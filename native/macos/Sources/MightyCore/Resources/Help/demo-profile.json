@@ -1,0 +1,1989 @@
+{
+  "version": 1,
+  "note": "The demo state `--help-capture` loads (docs/help/shots.json lists the screens). Everything here is fictional. A JSON object whose keys are only language codes is one user-visible string and must carry all four languages; the capture reads the one for the app's language. Program output (terminal output, command results, file contents the CLIs print) is what the program prints and stays as written. Each run's `frames` are the CLI's own stream lines (Claude stream-json, Codex exec JSONL), replayed through CLIStreamParser and the Claude permission channel, so the panes show what a real run would. Paths are relative to the workspace, which is created under the profile. The bundled copy is native/macos/Sources/MightyCore/Resources/Help/demo-profile.json and must stay byte-identical.",
+  "languages": [
+    "ko",
+    "en",
+    "zh",
+    "ja"
+  ],
+  "providers": [
+    {
+      "id": "claude",
+      "version": "2.1.300 (Claude Code)",
+      "account": "dev@example.com",
+      "plan": "Max"
+    },
+    {
+      "id": "codex",
+      "version": "codex-cli 0.160.0",
+      "account": "dev@example.com",
+      "plan": "Plus"
+    },
+    {
+      "id": "gemini",
+      "version": "0.12.0",
+      "account": "dev@example.com"
+    }
+  ],
+  "workspaces": [
+    {
+      "id": "demo-my-app",
+      "name": "my-app",
+      "directory": "my-app",
+      "files": [
+        {
+          "path": "package.json",
+          "content": "{\n  \"name\": \"my-app\",\n  \"version\": \"0.1.0\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"scripts\": {\n    \"dev\": \"vite\",\n    \"build\": \"vite build\",\n    \"test\": \"vitest run\",\n    \"test:e2e\": \"playwright test\",\n    \"typecheck\": \"tsc --noEmit\"\n  }\n}\n"
+        },
+        {
+          "path": "README.md",
+          "content": {
+            "ko": "# my-app\n\n로그인 폼과 설정 화면이 있는 작은 웹 앱입니다.\n\n## 스크립트\n\n- `npm run dev` — 개발 서버를 시작합니다\n- `npm test` — 단위 테스트를 실행합니다\n- `npm run test:e2e` — 종단 간 테스트를 실행합니다\n",
+            "en": "# my-app\n\nA small web app with a login form and a settings page.\n\n## Scripts\n\n- `npm run dev` — start the dev server\n- `npm test` — run the unit tests\n- `npm run test:e2e` — run the end-to-end tests\n",
+            "zh": "# my-app\n\n一个带有登录表单和设置页面的小型 Web 应用。\n\n## 脚本\n\n- `npm run dev` — 启动开发服务器\n- `npm test` — 运行单元测试\n- `npm run test:e2e` — 运行端到端测试\n",
+            "ja": "# my-app\n\nログインフォームと設定ページのある小さな Web アプリです。\n\n## スクリプト\n\n- `npm run dev` — 開発サーバーを起動します\n- `npm test` — 単体テストを実行します\n- `npm run test:e2e` — エンドツーエンドテストを実行します\n"
+          }
+        },
+        {
+          "path": "src/App.tsx",
+          "content": "import { LoginForm } from \"./components/LoginForm\";\nimport { Settings } from \"./pages/Settings\";\nimport \"./styles/theme.css\";\n\nexport function App({ signedIn }: { signedIn: boolean }) {\n  return <main className=\"app\">{signedIn ? <Settings /> : <LoginForm />}</main>;\n}\n"
+        },
+        {
+          "path": "src/components/LoginForm.tsx",
+          "content": "import { useState } from \"react\";\nimport { createSession } from \"../api/session\";\n\nexport function LoginForm() {\n  const [email, setEmail] = useState(\"\");\n  const [password, setPassword] = useState(\"\");\n  const [remember, setRemember] = useState(false);\n\n  async function submit(event: React.FormEvent) {\n    event.preventDefault();\n    await createSession({ email, password, remember });\n  }\n\n  return (\n    <form onSubmit={submit}>\n      <input type=\"email\" value={email} onChange={(e) => setEmail(e.target.value)} />\n      <input type=\"password\" value={password} onChange={(e) => setPassword(e.target.value)} />\n      <label>\n        <input type=\"checkbox\" checked={remember} onChange={(e) => setRemember(e.target.checked)} />\n        Remember me\n      </label>\n      <button type=\"submit\">Sign in</button>\n    </form>\n  );\n}\n"
+        },
+        {
+          "path": "src/api/session.ts",
+          "content": "const DAY = 24 * 60 * 60 * 1000;\n\nexport interface Credentials {\n  email: string;\n  password: string;\n  remember?: boolean;\n}\n\nexport async function createSession({ email, password, remember = false }: Credentials) {\n  const response = await fetch(\"/api/session\", {\n    method: \"POST\",\n    headers: { \"Content-Type\": \"application/json\" },\n    body: JSON.stringify({ email, password }),\n  });\n  if (!response.ok) throw new Error(\"Sign-in failed\");\n  const lifetime = remember ? 30 * DAY : DAY;\n  return { token: (await response.json()).token, expiresAt: Date.now() + lifetime };\n}\n\nexport function isExpired(session: { expiresAt: number }) {\n  return Date.now() >= session.expiresAt;\n}\n"
+        },
+        {
+          "path": "src/api/session.test.ts",
+          "content": "import { describe, expect, it, vi } from \"vitest\";\nimport { createSession, isExpired } from \"./session\";\n\nconst DAY = 24 * 60 * 60 * 1000;\n\ndescribe(\"createSession\", () => {\n  it(\"keeps a session for one day by default\", async () => {\n    vi.stubGlobal(\"fetch\", async () => new Response(JSON.stringify({ token: \"t\" })));\n    const session = await createSession({ email: \"a@example.com\", password: \"pw\" });\n    expect(session.expiresAt - Date.now()).toBeLessThanOrEqual(DAY);\n  });\n\n  it(\"keeps a remembered session for 30 days\", async () => {\n    vi.stubGlobal(\"fetch\", async () => new Response(JSON.stringify({ token: \"t\" })));\n    const session = await createSession({ email: \"a@example.com\", password: \"pw\", remember: true });\n    expect(session.expiresAt - Date.now()).toBeGreaterThan(29 * DAY);\n  });\n\n  it(\"reports an expired session\", () => {\n    expect(isExpired({ expiresAt: Date.now() - 1 })).toBe(true);\n  });\n});\n"
+        },
+        {
+          "path": "src/pages/Settings.tsx",
+          "content": "export function Settings() {\n  return (\n    <section className=\"settings\">\n      <h1>Settings</h1>\n      <p>Account, notifications and appearance.</p>\n    </section>\n  );\n}\n"
+        },
+        {
+          "path": "src/styles/theme.css",
+          "content": ":root {\n  --color-background: #ffffff;\n  --color-text: #1f2328;\n  --color-accent: #2f6feb;\n}\n\nbody {\n  background: var(--color-background);\n  color: var(--color-text);\n  font-family: system-ui, sans-serif;\n}\n"
+        }
+      ]
+    },
+    {
+      "id": "demo-docs-site",
+      "name": "docs-site",
+      "directory": "docs-site",
+      "files": [
+        {
+          "path": "package.json",
+          "content": "{\n  \"name\": \"docs-site\",\n  \"version\": \"0.1.0\",\n  \"private\": true,\n  \"scripts\": {\n    \"dev\": \"vitepress dev docs\",\n    \"build\": \"vitepress build docs\",\n    \"deploy:preview\": \"node scripts/deploy-preview.mjs\"\n  }\n}\n"
+        },
+        {
+          "path": "docs/getting-started.md",
+          "content": {
+            "ko": "# 시작하기\n\n## 로그인\n\n이메일과 비밀번호를 입력하고 **로그인**을 누릅니다.\n\n## 로그인 유지\n\n**로그인 유지**를 켜면 30일 동안 다시 로그인하지 않아도 됩니다. 공용 컴퓨터에서는 켜지 마세요.\n",
+            "en": "# Getting started\n\n## Signing in\n\nEnter your email and password, then choose **Sign in**.\n\n## Stay signed in\n\nTurn on **Remember me** to stay signed in for 30 days. Leave it off on shared computers.\n",
+            "zh": "# 快速开始\n\n## 登录\n\n输入邮箱和密码，然后点击**登录**。\n\n## 保持登录\n\n勾选**记住我**后，30 天内无需再次登录。在公用电脑上请不要勾选。\n",
+            "ja": "# はじめに\n\n## サインイン\n\nメールアドレスとパスワードを入力し、**サインイン**を選びます。\n\n## サインインしたままにする\n\n**ログイン状態を保持**をオンにすると、30 日間サインインし直す必要がありません。共用のコンピューターではオフのままにしてください。\n"
+          }
+        },
+        {
+          "path": "docs/faq.md",
+          "content": {
+            "ko": "# 자주 묻는 질문\n\n## 세션은 얼마나 유지되나요?\n\n기본은 하루입니다. **로그인 유지**를 켜면 30일입니다.\n\n## 비밀번호를 잊었어요\n\n로그인 화면의 **비밀번호 찾기**를 누르세요.\n",
+            "en": "# FAQ\n\n## How long does a session last?\n\nOne day by default, or 30 days with **Remember me** turned on.\n\n## I forgot my password\n\nChoose **Forgot password?** on the sign-in page.\n",
+            "zh": "# 常见问题\n\n## 会话能保持多久？\n\n默认一天；勾选**记住我**后为 30 天。\n\n## 我忘记了密码\n\n在登录页点击**忘记密码？**。\n",
+            "ja": "# よくある質問\n\n## セッションはどのくらい続きますか？\n\n既定では 1 日、**ログイン状態を保持**をオンにすると 30 日です。\n\n## パスワードを忘れました\n\nサインイン画面の**パスワードをお忘れですか？**を選んでください。\n"
+          }
+        }
+      ]
+    }
+  ],
+  "panes": [
+    {
+      "role": "mighty",
+      "workspace": "demo-my-app",
+      "kind": "claude",
+      "provider": "claude",
+      "model": "sonnet",
+      "effort": "high",
+      "permissionMode": "acceptEdits",
+      "view": "mighty",
+      "title": {
+        "ko": "로그인 유지",
+        "en": "Remember me",
+        "zh": "记住我",
+        "ja": "ログイン状態の保持"
+      },
+      "draft": {
+        "ko": "폼 아래에 '비밀번호 찾기' 링크도 넣어 줘.",
+        "en": "Also add a “Forgot password?” link under the form.",
+        "zh": "再在表单下方加一个“忘记密码？”链接。",
+        "ja": "フォームの下に「パスワードをお忘れですか？」のリンクも追加して。"
+      },
+      "runs": [
+        {
+          "input": {
+            "ko": "로그인 폼에 '로그인 유지' 옵션을 추가하고, 켜져 있으면 세션을 30일 동안 유지해 줘.",
+            "en": "Add a “Remember me” option to the login form and keep the session for 30 days when it is checked.",
+            "zh": "在登录表单里加一个“记住我”选项，勾选后让会话保持 30 天。",
+            "ja": "ログインフォームに「ログイン状態を保持」オプションを追加して、オンのときはセッションを 30 日間保持して。"
+          },
+          "finish": "completed",
+          "elapsedSeconds": 186,
+          "frames": [
+            {
+              "type": "system",
+              "subtype": "init",
+              "session_id": "5f0c2a8e-1d3b-4c6a-9e7f-2b8d4a6c1e93",
+              "model": "claude-sonnet-5-5",
+              "permissionMode": "default"
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_m1",
+              "session_id": "5f0c2a8e-1d3b-4c6a-9e7f-2b8d4a6c1e93",
+              "message": {
+                "id": "msg_m1",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": {
+                      "ko": "먼저 로그인 폼과 세션 코드를 읽어 볼게요.",
+                      "en": "I'll read the login form and the session code first.",
+                      "zh": "我先看一下登录表单和会话相关的代码。",
+                      "ja": "まずログインフォームとセッションのコードを読みます。"
+                    }
+                  },
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_m_read",
+                    "name": "Read",
+                    "input": {
+                      "file_path": "src/components/LoginForm.tsx"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1180,
+                  "cache_read_input_tokens": 38400,
+                  "cache_creation_input_tokens": 5200,
+                  "output_tokens": 210
+                }
+              }
+            },
+            {
+              "type": "user",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_m_read",
+                    "content": "import { useState } from \"react\";\nimport { createSession } from \"../api/session\";\n\nexport function LoginForm() {\n  const [email, setEmail] = useState(\"\");\n  const [password, setPassword] = useState(\"\");\n\n  async function submit(event: React.FormEvent) {\n    event.preventDefault();\n    await createSession({ email, password, remember });\n  }\n\n  return (\n    <form onSubmit={submit}>\n      <input type=\"email\" value={email} onChange={(e) => setEmail(e.target.value)} />\n      <input type=\"password\" value={password} onChange={(e) => setPassword(e.target.value)} />\n      <label>\n        <input type=\"checkbox\" checked={remember} onChange={(e) => setRemember(e.target.checked)} />\n        Remember me\n      </label>\n      <button type=\"submit\">Sign in</button>\n    </form>\n  );\n}\n"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_m2",
+              "session_id": "5f0c2a8e-1d3b-4c6a-9e7f-2b8d4a6c1e93",
+              "message": {
+                "id": "msg_m2",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_m_agent",
+                    "name": "Agent",
+                    "input": {
+                      "description": {
+                        "ko": "세션 만료 검토",
+                        "en": "Review session expiry",
+                        "zh": "检查会话过期逻辑",
+                        "ja": "セッション期限の確認"
+                      },
+                      "prompt": {
+                        "ko": "src/api/session.ts가 세션 수명을 어떻게 정하는지 확인하고, 30일 세션에서 문제가 될 부분을 알려 줘.",
+                        "en": "Check how src/api/session.ts sets the session lifetime and list anything that would break with a 30-day session.",
+                        "zh": "检查 src/api/session.ts 如何设置会话时长，列出改成 30 天后可能出问题的地方。",
+                        "ja": "src/api/session.ts がセッションの有効期間をどう決めているか確認し、30 日のセッションで問題になる箇所を挙げて。"
+                      },
+                      "subagent_type": "general-purpose"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1460,
+                  "cache_read_input_tokens": 40100,
+                  "cache_creation_input_tokens": 1900,
+                  "output_tokens": 160
+                }
+              }
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_c1",
+              "session_id": "5f0c2a8e-1d3b-4c6a-9e7f-2b8d4a6c1e93",
+              "message": {
+                "id": "msg_c1",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_c_read",
+                    "name": "Read",
+                    "input": {
+                      "file_path": "src/api/session.ts"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 900,
+                  "cache_read_input_tokens": 0,
+                  "cache_creation_input_tokens": 4100,
+                  "output_tokens": 90
+                }
+              },
+              "parent_tool_use_id": "toolu_m_agent"
+            },
+            {
+              "type": "user",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_c_read",
+                    "content": "const DAY = 24 * 60 * 60 * 1000;\n\nexport interface Credentials {\n  email: string;\n  password: string;\n  remember?: boolean;\n}\n\nexport async function createSession({ email, password, remember = false }: Credentials) {\n  const response = await fetch(\"/api/session\", {\n    method: \"POST\",\n    headers: { \"Content-Type\": \"application/json\" },\n    body: JSON.stringify({ email, password }),\n  });\n  if (!response.ok) throw new Error(\"Sign-in failed\");\n  const lifetime = DAY;\n  return { token: (await response.json()).token, expiresAt: Date.now() + lifetime };\n}\n\nexport function isExpired(session: { expiresAt: number }) {\n  return Date.now() >= session.expiresAt;\n}\n"
+                  }
+                ]
+              },
+              "parent_tool_use_id": "toolu_m_agent"
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_c2",
+              "session_id": "5f0c2a8e-1d3b-4c6a-9e7f-2b8d4a6c1e93",
+              "message": {
+                "id": "msg_c2",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": {
+                      "ko": "`createSession()`은 수명을 항상 하루로 정합니다. `remember` 값을 받아 켜져 있으면 30일을 쓰면 됩니다. 갱신 로직은 이미 `expiresAt`을 읽으므로 다른 곳은 바꿀 필요가 없습니다.",
+                      "en": "`createSession()` always sets a one-day lifetime. Accept a `remember` flag and use 30 days when it is set; the refresh logic already reads `expiresAt`, so nothing else needs to change.",
+                      "zh": "`createSession()` 总是把时长设为一天。增加一个 `remember` 参数，为真时使用 30 天即可；刷新逻辑已经读取 `expiresAt`，其他地方无需修改。",
+                      "ja": "`createSession()` は常に有効期間を 1 日にしています。`remember` を受け取り、オンなら 30 日にすれば十分です。更新処理はすでに `expiresAt` を読んでいるので、ほかは変更不要です。"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1300,
+                  "cache_read_input_tokens": 4100,
+                  "cache_creation_input_tokens": 0,
+                  "output_tokens": 180
+                }
+              },
+              "parent_tool_use_id": "toolu_m_agent"
+            },
+            {
+              "type": "result",
+              "subtype": "success",
+              "is_error": false,
+              "parent_tool_use_id": "toolu_m_agent",
+              "result": {
+                "ko": "`createSession()`은 수명을 항상 하루로 정합니다. `remember` 값을 받아 켜져 있으면 30일을 쓰면 됩니다. 갱신 로직은 이미 `expiresAt`을 읽으므로 다른 곳은 바꿀 필요가 없습니다.",
+                "en": "`createSession()` always sets a one-day lifetime. Accept a `remember` flag and use 30 days when it is set; the refresh logic already reads `expiresAt`, so nothing else needs to change.",
+                "zh": "`createSession()` 总是把时长设为一天。增加一个 `remember` 参数，为真时使用 30 天即可；刷新逻辑已经读取 `expiresAt`，其他地方无需修改。",
+                "ja": "`createSession()` は常に有効期間を 1 日にしています。`remember` を受け取り、オンなら 30 日にすれば十分です。更新処理はすでに `expiresAt` を読んでいるので、ほかは変更不要です。"
+              }
+            },
+            {
+              "type": "user",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_m_agent",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": {
+                          "ko": "`createSession()`은 수명을 항상 하루로 정합니다. `remember` 값을 받아 켜져 있으면 30일을 쓰면 됩니다. 갱신 로직은 이미 `expiresAt`을 읽으므로 다른 곳은 바꿀 필요가 없습니다.",
+                          "en": "`createSession()` always sets a one-day lifetime. Accept a `remember` flag and use 30 days when it is set; the refresh logic already reads `expiresAt`, so nothing else needs to change.",
+                          "zh": "`createSession()` 总是把时长设为一天。增加一个 `remember` 参数，为真时使用 30 天即可；刷新逻辑已经读取 `expiresAt`，其他地方无需修改。",
+                          "ja": "`createSession()` は常に有効期間を 1 日にしています。`remember` を受け取り、オンなら 30 日にすれば十分です。更新処理はすでに `expiresAt` を読んでいるので、ほかは変更不要です。"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_m3",
+              "session_id": "5f0c2a8e-1d3b-4c6a-9e7f-2b8d4a6c1e93",
+              "message": {
+                "id": "msg_m3",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_m_edit1",
+                    "name": "Edit",
+                    "input": {
+                      "file_path": "src/components/LoginForm.tsx",
+                      "old_string": "  const [password, setPassword] = useState(\"\");\n",
+                      "new_string": "  const [password, setPassword] = useState(\"\");\n  const [remember, setRemember] = useState(false);\n"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1620,
+                  "cache_read_input_tokens": 42000,
+                  "cache_creation_input_tokens": 900,
+                  "output_tokens": 380
+                }
+              }
+            },
+            {
+              "type": "user",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_m_edit1",
+                    "content": "The file src/components/LoginForm.tsx has been updated."
+                  }
+                ]
+              }
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_m4",
+              "session_id": "5f0c2a8e-1d3b-4c6a-9e7f-2b8d4a6c1e93",
+              "message": {
+                "id": "msg_m4",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_m_edit2",
+                    "name": "Edit",
+                    "input": {
+                      "file_path": "src/api/session.ts",
+                      "old_string": "  const lifetime = DAY;\n",
+                      "new_string": "  const lifetime = remember ? 30 * DAY : DAY;\n"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1700,
+                  "cache_read_input_tokens": 42900,
+                  "cache_creation_input_tokens": 600,
+                  "output_tokens": 240
+                }
+              }
+            },
+            {
+              "type": "user",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_m_edit2",
+                    "content": "The file src/api/session.ts has been updated."
+                  }
+                ]
+              }
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_m5",
+              "session_id": "5f0c2a8e-1d3b-4c6a-9e7f-2b8d4a6c1e93",
+              "message": {
+                "id": "msg_m5",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_m_edit3",
+                    "name": "Edit",
+                    "input": {
+                      "file_path": "src/api/session.test.ts",
+                      "old_string": "describe(\"createSession\", () => {\n",
+                      "new_string": "describe(\"createSession\", () => {\n  // one-day and 30-day lifetimes\n"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1750,
+                  "cache_read_input_tokens": 43500,
+                  "cache_creation_input_tokens": 700,
+                  "output_tokens": 520
+                }
+              }
+            },
+            {
+              "type": "user",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_m_edit3",
+                    "content": "The file src/api/session.test.ts has been updated."
+                  }
+                ]
+              }
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_m6",
+              "session_id": "5f0c2a8e-1d3b-4c6a-9e7f-2b8d4a6c1e93",
+              "message": {
+                "id": "msg_m6",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_m_test",
+                    "name": "Bash",
+                    "input": {
+                      "command": "npm test -- src/api",
+                      "description": {
+                        "ko": "세션 테스트 실행",
+                        "en": "Run the session tests",
+                        "zh": "运行会话测试",
+                        "ja": "セッションのテストを実行"
+                      }
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1800,
+                  "cache_read_input_tokens": 44200,
+                  "cache_creation_input_tokens": 500,
+                  "output_tokens": 120
+                }
+              }
+            },
+            {
+              "type": "user",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_m_test",
+                    "content": "\n> my-app@0.1.0 test\n> vitest run src/api\n\n ✓ src/api/session.test.ts (3 tests) 12ms\n\n Test Files  1 passed (1)\n      Tests  3 passed (3)\n   Duration  0.82s\n"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_m7",
+              "session_id": "5f0c2a8e-1d3b-4c6a-9e7f-2b8d4a6c1e93",
+              "message": {
+                "id": "msg_m7",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": {
+                      "ko": "완료했습니다. 이제 '로그인 유지'를 켜면 세션이 30일 동안 유지됩니다.\n\n- `src/components/LoginForm.tsx`: 체크박스를 추가하고 로그인 요청에 함께 보냅니다\n- `src/api/session.ts`: `createSession()`이 `remember`를 받아 하루 대신 30일로 정합니다\n- `src/api/session.test.ts`: 두 가지 수명을 확인하는 테스트를 더했습니다\n\n세션 테스트 3개가 모두 통과했습니다.",
+                      "en": "Done — “Remember me” now keeps the session for 30 days.\n\n- `src/components/LoginForm.tsx`: new checkbox, sent with the sign-in request\n- `src/api/session.ts`: `createSession()` takes `remember` and sets 30 days instead of one\n- `src/api/session.test.ts`: tests for both lifetimes\n\nAll 3 session tests pass.",
+                      "zh": "完成了：勾选“记住我”后，会话会保持 30 天。\n\n- `src/components/LoginForm.tsx`：新增复选框，并随登录请求一起发送\n- `src/api/session.ts`：`createSession()` 接收 `remember`，时长由一天改为 30 天\n- `src/api/session.test.ts`：为两种时长补充了测试\n\n3 个会话测试全部通过。",
+                      "ja": "完了しました。「ログイン状態を保持」をオンにすると、セッションが 30 日間続きます。\n\n- `src/components/LoginForm.tsx`: チェックボックスを追加し、サインイン要求と一緒に送ります\n- `src/api/session.ts`: `createSession()` が `remember` を受け取り、1 日ではなく 30 日にします\n- `src/api/session.test.ts`: 両方の有効期間のテストを追加しました\n\nセッションのテスト 3 件がすべて成功しました。"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1900,
+                  "cache_read_input_tokens": 44800,
+                  "cache_creation_input_tokens": 400,
+                  "output_tokens": 310
+                }
+              }
+            },
+            {
+              "type": "result",
+              "subtype": "success",
+              "is_error": false,
+              "session_id": "5f0c2a8e-1d3b-4c6a-9e7f-2b8d4a6c1e93",
+              "result": {
+                "ko": "완료했습니다. 이제 '로그인 유지'를 켜면 세션이 30일 동안 유지됩니다.\n\n- `src/components/LoginForm.tsx`: 체크박스를 추가하고 로그인 요청에 함께 보냅니다\n- `src/api/session.ts`: `createSession()`이 `remember`를 받아 하루 대신 30일로 정합니다\n- `src/api/session.test.ts`: 두 가지 수명을 확인하는 테스트를 더했습니다\n\n세션 테스트 3개가 모두 통과했습니다.",
+                "en": "Done — “Remember me” now keeps the session for 30 days.\n\n- `src/components/LoginForm.tsx`: new checkbox, sent with the sign-in request\n- `src/api/session.ts`: `createSession()` takes `remember` and sets 30 days instead of one\n- `src/api/session.test.ts`: tests for both lifetimes\n\nAll 3 session tests pass.",
+                "zh": "完成了：勾选“记住我”后，会话会保持 30 天。\n\n- `src/components/LoginForm.tsx`：新增复选框，并随登录请求一起发送\n- `src/api/session.ts`：`createSession()` 接收 `remember`，时长由一天改为 30 天\n- `src/api/session.test.ts`：为两种时长补充了测试\n\n3 个会话测试全部通过。",
+                "ja": "完了しました。「ログイン状態を保持」をオンにすると、セッションが 30 日間続きます。\n\n- `src/components/LoginForm.tsx`: チェックボックスを追加し、サインイン要求と一緒に送ります\n- `src/api/session.ts`: `createSession()` が `remember` を受け取り、1 日ではなく 30 日にします\n- `src/api/session.test.ts`: 両方の有効期間のテストを追加しました\n\nセッションのテスト 3 件がすべて成功しました。"
+              },
+              "usage": {
+                "input_tokens": 18420,
+                "cache_read_input_tokens": 41200,
+                "cache_creation_input_tokens": 6100,
+                "output_tokens": 2310
+              },
+              "modelUsage": {
+                "claude-sonnet-5-5": {
+                  "inputTokens": 18420,
+                  "outputTokens": 2310,
+                  "cacheReadInputTokens": 41200,
+                  "cacheCreationInputTokens": 6100,
+                  "contextWindow": 200000
+                }
+              },
+              "total_cost_usd": 0.21
+            }
+          ]
+        },
+        {
+          "input": {
+            "ko": "전체 테스트를 백그라운드에서 돌리고, 체크리스트를 계속 업데이트해 줘.",
+            "en": "Run the full test suite in the background and keep the checklist up to date.",
+            "zh": "在后台运行完整测试，并持续更新清单。",
+            "ja": "テスト一式をバックグラウンドで実行して、チェックリストを更新し続けて。"
+          },
+          "finish": null,
+          "elapsedSeconds": 74,
+          "frames": [
+            {
+              "type": "assistant",
+              "uuid": "msg_m8",
+              "session_id": "5f0c2a8e-1d3b-4c6a-9e7f-2b8d4a6c1e93",
+              "message": {
+                "id": "msg_m8",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_m_todo",
+                    "name": "TodoWrite",
+                    "input": {
+                      "todos": [
+                        {
+                          "content": {
+                            "ko": "단위 테스트 실행",
+                            "en": "Run the unit tests",
+                            "zh": "运行单元测试",
+                            "ja": "単体テストを実行"
+                          },
+                          "status": "completed",
+                          "activeForm": {
+                            "ko": "단위 테스트를 실행하는 중",
+                            "en": "Running the unit tests",
+                            "zh": "正在运行单元测试",
+                            "ja": "単体テストを実行中"
+                          }
+                        },
+                        {
+                          "content": {
+                            "ko": "종단 간 테스트 실행",
+                            "en": "Run the end-to-end tests",
+                            "zh": "运行端到端测试",
+                            "ja": "エンドツーエンドテストを実行"
+                          },
+                          "status": "in_progress",
+                          "activeForm": {
+                            "ko": "종단 간 테스트를 실행하는 중",
+                            "en": "Running the end-to-end tests",
+                            "zh": "正在运行端到端测试",
+                            "ja": "エンドツーエンドテストを実行中"
+                          }
+                        },
+                        {
+                          "content": {
+                            "ko": "변경 기록 업데이트",
+                            "en": "Update the changelog",
+                            "zh": "更新变更日志",
+                            "ja": "変更履歴を更新"
+                          },
+                          "status": "pending",
+                          "activeForm": {
+                            "ko": "변경 기록을 업데이트하는 중",
+                            "en": "Updating the changelog",
+                            "zh": "正在更新变更日志",
+                            "ja": "変更履歴を更新中"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1200,
+                  "cache_read_input_tokens": 46100,
+                  "cache_creation_input_tokens": 800,
+                  "output_tokens": 260
+                }
+              }
+            },
+            {
+              "type": "user",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_m_todo",
+                    "content": "Todos have been modified successfully."
+                  }
+                ]
+              }
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_m9",
+              "session_id": "5f0c2a8e-1d3b-4c6a-9e7f-2b8d4a6c1e93",
+              "message": {
+                "id": "msg_m9",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_m_e2e",
+                    "name": "Bash",
+                    "input": {
+                      "command": "npm run test:e2e",
+                      "description": {
+                        "ko": "종단 간 테스트",
+                        "en": "End-to-end tests",
+                        "zh": "端到端测试",
+                        "ja": "エンドツーエンドテスト"
+                      },
+                      "run_in_background": true
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1300,
+                  "cache_read_input_tokens": 46900,
+                  "cache_creation_input_tokens": 300,
+                  "output_tokens": 140
+                }
+              }
+            },
+            {
+              "type": "user",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_m_e2e",
+                    "content": "Command running in background with ID: bash_e2e."
+                  }
+                ]
+              }
+            },
+            {
+              "type": "system",
+              "subtype": "task_started",
+              "task_id": "bash_e2e",
+              "tool_use_id": "toolu_m_e2e",
+              "description": {
+                "ko": "종단 간 테스트",
+                "en": "End-to-end tests",
+                "zh": "端到端测试",
+                "ja": "エンドツーエンドテスト"
+              },
+              "is_backgrounded": true,
+              "task_type": "local_bash"
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_m10",
+              "session_id": "5f0c2a8e-1d3b-4c6a-9e7f-2b8d4a6c1e93",
+              "message": {
+                "id": "msg_m10",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": {
+                      "ko": "종단 간 테스트가 백그라운드에서 돌고 있습니다. 끝나면 체크리스트를 마저 표시할게요.",
+                      "en": "The end-to-end tests are running in the background. I'll tick off the checklist when they finish.",
+                      "zh": "端到端测试正在后台运行，完成后我会继续勾选清单。",
+                      "ja": "エンドツーエンドテストをバックグラウンドで実行中です。終わったらチェックリストを更新します。"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1350,
+                  "cache_read_input_tokens": 47200,
+                  "cache_creation_input_tokens": 200,
+                  "output_tokens": 90
+                }
+              }
+            },
+            {
+              "type": "result",
+              "subtype": "success",
+              "is_error": false,
+              "session_id": "5f0c2a8e-1d3b-4c6a-9e7f-2b8d4a6c1e93",
+              "result": {
+                "ko": "종단 간 테스트가 백그라운드에서 돌고 있습니다. 끝나면 체크리스트를 마저 표시할게요.",
+                "en": "The end-to-end tests are running in the background. I'll tick off the checklist when they finish.",
+                "zh": "端到端测试正在后台运行，完成后我会继续勾选清单。",
+                "ja": "エンドツーエンドテストをバックグラウンドで実行中です。終わったらチェックリストを更新します。"
+              },
+              "usage": {
+                "input_tokens": 6200,
+                "cache_read_input_tokens": 47200,
+                "cache_creation_input_tokens": 1300,
+                "output_tokens": 490
+              },
+              "modelUsage": {
+                "claude-sonnet-5-5": {
+                  "inputTokens": 6200,
+                  "outputTokens": 490,
+                  "cacheReadInputTokens": 47200,
+                  "cacheCreationInputTokens": 1300,
+                  "contextWindow": 200000
+                }
+              },
+              "total_cost_usd": 0.05
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "role": "plan",
+      "workspace": "demo-my-app",
+      "kind": "claude",
+      "provider": "claude",
+      "model": "opus",
+      "effort": "high",
+      "permissionMode": "plan",
+      "view": "default",
+      "title": {
+        "ko": "다크 모드",
+        "en": "Dark mode",
+        "zh": "深色模式",
+        "ja": "ダークモード"
+      },
+      "runs": [
+        {
+          "input": {
+            "ko": "설정 화면에 다크 모드 전환을 추가하는 계획을 세워 줘.",
+            "en": "Plan how to add a dark mode switch to the settings page.",
+            "zh": "规划一下如何在设置页面加入深色模式开关。",
+            "ja": "設定ページにダークモードの切り替えを追加する計画を立てて。"
+          },
+          "finish": null,
+          "elapsedSeconds": 52,
+          "frames": [
+            {
+              "type": "system",
+              "subtype": "init",
+              "session_id": "8a1e4c7b-3f2d-4b9a-8c6e-1d5f7a9b3c20",
+              "model": "claude-sonnet-5-5",
+              "permissionMode": "default"
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_p1",
+              "session_id": "8a1e4c7b-3f2d-4b9a-8c6e-1d5f7a9b3c20",
+              "message": {
+                "id": "msg_p1",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": {
+                      "ko": "지금 테마가 어떻게 적용되는지 먼저 볼게요.",
+                      "en": "I'll look at how the theme is applied today.",
+                      "zh": "我先看看目前主题是怎么应用的。",
+                      "ja": "まず今のテーマの適用方法を確認します。"
+                    }
+                  },
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_p_read",
+                    "name": "Read",
+                    "input": {
+                      "file_path": "src/styles/theme.css"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1100,
+                  "cache_read_input_tokens": 30200,
+                  "cache_creation_input_tokens": 4800,
+                  "output_tokens": 150
+                }
+              }
+            },
+            {
+              "type": "user",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_p_read",
+                    "content": ":root {\n  --color-background: #ffffff;\n  --color-text: #1f2328;\n  --color-accent: #2f6feb;\n}\n\nbody {\n  background: var(--color-background);\n  color: var(--color-text);\n  font-family: system-ui, sans-serif;\n}\n"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_p2",
+              "session_id": "8a1e4c7b-3f2d-4b9a-8c6e-1d5f7a9b3c20",
+              "message": {
+                "id": "msg_p2",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_p_grep",
+                    "name": "Grep",
+                    "input": {
+                      "pattern": "theme",
+                      "path": "src"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1200,
+                  "cache_read_input_tokens": 31000,
+                  "cache_creation_input_tokens": 300,
+                  "output_tokens": 80
+                }
+              }
+            },
+            {
+              "type": "user",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_p_grep",
+                    "content": "src/App.tsx\nsrc/pages/Settings.tsx\nsrc/styles/theme.css"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_p3",
+              "session_id": "8a1e4c7b-3f2d-4b9a-8c6e-1d5f7a9b3c20",
+              "message": {
+                "id": "msg_p3",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_p_plan",
+                    "name": "ExitPlanMode",
+                    "input": {
+                      "plan": {
+                        "ko": "# 다크 모드 전환 추가\n\n## 목표\n설정 화면에서 라이트·다크·시스템 중 하나를 고르고, 고른 값을 기억합니다.\n\n## 단계\n1. `src/styles/theme.css`에 다크 팔레트용 `--color-*` 변수를 더합니다.\n2. 선택을 `localStorage`에 읽고 쓰는 `useTheme()` 훅을 만듭니다.\n3. `src/pages/Settings.tsx`에 세 갈래 전환을 넣습니다.\n4. '시스템'을 고르면 운영체제 설정을 따릅니다.\n\n## 테스트\n- `useTheme()` 단위 테스트\n- 다크로 바꾸고 새로 고침하는 종단 간 테스트 1개",
+                        "en": "# Add a dark mode switch\n\n## Goal\nLet people pick Light, Dark or System on the Settings page, and remember the choice.\n\n## Steps\n1. Add `--color-*` variables for a dark palette to `src/styles/theme.css`.\n2. Create a `useTheme()` hook that reads and saves the choice in `localStorage`.\n3. Add a three-way switch to `src/pages/Settings.tsx`.\n4. Follow the system setting when “System” is picked.\n\n## Tests\n- Unit tests for `useTheme()`\n- One end-to-end test that switches to Dark and reloads",
+                        "zh": "# 添加深色模式开关\n\n## 目标\n在设置页面选择浅色、深色或跟随系统，并记住所选项。\n\n## 步骤\n1. 在 `src/styles/theme.css` 中添加深色配色的 `--color-*` 变量。\n2. 新建 `useTheme()` Hook，在 `localStorage` 中读取并保存选择。\n3. 在 `src/pages/Settings.tsx` 中加入三档切换。\n4. 选择“跟随系统”时使用系统设置。\n\n## 测试\n- `useTheme()` 的单元测试\n- 一个切换到深色并刷新页面的端到端测试",
+                        "ja": "# ダークモードの切り替えを追加\n\n## 目的\n設定ページでライト・ダーク・システムを選べるようにし、選択を記憶します。\n\n## 手順\n1. `src/styles/theme.css` にダーク配色用の `--color-*` 変数を追加します。\n2. 選択を `localStorage` に読み書きする `useTheme()` フックを作ります。\n3. `src/pages/Settings.tsx` に 3 択の切り替えを追加します。\n4. 「システム」を選んだときは OS の設定に従います。\n\n## テスト\n- `useTheme()` の単体テスト\n- ダークに切り替えて再読み込みするエンドツーエンドテスト 1 件"
+                      }
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1300,
+                  "cache_read_input_tokens": 31400,
+                  "cache_creation_input_tokens": 200,
+                  "output_tokens": 420
+                }
+              }
+            },
+            {
+              "type": "control_request",
+              "request_id": "plan-1",
+              "request": {
+                "subtype": "can_use_tool",
+                "tool_name": "ExitPlanMode",
+                "tool_use_id": "toolu_p_plan",
+                "input": {
+                  "plan": {
+                    "ko": "# 다크 모드 전환 추가\n\n## 목표\n설정 화면에서 라이트·다크·시스템 중 하나를 고르고, 고른 값을 기억합니다.\n\n## 단계\n1. `src/styles/theme.css`에 다크 팔레트용 `--color-*` 변수를 더합니다.\n2. 선택을 `localStorage`에 읽고 쓰는 `useTheme()` 훅을 만듭니다.\n3. `src/pages/Settings.tsx`에 세 갈래 전환을 넣습니다.\n4. '시스템'을 고르면 운영체제 설정을 따릅니다.\n\n## 테스트\n- `useTheme()` 단위 테스트\n- 다크로 바꾸고 새로 고침하는 종단 간 테스트 1개",
+                    "en": "# Add a dark mode switch\n\n## Goal\nLet people pick Light, Dark or System on the Settings page, and remember the choice.\n\n## Steps\n1. Add `--color-*` variables for a dark palette to `src/styles/theme.css`.\n2. Create a `useTheme()` hook that reads and saves the choice in `localStorage`.\n3. Add a three-way switch to `src/pages/Settings.tsx`.\n4. Follow the system setting when “System” is picked.\n\n## Tests\n- Unit tests for `useTheme()`\n- One end-to-end test that switches to Dark and reloads",
+                    "zh": "# 添加深色模式开关\n\n## 目标\n在设置页面选择浅色、深色或跟随系统，并记住所选项。\n\n## 步骤\n1. 在 `src/styles/theme.css` 中添加深色配色的 `--color-*` 变量。\n2. 新建 `useTheme()` Hook，在 `localStorage` 中读取并保存选择。\n3. 在 `src/pages/Settings.tsx` 中加入三档切换。\n4. 选择“跟随系统”时使用系统设置。\n\n## 测试\n- `useTheme()` 的单元测试\n- 一个切换到深色并刷新页面的端到端测试",
+                    "ja": "# ダークモードの切り替えを追加\n\n## 目的\n設定ページでライト・ダーク・システムを選べるようにし、選択を記憶します。\n\n## 手順\n1. `src/styles/theme.css` にダーク配色用の `--color-*` 変数を追加します。\n2. 選択を `localStorage` に読み書きする `useTheme()` フックを作ります。\n3. `src/pages/Settings.tsx` に 3 択の切り替えを追加します。\n4. 「システム」を選んだときは OS の設定に従います。\n\n## テスト\n- `useTheme()` の単体テスト\n- ダークに切り替えて再読み込みするエンドツーエンドテスト 1 件"
+                  }
+                },
+                "requires_user_interaction": true
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "role": "codex",
+      "workspace": "demo-my-app",
+      "kind": "claude",
+      "provider": "codex",
+      "model": "default",
+      "effort": "default",
+      "permissionMode": "acceptEdits",
+      "view": "default",
+      "title": {
+        "ko": "API 정리",
+        "en": "API cleanup",
+        "zh": "API 清理",
+        "ja": "API の整理"
+      },
+      "runs": [
+        {
+          "input": {
+            "ko": "src/api에서 쓰이지 않는 export를 찾아서 정리해 줘.",
+            "en": "Find unused exports in src/api and remove them.",
+            "zh": "找出 src/api 中没有被使用的导出并清理掉。",
+            "ja": "src/api の使われていない export を探して整理して。"
+          },
+          "finish": "completed",
+          "elapsedSeconds": 41,
+          "frames": [
+            {
+              "type": "thread.started",
+              "thread_id": "0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b"
+            },
+            {
+              "type": "turn.started"
+            },
+            {
+              "type": "item.started",
+              "item": {
+                "id": "item_1",
+                "type": "command_execution",
+                "command": "rg -n \"^export\" src/api",
+                "status": "in_progress"
+              }
+            },
+            {
+              "type": "item.completed",
+              "item": {
+                "id": "item_1",
+                "type": "command_execution",
+                "command": "rg -n \"^export\" src/api",
+                "aggregated_output": "src/api/session.ts:3:export interface Credentials {\nsrc/api/session.ts:9:export async function createSession({ email, password, remember = false }: Credentials) {\nsrc/api/session.ts:20:export function isExpired(session: { expiresAt: number }) {\n",
+                "exit_code": 0,
+                "status": "completed"
+              }
+            },
+            {
+              "type": "item.completed",
+              "item": {
+                "id": "item_2",
+                "type": "agent_message",
+                "text": {
+                  "ko": "`src/api/session.ts`의 `Credentials` 타입만 다른 파일에서 쓰이지 않습니다. 내부 타입으로 바꾸고 타입 검사를 다시 돌릴게요.",
+                  "en": "Only the `Credentials` type in `src/api/session.ts` is not used anywhere else. I'll make it internal and run the type check again.",
+                  "zh": "只有 `src/api/session.ts` 里的 `Credentials` 类型没有在其他文件中使用。我会把它改为内部类型，然后重新运行类型检查。",
+                  "ja": "`src/api/session.ts` の `Credentials` 型だけがほかのファイルで使われていません。内部の型に変えて、型チェックをもう一度実行します。"
+                }
+              }
+            },
+            {
+              "type": "item.completed",
+              "item": {
+                "id": "item_3",
+                "type": "file_change",
+                "changes": [
+                  {
+                    "path": "src/api/session.ts",
+                    "kind": "update"
+                  }
+                ],
+                "status": "completed"
+              }
+            },
+            {
+              "type": "item.completed",
+              "item": {
+                "id": "item_4",
+                "type": "command_execution",
+                "command": "npm run typecheck",
+                "aggregated_output": "\n> my-app@0.1.0 typecheck\n> tsc --noEmit\n\n",
+                "exit_code": 0,
+                "status": "completed"
+              }
+            },
+            {
+              "type": "item.completed",
+              "item": {
+                "id": "item_5",
+                "type": "agent_message",
+                "text": {
+                  "ko": "정리했습니다. `Credentials`는 이제 `src/api/session.ts` 안에서만 쓰이고, 타입 검사는 오류 없이 끝났습니다.",
+                  "en": "Done. `Credentials` is now private to `src/api/session.ts`, and the type check finishes without errors.",
+                  "zh": "已完成。`Credentials` 现在只在 `src/api/session.ts` 内部使用，类型检查没有报错。",
+                  "ja": "整理しました。`Credentials` は `src/api/session.ts` の中だけで使われるようになり、型チェックはエラーなく終わりました。"
+                }
+              }
+            },
+            {
+              "type": "turn.completed",
+              "usage": {
+                "input_tokens": 21400,
+                "cached_input_tokens": 15800,
+                "output_tokens": 1240
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "role": "shell",
+      "workspace": "demo-my-app",
+      "kind": "shell",
+      "provider": "claude",
+      "model": "default",
+      "effort": "default",
+      "permissionMode": "manual",
+      "view": "default",
+      "title": {
+        "ko": "테스트",
+        "en": "Tests",
+        "zh": "测试",
+        "ja": "テスト"
+      },
+      "runs": []
+    },
+    {
+      "role": "result",
+      "workspace": "demo-docs-site",
+      "kind": "claude",
+      "provider": "claude",
+      "model": "sonnet",
+      "effort": "medium",
+      "permissionMode": "acceptEdits",
+      "view": "mighty",
+      "title": {
+        "ko": "시작 가이드",
+        "en": "Getting started guide",
+        "zh": "快速开始指南",
+        "ja": "はじめにガイド"
+      },
+      "runs": [
+        {
+          "input": {
+            "ko": "새 '로그인 유지' 옵션에 맞게 시작 가이드를 고쳐 줘.",
+            "en": "Update the getting-started guide for the new “Remember me” option.",
+            "zh": "根据新的“记住我”选项更新快速开始指南。",
+            "ja": "新しい「ログイン状態を保持」オプションに合わせて、はじめにガイドを更新して。"
+          },
+          "finish": "completed",
+          "elapsedSeconds": 97,
+          "frames": [
+            {
+              "type": "system",
+              "subtype": "init",
+              "session_id": "c4b7e2a9-6d1f-4e8c-b3a5-9f2d7e1c6b48",
+              "model": "claude-sonnet-5-5",
+              "permissionMode": "default"
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_d1",
+              "session_id": "c4b7e2a9-6d1f-4e8c-b3a5-9f2d7e1c6b48",
+              "message": {
+                "id": "msg_d1",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": {
+                      "ko": "가이드를 고치고, 링크가 모두 살아 있는지도 확인할게요.",
+                      "en": "I'll update the guide and check that every link still works.",
+                      "zh": "我会更新指南，并检查所有链接是否仍然有效。",
+                      "ja": "ガイドを更新して、すべてのリンクが有効か確認します。"
+                    }
+                  },
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_d_read",
+                    "name": "Read",
+                    "input": {
+                      "file_path": "docs/getting-started.md"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1000,
+                  "cache_read_input_tokens": 22100,
+                  "cache_creation_input_tokens": 3900,
+                  "output_tokens": 140
+                }
+              }
+            },
+            {
+              "type": "user",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_d_read",
+                    "content": "# Getting started\n\n## Signing in\n\nEnter your email and password, then choose **Sign in**.\n"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_d2",
+              "session_id": "c4b7e2a9-6d1f-4e8c-b3a5-9f2d7e1c6b48",
+              "message": {
+                "id": "msg_d2",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_d_agent",
+                    "name": "Agent",
+                    "input": {
+                      "description": {
+                        "ko": "링크 확인",
+                        "en": "Check links",
+                        "zh": "检查链接",
+                        "ja": "リンクの確認"
+                      },
+                      "prompt": {
+                        "ko": "docs/ 안의 링크를 모두 확인하고 깨진 링크를 알려 줘.",
+                        "en": "Check every link in docs/ and report broken ones.",
+                        "zh": "检查 docs/ 中的所有链接，报告失效的链接。",
+                        "ja": "docs/ 内のリンクをすべて確認し、切れているものを報告して。"
+                      },
+                      "subagent_type": "general-purpose"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1100,
+                  "cache_read_input_tokens": 23000,
+                  "cache_creation_input_tokens": 700,
+                  "output_tokens": 120
+                }
+              }
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_dc1",
+              "session_id": "c4b7e2a9-6d1f-4e8c-b3a5-9f2d7e1c6b48",
+              "message": {
+                "id": "msg_dc1",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_dc_grep",
+                    "name": "Grep",
+                    "input": {
+                      "pattern": "\\]\\(",
+                      "path": "docs",
+                      "output_mode": "count"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 800,
+                  "cache_read_input_tokens": 0,
+                  "cache_creation_input_tokens": 2600,
+                  "output_tokens": 70
+                }
+              },
+              "parent_tool_use_id": "toolu_d_agent"
+            },
+            {
+              "type": "user",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_dc_grep",
+                    "content": "docs/getting-started.md:6\ndocs/faq.md:8"
+                  }
+                ]
+              },
+              "parent_tool_use_id": "toolu_d_agent"
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_dc2",
+              "session_id": "c4b7e2a9-6d1f-4e8c-b3a5-9f2d7e1c6b48",
+              "message": {
+                "id": "msg_dc2",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": {
+                      "ko": "링크 14개가 모두 정상입니다.",
+                      "en": "All 14 links resolve.",
+                      "zh": "14 个链接全部有效。",
+                      "ja": "14 件のリンクはすべて有効です。"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 900,
+                  "cache_read_input_tokens": 2600,
+                  "cache_creation_input_tokens": 0,
+                  "output_tokens": 40
+                }
+              },
+              "parent_tool_use_id": "toolu_d_agent"
+            },
+            {
+              "type": "result",
+              "subtype": "success",
+              "is_error": false,
+              "parent_tool_use_id": "toolu_d_agent",
+              "result": {
+                "ko": "링크 14개가 모두 정상입니다.",
+                "en": "All 14 links resolve.",
+                "zh": "14 个链接全部有效。",
+                "ja": "14 件のリンクはすべて有効です。"
+              }
+            },
+            {
+              "type": "user",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_d_agent",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": {
+                          "ko": "링크 14개가 모두 정상입니다.",
+                          "en": "All 14 links resolve.",
+                          "zh": "14 个链接全部有效。",
+                          "ja": "14 件のリンクはすべて有効です。"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_d3",
+              "session_id": "c4b7e2a9-6d1f-4e8c-b3a5-9f2d7e1c6b48",
+              "message": {
+                "id": "msg_d3",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_d_edit1",
+                    "name": "Edit",
+                    "input": {
+                      "file_path": "docs/getting-started.md",
+                      "old_string": "## Signing in\n",
+                      "new_string": "## Signing in\n"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1200,
+                  "cache_read_input_tokens": 23800,
+                  "cache_creation_input_tokens": 500,
+                  "output_tokens": 360
+                }
+              }
+            },
+            {
+              "type": "user",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_d_edit1",
+                    "content": "The file docs/getting-started.md has been updated."
+                  }
+                ]
+              }
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_d4",
+              "session_id": "c4b7e2a9-6d1f-4e8c-b3a5-9f2d7e1c6b48",
+              "message": {
+                "id": "msg_d4",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_d_edit2",
+                    "name": "Edit",
+                    "input": {
+                      "file_path": "docs/faq.md",
+                      "old_string": "# FAQ\n",
+                      "new_string": "# FAQ\n"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1250,
+                  "cache_read_input_tokens": 24300,
+                  "cache_creation_input_tokens": 400,
+                  "output_tokens": 210
+                }
+              }
+            },
+            {
+              "type": "user",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_d_edit2",
+                    "content": "The file docs/faq.md has been updated."
+                  }
+                ]
+              }
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_d5",
+              "session_id": "c4b7e2a9-6d1f-4e8c-b3a5-9f2d7e1c6b48",
+              "message": {
+                "id": "msg_d5",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": {
+                      "ko": "가이드를 고쳤습니다.\n\n- `docs/getting-started.md`: '로그인 유지' 절을 새로 썼습니다\n- `docs/faq.md`: '세션은 얼마나 유지되나요?'에 답을 더했습니다\n\n링크 14개는 모두 그대로 동작합니다.",
+                      "en": "Updated the guide.\n\n- `docs/getting-started.md`: new “Stay signed in” section\n- `docs/faq.md`: answer for “How long does a session last?”\n\nAll 14 links still work.",
+                      "zh": "指南已更新。\n\n- `docs/getting-started.md`：新增“保持登录”一节\n- `docs/faq.md`：补充“会话能保持多久？”的答案\n\n14 个链接仍然全部有效。",
+                      "ja": "ガイドを更新しました。\n\n- `docs/getting-started.md`: 「サインインしたままにする」の節を追加\n- `docs/faq.md`: 「セッションはどのくらい続きますか？」の回答を追加\n\n14 件のリンクはすべて引き続き有効です。"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1300,
+                  "cache_read_input_tokens": 24800,
+                  "cache_creation_input_tokens": 300,
+                  "output_tokens": 190
+                }
+              }
+            },
+            {
+              "type": "result",
+              "subtype": "success",
+              "is_error": false,
+              "session_id": "c4b7e2a9-6d1f-4e8c-b3a5-9f2d7e1c6b48",
+              "result": {
+                "ko": "가이드를 고쳤습니다.\n\n- `docs/getting-started.md`: '로그인 유지' 절을 새로 썼습니다\n- `docs/faq.md`: '세션은 얼마나 유지되나요?'에 답을 더했습니다\n\n링크 14개는 모두 그대로 동작합니다.",
+                "en": "Updated the guide.\n\n- `docs/getting-started.md`: new “Stay signed in” section\n- `docs/faq.md`: answer for “How long does a session last?”\n\nAll 14 links still work.",
+                "zh": "指南已更新。\n\n- `docs/getting-started.md`：新增“保持登录”一节\n- `docs/faq.md`：补充“会话能保持多久？”的答案\n\n14 个链接仍然全部有效。",
+                "ja": "ガイドを更新しました。\n\n- `docs/getting-started.md`: 「サインインしたままにする」の節を追加\n- `docs/faq.md`: 「セッションはどのくらい続きますか？」の回答を追加\n\n14 件のリンクはすべて引き続き有効です。"
+              },
+              "usage": {
+                "input_tokens": 9800,
+                "cache_read_input_tokens": 24800,
+                "cache_creation_input_tokens": 4600,
+                "output_tokens": 1100
+              },
+              "modelUsage": {
+                "claude-sonnet-5-5": {
+                  "inputTokens": 9800,
+                  "outputTokens": 1100,
+                  "cacheReadInputTokens": 24800,
+                  "cacheCreationInputTokens": 4600,
+                  "contextWindow": 200000
+                }
+              },
+              "total_cost_usd": 0.09
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "role": "question",
+      "workspace": "demo-docs-site",
+      "kind": "claude",
+      "provider": "claude",
+      "model": "sonnet",
+      "effort": "default",
+      "permissionMode": "acceptEdits",
+      "view": "default",
+      "title": {
+        "ko": "릴리스 노트",
+        "en": "Release notes",
+        "zh": "发布说明",
+        "ja": "リリースノート"
+      },
+      "runs": [
+        {
+          "input": {
+            "ko": "0.2.0 버전의 릴리스 노트를 써 줘.",
+            "en": "Write the release notes for version 0.2.0.",
+            "zh": "为 0.2.0 版本写发布说明。",
+            "ja": "バージョン 0.2.0 のリリースノートを書いて。"
+          },
+          "finish": null,
+          "elapsedSeconds": 18,
+          "frames": [
+            {
+              "type": "system",
+              "subtype": "init",
+              "session_id": "e9d3a1c5-7b2f-4a6d-8e1c-3f5b9d7a2e64",
+              "model": "claude-sonnet-5-5",
+              "permissionMode": "default"
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_q1",
+              "session_id": "e9d3a1c5-7b2f-4a6d-8e1c-3f5b9d7a2e64",
+              "message": {
+                "id": "msg_q1",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": {
+                      "ko": "쓰기 전에 두 가지만 여쭐게요.",
+                      "en": "Before I write them, two quick questions.",
+                      "zh": "动笔之前，先问两个问题。",
+                      "ja": "書く前に 2 つだけ確認させてください。"
+                    }
+                  },
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_q_ask",
+                    "name": "AskUserQuestion",
+                    "input": {
+                      "questions": [
+                        {
+                          "header": {
+                            "ko": "독자",
+                            "en": "Audience",
+                            "zh": "读者",
+                            "ja": "読者"
+                          },
+                          "question": {
+                            "ko": "이 릴리스 노트는 누가 읽나요?",
+                            "en": "Who are these release notes for?",
+                            "zh": "这份发布说明是写给谁看的？",
+                            "ja": "このリリースノートは誰向けですか？"
+                          },
+                          "multiSelect": false,
+                          "options": [
+                            {
+                              "label": {
+                                "ko": "사용자",
+                                "en": "Users",
+                                "zh": "用户",
+                                "ja": "ユーザー"
+                              },
+                              "description": {
+                                "ko": "쉬운 말로, 사용자에게 달라진 점 위주로",
+                                "en": "Plain words, focused on what changed for them",
+                                "zh": "用通俗的语言，侧重对他们有什么变化",
+                                "ja": "やさしい言葉で、ユーザーにとっての変更点を中心に"
+                              }
+                            },
+                            {
+                              "label": {
+                                "ko": "개발자",
+                                "en": "Developers",
+                                "zh": "开发者",
+                                "ja": "開発者"
+                              },
+                              "description": {
+                                "ko": "API와 설정 변경을 자세히",
+                                "en": "API and configuration changes in detail",
+                                "zh": "详细说明 API 和配置的变化",
+                                "ja": "API と設定の変更を詳しく"
+                              }
+                            },
+                            {
+                              "label": {
+                                "ko": "둘 다",
+                                "en": "Both",
+                                "zh": "两者都是",
+                                "ja": "両方"
+                              },
+                              "description": {
+                                "ko": "짧은 요약 다음에 자세한 내용",
+                                "en": "A short summary first, details below",
+                                "zh": "先写简短摘要，再写详细内容",
+                                "ja": "短い要約のあとに詳細"
+                              }
+                            }
+                          ]
+                        },
+                        {
+                          "header": {
+                            "ko": "구성",
+                            "en": "Sections",
+                            "zh": "章节",
+                            "ja": "構成"
+                          },
+                          "question": {
+                            "ko": "어떤 절을 넣을까요?",
+                            "en": "Which sections should they include?",
+                            "zh": "需要包含哪些章节？",
+                            "ja": "どの節を入れますか？"
+                          },
+                          "multiSelect": true,
+                          "options": [
+                            {
+                              "label": {
+                                "ko": "새 기능",
+                                "en": "New features",
+                                "zh": "新功能",
+                                "ja": "新機能"
+                              },
+                              "description": {
+                                "ko": "로그인 유지, 다크 모드",
+                                "en": "Remember me, dark mode",
+                                "zh": "记住我、深色模式",
+                                "ja": "ログイン状態の保持、ダークモード"
+                              }
+                            },
+                            {
+                              "label": {
+                                "ko": "고친 문제",
+                                "en": "Fixes",
+                                "zh": "问题修复",
+                                "ja": "修正"
+                              },
+                              "description": {
+                                "ko": "고친 버그 목록",
+                                "en": "Bugs that were fixed",
+                                "zh": "已修复的问题列表",
+                                "ja": "修正したバグの一覧"
+                              }
+                            },
+                            {
+                              "label": {
+                                "ko": "알려진 문제",
+                                "en": "Known issues",
+                                "zh": "已知问题",
+                                "ja": "既知の問題"
+                              },
+                              "description": {
+                                "ko": "아직 남은 문제",
+                                "en": "Problems still open",
+                                "zh": "尚未解决的问题",
+                                "ja": "まだ残っている問題"
+                              }
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 900,
+                  "cache_read_input_tokens": 19800,
+                  "cache_creation_input_tokens": 3100,
+                  "output_tokens": 260
+                }
+              }
+            },
+            {
+              "type": "control_request",
+              "request_id": "question-1",
+              "request": {
+                "subtype": "can_use_tool",
+                "tool_name": "AskUserQuestion",
+                "tool_use_id": "toolu_q_ask",
+                "input": {
+                  "questions": [
+                    {
+                      "header": {
+                        "ko": "독자",
+                        "en": "Audience",
+                        "zh": "读者",
+                        "ja": "読者"
+                      },
+                      "question": {
+                        "ko": "이 릴리스 노트는 누가 읽나요?",
+                        "en": "Who are these release notes for?",
+                        "zh": "这份发布说明是写给谁看的？",
+                        "ja": "このリリースノートは誰向けですか？"
+                      },
+                      "multiSelect": false,
+                      "options": [
+                        {
+                          "label": {
+                            "ko": "사용자",
+                            "en": "Users",
+                            "zh": "用户",
+                            "ja": "ユーザー"
+                          },
+                          "description": {
+                            "ko": "쉬운 말로, 사용자에게 달라진 점 위주로",
+                            "en": "Plain words, focused on what changed for them",
+                            "zh": "用通俗的语言，侧重对他们有什么变化",
+                            "ja": "やさしい言葉で、ユーザーにとっての変更点を中心に"
+                          }
+                        },
+                        {
+                          "label": {
+                            "ko": "개발자",
+                            "en": "Developers",
+                            "zh": "开发者",
+                            "ja": "開発者"
+                          },
+                          "description": {
+                            "ko": "API와 설정 변경을 자세히",
+                            "en": "API and configuration changes in detail",
+                            "zh": "详细说明 API 和配置的变化",
+                            "ja": "API と設定の変更を詳しく"
+                          }
+                        },
+                        {
+                          "label": {
+                            "ko": "둘 다",
+                            "en": "Both",
+                            "zh": "两者都是",
+                            "ja": "両方"
+                          },
+                          "description": {
+                            "ko": "짧은 요약 다음에 자세한 내용",
+                            "en": "A short summary first, details below",
+                            "zh": "先写简短摘要，再写详细内容",
+                            "ja": "短い要約のあとに詳細"
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "header": {
+                        "ko": "구성",
+                        "en": "Sections",
+                        "zh": "章节",
+                        "ja": "構成"
+                      },
+                      "question": {
+                        "ko": "어떤 절을 넣을까요?",
+                        "en": "Which sections should they include?",
+                        "zh": "需要包含哪些章节？",
+                        "ja": "どの節を入れますか？"
+                      },
+                      "multiSelect": true,
+                      "options": [
+                        {
+                          "label": {
+                            "ko": "새 기능",
+                            "en": "New features",
+                            "zh": "新功能",
+                            "ja": "新機能"
+                          },
+                          "description": {
+                            "ko": "로그인 유지, 다크 모드",
+                            "en": "Remember me, dark mode",
+                            "zh": "记住我、深色模式",
+                            "ja": "ログイン状態の保持、ダークモード"
+                          }
+                        },
+                        {
+                          "label": {
+                            "ko": "고친 문제",
+                            "en": "Fixes",
+                            "zh": "问题修复",
+                            "ja": "修正"
+                          },
+                          "description": {
+                            "ko": "고친 버그 목록",
+                            "en": "Bugs that were fixed",
+                            "zh": "已修复的问题列表",
+                            "ja": "修正したバグの一覧"
+                          }
+                        },
+                        {
+                          "label": {
+                            "ko": "알려진 문제",
+                            "en": "Known issues",
+                            "zh": "已知问题",
+                            "ja": "既知の問題"
+                          },
+                          "description": {
+                            "ko": "아직 남은 문제",
+                            "en": "Problems still open",
+                            "zh": "尚未解决的问题",
+                            "ja": "まだ残っている問題"
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "role": "permission",
+      "workspace": "demo-docs-site",
+      "kind": "claude",
+      "provider": "claude",
+      "model": "sonnet",
+      "effort": "default",
+      "permissionMode": "manual",
+      "view": "default",
+      "title": {
+        "ko": "미리보기 배포",
+        "en": "Preview deploy",
+        "zh": "预览部署",
+        "ja": "プレビュー公開"
+      },
+      "runs": [
+        {
+          "input": {
+            "ko": "사이트를 빌드하고 미리보기를 올려 줘.",
+            "en": "Build the site and publish a preview.",
+            "zh": "构建站点并发布预览。",
+            "ja": "サイトをビルドしてプレビューを公開して。"
+          },
+          "finish": null,
+          "elapsedSeconds": 33,
+          "frames": [
+            {
+              "type": "system",
+              "subtype": "init",
+              "session_id": "1b6f9d3e-5a2c-4e7b-9d4f-6a8c2e1b7d35",
+              "model": "claude-sonnet-5-5",
+              "permissionMode": "default"
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_r1",
+              "session_id": "1b6f9d3e-5a2c-4e7b-9d4f-6a8c2e1b7d35",
+              "message": {
+                "id": "msg_r1",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": {
+                      "ko": "먼저 사이트를 빌드할게요.",
+                      "en": "I'll build the site first.",
+                      "zh": "我先构建站点。",
+                      "ja": "まずサイトをビルドします。"
+                    }
+                  },
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_r_build",
+                    "name": "Bash",
+                    "input": {
+                      "command": "npm run build",
+                      "description": {
+                        "ko": "사이트 빌드",
+                        "en": "Build the site",
+                        "zh": "构建站点",
+                        "ja": "サイトをビルド"
+                      }
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 950,
+                  "cache_read_input_tokens": 18700,
+                  "cache_creation_input_tokens": 2900,
+                  "output_tokens": 120
+                }
+              }
+            },
+            {
+              "type": "user",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_r_build",
+                    "content": "\n> docs-site@0.1.0 build\n> vitepress build docs\n\n✓ building client + server bundles...\n✓ rendering pages...\nbuild complete in 3.21s.\n"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_r2",
+              "session_id": "1b6f9d3e-5a2c-4e7b-9d4f-6a8c2e1b7d35",
+              "message": {
+                "id": "msg_r2",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": {
+                      "ko": "빌드가 끝났습니다. 이제 미리보기를 올릴게요.",
+                      "en": "The build is done. Now I'll publish the preview.",
+                      "zh": "构建完成，现在发布预览。",
+                      "ja": "ビルドが終わりました。プレビューを公開します。"
+                    }
+                  },
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_r_deploy",
+                    "name": "Bash",
+                    "input": {
+                      "command": "npm run deploy:preview",
+                      "description": {
+                        "ko": "미리보기 올리기",
+                        "en": "Publish a preview",
+                        "zh": "发布预览",
+                        "ja": "プレビューを公開"
+                      }
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1000,
+                  "cache_read_input_tokens": 19300,
+                  "cache_creation_input_tokens": 300,
+                  "output_tokens": 110
+                }
+              }
+            },
+            {
+              "type": "control_request",
+              "request_id": "permission-1",
+              "request": {
+                "subtype": "can_use_tool",
+                "tool_name": "Bash",
+                "tool_use_id": "toolu_r_deploy",
+                "input": {
+                  "command": "npm run deploy:preview",
+                  "description": {
+                    "ko": "미리보기 올리기",
+                    "en": "Publish a preview",
+                    "zh": "发布预览",
+                    "ja": "プレビューを公開"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "layouts": [
+    {
+      "workspace": "demo-my-app",
+      "preset": "grid",
+      "active": "mighty"
+    },
+    {
+      "workspace": "demo-docs-site",
+      "preset": "columns",
+      "active": "question"
+    }
+  ],
+  "activeWorkspace": "demo-my-app",
+  "terminal": {
+    "role": "shell",
+    "command": "npm test",
+    "output": [
+      "",
+      "> my-app@0.1.0 test",
+      "> vitest run",
+      "",
+      " ✓ src/api/session.test.ts (3 tests) 12ms",
+      " ✓ src/components/LoginForm.test.tsx (4 tests) 38ms",
+      "",
+      " Test Files  2 passed (2)",
+      "      Tests  7 passed (7)",
+      "   Duration  1.24s"
+    ]
+  },
+  "resumeSessions": [
+    {
+      "provider": "claude",
+      "workspace": "demo-my-app",
+      "sessionId": "3d8b1f6a-9c4e-4a2b-8f7d-5e1a3c9b6d02",
+      "minutesAgo": 40,
+      "requests": 4,
+      "title": {
+        "ko": "가끔 실패하는 로그인 테스트 고치기",
+        "en": "Fix the flaky login test",
+        "zh": "修复偶尔失败的登录测试",
+        "ja": "ときどき失敗するログインテストを直す"
+      }
+    },
+    {
+      "provider": "claude",
+      "workspace": "demo-my-app",
+      "sessionId": "7a2c5e9b-1f4d-4b8a-9c3e-6d2f8a1b4c57",
+      "minutesAgo": 310,
+      "requests": 6,
+      "title": {
+        "ko": "비밀번호 강도 표시 추가",
+        "en": "Add a password strength meter",
+        "zh": "添加密码强度提示",
+        "ja": "パスワード強度メーターを追加"
+      }
+    },
+    {
+      "provider": "claude",
+      "workspace": "demo-my-app",
+      "sessionId": "b5e8a2d7-4c1f-4e9b-a6d3-2f7c9e5a1b80",
+      "minutesAgo": 4380,
+      "requests": 2,
+      "title": {
+        "ko": "CI 워크플로 설정",
+        "en": "Set up the CI workflow",
+        "zh": "配置 CI 工作流",
+        "ja": "CI ワークフローを設定"
+      }
+    }
+  ]
+}

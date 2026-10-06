@@ -86,6 +86,64 @@ jobs:
           name: MightyClaude-macos-smoke
           path: ${{ runner.temp }}/mighty-native-smoke/
           if-no-files-found: warn
+      - name: Capture help screenshots in four languages
+        # The help site's pictures (docs/help/shots.json) from the bundled demo profile,
+        # one launch per language in a fresh profile, light and dark. Never run on a
+        # developer's Mac: a second app instance breaks Korean input there.
+        if: success() || failure()
+        timeout-minutes: 30
+        run: |
+          set -u
+          APP=release/native-macos/MightyClaude.app/Contents/MacOS/MightyClaude
+          status=0
+          for lang in ko en zh ja; do
+            case "$lang" in zh) tag=zh-Hans ;; *) tag="$lang" ;; esac
+            profile="$RUNNER_TEMP/mighty-help-$lang"
+            rm -rf "$profile"
+            echo "::group::Help capture ($lang)"
+            # perl's alarm bounds one launch, so a stuck language cannot use up the step.
+            if ! perl -e 'alarm shift; exec @ARGV' 420 "$APP" --help-capture --smoke-exit --profile "$profile" -language "$lang" -AppleLanguages "($tag)"; then
+              echo "::error title=Help capture ($lang)::the app exited non-zero or timed out"
+              status=1
+            fi
+            echo "::endgroup::"
+          done
+          python3 - <<'PY' || status=1
+          import json, os, pathlib, sys
+          temp = pathlib.Path(os.environ["RUNNER_TEMP"])
+          shots = json.loads(pathlib.Path("docs/help/shots.json").read_text())["shots"]
+          expected = {f'{s["id"]}-{t}.png' for s in shots for t in s.get("themes", ["light", "dark"])}
+          bad = False
+          for lang in ["ko", "en", "zh", "ja"]:
+              folder = temp / f"mighty-help-{lang}" / "help-shots" / lang
+              manifest_path = folder / "manifest.json"
+              if not manifest_path.exists():
+                  print(f"::error title=Help capture ({lang})::no manifest.json was written", flush=True)
+                  bad = True
+                  continue
+              manifest = json.loads(manifest_path.read_text())
+              failed = [s for s in manifest.get("shots", []) if s.get("status") != "ok"]
+              ok = {s["file"] for s in manifest.get("shots", []) if s.get("status") == "ok" and (folder / s["file"]).exists()}
+              missing = sorted(expected - ok)
+              print(f"{lang}: {len(ok)} of {len(expected)} pictures, {len(failed)} failed")
+              if manifest.get("error"):
+                  print(f'::error title=Help capture ({lang})::{manifest["error"]}', flush=True)
+              for shot in failed:
+                  print(f'::error title=Help shot {lang}/{shot.get("file")}::{shot.get("error", "failed")}', flush=True)
+              if not manifest.get("passed") or failed or missing:
+                  if missing and not failed:
+                      print(f'::error title=Help capture ({lang})::missing {", ".join(missing[:20])}', flush=True)
+                  bad = True
+          sys.exit(1 if bad else 0)
+          PY
+          exit $status
+      - name: Upload help screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MightyClaude-macos-help-shots
+          path: ${{ runner.temp }}/mighty-help-*/help-shots/
+          if-no-files-found: warn
       - name: Package macOS app with executable modes and hidden resources
         run: ditto -c -k --sequesterRsrc --keepParent release/native-macos/MightyClaude.app release/MightyClaude-macos.zip
       - name: Gate the release package size before upload

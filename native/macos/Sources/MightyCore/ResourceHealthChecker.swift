@@ -57,6 +57,26 @@ public enum ResourceHealthChecker {
         return ResourceCheckResult(resource: name, resolvedPath: nil, triedPaths: candidates.map(\.path))
     }
 
+    // MARK: - Help capture files
+
+    /// One of `HelpCaptureResources.files` in the bundle's Help/ folder, searched like
+    /// the catalogs. It must parse as a JSON object.
+    public static func checkHelpFile(_ name: String) -> ResourceCheckResult {
+        var candidates: [URL] = []
+        for root in BundledStyleSource.searchRoots() {
+            let bundle = root.appendingPathComponent(BundledStyleSource.bundleName, isDirectory: true)
+            candidates.append(bundle.appendingPathComponent("Contents/Resources/Help/\(name)"))
+            candidates.append(bundle.appendingPathComponent("Help/\(name)"))
+        }
+        if let resources = Bundle.main.resourceURL { candidates.append(resources.appendingPathComponent("Help/\(name)")) }
+        for url in candidates {
+            if let data = try? Data(contentsOf: url), (try? JSONSerialization.jsonObject(with: data)) is [String: Any] {
+                return ResourceCheckResult(resource: "Help/\(name)", resolvedPath: url.path, triedPaths: candidates.map(\.path))
+            }
+        }
+        return ResourceCheckResult(resource: "Help/\(name)", resolvedPath: nil, triedPaths: candidates.map(\.path))
+    }
+
     // MARK: - Default companion pet
 
     public static func checkDefaultPet() -> ResourceCheckResult {

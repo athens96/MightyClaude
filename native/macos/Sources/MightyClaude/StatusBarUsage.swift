@@ -31,7 +31,7 @@ final class AccountUsageStatusController: ObservableObject {
     private var pollTask: Task<Void, Never>?
     private var refreshTask: Task<Void, Never>?
     private var stopped = false
-    private var testing: Bool { ProcessInfo.processInfo.arguments.contains { $0.hasPrefix("--") && $0.contains("smoke-test") } }
+    private var testing: Bool { ProcessInfo.processInfo.arguments.contains { $0.hasPrefix("--") && $0.contains("smoke-test") || $0 == HelpCapture.argument } }
 
     func configure(store: AppStore) {
         guard self.store == nil else { return }

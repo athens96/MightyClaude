@@ -20,7 +20,7 @@ let package = Package(
     targets: [
         .target(name: "MightyCore", dependencies: [
             .product(name: "libzstd", package: "zstd"),
-        ], resources: [.copy("Resources/Styles"), .copy("Resources/Locales")]),
+        ], resources: [.copy("Resources/Styles"), .copy("Resources/Locales"), .copy("Resources/Help")]),
         .executableTarget(name: "MightyClaude", dependencies: [
             "MightyCore",
             .product(name: "GhosttyTerminal", package: "libghostty-spm"),

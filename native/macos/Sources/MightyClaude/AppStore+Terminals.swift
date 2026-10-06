@@ -5,7 +5,7 @@ import MightyCore
 
 extension AppStore {
     var terminalSmokeMode: Bool { ProcessInfo.processInfo.arguments.contains("--terminal-smoke-test") }
-    private var isolatedTerminalSmoke: Bool { terminalSmokeMode || ProcessInfo.processInfo.arguments.contains("--layout-smoke-test") }
+    private var isolatedTerminalSmoke: Bool { terminalSmokeMode || ProcessInfo.processInfo.arguments.contains("--layout-smoke-test") || helpCapturing }
 
     func usesLocalTerminal(_ session: RunSession) -> Bool {
         guard session.kind == "shell", let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return false }

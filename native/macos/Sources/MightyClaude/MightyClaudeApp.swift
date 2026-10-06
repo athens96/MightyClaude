@@ -17,8 +17,9 @@ enum MightyClaudeLauncher {
         if CommandLine.arguments.contains(PaneMCPServerLocation.headlessArgument) {
             AgentIOMCPCommand.run()
         }
-        // Before AppKit reads the language it draws its own menus in.
-        AppLanguage.applyToSystemInterface()
+        // Before AppKit reads the language it draws its own menus in. The help capture
+        // gets its languages from the launch arguments and leaves the saved ones alone.
+        if !CommandLine.arguments.contains(HelpCapture.argument) { AppLanguage.applyToSystemInterface() }
         // SwiftUI creates its own AppKitApplication if NSApp does not exist.
         // NSPrincipalClass alone is ignored by App.main(), so establish our
         // CEF-compatible singleton before handing scene management to SwiftUI.
