@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 import type { QueuedItem } from '@/api/types';
 import { Button } from '@/components/ui';
+import { t } from '@/lib/i18n';
 import { monoText, radius, spacing, useStyles, type Palette } from '@/theme';
 
 /**
@@ -28,9 +29,9 @@ export function QueuedList({
   return (
     <View style={styles.wrap}>
       <View style={styles.header}>
-        <Text style={styles.title}>대기열 {items.length}건</Text>
+        <Text style={styles.title}>{t('phone.queue.title', { count: items.length })}</Text>
         {manageable && canRunNext ? (
-          <Button label="다음 실행" tone="neutral" compact busy={busy} onPress={onRunNext} />
+          <Button label={t('queue.runNext')} tone="neutral" compact busy={busy} onPress={onRunNext} />
         ) : null}
       </View>
       {items.map((item) => (
@@ -40,8 +41,8 @@ export function QueuedList({
           </Text>
           {manageable ? (
             <Button
-              label="삭제"
-              accessibilityLabel={`${item.text.slice(0, 30)} 대기열에서 삭제`}
+              label={t('phone.queue.remove')}
+              accessibilityLabel={t('phone.queue.removeLabel', { text: item.text.slice(0, 30) })}
               tone="ghost"
               compact
               busy={busy}

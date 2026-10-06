@@ -46,7 +46,7 @@ import {
   SessionTitle,
   optionsFor,
   settingFields,
-  settingTitles,
+  settingTitle,
   valueFor,
   type SettingField,
 } from '@/components/session-header';
@@ -88,14 +88,15 @@ import { showToast } from '@/store/toast';
 import { spacing, typeScale, useStyles, usePalette, type Palette } from '@/theme';
 
 /**
- * The host reports what actually happened, not what was asked for: "다음 요청" on a pane
- * that has just gone idle is answered with `started`. The toast therefore follows the
- * answer and never the button; an unknown word falls back to plain "전송".
+ * The host reports what actually happened, not what was asked for: "next request" on a
+ * pane that has just gone idle is answered with `started`. The toast therefore follows the
+ * answer and never the button; an unknown word falls back to plain "sent". The values are
+ * locale keys, read when the toast is shown.
  */
-const acceptedMessages: Record<string, string> = {
-  started: '전송',
-  steered: '실행 중인 작업에 전달',
-  queued: '대기열에 추가',
+const acceptedMessageKeys: Record<string, string> = {
+  started: 'phone.session.accepted.started',
+  steered: 'phone.session.accepted.steered',
+  queued: 'phone.session.accepted.queued',
 };
 
 /**
@@ -103,7 +104,8 @@ const acceptedMessages: Record<string, string> = {
  * object answers `constructor` with a function, which the toast would then try to draw.
  */
 function acceptedMessage(accepted: string): string {
-  return (Object.hasOwn(acceptedMessages, accepted) ? acceptedMessages[accepted] : undefined) ?? '전송';
+  const key = Object.hasOwn(acceptedMessageKeys, accepted) ? acceptedMessageKeys[accepted] : undefined;
+  return t(key ?? 'phone.session.accepted.started');
 }
 
 const NO_ENTRIES: LogEntry[] = [];
@@ -236,13 +238,13 @@ export default function SessionScreen() {
     if (closedRef.current) return;
     closedRef.current = true;
     setClosed(true);
-    showToast('실행 창이 닫혔습니다');
+    showToast(t('phone.session.toast.paneGone'));
     leavePane();
   }, [leavePane]);
 
   const fetchPage = useCallback(
     async (since: number | undefined, signal: AbortSignal) => {
-      if (!client || !sessionId) throw new Error('세션을 찾을 수 없습니다.');
+      if (!client || !sessionId) throw new Error(t('phone.session.notFound'));
       try {
         return await client.session(sessionId, {
           since,
@@ -455,7 +457,7 @@ export default function SessionScreen() {
     [attachFiles.length, clearAttachments, client, followNewest, poll, sessionId, uploadAttachments],
   );
 
-  // 중지 can be pressed on a picture of the pane that is out of date — the run ended
+  // Stop can be pressed on a picture of the pane that is out of date — the run ended
   // while the phone was away. The pane is read again whatever the answer, and "nothing
   // was running" retires the picture the button was drawn from straight away.
   const detailRevision = detail?.revision;
@@ -469,7 +471,7 @@ export default function SessionScreen() {
       } catch (error) {
         verdict = stopVerdict({ failure: describeError(error) });
       }
-      if (verdict.kind === 'requested') showToast('중지 요청됨');
+      if (verdict.kind === 'requested') showToast(t('phone.session.toast.stopRequested'));
       else if (verdict.kind === 'notRunning') {
         setSettledRevision(drawnFrom);
         showToast(t('phone.session.stopNotRunning'));
@@ -482,7 +484,7 @@ export default function SessionScreen() {
     setSettledRequests((prev) => new Set(prev).add(key));
   }, []);
 
-  /** `done` replaces the allow/deny toast, e.g. for a questionnaire's 취소. */
+  /** `done` replaces the allow/deny toast, e.g. for a questionnaire's cancel. */
   const decide = useCallback(
     async (requestId: string, runId: string, allow: boolean, done?: string) => {
       if (!client || !sessionId || decidingRef.current) return;
@@ -491,7 +493,7 @@ export default function SessionScreen() {
       try {
         await client.respondPermission(sessionId, { requestId, runId, allow });
         settle(requestKey({ id: requestId, runId }));
-        showToast(done ?? (allow ? '허용했습니다' : '거부했습니다'), 'success');
+        showToast(done ?? (allow ? t('phone.session.toast.allowed') : t('phone.session.toast.denied')), 'success');
         poll.refresh();
       } catch (error) {
         showToast(describeError(error), 'error');
@@ -532,7 +534,7 @@ export default function SessionScreen() {
       try {
         await client.answer(sessionId, { requestId, runId, answers });
         settle(requestKey({ id: requestId, runId }));
-        showToast('답변을 보냈습니다', 'success');
+        showToast(t('phone.session.toast.answered'), 'success');
         poll.refresh();
       } catch (error) {
         showToast(describeError(error), 'error');
@@ -551,7 +553,7 @@ export default function SessionScreen() {
         setQueueBusy(true);
         try {
           await client.removeQueued(sessionId, itemId);
-          showToast('대기열에서 뺐습니다', 'success');
+          showToast(t('phone.session.toast.dequeued'), 'success');
           poll.refresh();
         } catch (error) {
           showToast(describeError(error), 'error');
@@ -569,7 +571,7 @@ export default function SessionScreen() {
       setQueueBusy(true);
       try {
         await client.runNext(sessionId);
-        showToast('다음 요청을 시작했습니다', 'success');
+        showToast(t('phone.session.toast.nextStarted'), 'success');
         poll.refresh();
       } catch (error) {
         showToast(describeError(error), 'error');
@@ -587,7 +589,7 @@ export default function SessionScreen() {
         try {
           await client.rename(sessionId, title);
           setRenaming(false);
-          showToast('이름을 바꿨습니다', 'success');
+          showToast(t('phone.session.toast.renamed'), 'success');
           poll.refresh();
         } catch (error) {
           showToast(describeError(error), 'error');
@@ -627,7 +629,7 @@ export default function SessionScreen() {
         // is still in flight cannot come back as a banner about a pane that is gone.
         closedRef.current = true;
         setClosed(true);
-        showToast('실행 창을 닫았습니다', 'success');
+        showToast(t('phone.session.toast.closed'), 'success');
         leavePane();
       } catch (error) {
         showToast(describeError(error), 'error');
@@ -644,7 +646,7 @@ export default function SessionScreen() {
       // A host without the "settings" capability has none to offer, even when it does
       // list the /model and /permission commands that lead here.
       if (!settings) {
-        showToast('호스트가 설정을 알려 주지 않았습니다.', 'error');
+        showToast(t('phone.session.noSettings'), 'error');
         return;
       }
       setPicker(field);
@@ -676,7 +678,7 @@ export default function SessionScreen() {
         try {
           await client.updateSettings(sessionId, patch);
           closePicker();
-          showToast('설정을 바꿨습니다', 'success');
+          showToast(t('phone.session.toast.settingsChanged'), 'success');
           poll.refresh();
         } catch (error) {
           showToast(describeError(error), 'error');
@@ -696,7 +698,7 @@ export default function SessionScreen() {
         try {
           const result = await client.runCommand(sessionId, action);
           if (result.message) setMessage({ title: `/${name}`, body: result.message });
-          else showToast(`/${name} 실행됨`, 'success');
+          else showToast(t('phone.session.toast.commandRan', { name }), 'success');
           poll.refresh();
         } catch (error) {
           showToast(describeError(error), 'error');
@@ -732,7 +734,7 @@ export default function SessionScreen() {
   const running = composerRunning(session?.status, detail?.revision, settledRevision);
   // The override covers one stale detail only. Once another revision arrives it has
   // spoken for itself, and a later detail that happens to reuse the number (the Mac
-  // restarted and counts again) must not hide 중지 for a run that is really going.
+  // restarted and counts again) must not hide Stop for a run that is really going.
   useEffect(() => {
     if (settledRevision !== undefined && detail?.revision !== undefined && detail.revision !== settledRevision) {
       setSettledRevision(undefined);
@@ -778,7 +780,7 @@ export default function SessionScreen() {
     [detail?.permissions, settledRequests],
   );
   const planPending = planRequest !== undefined;
-  // With the keyboard up (typing a "직접 입력" answer) the body gets less room, so the
+  // With the keyboard up (typing a "custom answer") the body gets less room, so the
   // transcript above keeps a strip of its own.
   const questionBodyHeight = Math.round(Math.min(320, windowHeight * (keyboardShown ? 0.22 : 0.4)));
   const view: BodyView = chosenView ?? defaultView(mighty);
@@ -940,7 +942,7 @@ export default function SessionScreen() {
     >
       <Stack.Screen
         options={{
-          title: session?.title || '세션',
+          title: session?.title || t('phone.session.title'),
           // The compact header: the title, and under it the status glyph and the figures.
           headerTitle: detail
             ? () => <SessionTitle detail={detail} {...(receivedAt !== undefined ? { receivedAt } : {})} />
@@ -949,7 +951,7 @@ export default function SessionScreen() {
           headerRight: canPane
             ? () => (
                 <Pressable
-                  accessibilityLabel="실행 창 메뉴"
+                  accessibilityLabel={t('pane.menu.accessibility')}
                   accessibilityRole="button"
                   hitSlop={8}
                   onPress={() => setMenuOpen(true)}
@@ -1003,7 +1005,7 @@ export default function SessionScreen() {
               ListHeaderComponent={headerNode}
               ListHeaderComponentStyle={styles.listHeader}
               ListEmptyComponent={
-                <EmptyState title={poll.loading ? '불러오는 중…' : '기록이 없습니다'} />
+                <EmptyState title={poll.loading ? t('phone.workspaces.loading') : t('phone.session.empty')} />
               }
               ListFooterComponent={footerNode}
             />
@@ -1115,9 +1117,9 @@ export default function SessionScreen() {
       </View>
 
       <Sheet visible={menuOpen} onClose={() => setMenuOpen(false)}>
-        <Text style={styles.menuTitle}>실행 창</Text>
+        <Text style={styles.menuTitle}>{t('phone.session.menu.title')}</Text>
         <Button
-          label="이름 변경"
+          label={t('phone.session.menu.rename')}
           tone="neutral"
           onPress={() => {
             setMenuOpen(false);
@@ -1125,27 +1127,27 @@ export default function SessionScreen() {
           }}
         />
         <Button
-          label="창 닫기"
+          label={t('phone.session.menu.close')}
           tone="danger"
           onPress={() => {
             setMenuOpen(false);
             setClosing(true);
           }}
         />
-        <Button label="취소" tone="ghost" onPress={() => setMenuOpen(false)} />
+        <Button label={t('common.cancel')} tone="ghost" onPress={() => setMenuOpen(false)} />
       </Sheet>
 
       <PromptDialog
         visible={renaming}
-        title="이름 변경"
+        title={t('phone.session.menu.rename')}
         description={
           session?.titleMode === 'fixed'
-            ? `${t('pane.rename.modeFixed')} · 1~80자까지 쓸 수 있습니다.`
-            : `${t('pane.rename.automatic')} · 1~80자까지 쓸 수 있습니다.`
+            ? `${t('pane.rename.modeFixed')} · ${t('phone.session.rename.limit')}`
+            : `${t('pane.rename.automatic')} · ${t('phone.session.rename.limit')}`
         }
         initialValue={session?.title ?? ''}
-        placeholder="실행 창 이름"
-        confirmLabel="변경"
+        placeholder={t('phone.session.rename.placeholder')}
+        confirmLabel={t('phone.session.rename.confirm')}
         busy={paneBusy}
         onConfirm={rename}
         onCancel={() => setRenaming(false)}
@@ -1158,9 +1160,9 @@ export default function SessionScreen() {
 
       <ConfirmDialog
         visible={closing}
-        title="창을 닫을까요?"
-        description="실행 중이면 중지한 뒤 닫습니다. 되돌릴 수 없습니다."
-        confirmLabel="닫기"
+        title={t('phone.session.close.title')}
+        description={t('phone.session.close.message')}
+        confirmLabel={t('common.close')}
         destructive
         busy={paneBusy}
         onConfirm={closePane}
@@ -1169,12 +1171,12 @@ export default function SessionScreen() {
 
       <PickerSheet
         visible={picker !== undefined}
-        title={picker ? settingTitles[picker] : ''}
+        title={picker ? settingTitle(picker) : ''}
         note={
           settings && !settings.editable
             ? t('phone.session.settingsLocked')
             : pendingViewMode
-              ? 'Mighty 보기와 함께 적용합니다.'
+              ? t('phone.session.applyWithMighty')
               : undefined
         }
         options={picker ? optionsFor(settings, picker) : []}

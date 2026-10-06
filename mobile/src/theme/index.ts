@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { Platform, useColorScheme, type TextStyle } from 'react-native';
 import type { Provider, SessionStatus, SettingOption } from '@/api/types';
+import { t } from '@/lib/i18n';
 import type { Tone } from '@/lib/status-tone';
 
 export interface Palette {
@@ -72,7 +73,7 @@ export interface Palette {
 }
 
 /**
- * "카드 대시보드" (concept D): status first. A cool grey page with white cards by day,
+ * "card dashboard" (concept D): status first. A cool grey page with white cards by day,
  * deep ink navy with slate cards by night; every state owns a bold fill — run blue, wait
  * amber, done green, error red, stop slate — with a soft tint and a text-safe ink. The
  * concept's hues were darkened where white text needed it — run #2F6BFF → #2A5FEE (and
@@ -277,20 +278,22 @@ export const cardShadow = {
   elevation: 1,
 } as const;
 
-const statusLabels: Record<SessionStatus, string> = {
-  idle: '대기',
-  running: '실행 중',
-  completed: '완료',
-  error: '오류',
-  stopped: '중지됨',
+/** Locale keys, read when a label is drawn. */
+const statusLabelKeys: Record<SessionStatus, string> = {
+  idle: 'phone.status.idle',
+  running: 'session.state.running',
+  completed: 'session.state.completed',
+  error: 'session.state.error',
+  stopped: 'session.state.stopped',
 };
 
-const kindLabels: Record<string, string> = {
-  claude: '에이전트',
-  shell: '셸',
-  browser: '브라우저',
-  'agent-terminal': '에이전트 터미널',
-  'agent-browser': '에이전트 브라우저',
+/** Locale keys, read when a label is drawn. */
+const kindLabelKeys: Record<string, string> = {
+  claude: 'dashboard.kind.agent',
+  shell: 'dashboard.kind.shell',
+  browser: 'browser.tab.title',
+  'agent-terminal': 'dashboard.kind.agentTerminal',
+  'agent-browser': 'dashboard.kind.agentBrowser',
 };
 
 const providerLabels: Record<Provider, string> = {
@@ -310,22 +313,27 @@ export const providerColors: Record<Provider, string[]> = {
  * Unknown strings from the host must never crash a screen, so every lookup falls back:
  * a value we do not know is shown as-is, and an empty one becomes a neutral label.
  */
-function labelFor(table: Record<string, string>, value: string): string {
+function labelFor(
+  table: Record<string, string>,
+  value: string,
+  read: (entry: string) => string = (entry) => entry,
+): string {
   // `Object.hasOwn`, because the key is a word the host chose: a plain object answers
   // `constructor` with a function, which reaches `<Text>` as something that is not a
   // string and draws nothing at all.
-  const label = Object.hasOwn(table, value) ? table[value] : undefined;
-  return label ?? (value.length > 0 ? value : '알 수 없음');
+  const entry = Object.hasOwn(table, value) ? table[value] : undefined;
+  if (entry !== undefined) return read(entry);
+  return value.length > 0 ? value : t('phone.unknown');
 }
 
 /**
  * Everything drawn with a status chip: a pane's own status, plus the `waiting` that
  * `activity.state` and Mighty blocks add and a pane itself never reports.
  */
-const chipLabels: Record<string, string> = { ...statusLabels, waiting: '기다리는 중' };
+const chipLabelKeys: Record<string, string> = { ...statusLabelKeys, waiting: 'phone.status.waiting' };
 
 export function statusLabel(status: string): string {
-  return labelFor(chipLabels, status);
+  return labelFor(chipLabelKeys, status, t);
 }
 
 export function statusColor(palette: Palette, status: string): string {
@@ -378,7 +386,7 @@ export function toneColors(palette: Palette, tone: Tone): ToneColors {
 }
 
 export function kindLabel(kind: string): string {
-  return labelFor(kindLabels, kind);
+  return labelFor(kindLabelKeys, kind, t);
 }
 
 export function providerLabel(provider: string): string {
@@ -456,14 +464,16 @@ export function providerColorsFor(palette: Palette, provider: string): string[] 
  * `agentViewMode` is the one setting the host sends without an option list, so the two
  * values the contract fixes are spelled out here.
  */
-export const AGENT_VIEW_MODES: SettingOption[] = [
-  { id: 'plain', label: '기본' },
-  { id: 'mighty', label: 'Mighty' },
-];
+export function agentViewModes(): SettingOption[] {
+  return [
+    { id: 'plain', label: t('graph.view.default') },
+    { id: 'mighty', label: 'Mighty' },
+  ];
+}
 
 /** The host's label for an id, falling back to the id itself for values we do not know. */
 export function optionLabel(options: readonly SettingOption[], id: string): string {
   const match = options.find((option) => option.id === id);
   if (match && match.label.length > 0) return match.label;
-  return id.length > 0 ? id : '알 수 없음';
+  return id.length > 0 ? id : t('phone.unknown');
 }

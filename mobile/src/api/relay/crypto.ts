@@ -3,6 +3,7 @@ import { x25519 } from '@noble/curves/ed25519';
 import { hkdf } from '@noble/hashes/hkdf';
 import { sha256 } from '@noble/hashes/sha256';
 import { randomBytes } from '@/api/relay/random';
+import { t } from '@/lib/i18n';
 
 /** HKDF `info` string fixed by docs/relay.md. */
 export const HKDF_INFO = 'mightyclaude-relay-v1';
@@ -84,7 +85,7 @@ export function fromBase64(text: string): Uint8Array {
   for (const char of clean) {
     let value = STANDARD_ALPHABET.indexOf(char);
     if (value < 0) value = URL_ALPHABET.indexOf(char);
-    if (value < 0) throw new RelayCryptoError(`base64 문자열이 아닙니다: ${text}`);
+    if (value < 0) throw new RelayCryptoError(t('phone.relay.crypto.notBase64', { text }));
     buffer = (buffer << 6) | value;
     bits += 6;
     if (bits >= 8) {
@@ -170,10 +171,10 @@ export function deriveSessionKey(input: DeriveKeyInput): Uint8Array {
   try {
     shared = x25519.getSharedSecret(input.secretKey, input.peerPublicKey);
   } catch {
-    throw new RelayCryptoError('공유 비밀을 만들 수 없습니다 (잘못된 공개키).');
+    throw new RelayCryptoError(t('phone.relay.crypto.sharedSecret'));
   }
   if (isAllZero(shared)) {
-    throw new RelayCryptoError('공유 비밀이 0입니다 (잘못된 공개키).');
+    throw new RelayCryptoError(t('phone.relay.crypto.zeroSecret'));
   }
   const salt = concatBytes(input.clientNonce, input.serverNonce);
   return hkdf(sha256, shared, salt, utf8Encode(HKDF_INFO), KEY_LENGTH);
@@ -182,7 +183,7 @@ export function deriveSessionKey(input: DeriveKeyInput): Uint8Array {
 /** `[direction 1B][0,0,0][counter 8B big-endian]`. */
 export function buildNonce(direction: number, counter: bigint): Uint8Array {
   if (counter < 0n || counter > 0xffffffffffffffffn) {
-    throw new RelayCryptoError('프레임 카운터 범위를 벗어났습니다.');
+    throw new RelayCryptoError(t('phone.relay.crypto.counterRange'));
   }
   const nonce = new Uint8Array(NONCE_LENGTH);
   nonce[0] = direction;
@@ -192,9 +193,9 @@ export function buildNonce(direction: number, counter: bigint): Uint8Array {
 
 /** Reads back a nonce produced by `buildNonce`, validating the reserved bytes. */
 export function parseNonce(nonce: Uint8Array): { direction: number; counter: bigint } {
-  if (nonce.length !== NONCE_LENGTH) throw new RelayCryptoError('nonce 길이가 잘못되었습니다.');
+  if (nonce.length !== NONCE_LENGTH) throw new RelayCryptoError(t('phone.relay.crypto.nonceLength'));
   if ((nonce[1] ?? 0) !== 0 || (nonce[2] ?? 0) !== 0 || (nonce[3] ?? 0) !== 0) {
-    throw new RelayCryptoError('nonce 예약 바이트가 0이 아닙니다.');
+    throw new RelayCryptoError(t('phone.relay.crypto.nonceReserved'));
   }
   const view = new DataView(nonce.buffer, nonce.byteOffset, nonce.byteLength);
   return { direction: nonce[0] ?? 0, counter: view.getBigUint64(4, false) };
@@ -214,7 +215,7 @@ export class RelayCipher {
     private readonly sendDirection: number,
     private readonly receiveDirection: number,
   ) {
-    if (key.length !== KEY_LENGTH) throw new RelayCryptoError('세션 키 길이가 잘못되었습니다.');
+    if (key.length !== KEY_LENGTH) throw new RelayCryptoError(t('phone.relay.crypto.keyLength'));
   }
 
   seal(plaintext: Uint8Array): Uint8Array {
@@ -230,21 +231,21 @@ export class RelayCipher {
 
   open(frame: Uint8Array): Uint8Array {
     if (frame.length < NONCE_LENGTH + TAG_LENGTH) {
-      throw new RelayCryptoError('프레임이 너무 짧습니다.');
+      throw new RelayCryptoError(t('phone.relay.crypto.frameShort'));
     }
     const { direction, counter } = parseNonce(frame.slice(0, NONCE_LENGTH));
     if (direction !== this.receiveDirection) {
-      throw new RelayCryptoError('프레임 방향이 잘못되었습니다.');
+      throw new RelayCryptoError(t('phone.relay.crypto.frameDirection'));
     }
     if (this.lastReceivedCounter !== undefined && counter <= this.lastReceivedCounter) {
-      throw new RelayCryptoError('프레임 카운터가 증가하지 않았습니다 (재전송).');
+      throw new RelayCryptoError(t('phone.relay.crypto.replay'));
     }
     const nonce = frame.slice(0, NONCE_LENGTH);
     let plaintext: Uint8Array;
     try {
       plaintext = chacha20poly1305(this.key, nonce).decrypt(frame.slice(NONCE_LENGTH));
     } catch {
-      throw new RelayCryptoError('프레임 복호화에 실패했습니다.');
+      throw new RelayCryptoError(t('phone.relay.crypto.decrypt'));
     }
     this.lastReceivedCounter = counter;
     return plaintext;

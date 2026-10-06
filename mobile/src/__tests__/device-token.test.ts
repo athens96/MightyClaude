@@ -24,6 +24,11 @@ import {
   writeHostSecrets,
   type SecretStore,
 } from '@/lib/host-secrets';
+import { resetLanguage } from '@/lib/i18n';
+
+// These assertions read the Korean copy: pin it, whatever the machine's language.
+beforeAll(() => resetLanguage('ko'));
+afterAll(() => resetLanguage());
 
 function memoryStore(initial: Record<string, string> = {}) {
   const values = new Map<string, string>(Object.entries(initial));

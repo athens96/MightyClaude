@@ -3,6 +3,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { describeError, type MobileClient } from '@/api/client';
 import { fileNameOf, fileSizeOf, readFileSlice } from '@/lib/file-slices';
+import { t } from '@/lib/i18n';
 import {
   acceptFiles,
   uploadAttachments,
@@ -86,7 +87,7 @@ export function useAttachments(onError: (message: string) => void): AttachmentsC
       if (result.canceled) return;
       add(
         result.assets.map((asset, index) => {
-          const name = asset.fileName?.trim() || fileNameOf(asset.uri, `사진 ${index + 1}`);
+          const name = asset.fileName?.trim() || fileNameOf(asset.uri, t('phone.attachments.photoName', { index: index + 1 }));
           return pickedFile(asset.uri, name, asset.fileSize, asset.mimeType);
         }),
       );
@@ -106,7 +107,7 @@ export function useAttachments(onError: (message: string) => void): AttachmentsC
       if (result.canceled) return;
       add(
         result.assets.map((asset) =>
-          pickedFile(asset.uri, asset.name || fileNameOf(asset.uri, '파일'), asset.size, asset.mimeType),
+          pickedFile(asset.uri, asset.name || fileNameOf(asset.uri, t('phone.attachments.fileName')), asset.size, asset.mimeType),
         ),
       );
     } catch (error) {

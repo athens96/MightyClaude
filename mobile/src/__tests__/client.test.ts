@@ -2,6 +2,11 @@ import { ApiError, byteLength, createClient, describeError, needsRepair } from '
 import { RelayError } from '@/api/relay/transport';
 import type { MobileClient, RelayChannel } from '@/api/client';
 import type { RelayNotification } from '@/api/relay/transport';
+import { resetLanguage } from '@/lib/i18n';
+
+// These assertions read the Korean copy: pin it, whatever the machine's language.
+beforeAll(() => resetLanguage('ko'));
+afterAll(() => resetLanguage());
 
 interface Recorded {
   method: 'GET' | 'POST';

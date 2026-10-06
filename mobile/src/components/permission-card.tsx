@@ -1,10 +1,11 @@
 import { StyleSheet, Text, View } from 'react-native';
 import type { MobilePermission } from '@/api/types';
 import { Button, Card } from '@/components/ui';
+import { t } from '@/lib/i18n';
 import { monoText, radius, spacing, typeScale, useStyles, type Palette } from '@/theme';
 
 /**
- * A tool the pane wants to run, waiting for 허용 or 거부. An AskUserQuestion request is
+ * A tool the pane wants to run, waiting for Allow or Deny. An AskUserQuestion request is
  * not drawn here: it carries a `questionnaire` and the screen docks a
  * `QuestionnaireCard` above the composer for it instead, as the Mac does.
  */
@@ -36,14 +37,14 @@ export function PermissionCard({
 
       <View style={styles.actions}>
         <Button
-          label="거부"
+          label={t('permission.deny')}
           tone="neutral"
           busy={busy}
           style={styles.action}
           onPress={() => onDecide(false)}
         />
         <Button
-          label="허용"
+          label={t('permission.allow')}
           tone="primary"
           busy={busy}
           disabled={!permission.canAllow}

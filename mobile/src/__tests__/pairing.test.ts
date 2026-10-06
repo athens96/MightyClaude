@@ -1,4 +1,5 @@
 import { toBase64 } from '@/api/relay/crypto';
+import { resetLanguage } from '@/lib/i18n';
 import {
   describeRelayTarget,
   formatPairingUrl,
@@ -9,6 +10,10 @@ import {
   relayTransportError,
   type PairingPayload,
 } from '@/lib/pairing';
+
+// These assertions read the Korean copy: pin it, whatever the machine's language.
+beforeAll(() => resetLanguage('ko'));
+afterAll(() => resetLanguage());
 
 const publicKey = toBase64(Uint8Array.from({ length: 32 }, (_, index) => index));
 const publicKeyUrl = publicKey.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');

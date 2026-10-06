@@ -22,7 +22,12 @@ import {
 } from '@/api/relay/transport';
 import { createClient } from '@/api/client';
 import type { DeviceAuthState } from '@/lib/device-token';
+import { resetLanguage } from '@/lib/i18n';
 import { createKeyedMutex } from '@/lib/keyed-mutex';
+
+// These assertions read the Korean copy: pin it, whatever the machine's language.
+beforeAll(() => resetLanguage('ko'));
+afterAll(() => resetLanguage());
 
 const PAIRING_KEY = 'pairing-key-under-test';
 const SERVER_ID = 'mac-studio.local';

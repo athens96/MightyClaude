@@ -20,6 +20,7 @@ import {
   type AuthRejection,
   type DeviceAuthState,
 } from '@/lib/device-token';
+import { t } from '@/lib/i18n';
 
 /** Wire version of both the relay query string and the handshake envelopes. */
 export const RELAY_WIRE_VERSION = 1;
@@ -55,20 +56,20 @@ export type RelayFailure =
   | 'timeout'
   | 'closed';
 
-const failureMessages: Record<RelayFailure, string> = {
-  'host-offline': '호스트 오프라인',
-  'host-not-attached': '호스트가 응답하지 않습니다',
-  unpaired: '재페어링 필요',
-  'device-revoked': '이 기기의 연결이 Mac에서 해제되었습니다. 다시 페어링하세요.',
-  'device-conflict': '이 기기가 Mac에 이미 등록되어 있습니다. 잠시 후 다시 시도합니다.',
-  'device-limit':
-    'Mac의 기기 목록이 가득 찼거나 등록이 잠시 제한되었습니다. Mac 설정에서 쓰지 않는 기기를 해제한 뒤 다시 시도하세요.',
-  'auth-refused': '호스트가 인증을 거절했습니다. 잠시 후 다시 시도합니다.',
-  'too-many': '연결이 너무 많습니다',
-  'relay-unreachable': '릴레이 연결 안 됨',
-  protocol: '릴레이 프로토콜 오류',
-  timeout: '응답 시간이 초과되었습니다',
-  closed: '연결이 끊어졌습니다',
+/** Locale keys, read when a failure is described. */
+const failureMessageKeys: Record<RelayFailure, string> = {
+  'host-offline': 'phone.hosts.reachability.offline',
+  'host-not-attached': 'phone.relay.failure.hostNotAttached',
+  unpaired: 'phone.hosts.reachability.unauthorized',
+  'device-revoked': 'phone.relay.failure.deviceRevoked',
+  'device-conflict': 'phone.relay.failure.deviceConflict',
+  'device-limit': 'phone.relay.failure.deviceLimit',
+  'auth-refused': 'phone.relay.failure.authRefused',
+  'too-many': 'phone.relay.failure.tooMany',
+  'relay-unreachable': 'phone.hosts.reachability.relayOffline',
+  protocol: 'phone.relay.failure.protocol',
+  timeout: 'phone.relay.failure.timeout',
+  closed: 'phone.relay.failure.closed',
 };
 
 /**
@@ -87,7 +88,7 @@ const authFailures: Record<AuthErrorReason, RelayFailure> = {
 };
 
 export function describeRelayFailure(failure: RelayFailure): string {
-  return failureMessages[failure];
+  return t(failureMessageKeys[failure]);
 }
 
 /** A rejected key or a released device: neither fixes itself, both need pairing again. */
@@ -97,12 +98,12 @@ export function isFinalFailure(failure: RelayFailure | undefined): boolean {
 
 /**
  * The banner for a connection that will not open again on its own. A released device
- * says what happened in its own message; a rejected key only says "재페어링 필요", so
+ * says what happened in its own message; a rejected key only says "re-pairing required", so
  * that case adds which secret went stale.
  */
 export function describeRepairNeeded(failureMessage: string | undefined): string {
-  if (failureMessage && failureMessage !== failureMessages.unpaired) return failureMessage;
-  return '재페어링 필요 — 저장된 키가 호스트와 일치하지 않습니다.';
+  if (failureMessage && failureMessage !== describeRelayFailure('unpaired')) return failureMessage;
+  return t('phone.relay.repairStaleKey');
 }
 
 /** A relay/transport-level failure, as opposed to an `ApiError` from the host. */
@@ -111,7 +112,7 @@ export class RelayError extends Error {
   readonly closeCode?: number;
 
   constructor(failure: RelayFailure, closeCode?: number, message?: string) {
-    super(message ?? failureMessages[failure]);
+    super(message ?? describeRelayFailure(failure));
     this.name = 'RelayError';
     this.failure = failure;
     this.closeCode = closeCode;
@@ -235,7 +236,7 @@ export interface RelayConnectionOptions {
 
 function defaultSocketFactory(url: string): RelaySocket {
   const Ctor = (globalThis as { WebSocket?: new (url: string) => RelaySocket }).WebSocket;
-  if (!Ctor) throw new RelayError('relay-unreachable', undefined, 'WebSocket을 사용할 수 없습니다.');
+  if (!Ctor) throw new RelayError('relay-unreachable', undefined, t('phone.relay.noWebSocket'));
   return new Ctor(url);
 }
 
@@ -458,7 +459,7 @@ export class RelayConnection {
    * The app is back. A tunnel that is down redials at once; one that still looks open
    * is asked for a pong first. A socket the OS froze or cut while the app was in the
    * background can stay "open" here long after the relay dropped it, and everything
-   * sent into it — the screen's refresh, a tap on 중지 — would wait out its deadline.
+   * sent into it — the screen's refresh, a tap on Stop — would wait out its deadline.
    */
   private onForeground(): void {
     if (this.socket && this.currentState === 'ready') this.probe();
@@ -570,9 +571,9 @@ export class RelayConnection {
       return;
     }
     const bytes = toBytes(data);
-    if (!bytes) throw new RelayError('protocol', undefined, '알 수 없는 프레임 형식입니다.');
+    if (!bytes) throw new RelayError('protocol', undefined, t('phone.relay.unknownFrame'));
     const cipher = this.cipher;
-    if (!cipher) throw new RelayError('protocol', undefined, '핸드셰이크 전 암호 프레임입니다.');
+    if (!cipher) throw new RelayError('protocol', undefined, t('phone.relay.cipherBeforeHandshake'));
     let message: unknown;
     try {
       message = cipher.openJson(bytes);
@@ -580,7 +581,7 @@ export class RelayConnection {
       throw new RelayError(
         'protocol',
         undefined,
-        error instanceof RelayCryptoError ? error.message : '프레임을 열 수 없습니다.',
+        error instanceof RelayCryptoError ? error.message : t('phone.relay.cannotOpenFrame'),
       );
     }
     this.handleEnvelope(message);
@@ -596,15 +597,15 @@ export class RelayConnection {
     try {
       parsed = JSON.parse(raw) as typeof parsed;
     } catch {
-      throw new RelayError('protocol', undefined, '핸드셰이크 응답을 해석할 수 없습니다.');
+      throw new RelayError('protocol', undefined, t('phone.relay.handshakeUnreadable'));
     }
     if (parsed.type !== 'ready' || !parsed.serverKey || !parsed.nonce) {
-      throw new RelayError('protocol', undefined, '핸드셰이크 응답이 올바르지 않습니다.');
+      throw new RelayError('protocol', undefined, t('phone.relay.handshakeInvalid'));
     }
 
     const serverKey = fromBase64(parsed.serverKey);
     if (!bytesEqual(serverKey, fromBase64(this.target.hostPublicKeyB64))) {
-      throw new RelayError('unpaired', undefined, '호스트 공개키가 페어링 정보와 다릅니다.');
+      throw new RelayError('unpaired', undefined, t('phone.relay.hostKeyMismatch'));
     }
 
     const key = deriveSessionKey({
@@ -625,7 +626,7 @@ export class RelayConnection {
   private authenticate(socket: RelaySocket): void {
     const frame = authFrameFor(this.auth, this.clientName);
     if (!frame) {
-      throw new RelayError('unpaired', undefined, '이 호스트의 인증 정보가 없습니다.');
+      throw new RelayError('unpaired', undefined, t('phone.relay.noCredentials'));
     }
     if (frame.pairingKey === undefined || !this.authorize) {
       this.sendEncrypted(frame);
