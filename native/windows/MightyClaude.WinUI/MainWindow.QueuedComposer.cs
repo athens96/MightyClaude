@@ -51,11 +51,13 @@ public sealed partial class MainWindow
             // The same request validation applies before consuming a draft even though it runs later.
             _ = new StartRunRequest(pane.Id, pane.WorkspaceId, pane.Kind, text, RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot), pane.Model, pane.Provider, pane.Settings, pane.ResumeId, files).Validate();
             // A turn that is over but still running background agents takes new input in the same process
-            // (M/AppStore.swift submit); the queue is the fallback.
-            var joins = steering || pane.BackgroundWork?.WaitingOnBackground == true;
+            // (M/AppStore.swift submit); the queue is the fallback. A plan-mode style's new request waits and
+            // starts fresh in plan mode (§1.17.4), and the queued item keeps that decision.
+            var plans = LaunchesInPlanMode;
+            var joins = BackgroundQueuePolicy.ComposerJoins(steering, pane.BackgroundWork, plans);
             var steered = joins && files.Length == 0 && pane.Provider == "claude" && !starting && await owner.service.TrySteerAsync(id, text);
             if (!QueuePaneAlive) return true;
-            if (!steered) queuedInputs.Add(text, files);
+            if (!steered) queuedInputs.Add(text, files, BackgroundQueuePolicy.QueuedOverride(plans));
             var consumed = files.Select(file => file.Id).ToHashSet(); pendingAttachments.RemoveAll(file => consumed.Contains(file.Id)); RefreshAttachments();
             if (input.Text == text) { updating = true; input.Text = ""; updating = false; await Change(s => s with { Draft = "" }); }
             RefreshComposerState(); RenderQueuedInputs();
@@ -66,11 +68,17 @@ public sealed partial class MainWindow
 
         private Task ComposerPrimaryAction() => starting || queueStarting || Session.Status == "running" && !HasComposerContent ? StopActiveRun() : Send();
 
+        /// <summary>A plan-mode style starts every new request in plan mode (§1.17.4).</summary>
+        private bool LaunchesInPlanMode => activeStyle?.Evaluator.LaunchPermissionMode == "plan";
+        /// <summary>Stopped while the turn was over and only background work ran: the queue survives and runs next (M/AppStore.swift queueKeptOnStop).</summary>
+        private bool queueKeptOnStop;
+
         private Task StopActiveRun() => owner.Act(async () =>
         {
             if (stopping) return;
             composerSubmissionVersion++;
-            queueDrainTimer.Stop(); queuedInputs.Clear(); RenderQueuedInputs();
+            queueKeptOnStop = BackgroundQueuePolicy.StopKeepsQueue(Session.BackgroundWork);
+            queueDrainTimer.Stop(); if (!queueKeptOnStop) queuedInputs.Clear(); RenderQueuedInputs();
             stopping = true; RefreshComposerState();
             try { await owner.service.StopAsync(id); }
             finally { stopping = false; if (QueuePaneAlive) Refresh(); }
@@ -94,7 +102,8 @@ public sealed partial class MainWindow
         internal void ReceiveQueueRunEvent(RunEvent value)
         {
             if (value.Type != "status") return;
-            if (queuedInputs.Settle(value.Status ?? "")) queueDrainTimer.Start();
+            var kept = value.Status == "stopped" && queueKeptOnStop; if (value.Status is "stopped" or "completed" or "idle" or "error") queueKeptOnStop = false;
+            if (queuedInputs.Settle(value.Status ?? "", kept)) queueDrainTimer.Start();
             else if (value.Status is "error" or "stopped") queueDrainTimer.Stop();
             RenderQueuedInputs();
         }
@@ -121,7 +130,9 @@ public sealed partial class MainWindow
             var busy = Session.Status == "running" || starting || queueStarting || owner.BackgroundUpdateHolds(Session);
             var header = new Grid { ColumnSpacing = 6 }; header.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); header.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             header.Children.Add(new FontIcon { Glyph = "", FontSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = accent, VerticalAlignment = VerticalAlignment.Center });
-            var count = new TextBlock { Text = Locale.Get(busy ? "queue.waitingBusy" : "queue.waiting", new Dictionary<string, string> { ["count"] = queuedInputs.Items.Count.ToString() }), FontSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = ink2, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
+            var waitsOnBackground = BackgroundQueuePolicy.WaitsOnBackground(Session.BackgroundWork, LaunchesInPlanMode, queuedInputs.Items.Count);
+            var count = new TextBlock { Text = Locale.Get(busy ? "queue.waitingBusy" : "queue.waiting", new Dictionary<string, string> { ["count"] = queuedInputs.Items.Count.ToString() }) + (waitsOnBackground ? "\n" + Locale.Get("queue.waitingOnBackground.windows") : ""), FontSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = ink2, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
+            if (waitsOnBackground) AutomationProperties.SetAutomationId(count, "queue-background-" + id);
             Grid.SetColumn(count, 1); header.Children.Add(count);
             if (!busy)
             {
@@ -161,6 +172,8 @@ public sealed partial class MainWindow
                 var pane = Session;
                 var submitted = await PrepareStyleSubmission(item.Text, item.Attachments.Count > 0);
                 var request = await PrepareStyleRunRequest(new StartRunRequest(pane.Id, pane.WorkspaceId, pane.Kind, submitted, RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot), pane.Model, pane.Provider, pane.Settings, pane.ResumeId, item.Attachments.ToList()));
+                // The decision made when the item was queued wins (§1.17.4).
+                request = request with { PermissionModeOverride = item.PermissionModeOverride };
                 // Stop or removal while style consent was open must prevent this request from starting.
                 if (!QueuePaneAlive || !queuedInputs.Items.Any(queued => queued.Id == item.Id)) return;
                 await owner.StartFromComposer(request);

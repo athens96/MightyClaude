@@ -120,6 +120,9 @@ public sealed partial class MainWindow
             Checkpoint("planCard", "running");
             result["planCard"] = await pane.RunPlanCardSmoke();
             Checkpoint("planCard", "passed");
+            Checkpoint("claudePlanStyle", "running");
+            result["claudePlanStyle"] = await pane.RunClaudePlanStyleSmoke();
+            Checkpoint("claudePlanStyle", "passed");
             Checkpoint("transcriptActions", "running");
             result["transcriptActions"] = await pane.Transcript.RunActionsSmoke();
             Checkpoint("transcriptActions", "passed");

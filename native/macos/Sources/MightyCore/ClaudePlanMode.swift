@@ -88,9 +88,14 @@ public struct PlanRecord: Codable, Sendable, Equatable, Identifiable {
     /// The id of the diagram request the plan belongs to (`MightyGraphRun.sourceRunID`),
     /// so its history block attaches beside that request.
     public var graphRunId: String?
-    public init(id: String, runId: String, plan: String, planTruncated: Bool? = nil, receivedAt: String, decidedAt: String, outcome: PlanOutcome, feedback: String? = nil, graphRunId: String? = nil) {
+    /// The run was started in this permission mode by a per-run override (a
+    /// plan-mode style, docs/mighty-styles.md §1.17.4), not by the pane's own
+    /// mode: its approval leaves the pane's stored mode alone.
+    public var launchOverride: String?
+    public init(id: String, runId: String, plan: String, planTruncated: Bool? = nil, receivedAt: String, decidedAt: String, outcome: PlanOutcome, feedback: String? = nil, graphRunId: String? = nil, launchOverride: String? = nil) {
         self.id = id; self.runId = runId; self.plan = plan; self.planTruncated = planTruncated
         self.receivedAt = receivedAt; self.decidedAt = decidedAt; self.outcome = outcome; self.feedback = feedback; self.graphRunId = graphRunId
+        self.launchOverride = launchOverride
     }
 }
 
@@ -216,6 +221,7 @@ public enum ClaudePlanMode {
         let list = history.filter { CoreValidation.identifier($0.id) && !$0.plan.isEmpty && AgentRunTiming.parseTimestamp($0.decidedAt) != nil }.map { record -> PlanRecord in
             var value = bounded(record)
             if let id = value.graphRunId, !CoreValidation.identifier(id) { value.graphRunId = nil }
+            if let mode = value.launchOverride, mode != "plan" { value.launchOverride = nil }
             return value
         }
         return list.isEmpty ? nil : budgeted(Array(list.suffix(maximumHistory)))
@@ -579,8 +585,10 @@ extension RunSession {
             guard let record = event.plan else { return }
             planHistory = ClaudePlanMode.appending(record, to: planHistory)
             // Only a pane the user put in plan mode takes the approved mode; one
-            // Claude moved into planning by itself keeps its own.
-            if settings.permissionMode == "plan", let mode = record.outcome.paneMode { settings.permissionMode = mode }
+            // Claude moved into planning by itself keeps its own, and so does a
+            // run a plan-mode style started in plan mode (§1.17.4) — even in a
+            // pane stored in plan, whose next request plans again.
+            if settings.permissionMode == "plan", record.launchOverride == nil, let mode = record.outcome.paneMode { settings.permissionMode = mode }
         case "todos": todoProgress = TodoProgress.normalized(event.todos)
         case "background": backgroundWork = BackgroundWork.normalized(event.background, restoring: false)
         case "status":

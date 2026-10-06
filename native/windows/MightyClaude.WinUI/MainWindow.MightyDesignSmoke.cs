@@ -46,7 +46,8 @@ public sealed partial class MainWindow
             return async () =>
             {
                 AnimationsEnabledOverride = animations;
-                await owner.Act(async () => { await Change(p => p with { GraphRuns = original.GraphRuns, AgentViewMode = original.AgentViewMode, GraphViewMode = original.GraphViewMode }); Refresh(); RefreshMightyView(Session); });
+                backgroundOpen = false;
+                await owner.Act(async () => { await Change(p => p with { GraphRuns = original.GraphRuns, AgentViewMode = original.AgentViewMode, GraphViewMode = original.GraphViewMode, BackgroundWork = original.BackgroundWork }); Refresh(); RefreshMightyView(Session); });
             };
         }
 

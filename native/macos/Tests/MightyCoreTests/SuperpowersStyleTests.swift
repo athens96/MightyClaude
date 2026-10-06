@@ -35,7 +35,7 @@ struct SuperpowersStyleTests {
     @Test func appearsInTheStylePicker() {
         // A bundled manifest is pre-approved, so it is runnable without a card.
         #expect(registry.resolve("superpowers")?.approval == .preApproved)
-        #expect(registry.runnableInPrecedence(workspace: nil).map(\.id) == ["ouroboros", "paperthin", "superpowers"])
+        #expect(registry.runnableInPrecedence(workspace: nil).map(\.id) == ["claude-plan", "ouroboros", "paperthin", "superpowers"])
         #expect(registry.resolve("superpowers")?.source == .bundled)
         #expect(style.manifest.presentation.icon?.rawValue == "sparkles" && style.manifest.presentation.tint == .teal)
     }

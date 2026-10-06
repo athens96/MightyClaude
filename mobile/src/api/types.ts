@@ -462,14 +462,27 @@ export interface StylePresentation {
 }
 
 /**
- * One rendered state widget — exactly three kinds, closed vocabulary (§1.16).
+ * One background task a `taskList` widget carries (§1.17, v6). The times are the host
+ * pane's own ISO 8601 stamps, so the phone works the elapsed time out against its clock.
+ */
+export interface StyleTaskItem {
+  text: string;
+  kind: 'agent' | 'shell' | 'other';
+  status: 'running' | 'completed' | 'failed' | 'stopped' | 'unknown';
+  startedAt: string;
+  endedAt?: string;
+}
+
+/**
+ * One rendered state widget — a closed vocabulary (§1.16; `taskList` since v6, §1.17).
  * The Mac evaluates state sources and sends the results; the phone just renders.
  * A progress bar's `value` is the count done and `total` the whole count.
  */
 export type StyleWidget =
   | { kind: 'progressBar'; value: number; total?: number }
   | { kind: 'list'; items: string[] }
-  | { kind: 'label'; text: string };
+  | { kind: 'label'; text: string }
+  | { kind: 'taskList'; items: StyleTaskItem[] };
 
 /**
  * `MobileMighty.panel` — everything one guided pane draws. Present only when the pane is

@@ -198,9 +198,13 @@ public struct QueuedInput: Sendable, Equatable, Identifiable {
     public var text: String
     public var attachments: [RunAttachment]
     public var createdAt: String
+    /// Decided when the item was queued: the permission mode its run starts in
+    /// when a plan-mode style asked for one (§1.17.4), so a later style change
+    /// does not change what was queued.
+    public var permissionModeOverride: String?
     public static let maximumItems = 16
-    public init(id: String = UUID().uuidString, text: String, attachments: [RunAttachment] = [], createdAt: String = mightyTimestamp()) {
-        self.id = id; self.text = text; self.attachments = attachments; self.createdAt = createdAt
+    public init(id: String = UUID().uuidString, text: String, attachments: [RunAttachment] = [], createdAt: String = mightyTimestamp(), permissionModeOverride: String? = nil) {
+        self.id = id; self.text = text; self.attachments = attachments; self.createdAt = createdAt; self.permissionModeOverride = permissionModeOverride
     }
     public var isEmpty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty }
 }

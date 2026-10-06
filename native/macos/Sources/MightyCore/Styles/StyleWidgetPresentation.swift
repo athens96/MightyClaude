@@ -12,6 +12,28 @@ public enum StyleWidgetPresentation: Sendable, Equatable {
     case list(items: [String])
     /// One line; empty when the source has nothing to say.
     case label(text: String)
+    /// §1.17 (v6): background tasks, running ones first.
+    case taskList(items: [Task])
+
+    /// One background task as both platforms draw it: the description (or
+    /// the kind when it has none), the kind and the status in words, and the
+    /// times the elapsed text is worked out from against the viewer's clock.
+    public struct Task: Sendable, Equatable {
+        public var text: String
+        public var kind: String
+        public var kindTitle: String
+        public var status: String
+        public var statusTitle: String
+        public var running: Bool
+        public var startedAt: Date?
+        public var endedAt: Date?
+
+        /// `3분 12초` — to now while it runs, to its end once it ended.
+        public func elapsed(now: Date) -> String {
+            guard let startedAt else { return "" }
+            return StyleWidgetPresentation.elapsed(from: startedAt, to: running ? now : (endedAt ?? now))
+        }
+    }
 
     /// The phone draws at most this many list lines, and so does the Mac.
     public static let maximumListItems = StyleStateEngine.maximumListItems
@@ -41,7 +63,45 @@ public enum StyleWidgetPresentation: Sendable, Equatable {
             return .list(items: Array(lines.prefix(maximumListItems)))
         case .label(let text):
             return .label(text: line(text))
+        case .taskList(let items):
+            return .taskList(items: items.prefix(StyleLimits.maximumTaskListItems).map(task))
         }
+    }
+
+    static func task(_ item: StylePanel.TaskItem) -> Task {
+        let kind = ["agent", "shell"].contains(item.kind) ? item.kind : "other"
+        let status = ["running", "completed", "failed", "stopped"].contains(item.status) ? item.status : "unknown"
+        let kindTitle = taskKindTitle(kind)
+        let text = line(item.text)
+        return Task(text: text.isEmpty ? kindTitle : text, kind: kind, kindTitle: kindTitle, status: status,
+                    statusTitle: taskStatusTitle(status), running: status == "running",
+                    startedAt: AgentRunTiming.parseTimestamp(item.startedAt), endedAt: item.endedAt.flatMap(AgentRunTiming.parseTimestamp))
+    }
+
+    public static func taskKindTitle(_ kind: String) -> String {
+        switch kind {
+        case "agent": return L("styles.state.taskKind.agent")
+        case "shell": return L("styles.state.taskKind.shell")
+        default: return L("styles.state.taskKind.other")
+        }
+    }
+
+    public static func taskStatusTitle(_ status: String) -> String {
+        switch status {
+        case "running": return L("styles.state.taskStatus.running")
+        case "completed": return L("styles.state.taskStatus.completed")
+        case "failed": return L("styles.state.taskStatus.failed")
+        case "stopped": return L("styles.state.taskStatus.stopped")
+        default: return L("styles.state.taskStatus.unknown")
+        }
+    }
+
+    /// `45초`, `3분 12초`, `1시간 2분`; a clock that went back reads as 0.
+    public static func elapsed(from start: Date, to end: Date) -> String {
+        let seconds = max(0, Int(end.timeIntervalSince(start)))
+        if seconds < 60 { return L("styles.state.elapsedSeconds", ["seconds": String(seconds)]) }
+        if seconds < 3600 { return L("styles.state.elapsedMinutes", ["minutes": String(seconds / 60), "seconds": String(seconds % 60)]) }
+        return L("styles.state.elapsedHours", ["hours": String(seconds / 3600), "minutes": String(seconds % 3600 / 60)])
     }
 
     /// Whether there is anything to draw: an empty bar still draws its track
@@ -51,6 +111,7 @@ public enum StyleWidgetPresentation: Sendable, Equatable {
         case .progressBar: return false
         case .list(let items): return items.isEmpty
         case .label(let text): return text.isEmpty
+        case .taskList(let items): return items.isEmpty
         }
     }
 

@@ -48,6 +48,8 @@ public sealed partial class MainWindow
                 () => $"{key}: the panes never loaded side by side: [{string.Join(", ", new[] { mightyId, defaultId, terminalId, emptyId, filesPane }.Select(id => id + "=" + (views.TryGetValue(id, out var v) && v.Container.IsLoaded)))}]");
             restoreMighty = views[mightyId].MightyDesignRestore();
             await views[mightyId].BeginMightyDesignSmoke();
+            // The Mighty pane's background strip, opened, so both theme passes walk its rows too.
+            await views[mightyId].OpenBackgroundStripForSmoke();
             // Select the row first, so its debounced preview cannot redraw the Markdown after the light pass read it.
             await WaitUI(() => views[filesPane].FilesTree.Children.ContainsKey(""), () => $"{key}: the files tree never listed the workspace");
             await views[filesPane].FilesSmokeSelect("README.md");
@@ -64,6 +66,9 @@ public sealed partial class MainWindow
                 await WaitUI(() => mighty.GraphViewportForSmoke is { Visibility: Visibility.Visible, IsLoaded: true } && files.FilesMarkdownForSmoke is { IsLoaded: true }
                     && terminal.SlimHeaderForSmoke?.Header is { IsLoaded: true } && empty.EmptyOutputForSmoke is { Visibility: Visibility.Visible, IsLoaded: true },
                     () => $"{key} ({theme}): the Mighty diagram, the Markdown preview, the terminal header or the empty agent pane never showed");
+                mighty.Refresh();
+                await WaitUI(() => mighty.BackgroundHostForSmoke is { Visibility: Visibility.Visible, IsLoaded: true } && mighty.BackgroundRowsLoadedForSmoke,
+                    () => $"{key} ({theme}): the Mighty pane's opened background strip never showed");
                 root.UpdateLayout();
                 // Both documents are drawn again once their boxes have painted over them for the theme.
                 await WaitUI(() => ConversationInkAt(standard) is var (at, tokens) && RtfInkIs(standard.Transcript.View, at, tokens) && RtfInkIs(files.FilesMarkdownForSmoke!, 0, [DesignToken.Ink]),
@@ -86,6 +91,7 @@ public sealed partial class MainWindow
                 RequireVisited(walked, sidebarSurface, "the sidebar"); RequireVisited(walked, parts.Header, "the terminal header");
                 RequireVisited(walked, standard.Transcript.View, "the Default conversation"); RequireVisited(walked, empty.EmptyOutputForSmoke!, "the empty agent pane");
                 RequireVisited(walked, mighty.GraphViewportForSmoke!, "the Mighty diagram"); RequireVisited(walked, files.FilesHost!, "the files pane");
+                RequireVisited(walked, mighty.BackgroundHostForSmoke!, "the background strip");
                 checks[theme + ".mainWindow"] = walked.Summary;
 
                 showsDashboard = true; RefreshDashboardEntry(); RenderDashboard(); root.UpdateLayout();

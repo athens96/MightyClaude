@@ -99,6 +99,82 @@ public static class StyleStateEngine
         }
         return new(states,widgets);
     }
+    // ── §1.17 (v6): the pane's plan-mode state ────────────────────────────────
+
+    /// <summary>The closed plan stages, in order.</summary>
+    public static readonly string[] PlanStages=["planning","awaitingApproval","executing"];
+    /// <summary>A task list shows at most this many tasks.</summary>
+    public const int MaximumTaskListItems=8;
+
+    /// <summary>
+    /// Where the pane stands in Claude's plan mode (M/StyleStateEngine.swift planStage): a waiting plan is
+    /// awaitingApproval; otherwise the latest request's plan answers decide — approved is executing, none
+    /// yet, sent back or cancelled is planning, so the next new request starts there again.
+    /// </summary>
+    public static string PlanStage(RunSession session,bool pendingPlan)
+    {
+        if(pendingPlan)return "awaitingApproval";
+        // The latest request as the Mac reads it: the saved request blocks, or for a pane that never saved any, the blocks
+        // its log makes (M/MightyGraph.swift legacyRuns) — the last one's id is its last user entry, or "history-<pane>".
+        string? lastId=null,lastSource=null,lastStatus=null;
+        if(session.GraphRuns is {} runs){if(runs.Count>0){lastId=runs[^1].Id;lastSource=runs[^1].SourceRunID;lastStatus=runs[^1].Status;}}
+        else if(session.Logs.Count>0){lastId=session.Logs.LastOrDefault(l=>l.Kind=="user")?.Id??"history-"+session.Id;lastStatus=session.Status=="idle"?"completed":session.Status;}
+        // A run has started but its request block is not there yet (the tracker adds it when the run's graph first reports):
+        // that request has no plan answer yet. A turn that is over and only waits on background work is still its own.
+        if(session.Status=="running"&&lastStatus is {} status&&MightyGraphSupport.Terminal(status)&&session.BackgroundWork?.TurnEnded!=true)return "planning";
+        var history=session.PlanHistory??[];PlanRecord? latest;
+        // A record's GraphRunId is its run's SourceRunID on both platforms (the block id is matched too, as the diagram attaches
+        // records either way); a Mac record from before GraphRunId names the same id as its RunId.
+        if(lastId is not null)latest=history.LastOrDefault(r=>r.GraphRunId==lastId||lastSource is not null&&(r.GraphRunId==lastSource||r.RunId==lastSource));
+        else latest=history.LastOrDefault();
+        return latest?.Outcome is PlanOutcome.ApprovedAuto or PlanOutcome.ApprovedConfirm?"executing":"planning";
+    }
+
+    /// <summary>The cached file and event reading with the pane's live plan stage and run-state widgets added last.</summary>
+    public static StyleStateReading Live(StyleStateReading? cached,StyleManifest manifest,RunSession session,bool pendingPlan)
+    {
+        var evaluator=new StyleEvaluator(manifest);
+        var reading=cached??new(new Dictionary<int,StyleFileState>(),[]);
+        if(!evaluator.ReadsPlanState)return reading;
+        var stage=PlanStage(session,pendingPlan);
+        var widgets=reading.Widgets.Concat(RunStateWidgets(manifest,stage,session.TodoProgress,session.BackgroundWork)).ToList();
+        return reading with{Widgets=widgets,PlanStage=stage};
+    }
+
+    /// <summary>Each declared run-state source as its widget. The checklist belongs to the plan being carried out, so it reads only while executing.</summary>
+    public static IReadOnlyList<StyleStateWidget> RunStateWidgets(StyleManifest manifest,string stage,TodoProgress? todos,BackgroundWork? work)
+    {
+        var widgets=new List<StyleStateWidget>();
+        if(!manifest.Root.TryGetProperty("stateSources",out var sources))return widgets;
+        foreach(var source in StyleManifest.Items(sources,"runState"))widgets.Add(RunState(StyleManifest.Text(source,"source")!,StyleManifest.Text(source,"widget")!,stage,todos,work));
+        return widgets;
+    }
+
+    public static StyleStateWidget RunState(string source,string kind,string stage,TodoProgress? todos,BackgroundWork? work)
+    {
+        static Dictionary<string,string> Count(int count)=>new(){{"count",count.ToString(System.Globalization.CultureInfo.InvariantCulture)}};
+        if(source=="todos")
+        {
+            if(stage!="executing"||todos is not {Items.Count:>0})return Empty(kind);
+            return kind switch
+            {
+                "progressBar"=>new(kind,Value:todos.Completed,Total:todos.Items.Count),
+                "list"=>new(kind,Items:todos.Items.Where(i=>i.Status!="completed").Select(i=>StyleText.Safe(i.Content,400)).Take(8).ToArray()),
+                _=>new(kind,todos.CurrentText is {} current?Locale.Get("styles.state.todoCurrent",new Dictionary<string,string>{{"item",StyleText.Safe(current,400)}}):""),
+            };
+        }
+        var tasks=work?.Tasks??[];var running=tasks.Count(t=>t.Status=="running");
+        return kind switch
+        {
+            // Running work first, each group in the order it started.
+            "taskList"=>new(kind,Tasks:tasks.Where(t=>t.Status=="running").Concat(tasks.Where(t=>t.Status!="running")).Take(MaximumTaskListItems).Select(t=>new StyleTaskItem(StyleText.Safe(t.Description,400),t.Kind,t.Status,t.StartedAt,t.EndedAt)).ToArray()),
+            "label"=>new(kind,work is {WaitingOnBackground:true}?Locale.Get("plan.background.status",Count(running)):running>0?Locale.Get("styles.state.backgroundRunning",Count(running)):""),
+            _=>new(kind,Value:tasks.Count-running,Total:tasks.Count),
+        };
+    }
+
+    private static StyleStateWidget Empty(string kind)=>kind switch{"progressBar"=>new(kind,Value:0,Total:0),"list"=>new(kind,Items:[]),"taskList"=>new(kind,Tasks:[]),_=>new(kind,"")};
+
     public static (StyleFileState State,StyleStateWidget Widget) Parse(string text,string parser,string kind)
     {
         var state=new StyleFileState(true,false);

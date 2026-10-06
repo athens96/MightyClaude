@@ -21,11 +21,11 @@ internal static class StylesVerification
             catch(StyleManifestException e){if(e.Code!=expected)failures.Add(expected+" got "+e.Code);}
             count++;
         }
-        foreach(var suffix in new[]{"valid/minimal.json","valid/with-phases.json","valid/with-state-sources.json","valid/with-job-declaration.json","Styles.gstack.json","Styles.oh-my-claudecode.json"})
+        foreach(var suffix in new[]{"valid/minimal.json","valid/with-phases.json","valid/with-state-sources.json","valid/with-job-declaration.json","valid/with-plan-state.json","Styles.gstack.json","Styles.oh-my-claudecode.json"})
         {
             try{StyleManifestDecoder.Decode(Fixture(suffix));}catch(StyleManifestException e){failures.Add(suffix+" rejected "+e.Code);}
         }
-        Check(count==51,"Expected all 51 committed invalid manifests, got "+count);Check(failures.Count==0,string.Join("; ",failures));
+        Check(count==52,"Expected all 52 committed invalid manifests, got "+count);Check(failures.Count==0,string.Join("; ",failures));
         try{StyleManifestDecoder.Decode(new byte[StyleManifestDecoder.MaximumBytes+1]);throw new InvalidOperationException("oversize accepted");}catch(StyleManifestException e){Check(e.Code=="E_TOO_LARGE","size precedes JSON");}
         var minimal=Encoding.UTF8.GetString(Fixture("valid/minimal.json"));
         foreach(var glyph in new[]{"☕","👩‍💻","⚙️","🚀"})StyleManifestDecoder.Decode(Encoding.UTF8.GetBytes(minimal.Replace("\"takesText\":false","\"takesText\":false,\"glyph\":"+JsonSerializer.Serialize(glyph),StringComparison.Ordinal)));
@@ -36,7 +36,7 @@ internal static class StylesVerification
         var root=Verification.Temp();var workspace=Path.Combine(root,"workspace");var profile=Path.Combine(root,"profile");Directory.CreateDirectory(workspace);Directory.CreateDirectory(Path.Combine(profile,"styles"));
         try
         {
-            var registry=StyleRegistry.Load(profile,workspace);Check(registry.Styles.Count==3&&registry.Styles.All(s=>s.Runnable),"all three bundled styles loaded: "+string.Join(";",registry.Rejections.Select(e=>e.Message)));
+            var registry=StyleRegistry.Load(profile,workspace);Check(registry.Styles.Count==4&&registry.Styles.All(s=>s.Runnable),"all four bundled styles loaded: "+string.Join(";",registry.Rejections.Select(e=>e.Message)));
             var source=Fixture("valid/with-state-sources.json");var file=Path.Combine(profile,"styles","custom.json");File.WriteAllBytes(file,source);
             registry=StyleRegistry.Load(profile,workspace);var style=registry.Styles.Single(s=>s.Id=="corpus-state");Check(!style.Runnable,"unapproved doesn't run");var trust=new StyleTrustStore(Path.Combine(profile,"style-trust"));trust.Decide(style,"approved");registry=StyleRegistry.Load(profile,workspace);Check(registry.Runnable(style.Id,style.Hash)!=null,"approval binds bytes and place");Check(registry.Runnable(style.Id,"wrong")==null,"pane hash also gates");
             File.WriteAllText(file,Encoding.UTF8.GetString(source)+" ");Check(!StyleRegistry.Unchanged(style),"changed file invalidates preview before approve/run");registry=StyleRegistry.Load(profile,workspace);var changed=registry.Styles.Single(s=>s.Id==style.Id);Check(!changed.Runnable,"one changed byte asks again");trust.Decide(changed,"revoked");File.WriteAllBytes(file,source);registry=StyleRegistry.Load(profile,workspace);Check(registry.Styles.Single(s=>s.Id==style.Id).Approval=="revoked","revocation survives old bytes returning");trust.Decide(style,"unblock");Check(StyleRegistry.Load(profile,workspace).Runnable(style.Id,style.Hash)==null,"unblock requires fresh approval");

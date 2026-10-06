@@ -246,7 +246,12 @@ public sealed partial class MainWindow
             }
             await Change(p=>p with{MightyStyle=selected?.Id,MightyStyleHash=selected?.Hash,MightyStyleSince=p.MightyStyle==selected?.Id?p.MightyStyleSince:null});styleStartingNew=false;styleGroup=null;loadedStyleKey=null;await LoadStyles();Refresh();
         });
-        private StylePhase? GuidedPhase(RegisteredStyle style)=>style.Evaluator.CurrentPhase(Session.GraphRuns is {Count:>0} runs?runs.Select(r=>r.Input):Session.Logs.Where(l=>l.Kind=="user").Select(l=>l.Text),styleReading?.Files);
+        private StylePhase? GuidedPhase(RegisteredStyle style)=>style.Evaluator.CurrentPhase(Session.GraphRuns is {Count:>0} runs?runs.Select(r=>r.Input):Session.Logs.Where(l=>l.Kind=="user").Select(l=>l.Text),styleReading?.Files,LiveStyleReading(style).PlanStage);
+        /// <summary>
+        /// The cached file and event reading with the pane's own plan stage and run-state widgets added (§1.17): they
+        /// come from the pane and its waiting plan, never from disk, so they are read live on every render.
+        /// </summary>
+        private StyleStateReading LiveStyleReading(RegisteredStyle style)=>StyleStateEngine.Live(styleReading,style.Manifest,Session,PendingPlan is not null);
         private void RefreshStyleComposer()
         {
             if(owner.closing||!owner.service.Snapshot.Sessions.Any(p=>p.Id==id))return;
@@ -374,8 +379,16 @@ public sealed partial class MainWindow
 
             // The style's state sources, as the phone draws them (M/GuidedPanel.swift:185-218): a 6pt bar with its count, a list, or a label.
             var widgets=new StackPanel{Spacing=5};
-            foreach(var widget in styleReading?.Widgets??[])
+            ForgetElapsed(guidedElapsed);
+            foreach(var widget in LiveStyleReading(style).Widgets)
             {
+                if(widget.Kind=="taskList")
+                {
+                    // §1.17: the pane's background agents and shells, with their elapsed time.
+                    var tasks=StylePresentation.Tasks(widget);
+                    if(tasks.Count>0)widgets.Children.Add(BackgroundRows(tasks,guidedElapsed));
+                    continue;
+                }
                 if(widget.Kind=="progressBar"&&StylePresentation.Progress(widget) is {} progress)
                 {
                     var bar=new Grid{ColumnSpacing=6};bar.ColumnDefinitions.Add(new(){Width=new(1,GridUnitType.Star)});bar.ColumnDefinitions.Add(new(){Width=GridLength.Auto});

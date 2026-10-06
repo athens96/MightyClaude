@@ -37,6 +37,34 @@ enum StyleGolden {
         /// golden keeps its bytes. The panel carries the reading's widgets as
         /// they are; see `stateReading(for:)` for what is recorded.
         var withState: StylePanel?
+        /// §1.17 (v6): only for a style that reads the plan stage — the panel
+        /// at each stage, with `stateRunState` read at that stage (a plan
+        /// waiting for its answer is a running turn). Three top-level cases
+        /// rather than one map, so every case in a golden is a panel.
+        var planStagePlanning: StylePanel?
+        var planStageAwaitingApproval: StylePanel?
+        var planStageExecuting: StylePanel?
+
+        /// The three stage cases by stage, for the readable assertions.
+        var planStages: [StylePlanStage: StylePanel]? {
+            guard let planStagePlanning, let planStageAwaitingApproval, let planStageExecuting else { return nil }
+            return [.planning: planStagePlanning, .awaitingApproval: planStageAwaitingApproval, .executing: planStageExecuting]
+        }
+    }
+
+    /// §1.17: the pane's fixed plan-mode state — three of seven steps done
+    /// with the fourth under way, and two background tasks, one still running
+    /// after the turn ended.
+    static func stateRunState(_ stage: StylePlanStage) -> StyleRunStateInput {
+        let items = (1...7).map { index in
+            TodoItem(content: "step \(index)", activeForm: "doing step \(index)", status: index <= 3 ? "completed" : index == 4 ? "in_progress" : "pending")
+        }
+        let work = BackgroundWork(tasks: [
+            BackgroundTask(id: "bg-1", kind: "agent", description: "review the diff", startedAt: "2026-10-06T01:00:00.000Z"),
+            BackgroundTask(id: "bg-2", kind: "shell", description: "npm test", startedAt: "2026-10-06T01:00:05.000Z",
+                           status: "completed", endedAt: "2026-10-06T01:01:10.000Z"),
+        ], turnEnded: true)
+        return StyleRunStateInput(planStage: stage, todos: TodoProgress(items: items), background: work)
     }
 
     /// A plan three of seven items done, read by the engine's own checklist parser.
@@ -55,12 +83,24 @@ enum StyleGolden {
     /// run-event sources aggregate `stateRunEvents`. A label's text comes from
     /// the app's locale, so the reading is made in Korean — the copy the
     /// golden records and the phone test reads — whatever the machine runs.
-    static func stateReading(for manifest: StyleManifest) -> StyleStateReading? {
+    static func stateReading(for manifest: StyleManifest, stage: StylePlanStage = .executing) -> StyleStateReading? {
         guard let sources = manifest.stateSources else { return nil }
         let files = sources.files.map { StyleStateEngine.parse(stateChecklist, source: $0) }
+        // §1.17: a style that reads the plan stage records it at `executing`.
+        let runState = manifest.readsPlanState ? stateRunState(stage) : nil
         return withKoreanLocale {
-            StyleStateEngine.reading(sources: sources, files: files, runEvents: stateRunEvents)
+            StyleStateEngine.reading(sources: sources, files: files, runEvents: stateRunEvents, runState: runState)
         }
+    }
+
+    /// §1.17: one panel per plan stage, for a style that reads it.
+    static func planStageReadings(for manifest: StyleManifest) -> [StylePlanStage: StyleStateReading]? {
+        guard manifest.readsPlanState else { return nil }
+        var readings: [StylePlanStage: StyleStateReading] = [:]
+        for stage in StylePlanStage.allCases {
+            readings[stage] = stateReading(for: manifest, stage: stage) ?? StyleStateReading(planStage: stage)
+        }
+        return readings
     }
 
     /// Korean for this task only: the process-wide preference stays untouched,
@@ -86,9 +126,14 @@ enum StyleGolden {
         let open = Dictionary(uniqueKeysWithValues: manifest.capabilities.map { ($0, "open") })
         func make(prompts: [String] = [], group: String? = nil, states: [String: String] = casebookStates,
                   items: [StyleAttachmentItem] = [], prerequisites: StylePrerequisiteResult = ready,
-                  state: StyleStateReading = .empty) -> StylePanel {
+                  state: StyleStateReading = .empty, running: Bool = false) -> StylePanel {
             StylePanelProjection.make(style: style, prompts: prompts, selectedGroupId: group,
-                                      capabilityStates: states, attachments: items, prerequisites: prerequisites, state: state)
+                                      capabilityStates: states, attachments: items, prerequisites: prerequisites,
+                                      running: running, state: state)
+        }
+        let stages = planStageReadings(for: manifest)
+        func stage(_ value: StylePlanStage) -> StylePanel? {
+            stages?[value].map { make(state: $0, running: value == .awaitingApproval) }
         }
         return Projection(empty: make(),
                           afterFirstAction: make(prompts: [firstPrompt]),
@@ -96,7 +141,9 @@ enum StyleGolden {
                           firstGroup: make(group: manifest.groups.first?.id),
                           lastGroup: make(group: manifest.groups.last?.id),
                           capabilityOpen: make(group: manifest.groups.last?.id, states: open, items: attachments),
-                          withState: stateReading(for: manifest).map { make(state: $0) })
+                          withState: stateReading(for: manifest).map { make(state: $0) },
+                          planStagePlanning: stage(.planning), planStageAwaitingApproval: stage(.awaitingApproval),
+                          planStageExecuting: stage(.executing))
     }
 
     static func serialise(_ projection: Projection) throws -> Data {

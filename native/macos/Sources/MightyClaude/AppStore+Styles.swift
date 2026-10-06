@@ -234,10 +234,31 @@ extension AppStore {
     /// with this pane's own run events. The phone panel and its digest both
     /// read this, and its file states are the ones `styleFileStates` returns.
     func styleState(_ style: RegisteredStyle, for session: RunSession) -> StyleStateReading {
-        guard let sources = style.manifest.stateSources else { return .empty }
+        // §1.17: the pane's plan stage, checklist and background work, read
+        // from the pane itself and its waiting plan request — never from disk.
+        let runState = style.manifest.readsPlanState ? styleRunState(for: session) : nil
+        guard let sources = style.manifest.stateSources else { return StyleStateReading(planStage: runState?.planStage) }
         let since = session.mightyStyleSince.flatMap(AgentRunTiming.parseTimestamp)
         return StyleStateEngine.reading(sources: sources, files: styleFiles(style, for: session),
-                                        runEvents: StyleStateEngine.runEvents(from: session, since: since))
+                                        runEvents: StyleStateEngine.runEvents(from: session, since: since), runState: runState)
+    }
+
+    /// §1.17: what a plan-state style reads of the pane.
+    func styleRunState(for session: RunSession) -> StyleRunStateInput {
+        StyleRunStateInput.of(session, pendingPlan: PlanCardSupport.pendingPlan(toolPermissions[session.id]) != nil)
+    }
+
+    /// §1.17: the plan stage the pane's phase bar reads, nil for a style that
+    /// does not read it.
+    func stylePlanStage(_ style: RegisteredStyle, for session: RunSession) -> StylePlanStage? {
+        style.manifest.readsPlanState ? styleRunState(for: session).planStage : nil
+    }
+
+    /// §1.17: a style whose every new request starts in plan mode. Its new
+    /// input never joins a turn that only waits on background work, so the
+    /// request starts fresh in plan mode instead (⌘Enter still steers).
+    func styleLaunchesInPlanMode(_ session: RunSession) -> Bool {
+        guidedStyle(session)?.manifest.launch?.permissionMode == .plan
     }
 
     /// Reads the pane's file sources off the main actor. Asked for when the

@@ -39,7 +39,8 @@
 | `autoAllow` | array | ✓ | ≤32, 비어 있어도 됨 | 1.9 |
 | `presentation` | object | ✓ | 1.10 | 스타일 단위 아이콘·색 |
 | `job` | object | — | 1.13 | 백그라운드 잡 선언 (선택). 없으면 오늘과 동일하게 동작 |
-| `stateSources` | object | — | 1.16 | 상태 소스 선언 (선택, **v5 추가**). 파일·실행 이벤트를 읽어 위젯에 투영 |
+| `stateSources` | object | — | 1.16 | 상태 소스 선언 (선택, **v5 추가**). 파일·실행 이벤트를 읽어 위젯에 투영. v6에서 `runState`(1.17)가 더해졌다 |
+| `launch` | object | — | 1.17 | 요청 시작 방식 (선택, **v6 추가**). `{"permissionMode": "plan"}` 하나 |
 
 **최상위·중첩을 통틀어 모르는 키는 거부한다**(`E_UNKNOWN_FIELD`). 이유 한 줄: 승인 화면이 "파일 내용 전부"를 보여 주기로 한 이상, 앱이 뜻을 모르는 필드는 보여 줄 수도 설명할 수도 없어 약속을 깨기 때문이다. 앞으로의 확장은 `schema` 값으로 받는다 — v2 파일은 절반만 읽히는 대신 "이 앱은 schema 1만 읽습니다"로 분명히 거부된다(폰·Windows가 나중에 같은 파일을 읽을 때도 같은 판정을 내린다).
 
@@ -792,6 +793,82 @@ stateOverrides: [{
 | `E_STATE_PATH_ESCAPE` | 경로가 워크스페이스를 벗어납니다: `<값>`. |
 | `E_STATE_RUN_EVENT` | 알 수 없는 실행 이벤트입니다: `<값>`. |
 
+### 1.17 Claude 계획 모드 읽기 (v6)
+
+**v6 추가.** `schema: 1` 그대로이고 엔진이 `mighty-style-engine-v6` 이상일 때만 읽힌다. 이전 엔진은 아래 어휘를 모르는 키(`E_UNKNOWN_FIELD`)나 모르는 규칙(`E_UNKNOWN_RULE`)으로 거부한다. 번들 "클러드 플랜"(`claude-plan.json`)이 이 어휘로 쓰였다 — 스타일 id를 엔진이 아는 곳은 없다.
+
+v5의 상태 소스가 워크스페이스 파일과 실행 이벤트를 읽었다면, v6은 **실행 창 자신이 이미 들고 있는 Claude 계획 모드의 상태**를 읽는다: 계획 답변 기록(`RunSession.planHistory`), 기다리는 ExitPlanMode 요청, 실행 체크리스트(`RunSession.todoProgress`), 백그라운드 작업(`RunSession.backgroundWork`). 디스크를 읽지 않고, 식 언어도 없다.
+
+#### 1.17.1 계획 단계 (닫힌 집합)
+
+| 단계 | 뜻 |
+|---|---|
+| `awaitingApproval` | 이 실행 창에 답을 기다리는 계획(ExitPlanMode 요청)이 있다 |
+| `executing` | 기다리는 계획이 없고, **최신 요청**의 마지막 계획 답변이 승인(`approvedAuto` · `approvedConfirm`)이다 — 실행 중이든 끝났든 |
+| `planning` | 그 밖 전부: 최신 요청에 계획 답변이 아직 없거나, 마지막 답변이 수정 요청(`revised`) · 취소(`cancelled`)다 |
+
+"최신 요청"은 실행 창의 마지막 요청 블록이다: 저장된 `graphRuns`의 마지막, `graphRuns`를 한 번도 저장하지 않은 실행 창이면 로그로 만든 블록(`MightyGraphSupport.legacyRuns` — 마지막 사용자 항목의 id, 사용자 항목이 없으면 `history-<실행 창 id>`, `sourceRunID` 없음)의 마지막. 블록이 하나도 없으면(빈 `graphRuns`, 로그도 없음) 계획 기록 전체의 마지막 것을 본다. 계획 기록은 `graphRunId`가 그 블록의 `sourceRunID`(두 플랫폼 모두 `graphRunId`에 실행의 `sourceRunID`를 적는다)나 블록 id와 같거나, `runId`가 그 `sourceRunID`와 같을 때(맥에서 `graphRunId`가 생기기 전의 기록) 그 요청의 것이다. 그래서 **새 요청을 보내면 단계는 다시 `planning`이다.** 실행 창이 실행 중인데 마지막 블록이 이미 끝난 상태이고 그 턴이 끝난 채 백그라운드만 기다리는 것도 아니면, 새 요청의 블록이 아직 생기지 않은 것이므로(Windows는 실행의 그래프가 처음 보고할 때 블록을 더한다) 역시 `planning`이다. 판정은 `StyleStateEngine.planStage(session:pendingPlan:)`(맥) · `StyleStateEngine.PlanStage`(Windows) 한 곳이고 두 쪽이 같은 규칙이다.
+
+#### 1.17.2 `rules.phase` — `planState`
+
+```
+"phase": { "kind": "planState", "map": { "planning": "<phase id>", "awaitingApproval": "<phase id>", "executing": "<phase id>" } }
+```
+
+세 단계를 **모두** 매핑해야 한다(빠지면 `E_RULE_INCOMPLETE`, 값은 빠진 단계 이름). 세 이름 밖의 키는 `E_UNKNOWN_REFERENCE`(`rules.phase.map`), 없는 단계 id를 가리키면 `E_UNKNOWN_REFERENCE`(`rules.phase.map.<단계>`). 이 규칙 아래에서는 **과거 요청이 단계를 움직이지 않는다** — 행동의 `phase`는 요청 블록의 제목에만 쓰인다. 단계를 읽은 것이 없으면(골든의 일반 사례, 폰 페이로드를 만들기 전) `planning`으로 본다.
+
+#### 1.17.3 `stateSources.runState`
+
+```
+"runState": [ { "source": "todos" | "background", "widget": "<위젯>" } ]   // 0–4개
+```
+
+| `source` | 쓸 수 있는 위젯 | 그리는 것 |
+|---|---|---|
+| `todos` | `progressBar` · `list` · `label` | 막대 = 완료 수/전체 수, 목록 = 완료되지 않은 항목(최대 8), 라벨 = 진행 중인 항목(`styles.state.todoCurrent`, "진행 중: …"). **단계가 `executing`일 때만** 읽고, 그 밖에는 빈 위젯(`0/0`, 빈 목록, 빈 라벨)이다 — 새 계획이 지난 계획의 진척을 보여 주지 않게 |
+| `background` | `taskList` · `label` · `progressBar` | 작업 목록 = 실행 중인 것 먼저, 각 무리는 시작 순서, 최대 8개. 라벨 = 턴이 끝났는데 돌고 있으면 `plan.background.status`("턴 완료 · 백그라운드 N개 실행 중"), 돌고만 있으면 `styles.state.backgroundRunning`, 없으면 빈 라벨. 막대 = 끝난 수/전체 수 |
+
+모르는 `source`는 `E_STATE_RUN_STATE`, 그 소스가 쓸 수 없는 위젯은 `E_STATE_WIDGET`. 위젯 순서는 파일 소스 → 실행 이벤트 → 실행 상태, 각각 선언 순서다(§1.16.4). 실행 상태 위젯은 읽을 때마다 실행 창에서 새로 만들고 캐시하지 않는다.
+
+**`taskList` 위젯**(v6, `background` 전용 — 파일 소스·실행 이벤트에 쓰면 `E_STATE_WIDGET`). 페이로드 모양:
+
+```
+{ "kind": "taskList", "items": [ { "text": "...", "kind": "agent|shell|other", "status": "running|completed|failed|stopped|unknown", "startedAt": "<ISO 8601>", "endedAt": "<ISO 8601>"? } ] }
+```
+
+시각은 실행 창이 적은 그대로 보내고 **경과 시간은 그리는 쪽이 자기 시계로 계산한다**(실행 중이면 지금까지, 끝났으면 끝난 때까지; `styles.state.elapsed*` — "45초", "3분 12초", "1시간 2분"; 시계가 거꾸로 가면 0). 줄마다 상태 점 · 설명(비어 있으면 종류 이름) · `종류 · 상태 · 경과`. 모르는 종류는 `other`, 모르는 상태는 `unknown`으로 읽고, 폰은 시작 시각이 없거나 읽을 수 없는 작업을 버린다. 빈 목록은 자리만 지키고 그리지 않는다. 맥 `StyleWidgetPresentation.taskList` · `BackgroundTaskRows`, Windows `StylePresentation.Tasks` · `BackgroundRows`, 폰 `taskRowDisplay` · `TaskListWidget`이 같은 규칙이고, 실행 중인 줄의 경과 시간은 1초마다 다시 그린다.
+
+#### 1.17.4 `launch`
+
+```
+"launch": { "permissionMode": "plan" }
+```
+
+닫힌 집합 하나(`plan`; 그 밖은 `E_UNKNOWN_RULE`). 이 스타일로 도는 실행 창의 **새 요청마다** 실행을 `--permission-mode plan`으로 시작한다(`StartRunRequest.permissionModeOverride`, Claude 실행 창 전용 — 스타일이 Claude 로컬 실행 창 + 마이티 보기에서만 돌므로 따로 막을 것이 없다). 실행 창에 저장된 권한 모드는 바꾸지 않는다. 계획 카드의 답이 그 세션의 모드를 승인한 쪽으로 옮기고(`setMode`), 다음 새 요청은 다시 계획 모드로 시작한다. 이미 돌고 있는 턴에 끼워 보내는 입력(⌘Enter, Windows는 Ctrl+Enter)은 새 요청이 아니다. 턴이 끝나고 백그라운드 작업만 기다리는 동안 보낸 새 입력은, 이 선언이 있으면 그 프로세스에 끼워 넣지 않고 대기열에 두었다가 새 계획 모드 실행으로 시작한다 — 폰에서 보낸 요청도 같다(`BackgroundQueuePolicy`, 맥·Windows 같은 규칙; 폰이 이 값을 고를 수는 없다). 그동안 대기열은 "백그라운드 작업이 끝나야 시작합니다 · ⌘Enter로 끼워 넣기 / 중지"(`queue.waitingOnBackground.*`)를 보여 준다. 턴이 끝난 채 백그라운드만 기다리는 실행을 중지하면(화면이든 폰이든) 대기열은 지워지지 않고 첫 요청이 곧바로 시작한다. 대기열에 넣을 때 그 항목의 시작 모드를 정해 두므로(`QueuedInput.permissionModeOverride`), 그 뒤에 스타일을 바꿔도 이미 넣은 요청의 시작 모드는 바뀌지 않는다.
+
+**저장된 모드.** 이 선언으로 계획 모드로 시작한 실행의 계획 답변은 실행 창에 저장된 권한 모드를 쓰지 않는다(`PlanRecord.launchOverride = "plan"`). 실행 창 자신이 `plan`으로 저장되어 있어도 마찬가지다 — 다음 요청이 어차피 다시 계획한다. 이 선언 없이 저장된 모드가 `plan`인 실행 창은 1단계의 동작 그대로 승인한 모드로 저장된다.
+
+#### 1.17.5 단계별 입력창 문구와 안내
+
+```
+"placeholders": { ..., "phases": { "<phase id>": { "idle"?: "…", "running"?: "…" } } }   // 0–120자
+"guidance":     { ..., "phases": { "<phase id>": { "idle"?: "…", "running"?: "…" } } }   // 0–160자, {phase}만
+```
+
+선택. 키는 있는 단계 id여야 한다(`E_UNKNOWN_REFERENCE`, `placeholders.phases` · `guidance.phases`). 지금 단계에 지금 상태(실행 중이냐 아니냐)의 줄이 있으면 그것이 이긴다. 입력창은 질문에 답하는 중이면 `answering`이, 잡이 열려 있으면 기존 규칙이 먼저다. 안내는 잡이 열려 있으면 잡의 안내가 먼저다. 줄이 없으면 1.7의 규칙 그대로다. 안내의 `{phase}` 규칙은 1.7과 같다(그 밖의 `{…}`는 `E_PROMPT_PLACEHOLDER`).
+
+#### 1.17.6 오류 코드
+
+| 코드 | 한국어 메시지 |
+|---|---|
+| `E_STATE_RUN_STATE` | 알 수 없는 실행 상태 소스입니다: `<값>`. |
+
+이로써 오류 코드는 **54개**다.
+
+#### 1.17.7 번들 "클러드 플랜"
+
+`native/macos/Sources/MightyCore/Resources/Styles/claude-plan.json`(Windows Core는 같은 파일을 묻어 둔다). 단계 계획 → 승인 → 실행, 준비물 없음, 자동 허용 없음, Enter는 그대로(권고만), 인식 접두사 `[`(행동 `[계획] {text}` · `[검증] …`). 계획 단계에는 "새 계획", 실행 뒤에는 "새 계획" · "검증 요청"을 낸다. 위젯은 체크리스트 막대 · 진행 중 항목 · 백그라운드 줄 · 백그라운드 작업 목록. 골든 `styles/golden/claude-plan.panel.json`은 6가지 고정 입력에 더해 `withState`(실행 중 고정 상태)와 `planStagePlanning` · `planStageAwaitingApproval` · `planStageExecuting`(단계마다 한 패널, 승인 대기는 실행 중 턴) 사례를 담는다. 고정 상태는 체크리스트 7개 중 3개 완료·4번째 진행 중, 백그라운드 둘(하나는 턴이 끝난 뒤에도 실행 중)이다(`StyleGolden.stateRunState`).
+
 ---
 
 ## 2. 검증
@@ -1008,7 +1085,8 @@ BundledStyleSource.directories() -> [URL]
 2. **자동 허용 목록** — 조립된 와이어 이름(`mcp__plugin_x__tool_y`)으로 한 줄씩. **접히지 않는다.** 비어 있으면 "자동 허용 없음"이라고 분명히 쓴다. 1.9의 소속 규칙은 남의 서버를 막을 뿐 그 플러그인 안의 쓰기·실행 도구를 막지 못하므로, 이 구역이 맨 위에 와야 한다.
 3. **설치 명령 원문**과 **"누르면 터미널 창에 채워지기만 하고 실행은 직접 Enter"** 안내(1.5). 단, 도구 모음(toolkit)은 예외로 확인 화면에서 직접 실행된다([docs/toolkit.md](toolkit.md)).
 4. **Enter 규칙.** `rewriteBareDraftTo`이면 `"이 실행 창의 첫 Enter는 <그 행동의 prompt 원문>의 {text} 자리에 들어갑니다"`를 **프롬프트 원문 그대로** 보여 준다. 사람 말 요약만으로는 보낼 바이트를 알 수 없다.
-5. **상태 읽기**(v5, `stateSources`가 있을 때만). 엔진이 읽을 워크스페이스 파일 글롭과 파서, 실행 이벤트와 집계, 단계 덮어쓰기를 원문 그대로 한 줄씩. **접히지 않는다**(§1.16.6).
+5. **상태 읽기**(v5, `stateSources`가 있거나 v6의 `planState` 단계 규칙이 있을 때만). 엔진이 읽을 워크스페이스 파일 글롭과 파서, 실행 이벤트와 집계, 단계 덮어쓰기, v6의 실행 상태 소스와 계획 상태 → 단계 대응을 원문 그대로 한 줄씩. **접히지 않는다**(§1.16.6, §1.17).
+5½. **요청 시작 방식**(v6, `launch`가 있을 때만). "이 스타일로 보내는 새 요청은 모두 plan 권한 모드로 시작하고 실행 창에 저장된 모드는 바뀌지 않는다"를 한 줄로. **접히지 않는다**(§1.17.4).
 6. `name` · `id` · `summary` · `subtitle`.
 7. 그룹 · 단계 · 별칭 · 인식 접두사.
 8. 나머지 규칙 다섯 개를 사람 말로 푼 요약과, 원본 JSON 조각.
@@ -1649,7 +1727,7 @@ MobileStylePanel {
 
 태그 `mighty-style-engine-v1`이 다음을 얼린다.
 
-> **고정 이력.** `mighty-style-engine-v1`(2026-09-19)은 스타일 엔진을 처음 얼린 태그다. `mighty-style-engine-v2`(2026-09-20)는 같은 방식으로 다시 건 고정이다. v1 과 v2 사이에 스타일 엔진 파일(`native/macos/Sources/MightyCore/Styles/**`)·스키마·규칙 어휘는 **바뀌지 않았다.** 달라진 것은 입력창의 한글 직접 조합(`docs/hangul-fallback-composer.md`)과 적합성 코퍼스(`styles/conformance/`)뿐이고, 검사가 저장소 전체를 보기 때문에 앱 소스 변경을 담으려면 고정을 다시 걸어야 했다. 외부 도구가 v1 시점의 엔진 파일을 고정 사본으로 쓰는 것은 그대로 유효하다. `mighty-style-engine-v3`(2026-09-20)는 v2 이후 처음으로 엔진 쪽 파일(`StyleSurfaces.swift`의 연결 규칙, 폰의 `styles.ts`)을 바꾼 고정이다. `mighty-style-engine-v4`(2026-09-22)는 매니페스트의 선택적 `job` 선언(§1.13)과 오류 코드 `E_JOB_MATCHER_LITERAL`을 더한 고정이다. `mighty-style-engine-v5`는 상태 소스(`stateSources`, §1.16)와 `rules.phase.stateOverrides`, 오류 코드 `E_STATE_*` 다섯 개, 골든의 `withState` 사례, 폰 페이로드의 `panel.widgets`를 더한 고정이며 검사 스크립트와 CI의 기본 태그다. 각 고정의 두 커밋 SHA는 `docs/styles-followups.md` 머리에 있다.
+> **고정 이력.** `mighty-style-engine-v1`(2026-09-19)은 스타일 엔진을 처음 얼린 태그다. `mighty-style-engine-v2`(2026-09-20)는 같은 방식으로 다시 건 고정이다. v1 과 v2 사이에 스타일 엔진 파일(`native/macos/Sources/MightyCore/Styles/**`)·스키마·규칙 어휘는 **바뀌지 않았다.** 달라진 것은 입력창의 한글 직접 조합(`docs/hangul-fallback-composer.md`)과 적합성 코퍼스(`styles/conformance/`)뿐이고, 검사가 저장소 전체를 보기 때문에 앱 소스 변경을 담으려면 고정을 다시 걸어야 했다. 외부 도구가 v1 시점의 엔진 파일을 고정 사본으로 쓰는 것은 그대로 유효하다. `mighty-style-engine-v3`(2026-09-20)는 v2 이후 처음으로 엔진 쪽 파일(`StyleSurfaces.swift`의 연결 규칙, 폰의 `styles.ts`)을 바꾼 고정이다. `mighty-style-engine-v4`(2026-09-22)는 매니페스트의 선택적 `job` 선언(§1.13)과 오류 코드 `E_JOB_MATCHER_LITERAL`을 더한 고정이다. `mighty-style-engine-v5`는 상태 소스(`stateSources`, §1.16)와 `rules.phase.stateOverrides`, 오류 코드 `E_STATE_*` 다섯 개, 골든의 `withState` 사례, 폰 페이로드의 `panel.widgets`를 더한 고정이다. `mighty-style-engine-v6`(준비 중)은 Claude 계획 모드 읽기(§1.17: `planState` 단계 규칙, `stateSources.runState`, `taskList` 위젯, `launch`, 단계별 입력창 문구·안내), 오류 코드 `E_STATE_RUN_STATE`, 번들 "클러드 플랜", 골든의 `planStage*` 사례를 더한 고정이며 검사 스크립트와 CI의 기본 태그다. 각 고정의 두 커밋 SHA는 `docs/styles-followups.md` 머리에 있다.
 
 - **스키마 v1** — 1장의 모든 필드·타입·한도. `guidance`(1.7)와 `rules.start`(1.6)를 포함한다.
 - **규칙 어휘** — `StartRule` 2종, `PhaseRule` 2종, `NextRule` 2종, `EnterRule` 2종(제약 3개 포함), `RecommendRule` 2종, `InitialGroupRule` 2종.
@@ -1657,17 +1735,18 @@ MobileStylePanel {
 - **내장 기능 목록** — `paperthin.casebook` 하나. 그 상태 값 3개와 빈 상태 문구.
 - **팔레트** — 1.10의 9개 이름.
 - **아이콘 목록** — 1.10의 33개 이름.
-- **오류 코드 목록** — 2장의 **53개**(v5에서 `E_STATE_*` 다섯 개가 더해졌다).
+- **오류 코드 목록** — 2장의 **54개**(v5에서 `E_STATE_*` 다섯 개, v6에서 `E_STATE_RUN_STATE`가 더해졌다).
 - **검증 순서** — 2장의 ⓪①②③④와 사전 스캔이 보는 다섯 가지.
 - **투영의 모양과 직렬화 규칙** — `StylePanel`의 필드 구성(7.3), 실행 중 `next`·`guidance` 규칙(6.1의 7번), 8.4의 골든 직렬화 규칙(UTF-8, 키 사전순, 들여쓰기 2칸, `\/` 이스케이프 없음, 마지막 줄바꿈 1개), 그리고 골든의 **고정 입력 6가지**(8.4)와, `stateSources`를 선언한 스타일에만 붙는 `withState` 사례(§1.16.4).
-- **폰 페이로드** — `MobileStylePanel`의 모양(v5부터 `widgets` 포함), `style` capability, `styleId` 규칙, `/guided`의 새 필드, 와이어 어휘 `["cli","ouroboros","paperthin"]`.
+- **폰 페이로드** — `MobileStylePanel`의 모양(v5부터 `widgets` 포함, v6부터 `taskList` 위젯), `style` capability, `styleId` 규칙, `/guided`의 새 필드, 와이어 어휘 `["cli","ouroboros","paperthin"]`.
 - **상태 소스 어휘**(v5) — 파서 2종, 집계 2종, 위젯 3종, 실행 이벤트 3종, `stateOverrides` 조건 2종과 각 한도(§1.16).
+- **계획 모드 어휘**(v6) — 계획 단계 3종, 실행 상태 소스 2종과 소스별 위젯, `taskList` 위젯과 그 페이로드, `launch.permissionMode` 1종, 단계별 줄의 모양(§1.17).
 - **터미널 입력 정책** — `TerminalInput`의 모양과 `autoRun`의 출처 규칙(1.5·5.7).
 
 ### 8.3 `scripts/check-style-freeze.sh`
 
 ```
-용법: scripts/check-style-freeze.sh [<tag>]        # 기본 tag = mighty-style-engine-v5
+용법: scripts/check-style-freeze.sh [<tag>] [--pending <file>]   # 기본 tag = mighty-style-engine-v6
 ```
 **태그 커밋의 모양.** 태그 `T`는 **`styles/FREEZE` 하나만 더하는 커밋**이고, 그 내용은 **`T`의 부모 `P`의 SHA 40자 한 줄**이다. `P`가 마지막 엔진 커밋이다. 자기 자신의 SHA를 담을 수는 없으므로(자기 참조) 부모를 담는다.
 
@@ -1693,6 +1772,8 @@ MobileStylePanel {
 **1번이 1번인 이유.** 태그의 존재만 보면 `git tag -f mighty-style-engine-v1 HEAD` 한 줄로 `git diff`가 비고 스크립트가 `OK: 0 files`를 찍는다 — 고정 장치가 스스로를 고정하지 못한다. 커밋 SHA를 저장소 안의 파일에 박아 두고, 그 파일 자체를 허용 목록 **밖**에 두고, 태그 커밋이 그 파일 하나만 담게 해야 태그를 옮기는 순간 셋 중 하나가 반드시 깨진다.
 
 **v5에서 허용 목록을 금지 목록으로 바꾼 이유.** v4까지는 태그 이후의 diff가 매니페스트와 그 테스트(와 Windows 전용 경로)만 담아야 했다. 그러면 엔진과 상관없는 앱 개발도 전부 고정 위반이 되어, 태그 이후 macOS CI의 고정 단계가 언제나 실패했다. 지키려던 것은 엔진이므로 v5부터는 엔진·오라클·계약·검사 자신만 고정하고 나머지는 자유롭게 둔다. 좁힌 이유는 그대로 유지된다: 계약 문서(`docs/mighty-styles.md`)와 오라클 테스트(`StylesOuroborosTests` 등)는 고정 안쪽이라 태그 이후에 고쳐 이미 한 일을 합법화할 수 없고, 제삼자 스타일 테스트만 이름 글롭으로 예외다. 검사 단계는 `native-macos.yml`에서 떼어 고정 안쪽의 `style-freeze.yml`로 옮겼으므로 검사 단계를 고쳐 우회할 수도 없다.
+
+**다음 고정을 준비하는 동안.** 기본 태그(지금 `mighty-style-engine-v6`)가 아직 없으면 검사는 건너뛰지 않는다. `styles/STYLE_FREEZE_PENDING`이 직전 태그(`previous-tag: mighty-style-engine-v5`)와 준비 중인 고정이 바꾸는 고정 경로를 정확히 적고, 검사는 직전 태그로 돌되 그 경로만 예외로 둔다(`scripts/check-style-freeze.sh mighty-style-engine-v5 --pending styles/STYLE_FREEZE_PENDING`, 인자 없이 부르면 스스로 이렇게 내려간다). 그리고 직전 태그의 번들 매니페스트 · 골든 · 코퍼스는 바이트 그대로여야 한다 — `git diff --exit-code --diff-filter=MDR <직전 태그> HEAD -- native/macos/Sources/MightyCore/Resources/Styles styles/golden styles/conformance`(새 파일을 더하는 것만 된다). `style-freeze.yml`이 둘을 모두 돌린다. 사용자가 정할 때 새 태그를 걸면 `styles/STYLE_FREEZE_PENDING`을 지운다.
 
 삭제·이름 변경도 `--name-only`에 잡히므로 엔진 파일을 지우는 것도 실패한다. 스크립트는 `DEVELOPER_DIR` 설정을 요구하지 않는다(`git`만 쓴다).
 
@@ -1827,7 +1908,7 @@ scripts/check-style-freeze.sh                       # 0
 2. **중첩 그룹.** 그룹 안의 그룹이 없다. gstack처럼 행동이 30개를 넘는 카탈로그는 1단 그룹으로 평평해진다.
 3. **치환자 하나뿐.** `{text}` 외에 `{path}`·`{flag}` 같은 두 번째 입력 칸이 없다. `/oh-my-claudecode:execute <plan> --model opus`처럼 인자가 둘인 호출은 한 줄 자유 텍스트로 내려간다.
 4. **조건부 다음 행동.** `NextRule`은 단계 또는 그룹만 본다. "준비물이 미충족이면 설치 행동만", "케이스북이 `complete`면 다른 목록"은 못 쓴다.
-5. **상태를 읽는 단계 계산.** ~~`PhaseRule`은 과거 요청 텍스트만 본다.~~ **v5에서 부분 해결.** `stateSources.files`의 `stateOverrides`를 통해 파일 존재 여부(`fileExists`)와 체크리스트 완료 여부(`allChecked`)로 단계를 덮어쓸 수 있다(1.16.5). MCP 도구 응답이나 자유 상태 표현식은 여전히 소스로 쓸 수 없다 — 어휘 폐쇄성(1.16.6)을 지키기 위해 의도한 제약이다.
+5. **상태를 읽는 단계 계산.** ~~`PhaseRule`은 과거 요청 텍스트만 본다.~~ **v5에서 부분 해결, v6에서 하나 더.** v6의 `planState`는 실행 창의 Claude 계획 상태로 단계를 정한다(1.17). `stateSources.files`의 `stateOverrides`를 통해 파일 존재 여부(`fileExists`)와 체크리스트 완료 여부(`allChecked`)로 단계를 덮어쓸 수 있다(1.16.5). MCP 도구 응답이나 자유 상태 표현식은 여전히 소스로 쓸 수 없다 — 어휘 폐쇄성(1.16.6)을 지키기 위해 의도한 제약이다.
 6. **루프 진행·중지.** 오래 도는 행동(`ralph`, `autopilot`, `re0-loop`)의 진행률이나 전용 중지 버튼을 선언할 수 없다. 취소도 그냥 또 하나의 행동이다.
 7. **토글형 행동.** `/freeze`↔`/unfreeze`, `/guard`↔`/careful`처럼 켜고 끄는 짝을 하나의 on/off로 표현할 수 없고 상태를 되읽을 수도 없다.
 8. **추천 규칙의 조합.** 내장 기능 하나의 상태만 본다. 둘을 조합하거나, 최근 사용 순으로 정렬하거나, 여러 개를 추천할 수 없다.

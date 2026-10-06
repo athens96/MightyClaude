@@ -168,6 +168,9 @@ final class AppStore: ObservableObject {
     @Published var automaticUpdateRunning = false
     /// Panes whose queue waits for a background update step to end.
     var heldForUpdate = Set<String>()
+    /// Panes stopped while their turn was over and only background work ran:
+    /// their queue survives the stop and starts next (§1.17.4).
+    var queueKeptOnStop = Set<String>()
     @Published var updatingPluginsFor: String?
     @Published var pluginUpdateResults: [String: PluginAutoUpdateResult] = [:]
     /// Korean composition broke in a composer; shown until reconnected or dismissed.
@@ -689,9 +692,12 @@ final class AppStore: ObservableObject {
         if session.status == "running" || pendingRuns.contains(id) || held {
             if held { heldForUpdate.insert(id) }
             // A turn that is over but still running background agents takes new
-            // input in the same process; the queue is the fallback.
-            let joins = steering || session.backgroundWork?.waitingOnBackground == true
-            deferInput(id, session: session, workspace: workspace, item: QueuedInput(text: input, attachments: attachments), steering: joins && !held)
+            // input in the same process; the queue is the fallback. A plan-mode
+            // style's new request waits and starts fresh in plan mode (§1.17.4).
+            let plans = styleLaunchesInPlanMode(session)
+            let joins = BackgroundQueuePolicy.composerJoins(steering: steering, work: session.backgroundWork, launchesInPlan: plans)
+            let item = QueuedInput(text: input, attachments: attachments, permissionModeOverride: BackgroundQueuePolicy.queuedOverride(launchesInPlan: plans))
+            deferInput(id, session: session, workspace: workspace, item: item, steering: joins && !held)
             return
         }
         start(id, session: session, workspace: workspace, input: input, attachments: attachments, restoringDraft: originalDraft)
@@ -794,12 +800,15 @@ final class AppStore: ObservableObject {
                 return
             }
             queuedInputs[id] = queue.count > 1 ? Array(queue.dropFirst()) : nil
-            if !start(id, session: session, workspace: workspace, input: next.text, attachments: next.attachments, restoringDraft: nil) {
+            if !start(id, session: session, workspace: workspace, input: next.text, attachments: next.attachments, restoringDraft: nil, queued: next) {
                 // Validation refused it; keep the item so nothing typed is lost.
                 queuedInputs[id, default: []].insert(next, at: 0)
                 updateSession(id) { $0.logs.append(LogEntry(kind: "system", text: "대기 중인 요청을 실행하지 못해 대기열에 남겨 두었습니다. \(error ?? "")")) }
             }
         case "stopped":
+            // Stopped while the turn was over and only background work ran:
+            // what waited for that work runs now instead of being thrown away.
+            if queueKeptOnStop.remove(id) != nil { settleQueue(id, status: "completed"); return }
             queuedInputs.removeValue(forKey: id)
             updateSession(id) { $0.logs.append(LogEntry(kind: "system", text: "실행을 중지해 대기 중인 요청 \(queue.count)개를 취소했습니다.")) }
         case "error":
@@ -809,7 +818,8 @@ final class AppStore: ObservableObject {
     }
 
     @discardableResult
-    func start(_ id: String, session: RunSession, workspace: Workspace, input: String, attachments: [RunAttachment], restoringDraft: String?) -> Bool {
+    /// `queued` is the queue item being started: its recorded launch decision wins.
+    func start(_ id: String, session: RunSession, workspace: Workspace, input: String, attachments: [RunAttachment], restoringDraft: String?, queued: QueuedInput? = nil) -> Bool {
         if claudeModelResetInProgress, session.provider == "claude", session.kind != "shell" {
             error = "Claude 모델 목록을 다시 불러오는 중입니다. 완료 후 다시 실행하세요."
             return false
@@ -857,6 +867,11 @@ final class AppStore: ObservableObject {
                 var request = StartRunRequest(sessionId: id, workspaceId: workspace.id, kind: current.kind, input: input, model: current.model, provider: current.provider, settings: current.settings, resumeId: current.resumeId, attachments: attachments, registeredModels: registered)
                 // A resumed conversation continues its checklist (task tools keep their ids).
                 if current.resumeId != nil { request.todoProgress = current.todoProgress }
+                // §1.17: a plan-mode style starts every new request in plan mode,
+                // leaving the pane's stored mode as it is; a queued item keeps
+                // the decision made when it was queued.
+                if let queued { request.permissionModeOverride = queued.permissionModeOverride }
+                else if styleLaunchesInPlanMode(current) { request.permissionModeOverride = StyleLaunchPermissionMode.plan.rawValue }
                 try CoreValidation.validate(request)
                 if current.kind != "shell" {
                     let provider = providerRuntime(current.provider, workspaceId: workspace.id)
@@ -903,6 +918,7 @@ final class AppStore: ObservableObject {
             return
         }
         guard let session = snapshot.sessions.first(where: { $0.id == id }), session.status == "running" || pendingRuns.contains(id) else { return }
+        if BackgroundQueuePolicy.stopKeepsQueue(session.backgroundWork) { queueKeptOnStop.insert(id) } else { queueKeptOnStop.remove(id) }
         liveRuns.signalStop(id: id)
         let starting = startTasks[id]
         starting?.cancel()

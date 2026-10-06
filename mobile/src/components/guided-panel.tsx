@@ -8,12 +8,12 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
-import type { StyleAction, StylePanel, StyleWidget } from '@/api/types';
+import type { StyleAction, StylePanel, StyleTaskItem, StyleWidget } from '@/api/types';
 import { GuidedActionChip } from '@/components/guided-action-chip';
 import { ActionListSheet, InfoSheet } from '@/components/sheets';
 import { Button } from '@/components/ui';
 import { t } from '@/lib/i18n';
-import { progressBarDisplay, styleViewModel, type StyleViewModel } from '@/lib/styles';
+import { progressBarDisplay, styleViewModel, taskRowDisplay, type StyleViewModel } from '@/lib/styles';
 import { monoText, radius, spacing, tintColor, useStyles, usePalette, type Palette } from '@/theme';
 
 /**
@@ -303,7 +303,8 @@ export function StateWidget({ widget, tint }: { widget: StyleWidget; tint: strin
       </View>
     );
   }
-  // An empty list or label never reaches here: `styleViewModel` left it out (§1.16.4).
+  // An empty list, label or task list never reaches here: `styleViewModel` left it out (§1.16.4).
+  if (widget.kind === 'taskList') return <TaskListWidget items={widget.items} tint={tint} />;
   if (widget.kind === 'list') {
     return (
       <View style={styles.widgetList}>
@@ -320,6 +321,48 @@ export function StateWidget({ widget, tint }: { widget: StyleWidget; tint: strin
     <Text numberOfLines={1} ellipsizeMode="tail" style={styles.widgetLabel}>
       {widget.text}
     </Text>
+  );
+}
+
+/**
+ * Background tasks (§1.17): a status dot, what each is doing, and `kind · status ·
+ * elapsed`. The elapsed time ticks once a second while any task still runs.
+ */
+export function TaskListWidget({ items, tint }: { items: StyleTaskItem[]; tint: string }) {
+  const styles = useStyles(makeStyles);
+  const palette = usePalette();
+  const [now, setNow] = useState(() => Date.now());
+  const anyRunning = items.some((item) => item.status === 'running');
+  useEffect(() => {
+    if (!anyRunning) return undefined;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [anyRunning]);
+  return (
+    <View style={styles.widgetList}>
+      {items.map((item, index) => {
+        const row = taskRowDisplay(item, now);
+        const dot =
+          item.status === 'running'
+            ? tint
+            : item.status === 'completed'
+              ? palette.success
+              : item.status === 'failed'
+                ? palette.danger
+                : palette.textMuted;
+        return (
+          <View key={index} accessible accessibilityLabel={`${row.text} · ${row.detail}`} style={styles.taskRow}>
+            <View style={[styles.taskDot, { backgroundColor: dot }]} />
+            <Text numberOfLines={1} style={styles.taskText}>
+              {row.text}
+            </Text>
+            <Text numberOfLines={1} style={styles.taskDetail}>
+              {row.detail}
+            </Text>
+          </View>
+        );
+      })}
+    </View>
   );
 }
 
@@ -401,6 +444,10 @@ const makeStyles = (palette: Palette) =>
     widgetList: { gap: 1 },
     widgetItem: { color: palette.textMuted, fontSize: 11 },
     widgetLabel: { color: palette.textMuted, fontSize: 12 },
+    taskRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.xs },
+    taskDot: { borderRadius: radius.round, height: 6, width: 6 },
+    taskText: { color: palette.text, flex: 1, fontSize: 12 },
+    taskDetail: { color: palette.textMuted, fontSize: 11, fontVariant: ['tabular-nums'] },
 
     command: {
       ...monoText,

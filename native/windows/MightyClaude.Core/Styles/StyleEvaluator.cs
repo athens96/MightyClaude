@@ -14,9 +14,17 @@ public sealed class StyleEvaluator(StyleManifest manifest)
         return name.Length==0?null:StyleManifest.Bool(rule,"lowercase")?name.ToLowerInvariant():name;
     }
     public StyleAction? RecognisedAction(string prompt){var n=RecognisedName(Manifest,prompt);return Manifest.Actions.FirstOrDefault(a=>a.Id==n)??Manifest.Actions.FirstOrDefault(a=>a.Match is not null&&a.Match==n);}
-    public StylePhase? CurrentPhase(IEnumerable<string> prompts,IReadOnlyDictionary<int,StyleFileState>? states=null)
+    /// <summary>§1.17 (v6): the style reads the pane's plan stage — for its phase rule or a run-state source.</summary>
+    public bool ReadsPlanState => S(Manifest.Rules.GetProperty("phase"),"kind")=="planState"||(Manifest.Root.TryGetProperty("stateSources",out var sources)&&StyleManifest.Items(sources,"runState").Length>0);
+    /// <summary>§1.17 (v6): <c>launch.permissionMode</c>, when the style starts every new request in a mode of its own.</summary>
+    public string? LaunchPermissionMode => Manifest.Root.TryGetProperty("launch",out var launch)?S(launch,"permissionMode"):null;
+    /// <summary>§1.17 (v6): the style draws a background task list of its own.</summary>
+    public bool DrawsTasks => Manifest.Root.TryGetProperty("stateSources",out var sources)&&StyleManifest.Items(sources,"runState").Any(e=>S(e,"source")=="background"&&S(e,"widget")=="taskList");
+    public StylePhase? CurrentPhase(IEnumerable<string> prompts,IReadOnlyDictionary<int,StyleFileState>? states=null,string? planStage=null)
     {
         var rule=Manifest.Rules.GetProperty("phase");if(S(rule,"kind")=="none")return null;
+        // §1.17: the stage, not the request history, moves a plan-state phase; nothing read is planning.
+        if(S(rule,"kind")=="planState")return Manifest.Phases.FirstOrDefault(p=>p.Id==S(rule.GetProperty("map"),planStage??"planning"));
         var id=S(rule,"default");
         foreach(var prompt in prompts.Reverse())
         {
@@ -66,16 +74,20 @@ public sealed class StyleEvaluator(StyleManifest manifest)
     public string Placeholder(StylePhase? phase,bool running,bool answering=false,bool jobOpen=false)
     {
         var p=Manifest.Root.GetProperty("placeholders");
+        // §1.17 (v6): a phase's own line for this state wins, after a question and while no job is open.
+        if(!answering&&!jobOpen&&phase is not null&&OwnLine(p,phase.Id,running) is {} own)return own;
         return S(p,answering?"answering":running||jobOpen?"running":S(Manifest.Rules.GetProperty("enter"),"phase")==phase?.Id&&p.TryGetProperty("initial",out _)?"initial":"idle")??"";
     }
     public string? Guidance(StylePhase? phase,bool running,bool jobOpen=false)
     {
         string? text;
         if(jobOpen)text=Manifest.Root.TryGetProperty("job",out var job)?S(job,"guidance"):null;
+        else if(phase is not null&&OwnLine(Manifest.Root.GetProperty("guidance"),phase.Id,running) is {} own)text=own;
         else text=S(Manifest.Root.GetProperty("guidance"),running?"running":S(Manifest.Rules.GetProperty("start"),"phase")==phase?.Id?"start":"next");
         if(string.IsNullOrEmpty(text))return null;
         return phase!=null?text.Replace("{phase}",phase.Title,StringComparison.Ordinal):text.Replace("{phase} ","",StringComparison.Ordinal).Replace("{phase}","",StringComparison.Ordinal);
     }
+    private static string? OwnLine(JsonElement owner,string phase,bool running)=>owner.TryGetProperty("phases",out var phases)&&phases.TryGetProperty(phase,out var lines)?S(lines,running?"running":"idle"):null;
     public bool AutoAllowed(string toolName)=>toolName.Split("__").Last()!="AskUserQuestion"&&StyleManifest.Items(Manifest.Root,"autoAllow").Any(e=>(S(e,"server") is {} server?"mcp__"+server+"__"+S(e,"tool"):S(e,"tool"))==toolName);
     public bool JobOpen(RunSession session)
     {
@@ -95,5 +107,8 @@ public sealed class StyleEvaluator(StyleManifest manifest)
     }
 }
 public sealed record StyleFileState(bool Exists,bool AllChecked);
-public sealed record StyleStateWidget(string Kind,string? Text=null,int Value=0,int? Total=null,IReadOnlyList<string>? Items=null);
-public sealed record StyleStateReading(IReadOnlyDictionary<int,StyleFileState> Files,IReadOnlyList<StyleStateWidget> Widgets);
+/// <summary>§1.17 (v6): one background task as a <c>taskList</c> widget carries it; the times are the pane's own ISO 8601 stamps.</summary>
+public sealed record StyleTaskItem(string Text,string Kind,string Status,string StartedAt,string? EndedAt=null);
+public sealed record StyleStateWidget(string Kind,string? Text=null,int Value=0,int? Total=null,IReadOnlyList<string>? Items=null,IReadOnlyList<StyleTaskItem>? Tasks=null);
+/// <param name="PlanStage">§1.17 (v6): planning, awaitingApproval or executing — only for a style that reads it.</param>
+public sealed record StyleStateReading(IReadOnlyDictionary<int,StyleFileState> Files,IReadOnlyList<StyleStateWidget> Widgets,string? PlanStage=null);

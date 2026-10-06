@@ -16,5 +16,6 @@
     <EmbeddedResource Include="../../../styles/conformance/**/*.json" LogicalName="MightyClaude.Core.Tests.Styles.%(RecursiveDir)%(Filename)%(Extension)" />
     <EmbeddedResource Include="../../../styles/gstack.json" LogicalName="MightyClaude.Core.Tests.Styles.gstack.json" />
     <EmbeddedResource Include="../../../styles/oh-my-claudecode.json" LogicalName="MightyClaude.Core.Tests.Styles.oh-my-claudecode.json" />
+    <EmbeddedResource Include="../../../styles/golden/claude-plan.panel.json" LogicalName="MightyClaude.Core.Tests.Styles.golden.claude-plan.panel.json" />
   </ItemGroup>
 </Project>

@@ -14,10 +14,31 @@ public struct StyleFileReading: Sendable, Equatable, Hashable {
 public struct StyleStateReading: Sendable, Equatable, Hashable {
     public var fileSourceStates: [Int: StyleFileSourceState]
     public var widgets: [StylePanel.Widget]
-    public init(fileSourceStates: [Int: StyleFileSourceState] = [:], widgets: [StylePanel.Widget] = []) {
-        self.fileSourceStates = fileSourceStates; self.widgets = widgets
+    /// §1.17 (v6): the pane's plan stage, only for a style that reads it.
+    public var planStage: StylePlanStage?
+    public init(fileSourceStates: [Int: StyleFileSourceState] = [:], widgets: [StylePanel.Widget] = [], planStage: StylePlanStage? = nil) {
+        self.fileSourceStates = fileSourceStates; self.widgets = widgets; self.planStage = planStage
     }
     public static let empty = StyleStateReading()
+}
+
+/// §1.17 (v6): the pane's plan-mode state a run-state source reads — its
+/// stage, its checklist and its background work, all already on the pane.
+public struct StyleRunStateInput: Sendable, Equatable {
+    public var planStage: StylePlanStage
+    public var todos: TodoProgress?
+    public var background: BackgroundWork?
+    public init(planStage: StylePlanStage, todos: TodoProgress? = nil, background: BackgroundWork? = nil) {
+        self.planStage = planStage; self.todos = todos; self.background = background
+    }
+
+    /// What a pane carries: `pendingPlan` is whether an ExitPlanMode request
+    /// waits for an answer, which lives with the permission requests, not on
+    /// the pane.
+    public static func of(_ session: RunSession, pendingPlan: Bool) -> StyleRunStateInput {
+        StyleRunStateInput(planStage: StyleStateEngine.planStage(session: session, pendingPlan: pendingPlan),
+                           todos: session.todoProgress, background: session.backgroundWork)
+    }
 }
 
 /// §1.16: the closed state-reading engine. It knows the two parsers, the two
@@ -57,7 +78,7 @@ public enum StyleStateEngine {
     /// Pure: combines file readings (from disk, possibly cached) with the
     /// pane's events. A missing reading draws as the source's empty widget.
     public static func reading(sources: StyleStateSources, files: [StyleFileReading],
-                               runEvents: [RunEventRecord]) -> StyleStateReading {
+                               runEvents: [RunEventRecord], runState: StyleRunStateInput? = nil) -> StyleStateReading {
         var states: [Int: StyleFileSourceState] = [:]
         var widgets: [StylePanel.Widget] = []
         for (index, source) in sources.files.enumerated() {
@@ -68,7 +89,80 @@ public enum StyleStateEngine {
         for source in sources.runEvents {
             widgets.append(aggregate(source, events: runEvents.filter { $0.event == source.event }))
         }
-        return StyleStateReading(fileSourceStates: states, widgets: widgets)
+        // §1.17: run-state sources last, in declaration order. With nothing
+        // read (the golden's plain cases) each draws as its empty widget.
+        let input = runState ?? StyleRunStateInput(planStage: .planning)
+        for source in sources.runState { widgets.append(self.runState(source, input: input)) }
+        return StyleStateReading(fileSourceStates: states, widgets: widgets, planStage: runState?.planStage)
+    }
+
+    // MARK: - Run state (§1.17, v6)
+
+    /// Where the pane stands in Claude's plan mode. A waiting plan is
+    /// `awaitingApproval`. Otherwise the plan answers of the pane's latest
+    /// request decide: approved is `executing`; none yet, sent back or
+    /// cancelled is `planning` — so the next new request starts there again.
+    /// Windows Core (`StyleStateEngine.PlanStage`) is the same rule.
+    public static func planStage(session: RunSession, pendingPlan: Bool) -> StylePlanStage {
+        if pendingPlan { return .awaitingApproval }
+        let runs = session.graphRuns ?? MightyGraphSupport.legacyRuns(session)
+        // A run has started but its request block is not there yet (Windows
+        // adds the block when the run's graph first reports): that request
+        // has no plan answer yet. A turn that is over and only waits on its
+        // background work is still the latest request's own.
+        if session.status == "running", let last = runs.last, MightyGraphSupport.terminal(last.status),
+           session.backgroundWork?.turnEnded != true { return .planning }
+        let history = session.planHistory ?? []
+        let latest: PlanRecord?
+        if let run = runs.last {
+            // A record's `graphRunId` is its run's `sourceRunID` on both
+            // platforms (the block id is matched too, as Windows' diagram
+            // attaches records either way); a Mac record from before
+            // `graphRunId` names the same id as its `runId`.
+            latest = history.last { record in
+                record.graphRunId == run.id || (run.sourceRunID != nil && (record.graphRunId == run.sourceRunID || record.runId == run.sourceRunID))
+            }
+        } else {
+            latest = history.last
+        }
+        switch latest?.outcome {
+        case .approvedAuto?, .approvedConfirm?: return .executing
+        case .revised?, .cancelled?, nil: return .planning
+        }
+    }
+
+    /// One run-state source drawn as its widget. The checklist belongs to the
+    /// plan being carried out, so it reads only while `executing`: a new
+    /// plan does not show the last one's progress.
+    static func runState(_ source: StyleStateRunStateSource, input: StyleRunStateInput) -> StylePanel.Widget {
+        switch source.source {
+        case .todos:
+            guard input.planStage == .executing, let todos = input.todos, !todos.items.isEmpty else { return emptyWidget(source.widget) }
+            switch source.widget {
+            case .progressBar: return .progressBar(value: todos.completed, total: todos.total)
+            case .list: return .list(items: Array(todos.items.filter { $0.status != "completed" }.map { eventValue($0.content) }.prefix(maximumListItems)))
+            case .label:
+                guard let current = todos.currentText else { return .label(text: "") }
+                return .label(text: L("styles.state.todoCurrent", ["item": eventValue(current)]))
+            case .taskList: return emptyWidget(.taskList)
+            }
+        case .background:
+            let work = input.background ?? BackgroundWork()
+            let running = work.running.count
+            switch source.widget {
+            case .taskList:
+                // Running work first, each group in the order it started.
+                let ordered = work.tasks.filter { $0.status == "running" } + work.tasks.filter { $0.status != "running" }
+                return .taskList(items: ordered.prefix(StyleLimits.maximumTaskListItems).map {
+                    StylePanel.TaskItem(text: eventValue($0.description), kind: $0.kind, status: $0.status, startedAt: $0.startedAt, endedAt: $0.endedAt)
+                })
+            case .label:
+                if work.waitingOnBackground { return .label(text: L("plan.background.status", ["count": String(running)])) }
+                return .label(text: running > 0 ? L("styles.state.backgroundRunning", ["count": String(running)]) : "")
+            case .progressBar: return .progressBar(value: work.tasks.count - running, total: work.tasks.count)
+            case .list: return emptyWidget(.list)
+            }
+        }
     }
 
     // MARK: - File sources
@@ -266,6 +360,7 @@ public enum StyleStateEngine {
             case .progressBar: widget = .progressBar(value: checked, total: items.count)
             case .list: widget = .list(items: Array(items.filter { !$0.checked }.map(\.text).prefix(maximumListItems)))
             case .label: widget = .label(text: L("styles.state.checklistLabel", ["checked": String(checked), "total": String(items.count)]))
+            case .taskList: widget = emptyWidget(.taskList)
             }
             return StyleFileReading(state: state, widget: widget)
         case .json:
@@ -292,6 +387,8 @@ public enum StyleStateEngine {
             guard let done = count(object?["value"]) else { return nil }
             let total = count(object?["total"])
             return .progressBar(value: total.map { min(done, $0) } ?? done, total: total)
+        case .taskList:
+            return nil
         }
     }
 
@@ -315,6 +412,7 @@ public enum StyleStateEngine {
         case .progressBar: return .progressBar(value: 0, total: 0)
         case .list: return .list(items: [])
         case .label: return .label(text: "")
+        case .taskList: return .taskList(items: [])
         }
     }
 
@@ -355,7 +453,7 @@ public enum StyleStateEngine {
 
     /// An event's value came from the agent, not through the approval card: it
     /// is cut and cleaned exactly as a file source's text is (§1.8, §1.16.3).
-    private static func eventValue(_ value: String) -> String {
+    static func eventValue(_ value: String) -> String {
         StyleText.replacingBanned(String(value.prefix(StyleLimits.maximumString)))
     }
 
@@ -368,6 +466,7 @@ public enum StyleStateEngine {
         case (_, .progressBar): return .progressBar(value: events.count, total: nil)
         case (.lastValue, .label): return .label(text: events.last?.value ?? "")
         case (.lastValue, .list): return .list(items: events.last.map { [$0.value] } ?? [])
+        case (_, .taskList): return emptyWidget(.taskList)
         }
     }
 

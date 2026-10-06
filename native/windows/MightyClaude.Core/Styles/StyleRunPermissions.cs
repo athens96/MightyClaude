@@ -22,6 +22,7 @@ public static class StyleRunPermissions
         if(!StyleRegistry.Unchanged(style))throw new IOException(Locale.Get("guidedPanel.approvalRequired"));
         var grants=StyleManifest.Items(style.Manifest.Root,"autoAllow").Select(e=>StyleManifest.Text(e,"server") is {} server?"mcp__"+server+"__"+StyleManifest.Text(e,"tool"):StyleManifest.Text(e,"tool")!).ToArray();
         if(grants.Any(g=>!ValidWireName(g)))throw new IOException("Invalid style tool permission.");
-        return request with{StyleAutoAllow=Array.AsReadOnly(grants)};
+        // §1.17 (v6): a plan-mode style starts every new request in plan mode; the pane's stored mode stays.
+        return request with{StyleAutoAllow=Array.AsReadOnly(grants),PermissionModeOverride=style.Evaluator.LaunchPermissionMode=="plan"?"plan":request.PermissionModeOverride};
     }
 }

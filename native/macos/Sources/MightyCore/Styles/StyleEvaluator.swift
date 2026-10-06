@@ -67,6 +67,9 @@ public struct StyleEvaluator: Sendable {
     /// Newest first until something recognised carries a phase; free text and
     /// phase-less actions never move the flow (§1.6).
     public func currentPhase(prompts: [String]) -> StylePhase? {
+        // §1.17: history does not move a plan-state phase; with no stage
+        // read, the pane is planning.
+        if case .planState = manifest.rules.phase { return currentPhase(planStage: .planning) }
         guard case .lastRecognisedAction(let fallback, _) = manifest.rules.phase else { return nil }
         for prompt in prompts.reversed() {
             switch recognised(inPrompt: prompt) {
@@ -87,7 +90,8 @@ public struct StyleEvaluator: Sendable {
     /// Precedence when history and state disagree:
     ///   • plan command run, no qualifying plan file (exists=false): command phase wins.
     ///   • qualifying plan present (exists=true), last command was an earlier phase: state advances.
-    public func currentPhase(prompts: [String], fileSourceStates: [Int: StyleFileSourceState]) -> StylePhase? {
+    public func currentPhase(prompts: [String], fileSourceStates: [Int: StyleFileSourceState], planStage: StylePlanStage? = nil) -> StylePhase? {
+        if case .planState = manifest.rules.phase { return currentPhase(planStage: planStage ?? .planning) }
         guard case .lastRecognisedAction(_, let overrides) = manifest.rules.phase, !overrides.isEmpty else {
             return currentPhase(prompts: prompts)
         }
@@ -109,14 +113,23 @@ public struct StyleEvaluator: Sendable {
         return bestPhase
     }
 
+    /// §1.17 (v6): the phase a `planState` rule maps the stage to; nil for
+    /// any other rule.
+    public func currentPhase(planStage: StylePlanStage) -> StylePhase? {
+        guard case .planState(let map) = manifest.rules.phase, let id = map[planStage.rawValue] else { return nil }
+        return manifest.phase(id)
+    }
+
     /// The pane's own request history, which survives the log being trimmed.
     public func currentPhase(session: RunSession) -> StylePhase? {
         currentPhase(session: session, fileSourceStates: [:])
     }
 
     /// The Mac pane's phase: its request history plus the state its declared
-    /// sources read (§1.16), the same pair the phone panel is projected from.
-    public func currentPhase(session: RunSession, fileSourceStates: [Int: StyleFileSourceState]) -> StylePhase? {
+    /// sources read (§1.16) and its plan stage (§1.17), the same inputs the
+    /// phone panel is projected from.
+    public func currentPhase(session: RunSession, fileSourceStates: [Int: StyleFileSourceState], planStage: StylePlanStage? = nil) -> StylePhase? {
+        if case .planState = manifest.rules.phase { return currentPhase(planStage: planStage ?? .planning) }
         let requests = (session.graphRuns ?? MightyGraphSupport.legacyRuns(session)).map(\.input)
         return currentPhase(prompts: requests.isEmpty ? session.logs.filter { $0.kind == "user" }.map(\.text) : requests,
                             fileSourceStates: fileSourceStates)
@@ -226,6 +239,8 @@ public struct StyleEvaluator: Sendable {
     /// An empty string means "the app's own default", which lives in the app.
     public func placeholder(phase: StylePhase?, running: Bool, answering: Bool, jobOpen: Bool = false) -> String {
         if answering { return manifest.placeholders.answering }
+        // §1.17 (v6): a phase's own line for this state, while no job is open.
+        if !jobOpen, let phase, let own = manifest.placeholders.phases[phase.id], let text = running ? own.running : own.idle { return text }
         if running || jobOpen { return manifest.placeholders.running ?? "" }
         if case .rewriteBareDraftTo(_, let rulePhase) = manifest.rules.enter, phase?.id == rulePhase, let initial = manifest.placeholders.initial { return initial }
         return manifest.placeholders.idle
@@ -237,7 +252,9 @@ public struct StyleEvaluator: Sendable {
             return StyleGuidanceTemplate.render(text, phaseTitle: phase?.title)
         }
         let text: String?
-        if running { text = manifest.guidance.running }
+        // §1.17 (v6): the phase's own line for this state wins when it has one.
+        if let phase, let own = manifest.guidance.phases[phase.id], let line = running ? own.running : own.idle { text = line }
+        else if running { text = manifest.guidance.running }
         else if case .actions(let startPhase, _, _) = manifest.rules.start, phase?.id == startPhase { text = manifest.guidance.start }
         else { text = manifest.guidance.next }
         guard let text, !text.isEmpty else { return nil }

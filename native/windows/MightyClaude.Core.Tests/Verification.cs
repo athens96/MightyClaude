@@ -226,6 +226,11 @@ internal static class Verification
         await Test("styles Conformance", StylesVerification.Conformance);
         await Test("styles EvaluationAndTrust", StylesVerification.EvaluationAndTrust);
         await Test("styles StateBoundaries", StylesVerification.StateBoundaries);
+        await Test("claude plan style: manifest and v6 validation", ClaudePlanStyleVerification.ManifestAndValidation);
+        await Test("claude plan style: stage rules, chips, lines and the plan-mode launch", ClaudePlanStyleVerification.StageRules);
+        await Test("claude plan style: run-state widgets match the shared golden", ClaudePlanStyleVerification.WidgetsMatchTheGolden);
+        await Test("claude plan style: background tasks and the strip outside the style", ClaudePlanStyleVerification.TasksAndBackgroundStrip);
+        await Test("claude plan style: queue, phone sends, stop and the stored mode", ClaudePlanStyleVerification.QueueAndStoredMode);
         await Test("desktop parity NewPanesInheritChoicesWithoutConversationIdentity", DesktopParityVerification.NewPanesInheritChoicesWithoutConversationIdentity);
         await Test("desktop parity GitStatusParsesOnlyLocalRepositoryMetadata", DesktopParityVerification.GitStatusParsesOnlyLocalRepositoryMetadata);
         await Test("desktop parity TranscriptAndResultFilesResolveTheSameSafePreview", DesktopParityVerification.TranscriptAndResultFilesResolveTheSameSafePreview);
