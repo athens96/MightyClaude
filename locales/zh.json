@@ -19,7 +19,7 @@
   "badge.betaAccessibility": "Beta 功能",
   "browser.address.placeholder": "输入地址",
   "browser.back": "后退",
-  "browser.engine.disabled": "浏览器已关闭。请在“设置 → 显示”中打开“使用浏览器窗格”，然后重启应用。",
+  "browser.engine.disabled": "浏览器已关闭。请在“设置 → 通用 → 显示”中打开“使用浏览器窗格”，然后重启应用。",
   "browser.engine.failed": "无法启动浏览器引擎。请重启应用。",
   "browser.engine.missing": "浏览器引擎尚未就绪。请运行 scripts/fetch-browser-engine.sh 进行安装。",
   "browser.forward": "前进",

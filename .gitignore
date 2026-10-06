@@ -23,3 +23,6 @@ native/windows/.nuget/
 # Python bytecode
 __pycache__/
 *.pyc
+
+# The generated help site (node scripts/help/build.mjs); it is uploaded to R2, not committed.
+docs/help/site/

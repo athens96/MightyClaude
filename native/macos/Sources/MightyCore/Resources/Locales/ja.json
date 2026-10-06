@@ -19,7 +19,7 @@
   "badge.betaAccessibility": "ベータ機能",
   "browser.address.placeholder": "アドレスを入力",
   "browser.back": "戻る",
-  "browser.engine.disabled": "ブラウザはオフです。設定 → 表示で「ブラウザペインを使用」をオンにして、アプリを再起動してください。",
+  "browser.engine.disabled": "ブラウザはオフです。「設定 → 一般 → 表示」で「ブラウザペインを使用」をオンにして、アプリを再起動してください。",
   "browser.engine.failed": "ブラウザエンジンを起動できませんでした。アプリを再起動してください。",
   "browser.engine.missing": "ブラウザエンジンの準備ができていません。scripts/fetch-browser-engine.sh を実行してインストールしてください。",
   "browser.forward": "進む",
