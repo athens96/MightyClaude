@@ -1,6 +1,7 @@
 import AppKit
 import Darwin
 import GhosttyTerminal
+import ObjectiveC
 import MightyCore
 import SwiftUI
 
@@ -66,6 +67,7 @@ enum HelpCapture {
             manifest["shotCount"] = list.shots.count
             store.runtime = runtime(profile, store: store)
             let main = try await mainWindow(store: store)
+            manifest["screen"] = screenInfo(main)
             // The empty profile's first window comes before anything is seeded.
             let ordered = list.shots.filter { $0.screen == .welcome } + list.shots.filter { $0.screen != .welcome }
             var demo: Demo?
@@ -147,8 +149,18 @@ enum HelpCapture {
     private static func seed(_ demo: Demo, store: AppStore, main: NSWindow) async throws {
         let profile = demo.profile
         var paths: [String: String] = [:]
+        let root = try workspacesRoot(store)
         for spec in profile.workspaces {
-            let folder = store.dataDirectory.appendingPathComponent(spec.directory, isDirectory: true)
+            let folder = root.appendingPathComponent(spec.directory, isDirectory: true)
+            if root != store.dataDirectory {
+                // Outside the profile only a folder an earlier capture made is replaced.
+                let marker = root.appendingPathComponent(".mighty-help-demo")
+                if FileManager.default.fileExists(atPath: folder.path), !FileManager.default.fileExists(atPath: marker.path) {
+                    throw MightyError("refusing to replace \(folder.path): no earlier help capture made it")
+                }
+                try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+                try Data("Demo workspaces of Mighty Claude's help capture.\n".utf8).write(to: marker, options: .atomic)
+            }
             try? FileManager.default.removeItem(at: folder)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             for file in spec.files {
@@ -201,6 +213,16 @@ enum HelpCapture {
         catch { demo.terminalProblem = error.localizedDescription }
     }
 
+    /// Where the demo workspace folders go: the profile, or the folder given with
+    /// `--help-workspaces <dir>`. CI passes a folder in its throwaway home, so the
+    /// pictures show a path like a person's own rather than the runner's temp folder.
+    private static func workspacesRoot(_ store: AppStore) throws -> URL {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let index = arguments.firstIndex(of: "--help-workspaces") else { return store.dataDirectory }
+        guard arguments.indices.contains(index + 1), arguments[index + 1].hasPrefix("/") else { throw MightyError("--help-workspaces needs an absolute folder") }
+        return URL(fileURLWithPath: arguments[index + 1], isDirectory: true)
+    }
+
     /// Claude session records the "continue a session" list reads, in a config folder
     /// under the profile: this process alone looks there (CLAUDE_CONFIG_DIR).
     private static func writeResumeRecords(_ profile: DemoProfile, paths: [String: String], store: AppStore) throws {
@@ -236,12 +258,33 @@ enum HelpCapture {
         guard terminal.view.paste(text: spec.command), terminal.view.sendKey(.enter, modifiers: []) else { throw MightyError("could not type into the terminal") }
         let marker = spec.output.last { !$0.trimmingCharacters(in: .whitespaces).isEmpty }?.trimmingCharacters(in: .whitespaces) ?? ""
         try await wait("the terminal output", store: store, timeout: 10) { terminal.diagnosticText().contains(marker) }
+        clearSelection(terminal)
+    }
+
+    /// Reading the terminal's text selects all of it; one click in its corner clears
+    /// that highlight, as the terminal smoke does. The pasteboard is not touched.
+    private static func clearSelection(_ terminal: LocalTerminalSession) {
+        guard let window = terminal.view.window else { return }
+        let point = terminal.view.convert(NSPoint(x: 4, y: 4), to: nil)
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            guard let event = NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                                 windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0) else { continue }
+            if type == .leftMouseDown { terminal.view.mouseDown(with: event) } else { terminal.view.mouseUp(with: event) }
+        }
     }
 
     private static func quote(_ value: String) -> String { "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'" }
 
     private static func select(_ workspace: String, demo: Demo, store: AppStore) async throws {
         store.showsDashboard = false
+        // A screen that changed a pane's view puts it back, even when it failed half-way.
+        for pane in demo.profile.panes {
+            guard let id = demo.panes[pane.role], let session = store.snapshot.sessions.first(where: { $0.id == id }) else { continue }
+            let mode = pane.view == "mighty" ? "mighty" : nil
+            if session.agentViewMode != mode || session.graphViewMode != nil {
+                store.updateSession(id) { $0.agentViewMode = mode; $0.graphViewMode = nil }
+            }
+        }
         for (id, mode) in demo.modes { store.setPaneLayoutMode(mode, workspaceId: id) }
         store.selectWorkspace(workspace)
         if let layout = demo.profile.layouts.first(where: { $0.workspace == workspace }) { store.selectSession(try demo.pane(layout.active)) }
@@ -255,8 +298,8 @@ enum HelpCapture {
             ["id": shot.id, "section": shot.section, "screen": shot.screen.rawValue, "theme": theme, "file": "\(shot.id)-\(theme).png"]
         }
         if let size = shot.window {
-            main.setContentSize(NSSize(width: size.width, height: size.height))
-            try? await Task.sleep(for: .milliseconds(250))
+            resize(main, to: size)
+            try? await Task.sleep(for: .milliseconds(300))
         }
         let target: Target
         do { target = try await open(shot.screen, demo: demo, store: store, main: main) }
@@ -285,6 +328,11 @@ enum HelpCapture {
                 if let image = NSBitmapImageRep(data: try Data(contentsOf: url)) {
                     value["pixelWidth"] = image.pixelsWide; value["pixelHeight"] = image.pixelsHigh
                 }
+                if target.window === main, let content = main.contentView?.bounds.size { value["windowContent"] = [content.width, content.height] }
+                // A trial, not a help picture: the same view drawn into a bitmap twice its size.
+                if [.overview, .agentBasic, .terminalPane].contains(shot.screen), (target.window.screen?.backingScaleFactor ?? 1) < 2 {
+                    value["doubleScaleTrial"] = (try? drawDoubled(target.window, to: url.deletingLastPathComponent().appendingPathComponent("trials/\(shot.id)-\(theme)@2x.png")))?.lastPathComponent ?? "failed"
+                }
                 value["status"] = "ok"
                 results.append(Shot(entry: value, failed: false))
             } catch {
@@ -295,6 +343,53 @@ enum HelpCapture {
         await target.cleanup()
         await reset(demo: demo, store: store, main: main)
         return results
+    }
+
+    /// The main window at the shot's content size, its top at the top of the screen. A CI
+    /// runner's screen is shorter than a help picture, so the capture lets this window
+    /// reach below the screen's bottom edge (`allowTallWindows`); the picture is drawn
+    /// from the views, not read off the screen, so the part below the edge is there too.
+    private static func resize(_ main: NSWindow, to size: HelpShotSize) {
+        allowTallWindows(main)
+        var frame = main.frameRect(forContentRect: NSRect(x: 0, y: 0, width: size.width, height: size.height))
+        let screen = (main.screen ?? NSScreen.main)?.visibleFrame ?? NSRect(x: 0, y: 0, width: size.width, height: size.height)
+        frame.origin = NSPoint(x: screen.minX, y: screen.maxY - frame.height)
+        main.setFrame(frame, display: true)
+    }
+
+    private static var tallWindowsAllowed = false
+
+    /// AppKit keeps a titled window inside its screen (`constrainFrameRect(_:to:)`).
+    /// For this capture-only process the main window's class returns the frame it is
+    /// given instead; nothing else in the app changes.
+    private static func allowTallWindows(_ main: NSWindow) {
+        guard !tallWindowsAllowed else { return }
+        tallWindowsAllowed = true
+        let selector = #selector(NSWindow.constrainFrameRect(_:to:))
+        guard let method = class_getInstanceMethod(NSWindow.self, selector) else { return }
+        let keep: @convention(block) (NSWindow, NSRect, NSScreen?) -> NSRect = { _, frame, _ in frame }
+        class_replaceMethod(type(of: main), selector, imp_implementationWithBlock(keep), method_getTypeEncoding(method))
+    }
+
+    /// The window's views drawn into a bitmap of twice their point size.
+    private static func drawDoubled(_ window: NSWindow, to url: URL) throws -> URL {
+        guard let view = window.contentView?.superview ?? window.contentView else { throw MightyError("no content view") }
+        view.layoutSubtreeIfNeeded()
+        let bounds = view.bounds
+        guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(bounds.width * 2), pixelsHigh: Int(bounds.height * 2), bitsPerSample: 8,
+                                            samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { throw MightyError("no bitmap") }
+        bitmap.size = bounds.size
+        view.cacheDisplay(in: bounds, to: bitmap)
+        guard let png = bitmap.representation(using: .png, properties: [:]) else { throw MightyError("no PNG") }
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try png.write(to: url, options: .atomic)
+        return url
+    }
+
+    /// The screen the capture ran on, for reading the pictures' sizes.
+    static func screenInfo(_ main: NSWindow?) -> [String: Any] {
+        guard let screen = main?.screen ?? NSScreen.main else { return [:] }
+        return ["frame": NSStringFromRect(screen.frame), "visibleFrame": NSStringFromRect(screen.visibleFrame), "backingScale": screen.backingScaleFactor]
     }
 
     private static func apply(theme: String, store: AppStore) {
@@ -335,6 +430,11 @@ enum HelpCapture {
             return Target(window: main) { store.showsDashboard = false }
         case .resumeChoice, .resumeList:
             guard let space = store.snapshot.workspaces.first(where: { $0.id == workspace }) else { throw MightyError("the demo workspace is missing") }
+            if screen == .resumeList {
+                let expected = demo.profile.resumeSessions.filter { $0.provider == "claude" && $0.workspace == workspace }.count
+                let found = await store.resumableSessions(for: space, provider: "claude").items.count
+                guard found == expected else { throw MightyError("the session list reads \(found) of \(expected) demo records") }
+            }
             store.resumePicker = ResumePickerRequest(workspace: space, provider: "claude", stage: screen == .resumeChoice ? .choice : .list)
             let sheet = try await attachedSheet(main, store: store)
             if screen == .resumeList {
@@ -384,10 +484,14 @@ enum HelpCapture {
             let id = try demo.pane("mighty")
             store.setPaneFocus(true, sessionId: id)
             try await Task.sleep(for: .milliseconds(400))
-            store.sessionInfoSessionID = id
-            try await wait("the session details", store: store, timeout: 5) { NSApp.windows.contains { $0 !== main && $0.isVisible && node($0, identifier: "session-info-\(id)") != nil } }
-            try await Task.sleep(for: .milliseconds(400))
-            guard let window = NSApp.windows.first(where: { $0 !== main && $0.isVisible && node($0, identifier: "session-info-\(id)") != nil }) else { throw MightyError("the session details did not open") }
+            // The context ring opens it, as a click would; the state alone is the fallback.
+            if let ring = node(main, identifier: "context-\(id)") { press(ring) } else { store.sessionInfoSessionID = id }
+            func details() -> NSWindow? {
+                NSApp.windows.first { $0 !== main && $0.isVisible && node($0, identifier: "session-info-\(id)") != nil } ?? popover(excluding: main)
+            }
+            try await wait("the session details", store: store, timeout: 6) { store.sessionInfoSessionID == id && details() != nil }
+            try await Task.sleep(for: .milliseconds(500))
+            guard let window = details() else { throw MightyError("the session details did not open") }
             return Target(window: window) { store.sessionInfoSessionID = nil }
         case .planDocument:
             let id = try demo.pane("plan")
@@ -481,16 +585,29 @@ enum HelpCapture {
 
     // MARK: Accessibility
 
-    private static func node(_ element: Any, identifier: String? = nil, prefix: String? = nil, depth: Int = 0) -> NSObject? {
-        guard depth < 48, let object = element as? NSObject else { return nil }
-        func value(_ key: String) -> Any? { object.responds(to: NSSelectorFromString(key)) ? object.value(forKey: key) : nil }
-        if let id = value("accessibilityIdentifier") as? String, (identifier.map { id == $0 } ?? false) || (prefix.map { id.hasPrefix($0) } ?? false) {
-            return object
+    /// The first element with the identifier (or prefix), searched like the GUI smoke's
+    /// `smokeAccessibilityElement`: AppKit can leave SwiftUI hosting wrappers out of the
+    /// accessibility tree, so the native subviews (and a window's content view) are
+    /// walked too. Hidden views are skipped.
+    private static func node(_ element: Any, identifier: String? = nil, prefix: String? = nil) -> NSObject? {
+        var visited = Set<ObjectIdentifier>()
+        func find(_ element: Any, depth: Int) -> NSObject? {
+            if let view = element as? NSView, view.isHiddenOrHasHiddenAncestor { return nil }
+            guard depth < 128, visited.count < 20_000, let object = element as? NSObject,
+                  visited.insert(ObjectIdentifier(object)).inserted else { return nil }
+            func value(_ key: String) -> Any? { object.responds(to: NSSelectorFromString(key)) ? object.value(forKey: key) : nil }
+            if let id = value("accessibilityIdentifier") as? String, (identifier.map { id == $0 } ?? false) || (prefix.map { id.hasPrefix($0) } ?? false) {
+                return object
+            }
+            var children = value("accessibilityChildren") as? [Any] ?? []
+            if let view = element as? NSView { children.append(contentsOf: view.subviews) }
+            if let window = element as? NSWindow, let content = window.contentView { children.append(content) }
+            for child in children {
+                if let found = find(child, depth: depth + 1) { return found }
+            }
+            return nil
         }
-        for child in value("accessibilityChildren") as? [Any] ?? [] {
-            if let found = node(child, identifier: identifier, prefix: prefix, depth: depth + 1) { return found }
-        }
-        return nil
+        return find(element, depth: 0)
     }
 
     private static func press(_ object: NSObject) {
