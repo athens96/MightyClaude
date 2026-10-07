@@ -101,6 +101,9 @@ public sealed partial class MainWindow
             Checkpoint("claudePlanStyle", "running");
             result["claudePlanStyle"] = await pane.RunClaudePlanStyleSmoke();
             Checkpoint("claudePlanStyle", "passed");
+            Checkpoint("backgroundWorkToggle", "running");
+            result["backgroundWorkToggle"] = await pane.RunBackgroundWorkToggleSmoke();
+            Checkpoint("backgroundWorkToggle", "passed");
             Checkpoint("transcriptActions", "running");
             result["transcriptActions"] = await pane.Transcript.RunActionsSmoke();
             Checkpoint("transcriptActions", "passed");

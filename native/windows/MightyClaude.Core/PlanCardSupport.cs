@@ -71,10 +71,11 @@ public static class PlanCardSupport
 
     /// <summary>
     /// The expandable background list outside a style (M/PlanCardSupport.swift showsBackgroundStrip): in any view while
-    /// the turn is over and background work runs, and in the Mighty view whenever it runs — unless the style draws its own.
+    /// the turn is over and background work runs, and in the Mighty view whenever it runs — unless the style draws its own,
+    /// or the user hid the line (<see cref="AppSnapshot.ShowsBackgroundWork"/>).
     /// </summary>
-    public static bool ShowsBackgroundStrip(BackgroundWork? work, bool mighty, bool styleDrawsTasks) =>
-        !styleDrawsTasks && work is not null && work.Running.Count > 0 && (work.WaitingOnBackground || mighty);
+    public static bool ShowsBackgroundStrip(BackgroundWork? work, bool mighty, bool styleDrawsTasks, bool enabled = true) =>
+        enabled && !styleDrawsTasks && work is not null && work.Running.Count > 0 && (work.WaitingOnBackground || mighty);
 
     /// <summary>The strip's folded line: the header's "turn done" word while waiting, else how many still run.</summary>
     public static string BackgroundSummary(BackgroundWork work) =>

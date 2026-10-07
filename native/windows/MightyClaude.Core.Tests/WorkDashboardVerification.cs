@@ -90,4 +90,33 @@ internal static class WorkDashboardVerification
         }
         finally { Directory.Delete(directory, true); }
     }
+
+    // The background work line above the composer: older state shows it folded, both switches survive a reload, only a
+    // JSON boolean counts, and a hidden line draws nothing in either view (M/SnapshotPreferencesTests, M/PlanCardTests).
+    internal static async Task BackgroundWorkLinePersistsAndHides()
+    {
+        var legacy = System.Text.Json.JsonSerializer.Deserialize<AppSnapshot>("""{"version":1,"workspaces":[],"sessions":[],"layout":"grid","theme":"dark","sidebarWidth":300}""", Wire.Json)!;
+        Check(legacy.ShowsBackgroundWork is null && legacy.BackgroundWorkOpen is null && new AppSnapshot().ShowsBackgroundWork is null && new AppSnapshot().BackgroundWorkOpen is null,
+            $"old state without the fields must show the line folded; got shows={legacy.ShowsBackgroundWork} open={legacy.BackgroundWorkOpen}");
+        var invalid = System.Text.Json.JsonSerializer.Deserialize<AppSnapshot>("""{"version":1,"showsBackgroundWork":0,"backgroundWorkOpen":"true"}""", Wire.Json)!;
+        Check(invalid.ShowsBackgroundWork is null && invalid.BackgroundWorkOpen is null, $"only a JSON boolean counts; got shows={invalid.ShowsBackgroundWork} open={invalid.BackgroundWorkOpen}");
+        var normalized = StateStore.Normalize(new AppSnapshot { ShowsBackgroundWork = false, BackgroundWorkOpen = true }, false);
+        Check(normalized.ShowsBackgroundWork == false && normalized.BackgroundWorkOpen == true, $"normalize must keep both; got shows={normalized.ShowsBackgroundWork} open={normalized.BackgroundWorkOpen}");
+        var directory = Verification.Temp();
+        try
+        {
+            foreach (var (shows, open) in new[] { (false, true), (true, false) })
+            {
+                var store = new StateStore(directory); await store.LoadAsync();
+                await store.SaveAsync(new AppSnapshot { ShowsBackgroundWork = shows, BackgroundWorkOpen = open });
+                var restored = await new StateStore(directory).LoadAsync();
+                Check(restored.ShowsBackgroundWork == shows && restored.BackgroundWorkOpen == open, $"reload must restore shows={shows} open={open}; got shows={restored.ShowsBackgroundWork} open={restored.BackgroundWorkOpen}");
+            }
+        }
+        finally { Directory.Delete(directory, true); }
+        var work = new BackgroundWork([new BackgroundTask("a", "agent", "look", "2026-10-06T01:00:00.000Z")], TurnEnded: true);
+        foreach (var mighty in new[] { false, true })
+            Check(PlanCardSupport.ShowsBackgroundStrip(work, mighty, false) && PlanCardSupport.ShowsBackgroundStrip(work, mighty, false, enabled: true) && !PlanCardSupport.ShowsBackgroundStrip(work, mighty, false, enabled: false),
+                $"a hidden line draws nothing (mighty={mighty})");
+    }
 }

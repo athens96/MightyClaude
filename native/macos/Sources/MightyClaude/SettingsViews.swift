@@ -235,6 +235,8 @@ struct AppSettingsView: View {
                     }
                 }
                 .toggleStyle(.switch).accessibilityIdentifier("settings-status-line")
+                Toggle(L("settings.display.backgroundWorkToggle"), isOn: Binding(get: { store.showsBackgroundWork }, set: { store.setShowsBackgroundWork($0) }))
+                    .toggleStyle(.switch).accessibilityIdentifier("settings-background-work")
                 Toggle(isOn: Binding(
                     get: { CefBrowserEngine.isEnabledInSettings },
                     set: { store.objectWillChange.send(); CefBrowserEngine.isEnabledInSettings = $0 }

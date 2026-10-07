@@ -110,6 +110,31 @@ struct SnapshotPreferencesTests {
         }
     }
 
+    @Test func backgroundWorkLineSwitchesPersistAndOlderStateShowsItFolded() async throws {
+        // Older state has neither field: the line is shown, folded.
+        let legacy = Data(#"{"version":1,"workspaces":[],"sessions":[],"layout":"grid","theme":"dark","sidebarWidth":300}"#.utf8)
+        let old = StateRepository.decodeSnapshot(legacy)
+        #expect(old.showsBackgroundWork == nil && old.backgroundWorkOpen == nil)
+        #expect(AppSnapshot().showsBackgroundWork == nil && AppSnapshot().backgroundWorkOpen == nil)
+        let normalized = StateRepository.normalize(AppSnapshot(showsBackgroundWork: false, backgroundWorkOpen: true), restoring: true)
+        #expect(normalized.showsBackgroundWork == false && normalized.backgroundWorkOpen == true)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mighty-background-line-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        for (shown, open) in [(false, true), (true, false), (false, false), (true, true)] {
+            try await StateRepository(directory: directory, legacyStateURL: nil).save(AppSnapshot(showsBackgroundWork: shown, backgroundWorkOpen: open))
+            let restored = try await StateRepository(directory: directory, legacyStateURL: nil).load()
+            #expect(restored.showsBackgroundWork == shown)
+            #expect(restored.backgroundWorkOpen == open)
+        }
+        // Only a JSON boolean counts; anything else reads as the default.
+        var object = try #require(JSONSerialization.jsonObject(with: legacy) as? [String: Any])
+        for invalid: Any in [0, "false", NSNull()] {
+            object["showsBackgroundWork"] = invalid; object["backgroundWorkOpen"] = invalid
+            let decoded = StateRepository.decodeSnapshot(try JSONSerialization.data(withJSONObject: object))
+            #expect(decoded.showsBackgroundWork == nil && decoded.backgroundWorkOpen == nil)
+        }
+    }
+
     @Test func sidebarWidthNormalizesIntoTheContractBounds() throws {
         func normalized(_ width: Double) -> Double { StateRepository.normalize(AppSnapshot(sidebarWidth: width), restoring: false).sidebarWidth }
         #expect(normalized(205) == 210)

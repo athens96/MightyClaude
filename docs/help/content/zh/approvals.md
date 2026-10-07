@@ -44,5 +44,7 @@ Claude 有时会在后台运行耗时较长的命令或子智能体。这时即�
 - 输入框上方会显示一行提示，说明本轮已结束，但后台任务仍在运行。点击{{ui:plan.background.show}}可以查看每个任务的类型、状态和用时。
 - 在 Mighty 视图中显示为{{ui:graph.block.task}}块。
 - 此时发送的请求会在后台任务结束后开始。要立即插入，请按{{kbd:⌘Enter}}。
+- 如果这一行碍事，点击它右侧的眼睛按钮（{{ui:plan.background.hideStrip}}）。所有窗格中都会隐藏这一行，后台任务照常运行。
+- 要重新显示，请在“{{ui:menu.settings}} → {{ui:settings.nav.general}} → {{ui:settings.display.sectionTitle}}”中打开{{ui:settings.display.backgroundWorkToggle}}，或在窗格的“…”菜单中选择{{ui:pane.menu.backgroundWork}}。这一行是否展开也会被记住。
 
 ![[background-work]]

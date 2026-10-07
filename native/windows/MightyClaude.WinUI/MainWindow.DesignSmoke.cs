@@ -875,14 +875,14 @@ public sealed partial class MainWindow
             finally { Container.Width = paneWidth; Container.HorizontalAlignment = paneAlignment; await Change(p => p with { Title = pane.Title }); RefreshHeaderStatus(Session, dark); o.root.UpdateLayout(); }
 
             // The … menu is the Mac's (M/SessionPaneView.swift:281-295): rename, focus view, copy the run log (decision
-            // Q4), start a new conversation, then close behind a separator. The header has no Copy button.
+            // Q4), start a new conversation, show the background work line, then close behind a separator. The header has no Copy button.
             var menuButton = paneMenuButton ?? throw new InvalidOperationException($"{key} ({theme}): the header has no pane menu button");
             Require(menuButton.Width == 22 && menuButton.Height == 24 && ReferenceEquals(paneHeaderControls.Children[paneHeaderControls.Children.Count - 1], menuButton),
                 $"{key} ({theme}): the pane menu button must be the last, 22x24 header control; got {menuButton.Width}x{menuButton.Height}");
             o.RequireBrush(menuButton, e => ((Control)e).Foreground, DesignToken.Ink2, "the pane menu button", key: key);
             o.RequireSubtle(await StateBackground(menuButton, "PointerOver", b.Subtle, key), "the pane menu button under the pointer", key);
             var items = ((MenuFlyout)menuButton.Flyout).Items;
-            var menuWant = new[] { Locale.Get("menu.rename"), Locale.Get("menu.focusPane"), Locale.Get("pane.menu.copyLog"), Locale.Get("pane.menu.newConversation"), null, Locale.Get("menu.closePane") };
+            var menuWant = new[] { Locale.Get("menu.rename"), Locale.Get("menu.focusPane"), Locale.Get("pane.menu.copyLog"), Locale.Get("pane.menu.newConversation"), Locale.Get("pane.menu.backgroundWork"), null, Locale.Get("menu.closePane") };
             var menuGot = items.Select(item => item is MenuFlyoutItem entry ? entry.Text : null).ToArray();
             Require(menuGot.SequenceEqual(menuWant) && AutomationProperties.GetAutomationId(items[2]) == "pane-menu-copy-" + id,
                 $"{key} ({theme}): the pane menu must read {string.Join(" | ", menuWant.Select(text => text ?? "-"))}; got {string.Join(" | ", menuGot.Select(text => text ?? "-"))}");

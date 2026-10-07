@@ -37,17 +37,16 @@ public sealed partial class MainWindow
         internal sealed record MightyDesignViews(Border Viewport, MightyDotGrid Dots, Border Card, Rectangle Outline, Rectangle Draft, Border RowCard, Border ResultCard, Grid ResultHead);
 
         /// <summary>
-        /// What puts this pane back as it is now (its runs, view modes and the animation setting). Taken
+        /// What puts this pane back as it is now (its runs, view modes, the animation setting and the background line's switches). Taken
         /// before <see cref="BeginMightyDesignSmoke"/> changes anything, so a failure part way is undone too.
         /// </summary>
         internal Func<Task> MightyDesignRestore()
         {
-            var original = Session; var animations = AnimationsEnabledOverride;
+            var original = Session; var animations = AnimationsEnabledOverride; var state = owner.service.Snapshot;
             return async () =>
             {
                 AnimationsEnabledOverride = animations;
-                backgroundOpen = false;
-                await owner.Act(async () => { await Change(p => p with { GraphRuns = original.GraphRuns, AgentViewMode = original.AgentViewMode, GraphViewMode = original.GraphViewMode, BackgroundWork = original.BackgroundWork, Status = original.Status }); Refresh(); RefreshMightyView(Session); });
+                await owner.Act(async () => { await owner.service.UpdateAsync(s => s with { ShowsBackgroundWork = state.ShowsBackgroundWork, BackgroundWorkOpen = state.BackgroundWorkOpen }); await Change(p => p with { GraphRuns = original.GraphRuns, AgentViewMode = original.AgentViewMode, GraphViewMode = original.GraphViewMode, BackgroundWork = original.BackgroundWork, Status = original.Status }); Refresh(); RefreshMightyView(Session); });
             };
         }
 

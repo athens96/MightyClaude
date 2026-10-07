@@ -44,5 +44,7 @@ Claudeは、時間のかかるコマンドやサブエージェントをバッ�
 - 入力欄の上に、ターンは終わったもののバックグラウンドタスクが実行中であることを示す行が表示されます。{{ui:plan.background.show}}をクリックすると、タスクごとの種類、状態、経過時間を確認できます。
 - Mighty表示では{{ui:graph.block.task}}ブロックとして表示されます。
 - この間に送信したリクエストは、バックグラウンドタスクが終わってから始まります。すぐに割り込ませるには{{kbd:⌘Enter}}を押します。
+- この行が邪魔なときは、右側の目のボタン（{{ui:plan.background.hideStrip}}）をクリックします。すべてのペインで行が消え、バックグラウンドタスクはそのまま実行されます。
+- もう一度表示するには、「{{ui:menu.settings}} → {{ui:settings.nav.general}} → {{ui:settings.display.sectionTitle}}」で{{ui:settings.display.backgroundWorkToggle}}をオンにするか、ペインの「…」メニューで{{ui:pane.menu.backgroundWork}}を選びます。行を開いたままにしたかどうかも記憶されます。
 
 ![[background-work]]

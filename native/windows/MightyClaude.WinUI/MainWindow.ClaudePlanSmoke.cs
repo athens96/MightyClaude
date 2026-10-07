@@ -88,7 +88,7 @@ public sealed partial class MainWindow
             {
                 ClearToolPermissions();
                 await Change(p => p with { Provider = original.Provider, AgentViewMode = original.AgentViewMode, MightyStyle = original.MightyStyle, MightyStyleHash = original.MightyStyleHash, MightyStyleSince = original.MightyStyleSince, Status = original.Status, GraphRuns = original.GraphRuns, PlanHistory = original.PlanHistory, TodoProgress = original.TodoProgress, BackgroundWork = original.BackgroundWork });
-                input.Text = draft; activeStyle = null; loadedStyleKey = null; backgroundOpen = false; stylePrerequisites = savedPrerequisites; Refresh(); RefreshMightyView(Session);
+                input.Text = draft; activeStyle = null; loadedStyleKey = null; stylePrerequisites = savedPrerequisites; Refresh(); RefreshMightyView(Session);
                 await WaitUI(() => !styleLoading);
             }
         }

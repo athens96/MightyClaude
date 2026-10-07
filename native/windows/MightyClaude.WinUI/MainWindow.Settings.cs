@@ -77,7 +77,8 @@ public sealed partial class MainWindow
     private Task OpenSettings() => Act(ShowCategorizedSettingsAsync);
 
     // 화면 (M/SettingsViews.swift:221-251): the theme and the language as segmented pickers, the language
-    // note, then the status-line and browser switches, each with its 11pt explanation under the label.
+    // note, then the status-line and browser switches, each with its 11pt explanation under the label, and
+    // between them the background work line's switch.
     private StackPanel BuildDisplaySection()
     {
         var rows = new StackPanel();
@@ -104,6 +105,13 @@ public sealed partial class MainWindow
         void StatusLineToggled() => _ = Act(() => SetStatusLineEnabled(statusLineToggle.IsChecked == true));
         statusLineToggle.Checked += (_, _) => StatusLineToggled(); statusLineToggle.Unchecked += (_, _) => StatusLineToggled();
         SettingsRow(rows, SettingsLabeled(SettingsTitled(statusLineLabel, Locale.Get("settings.display.statusLineDescription")), statusLineToggle, top: true));
+
+        // The background work line above the composer; the line's eye button and the pane's … menu set the same value.
+        var backgroundWorkLabel = Locale.Get("settings.display.backgroundWorkToggle");
+        var backgroundWorkToggle = SettingsSwitch(backgroundWorkLabel, ShowsBackgroundWork, "settings-background-work");
+        void BackgroundWorkToggled() => _ = Act(() => SetShowsBackgroundWork(backgroundWorkToggle.IsChecked == true));
+        backgroundWorkToggle.Checked += (_, _) => BackgroundWorkToggled(); backgroundWorkToggle.Unchecked += (_, _) => BackgroundWorkToggled();
+        SettingsRow(rows, SettingsLabeled(SettingsText(backgroundWorkLabel), backgroundWorkToggle));
 
         // Browser engine toggle — opt-in, off by default; restart required to apply.
         var browserLabel = Locale.Get("settings.display.browserToggle");

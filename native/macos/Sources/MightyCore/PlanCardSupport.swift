@@ -62,9 +62,10 @@ public enum PlanCardSupport {
 
     /// The expandable background list outside a style: in any view while the
     /// turn is over and background work runs, and in the Mighty view whenever
-    /// background work runs. A style that draws its own task list keeps it.
-    public static func showsBackgroundStrip(_ work: BackgroundWork?, mighty: Bool, styleDrawsTasks: Bool) -> Bool {
-        guard !styleDrawsTasks, let work, !work.running.isEmpty else { return false }
+    /// background work runs. A style that draws its own task list keeps it, and
+    /// nothing is drawn while the user hid the line (`AppSnapshot.showsBackgroundWork`).
+    public static func showsBackgroundStrip(_ work: BackgroundWork?, mighty: Bool, styleDrawsTasks: Bool, enabled: Bool = true) -> Bool {
+        guard enabled, !styleDrawsTasks, let work, !work.running.isEmpty else { return false }
         return work.waitingOnBackground || mighty
     }
 
