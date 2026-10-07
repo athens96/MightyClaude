@@ -103,6 +103,17 @@ struct PlanCardTests {
         }
     }
 
+    @Test func aHiddenBackgroundLineDrawsNothingInEitherView() {
+        let task = BackgroundTask(id: "a", kind: "agent", description: "look", startedAt: "2027-01-15T08:00:00.000Z")
+        let waiting = BackgroundWork(tasks: [task], turnEnded: true)
+        for mighty in [false, true] {
+            #expect(PlanCardSupport.showsBackgroundStrip(waiting, mighty: mighty, styleDrawsTasks: false))
+            #expect(PlanCardSupport.showsBackgroundStrip(waiting, mighty: mighty, styleDrawsTasks: false, enabled: true))
+            #expect(!PlanCardSupport.showsBackgroundStrip(waiting, mighty: mighty, styleDrawsTasks: false, enabled: false))
+        }
+        #expect(!PlanCardSupport.showsBackgroundStrip(BackgroundWork(tasks: [task], turnEnded: false), mighty: true, styleDrawsTasks: false, enabled: false))
+    }
+
     @Test func thePlanCardTakesTheResultsPlaceAndRecordsHangBesideTheRequest() throws {
         let agent = MightyGraphAgent(id: "a1", title: "조사")
         var running = Self.run("g2", source: "run-b"); running.agents = [agent]

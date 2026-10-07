@@ -162,9 +162,9 @@ struct SessionPaneView: View {
                 }
                 // Background agents still running: in any view once the turn is
                 // over, and in the Mighty view all along — unless the pane's style
-                // draws its own task list.
+                // draws its own task list or the user hid the line.
                 if session.kind == "claude", let work = session.backgroundWork,
-                   PlanCardSupport.showsBackgroundStrip(work, mighty: showsMightyGraph, styleDrawsTasks: PlanCardSupport.styleDrawsTasks(style?.manifest)) {
+                   PlanCardSupport.showsBackgroundStrip(work, mighty: showsMightyGraph, styleDrawsTasks: PlanCardSupport.styleDrawsTasks(style?.manifest), enabled: store.showsBackgroundWork) {
                     BackgroundWorkStrip(sessionId: session.id, work: work)
                 }
                 ToolPermissionBar(sessionId: session.id)
@@ -305,6 +305,9 @@ struct SessionPaneView: View {
             }.disabled(session.logs.isEmpty)
             if session.kind != "shell" {
                 Button(L("pane.menu.newConversation")) { store.resetConversation(session.id) }.disabled(running || session.resumeId == nil)
+            }
+            if session.kind == "claude" {
+                Toggle(L("pane.menu.backgroundWork"), isOn: Binding(get: { store.showsBackgroundWork }, set: { store.setShowsBackgroundWork($0) }))
             }
             Divider()
             Button(L("menu.closePane"), role: .destructive) { store.closeSession(session.id) }

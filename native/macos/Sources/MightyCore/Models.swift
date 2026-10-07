@@ -390,10 +390,16 @@ public struct AppSnapshot: Codable, Sendable, Equatable {
     /// A run that lost its Claude/Codex sign-in starts the sign-in by itself.
     /// nil (older state) means on, the default.
     public var autoLoginCLIs: Bool?
-    public init(version: Int = 1, workspaces: [Workspace] = [], sessions: [RunSession] = [], activeWorkspaceId: String? = nil, activeSessionId: String? = nil, layout: String = "grid", theme: String = "dark", sidebarWidth: Double = SidebarFold.defaultWidth, paneLayouts: [String: PaneLayoutNode]? = nil, paneLayoutModes: [String: String]? = nil, paneLayoutActiveSessionIds: [String: String]? = nil, autoUpdateCLIs: Bool? = nil, expandedWorkspaceIds: [String]? = nil, mobileRemote: MobileRemoteSettings? = nil, modelDefaults: ModelDefaultsConfig? = nil, phaseModels: PhaseModelHardcodedConfig? = nil, autoUpdatePlugins: Bool? = nil, sidebarCollapsed: Bool? = nil, autoLoginCLIs: Bool? = nil) {
+    /// The background work line above an agent pane's composer is drawn (Settings → General →
+    /// Display, the line's hide button, the pane's … menu). nil (older state) means shown.
+    public var showsBackgroundWork: Bool?
+    /// That line was left open on its task rows. nil (older state) means folded.
+    public var backgroundWorkOpen: Bool?
+    public init(version: Int = 1, workspaces: [Workspace] = [], sessions: [RunSession] = [], activeWorkspaceId: String? = nil, activeSessionId: String? = nil, layout: String = "grid", theme: String = "dark", sidebarWidth: Double = SidebarFold.defaultWidth, paneLayouts: [String: PaneLayoutNode]? = nil, paneLayoutModes: [String: String]? = nil, paneLayoutActiveSessionIds: [String: String]? = nil, autoUpdateCLIs: Bool? = nil, expandedWorkspaceIds: [String]? = nil, mobileRemote: MobileRemoteSettings? = nil, modelDefaults: ModelDefaultsConfig? = nil, phaseModels: PhaseModelHardcodedConfig? = nil, autoUpdatePlugins: Bool? = nil, sidebarCollapsed: Bool? = nil, autoLoginCLIs: Bool? = nil, showsBackgroundWork: Bool? = nil, backgroundWorkOpen: Bool? = nil) {
         self.autoUpdatePlugins = autoUpdatePlugins
         self.sidebarCollapsed = sidebarCollapsed
         self.autoLoginCLIs = autoLoginCLIs
+        self.showsBackgroundWork = showsBackgroundWork; self.backgroundWorkOpen = backgroundWorkOpen
         self.version = version; self.workspaces = workspaces; self.sessions = sessions; self.activeWorkspaceId = activeWorkspaceId; self.activeSessionId = activeSessionId; self.layout = layout; self.theme = theme; self.sidebarWidth = sidebarWidth
         self.paneLayouts = paneLayouts
         self.paneLayoutModes = paneLayoutModes; self.paneLayoutActiveSessionIds = paneLayoutActiveSessionIds

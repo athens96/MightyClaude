@@ -45,28 +45,41 @@ struct BackgroundTaskRows: View {
 }
 
 /// The pane's background work outside a style: one folded line above the
-/// composer that opens to the task rows.
+/// composer that opens to the task rows. Whether it is open and whether it is
+/// drawn at all are app-wide and saved (`AppStore.backgroundWorkOpen`,
+/// `AppStore.showsBackgroundWork`); the eye button hides it.
 struct BackgroundWorkStrip: View {
+    @EnvironmentObject private var store: AppStore
     let sessionId: String
     let work: BackgroundWork
-    @ViewState private var open = false
 
     var body: some View {
         let tasks = PlanCardSupport.backgroundTasks(work)
+        let open = store.backgroundWorkOpen
         VStack(alignment: .leading, spacing: 6) {
-            Button { open.toggle() } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "square.stack.3d.up").foregroundStyle(Palette.accent)
-                    Text(L("plan.background.listTitle", ["count": "\(work.tasks.count)"])).font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.ink)
-                    Text(verbatim: PlanCardSupport.backgroundSummary(work)).font(.system(size: 11)).foregroundStyle(Palette.ink2).lineLimit(1)
-                    Spacer(minLength: 0)
-                    Image(systemName: open ? "chevron.up" : "chevron.down").font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.ink2)
-                }.contentShape(Rectangle())
+            HStack(spacing: 6) {
+                Button { store.setBackgroundWorkOpen(!open) } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "square.stack.3d.up").foregroundStyle(Palette.accent)
+                        Text(L("plan.background.listTitle", ["count": "\(work.tasks.count)"])).font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.ink)
+                        Text(verbatim: PlanCardSupport.backgroundSummary(work)).font(.system(size: 11)).foregroundStyle(Palette.ink2).lineLimit(1)
+                        Spacer(minLength: 0)
+                        Image(systemName: open ? "chevron.up" : "chevron.down").font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.ink2)
+                    }.contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(L("plan.background.listTitle", ["count": "\(work.tasks.count)"]))
+                .accessibilityValue(open ? L("plan.background.hide") : L("plan.background.show"))
+                .accessibilityIdentifier("background-work-\(sessionId)")
+                Button { store.setShowsBackgroundWork(false) } label: {
+                    Image(systemName: "eye.slash").font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.ink2)
+                        .frame(width: 18, height: 16).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(L("plan.background.hideStripHelp"))
+                .accessibilityLabel(L("plan.background.hideStrip"))
+                .accessibilityIdentifier("background-work-hide-\(sessionId)")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(L("plan.background.listTitle", ["count": "\(work.tasks.count)"]))
-            .accessibilityValue(open ? L("plan.background.hide") : L("plan.background.show"))
-            .accessibilityIdentifier("background-work-\(sessionId)")
             if open { BackgroundTaskRows(tasks: tasks) }
         }
         .padding(.horizontal, 12).padding(.vertical, 6)

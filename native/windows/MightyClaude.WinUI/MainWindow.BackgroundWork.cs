@@ -8,12 +8,45 @@ namespace MightyClaude.WinUI;
 
 public sealed partial class MainWindow
 {
+    /// <summary>
+    /// The background work line above every agent pane's composer is drawn (null, older state, means shown). Settings →
+    /// General → Display, the line's hide button and the pane's … menu all set this one saved value (M/AppStore.swift showsBackgroundWork).
+    /// </summary>
+    private bool ShowsBackgroundWork => service.Snapshot.ShowsBackgroundWork != false;
+
+    /// <summary>The line is open on its task rows (null means folded); saved, so it opens the same way next time.</summary>
+    private bool BackgroundWorkOpen => service.Snapshot.BackgroundWorkOpen == true;
+
+    /// <summary>Shows or hides the line in every pane now; the returned task is the save.</summary>
+    private Task SetShowsBackgroundWork(bool shown)
+    {
+        if (ShowsBackgroundWork == shown) return Task.CompletedTask;
+        var save = service.UpdateAsync(s => s with { ShowsBackgroundWork = shown });
+        RefreshBackgroundWorkLines();
+        return save;
+    }
+
+    /// <summary>Opens or folds the line in every pane now; the returned task is the save.</summary>
+    private Task SetBackgroundWorkOpen(bool open)
+    {
+        if (BackgroundWorkOpen == open) return Task.CompletedTask;
+        var save = service.UpdateAsync(s => s with { BackgroundWorkOpen = open });
+        RefreshBackgroundWorkLines();
+        return save;
+    }
+
+    private void RefreshBackgroundWorkLines()
+    {
+        var sessions = service.Snapshot.Sessions;
+        foreach (var (id, view) in views)
+            if (sessions.FirstOrDefault(s => s.Id == id) is { } pane) view.RefreshBackgroundWork(pane);
+    }
+
     private sealed partial class PaneView
     {
         /// <summary>The background strip above the composer (M/BackgroundWorkViews.swift BackgroundWorkStrip).</summary>
         private StackPanel? backgroundHost;
         private string? backgroundKey;
-        private bool backgroundOpen;
         /// <summary>The elapsed texts on screen: the strip's and the guided panel's task list, ticked once a second.</summary>
         private readonly List<(TextBlock Text, StylePresentation.TaskRow Task)> stripElapsed = [], guidedElapsed = [];
         private DispatcherTimer? backgroundTicker;
@@ -28,7 +61,8 @@ public sealed partial class MainWindow
             var mighty = pane.Kind == "claude" && pane.Provider == "claude" && pane.AgentViewMode == "mighty";
             var drawsTasks = mighty && activeStyle?.Evaluator.DrawsTasks == true;
             var work = pane.BackgroundWork;
-            var shows = pane.Kind == "claude" && PlanCardSupport.ShowsBackgroundStrip(work, mighty, drawsTasks);
+            var shows = pane.Kind == "claude" && PlanCardSupport.ShowsBackgroundStrip(work, mighty, drawsTasks, owner.ShowsBackgroundWork);
+            var backgroundOpen = owner.BackgroundWorkOpen;
             var key = shows ? string.Join("|", work!.Tasks.Select(t => t.Id + ":" + t.Status + ":" + t.Description)) + "|" + work.TurnEnded + "|" + backgroundOpen + "|" + Locale.LanguagePreference + "|" + owner.service.Snapshot.Theme : "";
             if (key == backgroundKey) return;
             backgroundKey = key;
@@ -49,9 +83,24 @@ public sealed partial class MainWindow
             var fold = FoldButton(face, Locale.Get(backgroundOpen ? "plan.background.hide" : "plan.background.show"));
             fold.IsChecked = backgroundOpen;
             AutomationProperties.SetAutomationId(fold, "background-work-" + id);
-            fold.Click += (_, _) => { backgroundOpen = !backgroundOpen; RefreshBackgroundWork(Session); };
+            fold.Click += (_, _) => _ = ToggleBackgroundWorkOpen();
+            // The eye on the line's trailing side hides it everywhere; Settings and the pane's … menu bring it back.
+            var hide = new Button
+            {
+                Width = 22, Height = 20, MinWidth = 0, MinHeight = 0, Padding = new Thickness(0), CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow), BorderThickness = new Thickness(0),
+                Content = new FontIcon { Glyph = "\uED1A", FontSize = 11 }, VerticalAlignment = VerticalAlignment.Center,
+            };
+            owner.PaintPlainButton(hide, b.Transparent, b.Subtle, ink: ink2);
+            var hideName = Locale.Get("plan.background.hideStrip");
+            AutomationProperties.SetName(hide, hideName); AutomationProperties.SetAutomationId(hide, "background-work-hide-" + id);
+            ToolTipService.SetToolTip(hide, Locale.Get("plan.background.hideStripHelp"));
+            hide.Click += (_, _) => _ = HideBackgroundWork();
+            var line = new Grid { ColumnSpacing = 6 };
+            line.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); line.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+            line.Children.Add(fold);
+            Grid.SetColumn(hide, 1); line.Children.Add(hide);
             var strip = new StackPanel { Spacing = 6 };
-            strip.Children.Add(fold);
+            strip.Children.Add(line);
             if (backgroundOpen) strip.Children.Add(BackgroundRows(PlanCardSupport.BackgroundTasks(work), stripElapsed));
             backgroundHost.Children.Add(new Border
             {
@@ -59,6 +108,15 @@ public sealed partial class MainWindow
                 CornerRadius = new CornerRadius(DesignMetrics.Radius.Entry), Background = b.Brush(DesignToken.Card), BorderBrush = b.Brush(DesignToken.Line), BorderThickness = new Thickness(DesignMetrics.Stroke.Line),
             });
         }
+
+        /// <summary>The line's own fold: opens or folds it in every pane, and saves that.</summary>
+        private Task ToggleBackgroundWorkOpen() => owner.Act(() => owner.SetBackgroundWorkOpen(!owner.BackgroundWorkOpen));
+
+        /// <summary>The line's eye button: hides the line in every pane, and saves that.</summary>
+        private Task HideBackgroundWork() => owner.Act(() => owner.SetShowsBackgroundWork(false));
+
+        /// <summary>The pane's … menu item: shows or hides the line, and saves that.</summary>
+        private Task ToggleBackgroundWorkShown() => owner.Act(() => owner.SetShowsBackgroundWork(!owner.ShowsBackgroundWork));
 
         /// <summary>
         /// Background tasks, one row each (M/BackgroundWorkViews.swift BackgroundTaskRows): a status dot, what the task is
@@ -104,7 +162,7 @@ public sealed partial class MainWindow
         /// </summary>
         internal async Task OpenBackgroundStripForSmoke()
         {
-            backgroundOpen = true;
+            await owner.service.UpdateAsync(s => s with { ShowsBackgroundWork = true, BackgroundWorkOpen = true });
             var work = new BackgroundWork([
                 new BackgroundTask("palette-bg-1", "agent", "palette background agent", Wire.Now()),
                 new BackgroundTask("palette-bg-2", "shell", "palette background shell", Wire.Now(), "failed", EndedAt: Wire.Now()),

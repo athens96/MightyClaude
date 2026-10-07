@@ -969,6 +969,23 @@ final class AppStore: ObservableObject {
 
     func toggleSidebar() { setSidebarCollapsed(!sidebarCollapsed) }
 
+    /// The background work line above every agent pane's composer is drawn; Settings → General →
+    /// Display, the line's hide button and the pane's … menu all set this one saved value.
+    var showsBackgroundWork: Bool { snapshot.showsBackgroundWork != false }
+
+    func setShowsBackgroundWork(_ shown: Bool) {
+        guard shown != showsBackgroundWork else { return }
+        snapshot.showsBackgroundWork = shown
+    }
+
+    /// That line is open on its task rows; saved, so it opens the same way next time.
+    var backgroundWorkOpen: Bool { snapshot.backgroundWorkOpen == true }
+
+    func setBackgroundWorkOpen(_ open: Bool) {
+        guard open != backgroundWorkOpen else { return }
+        snapshot.backgroundWorkOpen = open
+    }
+
     /// Where the sidebar border's drag left it (`SidebarResizeHandle`): a width is saved, a fold
     /// folds the sidebar and keeps the saved width, so unfolding brings back the one it had.
     func applySidebarDrag(_ result: SidebarFold.DragResult) {
@@ -1261,8 +1278,11 @@ final class AppStore: ObservableObject {
             result["usageReset"] = usageReset
             let sidebarResize = await runSidebarResizeSmoke(window: window)
             result["sidebarResize"] = sidebarResize
+            let backgroundWorkLine = await runBackgroundWorkLineSmoke()
+            result["backgroundWorkLine"] = backgroundWorkLine
             result["passed"] = completedCorrectly && settingsRestored && window != nil
                 && (usageReset["passed"] as? Bool == true) && (sidebarResize["passed"] as? Bool == true)
+                && (backgroundWorkLine["passed"] as? Bool == true)
             result["status"] = snapshot.sessions.first { $0.id == sessionId }?.status ?? "missing"
         } catch {
             result["error"] = error.localizedDescription
@@ -1322,6 +1342,52 @@ final class AppStore: ObservableObject {
         setSidebarCollapsed(originalCollapsed)
         do { try await flush() } catch { result["restoreError"] = error.localizedDescription }
         result["restored"] = snapshot.sidebarWidth == originalWidth && sidebarCollapsed == originalCollapsed
+        return result
+    }
+
+    /// The background work line through the calls its hide button, the pane's … menu and the Settings switch
+    /// make (no clicks: CI has no accessibility client, so the state decides): hiding is saved and the line's
+    /// rule then draws nothing in either view, its open state is saved, and showing it again is saved. Both
+    /// values are put back after.
+    private func runBackgroundWorkLineSmoke() async -> [String: Any] {
+        let originalShown = snapshot.showsBackgroundWork, originalOpen = snapshot.backgroundWorkOpen
+        var result: [String: Any] = ["passed": false]
+        func savedState() async throws -> AppSnapshot {
+            try await flush()
+            return try await StateRepository(directory: dataDirectory, legacyStateURL: nil).load()
+        }
+        let work = BackgroundWork(tasks: [BackgroundTask(id: "smoke-bg-1", kind: "agent", description: "smoke background agent", startedAt: "2026-01-01T00:00:00Z")], turnEnded: true)
+        func drawn(mighty: Bool) -> Bool { PlanCardSupport.showsBackgroundStrip(work, mighty: mighty, styleDrawsTasks: false, enabled: showsBackgroundWork) }
+        do {
+            setShowsBackgroundWork(true)
+            setBackgroundWorkOpen(false)
+            let drawnBefore = drawn(mighty: false) && drawn(mighty: true)
+            result["drawnWhenShown"] = drawnBefore
+
+            setShowsBackgroundWork(false)
+            let hidden = try await savedState()
+            let hideSaved = !showsBackgroundWork && hidden.showsBackgroundWork == false && !drawn(mighty: false) && !drawn(mighty: true)
+            result["hideSaved"] = hideSaved
+
+            setBackgroundWorkOpen(true)
+            let opened = try await savedState()
+            let openRemembered = backgroundWorkOpen && opened.backgroundWorkOpen == true
+            setBackgroundWorkOpen(false)
+            let folded = try await savedState()
+            let foldRemembered = !backgroundWorkOpen && folded.backgroundWorkOpen == false
+            result["openRemembered"] = openRemembered && foldRemembered
+
+            setShowsBackgroundWork(true)
+            let shown = try await savedState()
+            let showSaved = showsBackgroundWork && shown.showsBackgroundWork == true && drawn(mighty: false)
+            result["showSaved"] = showSaved
+
+            result["passed"] = drawnBefore && hideSaved && openRemembered && foldRemembered && showSaved
+        } catch { result["error"] = error.localizedDescription }
+        snapshot.showsBackgroundWork = originalShown
+        snapshot.backgroundWorkOpen = originalOpen
+        do { try await flush() } catch { result["restoreError"] = error.localizedDescription }
+        result["restored"] = snapshot.showsBackgroundWork == originalShown && snapshot.backgroundWorkOpen == originalOpen
         return result
     }
 
