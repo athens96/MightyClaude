@@ -124,7 +124,7 @@ struct SessionPaneView: View {
     private var statusLineToggle: some View {
         let on = store.statusLineEnabled
         return Button { store.statusLineEnabled.toggle() } label: {
-            Image(systemName: on ? "rectangle.bottomthird.inset.filled" : "rectangle").font(.system(size: 12)).frame(width: 16, height: 32)
+            Image(systemName: on ? "rectangle.bottomthird.inset.filled" : "rectangle").font(.system(size: 12)).frame(width: 16, height: DesignMetrics.Layout.toolbar)
                 .foregroundStyle(on ? Palette.accent : Palette.ink2)
         }
         .buttonStyle(.plain)
@@ -193,7 +193,7 @@ struct SessionPaneView: View {
         store.selectSession(session.id)
     }
 
-    /// The pane's header: the shell keeps the slim ink bar; an agent pane gets one 34pt
+    /// The pane's header: the shell keeps the slim ink bar; an agent pane gets one `Layout.paneHeader`
     /// line on the pane's own surface (status v2), the same in Default and Mighty.
     @ViewBuilder private var header: some View {
         if session.kind == "shell" {
@@ -226,7 +226,7 @@ struct SessionPaneView: View {
         let modelText = card.model != nil ? store.modelLabel(for: session) : usageModel.map { ModelLabel.text($0) }
         let figures = PaneHero.figures(session)
         let ticking = running && figures.contains { if case .elapsed(let timing) = $0 { timing.finishedAt == nil } else { false } }
-        return HStack(spacing: 8) {
+        return HStack(spacing: DesignMetrics.Spacing.sm) {
             StatusGlyph(tone: card.tone, kind: session.kind)
             Text(session.title).font(.system(size: 13, weight: .bold)).tracking(-0.1).foregroundStyle(Palette.ink)
                 .lineLimit(1).truncationMode(.tail)
@@ -247,13 +247,13 @@ struct SessionPaneView: View {
                 }
             }
             .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-            HStack(spacing: 10) { headerControls }
+            HStack(spacing: DesignMetrics.Spacing.sm) { headerControls }
                 .foregroundStyle(Palette.ink2)
-                .padding(.leading, 6)
+                .padding(.leading, DesignMetrics.Spacing.xs)
                 .fixedSize()
         }
-        .padding(.leading, 14).padding(.trailing, 10)
-        .frame(height: 34)
+        .padding(.leading, DesignMetrics.Inset.paneHeaderLeading).padding(.trailing, DesignMetrics.Inset.paneHeaderTrailing)
+        .frame(height: DesignMetrics.Layout.paneHeader)
         .background(Palette.panel)
         .overlay(alignment: .bottom) { Rectangle().fill(Palette.border).frame(height: 1).allowsHitTesting(false) }
         .contentShape(Rectangle())
@@ -522,17 +522,17 @@ struct SessionPaneView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.horizontal, 12)
+        .padding(.horizontal, DesignMetrics.Spacing.xs)
         // Concept D: the conversation sits on the raised grey, its replies on white cards.
         .background(showsMightyGraph ? Color.clear : Palette.raised)
     }
 
     private var emptyOutput: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
             Group {
                 if session.kind == "shell" { Image(systemName: "terminal").font(.system(size: 24, weight: .light)) }
                 else { ProviderIcon(provider: session.provider, size: 24, weight: .light) }
-            }.foregroundStyle(Palette.accent.opacity(0.75)).padding(.bottom, 5)
+            }.foregroundStyle(Palette.accent.opacity(0.75)).padding(.bottom, DesignMetrics.Spacing.xs)
             HStack(spacing: 8) {
                 Text(session.kind == "shell" ? L("pane.empty.shellTitle") : L("pane.empty.agentTitle", ["provider": ProviderOptions.label(session.provider)]))
                     .font(.system(size: 16, weight: .medium))
@@ -540,26 +540,26 @@ struct SessionPaneView: View {
             }
             Text(session.kind == "shell" ? L("pane.empty.shellBody") : L("pane.empty.agentBody"))
                 .font(.system(size: 12)).foregroundStyle(Palette.ink2).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
-        }.frame(maxWidth: .infinity, alignment: .leading).padding(24)
+        }.frame(maxWidth: .infinity, alignment: .leading).padding(DesignMetrics.Spacing.xl)
     }
 
     private var composer: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Inset.composerStack) {
             if offersMightyStyle {
-                HStack(spacing: 8) {
+                HStack(spacing: DesignMetrics.Spacing.md) {
                     MightyStylePicker(session: session, onApprove: { openApproval($0) })
                     Text(verbatim: styleHint).font(.system(size: 10)).foregroundStyle(.tertiary).lineLimit(1)
                     Spacer(minLength: 0)
-                }.padding(.horizontal, 12).padding(.top, 9)
+                }.padding(.horizontal, DesignMetrics.Inset.composerInnerH).padding(.top, DesignMetrics.Spacing.sm)
                 // One state, one message: a manifest that changed on disk is
                 // both "re-choose" and "needs confirming", and the strip is the
                 // one that says what to do about it.
                 if let pending = pendingStyle {
                     GuidedApprovalStrip(name: pending.manifest.name, source: pending.source, sessionID: session.id) { openApproval(pending) }
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, DesignMetrics.Inset.composerInnerH)
                 } else if store.styleNeedsRechoosing(session) {
                     Text(L("composer.style.changed"))
-                        .font(.system(size: 10)).foregroundStyle(Palette.waitText).padding(.horizontal, 12)
+                        .font(.system(size: 10)).foregroundStyle(Palette.waitText).padding(.horizontal, DesignMetrics.Inset.composerInnerH)
                         .accessibilityIdentifier("mighty-style-changed-\(session.id)")
                 }
                 if let style {
@@ -569,14 +569,14 @@ struct SessionPaneView: View {
             }
             if !attachments.isEmpty {
                 ScrollView(.horizontal) {
-                    HStack(spacing: 7) {
+                    HStack(spacing: DesignMetrics.Spacing.sm) {
                         ForEach(attachments) { attachment in
                             AttachmentChip(attachment: attachment) { store.removeAttachment(session.id, attachmentId: attachment.id) }
                         }
                     }
                 }
                 .scrollIndicators(.hidden).fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 10).padding(.top, 10)
+                .padding(.horizontal, DesignMetrics.Inset.composerInnerH).padding(.top, DesignMetrics.Spacing.sm)
                 .accessibilityIdentifier("attachments-\(session.id)")
             }
             if !queued.isEmpty {
@@ -584,14 +584,14 @@ struct SessionPaneView: View {
                                  onRemove: { store.removeQueuedInput(session.id, itemId: $0) }, onRunNext: { store.runNextQueuedInput(session.id) },
                                  notice: BackgroundQueuePolicy.waitsOnBackground(work: session.backgroundWork, launchesInPlan: store.styleLaunchesInPlanMode(session),
                                                                                  queued: queued.count) ? L("queue.waitingOnBackground.mac") : nil)
-                    .padding(.horizontal, 10).padding(.top, attachments.isEmpty ? 10 : 6)
+                    .padding(.horizontal, DesignMetrics.Inset.composerInnerH).padding(.top, attachments.isEmpty ? DesignMetrics.Spacing.sm : 0)
             }
             if paletteVisible {
                 SlashCommandPalette(commands: paletteCommands, selectedIndex: min(paletteIndex, paletteCommands.count - 1),
                                     onSelect: { applyCompletion($0) }, onHover: { paletteIndex = $0 })
-                    .padding(.horizontal, 10).padding(.top, 10)
+                    .padding(.horizontal, DesignMetrics.Inset.composerInnerH).padding(.top, DesignMetrics.Spacing.sm)
             }
-            HStack(alignment: .top, spacing: 6) {
+            HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
                 // The composer says which command Enter is about to send; the
                 // manifest's own placeholder cannot be trusted to (§1.6).
                 if let armedPrefix {
@@ -610,26 +610,26 @@ struct SessionPaneView: View {
                     .frame(height: editorHeight)
                     .background(TextEditorHeightReader(inputController: composerInput, height: $editorHeight, placeholder: composerPlaceholder).allowsHitTesting(false))
             }
-                .padding(.horizontal, 8).padding(.top, attachments.isEmpty && queued.isEmpty ? 9 : 0)
+                .padding(.horizontal, DesignMetrics.Inset.composerInnerH).padding(.top, attachments.isEmpty && queued.isEmpty ? DesignMetrics.Spacing.sm : 0)
                 .help(running ? (steers ? L("composer.inputHelp.steer") : L("composer.inputHelp.queue")) : L("composer.inputHelp.idle"))
             if importingAttachments {
-                HStack(spacing: 6) {
+                HStack(spacing: DesignMetrics.Spacing.sm) {
                     ProgressView().controlSize(.mini)
                     Text(L("composer.hint.attachmentsLoading")).font(.system(size: 11)).foregroundStyle(Palette.ink2)
-                }.padding(.horizontal, 12)
+                }.padding(.horizontal, DesignMetrics.Inset.composerInnerH)
             }
             if let attachmentError = store.attachmentErrors[session.id] {
-                HStack(alignment: .top, spacing: 7) {
+                HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
                     Image(systemName: "exclamationmark.circle").foregroundStyle(Palette.accent)
                     Text(attachmentError).frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
                     Button { store.attachmentErrors.removeValue(forKey: session.id) } label: { Image(systemName: "xmark").font(.system(size: 9)).frame(width: 18, height: 16) }
                         .buttonStyle(.plain).accessibilityLabel(L("composer.attachment.dismissError"))
                 }
-                .font(.system(size: 11)).foregroundStyle(Palette.ink2).padding(.horizontal, 12)
+                .font(.system(size: 11)).foregroundStyle(Palette.ink2).padding(.horizontal, DesignMetrics.Inset.composerInnerH)
                 .accessibilityIdentifier("attachment-error-\(session.id)")
             }
             if let problem = store.inputMethodProblem, composerFocused {
-                HStack(alignment: .top, spacing: 7) {
+                HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
                     Image(systemName: "keyboard.badge.ellipsis").foregroundStyle(problem.recoveryState == .reconnected ? Palette.doneText : Palette.waitText).padding(.top, 1)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(problem.recoveryState == .reconnected ? L("inputRecovery.noticeReconnected") : L("inputRecovery.noticeCheck")).fontWeight(.medium)
@@ -643,23 +643,23 @@ struct SessionPaneView: View {
                     Button { store.dismissInputMethodProblem() } label: { Image(systemName: "xmark").font(.system(size: 9)).frame(width: 18, height: 16) }
                         .buttonStyle(.plain).accessibilityLabel(L("inputRecovery.dismiss"))
                 }
-                .font(.system(size: 11)).lineSpacing(2).padding(.horizontal, 12)
+                .font(.system(size: 11)).lineSpacing(2).padding(.horizontal, DesignMetrics.Inset.composerInnerH)
                 .accessibilityIdentifier("input-method-problem-\(session.id)")
             }
             if let provider = store.loginRequired[session.id] {
                 CLILoginRecoveryCard(provider: provider, sessionID: session.id)
             }
             if store.backgroundUpdateHolds(session) {
-                HStack(alignment: .top, spacing: 7) {
+                HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
                     ProgressView().controlSize(.mini).padding(.top, 1)
                     Text(L("settings.cliUpdate.backgroundUpdateQueued", ["provider": ProviderOptions.label(session.provider)]))
                         .foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
                 }
-                .font(.system(size: 11)).lineSpacing(2).padding(.horizontal, 12)
+                .font(.system(size: 11)).lineSpacing(2).padding(.horizontal, DesignMetrics.Inset.composerInnerH)
                 .accessibilityElement(children: .combine).accessibilityIdentifier("background-update-\(session.id)")
             }
             if let reason = blockedReason {
-                HStack(alignment: .top, spacing: 7) {
+                HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
                     Image(systemName: "info.circle").foregroundStyle(Palette.accent).padding(.top, 1)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(L("composer.blocked.title")).fontWeight(.medium)
@@ -667,12 +667,12 @@ struct SessionPaneView: View {
                     }
                 }
                 .font(.system(size: 11)).lineSpacing(2)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, DesignMetrics.Inset.composerInnerH)
                 .accessibilityElement(children: .combine).accessibilityIdentifier("run-blocked-\(session.id)")
                 .background(AccessibilityStateProbe(identifier: "run-blocked-\(session.id)", enabled: true))
             }
             composerToolbar
-            .padding(.horizontal, 10).padding(.bottom, statusLine == nil ? 10 : 4)
+            .padding(.horizontal, DesignMetrics.Inset.composerInnerH).padding(.bottom, statusLine == nil ? DesignMetrics.Inset.composerInnerB : DesignMetrics.Spacing.xs)
             if let statusLine {
                 StatusLineView(sessionID: session.id, state: statusLine, padding: statusLine.config?.padding ?? 0,
                                onTrust: { store.trustStatusLine($0, sessionID: session.id) }, onDismiss: { store.dismissUntrustedStatusLine(sessionID: session.id) })
@@ -687,7 +687,7 @@ struct SessionPaneView: View {
             store.importAttachments(session.id, providers: providers)
             return !providers.isEmpty
         }
-        .padding(12)
+        .padding(DesignMetrics.Inset.composerOuter)
         // The status line follows the CLI's cadence loosely: on every state
         // change, plus a slow tick so elapsed time and repo info stay fresh.
         .task(id: session.id) {
@@ -736,7 +736,9 @@ struct SessionPaneView: View {
 
     private var composerToolbar: some View {
         GeometryReader { geometry in
-            let actionsWidth: CGFloat = (running && canSend ? 64 : 32) + (session.resumeId == nil ? 0 : 22) + (session.kind == "shell" ? 0 : 38)
+            // Stop beside send, or send alone; the resume mark; the context ring.
+            let height = ComposerToolbarMetrics.height, gap = ComposerToolbarMetrics.spacing
+            let actionsWidth = (running && canSend ? Self.compactStop + gap + height : height) + (session.resumeId == nil ? 0 : 16 + gap) + (session.kind == "shell" ? 0 : height + gap)
             let width = max(0, geometry.size.width - actionsWidth - ComposerToolbarMetrics.spacing)
             let style = ComposerToolbarMetrics.style(width: width, model: selectedModelName, effort: showsEffort ? effortLabel(session.settings.effort) : nil, permission: permissionLabel(session.settings.permissionMode, provider: session.provider), fast: showsFast)
             HStack(alignment: .center, spacing: ComposerToolbarMetrics.spacing) {
@@ -758,9 +760,9 @@ struct SessionPaneView: View {
                     Text(L("composer.shell.title")).font(.system(size: 11)).foregroundStyle(Palette.ink2).lineLimit(1)
                     Spacer(minLength: 0)
                 }
-                HStack(alignment: .center, spacing: 6) {
+                HStack(alignment: .center, spacing: ComposerToolbarMetrics.spacing) {
                     if session.resumeId != nil {
-                        Image(systemName: "arrow.triangle.branch").font(.system(size: 11)).frame(width: 16, height: 32).foregroundStyle(Palette.ink2).help(L("composer.resume.help")).accessibilityLabel(L("composer.resume.name"))
+                        Image(systemName: "arrow.triangle.branch").font(.system(size: 11)).frame(width: 16, height: ComposerToolbarMetrics.height).foregroundStyle(Palette.ink2).help(L("composer.resume.help")).accessibilityLabel(L("composer.resume.name"))
                     }
                     if session.kind != "shell" { SessionContextButton(sessionID: session.id) }
                     if showsStatusLineToggle { statusLineToggle }
@@ -770,7 +772,7 @@ struct SessionPaneView: View {
                         let compact = canSend
                         // Concept D: stop is the red square, send the round run blue.
                         Button(action: stopRun) {
-                            Image(systemName: "stop.fill").font(.system(size: compact ? 10 : 12, weight: .semibold)).frame(width: compact ? 28 : 32, height: compact ? 28 : 32)
+                            Image(systemName: "stop.fill").font(.system(size: compact ? 9 : 11, weight: .semibold)).frame(width: compact ? Self.compactStop : ComposerToolbarMetrics.height, height: compact ? Self.compactStop : ComposerToolbarMetrics.height)
                                 .foregroundStyle(Palette.onStatus)
                                 .background(Palette.err, in: RoundedRectangle(cornerRadius: compact ? 7 : 8, style: .continuous))
                                 .contentShape(RoundedRectangle(cornerRadius: compact ? 7 : 8, style: .continuous))
@@ -783,7 +785,7 @@ struct SessionPaneView: View {
                     }
                     if !running || canSend {
                         Button { submitComposer() } label: {
-                            Image(systemName: running ? "text.badge.plus" : "arrow.up").font(.system(size: running ? 13 : 14, weight: .semibold)).frame(width: 32, height: 32)
+                            Image(systemName: running ? "text.badge.plus" : "arrow.up").font(.system(size: running ? 12 : 13, weight: .semibold)).frame(width: ComposerToolbarMetrics.height, height: ComposerToolbarMetrics.height)
                                 .foregroundStyle(canSend ? Palette.onStatus : Palette.ink2)
                                 .background(canSend ? Palette.run : Palette.track, in: Circle()).contentShape(Circle())
                         }
@@ -799,6 +801,9 @@ struct SessionPaneView: View {
         .frame(height: ComposerToolbarMetrics.height)
         .popover(item: settingsPopover, arrowEdge: .bottom) { selected in RunSettingsView(session: selected).environmentObject(store) }
     }
+
+    /// The stop square beside send while text waits: 4pt under the toolbar's height.
+    private static let compactStop = ComposerToolbarMetrics.height - 4
 
     /// Arrows move the highlight, Enter/Tab insert it, Esc closes the list for
     /// this draft. Returns false when the key should reach the editor.

@@ -20,6 +20,8 @@ public sealed partial class MainWindow
         internal const double SessionInfoContextTint = 0.07;
 
         private ContextUsageRing? contextIndicator, contextDetailRing;
+        /// <summary>The toolbar's context ring: its circle and 2pt line fill the toolbar-high button (M/SessionInfoViews.swift SessionContextButton).</summary>
+        internal const double ContextRingSize = DesignMetrics.Layout.Toolbar - 2;
         private Flyout? sessionInfoFlyout;
         private bool sessionInfoOpen;
         private bool sessionInfoUnloadHooked;
@@ -43,7 +45,7 @@ public sealed partial class MainWindow
             var pane = owner.service.Snapshot.Sessions.FirstOrDefault(s => s.Id == id);
             if (pane is null) return;
             var usage = pane.SessionUsage?.Provider == pane.Provider ? pane.SessionUsage : null;
-            contextIndicator ??= new(owner.brushes, 28); contextIndicator.Update(usage?.ContextPercent);
+            contextIndicator ??= new(owner.brushes, ContextRingSize); contextIndicator.Update(usage?.ContextPercent);
             context.Content = contextIndicator.View;
             AutomationProperties.SetName(context, Locale.Get("composer.sessionInfo.title") + " · " + contextIndicator.Text);
             RefreshSessionInfo();

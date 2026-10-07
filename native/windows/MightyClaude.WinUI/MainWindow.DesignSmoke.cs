@@ -177,7 +177,7 @@ public sealed partial class MainWindow
             $"{key} ({theme}): the header files button must be 26×24 for the active workspace; got {workspaceHeaderFiles.Width}×{workspaceHeaderFiles.Height} '{AutomationProperties.GetAutomationId(workspaceHeaderFiles)}'");
 
         var dock = (panes.Children.OfType<ScrollViewer>().FirstOrDefault()?.Content as FrameworkElement)?.Margin;
-        Require(dock == new Thickness(DesignMetrics.Layout.DockInset), $"{key} ({theme}): the pane dock must sit Layout.DockInset {DesignMetrics.Layout.DockInset} inside its scroll view; got {dock?.ToString() ?? "no dock"}");
+        Require(dock == new Thickness(DesignMetrics.Inset.Dock), $"{key} ({theme}): the pane dock must sit Inset.Dock {DesignMetrics.Inset.Dock} inside its scroll view; got {dock?.ToString() ?? "no dock"}");
 
         foreach (var (pane, name, token, opacity) in new[] { (active, "the active pane", DesignToken.Accent, DesignMetrics.Opacity.PaneActiveBorder), (inactive, "an inactive pane", DesignToken.Line, 1.0) })
         {
@@ -714,7 +714,7 @@ public sealed partial class MainWindow
 
         /// <summary>
         /// Stage 4 in the theme just rendered, on this (reused) pane: the tab strip and the pane's tab
-        /// (M/PaneDockView.swift:194-262), the 34pt header with its title, state word in each tone's
+        /// (M/PaneDockView.swift:194-262), the Layout.PaneHeader header with its title, state word in each tone's
         /// ink and figures (M/SessionPaneView.swift:208-251), the … menu holding Copy (decision Q4), the
         /// Default | Mighty switch (segmentTrack, segmentOn, shadow 0.12), the composer card with its
         /// focus ring and shadow (M/SessionPaneView.swift:654-656), the pills, the send / stop shape, the
@@ -744,8 +744,8 @@ public sealed partial class MainWindow
             var strays = VisualChildren(strip).OfType<Button>().Where(button => !o.tabCells.Values.Any(parts => ReferenceEquals(parts.Tab, button) || ReferenceEquals(parts.Close, button))).Select(AutomationProperties.GetName).ToList();
             Require(strays.Count == 0, $"{key} ({theme}): the tab strip must hold only its tabs' buttons; also found {string.Join(", ", strays)}");
             var stripScroll = strip.Children.OfType<ScrollViewer>().Single();
-            Require(stripScroll.HorizontalScrollBarVisibility == ScrollBarVisibility.Hidden && stripScroll.Content is StackPanel { Spacing: 3 } tabRowPanel && tabRowPanel.Padding == new Thickness(5, 4, 5, 4),
-                $"{key} ({theme}): the tab strip must scroll sideways with no scroll bar, its tabs 3 apart in padding h5 v4; got {stripScroll.HorizontalScrollBarVisibility}, {(stripScroll.Content as StackPanel)?.Spacing}, {(stripScroll.Content as StackPanel)?.Padding}");
+            Require(stripScroll.HorizontalScrollBarVisibility == ScrollBarVisibility.Hidden && stripScroll.Content is StackPanel { Spacing: 3 } tabRowPanel && tabRowPanel.Padding == new Thickness(5, TabStripPadding, 5, TabStripPadding),
+                $"{key} ({theme}): the tab strip must scroll sideways with no scroll bar, its tabs 3 apart in padding h5 v{TabStripPadding}; got {stripScroll.HorizontalScrollBarVisibility}, {(stripScroll.Content as StackPanel)?.Spacing}, {(stripScroll.Content as StackPanel)?.Padding}");
             bool Inside(FrameworkElement inner, FrameworkElement outer, out string where)
             {
                 var top = inner.TransformToVisual(outer).TransformPoint(new Windows.Foundation.Point());
@@ -755,8 +755,8 @@ public sealed partial class MainWindow
             foreach (var sessionId in group.SessionIds)
             {
                 var parts = o.tabCells[sessionId];
-                Require(Math.Abs(parts.Cell.ActualHeight - 30) < .5 && Math.Abs(parts.Tab.ActualHeight - 30) < .5 && Math.Abs(parts.Close.ActualHeight - 30) < .5,
-                    $"{key} ({theme}): tab {sessionId} must lay out 30 tall with its tab and close buttons 30 tall; got cell {parts.Cell.ActualHeight:F1}, tab {parts.Tab.ActualHeight:F1}, close {parts.Close.ActualHeight:F1}");
+                Require(Math.Abs(parts.Cell.ActualHeight - DesignMetrics.Layout.Tab) < .5 && Math.Abs(parts.Tab.ActualHeight - DesignMetrics.Layout.Tab) < .5 && Math.Abs(parts.Close.ActualHeight - DesignMetrics.Layout.Tab) < .5,
+                    $"{key} ({theme}): tab {sessionId} must lay out Layout.Tab {DesignMetrics.Layout.Tab} tall with its tab and close buttons as tall; got cell {parts.Cell.ActualHeight:F1}, tab {parts.Tab.ActualHeight:F1}, close {parts.Close.ActualHeight:F1}");
                 foreach (var (inner, outer, what) in new (FrameworkElement, FrameworkElement, string)[] { (parts.Tab, parts.Cell, "tab button in its cell"), (parts.Close, parts.Cell, "close button in its cell"), (parts.Cell, strip, "tab cell in the strip") })
                     Require(Inside(inner, outer, out var where), $"{key} ({theme}): the {what} of {sessionId} is clipped: {where}");
             }
@@ -770,8 +770,8 @@ public sealed partial class MainWindow
             Require(title.MaxWidth == 125, $"{key} ({theme}): a tab title must be at most 125 wide; got {title.MaxWidth}");
             o.RequireBrush(title, e => ((TextBlock)e).Foreground, DesignToken.Ink, "the selected tab's title", key: key);
             var closeRow = cell.Children.OfType<StackPanel>().Single();
-            Require(close.Width == 20 && close.Height == 30 && close.Content is FontIcon && closeRow.Spacing == 0 && closeRow.Padding == new Thickness(0, 0, 2, 0) && ReferenceEquals(closeRow.Children[closeRow.Children.Count - 1], close),
-                $"{key} ({theme}): a tab must end with its close, an x in a 20x30 box with 2 after it (M/PaneDockView.swift:255-258); got {close.Width}x{close.Height}, row padding {closeRow.Padding}");
+            Require(close.Width == 20 && close.Height == DesignMetrics.Layout.Tab && close.Content is FontIcon && closeRow.Spacing == 0 && closeRow.Padding == new Thickness(0, 0, 2, 0) && ReferenceEquals(closeRow.Children[closeRow.Children.Count - 1], close),
+                $"{key} ({theme}): a tab must end with its close, an x in a 20x{DesignMetrics.Layout.Tab} box with 2 after it (M/PaneDockView.swift); got {close.Width}x{close.Height}, row padding {closeRow.Padding}");
             o.RequireBrush(close, e => ((Control)e).Foreground, DesignToken.Ink2, "a tab's close", key: key);
             // The Mac's tab order puts the 12pt mark last; it shows for a counted pane that is not idle.
             var tabRow = (StackPanel)tab.Content; var tabMark = o.tabIndicators[id];
@@ -790,7 +790,7 @@ public sealed partial class MainWindow
                 o.RequireBrush(other.Title, e => ((TextBlock)e).Foreground, DesignToken.Ink2, "an unselected tab's title", key: key);
             }
 
-            // The 34pt header line.
+            // The Layout.PaneHeader header line.
             var header = paneHeader ?? throw new InvalidOperationException($"{key} ({theme}): the pane has no header");
             Require(header.Height == DesignMetrics.Layout.PaneHeader && Math.Abs(header.ActualHeight - DesignMetrics.Layout.PaneHeader) < .5 && header.Padding == new Thickness(14, 0, 10, 0),
                 $"{key} ({theme}): the pane header must be Layout.PaneHeader {DesignMetrics.Layout.PaneHeader} tall with padding l14 r10; got {header.Height} (actual {header.ActualHeight:F1}), {header.Padding}");
@@ -1007,7 +1007,7 @@ public sealed partial class MainWindow
             o.RequireBrush(input, e => ((TextBox)e).PlaceholderForeground, DesignToken.Ink, "the editor's placeholder at rest", DesignBrushes.TertiaryOpacity, key);
             RequireShared(drawnPlaceholder!.Foreground, b.Tertiary, "the editor's drawn placeholder", key);
 
-            // The toolbar (M/SessionPaneView.swift:707-771, M/ComposerControls.swift:39-41): one 32pt row 10 from the card's sides,
+            // The toolbar (M/SessionPaneView.swift:707-771, M/ComposerControls.swift:39-41): one Layout.Toolbar row 10 from the card's sides,
             // the pills leading and 6 apart in the Mac's order, the right cluster trailing.
             Require(toolbar.Height == DesignMetrics.Layout.Toolbar && toolbar.Margin.Left == 10 && toolbar.Margin.Right == 10 && selectors.Spacing == ToolbarSpacing && toolbarActions.Spacing == ToolbarSpacing
                 && selectors.HorizontalAlignment == HorizontalAlignment.Left,
@@ -1108,7 +1108,7 @@ public sealed partial class MainWindow
                 send.IsEnabled = true; PaintSend();
                 o.RequireBrush(sendDisc, e => ((Border)e).Background, DesignToken.Run, "the send circle with a draft", key: key);
                 o.RequireBrush(sendDisc, _ => sendArrow.Colour, DesignToken.OnStatus, "the send arrow", key: key);
-                Require(sendDisc.Width == 32 && sendDisc.Height == 32 && sendDisc.CornerRadius == new CornerRadius(16) && sendHost.Opacity == 1, $"{key} ({theme}): the send shape must be an opaque 32 circle; got {sendDisc.Width}x{sendDisc.Height} r{sendDisc.CornerRadius} at {sendHost.Opacity}");
+                Require(sendDisc.Width == DesignMetrics.Layout.Toolbar && sendDisc.Height == DesignMetrics.Layout.Toolbar && sendDisc.CornerRadius == new CornerRadius(16) && sendHost.Opacity == 1, $"{key} ({theme}): the send shape must be an opaque {DesignMetrics.Layout.Toolbar} circle; got {sendDisc.Width}x{sendDisc.Height} r{sendDisc.CornerRadius} at {sendHost.Opacity}");
                 input.Text = ""; await WaitUI(() => !send.IsEnabled && Session.Draft == "");
                 o.RequireBrush(sendDisc, e => ((Border)e).Background, DesignToken.Track, "the send circle with nothing to send", key: key);
                 o.RequireBrush(sendDisc, _ => sendArrow.Colour, DesignToken.Ink2, "the disabled send arrow", key: key);
@@ -1124,21 +1124,21 @@ public sealed partial class MainWindow
                 pendingAttachments.Clear(); pendingAttachments.AddRange(attachments); RefreshAttachments(); RefreshComposerState();
             }
 
-            // The context ring: its own 32pt button; a track in ink x 0.12 two points wide, an accent arc, waitText from 95%.
-            Require(contextIndicator is not null && context.Width == 32 && context.Height == 32 && Math.Abs(contextIndicator.View.Width - 30) < .01, $"{key} ({theme}): the composer must have a context ring 30 across (a 28pt circle and its 2pt line) in a 32pt button; got {contextIndicator?.View.Width} in {context.Width}x{context.Height}");
+            // The context ring: its own toolbar-high button; a track in ink x 0.12 two points wide, an accent arc, waitText from 95%.
+            Require(contextIndicator is not null && context.Width == DesignMetrics.Layout.Toolbar && context.Height == DesignMetrics.Layout.Toolbar && Math.Abs(contextIndicator.View.Width - (ContextRingSize + 2)) < .01, $"{key} ({theme}): the composer must have a context ring {ContextRingSize + 2} across (a {ContextRingSize}pt circle and its 2pt line) in a {DesignMetrics.Layout.Toolbar}pt button; got {contextIndicator?.View.Width} in {context.Width}x{context.Height}");
             o.RequireBrush(contextIndicator!.View, _ => contextIndicator.TrackStroke, DesignToken.Ink, "the context ring's track", ContextUsageRing.TrackOpacity, key);
-            var ring = new ContextUsageRing(b, 28); ring.Update(40);
+            var ring = new ContextUsageRing(b, ContextRingSize); ring.Update(40);
             o.RequireBrush(ring.View, _ => ring.ArcStroke, DesignToken.Accent, "the context arc under 95%", key: key);
             ring.Update(96);
             o.RequireBrush(ring.View, _ => ring.ArcStroke, DesignToken.WaitText, "the context arc from 95%", key: key);
 
-            // The status-line toggle: in the composer's right cluster after the context ring, in its 16x32 frame (M/SessionPaneView.swift:123-133, 736);
+            // The status-line toggle: in the composer's right cluster after the context ring, in its 16pt-wide, toolbar-high frame (M/SessionPaneView.swift:123-133, 736);
             // ink2 off and accent on, the subtle wash under the pointer.
             var toggleTheme = statusLineToggle.Resources.ThemeDictionaries[theme == "light" ? "Light" : "Dark"] as ResourceDictionary;
-            Require(statusLineToggle.Width == 16 && statusLineToggle.Height == 32 && toggleTheme is not null
+            Require(statusLineToggle.Width == 16 && statusLineToggle.Height == DesignMetrics.Layout.Toolbar && toggleTheme is not null
                 && ReferenceEquals(toggleTheme["ToggleButtonForeground"], b.Brush(DesignToken.Ink2)) && ReferenceEquals(toggleTheme["ToggleButtonForegroundChecked"], b.Brush(DesignToken.Accent))
                 && ReferenceEquals(toggleTheme["ToggleButtonBackgroundPointerOver"], b.Subtle),
-                $"{key} ({theme}): the status-line toggle must be 16x32 with the shared ink2 / accent / subtle brushes; got {statusLineToggle.Width}x{statusLineToggle.Height}");
+                $"{key} ({theme}): the status-line toggle must be 16x{DesignMetrics.Layout.Toolbar} with the shared ink2 / accent / subtle brushes; got {statusLineToggle.Width}x{statusLineToggle.Height}");
             var cluster = toolbarActions.Children.ToList();
             Require(cluster.IndexOf(resumeHost) == 0 && cluster.IndexOf(context) == 1 && cluster.IndexOf(statusLineToggle) == 2 && cluster.IndexOf(sendHost) == cluster.Count - 1 && !paneHeaderControls.Children.Contains(statusLineToggle),
                 $"{key} ({theme}): the right cluster must be the resume mark, the context ring, the status-line toggle, then stop / send, and the toggle must have left the pane header");

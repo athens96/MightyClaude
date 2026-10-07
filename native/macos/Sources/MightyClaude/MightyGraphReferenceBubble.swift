@@ -104,7 +104,7 @@ struct MightyGraphReferenceBubble: View {
                 .accessibilityIdentifier("mighty-reference-close-\(sessionID)")
         }
         .buttonStyle(.plain).font(.system(size: 12))
-        .padding(.horizontal, 12).frame(height: 40)
+        .padding(.horizontal, 12).frame(height: DesignMetrics.Layout.previewHead)
     }
 
     private var icon: String {

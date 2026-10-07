@@ -23,8 +23,9 @@ struct SessionContextButton: View {
             store.selectSession(sessionID)
             presented.wrappedValue.toggle()
         } label: {
-            SessionContextRing(usage: usage)
-                .frame(width: 32, height: 32).contentShape(Circle())
+            // The ring and its 2pt line fill the toolbar-high button.
+            SessionContextRing(usage: usage, size: ComposerToolbarMetrics.height - 2)
+                .frame(width: ComposerToolbarMetrics.height, height: ComposerToolbarMetrics.height).contentShape(Circle())
                 .accessibilityElement(children: .ignore)
         }
         .buttonStyle(.plain)
@@ -169,7 +170,7 @@ struct SessionContextRing: View {
             Text(SessionUsagePresentation.percent(usage))
                 .font(.system(size: size > 32 ? 13 : 8.5, weight: .semibold, design: .rounded))
                 .monospacedDigit().foregroundStyle(percent == nil ? Color.secondary : Color.primary)
-                .lineLimit(1)
+                .lineLimit(1).minimumScaleFactor(0.8).padding(.horizontal, 2)
         }.frame(width: size, height: size)
     }
 }

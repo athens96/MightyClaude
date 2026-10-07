@@ -20,11 +20,13 @@ public sealed partial class MainWindow
         private bool HasComposerContent => !string.IsNullOrWhiteSpace(input.Text) || pendingAttachments.Count > 0;
 
         /// <summary>Adds the small stop square that stands before send while a draft waits to be queued (the toolbar's right cluster).</summary>
+        /// <summary>The small stop square beside send: 4pt under the toolbar's height, as the Mac's.</summary>
+        internal const double QueueStopSize = DesignMetrics.Layout.Toolbar - 4;
         private void InitializeQueuedComposer(StackPanel actions)
         {
             AutomationProperties.SetAutomationId(queuedInputHost, "queue-" + id);
-            queueStopButton = Button("■", StopActiveRun); queueStopButton.Width = queueStopButton.Height = 28; queueStopButton.MinWidth = 0; queueStopButton.MinHeight = 0; queueStopButton.Padding = new(0); queueStopButton.BorderThickness = new(0); queueStopButton.Visibility = Visibility.Collapsed;
-            // With text waiting, stop shrinks to the 28pt err square (r7, a 10pt symbol) beside send (M/SessionPaneView.swift:737-750).
+            queueStopButton = Button("■", StopActiveRun); queueStopButton.Width = queueStopButton.Height = QueueStopSize; queueStopButton.MinWidth = 0; queueStopButton.MinHeight = 0; queueStopButton.Padding = new(0); queueStopButton.BorderThickness = new(0); queueStopButton.Visibility = Visibility.Collapsed;
+            // With text waiting, stop shrinks to the err square 4pt under the toolbar (r7, a 10pt symbol) beside send (M/SessionPaneView.swift:737-750).
             queueStopButton.CornerRadius = new(7); queueStopButton.VerticalAlignment = VerticalAlignment.Center;
             queueStopButton.Content = ComposerGlyph.Stop(compact: true).Ink(owner.brushes.Brush(DesignToken.OnStatus)).View;
             owner.PaintPlainButton(queueStopButton, owner.brushes.Brush(DesignToken.Err), owner.brushes.Brush(DesignToken.Err), ink: owner.brushes.Brush(DesignToken.OnStatus), disabledInk: owner.brushes.Brush(DesignToken.OnStatus));

@@ -335,15 +335,15 @@ public sealed partial class MainWindow
             var resume = new Border { Child = resumeMark.View, Background = b.Transparent, Visibility = Visibility.Collapsed };
             AutomationProperties.SetName(resume, Locale.Get("composer.resume.name")); ToolTipService.SetToolTip(resume, Locale.Get("composer.resume.help"));
             resumeHost = resume; toolbarActions.Children.Add(resume);
-            // The context ring's button: the ring's own 32 × 32 frame (M/SessionInfoViews.swift:26-27).
-            context = new Button { Width = 32, Height = 32, MinWidth = 0, MinHeight = 0, Padding = new Thickness(0), CornerRadius = new CornerRadius(16), BorderThickness = new Thickness(0), VerticalAlignment = VerticalAlignment.Center };
+            // The context ring's button: the ring's own toolbar-high frame (M/SessionInfoViews.swift:26-27).
+            context = new Button { Width = DesignMetrics.Layout.Toolbar, Height = DesignMetrics.Layout.Toolbar, MinWidth = 0, MinHeight = 0, Padding = new Thickness(0), CornerRadius = new CornerRadius(16), BorderThickness = new Thickness(0), VerticalAlignment = VerticalAlignment.Center };
             context.Click += async (_, _) => await ShowContext();
             owner.PaintPlainButton(context, b.Transparent, b.Subtle, ink: ink2);
             AutomationProperties.SetName(context, Locale.Get("composer.context.name")); AutomationProperties.SetAutomationId(context, "context-" + id);
             toolbarActions.Children.Add(context);
             InitializeStatusLineToggle(toolbarActions);
             InitializeQueuedComposer(toolbarActions);
-            send = new Button { Width = 32, Height = 32, MinWidth = 0, MinHeight = 0, Padding = new Thickness(0), CornerRadius = new CornerRadius(16), BorderThickness = new Thickness(0) };
+            send = new Button { Width = DesignMetrics.Layout.Toolbar, Height = DesignMetrics.Layout.Toolbar, MinWidth = 0, MinHeight = 0, Padding = new Thickness(0), CornerRadius = new CornerRadius(16), BorderThickness = new Thickness(0) };
             send.Click += async (_, _) => await PrimaryAction();
             foreach (var glyph in new[] { sendArrow, sendQueue, sendStop }) sendGlyph.Children.Add(glyph.View);
             send.Content = sendGlyph; ShowSendSymbol("send");

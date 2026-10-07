@@ -134,7 +134,7 @@ public sealed partial class MainWindow
         Require(ReferenceEquals(actual, expected), $"{PaletteDesignKey} ({SmokeTheme}): {what} must be the shared {Describe(expected)} brush; got {Describe(actual)}");
 
     /// <summary>
-    /// The terminal's slim ink bar (M/PaneChrome.swift:99-122): 34 high on the shared <c>idle</c> brush,
+    /// The terminal's slim ink bar (M/PaneChrome.swift:99-122): Layout.PaneHeader high on the shared <c>idle</c> brush,
     /// radius 11, padding h13; the 11pt symbol, the 13pt bold title, the 11.5pt kind words and the 11pt
     /// bold status word in its 20-high capsule with a 1.5pt edge, all <c>onStatus</c>.
     /// </summary>
@@ -184,7 +184,7 @@ public sealed partial class MainWindow
     /// <summary>
     /// The slim ink bar a tab group draws over a pane that is not a conversation (M/PaneChrome.swift:99-141,
     /// M/PaneDockView.swift:178-180), here the files pane's: between the tab strip and the pane, set in h8 t8 b2,
-    /// 34 high on <c>idle</c>, radius 11, padding h13; the folder, the title in 13pt bold and the kind in 11.5pt,
+    /// Layout.PaneHeader high on <c>idle</c>, radius 11, padding h13; the folder, the title in 13pt bold and the kind in 11.5pt,
     /// all <c>onStatus</c>, with no status capsule and no menu. The pane under it draws no header and no outline.
     /// </summary>
     private void RequireGroupSlimHeaderInTheme(PaneView files)
@@ -227,7 +227,7 @@ public sealed partial class MainWindow
     private async Task<string> RequireDockInTheme()
     {
         const string key = PaletteDesignKey; var theme = SmokeTheme;
-        Require(DesignMetrics.Layout.SplitDivider == 10 && splitDividers.Count >= 2, $"{key} ({theme}): the side-by-side layout must hold dividers of Layout.SplitDivider 10; got {splitDividers.Count} of {DesignMetrics.Layout.SplitDivider}");
+        Require(splitDividers.Count >= 2, $"{key} ({theme}): the side-by-side layout must hold dividers of Layout.SplitDivider {DesignMetrics.Layout.SplitDivider}; got {splitDividers.Count} of {DesignMetrics.Layout.SplitDivider}");
         foreach (var (splitId, (divider, handle)) in splitDividers)
         {
             var sideways = handle.Width < handle.Height;

@@ -129,7 +129,7 @@ struct MightyGraphView: View {
         if !runs[index].resultEntries.contains(where: { $0.kind != "user" }) { return 0 }
         return resultHeights[MightyGraphLayout.nodeID(runs[index], suffix: "result")].map { Self.blockHeaderHeight + $0 }
     }
-    private static let blockHeaderHeight: CGFloat = 38
+    private static let blockHeaderHeight = DesignMetrics.Layout.blockHead
     /// The pane's own requests as the reveal rule sees them.
     private var ownRunProgress: [MightyGraphCamera.ResultReveal.RunProgress] {
         ownRuns.map { .init(id: $0.id, finished: MightyGraphLayout.finished($0)) }
@@ -184,7 +184,7 @@ struct MightyGraphView: View {
         let target = scrollTarget ?? MightyGraphScrollTarget(token: "initial:" + sessionID, nodeID: fallbackNodeID, alignTop: false)
         let live = MightyGraphLayout.liveNodeIDs(runs)
         VStack(spacing: 0) {
-            HStack(spacing: 10) {
+            HStack(spacing: DesignMetrics.Spacing.md) {
                 MightyViewSwitch(sessionID: sessionID, mode: viewMode) { mode in
                     onFocus()
                     onViewMode(mode)
@@ -195,7 +195,7 @@ struct MightyGraphView: View {
                 Text(summary)
                     .font(.system(size: 10)).foregroundStyle(Palette.ink2).lineLimit(1)
                     .help(tokens.isEmpty ? "" : L("graph.header.totalHelp", ["detail": tokens.detail]))
-                Spacer(minLength: 8)
+                Spacer(minLength: DesignMetrics.Spacing.md)
                 if viewMode == .diagram {
                     Group {
                         Button { zoom = max(0.5, zoom - 0.1) } label: { Image(systemName: "minus.magnifyingglass") }
@@ -208,7 +208,7 @@ struct MightyGraphView: View {
                     .foregroundStyle(Palette.ink2)
                 }
             }
-            .buttonStyle(.plain).padding(.horizontal, 12).padding(.vertical, 10)
+            .buttonStyle(.plain).padding(.horizontal, DesignMetrics.Inset.graphBarH).padding(.vertical, DesignMetrics.Inset.graphBarV)
             Divider().overlay(Palette.border)
             if viewMode == .timeline {
                 timeline(MightyTimeline.groups(runs))
@@ -425,7 +425,7 @@ struct MightyGraphView: View {
     @ViewBuilder private func card(_ node: MightyGraphLayout.Node, executions: [String: OuroborosExecutionLink]) -> some View {
         switch node.content {
         case .draft:
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
                 HStack {
                     Label(runs.isEmpty ? L("graph.block.firstRequest") : L("graph.block.nextRequest"), systemImage: "square.and.pencil").font(.system(size: 12, weight: .semibold))
                     Spacer()
@@ -435,10 +435,10 @@ struct MightyGraphView: View {
                 // canvas monitor hands first responder back to itself for every
                 // click that is not on an NSTextView, which left a SwiftUI
                 // selection here drawn but impossible to copy.
-                MightyGraphDraftPreview(draft: draft, width: max(1, node.frame.width - 32), identifier: "mighty-draft-\(sessionID)")
+                MightyGraphDraftPreview(draft: draft, width: max(1, node.frame.width - 2 * DesignMetrics.Spacing.lg), identifier: "mighty-draft-\(sessionID)")
                 Spacer(minLength: 0)
             }
-            .padding(16).background(Palette.panel, in: RoundedRectangle(cornerRadius: 12))
+            .padding(DesignMetrics.Spacing.lg).background(Palette.panel, in: RoundedRectangle(cornerRadius: 12))
             .overlay { RoundedRectangle(cornerRadius: 12).stroke(Palette.accent.opacity(0.6), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])) }
             .accessibilityElement(children: .contain).accessibilityIdentifier("mighty-node-\(node.id)")
         case .request(let index):
@@ -510,7 +510,7 @@ struct MightyGraphView: View {
         let onStrip = headerFill != nil
         let quiet = onStrip ? Palette.onStatus : Palette.ink2
         return VStack(spacing: 0) {
-            HStack(spacing: 7) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: icon).foregroundStyle(onStrip ? Palette.onStatus : tint)
                 // A request block's title ends with its agent's name; its mark goes before it.
                 (titleProvider.map { ProviderBadgeIcon.labelled(title, provider: $0, font: .systemFont(ofSize: 12, weight: .bold)) } ?? Text(title))
@@ -574,19 +574,19 @@ struct MightyGraphView: View {
                         .accessibilityLabel(expanded.contains(node.id) ? L("graph.block.collapse") : L("graph.block.expand"))
                         .accessibilityIdentifier("mighty-expand-\(node.id)")
                 }
-            }.padding(.horizontal, 12).frame(height: Self.blockHeaderHeight)
+            }.padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).frame(height: Self.blockHeaderHeight)
             .background(headerFill ?? Color.clear)
             if !onStrip { Divider().overlay(Palette.border) }
             if !input.isEmpty {
-                MightyGraphInputPreview(input: input, width: node.frame.width - 24, identifier: "mighty-request-\(node.id)")
-                    .padding(.horizontal, 12).padding(.vertical, 8)
+                MightyGraphInputPreview(input: input, width: node.frame.width - 2 * DesignMetrics.Inset.graphBlockBodyH, identifier: "mighty-request-\(node.id)")
+                    .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).padding(.vertical, DesignMetrics.Inset.graphBlockBodyV)
                     .background(tint.opacity(0.055))
                 Divider().overlay(Palette.border)
             }
             if content.isEmpty {
                 Text(MightyGraphLayout.terminal(status) ? L("graph.block.noResponse") : L("graph.block.waitingResponse"))
                     .font(.system(size: 12)).foregroundStyle(Palette.ink2)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).padding(15)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).padding(DesignMetrics.Inset.graphBlockBodyH)
             } else {
                 blockTranscript(id: "graph-\(sessionID)-\(node.id)", status: status, entries: content, records: records, childBlocks: childBlocks,
                                 onContentHeight: onContentHeight)
@@ -641,7 +641,7 @@ struct MightyGraphView: View {
             }
         }
         .font(.system(size: 11)).foregroundStyle(Palette.ink2).lineLimit(1).minimumScaleFactor(0.8)
-        .padding(.horizontal, 14)
+        .padding(.horizontal, DesignMetrics.Spacing.lg)
         .frame(width: width, height: height)
         .background(Palette.panel, in: Capsule())
         .overlay { Capsule().stroke(Palette.border, style: StrokeStyle(lineWidth: 1, dash: [4, 3])) }
@@ -675,7 +675,7 @@ struct MightyGraphView: View {
     private func timeline(_ groups: [MightyTimeline.Group]) -> some View {
         ScrollViewReader { proxy in
             ScrollView(.vertical) {
-                LazyVStack(alignment: .leading, spacing: 10) {
+                LazyVStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
                     if history != nil {
                         historyCard(width: MightyGraphLayout.historyWidth, height: MightyGraphLayout.historyHeight)
                             .frame(maxWidth: .infinity)
@@ -683,7 +683,7 @@ struct MightyGraphView: View {
                     }
                     if groups.isEmpty {
                         Text(L("graph.timeline.empty")).font(.system(size: 12)).foregroundStyle(Palette.ink2)
-                            .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, DesignMetrics.Spacing.md)
                             .id("timeline-empty")
                     }
                     ForEach(groups) { group in
@@ -691,7 +691,7 @@ struct MightyGraphView: View {
                     }
                 }
                 .scrollTargetLayout()
-                .padding(.leading, 12).padding(.trailing, 14).padding(.vertical, 12)
+                .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).padding(.vertical, DesignMetrics.Spacing.md)
             }
             .scrollPosition(id: $timelineTop)
             .defaultScrollAnchor(.bottom)
@@ -730,17 +730,17 @@ struct MightyGraphView: View {
     private func timelineGroup(_ group: MightyTimeline.Group) -> some View {
         let run = runs[group.runIndex]
         let open = (group.runIndex == runs.count - 1) != timelineFlipped.contains(group.id)
-        return VStack(alignment: .leading, spacing: 8) {
+        return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             timelineHeader(group, run: run, open: open)
             if open {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: MightyTimelineMarker.rowGap) {
                     ForEach(Array(group.rows.enumerated()), id: \.element.id) { index, row in
                         timelineRow(row, index: index, group: group, run: run)
                     }
                 }
             }
             if let result = group.result {
-                timelineResult(result, group: group, run: run).padding(.leading, MightyTimelineMarker.width + 8)
+                timelineResult(result, group: group, run: run).padding(.leading, MightyTimelineMarker.width + DesignMetrics.Spacing.md)
             }
         }
     }
@@ -753,8 +753,8 @@ struct MightyGraphView: View {
         return Button {
             if !timelineFlipped.insert(group.id).inserted { timelineFlipped.remove(group.id) }
         } label: {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
+                HStack(spacing: DesignMetrics.Spacing.md) {
                     Image(systemName: open ? "chevron.down" : "chevron.right")
                         .font(.system(size: 10, weight: .bold)).foregroundStyle(Palette.ink2).frame(width: 11)
                     ProviderBadgeIcon.labelled(title, provider: provider, font: Palette.headingNSFont(16))
@@ -763,7 +763,7 @@ struct MightyGraphView: View {
                         Image(systemName: "clock.arrow.circlepath").font(.system(size: 11)).foregroundStyle(Palette.ink2)
                             .help(L("graph.history.tag")).accessibilityLabel(L("graph.history.tag"))
                     }
-                    Spacer(minLength: 6)
+                    Spacer(minLength: DesignMetrics.Spacing.sm)
                     MightyStatusPill(text: statusLabel(group.status), tone: DesignTone(status: group.status), height: 20)
                 }
                 Group {
@@ -804,7 +804,7 @@ struct MightyGraphView: View {
         }) {
             timelineDetail(row, run: run, tint: look.tint)
         }
-        .padding(.leading, MightyTimelineMarker.width + 8)
+        .padding(.leading, MightyTimelineMarker.width + DesignMetrics.Spacing.md)
         .background(alignment: .topLeading) {
             MightyTimelineMarker(node: row.node, above: index == 0 ? nil : .some(MightyTimeline.railAbove(group.rows, at: index)),
                                  last: index == group.rows.count - 1, icon: look.icon)
@@ -845,13 +845,13 @@ struct MightyGraphView: View {
                 Text(input).font(.system(size: 11)).foregroundStyle(Palette.ink).lineLimit(6)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 11).padding(.vertical, 7)
+                    .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).padding(.vertical, DesignMetrics.Inset.graphBlockBodyV)
                     .background(tint.opacity(0.055))
                 Divider().overlay(Palette.border)
             }
             if entries.isEmpty {
                 Text(L("phone.blocks.nothing")).font(.system(size: 12)).foregroundStyle(Palette.ink2)
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(11)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(DesignMetrics.Inset.graphBlockBodyH)
             } else {
                 blockTranscript(id: "timeline-\(sessionID)-\(row.nodeID)", status: status, entries: entries, records: records, childBlocks: childBlocks, inTimeline: true)
                     .frame(height: 260)

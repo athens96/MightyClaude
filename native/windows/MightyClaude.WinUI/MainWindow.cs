@@ -299,12 +299,12 @@ public sealed partial class MainWindow : Window
         private readonly Microsoft.UI.Xaml.Controls.Primitives.ToggleButton fast = NewPill<Microsoft.UI.Xaml.Controls.Primitives.ToggleButton>();
         private Button send = null!, context = null!;
         /// <summary>The send / stop button's coloured shape, drawn under the button (PaintSend, MainWindow.Composer.cs).</summary>
-        private readonly Border sendDisc = new() { Width = 32, Height = 32, IsHitTestVisible = false };
+        private readonly Border sendDisc = new() { Width = DesignMetrics.Layout.Toolbar, Height = DesignMetrics.Layout.Toolbar, IsHitTestVisible = false };
         /// <summary>The send button's symbols (the arrow, the queue mark and the stop square), one shown and inked by <see cref="PaintSend"/> in every state.</summary>
-        private readonly Grid sendGlyph = new() { Width = 32, Height = 32 };
+        private readonly Grid sendGlyph = new() { Width = DesignMetrics.Layout.Toolbar, Height = DesignMetrics.Layout.Toolbar };
         /// <summary>The pills last painted active (<see cref="PaintPill"/>), so a change of enablement keeps their look.</summary>
         private readonly HashSet<ContentControl> activePills = [];
-        private readonly Grid sendHost = new() { Width = 32, Height = 32, VerticalAlignment = VerticalAlignment.Center };
+        private readonly Grid sendHost = new() { Width = DesignMetrics.Layout.Toolbar, Height = DesignMetrics.Layout.Toolbar, VerticalAlignment = VerticalAlignment.Center };
         /// <summary>The composer card's surface (M/SessionPaneView.swift:654); its edge is <see cref="composerRing"/>.</summary>
         private Border composerCard = null!;
         /// <summary>The shape under the composer card that casts its shadow (CardShadow).</summary>

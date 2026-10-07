@@ -37,8 +37,8 @@ public sealed partial class MainWindow
         private bool statusLineRestartPending;
         private readonly Microsoft.UI.Xaml.Controls.Primitives.ToggleButton statusLineToggle = new()
         {
-            // The toggle sits in the composer's right cluster in a 16 × 32 frame (M/SessionPaneView.swift:123-133, 736).
-            Width = 16, Height = 32, MinWidth = 0, MinHeight = 0, VerticalAlignment = VerticalAlignment.Center,
+            // The toggle sits in the composer's right cluster in a 16pt-wide, toolbar-high frame (M/SessionPaneView.swift:123-133, 736).
+            Width = 16, Height = DesignMetrics.Layout.Toolbar, MinWidth = 0, MinHeight = 0, VerticalAlignment = VerticalAlignment.Center,
             Padding = new Thickness(0), BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow),
         };
 

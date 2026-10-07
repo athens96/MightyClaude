@@ -152,8 +152,8 @@ public sealed partial class MainWindow
         if (LayoutMode(state, workspace) == "focus") node = PaneLayout.Groups(node).FirstOrDefault(g => g.SessionIds.Contains(state.ActiveSessionId ?? "")) ?? PaneLayout.Groups(node).First();
         var content = BuildLayoutNode(node, workspace, state);
         var minimum = LayoutMinimum(node);
-        // The dock sits DockInset inside its scroll view on every side (M/PaneDockView.swift:62-63).
-        const double inset = DesignMetrics.Layout.DockInset;
+        // The dock sits Inset.Dock inside its scroll view on every side (M/PaneDockView.swift).
+        const double inset = DesignMetrics.Inset.Dock;
         content.Margin = new Thickness(inset);
         content.Width = Math.Max(minimum.Width, (panes.ActualWidth > 0 ? panes.ActualWidth : 900) - 2 * inset); content.Height = Math.Max(minimum.Height, (panes.ActualHeight > 0 ? panes.ActualHeight : 650) - 2 * inset);
         var viewport = new ScrollViewer { Content = content, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollMode = ScrollMode.Auto, VerticalScrollMode = ScrollMode.Auto };
@@ -276,6 +276,9 @@ public sealed partial class MainWindow
         return menu;
     }
 
+    /// <summary>The tab strip's space above and below its tabs: what Layout.TabStrip leaves around a Layout.Tab tab.</summary>
+    internal const double TabStripPadding = (DesignMetrics.Layout.TabStrip - DesignMetrics.Layout.Tab) / 2;
+
     /// <summary>
     /// A tab group is one card (M/PaneDockView.swift:162-193): the 38pt strip on top, then the slim ink
     /// bar when the selected pane is not a conversation, then the pane. The strip (M/PaneDockView.swift:195-216)
@@ -288,7 +291,7 @@ public sealed partial class MainWindow
     {
         var group = new Grid { AllowDrop = true, Background = brushes.Brush(DesignToken.Card), CornerRadius = new CornerRadius(DesignMetrics.Radius.Pane) };
         group.RowDefinitions.Add(new() { Height = GridLength.Auto }); group.RowDefinitions.Add(new() { Height = GridLength.Auto }); group.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) });
-        var tabs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 3, Padding = new Thickness(5, 4, 5, 4) };
+        var tabs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 3, Padding = new Thickness(5, TabStripPadding, 5, TabStripPadding) };
         var bar = new ScrollViewer { Content = tabs, HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Enabled, VerticalScrollMode = ScrollMode.Disabled };
         var holdsActive = state.ActiveSessionId is { } activeId && node.SessionIds.Contains(activeId);
         var strip = new Grid { Height = DesignMetrics.Layout.TabStrip, Background = brushes.Subtle, CornerRadius = new CornerRadius(DesignMetrics.Radius.Pane, DesignMetrics.Radius.Pane, 0, 0) };
@@ -324,9 +327,9 @@ public sealed partial class MainWindow
         {
             var session = state.Sessions.First(s => s.Id == id); var isSelected = id == selected;
             // PaneDockTab (M/PaneDockView.swift:236-266): the handle covers the tab up to its close button,
-            // l10 r6, at least 56x30; the selected tab is a card with a line border, r6, drawn as a shape
+            // l10 r6, at least 56 wide and Layout.Tab tall; the selected tab is a card with a line border, r6, drawn as a shape
             // under the buttons so the border takes no room from them.
-            var tab = Button(session.Title, () => SelectLayoutSession(id)); tab.CanDrag = true; tab.AllowDrop = true; tab.MinWidth = 56; tab.Height = 30; tab.MinHeight = 0; tab.Padding = new(10, 0, 6, 0); tab.CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment); tab.BorderThickness = new(0);
+            var tab = Button(session.Title, () => SelectLayoutSession(id)); tab.CanDrag = true; tab.AllowDrop = true; tab.MinWidth = 56; tab.Height = DesignMetrics.Layout.Tab; tab.MinHeight = 0; tab.Padding = new(10, 0, 6, 0); tab.CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment); tab.BorderThickness = new(0);
             tab.HorizontalContentAlignment = HorizontalAlignment.Left; tab.VerticalAlignment = VerticalAlignment.Center;
             PaintPlainButton(tab, brushes.Transparent, brushes.Transparent);
             tab.Content = TabIndicator(session, isSelected); tab.ContextFlyout = TabMenu(id);
@@ -350,7 +353,7 @@ public sealed partial class MainWindow
                 await DockSession(moved, workspace, node.Id, "center", index);
             };
             // The Mac's xmark at 8 medium draws 6.3 wide; Segoe's Cancel needs 9.5 to draw as wide.
-            var close = Button("×", () => CloseSession(id)); close.Content = new FontIcon { Glyph = "\uE711", FontSize = 9.5, FontWeight = Microsoft.UI.Text.FontWeights.Medium }; close.MinWidth = 0; close.MinHeight = 0; close.Width = 20; close.Height = 30; close.Padding = new(0); close.CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment); close.BorderThickness = new(0);
+            var close = Button("×", () => CloseSession(id)); close.Content = new FontIcon { Glyph = "\uE711", FontSize = 9.5, FontWeight = Microsoft.UI.Text.FontWeights.Medium }; close.MinWidth = 0; close.MinHeight = 0; close.Width = 20; close.Height = DesignMetrics.Layout.Tab; close.Padding = new(0); close.CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment); close.BorderThickness = new(0);
             PaintPlainButton(close, brushes.Transparent, brushes.Transparent, ink: brushes.Brush(DesignToken.Ink2));
             AutomationProperties.SetName(close, Locale.Get("layout.tab.closeAccessibility", new Dictionary<string, string> { ["title"] = session.Title }));
             var handle = new Grid(); handle.Children.Add(tab); handle.Children.Add(landing);
@@ -360,7 +363,7 @@ public sealed partial class MainWindow
                 CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), BorderThickness = new Thickness(DesignMetrics.Stroke.Line), IsHitTestVisible = false,
                 Background = isSelected ? brushes.Brush(DesignToken.Card) : brushes.Transparent, BorderBrush = isSelected ? brushes.Brush(DesignToken.Line) : brushes.Transparent,
             };
-            var tabCell = new Grid { Height = 30, VerticalAlignment = VerticalAlignment.Center }; tabCell.Children.Add(shape); tabCell.Children.Add(row);
+            var tabCell = new Grid { Height = DesignMetrics.Layout.Tab, VerticalAlignment = VerticalAlignment.Center }; tabCell.Children.Add(shape); tabCell.Children.Add(row);
             AutomationProperties.SetAutomationId(tabCell, "pane-tab-" + id);
             tabCells[id] = (tabCell, shape, tab, close, tabTitles[id]);
             tabs.Children.Add(tabCell);
