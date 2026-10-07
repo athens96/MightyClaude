@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "note": "Raw spacing numbers (2 or more) left per area of scripts/check-design-tokens.js, written where a spacing goes instead of the spacing scale or a named inset from native/contracts/fixtures/design-tokens.json. The count must equal its area's budget: more is a new literal, fewer means the budget is stale; lower it with node scripts/check-design-tokens.js --write-budget, which never raises one. Exempt files are not counted; each says why, and a glob that matches no file fails. True geometry may sit in a // spacing-exempt-begin: <reason> … // spacing-exempt-end region.",
+  "areas": {
+    "macOS": 64,
+    "Windows": 8,
+    "phone": 1
+  },
+  "exemptFiles": {
+    "native/macos/Sources/MightyClaude/*Diagnostics*.swift": "GUI smoke and contract-harness steps (--smoke-test, scripts/tests): fixtures and measurements, not app chrome.",
+    "native/macos/Sources/MightyClaude/AppStore+*Smoke.swift": "The GUI smoke steps (--smoke-test), one file per area: fixtures and measurements, not app chrome.",
+    "native/macos/Sources/MightyClaude/ScreenShareReferenceSceneWindow.swift": "A fixed reference scene for the screen-share check, not app chrome.",
+    "native/macos/Sources/MightyCore/Styles/**": "frozen style engine v6 (scripts/check-style-freeze.sh); changing it needs v7",
+    "native/windows/MightyClaude.WinUI/*Smoke*.cs": "The Windows GUI smoke (--smoke-test): fixtures and measured expectations, not app chrome.",
+    "native/windows/MightyClaude.Core/*Smoke*.cs": "Smoke support in Core (--smoke-test): fixtures, not app chrome.",
+    "native/windows/MightyClaude.WinUI/ScreenShareReferenceSceneWindow.cs": "A fixed reference scene for the screen-share check, not app chrome.",
+    "mobile/src/lib/styles.ts": "frozen style engine v6 (the phone renderer, scripts/check-style-freeze.sh); changing it needs v7"
+  }
+}
