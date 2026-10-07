@@ -25,8 +25,8 @@ public sealed class MightyGraphLayout
     public (double W, double H)? ResultLimit { get; set; }
     public (double W, double H)? ResultWindowFit { get; set; }
 
-    private const double SiblingGap = 32;
-    private const double RowGap = 52;
+    private const double SiblingGap = 20;
+    private const double RowGap = 32;
     /// The top of the diagram: loads older requests from the session record.
     public const string HistoryNodeID = "history-top";
     public const double HistoryWidth = 380;
@@ -39,7 +39,7 @@ public sealed class MightyGraphLayout
     public const string PlanRecordSuffix = "plan-record:";
     public const double PlanRecordWidth = 320;
     public static double PlanRecordHeight(bool expanded) => expanded ? 420 : 104;
-    private const double AttachmentGap = 16;
+    private const double AttachmentGap = 8;
 
     public static bool Terminal(string state) =>
         state is "completed" or "error" or "failed" or "stopped" or "cancelled" or "interrupted";

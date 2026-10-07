@@ -31,7 +31,7 @@ struct MightyViewSwitch: View {
             Label(title, systemImage: symbol)
                 .font(.system(size: 11, weight: selected ? .bold : .semibold)).lineLimit(1)
                 .foregroundStyle(selected ? Palette.ink : Palette.ink2)
-                .padding(.horizontal, 9).frame(height: 22)
+                .padding(.horizontal, DesignMetrics.Spacing.md).frame(height: 20)
                 .background(selected ? Palette.panel : Color.clear, in: shape)
                 .contentShape(shape)
         }
@@ -73,11 +73,14 @@ struct MightyTimelineMarker: View {
     let above: DesignTone??
     let last: Bool
     let icon: String
-    var gap: CGFloat = 6
+    var gap = rowGap
 
+    /// The space between a request's rows, which the rail runs on through.
+    static let rowGap = DesignMetrics.Spacing.xs
     static let width: CGFloat = 32
     static let nodeSize: CGFloat = 24
-    static let nodeTop: CGFloat = 9
+    /// Two points under the row card's own top padding.
+    static let nodeTop = DesignMetrics.Inset.graphBlockBodyV + 2
     static var centre: CGFloat { nodeTop + nodeSize / 2 }
 
     var body: some View {
@@ -156,8 +159,8 @@ struct MightyTimelineRowCard<Detail: View>: View {
         let tone = row.node.tone
         VStack(alignment: .leading, spacing: 0) {
             Button(action: onToggle) {
-                HStack(alignment: .top, spacing: 8) {
-                    VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .top, spacing: DesignMetrics.Spacing.md) {
+                    VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                         Text(title).font(.system(size: 13, weight: .bold)).foregroundStyle(Palette.ink)
                             .lineLimit(2).multilineTextAlignment(.leading)
                         HStack(spacing: 4) {
@@ -177,7 +180,7 @@ struct MightyTimelineRowCard<Detail: View>: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     MightyStatusPill(text: status, tone: tone, height: 19)
                 }
-                .padding(.horizontal, 11).padding(.vertical, 7)
+                .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).padding(.vertical, DesignMetrics.Inset.graphBlockBodyV)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -219,7 +222,7 @@ struct MightyTimelineResultCard<Files: View>: View {
         let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
         let ink = Palette.heroInk(result.tone)
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: Self.icon(result.tone)).font(.system(size: 11, weight: .bold))
                 Text(title).font(.system(size: 12, weight: .heavy)).lineLimit(1)
                 Spacer(minLength: 6)
@@ -227,7 +230,7 @@ struct MightyTimelineResultCard<Files: View>: View {
                 Text(caption).font(.system(size: 10.5, weight: .semibold, design: .monospaced)).lineLimit(1)
             }
             .foregroundStyle(ink)
-            .padding(.horizontal, 13).padding(.vertical, 6)
+            .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).padding(.vertical, DesignMetrics.Inset.graphBlockBodyV)
             .background(Palette.heroFill(result.tone))
             if let text = result.text {
                 VStack(alignment: .leading, spacing: 4) {
@@ -244,7 +247,7 @@ struct MightyTimelineResultCard<Files: View>: View {
                         .accessibilityIdentifier("mighty-timeline-result-more-\(result.nodeID)")
                     }
                 }
-                .padding(.horizontal, 13).padding(.top, 8).padding(.bottom, 10)
+                .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).padding(.top, DesignMetrics.Spacing.sm).padding(.bottom, DesignMetrics.Spacing.md)
             }
         }
         .background(Palette.panel, in: shape)

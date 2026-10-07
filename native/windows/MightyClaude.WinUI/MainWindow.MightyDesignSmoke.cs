@@ -197,14 +197,14 @@ public sealed partial class MainWindow
             foreach (var zoom in new[] { zoomOutButton!, zoomResetButton, zoomInButton! })
                 o.RequireBrush(zoom, e => ((Control)e).Foreground, DesignToken.Ink2, "the zoom control " + AutomationProperties.GetAutomationId(zoom), key: key);
 
-            // A block: the D card, its 38pt header over a line, the title and mark, the request band, the pill, the capsule.
+            // A block: the D card, its Layout.BlockHead header over a line, the title and mark, the request band, the pill, the capsule.
             var view = graphCardViews[liveRequest]; var card = view.Card;
             RequireRadius(card, DesignMetrics.Radius.Block, $"({theme}) a block card (Radius.Block)", key);
             RequireThickness(card, DesignMetrics.Stroke.Line, $"({theme}) a block card (Stroke.Line)", key);
             Require(card.Padding == new Thickness(0), $"{key} ({theme}): a block card insets nothing, so its header and band run edge to edge; got padding {card.Padding}");
             o.RequireBrush(card, e => ((Border)e).Background, DesignToken.Card, "a block card", key: key);
             o.RequireBrush(card, e => ((Border)e).BorderBrush, DesignToken.Line, "a block card's edge", key: key);
-            // The Mac strokes the card's 1pt edge over its content (M/MightyGraphActivityView.swift:142-146): the 38pt head
+            // The Mac strokes the card's 1pt edge over its content (M/MightyGraphActivityView.swift:142-146): the Layout.BlockHead head
             // and its h12 padding are measured from the card's own edge, the edge included.
             var header = view.Header!; var edge = card.BorderThickness.Left;
             Require(header.Height + edge == DesignMetrics.Layout.BlockHead + DesignMetrics.Stroke.Line && header.Padding == new Thickness(12 - edge, 0, 12 - edge, 0) && header.ColumnSpacing == 7 && header.BorderThickness == new Thickness(0, 0, 0, DesignMetrics.Stroke.Line),

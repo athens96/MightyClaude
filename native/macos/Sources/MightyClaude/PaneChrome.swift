@@ -38,7 +38,7 @@ struct HeroStatusPill: View {
         Text(text)
             .font(.system(size: 11, weight: .bold)).lineLimit(1)
             .foregroundStyle(ink)
-            .padding(.horizontal, 8).frame(height: 20)
+            .padding(.horizontal, DesignMetrics.Spacing.md).frame(height: 18)
             .overlay { Capsule().strokeBorder(ink, lineWidth: 1.5) }
             .fixedSize()
     }
@@ -104,19 +104,19 @@ struct SlimPaneHeader<Trailing: View>: View {
     @ViewBuilder var trailing: () -> Trailing
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: DesignMetrics.Spacing.md) {
             Image(systemName: paneSymbol(kind)).font(.system(size: 11, weight: .semibold)).accessibilityHidden(true)
             Text(title).font(.system(size: 13, weight: .bold)).lineLimit(1).truncationMode(.tail)
                 .accessibilityAddTraits(.isHeader)
             Text(subtitle).font(.system(size: 11.5)).lineLimit(1).truncationMode(.tail)
-            Spacer(minLength: 6)
+            Spacer(minLength: DesignMetrics.Spacing.sm)
             if let status { HeroStatusPill(text: status, ink: Palette.onStatus) }
             trailing()
         }
         .foregroundStyle(Palette.onStatus)
-        .padding(.horizontal, 13).frame(height: 34)
+        .padding(.horizontal, DesignMetrics.Inset.paneHeaderLeading).frame(height: DesignMetrics.Layout.paneHeader)
         .background(Palette.idle, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-        .padding(.horizontal, 8).padding(.top, 8).padding(.bottom, 2)
+        .padding(.horizontal, DesignMetrics.Spacing.xs).padding(.top, DesignMetrics.Spacing.xs).padding(.bottom, DesignMetrics.Spacing.xxs)
         .accessibilityElement(children: .contain)
     }
 }
@@ -162,7 +162,7 @@ struct PaneCardButtonStyle: ButtonStyle {
             configuration.label
                 .font(.system(size: 12, weight: .bold)).lineLimit(1)
                 .foregroundStyle(accent ? Palette.onAccent : prominent ? Palette.panel : Palette.ink)
-                .padding(.horizontal, 13).frame(minHeight: 28)
+                .padding(.horizontal, DesignMetrics.Spacing.lg).frame(minHeight: 24)
                 .background(accent ? Palette.accent : prominent ? Palette.ink : Palette.raised, in: shape)
                 .overlay { if !prominent { shape.strokeBorder(Palette.border, lineWidth: 1) } }
                 .opacity(enabled ? (configuration.isPressed ? 0.8 : 1) : 0.45)
@@ -187,7 +187,7 @@ extension View {
     /// that says it waits on the user.
     func paneWaitCard() -> some View {
         let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
-        return padding(14)
+        return padding(DesignMetrics.Spacing.md)
             .background(Palette.panel, in: shape)
             .overlay { shape.strokeBorder(Palette.wait, lineWidth: 2).allowsHitTesting(false) }
     }

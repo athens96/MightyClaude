@@ -39,9 +39,9 @@ enum PaneDockZone: String, Equatable {
 }
 
 private enum PaneDockMetrics {
-    static let divider: CGFloat = 10
+    static let divider = DesignMetrics.Layout.splitDivider
     static func minimumSize(_ node: PaneLayoutNode) -> CGSize {
-        guard node.kind == "split", node.children.count == 2 else { return CGSize(width: 315, height: 290) }
+        guard node.kind == "split", node.children.count == 2 else { return CGSize(width: DesignMetrics.Layout.paneMinWidth, height: DesignMetrics.Layout.paneMinHeight) }
         let first = minimumSize(node.children[0]), second = minimumSize(node.children[1])
         if node.axis == "vertical" { return CGSize(width: max(first.width, second.width), height: first.height + second.height + divider) }
         return CGSize(width: first.width + second.width + divider, height: max(first.height, second.height))
@@ -59,8 +59,8 @@ struct PaneDockView: View {
             let minimum = PaneDockMetrics.minimumSize(visibleRoot)
             ScrollView([.horizontal, .vertical]) {
                 PaneDockNode(node: visibleRoot, workspaceId: workspaceId)
-                    .frame(width: max(minimum.width, geometry.size.width - 32), height: max(minimum.height, geometry.size.height - 32))
-                    .padding(16)
+                    .frame(width: max(minimum.width, geometry.size.width - 2 * DesignMetrics.Inset.dock), height: max(minimum.height, geometry.size.height - 2 * DesignMetrics.Inset.dock))
+                    .padding(DesignMetrics.Inset.dock)
             }
         }
         .accessibilityElement(children: .contain)
@@ -196,19 +196,19 @@ private struct PaneDockGroup: View {
         HStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView(.horizontal) {
-                    HStack(spacing: 3) {
+                    HStack(spacing: DesignMetrics.Spacing.xxs) {
                         ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
                             PaneDockTab(session: session, groupId: node.id, selected: session.id == selected?.id, nextSessionId: sessions.indices.contains(index + 1) ? sessions[index + 1].id : nil)
                                 .id(session.id)
                         }
-                    }.padding(.horizontal, 5).padding(.vertical, 4)
+                    }.padding(.horizontal, DesignMetrics.Spacing.xs).padding(.vertical, (DesignMetrics.Layout.tabStrip - DesignMetrics.Layout.tab) / 2)
                 }
                 .scrollIndicators(.hidden)
                 .onChange(of: node.selectedSessionId) { _, id in if let id { proxy.scrollTo(id, anchor: .center) } }
             }
             .frame(minWidth: 0, maxWidth: .infinity)
         }
-        .frame(height: 38)
+        .frame(height: DesignMetrics.Layout.tabStrip)
         .background(Palette.subtle, in: UnevenRoundedRectangle(topLeadingRadius: 11, topTrailingRadius: 11))
         .overlay(alignment: .bottom) { Rectangle().fill(sessions.contains(where: { $0.id == store.snapshot.activeSessionId }) ? Palette.accent.opacity(0.55) : Palette.border).frame(height: 1) }
         .accessibilityElement(children: .contain)
@@ -237,7 +237,7 @@ private struct PaneDockTab: View {
         HStack(spacing: 0) {
             // The click/drag handle covers the whole tab up to the close
             // button, padding included, so the tab's visible shape is its hit area.
-            HStack(spacing: 6) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Group {
                     if session.kind == "shell" || session.kind == AgentIOPaneKind.terminal { Image(systemName: "terminal").font(.system(size: 10)) }
                     else if session.kind == "browser" || session.kind == AgentIOPaneKind.browser { Image(systemName: "globe").font(.system(size: 10)) }
@@ -248,14 +248,14 @@ private struct PaneDockTab: View {
                 if session.kind == "claude" && ProviderOptions.isBeta(session.provider) { BetaBadge() }
                 if let tone = tabTone { StatusGlyph(tone: tone, kind: session.kind, size: 12) }
             }
-            .padding(.leading, 10).padding(.trailing, 6)
-            .frame(minWidth: 56, minHeight: 30, maxHeight: 30, alignment: .leading)
+            .padding(.leading, DesignMetrics.Inset.tabLeading).padding(.trailing, DesignMetrics.Inset.tabTrailing)
+            .frame(minWidth: 56, minHeight: DesignMetrics.Layout.tab, maxHeight: DesignMetrics.Layout.tab, alignment: .leading)
             .allowsHitTesting(false).accessibilityHidden(true)
             .overlay { PaneDockTabHandle(store: store, sessionId: session.id, workspaceId: session.workspaceId, groupId: groupId, title: session.title, nextSessionId: nextSessionId) }
-            Button { store.closeSession(session.id) } label: { Image(systemName: "xmark").font(.system(size: 8, weight: .medium)).frame(width: 20, height: 30).contentShape(Rectangle()) }
+            Button { store.closeSession(session.id) } label: { Image(systemName: "xmark").font(.system(size: 8, weight: .medium)).frame(width: 20, height: DesignMetrics.Layout.tab).contentShape(Rectangle()) }
                 .buttonStyle(.plain).foregroundStyle(Palette.ink2).accessibilityLabel(L("layout.tab.closeTabAccessibility", ["title": session.title]))
         }
-        .padding(.trailing, 2).frame(height: 30)
+        .padding(.trailing, DesignMetrics.Spacing.xxs).frame(height: DesignMetrics.Layout.tab)
         .foregroundStyle(selected ? Palette.ink : Palette.ink2)
         .background(selected ? Palette.panel : Color.clear, in: RoundedRectangle(cornerRadius: 6))
         .overlay { RoundedRectangle(cornerRadius: 6).stroke(selected ? Palette.border : Color.clear) }

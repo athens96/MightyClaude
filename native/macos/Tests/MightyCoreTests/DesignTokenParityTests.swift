@@ -64,6 +64,37 @@ struct DesignTokenParityTests {
         }
     }
 
+    /// `metrics.spacing`, `metrics.inset` and `metrics.layout`: the Mac's `DesignMetrics` names
+    /// the same keys with the same values, so a size changed on one side fails here.
+    @Test(arguments: ["spacing", "inset", "layout"])
+    func metricsMatchTheFixture(_ section: String) throws {
+        let metrics = try #require(try Self.load()["metrics"] as? [String: Any])
+        let table = try #require(metrics[section] as? [String: Double], "metrics.\(section)")
+        let mac: [String: CGFloat] = switch section {
+        case "spacing": DesignMetrics.Spacing.all
+        case "inset": DesignMetrics.Inset.all
+        default: DesignMetrics.Layout.all
+        }
+        #expect(Set(mac.keys) == Set(table.keys), "\(section): Mac-only \(Set(mac.keys).subtracting(table.keys).sorted()), fixture-only \(Set(table.keys).subtracting(mac.keys).sorted())")
+        for (name, value) in table {
+            #expect(mac[name].map(Double.init) == value, "metrics.\(section).\(name): fixture \(value), Mac \(mac[name].map { "\($0)" } ?? "missing")")
+        }
+    }
+
+    /// The constants the views read and the tables above are the same numbers.
+    @Test func metricTablesListTheirConstants() {
+        #expect(DesignMetrics.Spacing.all["md"] == DesignMetrics.Spacing.md && DesignMetrics.Spacing.all.count == 6)
+        #expect(DesignMetrics.Inset.all["dock"] == DesignMetrics.Inset.dock && DesignMetrics.Inset.all["listGap"] == DesignMetrics.Inset.listGap)
+        #expect(DesignMetrics.Layout.all["toolbar"] == DesignMetrics.Layout.toolbar && DesignMetrics.Layout.all["tab"] == DesignMetrics.Layout.tab)
+        // Every inset and size sits on the 2pt half-grid of the spacing scale but the 3pt pane rows and status bar.
+        for (name, value) in DesignMetrics.Inset.all where !["paneRowV", "statusBarV"].contains(name) {
+            #expect(value.truncatingRemainder(dividingBy: 2) == 0, "inset.\(name) \(value) is off the 2pt grid")
+        }
+        // A tab sits inside its strip, and the toolbar's buttons stay a usable target.
+        #expect(DesignMetrics.Layout.tab < DesignMetrics.Layout.tabStrip)
+        #expect(DesignMetrics.Layout.toolbar >= 24 && DesignMetrics.Layout.tab >= 22 && DesignMetrics.Layout.paneHeader >= 24)
+    }
+
     @Test func providerColoursMatchTheFixture() throws {
         let windowsOnly = try #require(try Self.load()["windowsOnly"] as? [String: Any])
         let providers = try #require(windowsOnly["provider"] as? [String: Any])

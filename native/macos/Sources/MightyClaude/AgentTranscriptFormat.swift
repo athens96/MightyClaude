@@ -176,10 +176,10 @@ enum AgentTranscriptFormat {
             block.backgroundColor = Palette.nsToken(\.card)
             block.setBorderColor(Palette.nsToken(\.line))
             block.setWidth(1, type: .absoluteValueType, for: .border)
-            block.setWidth(14, type: .absoluteValueType, for: .padding, edge: .minX)
-            block.setWidth(14, type: .absoluteValueType, for: .padding, edge: .maxX)
-            block.setWidth(11, type: .absoluteValueType, for: .padding, edge: .minY)
-            block.setWidth(5, type: .absoluteValueType, for: .padding, edge: .maxY)
+            block.setWidth(DesignMetrics.Inset.replyCardH, type: .absoluteValueType, for: .padding, edge: .minX)
+            block.setWidth(DesignMetrics.Inset.replyCardH, type: .absoluteValueType, for: .padding, edge: .maxX)
+            block.setWidth(DesignMetrics.Inset.replyCardT, type: .absoluteValueType, for: .padding, edge: .minY)
+            block.setWidth(DesignMetrics.Inset.replyCardB, type: .absoluteValueType, for: .padding, edge: .maxY)
             return block
         }
 
@@ -190,10 +190,10 @@ enum AgentTranscriptFormat {
             let bubble = RoundedTextBlock()
             bubble.backgroundColor = Palette.nsToken(\.ink)
             bubble.setWidth(15, type: .percentageValueType, for: .margin, edge: .minX)
-            bubble.setWidth(14, type: .absoluteValueType, for: .padding, edge: .minX)
-            bubble.setWidth(14, type: .absoluteValueType, for: .padding, edge: .maxX)
-            bubble.setWidth(10, type: .absoluteValueType, for: .padding, edge: .minY)
-            bubble.setWidth(8, type: .absoluteValueType, for: .padding, edge: .maxY)
+            bubble.setWidth(DesignMetrics.Inset.userBubbleH, type: .absoluteValueType, for: .padding, edge: .minX)
+            bubble.setWidth(DesignMetrics.Inset.userBubbleH, type: .absoluteValueType, for: .padding, edge: .maxX)
+            bubble.setWidth(DesignMetrics.Inset.userBubbleT, type: .absoluteValueType, for: .padding, edge: .minY)
+            bubble.setWidth(DesignMetrics.Inset.userBubbleB, type: .absoluteValueType, for: .padding, edge: .maxY)
             let ink = Palette.nsToken(\.card)
             let text = NSMutableAttributedString(string: "")
             // The accent fails contrast on the ink bubble; links there keep the bubble's
@@ -217,10 +217,10 @@ enum AgentTranscriptFormat {
             chip.backgroundColor = Palette.nsToken(\.card)
             chip.setBorderColor(activity.state == "error" ? Palette.nsToken(\.errText) : Palette.nsToken(\.line))
             chip.setWidth(1, type: .absoluteValueType, for: .border)
-            chip.setWidth(10, type: .absoluteValueType, for: .padding, edge: .minX)
-            chip.setWidth(10, type: .absoluteValueType, for: .padding, edge: .maxX)
-            chip.setWidth(7, type: .absoluteValueType, for: .padding, edge: .minY)
-            chip.setWidth(7, type: .absoluteValueType, for: .padding, edge: .maxY)
+            chip.setWidth(DesignMetrics.Inset.toolChipH, type: .absoluteValueType, for: .padding, edge: .minX)
+            chip.setWidth(DesignMetrics.Inset.toolChipH, type: .absoluteValueType, for: .padding, edge: .maxX)
+            chip.setWidth(DesignMetrics.Inset.toolChipV, type: .absoluteValueType, for: .padding, edge: .minY)
+            chip.setWidth(DesignMetrics.Inset.toolChipV, type: .absoluteValueType, for: .padding, edge: .maxY)
             let mono = NSFont.monospacedSystemFont(ofSize: 11.5, weight: .regular)
             let line = NSMutableAttributedString(attributedString: AgentTranscriptFormat.statusSquare(activity.state, live: live))
             let name = activity.toolName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -366,7 +366,7 @@ enum AgentTranscriptFormat {
                 else { code(block.plainText, language: language, indent: indent) }
             case .blockQuote:
                 let border = NSTextBlock()
-                border.setWidth(10, type: .absoluteValueType, for: .padding)
+                border.setWidth(DesignMetrics.Inset.quote, type: .absoluteValueType, for: .padding)
                 border.setWidth(3, type: .absoluteValueType, for: .border, edge: .minX)
                 border.setBorderColor(Palette.nsToken(\.accent, alpha: 0.55), for: .minX)
                 for child in block.children { self.block(child, indent: indent + 3, quote: border) }
@@ -425,7 +425,7 @@ enum AgentTranscriptFormat {
         func box(background: NSColor, border: NSColor = .separatorColor) -> NSTextBlock {
             let block = NSTextBlock()
             block.backgroundColor = background
-            block.setWidth(10, type: .absoluteValueType, for: .padding)
+            block.setWidth(DesignMetrics.Inset.codeBlock, type: .absoluteValueType, for: .padding)
             block.setWidth(0.5, type: .absoluteValueType, for: .border)
             block.setBorderColor(border)
             return block
@@ -437,7 +437,7 @@ enum AgentTranscriptFormat {
             if cards {
                 background = RoundedTextBlock()
                 background.backgroundColor = Palette.nsToken(\.codeSurface)
-                background.setWidth(12, type: .absoluteValueType, for: .padding)
+                background.setWidth(DesignMetrics.Inset.codeBlock, type: .absoluteValueType, for: .padding)
             } else {
                 background = box(background: NSColor.labelColor.withAlphaComponent(0.035))
             }
@@ -464,7 +464,7 @@ enum AgentTranscriptFormat {
                     let cell = row.children.first { if case .tableCell(let index) = $0.kind { return index == column }; return false }
                     let box = NSTextTableBlock(table: table, startingRow: rowIndex, rowSpan: 1, startingColumn: column, columnSpan: 1)
                     box.setContentWidth(100 / CGFloat(columns.count), type: .percentageValueType)
-                    box.setWidth(8, type: .absoluteValueType, for: .padding)
+                    box.setWidth(DesignMetrics.Spacing.sm, type: .absoluteValueType, for: .padding)
                     box.setWidth(0.5, type: .absoluteValueType, for: .border)
                     box.setBorderColor(.separatorColor)
                     if row.kind == .tableHeaderRow { box.backgroundColor = NSColor.labelColor.withAlphaComponent(0.04) }

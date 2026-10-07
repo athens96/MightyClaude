@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import MightyCore
 
 struct ComposerPill: View {
     let title: String
@@ -37,8 +38,8 @@ enum ComposerToolbarStyle: Equatable { case full, compact, overflow }
 /// All controls share one height. Labels progressively collapse, then secondary
 /// choices move into a menu; the composer never grows a second controls row.
 enum ComposerToolbarMetrics {
-    static let height: CGFloat = 32
-    static let spacing: CGFloat = 6
+    static let height = DesignMetrics.Layout.toolbar
+    static let spacing = DesignMetrics.Spacing.sm
     static func textWidth(_ title: String) -> CGFloat {
         ceil((title as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 11, weight: .medium)]).width)
     }

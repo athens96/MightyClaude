@@ -73,9 +73,9 @@ public sealed partial class MainWindow
                 try
                 {
                     Container.Width = 320; Container.HorizontalAlignment = HorizontalAlignment.Left; owner.root.UpdateLayout(); await Task.Delay(80); owner.root.UpdateLayout();
-                    // Design stage 4: the header stays one 34pt line at any width (the Mac's); a narrow pane
+                    // Design stage 4: the header stays one Layout.PaneHeader line at any width (the Mac's); a narrow pane
                     // shows the Default | Mighty switch as icons instead of moving it to a second row.
-                    await WaitUI(() => HeaderFitsSmoke(true), "320px pane header controls must remain fully inside its one 34pt line, the switch as icons only");
+                    await WaitUI(() => HeaderFitsSmoke(true), "320px pane header controls must remain fully inside its one header line, the switch as icons only");
                     // The Mighty bar is one row on the Mac at any width (M/MightyGraphView.swift:175-201): a pane this narrow keeps
                     // it one row, 46 over its rule, by showing the Diagram | Timeline switch as symbols only.
                     await WaitUI(() => graphToolbar is { ActualHeight: > 46.5 and < 47.5 } && !ViewWordsShown, "320px pane keeps the Mighty bar one row, its view switch as symbols only");

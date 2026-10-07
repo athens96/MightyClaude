@@ -172,7 +172,7 @@ enum ComposerPresentationDiagnostics {
                     let required = ["attach-" + fixtureId, "composer-model-" + fixtureId, primary].allSatisfy { nodes[$0] != nil } && nodes[absent] == nil
                     let hasSettings = nodes["composer-more-" + fixtureId] != nil || nodes["composer-options-" + fixtureId] != nil
                     let inside = frames.allSatisfy { $0.1.minX >= content.minX - 1 && $0.1.maxX <= content.maxX + 1 }
-                    let rowPass = required && hasSettings && centerSpread <= 2 && heights.allSatisfy { abs($0 - 32) <= 2 } && inside
+                    let rowPass = required && hasSettings && centerSpread <= 2 && heights.allSatisfy { abs($0 - ComposerToolbarMetrics.height) <= 2 } && inside
                     if let frame = nodes[primary] {
                         if let prior = primaryFrame { samePrimaryPosition = samePrimaryPosition && abs(prior.minX - frame.minX) < 1 && abs(prior.midY - frame.midY) < 1 }
                         primaryFrame = frame

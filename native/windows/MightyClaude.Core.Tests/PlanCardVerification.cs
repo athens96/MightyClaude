@@ -61,7 +61,7 @@ internal static class PlanCardVerification
         var plan = layout.Nodes.Single(n => n.Id == planID);
         Check(plan.Kind == "plan" && plan.Frame.W == MightyGraphLayout.PlanWidth && plan.Frame.H == MightyGraphLayout.PlanHeight, "the plan card's size");
         var agent = layout.Nodes.Single(n => n.Kind == "agent");
-        Check(Math.Abs(plan.Frame.Y - (agent.Frame.MaxY + 52)) < 0.01 && layout.Edges.Any(e => e.Source == agent.Id && e.Target == planID && e.Joins), "below the last block, joined to it");
+        Check(Math.Abs(plan.Frame.Y - (agent.Frame.MaxY + 32)) < 0.01 && layout.Edges.Any(e => e.Source == agent.Id && e.Target == planID && e.Joins), "below the last block, joined to it");
         Check(Math.Abs(plan.Frame.X + plan.Frame.W / 2 - MightyGraphCamera.CentreX) < 0.5, "on the diagram's centreline");
         foreach (var node in plain.Nodes) Check(layout.Nodes.Single(n => n.Id == node.Id).Frame == node.Frame, "nothing above it moves: " + node.Id);
         var blocks = MightyGraphBlockModel.Blocks(layout, runs, "", "Claude", false);

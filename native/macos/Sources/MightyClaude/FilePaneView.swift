@@ -180,7 +180,7 @@ private struct FilePanePreviewView: View {
                 .help(L("menu.showInFinder")).accessibilityLabel(L("menu.showInFinder"))
         }
         .buttonStyle(.plain).font(.system(size: 12))
-        .padding(.horizontal, 12).frame(height: 40)
+        .padding(.horizontal, 12).frame(height: DesignMetrics.Layout.previewHead)
         .background(Palette.subtle)
     }
 

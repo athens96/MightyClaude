@@ -146,14 +146,15 @@ public sealed partial class MainWindow
         {
             if (referencePanel is not null) return;
             var b = owner.brushes; var ink = b.Brush(DesignToken.Ink); var card = b.Brush(DesignToken.Card);
-            // The head: 40 tall and padded h12 from the panel's own edge, its parts 8 apart; the buttons plain, their symbols 12 in ink.
+            // The head: Layout.PreviewHead tall and padded h12 from the panel's own edge, its parts 8 apart; the buttons plain, their symbols 12 in ink.
             var header = new Grid { Height = DesignMetrics.Layout.PreviewHead - DesignMetrics.Stroke.Line, Padding = new Thickness(12 - DesignMetrics.Stroke.Line, 0, 12 - DesignMetrics.Stroke.Line, 0), ColumnSpacing = 8 };
             foreach (var width in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto }) header.ColumnDefinitions.Add(new() { Width = width });
             referenceSymbol = new Grid { VerticalAlignment = VerticalAlignment.Center };
             header.Children.Add(referenceSymbol);
             var words = new StackPanel { Spacing = 1, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0) };
-            words.Children.Add(referenceTitle = new TextBlock { FontSize = DesignMetrics.Type.Block, FontWeight = FontWeights.SemiBold, Foreground = ink, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap });
-            words.Children.Add(referencePath = new TextBlock { FontSize = DesignMetrics.Type.Small, FontFamily = new FontFamily(DesignMetrics.Font.Mono), Foreground = b.Brush(DesignToken.Ink2), TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap });
+            // The two lines keep the files preview's line heights, so they fit the head's height (MainWindow.Files.cs).
+            words.Children.Add(referenceTitle = new TextBlock { FontSize = DesignMetrics.Type.Block, FontWeight = FontWeights.SemiBold, Foreground = ink, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, LineHeight = 15, LineStackingStrategy = LineStackingStrategy.BlockLineHeight });
+            words.Children.Add(referencePath = new TextBlock { FontSize = DesignMetrics.Type.Small, FontFamily = new FontFamily(DesignMetrics.Font.Mono), Foreground = b.Brush(DesignToken.Ink2), TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, LineHeight = 12, LineStackingStrategy = LineStackingStrategy.BlockLineHeight });
             Grid.SetColumn(words, 1); header.Children.Add(words);
             var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
             referenceFlip = ReferenceButton("rectangle.lefthalf.inset.filled.arrow.left", Locale.Get("reference.flipLeft"), "mighty-reference-flip-" + id, () => { referenceOnLeft = !referenceOnLeft; FitReferencePreview(); return Task.CompletedTask; });

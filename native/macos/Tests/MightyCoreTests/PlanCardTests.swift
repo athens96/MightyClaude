@@ -126,7 +126,7 @@ struct PlanCardTests {
         #expect(plan.content == .plan(1) && !plan.isAuxiliary)
         #expect(plan.frame.size == CGSize(width: MightyGraphLayout.planWidth, height: MightyGraphLayout.planHeight))
         let agentNode = try #require(layout.nodes.first { $0.content == .agent(1, 0) })
-        #expect(plan.frame.minY == agentNode.frame.maxY + 52)
+        #expect(plan.frame.minY == agentNode.frame.maxY + MightyGraphLayout.rowGap)
         #expect(layout.edges.contains { $0.source == agentNode.id && $0.target == planID && $0.joins })
         // Centred on the diagram's one centreline, and nothing above it moved.
         #expect(abs(plan.frame.midX - MightyGraphCamera.centreX) < 0.5)

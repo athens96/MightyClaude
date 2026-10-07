@@ -96,13 +96,13 @@ struct DashboardView: View {
     var body: some View {
         let sessions = store.snapshot.sessions
         let stats = WorkDashboard.stats(sessions: sessions, permissions: store.toolPermissions)
-        // M/DashboardView padding: h28 t20 b24; only the header row moves past the traffic lights while folded.
-        let inset: CGFloat = 28
+        // The page's inset (Inset.dashboardPage); only the header row moves past the traffic lights while folded.
+        let inset = DesignMetrics.Inset.dashboardPageH
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 10) {
+                HStack(spacing: DesignMetrics.Spacing.md) {
                     SidebarToggleButton()
-                    VStack(alignment: .leading, spacing: 3) {
+                    VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                         Text(L("phone.dashboard.title")).font(Palette.heading(29)).foregroundStyle(Palette.ink)
                             .accessibilityAddTraits(.isHeader)
                         Text(L("dashboard.subtitle", ["workspaces": "\(store.snapshot.workspaces.count)", "panes": "\(sessions.count)"]))
@@ -111,17 +111,17 @@ struct DashboardView: View {
                 }
                 .leadingPastTrafficLights(inset)
                 VStack(alignment: .leading, spacing: 0) {
-                    statRow(stats).padding(.top, 16)
+                    statRow(stats).padding(.top, DesignMetrics.Spacing.md)
                     if store.snapshot.workspaces.isEmpty {
-                        Text(L("dashboard.empty")).font(.system(size: 13)).foregroundStyle(Palette.ink2).padding(.top, 28)
+                        Text(L("dashboard.empty")).font(.system(size: 13)).foregroundStyle(Palette.ink2).padding(.top, DesignMetrics.Spacing.lg)
                     }
                     ForEach(store.snapshot.workspaces) { workspace in
-                        group(workspace, sessions: sessions.filter { $0.workspaceId == workspace.id }).padding(.top, 22)
+                        group(workspace, sessions: sessions.filter { $0.workspaceId == workspace.id }).padding(.top, DesignMetrics.Spacing.lg)
                     }
                 }
                 .padding(.leading, inset)
             }
-            .padding(.trailing, inset).padding(.top, 20).padding(.bottom, 24)
+            .padding(.trailing, inset).padding(.top, DesignMetrics.Inset.dashboardPageT).padding(.bottom, DesignMetrics.Inset.dashboardPageB)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .accessibilityIdentifier("work-dashboard")
@@ -129,9 +129,12 @@ struct DashboardView: View {
 
     // MARK: Tiles
 
+    /// A number tile's height: the 34pt heading figure, its label and the tile's inset, with a little air.
+    private static let tileHeight: CGFloat = 84
+
     private func statRow(_ stats: WorkDashboard.Stats) -> some View {
         let usage = usageRows
-        return HStack(alignment: .top, spacing: 12) {
+        return HStack(alignment: .top, spacing: DesignMetrics.Spacing.md) {
             tile(stats.running, L("phone.dashboard.stat.running"), fill: Palette.run, number: Palette.onStatus, label: Palette.onStatus)
                 .accessibilityIdentifier("dashboard-stat-running")
             tile(stats.waiting, L("phone.dashboard.stat.waiting"), fill: Palette.wait, number: Palette.onWait, label: Palette.onWait)
@@ -146,11 +149,11 @@ struct DashboardView: View {
     private func tile(_ count: Int, _ label: String, fill: Color, number: Color, label ink: Color) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("\(count)").font(Palette.heading(34)).monospacedDigit().foregroundStyle(number)
-            Spacer(minLength: 4)
+            Spacer(minLength: DesignMetrics.Spacing.xxs)
             Text(label).font(.system(size: 12.5, weight: .bold)).foregroundStyle(ink).lineLimit(1)
         }
-        .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 13)
-        .frame(minWidth: 110, maxWidth: usageRows.isEmpty ? .infinity : 220, minHeight: 92, maxHeight: 92, alignment: .leading)
+        .padding(.horizontal, DesignMetrics.Inset.dashboardTileH).padding(.vertical, DesignMetrics.Inset.dashboardTileV)
+        .frame(minWidth: 110, maxWidth: usageRows.isEmpty ? .infinity : 220, minHeight: Self.tileHeight, maxHeight: Self.tileHeight, alignment: .leading)
         // The shadow sits on the tile's shape only, never on the words drawn on it.
         .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(fill).shadow(color: .black.opacity(0.05), radius: 1, y: 1))
         .accessibilityElement(children: .ignore)
@@ -168,16 +171,16 @@ struct DashboardView: View {
     }
 
     private func usageCard(_ rows: [(provider: String, windows: [AccountUsageWindow])]) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 7) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: "waveform.path.ecg").font(.system(size: 11)).foregroundStyle(Palette.ink2)
                 Text(L("dashboard.usage.title")).font(.system(size: 12, weight: .bold)).foregroundStyle(Palette.ink)
                 Spacer(minLength: 6)
                 Text(L("dashboard.usage.shared")).font(.system(size: 11)).foregroundStyle(Palette.ink2).lineLimit(1)
             }
             ForEach(rows, id: \.provider) { row in
-                HStack(spacing: 14) {
-                    HStack(spacing: 6) {
+                HStack(spacing: DesignMetrics.Spacing.lg) {
+                    HStack(spacing: DesignMetrics.Spacing.sm) {
                         ProviderIcon(provider: row.provider, size: 11)
                         Text(ProviderOptions.label(row.provider)).font(.system(size: 11.5, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
                     }.frame(width: 78, alignment: .leading)
@@ -185,8 +188,8 @@ struct DashboardView: View {
                 }
             }
         }
-        .padding(.horizontal, 16).padding(.vertical, 11)
-        .frame(minWidth: 260, maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
+        .padding(.horizontal, DesignMetrics.Inset.dashboardTileH).padding(.vertical, DesignMetrics.Inset.dashboardTileV)
+        .frame(minWidth: 260, maxWidth: .infinity, minHeight: Self.tileHeight, alignment: .topLeading)
         .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Palette.panel).shadow(color: .black.opacity(0.05), radius: 1, y: 1))
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("dashboard-usage")
@@ -213,8 +216,8 @@ struct DashboardView: View {
 
     private func group(_ workspace: Workspace, sessions: [RunSession]) -> some View {
         let cards = WorkDashboard.ordered(sessions.map { WorkDashboard.card($0, permissions: store.toolPermissions[$0.id]) })
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
+        return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
+            HStack(spacing: DesignMetrics.Spacing.md) {
                 Text(workspace.name).font(Palette.heading(17)).foregroundStyle(Palette.ink).lineLimit(1)
                     .accessibilityAddTraits(.isHeader)
                 Text(workspace.path).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(Palette.ink2)
@@ -224,7 +227,7 @@ struct DashboardView: View {
                 Button { store.openFilePane(workspaceId: workspace.id) } label: {
                     Label(L("files.pane.title"), systemImage: "folder").font(.system(size: 11.5, weight: .bold))
                         .foregroundStyle(Palette.ink)
-                        .padding(.horizontal, 11).frame(height: 26)
+                        .padding(.horizontal, DesignMetrics.Spacing.md).frame(height: 24)
                         .background(Palette.panel, in: Capsule())
                         .contentShape(Capsule())
                 }
@@ -234,7 +237,7 @@ struct DashboardView: View {
                 Menu { WorkspaceAddMenuItems(store: store, workspace: workspace) } label: {
                     Label(L("workspace.addPane"), systemImage: "plus").font(.system(size: 11.5, weight: .bold))
                         .foregroundStyle(Palette.panel)
-                        .padding(.horizontal, 11).frame(height: 26)
+                        .padding(.horizontal, DesignMetrics.Spacing.md).frame(height: 24)
                         .background(Palette.ink, in: Capsule())
                         .contentShape(Capsule())
                 }
@@ -251,7 +254,7 @@ struct DashboardView: View {
                 // One white group per workspace, its panes as glyph rows (status v2).
                 VStack(spacing: 0) {
                     ForEach(Array(cards.enumerated()), id: \.element.id) { index, card in
-                        if index > 0 { Rectangle().fill(Palette.border).frame(height: 1).padding(.leading, 43) }
+                        if index > 0 { Rectangle().fill(Palette.border).frame(height: 1).padding(.leading, DashboardRow.textLeading) }
                         DashboardRow(card: card, localTerminal: sessions.first { $0.id == card.id }.map { store.usesLocalTerminal($0) } ?? false)
                     }
                 }
@@ -269,6 +272,10 @@ struct DashboardView: View {
 /// step in mono. Only a pane waiting on the user carries a word on the right ("질문 1").
 /// Clicking it opens the workspace on that pane.
 struct DashboardRow: View {
+    static let glyphSize: CGFloat = 18
+    static let glyphGap: CGFloat = 10
+    /// Where a row's words start: the rule between rows begins there.
+    static let textLeading = DesignMetrics.Inset.dashboardRowH + glyphSize + glyphGap
     @EnvironmentObject private var store: AppStore
     let card: WorkDashboard.Card
     let localTerminal: Bool
@@ -277,8 +284,8 @@ struct DashboardRow: View {
     var body: some View {
         let settled = [.done, .stop, .idle].contains(card.tone)
         Button { store.selectSession(card.id) } label: {
-            HStack(alignment: .top, spacing: 11) {
-                StatusGlyph(tone: card.tone, kind: card.kind, size: 18).padding(.top, 1).accessibilityHidden(true)
+            HStack(alignment: .top, spacing: Self.glyphGap) {
+                StatusGlyph(tone: card.tone, kind: card.kind, size: Self.glyphSize).padding(.top, 1).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(card.title).font(.system(size: 14, weight: settled ? .medium : .semibold)).foregroundStyle(Palette.ink).lineLimit(1)
                         .frame(minHeight: 20)
@@ -290,7 +297,7 @@ struct DashboardRow: View {
                     if let last = card.lastActivity, card.isRunning {
                         Text(last.text).font(.system(size: 11.3, design: .monospaced))
                             .foregroundStyle(last.isError ? Palette.errText : Palette.ink2)
-                            .lineLimit(1).truncationMode(.tail).padding(.top, 4)
+                            .lineLimit(1).truncationMode(.tail).padding(.top, DesignMetrics.Spacing.xxs)
                     }
                 }
                 Spacer(minLength: 4)
@@ -299,7 +306,7 @@ struct DashboardRow: View {
                         .lineLimit(1).fixedSize().frame(minHeight: 20)
                 }
             }
-            .padding(.horizontal, 14).padding(.vertical, 11)
+            .padding(.horizontal, DesignMetrics.Inset.dashboardRowH).padding(.vertical, DesignMetrics.Inset.dashboardRowV)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(hovering ? Palette.subtle : Color.clear)
             .contentShape(Rectangle())

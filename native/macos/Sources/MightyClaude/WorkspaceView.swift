@@ -82,32 +82,32 @@ struct WorkspaceView: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 7) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: "magnifyingglass").foregroundStyle(Palette.sidebarInk2)
                 TextField(L("sidebar.searchPlaceholder"), text: $store.search).textFieldStyle(.plain).font(.system(size: 12))
                     .focused($searchFocused)
                     .accessibilityLabel(L("sidebar.searchPlaceholder"))
             }
-            .padding(9).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 7)).padding(.horizontal, 14).padding(.top, 10)
+            .padding(DesignMetrics.Inset.sidebarSearch).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 7)).padding(.horizontal, DesignMetrics.Spacing.md).padding(.top, DesignMetrics.Spacing.sm)
 
-            dashboardEntry.padding(.horizontal, 9).padding(.top, 12)
+            dashboardEntry.padding(.horizontal, DesignMetrics.Spacing.sm).padding(.top, DesignMetrics.Spacing.sm)
 
             HStack {
                 Text(L("sidebar.workspacesHeader")).font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.sidebarInk2)
                 Text("\(store.snapshot.workspaces.count)").font(.system(size: 10, design: .monospaced)).foregroundStyle(Palette.sidebarInk2)
                 Spacer()
             }
-            .padding(.horizontal, 20).padding(.top, 20).padding(.bottom, 11)
+            .padding(.horizontal, DesignMetrics.Inset.sidebarSectionH).padding(.top, DesignMetrics.Inset.sidebarSectionT).padding(.bottom, DesignMetrics.Inset.sidebarSectionB)
 
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 4) {
+                LazyVStack(alignment: .leading, spacing: DesignMetrics.Inset.listGap) {
                     ForEach(store.filteredWorkspaces) { workspace in workspaceRow(workspace) }
                     if store.filteredWorkspaces.isEmpty {
                         Text(store.search.isEmpty ? L("dashboard.empty") : L("sidebar.noSearchResults"))
-                            .font(.system(size: 12)).foregroundStyle(Palette.sidebarInk2).padding(16)
+                            .font(.system(size: 12)).foregroundStyle(Palette.sidebarInk2).padding(DesignMetrics.Spacing.lg)
                     }
                 }
-                .padding(.horizontal, 9)
+                .padding(.horizontal, DesignMetrics.Spacing.sm)
             }
 
             // While a workspace is listed, a folder opens from its "Add Pane" menu or ⌘O;
@@ -115,17 +115,17 @@ struct WorkspaceView: View {
             // sidebar's way in.
             if store.filteredWorkspaces.isEmpty {
                 Button { store.openWorkspace() } label: {
-                    Label(L("sidebar.openFolder"), systemImage: "folder.badge.plus").font(.system(size: 12)).frame(maxWidth: .infinity, alignment: .leading).padding(10)
+                    Label(L("sidebar.openFolder"), systemImage: "folder.badge.plus").font(.system(size: 12)).frame(maxWidth: .infinity, alignment: .leading).padding(DesignMetrics.Spacing.sm)
                 }
-                .buttonStyle(.plain).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 7)).padding(.horizontal, 14).padding(.bottom, 12)
+                .buttonStyle(.plain).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 7)).padding(.horizontal, DesignMetrics.Spacing.md).padding(.bottom, DesignMetrics.Spacing.md)
             }
             Divider()
-            HStack(spacing: 9) {
+            HStack(spacing: DesignMetrics.Spacing.md) {
                 Group {
                     if let image = BrandAssets.icon { Image(nsImage: image).resizable().interpolation(.high).scaledToFit() }
                     else { Image(systemName: "sparkles").resizable().scaledToFit().foregroundStyle(Palette.sidebarAccent) }
                 }.frame(width: 20, height: 20).accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                     Text("Mighty Claude").font(.system(size: 12, weight: .semibold)).lineLimit(1)
                     Text("v\(store.appVersion)").font(.system(size: 10, design: .monospaced))
                         .foregroundStyle(Palette.sidebarInk2).lineLimit(1)
@@ -136,7 +136,7 @@ struct WorkspaceView: View {
                     .buttonStyle(.plain).help(L("sidebar.toggleTheme")).accessibilityLabel(L("sidebar.toggleTheme"))
                 Button { store.showSettings = true } label: { Image(systemName: "gearshape") }
                     .buttonStyle(.plain).help(L("settings.settingsWindowTitle")).accessibilityLabel(L("settings.settingsWindowTitle"))
-            }.padding(16)
+            }.padding(.horizontal, DesignMetrics.Spacing.lg).padding(.vertical, DesignMetrics.Spacing.md)
         }
         // A solid D surface, never vibrancy, so the wallpaper never decides the sidebar's
         // contrast; it runs up under the hidden title bar and the traffic lights.
@@ -149,15 +149,15 @@ struct WorkspaceView: View {
         let badges = WorkDashboard.badges(sessions: store.snapshot.sessions, permissions: store.toolPermissions)
         let selected = store.showsDashboard
         return Button { store.showsDashboard = true } label: {
-            HStack(spacing: 9) {
-                RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Palette.run).frame(width: 24, height: 24)
+            HStack(spacing: DesignMetrics.Spacing.md) {
+                RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Palette.run).frame(width: 22, height: 22)
                     .overlay { Image(systemName: "square.grid.2x2.fill").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.onStatus) }
                     .accessibilityHidden(true)
                 Text(L("phone.dashboard.title")).font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.ink).lineLimit(1)
                 Spacer(minLength: 0)
                 StatusCounts(badges: badges)
             }
-            .padding(.horizontal, 10).padding(.vertical, 8)
+            .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Inset.sidebarRowV)
             .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(selected ? Palette.panel : Color.clear)
                 .shadow(color: .black.opacity(selected ? 0.06 : 0), radius: 1, y: 1))
             .contentShape(Rectangle())
@@ -175,18 +175,18 @@ struct WorkspaceView: View {
         let expanded = store.isWorkspaceExpanded(workspace.id)
         let sessions = store.snapshot.sessions.filter { $0.workspaceId == workspace.id }
         let badges = WorkDashboard.badges(sessions: sessions, permissions: store.toolPermissions)
-        return VStack(alignment: .leading, spacing: 3) {
+        return VStack(alignment: .leading, spacing: DesignMetrics.Inset.listGap) {
             HStack(spacing: 0) {
             Button { store.selectWorkspace(workspace.id) } label: {
-                HStack(spacing: 9) {
+                HStack(spacing: DesignMetrics.Spacing.md) {
                     Image(systemName: "folder").font(.system(size: 14)).foregroundStyle(selected ? Palette.sidebarAccent : Palette.sidebarInk2)
-                    VStack(alignment: .leading, spacing: 3) {
+                    VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                         Text(workspace.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
                     }
                     Spacer(minLength: 0)
                     workspaceBadges(badges, workspace: workspace)
                 }
-                .padding(.leading, 11).padding(.trailing, 4).padding(.vertical, 10).frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, DesignMetrics.Spacing.sm).padding(.trailing, DesignMetrics.Spacing.xs).padding(.vertical, DesignMetrics.Inset.sidebarRowV).frame(minHeight: 24).frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -196,7 +196,7 @@ struct WorkspaceView: View {
                 Image(systemName: expanded ? "chevron.down" : "chevron.right").font(.system(size: 8, weight: .semibold)).foregroundStyle(Palette.sidebarInk2)
                     .frame(width: 18, height: 18).contentShape(Rectangle())
             }
-            .buttonStyle(.plain).padding(.trailing, 6)
+            .buttonStyle(.plain).padding(.trailing, DesignMetrics.Spacing.sm)
             .help(expanded ? L("workspace.list.collapseHelp") : L("workspace.list.expandHelp"))
             .accessibilityLabel(expanded ? L("workspace.collapseAccessibility", ["workspace": workspace.name]) : L("workspace.expandAccessibility", ["workspace": workspace.name]))
             .accessibilityIdentifier("workspace-expand-\(workspace.id)")
@@ -212,7 +212,7 @@ struct WorkspaceView: View {
                 ForEach(sessions) { session in paneRow(session) }
                 workspaceAddMenu(workspace)
             }
-        }.padding(.bottom, selected ? 12 : 1)
+        }.padding(.bottom, selected ? DesignMetrics.Spacing.sm : 0)
     }
 
     /// What in this workspace wants a look: requests waiting on the user, panes running
@@ -232,10 +232,10 @@ struct WorkspaceView: View {
         let localTerminal = store.usesLocalTerminal(session)
         let settled = [.done, .stop, .idle].contains(card.tone)
         return Button { store.selectSession(session.id) } label: {
-            HStack(alignment: .top, spacing: 8) {
+            HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
                 StatusGlyph(tone: card.tone, kind: session.kind).padding(.top, 1.5).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 6) {
+                    HStack(spacing: DesignMetrics.Spacing.sm) {
                         Text(session.title).font(.system(size: 12.5, weight: settled ? .medium : .semibold)).foregroundStyle(Palette.ink)
                             .lineLimit(1).help(session.titleHelp)
                         if beta { BetaBadge() }
@@ -257,13 +257,13 @@ struct WorkspaceView: View {
                         .frame(minHeight: 17)
                 }
             }
-            .padding(.leading, 8).padding(.trailing, 9).padding(.top, 6).padding(.bottom, 7)
+            .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Inset.paneRowV)
             .frame(maxWidth: .infinity, alignment: .leading)
             .modifier(SidebarRowHighlight(selected: active))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .padding(.leading, 22).padding(.trailing, 2).padding(.vertical, 1)
+        .padding(.leading, 22).padding(.trailing, 2)
         // The Button stays the accessibility element (its own press action); only its
         // label is replaced, so the meta line's ticking clock is not read out.
         .accessibilityLabel("\(session.title)\(beta ? ", " + L("badge.betaAccessibility") : ""), \(card.attention.total > 0 ? status : Palette.word(card.tone))")
@@ -300,16 +300,16 @@ struct WorkspaceView: View {
     }
 
     private func workspaceHeader(_ workspace: Workspace) -> some View {
-        HStack(spacing: 14) {
-            HStack(spacing: 10) {
+        HStack(spacing: DesignMetrics.Spacing.lg) {
+            HStack(spacing: DesignMetrics.Spacing.md) {
                 SidebarToggleButton()
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
+                    HStack(spacing: DesignMetrics.Spacing.md) {
                         Text(workspace.name).font(.system(size: 17, weight: .semibold)).lineLimit(1)
                         Spacer(minLength: 0)
                     }
                     .overlay { WorkspaceTitlebarRegion(enabled: !store.hasModal, rename: { store.beginRenameWorkspace(workspace.id) }) }
-                    HStack(spacing: 10) {
+                    HStack(spacing: DesignMetrics.Spacing.md) {
                         Text(workspace.path).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
                         if let git = gitState.info(for: workspace) { WorkspaceGitBadge(info: git) }
                         Spacer(minLength: 0)
@@ -329,7 +329,8 @@ struct WorkspaceView: View {
             .help(L("menu.showFiles") + " (⇧⌘E)")
             .accessibilityLabel(L("menu.showFiles"))
             .accessibilityIdentifier("workspace-open-files-\(workspace.id)")
-        }.leadingPastTrafficLights(24).padding(.trailing, 24).padding(.top, 14).padding(.bottom, 10)
+        }.leadingPastTrafficLights(DesignMetrics.Inset.workspaceHeaderH).padding(.trailing, DesignMetrics.Inset.workspaceHeaderH)
+            .padding(.top, DesignMetrics.Inset.workspaceHeaderT).padding(.bottom, DesignMetrics.Inset.workspaceHeaderB)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("workspace-header-\(workspace.id)")
     }
@@ -339,13 +340,13 @@ struct WorkspaceView: View {
         Menu {
             WorkspaceAddMenuItems(store: store, workspace: workspace)
         } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: "plus").font(.system(size: 10, weight: .semibold)).frame(width: 12)
                 Text(L("workspace.addPane")).font(.system(size: 11))
                 Spacer(minLength: 0)
             }
             .foregroundStyle(Palette.sidebarAccent)
-            .padding(.leading, 26).padding(.trailing, 12).padding(.vertical, 8)
+            .padding(.leading, 28).padding(.trailing, DesignMetrics.Spacing.lg).padding(.vertical, DesignMetrics.Inset.sidebarRowV).frame(minHeight: 22)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
@@ -378,7 +379,7 @@ struct WorkspaceView: View {
             Spacer()
             Text(L("layout.welcome.footerMac")).font(.system(size: 11)).foregroundStyle(.tertiary).padding(.bottom, 25)
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
-        .overlay(alignment: .topLeading) { SidebarToggleButton().leadingPastTrafficLights(24).padding(.top, 14) }
+        .overlay(alignment: .topLeading) { SidebarToggleButton().leadingPastTrafficLights(DesignMetrics.Inset.workspaceHeaderH).padding(.top, DesignMetrics.Inset.workspaceHeaderT) }
     }
 
     private var emptyPanes: some View {
@@ -390,7 +391,7 @@ struct WorkspaceView: View {
     }
 
     private var statusBar: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: DesignMetrics.Spacing.sm) {
             Image(systemName: "desktopcomputer").font(.system(size: 10))
             Text(L("window.status.thisMac"))
             Spacer()
@@ -407,7 +408,7 @@ struct WorkspaceView: View {
             StatusBarUsageView(controller: accountUsage)
             AgentStatusControls(companion: store.companion)
         }
-        .font(.system(size: 10)).foregroundStyle(.secondary).padding(.horizontal, 20).padding(.vertical, 8)
+        .font(.system(size: 10)).foregroundStyle(.secondary).padding(.horizontal, DesignMetrics.Inset.statusBarH).padding(.vertical, DesignMetrics.Inset.statusBarV)
         .background(Palette.subtle).overlay(alignment: .top) { Divider() }
     }
 
@@ -416,7 +417,7 @@ struct WorkspaceView: View {
             Image(systemName: "exclamationmark.triangle").foregroundStyle(Palette.waitText)
             Text(message).font(.system(size: 12)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
             Button { store.resourceWarning = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel(L("window.warning.dismiss"))
-        }.padding([.vertical, .trailing], 12).leadingPastTrafficLights(12).background(Palette.waitSoft)
+        }.padding([.vertical, .trailing], DesignMetrics.Spacing.md).leadingPastTrafficLights(DesignMetrics.Spacing.md).background(Palette.waitSoft)
     }
 
     private func errorBanner(_ message: String) -> some View {
@@ -424,7 +425,7 @@ struct WorkspaceView: View {
             Image(systemName: "exclamationmark.triangle").foregroundStyle(Palette.errText)
             Text(message).font(.system(size: 12)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
             Button { store.error = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel(L("window.error.dismiss"))
-        }.padding([.vertical, .trailing], 12).leadingPastTrafficLights(12).background(Palette.errSoft)
+        }.padding([.vertical, .trailing], DesignMetrics.Spacing.md).leadingPastTrafficLights(DesignMetrics.Spacing.md).background(Palette.errSoft)
     }
 }
 

@@ -49,7 +49,7 @@ public struct MightyGraphLayout {
     public static let planRecordWidth: CGFloat = 320
     public static func planRecordHeight(expanded: Bool) -> CGFloat { expanded ? 420 : 104 }
     public static let executionWidth: CGFloat = 380
-    static let executionGap: CGFloat = 16
+    static let executionGap: CGFloat = 8
     /// Collapsed, it holds the goal, progress, counts, one phase line, a
     /// three-line note and the footer without clipping.
     public static func executionHeight(expanded: Bool) -> CGFloat { expanded ? 470 : 290 }
@@ -102,8 +102,8 @@ public struct MightyGraphLayout {
     /// without a viewport (the limit also without a zoom) or a result.
     public var resultLimit: CGSize? = nil
     public var resultWindowFit: CGSize? = nil
-    static let siblingGap: CGFloat = 32
-    static let rowGap: CGFloat = 52
+    static let siblingGap: CGFloat = 20
+    static let rowGap: CGFloat = 32
     public static let historyNodeID = "history-top"
     public static let historyWidth: CGFloat = 380
     public static let historyHeight: CGFloat = 44

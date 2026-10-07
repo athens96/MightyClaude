@@ -411,16 +411,16 @@ public struct AppSnapshot: Codable, Sendable, Equatable {
 
 /// The sidebar's width rules: its bounds, the border drag that resizes or folds it, and what is saved.
 /// The numbers are the design contract's `metrics.layout` (`sidebarMin`, `sidebarDefault`,
-/// `sidebarMax`, `sidebarFoldThreshold`), which Windows reads as `DesignMetrics.Layout`.
+/// `sidebarMax`, `sidebarFoldThreshold`), read from `DesignMetrics.Layout` as Windows reads its own.
 public enum SidebarFold {
     /// The narrowest open sidebar.
-    public static let minimumWidth: Double = 210
+    public static let minimumWidth = Double(DesignMetrics.Layout.sidebarMin)
     /// A fresh sidebar's width, and the one a double-click on its border puts back.
-    public static let defaultWidth: Double = 252
+    public static let defaultWidth = Double(DesignMetrics.Layout.sidebarDefault)
     /// The widest sidebar.
-    public static let maximumWidth: Double = 360
+    public static let maximumWidth = Double(DesignMetrics.Layout.sidebarMax)
     /// A border drag that would leave the sidebar narrower than this folds it away instead.
-    public static let foldThreshold: Double = 150
+    public static let foldThreshold = Double(DesignMetrics.Layout.sidebarFoldThreshold)
     /// One accessibility increment or decrement of the border.
     public static let step: Double = 10
 

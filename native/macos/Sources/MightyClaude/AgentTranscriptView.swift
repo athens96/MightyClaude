@@ -165,7 +165,7 @@ final class AgentTranscriptCoordinator: NSObject, NSTextViewDelegate {
         editor.isVerticallyResizable = true; editor.isHorizontallyResizable = false
         editor.minSize = .zero; editor.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         editor.autoresizingMask = [.width]
-        editor.textContainerInset = NSSize(width: 15, height: AgentTranscriptTextView.topInset)
+        editor.textContainerInset = NSSize(width: DesignMetrics.Inset.transcript, height: AgentTranscriptTextView.topInset)
         // Every link run carries its own colour (the accent, or the bubble's ink where the
         // accent would fail contrast), so the link attributes add only the cursor.
         editor.linkTextAttributes = [.cursor: NSCursor.pointingHand]
@@ -369,11 +369,11 @@ final class AgentTranscriptTextView: SelectableTextView {
     private var initialScrollPending = true
     private var initialScrollScheduled = false
     private var positioningInitialScroll = false
-    static let topInset: CGFloat = 15
+    static let topInset = DesignMetrics.Inset.transcript
 
     /// Space under the last line. NSTextView insets are symmetric, so the
     /// total is split across the inset and the origin is pinned to the top.
-    var bottomInset: CGFloat = 15 {
+    var bottomInset = DesignMetrics.Inset.transcript {
         didSet {
             guard bottomInset != oldValue else { return }
             textContainerInset = NSSize(width: textContainerInset.width, height: (Self.topInset + bottomInset) / 2)

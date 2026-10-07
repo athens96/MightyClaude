@@ -51,14 +51,15 @@ struct MightyGraphLayoutTests {
         #expect(points.count == 4)
         #expect(points.first == CGPoint(x: request.frame.midX, y: request.frame.maxY))
         #expect(points.last == CGPoint(x: child.frame.midX, y: child.frame.minY))
-        // The bend sits at most 26 points below the source.
-        #expect(points[1].y == request.frame.maxY + 26)
+        // The bend sits at most 26 points below the source, halfway down a shorter gap.
+        let clearance = min(26, MightyGraphLayout.rowGap / 2)
+        #expect(points[1].y == request.frame.maxY + clearance)
         #expect(points[1].y == points[2].y)
         // A joining edge bends just above its target instead.
         guard let join = layout.edges.first(where: { $0.joins }), let target = node(layout, join.target) else {
             Issue.record("결과로 모이는 선이 없습니다."); return
         }
-        #expect(layout.route(join)[1].y == target.frame.minY - 26)
+        #expect(layout.route(join)[1].y == target.frame.minY - clearance)
         #expect(layout.route(MightyGraphLayout.Edge(source: "없음", target: agentID)).isEmpty)
     }
 

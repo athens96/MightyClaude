@@ -149,7 +149,7 @@ internal static class DesignTokenVerification
     internal static Task MetricsAndOpacitiesMatchTheFixture()
     {
         var metrics = Fixture.Value.GetProperty("metrics");
-        foreach (var (section, type) in new[] { ("radius", typeof(DesignMetrics.Radius)), ("stroke", typeof(DesignMetrics.Stroke)), ("type", typeof(DesignMetrics.Type)), ("layout", typeof(DesignMetrics.Layout)) })
+        foreach (var (section, type) in new[] { ("radius", typeof(DesignMetrics.Radius)), ("stroke", typeof(DesignMetrics.Stroke)), ("type", typeof(DesignMetrics.Type)), ("spacing", typeof(DesignMetrics.Spacing)), ("inset", typeof(DesignMetrics.Inset)), ("layout", typeof(DesignMetrics.Layout)) })
         {
             var constants = type.GetFields(BindingFlags.Public | BindingFlags.Static).Where(f => f.IsLiteral).ToDictionary(f => Camel(f.Name), f => (double)f.GetRawConstantValue()!);
             var table = metrics.GetProperty(section).EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetDouble());

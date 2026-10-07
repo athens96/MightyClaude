@@ -2,9 +2,10 @@ namespace MightyClaude.Core;
 
 /// <summary>
 /// The geometry and type of the macOS app, as named constants for the WinUI port
-/// (artifacts/design-system/index.html §3–4). These live in Mac SwiftUI views rather than
-/// MightyCore, so only the Windows tests hold them to the <c>metrics</c> section of
-/// native/contracts/fixtures/design-tokens.json. 1pt is drawn as 1 epx.
+/// (docs/design-system/index.html §3–4), held to the <c>metrics</c> section of
+/// native/contracts/fixtures/design-tokens.json by the Core tests. <see cref="Spacing"/>,
+/// <see cref="Inset"/> and <see cref="Layout"/> are also the Mac's own MightyCore
+/// <c>DesignMetrics</c>, which DesignTokenParityTests holds to the same file. 1pt is drawn as 1 epx.
 /// </summary>
 public static class DesignMetrics
 {
@@ -102,6 +103,85 @@ public static class DesignMetrics
         public const string Heading = "Segoe UI Variable Display, Segoe UI";
     }
 
+    /// <summary>The spacing scale (M/MightyCore/DesignMetrics.swift Spacing): a 4pt grid with 2 and 6 between its first steps.</summary>
+    public static class Spacing
+    {
+        public const double Xxs = 2;
+        public const double Xs = 4;
+        public const double Sm = 6;
+        public const double Md = 8;
+        public const double Lg = 12;
+        public const double Xl = 16;
+    }
+
+    /// <summary>
+    /// Named insets, the padding of one surface (M/MightyCore/DesignMetrics.swift Inset): <c>H</c>/<c>V</c> are
+    /// horizontal and vertical, <c>T</c>/<c>B</c> top and bottom, <c>Leading</c>/<c>Trailing</c> the two sides; a bare
+    /// name is every side. Windows reads them where it already used a central constant; the rest moves in stage C.
+    /// </summary>
+    public static class Inset
+    {
+        /// <summary>The pane dock inside its scroll view, on every side (M/PaneDockView.swift).</summary>
+        public const double Dock = 4;
+        /// <summary>The workspace header over the panes.</summary>
+        public const double WorkspaceHeaderH = 12;
+        public const double WorkspaceHeaderT = 6;
+        public const double WorkspaceHeaderB = 4;
+        /// <summary>An agent pane's one-line header.</summary>
+        public const double PaneHeaderLeading = 8;
+        public const double PaneHeaderTrailing = 6;
+        /// <summary>A tab in a pane group's strip.</summary>
+        public const double TabLeading = 8;
+        public const double TabTrailing = 4;
+        /// <summary>The composer card in its pane, its rows inside the card, and the gap between them.</summary>
+        public const double ComposerOuter = 6;
+        public const double ComposerInnerH = 8;
+        public const double ComposerInnerB = 6;
+        public const double ComposerStack = 4;
+        /// <summary>The transcript's text inside its scroll view.</summary>
+        public const double Transcript = 8;
+        /// <summary>A reply's card, the user's bubble and a tool call's chip in the transcript.</summary>
+        public const double ReplyCardH = 8;
+        public const double ReplyCardT = 6;
+        public const double ReplyCardB = 4;
+        public const double UserBubbleH = 8;
+        public const double UserBubbleT = 6;
+        public const double UserBubbleB = 4;
+        public const double ToolChipH = 6;
+        public const double ToolChipV = 4;
+        /// <summary>A code block, and a block quote inside its rule.</summary>
+        public const double CodeBlock = 6;
+        public const double Quote = 6;
+        /// <summary>The Mighty view's bar, and a diagram block's body and the timeline's rows.</summary>
+        public const double GraphBarH = 8;
+        public const double GraphBarV = 4;
+        public const double GraphBlockBodyH = 8;
+        public const double GraphBlockBodyV = 4;
+        /// <summary>The sidebar's search, section headers, workspace rows and pane rows.</summary>
+        public const double SidebarSearch = 6;
+        public const double SidebarSectionH = 12;
+        public const double SidebarSectionT = 10;
+        public const double SidebarSectionB = 4;
+        public const double SidebarRowV = 4;
+        public const double PaneRowV = 3;
+        /// <summary>The dashboard's page, its number tiles and its pane rows.</summary>
+        public const double DashboardPageH = 12;
+        public const double DashboardPageT = 10;
+        public const double DashboardPageB = 12;
+        public const double DashboardTileH = 10;
+        public const double DashboardTileV = 8;
+        public const double DashboardRowH = 8;
+        public const double DashboardRowV = 6;
+        /// <summary>The window's status bar.</summary>
+        public const double StatusBarH = 10;
+        public const double StatusBarV = 3;
+        /// <summary>A sheet's and a popover's content.</summary>
+        public const double Sheet = 12;
+        public const double Popover = 10;
+        /// <summary>Between the rows of a list.</summary>
+        public const double ListGap = 2;
+    }
+
     /// <summary>Layout sizes (doc §4 "layout sizes").</summary>
     public static class Layout
     {
@@ -111,20 +191,20 @@ public static class DesignMetrics
         public const double SidebarMax = 360;
         /// <summary>A sidebar grip drag that would leave the sidebar narrower than this folds it away (M/Models.swift SidebarFold.foldThreshold).</summary>
         public const double SidebarFoldThreshold = 150;
-        /// <summary>The pane dock's outer inset (M/PaneDockView.swift:62-63).</summary>
-        public const double DockInset = 16;
         /// <summary>Header heights: pane header, tab strip, diagram block head, file preview head.</summary>
-        public const double PaneHeader = 34;
-        public const double TabStrip = 38;
-        public const double BlockHead = 38;
-        public const double PreviewHead = 40;
-        /// <summary>The composer toolbar and its chips (M/ComposerControls.swift:39-62).</summary>
-        public const double Toolbar = 32;
+        public const double PaneHeader = 26;
+        public const double TabStrip = 28;
+        /// <summary>A tab in the strip, its close button with it (M/PaneDockView.swift PaneDockTab).</summary>
+        public const double Tab = 24;
+        public const double BlockHead = 28;
+        public const double PreviewHead = 30;
+        /// <summary>The composer toolbar, its chips and its round buttons (M/ComposerControls.swift ComposerToolbarMetrics).</summary>
+        public const double Toolbar = 26;
         /// <summary>The smallest pane (a tab group) the dock lays out before it scrolls (M/PaneDockView.swift:41-44).</summary>
         public const double PaneMinWidth = 315;
         public const double PaneMinHeight = 290;
         /// <summary>A split's divider: the hit area between two panes, around a visible 3×30 handle (M/PaneDockView.swift:42, 125-158).</summary>
-        public const double SplitDivider = 10;
+        public const double SplitDivider = 6;
     }
 
     /// <summary>

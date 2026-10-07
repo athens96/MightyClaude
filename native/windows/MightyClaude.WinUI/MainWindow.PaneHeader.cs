@@ -118,7 +118,7 @@ public sealed partial class MainWindow
         _ => kind,
     };
 
-    /// <summary>A slim bar's fill and shape: <c>idle</c>, radius 11, 34 high, padding h13 (M/PaneChrome.swift:117-118).</summary>
+    /// <summary>A slim bar's fill and shape: <c>idle</c>, radius 11, Layout.PaneHeader high, padding h13 (M/PaneChrome.swift:117-118).</summary>
     private static void PaintSlimBar(Grid bar, DesignBrushes brushes)
     {
         bar.Height = DesignMetrics.Layout.PaneHeader; bar.Padding = new Thickness(13, 0, 13, 0);
@@ -450,7 +450,7 @@ public sealed partial class MainWindow
         private void QueuePaneHeaderLayout() => headerLine?.InvalidateMeasure();
 
         /// <summary>
-        /// The header is still one 34pt row and every visible control (the … menu, both sides of the
+        /// The header is still one Layout.PaneHeader row and every visible control (the … menu, both sides of the
         /// switch, the status-line toggle) lies inside it. The switch shows its words at every width, as
         /// on the Mac, so <paramref name="narrow"/> asks nothing more of a narrow pane than of a wide one.
         /// </summary>
