@@ -56,14 +56,16 @@ struct WorkspaceView: View {
             guard value else { return }
             store.focusSearch = false
             // The search lives in the sidebar: a folded sidebar opens first, and the field
-            // takes focus once it is back in the window (its onAppear, or after the unfold).
+            // takes focus once the unfold has brought it back (below).
             if store.sidebarCollapsed {
                 focusSearchOnUnfold = true
                 withAnimation(.easeInOut(duration: 0.2)) { store.setSidebarCollapsed(false) }
             } else { searchFocused = true }
         }
         .onChange(of: store.sidebarCollapsed) { _, collapsed in
-            guard !collapsed, focusSearchOnUnfold else { return }
+            // Folded, the sidebar stays in the tree (`SidebarSplit`), so its search lets go of the keyboard.
+            if collapsed { searchFocused = false; return }
+            guard focusSearchOnUnfold else { return }
             Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(250))
                 guard focusSearchOnUnfold else { return }
@@ -84,7 +86,6 @@ struct WorkspaceView: View {
                 Image(systemName: "magnifyingglass").foregroundStyle(Palette.sidebarInk2)
                 TextField(L("sidebar.searchPlaceholder"), text: $store.search).textFieldStyle(.plain).font(.system(size: 12))
                     .focused($searchFocused)
-                    .onAppear { if focusSearchOnUnfold { searchFocused = true } }
                     .accessibilityLabel(L("sidebar.searchPlaceholder"))
             }
             .padding(9).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 7)).padding(.horizontal, 14).padding(.top, 10)
@@ -464,8 +465,10 @@ extension View {
 }
 
 /// The sidebar at its saved width, its border handle, and the content beside it. Folded, the
-/// sidebar and the handle leave and the content takes the window. While the border is dragged
-/// the width lives here, so only this view redraws per step; the saved width changes once, at the end.
+/// sidebar slides out past the window's leading edge and the content takes the window; it stays
+/// in the tree, so its scroll position is there when it comes back, but is hidden from VoiceOver,
+/// the pointer and the keyboard meanwhile. The handle leaves. While the border is dragged the
+/// width lives here, so only this view redraws per step; the saved width changes once, at the end.
 private struct SidebarSplit<Sidebar: View, Detail: View>: View {
     @EnvironmentObject private var store: AppStore
     let sidebar: Sidebar
@@ -474,14 +477,20 @@ private struct SidebarSplit<Sidebar: View, Detail: View>: View {
 
     var body: some View {
         let width = CGFloat(liveWidth ?? store.snapshot.sidebarWidth)
+        let collapsed = store.sidebarCollapsed
         HStack(spacing: 0) {
-            if !store.sidebarCollapsed {
-                sidebar.frame(width: width).transition(.move(edge: .leading))
-            }
+            // Laid out at its own width and pinned to the trailing edge of a column that folds
+            // to zero, the sidebar lies wholly past the window's edge when folded. Not clipped,
+            // so its surface still runs up under the hidden title bar.
+            sidebar.frame(width: width)
+                .frame(width: collapsed ? 0 : width, alignment: .trailing)
+                .accessibilityHidden(collapsed)
+                .allowsHitTesting(!collapsed)
+                .disabled(collapsed)
             detail.frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .overlay(alignment: .leading) {
-            if !store.sidebarCollapsed {
+            if !collapsed {
                 SidebarResizeHandle(width: width, liveWidth: $liveWidth)
                     .padding(.leading, max(0, width - SidebarResizeHandle.hitWidth / 2))
                     // Full height, like the sidebar surface it resizes.
@@ -495,7 +504,8 @@ private struct SidebarSplit<Sidebar: View, Detail: View>: View {
 /// The sidebar's trailing border, drawn as a hairline over a hit strip that straddles it, like the pane
 /// dock's dividers (`PaneDockView`): dragging resizes the sidebar between `SidebarFold`'s bounds, dragging
 /// it narrower than the fold threshold folds it away (keeping the saved width), a double-click puts the
-/// default width back. The width is saved only when a drag ends.
+/// default width back. The width is saved only when a drag ends. It takes keyboard focus, and the left
+/// and right arrows step the width like the accessibility action.
 private struct SidebarResizeHandle: View {
     static let hitWidth: CGFloat = 6
     @EnvironmentObject private var store: AppStore
@@ -504,9 +514,10 @@ private struct SidebarResizeHandle: View {
     /// The sidebar's width when the current drag began; nil while not dragging.
     @ViewState private var origin: Double?
     @ViewState private var hovered = false
+    @FocusState private var focused: Bool
 
     var body: some View {
-        let active = hovered || origin != nil
+        let active = hovered || origin != nil || focused
         Rectangle().fill(Color.clear)
             .frame(width: Self.hitWidth)
             .frame(maxHeight: .infinity)
@@ -517,7 +528,8 @@ private struct SidebarResizeHandle: View {
                 // A drag keeps its cursor when the pointer runs ahead of the border.
                 if hovering || origin == nil { (hovering ? NSCursor.resizeLeftRight : NSCursor.arrow).set() }
             }
-            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
+            // A press that wobbles a point or two stays a click, so a double-click still resets.
+            .gesture(DragGesture(minimumDistance: 3, coordinateSpace: .global)
                 .onChanged { value in
                     guard !store.sidebarCollapsed else { return }
                     let start = origin ?? Double(width)
@@ -537,6 +549,15 @@ private struct SidebarResizeHandle: View {
                     store.applySidebarDrag(SidebarFold.drag(startWidth: start, translation: Double(value.translation.width)))
                 })
             .onTapGesture(count: 2) { store.resetSidebarWidth() }
+            // Folding (or the drag folding it) takes the handle away under the pointer; no
+            // exit hover comes then, so the resize cursor would stay.
+            .onDisappear { if hovered || origin != nil { NSCursor.arrow.set() } }
+            .focusable()
+            .focused($focused)
+            // The accent line is the focus mark; the system ring would not fit a 6 pt strip.
+            .focusEffectDisabled()
+            .onKeyPress(.leftArrow) { store.stepSidebarWidth(-1); return .handled }
+            .onKeyPress(.rightArrow) { store.stepSidebarWidth(1); return .handled }
             .accessibilityElement()
             .accessibilityLabel(L("sidebar.resize"))
             .accessibilityValue(L("sidebar.resizeValue", ["value": "\(Int(width.rounded()))"]))
