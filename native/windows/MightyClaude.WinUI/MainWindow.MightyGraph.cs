@@ -249,7 +249,7 @@ public sealed partial class MainWindow
         }
 
         /// <summary>
-        /// The Mighty bar (M/MightyGraphView.swift:175-201): one row, padding h12 v10, its parts 10 apart, over a
+        /// The Mighty bar (M/MightyGraphView.swift:175-201): one row, padding <c>Inset.GraphBarH</c> by <c>Inset.GraphBarV</c>, its parts <c>Spacing.Md</c> apart, over a
         /// <c>line</c> rule. From the left: the Diagram | Timeline switch, the style title 12 bold <c>ink</c> (and
         /// the badge of a style that is not built in), then the 10pt <c>ink2</c> summary, which gives way first;
         /// at the right, on the diagram only, the zoom controls in <c>ink2</c>: out, NN% (38 wide) and in. A pane
@@ -267,9 +267,10 @@ public sealed partial class MainWindow
             lead.Children.Add(BuildGraphPresentationSwitch()); lead.Children.Add(graphStyleHeader); lead.Children.Add(graphStyleBadge = BuildStyleSourceBadge());
             bar.Children.Add(lead);
             Grid.SetColumn(graphTotal, 1); bar.Children.Add(graphTotal);
-            // The Mac's 13pt magnifying glasses stand 10 from the percentage. Each sits in a 22-wide button here, so the
-            // buttons are 6 apart and the row reaches 4 into the bar's padding: the last glass ends where the Mac's does.
-            var zoom = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, Margin = new Thickness(0, 0, -DesignMetrics.Spacing.Xs, 0), VerticalAlignment = VerticalAlignment.Center };
+            // The Mac's 13pt magnifying glasses stand Spacing.Md from the percentage. Each sits in a 22-wide button here, 4.5 clear
+            // of it on either side, so the buttons are Spacing.Xs apart and the row reaches Spacing.Xs into the bar's padding:
+            // the last glass ends where the Mac's does.
+            var zoom = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs, Margin = new Thickness(0, 0, -DesignMetrics.Spacing.Xs, 0), VerticalAlignment = VerticalAlignment.Center };
             zoomOutButton = ZoomButton(MightySymbols.Create("minus.magnifyingglass", 13, null), Locale.Get(MightyGraphViewModel.LocaleKeyZoomOut), "mighty-zoom-out-" + id, () => SetGraphZoom(MightyGraphViewModel.ZoomOut(graphZoom)));
             // The Mac's Text takes the body font: 13, its digits of one width.
             var percent = new TextBlock { Text = MightyGraphViewModel.ZoomLabel(graphZoom), FontSize = DesignMetrics.Type.Body, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
@@ -812,7 +813,7 @@ public sealed partial class MainWindow
         }
 
         /// <summary>
-        /// The draft (M/MightyGraphView.swift:404-420, 1048-1063): padding 16, its parts 10 apart. "Next request" 12
+        /// The draft (M/MightyGraphView.swift:404-420, 1048-1063): padding <c>Spacing.Lg</c>, its parts <c>Spacing.Md</c> apart. "Next request" 12
         /// semibold <c>ink</c> after its pencil, the state word 11 <c>ink2</c> at the right; under them the draft, 12pt
         /// in at most four lines. No header rule, no size control, only the corner handle.
         /// </summary>
@@ -891,7 +892,7 @@ public sealed partial class MainWindow
         };
 
         /// <summary>
-        /// A block's 38pt header (M/MightyGraphView.swift:483-550): padding h12, its parts 7 apart, over a 1pt
+        /// A block's <c>Layout.BlockHead</c> header (M/MightyGraphView.swift:483-550): padding <c>Inset.GraphBlockBodyH</c>, its parts <c>Spacing.Sm</c> apart, over a 1pt
         /// <c>line</c>. From the left: the block's symbol (13, in its tint), the title 12 bold <c>ink</c> (a
         /// request's with its agent's mark before the name) and the clock of a request read back from the session
         /// record. At the right: the selected block's scroll hint, the activity mark, the status pill, the usage
@@ -909,7 +910,7 @@ public sealed partial class MainWindow
             var header = new Grid
             {
                 ColumnSpacing = DesignMetrics.Spacing.Sm, Padding = new Thickness(DesignMetrics.Inset.GraphBlockBodyH - BlockEdge, 0, DesignMetrics.Inset.GraphBlockBodyH - BlockEdge, 0),
-                // 38 from the card's top, the card's own edge being the first point of it; a plain header ends in its rule.
+                // Layout.BlockHead from the card's top, the card's own edge being the first point of it; a plain header ends in its rule.
                 Height = DesignMetrics.Layout.BlockHead - BlockEdge + (strip ? 0 : DesignMetrics.Stroke.Line),
                 BorderThickness = new Thickness(0, 0, 0, strip ? 0 : DesignMetrics.Stroke.Line), BorderBrush = b.Brush(DesignToken.Line),
             };
@@ -1021,11 +1022,11 @@ public sealed partial class MainWindow
         /// <summary>
         /// A plain header button (the Mac's <c>.plain</c>): no fill at rest, the subtle wash under the pointer, in
         /// <paramref name="ink"/>. The Mac's is as wide as what it shows, so this one takes only that much room in
-        /// its row: the 4 the wash reaches round the symbol or word is given back by its margin.
+        /// its row: the <c>Spacing.Xs</c> the wash reaches round the symbol or word is given back by its margin.
         /// </summary>
         private Button HeaderButton(UIElement content, Brush ink)
         {
-            const double reach = 4;
+            const double reach = DesignMetrics.Spacing.Xs;
             var button = new Button
             {
                 Content = content, MinWidth = 0, MinHeight = 0, Height = 22, Padding = new Thickness(reach, 0, reach, 0), Margin = new Thickness(-reach, 0, -reach, 0),
@@ -1234,10 +1235,10 @@ public sealed partial class MainWindow
         // ── result files panel ────────────────────────────────────────────────
 
         /// <summary>
-        /// The files a result names, beside its card (M/MightyGraphResultFilesView.swift:79-127). A 38pt head,
-        /// padding h12, its parts 7 apart, over a <c>line</c> rule: the two documents in <c>accent</c>, the title
-        /// 12 semibold, the count 10 <c>ink2</c> and the close cross in <c>ink2</c>. Under it the files, 4 apart
-        /// and 8 from the card's edge: each a <c>cardRaised</c> row, radius 6, padding 8, the document 12 in
+        /// The files a result names, beside its card (M/MightyGraphResultFilesView.swift:79-127). A <c>Layout.BlockHead</c> head,
+        /// padding <c>Inset.GraphBlockBodyH</c>, its parts <c>Spacing.Sm</c> apart, over a <c>line</c> rule: the two documents in <c>accent</c>, the title
+        /// 12 semibold, the count 10 <c>ink2</c> and the close cross in <c>ink2</c>. Under it the files, <c>Spacing.Xs</c> apart
+        /// and <c>Spacing.Sm</c> from the card's edge: each a <c>cardRaised</c> row, radius 6, padding <c>Spacing.Sm</c>, the document 12 in
         /// <c>accent</c>, the name 12 medium over the path 10 mono <c>ink2</c> in at most two lines.
         /// </summary>
         private Grid BuildResultFilesPanel(MightyGraphBlock block, IReadOnlyList<ResultFiles.ResultFile> files)

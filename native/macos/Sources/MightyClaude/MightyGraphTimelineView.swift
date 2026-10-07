@@ -31,7 +31,7 @@ struct MightyViewSwitch: View {
             Label(title, systemImage: symbol)
                 .font(.system(size: 11, weight: selected ? .bold : .semibold)).lineLimit(1)
                 .foregroundStyle(selected ? Palette.ink : Palette.ink2)
-                .padding(.horizontal, DesignMetrics.Spacing.md).frame(height: 20)
+                .padding(.horizontal, DesignMetrics.Spacing.md).frame(height: DesignMetrics.Layout.hitTarget)
                 .background(selected ? Palette.panel : Color.clear, in: shape)
                 .contentShape(shape)
         }

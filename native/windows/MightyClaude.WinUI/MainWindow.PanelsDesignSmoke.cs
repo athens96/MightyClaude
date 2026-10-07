@@ -285,10 +285,10 @@ public sealed partial class MainWindow
 
     /// <summary>
     /// The settings sheet (M/SettingsViews.swift:152-269, 325-338): 800×700 points of content, the page
-    /// frame, the heading (padding 22 on card, the 21pt accent gear, the 17pt title, the round close mark),
-    /// the 200-wide list on the sidebar surface whose chosen 30-high row is filled with accent under onAccent
+    /// frame, the heading (padding <see cref="SettingsHeadingPadding"/> on card, the 21pt accent gear, the 17pt title, the round close mark),
+    /// the 200-wide list on the sidebar surface whose chosen <see cref="SettingsNavigationRowHeight"/>-high row is filled with accent under onAccent
     /// words and symbol, the grouped form on the sheet's card surface (boxes on cardRaised with a 1pt line at
-    /// radius 6, rows 10 in with a rule between them, a segmented picker and a switch at the trailing edge),
+    /// radius 6, rows <see cref="SettingsRowInset"/> in with a rule between them, a segmented picker and a switch at the trailing edge),
     /// and the close row on card.
     /// </summary>
     private async Task<FrameworkElement> RequireSettingsDesignInTheme(FrameworkElement? light)
@@ -343,8 +343,9 @@ public sealed partial class MainWindow
         Require(presenter is ListViewItemPresenter, $"{key} ({theme}): the settings row's template root must be a ListViewItemPresenter; got {presenter.GetType().Name}");
         RequireBrush(selected!, _ => ((ListViewItemPresenter)presenter).SelectedBackground, DesignToken.Accent, "the chosen settings row's resolved SelectedBackground", key: key);
         RequireBrush(selected!, _ => ((ListViewItemPresenter)presenter).SelectedForeground, DesignToken.OnAccent, "the chosen settings row's resolved SelectedForeground", key: key);
-        // A row's fill is 30 high at radius 5 (the stock row draws it 2 in from its own top and bottom, so the row is 34 and
-        // overlaps its neighbours by 2); its symbol is accent, and onAccent on the chosen row (M/SettingsViews.swift:208-209).
+        // A row's fill is SettingsNavigationRowHeight high at Radius.FileRow (the stock row draws it ListSelectionInsetY in from its own
+        // top and bottom, so the row is that much taller at each end and overlaps its neighbours by it); its symbol is accent, and
+        // onAccent on the chosen row (M/SettingsViews.swift:208-209).
         Require(Math.Abs(selected!.ActualHeight - 2 * ListSelectionInsetY - SettingsNavigationRowHeight) < .5 && selected.Margin == new Thickness(0, -ListSelectionInsetY, 0, -ListSelectionInsetY) && selected.CornerRadius == new CornerRadius(DesignMetrics.Radius.FileRow),
             $"{key} ({theme}): a settings list row's fill must be {SettingsNavigationRowHeight} high at radius {DesignMetrics.Radius.FileRow}; got a row {selected.ActualHeight:F1} high with margin {selected.Margin}, {selected.CornerRadius}");
         Brush? Symbol(ListViewItem item) => ((Grid)((StackPanel)item.Content).Children[0]).Children[0] switch { IconElement icon => icon.Foreground, Microsoft.UI.Xaml.Shapes.Shape shape => shape.Fill, _ => null };
@@ -359,7 +360,7 @@ public sealed partial class MainWindow
         RequireThickness(card, DesignMetrics.Stroke.Line, "a settings section card", key);
         RequireBrush(card, e => ((Border)e).Background, DesignToken.CardRaised, "a settings section card", key: key);
         RequireBrush(card, e => ((Border)e).BorderBrush, DesignToken.Line, "a settings section card border", key: key);
-        // Its rows: 10 in from the box and 10 above and below, a 1pt line over every row but the first
+        // Its rows: SettingsRowInset in from the box and SettingsRowInset above and below, a 1pt line over every row but the first
         // (whose padding counts the box's own line as its first point).
         var rows = ((StackPanel)card.Child).Children.OfType<Border>().Where(row => row.Visibility == Visibility.Visible).ToList();
         Require(rows.Count >= 2, $"{key} ({theme}): the General tab's first box must hold its rows; got {rows.Count}");
@@ -525,7 +526,7 @@ public sealed partial class MainWindow
 
     /// <summary>
     /// The popovers (M/StatusBarUsage.swift:167-312, M/SessionInfoViews.swift): the usage and session
-    /// popovers' presenter is the card at radius 10 with a 1pt line and padding 16, the usage rows draw
+    /// popovers' presenter is the card at <c>Radius.Entry</c> with a 1pt line and padding <see cref="PopoverPadding"/>, the usage rows draw
     /// 6pt bars, the session popover's ring block sits on accentSoft under an ink2 status line.
     /// </summary>
     private async Task<Style> RequirePopoversInTheme(PaneView agent, Style? light)
@@ -658,7 +659,7 @@ public sealed partial class MainWindow
             var (filter, tree, head, content) = FilesDesignParts;
             Require(filter is not null && tree is not null && head is not null && content is not null, $"{key} ({theme}): the files pane is missing its filter row, tree, preview head or content");
             owner.RequireSubtle(filter!.Background, "the files filter row", key);
-            Require(filter.Padding == new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm) && filter.Height == FilesFilterHeight && filter.ColumnSpacing == DesignMetrics.Spacing.Sm, $"{key} ({theme}): the files filter row must be {FilesFilterHeight} high with padding h10 v7 and its parts 6 apart; got {filter.Height}, {filter.Padding}, {filter.ColumnSpacing}");
+            Require(filter.Padding == new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm) && filter.Height == FilesFilterHeight && filter.ColumnSpacing == DesignMetrics.Spacing.Sm, $"{key} ({theme}): the files filter row must be {FilesFilterHeight} high with padding h{DesignMetrics.Spacing.Md} v{DesignMetrics.Spacing.Sm} and its parts {DesignMetrics.Spacing.Sm} apart; got {filter.Height}, {filter.Padding}, {filter.ColumnSpacing}");
             // The tree and the preview fill the pane card edge to edge and share it as the Mac's split view does:
             // evenly until the tree is dragged, the tree within 160…520 (M/FilePaneView.swift:22-25).
             var host = filesHost!; var treeWidth = host.ColumnDefinitions[0].ActualWidth;

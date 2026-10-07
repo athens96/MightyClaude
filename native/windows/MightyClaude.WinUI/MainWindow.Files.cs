@@ -314,6 +314,8 @@ public sealed partial class MainWindow
 
         /// <summary>The filter row's height: v7 around the 11pt field's 14 (M/FilePaneView.swift:33-44).</summary>
         internal const double FilesFilterHeight = 28;
+        /// <summary>The Markdown preview's padding on every side (M/FilePaneView.swift:246 <c>Spacing.lg</c>).</summary>
+        internal const double FilesMarkdownInset = DesignMetrics.Spacing.Lg;
 
         /// <summary>
         /// The preview column (M/FilePaneView.swift:157-185): the 40-high head on the subtle wash, padding h12, its
@@ -901,12 +903,13 @@ public sealed partial class MainWindow
         })!;
 
         /// <summary>
-        /// Rendered with the transcript's Markdown renderer: no images, no local links. Padding 18, and the
-        /// page stops 860 from the pane's leading edge however wide the pane is (M/FilePaneView.swift:246).
+        /// Rendered with the transcript's Markdown renderer: no images, no local links. Padding
+        /// <see cref="FilesMarkdownInset"/>, and the page stops 860 from the pane's leading edge however wide the
+        /// pane is (M/FilePaneView.swift:246).
         /// </summary>
         private static RichEditBox MarkdownView(string rtf)
         {
-            const double inset = 18, page = 860;
+            const double inset = FilesMarkdownInset, page = 860;
             var view = new RichEditBox { IsReadOnly = true, IsSpellCheckEnabled = false, IsTextPredictionEnabled = false, TextWrapping = TextWrapping.Wrap, BorderThickness = new Thickness(0), Background = new SolidColorBrush(Colors.Transparent), Padding = new Thickness(inset) };
             view.SizeChanged += (_, args) =>
             {

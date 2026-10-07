@@ -128,7 +128,7 @@ public sealed partial class MainWindow
 
     /// <summary>
     /// The popovers' presenter (M/StatusBarUsage.swift:167-312, M/SessionInfoViews.swift): the <c>card</c>
-    /// surface, a 1pt <c>line</c>, radius 10 and padding 16. One style per window, set on a Flyout as it
+    /// surface, a 1pt <c>line</c>, radius <c>Radius.Entry</c> and padding <see cref="PopoverPadding"/>. One style per window, set on a Flyout as it
     /// is built; its setters hold the shared brushes, so an open popover follows the theme.
     /// </summary>
     internal Style CardFlyoutStyle => cardFlyoutStyle ??= NewCardFlyoutStyle();

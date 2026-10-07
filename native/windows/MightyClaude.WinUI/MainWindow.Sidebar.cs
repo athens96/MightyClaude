@@ -53,7 +53,7 @@ public sealed partial class MainWindow
         // SF's magnifier draws 1.5 inside its frame and AppKit's 12pt line sets its text 1 higher than
         // Segoe's (measured on docs/design-system/crops/sidebar-top-*.webp: the symbol 10.5 and the words 31.5 from the field's edge).
         sidebarSearchIcon.Margin = new Thickness(1.5, 0, 0, 0); search.Margin = new Thickness(0, -1, 0, 0);
-        // The row is the Mac text field's 12pt line, so the field is 33 high (9 + 15 + 9) as on the Mac.
+        // The row is the Mac text field's 12pt line, so the field is SearchRowHeight + 2 × Inset.SidebarSearch high as on the Mac.
         var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, Height = SearchRowHeight };
         row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
         row.Children.Add(sidebarSearchIcon); Grid.SetColumn(search, 1); row.Children.Add(search);

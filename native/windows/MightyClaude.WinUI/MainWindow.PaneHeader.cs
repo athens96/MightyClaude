@@ -74,10 +74,12 @@ public sealed partial class MainWindow
 
     /// <summary>The kinds whose tab group draws the slim bar over the pane, which then shows no header of its own (M/PaneDockView.swift:171, 178-180).</summary>
     private static readonly HashSet<string> GroupSlimHeaderKinds = ["browser", AgentIOPaneKind.Terminal, AgentIOPaneKind.Browser, FilePaneKind.Kind];
-    /// <summary>A slim bar's place in its pane card: h4 t4 b2 (M/PaneChrome.swift:119).</summary>
+    /// <summary>A slim bar's place in its pane card: <c>Spacing.Xs</c> at the sides and top, <c>Spacing.Xxs</c> under it (M/PaneChrome.swift:119).</summary>
     internal static readonly Thickness SlimBarMargin = new(DesignMetrics.Spacing.Xs, DesignMetrics.Spacing.Xs, DesignMetrics.Spacing.Xs, DesignMetrics.Spacing.Xxs);
     /// <summary>The least room between a slim bar's words and what trails them (M/PaneChrome.swift:112).</summary>
     private const double SlimBarSpacer = DesignMetrics.Spacing.Sm;
+    /// <summary>The status capsule's height in a slim bar; its ends are half of it round (M/PaneChrome.swift:41-42).</summary>
+    private const double SlimPillHeight = 18;
     /// <summary>
     /// The body font (SF Pro's stand-in) for words that stand outside a stock control. Those do not take
     /// the controls' font resource: left alone they follow the system language, which on a Korean system
@@ -351,10 +353,10 @@ public sealed partial class MainWindow
             label.Foreground = onStatus; label.FontSize = DesignMetrics.Type.Pill; label.FontWeight = Microsoft.UI.Text.FontWeights.Bold;
             slimSymbol = PaneSymbol("shell", 11, onStatus, semibold: true);
             slimSubtitle = SlimBarWords(Locale.Get("dashboard.kind.shell") + " · " + Locale.Get("phone.card.localTerminal"), onStatus);
-            // The capsule's edge is drawn inside its h8 padding, as the Mac's strokeBorder is (M/PaneChrome.swift:41-42).
+            // The capsule's edge is drawn inside its h Spacing.Md padding, as the Mac's strokeBorder is (M/PaneChrome.swift:41-42).
             slimStatusPill = new Border
             {
-                Child = label, Height = 18, Padding = new Thickness(DesignMetrics.Spacing.Md - DesignMetrics.Stroke.Focus, 0, DesignMetrics.Spacing.Md - DesignMetrics.Stroke.Focus, 0), CornerRadius = new CornerRadius(9),
+                Child = label, Height = SlimPillHeight, Padding = new Thickness(DesignMetrics.Spacing.Md - DesignMetrics.Stroke.Focus, 0, DesignMetrics.Spacing.Md - DesignMetrics.Stroke.Focus, 0), CornerRadius = new CornerRadius(SlimPillHeight / 2),
                 BorderThickness = new Thickness(DesignMetrics.Stroke.Focus), BorderBrush = onStatus, VerticalAlignment = VerticalAlignment.Center,
             };
             AutomationProperties.SetAutomationId(slimStatusPill, "pane-status-pill-" + id);

@@ -135,8 +135,8 @@ public sealed partial class MainWindow
 
     /// <summary>
     /// The terminal's slim ink bar (M/PaneChrome.swift:99-122): Layout.PaneHeader high on the shared <c>idle</c> brush,
-    /// radius 11, padding h13; the 11pt symbol, the 13pt bold title, the 11.5pt kind words and the 11pt
-    /// bold status word in its 20-high capsule with a 1.5pt edge, all <c>onStatus</c>.
+    /// radius 11, padding Inset.PaneHeaderLeading; the 11pt symbol, the 13pt bold title, the 11.5pt kind words and the 11pt
+    /// bold status word in its <see cref="SlimPillHeight"/>-high capsule with a 1.5pt edge, all <c>onStatus</c>.
     /// </summary>
     private (Grid Header, TextBlock Word) RequireTerminalHeaderInTheme(PaneView terminal, PaletteLandmarks? light)
     {
@@ -161,12 +161,12 @@ public sealed partial class MainWindow
         RequireFont(slim.Word, DesignMetrics.Type.Pill, FontWeights.Bold, $"({theme}) the terminal status word", key);
         RequireBrush(slim.Word, e => ((TextBlock)e).Foreground, DesignToken.OnStatus, "the terminal status word", key: key);
         var pill = slim.Pill!;
-        Require(pill.Height == 18 && pill.BorderThickness == new Thickness(DesignMetrics.Stroke.Focus) && ReferenceEquals(pill.Child, slim.Word),
-            $"{key} ({theme}): the status capsule must be 18 high with a {DesignMetrics.Stroke.Focus}pt edge around the word; got {pill.Height}, {pill.BorderThickness}");
+        Require(pill.Height == SlimPillHeight && pill.CornerRadius == new CornerRadius(SlimPillHeight / 2) && pill.BorderThickness == new Thickness(DesignMetrics.Stroke.Focus) && ReferenceEquals(pill.Child, slim.Word),
+            $"{key} ({theme}): the status capsule must be {SlimPillHeight} high, radius {SlimPillHeight / 2}, with a {DesignMetrics.Stroke.Focus}pt edge around the word; got {pill.Height}, {pill.CornerRadius}, {pill.BorderThickness}");
         // The edge is drawn inside the capsule's h Spacing.Md padding (M/PaneChrome.swift:41-42), so word and edge together stand that far in.
         Require(pill.Padding.Left + pill.BorderThickness.Left == DesignMetrics.Spacing.Md && pill.Padding.Right + pill.BorderThickness.Right == DesignMetrics.Spacing.Md, $"{key} ({theme}): the status word must stand {DesignMetrics.Spacing.Md} inside the capsule; got padding {pill.Padding} inside a {pill.BorderThickness} edge");
         RequireBrush(pill, e => ((Border)e).BorderBrush, DesignToken.OnStatus, "the status capsule's edge", key: key);
-        // The bar is set in h4 t4 from the card's edge with 2 under it, and its parts stand in the Mac's order, Spacing.Md apart (M/PaneChrome.swift:107-119).
+        // The bar is set in Spacing.Xs at the sides and top from the card's edge with Spacing.Xxs under it, and its parts stand in the Mac's order, Spacing.Md apart (M/PaneChrome.swift:107-119).
         var card = terminal.Container; var edge = card.BorderThickness.Left; const double setIn = DesignMetrics.Spacing.Xs;
         var at = header.TransformToVisual(card).TransformPoint(new Windows.Foundation.Point());
         Require(Math.Abs(at.X - edge - setIn) < .6 && Math.Abs(at.Y - edge - setIn) < .6 && Math.Abs(card.ActualWidth - at.X - header.ActualWidth - edge - setIn) < .6,
@@ -177,14 +177,14 @@ public sealed partial class MainWindow
         double End(FrameworkElement part) => Left(part) + part.ActualWidth;
         const double pad = DesignMetrics.Inset.PaneHeaderLeading, gap = PaneHeaderLine.SlimSpacing;
         Require(gap == DesignMetrics.Spacing.Md && Math.Abs(Left(slim.Symbol) - pad) < .6 && Math.Abs(Left(slim.Title) - (End(slim.Symbol) + gap)) < .6 && Left(slim.Subtitle) >= End(slim.Title) + gap - .6
-            && Left(pill) >= End(slim.Subtitle) + gap + DesignMetrics.Spacing.Sm + gap - .6 && Math.Abs(End(pill) - (header.ActualWidth - pad - 22 - gap)) < .6,
+            && Left(pill) >= End(slim.Subtitle) + gap + SlimBarSpacer + gap - .6 && Math.Abs(End(pill) - (header.ActualWidth - pad - 22 - gap)) < .6,
             $"{key} ({theme}): the terminal header must read symbol, title, kind, then the capsule {gap} before the menu, from its {pad} padding and {gap} apart; got symbol {Left(slim.Symbol):F1}..{End(slim.Symbol):F1}, title {Left(slim.Title):F1}..{End(slim.Title):F1}, kind {Left(slim.Subtitle):F1}..{End(slim.Subtitle):F1}, capsule {Left(pill):F1}..{End(pill):F1} of {header.ActualWidth:F1}");
         return (header, slim.Word);
     }
 
     /// <summary>
     /// The slim ink bar a tab group draws over a pane that is not a conversation (M/PaneChrome.swift:99-141,
-    /// M/PaneDockView.swift:178-180), here the files pane's: between the tab strip and the pane, set in h4 t4 b2,
+    /// M/PaneDockView.swift:178-180), here the files pane's: between the tab strip and the pane, set in <see cref="SlimBarMargin"/>,
     /// Layout.PaneHeader high on <c>idle</c>, radius 11, padding Inset.PaneHeaderLeading; the folder, the title in 13pt bold and the kind in 11.5pt,
     /// all <c>onStatus</c>, with no status capsule and no menu. The pane under it draws no header and no outline.
     /// </summary>
@@ -219,10 +219,10 @@ public sealed partial class MainWindow
 
     /// <summary>
     /// The dock's dividers and drop previews in the theme just rendered. A divider (M/PaneDockView.swift:42,
-    /// 125-133) is a 10pt strip that takes the pointer, with a 3x30 handle (30x3 between rows) of radius 2 in
+    /// 125-133) is a <c>Layout.SplitDivider</c> strip that takes the pointer, with a 3x30 handle (30x3 between rows) of radius 2 in
     /// its middle, <c>line</c> until the pointer is on it. A drop preview (M/PaneDockDrag.swift:131-146,
-    /// M/PaneDockView.swift:28-38) is the zone set in 5 with radius 9: <c>accent</c> x 0.16 under a 2pt accent
-    /// dash [6, 4], and the zone's words in 12pt semibold accent on a <c>page</c> x 0.95 capsule (h12 v7,
+    /// M/PaneDockView.swift:28-38) is the zone set in <see cref="DropHintInset"/> with radius 9: <c>accent</c> x 0.16 under a 2pt accent
+    /// dash [6, 4], and the zone's words in 12pt semibold accent on a <c>page</c> x 0.95 capsule (h <c>Spacing.Md</c> v <c>Spacing.Sm</c>,
     /// radius 15) in its middle. Returns the capture of the dock showing three zones.
     /// </summary>
     private async Task<string> RequireDockInTheme()
@@ -345,13 +345,13 @@ public sealed partial class MainWindow
     /// <summary>
     /// The files pane's Markdown preview as its renderer draws it, for the eye. Side by side with four other
     /// panes the files pane is too narrow to show one, so the Mac's own Markdown sample
-    /// (M/AgentMarkdownView.swift:308-329) goes into a box set up as the pane's (padding 18,
-    /// M/FilePaneView.swift:246) over the window for the length of one capture.
+    /// (M/AgentMarkdownView.swift:308-329) goes into a box set up as the pane's (padding
+    /// <see cref="PaneView.FilesMarkdownInset"/>, M/FilePaneView.swift:246) over the window for the length of one capture.
     /// </summary>
     private async Task CaptureMarkdownPreview(string theme)
     {
         const string sample = "# \uC791\uC5C5\uC744 \uC815\uB9AC\uD588\uC5B4\uC694\n\n**\uB124\uC774\uD2F0\uBE0C \uD654\uBA74**\uC5D0\uC11C \uC77D\uAE30 \uD3B8\uD558\uAC8C \uD45C\uC2DC\uD569\uB2C8\uB2E4. `SessionPaneView.swift`\uC640 [Swift \uBB38\uC11C](https://www.swift.org/documentation/)\uB97C \uD655\uC778\uD558\uC138\uC694.\n\n## \uBCC0\uACBD \uC0AC\uD56D\n- \uC77D\uAE30 \uD3B8\uD55C \uC81C\uBAA9\uACFC \uBAA9\uB85D\n  - \uC911\uCCA9 \uD56D\uBAA9\uB3C4 \uC720\uC9C0\n- [x] \uC785\uB825\uACFC \uD130\uBBF8\uB110 \uC720\uC9C0\n\n1. \uCCAB\uC9F8\n2. \uB458\uC9F8\n\n> \uC791\uC131 \uC911\uC778 \uCD08\uC548\uACFC \uC2E4\uD589 \uC911\uC778 \uD130\uBBF8\uB110\uC740 \uADF8\uB300\uB85C \uC774\uC5B4\uC9D1\uB2C8\uB2E4.\n\n```swift\nlet message = \"\uC548\uB155\uD558\uC138\uC694\"\nprint(message)\n```\n\n| \uD56D\uBAA9 | \uC0C1\uD0DC |\n|:---|---:|\n| Markdown | \uC644\uB8CC |\n| \uC9C4\uD589 \uC0C1\uD0DC | \uD655\uC778 \uC911 |\n\n---\n\n### \uB9C8\uBB34\uB9AC\n\uB9C8\uC9C0\uB9C9 \uBB38\uB2E8\uC785\uB2C8\uB2E4.";
-        var view = new RichEditBox { IsReadOnly = true, IsSpellCheckEnabled = false, IsTextPredictionEnabled = false, TextWrapping = TextWrapping.Wrap, BorderThickness = new Thickness(0), Background = brushes.Transparent, Padding = new Thickness(DesignMetrics.Spacing.Lg) };
+        var view = new RichEditBox { IsReadOnly = true, IsSpellCheckEnabled = false, IsTextPredictionEnabled = false, TextWrapping = TextWrapping.Wrap, BorderThickness = new Thickness(0), Background = brushes.Transparent, Padding = new Thickness(PaneView.FilesMarkdownInset) };
         var card = new Border
         {
             Width = 620, Height = 720, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Child = view,
