@@ -27,7 +27,7 @@ struct RenameSheet: View {
     private var validName: Bool { !trimmedName.isEmpty && trimmedName.count <= 120 && !hasControlCharacters }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.lg) {
             Text(heading).font(.headline)
             TextField(L("pane.rename.namePlaceholder"), text: $name)
                 .textFieldStyle(.roundedBorder)
@@ -56,7 +56,7 @@ struct RenameSheet: View {
                     .accessibilityIdentifier("rename-save")
             }
         }
-        .padding(22).frame(width: 360)
+        .padding(DesignMetrics.Inset.sheet).frame(width: 360)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("rename-sheet")
         .onAppear { nameFocused = true }

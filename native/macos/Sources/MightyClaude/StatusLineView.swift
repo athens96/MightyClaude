@@ -11,20 +11,20 @@ struct StatusLineView: View {
     var onDismiss: () -> Void = {}
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
             if let untrusted = state.untrusted {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
                     Label(L("statusLine.untrustedPrompt", ["source": untrusted.sourceLabel]), systemImage: "terminal")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                     Text(untrusted.command).font(.system(size: 11, design: .monospaced)).lineLimit(3).textSelection(.enabled)
-                        .padding(6).frame(maxWidth: .infinity, alignment: .leading).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 6))
-                    HStack(spacing: 8) {
+                        .padding(DesignMetrics.Spacing.sm).frame(maxWidth: .infinity, alignment: .leading).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 6))
+                    HStack(spacing: DesignMetrics.Spacing.sm) {
                         Button(L("statusLine.trust")) { onTrust(untrusted) }.controlSize(.small).accessibilityIdentifier("status-line-trust-\(sessionID)")
                         Button(L("statusLine.notNow")) { onDismiss() }.controlSize(.small)
                         Text(L("statusLine.reaskNote")).font(.system(size: 10)).foregroundStyle(.tertiary)
                     }
                 }
-                .padding(.bottom, 4)
+                .padding(.bottom, DesignMetrics.Spacing.xs)
                 .accessibilityIdentifier("status-line-untrusted-\(sessionID)")
             }
             if let result = state.result, state.config != nil {
@@ -40,7 +40,7 @@ struct StatusLineView: View {
         .font(.system(size: 11, design: .monospaced))
         .textSelection(.enabled)
         .padding(.leading, CGFloat(padding) * 6)
-        .padding(.horizontal, 12).padding(.top, 2).padding(.bottom, 8)
+        .padding(.horizontal, DesignMetrics.Spacing.md).padding(.top, DesignMetrics.Spacing.xxs).padding(.bottom, DesignMetrics.Spacing.sm)
         .help((state.config.map { "statusLine · " + $0.sourceLabel + " · " + $0.command } ?? "statusLine") + (state.updatedAt.map { " · " + $0.formatted(date: .omitted, time: .standard) } ?? ""))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(L("composer.statusLine.name"))

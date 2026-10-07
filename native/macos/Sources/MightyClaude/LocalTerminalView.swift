@@ -47,10 +47,10 @@ struct LocalTerminalPane: View {
             if let terminal = store.localTerminals[session.id] {
                 LocalTerminalContent(terminal: terminal, restart: { Task { await store.restartTerminal(session.id) } })
             } else if let failure = store.terminalErrors[session.id] {
-                VStack(spacing: 12) {
+                VStack(spacing: DesignMetrics.Spacing.md) {
                     Text(failure).font(.system(size: 12)).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     Button(L("terminal.restart")) { Task { await store.ensureLocalTerminal(session.id) } }
-                }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
+                }.padding(DesignMetrics.Spacing.xl).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ProgressView(L("terminal.starting")).controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -70,13 +70,13 @@ private struct LocalTerminalContent: View {
                 .id(ObjectIdentifier(terminal))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             if terminal.exited || terminal.failure != nil {
-                HStack(spacing: 8) {
+                HStack(spacing: DesignMetrics.Spacing.sm) {
                     Text(terminal.failure ?? L("terminal.shellExited")).font(.system(size: 11)).foregroundStyle(.secondary)
                     Spacer(minLength: 4)
                     Button(L("terminal.restart"), action: restart).controlSize(.small)
-                }.padding(10).background(Palette.subtle)
+                }.padding(DesignMetrics.Spacing.md).background(Palette.subtle)
             }
-            HStack(spacing: 7) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Text("Ghostty").fontWeight(.medium)
                 Text("·")
                 Text(terminal.title.isEmpty ? "zsh" : terminal.title).lineLimit(1)
@@ -84,7 +84,7 @@ private struct LocalTerminalContent: View {
                 Text(terminal.workingDirectory).lineLimit(1).truncationMode(.middle).help(terminal.workingDirectory)
                 if let grid = terminal.grid { Text("\(grid.columns)×\(grid.rows)").monospacedDigit().foregroundStyle(.tertiary) }
             }
-            .font(.system(size: 9)).foregroundStyle(.secondary).padding(.horizontal, 10).padding(.vertical, 6)
+            .font(.system(size: 9)).foregroundStyle(.secondary).padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.sm)
             .background(Palette.subtle)
         }
         .onAppear { focusIfActive() }
@@ -181,13 +181,13 @@ struct LegacyTerminalHistory: View {
     let session: RunSession
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.lg) {
             HStack { Text(L("terminal.history.title")).font(.headline); Spacer(); Button(L("settings.closeButton")) { dismiss() }.keyboardShortcut(.cancelAction) }
             Text(L("terminal.history.helpMac")).font(.system(size: 12)).foregroundStyle(.secondary)
             ScrollView {
                 Text(session.logs.isEmpty ? L("terminal.history.empty") : session.logs.map { "[\($0.kind)] \($0.text)" }.joined(separator: "\n\n"))
-                    .font(.system(size: 11, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                    .font(.system(size: 11, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(DesignMetrics.Spacing.md)
             }.background(Palette.subtle, in: RoundedRectangle(cornerRadius: 8))
-        }.padding(20).frame(width: 630, height: 450)
+        }.padding(DesignMetrics.Inset.sheet).frame(width: 630, height: 450)
     }
 }

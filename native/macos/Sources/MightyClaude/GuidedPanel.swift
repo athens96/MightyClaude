@@ -32,14 +32,15 @@ struct MightyStylePicker: View {
                     .help(row.summary)
             }
         } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: DesignMetrics.Spacing.xs) {
                 Text(verbatim: label).font(.system(size: 10, weight: .medium)).lineLimit(1)
                 if let source = current?.source, let badge = StyleChrome.sourceBadge(source) { SourceBadge(text: badge) }
                 Image(systemName: "chevron.down").font(.system(size: 7)).foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 7).padding(.vertical, 3)
+            .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xxs)
             .background(Palette.subtle, in: RoundedRectangle(cornerRadius: 6))
-            .contentShape(RoundedRectangle(cornerRadius: 6))
+            // The pill stays slim; the target around it does not.
+            .frame(minHeight: DesignMetrics.Layout.hitTarget).contentShape(Rectangle())
         }
         .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
         .disabled(session.status == "running")
@@ -89,7 +90,7 @@ struct GuidedPanel: View {
     }
     private var draft: String { (store.drafts[session.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
     private var capabilitiesLoaded: Bool { store.styleCapabilitiesAreLoaded(style, for: session) }
-    private let columns = [GridItem(.adaptive(minimum: 104, maximum: 170), spacing: 5, alignment: .leading)]
+    private let columns = [GridItem(.adaptive(minimum: 104, maximum: 170), spacing: DesignMetrics.Spacing.xs, alignment: .leading)]
 
     var body: some View {
         let jobOpen = evaluator.isJobOpen(session: session)
@@ -98,7 +99,7 @@ struct GuidedPanel: View {
         let setup = store.stylePrerequisite(style, for: session)
         // The cached reading only: file sources were read off the main actor.
         let widgets = StyleWidgetPresentation.make(store.styleState(style, for: session).widgets).filter { !$0.isEmpty }
-        return VStack(alignment: .leading, spacing: 8) {
+        return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             if !manifest.phases.isEmpty { stepper(chips.phaseId) }
             // A waiting question always wins: nothing else may hide it.
             if let (request, questionnaire) = store.guidedQuestion(for: session.id) {
@@ -120,7 +121,7 @@ struct GuidedPanel: View {
                 }
             }
         }
-        .padding(.horizontal, 12).padding(.top, 8)
+        .padding(.horizontal, DesignMetrics.Spacing.md).padding(.top, DesignMetrics.Spacing.sm)
         .accessibilityElement(children: .contain).accessibilityIdentifier("mighty-panel-\(session.id)")
         .onAppear { seedGroup() }
         .onChange(of: capabilitiesLoaded) { _, _ in seedGroup() }
@@ -139,11 +140,11 @@ struct GuidedPanel: View {
     private func stepper(_ currentId: String?) -> some View {
         let ordered = manifest.orderedPhases
         let reachedIndex = ordered.firstIndex { $0.id == currentId }
-        return HStack(spacing: 4) {
+        return HStack(spacing: DesignMetrics.Spacing.xs) {
             ForEach(Array(ordered.enumerated()), id: \.element.id) { index, item in
                 let isCurrent = item.id == currentId
                 let reached = reachedIndex.map { index <= $0 } ?? false
-                HStack(spacing: 4) {
+                HStack(spacing: DesignMetrics.Spacing.xs) {
                     Text(verbatim: item.title).font(.system(size: 10, weight: isCurrent ? .semibold : .regular))
                         .foregroundStyle(isCurrent ? Palette.accent : reached ? Color.primary.opacity(0.75) : Color.secondary.opacity(0.6))
                     if index < ordered.count - 1 { Image(systemName: "chevron.right").font(.system(size: 7)).foregroundStyle(.tertiary) }
@@ -159,7 +160,7 @@ struct GuidedPanel: View {
     // MARK: 3 · prerequisites
 
     private func setupBlock(_ result: StylePrerequisiteResult) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
             ForEach(Array(result.missing.enumerated()), id: \.offset) { index, line in
                 if index == 0 { Label(line, systemImage: "shippingbox").font(.system(size: 11, weight: .medium)) }
                 else { Text(verbatim: line).font(.system(size: 11, weight: .medium)) }
@@ -168,7 +169,7 @@ struct GuidedPanel: View {
                 Text(verbatim: hint).font(.system(size: 11)).foregroundStyle(.secondary)
                     .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
             }
-            HStack(spacing: 6) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 // Only when the command actually fixes one of the unmet checks.
                 if result.canInstall { Button(L("guidedPanel.installButton")) { store.startStyleInstall(style, from: session) }.controlSize(.small) }
                 Button(L("guidedPanel.recheckButton")) { store.refreshStylePrerequisites(style, for: session) }.controlSize(.small)
@@ -183,7 +184,7 @@ struct GuidedPanel: View {
     /// the phone draws them (§1.16.4). An empty list or label was already
     /// left out; an empty bar still draws its track and `0/0`.
     private func stateWidgets(_ widgets: [StyleWidgetPresentation]) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
             ForEach(Array(widgets.enumerated()), id: \.offset) { _, widget in stateWidget(widget) }
         }
         .accessibilityElement(children: .contain).accessibilityLabel(L("guidedPanel.stateAccessibility"))
@@ -194,7 +195,7 @@ struct GuidedPanel: View {
         switch widget {
         case .progressBar(let fraction, let text):
             // Both numbers are counts, so the bar says 3/7 rather than 43%.
-            HStack(spacing: 6) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 GeometryReader { proxy in
                     ZStack(alignment: .leading) {
                         Capsule().fill(Palette.border)
@@ -223,7 +224,7 @@ struct GuidedPanel: View {
     // MARK: 5 · group map
 
     private var groupMap: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: DesignMetrics.Spacing.xs) {
             ForEach(manifest.groups) { item in
                 let selected = item.id == group?.id
                 Button { selection.groupId = item.id } label: {
@@ -231,7 +232,7 @@ struct GuidedPanel: View {
                         Text(verbatim: item.title).font(.system(size: 11, weight: .semibold, design: .monospaced))
                         Text(verbatim: item.axis ?? "").font(.system(size: 9)).foregroundStyle(.secondary)
                     }
-                    .padding(.horizontal, 9).padding(.vertical, 5).frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xs).frame(maxWidth: .infinity, alignment: .leading)
                     .background(selected ? Palette.accent.opacity(0.16) : Palette.subtle, in: RoundedRectangle(cornerRadius: 7))
                     .overlay { RoundedRectangle(cornerRadius: 7).stroke(selected ? Palette.accent.opacity(0.7) : Color.clear) }
                     .contentShape(RoundedRectangle(cornerRadius: 7))
@@ -259,7 +260,7 @@ struct GuidedPanel: View {
 
     private var attachmentRow: some View {
         let items = store.styleChips(style, for: session)
-        return HStack(spacing: 6) {
+        return HStack(spacing: DesignMetrics.Spacing.sm) {
             Image(systemName: "folder").font(.system(size: 10)).foregroundStyle(.secondary)
             if items.isEmpty {
                 Text(verbatim: attachmentEmptyDetail).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
@@ -278,10 +279,10 @@ struct GuidedPanel: View {
     private func attachmentChips(_ items: [StyleAttachmentItem]) -> some View {
         let detail = items.first?.detail ?? ""
         return ScrollView(.horizontal) {
-            HStack(spacing: 6) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 if !detail.isEmpty {
                     Text(verbatim: detail).font(.system(size: 10)).foregroundStyle(.secondary)
-                        .padding(.horizontal, 5).padding(.vertical, 1).background(Palette.subtle, in: Capsule()).lineLimit(1)
+                        .padding(.horizontal, DesignMetrics.Spacing.xs).padding(.vertical, 1).background(Palette.subtle, in: Capsule()).lineLimit(1)
                 }
                 // Six chips on screen however many the payload carries (§1.8).
                 ForEach(items.prefix(StyleLimits.maximumCasebookChips)) { item in
@@ -306,7 +307,7 @@ struct GuidedPanel: View {
     /// A sequence in flight offers nothing to press, so the row is a spinner
     /// and the guidance line below it says what is running (§6.1).
     private var progressRow: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: DesignMetrics.Spacing.sm) {
             ProgressView().controlSize(.small)
             Spacer(minLength: 0)
         }
@@ -318,9 +319,9 @@ struct GuidedPanel: View {
         let recommended = chips.recommendedId
         return Group {
             if chips.grid {
-                VStack(alignment: .leading, spacing: 5) {
+                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
                     ScrollView {
-                        LazyVGrid(columns: columns, alignment: .leading, spacing: 5) {
+                        LazyVGrid(columns: columns, alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
                             ForEach(chips.actions) { action in chip(action, chips: chips, recommended: recommended) }
                         }
                     }
@@ -329,7 +330,7 @@ struct GuidedPanel: View {
                 }
             } else {
                 ScrollView(.horizontal) {
-                    HStack(spacing: 6) {
+                    HStack(spacing: DesignMetrics.Spacing.sm) {
                         ForEach(chips.actions) { action in chip(action, chips: chips, recommended: recommended) }
                         resetChip(chips.reset)
                     }

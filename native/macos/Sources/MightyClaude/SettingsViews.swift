@@ -37,18 +37,18 @@ struct RunSettingsView: View {
                 Spacer()
                 Text(ProviderOptions.label(session.provider)).font(.system(size: 11)).foregroundStyle(.secondary)
                 if ProviderOptions.isBeta(session.provider) { BetaBadge() }
-            }.padding(16)
+            }.padding(.horizontal, DesignMetrics.Inset.popover).padding(.vertical, DesignMetrics.Spacing.md)
             Divider()
             ScrollView {
-                VStack(alignment: .leading, spacing: 15) {
-                    VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
+                    VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
                         Text(store.modelLabel(for: currentSession)).font(.system(size: 13, weight: .medium))
                         if let description = selectedModel?.description, !description.isEmpty { Text(description).font(.system(size: 11)).foregroundStyle(.secondary).textSelection(.enabled) }
                         Label(runtime.modelCatalog.source == "cli" ? L("settings.run.modelSourceCli") : L("settings.run.modelSourceDefault"), systemImage: "info.circle")
                             .font(.system(size: 10)).foregroundStyle(.secondary)
                     }
                     Divider()
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
                         Text(permissionLabel(currentSession.settings.permissionMode, provider: session.provider)).font(.system(size: 12, weight: .medium))
                         Text(permissionDescription(currentSession.settings.permissionMode, provider: session.provider)).font(.system(size: 11)).foregroundStyle(.secondary)
                         if currentSession.settings.permissionMode != "fullAccess" {
@@ -64,7 +64,7 @@ struct RunSettingsView: View {
                     }
                     if runtime.capabilities.webSearch {
                         Divider()
-                        VStack(alignment: .leading, spacing: 7) {
+                        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
                             Picker(L("settings.run.webSearchLabel"), selection: $webSearch) {
                                 Text(L("settings.run.webSearchDefault")).tag("default")
                                 Text(L("settings.run.webSearchOff")).tag("disabled")
@@ -75,7 +75,7 @@ struct RunSettingsView: View {
                         }
                     }
                     if runtime.capabilities.networkAccess {
-                        VStack(alignment: .leading, spacing: 7) {
+                        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
                             Toggle(L("settings.run.shellNetworkToggle"), isOn: $networkAccess).toggleStyle(.switch).controlSize(.small)
                                 .disabled(!["acceptEdits", "onRequest"].contains(currentSession.settings.permissionMode)).accessibilityLabel(L("settings.run.shellNetworkToggle"))
                             Text(currentSession.settings.permissionMode == "fullAccess" ? L("settings.run.shellNetworkFullAccess") : ["acceptEdits", "onRequest"].contains(currentSession.settings.permissionMode) ? L("settings.run.shellNetworkAcceptEdits") : L("settings.run.shellNetworkLocked"))
@@ -84,16 +84,16 @@ struct RunSettingsView: View {
                     }
                     if runtime.capabilities.maxTurns || runtime.capabilities.maxBudgetUsd {
                         Divider()
-                        VStack(alignment: .leading, spacing: 9) {
+                        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
                             Text(L("settings.run.limitsTitle")).font(.system(size: 12, weight: .medium))
                             if runtime.capabilities.maxTurns {
-                                VStack(alignment: .leading, spacing: 5) {
+                                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                                     Text(L("settings.run.maxTurnsLabel")).font(.system(size: 11))
                                     TextField(L("settings.run.maxTurnsLabel"), text: $maxTurns, prompt: Text(L("settings.run.unlimitedPlaceholder"))).textFieldStyle(.roundedBorder).accessibilityLabel(L("settings.run.maxTurnsLabel"))
                                 }
                             }
                             if runtime.capabilities.maxBudgetUsd {
-                                VStack(alignment: .leading, spacing: 5) {
+                                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                                     Text(L("settings.run.maxBudgetLabel")).font(.system(size: 11))
                                     TextField(L("settings.run.maxBudgetLabel"), text: $maxBudget, prompt: Text(L("settings.run.unlimitedPlaceholder"))).textFieldStyle(.roundedBorder).accessibilityLabel(L("settings.run.maxBudgetLabel"))
                                 }
@@ -111,17 +111,17 @@ struct RunSettingsView: View {
                         }
                     }
                 }
-                .font(.system(size: 12)).fixedSize(horizontal: false, vertical: true).padding(16).disabled(running)
+                .font(.system(size: 12)).fixedSize(horizontal: false, vertical: true).padding(DesignMetrics.Inset.popover).disabled(running)
             }
-            if let validationError { Text(validationError).font(.system(size: 11)).foregroundStyle(Palette.errText).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16).padding(.bottom, 10) }
+            if let validationError { Text(validationError).font(.system(size: 11)).foregroundStyle(Palette.errText).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, DesignMetrics.Inset.popover).padding(.bottom, DesignMetrics.Spacing.md) }
             Divider()
             HStack {
                 Text(L("settings.run.appliesNextRequest")).font(.system(size: 10)).foregroundStyle(.secondary)
                 Spacer()
                 Button(L("settings.run.cancelButton")) { dismiss() }.keyboardShortcut(.cancelAction)
                 Button(L("settings.run.applyButton")) { save() }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction).disabled(running)
-            }.controlSize(.small).padding(14)
-        }.frame(width: 360, height: runtime.capabilities.webSearch ? 500 : 445)
+            }.controlSize(.small).padding(.horizontal, DesignMetrics.Inset.popover).padding(.vertical, DesignMetrics.Spacing.md)
+        }.frame(width: 360, height: runtime.capabilities.webSearch ? 440 : 390)
     }
 
     private func save() {
@@ -189,14 +189,14 @@ struct AppSettingsView: View {
             HStack(spacing: 0) {
                 sidebar
                 Divider()
-                Form { detail(pane) }
-                    .formStyle(.grouped)
-                    // A fresh form per entry starts at its top.
+                SettingsPage { detail(pane) }
+                    // A fresh page per entry starts at its top.
                     .id(pane)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             Divider()
-            HStack { Spacer(); Button(L("settings.closeButton")) { dismiss() }.keyboardShortcut(.cancelAction) }.padding(18)
+            HStack { Spacer(); Button(L("settings.closeButton")) { dismiss() }.keyboardShortcut(.cancelAction) }
+                .padding(.horizontal, DesignMetrics.Inset.sheet).padding(.vertical, DesignMetrics.Spacing.md)
         }
         .frame(width: 800, height: 700)
         // Opening Settings is one of the four moments the sources are re-read.
@@ -206,7 +206,7 @@ struct AppSettingsView: View {
     private var sidebar: some View {
         List(SettingsPane.allCases, selection: Binding(get: { pane }, set: { if let value = $0 { pane = value } })) { item in
             Label(item.title, systemImage: item.symbol)
-                .padding(.vertical, 3)
+                .padding(.vertical, DesignMetrics.Spacing.xxs)
                 .tag(item)
                 .accessibilityIdentifier("settings-nav-\(item.rawValue)")
         }
@@ -218,7 +218,7 @@ struct AppSettingsView: View {
     private func detail(_ pane: SettingsPane) -> some View {
         switch pane {
         case .general:
-            Section(L("settings.display.sectionTitle")) {
+            SettingsGroup(L("settings.display.sectionTitle")) {
                 Picker(L("settings.display.themeLabel"), selection: $store.snapshot.theme) { Text(L("settings.display.themeDarkMac")).tag("dark"); Text(L("settings.display.themeLightMac")).tag("light") }.pickerStyle(.segmented)
                 Picker(L("settings.display.languageLabel"), selection: Binding(
                     get: { AppLanguage(rawValue: UserDefaults.standard.string(forKey: "language") ?? "system") ?? .system },
@@ -228,32 +228,32 @@ struct AppSettingsView: View {
                 }.pickerStyle(.segmented).accessibilityIdentifier("settings-language")
                 Text(L("settings.display.languageMenuNote")).font(.system(size: 11)).foregroundStyle(.secondary)
                 Toggle(isOn: Binding(get: { store.statusLineEnabled }, set: { store.statusLineEnabled = $0 })) {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                         Text(L("settings.display.statusLineToggle"))
                         Text(L("settings.display.statusLineDescription"))
                             .font(.system(size: 11)).foregroundStyle(.secondary)
                     }
                 }
-                .toggleStyle(.switch).accessibilityIdentifier("settings-status-line")
+                .accessibilityIdentifier("settings-status-line")
                 Toggle(L("settings.display.backgroundWorkToggle"), isOn: Binding(get: { store.showsBackgroundWork }, set: { store.setShowsBackgroundWork($0) }))
-                    .toggleStyle(.switch).accessibilityIdentifier("settings-background-work")
+                    .accessibilityIdentifier("settings-background-work")
                 Toggle(isOn: Binding(
                     get: { CefBrowserEngine.isEnabledInSettings },
                     set: { store.objectWillChange.send(); CefBrowserEngine.isEnabledInSettings = $0 }
                 )) {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                         Text(L("settings.display.browserToggle"))
                         Text(L("settings.display.browserDescription"))
                             .font(.system(size: 11)).foregroundStyle(.secondary)
                     }
                 }
-                .toggleStyle(.switch).accessibilityIdentifier("settings-browser-engine")
+                .accessibilityIdentifier("settings-browser-engine")
             }
             // Per-workspace destination for URLs the agent opens. Writes to the
             // same persisted store the open agent panes read (and the dialog's
             // "remember" writes), so a change here is in force on their very
             // next open_url call and survives a restart.
-            Section(WebOpenChoiceCopy.settingTitle) {
+            SettingsGroup(WebOpenChoiceCopy.settingTitle) {
                 Picker(WebOpenChoiceCopy.settingTitle, selection: Binding(
                     get: { WebOpenChoiceStore.shared.setting(forWorkspace: store.snapshot.activeWorkspaceId ?? "") },
                     set: { choice in
@@ -276,18 +276,18 @@ struct AppSettingsView: View {
             ComponentsSettingsSection().environmentObject(store)
             ToolkitSettingsSection().environmentObject(store)
         case .cli:
-            Section {
+            SettingsGroup {
                 ForEach(ProviderOptions.ids, id: \.self) { id in
                     let provider = store.runtime?.providers?.first { $0.id == id } ?? ProviderOptions.fallbackRuntime(id)
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                         HStack {
-                            HStack(spacing: 6) { ProviderIcon(provider: id, size: 13); Text(provider.name); if ProviderOptions.isBeta(id) { BetaBadge() } }.font(.system(size: 13, weight: .medium))
+                            HStack(spacing: DesignMetrics.Spacing.sm) { ProviderIcon(provider: id, size: 13); Text(provider.name); if ProviderOptions.isBeta(id) { BetaBadge() } }.font(.system(size: 13, weight: .medium))
                             Spacer()
                             Text(provider.available ? L("settings.providers.statusReady") : L("settings.providers.statusNeedsSetup")).font(.system(size: 10)).foregroundStyle(provider.available ? Palette.doneText : Palette.waitText)
                         }
                         if let version = provider.version { Text(version).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary) }
                         Text(provider.detail).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
-                    }.padding(.vertical, 4)
+                    }
                 }
                 HStack {
                     Text(L("settings.providers.loginNote")).font(.system(size: 11)).foregroundStyle(.secondary)
@@ -297,7 +297,7 @@ struct AppSettingsView: View {
             } header: { Text(L("settings.providers.sectionTitleMac")) }
             CLIAccountsSettingsSection()
             if let mods = store.runtime?.mods {
-                Section("Claude Mods") {
+                SettingsGroup("Claude Mods") {
                     Text(mods.detail).font(.system(size: 12)).foregroundStyle(.secondary).textSelection(.enabled)
                     LabeledContent(L("settings.claudeMods.compatLabel"), value: mods.minimumVersion)
                 }
@@ -310,7 +310,7 @@ struct AppSettingsView: View {
             CompanionSettingsSection(companion: store.companion)
         case .about:
             AppUpdateSettingsSection()
-            Section(L("settings.appInfo.sectionTitle")) {
+            SettingsGroup(L("settings.appInfo.sectionTitle")) {
                 LabeledContent(L("settings.appInfo.versionLabel"), value: store.runtime?.appVersion ?? "0.2.0")
                 Text(L("settings.appInfo.runtimeNote")).font(.system(size: 11)).foregroundStyle(.secondary)
                 LabeledContent(L("menu.help")) {
@@ -332,12 +332,12 @@ struct SheetHeading: View {
     let dismiss: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: systemImage).font(.system(size: 21, weight: .light)).foregroundStyle(Palette.accent).frame(width: 31)
-            VStack(alignment: .leading, spacing: 4) { Text(title).font(.system(size: 17, weight: .semibold)); Text(subtitle).font(.system(size: 11)).foregroundStyle(.secondary) }
+        HStack(spacing: DesignMetrics.Spacing.md) {
+            Image(systemName: systemImage).font(.system(size: 19, weight: .light)).foregroundStyle(Palette.accent).frame(width: 26)
+            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) { Text(title).font(.system(size: 17, weight: .semibold)); Text(subtitle).font(.system(size: 11)).foregroundStyle(.secondary) }
             Spacer()
             Button(action: dismiss) { Image(systemName: "xmark.circle.fill").font(.system(size: 17)).foregroundStyle(.tertiary) }.buttonStyle(.plain).accessibilityLabel(L("settings.closeButton"))
-        }.padding(22).frame(maxWidth: .infinity, alignment: .leading).overlay(alignment: .bottom) { Divider() }
+        }.padding(.horizontal, DesignMetrics.Inset.sheet).padding(.vertical, DesignMetrics.Spacing.md).frame(maxWidth: .infinity, alignment: .leading).overlay(alignment: .bottom) { Divider() }
     }
 }
 

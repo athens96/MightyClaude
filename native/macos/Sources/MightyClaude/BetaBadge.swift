@@ -8,7 +8,7 @@ struct BetaBadge: View {
         Text(verbatim: L("badge.beta"))
             .font(.system(size: 9, weight: .medium))
             .foregroundStyle(Palette.stopText)
-            .padding(.horizontal, 5).padding(.vertical, 1)
+            .padding(.horizontal, DesignMetrics.Spacing.xs).padding(.vertical, 1)
             .background(Palette.stopSoft, in: Capsule())
             .fixedSize()
             .accessibilityLabel(L("badge.betaAccessibility"))

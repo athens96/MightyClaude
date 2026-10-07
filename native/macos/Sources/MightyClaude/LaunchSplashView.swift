@@ -20,13 +20,13 @@ struct LaunchSplashView: View {
                 brandIcon
                     .frame(width: 104, height: 104)
                     .shadow(color: Palette.accent.opacity(0.10), radius: 24, y: 8)
-                    .padding(.bottom, 24)
+                    .padding(.bottom, DesignMetrics.Spacing.xl)
 
                 Text("Mighty Claude")
                     .font(.system(size: 30, weight: .semibold, design: .rounded))
                     .tracking(-0.6)
                     .foregroundStyle(.primary)
-                    .padding(.bottom, 10)
+                    .padding(.bottom, DesignMetrics.Spacing.md)
 
                 Text(L("launch.preparing"))
                     .font(.system(size: 13))

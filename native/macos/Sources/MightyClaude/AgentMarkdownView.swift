@@ -134,7 +134,7 @@ struct AgentMarkdownView: View {
     let source: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
             ForEach(AgentMarkdownDocument.parse(source).blocks) { block in AgentMarkdownBlockView(block: block) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -163,27 +163,27 @@ private struct AgentMarkdownBlockView: View {
         case .unorderedList:
             list(ordered: false)
         case .listItem:
-            children(block.children, spacing: 6)
+            children(block.children, spacing: DesignMetrics.Spacing.sm)
         case .codeBlock(let language):
             AgentCodeBlock(code: block.plainText, language: language)
         case .blockQuote:
-            HStack(alignment: .top, spacing: 11) {
+            HStack(alignment: .top, spacing: DesignMetrics.Spacing.md) {
                 RoundedRectangle(cornerRadius: 2).fill(Palette.accent.opacity(0.6)).frame(width: 3)
-                children(block.children, spacing: 8).foregroundStyle(.secondary)
+                children(block.children, spacing: DesignMetrics.Spacing.sm).foregroundStyle(.secondary)
             }
             .fixedSize(horizontal: false, vertical: true)
-            .padding(.vertical, 3)
+            .padding(.vertical, DesignMetrics.Spacing.xxs)
         case .thematicBreak:
-            Divider().padding(.vertical, 4)
+            Divider().padding(.vertical, DesignMetrics.Spacing.xs)
         case .table(let columns):
             AgentMarkdownTable(block: block, columns: columns)
         case .tableCell:
             inline(block.text)
         case .tableHeaderRow, .tableRow:
-            children(block.children, spacing: 5)
+            children(block.children, spacing: DesignMetrics.Spacing.xs)
         @unknown default:
             inline(block.text)
-            children(block.children, spacing: 6)
+            children(block.children, spacing: DesignMetrics.Spacing.sm)
         }
     }
 
@@ -203,10 +203,10 @@ private struct AgentMarkdownBlockView: View {
     }
 
     private func list(ordered: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             ForEach(block.children) { item in
                 let task = taskItem(item)
-                HStack(alignment: .top, spacing: 9) {
+                HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
                     Group {
                         if let checked = task.checked {
                             Image(systemName: checked ? "checkmark.square.fill" : "square").foregroundStyle(checked ? Palette.accent : Color.secondary).font(.system(size: 12))
@@ -214,7 +214,7 @@ private struct AgentMarkdownBlockView: View {
                             Text("\(ordinal).").monospacedDigit().foregroundStyle(.secondary)
                         } else { Text("•").foregroundStyle(Palette.accent) }
                     }.frame(minWidth: 17, alignment: .trailing).padding(.top, 1)
-                    children(task.children, spacing: 7)
+                    children(task.children, spacing: DesignMetrics.Spacing.sm)
                 }
             }
         }
@@ -246,13 +246,13 @@ private struct AgentCodeBlock: View {
                     Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
                 } label: { Label(copied ? L("markdown.code.copied") : L("pane.copyButton"), systemImage: copied ? "checkmark" : "doc.on.doc").font(.system(size: 10)) }
                 .buttonStyle(.plain).foregroundStyle(.secondary).help(L("markdown.code.copyHelp"))
-            }.padding(.horizontal, 12).padding(.vertical, 8).background(Palette.subtle)
+            }.padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.sm).background(Palette.subtle)
             Divider()
             ScrollView(.horizontal) {
                 Text(code.hasSuffix("\n") ? String(code.dropLast()) : code)
                     .font(.system(size: 12, design: .monospaced)).lineSpacing(3)
                     .fixedSize(horizontal: true, vertical: false)
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(DesignMetrics.Spacing.md)
             }
         }
         .background(Palette.canvas.opacity(0.65), in: RoundedRectangle(cornerRadius: 9))
@@ -277,8 +277,8 @@ private struct AgentMarkdownTable: View {
                             Text(cell?.text ?? AttributedString(""))
                                 .font(.system(size: 12, weight: row.kind == .tableHeaderRow ? .semibold : .regular))
                                 .fixedSize(horizontal: false, vertical: true)
-                                .frame(width: widths[column] - 24, alignment: alignment(columns[column].alignment))
-                                .padding(.horizontal, 12).padding(.vertical, 9)
+                                .frame(width: widths[column] - DesignMetrics.Spacing.md * 2, alignment: alignment(columns[column].alignment))
+                                .padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.sm)
                         }
                     }
                     .background(row.kind == .tableHeaderRow ? Palette.subtle : Color.clear)
@@ -299,7 +299,7 @@ private struct AgentMarkdownTable: View {
         columns.indices.map { column in
             let widest = block.children.flatMap(\.children).filter { if case .tableCell(let index) = $0.kind { return index == column }; return false }
                 .map { ($0.plainText as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 12, weight: .medium)]).width }.max() ?? 0
-            return min(260, max(85, ceil(widest) + 24))
+            return min(260, max(85, ceil(widest) + DesignMetrics.Spacing.md * 2))
         }
     }
 }

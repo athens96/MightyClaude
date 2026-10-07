@@ -30,7 +30,7 @@ private struct FilePaneContent: View {
 
     private var tree: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 6) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: "line.3.horizontal.decrease").font(.system(size: 10)).foregroundStyle(.tertiary)
                 TextField(L("files.tree.filter"), text: $model.filter)
                     .textFieldStyle(.plain).font(.system(size: 11))
@@ -40,7 +40,7 @@ private struct FilePaneContent: View {
                     .help(L("files.tree.refresh")).accessibilityLabel(L("files.tree.refresh"))
                     .accessibilityIdentifier("files-refresh")
             }
-            .padding(.horizontal, 10).padding(.vertical, 7)
+            .padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.sm)
             .background(Palette.subtle)
             Divider()
             ScrollViewReader { proxy in
@@ -60,7 +60,7 @@ private struct FilePaneContent: View {
                         if filtering, model.rows.isEmpty { note(L("files.tree.noMatches")) }
                         if filtering, model.filterHitCap { note(L("files.tree.moreResults", ["count": FilePaneModel.maximumFilterResults.formatted()])) }
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, DesignMetrics.Spacing.xs)
                 }
                 .onChange(of: model.selectedPath) { _, path in if let path { proxy.scrollTo(path) } }
                 // A folder revealed from the filter may already be the selection.
@@ -80,7 +80,7 @@ private struct FilePaneContent: View {
     }
 
     private func note(_ text: String) -> some View {
-        Text(text).font(.system(size: 10)).foregroundStyle(.secondary).padding(.horizontal, 12).padding(.vertical, 6)
+        Text(text).font(.system(size: 10)).foregroundStyle(.secondary).padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.sm)
     }
 }
 
@@ -100,7 +100,7 @@ private struct FilePaneRow: View, Equatable {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 5) {
+            HStack(spacing: DesignMetrics.Spacing.xs) {
                 Group {
                     if entry.isDirectory, !filtering { Image(systemName: row.isExpanded ? "chevron.down" : "chevron.right").font(.system(size: 8, weight: .semibold)) }
                     else { Color.clear }
@@ -115,10 +115,10 @@ private struct FilePaneRow: View, Equatable {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.leading, 8 + CGFloat(row.depth) * 14).padding(.trailing, 8).padding(.vertical, 4)
+            .padding(.leading, 8 + CGFloat(row.depth) * 14).padding(.trailing, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xs)
             .opacity(entry.isNoise ? 0.55 : 1)
             .background(isSelected ? Palette.accent.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: 5))
-            .padding(.horizontal, 4)
+            .padding(.horizontal, DesignMetrics.Spacing.xs)
             .contentShape(Rectangle())
             .onTapGesture(perform: onTap)
             .help(entry.relativePath)
@@ -132,7 +132,7 @@ private struct FilePaneRow: View, Equatable {
 
     private func caption(_ text: String) -> some View {
         Text(text).font(.system(size: 10)).foregroundStyle(.tertiary)
-            .padding(.leading, 8 + CGFloat(row.depth + 1) * 14 + 29).padding(.vertical, 3)
+            .padding(.leading, 8 + CGFloat(row.depth + 1) * 14 + 29).padding(.vertical, DesignMetrics.Spacing.xxs)
     }
 }
 
@@ -168,7 +168,7 @@ private struct FilePanePreviewView: View {
     }
 
     private func header(_ info: FilePaneFileInfo) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: DesignMetrics.Spacing.sm) {
             Image(systemName: FilePaneIcons.symbol(for: info.name)).foregroundStyle(Palette.accent)
             VStack(alignment: .leading, spacing: 1) {
                 Text(info.name).font(.system(size: 12, weight: .semibold)).lineLimit(1)
@@ -180,7 +180,7 @@ private struct FilePanePreviewView: View {
                 .help(L("menu.showInFinder")).accessibilityLabel(L("menu.showInFinder"))
         }
         .buttonStyle(.plain).font(.system(size: 12))
-        .padding(.horizontal, 12).frame(height: DesignMetrics.Layout.previewHead)
+        .padding(.horizontal, DesignMetrics.Spacing.md).frame(height: DesignMetrics.Layout.previewHead)
         .background(Palette.subtle)
     }
 
@@ -243,7 +243,7 @@ private struct FilePanePreviewView: View {
                 if model.showsMarkdownSource || !renderable {
                     FileSourceTextView(content: text, identity: identity(info, "markdown-source"))
                 } else {
-                    ScrollView { AgentMarkdownView(source: text.text).padding(18).frame(maxWidth: 860, alignment: .leading) }
+                    ScrollView { AgentMarkdownView(source: text.text).padding(DesignMetrics.Spacing.lg).frame(maxWidth: 860, alignment: .leading) }
                         .accessibilityIdentifier("files-markdown")
                 }
             }
@@ -255,7 +255,7 @@ private struct FilePanePreviewView: View {
                 FileImagePreview(image: image, zoom: model.imageZoom)
             }
         case .unsupported(let info, let reason):
-            VStack(spacing: 8) {
+            VStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: "doc.questionmark").font(.system(size: 30, weight: .light)).foregroundStyle(.secondary)
                 Text(L("files.preview.unsupported")).font(.system(size: 13, weight: .semibold))
                 Text(info.name).font(.system(size: 12)).lineLimit(2).multilineTextAlignment(.center)
@@ -273,9 +273,9 @@ private struct FilePanePreviewView: View {
                 }.font(.system(size: 11))
                 if let reason { Text(reason).font(.system(size: 11)).foregroundStyle(.secondary).multilineTextAlignment(.center) }
                 Button(L("menu.showInFinder")) { NSWorkspace.shared.activateFileViewerSelecting([info.url]) }
-                    .padding(.top, 4).accessibilityIdentifier("files-show-in-finder")
+                    .padding(.top, DesignMetrics.Spacing.xs).accessibilityIdentifier("files-show-in-finder")
             }
-            .padding(24)
+            .padding(DesignMetrics.Spacing.xl)
             .accessibilityIdentifier("files-unsupported")
         case .failed(let message):
             notice(symbol: "exclamationmark.triangle", title: message, detail: nil)
@@ -293,23 +293,23 @@ private struct FilePanePreviewView: View {
     }
 
     private func banner(_ text: String) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: DesignMetrics.Spacing.sm) {
             Image(systemName: "info.circle")
             Text(text)
             Spacer(minLength: 0)
         }
         .font(.system(size: 10)).foregroundStyle(.secondary)
-        .padding(.horizontal, 12).padding(.vertical, 6)
+        .padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.sm)
         .background(Palette.waitSoft)
     }
 
     private func notice(symbol: String, title: String, detail: String?) -> some View {
-        VStack(spacing: 6) {
+        VStack(spacing: DesignMetrics.Spacing.sm) {
             Image(systemName: symbol).font(.system(size: 24, weight: .light)).foregroundStyle(.secondary)
             Text(title).font(.system(size: 12)).foregroundStyle(.secondary).multilineTextAlignment(.center)
             if let detail { Text(detail).font(.system(size: 11)).foregroundStyle(.tertiary) }
         }
-        .padding(20)
+        .padding(DesignMetrics.Spacing.xl)
     }
 }
 
@@ -339,13 +339,13 @@ private struct FileImagePreview: View {
                 ScrollView([.horizontal, .vertical]) {
                     Image(nsImage: image.full ?? image.display).resizable().interpolation(zoom >= 2 ? .none : .high)
                         .frame(width: base.width * zoom, height: base.height * zoom)
-                        .padding(12)
+                        .padding(DesignMetrics.Spacing.md)
                         .frame(minWidth: geometry.size.width, minHeight: geometry.size.height)
                 }
             } else {
                 // Fit: shrink to the pane, never enlarge past actual size.
                 Image(nsImage: image.display).resizable().interpolation(.high).scaledToFit()
-                    .frame(maxWidth: min(base.width, max(1, geometry.size.width - 24)), maxHeight: min(base.height, max(1, geometry.size.height - 24)))
+                    .frame(maxWidth: min(base.width, max(1, geometry.size.width - DesignMetrics.Spacing.md * 2)), maxHeight: min(base.height, max(1, geometry.size.height - DesignMetrics.Spacing.md * 2)))
                     .frame(width: geometry.size.width, height: geometry.size.height)
             }
         }

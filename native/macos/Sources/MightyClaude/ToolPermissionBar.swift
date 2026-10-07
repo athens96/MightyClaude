@@ -52,8 +52,8 @@ private struct ToolPermissionCard: View {
 
     var body: some View {
         let presentation = presentation
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 PaneWaitBadge(systemImage: "hand.raised.fill")
                 Text(L("permission.bar.title", ["title": presentation.title])).font(.system(size: 13, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
                 Text(request.toolName).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(Palette.ink2).lineLimit(1)
@@ -66,14 +66,14 @@ private struct ToolPermissionCard: View {
                     .accessibilityIdentifier("permission-headline")
             }
             ScrollView {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
                     ForEach(Array(presentation.fields.enumerated()), id: \.offset) { _, field in
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                             Text(field.label).font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.ink2)
                             if field.code {
                                 Text(field.value).font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
                                     .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.horizontal, 8).padding(.vertical, 6)
+                                    .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.sm)
                                     .background(Palette.raised, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                             } else {
                                 Text(field.value).font(.system(size: 11)).textSelection(.enabled)
@@ -88,9 +88,9 @@ private struct ToolPermissionCard: View {
                     if let reason = request.reason, !reason.isEmpty { Text(reason).font(.system(size: 10)).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true) }
                     DisclosureGroup(L("styles.approval.raw"), isExpanded: $showsJSON) {
                         Text(request.inputJSON).font(.system(size: 10, design: .monospaced)).textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 4)
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(.top, DesignMetrics.Spacing.xs)
                     }.font(.system(size: 10)).accessibilityIdentifier("permission-json")
-                }.frame(maxWidth: .infinity, alignment: .leading).padding(.trailing, 4)
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(.trailing, DesignMetrics.Spacing.xs)
             }.frame(maxHeight: 180)
             if !request.canAllow {
                 Text(L("permission.bar.cannotAllow"))
@@ -99,7 +99,7 @@ private struct ToolPermissionCard: View {
             if let error = store.permissionErrors[sessionId] {
                 Text(error).font(.system(size: 10)).foregroundStyle(Palette.errText).lineLimit(2)
             }
-            HStack(spacing: 8) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Text(L("permission.bar.thisRequestOnly")).font(.system(size: 11)).foregroundStyle(Palette.ink2)
                 Spacer(minLength: 0)
                 if busy { ProgressView().controlSize(.mini) }
@@ -111,7 +111,7 @@ private struct ToolPermissionCard: View {
         }
         // Concept D: the same amber-edged card as a question, above the composer.
         .paneWaitCard()
-        .padding(.horizontal, 12).padding(.top, 8)
+        .padding(.horizontal, DesignMetrics.Spacing.md).padding(.top, DesignMetrics.Spacing.sm)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("permission-request-\(request.id)")
     }

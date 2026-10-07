@@ -143,12 +143,15 @@ public enum DesignMetrics {
         public static let paneMinHeight: CGFloat = 290
         /// A split's divider: the hit area between two panes.
         public static let splitDivider: CGFloat = 6
+        /// The least height of something to click (a chip, a dense row, a settings switch's row), so
+        /// tightening the spacing never shrinks a target below it.
+        public static let hitTarget: CGFloat = 22
 
         /// Every size by its fixture name.
         public static let all: [String: CGFloat] = [
             "sidebarMin": sidebarMin, "sidebarDefault": sidebarDefault, "sidebarMax": sidebarMax, "sidebarFoldThreshold": sidebarFoldThreshold,
             "paneHeader": paneHeader, "tabStrip": tabStrip, "tab": tab, "blockHead": blockHead, "previewHead": previewHead,
-            "toolbar": toolbar, "paneMinWidth": paneMinWidth, "paneMinHeight": paneMinHeight, "splitDivider": splitDivider,
+            "toolbar": toolbar, "paneMinWidth": paneMinWidth, "paneMinHeight": paneMinHeight, "splitDivider": splitDivider, "hitTarget": hitTarget,
         ]
     }
 }

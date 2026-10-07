@@ -442,7 +442,8 @@
       "toolbar": 26,
       "paneMinWidth": 315,
       "paneMinHeight": 290,
-      "splitDivider": 6
+      "splitDivider": 6,
+      "hitTarget": 22
     },
     "dash": {
       "running": {

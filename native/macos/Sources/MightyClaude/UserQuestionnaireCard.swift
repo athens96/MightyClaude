@@ -54,8 +54,8 @@ struct UserQuestionnaireCard: View {
     private var canSubmit: Bool { canAnswer && (try? questionnaire.validatedAnswers(answers)) != nil }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 PaneWaitBadge(systemImage: "questionmark")
                 Text(L("phone.questionnaire.title")).font(.system(size: 13, weight: .bold)).foregroundStyle(Palette.ink)
                 Text(progressText)
@@ -68,11 +68,11 @@ struct UserQuestionnaireCard: View {
             }.font(.system(size: 12))
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.lg) {
                     if questionnaire.questions.indices.contains(currentStep) {
                         questionSection(questionnaire.questions[currentStep], index: currentStep).id(currentStep)
                     }
-                }.padding(.trailing, 5).padding(.vertical, 2)
+                }.padding(.trailing, DesignMetrics.Spacing.xs).padding(.vertical, DesignMetrics.Spacing.xxs)
                     .background { GeometryReader { proxy in
                         Color.clear.preference(key: QuestionContentHeight.self, value: proxy.size.height)
                     } }
@@ -96,7 +96,7 @@ struct UserQuestionnaireCard: View {
                     .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
             }
 
-            HStack(spacing: 8) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Text(currentStep < lastStep ? L("phone.questionnaire.hintNext") : L("phone.questionnaire.hintSubmit"))
                     .font(.system(size: 11)).foregroundStyle(Palette.ink2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -127,7 +127,7 @@ struct UserQuestionnaireCard: View {
         }
         // Concept D: a white card with the amber edge, docked right above the composer.
         .paneWaitCard()
-        .padding(.horizontal, 12).padding(.top, 8)
+        .padding(.horizontal, DesignMetrics.Spacing.md).padding(.top, DesignMetrics.Spacing.sm)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("questionnaire-\(request.id)")
     }
@@ -135,7 +135,7 @@ struct UserQuestionnaireCard: View {
     /// Filled for answered questions, ringed for the one on screen; a dot jumps
     /// back to a question already reached.
     private var stepDots: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: DesignMetrics.Spacing.xs) {
             ForEach(questionnaire.questions.indices, id: \.self) { index in
                 Button { if canJump(to: index) { step = index } } label: {
                     // The question on screen is the amber dot; one answered keeps a soft amber.
@@ -153,8 +153,8 @@ struct UserQuestionnaireCard: View {
     }
 
     private func questionSection(_ question: UserQuestionnaire.Question, index: Int) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Text(question.header).font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.waitText)
                 Spacer(minLength: 0)
                 Text(question.multiSelect ? L("phone.questionnaire.multiple") : L("phone.questionnaire.single"))
@@ -164,7 +164,7 @@ struct UserQuestionnaireCard: View {
                 .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
 
             // Two tiles a row where the pane is wide enough, one where it is not.
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 210), spacing: 8, alignment: .top)], alignment: .leading, spacing: 8) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 210), spacing: DesignMetrics.Spacing.sm, alignment: .top)], alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             ForEach(Array(question.options.enumerated()), id: \.offset) { optionIndex, option in
                 choiceRow(label: option.label, description: option.description,
                           selected: selections[index, default: []].contains(option.label), multiple: question.multiSelect,
@@ -205,12 +205,12 @@ struct UserQuestionnaireCard: View {
                            identifier: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             let shape = RoundedRectangle(cornerRadius: 11, style: .continuous)
-            HStack(alignment: .top, spacing: 8) {
+            HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: multiple ? (selected ? "checkmark.square.fill" : "square") :
                         (selected ? "largecircle.fill.circle" : "circle"))
                     .foregroundStyle(selected ? Palette.waitText : Palette.ink2)
                     .font(.system(size: 14)).frame(width: 17).padding(.top, 1)
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                     Text(label).font(.system(size: 13, weight: .bold)).foregroundStyle(Palette.ink)
                     if let description, !description.isEmpty {
                         Text(description).font(.system(size: 11.5)).foregroundStyle(Palette.ink2)
@@ -218,7 +218,7 @@ struct UserQuestionnaireCard: View {
                 }.fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 11).padding(.vertical, 9)
+            .padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.sm)
             .frame(maxWidth: .infinity, minHeight: 50, alignment: .topLeading)
             .background(selected ? Palette.waitSoft : Palette.panel, in: shape)
             .overlay { shape.strokeBorder(selected ? Palette.wait : Palette.border, lineWidth: selected ? 2 : 1) }

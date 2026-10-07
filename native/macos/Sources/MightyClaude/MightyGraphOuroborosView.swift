@@ -168,7 +168,7 @@ struct MightyGraphOuroborosCard: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 7) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: "infinity").foregroundStyle(tint)
                 Text(L("graph.ouroboros.title")).font(.system(size: 12, weight: .semibold)).lineLimit(1)
                 Spacer(minLength: 3)
@@ -180,9 +180,9 @@ struct MightyGraphOuroborosCard: View {
                     .help(expanded ? L("graph.ouroboros.hideACs") : L("graph.ouroboros.showACs"))
                     .accessibilityLabel(expanded ? L("graph.ouroboros.hideACs") : L("graph.ouroboros.showACs"))
                     .accessibilityIdentifier("mighty-ouroboros-list-toggle-\(nodeID)")
-            }.padding(.horizontal, 12).frame(height: 38)
+            }.padding(.horizontal, DesignMetrics.Spacing.md).frame(height: DesignMetrics.Layout.blockHead)
             Divider()
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
                 if let goal = snapshot?.goal {
                     Text(goal).font(.system(size: 12)).lineLimit(expanded ? 2 : 1).help(goal)
                         .accessibilityIdentifier("mighty-ouroboros-goal-\(nodeID)")
@@ -196,7 +196,7 @@ struct MightyGraphOuroborosCard: View {
                 if expanded { acList } else { Spacer(minLength: 0) }
                 footer
             }
-            .padding(12)
+            .padding(DesignMetrics.Spacing.md)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .mightyBlockCard()
@@ -217,7 +217,7 @@ struct MightyGraphOuroborosCard: View {
     @ViewBuilder private var progress: some View {
         if let total = snapshot?.total, total > 0 {
             let completed = min(total, snapshot?.completed ?? 0)
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
                 ProgressView(value: Double(completed), total: Double(total)).tint(status == .failed ? Palette.err : tint)
                 Text(L("graph.ouroboros.progress", ["completed": "\(completed)", "total": "\(total)"]))
                     .font(.system(size: 11, weight: .medium)).monospacedDigit()
@@ -234,11 +234,11 @@ struct MightyGraphOuroborosCard: View {
             (L("graph.ouroboros.count.failed", ["n": "\(snapshot?.failed ?? 0)"]), snapshot?.failed, Palette.errText),
         ]
         if values.contains(where: { $0.1 != nil }) {
-            HStack(spacing: 6) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 ForEach(values.indices, id: \.self) { index in
                     Text(values[index].0).font(.system(size: 10)).monospacedDigit().lineLimit(1)
                         .foregroundStyle(values[index].1 ?? 0 > 0 ? values[index].2 : Palette.ink2)
-                        .padding(.horizontal, 6).padding(.vertical, 2).background(Palette.raised, in: Capsule())
+                        .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xxs).background(Palette.raised, in: Capsule())
                 }
             }
             .accessibilityElement(children: .combine).accessibilityIdentifier("mighty-ouroboros-counts-\(nodeID)")
@@ -252,20 +252,20 @@ struct MightyGraphOuroborosCard: View {
                 Spacer(minLength: 0)
             } else {
                 ScrollView(.vertical) {
-                    LazyVStack(alignment: .leading, spacing: 3) {
+                    LazyVStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                         ForEach(items.prefix(300)) { item in
-                            HStack(alignment: .top, spacing: 6) {
+                            HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
                                 Image(systemName: Self.icon(item.status)).font(.system(size: 11)).foregroundStyle(Self.color(item.status, tint: tint))
                                     .padding(.top, 1)
                                 Text(item.title).font(.system(size: 11)).lineLimit(2).help(item.title)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
-                            .padding(.leading, CGFloat(item.depth) * 12).padding(.vertical, 3).padding(.horizontal, 6)
+                            .padding(.leading, CGFloat(item.depth) * 12).padding(.vertical, DesignMetrics.Spacing.xxs).padding(.horizontal, DesignMetrics.Spacing.sm)
                             .background(Palette.raised, in: RoundedRectangle(cornerRadius: 5))
                             .accessibilityElement(children: .ignore)
                             .accessibilityLabel(item.title + ", " + Self.statusWord(item.status))
                         }
-                    }.padding(.bottom, 8)
+                    }.padding(.bottom, DesignMetrics.Spacing.sm)
                 }
                 .accessibilityIdentifier("mighty-ouroboros-acs-\(nodeID)")
             }
@@ -276,7 +276,7 @@ struct MightyGraphOuroborosCard: View {
     }
 
     private var footer: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: DesignMetrics.Spacing.sm) {
             if openFailed {
                 Text(L("graph.ouroboros.openFailed")).font(.system(size: 10)).foregroundStyle(Palette.errText).lineLimit(1)
                     .accessibilityIdentifier("mighty-ouroboros-open-failed-\(nodeID)")

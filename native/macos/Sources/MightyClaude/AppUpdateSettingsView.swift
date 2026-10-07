@@ -5,13 +5,13 @@ struct AppUpdateSettingsSection: View {
     @EnvironmentObject private var store: AppStore
 
     var body: some View {
-        Section(L("settings.appUpdate.sectionTitle")) {
+        SettingsGroup(L("settings.appUpdate.sectionTitle")) {
             LabeledContent(L("settings.appUpdate.currentVersionLabel"), value: store.appVersion)
             if store.appUpdatePublicKey == nil {
                 // Rule 1: keyless builds do not support update checks — no bypass.
                 Text(L("settings.appUpdate.noPublicKeyNotice"))
                     .font(.system(size: 11)).foregroundStyle(Palette.waitText)
-                HStack(spacing: 8) {
+                HStack(spacing: DesignMetrics.Spacing.md) {
                     Spacer()
                     Button(L("settings.appUpdate.checkButton")) {}.disabled(true)
                 }
@@ -33,7 +33,7 @@ struct AppUpdateSettingsSection: View {
                     .accessibilityIdentifier("app-update-automatic")
                 Text(L("settings.appUpdate.signatureVerified"))
                     .font(.system(size: 10)).foregroundStyle(.secondary)
-                HStack(spacing: 8) {
+                HStack(spacing: DesignMetrics.Spacing.md) {
                     statusView
                     Spacer()
                     actionButton

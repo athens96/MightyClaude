@@ -33,7 +33,7 @@ struct GuidedActionChip: View {
     private var emphasised: Bool { prominent || recommended }
 
     var body: some View {
-        let label = HStack(spacing: 5) {
+        let label = HStack(spacing: DesignMetrics.Spacing.xs) {
             if let glyph = action.glyph { Text(verbatim: glyph).font(.system(size: 11)) }
             else if let icon = action.icon { Image(systemName: icon.rawValue).font(.system(size: 10)) }
             Text(verbatim: action.title)
@@ -42,7 +42,8 @@ struct GuidedActionChip: View {
             if action.flags.contains(.userInvoked) { Image(systemName: "person.fill").font(.system(size: 8)).foregroundStyle(.secondary) }
             if action.flags.contains(.readOnly) { Image(systemName: "eye").font(.system(size: 8)).foregroundStyle(.secondary) }
         }
-        .padding(.horizontal, 8).padding(.vertical, 5)
+        .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xs)
+        .frame(minHeight: DesignMetrics.Layout.hitTarget)
         .background(emphasised ? Palette.tint(action.tint).opacity(0.18) : Palette.subtle, in: RoundedRectangle(cornerRadius: 6))
         .contentShape(RoundedRectangle(cornerRadius: 6))
 
@@ -66,7 +67,7 @@ struct GuidedApprovalStrip: View {
     let onOpen: () -> Void
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: DesignMetrics.Spacing.sm) {
             Image(systemName: "questionmark.square.dashed").font(.system(size: 10)).foregroundStyle(.secondary)
             Text(verbatim: name).font(.system(size: 11, weight: .medium)).lineLimit(1)
             if let badge = StyleChrome.sourceBadge(source) { SourceBadge(text: badge) }
@@ -86,7 +87,7 @@ struct SourceBadge: View {
         Text(verbatim: text)
             .font(.system(size: 9))
             .foregroundStyle(.secondary)
-            .padding(.horizontal, 5).padding(.vertical, 1)
+            .padding(.horizontal, DesignMetrics.Spacing.xs).padding(.vertical, 1)
             .background(Palette.subtle, in: Capsule())
             .accessibilityLabel(L("guidedPanel.sourcePrefix") + text)
     }

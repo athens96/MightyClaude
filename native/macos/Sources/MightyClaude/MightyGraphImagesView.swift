@@ -21,7 +21,7 @@ struct MightyGraphImagesCard: View {
         let hidden = items.count - shown.count
         let foldable = MightyGraphLayout.visibleImages(count: items.count, expanded: true) > MightyGraphLayout.visibleImages(count: items.count, expanded: false)
         VStack(spacing: 0) {
-            HStack(spacing: 7) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: "photo.on.rectangle.angled").foregroundStyle(tint)
                 Text(L("graph.images.title")).font(.system(size: 12, weight: .semibold)).lineLimit(1)
                 Spacer(minLength: 3)
@@ -33,15 +33,15 @@ struct MightyGraphImagesCard: View {
                         .accessibilityLabel(expanded ? L("graph.images.collapse") : L("graph.images.expand"))
                         .accessibilityIdentifier("mighty-images-toggle-\(nodeID)")
                 }
-            }.padding(.horizontal, 12).frame(height: 38)
+            }.padding(.horizontal, DesignMetrics.Spacing.lg).frame(height: 38) // MightyGraphLayout.imagesHeight counts this header, the grid's inset and its gaps
             Divider()
-            let columns = Array(repeating: GridItem(.fixed(MightyGraphLayout.imagesTile), spacing: 8), count: MightyGraphLayout.imagesColumns)
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
+            let columns = Array(repeating: GridItem(.fixed(MightyGraphLayout.imagesTile), spacing: DesignMetrics.Spacing.md), count: MightyGraphLayout.imagesColumns)
+            LazyVGrid(columns: columns, alignment: .leading, spacing: DesignMetrics.Spacing.md) {
                 ForEach(Array(shown.enumerated()), id: \.element.id) { index, item in
                     tile(item, more: index == shown.count - 1 && hidden > 0 ? hidden : 0)
                 }
             }
-            .padding(12)
+            .padding(DesignMetrics.Spacing.lg)
             Spacer(minLength: 0)
         }
         .mightyBlockCard()

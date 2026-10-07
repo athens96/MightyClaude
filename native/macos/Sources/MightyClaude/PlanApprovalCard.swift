@@ -15,7 +15,7 @@ struct PlanDocumentSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: "list.bullet.clipboard").foregroundStyle(Palette.accent)
                 Text(document.title).font(.system(size: 14, weight: .bold)).foregroundStyle(Palette.ink)
                 Text(document.subtitle).font(.system(size: 11)).foregroundStyle(Palette.ink2).lineLimit(1)
@@ -24,11 +24,11 @@ struct PlanDocumentSheet: View {
                     .keyboardShortcut(.cancelAction)
                     .accessibilityIdentifier("plan-document-close")
             }
-            .padding(.horizontal, 18).padding(.vertical, 12)
+            .padding(.horizontal, DesignMetrics.Inset.sheet).padding(.vertical, DesignMetrics.Spacing.md)
             Divider().overlay(Palette.border)
             ScrollView {
                 AgentMarkdownView(source: document.plan).textSelection(.enabled)
-                    .padding(22).frame(maxWidth: 860, alignment: .leading)
+                    .padding(DesignMetrics.Spacing.lg).frame(maxWidth: 860, alignment: .leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .background(Palette.panel)
@@ -59,8 +59,8 @@ struct PlanApprovalCard: View {
     private var received: String { PlanCardSupport.receivedText(request.receivedAt ?? "") }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 PaneWaitBadge(systemImage: "list.bullet.clipboard")
                 Text(L("plan.card.title")).font(.system(size: 13, weight: .bold)).foregroundStyle(Palette.ink)
                 if request.receivedAt != nil {
@@ -80,7 +80,7 @@ struct PlanApprovalCard: View {
             ScrollView {
                 AgentMarkdownView(source: plan).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 12).padding(.vertical, 10)
+                    .padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.md)
             }
             .background(Palette.raised, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .frame(minHeight: 80, maxHeight: inDiagram ? .infinity : 260)
@@ -88,10 +88,10 @@ struct PlanApprovalCard: View {
             .accessibilityIdentifier("plan-text")
 
             if revising {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
                     TextField(L("plan.card.revisePlaceholder"), text: $feedback, axis: .vertical)
                         .textFieldStyle(.plain).font(.system(size: 12)).lineLimit(2...6)
-                        .padding(.horizontal, 10).padding(.vertical, 8)
+                        .padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.sm)
                         .background(Palette.panel, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                         .overlay { RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(Palette.border, lineWidth: 1).allowsHitTesting(false) }
                         .accessibilityIdentifier("plan-revise-text")
@@ -99,7 +99,7 @@ struct PlanApprovalCard: View {
                         Text(L("plan.error.feedbackTooLong")).font(.system(size: 11)).foregroundStyle(Palette.errText)
                             .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("plan-revise-too-long")
                     }
-                    HStack(spacing: 8) {
+                    HStack(spacing: DesignMetrics.Spacing.sm) {
                         Spacer(minLength: 0)
                         Button(L("plan.card.reviseClose")) { revising = false }
                             .buttonStyle(PaneCardButtonStyle()).accessibilityIdentifier("plan-revise-close")
@@ -118,14 +118,14 @@ struct PlanApprovalCard: View {
             }
 
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) {
+                HStack(spacing: DesignMetrics.Spacing.sm) {
                     Text(L("plan.card.hint")).font(.system(size: 11)).foregroundStyle(Palette.ink2).lineLimit(1)
                     Spacer(minLength: 0)
                     buttons
                 }
-                VStack(alignment: .trailing, spacing: 6) {
-                    HStack(spacing: 8) { Spacer(minLength: 0); secondaryButtons }
-                    HStack(spacing: 8) { Spacer(minLength: 0); primaryButtons }
+                VStack(alignment: .trailing, spacing: DesignMetrics.Spacing.sm) {
+                    HStack(spacing: DesignMetrics.Spacing.sm) { Spacer(minLength: 0); secondaryButtons }
+                    HStack(spacing: DesignMetrics.Spacing.sm) { Spacer(minLength: 0); primaryButtons }
                 }
             }
             .disabled(busy || !canAnswer)
@@ -181,8 +181,8 @@ struct PlanRecordView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 7) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: "list.bullet.clipboard").foregroundStyle(Palette.accent)
                 Text(L("plan.card.title")).font(.system(size: 12, weight: .bold)).foregroundStyle(Palette.ink)
                 MightyStatusPill(text: PlanCardSupport.outcomeTitle(record.outcome), tone: tone)
@@ -203,7 +203,7 @@ struct PlanRecordView: View {
             }
             if expanded {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
                         AgentMarkdownView(source: record.plan).textSelection(.enabled)
                         if record.planTruncated == true {
                             Text(L("plan.history.truncated")).font(.system(size: 10)).foregroundStyle(Palette.ink2)
@@ -219,7 +219,7 @@ struct PlanRecordView: View {
             }
             if inDiagram { Spacer(minLength: 0) }
         }
-        .padding(.horizontal, 12).padding(.vertical, 9)
+        .padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.sm)
         .frame(maxWidth: .infinity, maxHeight: inDiagram ? .infinity : nil, alignment: .topLeading)
         .mightyBlockCard()
         .accessibilityElement(children: .contain)
@@ -244,9 +244,9 @@ struct PlanHistoryStrip: View {
     @ViewState private var expanded = Set<String>()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             Button { open.toggle() } label: {
-                HStack(spacing: 6) {
+                HStack(spacing: DesignMetrics.Spacing.sm) {
                     Image(systemName: "list.bullet.clipboard").foregroundStyle(Palette.accent)
                     Text(L("plan.history.title", ["count": "\(records.count)"])).font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.ink)
                     if let last = records.last {
@@ -263,7 +263,7 @@ struct PlanHistoryStrip: View {
             .accessibilityIdentifier("plan-history-\(sessionId)")
             if open {
                 ScrollView {
-                    VStack(spacing: 6) {
+                    VStack(spacing: DesignMetrics.Spacing.sm) {
                         ForEach(records.reversed()) { record in
                             PlanRecordView(record: record, expanded: expanded.contains(record.id)) {
                                 if !expanded.insert(record.id).inserted { expanded.remove(record.id) }
@@ -273,9 +273,9 @@ struct PlanHistoryStrip: View {
                 }.frame(maxHeight: 280)
             }
         }
-        .padding(.horizontal, 12).padding(.vertical, 6)
+        .padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.sm)
         .background(Palette.panel, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay { RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Palette.border, lineWidth: 1).allowsHitTesting(false) }
-        .padding(.horizontal, 12).padding(.top, 6)
+        .padding(.horizontal, DesignMetrics.Spacing.md).padding(.top, DesignMetrics.Spacing.sm)
     }
 }

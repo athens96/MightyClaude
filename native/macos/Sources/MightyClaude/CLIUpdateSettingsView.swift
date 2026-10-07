@@ -5,7 +5,7 @@ struct CLIUpdateSettingsSection: View {
     @EnvironmentObject private var store: AppStore
 
     var body: some View {
-        Section(L("settings.cliUpdate.sectionTitle")) {
+        SettingsGroup(L("settings.cliUpdate.sectionTitle")) {
             Toggle(L("settings.cliUpdate.autoUpdateToggle"), isOn: Binding(
                 get: { store.snapshot.autoUpdateCLIs == true },
                 set: { store.snapshot.autoUpdateCLIs = $0 }
@@ -20,7 +20,7 @@ struct CLIUpdateSettingsSection: View {
             .accessibilityIdentifier("plugin-auto-update")
             Text(L("settings.cliUpdate.autoUpdatePluginsDescription"))
                 .font(.system(size: 11)).foregroundStyle(.secondary)
-            HStack(spacing: 8) {
+            HStack(spacing: DesignMetrics.Spacing.md) {
                 if store.isUpdatingCLIs {
                     ProgressView().controlSize(.small)
                     Text(store.updatingCLI.map { L("settings.cliUpdate.progressProviderTemplate", ["provider": ProviderOptions.label($0)]) }
@@ -38,8 +38,8 @@ struct CLIUpdateSettingsSection: View {
             }
             ForEach(ProviderOptions.ids, id: \.self) { provider in
                 if let result = store.cliUpdateResults[provider] {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 6) {
+                    VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
+                        HStack(spacing: DesignMetrics.Spacing.sm) {
                             Image(systemName: icon(result.status))
                                 .foregroundStyle(result.status == "failed" ? Palette.waitText : Color.secondary)
                             Text(L("settings.cliUpdate.resultRowTemplate", ["provider": ProviderOptions.label(provider), "status": label(result.status)]))
@@ -56,8 +56,8 @@ struct CLIUpdateSettingsSection: View {
                     .accessibilityIdentifier("cli-update-result-\(provider)")
                 }
                 if let result = store.pluginUpdateResults[provider] {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 6) {
+                    VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
+                        HStack(spacing: DesignMetrics.Spacing.sm) {
                             Image(systemName: icon(result.status == "succeeded" ? "updated" : result.status))
                                 .foregroundStyle(result.status == "failed" ? Palette.waitText : Color.secondary)
                             Text(L("settings.cliUpdate.pluginRowTemplate", ["provider": ProviderOptions.label(provider), "status": label(result.status == "succeeded" ? "updated" : result.status)]))

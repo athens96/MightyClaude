@@ -18,14 +18,14 @@ struct BackgroundTaskRows: View {
     }
 
     private func rows(now: Date) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
             ForEach(Array(tasks.enumerated()), id: \.offset) { _, task in row(task, now: now) }
         }
     }
 
     private func row(_ task: StyleWidgetPresentation.Task, now: Date) -> some View {
         let detail = [task.kindTitle, task.statusTitle, task.elapsed(now: now)].filter { !$0.isEmpty }.joined(separator: " · ")
-        return HStack(spacing: 6) {
+        return HStack(spacing: DesignMetrics.Spacing.sm) {
             Circle().fill(color(task.status)).frame(width: 6, height: 6)
             Text(verbatim: task.text).font(.system(size: 11)).foregroundStyle(Palette.ink).lineLimit(1)
             Spacer(minLength: 4)
@@ -56,10 +56,10 @@ struct BackgroundWorkStrip: View {
     var body: some View {
         let tasks = PlanCardSupport.backgroundTasks(work)
         let open = store.backgroundWorkOpen
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Button { store.setBackgroundWorkOpen(!open) } label: {
-                    HStack(spacing: 6) {
+                    HStack(spacing: DesignMetrics.Spacing.sm) {
                         Image(systemName: "square.stack.3d.up").foregroundStyle(Palette.accent)
                         Text(L("plan.background.listTitle", ["count": "\(work.tasks.count)"])).font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.ink)
                         Text(verbatim: PlanCardSupport.backgroundSummary(work)).font(.system(size: 11)).foregroundStyle(Palette.ink2).lineLimit(1)
@@ -82,9 +82,9 @@ struct BackgroundWorkStrip: View {
             }
             if open { BackgroundTaskRows(tasks: tasks) }
         }
-        .padding(.horizontal, 12).padding(.vertical, 6)
+        .padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.sm)
         .background(Palette.panel, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay { RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Palette.border, lineWidth: 1).allowsHitTesting(false) }
-        .padding(.horizontal, 12).padding(.top, 6)
+        .padding(.horizontal, DesignMetrics.Spacing.md).padding(.top, DesignMetrics.Spacing.sm)
     }
 }

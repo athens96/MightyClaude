@@ -37,7 +37,7 @@ struct WorkspaceGitBadge: View {
     let info: WorkspaceGitInfo
 
     var body: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: DesignMetrics.Spacing.xs) {
             Image(systemName: "arrow.triangle.branch")
             Text(info.label).lineLimit(1).truncationMode(.middle)
             if info.isDirty { Circle().fill(Palette.accent).frame(width: 5, height: 5).accessibilityHidden(true) }
@@ -45,7 +45,7 @@ struct WorkspaceGitBadge: View {
             if let behind = info.behind, behind > 0 { Text("↓\(behind)").monospacedDigit() }
         }
         .font(.system(size: 10, weight: .medium)).foregroundStyle(Palette.ink2)
-        .padding(.horizontal, 7).padding(.vertical, 3)
+        .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xxs)
         .background(Palette.subtle, in: Capsule())
         .frame(maxWidth: 260)
         .help(L("git.help", ["label": info.label, "state": info.isDirty ? L("git.dirty") : L("git.clean")]))
