@@ -74,23 +74,23 @@ public sealed partial class MainWindow
             Border Rule() => new() { Height = DesignMetrics.Stroke.Line, Background = line };
 
             // The title, with the provider and its beta capsule at the right, padding 16.
-            var header = new Grid { Padding = new Thickness(16), ColumnSpacing = 8 };
+            var header = new Grid { Padding = new Thickness(DesignMetrics.Spacing.Lg), ColumnSpacing = DesignMetrics.Spacing.Sm };
             header.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             var title = Words(Locale.Get("settings.run.title"), 14, ink); title.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold; title.VerticalAlignment = VerticalAlignment.Center; header.Children.Add(title);
             var provider = Words(ProviderMark.Label(pane.Provider), 11, ink2); provider.VerticalAlignment = VerticalAlignment.Center; Grid.SetColumn(provider, 1); header.Children.Add(provider);
             if (ProviderCatalog.IsBeta(pane.Provider)) { var beta = BetaBadgeView.Create(b); Grid.SetColumn(beta, 2); header.Children.Add(beta); }
 
             // The settings themselves: blocks 15 apart, padding 16, 12pt unless said otherwise.
-            var blocks = new StackPanel { Spacing = 15, Margin = new Thickness(16) };
-            var modelBlock = new StackPanel { Spacing = 6 };
+            var blocks = new StackPanel { Spacing = DesignMetrics.Spacing.Md, Margin = new Thickness(DesignMetrics.Spacing.Lg) };
+            var modelBlock = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
             modelBlock.Children.Add(Words(ModelLabel.Selection(pane, catalog), 13, ink, medium: true));
             if (selected?.Description is { Length: > 0 } description) { var said = Words(description, 11, ink2); said.IsTextSelectionEnabled = true; modelBlock.Children.Add(said); }
-            var source = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
+            var source = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs };
             source.Children.Add(new FontIcon { Glyph = "", FontSize = 10, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center });
             source.Children.Add(Words(Locale.Get(catalog.Source == "cli" ? "settings.run.modelSourceCli" : "settings.run.modelSourceDefault"), 10, ink2));
             modelBlock.Children.Add(source); blocks.Children.Add(modelBlock);
             blocks.Children.Add(Rule());
-            var permissionBlock = new StackPanel { Spacing = 6 };
+            var permissionBlock = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
             permissionBlock.Children.Add(Words(PermissionLabel(pane.Provider, pane.Settings.PermissionMode), 12, ink, medium: true));
             permissionBlock.Children.Add(Words(PermissionDescription(pane.Provider, pane.Settings.PermissionMode), 11, ink2));
             if (pane.Settings.PermissionMode != "fullAccess")
@@ -102,8 +102,8 @@ public sealed partial class MainWindow
             if (caps.WebSearch)
             {
                 blocks.Children.Add(Rule());
-                var block = new StackPanel { Spacing = 7 };
-                var row = new Grid { ColumnSpacing = 10 }; row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
+                var block = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
+                var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Md }; row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
                 var label = Words(Locale.Get("settings.run.webSearchLabel"), 12, ink); label.VerticalAlignment = VerticalAlignment.Center; row.Children.Add(label);
                 search = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch, FontSize = 12, MinHeight = 28 };
                 foreach (var (value, key) in new[] { ("default", "settings.run.webSearchDefault"), ("disabled", "settings.run.webSearchOff"), ("cached", "settings.run.webSearchCached"), ("live", "settings.run.webSearchLive") })
@@ -117,8 +117,8 @@ public sealed partial class MainWindow
             }
             if (caps.NetworkAccess)
             {
-                var block = new StackPanel { Spacing = 7 }; var allowed = pane.Settings.PermissionMode is "acceptEdits" or "onRequest";
-                var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+                var block = new StackPanel { Spacing = DesignMetrics.Spacing.Sm }; var allowed = pane.Settings.PermissionMode is "acceptEdits" or "onRequest";
+                var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Md };
                 var label = Words(Locale.Get("settings.run.shellNetworkToggle"), 12, ink); label.VerticalAlignment = VerticalAlignment.Center; row.Children.Add(label);
                 // The Mac's small switch (M/SettingsViews.swift:79), the one the settings form and the other popovers draw.
                 network = owner.SettingsSwitch(Locale.Get("settings.run.shellNetworkToggle"), networkAccess, "run-settings-network-" + id); network.IsEnabled = allowed;
@@ -130,15 +130,15 @@ public sealed partial class MainWindow
             if (caps.MaxTurns || caps.MaxBudgetUsd)
             {
                 blocks.Children.Add(Rule());
-                var block = new StackPanel { Spacing = 9 };
+                var block = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
                 block.Children.Add(Words(Locale.Get("settings.run.limitsTitle"), 12, ink, medium: true));
                 // A limit is the Mac's rounded field in the popover's 12pt (M/SettingsViews.swift:92, 98, 114): the form's field in the body
                 // font, 20 high with its words 9 in, as the 12pt field measures on docs/design-system/crops/menu-more-claude-dark.webp.
                 TextBox Limit(string key, string? value, string automation)
                 {
-                    var field = new StackPanel { Spacing = 5 }; field.Children.Add(Words(Locale.Get(key), 11, ink));
+                    var field = new StackPanel { Spacing = DesignMetrics.Spacing.Xs }; field.Children.Add(Words(Locale.Get(key), 11, ink));
                     var box = owner.SettingsField(new TextBox { Text = value ?? "", PlaceholderText = Locale.Get("settings.run.unlimitedPlaceholder") }, 12);
-                    box.FontFamily = BodyFont; box.Height = RunSettingsField; box.Padding = new Thickness(8, 1, 8, 1);
+                    box.FontFamily = BodyFont; box.Height = RunSettingsField; box.Padding = new Thickness(DesignMetrics.Spacing.Sm, 1, DesignMetrics.Spacing.Sm, 1);
                     AutomationProperties.SetName(box, Locale.Get(key)); AutomationProperties.SetAutomationId(box, automation);
                     field.Children.Add(box); block.Children.Add(field); return box;
                 }
@@ -161,9 +161,9 @@ public sealed partial class MainWindow
                 clear.HorizontalAlignment = HorizontalAlignment.Left; blocks.Children.Add(clear);
             }
 
-            var problem = new TextBlock { FontSize = 11, Foreground = b.Brush(DesignToken.ErrText), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(16, 0, 16, 10), Visibility = Visibility.Collapsed };
+            var problem = new TextBlock { FontSize = 11, Foreground = b.Brush(DesignToken.ErrText), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(DesignMetrics.Spacing.Lg, 0, DesignMetrics.Spacing.Lg, DesignMetrics.Spacing.Md), Visibility = Visibility.Collapsed };
             // "Applies to the next request", then Cancel and the prominent Apply, the Mac's small buttons (16 high, M/SettingsViews.swift:121-123), padding 14.
-            var footer = new Grid { Padding = new Thickness(14), ColumnSpacing = 8 };
+            var footer = new Grid { Padding = new Thickness(DesignMetrics.Spacing.Md), ColumnSpacing = DesignMetrics.Spacing.Sm };
             footer.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             var applies = Words(Locale.Get("settings.run.appliesNextRequest"), 10, ink2); applies.VerticalAlignment = VerticalAlignment.Center; footer.Children.Add(applies);
             var flyout = new Flyout { Placement = FlyoutPlacementMode.Top, FlyoutPresenterStyle = owner.EdgeFlyoutStyle };

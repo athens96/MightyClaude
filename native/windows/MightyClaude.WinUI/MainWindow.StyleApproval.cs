@@ -41,30 +41,30 @@ public sealed partial class MainWindow
         TextBlock Title(string text) => new() { Text = text, FontSize = 12, FontWeight = FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap };
 
         // The heading.
-        var heading = new Grid { Padding = new Thickness(StyleApprovalInset, StyleApprovalEdge, StyleApprovalInset, StyleApprovalEdge), ColumnSpacing = 8 };
+        var heading = new Grid { Padding = new Thickness(StyleApprovalInset, StyleApprovalEdge, StyleApprovalInset, StyleApprovalEdge), ColumnSpacing = DesignMetrics.Spacing.Sm };
         heading.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); heading.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        var named = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
+        var named = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Center };
         named.Children.Add(new TextBlock { Text = style.Manifest.Name, FontSize = 15, FontWeight = FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Ink), VerticalAlignment = VerticalAlignment.Center });
         // The badge that follows a name that is not the app's own (M/GuidedActionChip.swift:83-90): 9pt ink2 on the subtle capsule.
         if(style.Source != "bundled") named.Children.Add(new Border
         {
             Child = new TextBlock { Text = StylePresentation.Source(style.Source), FontSize = 9, Foreground = brushes.Brush(DesignToken.Ink2) },
-            Padding = new Thickness(5, 1, 5, 1), CornerRadius = new CornerRadius(8), Background = brushes.Subtle, VerticalAlignment = VerticalAlignment.Center,
+            Padding = new Thickness(DesignMetrics.Spacing.Xs, 1, DesignMetrics.Spacing.Xs, 1), CornerRadius = new CornerRadius(8), Background = brushes.Subtle, VerticalAlignment = VerticalAlignment.Center,
         });
         heading.Children.Add(named);
         var expandLabel = Locale.Get("styles.approval.expandAll");
         var disclosure = SettingsSwitch(expandLabel, true, "style-approval-expand");
-        var expand = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
+        var expand = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Center };
         expand.Children.Add(SettingsText(expandLabel, 9)); expand.Children.Add(disclosure);
         Grid.SetColumn(expand, 1); heading.Children.Add(expand);
 
         // The sections.
         FrameworkElement Section(StyleApprovalSection section)
         {
-            var panel = new StackPanel { Spacing = 5 };
+            var panel = new StackPanel { Spacing = DesignMetrics.Spacing.Xs };
             AutomationProperties.SetAutomationId(panel, "style-approval-" + section.Id);
             panel.Children.Add(Title(section.Title));
-            var lines = new StackPanel { Spacing = 5 };
+            var lines = new StackPanel { Spacing = DesignMetrics.Spacing.Xs };
             foreach(var text in section.Lines) lines.Children.Add(SettingsText(text, 11, DesignToken.Ink2, mono: section.Monospaced, selectable: true));
             panel.Children.Add(lines); if(section.Foldable)collapsible.Add(lines);
             return panel;
@@ -86,7 +86,7 @@ public sealed partial class MainWindow
             }
             else (fixedTop ? top : rest).Children.Add(Section(section));
         }
-        var raw = new StackPanel { Spacing = 5 };
+        var raw = new StackPanel { Spacing = DesignMetrics.Spacing.Xs };
         AutomationProperties.SetAutomationId(raw, "style-approval-raw");
         raw.Children.Add(Title(Locale.Get("styles.approval.raw")));
         var contents = SettingsText(Encoding.UTF8.GetString(style.Bytes.Span), 10, DesignToken.Ink2, mono: true, selectable: true);
@@ -103,7 +103,7 @@ public sealed partial class MainWindow
             else if(decision.Confirming) { message.Text = Locale.Get("styles.approval.secondConfirmation",new Dictionary<string,string>{{"count",automatic.ToString()}}); message.Foreground = brushes.Brush(DesignToken.Ink2); }
             else message.Text = "";
         }
-        var footer = new Grid { Padding = new Thickness(StyleApprovalInset, StyleApprovalEdge, StyleApprovalInset, StyleApprovalEdge), ColumnSpacing = 8 };
+        var footer = new Grid { Padding = new Thickness(StyleApprovalInset, StyleApprovalEdge, StyleApprovalInset, StyleApprovalEdge), ColumnSpacing = DesignMetrics.Spacing.Sm };
         footer.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         footer.Children.Add(message);
         var dismiss = SettingsPush(Button(readOnly ? Locale.Get("settings.closeButton") : Locale.Get("guidedPanel.cancelButton"), () => { dialog.Hide(); return Task.CompletedTask; }));

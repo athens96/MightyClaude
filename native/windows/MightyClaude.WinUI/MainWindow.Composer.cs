@@ -13,7 +13,7 @@ public sealed partial class MainWindow
     private sealed partial class PaneView
     {
         /// <summary>The gap between the toolbar's controls (M/ComposerControls.swift:41).</summary>
-        private const double ToolbarSpacing = 6;
+        private const double ToolbarSpacing = DesignMetrics.Spacing.Sm;
         /// <summary>The widest a pill's words may be, by pill and toolbar style (M/ComposerControls.swift:51-60, M/SessionPaneView.swift:372, 398).</summary>
         private const double ModelCapFull = 155, ModelCapCompact = 90, ModelCapOverflow = 110, EffortCap = 48, PermissionCap = 90, FastCap = 40;
         /// <summary>
@@ -22,10 +22,10 @@ public sealed partial class MainWindow
         /// (the send button with nothing to send): ink × 0.5 words, line × 0.5 edge, track × 0.5 disc.
         /// </summary>
         private const double DisabledDim = 0.5;
-        /// <summary>The composer card's margin from the pane's edge, all round (M/SessionPaneView.swift:660).</summary>
-        private const double ComposerMargin = 12;
+        /// <summary>The composer card's margin from the pane's edge, all round (M/SessionPaneView.swift:690).</summary>
+        private const double ComposerMargin = DesignMetrics.Inset.ComposerOuter;
         /// <summary>A pill's words and symbol sit 8 from its edge (M/ComposerControls.swift:23); the 1pt edge is inside the face.</summary>
-        private static readonly Thickness PillPadding = new(8 - DesignMetrics.Stroke.Line, 0, 8 - DesignMetrics.Stroke.Line, 0);
+        private static readonly Thickness PillPadding = new(DesignMetrics.Spacing.Md - DesignMetrics.Stroke.Line, 0, DesignMetrics.Spacing.Md - DesignMetrics.Stroke.Line, 0);
 
         /// <summary>How much of the toolbar shows (M/ComposerControls.swift:35): every pill with its words, symbols only, or one options menu.</summary>
         private enum ToolbarStyle { Full, Compact, Overflow }
@@ -77,6 +77,7 @@ public sealed partial class MainWindow
             var words = new TextBlock { TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, FontSize = DesignMetrics.Type.Pill, FontWeight = Microsoft.UI.Text.FontWeights.Medium, VerticalAlignment = VerticalAlignment.Center };
             var iconHost = new Grid { Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
             var mark = ComposerGlyph.ChevronDown(); mark.View.Visibility = chevron ? Visibility.Visible : Visibility.Collapsed;
+            // The Mac's pill keeps its own 5 between its parts (M/ComposerControls.swift:14), which PillWidth counts.
             var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             row.Children.Add(iconHost); row.Children.Add(words); row.Children.Add(mark.View);
             var face = new Border { Child = row, Padding = PillPadding, CornerRadius = new CornerRadius(16), BorderThickness = new Thickness(DesignMetrics.Stroke.Line) };
@@ -303,7 +304,7 @@ public sealed partial class MainWindow
         private StackPanel ProgressRow(TextBlock words)
         {
             words.Foreground = owner.brushes.Brush(DesignToken.Ink2);
-            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(12, 0, 12, 0), Visibility = Visibility.Collapsed };
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, Margin = new Thickness(DesignMetrics.Inset.ComposerInnerH, 0, DesignMetrics.Inset.ComposerInnerH, 0), Visibility = Visibility.Collapsed };
             row.Children.Add(new ProgressRing { IsActive = true, Width = 12, Height = 12, MinWidth = 0, MinHeight = 0, VerticalAlignment = VerticalAlignment.Center, Foreground = owner.brushes.Brush(DesignToken.Ink2) });
             row.Children.Add(words);
             return row;
@@ -354,7 +355,7 @@ public sealed partial class MainWindow
             send.IsEnabledChanged += (_, _) => PaintSend();
             sendHost.Children.Add(sendDisc); sendHost.Children.Add(send); toolbarActions.Children.Add(sendHost);
 
-            toolbar = new Grid { Height = DesignMetrics.Layout.Toolbar, ColumnSpacing = ToolbarSpacing, Margin = new Thickness(10, 0, 10, 10) };
+            toolbar = new Grid { Height = DesignMetrics.Layout.Toolbar, ColumnSpacing = ToolbarSpacing, Margin = new Thickness(DesignMetrics.Inset.ComposerInnerH, 0, DesignMetrics.Inset.ComposerInnerH, DesignMetrics.Inset.ComposerInnerB) };
             toolbar.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); toolbar.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             toolbar.Children.Add(selectors); Grid.SetColumn(toolbarActions, 1); toolbar.Children.Add(toolbarActions);
             toolbar.SizeChanged += (_, _) => ArrangeComposer();
@@ -380,7 +381,7 @@ public sealed partial class MainWindow
 
             // The editor, with the command Enter is about to send before it (M/SessionPaneView.swift:564-583). The Mac's row keeps its 6
             // between the chip and the editor only while the chip shows, so the gap is the chip's own margin, not the grid's.
-            inputRow = new Grid { Margin = new Thickness(8, 9, 8, 0) };
+            inputRow = new Grid { Margin = new Thickness(DesignMetrics.Inset.ComposerInnerH, DesignMetrics.Spacing.Sm, DesignMetrics.Inset.ComposerInnerH, 0) };
             inputRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); inputRow.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
             styleEnterChip.Margin = new Thickness(0, 0, ComposerChipGap, 0);
             inputRow.Children.Add(styleEnterChip); Grid.SetColumn(input, 1); inputRow.Children.Add(input);
@@ -389,9 +390,9 @@ public sealed partial class MainWindow
             holdRow = ProgressRow(holdText);
             AutomationProperties.SetAutomationId(holdRow, "background-update-" + id);
             // An attachment that could not be added (M/SessionPaneView.swift:591-600): the accent mark, the reason in 11pt ink2 and a cross that takes it down.
-            attachmentErrorRow = new Grid { ColumnSpacing = 7, Margin = new Thickness(12, 0, 12, 0), Visibility = Visibility.Collapsed };
+            attachmentErrorRow = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, Margin = new Thickness(DesignMetrics.Inset.ComposerInnerH, 0, DesignMetrics.Inset.ComposerInnerH, 0), Visibility = Visibility.Collapsed };
             foreach (var width in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto }) attachmentErrorRow.ColumnDefinitions.Add(new() { Width = width });
-            attachmentErrorRow.Children.Add(new FontIcon { Glyph = "", FontSize = 11, Foreground = b.Brush(DesignToken.Accent), VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 2, 0, 0) });
+            attachmentErrorRow.Children.Add(new FontIcon { Glyph = "", FontSize = 11, Foreground = b.Brush(DesignToken.Accent), VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, DesignMetrics.Spacing.Xxs, 0, 0) });
             attachmentErrorText.Foreground = b.Brush(DesignToken.Ink2); Grid.SetColumn(attachmentErrorText, 1); attachmentErrorRow.Children.Add(attachmentErrorText);
             AutomationProperties.SetLiveSetting(attachmentErrorText, Microsoft.UI.Xaml.Automation.Peers.AutomationLiveSetting.Polite);
             var dismissError = owner.SafeButton("×", () => { ShowAttachmentError(null); return Task.CompletedTask; });
@@ -401,17 +402,17 @@ public sealed partial class MainWindow
             AutomationProperties.SetName(dismissError, Locale.Get("composer.attachment.dismissError")); Grid.SetColumn(dismissError, 2); attachmentErrorRow.Children.Add(dismissError);
             AutomationProperties.SetAutomationId(attachmentErrorRow, "attachment-error-" + id);
             // Why a draft cannot run yet (M/SessionPaneView.swift:631-643): the accent mark, the 11pt medium line, the reason in ink2.
-            blockedRow = new Grid { ColumnSpacing = 7, Margin = new Thickness(12, 0, 12, 0), Visibility = Visibility.Collapsed };
+            blockedRow = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, Margin = new Thickness(DesignMetrics.Inset.ComposerInnerH, 0, DesignMetrics.Inset.ComposerInnerH, 0), Visibility = Visibility.Collapsed };
             blockedRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); blockedRow.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
-            blockedRow.Children.Add(new FontIcon { Glyph = "", FontSize = 11, Foreground = b.Brush(DesignToken.Accent), VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 2, 0, 0) });
-            var blockedWords = new StackPanel { Spacing = 3 };
+            blockedRow.Children.Add(new FontIcon { Glyph = "", FontSize = 11, Foreground = b.Brush(DesignToken.Accent), VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, DesignMetrics.Spacing.Xxs, 0, 0) });
+            var blockedWords = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
             blockedWords.Children.Add(new TextBlock { Text = Locale.Get("composer.blocked.title"), FontSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = b.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap });
             inputHint.Foreground = b.Brush(DesignToken.Ink2); blockedWords.Children.Add(inputHint);
             Grid.SetColumn(blockedWords, 1); blockedRow.Children.Add(blockedWords);
             AutomationProperties.SetAutomationId(blockedRow, "run-blocked-" + id);
 
             attachmentsScroll.Content = attachmentChips;
-            composerPanel = new StackPanel { Spacing = 9 };
+            composerPanel = new StackPanel { Spacing = DesignMetrics.Inset.ComposerStack };
             foreach (var part in new FrameworkElement[] { styleHost, attachmentsScroll, queuedInputHost, slashPaletteHost, inputRow, loadingRow, attachmentErrorRow, loginRecoveryHost, holdRow, blockedRow, toolbar, statusLineHost })
                 composerPanel.Children.Add(part);
             composerCard = new Border { Child = composerPanel, CornerRadius = new CornerRadius(DesignMetrics.Radius.Composer), Background = b.Brush(DesignToken.Card) };
@@ -424,10 +425,10 @@ public sealed partial class MainWindow
             AutomationProperties.SetAutomationId(composerCard, "composer-card-" + id);
             var region = new StackPanel();
             // The pane's answered plans, folded to one line over the permission and plan cards (MainWindow.PlanCard.cs).
-            planHistoryHost = new StackPanel { Margin = new Thickness(12, 6, 12, 0), Visibility = Visibility.Collapsed };
+            planHistoryHost = new StackPanel { Margin = new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Md, 0), Visibility = Visibility.Collapsed };
             AutomationProperties.SetAutomationId(planHistoryHost, "plan-history-host-" + id);
             // Background agents still running, folded to one line under the plans (MainWindow.BackgroundWork.cs).
-            backgroundHost = new StackPanel { Margin = new Thickness(12, 6, 12, 0), Visibility = Visibility.Collapsed };
+            backgroundHost = new StackPanel { Margin = new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Md, 0), Visibility = Visibility.Collapsed };
             AutomationProperties.SetAutomationId(backgroundHost, "background-work-host-" + id);
             foreach (var part in new FrameworkElement[] { nextActionsHost, planHistoryHost, backgroundHost, toolPermissionHost, agentWebPromptScroll, cardHost }) region.Children.Add(part);
             var scroll = new ScrollViewer

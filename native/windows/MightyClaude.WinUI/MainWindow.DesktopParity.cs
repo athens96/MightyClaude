@@ -49,14 +49,14 @@ public sealed partial class MainWindow
         shade.GradientStops.Add(new GradientStop { Color = DesignBrushes.ToColor(accent, SplashShadowOpacity), Offset = (SplashIcon / 2 - SplashShadowBlur) / reach });
         shade.GradientStops.Add(new GradientStop { Color = DesignBrushes.ToColor(accent, SplashShadowOpacity / 2), Offset = SplashIcon / 2 / reach });
         shade.GradientStops.Add(new GradientStop { Color = DesignBrushes.ToColor(accent, 0), Offset = 1 });
-        var badge = new Grid { Width = SplashIcon, Height = SplashIcon, Margin = new Thickness(0, 0, 0, 24) };
+        var badge = new Grid { Width = SplashIcon, Height = SplashIcon, Margin = new Thickness(0, 0, 0, DesignMetrics.Spacing.Xl) };
         badge.Children.Add(new Microsoft.UI.Xaml.Shapes.Ellipse { Width = 2 * reach, Height = 2 * reach, Margin = new Thickness(-SplashShadowBlur, SplashShadowDrop - SplashShadowBlur, -SplashShadowBlur, -SplashShadowDrop - SplashShadowBlur), Fill = shade, IsHitTestVisible = false });
         badge.Children.Add(icon); stack.Children.Add(badge);
         // Tracking −0.6pt at 30pt is −20 thousandths of an em. SF's 30pt line is 36 high where Segoe's is 40, and its
         // 13pt line 15.5 where Segoe's is 17: the margins give the difference back, so the column measures as the Mac's.
-        stack.Children.Add(new TextBlock { Text = "Mighty Claude", FontSize = 30, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, CharacterSpacing = -20, Foreground = brushes.Brush(DesignToken.Ink), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, -4, 0, 10) });
-        stack.Children.Add(new TextBlock { Text = Locale.Get("launch.preparing"), FontSize = DesignMetrics.Type.Body, Foreground = brushes.Brush(DesignToken.Ink2), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, -2, 0, 0) });
-        var progress = new ProgressRing { IsActive = true, Width = 16, Height = 16, MinWidth = 16, MinHeight = 16, Margin = new Thickness(0, 28, 0, 0) };
+        stack.Children.Add(new TextBlock { Text = "Mighty Claude", FontSize = 30, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, CharacterSpacing = -20, Foreground = brushes.Brush(DesignToken.Ink), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, -DesignMetrics.Spacing.Xs, 0, DesignMetrics.Spacing.Md) });
+        stack.Children.Add(new TextBlock { Text = Locale.Get("launch.preparing"), FontSize = DesignMetrics.Type.Body, Foreground = brushes.Brush(DesignToken.Ink2), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, -DesignMetrics.Spacing.Xxs, 0, 0) });
+        var progress = new ProgressRing { IsActive = true, Width = 16, Height = 16, MinWidth = 16, MinHeight = 16, Margin = new Thickness(0, DesignMetrics.Spacing.Xl, 0, 0) };
         AutomationProperties.SetName(progress, Locale.Get("launch.loading")); stack.Children.Add(progress);
         launchSplash.Children.Add(stack); Grid.SetRowSpan(launchSplash, 3); Grid.SetColumnSpan(launchSplash, 2);
         AutomationProperties.SetAutomationId(launchSplash, "launch-splash"); root.Children.Add(launchSplash);
@@ -106,7 +106,7 @@ public sealed partial class MainWindow
     {
         if (workspace.Id != service.Snapshot.ActiveWorkspaceId) return null;
         // 18 high: the Mac's 10pt line (12) in v3; the words are centred in it.
-        var badge = new Border { Height = GitBadgeHeight, Padding = new Thickness(7, 0, 7, 0), CornerRadius = new CornerRadius(GitBadgeHeight / 2), Background = brushes.Subtle, MaxWidth = GitBadgeMaxWidth, VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
+        var badge = new Border { Height = GitBadgeHeight, Padding = new Thickness(DesignMetrics.Spacing.Sm, 0, DesignMetrics.Spacing.Sm, 0), CornerRadius = new CornerRadius(GitBadgeHeight / 2), Background = brushes.Subtle, MaxWidth = GitBadgeMaxWidth, VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
         gitBadges[workspace.Id] = badge; AutomationProperties.SetAutomationId(badge, "workspace-git-info");
         if (gitWorkspaceKey == workspace.Id + "|" + workspace.Path) UpdateGitBadge(badge);
         return badge;
@@ -141,7 +141,7 @@ public sealed partial class MainWindow
             Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(words, FontNumeralAlignment.Tabular); parts.Add(words);
         }
         // Only the name gives way: left-aligned, its star column takes just the name's width, or what the other parts leave, and trims.
-        var row = new Grid { ColumnSpacing = 5, HorizontalAlignment = HorizontalAlignment.Left };
+        var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Xs, HorizontalAlignment = HorizontalAlignment.Left };
         for (var column = 0; column < parts.Count; column++)
         {
             row.ColumnDefinitions.Add(new() { Width = column == 1 ? new GridLength(1, GridUnitType.Star) : GridLength.Auto });

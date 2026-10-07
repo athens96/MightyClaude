@@ -23,7 +23,7 @@ internal static class BetaBadgeView
         };
         var badge = new Border
         {
-            Child = text, CornerRadius = new CornerRadius(7), Padding = new Thickness(5, 1, 5, 1), VerticalAlignment = VerticalAlignment.Center,
+            Child = text, CornerRadius = new CornerRadius(7), Padding = new Thickness(DesignMetrics.Spacing.Xs, 1, DesignMetrics.Spacing.Xs, 1), VerticalAlignment = VerticalAlignment.Center,
             Background = brushes.Brush(DesignToken.StopSoft)
         };
         AutomationProperties.SetName(badge, Locale.Get("badge.betaAccessibility"));
@@ -43,7 +43,7 @@ public sealed partial class MainWindow
     private FrameworkElement SessionTitle(RunSession session, TextBlock title, bool tab)
     {
         if (!ProviderCatalog.ShowsBetaBadge(session)) return title;
-        var line = new Grid { ColumnSpacing = 6, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
+        var line = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
         line.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); line.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         line.Children.Add(title);
         var badge = BetaBadgeView.Create(brushes); Grid.SetColumn(badge, 1); line.Children.Add(badge);

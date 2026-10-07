@@ -147,8 +147,8 @@ public sealed partial class MainWindow
         if (light is not null) Require(ReferenceEquals(header, light.Header), $"{key} ({theme}): the toggle rebuilt the terminal header instead of recolouring it");
         Require(header.Height == DesignMetrics.Layout.PaneHeader && Math.Abs(header.ActualHeight - DesignMetrics.Layout.PaneHeader) < .5,
             $"{key} ({theme}): the terminal header must be Layout.PaneHeader {DesignMetrics.Layout.PaneHeader} high; got {header.Height} (laid out {header.ActualHeight:F1})");
-        Require(header.CornerRadius == new CornerRadius(DesignMetrics.Radius.Pane) && header.Padding == new Thickness(13, 0, 13, 0) && header.BorderThickness == new Thickness(0),
-            $"{key} ({theme}): the terminal header must be radius {DesignMetrics.Radius.Pane}, padding h13, no border; got {header.CornerRadius}, {header.Padding}, {header.BorderThickness}");
+        Require(header.CornerRadius == new CornerRadius(DesignMetrics.Radius.Pane) && header.Padding == new Thickness(DesignMetrics.Inset.PaneHeaderLeading, 0, DesignMetrics.Inset.PaneHeaderLeading, 0) && header.BorderThickness == new Thickness(0),
+            $"{key} ({theme}): the terminal header must be radius {DesignMetrics.Radius.Pane}, padding h{DesignMetrics.Inset.PaneHeaderLeading}, no border; got {header.CornerRadius}, {header.Padding}, {header.BorderThickness}");
         RequirePaletteShared(header.Background, brushes.Brush(DesignToken.Idle), "the terminal header's fill");
         RequireBrush(header, e => ((Grid)e).Background, DesignToken.Idle, "the terminal header's fill", key: key);
         RequireBrush(slim.Symbol!, e => ((FontIcon)e).Foreground, DesignToken.OnStatus, "the terminal header's symbol", key: key);
@@ -161,30 +161,31 @@ public sealed partial class MainWindow
         RequireFont(slim.Word, DesignMetrics.Type.Pill, FontWeights.Bold, $"({theme}) the terminal status word", key);
         RequireBrush(slim.Word, e => ((TextBlock)e).Foreground, DesignToken.OnStatus, "the terminal status word", key: key);
         var pill = slim.Pill!;
-        Require(pill.Height == 20 && pill.BorderThickness == new Thickness(DesignMetrics.Stroke.Focus) && ReferenceEquals(pill.Child, slim.Word),
-            $"{key} ({theme}): the status capsule must be 20 high with a {DesignMetrics.Stroke.Focus}pt edge around the word; got {pill.Height}, {pill.BorderThickness}");
-        // The edge is drawn inside the capsule's h8 padding (M/PaneChrome.swift:41-42), so word and edge together stand 8 in.
-        Require(pill.Padding.Left + pill.BorderThickness.Left == 8 && pill.Padding.Right + pill.BorderThickness.Right == 8, $"{key} ({theme}): the status word must stand 8 inside the capsule; got padding {pill.Padding} inside a {pill.BorderThickness} edge");
+        Require(pill.Height == 18 && pill.BorderThickness == new Thickness(DesignMetrics.Stroke.Focus) && ReferenceEquals(pill.Child, slim.Word),
+            $"{key} ({theme}): the status capsule must be 18 high with a {DesignMetrics.Stroke.Focus}pt edge around the word; got {pill.Height}, {pill.BorderThickness}");
+        // The edge is drawn inside the capsule's h Spacing.Md padding (M/PaneChrome.swift:41-42), so word and edge together stand that far in.
+        Require(pill.Padding.Left + pill.BorderThickness.Left == DesignMetrics.Spacing.Md && pill.Padding.Right + pill.BorderThickness.Right == DesignMetrics.Spacing.Md, $"{key} ({theme}): the status word must stand {DesignMetrics.Spacing.Md} inside the capsule; got padding {pill.Padding} inside a {pill.BorderThickness} edge");
         RequireBrush(pill, e => ((Border)e).BorderBrush, DesignToken.OnStatus, "the status capsule's edge", key: key);
-        // The bar is set in h8 t8 from the card's edge with 2 under it, and its parts stand in the Mac's order, 8 apart (M/PaneChrome.swift:107-119).
-        var card = terminal.Container; var edge = card.BorderThickness.Left;
+        // The bar is set in h4 t4 from the card's edge with 2 under it, and its parts stand in the Mac's order, Spacing.Md apart (M/PaneChrome.swift:107-119).
+        var card = terminal.Container; var edge = card.BorderThickness.Left; const double setIn = DesignMetrics.Spacing.Xs;
         var at = header.TransformToVisual(card).TransformPoint(new Windows.Foundation.Point());
-        Require(Math.Abs(at.X - edge - 8) < .6 && Math.Abs(at.Y - edge - 8) < .6 && Math.Abs(card.ActualWidth - at.X - header.ActualWidth - edge - 8) < .6,
-            $"{key} ({theme}): the terminal header must be set in 8 from the leading, top and trailing edges inside the card's border; got {at.X - edge:F1}, {at.Y - edge:F1}, {card.ActualWidth - at.X - header.ActualWidth - edge:F1}");
+        Require(Math.Abs(at.X - edge - setIn) < .6 && Math.Abs(at.Y - edge - setIn) < .6 && Math.Abs(card.ActualWidth - at.X - header.ActualWidth - edge - setIn) < .6,
+            $"{key} ({theme}): the terminal header must be set in {setIn} from the leading, top and trailing edges inside the card's border; got {at.X - edge:F1}, {at.Y - edge:F1}, {card.ActualWidth - at.X - header.ActualWidth - edge:F1}");
         double Left(FrameworkElement part) => part.TransformToVisual(header).TransformPoint(new Windows.Foundation.Point()).X;
-        // Symbol, title, kind, then after at least 6 of room the capsule and the 22-wide menu against the trailing padding, each 8 from
+        // Symbol, title, kind, then after at least SlimBarSpacer of room the capsule and the 22-wide menu against the trailing padding, each SlimSpacing from
         // the one before; a text that had to trim ends short of its place, so the texts are held to "at least".
         double End(FrameworkElement part) => Left(part) + part.ActualWidth;
-        Require(Math.Abs(Left(slim.Symbol) - 13) < .6 && Math.Abs(Left(slim.Title) - (End(slim.Symbol) + 8)) < .6 && Left(slim.Subtitle) >= End(slim.Title) + 8 - .6
-            && Left(pill) >= End(slim.Subtitle) + 8 + 6 + 8 - .6 && Math.Abs(End(pill) - (header.ActualWidth - 13 - 22 - 8)) < .6,
-            $"{key} ({theme}): the terminal header must read symbol, title, kind, then the capsule 8 before the menu, from its 13 padding and 8 apart; got symbol {Left(slim.Symbol):F1}..{End(slim.Symbol):F1}, title {Left(slim.Title):F1}..{End(slim.Title):F1}, kind {Left(slim.Subtitle):F1}..{End(slim.Subtitle):F1}, capsule {Left(pill):F1}..{End(pill):F1} of {header.ActualWidth:F1}");
+        const double pad = DesignMetrics.Inset.PaneHeaderLeading, gap = PaneHeaderLine.SlimSpacing;
+        Require(gap == DesignMetrics.Spacing.Md && Math.Abs(Left(slim.Symbol) - pad) < .6 && Math.Abs(Left(slim.Title) - (End(slim.Symbol) + gap)) < .6 && Left(slim.Subtitle) >= End(slim.Title) + gap - .6
+            && Left(pill) >= End(slim.Subtitle) + gap + DesignMetrics.Spacing.Sm + gap - .6 && Math.Abs(End(pill) - (header.ActualWidth - pad - 22 - gap)) < .6,
+            $"{key} ({theme}): the terminal header must read symbol, title, kind, then the capsule {gap} before the menu, from its {pad} padding and {gap} apart; got symbol {Left(slim.Symbol):F1}..{End(slim.Symbol):F1}, title {Left(slim.Title):F1}..{End(slim.Title):F1}, kind {Left(slim.Subtitle):F1}..{End(slim.Subtitle):F1}, capsule {Left(pill):F1}..{End(pill):F1} of {header.ActualWidth:F1}");
         return (header, slim.Word);
     }
 
     /// <summary>
     /// The slim ink bar a tab group draws over a pane that is not a conversation (M/PaneChrome.swift:99-141,
-    /// M/PaneDockView.swift:178-180), here the files pane's: between the tab strip and the pane, set in h8 t8 b2,
-    /// Layout.PaneHeader high on <c>idle</c>, radius 11, padding h13; the folder, the title in 13pt bold and the kind in 11.5pt,
+    /// M/PaneDockView.swift:178-180), here the files pane's: between the tab strip and the pane, set in h4 t4 b2,
+    /// Layout.PaneHeader high on <c>idle</c>, radius 11, padding Inset.PaneHeaderLeading; the folder, the title in 13pt bold and the kind in 11.5pt,
     /// all <c>onStatus</c>, with no status capsule and no menu. The pane under it draws no header and no outline.
     /// </summary>
     private void RequireGroupSlimHeaderInTheme(PaneView files)
@@ -193,9 +194,9 @@ public sealed partial class MainWindow
         var session = files.SessionForSmoke;
         Require(groupSlimHeaders.TryGetValue(session.Id, out var slim) && slim.Bar.IsLoaded, $"{key} ({theme}): the files pane's tab group draws no slim header over it");
         var bar = slim.Bar;
-        Require(bar.Height == DesignMetrics.Layout.PaneHeader && Math.Abs(bar.ActualHeight - DesignMetrics.Layout.PaneHeader) < .5 && bar.Margin == new Thickness(8, 8, 8, 2)
-            && bar.CornerRadius == new CornerRadius(DesignMetrics.Radius.Pane) && bar.Padding == new Thickness(13, 0, 13, 0),
-            $"{key} ({theme}): the files header must be {DesignMetrics.Layout.PaneHeader} high, set in h8 t8 b2, radius {DesignMetrics.Radius.Pane}, padding h13; got {bar.Height} (laid out {bar.ActualHeight:F1}), {bar.Margin}, {bar.CornerRadius}, {bar.Padding}");
+        Require(bar.Height == DesignMetrics.Layout.PaneHeader && Math.Abs(bar.ActualHeight - DesignMetrics.Layout.PaneHeader) < .5 && bar.Margin == new Thickness(DesignMetrics.Spacing.Xs, DesignMetrics.Spacing.Xs, DesignMetrics.Spacing.Xs, DesignMetrics.Spacing.Xxs)
+            && bar.CornerRadius == new CornerRadius(DesignMetrics.Radius.Pane) && bar.Padding == new Thickness(DesignMetrics.Inset.PaneHeaderLeading, 0, DesignMetrics.Inset.PaneHeaderLeading, 0),
+            $"{key} ({theme}): the files header must be {DesignMetrics.Layout.PaneHeader} high, set in h{DesignMetrics.Spacing.Xs} t{DesignMetrics.Spacing.Xs} b{DesignMetrics.Spacing.Xxs}, radius {DesignMetrics.Radius.Pane}, padding h{DesignMetrics.Inset.PaneHeaderLeading}; got {bar.Height} (laid out {bar.ActualHeight:F1}), {bar.Margin}, {bar.CornerRadius}, {bar.Padding}");
         RequirePaletteShared(bar.Background, brushes.Brush(DesignToken.Idle), "the files header's fill");
         RequireBrush(bar, e => ((Grid)e).Background, DesignToken.Idle, "the files header's fill", key: key);
         Require(slim.Symbol.Glyph == "\uE8B7" && slim.Symbol.FontSize == 12.5 && slim.Symbol.FontWeight.Weight == FontWeights.SemiBold.Weight, $"{key} ({theme}): the files header must lead with the 12.5pt semibold folder (the Mac's 11pt folder draws 12.3 wide); got {slim.Symbol.FontSize}pt");
@@ -211,8 +212,8 @@ public sealed partial class MainWindow
         var strip = tabStrips[group.Id].Strip;
         var top = bar.TransformToVisual(strip).TransformPoint(new Windows.Foundation.Point()).Y;
         var paneTop = files.Container.TransformToVisual(bar).TransformPoint(new Windows.Foundation.Point()).Y;
-        Require(Math.Abs(top - (strip.ActualHeight + 8)) < 1 && Math.Abs(paneTop - (bar.ActualHeight + 2)) < 1,
-            $"{key} ({theme}): the files header must sit 8 under the tab strip and 2 over the pane; got {top - strip.ActualHeight:F1} and {paneTop - bar.ActualHeight:F1}");
+        Require(Math.Abs(top - (strip.ActualHeight + SlimBarMargin.Top)) < 1 && Math.Abs(paneTop - (bar.ActualHeight + SlimBarMargin.Bottom)) < 1 && SlimBarMargin.Top == DesignMetrics.Spacing.Xs && SlimBarMargin.Bottom == DesignMetrics.Spacing.Xxs,
+            $"{key} ({theme}): the files header must sit {DesignMetrics.Spacing.Xs} under the tab strip and {DesignMetrics.Spacing.Xxs} over the pane; got {top - strip.ActualHeight:F1} and {paneTop - bar.ActualHeight:F1}");
         RequireClear(files.Container.BorderBrush, "the files pane's own outline", key);
     }
 
@@ -255,20 +256,21 @@ public sealed partial class MainWindow
             {
                 var (hint, edge, label, words, _) = hints[i]; var zone = zones[i]; var group = (FrameworkElement)hint.Parent;
                 var at = hint.TransformToVisual(group).TransformPoint(new Windows.Foundation.Point());
+                const double inset = DropHintInset;
                 var (left, top, width, height) = zone switch
                 {
-                    "left" => (5d, 5d, group.ActualWidth / 2 - 10, group.ActualHeight - 10),
-                    "bottom" => (5d, group.ActualHeight / 2 + 5, group.ActualWidth - 10, group.ActualHeight / 2 - 10),
-                    _ => (5d, 5d, group.ActualWidth - 10, group.ActualHeight - 10),
+                    "left" => (inset, inset, group.ActualWidth / 2 - 2 * inset, group.ActualHeight - 2 * inset),
+                    "bottom" => (inset, group.ActualHeight / 2 + inset, group.ActualWidth - 2 * inset, group.ActualHeight / 2 - 2 * inset),
+                    _ => (inset, inset, group.ActualWidth - 2 * inset, group.ActualHeight - 2 * inset),
                 };
                 Require(hint.Visibility == Visibility.Visible && !hint.IsHitTestVisible && Math.Abs(at.X - left) < .6 && Math.Abs(at.Y - top) < .6 && Math.Abs(hint.ActualWidth - width) < .6 && Math.Abs(hint.ActualHeight - height) < .6,
-                    $"{key} ({theme}): the '{zone}' drop preview must cover its zone set in 5, {width:F1}x{height:F1} at ({left:F1}, {top:F1}); got {hint.ActualWidth:F1}x{hint.ActualHeight:F1} at ({at.X:F1}, {at.Y:F1}) in {group.ActualWidth:F1}x{group.ActualHeight:F1}");
+                    $"{key} ({theme}): the '{zone}' drop preview must cover its zone set in {inset}, {width:F1}x{height:F1} at ({left:F1}, {top:F1}); got {hint.ActualWidth:F1}x{hint.ActualHeight:F1} at ({at.X:F1}, {at.Y:F1}) in {group.ActualWidth:F1}x{group.ActualHeight:F1}");
                 Require(edge.RadiusX == 9 && edge.RadiusY == 9 && edge.StrokeThickness == DesignMetrics.Stroke.Active && edge.StrokeDashArray.SequenceEqual([3, 2]),
                     $"{key} ({theme}): the '{zone}' drop preview must be radius 9 under a {DesignMetrics.Stroke.Active}pt dash of 6 on, 4 off (3 and 2 strokes); got radius {edge.RadiusX}, {edge.StrokeThickness}pt, [{string.Join(", ", edge.StrokeDashArray)}]");
                 RequireBrush(edge, e => ((Microsoft.UI.Xaml.Shapes.Shape)e).Fill, DesignToken.Accent, $"the '{zone}' drop preview's wash", DropHintOpacity, key);
                 RequireBrush(edge, e => ((Microsoft.UI.Xaml.Shapes.Shape)e).Stroke, DesignToken.Accent, $"the '{zone}' drop preview's dash", key: key);
-                Require(label.Padding == new Thickness(12, 7, 12, 7) && label.CornerRadius == new CornerRadius(15) && ReferenceEquals(label.Child, words),
-                    $"{key} ({theme}): the '{zone}' drop preview's words must stand in a capsule of padding h12 v7, radius 15; got {label.Padding}, {label.CornerRadius}");
+                Require(label.Padding == new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm) && label.CornerRadius == new CornerRadius(15) && ReferenceEquals(label.Child, words),
+                    $"{key} ({theme}): the '{zone}' drop preview's words must stand in a capsule of padding h{DesignMetrics.Spacing.Md} v{DesignMetrics.Spacing.Sm}, radius 15; got {label.Padding}, {label.CornerRadius}");
                 RequireBrush(label, e => ((Border)e).Background, DesignToken.Page, $"the capsule under the '{zone}' drop preview's words", DropHintLabelOpacity, key);
                 RequireFont(words, DesignMetrics.Type.Block, FontWeights.SemiBold, $"({theme}) the '{zone}' drop preview's words", key);
                 RequireBrush(words, e => ((TextBlock)e).Foreground, DesignToken.Accent, $"the '{zone}' drop preview's words", key: key);
@@ -323,8 +325,8 @@ public sealed partial class MainWindow
         RequireConversationType(standard);
         Require(standard.EmptyOutputForSmoke is { Visibility: Visibility.Collapsed }, $"{key} ({theme}): the empty state shows over a pane that has a conversation");
         var state0 = empty.EmptyOutputForSmoke!;
-        Require(state0.Margin == new Thickness(PaneView.EmptyOutputPadding, PaneView.EmptyOutputPadding - 8, PaneView.EmptyOutputPadding, 0) && state0.Spacing == 10,
-            $"{key} ({theme}): the empty agent pane must sit {PaneView.EmptyOutputPadding} inside the output area (M/SessionPaneView.swift:515), its parts 10 apart; got margin {state0.Margin}, spacing {state0.Spacing}");
+        Require(state0.Margin == new Thickness(PaneView.EmptyOutputPadding, PaneView.EmptyOutputPadding - DesignMetrics.Spacing.Sm, PaneView.EmptyOutputPadding, 0) && state0.Spacing == DesignMetrics.Spacing.Md,
+            $"{key} ({theme}): the empty agent pane must sit {PaneView.EmptyOutputPadding} inside the output area (M/SessionPaneView.swift:543), its parts {DesignMetrics.Spacing.Md} apart; got margin {state0.Margin}, spacing {state0.Spacing}");
         var heading = state0.Children.OfType<StackPanel>().FirstOrDefault()?.Children.OfType<TextBlock>().FirstOrDefault()
             ?? throw new InvalidOperationException($"{key} ({theme}): the empty agent pane has no title line");
         var body = state0.Children.OfType<TextBlock>().LastOrDefault() ?? throw new InvalidOperationException($"{key} ({theme}): the empty agent pane has no explanation");
@@ -349,7 +351,7 @@ public sealed partial class MainWindow
     private async Task CaptureMarkdownPreview(string theme)
     {
         const string sample = "# \uC791\uC5C5\uC744 \uC815\uB9AC\uD588\uC5B4\uC694\n\n**\uB124\uC774\uD2F0\uBE0C \uD654\uBA74**\uC5D0\uC11C \uC77D\uAE30 \uD3B8\uD558\uAC8C \uD45C\uC2DC\uD569\uB2C8\uB2E4. `SessionPaneView.swift`\uC640 [Swift \uBB38\uC11C](https://www.swift.org/documentation/)\uB97C \uD655\uC778\uD558\uC138\uC694.\n\n## \uBCC0\uACBD \uC0AC\uD56D\n- \uC77D\uAE30 \uD3B8\uD55C \uC81C\uBAA9\uACFC \uBAA9\uB85D\n  - \uC911\uCCA9 \uD56D\uBAA9\uB3C4 \uC720\uC9C0\n- [x] \uC785\uB825\uACFC \uD130\uBBF8\uB110 \uC720\uC9C0\n\n1. \uCCAB\uC9F8\n2. \uB458\uC9F8\n\n> \uC791\uC131 \uC911\uC778 \uCD08\uC548\uACFC \uC2E4\uD589 \uC911\uC778 \uD130\uBBF8\uB110\uC740 \uADF8\uB300\uB85C \uC774\uC5B4\uC9D1\uB2C8\uB2E4.\n\n```swift\nlet message = \"\uC548\uB155\uD558\uC138\uC694\"\nprint(message)\n```\n\n| \uD56D\uBAA9 | \uC0C1\uD0DC |\n|:---|---:|\n| Markdown | \uC644\uB8CC |\n| \uC9C4\uD589 \uC0C1\uD0DC | \uD655\uC778 \uC911 |\n\n---\n\n### \uB9C8\uBB34\uB9AC\n\uB9C8\uC9C0\uB9C9 \uBB38\uB2E8\uC785\uB2C8\uB2E4.";
-        var view = new RichEditBox { IsReadOnly = true, IsSpellCheckEnabled = false, IsTextPredictionEnabled = false, TextWrapping = TextWrapping.Wrap, BorderThickness = new Thickness(0), Background = brushes.Transparent, Padding = new Thickness(18) };
+        var view = new RichEditBox { IsReadOnly = true, IsSpellCheckEnabled = false, IsTextPredictionEnabled = false, TextWrapping = TextWrapping.Wrap, BorderThickness = new Thickness(0), Background = brushes.Transparent, Padding = new Thickness(DesignMetrics.Spacing.Lg) };
         var card = new Border
         {
             Width = 620, Height = 720, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Child = view,
@@ -371,7 +373,7 @@ public sealed partial class MainWindow
 
     /// <summary>
     /// The Default conversation as the Mac's concept D draws it (M/AgentTranscriptFormat.swift:174-248, 298-360):
-    /// the words 12 + 15 in from the pane's edge; the body at 13 exactly (9.75 typographic points: RTF counts
+    /// the words PaneInset + Inset.Transcript in from the pane's edge; the body at 13 exactly (9.75 typographic points: RTF counts
     /// points where the Mac counts epx), a level-two heading 18 semibold, a tool row's detail 11.5 mono with
     /// its timing at 10.5; no request heading; and behind the words the ink bubble, the reply card, the chip,
     /// the quote's bar and the code surface, in the shared token brushes at radius 11.

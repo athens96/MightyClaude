@@ -26,7 +26,7 @@ public sealed partial class MainWindow
     private FrameworkElement DashboardProviderLine(WorkDashboard.Card card)
     {
         // 17 high, as the Mac lays the line out (a row is 60: v11, the 20-high title, 1, this line).
-        var line = new Grid { ColumnSpacing = 4, MinHeight = DashboardMetaHeight };
+        var line = new Grid { ColumnSpacing = DesignMetrics.Spacing.Xs, MinHeight = DashboardMetaHeight };
         var ink = brushes.Brush(DesignToken.Ink2);
         void Add(FrameworkElement part, bool rest = false)
         {
@@ -73,16 +73,16 @@ public sealed partial class MainWindow
     }
 
     /// <summary>
-    /// A workspace group's head (M/DashboardView.swift:207-238), its parts 10 apart: the name in the heading font
-    /// at 17, the path 11.5 mono <c>ink2</c> cut in the middle, the Git capsule, then (at least 8 further) the
-    /// 26-high capsules Files (<c>card</c>) and Add pane (<c>ink</c> under <c>card</c> words). The capsules wrap
-    /// under the name when narrow, 8 below it; on one line the head is as high as its capsules, so the rows' card
-    /// stands the group's 10 under it (M/DashboardView.swift:207).
+    /// A workspace group's head (M/DashboardView.swift:219-250), its parts <c>Spacing.Md</c> apart: the name in the heading font
+    /// at 17, the path 11.5 mono <c>ink2</c> cut in the middle, the Git capsule, then (at least <c>Spacing.Md</c> further) the
+    /// <see cref="DashboardCapsuleHeight"/>-high capsules Files (<c>card</c>) and Add pane (<c>ink</c> under <c>card</c> words).
+    /// The capsules wrap under the name when narrow, <c>Spacing.Md</c> below it; on one line the head is as high as its
+    /// capsules, so the rows' card stands the group's spacing under it (M/DashboardView.swift:219).
     /// </summary>
     private (FrameworkElement Header, Button Files, Button Add) DashboardWorkspaceHeader(Workspace workspace)
     {
-        const double spacing = 10, gap = spacing + 8 + spacing, wrapped = 8;
-        var header = new Grid { Padding = new(2, 0, 2, 0) };
+        const double spacing = DesignMetrics.Spacing.Md, gap = spacing + DesignMetrics.Spacing.Md + spacing, wrapped = DesignMetrics.Spacing.Md;
+        var header = new Grid { Padding = new(DesignMetrics.Spacing.Xxs, 0, DesignMetrics.Spacing.Xxs, 0) };
         header.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
         header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         header.RowDefinitions.Add(new() { Height = GridLength.Auto }); header.RowDefinitions.Add(new() { Height = GridLength.Auto });
@@ -139,13 +139,13 @@ public sealed partial class MainWindow
         var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DashboardCapsuleLabelSpacing };
         label.Children.Add(symbol);
         label.Children.Add(new TextBlock { Text = words, FontSize = 11.5, FontWeight = FontWeights.Bold, VerticalAlignment = VerticalAlignment.Center });
-        button.Content = label; button.Height = DashboardCapsuleHeight; button.MinHeight = 0; button.MinWidth = 0; button.Padding = new(11, 0, 11, 0);
+        button.Content = label; button.Height = DashboardCapsuleHeight; button.MinHeight = 0; button.MinWidth = 0; button.Padding = new(DesignMetrics.Spacing.Md, 0, DesignMetrics.Spacing.Md, 0);
         button.CornerRadius = new(DashboardCapsuleHeight / 2); button.BorderThickness = new(0); button.VerticalAlignment = VerticalAlignment.Center;
         PaintPlainButton(button, fill, hover, ink: ink);
     }
 
     /// <summary>The group head's capsule height (M/DashboardView.swift:218) and the gap a label leaves between its symbol and words (measured on docs/design-system/crops/dashboard-group-light.webp).</summary>
-    internal const double DashboardCapsuleHeight = 26, DashboardCapsuleLabelSpacing = 8;
+    internal const double DashboardCapsuleHeight = 24, DashboardCapsuleLabelSpacing = 8;
 
     /// <summary>
     /// The Git capsule (M/WorkspaceGitView.swift:39-50): 10pt medium <c>ink2</c> on the subtle wash, padding h7 v3,
@@ -162,9 +162,9 @@ public sealed partial class MainWindow
         AutomationProperties.SetAccessibilityView(dirty, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
         // Only the branch gives way in a capsule that reached its 260 (the symbol, the dot and the counts keep their room).
         label.MaxWidth = 170;
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs };
         foreach (var part in new FrameworkElement[] { PanelSymbol.Branch(ink), label, dirty, ahead, behind }) row.Children.Add(part);
-        var capsule = new Border { Child = row, Padding = new(7, 3, 7, 3), CornerRadius = new(DashboardGitRadius), Background = brushes.Subtle, MaxWidth = 260, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
+        var capsule = new Border { Child = row, Padding = new(DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xxs, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xxs), CornerRadius = new(DashboardGitRadius), Background = brushes.Subtle, MaxWidth = 260, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
         AutomationProperties.SetAutomationId(capsule, "dashboard-git-" + workspaceId);
         return dashboardGitLabels[workspaceId] = new(capsule, label, dirty, ahead, behind);
     }

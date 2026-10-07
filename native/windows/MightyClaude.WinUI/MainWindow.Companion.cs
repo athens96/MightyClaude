@@ -244,14 +244,14 @@ public sealed partial class MainWindow
     /// </summary>
     private Grid CompanionWindowFrame(UIElement body) => new()
     {
-        RequestedTheme = root.RequestedTheme, Language = WindowLanguage(), Background = WindowBackground(), Padding = new Thickness(16),
-        Children = { new Border { Child = body, CornerRadius = new CornerRadius(DesignMetrics.Radius.Composer), BorderThickness = new Thickness(DesignMetrics.Stroke.Active), BorderBrush = brushes.Brush(DesignToken.Wait), Background = brushes.Brush(DesignToken.Card), Padding = new Thickness(14) } },
+        RequestedTheme = root.RequestedTheme, Language = WindowLanguage(), Background = WindowBackground(), Padding = new Thickness(DesignMetrics.Spacing.Lg),
+        Children = { new Border { Child = body, CornerRadius = new CornerRadius(DesignMetrics.Radius.Composer), BorderThickness = new Thickness(DesignMetrics.Stroke.Active), BorderBrush = brushes.Brush(DesignToken.Wait), Background = brushes.Brush(DesignToken.Card), Padding = new Thickness(DesignMetrics.Spacing.Md) } },
     };
-    /// <summary>A button of those windows, as on the pane's question and permission cards (M/PaneChrome.swift:145-169): 12 bold, 28 high at radius 9; the answer in ink behind the card's colour, the others on the raised card with a line.</summary>
+    /// <summary>A button of those windows, as on the pane's question and permission cards (M/PaneChrome.swift:145-169): 12 bold, <see cref="CardButtonHeight"/> high at radius 9; the answer in ink behind the card's colour, the others on the raised card with a line.</summary>
     private Button CompanionCardButton(Button button, bool prominent)
     {
         button.CornerRadius = new CornerRadius(DesignMetrics.Radius.CardButton); button.FontSize = 12; button.FontWeight = Microsoft.UI.Text.FontWeights.Bold;
-        button.Padding = new Thickness(13, 0, 13, 0); button.MinHeight = 28; button.Height = 28; button.BorderThickness = new Thickness(prominent ? 0 : DesignMetrics.Stroke.Line);
+        button.Padding = CardButtonPadding; button.MinHeight = CardButtonHeight; button.Height = CardButtonHeight; button.BorderThickness = new Thickness(prominent ? 0 : DesignMetrics.Stroke.Line);
         var fill = brushes.Brush(prominent ? DesignToken.Ink : DesignToken.CardRaised);
         PaintPlainButton(button, fill, fill, prominent ? null : brushes.Brush(DesignToken.Line), brushes.Brush(prominent ? DesignToken.Card : DesignToken.Ink), brushes.Brush(DesignToken.Ink3));
         return button;
@@ -263,7 +263,7 @@ public sealed partial class MainWindow
         if (companionQuestionWindowKey == key && companionQuestionWindow is { } existing) { existing.Activate(); return; }
         companionQuestionWindow?.Close();
         if (UserQuestionnaire.Parse(request.InputJson) is not { } questionnaire) return;
-        var draft = CompanionDraft(request); var window = new Window { Title = Locale.Get("phone.questionnaire.title") }; var host = new StackPanel { Spacing = 10 };
+        var draft = CompanionDraft(request); var window = new Window { Title = Locale.Get("phone.questionnaire.title") }; var host = new StackPanel { Spacing = DesignMetrics.Spacing.Md };
         window.Content = CompanionWindowFrame(new ScrollViewer { Content = host, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }); window.AppWindow.Resize(new(460, 580)); brushes.ApplyTitleBar(window.AppWindow);
         companionQuestionWindow = window; companionQuestionWindowKey = key;
         window.Closed += (_, _) => { if (companionQuestionWindow == window) { companionQuestionWindow = null; companionQuestionWindowKey = null; } };
@@ -281,7 +281,7 @@ public sealed partial class MainWindow
             TextBox? customInput = null;
             foreach (var option in question.Options)
             {
-                var content = new StackPanel { Spacing = 3 }; content.Children.Add(new TextBlock { Text = option.Label, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink, TextWrapping = TextWrapping.Wrap }); content.Children.Add(new TextBlock { Text = option.Description, FontSize = 11, Foreground = ink2, TextWrapping = TextWrapping.Wrap });
+                var content = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs }; content.Children.Add(new TextBlock { Text = option.Label, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink, TextWrapping = TextWrapping.Wrap }); content.Children.Add(new TextBlock { Text = option.Description, FontSize = 11, Foreground = ink2, TextWrapping = TextWrapping.Wrap });
                 var choice = new CheckBox { Content = content, IsChecked = picks.Contains(option.Label), HorizontalContentAlignment = HorizontalAlignment.Stretch };
                 radios.Add(choice); choice.Checked += (_, _) => { if (!question.MultiSelect) { picks.Clear(); foreach (var other in radios.Where(r => r != choice)) other.IsChecked = false; draft.Custom.Remove(step); if (customInput is not null) customInput.Text = ""; } picks.Add(option.Label); };
                 choice.Unchecked += (_, _) => picks.Remove(option.Label); host.Children.Add(choice);
@@ -289,7 +289,7 @@ public sealed partial class MainWindow
             var custom = new TextBox { Header = Locale.Get("companion.question.custom"), AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 70, MaxLength = 8192, Text = draft.Custom.GetValueOrDefault(step) ?? "" }; customInput = custom;
             custom.TextChanged += (_, _) => { draft.Custom[step] = custom.Text; if (!question.MultiSelect && !string.IsNullOrWhiteSpace(custom.Text)) { picks.Clear(); foreach (var choice in radios) choice.IsChecked = false; } }; host.Children.Add(custom);
             var error = new TextBlock { FontSize = 11, Foreground = brushes.Brush(DesignToken.ErrText), TextWrapping = TextWrapping.Wrap }; host.Children.Add(error);
-            var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, HorizontalAlignment = HorizontalAlignment.Right };
+            var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, HorizontalAlignment = HorizontalAlignment.Right };
             if (step > 0) buttons.Children.Add(CompanionCardButton(Button(Locale.Get("companion.question.back"), () => { draft.Step--; RenderQuestion(); return Task.CompletedTask; }), prominent: false));
             buttons.Children.Add(CompanionCardButton(Button(Locale.Get(step + 1 == questionnaire.Questions.Count ? "companion.question.submit" : "companion.question.next"), () =>
             {
@@ -313,13 +313,13 @@ public sealed partial class MainWindow
     {
         var key = PermissionKey(request); companionQuestionWindow?.Close();
         var window = new Window { Title = ToolPermissionPresentation.Make(request.ToolName, request.InputJson).Title };
-        var content = new Grid { RowSpacing = 10 };
+        var content = new Grid { RowSpacing = DesignMetrics.Spacing.Md };
         content.RowDefinitions.Add(new() { Height = GridLength.Auto }); content.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) }); content.RowDefinitions.Add(new() { Height = GridLength.Auto });
         // The pane's permission card in a window of its own (MainWindow.ToolPermission.cs): its title 12 semibold, the whole request in the mono face.
         content.Children.Add(new TextBlock { Text = ToolPermissionStrings.BarTitleTemplate.Replace("{title}", window.Title), FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap });
         var text = new TextBox { IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, FontFamily = new Microsoft.UI.Xaml.Media.FontFamily(DesignMetrics.Font.Mono), FontSize = DesignMetrics.Type.Mono, Text = request.InputJson };
         var scroll = new ScrollViewer { Content = text, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }; Grid.SetRow(scroll, 1); content.Children.Add(scroll);
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, HorizontalAlignment = HorizontalAlignment.Right }; var error = new TextBlock { FontSize = 11, Foreground = brushes.Brush(DesignToken.ErrText), TextWrapping = TextWrapping.Wrap };
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, HorizontalAlignment = HorizontalAlignment.Right }; var error = new TextBlock { FontSize = 11, Foreground = brushes.Brush(DesignToken.ErrText), TextWrapping = TextWrapping.Wrap };
         Task Respond(bool allow)
         {
             if (!companionPermissions.TryGetValue(key, out var live) || live != request || live.State != "pending" || allow && !live.CanAllow) { window.Close(); return Task.CompletedTask; }
@@ -327,7 +327,7 @@ public sealed partial class MainWindow
             return Task.CompletedTask;
         }
         buttons.Children.Add(CompanionCardButton(Button(ToolPermissionStrings.ButtonDeny, () => Respond(false)), prominent: false)); buttons.Children.Add(CompanionCardButton(Button(ToolPermissionStrings.ButtonAllowOnce, () => Respond(true)), prominent: true));
-        var footer = new StackPanel { Spacing = 6 }; footer.Children.Add(error); footer.Children.Add(buttons); Grid.SetRow(footer, 2); content.Children.Add(footer);
+        var footer = new StackPanel { Spacing = DesignMetrics.Spacing.Sm }; footer.Children.Add(error); footer.Children.Add(buttons); Grid.SetRow(footer, 2); content.Children.Add(footer);
         window.Content = CompanionWindowFrame(content); window.AppWindow.Resize(new(520, 500)); brushes.ApplyTitleBar(window.AppWindow); companionQuestionWindow = window; companionQuestionWindowKey = key;
         window.Closed += (_, _) => { if (companionQuestionWindow == window) { companionQuestionWindow = null; companionQuestionWindowKey = null; } };
         if (aside) window.AppWindow.Show(false); else window.Activate();
@@ -384,11 +384,11 @@ public sealed partial class MainWindow
         }), SettingsControlSize.Small));
         buttons.Children.Add(SettingsPush(Button(Locale.Get("companion.settings.reload"), async () => { await ReloadCompanionPets(); Populate(); await RefreshPreview(); Say(companionError); }), SettingsControlSize.Small));
         buttons.Children.Add(SettingsPush(Button(Locale.Get("companion.settings.resetPosition"), async () => { companionPreferences = companionPreferences with { Left = null, Top = null, BubbleWidth = null, BubbleHeight = null }; SaveCompanionPreferences(); await ReloadCompanionPets(); }), SettingsControlSize.Small));
-        var choice = new StackPanel { Spacing = 7, VerticalAlignment = VerticalAlignment.Center };
+        var choice = new StackPanel { Spacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Center };
         // The pop-up's chip ends at the row's edge, as the Mac's does; what a ComboBox keeps after it is clear and stands past the edge.
         var petPicker = SettingsPopupFrame(picker); petPicker.Margin = new Thickness(0, 0, -SettingsPopupChipInset, 0);
         choice.Children.Add(SettingsLabeled(SettingsText(petLabel), petPicker)); choice.Children.Add(buttons);
-        var petRow = new Grid { ColumnSpacing = 8 };
+        var petRow = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
         petRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); petRow.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
         petRow.Children.Add(preview); Grid.SetColumn(choice, 1); petRow.Children.Add(choice);
         SettingsRow(rows, petRow);

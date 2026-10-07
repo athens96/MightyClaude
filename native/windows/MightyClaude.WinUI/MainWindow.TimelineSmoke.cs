@@ -77,8 +77,9 @@ public sealed partial class MainWindow
                     // shows the Default | Mighty switch as icons instead of moving it to a second row.
                     await WaitUI(() => HeaderFitsSmoke(true), "320px pane header controls must remain fully inside its one header line, the switch as icons only");
                     // The Mighty bar is one row on the Mac at any width (M/MightyGraphView.swift:175-201): a pane this narrow keeps
-                    // it one row, 46 over its rule, by showing the Diagram | Timeline switch as symbols only.
-                    await WaitUI(() => graphToolbar is { ActualHeight: > 46.5 and < 47.5 } && !ViewWordsShown, "320px pane keeps the Mighty bar one row, its view switch as symbols only");
+                    // it one row over its rule (the vertical inset, the 22 switch in its 2pt track, the inset), by showing the Diagram | Timeline switch as symbols only.
+                    var barHeight = 2 * DesignMetrics.Inset.GraphBarV + 22 + 2 * DesignMetrics.Spacing.Xxs + DesignMetrics.Stroke.Line;
+                    await WaitUI(() => graphToolbar is { ActualHeight: var tall } && Math.Abs(tall - barHeight) < .5 && !ViewWordsShown, "320px pane keeps the Mighty bar one row, its view switch as symbols only");
                     foreach (var control in new FrameworkElement[] { diagramButton!, timelineButton!, zoomOutButton!, zoomResetButton!, zoomInButton! })
                     {
                         var edge = control.TransformToVisual(graphToolbar!).TransformPoint(new Windows.Foundation.Point(control.ActualWidth, 0));

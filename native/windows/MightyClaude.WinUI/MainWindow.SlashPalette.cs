@@ -42,11 +42,11 @@ public sealed partial class MainWindow
             // The palette is a card with a line border, r10; the hints ink2, the count in the tertiary ink (M/SlashCommandPalette.swift:34-43).
             var ink2 = owner.brushes.Brush(DesignToken.Ink2); slashCount.Foreground = owner.brushes.Tertiary;
             TextBlock Hint(string text) => new() { Text = text, FontSize = 10, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
-            var footer = new Grid { ColumnSpacing = 10, Padding = new Thickness(12, 5, 12, 5) };
+            var footer = new Grid { ColumnSpacing = DesignMetrics.Spacing.Md, Padding = new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Xs, DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Xs) };
             footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             footer.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
             footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-            var hints = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+            var hints = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Md };
             hints.Children.Add(Hint(SlashCommandStrings.PaletteMove));
             hints.Children.Add(Hint(SlashCommandStrings.PaletteSelect));
             hints.Children.Add(Hint(SlashCommandStrings.PaletteDismiss));
@@ -62,7 +62,7 @@ public sealed partial class MainWindow
                 BorderBrush = owner.brushes.Brush(DesignToken.Line),
                 Background = owner.brushes.Brush(DesignToken.Card),
                 // Padding h10 t10 in the composer's stack (M/SessionPaneView.swift:562).
-                Visibility = Visibility.Collapsed, Margin = new Thickness(10, 10, 10, 0),
+                Visibility = Visibility.Collapsed, Margin = new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Md, 0),
             };
             AutomationProperties.SetAutomationId(host, "slash-palette-" + id);
             slashPaletteHost = host;
@@ -135,7 +135,7 @@ public sealed partial class MainWindow
 
         private Border SlashRow(SlashCommand command, bool highlighted, int index, Brush accent)
         {
-            var grid = new Grid { ColumnSpacing = 10, Padding = new Thickness(12, 6, 12, 6) };
+            var grid = new Grid { ColumnSpacing = DesignMetrics.Spacing.Md, Padding = new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm) };
             grid.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             grid.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
             grid.ColumnDefinitions.Add(new() { Width = GridLength.Auto });

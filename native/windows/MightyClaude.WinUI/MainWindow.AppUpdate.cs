@@ -108,11 +108,11 @@ public sealed partial class MainWindow
             await service.UpdateAsync(s => s with { AppUpdateManifestUrlOverride = typed.Length == 0 ? null : typed });
         };
         var addressHint = SettingsText("", 11, DesignToken.Ink2);
-        var typedAddress = new StackPanel { Spacing = 6 };
+        var typedAddress = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
         typedAddress.Children.Add(address); typedAddress.Children.Add(addressHint);
         appUpdateAddressRow = SettingsRow(rows, typedAddress);
         // The address is longer than the line beside its label, so the form sets it under the label (screens/10-settings-about-*.webp).
-        var builtIn = new StackPanel { Spacing = 4 };
+        var builtIn = new StackPanel { Spacing = DesignMetrics.Spacing.Xs };
         builtIn.Children.Add(SettingsText(Locale.Get("settings.appUpdate.manifestUrlAddressLabel")));
         builtIn.Children.Add(SettingsText(AppUpdate.BuiltInManifestUrl ?? "", 11, DesignToken.Ink2, mono: true, selectable: true));
         appUpdateBuiltInRow = SettingsRow(rows, builtIn);
@@ -135,8 +135,8 @@ public sealed partial class MainWindow
         AutomationProperties.SetAutomationId(button, AppUpdateButtonId);
         button.Click += async (_, _) => await AppUpdate.PressAsync(service.Snapshot.AppUpdateManifestUrlOverride);
         // The spinner while checking, staging or installing and the 140-wide bar while downloading lead the words (M/AppUpdateSettingsView.swift:54-67).
-        appUpdateBusy = new ProgressRing { Width = 14, Height = 14, MinWidth = 0, MinHeight = 0, IsActive = false, Visibility = Visibility.Collapsed, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
-        appUpdateDownload = new ProgressBar { Width = 140, Minimum = 0, Maximum = 1, Visibility = Visibility.Collapsed, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
+        appUpdateBusy = new ProgressRing { Width = 14, Height = 14, MinWidth = 0, MinHeight = 0, IsActive = false, Visibility = Visibility.Collapsed, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, DesignMetrics.Spacing.Sm, 0) };
+        appUpdateDownload = new ProgressBar { Width = 140, Minimum = 0, Maximum = 1, Visibility = Visibility.Collapsed, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, DesignMetrics.Spacing.Sm, 0) };
         var state = new Grid();
         state.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); state.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); state.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         state.Children.Add(appUpdateBusy); Grid.SetColumn(appUpdateDownload, 1); state.Children.Add(appUpdateDownload); Grid.SetColumn(status, 2); state.Children.Add(status);

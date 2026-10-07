@@ -225,7 +225,7 @@ public sealed partial class MainWindow
         private void FitFilesHost(Grid grid)
         {
             if (filesHost is null) return;
-            const double gap = 2;
+            const double gap = DesignMetrics.Spacing.Xxs;
             var p = grid.Padding;
             var header = paneHeader is { Visibility: Visibility.Visible } shown && double.IsFinite(shown.Height) ? shown : null;
             var top = Grid.GetRow(filesHost) > 0 ? gap - grid.RowSpacing : header is null ? -p.Top : header.Margin.Top + header.Height + gap;
@@ -245,7 +245,7 @@ public sealed partial class MainWindow
             panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             panel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-            var bar = filesFilterRow = new Grid { ColumnSpacing = 6, Height = FilesFilterHeight, Padding = new Thickness(10, 7, 10, 7), Background = b.Subtle };
+            var bar = filesFilterRow = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, Height = FilesFilterHeight, Padding = new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm), Background = b.Subtle };
             bar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             bar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             bar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -264,7 +264,7 @@ public sealed partial class MainWindow
             };
             Grid.SetColumn(filesFilter, 1); bar.Children.Add(filesFilter);
             // The symbol alone takes the row's room, as the Mac's plain button; its wash reaches 4 and 2 past it.
-            var refresh = new Button { Content = new FontIcon { Glyph = "\uE72C", FontSize = DesignMetrics.Type.Pill }, MinWidth = 0, MinHeight = 0, Padding = new Thickness(4, 2, 4, 2), Margin = new Thickness(-4, -2, -4, -2), BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow), VerticalAlignment = VerticalAlignment.Center };
+            var refresh = new Button { Content = new FontIcon { Glyph = "\uE72C", FontSize = DesignMetrics.Type.Pill }, MinWidth = 0, MinHeight = 0, Padding = new Thickness(DesignMetrics.Spacing.Xs, DesignMetrics.Spacing.Xxs, DesignMetrics.Spacing.Xs, DesignMetrics.Spacing.Xxs), Margin = new Thickness(-DesignMetrics.Spacing.Xs, -DesignMetrics.Spacing.Xxs, -DesignMetrics.Spacing.Xs, -DesignMetrics.Spacing.Xxs), BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow), VerticalAlignment = VerticalAlignment.Center };
             owner.PaintPlainButton(refresh, b.Transparent, b.Subtle, ink: b.Brush(DesignToken.Ink2));
             AutomationProperties.SetName(refresh, Locale.Get("files.tree.refresh")); ToolTipService.SetToolTip(refresh, Locale.Get("files.tree.refresh"));
             AutomationProperties.SetAutomationId(refresh, "files-refresh");
@@ -275,7 +275,7 @@ public sealed partial class MainWindow
             Grid.SetRow(line, 1); panel.Children.Add(line);
 
             // The Mac's rows stand where they belong at once: no slide as a folder opens, the tree refreshes or the filter changes.
-            filesList = new ListView { SelectionMode = ListViewSelectionMode.Single, IsItemClickEnabled = false, Padding = new Thickness(0, 4, 0, 4), ItemContainerTransitions = new Microsoft.UI.Xaml.Media.Animation.TransitionCollection() };
+            filesList = new ListView { SelectionMode = ListViewSelectionMode.Single, IsItemClickEnabled = false, Padding = new Thickness(0, DesignMetrics.Spacing.Xs, 0, DesignMetrics.Spacing.Xs), ItemContainerTransitions = new Microsoft.UI.Xaml.Media.Animation.TransitionCollection() };
             AutomationProperties.SetAutomationId(filesList, "files-tree");
             PaintFilesRows(filesList);
             filesList.SizeChanged += (_, args) => { if (args.NewSize.Width != args.PreviousSize.Width) FitTreeNames(reset: true); };
@@ -329,7 +329,7 @@ public sealed partial class MainWindow
             panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             panel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-            var header = previewHeader = new Grid { ColumnSpacing = 8, Height = DesignMetrics.Layout.PreviewHead, Padding = new Thickness(12, 0, 12, 0), Background = b.Subtle };
+            var header = previewHeader = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, Height = DesignMetrics.Layout.PreviewHead, Padding = new Thickness(DesignMetrics.Spacing.Lg, 0, DesignMetrics.Spacing.Lg, 0), Background = b.Subtle };
             header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -344,7 +344,7 @@ public sealed partial class MainWindow
             names.SizeChanged += (_, args) => { if (previewHeaderPath is { } shown && args.NewSize.Width != args.PreviousSize.Width) MiddleTrim.Fit(previewPath, shown, args.NewSize.Width); };
             Grid.SetColumn(names, 1); header.Children.Add(names);
             // A spacer of at least 6 between the names and the tools, each 8 from it (22 in all); the tools 8 apart.
-            previewTools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(14, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+            previewTools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, Margin = new Thickness(DesignMetrics.Spacing.Md, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
             previewEncoding = new TextBlock { FontSize = DesignMetrics.Type.Small, Foreground = b.Brush(DesignToken.Ink2), VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
             ToolTipService.SetToolTip(previewEncoding, Locale.Get("files.preview.encoding"));
             AutomationProperties.SetAutomationId(previewEncoding, "files-encoding");
@@ -373,7 +373,7 @@ public sealed partial class MainWindow
         /// </summary>
         private Button PreviewToolButton(FrameworkElement face, string key, Brush ink, bool enabled = true)
         {
-            var button = new Button { Content = face, MinWidth = 0, MinHeight = 0, Padding = new Thickness(3), Margin = new Thickness(-3), BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow), VerticalAlignment = VerticalAlignment.Center, IsEnabled = enabled };
+            var button = new Button { Content = face, MinWidth = 0, MinHeight = 0, Padding = new Thickness(DesignMetrics.Spacing.Xxs), Margin = new Thickness(-DesignMetrics.Spacing.Xxs), BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow), VerticalAlignment = VerticalAlignment.Center, IsEnabled = enabled };
             owner.PaintPlainButton(button, owner.brushes.Transparent, owner.brushes.Subtle, ink: ink, disabledInk: owner.brushes.Brush(DesignToken.Ink3));
             AutomationProperties.SetName(button, Locale.Get(key)); ToolTipService.SetToolTip(button, Locale.Get(key));
             return button;
@@ -497,7 +497,7 @@ public sealed partial class MainWindow
         private void Note(string text) => filesList?.Items.Add(new ListViewItem
         {
             Content = new TextBlock { Text = text, FontSize = DesignMetrics.Type.Small, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap },
-            IsHitTestVisible = false, IsTabStop = false, MinHeight = 0, Padding = new Thickness(12, 6, 12, 6), HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            IsHitTestVisible = false, IsTabStop = false, MinHeight = 0, Padding = new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm), HorizontalContentAlignment = HorizontalAlignment.Stretch,
         });
 
         /// <summary>
@@ -575,7 +575,7 @@ public sealed partial class MainWindow
             // the Mac's own inset, and each row reaches 2 over its neighbours so the wash is the whole 21 of the row.
             var item = new ListViewItem
             {
-                Content = line, Tag = entry.RelativePath, MinHeight = FilesRowLine + 8 + 2 * FilesRowWash, Padding = new Thickness(0, 4 + FilesRowWash, trailing + rowMargin, 4 + FilesRowWash), Margin = new Thickness(0, -FilesRowWash, 0, -FilesRowWash),
+                Content = line, Tag = entry.RelativePath, MinHeight = FilesRowLine + 8 + 2 * FilesRowWash, Padding = new Thickness(0, DesignMetrics.Spacing.Xs + FilesRowWash, trailing + rowMargin, DesignMetrics.Spacing.Xs + FilesRowWash), Margin = new Thickness(0, -FilesRowWash, 0, -FilesRowWash),
                 CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow), HorizontalContentAlignment = HorizontalAlignment.Stretch,
             };
             AutomationProperties.SetAutomationId(item, "files-row-" + entry.RelativePath);
@@ -593,7 +593,7 @@ public sealed partial class MainWindow
         private ListViewItem CaptionItem(string text, int depth, bool reports = false) => new()
         {
             Content = new TextBlock { Text = text, FontSize = DesignMetrics.Type.Small, Foreground = reports ? owner.brushes.Brush(DesignToken.Ink2) : owner.brushes.Tertiary, Margin = new Thickness(FilesRowIndent + depth * FilesDepthIndent + 29, 0, 0, 0), TextWrapping = TextWrapping.Wrap },
-            IsHitTestVisible = false, IsTabStop = false, MinHeight = 18, Padding = new Thickness(0, 3, 0, 3),
+            IsHitTestVisible = false, IsTabStop = false, MinHeight = 18, Padding = new Thickness(0, DesignMetrics.Spacing.Xxs, 0, DesignMetrics.Spacing.Xxs),
         };
 
         /// <summary>The tree's indents and the faded rows' opacity (M/FilePaneView.swift:118-119).</summary>
@@ -732,7 +732,7 @@ public sealed partial class MainWindow
         /// </summary>
         private FrameworkElement Notice(string glyph, double size, string text)
         {
-            var notice = new StackPanel { Spacing = 6, Padding = new Thickness(20), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+            var notice = new StackPanel { Spacing = DesignMetrics.Spacing.Sm, Padding = new Thickness(DesignMetrics.Spacing.Lg), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             notice.Children.Add(new FontIcon { Glyph = glyph, FontSize = size, FontWeight = FontWeights.Light, Foreground = owner.brushes.Brush(DesignToken.Ink2) });
             notice.Children.Add(new TextBlock { Text = text, FontSize = DesignMetrics.Type.Block, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center });
             AutomationProperties.SetAutomationId(notice, "files-notice");
@@ -740,15 +740,15 @@ public sealed partial class MainWindow
         }
 
         /// <summary>A centred 12pt <c>ink2</c> sentence, for the reference preview's states.</summary>
-        private TextBlock Centered(string text) => new() { Text = text, FontSize = DesignMetrics.Type.Block, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(24) };
+        private TextBlock Centered(string text) => new() { Text = text, FontSize = DesignMetrics.Type.Block, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(DesignMetrics.Spacing.Xl) };
 
         /// <summary>A note over the preview (M/FilePaneView.swift:295-304): an info symbol and 10pt <c>ink2</c> words on <c>waitSoft</c>, padding h12 v6.</summary>
         private void Banner(string text)
         {
-            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-            row.Children.Add(new FontIcon { Glyph = "\uE946", FontSize = DesignMetrics.Type.Small, Foreground = owner.brushes.Brush(DesignToken.Ink2), VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 2, 0, 0) });
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
+            row.Children.Add(new FontIcon { Glyph = "\uE946", FontSize = DesignMetrics.Type.Small, Foreground = owner.brushes.Brush(DesignToken.Ink2), VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, DesignMetrics.Spacing.Xxs, 0, 0) });
             row.Children.Add(new TextBlock { Text = text, FontSize = DesignMetrics.Type.Small, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap });
-            previewBanners?.Children.Add(new Border { Background = owner.brushes.Brush(DesignToken.WaitSoft), Padding = new Thickness(12, 6, 12, 6), Child = row });
+            previewBanners?.Children.Add(new Border { Background = owner.brushes.Brush(DesignToken.WaitSoft), Padding = new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm), Child = row });
         }
 
         private async Task DrawPreview(FilesPrepared prepared, int request)
@@ -806,12 +806,12 @@ public sealed partial class MainWindow
         private void MarkdownToggle(FilesPrepared prepared)
         {
             var b = owner.brushes;
-            var track = new StackPanel { Orientation = Orientation.Horizontal, Padding = new Thickness(2), CornerRadius = new CornerRadius(DesignMetrics.Radius.Row), Background = b.SegmentTrack, VerticalAlignment = VerticalAlignment.Center };
+            var track = new StackPanel { Orientation = Orientation.Horizontal, Padding = new Thickness(DesignMetrics.Spacing.Xxs), CornerRadius = new CornerRadius(DesignMetrics.Radius.Row), Background = b.SegmentTrack, VerticalAlignment = VerticalAlignment.Center };
             AutomationProperties.SetAutomationId(track, "files-markdown-mode");
             Button Choice(string key, bool source)
             {
                 var chosen = showMarkdownSource == source;
-                var chip = new Border { Padding = new Thickness(8, 2, 8, 2), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), Background = chosen ? b.Brush(DesignToken.Accent) : b.Transparent, Child = new TextBlock { Text = Locale.Get(key), FontSize = DesignMetrics.Type.Block, FontWeight = chosen ? FontWeights.Medium : FontWeights.Normal, Foreground = b.Brush(chosen ? DesignToken.OnAccent : DesignToken.Ink) } };
+                var chip = new Border { Padding = new Thickness(DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xxs, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xxs), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), Background = chosen ? b.Brush(DesignToken.Accent) : b.Transparent, Child = new TextBlock { Text = Locale.Get(key), FontSize = DesignMetrics.Type.Block, FontWeight = chosen ? FontWeights.Medium : FontWeights.Normal, Foreground = b.Brush(chosen ? DesignToken.OnAccent : DesignToken.Ink) } };
                 var button = new Button { Content = chip, Padding = new Thickness(0), MinWidth = 0, MinHeight = 0, BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment) };
                 owner.PaintPlainButton(button, b.Transparent, b.Transparent);
                 AutomationProperties.SetName(button, Locale.Get(key));
@@ -831,7 +831,7 @@ public sealed partial class MainWindow
         /// </summary>
         private FrameworkElement SourceView(FilesPrepared prepared)
         {
-            const double insetX = 6 + 5, insetY = 8, numberEnd = 8;
+            const double insetX = DesignMetrics.Spacing.Sm + 5, insetY = DesignMetrics.Spacing.Md, numberEnd = 8;
             var b = owner.brushes; var text = prepared.Data.Text ?? "";
             var body = new RichTextBlock
             {
@@ -1080,19 +1080,19 @@ public sealed partial class MainWindow
         /// </summary>
         private FrameworkElement UnsupportedCard(FilePreviewData data, string? reason)
         {
-            var card = new StackPanel { Spacing = 8, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(24) };
+            var card = new StackPanel { Spacing = DesignMetrics.Spacing.Sm, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(DesignMetrics.Spacing.Xl) };
             AutomationProperties.SetAutomationId(card, "files-unsupported");
             var b = owner.brushes;
             // doc.questionmark at 30 light: a blank page with the question mark on it.
             var symbol = new Grid { HorizontalAlignment = HorizontalAlignment.Center };
             symbol.Children.Add(new FontIcon { Glyph = "\uE7C3", FontSize = 34, FontWeight = FontWeights.Light, Foreground = b.Brush(DesignToken.Ink2) });
-            symbol.Children.Add(new TextBlock { Text = "?", FontSize = 14, FontWeight = FontWeights.SemiBold, Foreground = b.Brush(DesignToken.Ink2), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 5, 0, 0) });
+            symbol.Children.Add(new TextBlock { Text = "?", FontSize = 14, FontWeight = FontWeights.SemiBold, Foreground = b.Brush(DesignToken.Ink2), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, DesignMetrics.Spacing.Xs, 0, 0) });
             AutomationProperties.SetAccessibilityView(symbol, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
             card.Children.Add(symbol);
             card.Children.Add(new TextBlock { Text = Locale.Get("files.preview.unsupported"), FontSize = DesignMetrics.Type.Title, FontWeight = FontWeights.SemiBold, Foreground = b.Brush(DesignToken.Ink), HorizontalAlignment = HorizontalAlignment.Center });
             card.Children.Add(new TextBlock { Text = data.Name, FontSize = DesignMetrics.Type.Block, Foreground = b.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, MaxLines = 2 });
             // Size and modified time as a two-column grid of an ink2 label and its ink value (M/FilePaneView.swift:262-273).
-            var facts = new Grid { ColumnSpacing = 10, RowSpacing = 3, HorizontalAlignment = HorizontalAlignment.Center };
+            var facts = new Grid { ColumnSpacing = DesignMetrics.Spacing.Md, RowSpacing = DesignMetrics.Spacing.Xxs, HorizontalAlignment = HorizontalAlignment.Center };
             facts.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); facts.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             void Fact(string label, string value)
             {
@@ -1107,7 +1107,7 @@ public sealed partial class MainWindow
             if (reason is not null) card.Children.Add(new TextBlock { Text = reason, FontSize = DesignMetrics.Type.Pill, Foreground = b.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center });
             // The Mac's push button, 4 further under the rest.
             var reveal = owner.PushButton(Locale.Get("menu.showInExplorer"));
-            reveal.HorizontalAlignment = HorizontalAlignment.Center; reveal.Margin = new Thickness(0, 4, 0, 0);
+            reveal.HorizontalAlignment = HorizontalAlignment.Center; reveal.Margin = new Thickness(0, DesignMetrics.Spacing.Xs, 0, 0);
             AutomationProperties.SetAutomationId(reveal, "files-show-in-explorer");
             reveal.Click += (_, _) => RevealInExplorer(data.RelativePath);
             card.Children.Add(reveal);

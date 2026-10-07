@@ -154,7 +154,8 @@ public sealed partial class MainWindow
         Require(workspaceHeader.Visibility == Visibility.Visible && workspaceHeaderName.Text == workspace.Name && Grid.GetRow(detailTop) == 0 && Grid.GetColumn(detailTop) == 1
             && detailTop.Children.Count == 2 && ReferenceEquals(detailTop.Children[0], errorBanner) && ReferenceEquals(detailTop.Children[1], workspaceHeader),
             $"{key} ({theme}): the workspace header must show the active workspace '{workspace.Name}' over the dock, under the error banner; got '{workspaceHeaderName.Text}', {workspaceHeader.Visibility}, row {Grid.GetRow(detailTop)} column {Grid.GetColumn(detailTop)}, {detailTop.Children.Count} parts");
-        Require(workspaceHeader.Padding == new Thickness(24, 14, 24, 10), $"{key} ({theme}): the workspace header padding must be h24 t14 b10; got {workspaceHeader.Padding}");
+        Require(workspaceHeader.Padding == new Thickness(DesignMetrics.Inset.WorkspaceHeaderH, DesignMetrics.Inset.WorkspaceHeaderT, DesignMetrics.Inset.WorkspaceHeaderH, DesignMetrics.Inset.WorkspaceHeaderB),
+            $"{key} ({theme}): the workspace header padding must be Inset.WorkspaceHeader h{DesignMetrics.Inset.WorkspaceHeaderH} t{DesignMetrics.Inset.WorkspaceHeaderT} b{DesignMetrics.Inset.WorkspaceHeaderB}; got {workspaceHeader.Padding}");
         Require(workspaceHeader.BorderThickness == new Thickness(0, 0, 0, DesignMetrics.Stroke.Line), $"{key} ({theme}): the divider under the workspace header must be a bottom Stroke.Line {DesignMetrics.Stroke.Line} only; got {workspaceHeader.BorderThickness}");
         // A SwiftUI Divider (M/WorkspaceView.swift:22): the separator, the label colour at a tenth.
         RequireBrush(workspaceHeader, e => ((Grid)e).BorderBrush, DesignToken.Ink, "the divider under the workspace header", SeparatorOpacity, key);
@@ -164,8 +165,8 @@ public sealed partial class MainWindow
             && AutomationProperties.GetAutomationId(headerRun) == "workspace-header-running-" + workspace.Id,
             $"{key} ({theme}): the header, its counts and its running count must carry the Mac's ids workspace-header-{workspace.Id} / workspace-header-status-{workspace.Id} / workspace-header-running-{workspace.Id}; got '{AutomationProperties.GetAutomationId(workspaceHeader)}' / '{AutomationProperties.GetAutomationId(headerCounts.View)}' / '{AutomationProperties.GetAutomationId(headerRun)}'");
         // StatusCounts(long: true) (M/WorkspaceView.swift:305-307, 459-502): every state, zeros left out, each named.
-        Require(headerCounts.Entries.Select(e => e.Tone).SequenceEqual(StatusCountsView.Tones(true)) && Grid.GetColumn(headerCounts.View) == 1 && workspaceHeader.ColumnSpacing == 14,
-            $"{key} ({theme}): the header's counts must be the long form (wait, run, err, done, stop, idle) between the name and the files button, 14 apart; got {string.Join(", ", headerCounts.Entries.Select(e => e.Tone))} in column {Grid.GetColumn(headerCounts.View)}, spacing {workspaceHeader.ColumnSpacing}");
+        Require(headerCounts.Entries.Select(e => e.Tone).SequenceEqual(StatusCountsView.Tones(true)) && Grid.GetColumn(headerCounts.View) == 1 && workspaceHeader.ColumnSpacing == DesignMetrics.Spacing.Lg,
+            $"{key} ({theme}): the header's counts must be the long form (wait, run, err, done, stop, idle) between the name and the files button, Spacing.Lg {DesignMetrics.Spacing.Lg} apart; got {string.Join(", ", headerCounts.Entries.Select(e => e.Tone))} in column {Grid.GetColumn(headerCounts.View)}, spacing {workspaceHeader.ColumnSpacing}");
         RequireCounts(headerCounts, WorkDashboard.WorkspaceBadges(service.Snapshot.Sessions.Where(s => s.WorkspaceId == workspace.Id), DashboardAttention), "the workspace header's counts", key, false);
         Require(workspaceHeaderName.FontSize == DesignMetrics.Type.Header && workspaceHeaderName.FontWeight.Weight == Microsoft.UI.Text.FontWeights.SemiBold.Weight,
             $"{key} ({theme}): the workspace header name must be Type.Header {DesignMetrics.Type.Header}pt semibold; got {workspaceHeaderName.FontSize}pt weight {workspaceHeaderName.FontWeight.Weight}");
@@ -189,21 +190,21 @@ public sealed partial class MainWindow
 
         RequireSubtle(statusBar, "the status bar background", key);
         RequireBrush(statusBar, e => ((Border)e).BorderBrush, DesignToken.Ink, "the status bar's top divider (M/WorkspaceView.swift:394, a Divider)", SeparatorOpacity, key);
-        // Padding h20 v8 (M/WorkspaceView.swift:393); the Mac's top line is an overlay, so the 8 above counts the line here.
-        Require(statusBar.BorderThickness == new Thickness(0, DesignMetrics.Stroke.Line, 0, 0) && statusBar.Padding == new Thickness(20, 8 - DesignMetrics.Stroke.Line, 20, 8) && Grid.GetRow(statusBar) == 2 && Grid.GetColumn(statusBar) == 1,
-            $"{key} ({theme}): the status bar must be under the dock with a top Stroke.Line {DesignMetrics.Stroke.Line} and padding h20 v8 (the line inside the 8 above); got border {statusBar.BorderThickness}, padding {statusBar.Padding}, row {Grid.GetRow(statusBar)} column {Grid.GetColumn(statusBar)}");
+        // Padding Inset.StatusBar (M/WorkspaceView.swift:409); the Mac's top line is an overlay, so the padding above counts the line here.
+        Require(statusBar.BorderThickness == new Thickness(0, DesignMetrics.Stroke.Line, 0, 0) && statusBar.Padding == new Thickness(DesignMetrics.Inset.StatusBarH, DesignMetrics.Inset.StatusBarV - DesignMetrics.Stroke.Line, DesignMetrics.Inset.StatusBarH, DesignMetrics.Inset.StatusBarV) && Grid.GetRow(statusBar) == 2 && Grid.GetColumn(statusBar) == 1,
+            $"{key} ({theme}): the status bar must be under the dock with a top Stroke.Line {DesignMetrics.Stroke.Line} and padding h{DesignMetrics.Inset.StatusBarH} v{DesignMetrics.Inset.StatusBarV} (the line inside the padding above); got border {statusBar.BorderThickness}, padding {statusBar.Padding}, row {Grid.GetRow(statusBar)} column {Grid.GetColumn(statusBar)}");
         Require(status.FontSize == DesignMetrics.Type.Small && status.TextWrapping == TextWrapping.NoWrap && status.TextTrimming == TextTrimming.CharacterEllipsis,
             $"{key} ({theme}): the status text must be one trimmed Type.Small {DesignMetrics.Type.Small}pt line; got {status.FontSize}pt, {status.TextWrapping}, {status.TextTrimming}");
         RequireStatusBarOrder(key);
-        // The Mac's error banner (M/WorkspaceView.swift:405-411): on errSoft, padding 12, its message in the default ink, shown only with a message.
+        // The Mac's error banner (M/WorkspaceView.swift:405-411): on errSoft, padding Spacing.Md, its message in the default ink, shown only with a message.
         Require((error.Visibility == Visibility.Collapsed) == string.IsNullOrEmpty(error.Text) && errorBanner.Visibility == error.Visibility,
             $"{key} ({theme}): the error banner must be collapsed exactly while there is no message; got banner {errorBanner.Visibility}, line {error.Visibility} with '{error.Text}'");
         RequireBrush(errorBanner, e => ((Border)e).Background, DesignToken.ErrSoft, "the error banner", key: key);
-        Require(errorBanner.Padding == new Thickness(12) && error.FontSize == 12 && error.IsTextSelectionEnabled && errorBanner.Child is Grid { ColumnSpacing: 9, Children: [FontIcon, TextBlock, Microsoft.UI.Xaml.Controls.Button] },
-            $"{key} ({theme}): the error banner must be a warning symbol, the selectable 12pt message and a close button, 9 apart, padding 12; got padding {errorBanner.Padding}, {error.FontSize}pt");
+        Require(errorBanner.Padding == new Thickness(DesignMetrics.Spacing.Md) && error.FontSize == 12 && error.IsTextSelectionEnabled && errorBanner.Child is Grid { ColumnSpacing: DesignMetrics.Spacing.Sm, Children: [FontIcon, TextBlock, Microsoft.UI.Xaml.Controls.Button] },
+            $"{key} ({theme}): the error banner must be a warning symbol, the selectable 12pt message and a close button, {DesignMetrics.Spacing.Sm} apart, padding {DesignMetrics.Spacing.Md}; got padding {errorBanner.Padding}, {error.FontSize}pt");
         RequireBrush((FontIcon)((Grid)errorBanner.Child).Children[0], e => ((FontIcon)e).Foreground, DesignToken.ErrText, "the error banner's symbol", key: key);
-        // One 10pt row: padding 8 + the capsule's 21 + 8, the line inside the top 8. The Mac's bar is 37 tall on every screen (docs/design-system/screens: 74px at 2x).
-        Require(Math.Abs(statusBar.ActualHeight - (16 + CompanionCapsuleHeight)) < 0.6, $"{key} ({theme}): the status bar must be one row {16 + CompanionCapsuleHeight} tall, as the Mac's; got {statusBar.ActualHeight:F1}");
+        // One 10pt row: the vertical inset, the capsule's height and the inset again, the line inside the top inset, as the Mac's bar.
+        Require(Math.Abs(statusBar.ActualHeight - (2 * DesignMetrics.Inset.StatusBarV + CompanionCapsuleHeight)) < 0.6, $"{key} ({theme}): the status bar must be one row {2 * DesignMetrics.Inset.StatusBarV + CompanionCapsuleHeight} tall, as the Mac's; got {statusBar.ActualHeight:F1}");
         RequireBrush(status, e => ((TextBlock)e).Foreground, DesignToken.Ink2, "the status text", key: key);
         RequireBrush(error, e => ((TextBlock)e).Foreground, DesignToken.Ink, "the error text", key: key);
         RequireTitleBar(key);
@@ -230,14 +231,14 @@ public sealed partial class MainWindow
         var parts = statusTrailing.Children.ToList();
         Require(statusTrailing.Spacing == StatusBarSpacing && parts.Count == 8 && ReferenceEquals(parts[0], statusPanes) && parts[1] is TextBlock && ReferenceEquals(parts[2], statusRunning)
             && ReferenceEquals(parts[3], updateBadge) && parts[4] is Border && ReferenceEquals(parts[5], usageButton) && ReferenceEquals(parts[6], usageDivider)
-            && parts[7] is StackPanel { Spacing: 10, Children: [Microsoft.UI.Xaml.Controls.Button paw, Microsoft.UI.Xaml.Controls.Button capsule] } && ReferenceEquals(paw, companionToggleControl) && ReferenceEquals(capsule, companionStatusControl),
+            && parts[7] is StackPanel { Spacing: DesignMetrics.Spacing.Md, Children: [Microsoft.UI.Xaml.Controls.Button paw, Microsoft.UI.Xaml.Controls.Button capsule] } && ReferenceEquals(paw, companionToggleControl) && ReferenceEquals(capsule, companionStatusControl),
             $"{key} ({theme}): the status bar's trailing parts must be the pane count, a dot, the running count, the update badge, a line, the usage chips, their line and the pet controls (paw, then capsule, 10 apart), {StatusBarSpacing} apart; got {parts.Count} parts: {string.Join(", ", parts.Select(p => p.GetType().Name + "'" + AutomationProperties.GetAutomationId(p) + "'"))}");
         string Count(int value) => value.ToString(System.Globalization.CultureInfo.InvariantCulture);
         var panesWant = Locale.Get("window.status.paneCount", new Dictionary<string, string> { ["count"] = Count(state.Sessions.Count(s => s.WorkspaceId == state.ActiveWorkspaceId)) });
         var runningWant = Locale.Get("window.status.runningCount", new Dictionary<string, string> { ["count"] = Count(state.Sessions.Count(s => s.Status == "running")) });
         Require(statusPanes.Text == panesWant && statusRunning.Text == runningWant, $"{key} ({theme}): the status bar must count '{panesWant}' and '{runningWant}'; got '{statusPanes.Text}' and '{statusRunning.Text}'");
         var dot = (TextBlock)parts[1];
-        Require(dot.Margin == new Thickness(3, 0, 3, 0), $"{key} ({theme}): the dot between the counts must have 3 on either side; got {dot.Margin}");
+        Require(dot.Margin == new Thickness(DesignMetrics.Spacing.Xxs, 0, DesignMetrics.Spacing.Xxs, 0), $"{key} ({theme}): the dot between the counts must have {DesignMetrics.Spacing.Xxs} on either side; got {dot.Margin}");
         foreach (var (text, what) in new[] { (statusPanes, "the pane count"), (dot, "the dot between the counts"), (statusRunning, "the running count") })
         {
             Require(text.FontSize == DesignMetrics.Type.Small, $"{key} ({theme}): {what} must be {DesignMetrics.Type.Small}pt; got {text.FontSize}pt");
@@ -254,15 +255,15 @@ public sealed partial class MainWindow
             RequireBrush(line, e => ((Border)e).Background, DesignToken.Ink, what, SeparatorOpacity, key);
         }
         // The chips show with a provider that has an agent pane, and their line with them.
-        Require(usageButton is { Visibility: Visibility.Visible } && usageDivider!.Visibility == Visibility.Visible && usageChips.Spacing == 6 && usageChips.Children.Count > 0,
+        Require(usageButton is { Visibility: Visibility.Visible } && usageDivider!.Visibility == Visibility.Visible && usageChips.Spacing == DesignMetrics.Spacing.Sm && usageChips.Children.Count > 0,
             $"{key} ({theme}): the usage chips and the line after them must show while an agent pane exists, 6 apart; got {usageButton?.Visibility}, line {usageDivider!.Visibility}, {usageChips.Children.Count} chips");
         foreach (var chip in usageChips.Children.OfType<Border>())
         {
             var id = AutomationProperties.GetAutomationId(chip);
             RequireSubtle(chip, $"the usage chip {id}", key);
             // Sizes with a fraction are read back as the single-precision values the layout holds.
-            Require(chip.Height == UsageChipHeight && chip.Padding == new Thickness(7, 0, 7, 0) && chip.CornerRadius == new CornerRadius(UsageChipHeight / 2)
-                && chip.Child is StackPanel { Spacing: 5, Children.Count: >= 2 } face && face.Children[0] is Microsoft.UI.Xaml.Shapes.Path mark && Math.Abs(mark.Width - UsageChipMark) < 0.01
+            Require(chip.Height == UsageChipHeight && chip.Padding == new Thickness(DesignMetrics.Spacing.Sm, 0, DesignMetrics.Spacing.Sm, 0) && chip.CornerRadius == new CornerRadius(UsageChipHeight / 2)
+                && chip.Child is StackPanel { Spacing: DesignMetrics.Spacing.Xs, Children.Count: >= 2 } face && face.Children[0] is Microsoft.UI.Xaml.Shapes.Path mark && Math.Abs(mark.Width - UsageChipMark) < 0.01
                 && face.Children.Skip(1).All(word => word is TextBlock { FontSize: DesignMetrics.Type.Small }),
                 $"{key} ({theme}): the usage chip {id} must be the provider's {UsageChipMark:F2}pt mark and 10pt words, 5 apart, on a capsule {UsageChipHeight} high (the Mac's 10pt line in v3) with h7; got {chip.Height} high, padding {chip.Padding}, a {(((chip.Child as StackPanel)?.Children.FirstOrDefault() as FrameworkElement)?.Width ?? 0):F2}pt {(chip.Child as StackPanel)?.Children.FirstOrDefault()?.GetType().Name}");
             foreach (var word in ((StackPanel)chip.Child).Children.OfType<TextBlock>())
@@ -274,7 +275,7 @@ public sealed partial class MainWindow
             $"{key} ({theme}): the paw must be {CompanionGlyphSize}pt, accent while the pet shows and ink2 otherwise; got {Describe(companionGlyph.Foreground)} with the pet {(companionPreferences.Enabled ? "showing" : "hidden")}");
         var pill = companionStatusCapsule!;
         RequireSubtle(pill, "the agent status capsule", key);
-        Require(pill.Height == CompanionCapsuleHeight && pill.Padding == new Thickness(8, 0, 8, 0) && pill.CornerRadius == new CornerRadius(CompanionCapsuleHeight / 2) && pill.Child is StackPanel { Spacing: 5 },
+        Require(pill.Height == CompanionCapsuleHeight && pill.Padding == new Thickness(DesignMetrics.Spacing.Sm, 0, DesignMetrics.Spacing.Sm, 0) && pill.CornerRadius == new CornerRadius(CompanionCapsuleHeight / 2) && pill.Child is StackPanel { Spacing: DesignMetrics.Spacing.Xs },
             $"{key} ({theme}): the agent status capsule must be {CompanionCapsuleHeight} high (the Mac's 13-high symbol in v4), padding h8, its symbol 5 from its count; got {pill.Height}, {pill.Padding}, {pill.CornerRadius}");
         var busy = state.Sessions.Count(s => s.Kind == "claude" && CompanionStatus(s) is "running" or "waiting" or "starting" or "queued");
         var (waveform, dots) = (companionStatusBusy!, companionStatusIdle!);
@@ -373,8 +374,8 @@ public sealed partial class MainWindow
         // The search field (M/WorkspaceView.swift:71-77).
         RequireSubtle(sidebarSearchBox, "the search field's wash", key);
         RequireRadius(sidebarSearchBox, DesignMetrics.Radius.Search, "the search field (Radius.Search)", key);
-        Require(sidebarSearchBox.Padding == new Thickness(9) && sidebarSearchBox.Margin == new Thickness(14, 10, 14, 0),
-            $"{key} ({theme}): the search field must have padding 9 and margin h14 t10; got padding {sidebarSearchBox.Padding}, margin {sidebarSearchBox.Margin}");
+        Require(sidebarSearchBox.Padding == new Thickness(DesignMetrics.Inset.SidebarSearch) && sidebarSearchBox.Margin == new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Md, 0),
+            $"{key} ({theme}): the search field must have padding Inset.SidebarSearch {DesignMetrics.Inset.SidebarSearch} and margin h{DesignMetrics.Spacing.Md} t{DesignMetrics.Spacing.Sm}; got padding {sidebarSearchBox.Padding}, margin {sidebarSearchBox.Margin}");
         RequireBrush(sidebarSearchIcon, e => ((FontIcon)e).Foreground, DesignToken.SidebarInk2, "the search magnifier", key: key);
         Require(search.FontSize == 12 && search.BorderThickness == new Thickness(0), $"{key} ({theme}): the search text must be 12pt with no border; got {search.FontSize}pt, border {search.BorderThickness}");
         foreach (var resource in new[] { "TextControlBackground", "TextControlBackgroundPointerOver", "TextControlBackgroundFocused", "TextControlBorderBrushFocused" })
@@ -386,9 +387,9 @@ public sealed partial class MainWindow
         var drawnPlaceholder = VisualChildren(search).OfType<TextBlock>().FirstOrDefault(t => t.Name == "PlaceholderTextContentPresenter");
         Require(drawnPlaceholder is not null && ReferenceEquals(drawnPlaceholder.Foreground, search.PlaceholderForeground),
             $"{key} ({theme}): the search field's drawn placeholder must take the placeholder ink; got {Describe(drawnPlaceholder?.Foreground)}{(drawnPlaceholder is null ? " (the template has no PlaceholderTextContentPresenter)" : "")}");
-        // 9 + the 12pt text field's 15 + 9, as the Mac's field measures.
-        Require(sidebarSearchBox.Child is Grid { Height: SearchRowHeight, ColumnSpacing: 7 } && Math.Abs(sidebarSearchBox.ActualHeight - (SearchRowHeight + 18)) < 0.5,
-            $"{key} ({theme}): the search field must be {SearchRowHeight + 18} high (padding 9 around a {SearchRowHeight}-high row), the magnifier 7 from the text; got {sidebarSearchBox.ActualHeight:F1}");
+        // The inset + the 12pt text field's 15 + the inset, as the Mac's field measures.
+        Require(sidebarSearchBox.Child is Grid { Height: SearchRowHeight, ColumnSpacing: DesignMetrics.Spacing.Sm } && Math.Abs(sidebarSearchBox.ActualHeight - (SearchRowHeight + 2 * DesignMetrics.Inset.SidebarSearch)) < 0.5,
+            $"{key} ({theme}): the search field must be {SearchRowHeight + 2 * DesignMetrics.Inset.SidebarSearch} high (padding {DesignMetrics.Inset.SidebarSearch} around a {SearchRowHeight}-high row), the magnifier {DesignMetrics.Spacing.Sm} from the text; got {sidebarSearchBox.ActualHeight:F1}");
         var workspaceName = state.Workspaces.First(w => w.Id == workspaceId).Name;
         try
         {
@@ -399,7 +400,7 @@ public sealed partial class MainWindow
             var expected = Locale.Get("sidebar.noSearchResults");
             Require(workspaces.Children.Count == 0 && sidebarEmpty.Visibility == Visibility.Visible && sidebarEmpty.Text == expected,
                 $"{key} ({theme}): a search with no match must say '{expected}'; got {workspaces.Children.Count} rows, '{sidebarEmpty.Text}' {sidebarEmpty.Visibility}");
-            Require(sidebarEmpty.FontSize == 12 && sidebarEmpty.Padding == new Thickness(16), $"{key} ({theme}): the empty text must be 12pt with padding 16; got {sidebarEmpty.FontSize}pt, {sidebarEmpty.Padding}");
+            Require(sidebarEmpty.FontSize == 12 && sidebarEmpty.Padding == new Thickness(DesignMetrics.Spacing.Lg), $"{key} ({theme}): the empty text must be 12pt with padding {DesignMetrics.Spacing.Lg}; got {sidebarEmpty.FontSize}pt, {sidebarEmpty.Padding}");
             RequireBrush(sidebarEmpty, e => ((TextBlock)e).Foreground, DesignToken.SidebarInk2, "the empty-search text", key: key);
             Require(addFolderButton.Visibility == Visibility.Visible && addFolderButton.FontSize == 12 && addFolderButton.CornerRadius == new CornerRadius(DesignMetrics.Radius.Search),
                 $"{key} ({theme}): the open-folder button must show, 12pt at radius {DesignMetrics.Radius.Search}; got {addFolderButton.Visibility}, {addFolderButton.FontSize}pt, {addFolderButton.CornerRadius}");
@@ -415,7 +416,7 @@ public sealed partial class MainWindow
 
         // The work-status entry (M/WorkspaceView.swift:136-158).
         var icon = dashboardEntryIcon!; var entry = dashboardEntry!;
-        Require(icon.Width == 24 && icon.Height == 24, $"{key} ({theme}): the work-status tile must be 24×24; got {icon.Width}×{icon.Height}");
+        Require(icon.Width == DashboardEntryTile && icon.Height == DashboardEntryTile && DashboardEntryTile == 22, $"{key} ({theme}): the work-status tile must be 22×22; got {icon.Width}×{icon.Height}");
         RequireRadius(icon, DesignMetrics.Radius.Search, "the work-status tile (Radius.Search)", key);
         RequireBrush(icon, e => ((Border)e).Background, DesignToken.Run, "the work-status tile", key: key);
         // square.grid.2x2.fill: four filled rounded squares, not outlines (M/WorkspaceView.swift:141).
@@ -427,7 +428,7 @@ public sealed partial class MainWindow
             RequireBrush(square, e => ((Microsoft.UI.Xaml.Shapes.Rectangle)e).Fill, DesignToken.OnStatus, "the work-status tile's symbol", key: key);
         RequireFont(dashboardEntryTitle!, DesignMetrics.Type.Title, Microsoft.UI.Text.FontWeights.SemiBold, $"({theme}) the work-status title", key);
         RequireBrush(dashboardEntryTitle!, e => ((TextBlock)e).Foreground, DesignToken.Ink, "the work-status title", key: key);
-        Require(entry.Padding == new Thickness(10, 8, 10, 8), $"{key} ({theme}): the work-status entry padding must be h10 v8; got {entry.Padding}");
+        Require(entry.Padding == new Thickness(DesignMetrics.Spacing.Sm, DesignMetrics.Inset.SidebarRowV, DesignMetrics.Spacing.Sm, DesignMetrics.Inset.SidebarRowV), $"{key} ({theme}): the work-status entry padding must be h{DesignMetrics.Spacing.Sm} v{DesignMetrics.Inset.SidebarRowV}; got {entry.Padding}");
         RequireRadius(entry, DesignMetrics.Radius.Entry, "the work-status entry (Radius.Entry)", key);
         RequireClear(entry.Background, "the work-status entry while the dashboard is hidden", key);
         // While the dashboard shows, the entry is the sidebar's one selection: no workspace row and no pane
@@ -459,7 +460,8 @@ public sealed partial class MainWindow
         Require(sessionsCount.FontSize == DesignMetrics.Type.Small && sessionsCount.FontFamily?.Source == DesignMetrics.Font.Mono && sessionsCount.Text == state.Workspaces.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
             $"{key} ({theme}): the section count must be {state.Workspaces.Count} in Font.Mono at {DesignMetrics.Type.Small}pt; got '{sessionsCount.Text}' in '{sessionsCount.FontFamily?.Source}' at {sessionsCount.FontSize}pt");
         RequireBrush(sessionsCount, e => ((TextBlock)e).Foreground, DesignToken.SidebarInk2, "the section count", key: key);
-        Require(sessionsHeaderRow.Margin == new Thickness(20, 20, 20, 11), $"{key} ({theme}): the section header padding must be h20 t20 b11; got {sessionsHeaderRow.Margin}");
+        Require(sessionsHeaderRow.Margin == new Thickness(DesignMetrics.Inset.SidebarSectionH, DesignMetrics.Inset.SidebarSectionT, DesignMetrics.Inset.SidebarSectionH, DesignMetrics.Inset.SidebarSectionB),
+            $"{key} ({theme}): the section header padding must be Inset.SidebarSection h{DesignMetrics.Inset.SidebarSectionH} t{DesignMetrics.Inset.SidebarSectionT} b{DesignMetrics.Inset.SidebarSectionB}; got {sessionsHeaderRow.Margin}");
 
         // Workspace rows (M/WorkspaceView.swift:160-203).
         Grid WorkspaceHeader(string id) => (Grid)workspaces.Children.OfType<StackPanel>().Single(g => AutomationProperties.GetAutomationId(g) == "sidebar-workspace-" + id).Children[0];
@@ -468,8 +470,8 @@ public sealed partial class MainWindow
         Require(header.CornerRadius == new CornerRadius(DesignMetrics.Radius.Search), $"{key} ({theme}): the workspace row must have radius {DesignMetrics.Radius.Search}; got {header.CornerRadius}");
         var select = header.Children.OfType<Button>().First(); var label = (Grid)select.Content;
         var folder = (FontIcon)label.Children[0]; var name = (TextBlock)label.Children[1];
-        Require(folder.FontSize == 14 && select.Padding == new Thickness(11, 10, 4, 10) && label.ColumnSpacing == 9,
-            $"{key} ({theme}): the workspace row must be folder 14, spacing 9, padding l11 r4 v10; got folder {folder.FontSize}, spacing {label.ColumnSpacing}, padding {select.Padding}");
+        Require(folder.FontSize == 14 && select.Padding == new Thickness(DesignMetrics.Spacing.Sm, DesignMetrics.Inset.SidebarRowV, DesignMetrics.Spacing.Xs, DesignMetrics.Inset.SidebarRowV) && label.ColumnSpacing == DesignMetrics.Spacing.Md && select.MinHeight == SidebarWorkspaceRowMin,
+            $"{key} ({theme}): the workspace row must be folder 14, spacing {DesignMetrics.Spacing.Md}, padding l{DesignMetrics.Spacing.Sm} r{DesignMetrics.Spacing.Xs} v{DesignMetrics.Inset.SidebarRowV}, at least {SidebarWorkspaceRowMin} high; got folder {folder.FontSize}, spacing {label.ColumnSpacing}, padding {select.Padding}, least height {select.MinHeight}");
         RequireBrush(folder, e => ((FontIcon)e).Foreground, DesignToken.SidebarAccent, "the selected workspace's folder", key: key);
         RequireFont(name, DesignMetrics.Type.Row, Microsoft.UI.Text.FontWeights.Medium, $"({theme}) the workspace name", key);
         RequireBrush(name, e => ((TextBlock)e).Foreground, DesignToken.Ink, "the workspace name", key: key);
@@ -496,26 +498,30 @@ public sealed partial class MainWindow
         // The hairline is an overlay over the row's padding (M/WorkspaceView.swift:526), so it takes no room from the row.
         var (activeEdge, inactiveEdge) = (sidebarRowEdges[activeId], sidebarRowEdges[inactive.Id]);
         Require(ReferenceEquals(activeEdge.BorderBrush, brushes.RowSelectedBorder) && Describe(activeEdge.BorderBrush) == borderWant && activeEdge.BorderThickness == new Thickness(DesignMetrics.Stroke.Hairline)
-            && activeEdge.CornerRadius == new CornerRadius(DesignMetrics.Radius.Row) && activeEdge.Margin == new Thickness(-8, -6, -9, -7) && !activeEdge.IsHitTestVisible && activeRow.BorderThickness == new Thickness(0),
+            && activeEdge.CornerRadius == new CornerRadius(DesignMetrics.Radius.Row) && activeEdge.Margin == new Thickness(-DesignMetrics.Spacing.Sm, -DesignMetrics.Inset.PaneRowV, -DesignMetrics.Spacing.Sm, -DesignMetrics.Inset.PaneRowV) && !activeEdge.IsHitTestVisible && activeRow.BorderThickness == new Thickness(0),
             $"{key} ({theme}): the selected pane row's hairline must be an overlay over its padding, black at {border.GetProperty("opacity").GetDouble()} ({borderWant}), {DesignMetrics.Stroke.Hairline}pt at radius {DesignMetrics.Radius.Row}; got {Describe(activeEdge.BorderBrush)}, {activeEdge.BorderThickness}, margin {activeEdge.Margin}, the row's own border {activeRow.BorderThickness}");
         foreach (var (row, what) in new[] { (activeRow, "the selected pane row"), (inactiveRow, "a pane row") })
-            Require(row.CornerRadius == new CornerRadius(DesignMetrics.Radius.Row) && row.Padding == new Thickness(8, 6, 9, 7),
-                $"{key} ({theme}): {what} must have radius {DesignMetrics.Radius.Row} and padding l8 r9 t6 b7; got {row.CornerRadius}, {row.Padding}");
-        // The group's 3pt spacing around rows set in l22 r2 v1 (M/WorkspaceView.swift:165, 253): 4 under the
-        // workspace row, 5 between pane rows, 4 over the add row; the workspace row first, the add row last.
+            Require(row.CornerRadius == new CornerRadius(DesignMetrics.Radius.Row) && row.Padding == new Thickness(DesignMetrics.Spacing.Sm, DesignMetrics.Inset.PaneRowV, DesignMetrics.Spacing.Sm, DesignMetrics.Inset.PaneRowV),
+                $"{key} ({theme}): {what} must have radius {DesignMetrics.Radius.Row} and padding h{DesignMetrics.Spacing.Sm} v{DesignMetrics.Inset.PaneRowV}; got {row.CornerRadius}, {row.Padding}");
+        // The group's list gap around rows set in l22 r2 (M/WorkspaceView.swift:178, 266): the gap under the
+        // workspace row, between pane rows and over the add row; the workspace row first, the add row last.
         var group = workspaces.Children.OfType<StackPanel>().Single(g => AutomationProperties.GetAutomationId(g) == "sidebar-workspace-" + workspaceId);
-        Require(group.Spacing == 3 && group.Margin == new Thickness(0, 0, 0, 12) && group.Children is [Grid, StackPanel { Spacing: 5 } paneRows, Microsoft.UI.Xaml.Controls.Button] && paneRows.Margin == new Thickness(22, 1, 2, 1) && paneRows.Children.Contains(activeRow),
-            $"{key} ({theme}): the selected workspace's group must be its row, its pane rows (5 apart, set in l22 r2 v1) and the add row, 3 apart with 12 under it; got spacing {group.Spacing}, margin {group.Margin}, {group.Children.Count} parts");
+        Require(group.Spacing == DesignMetrics.Inset.ListGap && group.Margin == new Thickness(0, 0, 0, DesignMetrics.Spacing.Sm) && group.Children is [Grid, StackPanel { Spacing: DesignMetrics.Inset.ListGap } paneRows, Microsoft.UI.Xaml.Controls.Button] && paneRows.Margin == new Thickness(22, 0, DesignMetrics.Spacing.Xxs, 0) && paneRows.Children.Contains(activeRow),
+            $"{key} ({theme}): the selected workspace's group must be its row, its pane rows ({DesignMetrics.Inset.ListGap} apart, set in l22 r{DesignMetrics.Spacing.Xxs}) and the add row, {DesignMetrics.Inset.ListGap} apart with {DesignMetrics.Spacing.Sm} under it; got spacing {group.Spacing}, margin {group.Margin}, {group.Children.Count} parts");
         root.UpdateLayout();
-        // A row is its two lines in t6 b7: 6 + 17 + 15 + 7 (M/WorkspaceView.swift:230, 247, 286).
-        Require(Math.Abs(inactiveRow.ActualHeight - 45) <= 0.6 && Math.Abs(activeRow.ActualHeight - 45) <= 0.6, $"{key} ({theme}): a pane row must be 45 high (6 + the 17 title line + the 15 meta line + 7); got {inactiveRow.ActualHeight:F1} and, selected, {activeRow.ActualHeight:F1}");
-        // The rows whose height is their words' measure as the Mac's: the workspace row 34 (v10 around the 12pt line),
-        // the add row 29 (v8 around the 11pt line), the section header's 10pt line 12 (M/WorkspaceView.swift:81-86, 176, 332).
+        // A row is its two lines in its vertical inset: PaneRowV + 17 + 15 + PaneRowV (M/WorkspaceView.swift:230, 260, 286).
+        var paneRowHeight = 2 * DesignMetrics.Inset.PaneRowV + 17 + 15;
+        Require(Math.Abs(inactiveRow.ActualHeight - paneRowHeight) <= 0.6 && Math.Abs(activeRow.ActualHeight - paneRowHeight) <= 0.6, $"{key} ({theme}): a pane row must be {paneRowHeight} high ({DesignMetrics.Inset.PaneRowV} + the 17 title line + the 15 meta line + {DesignMetrics.Inset.PaneRowV}); got {inactiveRow.ActualHeight:F1} and, selected, {activeRow.ActualHeight:F1}");
+        // The rows whose height is their words' measure as the Mac's, held to the rows' least heights: the workspace row (the row
+        // inset around the 12pt line's 14, at least 24), the add row (around the 11pt line's 13, at least 22), the section header's
+        // 10pt line 12 (M/WorkspaceView.swift:81-86, 189, 343).
         var (workspaceRow, addRow) = ((Grid)group.Children[0], (Microsoft.UI.Xaml.Controls.Button)group.Children[^1]);
-        Require(Math.Abs(workspaceRow.ActualHeight - 34) <= 0.6 && Math.Abs(addRow.ActualHeight - 29) <= 0.6 && Math.Abs(sessionsHeaderRow.ActualHeight - 12) <= 0.6,
-            $"{key} ({theme}): the workspace row must be 34 high, the add row 29 and the section header's line 12, as on the Mac; got {workspaceRow.ActualHeight:F1}, {addRow.ActualHeight:F1}, {sessionsHeaderRow.ActualHeight:F1}");
+        var (workspaceRowHeight, addRowHeight) = (Math.Max(SidebarWorkspaceRowMin, 2 * DesignMetrics.Inset.SidebarRowV + 14), Math.Max(SidebarAddRowMin, 2 * DesignMetrics.Inset.SidebarRowV + 13));
+        Require(Math.Abs(workspaceRow.ActualHeight - workspaceRowHeight) <= 0.6 && Math.Abs(addRow.ActualHeight - addRowHeight) <= 0.6 && Math.Abs(sessionsHeaderRow.ActualHeight - 12) <= 0.6,
+            $"{key} ({theme}): the workspace row must be {workspaceRowHeight} high, the add row {addRowHeight} and the section header's line 12, as on the Mac; got {workspaceRow.ActualHeight:F1}, {addRow.ActualHeight:F1}, {sessionsHeaderRow.ActualHeight:F1}");
         var rowLeft = activeRow.TransformToVisual(sidebarSurface).TransformPoint(new Windows.Foundation.Point()).X;
-        Require(Math.Abs(rowLeft - 31) <= 0.5, $"{key} ({theme}): a pane row must start 31 from the sidebar's edge (the list's 9 and the row's 22); got {rowLeft:F1}");
+        var rowLeftWant = DesignMetrics.Spacing.Sm + 22;
+        Require(workspaces.Margin.Left == DesignMetrics.Spacing.Sm && Math.Abs(rowLeft - rowLeftWant) <= 0.5, $"{key} ({theme}): a pane row must start {rowLeftWant} from the sidebar's edge (the list's {DesignMetrics.Spacing.Sm} and the row's 22); got {rowLeft:F1}, the list's {workspaces.Margin.Left}");
         RequireClear(inactiveRow.Background, "a pane row at rest", key);
         RequireClear(inactiveEdge.BorderBrush, "a pane row's hairline at rest", key);
         // A status change re-renders the sidebar with new row buttons, so each hover check reads the
@@ -561,14 +567,14 @@ public sealed partial class MainWindow
             RequireBrush(badge, e => ((Border)e).Background, DesignToken.StopSoft, what, key: key);
             RequireBrush((TextBlock)badge.Child, e => ((TextBlock)e).Foreground, DesignToken.StopText, what + " text", key: key);
             RequireFont((TextBlock)badge.Child, DesignMetrics.Type.Badge, Microsoft.UI.Text.FontWeights.Medium, $"({theme}) {what} text", key);
-            Require(badge.Padding == new Thickness(5, 1, 5, 1) && badge.BorderThickness == new Thickness(0), $"{key} ({theme}): {what} must be padding h5 v1 with no outline; got {badge.Padding}, {badge.BorderThickness}");
+            Require(badge.Padding == new Thickness(DesignMetrics.Spacing.Xs, 1, DesignMetrics.Spacing.Xs, 1) && badge.BorderThickness == new Thickness(0), $"{key} ({theme}): {what} must be padding h5 v1 with no outline; got {badge.Padding}, {badge.BorderThickness}");
         }
 
         // The add row (M/WorkspaceView.swift:322-341).
         var add = workspaces.Children.OfType<StackPanel>().SelectMany(g => g.Children.OfType<Button>()).Single(b => AutomationProperties.GetAutomationId(b) == "workspace-add-session-" + workspaceId);
         var addLabel = (StackPanel)add.Content;
-        Require(add.Padding == new Thickness(26, 8, 12, 8) && addLabel.Children[0] is FontIcon { FontSize: 10 } && addLabel.Children[1] is TextBlock { FontSize: DesignMetrics.Type.Pill },
-            $"{key} ({theme}): the add row must be a 10pt plus and 11pt words, padding l26 r12 v8; got padding {add.Padding}");
+        Require(add.Padding == new Thickness(28, DesignMetrics.Inset.SidebarRowV, DesignMetrics.Spacing.Lg, DesignMetrics.Inset.SidebarRowV) && add.MinHeight == SidebarAddRowMin && addLabel.Children[0] is FontIcon { FontSize: 10 } && addLabel.Children[1] is TextBlock { FontSize: DesignMetrics.Type.Pill },
+            $"{key} ({theme}): the add row must be a 10pt plus and 11pt words, padding l28 r{DesignMetrics.Spacing.Lg} v{DesignMetrics.Inset.SidebarRowV}, at least {SidebarAddRowMin} high; got padding {add.Padding}, least height {add.MinHeight}");
         RequireBrush((FontIcon)addLabel.Children[0], e => ((FontIcon)e).Foreground, DesignToken.SidebarAccent, "the add row's plus", key: key);
         RequireBrush((TextBlock)addLabel.Children[1], e => ((TextBlock)e).Foreground, DesignToken.SidebarAccent, "the add row's words", key: key);
 
@@ -621,22 +627,22 @@ public sealed partial class MainWindow
         RequireBrush(layout, e => ((Control)e).Resources.TryGetValue("ComboBoxBackgroundBorderBrushFocused", out var ring) ? ring as Brush : null, DesignToken.Accent, "the layout picker's keyboard-focus ring", key: key);
         var footer = sidebarFooter!;
         RequireBrush(footer, e => ((Grid)e).BorderBrush, DesignToken.Ink, "the footer divider (M/WorkspaceView.swift:108, a Divider)", SeparatorOpacity, key);
-        Require(footer.BorderThickness == new Thickness(0, DesignMetrics.Stroke.Line, 0, 0) && footer.Padding == new Thickness(16),
-            $"{key} ({theme}): the footer must have a top Stroke.Line {DesignMetrics.Stroke.Line} and padding 16; got {footer.BorderThickness}, {footer.Padding}");
+        Require(footer.BorderThickness == new Thickness(0, DesignMetrics.Stroke.Line, 0, 0) && footer.Padding == new Thickness(DesignMetrics.Spacing.Lg, DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Lg, DesignMetrics.Spacing.Md),
+            $"{key} ({theme}): the footer must have a top Stroke.Line {DesignMetrics.Stroke.Line} and padding h{DesignMetrics.Spacing.Lg} v{DesignMetrics.Spacing.Md}; got {footer.BorderThickness}, {footer.Padding}");
         var glyph = (sidebarThemeButton?.Content as FontIcon)?.Glyph; var glyphWant = theme == "light" ? SidebarMoonGlyph : SidebarSunGlyph;
         Require(glyph == glyphWant, $"{key} ({theme}): the theme button must show the {(theme == "light" ? "moon" : "sun")} U+{(int)glyphWant[0]:X4}; got {(glyph is { Length: > 0 } g ? $"U+{(int)g[0]:X4}" : "none")}");
         // The name and current version determine the row height; the footer must fit both without clipping.
         root.UpdateLayout();
         var brandHeight = ((FrameworkElement)footer.Children[0]).ActualHeight;
-        Require(brandHeight >= 20 && Math.Abs(footer.ActualHeight - (DesignMetrics.Stroke.Line + 32 + brandHeight)) < 0.5, $"{key} ({theme}): the footer must fit the brand and version inside padding 16; got footer {footer.ActualHeight:F1}, brand {brandHeight:F1}");
+        Require(brandHeight >= 20 && Math.Abs(footer.ActualHeight - (DesignMetrics.Stroke.Line + 2 * DesignMetrics.Spacing.Md + brandHeight)) < 0.5, $"{key} ({theme}): the footer must fit the brand and version inside padding v{DesignMetrics.Spacing.Md}; got footer {footer.ActualHeight:F1}, brand {brandHeight:F1}");
         Require(settingsButton.Content is FontIcon { FontSize: SidebarFooterGlyph } && settingsButton.Width == SidebarFooterButton && sidebarThemeButton!.Width == SidebarFooterButton,
             $"{key} ({theme}): the footer's symbols must be {SidebarFooterGlyph}pt in {SidebarFooterButton}pt hit areas; got {settingsButton.Width} and {sidebarThemeButton!.Width}");
-        // The Mac's gear stands with its centre 24 from the sidebar's dividing line and the theme symbol's 24.5 before it
-        // (docs/design-system/screens/01-main-mighty-diagram-light.webp); layout rounding may move either by under a pixel.
+        // The Mac's gear stands with its centre SidebarFooterGearCentre inside the footer's padding and the theme symbol's 24.5
+        // before it (docs/design-system/screens/01-main-mighty-diagram-light.webp); layout rounding may move either by under a pixel.
         double Centre(FrameworkElement button) => button.TransformToVisual(footer).TransformPoint(new Windows.Foundation.Point(button.ActualWidth / 2, 0)).X;
         var (gearCentre, themeCentre) = (Centre(settingsButton), Centre(sidebarThemeButton));
-        Require(Math.Abs(footer.ActualWidth - gearCentre - (16 + SidebarFooterGearCentre)) <= 0.75 && Math.Abs(gearCentre - themeCentre - SidebarFooterPitch) <= 0.75,
-            $"{key} ({theme}): the gear's centre must be {16 + SidebarFooterGearCentre} from the footer's trailing edge and the theme symbol's {SidebarFooterPitch} before it, as the Mac's; got {footer.ActualWidth - gearCentre:F1} and {gearCentre - themeCentre:F1}");
+        Require(Math.Abs(footer.ActualWidth - gearCentre - (DesignMetrics.Spacing.Lg + SidebarFooterGearCentre)) <= 0.75 && Math.Abs(gearCentre - themeCentre - SidebarFooterPitch) <= 0.75,
+            $"{key} ({theme}): the gear's centre must be {DesignMetrics.Spacing.Lg + SidebarFooterGearCentre} from the footer's trailing edge and the theme symbol's {SidebarFooterPitch} before it, as the Mac's; got {footer.ActualWidth - gearCentre:F1} and {gearCentre - themeCentre:F1}");
         await CaptureShellStates(theme);
     }
 
@@ -652,16 +658,16 @@ public sealed partial class MainWindow
         var theme = SmokeTheme;
         var shown = counts.Entries.Where(e => e.Entry.Visibility == Visibility.Visible).Select(e => e.Tone).ToList();
         if (allThree) Require(shown.Take(3).SequenceEqual([DesignTone.Wait, DesignTone.Run, DesignTone.Err]), $"{key} ({theme}): {what} must show wait, run, err in that order; got {string.Join(", ", shown)}");
-        Require(counts.View.Spacing == 9 && counts.View.Children.Select(child => child as StackPanel).SequenceEqual(counts.Entries.Select(e => e.Entry)),
-            $"{key} ({theme}): {what} must lay its entries out in the Mac's order, 9 apart; got spacing {counts.View.Spacing}");
+        Require(counts.View.Spacing == DesignMetrics.Spacing.Sm && counts.View.Children.Select(child => child as StackPanel).SequenceEqual(counts.Entries.Select(e => e.Entry)),
+            $"{key} ({theme}): {what} must lay its entries out in the Mac's order, {DesignMetrics.Spacing.Sm} apart; got spacing {counts.View.Spacing}");
         foreach (var (tone, mark, count, entry, word) in counts.Entries)
         {
             var (a, b) = StatusCountsView.Counted(badges, tone); var value = a + b;
             Require((entry.Visibility == Visibility.Visible) == (value > 0), $"{key} ({theme}): {what}' {tone} entry must be {(value > 0 ? "shown" : "hidden")} for {value}; got {entry.Visibility}");
             if (value == 0) continue;
             var glyph = StatusGlyph.Kind(tone);
-            Require(count.Text == value.ToString(System.Globalization.CultureInfo.InvariantCulture) && mark.Glyph == glyph && mark.View.Width == 12 && entry.Spacing == 3,
-                $"{key} ({theme}): {what}' {tone} entry must be a 12pt {glyph} and {value}, 3 apart; got {mark.View.Width}pt {mark.Glyph} and '{count.Text}', spacing {entry.Spacing}");
+            Require(count.Text == value.ToString(System.Globalization.CultureInfo.InvariantCulture) && mark.Glyph == glyph && mark.View.Width == 12 && entry.Spacing == DesignMetrics.Spacing.Xxs,
+                $"{key} ({theme}): {what}' {tone} entry must be a 12pt {glyph} and {value}, {DesignMetrics.Spacing.Xxs} apart; got {mark.View.Width}pt {mark.Glyph} and '{count.Text}', spacing {entry.Spacing}");
             RequireFont(count, DesignMetrics.Type.Pill, Microsoft.UI.Text.FontWeights.Bold, $"({theme}) {what}' {tone} count", key);
             RequireBrush(count, e => ((TextBlock)e).Foreground, DesignToken.Ink, $"{what}' {tone} count", key: key);
             if (word is null) continue;
@@ -744,8 +750,8 @@ public sealed partial class MainWindow
             var strays = VisualChildren(strip).OfType<Button>().Where(button => !o.tabCells.Values.Any(parts => ReferenceEquals(parts.Tab, button) || ReferenceEquals(parts.Close, button))).Select(AutomationProperties.GetName).ToList();
             Require(strays.Count == 0, $"{key} ({theme}): the tab strip must hold only its tabs' buttons; also found {string.Join(", ", strays)}");
             var stripScroll = strip.Children.OfType<ScrollViewer>().Single();
-            Require(stripScroll.HorizontalScrollBarVisibility == ScrollBarVisibility.Hidden && stripScroll.Content is StackPanel { Spacing: 3 } tabRowPanel && tabRowPanel.Padding == new Thickness(5, TabStripPadding, 5, TabStripPadding),
-                $"{key} ({theme}): the tab strip must scroll sideways with no scroll bar, its tabs 3 apart in padding h5 v{TabStripPadding}; got {stripScroll.HorizontalScrollBarVisibility}, {(stripScroll.Content as StackPanel)?.Spacing}, {(stripScroll.Content as StackPanel)?.Padding}");
+            Require(stripScroll.HorizontalScrollBarVisibility == ScrollBarVisibility.Hidden && stripScroll.Content is StackPanel { Spacing: DesignMetrics.Spacing.Xxs } tabRowPanel && tabRowPanel.Padding == new Thickness(DesignMetrics.Spacing.Xs, TabStripPadding, DesignMetrics.Spacing.Xs, TabStripPadding),
+                $"{key} ({theme}): the tab strip must scroll sideways with no scroll bar, its tabs {DesignMetrics.Spacing.Xxs} apart in padding h{DesignMetrics.Spacing.Xs} v{TabStripPadding}; got {stripScroll.HorizontalScrollBarVisibility}, {(stripScroll.Content as StackPanel)?.Spacing}, {(stripScroll.Content as StackPanel)?.Padding}");
             bool Inside(FrameworkElement inner, FrameworkElement outer, out string where)
             {
                 var top = inner.TransformToVisual(outer).TransformPoint(new Windows.Foundation.Point());
@@ -764,20 +770,20 @@ public sealed partial class MainWindow
             o.RequireBrush(shape, e => ((Border)e).Background, DesignToken.Card, "the selected tab", key: key);
             o.RequireBrush(shape, e => ((Border)e).BorderBrush, DesignToken.Line, "the selected tab's border", key: key);
             Require(shape.CornerRadius == new CornerRadius(DesignMetrics.Radius.Segment) && shape.BorderThickness == new Thickness(DesignMetrics.Stroke.Line) && Math.Abs(shape.ActualHeight - cell.ActualHeight) < .5
-                && tab.MinWidth == 56 && tab.Padding == new Thickness(10, 0, 6, 0),
-                $"{key} ({theme}): the selected tab must be a radius {DesignMetrics.Radius.Segment} shape with a Stroke.Line border filling its cell, at least 56 wide, padding l10 r6; got {shape.CornerRadius}, {shape.BorderThickness}, {shape.ActualHeight:F1}/{cell.ActualHeight:F1}, {tab.MinWidth}, {tab.Padding}");
+                && tab.MinWidth == 56 && tab.Padding == new Thickness(DesignMetrics.Inset.TabLeading, 0, DesignMetrics.Inset.TabTrailing, 0),
+                $"{key} ({theme}): the selected tab must be a radius {DesignMetrics.Radius.Segment} shape with a Stroke.Line border filling its cell, at least 56 wide, padding Inset.Tab l{DesignMetrics.Inset.TabLeading} r{DesignMetrics.Inset.TabTrailing}; got {shape.CornerRadius}, {shape.BorderThickness}, {shape.ActualHeight:F1}/{cell.ActualHeight:F1}, {tab.MinWidth}, {tab.Padding}");
             RequireFont(title, DesignMetrics.Type.Pill, Microsoft.UI.Text.FontWeights.SemiBold, $"({theme}) the selected tab's title", key);
             Require(title.MaxWidth == 125, $"{key} ({theme}): a tab title must be at most 125 wide; got {title.MaxWidth}");
             o.RequireBrush(title, e => ((TextBlock)e).Foreground, DesignToken.Ink, "the selected tab's title", key: key);
             var closeRow = cell.Children.OfType<StackPanel>().Single();
-            Require(close.Width == 20 && close.Height == DesignMetrics.Layout.Tab && close.Content is FontIcon && closeRow.Spacing == 0 && closeRow.Padding == new Thickness(0, 0, 2, 0) && ReferenceEquals(closeRow.Children[closeRow.Children.Count - 1], close),
-                $"{key} ({theme}): a tab must end with its close, an x in a 20x{DesignMetrics.Layout.Tab} box with 2 after it (M/PaneDockView.swift); got {close.Width}x{close.Height}, row padding {closeRow.Padding}");
+            Require(close.Width == 20 && close.Height == DesignMetrics.Layout.Tab && close.Content is FontIcon && closeRow.Spacing == 0 && closeRow.Padding == new Thickness(0, 0, DesignMetrics.Spacing.Xxs, 0) && ReferenceEquals(closeRow.Children[closeRow.Children.Count - 1], close),
+                $"{key} ({theme}): a tab must end with its close, an x in a 20x{DesignMetrics.Layout.Tab} box with {DesignMetrics.Spacing.Xxs} after it (M/PaneDockView.swift); got {close.Width}x{close.Height}, row padding {closeRow.Padding}");
             o.RequireBrush(close, e => ((Control)e).Foreground, DesignToken.Ink2, "a tab's close", key: key);
             // The Mac's tab order puts the 12pt mark last; it shows for a counted pane that is not idle.
             var tabRow = (StackPanel)tab.Content; var tabMark = o.tabIndicators[id];
-            // An agent's tab leads with its mark in the Mac's frame, 1.15 times the 10pt size (M/ProviderIcon.swift:18), 6 before the title.
-            Require(tabRow.Spacing == 6 && tabRow.Children[0] is Microsoft.UI.Xaml.Shapes.Path { Width: 11.5, Height: 11.5 },
-                $"{key} ({theme}): an agent tab must lead with its 11.5pt mark, 6 before the title; got spacing {tabRow.Spacing} and {tabRow.Children[0].GetType().Name} {(tabRow.Children[0] as FrameworkElement)?.Width}");
+            // An agent's tab leads with its mark in the Mac's frame, 1.15 times the 10pt size (M/ProviderIcon.swift:18), Spacing.Sm before the title.
+            Require(tabRow.Spacing == DesignMetrics.Spacing.Sm && tabRow.Children[0] is Microsoft.UI.Xaml.Shapes.Path { Width: 11.5, Height: 11.5 },
+                $"{key} ({theme}): an agent tab must lead with its 11.5pt mark, {DesignMetrics.Spacing.Sm} before the title; got spacing {tabRow.Spacing} and {tabRow.Children[0].GetType().Name} {(tabRow.Children[0] as FrameworkElement)?.Width}");
             var markShown = WorkDashboard.IsCounted(pane.Kind) && StatusGlyph.Tone(StatusGlyph.DisplayStatus(pane.Status, PendingRequests)) != DesignTone.Idle;
             Require(ReferenceEquals(tabRow.Children[tabRow.Children.Count - 1], tabMark.View) && tabMark.View.Width == StatusGlyph.TabSize
                 && tabMark.View.Visibility == (markShown ? Visibility.Visible : Visibility.Collapsed),
@@ -792,8 +798,8 @@ public sealed partial class MainWindow
 
             // The Layout.PaneHeader header line.
             var header = paneHeader ?? throw new InvalidOperationException($"{key} ({theme}): the pane has no header");
-            Require(header.Height == DesignMetrics.Layout.PaneHeader && Math.Abs(header.ActualHeight - DesignMetrics.Layout.PaneHeader) < .5 && header.Padding == new Thickness(14, 0, 10, 0),
-                $"{key} ({theme}): the pane header must be Layout.PaneHeader {DesignMetrics.Layout.PaneHeader} tall with padding l14 r10; got {header.Height} (actual {header.ActualHeight:F1}), {header.Padding}");
+            Require(header.Height == DesignMetrics.Layout.PaneHeader && Math.Abs(header.ActualHeight - DesignMetrics.Layout.PaneHeader) < .5 && header.Padding == new Thickness(DesignMetrics.Inset.PaneHeaderLeading, 0, DesignMetrics.Inset.PaneHeaderTrailing, 0),
+                $"{key} ({theme}): the pane header must be Layout.PaneHeader {DesignMetrics.Layout.PaneHeader} tall with padding Inset.PaneHeader l{DesignMetrics.Inset.PaneHeaderLeading} r{DesignMetrics.Inset.PaneHeaderTrailing}; got {header.Height} (actual {header.ActualHeight:F1}), {header.Padding}");
             Require(Math.Abs(header.ActualWidth - (Container.ActualWidth - 2 * DesignMetrics.Stroke.Line)) < 1,
                 $"{key} ({theme}): the pane header must run edge to edge inside the card ({Container.ActualWidth - 2 * DesignMetrics.Stroke.Line:F1}); got {header.ActualWidth:F1}");
             o.RequireBrush(header, e => ((Grid)e).Background, DesignToken.Card, "the pane header", key: key);
@@ -912,7 +918,7 @@ public sealed partial class MainWindow
             // The Default | Mighty switch.
             Require(modeSwitch is not null && modeDefaultChip is not null && modeMightyChip is not null && modeDefaultButton is not null && modeMightyButton is not null,
                 $"{key} ({theme}): the smoke pane shows no Default | Mighty switch");
-            Require(ReferenceEquals(modeSwitch!.Background, b.SegmentTrack) && modeSwitch.CornerRadius == new CornerRadius(DesignMetrics.Radius.Row) && modeSwitch.Padding == new Thickness(2),
+            Require(ReferenceEquals(modeSwitch!.Background, b.SegmentTrack) && modeSwitch.CornerRadius == new CornerRadius(DesignMetrics.Radius.Row) && modeSwitch.Padding == new Thickness(DesignMetrics.Spacing.Xxs),
                 $"{key} ({theme}): the switch track must be the shared segmentTrack brush, radius {DesignMetrics.Radius.Row}, padding 2; got {Describe(modeSwitch.Background)}, {modeSwitch.CornerRadius}, {modeSwitch.Padding}");
             o.RequireHex(modeSwitch.Background, o.DerivedHex("segmentTrack"), "derived.segmentTrack", "the switch track", key);
             var mighty = pane.AgentViewMode == "mighty";
@@ -930,14 +936,14 @@ public sealed partial class MainWindow
                 $"{key} ({theme}): the chosen side must be its caster, then a segmentOn face of radius {DesignMetrics.Radius.Segment} over the caster's shadow, then the button; got {chipCell?.Children.Count.ToString() ?? "no"} parts");
             foreach (var (button, ink, what) in new[] { (onButton, DesignToken.Ink, "the chosen side"), (offButton, DesignToken.Ink2, "the other side") })
             {
-                Require(button.Height == 20 && button.CornerRadius == new CornerRadius(DesignMetrics.Radius.Segment) && button.Padding == new Thickness(8, 0, 8, 0),
-                    $"{key} ({theme}): {what} of the switch must be 20 tall, radius {DesignMetrics.Radius.Segment}, padding h8; got {button.Height}, {button.CornerRadius}, {button.Padding}");
+                Require(button.Height == 20 && button.CornerRadius == new CornerRadius(DesignMetrics.Radius.Segment) && button.Padding == new Thickness(DesignMetrics.Spacing.Md, 0, DesignMetrics.Spacing.Md, 0),
+                    $"{key} ({theme}): {what} of the switch must be 20 tall, radius {DesignMetrics.Radius.Segment}, padding h{DesignMetrics.Spacing.Md}; got {button.Height}, {button.CornerRadius}, {button.Padding}");
                 var words = ((Panel)button.Content).Children.OfType<TextBlock>().Single();
                 RequireFont(words, DesignMetrics.Type.Pill, Microsoft.UI.Text.FontWeights.SemiBold, $"({theme}) {what}'s words", key);
                 o.RequireBrush(words, e => ((TextBlock)e).Foreground, ink, $"{what}'s words", key: key);
                 // The symbol stands in the Mac Label's 15x12 slot, 8 before the word and in its ink; the word shows at every width.
                 var option = (StackPanel)button.Content;
-                Require(option.Spacing == 8 && option.Children[0] is Microsoft.UI.Xaml.Shapes.Path { Width: 15, Height: 12 } symbol && ReferenceEquals(symbol.Fill, words.Foreground) && words.Visibility == Visibility.Visible,
+                Require(option.Spacing == DesignMetrics.Spacing.Md && option.Children[0] is Microsoft.UI.Xaml.Shapes.Path { Width: 15, Height: 12 } symbol && ReferenceEquals(symbol.Fill, words.Foreground) && words.Visibility == Visibility.Visible,
                     $"{key} ({theme}): {what} of the switch must be a drawn symbol in a 15x12 slot, 8 before its word and in the word's ink; got spacing {option.Spacing}, {option.Children[0].GetType().Name}");
             }
 
@@ -952,13 +958,13 @@ public sealed partial class MainWindow
             var cardShadow = CardShadow.Of(composerShadow);
             Require(cardShadow is not null && Math.Abs(cardShadow.Opacity - CardShadow.Composer) < .001 && Math.Abs(cardShadow.Offset.Y - 1) < .01 && composerShadow.RadiusX == DesignMetrics.Radius.Composer,
                 $"{key} ({theme}): the composer card must cast a {CardShadow.Composer} shadow one point down; got {(cardShadow is null ? "none" : $"{cardShadow.Opacity} at y {cardShadow.Offset.Y}")}");
-            // The card stands 12 from the pane's edges on every side and its parts 9 apart (M/SessionPaneView.swift:519, 660).
+            // The card stands Inset.ComposerOuter from the pane's edges on every side and its parts Inset.ComposerStack apart (M/SessionPaneView.swift:548, 690).
             var cardAt = card.TransformToVisual(Container).TransformPoint(new Windows.Foundation.Point());
             var inset = DesignMetrics.Stroke.Line + ComposerMargin;
             Require(Math.Abs(cardAt.X - inset) < .6 && Math.Abs(Container.ActualWidth - cardAt.X - card.ActualWidth - inset) < .6 && Math.Abs(Container.ActualHeight - cardAt.Y - card.ActualHeight - inset) < .6,
                 $"{key} ({theme}): the composer card must stand {ComposerMargin} inside the pane's edge at the sides and the bottom; got left {cardAt.X:F1}, right {Container.ActualWidth - cardAt.X - card.ActualWidth:F1}, bottom {Container.ActualHeight - cardAt.Y - card.ActualHeight:F1} (with the {DesignMetrics.Stroke.Line} pane border)");
-            Require(composerPanel.Spacing == 9, $"{key} ({theme}): the composer's parts must be 9 apart; got {composerPanel.Spacing}");
-            // With nothing between them, the conversation's surface ends the same 12 over the card (M/SessionPaneView.swift:147-161, 660).
+            Require(ComposerMargin == DesignMetrics.Inset.ComposerOuter && composerPanel.Spacing == DesignMetrics.Inset.ComposerStack, $"{key} ({theme}): the composer card must stand Inset.ComposerOuter {DesignMetrics.Inset.ComposerOuter} in and its parts Inset.ComposerStack {DesignMetrics.Inset.ComposerStack} apart; got {ComposerMargin} and {composerPanel.Spacing}");
+            // With nothing between them, the conversation's surface ends the same Inset.ComposerOuter over the card (M/SessionPaneView.swift:147-161, 690).
             var surface = output.View;
             if (surface.Visibility == Visibility.Visible && surface.ActualHeight > 0 && new FrameworkElement[] { nextActionsHost, toolPermissionHost, agentWebPromptScroll }.All(part => part.Visibility == Visibility.Collapsed || part.ActualHeight == 0))
             {
@@ -992,10 +998,10 @@ public sealed partial class MainWindow
             }
             finally { previousFocus?.Focus(FocusState.Programmatic); composerFocused = input.FocusState != FocusState.Unfocused; PaintComposerRing(); }
             RequireShared(input.Resources["TextControlBackgroundFocused"] as Brush, b.Transparent, "the editor's focused fill", key);
-            // The editor: 13pt, one line 20 high, six at most, set 8 in from the card with the text view's own 5 (M/NativeComposerEditor.swift:32-33, M/SessionPaneView.swift:583).
-            Require(input.FontSize == DesignMetrics.Type.Body && input.MinHeight == ComposerLine && input.Padding.Left == 5 && inputRow.Margin.Left == 8 && inputRow.Margin.Right == 8,
-                $"{key} ({theme}): the editor must be {DesignMetrics.Type.Body}pt, {ComposerLine} high for one line, padded 5 inside a row 8 from the card's edge; got {input.FontSize}pt, min {input.MinHeight}, padding {input.Padding}, row margin {inputRow.Margin}");
-            // Typed words start at the row's 8 and the text view's 5, with no room kept for the hidden chip (the Mac's HStack spaces only what it
+            // The editor: 13pt, one line 20 high, six at most, set Inset.ComposerInnerH in from the card with the text view's own 5 (M/NativeComposerEditor.swift:32-33, M/SessionPaneView.swift:612).
+            Require(input.FontSize == DesignMetrics.Type.Body && input.MinHeight == ComposerLine && input.Padding.Left == 5 && inputRow.Margin.Left == DesignMetrics.Inset.ComposerInnerH && inputRow.Margin.Right == DesignMetrics.Inset.ComposerInnerH,
+                $"{key} ({theme}): the editor must be {DesignMetrics.Type.Body}pt, {ComposerLine} high for one line, padded 5 inside a row {DesignMetrics.Inset.ComposerInnerH} from the card's edge; got {input.FontSize}pt, min {input.MinHeight}, padding {input.Padding}, row margin {inputRow.Margin}");
+            // Typed words start at the row's inset and the text view's 5, with no room kept for the hidden chip (the Mac's HStack spaces only what it
             // shows); they stand 2 up in their line box; the placeholder starts 2 after them, as the Mac's label does (M/TextEditorHeightReader.swift:86, 93).
             var drawnPlaceholder = VisualChildren(input).OfType<TextBlock>().FirstOrDefault(part => part.Name == "PlaceholderTextContentPresenter");
             Require(inputRow.ColumnSpacing == 0 && styleEnterChip.Margin == new Thickness(0, 0, ComposerChipGap, 0) && input.Margin == new Thickness(0, -ComposerTextLift, 0, ComposerTextLift)
@@ -1007,11 +1013,11 @@ public sealed partial class MainWindow
             o.RequireBrush(input, e => ((TextBox)e).PlaceholderForeground, DesignToken.Ink, "the editor's placeholder at rest", DesignBrushes.TertiaryOpacity, key);
             RequireShared(drawnPlaceholder!.Foreground, b.Tertiary, "the editor's drawn placeholder", key);
 
-            // The toolbar (M/SessionPaneView.swift:707-771, M/ComposerControls.swift:39-41): one Layout.Toolbar row 10 from the card's sides,
-            // the pills leading and 6 apart in the Mac's order, the right cluster trailing.
-            Require(toolbar.Height == DesignMetrics.Layout.Toolbar && toolbar.Margin.Left == 10 && toolbar.Margin.Right == 10 && selectors.Spacing == ToolbarSpacing && toolbarActions.Spacing == ToolbarSpacing
+            // The toolbar (M/SessionPaneView.swift:707-771, M/ComposerControls.swift:39-41): one Layout.Toolbar row Inset.ComposerInnerH from the card's sides,
+            // the pills leading and Spacing.Sm apart in the Mac's order, the right cluster trailing.
+            Require(toolbar.Height == DesignMetrics.Layout.Toolbar && toolbar.Margin.Left == DesignMetrics.Inset.ComposerInnerH && toolbar.Margin.Right == DesignMetrics.Inset.ComposerInnerH && ToolbarSpacing == DesignMetrics.Spacing.Sm && selectors.Spacing == ToolbarSpacing && toolbarActions.Spacing == ToolbarSpacing
                 && selectors.HorizontalAlignment == HorizontalAlignment.Left,
-                $"{key} ({theme}): the toolbar must be {DesignMetrics.Layout.Toolbar} high, 10 from the card's sides, its controls {ToolbarSpacing} apart and the pills leading; got {toolbar.Height}, {toolbar.Margin}, {selectors.Spacing}/{toolbarActions.Spacing}, {selectors.HorizontalAlignment}");
+                $"{key} ({theme}): the toolbar must be {DesignMetrics.Layout.Toolbar} high, {DesignMetrics.Inset.ComposerInnerH} from the card's sides, its controls {ToolbarSpacing} apart and the pills leading; got {toolbar.Height}, {toolbar.Margin}, {selectors.Spacing}/{toolbarActions.Spacing}, {selectors.HorizontalAlignment}");
             var order = selectors.Children.OfType<Control>().ToList();
             Require(order.SequenceEqual(new Control[] { attach, model, effort, permission, fast, more, options }),
                 $"{key} ({theme}): the pills must stand in the Mac's order: attach, model, effort, permission, Fast, …, options");
@@ -1029,11 +1035,11 @@ public sealed partial class MainWindow
                 o.RequireClear(pill.Background, what + "'s button at rest", key);
                 o.RequireSubtle(await StateBackground(pill, "PointerOver", b.Subtle, key), what + "'s button under the pointer", key);
             }
-            // A pill is as wide as its contents (never stretched): the 14pt symbol box, the words and the 7pt chevron 5 apart, 8 in from the edge.
+            // A pill is as wide as its contents (never stretched): the 14pt symbol box, the words and the 7pt chevron 5 apart, Spacing.Md in from the edge.
             var modelParts = Parts(model); var modelRow = (StackPanel)modelParts.Face.Child;
-            Require(modelRow.Spacing == 5 && modelParts.IconHost.Width == 14 && modelParts.IconHost.Height == 14 && modelParts.Face.Padding.Left + DesignMetrics.Stroke.Line == 8 && double.IsNaN(model.Width) && model.HorizontalAlignment != HorizontalAlignment.Stretch,
-                $"{key} ({theme}): the model pill must be sized to its contents with a 14pt symbol box, spacing 5 and padding 8; got spacing {modelRow.Spacing}, box {modelParts.IconHost.Width}x{modelParts.IconHost.Height}, padding {modelParts.Face.Padding}, width {model.Width}");
-            Require(Math.Abs(model.ActualWidth - (modelRow.ActualWidth + 16)) < 1 && model.ActualWidth < selectors.ActualWidth,
+            Require(modelRow.Spacing == 5 && modelParts.IconHost.Width == 14 && modelParts.IconHost.Height == 14 && modelParts.Face.Padding.Left + DesignMetrics.Stroke.Line == DesignMetrics.Spacing.Md && double.IsNaN(model.Width) && model.HorizontalAlignment != HorizontalAlignment.Stretch,
+                $"{key} ({theme}): the model pill must be sized to its contents with a 14pt symbol box, spacing 5 and padding {DesignMetrics.Spacing.Md}; got spacing {modelRow.Spacing}, box {modelParts.IconHost.Width}x{modelParts.IconHost.Height}, padding {modelParts.Face.Padding}, width {model.Width}");
+            Require(Math.Abs(model.ActualWidth - (modelRow.ActualWidth + 2 * DesignMetrics.Spacing.Md)) < 1 && model.ActualWidth < selectors.ActualWidth,
                 $"{key} ({theme}): the model pill must be exactly its contents plus the padding wide; got {model.ActualWidth:F1} for contents {modelRow.ActualWidth:F1}");
             Require(modelParts.IconHost.Children.Count == 1 && modelParts.IconHost.Children[0] is Microsoft.UI.Xaml.Shapes.Path && modelParts.Icon is null && pillProvider == pane.Provider,
                 $"{key} ({theme}): the model pill must carry its provider's mark ({pane.Provider}); got {pillProvider ?? "none"}");

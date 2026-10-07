@@ -16,15 +16,15 @@ public sealed partial class MainWindow
     private readonly Dictionary<string, TextBlock> sidebarTitles = [];
     private Button? sidebarThemeButton;
     /// <summary>The search field's rounded subtle wash around the magnifier and the text box (M/WorkspaceView.swift:71-77).</summary>
-    private readonly Border sidebarSearchBox = new() { CornerRadius = new CornerRadius(DesignMetrics.Radius.Search), Padding = new Thickness(9), Margin = new Thickness(14, 10, 14, 0) };
+    private readonly Border sidebarSearchBox = new() { CornerRadius = new CornerRadius(DesignMetrics.Radius.Search), Padding = new Thickness(DesignMetrics.Inset.SidebarSearch), Margin = new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Md, 0) };
     private readonly FontIcon sidebarSearchIcon = new() { Glyph = "\uE721", FontSize = 13, VerticalAlignment = VerticalAlignment.Center };
     /// <summary>The height of the search field's row: the line of AppKit's 12pt text field (M/WorkspaceView.swift:73).</summary>
     internal const double SearchRowHeight = 15;
     /// <summary>The count beside the section header's words, 10pt mono.</summary>
     private readonly TextBlock sessionsCount = new() { FontSize = DesignMetrics.Type.Small, FontFamily = new FontFamily(DesignMetrics.Font.Mono), VerticalAlignment = VerticalAlignment.Center };
-    private readonly StackPanel sessionsHeaderRow = new() { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(20, 20, 20, 11) };
+    private readonly StackPanel sessionsHeaderRow = new() { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, Margin = new Thickness(DesignMetrics.Inset.SidebarSectionH, DesignMetrics.Inset.SidebarSectionT, DesignMetrics.Inset.SidebarSectionH, DesignMetrics.Inset.SidebarSectionB) };
     /// <summary>What the list says when it lists no workspace: none match the search, or none yet (M/WorkspaceView.swift:89-93).</summary>
-    private readonly TextBlock sidebarEmpty = new() { FontSize = 12, TextWrapping = TextWrapping.Wrap, Padding = new Thickness(16), Margin = new Thickness(9, 0, 9, 0), Visibility = Visibility.Collapsed };
+    private readonly TextBlock sidebarEmpty = new() { FontSize = 12, TextWrapping = TextWrapping.Wrap, Padding = new Thickness(DesignMetrics.Spacing.Lg), Margin = new Thickness(DesignMetrics.Spacing.Sm, 0, DesignMetrics.Spacing.Sm, 0), Visibility = Visibility.Collapsed };
     /// <summary>The open-folder button's words, set again when the language changes.</summary>
     private readonly TextBlock addFolderLabel = new() { FontSize = 12, Margin = MacLine(), VerticalAlignment = VerticalAlignment.Center };
     private Border? sidebarFooterBeta;
@@ -54,7 +54,7 @@ public sealed partial class MainWindow
         // Segoe's (measured on docs/design-system/crops/sidebar-top-*.webp: the symbol 10.5 and the words 31.5 from the field's edge).
         sidebarSearchIcon.Margin = new Thickness(1.5, 0, 0, 0); search.Margin = new Thickness(0, -1, 0, 0);
         // The row is the Mac text field's 12pt line, so the field is 33 high (9 + 15 + 9) as on the Mac.
-        var row = new Grid { ColumnSpacing = 7, Height = SearchRowHeight };
+        var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, Height = SearchRowHeight };
         row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
         row.Children.Add(sidebarSearchIcon); Grid.SetColumn(search, 1); row.Children.Add(search);
         sidebarSearchBox.Child = row;
@@ -78,12 +78,12 @@ public sealed partial class MainWindow
     /// </summary>
     private void StyleSidebarOpenFolder()
     {
-        var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
         label.Children.Add(new FontIcon { Glyph = "\uE8F4", FontSize = 12, VerticalAlignment = VerticalAlignment.Center });
         label.Children.Add(addFolderLabel); addFolderButton.Content = label;
         addFolderButton.Foreground = brushes.Brush(DesignToken.Ink);
         addFolderButton.HorizontalAlignment = HorizontalAlignment.Stretch; addFolderButton.HorizontalContentAlignment = HorizontalAlignment.Left;
-        addFolderButton.FontSize = 12; addFolderButton.Padding = new Thickness(10); addFolderButton.Margin = new Thickness(14, 0, 14, 12);
+        addFolderButton.FontSize = 12; addFolderButton.Padding = new Thickness(DesignMetrics.Spacing.Sm); addFolderButton.Margin = new Thickness(DesignMetrics.Spacing.Md, 0, DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Md);
         PlainSidebarButton(addFolderButton, brushes.Subtle, brushes.Subtle, radius: DesignMetrics.Radius.Search);
     }
 
@@ -103,14 +103,14 @@ public sealed partial class MainWindow
         foreach (var key in new[] { "ComboBoxForeground", "ComboBoxForegroundPointerOver", "ComboBoxForegroundPressed", "ComboBoxForegroundFocused", "ComboBoxForegroundFocusedPressed" }) layout.Resources[key] = brushes.Brush(DesignToken.Ink);
         foreach (var key in new[] { "ComboBoxDropDownGlyphForeground", "ComboBoxDropDownGlyphForegroundFocused", "ComboBoxDropDownGlyphForegroundFocusedPressed" }) layout.Resources[key] = brushes.Brush(DesignToken.SidebarInk2);
         AutomationProperties.SetAutomationId(layout, "sidebar-layout");
-        var tools = new Grid { Margin = new Thickness(14, 8, 14, 8) };
+        var tools = new Grid { Margin = new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm) };
         tools.Children.Add(layout);
         return tools;
     }
 
     /// <summary>
     /// The footer under a full-width <c>line</c> (M/WorkspaceView.swift:108-120): the app icon 20,
-    /// 9 from "Mighty Claude" 12pt semibold with the app's 베타 capsule right after it, then the
+    /// <c>Spacing.Md</c> from "Mighty Claude" 12pt semibold with the app's 베타 capsule right after it, then the
     /// help, theme and settings symbols, plain; the current app version sits below the name in muted 10pt mono.
     /// Help is Windows' own (the Mac's is in its Help menu), set the same pitch before the theme symbol.
     /// </summary>
@@ -118,15 +118,15 @@ public sealed partial class MainWindow
     {
         // Mac groups the brand and the two global actions below the project tree.
         // Keep that grouping while retaining native focus, tooltip and UIA behavior.
-        var footer = sidebarFooter = new Grid { Padding = new Thickness(16), BorderThickness = new Thickness(0, DesignMetrics.Stroke.Line, 0, 0), BorderBrush = Separator };
+        var footer = sidebarFooter = new Grid { Padding = SidebarFooterPadding, BorderThickness = new Thickness(0, DesignMetrics.Stroke.Line, 0, 0), BorderBrush = Separator };
         AutomationProperties.SetAutomationId(footer, "sidebar-footer");
         footer.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
         footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         // Left-aligned, so the name takes only its own width and the capsule stays right after it while the name still trims.
-        var brand = new Grid { HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center, RowSpacing = 2 };
+        var brand = new Grid { HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center, RowSpacing = DesignMetrics.Spacing.Xxs };
         brand.RowDefinitions.Add(new() { Height = GridLength.Auto }); brand.RowDefinitions.Add(new() { Height = GridLength.Auto });
         brand.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); brand.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); brand.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        var image = new Image { Source = new BitmapImage(new Uri("ms-appx:///Assets/mightyclaude.png")), Width = 20, Height = 20, Margin = new Thickness(0, 0, 9, 0) };
+        var image = new Image { Source = new BitmapImage(new Uri("ms-appx:///Assets/mightyclaude.png")), Width = 20, Height = 20, Margin = new Thickness(0, 0, DesignMetrics.Spacing.Md, 0) };
         AutomationProperties.SetAccessibilityView(image, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw); Grid.SetRowSpan(image, 2); brand.Children.Add(image);
         var title = new TextBlock { Text = "Mighty Claude", FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
         Grid.SetColumn(title, 1); brand.Children.Add(title);
@@ -135,7 +135,7 @@ public sealed partial class MainWindow
         Grid.SetColumn(version, 1); Grid.SetColumnSpan(version, 2); Grid.SetRow(version, 1); brand.Children.Add(version);
         // The whole Windows app is a beta: the same capsule as a beta agent's, 6 after the name (M/BetaBadge.swift, M/WorkspaceView.swift:225).
         brandBeta.Foreground = brushes.Brush(DesignToken.StopText);
-        var beta = sidebarFooterBeta = new Border { Child = brandBeta, CornerRadius = new CornerRadius(7), Background = brushes.Brush(DesignToken.StopSoft), Padding = new Thickness(5, 1, 5, 1), Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+        var beta = sidebarFooterBeta = new Border { Child = brandBeta, CornerRadius = new CornerRadius(7), Background = brushes.Brush(DesignToken.StopSoft), Padding = new Thickness(DesignMetrics.Spacing.Xs, 1, DesignMetrics.Spacing.Xs, 1), Margin = new Thickness(DesignMetrics.Spacing.Sm, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
         Grid.SetColumn(beta, 2); brand.Children.Add(beta); footer.Children.Add(brand);
         var help = BuildSidebarHelpButton(); Grid.SetColumn(help, 1); footer.Children.Add(help);
         var theme = BuildSidebarThemeButton(); Grid.SetColumn(theme, 2); footer.Children.Add(theme);
@@ -150,7 +150,7 @@ public sealed partial class MainWindow
             button.Width = SidebarFooterButton; button.Height = SidebarFooterButton; button.MinWidth = 0; button.MinHeight = 0; button.Padding = new Thickness(0);
             button.Foreground = brushes.Brush(DesignToken.Ink); PlainSidebarButton(button, brushes.Transparent, brushes.Subtle, radius: DesignMetrics.Radius.Search);
         }
-        help.Margin = new Thickness(18 - inset, -overhang, 0, -overhang);
+        help.Margin = new Thickness(DesignMetrics.Spacing.Lg - inset, -overhang, 0, -overhang);
         theme.Margin = new Thickness(SidebarFooterPitch - SidebarFooterButton, -overhang, 0, -overhang);
         settingsButton.Margin = new Thickness(SidebarFooterPitch - SidebarFooterButton, -overhang, SidebarFooterGearCentre - SidebarFooterButton / 2, -overhang);
         Grid.SetColumn(settingsButton, 3); footer.Children.Add(settingsButton);
@@ -164,6 +164,12 @@ public sealed partial class MainWindow
     /// docs/design-system/screens/01-main-mighty-diagram-light.webp: 24 and 48.5 from the sidebar's dividing line).
     /// </summary>
     internal const double SidebarFooterGlyph = 14, SidebarFooterButton = 26, SidebarFooterGearCentre = 8, SidebarFooterPitch = 24.5;
+    /// <summary>The footer's padding: <c>Spacing.Lg</c> at the sides, <c>Spacing.Md</c> over and under (M/WorkspaceView.swift:139).</summary>
+    internal static readonly Thickness SidebarFooterPadding = new(DesignMetrics.Spacing.Lg, DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Lg, DesignMetrics.Spacing.Md);
+    /// <summary>The least height of a workspace row and of the add row under its panes (M/WorkspaceView.swift:189, 343).</summary>
+    internal const double SidebarWorkspaceRowMin = 24, SidebarAddRowMin = 22;
+    /// <summary>A pane row's indent under its workspace and its trailing room (M/WorkspaceView.swift:266).</summary>
+    internal static readonly Thickness SidebarPaneRowsMargin = new(22, 0, DesignMetrics.Spacing.Xxs, 0);
 
     /// <summary>
     /// The margin that sets a line of 10 to 13pt words on the Mac's line: SF Pro's line is about 1.19 em
@@ -237,30 +243,31 @@ public sealed partial class MainWindow
             {
                 var selected = !showsDashboard && state.ActiveWorkspaceId == workspace.Id;
                 var isExpanded = expanded.Contains(workspace.Id);
-                var group = new StackPanel { Spacing = 3, Margin = new Thickness(0, 0, 0, selected ? 12 : 1) };
+                var group = new StackPanel { Spacing = DesignMetrics.Inset.ListGap, Margin = new Thickness(0, 0, 0, selected ? DesignMetrics.Spacing.Sm : 0) };
                 AutomationProperties.SetAutomationId(group, "sidebar-workspace-" + workspace.Id);
                 // The workspace row (M/WorkspaceView.swift:160-203): sidebarAccent × 0.10 at radius 7 while selected.
                 var header = new Grid { CornerRadius = new CornerRadius(DesignMetrics.Radius.Search), Background = selected ? brushes.Brush(DesignToken.SidebarAccent, DesignMetrics.Opacity.SidebarWorkspaceSelected) : brushes.Transparent, ContextFlyout = WorkspaceMenu(workspace.Id) };
                 header.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-                var label = new Grid { ColumnSpacing = 9 };
+                var label = new Grid { ColumnSpacing = DesignMetrics.Spacing.Md };
                 label.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); label.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); label.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
                 label.Children.Add(new FontIcon { Glyph = "\uE8B7", FontSize = 14, VerticalAlignment = VerticalAlignment.Center, Foreground = brushes.Brush(selected ? DesignToken.SidebarAccent : DesignToken.SidebarInk2) });
                 var title = new TextBlock { Text = workspace.Name, FontSize = DesignMetrics.Type.Row, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = brushes.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, Margin = MacLine(), VerticalAlignment = VerticalAlignment.Center };
                 Grid.SetColumn(title, 1); label.Children.Add(title);
                 var counts = new StatusCountsView(brushes, "workspace-running-" + workspace.Id); workspaceStatusCounts[workspace.Id] = counts;
                 counts.Update(WorkDashboard.WorkspaceBadges(state.Sessions.Where(s => s.WorkspaceId == workspace.Id), DashboardAttention), DarkTheme);
-                // The Mac's Spacer stands between the name and the counts, 9 from each (M/WorkspaceView.swift:168-174).
-                counts.View.Margin = new Thickness(9, 0, 0, 0);
+                // The Mac's Spacer stands between the name and the counts (M/WorkspaceView.swift:168-174).
+                counts.View.Margin = new Thickness(DesignMetrics.Spacing.Sm, 0, 0, 0);
                 Grid.SetColumn(counts.View, 2); label.Children.Add(counts.View);
                 var select = SidebarButton(workspace.Name, () => SelectWorkspace(workspace.Id)); select.Content = label;
-                select.Padding = new Thickness(11, 10, 4, 10); PlainSidebarButton(select, brushes.Transparent, brushes.Transparent);
+                select.Padding = new Thickness(DesignMetrics.Spacing.Sm, DesignMetrics.Inset.SidebarRowV, DesignMetrics.Spacing.Xs, DesignMetrics.Inset.SidebarRowV); select.MinHeight = SidebarWorkspaceRowMin;
+                PlainSidebarButton(select, brushes.Transparent, brushes.Transparent);
                 AutomationProperties.SetAutomationId(select, "workspace-select-" + workspace.Id); header.Children.Add(select);
                 Button disclosure = null!;
                 disclosure = SidebarButton(isExpanded ? "⌄" : "›", () => ToggleWorkspaceDisclosure(workspace.Id, disclosure.FocusState == FocusState.Keyboard));
                 // The chevron, 8pt semibold sidebarInk2 in an 18×18 box, 6 from the trailing edge.
                 disclosure.Content = new FontIcon { Glyph = isExpanded ? "\uE70D" : "\uE76C", FontSize = 8, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.SidebarInk2) };
                 disclosure.Width = 18; disclosure.Height = 18; disclosure.MinWidth = 0; disclosure.MinHeight = 0; disclosure.Padding = new Thickness(0);
-                disclosure.Margin = new Thickness(0, 0, 6, 0); disclosure.VerticalAlignment = VerticalAlignment.Center; disclosure.HorizontalAlignment = HorizontalAlignment.Center;
+                disclosure.Margin = new Thickness(0, 0, DesignMetrics.Spacing.Sm, 0); disclosure.VerticalAlignment = VerticalAlignment.Center; disclosure.HorizontalAlignment = HorizontalAlignment.Center;
                 disclosure.HorizontalContentAlignment = HorizontalAlignment.Center; PlainSidebarButton(disclosure, brushes.Transparent, brushes.Transparent, radius: DesignMetrics.Radius.FileRow);
                 Grid.SetColumn(disclosure, 1);
                 var disclosureName = Locale.Get(isExpanded ? "workspace.collapseAccessibility" : "workspace.expandAccessibility", new Dictionary<string, string> { ["workspace"] = workspace.Name });
@@ -269,9 +276,9 @@ public sealed partial class MainWindow
                 ToolTipService.SetToolTip(select, workspace.Path); group.Children.Add(header);
                 if (isExpanded)
                 {
-                    // Each pane row is set in l22 r2 v1 inside the group's 3pt spacing (M/WorkspaceView.swift:165, 253):
-                    // 4 under the workspace row, 5 between rows, 4 over the add row.
-                    var children = new StackPanel { Spacing = 5, Margin = new Thickness(22, 1, 2, 1) };
+                    // Each pane row is set in SidebarPaneRowsMargin, the group's list gap under the workspace row,
+                    // between rows and over the add row (M/WorkspaceView.swift:178, 266).
+                    var children = new StackPanel { Spacing = DesignMetrics.Inset.ListGap, Margin = SidebarPaneRowsMargin };
                     foreach (var session in state.Sessions.Where(session => session.WorkspaceId == workspace.Id))
                     {
                         var active = !showsDashboard && state.ActiveSessionId == session.Id;
@@ -283,12 +290,12 @@ public sealed partial class MainWindow
                         sidebarSessionButtons[session.Id] = button; children.Children.Add(button);
                     }
                     if (children.Children.Count > 0) group.Children.Add(children);
-                    // "창 추가", the list's last row (M/WorkspaceView.swift:322-341): plus 10 semibold and 11pt words in sidebarAccent, padding l26 r12 v8.
+                    // The add row, the list's last (M/WorkspaceView.swift:322-343): plus 10 semibold and 11pt words in sidebarAccent, padding l28 r12 and the row inset over and under.
                     var add = SidebarButton(Locale.Get("workspace.addPane"), () => Task.CompletedTask);
-                    var addLabel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+                    var addLabel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
                     addLabel.Children.Add(new FontIcon { Glyph = "\uE710", FontSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Width = 12, Foreground = brushes.Brush(DesignToken.SidebarAccent), VerticalAlignment = VerticalAlignment.Center });
                     addLabel.Children.Add(new TextBlock { Text = Locale.Get("workspace.addPane"), FontSize = DesignMetrics.Type.Pill, Foreground = brushes.Brush(DesignToken.SidebarAccent), Margin = MacLine(), VerticalAlignment = VerticalAlignment.Center });
-                    add.Content = addLabel; add.Flyout = DashboardAddMenu(workspace.Id); add.FontSize = DesignMetrics.Type.Pill; add.Padding = new Thickness(26, 8, 12, 8);
+                    add.Content = addLabel; add.Flyout = DashboardAddMenu(workspace.Id); add.FontSize = DesignMetrics.Type.Pill; add.Padding = new Thickness(28, DesignMetrics.Inset.SidebarRowV, DesignMetrics.Spacing.Lg, DesignMetrics.Inset.SidebarRowV); add.MinHeight = SidebarAddRowMin;
                     PlainSidebarButton(add, brushes.Transparent, brushes.Transparent);
                     AutomationProperties.SetAutomationId(add, "workspace-add-session-" + workspace.Id);
                     AutomationProperties.SetName(add, Locale.Get("workspace.addPaneAccessibility", new Dictionary<string, string> { ["workspace"] = workspace.Name }));
@@ -303,8 +310,8 @@ public sealed partial class MainWindow
     /// <summary>
     /// A pane row's wash (M/WorkspaceView.swift:516-529, SidebarRowHighlight): the <c>card</c>
     /// surface while selected, <c>subtle</c> under the pointer, otherwise nothing; radius 8, padding
-    /// l8 r9 t6 b7. Never a status colour. The selected row's 0.5pt black hairline is an overlay on
-    /// the row's content (<see cref="SessionIndicator"/>), as on the Mac, so the row keeps its 45pt height.
+    /// <see cref="SidebarPaneRowPadding"/>. Never a status colour. The selected row's 0.5pt black hairline is an overlay on
+    /// the row's content (<see cref="SessionIndicator"/>), as on the Mac, so the row keeps its height.
     /// </summary>
     private void StyleSidebarPaneRow(Button button, bool selected)
     {
@@ -316,7 +323,7 @@ public sealed partial class MainWindow
     {
         var button = SafeButton(title, action);
         button.HorizontalAlignment = HorizontalAlignment.Stretch; button.HorizontalContentAlignment = HorizontalAlignment.Stretch;
-        button.Padding = new Thickness(8, 7, 8, 7); button.BorderThickness = new Thickness(0); button.CornerRadius = new CornerRadius(DesignMetrics.Radius.Search);
+        button.Padding = new Thickness(DesignMetrics.Spacing.Sm, DesignMetrics.Inset.SidebarRowV, DesignMetrics.Spacing.Sm, DesignMetrics.Inset.SidebarRowV); button.BorderThickness = new Thickness(0); button.CornerRadius = new CornerRadius(DesignMetrics.Radius.Search);
         // Unpainted: every caller paints it once with its own look (PlainSidebarButton writes each resource once).
         return button;
     }
@@ -355,7 +362,7 @@ public sealed partial class MainWindow
 /// </summary>
 internal sealed class StatusCountsView
 {
-    internal StackPanel View { get; } = new() { Orientation = Orientation.Horizontal, Spacing = 9, VerticalAlignment = VerticalAlignment.Center };
+    internal StackPanel View { get; } = new() { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Center };
     /// <summary>Each entry's parts; <c>Word</c> is the state's name, drawn only in the long form.</summary>
     internal IReadOnlyList<(DesignTone Tone, StatusMark Mark, TextBlock Count, StackPanel Entry, TextBlock? Word)> Entries { get; }
     /// <summary>What each entry last showed (questions and permissions for wait, the count otherwise) and the theme; -1 before the first update.</summary>
@@ -389,7 +396,7 @@ internal sealed class StatusCountsView
             // The words stand on the Mac's 13pt line (MainWindow.Sidebar.cs, MacLine), so the counts never make a row taller than the Mac's.
             var count = new TextBlock { FontSize = DesignMetrics.Type.Pill, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = brushes.Brush(DesignToken.Ink), Margin = MainWindow.MacLine(), VerticalAlignment = VerticalAlignment.Center };
             Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(count, FontNumeralAlignment.Tabular);
-            var entry = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 3, Visibility = Visibility.Collapsed };
+            var entry = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xxs, Visibility = Visibility.Collapsed };
             entry.Children.Add(mark.View); entry.Children.Add(count);
             TextBlock? word = null;
             if (longForm)

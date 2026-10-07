@@ -54,7 +54,7 @@ public sealed partial class MainWindow
         SettingsPush(register); AutomationProperties.SetAutomationId(register, "settings-style-register");
         var rescan = SettingsPush(Button(Locale.Get("settings.styles.rescanButton"), () => Act(Populate)));
         AutomationProperties.SetAutomationId(rescan, "settings-style-rescan");
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
         actions.Children.Add(register); actions.Children.Add(rescan);
         actionsRow = SettingsRow(rows, actions);
         SettingsRow(rows, SettingsText(Locale.Get("settings.styles.description"), 11, DesignToken.Ink2));
@@ -73,9 +73,9 @@ public sealed partial class MainWindow
             if (registry.TrustLocked)
             {
                 // M/StyleSettingsSection.swift:42-51: the file that is locked, in 11pt medium waitText after its mark, over what to do about it.
-                var banner = new StackPanel { Spacing = 3 };
+                var banner = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
                 AutomationProperties.SetAutomationId(banner, "settings-style-locked");
-                var file = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
+                var file = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs };
                 file.Children.Add(SettingsSymbol("", 11, DesignToken.WaitText));
                 file.Children.Add(SettingsText(Path.Combine(StateDirectory, "style-trust", "approvals.json"), 11, DesignToken.WaitText, medium: true, selectable: true));
                 banner.Children.Add(file); banner.Children.Add(SettingsText(Locale.Get("settings.styles.lockBanner"), 11, DesignToken.Ink2, selectable: true));
@@ -85,16 +85,16 @@ public sealed partial class MainWindow
             var contents = new List<FrameworkElement>();
             foreach (var style in registry.Styles)
             {
-                var row = new StackPanel { Spacing = 4, Margin = new Thickness(0, 3, 0, 3) };
+                var row = new StackPanel { Spacing = DesignMetrics.Spacing.Xs, Margin = new Thickness(0, DesignMetrics.Spacing.Xxs, 0, DesignMetrics.Spacing.Xxs) };
                 AutomationProperties.SetAutomationId(row, "settings-style-" + style.Id);
-                var head = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+                var head = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
                 head.Children.Add(SettingsText(StylePresentation.Name(style), 12, medium: true));
                 // The capsule of a style the app ships reads the bundled badge's one word here, as the Mac's list does (M/Styles/StyleSurfaces.swift:248).
                 head.Children.Add(SettingsCapsule(style.Approval == "preApproved" ? Locale.Get("settings.toolkit.bundledBadge") : StylePresentation.State(style.Approval), brushes.Brush(DesignToken.Ink2), brushes.Subtle));
                 row.Children.Add(head);
                 row.Children.Add(SettingsText(style.Id + " · " + Locale.Get("settings.styles.hashDetailTemplate", new Dictionary<string,string>{{"hash",style.Hash[..12]}}) + " · " + Locale.Get("settings.styles.actionCountTemplate", new Dictionary<string,string>{{"count",style.Manifest.Actions.Length.ToString()}}) + " · " + Locale.Get("settings.styles.autoAllowCountTemplate", new Dictionary<string,string>{{"count",StyleManifest.Items(style.Manifest.Root,"autoAllow").Length.ToString()}}), 10, DesignToken.Ink2));
                 row.Children.Add(Path10(style.Path));
-                var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+                var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
                 controls.Children.Add(SettingsPush(Button(Locale.Get("settings.styles.viewButton"), async () => { await ShowStyleApproval(style, readOnly: true); }), SettingsControlSize.Small));
                 if (style.Source != "bundled")
                 {
@@ -126,7 +126,7 @@ public sealed partial class MainWindow
             foreach (var rejection in registry.Rejections)
             {
                 // M/StyleSettingsSection.swift:99-108: why the file was refused over its path, at 0.7.
-                var refused = new StackPanel { Spacing = 2, Margin = new Thickness(0, 2, 0, 2), Opacity = 0.7 };
+                var refused = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs, Margin = new Thickness(0, DesignMetrics.Spacing.Xxs, 0, DesignMetrics.Spacing.Xxs), Opacity = 0.7 };
                 AutomationProperties.SetAutomationId(refused, "settings-style-rejected");
                 refused.Children.Add(SettingsText(rejection.Code + " · " + rejection.Message, 11, DesignToken.Ink2, selectable: true)); refused.Children.Add(Path10(rejection.Path));
                 contents.Add(refused);
@@ -144,20 +144,20 @@ public sealed partial class MainWindow
     private sealed partial class PaneView
     {
         /// <summary>The Mighty rows over the editor (M/SessionPaneView.swift:520-541): the style row, a pending style's strip and the guide panel, 9 apart like the rest of the composer.</summary>
-        private readonly StackPanel styleHost=new(){Spacing=9,Visibility=Visibility.Collapsed};
+        private readonly StackPanel styleHost=new(){Spacing=DesignMetrics.Spacing.Sm,Visibility=Visibility.Collapsed};
         /// <summary>The style menu's chip (M/GuidedPanel.swift:35-43): the style's name in 10 medium, its source badge and a 7pt chevron, padding h7 v3 on the subtle wash at radius 6.</summary>
-        private readonly Button stylePicker=new(){HorizontalAlignment=HorizontalAlignment.Left,VerticalAlignment=VerticalAlignment.Center,MinWidth=0,MinHeight=0,Padding=new(7,3,7,3),BorderThickness=new(0),CornerRadius=new(DesignMetrics.Radius.Segment)};
+        private readonly Button stylePicker=new(){HorizontalAlignment=HorizontalAlignment.Left,VerticalAlignment=VerticalAlignment.Center,MinWidth=0,MinHeight=0,Padding=new(DesignMetrics.Spacing.Sm,DesignMetrics.Spacing.Xxs,DesignMetrics.Spacing.Sm,DesignMetrics.Spacing.Xxs),BorderThickness=new(0),CornerRadius=new(DesignMetrics.Radius.Segment)};
         private readonly TextBlock stylePickerLabel=new(){Text="CLI",FontSize=10,FontWeight=FontWeights.Medium,TextWrapping=TextWrapping.NoWrap,VerticalAlignment=VerticalAlignment.Center};
         private readonly Border stylePickerBadge=new(){Visibility=Visibility.Collapsed,VerticalAlignment=VerticalAlignment.Center};
-        private readonly StackPanel stylePickerFace=new(){Orientation=Orientation.Horizontal,Spacing=4};
+        private readonly StackPanel stylePickerFace=new(){Orientation=Orientation.Horizontal,Spacing=DesignMetrics.Spacing.Xs};
         /// <summary>What the chosen style is for, beside its chip: the manifest's subtitle in 10pt in the tertiary ink (M/SessionPaneView.swift:523).</summary>
         private readonly TextBlock styleHint=new(){FontSize=10,TextWrapping=TextWrapping.NoWrap,TextTrimming=TextTrimming.CharacterEllipsis,VerticalAlignment=VerticalAlignment.Center};
         /// <summary>The one-line strip a style that still needs a yes leaves in the panel (M/GuidedActionChip.swift:62-80).</summary>
-        private readonly StackPanel styleNotice=new(){Orientation=Orientation.Horizontal,Spacing=6,Margin=new(12,0,12,0),Visibility=Visibility.Collapsed};
+        private readonly StackPanel styleNotice=new(){Orientation=Orientation.Horizontal,Spacing=DesignMetrics.Spacing.Sm,Margin=new(DesignMetrics.Inset.ComposerInnerH,0,DesignMetrics.Inset.ComposerInnerH,0),Visibility=Visibility.Collapsed};
         /// <summary>The guide panel (M/GuidedPanel.swift:101-123): its blocks 8 apart, padding h12 t8.</summary>
-        private readonly StackPanel guidedBody=new(){Spacing=8,Margin=new(12,8,12,0),Visibility=Visibility.Collapsed};
+        private readonly StackPanel guidedBody=new(){Spacing=DesignMetrics.Spacing.Sm,Margin=new(DesignMetrics.Inset.ComposerInnerH,DesignMetrics.Spacing.Sm,DesignMetrics.Inset.ComposerInnerH,0),Visibility=Visibility.Collapsed};
         /// <summary>The command Enter is about to send, before the editor (M/SessionPaneView.swift:567-574): 10pt mono accent on accent × 0.12, padding h6 v3, radius 5.</summary>
-        private readonly Border styleEnterChip=new(){Padding=new(6,3,6,3),CornerRadius=new(DesignMetrics.Radius.FileRow),VerticalAlignment=VerticalAlignment.Top,Visibility=Visibility.Collapsed};
+        private readonly Border styleEnterChip=new(){Padding=new(DesignMetrics.Spacing.Sm,DesignMetrics.Spacing.Xxs,DesignMetrics.Spacing.Sm,DesignMetrics.Spacing.Xxs),CornerRadius=new(DesignMetrics.Radius.FileRow),VerticalAlignment=VerticalAlignment.Top,Visibility=Visibility.Collapsed};
         /// <summary>The armed-prefix chip's accent tint (M/SessionPaneView.swift:571).</summary>
         private const double StyleEnterTint=0.12;
         private StyleRegistry? styleRegistry;
@@ -182,7 +182,7 @@ public sealed partial class MainWindow
             // A running pane's picker is off, and a disabled plain button is drawn at half strength (M/GuidedPanel.swift:45).
             stylePicker.IsEnabledChanged+=(_,_)=>stylePicker.Opacity=stylePicker.IsEnabled?1:DisabledDim;
             styleHint.Foreground=b.Tertiary;
-            var row=new Grid{ColumnSpacing=8,Margin=new(12,9,12,0)};row.ColumnDefinitions.Add(new(){Width=GridLength.Auto});row.ColumnDefinitions.Add(new(){Width=new(1,GridUnitType.Star)});
+            var row=new Grid{ColumnSpacing=DesignMetrics.Spacing.Sm,Margin=new(DesignMetrics.Inset.ComposerInnerH,DesignMetrics.Spacing.Sm,DesignMetrics.Inset.ComposerInnerH,0)};row.ColumnDefinitions.Add(new(){Width=GridLength.Auto});row.ColumnDefinitions.Add(new(){Width=new(1,GridUnitType.Star)});
             row.Children.Add(stylePicker);Grid.SetColumn(styleHint,1);row.Children.Add(styleHint);
             styleEnterChip.Child=styleEnterPrefix;styleEnterChip.Background=b.Brush(DesignToken.Accent,StyleEnterTint);styleEnterPrefix.Foreground=b.Brush(DesignToken.Accent);
             AutomationProperties.SetAutomationId(styleEnterChip,"mighty-enter-armed-"+id);
@@ -289,7 +289,7 @@ public sealed partial class MainWindow
         /// <summary>A chip that cannot be pressed yet (M/GuidedActionChip.swift:52).</summary>
         private const double ChipDisabled=0.45;
         /// <summary>The badge after a style that is not built in (M/GuidedActionChip.swift:83-93): 9pt <c>ink2</c> on the subtle capsule, padding h5 v1.</summary>
-        private Border SourceBadge(string text)=>new(){Child=new TextBlock{Text=text,FontSize=9,Foreground=owner.brushes.Brush(DesignToken.Ink2)},Padding=new(5,1,5,1),CornerRadius=new(8),Background=owner.brushes.Subtle,VerticalAlignment=VerticalAlignment.Center};
+        private Border SourceBadge(string text)=>new(){Child=new TextBlock{Text=text,FontSize=9,Foreground=owner.brushes.Brush(DesignToken.Ink2)},Padding=new(DesignMetrics.Spacing.Xs,1,DesignMetrics.Spacing.Xs,1),CornerRadius=new(8),Background=owner.brushes.Subtle,VerticalAlignment=VerticalAlignment.Center};
         /// <summary>Tall enough for the chip rows at the narrowest pane, capped so a long catalogue scrolls (M/GuidedPanel.swift:366-369).</summary>
         private static double ChipGridHeight(int count){var rows=Math.Max(1,(count+2)/3);return Math.Min(92,rows*27+(rows-1)*5);}
         private Task InstallStyle(RegisteredStyle style,string command)=>owner.Act(async()=>
@@ -319,7 +319,7 @@ public sealed partial class MainWindow
             var pane=Session;stylePicker.IsEnabled=pane.Status!="running"&&!starting;
             stylePickerLabel.Text=activeStyle?.Manifest.Name??"CLI";
             var badged=activeStyle is {Source:not "bundled"};stylePickerBadge.Visibility=badged?Visibility.Visible:Visibility.Collapsed;
-            if(badged){stylePickerBadge.Child=new TextBlock{Text=StylePresentation.Source(activeStyle!.Source),FontSize=9,Foreground=ink2};stylePickerBadge.Padding=new(5,1,5,1);stylePickerBadge.CornerRadius=new(8);stylePickerBadge.Background=b.Subtle;}
+            if(badged){stylePickerBadge.Child=new TextBlock{Text=StylePresentation.Source(activeStyle!.Source),FontSize=9,Foreground=ink2};stylePickerBadge.Padding=new(DesignMetrics.Spacing.Xs,1,DesignMetrics.Spacing.Xs,1);stylePickerBadge.CornerRadius=new(8);stylePickerBadge.Background=b.Subtle;}
             styleHint.Text=activeStyle?.Manifest.Subtitle??Locale.Get("composer.style.free");
             guidedBody.Children.Clear();styleActionButtons.Clear();styleNotice.Children.Clear();styleNotice.Visibility=Visibility.Collapsed;guidedBody.Visibility=Visibility.Collapsed;
             if(activeStyle is not {} style)
@@ -342,7 +342,7 @@ public sealed partial class MainWindow
             if(style.Manifest.Phases.Length>0)
             {
                 // The phase bar (M/GuidedPanel.swift:139-152): 10pt names 4 apart with 7pt chevrons in the tertiary ink between; the current one accent semibold, those reached ink × 0.75, those ahead ink2 × 0.6.
-                var phases=new StackPanel{Orientation=Orientation.Horizontal,Spacing=4};var ordered=style.Manifest.Phases.OrderBy(p=>p.Order).ToArray();
+                var phases=new StackPanel{Orientation=Orientation.Horizontal,Spacing=DesignMetrics.Spacing.Xs};var ordered=style.Manifest.Phases.OrderBy(p=>p.Order).ToArray();
                 for(var index=0;index<ordered.Length;index++)
                 {
                     var item=ordered[index];var current=item.Id==phase?.Id;var reached=phase is not null&&item.Order<=phase.Order;
@@ -359,18 +359,18 @@ public sealed partial class MainWindow
             if(stylePrerequisites is {Ready:false} prerequisites)
             {
                 // What the style still needs (M/GuidedPanel.swift:161-178): each missing thing in 11 medium, the first behind a box mark, the hint in ink2, then small buttons.
-                var setup=new StackPanel{Spacing=5};var first=true;
+                var setup=new StackPanel{Spacing=DesignMetrics.Spacing.Xs};var first=true;
                 foreach(var line in prerequisites.Missing)
                 {
                     var words=new TextBlock{Text=line,FontSize=11,FontWeight=FontWeights.Medium,Foreground=ink,TextWrapping=TextWrapping.Wrap,VerticalAlignment=VerticalAlignment.Center};
-                    if(first){var lead=new StackPanel{Orientation=Orientation.Horizontal,Spacing=5};lead.Children.Add(new FontIcon{Glyph="",FontSize=11,Foreground=ink,VerticalAlignment=VerticalAlignment.Center});lead.Children.Add(words);setup.Children.Add(lead);first=false;}
+                    if(first){var lead=new StackPanel{Orientation=Orientation.Horizontal,Spacing=DesignMetrics.Spacing.Xs};lead.Children.Add(new FontIcon{Glyph="",FontSize=11,Foreground=ink,VerticalAlignment=VerticalAlignment.Center});lead.Children.Add(words);setup.Children.Add(lead);first=false;}
                     else setup.Children.Add(words);
                 }
                 if(prerequisites.Hint is {Length:>0} hint)setup.Children.Add(new TextBlock{Text=hint,FontSize=11,Foreground=ink2,TextWrapping=TextWrapping.Wrap,IsTextSelectionEnabled=true});
-                var buttons=new StackPanel{Orientation=Orientation.Horizontal,Spacing=6};
+                var buttons=new StackPanel{Orientation=Orientation.Horizontal,Spacing=DesignMetrics.Spacing.Sm};
                 if(prerequisites.InstallCommand is {} command)
                 {
-                    setup.Children.Add(new Border{Child=new TextBlock{Text=command,FontSize=10,FontFamily=new FontFamily(DesignMetrics.Font.Mono),Foreground=ink,TextWrapping=TextWrapping.Wrap,IsTextSelectionEnabled=true},Padding=new(6),CornerRadius=new(DesignMetrics.Radius.Segment),Background=b.Subtle});
+                    setup.Children.Add(new Border{Child=new TextBlock{Text=command,FontSize=10,FontFamily=new FontFamily(DesignMetrics.Font.Mono),Foreground=ink,TextWrapping=TextWrapping.Wrap,IsTextSelectionEnabled=true},Padding=new(DesignMetrics.Spacing.Sm),CornerRadius=new(DesignMetrics.Radius.Segment),Background=b.Subtle});
                     buttons.Children.Add(SmallButton(Locale.Get("guidedPanel.installButton"),()=>InstallStyle(style,command)));
                 }
                 buttons.Children.Add(SmallButton(Locale.Get("guidedPanel.recheckButton"),LoadStyles));setup.Children.Add(buttons);
@@ -378,7 +378,7 @@ public sealed partial class MainWindow
             }
 
             // The style's state sources, as the phone draws them (M/GuidedPanel.swift:185-218): a 6pt bar with its count, a list, or a label.
-            var widgets=new StackPanel{Spacing=5};
+            var widgets=new StackPanel{Spacing=DesignMetrics.Spacing.Xs};
             ForgetElapsed(guidedElapsed);
             foreach(var widget in LiveStyleReading(style).Widgets)
             {
@@ -391,7 +391,7 @@ public sealed partial class MainWindow
                 }
                 if(widget.Kind=="progressBar"&&StylePresentation.Progress(widget) is {} progress)
                 {
-                    var bar=new Grid{ColumnSpacing=6};bar.ColumnDefinitions.Add(new(){Width=new(1,GridUnitType.Star)});bar.ColumnDefinitions.Add(new(){Width=GridLength.Auto});
+                    var bar=new Grid{ColumnSpacing=DesignMetrics.Spacing.Sm};bar.ColumnDefinitions.Add(new(){Width=new(1,GridUnitType.Star)});bar.ColumnDefinitions.Add(new(){Width=GridLength.Auto});
                     var fill=new Border{Height=6,CornerRadius=new(3),HorizontalAlignment=HorizontalAlignment.Left,Background=accent,Width=0};
                     var track=new Grid{Height=6,CornerRadius=new(3),Background=b.Brush(DesignToken.Line),VerticalAlignment=VerticalAlignment.Center};track.Children.Add(fill);
                     var part=Math.Clamp(progress.Fraction,0,1);track.SizeChanged+=(_,args)=>fill.Width=args.NewSize.Width*part;
@@ -411,12 +411,12 @@ public sealed partial class MainWindow
             if(evaluator.DrawsGroupMap)
             {
                 // The group map (M/GuidedPanel.swift:222-241): equal tiles 5 apart, the title in 11 semibold mono over its axis in 9pt ink2, padding h9 v5 at radius 7.
-                var map=new Grid{ColumnSpacing=5};var column=0;
+                var map=new Grid{ColumnSpacing=DesignMetrics.Spacing.Xs};var column=0;
                 foreach(var item in style.Manifest.Groups)
                 {
                     map.ColumnDefinitions.Add(new(){Width=new(1,GridUnitType.Star)});var chosen=group?.Id==item.Id;
                     var words=new StackPanel{Spacing=1};words.Children.Add(new TextBlock{Text=item.Title,FontWeight=FontWeights.SemiBold,FontSize=11,FontFamily=new FontFamily(DesignMetrics.Font.Mono),Foreground=ink,TextTrimming=TextTrimming.CharacterEllipsis});words.Children.Add(new TextBlock{Text=item.Axis??"",FontSize=9,Foreground=ink2,TextTrimming=TextTrimming.CharacterEllipsis});
-                    var tile=new Border{Child=words,Padding=new(9,5,9,5),CornerRadius=new(7),BorderThickness=new(DesignMetrics.Stroke.Line),Background=chosen?b.Brush(DesignToken.Accent,GroupChosenFill):b.Subtle,BorderBrush=chosen?b.Brush(DesignToken.Accent,GroupChosenEdge):b.Transparent};
+                    var tile=new Border{Child=words,Padding=new(DesignMetrics.Spacing.Sm,DesignMetrics.Spacing.Xs,DesignMetrics.Spacing.Sm,DesignMetrics.Spacing.Xs),CornerRadius=new(7),BorderThickness=new(DesignMetrics.Stroke.Line),Background=chosen?b.Brush(DesignToken.Accent,GroupChosenFill):b.Subtle,BorderBrush=chosen?b.Brush(DesignToken.Accent,GroupChosenEdge):b.Transparent};
                     var button=Button(item.Title,()=>{styleGroup=item.Id;RenderGuidedStyle();return Task.CompletedTask;});button.Content=tile;button.Padding=new(0);button.MinWidth=0;button.MinHeight=0;button.BorderThickness=new(0);button.CornerRadius=new(7);button.HorizontalAlignment=HorizontalAlignment.Stretch;button.HorizontalContentAlignment=HorizontalAlignment.Stretch;
                     owner.PaintPlainButton(button,b.Transparent,b.Transparent);
                     ToolTipService.SetToolTip(button,item.Question??item.Title);AutomationProperties.SetAutomationId(button,"mighty-group-"+item.Id+"-"+id);Grid.SetColumn(button,column++);map.Children.Add(button);
@@ -427,13 +427,13 @@ public sealed partial class MainWindow
             if(StyleManifest.Strings(style.Manifest.Root,"capabilities").Length>0&&(evaluator.RecommendGroupId is null||group?.Id==evaluator.RecommendGroupId))
             {
                 // What the built-in feature found (M/GuidedPanel.swift:257-294): a folder mark, the empty line or up to six file chips behind their detail, and reload.
-                var files=new Grid{ColumnSpacing=6};files.ColumnDefinitions.Add(new(){Width=GridLength.Auto});files.ColumnDefinitions.Add(new(){Width=new(1,GridUnitType.Star)});files.ColumnDefinitions.Add(new(){Width=GridLength.Auto});
+                var files=new Grid{ColumnSpacing=DesignMetrics.Spacing.Sm};files.ColumnDefinitions.Add(new(){Width=GridLength.Auto});files.ColumnDefinitions.Add(new(){Width=new(1,GridUnitType.Star)});files.ColumnDefinitions.Add(new(){Width=GridLength.Auto});
                 files.Children.Add(new FontIcon{Glyph="",FontSize=10,Foreground=ink2,VerticalAlignment=VerticalAlignment.Center});
                 if(styleCapabilityFiles.Count==0){var none=new TextBlock{Text=Locale.Get("styles.casebook.empty"),FontSize=11,Foreground=ink2,TextWrapping=TextWrapping.NoWrap,TextTrimming=TextTrimming.CharacterEllipsis,VerticalAlignment=VerticalAlignment.Center};Grid.SetColumn(none,1);files.Children.Add(none);}
                 else
                 {
-                    var chips=new StackPanel{Orientation=Orientation.Horizontal,Spacing=6};
-                    if(styleCapabilityFiles[0].Detail is {Length:>0} detail)chips.Children.Add(new Border{Child=new TextBlock{Text=detail,FontSize=10,Foreground=ink2,TextWrapping=TextWrapping.NoWrap},Padding=new(5,1,5,1),CornerRadius=new(8),Background=b.Subtle,VerticalAlignment=VerticalAlignment.Center});
+                    var chips=new StackPanel{Orientation=Orientation.Horizontal,Spacing=DesignMetrics.Spacing.Sm};
+                    if(styleCapabilityFiles[0].Detail is {Length:>0} detail)chips.Children.Add(new Border{Child=new TextBlock{Text=detail,FontSize=10,Foreground=ink2,TextWrapping=TextWrapping.NoWrap},Padding=new(DesignMetrics.Spacing.Xs,1,DesignMetrics.Spacing.Xs,1),CornerRadius=new(8),Background=b.Subtle,VerticalAlignment=VerticalAlignment.Center});
                     foreach(var file in styleCapabilityFiles.Take(6))
                     {
                         var open=Button(file.Title,()=>{owner.service.OpenResultFile(file.Path,Workspace.Path);return Task.CompletedTask;});open.FontSize=10;open.FontFamily=new FontFamily(DesignMetrics.Font.Mono);open.Padding=new(0);open.MinWidth=0;open.MinHeight=0;open.BorderThickness=new(0);open.VerticalAlignment=VerticalAlignment.Center;
@@ -441,7 +441,7 @@ public sealed partial class MainWindow
                     }
                     var scroll=new ScrollViewer{Content=chips,HorizontalScrollBarVisibility=ScrollBarVisibility.Hidden,HorizontalScrollMode=ScrollMode.Auto,VerticalScrollBarVisibility=ScrollBarVisibility.Disabled,VerticalScrollMode=ScrollMode.Disabled};Grid.SetColumn(scroll,1);files.Children.Add(scroll);
                 }
-                var reload=Button("↻",LoadStyles);reload.Content=new FontIcon{Glyph="",FontSize=9};reload.Padding=new(2);reload.MinWidth=0;reload.MinHeight=0;reload.BorderThickness=new(0);reload.CornerRadius=new(DesignMetrics.Radius.FileRow);reload.VerticalAlignment=VerticalAlignment.Center;
+                var reload=Button("↻",LoadStyles);reload.Content=new FontIcon{Glyph="",FontSize=9};reload.Padding=new(DesignMetrics.Spacing.Xxs);reload.MinWidth=0;reload.MinHeight=0;reload.BorderThickness=new(0);reload.CornerRadius=new(DesignMetrics.Radius.FileRow);reload.VerticalAlignment=VerticalAlignment.Center;
                 owner.PaintPlainButton(reload,b.Transparent,b.Subtle,ink:ink2);ToolTipService.SetToolTip(reload,Locale.Get("guidedPanel.reloadHelp"));AutomationProperties.SetName(reload,Locale.Get("guidedPanel.reloadHelp"));Grid.SetColumn(reload,2);files.Children.Add(reload);
                 AutomationProperties.SetAutomationId(files,"mighty-attachments-"+id);guidedBody.Children.Add(files);
             }
@@ -463,13 +463,13 @@ public sealed partial class MainWindow
                     // with every render, so its look is painted once, before it is shown.
                     var flags=action.Flags??[];var label=(action.Glyph??StylePresentation.Icon(action.Icon))+" "+action.Title+(flags.Contains("userInvoked")?" ♙":"")+(flags.Contains("readOnly")?" ◉":"");
                     var emphasised=action.Id==prominent||action.Id==recommended;
-                    var face=new StackPanel{Orientation=Orientation.Horizontal,Spacing=5};
+                    var face=new StackPanel{Orientation=Orientation.Horizontal,Spacing=DesignMetrics.Spacing.Xs};
                     if(action.Glyph is {Length:>0} glyph)face.Children.Add(new TextBlock{Text=glyph,FontSize=11,VerticalAlignment=VerticalAlignment.Center});
                     else if(StylePresentation.Icon(action.Icon) is {Length:>0} icon)face.Children.Add(new TextBlock{Text=icon,FontSize=10,VerticalAlignment=VerticalAlignment.Center});
                     face.Children.Add(new TextBlock{Text=action.Title,FontSize=11,FontWeight=emphasised?FontWeights.SemiBold:FontWeights.Normal,TextWrapping=TextWrapping.NoWrap,TextTrimming=TextTrimming.CharacterEllipsis,VerticalAlignment=VerticalAlignment.Center});
                     if(flags.Contains("userInvoked"))face.Children.Add(new FontIcon{Glyph="",FontSize=8,Foreground=ink2,VerticalAlignment=VerticalAlignment.Center});
                     if(flags.Contains("readOnly"))face.Children.Add(new FontIcon{Glyph="",FontSize=8,Foreground=ink2,VerticalAlignment=VerticalAlignment.Center});
-                    var button=Button(label.Trim(),()=>InvokeStyleAction(action.Id));button.Content=face;button.Padding=new(8,5,8,5);button.MinWidth=0;button.MinHeight=0;button.HorizontalAlignment=HorizontalAlignment.Left;button.IsEnabled=!action.RequiresText||!string.IsNullOrWhiteSpace(input.Text);
+                    var button=Button(label.Trim(),()=>InvokeStyleAction(action.Id));button.Content=face;button.Padding=new(DesignMetrics.Spacing.Sm,DesignMetrics.Spacing.Xs,DesignMetrics.Spacing.Sm,DesignMetrics.Spacing.Xs);button.MinWidth=0;button.MinHeight=0;button.HorizontalAlignment=HorizontalAlignment.Left;button.IsEnabled=!action.RequiresText||!string.IsNullOrWhiteSpace(input.Text);
                     button.CornerRadius=new(DesignMetrics.Radius.Segment);button.BorderThickness=new(0);
                     var chipFill=emphasised?b.Brush(StyleTint(action.Tint),StyleChipTint):b.Subtle;owner.PaintPlainButton(button,chipFill,chipFill,ink:ink,disabledInk:ink);
                     button.Opacity=button.IsEnabled?1:ChipDisabled;button.IsEnabledChanged+=(_,_)=>button.Opacity=button.IsEnabled?1:ChipDisabled;
@@ -481,21 +481,21 @@ public sealed partial class MainWindow
                 else if(!evaluator.AtStart(phase)&&evaluator.ResetTitle is {} title)
                 {
                     reset=SmallButton(title,()=>{styleStartingNew=true;RenderGuidedStyle();return Task.CompletedTask;});
-                    var again=new StackPanel{Orientation=Orientation.Horizontal,Spacing=4};again.Children.Add(new FontIcon{Glyph="",FontSize=9,VerticalAlignment=VerticalAlignment.Center});again.Children.Add(new TextBlock{Text=title,FontSize=11,VerticalAlignment=VerticalAlignment.Center});
+                    var again=new StackPanel{Orientation=Orientation.Horizontal,Spacing=DesignMetrics.Spacing.Xs};again.Children.Add(new FontIcon{Glyph="",FontSize=9,VerticalAlignment=VerticalAlignment.Center});again.Children.Add(new TextBlock{Text=title,FontSize=11,VerticalAlignment=VerticalAlignment.Center});
                     reset.Content=again;ToolTipService.SetToolTip(reset,Locale.Get("guidedPanel.resetHelp"));AutomationProperties.SetAutomationId(reset,"mighty-reset-"+id);
                 }
                 if(grid)
                 {
                     // Under a group map the chips are a catalogue: an adaptive grid (104–170 wide, 5 apart) that scrolls past its height, the reset chip under it.
                     var cells=new AdaptiveGridPanel{Minimum=104,Maximum=170,Gap=5};foreach(var chip in chips)cells.Children.Add(chip);
-                    var catalogue=new StackPanel{Spacing=5};catalogue.Children.Add(new ScrollViewer{Content=cells,MaxHeight=ChipGridHeight(chips.Count),VerticalScrollBarVisibility=ScrollBarVisibility.Hidden,VerticalScrollMode=ScrollMode.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled,HorizontalScrollMode=ScrollMode.Disabled});
+                    var catalogue=new StackPanel{Spacing=DesignMetrics.Spacing.Xs};catalogue.Children.Add(new ScrollViewer{Content=cells,MaxHeight=ChipGridHeight(chips.Count),VerticalScrollBarVisibility=ScrollBarVisibility.Hidden,VerticalScrollMode=ScrollMode.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled,HorizontalScrollMode=ScrollMode.Disabled});
                     if(reset is not null){reset.HorizontalAlignment=HorizontalAlignment.Left;catalogue.Children.Add(reset);}
                     guidedBody.Children.Add(catalogue);
                 }
                 else if(chips.Count>0||reset is not null)
                 {
                     // A phase's row is one line that scrolls sideways, the chips 6 apart and the reset chip last.
-                    var line=new StackPanel{Orientation=Orientation.Horizontal,Spacing=6};foreach(var chip in chips)line.Children.Add(chip);if(reset is not null)line.Children.Add(reset);
+                    var line=new StackPanel{Orientation=Orientation.Horizontal,Spacing=DesignMetrics.Spacing.Sm};foreach(var chip in chips)line.Children.Add(chip);if(reset is not null)line.Children.Add(reset);
                     guidedBody.Children.Add(new ScrollViewer{Content=line,HorizontalScrollBarVisibility=ScrollBarVisibility.Hidden,HorizontalScrollMode=ScrollMode.Auto,VerticalScrollBarVisibility=ScrollBarVisibility.Disabled,VerticalScrollMode=ScrollMode.Disabled});
                 }
             }

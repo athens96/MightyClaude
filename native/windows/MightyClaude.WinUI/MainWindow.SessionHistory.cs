@@ -151,13 +151,13 @@ public sealed partial class MainWindow
                 RadiusX = frame.H / 2, RadiusY = frame.H / 2, StrokeThickness = DesignMetrics.Stroke.Line, StrokeDashArray = dashes,
                 Stroke = b.Brush(DesignToken.Line), Fill = b.Brush(DesignToken.Card),
             });
-            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(14, 0, 14, 0), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, Margin = new Thickness(DesignMetrics.Spacing.Md, 0, DesignMetrics.Spacing.Md, 0), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             if (state.BlockActs)
             {
                 var failed = state.Phase == SessionHistoryState.Phases.Failed;
-                var face = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, VerticalAlignment = VerticalAlignment.Center };
+                var face = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs, VerticalAlignment = VerticalAlignment.Center };
                 face.Children.Add(MightySymbols.Create(failed ? "arrow.clockwise" : "arrow.up.circle", DesignMetrics.Type.Pill, accent)); face.Children.Add(Words(lead, accent));
-                var button = new Button { Content = face, MinWidth = 0, MinHeight = 0, Height = 22, Padding = new Thickness(4, 0, 4, 0), Margin = new Thickness(-4, 0, -4, 0), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), BorderThickness = new Thickness(0), VerticalAlignment = VerticalAlignment.Center };
+                var button = new Button { Content = face, MinWidth = 0, MinHeight = 0, Height = 22, Padding = new Thickness(DesignMetrics.Spacing.Xs, 0, DesignMetrics.Spacing.Xs, 0), Margin = new Thickness(-DesignMetrics.Spacing.Xs, 0, -DesignMetrics.Spacing.Xs, 0), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), BorderThickness = new Thickness(0), VerticalAlignment = VerticalAlignment.Center };
                 owner.PaintPlainButton(button, b.Transparent, b.Subtle, ink: accent);
                 AutomationProperties.SetAutomationId(button, (failed ? "mighty-history-retry-" : "mighty-history-load-") + id);
                 AutomationProperties.SetName(button, text);

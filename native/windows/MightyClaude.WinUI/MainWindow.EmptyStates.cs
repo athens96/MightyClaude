@@ -21,7 +21,7 @@ public sealed partial class MainWindow
         var page = new Grid();
         page.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) });
         page.RowDefinitions.Add(new() { Height = GridLength.Auto });
-        var stack = new StackPanel { Spacing = 18, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(32) };
+        var stack = new StackPanel { Spacing = DesignMetrics.Spacing.Lg, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(DesignMetrics.Spacing.Xl) };
         // rectangle.split.2x1 at 50pt ultraLight: a hairline rounded rectangle, wider than tall, split down its middle.
         var accent = brushes.Brush(DesignToken.Accent);
         var symbol = new Grid { Width = WelcomeSymbolWidth, Height = WelcomeSymbolHeight, HorizontalAlignment = HorizontalAlignment.Center };
@@ -35,31 +35,31 @@ public sealed partial class MainWindow
         var title = new TextBlock
         {
             Text = Locale.Get("layout.welcome.title"), FontSize = DesignMetrics.Type.Welcome, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            Foreground = brushes.Brush(DesignToken.Ink), TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, -3, 0, -1),
+            Foreground = brushes.Brush(DesignToken.Ink), TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, -DesignMetrics.Spacing.Xxs, 0, -1),
         };
         AutomationProperties.SetAutomationId(title, "welcome-title");
         stack.Children.Add(title);
         stack.Children.Add(new TextBlock
         {
-            Text = Locale.Get("layout.welcome.body"), FontSize = 14, LineHeight = WelcomeBodyLine, Foreground = brushes.Brush(DesignToken.Ink2), Margin = new Thickness(0, -2, 0, -3),
+            Text = Locale.Get("layout.welcome.body"), FontSize = 14, LineHeight = WelcomeBodyLine, Foreground = brushes.Brush(DesignToken.Ink2), Margin = new Thickness(0, -DesignMetrics.Spacing.Xxs, 0, -DesignMetrics.Spacing.Xxs),
             TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap, MaxWidth = 520, HorizontalAlignment = HorizontalAlignment.Center,
         });
         // The Mac's prominent button around a 13pt label padded h10 v5 (M/WorkspaceView.swift:359): 32 high, radius 6.
-        var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
         label.Children.Add(new FontIcon { Glyph = "", FontSize = DesignMetrics.Type.Body, VerticalAlignment = VerticalAlignment.Center });
         label.Children.Add(new TextBlock { Text = Locale.Get("layout.welcome.openProject"), FontSize = DesignMetrics.Type.Body, VerticalAlignment = VerticalAlignment.Center });
-        var open = new Button { Content = label, Style = (Style)Application.Current.Resources["AccentButtonStyle"], Height = WelcomeButtonHeight, MinHeight = 0, Padding = new Thickness(18, 0, 18, 0), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 8, 0, 0) };
+        var open = new Button { Content = label, Style = (Style)Application.Current.Resources["AccentButtonStyle"], Height = WelcomeButtonHeight, MinHeight = 0, Padding = new Thickness(DesignMetrics.Spacing.Lg, 0, DesignMetrics.Spacing.Lg, 0), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, DesignMetrics.Spacing.Sm, 0, 0) };
         open.Click += async (_, _) => await PickFolder();
         AutomationProperties.SetName(open, Locale.Get("layout.welcome.openProject")); AutomationProperties.SetAutomationId(open, "welcome-open-folder");
         stack.Children.Add(open);
-        stack.Children.Add(new TextBlock { Text = Locale.Get("layout.welcome.shortcuts"), FontSize = DesignMetrics.Type.Pill, Foreground = brushes.Tertiary, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 10 - 2, 0, 0) });
+        stack.Children.Add(new TextBlock { Text = Locale.Get("layout.welcome.shortcuts"), FontSize = DesignMetrics.Type.Pill, Foreground = brushes.Tertiary, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, DesignMetrics.Spacing.Md - DesignMetrics.Spacing.Xxs, 0, 0) });
         page.Children.Add(stack);
         // The Mac's column keeps its spacing between the lower Spacer and the foot line (18, less the 2 Segoe's line is taller), so the parts stand that much above the middle.
-        var footer = new TextBlock { Text = Locale.Get("layout.welcome.footer"), FontSize = DesignMetrics.Type.Pill, Foreground = brushes.Tertiary, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 16, 0, 25) };
+        var footer = new TextBlock { Text = Locale.Get("layout.welcome.footer"), FontSize = DesignMetrics.Type.Pill, Foreground = brushes.Tertiary, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, DesignMetrics.Spacing.Lg, 0, DesignMetrics.Spacing.Xl) };
         Grid.SetRow(footer, 1); page.Children.Add(footer);
         // The sidebar button at the top-leading corner, where the workspace header has it (padding l24 t14).
         var toggle = NewSidebarToggle("welcome-sidebar-toggle");
-        toggle.HorizontalAlignment = HorizontalAlignment.Left; toggle.VerticalAlignment = VerticalAlignment.Top; toggle.Margin = new Thickness(24, 14, 0, 0);
+        toggle.HorizontalAlignment = HorizontalAlignment.Left; toggle.VerticalAlignment = VerticalAlignment.Top; toggle.Margin = new Thickness(DesignMetrics.Spacing.Xl, DesignMetrics.Spacing.Md, 0, 0);
         page.Children.Add(toggle);
         AutomationProperties.SetAutomationId(page, "welcome");
         return page;
@@ -77,15 +77,15 @@ public sealed partial class MainWindow
     /// </summary>
     private StackPanel BuildEmptyPanes(bool canAdd)
     {
-        var stack = new StackPanel { Spacing = 10, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(32) };
+        var stack = new StackPanel { Spacing = DesignMetrics.Spacing.Md, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(DesignMetrics.Spacing.Xl) };
         // square.stack.3d.up: layers stacked in depth (Segoe Fluent Icons MapLayers).
-        stack.Children.Add(new FontIcon { Glyph = "", FontSize = 36, Foreground = brushes.Brush(DesignToken.Ink2), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 6) });
+        stack.Children.Add(new FontIcon { Glyph = "", FontSize = 36, Foreground = brushes.Brush(DesignToken.Ink2), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, DesignMetrics.Spacing.Sm) });
         stack.Children.Add(new TextBlock { Text = Locale.Get("layout.empty.addPane"), FontSize = 20, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Ink), TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap });
         stack.Children.Add(new TextBlock { Text = Locale.Get("layout.empty.addPaneDetail"), FontSize = DesignMetrics.Type.Body, Foreground = brushes.Brush(DesignToken.Ink2), TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap, MaxWidth = 420 });
         if (canAdd)
         {
             var title = Locale.Get("workspace.newAgentPane", new Dictionary<string, string> { ["provider"] = ProviderMark.Label(AddPaneMenu.NewPaneShortcutProvider) });
-            var add = new Button { Content = title, Style = (Style)Application.Current.Resources["AccentButtonStyle"], FontSize = DesignMetrics.Type.Body, CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 8, 0, 0) };
+            var add = new Button { Content = title, Style = (Style)Application.Current.Resources["AccentButtonStyle"], FontSize = DesignMetrics.Type.Body, CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, DesignMetrics.Spacing.Sm, 0, 0) };
             add.Click += async (_, _) => await AddPaneFromShortcut();
             AutomationProperties.SetName(add, title); AutomationProperties.SetAutomationId(add, "empty-panes-add");
             stack.Children.Add(add);
@@ -105,18 +105,24 @@ public sealed partial class MainWindow
 
         /// <summary>The empty state the design smoke reads (null on a pane that is not an agent's).</summary>
         internal StackPanel? EmptyOutputForSmoke => emptyOutput;
-        /// <summary>The empty state's padding (M/SessionPaneView.swift:515 <c>.padding(24)</c>).</summary>
-        internal const double EmptyOutputPadding = 24;
+        /// <summary>The empty state's padding (M/SessionPaneView.swift:543 <c>.padding(Spacing.xl)</c>).</summary>
+        internal const double EmptyOutputPadding = DesignMetrics.Spacing.Xl;
 
-        /// <summary>The pane's own inset, which the Mac's output area keeps beside its text view (M/SessionPaneView.swift:497 <c>.padding(.horizontal, 12)</c>).</summary>
-        internal const double TranscriptGutter = 12;
+        /// <summary>
+        /// The pane grid's padding: what the Mac's output area keeps beside its text view (M/SessionPaneView.swift:525
+        /// <c>.padding(.horizontal, Spacing.xs)</c>). The header, the transcript, the composer's region and the
+        /// terminal, browser and files hosts reach over it to the card's edge.
+        /// </summary>
+        internal const double PaneInset = DesignMetrics.Spacing.Xs;
+        /// <summary>The pane's own inset beside the transcript's text, the pane grid's padding.</summary>
+        internal const double TranscriptGutter = PaneInset;
         /// <summary>
         /// The Default conversation's surface (M/SessionPaneView.swift:490-499): concept D sets the
         /// conversation on the raised grey, edge to edge under the header and down to where the composer's
-        /// region starts, which is its own 12 over the composer card (M/SessionPaneView.swift:660), drawn as
-        /// bubbles, reply cards and tool chips (<c>cards: true</c>). Its words stand 12 + 15 in from
-        /// the pane's edge: the output area's padding and the text view's own inset (M/AgentTranscriptView.swift:168),
-        /// whose 15 over the first line and under the last scroll with the document.
+        /// region starts, which is its own <c>Inset.ComposerOuter</c> over the composer card (M/SessionPaneView.swift:690), drawn as
+        /// bubbles, reply cards and tool chips (<c>cards: true</c>). Its words stand <see cref="PaneInset"/> + <c>Inset.Transcript</c>
+        /// in from the pane's edge: the output area's padding and the text view's own inset (M/AgentTranscriptView.swift:168),
+        /// whose inset over the first line and under the last scrolls with the document.
         /// The transcript is a stock RichEditBox, so its state resources take the same shared brush,
         /// written once here, while the pane is built and before it enters the tree.
         /// </summary>
@@ -137,15 +143,15 @@ public sealed partial class MainWindow
         /// <summary>
         /// The empty agent pane (M/SessionPaneView.swift:502-516): the agent's 24pt mark, "start working
         /// with" its name in 16pt medium <c>ink</c> (with the beta capsule for a beta agent) and the 12pt
-        /// <c>ink2</c> explanation, padding 24 inside the output area's own 12, over the conversation in the
-        /// Default view while it is empty: 36 in from the pane's edge and 24 under the header.
+        /// <c>ink2</c> explanation, padded by <see cref="EmptyOutputPadding"/> inside the output area's own <see cref="PaneInset"/>,
+        /// over the conversation in the Default view while it is empty.
         /// Not hit-testable, so it never takes a click from the transcript under it.
         /// </summary>
         private void InitializeEmptyOutput(Grid grid)
         {
             if (Session.Kind != "claude") return;
-            // The pane grid already insets its rows by 12 and parts them from the header by its row spacing.
-            emptyOutput = new StackPanel { Spacing = 10, Margin = new Thickness(EmptyOutputPadding, EmptyOutputPadding - grid.RowSpacing, EmptyOutputPadding, 0), VerticalAlignment = VerticalAlignment.Top, IsHitTestVisible = false, Visibility = Visibility.Collapsed };
+            // The pane grid already insets its rows by PaneInset and parts them from the header by its row spacing.
+            emptyOutput = new StackPanel { Spacing = DesignMetrics.Spacing.Md, Margin = new Thickness(EmptyOutputPadding, EmptyOutputPadding - grid.RowSpacing, EmptyOutputPadding, 0), VerticalAlignment = VerticalAlignment.Top, IsHitTestVisible = false, Visibility = Visibility.Collapsed };
             AutomationProperties.SetAutomationId(emptyOutput, "pane-empty-" + id);
             emptyOutput.SizeChanged += (_, _) => fitEmptyTitle?.Invoke();
             Grid.SetRow(emptyOutput, 1); grid.Children.Add(emptyOutput);
@@ -169,10 +175,10 @@ public sealed partial class MainWindow
             if (ProviderMark.MarkedProvider(pane.Provider) is { } marked)
             {
                 var mark = ProviderMarkView.Create(marked, 24);
-                mark.HorizontalAlignment = HorizontalAlignment.Left; mark.Margin = new Thickness(0, 0, 0, 5);
+                mark.HorizontalAlignment = HorizontalAlignment.Left; mark.Margin = new Thickness(0, 0, 0, DesignMetrics.Spacing.Xs);
                 emptyOutput.Children.Add(mark);
             }
-            var heading = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            var heading = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
             // "Claude와 작업을 시작하세요": the agent's short name, as the Mac says it (M/SessionPaneView.swift:509 ProviderOptions.label).
             var title = new TextBlock
             {

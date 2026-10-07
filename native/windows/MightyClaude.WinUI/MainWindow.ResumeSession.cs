@@ -85,23 +85,23 @@ public sealed partial class MainWindow
     {
         var agent = ProviderMark.Label(provider);
         var title = Locale.Get("resume.choice.title", new Dictionary<string, string> { ["provider"] = agent });
-        var top = new Grid { ColumnSpacing = 10 };
+        var top = new Grid { ColumnSpacing = DesignMetrics.Spacing.Md };
         top.ColumnDefinitions.Add(new() { Width = new(ResumeMarkColumn) }); top.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
         var mark = ProviderMarkView.Create(provider, ResumeMarkSize * ProviderIconScale);
         mark.HorizontalAlignment = HorizontalAlignment.Center; mark.VerticalAlignment = VerticalAlignment.Top; mark.Margin = new Thickness(0, 1, 0, 0);
         top.Children.Add(mark);
-        var words = new StackPanel { Spacing = 4 };
+        var words = new StackPanel { Spacing = DesignMetrics.Spacing.Xs };
         words.Children.Add(SheetTitle(title));
         words.Children.Add(new TextBlock { Text = Locale.Get("resume.choice.message", new Dictionary<string, string> { ["provider"] = agent }), FontSize = 12, LineHeight = 15, LineStackingStrategy = LineStackingStrategy.BlockLineHeight, Foreground = brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap });
         Grid.SetColumn(words, 1); top.Children.Add(words);
 
         var cancel = PushButton(Locale.Get("resume.cancel")); var resume = PushButton(Locale.Get("resume.choice.resume")); var startNew = PushButton(Locale.Get("resume.choice.startNew"), prominent: true);
         AutomationProperties.SetAutomationId(cancel, "add-pane-choice-cancel"); AutomationProperties.SetAutomationId(resume, "add-pane-choice-resume"); AutomationProperties.SetAutomationId(startNew, "add-pane-choice-new");
-        var buttons = new Grid { ColumnSpacing = 8 };
+        var buttons = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
         foreach (var width in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto, GridLength.Auto }) buttons.ColumnDefinitions.Add(new() { Width = width });
         buttons.Children.Add(cancel); Grid.SetColumn(resume, 2); buttons.Children.Add(resume); Grid.SetColumn(startNew, 3); buttons.Children.Add(startNew);
 
-        var body = new StackPanel { Spacing = 16 };
+        var body = new StackPanel { Spacing = DesignMetrics.Spacing.Lg };
         body.Children.Add(top); body.Children.Add(buttons);
         var choice = StyledDialog(new ContentDialog { Content = body, XamlRoot = root.XamlRoot }, ChoiceSheetWidth, bare: true);
         AutomationProperties.SetAutomationId(choice, "add-pane-choice"); AutomationProperties.SetName(choice, title);
@@ -132,26 +132,26 @@ public sealed partial class MainWindow
         // title beside the agent's mark over the folder's path; the title search; the sessions; Show all sessions
         // with the hidden count; the note with Cancel at its end.
         var ink2 = brushes.Brush(DesignToken.Ink2); var tertiary = brushes.Tertiary;
-        var content = new Grid { RowSpacing = 12 };
+        var content = new Grid { RowSpacing = DesignMetrics.Spacing.Md };
         foreach (var height in new[] { GridLength.Auto, GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto, GridLength.Auto }) content.RowDefinitions.Add(new() { Height = height });
         void Place(FrameworkElement part, int row) { Grid.SetRow(part, row); content.Children.Add(part); }
 
-        var titleRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7 };
+        var titleRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
         titleRow.Children.Add(ProviderMarkView.Create(provider, ResumeRowMarkSize * ProviderIconScale)); titleRow.Children.Add(SheetTitle(Locale.Get("resume.title")));
         var path = new TextBlock { FontSize = DesignMetrics.Type.Mono, FontFamily = new Microsoft.UI.Xaml.Media.FontFamily(DesignMetrics.Font.Mono), Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis, HorizontalAlignment = HorizontalAlignment.Left, LineHeight = 14, LineStackingStrategy = LineStackingStrategy.BlockLineHeight };
         MiddleTrim.Fit(path, workspace.Path, ResumeSheetWidth - 2 * SheetPadding - 2 * DesignMetrics.Stroke.Line); ToolTipService.SetToolTip(path, workspace.Path);
-        var heading = new StackPanel { Spacing = 3 }; heading.Children.Add(titleRow); heading.Children.Add(path);
+        var heading = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs }; heading.Children.Add(titleRow); heading.Children.Add(path);
         Place(heading, 0);
 
         // The search: a magnifier in the tertiary ink (:85) and the plain 12pt field 7 apart, padding 7 on the subtle wash at radius 7 (29 high on the Mac's crop).
         var search = new TextBox { PlaceholderText = Locale.Get("resume.search"), FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
         PaintPlainTextBox(search);
         AutomationProperties.SetName(search, Locale.Get("resume.search")); AutomationProperties.SetAutomationId(search, "resume-search");
-        var searchRow = new Grid { ColumnSpacing = 7 };
+        var searchRow = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
         searchRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); searchRow.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
         searchRow.Children.Add(new FontIcon { Glyph = "\uE721", FontSize = 15, Foreground = tertiary, VerticalAlignment = VerticalAlignment.Center });
         Grid.SetColumn(search, 1); searchRow.Children.Add(search);
-        Place(new Border { Child = searchRow, Height = 29, Padding = new Thickness(7, 0, 7, 0), CornerRadius = new CornerRadius(DesignMetrics.Radius.Search), Background = brushes.Subtle }, 1);
+        Place(new Border { Child = searchRow, Height = 29, Padding = new Thickness(DesignMetrics.Spacing.Sm, 0, DesignMetrics.Spacing.Sm, 0), CornerRadius = new CornerRadius(DesignMetrics.Radius.Search), Background = brushes.Subtle }, 1);
 
         // The sessions on half the subtle wash at radius 8, their rows 2 apart (standing in place at once, as the Mac's,
         // when the search narrows them); or, in their place, why there are none.
@@ -175,13 +175,13 @@ public sealed partial class MainWindow
         showAllRow.Children.Add(new Viewbox { Height = 20 * checkScale, Child = showAll, VerticalAlignment = VerticalAlignment.Center }); showAllRow.Children.Add(showAllWords);
         var hidden = new TextBlock { FontSize = DesignMetrics.Type.Small, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
         AutomationProperties.SetAutomationId(hidden, "resume-hidden-count");
-        var footer = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+        var footer = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Md };
         footer.Children.Add(showAllRow); footer.Children.Add(hidden);
         Place(footer, 3);
 
         var note = new TextBlock { Text = Locale.Get("resume.note"), FontSize = DesignMetrics.Type.Small, Foreground = ink2, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
         var cancel = PushButton(Locale.Get("resume.cancel"));
-        var bottom = new Grid { ColumnSpacing = 8 };
+        var bottom = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
         bottom.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); bottom.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         bottom.Children.Add(note); Grid.SetColumn(cancel, 1); bottom.Children.Add(cancel);
         Place(bottom, 4);
@@ -196,7 +196,7 @@ public sealed partial class MainWindow
         // What stands in the list's place (M/ResumeSessionSheet.swift:114-128): a 26pt light symbol in the tertiary ink, a 13pt medium line and its 11pt reason, 8 apart.
         FrameworkElement Nothing(string line, string? reason)
         {
-            var words = new StackPanel { Spacing = 8, Padding = new Thickness(20), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+            var words = new StackPanel { Spacing = DesignMetrics.Spacing.Sm, Padding = new Thickness(DesignMetrics.Spacing.Lg), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             words.Children.Add(new FontIcon { Glyph = "\uE81C", FontSize = 28, FontWeight = FontWeights.Light, Foreground = tertiary });
             words.Children.Add(new TextBlock { Text = line, FontSize = DesignMetrics.Type.Title, FontWeight = FontWeights.Medium, Foreground = brushes.Brush(DesignToken.Ink), TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, TextWrapping = TextWrapping.Wrap });
             if (reason is not null) words.Children.Add(new TextBlock { Text = reason, FontSize = DesignMetrics.Type.Pill, Foreground = ink2, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, TextWrapping = TextWrapping.Wrap });
@@ -221,7 +221,7 @@ public sealed partial class MainWindow
         {
             var load = ++loads; reading = true;
             // The Mac's progress view over its words, in the list's place.
-            var progress = new StackPanel { Spacing = 8, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+            var progress = new StackPanel { Spacing = DesignMetrics.Spacing.Sm, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             progress.Children.Add(new ProgressRing { IsActive = true, Width = 20, Height = 20, MinWidth = 0, MinHeight = 0, HorizontalAlignment = HorizontalAlignment.Center });
             progress.Children.Add(new TextBlock { Text = Locale.Get("resume.loading"), FontSize = DesignMetrics.Type.Pill, Foreground = ink2, HorizontalAlignment = HorizontalAlignment.Center });
             list.Items.Clear(); list.Visibility = Visibility.Collapsed; state.Child = progress;
@@ -267,11 +267,11 @@ public sealed partial class MainWindow
         var spoken = ResumableSessions.Details(item, now);
         var busy = ResumableSessions.MayBeRunning(item, now); var warning = Locale.Get("resume.recentlyModified");
         var details = busy && spoken.EndsWith(" · " + warning, StringComparison.Ordinal) ? spoken[..^(warning.Length + 3)] : spoken;
-        var words = new StackPanel { Spacing = 4 };
+        var words = new StackPanel { Spacing = DesignMetrics.Spacing.Xs };
         var name = new TextBlock { Text = title, FontSize = 12, FontWeight = FontWeights.Medium, Foreground = brushes.Brush(item.Title is null ? DesignToken.Ink2 : DesignToken.Ink), TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis, LineHeight = 15, LineStackingStrategy = LineStackingStrategy.BlockLineHeight };
         if (ProviderCatalog.IsBeta(item.Provider))
         {
-            var line = new Grid { ColumnSpacing = 6, HorizontalAlignment = HorizontalAlignment.Left };
+            var line = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, HorizontalAlignment = HorizontalAlignment.Left };
             line.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); line.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             line.Children.Add(name);
             var badge = BetaBadgeView.Create(brushes); Grid.SetColumn(badge, 1); line.Children.Add(badge);
@@ -282,18 +282,18 @@ public sealed partial class MainWindow
         if (busy)
         {
             var wait = brushes.Brush(DesignToken.WaitText);
-            var caution = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+            var caution = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs };
             caution.Children.Add(new FontIcon { Glyph = "\uE783", FontSize = 11, Foreground = wait, VerticalAlignment = VerticalAlignment.Center });
             caution.Children.Add(new TextBlock { Text = warning, FontSize = DesignMetrics.Type.Small, Foreground = wait, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center });
             AutomationProperties.SetAutomationId(caution, "resume-busy-" + item.SessionID);
             words.Children.Add(caution);
         }
         var mark = ProviderMarkView.Create(item.Provider, ResumeRowMarkSize * ProviderIconScale);
-        mark.HorizontalAlignment = HorizontalAlignment.Center; mark.VerticalAlignment = VerticalAlignment.Top; mark.Margin = new Thickness(0, 2, 0, 0);
-        var row = new Grid { ColumnSpacing = 10, Tag = item };
+        mark.HorizontalAlignment = HorizontalAlignment.Center; mark.VerticalAlignment = VerticalAlignment.Top; mark.Margin = new Thickness(0, DesignMetrics.Spacing.Xxs, 0, 0);
+        var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Md, Tag = item };
         row.ColumnDefinitions.Add(new() { Width = new(ResumeRowMarkColumn) }); row.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
         row.Children.Add(mark); Grid.SetColumn(words, 1); row.Children.Add(words);
-        var container = new ListViewItem { Content = row, Tag = item, Padding = new Thickness(10, 8, 10, 8), MinHeight = 0, Margin = new Thickness(0, 0, 0, 2), HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Top };
+        var container = new ListViewItem { Content = row, Tag = item, Padding = new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm), MinHeight = 0, Margin = new Thickness(0, 0, 0, DesignMetrics.Spacing.Xxs), HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Top };
         var provider = ProviderCatalog.BetaLabel(item.Provider, ProviderMark.Label(item.Provider));
         AutomationProperties.SetName(container, Locale.Get("resume.rowAccessibility", new Dictionary<string, string> { ["provider"] = provider, ["title"] = title, ["details"] = spoken }));
         AutomationProperties.SetAutomationId(container, "resume-session-" + item.SessionID);

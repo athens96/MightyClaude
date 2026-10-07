@@ -170,11 +170,11 @@ public sealed partial class MainWindow
         {
             var b = owner.brushes; var ink = b.Brush(DesignToken.Ink); var ink2 = b.Brush(DesignToken.Ink2);
             var plan = request.Plan ?? "";
-            var body = new Grid { RowSpacing = 10 };
+            var body = new Grid { RowSpacing = DesignMetrics.Spacing.Md };
             foreach (var height in new[] { GridLength.Auto, inDiagram ? new GridLength(1, GridUnitType.Star) : GridLength.Auto, GridLength.Auto })
                 body.RowDefinitions.Add(new RowDefinition { Height = height });
 
-            var header = new Grid { ColumnSpacing = 8 };
+            var header = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             foreach (var width in new[] { GridLength.Auto, GridLength.Auto, GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto, GridLength.Auto }) header.ColumnDefinitions.Add(new() { Width = width });
             header.Children.Add(WaitBadge(ComposerGlyph.Icon("", 11, 22, 22).Ink(b.Brush(DesignToken.OnWait)).View));
             var title = new TextBlock { Text = Locale.Get("plan.card.title"), FontSize = 13, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
@@ -195,7 +195,7 @@ public sealed partial class MainWindow
             if (!inDiagram) page.MaxHeight = 260;
             Grid.SetRow(page, 1); body.Children.Add(page);
 
-            var controls = new StackPanel { Spacing = 10 };
+            var controls = new StackPanel { Spacing = DesignMetrics.Spacing.Md };
             Grid.SetRow(controls, 2); body.Children.Add(controls);
 
             var card = WaitCard(body);
@@ -216,7 +216,7 @@ public sealed partial class MainWindow
             if (draft.Revising)
             {
                 Button? send = null;
-                var revise = new StackPanel { Spacing = 6 };
+                var revise = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
                 var field = new TextBox { AcceptsReturn = true, Text = draft.Feedback, PlaceholderText = Locale.Get("plan.card.revisePlaceholder"), PlaceholderForeground = b.Tertiary, FontSize = 12, TextWrapping = TextWrapping.Wrap, MinHeight = 56, MaxHeight = 120, IsEnabled = !draft.Sending };
                 AutomationProperties.SetName(field, Locale.Get("plan.card.revisePlaceholder"));
                 AutomationProperties.SetAutomationId(field, "plan-revise-text-" + id);
@@ -229,7 +229,7 @@ public sealed partial class MainWindow
                 }
                 field.TextChanged += (_, _) => { draft.Feedback = field.Text; Check(); };
                 revise.Children.Add(field); revise.Children.Add(tooLong);
-                var reviseActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right };
+                var reviseActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, HorizontalAlignment = HorizontalAlignment.Right };
                 var close = Button(Locale.Get("plan.card.reviseClose"), () => { draft.Revising = false; draft.Error = null; RenderPlanEverywhere(); return Task.CompletedTask; }); PaintCardButton(close, prominent: false);
                 close.IsEnabled = !draft.Sending;
                 AutomationProperties.SetAutomationId(close, "plan-revise-close-" + id); reviseActions.Children.Add(close);
@@ -248,7 +248,7 @@ public sealed partial class MainWindow
                 parts.Controls.Children.Add(message);
             }
 
-            var hint = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            var hint = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
             if (draft.Sending)
             {
                 var sending = new ProgressRing { IsActive = true, Width = 12, Height = 12, MinWidth = 0, MinHeight = 0, VerticalAlignment = VerticalAlignment.Center, Foreground = ink2 };
@@ -282,7 +282,7 @@ public sealed partial class MainWindow
         private void PaintAccentButton(Button button)
         {
             button.CornerRadius = new CornerRadius(DesignMetrics.Radius.CardButton); button.FontSize = 12; button.FontWeight = Microsoft.UI.Text.FontWeights.Bold;
-            button.Padding = new Thickness(13, 0, 13, 0); button.MinWidth = 0; button.MinHeight = 28; button.Height = 28; button.BorderThickness = new Thickness(0);
+            button.Padding = CardButtonPadding; button.MinWidth = 0; button.MinHeight = CardButtonHeight; button.Height = CardButtonHeight; button.BorderThickness = new Thickness(0);
             var fill = owner.brushes.Brush(DesignToken.Accent); var ink = owner.brushes.Brush(DesignToken.OnAccent);
             owner.PaintPlainButton(button, fill, fill, null, ink, ink);
             button.Opacity = button.IsEnabled ? 1 : CardButtonDisabled;
@@ -348,7 +348,7 @@ public sealed partial class MainWindow
         private async Task OpenPlanDocument(string title, string subtitle, string plan)
         {
             if (owner.dialogOpen || owner.options.SmokeTest) return;
-            var content = new Grid { RowSpacing = 8 };
+            var content = new Grid { RowSpacing = DesignMetrics.Spacing.Sm };
             content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); content.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
             content.Children.Add(new TextBlock { Text = subtitle, FontSize = 11, Foreground = owner.brushes.Brush(DesignToken.Ink2) });
             var document = PlanMarkdown(plan, "plan-document");
@@ -380,7 +380,7 @@ public sealed partial class MainWindow
             if (records.Count == 0) return;
             var b = owner.brushes; var ink = b.Brush(DesignToken.Ink); var ink2 = b.Brush(DesignToken.Ink2);
             var last = records[^1];
-            var face = new Grid { ColumnSpacing = 6 };
+            var face = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             foreach (var width in new[] { GridLength.Auto, GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto }) face.ColumnDefinitions.Add(new() { Width = width });
             face.Children.Add(ComposerGlyph.Icon("", 11).Ink(b.Brush(DesignToken.Accent)).View);
             var count = new TextBlock { Text = Locale.Get("plan.history.title", new Dictionary<string, string> { ["count"] = records.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) }), FontSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
@@ -393,11 +393,11 @@ public sealed partial class MainWindow
             fold.IsChecked = planHistoryOpen;
             AutomationProperties.SetAutomationId(fold, "plan-history-" + id);
             fold.Click += (_, _) => { planHistoryOpen = !planHistoryOpen; RefreshPlanHistory(Session); };
-            var strip = new StackPanel { Spacing = 6 };
+            var strip = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
             strip.Children.Add(fold);
             if (planHistoryOpen)
             {
-                var list = new StackPanel { Spacing = 6 };
+                var list = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
                 foreach (var record in Enumerable.Reverse(records))
                 {
                     var recordId = record.Id;
@@ -407,7 +407,7 @@ public sealed partial class MainWindow
             }
             planHistoryHost.Children.Add(new Border
             {
-                Child = strip, Padding = new Thickness(12 - DesignMetrics.Stroke.Line, 6 - DesignMetrics.Stroke.Line, 12 - DesignMetrics.Stroke.Line, 6 - DesignMetrics.Stroke.Line),
+                Child = strip, Padding = new Thickness(DesignMetrics.Spacing.Md - DesignMetrics.Stroke.Line, DesignMetrics.Spacing.Sm - DesignMetrics.Stroke.Line, DesignMetrics.Spacing.Md - DesignMetrics.Stroke.Line, DesignMetrics.Spacing.Sm - DesignMetrics.Stroke.Line),
                 CornerRadius = new CornerRadius(DesignMetrics.Radius.Entry), Background = b.Brush(DesignToken.Card), BorderBrush = b.Brush(DesignToken.Line), BorderThickness = new Thickness(DesignMetrics.Stroke.Line),
             });
         }
@@ -420,9 +420,9 @@ public sealed partial class MainWindow
         {
             var b = owner.brushes; var ink2 = b.Brush(DesignToken.Ink2);
             var tone = record.Outcome switch { PlanOutcome.ApprovedAuto or PlanOutcome.ApprovedConfirm => DesignTone.Done, PlanOutcome.Revised => DesignTone.Wait, _ => DesignTone.Stop };
-            var head = new Grid { ColumnSpacing = 7 };
+            var head = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             foreach (var width in new[] { GridLength.Auto, GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto }) head.ColumnDefinitions.Add(new() { Width = width });
-            var pill = new Border { Child = new TextBlock { Text = PlanCardSupport.OutcomeTitle(record.Outcome), FontSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = b.Text(tone) }, Background = b.Soft(tone), CornerRadius = new CornerRadius(9), Padding = new Thickness(7, 1, 7, 1), VerticalAlignment = VerticalAlignment.Center };
+            var pill = new Border { Child = new TextBlock { Text = PlanCardSupport.OutcomeTitle(record.Outcome), FontSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = b.Text(tone) }, Background = b.Soft(tone), CornerRadius = new CornerRadius(9), Padding = new Thickness(DesignMetrics.Spacing.Sm, 1, DesignMetrics.Spacing.Sm, 1), VerticalAlignment = VerticalAlignment.Center };
             head.Children.Add(pill);
             var time = new TextBlock { Text = PlanCardSupport.TimeText(record.DecidedAt), FontSize = 10, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(time, 1); head.Children.Add(time);
@@ -434,7 +434,7 @@ public sealed partial class MainWindow
             fold.IsChecked = expanded;
             AutomationProperties.SetAutomationId(fold, "plan-record-" + record.Id);
             fold.Click += (_, _) => toggle();
-            var row = new StackPanel { Spacing = 6 };
+            var row = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
             row.Children.Add(fold);
             if (expanded)
             {
@@ -447,7 +447,7 @@ public sealed partial class MainWindow
                 row.Children.Add(new TextBlock { Text = Locale.Get("plan.history.feedback") + " · " + feedback, FontSize = 10.5, Foreground = b.Brush(DesignToken.WaitText), TextWrapping = expanded ? TextWrapping.Wrap : TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, IsTextSelectionEnabled = expanded });
             return new Border
             {
-                Child = row, Padding = new Thickness(inDiagram ? 12 : 8, inDiagram ? 9 : 6, inDiagram ? 12 : 8, inDiagram ? 9 : 6), CornerRadius = new CornerRadius(DesignMetrics.Radius.Row),
+                Child = row, Padding = new Thickness(inDiagram ? DesignMetrics.Spacing.Md : DesignMetrics.Spacing.Sm, inDiagram ? DesignMetrics.Spacing.Sm : DesignMetrics.Spacing.Sm, inDiagram ? DesignMetrics.Spacing.Md : DesignMetrics.Spacing.Sm, inDiagram ? DesignMetrics.Spacing.Sm : DesignMetrics.Spacing.Sm), CornerRadius = new CornerRadius(DesignMetrics.Radius.Row),
                 Background = inDiagram ? b.Transparent : b.Brush(DesignToken.CardRaised), VerticalAlignment = inDiagram ? VerticalAlignment.Stretch : VerticalAlignment.Top,
             };
         }

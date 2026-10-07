@@ -29,8 +29,8 @@ public sealed partial class MainWindow : Window
     private readonly StackPanel sidebarTop = new();
     /// <summary>The scrolling part of the sidebar: the workspace list and its empty text.</summary>
     private readonly StackPanel sidebar = new();
-    private readonly Grid panes = new() { ColumnSpacing = 12, RowSpacing = 12 };
-    private readonly StackPanel workspaces = new() { Spacing = 4, Margin = new Thickness(9, 0, 9, 0) };
+    private readonly Grid panes = new() { ColumnSpacing = DesignMetrics.Spacing.Md, RowSpacing = DesignMetrics.Spacing.Md };
+    private readonly StackPanel workspaces = new() { Spacing = DesignMetrics.Spacing.Xs, Margin = new Thickness(DesignMetrics.Spacing.Sm, 0, DesignMetrics.Spacing.Sm, 0) };
     private readonly TextBox search = new() { FontSize = 12, BorderThickness = new Thickness(0), Padding = new Thickness(0), MinHeight = 0, VerticalAlignment = VerticalAlignment.Center };
     private readonly TextBlock sessionsHeader = new() { FontSize = DesignMetrics.Type.Small, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center };
     // The whole Windows app is a beta: the badge beside the sidebar brand.
@@ -312,8 +312,8 @@ public sealed partial class MainWindow : Window
         private bool composerFocused, composerDropTargeted;
         private readonly StackPanel selectors = new() { Orientation = Orientation.Horizontal, Spacing = ToolbarSpacing, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
         /// <summary>The attachments of the next request: one row that scrolls sideways (M/SessionPaneView.swift:542-553).</summary>
-        private readonly StackPanel attachmentChips = new() { Orientation = Orientation.Horizontal, Spacing = 7 };
-        private readonly ScrollViewer attachmentsScroll = new() { HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden, HorizontalScrollMode = ScrollMode.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollMode = ScrollMode.Disabled, Margin = new Thickness(10, 10, 10, 0), Visibility = Visibility.Collapsed };
+        private readonly StackPanel attachmentChips = new() { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
+        private readonly ScrollViewer attachmentsScroll = new() { HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden, HorizontalScrollMode = ScrollMode.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollMode = ScrollMode.Disabled, Margin = new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Md, 0), Visibility = Visibility.Collapsed };
         private readonly List<RunAttachment> pendingAttachments = [];
         private bool updating, draftLoaded, attachmentsLoading, composingInput, starting, stopping, canSend;
         public Border Container { get; }
@@ -332,9 +332,9 @@ public sealed partial class MainWindow : Window
             this.owner = owner; this.id = id;
             output.OpenReference = OpenReferencePreview; output.OpenImage = OpenTranscriptImage;
             InitSlashPalette(); InitPermissionBar(); InitializeStyles();
-            var grid = new Grid { Padding = new Thickness(12), RowSpacing = 8 };
+            var grid = new Grid { Padding = new Thickness(PaneInset), RowSpacing = DesignMetrics.Spacing.Sm };
             foreach (var height in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto }) grid.RowDefinitions.Add(new RowDefinition { Height = height });
-            // The 34pt header line runs edge to edge over the pane card (MainWindow.PaneHeader.cs).
+            // The header line runs edge to edge over the pane card (MainWindow.PaneHeader.cs).
             var header = BuildPaneHeader(); grid.Children.Add(header);
             // Copy lives in the header's … menu, as on the Mac (decision Q4).
             AddPaneMenu();
@@ -413,9 +413,9 @@ public sealed partial class MainWindow : Window
             {
                 Container.BorderBrush = b.Transparent; Container.BorderThickness = new Thickness(0);
                 Container.CornerRadius = new CornerRadius(0, 0, DesignMetrics.Radius.Pane, DesignMetrics.Radius.Pane);
-                // Its content fills the card, over the pane grid's 12pt padding (the browser's host is built that way);
+                // Its content fills the card, over the pane grid's padding (the browser's host is built that way);
                 // a margin the files pane gives its own host is left alone.
-                if (filesHost is { } files && files.Margin == default) files.Margin = new Thickness(-12);
+                if (filesHost is { } files && files.Margin == default) files.Margin = new Thickness(-PaneInset);
             }
             else Container.BorderBrush = active ? b.Brush(DesignToken.Accent, DesignMetrics.Opacity.PaneActiveBorder) : b.Brush(DesignToken.Line);
             PaintHeaderFade();
@@ -539,10 +539,10 @@ public sealed partial class MainWindow : Window
                 var picture = new Grid { Width = 34, Height = 34, CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow), Background = b.Brush(DesignToken.Ink, AttachmentPictureWash) };
                 if (image) { var thumbnail = new Microsoft.UI.Xaml.Shapes.Rectangle { RadiusX = DesignMetrics.Radius.FileRow, RadiusY = DesignMetrics.Radius.FileRow }; picture.Children.Add(thumbnail); _ = LoadThumbnail(file, thumbnail); }
                 else picture.Children.Add(new FontIcon { Glyph = file.MediaType == "application/pdf" ? "" : "", FontSize = 17, Foreground = b.Brush(DesignToken.Accent) });
-                var words = new StackPanel { Spacing = 2, Width = 106, VerticalAlignment = VerticalAlignment.Center };
+                var words = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs, Width = 106, VerticalAlignment = VerticalAlignment.Center };
                 words.Children.Add(new TextBlock { Text = file.Name, FontSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = b.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap });
                 words.Children.Add(new TextBlock { Text = size, FontSize = 10, Foreground = b.Brush(DesignToken.Ink2) });
-                var face = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7 }; face.Children.Add(picture); face.Children.Add(words);
+                var face = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm }; face.Children.Add(picture); face.Children.Add(words);
                 var preview = Button(file.Name, () => PreviewAttachment(file)); preview.Content = face; preview.MinWidth = 0; preview.MinHeight = 0; preview.Padding = new Thickness(0); preview.BorderThickness = new Thickness(0); preview.CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow);
                 owner.PaintPlainButton(preview, b.Transparent, b.Transparent);
                 AutomationProperties.SetName(preview, Locale.Get("composer.attachment.preview", new Dictionary<string, string> { ["name"] = file.Name })); ToolTipService.SetToolTip(preview, $"{file.Name} · {size}");
@@ -550,8 +550,8 @@ public sealed partial class MainWindow : Window
                 remove.Content = new FontIcon { Glyph = "", FontSize = 9, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold }; remove.MinWidth = 0; remove.MinHeight = 0; remove.Width = 20; remove.Height = 26; remove.Padding = new Thickness(0); remove.BorderThickness = new Thickness(0); remove.CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow); remove.VerticalAlignment = VerticalAlignment.Center;
                 owner.PaintPlainButton(remove, b.Transparent, b.Subtle, ink: b.Brush(DesignToken.Ink2));
                 AutomationProperties.SetName(remove, Locale.Get("composer.attachment.remove", new Dictionary<string, string> { ["name"] = file.Name })); AutomationProperties.SetAutomationId(remove, "remove-attachment-" + file.Id);
-                var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7 }; row.Children.Add(preview); row.Children.Add(remove);
-                var chip = new Border { Child = row, Padding = new Thickness(6), CornerRadius = new CornerRadius(AttachmentChipRadius), Background = b.Brush(DesignToken.Ink, AttachmentChipWash), BorderBrush = b.Brush(DesignToken.Line), BorderThickness = new Thickness(DesignMetrics.Stroke.Hairline) };
+                var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm }; row.Children.Add(preview); row.Children.Add(remove);
+                var chip = new Border { Child = row, Padding = new Thickness(DesignMetrics.Spacing.Sm), CornerRadius = new CornerRadius(AttachmentChipRadius), Background = b.Brush(DesignToken.Ink, AttachmentChipWash), BorderBrush = b.Brush(DesignToken.Line), BorderThickness = new Thickness(DesignMetrics.Stroke.Hairline) };
                 AutomationProperties.SetAutomationId(chip, "attachment-" + file.Id);
                 attachmentChips.Children.Add(chip);
             }
@@ -562,7 +562,7 @@ public sealed partial class MainWindow : Window
         private static async Task LoadThumbnail(RunAttachment file, Microsoft.UI.Xaml.Shapes.Rectangle thumbnail) { try { thumbnail.Fill = new ImageBrush { ImageSource = await AttachmentInput.PreviewAsync(file, 96), Stretch = Stretch.UniformToFill }; } catch (Exception) { thumbnail.Visibility = Visibility.Collapsed; } }
         private Task PreviewAttachment(RunAttachment file) => owner.Act(async () =>
         {
-            var content = new StackPanel { Spacing = 10, MaxWidth = 640 }; content.Children.Add(new TextBlock { Text = $"{file.MediaType} · {AttachmentSupport.DecodedLength(file):N0} bytes", FontSize = 11 });
+            var content = new StackPanel { Spacing = DesignMetrics.Spacing.Md, MaxWidth = 640 }; content.Children.Add(new TextBlock { Text = $"{file.MediaType} · {AttachmentSupport.DecodedLength(file):N0} bytes", FontSize = 11 });
             if (file.MediaType.StartsWith("image/", StringComparison.Ordinal)) content.Children.Add(new Image { Source = await AttachmentInput.PreviewAsync(file), MaxHeight = 420, Stretch = Stretch.Uniform });
             else if (file.MediaType == "text/plain") { var text = System.Text.Encoding.UTF8.GetString(AttachmentSupport.Decode(file)); content.Children.Add(new TextBox { AcceptsReturn = true, Text = text[..Math.Min(text.Length, 20000)], IsReadOnly = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 350 }); }
             else content.Children.Add(new TextBlock { Text = Locale.Get("composer.attachment.sentAsFile"), TextWrapping = TextWrapping.Wrap });
@@ -590,7 +590,7 @@ public sealed partial class MainWindow : Window
         /// <summary>A section header in a menu (the Mac's provider <c>Section</c>): a small quiet line over its rows that cannot be chosen.</summary>
         private MenuFlyoutItem MenuHeader(string text)
         {
-            var item = new MenuFlyoutItem { Text = text, IsEnabled = false, FontSize = DesignMetrics.Type.Pill, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, MinHeight = 0, Padding = new Thickness(11, 7, 11, 3) };
+            var item = new MenuFlyoutItem { Text = text, IsEnabled = false, FontSize = DesignMetrics.Type.Pill, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, MinHeight = 0, Padding = new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Xxs) };
             owner.SetResourcesOnce(item, [("MenuFlyoutItemForegroundDisabled", owner.brushes.Brush(DesignToken.Ink3))]);
             return item;
         }
@@ -788,7 +788,7 @@ public sealed partial class MainWindow : Window
         }
         private Task CustomModel() => owner.Act(async () =>
         {
-            if (Session.Status == "running") return; var field = new TextBox { Header = Locale.Get("composer.model.idHeader"), Text = Session.Model }; var validation = new TextBlock { TextWrapping = TextWrapping.Wrap }; var content = new StackPanel { Spacing = 8 }; content.Children.Add(field); content.Children.Add(validation);
+            if (Session.Status == "running") return; var field = new TextBox { Header = Locale.Get("composer.model.idHeader"), Text = Session.Model }; var validation = new TextBlock { TextWrapping = TextWrapping.Wrap }; var content = new StackPanel { Spacing = DesignMetrics.Spacing.Sm }; content.Children.Add(field); content.Children.Add(validation);
             var dialog = owner.StyledDialog(new ContentDialog { Title = Locale.Get("composer.model.enterIdTitle"), Content = content, XamlRoot = owner.root.XamlRoot, PrimaryButtonText = Locale.Get("composer.model.select"), CloseButtonText = Locale.Get("settings.run.cancelButton") });
             dialog.PrimaryButtonClick += (_, args) => { if (!Wire.Model(field.Text.Trim())) { validation.Text = Locale.Get("composer.model.invalidName"); args.Cancel = true; } };
             if (await dialog.ShowAsync() == ContentDialogResult.Primary) await ChangeModel(field.Text.Trim());

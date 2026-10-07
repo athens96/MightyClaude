@@ -52,15 +52,15 @@ public sealed partial class MainWindow
         SettingsRow(panel, SettingsText(Locale.Get("settings.phaseModels.effortNote"), 11, DesignToken.Ink2));
         foreach (var provider in new[] { "claude", "codex" })
         {
-            var block = new StackPanel { Spacing = 6, Margin = new Thickness(0, 4, 0, 4) };
+            var block = new StackPanel { Spacing = DesignMetrics.Spacing.Sm, Margin = new Thickness(0, DesignMetrics.Spacing.Xs, 0, DesignMetrics.Spacing.Xs) };
             AutomationProperties.SetAutomationId(block, "phaseModels-provider-" + provider);
-            var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
             header.Children.Add(SettingsText(ProviderMark.Label(provider), 12, medium: true));
             if (ProviderCatalog.IsBeta(provider)) header.Children.Add(BetaBadgeView.Create(brushes));
             block.Children.Add(header);
             foreach (var phase in PhaseModelSection.Phases.Where(p => provider != "claude" || p != Phase.Review))
             {
-                var row = new Grid { ColumnSpacing = 8, MinHeight = SettingsControlHeight };
+                var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, MinHeight = SettingsControlHeight };
                 row.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
                 row.ColumnDefinitions.Add(new() { Width = new GridLength(PhaseModelColumn) });
                 row.ColumnDefinitions.Add(new() { Width = new GridLength(PhaseEffortColumn) });
@@ -88,7 +88,7 @@ public sealed partial class MainWindow
             block.Children.Add(PhaseRule());
             foreach (var knob in PhaseModelSection.ToolBlocks(config, tools).Single(b => b.Tool == provider).Knobs.Where(k => !k.IsEffort))
             {
-                var row = new Grid { ColumnSpacing = 8, MinHeight = SettingsControlHeight };
+                var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, MinHeight = SettingsControlHeight };
                 row.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new() { Width = new GridLength(PhaseModelColumn) });
                 row.Children.Add(SettingsText(knob.Label, 11, DesignToken.Ink2));
                 var picker = SettingsPopupFrame(PhaseModelPicker(provider, knob.Label, knob.Value, "phase-models-knob-" + knob.KnobId, value => ApplyPhaseModelKnob(knob.KnobId, value)));
@@ -111,7 +111,7 @@ public sealed partial class MainWindow
     {
         var picker = SettingsPopup(new ComboBox());
         // The Mac's pop-up title and chevrons stand 4.5 right of the column's centre; a stock ComboBox's words stand 3.5 left of its own.
-        picker.Margin = new Thickness(16, 0, 0, 0);
+        picker.Margin = new Thickness(DesignMetrics.Spacing.Lg, 0, 0, 0);
         AutomationProperties.SetAutomationId(picker, id);
         AutomationProperties.SetName(picker, label);
         picker.Items.Add(new ComboBoxItem { Content = PhaseModelSection.DefaultOption, Tag = "default" });
@@ -131,10 +131,10 @@ public sealed partial class MainWindow
         block.Children.Add(SettingsText(Locale.Get("settings.phaseModels.registeredTitle"), 11, medium: true));
         foreach (var entry in PhaseRegistered(provider))
         {
-            var row = new Grid { ColumnSpacing = 8 };
+            var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             row.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             AutomationProperties.SetAutomationId(row, "phaseModels-registered-" + provider + "-" + entry.Name);
-            var words = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
+            var words = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs, VerticalAlignment = VerticalAlignment.Center };
             words.Children.Add(SettingsText(entry.Name, 11, mono: true));
             if (entry.SupportsEffort) words.Children.Add(SettingsText(Locale.Get("settings.phaseModels.supportsEffortLabel"), 10, DesignToken.Ink2));
             row.Children.Add(words);
@@ -144,10 +144,10 @@ public sealed partial class MainWindow
         }
         if (!phaseRegistrationDrafts.TryGetValue(provider, out var draft)) phaseRegistrationDrafts[provider] = draft = new();
         // The field stands 3 closer to the title than the block's 6 (screens/10-settings-models-*.webp).
-        var addPanel = new StackPanel { Spacing = 4, Margin = new Thickness(0, -3, 0, 0) };
+        var addPanel = new StackPanel { Spacing = DesignMetrics.Spacing.Xs, Margin = new Thickness(0, -DesignMetrics.Spacing.Xxs, 0, 0) };
         // In the Mac's form a text field's title is its leading label; the field takes the trailing half.
         var fieldLabel = Locale.Get("settings.phaseModels.addPlaceholder");
-        var addRow = new Grid { ColumnSpacing = 6 };
+        var addRow = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
         addRow.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); addRow.ColumnDefinitions.Add(new() { Width = new GridLength(PhaseNameField) }); addRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         addRow.Children.Add(SettingsText(fieldLabel));
         var input = SettingsField(new TextBox { Text = draft.Name });
@@ -164,9 +164,9 @@ public sealed partial class MainWindow
         AutomationProperties.SetAutomationId(add, "phaseModels-addButton-" + provider);
         var supportsLabel = Locale.Get("settings.phaseModels.supportsEffortLabel");
         var supports = SettingsSwitch(supportsLabel, draft.SupportsEffort, "phaseModels-addEffort-" + provider);
-        var levels = new StackPanel { Spacing = 2, Visibility = draft.SupportsEffort ? Visibility.Visible : Visibility.Collapsed };
+        var levels = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs, Visibility = draft.SupportsEffort ? Visibility.Visible : Visibility.Collapsed };
         levels.Children.Add(SettingsText(Locale.Get("settings.phaseModels.effortLevelsLabel"), 10, DesignToken.Ink2));
-        var chips = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        var chips = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs };
         foreach (var level in Wire.Efforts)
         {
             var chip = PhaseLevelChip(level, draft.Levels.Contains(level));
@@ -211,7 +211,7 @@ public sealed partial class MainWindow
     private ToggleButton PhaseLevelChip(string level, bool chosen)
     {
         var words = new TextBlock { Text = level, FontSize = 9, Foreground = brushes.Brush(DesignToken.OnAccent), VerticalAlignment = VerticalAlignment.Center };
-        var face = new Border { Child = words, Height = SettingsMiniHeight, Padding = new Thickness(5, 0, 5, 0), CornerRadius = new CornerRadius(3.5), Background = brushes.Brush(DesignToken.Accent) };
+        var face = new Border { Child = words, Height = SettingsMiniHeight, Padding = new Thickness(DesignMetrics.Spacing.Xs, 0, DesignMetrics.Spacing.Xs, 0), CornerRadius = new CornerRadius(3.5), Background = brushes.Brush(DesignToken.Accent) };
         var chip = new ToggleButton { Content = face, Tag = level, IsChecked = chosen, MinWidth = 0, MinHeight = 0, Padding = new Thickness(0), BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(3.5) };
         ClearToggleChrome(chip);
         void Paint() => face.Opacity = chip.IsChecked == true ? 1 : 0.4;

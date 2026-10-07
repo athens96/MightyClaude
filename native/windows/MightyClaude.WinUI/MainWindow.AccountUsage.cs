@@ -15,8 +15,8 @@ namespace MightyClaude.WinUI;
 // the switch.
 public sealed partial class MainWindow
 {
-    private readonly StackPanel usageChips = new() { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
-    private readonly StackPanel usageDetails = new() { Spacing = 12, Width = UsagePopoverWidth - 2 * PopoverPadding };
+    private readonly StackPanel usageChips = new() { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Center };
+    private readonly StackPanel usageDetails = new() { Spacing = DesignMetrics.Spacing.Md, Width = UsagePopoverWidth - 2 * PopoverPadding };
     /// <summary>The usage popover's width over all: its padding 16 is inside the 320 (M/StatusBarUsage.swift:235, the padding before the frame).</summary>
     internal const double UsagePopoverWidth = 320;
     private Button? usageButton;
@@ -63,7 +63,7 @@ public sealed partial class MainWindow
         {
             // A chip (M/StatusBarUsage.swift:173-193): the provider's mark, then each leading window in 10pt
             // tabular ink2 (waitText once that window is near its limit), 5 apart, h7 v3 on a subtle capsule (18 high).
-            var words = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
+            var words = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs };
             words.Children.Add(ProviderMarkView.Create(chip.Provider, UsageChipMark));
             foreach (var (text, warning) in UsageChipWords(chip))
             {
@@ -71,7 +71,7 @@ public sealed partial class MainWindow
                 Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(word, Microsoft.UI.Xaml.FontNumeralAlignment.Tabular);
                 words.Children.Add(word);
             }
-            var border = new Border { Height = UsageChipHeight, CornerRadius = new CornerRadius(UsageChipHeight / 2), Padding = new Thickness(7, 0, 7, 0), Background = brushes.Subtle, Child = words };
+            var border = new Border { Height = UsageChipHeight, CornerRadius = new CornerRadius(UsageChipHeight / 2), Padding = new Thickness(DesignMetrics.Spacing.Sm, 0, DesignMetrics.Spacing.Sm, 0), Background = brushes.Subtle, Child = words };
             AutomationProperties.SetAutomationId(border, "statusbar-usage-" + chip.Provider);
             // The mark stands for the provider's name, which a screen reader still hears.
             AutomationProperties.SetName(border, ProviderCatalog.Name(chip.Provider) + " " + chip.Text);
@@ -108,7 +108,7 @@ public sealed partial class MainWindow
         if (usage is null) return;
         var ink = brushes.Brush(DesignToken.Ink); var ink2 = brushes.Brush(DesignToken.Ink2);
         usageDetails.Children.Clear();
-        var header = new Grid { ColumnSpacing = 6 };
+        var header = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -127,7 +127,7 @@ public sealed partial class MainWindow
             refresh.IsEnabled = !reading;
         }
         refresh.Click += (_, _) => ShowReading();
-        refresh.MinWidth = 0; refresh.MinHeight = 0; refresh.Padding = new Thickness(5, 3, 5, 3); refresh.Margin = new Thickness(0, -3, -5, -3); refresh.BorderThickness = new Thickness(0); refresh.CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow);
+        refresh.MinWidth = 0; refresh.MinHeight = 0; refresh.Padding = new Thickness(DesignMetrics.Spacing.Xs); refresh.Margin = new Thickness(0, -DesignMetrics.Spacing.Xs, -DesignMetrics.Spacing.Xs, -DesignMetrics.Spacing.Xs); refresh.BorderThickness = new Thickness(0); refresh.CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow);
         PaintPlainButton(refresh, brushes.Transparent, brushes.Subtle, ink: ink2, disabledInk: brushes.Brush(DesignToken.Ink3));
         ShowReading();
         AutomationProperties.SetName(refresh, AccountUsageStrings.RefreshAccessibilityLabel);
@@ -139,10 +139,10 @@ public sealed partial class MainWindow
         foreach (var card in usage.Cards())
         {
             // A provider's card on the subtle wash at radius 9, padding 10, its parts 8 apart (M/StatusBarUsage.swift:239-286).
-            var panel = new StackPanel { Spacing = 8, Padding = new Thickness(10), CornerRadius = new CornerRadius(DesignMetrics.Radius.CardButton), Background = brushes.Subtle };
+            var panel = new StackPanel { Spacing = DesignMetrics.Spacing.Sm, Padding = new Thickness(DesignMetrics.Spacing.Md), CornerRadius = new CornerRadius(DesignMetrics.Radius.CardButton), Background = brushes.Subtle };
             AutomationProperties.SetAutomationId(panel, "statusbar-usage-card-" + card.Provider);
             // The mark, the agent's name and its beta capsule 6 apart; the account and plan across from them.
-            var title = new Grid { ColumnSpacing = 6 };
+            var title = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             foreach (var width in new[] { GridLength.Auto, GridLength.Auto, GridLength.Auto, new GridLength(1, GridUnitType.Star) }) title.ColumnDefinitions.Add(new ColumnDefinition { Width = width });
             title.Children.Add(ProviderMarkView.Create(card.Provider, UsageCardMark));
             var name = new TextBlock { Text = ProviderMark.Label(card.Provider), FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
@@ -159,7 +159,7 @@ public sealed partial class MainWindow
             {
                 // A window: its name and "12% used" on one line, the bar, when it resets; 3 apart.
                 var row = card.Windows[index];
-                var window = new StackPanel { Spacing = 3 };
+                var window = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
                 var line = new Grid();
                 line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                 line.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -187,10 +187,10 @@ public sealed partial class MainWindow
         if (usage.Providers.Contains("claude"))
         {
             // The switch's words (11pt over a 10pt ink2 explanation, 2 apart) with the switch across from them.
-            var row = new Grid { ColumnSpacing = 8 };
+            var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            var words = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
+            var words = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs, VerticalAlignment = VerticalAlignment.Center };
             words.Children.Add(new TextBlock { Text = AccountUsageStrings.ToggleLabel, FontSize = DesignMetrics.Type.Pill, Foreground = ink, TextWrapping = TextWrapping.Wrap });
             words.Children.Add(new TextBlock { Text = AccountUsageStrings.ToggleDescription, FontSize = DesignMetrics.Type.Small, Foreground = ink2, TextWrapping = TextWrapping.Wrap });
             row.Children.Add(words);
@@ -222,7 +222,7 @@ public sealed partial class MainWindow
     {
         var rows = usage?.ResetRows() ?? [];
         if (rows.Count == 0) return;
-        var section = new StackPanel { Spacing = 4 };
+        var section = new StackPanel { Spacing = DesignMetrics.Spacing.Xs };
         RenderAccountUsageReset(section, rows);
         card.Children.Add(section);
     }
@@ -233,7 +233,7 @@ public sealed partial class MainWindow
     {
         if (rows.Count == 0) return;
         // The line stands 8 from the title under it, as a card's parts do (the rows' own 4, and 4 more).
-        panel.Children.Add(new Border { Height = DesignMetrics.Stroke.Line, Background = Separator, Margin = new Thickness(0, 0, 0, 4) });
+        panel.Children.Add(new Border { Height = DesignMetrics.Stroke.Line, Background = Separator, Margin = new Thickness(0, 0, 0, DesignMetrics.Spacing.Xs) });
         panel.Children.Add(new TextBlock { Text = ClaudeResetEntitlements.Title, FontSize = DesignMetrics.Type.Pill, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = brushes.Brush(DesignToken.Ink) });
         foreach (var row in rows)
         {

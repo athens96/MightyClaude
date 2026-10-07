@@ -10,8 +10,9 @@ public static class CompanionBubbleLayout
 {
     public const double DefaultWidth = 258, MinimumWidth = 220, MaximumWidth = 640, MinimumHeight = 100, MaximumHeight = 480;
     /// The pet's floating window around its bubble (M/ResizeEdges.swift:51-56, M/AgentCompanionViews.swift:129-145):
-    /// 12 on each side of the bubble, 8 around the column, 2 between the bubble and the pet's 125 × 135 frame.
-    public const double SidePadding = 12, Padding = 8, Gap = 2, PetWidth = 125, PetHeight = 135;
+    /// 12 on each side of the bubble, 8 around the column, 2 between the bubble and the pet's 125 × 135 frame. The pet's
+    /// window keeps the Mac's own measures (M/ResizeEdges.swift sidePadding), on the shared spacing scale.
+    public const double SidePadding = DesignMetrics.Spacing.Lg, Padding = DesignMetrics.Spacing.Md, Gap = DesignMetrics.Spacing.Xxs, PetWidth = 125, PetHeight = 135;
     /// Top padding, the gap under the bubble, the pet and the bottom padding.
     public const double Chrome = Padding + Gap + PetHeight + Padding;
     /// The window's height around a bubble that follows its content, and around an approval.

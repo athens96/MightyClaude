@@ -52,11 +52,11 @@ public sealed partial class MainWindow
             draft.Step = Math.Clamp(draft.Step, 0, total - 1);
             var step = draft.Step; var question = questionnaire.Questions[step];
             var b = owner.brushes; var ink = b.Brush(DesignToken.Ink); var ink2 = b.Brush(DesignToken.Ink2);
-            var body = new StackPanel { Spacing = 10 };
+            var body = new StackPanel { Spacing = DesignMetrics.Spacing.Md };
 
-            var header = new Grid { ColumnSpacing = 8 };
+            var header = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             header.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-            var lead = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            var lead = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
             lead.Children.Add(WaitBadge(new TextBlock { Text = "?", FontSize = 13, FontWeight = Microsoft.UI.Text.FontWeights.ExtraBold, Foreground = b.Brush(DesignToken.OnWait), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, -1, 0, 0) }));
             lead.Children.Add(new TextBlock { Text = Locale.Get("phone.questionnaire.title"), FontSize = 13, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = ink, VerticalAlignment = VerticalAlignment.Center });
             var progress = new TextBlock
@@ -67,7 +67,7 @@ public sealed partial class MainWindow
             Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(progress, FontNumeralAlignment.Tabular);
             AutomationProperties.SetAutomationId(progress, "questionnaire-progress"); lead.Children.Add(progress);
             // A dot for each question (M/UserQuestionnaireCard.swift:137-153): amber for the one on screen, soft amber once answered, the track's grey before.
-            var dots = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
+            var dots = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs, VerticalAlignment = VerticalAlignment.Center };
             for (var index = 0; index < total; index++)
             {
                 var target = index; var now = index == step; var done = draft.Answered(index);
@@ -89,8 +89,8 @@ public sealed partial class MainWindow
             Grid.SetColumn(questionnaireWaiting, 1); header.Children.Add(questionnaireWaiting);
             body.Children.Add(header);
 
-            var section = new StackPanel { Spacing = 8, IsHitTestVisible = !draft.Sending, Margin = new Thickness(0, 2, 5, 2) };
-            var kind = new Grid { ColumnSpacing = 6 };
+            var section = new StackPanel { Spacing = DesignMetrics.Spacing.Sm, IsHitTestVisible = !draft.Sending, Margin = new Thickness(0, DesignMetrics.Spacing.Xxs, DesignMetrics.Spacing.Xs, DesignMetrics.Spacing.Xxs) };
+            var kind = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             kind.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); kind.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             kind.Children.Add(new TextBlock { Text = question.Header, FontSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = b.Brush(DesignToken.WaitText), TextWrapping = TextWrapping.Wrap });
             var mode = new TextBlock { Text = Locale.Get(question.MultiSelect ? "phone.questionnaire.multiple" : "phone.questionnaire.single"), FontSize = 10.5, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
@@ -135,10 +135,10 @@ public sealed partial class MainWindow
 
             var last = step + 1 == total;
             // What happens next, then Cancel, Back and the ink button that goes forward (M/UserQuestionnaireCard.swift:99-126).
-            var footer = new Grid { ColumnSpacing = 8 };
+            var footer = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             footer.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             footer.Children.Add(new TextBlock { Text = Locale.Get(last ? "phone.questionnaire.hintSubmit" : "phone.questionnaire.hintNext"), FontSize = 11, Foreground = ink2, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center });
-            var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, IsHitTestVisible = !draft.Sending };
+            var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, IsHitTestVisible = !draft.Sending };
             if (draft.Sending)
             {
                 var sending = new ProgressRing { IsActive = true, Width = 12, Height = 12, MinWidth = 0, MinHeight = 0, VerticalAlignment = VerticalAlignment.Center, Foreground = ink2 };
@@ -185,15 +185,15 @@ public sealed partial class MainWindow
             var b = owner.brushes; var edge = selected ? DesignMetrics.Stroke.Active : DesignMetrics.Stroke.Line;
             var mark = ComposerGlyph.Icon(multiple ? (selected ? "" : "") : (selected ? "" : ""), 14, 17, 17).Ink(b.Brush(selected ? DesignToken.WaitText : DesignToken.Ink2));
             mark.View.VerticalAlignment = VerticalAlignment.Top; mark.View.Margin = new Thickness(0, 1, 0, 0);
-            var label = new StackPanel { Spacing = 3 };
+            var label = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
             label.Children.Add(new TextBlock { Text = title, FontSize = 13, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = b.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap });
             if (detail.Length > 0) label.Children.Add(new TextBlock { Text = detail, FontSize = 11.5, Foreground = b.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap });
-            var row = new Grid { ColumnSpacing = 8 };
+            var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
             row.Children.Add(mark.View); Grid.SetColumn(label, 1); row.Children.Add(label);
             var face = new Border
             {
-                Child = row, MinHeight = 50, CornerRadius = new CornerRadius(ChoiceRadius), BorderThickness = new Thickness(edge), Padding = new Thickness(11 - edge, 9 - edge, 11 - edge, 9 - edge),
+                Child = row, MinHeight = 50, CornerRadius = new CornerRadius(ChoiceRadius), BorderThickness = new Thickness(edge), Padding = new Thickness(DesignMetrics.Spacing.Md - edge, DesignMetrics.Spacing.Sm - edge, DesignMetrics.Spacing.Md - edge, DesignMetrics.Spacing.Sm - edge),
                 Background = b.Brush(selected ? DesignToken.WaitSoft : DesignToken.Card), BorderBrush = b.Brush(selected ? DesignToken.Wait : DesignToken.Line),
             };
             var button = new ToggleButton

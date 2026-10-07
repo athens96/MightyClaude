@@ -162,9 +162,9 @@ public sealed partial class MainWindow
     }
 
     /// <summary>
-    /// The dashboard (M/DashboardView.swift:94-338): the 29pt heading-font title, the three 92-high
+    /// The dashboard (M/DashboardView.swift:94-338): the 29pt heading-font title, the three 84-high
     /// radius-18 tiles on run / wait / card with their inks and 0.05 shadows, the usage card's 6pt bars,
-    /// a workspace's rows on one card with the subtle wash under the pointer, its 26-high capsules, and
+    /// a workspace's rows on one card with the subtle wash under the pointer, its 24-high capsules, and
     /// the sidebar's selected work-status entry with its 0.06 shadow.
     /// </summary>
     private async Task<(UIElement Content, DashboardParts Parts)> RequireDashboardDesignInTheme(PanelsDesignViews? light)
@@ -191,7 +191,8 @@ public sealed partial class MainWindow
         })
         {
             RequireRadius(tile, DesignMetrics.Radius.Tile, $"{name} (Radius.Tile)", key);
-            Require(tile.Height == DashboardTileHeight && tile.Padding == new Thickness(16, 12, 16, 13), $"{key} ({theme}): {name} must be {DashboardTileHeight} high with padding h16 t12 b13; got {tile.Height}, {tile.Padding}");
+            Require(tile.Height == DashboardTileHeight && tile.Padding == new Thickness(DesignMetrics.Inset.DashboardTileH, DesignMetrics.Inset.DashboardTileV, DesignMetrics.Inset.DashboardTileH, DesignMetrics.Inset.DashboardTileV),
+                $"{key} ({theme}): {name} must be {DashboardTileHeight} high with padding Inset.DashboardTile h{DesignMetrics.Inset.DashboardTileH} v{DesignMetrics.Inset.DashboardTileV}; got {tile.Height}, {tile.Padding}");
             RequireBrush(tile, e => ((Border)e).Background, fill, $"{name}'s fill", key: key);
             var body = (Grid)tile.Child; var figure = (TextBlock)body.Children[0]; var label = (TextBlock)body.Children[1];
             Require(figure.FontSize == DesignMetrics.Type.Tile && figure.FontFamily?.Source == DesignMetrics.Font.Heading && label.FontSize == DesignMetrics.Type.SideRow,
@@ -203,13 +204,14 @@ public sealed partial class MainWindow
         var usageCard = parts.Usage!;
         RequireRadius(usageCard, DesignMetrics.Radius.Tile, "the usage card (Radius.Tile)", key);
         RequireBrush(usageCard, e => ((Border)e).Background, DesignToken.Card, "the usage card", key: key);
-        Require(usageCard.Padding == new Thickness(16, 11, 16, 11) && usageCard.MinHeight == DashboardTileHeight, $"{key} ({theme}): the usage card must have padding h16 v11 and be at least {DashboardTileHeight} high; got {usageCard.Padding}, {usageCard.MinHeight}");
+        Require(usageCard.Padding == new Thickness(DesignMetrics.Inset.DashboardTileH, DesignMetrics.Inset.DashboardTileV, DesignMetrics.Inset.DashboardTileH, DesignMetrics.Inset.DashboardTileV) && usageCard.MinHeight == DashboardTileHeight,
+            $"{key} ({theme}): the usage card must have padding Inset.DashboardTile h{DesignMetrics.Inset.DashboardTileH} v{DesignMetrics.Inset.DashboardTileV} and be at least {DashboardTileHeight} high; got {usageCard.Padding}, {usageCard.MinHeight}");
         // Beside the usage card a tile stops at 220 and the card takes what the three leave (M/DashboardView.swift:144, 180);
         // on a page too narrow for that the tiles give way first, down to their 110.
         var tilesRow = (Grid)VisualTreeHelper.GetParent(parts.TileHosts[0]); var usageHost = (FrameworkElement)VisualTreeHelper.GetParent(usageCard);
         var tileWidth = Math.Clamp((tilesRow.ActualWidth - tilesRow.ColumnSpacing * parts.TileHosts.Count - DashboardUsageMinWidth) / parts.TileHosts.Count, DashboardTileMinWidth, DashboardTileMaxWidth);
-        Require(tilesRow.ColumnSpacing == 12 && parts.TileHosts.All(h => Math.Abs(h.ActualWidth - tileWidth) <= 1) && Math.Abs(usageHost.ActualWidth - (tilesRow.ActualWidth - parts.TileHosts.Count * (tileWidth + tilesRow.ColumnSpacing))) <= 1,
-            $"{key} ({theme}): in a {tilesRow.ActualWidth:F0}-wide row the tiles must be {tileWidth:F0} wide, 12 apart, and the usage card take the rest; got tiles {string.Join(", ", parts.TileHosts.Select(h => h.ActualWidth.ToString("F0")))}, card {usageHost.ActualWidth:F0}");
+        Require(tilesRow.ColumnSpacing == DesignMetrics.Spacing.Md && parts.TileHosts.All(h => Math.Abs(h.ActualWidth - tileWidth) <= 1) && Math.Abs(usageHost.ActualWidth - (tilesRow.ActualWidth - parts.TileHosts.Count * (tileWidth + tilesRow.ColumnSpacing))) <= 1,
+            $"{key} ({theme}): in a {tilesRow.ActualWidth:F0}-wide row the tiles must be {tileWidth:F0} wide, {DesignMetrics.Spacing.Md} apart, and the usage card take the rest; got tiles {string.Join(", ", parts.TileHosts.Select(h => h.ActualWidth.ToString("F0")))}, card {usageHost.ActualWidth:F0}");
         // The chips' leading windows (session, then weekly, never the spend limit), read from Core as the card was.
         var rows = (usage?.LeadingBars() ?? []).SelectMany(c => c.Bars).ToList();
         Require(parts.UsageBars.Count == rows.Count && rows.Count > 0 && rows.Any(r => r.Warning), $"{key} ({theme}): the usage card must draw one bar per leading window, one of them past 90%; got {parts.UsageBars.Count} bars for {rows.Count} windows");
@@ -221,7 +223,8 @@ public sealed partial class MainWindow
         RequireBrush(group, e => ((Border)e).Background, DesignToken.Card, "a workspace's rows card", key: key);
         RequireCardShadow((Grid)VisualTreeHelper.GetParent(group), CardShadow.DashboardCard, "a workspace's rows card", key);
         var row = parts.FirstRow!;
-        Require(row.Padding == new Thickness(14, 11, 14, 11), $"{key} ({theme}): a dashboard row's padding must be h14 v11; got {row.Padding}");
+        Require(row.Padding == new Thickness(DesignMetrics.Inset.DashboardRowH, DesignMetrics.Inset.DashboardRowV, DesignMetrics.Inset.DashboardRowH, DesignMetrics.Inset.DashboardRowV),
+            $"{key} ({theme}): a dashboard row's padding must be Inset.DashboardRow h{DesignMetrics.Inset.DashboardRowH} v{DesignMetrics.Inset.DashboardRowV}; got {row.Padding}");
         RequireSubtle(await StateBackground(row, "PointerOver", brushes.Subtle, key), "a dashboard row's PointerOver key frame", key);
         RequireClear(OwnResource(row, "ButtonBackground") as Brush, "a dashboard row at rest", key);
         foreach (var (capsule, fill, hover, ink, name) in new[] { (parts.Files!, DesignToken.Card, DesignToken.CardRaised, DesignToken.Ink, "the files capsule"), (parts.Add!, DesignToken.Ink, DesignToken.Ink2, DesignToken.Card, "the add-pane capsule") })
@@ -232,19 +235,19 @@ public sealed partial class MainWindow
             var frame = await StateBackground(capsule, "PointerOver", brushes.Brush(hover), key);
             RequireBrush(capsule, _ => frame, hover, $"{name}'s PointerOver key frame", key: key);
         }
-        // The group head's parts are 10 apart (M/DashboardView.swift:208), the capsules among them.
-        Require(VisualTreeHelper.GetParent(parts.Files!) is StackPanel { Spacing: 10 } actions && ReferenceEquals(VisualTreeHelper.GetParent(parts.Add!), actions) && actions.Children.IndexOf(parts.Files) < actions.Children.IndexOf(parts.Add),
-            $"{key} ({theme}): the files capsule must stand 10 before the add-pane capsule");
-        // On one line the head is as high as its capsules, and the rows' card stands the group's 10 under it (M/DashboardView.swift:207, 218).
+        // The group head's parts are Spacing.Md apart (M/DashboardView.swift:220), the capsules among them.
+        Require(VisualTreeHelper.GetParent(parts.Files!) is StackPanel { Spacing: DesignMetrics.Spacing.Md } actions && ReferenceEquals(VisualTreeHelper.GetParent(parts.Add!), actions) && actions.Children.IndexOf(parts.Files) < actions.Children.IndexOf(parts.Add),
+            $"{key} ({theme}): the files capsule must stand {DesignMetrics.Spacing.Md} before the add-pane capsule");
+        // On one line the head is as high as its capsules, and the rows' card stands the group's Spacing.Sm under it (M/DashboardView.swift:219, 230).
         var underHead = parts.Rows!.TransformToVisual(parts.Files!).TransformPoint(new Windows.Foundation.Point()).Y - parts.Files!.ActualHeight;
-        Require(Math.Abs(underHead - 10) < 0.6, $"{key} ({theme}): a group's card of rows must stand 10 under its head's capsules; got {underHead:F1}");
+        Require(Math.Abs(underHead - DesignMetrics.Spacing.Sm) < 0.6, $"{key} ({theme}): a group's card of rows must stand {DesignMetrics.Spacing.Sm} under its head's capsules; got {underHead:F1}");
         // The pulse dot (M/DashboardView.swift:340-360) at rest: a 7 run dot over a 13 halo of run at 0.22, in a 14 frame.
         var pulse = PulseDot(brushes, animated: false); var discs = pulse.Children.OfType<Microsoft.UI.Xaml.Shapes.Ellipse>().ToList();
         Require(pulse is { Width: 14, Height: 14 } && discs.Count == 2 && discs[0] is { Width: 13, Height: 13 } && discs[1] is { Width: 7, Height: 7 },
             $"{key} ({theme}): the pulse dot must be a 7 dot over a 13 halo in a 14 frame; got {pulse.Width} × {pulse.Height} with discs {string.Join(", ", discs.Select(d => d.Width))}");
         RequireBrush(discs[0], e => ((Microsoft.UI.Xaml.Shapes.Ellipse)e).Fill, DesignToken.Run, "the pulse dot's halo", 0.22, key);
         RequireBrush(discs[1], e => ((Microsoft.UI.Xaml.Shapes.Ellipse)e).Fill, DesignToken.Run, "the pulse dot", key: key);
-        await CaptureLaidOver(new Border { Child = pulse, Padding = new Thickness(8), Background = brushes.Brush(DesignToken.Card) }, $"pulse-dot-{theme}");
+        await CaptureLaidOver(new Border { Child = pulse, Padding = new Thickness(DesignMetrics.Spacing.Sm), Background = brushes.Brush(DesignToken.Card) }, $"pulse-dot-{theme}");
         // The sidebar's work-status entry while the dashboard shows: card with the 0.06 shadow.
         RequireBrush(dashboardEntry!, e => ((Border)e).Background, DesignToken.Card, "the selected work-status entry", key: key);
         Require(dashboardEntryShadow is { Visibility: Visibility.Visible }, $"{key} ({theme}): the selected work-status entry must show its shadow caster");
@@ -309,7 +312,7 @@ public sealed partial class MainWindow
         FrameworkElement Part(string id) => VisualChildren(frame).OfType<FrameworkElement>().FirstOrDefault(e => AutomationProperties.GetAutomationId(e) == id)
             ?? throw new InvalidOperationException($"{key} ({theme}): the settings window has no {id}");
         var heading = (Grid)Part("settings-heading");
-        Require(heading.Padding == new Thickness(22), $"{key} ({theme}): the settings heading padding must be 22; got {heading.Padding}");
+        Require(heading.Padding == new Thickness(DesignMetrics.Spacing.Lg) && SettingsHeadingPadding == DesignMetrics.Spacing.Lg, $"{key} ({theme}): the settings heading padding must be {DesignMetrics.Spacing.Lg}; got {heading.Padding}");
         Require(heading.Height == SettingsHeadingHeight && Math.Abs(heading.ActualHeight - SettingsHeadingHeight) < .5, $"{key} ({theme}): the settings heading must be {SettingsHeadingHeight} high with its rule; got {heading.Height} (laid out {heading.ActualHeight:F1})");
         RequireBrush(heading, e => ((Grid)e).Background, DesignToken.Card, "the settings heading", key: key);
         RequireBrush(heading, e => ((Grid)e).BorderBrush, DesignToken.Line, "the line under the settings heading", key: key);
@@ -398,15 +401,15 @@ public sealed partial class MainWindow
         else RequireBrush(toggle, _ => capsule.Background, DesignToken.Ink2, "an off switch", SettingsSwitchOffOpacity, key);
         var footer = (Grid)Part("settings-footer");
         RequireBrush(footer, e => ((Grid)e).Background, DesignToken.Card, "the settings close row", key: key);
-        Require(footer.Padding == new Thickness(18), $"{key} ({theme}): the settings close row padding must be 18; got {footer.Padding}");
+        Require(footer.Padding == new Thickness(DesignMetrics.Spacing.Lg), $"{key} ({theme}): the settings close row padding must be {DesignMetrics.Spacing.Lg}; got {footer.Padding}");
         return frame;
     }
 
     /// <summary>
-    /// The start-new-or-resume sheet (M/ResumeSessionSheet.swift:13-50), shown for real: 400 wide, padding 20,
-    /// radius 12 and as high as its content, with no stock title or buttons; the agent's mark (18, in the Mac's
-    /// 1.15 frame and a 22-wide column) 10 from the 13pt bold title over the 12pt ink2 sentence; 16 under them its
-    /// own buttons 8 apart, Cancel leading and, after the spacer, Resume… and the accent Start new; its
+    /// The start-new-or-resume sheet (M/ResumeSessionSheet.swift:13-50), shown for real: 400 wide, padded by the sheet's
+    /// inset, radius 12 and as high as its content, with no stock title or buttons; the agent's mark (18, in the Mac's
+    /// 1.15 frame and a 22-wide column) Spacing.Md from the 13pt bold title over the 12pt ink2 sentence; Spacing.Lg under them its
+    /// own buttons Spacing.Sm apart, Cancel leading and, after the spacer, Resume… and the accent Start new; its
     /// template's surface the shared card brush and its border the line.
     /// </summary>
     private async Task RequireSheetInTheme(ContentDialog sheet)
@@ -423,7 +426,7 @@ public sealed partial class MainWindow
             $"{key} ({theme}): the choice sheet must have radius {SheetRadius}, no least height and no line under its content; got {sheet.CornerRadius}, {OwnResource(sheet, "ContentDialogMinHeight")}, {OwnResource(sheet, "ContentDialogSeparatorThickness")}");
         var body = sheet.Content as StackPanel ?? throw new InvalidOperationException($"{key} ({theme}): the choice sheet's content is not its two rows");
         var top = (Grid)body.Children[0]; var buttons = (Grid)body.Children[1];
-        Require(body.Spacing == 16 && top.ColumnSpacing == 10 && buttons.ColumnSpacing == 8, $"{key} ({theme}): the choice sheet's rows must be 16 apart, the mark 10 from the words and the buttons 8 apart; got {body.Spacing}, {top.ColumnSpacing}, {buttons.ColumnSpacing}");
+        Require(body.Spacing == DesignMetrics.Spacing.Lg && top.ColumnSpacing == DesignMetrics.Spacing.Md && buttons.ColumnSpacing == DesignMetrics.Spacing.Sm, $"{key} ({theme}): the choice sheet's rows must be {DesignMetrics.Spacing.Lg} apart, the mark {DesignMetrics.Spacing.Md} from the words and the buttons {DesignMetrics.Spacing.Sm} apart; got {body.Spacing}, {top.ColumnSpacing}, {buttons.ColumnSpacing}");
         var mark = top.Children.OfType<Microsoft.UI.Xaml.Shapes.Path>().Single();
         Require(Math.Abs(mark.Width - ResumeMarkSize * ProviderIconScale) < 0.001 && top.ColumnDefinitions[0].Width.Value == ResumeMarkColumn,
             $"{key} ({theme}): the sheet's agent mark must be {ResumeMarkSize} × {ProviderIconScale} in a {ResumeMarkColumn}-wide column; got {mark.Width} in {top.ColumnDefinitions[0].Width.Value}");
@@ -432,14 +435,14 @@ public sealed partial class MainWindow
             $"{key} ({theme}): the sheet must be titled and named resume.choice.title for Claude; got '{title.Text}' / '{AutomationProperties.GetName(sheet)}'");
         RequireFont(title, DesignMetrics.Type.Title, Microsoft.UI.Text.FontWeights.Bold, $"({theme}) the sheet's title", key);
         RequireBrush(title, e => ((TextBlock)e).Foreground, DesignToken.Ink, "the sheet's title", key: key);
-        Require(words.Spacing == 4 && sentence.FontSize == 12, $"{key} ({theme}): the sheet's sentence must be 12pt, 4 under the title; got {sentence.FontSize}pt, {words.Spacing}");
+        Require(words.Spacing == DesignMetrics.Spacing.Xs && sentence.FontSize == 12, $"{key} ({theme}): the sheet's sentence must be 12pt, {DesignMetrics.Spacing.Xs} under the title; got {sentence.FontSize}pt, {words.Spacing}");
         RequireBrush(sentence, e => ((TextBlock)e).Foreground, DesignToken.Ink2, "the sheet's sentence", key: key);
         var order = buttons.Children.OfType<Button>().OrderBy(Grid.GetColumn).ToList();
         Require(order.Select(AutomationProperties.GetAutomationId).SequenceEqual(["add-pane-choice-cancel", "add-pane-choice-resume", "add-pane-choice-new"])
             && order.Select(Grid.GetColumn).SequenceEqual([0, 2, 3]) && buttons.ColumnDefinitions[1].Width.IsStar,
             $"{key} ({theme}): the sheet's buttons must be Cancel at the leading edge and, after a spacer, Resume… and Start new; got {string.Join(", ", order.Select(b => AutomationProperties.GetAutomationId(b) + "@" + Grid.GetColumn(b)))}");
         foreach (var button in order)
-            Require(button.Height == PushButtonHeight && button.FontSize == DesignMetrics.Type.Body && button.Padding == new Thickness(8, 0, 8, 0),
+            Require(button.Height == PushButtonHeight && button.FontSize == DesignMetrics.Type.Body && button.Padding == new Thickness(DesignMetrics.Spacing.Md, 0, DesignMetrics.Spacing.Md, 0),
                 $"{key} ({theme}): a sheet button must be {PushButtonHeight} high with {DesignMetrics.Type.Body}pt words set in 8; got {button.Height}, {button.FontSize}pt, {button.Padding}");
         RequireBrush(order[2], e => OwnResource(e, "ButtonBackground") as Brush, DesignToken.Accent, "the Start new button's fill", key: key);
         RequireBrush(order[2], e => OwnResource(e, "ButtonForeground") as Brush, DesignToken.OnAccent, "the Start new button's words", key: key);
@@ -484,7 +487,7 @@ public sealed partial class MainWindow
     /// <summary>An element that is on no page now, laid over the window's corner for as long as its capture to <c>smoke-panels-{name}.png</c> takes.</summary>
     private async Task CaptureLaidOver(FrameworkElement element, string name)
     {
-        element.HorizontalAlignment = HorizontalAlignment.Left; element.VerticalAlignment = VerticalAlignment.Top; element.Margin = new Thickness(8);
+        element.HorizontalAlignment = HorizontalAlignment.Left; element.VerticalAlignment = VerticalAlignment.Top; element.Margin = new Thickness(DesignMetrics.Spacing.Sm);
         Grid.SetRowSpan(element, 3); Grid.SetColumnSpan(element, 2); root.Children.Add(element);
         try
         {
@@ -655,7 +658,7 @@ public sealed partial class MainWindow
             var (filter, tree, head, content) = FilesDesignParts;
             Require(filter is not null && tree is not null && head is not null && content is not null, $"{key} ({theme}): the files pane is missing its filter row, tree, preview head or content");
             owner.RequireSubtle(filter!.Background, "the files filter row", key);
-            Require(filter.Padding == new Thickness(10, 7, 10, 7) && filter.Height == FilesFilterHeight && filter.ColumnSpacing == 6, $"{key} ({theme}): the files filter row must be {FilesFilterHeight} high with padding h10 v7 and its parts 6 apart; got {filter.Height}, {filter.Padding}, {filter.ColumnSpacing}");
+            Require(filter.Padding == new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm) && filter.Height == FilesFilterHeight && filter.ColumnSpacing == DesignMetrics.Spacing.Sm, $"{key} ({theme}): the files filter row must be {FilesFilterHeight} high with padding h10 v7 and its parts 6 apart; got {filter.Height}, {filter.Padding}, {filter.ColumnSpacing}");
             // The tree and the preview fill the pane card edge to edge and share it as the Mac's split view does:
             // evenly until the tree is dragged, the tree within 160…520 (M/FilePaneView.swift:22-25).
             var host = filesHost!; var treeWidth = host.ColumnDefinitions[0].ActualWidth;
@@ -681,7 +684,7 @@ public sealed partial class MainWindow
             // WinUI's item presenter draws the wash 4 and 2 inside the item, so the item reaches 2 over each neighbour.
             Require(OwnResource(tree, "ListViewItemCornerRadius") is CornerRadius washCorner && washCorner == new CornerRadius(DesignMetrics.Radius.FileRow),
                 $"{key} ({theme}): the files rows' wash must be rounded by Radius.FileRow {DesignMetrics.Radius.FileRow}; got {OwnResource(tree, "ListViewItemCornerRadius")}");
-            Require(selected.Padding == new Thickness(0, 4 + FilesRowWash, 12, 4 + FilesRowWash) && selected.Margin == new Thickness(0, -FilesRowWash, 0, -FilesRowWash) && Math.Abs(selected.ActualHeight - 2 * FilesRowWash - (FilesRowLine + 8)) <= 0.5,
+            Require(selected.Padding == new Thickness(0, DesignMetrics.Spacing.Xs + FilesRowWash, 12, DesignMetrics.Spacing.Xs + FilesRowWash) && selected.Margin == new Thickness(0, -FilesRowWash, 0, -FilesRowWash) && Math.Abs(selected.ActualHeight - 2 * FilesRowWash - (FilesRowLine + 8)) <= 0.5,
                 $"{key} ({theme}): a files row's wash must be {FilesRowLine + 8} high (v4 around its {FilesRowLine}-high line); got padding {selected.Padding}, margin {selected.Margin}, {selected.ActualHeight:F1} high");
             var presenter = VisualTreeHelper.GetChild(selected, 0);
             Require(presenter is ListViewItemPresenter, $"{key} ({theme}): the files row's template root must be a ListViewItemPresenter; got {presenter.GetType().Name}");
@@ -703,8 +706,8 @@ public sealed partial class MainWindow
             // The source's lines and its gutter (M/FilePaneView.swift:392, 433, 477, 493-508): 12pt mono 15 apart, set in
             // 6 + 5 and 8; the numbers 10pt in the tertiary ink (tertiaryLabelColor, :493) in a gutter digits × 7 + 16 wide (30 for this file) closed by a line.
             var source = VisualChildren(content!).OfType<RichTextBlock>().First();
-            Require(source.FontSize == 12 && source.LineHeight == FilesLineHeight && source.Margin == new Thickness(11, 8, 11, 8),
-                $"{key} ({theme}): the source must be 12pt in lines of {FilesLineHeight}, set in 11 and 8; got {source.FontSize}pt, {source.LineHeight}, {source.Margin}");
+            Require(source.FontSize == 12 && source.LineHeight == FilesLineHeight && source.Margin == new Thickness(DesignMetrics.Spacing.Sm + 5, DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm + 5, DesignMetrics.Spacing.Md),
+                $"{key} ({theme}): the source must be 12pt in lines of {FilesLineHeight}, set in {DesignMetrics.Spacing.Sm + 5} and {DesignMetrics.Spacing.Md}; got {source.FontSize}pt, {source.LineHeight}, {source.Margin}");
             var gutter = VisualChildren(content!).OfType<Border>().FirstOrDefault(border => border.Child is TextBlock { TextAlignment: TextAlignment.Right })
                 ?? throw new InvalidOperationException($"{key} ({theme}): the source preview has no line-number gutter");
             var numbers = (TextBlock)gutter.Child;
