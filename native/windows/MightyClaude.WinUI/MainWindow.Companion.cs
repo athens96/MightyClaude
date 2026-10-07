@@ -774,6 +774,8 @@ public sealed partial class MainWindow
                 Require(approve.Bounds.Top > cancel.Bounds.Bottom && !approve.Trimmed, $"the plan's approve ({theme}) must be whole, on a row under the others; got {approve.Bounds} under {cancel.Bounds}, trimmed {approve.Trimmed}");
             }
             // A choice, the answer button and the cancel all belong to the question shown; the approval's to the approval. None of them brings a window forward.
+            // Each card is put up again before its clicks: the faces above end on the plan, not the question.
+            overlay.SetCard(CompanionCard("smoke-question", snapshot, agent, "waiting", question), true); overlay.Draw(6, 0);
             var before = clicks.Count; var front = CompanionOverlay.ForegroundWindow;
             Require(overlay.SmokeClick("questions") && overlay.SmokeClick("deny") && overlay.SmokeClick("open") && clicks.Skip(before).SequenceEqual(new[] { "smoke-question:questions", "smoke-question:deny", "smoke-question:open" }), "The question's buttons did not answer for the question shown.");
             overlay.SetCard(CompanionCard("smoke-approval", snapshot, agent, "waiting", approval), true); overlay.Draw(6, 0); before = clicks.Count;
@@ -809,7 +811,15 @@ public sealed partial class MainWindow
                 finally { if (companionQuestionWindow == opened) opened.Close(); }
             }
         }
-        finally { companionQuestions.Remove(PermissionKey(question)); companionPermissions.Remove(PermissionKey(plan)); smokePlanAnswerer = null; }
+        finally
+        {
+            // Whatever step failed, the app's own pet starts clean: no draft, no stand-in request or answerer, no answer marked
+            // as on its way, and no plan window left open (its Closed handler lets go of the window and its sync).
+            companionQuestions.Remove(PermissionKey(question)); companionPermissions.Remove(PermissionKey(plan)); smokePlanAnswerer = null;
+            companionPlanSending = null;
+            if (companionQuestionWindowKey == PermissionKey(plan)) companionQuestionWindow?.Close();
+            companionPlanWindowSync = null;
+        }
     }
     /// <summary>
     /// The plan's own window: the plan's Markdown rendered (not its marks), the change request held back until it has words,
