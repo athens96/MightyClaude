@@ -24,6 +24,8 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: mods/mighty-bridge/tests/package-lock.json
+      - name: Design-token gate — colour and spacing literals only go down
+        run: node scripts/check-design-tokens.js --check
       - name: Type-check and test the Claude mod
         working-directory: mods/mighty-bridge/tests
         run: npm ci --no-audit --no-fund && npm run check

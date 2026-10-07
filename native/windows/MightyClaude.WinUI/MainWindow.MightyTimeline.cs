@@ -599,9 +599,11 @@ public sealed partial class MainWindow
                 }
                 else
                 {
+                    // spacing-exempt-begin: halo geometry, centred on the node; the -5 overhang is (42 - 32) / 2, not a gap
                     // Centred on the node (its centre is TimelineNodeCentre down): 42 at 0.10, 32 at 0.28.
                     marker.Children.Add(new Ellipse { Width = 42, Height = 42, Fill = fill, Opacity = .10, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(-5, TimelineNodeCentre - 21, -5, 0) });
                     marker.Children.Add(new Ellipse { Width = 32, Height = 32, Fill = fill, Opacity = .28, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, TimelineNodeCentre - 16, 0, 0) });
+                    // spacing-exempt-end
                 }
             }
             var mark = MightySymbols.Create(symbol, 9, b.FillInk(row.Node.Tone), MightySymbols.Weight.Bold, fill);
