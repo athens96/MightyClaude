@@ -1534,6 +1534,8 @@
   "companion.pager.next": "Next agent",
   "companion.pager.position": "Working agent {position} of {count}",
   "companion.pager.previous": "Previous agent",
+  "companion.plan.accessibility": "Plan approval for {title}{place}: {headline}",
+  "companion.plan.review": "Review plan…",
   "companion.question.back": "Back",
   "companion.question.custom": "Write your own answer",
   "companion.question.next": "Next",

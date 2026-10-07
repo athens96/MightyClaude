@@ -1534,6 +1534,8 @@
   "companion.pager.next": "下一个智能体",
   "companion.pager.position": "工作中的智能体，第 {position} 个，共 {count} 个",
   "companion.pager.previous": "上一个智能体",
+  "companion.plan.accessibility": "{title}{place} 的计划批准请求：{headline}",
+  "companion.plan.review": "查看计划…",
   "companion.question.back": "上一步",
   "companion.question.custom": "自行输入",
   "companion.question.next": "下一步",

@@ -132,13 +132,15 @@ final class AgentMarkdownDocument: NSObject {
 
 struct AgentMarkdownView: View {
     let source: String
+    /// Smaller type and tighter gaps, for the pet's bubble; the default is the transcript's size.
+    var compact = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
-            ForEach(AgentMarkdownDocument.parse(source).blocks) { block in AgentMarkdownBlockView(block: block) }
+        VStack(alignment: .leading, spacing: compact ? DesignMetrics.Spacing.sm : DesignMetrics.Spacing.md) {
+            ForEach(AgentMarkdownDocument.parse(source).blocks) { block in AgentMarkdownBlockView(block: block, compact: compact) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .font(.system(size: 13)).lineSpacing(4)
+        .font(.system(size: compact ? 11 : 13)).lineSpacing(compact ? 2 : 4)
         .textSelection(.enabled)
         .tint(Palette.accent)
         .environment(\.openURL, OpenURLAction { url in AgentMarkdownDocument.safeLink(url) ? .systemAction : .discarded })
@@ -147,6 +149,7 @@ struct AgentMarkdownView: View {
 
 private struct AgentMarkdownBlockView: View {
     let block: AgentMarkdownBlock
+    var compact = false
 
     @ViewBuilder var body: some View {
         switch block.kind {
@@ -154,8 +157,8 @@ private struct AgentMarkdownBlockView: View {
             inline(block.text).fixedSize(horizontal: false, vertical: true)
         case .header(let level):
             inline(block.text)
-                .font(.system(size: level == 1 ? 22 : level == 2 ? 18 : level == 3 ? 15 : 13, weight: .semibold))
-                .padding(.top, level <= 2 ? 6 : 2)
+                .font(.system(size: compact ? (level == 1 ? 13 : level == 2 ? 12 : 11) : level == 1 ? 22 : level == 2 ? 18 : level == 3 ? 15 : 13, weight: .semibold))
+                .padding(.top, compact ? DesignMetrics.Spacing.xxs : level <= 2 ? 6 : 2)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
         case .orderedList:
@@ -190,7 +193,7 @@ private struct AgentMarkdownBlockView: View {
     private func inline(_ text: AttributedString) -> Text {
         var styled = text
         for run in Array(styled.runs) where run.inlinePresentationIntent?.contains(.code) == true {
-            styled[run.range].font = .system(size: 12, design: .monospaced)
+            styled[run.range].font = .system(size: compact ? 10 : 12, design: .monospaced)
             styled[run.range].backgroundColor = Palette.subtle
         }
         return Text(styled)
@@ -198,7 +201,7 @@ private struct AgentMarkdownBlockView: View {
 
     private func children(_ children: [AgentMarkdownBlock], spacing: CGFloat) -> AnyView {
         AnyView(VStack(alignment: .leading, spacing: spacing) {
-            ForEach(children) { child in AgentMarkdownBlockView(block: child) }
+            ForEach(children) { child in AgentMarkdownBlockView(block: child, compact: compact) }
         }.frame(maxWidth: .infinity, alignment: .leading))
     }
 

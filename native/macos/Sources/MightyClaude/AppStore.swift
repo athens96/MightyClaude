@@ -438,6 +438,9 @@ final class AppStore: ObservableObject {
     /// Only the GUI smoke's attachment check fills this: it sends nothing, so a runner
     /// without the CLI must not block the pane and hide what the check looks at.
     @Published var smokeProvidersTreatedAvailable: Set<String> = []
+    /// The GUI smoke's stand-in for the runner's plan answer (pane id, run id, request id, decision);
+    /// nil answers through the runner. Nothing reaches a CLI while it is set.
+    var smokePlanAnswerer: ((String, String, String, PlanDecision) async throws -> Void)?
 
     func runBlockedReason(_ session: RunSession, checkRuntime: Bool = true) -> String? {
         guard snapshot.workspaces.contains(where: { $0.id == session.workspaceId }) else { return L("run.blocked.selectWorkspace") }
@@ -1082,7 +1085,8 @@ final class AppStore: ObservableObject {
         permissionErrors.removeValue(forKey: sessionId)
         defer { permissionResponses.remove(key) }
         do {
-            try await runner.answerPlan(sessionId: sessionId, runId: request.runId, requestId: request.id, decision: decision)
+            if let smokePlanAnswerer { try await smokePlanAnswerer(sessionId, request.runId, request.id, decision) }
+            else { try await runner.answerPlan(sessionId: sessionId, runId: request.runId, requestId: request.id, decision: decision) }
             toolPermissions[sessionId]?.removeAll { $0.id == request.id && $0.runId == request.runId }
         } catch {
             if !ending, toolPermissions[sessionId]?.contains(where: { $0.id == request.id && $0.runId == request.runId && $0.state == "pending" }) == true {
@@ -1280,9 +1284,11 @@ final class AppStore: ObservableObject {
             result["sidebarResize"] = sidebarResize
             let backgroundWorkLine = await runBackgroundWorkLineSmoke()
             result["backgroundWorkLine"] = backgroundWorkLine
+            let petPlan = await runPetPlanSmoke(sessionId: claudeId)
+            result["petPlan"] = petPlan
             result["passed"] = completedCorrectly && settingsRestored && window != nil
                 && (usageReset["passed"] as? Bool == true) && (sidebarResize["passed"] as? Bool == true)
-                && (backgroundWorkLine["passed"] as? Bool == true)
+                && (backgroundWorkLine["passed"] as? Bool == true) && (petPlan["passed"] as? Bool == true)
             result["status"] = snapshot.sessions.first { $0.id == sessionId }?.status ?? "missing"
         } catch {
             result["error"] = error.localizedDescription

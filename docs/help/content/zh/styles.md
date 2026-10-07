@@ -36,6 +36,8 @@ Claude 在计划模式（Plan mode 或 Claude 计划风格）中完成计划后�
    - {{ui:plan.card.revise}}：写下需要修改的地方并点击{{ui:plan.card.reviseSend}}，Claude 会重新制定计划。
    - {{ui:plan.card.cancel}}：拒绝该计划并停止本次任务。
 
+桌面宠物也会显示完成的计划：收到的时间、计划的前几行以及答复按钮。可以直接在宠物上点击{{ui:plan.card.approveAuto}}或{{ui:plan.card.cancel}}。要写修改请求或阅读整个计划，请点击{{ui:companion.plan.review}}（在 Mac 上也可以点击{{ui:plan.card.revise}}）。计划会在一个带有全部四种答复的小窗口中打开，答复计划后窗口会自动关闭。
+
 已答复的计划会保留在记录中，可以再次查看。
 
 ![[plan-document]]
