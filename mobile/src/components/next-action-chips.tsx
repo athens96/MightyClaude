@@ -50,7 +50,7 @@ export function NextActionChips({
 
 const makeStyles = (palette: Palette) =>
   StyleSheet.create({
-    row: { gap: 5, paddingBottom: spacing.xs, paddingTop: spacing.xs },
+    row: { gap: spacing.sm, paddingBottom: spacing.xs, paddingTop: spacing.xs },
     heading: {
       color: palette.textFaint,
       fontSize: 11.5,
@@ -66,8 +66,10 @@ const makeStyles = (palette: Palette) =>
       borderRadius: radius.lg - 2,
       flexDirection: 'row',
       gap: spacing.sm,
+      // About 40pt to tap, however short the label.
+      minHeight: 40,
       paddingHorizontal: spacing.md,
-      paddingVertical: 9,
+      paddingVertical: spacing.lg,
     },
     label: { color: palette.text, flex: 1, fontSize: 13.5, fontWeight: '600', lineHeight: 18 },
     pressed: { backgroundColor: palette.surfaceRaised },

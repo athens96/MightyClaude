@@ -78,7 +78,7 @@ export function SessionPanel({
 
 const makeStyles = (palette: Palette) =>
   StyleSheet.create({
-    wrap: { paddingHorizontal: spacing.md + 2, paddingTop: spacing.xs },
+    wrap: { paddingHorizontal: spacing.lg, paddingTop: spacing.xs },
     row: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
     toggle: {
       alignItems: 'center',

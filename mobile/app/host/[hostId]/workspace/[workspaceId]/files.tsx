@@ -180,6 +180,7 @@ export default function FilesScreen() {
                 accessibilityLabel={t('phone.files.breadcrumbLabel', { name: crumb.label })}
                 accessibilityState={{ selected: last }}
                 disabled={last}
+                hitSlop={{ bottom: 10, top: 10 }}
                 onPress={() => open(crumb.path)}
               >
                 <Text numberOfLines={1} style={[styles.crumb, last && styles.crumbCurrent]}>
@@ -286,7 +287,7 @@ const makeStyles = (palette: Palette) =>
       borderRadius: radius.lg - 2,
       flexDirection: 'row',
       gap: spacing.md,
-      marginBottom: 6,
+      marginBottom: spacing.md,
       minHeight: 48,
       paddingHorizontal: spacing.md,
       paddingVertical: spacing.sm,
@@ -295,7 +296,7 @@ const makeStyles = (palette: Palette) =>
     pressed: { opacity: 0.6 },
     glyph: { color: palette.textFaint, fontSize: 16, textAlign: 'center', width: 16 },
     folderGlyph: { color: palette.textMuted },
-    rowText: { flex: 1, gap: 2 },
+    rowText: { flex: 1, gap: spacing.xs },
     name: { color: palette.text, fontSize: 15 },
     folderName: { fontWeight: '700' },
     link: { color: palette.textMuted },

@@ -89,6 +89,7 @@ export function Button({
       accessibilityRole="button"
       accessibilityState={{ disabled: inactive }}
       disabled={inactive}
+      hitSlop={compact ? 4 : undefined}
       onPress={() => {
         void Haptics.selectionAsync();
         onPress();
@@ -165,6 +166,7 @@ export function Chip({
       accessibilityRole="button"
       accessibilityState={{ selected, disabled }}
       disabled={disabled}
+      hitSlop={{ bottom: 8, top: 8 }}
       onPress={() => {
         void Haptics.selectionAsync();
         onPress();
@@ -220,6 +222,7 @@ export function SegmentedControl<T extends string>({
             key={option.id}
             accessibilityRole="tab"
             accessibilityState={{ selected }}
+            hitSlop={{ bottom: 4, top: 4 }}
             onPress={() => {
               if (selected) return;
               void Haptics.selectionAsync();
@@ -275,12 +278,12 @@ const makeStyles = (palette: Palette) =>
       borderRadius: radius.md,
       justifyContent: 'center',
       minHeight: 46,
-      paddingHorizontal: spacing.lg,
+      paddingHorizontal: spacing.xl,
     },
     buttonCompact: {
       borderRadius: radius.round,
       minHeight: 32,
-      paddingHorizontal: spacing.md,
+      paddingHorizontal: spacing.lg,
     },
     buttonOutline: {
       borderColor: palette.border,
@@ -305,8 +308,8 @@ const makeStyles = (palette: Palette) =>
       borderWidth: StyleSheet.hairlineWidth,
       flexDirection: 'row',
       gap: spacing.xs,
-      paddingHorizontal: 10,
-      paddingVertical: 4,
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.sm,
     },
     chipDisabled: { opacity: 0.4 },
     chipDot: { borderRadius: radius.round, height: 6, width: 6 },
@@ -317,7 +320,7 @@ const makeStyles = (palette: Palette) =>
       backgroundColor: palette.wait,
       borderRadius: radius.round,
       minWidth: 20,
-      paddingHorizontal: 6,
+      paddingHorizontal: spacing.sm,
       paddingVertical: 1,
     },
     badgeLabel: {
@@ -330,7 +333,7 @@ const makeStyles = (palette: Palette) =>
       backgroundColor: palette.track,
       borderRadius: radius.md,
       flexDirection: 'row',
-      padding: 3,
+      padding: spacing.xs,
     },
     segmentItem: {
       alignItems: 'center',
@@ -346,7 +349,7 @@ const makeStyles = (palette: Palette) =>
     betaBadge: {
       backgroundColor: palette.waitSoft,
       borderRadius: 4,
-      paddingHorizontal: 4,
+      paddingHorizontal: spacing.sm,
     },
     betaBadgeLabel: { color: palette.warning, fontSize: 9.5, fontWeight: '800', letterSpacing: 0.2 },
     empty: { alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.xl, paddingVertical: spacing.xxl },
@@ -358,7 +361,7 @@ const makeStyles = (palette: Palette) =>
       marginHorizontal: spacing.lg,
       marginTop: spacing.sm,
       paddingHorizontal: spacing.md,
-      paddingVertical: spacing.sm + 2,
+      paddingVertical: spacing.md,
     },
     errorBannerText: { color: palette.danger, fontSize: 13, fontWeight: '600', lineHeight: 18 },
   });

@@ -25,6 +25,7 @@ function HostSection({ host }: { host: PairedHost }) {
         accessibilityRole="button"
         accessibilityLabel={t('phone.sessions.openHost', { name })}
         accessibilityHint={t(reachabilityKeys[reachability])}
+        hitSlop={{ bottom: 8, top: 8 }}
         onPress={() => router.push(`/host/${host.id}`)}
         style={({ pressed }) => [styles.hostRow, pressed && styles.pressed]}
       >
@@ -83,7 +84,7 @@ export default function SessionsTab() {
 const makeStyles = (palette: Palette) =>
   StyleSheet.create({
     screen: { backgroundColor: palette.background, flex: 1 },
-    content: { gap: spacing.xl, paddingHorizontal: spacing.md + 2 },
+    content: { gap: spacing.xl, paddingHorizontal: spacing.lg },
     title: { paddingHorizontal: spacing.xs },
     section: { gap: spacing.sm },
     hostRow: {

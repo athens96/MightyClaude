@@ -362,7 +362,7 @@ const makeStyles = (palette: Palette) =>
       paddingHorizontal: spacing.md,
       paddingVertical: spacing.sm,
     },
-    optionStacked: { alignItems: 'flex-start', flexDirection: 'column', gap: 2 },
+    optionStacked: { alignItems: 'flex-start', flexDirection: 'column', gap: spacing.xs },
     optionDescription: { color: palette.textMuted, fontSize: 12, lineHeight: 17 },
     optionLocked: { opacity: 0.45 },
     optionLabel: { color: palette.text, flex: 1, fontSize: 15, fontWeight: '600' },

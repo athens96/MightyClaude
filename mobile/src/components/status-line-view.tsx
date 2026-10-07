@@ -96,7 +96,7 @@ const makeStyles = (palette: Palette) =>
     line: { ...monoText, color: palette.textMuted },
     segmentDefault: { color: palette.textMuted },
     bold: { fontWeight: '700' },
-    limit: { gap: 2 },
+    limit: { gap: spacing.xs },
     limitRow: { flexDirection: 'row', gap: spacing.sm },
     limitLabel: { color: palette.textMuted, flex: 1, fontSize: 11 },
     limitValue: { color: palette.textFaint, fontSize: 11 },

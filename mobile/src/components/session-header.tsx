@@ -222,7 +222,7 @@ const makeStyles = (palette: Palette) =>
   StyleSheet.create({
     title: { alignItems: 'center' },
     titleText: { color: palette.text, fontSize: 15.5, fontWeight: '700', lineHeight: 20 },
-    subtitle: { alignItems: 'center', flexDirection: 'row', gap: 5, marginTop: 1 },
+    subtitle: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm, marginTop: 1 },
     subtitleText: { color: palette.textMuted, flexShrink: 1, fontSize: 12, lineHeight: 16 },
     word: { fontWeight: '600' },
     header: { gap: spacing.sm },

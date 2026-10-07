@@ -124,7 +124,7 @@ export default function AlertsTab() {
 const makeStyles = (palette: Palette) =>
   StyleSheet.create({
     screen: { backgroundColor: palette.background, flex: 1 },
-    content: { paddingHorizontal: spacing.md + 2 },
+    content: { paddingHorizontal: spacing.lg },
     title: { marginBottom: spacing.sm, paddingHorizontal: spacing.xs },
     sectionTitle: {
       color: palette.textFaint,
@@ -141,7 +141,7 @@ const makeStyles = (palette: Palette) =>
       flexDirection: 'row',
       gap: ROW_GAP,
       paddingHorizontal: ROW_PADDING,
-      paddingVertical: 12,
+      paddingVertical: spacing.md,
     },
     first: { borderTopLeftRadius: 18, borderTopRightRadius: 18 },
     last: { borderBottomLeftRadius: 18, borderBottomRightRadius: 18 },

@@ -16,7 +16,7 @@ import { rowMark, rowMeta, rowNote, waitLabel } from '@/lib/session-row';
 import { statusWord } from '@/lib/status-glyph';
 import { useNow } from '@/hooks/use-now';
 import { useDetailReceivedAt, useSessionDetail } from '@/store/live';
-import { monoText, useStyles, type Palette } from '@/theme';
+import { monoText, spacing, useStyles, type Palette } from '@/theme';
 
 const AGE_KEYS: Record<AgeUnit, string> = {
   now: 'resume.time.now',
@@ -33,8 +33,8 @@ export function ageText(updatedAt: string, now = Date.now()): string | undefined
 
 /** The status glyph's width plus the gap after it: where the title, and the rule, begin. */
 export const ROW_GLYPH = 18;
-export const ROW_GAP = 11;
-export const ROW_PADDING = 14;
+export const ROW_GAP = spacing.lg;
+export const ROW_PADDING = spacing.lg;
 export const ROW_TEXT_INSET = ROW_PADDING + ROW_GLYPH + ROW_GAP;
 /** The provider's mark before its name, sized to the 12.5pt meta line. */
 const MARK_SIZE = 12;
@@ -136,7 +136,7 @@ const makeStyles = (palette: Palette) =>
       flexDirection: 'row',
       gap: ROW_GAP,
       paddingHorizontal: ROW_PADDING,
-      paddingVertical: 12,
+      paddingVertical: spacing.md,
     },
     pressed: { backgroundColor: palette.surfaceRaised },
     rule: {
@@ -151,11 +151,11 @@ const makeStyles = (palette: Palette) =>
     texts: { flex: 1, minWidth: 0 },
     title: { color: palette.text, fontSize: 15, fontWeight: '600', lineHeight: 20 },
     titleSettled: { fontWeight: '500' },
-    metaRow: { alignItems: 'center', flexDirection: 'row', gap: 4, marginTop: 1 },
+    metaRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm, marginTop: 1 },
     meta: { color: palette.textMuted, fontSize: 12.5, lineHeight: 17 },
     metaLine: { marginTop: 1 },
     metaRest: { flexShrink: 1 },
-    note: { ...monoText, color: palette.textMuted, fontSize: 11.3, lineHeight: 16, marginTop: 5 },
+    note: { ...monoText, color: palette.textMuted, fontSize: 11.3, lineHeight: 16, marginTop: spacing.sm },
     reason: { color: palette.danger },
     ask: { color: palette.warning, fontSize: 12.5, fontWeight: '700', lineHeight: 20 },
   });

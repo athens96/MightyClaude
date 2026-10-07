@@ -417,7 +417,7 @@ const makeStyles = (palette: Palette) =>
     headTitle: { flex: 1, fontSize: 13, fontWeight: '600' },
     sourceBadge: { color: palette.warning, fontSize: 11, fontWeight: '500' },
     busyText: { flexShrink: 1 },
-    stepper: { alignItems: 'center', flexDirection: 'row', gap: 4, paddingVertical: 2 },
+    stepper: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm, paddingVertical: spacing.xs },
     step: { backgroundColor: palette.border, borderRadius: radius.round, flex: 1, height: 3 },
     stepDone: { opacity: 0.45 },
     stepCurrent: { flex: 1.6, height: 6 },
@@ -429,7 +429,7 @@ const makeStyles = (palette: Palette) =>
       marginLeft: spacing.xs,
       paddingVertical: 1,
     },
-    setup: { gap: 2 },
+    setup: { gap: spacing.xs },
     widgets: { gap: spacing.xs },
     widgetRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.xs },
     widgetTrack: {
@@ -464,6 +464,9 @@ const makeStyles = (palette: Palette) =>
       flexGrow: 1,
       flexBasis: '46%',
       gap: 1,
+      justifyContent: 'center',
+      // About 40pt to tap, however short the title.
+      minHeight: 40,
       paddingHorizontal: spacing.sm,
       paddingVertical: spacing.xs,
     },

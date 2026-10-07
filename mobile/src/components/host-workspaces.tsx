@@ -144,11 +144,11 @@ const makeStyles = (palette: Palette) =>
     groupHeader: {
       alignItems: 'center',
       flexDirection: 'row',
-      gap: 6,
+      gap: spacing.md,
       paddingHorizontal: spacing.xs,
       paddingTop: spacing.xs,
     },
-    groupTitles: { alignItems: 'baseline', flex: 1, flexDirection: 'row', gap: 6 },
+    groupTitles: { alignItems: 'baseline', flex: 1, flexDirection: 'row', gap: spacing.md },
     workspaceName: {
       color: palette.text,
       flexShrink: 0,

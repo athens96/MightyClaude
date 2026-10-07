@@ -208,13 +208,20 @@ export function useStyles<T>(factory: (palette: Palette) => T): T {
   }, [factory, palette]);
 }
 
+/**
+ * The shared dense scale from `native/contracts/fixtures/design-tokens.json`
+ * (`metrics.spacing`: xxs 2, xs 4, sm 6, md 8, lg 12, xl 16). The phone keeps its own
+ * names one step up, so each name here is the contract's next-smaller step:
+ * xs = xxs, sm = xs, md = sm, lg = md, xl = lg, xxl = xl. `design-spacing.test.ts`
+ * holds the two together.
+ */
 export const spacing = {
-  xs: 4,
-  sm: 8,
-  md: 12,
-  lg: 16,
-  xl: 24,
-  xxl: 32,
+  xs: 2,
+  sm: 4,
+  md: 6,
+  lg: 8,
+  xl: 12,
+  xxl: 16,
 } as const;
 
 /** Moulded, not cut: pills are round, rows and fields 12–14, cards 20, sheets 24. */

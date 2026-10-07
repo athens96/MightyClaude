@@ -111,6 +111,7 @@ export default function DashboardTab() {
               })}
               accessibilityHint={hosts.length > 1 ? t('phone.dashboard.pickHost') : undefined}
               disabled={hosts.length < 2}
+              hitSlop={{ bottom: 8, top: 8 }}
               onPress={() => setPicking(true)}
               style={({ pressed }) => [styles.hostChip, pressed && styles.pressed]}
             >
@@ -126,6 +127,7 @@ export default function DashboardTab() {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={t('phone.hosts.addHost')}
+            hitSlop={4}
             onPress={() => router.push('/pair')}
             style={({ pressed }) => [styles.circle, pressed && styles.pressed]}
           >
@@ -183,7 +185,7 @@ export default function DashboardTab() {
 const makeStyles = (palette: Palette) =>
   StyleSheet.create({
     screen: { backgroundColor: palette.background, flex: 1 },
-    content: { gap: spacing.md, paddingHorizontal: spacing.md + 2 },
+    content: { gap: spacing.md, paddingHorizontal: spacing.lg },
     topRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
     hostChip: {
       ...cardShadow,
@@ -192,10 +194,10 @@ const makeStyles = (palette: Palette) =>
       borderRadius: radius.round,
       flexDirection: 'row',
       flexShrink: 1,
-      gap: 7,
-      paddingLeft: 8,
-      paddingRight: 12,
-      paddingVertical: 6,
+      gap: spacing.md,
+      paddingLeft: spacing.md,
+      paddingRight: spacing.lg,
+      paddingVertical: spacing.sm,
     },
     hostName: { color: palette.text, flexShrink: 1, fontSize: 13, fontWeight: '700' },
     circle: {
@@ -208,13 +210,13 @@ const makeStyles = (palette: Palette) =>
       width: 36,
     },
     pressed: { opacity: 0.75 },
-    title: { paddingHorizontal: 2 },
+    title: { paddingHorizontal: spacing.xs },
     stats: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.xs },
     tile: {
       borderRadius: 18,
       flex: 1,
       paddingHorizontal: spacing.md,
-      paddingVertical: 11,
+      paddingVertical: spacing.lg,
     },
     tileWide: { flex: 1.25 },
     tileCount: { ...typeScale.number },

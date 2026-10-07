@@ -20,6 +20,9 @@ import {
   type Palette,
 } from '@/theme';
 
+/** The live dot's 14pt halo plus the row's gap: where the host name, and the lines under it, begin. */
+const NAME_INSET = 14 + spacing.sm;
+
 function HostRow({ host }: { host: PairedHost }) {
   const palette = usePalette();
   const styles = useStyles(makeStyles);
@@ -137,16 +140,16 @@ export default function HostsTab() {
 const makeStyles = (palette: Palette) =>
   StyleSheet.create({
     screen: { backgroundColor: palette.background, flex: 1 },
-    list: { paddingHorizontal: spacing.md + 2 },
+    list: { paddingHorizontal: spacing.lg },
     title: { marginBottom: spacing.md, paddingHorizontal: spacing.xs },
     separator: { height: spacing.sm },
     row: {
       ...cardShadow,
       backgroundColor: palette.surface,
       borderRadius: radius.card,
-      gap: 3,
+      gap: spacing.xs,
       paddingHorizontal: spacing.lg,
-      paddingVertical: spacing.md + 2,
+      paddingVertical: spacing.lg,
     },
     pressed: { opacity: 0.85, transform: [{ scale: 0.99 }] },
     rowTop: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
@@ -157,8 +160,8 @@ const makeStyles = (palette: Palette) =>
       fontSize: 17,
       fontWeight: '700',
     },
-    address: { color: palette.textMuted, fontFamily: monoFontFamily, fontSize: 12, marginLeft: 22 },
-    rowBottom: { alignItems: 'center', flexDirection: 'row', gap: 5, marginLeft: 22, marginTop: 2 },
+    address: { color: palette.textMuted, fontFamily: monoFontFamily, fontSize: 12, marginLeft: NAME_INSET },
+    rowBottom: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm, marginLeft: NAME_INSET, marginTop: spacing.xs },
     status: { fontSize: 12, fontWeight: '700' },
     meta: { color: palette.textFaint, fontSize: 12 },
     footer: { gap: spacing.xs, paddingTop: spacing.lg },
