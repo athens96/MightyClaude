@@ -90,7 +90,8 @@ public sealed partial class MainWindow
         BuildErrorBanner();
 
         workspaceHeader.BorderBrush = Separator;
-        // The name stands on the Mac's 17pt line (about 20 high; Segoe's is 23), so the header is the Mac's 66 with a Git capsule.
+        // The name stands on the Mac's 17pt line (about 20 high; Segoe's is 23), so with a Git capsule the header is the Mac's:
+        // Inset.WorkspaceHeaderT, the name's 20, Spacing.Xxs, the GitBadgeHeight capsule, Inset.WorkspaceHeaderB and the rule.
         workspaceHeaderName.Foreground = brushes.Brush(DesignToken.Ink); workspaceHeaderName.Margin = MacLine();
         workspaceHeaderPath.Foreground = workspaceHeaderFiles.Foreground = brushes.Brush(DesignToken.Ink2);
         workspaceHeader.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });

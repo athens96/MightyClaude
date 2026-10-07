@@ -72,7 +72,8 @@ public sealed partial class MainWindow
     /// <summary>
     /// A popover's content, written as <c>smoke-shell-{name}.png</c>. The window's renderer does not read
     /// popups, so the content is laid for the capture on a card in the window, drawn as the popovers'
-    /// presenter draws it (<see cref="CardFlyoutStyle"/>: card, a 1pt line, radius 10, padding 16), and
+    /// presenter draws it (<see cref="CardFlyoutStyle"/>: card, a 1pt line, radius <c>Radius.Entry</c>, padding
+    /// <see cref="PopoverPadding"/>) just over the status bar, and
     /// then let go, for the caller to hand back to its flyout.
     /// </summary>
     private async Task CaptureShellPopover(string name, FrameworkElement content)
@@ -80,7 +81,7 @@ public sealed partial class MainWindow
         var card = new Border
         {
             Child = content, Background = brushes.Brush(DesignToken.Card), BorderBrush = brushes.Brush(DesignToken.Line), BorderThickness = new Thickness(DesignMetrics.Stroke.Line),
-            CornerRadius = new CornerRadius(DesignMetrics.Radius.Entry), Padding = new Thickness(PopoverPadding), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, DesignMetrics.Spacing.Lg, 44),
+            CornerRadius = new CornerRadius(DesignMetrics.Radius.Entry), Padding = new Thickness(PopoverPadding), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, DesignMetrics.Spacing.Lg, statusBar.ActualHeight + DesignMetrics.Spacing.Sm),
         };
         Grid.SetRowSpan(card, 3); Grid.SetColumnSpan(card, 2); root.Children.Add(card);
         try
@@ -248,9 +249,10 @@ public sealed partial class MainWindow
         try { await CaptureShellSmoke("splash-" + theme); }
         finally { HideLaunchSplash(); }
 
-        // The rename sheet (M/RenameViews.swift:29-63), shown for real and dismissed without a change: 360 wide in
-        // padding 22, the 13pt bold heading, the name field with its label as the placeholder, the caption and the
-        // refusals in 10pt and the sheet's own buttons, 14 apart — Automatic leading, Cancel and the accent Save trailing.
+        // The rename sheet (M/RenameViews.swift:29-63), shown for real and dismissed without a change: RenameSheetWidth wide in
+        // RenameSheetPadding, the 13pt bold heading, the name field with its label as the placeholder, the caption and the
+        // refusals in 10pt and the sheet's own buttons, the lines RenameSpacing apart, the buttons Spacing.Sm apart — Automatic
+        // leading, Cancel and the accent Save trailing.
         if (state.ActiveSessionId is { } renamed)
         {
             var offersAutomatic = state.Sessions.First(s => s.Id == renamed).Kind == "claude";

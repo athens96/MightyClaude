@@ -161,8 +161,8 @@ public sealed partial class MainWindow
             Require(bar.RowDefinitions.Count == 0 && lead.Children.Count == 3 && ReferenceEquals(lead.Children[0], track) && ReferenceEquals(lead.Children[1], graphStyleHeader) && ReferenceEquals(lead.Children[2], graphStyleBadge)
                     && Grid.GetColumn(lead) == 0 && Grid.GetColumn(graphTotal) == 1 && Grid.GetColumn(graphZoomControls!) == 2,
                 $"{key} ({theme}): the Mighty bar must be one row: the view switch, the title and its badge, the summary, then the zoom; got {lead.Children.Count} leading parts in columns {Grid.GetColumn(lead)} / {Grid.GetColumn(graphTotal)} / {Grid.GetColumn(graphZoomControls!)}");
-            // The vertical inset + the switch (22 in a 2pt track) + the inset, over the rule.
-            var barHeight = 2 * DesignMetrics.Inset.GraphBarV + 22 + 2 * DesignMetrics.Spacing.Xxs + DesignMetrics.Stroke.Line;
+            // The vertical inset + the switch (Layout.HitTarget in a Spacing.Xxs track) + the inset, over the rule.
+            var barHeight = 2 * DesignMetrics.Inset.GraphBarV + DesignMetrics.Layout.HitTarget + 2 * DesignMetrics.Spacing.Xxs + DesignMetrics.Stroke.Line;
             double Left(FrameworkElement part) => part.TransformToVisual(bar).TransformPoint(new Windows.Foundation.Point()).X;
             Require(Math.Abs(bar.ActualHeight - barHeight) < .5 && Left(track) < Left(graphStyleHeader) && Left(graphStyleHeader) < Left(graphTotal) && Left(graphTotal) < Left(graphZoomControls!),
                 $"{key} ({theme}): the Mighty bar must be {barHeight} tall with the switch, the title, the summary and the zoom from left to right; got {bar.ActualHeight:F1} tall, at x {Left(track):F1} / {Left(graphStyleHeader):F1} / {Left(graphTotal):F1} / {Left(graphZoomControls!):F1}");
@@ -172,15 +172,15 @@ public sealed partial class MainWindow
             o.RequireBrush(graphStyleHeader, e => ((TextBlock)e).Foreground, DesignToken.Ink, "the Mighty bar title", key: key);
             Require(graphTotal.FontSize == DesignMetrics.Type.Small, $"{key} ({theme}): the Mighty bar summary must be Type.Small {DesignMetrics.Type.Small}pt; got {graphTotal.FontSize}");
             o.RequireBrush(graphTotal, e => ((TextBlock)e).Foreground, DesignToken.Ink2, "the Mighty bar summary", key: key);
-            Require(track.CornerRadius == new CornerRadius(DesignMetrics.Radius.Row) && track.Padding == new Thickness(DesignMetrics.Spacing.Xxs) && track.Spacing == DesignMetrics.Spacing.Xxs, $"{key} ({theme}): the view switch track must be radius {DesignMetrics.Radius.Row}, padding 2, its options 2 apart; got {track.CornerRadius}, {track.Padding}, {track.Spacing}");
+            Require(track.CornerRadius == new CornerRadius(DesignMetrics.Radius.Row) && track.Padding == new Thickness(DesignMetrics.Spacing.Xxs) && track.Spacing == DesignMetrics.Spacing.Xxs, $"{key} ({theme}): the view switch track must be radius {DesignMetrics.Radius.Row}, padding and gap Spacing.Xxs {DesignMetrics.Spacing.Xxs}; got {track.CornerRadius}, {track.Padding}, {track.Spacing}");
             o.RequireBrush(track, e => ((StackPanel)e).Background, DesignToken.Track, "the view switch track", key: key);
             Require(ViewWordsShown, $"{key} ({theme}): a bar this wide ({bar.ActualWidth:F0}) must show the view switch's words");
             foreach (var (option, selected, what) in new[] { (diagramButton!, true, "the chosen view (Diagram)"), (timelineButton!, false, "the other view (Timeline)") })
             {
                 // The look is on the option's chip, symbol and words; the button keeps the resources written once.
                 var (chip, optionSymbol, optionWords) = ViewOptionParts(option);
-                Require(option.Height == 22 && option.Padding == new Thickness(0) && chip.Padding == new Thickness(DesignMetrics.Spacing.Md, 0, DesignMetrics.Spacing.Md, 0) && option.CornerRadius == new CornerRadius(DesignMetrics.Radius.Segment) && chip.CornerRadius == option.CornerRadius,
-                    $"{key} ({theme}): {what} must be 22 tall, its chip padding h{DesignMetrics.Spacing.Md}, both radius {DesignMetrics.Radius.Segment}; got {option.Height}, chip padding {chip.Padding} (button {option.Padding}), {option.CornerRadius} / {chip.CornerRadius}");
+                Require(option.Height == DesignMetrics.Layout.HitTarget && option.Padding == new Thickness(0) && chip.Padding == new Thickness(DesignMetrics.Spacing.Md, 0, DesignMetrics.Spacing.Md, 0) && option.CornerRadius == new CornerRadius(DesignMetrics.Radius.Segment) && chip.CornerRadius == option.CornerRadius,
+                    $"{key} ({theme}): {what} must be Layout.HitTarget {DesignMetrics.Layout.HitTarget} tall, its chip padding h{DesignMetrics.Spacing.Md}, both radius {DesignMetrics.Radius.Segment}; got {option.Height}, chip padding {chip.Padding} (button {option.Padding}), {option.CornerRadius} / {chip.CornerRadius}");
                 RequireFont(optionWords, DesignMetrics.Type.Pill, selected ? FontWeights.Bold : FontWeights.SemiBold, $"({theme}) {what}", key);
                 o.RequireBrush(optionWords, e => ((TextBlock)e).Foreground, selected ? DesignToken.Ink : DesignToken.Ink2, what + "'s words", key: key);
                 // Each option carries its symbol before its word (M/MightyGraphTimelineView.swift:17-18), in the word's ink.
@@ -205,7 +205,7 @@ public sealed partial class MainWindow
             o.RequireBrush(card, e => ((Border)e).Background, DesignToken.Card, "a block card", key: key);
             o.RequireBrush(card, e => ((Border)e).BorderBrush, DesignToken.Line, "a block card's edge", key: key);
             // The Mac strokes the card's 1pt edge over its content (M/MightyGraphActivityView.swift:142-146): the Layout.BlockHead head
-            // and its h12 padding are measured from the card's own edge, the edge included.
+            // and its Inset.GraphBlockBodyH padding are measured from the card's own edge, the edge included.
             var header = view.Header!; var edge = card.BorderThickness.Left;
             Require(header.Height + edge == DesignMetrics.Layout.BlockHead + DesignMetrics.Stroke.Line && header.Padding == new Thickness(DesignMetrics.Inset.GraphBlockBodyH - edge, 0, DesignMetrics.Inset.GraphBlockBodyH - edge, 0) && header.ColumnSpacing == DesignMetrics.Spacing.Sm && header.BorderThickness == new Thickness(0, 0, 0, DesignMetrics.Stroke.Line),
                 $"{key} ({theme}): a block header must end Layout.BlockHead {DesignMetrics.Layout.BlockHead} from the card's top over a Stroke.Line rule, padding h{DesignMetrics.Inset.GraphBlockBodyH} from the card's edge, spacing {DesignMetrics.Spacing.Sm}; got {header.Height} under a {edge} edge, {header.Padding}, {header.ColumnSpacing}, {header.BorderThickness}");
@@ -232,7 +232,7 @@ public sealed partial class MainWindow
             // The request keeps its place between the header and the transcript, its words 14 to 64 tall and scrolling within (M/MightyGraphView.swift:551-556, 1025-1042).
             var band = view.RequestBand!;
             Require(band.Visibility == Visibility.Visible && band.Padding == new Thickness(DesignMetrics.Inset.GraphBlockBodyH - edge, DesignMetrics.Inset.GraphBlockBodyV, DesignMetrics.Inset.GraphBlockBodyH - edge, DesignMetrics.Inset.GraphBlockBodyV) && band.BorderThickness == new Thickness(0, 0, 0, DesignMetrics.Stroke.Line),
-                $"{key} ({theme}): the request band must show with padding h12 (from the card's edge) v8 over a Stroke.Line rule; got {band.Visibility}, {band.Padding}, {band.BorderThickness}");
+                $"{key} ({theme}): the request band must show with padding Inset.GraphBlockBody h{DesignMetrics.Inset.GraphBlockBodyH} (from the card's edge) v{DesignMetrics.Inset.GraphBlockBodyV} over a Stroke.Line rule; got {band.Visibility}, {band.Padding}, {band.BorderThickness}");
             Require(view.Body!.Children.Contains(band) && Grid.GetRow(band) == 1 && band.Child is ScrollViewer { MaxHeight: 64 } && view.Request!.MinHeight == 14 && graphBodies.TryGetValue(liveRequest, out var transcriptScroll) && Grid.GetRow(transcriptScroll) == 2,
                 $"{key} ({theme}): the request band must stand between the header and the scrolling transcript, its words at most 64 tall; got row {Grid.GetRow(band)}, {band.Child?.GetType().Name}");
             o.RequireBrush(band, e => ((Border)e).Background, TintToken(RequestStyleLook(live.Input).Tint), "the request band (inputPreview)", DesignMetrics.Opacity.InputPreview, key);
@@ -287,7 +287,7 @@ public sealed partial class MainWindow
             o.RequireBrush(view.GripSymbol!, SymbolInk, DesignToken.Ink2, "the corner handle's arrows", key: key);
 
             // The draft (M/MightyGraphView.swift:404-420): its dashed accent edge, [5, 4] pt at 1.5pt, stroked on the card's outline;
-            // inside, 16 from the edge, "Next request" 12 semibold after its pencil, the state word 11 ink2, the draft 12 in four lines at most.
+            // inside, Spacing.Lg from the edge, "Next request" 12 semibold after its pencil, the state word 11 ink2, the draft 12 in four lines at most.
             var draft = graphDraftOutline!; var draftCard = graphCards[draftId]; var draftView = graphCardViews[draftId];
             var draftDash = draft.StrokeDashArray?.ToArray() ?? [];
             Require(draft.StrokeThickness == DesignMetrics.Dash.DraftWidth && draftDash.Length == 2 && Math.Abs(draftDash[0] - 5 / 1.5) < 1e-6 && Math.Abs(draftDash[1] - 4 / 1.5) < 1e-6,

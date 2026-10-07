@@ -17,7 +17,7 @@ public sealed partial class MainWindow
 {
     private readonly StackPanel usageChips = new() { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Center };
     private readonly StackPanel usageDetails = new() { Spacing = DesignMetrics.Spacing.Md, Width = UsagePopoverWidth - 2 * PopoverPadding };
-    /// <summary>The usage popover's width over all: its padding 16 is inside the 320 (M/StatusBarUsage.swift:235, the padding before the frame).</summary>
+    /// <summary>The usage popover's width over all: its padding <see cref="PopoverPadding"/> is inside the 320 (M/StatusBarUsage.swift:235, the padding before the frame).</summary>
     internal const double UsagePopoverWidth = 320;
     private Button? usageButton;
     private AccountUsageStatus? usage;

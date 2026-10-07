@@ -338,7 +338,8 @@ public sealed partial class MainWindow
     /// <summary>
     /// The rename sheet of RenameViews.swift:29-63, 360 wide in <see cref="RenameSheetPadding"/>: the 13pt bold heading, the
     /// name field (its label the placeholder, the current name selected), the caption under it in 10pt
-    /// <c>ink2</c>, each refusal in 10pt <c>errText</c> and the sheet's own row of buttons, 14 apart —
+    /// <c>ink2</c>, each refusal in 10pt <c>errText</c> and the sheet's own row of buttons, the lines
+    /// <see cref="RenameSpacing"/> apart, the buttons <c>Spacing.Sm</c> apart —
     /// Automatic at the leading edge for an agent pane (pane.rename.automatic: its title follows its
     /// latest request again), Cancel and the accent Save at the trailing edge, each as wide as its
     /// words. Save is disabled while the name is invalid; Return in the field saves and Esc cancels.

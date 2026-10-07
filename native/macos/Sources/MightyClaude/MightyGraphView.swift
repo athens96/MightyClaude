@@ -130,6 +130,10 @@ struct MightyGraphView: View {
         return resultHeights[MightyGraphLayout.nodeID(runs[index], suffix: "result")].map { Self.blockHeaderHeight + $0 }
     }
     private static let blockHeaderHeight = DesignMetrics.Layout.blockHead
+    /// A timeline request's chevron column, and how far its request and tally stand in under it: past the
+    /// chevron and the header line's `Spacing.md`, so they line up with the title.
+    private static let timelineChevronWidth: CGFloat = 11
+    private static let timelineRequestIndent = timelineChevronWidth + DesignMetrics.Spacing.md
     /// The pane's own requests as the reveal rule sees them.
     private var ownRunProgress: [MightyGraphCamera.ResultReveal.RunProgress] {
         ownRuns.map { .init(id: $0.id, finished: MightyGraphLayout.finished($0)) }
@@ -756,7 +760,7 @@ struct MightyGraphView: View {
             VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                 HStack(spacing: DesignMetrics.Spacing.md) {
                     Image(systemName: open ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 10, weight: .bold)).foregroundStyle(Palette.ink2).frame(width: 11)
+                        .font(.system(size: 10, weight: .bold)).foregroundStyle(Palette.ink2).frame(width: Self.timelineChevronWidth)
                     ProviderBadgeIcon.labelled(title, provider: provider, font: Palette.headingNSFont(16))
                         .font(Palette.heading(16)).foregroundStyle(Palette.ink).lineLimit(1)
                     if group.runIndex < olderCount {
@@ -774,7 +778,7 @@ struct MightyGraphView: View {
                     Text(L("phone.blocks.tally", ["total": "\(group.tally.total)", "settled": "\(group.tally.settled)"]))
                         .font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.ink2)
                 }
-                .padding(.leading, 19)
+                .padding(.leading, Self.timelineRequestIndent)
             }
             .padding(.horizontal, 2)
             .frame(maxWidth: .infinity, alignment: .leading)

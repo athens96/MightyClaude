@@ -43,7 +43,7 @@ public sealed partial class MainWindow
 
         /// <summary>
         /// The Diagram | Timeline switch that leads the Mighty bar (M/MightyGraphTimelineView.swift:10-42): a
-        /// <c>track</c> rail, radius 8, padding 2, its options 2 apart; each 22 tall, padding h9, radius 6, its
+        /// <c>track</c> rail, radius 8, padding and gap <c>Spacing.Xxs</c>; each option <c>Layout.HitTarget</c> tall, <c>Spacing.Md</c> at the sides, radius 6, its
         /// symbol (three joined nodes for the diagram, an indented list for the timeline) before its 11pt word.
         /// </summary>
         private FrameworkElement BuildGraphPresentationSwitch()
@@ -64,7 +64,7 @@ public sealed partial class MainWindow
 
         /// <summary>
         /// One view option: the button itself is plain (no fill at rest, the subtle wash under the pointer,
-        /// written once); its chip, a Border filling it with padding h9, carries the chosen side's <c>card</c>,
+        /// written once); its chip, a Border filling it with <c>Spacing.Md</c> at the sides, carries the chosen side's <c>card</c>,
         /// and the symbol and the word their ink (<see cref="RefreshGraphPresentationSwitch"/>), so choosing never
         /// rewrites resources.
         /// </summary>
@@ -75,7 +75,7 @@ public sealed partial class MainWindow
             var face = new StackPanel { Orientation = Orientation.Horizontal, Spacing = ViewSymbolGap, VerticalAlignment = VerticalAlignment.Center };
             face.Children.Add(mark); face.Children.Add(new TextBlock { Text = text, FontSize = DesignMetrics.Type.Pill, VerticalAlignment = VerticalAlignment.Center });
             var chip = new Border { Child = face, Padding = new Thickness(DesignMetrics.Spacing.Md, 0, DesignMetrics.Spacing.Md, 0), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment) };
-            var button = new Button { Content = chip, MinWidth = 0, MinHeight = 0, Height = 22, Padding = new Thickness(0), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), BorderThickness = new Thickness(0), HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Stretch };
+            var button = new Button { Content = chip, MinWidth = 0, MinHeight = 0, Height = DesignMetrics.Layout.HitTarget, Padding = new Thickness(0), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), BorderThickness = new Thickness(0), HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Stretch };
             owner.PaintPlainButton(button, owner.brushes.Transparent, owner.brushes.Subtle);
             AutomationProperties.SetAutomationId(button, automationId); AutomationProperties.SetName(button, text);
             ToolTipService.SetToolTip(button, text);
@@ -152,8 +152,10 @@ public sealed partial class MainWindow
                 AutomationProperties.SetName(graphStyleBadge, named is null ? "" : Locale.Get("guidedPanel.sourcePrefix") + named);
             }
             if (graphZoomControls is not null) graphZoomControls.Visibility = timeline ? Visibility.Collapsed : Visibility.Visible;
-            // The Mac's Spacer(minLength: 8) after the summary: with the row's 10 it stands 28 before the zoom, 18 before the bar's edge.
-            graphTotal.Margin = new Thickness(0, 0, timeline ? DesignMetrics.Spacing.Md : DesignMetrics.Spacing.Lg, 0);
+            // The Mac's summary is followed by the row's Spacing.Md and a Spacer(minLength: Spacing.Md): 2 × Spacing.Md to the bar's
+            // padding on the timeline (this Spacing.Md and the grid's), and with the row's Spacing.Md again before the zoom on the
+            // diagram, 3 × Spacing.Md (this 2 × Spacing.Md and the grid's).
+            graphTotal.Margin = new Thickness(0, 0, timeline ? DesignMetrics.Spacing.Md : 2 * DesignMetrics.Spacing.Md, 0);
             foreach (var (button, selected, text) in new[] { (diagramButton, !timeline, Locale.Get("graph.view.diagram")), (timelineButton, timeline, Locale.Get("graph.view.timeline")) })
             {
                 if (button is null) continue;
@@ -302,6 +304,11 @@ public sealed partial class MainWindow
         private const double TimelineRowGap = DesignMetrics.Spacing.Xs;
         /// <summary>The marker column beside a row, and what follows it <c>Spacing.Md</c> further in (M/MightyGraphTimelineView.swift:80, M/MightyGraphView.swift:743, 807).</summary>
         private const double TimelineMarkerWidth = 32, TimelineMarkerGap = DesignMetrics.Spacing.Md;
+        /// <summary>
+        /// The request header's chevron column, and how far the request and its tally stand in under it: past the chevron
+        /// and the header line's <c>Spacing.Md</c>, so they line up with the title (M/MightyGraphView.swift timelineHeader).
+        /// </summary>
+        private const double TimelineChevronWidth = 11, TimelineRequestIndent = TimelineChevronWidth + DesignMetrics.Spacing.Md;
         /// <summary>A node is 24 across, two points under the row card's own top padding; the rails meet at its centre (M/MightyGraphTimelineView.swift:81-84).</summary>
         private const double TimelineNode = 24, TimelineNodeTop = DesignMetrics.Inset.GraphBlockBodyV + 2, TimelineNodeCentre = TimelineNodeTop + TimelineNode / 2;
         /// <summary>A row's 13pt title line and its 11pt "kind · meta" line as the Mac lays them out (M/MightyGraphTimelineView.swift:161-168).</summary>
@@ -315,7 +322,7 @@ public sealed partial class MainWindow
         /// while it is open, and its result card. The header line is the chevron (10 bold <c>ink2</c>),
         /// "Request N · [mark] Codex" in the heading font (decision Q1: Segoe UI Variable Display Bold,
         /// 16) in <c>ink</c>, a clock for a request read back from the record, and the 20pt status
-        /// pill; under it, indented 19, the request (12 <c>ink2</c>, two lines) and the block tally
+        /// pill; under it, indented <see cref="TimelineRequestIndent"/> to the title, the request (12 <c>ink2</c>, two lines) and the block tally
         /// (11 semibold <c>ink2</c>).
         /// </summary>
         private StackPanel BuildTimelineGroup(MightyTimeline.Group group, MightyGraphRun run, RunSession pane, bool older, bool open)
@@ -326,7 +333,7 @@ public sealed partial class MainWindow
             var head = TimelineHeading();
             var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Md, VerticalAlignment = VerticalAlignment.Center };
             var chevron = (FontIcon)MightySymbols.Create(open ? "chevron.down" : "chevron.right", 10, ink2);
-            chevron.FontWeight = FontWeights.Bold; chevron.Width = 11;
+            chevron.FontWeight = FontWeights.Bold; chevron.Width = TimelineChevronWidth;
             line.Children.Add(chevron);
             var title = ProviderMarkView.Labelled(GraphRequestTitle(run, group.Ordinal), ProviderMark.MarkedProvider(pane.Provider), DesignMetrics.Type.Timeline, FontWeights.Bold);
             PaintWords(title, b.Brush(DesignToken.Ink), new FontFamily(DesignMetrics.Font.Heading));
@@ -345,8 +352,8 @@ public sealed partial class MainWindow
             Grid.SetColumn(status, 1); head.Children.Add(status); header.Children.Add(head);
             var promptText = string.Join(" ", group.Input.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)).Trim();
             TextBlock? prompt = null;
-            if (promptText.Length > 0) header.Children.Add(prompt = new TextBlock { Text = promptText, FontSize = DesignMetrics.Type.Block, Foreground = ink2, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(DesignMetrics.Spacing.Lg, 0, 0, 0) });
-            var tally = new TextBlock { Text = Locale.Get("phone.blocks.tally", new Dictionary<string, string> { ["total"] = group.Tally.Total.ToString(), ["settled"] = group.Tally.Settled.ToString() }), FontSize = DesignMetrics.Type.Pill, FontWeight = FontWeights.SemiBold, Foreground = ink2, Margin = new Thickness(DesignMetrics.Spacing.Lg, 0, 0, 0) };
+            if (promptText.Length > 0) header.Children.Add(prompt = new TextBlock { Text = promptText, FontSize = DesignMetrics.Type.Block, Foreground = ink2, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(TimelineRequestIndent, 0, 0, 0) });
+            var tally = new TextBlock { Text = Locale.Get("phone.blocks.tally", new Dictionary<string, string> { ["total"] = group.Tally.Total.ToString(), ["settled"] = group.Tally.Settled.ToString() }), FontSize = DesignMetrics.Type.Pill, FontWeight = FontWeights.SemiBold, Foreground = ink2, Margin = new Thickness(TimelineRequestIndent, 0, 0, 0) };
             header.Children.Add(tally);
             timelineHeads[group.RunId] = (title, chevron, prompt, tally, status);
             var button = TimelineButton(header, "mighty-timeline-request-" + group.RunId, new Thickness(DesignMetrics.Spacing.Xxs, 0, DesignMetrics.Spacing.Xxs, 0), () => { ToggleTimelineSet(timelineFlipped, group.RunId); RefreshMightyView(Session); });
@@ -371,7 +378,7 @@ public sealed partial class MainWindow
         /// <summary>
         /// One block on the timeline (M/MightyGraphTimelineView.swift:142-204): a <c>card</c> with radius 14
         /// and a 1pt <c>line</c> edge (2pt <c>run</c> while it runs, 2pt <c>wait</c> while it waits), padding
-        /// h11 v7 from the card's own edge; the title 13 bold <c>ink</c>, "kind · meta" 11 <c>ink2</c> after its
+        /// <c>Inset.GraphBlockBodyH</c> by <c>Inset.GraphBlockBodyV</c> from the card's own edge; the title 13 bold <c>ink</c>, "kind · meta" 11 <c>ink2</c> after its
         /// symbol (9 bold) in the block's tint, the latest step 10.8 mono <c>ink2</c> after the pulsing run dot,
         /// the 19pt status pill. Open, the request on its tint × 0.055 band and the transcript follow a 1pt
         /// <c>line</c>. The rail and node stand to its left.
@@ -388,7 +395,7 @@ public sealed partial class MainWindow
             var marker = TimelineMarker(row, index, group.Rows, symbol, out var node);
             grid.Children.Add(marker);
             // The title and the line under it stand on the Mac's line pitch (13 on 16, 11 on 14; Segoe's own are 18 and 15), so a row
-            // of the two is 46 high as the Mac's is (v7, 16, 2, 14, v7; docs/design-system/crops/timeline-*.webp).
+            // of the two is as high as the Mac's (Inset.GraphBlockBodyV, 16, Spacing.Xxs, 14, Inset.GraphBlockBodyV).
             var body = new StackPanel(); var text = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
             text.Children.Add(new TextBlock { Text = row.Title, FontSize = DesignMetrics.Type.Title, FontWeight = FontWeights.Bold, Foreground = b.Brush(DesignToken.Ink), MaxLines = 2, TextWrapping = TextWrapping.Wrap, TextTrimming = TextTrimming.CharacterEllipsis, LineHeight = TimelineTitleLine, LineStackingStrategy = LineStackingStrategy.BlockLineHeight });
             var agent = row.AgentIndex is { } n ? run.Agents[n] : null;
@@ -471,7 +478,8 @@ public sealed partial class MainWindow
 
         /// <summary>
         /// The card under a finished request (M/MightyGraphTimelineView.swift:208-269): a <c>card</c> with
-        /// radius 16 and no edge, its head strip <c>heroFill</c> of the outcome (padding h13 v6) carrying in
+        /// radius 16 and no edge, its head strip <c>heroFill</c> of the outcome (padding <c>Inset.GraphBlockBodyH</c> by
+        /// <c>Inset.GraphBlockBodyV</c>) carrying in
         /// <c>heroInk</c> the outcome's filled symbol (11 bold), the title (12 heavy), the files menu and the
         /// caption (10.5 semibold mono); under it the answer as plain words, 12.5 <c>ink</c>, eight lines until
         /// "show all" (12 bold <c>accent</c>) opens it.
@@ -504,7 +512,7 @@ public sealed partial class MainWindow
                 var count = new TextBlock { Text = files.Count.ToString(System.Globalization.CultureInfo.InvariantCulture), FontSize = DesignMetrics.Type.Small, Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
                 Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(count, FontNumeralAlignment.Tabular);
                 face.Children.Add(count);
-                // 18 tall, so the strip around it is the Mac's 30.
+                // 18 tall: with Inset.GraphBlockBodyV over and under it, the strip is 18 + 2 × Inset.GraphBlockBodyV high, as the Mac's.
                 var fileButton = HeaderButton(face, ink); fileButton.Flyout = menu; fileButton.Height = 18;
                 AutomationProperties.SetAutomationId(fileButton, "mighty-timeline-result-files-" + result.NodeId);
                 AutomationProperties.SetName(fileButton, Locale.Get("graph.resultFiles.countLabel", new Dictionary<string, string> { ["count"] = files.Count.ToString() }));

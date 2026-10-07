@@ -447,7 +447,7 @@ public sealed partial class MainWindow
                 row.Children.Add(new TextBlock { Text = Locale.Get("plan.history.feedback") + " · " + feedback, FontSize = 10.5, Foreground = b.Brush(DesignToken.WaitText), TextWrapping = expanded ? TextWrapping.Wrap : TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, IsTextSelectionEnabled = expanded });
             return new Border
             {
-                Child = row, Padding = new Thickness(inDiagram ? DesignMetrics.Spacing.Md : DesignMetrics.Spacing.Sm, inDiagram ? DesignMetrics.Spacing.Sm : DesignMetrics.Spacing.Sm, inDiagram ? DesignMetrics.Spacing.Md : DesignMetrics.Spacing.Sm, inDiagram ? DesignMetrics.Spacing.Sm : DesignMetrics.Spacing.Sm), CornerRadius = new CornerRadius(DesignMetrics.Radius.Row),
+                Child = row, Padding = new Thickness(inDiagram ? DesignMetrics.Spacing.Md : DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Sm, inDiagram ? DesignMetrics.Spacing.Md : DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Sm), CornerRadius = new CornerRadius(DesignMetrics.Radius.Row),
                 Background = inDiagram ? b.Transparent : b.Brush(DesignToken.CardRaised), VerticalAlignment = inDiagram ? VerticalAlignment.Stretch : VerticalAlignment.Top,
             };
         }
