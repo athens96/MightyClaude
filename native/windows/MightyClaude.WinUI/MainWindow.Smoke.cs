@@ -1499,19 +1499,19 @@ public sealed partial class MainWindow
             var controls = selectors.Children.OfType<FrameworkElement>().Concat(toolbarActions.Children.OfType<FrameworkElement>()).Where(c => c.Visibility == Visibility.Visible).ToArray();
             var centers = controls.Select(c => c.TransformToVisual(Container).TransformPoint(new(0, 0)).Y + c.ActualHeight / 2).ToArray();
             Require(controls.Contains(context) && controls.Contains(sendHost) && controls.Contains(statusLineToggle), "입력창 도구 줄에 컨텍스트 링, 상태줄 토글, 전송 버튼이 모두 있어야 합니다.");
-            Require(controls.All(c => Math.Abs(c.ActualHeight - 32) < 1 && c.TransformToVisual(Container).TransformPoint(new(c.ActualWidth, 0)).X <= Container.ActualWidth + 1) && centers.Max() - centers.Min() < 1, "좁은 입력창의 버튼이 한 줄 안에 맞지 않습니다.");
+            Require(controls.All(c => Math.Abs(c.ActualHeight - DesignMetrics.Layout.Toolbar) < 1 && c.TransformToVisual(Container).TransformPoint(new(c.ActualWidth, 0)).X <= Container.ActualWidth + 1) && centers.Max() - centers.Min() < 1, "좁은 입력창의 버튼이 한 줄 안에 맞지 않습니다.");
             // A narrow panel folds into the model pill and one options menu (M/ComposerControls.swift:48-55, M/SessionPaneView.swift:713-720); pills never go under the right-hand cluster.
             var pillsEnd = selectors.TransformToVisual(toolbar).TransformPoint(new(selectors.ActualWidth, 0)).X; var clusterStart = toolbarActions.TransformToVisual(toolbar).TransformPoint(new(0, 0)).X;
             Require(toolbarStyle == ToolbarStyle.Overflow && options.Visibility == Visibility.Visible && more.Visibility == Visibility.Collapsed && permission.Visibility == Visibility.Collapsed && effort.Visibility == Visibility.Collapsed && pillsEnd <= clusterStart + .5,
                 $"좁은 입력창은 첨부, 모델, 옵션 메뉴만 보여야 합니다: {toolbarStyle}, 필 끝 {pillsEnd:F1}, 오른쪽 묶음 시작 {clusterStart:F1}");
-            // The three steps' boundaries are the Mac's formula: pill = words (capped) + 16 + 14 + 5 (+ 12 chevron), full = 64 + model(155) + permission(90) + effort(48) + spacing, compact = 32 x (count - 1) + model(90) + spacing.
+            // The three steps' boundaries are the Mac's formula: pill = words (capped) + 16 + 14 + 5 (+ 12 chevron), full = 2 x toolbar + model(155) + permission(90) + effort(48) + spacing, compact = toolbar x (count - 1) + model(90) + spacing.
             double Words(string text, double cap) => Math.Min(PillTextWidth(text), cap);
-            var fullWidth = 64 + (Words("Opus 4.7", 155) + 47) + (Words("Auto mode", 90) + 47) + (Words("High", 48) + 47) + 4 * 6; var compactWidth = 32 * 4 + (Words("Opus 4.7", 90) + 47) + 4 * 6;
+            var fullWidth = 2 * DesignMetrics.Layout.Toolbar + (Words("Opus 4.7", 155) + 47) + (Words("Auto mode", 90) + 47) + (Words("High", 48) + 47) + 4 * 6; var compactWidth = DesignMetrics.Layout.Toolbar * 4 + (Words("Opus 4.7", 90) + 47) + 4 * 6;
             Require(StyleFor(fullWidth + 4, "Opus 4.7", "High", "Auto mode", false) == ToolbarStyle.Full && StyleFor(fullWidth + 3, "Opus 4.7", "High", "Auto mode", false) == ToolbarStyle.Compact
                 && StyleFor(compactWidth + 4, "Opus 4.7", "High", "Auto mode", false) == ToolbarStyle.Compact && StyleFor(compactWidth + 3, "Opus 4.7", "High", "Auto mode", false) == ToolbarStyle.Overflow
-                && ModelTextCap(ToolbarStyle.Overflow, 171) == 48 && ModelTextCap(ToolbarStyle.Overflow, 400) == 110,
+                && ModelTextCap(ToolbarStyle.Overflow, 48 + 2 * DesignMetrics.Layout.Toolbar + 2 * ToolbarSpacing + 47) == 48 && ModelTextCap(ToolbarStyle.Overflow, 400) == 110,
                 $"입력창 도구 줄의 단계 경계가 Mac과 다릅니다: 전체 {fullWidth:F1}, 축약 {compactWidth:F1}");
-            checks["compactControls32pxSingleRow"] = true; Container.Width = double.NaN; Container.UpdateLayout();
+            checks["compactControlsToolbarHighSingleRow"] = true; Container.Width = double.NaN; Container.UpdateLayout();
             var oldFile = AttachmentSupport.Make("old.txt", "old"u8.ToArray()); var newFile = AttachmentSupport.Make("next.txt", "next"u8.ToArray()); pendingAttachments.Add(oldFile); RefreshAttachments();
             var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously); var calls = 0; StartRunRequest? submitted = null;
             owner.smokeStart = async request => { calls++; submitted = request; await Change(p => p with { Status = "running" }); await gate.Task; await Change(p => p with { Status = "completed" }); };
