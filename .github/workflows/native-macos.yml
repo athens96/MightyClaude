@@ -30,6 +30,7 @@ jobs:
       - name: Test Swift core
         run: bash scripts/test-native-macos.sh
       - name: Build SwiftUI application
+        id: build-app
         # Runs even when the Swift tests failed, so one CI run reports both.
         if: success() || failure()
         env:
@@ -88,16 +89,15 @@ jobs:
           if-no-files-found: warn
       - name: Smoke test the Ghostty terminal pane
         # A real shell in a disposable profile: PTY, folder, history, Ctrl-C, resize,
-        # restart, and that the pane is running only while a command runs.
-        if: success() || failure()
+        # restart, and that the pane is running only while a command runs. Only with an app to run.
+        if: (success() || failure()) && steps.build-app.outcome == 'success'
         timeout-minutes: 5
         run: |
           set -u
           profile="$RUNNER_TEMP/mighty-terminal-smoke"
           rm -rf "$profile"
           status=0
-          # BASH_ENV is the user's to keep, and a set one turns the activity reading off.
-          if ! env -u BASH_ENV perl -e 'alarm shift; exec @ARGV' 180 release/native-macos/MightyClaude.app/Contents/MacOS/MightyClaude \
+          if ! perl -e 'alarm shift; exec @ARGV' 180 release/native-macos/MightyClaude.app/Contents/MacOS/MightyClaude \
               --terminal-smoke-test --smoke-exit --profile "$profile"; then
             echo "::error title=macOS terminal smoke::the app exited non-zero or timed out"
             status=1

@@ -63,21 +63,10 @@ extension AppStore {
             result["initialPTYGrid"] = initialGrid
 
             stage = "shell-activity"
-            do {
-                try await waitForSmoke(timeout: 5) { terminal.shellProcessId == shellPID }
-            } catch {
-                throw MightyError("The activity probe found shell \(terminal.shellProcessId.map { String($0) } ?? "none"), not \(shellPID)")
-            }
+            let activity = try await terminalSmokeActivity(terminal, id: id, shellPID: shellPID, marker: "SLEEP_DONE")
             result["activityShellPID"] = Int(shellPID)
-            guard terminalSmokeStatus(id) == "idle" else { throw MightyError("The shell at its prompt is \(terminalSmokeStatus(id) ?? "missing"), not idle") }
-            try terminalSmokeSend(terminal, "/bin/sleep 2; printf 'MIGHTY_%s\\n' 'SLEEP_DONE'")
-            let commandSent = Date()
-            try await waitForSmoke(timeout: 1.5) { self.terminalSmokeStatus(id) == "running" }
-            result["activityRunningAfterSeconds"] = Date().timeIntervalSince(commandSent)
-            try await terminalSmokeWaitText(terminal, "MIGHTY_SLEEP_DONE", timeout: 5)
-            let commandEnded = Date()
-            try await waitForSmoke(timeout: 3) { self.terminalSmokeStatus(id) == "idle" }
-            result["activityIdleAfterSeconds"] = Date().timeIntervalSince(commandEnded)
+            result["activityRunningAfterSeconds"] = activity.running
+            result["activityIdleAfterSeconds"] = activity.idle
             result["shellActivity"] = true
 
             stage = "persistent-directory"
@@ -194,6 +183,13 @@ extension AppStore {
             result["exitAndRestart"] = true
             result["restartedPID"] = Int(restartedPID)
 
+            // The new shell writes its own pid file, so the reading follows it.
+            stage = "restarted-shell-activity"
+            let restartedActivity = try await terminalSmokeActivity(restarted, id: id, shellPID: restartedPID, marker: "RESTARTED_SLEEP_DONE")
+            result["restartedActivityRunningAfterSeconds"] = restartedActivity.running
+            result["restartedActivityIdleAfterSeconds"] = restartedActivity.idle
+            result["restartedShellActivity"] = true
+
             stage = "close-foreground-cleanup"
             let closingPIDFile = folder.appendingPathComponent("closing-pid.txt")
             try terminalSmokeSend(restarted, terminalSmokeSleepCommand(pidFile: closingPIDFile))
@@ -277,6 +273,33 @@ extension AppStore {
     private func terminalSmokeSleepCommand(pidFile: URL) -> String {
         let script = "printf '%s\\n' \"$$\" > \(terminalSmokeQuote(pidFile.path)); exec /bin/sleep 30"
         return "/bin/sh -c " + terminalSmokeQuote(script)
+    }
+
+    /// The probe has found `shellPID`; the pane is idle at the prompt, running during
+    /// `sleep 3` (within 2.5 s of the command) and idle within 3 s after it ends.
+    private func terminalSmokeActivity(_ terminal: LocalTerminalSession, id: String, shellPID: pid_t, marker: String) async throws -> (running: Double, idle: Double) {
+        do {
+            try await waitForSmoke(timeout: 5) { terminal.shellProcessId == shellPID }
+        } catch {
+            throw MightyError("The activity probe found shell \(terminal.shellProcessId.map { String($0) } ?? "none"), not \(shellPID)")
+        }
+        try await waitForSmoke(timeout: 2) { self.terminalSmokeStatus(id) == "idle" }
+        try terminalSmokeSend(terminal, "/bin/sleep 3; printf 'MIGHTY_%s\\n' '\(marker)'")
+        let commandSent = Date()
+        do {
+            try await waitForSmoke(timeout: 2.5) { self.terminalSmokeStatus(id) == "running" }
+        } catch {
+            throw MightyError("During sleep 3 the pane stayed \(terminalSmokeStatus(id) ?? "missing"), not running")
+        }
+        let running = Date().timeIntervalSince(commandSent)
+        try await terminalSmokeWaitText(terminal, "MIGHTY_" + marker, timeout: 6)
+        let commandEnded = Date()
+        do {
+            try await waitForSmoke(timeout: 3) { self.terminalSmokeStatus(id) == "idle" }
+        } catch {
+            throw MightyError("After sleep 3 the pane stayed \(terminalSmokeStatus(id) ?? "missing"), not idle")
+        }
+        return (running, Date().timeIntervalSince(commandEnded))
     }
 
     private func terminalSmokeStatus(_ id: String) -> String? { snapshot.sessions.first { $0.id == id }?.status }

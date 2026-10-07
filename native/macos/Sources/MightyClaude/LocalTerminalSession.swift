@@ -26,6 +26,8 @@ final class LocalTerminalSession: NSObject, ObservableObject, TerminalSurfaceTit
     /// The shell `ShellProcessProbe` found for this pane, with its start time so a
     /// reused pid is noticed, and when the next reading is due.
     private(set) var shellProcessId: pid_t?
+    /// Where the pane's command writes the shell's pid; nil turns the reading off.
+    private let pidFile: URL?
     private var shellStarted: UInt64 = 0
     private var nextActivityProbe = ContinuousClock.now
     private let focused: () -> Void
@@ -47,6 +49,7 @@ final class LocalTerminalSession: NSObject, ObservableObject, TerminalSurfaceTit
         self.statusChanged = statusChanged
         self.focused = focused
         self.closeRequested = closeRequested
+        pidFile = ShellProcessProbe.pidFile(terminalId: id)
         let terminalView = HostTerminalView(frame: .zero)
         view = terminalView
         super.init()
@@ -61,9 +64,12 @@ final class LocalTerminalSession: NSObject, ObservableObject, TerminalSurfaceTit
         var seen = Set<String>()
         environment["PATH"] = paths.filter { !$0.isEmpty && seen.insert($0).inserted }.joined(separator: ":")
         if smoke { environment["HISTFILE"] = "/dev/null" }
-        // The shell writes its pid here as it starts, so its activity can be read.
-        try? FileManager.default.removeItem(at: ShellProcessProbe.pidFile(terminalId: id))
-        environment.merge(ShellProcessProbe.environment(terminalId: id)) { current, _ in current }
+        // The pane's command (`ShellProcessProbe.shellCommand`) writes the shell's pid
+        // here and removes the variable before the shell starts.
+        if let pidFile {
+            try? FileManager.default.removeItem(at: pidFile)
+            environment[ShellProcessProbe.pidFileVariable] = pidFile.path
+        }
         // A per-surface command forces Ghostty's wait-after-command mode.
         // The shared controller supplies the shell command instead, so exit
         // reaches the close callback immediately without another key press.
@@ -123,7 +129,7 @@ final class LocalTerminalSession: NSObject, ObservableObject, TerminalSurfaceTit
         view.removeFromSuperview()
         surface = nil
         ready = false
-        try? FileManager.default.removeItem(at: ShellProcessProbe.pidFile(terminalId: id))
+        if let pidFile { try? FileManager.default.removeItem(at: pidFile) }
     }
 
     private func publish(_ action: @escaping (LocalTerminalSession) -> Void) {
@@ -206,9 +212,7 @@ final class LocalTerminalSession: NSObject, ObservableObject, TerminalSurfaceTit
         let now = ContinuousClock.now
         guard ready, !exited, failure == nil, !disposed, !["completed", "error"].contains(currentStatus), now >= nextActivityProbe else { return }
         nextActivityProbe = now + .milliseconds(500)
-        guard let busy = shellBusy() else { return }
-        let status = busy ? "running" : "idle"
-        if status != currentStatus { statusChanged(status) }
+        if let status = ShellActivity.nextStatus(current: currentStatus, busy: shellBusy()) { statusChanged(status) }
     }
 
     private func shellBusy() -> Bool? {
@@ -219,7 +223,7 @@ final class LocalTerminalSession: NSObject, ObservableObject, TerminalSurfaceTit
             // Gone, or the pid now belongs to another process: find the shell again.
             shellProcessId = nil
         }
-        guard let pid = ShellProcessProbe.findShellPid(pidFile: ShellProcessProbe.pidFile(terminalId: id)), let groups = ShellProcessProbe.groups(pid: pid) else { return nil }
+        guard let pidFile, let pid = ShellProcessProbe.findShellPid(pidFile: pidFile), let groups = ShellProcessProbe.groups(pid: pid) else { return nil }
         shellProcessId = pid
         shellStarted = groups.started
         return groups.tpgid > 0 ? ShellActivity.isBusy(shellGroup: groups.pgid, foregroundGroup: groups.tpgid) : nil

@@ -88,25 +88,43 @@ public sealed partial class MainWindow
             await ToggleSidebar();
             await WaitUI(() => !service.Snapshot.SidebarCollapsed && sidebarSurface.Visibility == Visibility.Visible, () => $"the sidebar must unfold again after the focus check; got collapsed={service.Snapshot.SidebarCollapsed}, {sidebarSurface.Visibility}");
 
-            // The grip, through the handlers its Thumb calls (no mouse): a drag inside the bounds only moves the
-            // column; one past the fold threshold folds the sidebar, and neither it nor the release saves a width,
-            // so the width from before the drag comes back with the unfold.
+            // The grip, through the handlers its Thumb calls (no mouse), in the small steps a Thumb reports (each
+            // DragDelta is the move since the last one): a wobble under the slack moves nothing; a drag inside the
+            // bounds moves the column only; a slow one carries on past the minimum, where the column stays at it,
+            // and folds the sidebar once the pointer is past the fold threshold. Neither the fold nor the release
+            // saves a width, so the width from before the drag comes back with the unfold.
             var column = root.ColumnDefinitions[0];
-            await SidebarGripDragged(-20);
+            SidebarGripStarted();
+            await SidebarGripDragged(-1); await SidebarGripDragged(-1);
+            Require(Math.Abs(column.Width.Value - width) < 0.5, $"a grip press that wobbles under {DividerSlack} must not move the column from {width}; got {column.Width.Value:F1}");
+            for (var step = 0; step < 18; step++) await SidebarGripDragged(-1);
             Require(!service.Snapshot.SidebarCollapsed && Math.Abs(column.Width.Value - (width - 20)) < 0.5 && service.Snapshot.SidebarWidth == width,
-                $"a grip drag inside the bounds must move the column to {width - 20} without saving; got collapsed={service.Snapshot.SidebarCollapsed}, column {column.Width.Value:F1}, saved {service.Snapshot.SidebarWidth}");
-            await SidebarGripDragged(DesignMetrics.Layout.SidebarFoldThreshold - column.Width.Value - 1);
+                $"a grip drag of 20 × -1 inside the bounds must move the column to {width - 20} without saving; got collapsed={service.Snapshot.SidebarCollapsed}, column {column.Width.Value:F1}, saved {service.Snapshot.SidebarWidth}");
+            for (var step = 0; step < 30; step++) await SidebarGripDragged(-3);
+            Require(!service.Snapshot.SidebarCollapsed && Math.Abs(column.Width.Value - DesignMetrics.Layout.SidebarMin) < 0.5,
+                $"a slow drag to {width - 110} must hold the column at its minimum {DesignMetrics.Layout.SidebarMin} without folding; got collapsed={service.Snapshot.SidebarCollapsed}, column {column.Width.Value:F1}");
+            for (var step = 0; step < 14; step++) await SidebarGripDragged(-3);
             await SidebarGripReleased(canceled: false);
             root.UpdateLayout();
             Require(service.Snapshot.SidebarCollapsed && sidebarSurface.Visibility == Visibility.Collapsed && sidebarGripHost?.Visibility == Visibility.Collapsed && column.ActualWidth < 0.5,
-                $"a grip drag under the fold threshold {DesignMetrics.Layout.SidebarFoldThreshold} must fold the sidebar and its grip; got collapsed={service.Snapshot.SidebarCollapsed}, {sidebarSurface.Visibility}, grip {sidebarGripHost?.Visibility.ToString() ?? "none"}, width {column.ActualWidth:F1}");
+                $"a slow grip drag (steps of -3) past the fold threshold {DesignMetrics.Layout.SidebarFoldThreshold} must fold the sidebar and its grip; got collapsed={service.Snapshot.SidebarCollapsed}, {sidebarSurface.Visibility}, grip {sidebarGripHost?.Visibility.ToString() ?? "none"}, width {column.ActualWidth:F1}");
             Require(service.Snapshot.SidebarWidth == width, $"folding by drag must keep the width from before the drag, {width}; got {service.Snapshot.SidebarWidth}");
             stored = await Saved(true);
             Require(stored.SidebarCollapsed && stored.SidebarWidth == width, $"the fold by drag must be saved with the earlier width: expected collapsed=True width={width}; got collapsed={stored.SidebarCollapsed} width={stored.SidebarWidth}");
             await ToggleSidebar();
             await WaitUI(() => !service.Snapshot.SidebarCollapsed && Math.Abs(column.ActualWidth - width) < 1,
                 () => $"unfolding after a fold by drag must bring the sidebar back {width} wide; got collapsed={service.Snapshot.SidebarCollapsed}, width {column.ActualWidth:F1}");
-            return new() { ["shortcutBound"] = true, ["toggleCollapses"] = true, ["contentTakesSpace"] = true, ["toggleRestoresWidth"] = true, ["statePersists"] = true, ["automationNameFollows"] = true, ["focusLeavesFoldedSidebar"] = true, ["foldByDragKeepsWidth"] = true };
+
+            // Past the maximum and back: the column stops at the maximum, and on the way back the border is under the
+            // pointer again (where the drag began plus how far it went), which the release saves.
+            SidebarGripStarted();
+            for (var step = 0; step < 20; step++) await SidebarGripDragged(5);
+            Require(Math.Abs(column.Width.Value - DesignMetrics.Layout.SidebarMax) < 0.5, $"a drag to {width + 100} must hold the column at its maximum {DesignMetrics.Layout.SidebarMax}; got {column.Width.Value:F1}");
+            for (var step = 0; step < 15; step++) await SidebarGripDragged(-6);
+            Require(Math.Abs(column.Width.Value - (width + 10)) < 0.5, $"back from past the maximum, the column must follow the pointer to {width + 10}; got {column.Width.Value:F1}");
+            await SidebarGripReleased(canceled: false);
+            Require(service.Snapshot.SidebarWidth == width + 10, $"letting go must save the width the drag reached, {width + 10}; got {service.Snapshot.SidebarWidth}");
+            return new() { ["shortcutBound"] = true, ["toggleCollapses"] = true, ["contentTakesSpace"] = true, ["toggleRestoresWidth"] = true, ["statePersists"] = true, ["automationNameFollows"] = true, ["focusLeavesFoldedSidebar"] = true, ["foldByDragKeepsWidth"] = true, ["slowDragFolds"] = true, ["dragFollowsPointerPastBounds"] = true };
         }
         finally
         {

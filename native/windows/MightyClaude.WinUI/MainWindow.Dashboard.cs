@@ -79,6 +79,7 @@ public sealed partial class MainWindow
         void ShowGrip() => sidebarSurface.BorderBrush = gripHovered || grip.IsDragging || grip.FocusState == FocusState.Keyboard ? brushes.Brush(DesignToken.Accent) : SidebarEdge;
         grip.PointerEntered += (_, _) => { gripHovered = true; ShowGrip(); }; grip.PointerExited += (_, _) => { gripHovered = false; ShowGrip(); };
         grip.GotFocus += (_, _) => ShowGrip(); grip.LostFocus += (_, _) => ShowGrip(); grip.DragCompleted += (_, _) => ShowGrip();
+        grip.DragStarted += (_, _) => SidebarGripStarted();
         grip.DragDelta += async (_, args) => await SidebarGripDragged(args.HorizontalChange);
         grip.DragCompleted += async (_, args) => await SidebarGripReleased(args.Canceled);
         grip.DoubleTapped += async (_, args) => { args.Handled = true; await Act(() => service.UpdateAsync(s => s with { SidebarWidth = DesignMetrics.Layout.SidebarDefault })); root.ColumnDefinitions[0].Width = new(DesignMetrics.Layout.SidebarDefault); };
@@ -89,27 +90,41 @@ public sealed partial class MainWindow
             await Act(() => service.UpdateAsync(s => s with { SidebarWidth = width })); root.ColumnDefinitions[0].Width = new(width);
         };
     }
+    /// <summary>The sidebar column's width when the grip was pressed, and how far the pointer has gone since.</summary>
+    private double sidebarGripStart, sidebarGripTravel;
+    /// <summary>Whether the press has gone past <see cref="DividerSlack"/> and become a drag.</summary>
+    private bool sidebarGripMoved;
+
+    /// <summary>The sidebar grip pressed: the drag is measured from the column's width now.</summary>
+    private void SidebarGripStarted() { sidebarGripStart = root.ColumnDefinitions[0].Width.Value; sidebarGripTravel = 0; sidebarGripMoved = false; }
+
     /// <summary>
-    /// The sidebar grip moved <paramref name="change"/> past where the column ends now (M/WorkspaceView.swift
-    /// SidebarResizeHandle): the column follows inside its bounds, and a width under the fold threshold folds
-    /// the sidebar instead. A drag saves only when it is let go, so the saved width is still the one from
-    /// before the drag, and unfolding brings that back. The sidebar fold smoke drives this too.
+    /// The sidebar grip moved <paramref name="change"/> since its last move (a Thumb reports each step, not the
+    /// total). The border follows the pointer from where the drag began (M/WorkspaceView.swift SidebarResizeHandle):
+    /// the column takes that width inside its bounds, so after running past one the border is back under the pointer
+    /// on the way back, and a width under the fold threshold folds the sidebar instead, however slow the drag. A
+    /// press that wobbles less than <see cref="DividerSlack"/> is still a click. A drag saves only when it is let
+    /// go, so the saved width is still the one from before the drag, and unfolding brings that back. The sidebar
+    /// fold smoke drives this too.
     /// </summary>
     private Task SidebarGripDragged(double change)
     {
         // The surface hides with the fold at once (ApplySidebarCollapsed); reading it spares a snapshot copy per pointer move.
         if (sidebarSurface.Visibility == Visibility.Collapsed) return Task.CompletedTask;
-        var column = root.ColumnDefinitions[0];
-        var proposed = column.Width.Value + change;
+        sidebarGripTravel += change;
+        if (!sidebarGripMoved && Math.Abs(sidebarGripTravel) < DividerSlack) return Task.CompletedTask;
+        sidebarGripMoved = true;
+        var proposed = sidebarGripStart + sidebarGripTravel;
         if (proposed < DesignMetrics.Layout.SidebarFoldThreshold) return Act(() => SetSidebarCollapsed(true));
-        column.Width = new(Math.Clamp(proposed, DesignMetrics.Layout.SidebarMin, DesignMetrics.Layout.SidebarMax));
+        root.ColumnDefinitions[0].Width = new(Math.Clamp(proposed, DesignMetrics.Layout.SidebarMin, DesignMetrics.Layout.SidebarMax));
         return Task.CompletedTask;
     }
 
-    /// <summary>The sidebar grip let go: the width it reached is saved, a canceled drag goes back to the saved one, and after a fold by drag nothing is saved.</summary>
+    /// <summary>The sidebar grip let go: the width it reached is saved, a canceled drag goes back to the saved one, and after a fold by drag or a press that never moved nothing is saved.</summary>
     private async Task SidebarGripReleased(bool canceled)
     {
-        if (service.Snapshot.SidebarCollapsed) return;
+        var moved = sidebarGripMoved; sidebarGripMoved = false;
+        if (!moved || service.Snapshot.SidebarCollapsed) return;
         var width = canceled ? service.Snapshot.SidebarWidth : root.ColumnDefinitions[0].Width.Value;
         await Act(() => service.UpdateAsync(s => s with { SidebarWidth = width }));
         root.ColumnDefinitions[0].Width = new(width);

@@ -9,4 +9,13 @@ public enum ShellActivity {
     public static func isBusy(shellGroup: pid_t, foregroundGroup: pid_t) -> Bool {
         foregroundGroup > 0 && foregroundGroup != shellGroup
     }
+
+    /// The status a shell pane moves to after a reading, or nil to leave it: a pane
+    /// that has completed or failed keeps that, a reading that could not be taken
+    /// (`busy` nil) changes nothing, and only a different status is reported.
+    public static func nextStatus(current: String, busy: Bool?) -> String? {
+        guard let busy, !["completed", "error"].contains(current) else { return nil }
+        let next = busy ? "running" : "idle"
+        return next == current ? nil : next
+    }
 }

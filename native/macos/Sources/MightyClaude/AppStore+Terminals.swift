@@ -64,7 +64,8 @@ extension AppStore {
             light: TerminalConfiguration.alabaster.background("FAF9F6"),
             dark: TerminalConfiguration.afterglow.background("202020").foreground("DEDCD8").cursorColor("E1AB91")
         )
-        let shellCommand = isolatedTerminalSmoke ? "/bin/zsh -f" : "/bin/zsh -il"
+        // The command names its shell for the activity reading, then becomes it (same pid).
+        let shellCommand = ShellProcessProbe.shellCommand(isolatedTerminalSmoke ? "/bin/zsh -f" : "/bin/zsh -il")
         let controller = TerminalController(theme: theme) { settings in
             settings.withCustom("command", shellCommand)
             settings.withCustom("wait-after-command", "false")
