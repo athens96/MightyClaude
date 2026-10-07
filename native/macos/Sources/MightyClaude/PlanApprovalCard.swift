@@ -52,6 +52,12 @@ struct PlanApprovalCard: View {
     var inDiagram = false
     /// Opened from the pet's 수정 요청: the change request box starts open.
     var startsRevising = false
+    /// The 펼치기 button. The pet's plan window is already the large view,
+    /// and its sheet would open on the main window, out of sight.
+    var showsExpand = true
+    /// Raised each time the pet's 수정 요청 brings back a window already open:
+    /// the change request box opens again.
+    var reviseRequests = 0
     @ViewState private var revising = false
     @ViewState private var feedback = ""
 
@@ -71,12 +77,14 @@ struct PlanApprovalCard: View {
                 }
                 Spacer(minLength: 0)
                 if count > 1 { Text(L("phone.questionnaire.waiting", ["count": "\(count)"])).font(.system(size: 11)).foregroundStyle(Palette.ink2) }
-                Button {
-                    store.planDocument = PlanDocument(id: request.id, title: L("plan.card.title"), subtitle: received, plan: plan)
-                } label: { Label(L("plan.card.expand"), systemImage: "arrow.up.left.and.arrow.down.right") }
-                    .buttonStyle(PaneCardButtonStyle())
-                    .disabled(store.hasModal)
-                    .accessibilityIdentifier("plan-expand")
+                if showsExpand {
+                    Button {
+                        store.planDocument = PlanDocument(id: request.id, title: L("plan.card.title"), subtitle: received, plan: plan)
+                    } label: { Label(L("plan.card.expand"), systemImage: "arrow.up.left.and.arrow.down.right") }
+                        .buttonStyle(PaneCardButtonStyle())
+                        .disabled(store.hasModal)
+                        .accessibilityIdentifier("plan-expand")
+                }
             }
 
             ScrollView {
@@ -132,14 +140,16 @@ struct PlanApprovalCard: View {
             }
             .disabled(busy || !canAnswer)
         }
-        // Clear of the diagram's resize handle in the block's corner.
-        .padding(.bottom, inDiagram ? 12 : 0)
+        // Clear of the diagram's resize handle in the block's corner: with the
+        // card's own padding, `gripClearance` above the block's bottom edge.
+        .padding(.bottom, inDiagram ? DesignMetrics.Layout.gripClearance - DesignMetrics.Spacing.md : 0)
         .paneWaitCard()
         .frame(maxHeight: inDiagram ? .infinity : nil)
         .padding(.horizontal, inDiagram ? 0 : 12).padding(.top, inDiagram ? 0 : 8)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("plan-card-\(request.id)")
         .onAppear { if startsRevising { revising = true } }
+        .onChange(of: reviseRequests) { _, _ in revising = true }
     }
 
     @ViewBuilder private var buttons: some View {

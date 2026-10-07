@@ -272,10 +272,17 @@ final class AgentCompanion: ObservableObject {
     /// Only a click opens it, so bringing it forward never takes focus the user did not give.
     func openPlanWindow(revising: Bool) {
         guard let store, let approval, approval.plan != nil else { return }
-        if let planWindow, planWindow.approval.id == approval.id { planWindow.show(); return }
+        if let planWindow, planWindow.approval.id == approval.id {
+            if revising { planWindow.startRevising() }
+            planWindow.show()
+            return
+        }
         closePlanWindow()
         let window = CompanionPlanWindow(approval: approval, store: store, revising: revising) { [weak self] closed in
-            if self?.planWindow === closed { self?.planWindow = nil }
+            // Let go of it on the next turn, not inside its own close.
+            DispatchQueue.main.async { [weak self] in
+                if self?.planWindow === closed { self?.planWindow = nil }
+            }
         }
         planWindow = window
         window.show()

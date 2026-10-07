@@ -1379,7 +1379,7 @@ public sealed partial class MainWindow
             if (graphResizeNodeId != graphLatestResultId)
             {
                 var raw = BlockAtLeast(DraggedResultSize(point));
-                if (new GraphBlockSize(raw.W, raw.H).Normalized is { } custom && graphResizeNodeId is { } node && graphCards.TryGetValue(node, out var changed))
+                if (graphResizeNodeId is { } node && new GraphBlockSize(raw.W, raw.H).NormalizedFor(node) is { } custom && graphCards.TryGetValue(node, out var changed))
                 { changed.Width = custom.Width; changed.Height = custom.Height; ApplyGraphSelectionStyle(); }
                 return;
             }

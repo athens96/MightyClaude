@@ -15,7 +15,8 @@ namespace MightyClaude.WinUI;
 /// <param name="Glyph">Drawn as the open-in-app symbol instead of its words (M/AgentCompanionViews.swift:337-340).</param>
 /// <param name="OwnRow">On a row of its own under the others, at the right edge: an answer too long to share
 /// the row, as the plan's approve (M/AgentCompanionViews.swift CompanionPlanBubble).</param>
-internal sealed record CompanionOverlayButton(string Id, string Label, bool Prominent = false, bool Glyph = false, bool OwnRow = false);
+/// <param name="Disabled">Drawn faded and not clickable, as while the plan's answer is on its way.</param>
+internal sealed record CompanionOverlayButton(string Id, string Label, bool Prominent = false, bool Glyph = false, bool OwnRow = false, bool Disabled = false);
 internal sealed record CompanionOverlayOption(string Label, string Description, bool Picked);
 
 /// <summary>
@@ -29,7 +30,7 @@ internal sealed record CompanionOverlayRequest(bool Question, string Title, stri
 {
     internal string Drawn => string.Join('\u001e', Question, Title, Origin, Detail, Headline, Code, Boxed, MultiSelect, Error,
         string.Join('\u001d', Options.Select(o => o.Label + '\u001c' + o.Description + '\u001c' + o.Picked)),
-        string.Join('\u001d', Buttons.Select(b => b.Id + '\u001c' + b.Label + '\u001c' + b.Prominent + '\u001c' + b.Glyph + '\u001c' + b.OwnRow)));
+        string.Join('\u001d', Buttons.Select(b => b.Id + '\u001c' + b.Label + '\u001c' + b.Prominent + '\u001c' + b.Glyph + '\u001c' + b.OwnRow + '\u001c' + b.Disabled)));
 }
 
 /// <summary>
@@ -58,6 +59,7 @@ internal sealed class CompanionOverlay : IDisposable
     private const uint ExStyle = 0x08000000 | 0x00080000 | 0x00000080; // NOACTIVATE, LAYERED, TOOLWINDOW
     /// The bubble (M/AgentCompanionViews.swift:190-193, 365-367): padding 12 inside a radius of 18.
     private const double Inset = 12, Corner = 18;
+    private const float DisabledOpacity = 0.45f;
     /// A small system button (`.controlSize(.small)`, M/AgentCompanionViews.swift:336-362) and the gap between two.
     private const double ButtonHeight = 20, ButtonRadius = DesignMetrics.Radius.FileRow, ButtonGap = 6;
     /// The pager's row and its chevron capsules (M/AgentCompanionViews.swift:262-294).
@@ -566,6 +568,8 @@ internal sealed class CompanionOverlay : IDisposable
     private void Button(CanvasDrawingSession session, CompanionOverlayButton button, DesignPalette palette, double x, double y, double wide)
     {
         float radius = (float)ButtonRadius;
+        // A disabled button at the pane's disabled-button opacity (MainWindow.ToolPermission.cs CardButtonDisabled), with no hit area.
+        using var faded = button.Disabled ? session.CreateLayer(DisabledOpacity) : null;
         if (button.Prominent) session.FillRoundedRectangle((float)x, (float)y, (float)wide, (float)ButtonHeight, radius, radius, Paint(palette.Accent));
         else
         {
@@ -579,7 +583,7 @@ internal sealed class CompanionOverlay : IDisposable
             using var label = Text(button.Label, 11, 400, Math.Max(1, wide - 16));
             Put(session, label, button.Label, x + (wide - label.LayoutBounds.Width) / 2, Math.Round(y + (ButtonHeight - label.LayoutBounds.Height) / 2), palette, ink);
         }
-        hitButtons.Add((new(x, y, wide, ButtonHeight), button.Id));
+        if (!button.Disabled) hitButtons.Add((new(x, y, wide, ButtonHeight), button.Id));
     }
     /// questionmark.bubble.fill: no Windows icon font has it, so the bubble and its tail are drawn, and the mark is cut in the card's colour.
     private void QuestionBubble(CanvasDrawingSession session, double x, double y, DesignPalette palette)

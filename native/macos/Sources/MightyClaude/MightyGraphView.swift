@@ -365,7 +365,7 @@ struct MightyGraphView: View {
     /// `graph` is the layout the drag started on: its viewport limit and
     /// window fit are what the newest result card is kept within.
     private func resize(_ graph: MightyGraphLayout, _ id: String, _ size: CGSize, _ edges: ResizeEdges, _ phase: MightyGraphLayout.ResizePhase) {
-        guard let value = MightyGraphBlockSize(width: size.width, height: size.height).normalized else { return }
+        guard let value = MightyGraphBlockSize(width: size.width, height: size.height).normalized(nodeID: id) else { return }
         if reveal.holdingID != nil { reveal.cancel() }
         resized[id] = value
         if isRecordNode(id) { return }

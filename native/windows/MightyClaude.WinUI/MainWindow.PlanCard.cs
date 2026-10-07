@@ -202,8 +202,9 @@ public sealed partial class MainWindow
             if (inDiagram)
             {
                 card.HorizontalAlignment = HorizontalAlignment.Stretch; card.VerticalAlignment = VerticalAlignment.Stretch;
-                // Clear of the diagram's resize handle in the block's corner (M/PlanApprovalCard.swift).
-                body.Margin = new Thickness(0, 0, 0, DesignMetrics.Spacing.Lg);
+                // Clear of the diagram's resize handle in the block's corner (M/PlanApprovalCard.swift): with the
+                // card's own padding (WaitCard, Spacing.Md in all), Layout.GripClearance above the block's bottom edge.
+                body.Margin = new Thickness(0, 0, 0, DesignMetrics.Layout.GripClearance - DesignMetrics.Spacing.Md);
             }
             AutomationProperties.SetAutomationId(card, "plan-card-" + id);
             AutomationProperties.SetName(card, Locale.Get("plan.card.title"));
@@ -579,8 +580,11 @@ public sealed partial class MainWindow
                 ReceiveToolPermission(SmokePlan("smoke-plan-5"));
                 var planNode = MightyGraphBlockSize.NodeId(runId, MightyGraphLayout.PlanSuffix);
                 bool Docked() => planDockCard is not null && toolPermissionHost.Visibility == Visibility.Visible && toolPermissionHost.Children.Contains(planDockCard);
+                // The plan block on the canvas holds the diagram's plan card itself, in the body grid under its corner handle.
                 bool Drawn() => graphHost?.Visibility == Visibility.Visible && graphViewport?.Visibility == Visibility.Visible
-                    && graphCards.TryGetValue(planNode, out var drawn) && graphCanvas.Children.Contains(drawn) && drawn is Border { Child: not null };
+                    && graphCards.TryGetValue(planNode, out var drawn) && graphCanvas.Children.Contains(drawn)
+                    && graphCardViews.TryGetValue(planNode, out var planView) && ReferenceEquals(planView.Card, drawn) && planView.Body is { } planBody
+                    && planCards.TryGetValue(true, out var diagramCard) && planBody.Children.Contains(diagramCard.Card);
                 async Task Mode(string agentView, string graphView, bool diagram, string step)
                 {
                     await owner.Act(async () => { await Change(p => p with { AgentViewMode = agentView, GraphViewMode = graphView }); Refresh(); RefreshMightyView(Session); });

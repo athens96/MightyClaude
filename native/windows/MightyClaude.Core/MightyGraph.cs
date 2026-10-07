@@ -302,10 +302,16 @@ public sealed record GraphBlockSize(
 {
     /// Kept within the drag bounds; null when either side is not a number.
     [JsonIgnore]
-    public GraphBlockSize? Normalized =>
+    public GraphBlockSize? Normalized => NormalizedAtLeast(MightyGraphBlockSize.MinimumHeight);
+
+    /// <see cref="Normalized"/> for the block <paramref name="nodeId"/> names: an answered plan's block may stay as
+    /// short as it folds (macOS <c>MightyGraphBlockSize.normalized(nodeID:)</c>).
+    public GraphBlockSize? NormalizedFor(string nodeId) => NormalizedAtLeast(MightyGraphBlockSize.MinimumHeightFor(nodeId));
+
+    private GraphBlockSize? NormalizedAtLeast(double minimumHeight) =>
         double.IsFinite(Width) && double.IsFinite(Height)
             ? new(Math.Min(MightyGraphBlockSize.MaximumWidth, Math.Max(MightyGraphBlockSize.MinimumWidth, Width)),
-                  Math.Min(MightyGraphBlockSize.MaximumHeight, Math.Max(MightyGraphBlockSize.MinimumHeight, Height)))
+                  Math.Min(MightyGraphBlockSize.MaximumHeight, Math.Max(minimumHeight, Height)))
             : null;
 }
 
@@ -321,5 +327,20 @@ public static class MightyGraphBlockSize
     {
         var len = Encoding.UTF8.GetByteCount(runId);
         return $"{len}:{runId}:{suffix}";
+    }
+
+    /// <summary>The least height a saved size of <paramref name="nodeId"/> keeps: an answered plan's folded height, else <see cref="MinimumHeight"/>.</summary>
+    public static double MinimumHeightFor(string nodeId) =>
+        Suffix(nodeId)?.StartsWith(MightyGraphLayout.PlanRecordSuffix, StringComparison.Ordinal) == true ? MightyGraphLayout.PlanRecordHeight(false) : MinimumHeight;
+
+    /// <summary>The suffix of a <see cref="NodeId"/>, read past its length-prefixed run id (UTF-8 bytes, as written).</summary>
+    internal static string? Suffix(string nodeId)
+    {
+        var colon = nodeId.IndexOf(':');
+        if (colon <= 0 || !int.TryParse(nodeId.AsSpan(0, colon), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var count)) return null;
+        var bytes = Encoding.UTF8.GetBytes(nodeId);
+        var separator = colon + 1 + count;
+        if (separator >= bytes.Length || bytes[separator] != (byte)':') return null;
+        return Encoding.UTF8.GetString(bytes, separator + 1, bytes.Length - separator - 1);
     }
 }

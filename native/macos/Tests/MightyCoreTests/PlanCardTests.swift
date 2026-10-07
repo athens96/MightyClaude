@@ -177,5 +177,11 @@ struct PlanCardTests {
         // A size below the plan card's least (saved elsewhere) is drawn at that least.
         let small = layout([planID: .init(width: 300, height: 140)])
         #expect(small.nodes.first { $0.id == planID }?.frame.size == MightyGraphLayout.planMinimumSize)
+        // An answered plan's least is its folded height: dragged from there it does not jump to the blocks' least.
+        let folded = layout([:]).nodes.first { $0.id == recordID }
+        #expect(folded?.minimumSize == MightyGraphLayout.planRecordMinimumSize)
+        #expect(folded?.frame.height == MightyGraphLayout.planRecordMinimumSize.height)
+        let short = layout([recordID: .init(width: 360, height: Double(MightyGraphLayout.planRecordMinimumSize.height))])
+        #expect(short.nodes.first { $0.id == recordID }?.frame.size == CGSize(width: 360, height: MightyGraphLayout.planRecordMinimumSize.height))
     }
 }

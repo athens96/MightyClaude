@@ -47,9 +47,13 @@ public sealed class MightyGraphLayout
     public static double PlanRecordHeight(bool expanded) => expanded ? 420 : 104;
 
     /// <summary>The least a drag may make a block of <paramref name="kind"/> (macOS Node.minimumSize).</summary>
-    public static (double W, double H) MinimumBlockSize(string kind) => kind == "plan"
-        ? (PlanMinimumWidth, PlanMinimumHeight)
-        : (MightyGraphBlockSize.MinimumWidth, MightyGraphBlockSize.MinimumHeight);
+    /// An answered plan's least is its folded height, so its first drag starts where it stands.
+    public static (double W, double H) MinimumBlockSize(string kind) => kind switch
+    {
+        "plan" => (PlanMinimumWidth, PlanMinimumHeight),
+        "planRecord" => (MightyGraphBlockSize.MinimumWidth, PlanRecordHeight(false)),
+        _ => (MightyGraphBlockSize.MinimumWidth, MightyGraphBlockSize.MinimumHeight),
+    };
     private const double AttachmentGap = 8;
 
     public static bool Terminal(string state) =>
@@ -222,7 +226,7 @@ public sealed class MightyGraphLayout
                 if (resultMaximum is { } maximum) return ResultSize(ResultCap(maximum, resultLimit), resultContentHeight);
                 if (hasSharedResultSize) return (defaultW, defaultH);
             }
-            if (blockSizes?.GetValueOrDefault(id)?.Normalized is { } custom) return (custom.Width, custom.Height);
+            if (blockSizes?.GetValueOrDefault(id)?.NormalizedFor(id) is { } custom) return (custom.Width, custom.Height);
             return (defaultW, defaultH);
         }
 

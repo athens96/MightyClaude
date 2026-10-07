@@ -89,10 +89,22 @@ internal static class PlanCardVerification
         Check(opened.W == MightyGraphLayout.PlanRecordWidth && opened.H == MightyGraphLayout.PlanRecordHeight(true), "without one it opens to its own height");
         var least = Sized(new() { [planID] = new(300, 140) }, []).Nodes.Single(n => n.Id == planID).Frame;
         Check(least.W == MightyGraphLayout.PlanMinimumWidth && least.H == MightyGraphLayout.PlanMinimumHeight, "the plan card is never drawn below its answers");
+        var folded = MightyGraphLayout.PlanRecordHeight(false);
         Check(MightyGraphLayout.MinimumBlockSize("plan") == (MightyGraphLayout.PlanMinimumWidth, MightyGraphLayout.PlanMinimumHeight)
-              && MightyGraphLayout.MinimumBlockSize("planRecord") == (MightyGraphBlockSize.MinimumWidth, MightyGraphBlockSize.MinimumHeight), "the least a drag makes each plan block");
-        var kept = GraphBlockPreferences.Normalize(sizes);
-        Check(kept is not null && kept[planID] == sizes[planID] && kept[recordID] == sizes[recordID], "saved plan sizes survive the normalizer");
+              && MightyGraphLayout.MinimumBlockSize("planRecord") == (MightyGraphBlockSize.MinimumWidth, folded), "the least a drag makes each plan block");
+        // An answered plan keeps its folded height (macOS anAnsweredPlanKeepsItsFoldedHeight): its first drag does not jump to 140.
+        var requestID = MightyGraphBlockSize.NodeId("g1", "request");
+        Check(MightyGraphBlockSize.MinimumHeightFor(recordID) == folded && MightyGraphBlockSize.MinimumHeightFor(requestID) == MightyGraphBlockSize.MinimumHeight
+              && MightyGraphBlockSize.MinimumHeightFor(MightyGraphBlockSize.NodeId("x:plan-record:y", "request")) == MightyGraphBlockSize.MinimumHeight, "only an answered plan's key takes its folded height");
+        Check(new GraphBlockSize(320, 40).NormalizedFor(recordID) == new GraphBlockSize(320, folded) && new GraphBlockSize(320, folded).NormalizedFor(requestID) == new GraphBlockSize(320, MightyGraphBlockSize.MinimumHeight),
+            "a size is clamped to its own block's least");
+        var shortRecord = Sized(new() { [recordID] = new(360, folded) }, []).Nodes.Single(n => n.Id == recordID).Frame;
+        Check(shortRecord.W == 360 && shortRecord.H == folded, "an answered plan dragged to its folded height is drawn there");
+        // The Windows normalizer keeps every well-formed key; what it must not do is lift a folded answered plan to 140.
+        var kept = GraphBlockPreferences.Normalize(new Dictionary<string, GraphBlockSize> { [recordID] = new(360, folded), [requestID] = new(360, folded) });
+        Check(kept is not null && kept[recordID] == new GraphBlockSize(360, folded) && kept[requestID] == new GraphBlockSize(360, MightyGraphBlockSize.MinimumHeight),
+            "the saved-size normalizer keeps an answered plan at its folded height and other blocks at their least");
+        Check(GraphBlockPreferences.Set(new RunSession(), recordID, new(360, folded)).GraphBlockSizes?[recordID] == new GraphBlockSize(360, folded), "a dragged answered plan is saved at its folded height");
         return Task.CompletedTask;
     }
 }
