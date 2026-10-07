@@ -170,7 +170,7 @@ struct SessionContextRing: View {
             Text(SessionUsagePresentation.percent(usage))
                 .font(.system(size: size > 32 ? 13 : 8.5, weight: .semibold, design: .rounded))
                 .monospacedDigit().foregroundStyle(percent == nil ? Color.secondary : Color.primary)
-                .lineLimit(1).minimumScaleFactor(0.8).padding(.horizontal, 2)
+                .lineLimit(1).minimumScaleFactor(0.8).padding(.horizontal, DesignMetrics.Spacing.xxs)
         }.frame(width: size, height: size)
     }
 }
@@ -196,10 +196,10 @@ struct SessionInfoView: View {
         Group {
             if let session = store.snapshot.sessions.first(where: { $0.id == sessionID }) { content(session) }
             else {
-                VStack(spacing: 8) {
+                VStack(spacing: DesignMetrics.Spacing.sm) {
                     Image(systemName: "rectangle.slash").font(.title2).foregroundStyle(.secondary)
                     Text(L("composer.sessionInfo.closedPane")).font(.system(size: 13, weight: .medium))
-                }.frame(maxWidth: .infinity).padding(24)
+                }.frame(maxWidth: .infinity).padding(DesignMetrics.Spacing.xl)
             }
         }
         .frame(width: width)
@@ -214,32 +214,32 @@ struct SessionInfoView: View {
         let workspace = store.snapshot.workspaces.first { $0.id == session.workspaceId }
         let selectedModel = store.modelLabel(for: session)
         return VStack(alignment: .leading, spacing: sectionSpacing) {
-            HStack(spacing: 9) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 ProviderIcon(provider: session.provider, size: 20)
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                     Text(session.title).font(.system(size: 14, weight: .semibold)).lineLimit(1).help(session.titleHelp)
-                    HStack(spacing: 6) {
+                    HStack(spacing: DesignMetrics.Spacing.sm) {
                         Text(ProviderOptions.label(session.provider)).font(.system(size: 11)).foregroundStyle(.secondary)
                             .accessibilityIdentifier("session-info-provider-\(sessionID)")
                         if ProviderOptions.isBeta(session.provider) { BetaBadge() }
                     }
                 }
                 Spacer(minLength: 0)
-                HStack(spacing: 4) { StatusDot(status: session.status); Text(Palette.status(session.status)).font(.system(size: 10)) }
+                HStack(spacing: DesignMetrics.Spacing.xs) { StatusDot(status: session.status); Text(Palette.status(session.status)).font(.system(size: 10)) }
                     .foregroundStyle(.secondary)
             }.frame(height: headerHeight)
             ScrollView(.vertical) {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 11) {
+                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
+                    HStack(spacing: DesignMetrics.Spacing.md) {
                         SessionContextRing(usage: usage, size: 42)
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
                             Text(L("composer.sessionInfo.contextUsage")).font(.system(size: 12, weight: .semibold))
                             Text(SessionUsagePresentation.context(usage)).font(.system(size: 11)).foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer(minLength: 0)
                     }
-                    .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(DesignMetrics.Spacing.md).frame(maxWidth: .infinity, alignment: .leading)
                     .background(Palette.accent.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(L("composer.sessionInfo.contextAccessibility", ["percent": SessionUsagePresentation.percent(usage), "detail": SessionUsagePresentation.context(usage)]))
@@ -281,7 +281,7 @@ struct SessionInfoView: View {
                         Text(L("composer.sessionInfo.noUsage")).font(.system(size: 11)).foregroundStyle(.secondary)
                     }
                     Button { showsIdentifiers.toggle() } label: {
-                        HStack(spacing: 5) {
+                        HStack(spacing: DesignMetrics.Spacing.xs) {
                             Image(systemName: showsIdentifiers ? "chevron.down" : "chevron.right").font(.system(size: 8, weight: .semibold))
                             Text(L("composer.sessionInfo.sessionId")).font(.system(size: 11))
                             Spacer(minLength: 0)
@@ -295,7 +295,7 @@ struct SessionInfoView: View {
                         if let id = usage?.providerSessionId ?? session.resumeId { row(L("composer.sessionInfo.cliSessionId"), id, key: "cli-identity", monospaced: true) }
                     }
                     if let usage {
-                        VStack(alignment: .leading, spacing: 3) {
+                        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                             Text(L("composer.sessionInfo.reported", ["provider": ProviderOptions.label(session.provider)])).help(usage.source)
                             if let date = AgentRunTiming.parseTimestamp(usage.updatedAt) { Text(L("composer.sessionInfo.lastReceived", ["time": date.formatted(date: .omitted, time: .standard)])) }
                         }.font(.system(size: 10)).foregroundStyle(.tertiary)
@@ -303,12 +303,12 @@ struct SessionInfoView: View {
                 }
                 // Keep a bounded line width without a greedy outer geometry
                 // reader. Only the content's natural height drives the popover.
-                .frame(width: width - padding * 2 - 16, alignment: .leading)
+                .frame(width: width - padding * 2 - DesignMetrics.Spacing.lg, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
                 .background(GeometryReader { geometry in
                     Color.clear.preference(key: SessionInfoContentHeight.self, value: geometry.size.height)
                 })
-                .padding(.trailing, 16)
+                .padding(.trailing, DesignMetrics.Spacing.lg)
             }
             .frame(height: min(maximumBodyHeight, max(1, contentHeight)))
             .onPreferenceChange(SessionInfoContentHeight.self) { height in
@@ -327,7 +327,7 @@ struct SessionInfoView: View {
     }
 
     private func row(_ title: String, _ value: String, key: String, monospaced: Bool = false) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
+        HStack(alignment: .firstTextBaseline, spacing: DesignMetrics.Spacing.md) {
             Text(title).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 .layoutPriority(1)
             Spacer(minLength: 0)

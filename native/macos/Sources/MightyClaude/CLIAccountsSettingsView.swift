@@ -8,7 +8,7 @@ struct CLIAccountsSettingsSection: View {
     private struct Pending: Identifiable { let provider: String; let relogin: Bool; var id: String { provider + (relogin ? "+" : "-") } }
 
     var body: some View {
-        Section(L("settings.cliAccounts.sectionTitle")) {
+        SettingsGroup(L("settings.cliAccounts.sectionTitle")) {
             ForEach(ProviderOptions.ids, id: \.self) { provider in row(provider) }
             Text(L("settings.cliAccounts.sectionDescriptionMac"))
                 .font(.system(size: 11)).foregroundStyle(.secondary)
@@ -40,10 +40,10 @@ struct CLIAccountsSettingsSection: View {
         let status = store.cliAccounts[provider]
         let busy = store.cliAccountBusy.contains(provider)
         let pending = store.cliLoginPending.contains(provider)
-        HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
             ProviderIcon(provider: provider, size: 14).frame(width: 18).padding(.top, 1)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
+                HStack(spacing: DesignMetrics.Spacing.sm) {
                     Text(ProviderOptions.label(provider)).font(.system(size: 12, weight: .medium))
                     if ProviderOptions.isBeta(provider) { BetaBadge() }
                 }

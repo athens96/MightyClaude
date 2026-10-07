@@ -88,16 +88,16 @@ struct ScreenSharePermissionsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: "lock.shield").foregroundStyle(.secondary)
                 Text(L("settings.screenShare.permissions.title")).font(.system(size: 14, weight: .semibold))
                 BetaBadge()
                 Spacer()
             }
-            .padding(16)
+            .padding(DesignMetrics.Inset.sheet)
             Divider()
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.lg) {
                     Text(L("settings.screenShare.permissions.intro"))
                         .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     ForEach(ScreenSharePermission.allCases, id: \.self) { permission in
@@ -107,7 +107,7 @@ struct ScreenSharePermissionsView: View {
                         .font(.system(size: 11)).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("screen-share-permissions-signing-note")
                 }
-                .padding(16)
+                .padding(DesignMetrics.Inset.sheet)
             }
             Divider()
             HStack {
@@ -116,7 +116,7 @@ struct ScreenSharePermissionsView: View {
                 Spacer()
                 Button(L("settings.screenShare.permissions.close")) { dismiss() }.keyboardShortcut(.cancelAction)
             }
-            .padding(16)
+            .padding(DesignMetrics.Inset.sheet)
         }
         .frame(width: 520, height: 560)
         .accessibilityIdentifier("screen-share-permissions")
@@ -132,8 +132,8 @@ struct ScreenSharePermissionsView: View {
 
     private func row(_ permission: ScreenSharePermission) -> some View {
         let status = statuses[permission] ?? .unknown
-        return VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
+        return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: Self.symbol(permission)).frame(width: 18).foregroundStyle(.secondary)
                 Text(Self.title(permission)).font(.system(size: 12, weight: .medium))
                 statusChip(status)
@@ -159,7 +159,7 @@ struct ScreenSharePermissionsView: View {
             }
             Text(Self.explanation(permission))
                 .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                .padding(.leading, 26)
+                .padding(.leading, 18 + DesignMetrics.Spacing.sm) // under the title: the icon column and its gap
         }
         .accessibilityIdentifier("screen-share-permission-\(permission.rawValue)")
     }
@@ -174,7 +174,7 @@ struct ScreenSharePermissionsView: View {
             }
         }()
         return Text(text).font(.system(size: 9, weight: .medium)).foregroundStyle(foreground)
-            .padding(.horizontal, 5).padding(.vertical, 1)
+            .padding(.horizontal, DesignMetrics.Spacing.xs).padding(.vertical, 1)
             .background(background, in: Capsule())
     }
 

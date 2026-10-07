@@ -182,10 +182,10 @@ struct ClaudePluginView: View {
     @ViewState private var showsOutput = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 12) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.lg) {
+            HStack(alignment: .top, spacing: DesignMetrics.Spacing.md) {
                 Image(systemName: "puzzlepiece.extension").font(.system(size: 25)).foregroundStyle(Palette.accent)
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
                     Text(L("plugins.titleTemplate", ["provider": model.providerLabel])).font(.system(size: 18, weight: .semibold))
                     Text(model.workspace.name).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
                     Text(model.workspace.path).font(.system(size: 10, design: .monospaced)).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle).help(model.workspace.path)
@@ -209,26 +209,26 @@ struct ClaudePluginView: View {
                     .accessibilityIdentifier("\(model.provider)-plugin-close")
             }
         }
-        .padding(20).frame(width: 760, height: 620)
+        .padding(DesignMetrics.Inset.sheet).frame(width: 760, height: 620)
         .accessibilityElement(children: .contain).accessibilityIdentifier("\(model.provider)-plugin-browser")
         .onAppear { model.loadIfNeeded() }
     }
 
     private var browser: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 tab(L("settings.toolkit.verdictInstalled"), value: "installed", count: model.snapshot?.installed.count ?? 0)
                 tab(L("plugins.tab.marketplace"), value: "marketplace", count: model.snapshot?.available.count ?? 0)
                 Spacer()
                 Button { model.reload() } label: { Label(L("plugins.button.reload"), systemImage: "arrow.clockwise") }
                     .disabled(model.isBusy).accessibilityIdentifier("\(model.provider)-plugin-reload")
             }
-            HStack(spacing: 10) {
-                HStack(spacing: 7) {
+            HStack(spacing: DesignMetrics.Spacing.md) {
+                HStack(spacing: DesignMetrics.Spacing.sm) {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                     TextField(L("plugins.searchPlaceholder"), text: $model.search).textFieldStyle(.plain)
                         .accessibilityIdentifier("\(model.provider)-plugin-search")
-                }.padding(9).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 8))
+                }.padding(DesignMetrics.Spacing.sm).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 8))
                 Picker(L("plugins.tab.marketplace"), selection: $model.marketplaceFilter) {
                     Text(L("plugins.filterAll")).tag("")
                     ForEach(model.marketplaces, id: \.self) { Text($0).tag($0) }
@@ -236,7 +236,7 @@ struct ClaudePluginView: View {
                 .frame(width: 230).accessibilityIdentifier("\(model.provider)-plugin-marketplace-filter")
             }
             if model.tab == "marketplace" {
-                HStack(spacing: 12) {
+                HStack(spacing: DesignMetrics.Spacing.md) {
                     Picker(L("plugins.scopePicker.label"), selection: $model.scope) {
                         if model.provider != "codex" {
                             Text(L("plugins.scopePicker.local")).tag("local")
@@ -287,7 +287,7 @@ struct ClaudePluginView: View {
             Divider()
             GeometryReader { viewport in
                 ScrollView(.vertical) {
-                    LazyVStack(alignment: .leading, spacing: 10) {
+                    LazyVStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
                         if model.tab == "installed" {
                             ForEach(model.installed) { installedRow($0) }
                             if model.installed.isEmpty { emptyList }
@@ -296,7 +296,7 @@ struct ClaudePluginView: View {
                             if model.available.isEmpty { emptyList }
                         }
                     }
-                    .frame(width: max(0, viewport.size.width - 16), alignment: .leading).padding(.trailing, 16)
+                    .frame(width: max(0, viewport.size.width - DesignMetrics.Spacing.lg), alignment: .leading).padding(.trailing, DesignMetrics.Spacing.lg)
                 }
             }
         }
@@ -305,13 +305,13 @@ struct ClaudePluginView: View {
     private func tab(_ title: String, value: String, count: Int) -> some View {
         Button { model.tab = value } label: {
             Text("\(title) \(count)").font(.system(size: 12, weight: model.tab == value ? .semibold : .regular))
-                .padding(.horizontal, 12).padding(.vertical, 7)
+                .padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.sm)
                 .background(model.tab == value ? Palette.accent.opacity(0.17) : Palette.subtle, in: RoundedRectangle(cornerRadius: 7))
         }.buttonStyle(.plain).accessibilityIdentifier("\(model.provider)-plugin-tab-\(value)")
     }
     private func installedRow(_ plugin: ClaudeInstalledPlugin) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
+            HStack(alignment: .firstTextBaseline, spacing: DesignMetrics.Spacing.sm) {
                 Text(plugin.name).font(.system(size: 13, weight: .semibold)).lineLimit(2)
                 if let version = plugin.version { Text(version).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary) }
                 Spacer(minLength: 8)
@@ -324,14 +324,14 @@ struct ClaudePluginView: View {
             ForEach(Array(plugin.errors.enumerated()), id: \.offset) { _, error in Text(error).font(.system(size: 10)).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true) }
             ForEach(Array(plugin.notes.enumerated()), id: \.offset) { _, note in Text(note).font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
         }
-        .padding(12).frame(maxWidth: .infinity, alignment: .leading).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 9))
+        .padding(DesignMetrics.Spacing.md).frame(maxWidth: .infinity, alignment: .leading).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 9))
         .accessibilityElement(children: .contain).accessibilityIdentifier("\(model.provider)-plugin-row-\(plugin.id)")
     }
     private func catalogRow(_ plugin: ClaudeCatalogPlugin) -> some View {
         let installed = model.installedInSelectedScope(plugin.id)
-        return HStack(alignment: .top, spacing: 14) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
+        return HStack(alignment: .top, spacing: DesignMetrics.Spacing.lg) {
+            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
+                HStack(spacing: DesignMetrics.Spacing.sm) {
                     Text(plugin.name).font(.system(size: 13, weight: .semibold)).lineLimit(2)
                     if let version = plugin.version { Text(version).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary) }
                 }
@@ -343,11 +343,11 @@ struct ClaudePluginView: View {
                 .disabled(installed || model.isBusy || model.blockedReason != nil || model.snapshot?.status != "ready")
                 .accessibilityIdentifier("\(model.provider)-plugin-install-\(plugin.id)")
         }
-        .padding(12).frame(maxWidth: .infinity, alignment: .leading).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 9))
+        .padding(DesignMetrics.Spacing.md).frame(maxWidth: .infinity, alignment: .leading).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 9))
         .accessibilityElement(children: .contain).accessibilityIdentifier("\(model.provider)-plugin-row-\(plugin.id)")
     }
     private var emptyList: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: DesignMetrics.Spacing.md) {
             Text(emptyMessage).font(.system(size: 12)).foregroundStyle(.secondary)
             if model.snapshot?.status == "ready", model.tab == "marketplace", model.snapshot?.marketplaces.isEmpty == true {
                 if model.provider == "codex" {

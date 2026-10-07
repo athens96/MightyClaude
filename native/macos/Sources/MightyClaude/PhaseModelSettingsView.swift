@@ -7,7 +7,7 @@ struct PhaseModelSettingsSection: View {
     @EnvironmentObject private var store: AppStore
 
     var body: some View {
-        Section {
+        SettingsGroup {
             Text(L("settings.phaseModels.description"))
                 .font(.system(size: 11)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -42,8 +42,8 @@ private struct PhaseModelProviderBlock: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Text(ProviderOptions.label(provider)).font(.system(size: 12, weight: .medium))
                 if ProviderOptions.isBeta(provider) { BetaBadge() }
             }
@@ -63,7 +63,7 @@ private struct PhaseModelProviderBlock: View {
                     .accessibilityIdentifier("phaseModels-error-\(provider)")
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, DesignMetrics.Spacing.xxs)
     }
 
     // MARK: - Claude phase rows
@@ -128,7 +128,7 @@ private struct PhaseModelProviderBlock: View {
     /// A phase with no knob for one of the two says so instead of offering a
     /// choice the CLI would ignore.
     private func phaseRow(_ phase: PhaseModelRouting.Phase, model: ModelCell?, effort: EffortCell?) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: DesignMetrics.Spacing.sm) {
             Text(phaseTitle(phase)).font(.system(size: 11))
             Spacer(minLength: 4)
             if let model {
@@ -215,7 +215,7 @@ private struct PhaseModelProviderBlock: View {
     }
 
     private func knobRow(label: String, keyPath: WritableKeyPath<PhaseModelHardcodedConfig, String>) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: DesignMetrics.Spacing.sm) {
             Text(label).font(.system(size: 11)).foregroundStyle(.secondary)
             Spacer(minLength: 4)
             Picker("", selection: Binding(
@@ -232,7 +232,7 @@ private struct PhaseModelProviderBlock: View {
 
     private func registeredRow(_ entry: RegisteredModelEntry) -> some View {
         HStack {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                 Text(verbatim: entry.name).font(.system(size: 11, design: .monospaced))
                 if entry.supportsEffort {
                     Text(L("settings.phaseModels.supportsEffortLabel"))
@@ -249,8 +249,8 @@ private struct PhaseModelProviderBlock: View {
     }
 
     private var addRow: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 TextField(L("settings.phaseModels.addPlaceholder"), text: $addName)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 11, design: .monospaced))
@@ -265,10 +265,10 @@ private struct PhaseModelProviderBlock: View {
                 .accessibilityIdentifier("phaseModels-addEffort-\(provider)")
                 .onChange(of: addSupportsEffort) { _, on in if !on { addEffortLevels = [] } }
             if addSupportsEffort {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                     Text(L("settings.phaseModels.effortLevelsLabel"))
                         .font(.system(size: 10)).foregroundStyle(.secondary)
-                    HStack(spacing: 4) {
+                    HStack(spacing: DesignMetrics.Spacing.xs) {
                         ForEach(ProviderOptions.efforts, id: \.self) { level in
                             let selected = addEffortLevels.contains(level)
                             Button(level) {

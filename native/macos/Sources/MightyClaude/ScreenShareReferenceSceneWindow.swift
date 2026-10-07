@@ -111,7 +111,7 @@ private struct ReferenceSceneView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 10) {
+            HStack(spacing: DesignMetrics.Spacing.md) {
                 Text(label).font(.system(size: 15, weight: .semibold, design: .rounded)).monospacedDigit()
                     .accessibilityIdentifier("screen-share-scene-countdown")
                 BetaBadge()
@@ -119,7 +119,7 @@ private struct ReferenceSceneView: View {
                 Button(L("screenShare.scene.stopButton"), action: onStop)
                     .accessibilityIdentifier("screen-share-scene-stop")
             }
-            .padding(.horizontal, 16).padding(.vertical, 10)
+            .padding(.horizontal, DesignMetrics.Spacing.lg).padding(.vertical, DesignMetrics.Spacing.md)
             Divider()
             if player.moment.phase == .motion {
                 // Redrawn every display frame while things move, and only then.
@@ -186,7 +186,7 @@ private struct ReferenceDocument: View {
     }
 
     private func section(_ number: Int) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             Text(L("screenShare.scene.documentHeading", ["number": String(number)]))
                 .font(.system(size: 20, weight: .bold)).foregroundStyle(Color.black)
             Text(L("screenShare.scene.documentParagraph", ["number": String(number)]))
@@ -227,7 +227,7 @@ private struct ReferenceTerminal: View {
         Text(Self.visibleText(typed: count) + "▌")
             .font(.system(size: 13, design: .monospaced)).foregroundStyle(Color.green)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding(14)
+            .padding(DesignMetrics.Spacing.lg)
             .background(Color.black)
     }
 }

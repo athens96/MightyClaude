@@ -9,10 +9,10 @@ struct ComponentsSettingsSection: View {
     @EnvironmentObject private var store: AppStore
 
     var body: some View {
-        Section {
+        SettingsGroup {
             ForEach(store.components) { component in row(component) }
             if let message = store.componentMessage {
-                HStack(alignment: .top, spacing: 6) {
+                HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
                     Image(systemName: store.componentMessageIsError ? "exclamationmark.triangle.fill" : "checkmark.circle").foregroundStyle(store.componentMessageIsError ? Palette.waitText : Palette.doneText).padding(.top, 1)
                     Text(message).font(.system(size: 11)).foregroundStyle(store.componentMessageIsError ? .primary : .secondary).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                 }
@@ -40,8 +40,8 @@ struct ComponentsSettingsSection: View {
     }
 
     private func row(_ component: ComponentStatus) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 icon(component)
                 Text(component.title).font(.system(size: 13, weight: .medium))
                 if ProviderOptions.isBeta(component.id) { BetaBadge() }
@@ -51,13 +51,13 @@ struct ComponentsSettingsSection: View {
             }
             Text(component.detail).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
             if !component.actions.isEmpty {
-                HStack(spacing: 8) {
+                HStack(spacing: DesignMetrics.Spacing.sm) {
                     ForEach(component.actions) { action in
                         let running = store.componentAction == component.id + ":" + action.id
                         Button {
                             store.performComponentAction(component: component.id, action: action.id)
                         } label: {
-                            HStack(spacing: 5) {
+                            HStack(spacing: DesignMetrics.Spacing.xs) {
                                 if running { ProgressView().controlSize(.mini) }
                                 Text(running ? L("settings.components.inProgressLabel") : action.title)
                             }
@@ -69,7 +69,7 @@ struct ComponentsSettingsSection: View {
                 }
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, DesignMetrics.Spacing.xxs)
         .accessibilityElement(children: .contain).accessibilityIdentifier("component-\(component.id)")
     }
 
@@ -106,9 +106,9 @@ struct ToolkitSettingsSection: View {
     @EnvironmentObject private var store: AppStore
 
     var body: some View {
-        Section {
+        SettingsGroup {
             if let err = store.toolkitFileError {
-                HStack(alignment: .top, spacing: 6) {
+                HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
                     Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Palette.waitText).padding(.top, 1)
                     Text(L("settings.toolkit.errorBanner") + " " + err).font(.system(size: 11)).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                 }
@@ -119,7 +119,7 @@ struct ToolkitSettingsSection: View {
             if let results = store.toolkitRunResults {
                 toolkitResultTable(results)
             }
-            HStack(spacing: 6) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Text(L("settings.toolkit.sectionDescription")).font(.system(size: 11)).foregroundStyle(.secondary)
                 Spacer()
                 Button(L("settings.toolkit.addButton")) { addEntryFromFile() }
@@ -147,14 +147,14 @@ struct ToolkitSettingsSection: View {
     private func toolkitRow(_ entry: ToolkitEntry) -> some View {
         let isInstalled = isEntryInstalled(entry)
         let approval = store.toolkitApprovals[entry.entryId]
-        return VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
+        return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: "wrench.and.screwdriver").font(.system(size: 12))
                 Text(entry.displayName).font(.system(size: 13, weight: .medium))
                 if entry.source == .bundled {
-                    Text(L("settings.toolkit.bundledBadge")).font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary).padding(.horizontal, 4).padding(.vertical, 1).background(Color.secondary.opacity(0.15)).clipShape(RoundedRectangle(cornerRadius: 3))
+                    Text(L("settings.toolkit.bundledBadge")).font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary).padding(.horizontal, DesignMetrics.Spacing.xs).padding(.vertical, 1).background(Color.secondary.opacity(0.15)).clipShape(RoundedRectangle(cornerRadius: 3))
                 } else if approval != nil {
-                    Text(L("settings.toolkit.approvedBadge")).font(.system(size: 9, weight: .medium)).foregroundStyle(Palette.doneText).padding(.horizontal, 4).padding(.vertical, 1).background(Palette.doneSoft).clipShape(RoundedRectangle(cornerRadius: 3))
+                    Text(L("settings.toolkit.approvedBadge")).font(.system(size: 9, weight: .medium)).foregroundStyle(Palette.doneText).padding(.horizontal, DesignMetrics.Spacing.xs).padding(.vertical, 1).background(Palette.doneSoft).clipShape(RoundedRectangle(cornerRadius: 3))
                 }
                 Spacer()
                 Text(isInstalled ? L("settings.toolkit.statusInstalled") : L("settings.toolkit.statusMissing"))
@@ -162,7 +162,7 @@ struct ToolkitSettingsSection: View {
                     .foregroundStyle(isInstalled ? Palette.doneText : Palette.waitText)
             }
             if entry.source == .user {
-                HStack(spacing: 6) {
+                HStack(spacing: DesignMetrics.Spacing.sm) {
                     if approval == nil {
                         Text(L("settings.toolkit.needsApproval")).font(.system(size: 11)).foregroundStyle(.secondary)
                         Button(L("settings.toolkit.approveButton")) {
@@ -182,7 +182,7 @@ struct ToolkitSettingsSection: View {
                 }
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, DesignMetrics.Spacing.xxs)
         .accessibilityIdentifier("settings-toolkit-entry-\(entry.entryId)")
     }
 
@@ -197,10 +197,10 @@ struct ToolkitSettingsSection: View {
     }
 
     private func toolkitResultTable(_ results: [ToolkitRunItem]) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
             ForEach(results, id: \.entryId) { item in
                 let entry = store.toolkitEntries.first { $0.entryId == item.entryId }
-                HStack(spacing: 6) {
+                HStack(spacing: DesignMetrics.Spacing.sm) {
                     verdictIcon(item.verdict)
                     Text(entry?.displayName ?? item.entryId).font(.system(size: 11))
                     Spacer()
@@ -208,17 +208,17 @@ struct ToolkitSettingsSection: View {
                 }
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, DesignMetrics.Spacing.xxs)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("settings-toolkit-results")
     }
 
     private func toolkitConfirmationSheet() -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
             Text(L("settings.toolkit.confirmTitle")).font(.headline)
             Text(L("settings.toolkit.confirmDescription")).font(.system(size: 12)).foregroundStyle(.secondary)
             ScrollView {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
                     ForEach(store.toolkitPlan, id: \.entry.entryId) { item in
                         confirmationPlanRow(item)
                     }
@@ -235,12 +235,12 @@ struct ToolkitSettingsSection: View {
                     .accessibilityIdentifier("settings-toolkit-confirm")
             }
         }
-        .padding(20)
+        .padding(DesignMetrics.Inset.sheet)
         .frame(minWidth: 480, maxWidth: 600)
     }
 
     private func confirmationPlanRow(_ item: ToolkitPlanItem) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
             Text(item.entry.displayName).font(.system(size: 12, weight: .medium))
             switch item.action {
             case .skip:
@@ -251,7 +251,7 @@ struct ToolkitSettingsSection: View {
                 }
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, DesignMetrics.Spacing.xxs)
     }
 
     @ViewBuilder private func verdictIcon(_ verdict: ToolkitRunItem.Verdict) -> some View {

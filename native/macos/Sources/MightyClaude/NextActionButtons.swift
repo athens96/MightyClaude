@@ -12,14 +12,14 @@ struct NextActionButtons: View {
     let onFill: (String) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
             Text(L("pane.nextActions.label"))
                 .font(.system(size: 11.5, weight: .bold)).foregroundStyle(Palette.ink2)
-                .padding(.horizontal, 3)
+                .padding(.horizontal, DesignMetrics.Spacing.xxs)
                 .accessibilityHidden(true)
             ForEach(Array(actions.enumerated()), id: \.offset) { index, action in
                 Button { onFill(action.fill) } label: {
-                    HStack(spacing: 10) {
+                    HStack(spacing: DesignMetrics.Spacing.md) {
                         Text(verbatim: action.displayLabel)
                             .font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.ink)
                             .lineLimit(2).truncationMode(.tail).multilineTextAlignment(.leading)
@@ -27,7 +27,7 @@ struct NextActionButtons: View {
                         Image(systemName: "arrow.right").font(.system(size: 13, weight: .bold)).foregroundStyle(Palette.accent)
                             .accessibilityHidden(true)
                     }
-                    .padding(.horizontal, 14).padding(.vertical, 9)
+                    .padding(.horizontal, DesignMetrics.Spacing.lg).padding(.vertical, DesignMetrics.Spacing.sm)
                     .background(Palette.panel, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Palette.border, lineWidth: 1) }
                     .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -39,7 +39,7 @@ struct NextActionButtons: View {
                 .accessibilityIdentifier("next-action-\(sessionID)-\(index)")
             }
         }
-        .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 2)
+        .padding(.horizontal, DesignMetrics.Spacing.md).padding(.top, DesignMetrics.Spacing.sm).padding(.bottom, DesignMetrics.Spacing.xxs)
         .frame(maxWidth: .infinity, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
         .id(entryID)

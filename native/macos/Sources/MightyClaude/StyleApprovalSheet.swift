@@ -41,11 +41,11 @@ struct StyleApprovalSheet: View {
             header
             Divider()
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.lg) {
                     ForEach(sections) { section in sectionView(section) }
                     rawSection
                 }
-                .padding(16)
+                .padding(DesignMetrics.Inset.sheet)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             Divider()
@@ -56,18 +56,18 @@ struct StyleApprovalSheet: View {
     }
 
     private var header: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: DesignMetrics.Spacing.sm) {
             Text(verbatim: style.manifest.name).font(.system(size: 15, weight: .semibold))
             if let badge = StyleChrome.sourceBadge(style.source) { SourceBadge(text: badge) }
             Spacer(minLength: 0)
             Toggle(L("styles.approval.expandAll"), isOn: $expanded).toggleStyle(.switch).controlSize(.mini)
         }
-        .padding(.horizontal, 16).padding(.vertical, 12)
+        .padding(.horizontal, DesignMetrics.Inset.sheet).padding(.vertical, DesignMetrics.Spacing.md)
     }
 
     @ViewBuilder private func sectionView(_ section: StyleApprovalSection) -> some View {
         let hidden = section.foldable && !expanded
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
             Text(verbatim: section.title).font(.system(size: 12, weight: .semibold))
             if hidden {
                 Text(L("styles.approval.collapsedLines", ["count": "\(section.lines.count)", "separator": StyleChrome.separator]))
@@ -94,7 +94,7 @@ struct StyleApprovalSheet: View {
     }
 
     private var rawSection: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
             Text(L("styles.approval.raw")).font(.system(size: 12, weight: .semibold))
             if expanded {
                 Text(verbatim: rawText)
@@ -109,7 +109,7 @@ struct StyleApprovalSheet: View {
     }
 
     private var footer: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: DesignMetrics.Spacing.sm) {
             if confirming {
                 Text(verbatim: StyleApprovalCard.secondConfirmation(count: autoAllowCount))
                     .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -130,7 +130,7 @@ struct StyleApprovalSheet: View {
                     .accessibilityIdentifier("style-approval-allow")
             }
         }
-        .padding(.horizontal, 16).padding(.vertical, 12)
+        .padding(.horizontal, DesignMetrics.Inset.sheet).padding(.vertical, DesignMetrics.Spacing.md)
     }
 
     private func allow() {

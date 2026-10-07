@@ -14,9 +14,9 @@ struct StyleSettingsSection: View {
     }
 
     var body: some View {
-        Section {
+        SettingsGroup {
             if store.styleTrustLocked { lockBanner }
-            HStack(spacing: 8) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Button(L("settings.styles.registerButton")) { register() }.disabled(store.styleTrustLocked)
                     .accessibilityIdentifier("settings-style-register")
                 Button(L("settings.styles.rescanButton")) { store.rescanStyles() }
@@ -40,7 +40,7 @@ struct StyleSettingsSection: View {
     }
 
     private var lockBanner: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
             Label(StyleSettingsList.lockedMessage(store.styleTrustPath), systemImage: "exclamationmark.triangle")
                 .font(.system(size: 11, weight: .medium)).foregroundStyle(Palette.waitText)
             Text(L("settings.styles.lockBanner"))
@@ -58,11 +58,11 @@ struct StyleSettingsSection: View {
             L("settings.styles.actionCountTemplate", ["count": "\(row.actionCount)"]),
             L("settings.styles.autoAllowCountTemplate", ["count": "\(row.autoAllowCount)"]),
         ].joined(separator: " " + StyleChrome.separator + " ")
-        return VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
+        return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Text(verbatim: head).font(.system(size: 12, weight: .medium))
                 Text(verbatim: row.stateLabel).font(.system(size: 10)).foregroundStyle(.secondary)
-                    .padding(.horizontal, 5).padding(.vertical, 1).background(Palette.subtle, in: Capsule())
+                    .padding(.horizontal, DesignMetrics.Spacing.xs).padding(.vertical, 1).background(Palette.subtle, in: Capsule())
                 Spacer(minLength: 0)
             }
             Text(verbatim: detail).font(.system(size: 10)).foregroundStyle(.secondary)
@@ -70,13 +70,13 @@ struct StyleSettingsSection: View {
                 .textSelection(.enabled).lineLimit(1).truncationMode(.middle)
             buttons(row)
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, DesignMetrics.Spacing.xxs)
         .accessibilityElement(children: .contain).accessibilityIdentifier("settings-style-\(row.styleId)")
     }
 
     @ViewBuilder private func buttons(_ row: StyleSettingsRow) -> some View {
         let style = byPath[row.path]
-        HStack(spacing: 6) {
+        HStack(spacing: DesignMetrics.Spacing.sm) {
             Button(L("settings.styles.viewButton")) {
                 guard let style else { return }
                 candidate = StyleApprovalCandidate(style: style, data: store.styleBytes(for: style), readOnly: true)
@@ -97,13 +97,13 @@ struct StyleSettingsSection: View {
     }
 
     private func rejectionRow(_ rejection: StyleRejection) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
             Text(verbatim: rejection.error.code + " " + StyleChrome.separator + " " + rejection.error.message)
                 .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Text(verbatim: rejection.path).font(.system(size: 10, design: .monospaced)).foregroundStyle(.tertiary)
                 .textSelection(.enabled).lineLimit(1).truncationMode(.middle)
         }
-        .padding(.vertical, 2).opacity(0.7)
+        .padding(.vertical, DesignMetrics.Spacing.xxs).opacity(0.7)
         .accessibilityElement(children: .combine).accessibilityIdentifier("settings-style-rejected")
     }
 

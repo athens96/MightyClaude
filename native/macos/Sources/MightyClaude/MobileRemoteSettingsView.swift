@@ -15,9 +15,9 @@ struct MobileRemoteSettingsSection: View {
     private var relayDirty: Bool { RelayEndpoint.normalize(relayText) != RelayEndpoint.normalize(settings.relayURL) }
 
     var body: some View {
-        Section(L("settings.mobileRemote.sectionTitle")) {
+        SettingsGroup(L("settings.mobileRemote.sectionTitle")) {
             Toggle(isOn: Binding(get: { settings.enabled }, set: { store.setMobileRemote(enabled: $0) })) {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                     Text(L("settings.mobileRemote.allowToggle"))
                     Text(L("settings.mobileRemote.allowDescription"))
                         .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -25,14 +25,14 @@ struct MobileRemoteSettingsSection: View {
             }
             .disabled(store.mobileBusy)
             .accessibilityIdentifier("settings-mobile-toggle")
-            HStack(spacing: 8) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Text(L("settings.mobileRemote.relayLabel"))
                 TextField(MobileWire.defaultRelayURL.isEmpty ? "wss://relay.example.com" : MobileWire.defaultRelayURL, text: $relayText).textFieldStyle(.roundedBorder).font(.system(size: 11, design: .monospaced))
                     .onSubmit(applyRelay).accessibilityIdentifier("settings-mobile-relay")
                 Button(L("settings.mobileRemote.applyButton"), action: applyRelay).disabled(store.mobileBusy || !relayDirty || RelayEndpoint.normalize(relayText) == nil)
             }
             connectionGuide
-            HStack(spacing: 8) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Circle().fill(Palette.mark(status.relayConnected ? "completed" : settings.enabled ? "waiting" : "idle")).frame(width: 8, height: 8)
                 Text(status.relayConnected
                      ? (status.clients > 0 ? L("settings.mobileRemote.statusConnectedTemplate", ["count": "\(status.clients)"]) : L("settings.mobileRemote.statusRelayConnected"))
@@ -58,22 +58,22 @@ struct MobileRemoteSettingsSection: View {
                 Text(L("settings.mobileRemote.relayHint")).font(.system(size: 11)).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true)
             }
             if status.relayConnected, let pairing = status.pairingURL {
-                HStack(alignment: .top, spacing: 16) {
+                HStack(alignment: .top, spacing: DesignMetrics.Spacing.lg) {
                     if let image = MobilePairingQR.image(for: pairing) {
                         Image(nsImage: image).interpolation(.none).resizable().frame(width: 160, height: 160)
                             .background(Color.white).clipShape(RoundedRectangle(cornerRadius: 8))
                             .accessibilityLabel(L("settings.mobileRemote.qrAccessibility")).accessibilityIdentifier("settings-mobile-qr")
                     }
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
                         Text(L("settings.mobileRemote.scanInstruction")).font(.system(size: 11)).foregroundStyle(.secondary)
                         LabeledContent(L("settings.mobileRemote.hostIdLabel")) { Text(status.serverId).font(.system(size: 11, design: .monospaced)).textSelection(.enabled).lineLimit(1) }
                         LabeledContent(L("settings.mobileRemote.keyLabel")) {
-                            HStack(spacing: 6) {
+                            HStack(spacing: DesignMetrics.Spacing.sm) {
                                 Text(showsKey ? (status.key ?? "") : String(repeating: "•", count: 16)).font(.system(size: 11, design: .monospaced)).textSelection(.enabled).lineLimit(1)
                                 Button(showsKey ? L("settings.mobileRemote.hideKeyButton") : L("settings.mobileRemote.showKeyButton")) { showsKey.toggle() }.controlSize(.small)
                             }
                         }
-                        HStack(spacing: 8) {
+                        HStack(spacing: DesignMetrics.Spacing.sm) {
                             Button {
                                 NSPasteboard.general.clearContents(); NSPasteboard.general.setString(pairing, forType: .string)
                             } label: { Label(L("settings.mobileRemote.copyLinkButton"), systemImage: "doc.on.doc") }.controlSize(.small)
@@ -83,10 +83,10 @@ struct MobileRemoteSettingsSection: View {
                         }
                     }
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, DesignMetrics.Spacing.xxs)
             }
             Toggle(isOn: Binding(get: { settings.allowLegacyPhones }, set: { store.setMobileRemote(enabled: settings.enabled, allowLegacyPhones: $0) })) {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                     Text(L("settings.mobileRemote.legacyAppsToggle"))
                     Text(L("settings.mobileRemote.legacyAppsDescription"))
                         .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -128,10 +128,10 @@ struct MobileRemoteSettingsSection: View {
     @ViewBuilder private var devices: some View {
         Text(L("settings.mobileRemote.connectedDevicesTitle")).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
         ForEach(status.devices) { device in
-            HStack(spacing: 8) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: device.legacy ? "questionmark.app" : "iphone").foregroundStyle(device.connected ? Palette.doneText : .secondary)
                 VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 6) {
+                    HStack(spacing: DesignMetrics.Spacing.sm) {
                         Text(device.name).font(.system(size: 12))
                         if device.connected { connectedBadge }
                         if device.isNew { newBadge }
@@ -149,7 +149,7 @@ struct MobileRemoteSettingsSection: View {
 
     private var connectedBadge: some View {
         Text(L("settings.mobileRemote.connectedBadge")).font(.system(size: 9, weight: .medium)).foregroundStyle(Palette.doneText)
-            .padding(.horizontal, 5).padding(.vertical, 1)
+            .padding(.horizontal, DesignMetrics.Spacing.xs).padding(.vertical, 1)
             .background(Palette.doneSoft, in: Capsule())
     }
 
@@ -157,7 +157,7 @@ struct MobileRemoteSettingsSection: View {
     /// themselves is the one thing this list has to show at a glance.
     private var newBadge: some View {
         Text(L("settings.mobileRemote.newDeviceBadge")).font(.system(size: 9, weight: .medium)).foregroundStyle(Palette.waitText)
-            .padding(.horizontal, 5).padding(.vertical, 1)
+            .padding(.horizontal, DesignMetrics.Spacing.xs).padding(.vertical, 1)
             .background(Palette.waitSoft, in: Capsule())
             .accessibilityIdentifier("settings-mobile-new-badge")
     }
@@ -173,18 +173,18 @@ struct MobileRemoteSettingsSection: View {
     }
 
     @ViewBuilder private var connectionGuide: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
             guideStep(1, L("settings.mobileRemote.guide.step1"))
             guideStep(2, L("settings.mobileRemote.guide.step2"))
             guideStep(3, L("settings.mobileRemote.guide.step3"))
             guideStep(4, L("settings.mobileRemote.guide.step4"))
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, DesignMetrics.Spacing.xxs)
         .accessibilityIdentifier("settings-mobile-guide")
     }
 
     private func guideStep(_ n: Int, _ text: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 5) {
+        HStack(alignment: .firstTextBaseline, spacing: DesignMetrics.Spacing.xs) {
             Text("\(n).").font(.system(size: 11)).foregroundStyle(.secondary).frame(width: 14, alignment: .trailing)
             Text(text).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }

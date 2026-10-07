@@ -12,8 +12,8 @@ struct WebOpenChoicePanel: View {
     @ViewState private var remember = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 7) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: "safari").foregroundStyle(Palette.accent)
                 Text(WebOpenChoiceCopy.dialogTitle).fontWeight(.semibold).lineLimit(1)
                 Spacer(minLength: 0)
@@ -22,13 +22,13 @@ struct WebOpenChoicePanel: View {
                 .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
             Text(request.url.absoluteString).font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
                 .lineLimit(3).truncationMode(.middle).frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 8).padding(.vertical, 6)
+                .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.sm)
                 .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
                 .accessibilityIdentifier("web-open-url")
             Toggle(WebOpenChoiceCopy.rememberToggle, isOn: $remember)
                 .toggleStyle(.checkbox).font(.system(size: 11))
                 .accessibilityIdentifier("web-open-remember")
-            HStack(spacing: 8) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Text(WebOpenChoiceCopy.fallbackHint(seconds: request.timeoutSeconds)).font(.system(size: 10)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
@@ -39,7 +39,7 @@ struct WebOpenChoicePanel: View {
                     .accessibilityIdentifier("web-open-in-app")
             }.controlSize(.small)
         }
-        .padding(12)
+        .padding(DesignMetrics.Spacing.md)
         .background(Palette.accent.opacity(0.055))
         .overlay(alignment: .top) { Divider() }
         .accessibilityElement(children: .contain)

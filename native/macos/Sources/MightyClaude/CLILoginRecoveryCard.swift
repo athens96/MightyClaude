@@ -17,9 +17,9 @@ struct CLILoginRecoveryCard: View {
     private var signsInInTerminal: Bool { provider == "gemini" }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 7) {
+        HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
             Image(systemName: "person.crop.circle.badge.exclamationmark").foregroundStyle(Palette.waitText).padding(.top, 1)
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
                 Text(L("loginRecovery.title", ["provider": ProviderOptions.label(provider)])).fontWeight(.medium)
                 if let note = store.loginCardNotes[sessionID] {
                     Text(L("loginRecovery.resendBlockedTemplate", ["reason": note])).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true)
@@ -43,7 +43,7 @@ struct CLILoginRecoveryCard: View {
                     }
                     if state?.asksForCode == true {
                         Text(L("loginRecovery.codePrompt")).foregroundStyle(.secondary)
-                        HStack(spacing: 6) {
+                        HStack(spacing: DesignMetrics.Spacing.sm) {
                             SecureField(L("loginRecovery.codePlaceholder"), text: $code)
                                 .textFieldStyle(.roundedBorder).frame(maxWidth: 240).onSubmit(submitCode)
                             Button(L("loginRecovery.codeSubmit"), action: submitCode).controlSize(.small)
@@ -71,7 +71,7 @@ struct CLILoginRecoveryCard: View {
             Button { store.dismissLoginRequired(sessionID) } label: { Image(systemName: "xmark").font(.system(size: 9)).frame(width: 18, height: 16) }
                 .buttonStyle(.plain).accessibilityLabel(L("loginRecovery.dismiss"))
         }
-        .font(.system(size: 11)).lineSpacing(2).padding(.horizontal, 12)
+        .font(.system(size: 11)).lineSpacing(2).padding(.horizontal, DesignMetrics.Spacing.md)
         .accessibilityIdentifier("login-required-\(sessionID)")
     }
 
@@ -90,7 +90,7 @@ struct CLILoginRecoveryCard: View {
     }
 
     private func progress(_ text: String) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: DesignMetrics.Spacing.sm) {
             ProgressView().controlSize(.mini)
             Text(text).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }

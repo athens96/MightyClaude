@@ -12,13 +12,13 @@ struct ResumeChoiceSheet: View {
 
     var body: some View {
         let agent = ProviderOptions.label(provider)
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .top, spacing: 10) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.lg) {
+            HStack(alignment: .top, spacing: DesignMetrics.Spacing.md) {
                 ProviderIcon(provider: provider, size: 18).foregroundStyle(.secondary).frame(width: 22).padding(.top, 1)
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
                     Text(L("resume.choice.title", ["provider": agent])).font(.headline)
                     if checking {
-                        HStack(spacing: 6) {
+                        HStack(spacing: DesignMetrics.Spacing.sm) {
                             ProgressView().controlSize(.small)
                             Text(L("resume.loading")).font(.system(size: 12)).foregroundStyle(.secondary)
                         }
@@ -30,7 +30,7 @@ struct ResumeChoiceSheet: View {
                     }
                 }
             }
-            HStack(spacing: 8) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Button(L("resume.cancel")) { store.closeResumeChoice() }
                     .keyboardShortcut(.cancelAction)
                     .accessibilityIdentifier("add-pane-choice-cancel")
@@ -43,7 +43,7 @@ struct ResumeChoiceSheet: View {
                     .accessibilityIdentifier("add-pane-choice-new")
             }
         }
-        .padding(20)
+        .padding(DesignMetrics.Inset.sheet)
         .frame(width: 400)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("add-pane-choice")
@@ -72,24 +72,24 @@ struct ResumeSessionSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 7) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
+            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
+                HStack(spacing: DesignMetrics.Spacing.sm) {
                     ProviderIcon(provider: provider, size: 14).foregroundStyle(.secondary)
                     Text(L("resume.title")).font(.headline)
                 }
                 Text(workspace.path).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
                     .lineLimit(1).truncationMode(.middle)
             }
-            HStack(spacing: 7) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.tertiary)
                 TextField(L("resume.search"), text: $search).textFieldStyle(.plain).font(.system(size: 12))
                     .focused($searchFocused)
                     .accessibilityIdentifier("resume-search")
             }
-            .padding(7).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 7))
+            .padding(DesignMetrics.Spacing.sm).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 7))
             content.frame(maxWidth: .infinity, minHeight: 300, maxHeight: .infinity)
-            HStack(spacing: 10) {
+            HStack(spacing: DesignMetrics.Spacing.md) {
                 Toggle(L("resume.showAll"), isOn: $showAll).toggleStyle(.checkbox).font(.caption)
                     .accessibilityIdentifier("resume-show-all")
                 if !showAll, let hidden = listing?.hidden, hidden > 0 {
@@ -103,7 +103,7 @@ struct ResumeSessionSheet: View {
                 Button(L("resume.cancel")) { store.resumePicker = nil }.keyboardShortcut(.cancelAction)
             }
         }
-        .padding(20)
+        .padding(DesignMetrics.Inset.sheet)
         .frame(width: 560, height: 520)
         .task(id: showAll) {
             listing = await store.resumableSessions(for: workspace, provider: provider, includeAutomated: showAll)
@@ -115,7 +115,7 @@ struct ResumeSessionSheet: View {
         if listing == nil {
             ProgressView(L("resume.loading")).frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if shown.isEmpty {
-            VStack(spacing: 8) {
+            VStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: "clock.arrow.circlepath").font(.system(size: 26, weight: .light)).foregroundStyle(.tertiary)
                 if search.trimmingCharacters(in: .whitespaces).isEmpty {
                     Text(L("resume.empty")).font(.system(size: 13, weight: .medium))
@@ -124,11 +124,11 @@ struct ResumeSessionSheet: View {
                     Text(L("resume.noMatch")).font(.system(size: 13, weight: .medium))
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity).padding(20)
+            .frame(maxWidth: .infinity, maxHeight: .infinity).padding(DesignMetrics.Spacing.xl)
             .accessibilityIdentifier("resume-empty")
         } else {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 2) {
+                LazyVStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                     ForEach(shown) { item in row(item) }
                 }
             }
@@ -144,10 +144,10 @@ struct ResumeSessionSheet: View {
         // Written moments ago: a CLI elsewhere may still be running it.
         let busy = ResumableSessions.mayBeRunning(item)
         return Button { store.resumeSession(item, workspaceId: workspace.id) } label: {
-            HStack(alignment: .top, spacing: 10) {
-                ProviderIcon(provider: item.provider, size: 14).foregroundStyle(.secondary).frame(width: 18).padding(.top, 2)
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
+            HStack(alignment: .top, spacing: DesignMetrics.Spacing.md) {
+                ProviderIcon(provider: item.provider, size: 14).foregroundStyle(.secondary).frame(width: 18).padding(.top, DesignMetrics.Spacing.xxs)
+                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
+                    HStack(spacing: DesignMetrics.Spacing.sm) {
                         Text(title).font(.system(size: 12, weight: .medium)).lineLimit(2).foregroundStyle(item.title == nil ? .secondary : .primary)
                         if ProviderOptions.isBeta(item.provider) { BetaBadge() }
                     }
@@ -160,7 +160,7 @@ struct ResumeSessionSheet: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 10).padding(.vertical, 8)
+            .padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.sm)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }

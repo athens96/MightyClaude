@@ -21,10 +21,10 @@ struct ScreenShareSettingsSection: View {
     private var devices: [MobileDeviceInfo] { store.mobileStatus.devices }
 
     var body: some View {
-        Section {
+        SettingsGroup {
             Text(L("settings.screenShare.description"))
                 .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 8) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Button { showsPermissions = true } label: {
                     Label(L("settings.screenShare.permissions.openButton"), systemImage: "lock.shield")
                 }
@@ -46,7 +46,7 @@ struct ScreenShareSettingsSection: View {
                 if device.legacy { legacyRow(device) } else { phoneRow(device) }
             }
         } header: {
-            HStack(spacing: 6) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Text(L("settings.screenShare.sectionTitle"))
                 BetaBadge()
             }
@@ -91,9 +91,9 @@ struct ScreenShareSettingsSection: View {
     /// A phone that authenticates with the pairing key alone cannot be told
     /// apart from any other such phone, so it can never be allow-listed.
     private func legacyRow(_ device: MobileDeviceInfo) -> some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
             Image(systemName: "questionmark.app").foregroundStyle(.secondary)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                 Text(device.name).font(.system(size: 12))
                 Text(L("settings.screenShare.legacyUnsupported"))
                     .font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -105,8 +105,8 @@ struct ScreenShareSettingsSection: View {
     private func phoneRow(_ device: MobileDeviceInfo) -> some View {
         let row = rows[device.id] ?? ScreenShareDeviceSettings(deviceId: device.id)
         let live = sessions.filter { $0.deviceId == device.id }
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
+        return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: "iphone").foregroundStyle(live.isEmpty ? Color.secondary : Palette.doneText)
                 Text(device.name).font(.system(size: 12))
                 Spacer(minLength: 8)
@@ -137,7 +137,7 @@ struct ScreenShareSettingsSection: View {
                 Text(L("settings.screenShare.noSession")).font(.system(size: 10)).foregroundStyle(.secondary)
             }
             ForEach(live, id: \.sessionId) { session in
-                HStack(spacing: 6) {
+                HStack(spacing: DesignMetrics.Spacing.sm) {
                     Circle().fill(Palette.doneText).frame(width: 6, height: 6)
                     Text(session.mode == .control
                          ? L("settings.screenShare.sessionControl", ["time": Self.clock(session.startedAt)])
@@ -153,13 +153,13 @@ struct ScreenShareSettingsSection: View {
                 }
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, DesignMetrics.Spacing.xxs)
         .accessibilityIdentifier("settings-screen-share-device-\(device.id)")
     }
 
     @ViewBuilder private func keyLine(_ device: MobileDeviceInfo, row: ScreenShareDeviceSettings) -> some View {
         if let key = row.controlKeyPublicData {
-            HStack(spacing: 6) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: "key").font(.system(size: 10)).foregroundStyle(.secondary)
                 Text(L("settings.screenShare.keyFingerprint", ["fingerprint": ScreenShareControlKey.fingerprint(key)]))
                     .font(.system(size: 11, design: .monospaced)).textSelection(.enabled)

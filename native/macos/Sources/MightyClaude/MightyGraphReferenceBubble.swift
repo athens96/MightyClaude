@@ -75,7 +75,7 @@ struct MightyGraphReferenceBubble: View {
             .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
             .frame(width: 22, height: 22)
             .background(Palette.panel.opacity(0.95), in: RoundedRectangle(cornerRadius: 5))
-            .padding(2)
+            .padding(DesignMetrics.Spacing.xxs)
             .help(L("reference.resizeHelp"))
             .allowsHitTesting(false)
             .accessibilityLabel(L("reference.resizeAccessibility"))
@@ -83,7 +83,7 @@ struct MightyGraphReferenceBubble: View {
     }
 
     private var header: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: DesignMetrics.Spacing.sm) {
             Image(systemName: icon).foregroundStyle(Palette.accent)
             VStack(alignment: .leading, spacing: 1) {
                 Text(reference.line.map { L("reference.line", ["title": reference.title, "line": "\($0)"]) } ?? reference.title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
@@ -104,7 +104,7 @@ struct MightyGraphReferenceBubble: View {
                 .accessibilityIdentifier("mighty-reference-close-\(sessionID)")
         }
         .buttonStyle(.plain).font(.system(size: 12))
-        .padding(.horizontal, 12).frame(height: DesignMetrics.Layout.previewHead)
+        .padding(.horizontal, DesignMetrics.Spacing.md).frame(height: DesignMetrics.Layout.previewHead)
     }
 
     private var icon: String {
@@ -122,14 +122,14 @@ struct MightyGraphReferenceBubble: View {
         case .loading:
             ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
         case .markdown(let source):
-            ScrollView { AgentMarkdownView(source: source).padding(14).padding(.bottom, Self.handleClearance) }
+            ScrollView { AgentMarkdownView(source: source).padding(DesignMetrics.Spacing.lg).padding(.bottom, Self.handleClearance) }
         case .text(let text):
             ScrollView([.vertical, .horizontal]) {
                 Text(text).font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .topLeading).padding(14).padding(.bottom, Self.handleClearance)
+                    .frame(maxWidth: .infinity, alignment: .topLeading).padding(DesignMetrics.Spacing.lg).padding(.bottom, Self.handleClearance)
             }
         case .image(let image):
-            ScrollView([.vertical, .horizontal]) { Image(nsImage: image).resizable().scaledToFit().padding(14).padding(.bottom, Self.handleClearance) }
+            ScrollView([.vertical, .horizontal]) { Image(nsImage: image).resizable().scaledToFit().padding(DesignMetrics.Spacing.lg).padding(.bottom, Self.handleClearance) }
         case .html(let url):
             MightyLocalWebPreview(url: url)
         case .tooLarge:
@@ -142,12 +142,12 @@ struct MightyGraphReferenceBubble: View {
     }
 
     private func notice(_ title: String, detail: String) -> some View {
-        VStack(spacing: 6) {
+        VStack(spacing: DesignMetrics.Spacing.sm) {
             Image(systemName: "doc.questionmark").font(.system(size: 24, weight: .light)).foregroundStyle(.secondary)
             Text(title).font(.system(size: 12, weight: .medium))
             Text(detail).font(.system(size: 11)).foregroundStyle(.secondary).multilineTextAlignment(.center)
         }
-        .padding(20).frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(DesignMetrics.Spacing.xl).frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private static func load(_ reference: MightyGraphReference) async -> Content {

@@ -60,15 +60,15 @@ private struct AgentTerminalContent: View {
                 .id(ObjectIdentifier(terminal))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             if let failure = terminal.failure {
-                Text(failure).font(.system(size: 11)).foregroundStyle(.secondary).padding(10).frame(maxWidth: .infinity, alignment: .leading).background(Palette.subtle)
+                Text(failure).font(.system(size: 11)).foregroundStyle(.secondary).padding(DesignMetrics.Spacing.md).frame(maxWidth: .infinity, alignment: .leading).background(Palette.subtle)
             }
-            HStack(spacing: 7) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Text(L("agentTerminal.terminalPane.title")).fontWeight(.medium)
                 Spacer(minLength: 4)
                 Text(terminal.workingDirectory).lineLimit(1).truncationMode(.middle).help(terminal.workingDirectory)
                 if let grid = terminal.grid { Text("\(grid.columns)×\(grid.rows)").monospacedDigit().foregroundStyle(.tertiary) }
             }
-            .font(.system(size: 9)).foregroundStyle(.secondary).padding(.horizontal, 10).padding(.vertical, 6)
+            .font(.system(size: 9)).foregroundStyle(.secondary).padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.sm)
             .background(Palette.subtle)
         }
         .onAppear { focusIfActive() }

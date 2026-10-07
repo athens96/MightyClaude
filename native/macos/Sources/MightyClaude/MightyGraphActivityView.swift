@@ -57,7 +57,7 @@ struct MightyGraphActivityIndicator: View {
                 } else {
                     TimelineView(.animation(minimumInterval: 1.0 / 24)) { context in
                         let phase = MightyGraphActivityStyle.phase(at: context.date, reducedMotion: false)
-                        HStack(alignment: .center, spacing: 2) {
+                        HStack(alignment: .center, spacing: DesignMetrics.Spacing.xxs) {
                             ForEach(0..<4) { index in
                                 Capsule().fill(tint)
                                     .frame(width: 3, height: MightyGraphActivityStyle.barHeight(index, phase: phase))
@@ -131,7 +131,7 @@ struct MightyStatusPill: View {
         Text(text)
             .font(.system(size: 10, weight: .bold)).lineLimit(1)
             .foregroundStyle(Palette.text(tone))
-            .padding(.horizontal, 7).frame(height: height)
+            .padding(.horizontal, DesignMetrics.Spacing.sm).frame(height: height)
             .background(Palette.soft(tone), in: Capsule())
             .fixedSize()
     }

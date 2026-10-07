@@ -14,8 +14,8 @@ struct QueuedInputsView: View {
     var notice: String? = nil
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: "clock.arrow.circlepath").font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.accent)
                 Text(running ? L("queue.waitingBusy", ["count": "\(items.count)"]) : L("queue.waiting", ["count": "\(items.count)"])).font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
                 Spacer(minLength: 0)
@@ -30,9 +30,9 @@ struct QueuedInputsView: View {
                     .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("queue-background-\(sessionID)")
             }
             ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                HStack(alignment: .top, spacing: 7) {
+                HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
                     Text("\(index + 1)").font(.system(size: 10, weight: .semibold)).monospacedDigit().foregroundStyle(.secondary).frame(width: 14, alignment: .trailing).padding(.top, 1)
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                         Text(item.text.isEmpty ? L("queue.attachmentsOnly") : item.text).font(.system(size: 11)).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
                         if !item.attachments.isEmpty {
                             Text(item.attachments.map(\.name).joined(separator: ", ")).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
@@ -42,7 +42,7 @@ struct QueuedInputsView: View {
                         .buttonStyle(.plain).foregroundStyle(.secondary).help(L("queue.removeHelp")).accessibilityLabel(L("queue.remove"))
                         .accessibilityIdentifier("queue-remove-\(item.id)")
                 }
-                .padding(.horizontal, 8).padding(.vertical, 5)
+                .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xs)
                 .background(Palette.subtle, in: RoundedRectangle(cornerRadius: 8))
                 .accessibilityElement(children: .combine).accessibilityIdentifier("queue-item-\(item.id)")
             }

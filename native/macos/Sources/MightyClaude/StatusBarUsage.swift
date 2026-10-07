@@ -159,20 +159,20 @@ struct StatusBarUsageView: View {
     var body: some View {
         if !controller.providers.isEmpty {
             Button { showsDetails.toggle() } label: {
-                HStack(spacing: 6) {
+                HStack(spacing: DesignMetrics.Spacing.sm) {
                     ForEach(controller.providers, id: \.self) { provider in chip(provider) }
                 }
             }
             .buttonStyle(.plain).help(L("windows.accountUsage.chipsTooltip"))
             .accessibilityLabel(L("windows.accountUsage.title")).accessibilityIdentifier("statusbar-usage")
             .popover(isPresented: $showsDetails, arrowEdge: .bottom) { StatusBarUsageDetails(controller: controller) }
-            Divider().frame(height: 12).padding(.horizontal, 4)
+            Divider().frame(height: 12).padding(.horizontal, DesignMetrics.Spacing.xs)
         }
     }
 
     private func chip(_ provider: String) -> some View {
         let usage = controller.snapshots[provider]
-        return HStack(spacing: 5) {
+        return HStack(spacing: DesignMetrics.Spacing.xs) {
             ProviderIcon(provider: provider, size: 9)
             if let usage, !usage.windows.isEmpty {
                 ForEach(Array(Self.leading(usage.windows).enumerated()), id: \.offset) { _, window in
@@ -187,7 +187,7 @@ struct StatusBarUsageView: View {
                 Text(controller.refreshing ? L("windows.accountUsage.chipChecking") : "—").foregroundStyle(.secondary)
             }
         }
-        .font(.system(size: 10)).padding(.horizontal, 7).padding(.vertical, 3)
+        .font(.system(size: 10)).padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xxs)
         .background(Palette.subtle, in: Capsule())
         .accessibilityIdentifier("statusbar-usage-\(provider)")
     }
@@ -213,7 +213,7 @@ struct StatusBarUsageDetails: View {
     @ObservedObject var controller: AccountUsageStatusController
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
             HStack {
                 Label(L("windows.accountUsage.title"), systemImage: "chart.pie").font(.system(size: 13, weight: .semibold))
                 Spacer()
@@ -226,7 +226,7 @@ struct StatusBarUsageDetails: View {
             ForEach(controller.providers, id: \.self) { provider in card(provider) }
             if controller.providers.contains("claude") {
                 Toggle(isOn: $controller.claudeKeychainEnabled) {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                         Text(L("usage.keychain.toggle")).font(.system(size: 11))
                         Text(L("usage.keychain.toggleDescription")).font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
@@ -237,14 +237,14 @@ struct StatusBarUsageDetails: View {
             Text(L("usage.sharedNoteMac"))
                 .font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
-        .padding(16).frame(width: 320)
+        .padding(DesignMetrics.Inset.popover).frame(width: 320)
         .accessibilityIdentifier("statusbar-usage-details")
     }
 
     private func card(_ provider: String) -> some View {
         let usage = controller.snapshots[provider]
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
+        return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 ProviderIcon(provider: provider, size: 12)
                 Text(ProviderOptions.label(provider)).font(.system(size: 12, weight: .semibold))
                 if ProviderOptions.isBeta(provider) { BetaBadge() }
@@ -255,7 +255,7 @@ struct StatusBarUsageDetails: View {
             }
             if let usage {
                 ForEach(Array(usage.windows.enumerated()), id: \.offset) { _, window in
-                    VStack(alignment: .leading, spacing: 3) {
+                    VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                         HStack {
                             Text(StatusBarUsageView.windowLabel(window.kind) + (window.windowMinutes.map { $0 == 300 ? L("windows.accountUsage.windowFiveHourSuffix") : $0 == 10080 ? L("windows.accountUsage.windowSevenDaySuffix") : "" } ?? ""))
                             Spacer()
@@ -286,7 +286,7 @@ struct StatusBarUsageDetails: View {
                 Text(controller.refreshing ? L("windows.accountUsage.cardChecking") : L("windows.accountUsage.cardNotCheckedYet")).font(.system(size: 11)).foregroundStyle(.secondary)
             }
         }
-        .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+        .padding(DesignMetrics.Spacing.md).frame(maxWidth: .infinity, alignment: .leading)
         .background(Palette.subtle, in: RoundedRectangle(cornerRadius: 9))
     }
 
@@ -301,7 +301,7 @@ struct StatusBarUsageDetails: View {
             : []
         if !rows.isEmpty {
             Divider()
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
                 Text(L("usage.reset.title")).font(.system(size: 11, weight: .medium))
                 ForEach(rows) { row in
                     VStack(alignment: .leading, spacing: 1) {

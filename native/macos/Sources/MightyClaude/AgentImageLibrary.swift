@@ -341,7 +341,7 @@ private struct AgentImageViewerView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 12) {
+            HStack(spacing: DesignMetrics.Spacing.md) {
                 if let picture {
                     Text(L("files.image.pixels", ["width": "\(Int(picture.pixelSize.width))", "height": "\(Int(picture.pixelSize.height))"]))
                         .font(.system(size: 11)).foregroundStyle(.secondary).monospacedDigit()
@@ -353,11 +353,11 @@ private struct AgentImageViewerView: View {
                     if picture.fileURL != nil { Button(L("images.menu.preview")) { AgentImageActions.openInPreview(picture) } }
                 }
             }
-            .controlSize(.small).padding(.horizontal, 12).padding(.vertical, 8)
+            .controlSize(.small).padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.sm)
             Divider()
             Group {
                 if let picture {
-                    Image(nsImage: picture.image).resizable().interpolation(.high).scaledToFit().padding(12)
+                    Image(nsImage: picture.image).resizable().interpolation(.high).scaledToFit().padding(DesignMetrics.Spacing.md)
                         .accessibilityLabel(key.label)
                 } else {
                     Text(finished ? L("images.missing") : L("images.loading")).font(.system(size: 12)).foregroundStyle(.secondary)

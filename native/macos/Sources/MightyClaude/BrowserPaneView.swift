@@ -38,7 +38,7 @@ struct BrowserPaneView: View {
     }
 
     private var navigationBar: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: DesignMetrics.Spacing.sm) {
             Button {
                 engine.goBack()
             } label: {
@@ -81,8 +81,8 @@ struct BrowserPaneView: View {
 
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, DesignMetrics.Spacing.md)
+        .padding(.vertical, DesignMetrics.Spacing.sm)
         .background(Palette.subtle)
     }
 
@@ -93,7 +93,7 @@ struct BrowserPaneView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             if let reason = engine.failureReason {
-                VStack(spacing: 12) {
+                VStack(spacing: DesignMetrics.Spacing.md) {
                     Image(systemName: "globe.slash").font(.system(size: 36)).foregroundStyle(.secondary)
                     Text(reason)
                         .font(.system(size: 13))

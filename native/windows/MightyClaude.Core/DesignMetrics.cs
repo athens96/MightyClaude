@@ -205,6 +205,8 @@ public static class DesignMetrics
         public const double PaneMinHeight = 290;
         /// <summary>A split's divider: the hit area between two panes, around a visible 3×30 handle (M/PaneDockView.swift:42, 125-158).</summary>
         public const double SplitDivider = 6;
+        /// <summary>The least height of something to click (a chip, a dense row, a settings switch's row), so tightening the spacing never shrinks a target below it (M/SettingsLayout.swift SettingsSwitchStyle).</summary>
+        public const double HitTarget = 22;
     }
 
     /// <summary>

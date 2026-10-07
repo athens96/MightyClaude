@@ -84,7 +84,7 @@ struct MightyGraphResultFilesView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 7) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: "doc.on.doc").foregroundStyle(Palette.accent)
                 Text(L("graph.resultFiles.title")).font(.system(size: 12, weight: .semibold))
                 Text("\(files.count)").font(.system(size: 10)).foregroundStyle(Palette.ink2)
@@ -93,16 +93,16 @@ struct MightyGraphResultFilesView: View {
                     .buttonStyle(.plain).help(L("graph.resultFiles.closeButton"))
                     .accessibilityLabel(L("graph.resultFiles.closeButton"))
                     .accessibilityIdentifier("mighty-result-files-close-\(nodeID)")
-            }.padding(.horizontal, 12).frame(height: 38)
+            }.padding(.horizontal, DesignMetrics.Spacing.md).frame(height: DesignMetrics.Layout.blockHead)
             Divider()
             ScrollView(.vertical) {
-                LazyVStack(alignment: .leading, spacing: 4) {
+                LazyVStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
                     ForEach(files) { file in
                         Button { onOpen(file) } label: {
-                            HStack(alignment: .top, spacing: 8) {
+                            HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
                                 Image(systemName: "doc.text").font(.system(size: 12)).foregroundStyle(Palette.accent)
-                                    .padding(.top, 2)
-                                VStack(alignment: .leading, spacing: 3) {
+                                    .padding(.top, DesignMetrics.Spacing.xxs)
+                                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                                     Text(file.url.lastPathComponent).font(.system(size: 12, weight: .medium))
                                         .lineLimit(1).truncationMode(.middle)
                                     Text(file.path + (file.line.map { ":\($0)" } ?? ""))
@@ -110,14 +110,14 @@ struct MightyGraphResultFilesView: View {
                                         .lineLimit(2).truncationMode(.middle)
                                 }.frame(maxWidth: .infinity, alignment: .leading)
                             }
-                            .padding(8).contentShape(Rectangle())
+                            .padding(DesignMetrics.Spacing.sm).contentShape(Rectangle())
                             .background(Palette.raised, in: RoundedRectangle(cornerRadius: 6))
                         }
                         .buttonStyle(.plain).help(file.path)
                         .accessibilityLabel(L("graph.resultFiles.openFile", ["path": file.path]))
                         .accessibilityIdentifier("mighty-result-file-\(nodeID)-\(file.path)")
                     }
-                }.padding(8).padding(.bottom, 16)
+                }.padding(DesignMetrics.Spacing.sm).padding(.bottom, DesignMetrics.Spacing.lg)
             }
             .accessibilityIdentifier("mighty-result-files-scroll-\(nodeID)")
         }

@@ -30,14 +30,14 @@ struct SlashCommandPalette: View {
                 }
             }
             Divider()
-            HStack(spacing: 10) {
+            HStack(spacing: DesignMetrics.Spacing.md) {
                 Text(L("slash.palette.move")).font(.system(size: 10)).foregroundStyle(.secondary)
                 Text(L("slash.palette.select")).font(.system(size: 10)).foregroundStyle(.secondary)
                 Text(L("slash.palette.dismiss")).font(.system(size: 10)).foregroundStyle(.secondary)
                 Spacer()
                 Text(L("slash.palette.count", ["count": "\(commands.count)"])).font(.system(size: 10)).foregroundStyle(.tertiary)
             }
-            .padding(.horizontal, 12).padding(.vertical, 5)
+            .padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.xs)
         }
         .background(Palette.panel, in: RoundedRectangle(cornerRadius: 10))
         .overlay { RoundedRectangle(cornerRadius: 10).stroke(Palette.border, lineWidth: 1) }
@@ -45,7 +45,7 @@ struct SlashCommandPalette: View {
     }
 
     private func row(_ command: SlashCommand, highlighted: Bool) -> some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .top, spacing: DesignMetrics.Spacing.md) {
             Text("/" + command.invocation).font(.system(size: 12, weight: .semibold, design: .monospaced)).lineLimit(1)
                 .foregroundStyle(highlighted ? Palette.onAccent : .primary)
             VStack(alignment: .leading, spacing: 1) {
@@ -65,7 +65,7 @@ struct SlashCommandPalette: View {
                     .help(L("slash.palette.argumentHelp"))
             }
         }
-        .padding(.horizontal, 12).padding(.vertical, 6)
+        .padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.sm)
         .background(highlighted ? Palette.accent : Color.clear)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(highlighted ? .isSelected : [])
