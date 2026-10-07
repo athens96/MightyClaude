@@ -156,21 +156,21 @@ internal sealed class ComposerGlyph
 
     // ── the right cluster (M/SessionPaneView.swift:731-765) ──
 
-    /// <summary><c>arrow.triangle.branch</c> at 11 in its 16 × 32 frame: this pane continues an earlier conversation.</summary>
-    internal static ComposerGlyph Branch() => new ComposerGlyph(10, 10.6, 16, 32)
+    /// <summary><c>arrow.triangle.branch</c> at 11 in its 16pt-wide, toolbar-high frame: this pane continues an earlier conversation.</summary>
+    internal static ComposerGlyph Branch() => new ComposerGlyph(10, 10.6, 16, DesignMetrics.Layout.Toolbar)
         .Stroke("M5 9.5 L5 6 C5 4.4 3.2 3.6 1.5 1.4 M5 6 C5 4.4 6.8 3.6 8.5 1.4 M1.2 3.7 L1.2 1.1 L3.8 1.1 M6.2 1.1 L8.8 1.1 L8.8 3.7", 1.15);
 
-    /// <summary><c>arrow.up</c> at 14 semibold: about 10 × 12 with a 1.8pt stroke.</summary>
-    internal static ComposerGlyph ArrowUp() => new ComposerGlyph(10, 12.2, 32, 32).Stroke("M5 11.2 L5 1 M0.9 5.1 L5 1 L9.1 5.1", 1.8);
+    /// <summary><c>arrow.up</c> at 14 semibold: about 10 × 12 with a 1.8pt stroke, centred in the toolbar-high send button.</summary>
+    internal static ComposerGlyph ArrowUp() => new ComposerGlyph(10, 12.2, DesignMetrics.Layout.Toolbar, DesignMetrics.Layout.Toolbar).Stroke("M5 11.2 L5 1 M0.9 5.1 L5 1 L9.1 5.1", 1.8);
 
     /// <summary><c>text.badge.plus</c> at 13 semibold: the draft joins the queue.</summary>
-    internal static ComposerGlyph QueueAdd() => new ComposerGlyph(13.6, 12.1, 32, 32)
+    internal static ComposerGlyph QueueAdd() => new ComposerGlyph(13.6, 12.1, DesignMetrics.Layout.Toolbar, DesignMetrics.Layout.Toolbar)
         .Stroke("M2.7 0.8 L2.7 5.8 M0.2 3.3 L5.2 3.3 M7.4 3.3 L13.3 3.3 M0.8 7.6 L13.3 7.6 M0.8 11.3 L9.6 11.3", 1.5);
 
-    /// <summary><c>stop.fill</c>: the rounded square, 10 on the 32pt button and 8.4 on the 28pt one.</summary>
+    /// <summary><c>stop.fill</c>: the rounded square, 10 on the toolbar-high button and 8.4 on the small one 4pt under it.</summary>
     internal static ComposerGlyph Stop(bool compact)
     {
-        var side = compact ? 8.4 : 10; var box = compact ? 28 : 32;
+        var side = compact ? 8.4 : 10; var box = compact ? DesignMetrics.Layout.Toolbar - 4 : DesignMetrics.Layout.Toolbar;
         return new ComposerGlyph(side, side, box, box).Block(0, 0, side, side, side * 0.22);
     }
 
