@@ -1534,6 +1534,8 @@
   "companion.pager.next": "다음 에이전트",
   "companion.pager.position": "작업 중인 에이전트 {count}개 중 {position}번째",
   "companion.pager.previous": "이전 에이전트",
+  "companion.plan.accessibility": "{place}{title} 계획 승인 요청: {headline}",
+  "companion.plan.review": "계획 검토…",
   "companion.question.back": "이전",
   "companion.question.custom": "직접 입력",
   "companion.question.next": "다음",

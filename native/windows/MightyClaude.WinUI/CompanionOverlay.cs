@@ -13,7 +13,9 @@ using Tint = Windows.UI.Color;
 namespace MightyClaude.WinUI;
 
 /// <param name="Glyph">Drawn as the open-in-app symbol instead of its words (M/AgentCompanionViews.swift:337-340).</param>
-internal sealed record CompanionOverlayButton(string Id, string Label, bool Prominent = false, bool Glyph = false);
+/// <param name="OwnRow">On a row of its own under the others, at the right edge: an answer too long to share
+/// the row, as the plan's approve (M/AgentCompanionViews.swift CompanionPlanBubble).</param>
+internal sealed record CompanionOverlayButton(string Id, string Label, bool Prominent = false, bool Glyph = false, bool OwnRow = false);
 internal sealed record CompanionOverlayOption(string Label, string Description, bool Picked);
 
 /// <summary>
@@ -27,7 +29,7 @@ internal sealed record CompanionOverlayRequest(bool Question, string Title, stri
 {
     internal string Drawn => string.Join('\u001e', Question, Title, Origin, Detail, Headline, Code, Boxed, MultiSelect, Error,
         string.Join('\u001d', Options.Select(o => o.Label + '\u001c' + o.Description + '\u001c' + o.Picked)),
-        string.Join('\u001d', Buttons.Select(b => b.Id + '\u001c' + b.Label + '\u001c' + b.Prominent + '\u001c' + b.Glyph)));
+        string.Join('\u001d', Buttons.Select(b => b.Id + '\u001c' + b.Label + '\u001c' + b.Prominent + '\u001c' + b.Glyph + '\u001c' + b.OwnRow)));
 }
 
 /// <summary>
@@ -472,17 +474,27 @@ internal sealed class CompanionOverlay : IDisposable
             else Stack(request.Code, 10, 400, 3, DesignToken.Ink, Mono);
         }
         Stack(request.Error, 9, 400, 2, DesignToken.ErrText);
-        if (request.Buttons.Count > 0)
+        var row = request.Buttons.Where(button => !button.OwnRow).ToList();
+        if (row.Count > 0)
         {
             // The first button at the left, the others from the right edge, 6 apart (M:336-362).
             cursor += spacing;
-            var edge = x + w; var free = w - request.Buttons.Sum(button => ButtonWidth(button, Wide)) - (request.Buttons.Count - 1) * ButtonGap;
-            for (var index = request.Buttons.Count - 1; index >= 1; index--)
+            var edge = x + w; var free = w - row.Sum(button => ButtonWidth(button, Wide)) - (row.Count - 1) * ButtonGap;
+            for (var index = row.Count - 1; index >= 1; index--)
             {
-                var button = request.Buttons[index]; var wide = ButtonWidth(button, button.Prominent && free < 0 ? ButtonWidth(button, Wide) + free : Wide);
+                var button = row[index]; var wide = ButtonWidth(button, button.Prominent && free < 0 ? ButtonWidth(button, Wide) + free : Wide);
                 edge -= wide; if (session is not null) Button(session, button, palette, edge, cursor, wide); edge -= ButtonGap;
             }
-            if (session is not null) Button(session, request.Buttons[0], palette, x, cursor, ButtonWidth(request.Buttons[0], Wide));
+            if (session is not null) Button(session, row[0], palette, x, cursor, ButtonWidth(row[0], Wide));
+            cursor += ButtonHeight;
+        }
+        var under = row.Count > 0;
+        foreach (var button in request.Buttons.Where(button => button.OwnRow))
+        {
+            // A long answer under the row, at the right edge, as wide as its words within the bubble.
+            cursor += under ? ButtonGap : spacing; under = true;
+            var wide = ButtonWidth(button, w);
+            if (session is not null) Button(session, button, palette, x + w - wide, cursor, wide);
             cursor += ButtonHeight;
         }
         if (current.Count > 1 || current.Pending) { cursor += spacing; if (session is not null) Pager(session, current, palette, x, cursor, w); cursor += PagerHeight; }

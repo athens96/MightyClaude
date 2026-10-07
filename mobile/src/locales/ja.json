@@ -1534,6 +1534,8 @@
   "companion.pager.next": "次のエージェント",
   "companion.pager.position": "作業中のエージェント {position}/{count}",
   "companion.pager.previous": "前のエージェント",
+  "companion.plan.accessibility": "{place}{title}の計画承認リクエスト: {headline}",
+  "companion.plan.review": "計画を確認…",
   "companion.question.back": "戻る",
   "companion.question.custom": "自分で回答を入力",
   "companion.question.next": "次へ",

@@ -9,6 +9,12 @@ public enum PlanCardSupport {
         requests?.first { $0.canAnswerPlan && $0.state == "pending" && $0.plan != nil }
     }
 
+    /// The plan the pet's bubble shows for its pending request: only a plan
+    /// the user can answer (ExitPlanMode); nil for every other request.
+    public static func companionPlan(_ request: ToolPermissionRequest) -> String? {
+        request.canAnswerPlan ? request.plan : nil
+    }
+
     /// The diagram request a plan's run drew (`MightyGraphRun.id`), nil when
     /// the diagram has none for it.
     public static func graphRunID(runId: String, runs: [MightyGraphRun]) -> String? {

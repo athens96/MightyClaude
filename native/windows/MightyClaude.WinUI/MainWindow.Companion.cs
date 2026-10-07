@@ -188,6 +188,17 @@ public sealed partial class MainWindow
     private CompanionOverlayRequest CompanionRequest(ToolPermissionRequest permission, string origin)
     {
         var error = companionRequestError is { } failed && failed.Key == PermissionKey(permission) ? failed.Message : null;
+        if (permission.CanAnswerPlan && permission.Plan is { } plan)
+        {
+            // A finished plan (M/AgentCompanionViews.swift CompanionPlanBubble): when it came, its first line and the few
+            // after it, and the plan's own answers. Cancel is the plan's cancel, not a generic deny; a change request needs
+            // the keyboard, which the pet never takes, so 계획 검토 opens the plan in a window of its own.
+            var lines = plan.Split('\n').Select(line => line.Trim().TrimStart('#').Trim()).Where(line => line.Length > 0).Skip(1).Take(3).ToArray();
+            return new(false, Locale.Get("plan.card.title"), origin, permission.ReceivedAt is { } received ? PlanCardSupport.ReceivedText(received) : "", PlanCardSupport.Headline(plan),
+                lines.Length == 0 ? null : string.Join('\n', lines), false, false, [],
+                [new("open", Locale.Get("companion.button.open"), Glyph: true), new("plan-cancel", Locale.Get("plan.card.cancel")), new("plan-review", Locale.Get("companion.plan.review")),
+                    new("plan-approve", Locale.Get("plan.card.approveAuto"), Prominent: true, OwnRow: true)], error);
+        }
         if (permission.CanAnswerQuestions && UserQuestionnaire.Parse(permission.InputJson) is { } questionnaire)
         {
             var draft = CompanionDraft(permission); var step = Math.Clamp(draft.Step, 0, questionnaire.Questions.Count - 1); var question = questionnaire.Questions[step];
@@ -234,6 +245,12 @@ public sealed partial class MainWindow
             || request != presented || request.State != "pending" || request.RunId != companionShown) return;
         if (action == "questions" && request.CanAnswerQuestions) { ShowCompanionQuestions(request); return; }
         if (action == "review" && request.CanAllow && !request.CanAnswerQuestions) { ShowCompanionApproval(request); return; }
+        if (request.CanAnswerPlan && request.Plan is not null)
+        {
+            if (action == "plan-review") ShowCompanionPlan(request);
+            else if (action is "plan-cancel" or "plan-approve") AnswerCompanionPlan(request, action == "plan-cancel" ? PlanDecision.Cancel : PlanDecision.ApproveAutoEdit);
+            return;
+        }
         if (action != "deny") return;
         try { service.RespondToToolPermission(request.RunId, request.Id, false); }
         catch (Exception ex) { companionError = ex.Message; companionRequestError = (PermissionKey(request), ex.Message); RefreshCompanion(); }
@@ -329,6 +346,92 @@ public sealed partial class MainWindow
         buttons.Children.Add(CompanionCardButton(Button(ToolPermissionStrings.ButtonDeny, () => Respond(false)), prominent: false)); buttons.Children.Add(CompanionCardButton(Button(ToolPermissionStrings.ButtonAllowOnce, () => Respond(true)), prominent: true));
         var footer = new StackPanel { Spacing = DesignMetrics.Spacing.Sm }; footer.Children.Add(error); footer.Children.Add(buttons); Grid.SetRow(footer, 2); content.Children.Add(footer);
         window.Content = CompanionWindowFrame(content); window.AppWindow.Resize(new(520, 500)); brushes.ApplyTitleBar(window.AppWindow); companionQuestionWindow = window; companionQuestionWindowKey = key;
+        window.Closed += (_, _) => { if (companionQuestionWindow == window) { companionQuestionWindow = null; companionQuestionWindowKey = null; } };
+        if (aside) window.AppWindow.Show(false); else window.Activate();
+    }
+    /// <summary>
+    /// One of the plan's answers from the bubble or its window (M/AgentCompanion.swift answerPlan), through the service or the
+    /// smoke's stand-in, while the request is still the one waiting. Once sent the request settles in the pane and the bubble at
+    /// once, as the pane's card does (MainWindow.PlanCard.cs AnswerPlanCard); an error stays on the request and is returned.
+    /// </summary>
+    private string? AnswerCompanionPlan(ToolPermissionRequest request, PlanDecision decision)
+    {
+        var key = PermissionKey(request);
+        if (!companionPermissions.TryGetValue(key, out var live) || live != request || live.State != "pending" || !live.CanAnswerPlan) return null;
+        try
+        {
+            if (smokePlanAnswerer is { } fake) fake(request.RunId, request.Id, decision);
+            else service.AnswerPlan(request.RunId, request.Id, decision);
+        }
+        catch (Exception ex) { companionError = ex.Message; companionRequestError = (key, ex.Message); RefreshCompanion(); return ex.Message; }
+        var settled = request with { State = PlanOutcome.PaneMode(decision.Outcome) is null ? "denied" : "allowed" };
+        if (views.TryGetValue(request.RunId, out var pane)) pane.ReceiveToolPermission(settled);
+        ReceiveCompanionPermission(settled);
+        return null;
+    }
+    /// <summary>
+    /// The plan the bubble shows, in a window that takes the keyboard (M/CompanionPlanWindow.swift): the plan's Markdown, a change
+    /// request box and the plan's four answers on the wait card. It closes with its request, as the question window does.
+    /// </summary>
+    /// <param name="aside">Shown without being brought forward, for the GUI smoke.</param>
+    private void ShowCompanionPlan(ToolPermissionRequest request, bool aside = false)
+    {
+        var key = PermissionKey(request);
+        if (companionQuestionWindowKey == key && companionQuestionWindow is { } existing) { if (!aside) existing.Activate(); return; }
+        companionQuestionWindow?.Close();
+        if (request.Plan is not { } plan) return;
+        var ink2 = brushes.Brush(DesignToken.Ink2);
+        var window = new Window { Title = Locale.Get("plan.card.title") };
+        var content = new Grid { RowSpacing = DesignMetrics.Spacing.Md };
+        foreach (var height in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto, GridLength.Auto }) content.RowDefinitions.Add(new() { Height = height });
+        // The pane's plan card in a window of its own (MainWindow.PlanCard.cs): 계획 at 13 bold, when it came and where from in the secondary ink.
+        var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
+        header.Children.Add(new TextBlock { Text = window.Title, FontSize = 13, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = brushes.Brush(DesignToken.Ink), VerticalAlignment = VerticalAlignment.Center });
+        var session = service.Snapshot.Sessions.FirstOrDefault(s => s.Id == request.RunId);
+        var place = string.Join(" · ", new[] { request.ReceivedAt is { } at ? PlanCardSupport.ReceivedText(at) : "", session?.Title ?? "" }.Where(part => part.Length > 0));
+        header.Children.Add(new TextBlock { Text = place, FontSize = 11, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis });
+        content.Children.Add(header);
+        // The plan's Markdown. Its RTF bakes the theme's colours in and the box paints its own over them, so it is drawn
+        // again in the window's theme once shown and whenever the theme changes (MainWindow.PlanCard.cs PlanMarkdown).
+        var document = PaneView.MarkdownView(TranscriptRtf.RenderMarkdown(plan, !DarkTheme));
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(document, "pet-plan-text");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(document, window.Title);
+        void Rerender() => document.DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+        {
+            if (document.IsLoaded) PaneView.SetMarkdownRtf(document, TranscriptRtf.RenderMarkdown(plan, !DarkTheme));
+        });
+        document.ActualThemeChanged += (_, _) => Rerender(); document.Loaded += (_, _) => Rerender();
+        var page = new Border { Child = document, CornerRadius = new CornerRadius(DesignMetrics.Radius.Entry), Background = brushes.Brush(DesignToken.CardRaised) };
+        Grid.SetRow(page, 1); content.Children.Add(page);
+        var revise = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
+        var field = new TextBox { AcceptsReturn = true, PlaceholderText = Locale.Get("plan.card.revisePlaceholder"), PlaceholderForeground = brushes.Tertiary, FontSize = 12, TextWrapping = TextWrapping.Wrap, MinHeight = 56, MaxHeight = 120 };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(field, field.PlaceholderText); Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(field, "pet-plan-revise-text");
+        var tooLong = new TextBlock { Text = Locale.Get("plan.error.feedbackTooLong"), FontSize = 11, Foreground = brushes.Brush(DesignToken.ErrText), TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed };
+        revise.Children.Add(field); revise.Children.Add(tooLong);
+        Grid.SetRow(revise, 2); content.Children.Add(revise);
+        var error = new TextBlock { FontSize = 11, Foreground = brushes.Brush(DesignToken.ErrText), TextWrapping = TextWrapping.Wrap };
+        Task Respond(PlanDecision decision)
+        {
+            if (decision.Kind == "revise" && !PlanCardSupport.CanSendRevise(decision.Feedback)) return Task.CompletedTask;
+            if (AnswerCompanionPlan(request, decision) is { } failed) error.Text = failed;
+            else if (companionQuestionWindow == window) window.Close();
+            return Task.CompletedTask;
+        }
+        // The four answers as on the pane's card, the accent one last; tiles in one row where the window is wide, two where not.
+        var actions = new AdaptiveGridPanel { Minimum = 150, Gap = DesignMetrics.Spacing.Md };
+        Button Answer(string label, string automation, Func<Task> action, bool prominent)
+        {
+            var button = CompanionCardButton(Button(Locale.Get(label), action), prominent); button.HorizontalAlignment = HorizontalAlignment.Stretch;
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(button, automation); actions.Children.Add(button); return button;
+        }
+        Answer("plan.card.cancel", "pet-plan-cancel", () => Respond(PlanDecision.Cancel), false);
+        var send = Answer("plan.card.revise", "pet-plan-revise", () => Respond(PlanDecision.Revise(field.Text)), false);
+        Answer("plan.card.approveConfirm", "pet-plan-approve-confirm", () => Respond(PlanDecision.ApproveConfirmEach), false);
+        Answer("plan.card.approveAuto", "pet-plan-approve-auto", () => Respond(PlanDecision.ApproveAutoEdit), true);
+        void Check() { tooLong.Visibility = PlanCardSupport.FeedbackTooLong(field.Text) ? Visibility.Visible : Visibility.Collapsed; send.IsEnabled = PlanCardSupport.CanSendRevise(field.Text); }
+        field.TextChanged += (_, _) => Check(); Check();
+        var footer = new StackPanel { Spacing = DesignMetrics.Spacing.Sm }; footer.Children.Add(error); footer.Children.Add(actions); Grid.SetRow(footer, 3); content.Children.Add(footer);
+        window.Content = CompanionWindowFrame(content); window.AppWindow.Resize(new(560, 620)); brushes.ApplyTitleBar(window.AppWindow); companionQuestionWindow = window; companionQuestionWindowKey = key;
         window.Closed += (_, _) => { if (companionQuestionWindow == window) { companionQuestionWindow = null; companionQuestionWindowKey = null; } };
         if (aside) window.AppWindow.Show(false); else window.Activate();
     }
@@ -512,7 +615,7 @@ public sealed partial class MainWindow
         finally { companionStatusFlyout.Hide(); }
         return new() { ["bundledAtlasDecoded"] = pixels.Length == pet.Width * pet.Height * 4, ["allAnimationRowsRendered"] = true,
             ["nonActivatingWindow"] = true, ["pointerActionBoundToCard"] = true, ["selectedPetPreview"] = true, ["contextMenuNonActivating"] = true,
-            ["contentDrivenHeightAndEdgeResize"] = true, ["keyboardAccessibleAgentStatus"] = true, ["renderedOverlaySnapshots"] = captures.Count == 2, ["screenshots"] = captures, ["physicalInputTested"] = false };
+            ["contentDrivenHeightAndEdgeResize"] = true, ["planBubbleAndWindow"] = true, ["keyboardAccessibleAgentStatus"] = true, ["renderedOverlaySnapshots"] = captures.Count == 2, ["screenshots"] = captures, ["physicalInputTested"] = false };
     }
     private async Task<string> CaptureCompanionSmoke(CompanionOverlay overlay, string name)
     {
@@ -588,6 +691,9 @@ public sealed partial class MainWindow
         var question = new ToolPermissionRequest("smoke-question", agent.Id, "smoke-ask", "AskUserQuestion",
             "{\"questions\":[{\"header\":\"Layout\",\"question\":\"Which layout should the pet's bubble follow?\",\"multiSelect\":true,\"options\":[{\"label\":\"The Mac's\",\"description\":\"The same order, type and paddings\"},{\"label\":\"The earlier Windows card\",\"description\":\"\"}]},"
             + "{\"header\":\"Next\",\"question\":\"And after that?\",\"multiSelect\":false,\"options\":[{\"label\":\"Ship it\",\"description\":\"\"},{\"label\":\"Look again\",\"description\":\"\"}]}]}", "question", CanAllow: false, CanAnswerQuestions: true);
+        var plan = new ToolPermissionRequest("smoke-plan", agent.Id, "smoke-exit-plan", ClaudePlanMode.ToolName,
+            "{\"plan\":\"# Ship the pet's plan bubble\\n\\n1. Draw the plan in the bubble\\n2. Route its buttons\\n3. Open the plan window\\n4. Fake an answer\"}", "plan",
+            CanAllow: false, CanAnswerPlan: true, ReceivedAt: "2027-01-15T08:05:00.000Z");
         var fonts = CompanionOverlay.SmokeFonts;
         void Drawn(string face, string value, double size, int weight, DesignToken ink, string? family = null)
         {
@@ -630,12 +736,28 @@ public sealed partial class MainWindow
                 Drawn("question", Locale.Get("phone.questionnaire.title") + " 1/2", 11, 600, DesignToken.Ink); Drawn("question", "Which layout should the pet's bubble follow?", 11, 500, DesignToken.Ink);
                 Drawn("question", "The Mac's", 11, 500, DesignToken.Ink); Drawn("question", "The same order, type and paddings", 9, 400, DesignToken.Ink2); Drawn("question", "The earlier Windows card", 11, 500, DesignToken.Ink);
                 Drawn("question", Locale.Get("companion.button.answer"), 11, 400, DesignToken.OnAccent); Drawn("question", Locale.Get("phone.questionnaire.cancel"), 11, 400, DesignToken.Ink);
+
+                // A finished plan in the taller window: when it came, its first line and the next three, and its answers, the approve on a row of its own.
+                overlay.SetCard(CompanionCard("smoke-plan", snapshot, agent, "waiting", plan) with { Light = light }, true); overlay.Draw(6, 0);
+                await CaptureCompanionSmoke(overlay, "smoke-companion-plan-" + theme + ".png");
+                Require(overlay.SmokeGeometry.Width == 282 && overlay.SmokeGeometry.Height == CompanionBubbleLayout.TallHeight && overlay.SmokeGeometry.Bubble.Bottom == CompanionBubbleLayout.TallHeight - 145,
+                    $"a plan must stand in the taller window, on the pet; got {overlay.SmokeGeometry.Width} × {overlay.SmokeGeometry.Height}");
+                Drawn("plan", Locale.Get("plan.card.title"), 11, 600, DesignToken.Ink); Drawn("plan", origin, 9, 400, DesignToken.Ink2);
+                Drawn("plan", PlanCardSupport.ReceivedText(plan.ReceivedAt!), 10, 400, DesignToken.Ink2); Drawn("plan", "Ship the pet's plan bubble", 11, 500, DesignToken.Ink);
+                Drawn("plan", "1. Draw the plan in the bubble\n2. Route its buttons\n3. Open the plan window", 10, 400, DesignToken.Ink, fonts.Mono);
+                Drawn("plan", Locale.Get("plan.card.cancel"), 11, 400, DesignToken.Ink); Drawn("plan", Locale.Get("companion.plan.review"), 11, 400, DesignToken.Ink);
+                Drawn("plan", Locale.Get("plan.card.approveAuto"), 11, 400, DesignToken.OnAccent);
+                var approve = overlay.SmokeTexts!.First(item => item.Value == Locale.Get("plan.card.approveAuto")); var cancel = overlay.SmokeTexts!.First(item => item.Value == Locale.Get("plan.card.cancel"));
+                Require(approve.Bounds.Top > cancel.Bounds.Bottom && !approve.Trimmed, $"the plan's approve ({theme}) must be whole, on a row under the others; got {approve.Bounds} under {cancel.Bounds}, trimmed {approve.Trimmed}");
             }
             // A choice, the answer button and the cancel all belong to the question shown; the approval's to the approval. None of them brings a window forward.
             var before = clicks.Count; var front = CompanionOverlay.ForegroundWindow;
             Require(overlay.SmokeClick("questions") && overlay.SmokeClick("deny") && overlay.SmokeClick("open") && clicks.Skip(before).SequenceEqual(new[] { "smoke-question:questions", "smoke-question:deny", "smoke-question:open" }), "The question's buttons did not answer for the question shown.");
             overlay.SetCard(CompanionCard("smoke-approval", snapshot, agent, "waiting", approval), true); overlay.Draw(6, 0); before = clicks.Count;
             Require(overlay.SmokeClick("review") && overlay.SmokeClick("deny") && clicks.Skip(before).SequenceEqual(new[] { "smoke-approval:review", "smoke-approval:deny" }), "The approval's buttons did not answer for the approval shown.");
+            overlay.SetCard(CompanionCard("smoke-plan", snapshot, agent, "waiting", plan), true); overlay.Draw(6, 0); before = clicks.Count;
+            Require(overlay.SmokeClick("plan-approve") && overlay.SmokeClick("plan-review") && overlay.SmokeClick("plan-cancel") && overlay.SmokeClick("open") && !overlay.SmokeClick("deny")
+                && clicks.Skip(before).SequenceEqual(new[] { "smoke-plan:plan-approve", "smoke-plan:plan-review", "smoke-plan:plan-cancel", "smoke-plan:open" }), "The plan's buttons did not answer for the plan shown.");
             Require(CompanionOverlay.ForegroundWindow == front && front != overlay.Handle && !overlay.TookThread, "Companion requests acquired foreground focus.");
             // Without a pet image the paw stands in the pet's frame, in the accent with 35 clear around it (M/AgentCompanionViews.swift:137-140).
             using var bare = new CompanionOverlay(new CompanionPreferences()); bare.SetAtlas([]);
@@ -649,7 +771,7 @@ public sealed partial class MainWindow
             Require(At(pet.X + pet.Width / 2, pet.Y + 40 + 39.5) == (accent.B, accent.G, accent.R, (byte)255) && At(pet.X + 20, pet.Y + 20).A == 0 && At(pet.Right - 20, pet.Bottom - 20).A == 0,
                 $"Without a pet image the paw must stand in the pet's frame, in the accent; got {At(pet.X + pet.Width / 2, pet.Y + 40 + 39.5)}.");
             // The two windows the bubble's buttons open: the wait card on the app's page, in the app's theme. Shown aside, so the smoke's own window keeps the keyboard.
-            foreach (var (name, open) in new (string, Action)[] { ("review", () => ShowCompanionApproval(approval, aside: true)), ("answer", () => ShowCompanionQuestions(question, aside: true)) })
+            foreach (var (name, open) in new (string, Action)[] { ("review", () => ShowCompanionApproval(approval, aside: true)), ("answer", () => ShowCompanionQuestions(question, aside: true)), ("plan", () => ShowCompanionPlan(plan, aside: true)) })
             {
                 open(); var opened = companionQuestionWindow ?? throw new InvalidOperationException("The pet's " + name + " window did not open.");
                 try
@@ -659,10 +781,40 @@ public sealed partial class MainWindow
                         && ReferenceEquals(waitCard.BorderBrush, brushes.Brush(DesignToken.Wait)) && ReferenceEquals(waitCard.Background, brushes.Brush(DesignToken.Card)) && waitCard.CornerRadius == new CornerRadius(DesignMetrics.Radius.Composer),
                         "The pet's " + name + " window must be the wait card on the app's page, in the app's theme.");
                     await CaptureElement(page, Path.Combine(options.ProfileDirectory!, "smoke-companion-" + name + ".png"));
+                    if (name == "plan") await CheckCompanionPlanWindow(opened, page, plan, agent);
                 }
-                finally { opened.Close(); }
+                finally { if (companionQuestionWindow == opened) opened.Close(); }
             }
         }
-        finally { companionQuestions.Remove(PermissionKey(question)); }
+        finally { companionQuestions.Remove(PermissionKey(question)); companionPermissions.Remove(PermissionKey(plan)); smokePlanAnswerer = null; }
+    }
+    /// <summary>
+    /// The plan's own window: the plan's Markdown rendered (not its marks), the change request held back until it has words,
+    /// and an approve that answers through the smoke's stand-in and takes the window and the request with it.
+    /// </summary>
+    private async Task CheckCompanionPlanWindow(Window opened, Grid page, ToolPermissionRequest plan, RunSession agent)
+    {
+        RichEditBox? text = null; Button? approve = null, revise = null; TextBox? field = null;
+        await WaitUI(() =>
+        {
+            var all = VisualChildren(page).ToArray();
+            text = all.OfType<RichEditBox>().FirstOrDefault(view => Microsoft.UI.Xaml.Automation.AutomationProperties.GetAutomationId(view) == "pet-plan-text");
+            approve = all.OfType<Button>().FirstOrDefault(button => Microsoft.UI.Xaml.Automation.AutomationProperties.GetAutomationId(button) == "pet-plan-approve-auto");
+            revise = all.OfType<Button>().FirstOrDefault(button => Microsoft.UI.Xaml.Automation.AutomationProperties.GetAutomationId(button) == "pet-plan-revise");
+            field = all.OfType<TextBox>().FirstOrDefault(box => Microsoft.UI.Xaml.Automation.AutomationProperties.GetAutomationId(box) == "pet-plan-revise-text");
+            return text is { IsLoaded: true } && approve is not null && revise is not null && field is not null;
+        });
+        text!.Document.GetText(Microsoft.UI.Text.TextGetOptions.None, out var rendered);
+        Require(rendered.Contains("Ship the pet's plan bubble", StringComparison.Ordinal) && rendered.Contains("Route its buttons", StringComparison.Ordinal) && !rendered.Contains("# Ship", StringComparison.Ordinal),
+            "The pet's plan window must render the plan's Markdown: " + rendered);
+        Require(!revise!.IsEnabled, "The pet's plan window must hold back an empty change request.");
+        field!.Text = "Write the tests first";
+        await WaitUI(() => revise.IsEnabled);
+        var answers = new List<(string Pane, string Request, PlanDecision Decision)>();
+        smokePlanAnswerer = (pane, request, decision) => answers.Add((pane, request, decision));
+        companionPermissions[PermissionKey(plan)] = plan;
+        ((Microsoft.UI.Xaml.Automation.Provider.IInvokeProvider)new Microsoft.UI.Xaml.Automation.Peers.ButtonAutomationPeer(approve!).GetPattern(Microsoft.UI.Xaml.Automation.Peers.PatternInterface.Invoke)).Invoke();
+        await WaitUI(() => answers.Count == 1 && companionQuestionWindow != opened && !companionPermissions.ContainsKey(PermissionKey(plan)));
+        Require(answers[0] == (agent.Id, plan.Id, PlanDecision.ApproveAutoEdit), "The pet's plan window must answer approveAutoEdit through the stand-in.");
     }
 }

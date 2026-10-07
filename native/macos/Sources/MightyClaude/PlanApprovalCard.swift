@@ -50,6 +50,8 @@ struct PlanApprovalCard: View {
     var count = 1
     /// Drawn in the diagram: it fills its block instead of docking.
     var inDiagram = false
+    /// Opened from the pet's 수정 요청: the change request box starts open.
+    var startsRevising = false
     @ViewState private var revising = false
     @ViewState private var feedback = ""
 
@@ -137,6 +139,7 @@ struct PlanApprovalCard: View {
         .padding(.horizontal, inDiagram ? 0 : 12).padding(.top, inDiagram ? 0 : 8)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("plan-card-\(request.id)")
+        .onAppear { if startsRevising { revising = true } }
     }
 
     @ViewBuilder private var buttons: some View {

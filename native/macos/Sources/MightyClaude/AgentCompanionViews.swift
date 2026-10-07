@@ -128,7 +128,9 @@ struct CompanionOverlayView: View {
     @ViewState private var celebrating = false
     var body: some View {
         VStack(spacing: DesignMetrics.Spacing.xxs) {
-            if let approval = companion.visibleApproval {
+            if let approval = companion.visibleApproval, let plan = approval.plan {
+                CompanionPlanBubble(companion: companion, approval: approval, plan: plan)
+            } else if let approval = companion.visibleApproval {
                 CompanionApprovalBubble(companion: companion, approval: approval)
             } else if companion.preferences.showsTask, bubble.isVisible, let current = companion.shown {
                 CompanionTaskBubble(companion: companion, current: current)
@@ -386,6 +388,66 @@ struct CompanionApprovalBubble: View {
     static func picked(_ label: String, question: UserQuestionnaire.Question, progress: QuestionnaireProgress) -> Bool {
         if question.multiSelect { return progress.selected.contains(label) }
         return progress.answers[question.question]?.selectedOptions.contains(label) == true
+    }
+}
+
+/// Claude's finished plan (ExitPlanMode) in the taller bubble: the plan in small
+/// Markdown, scrolling once it outgrows the window, and the plan card's four answers.
+/// Cancel is the plan's own cancel. A change request needs typing, which the pet
+/// never takes, so 수정 요청 opens the plan card in a window of its own.
+struct CompanionPlanBubble: View {
+    @ObservedObject var companion: AgentCompanion
+    let approval: CompanionApproval
+    let plan: String
+    var body: some View {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
+                Image(systemName: "list.bullet.clipboard").foregroundStyle(Palette.waitText)
+                Text(L("plan.card.title")).font(.system(size: 11, weight: .semibold))
+                if let received = approval.request.receivedAt {
+                    Text(PlanCardSupport.receivedText(received)).font(.system(size: 9)).foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                Text(place).font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
+            }
+            // A short plan shows whole; a long one scrolls in the room the window leaves.
+            ViewThatFits(in: .vertical) {
+                planText
+                ScrollView { planText }.frame(maxHeight: .infinity)
+            }
+            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+            .accessibilityIdentifier("pet-plan-text")
+            if let error = companion.approvalError { Text(error).font(.system(size: 9)).foregroundStyle(Palette.errText).lineLimit(2) }
+            VStack(spacing: DesignMetrics.Spacing.sm) {
+                HStack(spacing: DesignMetrics.Spacing.sm) {
+                    Button { companion.openApproval() } label: { Image(systemName: "arrow.up.forward.app") }
+                        .help(L("companion.button.openInPane")).accessibilityLabel(L("companion.button.openInPane")).accessibilityIdentifier("pet-plan-open")
+                    Button { companion.openPlanWindow(revising: false) } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }
+                        .help(L("companion.plan.review")).accessibilityLabel(L("companion.plan.review")).accessibilityIdentifier("pet-plan-expand")
+                    Spacer(minLength: 0)
+                    if companion.approvalBusy { ProgressView().controlSize(.mini) }
+                    Button(L("plan.card.cancel")) { companion.answerPlan(.cancel) }.accessibilityIdentifier("pet-plan-cancel")
+                    Button(L("plan.card.revise")) { companion.openPlanWindow(revising: true) }.accessibilityIdentifier("pet-plan-revise")
+                }
+                Button { companion.answerPlan(.approveConfirmEach) } label: { Text(L("plan.card.approveConfirm")).frame(maxWidth: .infinity) }
+                    .accessibilityIdentifier("pet-plan-approve-confirm")
+                Button { companion.answerPlan(.approveAutoEdit) } label: { Text(L("plan.card.approveAuto")).frame(maxWidth: .infinity) }
+                    .buttonStyle(.borderedProminent).accessibilityIdentifier("pet-plan-approve-auto")
+            }.controlSize(.small).disabled(companion.approvalBusy)
+            CompanionPager(companion: companion)
+        }
+        .padding(DesignMetrics.Inset.popover).frame(width: CompanionBubbleLayout.approvalWidth(companion.bubbleSize.width))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Palette.wait.opacity(0.45)))
+        .overlay(CompanionBubbleResizer(companion: companion, measuredHeight: nil, allowsHeight: false))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(L("companion.plan.accessibility", ["place": approval.workspaceName.isEmpty ? "" : L("companion.spoken.place", ["workspace": approval.workspaceName]), "title": approval.sessionTitle, "headline": PlanCardSupport.headline(plan)]))
+        .accessibilityIdentifier("pet-plan-bubble")
+    }
+    private var place: String { approval.workspaceName.isEmpty ? approval.sessionTitle : approval.workspaceName + " · " + approval.sessionTitle }
+    private var planText: some View {
+        AgentMarkdownView(source: plan, compact: true)
+            .padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.sm)
     }
 }
 

@@ -30,6 +30,16 @@ struct PlanCardTests {
         #expect(PlanCardSupport.pendingPlan([Self.bash(), plan, Self.planRequest(id: "plan-3")])?.id == "plan-2")
     }
 
+    @Test func thePetShowsThePlanOfAPlanRequestOnly() {
+        #expect(PlanCardSupport.companionPlan(Self.planRequest()) == "# 계획\n\n1. 테스트")
+        #expect(PlanCardSupport.companionPlan(Self.bash()) == nil)
+        var unanswerable = Self.planRequest(); unanswerable.canAnswerPlan = false
+        #expect(PlanCardSupport.companionPlan(unanswerable) == nil)
+        // A permission that answers plans but carries none (not ExitPlanMode) has nothing to show.
+        var other = Self.bash(); other.canAnswerPlan = true
+        #expect(PlanCardSupport.companionPlan(other) == nil)
+    }
+
     @Test func theDiagramDrawsThePlanUnderItsUnfinishedRequestOnly() {
         let plan = Self.planRequest(runId: "run-b")
         let runs = [Self.run("g1", source: "run-a", status: "completed"), Self.run("g2", source: "run-b")]

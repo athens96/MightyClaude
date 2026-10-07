@@ -907,7 +907,7 @@ public sealed partial class MainWindow
         /// <see cref="FilesMarkdownInset"/>, and the page stops 860 from the pane's leading edge however wide the
         /// pane is (M/FilePaneView.swift:246).
         /// </summary>
-        private static RichEditBox MarkdownView(string rtf)
+        internal static RichEditBox MarkdownView(string rtf)
         {
             const double inset = FilesMarkdownInset, page = 860;
             var view = new RichEditBox { IsReadOnly = true, IsSpellCheckEnabled = false, IsTextPredictionEnabled = false, TextWrapping = TextWrapping.Wrap, BorderThickness = new Thickness(0), Background = new SolidColorBrush(Colors.Transparent), Padding = new Thickness(inset) };
@@ -929,7 +929,7 @@ public sealed partial class MainWindow
         }
 
         /// <summary>Shows <paramref name="rtf"/> in a read-only Markdown view and remembers it for a repaint, keeping the reader's place.</summary>
-        private static void SetMarkdownRtf(RichEditBox view, string rtf)
+        internal static void SetMarkdownRtf(RichEditBox view, string rtf)
         {
             var offset = AgentTranscript.Descendant<ScrollViewer>(view)?.VerticalOffset ?? 0;
             try { view.IsReadOnly = false; view.Document.SetText(TextSetOptions.FormatRtf, rtf); }

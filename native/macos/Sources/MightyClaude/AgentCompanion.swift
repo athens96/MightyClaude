@@ -29,6 +29,12 @@ struct CompanionApproval: Equatable, Identifiable {
     let sessionTitle: String
     let workspaceName: String
     let request: ToolPermissionRequest
+    /// A finished plan (ExitPlanMode) the bubble shows with its four answers; nil for every other request.
+    let plan: String?
+    init(sessionId: String, sessionTitle: String, workspaceName: String, request: ToolPermissionRequest) {
+        self.sessionId = sessionId; self.sessionTitle = sessionTitle; self.workspaceName = workspaceName; self.request = request
+        plan = PlanCardSupport.companionPlan(request)
+    }
     var id: String { sessionId + "|" + request.runId + "|" + request.id }
     var presentation: ToolPermissionPresentation { ToolPermissionPresentation.make(toolName: request.toolName, inputJSON: request.inputJSON) }
     /// Answered from the bubble one question at a time. The bubble has no "Write your own answer"
@@ -81,6 +87,7 @@ final class AgentCompanion: ObservableObject {
     private var lastTouched: [String: Date] = [:]
     private var preferencesURL: URL?
     private var overlay: CompanionPanel?
+    private var planWindow: CompanionPlanWindow?
     private var notifications: CompletionNotifications?
     private var stopped = false
     private(set) var completionCount = 0
@@ -247,10 +254,36 @@ final class AgentCompanion: ObservableObject {
         if busy != approvalBusy { approvalBusy = busy }
         let error = next.flatMap { errors[$0.sessionId] }
         if error != approvalError { approvalError = error }
+        // The plan's own window goes with its request: answered, cancelled, or its run ended.
+        if let window = planWindow, permissions[window.approval.sessionId]?.contains(where: {
+            $0.id == window.approval.request.id && $0.runId == window.approval.request.runId && $0.state == "pending"
+        }) != true { closePlanWindow() }
     }
     func answerApproval(allow: Bool) {
         guard let store, let approval, !approvalBusy else { return }
         Task { await store.answerPermission(sessionId: approval.sessionId, request: approval.request, allow: allow) }
+    }
+    /// One of the plan's answers from the bubble; Cancel is the plan's own cancel, not a generic deny.
+    @discardableResult func answerPlan(_ decision: PlanDecision) -> Task<Void, Never>? {
+        guard let store, let approval, approval.plan != nil, !approvalBusy else { return nil }
+        return Task { await store.answerPlan(sessionId: approval.sessionId, request: approval.request, decision: decision) }
+    }
+    /// The plan in a window that takes the keyboard, for a change request or to read all of it.
+    /// Only a click opens it, so bringing it forward never takes focus the user did not give.
+    func openPlanWindow(revising: Bool) {
+        guard let store, let approval, approval.plan != nil else { return }
+        if let planWindow, planWindow.approval.id == approval.id { planWindow.show(); return }
+        closePlanWindow()
+        let window = CompanionPlanWindow(approval: approval, store: store, revising: revising) { [weak self] closed in
+            if self?.planWindow === closed { self?.planWindow = nil }
+        }
+        planWindow = window
+        window.show()
+    }
+    private func closePlanWindow() {
+        let window = planWindow
+        planWindow = nil
+        window?.close()
     }
     /// A single-choice tap records the answer and moves on; a multi-choice tap toggles.
     /// Nothing is sent from a tap when there are several questions: the last one waits for "Send".
@@ -337,7 +370,7 @@ final class AgentCompanion: ObservableObject {
         notificationStatus = current.authorizationStatus == .authorized ? L("windows.notifications.statusAllowed") : current.authorizationStatus == .denied ? L("windows.notifications.statusDenied") : L("windows.notifications.statusNeedPermission")
     }
 
-    func shutdown() { stopped = true; overlay?.close(); overlay = nil; notifications = nil }
+    func shutdown() { stopped = true; closePlanWindow(); overlay?.close(); overlay = nil; notifications = nil }
     private func priority(_ status: String) -> Int {
         switch status { case "waiting": return 5; case "running": return 4; case "error": return 3; case "completed": return 2; default: return 1 }
     }
