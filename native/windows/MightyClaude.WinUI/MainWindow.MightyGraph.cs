@@ -686,7 +686,12 @@ public sealed partial class MainWindow
                 AutomationProperties.SetAutomationId(card, "mighty-node-" + block.Id);
                 card.PointerPressed += (_, args) => { SelectGraphBlock(block.Id); graphViewport?.Focus(FocusState.Pointer); args.Handled = true; };
                 if (block.Kind == "draft") BuildDraftCard(view, block.Id);
-                else if (block.Kind is not ("resultFiles" or "plan" or "planRecord")) BuildBlockBody(view, block.Id);
+                else if (block.Kind is "plan" or "planRecord")
+                {
+                    // The plan card or the answered plan goes in under the corner handle, as every other block has it.
+                    view.Body = new Grid(); view.Body.Children.Add(BuildResultResizeGrip(view, block.Id)); view.Card.Child = view.Body;
+                }
+                else if (block.Kind != "resultFiles") BuildBlockBody(view, block.Id);
             }
             // Frame is deliberately excluded. Resizing or camera movement must
             // never tear down a RichEditBox while native text services load it.
@@ -716,15 +721,23 @@ public sealed partial class MainWindow
             if (block.Kind == "plan")
             {
                 // The same card for the whole wait: its plan document is never rebuilt (MainWindow.PlanCard.cs).
+                // It sits under the corner handle, the body's last child.
+                var planBody = view.Body!;
                 if (PendingPlan is { } plan)
                 {
                     var planCard = PlanCard(plan, PendingCount, inDiagram: true);
-                    if (!ReferenceEquals(view.Card.Child, planCard)) { Detach(planCard); view.Card.Child = planCard; }
+                    if (!planBody.Children.Contains(planCard)) { Detach(planCard); planBody.Children.Insert(0, planCard); }
                 }
-                else view.Card.Child = null;
+                else if (planBody.Children.Count > 1) planBody.Children.RemoveAt(0);
                 return view.Card;
             }
-            if (block.Kind == "planRecord") { view.Card.Child = BuildPlanRecordBlock(block); return view.Card; }
+            if (block.Kind == "planRecord")
+            {
+                var recordBody = view.Body!;
+                if (recordBody.Children.Count > 1) recordBody.Children.RemoveAt(0);
+                if (BuildPlanRecordBlock(block) is { } row) recordBody.Children.Insert(0, row);
+                return view.Card;
+            }
             if (block.Kind == "draft")
             {
                 // The draft itself, or the hint in the quiet ink while there is none (M/MightyGraphView.swift:1054-1055).
@@ -1352,12 +1365,20 @@ public sealed partial class MainWindow
             return (graphResizeStart.W + (point.X - graphResizeOrigin.X) / scale, graphResizeStart.H + (point.Y - graphResizeOrigin.Y) / scale);
         }
 
+        /// A block other than the newest result never goes below the least its kind takes
+        /// (<see cref="MightyGraphLayout.MinimumBlockSize"/>): the plan card keeps its answers inside it.
+        private (double W, double H) BlockAtLeast((double W, double H) size)
+        {
+            var least = MightyGraphLayout.MinimumBlockSize(graphResizeNodeId is { } node ? graphBlockKinds.GetValueOrDefault(node) ?? "" : "");
+            return (Math.Max(least.W, size.W), Math.Max(least.H, size.H));
+        }
+
         /// Live: the card follows the cursor up to the pane's edge and stops there.
         private void MoveResultResize(Windows.Foundation.Point point)
         {
             if (graphResizeNodeId != graphLatestResultId)
             {
-                var raw = DraggedResultSize(point);
+                var raw = BlockAtLeast(DraggedResultSize(point));
                 if (new GraphBlockSize(raw.W, raw.H).Normalized is { } custom && graphResizeNodeId is { } node && graphCards.TryGetValue(node, out var changed))
                 { changed.Width = custom.Width; changed.Height = custom.Height; ApplyGraphSelectionStyle(); }
                 return;
@@ -1385,9 +1406,10 @@ public sealed partial class MainWindow
             if (sides is (false, false)) phase = MightyGraphLayout.ResizePhase.Cancelled;
             if (graphResizeNodeId is { } nodeId && nodeId != graphLatestResultId)
             {
+                var size = BlockAtLeast(dragged);
                 graphResizeNodeId = null; graphResizeLayout = null;
                 if (phase != MightyGraphLayout.ResizePhase.Cancelled)
-                    _ = owner.Act(async () => { await Change(p => GraphBlockPreferences.Set(p, nodeId, new(dragged.W, dragged.H))); RefreshMightyView(Session); });
+                    _ = owner.Act(async () => { await Change(p => GraphBlockPreferences.Set(p, nodeId, new(size.W, size.H))); RefreshMightyView(Session); });
                 else RefreshMightyView(Session);
                 return;
             }

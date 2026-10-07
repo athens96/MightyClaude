@@ -44,6 +44,21 @@ struct MightyGraphBlockSizeTests {
         #expect(MightyGraphBlockSize.nodeID(runID: "한글", suffix: "request") == "6:한글:request")
     }
 
+    @Test func planBlockSizesSurviveTheNormalizer() throws {
+        let size = MightyGraphBlockSize(width: 720, height: 560)
+        let runs = [MightyGraphRun(id: "done", status: "completed"), MightyGraphRun(id: "going")]
+        let plan = MightyGraphBlockSize.nodeID(runID: "going", suffix: MightyGraphLayout.planSuffix)
+        let records = ["done", "going"].map { MightyGraphBlockSize.nodeID(runID: $0, suffix: MightyGraphLayout.planRecordSuffix + "plan_1") }
+        let foreign = MightyGraphBlockSize.nodeID(runID: "gone", suffix: MightyGraphLayout.planRecordSuffix + "plan_1")
+        var values = [plan: size, foreign: size]
+        for id in records { values[id] = size }
+        let normalized = try #require(MightyGraphBlockSize.normalized(values, runs: runs))
+        #expect(plan == "5:going:plan" && records[0] == "4:done:plan-record:plan_1")
+        #expect(normalized[plan] == size)
+        for id in records { #expect(normalized[id] == size) }
+        #expect(normalized[foreign] == nil)
+    }
+
     @Test func activeResultsAndInvalidDimensionsAreRemovedBeforeEncoding() throws {
         let workspace = Workspace(id: "workspace", name: "Graph", path: "/tmp")
         var session = RunSession(workspaceId: workspace.id, title: "Running")

@@ -35,10 +35,21 @@ public sealed class MightyGraphLayout
     public const string PlanSuffix = "plan";
     public const double PlanWidth = 640;
     public const double PlanHeight = 520;
+    /// <summary>
+    /// The least a drag makes the plan card (macOS planMinimumSize): its header, the plan's 80pt page and the
+    /// answers in two rows, wide enough that the two approve buttons share one.
+    /// </summary>
+    public const double PlanMinimumWidth = 460;
+    public const double PlanMinimumHeight = 320;
     /// <summary>An answered plan's block, attached beside its request (macOS planRecordSuffix).</summary>
     public const string PlanRecordSuffix = "plan-record:";
     public const double PlanRecordWidth = 320;
     public static double PlanRecordHeight(bool expanded) => expanded ? 420 : 104;
+
+    /// <summary>The least a drag may make a block of <paramref name="kind"/> (macOS Node.minimumSize).</summary>
+    public static (double W, double H) MinimumBlockSize(string kind) => kind == "plan"
+        ? (PlanMinimumWidth, PlanMinimumHeight)
+        : (MightyGraphBlockSize.MinimumWidth, MightyGraphBlockSize.MinimumHeight);
     private const double AttachmentGap = 8;
 
     public static bool Terminal(string state) =>
@@ -307,7 +318,8 @@ public sealed class MightyGraphLayout
             if (run.Id == planRunID && !Finished(run))
             {
                 var planID = NodeID(run, PlanSuffix);
-                var planSize = Size(planID, PlanWidth, PlanHeight);
+                var saved = Size(planID, PlanWidth, PlanHeight);
+                var planSize = (W: Math.Max(PlanMinimumWidth, saved.W), H: Math.Max(PlanMinimumHeight, saved.H));
                 if (planSize.W > tree.Width)
                 {
                     tree.Offset((planSize.W - tree.Width) / 2, 0);
@@ -406,10 +418,12 @@ public sealed class MightyGraphLayout
             var id = NodeID(runs[runIndex], PlanRecordSuffix + recordID);
             if (layout.Nodes.Any(n => n.Id == id)) continue;
             var top = nextY.TryGetValue(runIndex, out var stacked) ? stacked : request.Frame.Y;
-            var height = PlanRecordHeight(expanded.Contains(id));
+            // A dragged size wins over folded or opened, as on the other blocks.
+            var recordSize = Size(id, PlanRecordWidth, PlanRecordHeight(expanded.Contains(id)));
+            var height = recordSize.H;
             var sharing = layout.Nodes.Where(n => n.Frame.Y < top + height && n.Frame.MaxY > top).Select(n => n.Frame.MaxX).ToList();
             var right = sharing.Count > 0 ? sharing.Max() : request.Frame.MaxX;
-            var frame = new GraphRect(Math.Max(right, request.Frame.MaxX) + AttachmentGap, top, PlanRecordWidth, height);
+            var frame = new GraphRect(Math.Max(right, request.Frame.MaxX) + AttachmentGap, top, recordSize.W, height);
             layout.Nodes.Add(new Node(id, "planRecord", frame));
             layout.Size = (Math.Max(layout.Size.W, frame.MaxX + 24 - layout.OriginX), Math.Max(layout.Size.H, frame.MaxY + 24 - layout.OriginY));
             nextY[runIndex] = frame.MaxY + AttachmentGap;
