@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 import { toneOf } from '@/lib/status-tone';
-import { radius, statusLabel, toneColors, usePalette } from '@/theme';
+import { radius, spacing, statusLabel, toneColors, usePalette } from '@/theme';
 
 /**
  * Status as a capsule in its tone. Running and waiting are the loud ones — filled, the
@@ -58,9 +58,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: radius.round,
     flexDirection: 'row',
-    gap: 5,
-    paddingHorizontal: 9,
-    paddingVertical: 3,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
   },
   dot: { borderRadius: radius.round, height: 6, width: 6 },
   label: { fontSize: 11.5, fontWeight: '700' },

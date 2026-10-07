@@ -52,6 +52,8 @@ export function GuidedActionChip({
       accessibilityState={{ busy, disabled }}
       disabled={disabled || busy}
       onLongPress={onLongPress}
+      // 34 drawn, about 40 to tap.
+      hitSlop={{ bottom: 3, top: 3 }}
       onPress={onPress}
       style={({ pressed }) => [
         styles.chip,
@@ -93,7 +95,7 @@ const makeStyles = (palette: Palette) =>
       borderRadius: radius.md,
       borderWidth: StyleSheet.hairlineWidth,
       flexDirection: 'row',
-      gap: 4,
+      gap: spacing.sm,
       minHeight: 34,
       paddingHorizontal: spacing.md,
       paddingVertical: spacing.xs,

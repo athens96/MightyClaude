@@ -79,7 +79,10 @@ const makeStyles = (palette: Palette) =>
     row: {
       borderBottomColor: palette.border,
       borderBottomWidth: StyleSheet.hairlineWidth,
-      gap: 2,
+      gap: spacing.xs,
+      justifyContent: 'center',
+      // About 40pt to tap, however short the row.
+      minHeight: 40,
       paddingHorizontal: spacing.md,
       paddingVertical: spacing.sm,
     },

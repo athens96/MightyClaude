@@ -117,10 +117,10 @@ export default function HostScreen() {
 const makeStyles = (palette: Palette) =>
   StyleSheet.create({
     screen: { backgroundColor: palette.background, flex: 1 },
-    content: { paddingHorizontal: spacing.md + 2, paddingTop: spacing.sm },
+    content: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
     actions: {
       alignItems: 'flex-start',
-      paddingHorizontal: spacing.md + 2,
+      paddingHorizontal: spacing.lg,
       paddingTop: spacing.sm,
     },
   });

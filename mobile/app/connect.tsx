@@ -77,7 +77,7 @@ const makeStyles = (palette: Palette) =>
       width: 32,
     },
     badgeText: { color: palette.accent, fontFamily: headingFontFamily, fontSize: 16, fontWeight: '700' },
-    stepContent: { flex: 1, gap: spacing.xs, paddingTop: 5 },
+    stepContent: { flex: 1, gap: spacing.xs, paddingTop: spacing.sm },
     stepTitle: { color: palette.text, fontSize: 16, fontWeight: '700' },
     stepBody: { color: palette.textMuted, fontSize: 14, lineHeight: 21 },
   });

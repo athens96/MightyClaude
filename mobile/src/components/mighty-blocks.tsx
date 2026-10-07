@@ -54,8 +54,11 @@ import {
  */
 
 const NODE = 25;
-/** Where the node sits from the top of its row, level with the card's title. */
-const NODE_TOP = 9;
+/**
+ * Where the node sits from the top of its row, level with the card's title: the head's
+ * top padding (`spacing.md`), less the 3pt the node has always sat above it.
+ */
+const NODE_TOP = spacing.md - 3;
 const NODE_CENTRE = NODE_TOP + NODE / 2;
 
 function railColor(palette: Palette, rail: TimelineNode['rail']): string {
@@ -429,16 +432,16 @@ const makeStyles = (palette: Palette) =>
       ...cardShadow,
       backgroundColor: palette.surfaceRaised,
       borderRadius: radius.card,
-      paddingHorizontal: spacing.sm + 2,
+      paddingHorizontal: spacing.md,
     },
-    runHead: { gap: 3, paddingHorizontal: spacing.xs, paddingVertical: spacing.md },
+    runHead: { gap: spacing.xs, paddingHorizontal: spacing.xs, paddingVertical: spacing.md },
     runTitleRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
     runChevron: { color: palette.textFaint, fontSize: 12 },
     runTitle: { ...typeScale.heading, color: palette.text, flex: 1, fontSize: 17, lineHeight: 22 },
     runPreview: { color: palette.textMuted, fontSize: 13, lineHeight: 19 },
     runCount: { color: palette.textFaint, fontSize: 11.5, fontWeight: '600' },
     blocks: { paddingBottom: spacing.md },
-    timelineRow: { flexDirection: 'row', gap: 6, paddingBottom: spacing.sm },
+    timelineRow: { flexDirection: 'row', gap: spacing.md, paddingBottom: spacing.sm },
     block: {
       backgroundColor: palette.surface,
       borderColor: 'transparent',
@@ -453,20 +456,20 @@ const makeStyles = (palette: Palette) =>
       gap: spacing.sm,
       minHeight: 44,
       paddingHorizontal: spacing.md,
-      paddingVertical: spacing.sm + 1,
+      paddingVertical: spacing.md,
     },
-    blockBody: { flex: 1, gap: 2 },
+    blockBody: { flex: 1, gap: spacing.xs },
     blockTitle: { color: palette.text, fontSize: 14, fontWeight: '700', lineHeight: 19 },
     blockMeta: { color: palette.textMuted, fontSize: 11.5 },
-    blockSummary: { color: palette.textMuted, fontSize: 12, lineHeight: 17, marginTop: 2 },
-    toggle: { color: palette.accent, fontSize: 12, fontWeight: '700', marginTop: 3 },
+    blockSummary: { color: palette.textMuted, fontSize: 12, lineHeight: 17, marginTop: spacing.xs },
+    toggle: { color: palette.accent, fontSize: 12, fontWeight: '700', marginTop: spacing.xs },
     details: {
       gap: spacing.sm,
-      paddingBottom: spacing.sm + 2,
+      paddingBottom: spacing.md,
       paddingHorizontal: spacing.md,
       paddingTop: spacing.xs,
     },
-    section: { gap: 2 },
+    section: { gap: spacing.xs },
     sectionLabel: { color: palette.textFaint, fontSize: 11, fontWeight: '700' },
     activityLine: { ...monoText, color: palette.textMuted },
     resultCard: {
@@ -475,8 +478,8 @@ const makeStyles = (palette: Palette) =>
       marginTop: spacing.xs,
       overflow: 'hidden',
     },
-    resultHead: { paddingHorizontal: spacing.md + 2, paddingVertical: spacing.sm },
+    resultHead: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
     resultHeading: { fontSize: 12.5, fontWeight: '800' },
-    resultBody: { gap: spacing.xs, paddingHorizontal: spacing.md + 2, paddingVertical: spacing.sm + 2 },
+    resultBody: { gap: spacing.xs, paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
     pressed: { opacity: 0.6 },
   });

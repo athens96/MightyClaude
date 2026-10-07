@@ -712,6 +712,7 @@ export default function RemoteScreenScreen() {
               <Pressable
                 accessibilityLabel={t('phone.screenShare.fullScreen.enterLabel')}
                 accessibilityRole="button"
+                hitSlop={4}
                 onPress={() => dispatchFull({ type: 'enter' })}
                 style={({ pressed }) => [styles.fullScreenChip, pressed && styles.pressed]}
               >
@@ -980,7 +981,7 @@ const makeStyles = (palette: Palette) =>
       color: '#fff',
       fontSize: 11,
       paddingHorizontal: spacing.xs,
-      paddingVertical: 2,
+      paddingVertical: spacing.xs,
       textAlign: 'right',
     },
     fullScreenBanners: { bottom: 0, left: 0, position: 'absolute', right: 0 },
