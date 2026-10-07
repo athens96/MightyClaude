@@ -169,10 +169,10 @@ public sealed partial class MainWindow
             graphAttached = true;
 
             // The switch leads the header's controls (M/SessionPaneView.swift:251-256).
-            var options = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
+            var options = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xxs };
             modeDefaultButton = ModePill(MightyGraphViewModel.LocaleKeyDefault, "default", options, out modeDefaultChip);
             modeMightyButton = ModePill(MightyGraphViewModel.LocaleKeyMighty, "mighty", options, out modeMightyChip);
-            modeSwitch = new Border { Child = options, Padding = new Thickness(2), CornerRadius = new CornerRadius(DesignMetrics.Radius.Row), Background = owner.brushes.SegmentTrack, VerticalAlignment = VerticalAlignment.Center };
+            modeSwitch = new Border { Child = options, Padding = new Thickness(DesignMetrics.Spacing.Xxs), CornerRadius = new CornerRadius(DesignMetrics.Radius.Row), Background = owner.brushes.SegmentTrack, VerticalAlignment = VerticalAlignment.Center };
             AutomationProperties.SetAutomationId(modeSwitch, "mighty-mode-switch-" + id);
             paneHeaderControls.Children.Insert(0, modeSwitch);
             modeSwitch.SizeChanged += (_, _) => QueuePaneHeaderLayout();
@@ -258,18 +258,18 @@ public sealed partial class MainWindow
         private Grid BuildGraphToolbar()
         {
             var b = owner.brushes;
-            var bar = new Grid { ColumnSpacing = 10, Padding = new Thickness(12, 10, 12, 10), BorderThickness = new Thickness(0, 0, 0, DesignMetrics.Stroke.Line), BorderBrush = b.Brush(DesignToken.Line) };
+            var bar = new Grid { ColumnSpacing = DesignMetrics.Spacing.Md, Padding = new Thickness(DesignMetrics.Inset.GraphBarH, DesignMetrics.Inset.GraphBarV, DesignMetrics.Inset.GraphBarH, DesignMetrics.Inset.GraphBarV), BorderThickness = new Thickness(0, 0, 0, DesignMetrics.Stroke.Line), BorderBrush = b.Brush(DesignToken.Line) };
             foreach (var width in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto }) bar.ColumnDefinitions.Add(new ColumnDefinition { Width = width });
             graphStyleHeader.Foreground = b.Brush(DesignToken.Ink);
             graphTotal.Foreground = b.Brush(DesignToken.Ink2);
             AutomationProperties.SetAutomationId(graphTotal, "mighty-tokens-" + id);
-            var lead = graphToolbarLead = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, VerticalAlignment = VerticalAlignment.Center };
+            var lead = graphToolbarLead = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Md, VerticalAlignment = VerticalAlignment.Center };
             lead.Children.Add(BuildGraphPresentationSwitch()); lead.Children.Add(graphStyleHeader); lead.Children.Add(graphStyleBadge = BuildStyleSourceBadge());
             bar.Children.Add(lead);
             Grid.SetColumn(graphTotal, 1); bar.Children.Add(graphTotal);
             // The Mac's 13pt magnifying glasses stand 10 from the percentage. Each sits in a 22-wide button here, so the
             // buttons are 6 apart and the row reaches 4 into the bar's padding: the last glass ends where the Mac's does.
-            var zoom = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(0, 0, -4, 0), VerticalAlignment = VerticalAlignment.Center };
+            var zoom = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, Margin = new Thickness(0, 0, -DesignMetrics.Spacing.Xs, 0), VerticalAlignment = VerticalAlignment.Center };
             zoomOutButton = ZoomButton(MightySymbols.Create("minus.magnifyingglass", 13, null), Locale.Get(MightyGraphViewModel.LocaleKeyZoomOut), "mighty-zoom-out-" + id, () => SetGraphZoom(MightyGraphViewModel.ZoomOut(graphZoom)));
             // The Mac's Text takes the body font: 13, its digits of one width.
             var percent = new TextBlock { Text = MightyGraphViewModel.ZoomLabel(graphZoom), FontSize = DesignMetrics.Type.Body, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
@@ -305,10 +305,10 @@ public sealed partial class MainWindow
         private Button ModePill(string localeKey, string mode, Panel options, out Rectangle chip)
         {
             var text = Locale.Get(localeKey);
-            var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
+            var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Md, VerticalAlignment = VerticalAlignment.Center };
             content.Children.Add(ModeSymbol(mode == "mighty"));
             content.Children.Add(new TextBlock { Text = text, FontSize = DesignMetrics.Type.Pill, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
-            var button = new Button { Content = content, MinWidth = 0, MinHeight = 0, Height = 20, Padding = new Thickness(8, 0, 8, 0), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), BorderThickness = new Thickness(0) };
+            var button = new Button { Content = content, MinWidth = 0, MinHeight = 0, Height = 20, Padding = new Thickness(DesignMetrics.Spacing.Md, 0, DesignMetrics.Spacing.Md, 0), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), BorderThickness = new Thickness(0) };
             owner.PaintPlainButton(button, owner.brushes.Transparent, owner.brushes.Transparent);
             AutomationProperties.SetAutomationId(button, "mighty-mode-" + mode + "-" + id); AutomationProperties.SetName(button, text); ToolTipService.SetToolTip(button, text);
             button.Click += async (_, _) => await SetAgentViewMode(mode);
@@ -776,16 +776,16 @@ public sealed partial class MainWindow
         }
 
         /// <summary>
-        /// A block transcript's own inset (M/AgentTranscriptView.swift:35, 168, 372-380): 15 from the card's sides and
-        /// under the header, 30 at the bottom so the corner handle never covers the last line.
+        /// A block transcript's own inset (M/AgentTranscriptView.swift:35, 168, 372-380): <c>Inset.Transcript</c> from the card's
+        /// sides and under the header, and at the bottom the 22pt corner handle more, so it never covers the last line.
         /// </summary>
-        private static Thickness TranscriptInset => new(15 - BlockEdge, 15, 15 - BlockEdge, 30);
+        private static Thickness TranscriptInset => new(DesignMetrics.Inset.Transcript - BlockEdge, DesignMetrics.Inset.Transcript, DesignMetrics.Inset.Transcript - BlockEdge, DesignMetrics.Inset.Transcript + 22);
 
         /// <summary>
         /// What a block holds under its header (M/MightyGraphView.swift:551-564, 1025-1042): the request, which keeps
-        /// its place on its tint × 0.055 band (padding h12 v8, 11pt, 14 to 64 tall and scrolling within, over a
-        /// <c>line</c> rule), then the transcript, which scrolls in what is left, or the words that stand for one
-        /// (12 <c>ink2</c>, padding 15); and the corner handle over them.
+        /// its place on its tint × 0.055 band (padded by <c>Inset.GraphBlockBody</c>, 11pt, 14 to 64 tall and scrolling within,
+        /// over a <c>line</c> rule), then the transcript, which scrolls in what is left, or the words that stand for one
+        /// (12 <c>ink2</c>, padding <c>Inset.GraphBlockBodyH</c>); and the corner handle over them.
         /// </summary>
         private void BuildBlockBody(GraphCardView view, string blockId)
         {
@@ -795,13 +795,13 @@ public sealed partial class MainWindow
             view.Request = new TextBlock { FontSize = DesignMetrics.Type.Pill, TextWrapping = TextWrapping.Wrap, Foreground = b.Brush(DesignToken.Ink), MinHeight = 14 };
             view.RequestBand = new Border
             {
-                Visibility = Visibility.Collapsed, Padding = new Thickness(12 - BlockEdge, 8, 12 - BlockEdge, 8),
+                Visibility = Visibility.Collapsed, Padding = new Thickness(DesignMetrics.Inset.GraphBlockBodyH - BlockEdge, DesignMetrics.Inset.GraphBlockBodyV, DesignMetrics.Inset.GraphBlockBodyH - BlockEdge, DesignMetrics.Inset.GraphBlockBodyV),
                 BorderThickness = new Thickness(0, 0, 0, DesignMetrics.Stroke.Line), BorderBrush = b.Brush(DesignToken.Line),
                 Child = new ScrollViewer { Content = view.Request, MaxHeight = 64, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled },
             };
             Grid.SetRow(view.RequestBand, 1); view.Body.Children.Add(view.RequestBand);
             view.Content = new StackPanel { VerticalAlignment = VerticalAlignment.Top };
-            view.Placeholder = new TextBlock { FontSize = DesignMetrics.Type.Block, Foreground = b.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(15 - BlockEdge, 15, 15 - BlockEdge, 15), Visibility = Visibility.Collapsed };
+            view.Placeholder = new TextBlock { FontSize = DesignMetrics.Type.Block, Foreground = b.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(DesignMetrics.Inset.GraphBlockBodyH - BlockEdge, DesignMetrics.Inset.GraphBlockBodyH, DesignMetrics.Inset.GraphBlockBodyH - BlockEdge, DesignMetrics.Inset.GraphBlockBodyH), Visibility = Visibility.Collapsed };
             view.Content.Children.Add(view.Placeholder);
             view.Content.SizeChanged += (_, _) => QueueGraphCardMeasure(blockId, view);
             view.Card.Loaded += (_, _) => QueueGraphCardMeasure(blockId, view);
@@ -819,15 +819,15 @@ public sealed partial class MainWindow
         private void BuildDraftCard(GraphCardView view, string blockId)
         {
             var b = owner.brushes; var ink = b.Brush(DesignToken.Ink);
-            var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 9, VerticalAlignment = VerticalAlignment.Center };
+            var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Center };
             label.Children.Add(view.DraftSymbol = MightySymbols.Create("square.and.pencil", 12, ink));
             label.Children.Add(view.DraftTitle = new TextBlock { FontSize = DesignMetrics.Type.Block, FontWeight = FontWeights.SemiBold, Foreground = ink, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center });
             view.DraftState = new TextBlock { FontSize = DesignMetrics.Type.Pill, Foreground = b.Brush(DesignToken.Ink2), VerticalAlignment = VerticalAlignment.Center };
-            var head = new Grid { ColumnSpacing = 8 };
+            var head = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             head.Children.Add(label); Grid.SetColumn(view.DraftState, 1); head.Children.Add(view.DraftState);
             view.Request = new TextBlock { FontSize = DesignMetrics.Type.Block, TextWrapping = TextWrapping.Wrap, MaxLines = 4, TextTrimming = TextTrimming.CharacterEllipsis };
-            var parts = new StackPanel { Spacing = 10, Margin = new Thickness(16) };
+            var parts = new StackPanel { Spacing = DesignMetrics.Spacing.Md, Margin = new Thickness(DesignMetrics.Spacing.Lg) };
             parts.Children.Add(head); parts.Children.Add(view.Request);
             view.Body = new Grid(); view.Body.Children.Add(parts);
             view.Body.Children.Add(BuildResultResizeGrip(view, blockId));
@@ -908,7 +908,7 @@ public sealed partial class MainWindow
             var quiet = strip ? b.FillInk(tone) : b.Brush(DesignToken.Ink2);
             var header = new Grid
             {
-                ColumnSpacing = 7, Padding = new Thickness(12 - BlockEdge, 0, 12 - BlockEdge, 0),
+                ColumnSpacing = DesignMetrics.Spacing.Sm, Padding = new Thickness(DesignMetrics.Inset.GraphBlockBodyH - BlockEdge, 0, DesignMetrics.Inset.GraphBlockBodyH - BlockEdge, 0),
                 // 38 from the card's top, the card's own edge being the first point of it; a plain header ends in its rule.
                 Height = DesignMetrics.Layout.BlockHead - BlockEdge + (strip ? 0 : DesignMetrics.Stroke.Line),
                 BorderThickness = new Thickness(0, 0, 0, strip ? 0 : DesignMetrics.Stroke.Line), BorderBrush = b.Brush(DesignToken.Line),
@@ -928,7 +928,7 @@ public sealed partial class MainWindow
             };
             header.Children.Add(view.Symbol = MightySymbols.Create(symbol, 13, strip ? ink : b.Brush(BlockTint(block, look.Tint)), cut: b.Brush(DesignToken.Card)));
             // An SF Symbol's frame is wider than its drawing: the Mac's title starts 36 from the card's edge (docs/design-system/crops/result-card-*.webp).
-            view.Symbol.Margin = new Thickness(0, 0, 2, 0);
+            view.Symbol.Margin = new Thickness(0, 0, DesignMetrics.Spacing.Xxs, 0);
             // A request block's title ends with its agent's name; its mark goes before it.
             var title = ProviderMarkView.Labelled(block.Title, MightyGraphBlockModel.TitleProvider(block, Session.Provider), DesignMetrics.Type.Block, FontWeights.Bold);
             PaintWords(title, ink);
@@ -943,14 +943,14 @@ public sealed partial class MainWindow
                 ToolTipService.SetToolTip(clock, Locale.Get("graph.history.tag"));
                 AutomationProperties.SetName(clock, Locale.Get("graph.history.tag")); AutomationProperties.SetAutomationId(clock, "mighty-record-" + block.Id);
                 AutomationProperties.SetAccessibilityView(clock, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Content);
-                var tagged = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7, VerticalAlignment = VerticalAlignment.Center };
+                var tagged = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Center };
                 tagged.Children.Add(title); tagged.Children.Add(clock);
                 named = tagged;
             }
-            named.Margin = new Thickness(0, 0, 10, 0);
+            named.Margin = new Thickness(0, 0, DesignMetrics.Spacing.Md, 0);
             Grid.SetColumn(named, 1); header.Children.Add(named);
 
-            var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7, VerticalAlignment = VerticalAlignment.Center };
+            var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Center };
             right.Children.Add(view.ScrollHint = new TextBlock
             {
                 Text = Locale.Get(MightyGraphViewModel.LocaleKeyBlockScrolling), FontSize = DesignMetrics.Type.Badge, FontWeight = FontWeights.Medium, Foreground = strip ? ink : b.Brush(DesignToken.Accent),
@@ -964,7 +964,7 @@ public sealed partial class MainWindow
             {
                 var pill = new Border
                 {
-                    CornerRadius = new CornerRadius(9), Padding = new Thickness(6, 2, 6, 2), VerticalAlignment = VerticalAlignment.Center,
+                    CornerRadius = new CornerRadius(9), Padding = new Thickness(DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xxs, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xxs), VerticalAlignment = VerticalAlignment.Center,
                     Background = b.Brush(DesignToken.CardRaised),
                     Child = new TextBlock { Text = capsule, FontSize = DesignMetrics.Type.Small, FontFamily = new FontFamily(DesignMetrics.Font.Mono), Foreground = quiet },
                 };
@@ -979,7 +979,7 @@ public sealed partial class MainWindow
                 var open = graphResultFilesRunId == runId;
                 var text = Locale.Get(open ? MightyGraphViewModel.LocaleKeyResultFilesClose : MightyGraphViewModel.LocaleKeyResultFilesOpen);
                 var filesInk = strip ? ink : b.Brush(open ? DesignToken.Accent : DesignToken.Ink2);
-                var face = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 3, VerticalAlignment = VerticalAlignment.Center };
+                var face = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xxs, VerticalAlignment = VerticalAlignment.Center };
                 face.Children.Add(MightySymbols.Create(open ? "doc.on.doc.fill" : "doc.on.doc", 13, filesInk));
                 var count = new TextBlock { Text = files.Count.ToString(System.Globalization.CultureInfo.InvariantCulture), FontSize = DesignMetrics.Type.Small, Foreground = filesInk, VerticalAlignment = VerticalAlignment.Center };
                 Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(count, FontNumeralAlignment.Tabular);
@@ -1070,7 +1070,7 @@ public sealed partial class MainWindow
         /// </summary>
         private Border StatusPill(string text, DesignTone tone, double height) => new()
         {
-            Height = height, CornerRadius = new CornerRadius(height / 2), Padding = new Thickness(7, 0, 7, 0), VerticalAlignment = VerticalAlignment.Center,
+            Height = height, CornerRadius = new CornerRadius(height / 2), Padding = new Thickness(DesignMetrics.Spacing.Sm, 0, DesignMetrics.Spacing.Sm, 0), VerticalAlignment = VerticalAlignment.Center,
             Background = owner.brushes.Soft(tone),
             Child = new TextBlock { Text = text, FontSize = DesignMetrics.Type.Small, FontWeight = FontWeights.Bold, Foreground = owner.brushes.Text(tone), VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis },
         };
@@ -1248,7 +1248,7 @@ public sealed partial class MainWindow
             AutomationProperties.SetAutomationId(panel, "mighty-result-files-" + block.Id);
             var head = new Grid
             {
-                ColumnSpacing = 7, Padding = new Thickness(12 - BlockEdge, 0, 12 - BlockEdge, 0), Height = DesignMetrics.Layout.BlockHead - BlockEdge + DesignMetrics.Stroke.Line,
+                ColumnSpacing = DesignMetrics.Spacing.Sm, Padding = new Thickness(DesignMetrics.Inset.GraphBlockBodyH - BlockEdge, 0, DesignMetrics.Inset.GraphBlockBodyH - BlockEdge, 0), Height = DesignMetrics.Layout.BlockHead - BlockEdge + DesignMetrics.Stroke.Line,
                 BorderThickness = new Thickness(0, 0, 0, DesignMetrics.Stroke.Line), BorderBrush = b.Brush(DesignToken.Line),
             };
             foreach (var width in new[] { GridLength.Auto, GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto }) head.ColumnDefinitions.Add(new ColumnDefinition { Width = width });
@@ -1264,18 +1264,18 @@ public sealed partial class MainWindow
             close.Click += (_, _) => CloseResultFiles();
             Grid.SetColumn(close, 3); head.Children.Add(close);
             panel.Children.Add(head);
-            var list = new StackPanel { Spacing = 4, Padding = new Thickness(8 - BlockEdge, 8, 8 - BlockEdge, 8 + 16) };
+            var list = new StackPanel { Spacing = DesignMetrics.Spacing.Xs, Padding = new Thickness(DesignMetrics.Spacing.Sm - BlockEdge, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Sm - BlockEdge, DesignMetrics.Spacing.Sm + DesignMetrics.Spacing.Lg) };
             foreach (var file in files.Take(ResultFiles.MaximumResultFiles))
             {
-                var face = new Grid { ColumnSpacing = 8 };
+                var face = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
                 face.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); face.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                var document = MightySymbols.Create("doc.text", 12, accent); document.VerticalAlignment = VerticalAlignment.Top; document.Margin = new Thickness(0, 2, 0, 0);
+                var document = MightySymbols.Create("doc.text", 12, accent); document.VerticalAlignment = VerticalAlignment.Top; document.Margin = new Thickness(0, DesignMetrics.Spacing.Xxs, 0, 0);
                 face.Children.Add(document);
-                var words = new StackPanel { Spacing = 3 };
+                var words = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
                 words.Children.Add(new TextBlock { Text = Path.GetFileName(file.Path), FontSize = DesignMetrics.Type.Block, FontWeight = FontWeights.Medium, Foreground = b.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis });
                 words.Children.Add(new TextBlock { Text = file.Path + (file.Line is { } line ? ":" + line : ""), FontSize = DesignMetrics.Type.Small, FontFamily = new FontFamily(DesignMetrics.Font.Mono), Foreground = ink2, TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis });
                 Grid.SetColumn(words, 1); face.Children.Add(words);
-                var row = new Button { Content = face, MinWidth = 0, MinHeight = 0, Padding = new Thickness(8), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), BorderThickness = new Thickness(0), HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch };
+                var row = new Button { Content = face, MinWidth = 0, MinHeight = 0, Padding = new Thickness(DesignMetrics.Spacing.Sm), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), BorderThickness = new Thickness(0), HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch };
                 owner.PaintPlainButton(row, b.Brush(DesignToken.CardRaised), b.Brush(DesignToken.Track));
                 AutomationProperties.SetAutomationId(row, "mighty-result-file-" + block.Id + "-" + file.Path);
                 AutomationProperties.SetName(row, file.Path); ToolTipService.SetToolTip(row, file.Path);
@@ -1315,7 +1315,7 @@ public sealed partial class MainWindow
             view.GripSymbol = MightySymbols.Create("arrow.up.left.and.arrow.down.right", 10, b.Brush(DesignToken.Ink2), MightySymbols.Weight.Semibold);
             view.GripSymbol.HorizontalAlignment = HorizontalAlignment.Center;
             // 2 from the card's corner, which the card's own edge is the first part of.
-            var inset = 2 - view.Card.BorderThickness.Right;
+            var inset = DesignMetrics.Spacing.Xxs - view.Card.BorderThickness.Right;
             var grip = view.Grip = new Border
             {
                 Width = 22, Height = 22, Margin = new Thickness(0, 0, inset, inset), CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow), Background = b.Brush(DesignToken.Card, GripOpacity),

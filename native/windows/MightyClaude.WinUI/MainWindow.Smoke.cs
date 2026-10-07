@@ -619,7 +619,7 @@ public sealed partial class MainWindow
         // Real controls: the rows and the always-enabled link are drawn with
         // the window's own builder into a detached panel, so nothing on screen
         // and no stored setting is changed and there is nothing to put back.
-        var panel = new StackPanel { Spacing = 4 };
+        var panel = new StackPanel { Spacing = DesignMetrics.Spacing.Xs };
         RenderAccountUsageReset(panel, result.Rows);
         Require(panel.Children.OfType<StackPanel>().Count() == 2, "usageReset smoke: a row per programme renders in the real panel");
         var link = panel.Children.OfType<HyperlinkButton>().FirstOrDefault();

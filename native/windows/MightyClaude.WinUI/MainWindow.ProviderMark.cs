@@ -79,10 +79,10 @@ internal static class ProviderMarkView
         line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         // The head's trailing space becomes a fixed gap: a text box may not measure it.
         var head = Words(parts.Head.TrimEnd());
-        if (parts.Head.Length > 0) head.Margin = new Thickness(0, 0, 4, 0);
+        if (parts.Head.Length > 0) head.Margin = new Thickness(0, 0, DesignMetrics.Spacing.Xs, 0);
         line.Children.Add(head);
         var mark = Create(marked, ProviderMark.InlineSize(fontSize));
-        mark.Margin = new Thickness(0, 0, 4, 0);
+        mark.Margin = new Thickness(0, 0, DesignMetrics.Spacing.Xs, 0);
         Grid.SetColumn(mark, 1); line.Children.Add(mark);
         var name = Words(parts.Label);
         Grid.SetColumn(name, 2); line.Children.Add(name);
@@ -112,7 +112,7 @@ public sealed partial class MainWindow
     {
         if (ProviderMark.SidebarProvider(session) is not { } provider) return null;
         var ink = brushes.Brush(active ? DesignToken.Ink2 : DesignToken.SidebarInk2);
-        var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center, MinHeight = 15 };
+        var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs, VerticalAlignment = VerticalAlignment.Center, MinHeight = 15 };
         line.Children.Add(ProviderMarkView.Create(provider));
         line.Children.Add(new TextBlock { Text = ProviderMark.Label(provider), FontSize = DesignMetrics.Type.Pill, Foreground = ink, VerticalAlignment = VerticalAlignment.Center });
         var details = new TextBlock { Text = SidebarMeta(session), FontSize = DesignMetrics.Type.Pill, Foreground = ink, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };

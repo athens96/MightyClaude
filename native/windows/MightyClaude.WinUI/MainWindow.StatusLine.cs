@@ -30,7 +30,7 @@ public sealed partial class MainWindow
         // Claude's statusLine under the composer (macOS StatusLineView.swift).
         // This layer only draws the state Core produced and forwards the answer
         // to the trust question; discovery, trust and execution live in Core.
-        private readonly StackPanel statusLineHost = new() { Spacing = 2, Visibility = Visibility.Collapsed };
+        private readonly StackPanel statusLineHost = new() { Spacing = DesignMetrics.Spacing.Xxs, Visibility = Visibility.Collapsed };
         private StatusLineConfig? statusLineUntrusted;
         private StatusLineRefresher? _refresher;
         private Task statusLineStopping = Task.CompletedTask;
@@ -161,24 +161,24 @@ public sealed partial class MainWindow
             var b = owner.brushes; var ink2 = b.Brush(DesignToken.Ink2); var mono = new FontFamily(DesignMetrics.Font.Mono);
             statusLineUntrusted = untrusted;
             statusLineHost.Children.Clear();
-            // The Mac's own padding: 12 at the sides (plus the command's own, 6 a step), 2 over and 8 under (M/StatusLineView.swift:42-43).
-            statusLineHost.Margin = new Thickness(12 + padding * 6, 2, 12, 8);
+            // The composer rows' sides (plus the command's own, 6 a step), 2 over and the composer's bottom inset under (M/StatusLineView.swift:42-43).
+            statusLineHost.Margin = new Thickness(DesignMetrics.Inset.ComposerInnerH + padding * 6, DesignMetrics.Spacing.Xxs, DesignMetrics.Inset.ComposerInnerH, DesignMetrics.Inset.ComposerInnerB);
             if (untrusted is not null)
             {
                 // The question a workspace's command must answer first (M/StatusLineView.swift:15-29): the terminal mark and
                 // the 11pt ink2 question, the command on the subtle wash at radius 6, two small buttons and a quiet note.
-                var prompt = new StackPanel { Spacing = 4, Margin = new Thickness(0, 0, 0, 4) };
-                var question = new Grid { ColumnSpacing = 5 }; question.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); question.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
-                question.Children.Add(new FontIcon { Glyph = "", FontSize = 11, Foreground = ink2, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 2, 0, 0) });
+                var prompt = new StackPanel { Spacing = DesignMetrics.Spacing.Xs, Margin = new Thickness(0, 0, 0, DesignMetrics.Spacing.Xs) };
+                var question = new Grid { ColumnSpacing = DesignMetrics.Spacing.Xs }; question.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); question.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
+                question.Children.Add(new FontIcon { Glyph = "", FontSize = 11, Foreground = ink2, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, DesignMetrics.Spacing.Xxs, 0, 0) });
                 var asked = new TextBlock { Text = StatusLineStrings.TrustPromptTemplate.Replace("{source}", untrusted.SourceLabel), FontSize = 11, Foreground = ink2, TextWrapping = TextWrapping.Wrap };
                 Grid.SetColumn(asked, 1); question.Children.Add(asked); prompt.Children.Add(question);
                 prompt.Children.Add(new Border
                 {
                     Child = new TextBlock { Text = untrusted.Command, FontSize = 11, FontFamily = mono, Foreground = b.Brush(DesignToken.Ink), MaxLines = 3, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true },
-                    CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), Padding = new Thickness(6),
+                    CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), Padding = new Thickness(DesignMetrics.Spacing.Sm),
                     Background = b.Subtle,
                 });
-                var answers = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+                var answers = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
                 var allow = SmallButton(StatusLineStrings.TrustAllow, () => owner.Act(() => TrustStatusLine(untrusted)));
                 AutomationProperties.SetAutomationId(allow, "status-line-trust-" + id);
                 var deny = SmallButton(StatusLineStrings.TrustDeny, () => { DismissStatusLine(); RenderStatusLine(config, null, result, padding); return Task.CompletedTask; });
@@ -195,7 +195,7 @@ public sealed partial class MainWindow
                 if (result.ErrorText is { Length: > 0 } error && result.Lines.Count == 0)
                 {
                     // A failed command says so in one quiet line behind the warning mark (M/StatusLineView.swift:35-37).
-                    var failed = new Grid { ColumnSpacing = 5 }; failed.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); failed.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
+                    var failed = new Grid { ColumnSpacing = DesignMetrics.Spacing.Xs }; failed.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); failed.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
                     failed.Children.Add(new FontIcon { Glyph = "", FontSize = 11, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center });
                     var said = new TextBlock { Text = error, FontSize = 11, FontFamily = mono, Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap };
                     Grid.SetColumn(said, 1); failed.Children.Add(said); statusLineHost.Children.Add(failed);
@@ -206,7 +206,7 @@ public sealed partial class MainWindow
             ToolTipService.SetToolTip(statusLineHost, config is null ? "statusLine" : "statusLine · " + config.SourceLabel + " · " + config.Command);
             statusLineHost.Visibility = statusLineHost.Children.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
             // The toolbar sits 10 over the card's edge, or 4 over a status line (M/SessionPaneView.swift:645).
-            if (toolbar is not null) toolbar.Margin = new Thickness(10, 0, 10, statusLineHost.Visibility == Visibility.Visible ? 4 : 10);
+            if (toolbar is not null) toolbar.Margin = new Thickness(DesignMetrics.Inset.ComposerInnerH, 0, DesignMetrics.Inset.ComposerInnerH, statusLineHost.Visibility == Visibility.Visible ? DesignMetrics.Spacing.Xs : DesignMetrics.Inset.ComposerInnerB);
         }
 
         /// <summary>
@@ -216,7 +216,7 @@ public sealed partial class MainWindow
         private Button SmallButton(string title, Func<Task> action, bool prominent = false)
         {
             var b = owner.brushes; var button = Button(title, action);
-            button.FontSize = 11; button.MinWidth = 0; button.MinHeight = 0; button.Padding = new Thickness(8, 1, 8, 2); button.CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow); button.VerticalAlignment = VerticalAlignment.Center;
+            button.FontSize = 11; button.MinWidth = 0; button.MinHeight = 0; button.Padding = new Thickness(DesignMetrics.Spacing.Sm, 1, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xxs); button.CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow); button.VerticalAlignment = VerticalAlignment.Center;
             if (prominent)
             {
                 button.BorderThickness = new Thickness(0); button.FontWeight = Microsoft.UI.Text.FontWeights.Medium;
@@ -261,8 +261,8 @@ public sealed partial class MainWindow
             var segments = rows[0].Inlines.OfType<Microsoft.UI.Xaml.Documents.Run>().ToList();
             Require(segments[0].Foreground is SolidColorBrush, "the terminal colour was not applied to the first status line segment");
             Require(segments.Any(r => r.FontWeight.Weight >= Microsoft.UI.Text.FontWeights.SemiBold.Weight), "bold text was not applied to the status line");
-            // The toolbar sits 4 over a status line, 10 over the card's edge without one (M/SessionPaneView.swift:645).
-            Require(toolbar.Margin.Bottom == 4, $"the toolbar must sit 4 over the status line; got {toolbar.Margin.Bottom}");
+            // The toolbar sits Spacing.Xs over a status line, Inset.ComposerInnerB over the card's edge without one (M/SessionPaneView.swift:676).
+            Require(toolbar.Margin.Bottom == DesignMetrics.Spacing.Xs, $"the toolbar must sit {DesignMetrics.Spacing.Xs} over the status line; got {toolbar.Margin.Bottom}");
             await SettleDesktopCapture(owner.root); await CaptureElement(Container, Path.Combine(owner.options.ProfileDirectory!, "smoke-composer-status-line.png"));
             return true;
         }

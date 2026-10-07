@@ -157,7 +157,7 @@ public sealed partial class MainWindow
         SettingsRow(rows, SettingsLabeled(SettingsTitled(allowLabel, Locale.Get("windows.mobile.relayDescription")), enabled, top: true));
         // The form draws the field's own title — the address used while the field is empty — as a label before it,
         // and gives the field 0.54 of what the row's label and button leave (screens/10-settings-mobile-redacted-dark.webp).
-        var relayRow = new Grid { ColumnSpacing = 8 };
+        var relayRow = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
         relayRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); relayRow.ColumnDefinitions.Add(new() { Width = new(1 - MobileRelayFieldShare, GridUnitType.Star) });
         relayRow.ColumnDefinitions.Add(new() { Width = new(MobileRelayFieldShare, GridUnitType.Star) }); relayRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var relayDefault = SettingsText(MobileRelayHost.DefaultRelay, 11, mono: true); relayDefault.TextWrapping = TextWrapping.NoWrap; relayDefault.TextTrimming = TextTrimming.CharacterEllipsis;
@@ -165,12 +165,12 @@ public sealed partial class MainWindow
         Grid.SetColumn(relay, 2); relayRow.Children.Add(relay); Grid.SetColumn(apply, 3); relayRow.Children.Add(apply);
         SettingsRow(rows, relayRow);
         // The four steps (M/MobileRemoteSettingsView.swift:175-191): the number in a 14-wide column, right-aligned, 5 from its sentence.
-        var guide = new StackPanel { Spacing = 3, Margin = new Thickness(0, 2, 0, 2) };
+        var guide = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs, Margin = new Thickness(0, DesignMetrics.Spacing.Xxs, 0, DesignMetrics.Spacing.Xxs) };
         AutomationProperties.SetAutomationId(guide, "settings-mobile-guide");
         var steps = new[] { Locale.Get("settings.mobileRemote.guide.step1"), Locale.Get("settings.mobileRemote.guide.step2"), Locale.Get("settings.mobileRemote.guide.step3"), Locale.Get("settings.mobileRemote.guide.step4") };
         for (var step = 0; step < steps.Length; step++)
         {
-            var line = new Grid { ColumnSpacing = 5 };
+            var line = new Grid { ColumnSpacing = DesignMetrics.Spacing.Xs };
             line.ColumnDefinitions.Add(new() { Width = new(14) }); line.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
             var number = SettingsText(step + 1 + ".", 11, DesignToken.Ink2); number.HorizontalAlignment = HorizontalAlignment.Right; number.VerticalAlignment = VerticalAlignment.Top;
             line.Children.Add(number);
@@ -178,7 +178,7 @@ public sealed partial class MainWindow
             guide.Children.Add(line);
         }
         SettingsRow(rows, guide);
-        var state = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var state = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
         state.Children.Add(dot); state.Children.Add(status);
         SettingsRow(rows, SettingsLabeled(state, reconnect));
 
@@ -188,18 +188,18 @@ public sealed partial class MainWindow
         regenerate.Content = SettingsGlyphLabel("", Locale.Get("settings.mobileRemote.regenerateKeyButton"), 11);
         // On Windows a new key unpairs every phone; the button says so before it asks.
         ToolTipService.SetToolTip(regenerate, Locale.Get("windows.mobile.rotationDescription"));
-        var pairing = new StackPanel { Spacing = 6 };
+        var pairing = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
         pairing.Children.Add(SettingsText(Locale.Get("settings.mobileRemote.scanInstruction"), 11, DesignToken.Ink2));
         // The host id is too long for its label's line, so the form sets it under the label; the key stays beside its own.
         pairing.Children.Add(SettingsText(hostIdLabel)); pairing.Children.Add(hostId);
-        var key = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        var key = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
         key.Children.Add(pairingKey); key.Children.Add(showKey);
         pairing.Children.Add(SettingsLabeled(SettingsText(keyLabel), key));
-        var pairingButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var pairingButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
         pairingButtons.Children.Add(copy); pairingButtons.Children.Add(regenerate);
         pairing.Children.Add(pairingButtons);
         // The QR on white at radius 8, 16 from the pairing words (M/MobileRemoteSettingsView.swift:61-65).
-        var identity = new Grid { ColumnSpacing = 16, Margin = new Thickness(0, 4, 0, 4) };
+        var identity = new Grid { ColumnSpacing = DesignMetrics.Spacing.Lg, Margin = new Thickness(0, DesignMetrics.Spacing.Xs, 0, DesignMetrics.Spacing.Xs) };
         identity.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); identity.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
         identity.Children.Add(new Border { Child = qr, Background = brushes.Brush(DesignToken.OnStatus), CornerRadius = new CornerRadius(DesignMetrics.Radius.Row), VerticalAlignment = VerticalAlignment.Top });
         Grid.SetColumn(pairing, 1); identity.Children.Add(pairing);
@@ -242,7 +242,7 @@ public sealed partial class MainWindow
             var contents = new List<FrameworkElement>();
             foreach (var device in mobileHost.Devices)
             {
-                var row = new Grid { ColumnSpacing = 8 };
+                var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
                 AutomationProperties.SetAutomationId(row, "settings-mobile-device-" + device.Id);
                 row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
                 row.Children.Add(SettingsSymbol(device.Legacy ? "" : "", 14, DesignToken.Ink2));

@@ -74,7 +74,7 @@ public sealed partial class MainWindow
         // tabs beside the reload button, the search box beside the marketplace filter, on the marketplace tab the
         // scope beside the marketplace refresh, what the read and the last operation said, the note, a rule and
         // the rows; then the progress, the cancel and the close buttons on the last line.
-        var rows = new StackPanel { Spacing = 10 };
+        var rows = new StackPanel { Spacing = DesignMetrics.Spacing.Md };
         var status = SettingsText("", 11, DesignToken.WaitText, selectable: true); status.Visibility = Visibility.Collapsed;
         AutomationProperties.SetAutomationId(status, PluginAutomationId(provider, "load-status"));
         // The command's own output, 80 high behind its disclosure (M/ClaudePluginView.swift:277-282).
@@ -87,7 +87,7 @@ public sealed partial class MainWindow
             diagnosticsBox.Visibility = open ? Visibility.Visible : Visibility.Collapsed; diagnosticsMark.Glyph = open ? PluginUnfoldedGlyph : PluginFoldedGlyph;
             return Task.CompletedTask;
         });
-        var diagnosticsLabel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        var diagnosticsLabel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs };
         diagnosticsLabel.Children.Add(diagnosticsMark); diagnosticsLabel.Children.Add(new TextBlock { Text = PluginStrings.DiagnosticsDisclosure, FontSize = 10, VerticalAlignment = VerticalAlignment.Center });
         diagnosticsToggle.Content = diagnosticsLabel; diagnosticsToggle.Padding = new Thickness(0); diagnosticsToggle.MinWidth = 0; diagnosticsToggle.MinHeight = 0;
         diagnosticsToggle.BorderThickness = new Thickness(0); diagnosticsToggle.HorizontalAlignment = HorizontalAlignment.Left;
@@ -176,10 +176,10 @@ public sealed partial class MainWindow
         // The small ring that turns while the list is read or an operation runs (M/ClaudePluginView.swift:198-202).
         var working = new ProgressRing { Width = 16, Height = 16, MinWidth = 0, MinHeight = 0, IsActive = false, Visibility = Visibility.Collapsed, Foreground = brushes.Brush(DesignToken.Ink2), VerticalAlignment = VerticalAlignment.Center };
         // What the last operation said (M/ClaudePluginView.swift:270-276): its mark and sentence, doneText when it succeeded and waitText otherwise.
-        var operationMark = new FontIcon { FontSize = 11, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 2, 0, 0) };
+        var operationMark = new FontIcon { FontSize = 11, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, DesignMetrics.Spacing.Xxs, 0, 0) };
         var operationResult = SettingsText("", 11, selectable: true);
         AutomationProperties.SetAutomationId(operationResult, PluginAutomationId(provider, "operation-result"));
-        var resultRow = new Grid { ColumnSpacing = 5, Visibility = Visibility.Collapsed };
+        var resultRow = new Grid { ColumnSpacing = DesignMetrics.Spacing.Xs, Visibility = Visibility.Collapsed };
         resultRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); resultRow.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
         resultRow.Children.Add(operationMark); Grid.SetColumn(operationResult, 1); resultRow.Children.Add(operationResult);
         void ShowResult(string? text, bool succeeded)
@@ -191,9 +191,9 @@ public sealed partial class MainWindow
 
         // The scope beside the marketplace refresh (M/ClaudePluginView.swift:239-252): its label and pop-up at the
         // leading edge, the button at the trailing one, 12 apart.
-        var pickerRow = new Grid { ColumnSpacing = 12 };
+        var pickerRow = new Grid { ColumnSpacing = DesignMetrics.Spacing.Md };
         pickerRow.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); pickerRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        var scopeLine = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var scopeLine = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
         scopePicker.HorizontalAlignment = HorizontalAlignment.Left;
         scopeLine.Children.Add(SettingsText(PluginStrings.ScopePickerLabel)); scopeLine.Children.Add(scopePicker);
         pickerRow.Children.Add(scopeLine); Grid.SetColumn(refreshBtn, 1); pickerRow.Children.Add(refreshBtn);
@@ -281,7 +281,7 @@ public sealed partial class MainWindow
             if (rows.Children.Count == 0)
             {
                 // M/ClaudePluginView.swift:349-362: the sentence, and under it the way to add a marketplace, centred with 28 above and below.
-                var empty = new StackPanel { Spacing = 10, Margin = new Thickness(0, 28, 0, 28) };
+                var empty = new StackPanel { Spacing = DesignMetrics.Spacing.Md, Margin = new Thickness(0, DesignMetrics.Spacing.Xl, 0, DesignMetrics.Spacing.Xl) };
                 var message = SettingsText(browser.EmptyMessage, 12, DesignToken.Ink2); message.HorizontalAlignment = HorizontalAlignment.Center; message.TextAlignment = TextAlignment.Center;
                 empty.Children.Add(message);
                 if (browser.ShowsMarketplaceHelpLink)
@@ -347,9 +347,9 @@ public sealed partial class MainWindow
         var workspaceName = SettingsText(workspace.Name, 12, DesignToken.Ink2); var workspacePath = SettingsTertiary(workspace.Path, mono: true);
         foreach (var line in new[] { workspaceName, workspacePath }) { line.TextWrapping = TextWrapping.NoWrap; line.TextTrimming = TextTrimming.CharacterEllipsis; }
         ToolTipService.SetToolTip(workspacePath, workspace.Path);
-        var named = new StackPanel { Spacing = 4 };
+        var named = new StackPanel { Spacing = DesignMetrics.Spacing.Xs };
         named.Children.Add(title); named.Children.Add(workspaceName); named.Children.Add(workspacePath);
-        var header = new Grid { ColumnSpacing = 12 };
+        var header = new Grid { ColumnSpacing = DesignMetrics.Spacing.Md };
         header.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); header.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var piece = new FontIcon { Glyph = PluginGlyph, FontSize = 25, Foreground = brushes.Brush(DesignToken.Accent), VerticalAlignment = VerticalAlignment.Top };
         AutomationProperties.SetAccessibilityView(piece, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
@@ -358,45 +358,45 @@ public sealed partial class MainWindow
         // The tabs, 6 apart, and the reload button at the trailing edge.
         var tabs = new Grid();
         tabs.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); tabs.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        var tabLine = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        var tabLine = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
         tabLine.Children.Add(installedTab); tabLine.Children.Add(marketplaceTab);
         tabs.Children.Add(tabLine); Grid.SetColumn(reload, 1); tabs.Children.Add(reload);
 
         // The search box takes what the 230-wide marketplace filter leaves (M/ClaudePluginView.swift:226-237).
-        var searchLine = new Grid { ColumnSpacing = 7 };
+        var searchLine = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
         searchLine.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); searchLine.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
         searchLine.Children.Add(SettingsSymbol(PluginSearchGlyph, 12, DesignToken.Ink2)); Grid.SetColumn(search, 1); searchLine.Children.Add(search);
-        var searchBox = new Border { Child = searchLine, Padding = new Thickness(9), CornerRadius = new CornerRadius(DesignMetrics.Radius.Row), Background = brushes.Subtle };
-        var filterLine = new Grid { ColumnSpacing = 8, Width = PluginFilterWidth, VerticalAlignment = VerticalAlignment.Center };
+        var searchBox = new Border { Child = searchLine, Padding = new Thickness(DesignMetrics.Spacing.Sm), CornerRadius = new CornerRadius(DesignMetrics.Radius.Row), Background = brushes.Subtle };
+        var filterLine = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, Width = PluginFilterWidth, VerticalAlignment = VerticalAlignment.Center };
         filterLine.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); filterLine.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
         filter.HorizontalAlignment = HorizontalAlignment.Stretch;
         filterLine.Children.Add(SettingsText(PluginStrings.TabMarketplace)); Grid.SetColumn(filter, 1); filterLine.Children.Add(filter);
-        var filters = new Grid { ColumnSpacing = 10 };
+        var filters = new Grid { ColumnSpacing = DesignMetrics.Spacing.Md };
         filters.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); filters.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         filters.Children.Add(searchBox); Grid.SetColumn(filterLine, 1); filters.Children.Add(filterLine);
 
         // Everything above the rows, 12 apart; what does not apply is collapsed and leaves no gap.
-        var controls = new StackPanel { Spacing = 12 };
+        var controls = new StackPanel { Spacing = DesignMetrics.Spacing.Md };
         foreach (var part in new FrameworkElement[] { tabs, filters, pickerRow, pickerNote, marketplaceUnavailable, status, resultRow, diagnosticsToggle, diagnosticsBox, SettingsText(browser.FooterNote, 10, DesignToken.Ink2) }) controls.Children.Add(part);
-        var list = new Grid { RowSpacing = 12 };
+        var list = new Grid { RowSpacing = DesignMetrics.Spacing.Md };
         list.RowDefinitions.Add(new() { Height = GridLength.Auto }); list.RowDefinitions.Add(new() { Height = GridLength.Auto }); list.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) });
         list.Children.Add(controls);
         var rule = new Border { Height = DesignMetrics.Stroke.Line, Background = brushes.Brush(DesignToken.Line) };
         Grid.SetRow(rule, 1); list.Children.Add(rule);
         // The rows keep 16 clear at the trailing edge for the scroller (M/ClaudePluginView.swift:299).
-        rows.Padding = new Thickness(0, 0, 16, 0);
+        rows.Padding = new Thickness(0, 0, DesignMetrics.Spacing.Lg, 0);
         var scroller = new ScrollViewer { Content = rows, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled };
         Grid.SetRow(scroller, 2); list.Children.Add(scroller);
 
         // The last line (M/ClaudePluginView.swift:197-210): the ring and what is being done, then the cancel and close buttons.
-        var footer = new Grid { ColumnSpacing = 8 };
+        var footer = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
         footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); footer.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
         footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var doing = new Grid(); doing.Children.Add(progress); doing.Children.Add(operationProgress);
         footer.Children.Add(working); Grid.SetColumn(doing, 1); footer.Children.Add(doing);
         Grid.SetColumn(cancelBtn, 2); footer.Children.Add(cancelBtn); Grid.SetColumn(close, 3); footer.Children.Add(close);
 
-        var body = new Grid { RowSpacing = 14 };
+        var body = new Grid { RowSpacing = DesignMetrics.Spacing.Md };
         body.RowDefinitions.Add(new() { Height = GridLength.Auto }); body.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) }); body.RowDefinitions.Add(new() { Height = GridLength.Auto });
         body.Children.Add(header); Grid.SetRow(list, 1); body.Children.Add(list); Grid.SetRow(footer, 2); body.Children.Add(footer);
         RenderPlugins();
@@ -451,7 +451,7 @@ public sealed partial class MainWindow
     /// </summary>
     private Button PluginTab()
     {
-        var chip = new Border { Child = new TextBlock { FontSize = 12, Foreground = brushes.Brush(DesignToken.Ink) }, Padding = new Thickness(12, 7, 12, 7), CornerRadius = new CornerRadius(7) };
+        var chip = new Border { Child = new TextBlock { FontSize = 12, Foreground = brushes.Brush(DesignToken.Ink) }, Padding = new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm), CornerRadius = new CornerRadius(7) };
         var tab = new Button { Content = chip, Padding = new Thickness(0), MinWidth = 0, MinHeight = 0, BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(7) };
         PaintPlainButton(tab, brushes.Transparent, brushes.Transparent);
         return tab;
@@ -811,11 +811,11 @@ public sealed partial class MainWindow
     /// </summary>
     private Grid PluginRowPanel(string provider, ClaudePluginRow row, Button? install = null)
     {
-        var panel = new Grid { ColumnSpacing = 14, Padding = new Thickness(12), CornerRadius = new CornerRadius(9), Background = brushes.Subtle };
+        var panel = new Grid { ColumnSpacing = DesignMetrics.Spacing.Md, Padding = new Thickness(DesignMetrics.Spacing.Md), CornerRadius = new CornerRadius(9), Background = brushes.Subtle };
         panel.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); panel.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         AutomationProperties.SetAutomationId(panel, PluginAutomationId(provider, "row-" + row.Id));
         var words = new StackPanel { Spacing = install is null ? 7 : 6 };
-        var title = new Grid { ColumnSpacing = 8 };
+        var title = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
         title.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); title.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); title.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
         var name = SettingsText(row.Name, 13); name.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold; name.MaxLines = 2; name.TextTrimming = TextTrimming.CharacterEllipsis;
         title.Children.Add(name);

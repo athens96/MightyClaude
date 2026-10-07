@@ -316,7 +316,7 @@ public sealed partial class MainWindow
     private sealed partial class PaneView
     {
         /// <summary>The sign-in card, between the editor and the toolbar (M/SessionPaneView.swift:619-621, M/CLILoginRecoveryCard.swift:67).</summary>
-        private readonly StackPanel loginRecoveryHost = new() { Margin = new Thickness(12, 0, 12, 0), Visibility = Visibility.Collapsed };
+        private readonly StackPanel loginRecoveryHost = new() { Margin = new Thickness(DesignMetrics.Spacing.Md, 0, DesignMetrics.Spacing.Md, 0), Visibility = Visibility.Collapsed };
         private string? loginCardFingerprint;
         private void InitializeLoginRecoveryCard() => AutomationProperties.SetAutomationId(loginRecoveryHost, "login-required-" + id);
         internal void RenderLoginRecovery()
@@ -334,10 +334,10 @@ public sealed partial class MainWindow
             var b = owner.brushes; var ink = b.Brush(DesignToken.Ink); var ink2 = b.Brush(DesignToken.Ink2); var wait = b.Brush(DesignToken.WaitText);
             TextBlock Line(string text, Brush brush) => new() { Text = text, FontSize = 11, Foreground = brush, TextWrapping = TextWrapping.Wrap };
             Button Small(string title, Func<Task> action) => SmallButton(title, () => owner.Act(action));
-            var card = new Grid { ColumnSpacing = 7 };
+            var card = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             card.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); card.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); card.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             card.Children.Add(new FontIcon { Glyph = "", FontSize = 12, Foreground = wait, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 1, 0, 0) });
-            var words = new StackPanel { Spacing = 4 };
+            var words = new StackPanel { Spacing = DesignMetrics.Spacing.Xs };
             var title = Line(Locale.Get("loginRecovery.title", new Dictionary<string, string> { ["provider"] = ProviderCatalog.Name(provider) }), ink); title.FontWeight = Microsoft.UI.Text.FontWeights.Medium;
             words.Children.Add(title);
             if (note is not null) words.Children.Add(Line(Locale.Get("loginRecovery.resendBlockedTemplate", new Dictionary<string, string> { ["reason"] = note }), wait));
@@ -345,7 +345,7 @@ public sealed partial class MainWindow
             {
                 if (job.Automatic) words.Children.Add(Line(Locale.Get("loginRecovery.autoStarted"), ink2));
                 // Gemini's terminal sentence is long: a star column lets it wrap beside the ring.
-                var busy = new Grid { ColumnSpacing = 6 };
+                var busy = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
                 busy.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); busy.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
                 busy.Children.Add(new ProgressRing { IsActive = true, Width = 12, Height = 12, MinWidth = 0, MinHeight = 0, VerticalAlignment = VerticalAlignment.Center, Foreground = ink2 });
                 var state = Line(Locale.Get(job.Phase == "starting" ? "loginRecovery.starting" : job.Terminal ? "loginRecovery.geminiTerminal" : "loginRecovery.waiting"), ink2);
@@ -367,10 +367,10 @@ public sealed partial class MainWindow
                 Task SubmitCode() { if (job?.Process?.SendCode(field.Password) == true) field.Password = ""; return Task.CompletedTask; }
                 field.KeyDown += async (_, args) => { if (args.Key == Windows.System.VirtualKey.Enter) { args.Handled = true; await SubmitCode(); } };
                 words.Children.Add(Line(Locale.Get("loginRecovery.codePrompt"), ink2));
-                var code = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 }; code.Children.Add(field); code.Children.Add(Small(Locale.Get("loginRecovery.codeSubmit"), SubmitCode)); words.Children.Add(code);
+                var code = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm }; code.Children.Add(field); code.Children.Add(Small(Locale.Get("loginRecovery.codeSubmit"), SubmitCode)); words.Children.Add(code);
             }
             Grid.SetColumn(words, 1); card.Children.Add(words);
-            var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(4, 0, 0, 0) };
+            var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(DesignMetrics.Spacing.Xs, 0, 0, 0) };
             if (job is not null)
             {
                 // Sends of the provider wait while its sign-in runs, so resending is offered again once it ends.

@@ -88,12 +88,12 @@ public sealed partial class MainWindow
             // Caps are visible in this preview too; a clipped document must never look complete.
             if (prepared.Data.Truncated || prepared.RenderCapped || prepared.HighlightCapped)
             {
-                var capped = new Grid { RowSpacing = 4 };
+                var capped = new Grid { RowSpacing = DesignMetrics.Spacing.Xs };
                 capped.RowDefinitions.Add(new() { Height = GridLength.Auto }); capped.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) });
                 var capText = prepared.RenderCapped ? Locale.Get("files.preview.renderCapped", new Dictionary<string, string> { ["count"] = (FilePaneDrawing.MaximumSourceUnits / 1024).ToString() })
                     : prepared.HighlightCapped ? Locale.Get("files.preview.highlightCapped", new Dictionary<string, string> { ["count"] = prepared.HighlightUnits.ToString() })
                     : Locale.Get("files.preview.truncated");
-                capped.Children.Add(new TextBlock { Text = capText, FontSize = DesignMetrics.Type.Pill, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(14, 8, 14, 0) });
+                capped.Children.Add(new TextBlock { Text = capText, FontSize = DesignMetrics.Type.Pill, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Md, 0) });
                 Grid.SetRow(content, 1); capped.Children.Add(content); content = capped;
             }
             referenceBody.Child = content;
@@ -113,7 +113,7 @@ public sealed partial class MainWindow
         {
             var b = owner.brushes;
             var mark = MightySymbols.Create("doc.questionmark", 24, b.Brush(DesignToken.Ink2)); mark.HorizontalAlignment = HorizontalAlignment.Center;
-            var notice = new StackPanel { Spacing = 6, Margin = new Thickness(20), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+            var notice = new StackPanel { Spacing = DesignMetrics.Spacing.Sm, Margin = new Thickness(DesignMetrics.Spacing.Lg), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             notice.Children.Add(mark);
             notice.Children.Add(new TextBlock { Text = text, FontSize = DesignMetrics.Type.Block, FontWeight = FontWeights.Medium, Foreground = b.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center });
             return notice;
@@ -147,16 +147,16 @@ public sealed partial class MainWindow
             if (referencePanel is not null) return;
             var b = owner.brushes; var ink = b.Brush(DesignToken.Ink); var card = b.Brush(DesignToken.Card);
             // The head: Layout.PreviewHead tall and padded h12 from the panel's own edge, its parts 8 apart; the buttons plain, their symbols 12 in ink.
-            var header = new Grid { Height = DesignMetrics.Layout.PreviewHead - DesignMetrics.Stroke.Line, Padding = new Thickness(12 - DesignMetrics.Stroke.Line, 0, 12 - DesignMetrics.Stroke.Line, 0), ColumnSpacing = 8 };
+            var header = new Grid { Height = DesignMetrics.Layout.PreviewHead - DesignMetrics.Stroke.Line, Padding = new Thickness(DesignMetrics.Spacing.Lg - DesignMetrics.Stroke.Line, 0, DesignMetrics.Spacing.Lg - DesignMetrics.Stroke.Line, 0), ColumnSpacing = DesignMetrics.Spacing.Sm };
             foreach (var width in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto }) header.ColumnDefinitions.Add(new() { Width = width });
             referenceSymbol = new Grid { VerticalAlignment = VerticalAlignment.Center };
             header.Children.Add(referenceSymbol);
-            var words = new StackPanel { Spacing = 1, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0) };
+            var words = new StackPanel { Spacing = 1, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, DesignMetrics.Spacing.Xs, 0) };
             // The two lines keep the files preview's line heights, so they fit the head's height (MainWindow.Files.cs).
             words.Children.Add(referenceTitle = new TextBlock { FontSize = DesignMetrics.Type.Block, FontWeight = FontWeights.SemiBold, Foreground = ink, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, LineHeight = 15, LineStackingStrategy = LineStackingStrategy.BlockLineHeight });
             words.Children.Add(referencePath = new TextBlock { FontSize = DesignMetrics.Type.Small, FontFamily = new FontFamily(DesignMetrics.Font.Mono), Foreground = b.Brush(DesignToken.Ink2), TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, LineHeight = 12, LineStackingStrategy = LineStackingStrategy.BlockLineHeight });
             Grid.SetColumn(words, 1); header.Children.Add(words);
-            var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
+            var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Center };
             referenceFlip = ReferenceButton("rectangle.lefthalf.inset.filled.arrow.left", Locale.Get("reference.flipLeft"), "mighty-reference-flip-" + id, () => { referenceOnLeft = !referenceOnLeft; FitReferencePreview(); return Task.CompletedTask; });
             referenceReveal = ReferenceButton("folder", Locale.Get("menu.showInExplorer"), "mighty-reference-reveal-" + id, () => { if (referenceTarget is { } target) RevealInExplorer(target.RelativePath); return Task.CompletedTask; });
             referenceOpen = ReferenceButton("arrow.up.forward.app", Locale.Get("reference.openExternal"), "mighty-reference-open-" + id, async () =>
@@ -189,7 +189,7 @@ public sealed partial class MainWindow
             thumb.DragDelta += (_, args) => { referenceWidth += (referenceOnLeft ? 1 : -1) * args.HorizontalChange; referenceHeight = Math.Max(ReferenceMinimumHeight, referenceHeight + args.VerticalChange); FitReferencePreview(); };
             // Back to the size it opens at: 420 wide and as tall as the room.
             thumb.DoubleTapped += (_, args) => { referenceWidth = ReferenceDefaultWidth; referenceHeight = 0; FitReferencePreview(); args.Handled = true; };
-            referenceGrip = new Grid { Width = 22, Height = 22, Margin = new Thickness(2 - DesignMetrics.Stroke.Line), VerticalAlignment = VerticalAlignment.Bottom };
+            referenceGrip = new Grid { Width = 22, Height = 22, Margin = new Thickness(DesignMetrics.Spacing.Xxs - DesignMetrics.Stroke.Line), VerticalAlignment = VerticalAlignment.Bottom };
             referenceGrip.Children.Add(new Border { CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow), Background = b.Brush(DesignToken.Card, GripOpacity), Child = arrows });
             referenceGrip.Children.Add(thumb);
             Grid.SetRowSpan(referenceGrip, 3); panel.Children.Add(referenceGrip);

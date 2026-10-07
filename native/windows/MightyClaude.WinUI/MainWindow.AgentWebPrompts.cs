@@ -42,18 +42,18 @@ public sealed partial class MainWindow
                 if (agentWebPromptCards.ContainsKey(request.Id)) continue;
                 // One choice (M/WebOpenChoicePanel.swift:15-46): the accent globe and the 11pt semibold title, the question in 12, the
                 // address in 11 mono on a wash at radius 6, the remember box, then the fallback note and the two small buttons.
-                var content = new StackPanel { Spacing = 8 };
-                var heading = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7 };
+                var content = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
+                var heading = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
                 heading.Children.Add(new FontIcon { Glyph = "", FontSize = 11, Foreground = b.Brush(DesignToken.Accent), VerticalAlignment = VerticalAlignment.Center });
                 heading.Children.Add(new TextBlock { Text = Locale.Get("agentTerminal.urlOpen.dialogTitle"), FontSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = b.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center });
                 content.Children.Add(heading);
                 content.Children.Add(new TextBlock { Text = Locale.Get("agentTerminal.urlOpen.dialogMessage"), FontSize = 12, Foreground = b.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap });
                 var url = new TextBlock { Text = request.Url.AbsoluteUri, FontFamily = new FontFamily(DesignMetrics.Font.Mono), FontSize = 11, Foreground = b.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap, MaxLines = 3, TextTrimming = TextTrimming.CharacterEllipsis, IsTextSelectionEnabled = true };
                 AutomationProperties.SetAutomationId(url, "web-open-url"); ToolTipService.SetToolTip(url, request.Url.AbsoluteUri);
-                content.Children.Add(new Border { Child = url, Padding = new Thickness(8, 6, 8, 6), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), Background = b.Brush(DesignToken.Ink, WebOpenAddressWash) });
+                content.Children.Add(new Border { Child = url, Padding = new Thickness(DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Sm), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), Background = b.Brush(DesignToken.Ink, WebOpenAddressWash) });
                 var remember = new CheckBox { Content = Locale.Get("agentTerminal.urlOpen.rememberToggle"), FontSize = 11, MinHeight = 0, MinWidth = 0, Foreground = b.Brush(DesignToken.Ink) };
                 AutomationProperties.SetAutomationId(remember, "web-open-remember"); content.Children.Add(remember);
-                var actions = new Grid { ColumnSpacing = 8 };
+                var actions = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
                 actions.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); actions.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); actions.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
                 actions.Children.Add(new TextBlock { Text = Locale.Get("agentTerminal.urlOpen.fallbackHint", new Dictionary<string, string> { ["seconds"] = "30" }), FontSize = 10, Foreground = b.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center });
                 Button Answer(string destination, string label, string automationId, bool prominent, int column)
@@ -65,7 +65,7 @@ public sealed partial class MainWindow
                 actions.Children.Add(Answer("inApp", Locale.Get("agentTerminal.urlOpen.inAppButton"), "web-open-in-app", true, 2));
                 content.Children.Add(actions);
                 // The accent tint, edge to edge, with a line above it (M/WebOpenChoicePanel.swift:42-44).
-                var card = new Border { Child = content, Padding = new Thickness(12), Background = b.Brush(DesignToken.Accent, WebOpenTint), BorderThickness = new Thickness(0, DesignMetrics.Stroke.Line, 0, 0), BorderBrush = b.Brush(DesignToken.Line) };
+                var card = new Border { Child = content, Padding = new Thickness(DesignMetrics.Spacing.Md), Background = b.Brush(DesignToken.Accent, WebOpenTint), BorderThickness = new Thickness(0, DesignMetrics.Stroke.Line, 0, 0), BorderBrush = b.Brush(DesignToken.Line) };
                 AutomationProperties.SetAutomationId(card, "web-open-request-" + request.Id);
                 agentWebPromptCards[request.Id] = card; agentWebPromptHost.Children.Add(card);
             }

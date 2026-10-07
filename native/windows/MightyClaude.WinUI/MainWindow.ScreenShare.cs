@@ -28,10 +28,10 @@ public sealed partial class MainWindow
         var stop = Button(Locale.Get("windows.screenShare.stopShortcut"), () => screenHub?.KillAllAsync() ?? Task.CompletedTask);
         // The stop control while a phone shares this screen: on the err fill, radius 8 (the stop button's look).
         stop.BorderThickness = new(0); PaintPlainButton(stop, brushes.Brush(DesignToken.Err), brushes.Brush(DesignToken.Err), ink: brushes.Brush(DesignToken.OnStatus));
-        screenBanner = new Border { Child = stop, Background = brushes.Brush(DesignToken.Err), CornerRadius = new(DesignMetrics.Radius.Row), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Visibility = Visibility.Collapsed, Margin = new(12) };
+        screenBanner = new Border { Child = stop, Background = brushes.Brush(DesignToken.Err), CornerRadius = new(DesignMetrics.Radius.Row), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Visibility = Visibility.Collapsed, Margin = new(DesignMetrics.Spacing.Md) };
         Grid.SetColumnSpan(screenBanner, 2); Grid.SetRowSpan(screenBanner, 3); Canvas.SetZIndex(screenBanner, 100); root.Children.Add(screenBanner);
         // The error banner's close button stands in the same corner: while the banner shows, the stop control stands under it.
-        void Place() { if (screenBanner is not null) screenBanner.Margin = new(12, 12 + (errorBanner.Visibility == Visibility.Visible ? errorBanner.ActualHeight : 0), 12, 12); }
+        void Place() { if (screenBanner is not null) screenBanner.Margin = new(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Md + (errorBanner.Visibility == Visibility.Visible ? errorBanner.ActualHeight : 0), DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Md); }
         errorBanner.SizeChanged += (_, _) => Place(); errorBanner.RegisterPropertyChangedCallback(UIElement.VisibilityProperty, (_, _) => Place()); Place();
     }
     private void ScreenChanged() => DispatcherQueue.TryEnqueue(() => { if (screenBanner is not null) screenBanner.Visibility = screenHub?.Sessions.Count > 0 ? Visibility.Visible : Visibility.Collapsed; mobileRouter?.Changed(); });
@@ -62,7 +62,7 @@ public sealed partial class MainWindow
     {
         var rows = new StackPanel(); const string deviceRow = "screen-share-device";
         AutomationProperties.SetAutomationId(rows, "settings-screen-share");
-        var description = new StackPanel { Spacing = 4 };
+        var description = new StackPanel { Spacing = DesignMetrics.Spacing.Xs };
         description.Children.Add(SettingsText(Locale.Get("windows.screenShare.description"), 11, DesignToken.Ink2));
         description.Children.Add(SettingsText(Locale.Get("windows.screenShare.inputDescription"), 11, DesignToken.Ink2));
         SettingsRow(rows, description);
@@ -71,7 +71,7 @@ public sealed partial class MainWindow
         AutomationProperties.SetAutomationId(scene, "settings-screen-share-scene");
         var stopAll = SettingsPush(Button(Locale.Get("windows.screenShare.stopAll"), () => screenHub?.KillAllAsync() ?? Task.CompletedTask), SettingsControlSize.Small);
         AutomationProperties.SetAutomationId(stopAll, "settings-screen-share-stop-all");
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
         buttons.Children.Add(scene); buttons.Children.Add(stopAll);
         SettingsRow(rows, buttons);
         SettingsRow(rows, SettingsText(Locale.Get("settings.screenShare.scene.description"), 10, DesignToken.Ink2));
@@ -97,20 +97,20 @@ public sealed partial class MainWindow
                 if (device.Legacy)
                 {
                     // A phone that pairs with the key alone cannot be told apart, so it can never be allowed (M/ScreenShareSettingsSection.swift:93-103).
-                    var old = new Grid { ColumnSpacing = 8 };
+                    var old = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
                     AutomationProperties.SetAutomationId(old, "settings-screen-share-legacy");
                     old.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); old.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
                     var unknown = SettingsSymbol("", 14, DesignToken.Ink2); unknown.VerticalAlignment = VerticalAlignment.Top; old.Children.Add(unknown);
-                    var why = new StackPanel { Spacing = 2 };
+                    var why = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
                     why.Children.Add(SettingsText(device.Name, 12)); why.Children.Add(SettingsText(Locale.Get("settings.screenShare.legacyUnsupported"), 10, DesignToken.Ink2));
                     Grid.SetColumn(why, 1); old.Children.Add(why);
                     contents.Add(old); continue;
                 }
                 var sessions = screenHub?.Sessions.Where(s => s.DeviceId == device.Id).ToList() ?? [];
                 var available = screenPlatform?.Available == true && service.Snapshot.MobileRemote.Enabled;
-                var row = new StackPanel { Spacing = 6, Margin = new Thickness(0, 2, 0, 2) };
+                var row = new StackPanel { Spacing = DesignMetrics.Spacing.Sm, Margin = new Thickness(0, DesignMetrics.Spacing.Xxs, 0, DesignMetrics.Spacing.Xxs) };
                 AutomationProperties.SetAutomationId(row, "settings-screen-share-device-" + device.Id);
-                var head = new Grid { ColumnSpacing = 8 };
+                var head = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
                 head.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); head.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); head.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
                 head.Children.Add(SettingsSymbol("", 14, sessions.Count > 0 ? DesignToken.DoneText : DesignToken.Ink2));
                 var name = SettingsText(device.Name, 12); Grid.SetColumn(name, 1); head.Children.Add(name);
@@ -118,7 +118,7 @@ public sealed partial class MainWindow
                 var toggle = SettingsSwitch(allowLabel, grant.Allowed, "settings-screen-share-allow-" + device.Id); toggle.IsEnabled = available;
                 void Toggled() => _ = Act(() => Change(device.Id, toggle.IsChecked == true, grant.Grant, grant.Grant));
                 toggle.Checked += (_, _) => Toggled(); toggle.Unchecked += (_, _) => Toggled();
-                var allow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+                var allow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
                 allow.Children.Add(SettingsText(allowLabel, 11)); allow.Children.Add(toggle);
                 Grid.SetColumn(allow, 2); head.Children.Add(allow);
                 row.Children.Add(head);
@@ -133,7 +133,7 @@ public sealed partial class MainWindow
                 }
                 if (grant.ControlKeyPublic is { } key)
                 {
-                    var line = new Grid { ColumnSpacing = 6 };
+                    var line = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
                     line.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); line.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); line.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
                     line.Children.Add(SettingsSymbol("", 10, DesignToken.Ink2));
                     var fingerprint = SettingsText(Locale.Get("settings.screenShare.keyFingerprint", new Dictionary<string, string> { ["fingerprint"] = ScreenSharePolicy.Fingerprint(Convert.FromBase64String(key)) }), 11, mono: true, selectable: true);
@@ -151,7 +151,7 @@ public sealed partial class MainWindow
                 if (sessions.Count == 0) row.Children.Add(SettingsText(Locale.Get("settings.screenShare.noSession"), 10, DesignToken.Ink2));
                 foreach (var session in sessions)
                 {
-                    var live = new Grid { ColumnSpacing = 6 }; live.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); live.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); live.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+                    var live = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm }; live.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); live.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); live.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
                     live.Children.Add(new Microsoft.UI.Xaml.Shapes.Ellipse { Width = 6, Height = 6, Fill = brushes.Brush(DesignToken.DoneText), VerticalAlignment = VerticalAlignment.Center });
                     var since = SettingsText(Locale.Get(session.Mode == "control" ? "settings.screenShare.sessionControl" : "settings.screenShare.sessionView", new Dictionary<string, string> { ["time"] = session.StartedAt.ToLocalTime().ToString("HH:mm") }), 11);
                     Grid.SetColumn(since, 1); live.Children.Add(since);

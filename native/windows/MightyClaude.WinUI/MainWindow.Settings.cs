@@ -188,8 +188,8 @@ public sealed partial class MainWindow
         const string cliResults = "cli-results", pluginResultRows = "plugin-results";
         StackPanel ResultRow(string glyph, DesignToken ink, string title, string? provider, string? change, string detail, string id)
         {
-            var row = new StackPanel { Spacing = 4 };
-            var head = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            var row = new StackPanel { Spacing = DesignMetrics.Spacing.Xs };
+            var head = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
             head.Children.Add(SettingsSymbol(glyph, 12, ink)); head.Children.Add(SettingsText(title, 11, medium: true));
             if (provider is not null && ProviderCatalog.IsBeta(provider)) head.Children.Add(BetaBadgeView.Create(brushes));
             row.Children.Add(head);
@@ -317,7 +317,7 @@ public sealed partial class MainWindow
 
         if (fileError is not null)
         {
-            var banner = new Grid { ColumnSpacing = 6 };
+            var banner = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             banner.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); banner.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
             var mark = SettingsSymbol("", 12, DesignToken.WaitText); mark.VerticalAlignment = VerticalAlignment.Top; mark.Margin = new Thickness(0, 1, 0, 0);
             banner.Children.Add(mark);
@@ -327,13 +327,13 @@ public sealed partial class MainWindow
         }
 
         // Results from the last install run.
-        toolkitResultsPanel = new StackPanel { Spacing = 2, Margin = new Thickness(0, 4, 0, 4) };
+        toolkitResultsPanel = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs, Margin = new Thickness(0, DesignMetrics.Spacing.Xs, 0, DesignMetrics.Spacing.Xs) };
         AutomationProperties.SetAutomationId(toolkitResultsPanel, "settings-toolkit-results");
         SettingsRow(rows, toolkitResultsPanel, tag: ToolkitResultsRow).Visibility = Visibility.Collapsed;
         if (toolkitRunResults is not null) FillToolkitResults(toolkitResultsPanel, toolkitRunResults);
 
         // Action buttons row.
-        var btnRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        var btnRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
         var addBtn = SettingsPush(new Button { Content = Locale.Get("settings.toolkit.addButton") }, SettingsControlSize.Small);
         AutomationProperties.SetAutomationId(addBtn, "settings-toolkit-add");
         addBtn.Click += async (_, _) => await Act(() => AddToolkitEntry(store));
@@ -365,12 +365,12 @@ public sealed partial class MainWindow
         var contents = new List<FrameworkElement>();
         foreach (var row in ComponentSection.SectionRows(rt))
         {
-            var rowPanel = new StackPanel { Spacing = 6, Margin = new Thickness(0, 4, 0, 4) };
+            var rowPanel = new StackPanel { Spacing = DesignMetrics.Spacing.Sm, Margin = new Thickness(0, DesignMetrics.Spacing.Xs, 0, DesignMetrics.Spacing.Xs) };
             AutomationProperties.SetAutomationId(rowPanel, "component-" + row.Id);
 
-            var header = new Grid { ColumnSpacing = 8 };
+            var header = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             header.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-            var name = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            var name = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
             name.Children.Add(ProviderMarkView.Create(row.Id, SettingsProviderMark));
             name.Children.Add(SettingsText(row.Title, 13, medium: true));
             if (ProviderCatalog.IsBeta(row.Id)) name.Children.Add(BetaBadgeView.Create(brushes));
@@ -383,7 +383,7 @@ public sealed partial class MainWindow
 
             if (row.Actions.Count > 0)
             {
-                var actionsPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+                var actionsPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
                 foreach (var action in row.Actions)
                 {
                     var actionId = action.Id;
@@ -428,15 +428,15 @@ public sealed partial class MainWindow
         var probe = options.SmokeTest ? new ToolkitProbeContext { HomeDirectory = StateDirectory, PathDirectories = [], LocalAppData = StateDirectory } : LiveProbeContext();
         foreach (var entry in entries)
         {
-            var row = new StackPanel { Spacing = 4, Margin = new Thickness(0, 2, 0, 2) };
+            var row = new StackPanel { Spacing = DesignMetrics.Spacing.Xs, Margin = new Thickness(0, DesignMetrics.Spacing.Xxs, 0, DesignMetrics.Spacing.Xxs) };
             AutomationProperties.SetAutomationId(row, "toolkit-entry-" + entry.Id);
 
             var isBundled = entry.Source == ToolkitFileReader.ToolkitEntrySource.Bundled;
             var approval = isBundled ? null : store.GetApproval(entry);
 
-            var header = new Grid { ColumnSpacing = 6 };
+            var header = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             header.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-            var name = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            var name = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
             name.Children.Add(SettingsSymbol("", 12, DesignToken.Ink));
             name.Children.Add(SettingsText(entry.DisplayName, 13, medium: true));
             if (isBundled) name.Children.Add(SettingsCapsule(Locale.Get("settings.toolkit.bundledBadge"), brushes.Brush(DesignToken.Ink2), brushes.Brush(DesignToken.Ink2, ToolkitBadgeTint), 9, 3));
@@ -452,7 +452,7 @@ public sealed partial class MainWindow
 
             if (!isBundled)
             {
-                var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+                var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
                 if (approval is null)
                 {
                     actions.Children.Add(SettingsText(Locale.Get("settings.toolkit.needsApproval"), 11, DesignToken.Ink2));
@@ -502,7 +502,7 @@ public sealed partial class MainWindow
                 ToolkitRunItem.Verdict.Failed => (Locale.Get("settings.toolkit.verdictFailed"), "", DesignToken.ErrText),
                 _ => (Locale.Get("settings.toolkit.verdictSkipped"), "", DesignToken.Ink2),
             };
-            var line = new Grid { ColumnSpacing = 6 };
+            var line = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             line.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); line.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); line.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             line.Children.Add(SettingsSymbol(glyph, 11, ink));
             var name = SettingsText(item.EntryId, 11); Grid.SetColumn(name, 1); line.Children.Add(name);
@@ -524,13 +524,13 @@ public sealed partial class MainWindow
         if (plan.Count == 0) return;
 
         // Show confirm dialog: list every argv before running anything.
-        var argsList = new StackPanel { Spacing = 4 };
+        var argsList = new StackPanel { Spacing = DesignMetrics.Spacing.Xs };
         argsList.Children.Add(new TextBlock
         {
             Text = Locale.Get("settings.toolkit.confirmDescription"),
             TextWrapping = TextWrapping.Wrap,
             FontSize = 12,
-            Margin = new Thickness(0, 0, 0, 6),
+            Margin = new Thickness(0, 0, 0, DesignMetrics.Spacing.Sm),
         });
         foreach (var item in plan.Where(i => i.Action == ToolkitPlanItem.PlanAction.Run))
             foreach (var argv in item.Commands)
@@ -663,11 +663,11 @@ public sealed partial class MainWindow
             foreach (var id in Wire.Providers)
             {
                 var item = runtime?.Providers.FirstOrDefault(provider => provider.Id == id);
-                var row = new StackPanel { Spacing = 6, Margin = new Thickness(0, 4, 0, 4) };
+                var row = new StackPanel { Spacing = DesignMetrics.Spacing.Sm, Margin = new Thickness(0, DesignMetrics.Spacing.Xs, 0, DesignMetrics.Spacing.Xs) };
                 AutomationProperties.SetAutomationId(row, "settings-provider-" + id);
-                var header = new Grid { ColumnSpacing = 8 };
+                var header = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
                 header.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-                var name = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+                var name = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
                 name.Children.Add(ProviderMarkView.Create(id, SettingsProviderMark));
                 name.Children.Add(SettingsText(item?.Name ?? ProviderCatalog.Name(id), 13, medium: true));
                 if (ProviderCatalog.IsBeta(id)) name.Children.Add(BetaBadgeView.Create(brushes));
@@ -758,7 +758,7 @@ public sealed partial class MainWindow
         Grid AccountRow(CliAccountStatus status)
         {
             var provider = status.Provider;
-            var row = new Grid { RowSpacing = 6 };
+            var row = new Grid { RowSpacing = DesignMetrics.Spacing.Sm };
             AutomationProperties.SetAutomationId(row, AccountRowIdPrefix + provider);
             row.RowDefinitions.Add(new() { Height = GridLength.Auto }); row.RowDefinitions.Add(new() { Height = GridLength.Auto });
             var buttons = new List<Button>();
@@ -779,8 +779,8 @@ public sealed partial class MainWindow
             mark.HorizontalAlignment = HorizontalAlignment.Center; mark.VerticalAlignment = VerticalAlignment.Top; mark.Margin = new Thickness(0, 1, 0, 0);
             Place(mark, new(18));
 
-            var words = new StackPanel { Spacing = 2, HorizontalAlignment = HorizontalAlignment.Left };
-            var name = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            var words = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs, HorizontalAlignment = HorizontalAlignment.Left };
+            var name = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
             name.Children.Add(SettingsText(CliUpdateService.ProviderLabel(provider), 12, medium: true));
             if (ProviderCatalog.IsBeta(provider)) name.Children.Add(BetaBadgeView.Create(brushes));
             words.Children.Add(name);
@@ -882,7 +882,7 @@ public sealed partial class MainWindow
     /// </summary>
     private Button SettingsMenuButton(string title, MenuFlyout menu)
     {
-        var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7, VerticalAlignment = VerticalAlignment.Center };
+        var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Center };
         line.Children.Add(new TextBlock { Text = title, FontSize = 13, VerticalAlignment = VerticalAlignment.Center });
         line.Children.Add(SettingsChip(""));
         var button = new Button { Content = line, Flyout = menu, Height = SettingsControlHeight, MinHeight = 0, MinWidth = 0, Padding = new Thickness(0), BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(SettingsControlRadius) };

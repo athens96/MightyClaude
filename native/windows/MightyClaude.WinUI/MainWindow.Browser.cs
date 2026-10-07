@@ -88,7 +88,7 @@ public sealed partial class MainWindow
     /// <summary>The runtime-missing notice, built standalone so the smoke can scan its copy.</summary>
     internal static StackPanel BuildBrowserMissingNotice()
     {
-        var panel = new StackPanel { Spacing = 12, Padding = new Thickness(24) };
+        var panel = new StackPanel { Spacing = DesignMetrics.Spacing.Md, Padding = new Thickness(DesignMetrics.Spacing.Xl) };
         panel.Children.Add(new TextBlock { Text = Locale.Get("browser.runtime.missing"), TextWrapping = TextWrapping.Wrap });
         panel.Children.Add(new Button { Content = Locale.Get("browser.runtime.install") });
         return panel;
@@ -259,7 +259,7 @@ public sealed partial class MainWindow
             browserHistory = new BrowserHistory();
             // Edge to edge in the card, under the slim bar its tab group draws (M/BrowserPaneView.swift:30-34):
             // the toolbar, a 1pt line, then the page, with nothing between them.
-            const double inset = 12;
+            const double inset = PaneInset;
             browserHost = new Grid { Margin = new Thickness(-inset), CornerRadius = new CornerRadius(0, 0, DesignMetrics.Radius.Pane, DesignMetrics.Radius.Pane) };
             browserHost.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             browserHost.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -282,7 +282,7 @@ public sealed partial class MainWindow
         /// </summary>
         private Grid BuildBrowserNavBar()
         {
-            var nav = new Grid { ColumnSpacing = 6, Padding = new Thickness(12, 8, 12, 8), Background = owner.brushes.Subtle };
+            var nav = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, Padding = new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm), Background = owner.brushes.Subtle };
             for (var index = 0; index < 3; index++) nav.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             nav.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
@@ -295,7 +295,7 @@ public sealed partial class MainWindow
                 // AppKit's placeholder is the tertiary ink (M/BrowserPaneView.swift:72).
                 PlaceholderText = Locale.Get("browser.address.placeholder"), PlaceholderForeground = owner.brushes.Tertiary,
                 VerticalAlignment = VerticalAlignment.Center,
-                FontSize = 12, MinHeight = 0, Padding = new Thickness(7, 3, 7, 4), CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow),
+                FontSize = 12, MinHeight = 0, Padding = new Thickness(DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xxs, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xs), CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow),
             };
             AutomationProperties.SetName(addressBox, Locale.Get("browser.address.placeholder"));
 
@@ -445,7 +445,7 @@ public sealed partial class MainWindow
         {
             var panel = new StackPanel
             {
-                Spacing = 12, Padding = new Thickness(24),
+                Spacing = DesignMetrics.Spacing.Md, Padding = new Thickness(DesignMetrics.Spacing.Xl),
                 VerticalAlignment = VerticalAlignment.Center,
                 HorizontalAlignment = HorizontalAlignment.Center,
             };
@@ -499,7 +499,7 @@ public sealed partial class MainWindow
         private StackPanel BrowserNotice(string text)
         {
             var ink = owner.brushes.Brush(DesignToken.Ink2);
-            var notice = new StackPanel { Spacing = 12, Padding = new Thickness(24), VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
+            var notice = new StackPanel { Spacing = DesignMetrics.Spacing.Md, Padding = new Thickness(DesignMetrics.Spacing.Xl), VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
             notice.Children.Add(new FontIcon { Glyph = "\uE774", FontSize = 36, Foreground = ink, HorizontalAlignment = HorizontalAlignment.Center });
             notice.Children.Add(new TextBlock { Text = text, FontFamily = BodyFont, FontSize = DesignMetrics.Type.Body, Foreground = ink, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, MaxWidth = 380 });
             return notice;

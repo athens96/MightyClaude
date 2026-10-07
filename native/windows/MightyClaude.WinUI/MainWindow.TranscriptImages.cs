@@ -39,9 +39,9 @@ public sealed partial class MainWindow
                 var picture = new Image { Source = bitmap, Stretch = Stretch.Uniform };
                 AutomationProperties.SetName(picture, action.Image?.Source ?? Locale.Get("images.open"));
                 var viewer = new ScrollViewer { Content = picture, MinZoomFactor = .25f, MaxZoomFactor = 4, ZoomMode = ZoomMode.Enabled, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-                var body = new Grid { Width = Math.Clamp(owner.root.ActualWidth - 120, 280, 850), Height = Math.Clamp(owner.root.ActualHeight - 180, 260, 650), RowSpacing = 8 };
+                var body = new Grid { Width = Math.Clamp(owner.root.ActualWidth - 120, 280, 850), Height = Math.Clamp(owner.root.ActualHeight - 180, 260, 650), RowSpacing = DesignMetrics.Spacing.Sm };
                 body.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) }); body.RowDefinitions.Add(new() { Height = GridLength.Auto }); body.Children.Add(viewer);
-                var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+                var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
                 controls.Children.Add(Button("−", () => { viewer.ChangeView(null, null, Math.Max(.25f, viewer.ZoomFactor / 1.25f)); return Task.CompletedTask; }));
                 controls.Children.Add(Button(Locale.Get("files.image.fit"), () => { viewer.ChangeView(0, 0, 1); return Task.CompletedTask; }));
                 controls.Children.Add(Button("+", () => { viewer.ChangeView(null, null, Math.Min(4, viewer.ZoomFactor * 1.25f)); return Task.CompletedTask; }));

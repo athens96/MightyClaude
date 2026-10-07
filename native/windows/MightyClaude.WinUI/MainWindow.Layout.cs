@@ -247,6 +247,8 @@ public sealed partial class MainWindow
     private readonly Dictionary<string, (Grid Cell, Border Shape, Button Tab, Button Close, TextBlock Title)> tabCells = [];
     /// <summary>The drop preview while a tab is dragged over a group: accent at 0.16 under the zone's words on page at 0.95 (M/PaneDockDrag.swift:138, 143).</summary>
     private const double DropHintOpacity = 0.16, DropHintLabelOpacity = 0.95;
+    /// <summary>The drop preview's margin inside its tab group.</summary>
+    internal const double DropHintInset = DesignMetrics.Spacing.Xs;
     /// <summary>
     /// Each split's divider and the handle drawn over it, by split id, and each tab group's drop preview with
     /// the call that shows it for a zone, by group id (read by the paletteDesign smoke).
@@ -291,7 +293,7 @@ public sealed partial class MainWindow
     {
         var group = new Grid { AllowDrop = true, Background = brushes.Brush(DesignToken.Card), CornerRadius = new CornerRadius(DesignMetrics.Radius.Pane) };
         group.RowDefinitions.Add(new() { Height = GridLength.Auto }); group.RowDefinitions.Add(new() { Height = GridLength.Auto }); group.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) });
-        var tabs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 3, Padding = new Thickness(5, TabStripPadding, 5, TabStripPadding) };
+        var tabs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xxs, Padding = new Thickness(DesignMetrics.Spacing.Xs, TabStripPadding, DesignMetrics.Spacing.Xs, TabStripPadding) };
         var bar = new ScrollViewer { Content = tabs, HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Enabled, VerticalScrollMode = ScrollMode.Disabled };
         var holdsActive = state.ActiveSessionId is { } activeId && node.SessionIds.Contains(activeId);
         var strip = new Grid { Height = DesignMetrics.Layout.TabStrip, Background = brushes.Subtle, CornerRadius = new CornerRadius(DesignMetrics.Radius.Pane, DesignMetrics.Radius.Pane, 0, 0) };
@@ -308,13 +310,13 @@ public sealed partial class MainWindow
         var accent = brushes.Brush(DesignToken.Accent);
         var hintWords = new TextBlock { Text = Locale.Get("layout.drop.merge"), FontFamily = BodyFont, FontSize = DesignMetrics.Type.Block, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = accent };
         var hintEdge = new Microsoft.UI.Xaml.Shapes.Rectangle { RadiusX = 9, RadiusY = 9, Fill = brushes.Brush(DesignToken.Accent, DropHintOpacity), Stroke = accent, StrokeThickness = DesignMetrics.Stroke.Active, StrokeDashArray = [.. DesignMetrics.Dash.InStrokeUnits([6, 4], DesignMetrics.Stroke.Active)] };
-        var hint = new Grid { Margin = new Thickness(5), IsHitTestVisible = false, Visibility = Visibility.Collapsed };
-        var hintLabel = new Border { Child = hintWords, Padding = new Thickness(12, 7, 12, 7), CornerRadius = new CornerRadius(15), Background = brushes.Brush(DesignToken.Page, DropHintLabelOpacity), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        var hint = new Grid { Margin = new Thickness(DropHintInset), IsHitTestVisible = false, Visibility = Visibility.Collapsed };
+        var hintLabel = new Border { Child = hintWords, Padding = new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm), CornerRadius = new CornerRadius(15), Background = brushes.Brush(DesignToken.Page, DropHintLabelOpacity), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
         hint.Children.Add(hintEdge); hint.Children.Add(hintLabel);
-        // The preview covers the half the pane would take, or the whole group to join its tabs, less its 5pt margin.
+        // The preview covers the half the pane would take, or the whole group to join its tabs, less its margin.
         void ShowHint(string edge)
         {
-            hint.Width = edge is "left" or "right" ? Math.Max(0, group.ActualWidth / 2 - 10) : double.NaN; hint.Height = edge is "top" or "bottom" ? Math.Max(0, group.ActualHeight / 2 - 10) : double.NaN;
+            hint.Width = edge is "left" or "right" ? Math.Max(0, group.ActualWidth / 2 - 2 * DropHintInset) : double.NaN; hint.Height = edge is "top" or "bottom" ? Math.Max(0, group.ActualHeight / 2 - 2 * DropHintInset) : double.NaN;
             hint.HorizontalAlignment = edge == "left" ? HorizontalAlignment.Left : edge == "right" ? HorizontalAlignment.Right : HorizontalAlignment.Stretch;
             hint.VerticalAlignment = edge == "top" ? VerticalAlignment.Top : edge == "bottom" ? VerticalAlignment.Bottom : VerticalAlignment.Stretch;
             hintWords.Text = Locale.Get(edge switch { "left" => "layout.drop.left", "right" => "layout.drop.right", "top" => "layout.drop.top", "bottom" => "layout.drop.bottom", _ => "layout.drop.merge" });
@@ -329,14 +331,14 @@ public sealed partial class MainWindow
             // PaneDockTab (M/PaneDockView.swift:236-266): the handle covers the tab up to its close button,
             // l10 r6, at least 56 wide and Layout.Tab tall; the selected tab is a card with a line border, r6, drawn as a shape
             // under the buttons so the border takes no room from them.
-            var tab = Button(session.Title, () => SelectLayoutSession(id)); tab.CanDrag = true; tab.AllowDrop = true; tab.MinWidth = 56; tab.Height = DesignMetrics.Layout.Tab; tab.MinHeight = 0; tab.Padding = new(10, 0, 6, 0); tab.CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment); tab.BorderThickness = new(0);
+            var tab = Button(session.Title, () => SelectLayoutSession(id)); tab.CanDrag = true; tab.AllowDrop = true; tab.MinWidth = 56; tab.Height = DesignMetrics.Layout.Tab; tab.MinHeight = 0; tab.Padding = new(DesignMetrics.Inset.TabLeading, 0, DesignMetrics.Inset.TabTrailing, 0); tab.CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment); tab.BorderThickness = new(0);
             tab.HorizontalContentAlignment = HorizontalAlignment.Left; tab.VerticalAlignment = VerticalAlignment.Center;
             PaintPlainButton(tab, brushes.Transparent, brushes.Transparent);
             tab.Content = TabIndicator(session, isSelected); tab.ContextFlyout = TabMenu(id);
             tab.DoubleTapped += async (_, args) => { args.Handled = true; await RenameSession(id); };
             ToolTipService.SetToolTip(tab, Locale.Get("layout.tab.dragTooltip", new Dictionary<string, string> { ["title"] = session.Title }));
             // Where a dragged tab would land: a 2pt accent bar on this tab's leading or trailing edge (M/PaneDockDrag.swift:218-222).
-            var landing = new Border { Width = DesignMetrics.Stroke.Active, CornerRadius = new CornerRadius(1), Margin = new Thickness(0, 2, 0, 2), Background = accent, IsHitTestVisible = false, Visibility = Visibility.Collapsed };
+            var landing = new Border { Width = DesignMetrics.Stroke.Active, CornerRadius = new CornerRadius(1), Margin = new Thickness(0, DesignMetrics.Spacing.Xxs, 0, DesignMetrics.Spacing.Xxs), Background = accent, IsHitTestVisible = false, Visibility = Visibility.Collapsed };
             tab.DragStarting += (_, args) => { draggedSessionId = id; draggedWorkspaceId = workspace; args.Data.SetData(PaneDragFormat, id); args.Data.RequestedOperation = DataPackageOperation.Move; };
             tab.DropCompleted += (_, _) => { draggedSessionId = null; draggedWorkspaceId = null; };
             tab.DragOver += (_, args) =>
@@ -357,7 +359,7 @@ public sealed partial class MainWindow
             PaintPlainButton(close, brushes.Transparent, brushes.Transparent, ink: brushes.Brush(DesignToken.Ink2));
             AutomationProperties.SetName(close, Locale.Get("layout.tab.closeAccessibility", new Dictionary<string, string> { ["title"] = session.Title }));
             var handle = new Grid(); handle.Children.Add(tab); handle.Children.Add(landing);
-            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 0, Padding = new Thickness(0, 0, 2, 0) }; row.Children.Add(handle); row.Children.Add(close);
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 0, Padding = new Thickness(0, 0, DesignMetrics.Spacing.Xxs, 0) }; row.Children.Add(handle); row.Children.Add(close);
             var shape = new Border
             {
                 CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), BorderThickness = new Thickness(DesignMetrics.Stroke.Line), IsHitTestVisible = false,

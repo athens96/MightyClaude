@@ -13,7 +13,7 @@ public sealed partial class MainWindow
         dialogOpen = true;
         try
         {
-            var content = new StackPanel { Spacing = 12, Width = 580 };
+            var content = new StackPanel { Spacing = DesignMetrics.Spacing.Md, Width = 580 };
             content.Children.Add(new TextBlock { Text = Locale.Get("terminal.history.help"), TextWrapping = TextWrapping.Wrap, FontSize = 12, Opacity = .7 });
             var text = session.Logs.Count == 0 ? Locale.Get("terminal.history.empty") : string.Join("\n\n", session.Logs.Select(log => "[" + log.Kind + "] " + log.Text));
             content.Children.Add(new ScrollViewer { MaxHeight = 360, Content = new TextBlock { Text = text, IsTextSelectionEnabled = true, TextWrapping = TextWrapping.Wrap, FontFamily = new FontFamily(DesignMetrics.Font.Mono), FontSize = 11 } });

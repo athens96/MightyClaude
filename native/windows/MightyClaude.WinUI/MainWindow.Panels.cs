@@ -11,21 +11,24 @@ namespace MightyClaude.WinUI;
 // lightweight-styling value is written once into the element's own resources before it is shown.
 public sealed partial class MainWindow
 {
-    /// <summary>A sheet's padding (M/ResumeSessionSheet.swift: 20 all round).</summary>
-    internal const double SheetPadding = 20;
+    /// <summary>A sheet's padding, all round (<c>Inset.Sheet</c>; M/ResumeSessionSheet.swift).</summary>
+    internal const double SheetPadding = DesignMetrics.Inset.Sheet;
     /// <summary>The start-new-or-resume choice sheet's width and the resume list's size (M/ResumeSessionSheet.swift).</summary>
     internal const double ChoiceSheetWidth = 400, ResumeSheetWidth = 560, ResumeSheetHeight = 520;
-    /// <summary>A popover's padding and corner (M/StatusBarUsage.swift:76; the slash palette's radius 10).</summary>
-    internal const double PopoverPadding = 16;
+    /// <summary>A popover's padding (<c>Inset.Popover</c>; M/StatusBarUsage.swift:76).</summary>
+    internal const double PopoverPadding = DesignMetrics.Inset.Popover;
 
     /// <summary>The corner of a sheet, as macOS rounds its own (measured on docs/design-system/crops/sheet-choice-light.webp; no Swift line sets it).</summary>
     internal const double SheetRadius = 12;
     /// <summary>What a fixed-size sheet leaves clear of the window's edges when the window is smaller than it, and the least it shrinks to.</summary>
-    internal const double SheetMargin = 24, SheetMinimum = 240;
+    internal const double SheetMargin = DesignMetrics.Spacing.Xl, SheetMinimum = 240;
     /// <summary>A fixed sheet's side as it is drawn in a window with this much room: the side itself, or what the window leaves it.</summary>
     internal static double SheetFit(double side, double room) => room > 0 ? Math.Min(side, Math.Max(SheetMinimum, room - 2 * SheetMargin)) : side;
     /// <summary>A push button as the Mac draws its standard one: 20 high around 13pt words set in 8 (measured on the same crop).</summary>
     internal const double PushButtonHeight = 20;
+    /// <summary>A button on the pane's question, permission and plan cards (M/PaneChrome.swift:165): 24 high, padded <c>Spacing.Lg</c> at the sides.</summary>
+    internal const double CardButtonHeight = 24;
+    internal static readonly Thickness CardButtonPadding = new(DesignMetrics.Spacing.Lg, 0, DesignMetrics.Spacing.Lg, 0);
 
     /// <summary>
     /// A ContentDialog drawn as the Mac's sheet: the <c>card</c> surface over the content and the
@@ -96,7 +99,7 @@ public sealed partial class MainWindow
     /// </summary>
     internal Button PushButton(string title, bool prominent = false)
     {
-        var button = new Button { Content = title, FontSize = DesignMetrics.Type.Body, Height = PushButtonHeight, MinHeight = 0, MinWidth = 0, Padding = new Thickness(8, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
+        var button = new Button { Content = title, FontSize = DesignMetrics.Type.Body, Height = PushButtonHeight, MinHeight = 0, MinWidth = 0, Padding = new Thickness(DesignMetrics.Spacing.Md, 0, DesignMetrics.Spacing.Md, 0), VerticalAlignment = VerticalAlignment.Center };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, title);
         if (!prominent) return Toned(button);
         button.BorderThickness = new Thickness(0); button.CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment);
@@ -238,7 +241,7 @@ public sealed partial class MainWindow
         if (beta)
         {
             // M/ScreenShareSettingsSection.swift:48-52: the title and the capsule, 6 apart.
-            var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
             line.Children.Add(heading); line.Children.Add(BetaBadgeView.Create(brushes));
             wrapper.Children.Add(line);
         }

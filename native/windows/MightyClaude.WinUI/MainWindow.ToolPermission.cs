@@ -15,7 +15,7 @@ public sealed partial class MainWindow
     {
         // The card sits over the composer card, 12 in from the pane's sides and 8 under what is
         // above it (M/SessionPaneView.swift:156, M/ToolPermissionBar.swift:104-105).
-        private readonly StackPanel toolPermissionHost = new() { Margin = new Thickness(12, 8, 12, 0), Visibility = Visibility.Collapsed };
+        private readonly StackPanel toolPermissionHost = new() { Margin = new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Md, 0), Visibility = Visibility.Collapsed };
         private readonly List<ToolPermissionRequest> toolPermissions = [];
         // Stored for smoke assertions — updated by RenderToolPermissions.
         private TextBlock permTitleBlock = null!;
@@ -39,13 +39,13 @@ public sealed partial class MainWindow
 
         /// <summary>
         /// A button on the question and permission cards (M/PaneChrome.swift:145-169): 12 bold, padding
-        /// h13, 28 high, r9; the prominent one <c>ink</c> behind <c>card</c> words, the other
+        /// <see cref="CardButtonPadding"/>, <see cref="CardButtonHeight"/> high, r9; the prominent one <c>ink</c> behind <c>card</c> words, the other
         /// <c>cardRaised</c> with a 1pt <c>line</c> and <c>ink</c> words; the whole button at 0.45 while disabled.
         /// </summary>
         private void PaintCardButton(Button button, bool prominent)
         {
             button.CornerRadius = new CornerRadius(DesignMetrics.Radius.CardButton); button.FontSize = 12; button.FontWeight = Microsoft.UI.Text.FontWeights.Bold;
-            button.Padding = new Thickness(13, 0, 13, 0); button.MinWidth = 0; button.MinHeight = 28; button.Height = 28;
+            button.Padding = CardButtonPadding; button.MinWidth = 0; button.MinHeight = CardButtonHeight; button.Height = CardButtonHeight;
             button.BorderThickness = new Thickness(prominent ? 0 : DesignMetrics.Stroke.Line);
             var fill = owner.brushes.Brush(prominent ? DesignToken.Ink : DesignToken.CardRaised); var ink = owner.brushes.Brush(prominent ? DesignToken.Card : DesignToken.Ink);
             owner.PaintPlainButton(button, fill, fill, prominent ? null : owner.brushes.Brush(DesignToken.Line), ink, ink);
@@ -57,7 +57,7 @@ public sealed partial class MainWindow
         private Border WaitCard(UIElement body) => new()
         {
             Child = body, CornerRadius = new CornerRadius(DesignMetrics.Radius.Composer), BorderThickness = new Thickness(DesignMetrics.Stroke.Active),
-            BorderBrush = owner.brushes.Brush(DesignToken.Wait), Background = owner.brushes.Brush(DesignToken.Card), Padding = new Thickness(14 - DesignMetrics.Stroke.Active),
+            BorderBrush = owner.brushes.Brush(DesignToken.Wait), Background = owner.brushes.Brush(DesignToken.Card), Padding = new Thickness(DesignMetrics.Spacing.Md - DesignMetrics.Stroke.Active),
         };
 
         /// <summary>The amber disc that heads a card waiting on the user (M/PaneChrome.swift:172-180): 22 across in <c>wait</c>, its symbol in <c>onWait</c>.</summary>
@@ -107,7 +107,7 @@ public sealed partial class MainWindow
             permCountBlock = new TextBlock { FontSize = 12, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
             AutomationProperties.SetAutomationId(permCountBlock, "permission-count-" + id);
 
-            var titleRow = new Grid { ColumnSpacing = 8 };
+            var titleRow = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             foreach (var width in new[] { GridLength.Auto, GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto }) titleRow.ColumnDefinitions.Add(new() { Width = width });
             var hand = ComposerGlyph.Hand().Ink(b.Brush(DesignToken.OnWait));
             titleRow.Children.Add(WaitBadge(hand.View));
@@ -117,7 +117,7 @@ public sealed partial class MainWindow
 
             permHeadlineBlock = new TextBlock { FontSize = 14, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = ink, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, Visibility = Visibility.Collapsed };
             AutomationProperties.SetAutomationId(permHeadlineBlock, "permission-headline-" + id);
-            permFields = new StackPanel { Spacing = 6 };
+            permFields = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
             permSummaryBlock = new TextBlock { FontSize = 12, FontFamily = mono, Foreground = ink, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, Visibility = Visibility.Collapsed };
             permPathBlock = new TextBlock { FontSize = 10, Foreground = ink, TextWrapping = TextWrapping.Wrap };
             AutomationProperties.SetAutomationId(permPathBlock, "permission-path-" + id);
@@ -127,11 +127,11 @@ public sealed partial class MainWindow
             var chevron = new Grid { Width = 8, Height = 12, VerticalAlignment = VerticalAlignment.Center };
             permJsonFolded.View.HorizontalAlignment = permJsonUnfolded.View.HorizontalAlignment = HorizontalAlignment.Center;
             chevron.Children.Add(permJsonFolded.View); chevron.Children.Add(permJsonUnfolded.View);
-            var foldWords = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
+            var foldWords = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs };
             foldWords.Children.Add(chevron); foldWords.Children.Add(new TextBlock { Text = ToolPermissionStrings.BarRawJson, FontSize = 10, Foreground = ink, VerticalAlignment = VerticalAlignment.Center });
             permJsonFold = FoldButton(foldWords, ToolPermissionStrings.BarRawJson);
             AutomationProperties.SetAutomationId(permJsonFold, "permission-json-" + id);
-            permInputBlock = new TextBlock { FontFamily = mono, FontSize = 10, Foreground = ink, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, Margin = new Thickness(0, 4, 0, 0) };
+            permInputBlock = new TextBlock { FontFamily = mono, FontSize = 10, Foreground = ink, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, Margin = new Thickness(0, DesignMetrics.Spacing.Xs, 0, 0) };
             AutomationProperties.SetAutomationId(permInputBlock, "permission-input-" + id);
             void Fold()
             {
@@ -141,7 +141,7 @@ public sealed partial class MainWindow
             }
             permJsonFold.Checked += (_, _) => Fold(); permJsonFold.Unchecked += (_, _) => Fold(); Fold();
             var json = new StackPanel(); json.Children.Add(permJsonFold); json.Children.Add(permInputBlock);
-            var details = new StackPanel { Spacing = 6, Margin = new Thickness(0, 0, 4, 0) };
+            var details = new StackPanel { Spacing = DesignMetrics.Spacing.Sm, Margin = new Thickness(0, 0, DesignMetrics.Spacing.Xs, 0) };
             foreach (var part in new FrameworkElement[] { permFields, permSummaryBlock, permPathBlock, permReasonBlock, json }) details.Children.Add(part);
 
             permCannotAllowBlock = new TextBlock { FontSize = 10, Foreground = ink2, TextWrapping = TextWrapping.Wrap };
@@ -157,11 +157,11 @@ public sealed partial class MainWindow
             AutomationProperties.SetAutomationId(permAllowButton, "permission-allow-" + id);
             permAllowButton.Click += (_, _) => OnPermissionAllow();
 
-            var footer = new Grid { ColumnSpacing = 8 };
+            var footer = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             foreach (var width in new[] { new GridLength(1, GridUnitType.Star), GridLength.Auto, GridLength.Auto }) footer.ColumnDefinitions.Add(new() { Width = width });
             footer.Children.Add(noteBlock); Grid.SetColumn(permDenyButton, 1); footer.Children.Add(permDenyButton); Grid.SetColumn(permAllowButton, 2); footer.Children.Add(permAllowButton);
 
-            var body = new StackPanel { Spacing = 8 };
+            var body = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
             body.Children.Add(titleRow); body.Children.Add(permHeadlineBlock);
             body.Children.Add(new ScrollViewer { Content = details, MaxHeight = 180, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled });
             body.Children.Add(permCannotAllowBlock); body.Children.Add(footer);
@@ -213,13 +213,13 @@ public sealed partial class MainWindow
             permFields.Children.Clear(); permFields.Visibility = pres.Fields.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
             foreach (var field in pres.Fields)
             {
-                var block = new StackPanel { Spacing = 2 };
+                var block = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
                 block.Children.Add(new TextBlock { Text = field.Label, FontSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = b.Brush(DesignToken.Ink2) });
                 var value = new TextBlock { Text = field.Value, FontSize = 11, Foreground = ink, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true };
                 if (field.Code)
                 {
                     value.FontFamily = new FontFamily(DesignMetrics.Font.Mono);
-                    block.Children.Add(new Border { Child = value, Padding = new Thickness(8, 6, 8, 6), CornerRadius = new CornerRadius(DesignMetrics.Radius.Row), Background = b.Brush(DesignToken.CardRaised) });
+                    block.Children.Add(new Border { Child = value, Padding = new Thickness(DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Sm), CornerRadius = new CornerRadius(DesignMetrics.Radius.Row), Background = b.Brush(DesignToken.CardRaised) });
                 }
                 else block.Children.Add(value);
                 permFields.Children.Add(block);

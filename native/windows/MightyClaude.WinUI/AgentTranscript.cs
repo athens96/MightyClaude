@@ -486,7 +486,7 @@ internal sealed record TranscriptLink(int First, int Last, string? Label, string
 internal static class TranscriptRtf
 {
     /// <summary>The text view's inset on every side (M/AgentTranscriptView.swift:168, 372-376).</summary>
-    internal const double Inset = 15;
+    internal const double Inset = DesignMetrics.Inset.Transcript;
     /// <summary>The corner radius of the painted blocks (M/AgentTranscriptFormat.swift:487).</summary>
     internal const double BlockRadius = 11;
     /// <summary>A quote's bar: 3pt wide in the accent at 55% (M/AgentTranscriptFormat.swift:368-372).</summary>
@@ -501,6 +501,8 @@ internal static class TranscriptRtf
     internal const char LineBreak = (char)0xB;
     /// <summary>The Mac's line spacing: 3pt in a transcript (M/AgentTranscriptFormat.swift:300), 4pt in the files pane's Markdown (M/AgentMarkdownView.swift:141).</summary>
     private const double Lead = 3, PreviewLead = 4;
+    /// <summary>A boxed block's padding in the plain look and a wash's: the code block's inset and the box's hairline edge (M/AgentTranscriptFormat.swift:425-431).</summary>
+    private const double BoxPad = DesignMetrics.Inset.CodeBlock + DesignMetrics.Stroke.Hairline;
     /// <summary>Longer sources are shown as literal text, not parsed (M/AgentMarkdownView.swift:52).</summary>
     private const int MaximumRenderBytes = 131_072;
     private const int MaximumDepth = 8;
@@ -880,7 +882,7 @@ internal static class TranscriptRtf
             if (cards)
             {
                 // The request: an ink bubble over the right 85% of the width, the card colour for its words, its time under them (:186-209).
-                var bubble = w.Begin(TranscriptBlockKind.Bubble, 14, 14, 10 - Lead, 8 + Lead, margin: Math.Round(w.Width * 0.15));
+                var bubble = w.Begin(TranscriptBlockKind.Bubble, DesignMetrics.Inset.UserBubbleH, DesignMetrics.Inset.UserBubbleH, DesignMetrics.Inset.UserBubbleT - Lead, DesignMetrics.Inset.UserBubbleB + Lead, margin: Math.Round(w.Width * 0.15));
                 foreach (var line in lines) { w.Open(Line(w.Look.BodySize, line) + Lead, 3); w.Run(w.Face(w.Look.BodySize, CardInk), line); w.Close(); }
                 if (Time(entry.Timestamp) is { Length: > 0 } time) { w.Open(Line(10.5, time) + Lead, 0, align: 'r'); w.Run(w.Face(10.5, CardInk), time); w.Close(); }
                 w.End(bubble);
@@ -888,7 +890,7 @@ internal static class TranscriptRtf
             else
             {
                 // The plain look: an up-right arrow and the request on the accent wash (:67-70).
-                var wash = w.Begin(TranscriptBlockKind.Wash, 10.5, 10.5, 10.5 - Lead, 10.5 + Lead);
+                var wash = w.Begin(TranscriptBlockKind.Wash, BoxPad, BoxPad, BoxPad - Lead, BoxPad + Lead);
                 for (var index = 0; index < lines.Length; index++)
                 {
                     w.Open(Line(w.Look.BodySize, lines[index]) + Lead, 12);
@@ -907,7 +909,9 @@ internal static class TranscriptRtf
                 return;
             }
             // The speaker and the whole reply share one white card (:53-66); the plain look draws them straight on the block.
-            var card = cards ? w.Begin(TranscriptBlockKind.Card, 15, 15, 12 - Lead, 6 + Lead) : null;
+            // The card's padding counts its 1pt edge, which the Mac draws inside the padding.
+            const double edge = DesignMetrics.Stroke.Line;
+            var card = cards ? w.Begin(TranscriptBlockKind.Card, DesignMetrics.Inset.ReplyCardH + edge, DesignMetrics.Inset.ReplyCardH + edge, DesignMetrics.Inset.ReplyCardT + edge - Lead, DesignMetrics.Inset.ReplyCardB + edge + Lead) : null;
             {
                 var provider = entry.Provider ?? session.Provider; var time = Time(entry.Timestamp);
                 var words = "  " + ProviderMark.Label(provider) + (time.Length == 0 ? "" : "  ·  " + time);
@@ -968,7 +972,7 @@ internal static class TranscriptRtf
     /// <summary>
     /// One tool call as a chip row (M/AgentTranscriptFormat.swift:211-248): its state as a small filled square,
     /// the tool's name 12.5 bold, the detail 11.5 mono in ink2, then the timing, the state and the disclosure
-    /// at 10.5; on a card with a 1pt edge (errText when it failed), padding 10 by 7.
+    /// at 10.5; on a card with a 1pt edge (errText when it failed), padded by <c>Inset.ToolChip</c>.
     /// </summary>
     private static void ToolChip(Writer w, RunSession session, LogEntry entry, AgentActivity activity)
     {
@@ -977,7 +981,8 @@ internal static class TranscriptRtf
         var detail = activity.Summary.Length == 0 ? name.Length == 0 ? Locale.Get("transcript.tool.fallback") : "" : activity.Summary;
         var duration = ActivitySupport.DurationLabel(activity);
         var state = live || activity.State == "error" ? ToolState(activity.State) : null;
-        var chip = w.Begin(TranscriptBlockKind.Chip, 11, 11, 8 - Lead, 8 + Lead, error: activity.State == "error");
+        const double edge = DesignMetrics.Stroke.Line, side = DesignMetrics.Inset.ToolChipH + edge, over = DesignMetrics.Inset.ToolChipV + edge;
+        var chip = w.Begin(TranscriptBlockKind.Chip, side, side, over - Lead, over + Lead, error: activity.State == "error");
         var pitch = Math.Max(Math.Max(Line(12.5, name), Line(11.5, detail)), Line(10.5, duration + state + Locale.Get("transcript.tool.showDetail"))) + Lead;
         w.Open(pitch, 0);
         if (TranscriptMarks.Status(activity.State, live, w.Palette, w.Look.Scale, MarkLift(w, pitch, TranscriptMarks.StatusSize, 2.5)) is { } square) { w.Look.Marks.Add(w.Look.Paragraphs); w.Body.Append(square); }
@@ -1025,7 +1030,7 @@ internal static class TranscriptRtf
         {
             var question = form.Questions[index];
             var title = $"{index + 1}. {question.Header}  ·  {Locale.Get(question.MultiSelect ? "phone.questionnaire.multiple" : "phone.questionnaire.single")}";
-            var wash = w.Begin(TranscriptBlockKind.Wash, 10.5, 10.5, 10.5 - Lead, 10.5 + Lead);
+            var wash = w.Begin(TranscriptBlockKind.Wash, BoxPad, BoxPad, BoxPad - Lead, BoxPad + Lead);
             w.Open(Line(11, title) + Lead, 6); w.Run(w.Face(11, Accent, 600), title); w.Close();
             w.End(wash);
             foreach (var line in Lines(question.Question)) { w.Open(Line(14, line) + Lead, 10); w.Run(w.Face(14, Ink, 600), line); w.Close(); }
@@ -1061,13 +1066,14 @@ internal static class TranscriptRtf
 
     /// <summary>
     /// Code (M/AgentTranscriptFormat.swift:434-453): 12 mono, a line a paragraph. On a card it sits on the ink
-    /// code surface in codeText, padding 12; the plain look boxes it on the 3.5% wash, padding 10; the files
+    /// code surface in codeText, padded by <c>Inset.CodeBlock</c>; the plain look boxes it on the 3.5% wash, padded the same past its hairline; the files
     /// preview washes each line with the page colour. The whole block is what "copy code block" takes.
     /// </summary>
     private static void Code(Writer w, string code, string? language, double indent = 0, double gap = 12)
     {
         var first = w.Look.Paragraphs; var cards = w.Cards;
-        var block = w.Preview ? null : cards ? w.Begin(TranscriptBlockKind.Code, 12, 12, 12 - Lead, 12 + Lead) : w.Begin(TranscriptBlockKind.Box, 10.5, 10.5, 10.5 - Lead, 10.5 + Lead);
+        const double pad = DesignMetrics.Inset.CodeBlock;
+        var block = w.Preview ? null : cards ? w.Begin(TranscriptBlockKind.Code, pad, pad, pad - Lead, pad + Lead) : w.Begin(TranscriptBlockKind.Box, BoxPad, BoxPad, BoxPad - Lead, BoxPad + Lead);
         var ink = cards ? CodeText : Ink;
         var wash = w.Preview ? @"\highlight" + PageWash : "";
         if (language?.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() is { } name)
@@ -1302,7 +1308,8 @@ internal static class TranscriptRtf
                         w.After(gap - 8);
                         break;
                     }
-                    var bar = w.Begin(TranscriptBlockKind.Quote, QuoteBar + 10, 10, 10 - Lead, 10 + Lead);
+                    const double quotePad = DesignMetrics.Inset.Quote;
+                    var bar = w.Begin(TranscriptBlockKind.Quote, QuoteBar + quotePad, quotePad, quotePad - Lead, quotePad + Lead);
                     Blocks(w, quote.Children, indent + 3, true, gap, pictures);
                     w.End(bar);
                     break;
@@ -1356,7 +1363,7 @@ internal static class TranscriptRtf
 
     /// <summary>
     /// A table. In a transcript it takes the width in equal columns (M/AgentTranscriptFormat.swift:455-478):
-    /// 12pt cells padded 8, hairlines all round, the head row semibold on the ink at 4%. The files preview
+    /// 12pt cells padded <c>Spacing.Sm</c>, hairlines all round, the head row semibold on the ink at 4%. The files preview
     /// sizes each column to its words, 85 to 260 (M/AgentMarkdownView.swift:265-304): cells padded 12 by 9,
     /// a line under each row and round the whole. RichEdit measures a row in twips, so a transcript's is
     /// drawn again when its box changes width.
@@ -1365,7 +1372,7 @@ internal static class TranscriptRtf
     {
         var columns = table.Alignments.Length; if (columns == 0) return;
         var preview = w.Preview; var lead = preview ? PreviewLead : Lead;
-        double padX = preview ? 12 : 8, padY = preview ? 9 : 8;
+        double padX = preview ? 12 : DesignMetrics.Spacing.Sm, padY = preview ? 9 : DesignMetrics.Spacing.Sm;
         var left = w.Left + indent; var edges = new double[columns];
         if (preview)
         {

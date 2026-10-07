@@ -80,7 +80,7 @@ public sealed partial class MainWindow
         var card = new Border
         {
             Child = content, Background = brushes.Brush(DesignToken.Card), BorderBrush = brushes.Brush(DesignToken.Line), BorderThickness = new Thickness(DesignMetrics.Stroke.Line),
-            CornerRadius = new CornerRadius(DesignMetrics.Radius.Entry), Padding = new Thickness(PopoverPadding), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 16, 44),
+            CornerRadius = new CornerRadius(DesignMetrics.Radius.Entry), Padding = new Thickness(PopoverPadding), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, DesignMetrics.Spacing.Lg, 44),
         };
         Grid.SetRowSpan(card, 3); Grid.SetColumnSpan(card, 2); root.Children.Add(card);
         try
@@ -128,11 +128,12 @@ public sealed partial class MainWindow
         RefreshWorkspaceHeader();
         try
         {
-            Require(gitBadges.TryGetValue(workspace.Id, out var git) && git is { Visibility: Visibility.Visible, MaxWidth: GitBadgeMaxWidth, Height: GitBadgeHeight } && git.Padding == new Thickness(7, 0, 7, 0) && git.Child is Grid { ColumnSpacing: 5, Children.Count: 5 },
-                $"{SidebarDesignKey} ({theme}): the header's Git capsule must hold the branch symbol, the name, the change dot and the ahead and behind counts, 5 apart, {GitBadgeHeight} high (the Mac's 10pt line in v3) with h7, at most {GitBadgeMaxWidth} wide");
-            // With the capsule the header is the Mac's: t14, the 17pt name's line, 3, the capsule's 18, b10, and the line under it.
+            Require(gitBadges.TryGetValue(workspace.Id, out var git) && git is { Visibility: Visibility.Visible, MaxWidth: GitBadgeMaxWidth, Height: GitBadgeHeight } && git.Padding == new Thickness(DesignMetrics.Spacing.Sm, 0, DesignMetrics.Spacing.Sm, 0) && git.Child is Grid { ColumnSpacing: DesignMetrics.Spacing.Xs, Children.Count: 5 },
+                $"{SidebarDesignKey} ({theme}): the header's Git capsule must hold the branch symbol, the name, the change dot and the ahead and behind counts, {DesignMetrics.Spacing.Xs} apart, {GitBadgeHeight} high (the Mac's 10pt line in v3) with h{DesignMetrics.Spacing.Sm}, at most {GitBadgeMaxWidth} wide");
+            // With the capsule the header is the Mac's: its top inset, the 17pt name's line (20), Spacing.Xxs, the capsule, its bottom inset, and the line under it.
             root.UpdateLayout();
-            Require(Math.Abs(workspaceHeader.ActualHeight - 66) <= 1.5, $"{SidebarDesignKey} ({theme}): the workspace header with its Git capsule must be about 66 high, as the Mac's; got {workspaceHeader.ActualHeight:F1}");
+            var headerHeight = DesignMetrics.Inset.WorkspaceHeaderT + 20 + DesignMetrics.Spacing.Xxs + GitBadgeHeight + DesignMetrics.Inset.WorkspaceHeaderB + DesignMetrics.Stroke.Line;
+            Require(Math.Abs(workspaceHeader.ActualHeight - headerHeight) <= 1.5, $"{SidebarDesignKey} ({theme}): the workspace header with its Git capsule must be about {headerHeight} high, as the Mac's; got {workspaceHeader.ActualHeight:F1}");
             RequireSubtle(git!, "the header's Git capsule", SidebarDesignKey);
             await CaptureShellSmoke("window-" + theme);
         }
@@ -145,21 +146,22 @@ public sealed partial class MainWindow
             try
             {
                 root.UpdateLayout(); await Task.Delay(150);
-                Require(Math.Abs(statusBar.ActualHeight - (16 + CompanionCapsuleHeight)) < 0.6 && badge.ActualHeight <= CompanionCapsuleHeight, $"{SidebarDesignKey} ({theme}): the update badge must not make the status bar taller; got {statusBar.ActualHeight:F1} with a {badge.ActualHeight:F1}-high badge");
+                Require(Math.Abs(statusBar.ActualHeight - (2 * DesignMetrics.Inset.StatusBarV + CompanionCapsuleHeight)) < 0.6 && badge.ActualHeight <= CompanionCapsuleHeight, $"{SidebarDesignKey} ({theme}): the update badge must not make the status bar taller; got {statusBar.ActualHeight:F1} with a {badge.ActualHeight:F1}-high badge");
                 await CaptureElement(statusBar, Path.Combine(options.ProfileDirectory!, "smoke-shell-update-badge-" + theme + ".png"));
             }
             finally { updateBadgeText.Text = ""; RefreshStatusBar(); }
         }
 
         // The error banner over the header (M/WorkspaceView.swift:18, 405-411), given a message for the picture:
-        // one 12pt line in padding 12 is 40 high, edge to edge over the detail column, and the header moves down under it.
+        // one 12pt line (16) in its padding, edge to edge over the detail column, and the header moves down under it.
         var said = error.Text; error.Text = Locale.Get("window.error.addWorkspaceFirst");
         try
         {
             root.UpdateLayout();
             var headerTop = workspaceHeader.TransformToVisual(detailTop).TransformPoint(new Windows.Foundation.Point()).Y;
-            Require(errorBanner.Visibility == Visibility.Visible && Math.Abs(errorBanner.ActualHeight - 40) <= 1 && Math.Abs(errorBanner.ActualWidth - detailTop.ActualWidth) < 0.5 && Math.Abs(headerTop - errorBanner.ActualHeight) < 0.5,
-                $"{SidebarDesignKey} ({theme}): the error banner must be about 40 high across the detail column with the header under it; got {errorBanner.ActualHeight:F1} high, {errorBanner.ActualWidth:F1} of {detailTop.ActualWidth:F1} wide, the header at {headerTop:F1}");
+            var bannerHeight = 2 * DesignMetrics.Spacing.Md + 16;
+            Require(errorBanner.Visibility == Visibility.Visible && Math.Abs(errorBanner.ActualHeight - bannerHeight) <= 1 && Math.Abs(errorBanner.ActualWidth - detailTop.ActualWidth) < 0.5 && Math.Abs(headerTop - errorBanner.ActualHeight) < 0.5,
+                $"{SidebarDesignKey} ({theme}): the error banner must be about {bannerHeight} high across the detail column with the header under it; got {errorBanner.ActualHeight:F1} high, {errorBanner.ActualWidth:F1} of {detailTop.ActualWidth:F1} wide, the header at {headerTop:F1}");
             await CaptureShellSmoke("error-" + theme);
         }
         finally { error.Text = said; }
@@ -168,15 +170,15 @@ public sealed partial class MainWindow
         if (usageButton is { Visibility: Visibility.Visible, Flyout: Flyout { Content: ScrollViewer usageHost } usagePopover })
         {
             RenderAccountUsageDetails();
-            Require(usageDetails.Spacing == 12 && usageDetails.Width == UsagePopoverWidth - 2 * PopoverPadding && ReferenceEquals(usagePopover.FlyoutPresenterStyle, CardFlyoutStyle)
+            Require(usageDetails.Spacing == DesignMetrics.Spacing.Md && usageDetails.Width == UsagePopoverWidth - 2 * PopoverPadding && ReferenceEquals(usagePopover.FlyoutPresenterStyle, CardFlyoutStyle)
                 && usageDetails.Children[0] is Grid { Children: [FontIcon, TextBlock { FontSize: DesignMetrics.Type.Title }, Microsoft.UI.Xaml.Controls.Button] },
-                $"{SidebarDesignKey} ({theme}): the usage popover must be {UsagePopoverWidth} wide with its padding {PopoverPadding} (M/StatusBarUsage.swift:235), its parts 12 apart, under the pie symbol, its 13pt title and the refresh button; got content width {usageDetails.Width}, spacing {usageDetails.Spacing}");
+                $"{SidebarDesignKey} ({theme}): the usage popover must be {UsagePopoverWidth} wide with its padding {PopoverPadding} (M/StatusBarUsage.swift:235), its parts {DesignMetrics.Spacing.Md} apart, under the pie symbol, its 13pt title and the refresh button; got content width {usageDetails.Width}, spacing {usageDetails.Spacing}");
             foreach (var card in usageDetails.Children.OfType<StackPanel>())
             {
                 RequireSubtle(card.Background, "a usage card", SidebarDesignKey);
-                Require(card.Spacing == 8 && card.Padding == new Thickness(10) && card.CornerRadius == new CornerRadius(DesignMetrics.Radius.CardButton) && card.Children[0] is Grid { ColumnSpacing: 6 } head
+                Require(card.Spacing == DesignMetrics.Spacing.Sm && card.Padding == new Thickness(DesignMetrics.Spacing.Md) && card.CornerRadius == new CornerRadius(DesignMetrics.Radius.CardButton) && card.Children[0] is Grid { ColumnSpacing: DesignMetrics.Spacing.Sm } head
                     && head.Children[0] is Microsoft.UI.Xaml.Shapes.Path mark && Math.Abs(mark.Width - UsageCardMark) < 0.01 && head.Children[1] is TextBlock { FontSize: 12 },
-                    $"{SidebarDesignKey} ({theme}): the usage card {AutomationProperties.GetAutomationId(card)} must be padding 10 at radius {DesignMetrics.Radius.CardButton}, its parts 8 apart, under the {UsageCardMark:F1}pt mark and the 12pt name, 6 apart; got spacing {card.Spacing}, padding {card.Padding}");
+                    $"{SidebarDesignKey} ({theme}): the usage card {AutomationProperties.GetAutomationId(card)} must be padding {DesignMetrics.Spacing.Md} at radius {DesignMetrics.Radius.CardButton}, its parts {DesignMetrics.Spacing.Sm} apart, under the {UsageCardMark:F1}pt mark and the 12pt name, {DesignMetrics.Spacing.Sm} apart; got spacing {card.Spacing}, padding {card.Padding}");
             }
             if (usage!.Providers.Contains("claude")) RequirePopoverSwitch(usageDirectToggle, "statusbar-usage-direct-toggle", AccountUsageStrings.ToggleLabel, usage.DirectClaudeLookupEnabled, "the usage popover's direct-lookup switch");
             usageHost.Content = null;
@@ -191,8 +193,8 @@ public sealed partial class MainWindow
             {
                 RefreshCompanionControls();
                 Require(agentsBody.Width == CompanionPopoverWidth - 2 * CompanionPopoverPadding && agentsBody.Spacing == CompanionPopoverSpacing && agentsBody.Margin == new Thickness(CompanionPopoverPadding - PopoverPadding) && ReferenceEquals(agentsPopover.FlyoutPresenterStyle, CardFlyoutStyle)
-                    && companionStatusHeading is { FontSize: 14 } && companionStatusItems.Count > 0 && companionStatusItems.Values.All(item => item.Button.Padding == new Thickness(10) && item.Button.CornerRadius == new CornerRadius(DesignMetrics.Radius.Entry)),
-                    $"{SidebarDesignKey} ({theme}): the agent status popover must be {CompanionPopoverWidth} wide with its padding {CompanionPopoverPadding} (M/AgentCompanionViews.swift:66), its parts {CompanionPopoverSpacing} apart, under a 14pt title, each agent a card in padding 10 at radius {DesignMetrics.Radius.Entry}; got content width {agentsBody.Width}, spacing {agentsBody.Spacing}, {companionStatusItems.Count} agents");
+                    && companionStatusHeading is { FontSize: 14 } && companionStatusItems.Count > 0 && companionStatusItems.Values.All(item => item.Button.Padding == new Thickness(DesignMetrics.Spacing.Md) && item.Button.CornerRadius == new CornerRadius(DesignMetrics.Radius.Entry)),
+                    $"{SidebarDesignKey} ({theme}): the agent status popover must be {CompanionPopoverWidth} wide with its padding {CompanionPopoverPadding} (M/AgentCompanionViews.swift:66), its parts {CompanionPopoverSpacing} apart, under a 14pt title, each agent a card in padding {DesignMetrics.Spacing.Md} at radius {DesignMetrics.Radius.Entry}; got content width {agentsBody.Width}, spacing {agentsBody.Spacing}, {companionStatusItems.Count} agents");
                 foreach (var item in companionStatusItems.Values) RequireSubtle(OwnResource(item.Button, "ButtonBackground") as Microsoft.UI.Xaml.Media.Brush, "an agent's card in the status popover", SidebarDesignKey);
                 // Each card's open arrow is the tertiary ink (M/AgentCompanionViews.swift:57).
                 foreach (var item in companionStatusItems.Values)
@@ -257,7 +259,7 @@ public sealed partial class MainWindow
             {
                 Require(OwnResource(dialog, "ContentDialogMinWidth") is double min && min == RenameSheetWidth && OwnResource(dialog, "ContentDialogMaxWidth") is double max && max == RenameSheetWidth,
                     $"{SidebarDesignKey} ({theme}): the rename sheet must be {RenameSheetWidth} wide; got min {OwnResource(dialog, "ContentDialogMinWidth")}, max {OwnResource(dialog, "ContentDialogMaxWidth")}");
-                Require(dialog.Content is StackPanel { Spacing: RenameSpacing, Children: [TextBlock { FontSize: DesignMetrics.Type.Title } heading, TextBox name, TextBlock { FontSize: RenameCaption } caption, StackPanel { Spacing: RenameSpacing } refusals, Grid { ColumnSpacing: 8 }] } sheet
+                Require(dialog.Content is StackPanel { Spacing: RenameSpacing, Children: [TextBlock { FontSize: DesignMetrics.Type.Title } heading, TextBox name, TextBlock { FontSize: RenameCaption } caption, StackPanel { Spacing: RenameSpacing } refusals, Grid { ColumnSpacing: DesignMetrics.Spacing.Sm }] } sheet
                     && sheet.Margin == new Thickness(RenameSheetPadding - SheetPadding) && heading.FontWeight.Weight == Microsoft.UI.Text.FontWeights.Bold.Weight && ReferenceEquals(heading.Foreground, brushes.Brush(DesignToken.Ink))
                     && ReferenceEquals(name, field) && ReferenceEquals(refusals, errors) && field.Header is null && field.PlaceholderText == RenameStrings.FieldLabel && ReferenceEquals(caption.Foreground, brushes.Brush(DesignToken.Ink2)),
                     $"{SidebarDesignKey} ({theme}): the rename sheet must be the {DesignMetrics.Type.Title}pt bold heading, the name field (its label the placeholder), the {RenameCaption}pt ink2 caption, the refusals and the buttons, {RenameSpacing} apart in padding {RenameSheetPadding}");

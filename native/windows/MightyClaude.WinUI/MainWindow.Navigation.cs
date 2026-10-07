@@ -29,7 +29,7 @@ public sealed partial class MainWindow
     /// </summary>
     private FrameworkElement SessionIndicator(RunSession session, bool active = false)
     {
-        var row = new Grid { ColumnSpacing = 8, VerticalAlignment = VerticalAlignment.Center };
+        var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Center };
         row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var pending = PendingRequests(session.Id); var shown = StatusGlyph.DisplayStatus(session.Status, pending);
         var mark = new StatusMark(); mark.Update(session.Status, session.Kind, pending, DarkTheme);
@@ -42,7 +42,7 @@ public sealed partial class MainWindow
         // An automatic agent title is the request cut to 40 characters; hovering shows it whole (macOS titleHelp).
         ToolTipService.SetToolTip(title, PaneTitle.Help(session));
         // The Mac's Spacer stands between the words and the title, 8 from each (M/WorkspaceView.swift:222-245).
-        var state = new TextBlock { FontSize = 10.5, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = brushes.Brush(DesignToken.WaitText), MinHeight = 17, Margin = new Thickness(8, 0, 0, 0) };
+        var state = new TextBlock { FontSize = 10.5, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = brushes.Brush(DesignToken.WaitText), MinHeight = 17, Margin = new Thickness(DesignMetrics.Spacing.Sm, 0, 0, 0) };
         ShowSidebarWait(state, DashboardAttention(session.Id));
         // Sidebar metadata already contains the elapsed time below the title.
         var elapsed = new TextBlock { Text = session.Kind == "shell" ? "" : session.RunTiming?.Label() ?? "", FontSize = 10, Opacity = .7, Visibility = Visibility.Collapsed };
@@ -69,8 +69,8 @@ public sealed partial class MainWindow
         sessionIndicators[session.Id] = (mark, state, elapsed);
         AutomationProperties.SetName(row, session.Title + (ProviderCatalog.ShowsBetaBadge(session) ? ", " + Locale.Get("badge.betaAccessibility") : "") + ", " + StateLabel(shown)); return row;
     }
-    /// <summary>A sidebar pane row's padding: l8 r9 t6 b7 (M/WorkspaceView.swift:247).</summary>
-    private static readonly Thickness SidebarPaneRowPadding = new(8, 6, 9, 7);
+    /// <summary>A sidebar pane row's padding: <c>Spacing.Sm</c> at the sides, <c>Inset.PaneRowV</c> over and under (M/WorkspaceView.swift:260).</summary>
+    internal static readonly Thickness SidebarPaneRowPadding = new(DesignMetrics.Spacing.Sm, DesignMetrics.Inset.PaneRowV, DesignMetrics.Spacing.Sm, DesignMetrics.Inset.PaneRowV);
     /// <summary>Each sidebar pane row's hairline overlay, by session id.</summary>
     private readonly Dictionary<string, Border> sidebarRowEdges = [];
 
@@ -82,7 +82,7 @@ public sealed partial class MainWindow
     /// </summary>
     private StackPanel TabIndicator(RunSession session, bool selected)
     {
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Center };
         var title = new TextBlock
         {
             Text = session.Title, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center, MaxWidth = 125,
@@ -334,9 +334,9 @@ public sealed partial class MainWindow
     }
     private Task CloseSession(string id) => Act(async () => { await service.StopAsync(id); await service.UpdateAsync(s => s with { Sessions = s.Sessions.Where(p => p.Id != id).ToList() }); Render(); });
     /// <summary>The rename sheet's width, the spacing of its lines, its caption size and its padding (M/RenameViews.swift:30, 38, 59; SwiftUI's caption is 10pt on macOS).</summary>
-    internal const double RenameSheetWidth = 360, RenameSpacing = 14, RenameCaption = 10, RenameSheetPadding = 22;
+    internal const double RenameSheetWidth = 360, RenameSpacing = DesignMetrics.Spacing.Md, RenameCaption = 10, RenameSheetPadding = DesignMetrics.Inset.Sheet + DesignMetrics.Spacing.Xxs;
     /// <summary>
-    /// The rename sheet of RenameViews.swift:29-63, 360 wide in padding 22: the 13pt bold heading, the
+    /// The rename sheet of RenameViews.swift:29-63, 360 wide in <see cref="RenameSheetPadding"/>: the 13pt bold heading, the
     /// name field (its label the placeholder, the current name selected), the caption under it in 10pt
     /// <c>ink2</c>, each refusal in 10pt <c>errText</c> and the sheet's own row of buttons, 14 apart —
     /// Automatic at the leading edge for an agent pane (pane.rename.automatic: its title follows its
@@ -365,7 +365,7 @@ public sealed partial class MainWindow
             AutomationProperties.SetAutomationId(button, id); Grid.SetColumn(button, column);
             return button;
         }
-        var buttons = new Grid { ColumnSpacing = 8 };
+        var buttons = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
         buttons.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); buttons.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
         buttons.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); buttons.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         if (offerAutomatic) buttons.Children.Add(Choice(Locale.Get("pane.rename.automatic"), RenameAutomaticId, ContentDialogResult.Secondary, 0));

@@ -17,11 +17,11 @@ public sealed partial class MainWindow
     /// <summary>The sidebar's solid surface, edge to edge and full height, with a 1pt <c>line</c> on its trailing edge (M/WorkspaceView.swift:124).</summary>
     private readonly Border sidebarSurface = new() { BorderThickness = new Thickness(0, 0, DesignMetrics.Stroke.Line, 0) };
     /// <summary>
-    /// The status bar under the dock: the subtle wash under a 1pt top <c>line</c>, padding h20 v8
-    /// (M/WorkspaceView.swift:393-394). The Mac's line is an overlay over that padding and that wash,
-    /// so the 8 above the row counts the line here and the wash runs under it.
+    /// The status bar under the dock: the subtle wash under a 1pt top <c>line</c>, padded by
+    /// <c>Inset.StatusBar</c> (M/WorkspaceView.swift:393-394). The Mac's line is an overlay over that padding
+    /// and that wash, so the padding above the row counts the line here and the wash runs under it.
     /// </summary>
-    private readonly Border statusBar = new() { BorderThickness = new Thickness(0, DesignMetrics.Stroke.Line, 0, 0), Padding = new Thickness(20, 8 - DesignMetrics.Stroke.Line, 20, 8), BackgroundSizing = BackgroundSizing.OuterBorderEdge };
+    private readonly Border statusBar = new() { BorderThickness = new Thickness(0, DesignMetrics.Stroke.Line, 0, 0), Padding = new Thickness(DesignMetrics.Inset.StatusBarH, DesignMetrics.Inset.StatusBarV - DesignMetrics.Stroke.Line, DesignMetrics.Inset.StatusBarH, DesignMetrics.Inset.StatusBarV), BackgroundSizing = BackgroundSizing.OuterBorderEdge };
     /// <summary>"3 panes" of the active workspace and "1 running" over every workspace (M/WorkspaceView.swift:380-382).</summary>
     private readonly TextBlock statusPanes = new() { FontSize = DesignMetrics.Type.Small, VerticalAlignment = VerticalAlignment.Center }, statusRunning = new() { FontSize = DesignMetrics.Type.Small, VerticalAlignment = VerticalAlignment.Center };
     /// <summary>The accent "new version" badge, shown while an app update is available or ready (M/WorkspaceView.swift:383-388).</summary>
@@ -34,19 +34,19 @@ public sealed partial class MainWindow
     /// <summary>Runtime checks in flight; while one runs the status words say so instead of naming the machine.</summary>
     private int runtimeChecks;
     /// <summary>The status bar's HStack spacing, its dividers' height and their side padding (M/WorkspaceView.swift:376, 389).</summary>
-    internal const double StatusBarSpacing = 7, StatusDividerHeight = 12, StatusDividerInset = 4;
+    internal const double StatusBarSpacing = DesignMetrics.Spacing.Sm, StatusDividerHeight = 12, StatusDividerInset = DesignMetrics.Spacing.Xs;
     /// <summary>
     /// The error banner over the detail column (M/WorkspaceView.swift:18, 405-411): the warning
-    /// triangle in <c>errText</c>, the 12pt message and a close button, 9 apart, padding 12 on <c>errSoft</c>.
+    /// triangle in <c>errText</c>, the 12pt message and a close button, <c>Spacing.Sm</c> apart, padding <c>Spacing.Md</c> on <c>errSoft</c>.
     /// </summary>
-    private readonly Border errorBanner = new() { Padding = new Thickness(12), Visibility = Visibility.Collapsed };
+    private readonly Border errorBanner = new() { Padding = new Thickness(DesignMetrics.Spacing.Md), Visibility = Visibility.Collapsed };
     /// <summary>The detail column's top row: the error banner over the workspace header (M/WorkspaceView.swift:16-22).</summary>
     private readonly StackPanel detailTop = new();
     /// <summary>
-    /// The active workspace's name, path, Git state, counts and files button, padding h24 t14 b10,
+    /// The active workspace's name, path, Git state, counts and files button, padded by <c>Inset.WorkspaceHeader</c>,
     /// with the Divider under it as a 1pt bottom <c>line</c> (M/WorkspaceView.swift:21-22, 289-319).
     /// </summary>
-    private readonly Grid workspaceHeader = new() { ColumnSpacing = 14, Padding = new Thickness(24, 14, 24, 10), BorderThickness = new Thickness(0, 0, 0, DesignMetrics.Stroke.Line), Visibility = Visibility.Collapsed };
+    private readonly Grid workspaceHeader = new() { ColumnSpacing = DesignMetrics.Spacing.Lg, Padding = new Thickness(DesignMetrics.Inset.WorkspaceHeaderH, DesignMetrics.Inset.WorkspaceHeaderT, DesignMetrics.Inset.WorkspaceHeaderH, DesignMetrics.Inset.WorkspaceHeaderB), BorderThickness = new Thickness(0, 0, 0, DesignMetrics.Stroke.Line), Visibility = Visibility.Collapsed };
     private readonly TextBlock workspaceHeaderName = new() { FontSize = DesignMetrics.Type.Header, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, MaxLines = 1, TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly TextBlock workspaceHeaderPath = new() { FontFamily = new FontFamily(DesignMetrics.Font.Mono), FontSize = DesignMetrics.Type.Mono, IsTextSelectionEnabled = true, TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
     private readonly Border workspaceHeaderGit = new() { VerticalAlignment = VerticalAlignment.Center };
@@ -60,10 +60,10 @@ public sealed partial class MainWindow
     private readonly MenuFlyoutItem workspaceHeaderCopyPath = new();
     /// <summary>The one item of the menu over the header's name and blank space: "Rename workspace…" (M/WorkspaceTitlebar.swift:30-36).</summary>
     private readonly MenuFlyoutItem workspaceHeaderRename = new();
-    /// <summary>The header's leading sidebar button beside the name and path, 10 apart (M/WorkspaceView.swift:302-303).</summary>
-    private readonly Grid workspaceHeaderTitle = new() { ColumnSpacing = 10 };
-    /// <summary>The path's row: the path and the Git capsule, 10 apart.</summary>
-    private readonly Grid workspaceHeaderPathRow = new() { ColumnSpacing = 10 };
+    /// <summary>The header's leading sidebar button beside the name and path, <c>Spacing.Md</c> apart (M/WorkspaceView.swift:302-303).</summary>
+    private readonly Grid workspaceHeaderTitle = new() { ColumnSpacing = DesignMetrics.Spacing.Md };
+    /// <summary>The path's row: the path and the Git capsule, <c>Spacing.Md</c> apart.</summary>
+    private readonly Grid workspaceHeaderPathRow = new() { ColumnSpacing = DesignMetrics.Spacing.Md };
     /// <summary>Whether the sidebar's rows were last drawn for the dashboard (none selected) or for the panes.</summary>
     private bool sidebarDrawnForDashboard;
 
@@ -95,7 +95,7 @@ public sealed partial class MainWindow
         workspaceHeaderPath.Foreground = workspaceHeaderFiles.Foreground = brushes.Brush(DesignToken.Ink2);
         workspaceHeader.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
         workspaceHeader.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); workspaceHeader.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        var text = new StackPanel { Spacing = 3 }; text.Children.Add(workspaceHeaderName);
+        var text = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs }; text.Children.Add(workspaceHeaderName);
         var pathRow = workspaceHeaderPathRow;
         pathRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); pathRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         pathRow.Children.Add(workspaceHeaderPath); Grid.SetColumn(workspaceHeaderGit, 1); pathRow.Children.Add(workspaceHeaderGit);
@@ -131,7 +131,7 @@ public sealed partial class MainWindow
     {
         errorBanner.Background = brushes.Brush(DesignToken.ErrSoft);
         AutomationProperties.SetAutomationId(errorBanner, "error-banner");
-        var row = new Grid { ColumnSpacing = 9 };
+        var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
         row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var warning = new FontIcon { Glyph = "\uE7BA", FontSize = 13, Foreground = brushes.Brush(DesignToken.ErrText), VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 1, 0, 0) };
         AutomationProperties.SetAccessibilityView(warning, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
@@ -140,7 +140,7 @@ public sealed partial class MainWindow
         Grid.SetColumn(error, 1); row.Children.Add(error);
         var dismiss = Button("", () => { error.Text = ""; return Task.CompletedTask; });
         dismiss.Content = new FontIcon { Glyph = "\uE711", FontSize = 11 };
-        dismiss.MinWidth = 0; dismiss.MinHeight = 0; dismiss.Padding = new Thickness(3); dismiss.Margin = new Thickness(0, -2, -3, -3); dismiss.BorderThickness = new Thickness(0);
+        dismiss.MinWidth = 0; dismiss.MinHeight = 0; dismiss.Padding = new Thickness(DesignMetrics.Spacing.Xs); dismiss.Margin = new Thickness(0, -DesignMetrics.Spacing.Xs, -DesignMetrics.Spacing.Xs, -DesignMetrics.Spacing.Xs); dismiss.BorderThickness = new Thickness(0);
         dismiss.CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow); dismiss.VerticalAlignment = VerticalAlignment.Top;
         PaintPlainButton(dismiss, brushes.Transparent, brushes.Subtle, ink: brushes.Brush(DesignToken.Ink));
         AutomationProperties.SetAutomationId(dismiss, "error-banner-dismiss");
@@ -172,7 +172,7 @@ public sealed partial class MainWindow
         leading.Children.Add(machine); Grid.SetColumn(status, 1); leading.Children.Add(status);
 
         statusTrailing.Children.Add(statusPanes);
-        statusTrailing.Children.Add(new TextBlock { Text = "\u00B7", FontSize = DesignMetrics.Type.Small, Foreground = ink, Margin = new Thickness(3, 0, 3, 0), VerticalAlignment = VerticalAlignment.Center });
+        statusTrailing.Children.Add(new TextBlock { Text = "\u00B7", FontSize = DesignMetrics.Type.Small, Foreground = ink, Margin = new Thickness(DesignMetrics.Spacing.Xxs, 0, DesignMetrics.Spacing.Xxs, 0), VerticalAlignment = VerticalAlignment.Center });
         statusTrailing.Children.Add(statusRunning);
         // arrow.down.circle.fill: an accent disc with the arrow cut out of it; SF's circle symbols draw 1.2 of their point size, 12 at 10pt.
         var arrow = new Grid { Width = 12, Height = 12, VerticalAlignment = VerticalAlignment.Center };
@@ -181,7 +181,7 @@ public sealed partial class MainWindow
         arrow.Children.Add(new Microsoft.UI.Xaml.Shapes.Polyline { Points = [new(6, 3.1), new(6, 8.6)], Stroke = cut, StrokeThickness = 1.4, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round });
         arrow.Children.Add(new Microsoft.UI.Xaml.Shapes.Polyline { Points = [new(3.6, 6.4), new(6, 8.8), new(8.4, 6.4)], Stroke = cut, StrokeThickness = 1.4, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round, StrokeLineJoin = PenLineJoin.Round });
         updateBadgeText.Foreground = brushes.Brush(DesignToken.Accent);
-        var badge = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 }; badge.Children.Add(arrow); badge.Children.Add(updateBadgeText);
+        var badge = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs }; badge.Children.Add(arrow); badge.Children.Add(updateBadgeText);
         updateBadge = Button("", OpenSettings); updateBadge.Content = badge;
         updateBadge.MinWidth = 0; updateBadge.MinHeight = 0; updateBadge.Padding = new Thickness(0); updateBadge.BorderThickness = new Thickness(0); updateBadge.VerticalAlignment = VerticalAlignment.Center; updateBadge.Visibility = Visibility.Collapsed;
         PaintPlainButton(updateBadge, brushes.Transparent, brushes.Transparent);

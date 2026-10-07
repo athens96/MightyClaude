@@ -94,13 +94,13 @@ public sealed partial class MainWindow
         {
             if (Session.Kind is not ("shell" or AgentIOPaneKind.Terminal) || owner.options.SmokeTest && !owner.smokeTerminalEnabled) return;
             output.View.Visibility = composer.Visibility = Visibility.Collapsed;
-            const double inset = 12;
+            const double inset = PaneInset;
             var b = owner.brushes; var ink2 = b.Brush(DesignToken.Ink2); var shell = Session.Kind == "shell";
             var inner = DesignMetrics.Radius.Pane - DesignMetrics.Stroke.Line;
             // Over the pane grid's padding and row spacing, as the header and the conversation are; the corners follow the card's inner curve.
             var host = terminalHost = new Grid
             {
-                Margin = new Thickness(-inset, shell ? 2 - grid.RowSpacing : -inset - grid.RowSpacing, -inset, -inset),
+                Margin = new Thickness(-inset, shell ? DesignMetrics.Spacing.Xxs - grid.RowSpacing : -inset - grid.RowSpacing, -inset, -inset),
                 CornerRadius = shell ? new CornerRadius(0, 0, inner, inner) : new CornerRadius(inner),
             };
             Grid.SetRow(host, 1); Grid.SetRowSpan(host, 2); grid.Children.Add(host);
@@ -109,17 +109,17 @@ public sealed partial class MainWindow
             host.RowDefinitions.Add(new() { Height = GridLength.Auto });
             InstallTerminalRenderer();
             terminalNotice = new TextBlock { Text = Locale.Get("terminal.starting"), FontFamily = BodyFont, TextWrapping = TextWrapping.Wrap, FontSize = 11, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
-            terminalRestart = Button(Locale.Get("terminal.restart"), RestartTerminalAsync); terminalRestart.FontSize = 11; terminalRestart.MinHeight = 0; terminalRestart.Padding = new Thickness(9, 2, 9, 3); terminalRestart.VerticalAlignment = VerticalAlignment.Center;
+            terminalRestart = Button(Locale.Get("terminal.restart"), RestartTerminalAsync); terminalRestart.FontSize = 11; terminalRestart.MinHeight = 22; terminalRestart.Padding = new Thickness(DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xxs, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xxs); terminalRestart.VerticalAlignment = VerticalAlignment.Center;
             terminalRestart.IsEnabled = false; terminalRestart.Visibility = shell ? Visibility.Visible : Visibility.Collapsed;
-            var notices = new Grid { ColumnSpacing = 8, Padding = new Thickness(10), Background = b.Subtle }; notices.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); notices.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+            var notices = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, Padding = new Thickness(DesignMetrics.Spacing.Md), Background = b.Subtle }; notices.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); notices.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             notices.Children.Add(terminalNotice); Grid.SetColumn(terminalRestart, 1); notices.Children.Add(terminalRestart); Grid.SetRow(notices, 1); host.Children.Add(notices);
             // The bar shows only while the notice does: a running terminal has nothing between it and its footer.
             terminalNotice.RegisterPropertyChangedCallback(UIElement.VisibilityProperty, (_, _) => notices.Visibility = terminalNotice.Visibility);
-            var footer = new Grid { ColumnSpacing = 7, Padding = new Thickness(10, 6, 10, 6), Background = b.Subtle };
+            var footer = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, Padding = new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm), Background = b.Subtle };
             footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); footer.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             TextBlock Words(string text, bool medium = false) => new() { Text = text, FontFamily = BodyFont, FontSize = 9, Foreground = ink2, TextWrapping = TextWrapping.NoWrap, FontWeight = medium ? Microsoft.UI.Text.FontWeights.Medium : Microsoft.UI.Text.FontWeights.Normal };
             // A shell names its engine and its title, "ConPTY · powershell" (the Mac's "Ghostty · zsh"); an agent's terminal says what it is.
-            var name = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7 };
+            var name = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
             name.Children.Add(Words(shell ? "ConPTY" : Locale.Get("agentTerminal.terminalPane.title"), medium: true));
             terminalTitle = Words(Path.GetFileNameWithoutExtension(PseudoTerminal.DefaultShell)); terminalTitle.MaxWidth = 180; terminalTitle.TextTrimming = TextTrimming.CharacterEllipsis;
             if (shell) { name.Children.Add(Words("·")); name.Children.Add(terminalTitle); }

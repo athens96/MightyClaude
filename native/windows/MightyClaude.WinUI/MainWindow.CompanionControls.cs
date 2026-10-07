@@ -27,7 +27,7 @@ public sealed partial class MainWindow
     private ToggleButton? companionStatusPet;
     private TextBlock? companionStatusPetLabel, companionStatusEmpty;
     /// <summary>The agent status popover's width over all (its padding 18 is inside it), the spacing of its parts and the height its list scrolls at (M/AgentCompanionViews.swift:30, 62, 66).</summary>
-    internal const double CompanionPopoverWidth = 350, CompanionPopoverSpacing = 14, CompanionPopoverListHeight = 330;
+    internal const double CompanionPopoverWidth = 350, CompanionPopoverSpacing = DesignMetrics.Spacing.Md, CompanionPopoverListHeight = 330;
     /// <summary>
     /// The capsule's symbols are drawn in a 12-unit box, as the Mac's 10pt waveform.path and circle.grid.2x2
     /// are. The capsule is 21 high: the symbol's 13-high image in v4 (M/AgentCompanionViews.swift:15-17), the
@@ -44,7 +44,7 @@ public sealed partial class MainWindow
     private FrameworkElement BuildCompanionControls()
     {
         var ink = brushes.Brush(DesignToken.Ink2);
-        var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, VerticalAlignment = VerticalAlignment.Center };
+        var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Md, VerticalAlignment = VerticalAlignment.Center };
         companionToggleControl = Button("", ToggleCompanionPet);
         InitializeCompanionGlyph();
         // waveform.path: one line swinging widest at its middle. circle.grid.2x2: four small rings.
@@ -64,9 +64,9 @@ public sealed partial class MainWindow
         companionStatusIdle = dots;
         companionStatusNumber.Foreground = ink;
         Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(companionStatusNumber, FontNumeralAlignment.Tabular);
-        var face = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, VerticalAlignment = VerticalAlignment.Center };
+        var face = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs, VerticalAlignment = VerticalAlignment.Center };
         face.Children.Add(companionStatusBusy); face.Children.Add(companionStatusIdle); face.Children.Add(companionStatusNumber);
-        companionStatusCapsule = new Border { Child = face, Height = CompanionCapsuleHeight, Padding = new Thickness(8, 0, 8, 0), CornerRadius = new CornerRadius(CompanionCapsuleHeight / 2), Background = brushes.Subtle };
+        companionStatusCapsule = new Border { Child = face, Height = CompanionCapsuleHeight, Padding = new Thickness(DesignMetrics.Spacing.Sm, 0, DesignMetrics.Spacing.Sm, 0), CornerRadius = new CornerRadius(CompanionCapsuleHeight / 2), Background = brushes.Subtle };
         companionStatusControl = new Button { Content = companionStatusCapsule };
         foreach (var button in new[] { companionToggleControl, companionStatusControl })
         {
@@ -80,20 +80,20 @@ public sealed partial class MainWindow
         // AgentStatusPopover (M/AgentCompanionViews.swift:27-68): the title and the working count on one
         // line, the agents' cards, a line, then the pet switch; 350 wide with its padding 18, 14 apart.
         var body = companionStatusBody = new StackPanel { Spacing = CompanionPopoverSpacing, Width = CompanionPopoverWidth - 2 * CompanionPopoverPadding, Margin = new Thickness(CompanionPopoverPadding - PopoverPadding), RequestedTheme = root.RequestedTheme };
-        var head = new Grid { ColumnSpacing = 8 };
+        var head = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
         head.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); head.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         companionStatusHeading = new TextBlock { FontSize = 14, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis };
         head.Children.Add(companionStatusHeading);
         companionStatusCount = new TextBlock { FontSize = DesignMetrics.Type.Pill, Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
         Grid.SetColumn(companionStatusCount, 1); head.Children.Add(companionStatusCount);
         body.Children.Add(head);
-        companionStatusEmpty = new TextBlock { TextWrapping = TextWrapping.Wrap, FontSize = 12, Foreground = ink, Margin = new Thickness(0, 18, 0, 18), Visibility = Visibility.Collapsed };
+        companionStatusEmpty = new TextBlock { TextWrapping = TextWrapping.Wrap, FontSize = 12, Foreground = ink, Margin = new Thickness(0, DesignMetrics.Spacing.Lg, 0, DesignMetrics.Spacing.Lg), Visibility = Visibility.Collapsed };
         body.Children.Add(companionStatusEmpty);
-        companionStatusRows = new StackPanel { Spacing = 8 };
+        companionStatusRows = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
         body.Children.Add(new ScrollViewer { Content = companionStatusRows, MaxHeight = CompanionPopoverListHeight, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
         body.Children.Add(new Border { Height = DesignMetrics.Stroke.Line, Background = Separator });
         // A SwiftUI switch stands right after its words (M/AgentCompanionViews.swift:65), not across from them.
-        var pet = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var pet = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
         companionStatusPetLabel = new TextBlock { FontSize = DesignMetrics.Type.Body, Foreground = brushes.Brush(DesignToken.Ink), VerticalAlignment = VerticalAlignment.Center };
         pet.Children.Add(companionStatusPetLabel);
         // The Mac's mini switch (M/AgentCompanionViews.swift:65), which is the form's: 26×15 with its 13pt knob, filled when off too.
@@ -110,7 +110,7 @@ public sealed partial class MainWindow
     }
 
     /// <summary>The agent status popover's own padding (M/AgentCompanionViews.swift:66), reached from the shared popover padding by a margin.</summary>
-    internal const double CompanionPopoverPadding = 18;
+    internal const double CompanionPopoverPadding = DesignMetrics.Inset.Popover + DesignMetrics.Spacing.Xxs;
 
     private Task ToggleCompanionPet() => Act(async () =>
     {
@@ -189,7 +189,7 @@ public sealed partial class MainWindow
     private (Button Button, TextBlock Heading, TextBlock Detail, TextBlock Prompt, TextBlock Activity, TextBlock State, TextBlock Elapsed, StatusMark Mark, FrameworkElement PromptRow) BuildCompanionStatusRow(string sessionId)
     {
         var ink = brushes.Brush(DesignToken.Ink); var ink2 = brushes.Brush(DesignToken.Ink2);
-        var mark = new StatusMark(); mark.View.VerticalAlignment = VerticalAlignment.Top; mark.View.Margin = new Thickness(0, 2, 0, 0);
+        var mark = new StatusMark(); mark.View.VerticalAlignment = VerticalAlignment.Top; mark.View.Margin = new Thickness(0, DesignMetrics.Spacing.Xxs, 0, 0);
         var heading = new TextBlock { FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = ink, TextTrimming = TextTrimming.CharacterEllipsis };
         var state = new TextBlock { FontSize = DesignMetrics.Type.Small, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
         var detail = new TextBlock { FontSize = DesignMetrics.Type.Small, Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis };
@@ -198,7 +198,7 @@ public sealed partial class MainWindow
         var activity = new TextBlock { FontSize = DesignMetrics.Type.Pill, Foreground = ink2, TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis };
         Grid Across(FrameworkElement leading, FrameworkElement trailing)
         {
-            var line = new Grid { ColumnSpacing = 8 };
+            var line = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             line.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); line.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             line.Children.Add(leading); Grid.SetColumn(trailing, 1); line.Children.Add(trailing);
             return line;
@@ -206,7 +206,7 @@ public sealed partial class MainWindow
         // arrow.up.right and arrow.up.forward: a plain arrow to the upper right, drawn on a 10-unit box.
         Grid Arrow(double size, Brush stroke)
         {
-            var arrow = new Grid { Width = size, Height = size, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 2, 0, 0) };
+            var arrow = new Grid { Width = size, Height = size, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, DesignMetrics.Spacing.Xxs, 0, 0) };
             var unit = size / 10;
             foreach (var points in new[] { new[] { (1.6, 8.4), (8.2, 1.8) }, new[] { (3.2, 1.8), (8.2, 1.8), (8.2, 6.8) } })
             {
@@ -217,20 +217,20 @@ public sealed partial class MainWindow
             AutomationProperties.SetAccessibilityView(arrow, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
             return arrow;
         }
-        var promptRow = new Grid { ColumnSpacing = 6 };
+        var promptRow = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
         promptRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); promptRow.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
         promptRow.Children.Add(Arrow(10, ink));
         Grid.SetColumn(prompt, 1); promptRow.Children.Add(prompt);
-        var words = new StackPanel { Spacing = 4 };
+        var words = new StackPanel { Spacing = DesignMetrics.Spacing.Xs };
         words.Children.Add(Across(heading, state)); words.Children.Add(Across(detail, elapsed)); words.Children.Add(promptRow); words.Children.Add(activity);
-        var content = new Grid { ColumnSpacing = 10 };
+        var content = new Grid { ColumnSpacing = DesignMetrics.Spacing.Md };
         content.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); content.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); content.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         content.Children.Add(mark.View); Grid.SetColumn(words, 1); content.Children.Add(words);
         var open = Arrow(9, brushes.Tertiary);
         Grid.SetColumn(open, 2); content.Children.Add(open);
         var button = Button("", () => { companionStatusFlyout?.Hide(); FocusSession(sessionId); return Task.CompletedTask; });
         button.Content = content; button.HorizontalAlignment = HorizontalAlignment.Stretch; button.HorizontalContentAlignment = HorizontalAlignment.Stretch;
-        button.Padding = new Thickness(10); button.BorderThickness = new Thickness(0); button.CornerRadius = new CornerRadius(DesignMetrics.Radius.Entry);
+        button.Padding = new Thickness(DesignMetrics.Spacing.Md); button.BorderThickness = new Thickness(0); button.CornerRadius = new CornerRadius(DesignMetrics.Radius.Entry);
         PaintPlainButton(button, brushes.Subtle, brushes.Subtle, ink: ink);
         return (button, heading, detail, prompt, activity, state, elapsed, mark, promptRow);
     }

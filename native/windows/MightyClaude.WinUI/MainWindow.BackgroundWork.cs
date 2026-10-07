@@ -71,7 +71,7 @@ public sealed partial class MainWindow
             if (!shows) return;
             var b = owner.brushes; var ink = b.Brush(DesignToken.Ink); var ink2 = b.Brush(DesignToken.Ink2);
             var count = work!.Tasks.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            var face = new Grid { ColumnSpacing = 6 };
+            var face = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             foreach (var width in new[] { GridLength.Auto, GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto }) face.ColumnDefinitions.Add(new() { Width = width });
             face.Children.Add(ComposerGlyph.Icon("", 11).Ink(b.Brush(DesignToken.Accent)).View);
             var title = new TextBlock { Text = Locale.Get("plan.background.listTitle", new Dictionary<string, string> { ["count"] = count }), FontSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
@@ -95,16 +95,16 @@ public sealed partial class MainWindow
             AutomationProperties.SetName(hide, hideName); AutomationProperties.SetAutomationId(hide, "background-work-hide-" + id);
             ToolTipService.SetToolTip(hide, Locale.Get("plan.background.hideStripHelp"));
             hide.Click += (_, _) => _ = HideBackgroundWork();
-            var line = new Grid { ColumnSpacing = 6 };
+            var line = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             line.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); line.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             line.Children.Add(fold);
             Grid.SetColumn(hide, 1); line.Children.Add(hide);
-            var strip = new StackPanel { Spacing = 6 };
+            var strip = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
             strip.Children.Add(line);
             if (backgroundOpen) strip.Children.Add(BackgroundRows(PlanCardSupport.BackgroundTasks(work), stripElapsed));
             backgroundHost.Children.Add(new Border
             {
-                Child = strip, Padding = new Thickness(12 - DesignMetrics.Stroke.Line, 6 - DesignMetrics.Stroke.Line, 12 - DesignMetrics.Stroke.Line, 6 - DesignMetrics.Stroke.Line),
+                Child = strip, Padding = new Thickness(DesignMetrics.Spacing.Md - DesignMetrics.Stroke.Line, DesignMetrics.Spacing.Sm - DesignMetrics.Stroke.Line, DesignMetrics.Spacing.Md - DesignMetrics.Stroke.Line, DesignMetrics.Spacing.Sm - DesignMetrics.Stroke.Line),
                 CornerRadius = new CornerRadius(DesignMetrics.Radius.Entry), Background = b.Brush(DesignToken.Card), BorderBrush = b.Brush(DesignToken.Line), BorderThickness = new Thickness(DesignMetrics.Stroke.Line),
             });
         }
@@ -124,11 +124,11 @@ public sealed partial class MainWindow
         /// </summary>
         private StackPanel BackgroundRows(IReadOnlyList<StylePresentation.TaskRow> tasks, List<(TextBlock Text, StylePresentation.TaskRow Task)> elapsed)
         {
-            var b = owner.brushes; var rows = new StackPanel { Spacing = 3 };
+            var b = owner.brushes; var rows = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
             AutomationProperties.SetAutomationId(rows, "background-tasks-" + id);
             foreach (var task in tasks)
             {
-                var row = new Grid { ColumnSpacing = 6 };
+                var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
                 foreach (var width in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto }) row.ColumnDefinitions.Add(new() { Width = width });
                 var tone = task.Status switch { "running" => DesignToken.Accent, "completed" => DesignToken.Done, "failed" => DesignToken.Err, _ => DesignToken.Ink2 };
                 row.Children.Add(new Ellipse { Width = 6, Height = 6, Fill = b.Brush(tone), VerticalAlignment = VerticalAlignment.Center });

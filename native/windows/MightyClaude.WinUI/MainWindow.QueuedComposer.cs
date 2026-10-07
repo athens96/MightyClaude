@@ -12,7 +12,7 @@ public sealed partial class MainWindow
     {
         private readonly QueuedInputBuffer queuedInputs = new();
         /// <summary>The requests waiting behind the current run, over the editor (M/QueuedInputsView.swift:15, M/SessionPaneView.swift:555-557).</summary>
-        private readonly StackPanel queuedInputHost = new() { Spacing = 4, Margin = new Thickness(10, 10, 10, 0), Visibility = Visibility.Collapsed };
+        private readonly StackPanel queuedInputHost = new() { Spacing = DesignMetrics.Spacing.Xs, Margin = new Thickness(DesignMetrics.Inset.ComposerInnerH, DesignMetrics.Spacing.Md, DesignMetrics.Inset.ComposerInnerH, 0), Visibility = Visibility.Collapsed };
         private readonly DispatcherTimer queueDrainTimer = new() { Interval = TimeSpan.FromMilliseconds(100) };
         private Button? queueStopButton;
         private bool queueStarting;
@@ -114,8 +114,8 @@ public sealed partial class MainWindow
         private void FitComposerSpacing()
         {
             var attached = pendingAttachments.Count > 0; var queued = queuedInputs.Items.Count > 0;
-            queuedInputHost.Margin = new Thickness(10, attached ? 6 : 10, 10, 0);
-            if (inputRow is not null) inputRow.Margin = new Thickness(8, attached || queued ? 0 : 9, 8, 0);
+            queuedInputHost.Margin = new Thickness(DesignMetrics.Inset.ComposerInnerH, attached ? DesignMetrics.Spacing.Sm : DesignMetrics.Spacing.Md, DesignMetrics.Inset.ComposerInnerH, 0);
+            if (inputRow is not null) inputRow.Margin = new Thickness(DesignMetrics.Inset.ComposerInnerH, attached || queued ? 0 : DesignMetrics.Spacing.Sm, DesignMetrics.Inset.ComposerInnerH, 0);
         }
 
         /// <summary>
@@ -130,7 +130,7 @@ public sealed partial class MainWindow
             FitComposerSpacing();
             if (queuedInputs.Items.Count == 0) return;
             var busy = Session.Status == "running" || starting || queueStarting || owner.BackgroundUpdateHolds(Session);
-            var header = new Grid { ColumnSpacing = 6 }; header.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); header.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+            var header = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm }; header.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); header.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             header.Children.Add(new FontIcon { Glyph = "", FontSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = accent, VerticalAlignment = VerticalAlignment.Center });
             var waitsOnBackground = BackgroundQueuePolicy.WaitsOnBackground(Session.BackgroundWork, LaunchesInPlanMode, queuedInputs.Items.Count);
             var count = new TextBlock { Text = Locale.Get(busy ? "queue.waitingBusy" : "queue.waiting", new Dictionary<string, string> { ["count"] = queuedInputs.Items.Count.ToString() }) + (waitsOnBackground ? "\n" + Locale.Get("queue.waitingOnBackground.windows") : ""), FontSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = ink2, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
@@ -138,10 +138,10 @@ public sealed partial class MainWindow
             Grid.SetColumn(count, 1); header.Children.Add(count);
             if (!busy)
             {
-                var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+                var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs };
                 label.Children.Add(new FontIcon { Glyph = "", FontSize = 8, VerticalAlignment = VerticalAlignment.Center });
                 label.Children.Add(new TextBlock { Text = Locale.Get("queue.runNext"), FontSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.Medium, VerticalAlignment = VerticalAlignment.Center });
-                var next = Button(Locale.Get("queue.runNext"), StartNextQueuedInput); next.Content = label; next.Padding = new(4, 1, 4, 1); next.MinWidth = 0; next.MinHeight = 0; next.BorderThickness = new(0); next.CornerRadius = new(DesignMetrics.Radius.FileRow);
+                var next = Button(Locale.Get("queue.runNext"), StartNextQueuedInput); next.Content = label; next.Padding = new(DesignMetrics.Spacing.Xs, 1, DesignMetrics.Spacing.Xs, 1); next.MinWidth = 0; next.MinHeight = 0; next.BorderThickness = new(0); next.CornerRadius = new(DesignMetrics.Radius.FileRow);
                 owner.PaintPlainButton(next, b.Transparent, b.Subtle, ink: accent);
                 AutomationProperties.SetAutomationId(next, "queue-run-" + id); Grid.SetColumn(next, 2); header.Children.Add(next);
             }
@@ -149,10 +149,10 @@ public sealed partial class MainWindow
             var index = 0;
             foreach (var item in queuedInputs.Items)
             {
-                var row = new Grid { ColumnSpacing = 7, Padding = new(8, 5, 8, 5) }; row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+                var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, Padding = new(DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xs, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xs) }; row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
                 var number = new TextBlock { Text = (++index).ToString(), FontSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink2, Width = 14, TextAlignment = TextAlignment.Right, Margin = new(0, 1, 0, 0), VerticalAlignment = VerticalAlignment.Top };
                 Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(number, FontNumeralAlignment.Tabular); row.Children.Add(number);
-                var words = new StackPanel { Spacing = 2 };
+                var words = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
                 words.Children.Add(new TextBlock { Text = item.Text.Length == 0 ? Locale.Get("queue.attachmentsOnly") : item.Text, FontSize = 11, Foreground = b.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis });
                 if (item.Attachments.Count > 0) words.Children.Add(new TextBlock { Text = string.Join(", ", item.Attachments.Select(file => file.Name)), FontSize = 10, Foreground = ink2, TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis });
                 Grid.SetColumn(words, 1); row.Children.Add(words);

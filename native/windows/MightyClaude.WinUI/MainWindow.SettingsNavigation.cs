@@ -48,13 +48,13 @@ public sealed partial class MainWindow
             foreach (var category in SettingsNavigation.Available)
             {
                 // The symbol sits in an 18-wide slot centred 16 from the row's edge, the label 30 from it (crops/settings-general-*.webp).
-                var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, VerticalAlignment = VerticalAlignment.Center };
+                var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs, VerticalAlignment = VerticalAlignment.Center };
                 var symbol = SettingsCategorySymbol(category.Id);
                 label.Children.Add(new Grid { Width = 18, Children = { symbol }, VerticalAlignment = VerticalAlignment.Center });
                 label.Children.Add(new TextBlock { Text = category.Title, FontSize = DesignMetrics.Type.Title, VerticalAlignment = VerticalAlignment.Center });
                 var item = new ListViewItem
                 {
-                    Content = label, Tag = category, Padding = new(7 + ListSelectionInsetX, 0, 8 + ListSelectionInsetX, 0), CornerRadius = new(DesignMetrics.Radius.FileRow),
+                    Content = label, Tag = category, Padding = new(DesignMetrics.Spacing.Sm + ListSelectionInsetX, 0, DesignMetrics.Spacing.Sm + ListSelectionInsetX, 0), CornerRadius = new(DesignMetrics.Radius.FileRow),
                     MinHeight = 0, Height = SettingsNavigationRowHeight + 2 * ListSelectionInsetY, Margin = new(0, -ListSelectionInsetY, 0, -ListSelectionInsetY),
                 };
                 AutomationProperties.SetName(item, category.Title);
@@ -106,7 +106,7 @@ public sealed partial class MainWindow
             Grid.SetColumn(form, 2); body.Children.Add(form);
             Grid.SetRow(body, 1); frame.Children.Add(body);
             // The close row: padding 18 around the one button (M/SettingsViews.swift:199).
-            var footer = new Grid { Padding = new(18), Background = brushes.Brush(DesignToken.Card), BorderBrush = brushes.Brush(DesignToken.Line), BorderThickness = new(0, DesignMetrics.Stroke.Line, 0, 0) };
+            var footer = new Grid { Padding = new(DesignMetrics.Spacing.Lg), Background = brushes.Brush(DesignToken.Card), BorderBrush = brushes.Brush(DesignToken.Line), BorderThickness = new(0, DesignMetrics.Stroke.Line, 0, 0) };
             AutomationProperties.SetAutomationId(footer, "settings-footer");
             Grid.SetRow(footer, 2); frame.Children.Add(footer);
             var close = SettingsPush(Button(Locale.Get("settings.closeButton"), CloseWindow));
@@ -133,8 +133,8 @@ public sealed partial class MainWindow
     /// <summary>The settings sheet's content size in points and its side list's width (M/SettingsViews.swift:201, 214).</summary>
     internal const double SettingsWindowWidth = 800, SettingsWindowHeight = 700, SettingsNavigationWidth = 200;
 
-    /// <summary>A side-list row's height: the sidebar list's 24 plus the label's 3 above and below (M/SettingsViews.swift:209).</summary>
-    internal const double SettingsNavigationRowHeight = 30;
+    /// <summary>A side-list row's height: the sidebar list's 22 plus the label's 2 above and below (M/SettingsViews.swift:209).</summary>
+    internal const double SettingsNavigationRowHeight = 22 + 2 * DesignMetrics.Spacing.Xxs;
 
     /// <summary>
     /// The stock list row draws its rounded fill 4 in from its sides and 2 in from its top and bottom. A
@@ -144,7 +144,7 @@ public sealed partial class MainWindow
     internal const double ListSelectionInsetX = 4, ListSelectionInsetY = 2;
 
     /// <summary>The space kept free around the settings window on a work area too small for it, in points.</summary>
-    internal const double SettingsWindowMargin = 24;
+    internal const double SettingsWindowMargin = DesignMetrics.Spacing.Xl;
 
     /// <summary>
     /// The settings window's content size in physical pixels: the Mac sheet's 800×700 points at the display
@@ -181,24 +181,26 @@ public sealed partial class MainWindow
         return symbol;
     }
 
-    /// <summary>The heading's height with its rule: padding 22 around the 17pt title over the 11pt subtitle (crops/settings-general-*.webp, 80.5 + 1).</summary>
-    internal const double SettingsHeadingHeight = 82;
+    /// <summary>The heading's padding, all round.</summary>
+    internal const double SettingsHeadingPadding = DesignMetrics.Spacing.Lg;
+    /// <summary>The heading's height with its rule: its padding around the 17pt title over the 11pt subtitle (38 with the rule; crops/settings-general-*.webp).</summary>
+    internal const double SettingsHeadingHeight = 2 * SettingsHeadingPadding + 38;
 
     /// <summary>
     /// The sheet heading (M/SettingsViews.swift:325-338): a 21pt light gear in <c>accent</c> in a 31-wide
     /// column, the 17pt semibold title over an 11pt <c>ink2</c> subtitle, the round 17pt close mark at the
-    /// trailing edge, padding 22, on <c>card</c> with a <c>line</c> under it.
+    /// trailing edge, in <see cref="SettingsHeadingPadding"/>, on <c>card</c> with a <c>line</c> under it.
     /// </summary>
     private Grid SettingsHeading(Func<Task> close)
     {
-        var heading = new Grid { Height = SettingsHeadingHeight, Padding = new(22), ColumnSpacing = 12, Background = brushes.Brush(DesignToken.Card), BorderBrush = brushes.Brush(DesignToken.Line), BorderThickness = new(0, 0, 0, DesignMetrics.Stroke.Line) };
+        var heading = new Grid { Height = SettingsHeadingHeight, Padding = new(SettingsHeadingPadding), ColumnSpacing = DesignMetrics.Spacing.Md, Background = brushes.Brush(DesignToken.Card), BorderBrush = brushes.Brush(DesignToken.Line), BorderThickness = new(0, 0, 0, DesignMetrics.Stroke.Line) };
         heading.ColumnDefinitions.Add(new() { Width = new(31) });
         heading.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
         heading.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var icon = new FontIcon { Glyph = "", FontSize = 21, FontWeight = Microsoft.UI.Text.FontWeights.Light, Foreground = brushes.Brush(DesignToken.Accent), VerticalAlignment = VerticalAlignment.Center };
         AutomationProperties.SetAccessibilityView(icon, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
         heading.Children.Add(icon);
-        var words = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
+        var words = new StackPanel { Spacing = DesignMetrics.Spacing.Xs, VerticalAlignment = VerticalAlignment.Center };
         words.Children.Add(new TextBlock { Text = Locale.Get("settings.title"), FontSize = DesignMetrics.Type.Header, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Ink), LineHeight = 20, LineStackingStrategy = LineStackingStrategy.BlockLineHeight });
         words.Children.Add(new TextBlock { Text = "Windows · WinUI", FontSize = DesignMetrics.Type.Pill, Foreground = brushes.Brush(DesignToken.Ink2), LineHeight = 13, LineStackingStrategy = LineStackingStrategy.BlockLineHeight });
         Grid.SetColumn(words, 1); heading.Children.Add(words);
@@ -259,13 +261,13 @@ public sealed partial class MainWindow
 
     // ── The grouped form (M/SettingsViews.swift:192-193, .formStyle(.grouped)) ────────────────────────────
     // A heading over a box of rows; every row is one line with its words at the left and its control at the
-    // right, 10 in from the box and 10 above and below, a 1pt rule between rows. The sizes are read off
-    // docs/design-system/crops/settings-general-*.webp and screens/10-settings-*.webp (2 px = 1 pt).
+    // right, SettingsRowInset in from the box and above and below, a 1pt rule between rows. The control sizes are
+    // read off docs/design-system/crops/settings-general-*.webp and screens/10-settings-*.webp (2 px = 1 pt).
 
     /// <summary>The form's inset from its column, and the space from one box to the next heading.</summary>
-    internal const double SettingsFormInset = 20, SettingsGroupGap = 30;
+    internal const double SettingsFormInset = DesignMetrics.Spacing.Lg, SettingsGroupGap = DesignMetrics.Spacing.Xl;
     /// <summary>The space under a heading, a row's inset from its box (and its padding above and below), and the least height of a row's content.</summary>
-    internal const double SettingsHeadingGap = 10, SettingsRowInset = 10, SettingsRowContent = 16;
+    internal const double SettingsHeadingGap = DesignMetrics.Spacing.Sm, SettingsRowInset = DesignMetrics.Spacing.Md, SettingsRowContent = 16;
     /// <summary>The Mac's control heights: a push button, pop-up or segmented picker, their small size, and the mini one.</summary>
     internal const double SettingsControlHeight = 20, SettingsSmallHeight = 16, SettingsMiniHeight = 14;
     /// <summary>The Mac's rounded text field, with its border (screens/10-settings-models-*.webp).</summary>
@@ -308,7 +310,7 @@ public sealed partial class MainWindow
     /// <summary>A switch's words (M/SettingsViews.swift:233-237): the label over its 11pt <c>ink2</c> explanation, 2 apart.</summary>
     internal StackPanel SettingsTitled(string title, string help)
     {
-        var words = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
+        var words = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs, VerticalAlignment = VerticalAlignment.Center };
         words.Children.Add(SettingsText(title)); words.Children.Add(SettingsText(help, 11, DesignToken.Ink2));
         return words;
     }
@@ -319,7 +321,7 @@ public sealed partial class MainWindow
     /// </summary>
     internal Grid SettingsLabeled(FrameworkElement label, FrameworkElement control, bool share = false, bool top = false)
     {
-        var line = new Grid { ColumnSpacing = share ? 0 : 8 };
+        var line = new Grid { ColumnSpacing = share ? 0 : DesignMetrics.Spacing.Md };
         line.ColumnDefinitions.Add(new() { Width = new(share ? 1 - SettingsControlShare : 1, GridUnitType.Star) });
         line.ColumnDefinitions.Add(new() { Width = share ? new(SettingsControlShare, GridUnitType.Star) : GridLength.Auto });
         line.Children.Add(label);
@@ -327,14 +329,14 @@ public sealed partial class MainWindow
         // Beside two lines the Mac sets the switch on the label's own line, a point under its top.
         control.VerticalAlignment = top ? VerticalAlignment.Top : VerticalAlignment.Center;
         if (top) control.Margin = new Thickness(0, 1, 0, 0);
-        // A 20-high picker stands a point into the row's top padding, so its row is 39 high as on the Mac.
+        // A 20-high picker stands a point into the row's top padding, as on the Mac.
         else if (share) control.Margin = new Thickness(0, -1, 0, 0);
         Grid.SetColumn(control, 1); line.Children.Add(control);
         return line;
     }
 
     /// <summary>
-    /// Adds a row to a box's rows: 10 in from the box, 10 above and below its content, and a 1pt
+    /// Adds a row to a box's rows: <see cref="SettingsRowInset"/> in from the box and above and below its content, and a 1pt
     /// <c>line</c> over every row but the first one showing (<see cref="RuleSettingsRows"/>).
     /// Hide a row by its returned border, so the rule and the padding go with it.
     /// </summary>
@@ -493,7 +495,7 @@ public sealed partial class MainWindow
             Border? rule = null;
             if (i > 0)
             {
-                rule = new Border { Width = DesignMetrics.Stroke.Line, Background = b.Brush(DesignToken.Line), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 4, 0, 4), IsHitTestVisible = false };
+                rule = new Border { Width = DesignMetrics.Stroke.Line, Background = b.Brush(DesignToken.Line), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, DesignMetrics.Spacing.Xs, 0, DesignMetrics.Spacing.Xs), IsHitTestVisible = false };
                 Grid.SetColumn(rule, i); host.Children.Add(rule);
             }
             parts.Add((segment, chip, words, rule));
@@ -517,7 +519,7 @@ public sealed partial class MainWindow
     internal ComboBox SettingsPopup(ComboBox picker, bool bordered = false)
     {
         var b = brushes; var fill = bordered ? b.SegmentOn : b.Transparent; var line = bordered ? b.Brush(DesignToken.Line) : b.Transparent;
-        picker.Height = SettingsControlHeight; picker.MinHeight = 0; picker.MinWidth = 0; picker.FontSize = 13; picker.Padding = new Thickness(7, 0, 0, 0);
+        picker.Height = SettingsControlHeight; picker.MinHeight = 0; picker.MinWidth = 0; picker.FontSize = 13; picker.Padding = new Thickness(DesignMetrics.Spacing.Sm, 0, 0, 0);
         picker.BorderThickness = new Thickness(bordered ? DesignMetrics.Stroke.Line : 0); picker.CornerRadius = new CornerRadius(SettingsControlRadius);
         picker.HorizontalAlignment = HorizontalAlignment.Center; picker.VerticalAlignment = VerticalAlignment.Center;
         var values = new List<(string Key, object Value)> { ("ComboBoxMinHeight", SettingsControlHeight), ("ComboBoxThemeMinWidth", 0d) };
@@ -574,7 +576,7 @@ public sealed partial class MainWindow
     internal TextBox SettingsField(TextBox field, double size = 11)
     {
         var b = brushes; var card = b.Brush(DesignToken.Card); var line = b.Brush(DesignToken.Line);
-        field.Height = SettingsFieldHeight; field.MinHeight = 0; field.MinWidth = 0; field.Padding = new Thickness(6, 1, 6, 1); field.FontSize = size;
+        field.Height = SettingsFieldHeight; field.MinHeight = 0; field.MinWidth = 0; field.Padding = new Thickness(DesignMetrics.Spacing.Sm, 1, DesignMetrics.Spacing.Sm, 1); field.FontSize = size;
         field.FontFamily = new FontFamily(DesignMetrics.Font.Mono); field.CornerRadius = new CornerRadius(SettingsControlRadius); field.VerticalAlignment = VerticalAlignment.Center;
         // The template takes the placeholder's ink from the property in every state (BuildSidebarSearch).
         field.PlaceholderForeground = b.Tertiary;
@@ -615,7 +617,7 @@ public sealed partial class MainWindow
     /// <summary>A push button's content with a leading symbol (the Mac's <c>Label</c> in a button): the glyph and the words, 4 apart.</summary>
     internal static StackPanel SettingsGlyphLabel(string glyph, string label, double font)
     {
-        var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
+        var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs, VerticalAlignment = VerticalAlignment.Center };
         line.Children.Add(new FontIcon { Glyph = glyph, FontSize = font, VerticalAlignment = VerticalAlignment.Center });
         line.Children.Add(new TextBlock { Text = label, FontSize = font, VerticalAlignment = VerticalAlignment.Center });
         return line;
@@ -653,7 +655,7 @@ public sealed partial class MainWindow
     {
         var words = new TextBlock { Text = text, FontSize = size, Foreground = ink, LineHeight = size + 3, LineStackingStrategy = LineStackingStrategy.BlockLineHeight };
         if (size < 10) words.FontWeight = Microsoft.UI.Text.FontWeights.Medium;
-        return new Border { Child = words, Padding = new Thickness(5, 1, 5, 1), CornerRadius = new CornerRadius(radius), Background = fill, VerticalAlignment = VerticalAlignment.Center };
+        return new Border { Child = words, Padding = new Thickness(DesignMetrics.Spacing.Xs, 1, DesignMetrics.Spacing.Xs, 1), CornerRadius = new CornerRadius(radius), Background = fill, VerticalAlignment = VerticalAlignment.Center };
     }
 
     /// <summary>A symbol of the form in an ink, hidden from automation: the words beside it say what it marks.</summary>
