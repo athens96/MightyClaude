@@ -48,15 +48,36 @@ struct MightyGraphBlockSizeTests {
         let size = MightyGraphBlockSize(width: 720, height: 560)
         let runs = [MightyGraphRun(id: "done", status: "completed"), MightyGraphRun(id: "going")]
         let plan = MightyGraphBlockSize.nodeID(runID: "going", suffix: MightyGraphLayout.planSuffix)
+        // A settled run shows its result, never its plan card: that size goes, as an unsettled run's result does.
+        let settledPlan = MightyGraphBlockSize.nodeID(runID: "done", suffix: MightyGraphLayout.planSuffix)
         let records = ["done", "going"].map { MightyGraphBlockSize.nodeID(runID: $0, suffix: MightyGraphLayout.planRecordSuffix + "plan_1") }
         let foreign = MightyGraphBlockSize.nodeID(runID: "gone", suffix: MightyGraphLayout.planRecordSuffix + "plan_1")
-        var values = [plan: size, foreign: size]
+        var values = [plan: size, settledPlan: size, foreign: size]
         for id in records { values[id] = size }
         let normalized = try #require(MightyGraphBlockSize.normalized(values, runs: runs))
         #expect(plan == "5:going:plan" && records[0] == "4:done:plan-record:plan_1")
         #expect(normalized[plan] == size)
+        #expect(normalized[settledPlan] == nil)
         for id in records { #expect(normalized[id] == size) }
         #expect(normalized[foreign] == nil)
+    }
+
+    @Test func anAnsweredPlanKeepsItsFoldedHeight() throws {
+        let folded = Double(MightyGraphLayout.planRecordHeight(expanded: false))
+        #expect(Double(MightyGraphLayout.planRecordMinimumSize.height) == folded)
+        let runs = [MightyGraphRun(id: "done", status: "completed")]
+        let record = MightyGraphBlockSize.nodeID(runID: "done", suffix: MightyGraphLayout.planRecordSuffix + "plan_1")
+        let request = MightyGraphBlockSize.nodeID(runID: "done", suffix: "request")
+        #expect(MightyGraphBlockSize.minimumHeight(nodeID: record) == folded)
+        #expect(MightyGraphBlockSize.minimumHeight(nodeID: request) == MightyGraphBlockSize.minimumHeight)
+        // The run id is read past its length: a run named like a record suffix is still the request.
+        #expect(MightyGraphBlockSize.minimumHeight(nodeID: MightyGraphBlockSize.nodeID(runID: "x:plan-record:y", suffix: "request")) == MightyGraphBlockSize.minimumHeight)
+        #expect(MightyGraphBlockSize(width: 320, height: folded).normalized(nodeID: record) == .init(width: 320, height: folded))
+        #expect(MightyGraphBlockSize(width: 320, height: 40).normalized(nodeID: record) == .init(width: 320, height: folded))
+        #expect(MightyGraphBlockSize(width: 320, height: folded).normalized(nodeID: request) == .init(width: 320, height: MightyGraphBlockSize.minimumHeight))
+        let saved = try #require(MightyGraphBlockSize.normalized([record: .init(width: 360, height: folded), request: .init(width: 360, height: folded)], runs: runs))
+        #expect(saved[record] == .init(width: 360, height: folded))
+        #expect(saved[request] == .init(width: 360, height: MightyGraphBlockSize.minimumHeight))
     }
 
     @Test func activeResultsAndInvalidDimensionsAreRemovedBeforeEncoding() throws {

@@ -5,7 +5,7 @@ extension AppStore {
     func setGraphBlockSize(_ sessionID: String, nodeID: String, size: MightyGraphBlockSize?) {
         updateSession(sessionID) { session in
             var sizes = session.graphBlockSizes ?? [:]
-            if let size = size?.normalized { sizes[nodeID] = size }
+            if let size = size?.normalized(nodeID: nodeID) { sizes[nodeID] = size }
             else { sizes.removeValue(forKey: nodeID) }
             session.graphBlockSizes = sizes.isEmpty ? nil : sizes
         }

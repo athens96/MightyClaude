@@ -39,6 +39,7 @@ public struct MightyGraphLayout {
         /// header and its four answers inside the block.
         public var minimumSize: CGSize {
             if case .plan = content { return MightyGraphLayout.planMinimumSize }
+            if case .planRecord = content { return MightyGraphLayout.planRecordMinimumSize }
             return CGSize(width: MightyGraphBlockSize.minimumWidth, height: MightyGraphBlockSize.minimumHeight)
         }
     }
@@ -65,6 +66,9 @@ public struct MightyGraphLayout {
     public static let planMinimumSize = CGSize(width: 460, height: 320)
     public static let planRecordWidth: CGFloat = 320
     public static func planRecordHeight(expanded: Bool) -> CGFloat { expanded ? 420 : 104 }
+    /// An answered plan may be dragged as short as it folds, so its first drag
+    /// starts where it stands instead of jumping to the blocks' least height.
+    public static let planRecordMinimumSize = CGSize(width: MightyGraphBlockSize.minimumWidth, height: planRecordHeight(expanded: false))
     public static let executionWidth: CGFloat = 380
     static let executionGap: CGFloat = 8
     /// Collapsed, it holds the goal, progress, counts, one phase line, a
@@ -304,7 +308,7 @@ public struct MightyGraphLayout {
                 }
                 if let autoFit = autoFitResultSize { return resultSize(cap: resultCap(autoFit, within: resultLimit), contentHeight: resultContentHeight) }
             }
-            guard let custom = blockSizes[id]?.normalized else { return CGSize(width: width, height: height) }
+            guard let custom = blockSizes[id]?.normalized(nodeID: id) else { return CGSize(width: width, height: height) }
             return CGSize(width: custom.width, height: custom.height)
         }
         struct Tree {

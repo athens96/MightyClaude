@@ -146,6 +146,9 @@ public enum DesignMetrics {
         /// The least height of something to click (a chip, a dense row, a settings switch's row), so
         /// tightening the spacing never shrinks a target below it.
         public static let hitTarget: CGFloat = 22
+        /// How far a diagram block's content stays above its bottom edge so the corner
+        /// resize grip (a hit target square, `Spacing.xxs` in from the corner) covers none of it.
+        public static let gripClearance: CGFloat = hitTarget + 2 * Spacing.xxs
 
         /// Every size by its fixture name.
         public static let all: [String: CGFloat] = [

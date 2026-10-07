@@ -35,6 +35,10 @@ public sealed partial class MainWindow
     private (string? Id, DateTimeOffset? Started, bool Completed)? companionIdentity;
     private Window? companionQuestionWindow;
     private string? companionQuestionWindowKey;
+    /// <summary>The plan whose answer is on its way (by request key): the bubble's and the plan window's answers are off until it lands.</summary>
+    private string? companionPlanSending;
+    /// <summary>The open plan window's answers, turned on or off with <see cref="companionPlanSending"/>.</summary>
+    private Action? companionPlanWindowSync;
     private sealed class CompanionQuestionDraft(string input)
     {
         internal readonly string Input = input;
@@ -194,10 +198,12 @@ public sealed partial class MainWindow
             // after it, and the plan's own answers. Cancel is the plan's cancel, not a generic deny; a change request needs
             // the keyboard, which the pet never takes, so 계획 검토 opens the plan in a window of its own.
             var lines = plan.Split('\n').Select(line => line.Trim().TrimStart('#').Trim()).Where(line => line.Length > 0).Skip(1).Take(3).ToArray();
+            // While its answer is on its way the plan's own buttons are off (M/AgentCompanion.swift approvalBusy).
+            var sending = companionPlanSending == PermissionKey(permission);
             return new(false, Locale.Get("plan.card.title"), origin, permission.ReceivedAt is { } received ? PlanCardSupport.ReceivedText(received) : "", PlanCardSupport.Headline(plan),
                 lines.Length == 0 ? null : string.Join('\n', lines), false, false, [],
-                [new("open", Locale.Get("companion.button.open"), Glyph: true), new("plan-cancel", Locale.Get("plan.card.cancel")), new("plan-review", Locale.Get("companion.plan.review")),
-                    new("plan-approve", Locale.Get("plan.card.approveAuto"), Prominent: true, OwnRow: true)], error);
+                [new("open", Locale.Get("companion.button.open"), Glyph: true), new("plan-cancel", Locale.Get("plan.card.cancel"), Disabled: sending), new("plan-review", Locale.Get("companion.plan.review"), Disabled: sending),
+                    new("plan-approve", Locale.Get("plan.card.approveAuto"), Prominent: true, OwnRow: true, Disabled: sending)], error);
         }
         if (permission.CanAnswerQuestions && UserQuestionnaire.Parse(permission.InputJson) is { } questionnaire)
         {
@@ -248,7 +254,7 @@ public sealed partial class MainWindow
         if (request.CanAnswerPlan && request.Plan is not null)
         {
             if (action == "plan-review") ShowCompanionPlan(request);
-            else if (action is "plan-cancel" or "plan-approve") AnswerCompanionPlan(request, action == "plan-cancel" ? PlanDecision.Cancel : PlanDecision.ApproveAutoEdit);
+            else if (action is "plan-cancel" or "plan-approve") _ = AnswerCompanionPlan(request, action == "plan-cancel" ? PlanDecision.Cancel : PlanDecision.ApproveAutoEdit);
             return;
         }
         if (action != "deny") return;
@@ -351,19 +357,25 @@ public sealed partial class MainWindow
     }
     /// <summary>
     /// One of the plan's answers from the bubble or its window (M/AgentCompanion.swift answerPlan), through the service or the
-    /// smoke's stand-in, while the request is still the one waiting. Once sent the request settles in the pane and the bubble at
-    /// once, as the pane's card does (MainWindow.PlanCard.cs AnswerPlanCard); an error stays on the request and is returned.
+    /// smoke's stand-in, while the request is still the one waiting. The service is called off the UI thread, and while it is
+    /// out the bubble's and the plan window's answers are off (<see cref="companionPlanSending"/>), as the pane's card does
+    /// (MainWindow.PlanCard.cs AnswerPlanCard). Once sent the request settles in the pane and the bubble at once; an error
+    /// stays on the request and is returned.
     /// </summary>
-    private string? AnswerCompanionPlan(ToolPermissionRequest request, PlanDecision decision)
+    private async Task<string?> AnswerCompanionPlan(ToolPermissionRequest request, PlanDecision decision)
     {
         var key = PermissionKey(request);
-        if (!companionPermissions.TryGetValue(key, out var live) || live != request || live.State != "pending" || !live.CanAnswerPlan) return null;
+        if (companionPlanSending is not null || !companionPermissions.TryGetValue(key, out var live) || live != request || live.State != "pending" || !live.CanAnswerPlan) return null;
+        companionPlanSending = key; companionPlanWindowSync?.Invoke(); RefreshCompanion();
+        string? failed = null;
         try
         {
             if (smokePlanAnswerer is { } fake) fake(request.RunId, request.Id, decision);
-            else service.AnswerPlan(request.RunId, request.Id, decision);
+            else { var runId = request.RunId; var requestId = request.Id; await Task.Run(() => service.AnswerPlan(runId, requestId, decision)); }
         }
-        catch (Exception ex) { companionError = ex.Message; companionRequestError = (key, ex.Message); RefreshCompanion(); return ex.Message; }
+        catch (Exception ex) { failed = ex.Message; }
+        finally { companionPlanSending = null; companionPlanWindowSync?.Invoke(); }
+        if (failed is not null) { companionError = failed; companionRequestError = (key, failed); RefreshCompanion(); return failed; }
         var settled = request with { State = PlanOutcome.PaneMode(decision.Outcome) is null ? "denied" : "allowed" };
         if (views.TryGetValue(request.RunId, out var pane)) pane.ReceiveToolPermission(settled);
         ReceiveCompanionPermission(settled);
@@ -410,12 +422,11 @@ public sealed partial class MainWindow
         revise.Children.Add(field); revise.Children.Add(tooLong);
         Grid.SetRow(revise, 2); content.Children.Add(revise);
         var error = new TextBlock { FontSize = 11, Foreground = brushes.Brush(DesignToken.ErrText), TextWrapping = TextWrapping.Wrap };
-        Task Respond(PlanDecision decision)
+        async Task Respond(PlanDecision decision)
         {
-            if (decision.Kind == "revise" && !PlanCardSupport.CanSendRevise(decision.Feedback)) return Task.CompletedTask;
-            if (AnswerCompanionPlan(request, decision) is { } failed) error.Text = failed;
+            if (companionPlanSending is not null || decision.Kind == "revise" && !PlanCardSupport.CanSendRevise(decision.Feedback)) return;
+            if (await AnswerCompanionPlan(request, decision) is { } failed) error.Text = failed;
             else if (companionQuestionWindow == window) window.Close();
-            return Task.CompletedTask;
         }
         // The four answers as on the pane's card, the accent one last; tiles in one row where the window is wide, two where not.
         var actions = new AdaptiveGridPanel { Minimum = 150, Gap = DesignMetrics.Spacing.Md };
@@ -424,15 +435,27 @@ public sealed partial class MainWindow
             var button = CompanionCardButton(Button(Locale.Get(label), action), prominent); button.HorizontalAlignment = HorizontalAlignment.Stretch;
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(button, automation); actions.Children.Add(button); return button;
         }
-        Answer("plan.card.cancel", "pet-plan-cancel", () => Respond(PlanDecision.Cancel), false);
+        var cancel = Answer("plan.card.cancel", "pet-plan-cancel", () => Respond(PlanDecision.Cancel), false);
         var send = Answer("plan.card.revise", "pet-plan-revise", () => Respond(PlanDecision.Revise(field.Text)), false);
-        Answer("plan.card.approveConfirm", "pet-plan-approve-confirm", () => Respond(PlanDecision.ApproveConfirmEach), false);
-        Answer("plan.card.approveAuto", "pet-plan-approve-auto", () => Respond(PlanDecision.ApproveAutoEdit), true);
-        void Check() { tooLong.Visibility = PlanCardSupport.FeedbackTooLong(field.Text) ? Visibility.Visible : Visibility.Collapsed; send.IsEnabled = PlanCardSupport.CanSendRevise(field.Text); }
+        var confirm = Answer("plan.card.approveConfirm", "pet-plan-approve-confirm", () => Respond(PlanDecision.ApproveConfirmEach), false);
+        var approve = Answer("plan.card.approveAuto", "pet-plan-approve-auto", () => Respond(PlanDecision.ApproveAutoEdit), true);
+        // Every answer is off while one is on its way, from here or from the bubble; the change request also needs its words.
+        void Check()
+        {
+            var idle = companionPlanSending is null;
+            tooLong.Visibility = PlanCardSupport.FeedbackTooLong(field.Text) ? Visibility.Visible : Visibility.Collapsed;
+            send.IsEnabled = idle && PlanCardSupport.CanSendRevise(field.Text);
+            cancel.IsEnabled = confirm.IsEnabled = approve.IsEnabled = field.IsEnabled = idle;
+        }
         field.TextChanged += (_, _) => Check(); Check();
         var footer = new StackPanel { Spacing = DesignMetrics.Spacing.Sm }; footer.Children.Add(error); footer.Children.Add(actions); Grid.SetRow(footer, 3); content.Children.Add(footer);
         window.Content = CompanionWindowFrame(content); window.AppWindow.Resize(new(560, 620)); brushes.ApplyTitleBar(window.AppWindow); companionQuestionWindow = window; companionQuestionWindowKey = key;
-        window.Closed += (_, _) => { if (companionQuestionWindow == window) { companionQuestionWindow = null; companionQuestionWindowKey = null; } };
+        Action sync = Check; companionPlanWindowSync = sync;
+        window.Closed += (_, _) =>
+        {
+            if (companionPlanWindowSync == sync) companionPlanWindowSync = null;
+            if (companionQuestionWindow == window) { companionQuestionWindow = null; companionQuestionWindowKey = null; }
+        };
         if (aside) window.AppWindow.Show(false); else window.Activate();
     }
     // 펫과 알림 (M/AgentCompanionViews.swift:70-105): the pet switch; the chosen pet's first frame (58×64)
