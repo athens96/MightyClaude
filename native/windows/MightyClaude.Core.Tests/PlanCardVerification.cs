@@ -72,6 +72,27 @@ internal static class PlanCardVerification
         var firstRequest = withRecords.Nodes.Single(n => n.Id == MightyGraphBlockSize.NodeId("g1", "request"));
         Check(recordNode.Frame.Y == firstRequest.Frame.Y && recordNode.Frame.X > firstRequest.Frame.MaxX && MightyGraphCamera.IsAuxiliary(recordNode.Id), "an answered plan hangs beside its request");
         Check(MightyGraphBlockModel.Blocks(withRecords, runs, "", "Claude", false).Single(b => b.Kind == "planRecord").RecordId == "p1", "the block knows its record");
+
+        // Both plan blocks take a dragged size (macOS planBlocksTakeTheirSavedSize…), the record whether folded or opened.
+        var recordID = MightyGraphBlockSize.NodeId("g1", MightyGraphLayout.PlanRecordSuffix + "p1");
+        MightyGraphLayout Sized(Dictionary<string, GraphBlockSize> sizes, HashSet<string> expanded) =>
+            MightyGraphViewModel.CanvasLayout(runs, "", true, expanded, blockSizes: sizes, planRunID: "g2", planRecords: [("g1", "p1")]);
+        var sizes = new Dictionary<string, GraphBlockSize> { [planID] = new(820, 610), [recordID] = new(470, 260) };
+        var sizedPlan = Sized(sizes, []).Nodes.Single(n => n.Id == planID).Frame;
+        Check(sizedPlan.W == 820 && sizedPlan.H == 610, "the plan card takes its saved size");
+        foreach (var expanded in new[] { new HashSet<string>(), new HashSet<string> { recordID } })
+        {
+            var sizedRecord = Sized(sizes, expanded).Nodes.Single(n => n.Id == recordID).Frame;
+            Check(sizedRecord.W == 470 && sizedRecord.H == 260, "an answered plan takes its saved size, folded or opened");
+        }
+        var opened = Sized([], [recordID]).Nodes.Single(n => n.Id == recordID).Frame;
+        Check(opened.W == MightyGraphLayout.PlanRecordWidth && opened.H == MightyGraphLayout.PlanRecordHeight(true), "without one it opens to its own height");
+        var least = Sized(new() { [planID] = new(300, 140) }, []).Nodes.Single(n => n.Id == planID).Frame;
+        Check(least.W == MightyGraphLayout.PlanMinimumWidth && least.H == MightyGraphLayout.PlanMinimumHeight, "the plan card is never drawn below its answers");
+        Check(MightyGraphLayout.MinimumBlockSize("plan") == (MightyGraphLayout.PlanMinimumWidth, MightyGraphLayout.PlanMinimumHeight)
+              && MightyGraphLayout.MinimumBlockSize("planRecord") == (MightyGraphBlockSize.MinimumWidth, MightyGraphBlockSize.MinimumHeight), "the least a drag makes each plan block");
+        var kept = GraphBlockPreferences.Normalize(sizes);
+        Check(kept is not null && kept[planID] == sizes[planID] && kept[recordID] == sizes[recordID], "saved plan sizes survive the normalizer");
         return Task.CompletedTask;
     }
 }

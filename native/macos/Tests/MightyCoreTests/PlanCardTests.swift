@@ -131,10 +131,11 @@ struct PlanCardTests {
         // Centred on the diagram's one centreline, and nothing above it moved.
         #expect(abs(plan.frame.midX - MightyGraphCamera.centreX) < 0.5)
         for node in plain.nodes { #expect(layout.nodes.first { $0.id == node.id }?.frame == node.frame) }
-        // Answered plans are attachments beside their own request.
+        // Answered plans are attachments beside their own request, which a drag resizes all the same.
         let records = layout.nodes.filter { if case .planRecord = $0.content { return true }; return false }
-        #expect(records.count == 2 && records.allSatisfy(\.isAuxiliary))
+        #expect(records.count == 2 && records.allSatisfy(\.isAuxiliary) && records.allSatisfy(\.isResizable))
         #expect(records.allSatisfy { MightyGraphCamera.isAuxiliary(nodeID: $0.id) })
+        #expect(plan.isResizable && plan.minimumSize == MightyGraphLayout.planMinimumSize)
         let firstRequest = try #require(layout.nodes.first { $0.content == .request(0) })
         let first = try #require(records.first { $0.content == .planRecord(0, "p1") })
         #expect(first.frame.minY == firstRequest.frame.minY && first.frame.minX > firstRequest.frame.maxX)
@@ -144,5 +145,27 @@ struct PlanCardTests {
         // A finished run never shows a pending plan: its result is there instead.
         let finished = MightyGraphLayout.make(runs: [Self.run("g1", source: "run-a", status: "completed")], draft: "", running: false, expanded: [], planRunID: "g1")
         #expect(!finished.nodes.contains { $0.content == .plan(0) })
+    }
+
+    @Test func planBlocksTakeTheirSavedSizeAndThePlanCardNeverShrinksPastItsAnswers() throws {
+        let runs = [Self.run("g1", source: "run-a", status: "completed"), Self.run("g2", source: "run-b")]
+        let planID = MightyGraphBlockSize.nodeID(runID: "g2", suffix: MightyGraphLayout.planSuffix)
+        let recordID = MightyGraphBlockSize.nodeID(runID: "g1", suffix: MightyGraphLayout.planRecordSuffix + "p1")
+        let sizes: [String: MightyGraphBlockSize] = [planID: .init(width: 820, height: 610), recordID: .init(width: 470, height: 260)]
+        func layout(_ sizes: [String: MightyGraphBlockSize], expanded: Set<String> = []) -> MightyGraphLayout {
+            MightyGraphLayout.make(runs: runs, draft: "", running: true, expanded: expanded, blockSizes: sizes,
+                                   planRunID: "g2", planRecords: [.init(runID: "g1", recordID: "p1")])
+        }
+        #expect(layout(sizes).nodes.first { $0.id == planID }?.frame.size == CGSize(width: 820, height: 610))
+        // A dragged size wins over folded and opened alike.
+        for expanded in [Set<String>(), [recordID]] {
+            #expect(layout(sizes, expanded: expanded).nodes.first { $0.id == recordID }?.frame.size == CGSize(width: 470, height: 260))
+        }
+        // Without one, the record folds and opens to its own heights again.
+        #expect(layout([:], expanded: [recordID]).nodes.first { $0.id == recordID }?.frame.size
+                == CGSize(width: MightyGraphLayout.planRecordWidth, height: MightyGraphLayout.planRecordHeight(expanded: true)))
+        // A size below the plan card's least (saved elsewhere) is drawn at that least.
+        let small = layout([planID: .init(width: 300, height: 140)])
+        #expect(small.nodes.first { $0.id == planID }?.frame.size == MightyGraphLayout.planMinimumSize)
     }
 }

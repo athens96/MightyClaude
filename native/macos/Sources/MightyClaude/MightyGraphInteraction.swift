@@ -56,6 +56,9 @@ struct MightyGraphInteraction<Content: View>: NSViewRepresentable {
         view.expectedViewportSize = viewportSize
         view.selectedNodeID = selection
         view.auxiliaryNodeIDs = Set(nodes.filter(\.isAuxiliary).map(\.id))
+        view.resizableNodeIDs = Set(nodes.filter(\.isResizable).map(\.id))
+        view.minimumSizes = Dictionary(nodes.filter { $0.minimumSize != MightyGraphInteractionProbe.minimumBlockSize }.map { ($0.id, $0.minimumSize) },
+                                       uniquingKeysWith: { first, _ in first })
         view.fixedNodeIDs = Set(nodes.filter { $0.content == .history }.map(\.id))
         view.targetToken = targetToken
         view.targetFrame = targetFrame
@@ -122,9 +125,14 @@ final class MightyGraphInteractionProbe: NSView {
     var expectedViewportSize: CGSize = .zero
     var panOffset: CGPoint = .zero
     var selectedNodeID: String?
-    /// Attached file lists and execution blocks scroll immediately and do not
-    /// expose block resizing.
+    /// Attached file lists, execution blocks, picture previews and answered
+    /// plans scroll immediately.
     var auxiliaryNodeIDs: Set<String> = []
+    /// Blocks a press on the corner handle or a border resizes
+    /// (`MightyGraphLayout.Node.isResizable`), and those with a larger least
+    /// size than `minimumBlockSize`.
+    var resizableNodeIDs: Set<String> = []
+    var minimumSizes: [String: CGSize] = [:]
     /// Blocks that are neither resized nor selected, such as the history
     /// block at the top: a click goes to its button, a wheel pans past it.
     var fixedNodeIDs: Set<String> = []
@@ -328,7 +336,7 @@ final class MightyGraphInteractionProbe: NSView {
     /// The block and sides a press at `point` would resize: the bottom-right
     /// handle first, then a band along each border.
     func resizeTarget(at point: CGPoint) -> (id: String, frame: CGRect, edges: ResizeEdges)? {
-        for (id, frame) in frames.reversed() where !auxiliaryNodeIDs.contains(id) && !fixedNodeIDs.contains(id) {
+        for (id, frame) in frames.reversed() where resizableNodeIDs.contains(id) && !fixedNodeIDs.contains(id) {
             if frame.contains(point), resizeHandleRect(for: frame).contains(point) { return (id, frame, .bottomRight) }
             let edges = ResizeEdges.at(point, frame: frame, outside: resizeBand, inside: Self.resizeBandInside)
             if !edges.isEmpty { return (id, frame, edges) }
@@ -364,7 +372,7 @@ final class MightyGraphInteractionProbe: NSView {
     private func resize(to point: CGPoint) {
         guard var drag = resizeDrag else { return }
         let size = drag.edges.size(from: drag.initialFrame.size, delta: CGSize(width: point.x - drag.initialPoint.x, height: point.y - drag.initialPoint.y),
-                                   zoom: drag.initialZoom, minimum: Self.minimumBlockSize, maximum: Self.maximumBlockSize)
+                                   zoom: drag.initialZoom, minimum: minimumSizes[drag.id] ?? Self.minimumBlockSize, maximum: Self.maximumBlockSize)
         guard size != drag.size else { return }
         drag.size = size; drag.changed = true; resizeDrag = drag
         onResize(drag.id, size, drag.edges, .live)

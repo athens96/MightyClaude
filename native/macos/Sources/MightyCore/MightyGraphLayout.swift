@@ -20,12 +20,26 @@ public struct MightyGraphLayout {
         public let content: Content
         public var frame: CGRect
         public var isResultFiles: Bool { if case .resultFiles = content { return true }; return false }
-        /// Attachments beside the flow: not resized, scrolled at once.
+        /// Attachments beside the flow: scrolled at once.
         public var isAuxiliary: Bool {
             switch content {
             case .resultFiles, .execution, .images, .planRecord: return true
             default: return false
             }
+        }
+        /// Blocks with the corner handle and the edge bands: the flow's own
+        /// blocks, and the answered plans although they hang beside it.
+        public var isResizable: Bool {
+            switch content {
+            case .request, .agent, .result, .draft, .plan, .planRecord: return true
+            case .resultFiles, .execution, .images, .history: return false
+            }
+        }
+        /// The least a drag may make it: the plan card keeps its plan, its
+        /// header and its four answers inside the block.
+        public var minimumSize: CGSize {
+            if case .plan = content { return MightyGraphLayout.planMinimumSize }
+            return CGSize(width: MightyGraphBlockSize.minimumWidth, height: MightyGraphBlockSize.minimumHeight)
         }
     }
     /// A background execution's block, attached beside the request that started it.
@@ -46,6 +60,9 @@ public struct MightyGraphLayout {
     /// The pending plan card: wide enough to read a plan like a document.
     public static let planWidth: CGFloat = 640
     public static let planHeight: CGFloat = 520
+    /// Its header, the plan's 80pt page and the answers in two rows, wide
+    /// enough that the two approve buttons share one.
+    public static let planMinimumSize = CGSize(width: 460, height: 320)
     public static let planRecordWidth: CGFloat = 320
     public static func planRecordHeight(expanded: Bool) -> CGFloat { expanded ? 420 : 104 }
     public static let executionWidth: CGFloat = 380
@@ -365,7 +382,8 @@ public struct MightyGraphLayout {
             // run is still going, so nothing is below it yet.
             if run.id == planRunID, !finished(run) {
                 let id = nodeID(run, suffix: planSuffix)
-                let planSize = size(id, width: planWidth, height: planHeight)
+                let saved = size(id, width: planWidth, height: planHeight)
+                let planSize = CGSize(width: max(planMinimumSize.width, saved.width), height: max(planMinimumSize.height, saved.height))
                 if planSize.width > tree.width {
                     let shift = (planSize.width - tree.width) / 2
                     tree.offset(x: shift, y: 0)
@@ -477,9 +495,11 @@ public struct MightyGraphLayout {
             let id = nodeID(runs[runIndex], suffix: planRecordSuffix + block.recordID)
             guard !result.nodes.contains(where: { $0.id == id }) else { continue }
             let y = nextY[runIndex] ?? request.frame.minY
-            let height = planRecordHeight(expanded: expanded.contains(id))
+            // A dragged size wins over folded or opened, as on the other blocks.
+            let recordSize = size(id, width: planRecordWidth, height: planRecordHeight(expanded: expanded.contains(id)))
+            let height = recordSize.height
             let right = result.nodes.filter { $0.frame.minY < y + height && $0.frame.maxY > y }.map(\.frame.maxX).max() ?? request.frame.maxX
-            let frame = CGRect(x: max(right, request.frame.maxX) + executionGap, y: y, width: planRecordWidth, height: height)
+            let frame = CGRect(x: max(right, request.frame.maxX) + executionGap, y: y, width: recordSize.width, height: height)
             result.nodes.append(Node(id: id, content: .planRecord(runIndex, block.recordID), frame: frame))
             result.size.width = max(result.size.width, frame.maxX + 24 - result.originX)
             result.size.height = max(result.size.height, frame.maxY + 24 - result.originY)

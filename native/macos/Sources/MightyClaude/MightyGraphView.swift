@@ -485,10 +485,17 @@ struct MightyGraphView: View {
         case .history:
             historyCard(width: node.frame.width, height: node.frame.height)
         case .plan:
-            if let planRequest { planCard(planRequest) }
+            // Whatever does not fit a shrunk block (a change request being
+            // written, an error) is cut at its bottom, never drawn past it.
+            if let planRequest { planCard(planRequest).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top).clipped() }
         case .planRecord(_, let recordID):
             if let record = planHistory.last(where: { $0.id == recordID }) {
-                planRecordCard(record, expanded.contains(node.id)) { if !expanded.insert(node.id).inserted { expanded.remove(node.id) } }
+                // Folding or opening drops a dragged size, as the other blocks' size control does.
+                planRecordCard(record, expanded.contains(node.id)) {
+                    resized.removeValue(forKey: node.id)
+                    if !isRecordNode(node.id) { onSaveBlockSize(node.id, nil) }
+                    if !expanded.insert(node.id).inserted { expanded.remove(node.id) }
+                }
             }
         case .execution(_, let key):
             if let link = executions[key] {
@@ -959,7 +966,7 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
                         }
                         .frame(width: node.frame.width, height: node.frame.height)
                         .overlay(alignment: .bottomTrailing) {
-                            if !node.isAuxiliary, node.content != .history {
+                            if node.isResizable {
                                 Image(systemName: "arrow.up.left.and.arrow.down.right")
                                     .font(.system(size: 10, weight: .semibold))
                                     .foregroundStyle(selection == node.id ? Palette.accent : Palette.ink2)

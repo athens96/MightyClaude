@@ -199,7 +199,12 @@ public sealed partial class MainWindow
             Grid.SetRow(controls, 2); body.Children.Add(controls);
 
             var card = WaitCard(body);
-            if (inDiagram) { card.HorizontalAlignment = HorizontalAlignment.Stretch; card.VerticalAlignment = VerticalAlignment.Stretch; }
+            if (inDiagram)
+            {
+                card.HorizontalAlignment = HorizontalAlignment.Stretch; card.VerticalAlignment = VerticalAlignment.Stretch;
+                // Clear of the diagram's resize handle in the block's corner (M/PlanApprovalCard.swift).
+                body.Margin = new Thickness(0, 0, 0, DesignMetrics.Spacing.Lg);
+            }
             AutomationProperties.SetAutomationId(card, "plan-card-" + id);
             AutomationProperties.SetName(card, Locale.Get("plan.card.title"));
             return new PlanCardParts { RequestId = request.Id, Card = card, Document = document, Controls = controls, Waiting = waiting };
@@ -457,7 +462,13 @@ public sealed partial class MainWindow
         {
             if (block.RecordId is not { } recordId || Session.PlanHistory?.LastOrDefault(r => r.Id == recordId) is not { } record) return null;
             var blockId = block.Id;
-            return PlanRecordRow(record, graphExpanded.Contains(blockId), () => { if (!graphExpanded.Remove(blockId)) graphExpanded.Add(blockId); QueueGraphRefresh(); }, inDiagram: true);
+            // Folding or opening drops a dragged size, as the other blocks' size control does (AddGraphBlockSizeControls).
+            return PlanRecordRow(record, graphExpanded.Contains(blockId), () => _ = owner.Act(async () =>
+            {
+                await Change(p => GraphBlockPreferences.Set(p, blockId, null));
+                if (!graphExpanded.Remove(blockId)) graphExpanded.Add(blockId);
+                RefreshMightyView(Session);
+            }), inDiagram: true);
         }
 
         /// <summary>The fingerprint part of an answered plan's block.</summary>
