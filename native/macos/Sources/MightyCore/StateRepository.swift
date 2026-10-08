@@ -228,6 +228,7 @@ public actor StateRepository {
             }
             session.graphBlockSizes = session.kind == "shell" ? nil : MightyGraphBlockSize.normalized(session.graphBlockSizes, runs: session.mightyGraphRuns)
             session.graphResultSize = session.kind == "shell" ? nil : session.graphResultSize?.normalized
+            session.graphPlanSize = session.kind == "shell" ? nil : session.graphPlanSize?.normalized
             if session.kind == "shell" { session.graphViewMode = nil }
             if session.kind == "shell" { session.runTiming = nil; session.sessionUsage = nil }
             else {

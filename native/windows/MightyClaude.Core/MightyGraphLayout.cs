@@ -24,6 +24,10 @@ public sealed class MightyGraphLayout
     /// it; null without a viewport (the limit also without a zoom) or a result.
     public (double W, double H)? ResultLimit { get; set; }
     public (double W, double H)? ResultWindowFit { get; set; }
+    /// The same two for the pending plan block (<see cref="PlanSize"/>), for a drag
+    /// of it; null without a plan block or a viewport (the limit also without a zoom).
+    public (double W, double H)? PlanLimit { get; set; }
+    public (double W, double H)? PlanWindowFit { get; set; }
 
     private const double SiblingGap = 20;
     private const double RowGap = 32;
@@ -33,14 +37,15 @@ public sealed class MightyGraphLayout
     public const double HistoryHeight = 44;
     /// <summary>A run's pending plan approval, in the flow where its result will go (macOS planSuffix).</summary>
     public const string PlanSuffix = "plan";
+    /// <summary>The plan block without a viewport (the parity vectors); with one it fits the pane (<see cref="PlanSize"/>).</summary>
     public const double PlanWidth = 640;
     public const double PlanHeight = 520;
     /// <summary>
-    /// The least a drag makes the plan card (macOS planMinimumSize): its header, the plan's 80pt page and the
-    /// answers in two rows, wide enough that the two approve buttons share one.
+    /// The least a drag makes the plan block (macOS planMinimumSize): only the plan is in it (its answers are in the
+    /// composer), so as small as any block.
     /// </summary>
-    public const double PlanMinimumWidth = 460;
-    public const double PlanMinimumHeight = 320;
+    public const double PlanMinimumWidth = MightyGraphBlockSize.MinimumWidth;
+    public const double PlanMinimumHeight = MightyGraphBlockSize.MinimumHeight;
     /// <summary>An answered plan's block, attached beside its request (macOS planRecordSuffix).</summary>
     public const string PlanRecordSuffix = "plan-record:";
     public const double PlanRecordWidth = 320;
@@ -114,6 +119,23 @@ public sealed class MightyGraphLayout
     {
         if (contentHeight is not { } content || !double.IsFinite(content) || content < 0) return cap;
         return (cap.W, Math.Min(cap.H, Math.Max(MinimumResultHeight, Math.Ceiling(content))));
+    }
+
+    /// The pending plan block's size, by the newest result card's rules (macOS <c>MightyGraphLayout.planSize</c>):
+    /// the size the user last dragged it to (<paramref name="saved"/>, one per pane) or, with none, the window fit
+    /// is the most it takes, kept within the pane at <paramref name="zoom"/> so it shrinks and grows back with the
+    /// pane. The plan scrolls inside, so it never shrinks to its content. Without a viewport it is the saved size
+    /// or <see cref="PlanWidth"/> × <see cref="PlanHeight"/>. Also returns the limit and the window fit in force,
+    /// for a drag of it (<see cref="ResultDrag"/>).
+    public static ((double W, double H) Size, (double W, double H)? Limit, (double W, double H)? WindowFit) PlanSize(
+        GraphBlockSize? saved, (double W, double H)? viewport, double? zoom)
+    {
+        var savedSize = saved?.Normalized is { } s ? ((double W, double H)?)(s.Width, s.Height) : null;
+        if (viewport is not { } vp) return (savedSize ?? (PlanWidth, PlanHeight), null, null);
+        // No files panel stands beside a plan.
+        var fit = ResultFitSize(vp, false);
+        (double W, double H)? limit = zoom is { } z ? ResultViewportLimit(vp, z, false) : null;
+        return (ResultCap(savedSize ?? fit, limit), limit, fit);
     }
 
     /// Which sides a corner drag of the newest result card moved. The card
@@ -203,7 +225,8 @@ public sealed class MightyGraphLayout
         double? resultContentHeight = null,
         IReadOnlyDictionary<string, GraphBlockSize>? blockSizes = null,
         string? planRunID = null,
-        IReadOnlyList<(string RunID, string RecordID)>? planRecords = null)
+        IReadOnlyList<(string RunID, string RecordID)>? planRecords = null,
+        GraphBlockSize? planSize = null)
     {
         var latestResultID = LatestResultID(runs);
         var filesPanelOpenForLatest = FilesPanelOpen(runs, resultFilesRunID);
@@ -231,6 +254,7 @@ public sealed class MightyGraphLayout
         }
 
         var trees = new List<Tree>();
+        ((double W, double H) Size, (double W, double H)? Limit, (double W, double H)? WindowFit)? planFit = null;
         for (var runIndex = 0; runIndex < runs.Count; runIndex++)
         {
             var run = runs[runIndex];
@@ -322,17 +346,18 @@ public sealed class MightyGraphLayout
             if (run.Id == planRunID && !Finished(run))
             {
                 var planID = NodeID(run, PlanSuffix);
-                var saved = Size(planID, PlanWidth, PlanHeight);
-                var planSize = (W: Math.Max(PlanMinimumWidth, saved.W), H: Math.Max(PlanMinimumHeight, saved.H));
-                if (planSize.W > tree.Width)
+                var fit = PlanSize(planSize, viewport, zoom);
+                planFit = fit;
+                var planBlock = fit.Size;
+                if (planBlock.W > tree.Width)
                 {
-                    tree.Offset((planSize.W - tree.Width) / 2, 0);
-                    tree.Width = planSize.W;
+                    tree.Offset((planBlock.W - tree.Width) / 2, 0);
+                    tree.Width = planBlock.W;
                 }
-                tree.Nodes.Add(new Node(planID, "plan", new((tree.Width - planSize.W) / 2, tree.Height + RowGap, planSize.W, planSize.H)));
+                tree.Nodes.Add(new Node(planID, "plan", new((tree.Width - planBlock.W) / 2, tree.Height + RowGap, planBlock.W, planBlock.H)));
                 tree.Edges.AddRange(tree.Leaves.Select(l => new Edge(l, planID, true)));
                 tree.Leaves = [planID];
-                tree.Height += RowGap + planSize.H;
+                tree.Height += RowGap + planBlock.H;
             }
             if (Finished(run))
             {
@@ -435,6 +460,8 @@ public sealed class MightyGraphLayout
         layout.FittedResultID = FittedResultId(runs, viewport, hasSharedResultSize);
         layout.ResultLimit = resultLimit;
         layout.ResultWindowFit = autoFitResultSize;
+        layout.PlanLimit = planFit?.Limit;
+        layout.PlanWindowFit = planFit?.WindowFit;
         if (viewport is not null && resultMaximum is { } bounded && ResultCap(bounded, resultLimit) != bounded)
             layout.ViewportBoundResultID = latestResultID;
         return layout;

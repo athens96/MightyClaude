@@ -19,6 +19,14 @@ extension AppStore {
         }
     }
 
+    /// Store the dragged size of the pending plan block, the pane's one plan
+    /// size. Pass nil to clear and return to the window fit.
+    func setGraphPlanSize(_ sessionID: String, size: MightyGraphBlockSize?) {
+        updateSession(sessionID) { session in
+            session.graphPlanSize = size?.normalized
+        }
+    }
+
     /// The Mighty view's "다이어그램 | 타임라인" choice, kept per pane. The diagram is
     /// saved as nothing at all, so a pane that never chose stays as it was saved.
     func setGraphViewMode(_ sessionID: String, mode: MightyGraphViewMode) {

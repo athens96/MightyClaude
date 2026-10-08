@@ -73,13 +73,16 @@ internal static class PlanCardVerification
         Check(recordNode.Frame.Y == firstRequest.Frame.Y && recordNode.Frame.X > firstRequest.Frame.MaxX && MightyGraphCamera.IsAuxiliary(recordNode.Id), "an answered plan hangs beside its request");
         Check(MightyGraphBlockModel.Blocks(withRecords, runs, "", "Claude", false).Single(b => b.Kind == "planRecord").RecordId == "p1", "the block knows its record");
 
-        // Both plan blocks take a dragged size (macOS planBlocksTakeTheirSavedSize…), the record whether folded or opened.
+        // An answered plan takes a dragged size, folded or opened; the pending plan the pane's one plan size
+        // (macOS answeredPlanBlocksTakeTheirSavedSizeAndThePendingPlanItsOwn).
         var recordID = MightyGraphBlockSize.NodeId("g1", MightyGraphLayout.PlanRecordSuffix + "p1");
-        MightyGraphLayout Sized(Dictionary<string, GraphBlockSize> sizes, HashSet<string> expanded) =>
-            MightyGraphViewModel.CanvasLayout(runs, "", true, expanded, blockSizes: sizes, planRunID: "g2", planRecords: [("g1", "p1")]);
+        MightyGraphLayout Sized(Dictionary<string, GraphBlockSize> sizes, HashSet<string> expanded, GraphBlockSize? planSize = null) =>
+            MightyGraphViewModel.CanvasLayout(runs, "", true, expanded, blockSizes: sizes, planRunID: "g2", planRecords: [("g1", "p1")], planSize: planSize);
         var sizes = new Dictionary<string, GraphBlockSize> { [planID] = new(820, 610), [recordID] = new(470, 260) };
-        var sizedPlan = Sized(sizes, []).Nodes.Single(n => n.Id == planID).Frame;
-        Check(sizedPlan.W == 820 && sizedPlan.H == 610, "the plan card takes its saved size");
+        var unread = Sized(sizes, []).Nodes.Single(n => n.Id == planID).Frame;
+        Check(unread.W == MightyGraphLayout.PlanWidth && unread.H == MightyGraphLayout.PlanHeight, "a per-block size under the plan's key is not read");
+        var sizedPlan = Sized(sizes, [], new(820, 610)).Nodes.Single(n => n.Id == planID).Frame;
+        Check(sizedPlan.W == 820 && sizedPlan.H == 610, "the plan block takes the pane's plan size");
         foreach (var expanded in new[] { new HashSet<string>(), new HashSet<string> { recordID } })
         {
             var sizedRecord = Sized(sizes, expanded).Nodes.Single(n => n.Id == recordID).Frame;
@@ -87,10 +90,12 @@ internal static class PlanCardVerification
         }
         var opened = Sized([], [recordID]).Nodes.Single(n => n.Id == recordID).Frame;
         Check(opened.W == MightyGraphLayout.PlanRecordWidth && opened.H == MightyGraphLayout.PlanRecordHeight(true), "without one it opens to its own height");
-        var least = Sized(new() { [planID] = new(300, 140) }, []).Nodes.Single(n => n.Id == planID).Frame;
-        Check(least.W == MightyGraphLayout.PlanMinimumWidth && least.H == MightyGraphLayout.PlanMinimumHeight, "the plan card is never drawn below its answers");
+        // Its answers are in the composer, so the plan block may be as small as any block.
+        Check(MightyGraphLayout.PlanMinimumWidth == MightyGraphBlockSize.MinimumWidth && MightyGraphLayout.PlanMinimumHeight == MightyGraphBlockSize.MinimumHeight, "the plan's least is any block's");
+        var least = Sized([], [], new(10, 10)).Nodes.Single(n => n.Id == planID).Frame;
+        Check(least.W == MightyGraphLayout.PlanMinimumWidth && least.H == MightyGraphLayout.PlanMinimumHeight, "a tiny plan size is drawn at the blocks' least");
         var folded = MightyGraphLayout.PlanRecordHeight(false);
-        Check(MightyGraphLayout.MinimumBlockSize("plan") == (MightyGraphLayout.PlanMinimumWidth, MightyGraphLayout.PlanMinimumHeight)
+        Check(MightyGraphLayout.MinimumBlockSize("plan") == (MightyGraphBlockSize.MinimumWidth, MightyGraphBlockSize.MinimumHeight)
               && MightyGraphLayout.MinimumBlockSize("planRecord") == (MightyGraphBlockSize.MinimumWidth, folded), "the least a drag makes each plan block");
         // An answered plan keeps its folded height (macOS anAnsweredPlanKeepsItsFoldedHeight): its first drag does not jump to 140.
         var requestID = MightyGraphBlockSize.NodeId("g1", "request");
@@ -106,5 +111,75 @@ internal static class PlanCardVerification
             "the saved-size normalizer keeps an answered plan at its folded height and other blocks at their least");
         Check(GraphBlockPreferences.Set(new RunSession(), recordID, new(360, folded)).GraphBlockSizes?[recordID] == new GraphBlockSize(360, folded), "a dragged answered plan is saved at its folded height");
         return Task.CompletedTask;
+    }
+
+    /// <summary>The plan block fits the pane as the newest result does (macOS PlanCardTests / MightyGraphResultFitTests).</summary>
+    internal static Task PlanFitsThePaneLikeTheResult()
+    {
+        IReadOnlyList<MightyGraphRun> runs = [Run("g1", "completed"), Run("g2")];
+        var planID = MightyGraphBlockSize.NodeId("g2", MightyGraphLayout.PlanSuffix);
+        var resultID = MightyGraphBlockSize.NodeId("g1", "result");
+        MightyGraphLayout Make((double W, double H)? viewport, double? zoom = 1, GraphBlockSize? plan = null, GraphBlockSize? result = null) =>
+            MightyGraphViewModel.CanvasLayout(runs, "", true, new HashSet<string>(), viewport: viewport, zoom: zoom, sharedResultSize: result, resultContentHeight: 5_000, planRunID: "g2", planSize: plan);
+        (double W, double H) Frame(MightyGraphLayout layout, string node) => layout.Nodes.Single(n => n.Id == node).Frame is var f ? (f.W, f.H) : default;
+
+        var fitted = Make((1_200, 800));
+        Check(Frame(fitted, planID) == (1_152, 752) && Frame(fitted, planID) == MightyGraphLayout.ResultFitSize((1_200, 800), false), "nothing saved: the window fit");
+        Check(fitted.PlanWindowFit == (1_152, 752) && fitted.PlanLimit == (1_152, 752), "the layout carries the plan's limit and window fit for a drag");
+        var none = MightyGraphViewModel.CanvasLayout(runs, "", true, new HashSet<string>(), viewport: (1_200, 800), zoom: 1);
+        Check(none.PlanWindowFit is null && none.PlanLimit is null, "no plan block, no plan limits");
+
+        var saved = new GraphBlockSize(900, 700);
+        Check(Frame(Make((1_400, 1_000), plan: saved), planID) == (900, 700), "the saved size in a large pane");
+        Check(Frame(Make((700, 500), plan: saved), planID) == (652, 452), "a smaller pane draws it within the pane");
+        Check(Frame(Make((1_000, 800), 1.5, saved), planID) == MightyGraphLayout.ResultViewportLimit((1_000, 800), 1.5, false), "zoomed in, within what the pane shows");
+        Check(Frame(Make((1_400, 1_000), plan: saved), planID) == (900, 700), "it grows back to the saved size");
+        Check(Frame(Make(null, null), planID) == (MightyGraphLayout.PlanWidth, MightyGraphLayout.PlanHeight), "no viewport: the document size");
+        Check(Frame(Make(null, null, new(700, 400)), planID) == (700, 400), "no viewport: the saved size");
+
+        // The plan and the result keep their own sizes.
+        Check(Frame(Make((1_200, 800), result: new(700, 400)), planID) == (1_152, 752), "a result size leaves the plan at the window fit");
+        Check(Frame(Make((1_200, 800), plan: new(700, 400)), resultID) == (1_152, 752), "a plan size leaves the result at the window fit");
+
+        // A drag by the result's rules.
+        var fit = MightyGraphLayout.PlanSize(null, (1_000, 700), 1);
+        Check(MightyGraphLayout.ResultDrag((600, 420), true, true, MightyGraphLayout.ResizePhase.Finished, null, fit.Limit, fit.WindowFit).Save == new GraphBlockSize(600, 420), "released inside the pane: saved as released");
+        Check(MightyGraphLayout.ResultDrag((2_000, 420), true, true, MightyGraphLayout.ResizePhase.Live, null, fit.Limit, fit.WindowFit).Live == new GraphBlockSize(952, 420), "live: kept within the pane");
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// While the diagram draws the plan the composer area shows only its answers, else the whole card docks
+    /// (macOS theComposerShowsOnlyTheAnswersWhileTheDiagramDrawsThePlan); the plan size round-trips under the Mac field.
+    /// </summary>
+    internal static async Task ComposerShowsTheAnswersAndThePlanSizeIsKept()
+    {
+        IReadOnlyList<MightyGraphRun> runs = [Run("g1", "completed"), Run("g2")];
+        Check(PlanCardSupport.ComposerShowsPlanActions(Plan(), true, runs), "the diagram draws it: answers only");
+        Check(!PlanCardSupport.ComposerShowsPlanActions(Plan(), false, runs), "outside the diagram: the whole card");
+        Check(!PlanCardSupport.ComposerShowsPlanActions(Plan(), true, [Run("g1", "completed")]) && !PlanCardSupport.ComposerShowsPlanActions(Bash, true, runs)
+            && !PlanCardSupport.ComposerShowsPlanActions(null, true, runs) && !PlanCardSupport.ComposerShowsPlanActions(Plan(state: "allowed"), true, runs), "only a pending plan the diagram draws");
+
+        var workspace = new Workspace { Path = Path.GetTempPath() };
+        var session = new RunSession { WorkspaceId = workspace.Id, Provider = "claude", AgentViewMode = "mighty", GraphPlanSize = new(5_000, 610) };
+        var shell = new RunSession { WorkspaceId = workspace.Id, Kind = "shell", GraphPlanSize = new(900, 700) };
+        var plain = new RunSession { WorkspaceId = workspace.Id, Provider = "claude" };
+        var encoded = System.Text.Json.JsonSerializer.Serialize(new AppSnapshot { Version = 1, Workspaces = [workspace], Sessions = [session, shell, plain] }, Wire.Json);
+        using (var document = System.Text.Json.JsonDocument.Parse(encoded))
+        {
+            var saved = document.RootElement.GetProperty("sessions")[0].GetProperty("graphPlanSize");
+            Check(saved.GetProperty("width").GetDouble() == 5_000 && saved.GetProperty("height").GetDouble() == 610, "graphPlanSize is {width,height}");
+            Check(!document.RootElement.GetProperty("sessions")[2].TryGetProperty("graphPlanSize", out _), "no saved plan size writes nothing");
+        }
+        var directory = Verification.Temp();
+        try
+        {
+            await StateStore.AtomicWriteAsync(Path.Combine(directory, "workspace-state.json"), System.Text.Encoding.UTF8.GetBytes(encoded));
+            var loaded = await new StateStore(directory).LoadAsync();
+            Check(loaded.Sessions.Single(s => s.Id == session.Id).GraphPlanSize == new GraphBlockSize(1_400, 610), "the saved plan size survives clamped");
+            Check(loaded.Sessions.Single(s => s.Id == shell.Id).GraphPlanSize is null, "a shell pane keeps no plan size");
+            Check(loaded.Sessions.Single(s => s.Id == plain.Id).GraphPlanSize is null, "no saved plan size loads as none");
+        }
+        finally { Directory.Delete(directory, true); }
     }
 }

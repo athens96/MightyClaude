@@ -67,6 +67,23 @@ struct MightyGraphResultFitTests {
         #expect(frame(long, resultID("one"))?.size == CGSize(width: 1_152, height: 752))
     }
 
+    @Test func thePendingPlanFitsTheWindowAsTheResultDoesAndEachKeepsItsOwnSize() {
+        let viewport = CGSize(width: 1_200, height: 800)
+        let runs = [run("one"), run("two", status: "running")]
+        let plan = MightyGraphBlockSize.nodeID(runID: "two", suffix: MightyGraphLayout.planSuffix)
+        func make(result: MightyGraphBlockSize? = nil, plan planSize: MightyGraphBlockSize? = nil) -> MightyGraphLayout {
+            MightyGraphLayout.make(runs: runs, draft: "", running: true, expanded: [], viewport: viewport, zoom: 1,
+                                   sharedResultSize: result, resultContentHeight: 5_000, planRunID: "two", planSize: planSize)
+        }
+        // Nothing saved: both take the window fit.
+        #expect(frame(make(), plan)?.size == CGSize(width: 1_152, height: 752))
+        #expect(frame(make(), resultID("one"))?.size == CGSize(width: 1_152, height: 752))
+        // A result size leaves the plan at the window fit, and a plan size leaves the result.
+        #expect(frame(make(result: .init(width: 700, height: 400)), plan)?.size == CGSize(width: 1_152, height: 752))
+        #expect(frame(make(plan: .init(width: 700, height: 400)), resultID("one"))?.size == CGSize(width: 1_152, height: 752))
+        #expect(frame(make(plan: .init(width: 700, height: 400)), plan)?.size == CGSize(width: 700, height: 400))
+    }
+
     @Test func aShorterResultMovesNothingAboveItAndPullsTheDraftUp() {
         let viewport = CGSize(width: 1_200, height: 800)
         let full = MightyGraphLayout.make(runs: [run("one")], draft: "", running: false, expanded: [], viewport: viewport)

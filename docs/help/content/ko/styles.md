@@ -36,6 +36,8 @@ Claude가 계획 모드(Plan mode, 또는 클러드 플랜 스타일)에서 계�
    - {{ui:plan.card.revise}}: 바꿀 점을 적어 {{ui:plan.card.reviseSend}}를 누르면 Claude가 다시 계획합니다.
    - {{ui:plan.card.cancel}}: 계획을 거절하고 이번 작업을 멈춥니다.
 
+마이티 보기의 다이어그램에서는 계획이 요청 아래 블록에 뜨고, 네 가지 답은 입력창 쪽(스타일을 쓰면 스타일 패널)에 나옵니다. 계획 블록은 결과 카드처럼 창 크기에 맞춰지고, 크기를 직접 바꿨다면 {{ui:graph.result.fitToWindow}} 단추가 생깁니다. 기본 보기와 타임라인에서는 계획과 답이 한 카드로 입력창 위에 뜹니다.
+
 데스크톱 펫도 끝난 계획을 보여 줍니다. 받은 시각과 계획의 첫 줄들, 답할 버튼이 나옵니다. 펫에서 바로 {{ui:plan.card.approveAuto}} 단추나 {{ui:plan.card.cancel}} 단추를 누를 수 있습니다. 수정 요청을 쓰거나 계획 전체를 읽으려면 {{ui:companion.plan.review}} 단추(Mac에서는 {{ui:plan.card.revise}} 단추도)를 누르세요. 네 가지 답이 모두 있는 작은 창에 계획이 열리고, 계획에 답하면 창이 닫힙니다.
 
 답한 계획은 기록으로 남아 다시 볼 수 있습니다.

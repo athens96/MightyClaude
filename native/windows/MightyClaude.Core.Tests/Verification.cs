@@ -447,6 +447,8 @@ internal static class Verification
         await Test("plan mode stopping a pane waiting on background work ends everything", ClaudePlanModeVerification.StoppingAPaneWaitingOnBackgroundWorkEndsEverything);
         await Test("plan card helpers pick the plan, place it and read its outcome", PlanCardVerification.Helpers);
         await Test("plan card takes the result's place in the diagram", PlanCardVerification.LayoutPlacesThePlanCard);
+        await Test("plan block fits the pane like the newest result", PlanCardVerification.PlanFitsThePaneLikeTheResult);
+        await Test("plan answers sit in the composer area while the diagram draws the plan", PlanCardVerification.ComposerShowsTheAnswersAndThePlanSizeIsKept);
         await Test("plan mode approval never lowers the pane's own mode", ClaudePlanModeVerification.ApprovalNeverLowersThePaneMode);
         await Test("plan mode per-run override launches in plan and is never saved", ClaudePlanModeVerification.PerRunPlanOverride);
         await Test("plan mode history keeps new plans whole within its budget", ClaudePlanModeVerification.HistoryKeepsNewPlansWholeWithinItsBudget);

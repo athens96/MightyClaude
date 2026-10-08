@@ -157,16 +157,18 @@ struct PlanCardTests {
         #expect(!finished.nodes.contains { $0.content == .plan(0) })
     }
 
-    @Test func planBlocksTakeTheirSavedSizeAndThePlanCardNeverShrinksPastItsAnswers() throws {
+    @Test func answeredPlanBlocksTakeTheirSavedSizeAndThePendingPlanItsOwn() throws {
         let runs = [Self.run("g1", source: "run-a", status: "completed"), Self.run("g2", source: "run-b")]
         let planID = MightyGraphBlockSize.nodeID(runID: "g2", suffix: MightyGraphLayout.planSuffix)
         let recordID = MightyGraphBlockSize.nodeID(runID: "g1", suffix: MightyGraphLayout.planRecordSuffix + "p1")
         let sizes: [String: MightyGraphBlockSize] = [planID: .init(width: 820, height: 610), recordID: .init(width: 470, height: 260)]
-        func layout(_ sizes: [String: MightyGraphBlockSize], expanded: Set<String> = []) -> MightyGraphLayout {
+        func layout(_ sizes: [String: MightyGraphBlockSize], expanded: Set<String> = [], planSize: MightyGraphBlockSize? = nil) -> MightyGraphLayout {
             MightyGraphLayout.make(runs: runs, draft: "", running: true, expanded: expanded, blockSizes: sizes,
-                                   planRunID: "g2", planRecords: [.init(runID: "g1", recordID: "p1")])
+                                   planRunID: "g2", planRecords: [.init(runID: "g1", recordID: "p1")], planSize: planSize)
         }
-        #expect(layout(sizes).nodes.first { $0.id == planID }?.frame.size == CGSize(width: 820, height: 610))
+        // A per-block size under the plan's key is not read: the pane's one plan size is.
+        #expect(layout(sizes).nodes.first { $0.id == planID }?.frame.size == CGSize(width: MightyGraphLayout.planWidth, height: MightyGraphLayout.planHeight))
+        #expect(layout(sizes, planSize: .init(width: 820, height: 610)).nodes.first { $0.id == planID }?.frame.size == CGSize(width: 820, height: 610))
         // A dragged size wins over folded and opened alike.
         for expanded in [Set<String>(), [recordID]] {
             #expect(layout(sizes, expanded: expanded).nodes.first { $0.id == recordID }?.frame.size == CGSize(width: 470, height: 260))
@@ -174,8 +176,9 @@ struct PlanCardTests {
         // Without one, the record folds and opens to its own heights again.
         #expect(layout([:], expanded: [recordID]).nodes.first { $0.id == recordID }?.frame.size
                 == CGSize(width: MightyGraphLayout.planRecordWidth, height: MightyGraphLayout.planRecordHeight(expanded: true)))
-        // A size below the plan card's least (saved elsewhere) is drawn at that least.
-        let small = layout([planID: .init(width: 300, height: 140)])
+        // Its answers are in the composer, so the plan block may be as small as any block.
+        #expect(MightyGraphLayout.planMinimumSize == CGSize(width: MightyGraphBlockSize.minimumWidth, height: MightyGraphBlockSize.minimumHeight))
+        let small = layout([:], planSize: .init(width: 10, height: 10))
         #expect(small.nodes.first { $0.id == planID }?.frame.size == MightyGraphLayout.planMinimumSize)
         // An answered plan's least is its folded height: dragged from there it does not jump to the blocks' least.
         let folded = layout([:]).nodes.first { $0.id == recordID }
@@ -183,5 +186,104 @@ struct PlanCardTests {
         #expect(folded?.frame.height == MightyGraphLayout.planRecordMinimumSize.height)
         let short = layout([recordID: .init(width: 360, height: Double(MightyGraphLayout.planRecordMinimumSize.height))])
         #expect(short.nodes.first { $0.id == recordID }?.frame.size == CGSize(width: 360, height: MightyGraphLayout.planRecordMinimumSize.height))
+    }
+
+    // MARK: The plan block fits the pane like the newest result
+
+    private static let planRuns = [run("g1", source: "run-a", status: "completed"), run("g2", source: "run-b")]
+    private static let planNodeID = MightyGraphBlockSize.nodeID(runID: "g2", suffix: MightyGraphLayout.planSuffix)
+    private static func planFrame(viewport: CGSize?, zoom: CGFloat? = 1, saved: MightyGraphBlockSize? = nil) -> CGRect? {
+        MightyGraphLayout.make(runs: planRuns, draft: "", running: true, expanded: [], viewport: viewport, zoom: zoom,
+                               planRunID: "g2", planSize: saved).nodes.first { $0.id == planNodeID }?.frame
+    }
+
+    @Test func withNothingSavedThePlanFitsTheWindow() {
+        let viewport = CGSize(width: 1_200, height: 800)
+        #expect(Self.planFrame(viewport: viewport)?.size == MightyGraphLayout.resultFitSize(viewport: viewport, filesPanelOpen: false))
+        #expect(Self.planFrame(viewport: viewport)?.size == CGSize(width: 1_152, height: 752))
+        let layout = MightyGraphLayout.make(runs: Self.planRuns, draft: "", running: true, expanded: [], viewport: viewport, zoom: 1, planRunID: "g2")
+        #expect(layout.planWindowFit == CGSize(width: 1_152, height: 752) && layout.planLimit == CGSize(width: 1_152, height: 752))
+        // No plan block, no plan limits.
+        let none = MightyGraphLayout.make(runs: Self.planRuns, draft: "", running: true, expanded: [], viewport: viewport, zoom: 1)
+        #expect(none.planWindowFit == nil && none.planLimit == nil)
+    }
+
+    @Test func thePlanShrinksWithThePaneAndGrowsBackToItsSavedSize() {
+        let saved = MightyGraphBlockSize(width: 900, height: 700)
+        #expect(Self.planFrame(viewport: CGSize(width: 1_400, height: 1_000), saved: saved)?.size == CGSize(width: 900, height: 700))
+        // A smaller pane draws it within the pane, the saved size untouched…
+        #expect(Self.planFrame(viewport: CGSize(width: 700, height: 500), saved: saved)?.size == CGSize(width: 652, height: 452))
+        // …and zoomed in, within what the pane shows at that zoom.
+        #expect(Self.planFrame(viewport: CGSize(width: 1_000, height: 800), zoom: 1.5, saved: saved)?.size
+                == MightyGraphLayout.resultViewportLimit(viewport: CGSize(width: 1_000, height: 800), zoom: 1.5, filesPanelOpen: false))
+        // Back in a large pane it is the saved size again; the window fit is capped the same way.
+        #expect(Self.planFrame(viewport: CGSize(width: 1_400, height: 1_000), saved: saved)?.size == CGSize(width: 900, height: 700))
+        #expect(Self.planFrame(viewport: CGSize(width: 600, height: 400), zoom: 2)?.size
+                == MightyGraphLayout.resultViewportLimit(viewport: CGSize(width: 600, height: 400), zoom: 2, filesPanelOpen: false))
+    }
+
+    @Test func withoutAViewportThePlanIsItsSavedSizeOrTheDocumentSize() {
+        #expect(Self.planFrame(viewport: nil, zoom: nil)?.size == CGSize(width: MightyGraphLayout.planWidth, height: MightyGraphLayout.planHeight))
+        #expect(Self.planFrame(viewport: nil, zoom: nil, saved: .init(width: 700, height: 400))?.size == CGSize(width: 700, height: 400))
+        // A broken saved size is the window fit, never a broken frame.
+        #expect(Self.planFrame(viewport: CGSize(width: 1_200, height: 800), saved: .init(width: .nan, height: 400))?.size == CGSize(width: 1_152, height: 752))
+    }
+
+    @Test func aPlanDragSavesByTheResultsRules() {
+        let viewport = CGSize(width: 1_000, height: 700)
+        let fit = MightyGraphLayout.planSize(saved: nil, viewport: viewport, zoom: 1)
+        // Released inside the pane: saved as released; past the pane's edge: never smaller than the limit.
+        let inside = MightyGraphLayout.resultDrag(dragged: CGSize(width: 600, height: 420), edges: .bottomRight, phase: .finished,
+                                                  saved: nil, limit: fit.limit, windowFit: fit.windowFit)
+        #expect(inside.save == MightyGraphBlockSize(width: 600, height: 420))
+        let past = MightyGraphLayout.resultDrag(dragged: CGSize(width: 2_000, height: 420), edges: .bottomRight, phase: .live,
+                                                saved: nil, limit: fit.limit, windowFit: fit.windowFit)
+        #expect(past.live == MightyGraphBlockSize(width: 952, height: 420) && past.save == nil)
+    }
+
+    // MARK: The plan's answers in the composer
+
+    @Test func theComposerShowsOnlyTheAnswersWhileTheDiagramDrawsThePlan() {
+        let plan = Self.planRequest(runId: "run-b")
+        let runs = [Self.run("g1", source: "run-a", status: "completed"), Self.run("g2", source: "run-b")]
+        #expect(PlanCardSupport.composerShowsPlanActions(plan, showsDiagram: true, runs: runs))
+        #expect(PlanCardSupport.composerPlace(plan, showsDiagram: true, runs: runs, guided: false) == .barActions)
+        #expect(PlanCardSupport.composerPlace(plan, showsDiagram: true, runs: runs, guided: true) == .panelActions)
+        // The diagram does not draw it (default view, timeline, no request for it, request ended): the whole card docks.
+        #expect(!PlanCardSupport.composerShowsPlanActions(plan, showsDiagram: false, runs: runs))
+        for guided in [false, true] {
+            #expect(PlanCardSupport.composerPlace(plan, showsDiagram: false, runs: runs, guided: guided) == .card)
+            #expect(PlanCardSupport.composerPlace(Self.planRequest(runId: "run-z"), showsDiagram: true, runs: runs, guided: guided) == .card)
+            #expect(PlanCardSupport.composerPlace(Self.planRequest(runId: "run-a"), showsDiagram: true, runs: runs, guided: guided) == .card)
+            // Anything but a pending answerable plan has no plan place.
+            #expect(PlanCardSupport.composerPlace(nil, showsDiagram: true, runs: runs, guided: guided) == nil)
+            #expect(PlanCardSupport.composerPlace(Self.bash(), showsDiagram: true, runs: runs, guided: guided) == nil)
+            #expect(PlanCardSupport.composerPlace(Self.planRequest(runId: "run-b", state: "allowed"), showsDiagram: true, runs: runs, guided: guided) == nil)
+        }
+    }
+
+    @Test func onlyAClaudePaneShowingItsDiagramDrawsThePlan() {
+        var session = RunSession(id: "s", workspaceId: "w", title: "t")
+        #expect(!PlanCardSupport.showsDiagram(session))
+        session.agentViewMode = "mighty"
+        #expect(PlanCardSupport.showsDiagram(session))
+        session.graphViewMode = .timeline
+        #expect(!PlanCardSupport.showsDiagram(session))
+        session.graphViewMode = nil; session.kind = "shell"
+        #expect(!PlanCardSupport.showsDiagram(session))
+    }
+
+    @Test func thePlanSizeRoundTripsAndOldStateLoads() throws {
+        var session = RunSession(id: "s1", workspaceId: "w1", title: "t")
+        session.graphPlanSize = MightyGraphBlockSize(width: 820, height: 610)
+        let decoded = try JSONDecoder().decode(RunSession.self, from: JSONEncoder().encode(session))
+        #expect(decoded.graphPlanSize == MightyGraphBlockSize(width: 820, height: 610))
+        let plain = try JSONSerialization.jsonObject(with: JSONEncoder().encode(RunSession(id: "s2", workspaceId: "w1", title: "t"))) as? [String: Any]
+        #expect(plain?["graphPlanSize"] == nil)
+        let old = try JSONDecoder().decode(RunSession.self, from: Data(#"{"id":"s3","workspaceId":"w1","title":"t"}"#.utf8))
+        #expect(old.graphPlanSize == nil)
+        // A damaged size never loses the pane.
+        let damaged = try JSONDecoder().decode(RunSession.self, from: Data(#"{"id":"s4","workspaceId":"w1","title":"t","graphPlanSize":"wide"}"#.utf8))
+        #expect(damaged.graphPlanSize == nil && damaged.id == "s4")
     }
 }

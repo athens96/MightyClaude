@@ -41,7 +41,9 @@ public sealed partial class MainWindow
         private Task ResetGraphBlockSize(string nodeId) => owner.Act(async () =>
         {
             CancelResultReveal(); graphExpanded.Remove(nodeId);
-            await Change(p => GraphBlockPreferences.Set(nodeId == graphLatestResultId ? p with { GraphResultSize = null } : p, nodeId, null));
+            // The newest result and the pending plan go back to the window fit; any other block to its own size.
+            await Change(p => nodeId == graphPlanNodeId ? p with { GraphPlanSize = null }
+                : GraphBlockPreferences.Set(nodeId == graphLatestResultId ? p with { GraphResultSize = null } : p, nodeId, null));
             RefreshMightyView(Session);
         });
     }

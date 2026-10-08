@@ -35,8 +35,7 @@ public struct MightyGraphLayout {
             case .resultFiles, .execution, .images, .history: return false
             }
         }
-        /// The least a drag may make it: the plan card keeps its plan, its
-        /// header and its four answers inside the block.
+        /// The least a drag may make it: an answered plan may stay as short as it folds.
         public var minimumSize: CGSize {
             if case .plan = content { return MightyGraphLayout.planMinimumSize }
             if case .planRecord = content { return MightyGraphLayout.planRecordMinimumSize }
@@ -58,12 +57,14 @@ public struct MightyGraphLayout {
     }
     public static let planSuffix = "plan"
     public static let planRecordSuffix = "plan-record:"
-    /// The pending plan card: wide enough to read a plan like a document.
+    /// The pending plan card without a viewport (the parity vectors): wide
+    /// enough to read a plan like a document. With one it fits the pane as the
+    /// newest result does (`planSize`).
     public static let planWidth: CGFloat = 640
     public static let planHeight: CGFloat = 520
-    /// Its header, the plan's 80pt page and the answers in two rows, wide
-    /// enough that the two approve buttons share one.
-    public static let planMinimumSize = CGSize(width: 460, height: 320)
+    /// Only the plan is in the block (its answers are in the composer), so it
+    /// may be dragged as small as any block.
+    public static let planMinimumSize = CGSize(width: MightyGraphBlockSize.minimumWidth, height: MightyGraphBlockSize.minimumHeight)
     public static let planRecordWidth: CGFloat = 320
     public static func planRecordHeight(expanded: Bool) -> CGFloat { expanded ? 420 : 104 }
     /// An answered plan may be dragged as short as it folds, so its first drag
@@ -123,6 +124,10 @@ public struct MightyGraphLayout {
     /// without a viewport (the limit also without a zoom) or a result.
     public var resultLimit: CGSize? = nil
     public var resultWindowFit: CGSize? = nil
+    /// The same two for the pending plan block (`planSize`), for a drag of it;
+    /// nil without a plan block or a viewport (the limit also without a zoom).
+    public var planLimit: CGSize? = nil
+    public var planWindowFit: CGSize? = nil
     static let siblingGap: CGFloat = 20
     static let rowGap: CGFloat = 32
     public static let historyNodeID = "history-top"
@@ -184,6 +189,21 @@ public struct MightyGraphLayout {
     public static func resultCap(_ maximum: CGSize, within limit: CGSize?) -> CGSize {
         guard let limit else { return maximum }
         return CGSize(width: min(maximum.width, limit.width), height: min(maximum.height, limit.height))
+    }
+    /// The pending plan block's size, by the newest result card's rules: the
+    /// size the user last dragged it to (`saved`, one per pane) or, with none,
+    /// the window fit is the most it takes, kept within the pane at `zoom` so
+    /// it shrinks and grows back with the pane. The plan scrolls inside, so it
+    /// never shrinks to its content. Without a viewport it is the saved size or
+    /// `planWidth` × `planHeight`. Also returns the limit and the window fit in
+    /// force, for a drag of it (`resultDrag`).
+    public static func planSize(saved: MightyGraphBlockSize?, viewport: CGSize?, zoom: CGFloat?) -> (size: CGSize, limit: CGSize?, windowFit: CGSize?) {
+        let savedSize = saved?.normalized.map { CGSize(width: $0.width, height: $0.height) }
+        guard let viewport else { return (savedSize ?? CGSize(width: planWidth, height: planHeight), nil, nil) }
+        // No files panel stands beside a plan.
+        let fit = resultFitSize(viewport: viewport, filesPanelOpen: false)
+        let limit = zoom.map { resultViewportLimit(viewport: viewport, zoom: $0, filesPanelOpen: false) }
+        return (resultCap(savedSize ?? fit, within: limit), limit, fit)
     }
     /// Whether the result files panel is open beside the newest result card.
     public static func filesPanelOpen(runs: [MightyGraphRun], resultFilesRunID: String?) -> Bool {
@@ -281,8 +301,10 @@ public struct MightyGraphLayout {
     /// height (`resultSize(cap:contentHeight:)`); nil keeps it at its cap.
     /// `zoom`, with a viewport, also keeps the newest result card within the
     /// viewport at that zoom (`resultViewportLimit`); nil leaves its cap whole.
+    /// `planSize` is the pane's saved plan block size (`RunSession.graphPlanSize`,
+    /// or a drag in progress); see `planSize(saved:viewport:zoom:)`.
     public static func make(runs: [MightyGraphRun], draft: String, running: Bool, expanded: Set<String>, blockSizes: [String: MightyGraphBlockSize] = [:], resultFilesRunID: String? = nil, viewport: CGSize? = nil, zoom: CGFloat? = nil, sharedResultSize: MightyGraphBlockSize? = nil, resultContentHeight: CGFloat? = nil, executions: [Execution] = [], galleries: [ImageGallery] = [], retainedStart: Int = 0, history: Bool = false,
-                            planRunID: String? = nil, planRecords: [PlanRecordBlock] = []) -> Self {
+                            planRunID: String? = nil, planRecords: [PlanRecordBlock] = [], planSize savedPlanSize: MightyGraphBlockSize? = nil) -> Self {
         let latestResultID = Self.latestResultID(runs: runs)
 
         // The files panel reduces available width only when it is open for the latest result.
@@ -323,6 +345,7 @@ public struct MightyGraphLayout {
             }
         }
         var trees: [Tree] = []
+        var planFit: (size: CGSize, limit: CGSize?, windowFit: CGSize?)?
         for (runIndex, run) in runs.enumerated() {
             let mainID = nodeID(run, suffix: "request")
             let mainSize = size(mainID, width: MightyGraphCamera.requestWidth, height: expanded.contains(mainID) ? 540 : 280)
@@ -386,8 +409,9 @@ public struct MightyGraphLayout {
             // run is still going, so nothing is below it yet.
             if run.id == planRunID, !finished(run) {
                 let id = nodeID(run, suffix: planSuffix)
-                let saved = size(id, width: planWidth, height: planHeight)
-                let planSize = CGSize(width: max(planMinimumSize.width, saved.width), height: max(planMinimumSize.height, saved.height))
+                let fit = Self.planSize(saved: savedPlanSize, viewport: viewport, zoom: zoom)
+                planFit = fit
+                let planSize = fit.size
                 if planSize.width > tree.width {
                     let shift = (planSize.width - tree.width) / 2
                     tree.offset(x: shift, y: 0)
@@ -512,6 +536,8 @@ public struct MightyGraphLayout {
         result.fittedResultID = Self.fittedResultID(runs: runs, viewport: viewport, sharedResultSize: sharedResultSize)
         result.resultLimit = resultLimit
         result.resultWindowFit = autoFitResultSize
+        result.planLimit = planFit?.limit
+        result.planWindowFit = planFit?.windowFit
         if viewport != nil, let maximum = sharedResultSize.map({ CGSize(width: $0.width, height: $0.height) }) ?? autoFitResultSize,
            resultCap(maximum, within: resultLimit) != maximum {
             result.viewportBoundResultID = latestResultID

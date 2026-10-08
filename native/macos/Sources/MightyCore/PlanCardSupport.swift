@@ -30,6 +30,37 @@ public enum PlanCardSupport {
         return id
     }
 
+    /// Whether the pane shows its Mighty diagram (not the default view or the timeline).
+    public static func showsDiagram(_ session: RunSession) -> Bool {
+        session.kind == "claude" && MightyGraphSupport.providers.contains(session.provider)
+            && session.agentViewMode == "mighty" && session.mightyViewMode == .diagram
+    }
+
+    /// Where the composer shows a pending plan's answers.
+    public enum ComposerPlace: Equatable, Sendable {
+        /// The whole card, plan and answers, docked above the composer: the diagram does not draw the plan.
+        case card
+        /// Only the answers, in the guided style's panel, where a style shows its choices.
+        case panelActions
+        /// Only the answers, docked above the composer (no style).
+        case barActions
+    }
+
+    /// The diagram draws the plan, so the composer shows only its answers.
+    public static func composerShowsPlanActions(_ request: ToolPermissionRequest?, showsDiagram: Bool, runs: [MightyGraphRun]) -> Bool {
+        diagramPlanRunID(request, showsDiagram: showsDiagram, runs: runs) != nil
+    }
+
+    /// One place for each pending plan, so its answers never show twice: the
+    /// whole card while the diagram does not draw the plan, else only its
+    /// answers — in the guided panel under a style, docked above the composer
+    /// without one. nil for anything but an answerable pending plan.
+    public static func composerPlace(_ request: ToolPermissionRequest?, showsDiagram: Bool, runs: [MightyGraphRun], guided: Bool) -> ComposerPlace? {
+        guard let request, request.canAnswerPlan, request.state == "pending", request.plan != nil else { return nil }
+        guard composerShowsPlanActions(request, showsDiagram: showsDiagram, runs: runs) else { return .card }
+        return guided ? .panelActions : .barActions
+    }
+
     /// Answered plans whose request the diagram draws, oldest first.
     public static func diagramRecords(_ history: [PlanRecord]?, runs: [MightyGraphRun]) -> [MightyGraphLayout.PlanRecordBlock] {
         (history ?? []).compactMap { record in

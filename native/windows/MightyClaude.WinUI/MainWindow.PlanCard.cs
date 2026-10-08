@@ -26,23 +26,33 @@ public sealed partial class MainWindow
         }
 
         /// <summary>
-        /// One plan card, built once per request and place (docked or in the diagram): its plan document is
-        /// never torn down while the request waits; only the controls under it are rebuilt when the card's
-        /// state changes.
+        /// Where a plan card is: the whole card docked over the composer (the diagram does not draw the plan); the
+        /// plan alone in the diagram's block; its answers alone over the composer while the diagram draws it
+        /// (<see cref="PlanCardSupport.ComposerShowsPlanActions"/>, macOS PlanBody / PlanActionsCard).
+        /// </summary>
+        private enum PlanPlace { Dock, Diagram, Actions }
+
+        /// <summary>
+        /// One plan card, built once per request and place: its plan document is never torn down while the request
+        /// waits; only the controls under it are rebuilt when the card's state changes.
         /// </summary>
         private sealed class PlanCardParts
         {
             internal required string RequestId;
             internal required Border Card;
-            internal required RichEditBox Document;
-            internal required StackPanel Controls;
+            /// <summary>The plan's page; null on the answers-only card.</summary>
+            internal RichEditBox? Document;
+            /// <summary>The answers; null on the diagram's plan-only card.</summary>
+            internal StackPanel? Controls;
+            /// <summary>창에 맞춤 on the diagram's card, shown while a dragged plan size is saved.</summary>
+            internal Button? Fit;
             internal required TextBlock Waiting;
             internal string? Key;
         }
 
         private PlanDraft? planDraft;
-        /// <summary>The card docked over the composer (false) and the one in the diagram (true).</summary>
-        private readonly Dictionary<bool, PlanCardParts> planCards = [];
+        /// <summary>Each place's card for the waiting plan.</summary>
+        private readonly Dictionary<PlanPlace, PlanCardParts> planCards = [];
         private Border? planDockCard;
         private string? planShownId;
         /// <summary>Plan documents on screen, re-rendered in the new theme (their RTF bakes its colours in).</summary>
@@ -67,11 +77,12 @@ public sealed partial class MainWindow
         }
 
         /// <summary>The Mighty diagram draws the pending plan where its unfinished request's result will go.</summary>
-        private bool DiagramShowsPlan(ToolPermissionRequest plan) => PlanCardSupport.DiagramPlanRunID(plan, InMightyDiagram, Session.GraphRuns ?? []) is not null;
+        private bool DiagramShowsPlan(ToolPermissionRequest plan) => PlanCardSupport.ComposerShowsPlanActions(plan, InMightyDiagram, Session.GraphRuns ?? []);
 
         /// <summary>
-        /// The plan card in place of the generic permission card: docked over the composer, or nothing here
-        /// while the diagram draws it. False for any other request.
+        /// The plan card in place of the generic permission card: the whole card docked over the composer, or only
+        /// its answers there while the diagram draws the plan, as a style's choices sit in the composer area
+        /// (macOS PlanCardSupport.composerPlace). Exactly one set of answers shows. False for any other request.
         /// </summary>
         private bool TryRenderPlan(ToolPermissionRequest current, int count)
         {
@@ -81,14 +92,7 @@ public sealed partial class MainWindow
             if (questionnaireCard is not null) HideQuestionnaire();
             // The generic card never shows beside a plan, wherever the plan is drawn.
             permissionCard.Visibility = Visibility.Collapsed;
-            if (DiagramShowsPlan(current))
-            {
-                HidePlanDock();
-                permissionCard.Visibility = Visibility.Collapsed;
-                toolPermissionHost.Visibility = Visibility.Collapsed;
-                return true;
-            }
-            var card = PlanCard(current, count, inDiagram: false);
+            var card = PlanCard(current, count, DiagramShowsPlan(current) ? PlanPlace.Actions : PlanPlace.Dock);
             if (!ReferenceEquals(planDockCard, card) && planDockCard is not null) toolPermissionHost.Children.Remove(planDockCard);
             planDockCard = card;
             if (!toolPermissionHost.Children.Contains(card)) { Detach(card); toolPermissionHost.Children.Add(card); }
@@ -104,7 +108,7 @@ public sealed partial class MainWindow
             if (requestId is null)
             {
                 planDraft = null;
-                foreach (var parts in planCards.Values) { Detach(parts.Card); ForgetPlanView(parts.Document); }
+                foreach (var parts in planCards.Values) { Detach(parts.Card); if (parts.Document is { } document) ForgetPlanView(document); }
                 planCards.Clear();
             }
             QueueGraphRefresh();
@@ -141,41 +145,44 @@ public sealed partial class MainWindow
             if (PendingPlan is not null) RenderToolPermissions(preserveQuestionnaire: true);
         }
 
-        /// <summary>The fingerprint part of the diagram's plan block: rebuilt only when what it shows changes.</summary>
-        private string PlanBlockKey => PendingPlan is { } plan
-            ? (planDraft?.RequestId == plan.Id ? planDraft.Key : plan.Id) + "|" + PendingCount
-            : "";
+        /// <summary>The fingerprint part of the diagram's plan block: the plan alone, so only the plan and the count.</summary>
+        private string PlanBlockKey => PendingPlan is { } plan ? plan.Id + "|" + PendingCount : "";
 
         /// <summary>The card for <paramref name="request"/> in one place: built once, its controls brought up to date.</summary>
-        private Border PlanCard(ToolPermissionRequest request, int count, bool inDiagram)
+        private Border PlanCard(ToolPermissionRequest request, int count, PlanPlace place)
         {
-            if (!planCards.TryGetValue(inDiagram, out var parts) || parts.RequestId != request.Id)
+            if (!planCards.TryGetValue(place, out var parts) || parts.RequestId != request.Id)
             {
-                if (parts is not null) { Detach(parts.Card); ForgetPlanView(parts.Document); }
-                parts = BuildPlanCard(request, inDiagram);
-                planCards[inDiagram] = parts;
+                if (parts is not null) { Detach(parts.Card); if (parts.Document is { } document) ForgetPlanView(document); }
+                parts = BuildPlanCard(request, place);
+                planCards[place] = parts;
             }
             parts.Waiting.Text = Locale.Get("phone.questionnaire.waiting", new Dictionary<string, string> { ["count"] = count.ToString(System.Globalization.CultureInfo.InvariantCulture) });
             parts.Waiting.Visibility = count > 1 ? Visibility.Visible : Visibility.Collapsed;
+            if (parts.Fit is { } fit) fit.Visibility = Session.GraphPlanSize is not null ? Visibility.Visible : Visibility.Collapsed;
             var draft = planDraft is { } d && d.RequestId == request.Id ? d : planDraft = new(request.Id);
-            if (parts.Key != draft.Key) { parts.Key = draft.Key; BuildPlanControls(parts, request, draft); }
+            if (parts.Controls is not null && parts.Key != draft.Key) { parts.Key = draft.Key; BuildPlanControls(parts, request, draft); }
             return parts.Card;
         }
 
         /// <summary>
-        /// The plan card (M/PlanApprovalCard.swift): the list on its amber disc, 계획 and when it came, 펼치기; the plan
-        /// rendered as Markdown on the raised strip, scrolling inside; then the controls (<see cref="BuildPlanControls"/>).
+        /// The plan card (M/PlanApprovalCard.swift) for one place: the list on its amber disc, 계획 and when it came,
+        /// then — docked or in the diagram — 펼치기 and the plan rendered as Markdown on the raised strip, scrolling
+        /// inside; docked or alone over the composer, the controls (<see cref="BuildPlanControls"/>). Over the composer
+        /// it is the amber wait card; in the diagram the plan alone fills the block's card, with 창에 맞춤 while a
+        /// dragged size is saved.
         /// </summary>
-        private PlanCardParts BuildPlanCard(ToolPermissionRequest request, bool inDiagram)
+        private PlanCardParts BuildPlanCard(ToolPermissionRequest request, PlanPlace place)
         {
             var b = owner.brushes; var ink = b.Brush(DesignToken.Ink); var ink2 = b.Brush(DesignToken.Ink2);
             var plan = request.Plan ?? "";
+            var inDiagram = place == PlanPlace.Diagram;
             var body = new Grid { RowSpacing = DesignMetrics.Spacing.Md };
             foreach (var height in new[] { GridLength.Auto, inDiagram ? new GridLength(1, GridUnitType.Star) : GridLength.Auto, GridLength.Auto })
                 body.RowDefinitions.Add(new RowDefinition { Height = height });
 
             var header = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
-            foreach (var width in new[] { GridLength.Auto, GridLength.Auto, GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto, GridLength.Auto }) header.ColumnDefinitions.Add(new() { Width = width });
+            foreach (var width in new[] { GridLength.Auto, GridLength.Auto, GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto, GridLength.Auto, GridLength.Auto }) header.ColumnDefinitions.Add(new() { Width = width });
             header.Children.Add(WaitBadge(ComposerGlyph.Icon("", 11, 22, 22).Ink(b.Brush(DesignToken.OnWait)).View));
             var title = new TextBlock { Text = Locale.Get("plan.card.title"), FontSize = 13, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(title, 1); header.Children.Add(title);
@@ -185,30 +192,49 @@ public sealed partial class MainWindow
             Grid.SetColumn(receivedBlock, 2); header.Children.Add(receivedBlock);
             var waiting = new TextBlock { FontSize = 11, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
             Grid.SetColumn(waiting, 4); header.Children.Add(waiting);
-            var expand = Button(Locale.Get("plan.card.expand"), () => OpenPlanDocument(Locale.Get("plan.card.title"), received, plan)); PaintCardButton(expand, prominent: false);
-            AutomationProperties.SetAutomationId(expand, "plan-expand-" + id);
-            Grid.SetColumn(expand, 5); header.Children.Add(expand);
-            body.Children.Add(header);
-
-            var document = PlanMarkdown(plan, "plan-text-" + id);
-            var page = new Border { Child = document, CornerRadius = new CornerRadius(DesignMetrics.Radius.Entry), Background = b.Brush(DesignToken.CardRaised), MinHeight = 80 };
-            if (!inDiagram) page.MaxHeight = 260;
-            Grid.SetRow(page, 1); body.Children.Add(page);
-
-            var controls = new StackPanel { Spacing = DesignMetrics.Spacing.Md };
-            Grid.SetRow(controls, 2); body.Children.Add(controls);
-
-            var card = WaitCard(body);
+            Button? fit = null;
             if (inDiagram)
             {
-                card.HorizontalAlignment = HorizontalAlignment.Stretch; card.VerticalAlignment = VerticalAlignment.Stretch;
-                // Clear of the diagram's resize handle in the block's corner (M/PlanApprovalCard.swift): with the
-                // card's own padding (WaitCard, Spacing.Md in all), Layout.GripClearance above the block's bottom edge.
-                body.Margin = new Thickness(0, 0, 0, DesignMetrics.Layout.GripClearance - DesignMetrics.Spacing.Md);
+                // The plan block's way back to the window fit, as the newest result's (MainWindow.MightyGraph.cs).
+                var label = Locale.Get(MightyGraphViewModel.LocaleKeyResultFitToWindow);
+                fit = HeaderButton(new TextBlock { Text = label, FontSize = DesignMetrics.Type.Small }, b.Brush(DesignToken.Accent));
+                AutomationProperties.SetAutomationId(fit, "plan-fit-to-window-" + id);
+                AutomationProperties.SetName(fit, label); ToolTipService.SetToolTip(fit, label);
+                fit.Click += async (_, _) => await FitPlanToWindow();
+                Grid.SetColumn(fit, 5); header.Children.Add(fit);
             }
-            AutomationProperties.SetAutomationId(card, "plan-card-" + id);
+            if (place != PlanPlace.Actions)
+            {
+                var expand = Button(Locale.Get("plan.card.expand"), () => OpenPlanDocument(Locale.Get("plan.card.title"), received, plan)); PaintCardButton(expand, prominent: false);
+                AutomationProperties.SetAutomationId(expand, "plan-expand-" + id);
+                Grid.SetColumn(expand, 6); header.Children.Add(expand);
+            }
+            body.Children.Add(header);
+
+            RichEditBox? document = null;
+            if (place != PlanPlace.Actions)
+            {
+                document = PlanMarkdown(plan, "plan-text-" + id);
+                var page = new Border { Child = document, CornerRadius = new CornerRadius(DesignMetrics.Radius.Entry), Background = b.Brush(DesignToken.CardRaised), MinHeight = 80 };
+                if (!inDiagram) page.MaxHeight = 260;
+                Grid.SetRow(page, 1); body.Children.Add(page);
+            }
+
+            StackPanel? controls = null;
+            if (!inDiagram)
+            {
+                controls = new StackPanel { Spacing = DesignMetrics.Spacing.Md };
+                Grid.SetRow(controls, 2); body.Children.Add(controls);
+            }
+
+            // Over the composer the amber wait card; in the diagram the block's own card around the plan alone.
+            var card = inDiagram
+                ? new Border { Child = body, Padding = new Thickness(DesignMetrics.Spacing.Md), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch }
+                : WaitCard(body);
+            var automation = place switch { PlanPlace.Diagram => "plan-body-", PlanPlace.Actions => "plan-actions-", _ => "plan-card-" };
+            AutomationProperties.SetAutomationId(card, automation + id);
             AutomationProperties.SetName(card, Locale.Get("plan.card.title"));
-            return new PlanCardParts { RequestId = request.Id, Card = card, Document = document, Controls = controls, Waiting = waiting };
+            return new PlanCardParts { RequestId = request.Id, Card = card, Document = document, Controls = controls, Fit = fit, Waiting = waiting };
         }
 
         /// <summary>
@@ -218,7 +244,8 @@ public sealed partial class MainWindow
         private void BuildPlanControls(PlanCardParts parts, ToolPermissionRequest request, PlanDraft draft)
         {
             var b = owner.brushes; var ink2 = b.Brush(DesignToken.Ink2);
-            parts.Controls.Children.Clear();
+            if (parts.Controls is not { } controls) return;
+            controls.Children.Clear();
             if (draft.Revising)
             {
                 Button? send = null;
@@ -244,14 +271,14 @@ public sealed partial class MainWindow
                 AutomationProperties.SetAutomationId(send, "plan-revise-send-" + id); reviseActions.Children.Add(send);
                 Check();
                 revise.Children.Add(reviseActions);
-                parts.Controls.Children.Add(revise);
+                controls.Children.Add(revise);
                 if (!draft.Sending) field.Loaded += (_, _) => { if (field.IsLoaded) field.Focus(FocusState.Programmatic); };
             }
             if (draft.Error is { } error)
             {
                 var message = new TextBlock { Text = error, Foreground = b.Brush(DesignToken.ErrText), FontSize = 11, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true };
                 AutomationProperties.SetAutomationId(message, "plan-error-" + id);
-                parts.Controls.Children.Add(message);
+                controls.Children.Add(message);
             }
 
             var hint = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
@@ -261,7 +288,7 @@ public sealed partial class MainWindow
                 AutomationProperties.SetAutomationId(sending, "plan-sending-" + id); hint.Children.Add(sending);
             }
             hint.Children.Add(new TextBlock { Text = Locale.Get("plan.card.hint"), FontSize = 11, Foreground = ink2, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center });
-            parts.Controls.Children.Add(hint);
+            controls.Children.Add(hint);
             // Four answers as tiles: one row where the card is wide, two where it is not.
             var actions = new AdaptiveGridPanel { Minimum = 150, Gap = 8, IsHitTestVisible = !draft.Sending };
             void Answer(string key, string automation, PlanDecision? decision, bool accent)
@@ -281,7 +308,7 @@ public sealed partial class MainWindow
             Answer("plan.card.revise", "plan-revise", null, false);
             Answer("plan.card.approveConfirm", "plan-approve-confirm", PlanDecision.ApproveConfirmEach, false);
             Answer("plan.card.approveAuto", "plan-approve-auto", PlanDecision.ApproveAutoEdit, true);
-            parts.Controls.Children.Add(actions);
+            controls.Children.Add(actions);
         }
 
         /// <summary>The one primary choice of a card on the accent, its words in <c>onAccent</c> (M/PaneChrome.swift accent).</summary>
@@ -504,8 +531,10 @@ public sealed partial class MainWindow
         /// <summary>
         /// The docked plan card with a fake pending plan and an injected answerer: the card shows, its Markdown renders,
         /// each button answers with its own decision, a change request needs words, and the card goes once answered.
-        /// Then the view mode switches while a plan waits, and exactly one card shows after each switch. The pane's
-        /// draft, focus, requests, graph runs and view modes are put back afterwards.
+        /// Then the view mode switches while a plan waits: outside the diagram the whole card docks; in it the plan
+        /// block holds the plan alone and only its answers dock over the composer, so exactly one set of answers shows
+        /// after each switch, and an answer pressed there answers the plan. The pane's draft, focus, requests, graph
+        /// runs and view modes are put back afterwards.
         /// </summary>
         internal async Task<Dictionary<string, object?>> RunPlanCardSmoke()
         {
@@ -552,10 +581,10 @@ public sealed partial class MainWindow
                 checks["approveConfirmAndCancelAnswer"] = true;
 
                 await Shown("smoke-plan-4");
-                var document = planCards[false].Document;
+                var document = planCards[PlanPlace.Dock].Document;
                 Press(Find("plan-revise"));
                 await WaitUI(() => FindById<TextBox>(planDockCard, "plan-revise-text-" + id) is not null);
-                Require(ReferenceEquals(planCards[false].Document, document), "Opening the change request must keep the plan's document.");
+                Require(ReferenceEquals(planCards[PlanPlace.Dock].Document, document), "Opening the change request must keep the plan's document.");
                 Require(!Find("plan-revise-send").IsEnabled, "An empty change request cannot be sent.");
                 // Sent anyway, Core's refusal stays on the card and nothing is answered.
                 await AnswerPlanCard(SmokePlan("smoke-plan-4"), PlanDecision.Revise("  "));
@@ -579,18 +608,30 @@ public sealed partial class MainWindow
                 await owner.Act(async () => { await Change(p => p with { GraphRuns = [running] }); Refresh(); });
                 ReceiveToolPermission(SmokePlan("smoke-plan-5"));
                 var planNode = MightyGraphBlockSize.NodeId(runId, MightyGraphLayout.PlanSuffix);
-                bool Docked() => planDockCard is not null && toolPermissionHost.Visibility == Visibility.Visible && toolPermissionHost.Children.Contains(planDockCard);
-                // The plan block on the canvas holds the diagram's plan card itself, in the body grid under its corner handle.
+                // Over the composer: the whole card, or only its answers while the diagram draws the plan.
+                bool Over(PlanPlace place) => planDockCard is not null && toolPermissionHost.Visibility == Visibility.Visible && toolPermissionHost.Children.Contains(planDockCard)
+                    && planCards.TryGetValue(place, out var parts) && ReferenceEquals(parts.Card, planDockCard);
+                bool Docked() => Over(PlanPlace.Dock);
+                bool ActionsDocked() => Over(PlanPlace.Actions);
+                // The plan block on the canvas holds the diagram's plan-only card, in the body grid under its corner handle.
                 bool Drawn() => graphHost?.Visibility == Visibility.Visible && graphViewport?.Visibility == Visibility.Visible
                     && graphCards.TryGetValue(planNode, out var drawn) && graphCanvas.Children.Contains(drawn)
                     && graphCardViews.TryGetValue(planNode, out var planView) && ReferenceEquals(planView.Card, drawn) && planView.Body is { } planBody
-                    && planCards.TryGetValue(true, out var diagramCard) && planBody.Children.Contains(diagramCard.Card);
+                    && planCards.TryGetValue(PlanPlace.Diagram, out var diagramCard) && planBody.Children.Contains(diagramCard.Card);
+                // Every place an answer button could be: over the composer and on the canvas.
+                int AnswerSets() => (FindById<Button>(toolPermissionHost, "plan-approve-auto-" + id) is null ? 0 : 1) + (FindById<Button>(graphCanvas, "plan-approve-auto-" + id) is null ? 0 : 1);
                 async Task Mode(string agentView, string graphView, bool diagram, string step)
                 {
                     await owner.Act(async () => { await Change(p => p with { AgentViewMode = agentView, GraphViewMode = graphView }); Refresh(); RefreshMightyView(Session); });
-                    await WaitUI(() => diagram ? Drawn() && !Docked() : Docked() && !Drawn());
-                    Require((Docked() ? 1 : 0) + (Drawn() ? 1 : 0) == 1, "Exactly one plan card must show after switching to " + step + ".");
+                    await WaitUI(() => diagram ? Drawn() && ActionsDocked() && !Docked() : Docked() && !Drawn() && !ActionsDocked());
+                    await WaitUI(() => AnswerSets() == 1, () => "exactly one set of answers after switching to " + step);
                     Require(permissionCard.Visibility == Visibility.Collapsed, "The generic card must stay hidden after switching to " + step + ".");
+                    if (!diagram) return;
+                    var planOnly = planCards[PlanPlace.Diagram].Card;
+                    Require(FindById<RichEditBox>(planOnly, "plan-text-" + id) is not null, "The plan block must hold the plan after switching to " + step + ".");
+                    Require(FindById<Button>(planOnly, "plan-approve-auto-" + id) is null && FindById<Button>(planOnly, "plan-cancel-" + id) is null,
+                        "The plan block must hold no answers after switching to " + step + ".");
+                    Require(FindById<RichEditBox>(planDockCard, "plan-text-" + id) is null, "The answers over the composer must not repeat the plan after switching to " + step + ".");
                 }
                 await Mode("default", "diagram", false, "the default view");
                 await Mode("mighty", "diagram", true, "the diagram");
@@ -598,6 +639,15 @@ public sealed partial class MainWindow
                 await Mode("mighty", "diagram", true, "the diagram again");
                 await Mode("default", "diagram", false, "the default view again");
                 checks["oneCardAfterEachViewSwitch"] = true;
+
+                // In the diagram, the answers over the composer answer the plan the block shows.
+                await Mode("mighty", "diagram", true, "the diagram to answer");
+                foreach (var automation in new[] { "plan-cancel", "plan-revise", "plan-approve-confirm", "plan-approve-auto" })
+                    Require(FindById<Button>(planDockCard, automation + "-" + id) is not null, "The answers over the composer must have " + automation + ".");
+                Press(Find("plan-approve-confirm"));
+                await WaitUI(() => planDockCard is null && toolPermissionHost.Visibility == Visibility.Collapsed && !Drawn());
+                Require(answers.Count == 5 && answers[4] == (id, "smoke-plan-5", PlanDecision.ApproveConfirmEach), "The diagram's answers over the composer must answer the plan.");
+                checks["diagramAnswersSitOverTheComposer"] = true;
             }
             finally
             {

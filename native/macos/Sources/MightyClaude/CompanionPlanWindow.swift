@@ -69,7 +69,7 @@ private struct CompanionPlanWindowRoot: View {
 
     var body: some View {
         // No 펼치기: this window already is the large view, and its sheet would open on the main window.
-        PlanApprovalCard(sessionId: approval.sessionId, request: approval.request, inDiagram: true, startsRevising: revising,
+        PlanApprovalCard(sessionId: approval.sessionId, request: approval.request, fills: true, startsRevising: revising,
                          showsExpand: false, reviseRequests: state.reviseRequests)
             .padding(DesignMetrics.Inset.sheet)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

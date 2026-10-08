@@ -207,10 +207,6 @@ public static class DesignMetrics
         public const double SplitDivider = 6;
         /// <summary>The least height of something to click (a chip, a dense row, a settings switch's row), so tightening the spacing never shrinks a target below it (M/SettingsLayout.swift SettingsSwitchStyle).</summary>
         public const double HitTarget = 22;
-        /// <summary>How far a diagram block's content stays above its bottom edge so the corner resize grip (a hit target square,
-        /// <c>Spacing.Xxs</c> in from the corner) covers none of it (M/DesignMetrics.swift Layout.gripClearance). Derived, so not a
-        /// fixture constant: <c>static readonly</c> keeps it out of the literal table the parity check reads.</summary>
-        public static readonly double GripClearance = HitTarget + 2 * Spacing.Xxs;
     }
 
     /// <summary>

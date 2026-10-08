@@ -96,6 +96,9 @@ public sealed record RunSession
     // The newest result card's remembered maximum, set by dragging it
     // (macOS RunSession.graphResultSize); null means the window fit.
     [JsonPropertyName("graphResultSize")] public GraphBlockSize? GraphResultSize { get; init; }
+    // The pending plan block's remembered maximum, one per pane, set by dragging it
+    // (macOS RunSession.graphPlanSize); null means the window fit.
+    [JsonPropertyName("graphPlanSize")] public GraphBlockSize? GraphPlanSize { get; init; }
     [JsonPropertyName("graphBlockSizes")] public Dictionary<string, GraphBlockSize>? GraphBlockSizes { get; init; }
     // The Mighty presentation, independent of the outer default/Mighty choice.
     [JsonPropertyName("graphViewMode"), JsonConverter(typeof(MightyGraphViewModeConverter))]
