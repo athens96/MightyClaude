@@ -151,7 +151,7 @@ enum ComposerPresentationDiagnostics {
             let actionModel = PrimaryActionFixtureModel(RunSession(id: fixtureId, workspaceId: store.activeWorkspace?.id ?? "composer-fixture", title: "입력창 검증", provider: "codex", model: "long-model-name-for-responsive-toolbar", status: "running", resumeId: "fixture-resume"))
             let actionHost = NSHostingView(rootView: PrimaryActionFixture(model: actionModel, store: store))
             window.contentView = actionHost
-            let controls = ["attach-", "composer-model-", "composer-effort-", "composer-permission-", "composer-fast-", "composer-more-", "composer-options-", "composer-stop-", "send-"].map { $0 + fixtureId }
+            let controls = ["attach-", "composer-model-", "composer-effort-", "composer-permission-", "composer-fast-", "composer-more-", "composer-options-", "composer-stop-", "composer-steer-", "send-"].map { $0 + fixtureId }
             var rows: [[String: Any]] = []
             var allRowsPass = true
             var samePrimaryPosition = true

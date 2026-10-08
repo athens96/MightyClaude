@@ -250,6 +250,30 @@ public sealed partial class MainWindow
                 queuedInputs.Add(sample, []); queuedInputs.Add(Locale.Get("composer.shell.title"), attachments);
                 await Draft(sample); Refresh();
                 await Shot(Container, "queue");
+                // Stop, steer (a Claude turn and no files), then queue where send sits, each round like send; at 315 the row
+                // still folds into the options menu and every control stays on the one toolbar-high line, inside the pane.
+                var queueable = Session.Kind == "claude";
+                var steerShown = queueable && Session.Provider == "claude" && pendingAttachments.Count == 0;
+                var cluster = toolbarActions.Children.ToList();
+                Require(queueStopButton?.Visibility == (queueable ? Visibility.Visible : Visibility.Collapsed) && steerHost.Visibility == (steerShown ? Visibility.Visible : Visibility.Collapsed)
+                    && cluster.IndexOf(queueStopButton!) == cluster.Count - 3 && cluster.IndexOf(steerHost) == cluster.Count - 2 && cluster.IndexOf(sendHost) == cluster.Count - 1
+                    && (!queueable || sendSymbol == "queue") && steer.IsEnabled == (steerShown && send.IsEnabled),
+                    $"composer capture ({theme}): a busy pane with a draft must show stop, steer (Claude only) and queue in that order; got stop {queueStopButton?.Visibility}, steer {steerHost.Visibility} ({steer.IsEnabled}), send {sendSymbol} ({send.IsEnabled})");
+                if (steerShown)
+                {
+                    o.RequireBrush(steerDisc, e => ((Border)e).Background, steer.IsEnabled ? DesignToken.Run : DesignToken.Track, $"the steer circle (steer {(steer.IsEnabled ? "enabled" : "disabled")})", key: "composer");
+                    o.RequireBrush(steerDisc, _ => steerBolt.Colour, steer.IsEnabled ? DesignToken.OnStatus : DesignToken.Ink2, "the steer bolt", key: "composer");
+                    Require(steerDisc.CornerRadius == sendDisc.CornerRadius && steerDisc.Width == sendDisc.Width && steerHost.Opacity == sendHost.Opacity,
+                        $"composer capture ({theme}): steer must wear the queue button's circle; got r{steerDisc.CornerRadius} {steerDisc.Width} at {steerHost.Opacity}, queue r{sendDisc.CornerRadius} {sendDisc.Width} at {sendHost.Opacity}");
+                }
+                Container.Width = 315; Container.UpdateLayout(); await WaitUI(() => Math.Abs(Container.ActualWidth - 315) < 1 && toolbarStyle == ToolbarStyle.Overflow);
+                var row = selectors.Children.OfType<FrameworkElement>().Concat(toolbarActions.Children.OfType<FrameworkElement>()).Where(c => c.Visibility == Visibility.Visible).ToArray();
+                var middles = row.Select(c => c.TransformToVisual(Container).TransformPoint(new(0, 0)).Y + c.ActualHeight / 2).ToArray();
+                var pillsEnd = selectors.TransformToVisual(toolbar).TransformPoint(new(selectors.ActualWidth, 0)).X; var clusterStart = toolbarActions.TransformToVisual(toolbar).TransformPoint(new(0, 0)).X;
+                Require(row.All(c => Math.Abs(c.ActualHeight - (ReferenceEquals(c, queueStopButton) ? QueueStopSize : DesignMetrics.Layout.Toolbar)) < 1 && c.TransformToVisual(Container).TransformPoint(new(c.ActualWidth, 0)).X <= Container.ActualWidth + 1)
+                    && middles.Max() - middles.Min() < 1 && pillsEnd <= clusterStart + .5,
+                    $"composer capture ({theme}): at 315 the busy toolbar with stop, steer and queue must stay one line inside the pane; pills end {pillsEnd:F1}, cluster starts {clusterStart:F1}");
+                Container.Width = double.NaN; Container.UpdateLayout();
                 queuedInputs.Clear(); await Draft(""); await Change(p => p with { Status = "completed" }); Refresh();
                 // A narrow pane: attach, the model and one options menu.
                 Container.Width = 315; Container.UpdateLayout(); await WaitUI(() => Math.Abs(Container.ActualWidth - 315) < 1 && toolbarStyle == ToolbarStyle.Overflow);

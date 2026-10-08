@@ -15,12 +15,19 @@ public sealed partial class MainWindow
         private readonly StackPanel queuedInputHost = new() { Spacing = DesignMetrics.Spacing.Xs, Margin = new Thickness(DesignMetrics.Inset.ComposerInnerH, DesignMetrics.Spacing.Md, DesignMetrics.Inset.ComposerInnerH, 0), Visibility = Visibility.Collapsed };
         private readonly DispatcherTimer queueDrainTimer = new() { Interval = TimeSpan.FromMilliseconds(100) };
         private Button? queueStopButton;
+        /// <summary>
+        /// Steer (Ctrl+Enter) beside queue while a draft waits: the send button's toolbar-high circle with the bolt,
+        /// in <c>run</c> while the draft can go and <c>track</c> at half strength while not (<see cref="PaintSteer"/>).
+        /// </summary>
+        private Button steer = null!;
+        private readonly Border steerDisc = new() { Width = DesignMetrics.Layout.Toolbar, Height = DesignMetrics.Layout.Toolbar, CornerRadius = new CornerRadius(16), IsHitTestVisible = false };
+        private readonly Grid steerHost = new() { Width = DesignMetrics.Layout.Toolbar, Height = DesignMetrics.Layout.Toolbar, VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
+        private readonly ComposerGlyph steerBolt = ComposerGlyph.SteerBolt();
         private bool queueStarting;
         private int composerSubmissionVersion;
         private bool HasComposerContent => !string.IsNullOrWhiteSpace(input.Text) || pendingAttachments.Count > 0;
 
-        /// <summary>Adds the small stop square that stands before send while a draft waits to be queued (the toolbar's right cluster).</summary>
-        /// <summary>The small stop square beside send: 4pt under the toolbar's height, as the Mac's.</summary>
+        /// <summary>The small stop square before steer and queue: 4pt under the toolbar's height, as the Mac's.</summary>
         internal const double QueueStopSize = DesignMetrics.Layout.Toolbar - 4;
         private void InitializeQueuedComposer(StackPanel actions)
         {
@@ -32,6 +39,14 @@ public sealed partial class MainWindow
             owner.PaintPlainButton(queueStopButton, owner.brushes.Brush(DesignToken.Err), owner.brushes.Brush(DesignToken.Err), ink: owner.brushes.Brush(DesignToken.OnStatus), disabledInk: owner.brushes.Brush(DesignToken.OnStatus));
             AutomationProperties.SetName(queueStopButton, Locale.Get("composer.stop.name")); AutomationProperties.SetAutomationId(queueStopButton, "composer-stop-" + id);
             actions.Children.Add(queueStopButton);
+            // Stop, steer, then queue where send sits (M/SessionPaneView.swift:773-805).
+            steer = new Button { Width = DesignMetrics.Layout.Toolbar, Height = DesignMetrics.Layout.Toolbar, MinWidth = 0, MinHeight = 0, Padding = new(0), CornerRadius = new(16), BorderThickness = new(0), Content = steerBolt.View };
+            steer.Click += async (_, _) => await Send(steering: true);
+            AutomationProperties.SetName(steer, Locale.Get("phone.composer.steer")); AutomationProperties.SetAutomationId(steer, "composer-steer-" + id); ToolTipService.SetToolTip(steer, Locale.Get("queue.steerHint"));
+            // Like send, the button draws nothing of its own; the disc and the bolt carry its look (PaintSteer).
+            owner.PaintPlainButton(steer, owner.brushes.Transparent, owner.brushes.Transparent);
+            steer.IsEnabledChanged += (_, _) => PaintSteer();
+            steerHost.Children.Add(steerDisc); steerHost.Children.Add(steer); actions.Children.Add(steerHost);
             queueDrainTimer.Tick += async (_, _) =>
             {
                 if (!QueuePaneAlive) { queueDrainTimer.Stop(); return; }
@@ -93,11 +108,15 @@ public sealed partial class MainWindow
             // as a new queue item (which would also disable the primary button).
             var queueable = busy && !starting && !queueStarting && Session.Kind == "claude" && HasComposerContent;
             if (queueStopButton is not null) { queueStopButton.Visibility = queueable ? Visibility.Visible : Visibility.Collapsed; queueStopButton.IsEnabled = !stopping; }
+            // Steer only for a Claude turn and a draft without files: files always queue (DeferBusyComposer).
+            var steers = queueable && Session.Provider == "claude" && pendingAttachments.Count == 0;
+            steerHost.Visibility = steers ? Visibility.Visible : Visibility.Collapsed;
             if (queueable)
             {
                 ShowSendSymbol("queue"); send.IsEnabled = !starting && !queueStarting && !attachmentsLoading && !stopping && queuedInputs.Items.Count < QueuedInputBuffer.MaximumItems;
-                AutomationProperties.SetName(send, Locale.Get("queue.add")); ToolTipService.SetToolTip(send, Locale.Get(Session.Provider == "claude" ? "queue.addOrSteerHint" : "queue.addHint"));
+                AutomationProperties.SetName(send, Locale.Get("queue.add")); ToolTipService.SetToolTip(send, Locale.Get("queue.addHint"));
             }
+            steer.IsEnabled = steers && send.IsEnabled;
             RenderQueuedInputs();
         }
 

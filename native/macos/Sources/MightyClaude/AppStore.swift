@@ -1519,8 +1519,15 @@ final class AppStore: ObservableObject {
         let actionIdentifier = (running ? "composer-stop-" : "send-") + sessionId
         let absentIdentifier = (running ? "send-" : "composer-stop-") + sessionId
         func secondaryMatches(_ value: Bool?) -> Bool { sendsWhileRunning ? value == true : value == nil }
+        // Steer stands beside queue, enabled, exactly while that draft can go, carries
+        // no files and the pane can steer.
+        func steerMatches(_ value: Bool?) -> Bool {
+            let steers = sendsWhileRunning && (attachmentDrafts[sessionId] ?? []).isEmpty && canSteer(snapshot.sessions.first { $0.id == sessionId } ?? session)
+            return steers ? value == true : value == nil
+        }
         var action: Bool?
         var duplicate: Bool?
+        var steer: Bool?
         let actionDeadline = Date().addingTimeInterval(3)
         repeat {
             // SwiftUI publishes virtual accessibility children after the layout
@@ -1529,15 +1536,18 @@ final class AppStore: ObservableObject {
             tree = []
             action = smokeAccessibilityElement(window, identifier: actionIdentifier, tree: &tree)
             duplicate = smokeAccessibilityElement(window, identifier: absentIdentifier, tree: &tree)
-            if action == (running || expectedSendEnabled), secondaryMatches(duplicate) { break }
+            steer = smokeAccessibilityElement(window, identifier: "composer-steer-" + sessionId, tree: &tree)
+            if action == (running || expectedSendEnabled), secondaryMatches(duplicate), steerMatches(steer) { break }
             try await Task.sleep(for: .milliseconds(50))
         } while Date() < actionDeadline
         diagnostic["primaryAction"] = running ? "stop" : "send"
         diagnostic["primaryActionLocated"] = action != nil
         diagnostic["singlePrimaryAction"] = secondaryMatches(duplicate)
         diagnostic["sendWhileRunning"] = sendsWhileRunning
+        diagnostic["steerShown"] = steer != nil
+        diagnostic["steerMatchesState"] = steerMatches(steer)
         report(diagnostic)
-        guard let action, secondaryMatches(duplicate) else {
+        guard let action, secondaryMatches(duplicate), steerMatches(steer) else {
             let data = try JSONSerialization.data(withJSONObject: tree, options: [.prettyPrinted, .sortedKeys])
             try data.write(to: dataDirectory.appendingPathComponent("composer-accessibility.json"), options: .atomic)
             throw MightyError("단일 실행·중지 버튼의 접근성 상태를 확인하지 못했습니다.")

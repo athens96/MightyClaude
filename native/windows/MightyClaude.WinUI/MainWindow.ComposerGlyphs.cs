@@ -167,6 +167,9 @@ internal sealed class ComposerGlyph
     internal static ComposerGlyph QueueAdd() => new ComposerGlyph(13.6, 12.1, DesignMetrics.Layout.Toolbar, DesignMetrics.Layout.Toolbar)
         .Stroke("M2.7 0.8 L2.7 5.8 M0.2 3.3 L5.2 3.3 M7.4 3.3 L13.3 3.3 M0.8 7.6 L13.3 7.6 M0.8 11.3 L9.6 11.3", 1.5);
 
+    /// <summary><c>bolt.fill</c> at 12 semibold, centred in the toolbar-high steer button: the draft goes to the running turn now.</summary>
+    internal static ComposerGlyph SteerBolt() => new ComposerGlyph(8, 13.5, DesignMetrics.Layout.Toolbar, DesignMetrics.Layout.Toolbar).Fill(BoltOutline, 1.1);
+
     /// <summary><c>stop.fill</c>: the rounded square, 10 on the toolbar-high button and 8.4 on the small one 4pt under it.</summary>
     internal static ComposerGlyph Stop(bool compact)
     {

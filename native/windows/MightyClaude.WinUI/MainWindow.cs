@@ -490,7 +490,7 @@ public sealed partial class MainWindow : Window
             attach.IsEnabled = !attachmentsLoading; attach.Visibility = pane.Kind == "shell" ? Visibility.Collapsed : Visibility.Visible;
             RefreshStyles();
             RefreshQueuedComposer(busy);
-            if (mutationBlock is not null && (!busy || HasComposerContent)) send.IsEnabled = false;
+            if (mutationBlock is not null && (!busy || HasComposerContent)) send.IsEnabled = steer.IsEnabled = false;
             RefreshStyleComposer();
             RefreshNextActions(pane, busy);
             PaintSend();

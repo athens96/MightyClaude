@@ -47,6 +47,8 @@ struct SessionPaneView: View {
         return guided && store.guidedCanConfirm(session.id)
     }
     private var steers: Bool { store.canSteer(session) }
+    /// Steer is offered only for a draft the running turn can take: files always queue.
+    private var offersSteer: Bool { steers && attachments.isEmpty }
     /// The registered style this pane actually runs, if any.
     private var style: RegisteredStyle? { store.guidedStyle(session) }
     /// A guided style: the composer answers the agent's questions itself.
@@ -740,9 +742,10 @@ struct SessionPaneView: View {
 
     private var composerToolbar: some View {
         GeometryReader { geometry in
-            // Stop beside send, or send alone; the resume mark; the context ring.
+            // Stop beside steer and queue, or send alone; the resume mark; the context ring;
+            // the status-line toggle, which shows wherever steer can.
             let height = ComposerToolbarMetrics.height, gap = ComposerToolbarMetrics.spacing
-            let actionsWidth = (running && canSend ? Self.compactStop + gap + height : height) + (session.resumeId == nil ? 0 : 16 + gap) + (session.kind == "shell" ? 0 : height + gap)
+            let actionsWidth = (running && canSend ? Self.compactStop + gap + height + (offersSteer ? height + gap : 0) : height) + (session.resumeId == nil ? 0 : 16 + gap) + (session.kind == "shell" ? 0 : height + gap) + (showsStatusLineToggle ? 16 + gap : 0)
             let width = max(0, geometry.size.width - actionsWidth - ComposerToolbarMetrics.spacing)
             let style = ComposerToolbarMetrics.style(width: width, model: selectedModelName, effort: showsEffort ? effortLabel(session.settings.effort) : nil, permission: permissionLabel(session.settings.permissionMode, provider: session.provider), fast: showsFast)
             HStack(alignment: .center, spacing: ComposerToolbarMetrics.spacing) {
@@ -771,8 +774,8 @@ struct SessionPaneView: View {
                     if session.kind != "shell" { SessionContextButton(sessionID: session.id) }
                     if showsStatusLineToggle { statusLineToggle }
                     if running {
-                        // With text waiting, stop shrinks beside the send button
-                        // so Enter and the arrow keep meaning "send".
+                        // With text waiting, stop shrinks beside the steer and queue
+                        // buttons so Enter and ⌘Enter keep their round buttons.
                         let compact = canSend
                         // Concept D: stop is the red square, send the round run blue.
                         Button(action: stopRun) {
@@ -786,18 +789,17 @@ struct SessionPaneView: View {
                         .accessibilityLabel(stopping ? L("composer.stop.stoppingAccessibility") : L("phone.composer.stop"))
                         .accessibilityIdentifier("composer-stop-" + session.id)
                         .background(AccessibilityStateProbe(identifier: "composer-stop-" + session.id, enabled: !stopping))
-                    }
-                    if !running || canSend {
-                        Button { submitComposer() } label: {
-                            Image(systemName: running ? "text.badge.plus" : "arrow.up").font(.system(size: running ? 12 : 13, weight: .semibold)).frame(width: ComposerToolbarMetrics.height, height: ComposerToolbarMetrics.height)
-                                .foregroundStyle(canSend ? Palette.onStatus : Palette.ink2)
-                                .background(canSend ? Palette.run : Palette.track, in: Circle()).contentShape(Circle())
+                        // A busy pane offers the draft both ways, each the send button's
+                        // round disc: steer (⌘Enter) hands it to the running turn, queue
+                        // (Enter) waits for the next request, at the far right where send sits.
+                        if canSend {
+                            if offersSteer {
+                                roundSendButton(systemImage: "bolt.fill", size: 12, help: L("queue.steerHintMac"), label: L("phone.composer.steer"), identifier: "composer-steer-" + session.id) { submitComposer(command: true) }
+                            }
+                            roundSendButton(systemImage: "text.badge.plus", size: 12, help: L("queue.addHint"), label: L("queue.add"), identifier: "send-" + session.id) { submitComposer() }
                         }
-                        .buttonStyle(.plain).disabled(!canSend)
-                        .help(running ? (steers ? L("queue.addOrSteerHintMac") : L("queue.addHint")) : L("composer.send.helpMac"))
-                        .accessibilityLabel(running ? L("queue.add") : L("composer.send.name"))
-                        .accessibilityIdentifier("send-" + session.id)
-                        .background(AccessibilityStateProbe(identifier: "send-" + session.id, enabled: canSend))
+                    } else {
+                        roundSendButton(systemImage: "arrow.up", size: 13, help: L("composer.send.helpMac"), label: L("composer.send.name"), identifier: "send-" + session.id) { submitComposer() }
                     }
                 }.fixedSize(horizontal: true, vertical: true)
             }.frame(width: geometry.size.width, height: ComposerToolbarMetrics.height, alignment: .leading)
@@ -806,8 +808,23 @@ struct SessionPaneView: View {
         .popover(item: settingsPopover, arrowEdge: .bottom) { selected in RunSettingsView(session: selected).environmentObject(store) }
     }
 
-    /// The stop square beside send while text waits: 4pt under the toolbar's height.
+    /// The stop square beside steer and queue while text waits: 4pt under the toolbar's height.
     private static let compactStop = ComposerToolbarMetrics.height - 4
+
+    /// The send button's look, shared by send, steer and queue: the toolbar-high
+    /// circle in run blue while the draft can go, the track grey (and disabled) while not.
+    private func roundSendButton(systemImage: String, size: CGFloat, help: String, label: String, identifier: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage).font(.system(size: size, weight: .semibold)).frame(width: ComposerToolbarMetrics.height, height: ComposerToolbarMetrics.height)
+                .foregroundStyle(canSend ? Palette.onStatus : Palette.ink2)
+                .background(canSend ? Palette.run : Palette.track, in: Circle()).contentShape(Circle())
+        }
+        .buttonStyle(.plain).disabled(!canSend)
+        .help(help)
+        .accessibilityLabel(label)
+        .accessibilityIdentifier(identifier)
+        .background(AccessibilityStateProbe(identifier: identifier, enabled: canSend))
+    }
 
     /// Arrows move the highlight, Enter/Tab insert it, Esc closes the list for
     /// this draft. Returns false when the key should reach the editor.

@@ -10,16 +10,16 @@ An agent pane is a conversation with Claude, Codex or Gemini. You write requests
 ## Send a request {#send}
 1. Type what you want done in the composer.
 2. Press {{kbd:Enter}} or click the send button. Press {{kbd:⇧Enter}} for a new line.
-3. While it runs, a stop button appears beside send. Click it to stop.
+3. While it runs, a stop button takes the send button's place. Click it to stop.
 
 An {{kbd:Enter}} pressed while an input method is still composing (Korean, for example) finishes the composition instead of sending.
 
 ![[composer]]
 
 ### Keep asking while it runs {#queue}
-You can write the next request while a task is running.
-- {{kbd:Enter}}: queue it as the next request. Queued requests run in order once the current task ends. A pane holds up to 16.
-- {{kbd:⌘Enter}}: send it to the running Claude right away. This works only in Claude panes on this Mac. The Mighty view shows it as an orange {{ui:graph.block.steer}} block.
+You can write the next request while a task is running. Once the composer holds text, round buttons like send appear beside stop.
+- {{kbd:Enter}} or the {{ui:queue.add}} button: queue it as the next request. Queued requests run in order once the current task ends. A pane holds up to 16.
+- {{kbd:⌘Enter}} or the {{ui:phone.composer.steer}} button: send it to the running Claude right away. This works only in Claude panes on this Mac. The Mighty view shows it as an orange {{ui:graph.block.steer}} block.
 - Click {{ui:queue.runNext}} in the queue to run the first queued request now.
 
 Stopping the task cancels the queued requests too. The queue is emptied when the app reopens.

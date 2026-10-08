@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState, type Ref } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { Icon } from '@/components/icons';
+import { Icon, type IconName } from '@/components/icons';
 import { Button } from '@/components/ui';
 import { CommandList } from '@/components/command-list';
 import { Sheet } from '@/components/sheets';
@@ -61,6 +61,8 @@ export function Composer({
   const palette = usePalette();
   const styles = useStyles(makeStyles);
   const [pickerOpen, setPickerOpen] = useState(false);
+  // Which round button sent last, so only that one spins while the host answers.
+  const [pressedMode, setPressedMode] = useState<SubmitMode | undefined>(undefined);
   const tooLong = byteLength(text) > MAX_TEXT_BYTES;
 
   const matches = useMemo(() => {
@@ -99,6 +101,9 @@ export function Composer({
   // The host cannot fold files into a turn that is already open, so a request carrying
   // attachments is never offered as "send now": it queues, or it starts the pane.
   const canSteer = picked.length === 0;
+  // While a run is busy the round buttons show only for a draft with something in it,
+  // and stop shrinks beside them, as on the Mac and Windows.
+  const offersDraft = running && !empty;
 
   const submit = async (mode?: SubmitMode) => {
     const value = text.trim();
@@ -107,6 +112,34 @@ export function Composer({
     // what they typed — and the files they picked — and can try again.
     if (await onSend(value, mode)) onChangeText('');
   };
+
+  // Send, steer and queue are one look: the round run-blue button, faded while it cannot go.
+  const roundButton = (icon: IconName, label: string, mode?: SubmitMode) => (
+    <Pressable
+      key={mode ?? 'send'}
+      accessibilityLabel={label}
+      accessibilityRole="button"
+      accessibilityState={{ disabled: blocked || sending, busy: sending && pressedMode === mode }}
+      disabled={blocked || sending}
+      hitSlop={6}
+      onPress={() => {
+        void Haptics.selectionAsync();
+        setPressedMode(mode);
+        void submit(mode);
+      }}
+      style={({ pressed }) => [
+        styles.send,
+        (blocked || sending) && styles.sendDisabled,
+        pressed && styles.pressed,
+      ]}
+    >
+      {sending && pressedMode === mode ? (
+        <ActivityIndicator color={palette.onStatus} size="small" />
+      ) : (
+        <Icon name={icon} color={palette.onStatus} size={17} strokeWidth={2.8} />
+      )}
+    </Pressable>
+  );
 
   return (
     <View style={styles.bar}>
@@ -157,31 +190,6 @@ export function Composer({
         <Text style={styles.hint}>{t('phone.composer.attachmentsQueue')}</Text>
       ) : null}
 
-      {running && submitModes ? (
-        // While a run is going the message can join it or wait for the next turn; both
-        // ride above the field, so the field itself keeps only Stop.
-        <View style={styles.modeRow}>
-          {canSteer ? (
-            <Button
-              label={t('phone.composer.steer')}
-              tone="primary"
-              compact
-              busy={sending}
-              disabled={blocked}
-              onPress={() => void submit('steer')}
-            />
-          ) : null}
-          <Button
-            label={t('graph.block.nextRequest')}
-            tone={canSteer ? 'neutral' : 'primary'}
-            compact
-            busy={!canSteer && sending}
-            disabled={blocked || (canSteer && sending)}
-            onPress={() => void submit('queue')}
-          />
-        </View>
-      ) : null}
-
       <View style={styles.row}>
         {attachments ? (
           <Pressable
@@ -218,35 +226,26 @@ export function Composer({
                 void Haptics.selectionAsync();
                 onStop();
               }}
-              style={({ pressed }) => [styles.stop, pressed && styles.pressed]}
-            >
-              <Icon name="stop" color={palette.onStatus} size={18} />
-            </Pressable>
-          ) : null}
-          {running && submitModes ? null : (
-            <Pressable
-              accessibilityLabel={t('phone.composer.send')}
-              accessibilityRole="button"
-              accessibilityState={{ disabled: blocked || sending, busy: sending }}
-              disabled={blocked || sending}
-              hitSlop={6}
-              onPress={() => {
-                void Haptics.selectionAsync();
-                void submit();
-              }}
               style={({ pressed }) => [
-                styles.send,
-                (blocked || sending) && styles.sendDisabled,
+                styles.stop,
+                offersDraft && styles.stopCompact,
                 pressed && styles.pressed,
               ]}
             >
-              {sending ? (
-                <ActivityIndicator color={palette.onStatus} size="small" />
-              ) : (
-                <Icon name="send" color={palette.onStatus} size={17} strokeWidth={2.8} />
-              )}
+              <Icon name="stop" color={palette.onStatus} size={offersDraft ? 16 : 18} />
             </Pressable>
-          )}
+          ) : null}
+          {/* Stop, then steer, then queue at the far right where send sits when idle. */}
+          {!running
+            ? roundButton('send', t('phone.composer.send'))
+            : !offersDraft
+              ? null
+              : submitModes
+                ? [
+                    canSteer ? roundButton('steer', t('phone.composer.steer'), 'steer') : null,
+                    roundButton('queue', t('queue.add'), 'queue'),
+                  ]
+                : roundButton('send', t('phone.composer.send'))}
         </View>
       </View>
 
@@ -327,7 +326,8 @@ const makeStyles = (palette: Palette) =>
       justifyContent: 'center',
       width: 34,
     },
-    modeRow: { flexDirection: 'row', gap: spacing.xs, justifyContent: 'flex-end' },
+    // 4 under the round buttons, centred on them; hitSlop keeps the touch target over 40.
+    stopCompact: { borderRadius: 9, height: 30, marginBottom: spacing.xs, width: 30 },
     attach: {
       ...cardShadow,
       alignItems: 'center',
