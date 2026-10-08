@@ -24,6 +24,9 @@ struct MightyGraphView: View {
     var catalog: [ModelOption] = []
     var graphResultSize: MightyGraphBlockSize? = nil
     var onSaveResultSize: (MightyGraphBlockSize?) -> Void = { _ in }
+    /// The pending plan block's saved size, one per pane (`RunSession.graphPlanSize`).
+    var graphPlanSize: MightyGraphBlockSize? = nil
+    var onSavePlanSize: (MightyGraphBlockSize?) -> Void = { _ in }
     /// Shows a background execution's dashboard where the workspace opens
     /// web pages; false when nothing was shown (or the pane has closed).
     var onOpenURL: @MainActor (URL) async -> Bool = { _ in false }
@@ -39,16 +42,20 @@ struct MightyGraphView: View {
     var onViewMode: (MightyGraphViewMode) -> Void = { _ in }
     /// The pane's pending plan (`PlanCardSupport.pendingPlan`) and its answered
     /// plans. The cards come from the pane: the canvas hosts its own views, so
-    /// they bring the store with them.
+    /// they bring the store with them. The plan block holds the plan alone (its
+    /// answers are in the composer); the closure's action, when there is one,
+    /// is its 창에 맞춤.
     var planRequest: ToolPermissionRequest? = nil
     var planHistory: [PlanRecord] = []
-    var planCard: (ToolPermissionRequest) -> AnyView = { _ in AnyView(EmptyView()) }
+    var planCard: (ToolPermissionRequest, (() -> Void)?) -> AnyView = { _, _ in AnyView(EmptyView()) }
     var planRecordCard: (PlanRecord, Bool, @escaping () -> Void) -> AnyView = { _, _, _ in AnyView(EmptyView()) }
     let onFocus: () -> Void
     @ViewState private var resized: [String: MightyGraphBlockSize] = [:]
     /// The newest result's size only while its drag is in progress; the saved
     /// pane-wide size is the truth before and after.
     @ViewState private var liveResultSize: MightyGraphBlockSize?
+    /// The plan block's size only while its drag is in progress, as `liveResultSize`.
+    @ViewState private var livePlanSize: MightyGraphBlockSize?
     /// Result cards' measured answer heights, by node id: the newest card is
     /// no taller than its content (`MightyGraphLayout.resultSize`).
     @ViewState private var resultHeights: [String: CGFloat] = [:]
@@ -115,7 +122,7 @@ struct MightyGraphView: View {
               executions: links.map { MightyGraphLayout.Execution(runID: $0.runID, key: $0.key) },
               galleries: MightyGraphImages.galleries(runs: runs, root: workspaceRoot, fixed: olderCount),
               retainedStart: pinnedStart, history: history != nil,
-              planRunID: planRunID, planRecords: PlanCardSupport.diagramRecords(planHistory, runs: runs))
+              planRunID: planRunID, planRecords: PlanCardSupport.diagramRecords(planHistory, runs: runs), planSize: livePlanSize ?? graphPlanSize)
     }
     /// The diagram request the pending plan card goes under, nil when it is docked.
     private var planRunID: String? { PlanCardSupport.diagramPlanRunID(planRequest, showsDiagram: viewMode == .diagram, runs: runs) }
@@ -281,7 +288,8 @@ struct MightyGraphView: View {
                     let frames = Dictionary(resized.nodes.map { ($0.id, $0.frame) }, uniquingKeysWith: { first, _ in first })
                     let requested = scrollTarget.flatMap { frames[$0.nodeID] == nil ? nil : $0 }
                     // A saved-size card the pane now bounds follows the pane as a fitted one does.
-                    publish(MightyGraphCamera.resizeAnchor(fittedResultID: resized.fittedResultID ?? resized.viewportBoundResultID,
+                    // The pending plan block fits the pane as the newest result does, and is newer work than it.
+                    publish(MightyGraphCamera.resizeAnchor(fittedResultID: resized.fittedResultID ?? resized.viewportBoundResultID ?? planNodeID,
                                                            targetID: requested?.nodeID ?? initialTarget(resized),
                                                            targetAlignTop: requested?.alignTop ?? false,
                                                            frames: frames))
@@ -369,7 +377,13 @@ struct MightyGraphView: View {
         if reveal.holdingID != nil { reveal.cancel() }
         resized[id] = value
         if isRecordNode(id) { return }
-        if id == MightyGraphLayout.latestResultID(runs: runs) {
+        if id == planNodeID {
+            // The pane's one plan size, kept and saved by the newest result's rules.
+            let drag = MightyGraphLayout.resultDrag(dragged: size, edges: edges, phase: phase, saved: graphPlanSize,
+                                                    limit: graph.planLimit, windowFit: graph.planWindowFit)
+            livePlanSize = drag.live
+            if phase != .live, let save = drag.save { onSavePlanSize(save) }
+        } else if id == MightyGraphLayout.latestResultID(runs: runs) {
             // The saved size is the newest result's maximum, not what it shows.
             let drag = MightyGraphLayout.resultDrag(dragged: size, edges: edges, phase: phase, saved: graphResultSize,
                                                     limit: graph.resultLimit, windowFit: graph.resultWindowFit)
@@ -386,7 +400,14 @@ struct MightyGraphView: View {
     private func resetSize(_ id: String) {
         resized.removeValue(forKey: id)
         expanded.remove(id)
-        if !isRecordNode(id) { onSaveBlockSize(id, nil) }
+        if id == planNodeID { fitPlanToWindow() }
+        else if !isRecordNode(id) { onSaveBlockSize(id, nil) }
+    }
+
+    /// The plan block's 창에 맞춤: its saved size cleared, back to the window fit.
+    private func fitPlanToWindow() {
+        livePlanSize = nil
+        onSavePlanSize(nil)
     }
 
     private func initialTarget(_ graph: MightyGraphLayout) -> String {
@@ -485,9 +506,14 @@ struct MightyGraphView: View {
         case .history:
             historyCard(width: node.frame.width, height: node.frame.height)
         case .plan:
-            // Whatever does not fit a shrunk block (a change request being
-            // written, an error) is cut at its bottom, never drawn past it.
-            if let planRequest { planCard(planRequest).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top).clipped() }
+            // The plan alone on the block card, its page scrolling inside;
+            // its answers wait in the composer.
+            if let planRequest {
+                planCard(planRequest, graphPlanSize == nil ? nil : fitPlanToWindow)
+                    .padding(DesignMetrics.Spacing.md)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .mightyBlockCard()
+            }
         case .planRecord(_, let recordID):
             if let record = planHistory.last(where: { $0.id == recordID }) {
                 // Folding or opening drops a dragged size, as the other blocks' size control does.

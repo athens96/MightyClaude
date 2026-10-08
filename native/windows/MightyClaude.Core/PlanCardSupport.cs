@@ -25,6 +25,13 @@ public static class PlanCardSupport
         return MightyGraphLayout.Finished(last) ? null : last.Id;
     }
 
+    /// <summary>
+    /// The diagram draws the plan, so the composer area (the slot over the composer) shows only its answers
+    /// (macOS <c>PlanCardSupport.composerShowsPlanActions</c>); otherwise the whole card docks there.
+    /// </summary>
+    public static bool ComposerShowsPlanActions(ToolPermissionRequest? request, bool showsDiagram, IReadOnlyList<MightyGraphRun> runs) =>
+        DiagramPlanRunID(request, showsDiagram, runs) is not null;
+
     /// <summary>Answered plans whose request the diagram draws, oldest first: the graph run's id and the record's.</summary>
     public static List<(string RunID, string RecordID)> DiagramRecords(IReadOnlyList<PlanRecord>? history, IReadOnlyList<MightyGraphRun> runs)
     {

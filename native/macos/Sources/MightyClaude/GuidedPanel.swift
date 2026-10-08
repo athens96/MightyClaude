@@ -90,6 +90,14 @@ struct GuidedPanel: View {
     }
     private var draft: String { (store.drafts[session.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
     private var capabilitiesLoaded: Bool { store.styleCapabilitiesAreLoaded(style, for: session) }
+    /// The pending plan whose answers this panel shows (`PlanCardSupport.composerPlace`), nil otherwise.
+    private var diagramPlan: ToolPermissionRequest? {
+        let requests = store.guidedVisibleRequests(session.id)
+        guard let plan = PlanCardSupport.pendingPlan(requests),
+              PlanCardSupport.composerPlace(plan, showsDiagram: PlanCardSupport.showsDiagram(session), runs: session.mightyGraphRuns, guided: true) == .panelActions
+        else { return nil }
+        return plan
+    }
     private let columns = [GridItem(.adaptive(minimum: 104, maximum: 170), spacing: DesignMetrics.Spacing.xs, alignment: .leading)]
 
     var body: some View {
@@ -104,6 +112,11 @@ struct GuidedPanel: View {
             // A waiting question always wins: nothing else may hide it.
             if let (request, questionnaire) = store.guidedQuestion(for: session.id) {
                 AgentQuestionPanel(sessionId: session.id, request: request, questionnaire: questionnaire, onPrepare: onPrepare)
+            } else if let plan = diagramPlan {
+                // The diagram draws the plan; its answers wait here, as a question does.
+                PlanActionsCard(sessionId: session.id, request: plan,
+                                count: (store.toolPermissions[session.id] ?? []).filter { $0.state == "pending" }.count)
+                    .id(store.permissionResponseKey(sessionId: session.id, request: plan))
             } else {
                 if let setup, !setup.ready { setupBlock(setup) }
                 if !widgets.isEmpty { stateWidgets(widgets) }

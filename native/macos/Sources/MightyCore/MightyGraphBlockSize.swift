@@ -47,7 +47,8 @@ public struct MightyGraphBlockSize: Codable, Sendable, Equatable {
     public static let maximumSavedSizes = 1_024
 
     /// Keep only nodes owned by this session, preferring its recent turns:
-    /// requests, results, agents, the plan card and the answered plans.
+    /// requests, results, agents and the answered plans. The pending plan card
+    /// keeps the pane's one size (`RunSession.graphPlanSize`), not one per run.
     /// Pending input is stable across turns even while its card is hidden.
     static func normalized(_ values: [String: Self]?, runs: [MightyGraphRun]) -> [String: Self]? {
         guard let values, !values.isEmpty else { return nil }
@@ -61,9 +62,7 @@ public struct MightyGraphBlockSize: Codable, Sendable, Equatable {
             retain(nodeID(runID: run.id, suffix: "request"))
             if run.settled { retain(nodeID(runID: run.id, suffix: "result")) }
             for agent in run.agents { retain(nodeID(runID: run.id, suffix: "agent:" + agent.id)) }
-            // The plan card stands while its run is still going, as the result
-            // only once it has settled; its answered plans stay beside the request for good.
-            if !run.settled { retain(nodeID(runID: run.id, suffix: MightyGraphLayout.planSuffix)) }
+            // Answered plans stay beside the request for good.
             let records = nodeID(runID: run.id, suffix: MightyGraphLayout.planRecordSuffix)
             for id in values.keys.filter({ $0.hasPrefix(records) }).sorted() { retain(id) }
             if result.count >= maximumSavedSizes { break }

@@ -285,6 +285,9 @@ public struct RunSession: Codable, Sendable, Equatable, Identifiable {
     /// Per-session shared result card size set by dragging the latest result card.
     /// When present, later latest result cards use this size instead of auto-fit.
     public var graphResultSize: MightyGraphBlockSize?
+    /// The pending plan block's size, dragged once for the pane: the most it takes
+    /// within the pane, as `graphResultSize` is the newest result's. nil is the window fit.
+    public var graphPlanSize: MightyGraphBlockSize?
     /// The Mighty view's "Diagram | Timeline" choice. nil (older saves, or a word this
     /// build does not know) is the diagram; see `mightyViewMode`.
     public var graphViewMode: MightyGraphViewMode?
@@ -304,7 +307,7 @@ public struct RunSession: Codable, Sendable, Equatable, Identifiable {
     public init(id: String = UUID().uuidString, workspaceId: String, title: String, kind: String = "claude", provider: String = "claude", model: String = "default", settings: RunSettings = .init(), status: String = "idle", logs: [LogEntry] = [], resumeId: String? = nil, createdAt: String = mightyTimestamp(), runTiming: AgentRunTiming? = nil, sessionUsage: SessionUsage? = nil) {
         self.id = id; self.workspaceId = workspaceId; self.title = title; self.kind = kind; self.provider = provider; self.model = model; self.settings = settings; self.status = status; self.logs = logs; self.resumeId = resumeId; self.createdAt = createdAt; self.runTiming = runTiming; self.sessionUsage = sessionUsage
     }
-    enum CodingKeys: String, CodingKey { case id, workspaceId, title, kind, provider, model, settings, status, logs, resumeId, createdAt, runTiming, sessionUsage, agentViewMode, mightyStyle, mightyStyleHash, mightyStyleSince, graphRuns, graphBlockSizes, graphResultSize, graphViewMode, workspaceProfileKey, ownerSessionId, titleMode, planHistory, todoProgress, backgroundWork }
+    enum CodingKeys: String, CodingKey { case id, workspaceId, title, kind, provider, model, settings, status, logs, resumeId, createdAt, runTiming, sessionUsage, agentViewMode, mightyStyle, mightyStyleHash, mightyStyleSince, graphRuns, graphBlockSizes, graphResultSize, graphPlanSize, graphViewMode, workspaceProfileKey, ownerSessionId, titleMode, planHistory, todoProgress, backgroundWork }
     /// How the pane's Mighty view draws its requests; the diagram unless the timeline was chosen.
     public var mightyViewMode: MightyGraphViewMode { graphViewMode ?? .diagram }
     /// Full text of the most recent user log entry that would update the automatic title,
@@ -347,6 +350,7 @@ public struct RunSession: Codable, Sendable, Equatable, Identifiable {
         // Optional layout damage must not discard the saved conversation.
         graphBlockSizes = try? c.decodeIfPresent([String: MightyGraphBlockSize].self, forKey: .graphBlockSizes)
         graphResultSize = try? c.decodeIfPresent(MightyGraphBlockSize.self, forKey: .graphResultSize)
+        graphPlanSize = try? c.decodeIfPresent(MightyGraphBlockSize.self, forKey: .graphPlanSize)
         graphViewMode = try? c.decodeIfPresent(MightyGraphViewMode.self, forKey: .graphViewMode)
         workspaceProfileKey = try? c.decodeIfPresent(String.self, forKey: .workspaceProfileKey)
         ownerSessionId = try? c.decodeIfPresent(String.self, forKey: .ownerSessionId)

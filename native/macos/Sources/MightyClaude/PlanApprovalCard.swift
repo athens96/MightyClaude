@@ -40,16 +40,17 @@ struct PlanDocumentSheet: View {
     }
 }
 
-/// Claude's plan waiting for the user (ExitPlanMode): the Markdown plan and the
-/// four answers. Docked above the composer, or the large card in the Mighty
-/// diagram where the run's result will go.
+/// Claude's plan waiting for the user (ExitPlanMode): the Markdown plan
+/// (`PlanBody`) over its four answers (`PlanActions`), on the amber wait card.
+/// Docked above the composer while the Mighty diagram does not draw the plan,
+/// and the pet's plan window. In the diagram the plan block holds the body
+/// alone and the composer the answers (`PlanCardSupport.composerPlace`).
 struct PlanApprovalCard: View {
-    @EnvironmentObject private var store: AppStore
     let sessionId: String
     let request: ToolPermissionRequest
     var count = 1
-    /// Drawn in the diagram: it fills its block instead of docking.
-    var inDiagram = false
+    /// Fills its frame (the pet's plan window) instead of docking.
+    var fills = false
     /// Opened from the pet's 수정 요청: the change request box starts open.
     var startsRevising = false
     /// The 펼치기 button. The pet's plan window is already the large view,
@@ -58,25 +59,44 @@ struct PlanApprovalCard: View {
     /// Raised each time the pet's 수정 요청 brings back a window already open:
     /// the change request box opens again.
     var reviseRequests = 0
-    @ViewState private var revising = false
-    @ViewState private var feedback = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
+            PlanBody(request: request, count: count, fills: fills, showsExpand: showsExpand)
+            PlanActions(sessionId: sessionId, request: request, startsRevising: startsRevising, reviseRequests: reviseRequests)
+        }
+        .paneWaitCard()
+        .frame(maxHeight: fills ? .infinity : nil)
+        .padding(.horizontal, fills ? 0 : DesignMetrics.Spacing.lg).padding(.top, fills ? 0 : DesignMetrics.Spacing.md)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("plan-card-\(request.id)")
+    }
+}
+
+/// The plan itself: 계획, when it came and 펼치기, over the Markdown page.
+/// The diagram's plan block holds only this.
+struct PlanBody: View {
+    @EnvironmentObject private var store: AppStore
+    let request: ToolPermissionRequest
+    var count = 1
+    /// The page fills the rest of the frame (the diagram's block, the pet's
+    /// window) instead of a docked card's height.
+    var fills = false
+    var showsExpand = true
+    /// The diagram block's 창에 맞춤 while a dragged size is saved: back to the window fit.
+    var onFitToWindow: (() -> Void)? = nil
 
     private var plan: String { request.plan ?? "" }
-    private var busy: Bool { store.permissionResponses.contains(store.permissionResponseKey(sessionId: sessionId, request: request)) }
-    private var canAnswer: Bool { request.canAnswerPlan && request.state == "pending" }
     private var received: String { PlanCardSupport.receivedText(request.receivedAt ?? "") }
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
-            HStack(spacing: DesignMetrics.Spacing.sm) {
-                PaneWaitBadge(systemImage: "list.bullet.clipboard")
-                Text(L("plan.card.title")).font(.system(size: 13, weight: .bold)).foregroundStyle(Palette.ink)
-                if request.receivedAt != nil {
-                    Text(received).font(.system(size: 11)).foregroundStyle(Palette.ink2).monospacedDigit()
-                        .accessibilityIdentifier("plan-received")
+            PlanCardTitle(request: request, count: count) {
+                if let onFitToWindow {
+                    Button(L("graph.result.fitToWindow"), action: onFitToWindow)
+                        .buttonStyle(.plain).font(.system(size: 10)).foregroundStyle(Palette.accent)
+                        .accessibilityIdentifier("plan-fit-to-window")
                 }
-                Spacer(minLength: 0)
-                if count > 1 { Text(L("phone.questionnaire.waiting", ["count": "\(count)"])).font(.system(size: 11)).foregroundStyle(Palette.ink2) }
                 if showsExpand {
                     Button {
                         store.planDocument = PlanDocument(id: request.id, title: L("plan.card.title"), subtitle: received, plan: plan)
@@ -93,10 +113,74 @@ struct PlanApprovalCard: View {
                     .padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.md)
             }
             .background(Palette.raised, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .frame(minHeight: 80, maxHeight: inDiagram ? .infinity : 260)
+            .frame(minHeight: 80, maxHeight: fills ? .infinity : 260)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("plan-text")
+        }
+    }
+}
 
+/// The plan card's title line: the list on its amber disc, 계획, when it came,
+/// how many requests wait, then `trailing`.
+private struct PlanCardTitle<Trailing: View>: View {
+    let request: ToolPermissionRequest
+    var count = 1
+    @ViewBuilder var trailing: () -> Trailing
+
+    var body: some View {
+        HStack(spacing: DesignMetrics.Spacing.sm) {
+            PaneWaitBadge(systemImage: "list.bullet.clipboard")
+            Text(L("plan.card.title")).font(.system(size: 13, weight: .bold)).foregroundStyle(Palette.ink)
+            if request.receivedAt != nil {
+                Text(PlanCardSupport.receivedText(request.receivedAt ?? "")).font(.system(size: 11)).foregroundStyle(Palette.ink2).monospacedDigit()
+                    .accessibilityIdentifier("plan-received")
+            }
+            Spacer(minLength: 0)
+            if count > 1 { Text(L("phone.questionnaire.waiting", ["count": "\(count)"])).font(.system(size: 11)).foregroundStyle(Palette.ink2) }
+            trailing()
+        }
+    }
+}
+
+/// The composer's half of a plan the diagram draws: its title line and its
+/// four answers on the amber wait card, where a style shows its choices
+/// (`PlanCardSupport.ComposerPlace`). `docked` sits it above the composer as
+/// the permission card does; in the guided panel the panel insets it.
+struct PlanActionsCard: View {
+    let sessionId: String
+    let request: ToolPermissionRequest
+    var count = 1
+    var docked = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
+            PlanCardTitle(request: request, count: count) { EmptyView() }
+            PlanActions(sessionId: sessionId, request: request)
+        }
+        .paneWaitCard()
+        .padding(.horizontal, docked ? DesignMetrics.Spacing.lg : 0).padding(.top, docked ? DesignMetrics.Spacing.md : 0)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("plan-actions-\(request.id)")
+    }
+}
+
+/// A plan's answers: the change request box when asked for, an error, then
+/// the hint and the four buttons (approve with auto edits, approve and confirm
+/// each, request changes, cancel), off while one is sent.
+struct PlanActions: View {
+    @EnvironmentObject private var store: AppStore
+    let sessionId: String
+    let request: ToolPermissionRequest
+    var startsRevising = false
+    var reviseRequests = 0
+    @ViewState private var revising = false
+    @ViewState private var feedback = ""
+
+    private var busy: Bool { store.permissionResponses.contains(store.permissionResponseKey(sessionId: sessionId, request: request)) }
+    private var canAnswer: Bool { request.canAnswerPlan && request.state == "pending" }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
             if revising {
                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
                     TextField(L("plan.card.revisePlaceholder"), text: $feedback, axis: .vertical)
@@ -140,14 +224,6 @@ struct PlanApprovalCard: View {
             }
             .disabled(busy || !canAnswer)
         }
-        // Clear of the diagram's resize handle in the block's corner: with the
-        // card's own padding, `gripClearance` above the block's bottom edge.
-        .padding(.bottom, inDiagram ? DesignMetrics.Layout.gripClearance - DesignMetrics.Spacing.md : 0)
-        .paneWaitCard()
-        .frame(maxHeight: inDiagram ? .infinity : nil)
-        .padding(.horizontal, inDiagram ? 0 : 12).padding(.top, inDiagram ? 0 : 8)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("plan-card-\(request.id)")
         .onAppear { if startsRevising { revising = true } }
         .onChange(of: reviseRequests) { _, _ in revising = true }
     }

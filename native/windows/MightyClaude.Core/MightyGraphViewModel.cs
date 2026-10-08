@@ -81,8 +81,9 @@ public static class MightyGraphViewModel
         double? resultContentHeight = null,
         IReadOnlyDictionary<string, GraphBlockSize>? blockSizes = null,
         string? planRunID = null,
-        IReadOnlyList<(string RunID, string RecordID)>? planRecords = null)
-        => MightyGraphLayout.Make(graphRuns, draft, running, expanded, resultFilesRunID, viewport, zoom: zoom, sharedResultSize: sharedResultSize, retainedStart: retainedStart, history: history, resultContentHeight: resultContentHeight, blockSizes: blockSizes, planRunID: planRunID, planRecords: planRecords);
+        IReadOnlyList<(string RunID, string RecordID)>? planRecords = null,
+        GraphBlockSize? planSize = null)
+        => MightyGraphLayout.Make(graphRuns, draft, running, expanded, resultFilesRunID, viewport, zoom: zoom, sharedResultSize: sharedResultSize, retainedStart: retainedStart, history: history, resultContentHeight: resultContentHeight, blockSizes: blockSizes, planRunID: planRunID, planRecords: planRecords, planSize: planSize);
 
     // ── block capsule ─────────────────────────────────────────────────────────
 

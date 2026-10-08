@@ -44,11 +44,11 @@ struct MightyGraphBlockSizeTests {
         #expect(MightyGraphBlockSize.nodeID(runID: "한글", suffix: "request") == "6:한글:request")
     }
 
-    @Test func planBlockSizesSurviveTheNormalizer() throws {
+    @Test func answeredPlanSizesSurviveTheNormalizerAndThePendingPlanKeepsNone() throws {
         let size = MightyGraphBlockSize(width: 720, height: 560)
         let runs = [MightyGraphRun(id: "done", status: "completed"), MightyGraphRun(id: "going")]
+        // The pending plan block keeps the pane's one size (RunSession.graphPlanSize), never a per-run key.
         let plan = MightyGraphBlockSize.nodeID(runID: "going", suffix: MightyGraphLayout.planSuffix)
-        // A settled run shows its result, never its plan card: that size goes, as an unsettled run's result does.
         let settledPlan = MightyGraphBlockSize.nodeID(runID: "done", suffix: MightyGraphLayout.planSuffix)
         let records = ["done", "going"].map { MightyGraphBlockSize.nodeID(runID: $0, suffix: MightyGraphLayout.planRecordSuffix + "plan_1") }
         let foreign = MightyGraphBlockSize.nodeID(runID: "gone", suffix: MightyGraphLayout.planRecordSuffix + "plan_1")
@@ -56,7 +56,7 @@ struct MightyGraphBlockSizeTests {
         for id in records { values[id] = size }
         let normalized = try #require(MightyGraphBlockSize.normalized(values, runs: runs))
         #expect(plan == "5:going:plan" && records[0] == "4:done:plan-record:plan_1")
-        #expect(normalized[plan] == size)
+        #expect(normalized[plan] == nil)
         #expect(normalized[settledPlan] == nil)
         for id in records { #expect(normalized[id] == size) }
         #expect(normalized[foreign] == nil)

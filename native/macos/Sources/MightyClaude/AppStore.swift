@@ -1286,9 +1286,12 @@ final class AppStore: ObservableObject {
             result["backgroundWorkLine"] = backgroundWorkLine
             let petPlan = await runPetPlanSmoke(sessionId: claudeId)
             result["petPlan"] = petPlan
+            let planComposer = await runPlanComposerSmoke(sessionId: claudeId)
+            result["planComposer"] = planComposer
             result["passed"] = completedCorrectly && settingsRestored && window != nil
                 && (usageReset["passed"] as? Bool == true) && (sidebarResize["passed"] as? Bool == true)
                 && (backgroundWorkLine["passed"] as? Bool == true) && (petPlan["passed"] as? Bool == true)
+                && (planComposer["passed"] as? Bool == true)
             result["status"] = snapshot.sessions.first { $0.id == sessionId }?.status ?? "missing"
         } catch {
             result["error"] = error.localizedDescription

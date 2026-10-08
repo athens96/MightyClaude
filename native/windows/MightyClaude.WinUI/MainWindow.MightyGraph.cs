@@ -117,6 +117,8 @@ public sealed partial class MainWindow
         private MightyGraphLayout? graphLayout, graphResizeLayout;
         private string? graphLatestResultId;
         private GraphBlockSize? graphLiveResultSize;
+        /// <summary>The plan block's size only while its drag is in progress, as <see cref="graphLiveResultSize"/>.</summary>
+        private GraphBlockSize? graphLivePlanSize;
         private Button? graphFitResultButton;
         private bool graphResizing;
         private Windows.Foundation.Point graphResizeOrigin;
@@ -447,7 +449,7 @@ public sealed partial class MainWindow
             // Answered plans hang beside the requests they belong to.
             var layout = MightyGraphViewModel.CanvasLayout(runs, pane.Draft, pane.Status == "running", graphExpanded, graphResultFilesRunId, viewport,
                 graphZoom, graphLiveResultSize ?? pane.GraphResultSize, older.Count, ShowsHistoryBlock(pane, retained), resultContentHeight, pane.GraphBlockSizes, planRunId,
-                PlanCardSupport.DiagramRecords(pane.PlanHistory, runs));
+                PlanCardSupport.DiagramRecords(pane.PlanHistory, runs), graphLivePlanSize ?? pane.GraphPlanSize);
             graphPlanNodeId = planRunId is null ? null : MightyGraphBlockSize.NodeId(planRunId, MightyGraphLayout.PlanSuffix);
             graphLayout = layout; graphLatestResultId = MightyGraphLayout.LatestResultID(runs);
             TraceGraphSmoke($"layout:nodes={layout.Nodes.Count}:size={layout.Size.W:F2}x{layout.Size.H:F2}");
@@ -678,9 +680,8 @@ public sealed partial class MainWindow
             {
                 var card = new Border
                 {
-                    CornerRadius = new CornerRadius(DesignMetrics.Radius.Block), BorderThickness = new Thickness(block.Kind is "draft" or "plan" ? 0 : DesignMetrics.Stroke.Line),
-                    // The plan card brings its own amber-edged card (MainWindow.PlanCard.cs).
-                    BorderBrush = b.Brush(DesignToken.Line), Background = block.Kind == "plan" ? b.Transparent : b.Brush(DesignToken.Card), Tag = block.Id,
+                    CornerRadius = new CornerRadius(DesignMetrics.Radius.Block), BorderThickness = new Thickness(block.Kind is "draft" ? 0 : DesignMetrics.Stroke.Line),
+                    BorderBrush = b.Brush(DesignToken.Line), Background = b.Brush(DesignToken.Card), Tag = block.Id,
                 };
                 view = new GraphCardView { Card = card }; graphCardViews[block.Id] = view;
                 AutomationProperties.SetAutomationId(card, "mighty-node-" + block.Id);
@@ -688,7 +689,7 @@ public sealed partial class MainWindow
                 if (block.Kind == "draft") BuildDraftCard(view, block.Id);
                 else if (block.Kind is "plan" or "planRecord")
                 {
-                    // The plan card or the answered plan goes in under the corner handle, as every other block has it.
+                    // The plan or the answered plan goes in under the corner handle, as every other block has it.
                     view.Body = new Grid(); view.Body.Children.Add(BuildResultResizeGrip(view, block.Id)); view.Card.Child = view.Body;
                 }
                 else if (block.Kind != "resultFiles") BuildBlockBody(view, block.Id);
@@ -703,6 +704,7 @@ public sealed partial class MainWindow
                 Files = block.Kind is "result" or "resultFiles" ? files : [],
                 FilesOpen = graphResultFilesRunId, FromRecord = fromRecord,
                 Latest = graphLatestResultId == block.Id, SavedResult = pane.GraphResultSize is not null,
+                SavedPlan = block.Kind == "plan" && pane.GraphPlanSize is not null,
                 Fitted = graphLayout?.FittedResultID == block.Id, Expanded = graphExpanded.Contains(block.Id),
                 // No theme: every colour is a shared brush recoloured in place, and the transcript takes a
                 // theme change through RethemeMightyTranscripts, so a toggle rebuilds nothing. No selection
@@ -720,12 +722,12 @@ public sealed partial class MainWindow
             if (block.Kind == "resultFiles") { view.Card.Child = BuildResultFilesPanel(block, files); return view.Card; }
             if (block.Kind == "plan")
             {
-                // The same card for the whole wait: its plan document is never rebuilt (MainWindow.PlanCard.cs).
-                // It sits under the corner handle, the body's last child.
+                // The plan alone, the same for the whole wait: its document is never rebuilt, and its answers
+                // wait over the composer (MainWindow.PlanCard.cs). It sits under the corner handle, the body's last child.
                 var planBody = view.Body!;
                 if (PendingPlan is { } plan)
                 {
-                    var planCard = PlanCard(plan, PendingCount, inDiagram: true);
+                    var planCard = PlanCard(plan, PendingCount, PlanPlace.Diagram);
                     if (!planBody.Children.Contains(planCard)) { Detach(planCard); planBody.Children.Insert(0, planCard); }
                 }
                 else if (planBody.Children.Count > 1) planBody.Children.RemoveAt(0);
@@ -1376,6 +1378,17 @@ public sealed partial class MainWindow
         /// Live: the card follows the cursor up to the pane's edge and stops there.
         private void MoveResultResize(Windows.Foundation.Point point)
         {
+            if (graphResizeNodeId is { } planNode && planNode == graphPlanNodeId)
+            {
+                // The pane's one plan size, shown and saved by the newest result's rules.
+                var planDrag = MightyGraphLayout.ResultDrag(DraggedResultSize(point), true, true, MightyGraphLayout.ResizePhase.Live,
+                    Session.GraphPlanSize, graphResizeLayout?.PlanLimit, graphResizeLayout?.PlanWindowFit);
+                if (planDrag.Live is not { } livePlan || !graphCards.TryGetValue(planNode, out var planCard)) return;
+                graphLivePlanSize = livePlan;
+                planCard.Width = livePlan.Width; planCard.Height = livePlan.Height;
+                ApplyGraphSelectionStyle();
+                return;
+            }
             if (graphResizeNodeId != graphLatestResultId)
             {
                 var raw = BlockAtLeast(DraggedResultSize(point));
@@ -1404,6 +1417,15 @@ public sealed partial class MainWindow
             var dragged = point is { } at ? DraggedResultSize(at) : graphResizeStart;
             var sides = MightyGraphLayout.ResultDragSides(graphResizeStart, dragged);
             if (sides is (false, false)) phase = MightyGraphLayout.ResizePhase.Cancelled;
+            if (graphResizeNodeId is { } planNode && planNode == graphPlanNodeId)
+            {
+                var planDrag = MightyGraphLayout.ResultDrag(dragged, sides.Horizontal, sides.Vertical, phase,
+                    Session.GraphPlanSize, graphResizeLayout?.PlanLimit, graphResizeLayout?.PlanWindowFit);
+                graphResizeNodeId = null; graphResizeLayout = null; graphLivePlanSize = null;
+                if (planDrag.Save is { } savePlan) _ = owner.Act(async () => { await Change(p => p with { GraphPlanSize = savePlan }); RefreshMightyView(Session); });
+                else RefreshMightyView(Session);
+                return;
+            }
             if (graphResizeNodeId is { } nodeId && nodeId != graphLatestResultId)
             {
                 var size = BlockAtLeast(dragged);
@@ -1424,6 +1446,10 @@ public sealed partial class MainWindow
         /// Clears the saved size: the newest result card fits the window again.
         private Task FitResultToWindow() =>
             owner.Act(async () => { await Change(p => p with { GraphResultSize = null }); RefreshMightyView(Session); });
+
+        /// The plan block's 창에 맞춤: its saved size cleared, back to the window fit.
+        private Task FitPlanToWindow() =>
+            owner.Act(async () => { graphLivePlanSize = null; await Change(p => p with { GraphPlanSize = null }); RefreshMightyView(Session); });
 
         // ── zoom, pan and selection ───────────────────────────────────────────
 

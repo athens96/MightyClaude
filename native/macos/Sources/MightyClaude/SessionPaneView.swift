@@ -494,6 +494,8 @@ struct SessionPaneView: View {
                     catalog: store.providerRuntime(session.provider, workspaceId: session.workspaceId).modelCatalog.models,
                     graphResultSize: session.graphResultSize,
                     onSaveResultSize: { size in store.setGraphResultSize(session.id, size: size) },
+                    graphPlanSize: session.graphPlanSize,
+                    onSavePlanSize: { size in store.setGraphPlanSize(session.id, size: size) },
                     onOpenURL: { url in await store.openInAgentBrowser(url, agentPaneId: session.id) },
                     // A pane with no request and no session to read has no history block.
                     retainedStart: history.runs.count, history: retained.isEmpty && session.resumeId == nil ? nil : history,
@@ -502,10 +504,12 @@ struct SessionPaneView: View {
                     onViewMode: { store.setGraphViewMode(session.id, mode: $0) },
                     planRequest: PlanCardSupport.pendingPlan(store.toolPermissions[session.id]),
                     planHistory: session.planHistory ?? [],
-                    planCard: { [store] request in
-                        AnyView(PlanApprovalCard(sessionId: session.id, request: request,
-                                                 count: (store.toolPermissions[session.id] ?? []).filter { $0.state == "pending" }.count,
-                                                 inDiagram: true).environmentObject(store))
+                    planCard: { [store] request, fit in
+                        AnyView(PlanBody(request: request,
+                                         count: (store.toolPermissions[session.id] ?? []).filter { $0.state == "pending" }.count,
+                                         fills: true, onFitToWindow: fit)
+                            .accessibilityElement(children: .contain).accessibilityIdentifier("plan-body-\(request.id)")
+                            .environmentObject(store))
                     },
                     planRecordCard: { [store] record, expanded, toggle in
                         AnyView(PlanRecordView(record: record, expanded: expanded, onToggle: toggle, inDiagram: true).environmentObject(store))
