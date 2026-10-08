@@ -1146,8 +1146,25 @@ public sealed partial class MainWindow
                 && ReferenceEquals(toggleTheme["ToggleButtonBackgroundPointerOver"], b.Subtle),
                 $"{key} ({theme}): the status-line toggle must be 16x{DesignMetrics.Layout.Toolbar} with the shared ink2 / accent / subtle brushes; got {statusLineToggle.Width}x{statusLineToggle.Height}");
             var cluster = toolbarActions.Children.ToList();
-            Require(cluster.IndexOf(resumeHost) == 0 && cluster.IndexOf(context) == 1 && cluster.IndexOf(statusLineToggle) == 2 && cluster.IndexOf(sendHost) == cluster.Count - 1 && !paneHeaderControls.Children.Contains(statusLineToggle),
-                $"{key} ({theme}): the right cluster must be the resume mark, the context ring, the status-line toggle, then stop / send, and the toggle must have left the pane header");
+            Require(cluster.IndexOf(resumeHost) == 0 && cluster.IndexOf(context) == 1 && cluster.IndexOf(statusLineToggle) == 2 && cluster.IndexOf(queueStopButton!) == cluster.Count - 3 && cluster.IndexOf(steerHost) == cluster.Count - 2 && cluster.IndexOf(sendHost) == cluster.Count - 1 && !paneHeaderControls.Children.Contains(statusLineToggle),
+                $"{key} ({theme}): the right cluster must be the resume mark, the context ring, the status-line toggle, then stop, steer and send / queue, and the toggle must have left the pane header");
+            // Steer wears the send button's look in both states, set directly here (the busy pane's own state is checked in the composer capture).
+            Require(ReferenceEquals(steer.Content, steerBolt.View) && ReferenceEquals(OwnResource(steer, "ButtonBackground"), b.Transparent) && ReferenceEquals(OwnResource(steer, "ButtonBackgroundDisabled"), b.Transparent)
+                && steerDisc.Width == DesignMetrics.Layout.Toolbar && steerDisc.Height == DesignMetrics.Layout.Toolbar && steerDisc.CornerRadius == new CornerRadius(16),
+                $"{key} ({theme}): the steer button must draw nothing of its own over a {DesignMetrics.Layout.Toolbar} circle; got {steerDisc.Width}x{steerDisc.Height} r{steerDisc.CornerRadius}");
+            var steerWas = steer.IsEnabled;
+            try
+            {
+                steer.IsEnabled = true; PaintSteer();
+                o.RequireBrush(steerDisc, e => ((Border)e).Background, DesignToken.Run, "the steer circle", key: key);
+                o.RequireBrush(steerDisc, _ => steerBolt.Colour, DesignToken.OnStatus, "the steer bolt", key: key);
+                Require(steerHost.Opacity == 1, $"{key} ({theme}): an enabled steer button must be opaque; got {steerHost.Opacity}");
+                steer.IsEnabled = false; PaintSteer();
+                o.RequireBrush(steerDisc, e => ((Border)e).Background, DesignToken.Track, "the disabled steer circle", key: key);
+                o.RequireBrush(steerDisc, _ => steerBolt.Colour, DesignToken.Ink2, "the disabled steer bolt", key: key);
+                Require(Math.Abs(steerHost.Opacity - DisabledDim) < .001, $"{key} ({theme}): a disabled steer button must be drawn at {DisabledDim}, as send; got {steerHost.Opacity}");
+            }
+            finally { steer.IsEnabled = steerWas; PaintSteer(); }
             o.RequireBrush(resumeHost, _ => resumeMark.Colour, DesignToken.Ink2, "the resume mark", key: key);
             Require(resumeHost.Visibility == (pane.ResumeId is null ? Visibility.Collapsed : Visibility.Visible), $"{key} ({theme}): the resume mark must show exactly while the pane continues an earlier conversation; got {resumeHost.Visibility}");
 

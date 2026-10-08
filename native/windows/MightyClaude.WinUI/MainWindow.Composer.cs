@@ -253,6 +253,16 @@ public sealed partial class MainWindow
             var ink = b.Brush(stop || send.IsEnabled ? DesignToken.OnStatus : DesignToken.Ink2);
             sendArrow.Ink(ink); sendQueue.Ink(ink); sendStop.Ink(ink);
             sendHost.Opacity = send.IsEnabled ? 1 : DisabledDim;
+            PaintSteer();
+        }
+
+        /// <summary>The steer button wears the send button's circle: <c>run</c> with the <c>onStatus</c> bolt while it can go, <c>track</c> with <c>ink2</c> at half strength while not.</summary>
+        private void PaintSteer()
+        {
+            var b = owner.brushes;
+            steerDisc.Background = b.Brush(steer.IsEnabled ? DesignToken.Run : DesignToken.Track);
+            steerBolt.Ink(b.Brush(steer.IsEnabled ? DesignToken.OnStatus : DesignToken.Ink2));
+            steerHost.Opacity = steer.IsEnabled ? 1 : DisabledDim;
         }
 
         /// <summary>
@@ -313,7 +323,7 @@ public sealed partial class MainWindow
         /// <summary>
         /// Builds the pills and the right cluster (M/SessionPaneView.swift:707-771): one 32pt row, the pills
         /// leading and sized to their contents, then the resume mark, the context ring, the status-line
-        /// toggle and stop / send, 6 apart.
+        /// toggle and stop / send (stop, steer and queue while a draft waits on a busy pane), 6 apart.
         /// </summary>
         private void BuildToolbar()
         {

@@ -36,7 +36,7 @@ enum SessionInfoDiagnostics {
                 try await Task.sleep(for: .milliseconds(150))
                 guard let context = node(window, identifier: "context-\(measured.id)"), let send = node(window, identifier: "composer-stop-\(measured.id)") else { throw MightyError("컨텍스트 또는 보내기 버튼을 찾지 못했습니다.") }
                 let content = window.convertToScreen(window.contentView?.convert(window.contentView?.bounds ?? .zero, to: nil) ?? .zero)
-                let controls = ["attach-", "composer-model-", "composer-options-", "composer-effort-", "composer-permission-", "composer-more-", "composer-stop-", "context-", "send-"].compactMap { node(window, identifier: $0 + measured.id) }
+                let controls = ["attach-", "composer-model-", "composer-options-", "composer-effort-", "composer-permission-", "composer-more-", "composer-stop-", "composer-steer-", "context-", "send-"].compactMap { node(window, identifier: $0 + measured.id) }
                 let aligned = abs(context.frame.height - ComposerToolbarMetrics.height) <= 2 && abs(send.frame.height - ComposerToolbarMetrics.height) <= 2 && abs(context.frame.midY - send.frame.midY) <= 1 && abs(send.frame.minX - context.frame.maxX - 6) <= 1
                 let inside = controls.allSatisfy { $0.frame.minX >= content.minX - 1 && $0.frame.maxX <= content.maxX + 1 && abs($0.frame.midY - send.frame.midY) <= 1 }
                 rows.append(["width": width, "aligned": aligned, "insideWindow": inside, "contextFrame": NSStringFromRect(context.frame), "sendFrame": NSStringFromRect(send.frame)])
