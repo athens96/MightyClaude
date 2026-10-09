@@ -13,17 +13,21 @@ public struct DelegationChildRow: Sendable, Equatable, Identifiable {
     public var parentBranch: String
     /// The top folder of the parent's checkout when the child was made.
     public var parentCheckout: String?
+    /// Whether the child's card can undo its last merge: one is on record and
+    /// the child is merged, or closed after it.
+    public var canUndo: Bool
 
-    public init(id: String, parentSessionId: String, state: ChildState, task: String? = nil, parentBranch: String = "", parentCheckout: String? = nil) {
+    public init(id: String, parentSessionId: String, state: ChildState, task: String? = nil, parentBranch: String = "", parentCheckout: String? = nil, canUndo: Bool = false) {
         self.id = id; self.parentSessionId = parentSessionId; self.state = state; self.task = task
-        self.parentBranch = parentBranch; self.parentCheckout = parentCheckout
+        self.parentBranch = parentBranch; self.parentCheckout = parentCheckout; self.canUndo = canUndo
     }
 
     /// The row of `record`, its task read from `file`'s stored copy.
     public init(_ record: ChildRecord, in file: DelegationFile) {
         self.init(id: record.id, parentSessionId: record.parentSessionId, state: record.state,
                   task: file.copy(childId: record.id, kind: .task).flatMap { PaneTitle.shortened($0.text) },
-                  parentBranch: record.parentBranch, parentCheckout: record.parentCheckout)
+                  parentBranch: record.parentBranch, parentCheckout: record.parentCheckout,
+                  canUndo: record.state.after(.undoMerge) != nil && file.merges.contains { $0.childId == record.id })
     }
 }
 

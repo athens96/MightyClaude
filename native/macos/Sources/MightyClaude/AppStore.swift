@@ -299,6 +299,13 @@ final class AppStore: ObservableObject, DelegationHost {
     @Published var delegationHeld: [String: [DelegationDeliveryItem]] = [:]
     /// Reads `delegation`'s held items into `delegationHeld`.
     var delegationHeldWatch: Task<Void, Never>?
+    /// The last answer each child's card got, by child id: what was done, a
+    /// refusal with its reason, or a failure. Shown on the card until its next action.
+    @Published var delegationCardNotes: [String: DelegationCardNote] = [:]
+    /// The children whose card action is going.
+    @Published var delegationCardBusy: Set<String> = []
+    /// A discard from a child's card waiting on the human's confirmation.
+    @Published var pendingChildDiscard: PendingChildDiscard?
 
     /// Live agent runs, signalled to stop without waiting for the runner's
     /// actor or the main actor; read from the phone's handlers too.
@@ -341,7 +348,7 @@ final class AppStore: ObservableObject, DelegationHost {
         let needle = search.trimmingCharacters(in: .whitespacesAndNewlines)
         return snapshot.workspaces.filter { needle.isEmpty || $0.name.localizedCaseInsensitiveContains(needle) || $0.path.localizedCaseInsensitiveContains(needle) }
     }
-    var hasModal: Bool { showSettings || renameTarget != nil || settingsSession != nil || sessionInfoSessionID != nil || pendingRemoval != nil || attachmentPanelSession != nil || terminalHistorySession != nil || pluginBrowser != nil || resumePicker != nil || planDocument != nil }
+    var hasModal: Bool { showSettings || renameTarget != nil || settingsSession != nil || sessionInfoSessionID != nil || pendingRemoval != nil || pendingChildDiscard != nil || attachmentPanelSession != nil || terminalHistorySession != nil || pluginBrowser != nil || resumePicker != nil || planDocument != nil }
 
     func canEditAttachments(_ id: String) -> Bool {
         !ending && !closingSessions.contains(id) && snapshot.sessions.contains { $0.id == id }

@@ -116,15 +116,15 @@ extension DelegationCoordinator {
         file.children.contains { $0.id == id && $0.parentSessionId == caller.agentPaneId }
     }
 
-    /// Waits until no other tool merge is going, then holds the turn.
-    private func takeMergeTurn() async {
+    /// Waits until no other merge or undo is going, then holds the turn.
+    func takeMergeTurn() async {
         guard isMerging else { isMerging = true; return }
         // The turn is handed over with isMerging still set.
         await withCheckedContinuation { mergeTurns.append($0) }
     }
 
     /// Hands the turn to the merge waiting longest, if any.
-    private func passMergeTurn() {
+    func passMergeTurn() {
         if mergeTurns.isEmpty { isMerging = false } else { mergeTurns.removeFirst().resume() }
     }
 }
