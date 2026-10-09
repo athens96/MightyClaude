@@ -155,9 +155,12 @@ extension DelegationCoordinator {
     /// new report sends the parent one ended_without_report notice. When the
     /// host has reported that end already, the notice is sent now; a run
     /// awaited already, or one that ended with a report or by quitting,
-    /// sends nothing more. The run's start and end stay the host's to
-    /// report, so this never moves the child. The notice sent, if any, which
-    /// delivery then offers to the parent's pane.
+    /// sends nothing more. A follow-up that started a new run in the child's
+    /// idle pane (reported, ended, interrupted or merged) has the child
+    /// running it at once, which clears reported, whether or not the host
+    /// has reported that start yet; any other run's start and end stay the
+    /// host's to report. The notice sent, if any, which delivery then offers
+    /// to the parent's pane.
     @discardableResult func awaitRun(_ runId: String, of id: String) async -> Notice? {
         let notice = await recordAwait(runId, of: id)
         if notice != nil { await deliverPending() }
@@ -172,13 +175,16 @@ extension DelegationCoordinator {
         // Nothing below suspends until the await is saved.
         guard let index = file.children.firstIndex(where: { $0.id == id }), file.children[index].awaitedRunId != runId else { return nil }
         var next = file
-        let child = next.children[index]
+        var child = next.children[index]
         var notice: Notice?
         if child.runId == runId, child.state == .ended {
             let sent = Notice(id: UUID().uuidString.lowercased(), childId: id, reportRevision: child.reportRevision, kind: .endedWithoutReport)
             next.notices.append(sent); notice = sent
+        } else if child.runId != runId, Self.isIdleBetweenRuns(child.state) {
+            _ = child.noteRun(runId)
         }
-        next.children[index].awaitedRunId = runId
+        child.awaitedRunId = runId
+        next.children[index] = child
         keep(next, context: context)
         return notice
     }
@@ -199,6 +205,10 @@ extension DelegationCoordinator {
         if !ids.isEmpty { keep(next, context: context) }
         return ids
     }
+
+    /// Whether a child in `state` is idle in an open pane after a run, so a
+    /// new run there moves it to running.
+    static func isIdleBetweenRuns(_ state: ChildState) -> Bool { [.reported, .ended, .interrupted, .merged].contains(state) }
 
     /// Whether the end of the run `runId` may be recorded for `child`: it is
     /// the run going now, or the child's first run.
