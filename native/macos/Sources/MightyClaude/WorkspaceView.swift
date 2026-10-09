@@ -209,7 +209,13 @@ struct WorkspaceView: View {
                 Button(L("menu.showInFinder")) { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: workspace.path) }
             }
             if expanded {
-                ForEach(sessions) { session in paneRow(session) }
+                // Delegated children under their parent pane; a closed parent's under its node.
+                let tree = DelegationSidebar.tree(workspaceId: workspace.id, workspaces: store.snapshot.workspaces, sessions: store.snapshot.sessions, children: store.delegationChildren)
+                ForEach(tree.top) { session in
+                    paneRow(session)
+                    ForEach(tree.children[session.id] ?? []) { child in childRow(child) }
+                }
+                ForEach(tree.parentClosed) { node in parentClosedNode(node) }
                 workspaceAddMenu(workspace)
             }
         }.padding(.bottom, selected ? DesignMetrics.Spacing.sm : 0)
@@ -223,15 +229,17 @@ struct WorkspaceView: View {
 
     /// A pane in the sidebar as a plain row on the sidebar surface: its status glyph,
     /// the title, and a muted line with the provider, the clock and the context. Only a
-    /// pane waiting on the user carries a word on the right ("Question 1").
-    private func paneRow(_ session: RunSession) -> some View {
+    /// pane waiting on the user carries a word on the right ("Question 1"); a delegated
+    /// child's pane, one step in under its parent, always carries its state there.
+    private func paneRow(_ session: RunSession, child: DelegationChildRow? = nil) -> some View {
         let card = WorkDashboard.card(session, permissions: store.toolPermissions[session.id])
         let active = !store.showsDashboard && session.id == store.snapshot.activeSessionId
         let beta = session.kind == "claude" && ProviderOptions.isBeta(session.provider)
-        let status = DashboardText.status(card)
+        let childState = child.map { DelegationSidebar.shownState($0.state, asksHuman: card.attention.total > 0) }
+        let status = childState.map(DelegationText.state) ?? DashboardText.status(card)
         let localTerminal = store.usesLocalTerminal(session)
         let settled = [.done, .stop, .idle].contains(card.tone)
-        return Button { store.selectSession(session.id) } label: {
+        return sidebarListRow(nested: child != nil, Button { store.selectSession(session.id) } label: {
             HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
                 StatusGlyph(tone: card.tone, kind: session.kind).padding(.top, 1.5).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 0) {
@@ -252,7 +260,9 @@ struct WorkspaceView: View {
                     .foregroundStyle(active ? Palette.ink2 : Palette.sidebarInk2)
                 }
                 Spacer(minLength: 0)
-                if card.attention.total > 0 {
+                if let childState {
+                    childStateWord(childState)
+                } else if card.attention.total > 0 {
                     Text(status).font(.system(size: 10.5, weight: .bold)).foregroundStyle(Palette.waitText).lineLimit(1).fixedSize()
                         .frame(minHeight: 17)
                 }
@@ -262,17 +272,86 @@ struct WorkspaceView: View {
             .modifier(SidebarRowHighlight(selected: active))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .padding(.leading, 22).padding(.trailing, 2)
+        .buttonStyle(.plain))
         // The Button stays the accessibility element (its own press action); only its
         // label is replaced, so the meta line's ticking clock is not read out.
-        .accessibilityLabel("\(session.title)\(beta ? ", " + L("badge.betaAccessibility") : ""), \(card.attention.total > 0 ? status : Palette.word(card.tone))")
+        .accessibilityLabel(child != nil
+            ? L("delegation.child.accessibility", ["title": session.title, "state": status])
+            : "\(session.title)\(beta ? ", " + L("badge.betaAccessibility") : ""), \(card.attention.total > 0 ? status : Palette.word(card.tone))")
         .accessibilityAddTraits(active ? .isSelected : [])
         .accessibilityIdentifier(card.isRunning ? "sidebar-running-\(session.id)" : "sidebar-status-\(session.id)")
         .contextMenu {
             Button(L("menu.rename")) { store.beginRenameSession(session.id) }
             Button(L("menu.closePane"), role: .destructive) { store.closeSession(session.id) }
         }
+    }
+
+    /// A row of a workspace's list (a pane, a delegated child or a 'parent closed' node),
+    /// in past the folder icon; a `nested` row, a child under its parent, one step more.
+    private func sidebarListRow(nested: Bool, _ row: some View) -> some View {
+        row.padding(.leading, nested ? DesignMetrics.Spacing.xl : 0)
+            .padding(.leading, 22).padding(.trailing, 2)
+    }
+
+    /// A delegated child under its parent: its pane's row while the pane is open,
+    /// otherwise a row for the child the delegation file keeps.
+    @ViewBuilder private func childRow(_ child: DelegationChildRow) -> some View {
+        if let session = store.snapshot.sessions.first(where: { $0.id == child.id }) {
+            paneRow(session, child: child)
+        } else {
+            closedChildRow(child)
+        }
+    }
+
+    /// A child with no open pane (its start failed, or its pane was closed): its
+    /// task and its state, still listed under its parent.
+    private func closedChildRow(_ child: DelegationChildRow) -> some View {
+        let title = child.task ?? L("delegation.child.untitled")
+        let status = DelegationText.state(child.state)
+        return sidebarListRow(nested: true, HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
+            StatusGlyph(tone: DelegationSidebar.tone(child.state)).padding(.top, 1.5).accessibilityHidden(true)
+            Text(title).font(.system(size: 12.5, weight: .medium)).foregroundStyle(Palette.sidebarInk2)
+                .lineLimit(1).truncationMode(.tail).frame(minHeight: 17).help(title)
+            Spacer(minLength: 0)
+            childStateWord(child.state)
+        }
+        .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Inset.paneRowV)
+        .frame(maxWidth: .infinity, alignment: .leading))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(L("delegation.child.accessibility", ["title": title, "state": status]))
+        .accessibilityIdentifier("sidebar-child-\(child.id)")
+    }
+
+    /// The children of a closed parent pane, kept under a node of their own.
+    private func parentClosedNode(_ node: DelegationSidebar.ParentClosed) -> some View {
+        VStack(alignment: .leading, spacing: DesignMetrics.Inset.listGap) {
+            sidebarListRow(nested: false, HStack(spacing: DesignMetrics.Spacing.sm) {
+                Image(systemName: "rectangle.badge.xmark").font(.system(size: 11)).foregroundStyle(Palette.sidebarInk2).frame(width: 14)
+                    .accessibilityHidden(true)
+                Text(L("delegation.tree.parentClosed")).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Palette.sidebarInk2).lineLimit(1)
+                if !node.parentBranch.isEmpty {
+                    Text(verbatim: node.parentBranch).font(.system(size: 10.5, design: .monospaced)).foregroundStyle(Palette.sidebarInk2)
+                        .lineLimit(1).truncationMode(.middle)
+                }
+                Spacer(minLength: 0)
+                Text("\(node.children.count)").font(.system(size: 10, design: .monospaced)).foregroundStyle(Palette.sidebarInk2)
+            }
+            .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Inset.paneRowV)
+            .frame(maxWidth: .infinity, alignment: .leading))
+            .help(L("delegation.tree.parentClosedHelp"))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(L("delegation.tree.parentClosedAccessibility", ["count": "\(node.children.count)"]))
+            .accessibilityIdentifier("sidebar-parent-closed-\(node.id)")
+            ForEach(node.children) { child in childRow(child) }
+        }
+    }
+
+    /// A child's state in words, in its tone's ink (a quiet state in the sidebar's muted ink).
+    private func childStateWord(_ state: ChildState) -> some View {
+        let tone = DelegationSidebar.tone(state)
+        return Text(DelegationText.state(state)).font(.system(size: 10.5, weight: .bold))
+            .foregroundStyle(tone == .idle ? Palette.sidebarInk2 : Palette.text(tone)).lineLimit(1).fixedSize()
+            .frame(minHeight: 17)
     }
 
     /// `[mark] Claude · 02:14 · Context 41%`: the provider's mark, in its brand colour, goes
@@ -688,5 +767,24 @@ private struct SidebarRowHighlight: ViewModifier {
             .background(selected ? Palette.panel : hovering ? Palette.subtle : Color.clear, in: shape)
             .overlay { if selected { shape.strokeBorder(Color.black.opacity(0.07), lineWidth: 0.5).allowsHitTesting(false) } }
             .onHover { hovering = $0 }
+    }
+}
+
+/// Words for delegated children in the sidebar.
+enum DelegationText {
+    /// A child's state (`delegation.child.state.*`).
+    static func state(_ state: ChildState) -> String {
+        switch state {
+        case .creating: L("delegation.child.state.creating")
+        case .running: L("delegation.child.state.running")
+        case .waiting: L("delegation.child.state.waiting")
+        case .reported: L("delegation.child.state.reported")
+        case .merged: L("delegation.child.state.merged")
+        case .ended: L("delegation.child.state.ended")
+        case .interrupted: L("delegation.child.state.interrupted")
+        case .failed: L("delegation.child.state.failed")
+        case .closed: L("delegation.child.state.closed")
+        case .discarded: L("delegation.child.state.discarded")
+        }
     }
 }

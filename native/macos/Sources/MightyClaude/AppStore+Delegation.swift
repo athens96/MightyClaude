@@ -17,6 +17,13 @@ extension AppStore {
             let coordinator = try DelegationCoordinator(store: DelegationFileStore(directory: dataDirectory), host: self, worktrees: ChildWorktreeMaker(root: root))
             delegation = coordinator
             delegationRunEvents = DelegationRunEventPump(coordinator: coordinator)
+            // The sidebar's tree follows the file, switch on or off.
+            delegationChildWatch = Task { [weak self] in
+                for await rows in coordinator.childRows {
+                    guard let self else { return }
+                    if delegationChildren != rows { delegationChildren = rows }
+                }
+            }
         } catch {
             NSLog("MightyClaude delegation file unreadable; delegation is unavailable this launch: %@", error.localizedDescription)
         }

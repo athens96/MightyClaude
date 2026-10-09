@@ -284,6 +284,11 @@ final class AppStore: ObservableObject, DelegationHost {
     /// The id of each pane's run as delegation names it, and which panes
     /// finished their last run normally since this launch.
     var delegationRuns = DelegationRunLedger()
+    /// The delegated children as the sidebar lists them, as `delegation`'s
+    /// file has them; empty while it is unavailable.
+    @Published var delegationChildren: [DelegationChildRow] = []
+    /// Reads `delegation`'s child list into `delegationChildren`.
+    var delegationChildWatch: Task<Void, Never>?
 
     /// Live agent runs, signalled to stop without waiting for the runner's
     /// actor or the main actor; read from the phone's handlers too.
