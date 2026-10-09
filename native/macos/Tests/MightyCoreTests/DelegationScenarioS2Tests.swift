@@ -460,6 +460,12 @@ private func s2Count(of needle: String, in text: String) -> Int { text.component
         #expect(s2Count(of: after, in: transcript) == 1, label)
         let positions = [held.notices[1].id, held.notices[2].id, after].compactMap { transcript.range(of: $0)?.lowerBound }
         #expect(positions.count == 3 && positions == positions.sorted(), label)
+
+        // The Mac send's record, for scripts/delegation-record.py in macOS CI.
+        if path == .macSend {
+            let panes = (["parent"] + held.children.map(\.id)).compactMap { id in launch.host.pane(id).map { ($0.state, $0.resumeId) } }
+            try exportDelegationRecord("s2", profile: folder.appendingPathComponent("profile", isDirectory: true), repo: repo, claudeConfig: launch.host.config, panes: panes)
+        }
     }
 
     /// Plays `path` in the relaunch; the text that follows the released

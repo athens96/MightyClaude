@@ -1,0 +1,108 @@
+{
+  "children": [
+    {
+      "baseCommit": "@{commit:base}",
+      "branch": "mighty/s1-child-1",
+      "followUpCount": 0,
+      "id": "s1-child-1",
+      "parentBranch": "main",
+      "parentCheckout": "@{root}/repo",
+      "parentSessionId": "s1-parent",
+      "reportHead": "@{commit:one}",
+      "reportRevision": 1,
+      "requestKey": "key-s1-child-1",
+      "runId": "run-c1-1",
+      "startingMode": "acceptEdits",
+      "state": "merged",
+      "worktreePath": "@{root}/worktrees/s1-child-1"
+    },
+    {
+      "baseCommit": "@{commit:base}",
+      "branch": "mighty/s1-child-2",
+      "followUpCount": 0,
+      "id": "s1-child-2",
+      "parentBranch": "main",
+      "parentCheckout": "@{root}/repo",
+      "parentSessionId": "s1-parent",
+      "reportHead": "@{commit:two}",
+      "reportRevision": 1,
+      "requestKey": "key-s1-child-2",
+      "runId": "run-c2-1",
+      "startingMode": "manual",
+      "state": "discarded",
+      "worktreePath": "@{root}/worktrees/s1-child-2"
+    }
+  ],
+  "copies": [
+    {
+      "childId": "s1-child-1",
+      "kind": "task",
+      "originalBytes": 54,
+      "revision": 0,
+      "text": "# Task\n\nFeature one: add feature-one.txt saying one.\n",
+      "truncated": false
+    },
+    {
+      "childId": "s1-child-1",
+      "kind": "report",
+      "originalBytes": 34,
+      "revision": 1,
+      "text": "# Report\n\nAdded feature-one.txt.\n",
+      "truncated": false
+    },
+    {
+      "childId": "s1-child-2",
+      "kind": "task",
+      "originalBytes": 54,
+      "revision": 0,
+      "text": "# Task\n\nFeature two: add feature-two.txt saying two.\n",
+      "truncated": false
+    },
+    {
+      "childId": "s1-child-2",
+      "kind": "report",
+      "originalBytes": 34,
+      "revision": 1,
+      "text": "# Report\n\nAdded feature-two.txt.\n",
+      "truncated": false
+    }
+  ],
+  "followUps": [],
+  "merges": [
+    {
+      "childHead": "@{commit:one}",
+      "childId": "s1-child-1",
+      "kind": "tool_fast_forward",
+      "mergedCommit": "@{commit:one}",
+      "parentBranch": "main",
+      "preMergeCommit": "@{commit:base}"
+    }
+  ],
+  "notices": [
+    {
+      "childId": "s1-child-1",
+      "id": "notice-s1-1",
+      "kind": "reported",
+      "lane": "delivered",
+      "receipt": {
+        "route": "queue",
+        "runId": "run-s1-2",
+        "time": "2026-10-10T00:01:00Z"
+      },
+      "reportRevision": 1
+    },
+    {
+      "childId": "s1-child-2",
+      "id": "notice-s1-2",
+      "kind": "reported",
+      "lane": "delivered",
+      "receipt": {
+        "route": "queue",
+        "runId": "run-s1-3",
+        "time": "2026-10-10T00:02:00Z"
+      },
+      "reportRevision": 1
+    }
+  ],
+  "version": 1
+}

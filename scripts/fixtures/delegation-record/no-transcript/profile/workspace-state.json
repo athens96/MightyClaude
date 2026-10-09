@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "workspaces": [
+    {
+      "id": "ws-practice",
+      "name": "practice",
+      "path": "@{root}/repo",
+      "createdAt": "2026-10-10T00:00:00Z"
+    }
+  ],
+  "sessions": [
+    {
+      "id": "s1-parent",
+      "workspaceId": "ws-practice",
+      "title": "Claude",
+      "kind": "claude",
+      "provider": "claude",
+      "model": "default",
+      "settings": {
+        "effort": "default",
+        "permissionMode": "acceptEdits",
+        "fastMode": false,
+        "webSearch": "default",
+        "networkAccess": false
+      },
+      "status": "idle",
+      "logs": [],
+      "createdAt": "2026-10-10T00:00:00Z",
+      "resumeId": "s1-parent-session"
+    },
+    {
+      "id": "s1-child-1",
+      "workspaceId": "ws-practice",
+      "title": "Feature one",
+      "kind": "claude",
+      "provider": "claude",
+      "model": "default",
+      "settings": {
+        "effort": "default",
+        "permissionMode": "acceptEdits",
+        "fastMode": false,
+        "webSearch": "default",
+        "networkAccess": false
+      },
+      "status": "idle",
+      "logs": [],
+      "createdAt": "2026-10-10T00:00:00Z",
+      "resumeId": "s1-child-1-session",
+      "parentSessionId": "s1-parent",
+      "workingFolder": "@{root}/worktrees/s1-child-1"
+    }
+  ],
+  "activeWorkspaceId": "ws-practice",
+  "activeSessionId": "s1-parent",
+  "layout": "grid",
+  "theme": "dark"
+}

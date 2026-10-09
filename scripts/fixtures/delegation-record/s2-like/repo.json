@@ -1,0 +1,24 @@
+{
+  "commits": [
+    {
+      "name": "base",
+      "parents": [],
+      "files": {
+        "README.md": "# Practice\n"
+      },
+      "message": "Start"
+    }
+  ],
+  "branches": {
+    "main": "base",
+    "mighty/s2-child-1": "base",
+    "mighty/s2-child-2": "base",
+    "mighty/s2-child-3": "base"
+  },
+  "head": "main",
+  "worktrees": [
+    "s2-child-1",
+    "s2-child-2",
+    "s2-child-3"
+  ]
+}
