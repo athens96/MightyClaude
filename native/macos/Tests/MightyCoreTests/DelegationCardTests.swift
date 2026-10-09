@@ -2,16 +2,21 @@ import Foundation
 import Testing
 @testable import MightyCore
 
-/// The app side as a child's card sees it: the panes a test sets.
+/// The app side as a child's card sees it: the panes a test sets, and each
+/// item handed to a pane, which it takes as its next run.
 private final class CardHost: DelegationHost, @unchecked Sendable {
     private let lock = NSLock()
     private var panes: [String: DelegationPaneState] = [:]
+    private var handed: [String] = []
 
     func set(_ pane: DelegationPaneState) { lock.withLock { panes[pane.sessionId] = pane } }
+    var deliveries: [String] { lock.withLock { handed } }
 
     func createPane(_ pane: DelegationChildPane) async -> Bool { false }
     func startRun(sessionId: String, input: String) async -> String? { nil }
-    func deliver(_ input: String, to sessionId: String, route: DeliveryRoute) async -> String? { nil }
+    func deliver(_ input: String, to sessionId: String, route: DeliveryRoute) async -> String? {
+        lock.withLock { handed.append("\(sessionId) \(route.rawValue)"); return "run-delivered" }
+    }
     func paneState(sessionId: String) async -> DelegationPaneState? { lock.withLock { panes[sessionId] } }
     func stopRun(sessionId: String) async { lock.withLock { panes[sessionId]?.activity = .idle } }
 }
@@ -81,6 +86,73 @@ struct DelegationCardTests {
         #expect(await coordinator.nestedWorktrees(of: "c1") == [ChildCleanup.canonical(nested.path)])
         #expect(await coordinator.nestedWorktrees(of: "nobody") == nil)
     }
+}
+
+extension DelegationCardTests {
+    @Test func asksAgainWhenAWorktreeNestedInTheChildsSinceTheConfirmation() async throws {
+        let place = try MergePlace(); defer { place.remove() }
+        let (coordinator, _, _, _) = try await reportedChild(place)
+        let child = try #require(await coordinator.file.children.first)
+        let confirmed = try #require(await coordinator.nestedWorktrees(of: "c1")); #expect(confirmed.isEmpty)
+
+        // Nested after the confirmation named none: nothing is removed, and the answer names it.
+        let nested = URL(fileURLWithPath: child.worktreePath).appendingPathComponent("inner", isDirectory: true)
+        try await place.git(["worktree", "add", "-q", "-b", "inner", nested.path])
+        #expect(await coordinator.discardFromCard("c1", confirmedNested: confirmed) == .nestedChanged([ChildCleanup.canonical(nested.path)]))
+        #expect(FileManager.default.fileExists(atPath: child.worktreePath)); #expect(FileManager.default.fileExists(atPath: nested.path))
+        #expect(try await place.git(["rev-parse", "--verify", "-q", "refs/heads/mighty/c1"]).count == 40)
+        #expect(await coordinator.file.children.map(\.state) == [.reported])
+
+        // Confirmed with it named: the child, the nested worktree and the child's branch go.
+        #expect(await coordinator.discardFromCard("c1", confirmedNested: [ChildCleanup.canonical(nested.path)]) == .discarded)
+        #expect(!FileManager.default.fileExists(atPath: child.worktreePath)); #expect(!FileManager.default.fileExists(atPath: nested.path))
+        #expect(try await place.git(["for-each-ref", "--format=%(refname)", "refs/heads/mighty/"]).isEmpty)
+        #expect(await coordinator.file.children.map(\.state) == [.discarded])
+        #expect(await DelegationSidebar.rows(coordinator.file).isEmpty)
+    }
+
+    @Test func deliveryStartsNoRunInAPaneWhoseCheckoutACardIsChanging() async throws {
+        let place = try MergePlace(); defer { place.remove() }
+        let (coordinator, host, _, _) = try await reportedChild(place)
+        await coordinator.addPending(Notice(id: "n1", childId: "c1", reportRevision: 1, kind: .reported))
+
+        await coordinator.holdCardPanes(["parent"])
+        await coordinator.deliverPending()
+        #expect(host.deliveries.isEmpty)
+        #expect(await coordinator.file.notices.map(\.lane) == [.pending])
+
+        await coordinator.holdCardPanes([])
+        await coordinator.deliverPending()
+        #expect(host.deliveries == ["parent queue"])
+        #expect(await coordinator.file.notices.map(\.lane) == [.delivered])
+    }
+
+    @Test func undoesOnlyTheMergeInEffect() {
+        let first = MergeRecord(childId: "c1", kind: .cardFastForward, parentBranch: "main", preMergeCommit: "a", mergedCommit: "b", childHead: "b")
+        let second = MergeRecord(childId: "c1", kind: .cardFastForward, parentBranch: "main", preMergeCommit: "b", mergedCommit: "c", childHead: "c")
+        var child = ChildRecord(id: "c1", parentSessionId: "parent", worktreePath: "/tmp/w/c1", parentBranch: "main", baseCommit: "a", startingMode: "auto", requestKey: "k", state: .merged)
+        var file = DelegationFile(children: [child], merges: [first, second])
+        #expect(file.undoableMerge(of: "c1") == second)
+        for state in [ChildState.reported, .running, .ended, .failed, .discarded] {
+            child.state = state; file.children = [child]
+            #expect(file.undoableMerge(of: "c1") == nil, "\(state)")
+        }
+        // Closed: only the merge whose head it was closed at.
+        child.state = .closed; child.closedHead = "C"; file.children = [child]
+        #expect(file.undoableMerge(of: "c1") == second)
+        file.merges = [first]
+        #expect(file.undoableMerge(of: "c1") == nil)
+        child.closedHead = nil; file.children = [child]; file.merges = [first, second]
+        #expect(file.undoableMerge(of: "c1") == nil)
+        #expect(DelegationChildRow(child, in: file).canUndo == false)
+    }
+}
+
+extension DelegationCoordinator {
+    /// A pending item, as a run end or a follow-up leaves it after launch.
+    fileprivate func addPending(_ notice: Notice) { file.notices.append(notice) }
+    /// The panes a card's merge or undo would be changing.
+    fileprivate func holdCardPanes(_ ids: Set<String>) { cardPanes = ids }
 }
 
 private func store(_ place: MergePlace) -> DelegationFileStore {

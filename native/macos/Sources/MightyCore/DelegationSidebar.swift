@@ -13,8 +13,8 @@ public struct DelegationChildRow: Sendable, Equatable, Identifiable {
     public var parentBranch: String
     /// The top folder of the parent's checkout when the child was made.
     public var parentCheckout: String?
-    /// Whether the child's card can undo its last merge: one is on record and
-    /// the child is merged, or closed after it.
+    /// Whether the child's card can undo a merge
+    /// (``DelegationFile/undoableMerge(of:)``).
     public var canUndo: Bool
 
     public init(id: String, parentSessionId: String, state: ChildState, task: String? = nil, parentBranch: String = "", parentCheckout: String? = nil, canUndo: Bool = false) {
@@ -27,7 +27,7 @@ public struct DelegationChildRow: Sendable, Equatable, Identifiable {
         self.init(id: record.id, parentSessionId: record.parentSessionId, state: record.state,
                   task: file.copy(childId: record.id, kind: .task).flatMap { PaneTitle.shortened($0.text) },
                   parentBranch: record.parentBranch, parentCheckout: record.parentCheckout,
-                  canUndo: record.state.after(.undoMerge) != nil && file.merges.contains { $0.childId == record.id })
+                  canUndo: file.undoableMerge(of: record.id) != nil)
     }
 }
 
