@@ -275,6 +275,10 @@ extension AppStore {
         let permissions = permissions ?? toolPermissions
         let queued = queued ?? queuedInputs
         let held = held ?? delegationHeld
+        // Panes whose held rows changed (`delegationHeld` is still the old map
+        // here): one swapped for another leaves the summary's count as it was,
+        // yet the phone must re-read the pane's queued array.
+        let heldMoved = Set(held.keys).union(delegationHeld.keys).filter { held[$0]?.map(\.id) != delegationHeld[$0]?.map(\.id) }
         var changedSessions: [String] = []
         // The order carries the agent-owned terminal and browser panes too, so
         // opening or closing one of them is a state change the phone hears about.
@@ -287,7 +291,7 @@ extension AppStore {
         for session in phoneSessions {
             let editable = MobileRemoteSupport.editable(status: session.status, pendingRun: pendingRuns.contains(session.id))
             let fingerprint = MobileRemoteTracking.SessionFingerprint(session, editable: editable, options: mobileOptionsDigest(session), mighty: mobileMightyDigest(session))
-            let changed = mobileTracking.seen[session.id] != fingerprint
+            let changed = mobileTracking.seen[session.id] != fingerprint || heldMoved.contains(session.id)
             if changed { mobileTracking.sessionRevisions[session.id, default: 0] += 1 }
             var summary = mobileSummary(session, revision: mobileTracking.sessionRevisions[session.id, default: 1], permissions: permissions, queued: queued, held: held)
             let previous = mobileTracking.summaries[session.id]
