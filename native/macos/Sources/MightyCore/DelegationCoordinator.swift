@@ -201,6 +201,11 @@ public actor DelegationCoordinator: DelegationRequestHandler {
     /// the others wait here, first come first.
     var isMerging = false
     var mergeTurns: [CheckedContinuation<Void, Never>] = []
+    /// The panes whose checkout a card's merge or undo is changing: the
+    /// parent's, and the child's during a merge. Delivery starts no run in
+    /// them until it is over and offers their items again then, so an undo
+    /// finds its parent idle from start to end.
+    var cardPanes: Set<String> = []
     /// Whether a run event of a child's pane (its start, its end, the parent
     /// awaiting it, or the launch's sweep) is being recorded. They take turns
     /// in the order they came, so each is recorded whole before the next.

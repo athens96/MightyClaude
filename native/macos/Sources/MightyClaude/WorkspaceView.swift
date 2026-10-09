@@ -81,7 +81,7 @@ struct WorkspaceView: View {
         // A child's discard from its card, naming the worktrees nested in its own that go with it.
         .confirmationDialog(L("delegation.discard.title"), isPresented: Binding(get: { store.pendingChildDiscard != nil }, set: { if !$0 { store.pendingChildDiscard = nil } }),
                             titleVisibility: .visible, presenting: store.pendingChildDiscard) { pending in
-            Button(L("delegation.discard.confirm"), role: .destructive) { store.discardChildConfirmed(pending.id) }
+            Button(L("delegation.discard.confirm"), role: .destructive) { store.discardChildConfirmed(pending) }
             Button(L("resume.cancel"), role: .cancel) { store.pendingChildDiscard = nil }
         } message: { pending in Text(DelegationText.discardMessage(pending)) }
     }
@@ -884,7 +884,7 @@ enum DelegationText {
         switch (note.action, note.result) {
         case (.merge, .done): return (L("delegation.card.merged", ["branch": branch]), .done)
         case (.undo, .done): return (L("delegation.card.undone", ["branch": branch]), .done)
-        case (.discard, .done): return nil
+        case (.discard, .done), (_, .reconfirm): return nil
         case (.merge, .refused(let reason)): return (L("delegation.card.mergeRefused", ["reason": Self.reason(reason)]), .wait)
         case (.undo, .refused(let reason)): return (L("delegation.card.undoRefused", ["reason": Self.reason(reason)]), .wait)
         case (.discard, .refused(let reason)): return (L("delegation.card.discardFailed", ["error": Self.reason(reason)]), .err)

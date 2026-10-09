@@ -8,6 +8,9 @@ struct DelegationCardNote: Equatable {
         /// Refused with this reason; nothing changed.
         case refused(DelegationReasonCode)
         case failed(String)
+        /// More worktrees are nested in the child's than its discard's
+        /// confirmation named: nothing was removed, and it asks again with these.
+        case reconfirm([String])
     }
 
     var action: DelegationCardAction
@@ -206,9 +209,10 @@ extension AppStore {
     }
 
     /// The human's discard from the child's card: first the confirmation,
-    /// which names the worktrees nested in the child's that go with it.
+    /// which names the worktrees nested in the child's that go with it. One
+    /// confirmation at a time; a second is not asked over the first.
     func askToDiscardChild(_ id: String) {
-        guard let delegation, !delegationCardBusy.contains(id), let row = delegationChildren.first(where: { $0.id == id }) else { return }
+        guard let delegation, pendingChildDiscard == nil, !delegationCardBusy.contains(id), let row = delegationChildren.first(where: { $0.id == id }) else { return }
         delegationCardBusy.insert(id)
         delegationCardNotes[id] = nil
         let title = snapshot.sessions.first(where: { $0.id == id })?.title ?? row.task ?? L("delegation.child.untitled")
@@ -216,23 +220,37 @@ extension AppStore {
             let nested = await delegation.nestedWorktrees(of: id)
             guard let self else { return }
             delegationCardBusy.remove(id)
+            guard pendingChildDiscard == nil else { return }
             pendingChildDiscard = PendingChildDiscard(id: id, title: title, branch: ChildRecord.branchName(for: id), nested: nested)
         }
     }
 
-    /// The discard the human confirmed. The child's pane, its worktree gone,
-    /// closes once the child is discarded.
-    func discardChildConfirmed(_ id: String) {
+    /// The discard the human confirmed, with the nested worktrees its
+    /// confirmation named. When more are nested now, nothing is removed and
+    /// the confirmation asks again naming them all. The child's pane, its
+    /// worktree gone, closes once the child is discarded.
+    func discardChildConfirmed(_ pending: PendingChildDiscard) {
         pendingChildDiscard = nil
+        let id = pending.id
         runCardAction(id, .discard) { delegation in
-            switch await delegation.discardChild(id) {
+            switch await delegation.discardFromCard(id, confirmedNested: pending.nested) {
             case .discarded: .done
+            case .nestedChanged(let nested): .reconfirm(nested)
             case .failed(let message): .failed(message)
             }
         } then: { [weak self] result in
-            guard let self, result == .done, snapshot.sessions.contains(where: { $0.id == id }) else { return }
-            delegationCardNotes[id] = nil
-            closeSession(id)
+            guard let self else { return }
+            switch result {
+            case .done:
+                guard snapshot.sessions.contains(where: { $0.id == id }) else { return }
+                delegationCardNotes[id] = nil
+                closeSession(id)
+            case .reconfirm(let nested):
+                delegationCardNotes[id] = nil
+                if pendingChildDiscard == nil { pendingChildDiscard = PendingChildDiscard(id: id, title: pending.title, branch: pending.branch, nested: nested) }
+            case .refused, .failed:
+                break
+            }
         }
     }
 

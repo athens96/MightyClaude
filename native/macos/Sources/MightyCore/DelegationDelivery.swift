@@ -171,6 +171,9 @@ extension DelegationCoordinator {
                 keep(moving: [item], to: .held, receipt: nil, context: context)
                 return
             }
+            // A card's merge or undo is changing the pane's checkout: no run
+            // starts there now, and the item is offered again once it is over.
+            if route == .queue, cardPanes.contains(item.sessionId) { return }
             let receipt = DeliveryReceipt(time: Self.now(), route: route, runId: route == .steer ? pane?.runId ?? "" : "")
             guard save(moving: [item], to: .delivered, receipt: receipt, context: context) else { return }
             if let runId = await host.deliver(item.text, to: item.sessionId, route: route) {
