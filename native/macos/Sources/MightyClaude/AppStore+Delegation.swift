@@ -134,7 +134,9 @@ extension AppStore {
     }
 
     /// Gives a send that no run took back where it came from: the composer,
-    /// unless something was typed meanwhile, or the head of the queue.
+    /// unless something was typed meanwhile, or the head of the queue. The
+    /// attachments of a phone's send or a queued request never stay in the
+    /// Mac composer, where a failed start puts a send's attachments back.
     private func giveBack(_ id: String, attachments: [RunAttachment], from origin: HeldSendOrigin) {
         guard canEditAttachments(id) else { return }
         switch origin {
@@ -144,9 +146,13 @@ extension AppStore {
             let missing = attachments.filter { !existing.contains($0.id) }
             if !missing.isEmpty { attachmentDrafts[id, default: []].insert(contentsOf: missing, at: 0) }
         case .queue(let item):
+            let ids = Set(attachments.map(\.id))
+            attachmentDrafts[id]?.removeAll { ids.contains($0.id) }
             if queuedInputs[id]?.contains(where: { $0.id == item.id }) != true { queuedInputs[id, default: []].insert(item, at: 0) }
             updateSession(id) { $0.logs.append(LogEntry(kind: "system", text: L("queue.log.keptAfterFailure", ["error": error ?? ""]))) }
-        case .phone: break
+        case .phone:
+            let ids = Set(attachments.map(\.id))
+            attachmentDrafts[id]?.removeAll { ids.contains($0.id) }
         }
     }
 

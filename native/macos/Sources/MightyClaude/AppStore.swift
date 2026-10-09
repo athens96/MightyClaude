@@ -259,6 +259,9 @@ final class AppStore: ObservableObject, DelegationHost {
     })
     /// Each pane's run start, which answers whether the run's process got its input.
     private var startTasks: [String: Task<Bool, Never>] = [:]
+    /// Queued rows starting with the items delegation holds for their pane,
+    /// until that release is over.
+    private var releasingRows: Set<String> = []
     private(set) var closingSessions = Set<String>()
     private var draftRevisions: [String: UInt64] = [:]
     var attachmentTasks: [String: Task<Void, Never>] = [:]
@@ -801,7 +804,7 @@ final class AppStore: ObservableObject, DelegationHost {
             if queuedInputs[id]?.contains(where: { $0.id == item.id }) == true { return .queued }
             // Gone from the queue: settling either started it now, or threw the
             // whole queue away because the pane cannot run (it logged why).
-            if pendingRuns.contains(id) { return .started }
+            if pendingRuns.contains(id) || releasingRows.contains(item.id) { return .started }
             let status = snapshot.sessions.first { $0.id == id }?.status
             return status == "running" ? .started : .dropped
         }
@@ -868,7 +871,12 @@ final class AppStore: ObservableObject, DelegationHost {
             }
             queuedInputs[id] = queue.count > 1 ? Array(queue.dropFirst()) : nil
             // Items held for the pane go first, in this request's run.
-            if !(delegationHeld[id] ?? []).isEmpty { releaseHeld(id, input: next.text, attachments: next.attachments, from: .queue(next)); return }
+            if !(delegationHeld[id] ?? []).isEmpty {
+                releasingRows.insert(next.id)
+                let release = releaseHeld(id, input: next.text, attachments: next.attachments, from: .queue(next))
+                Task { _ = await release.value; releasingRows.remove(next.id) }
+                return
+            }
             if !start(id, session: session, workspace: workspace, input: next.text, attachments: next.attachments, restoringDraft: nil, queued: next) {
                 // Validation refused it; keep the item so nothing typed is lost.
                 queuedInputs[id, default: []].insert(next, at: 0)
