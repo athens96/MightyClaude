@@ -84,6 +84,12 @@ struct WorkspaceView: View {
             Button(L("delegation.discard.confirm"), role: .destructive) { store.discardChildConfirmed(pending) }
             Button(L("resume.cancel"), role: .cancel) { store.pendingChildDiscard = nil }
         } message: { pending in Text(DelegationText.discardMessage(pending)) }
+        // A parent's close from the Mac while its children are open; the phone's close never asks.
+        .confirmationDialog(L("delegation.parentClose.title"), isPresented: Binding(get: { store.pendingParentClose != nil }, set: { if !$0 { store.pendingParentClose = nil } }),
+                            titleVisibility: .visible, presenting: store.pendingParentClose) { pending in
+            Button(L("delegation.parentClose.confirm"), role: .destructive) { store.closeParentConfirmed(pending) }
+            Button(L("resume.cancel"), role: .cancel) { store.pendingParentClose = nil }
+        } message: { pending in Text(L("delegation.parentClose.message", ["title": pending.title, "count": "\(pending.openChildren)"])) }
     }
 
     private var sidebar: some View {
@@ -288,7 +294,7 @@ struct WorkspaceView: View {
         .accessibilityIdentifier(card.isRunning ? "sidebar-running-\(session.id)" : "sidebar-status-\(session.id)")
         .contextMenu {
             Button(L("menu.rename")) { store.beginRenameSession(session.id) }
-            Button(L("menu.closePane"), role: .destructive) { store.closeSession(session.id) }
+            Button(L("menu.closePane"), role: .destructive) { store.requestCloseSession(session.id) }
             if let child {
                 Divider()
                 childCardMenu(child)

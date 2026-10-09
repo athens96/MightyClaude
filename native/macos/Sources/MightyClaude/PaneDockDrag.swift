@@ -346,5 +346,5 @@ final class PaneDockTabHandleView: NSView {
     }
     @objc private func renamePane() { store?.beginRenameSession(sessionId) }
     @objc private func focusPane() { store?.setPaneFocus(true, sessionId: sessionId) }
-    @objc private func closePane() { store?.closeSession(sessionId) }
+    @objc private func closePane() { store?.requestCloseSession(sessionId) }
 }

@@ -252,7 +252,7 @@ private struct PaneDockTab: View {
             .frame(minWidth: 56, minHeight: DesignMetrics.Layout.tab, maxHeight: DesignMetrics.Layout.tab, alignment: .leading)
             .allowsHitTesting(false).accessibilityHidden(true)
             .overlay { PaneDockTabHandle(store: store, sessionId: session.id, workspaceId: session.workspaceId, groupId: groupId, title: session.title, nextSessionId: nextSessionId) }
-            Button { store.closeSession(session.id) } label: { Image(systemName: "xmark").font(.system(size: 8, weight: .medium)).frame(width: 20, height: DesignMetrics.Layout.tab).contentShape(Rectangle()) }
+            Button { store.requestCloseSession(session.id) } label: { Image(systemName: "xmark").font(.system(size: 8, weight: .medium)).frame(width: 20, height: DesignMetrics.Layout.tab).contentShape(Rectangle()) }
                 .buttonStyle(.plain).foregroundStyle(Palette.ink2).accessibilityLabel(L("layout.tab.closeTabAccessibility", ["title": session.title]))
         }
         .padding(.trailing, DesignMetrics.Spacing.xxs).frame(height: DesignMetrics.Layout.tab)

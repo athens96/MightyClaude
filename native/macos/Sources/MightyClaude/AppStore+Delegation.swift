@@ -29,6 +29,17 @@ struct PendingChildDiscard: Identifiable, Equatable {
     var nested: [String]?
 }
 
+/// A Mac close of a parent pane whose children are still open, waiting on
+/// the human's confirmation: only the parent closes, and its children stay
+/// as cards under a 'parent closed' node.
+struct PendingParentClose: Identifiable, Equatable {
+    /// The parent pane's id.
+    var id: String
+    var title: String
+    /// How many of its children are open.
+    var openChildren: Int
+}
+
 /// The app side of parent → child delegation between Claude panes (macOS
 /// only): AppStore is the coordinator's ``DelegationHost``. The coordinator
 /// owns the records, the tools, delivery and the git actions; the store only
@@ -182,6 +193,32 @@ extension AppStore {
             let ids = Set(attachments.map(\.id))
             attachmentDrafts[id]?.removeAll { ids.contains($0.id) }
         }
+    }
+
+    // MARK: Closing panes and removing workspaces
+
+    /// A human's close of the pane `id` from the Mac: a parent pane with open
+    /// children asks first, in the view layer, and then closes only the
+    /// parent; any other pane closes now. The phone's close never asks.
+    func requestCloseSession(_ id: String) {
+        let open = delegationChildren.filter { $0.parentSessionId == id && $0.state.isOpen }.count
+        guard open > 0, let session = snapshot.sessions.first(where: { $0.id == id }) else { closeSession(id); return }
+        guard pendingParentClose == nil else { return }
+        pendingParentClose = PendingParentClose(id: id, title: session.title, openChildren: open)
+    }
+
+    /// The parent close the human confirmed.
+    func closeParentConfirmed(_ pending: PendingParentClose) {
+        pendingParentClose = nil
+        closeSession(pending.id)
+    }
+
+    /// `workspace_has_children` while delegation has open children or child
+    /// worktrees not cleaned up in the workspace; nil when it may be removed.
+    func workspaceRemovalRefusal(_ workspace: Workspace) async -> DelegationReasonCode? {
+        guard let delegation else { return nil }
+        let panes = Set(snapshot.sessions.filter { $0.workspaceId == workspace.id }.map(\.id))
+        return await delegation.workspaceRemovalRefusal(paneIds: panes, folder: workspace.path)
     }
 
     // MARK: Child cards

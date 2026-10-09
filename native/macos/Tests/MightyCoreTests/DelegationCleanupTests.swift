@@ -423,4 +423,43 @@ struct DelegationCleanupTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: place.root.path).isEmpty)
         #expect(try fixture.store.load().children.map(\.state) == [.discarded])
     }
+
+    // MARK: Removing a workspace
+
+    private func removalChild(_ id: String, parent: String, state: ChildState, checkout: String? = "/work/app") -> ChildRecord {
+        ChildRecord(id: id, parentSessionId: parent, worktreePath: "/worktrees/" + id, parentBranch: "main", baseCommit: String(repeating: "a", count: 40),
+                    startingMode: "default", requestKey: "key-" + id, state: state, parentCheckout: checkout)
+    }
+
+    @Test func aWorkspaceWithAnOpenChildIsRefusedWhicheverWayTheChildIsItsOwn() {
+        let none: (String) -> Bool = { _ in false }
+        for state in ChildState.allCases where state.isOpen {
+            // By the parent's pane, the child's own pane, or the parent's checkout alone.
+            #expect(DelegationWorkspaceRemoval.refusal(children: [removalChild("c1", parent: "p1", state: state, checkout: nil)], paneIds: ["p1"], folder: "/work/app", worktreeExists: none) == .workspaceHasChildren)
+            #expect(DelegationWorkspaceRemoval.refusal(children: [removalChild("c1", parent: "gone", state: state, checkout: nil)], paneIds: ["c1"], folder: "/work/app", worktreeExists: none) == .workspaceHasChildren)
+            #expect(DelegationWorkspaceRemoval.refusal(children: [removalChild("c1", parent: "gone", state: state)], paneIds: [], folder: "/work/app", worktreeExists: none) == .workspaceHasChildren)
+            #expect(DelegationWorkspaceRemoval.refusal(children: [removalChild("c1", parent: "gone", state: state, checkout: "/work/app/sub")], paneIds: [], folder: "/work/app", worktreeExists: none) == .workspaceHasChildren)
+        }
+    }
+
+    @Test func aWorkspaceWithAnUncleanedChildWorktreeIsRefusedUntilItIsGoneOrDiscarded() {
+        var onDisk: Set<String> = ["/worktrees/c1"]
+        let exists: (String) -> Bool = { onDisk.contains($0) }
+        for state in [ChildState.closed, .failed] {
+            #expect(DelegationWorkspaceRemoval.refusal(children: [removalChild("c1", parent: "p1", state: state)], paneIds: [], folder: "/work/app", worktreeExists: exists) == .workspaceHasChildren)
+        }
+        // A discarded child never counts; a cleaned one's worktree is gone.
+        #expect(DelegationWorkspaceRemoval.refusal(children: [removalChild("c1", parent: "p1", state: .discarded)], paneIds: ["p1"], folder: "/work/app", worktreeExists: exists) == nil)
+        onDisk = []
+        #expect(DelegationWorkspaceRemoval.refusal(children: [removalChild("c1", parent: "p1", state: .closed)], paneIds: ["p1"], folder: "/work/app", worktreeExists: exists) == nil)
+        #expect(DelegationWorkspaceRemoval.refusal(children: [removalChild("c1", parent: "p1", state: .failed)], paneIds: ["p1"], folder: "/work/app", worktreeExists: exists) == nil)
+    }
+
+    @Test func anotherWorkspacesChildrenNeverRefuseTheRemoval() {
+        let all: (String) -> Bool = { _ in true }
+        let children = [removalChild("c1", parent: "p1", state: .running, checkout: "/work/other"),
+                        removalChild("c2", parent: "p2", state: .closed, checkout: "/work/apple")]
+        #expect(DelegationWorkspaceRemoval.refusal(children: children, paneIds: ["p3"], folder: "/work/app", worktreeExists: all) == nil)
+        #expect(DelegationWorkspaceRemoval.refusal(children: children, paneIds: ["p2"], folder: "/work/app", worktreeExists: all) == .workspaceHasChildren)
+    }
 }

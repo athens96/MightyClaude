@@ -188,6 +188,36 @@ public enum ChildCleanup {
     }
 }
 
+/// Whether a human may remove a workspace while delegation has children
+/// there (macOS only).
+public enum DelegationWorkspaceRemoval {
+    /// `workspace_has_children` when the workspace at `folder`, with the panes
+    /// `paneIds`, still has a child that is open or whose worktree is still on
+    /// disk (a closed child kept, or what a failed start left); nil when it may
+    /// go. A child is the workspace's when its pane or its parent's is one of
+    /// `paneIds`, or its parent's checkout is `folder` or inside it. A
+    /// discarded child's worktree is gone, so it never counts.
+    public static func refusal(children: [ChildRecord], paneIds: Set<String>, folder: String,
+                               worktreeExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }) -> DelegationReasonCode? {
+        let root = ChildCleanup.canonical(folder)
+        let inside = root.hasSuffix("/") ? root : root + "/"
+        for child in children where child.state != .discarded {
+            let checkout = child.parentCheckout.map(ChildCleanup.canonical)
+            let ours = paneIds.contains(child.id) || paneIds.contains(child.parentSessionId) || checkout.map { $0 == root || $0.hasPrefix(inside) } == true
+            if ours, child.state.isOpen || worktreeExists(child.worktreePath) { return .workspaceHasChildren }
+        }
+        return nil
+    }
+}
+
+extension DelegationCoordinator {
+    /// ``DelegationWorkspaceRemoval/refusal(children:paneIds:folder:worktreeExists:)``
+    /// for the children in the delegation file.
+    public func workspaceRemovalRefusal(paneIds: Set<String>, folder: String) -> DelegationReasonCode? {
+        DelegationWorkspaceRemoval.refusal(children: file.children, paneIds: paneIds, folder: folder)
+    }
+}
+
 /// A human's close and discard of a child (macOS only). The tools never reach these.
 extension DelegationCoordinator {
     /// A human closed the child's pane, on the Mac or from the phone. An open

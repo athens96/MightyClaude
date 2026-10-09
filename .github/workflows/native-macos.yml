@@ -176,6 +176,56 @@ jobs:
           name: MightyClaude-macos-terminal-smoke
           path: ${{ runner.temp }}/mighty-terminal-smoke/
           if-no-files-found: warn
+      - name: Smoke test delegation close paths
+        # Through the store's actions and the phone's routes, in a disposable profile and
+        # repository: merged children closed on the Mac and from the phone are cleaned up,
+        # a phone send releases a held notice, a workspace with children is refused with
+        # workspace_has_children, and a parent's close asks first on the Mac and closes only
+        # the parent from the phone. The parent's run is the scripted FakeClaude the app
+        # build made beside the app's binary; no model runs. Only with an app to run.
+        if: (success() || failure()) && steps.build-app.outcome == 'success'
+        timeout-minutes: 5
+        run: |
+          set -u
+          profile="$RUNNER_TEMP/mighty-delegation-smoke"
+          rm -rf "$profile"
+          status=0
+          fake="$(find native/macos/.build -type f -perm -u+x -name FakeClaude -not -path '*.dSYM/*' | head -n 1)"
+          if [ -z "$fake" ]; then
+            swift build --package-path native/macos --product FakeClaude
+            fake="$(swift build --package-path native/macos --show-bin-path)/FakeClaude"
+          fi
+          case "$fake" in /*) ;; *) fake="$PWD/$fake" ;; esac
+          echo "FakeClaude: $fake"
+          if ! perl -e 'alarm shift; exec @ARGV' 240 release/native-macos/MightyClaude.app/Contents/MacOS/MightyClaude \
+              --delegation-smoke-test --smoke-exit --profile "$profile" --fake-claude "$fake"; then
+            echo "::error title=macOS delegation smoke::the app exited non-zero or timed out"
+            status=1
+          fi
+          python3 - <<'PY' || status=1
+          import json, os, pathlib, sys
+          path = pathlib.Path(os.environ["RUNNER_TEMP"]) / "mighty-delegation-smoke" / "delegation-smoke-result.json"
+          if not path.exists():
+              print("::error title=macOS delegation smoke::no delegation-smoke-result.json was written", flush=True)
+              sys.exit(1)
+          result = json.loads(path.read_text())
+          print(json.dumps(result, ensure_ascii=False, sort_keys=True, indent=2))
+          expected = ["childrenListed", "macCloseMergedChild", "phoneCloseMergedChild", "phoneSendReleasedHeldNotice",
+                      "removeRefusedOpenChild", "macParentCloseAsks", "phoneParentCloseKeepsChild", "removeRefusedKeptWorktree", "removedAfterDiscard"]
+          missing = [name for name in expected if name not in result.get("checks", {})]
+          if not result.get("passed") or missing:
+              msg = f'stage={result.get("failedStage", "?")}; error={result.get("error", "unknown")}; missing={missing}'
+              print(f'::error title=macOS delegation smoke::{msg.replace("%", "%25").replace(chr(13), "%0D").replace(chr(10), "%0A")[:1500]}', flush=True)
+              sys.exit(1)
+          PY
+          exit $status
+      - name: Upload delegation smoke result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MightyClaude-macos-delegation-smoke
+          path: ${{ runner.temp }}/mighty-delegation-smoke/delegation-smoke-result.json
+          if-no-files-found: warn
       - name: Capture help screenshots in four languages
         # The help site's pictures (docs/help/shots.json) from the bundled demo profile,
         # one launch per language in a fresh profile, light and dark. Never run on a
