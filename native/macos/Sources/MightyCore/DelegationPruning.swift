@@ -28,9 +28,11 @@ extension DelegationFile {
     /// The room kept for one more child's record, beside its report copy.
     public static let recordAllowance = 4 * 1024
 
-    /// The room a full 64 KiB report copy of `childId` takes in the file.
+    /// The room the largest report copy of `childId` takes in the file: cut
+    /// at 64 KiB behind the marker, at the longest revision and file size.
     public static func reportCopyRoom(childId: String) throws -> Int {
-        try elementBytes(DelegationCopy(childId: childId, kind: .report, revision: 1, contents: Data(repeating: UInt8(ascii: "x"), count: DelegationFileStore.maximumCopyBytes)))
+        let longer = Data(repeating: UInt8(ascii: "x"), count: DelegationFileStore.maximumCopyBytes + 1)
+        return try elementBytes(DelegationCopy(childId: childId, kind: .report, revision: .max, contents: longer, totalBytes: .max))
     }
 
     /// The room one more child takes: a record allowance and a full report copy.
