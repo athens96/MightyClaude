@@ -305,7 +305,7 @@ struct WorkspaceView: View {
 
     /// A delegated child's card under its parent: its pane's row while the pane is
     /// open, otherwise a row for the child the delegation file keeps, and below it
-    /// the human's actions and the answer the last one got.
+    /// the human's actions and the answer the last one got, when there is either.
     private func childRow(_ child: DelegationChildRow) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             if let session = store.snapshot.sessions.first(where: { $0.id == child.id }) {
@@ -313,7 +313,11 @@ struct WorkspaceView: View {
             } else {
                 closedChildRow(child)
             }
-            childCardActions(child)
+            // A discarded child has no action left; its card stays a plain row.
+            if !child.cardActions.isEmpty || store.delegationCardBusy.contains(child.id)
+                || store.delegationCardNotes[child.id].flatMap({ DelegationText.note($0, child) }) != nil {
+                childCardActions(child)
+            }
         }
     }
 
