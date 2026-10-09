@@ -72,23 +72,30 @@ extension DelegationCoordinator {
 
     /// The child's start, after delegate has answered: its worktree, then its
     /// pane in the starting mode, then its first run. The child moves to
-    /// running once that run has started, and otherwise to failed with one
-    /// failed_to_start notice. Whatever a failed start made stays until a
-    /// human discards the child; the app never removes it on its own.
+    /// running once that run has started, as the run its parent awaits, and
+    /// otherwise to failed with one failed_to_start notice. Whatever a failed
+    /// start made stays until a human discards the child; the app never
+    /// removes it on its own.
     func startChild(_ id: String, base: ChildWorktreeBase, task: String) async {
         defer { starting.remove(id) }
         guard let child = file.children.first(where: { $0.id == id }), child.state == .creating else { return }
-        var started = false
+        var runId: String?
         if case .created(let worktree) = await worktrees.make(sessionId: id, base: base, task: task) {
             let pane = DelegationChildPane(sessionId: id, parentSessionId: child.parentSessionId, mode: child.startingMode, folder: worktree.workingFolder)
             if await host.createPane(pane) {
-                started = await host.startRun(sessionId: id, input: Self.firstInput(task: task, worktree: worktree)) != nil
+                runId = await host.startRun(sessionId: id, input: Self.firstInput(task: task, worktree: worktree))
             }
         }
         let context = await pruneContext()
         var next = file
-        guard let index = next.children.firstIndex(where: { $0.id == id }), next.children[index].apply(started ? .startRun : .failStart) else { return }
-        if !started { next.notices.append(Notice(id: UUID().uuidString.lowercased(), childId: id, reportRevision: 0, kind: .failedToStart)) }
+        guard let index = next.children.firstIndex(where: { $0.id == id }) else { return }
+        if let runId {
+            // The host may have reported this run's start, or even its end, already.
+            guard next.children[index].runId == runId || next.children[index].noteRun(runId) else { return }
+        } else {
+            guard next.children[index].apply(.failStart) else { return }
+            next.notices.append(Notice(id: UUID().uuidString.lowercased(), childId: id, reportRevision: 0, kind: .failedToStart))
+        }
         // The admitted record kept room for this child's report copy, far more
         // than this needs. Should the disk still refuse, the app goes on with
         // the move and the next save writes it.
