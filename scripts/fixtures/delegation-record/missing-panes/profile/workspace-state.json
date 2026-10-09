@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "workspaces": [
+    {
+      "id": "ws-practice",
+      "name": "practice",
+      "path": "@{root}/repo",
+      "createdAt": "2026-10-10T00:00:00Z"
+    }
+  ],
+  "sessions": [],
+  "activeWorkspaceId": "ws-practice",
+  "activeSessionId": null,
+  "layout": "grid",
+  "theme": "dark"
+}

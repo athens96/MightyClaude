@@ -1,0 +1,99 @@
+{
+  "version": 1,
+  "workspaces": [
+    {
+      "id": "ws-practice",
+      "name": "practice",
+      "path": "@{root}/repo",
+      "createdAt": "2026-10-10T00:00:00Z"
+    }
+  ],
+  "sessions": [
+    {
+      "id": "s2-parent",
+      "workspaceId": "ws-practice",
+      "title": "Claude",
+      "kind": "claude",
+      "provider": "claude",
+      "model": "default",
+      "settings": {
+        "effort": "default",
+        "permissionMode": "acceptEdits",
+        "fastMode": false,
+        "webSearch": "default",
+        "networkAccess": false
+      },
+      "status": "idle",
+      "logs": [],
+      "createdAt": "2026-10-10T00:00:00Z",
+      "resumeId": "s2-parent-session"
+    },
+    {
+      "id": "s2-child-1",
+      "workspaceId": "ws-practice",
+      "title": "Feature 1",
+      "kind": "claude",
+      "provider": "claude",
+      "model": "default",
+      "settings": {
+        "effort": "default",
+        "permissionMode": "acceptEdits",
+        "fastMode": false,
+        "webSearch": "default",
+        "networkAccess": false
+      },
+      "status": "idle",
+      "logs": [],
+      "createdAt": "2026-10-10T00:00:00Z",
+      "resumeId": "s2-child-1-session",
+      "parentSessionId": "s2-parent",
+      "workingFolder": "@{root}/worktrees/s2-child-1"
+    },
+    {
+      "id": "s2-child-2",
+      "workspaceId": "ws-practice",
+      "title": "Feature 2",
+      "kind": "claude",
+      "provider": "claude",
+      "model": "default",
+      "settings": {
+        "effort": "default",
+        "permissionMode": "acceptEdits",
+        "fastMode": false,
+        "webSearch": "default",
+        "networkAccess": false
+      },
+      "status": "idle",
+      "logs": [],
+      "createdAt": "2026-10-10T00:00:00Z",
+      "resumeId": "s2-child-2-session",
+      "parentSessionId": "s2-parent",
+      "workingFolder": "@{root}/worktrees/s2-child-2"
+    },
+    {
+      "id": "s2-child-3",
+      "workspaceId": "ws-practice",
+      "title": "Feature 3",
+      "kind": "claude",
+      "provider": "claude",
+      "model": "default",
+      "settings": {
+        "effort": "default",
+        "permissionMode": "acceptEdits",
+        "fastMode": false,
+        "webSearch": "default",
+        "networkAccess": false
+      },
+      "status": "idle",
+      "logs": [],
+      "createdAt": "2026-10-10T00:00:00Z",
+      "resumeId": "s2-child-3-session",
+      "parentSessionId": "s2-parent",
+      "workingFolder": "@{root}/worktrees/s2-child-3"
+    }
+  ],
+  "activeWorkspaceId": "ws-practice",
+  "activeSessionId": "s2-parent",
+  "layout": "grid",
+  "theme": "dark"
+}

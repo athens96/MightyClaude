@@ -1,0 +1,143 @@
+{
+  "children": [
+    {
+      "baseCommit": "@{commit:base}",
+      "branch": "mighty/s2-child-1",
+      "followUpCount": 0,
+      "id": "s2-child-1",
+      "parentBranch": "main",
+      "parentCheckout": "@{root}/repo",
+      "parentSessionId": "s2-parent",
+      "reportHead": "@{commit:base}",
+      "reportRevision": 1,
+      "requestKey": "key-s2-child-1",
+      "runId": "run-c1-1",
+      "startingMode": "acceptEdits",
+      "state": "reported",
+      "worktreePath": "@{root}/worktrees/s2-child-1"
+    },
+    {
+      "baseCommit": "@{commit:base}",
+      "branch": "mighty/s2-child-2",
+      "followUpCount": 0,
+      "id": "s2-child-2",
+      "parentBranch": "main",
+      "parentCheckout": "@{root}/repo",
+      "parentSessionId": "s2-parent",
+      "reportHead": "@{commit:base}",
+      "reportRevision": 1,
+      "requestKey": "key-s2-child-2",
+      "runId": "run-c2-1",
+      "startingMode": "acceptEdits",
+      "state": "reported",
+      "worktreePath": "@{root}/worktrees/s2-child-2"
+    },
+    {
+      "baseCommit": "@{commit:base}",
+      "branch": "mighty/s2-child-3",
+      "followUpCount": 0,
+      "id": "s2-child-3",
+      "parentBranch": "main",
+      "parentCheckout": "@{root}/repo",
+      "parentSessionId": "s2-parent",
+      "reportHead": "@{commit:base}",
+      "reportRevision": 1,
+      "requestKey": "key-s2-child-3",
+      "runId": "run-c3-1",
+      "startingMode": "acceptEdits",
+      "state": "reported",
+      "worktreePath": "@{root}/worktrees/s2-child-3"
+    }
+  ],
+  "copies": [
+    {
+      "childId": "s2-child-1",
+      "kind": "task",
+      "originalBytes": 43,
+      "revision": 0,
+      "text": "# Task\n\nFeature one: note what one needs.\n",
+      "truncated": false
+    },
+    {
+      "childId": "s2-child-1",
+      "kind": "report",
+      "originalBytes": 28,
+      "revision": 1,
+      "text": "# Report\n\nChild 1 is done.\n",
+      "truncated": false
+    },
+    {
+      "childId": "s2-child-2",
+      "kind": "task",
+      "originalBytes": 43,
+      "revision": 0,
+      "text": "# Task\n\nFeature two: note what two needs.\n",
+      "truncated": false
+    },
+    {
+      "childId": "s2-child-2",
+      "kind": "report",
+      "originalBytes": 28,
+      "revision": 1,
+      "text": "# Report\n\nChild 2 is done.\n",
+      "truncated": false
+    },
+    {
+      "childId": "s2-child-3",
+      "kind": "task",
+      "originalBytes": 47,
+      "revision": 0,
+      "text": "# Task\n\nFeature three: note what three needs.\n",
+      "truncated": false
+    },
+    {
+      "childId": "s2-child-3",
+      "kind": "report",
+      "originalBytes": 28,
+      "revision": 1,
+      "text": "# Report\n\nChild 3 is done.\n",
+      "truncated": false
+    }
+  ],
+  "followUps": [],
+  "merges": [],
+  "notices": [
+    {
+      "childId": "s2-child-1",
+      "id": "notice-s2-1",
+      "kind": "reported",
+      "lane": "delivered",
+      "receipt": {
+        "route": "queue",
+        "runId": "run-s2-2",
+        "time": "2026-10-10T00:01:00Z"
+      },
+      "reportRevision": 1
+    },
+    {
+      "childId": "s2-child-2",
+      "id": "notice-s2-2",
+      "kind": "reported",
+      "lane": "delivered",
+      "receipt": {
+        "route": "queue",
+        "runId": "run-s2-4",
+        "time": "2026-10-10T00:05:00Z"
+      },
+      "reportRevision": 1
+    },
+    {
+      "childId": "s2-child-3",
+      "id": "notice-s2-2",
+      "kind": "reported",
+      "lane": "delivered",
+      "receipt": {
+        "route": "queue",
+        "runId": "run-s2-4",
+        "time": "2026-10-10T00:05:00Z"
+      },
+      "reportRevision": 1
+    }
+  ],
+  "version": 1
+}

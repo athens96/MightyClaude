@@ -227,6 +227,28 @@ private func shown(_ name: String, on card: ToolPermissionRequest) -> String? {
     ToolPermissionPresentation.make(toolName: card.toolName, inputJSON: card.inputJSON).fields.first { $0.label == name }?.value
 }
 
+/// With MIGHTY_DELEGATION_RECORD_EXPORT set (macOS CI), copies a scenario's
+/// record to `<export>/<name>`: its profile, with a workspace state file
+/// naming its panes as the app saves them, its repository and its Claude
+/// config, which scripts/delegation-record.py then judges.
+func exportDelegationRecord(_ name: String, profile: URL, repo: URL, claudeConfig: URL, panes: [(state: DelegationPaneState, resumeId: String?)]) throws {
+    guard let export = ProcessInfo.processInfo.environment["MIGHTY_DELEGATION_RECORD_EXPORT"], !export.isEmpty else { return }
+    let target = URL(fileURLWithPath: export, isDirectory: true).appendingPathComponent(name, isDirectory: true)
+    try? FileManager.default.removeItem(at: target)
+    try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+    for (source, copy) in [(profile, "profile"), (repo, "repo"), (claudeConfig, "claude")] {
+        try FileManager.default.copyItem(at: source, to: target.appendingPathComponent(copy, isDirectory: true))
+    }
+    let workspace = Workspace(id: "scenario-\(name)", name: name, path: repo.path)
+    let sessions = panes.map { pane -> RunSession in
+        var session = RunSession(id: pane.state.sessionId, workspaceId: workspace.id, title: pane.state.sessionId, settings: RunSettings(permissionMode: pane.state.permissionMode), resumeId: pane.resumeId)
+        if let parent = pane.state.parentSessionId { session.parentSessionId = parent; session.workingFolder = pane.state.folder }
+        return session
+    }
+    let snapshot = AppSnapshot(workspaces: [workspace], sessions: sessions, activeWorkspaceId: workspace.id)
+    try JSONEncoder().encode(snapshot).write(to: target.appendingPathComponent("profile/workspace-state.json"))
+}
+
 private func toolText(_ result: Any?) -> String {
     ((result as? [String: Any])?["content"] as? [[String: Any]] ?? []).compactMap { $0["text"] as? String }.joined(separator: "\n")
 }
@@ -412,6 +434,10 @@ private func toolText(_ result: Any?) -> String {
 
         // 5. The verdict, from disk alone.
         try await judge(s, base: base, head1: head1, one: one.id, two: two.id, noticeRuns: [noticeRunOne, noticeRunTwo])
+
+        // 6. The record, for scripts/delegation-record.py in macOS CI.
+        let panes = try (["parent"] + s.store.load().children.map(\.id)).compactMap { id in s.host.pane(id).map { ($0.state, $0.resumeId) } }
+        try exportDelegationRecord("s1", profile: s.profile, repo: s.repo, claudeConfig: s.host.config, panes: panes)
     }
 
     /// Scenario S1's rules over the profile's delegation file, the

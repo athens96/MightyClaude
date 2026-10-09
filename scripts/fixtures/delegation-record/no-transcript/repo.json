@@ -1,0 +1,40 @@
+{
+  "commits": [
+    {
+      "name": "base",
+      "parents": [],
+      "files": {
+        "README.md": "# Practice\n"
+      },
+      "message": "Start"
+    },
+    {
+      "name": "one",
+      "parents": [
+        "base"
+      ],
+      "files": {
+        "feature-one.txt": "one\n"
+      },
+      "message": "Add feature-one.txt"
+    },
+    {
+      "name": "two",
+      "parents": [
+        "base"
+      ],
+      "files": {
+        "feature-two.txt": "two\n"
+      },
+      "message": "Add feature-two.txt"
+    }
+  ],
+  "branches": {
+    "main": "one",
+    "mighty/s1-child-1": "one"
+  },
+  "head": "main",
+  "worktrees": [
+    "s1-child-1"
+  ]
+}
