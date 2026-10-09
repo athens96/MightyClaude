@@ -39,7 +39,7 @@ jobs:
         # exported scenario records, failed or invalid on the broken fixtures.
         if: success() || failure()
         run: |
-          python3 scripts/tests/test_delegation_record.py -v
+          python3 scripts/test_delegation_record.py -v
           status=0
           for record in s1 s2; do
             folder="$RUNNER_TEMP/delegation-records/$record"
