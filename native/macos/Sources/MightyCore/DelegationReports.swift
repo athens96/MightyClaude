@@ -72,8 +72,8 @@ extension ChildRecord {
 /// that starts and ends in a child's pane, in order, and the coordinator
 /// records what the run left for the parent. These run events take turns in
 /// the order they came, so one never sees another half recorded. Notices are
-/// saved pending in the delegation file; delivering them to the parent is the
-/// next step.
+/// saved pending in the delegation file, and then delivery offers them to the
+/// parent's pane.
 extension DelegationCoordinator {
     /// A run `runId` started in the child `id`'s pane: the child is running
     /// it, which clears reported, so a merge waits for the next report. A
@@ -103,8 +103,15 @@ extension DelegationCoordinator {
     ///
     /// Only the run going now is recorded, or the child's first run, whose
     /// start the host may not have reported yet. A second report of the same
-    /// end, or the end of any other run, changes nothing. The notice sent, if any.
+    /// end, or the end of any other run, changes nothing. The notice sent, if
+    /// any, as it was made: delivery then offers it to the parent's pane.
     @discardableResult public func childRunEnded(_ id: String, runId: String, end: ChildRunEnd) async -> Notice? {
+        let notice = await recordRunEnd(id, runId: runId, end: end)
+        if notice != nil { await deliverPending() }
+        return notice
+    }
+
+    private func recordRunEnd(_ id: String, runId: String, end: ChildRunEnd) async -> Notice? {
         await takeRunTurn()
         defer { passRunTurn() }
         guard let found = file.children.first(where: { $0.id == id }), Self.mayEnd(found, runId: runId) else { return nil }
@@ -149,8 +156,15 @@ extension DelegationCoordinator {
     /// host has reported that end already, the notice is sent now; a run
     /// awaited already, or one that ended with a report or by quitting,
     /// sends nothing more. The run's start and end stay the host's to
-    /// report, so this never moves the child. The notice sent, if any.
+    /// report, so this never moves the child. The notice sent, if any, which
+    /// delivery then offers to the parent's pane.
     @discardableResult func awaitRun(_ runId: String, of id: String) async -> Notice? {
+        let notice = await recordAwait(runId, of: id)
+        if notice != nil { await deliverPending() }
+        return notice
+    }
+
+    private func recordAwait(_ runId: String, of id: String) async -> Notice? {
         await takeRunTurn()
         defer { passRunTurn() }
         guard let found = file.children.first(where: { $0.id == id }), found.awaitedRunId != runId else { return nil }

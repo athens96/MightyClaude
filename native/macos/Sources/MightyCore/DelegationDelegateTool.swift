@@ -100,6 +100,8 @@ extension DelegationCoordinator {
         // than this needs. Should the disk still refuse, the app goes on with
         // the move and the next save writes it.
         do { try commit(next, context: context) } catch { file = next }
+        // A failed start's notice goes to the parent's pane while the child still counts as starting.
+        if runId == nil { await deliverPending() }
     }
 
     /// The first message of a child's first run: its task and how it reports.

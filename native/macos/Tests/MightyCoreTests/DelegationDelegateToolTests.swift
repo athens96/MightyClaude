@@ -112,8 +112,13 @@ private struct Fixture {
     }
 
     /// The child's state as the coordinator holds it, once it equals `state`.
+    /// Until the child is in `state` and its start is over, the delivery of a failed start's notice included.
     func waitFor(_ id: String, _ state: ChildState) async -> Bool {
-        await waitUntil { await coordinator.file.children.first(where: { $0.id == id })?.state == state }
+        await waitUntil {
+            let reached = await coordinator.file.children.first(where: { $0.id == id })?.state == state
+            let starting = await coordinator.starting.contains(id)
+            return reached && !starting
+        }
     }
 
     /// Fixture git, kept away from the user's and the system's settings.
