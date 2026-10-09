@@ -178,7 +178,14 @@ public actor DelegationCoordinator: DelegationRequestHandler {
     /// The delegation file as last loaded or saved. The one exception: a
     /// child's start that the disk refused to save is held here until the
     /// next save writes it.
-    public internal(set) var file: DelegationFile
+    public internal(set) var file: DelegationFile { didSet { publishChildRows() } }
+    /// The children as the sidebar lists them: the list at load, then the
+    /// list after each change to it, in order. Only the newest waits when
+    /// they come faster than they are read. For one reader, the app.
+    public nonisolated let childRows: AsyncStream<[DelegationChildRow]>
+    private nonisolated let childRowsContinuation: AsyncStream<[DelegationChildRow]>.Continuation
+    /// The list ``childRows`` last carried.
+    private var publishedChildRows: [DelegationChildRow]
     /// Children whose start is still going: delegate saved their record and
     /// ``startChild(_:base:task:)`` has not finished. A discard waits for it.
     var starting: Set<String> = []
@@ -204,6 +211,17 @@ public actor DelegationCoordinator: DelegationRequestHandler {
         // What the last launch left pending is held, never delivered on its
         // own. The move only shortens the file, so it always fits.
         if file.holdPending() { try? store.save(file) }
+        (childRows, childRowsContinuation) = AsyncStream.makeStream(of: [DelegationChildRow].self, bufferingPolicy: .bufferingNewest(1))
+        publishedChildRows = DelegationSidebar.rows(file)
+        childRowsContinuation.yield(publishedChildRows)
+    }
+
+    /// Hands ``childRows`` the children when they differ from the last list it carried.
+    private func publishChildRows() {
+        let rows = DelegationSidebar.rows(file)
+        guard rows != publishedChildRows else { return }
+        publishedChildRows = rows
+        childRowsContinuation.yield(rows)
     }
 
     public nonisolated func handle(_ request: DelegationRequest, binding: PaneMCPBinding) async -> DelegationResponse {
