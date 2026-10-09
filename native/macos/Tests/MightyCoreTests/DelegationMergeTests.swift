@@ -191,8 +191,8 @@ struct DelegationMergeTests {
     }
 }
 
-/// A temp folder holding `repo` (the parent's checkout) and `worktrees` (the children's root).
-private struct MergePlace {
+/// A temp folder holding `repo` (the parent's checkout) and `worktrees` (the children's root). DelegationCardUndoTests shares it.
+struct MergePlace {
     let base: URL
     var repo: URL { base.appendingPathComponent("repo", isDirectory: true) }
     var root: URL { base.appendingPathComponent("worktrees", isDirectory: true) }
@@ -256,4 +256,4 @@ private struct MergePlace {
     }
 }
 
-private enum MergeFixtureError: Error { case childNotMade }
+enum MergeFixtureError: Error { case childNotMade }
