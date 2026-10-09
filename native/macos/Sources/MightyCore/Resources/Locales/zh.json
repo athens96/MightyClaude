@@ -799,6 +799,7 @@
   "run.blocked.onRequestNeedsUpdate": "要使用“请求批准”，请更新到 Codex CLI 0.153.4 或更高版本。",
   "run.blocked.selectWorkspace": "请选择一个工作区。",
   "run.blocked.updatingCLI": "正在更新 {provider} CLI。完成后再发送。",
+  "run.blocked.worktreeMissing": "此子窗格的 worktree 已不存在，无法运行（worktree_missing）。",
   "run.error.alreadyRunning": "此窗格已在运行。",
   "run.error.attachmentCleanupFailed": "运行已完成，但无法删除附件的临时副本。",
   "run.error.attachmentCleanupForbidden": "运行已完成，但没有删除附件临时副本的权限。",

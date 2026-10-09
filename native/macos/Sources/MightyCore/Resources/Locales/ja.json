@@ -799,6 +799,7 @@
   "run.blocked.onRequestNeedsUpdate": "「承認を求める」を使うには、Codex CLI 0.153.4以降にアップデートしてください。",
   "run.blocked.selectWorkspace": "ワークスペースを選択してください。",
   "run.blocked.updatingCLI": "{provider} CLIをアップデート中です。完了してから送信してください。",
+  "run.blocked.worktreeMissing": "この子ペインのworktreeが見つからないため、実行できません（worktree_missing）。",
   "run.error.alreadyRunning": "このペインはすでに実行中です。",
   "run.error.attachmentCleanupFailed": "実行は完了しましたが、添付の一時コピーを削除できませんでした。",
   "run.error.attachmentCleanupForbidden": "実行は完了しましたが、添付の一時コピーを削除する権限がありませんでした。",

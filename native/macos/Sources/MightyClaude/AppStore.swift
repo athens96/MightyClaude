@@ -6,7 +6,7 @@ import GhosttyTerminal
 import MightyCore
 
 @MainActor
-final class AppStore: ObservableObject {
+final class AppStore: ObservableObject, DelegationHost {
     static let shared = AppStore()
     let companion = AgentCompanion()
 
@@ -275,6 +275,15 @@ final class AppStore: ObservableObject {
     var agentIOServer: AgentIOSocketServer?
     /// How runs launch their per-pane MCP server; nil until the agent IO socket listens.
     var agentIOLocation: PaneMCPServerLocation?
+    /// Parent → child delegation between Claude panes: its records, tools,
+    /// delivery and git actions. Made at load whether or not the hidden switch
+    /// is on, so existing children keep working; nil when its file is unreadable.
+    var delegation: DelegationCoordinator?
+    /// Child panes' run starts and ends on their way to `delegation`, in order.
+    var delegationRunEvents: DelegationRunEventPump?
+    /// The id of each pane's run as delegation names it, and which panes
+    /// finished their last run normally since this launch.
+    var delegationRuns = DelegationRunLedger()
 
     /// Live agent runs, signalled to stop without waiting for the runner's
     /// actor or the main actor; read from the phone's handlers too.
@@ -326,10 +335,13 @@ final class AppStore: ObservableObject {
     func load() async {
         guard !loading, !isLoaded, !ending else { return }
         loading = true
+        startDelegation()
         // Before anything can touch the lazy runners, which capture the server location once.
         startAgentIO()
         do { snapshot = try await repository.load(); preparePaneLayouts(); canSave = true }
         catch { self.error = L("store.error.loadFailed", ["error": error.localizedDescription]) }
+        // Children whose runs quitting killed come back interrupted, before any pane runs again.
+        await delegation?.interruptRunsKilledByQuit()
         guard !ending, !Task.isCancelled else { loading = false; return }
         isLoaded = true
         checkResourceHealth()
@@ -444,6 +456,8 @@ final class AppStore: ObservableObject {
 
     func runBlockedReason(_ session: RunSession, checkRuntime: Bool = true) -> String? {
         guard snapshot.workspaces.contains(where: { $0.id == session.workspaceId }) else { return L("run.blocked.selectWorkspace") }
+        // A delegated child runs only in its own worktree, never in its parent's checkout.
+        if DelegationPanes.runRefusal(session) == .worktreeMissing { return L("run.blocked.worktreeMissing") }
         // A background update queues sends instead (`backgroundUpdateHolds`).
         if session.kind != "shell", updatingCLI == session.provider, !automaticUpdateRunning {
             return L("run.blocked.updatingCLI", ["provider": ProviderOptions.label(session.provider)])
@@ -554,6 +568,7 @@ final class AppStore: ObservableObject {
             await stop(id)
             await runner.revokePaneMCPBinding(agentPaneId: id)
             snapshot.sessions.removeAll { $0.id == id }
+            delegationRuns.forget(id)
             if let closing, FilePaneKind.isFilePane(closing.kind) { filePaneModels[closing.workspaceId]?.releasePreview() }
             drafts.removeValue(forKey: id)
             statusLines.removeValue(forKey: id)
@@ -755,6 +770,9 @@ final class AppStore: ObservableObject {
         steerTasks.removeValue(forKey: id)
     }
 
+    /// Hands `text` to the pane's running Claude turn; false when it did not take it.
+    func steerRunningTurn(_ id: String, text: String) async -> Bool { await runner.steer(sessionId: id, text: text) }
+
     /// What the text finally did. The runner refusing it is not the end: the
     /// item goes to the queue, and settling may start it right there, which a
     /// caller reporting to a phone must be able to tell apart from waiting.
@@ -839,6 +857,9 @@ final class AppStore: ObservableObject {
         if let reason = runBlockedReason(session) { error = reason; return false }
         if backgroundUpdateHolds(session) { error = L("settings.cliUpdate.backgroundUpdateQueued", ["provider": ProviderOptions.label(session.provider)]); return false }
         pendingRuns.insert(id)
+        // A new run in a child's pane sets it running and clears reported.
+        let runId = delegationRuns.begin(id)
+        if session.parentSessionId != nil { delegationRunEvents?.send(.started(childId: id, runId: runId)) }
         requestSent(id, session: session, input: input, attachments: attachments)
         if restoringDraft != nil { drafts[id] = "" }
         let submittedRevision = draftRevisions[id, default: 0]
@@ -894,7 +915,9 @@ final class AppStore: ObservableObject {
                 updateSession(id) { $0.beginRunTiming(); $0.status = "running" }
                 try await flush()
                 try Task.checkCancellation()
-                try await runner.start(request: request, workspace: currentWorkspace, allowPermissionPrompts: current.kind == "claude" && (current.provider == "claude" || (current.provider == "codex" && current.settings.permissionMode == "onRequest")))
+                // A child's run, its terminal tool and its MCP binding work in its worktree folder.
+                try await runner.start(request: request, workspace: DelegationPanes.runWorkspace(for: current, in: currentWorkspace),
+                                       allowPermissionPrompts: current.kind == "claude" && (current.provider == "claude" || (current.provider == "codex" && current.settings.permissionMode == "onRequest")))
             } catch {
                 if let restoringDraft, draftRevisions[id, default: 0] == submittedRevision, (drafts[id] ?? "").isEmpty, canEditAttachments(id) {
                     drafts[id] = restoringDraft
@@ -955,6 +978,7 @@ final class AppStore: ObservableObject {
         if event.type == "resume", let id = event.resumeId { rememberSessionID(id) }
         if event.type == "status", let provider = snapshot.sessions.first(where: { $0.id == event.sessionId })?.provider { providerLastActive[provider] = receivedAt }
         companion.receive(event, snapshot: snapshot, at: receivedAt)
+        if event.type == "status", let status = event.status, ["completed", "stopped", "error"].contains(status) { delegationRunEnded(event.sessionId, status: status) }
         if event.type == "status", let status = event.status, status != "running" { settleQueue(event.sessionId, status: status) }
         // Files a finished run wrote may now be readable pictures.
         if event.type == "status", ["completed", "error", "stopped"].contains(event.status ?? "") { AgentImageLibrary.shared.forgetMissingFiles() }
@@ -1166,6 +1190,8 @@ final class AppStore: ObservableObject {
         for task in starting { await task.value }
         // Process callbacks enqueue onto the main actor. Let terminal events settle before the final save.
         try? await Task.sleep(for: .milliseconds(60))
+        // Children whose runs quitting ended are recorded interrupted, with no notice.
+        await delegationRunEvents?.finish()
         // Cleanup is complete even if a terminal callback was unavailable.
         // Freeze the durable clock while this process is still alive.
         let stoppedAt = Date()
