@@ -166,15 +166,20 @@ public actor DelegationCoordinator: DelegationRequestHandler {
     public static let answerSeconds: TimeInterval = 45
 
     public nonisolated let store: DelegationFileStore
-    private let host: any DelegationHost
+    let host: any DelegationHost
+    /// Makes each child's worktree: under `~/.mightyclaude/worktrees` in the
+    /// app, under a temp folder in tests.
+    nonisolated let worktrees: ChildWorktreeMaker
     private nonisolated let isSwitchOn: @Sendable () -> Bool
     private nonisolated let answerSeconds: TimeInterval
-    /// The delegation file as last loaded or saved.
-    public private(set) var file: DelegationFile
+    /// The delegation file as last loaded or saved. The one exception: a
+    /// child's start that the disk refused to save is held here until the
+    /// next save writes it.
+    public internal(set) var file: DelegationFile
 
     /// Loads the delegation file from `store`; throws when it is unreadable.
-    public init(store: DelegationFileStore, host: any DelegationHost, isSwitchOn: @escaping @Sendable () -> Bool = { DelegationSwitch.isOn() }, answerSeconds: TimeInterval = DelegationCoordinator.answerSeconds) throws {
-        self.store = store; self.host = host; self.isSwitchOn = isSwitchOn
+    public init(store: DelegationFileStore, host: any DelegationHost, worktrees: ChildWorktreeMaker = ChildWorktreeMaker(), isSwitchOn: @escaping @Sendable () -> Bool = { DelegationSwitch.isOn() }, answerSeconds: TimeInterval = DelegationCoordinator.answerSeconds) throws {
+        self.store = store; self.host = host; self.worktrees = worktrees; self.isSwitchOn = isSwitchOn
         self.answerSeconds = min(answerSeconds, Self.answerSeconds)
         file = try store.load()
     }
@@ -190,9 +195,14 @@ public actor DelegationCoordinator: DelegationRequestHandler {
 
     /// Runs one checked call from the pane `caller`.
     private func perform(_ tool: DelegationToolManifest.Tool, _ arguments: [String: String], caller: PaneMCPBinding) async -> DelegationResponse {
-        // Until their own rules land here, delegate, list_children,
-        // child_status, merge and follow_up answer that they are not available.
-        .failure(Self.notBuiltMessage(tool.name))
+        switch tool {
+        case DelegationToolManifest.delegate:
+            return await delegate(task: arguments["task"] ?? "", mode: arguments["mode"] ?? "", caller: caller)
+        default:
+            // Until their own rules land here, list_children, child_status,
+            // merge and follow_up answer that they are not available.
+            return .failure(Self.notBuiltMessage(tool.name))
+        }
     }
 
     static func notBuiltMessage(_ tool: String) -> String { "\(tool) is not available in this build of Mighty Claude yet." }
