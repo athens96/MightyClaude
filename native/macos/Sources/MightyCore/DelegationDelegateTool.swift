@@ -56,7 +56,7 @@ extension DelegationCoordinator {
         if let reason = refusal(of: parentId, parent, mode: mode) { return .refusal(reason) }
         let id = UUID().uuidString.lowercased()
         let child = ChildRecord(id: id, parentSessionId: parentId, worktreePath: worktrees.worktreePath(for: id), parentBranch: base.parentBranch,
-                                baseCommit: base.baseCommit, startingMode: mode, requestKey: key)
+                                baseCommit: base.baseCommit, startingMode: mode, requestKey: key, parentCheckout: base.repository)
         do {
             guard case .admitted(let next) = try file.admitting(child, task: DelegationCopy(childId: id, kind: .task, revision: 0, contents: Data(task.utf8)), context: context) else { return .refusal(.storeFull) }
             try commit(next, context: context)
@@ -65,6 +65,7 @@ extension DelegationCoordinator {
         } catch {
             return .failure("The delegation file could not be saved, so no child was made.")
         }
+        starting.insert(id)
         Task { await self.startChild(id, base: base, task: task) }
         return .delegated(child)
     }
@@ -75,6 +76,7 @@ extension DelegationCoordinator {
     /// failed_to_start notice. Whatever a failed start made stays until a
     /// human discards the child; the app never removes it on its own.
     func startChild(_ id: String, base: ChildWorktreeBase, task: String) async {
+        defer { starting.remove(id) }
         guard let child = file.children.first(where: { $0.id == id }), child.state == .creating else { return }
         var started = false
         if case .created(let worktree) = await worktrees.make(sessionId: id, base: base, task: task) {

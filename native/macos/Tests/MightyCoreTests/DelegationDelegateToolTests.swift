@@ -47,6 +47,7 @@ private final class DelegateHost: DelegationHost, @unchecked Sendable {
 
     func deliver(_ input: String, to sessionId: String, route: DeliveryRoute) async -> String? { nil }
     func paneState(sessionId: String) async -> DelegationPaneState? { lock.withLock { panes[sessionId] } }
+    func stopRun(sessionId: String) async {}
 }
 
 /// A temp folder holding the workspace repository, the worktree root and the
