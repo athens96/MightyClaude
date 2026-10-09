@@ -105,10 +105,16 @@ public struct DelegationIOHandler: DelegationRequestHandler {
     public init(isSwitchOn: @escaping @Sendable () -> Bool = { DelegationSwitch.isOn() }) { self.isSwitchOn = isSwitchOn }
 
     public func handle(_ request: DelegationRequest, binding: PaneMCPBinding) async -> DelegationResponse {
-        guard isSwitchOn() else { return .failure(Self.detachedMessage) }
+        Self.gate(binding, isSwitchOn: isSwitchOn()) ?? .failure(Self.unknownToolMessage(request.tool))
+    }
+
+    /// The answer of rules 1 to 3, or nil when the call may go on to a tool.
+    /// ``DelegationCoordinator`` applies the same gates.
+    static func gate(_ binding: PaneMCPBinding, isSwitchOn: Bool) -> DelegationResponse? {
+        guard isSwitchOn else { return .failure(detachedMessage) }
         guard DelegationSwitch.isClaudePane(kind: binding.kind, provider: binding.provider) else { return .refusal(.claudeOnly) }
-        guard binding.delegation else { return .failure(Self.detachedMessage) }
-        return .failure(Self.unknownToolMessage(request.tool))
+        guard binding.delegation else { return .failure(detachedMessage) }
+        return nil
     }
 
     static func unknownToolMessage(_ tool: String) -> String { "Unknown delegation tool \(tool.prefix(80))." }
