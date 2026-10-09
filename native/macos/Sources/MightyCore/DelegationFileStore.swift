@@ -1,9 +1,11 @@
 import Foundation
 
-/// A stored copy of a child's TASK.md or REPORT.md (macOS only). A copy is
-/// never longer than ``DelegationFileStore/maximumCopyBytes`` in UTF-8: a
-/// longer file is cut at a character boundary and ends with
-/// ``truncationMarker``, while the full file stays in the worktree until cleanup.
+/// A stored copy of a child's TASK.md or REPORT.md (macOS only). A copy's text
+/// never takes more than ``DelegationFileStore/maximumCopyBytes`` inside the
+/// delegation file, its JSON escapes included (quotes, backslashes, newlines
+/// and colour codes take more there than in UTF-8): a longer file is cut at a
+/// character boundary and ends with ``truncationMarker``, whose own escapes
+/// come on top, while the full file stays in the worktree until cleanup.
 public struct DelegationCopy: Codable, Sendable, Equatable {
     public enum Kind: String, Codable, Sendable, CaseIterable { case task, report }
 
@@ -25,15 +27,34 @@ public struct DelegationCopy: Codable, Sendable, Equatable {
         originalBytes = max(totalBytes ?? contents.count, contents.count)
         let cap = DelegationFileStore.maximumCopyBytes
         let decoded = String(decoding: contents.prefix(cap + 1), as: UTF8.self)
-        if originalBytes <= cap, decoded.utf8.count <= cap { text = decoded; truncated = false; return }
-        let budget = cap - Self.truncationMarker.utf8.count
-        var end = decoded.startIndex, used = 0
-        for character in decoded {
+        if originalBytes <= cap, Self.storedBytes(decoded) <= cap { text = decoded; truncated = false; return }
+        text = Self.start(of: decoded, storedBytes: cap - Self.truncationMarker.utf8.count) + Self.truncationMarker; truncated = true
+    }
+
+    /// The bytes `text` takes inside the delegation file, its escapes included.
+    static func storedBytes(_ text: String) -> Int {
+        guard let data = try? DelegationFileStore.encode([text]) else { return .max }
+        return data.count - 4 // the array's `["` and `"]`
+    }
+
+    /// The longest whole-character start of `text` that takes at most
+    /// `budget` bytes inside the delegation file.
+    static func start(of text: String, storedBytes budget: Int) -> String {
+        // Escapes only add bytes, so the cut by UTF-8 bytes is the longest candidate.
+        var end = text.startIndex, used = 0
+        for character in text {
             let size = character.utf8.count
             guard used + size <= budget else { break }
-            used += size; end = decoded.index(after: end)
+            used += size; end = text.index(after: end)
         }
-        text = String(decoded[..<end]) + Self.truncationMarker; truncated = true
+        if storedBytes(String(text[..<end])) <= budget { return String(text[..<end]) }
+        let characters = Array(text[..<end])
+        var fits = 0, over = characters.count // the first `fits` characters fit; the first `over` do not
+        while over - fits > 1 {
+            let middle = (fits + over) / 2
+            if storedBytes(String(characters[..<middle])) <= budget { fits = middle } else { over = middle }
+        }
+        return String(characters[..<fits])
     }
 
     /// Reads at most a copy's worth of the file at `url`, so a huge file is never loaded whole.
