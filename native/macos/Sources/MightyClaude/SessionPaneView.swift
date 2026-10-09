@@ -314,7 +314,7 @@ struct SessionPaneView: View {
                 Toggle(L("pane.menu.backgroundWork"), isOn: Binding(get: { store.showsBackgroundWork }, set: { store.setShowsBackgroundWork($0) }))
             }
             Divider()
-            Button(L("menu.closePane"), role: .destructive) { store.closeSession(session.id) }
+            Button(L("menu.closePane"), role: .destructive) { store.requestCloseSession(session.id) }
         } label: {
             Image(systemName: "ellipsis").font(.system(size: 13, weight: .bold)).foregroundStyle(ink)
                 .frame(width: 22, height: 24).contentShape(Rectangle())

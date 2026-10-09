@@ -237,7 +237,7 @@ final class AppStore: ObservableObject, DelegationHost {
     /// Pictures agents showed, by hash, under the data directory.
     let imageCache: AgentImageCache
     let fileStore = ModelSettingsFileStore()
-    let providers = ProviderService()
+    let providers = ProviderService(binaryOverrides: AppStore.delegationSmokeBinaryOverrides())
     let pluginDirectory: URL
     private var loading = false
     private(set) var ending = false
@@ -306,6 +306,12 @@ final class AppStore: ObservableObject, DelegationHost {
     @Published var delegationCardBusy: Set<String> = []
     /// A discard from a child's card waiting on the human's confirmation.
     @Published var pendingChildDiscard: PendingChildDiscard?
+    /// A Mac close of a parent pane with open children, waiting on the
+    /// human's confirmation. The phone's close never asks.
+    @Published var pendingParentClose: PendingParentClose?
+    /// What closing each delegated child's pane did to its worktree and
+    /// branch, by child id, for this launch.
+    var delegationCloseOutcomes: [String: ChildCleanupOutcome] = [:]
 
     /// Live agent runs, signalled to stop without waiting for the runner's
     /// actor or the main actor; read from the phone's handlers too.
@@ -348,7 +354,7 @@ final class AppStore: ObservableObject, DelegationHost {
         let needle = search.trimmingCharacters(in: .whitespacesAndNewlines)
         return snapshot.workspaces.filter { needle.isEmpty || $0.name.localizedCaseInsensitiveContains(needle) || $0.path.localizedCaseInsensitiveContains(needle) }
     }
-    var hasModal: Bool { showSettings || renameTarget != nil || settingsSession != nil || sessionInfoSessionID != nil || pendingRemoval != nil || pendingChildDiscard != nil || attachmentPanelSession != nil || terminalHistorySession != nil || pluginBrowser != nil || resumePicker != nil || planDocument != nil }
+    var hasModal: Bool { showSettings || renameTarget != nil || settingsSession != nil || sessionInfoSessionID != nil || pendingRemoval != nil || pendingChildDiscard != nil || pendingParentClose != nil || attachmentPanelSession != nil || terminalHistorySession != nil || pluginBrowser != nil || resumePicker != nil || planDocument != nil }
 
     func canEditAttachments(_ id: String) -> Bool {
         !ending && !closingSessions.contains(id) && snapshot.sessions.contains { $0.id == id }
@@ -404,6 +410,7 @@ final class AppStore: ObservableObject, DelegationHost {
         else if arguments.contains("--layout-smoke-test") { Task { await runLayoutSmokeTest() } }
         else if arguments.contains("--usage-reset-smoke-test") { Task { await runUsageResetSmokeTest() } }
         else if arguments.contains("--files-smoke-test") { Task { await runFilesSmokeTest() } }
+        else if arguments.contains("--delegation-smoke-test") { Task { await runDelegationSmokeTest() } }
         else if terminalSmokeMode { Task { await runTerminalSmokeTest() } }
         else if arguments.contains("--smoke-test") { Task { await runSmokeTest() } }
     }
@@ -606,16 +613,37 @@ final class AppStore: ObservableObject, DelegationHost {
             if let workspaceId { reconcilePaneLayout(workspaceId) }
             releaseUnreachableAgentIOPanes()
             closingSessions.remove(id)
+            // A delegated child's close, on the Mac or from the phone: once its
+            // pane is gone, a merged child's worktree and branch are cleaned up
+            // when every rule holds. A parent's close closes only the parent.
+            if let delegation, closing?.parentSessionId != nil || delegationChildren.contains(where: { $0.id == id }) {
+                delegationCloseOutcomes[id] = await delegation.closeChild(id)
+            }
         }
     }
 
-    func removeWorkspace(_ workspace: Workspace) {
+    /// Removes the workspace and its panes, unless delegation still has open
+    /// children or child worktrees not cleaned up there: then it is refused
+    /// with `workspace_has_children` and nothing changes. What refused it, if anything.
+    @discardableResult
+    func removeWorkspace(_ workspace: Workspace) -> Task<DelegationReasonCode?, Never> {
         pendingRemoval = nil
         cancelAddPaneProbe()
+        return Task {
+            if let reason = await workspaceRemovalRefusal(workspace) {
+                error = L("delegation.workspace.hasChildren", ["code": reason.rawValue])
+                return reason
+            }
+            await removeWorkspaceNow(workspace)
+            return nil
+        }
+    }
+
+    private func removeWorkspaceNow(_ workspace: Workspace) async {
         let ids = snapshot.sessions.filter { $0.workspaceId == workspace.id }.map(\.id)
         closingSessions.formUnion(ids)
         for id in ids { liveRuns.signalStop(id: id) }
-        Task {
+        do {
             // Every run was signalled above; their bookkeeping runs together.
             await withTaskGroup(of: Void.self) { group in
                 for id in ids { group.addTask { await self.stop(id) } }
