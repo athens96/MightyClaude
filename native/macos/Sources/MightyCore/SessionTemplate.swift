@@ -24,7 +24,8 @@ extension RunSession {
     }
 
     /// Copy the user's choices only: model, run settings and basic/Mighty view.
-    /// Logs, resume identity, usage, timing, graph history and title stay fresh.
+    /// Logs, resume identity, usage, timing, graph history, title and a child's
+    /// parent link and working folder stay fresh.
     public mutating func inheritSettings(from template: RunSession) {
         model = template.model
         settings = template.settings

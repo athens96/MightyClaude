@@ -243,6 +243,12 @@ public actor StateRepository {
                 session.todoProgress = TodoProgress.normalized(session.todoProgress)
                 session.backgroundWork = BackgroundWork.normalized(session.backgroundWork, restoring: restoring || session.status != "running")
             } else { session.planHistory = nil; session.todoProgress = nil; session.backgroundWork = nil }
+            // A child's links stay even when its parent pane is gone: a closed parent keeps
+            // its children. Only agent panes can be children; a malformed value is dropped.
+            if session.kind == SessionKind.claude {
+                if let parent = session.parentSessionId, !CoreValidation.identifier(parent) || parent == session.id { session.parentSessionId = nil }
+                if let folder = session.workingFolder, !absolutePath(folder) { session.workingFolder = nil }
+            } else { session.parentSessionId = nil; session.workingFolder = nil }
             // Migration: retitle automatic agent panes from their most recent user request.
             // A nil titleMode (saved before this feature) is treated as "auto".
             if restoring && session.kind == SessionKind.claude {

@@ -304,10 +304,16 @@ public struct RunSession: Codable, Sendable, Equatable, Identifiable {
     public var todoProgress: TodoProgress?
     /// The latest run's background tasks.
     public var backgroundWork: BackgroundWork?
+    /// Present only on a delegated child pane (macOS): its parent pane's session id. It
+    /// stays after the parent pane closes. The delegation file is the authority.
+    public var parentSessionId: String?
+    /// Present only on a delegated child pane (macOS): the absolute path of its worktree,
+    /// where its runs work instead of the workspace folder.
+    public var workingFolder: String?
     public init(id: String = UUID().uuidString, workspaceId: String, title: String, kind: String = "claude", provider: String = "claude", model: String = "default", settings: RunSettings = .init(), status: String = "idle", logs: [LogEntry] = [], resumeId: String? = nil, createdAt: String = mightyTimestamp(), runTiming: AgentRunTiming? = nil, sessionUsage: SessionUsage? = nil) {
         self.id = id; self.workspaceId = workspaceId; self.title = title; self.kind = kind; self.provider = provider; self.model = model; self.settings = settings; self.status = status; self.logs = logs; self.resumeId = resumeId; self.createdAt = createdAt; self.runTiming = runTiming; self.sessionUsage = sessionUsage
     }
-    enum CodingKeys: String, CodingKey { case id, workspaceId, title, kind, provider, model, settings, status, logs, resumeId, createdAt, runTiming, sessionUsage, agentViewMode, mightyStyle, mightyStyleHash, mightyStyleSince, graphRuns, graphBlockSizes, graphResultSize, graphPlanSize, graphViewMode, workspaceProfileKey, ownerSessionId, titleMode, planHistory, todoProgress, backgroundWork }
+    enum CodingKeys: String, CodingKey { case id, workspaceId, title, kind, provider, model, settings, status, logs, resumeId, createdAt, runTiming, sessionUsage, agentViewMode, mightyStyle, mightyStyleHash, mightyStyleSince, graphRuns, graphBlockSizes, graphResultSize, graphPlanSize, graphViewMode, workspaceProfileKey, ownerSessionId, titleMode, planHistory, todoProgress, backgroundWork, parentSessionId, workingFolder }
     /// How the pane's Mighty view draws its requests; the diagram unless the timeline was chosen.
     public var mightyViewMode: MightyGraphViewMode { graphViewMode ?? .diagram }
     /// Full text of the most recent user log entry that would update the automatic title,
@@ -359,6 +365,9 @@ public struct RunSession: Codable, Sendable, Equatable, Identifiable {
         planHistory = (try? c.decodeIfPresent([LossyDecoded<PlanRecord>].self, forKey: .planHistory))?.compactMap(\.value)
         todoProgress = try? c.decodeIfPresent(TodoProgress.self, forKey: .todoProgress)
         backgroundWork = try? c.decodeIfPresent(BackgroundWork.self, forKey: .backgroundWork)
+        // Optional delegation links; damage must not discard the conversation.
+        parentSessionId = try? c.decodeIfPresent(String.self, forKey: .parentSessionId)
+        workingFolder = try? c.decodeIfPresent(String.self, forKey: .workingFolder)
     }
 }
 
