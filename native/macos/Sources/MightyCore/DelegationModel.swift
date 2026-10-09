@@ -100,6 +100,16 @@ public struct ChildRecord: Codable, Sendable, Equatable, Identifiable {
     /// The head of the child's branch when a human closed its merged pane,
     /// stored with its REPORT and TASK copies before any cleanup.
     public var closedHead: String?
+    /// The run going in the child's pane, or its last one, as the host named
+    /// it. nil before the first.
+    public var runId: String?
+    /// The run that carries the parent's work: the child's first run, which
+    /// delegate started, or the run a follow-up went to. It stays named after
+    /// that run ends, so its end sends the parent one notice, never two.
+    public var awaitedRunId: String?
+    /// The SHA-256 of the whole REPORT.md at the current revision, so only a
+    /// changed report makes the next one. nil before the first report.
+    public var reportDigest: String?
 
     public init(id: String, parentSessionId: String, worktreePath: String, parentBranch: String, baseCommit: String, startingMode: String, requestKey: String, followUpCount: Int = 0, reportRevision: Int = 0, reportHead: String? = nil, state: ChildState = .creating, parentCheckout: String? = nil) {
         self.id = id; self.parentSessionId = parentSessionId; self.worktreePath = worktreePath; branch = Self.branchName(for: id)
