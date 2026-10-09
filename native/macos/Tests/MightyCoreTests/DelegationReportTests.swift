@@ -3,17 +3,32 @@ import Foundation
 import Testing
 @testable import MightyCore
 
+/// Opens once; everyone waiting goes on.
+private actor Gate {
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    func wait() async {
+        if isOpen { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+    func open() { isOpen = true; waiters.forEach { $0.resume() }; waiters.removeAll() }
+}
+
 /// The app side as report revisions see it: the panes a test sets up, every
 /// child pane delegate asks for, and its first run, named "first-<id>". A
-/// test may hook the moment that run starts, before startRun returns.
+/// test may hook the moment that run starts, before startRun returns, and
+/// may hold every pane-state answer until a gate opens.
 private final class ReportHost: DelegationHost, @unchecked Sendable {
     private let lock = NSLock()
     private var panes: [String: DelegationPaneState] = [:]
     private var hook: (@Sendable (String, String) async -> Void)?
+    private var gate: Gate?
 
     func set(_ pane: DelegationPaneState) { lock.withLock { panes[pane.sessionId] = pane } }
     /// Called with the child's id and its first run's id while startRun is going.
     func onFirstRun(_ hook: @escaping @Sendable (String, String) async -> Void) { lock.withLock { self.hook = hook } }
+    /// Pane-state answers wait for `gate` to open.
+    func hold(until gate: Gate) { lock.withLock { self.gate = gate } }
 
     func createPane(_ pane: DelegationChildPane) async -> Bool {
         set(DelegationPaneState(sessionId: pane.sessionId, permissionMode: pane.mode, folder: pane.folder, parentSessionId: pane.parentSessionId))
@@ -27,7 +42,10 @@ private final class ReportHost: DelegationHost, @unchecked Sendable {
     }
 
     func deliver(_ input: String, to sessionId: String, route: DeliveryRoute) async -> String? { nil }
-    func paneState(sessionId: String) async -> DelegationPaneState? { lock.withLock { panes[sessionId] } }
+    func paneState(sessionId: String) async -> DelegationPaneState? {
+        if let gate = lock.withLock({ gate }) { await gate.wait() }
+        return lock.withLock { panes[sessionId] }
+    }
     func stopRun(sessionId: String) async {}
 }
 
@@ -287,6 +305,39 @@ private func record(_ id: String, state: ChildState, runId: String? = nil) -> Ch
         let child = await fixture.child(id)
         #expect(child.state == .ended && child.runId == "first-\(id)" && child.awaitedRunId == "first-\(id)")
         #expect(await fixture.notices(id).map(\.kind) == [.endedWithoutReport])
+        try await fixture.expectSaved()
+    }
+
+    @Test func runEventsTakeTurnsSoAnEndHalfRecordedIsNeverOvertaken() async throws {
+        let fixture = try await Fixture.make()
+        defer { fixture.remove() }
+        let coordinator = fixture.coordinator
+        let id = try await fixture.delegateRunningChild().id
+        let gate = Gate()
+        fixture.host.hold(until: gate)
+
+        // Delegate's first run ends; its end waits halfway, before it is saved,
+        // while the next run's start and its parent's await come in.
+        let end = Task { await coordinator.childRunEnded(id, runId: "first-\(id)", end: .finished) }
+        #expect(await waitUntil { await coordinator.isRecordingRun })
+        let start = Task { await coordinator.childRunStarted(id, runId: "follow-2") }
+        #expect(await waitUntil { await coordinator.runTurns.count == 1 })
+        let awaited = Task { await coordinator.awaitRun("follow-2", of: id) }
+        #expect(await waitUntil { await coordinator.runTurns.count == 2 })
+        #expect(await fixture.child(id).runId == "first-\(id)")
+        await gate.open()
+
+        // Each is recorded whole, in the order it came: the first run's notice is not lost.
+        let first = try #require(await end.value)
+        #expect(first.kind == .endedWithoutReport && first.reportRevision == 0)
+        await start.value
+        #expect(await awaited.value == nil)
+        let child = await fixture.child(id)
+        #expect(child.state == .running && child.runId == "follow-2" && child.awaitedRunId == "follow-2")
+        #expect(await coordinator.isRecordingRun == false)
+        #expect(await coordinator.runTurns.isEmpty)
+        #expect(await coordinator.childRunEnded(id, runId: "follow-2", end: .finished)?.kind == .endedWithoutReport)
+        #expect(await fixture.notices(id).map(\.kind) == [.endedWithoutReport, .endedWithoutReport])
         try await fixture.expectSaved()
     }
 
