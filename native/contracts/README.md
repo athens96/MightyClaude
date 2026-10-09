@@ -14,6 +14,14 @@ Only `running` states become `stopped` during restore.
 Native profiles are separate from the Electron profile. Initial migration reads
 the old snapshot and saves a copy; it never overwrites the old file.
 
+Mac-only, optional: a delegated child pane's `RunSession` may carry
+`parentSessionId` (its parent pane's session id) and `workingFolder` (the absolute
+path of its worktree). Restore and normalize keep them on agent panes, including
+a child whose parent pane was closed, and drop malformed values. A new pane never
+copies them from its template, and `RunSettings` never carries them. Snapshots
+without them load unchanged. The delegation side file is their authority; Windows
+neither reads nor writes them.
+
 ## Mobile protocol (m1) over the relay
 
 Phones reach the desktop through a relay (`relay/`, Node + `ws`) that both sides dial outbound; the relay only forwards ciphertext. The host keeps a control socket (`/ws?serverId=…&role=server&v=1&hostToken=…`) and opens one data socket per phone (`…&connectionId=…`, same `hostToken`); `serverId` is the lowercase hex SHA-256 of `hostToken`, which the relay checks on every host socket (4401 otherwise). On each data socket: plaintext `hello`/`ready` (X25519 keys + 16-byte nonces), HKDF-SHA256 (`mightyclaude-relay-v1`), then ChaCha20-Poly1305 frames `[12B nonce = direction ‖ 0,0,0 ‖ counter][ciphertext+tag]` with strictly increasing counters. The first encrypted message is `auth` carrying the pairing key; the host answers `auth_ok` or `auth_error`. Full text: `docs/relay.md`.
