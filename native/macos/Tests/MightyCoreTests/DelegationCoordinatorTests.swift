@@ -29,6 +29,7 @@ private final class FakeDelegationHost: DelegationHost, @unchecked Sendable {
         note("paneState \(sessionId)")
         return DelegationPaneState(sessionId: sessionId, permissionMode: "auto", folder: "/tmp", runId: "run-\(sessionId)", activity: .finished)
     }
+    func stopRun(sessionId: String) async { note("stopRun \(sessionId)") }
 }
 
 /// No terminal calls are made here.

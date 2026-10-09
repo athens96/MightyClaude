@@ -11,6 +11,7 @@ private struct OpenPanes: DelegationHost {
     func paneState(sessionId: String) async -> DelegationPaneState? {
         open.contains(sessionId) ? DelegationPaneState(sessionId: sessionId, permissionMode: "auto", folder: "/tmp/w") : nil
     }
+    func stopRun(sessionId: String) async {}
 }
 
 /// Delegation under storage pressure (macOS only): a nearly full

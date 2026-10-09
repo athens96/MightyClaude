@@ -142,6 +142,9 @@ public protocol DelegationHost: Sendable {
     func deliver(_ input: String, to sessionId: String, route: DeliveryRoute) async -> String?
     /// The pane now, or nil when it is closed.
     func paneState(sessionId: String) async -> DelegationPaneState?
+    /// Stops the pane's run, if one is going, and returns once it has ended.
+    /// Does nothing for an idle or closed pane.
+    func stopRun(sessionId: String) async
 }
 
 /// The app's delegation service (macOS only). It owns the child records (the
@@ -176,6 +179,9 @@ public actor DelegationCoordinator: DelegationRequestHandler {
     /// child's start that the disk refused to save is held here until the
     /// next save writes it.
     public internal(set) var file: DelegationFile
+    /// Children whose start is still going: delegate saved their record and
+    /// ``startChild(_:base:task:)`` has not finished. A discard waits for it.
+    var starting: Set<String> = []
 
     /// Loads the delegation file from `store`; throws when it is unreadable.
     public init(store: DelegationFileStore, host: any DelegationHost, worktrees: ChildWorktreeMaker = ChildWorktreeMaker(), isSwitchOn: @escaping @Sendable () -> Bool = { DelegationSwitch.isOn() }, answerSeconds: TimeInterval = DelegationCoordinator.answerSeconds) throws {

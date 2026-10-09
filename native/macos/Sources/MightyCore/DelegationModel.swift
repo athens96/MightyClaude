@@ -92,11 +92,20 @@ public struct ChildRecord: Codable, Sendable, Equatable, Identifiable {
     public var reportRevision: Int
     public var reportHead: String?
     public var state: ChildState
+    /// The top folder of the parent's checkout when the child was made: the
+    /// parent's side, where the child's branch lives and where its cleanup
+    /// and discard run git, even after the parent pane closed. nil in a
+    /// record kept before it was stored.
+    public var parentCheckout: String?
+    /// The head of the child's branch when a human closed its merged pane,
+    /// stored with its REPORT and TASK copies before any cleanup.
+    public var closedHead: String?
 
-    public init(id: String, parentSessionId: String, worktreePath: String, parentBranch: String, baseCommit: String, startingMode: String, requestKey: String, followUpCount: Int = 0, reportRevision: Int = 0, reportHead: String? = nil, state: ChildState = .creating) {
+    public init(id: String, parentSessionId: String, worktreePath: String, parentBranch: String, baseCommit: String, startingMode: String, requestKey: String, followUpCount: Int = 0, reportRevision: Int = 0, reportHead: String? = nil, state: ChildState = .creating, parentCheckout: String? = nil) {
         self.id = id; self.parentSessionId = parentSessionId; self.worktreePath = worktreePath; branch = Self.branchName(for: id)
         self.parentBranch = parentBranch; self.baseCommit = baseCommit; self.startingMode = startingMode; self.requestKey = requestKey
         self.followUpCount = followUpCount; self.reportRevision = reportRevision; self.reportHead = reportHead; self.state = state
+        self.parentCheckout = parentCheckout
     }
 
     public static func branchName(for sessionId: String) -> String { "mighty/" + sessionId }
