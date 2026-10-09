@@ -26,6 +26,9 @@ let package = Package(
             .product(name: "GhosttyTerminal", package: "libghostty-spm"),
             .product(name: "WebRTC", package: "WebRTC"),
         ]),
+        // A scripted stand-in for the claude CLI, with no model, that tests and
+        // CI launch through the app's normal run path. Never shipped.
+        .executableTarget(name: "FakeClaude", dependencies: ["MightyCore"], path: "Tests/FakeClaude"),
         .testTarget(name: "MightyCoreTests", dependencies: ["MightyCore"]),
     ]
 )
