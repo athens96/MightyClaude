@@ -19,8 +19,9 @@ public struct DelegationFollowUpInfo: Codable, Sendable, Equatable {
 extension DelegationCoordinator {
     /// The follow-ups one child may get from its parent.
     public static let maximumFollowUps = 2
-    /// The longest follow-up text in UTF-8, as long as a stored TASK.md copy.
-    /// A follow-up is kept whole until it is delivered, so it is never cut.
+    /// The most a follow-up's text may take in the delegation file, its JSON
+    /// escapes included, as much as a stored TASK.md copy. A follow-up is
+    /// kept whole until it is delivered, so it is never cut.
     public static let maximumFollowUpBytes = DelegationFileStore.maximumCopyBytes
 
     /// merge(child, expected_head) from `caller`. A child that is not the
@@ -50,12 +51,12 @@ extension DelegationCoordinator {
         case .failed(let message):
             return .failure("Git did not merge the child: \(message)")
         case .merged(let record):
+            // The merge is made, so it is on record before anything else can
+            // run here, and stays so even should the disk refuse it now; the
+            // next save writes it.
+            if !file.recordMerge(record), file.children.contains(where: { $0.id == record.childId }) { file.merges.append(record) }
             let context = await pruneContext()
-            var next = file
-            if !next.recordMerge(record), next.children.contains(where: { $0.id == record.childId }) { next.merges.append(record) }
-            // The merge is made, so it stays on record even should the disk
-            // refuse it now; the next save writes it.
-            do { try commit(next, context: context) } catch { file = next }
+            try? commit(file, context: context)
             return DelegationResponse(merged: record)
         }
     }
@@ -76,13 +77,18 @@ extension DelegationCoordinator {
     /// up by one; delivery hands it to the child exactly once.
     func followUp(_ id: String, text: String, caller: PaneMCPBinding) async -> DelegationResponse {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return .failure("follow_up needs a text: the instruction for the child.") }
-        guard text.utf8.count <= Self.maximumFollowUpBytes else { return .failure("A follow-up's text may be at most 64 KiB.") }
+        // Escapes only add bytes, so the UTF-8 size rules out a huge text before it is encoded.
+        guard text.utf8.count <= Self.maximumFollowUpBytes, DelegationCopy.storedBytes(text) <= Self.maximumFollowUpBytes else {
+            return .failure("A follow-up's text may be at most 64 KiB.")
+        }
         let id = id.trimmingCharacters(in: .whitespacesAndNewlines)
         guard isChild(id, of: caller) else { return .failure(Self.notYourChildMessage(id)) }
-        guard await host.paneState(sessionId: caller.agentPaneId) != nil else { return .refusal(.parentClosed) }
+        // Asks the host about every parent with children, the caller among them.
         let context = await pruneContext()
         // Nothing below suspends until the follow-up is saved, so two calls
-        // at once cannot both pass the limit.
+        // at once cannot both pass the limit, and the caller's pane is as
+        // last seen.
+        guard context.openPaneIds.contains(caller.agentPaneId) else { return .refusal(.parentClosed) }
         guard let index = file.children.firstIndex(where: { $0.id == id }) else { return .failure(Self.notYourChildMessage(id)) }
         guard file.children[index].state.isOpen else { return .refusal(.childClosed) }
         let count = file.children[index].followUpCount + 1
