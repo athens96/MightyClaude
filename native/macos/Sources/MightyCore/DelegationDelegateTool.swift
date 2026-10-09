@@ -90,8 +90,8 @@ extension DelegationCoordinator {
         var next = file
         guard let index = next.children.firstIndex(where: { $0.id == id }) else { return }
         if let runId {
-            // The host may have reported this run's start, or even its end, already.
-            guard next.children[index].runId == runId || next.children[index].noteRun(runId) else { return }
+            // Once the host has reported this run's start, or even its end, the record is past creating.
+            guard next.children[index].state == .creating, next.children[index].noteRun(runId) else { return }
         } else {
             guard next.children[index].apply(.failStart) else { return }
             next.notices.append(Notice(id: UUID().uuidString.lowercased(), childId: id, reportRevision: 0, kind: .failedToStart))

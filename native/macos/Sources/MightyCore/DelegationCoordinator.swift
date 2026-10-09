@@ -186,6 +186,11 @@ public actor DelegationCoordinator: DelegationRequestHandler {
     /// in a parent's checkout at once; the others wait here, first come first.
     var isMerging = false
     var mergeTurns: [CheckedContinuation<Void, Never>] = []
+    /// Whether a run event of a child's pane (its start, its end, the parent
+    /// awaiting it, or the launch's sweep) is being recorded. They take turns
+    /// in the order they came, so each is recorded whole before the next.
+    var isRecordingRun = false
+    var runTurns: [CheckedContinuation<Void, Never>] = []
 
     /// Loads the delegation file from `store`; throws when it is unreadable.
     public init(store: DelegationFileStore, host: any DelegationHost, worktrees: ChildWorktreeMaker = ChildWorktreeMaker(), isSwitchOn: @escaping @Sendable () -> Bool = { DelegationSwitch.isOn() }, answerSeconds: TimeInterval = DelegationCoordinator.answerSeconds) throws {

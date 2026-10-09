@@ -70,13 +70,17 @@ extension ChildRecord {
 
 /// Report revisions (macOS only): the host tells the coordinator each run
 /// that starts and ends in a child's pane, in order, and the coordinator
-/// records what the run left for the parent. Notices are saved pending in
-/// the delegation file; delivering them to the parent is the next step.
+/// records what the run left for the parent. These run events take turns in
+/// the order they came, so one never sees another half recorded. Notices are
+/// saved pending in the delegation file; delivering them to the parent is the
+/// next step.
 extension DelegationCoordinator {
     /// A run `runId` started in the child `id`'s pane: the child is running
     /// it, which clears reported, so a merge waits for the next report. A
     /// run already recorded, or a child that takes no runs, changes nothing.
     public func childRunStarted(_ id: String, runId: String) async {
+        await takeRunTurn()
+        defer { passRunTurn() }
         guard let found = file.children.first(where: { $0.id == id }), found.runId != runId else { return }
         let context = await pruneContext()
         // Nothing below suspends until the start is saved.
@@ -101,6 +105,8 @@ extension DelegationCoordinator {
     /// start the host may not have reported yet. A second report of the same
     /// end, or the end of any other run, changes nothing. The notice sent, if any.
     @discardableResult public func childRunEnded(_ id: String, runId: String, end: ChildRunEnd) async -> Notice? {
+        await takeRunTurn()
+        defer { passRunTurn() }
         guard let found = file.children.first(where: { $0.id == id }), Self.mayEnd(found, runId: runId) else { return nil }
         var report: ChildReportFile?, head: String?
         if end != .quit {
@@ -145,6 +151,8 @@ extension DelegationCoordinator {
     /// sends nothing more. The run's start and end stay the host's to
     /// report, so this never moves the child. The notice sent, if any.
     @discardableResult func awaitRun(_ runId: String, of id: String) async -> Notice? {
+        await takeRunTurn()
+        defer { passRunTurn() }
         guard let found = file.children.first(where: { $0.id == id }), found.awaitedRunId != runId else { return nil }
         let context = await pruneContext()
         // Nothing below suspends until the await is saved.
@@ -165,6 +173,8 @@ extension DelegationCoordinator {
     /// waiting had its run killed when the app quit. Each becomes
     /// interrupted, with no notice, and comes back stopped. The ids of those children.
     @discardableResult public func interruptRunsKilledByQuit() async -> [String] {
+        await takeRunTurn()
+        defer { passRunTurn() }
         let context = await pruneContext()
         var next = file, ids: [String] = []
         for index in next.children.indices where next.children[index].state == .running || next.children[index].state == .waiting {
@@ -186,5 +196,17 @@ extension DelegationCoordinator {
     /// the next save writes it.
     private func keep(_ next: DelegationFile, context: DelegationPruneContext) {
         do { try commit(next, context: context) } catch { file = next }
+    }
+
+    /// Waits until no other run event is being recorded, then holds the turn.
+    private func takeRunTurn() async {
+        guard isRecordingRun else { isRecordingRun = true; return }
+        // The turn is handed over with isRecordingRun still set.
+        await withCheckedContinuation { runTurns.append($0) }
+    }
+
+    /// Hands the turn to the run event waiting longest, if any.
+    private func passRunTurn() {
+        if runTurns.isEmpty { isRecordingRun = false } else { runTurns.removeFirst().resume() }
     }
 }
