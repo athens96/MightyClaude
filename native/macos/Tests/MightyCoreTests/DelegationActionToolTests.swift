@@ -346,6 +346,9 @@ struct DelegationActionToolTests {
         #expect(await fixture.call("follow_up", ["child": "open", "text": " \n"]).error == "follow_up needs a text: the instruction for the child.")
         let long = String(repeating: "x", count: DelegationCoordinator.maximumFollowUpBytes + 1)
         #expect(await fixture.call("follow_up", ["child": "open", "text": long]).error == "A follow-up's text may be at most 64 KiB.")
+        // Measured as it is stored: under 64 KiB in UTF-8, over it with its escapes.
+        let quotes = String(repeating: "\"", count: DelegationCoordinator.maximumFollowUpBytes / 2 + 1)
+        #expect(await fixture.call("follow_up", ["child": "open", "text": quotes]).error == "A follow-up's text may be at most 64 KiB.")
         #expect(await fixture.call("follow_up", ["child": "open"]).error == "follow_up takes exactly these string arguments: child, text.")
 
         // The parent's pane closed: its children keep their cards, and nothing more is sent to them.
