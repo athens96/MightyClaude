@@ -13,6 +13,18 @@ enum AgentIOMCPCommand {
     }
 }
 
+/// Handles `--agent-delegation-mcp`: the delegation MCP server a Claude pane's
+/// run launches while the hidden delegation switch is on. Like
+/// ``AgentIOMCPCommand`` it runs before any initialisation and exits when
+/// stdin closes.
+enum DelegationMCPCommand {
+    static func run() -> Never {
+        signal(SIGPIPE, SIG_IGN)
+        DelegationMCPServer().run(input: .standardInput, output: .standardOutput)
+        exit(0)
+    }
+}
+
 /// External opens: the system's default browser, through NSWorkspace.
 struct WorkspaceURLOpener: ExternalURLOpener {
     func open(_ url: URL) async -> Bool {
@@ -58,7 +70,9 @@ extension AppStore {
                 Task { @MainActor in self.showAgentTerminal(pane, agentPaneId: agentPaneId) }
             }
         }
-        let server = AgentIOSocketServer(socketPath: socketPath, bindings: paneBindings, handler: handler)
+        // Delegation calls share the socket and the pane tokens. They reach
+        // nothing while the hidden switch is off, and only Claude panes may make them.
+        let server = AgentIOSocketServer(socketPath: socketPath, bindings: paneBindings, handler: handler, delegation: DelegationIOHandler())
         do {
             try server.start()
             agentIOServer = server
