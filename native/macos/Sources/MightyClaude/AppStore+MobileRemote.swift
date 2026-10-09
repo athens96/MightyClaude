@@ -133,7 +133,9 @@ final class MobileRemoteBridge: MobileHostDelegate, @unchecked Sendable {
         try await MainActor.run { try store.orClosing().mobileRemoveQueued(sessionId, itemId: itemId) }
     }
     func mobileRunNextQueued(sessionId: String) async throws {
-        try await MainActor.run { try store.orClosing().mobileRunNextQueued(sessionId) }
+        // Awaits delegation's release of held items, so it cannot be folded into MainActor.run.
+        let store = try await MainActor.run { try self.store.orClosing() }
+        try await store.mobileRunNextQueued(sessionId)
     }
     func mobileRename(sessionId: String, title: String, titleMode: String?) async throws {
         try await MainActor.run { try store.orClosing().mobileRename(sessionId, title: title, titleMode: titleMode) }
@@ -200,6 +202,7 @@ extension AppStore {
         $toolPermissions.sink { [weak self] value in self?.mobileObserve(permissions: value) }.store(in: &mobileSubscriptions)
         // `$statusLines` is deliberately not observed: see SessionFingerprint.
         $queuedInputs.sink { [weak self] value in self?.mobileObserve(queued: value) }.store(in: &mobileSubscriptions)
+        $delegationHeld.sink { [weak self] value in self?.mobileObserve(held: value) }.store(in: &mobileSubscriptions)
         // Asleep, the Mac missed the relay's pings and its control socket may be
         // gone on the relay's side while it still looks open here.
         NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)
@@ -262,7 +265,8 @@ extension AppStore {
 
     // MARK: Revisions
 
-    func mobileObserve(snapshot incoming: AppSnapshot? = nil, permissions: [String: [ToolPermissionRequest]]? = nil, queued: [String: [QueuedInput]]? = nil) {
+    func mobileObserve(snapshot incoming: AppSnapshot? = nil, permissions: [String: [ToolPermissionRequest]]? = nil, queued: [String: [QueuedInput]]? = nil,
+                       held: [String: [DelegationDeliveryItem]]? = nil) {
         guard !ending, mobileBridge != nil else { return }
         let snapshot = incoming ?? self.snapshot
         // Nothing to track while the feature is off; the first publish after
@@ -270,6 +274,7 @@ extension AppStore {
         guard snapshot.mobileRemote?.enabled == true else { if !mobileTracking.seen.isEmpty { mobileTracking = MobileRemoteTracking(stateRevision: mobileTracking.stateRevision) }; return }
         let permissions = permissions ?? toolPermissions
         let queued = queued ?? queuedInputs
+        let held = held ?? delegationHeld
         var changedSessions: [String] = []
         // The order carries the agent-owned terminal and browser panes too, so
         // opening or closing one of them is a state change the phone hears about.
@@ -284,7 +289,7 @@ extension AppStore {
             let fingerprint = MobileRemoteTracking.SessionFingerprint(session, editable: editable, options: mobileOptionsDigest(session), mighty: mobileMightyDigest(session))
             let changed = mobileTracking.seen[session.id] != fingerprint
             if changed { mobileTracking.sessionRevisions[session.id, default: 0] += 1 }
-            var summary = mobileSummary(session, revision: mobileTracking.sessionRevisions[session.id, default: 1], permissions: permissions, queued: queued)
+            var summary = mobileSummary(session, revision: mobileTracking.sessionRevisions[session.id, default: 1], permissions: permissions, queued: queued, held: held)
             let previous = mobileTracking.summaries[session.id]
             var compare = summary; compare.revision = 0
             var previousCompare = previous; previousCompare?.revision = 0
@@ -309,7 +314,8 @@ extension AppStore {
         }
     }
 
-    private func mobileSummary(_ session: RunSession, revision: Int, permissions: [String: [ToolPermissionRequest]]? = nil, queued: [String: [QueuedInput]]? = nil) -> MobileSessionSummary {
+    private func mobileSummary(_ session: RunSession, revision: Int, permissions: [String: [ToolPermissionRequest]]? = nil, queued: [String: [QueuedInput]]? = nil,
+                               held: [String: [DelegationDeliveryItem]]? = nil) -> MobileSessionSummary {
         let pending = ((permissions ?? toolPermissions)[session.id] ?? []).filter { $0.state == "pending" }
         let last = session.logs.last(where: { $0.activity == nil && !$0.text.isEmpty })
         return MobileSessionSummary(
@@ -317,7 +323,8 @@ extension AppStore {
             status: session.status, revision: revision, updatedAt: session.logs.last?.timestamp ?? session.createdAt,
             preview: last.map { MobilePreview(kind: $0.kind, text: String($0.text.prefix(200))) },
             pendingPermissions: pending.filter { !$0.canAnswerQuestions }.count, pendingQuestions: pending.filter(\.canAnswerQuestions).count,
-            queued: (queued ?? queuedInputs)[session.id]?.count ?? 0, resumeId: session.resumeId, terminal: usesLocalTerminal(session) || AgentIOPaneKind.isAgentIOPane(session.kind),
+            // Held rows are in the pane's queued list too.
+            queued: ((queued ?? queuedInputs)[session.id]?.count ?? 0) + ((held ?? delegationHeld)[session.id]?.count ?? 0), resumeId: session.resumeId, terminal: usesLocalTerminal(session) || AgentIOPaneKind.isAgentIOPane(session.kind),
             // A command pane has no agent view and no style; sending "plain"
             // and "cli" would invite the phone to offer pickers it cannot use.
             agentViewMode: session.kind == "shell" ? nil : mobileViewMode(session),
@@ -379,7 +386,7 @@ extension AppStore {
             refreshStatusLine(for: session)
         }
         return MobileSessionDetail(revision: revision, session: summary, entries: Array(session.logs.suffix(MobileSessionDetail.maximumEntries)),
-                                   permissions: permissions, queued: (queuedInputs[id] ?? []).map { MobileQueuedItem(id: $0.id, text: $0.text) },
+                                   permissions: permissions, queued: DelegationQueueRows.mobileItems(held: delegationHeld[id] ?? [], queued: queuedInputs[id] ?? []),
                                    usage: mobileUsage(session), elapsedSeconds: session.runTiming?.elapsed(),
                                    hasOlder: MobileRemoteSupport.hasOlder(entryCount: session.logs.count), settings: mobileSettings(session),
                                    mighty: mobileMighty(session),
@@ -572,6 +579,8 @@ extension AppStore {
             case .refused: throw MightyError(deferred.failure ?? L("remote.error.queueRefused"))
             }
         }
+        // Items held for the pane go first, in this one run.
+        if !(delegationHeld[id] ?? []).isEmpty { return .steering(releaseHeld(id, input: text, attachments: attachments, restoringDraft: nil, fromPhone: true)) }
         let started = mobileCapturingError { start(id, session: session, workspace: workspace, input: text, attachments: attachments, restoringDraft: nil) }
         guard started.value else { throw MightyError(started.failure ?? L("remote.error.startFailed")) }
         return .immediate(.started)
@@ -619,15 +628,31 @@ extension AppStore {
         return session
     }
 
+    /// A held row is refused with `held_not_removable`, and nothing changes.
     func mobileRemoveQueued(_ id: String, itemId: String) throws {
         _ = try mobileCommandSession(id)
+        if DelegationQueueRows.removeRefusal(itemId: itemId, held: delegationHeld[id] ?? []) == .heldNotRemovable {
+            throw MobileHostError.conflict(L("queue.heldNotRemovable"))
+        }
         guard queuedInputs[id]?.contains(where: { $0.id == itemId }) == true else { throw MobileHostError.notFound(L("remote.error.queueItemNotFound")) }
         removeQueuedInput(id, itemId: itemId)
     }
 
-    func mobileRunNextQueued(_ id: String) throws {
+    /// Items held for the pane run next, all of them in one run (steered into
+    /// its running Claude run when it has one); the queued rows follow later.
+    func mobileRunNextQueued(_ id: String) async throws {
         let session = try mobileCommandSession(id)
-        guard !(queuedInputs[id] ?? []).isEmpty else { throw MobileHostError.conflict(L("remote.error.queueEmpty")) }
+        let held = !(delegationHeld[id] ?? []).isEmpty
+        guard held || !(queuedInputs[id] ?? []).isEmpty else { throw MobileHostError.conflict(L("remote.error.queueEmpty")) }
+        if held {
+            if let reason = runBlockedReason(session, checkRuntime: false) { throw MobileHostError.conflict(reason) }
+            let macError = error
+            let released = await runNextHeld(id)
+            let failure = error == macError ? nil : error
+            error = macError
+            guard released else { throw MobileHostError.conflict(failure ?? L("remote.error.startFailed")) }
+            return
+        }
         guard session.status != "running", !pendingRuns.contains(id) else { throw MobileHostError.conflict(L("remote.error.nextAfterRun")) }
         // Settling a blocked pane throws the whole queue away with only a log
         // line; the phone would be told "ok" and watch its requests vanish.

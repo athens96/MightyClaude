@@ -178,7 +178,7 @@ public actor DelegationCoordinator: DelegationRequestHandler {
     /// The delegation file as last loaded or saved. The one exception: a
     /// child's start that the disk refused to save is held here until the
     /// next save writes it.
-    public internal(set) var file: DelegationFile { didSet { publishChildRows() } }
+    public internal(set) var file: DelegationFile { didSet { publishChildRows(); publishHeldRows() } }
     /// The children as the sidebar lists them: the list at load, then the
     /// list after each change to it, in order. Only the newest waits when
     /// they come faster than they are read. For one reader, the app.
@@ -186,6 +186,13 @@ public actor DelegationCoordinator: DelegationRequestHandler {
     private nonisolated let childRowsContinuation: AsyncStream<[DelegationChildRow]>.Continuation
     /// The list ``childRows`` last carried.
     private var publishedChildRows: [DelegationChildRow]
+    /// The items held for each pane, oldest first, as its queued list shows
+    /// them: the map at load, then the map after each change to it, in
+    /// order. Only the newest waits. For one reader, the app.
+    public nonisolated let heldRows: AsyncStream<[String: [DelegationDeliveryItem]]>
+    private nonisolated let heldRowsContinuation: AsyncStream<[String: [DelegationDeliveryItem]]>.Continuation
+    /// The map ``heldRows`` last carried.
+    private var publishedHeldRows: [String: [DelegationDeliveryItem]]
     /// Children whose start is still going: delegate saved their record and
     /// ``startChild(_:base:task:)`` has not finished. A discard waits for it.
     var starting: Set<String> = []
@@ -214,6 +221,9 @@ public actor DelegationCoordinator: DelegationRequestHandler {
         (childRows, childRowsContinuation) = AsyncStream.makeStream(of: [DelegationChildRow].self, bufferingPolicy: .bufferingNewest(1))
         publishedChildRows = DelegationSidebar.rows(file)
         childRowsContinuation.yield(publishedChildRows)
+        (heldRows, heldRowsContinuation) = AsyncStream.makeStream(of: [String: [DelegationDeliveryItem]].self, bufferingPolicy: .bufferingNewest(1))
+        publishedHeldRows = file.heldItemsByPane()
+        heldRowsContinuation.yield(publishedHeldRows)
     }
 
     /// Hands ``childRows`` the children when they differ from the last list it carried.
@@ -222,6 +232,14 @@ public actor DelegationCoordinator: DelegationRequestHandler {
         guard rows != publishedChildRows else { return }
         publishedChildRows = rows
         childRowsContinuation.yield(rows)
+    }
+
+    /// Hands ``heldRows`` the held items when they differ from the last map it carried.
+    private func publishHeldRows() {
+        let rows = file.heldItemsByPane()
+        guard rows != publishedHeldRows else { return }
+        publishedHeldRows = rows
+        heldRowsContinuation.yield(rows)
     }
 
     public nonisolated func handle(_ request: DelegationRequest, binding: PaneMCPBinding) async -> DelegationResponse {

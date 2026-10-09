@@ -358,4 +358,114 @@ private struct Fixture {
         #expect(await fixture.coordinator.file.children[1].awaitedRunId == "run-1")
         fixture.expectEachTakenOnce([toRunning.id, toStopped.id])
     }
+
+    @Test func heldRowsComeFirstInThePhonesQueuedArrayInItsItemShapeCannotBeRemovedAndKeepRunNextOnOffer() throws {
+        let held = [DelegationDeliveryItem(id: "n-1", kind: .notice, childId: "c1", sessionId: "parent", text: "Notice 1"),
+                    DelegationDeliveryItem(id: "n-2", kind: .notice, childId: "c2", sessionId: "parent", text: "Notice 2")]
+        let queued = [QueuedInput(id: "q-1", text: "Human row")]
+        let items = DelegationQueueRows.mobileItems(held: held, queued: queued)
+        #expect(items == [MobileQueuedItem(id: "n-1", text: "Notice 1"), MobileQueuedItem(id: "n-2", text: "Notice 2"), MobileQueuedItem(id: "q-1", text: "Human row")])
+        // The existing item shape, nothing more: the phone shows them as it is.
+        let wire = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(items[0])) as? [String: Any])
+        #expect(Set(wire.keys) == ["id", "text"])
+        #expect(DelegationQueueRows.mobileItems(held: [], queued: queued) == [MobileQueuedItem(id: "q-1", text: "Human row")])
+
+        // The remove route refuses a held row with exactly held_not_removable; a human row may go.
+        #expect(DelegationQueueRows.removeRefusal(itemId: "n-2", held: held) == .heldNotRemovable)
+        #expect(DelegationQueueRows.removeRefusal(itemId: "n-2", held: held)?.rawValue == "held_not_removable")
+        #expect(DelegationQueueRows.removeRefusal(itemId: "q-1", held: held) == nil)
+        #expect(DelegationQueueRows.removeRefusal(itemId: "n-2", held: []) == nil)
+
+        // Run next shows whenever items are held, busy or not; otherwise only while idle.
+        #expect(DelegationQueueRows.offersRunNext(busy: true, held: 1))
+        #expect(DelegationQueueRows.offersRunNext(busy: false, held: 2))
+        #expect(DelegationQueueRows.offersRunNext(busy: false, held: 0))
+        #expect(!DelegationQueueRows.offersRunNext(busy: true, held: 0))
+    }
+
+    @Test func theHeldRowsTheAppShowsFollowTheFileAcrossARelaunch() async throws {
+        let fixture = try Fixture.make(parent: .idle)
+        defer { fixture.remove() }
+        var rows = fixture.coordinator.heldRows.makeAsyncIterator()
+        #expect(await rows.next() == [:])
+        let first = try await fixture.end("c1")
+        let second = try await fixture.end("c2")
+        let expected = [first, second].map { DelegationDeliveryItem(id: $0.id, kind: .notice, childId: $0.childId, sessionId: "parent", text: DelegationCoordinator.text(of: $0)) }
+        #expect(await rows.next() == ["parent": expected])
+        #expect(await fixture.coordinator.heldItems(for: "parent") == expected)
+
+        // Rebuilt from the same profile, the app's first map has them.
+        let relaunched = try Fixture.coordinator(fixture.store, fixture.host, fixture.base)
+        var relaunchedRows = relaunched.heldRows.makeAsyncIterator()
+        #expect(await relaunchedRows.next() == ["parent": expected])
+        // Released, they leave the queued list.
+        #expect(await relaunched.send("Go on.", in: "parent") == .released(runId: "run-1", itemIds: [first.id, second.id]))
+        #expect(await relaunchedRows.next() == [:])
+    }
+
+    @Test func theAppsSendStartsTheReleaseRunItselfAndRunNextSteersHeldItemsIntoARunningClaudeRun() async throws {
+        let fixture = try Fixture.make(parent: .idle)
+        defer { fixture.remove() }
+        let first = try await fixture.end("c1")
+        let second = try await fixture.end("c2")
+        // The app starts the run with the human's attachments: the whole input reaches its starter once.
+        let started = StartedInputs()
+        let release = await fixture.coordinator.send("Merge what is ready.", in: "parent") { input in started.add(input); return "app-run-1" }
+        #expect(release == .released(runId: "app-run-1", itemIds: [first.id, second.id]))
+        #expect(started.inputs == [[DelegationCoordinator.text(of: first), DelegationCoordinator.text(of: second), "Merge what is ready."].joined(separator: "\n\n")])
+        #expect(fixture.host.handed.isEmpty)
+        let saved = try fixture.store.load().notices
+        #expect(saved.map(\.lane) == [.delivered, .delivered] && saved.map { $0.receipt?.runId } == ["app-run-1", "app-run-1"])
+        #expect(saved.map { $0.receipt?.route } == [.queue, .queue])
+
+        // A starter that starts nothing leaves them held, as they were.
+        let third = try await fixture.end("c3")
+        #expect(await fixture.coordinator.send("Again.", in: "parent") { _ in nil } == .notStarted)
+        #expect(try fixture.saved(third) == fixture.held(third))
+        #expect(await fixture.coordinator.heldItems(for: "parent").map(\.id) == [third.id])
+
+        // Run next while the parent runs Claude: steered into that run, nothing else.
+        fixture.host.set("parent", .running, runId: "p-run")
+        #expect(await fixture.coordinator.runNext(in: "parent") == .released(runId: "p-run", itemIds: [third.id]))
+        let steer = try #require(fixture.host.handed.last)
+        #expect(fixture.host.handed.count == 1 && steer.route == .steer && steer.runId == "p-run" && steer.input == DelegationCoordinator.text(of: third))
+        #expect(steer.onDisk?.notices.first { $0.id == third.id }?.lane == .delivered)
+        let steered = try #require(try fixture.saved(third))
+        #expect(steered.lane == .delivered && steered.receipt?.route == .steer && steered.receipt?.runId == "p-run")
+        #expect(await fixture.coordinator.runNext(in: "parent") == .nothingHeld)
+        fixture.expectEachTakenOnce([third.id])
+    }
+
+    @Test func aNoticeARunCouldNotTakeWhileStartingOrEndingGoesOnWhenTheAppOffersItAgain() async throws {
+        let fixture = try Fixture.make(parent: .running)
+        defer { fixture.remove() }
+        // The parent's run is still starting: both steers are refused and the notice stays pending.
+        fixture.host.refuseNext([.running, .running])
+        let first = try await fixture.end("c1")
+        #expect(try fixture.saved(first) == first)
+        #expect(await fixture.coordinator.heldItems(for: "parent").isEmpty)
+        // Once the run is up the app offers it again: steered into that run.
+        await fixture.coordinator.deliverPending()
+        let steer = try #require(fixture.host.taken.last)
+        #expect(steer.route == .steer && steer.runId == "p-run" && steer.input == DelegationCoordinator.text(of: first))
+        #expect(try fixture.saved(first)?.receipt?.route == .steer && fixture.saved(first)?.lane == .delivered)
+
+        // A run that ends normally while its notice is offered: the run end offers it again, as the next run.
+        fixture.host.refuseNext([.finished, .finished])
+        let second = try await fixture.end("c2")
+        #expect(try fixture.saved(second) == second)
+        await fixture.coordinator.deliverPending()
+        let next = try #require(fixture.host.taken.last)
+        #expect(next.route == .queue && next.runId == "run-1" && next.input == DelegationCoordinator.text(of: second))
+        #expect(try fixture.saved(second)?.receipt?.runId == "run-1")
+        fixture.expectEachTakenOnce([first.id, second.id])
+    }
+}
+
+/// What a release's starter got, in order.
+private final class StartedInputs: @unchecked Sendable {
+    private let lock = NSLock()
+    private var log: [String] = []
+    var inputs: [String] { lock.withLock { log } }
+    func add(_ input: String) { lock.withLock { log.append(input) } }
 }
