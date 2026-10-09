@@ -68,7 +68,7 @@ private actor Latch {
                                     parentBranch: "main", baseCommit: String(repeating: "a", count: 40), startingMode: "plan", requestKey: "key-1")
             child.apply(.startRun)
             try store.save(DelegationFile(children: [child]))
-            coordinator = try DelegationCoordinator(store: store, host: host, isSwitchOn: { switchOn })
+            coordinator = try DelegationCoordinator(store: store, host: host, worktrees: ChildWorktreeMaker(root: folder.appendingPathComponent("worktrees", isDirectory: true)), isSwitchOn: { switchOn })
             server = AgentIOSocketServer(socketPath: socketPath, bindings: bindings, handler: NoTerminalCalls(), delegation: coordinator)
             try server.start()
         }

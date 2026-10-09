@@ -32,10 +32,16 @@ public final class DelegationMCPServer: @unchecked Sendable {
     public func handle(line: String) -> String? { core.handle(line: line) }
 
     /// The `tools/call` result for the app's answer. A refusal names its one
-    /// reason code in the text and as structured content.
+    /// reason code in the text and as structured content; a child is tool
+    /// data in both too.
     static func result(_ response: DelegationResponse) -> [String: Any] {
         if let reason = response.refused {
             return ["content": [["type": "text", "text": "Refused: \(reason.rawValue). Nothing was changed."]], "structuredContent": ["refused": reason.rawValue], "isError": true]
+        }
+        if let child = response.child {
+            let text = "Child \(child.id) is \(child.state.rawValue), on the branch \(child.branch), starting in \(child.startingMode) mode."
+            let data = ["id": child.id, "state": child.state.rawValue, "branch": child.branch, "mode": child.startingMode]
+            return ["content": [["type": "text", "text": text]], "structuredContent": ["child": data]]
         }
         return MCPStdioServer.toolError(response.error ?? "Mighty Claude did not answer the request.")
     }

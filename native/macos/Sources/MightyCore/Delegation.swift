@@ -73,14 +73,31 @@ public struct DelegationRequest: Codable, Sendable, Equatable {
 public struct DelegationResponse: Codable, Sendable, Equatable {
     /// The call was refused with exactly this reason, and nothing changed.
     public var refused: DelegationReasonCode?
-    /// The call reached no delegation tool: the pane is gone, the server is
-    /// not attached to its run, or no tool has that name.
+    /// The call reached no delegation tool (the pane is gone, the server is
+    /// not attached to its run, or no tool has that name), or the tool could
+    /// not take it as given.
     public var error: String?
+    /// The child the call is about: the one delegate just made, or the same
+    /// one again when that call is repeated in the same parent run.
+    public var child: DelegationChildInfo?
 
-    public init(refused: DelegationReasonCode? = nil, error: String? = nil) { self.refused = refused; self.error = error }
+    public init(refused: DelegationReasonCode? = nil, error: String? = nil, child: DelegationChildInfo? = nil) { self.refused = refused; self.error = error; self.child = child }
 
     public static func refusal(_ reason: DelegationReasonCode) -> DelegationResponse { DelegationResponse(refused: reason) }
     public static func failure(_ message: String) -> DelegationResponse { DelegationResponse(error: message) }
+    public static func delegated(_ child: ChildRecord) -> DelegationResponse { DelegationResponse(child: DelegationChildInfo(child)) }
+}
+
+/// One child as its parent's tools show it.
+public struct DelegationChildInfo: Codable, Sendable, Equatable {
+    public var id: String
+    public var state: ChildState
+    /// Always `mighty/<id>`.
+    public var branch: String
+    /// The permission mode the parent asked for in delegate.
+    public var startingMode: String
+
+    public init(_ child: ChildRecord) { id = child.id; state = child.state; branch = child.branch; startingMode = child.startingMode }
 }
 
 /// Serves one delegation call, already resolved to the pane its token belongs to.
