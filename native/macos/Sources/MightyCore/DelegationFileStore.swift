@@ -97,11 +97,12 @@ public struct DelegationFileStore: Sendable {
 
     public init(directory: URL) { self.directory = directory }
 
-    /// The exact bytes a save writes, for measuring what still fits.
-    public static func encode(_ file: DelegationFile) throws -> Data {
+    /// The exact bytes a save writes, for measuring what still fits. A part
+    /// of the file encodes to the same bytes it takes inside the file.
+    public static func encode<Value: Encodable>(_ value: Value) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        return try encoder.encode(file)
+        return try encoder.encode(value)
     }
 
     public func load() throws -> DelegationFile {
