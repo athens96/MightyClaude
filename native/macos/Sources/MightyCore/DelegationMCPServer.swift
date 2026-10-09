@@ -4,10 +4,11 @@ import Foundation
 ///
 /// A separate server from mighty-terminal, so that one keeps exactly its four
 /// tools. A run gets it only in a Claude pane and only while the hidden
-/// ``DelegationSwitch`` is on. It shares that pane's token and socket: each
+/// ``DelegationSwitch`` is on, and it lists exactly the six tools of
+/// ``DelegationToolManifest``. It shares that pane's token and socket: each
 /// `tools/call` is forwarded to the app with `MIGHTY_PANE_TOKEN` over
-/// `MIGHTY_AGENT_IO_SOCKET`, and the app decides which tools exist and who may
-/// call them (``DelegationIOHandler``). Every call answers within the socket's
+/// `MIGHTY_AGENT_IO_SOCKET`, and the app decides who may call them and runs
+/// them (``DelegationCoordinator``). Every call answers within the socket's
 /// 60 s limit. The token is never written anywhere.
 public final class DelegationMCPServer: @unchecked Sendable {
     public static let serverName = "mighty-delegation"
@@ -40,8 +41,8 @@ public final class DelegationMCPServer: @unchecked Sendable {
     }
 }
 
-/// Forwards every well-formed call to the app, which alone knows the
-/// delegation tools and whether this pane may use them.
+/// Lists the six delegation tools and forwards every well-formed call to the
+/// app, which decides whether this pane may use them.
 private struct DelegationToolSurface: MCPToolSurface {
     let token: String?
     let socketPath: String?
@@ -49,7 +50,7 @@ private struct DelegationToolSurface: MCPToolSurface {
 
     var serverInfo: [String: String] { ["name": DelegationMCPServer.serverName, "title": "Mighty Claude delegation", "version": "1.0.0"] }
     var instructions: String? { nil }
-    var toolDefinitions: [[String: Any]] { [] }
+    var toolDefinitions: [[String: Any]] { DelegationToolManifest.all.map(DelegationToolManifest.definition) }
     func accepts(tool name: String) -> Bool { DelegationRequest.isToolName(name) }
 
     func call(_ name: String, arguments: [String: Any]) -> [String: Any] {

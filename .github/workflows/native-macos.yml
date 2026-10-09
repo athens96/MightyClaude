@@ -39,7 +39,7 @@ jobs:
           MIGHTY_UPDATE_URL: ${{ vars.MIGHTY_UPDATE_URL }}
           MIGHTY_UPDATE_PUBLIC_KEY: ${{ vars.MIGHTY_UPDATE_PUBLIC_KEY }}
         run: bash scripts/build-macos.sh
-      - name: Delegation server answers headlessly; mighty-terminal keeps its four tools
+      - name: Delegation server lists its six tools headlessly; mighty-terminal keeps its four tools
         # The app binary as the two stdio MCP servers a run can launch. Only a Claude
         # pane's run with the hidden delegation switch on names the second one.
         if: (success() || failure()) && steps.build-app.outcome == 'success'
@@ -62,10 +62,11 @@ jobs:
           delegation = ask("--agent-delegation-mcp")
           print(json.dumps({"terminal": terminal, "delegation": delegation}))
           four = ["run_in_terminal", "read_latest_output", "stop", "open_url"]
+          six = ["delegate", "list_children", "child_status", "merge", "follow_up", "discard"]
           problems = []
           if terminal != (0, "mighty-terminal", four):
               problems.append(f"--agent-io-mcp answered {terminal}")
-          if delegation[:2] != (0, "mighty-delegation") or set(delegation[2]) & set(four):
+          if delegation != (0, "mighty-delegation", six):
               problems.append(f"--agent-delegation-mcp answered {delegation}")
           for problem in problems:
               print(f"::error title=macOS MCP servers::{problem}", flush=True)
