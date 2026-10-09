@@ -67,7 +67,9 @@ extension AppStore {
             guard let session = snapshot.sessions.first(where: { $0.id == id }) else { heldForUpdate.remove(id); continue }
             guard session.provider == provider, !backgroundUpdateHolds(session) else { continue }
             heldForUpdate.remove(id)
-            runNextQueuedInput(id)
+            // The queue as a run's end drains it, not run next: what
+            // delegation holds goes with the human's request, never alone.
+            runNextQueuedRow(id)
         }
     }
 
