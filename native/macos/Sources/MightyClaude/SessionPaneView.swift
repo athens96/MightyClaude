@@ -115,6 +115,8 @@ struct SessionPaneView: View {
     }
     private var paletteVisible: Bool { !paletteCommands.isEmpty }
     private var queued: [QueuedInput] { store.queuedInputs[session.id] ?? [] }
+    /// Delegation's notices or follow-ups held for this pane: rows that run first.
+    private var held: [DelegationDeliveryItem] { store.delegationHeld[session.id] ?? [] }
     /// Present when a `statusLine` command produced something, or a
     /// workspace-level command is waiting to be allowed.
     /// Local Claude panes can show Claude's `statusLine`; the button flips
@@ -585,8 +587,8 @@ struct SessionPaneView: View {
                 .padding(.horizontal, DesignMetrics.Inset.composerInnerH).padding(.top, DesignMetrics.Spacing.sm)
                 .accessibilityIdentifier("attachments-\(session.id)")
             }
-            if !queued.isEmpty {
-                QueuedInputsView(sessionID: session.id, items: queued, running: running || store.hasModal,
+            if !queued.isEmpty || !held.isEmpty {
+                QueuedInputsView(sessionID: session.id, held: held, items: queued, running: running || store.hasModal,
                                  onRemove: { store.removeQueuedInput(session.id, itemId: $0) }, onRunNext: { store.runNextQueuedInput(session.id) },
                                  notice: BackgroundQueuePolicy.waitsOnBackground(work: session.backgroundWork, launchesInPlan: store.styleLaunchesInPlanMode(session),
                                                                                  queued: queued.count) ? L("queue.waitingOnBackground.mac") : nil)

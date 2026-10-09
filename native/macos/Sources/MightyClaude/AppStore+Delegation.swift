@@ -24,6 +24,13 @@ extension AppStore {
                     if delegationChildren != rows { delegationChildren = rows }
                 }
             }
+            // So do the held rows of each pane's queued list, Mac and phone.
+            delegationHeldWatch = Task { [weak self] in
+                for await rows in coordinator.heldRows {
+                    guard let self else { return }
+                    if delegationHeld != rows { delegationHeld = rows }
+                }
+            }
         } catch {
             NSLog("MightyClaude delegation file unreadable; delegation is unavailable this launch: %@", error.localizedDescription)
         }
@@ -31,10 +38,86 @@ extension AppStore {
 
     /// A run of the pane `id` ended with `status`. A child's end reaches the
     /// coordinator after its start; while the app quits it counts as killed by quitting.
+    /// Any pane's end offers what it could not take while ending again: as
+    /// the pane's next run after a normal finish, held otherwise.
     func delegationRunEnded(_ id: String, status: String) {
         guard let ended = delegationRuns.end(id, status: status, quitting: ending) else { return }
-        guard snapshot.sessions.first(where: { $0.id == id })?.parentSessionId != nil else { return }
-        delegationRunEvents?.send(.ended(childId: id, runId: ended.runId, end: ended.end))
+        if snapshot.sessions.first(where: { $0.id == id })?.parentSessionId != nil {
+            delegationRunEvents?.send(.ended(childId: id, runId: ended.runId, end: ended.end))
+        }
+        offerDelegationPending()
+    }
+
+    /// Has delegation offer its pending notices and follow-ups to their panes
+    /// as they are now: a running Claude run takes them by steer.
+    func offerDelegationPending() {
+        guard !ending, let delegation else { return }
+        Task { await delegation.deliverPending() }
+    }
+
+    /// The human's send of `input` in the idle pane `id` while items are held
+    /// for it: delegation releases them all, oldest first, ahead of `input`
+    /// and with its attachments, in one run. What the send did; from the
+    /// phone, the Mac's error banner is left as it was.
+    @discardableResult
+    func releaseHeld(_ id: String, input: String, attachments: [RunAttachment], restoringDraft: String?, fromPhone: Bool = false) -> Task<SubmitOutcome, Never> {
+        // Taken from the composer now, so a second Enter cannot send it again.
+        if restoringDraft != nil { drafts[id] = "" }
+        let submittedIds = Set(attachments.map(\.id))
+        attachmentDrafts[id]?.removeAll { submittedIds.contains($0.id) }
+        return Task { [weak self] in
+            guard let self else { return .dropped }
+            let macError = error
+            defer { if fromPhone { error = macError } }
+            guard let delegation else { return sendUnheld(id, input: input, attachments: attachments, restoringDraft: restoringDraft) }
+            let release = await delegation.send(input, in: id) { [weak self] whole in
+                await self?.startDelivered(id, input: whole, attachments: attachments, restoringDraft: restoringDraft, titleFrom: input)
+            }
+            switch release {
+            case .released: return .started
+            // Released meanwhile by another send: this one goes as it would.
+            case .nothingHeld: return sendUnheld(id, input: input, attachments: attachments, restoringDraft: restoringDraft)
+            case .notStarted:
+                restoreSend(id, input: restoringDraft, attachments: attachments)
+                return .dropped
+            }
+        }
+    }
+
+    /// A run of `input` that delegation hands the pane: its id, or nil when
+    /// the pane cannot run now. A draft typed meanwhile is never cleared.
+    private func startDelivered(_ id: String, input: String, attachments: [RunAttachment], restoringDraft: String?, titleFrom: String) -> String? {
+        guard !ending, let session = snapshot.sessions.first(where: { $0.id == id }),
+              let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }),
+              start(id, session: session, workspace: workspace, input: input, attachments: attachments,
+                    restoringDraft: (drafts[id] ?? "").isEmpty ? restoringDraft : nil, titleFrom: titleFrom) else { return nil }
+        return delegationRuns.runId(id)
+    }
+
+    /// The human's send with nothing held: started now, or queued behind the
+    /// run that is starting.
+    private func sendUnheld(_ id: String, input: String, attachments: [RunAttachment], restoringDraft: String?) -> SubmitOutcome {
+        guard let session = snapshot.sessions.first(where: { $0.id == id }), let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return .dropped }
+        if session.status == "running" || pendingRuns.contains(id) {
+            let item = QueuedInput(text: input, attachments: attachments, permissionModeOverride: BackgroundQueuePolicy.queuedOverride(launchesInPlan: styleLaunchesInPlanMode(session)))
+            switch deferInput(id, session: session, workspace: workspace, item: item, steering: false) {
+            case .queued: return .queued
+            case .refused, .steering: return .dropped
+            }
+        }
+        if start(id, session: session, workspace: workspace, input: input, attachments: attachments, restoringDraft: (drafts[id] ?? "").isEmpty ? restoringDraft : nil) { return .started }
+        restoreSend(id, input: restoringDraft, attachments: attachments)
+        return .dropped
+    }
+
+    /// Puts a send that started nothing back in the composer, unless
+    /// something was typed meanwhile.
+    private func restoreSend(_ id: String, input: String?, attachments: [RunAttachment]) {
+        guard canEditAttachments(id) else { return }
+        if let input, (drafts[id] ?? "").isEmpty { drafts[id] = input }
+        let existing = Set((attachmentDrafts[id] ?? []).map(\.id))
+        let missing = attachments.filter { !existing.contains($0.id) }
+        if !missing.isEmpty { attachmentDrafts[id, default: []].insert(contentsOf: missing, at: 0) }
     }
 
     // MARK: DelegationHost
@@ -70,11 +153,9 @@ extension AppStore {
 
     /// A run with `input` in the pane, the way a send starts one: its id, or
     /// nil when the pane cannot run now (a child without its worktree among them).
+    /// Its words are delegation's, so they never title the pane.
     func startRun(sessionId: String, input: String) async -> String? {
-        guard !ending, let session = snapshot.sessions.first(where: { $0.id == sessionId }),
-              let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }),
-              start(sessionId, session: session, workspace: workspace, input: input, attachments: [], restoringDraft: nil) else { return nil }
-        return delegationRuns.runId(sessionId)
+        startDelivered(sessionId, input: input, attachments: [], restoringDraft: nil, titleFrom: "")
     }
 
     /// `input` steered into the pane's running Claude run, shown in its

@@ -289,6 +289,12 @@ final class AppStore: ObservableObject, DelegationHost {
     @Published var delegationChildren: [DelegationChildRow] = []
     /// Reads `delegation`'s child list into `delegationChildren`.
     var delegationChildWatch: Task<Void, Never>?
+    /// The notices and follow-ups held for each pane, oldest first, as
+    /// `delegation`'s file has them: rows of the pane's queued list that run
+    /// first, cannot be removed and are outside the queue's cap.
+    @Published var delegationHeld: [String: [DelegationDeliveryItem]] = [:]
+    /// Reads `delegation`'s held items into `delegationHeld`.
+    var delegationHeldWatch: Task<Void, Never>?
 
     /// Live agent runs, signalled to stop without waiting for the runner's
     /// actor or the main actor; read from the phone's handlers too.
@@ -726,6 +732,8 @@ final class AppStore: ObservableObject, DelegationHost {
             deferInput(id, session: session, workspace: workspace, item: item, steering: joins && !held)
             return
         }
+        // Items held for the pane go first, in this one run.
+        if !(delegationHeld[id] ?? []).isEmpty { releaseHeld(id, input: input, attachments: attachments, restoringDraft: originalDraft); return }
         start(id, session: session, workspace: workspace, input: input, attachments: attachments, restoringDraft: originalDraft)
     }
 
@@ -803,13 +811,39 @@ final class AppStore: ObservableObject, DelegationHost {
         return .steered
     }
 
-    func removeQueuedInput(_ id: String, itemId: String) {
+    /// Removes the human's queued request `itemId`. A row held for the pane
+    /// is refused with `held_not_removable`, and nothing changes.
+    @discardableResult
+    func removeQueuedInput(_ id: String, itemId: String) -> DelegationReasonCode? {
+        if let refusal = DelegationQueueRows.removeRefusal(itemId: itemId, held: delegationHeld[id] ?? []) { return refusal }
         queuedInputs[id]?.removeAll { $0.id == itemId }
         if queuedInputs[id]?.isEmpty == true { queuedInputs.removeValue(forKey: id) }
+        return nil
     }
 
-    /// Runs the first queued item now; used after an error left the queue paused.
+    /// Run next. Items held for the pane go first, all of them in one run
+    /// (steered into its running Claude run when it has one), and the queued
+    /// rows follow in later runs; otherwise the first queued row runs now,
+    /// as after an error left the queue paused.
     func runNextQueuedInput(_ id: String) {
+        if !(delegationHeld[id] ?? []).isEmpty { Task { await runNextHeld(id) }; return }
+        runNextQueuedRow(id)
+    }
+
+    /// Run next with items held for the pane: delegation releases them. False
+    /// when no run took them; they stay held.
+    @discardableResult
+    func runNextHeld(_ id: String) async -> Bool {
+        guard let delegation else { return false }
+        switch await delegation.runNext(in: id) {
+        case .released: return true
+        // Released meanwhile by another send: the queued rows as before.
+        case .nothingHeld: runNextQueuedRow(id); return true
+        case .notStarted: return false
+        }
+    }
+
+    private func runNextQueuedRow(_ id: String) {
         guard let session = snapshot.sessions.first(where: { $0.id == id }), session.status != "running", !pendingRuns.contains(id) else { return }
         settleQueue(id, status: "completed")
     }
@@ -848,7 +882,9 @@ final class AppStore: ObservableObject, DelegationHost {
 
     @discardableResult
     /// `queued` is the queue item being started: its recorded launch decision wins.
-    func start(_ id: String, session: RunSession, workspace: Workspace, input: String, attachments: [RunAttachment], restoringDraft: String?, queued: QueuedInput? = nil) -> Bool {
+    /// `titleFrom` is what an automatic title follows when it is not `input`:
+    /// a run delegation starts on its own sets none ("").
+    func start(_ id: String, session: RunSession, workspace: Workspace, input: String, attachments: [RunAttachment], restoringDraft: String?, queued: QueuedInput? = nil, titleFrom: String? = nil) -> Bool {
         if claudeModelResetInProgress, session.provider == "claude", session.kind != "shell" {
             error = L("composer.model.reloadingClaude")
             return false
@@ -876,7 +912,7 @@ final class AppStore: ObservableObject, DelegationHost {
         let logText = [input, attachmentSummary].filter { !$0.isEmpty }.joined(separator: "\n\n")
         let inputEntry = LogEntry(kind: "user", text: logText)
         let autoTitle: String? = (session.titleMode ?? "auto") == "auto" && session.kind != "shell" && session.kind != "browser"
-            ? PaneTitle.shortened(input) : nil
+            ? PaneTitle.shortened(titleFrom ?? input) : nil
         // §1.16: the first request in the pane's style is where its state starts.
         let startsStyle = guidedStyle(session) != nil && session.mightyStyleSince == nil
         updateSession(id) {
@@ -940,6 +976,8 @@ final class AppStore: ObservableObject, DelegationHost {
             }
             pendingRuns.remove(id)
             startTasks.removeValue(forKey: id)
+            // Up now: a notice its start could not take yet is steered in.
+            if snapshot.sessions.first(where: { $0.id == id })?.status == "running" { offerDelegationPending() }
             settleQueue(id, status: snapshot.sessions.first { $0.id == id }?.status ?? "idle")
         }
         return true
