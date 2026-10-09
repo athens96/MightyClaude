@@ -182,6 +182,10 @@ public actor DelegationCoordinator: DelegationRequestHandler {
     /// Children whose start is still going: delegate saved their record and
     /// ``startChild(_:base:task:)`` has not finished. A discard waits for it.
     var starting: Set<String> = []
+    /// Whether a tool merge is going. Merges take turns, so two never run git
+    /// in a parent's checkout at once; the others wait here, first come first.
+    var isMerging = false
+    var mergeTurns: [CheckedContinuation<Void, Never>] = []
 
     /// Loads the delegation file from `store`; throws when it is unreadable.
     public init(store: DelegationFileStore, host: any DelegationHost, worktrees: ChildWorktreeMaker = ChildWorktreeMaker(), isSwitchOn: @escaping @Sendable () -> Bool = { DelegationSwitch.isOn() }, answerSeconds: TimeInterval = DelegationCoordinator.answerSeconds) throws {
@@ -208,14 +212,15 @@ public actor DelegationCoordinator: DelegationRequestHandler {
             return listChildren(caller: caller)
         case DelegationToolManifest.childStatus:
             return childStatus(arguments["child"] ?? "", caller: caller)
+        case DelegationToolManifest.merge:
+            return await merge(arguments["child"] ?? "", expectedHead: arguments["expected_head"] ?? "", caller: caller)
+        case DelegationToolManifest.followUp:
+            return await followUp(arguments["child"] ?? "", text: arguments["text"] ?? "", caller: caller)
         default:
-            // Until their own rules land here, merge and follow_up answer that
-            // they are not available.
-            return .failure(Self.notBuiltMessage(tool.name))
+            // discard, which handle(_:binding:) already refused: only a human discards.
+            return .refusal(.discardHumanOnly)
         }
     }
-
-    static func notBuiltMessage(_ tool: String) -> String { "\(tool) is not available in this build of Mighty Claude yet." }
 
     static func lateMessage(_ tool: String, seconds: TimeInterval) -> String {
         "\(tool) did not finish within \(Int(seconds)) seconds. Its work goes on in Mighty Claude; call list_children to see where your children stand."

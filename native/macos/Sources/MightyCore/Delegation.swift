@@ -84,9 +84,15 @@ public struct DelegationResponse: Codable, Sendable, Equatable {
     public var children: [DelegationChildSummary]?
     /// child_status's answer: one of the caller's children.
     public var status: DelegationChildStatus?
+    /// merge's answer: the fast-forward it made, as the MergeRecord it wrote.
+    public var merged: MergeRecord?
+    /// follow_up's answer: the follow-up it recorded.
+    public var followUp: DelegationFollowUpInfo?
 
-    public init(refused: DelegationReasonCode? = nil, error: String? = nil, child: DelegationChildInfo? = nil, children: [DelegationChildSummary]? = nil, status: DelegationChildStatus? = nil) {
+    public init(refused: DelegationReasonCode? = nil, error: String? = nil, child: DelegationChildInfo? = nil, children: [DelegationChildSummary]? = nil, status: DelegationChildStatus? = nil,
+                merged: MergeRecord? = nil, followUp: DelegationFollowUpInfo? = nil) {
         self.refused = refused; self.error = error; self.child = child; self.children = children; self.status = status
+        self.merged = merged; self.followUp = followUp
     }
 
     public static func refusal(_ reason: DelegationReasonCode) -> DelegationResponse { DelegationResponse(refused: reason) }

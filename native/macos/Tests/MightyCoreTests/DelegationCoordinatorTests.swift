@@ -126,7 +126,7 @@ private actor Latch {
             let answer = fixture.send(tool.name, Self.arguments(tool), parent)
             #expect(clock.now - started < .seconds(DelegationCoordinator.answerSeconds), "\(tool.name)")
             // Answered by the coordinator's tool, not by the socket giving up or by a gate.
-            #expect(answer.refused != nil || answer.error != nil || answer.children != nil || answer.status != nil, "\(tool.name)")
+            #expect(answer.refused != nil || answer.error != nil || answer.children != nil || answer.status != nil || answer.merged != nil || answer.followUp != nil, "\(tool.name)")
             #expect(answer != noAnswer, "\(tool.name)")
             #expect(answer != .failure(DelegationIOHandler.unknownToolMessage(tool.name)), "\(tool.name)")
             #expect(answer != .failure(DelegationIOHandler.detachedMessage), "\(tool.name)")

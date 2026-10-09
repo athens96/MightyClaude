@@ -45,6 +45,8 @@ public final class DelegationMCPServer: @unchecked Sendable {
         }
         if let children = response.children { return result(children) }
         if let status = response.status { return result(status) }
+        if let merged = response.merged { return result(merged) }
+        if let followUp = response.followUp { return result(followUp) }
         return MCPStdioServer.toolError(response.error ?? "Mighty Claude did not answer the request.")
     }
 }
