@@ -1,6 +1,31 @@
 import Foundation
 import MightyCore
 
+/// The last answer a child's card got, shown on the card until its next action.
+struct DelegationCardNote: Equatable {
+    enum Result: Equatable, Sendable {
+        case done
+        /// Refused with this reason; nothing changed.
+        case refused(DelegationReasonCode)
+        case failed(String)
+    }
+
+    var action: DelegationCardAction
+    var result: Result
+}
+
+/// A discard from a child's card waiting on the human's confirmation.
+struct PendingChildDiscard: Identifiable, Equatable {
+    /// The child's id.
+    var id: String
+    var title: String
+    /// The child's branch, `mighty/<id>`.
+    var branch: String
+    /// The worktrees nested in the child's that go with it, deepest first;
+    /// nil when they could not be listed.
+    var nested: [String]?
+}
+
 /// The app side of parent → child delegation between Claude panes (macOS
 /// only): AppStore is the coordinator's ``DelegationHost``. The coordinator
 /// owns the records, the tools, delivery and the git actions; the store only
@@ -153,6 +178,77 @@ extension AppStore {
         case .phone:
             let ids = Set(attachments.map(\.id))
             attachmentDrafts[id]?.removeAll { ids.contains($0.id) }
+        }
+    }
+
+    // MARK: Child cards
+
+    /// The human's merge from the child's card.
+    func mergeChildFromCard(_ id: String) {
+        runCardAction(id, .merge) { delegation in
+            switch await delegation.mergeFromCard(id) {
+            case .merged: .done
+            case .refused(let reason): .refused(reason)
+            case .failed(let message): .failed(message)
+            }
+        }
+    }
+
+    /// The human's undo of the child's last merge from its card.
+    func undoChildMergeFromCard(_ id: String) {
+        runCardAction(id, .undo) { delegation in
+            switch await delegation.undoMergeFromCard(id) {
+            case .undone: .done
+            case .refused(let reason): .refused(reason)
+            case .failed(let message): .failed(message)
+            }
+        }
+    }
+
+    /// The human's discard from the child's card: first the confirmation,
+    /// which names the worktrees nested in the child's that go with it.
+    func askToDiscardChild(_ id: String) {
+        guard let delegation, !delegationCardBusy.contains(id), let row = delegationChildren.first(where: { $0.id == id }) else { return }
+        delegationCardBusy.insert(id)
+        delegationCardNotes[id] = nil
+        let title = snapshot.sessions.first(where: { $0.id == id })?.title ?? row.task ?? L("delegation.child.untitled")
+        Task { [weak self] in
+            let nested = await delegation.nestedWorktrees(of: id)
+            guard let self else { return }
+            delegationCardBusy.remove(id)
+            pendingChildDiscard = PendingChildDiscard(id: id, title: title, branch: ChildRecord.branchName(for: id), nested: nested)
+        }
+    }
+
+    /// The discard the human confirmed. The child's pane, its worktree gone,
+    /// closes once the child is discarded.
+    func discardChildConfirmed(_ id: String) {
+        pendingChildDiscard = nil
+        runCardAction(id, .discard) { delegation in
+            switch await delegation.discardChild(id) {
+            case .discarded: .done
+            case .failed(let message): .failed(message)
+            }
+        } then: { [weak self] result in
+            guard let self, result == .done, snapshot.sessions.contains(where: { $0.id == id }) else { return }
+            delegationCardNotes[id] = nil
+            closeSession(id)
+        }
+    }
+
+    /// Runs one card action of the child `id`, one at a time per child, and
+    /// keeps its answer for the card.
+    private func runCardAction(_ id: String, _ action: DelegationCardAction, _ work: @escaping @Sendable (DelegationCoordinator) async -> DelegationCardNote.Result,
+                               then: @escaping (DelegationCardNote.Result) -> Void = { _ in }) {
+        guard let delegation, !delegationCardBusy.contains(id) else { return }
+        delegationCardBusy.insert(id)
+        delegationCardNotes[id] = nil
+        Task { [weak self] in
+            let result = await work(delegation)
+            guard let self else { return }
+            delegationCardBusy.remove(id)
+            delegationCardNotes[id] = DelegationCardNote(action: action, result: result)
+            then(result)
         }
     }
 

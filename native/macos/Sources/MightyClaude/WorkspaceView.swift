@@ -78,6 +78,12 @@ struct WorkspaceView: View {
                 Button(L("resume.cancel"), role: .cancel) { store.pendingRemoval = nil }
             }
         } message: { Text(L("workspace.remove.message")) }
+        // A child's discard from its card, naming the worktrees nested in its own that go with it.
+        .confirmationDialog(L("delegation.discard.title"), isPresented: Binding(get: { store.pendingChildDiscard != nil }, set: { if !$0 { store.pendingChildDiscard = nil } }),
+                            titleVisibility: .visible, presenting: store.pendingChildDiscard) { pending in
+            Button(L("delegation.discard.confirm"), role: .destructive) { store.discardChildConfirmed(pending.id) }
+            Button(L("resume.cancel"), role: .cancel) { store.pendingChildDiscard = nil }
+        } message: { pending in Text(DelegationText.discardMessage(pending)) }
     }
 
     private var sidebar: some View {
@@ -283,6 +289,10 @@ struct WorkspaceView: View {
         .contextMenu {
             Button(L("menu.rename")) { store.beginRenameSession(session.id) }
             Button(L("menu.closePane"), role: .destructive) { store.closeSession(session.id) }
+            if let child {
+                Divider()
+                childCardMenu(child)
+            }
         }
     }
 
@@ -293,13 +303,68 @@ struct WorkspaceView: View {
             .padding(.leading, 22).padding(.trailing, 2)
     }
 
-    /// A delegated child under its parent: its pane's row while the pane is open,
-    /// otherwise a row for the child the delegation file keeps.
-    @ViewBuilder private func childRow(_ child: DelegationChildRow) -> some View {
-        if let session = store.snapshot.sessions.first(where: { $0.id == child.id }) {
-            paneRow(session, child: child)
-        } else {
-            closedChildRow(child)
+    /// A delegated child's card under its parent: its pane's row while the pane is
+    /// open, otherwise a row for the child the delegation file keeps, and below it
+    /// the human's actions and the answer the last one got.
+    private func childRow(_ child: DelegationChildRow) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let session = store.snapshot.sessions.first(where: { $0.id == child.id }) {
+                paneRow(session, child: child)
+            } else {
+                closedChildRow(child)
+            }
+            childCardActions(child)
+        }
+    }
+
+    /// The card's actions as a line of small buttons (merge while reported, undo
+    /// while its merge can be undone, discard until discarded), a busy line while
+    /// one is going, and the last answer: a refusal with its reason, or a failure.
+    private func childCardActions(_ child: DelegationChildRow) -> some View {
+        let busy = store.delegationCardBusy.contains(child.id)
+        let note = store.delegationCardNotes[child.id]
+        return sidebarListRow(nested: true, VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
+            HStack(spacing: DesignMetrics.Spacing.md) {
+                if busy {
+                    ProgressView().controlSize(.mini).accessibilityHidden(true)
+                    Text(L("delegation.card.working")).font(.system(size: 10.5)).foregroundStyle(Palette.sidebarInk2).lineLimit(1)
+                } else {
+                    ForEach(child.cardActions, id: \.self) { action in
+                        Button { perform(action, child) } label: {
+                            Text(DelegationText.action(action)).font(.system(size: 10.5, weight: .semibold))
+                                .foregroundStyle(action == .discard ? Palette.sidebarInk2 : Palette.sidebarAccent).lineLimit(1).fixedSize()
+                        }
+                        .buttonStyle(.plain)
+                        .help(DelegationText.actionHelp(action, child))
+                        .accessibilityLabel(DelegationText.actionHelp(action, child))
+                        .accessibilityIdentifier("child-card-\(action.rawValue)-\(child.id)")
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            if let note, !busy, let line = DelegationText.note(note, child) {
+                Text(line.text).font(.system(size: 10.5)).foregroundStyle(Palette.text(line.tone))
+                    .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                    .accessibilityIdentifier("child-card-note-\(child.id)")
+            }
+        }
+        .padding(.leading, DesignMetrics.Spacing.xl + DesignMetrics.Spacing.sm).padding(.trailing, DesignMetrics.Spacing.sm).padding(.bottom, DesignMetrics.Spacing.xs)
+        .frame(maxWidth: .infinity, alignment: .leading))
+    }
+
+    /// The card's actions in a child row's context menu.
+    @ViewBuilder private func childCardMenu(_ child: DelegationChildRow) -> some View {
+        ForEach(child.cardActions, id: \.self) { action in
+            Button(DelegationText.action(action), role: action == .discard ? .destructive : nil) { perform(action, child) }
+                .disabled(store.delegationCardBusy.contains(child.id))
+        }
+    }
+
+    private func perform(_ action: DelegationCardAction, _ child: DelegationChildRow) {
+        switch action {
+        case .merge: store.mergeChildFromCard(child.id)
+        case .undo: store.undoChildMergeFromCard(child.id)
+        case .discard: store.askToDiscardChild(child.id)
         }
     }
 
@@ -320,6 +385,8 @@ struct WorkspaceView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(L("delegation.child.accessibility", ["title": title, "state": status]))
         .accessibilityIdentifier("sidebar-child-\(child.id)")
+        .contentShape(Rectangle())
+        .contextMenu { childCardMenu(child) }
     }
 
     /// The children of a closed parent pane, kept under a node of their own.
@@ -786,5 +853,63 @@ enum DelegationText {
         case .closed: L("delegation.child.state.closed")
         case .discarded: L("delegation.child.state.discarded")
         }
+    }
+
+    /// A card action's button (`delegation.card.*`).
+    static func action(_ action: DelegationCardAction) -> String {
+        switch action {
+        case .merge: L("delegation.card.merge")
+        case .undo: L("delegation.card.undo")
+        case .discard: L("delegation.card.discard")
+        }
+    }
+
+    /// What a card action does to this child, for its help and accessibility.
+    static func actionHelp(_ action: DelegationCardAction, _ child: DelegationChildRow) -> String {
+        let branch = child.parentBranch.isEmpty ? L("delegation.card.parentBranch") : child.parentBranch
+        return switch action {
+        case .merge: L("delegation.card.mergeHelp", ["branch": branch])
+        case .undo: L("delegation.card.undoHelp", ["branch": branch])
+        case .discard: L("delegation.card.discardHelp", ["branch": ChildRecord.branchName(for: child.id)])
+        }
+    }
+
+    /// The card's line for its last answer, in its tone; nil when there is nothing to say.
+    static func note(_ note: DelegationCardNote, _ child: DelegationChildRow) -> (text: String, tone: DesignTone)? {
+        let branch = child.parentBranch.isEmpty ? L("delegation.card.parentBranch") : child.parentBranch
+        switch (note.action, note.result) {
+        case (.merge, .done): return (L("delegation.card.merged", ["branch": branch]), .done)
+        case (.undo, .done): return (L("delegation.card.undone", ["branch": branch]), .done)
+        case (.discard, .done): return nil
+        case (.merge, .refused(let reason)): return (L("delegation.card.mergeRefused", ["reason": Self.reason(reason)]), .wait)
+        case (.undo, .refused(let reason)): return (L("delegation.card.undoRefused", ["reason": Self.reason(reason)]), .wait)
+        case (.discard, .refused(let reason)): return (L("delegation.card.discardFailed", ["error": Self.reason(reason)]), .err)
+        case (.merge, .failed(let message)): return (L("delegation.card.mergeFailed", ["error": message]), .err)
+        case (.undo, .failed(let message)): return (L("delegation.card.undoFailed", ["error": message]), .err)
+        case (.discard, .failed(let message)): return (L("delegation.card.discardFailed", ["error": message]), .err)
+        }
+    }
+
+    /// Why a card's merge or undo was refused, ending in its reason code.
+    static func reason(_ reason: DelegationReasonCode) -> String {
+        switch reason {
+        case .notReported: L("delegation.reason.notReported")
+        case .branchNotCheckedOut: L("delegation.reason.branchNotCheckedOut")
+        case .trackedChanges: L("delegation.reason.trackedChanges")
+        case .mergeConflict: L("delegation.reason.mergeConflict")
+        case .undoParentMoved: L("delegation.reason.undoParentMoved")
+        case .parentBusy: L("delegation.reason.parentBusy")
+        default: L("delegation.reason.other", ["code": reason.rawValue])
+        }
+    }
+
+    /// The discard confirmation's text: what goes, and the nested worktrees that go with it.
+    static func discardMessage(_ pending: PendingChildDiscard) -> String {
+        let nested: String = switch pending.nested {
+        case nil: L("delegation.discard.nestedUnknown")
+        case let paths? where paths.isEmpty: L("delegation.discard.noNested")
+        case let paths?: L("delegation.discard.nested", ["count": "\(paths.count)", "paths": paths.joined(separator: "\n")])
+        }
+        return L("delegation.discard.message", ["title": pending.title, "branch": pending.branch]) + "\n\n" + nested
     }
 }

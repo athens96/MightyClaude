@@ -196,8 +196,9 @@ public actor DelegationCoordinator: DelegationRequestHandler {
     /// Children whose start is still going: delegate saved their record and
     /// ``startChild(_:base:task:)`` has not finished. A discard waits for it.
     var starting: Set<String> = []
-    /// Whether a tool merge is going. Merges take turns, so two never run git
-    /// in a parent's checkout at once; the others wait here, first come first.
+    /// Whether a merge (the tool's or a card's) or a card's undo is going.
+    /// They take turns, so two never run git in a parent's checkout at once;
+    /// the others wait here, first come first.
     var isMerging = false
     var mergeTurns: [CheckedContinuation<Void, Never>] = []
     /// Whether a run event of a child's pane (its start, its end, the parent
