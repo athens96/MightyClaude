@@ -204,9 +204,13 @@ public actor DelegationCoordinator: DelegationRequestHandler {
         switch tool {
         case DelegationToolManifest.delegate:
             return await delegate(task: arguments["task"] ?? "", mode: arguments["mode"] ?? "", caller: caller)
+        case DelegationToolManifest.listChildren:
+            return listChildren(caller: caller)
+        case DelegationToolManifest.childStatus:
+            return childStatus(arguments["child"] ?? "", caller: caller)
         default:
-            // Until their own rules land here, list_children, child_status,
-            // merge and follow_up answer that they are not available.
+            // Until their own rules land here, merge and follow_up answer that
+            // they are not available.
             return .failure(Self.notBuiltMessage(tool.name))
         }
     }

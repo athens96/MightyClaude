@@ -43,6 +43,8 @@ public final class DelegationMCPServer: @unchecked Sendable {
             let data = ["id": child.id, "state": child.state.rawValue, "branch": child.branch, "mode": child.startingMode]
             return ["content": [["type": "text", "text": text]], "structuredContent": ["child": data]]
         }
+        if let children = response.children { return result(children) }
+        if let status = response.status { return result(status) }
         return MCPStdioServer.toolError(response.error ?? "Mighty Claude did not answer the request.")
     }
 }

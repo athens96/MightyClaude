@@ -80,8 +80,14 @@ public struct DelegationResponse: Codable, Sendable, Equatable {
     /// The child the call is about: the one delegate just made, or the same
     /// one again when that call is repeated in the same parent run.
     public var child: DelegationChildInfo?
+    /// list_children's answer: the caller's children, possibly none.
+    public var children: [DelegationChildSummary]?
+    /// child_status's answer: one of the caller's children.
+    public var status: DelegationChildStatus?
 
-    public init(refused: DelegationReasonCode? = nil, error: String? = nil, child: DelegationChildInfo? = nil) { self.refused = refused; self.error = error; self.child = child }
+    public init(refused: DelegationReasonCode? = nil, error: String? = nil, child: DelegationChildInfo? = nil, children: [DelegationChildSummary]? = nil, status: DelegationChildStatus? = nil) {
+        self.refused = refused; self.error = error; self.child = child; self.children = children; self.status = status
+    }
 
     public static func refusal(_ reason: DelegationReasonCode) -> DelegationResponse { DelegationResponse(refused: reason) }
     public static func failure(_ message: String) -> DelegationResponse { DelegationResponse(error: message) }
