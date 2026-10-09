@@ -482,6 +482,9 @@ public actor ProcessRunner {
     /// Live per-pane tokens, shared with the socket server that resolves them.
     /// Memory only, revoked on pane close and on quit.
     private let paneMCPBindings: PaneMCPBindingRegistry
+    /// Whether the hidden delegation switch is on, asked at each Claude pane's
+    /// run start: that run then also gets the delegation server. Off unless given.
+    private let delegationEnabled: @Sendable () -> Bool
     /// Panes this runner minted tokens for, so shutdown revokes only its own.
     private var boundPaneIds = Set<String>()
     /// Where pictures from tool results are kept; nil leaves them out.
@@ -493,7 +496,7 @@ public actor ProcessRunner {
     /// `session_state_changed: idle` normally closes it first).
     private let backgroundIdleClose: Double
 
-    public init(providerService: ProviderService, pluginDirectory: URL, paneMCPServer: PaneMCPServerLocation? = nil, paneMCPBindings: PaneMCPBindingRegistry = PaneMCPBindingRegistry(), imageCache: AgentImageCache? = nil, liveRuns: LiveRunRegistry = LiveRunRegistry(), backgroundIdleClose: Double = 120, onEvent: @escaping @Sendable (RunEvent) -> Void) { self.providerService = providerService; self.pluginDirectory = pluginDirectory; self.paneMCPServer = paneMCPServer; self.paneMCPBindings = paneMCPBindings; self.imageCache = imageCache; self.liveRuns = liveRuns; self.backgroundIdleClose = backgroundIdleClose; self.onEvent = onEvent }
+    public init(providerService: ProviderService, pluginDirectory: URL, paneMCPServer: PaneMCPServerLocation? = nil, paneMCPBindings: PaneMCPBindingRegistry = PaneMCPBindingRegistry(), imageCache: AgentImageCache? = nil, liveRuns: LiveRunRegistry = LiveRunRegistry(), backgroundIdleClose: Double = 120, delegationEnabled: @escaping @Sendable () -> Bool = { false }, onEvent: @escaping @Sendable (RunEvent) -> Void) { self.providerService = providerService; self.pluginDirectory = pluginDirectory; self.paneMCPServer = paneMCPServer; self.paneMCPBindings = paneMCPBindings; self.imageCache = imageCache; self.liveRuns = liveRuns; self.backgroundIdleClose = backgroundIdleClose; self.delegationEnabled = delegationEnabled; self.onEvent = onEvent }
 
     /// Ends the pane's child right away, without waiting for this actor; the
     /// run's bookkeeping still needs `stop(id:)`. False when nothing ran.
@@ -555,9 +558,11 @@ public actor ProcessRunner {
                 let codexApprovals = request.provider == "codex" && request.settings.permissionMode == "onRequest"
                 // Every Claude and Codex run gets its own MCP server with a fresh random
                 // token bound to this agent pane alone. The token rides in the CLI
-                // environment only, never in argv.
+                // environment only, never in argv. While the hidden delegation switch
+                // is on, a Claude pane's run also gets the delegation server on that token.
                 let paneBinding = ["claude", "codex"].contains(request.provider) ? paneMCPServer.map {
-                    paneMCPBindings.bind(agentPaneId: request.sessionId, server: $0, workspaceId: workspace.id, workspacePath: workspace.path, provider: request.provider)
+                    paneMCPBindings.bind(agentPaneId: request.sessionId, server: $0, workspaceId: workspace.id, workspacePath: workspace.path, provider: request.provider,
+                                         kind: request.kind, delegation: DelegationSwitch.isClaudePane(kind: request.kind, provider: request.provider) && delegationEnabled())
                 } : nil
                 if let paneBinding { boundPaneIds.insert(request.sessionId); environment.merge(paneBinding.environment) { _, new in new } }
                 if request.provider == "codex" {

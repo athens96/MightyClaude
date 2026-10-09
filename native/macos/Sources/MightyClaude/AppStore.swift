@@ -283,7 +283,7 @@ final class AppStore: ObservableObject {
     /// batch, so a flood of output never queues ahead of a click.
     private let runEvents = RunEventBatcher(batchLimit: 32)
 
-    private lazy var runner = ProcessRunner(providerService: providers, pluginDirectory: pluginDirectory, paneMCPServer: agentIOLocation, paneMCPBindings: paneBindings, imageCache: imageCache, liveRuns: liveRuns) { [weak self, runEvents] event in
+    private lazy var runner = ProcessRunner(providerService: providers, pluginDirectory: pluginDirectory, paneMCPServer: agentIOLocation, paneMCPBindings: paneBindings, imageCache: imageCache, liveRuns: liveRuns, delegationEnabled: { DelegationSwitch.isOn() }) { [weak self, runEvents] event in
         if runEvents.push(event) { Task { @MainActor in self?.applyRunEvents() } }
     }
 

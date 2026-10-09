@@ -27,15 +27,22 @@ public struct PaneMCPBinding: Sendable, Equatable, CustomStringConvertible, Cust
     public let workspaceId: String
     public let workspacePath: String
     public let provider: String
+    /// The pane's kind. Bindings are only made for agent-pane runs.
+    public let kind: String
+    /// Whether this run also gets the delegation MCP server (``DelegationMCPServer``)
+    /// on the same token: only a Claude pane's run started while the hidden
+    /// ``DelegationSwitch`` was on.
+    public let delegation: Bool
 
-    public init(agentPaneId: String, token: String, server: PaneMCPServerLocation, workspaceId: String, workspacePath: String, provider: String) {
+    public init(agentPaneId: String, token: String, server: PaneMCPServerLocation, workspaceId: String, workspacePath: String, provider: String, kind: String = SessionKind.claude, delegation: Bool = false) {
         self.agentPaneId = agentPaneId; self.token = token; self.server = server
         self.workspaceId = workspaceId; self.workspacePath = workspacePath; self.provider = provider
+        self.kind = kind; self.delegation = delegation
     }
 
     /// Create a binding for one agent pane with a fresh 256-bit random token.
-    public static func generate(agentPaneId: String, server: PaneMCPServerLocation, workspaceId: String, workspacePath: String, provider: String) -> PaneMCPBinding {
-        PaneMCPBinding(agentPaneId: agentPaneId, token: randomToken(), server: server, workspaceId: workspaceId, workspacePath: workspacePath, provider: provider)
+    public static func generate(agentPaneId: String, server: PaneMCPServerLocation, workspaceId: String, workspacePath: String, provider: String, kind: String = SessionKind.claude, delegation: Bool = false) -> PaneMCPBinding {
+        PaneMCPBinding(agentPaneId: agentPaneId, token: randomToken(), server: server, workspaceId: workspaceId, workspacePath: workspacePath, provider: provider, kind: kind, delegation: delegation)
     }
 
     static func randomToken() -> String {
@@ -61,11 +68,13 @@ public struct PaneMCPBinding: Sendable, Equatable, CustomStringConvertible, Cust
 
     public var debugDescription: String { description }
 
-    /// The `--mcp-config` JSON for a Claude run. It names the server only; the
-    /// token and socket path arrive through the inherited environment.
+    /// The `--mcp-config` JSON for a Claude run. It names the servers only; the
+    /// token and socket path arrive through the inherited environment. The
+    /// delegation server is its own entry, so mighty-terminal keeps its four tools.
     func claudeMCPConfigJSON() throws -> String {
-        let server: [String: Any] = ["type": "stdio", "command": self.server.executable.path, "args": self.server.arguments]
-        let data = try JSONSerialization.data(withJSONObject: ["mcpServers": [PaneMCPBinding.serverName: server]], options: [.sortedKeys, .withoutEscapingSlashes])
+        var servers: [String: Any] = [PaneMCPBinding.serverName: ["type": "stdio", "command": server.executable.path, "args": server.arguments]]
+        if delegation { servers[DelegationMCPServer.serverName] = ["type": "stdio", "command": server.executable.path, "args": server.delegationArguments] }
+        let data = try JSONSerialization.data(withJSONObject: ["mcpServers": servers], options: [.sortedKeys, .withoutEscapingSlashes])
         return String(decoding: data, as: UTF8.self)
     }
 
@@ -115,8 +124,8 @@ public final class PaneMCPBindingRegistry: @unchecked Sendable {
     /// Mint a fresh binding for `agentPaneId`, replacing (and so revoking) any
     /// earlier token for the same pane. A reopened pane gets a new token.
     @discardableResult
-    public func bind(agentPaneId: String, server: PaneMCPServerLocation, workspaceId: String, workspacePath: String, provider: String) -> PaneMCPBinding {
-        let binding = PaneMCPBinding.generate(agentPaneId: agentPaneId, server: server, workspaceId: workspaceId, workspacePath: workspacePath, provider: provider)
+    public func bind(agentPaneId: String, server: PaneMCPServerLocation, workspaceId: String, workspacePath: String, provider: String, kind: String = SessionKind.claude, delegation: Bool = false) -> PaneMCPBinding {
+        let binding = PaneMCPBinding.generate(agentPaneId: agentPaneId, server: server, workspaceId: workspaceId, workspacePath: workspacePath, provider: provider, kind: kind, delegation: delegation)
         lock.lock(); bindingsByPane[agentPaneId] = binding; lock.unlock()
         return binding
     }
@@ -164,16 +173,18 @@ public final class PaneMCPBindingRegistry: @unchecked Sendable {
 
 /// How a CLI run launches the per-pane stdio MCP server, and the local socket
 /// it talks back to. Fixed for the app's lifetime; the token is what varies per pane.
-/// The server is the app binary itself in its headless `--agent-io-mcp` mode.
+/// The server is the app binary itself in its headless `--agent-io-mcp` mode, and
+/// the delegation server the same binary in its `--agent-delegation-mcp` mode.
 public struct PaneMCPServerLocation: Sendable, Equatable {
     public static let headlessArgument = "--agent-io-mcp"
 
     public let socketPath: String
     public let executable: URL
     public let arguments: [String]
+    public let delegationArguments: [String]
 
-    public init(socketPath: String, executable: URL, arguments: [String] = [PaneMCPServerLocation.headlessArgument]) {
-        self.socketPath = socketPath; self.executable = executable; self.arguments = arguments
+    public init(socketPath: String, executable: URL, arguments: [String] = [PaneMCPServerLocation.headlessArgument], delegationArguments: [String] = [DelegationMCPServer.headlessArgument]) {
+        self.socketPath = socketPath; self.executable = executable; self.arguments = arguments; self.delegationArguments = delegationArguments
     }
 }
 

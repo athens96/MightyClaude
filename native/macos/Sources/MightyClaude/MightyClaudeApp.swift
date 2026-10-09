@@ -17,6 +17,10 @@ enum MightyClaudeLauncher {
         if CommandLine.arguments.contains(PaneMCPServerLocation.headlessArgument) {
             AgentIOMCPCommand.run()
         }
+        // The delegation MCP server a Claude run gets while the hidden switch is on: stdio only, no GUI.
+        if CommandLine.arguments.contains(DelegationMCPServer.headlessArgument) {
+            DelegationMCPCommand.run()
+        }
         // Before AppKit reads the language it draws its own menus in. The help capture
         // gets its languages from the launch arguments and leaves the saved ones alone.
         if !CommandLine.arguments.contains(HelpCapture.argument) { AppLanguage.applyToSystemInterface() }

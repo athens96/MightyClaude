@@ -39,6 +39,38 @@ jobs:
           MIGHTY_UPDATE_URL: ${{ vars.MIGHTY_UPDATE_URL }}
           MIGHTY_UPDATE_PUBLIC_KEY: ${{ vars.MIGHTY_UPDATE_PUBLIC_KEY }}
         run: bash scripts/build-macos.sh
+      - name: Delegation server answers headlessly; mighty-terminal keeps its four tools
+        # The app binary as the two stdio MCP servers a run can launch. Only a Claude
+        # pane's run with the hidden delegation switch on names the second one.
+        if: (success() || failure()) && steps.build-app.outcome == 'success'
+        timeout-minutes: 2
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess, sys
+          app = "release/native-macos/MightyClaude.app/Contents/MacOS/MightyClaude"
+          env = {k: v for k, v in os.environ.items() if not k.startswith("MIGHTY_")}
+          requests = [
+              {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}},
+              {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+          ]
+          def ask(mode):
+              run = subprocess.run([app, mode], input="".join(json.dumps(r) + "\n" for r in requests),
+                                   capture_output=True, text=True, timeout=60, env=env)
+              answers = {a.get("id"): a.get("result", {}) for a in map(json.loads, filter(None, run.stdout.splitlines()))}
+              return run.returncode, answers.get(1, {}).get("serverInfo", {}).get("name"), [t.get("name") for t in answers.get(2, {}).get("tools", [])]
+          terminal = ask("--agent-io-mcp")
+          delegation = ask("--agent-delegation-mcp")
+          print(json.dumps({"terminal": terminal, "delegation": delegation}))
+          four = ["run_in_terminal", "read_latest_output", "stop", "open_url"]
+          problems = []
+          if terminal != (0, "mighty-terminal", four):
+              problems.append(f"--agent-io-mcp answered {terminal}")
+          if delegation[:2] != (0, "mighty-delegation") or set(delegation[2]) & set(four):
+              problems.append(f"--agent-delegation-mcp answered {delegation}")
+          for problem in problems:
+              print(f"::error title=macOS MCP servers::{problem}", flush=True)
+          sys.exit(1 if problems else 0)
+          PY
       - name: Smoke test isolated native profile
         if: success() || failure()
         timeout-minutes: 3
