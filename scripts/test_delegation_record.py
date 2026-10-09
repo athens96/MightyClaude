@@ -13,7 +13,7 @@ import sys
 import tempfile
 import unittest
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/delegation-record.py"
 FIXTURES = ROOT / "scripts/fixtures/delegation-record"
 GIT_ENV = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
