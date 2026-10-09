@@ -191,12 +191,19 @@ public actor DelegationCoordinator: DelegationRequestHandler {
     /// in the order they came, so each is recorded whole before the next.
     var isRecordingRun = false
     var runTurns: [CheckedContinuation<Void, Never>] = []
+    /// Whether a delivery pass is offering pending items to their panes, and
+    /// whether another pass was asked for meanwhile.
+    var isDelivering = false
+    var wantsDelivery = false
 
     /// Loads the delegation file from `store`; throws when it is unreadable.
     public init(store: DelegationFileStore, host: any DelegationHost, worktrees: ChildWorktreeMaker = ChildWorktreeMaker(), isSwitchOn: @escaping @Sendable () -> Bool = { DelegationSwitch.isOn() }, answerSeconds: TimeInterval = DelegationCoordinator.answerSeconds) throws {
         self.store = store; self.host = host; self.worktrees = worktrees; self.isSwitchOn = isSwitchOn
         self.answerSeconds = min(answerSeconds, Self.answerSeconds)
         file = try store.load()
+        // What the last launch left pending is held, never delivered on its
+        // own. The move only shortens the file, so it always fits.
+        if file.holdPending() { try? store.save(file) }
     }
 
     public nonisolated func handle(_ request: DelegationRequest, binding: PaneMCPBinding) async -> DelegationResponse {

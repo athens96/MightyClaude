@@ -305,11 +305,16 @@ struct DelegationActionToolTests {
         #expect(refusal["isError"] as? Bool == true)
         #expect(refusal["structuredContent"] as? [String: String] == ["refused": "follow_up_limit"])
 
-        // A relaunch from the same profile keeps both follow-ups and the limit.
+        // A relaunch from the same profile keeps both follow-ups and the limit;
+        // what was still pending at launch is held.
         let relaunched = try Fixture.makeCoordinator(store: fixture.store, host: fixture.host, place: place)
-        #expect(await relaunched.file == file)
+        var held = file
+        for index in held.followUps.indices { held.followUps[index].lane = .held }
+        #expect(await relaunched.file == held)
+        #expect(try fixture.store.load() == held)
+        let heldBytes = try fixture.fileBytes()
         #expect(await relaunched.handle(DelegationRequest(tool: "follow_up", arguments: ["child": "c1", "text": "Again."]), binding: fixture.binding("parent")) == .refusal(.followUpLimit))
-        #expect(try fixture.fileBytes() == bytes)
+        #expect(try fixture.fileBytes() == heldBytes)
     }
 
     @Test func followUpsAtOnceNeverPassTheLimit() async throws {

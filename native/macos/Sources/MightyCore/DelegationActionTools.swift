@@ -4,7 +4,8 @@ import Foundation
 public struct DelegationFollowUpInfo: Codable, Sendable, Equatable {
     public var id: String
     public var child: String
-    /// Pending until delivery hands it to the child, exactly once.
+    /// Where delivery has it as the call is answered: delivered, held, or
+    /// pending while the child's pane did not take it.
     public var lane: DeliveryLane
     /// How many more follow-ups the child may still get.
     public var remaining: Int
@@ -74,7 +75,8 @@ extension DelegationCoordinator {
     ///
     /// Every refusal changes nothing. Otherwise the follow-up is saved in the
     /// delegation file, pending, with its own id, and the child's count goes
-    /// up by one; delivery hands it to the child exactly once.
+    /// up by one; delivery then offers it to the child's pane and hands it
+    /// over exactly once.
     func followUp(_ id: String, text: String, caller: PaneMCPBinding) async -> DelegationResponse {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return .failure("follow_up needs a text: the instruction for the child.") }
         // Escapes only add bytes, so the UTF-8 size rules out a huge text before it is encoded.
@@ -104,7 +106,9 @@ extension DelegationCoordinator {
         } catch {
             return .failure("The delegation file could not be saved, so no follow-up was recorded.")
         }
-        return DelegationResponse(followUp: DelegationFollowUpInfo(followUp, remaining: Self.maximumFollowUps - count))
+        // Offered to the child's pane before the answer, which says where it went.
+        await deliverPending()
+        return DelegationResponse(followUp: DelegationFollowUpInfo(file.followUps.first { $0.id == followUp.id } ?? followUp, remaining: Self.maximumFollowUps - count))
     }
 
     /// Whether `id` names one of `caller`'s children.
