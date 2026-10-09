@@ -55,69 +55,99 @@ extension AppStore {
         Task { await delegation.deliverPending() }
     }
 
+    /// Where a send that goes with the pane's held items came from, and so
+    /// where it goes back when no run took it.
+    enum HeldSendOrigin {
+        /// The Mac composer: its draft and attachments go back to it.
+        case composer(draft: String)
+        /// The phone: it is told the send was dropped, and the Mac's error
+        /// banner is left as it was.
+        case phone
+        /// A queued request starting: back at the head of the queue.
+        case queue(QueuedInput)
+
+        var draft: String? { if case .composer(let draft) = self { draft } else { nil } }
+        var queued: QueuedInput? { if case .queue(let item) = self { item } else { nil } }
+    }
+
     /// The human's send of `input` in the idle pane `id` while items are held
-    /// for it: delegation releases them all, oldest first, ahead of `input`
-    /// and with its attachments, in one run. What the send did; from the
-    /// phone, the Mac's error banner is left as it was.
+    /// for it, from the composer, the phone or the queue: delegation releases
+    /// them all, oldest first, ahead of `input` and with its attachments, in
+    /// one run. What the send did.
     @discardableResult
-    func releaseHeld(_ id: String, input: String, attachments: [RunAttachment], restoringDraft: String?, fromPhone: Bool = false) -> Task<SubmitOutcome, Never> {
+    func releaseHeld(_ id: String, input: String, attachments: [RunAttachment], from origin: HeldSendOrigin) -> Task<SubmitOutcome, Never> {
         // Taken from the composer now, so a second Enter cannot send it again.
-        if restoringDraft != nil { drafts[id] = "" }
+        if origin.draft != nil { drafts[id] = "" }
         let submittedIds = Set(attachments.map(\.id))
         attachmentDrafts[id]?.removeAll { submittedIds.contains($0.id) }
         return Task { [weak self] in
             guard let self else { return .dropped }
             let macError = error
-            defer { if fromPhone { error = macError } }
-            guard let delegation else { return sendUnheld(id, input: input, attachments: attachments, restoringDraft: restoringDraft) }
+            defer { if case .phone = origin { error = macError } }
+            guard let delegation else { return sendUnheld(id, input: input, attachments: attachments, from: origin) }
             let release = await delegation.send(input, in: id) { [weak self] whole in
-                await self?.startDelivered(id, input: whole, attachments: attachments, restoringDraft: restoringDraft, titleFrom: input)
+                await self?.startDelivered(id, input: whole, attachments: attachments, restoringDraft: origin.draft, queued: origin.queued, titleFrom: input)
             }
             switch release {
             case .released: return .started
             // Released meanwhile by another send: this one goes as it would.
-            case .nothingHeld: return sendUnheld(id, input: input, attachments: attachments, restoringDraft: restoringDraft)
+            case .nothingHeld: return sendUnheld(id, input: input, attachments: attachments, from: origin)
             case .notStarted:
-                restoreSend(id, input: restoringDraft, attachments: attachments)
+                giveBack(id, attachments: attachments, from: origin)
                 return .dropped
             }
         }
     }
 
-    /// A run of `input` that delegation hands the pane: its id, or nil when
-    /// the pane cannot run now. A draft typed meanwhile is never cleared.
-    private func startDelivered(_ id: String, input: String, attachments: [RunAttachment], restoringDraft: String?, titleFrom: String) -> String? {
+    /// A run of `input` that delegation hands the pane: its id once the run's
+    /// process has it, or nil when the pane cannot run now or its start
+    /// failed or was stopped, so what it carried is not lost. A draft typed
+    /// meanwhile is never cleared.
+    private func startDelivered(_ id: String, input: String, attachments: [RunAttachment], restoringDraft: String?, queued: QueuedInput? = nil, titleFrom: String) async -> String? {
         guard !ending, let session = snapshot.sessions.first(where: { $0.id == id }),
               let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }),
               start(id, session: session, workspace: workspace, input: input, attachments: attachments,
-                    restoringDraft: (drafts[id] ?? "").isEmpty ? restoringDraft : nil, titleFrom: titleFrom) else { return nil }
-        return delegationRuns.runId(id)
+                    restoringDraft: (drafts[id] ?? "").isEmpty ? restoringDraft : nil, queued: queued, titleFrom: titleFrom) else { return nil }
+        let runId = delegationRuns.runId(id)
+        guard await startReachedRunner(id) else { return nil }
+        return runId
     }
 
     /// The human's send with nothing held: started now, or queued behind the
     /// run that is starting.
-    private func sendUnheld(_ id: String, input: String, attachments: [RunAttachment], restoringDraft: String?) -> SubmitOutcome {
+    private func sendUnheld(_ id: String, input: String, attachments: [RunAttachment], from origin: HeldSendOrigin) -> SubmitOutcome {
         guard let session = snapshot.sessions.first(where: { $0.id == id }), let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return .dropped }
         if session.status == "running" || pendingRuns.contains(id) {
+            if let item = origin.queued { queuedInputs[id, default: []].insert(item, at: 0); return .queued }
             let item = QueuedInput(text: input, attachments: attachments, permissionModeOverride: BackgroundQueuePolicy.queuedOverride(launchesInPlan: styleLaunchesInPlanMode(session)))
             switch deferInput(id, session: session, workspace: workspace, item: item, steering: false) {
             case .queued: return .queued
-            case .refused, .steering: return .dropped
+            case .refused, .steering:
+                giveBack(id, attachments: attachments, from: origin)
+                return .dropped
             }
         }
-        if start(id, session: session, workspace: workspace, input: input, attachments: attachments, restoringDraft: (drafts[id] ?? "").isEmpty ? restoringDraft : nil) { return .started }
-        restoreSend(id, input: restoringDraft, attachments: attachments)
+        if start(id, session: session, workspace: workspace, input: input, attachments: attachments,
+                 restoringDraft: (drafts[id] ?? "").isEmpty ? origin.draft : nil, queued: origin.queued) { return .started }
+        giveBack(id, attachments: attachments, from: origin)
         return .dropped
     }
 
-    /// Puts a send that started nothing back in the composer, unless
-    /// something was typed meanwhile.
-    private func restoreSend(_ id: String, input: String?, attachments: [RunAttachment]) {
+    /// Gives a send that no run took back where it came from: the composer,
+    /// unless something was typed meanwhile, or the head of the queue.
+    private func giveBack(_ id: String, attachments: [RunAttachment], from origin: HeldSendOrigin) {
         guard canEditAttachments(id) else { return }
-        if let input, (drafts[id] ?? "").isEmpty { drafts[id] = input }
-        let existing = Set((attachmentDrafts[id] ?? []).map(\.id))
-        let missing = attachments.filter { !existing.contains($0.id) }
-        if !missing.isEmpty { attachmentDrafts[id, default: []].insert(contentsOf: missing, at: 0) }
+        switch origin {
+        case .composer(let draft):
+            if (drafts[id] ?? "").isEmpty { drafts[id] = draft }
+            let existing = Set((attachmentDrafts[id] ?? []).map(\.id))
+            let missing = attachments.filter { !existing.contains($0.id) }
+            if !missing.isEmpty { attachmentDrafts[id, default: []].insert(contentsOf: missing, at: 0) }
+        case .queue(let item):
+            if queuedInputs[id]?.contains(where: { $0.id == item.id }) != true { queuedInputs[id, default: []].insert(item, at: 0) }
+            updateSession(id) { $0.logs.append(LogEntry(kind: "system", text: L("queue.log.keptAfterFailure", ["error": error ?? ""]))) }
+        case .phone: break
+        }
     }
 
     // MARK: DelegationHost
@@ -155,7 +185,7 @@ extension AppStore {
     /// nil when the pane cannot run now (a child without its worktree among them).
     /// Its words are delegation's, so they never title the pane.
     func startRun(sessionId: String, input: String) async -> String? {
-        startDelivered(sessionId, input: input, attachments: [], restoringDraft: nil, titleFrom: "")
+        await startDelivered(sessionId, input: input, attachments: [], restoringDraft: nil, titleFrom: "")
     }
 
     /// `input` steered into the pane's running Claude run, shown in its

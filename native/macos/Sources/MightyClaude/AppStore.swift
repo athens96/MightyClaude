@@ -257,7 +257,8 @@ final class AppStore: ObservableObject, DelegationHost {
     }, changed: { [weak self] key, previous, refreshed in
         self?.acceptLocalModels(key, previous: previous, refreshed: refreshed)
     })
-    private var startTasks: [String: Task<Void, Never>] = [:]
+    /// Each pane's run start, which answers whether the run's process got its input.
+    private var startTasks: [String: Task<Bool, Never>] = [:]
     private(set) var closingSessions = Set<String>()
     private var draftRevisions: [String: UInt64] = [:]
     var attachmentTasks: [String: Task<Void, Never>] = [:]
@@ -733,7 +734,7 @@ final class AppStore: ObservableObject, DelegationHost {
             return
         }
         // Items held for the pane go first, in this one run.
-        if !(delegationHeld[id] ?? []).isEmpty { releaseHeld(id, input: input, attachments: attachments, restoringDraft: originalDraft); return }
+        if !(delegationHeld[id] ?? []).isEmpty { releaseHeld(id, input: input, attachments: attachments, from: .composer(draft: originalDraft)); return }
         start(id, session: session, workspace: workspace, input: input, attachments: attachments, restoringDraft: originalDraft)
     }
 
@@ -843,7 +844,10 @@ final class AppStore: ObservableObject, DelegationHost {
         }
     }
 
-    private func runNextQueuedRow(_ id: String) {
+    /// Runs the first queued row now, as a run that ended would: items held
+    /// for the pane go ahead of it in its run. A background update's end
+    /// drains its queues this way.
+    func runNextQueuedRow(_ id: String) {
         guard let session = snapshot.sessions.first(where: { $0.id == id }), session.status != "running", !pendingRuns.contains(id) else { return }
         settleQueue(id, status: "completed")
     }
@@ -863,6 +867,8 @@ final class AppStore: ObservableObject, DelegationHost {
                 return
             }
             queuedInputs[id] = queue.count > 1 ? Array(queue.dropFirst()) : nil
+            // Items held for the pane go first, in this request's run.
+            if !(delegationHeld[id] ?? []).isEmpty { releaseHeld(id, input: next.text, attachments: next.attachments, from: .queue(next)); return }
             if !start(id, session: session, workspace: workspace, input: next.text, attachments: next.attachments, restoringDraft: nil, queued: next) {
                 // Validation refused it; keep the item so nothing typed is lost.
                 queuedInputs[id, default: []].insert(next, at: 0)
@@ -922,6 +928,7 @@ final class AppStore: ObservableObject, DelegationHost {
             if let shortened = autoTitle { $0.title = shortened }
         }
         startTasks[id] = Task {
+            var reachedRunner = false
             do {
                 try await prepareLocalModels(for: session)
                 try Task.checkCancellation()
@@ -959,6 +966,7 @@ final class AppStore: ObservableObject, DelegationHost {
                 // A child's run, its terminal tool and its MCP binding work in its worktree folder.
                 try await runner.start(request: request, workspace: DelegationPanes.runWorkspace(for: current, in: currentWorkspace),
                                        allowPermissionPrompts: current.kind == "claude" && (current.provider == "claude" || (current.provider == "codex" && current.settings.permissionMode == "onRequest")))
+                reachedRunner = true
             } catch {
                 if let restoringDraft, draftRevisions[id, default: 0] == submittedRevision, (drafts[id] ?? "").isEmpty, canEditAttachments(id) {
                     drafts[id] = restoringDraft
@@ -979,8 +987,16 @@ final class AppStore: ObservableObject, DelegationHost {
             // Up now: a notice its start could not take yet is steered in.
             if snapshot.sessions.first(where: { $0.id == id })?.status == "running" { offerDelegationPending() }
             settleQueue(id, status: snapshot.sessions.first { $0.id == id }?.status ?? "idle")
+            return reachedRunner
         }
         return true
+    }
+
+    /// Whether the run `start` just began in the pane `id` reached its
+    /// process with its input; waits until its start is over.
+    func startReachedRunner(_ id: String) async -> Bool {
+        guard let starting = startTasks[id] else { return false }
+        return await starting.value
     }
 
     func stop(_ id: String) async {
@@ -995,7 +1011,7 @@ final class AppStore: ObservableObject, DelegationHost {
         let starting = startTasks[id]
         starting?.cancel()
         await runner.stop(id: id)
-        await starting?.value
+        _ = await starting?.value
     }
 
     func apply(_ event: RunEvent) {
@@ -1230,7 +1246,7 @@ final class AppStore: ObservableObject, DelegationHost {
         stopAgentIO()
         // Processes started from agent terminal panes stop with the app (bounded to about 1 s).
         await AgentProcessRegistry.shared.terminateAll()
-        for task in starting { await task.value }
+        for task in starting { _ = await task.value }
         // Process callbacks enqueue onto the main actor. Let terminal events settle before the final save.
         try? await Task.sleep(for: .milliseconds(60))
         // Children whose runs quitting ended are recorded interrupted, with no notice.
