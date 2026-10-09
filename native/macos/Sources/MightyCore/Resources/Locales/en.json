@@ -799,6 +799,7 @@
   "run.blocked.onRequestNeedsUpdate": "Update to Codex CLI 0.153.4 or later to use Ask for approval.",
   "run.blocked.selectWorkspace": "Select a workspace.",
   "run.blocked.updatingCLI": "Updating the {provider} CLI. Send once it finishes.",
+  "run.blocked.worktreeMissing": "This child pane's worktree is missing, so it cannot run (worktree_missing).",
   "run.error.alreadyRunning": "A run is already active in this session.",
   "run.error.attachmentCleanupFailed": "Run completed but temporary attachment copy could not be deleted.",
   "run.error.attachmentCleanupForbidden": "Run completed but permission was denied to delete the temporary attachment copy.",

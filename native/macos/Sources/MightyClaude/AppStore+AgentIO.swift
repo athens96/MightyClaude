@@ -71,8 +71,11 @@ extension AppStore {
             }
         }
         // Delegation calls share the socket and the pane tokens. They reach
-        // nothing while the hidden switch is off, and only Claude panes may make them.
-        let server = AgentIOSocketServer(socketPath: socketPath, bindings: paneBindings, handler: handler, delegation: DelegationIOHandler())
+        // nothing while the hidden switch is off, and only Claude panes may
+        // make them. Without its coordinator (an unreadable delegation file)
+        // they reach no tool.
+        let delegationHandler: any DelegationRequestHandler = delegation.map { $0 as any DelegationRequestHandler } ?? DelegationIOHandler()
+        let server = AgentIOSocketServer(socketPath: socketPath, bindings: paneBindings, handler: handler, delegation: delegationHandler)
         do {
             try server.start()
             agentIOServer = server

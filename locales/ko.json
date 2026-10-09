@@ -799,6 +799,7 @@
   "run.blocked.onRequestNeedsUpdate": "승인 요청을 사용하려면 Codex CLI 0.153.4 이상으로 업데이트하세요.",
   "run.blocked.selectWorkspace": "워크스페이스를 선택하세요.",
   "run.blocked.updatingCLI": "{provider} CLI를 업데이트하고 있습니다. 완료 후 전송하세요.",
+  "run.blocked.worktreeMissing": "이 자식 창의 worktree가 없어 실행할 수 없습니다 (worktree_missing).",
   "run.error.alreadyRunning": "이미 실행 중인 창입니다.",
   "run.error.attachmentCleanupFailed": "실행은 종료했지만 첨부 임시 사본을 삭제하지 못했습니다.",
   "run.error.attachmentCleanupForbidden": "실행은 종료했지만 첨부 임시 사본을 삭제할 권한이 없습니다.",
