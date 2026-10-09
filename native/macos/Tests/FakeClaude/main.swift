@@ -28,6 +28,9 @@ import MightyCore
 //    "server": "mighty-delegation", "ask": true}  (default mighty-delegation),
 //                                                asked for first when `ask`
 //   {"permission": "Bash", "input": {...}}       a built-in tool use, asked for
+//   {"bash": "git commit ...", "ask": true}      a Bash tool use that runs its
+//                                                command in the working folder,
+//                                                asked for first when `ask`
 //   {"write": "REPORT.md", "text": "..."}        a file under the working folder
 //   {"sleep": 0.5}                               seconds
 //   {"exit": 3}                                  leave at once with this code
@@ -60,6 +63,7 @@ struct Step: Decodable {
     var ask: Bool?
     var permission: String?
     var input: [String: String]?
+    var bash: String?
     var write: String?
     var text: String?
     var sleep: Double?
@@ -292,6 +296,16 @@ final class FakeClaude {
                 } else {
                     toolResult(id, content: [["type": "text", "text": "\(tool) ran."]], isError: false)
                 }
+            } else if let command = step.bash {
+                let input = ["command": command]
+                let id = nextToolUseId()
+                assistant([["type": "tool_use", "id": id, "name": "Bash", "input": input]])
+                if step.ask == true, let denial = ask("Bash", input: input, toolUseId: id) {
+                    toolResult(id, content: [["type": "text", "text": denial]], isError: true); continue
+                }
+                let (code, output) = shell(command)
+                log(["event": "bash", "command": command, "code": Int(code)])
+                toolResult(id, content: [["type": "text", "text": output]], isError: code != 0)
             } else if let path = step.write {
                 let url = URL(fileURLWithPath: path, relativeTo: URL(fileURLWithPath: cwd, isDirectory: true))
                 try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -331,6 +345,21 @@ final class FakeClaude {
         if let updated = decision["updatedInput"] { entry["updatedInput"] = updated }
         log(entry)
         return behavior == "allow" ? nil : decision["message"] as? String ?? "Permission to use \(tool) was denied."
+    }
+
+    /// Runs `command` with /bin/sh in the working folder and the inherited
+    /// environment, as the CLI's Bash tool does: its exit code and output.
+    private func shell(_ command: String) -> (Int32, String) {
+        let process = Process(), output = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", command]
+        process.currentDirectoryURL = URL(fileURLWithPath: cwd, isDirectory: true)
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = output; process.standardError = output
+        do { try process.run() } catch { return (127, error.localizedDescription) }
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        return (process.terminationStatus, String(decoding: data, as: UTF8.self))
     }
 
     // MARK: Output

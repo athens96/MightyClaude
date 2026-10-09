@@ -6,7 +6,7 @@ import Testing
 /// The FakeClaude fixture built beside this test bundle, copied into `folder`
 /// as `claude` and signed ad hoc: some toolchains leave a plain executable
 /// unsigned, and an unsigned arm64 binary is killed at launch.
-private func fakeClaudeExecutable(in folder: URL) throws -> URL {
+func fakeClaudeExecutable(in folder: URL) throws -> URL {
     var info = Dl_info()
     guard dladdr(#dsohandle, &info) != 0, let image = info.dli_fname else { throw MightyError("The test bundle's path is unknown.") }
     var directory = URL(fileURLWithPath: String(cString: image)).deletingLastPathComponent()
@@ -28,7 +28,7 @@ private func fakeClaudeExecutable(in folder: URL) throws -> URL {
     return copy
 }
 
-private func jsonLines(_ url: URL) -> [[String: Any]] {
+func jsonLines(_ url: URL) -> [[String: Any]] {
     let text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
     return text.split(separator: "\n").compactMap { (try? JSONSerialization.jsonObject(with: Data($0.utf8))) as? [String: Any] }
 }
@@ -270,7 +270,7 @@ private final class EventLog: @unchecked Sendable {
     }
 }
 
-private func optionValue(_ option: String, _ arguments: [String]) -> String? {
+func optionValue(_ option: String, _ arguments: [String]) -> String? {
     guard let index = arguments.firstIndex(of: option), index + 1 < arguments.count else { return nil }
     return arguments[index + 1]
 }
