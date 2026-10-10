@@ -92,12 +92,13 @@ extension DelegationFile {
 /// A new item is offered to its pane at once, by the first rule that applies:
 ///
 /// 1. The pane runs Claude now: the item is steered into that run.
-/// 2. The pane is idle after a run that finished normally since this launch:
-///    the item starts its next run.
+/// 2. The pane is idle after a run that finished normally since this launch,
+///    and a run can start in it now: the item starts its next run.
 /// 3. Otherwise (the pane stopped, errored, has had no run since this launch,
-///    or is closed) the item is held. Only the human's next send or run next
-///    releases it, all of the pane's held items together, oldest first, in
-///    one run. A closed parent's held notices stay on its children's cards.
+///    cannot start a run now, or is closed) the item is held. Only the
+///    human's next send or run next releases it, all of the pane's held items
+///    together, oldest first, in one run. A closed parent's held notices stay
+///    on its children's cards.
 ///
 /// Before a pane gets an item, the item is saved delivered with its receipt,
 /// so it is never handed over twice; should the pane not take it after all,

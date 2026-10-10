@@ -40,9 +40,16 @@ public enum DelegationPanes {
     }
 
     /// The pane `session` of `workspace` as the coordinator reads it.
-    public static func paneState(of session: RunSession, in workspace: Workspace, runId: String?, activity: DelegationPaneActivity) -> DelegationPaneState {
+    /// `startRefused` says the app's start would refuse a run in the pane now:
+    /// a Claude model reset or a CLI update is going, the pane is blocked (a
+    /// child without its worktree among others), or its request does not
+    /// validate. A pane idle after a normal finish then reads as idle, so
+    /// what comes for it is held as a row of its queued list instead of being
+    /// handed a run the app would refuse. A running pane still reads as running.
+    public static func paneState(of session: RunSession, in workspace: Workspace, runId: String?, activity: DelegationPaneActivity, startRefused: Bool = false) -> DelegationPaneState {
         DelegationPaneState(sessionId: session.id, kind: session.kind, provider: session.provider, permissionMode: session.settings.permissionMode,
-                            folder: runWorkspace(for: session, in: workspace).path, parentSessionId: session.parentSessionId, runId: runId, activity: activity)
+                            folder: runWorkspace(for: session, in: workspace).path, parentSessionId: session.parentSessionId, runId: runId,
+                            activity: activity == .finished && startRefused ? .idle : activity)
     }
 }
 

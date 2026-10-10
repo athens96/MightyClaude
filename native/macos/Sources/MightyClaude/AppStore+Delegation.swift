@@ -360,11 +360,19 @@ extension AppStore {
         }
     }
 
+    /// The pane as delegation reads it. One idle after a normal finish whose
+    /// start would be refused now (a CLI update, a Claude model reset, a
+    /// child without its worktree…) reads as idle, so what comes for it is
+    /// held as a row of its queued list instead of waiting unseen for a run
+    /// it cannot take. Every notice and follow-up is a valid run input, so
+    /// the start is asked about with a stand-in for its words.
     func paneState(sessionId: String) async -> DelegationPaneState? {
         guard !closingSessions.contains(sessionId), let session = snapshot.sessions.first(where: { $0.id == sessionId }),
               let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return nil }
         let running = session.status == "running" || pendingRuns.contains(sessionId)
-        return DelegationPanes.paneState(of: session, in: workspace, runId: delegationRuns.runId(sessionId), activity: delegationRuns.activity(sessionId, running: running))
+        let activity = delegationRuns.activity(sessionId, running: running)
+        let refused = activity == .finished && startRefusal(session, in: workspace, input: "notice", attachments: []) != nil
+        return DelegationPanes.paneState(of: session, in: workspace, runId: delegationRuns.runId(sessionId), activity: activity, startRefused: refused)
     }
 
     func stopRun(sessionId: String) async { await stop(sessionId) }
