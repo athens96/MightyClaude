@@ -285,4 +285,30 @@ private struct Profile {
         #expect(host.handed.isEmpty)
         #expect(try profile.store.load() == file)
     }
+
+    @Test func twoHeldFollowUpsAtTheMostAFollowUpMayTakeFitTheOneRunThatRunNextReleasesThemIn() async throws {
+        let profile = try Profile.make()
+        defer { profile.remove() }
+        let (host, coordinator) = try await profile.launch("launch1")
+        host.set("parent", .running, runId: "p-run")
+        // c1's pane is idle after a stop, so both follow-ups are held; each is as long as follow_up takes.
+        #expect(DelegationCoordinator.maximumFollowUpBytes == 49_152)
+        let longest = String(repeating: "x", count: DelegationCoordinator.maximumFollowUpBytes)
+        let first = try #require(await profile.followUp(longest, on: coordinator).followUp)
+        let second = try #require(await profile.followUp(longest, on: coordinator).followUp)
+        #expect(first.lane == .held && second.lane == .held && second.remaining == 0)
+        #expect(host.handed.isEmpty)
+
+        // Run next releases both, oldest first, in one run whose input the app's start accepts.
+        let release = await coordinator.runNext(in: "c1")
+        #expect(release == .released(runId: "launch1-run-1", itemIds: [first.id, second.id]))
+        let run = try #require(host.handed.first)
+        #expect(host.handed.count == 1 && run.sessionId == "c1" && run.route == nil)
+        let texts = [try await profile.text(of: first.id, in: coordinator), try await profile.text(of: second.id, in: coordinator)]
+        #expect(run.input == texts.joined(separator: "\n\n"))
+        let request = StartRunRequest(sessionId: "c1", workspaceId: "ws-1", kind: SessionKind.claude, input: run.input, provider: "claude",
+                                      settings: RunSettings(permissionMode: "acceptEdits"))
+        #expect(throws: Never.self) { try CoreValidation.validate(request) }
+        #expect(await coordinator.heldItems(for: "c1").isEmpty)
+    }
 }
