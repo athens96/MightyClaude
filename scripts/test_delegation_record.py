@@ -304,6 +304,21 @@ class MalformedRecordTests(unittest.TestCase):
         answer = json.loads(result.stdout)
         self.assertEqual(answer["verdict"], "invalid")
         self.assertIn("unexpected shape", answer["reason"])
+        self.assertIn(", line ", answer["reason"])
+
+    def test_files_that_cannot_be_read_are_invalid_rather_than_a_crash(self):
+        # With no git on the PATH the repository cannot be read.
+        with tempfile.TemporaryDirectory(prefix="mighty-record-") as folder:
+            root = Path(folder).resolve()
+            materialize(FIXTURES / "s1-like", root)
+            result = subprocess.run([sys.executable, str(SCRIPT), "--profile", str(root / "profile"), "--repo", str(root / "repo"),
+                                     "--claude-dir", str(root / "claude"), "--json"], capture_output=True, text=True,
+                                    env={**os.environ, "PATH": str(root / "no-such-bin")})
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        answer = json.loads(result.stdout)
+        self.assertEqual(answer["verdict"], "invalid")
+        self.assertIn("could not be read", answer["reason"])
 
 
 if __name__ == "__main__":

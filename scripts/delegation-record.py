@@ -31,6 +31,7 @@ import json
 import os
 import subprocess
 import sys
+import traceback
 from pathlib import Path
 
 DELEGATION_FILE = "delegation-state.json"
@@ -453,9 +454,13 @@ def main(argv=None):
         verdict, reason = ("failed" if failed else "passed"), None
     except Invalid as error:
         failures, failed, verdict, reason = None, [], "invalid", str(error)
-    except (TypeError, ValueError, AttributeError, KeyError) as error:
-        # A shape the checks above did not foresee: not judged, never a crash.
-        failures, failed, verdict, reason = None, [], "invalid", f"a record has an unexpected shape ({type(error).__name__}: {error})"
+    except (TypeError, ValueError, AttributeError, KeyError, OSError) as error:
+        # A shape the checks above did not foresee, or files that cannot be
+        # read (git missing among them): not judged, never a crash, and the
+        # reason names where it stopped.
+        frame = traceback.extract_tb(error.__traceback__)[-1]
+        what = "the run's files could not be read" if isinstance(error, OSError) else "a record has an unexpected shape"
+        failures, failed, verdict, reason = None, [], "invalid", f"{what} ({type(error).__name__}: {error}; {frame.name}, line {frame.lineno})"
     if args.json:
         rules = [{"rule": name, "checks": text, "result": "skipped" if failures is None else ("failed" if failures[name] else "passed"),
                   "details": [] if failures is None else failures[name]} for name, text in RULES]
