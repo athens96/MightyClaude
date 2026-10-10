@@ -1310,6 +1310,8 @@
   "delegation.card.error.parentCheckoutUnknown": "親フォルダーがわからないため、何も削除していません。",
   "delegation.card.error.parentCheckoutUnreachable": "Git が親フォルダーにアクセスできなかったため、何も削除していません。",
   "delegation.card.error.notSaved": "委任の記録を保存できなかったため、何も削除していません。",
+  "delegation.card.error.fileFull": "委任の記録ファイルが 4 MiB の上限に達しています",
+  "delegation.card.error.fileUnreadable": "ディスク上の委任の記録ファイルを読み取れません",
   "delegation.card.error.worktreeMisplaced": "子ペインの worktree が worktree フォルダーの下の本来の場所にないため、何も削除していません。",
   "delegation.reason.notReported": "子ペインがまだ報告していないか、その後にもう一度実行されました (not_reported)。",
   "delegation.reason.branchNotCheckedOut": "記録された親ブランチが親フォルダーでチェックアウトされていません (branch_not_checked_out)。",

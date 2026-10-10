@@ -68,7 +68,8 @@ struct DelegationCardTests {
         #expect(chmod(profile.path, 0o500) == 0)
         defer { _ = chmod(profile.path, 0o700) }
         guard case .mergedUnsaved(let record, let error) = await coordinator.mergeFromCard("c1") else { Issue.record("not merged unsaved"); return }
-        #expect(!error.isEmpty)
+        // The reason sits inside the card's sentence, so it brings no closing stop of its own.
+        #expect(!error.isEmpty && !error.hasSuffix(".") && !error.hasSuffix("。"))
         #expect(try await place.git(["rev-parse", "HEAD"]) == head)
         #expect(await coordinator.file.merges == [record])
         #expect(await DelegationSidebar.rows(coordinator.file).map(\.state) == [.merged])
@@ -86,6 +87,13 @@ struct DelegationCardTests {
         #expect(!undoError.isEmpty)
         #expect(await coordinator.file.merges.isEmpty)
         #expect(try store(place).load().merges == [record])
+    }
+
+    @Test func anUnsavedFilesReasonReadsAsWordsForTheCardAndTheAgent() {
+        #expect(DelegationCoordinator.unsavedReason(DelegationFileError.full) == L("delegation.card.error.fileFull"))
+        #expect(DelegationCoordinator.unsavedReason(DelegationFileError.unreadable) == L("delegation.card.error.fileUnreadable"))
+        #expect(DelegationCoordinator.unsavedReasonForAgent(DelegationFileError.full) == "the delegation file is at its 4 MiB cap")
+        #expect(DelegationCoordinator.unsavedReason(CocoaError(.fileWriteNoPermission)).hasSuffix(".") == false)
     }
 
     @Test func refusesWithItsReasonAndChangesNothing() async throws {

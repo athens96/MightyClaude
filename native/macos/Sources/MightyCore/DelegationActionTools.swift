@@ -60,7 +60,7 @@ extension DelegationCoordinator {
             if !file.recordMerge(record), file.children.contains(where: { $0.id == record.childId }) { file.merges.append(record) }
             let context = await pruneContext()
             do { try commit(file, context: context) } catch {
-                return .failure("The child is merged: \(record.parentBranch) now points at \(record.mergedCommit), and the app keeps the merge on record, but the delegation file could not be saved (\(error.localizedDescription)). It is saved with the next change. Do not merge this child again.")
+                return .failure("The child is merged: \(record.parentBranch) now points at \(record.mergedCommit), and the app keeps the merge on record, but the delegation file could not be saved (\(Self.unsavedReasonForAgent(error))). Mighty Claude saves it again by itself; nothing is needed from you. Do not merge this child again.")
             }
             return DelegationResponse(merged: record)
         }

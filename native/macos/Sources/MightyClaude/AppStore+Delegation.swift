@@ -205,7 +205,8 @@ extension AppStore {
     /// children asks first, in the view layer, and then closes only the
     /// parent; any other pane closes now. The phone's close never asks.
     func requestCloseSession(_ id: String) {
-        let open = DelegationSidebar.openChildCount(of: id, children: delegationChildren, sessions: snapshot.sessions)
+        // A pane already closing, a discarded child's among them, is no open child.
+        let open = DelegationSidebar.openChildCount(of: id, children: delegationChildren, sessions: snapshot.sessions.filter { !closingSessions.contains($0.id) })
         guard open > 0, let session = snapshot.sessions.first(where: { $0.id == id }) else { closeSession(id); return }
         guard pendingParentClose == nil else { return }
         pendingParentClose = PendingParentClose(id: id, title: session.title, openChildren: open)

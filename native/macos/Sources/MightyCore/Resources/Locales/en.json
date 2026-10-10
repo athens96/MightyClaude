@@ -1310,6 +1310,8 @@
   "delegation.card.error.parentCheckoutUnknown": "the parent's folder is not known, so nothing was removed.",
   "delegation.card.error.parentCheckoutUnreachable": "Git could not reach the parent's folder, so nothing was removed.",
   "delegation.card.error.notSaved": "the delegation records could not be saved, so nothing was removed.",
+  "delegation.card.error.fileFull": "the delegation record file is at its 4 MiB cap",
+  "delegation.card.error.fileUnreadable": "the delegation record file on disk cannot be read",
   "delegation.card.error.worktreeMisplaced": "the child's worktree is not in its own place under the worktrees folder, so nothing was removed.",
   "delegation.reason.notReported": "the child has not reported, or has run again since (not_reported).",
   "delegation.reason.branchNotCheckedOut": "the recorded parent branch is not checked out in the parent's folder (branch_not_checked_out).",
