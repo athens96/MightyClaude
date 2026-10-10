@@ -145,10 +145,11 @@ private func waitUntil(timeout: TimeInterval = 60, _ condition: () async -> Bool
         try FileManager.default.createDirectory(at: plugin.appendingPathComponent(".claude-plugin"), withIntermediateDirectories: true)
         try Data("{\"name\":\"mighty\"}".utf8).write(to: plugin.appendingPathComponent(".claude-plugin/plugin.json"))
         let bindings = PaneMCPBindingRegistry()
+        // A busy CI runner may take longer than the app's 4 s for the fake's --version.
         let service = ProviderService(binaryOverrides: ["claude": fake], environment: [
             "PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": root.path, "CLAUDE_CONFIG_DIR": config.path,
             "FAKE_CLAUDE_SCRIPT": script.path, "FAKE_CLAUDE_LOG": root.appendingPathComponent("fake.jsonl").path,
-        ])
+        ], versionProbeTimeout: 60)
         let statuses = Shared<[String]>([])
         let runner = ProcessRunner(providerService: service, pluginDirectory: plugin, paneMCPServer: PaneMCPServerLocation(socketPath: root.appendingPathComponent("io.sock").path, executable: fake),
                                    paneMCPBindings: bindings, delegationEnabled: { false }, onEvent: { event in

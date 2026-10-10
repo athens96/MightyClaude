@@ -124,10 +124,11 @@ private final class EventLog: @unchecked Sendable {
             // The app-written config names the fixture in the app binary's
             // headless server modes, so the real MCP servers answer.
             let location = PaneMCPServerLocation(socketPath: socketPath, executable: fake)
+            // A busy CI runner may take longer than the app's 4 s for the fake's --version.
             let service = ProviderService(binaryOverrides: ["claude": fake], environment: [
                 "PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": root.path, "CLAUDE_CONFIG_DIR": config.path,
                 "FAKE_CLAUDE_SCRIPT": script.path, "FAKE_CLAUDE_LOG": log.path,
-            ])
+            ], versionProbeTimeout: 60)
             let events = events
             runner = ProcessRunner(providerService: service, pluginDirectory: plugin, paneMCPServer: location, paneMCPBindings: bindings,
                                    delegationEnabled: { true }, onEvent: { events.append($0) })

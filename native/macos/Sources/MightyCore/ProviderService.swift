@@ -11,6 +11,8 @@ public actor ProviderService {
     private let binaryOverrides: [String: URL]
     private let fixedEnvironment: [String: String]?
     private let environmentResolver: CLIEnvironmentResolver
+    /// How long a CLI's `--version` may take before that CLI counts as not found.
+    private let versionProbeTimeout: TimeInterval
     private struct CommandEntry {
         var id: UUID
         var created: Date
@@ -30,7 +32,7 @@ public actor ProviderService {
     private var catalogs: [CatalogKey: CatalogEntry] = [:]
     private var cacheGeneration = 0
     private var closing = false
-    public init(binaryOverrides: [String: URL] = [:], environment: [String: String]? = nil, environmentResolver: CLIEnvironmentResolver = .shared) { self.binaryOverrides = binaryOverrides; self.fixedEnvironment = environment; self.environmentResolver = environmentResolver }
+    public init(binaryOverrides: [String: URL] = [:], environment: [String: String]? = nil, environmentResolver: CLIEnvironmentResolver = .shared, versionProbeTimeout: TimeInterval = 4) { self.binaryOverrides = binaryOverrides; self.fixedEnvironment = environment; self.environmentResolver = environmentResolver; self.versionProbeTimeout = versionProbeTimeout }
 
     public nonisolated static func runtimeEnvironment() -> [String: String] {
         var env = ProcessInfo.processInfo.environment
@@ -91,13 +93,13 @@ public actor ProviderService {
             if commands[key] == nil, commands.count >= 64, let oldest = commands.min(by: { $0.value.created < $1.value.created }) {
                 commands.removeValue(forKey: oldest.key)?.task.cancel()
             }
-            let override = binaryOverrides[provider], env = snapshot.values
+            let override = binaryOverrides[provider], env = snapshot.values, probeTimeout = versionProbeTimeout
             let task = Task<ProviderCommand?, Never> {
                 let paths = override.map { [$0] } ?? (env["PATH"] ?? "").split(separator: ":").prefix(64).map { URL(fileURLWithPath: String($0)).appendingPathComponent(provider) }
                 for path in paths {
                     if Task.isCancelled { return nil }
                     guard FileManager.default.isExecutableFile(atPath: path.path) else { continue }
-                    if let result = try? await ProcessCapture.run(executable: path, arguments: ["--version"], environment: env, timeout: 4, maximumBytes: 16_384), result.exitCode == 0 {
+                    if let result = try? await ProcessCapture.run(executable: path, arguments: ["--version"], environment: env, timeout: probeTimeout, maximumBytes: 16_384), result.exitCode == 0 {
                         let version = String(String(decoding: result.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines).prefix(160))
                         if !version.isEmpty { return ProviderCommand(provider: provider, executable: path, version: version) }
                     }
