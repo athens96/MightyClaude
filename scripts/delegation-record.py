@@ -15,7 +15,10 @@ Nothing is written: git runs only read commands, without optional locks.
 In a transcript only the prompts the model received count: user lines with
 text, and queued commands taken into a running turn (a steer). The CLI's
 queue-operation and last-prompt lines repeat a prompt without delivering it,
-and an assistant line may quote one; neither counts.
+and an assistant line may quote one; neither counts. Nor do background-task
+notifications and other agents' (peer) messages, which the app never sends: a
+user line with promptSource "system" or a task-notification or peer origin,
+and a queued command that is not in prompt mode, is meta or has such an origin.
 
 Verdicts: passed (exit 0), failed (exit 1, naming each failed rule), invalid
 (exit 2) when the record cannot be judged: a profile file is missing or
@@ -44,6 +47,9 @@ LANES = {"pending", "held", "delivered"}
 ROUTES = {"steer", "queue"}
 NOTICE_KINDS = {"reported", "ended_without_report", "failed_to_start"}
 MERGE_KINDS = {"tool_fast_forward", "card_fast_forward", "card_merge_commit"}
+# Origins of what reaches the model without the app sending it: background-task
+# notifications and other agents' messages.
+INJECTED_ORIGINS = {"task-notification", "peer"}
 
 RULES = [
     ("file-cap", "the delegation file is at most 4 MiB and each TASK/REPORT copy at most 64 KiB, a cut copy ending in the truncation marker"),
@@ -83,11 +89,21 @@ def within(folder, root):
     return folder == root or folder.startswith(root.rstrip(os.sep) + os.sep)
 
 
+def injected(origin):
+    """Whether a line's or a queued command's origin is a background-task
+    notification or another agent's message."""
+    kind = origin.get("kind") if isinstance(origin, dict) else None
+    return isinstance(kind, str) and kind in INJECTED_ORIGINS
+
+
 def prompts(text):
     """The prompts a Claude-format transcript shows the model received, in
     order, once per line uuid (else per line): user lines with text, not tool
-    results, meta lines or compaction summaries, and queued commands taken
-    into a running turn. Sub-agent lines and unreadable lines are skipped."""
+    results, meta lines, compaction summaries, task notifications (promptSource
+    "system" or a task-notification origin) or peer messages, and queued
+    commands taken into a running turn in prompt mode (or with no mode), not
+    meta and not a task notification or peer message. Sub-agent lines and
+    unreadable lines are skipped."""
     found, seen = [], set()
     for number, line in enumerate(text.split("\n")):
         try:
@@ -97,11 +113,15 @@ def prompts(text):
         if not isinstance(entry, dict) or entry.get("isSidechain") is True:
             continue
         content = None
-        if entry.get("type") == "user" and entry.get("isMeta") is not True and entry.get("isCompactSummary") is not True:
+        attachment = entry.get("attachment") if isinstance(entry.get("attachment"), dict) else {}
+        if (entry.get("type") == "user" and entry.get("isMeta") is not True and entry.get("isCompactSummary") is not True
+                and entry.get("promptSource") != "system" and not injected(entry.get("origin"))):
             message = entry.get("message")
             content = message.get("content") if isinstance(message, dict) else None
-        elif entry.get("type") == "attachment" and isinstance(entry.get("attachment"), dict) and entry["attachment"].get("type") == "queued_command":
-            content = entry["attachment"].get("prompt")
+        elif (entry.get("type") == "attachment" and attachment.get("type") == "queued_command"
+                and attachment.get("commandMode", "prompt") == "prompt" and attachment.get("isMeta") is not True
+                and not injected(attachment.get("origin"))):
+            content = attachment.get("prompt")
         if isinstance(content, list):
             texts = [block["text"] for block in content if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str)]
             content = "\n".join(texts) if texts else None
