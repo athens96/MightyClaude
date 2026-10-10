@@ -315,7 +315,7 @@ private func s2Git(_ arguments: [String], in folder: URL) async throws -> String
 /// profile and the Claude config, by a coordinator rebuilt from that profile:
 /// the Mac's and the phone's send both call ``DelegationCoordinator/send(_:in:)``,
 /// their run next both call ``DelegationCoordinator/runNext(in:)``.
-@Suite(.serialized) struct DelegationScenarioS2Tests {
+@Suite(.serialized, .delegationLane) struct DelegationScenarioS2Tests {
     static let parentMode = "acceptEdits"
 
     enum ReleasePath: String, CaseIterable {

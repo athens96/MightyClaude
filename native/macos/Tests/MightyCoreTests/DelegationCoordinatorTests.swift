@@ -49,7 +49,7 @@ private actor Latch {
 }
 
 /// The coordinator behind the real app-side socket, with a fake host.
-@Suite(.serialized) struct DelegationCoordinatorTests {
+@Suite(.serialized, .delegationLane) struct DelegationCoordinatorTests {
     private struct Fixture {
         let folder: URL
         let socketPath: String

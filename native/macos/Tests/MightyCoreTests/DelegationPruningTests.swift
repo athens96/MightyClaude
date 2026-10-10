@@ -4,7 +4,7 @@ import Testing
 
 /// Pruning the delegation side file (macOS only) as it nears its 4 MiB cap,
 /// and the store_full refusal of a new child when pruning leaves no room.
-struct DelegationPruningTests {
+@Suite(.delegationLane) struct DelegationPruningTests {
     private let cap = DelegationFileStore.maximumFileBytes
     private let fullCopy = DelegationFileStore.maximumCopyBytes
     /// Parent p1 is open, p2 is closed; no merge can be undone.

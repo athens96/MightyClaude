@@ -121,7 +121,7 @@ private struct Profile {
     }
 }
 
-@Suite(.serialized) struct DelegationFollowUpTests {
+@Suite(.serialized, .delegationLane) struct DelegationFollowUpTests {
     @Test func aFollowUpToAReportedChildIdleAfterANormalFinishStartsItsNextRunOnceAndClearsReported() async throws {
         let profile = try Profile.make()
         defer { profile.remove() }

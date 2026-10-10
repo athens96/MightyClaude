@@ -25,7 +25,7 @@ private func record(_ id: String, of parent: String, _ state: ChildState) -> Chi
     ChildRecord(id: id, parentSessionId: parent, worktreePath: "/worktrees/\(id)", parentBranch: "main", baseCommit: "base", startingMode: "auto", requestKey: "key-\(id)", state: state, parentCheckout: "/repo")
 }
 
-@Suite struct DelegationSidebarTests {
+@Suite(.delegationLane) struct DelegationSidebarTests {
     let workspaces = [Workspace(id: "w1", name: "repo", path: "/repo"), Workspace(id: "w2", name: "sub", path: "/repo/sub"), Workspace(id: "w3", name: "app", path: "/other/app")]
 
     @Test func childrenAreListedUnderTheirOpenParentInTheOrderTheyWereMade() {

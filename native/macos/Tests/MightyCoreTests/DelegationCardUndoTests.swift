@@ -6,7 +6,7 @@ import Testing
 /// fast-forward when it can, otherwise exactly one merge commit; an undo puts
 /// the recorded parent branch, its index and its files back by
 /// compare-and-swap; and every refusal changes nothing.
-@Suite(.enabled(if: DelegationGit.executable != nil, "Requires a local Git executable"))
+@Suite(.enabled(if: DelegationGit.executable != nil, "Requires a local Git executable"), .delegationLane)
 struct DelegationCardUndoTests {
     @Test func fastForwardsWhenItCanAndUndoReturnsTheChildToReported() async throws {
         let place = try MergePlace(); defer { place.remove() }

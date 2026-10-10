@@ -147,7 +147,7 @@ private func record(_ id: String, state: ChildState, runId: String? = nil) -> Ch
 
 /// Report revisions with a fake host and real temp repositories: what each
 /// run that ends in a child's pane leaves for its parent.
-@Suite(.serialized) struct DelegationReportTests {
+@Suite(.serialized, .delegationLane) struct DelegationReportTests {
     @Test func aRunEndingWithAChangedReportRecordsTheNextRevisionAtTheChildHeadAndSendsOneReportedNotice() async throws {
         let fixture = try await Fixture.make()
         defer { fixture.remove() }

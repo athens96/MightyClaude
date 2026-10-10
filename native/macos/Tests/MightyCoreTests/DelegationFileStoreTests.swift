@@ -4,7 +4,7 @@ import Testing
 
 /// The delegation side file (macOS only): one file beside workspace-state.json,
 /// written atomically, capped at 4 MiB, with TASK/REPORT copies cut at 64 KiB.
-struct DelegationFileStoreTests {
+@Suite(.delegationLane) struct DelegationFileStoreTests {
     private func makeDirectory() throws -> URL {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("DelegationFileStoreTests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

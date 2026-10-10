@@ -33,7 +33,7 @@ private func toolCall(_ name: String, _ arguments: Any, id: Int = 5) -> String {
 private func errorCode(_ response: [String: Any]?) -> Int? { (response?["error"] as? [String: Any])?["code"] as? Int }
 
 /// The hidden switch: one defaults key, off unless it is set.
-struct DelegationSwitchTests {
+@Suite(.delegationLane) struct DelegationSwitchTests {
     @Test func theSwitchIsOffUntilTheHiddenKeyTurnsItOn() throws {
         let suite = "dev.mightyclaude.tests.delegation.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
@@ -68,7 +68,7 @@ struct DelegationSwitchTests {
 }
 
 /// What a run's MCP flags name, by switch and pane.
-struct DelegationAttachmentTests {
+@Suite(.delegationLane) struct DelegationAttachmentTests {
     private let plugin = URL(fileURLWithPath: "/tmp", isDirectory: true)
 
     @Test func switchedOffAClaudeConfigIsByteForByteTheOneBefore() throws {
@@ -122,7 +122,7 @@ private final class SwitchFlag: @unchecked Sendable {
 
 /// The real run path: ProcessRunner launches fake Claude and Codex CLIs that
 /// write down the arguments they were started with.
-@Suite(.serialized) struct DelegationRunPathTests {
+@Suite(.serialized, .delegationLane) struct DelegationRunPathTests {
     private func executable(_ url: URL, _ source: String) throws {
         try source.write(to: url, atomically: true, encoding: .utf8)
         guard chmod(url.path, 0o755) == 0 else { throw MightyError("chmod failed") }
@@ -220,7 +220,7 @@ private final class RecordingTerminalHandler: AgentIORequestHandler, @unchecked 
 }
 
 /// Delegation calls through the real app-side socket server.
-@Suite(.serialized) struct DelegationGateTests {
+@Suite(.serialized, .delegationLane) struct DelegationGateTests {
     private static let delegate = DelegationRequest(tool: "delegate", arguments: ["task": "Write the release notes", "mode": "plan"])
 
     private struct Fixture {
@@ -340,7 +340,7 @@ private final class RecordingDelegationTransport: @unchecked Sendable {
 }
 
 /// The `--agent-delegation-mcp` stdio server: a separate server on the pane's token.
-struct DelegationServerSurfaceTests {
+@Suite(.delegationLane) struct DelegationServerSurfaceTests {
     private let environment = [PaneMCPBinding.tokenEnvironmentKey: "fixture-token", PaneMCPBinding.socketEnvironmentKey: "/tmp/fixture.sock"]
 
     private func server(_ transport: RecordingDelegationTransport, environment: [String: String]? = nil) -> DelegationMCPServer {

@@ -3,7 +3,7 @@ import Testing
 @testable import MightyCore
 
 /// Real git repositories in a temp folder; the worktree root is a temp folder too.
-@Suite(.enabled(if: DelegationGit.executable != nil, "Requires a local Git executable"))
+@Suite(.enabled(if: DelegationGit.executable != nil, "Requires a local Git executable"), .delegationLane)
 struct DelegationWorktreeTests {
     private static let plenty: @Sendable (URL) -> Int64? = { _ in 50_000_000_000 }
 

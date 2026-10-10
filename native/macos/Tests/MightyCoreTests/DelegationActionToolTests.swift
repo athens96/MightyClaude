@@ -54,7 +54,7 @@ private func record(_ id: String, parent: String = "parent", state: ChildState, 
 /// merge and follow_up with a fake host, merging on real git repositories in
 /// a temp folder: what each tool records, and that every refusal names its
 /// one reason code and changes nothing.
-@Suite(.serialized, .enabled(if: DelegationGit.executable != nil, "Requires a local Git executable"))
+@Suite(.serialized, .enabled(if: DelegationGit.executable != nil, "Requires a local Git executable"), .delegationLane)
 struct DelegationActionToolTests {
     private struct Fixture {
         let place: MergePlace

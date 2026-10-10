@@ -123,7 +123,7 @@ private struct Fixture {
     }
 }
 
-@Suite(.serialized) struct DelegationDeliveryTests {
+@Suite(.serialized, .delegationLane) struct DelegationDeliveryTests {
     @Test func aPaneGetsItemsOnItsOwnOnlyWhileItRunsClaudeOrIsIdleAfterANormalFinish() {
         func pane(_ activity: DelegationPaneActivity, kind: String = SessionKind.claude, provider: String = "claude") -> DelegationPaneState {
             DelegationPaneState(sessionId: "p", kind: kind, provider: provider, permissionMode: "auto", folder: "/tmp", runId: "p-run", activity: activity)

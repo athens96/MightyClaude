@@ -49,7 +49,7 @@ private func report(_ id: String, revision: Int, _ text: String) -> DelegationCo
 
 /// list_children and child_status with a fake host: the parent reads its
 /// children from the delegation file, and nothing changes.
-@Suite(.serialized) struct DelegationStatusToolTests {
+@Suite(.serialized, .delegationLane) struct DelegationStatusToolTests {
     /// "parent" has children in every kind of state; "other" has one of its own.
     static let children = [
         record("running", state: .running),

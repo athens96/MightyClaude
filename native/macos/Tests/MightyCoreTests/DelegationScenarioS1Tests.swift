@@ -258,7 +258,7 @@ private func toolText(_ result: Any?) -> String {
 /// a fake Claude parent in an asking mode delegating two children, a child's
 /// approval only a human answers, both reports, the parent's fast-forward of
 /// child 1 and the human's discard of child 2. Judged from what is on disk.
-@Suite(.serialized) struct DelegationScenarioS1Tests {
+@Suite(.serialized, .delegationLane) struct DelegationScenarioS1Tests {
     static let delegateTool = "mcp__\(DelegationMCPServer.serverName)__delegate"
     static let mergeTool = "mcp__\(DelegationMCPServer.serverName)__merge"
     static let parentMode = "acceptEdits"

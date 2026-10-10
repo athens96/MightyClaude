@@ -304,7 +304,7 @@ private func s3Structured(_ call: [String: Any]) -> [String: Any] {
 /// with the human's next send in B. B brings in main and reports revision 2,
 /// which the merge tool fast-forwards with its new head as the expected head.
 /// A third follow-up is refused with follow_up_limit.
-@Suite(.serialized) struct DelegationScenarioS3Tests {
+@Suite(.serialized, .delegationLane) struct DelegationScenarioS3Tests {
     static let parentMode = "auto"
     static let childMode = "acceptEdits"
     static let taskA = "Feature A: add a.txt saying a."

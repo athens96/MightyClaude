@@ -153,7 +153,7 @@ private func record(_ id: String, parent: String = "parent", state: ChildState) 
 }
 
 /// Real temp repositories and a fake host: the delegate tool from the parent's call to its child's first run.
-@Suite(.enabled(if: DelegationGit.executable != nil, "Requires a local Git executable"))
+@Suite(.enabled(if: DelegationGit.executable != nil, "Requires a local Git executable"), .delegationLane)
 struct DelegationDelegateToolTests {
     @Test func delegateAnswersOnceTheRecordExistsInCreatingThenOpensTheChildInTheAskedModeAndRunsIt() async throws {
         let gate = Gate()
