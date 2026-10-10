@@ -152,7 +152,9 @@ extension DelegationCoordinator {
     /// still starting or already ending could not take is steered into the
     /// run once it is up, or goes by the pane's next run or is held once it
     /// ended. A call while a pass is going asks that pass for one more and
-    /// returns at once.
+    /// returns at once. An item its pane still did not take keeps the pane's
+    /// newer items waiting behind it for the rest of the pass, so none
+    /// overtakes it; the next pass offers them again, oldest first.
     public func deliverPending() async {
         wantsDelivery = true
         guard !isDelivering else { return }
@@ -161,7 +163,12 @@ extension DelegationCoordinator {
             wantsDelivery = false
             let pending = file.notices.filter { $0.lane == .pending }.map { ($0.id, DelegationDeliveryItem.Kind.notice) }
                 + file.followUps.filter { $0.lane == .pending }.map { ($0.id, DelegationDeliveryItem.Kind.followUp) }
-            for (id, kind) in pending { await offer(id, kind) }
+            var waiting: Set<String> = []
+            for (id, kind) in pending {
+                guard let item = lookUp(id, kind, in: .pending), !waiting.contains(item.sessionId) else { continue }
+                await offer(id, kind)
+                if lookUp(id, kind, in: .pending) != nil { waiting.insert(item.sessionId) }
+            }
         }
         isDelivering = false
     }
