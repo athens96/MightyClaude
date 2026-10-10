@@ -549,6 +549,26 @@ private struct Fixture {
         #expect(fixture.host.taken.map(\.input) == [DelegationCoordinator.text(of: first), DelegationCoordinator.text(of: second)])
         fixture.expectEachTakenOnce([first.id, second.id])
     }
+
+    @Test func anItemWaitingForItsPaneKeepsNoOtherPanesItemsWaiting() async throws {
+        let fixture = try Fixture.make(parent: .running)
+        defer { fixture.remove() }
+        fixture.host.set("c1", .running, runId: "r-c1")
+        // The parent's run takes nothing twice: its notice stays pending.
+        fixture.host.refuseNext([.running, .running])
+        let notice = try await fixture.end("c2")
+        #expect(try fixture.saved(notice) == notice)
+        // It takes nothing twice again in the pass a follow-up starts, and the
+        // follow-up still goes into the running child's run.
+        fixture.host.refuseNext([.running, .running])
+        #expect(await fixture.followUp("c1", "Go on.").error == nil)
+        #expect(try fixture.saved(notice) == notice)
+        #expect(fixture.host.taken.map(\.sessionId) == ["c1"] && fixture.host.taken.first?.route == .steer)
+        // The parent's notice goes on in the next pass.
+        await fixture.coordinator.deliverPending()
+        #expect(fixture.host.taken.map(\.sessionId) == ["c1", "parent"])
+        fixture.expectEachTakenOnce([notice.id])
+    }
 }
 
 /// What a release's starter got, in order.

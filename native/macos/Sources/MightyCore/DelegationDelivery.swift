@@ -110,7 +110,8 @@ extension DelegationFile {
 /// so it is never handed over twice; should the pane not take it after all,
 /// it goes back as it was. Should the pane not take a new item twice running,
 /// the item stays pending and is offered again with the next one, or when the
-/// app sees one of its panes' runs start or end; what is still pending at
+/// app sees one of its panes' runs start or end; until then the pane's newer
+/// items wait behind it, so none overtakes it. What is still pending at
 /// launch is held.
 extension DelegationCoordinator {
     /// How often one new item is offered to its pane in a row: a run that
