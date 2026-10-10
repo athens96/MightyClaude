@@ -934,18 +934,8 @@ final class AppStore: ObservableObject, DelegationHost {
     /// `titleFrom` is what an automatic title follows when it is not `input`:
     /// a run delegation starts on its own sets none ("").
     func start(_ id: String, session: RunSession, workspace: Workspace, input: String, attachments: [RunAttachment], restoringDraft: String?, queued: QueuedInput? = nil, titleFrom: String? = nil) -> Bool {
-        if claudeModelResetInProgress, session.provider == "claude", session.kind != "shell" {
-            error = L("composer.model.reloadingClaude")
-            return false
-        }
         guard !ending, !closingSessions.contains(id), !pendingRuns.contains(id), session.status != "running" else { return false }
-        let initialRequest = StartRunRequest(sessionId: id, workspaceId: workspace.id, kind: session.kind, input: input, model: session.model, provider: session.provider, settings: session.settings, resumeId: session.resumeId, attachments: attachments)
-        var admissionRequest = initialRequest
-        if session.kind != "shell" { admissionRequest.settings.effort = "default" }
-        do { try CoreValidation.validate(admissionRequest) }
-        catch { self.error = error.localizedDescription; return false }
-        if let reason = runBlockedReason(session) { error = reason; return false }
-        if backgroundUpdateHolds(session) { error = L("settings.cliUpdate.backgroundUpdateQueued", ["provider": ProviderOptions.label(session.provider)]); return false }
+        if let refusal = startRefusal(session, in: workspace, input: input, attachments: attachments) { error = refusal; return false }
         pendingRuns.insert(id)
         // A new run in a child's pane sets it running and clears reported.
         let runId = delegationRuns.begin(id)
@@ -1033,6 +1023,23 @@ final class AppStore: ObservableObject, DelegationHost {
             return reachedRunner
         }
         return true
+    }
+
+    /// Why `start` would refuse a run of `input` and `attachments` in the pane
+    /// `session` now, worded as its error banner says it: a Claude model reset
+    /// is going, the request does not validate, the pane is blocked
+    /// (`runBlockedReason`, a child without its worktree among others) or a
+    /// background update holds its provider. nil when it may start. It
+    /// changes nothing, so delegation asks it too before it hands an idle
+    /// pane a run.
+    func startRefusal(_ session: RunSession, in workspace: Workspace, input: String, attachments: [RunAttachment]) -> String? {
+        if claudeModelResetInProgress, session.provider == "claude", session.kind != "shell" { return L("composer.model.reloadingClaude") }
+        var admissionRequest = StartRunRequest(sessionId: session.id, workspaceId: workspace.id, kind: session.kind, input: input, model: session.model, provider: session.provider, settings: session.settings, resumeId: session.resumeId, attachments: attachments)
+        if session.kind != "shell" { admissionRequest.settings.effort = "default" }
+        do { try CoreValidation.validate(admissionRequest) } catch { return error.localizedDescription }
+        if let reason = runBlockedReason(session) { return reason }
+        if backgroundUpdateHolds(session) { return L("settings.cliUpdate.backgroundUpdateQueued", ["provider": ProviderOptions.label(session.provider)]) }
+        return nil
     }
 
     /// Whether the run `start` just began in the pane `id` reached its

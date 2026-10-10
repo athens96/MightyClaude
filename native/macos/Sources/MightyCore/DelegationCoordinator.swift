@@ -100,9 +100,11 @@ public struct DelegationChildPane: Sendable, Equatable {
 public enum DelegationPaneActivity: String, Sendable, CaseIterable {
     /// A run is going.
     case running
-    /// Idle after a run that finished normally since this launch.
+    /// Idle after a run that finished normally since this launch, and a run
+    /// can start in it now.
     case finished
-    /// Idle any other way: stopped, errored, or no run since this launch.
+    /// Idle any other way: stopped, errored, no run since this launch, or no
+    /// run can start in it now.
     case idle
 }
 

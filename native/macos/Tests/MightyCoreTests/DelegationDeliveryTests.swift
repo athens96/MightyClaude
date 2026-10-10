@@ -33,6 +33,8 @@ private final class DeliveryHost: DelegationHost, @unchecked Sendable {
     func set(_ sessionId: String, _ activity: DelegationPaneActivity, runId: String? = nil, provider: String = "claude") {
         lock.withLock { panes[sessionId] = DelegationPaneState(sessionId: sessionId, provider: provider, permissionMode: "auto", folder: "/tmp", runId: runId, activity: activity) }
     }
+    /// The pane as the app's host reads it (``DelegationPanes/paneState(of:in:runId:activity:startRefused:)``).
+    func put(_ pane: DelegationPaneState) { lock.withLock { panes[pane.sessionId] = pane } }
     func close(_ sessionId: String) { lock.withLock { _ = panes.removeValue(forKey: sessionId) } }
     func pane(_ sessionId: String) -> DelegationPaneState? { lock.withLock { panes[sessionId] } }
     /// Refuses the next hand-overs, one per entry; each leaves its pane in that activity.
@@ -174,6 +176,36 @@ private struct Fixture {
         #expect(firstWritten.lane == .delivered && firstWritten.receipt?.route == .queue)
         #expect(try fixture.saved(first)?.receipt?.runId == "run-1" && fixture.saved(first)?.lane == .delivered)
         #expect(try fixture.saved(second)?.receipt == DeliveryReceipt(time: try #require(try fixture.saved(second)?.receipt?.time), route: .steer, runId: "run-1"))
+        fixture.expectEachTakenOnce([first.id, second.id])
+    }
+
+    @Test func aPendingNoticeForAParentThatFinishedNormallyButCannotStartARunNowIsHeldAndNoRunIsAskedFor() async throws {
+        let fixture = try Fixture.make(parent: .running)
+        defer { fixture.remove() }
+        // The parent's run is still starting: both steers are refused and the notice stays pending.
+        fixture.host.refuseNext([.running, .running])
+        let first = try await fixture.end("c1")
+        #expect(try fixture.saved(first) == first)
+        let asked = fixture.host.handed.count
+
+        // Its run then finished normally, but the app's start would refuse a new one now (a CLI
+        // update or a Claude model reset holds it, or its request does not validate).
+        let parent = RunSession(id: "parent", workspaceId: "ws", title: "Parent", settings: RunSettings(permissionMode: "auto"))
+        let workspace = Workspace(id: "ws", name: "repo", path: fixture.base.path)
+        let refused = DelegationPanes.paneState(of: parent, in: workspace, runId: "p-run", activity: .finished, startRefused: true)
+        #expect(refused.activity == .idle && refused.runId == "p-run")
+        fixture.host.put(refused)
+        // The app offers it again as the run ends: it is held, a row of the parent's queued list,
+        // and the host is asked for no steer and no run. So is a notice made meanwhile.
+        await fixture.coordinator.deliverPending()
+        let second = try await fixture.end("c2")
+        #expect(fixture.host.handed.count == asked)
+        #expect(try fixture.store.load().notices == [fixture.held(first), fixture.held(second)])
+        #expect(await fixture.coordinator.heldItems(for: "parent").map(\.id) == [first.id, second.id])
+
+        // Once a run can start again, the human's next send releases both, oldest first, in one run.
+        fixture.host.put(DelegationPanes.paneState(of: parent, in: workspace, runId: "p-run", activity: .finished, startRefused: false))
+        #expect(await fixture.coordinator.send("Go on.", in: "parent") == .released(runId: "run-1", itemIds: [first.id, second.id]))
         fixture.expectEachTakenOnce([first.id, second.id])
     }
 

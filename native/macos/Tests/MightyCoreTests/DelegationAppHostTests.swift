@@ -176,6 +176,23 @@ private func waitUntil(timeout: TimeInterval = 60, _ condition: () async -> Bool
         await runner.shutdown()
     }
 
+    @Test func aPaneIdleAfterANormalFinishReadsAsIdleWhileTheAppWouldRefuseToStartARunInIt() {
+        let workspace = Workspace(id: "ws", name: "repo", path: "/tmp/repo")
+        let parent = RunSession(id: "parent-1", workspaceId: "ws", title: "Parent", settings: RunSettings(permissionMode: "acceptEdits"))
+        func read(_ activity: DelegationPaneActivity, refused: Bool) -> DelegationPaneState {
+            DelegationPanes.paneState(of: parent, in: workspace, runId: "run-1", activity: activity, startRefused: refused)
+        }
+        // Delivery holds what comes for it instead of handing it a run the app would refuse.
+        #expect(read(.finished, refused: true) == DelegationPaneState(sessionId: "parent-1", permissionMode: "acceptEdits", folder: "/tmp/repo", runId: "run-1", activity: .idle))
+        #expect(DelegationCoordinator.automaticRoute(to: read(.finished, refused: true)) == nil)
+        #expect(read(.finished, refused: false).activity == .finished)
+        #expect(DelegationCoordinator.automaticRoute(to: read(.finished, refused: false)) == .queue)
+        // Nothing else changes: a running pane is still steered into, an idle one stays idle.
+        #expect(read(.running, refused: true).activity == .running)
+        #expect(DelegationCoordinator.automaticRoute(to: read(.running, refused: true)) == .steer)
+        #expect(read(.idle, refused: true).activity == .idle && read(.idle, refused: false).activity == .idle)
+    }
+
     @Test func runIdsAndNormalFinishesSinceLaunchAreTrackedPerPane() {
         var ledger = DelegationRunLedger()
         #expect(ledger.runId("p") == nil && ledger.activity("p", running: false) == .idle)
