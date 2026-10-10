@@ -35,19 +35,28 @@ func jsonLines(_ url: URL) -> [[String: Any]] {
 
 /// The prompts a Claude-format transcript shows the model received, in
 /// order and once per line uuid, as scripts/delegation-record.py reads them:
-/// user lines with text (not tool results, meta lines or compaction
-/// summaries) and queued commands taken into a running turn. The CLI's
-/// queue-operation and last-prompt lines only repeat a prompt.
+/// user lines with text (not tool results, meta lines, compaction summaries,
+/// task notifications with promptSource "system" or a task-notification
+/// origin, or peer messages) and queued commands taken into a running turn
+/// in prompt mode (or with no mode), not meta and not a task notification or
+/// peer message. The CLI's queue-operation and last-prompt lines only repeat
+/// a prompt.
 func receivedPrompts(in transcript: String) -> [String] {
+    /// A background-task notification's or another agent's origin.
+    func injected(_ origin: Any?) -> Bool { ["task-notification", "peer"].contains((origin as? [String: Any])?["kind"] as? String ?? "") }
     var seen = Set<String>()
     return transcript.split(separator: "\n").enumerated().compactMap { number, line in
         guard let object = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any], object["isSidechain"] as? Bool != true else { return nil }
+        let attachment = object["attachment"] as? [String: Any] ?? [:]
         let content: Any?
         switch object["type"] as? String {
-        case "user" where object["isMeta"] as? Bool != true && object["isCompactSummary"] as? Bool != true:
+        case "user" where object["isMeta"] as? Bool != true && object["isCompactSummary"] as? Bool != true
+            && object["promptSource"] as? String != "system" && !injected(object["origin"]):
             content = (object["message"] as? [String: Any])?["content"]
-        case "attachment" where (object["attachment"] as? [String: Any])?["type"] as? String == "queued_command":
-            content = (object["attachment"] as? [String: Any])?["prompt"]
+        case "attachment" where attachment["type"] as? String == "queued_command"
+            && (attachment["commandMode"] == nil || attachment["commandMode"] as? String == "prompt")
+            && attachment["isMeta"] as? Bool != true && !injected(attachment["origin"]):
+            content = attachment["prompt"]
         default:
             return nil
         }
@@ -306,6 +315,47 @@ private final class EventLog: @unchecked Sendable {
         let transcript = try String(contentsOf: record, encoding: .utf8)
         #expect(transcript.components(separatedBy: prompt).count - 1 == 3)
         #expect(receivedPrompts(in: transcript) == [prompt])
+    }
+
+    @Test func receivedPromptsLeaveOutTaskNotificationsAndPeerMessagesAsTheRecordScriptDoes() throws {
+        // The shapes scripts/test_delegation_record.py checks; each line's text is its uuid too.
+        func user(_ text: String, _ fields: [String: Any]) -> [String: Any] {
+            let line: [String: Any] = ["type": "user", "uuid": text, "entrypoint": "sdk-cli", "message": ["role": "user", "content": text]]
+            return line.merging(fields) { $1 }
+        }
+        func queued(_ text: String, _ fields: [String: Any]) -> [String: Any] {
+            let command: [String: Any] = ["type": "queued_command", "prompt": text]
+            return ["type": "attachment", "uuid": text, "attachment": command.merging(fields) { $1 }]
+        }
+        let task: [String: Any] = ["kind": "task-notification"], peer: [String: Any] = ["kind": "peer", "from": "agent-2"]
+        let skipped = [
+            user("[n-1] task notification", ["promptSource": "system", "origin": task]),
+            user("[n-1] task notification from the sdk", ["promptSource": "sdk", "origin": task]),
+            user("[n-1] task notification without an origin", ["promptSource": "system"]),
+            user("[n-1] peer message", ["promptSource": "system", "isMeta": true, "origin": peer]),
+            user("[n-1] peer message from the sdk", ["promptSource": "sdk", "isMeta": true, "origin": peer]),
+            user("[n-1] peer message that is not meta", ["promptSource": "sdk", "origin": peer]),
+            queued("[n-1] peer command", ["commandMode": "prompt", "isMeta": true, "origin": peer]),
+            queued("[n-1] peer command that is not meta", ["commandMode": "prompt", "origin": peer]),
+            queued("[n-1] meta command", ["commandMode": "prompt", "isMeta": true]),
+            queued("[n-1] task command", ["commandMode": "task-notification", "isMeta": false, "origin": task]),
+            queued("[n-1] task command without an origin", ["commandMode": "task-notification", "isMeta": false]),
+            queued("[n-1] task-origin command", ["commandMode": "prompt", "origin": task]),
+        ]
+        let counted = [
+            user("[n-2] the app's prompt", ["promptSource": "sdk", "isMeta": false]),
+            user("[n-2] a line without a prompt source", ["isMeta": false]),
+            user("[n-2] a typed prompt", ["entrypoint": "cli", "promptSource": "typed", "origin": ["kind": "human"]]),
+            queued("[n-2] the app's steer", ["commandMode": "prompt", "isMeta": false]),
+            queued("[n-2] a steer without a mode", [:]),
+        ]
+        func transcript(_ lines: [[String: Any]]) throws -> String {
+            try lines.map { String(decoding: try JSONSerialization.data(withJSONObject: $0), as: UTF8.self) }.joined(separator: "\n")
+        }
+        let texts = { (lines: [[String: Any]]) in lines.compactMap { $0["uuid"] as? String } }
+        for line in skipped { #expect(receivedPrompts(in: try transcript([line])).isEmpty, "\(texts([line]))") }
+        for line in counted { #expect(receivedPrompts(in: try transcript([line])) == texts([line])) }
+        #expect(receivedPrompts(in: try transcript(Array(skipped[..<6]) + counted[..<3] + skipped[6...] + counted[3...])) == texts(counted))
     }
 }
 

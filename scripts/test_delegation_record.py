@@ -144,6 +144,28 @@ class DelegationRecordFixtureTests(unittest.TestCase):
                 kinds.update(holding)
         self.assertEqual(kinds, {"queue-operation", "user", "attachment", "assistant", "last-prompt"})
 
+    def test_s1_and_s2_like_transcripts_quote_delivered_ids_in_lines_the_app_never_sent(self):
+        # Task notifications as user lines (promptSource system, and sdk with
+        # a task-notification origin) and as queued commands, and another
+        # agent's message as a meta queued command, each quoting a delivered
+        # notice id: the passes show that none of them counts as a prompt.
+        def shape(entry):
+            attachment = entry.get("attachment") or {}
+            if entry["type"] == "user":
+                return ("user", entry.get("promptSource"), (entry.get("origin") or {}).get("kind"))
+            if attachment.get("type") == "queued_command":
+                return ("queued_command", attachment.get("commandMode"), attachment.get("isMeta") is True, (attachment.get("origin") or {}).get("kind") == "peer")
+            return (entry["type"],)
+
+        expected = {("user", "system", "task-notification"), ("user", "sdk", "task-notification"),
+                    ("queued_command", "prompt", True, True), ("queued_command", "task-notification", False, False)}
+        for name in ("s1-like", "s2-like"):
+            case = FIXTURES / name
+            notices = json.loads((case / "profile/delegation-state.json").read_text())["notices"]
+            delivered = [notice["id"] for notice in notices if notice["lane"] == "delivered"]
+            lines = [line for path in sorted((case / "claude").rglob("*.jsonl")) for line in path.read_text().splitlines()]
+            self.assertLessEqual(expected, {shape(json.loads(line)) for line in lines if any(nid in line for nid in delivered)}, name)
+
 
 class TranscriptReadingTests(unittest.TestCase):
     record = load_script()
@@ -169,6 +191,45 @@ class TranscriptReadingTests(unittest.TestCase):
         broken = ['{"type": "user", "uuid": "u5", "message": {"role": "us', "[1, 2]", '"text"', "", "{}"]
         text = "\n".join([json.dumps(line, ensure_ascii=False) for line in lines] + broken) + "\n"
         self.assertEqual(self.record.prompts(text), ["[n-1] first", "[n-2] steered", "[n-3] with a picture", "[n-4] one line\u2028still"])
+
+    def test_background_task_notifications_and_peer_messages_are_not_prompts(self):
+        # Each line's text is its uuid too, so no line hides behind another's.
+        def user(text, **fields):
+            return {"type": "user", "uuid": text, "entrypoint": "sdk-cli", "message": {"role": "user", "content": text}, **fields}
+
+        def queued(text, **fields):
+            return {"type": "attachment", "uuid": text, "attachment": {"type": "queued_command", "prompt": text, **fields}}
+
+        task, peer = {"kind": "task-notification"}, {"kind": "peer", "from": "agent-2"}
+        skipped = [
+            user("[n-1] task notification", promptSource="system", origin=task),
+            user("[n-1] task notification from the sdk", promptSource="sdk", origin=task),
+            user("[n-1] task notification without an origin", promptSource="system"),
+            user("[n-1] peer message", promptSource="system", isMeta=True, origin=peer),
+            user("[n-1] peer message from the sdk", promptSource="sdk", isMeta=True, origin=peer),
+            user("[n-1] peer message that is not meta", promptSource="sdk", origin=peer),
+            queued("[n-1] peer command", commandMode="prompt", isMeta=True, origin=peer),
+            queued("[n-1] peer command that is not meta", commandMode="prompt", origin=peer),
+            queued("[n-1] meta command", commandMode="prompt", isMeta=True),
+            queued("[n-1] task command", commandMode="task-notification", isMeta=False, origin=task),
+            queued("[n-1] task command without an origin", commandMode="task-notification", isMeta=False),
+            queued("[n-1] task-origin command", commandMode="prompt", origin=task),
+        ]
+        counted = [
+            user("[n-2] the app's prompt", promptSource="sdk", isMeta=False),
+            user("[n-2] a line without a prompt source", isMeta=False),
+            user("[n-2] a typed prompt", entrypoint="cli", promptSource="typed", origin={"kind": "human"}),
+            queued("[n-2] the app's steer", commandMode="prompt", isMeta=False),
+            queued("[n-2] a steer without a mode"),
+        ]
+        for line in skipped:
+            with self.subTest(skipped=line["uuid"]):
+                self.assertEqual(self.record.prompts(json.dumps(line)), [])
+        for line in counted:
+            with self.subTest(counted=line["uuid"]):
+                self.assertEqual(self.record.prompts(json.dumps(line)), [line["uuid"]])
+        text = "\n".join(json.dumps(line) for line in skipped[:6] + counted[:3] + skipped[6:] + counted[3:]) + "\n"
+        self.assertEqual(self.record.prompts(text), [line["uuid"] for line in counted])
 
     def judged(self, rule, notices, *received):
         """`rule`'s failures for `notices` of children of one parent whose transcript's prompts are `received`."""
