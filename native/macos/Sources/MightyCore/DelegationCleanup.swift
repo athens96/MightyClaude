@@ -43,6 +43,7 @@ public enum ChildDiscardOutcome: Sendable, Equatable {
     /// at its place and its branch are gone, whichever of them existed.
     case discarded
     /// Nothing after this step was removed; a later discard goes on from here.
+    /// The words are in the app's language, with git's own output kept as it is.
     case failed(String)
 }
 
@@ -143,22 +144,22 @@ public enum ChildCleanup {
         // Only the child's own place is ever forced away, never a folder a record names elsewhere.
         let own = canonical(child.worktreePath)
         guard ChildWorktreeMaker.isSafeSessionId(child.id), own == canonical(worktreeRoot.appendingPathComponent(child.id, isDirectory: true).path) else {
-            return .failed("The child's worktree is not its place under the worktree root, so nothing was removed.")
+            return .failed(L("delegation.card.error.worktreeMisplaced"))
         }
-        guard DelegationGit.executable != nil else { return .failed("Git is missing.") }
-        guard let listed = await worktrees(in: parentCheckout) else { return .failed("Git could not reach the parent's checkout, so nothing was removed.") }
+        guard DelegationGit.executable != nil else { return .failed(L("delegation.card.error.gitMissing")) }
+        guard let listed = await worktrees(in: parentCheckout) else { return .failed(L("delegation.card.error.parentCheckoutUnreachable")) }
         let doomed = listed.filter { $0.hasPrefix(own + "/") }.sorted { $0.count > $1.count } + listed.filter { $0 == own }
         for path in doomed {
-            guard let removed = await DelegationGit.run(["worktree", "remove", "--force", "--force", path], in: parentCheckout, timeout: gitTimeout) else { return .failed("Git did not finish.") }
+            guard let removed = await DelegationGit.run(["worktree", "remove", "--force", "--force", path], in: parentCheckout, timeout: gitTimeout) else { return .failed(L("delegation.card.error.gitUnfinished")) }
             guard removed.exitCode == 0 else { return .failed(DelegationGit.message(removed)) }
         }
         if FileManager.default.fileExists(atPath: child.worktreePath) {
             do { try FileManager.default.removeItem(atPath: child.worktreePath) } catch { return .failed(error.localizedDescription) }
         }
         guard let found = await DelegationGit.run(["rev-parse", "-q", "--verify", "refs/heads/" + child.branch], in: parentCheckout),
-              found.exitCode == 0 || found.exitCode == 1 else { return .failed("Git could not read the child's branch.") }
+              found.exitCode == 0 || found.exitCode == 1 else { return .failed(L("delegation.card.error.childBranchUnread")) }
         if found.exitCode == 0 {
-            guard let deleted = await DelegationGit.run(["branch", "-D", child.branch], in: parentCheckout) else { return .failed("Git did not finish.") }
+            guard let deleted = await DelegationGit.run(["branch", "-D", child.branch], in: parentCheckout) else { return .failed(L("delegation.card.error.gitUnfinished")) }
             guard deleted.exitCode == 0 else { return .failed(DelegationGit.message(deleted)) }
         }
         return .discarded
@@ -270,17 +271,17 @@ extension DelegationCoordinator {
     /// once its worktree and branch are gone; until then a discard may be
     /// tried again.
     public func discardChild(_ id: String) async -> ChildDiscardOutcome {
-        guard let found = file.children.first(where: { $0.id == id }), found.state != .discarded else { return .failed("No child with this id can be discarded.") }
-        guard !starting.contains(id) else { return .failed("The child is still starting, so nothing was removed. Discard it once its start has finished.") }
+        guard let found = file.children.first(where: { $0.id == id }), found.state != .discarded else { return .failed(L("delegation.card.error.cannotDiscard")) }
+        guard !starting.contains(id) else { return .failed(L("delegation.card.error.stillStarting")) }
         await host.stopRun(sessionId: id)
-        guard let checkout = await parentCheckout(of: found) else { return .failed("The parent's checkout is not known, so nothing was removed.") }
+        guard let checkout = await parentCheckout(of: found) else { return .failed(L("delegation.card.error.parentCheckoutUnknown")) }
         let context = await pruneContext()
-        guard let index = file.children.firstIndex(where: { $0.id == id }), file.children[index].state != .discarded else { return .failed("No child with this id can be discarded.") }
+        guard let index = file.children.firstIndex(where: { $0.id == id }), file.children[index].state != .discarded else { return .failed(L("delegation.card.error.cannotDiscard")) }
         let child = file.children[index]
         var next = file
         let report = URL(fileURLWithPath: ChildWorktree.reportFile(worktreePath: child.worktreePath))
         if let copy = try? DelegationCopy.read(childId: id, kind: .report, revision: child.reportRevision, from: report), copy.originalBytes > 0 { next.setCopy(copy) }
-        do { try commit(next, context: context) } catch { return .failed("The delegation file could not be saved, so nothing was removed.") }
+        do { try commit(next, context: context) } catch { return .failed(L("delegation.card.error.notSaved")) }
 
         let outcome = await ChildCleanup.discard(child, parentCheckout: checkout, worktreeRoot: worktrees.root)
         guard outcome == .discarded else { return outcome }

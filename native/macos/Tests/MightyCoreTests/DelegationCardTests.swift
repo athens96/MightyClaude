@@ -111,6 +111,23 @@ extension DelegationCardTests {
         #expect(await DelegationSidebar.rows(coordinator.file).isEmpty)
     }
 
+    @Test func aCardsFailureReadsInTheAppsLanguage() async throws {
+        let place = try MergePlace(); defer { place.remove() }
+        let (coordinator, _, _, _) = try await reportedChild(place)
+        var merges: [AppLanguage: String] = [:]
+        for language in [AppLanguage.ko, .en, .zh, .ja] {
+            merges[language] = await LocaleOverride.$language.withValue(language) { () async -> String? in
+                #expect(await coordinator.undoMergeFromCard("c1") == .failed(L("delegation.card.error.noMergeToUndo")))
+                #expect(await coordinator.discardFromCard("nobody", confirmedNested: []) == .failed(L("delegation.card.error.cannotDiscard")))
+                guard case .failed(let message) = await coordinator.mergeFromCard("nobody") else { return nil }
+                #expect(message == L("delegation.card.error.noChild"))
+                return message
+            }
+        }
+        // Each language's own words, never the one English text every language used to get.
+        #expect(merges.count == 4 && Set(merges.values).count == 4)
+    }
+
     @Test func deliveryStartsNoRunInAPaneWhoseCheckoutACardIsChanging() async throws {
         let place = try MergePlace(); defer { place.remove() }
         let (coordinator, host, _, _) = try await reportedChild(place)
