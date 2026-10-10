@@ -79,10 +79,15 @@ struct WorkspaceView: View {
             }
         } message: { Text(L("workspace.remove.message")) }
         // A child's discard from its card, naming the worktrees nested in its own that go with it.
-        .confirmationDialog(L("delegation.discard.title"), isPresented: Binding(get: { store.pendingChildDiscard != nil }, set: { if !$0 { store.pendingChildDiscard = nil } }),
+        // When they could not be listed it cannot be discarded now: the dialog says why and offers no discard.
+        .confirmationDialog(store.pendingChildDiscard.map(DelegationText.discardTitle) ?? "", isPresented: Binding(get: { store.pendingChildDiscard != nil }, set: { if !$0 { store.pendingChildDiscard = nil } }),
                             titleVisibility: .visible, presenting: store.pendingChildDiscard) { pending in
-            Button(L("delegation.discard.confirm"), role: .destructive) { store.discardChildConfirmed(pending) }
-            Button(L("resume.cancel"), role: .cancel) { store.pendingChildDiscard = nil }
+            if pending.nested != nil {
+                Button(L("delegation.discard.confirm"), role: .destructive) { store.discardChildConfirmed(pending) }
+                Button(L("resume.cancel"), role: .cancel) { store.pendingChildDiscard = nil }
+            } else {
+                Button(L("common.close"), role: .cancel) { store.pendingChildDiscard = nil }
+            }
         } message: { pending in Text(DelegationText.discardMessage(pending)) }
         // A parent's close from the Mac while its children are open; the phone's close never asks.
         .confirmationDialog(L("delegation.parentClose.title"), isPresented: Binding(get: { store.pendingParentClose != nil }, set: { if !$0 { store.pendingParentClose = nil } }),
@@ -913,13 +918,17 @@ enum DelegationText {
         }
     }
 
-    /// The discard confirmation's text: what goes, and the nested worktrees that go with it.
+    /// The discard confirmation's title: its question, or that the child cannot
+    /// be discarded now when the worktrees nested in it could not be listed.
+    static func discardTitle(_ pending: PendingChildDiscard) -> String {
+        pending.nested == nil ? L("delegation.discard.unavailableTitle") : L("delegation.discard.title")
+    }
+
+    /// The discard confirmation's text: what goes, and the nested worktrees that
+    /// go with it; or, when those could not be listed, why nothing can go now.
     static func discardMessage(_ pending: PendingChildDiscard) -> String {
-        let nested: String = switch pending.nested {
-        case nil: L("delegation.discard.nestedUnknown")
-        case let paths? where paths.isEmpty: L("delegation.discard.noNested")
-        case let paths?: L("delegation.discard.nested", ["count": "\(paths.count)", "paths": paths.joined(separator: "\n")])
-        }
+        guard let paths = pending.nested else { return L("delegation.discard.unavailable", ["title": pending.title]) }
+        let nested = paths.isEmpty ? L("delegation.discard.noNested") : L("delegation.discard.nested", ["count": "\(paths.count)", "paths": paths.joined(separator: "\n")])
         return L("delegation.discard.message", ["title": pending.title, "branch": pending.branch]) + "\n\n" + nested
     }
 }

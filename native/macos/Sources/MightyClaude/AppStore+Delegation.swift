@@ -25,7 +25,8 @@ struct PendingChildDiscard: Identifiable, Equatable {
     /// The child's branch, `mighty/<id>`.
     var branch: String
     /// The worktrees nested in the child's that go with it, deepest first;
-    /// nil when they could not be listed.
+    /// nil when they could not be listed, and then the child cannot be
+    /// discarded now: the confirmation says why and offers no discard.
     var nested: [String]?
 }
 
@@ -246,7 +247,8 @@ extension AppStore {
     }
 
     /// The human's discard from the child's card: first the confirmation,
-    /// which names the worktrees nested in the child's that go with it. One
+    /// which names the worktrees nested in the child's that go with it, or
+    /// says it cannot be discarded now when they cannot be listed. One
     /// confirmation at a time; a second is not asked over the first.
     func askToDiscardChild(_ id: String) {
         guard let delegation, pendingChildDiscard == nil, !delegationCardBusy.contains(id), let row = delegationChildren.first(where: { $0.id == id }) else { return }
