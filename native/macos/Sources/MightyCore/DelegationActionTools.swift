@@ -21,9 +21,11 @@ extension DelegationCoordinator {
     /// The follow-ups one child may get from its parent.
     public static let maximumFollowUps = 2
     /// The most a follow-up's text may take in the delegation file, its JSON
-    /// escapes included, as much as a stored TASK.md copy. A follow-up is
-    /// kept whole until it is delivered, so it is never cut.
-    public static let maximumFollowUpBytes = DelegationFileStore.maximumCopyBytes
+    /// escapes included: 48 KiB, so a child's two follow-ups, held and then
+    /// released together by run next, always fit one run's input of at most
+    /// 100,000 characters (``CoreValidation``). A follow-up is kept whole
+    /// until it is delivered, so it is never cut.
+    public static let maximumFollowUpBytes = 48 * 1024
 
     /// merge(child, expected_head) from `caller`. A child that is not the
     /// caller's is answered with an error. Otherwise the merge waits for its
@@ -64,7 +66,7 @@ extension DelegationCoordinator {
 
     /// follow_up(child, text) from `caller`. The first rule that applies answers:
     ///
-    /// 1. An empty text, a text over 64 KiB, or a child that is not the
+    /// 1. An empty text, a text over 48 KiB, or a child that is not the
     ///    caller's is answered with an error.
     /// 2. `parent_closed`: the caller's pane is closed. A closed parent's
     ///    children keep their cards, and nothing more is sent to them.
@@ -81,7 +83,7 @@ extension DelegationCoordinator {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return .failure("follow_up needs a text: the instruction for the child.") }
         // Escapes only add bytes, so the UTF-8 size rules out a huge text before it is encoded.
         guard text.utf8.count <= Self.maximumFollowUpBytes, DelegationCopy.storedBytes(text) <= Self.maximumFollowUpBytes else {
-            return .failure("A follow-up's text may be at most 64 KiB.")
+            return .failure("A follow-up's text may be at most 48 KiB.")
         }
         let id = id.trimmingCharacters(in: .whitespacesAndNewlines)
         guard isChild(id, of: caller) else { return .failure(Self.notYourChildMessage(id)) }

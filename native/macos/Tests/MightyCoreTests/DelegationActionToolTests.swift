@@ -344,16 +344,16 @@ struct DelegationActionToolTests {
             #expect(DelegationMCPServer.result(answer)["structuredContent"] as? [String: String] == ["refused": "child_closed"], "\(id)")
         }
         #expect(await fixture.call("follow_up", ["child": "full", "text": "Go on."]) == .refusal(.followUpLimit))
-        // A child that is not the caller's, an empty text or one over 64 KiB is an error.
+        // A child that is not the caller's, an empty text or one over 48 KiB is an error.
         #expect(await fixture.call("follow_up", ["child": "theirs", "text": "Go on."]) == .failure(DelegationCoordinator.notYourChildMessage("theirs")))
         #expect(await fixture.call("follow_up", ["child": "open", "text": "Go on."], from: "other") == .failure(DelegationCoordinator.notYourChildMessage("open")))
         #expect(await fixture.call("follow_up", ["child": "no-such-child", "text": "Go on."]) == .failure(DelegationCoordinator.notYourChildMessage("no-such-child")))
         #expect(await fixture.call("follow_up", ["child": "open", "text": " \n"]).error == "follow_up needs a text: the instruction for the child.")
         let long = String(repeating: "x", count: DelegationCoordinator.maximumFollowUpBytes + 1)
-        #expect(await fixture.call("follow_up", ["child": "open", "text": long]).error == "A follow-up's text may be at most 64 KiB.")
-        // Measured as it is stored: under 64 KiB in UTF-8, over it with its escapes.
+        #expect(await fixture.call("follow_up", ["child": "open", "text": long]).error == "A follow-up's text may be at most 48 KiB.")
+        // Measured as it is stored: under 48 KiB in UTF-8, over it with its escapes.
         let quotes = String(repeating: "\"", count: DelegationCoordinator.maximumFollowUpBytes / 2 + 1)
-        #expect(await fixture.call("follow_up", ["child": "open", "text": quotes]).error == "A follow-up's text may be at most 64 KiB.")
+        #expect(await fixture.call("follow_up", ["child": "open", "text": quotes]).error == "A follow-up's text may be at most 48 KiB.")
         #expect(await fixture.call("follow_up", ["child": "open"]).error == "follow_up takes exactly these string arguments: child, text.")
 
         // The parent's pane closed: its children keep their cards, and nothing more is sent to them.
