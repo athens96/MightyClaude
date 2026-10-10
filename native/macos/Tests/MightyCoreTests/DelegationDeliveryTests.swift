@@ -345,6 +345,9 @@ private struct Fixture {
         #expect(await fixture.coordinator.heldNotices(of: "c1") == [fixture.held(first)])
         #expect(await fixture.coordinator.heldNotices(of: "c2") == [fixture.held(second)])
         #expect(await fixture.coordinator.heldNotices(of: "c3").isEmpty)
+        // The child rows the app's sidebar follows carry the count each card shows.
+        var rows = fixture.coordinator.childRows.makeAsyncIterator()
+        #expect(await rows.next()?.map(\.heldNotices) == [1, 1, 0])
         // Nothing releases them: the parent's pane takes no run.
         #expect(await fixture.coordinator.send("Hello?", in: "parent") == .notStarted)
         #expect(await fixture.coordinator.runNext(in: "parent") == .notStarted)
@@ -354,6 +357,8 @@ private struct Fixture {
         let relaunched = try Fixture.coordinator(fixture.store, fixture.host, fixture.base)
         #expect(await relaunched.heldNotices(of: "c1") == [fixture.held(first)])
         #expect(await relaunched.heldNotices(of: "c2") == [fixture.held(second)])
+        var relaunchedRows = relaunched.childRows.makeAsyncIterator()
+        #expect(await relaunchedRows.next()?.map(\.heldNotices) == [1, 1, 0])
         #expect(fixture.host.handed.isEmpty)
     }
 

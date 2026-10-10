@@ -72,6 +72,9 @@ extension DelegationFile {
         return rows
     }
 
+    /// The held notices from the child `childId`, oldest first.
+    func heldNotices(of childId: String) -> [Notice] { notices.filter { $0.childId == childId && $0.lane == .held } }
+
     /// The notice as its child's parent pane gets it; nil without the child.
     func deliveryItem(of notice: Notice) -> DelegationDeliveryItem? {
         guard let child = children.first(where: { $0.id == notice.childId }) else { return nil }
@@ -116,8 +119,9 @@ extension DelegationCoordinator {
     public func heldItems(for sessionId: String) -> [DelegationDeliveryItem] { items(for: sessionId, in: .held) }
 
     /// The held notices from the child `childId`. When its parent pane is
-    /// closed nothing releases them: they stay on the child's card.
-    public func heldNotices(of childId: String) -> [Notice] { file.notices.filter { $0.childId == childId && $0.lane == .held } }
+    /// closed nothing releases them: they stay on the child's card, which
+    /// counts them (``DelegationChildRow/heldNotices``).
+    public func heldNotices(of childId: String) -> [Notice] { file.heldNotices(of: childId) }
 
     /// The human's send of `text` in the pane `sessionId`. When items are held
     /// for it, all of them go with the send, oldest first and ahead of

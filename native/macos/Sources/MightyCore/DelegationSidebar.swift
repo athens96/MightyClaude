@@ -1,7 +1,8 @@
 import Foundation
 
 /// One delegated child as the sidebar lists it (macOS only): its record's
-/// state and parent link, and its task in one line for a row whose pane is gone.
+/// state and parent link, its task in one line for a row whose pane is gone,
+/// and how many of its notices are held.
 public struct DelegationChildRow: Sendable, Equatable, Identifiable {
     /// The child pane's session id.
     public var id: String
@@ -16,10 +17,13 @@ public struct DelegationChildRow: Sendable, Equatable, Identifiable {
     /// Whether the child's card can undo a merge
     /// (``DelegationFile/undoableMerge(of:)``).
     public var canUndo: Bool
+    /// How many of the child's notices are held. With its parent pane
+    /// closed nothing releases them, and the child's card shows the count.
+    public var heldNotices: Int
 
-    public init(id: String, parentSessionId: String, state: ChildState, task: String? = nil, parentBranch: String = "", parentCheckout: String? = nil, canUndo: Bool = false) {
+    public init(id: String, parentSessionId: String, state: ChildState, task: String? = nil, parentBranch: String = "", parentCheckout: String? = nil, canUndo: Bool = false, heldNotices: Int = 0) {
         self.id = id; self.parentSessionId = parentSessionId; self.state = state; self.task = task
-        self.parentBranch = parentBranch; self.parentCheckout = parentCheckout; self.canUndo = canUndo
+        self.parentBranch = parentBranch; self.parentCheckout = parentCheckout; self.canUndo = canUndo; self.heldNotices = heldNotices
     }
 
     /// The row of `record`, its task read from `file`'s stored copy.
@@ -27,7 +31,7 @@ public struct DelegationChildRow: Sendable, Equatable, Identifiable {
         self.init(id: record.id, parentSessionId: record.parentSessionId, state: record.state,
                   task: file.copy(childId: record.id, kind: .task).flatMap { PaneTitle.shortened($0.text) },
                   parentBranch: record.parentBranch, parentCheckout: record.parentCheckout,
-                  canUndo: file.undoableMerge(of: record.id) != nil)
+                  canUndo: file.undoableMerge(of: record.id) != nil, heldNotices: file.heldNotices(of: record.id).count)
     }
 }
 

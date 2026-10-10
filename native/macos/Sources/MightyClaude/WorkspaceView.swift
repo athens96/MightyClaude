@@ -317,25 +317,29 @@ struct WorkspaceView: View {
     /// A delegated child's card under its parent: its pane's row while the pane is
     /// open, otherwise a row for the child the delegation file keeps, and below it
     /// the human's actions and the answer the last one got, when there is either.
-    private func childRow(_ child: DelegationChildRow) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+    /// Under a closed parent it also counts the child's held notices, which
+    /// nothing delivers any more.
+    private func childRow(_ child: DelegationChildRow, parentClosed: Bool = false) -> some View {
+        let heldNotices = parentClosed ? child.heldNotices : 0
+        return VStack(alignment: .leading, spacing: 0) {
             if let session = store.snapshot.sessions.first(where: { $0.id == child.id }) {
                 paneRow(session, child: child)
             } else {
                 closedChildRow(child)
             }
             // A discarded child has no action left; its card stays a plain row.
-            if !child.cardActions.isEmpty || store.delegationCardBusy.contains(child.id)
+            if !child.cardActions.isEmpty || store.delegationCardBusy.contains(child.id) || heldNotices > 0
                 || store.delegationCardNotes[child.id].flatMap({ DelegationText.note($0, child) }) != nil {
-                childCardActions(child)
+                childCardActions(child, heldNotices: heldNotices)
             }
         }
     }
 
     /// The card's actions as a line of small buttons (merge while reported, undo
     /// while its merge can be undone, discard until discarded), a busy line while
-    /// one is going, and the last answer: a refusal with its reason, or a failure.
-    private func childCardActions(_ child: DelegationChildRow) -> some View {
+    /// one is going, the count of held notices a closed parent left on the card,
+    /// and the last answer: a refusal with its reason, or a failure.
+    private func childCardActions(_ child: DelegationChildRow, heldNotices: Int) -> some View {
         let busy = store.delegationCardBusy.contains(child.id)
         let note = store.delegationCardNotes[child.id]
         return sidebarListRow(nested: true, VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
@@ -356,6 +360,12 @@ struct WorkspaceView: View {
                     }
                 }
                 Spacer(minLength: 0)
+            }
+            if heldNotices > 0 {
+                Text(L("delegation.card.heldNotices", ["count": "\(heldNotices)"])).font(.system(size: 10.5)).foregroundStyle(Palette.sidebarInk2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .help(L("delegation.card.heldNoticesHelp"))
+                    .accessibilityIdentifier("child-card-held-\(child.id)")
             }
             if let note, !busy, let line = DelegationText.note(note, child) {
                 Text(line.text).font(.system(size: 10.5)).foregroundStyle(Palette.text(line.tone))
@@ -424,7 +434,7 @@ struct WorkspaceView: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(L("delegation.tree.parentClosedAccessibility", ["count": "\(node.children.count)"]))
             .accessibilityIdentifier("sidebar-parent-closed-\(node.id)")
-            ForEach(node.children) { child in childRow(child) }
+            ForEach(node.children) { child in childRow(child, parentClosed: true) }
         }
     }
 
