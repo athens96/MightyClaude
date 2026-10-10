@@ -1310,6 +1310,8 @@
   "delegation.card.error.parentCheckoutUnknown": "부모 폴더를 알 수 없어 아무것도 지우지 않았습니다.",
   "delegation.card.error.parentCheckoutUnreachable": "Git이 부모 폴더에 접근하지 못해 아무것도 지우지 않았습니다.",
   "delegation.card.error.notSaved": "위임 기록을 저장하지 못해 아무것도 지우지 않았습니다.",
+  "delegation.card.error.fileFull": "위임 기록 파일이 4 MiB 한도에 찼습니다",
+  "delegation.card.error.fileUnreadable": "디스크의 위임 기록 파일을 읽을 수 없는 상태입니다",
   "delegation.card.error.worktreeMisplaced": "자식 창의 worktree가 worktree 폴더 아래 제자리에 있지 않아 아무것도 지우지 않았습니다.",
   "delegation.reason.notReported": "자식 창이 아직 보고하지 않았거나 그 뒤에 다시 실행됐습니다 (not_reported).",
   "delegation.reason.branchNotCheckedOut": "기록된 부모 브랜치가 부모 폴더에 체크아웃되어 있지 않습니다 (branch_not_checked_out).",

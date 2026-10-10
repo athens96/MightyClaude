@@ -83,8 +83,27 @@ extension DelegationCoordinator {
         let context = await pruneContext()
         // The merge stands and stays on record in memory; the human hears
         // that the file could not be saved, and the next save writes it.
-        do { try commit(file, context: context) } catch { return .mergedUnsaved(record, error.localizedDescription) }
+        do { try commit(file, context: context) } catch { return .mergedUnsaved(record, Self.unsavedReason(error)) }
         return outcome
+    }
+
+    /// Why the delegation file was not saved, for a card's note: in the
+    /// app's language, with no closing stop, since the note goes on after it.
+    static func unsavedReason(_ error: Error) -> String {
+        switch error as? DelegationFileError {
+        case .full?: L("delegation.card.error.fileFull")
+        case .unreadable?: L("delegation.card.error.fileUnreadable")
+        case nil: error.localizedDescription.trimmingCharacters(in: CharacterSet(charactersIn: ".。 \n"))
+        }
+    }
+
+    /// The same in English, for the merge tool's agent.
+    static func unsavedReasonForAgent(_ error: Error) -> String {
+        switch error as? DelegationFileError {
+        case .full?: "the delegation file is at its 4 MiB cap"
+        case .unreadable?: "the delegation file on disk cannot be read"
+        case nil: error.localizedDescription.trimmingCharacters(in: CharacterSet(charactersIn: ".。 \n"))
+        }
     }
 
     /// A human's undo from the child's card of the merge
@@ -117,7 +136,7 @@ extension DelegationCoordinator {
         // Undone on disk, so its record goes whatever the child did meanwhile.
         if !file.recordUndo(undone), let index = file.merges.lastIndex(of: undone) { file.merges.remove(at: index) }
         let context = await pruneContext()
-        do { try commit(file, context: context) } catch { return .undoneUnsaved(undone, restoredBranch: restored, error.localizedDescription) }
+        do { try commit(file, context: context) } catch { return .undoneUnsaved(undone, restoredBranch: restored, Self.unsavedReason(error)) }
         return outcome
     }
 

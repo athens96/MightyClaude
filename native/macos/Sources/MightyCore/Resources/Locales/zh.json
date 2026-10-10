@@ -1310,6 +1310,8 @@
   "delegation.card.error.parentCheckoutUnknown": "不知道父文件夹在哪里，因此没有删除任何内容。",
   "delegation.card.error.parentCheckoutUnreachable": "Git 无法访问父文件夹，因此没有删除任何内容。",
   "delegation.card.error.notSaved": "无法保存委派记录，因此没有删除任何内容。",
+  "delegation.card.error.fileFull": "委派记录文件已达到 4 MiB 上限",
+  "delegation.card.error.fileUnreadable": "磁盘上的委派记录文件无法读取",
   "delegation.card.error.worktreeMisplaced": "子窗格的 worktree 不在 worktree 文件夹下它自己的位置，因此没有删除任何内容。",
   "delegation.reason.notReported": "子窗格尚未报告，或之后又运行过 (not_reported)。",
   "delegation.reason.branchNotCheckedOut": "记录的父分支未在父文件夹中检出 (branch_not_checked_out)。",

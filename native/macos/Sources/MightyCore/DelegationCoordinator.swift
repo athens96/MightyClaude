@@ -177,9 +177,9 @@ public actor DelegationCoordinator: DelegationRequestHandler {
     nonisolated let worktrees: ChildWorktreeMaker
     private nonisolated let isSwitchOn: @Sendable () -> Bool
     private nonisolated let answerSeconds: TimeInterval
-    /// The delegation file as last loaded or saved. The one exception: a
-    /// child's start that the disk refused to save is held here until the
-    /// next save writes it.
+    /// The delegation file as last loaded or saved. The exceptions: a
+    /// child's start, a merge or an undo that the disk refused to save is
+    /// held here until the next save writes it.
     public internal(set) var file: DelegationFile { didSet { publishChildRows(); publishHeldRows() } }
     /// The children as the sidebar lists them: the list at load, then the
     /// list after each change to it, in order. Only the newest waits when
