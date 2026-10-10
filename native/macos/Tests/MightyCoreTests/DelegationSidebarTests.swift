@@ -87,6 +87,17 @@ private func record(_ id: String, of parent: String, _ state: ChildState) -> Chi
         #expect(rows.last?.task == nil)
     }
 
+    @Test func aRowCountsOnlyItsChildsHeldNoticesForTheCard() {
+        let receipt = DeliveryReceipt(time: "2026-10-10T01:00:00Z", route: .queue, runId: "run-1")
+        let file = DelegationFile(children: [record("a", of: "p", .ended), record("b", of: "p", .reported)],
+                                  notices: [Notice(id: "n1", childId: "a", reportRevision: 0, kind: .endedWithoutReport, lane: .held),
+                                            Notice(id: "n2", childId: "a", reportRevision: 1, kind: .reported, lane: .delivered, receipt: receipt),
+                                            Notice(id: "n3", childId: "a", reportRevision: 1, kind: .reported),
+                                            Notice(id: "n4", childId: "a", reportRevision: 2, kind: .reported, lane: .held),
+                                            Notice(id: "n5", childId: "b", reportRevision: 1, kind: .reported, lane: .delivered, receipt: receipt)])
+        #expect(DelegationSidebar.rows(file).map(\.heldNotices) == [2, 0])
+    }
+
     @Test func theCoordinatorHandsOnTheChildListAtLoadAndAfterEachChange() async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("delegation-sidebar-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: folder) }
