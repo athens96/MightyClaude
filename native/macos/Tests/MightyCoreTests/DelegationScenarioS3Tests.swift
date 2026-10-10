@@ -289,9 +289,6 @@ private func s3Git(_ arguments: [String], in folder: URL) async throws -> String
     return DelegationGit.line(result.stdout)
 }
 
-/// How many times `needle` appears in `text`.
-private func s3Count(of needle: String, in text: String) -> Int { text.components(separatedBy: needle).count - 1 }
-
 /// The structured content of one tool call the fake Claude logged.
 private func s3Structured(_ call: [String: Any]) -> [String: Any] {
     (call["result"] as? [String: Any])?["structuredContent"] as? [String: Any] ?? [:]
@@ -683,10 +680,11 @@ private func s3Structured(_ call: [String: Any]) -> [String: Any] {
         #expect(logB.filter { $0["event"] as? String == "bash" }.map { $0["code"] as? Int } == [0, 0])
 
         // The Claude-format transcripts, one session per pane across both
-        // launches: each notice in the parent's once, each follow-up in B's once.
-        let parentTranscript = try launch.transcript(of: w.repo.path)
-        for notice in file.notices { #expect(s3Count(of: notice.id, in: parentTranscript) == 1, "\(notice.id)") }
-        let transcriptB = try launch.transcript(of: b.worktreePath)
-        for followUp in file.followUps { #expect(s3Count(of: followUp.id, in: transcriptB) == 1, "\(followUp.id)") }
+        // launches: each notice in exactly one prompt the parent received,
+        // each follow-up in exactly one prompt B received.
+        let parentPrompts = receivedPrompts(in: try launch.transcript(of: w.repo.path))
+        for notice in file.notices { #expect(parentPrompts.filter { $0.contains(notice.id) }.count == 1, "\(notice.id)") }
+        let promptsB = receivedPrompts(in: try launch.transcript(of: b.worktreePath))
+        for followUp in file.followUps { #expect(promptsB.filter { $0.contains(followUp.id) }.count == 1, "\(followUp.id)") }
     }
 }

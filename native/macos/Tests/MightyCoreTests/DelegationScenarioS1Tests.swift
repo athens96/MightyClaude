@@ -523,12 +523,12 @@ private func toolText(_ result: Any?) -> String {
         }
 
         // The parent's Claude-format transcript: one session across its four
-        // runs, holding each notice exactly once.
+        // runs, each notice in exactly one prompt the model received.
         let projects = s.host.config.appendingPathComponent("projects/\(SessionHistory.claudeProjectFolder(s.repo.path))", isDirectory: true)
         let transcripts = try FileManager.default.contentsOfDirectory(at: projects, includingPropertiesForKeys: nil).filter { $0.pathExtension == "jsonl" }
         #expect(transcripts.count == 1)
-        let transcript = try String(contentsOf: try #require(transcripts.first), encoding: .utf8)
-        for notice in file.notices { #expect(transcript.components(separatedBy: notice.id).count - 1 == 1) }
+        let prompts = receivedPrompts(in: try String(contentsOf: try #require(transcripts.first), encoding: .utf8))
+        for notice in file.notices { #expect(prompts.filter { $0.contains(notice.id) }.count == 1) }
         #expect(launches.dropFirst().allSatisfy { optionValue("--resume", $0) == transcripts.first?.deletingPathExtension().lastPathComponent })
     }
 }

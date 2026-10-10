@@ -169,8 +169,9 @@ private func waitUntil(timeout: TimeInterval = 60, _ condition: () async -> Bool
         #expect(!binding.delegation)
         // Claude worked in the worktree, never in the parent's checkout.
         let record = config.appendingPathComponent("projects/\(SessionHistory.claudeProjectFolder(worktree.path))/\(session).jsonl")
-        let lines = jsonLines(record)
-        #expect(!lines.isEmpty && lines.allSatisfy { $0["cwd"] as? String == worktree.path })
+        // Every message line names its folder; the CLI's bookkeeping lines name none.
+        let messages = jsonLines(record).filter { $0["uuid"] != nil }
+        #expect(!messages.isEmpty && messages.allSatisfy { $0["cwd"] as? String == worktree.path })
         #expect(!FileManager.default.fileExists(atPath: config.appendingPathComponent("projects/\(SessionHistory.claudeProjectFolder(repo.path))").path))
         await runner.shutdown()
     }
