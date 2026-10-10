@@ -76,6 +76,25 @@ class Invalid(Exception):
     pass
 
 
+# The fields the rules compare or look up, by the delegation file's lists. A
+# field may be missing or null; when it is there it has this type, or the
+# file is not one the app wrote and is not judged.
+FIELD_TYPES = {
+    "children": {"id": str, "parentSessionId": str, "state": str, "worktreePath": str, "branch": str, "parentBranch": str,
+                 "reportHead": str, "reportRevision": int, "followUpCount": int, "runId": str, "startingMode": str},
+    "notices": {"id": str, "childId": str, "kind": str, "lane": str, "reportRevision": int, "receipt": dict},
+    "followUps": {"id": str, "childId": str, "lane": str, "text": str, "receipt": dict},
+    "merges": {"childId": str, "kind": str, "parentBranch": str, "childHead": str, "mergedCommit": str, "preMergeCommit": str},
+    "copies": {"childId": str, "kind": str, "revision": int, "text": str},
+}
+TYPE_WORDS = {str: "text", int: "a whole number", dict: "a record"}
+
+
+def has_type(value, kind):
+    # A JSON true or false is no number here, though Python counts bool as int.
+    return isinstance(value, kind) and not (kind is int and isinstance(value, bool))
+
+
 def claude_project_folder(path):
     """The folder name Claude gives a working folder under projects/."""
     return "".join(c if c.isascii() and c.isalnum() else "-" for c in path)
@@ -203,6 +222,10 @@ class Record:
         value = self.file.get(key)
         if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
             raise Invalid(f"the delegation file's {key} is not a list of records")
+        for index, item in enumerate(value):
+            for field, kind in FIELD_TYPES.get(key, {}).items():
+                if item.get(field) is not None and not has_type(item[field], kind):
+                    raise Invalid(f"the delegation file's {key}[{index}].{field} is not {TYPE_WORDS[kind]}")
         return value
 
     def fail(self, rule, detail):
@@ -430,6 +453,9 @@ def main(argv=None):
         verdict, reason = ("failed" if failed else "passed"), None
     except Invalid as error:
         failures, failed, verdict, reason = None, [], "invalid", str(error)
+    except (TypeError, ValueError, AttributeError, KeyError) as error:
+        # A shape the checks above did not foresee: not judged, never a crash.
+        failures, failed, verdict, reason = None, [], "invalid", f"a record has an unexpected shape ({type(error).__name__}: {error})"
     if args.json:
         rules = [{"rule": name, "checks": text, "result": "skipped" if failures is None else ("failed" if failures[name] else "passed"),
                   "details": [] if failures is None else failures[name]} for name, text in RULES]
