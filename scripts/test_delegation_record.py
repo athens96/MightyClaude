@@ -265,5 +265,46 @@ class TranscriptReadingTests(unittest.TestCase):
         self.assertTrue(within("/w/child/app", "/w/child/"))
 
 
+class MalformedRecordTests(unittest.TestCase):
+    """A delegation file the app did not write is not judged: the verdict is
+    invalid, naming what is wrong, and the script never crashes."""
+
+    def judge_s1_like_with(self, mutate, name="delegation-state.json"):
+        with tempfile.TemporaryDirectory(prefix="mighty-record-") as folder:
+            root = Path(folder).resolve()
+            materialize(FIXTURES / "s1-like", root)
+            path = root / "profile" / name
+            file = json.loads(path.read_text())
+            mutate(file)
+            path.write_text(json.dumps(file))
+            return judge(root, "--json")
+
+    def test_a_field_of_the_wrong_type_is_invalid_and_named(self):
+        cases = {
+            "children[0].reportRevision": lambda f: f["children"][0].__setitem__("reportRevision", "2"),
+            "notices[0].reportRevision": lambda f: f["notices"][0].__setitem__("reportRevision", "1"),
+            "notices[1].receipt": lambda f: f["notices"][1].__setitem__("receipt", "steer"),
+            "copies[0].revision": lambda f: f["copies"][0].__setitem__("revision", True),
+            "children[1].id": lambda f: f["children"][1].__setitem__("id", ["c2"]),
+        }
+        for field, mutate in cases.items():
+            with self.subTest(field=field):
+                result = self.judge_s1_like_with(mutate)
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+                answer = json.loads(result.stdout)
+                self.assertEqual(answer["verdict"], "invalid")
+                self.assertIn(field, answer["reason"])
+
+    def test_a_shape_no_check_foresaw_is_invalid_rather_than_a_crash(self):
+        # A pane whose id is a list cannot key the pane table.
+        result = self.judge_s1_like_with(lambda state: state["sessions"].append({"id": ["x"]}), name="workspace-state.json")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        answer = json.loads(result.stdout)
+        self.assertEqual(answer["verdict"], "invalid")
+        self.assertIn("unexpected shape", answer["reason"])
+
+
 if __name__ == "__main__":
     unittest.main()
