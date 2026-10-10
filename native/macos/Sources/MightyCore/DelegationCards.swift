@@ -121,15 +121,18 @@ extension DelegationCoordinator {
 
     /// A human's discard from the child's card once its confirmation named
     /// `confirmed` as the worktrees nested in the child's (nil when it could
-    /// not list them). The child's run is stopped first, so nothing nests
-    /// another worktree in it, and the nested worktrees are listed again:
-    /// when one is there that the confirmation did not name, nothing is
-    /// removed and the answer names them all, to ask again. Otherwise
-    /// ``discardChild(_:)`` removes the child's worktree, those nested in it
-    /// and its branch by force, in its turn with the merges and undos.
+    /// not list them). The nested worktrees are listed before anything else:
+    /// when they cannot be, the answer is a failure and nothing is stopped or
+    /// removed. Then the child's run is stopped, so nothing nests another
+    /// worktree in it, and the nested worktrees are listed again: when one is
+    /// there that the confirmation did not name, nothing is removed and the
+    /// answer names them all, to ask again. Otherwise ``discardChild(_:)``
+    /// removes the child's worktree, those nested in it and its branch by
+    /// force, in its turn with the merges and undos.
     public func discardFromCard(_ id: String, confirmedNested confirmed: [String]?) async -> ChildCardDiscardOutcome {
         guard file.children.contains(where: { $0.id == id && $0.state != .discarded }) else { return .failed(L("delegation.card.error.cannotDiscard")) }
         guard !starting.contains(id) else { return .failed(L("delegation.card.error.stillStarting")) }
+        guard await nestedWorktrees(of: id) != nil else { return .failed(L("delegation.card.error.nestedUnlisted")) }
         await host.stopRun(sessionId: id)
         await takeMergeTurn()
         let outcome = await cardDiscard(id, confirmed: confirmed)

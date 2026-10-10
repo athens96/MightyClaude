@@ -2,15 +2,18 @@ import Foundation
 import Testing
 @testable import MightyCore
 
-/// The app side as a child's card sees it: the panes a test sets, and each
-/// item handed to a pane, which it takes as its next run.
+/// The app side as a child's card sees it: the panes a test sets, each item
+/// handed to a pane, which it takes as its next run, and each pane stopped.
 private final class CardHost: DelegationHost, @unchecked Sendable {
     private let lock = NSLock()
     private var panes: [String: DelegationPaneState] = [:]
     private var handed: [String] = []
+    private var stopped: [String] = []
 
     func set(_ pane: DelegationPaneState) { lock.withLock { panes[pane.sessionId] = pane } }
+    func pane(_ sessionId: String) -> DelegationPaneState? { lock.withLock { panes[sessionId] } }
     var deliveries: [String] { lock.withLock { handed } }
+    var stops: [String] { lock.withLock { stopped } }
 
     func createPane(_ pane: DelegationChildPane) async -> Bool { false }
     func startRun(sessionId: String, input: String) async -> String? { nil }
@@ -18,7 +21,7 @@ private final class CardHost: DelegationHost, @unchecked Sendable {
         lock.withLock { handed.append("\(sessionId) \(route.rawValue)"); return "run-delivered" }
     }
     func paneState(sessionId: String) async -> DelegationPaneState? { lock.withLock { panes[sessionId] } }
-    func stopRun(sessionId: String) async { lock.withLock { panes[sessionId]?.activity = .idle } }
+    func stopRun(sessionId: String) async { lock.withLock { stopped.append(sessionId); panes[sessionId]?.activity = .idle } }
 }
 
 /// A child's card through the coordinator, on real git repositories in a temp
@@ -109,6 +112,31 @@ extension DelegationCardTests {
         #expect(try await place.git(["for-each-ref", "--format=%(refname)", "refs/heads/mighty/"]).isEmpty)
         #expect(await coordinator.file.children.map(\.state) == [.discarded])
         #expect(await DelegationSidebar.rows(coordinator.file).isEmpty)
+    }
+
+    @Test func aDiscardThatCannotListTheNestedWorktreesLeavesTheChildsRunAlone() async throws {
+        let place = try MergePlace(); defer { place.remove() }
+        let (coordinator, host, _, _) = try await reportedChild(place)
+        let child = try #require(await coordinator.file.children.first)
+        host.set(DelegationPaneState(sessionId: "c1", permissionMode: "acceptEdits", folder: child.worktreePath, parentSessionId: "parent", runId: "c1-run", activity: .running))
+        // The parent's folder is gone, so the worktrees nested in the child's cannot be listed.
+        let moved = place.base.appendingPathComponent("repo-moved", isDirectory: true)
+        try FileManager.default.moveItem(at: place.repo, to: moved)
+        #expect(await coordinator.nestedWorktrees(of: "c1") == nil)
+
+        #expect(await coordinator.discardFromCard("c1", confirmedNested: nil) == .failed(L("delegation.card.error.nestedUnlisted")))
+        // Its run is never stopped, and nothing is removed.
+        #expect(host.stops.isEmpty)
+        #expect(host.pane("c1")?.activity == .running)
+        #expect(FileManager.default.fileExists(atPath: child.worktreePath))
+        #expect(await coordinator.file.children.map(\.state) == [.reported])
+
+        // Listed again with the folder back, the discard goes on: its run is stopped, then it goes.
+        try FileManager.default.moveItem(at: moved, to: place.repo)
+        #expect(await coordinator.discardFromCard("c1", confirmedNested: []) == .discarded)
+        #expect(host.stops.first == "c1" && host.pane("c1")?.activity == .idle)
+        #expect(!FileManager.default.fileExists(atPath: child.worktreePath))
+        #expect(await coordinator.file.children.map(\.state) == [.discarded])
     }
 
     @Test func aCardsFailureReadsInTheAppsLanguage() async throws {
