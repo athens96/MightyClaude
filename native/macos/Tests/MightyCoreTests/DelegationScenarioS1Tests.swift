@@ -121,7 +121,8 @@ private final class ScenarioHost: DelegationHost, @unchecked Sendable {
             "GIT_COMMITTER_NAME": "Fake Claude", "GIT_COMMITTER_EMAIL": "fake-claude@example.invalid",
         ]
         if let developer = ProcessInfo.processInfo.environment["DEVELOPER_DIR"] { environment["DEVELOPER_DIR"] = developer }
-        let service = ProviderService(binaryOverrides: ["claude": fake], environment: environment)
+        // A busy CI runner may take longer than the app's 4 s for the fake's --version.
+        let service = ProviderService(binaryOverrides: ["claude": fake], environment: environment, versionProbeTimeout: 60)
         let suite = switchSuite
         return ProcessRunner(providerService: service, pluginDirectory: plugin, paneMCPServer: PaneMCPServerLocation(socketPath: socketPath, executable: fake),
                              paneMCPBindings: bindings, delegationEnabled: { DelegationSwitch.isOn(UserDefaults(suiteName: suite) ?? .standard) },

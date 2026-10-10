@@ -166,7 +166,8 @@ private final class SwitchFlag: @unchecked Sendable {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             workspaces[name] = Workspace(id: "ws-\(name)", name: name, path: folder.path)
         }
-        let service = ProviderService(binaryOverrides: ["claude": claude, "codex": codex], environment: ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": root.path])
+        // A busy CI runner may take longer than the app's 4 s for the fake's --version.
+        let service = ProviderService(binaryOverrides: ["claude": claude, "codex": codex], environment: ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": root.path], versionProbeTimeout: 60)
         let bindings = PaneMCPBindingRegistry()
         let location = PaneMCPServerLocation(socketPath: root.appendingPathComponent("io.sock").path, executable: appExecutable)
         let switchFlag = SwitchFlag()

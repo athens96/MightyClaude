@@ -146,7 +146,8 @@ private final class S2Host: DelegationHost, @unchecked Sendable {
             "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1",
         ]
         if let developer = ProcessInfo.processInfo.environment["DEVELOPER_DIR"] { environment["DEVELOPER_DIR"] = developer }
-        let service = ProviderService(binaryOverrides: ["claude": fake], environment: environment)
+        // A busy CI runner may take longer than the app's 4 s for the fake's --version.
+        let service = ProviderService(binaryOverrides: ["claude": fake], environment: environment, versionProbeTimeout: 60)
         let suite = switchSuite
         return ProcessRunner(providerService: service, pluginDirectory: plugin, paneMCPServer: PaneMCPServerLocation(socketPath: socketPath, executable: fake),
                              paneMCPBindings: bindings, delegationEnabled: { DelegationSwitch.isOn(UserDefaults(suiteName: suite) ?? .standard) },
