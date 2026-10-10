@@ -73,9 +73,11 @@ import Testing
         var recent = child("child", parent: "parent", folder: "/tmp/worktrees/child")
         recent.model = "claude-opus-5"; recent.settings = tuned
         recent.logs = [LogEntry(id: "c1", kind: "user", text: "hi", timestamp: "2026-10-09T10:00:00Z")]
-        // The child is the most recently used Claude pane, so it is the template.
-        let template = try #require(RunSession.template(kind: SessionKind.claude, provider: "claude", in: [parent, recent]))
-        #expect(template.id == "child")
+        // The child is the most recently used Claude pane, but a delegated child
+        // is never the template: its parent is.
+        #expect(RunSession.template(kind: SessionKind.claude, provider: "claude", in: [parent, recent])?.id == "parent")
+        // Settings taken from the child itself carry its model and run settings, never its links.
+        let template = recent
         var fresh = RunSession(workspaceId: "w", title: "Claude")
         fresh.inheritSettings(from: template)
         #expect(fresh.model == "claude-opus-5"); #expect(fresh.settings == tuned)

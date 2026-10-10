@@ -11,12 +11,14 @@ extension RunSession {
     }
 
     /// The pane whose settings a new `kind`/`provider` pane should inherit.
-    /// Shell panes carry no model or run settings, so they never act as one.
+    /// Shell panes carry no model or run settings, so they never act as one,
+    /// and neither does a delegated child pane: its mode was set for its task
+    /// by its parent, not chosen by the human.
     public static func template(kind: String, provider: String, in sessions: [RunSession], excluding excludedId: String? = nil) -> RunSession? {
         guard kind != "shell" else { return nil }
         let provider = ProviderOptions.normalizeProvider(provider)
         return sessions
-            .filter { $0.id != excludedId && $0.kind == kind && ProviderOptions.normalizeProvider($0.provider) == provider }
+            .filter { $0.id != excludedId && $0.parentSessionId == nil && $0.kind == kind && ProviderOptions.normalizeProvider($0.provider) == provider }
             .max { lhs, rhs in
                 let l = lhs.lastUsedAt, r = rhs.lastUsedAt
                 return l == r ? lhs.createdAt < rhs.createdAt : l < r
