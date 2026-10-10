@@ -1287,6 +1287,8 @@
   "delegation.card.heldNoticesHelp": "Notices from this child for its parent pane, which is closed, so nothing will deliver them.",
   "delegation.card.merged": "Merged into {branch}.",
   "delegation.card.undone": "The merge into {branch} was undone.",
+  "delegation.card.mergedUnsaved": "Merged into {branch}, but the delegation record could not be saved: {error}. It is written again with the next save.",
+  "delegation.card.undoneUnsaved": "The merge into {branch} was undone, but the delegation record could not be saved: {error}. It is written again with the next save.",
   "delegation.card.mergeRefused": "Merge refused: {reason}",
   "delegation.card.undoRefused": "Undo refused: {reason}",
   "delegation.card.mergeFailed": "Merge failed: {error}",

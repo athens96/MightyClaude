@@ -53,13 +53,15 @@ extension DelegationCoordinator {
             return .refusal(reason)
         case .failed(let message):
             return .failure("Git did not merge the child: \(message)")
-        case .merged(let record):
+        case .merged(let record), .mergedUnsaved(let record, _):
             // The merge is made, so it is on record before anything else can
             // run here, and stays so even should the disk refuse it now; the
-            // next save writes it.
+            // next save writes it, and the parent hears so.
             if !file.recordMerge(record), file.children.contains(where: { $0.id == record.childId }) { file.merges.append(record) }
             let context = await pruneContext()
-            try? commit(file, context: context)
+            do { try commit(file, context: context) } catch {
+                return .failure("The child is merged: \(record.parentBranch) now points at \(record.mergedCommit), and the app keeps the merge on record, but the delegation file could not be saved (\(error.localizedDescription)). It is saved with the next change. Do not merge this child again.")
+            }
             return DelegationResponse(merged: record)
         }
     }

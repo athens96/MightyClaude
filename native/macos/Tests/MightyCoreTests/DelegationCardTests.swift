@@ -60,6 +60,34 @@ struct DelegationCardTests {
         guard case .failed = await coordinator.undoMergeFromCard("c1") else { Issue.record("undid a merge that is not there"); return }
     }
 
+    @Test func aMergeOrUndoWhoseSaveFailsStandsStaysOnRecordInMemoryAndTheNextSaveWritesIt() async throws {
+        let place = try MergePlace(); defer { place.remove() }
+        let (coordinator, _, _, head) = try await reportedChild(place)
+        let profile = place.base.appendingPathComponent("profile", isDirectory: true)
+        // The disk refuses the delegation file now.
+        #expect(chmod(profile.path, 0o500) == 0)
+        defer { _ = chmod(profile.path, 0o700) }
+        guard case .mergedUnsaved(let record, let error) = await coordinator.mergeFromCard("c1") else { Issue.record("not merged unsaved"); return }
+        #expect(!error.isEmpty)
+        #expect(try await place.git(["rev-parse", "HEAD"]) == head)
+        #expect(await coordinator.file.merges == [record])
+        #expect(await DelegationSidebar.rows(coordinator.file).map(\.state) == [.merged])
+        #expect(try store(place).load().merges.isEmpty)
+
+        // The disk takes it again: the next save writes the merge.
+        #expect(chmod(profile.path, 0o700) == 0)
+        let file = await coordinator.file, context = await coordinator.pruneContext()
+        try await coordinator.commit(file, context: context)
+        #expect(try store(place).load().merges == [record])
+
+        // An undo whose save fails is made and taken out in memory the same way.
+        #expect(chmod(profile.path, 0o500) == 0)
+        guard case .undoneUnsaved(record, restoredBranch: false, let undoError) = await coordinator.undoMergeFromCard("c1") else { Issue.record("not undone unsaved"); return }
+        #expect(!undoError.isEmpty)
+        #expect(await coordinator.file.merges.isEmpty)
+        #expect(try store(place).load().merges == [record])
+    }
+
     @Test func refusesWithItsReasonAndChangesNothing() async throws {
         let place = try MergePlace(); defer { place.remove() }
         let (coordinator, _, base, _) = try await reportedChild(place)

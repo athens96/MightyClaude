@@ -81,7 +81,9 @@ extension DelegationCoordinator {
         guard case .merged(let record) = outcome else { return outcome }
         if !file.recordMerge(record), file.children.contains(where: { $0.id == record.childId }) { file.merges.append(record) }
         let context = await pruneContext()
-        try? commit(file, context: context)
+        // The merge stands and stays on record in memory; the human hears
+        // that the file could not be saved, and the next save writes it.
+        do { try commit(file, context: context) } catch { return .mergedUnsaved(record, error.localizedDescription) }
         return outcome
     }
 
@@ -111,11 +113,11 @@ extension DelegationCoordinator {
         // As it is now: the child may have moved on while the host answered.
         guard let current = file.children.first(where: { $0.id == id }), let record = file.undoableMerge(of: id) else { return .failed(L("delegation.card.error.noMergeToUndo")) }
         let outcome = await ChildMerge.undo(record, of: current, parentCheckout: checkout, parentActivity: activity)
-        guard case .undone(let undone, _) = outcome else { return outcome }
+        guard case .undone(let undone, let restored) = outcome else { return outcome }
         // Undone on disk, so its record goes whatever the child did meanwhile.
         if !file.recordUndo(undone), let index = file.merges.lastIndex(of: undone) { file.merges.remove(at: index) }
         let context = await pruneContext()
-        try? commit(file, context: context)
+        do { try commit(file, context: context) } catch { return .undoneUnsaved(undone, restoredBranch: restored, error.localizedDescription) }
         return outcome
     }
 

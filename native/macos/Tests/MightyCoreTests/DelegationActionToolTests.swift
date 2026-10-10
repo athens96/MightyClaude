@@ -113,6 +113,30 @@ struct DelegationActionToolTests {
         return (child, head)
     }
 
+    @Test func aToolMergeWhoseSaveFailsTellsTheParentItStandsAndTheNextSaveWritesIt() async throws {
+        let place = try MergePlace(); defer { place.remove() }
+        _ = try await place.repository()
+        let (made, head) = try await Self.reportedChild(place, "c1", files: ["a.txt"])
+        var child = made
+        child.parentCheckout = place.repo.path
+        let fixture = try Fixture(place, children: [child])
+        let profile = place.base.appendingPathComponent("profile", isDirectory: true)
+        #expect(chmod(profile.path, 0o500) == 0)
+        defer { _ = chmod(profile.path, 0o700) }
+
+        let answer = await fixture.call("merge", ["child": "c1", "expected_head": head])
+        // The fast-forward landed, and the parent is told so and not to merge again.
+        #expect(answer.error?.hasPrefix("The child is merged: main now points at \(head)") == true)
+        #expect(answer.error?.hasSuffix("Do not merge this child again.") == true)
+        #expect(try await place.git(["rev-parse", "HEAD"]) == head)
+        #expect(await fixture.coordinator.file.merges.map(\.childId) == ["c1"])
+        #expect(try fixture.store.load().merges.isEmpty)
+        #expect(chmod(profile.path, 0o700) == 0)
+        let file = await fixture.coordinator.file, context = await fixture.coordinator.pruneContext()
+        try await fixture.coordinator.commit(file, context: context)
+        #expect(try fixture.store.load().merges.map(\.childId) == ["c1"])
+    }
+
     @Test func mergeFastForwardsAReportedChildAndWritesItsMergeRecord() async throws {
         let place = try MergePlace(); defer { place.remove() }
         let base = try await place.repository()

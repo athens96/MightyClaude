@@ -1287,6 +1287,8 @@
   "delegation.card.heldNoticesHelp": "这些是此子窗格发给其父窗格的通知；父窗格已关闭，它们不会再被送达。",
   "delegation.card.merged": "已合并到 {branch}。",
   "delegation.card.undone": "已撤销到 {branch} 的合并。",
+  "delegation.card.mergedUnsaved": "已合并到 {branch}，但无法保存委派记录：{error}。下次保存时会重新写入。",
+  "delegation.card.undoneUnsaved": "已撤销到 {branch} 的合并，但无法保存委派记录：{error}。下次保存时会重新写入。",
   "delegation.card.mergeRefused": "合并被拒绝：{reason}",
   "delegation.card.undoRefused": "撤销被拒绝：{reason}",
   "delegation.card.mergeFailed": "合并失败：{error}",
