@@ -306,9 +306,6 @@ private func s2Git(_ arguments: [String], in folder: URL) async throws -> String
     return DelegationGit.line(result.stdout)
 }
 
-/// How many times `needle` appears in `text`.
-private func s2Count(of needle: String, in text: String) -> Int { text.components(separatedBy: needle).count - 1 }
-
 /// Scenario S2, headless: its own temp repository and profile, the switch on,
 /// a fake Claude parent with three children. Child 1's notice reaches the
 /// parent while it is idle after a normal finish; after the human stops the
@@ -452,14 +449,18 @@ private func s2Count(of needle: String, in text: String) -> Int { text.component
         guard let after else { return }
 
         // The parent's Claude-format transcript, one session across both
-        // launches: each notice id exactly once, the released two oldest first
-        // and ahead of the human's text or row.
+        // launches: each notice id in exactly one prompt the model received,
+        // the released two oldest first and ahead of the human's text or row,
+        // by prompt and then by place in it.
         let label = Comment(rawValue: path.rawValue)
-        let transcript = try launch.parentTranscript(repo: repo)
-        for notice in held.notices { #expect(s2Count(of: notice.id, in: transcript) == 1, "\(path.rawValue) \(notice.id)") }
-        #expect(s2Count(of: after, in: transcript) == 1, label)
-        let positions = [held.notices[1].id, held.notices[2].id, after].compactMap { transcript.range(of: $0)?.lowerBound }
-        #expect(positions.count == 3 && positions == positions.sorted(), label)
+        let prompts = receivedPrompts(in: try launch.parentTranscript(repo: repo))
+        for notice in held.notices { #expect(prompts.filter { $0.contains(notice.id) }.count == 1, "\(path.rawValue) \(notice.id)") }
+        #expect(prompts.filter { $0.contains(after) }.count == 1, label)
+        let positions = [held.notices[1].id, held.notices[2].id, after].compactMap { needle -> [Int]? in
+            guard let index = prompts.firstIndex(where: { $0.contains(needle) }), let range = prompts[index].range(of: needle) else { return nil }
+            return [index, prompts[index].distance(from: prompts[index].startIndex, to: range.lowerBound)]
+        }
+        #expect(positions.count == 3 && zip(positions, positions.dropFirst()).allSatisfy { $0.lexicographicallyPrecedes($1) }, label)
 
         // The Mac send's record, for scripts/delegation-record.py in macOS CI.
         if path == .macSend {

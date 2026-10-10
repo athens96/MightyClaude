@@ -11,6 +11,9 @@ import MightyCore
 // inherited (so the pane token never leaves the environment), and writes its
 // transcript where Claude Code does: `<CLAUDE_CONFIG_DIR>/projects/<cwd with
 // every character but ASCII letters and digits as "-">/<session id>.jsonl`.
+// Like the CLI, the transcript repeats each prompt outside the user line that
+// delivers it: a stream-json prompt is queued and dequeued (`queue-operation`
+// lines, the enqueue with its text) and every turn ends with a `last-prompt`.
 //
 // The same binary also runs the app's two stdio MCP servers, exactly as the
 // app binary's headless `--agent-io-mcp` and `--agent-delegation-mcp` modes do,
@@ -267,6 +270,10 @@ final class FakeClaude {
                   "permissionMode": Self.value(of: "--permission-mode", in: arguments) ?? "default", "uuid": UUID().uuidString.lowercased()])
         }
         stateChanged("running")
+        if streamJSON {
+            note(["type": "queue-operation", "operation": "enqueue", "timestamp": ISO8601DateFormatter().string(from: Date()), "content": Self.text(of: prompt)])
+            note(["type": "queue-operation", "operation": "dequeue", "timestamp": ISO8601DateFormatter().string(from: Date())])
+        }
         record(["type": "user", "message": ["role": "user", "content": prompt]])
         var texts: [String] = []
         for step in steps {
@@ -317,6 +324,8 @@ final class FakeClaude {
                 finish(code)
             }
         }
+        // On disk before the result, so a host that saw the turn end reads it.
+        note(["type": "last-prompt", "lastPrompt": Self.text(of: prompt), "leafUuid": lastUuid ?? NSNull()])
         emit(["type": "result", "subtype": "success", "is_error": false, "duration_ms": 1, "num_turns": 1,
               "result": texts.last ?? "", "session_id": sessionId, "total_cost_usd": 0,
               "usage": ["input_tokens": 1, "output_tokens": 1], "uuid": UUID().uuidString.lowercased()])
@@ -397,12 +406,28 @@ final class FakeClaude {
                                    "timestamp": ISO8601DateFormatter().string(from: Date())]
         line.merge(fields) { _, new in new }
         lastUuid = uuid
+        append(line, to: transcript)
+        return uuid
+    }
+
+    /// Appends one of the CLI's bookkeeping lines (a queue operation, the last
+    /// prompt): outside the chain of messages, with no uuid of its own.
+    private func note(_ fields: [String: Any]) {
+        append(fields.merging(["sessionId": sessionId]) { _, session in session }, to: transcript)
+    }
+
+    /// The session's transcript, where Claude Code keeps it.
+    private var transcript: URL {
         let configDirectory = environment["CLAUDE_CONFIG_DIR"].flatMap { $0.isEmpty ? nil : $0 }
             ?? (environment["HOME"] ?? NSHomeDirectory()) + "/.claude"
         let folder = String(cwd.unicodeScalars.map { $0.isASCII && CharacterSet.alphanumerics.contains($0) ? Character($0) : "-" })
         let directory = URL(fileURLWithPath: configDirectory, isDirectory: true).appendingPathComponent("projects/\(folder)", isDirectory: true)
-        append(line, to: directory.appendingPathComponent("\(sessionId).jsonl"))
-        return uuid
+        return directory.appendingPathComponent("\(sessionId).jsonl")
+    }
+
+    /// A prompt's text, as the CLI's queue and last-prompt lines keep it.
+    private static func text(of prompt: Any) -> String {
+        (prompt as? String) ?? (prompt as? [[String: Any]] ?? []).compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }.joined(separator: "\n")
     }
 
     private func log(_ object: [String: Any]) {

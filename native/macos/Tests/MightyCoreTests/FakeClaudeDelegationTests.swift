@@ -33,6 +33,31 @@ func jsonLines(_ url: URL) -> [[String: Any]] {
     return text.split(separator: "\n").compactMap { (try? JSONSerialization.jsonObject(with: Data($0.utf8))) as? [String: Any] }
 }
 
+/// The prompts a Claude-format transcript shows the model received, in
+/// order and once per line uuid, as scripts/delegation-record.py reads them:
+/// user lines with text (not tool results, meta lines or compaction
+/// summaries) and queued commands taken into a running turn. The CLI's
+/// queue-operation and last-prompt lines only repeat a prompt.
+func receivedPrompts(in transcript: String) -> [String] {
+    var seen = Set<String>()
+    return transcript.split(separator: "\n").enumerated().compactMap { number, line in
+        guard let object = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any], object["isSidechain"] as? Bool != true else { return nil }
+        let content: Any?
+        switch object["type"] as? String {
+        case "user" where object["isMeta"] as? Bool != true && object["isCompactSummary"] as? Bool != true:
+            content = (object["message"] as? [String: Any])?["content"]
+        case "attachment" where (object["attachment"] as? [String: Any])?["type"] as? String == "queued_command":
+            content = (object["attachment"] as? [String: Any])?["prompt"]
+        default:
+            return nil
+        }
+        let texts = (content as? String).map { [$0] } ?? (content as? [[String: Any]] ?? []).filter { $0["type"] as? String == "text" }.compactMap { $0["text"] as? String }
+        let key = (object["uuid"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "line \(number)"
+        guard !texts.isEmpty, seen.insert(key).inserted else { return nil }
+        return texts.joined(separator: "\n")
+    }
+}
+
 private func text(of result: Any?) -> String {
     ((result as? [String: Any])?["content"] as? [[String: Any]] ?? []).compactMap { $0["text"] as? String }.joined(separator: "\n")
 }
@@ -262,11 +287,24 @@ private final class EventLog: @unchecked Sendable {
         #expect(listed.title == "Delegate the release notes to a child.")
         #expect(listed.requests == 1)
         #expect(listed.model == "claude-fake-1")
+        // The chained messages, between the CLI's bookkeeping: the prompt
+        // queued and taken by the turn, then the turn's last prompt.
         let lines = jsonLines(record)
-        #expect(lines.map { $0["type"] as? String } == ["user", "assistant", "user", "assistant"])
-        #expect(lines.allSatisfy { $0["sessionId"] as? String == session && $0["cwd"] as? String == fixture.workspace.path })
-        #expect(zip(lines.dropFirst(), lines).allSatisfy { $0["parentUuid"] as? String == $1["uuid"] as? String })
-        #expect(lines[2]["toolUseResult"] != nil)
+        try #require(lines.map { $0["type"] as? String } == ["queue-operation", "queue-operation", "user", "assistant", "user", "assistant", "last-prompt"])
+        #expect(lines.allSatisfy { $0["sessionId"] as? String == session })
+        let messages = Array(lines[2 ..< 6])
+        #expect(messages.allSatisfy { $0["uuid"] != nil && $0["cwd"] as? String == fixture.workspace.path })
+        #expect(lines.allSatisfy { ($0["uuid"] != nil) == ["user", "assistant"].contains($0["type"] as? String) })
+        #expect(zip(messages.dropFirst(), messages).allSatisfy { $0["parentUuid"] as? String == $1["uuid"] as? String })
+        #expect(messages[2]["toolUseResult"] != nil)
+        let prompt = "Delegate the release notes to a child."
+        #expect(lines[0]["operation"] as? String == "enqueue" && lines[0]["content"] as? String == prompt)
+        #expect(lines[1]["operation"] as? String == "dequeue" && lines[1]["content"] == nil)
+        #expect(lines[6]["lastPrompt"] as? String == prompt && lines[6]["leafUuid"] as? String == messages.last?["uuid"] as? String)
+        // The prompt is on three lines, and the model received it once.
+        let transcript = try String(contentsOf: record, encoding: .utf8)
+        #expect(transcript.components(separatedBy: prompt).count - 1 == 3)
+        #expect(receivedPrompts(in: transcript) == [prompt])
     }
 }
 
