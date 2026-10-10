@@ -28,8 +28,11 @@ struct CLIEnvironmentTests {
         let path = bin?.path ?? "/usr/bin:/bin"
         try Data("export PATH='\(path)'\nexport FIXTURE_MODEL='\(model)'\nexport AWS_BEARER_TOKEN_BEDROCK='fixture-rotated'\nunset AWS_ACCESS_KEY_ID\n".utf8).write(to: root.appendingPathComponent("shell-settings"))
     }
+    /// The snapshot stays cached for 10 minutes, not the app's 10 s, so a busy
+    /// CI runner cannot expire it between a test's resolves; every refresh
+    /// these tests mean is a forced one.
     private func resolver(_ root: URL, shell: URL, timeout: TimeInterval = 30) -> CLIEnvironmentResolver {
-        CLIEnvironmentResolver(baseEnvironment: ["HOME": root.path, "PATH": "/usr/bin:/bin", "AWS_ACCESS_KEY_ID": "fixture-stale", "AWS_BEARER_TOKEN_BEDROCK": "fixture-old"], shell: shell, home: root, timeout: timeout)
+        CLIEnvironmentResolver(baseEnvironment: ["HOME": root.path, "PATH": "/usr/bin:/bin", "AWS_ACCESS_KEY_ID": "fixture-stale", "AWS_BEARER_TOKEN_BEDROCK": "fixture-old"], shell: shell, home: root, timeout: timeout, cacheTTL: 600)
     }
     private func waitForFile(_ file: URL) async throws {
         for _ in 0..<3000 {
