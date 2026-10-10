@@ -28,6 +28,16 @@ private func record(_ id: String, of parent: String, _ state: ChildState) -> Chi
 @Suite(.delegationLane) struct DelegationSidebarTests {
     let workspaces = [Workspace(id: "w1", name: "repo", path: "/repo"), Workspace(id: "w2", name: "sub", path: "/repo/sub"), Workspace(id: "w3", name: "app", path: "/other/app")]
 
+    @Test func aParentsCloseCountsItsOpenChildrenAndAChildPaneWhoseRowHasNotArrived() {
+        let sessions = [pane("p1", in: "w1"), pane("c1", in: "w1", parent: "p1"), pane("c3", in: "w1", parent: "p1"), pane("q1", in: "w1", parent: "q")]
+        let children = [child("c1", of: "p1", .running), child("c2", of: "p1", .failed), child("x", of: "q", .reported)]
+        // c1 is listed open, c2 failed does not count, and c3's pane is there before its row.
+        #expect(DelegationSidebar.openChildCount(of: "p1", children: children, sessions: sessions) == 2)
+        // Right after a delegate, the new child's pane alone makes the close ask.
+        #expect(DelegationSidebar.openChildCount(of: "p1", children: [], sessions: sessions) == 2)
+        #expect(DelegationSidebar.openChildCount(of: "p1", children: children.filter { $0.id != "c1" }, sessions: [pane("p1", in: "w1")]) == 0)
+    }
+
     @Test func childrenAreListedUnderTheirOpenParentInTheOrderTheyWereMade() {
         let sessions = [pane("p1", in: "w1"), pane("c1", in: "w1", parent: "p1"), pane("x", in: "w1"), pane("stray", in: "w1", parent: "p1"), pane("q", in: "w2")]
         let children = [child("c2", of: "p1", .failed), child("c1", of: "p1", .reported)]

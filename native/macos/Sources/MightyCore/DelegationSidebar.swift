@@ -47,6 +47,16 @@ public enum DelegationSidebar {
         file.children.filter { $0.state != .discarded }.map { DelegationChildRow($0, in: file) }
     }
 
+    /// The open children of the parent pane `parentId`, for its close to ask
+    /// about: the open ones among `children`, and the child panes in
+    /// `sessions` that `children` does not list yet, as for a child made a
+    /// moment ago whose row has not arrived.
+    public static func openChildCount(of parentId: String, children: [DelegationChildRow], sessions: [RunSession]) -> Int {
+        let listed = children.filter { $0.parentSessionId == parentId }
+        let known = Set(listed.map(\.id))
+        return listed.filter { $0.state.isOpen }.count + sessions.filter { $0.parentSessionId == parentId && !known.contains($0.id) }.count
+    }
+
     /// The state a child's row shows: waiting while a running child's pane
     /// has a request only a human can answer, otherwise its record's state.
     public static func shownState(_ state: ChildState, asksHuman: Bool) -> ChildState {
