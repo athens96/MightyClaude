@@ -32,6 +32,7 @@ public enum ChildCardDiscardOutcome: Sendable, Equatable {
     /// for the card to ask again.
     case nestedChanged([String])
     /// Nothing after this step was removed; a later discard goes on from here.
+    /// The words are in the app's language, with git's own output kept as it is.
     case failed(String)
 }
 
@@ -73,7 +74,7 @@ extension DelegationCoordinator {
     }
 
     private func cardMerge(_ id: String) async -> ChildMergeOutcome {
-        guard let child = file.children.first(where: { $0.id == id }) else { return .failed("No child has this id.") }
+        guard let child = file.children.first(where: { $0.id == id }) else { return .failed(L("delegation.card.error.noChild")) }
         cardPanes = [child.parentSessionId, child.id]
         guard let checkout = await parentCheckout(of: child) else { return .refused(.branchNotCheckedOut) }
         let outcome = await ChildMerge.cardMerge(child, parentCheckout: checkout)
@@ -103,12 +104,12 @@ extension DelegationCoordinator {
     }
 
     private func cardUndo(_ id: String) async -> ChildUndoOutcome {
-        guard let child = file.children.first(where: { $0.id == id }), file.undoableMerge(of: id) != nil else { return .failed("This child has no merge to undo.") }
+        guard let child = file.children.first(where: { $0.id == id }), file.undoableMerge(of: id) != nil else { return .failed(L("delegation.card.error.noMergeToUndo")) }
         cardPanes = [child.parentSessionId]
         guard let checkout = await parentCheckout(of: child) else { return .refused(.branchNotCheckedOut) }
         let activity = await host.paneState(sessionId: child.parentSessionId)?.activity
         // As it is now: the child may have moved on while the host answered.
-        guard let current = file.children.first(where: { $0.id == id }), let record = file.undoableMerge(of: id) else { return .failed("This child has no merge to undo.") }
+        guard let current = file.children.first(where: { $0.id == id }), let record = file.undoableMerge(of: id) else { return .failed(L("delegation.card.error.noMergeToUndo")) }
         let outcome = await ChildMerge.undo(record, of: current, parentCheckout: checkout, parentActivity: activity)
         guard case .undone(let undone, _) = outcome else { return outcome }
         // Undone on disk, so its record goes whatever the child did meanwhile.
@@ -127,8 +128,8 @@ extension DelegationCoordinator {
     /// ``discardChild(_:)`` removes the child's worktree, those nested in it
     /// and its branch by force, in its turn with the merges and undos.
     public func discardFromCard(_ id: String, confirmedNested confirmed: [String]?) async -> ChildCardDiscardOutcome {
-        guard file.children.contains(where: { $0.id == id && $0.state != .discarded }) else { return .failed("No child with this id can be discarded.") }
-        guard !starting.contains(id) else { return .failed("The child is still starting, so nothing was removed. Discard it once its start has finished.") }
+        guard file.children.contains(where: { $0.id == id && $0.state != .discarded }) else { return .failed(L("delegation.card.error.cannotDiscard")) }
+        guard !starting.contains(id) else { return .failed(L("delegation.card.error.stillStarting")) }
         await host.stopRun(sessionId: id)
         await takeMergeTurn()
         let outcome = await cardDiscard(id, confirmed: confirmed)
@@ -137,7 +138,7 @@ extension DelegationCoordinator {
     }
 
     private func cardDiscard(_ id: String, confirmed: [String]?) async -> ChildCardDiscardOutcome {
-        guard let nested = await nestedWorktrees(of: id) else { return .failed("The worktrees nested in the child's could not be listed, so nothing was removed.") }
+        guard let nested = await nestedWorktrees(of: id) else { return .failed(L("delegation.card.error.nestedUnlisted")) }
         guard Set(nested).isSubset(of: Set(confirmed ?? [])) else { return .nestedChanged(nested) }
         switch await discardChild(id) {
         case .discarded: return .discarded
