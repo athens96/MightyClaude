@@ -354,6 +354,8 @@ struct DelegationActionToolTests {
         // Measured as it is stored: under 48 KiB in UTF-8, over it with its escapes.
         let quotes = String(repeating: "\"", count: DelegationCoordinator.maximumFollowUpBytes / 2 + 1)
         #expect(await fixture.call("follow_up", ["child": "open", "text": quotes]).error == "A follow-up's text may be at most 48 KiB.")
+        // No run input may hold a NUL character, so a held one would block the child's pane.
+        #expect(await fixture.call("follow_up", ["child": "open", "text": "Go on.\0Then stop."]).error == "A follow-up's text may not contain a NUL character.")
         #expect(await fixture.call("follow_up", ["child": "open"]).error == "follow_up takes exactly these string arguments: child, text.")
 
         // The parent's pane closed: its children keep their cards, and nothing more is sent to them.

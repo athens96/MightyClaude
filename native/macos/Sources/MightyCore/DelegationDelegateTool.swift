@@ -20,8 +20,8 @@ extension DelegationCoordinator {
 
     /// delegate(task, mode) from `caller`. The first rule that applies answers:
     ///
-    /// 1. A mode that is not a starting mode, or an empty task, is answered
-    ///    with an error.
+    /// 1. A mode that is not a starting mode, or an empty task or one with a
+    ///    NUL character (no run input may hold one), is answered with an error.
     /// 2. The same call earlier in the caller's current run (the same request
     ///    key) gets that same child, in whatever state it is now.
     /// 3. `child_cannot_delegate` (the caller has a parent link), `width_cap`
@@ -39,6 +39,7 @@ extension DelegationCoordinator {
     func delegate(task: String, mode: String, caller: PaneMCPBinding) async -> DelegationResponse {
         guard Self.startingModes.contains(mode) else { return .failure("mode must be one of \(Self.startingModes.joined(separator: ", ")).") }
         guard !task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return .failure("delegate needs a task: what the child should do.") }
+        guard !task.contains("\0") else { return .failure("A task may not contain a NUL character.") }
         let parentId = caller.agentPaneId
         guard let parent = await host.paneState(sessionId: parentId) else { return .failure("The calling pane is closed.") }
         let key = DelegationRequestKey.make(parentSessionId: parentId, parentRunId: parent.runId ?? "", task: task, startingMode: mode)

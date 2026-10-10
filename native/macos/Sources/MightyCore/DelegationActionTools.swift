@@ -66,8 +66,9 @@ extension DelegationCoordinator {
 
     /// follow_up(child, text) from `caller`. The first rule that applies answers:
     ///
-    /// 1. An empty text, a text over 48 KiB, or a child that is not the
-    ///    caller's is answered with an error.
+    /// 1. An empty text, a text over 48 KiB or with a NUL character (no run
+    ///    input may hold one, so a held one would block the child's pane), or
+    ///    a child that is not the caller's is answered with an error.
     /// 2. `parent_closed`: the caller's pane is closed. A closed parent's
     ///    children keep their cards, and nothing more is sent to them.
     /// 3. `child_closed`: the child is not open (its pane closed, its start
@@ -85,6 +86,7 @@ extension DelegationCoordinator {
         guard text.utf8.count <= Self.maximumFollowUpBytes, DelegationCopy.storedBytes(text) <= Self.maximumFollowUpBytes else {
             return .failure("A follow-up's text may be at most 48 KiB.")
         }
+        guard !text.contains("\0") else { return .failure("A follow-up's text may not contain a NUL character.") }
         let id = id.trimmingCharacters(in: .whitespacesAndNewlines)
         guard isChild(id, of: caller) else { return .failure(Self.notYourChildMessage(id)) }
         // Asks the host about every parent with children, the caller among them.

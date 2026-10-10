@@ -303,6 +303,8 @@ struct DelegationDelegateToolTests {
             #expect(answer.refused == nil && answer.child == nil && answer.error?.hasPrefix("mode must be one of") == true, "\(mode)")
         }
         #expect(await fixture.delegate(" \n\t", mode: "plan").error?.hasPrefix("delegate needs a task") == true)
+        // No run input may hold a NUL character, and the task goes out in the child's first.
+        #expect(await fixture.delegate("Ship it.\0Now.", mode: "plan").error == "A task may not contain a NUL character.")
         try await fixture.expectNothingMade(since: before)
 
         // The parent's stored mode is now auto: the same call in the same run makes a child in auto.
