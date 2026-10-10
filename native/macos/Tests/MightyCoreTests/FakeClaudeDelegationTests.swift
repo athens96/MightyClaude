@@ -100,7 +100,7 @@ private final class EventLog: @unchecked Sendable {
 
 /// The scripted fake Claude, launched through the real ProcessRunner with the
 /// delegation switch on, behind the app's real socket server.
-@Suite(.serialized) struct FakeClaudeDelegationTests {
+@Suite(.serialized, .delegationLane) struct FakeClaudeDelegationTests {
     private struct Fixture {
         let root: URL
         let fake: URL

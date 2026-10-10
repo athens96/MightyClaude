@@ -5,7 +5,7 @@ import Testing
 /// The parent's merge tool on real git repositories in a temp folder: a
 /// reported child fast-forwards the recorded parent branch, and every refusal
 /// changes nothing.
-@Suite(.enabled(if: DelegationGit.executable != nil, "Requires a local Git executable"))
+@Suite(.enabled(if: DelegationGit.executable != nil, "Requires a local Git executable"), .delegationLane)
 struct DelegationMergeTests {
     @Test func fastForwardsTheParentBranchAndWritesTheMergeRecord() async throws {
         let place = try MergePlace(); defer { place.remove() }

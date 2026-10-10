@@ -4,7 +4,7 @@ import Testing
 
 /// A delegated child pane's two optional snapshot keys, `parentSessionId` and
 /// `workingFolder` (macOS only; the delegation file is the authority).
-struct DelegationSnapshotTests {
+@Suite(.delegationLane) struct DelegationSnapshotTests {
     private let workspace = Workspace(id: "w", name: "W", path: "/tmp/w")
 
     private func child(_ id: String, kind: String = SessionKind.claude, provider: String = "claude", parent: String?, folder: String?) -> RunSession {

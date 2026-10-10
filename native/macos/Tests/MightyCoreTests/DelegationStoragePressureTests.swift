@@ -17,7 +17,7 @@ private struct OpenPanes: DelegationHost {
 /// Delegation under storage pressure (macOS only): a nearly full
 /// workspace-state.json beside the delegation file, the delegation file near
 /// its own 4 MiB cap, and reports longer than a 64 KiB copy.
-struct DelegationStoragePressureTests {
+@Suite(.delegationLane) struct DelegationStoragePressureTests {
     private static let stateBytes = 7 * 1024 * 1024 + 512 * 1024
     private let cap = DelegationFileStore.maximumFileBytes
     private let fullCopy = DelegationFileStore.maximumCopyBytes

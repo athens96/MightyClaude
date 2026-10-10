@@ -4,7 +4,7 @@ import Testing
 
 /// The delegation model: child states and their only moves, the records the
 /// delegation file keeps, the reason codes and the delegate request key.
-struct DelegationModelTests {
+@Suite(.delegationLane) struct DelegationModelTests {
     /// The ontology's moves, written out by hand. Every (state, event) pair not
     /// listed here must be refused.
     private static let expectedAfter: [ChildState: [ChildStateEvent: ChildState]] = [

@@ -128,7 +128,7 @@ private func worktreeList(_ place: MergePlace) async throws -> [String] {
 /// child's card, on real git repositories in a temp folder: cleanup stores
 /// the copies first and never forces anything; discard is the one path that
 /// removes unmerged work, including whatever a failed start left.
-@Suite(.enabled(if: DelegationGit.executable != nil, "Requires a local Git executable"))
+@Suite(.enabled(if: DelegationGit.executable != nil, "Requires a local Git executable"), .delegationLane)
 struct DelegationCleanupTests {
     @Test func closingAMergedChildStoresItsCopiesThenRemovesItsWorktreeAndBranch() async throws {
         let place = try MergePlace(); defer { place.remove() }

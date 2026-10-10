@@ -28,7 +28,7 @@ private final class CardHost: DelegationHost, @unchecked Sendable {
 /// folder: merge and undo write and take back their MergeRecord, a refusal
 /// carries its one reason and changes nothing, the card offers only the
 /// actions that apply, and the discard confirmation gets the nested worktrees.
-@Suite(.enabled(if: DelegationGit.executable != nil, "Requires a local Git executable"))
+@Suite(.enabled(if: DelegationGit.executable != nil, "Requires a local Git executable"), .delegationLane)
 struct DelegationCardTests {
     @Test func mergesAndUndoesFromTheCardWithTheActionsThatApply() async throws {
         let place = try MergePlace(); defer { place.remove() }

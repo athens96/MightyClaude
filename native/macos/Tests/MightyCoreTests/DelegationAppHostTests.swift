@@ -63,7 +63,7 @@ private func waitUntil(timeout: TimeInterval = 60, _ condition: () async -> Bool
 /// What the app's DelegationHost (AppStore) does with a child's pane, checked
 /// without the app: the rules it applies, its run ids and the order its run
 /// events reach the coordinator in.
-@Suite(.serialized) struct DelegationAppHostTests {
+@Suite(.serialized, .delegationLane) struct DelegationAppHostTests {
     static let pane = DelegationChildPane(sessionId: "child-1", parentSessionId: "parent-1", mode: "plan", folder: "/tmp/mighty-worktrees/child-1")
 
     @Test func aChildPaneIsAClaudePaneInTheRequestedModeNeverTheLastUsedPanes() throws {
