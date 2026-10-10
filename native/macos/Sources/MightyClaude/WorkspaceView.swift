@@ -905,7 +905,9 @@ enum DelegationText {
         switch (note.action, note.result) {
         case (.merge, .done): return (L("delegation.card.merged", ["branch": branch]), .done)
         case (.undo, .done): return (L("delegation.card.undone", ["branch": branch]), .done)
-        case (.discard, .done), (_, .reconfirm): return nil
+        case (.merge, .doneUnsaved(let error)): return (L("delegation.card.mergedUnsaved", ["branch": branch, "error": error]), .err)
+        case (.undo, .doneUnsaved(let error)): return (L("delegation.card.undoneUnsaved", ["branch": branch, "error": error]), .err)
+        case (.discard, .done), (.discard, .doneUnsaved), (_, .reconfirm): return nil
         case (.merge, .refused(let reason)): return (L("delegation.card.mergeRefused", ["reason": Self.reason(reason)]), .wait)
         case (.undo, .refused(let reason)): return (L("delegation.card.undoRefused", ["reason": Self.reason(reason)]), .wait)
         case (.discard, .refused(let reason)): return (L("delegation.card.discardFailed", ["error": Self.reason(reason)]), .err)

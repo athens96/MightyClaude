@@ -1287,6 +1287,8 @@
   "delegation.card.heldNoticesHelp": "この子ペインが親ペインに宛てた通知です。親ペインは閉じているため、もう届けられません。",
   "delegation.card.merged": "{branch} にマージしました。",
   "delegation.card.undone": "{branch} へのマージを取り消しました。",
+  "delegation.card.mergedUnsaved": "{branch} にマージしましたが、委任の記録を保存できませんでした: {error}。次の保存で書き直します。",
+  "delegation.card.undoneUnsaved": "{branch} へのマージを取り消しましたが、委任の記録を保存できませんでした: {error}。次の保存で書き直します。",
   "delegation.card.mergeRefused": "マージは拒否されました: {reason}",
   "delegation.card.undoRefused": "取り消しは拒否されました: {reason}",
   "delegation.card.mergeFailed": "マージに失敗しました: {error}",

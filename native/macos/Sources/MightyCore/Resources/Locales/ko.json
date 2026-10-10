@@ -1287,6 +1287,8 @@
   "delegation.card.heldNoticesHelp": "이 자식 창이 닫힌 부모 창에 보내려던 알림입니다. 이제 전달할 곳이 없습니다.",
   "delegation.card.merged": "{branch}에 병합했습니다.",
   "delegation.card.undone": "{branch} 병합을 되돌렸습니다.",
+  "delegation.card.mergedUnsaved": "{branch}에 병합했지만 위임 기록을 저장하지 못했습니다: {error}. 다음에 저장할 때 다시 씁니다.",
+  "delegation.card.undoneUnsaved": "{branch} 병합을 되돌렸지만 위임 기록을 저장하지 못했습니다: {error}. 다음에 저장할 때 다시 씁니다.",
   "delegation.card.mergeRefused": "병합 거부: {reason}",
   "delegation.card.undoRefused": "되돌리기 거부: {reason}",
   "delegation.card.mergeFailed": "병합 실패: {error}",

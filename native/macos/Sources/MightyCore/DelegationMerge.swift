@@ -5,6 +5,10 @@ public enum ChildMergeOutcome: Sendable, Equatable {
     /// The recorded parent branch now holds the child's head. The record is
     /// what ``DelegationFile/recordMerge(_:)`` writes.
     case merged(MergeRecord)
+    /// A card's merge is made and on record in memory, but the delegation
+    /// file could not be saved (why, in the app's language); the next save
+    /// writes it.
+    case mergedUnsaved(MergeRecord, String)
     /// Refused before any git write; nothing changed.
     case refused(DelegationReasonCode)
     /// Git was missing or failed. A fast-forward git refuses leaves the parent as it was.
@@ -20,6 +24,10 @@ public enum ChildUndoOutcome: Sendable, Equatable {
     /// made again at its recorded head. ``DelegationFile/recordUndo(_:)``
     /// writes it.
     case undone(MergeRecord, restoredBranch: Bool)
+    /// A card's undo is made and its record taken out in memory, but the
+    /// delegation file could not be saved (why, in the app's language); the
+    /// next save writes it.
+    case undoneUnsaved(MergeRecord, restoredBranch: Bool, String)
     /// Refused before any git write; nothing changed.
     case refused(DelegationReasonCode)
     /// The record is no undoable merge of this child, or git was missing or

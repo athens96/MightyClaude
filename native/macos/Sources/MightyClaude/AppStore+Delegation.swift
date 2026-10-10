@@ -5,6 +5,9 @@ import MightyCore
 struct DelegationCardNote: Equatable {
     enum Result: Equatable, Sendable {
         case done
+        /// Done in git, but the delegation file could not be saved (why); the
+        /// next save writes it.
+        case doneUnsaved(String)
         /// Refused with this reason; nothing changed.
         case refused(DelegationReasonCode)
         case failed(String)
@@ -229,6 +232,7 @@ extension AppStore {
         runCardAction(id, .merge) { delegation in
             switch await delegation.mergeFromCard(id) {
             case .merged: .done
+            case .mergedUnsaved(_, let error): .doneUnsaved(error)
             case .refused(let reason): .refused(reason)
             case .failed(let message): .failed(message)
             }
@@ -240,6 +244,7 @@ extension AppStore {
         runCardAction(id, .undo) { delegation in
             switch await delegation.undoMergeFromCard(id) {
             case .undone: .done
+            case .undoneUnsaved(_, _, let error): .doneUnsaved(error)
             case .refused(let reason): .refused(reason)
             case .failed(let message): .failed(message)
             }
@@ -287,7 +292,7 @@ extension AppStore {
             case .reconfirm(let nested):
                 delegationCardNotes[id] = nil
                 if pendingChildDiscard == nil { pendingChildDiscard = PendingChildDiscard(id: id, title: pending.title, branch: pending.branch, nested: nested) }
-            case .refused, .failed:
+            case .doneUnsaved, .refused, .failed:
                 break
             }
         }
