@@ -97,8 +97,8 @@
       "kind": "reported",
       "lane": "delivered",
       "receipt": {
-        "route": "queue",
-        "runId": "run-s1-3",
+        "route": "steer",
+        "runId": "run-s1-2",
         "time": "2026-10-10T00:02:00Z"
       },
       "reportRevision": 1

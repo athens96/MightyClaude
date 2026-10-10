@@ -2,7 +2,9 @@
 """Run scripts/delegation-record.py over the synthetic fixtures in
 scripts/fixtures/delegation-record/: each case is built in a temp folder (its
 git repository from repo.json, its profile and Claude folder with the
-@{root} and @{commit:NAME} placeholders filled in) and judged read-only."""
+@{root} and @{commit:NAME} placeholders filled in, a REPO or REPO-<sub>
+project folder named after repo/ or repo/<sub>) and judged read-only."""
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -66,7 +68,8 @@ def materialize(case, root):
     for folder in ("profile", "claude"):
         for source in sorted((case / folder).rglob("*")):
             relative = source.relative_to(case)
-            parts = [claude_project_folder(str(root / "repo")) if part == "REPO" else part for part in relative.parts]
+            repo = claude_project_folder(str(root / "repo"))
+            parts = [repo + part[4:] if part == "REPO" or part.startswith("REPO-") else part for part in relative.parts]
             target = root.joinpath(*parts)
             if source.is_dir():
                 target.mkdir(parents=True, exist_ok=True)
@@ -82,8 +85,15 @@ def judge(root, *extra):
                            "--claude-dir", str(root / "claude"), *extra], capture_output=True, text=True)
 
 
+def load_script():
+    spec = importlib.util.spec_from_file_location("delegation_record", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 class DelegationRecordFixtureTests(unittest.TestCase):
-    CASES = ["s1-like", "s2-like", "duplicate-notice-id", "deleted-unmerged-branch", "missing-panes", "no-transcript"]
+    CASES = ["s1-like", "s2-like", "subfolder-workspace", "duplicate-notice-id", "deleted-unmerged-branch", "missing-panes", "no-transcript"]
 
     def test_every_case_is_listed_here(self):
         self.assertEqual(sorted(p.name for p in FIXTURES.iterdir() if p.is_dir()), sorted(self.CASES))
@@ -112,8 +122,86 @@ class DelegationRecordFixtureTests(unittest.TestCase):
                 self.assertTrue(verdict.startswith(f"Verdict: {expect['verdict']}"), text.stdout)
                 for rule in expect["failed"]:
                     self.assertIn(rule, verdict)
+                for rule, details in expect.get("details", {}).items():
+                    self.assertEqual(next(r["details"] for r in answer["rules"] if r["rule"] == rule), details, result.stdout)
                 if expect["verdict"] == "invalid":
                     self.assertIn("panes missing", answer["reason"])
+
+    def test_passing_transcripts_repeat_each_delivered_notice_id_beyond_its_one_prompt(self):
+        # The CLI's queue-operation and last-prompt lines and an assistant's
+        # quote repeat each id, and one notice is steered into a running turn,
+        # so a pass shows that only the prompts the model received count.
+        kinds = set()
+        for name in self.CASES:
+            case = FIXTURES / name
+            if json.loads((case / "expect.json").read_text())["verdict"] != "passed":
+                continue
+            lines = [line for path in sorted((case / "claude").rglob("*.jsonl")) for line in path.read_text().splitlines()]
+            notices = json.loads((case / "profile/delegation-state.json").read_text())["notices"]
+            for notice in (notice for notice in notices if notice["lane"] == "delivered"):
+                holding = [json.loads(line)["type"] for line in lines if notice["id"] in line]
+                self.assertGreater(len(holding), 1, f"{name} {notice['id']}")
+                kinds.update(holding)
+        self.assertEqual(kinds, {"queue-operation", "user", "attachment", "assistant", "last-prompt"})
+
+
+class TranscriptReadingTests(unittest.TestCase):
+    record = load_script()
+
+    def test_only_prompts_the_model_received_count_once_each(self):
+        lines = [
+            {"type": "queue-operation", "operation": "enqueue", "sessionId": "s", "content": "[n-1] first"},
+            {"type": "queue-operation", "operation": "dequeue", "sessionId": "s"},
+            {"type": "user", "uuid": "u1", "message": {"role": "user", "content": "[n-1] first"}},
+            {"type": "user", "uuid": "u1", "message": {"role": "user", "content": "[n-1] first"}},
+            {"type": "assistant", "uuid": "a1", "message": {"role": "assistant", "content": [{"type": "text", "text": "Quoting [n-1]."}]}},
+            {"type": "user", "uuid": "t1", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "x", "content": "[n-1]"}]}},
+            {"type": "user", "uuid": "m1", "isMeta": True, "message": {"role": "user", "content": "[n-1] as meta"}},
+            {"type": "user", "uuid": "c1", "isCompactSummary": True, "message": {"role": "user", "content": "Summary: [n-1] came."}},
+            {"type": "user", "uuid": "s1", "isSidechain": True, "message": {"role": "user", "content": "[n-1] to a sub-agent"}},
+            {"type": "attachment", "uuid": "q1", "attachment": {"type": "queued_command", "commandMode": "prompt", "prompt": [{"type": "text", "text": "[n-2] steered"}]}},
+            {"type": "queue-operation", "operation": "remove", "reason": "absorbed_mid_turn", "sessionId": "s", "content": "[n-2] steered"},
+            {"type": "attachment", "uuid": "h1", "attachment": {"type": "hook_success", "content": "[n-2]"}},
+            {"type": "last-prompt", "lastPrompt": "[n-1] first", "leafUuid": "a1", "sessionId": "s"},
+            {"type": "user", "message": {"role": "user", "content": [{"type": "image"}, {"type": "text", "text": "[n-3] with a picture"}]}},
+            {"type": "user", "uuid": "u4", "message": {"role": "user", "content": "[n-4] one line\u2028still"}},
+        ]
+        broken = ['{"type": "user", "uuid": "u5", "message": {"role": "us', "[1, 2]", '"text"', "", "{}"]
+        text = "\n".join([json.dumps(line, ensure_ascii=False) for line in lines] + broken) + "\n"
+        self.assertEqual(self.record.prompts(text), ["[n-1] first", "[n-2] steered", "[n-3] with a picture", "[n-4] one line\u2028still"])
+
+    def judged(self, rule, notices, *received):
+        """`rule`'s failures for `notices` of children of one parent whose transcript's prompts are `received`."""
+        record = self.record.Record.__new__(self.record.Record)
+        record.failures = {name: [] for name in self.record.RULE_NAMES}
+        record.notices = notices
+        record.by_id = {notice["childId"]: {"id": notice["childId"], "parentSessionId": "p"} for notice in notices}
+        record.transcripts = {"p": list(received)}
+        getattr(record, "rule_" + rule.replace("-", "_"))()
+        return record.failures[rule]
+
+    def test_a_delivered_notice_is_in_exactly_one_prompt_and_a_held_one_in_none(self):
+        notices = [{"id": "n-1", "childId": "c1", "lane": "delivered"}, {"id": "n-2", "childId": "c2", "lane": "held"}]
+        self.assertEqual(self.judged("transcript-once", notices, "[n-1]", "Go on."), [])
+        self.assertEqual(self.judged("transcript-once", notices, "[n-1] [n-1]", "Go on."), [])
+        self.assertEqual(self.judged("transcript-once", notices, "[n-1]", "[n-1] again"), ["delivered notice n-1 is in 2 of the transcript's prompts, not 1"])
+        self.assertEqual(self.judged("transcript-once", notices, "Go on."), ["delivered notice n-1 is in 0 of the transcript's prompts, not 1"])
+        self.assertEqual(self.judged("transcript-once", notices, "[n-1]", "[n-2]"), ["held notice n-2 is in 1 of the transcript's prompts, not 0"])
+
+    def test_delivered_notices_reach_the_model_oldest_first_by_prompt_and_then_within_it(self):
+        notices = [{"id": f"n-{i}", "childId": f"c{i}", "lane": "delivered"} for i in (1, 2, 3)]
+        self.assertEqual(self.judged("oldest-first", notices, "[n-1]", "[n-2]\n\n[n-3]\n\nFrom the Mac."), [])
+        self.assertEqual(self.judged("oldest-first", notices, "First, [n-1]", "[n-2]", "[n-3]"), [])
+        self.assertEqual(len(self.judged("oldest-first", notices, "[n-1]", "[n-3]\n\n[n-2]")), 1)
+        self.assertEqual(len(self.judged("oldest-first", notices, "[n-2]\n\n[n-3]", "[n-1]")), 1)
+
+    def test_a_child_pane_works_in_its_worktree_or_a_folder_inside_it(self):
+        within = self.record.within
+        for folder in ["/w/child", "/w/child/", "/w/child/app", "/w//child/./app/"]:
+            self.assertTrue(within(folder, "/w/child"), folder)
+        for folder in ["/w/childish", "/w/child-2/app", "/w", "/w/child/../other", "", None]:
+            self.assertFalse(within(folder, "/w/child"), folder)
+        self.assertTrue(within("/w/child/app", "/w/child/"))
 
 
 if __name__ == "__main__":

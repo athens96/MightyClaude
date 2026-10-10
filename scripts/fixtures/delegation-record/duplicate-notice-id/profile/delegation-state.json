@@ -133,8 +133,8 @@
       "lane": "delivered",
       "receipt": {
         "route": "queue",
-        "runId": "run-s2-4",
-        "time": "2026-10-10T00:05:00Z"
+        "runId": "run-s2-5",
+        "time": "2026-10-10T00:06:00Z"
       },
       "reportRevision": 1
     }
