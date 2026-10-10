@@ -94,14 +94,17 @@ extension DelegationFile {
 ///
 /// A new item is offered to its pane at once, by the first rule that applies:
 ///
-/// 1. The pane runs Claude now: the item is steered into that run.
-/// 2. The pane is idle after a run that finished normally since this launch,
+/// 1. Items are held for the pane already: the item is held behind them,
+///    whatever the pane is doing, so it never reaches the pane before them.
+/// 2. The pane runs Claude now: the item is steered into that run.
+/// 3. The pane is idle after a run that finished normally since this launch,
 ///    and a run can start in it now: the item starts its next run.
-/// 3. Otherwise (the pane stopped, errored, has had no run since this launch,
-///    cannot start a run now, or is closed) the item is held. Only the
-///    human's next send or run next releases it, all of the pane's held items
-///    together, oldest first, in one run. A closed parent's held notices stay
-///    on its children's cards.
+/// 4. Otherwise (the pane stopped, errored, has had no run since this launch,
+///    cannot start a run now, or is closed) the item is held.
+///
+/// Only the human's next send or run next releases held items, all of the
+/// pane's together, oldest first, in one run. A closed parent's held notices
+/// stay on its children's cards.
 ///
 /// Before a pane gets an item, the item is saved delivered with its receipt,
 /// so it is never handed over twice; should the pane not take it after all,
@@ -172,7 +175,9 @@ extension DelegationCoordinator {
             // Nothing below suspends until the item's lane is saved, so
             // nothing else moves it meanwhile.
             guard let item = lookUp(id, kind, in: .pending) else { return }
-            guard let route = Self.automaticRoute(to: pane) else {
+            // Behind items already held for the pane it is held too, so the
+            // human's next send or run next releases them all, oldest first.
+            guard items(for: item.sessionId, in: .held).isEmpty, let route = Self.automaticRoute(to: pane) else {
                 keep(moving: [item], to: .held, receipt: nil, context: context)
                 return
             }

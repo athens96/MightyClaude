@@ -209,6 +209,39 @@ private struct Fixture {
         fixture.expectEachTakenOnce([first.id, second.id])
     }
 
+    @Test func aNewItemForAPaneWithHeldItemsIsHeldBehindThemWhateverThePaneIsDoing() async throws {
+        let fixture = try Fixture.make(parent: .finished)
+        defer { fixture.remove() }
+        // The parent finished normally, but the app's start would refuse a new run now (a CLI
+        // update or a Claude model reset): the notice made meanwhile is held.
+        let parent = RunSession(id: "parent", workspaceId: "ws", title: "Parent", settings: RunSettings(permissionMode: "auto"))
+        let workspace = Workspace(id: "ws", name: "repo", path: fixture.base.path)
+        fixture.host.put(DelegationPanes.paneState(of: parent, in: workspace, runId: "p-run", activity: .finished, startRefused: true))
+        let first = try await fixture.end("c1")
+        #expect(try fixture.saved(first) == fixture.held(first))
+
+        // The refusal clears and the parent reads finished again. Before the human sends anything,
+        // the next notice is held behind the first; so is one made while the parent runs Claude.
+        // The host is asked for no run and no steer.
+        fixture.host.put(DelegationPanes.paneState(of: parent, in: workspace, runId: "p-run", activity: .finished, startRefused: false))
+        let second = try await fixture.end("c2")
+        fixture.host.set("parent", .running, runId: "p-run-2")
+        let third = try await fixture.end("c3")
+        await fixture.coordinator.deliverPending()
+        #expect(fixture.host.handed.isEmpty)
+        #expect(try fixture.store.load().notices == [first, second, third].map { fixture.held($0) })
+        #expect(await fixture.coordinator.heldItems(for: "parent").map(\.id) == [first.id, second.id, third.id])
+
+        // The human's next send releases all of them together, oldest first, ahead of the text, in one run.
+        fixture.host.set("parent", .finished, runId: "p-run-2")
+        #expect(await fixture.coordinator.send("Go on.", in: "parent") == .released(runId: "run-1", itemIds: [first.id, second.id, third.id]))
+        let run = try #require(fixture.host.handed.first)
+        #expect(fixture.host.handed.count == 1 && run.route == nil && run.sessionId == "parent")
+        #expect(run.input == ([first, second, third].map { DelegationCoordinator.text(of: $0) } + ["Go on."]).joined(separator: "\n\n"))
+        #expect(try fixture.store.load().notices.map { $0.receipt?.runId } == ["run-1", "run-1", "run-1"])
+        fixture.expectEachTakenOnce([first.id, second.id, third.id])
+    }
+
     @Test func otherwiseItIsHeldUntilOneSendReleasesAllOfThemOldestFirstAheadOfTheHumansTextInOneRun() async throws {
         // Stopped, errored, or no run since this launch.
         let fixture = try Fixture.make(parent: .idle)
@@ -322,14 +355,13 @@ private struct Fixture {
         #expect(await coordinator.heldItems(for: "parent").map(\.id) == ["n-old"])
         #expect(await coordinator.heldItems(for: "c1").map(\.id) == ["f-old"])
 
-        // A new notice goes on its own; what launch held stays held.
+        // A new notice does not go ahead of what launch held: it is held behind it.
         let fresh = try #require(await coordinator.childRunEnded("c2", runId: "r-c2", end: .finished))
-        #expect(host.handed.map(\.input) == [DelegationCoordinator.text(of: fresh)])
-        #expect(await coordinator.heldItems(for: "parent").map(\.id) == ["n-old"])
-        // The human's next send releases it.
-        host.set("parent", .finished, runId: "run-1")
-        #expect(await coordinator.send("Go on.", in: "parent") == .released(runId: "run-2", itemIds: ["n-old"]))
-        #expect(host.handed.last?.input == DelegationCoordinator.text(of: old.notices[0]) + "\n\nGo on.")
+        #expect(host.handed.isEmpty)
+        #expect(await coordinator.heldItems(for: "parent").map(\.id) == ["n-old", fresh.id])
+        // The human's next send releases both, oldest first.
+        #expect(await coordinator.send("Go on.", in: "parent") == .released(runId: "run-1", itemIds: ["n-old", fresh.id]))
+        #expect(host.handed.last?.input == [DelegationCoordinator.text(of: old.notices[0]), DelegationCoordinator.text(of: fresh), "Go on."].joined(separator: "\n\n"))
         #expect(host.handed.filter { $0.input.contains("n-done") }.isEmpty)
     }
 
