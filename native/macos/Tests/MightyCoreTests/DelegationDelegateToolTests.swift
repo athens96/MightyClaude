@@ -305,6 +305,9 @@ struct DelegationDelegateToolTests {
         #expect(await fixture.delegate(" \n\t", mode: "plan").error?.hasPrefix("delegate needs a task") == true)
         // No run input may hold a NUL character, and the task goes out in the child's first.
         #expect(await fixture.delegate("Ship it.\0Now.", mode: "plan").error == "A task may not contain a NUL character.")
+        // Nor may it be longer than its TASK.md copy may be, since all of it goes out in that run.
+        let long = String(repeating: "x", count: DelegationFileStore.maximumCopyBytes + 1)
+        #expect(await fixture.delegate(long, mode: "plan").error == "A task may be at most 64 KiB.")
         try await fixture.expectNothingMade(since: before)
 
         // The parent's stored mode is now auto: the same call in the same run makes a child in auto.
@@ -351,6 +354,16 @@ struct DelegationDelegateToolTests {
         #expect(saved.copies.filter { $0.kind == .report }.count == (try Self.nearlyFullFile(closedFirst: true)).copies.count - 1)
         #expect(try Data(contentsOf: prunable.store.fileURL).count <= DelegationFileStore.maximumFileBytes)
         #expect(await prunable.waitFor(child.id, .running))
+    }
+
+    @Test func aTaskAtTheMostTheToolTakesStillFitsTheChildsFirstRunInput() throws {
+        let id = UUID().uuidString.lowercased()
+        let path = "/tmp/" + String(repeating: "deep/", count: 40) + "worktrees/" + id
+        let worktree = ChildWorktree(sessionId: id, worktreePath: path, workingFolder: path, branch: ChildRecord.branchName(for: id), parentBranch: "main",
+                                     baseCommit: String(repeating: "a", count: 40))
+        let task = String(repeating: "x", count: DelegationFileStore.maximumCopyBytes)
+        let request = StartRunRequest(sessionId: id, workspaceId: "ws-1", kind: SessionKind.claude, input: DelegationCoordinator.firstInput(task: task, worktree: worktree), provider: "claude")
+        #expect(throws: Never.self) { try CoreValidation.validate(request) }
     }
 
     @Test func aStartThatFailsLeavesTheChildFailedWithOneFailedToStartNoticeAndKeepsWhatItMade() async throws {
