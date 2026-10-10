@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "workspaces": [
+    {
+      "id": "ws-practice-app",
+      "name": "app",
+      "path": "@{root}/repo/app",
+      "createdAt": "2026-10-10T00:00:00Z"
+    }
+  ],
+  "sessions": [
+    {
+      "id": "sub-parent",
+      "workspaceId": "ws-practice-app",
+      "title": "Claude",
+      "kind": "claude",
+      "provider": "claude",
+      "model": "default",
+      "settings": {
+        "effort": "default",
+        "permissionMode": "acceptEdits",
+        "fastMode": false,
+        "webSearch": "default",
+        "networkAccess": false
+      },
+      "status": "idle",
+      "logs": [],
+      "createdAt": "2026-10-10T00:00:00Z",
+      "resumeId": "sub-parent-session"
+    },
+    {
+      "id": "sub-child-1",
+      "workspaceId": "ws-practice-app",
+      "title": "Feature one",
+      "kind": "claude",
+      "provider": "claude",
+      "model": "default",
+      "settings": {
+        "effort": "default",
+        "permissionMode": "acceptEdits",
+        "fastMode": false,
+        "webSearch": "default",
+        "networkAccess": false
+      },
+      "status": "idle",
+      "logs": [],
+      "createdAt": "2026-10-10T00:00:00Z",
+      "resumeId": "sub-child-1-session",
+      "parentSessionId": "sub-parent",
+      "workingFolder": "@{root}/worktrees/sub-child-1/app"
+    },
+    {
+      "id": "sub-child-2",
+      "workspaceId": "ws-practice-app",
+      "title": "Feature two",
+      "kind": "claude",
+      "provider": "claude",
+      "model": "default",
+      "settings": {
+        "effort": "default",
+        "permissionMode": "acceptEdits",
+        "fastMode": false,
+        "webSearch": "default",
+        "networkAccess": false
+      },
+      "status": "idle",
+      "logs": [],
+      "createdAt": "2026-10-10T00:00:00Z",
+      "resumeId": "sub-child-2-session",
+      "parentSessionId": "sub-parent",
+      "workingFolder": "@{root}/worktrees/sub-child-2/app"
+    }
+  ],
+  "activeWorkspaceId": "ws-practice-app",
+  "activeSessionId": "sub-parent",
+  "layout": "grid",
+  "theme": "dark"
+}

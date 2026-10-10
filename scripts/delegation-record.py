@@ -12,6 +12,11 @@ any run: the delegation file, the panes it names, the repository and the
 parent's Claude-format transcript. Each rule is listed once with its result.
 Nothing is written: git runs only read commands, without optional locks.
 
+In a transcript only the prompts the model received count: user lines with
+text, and queued commands taken into a running turn (a steer). The CLI's
+queue-operation and last-prompt lines repeat a prompt without delivering it,
+and an assistant line may quote one; neither counts.
+
 Verdicts: passed (exit 0), failed (exit 1, naming each failed rule), invalid
 (exit 2) when the record cannot be judged: a profile file is missing or
 unreadable, it holds no child, the repository is not a git checkout, or a
@@ -47,7 +52,7 @@ RULES = [
     ("one-layer", "no child is the parent of another child"),
     ("width-cap", "a parent has at most 3 open children"),
     ("follow-up-cap", "a child has at most 2 follow-ups"),
-    ("pane-links", "parent and child panes are Claude panes, and each child pane carries its parent link and worktree"),
+    ("pane-links", "parent and child panes are Claude panes, and each child pane carries its parent link and works in its worktree or a folder inside it"),
     ("one-notice-per-revision", "a notice names a child and a revision it reached, one reported notice per revision, one for each open child's current report"),
     ("receipts", "delivered notices and follow-ups carry one receipt (time, steer or queue, run); pending and held ones none"),
     ("merge-records", "each merge record lands its child head: a fast-forward to it, or one merge commit of the old parent head and it"),
@@ -55,8 +60,8 @@ RULES = [
     ("unmerged-kept", "work that is not merged keeps its branch; only a closed child's merged branch may be gone"),
     ("discarded-gone", "a discarded child's branch and worktree are gone"),
     ("parent-transcript", "each parent pane's Claude-format transcript is found"),
-    ("transcript-once", "each delivered notice id is in its parent's transcript exactly once, a held or pending one not at all"),
-    ("oldest-first", "a parent's delivered notices reach its transcript oldest first"),
+    ("transcript-once", "each delivered notice id is in exactly one prompt of its parent's transcript, a held or pending one in none"),
+    ("oldest-first", "a parent's delivered notices reach its transcript oldest first, by prompt and then within the prompt"),
 ]
 RULE_NAMES = [name for name, _ in RULES]
 
@@ -68,6 +73,45 @@ class Invalid(Exception):
 def claude_project_folder(path):
     """The folder name Claude gives a working folder under projects/."""
     return "".join(c if c.isascii() and c.isalnum() else "-" for c in path)
+
+
+def within(folder, root):
+    """Whether `folder` is `root` or a folder inside it, both normalized: /a/bc is not inside /a/b."""
+    if not isinstance(folder, str) or not isinstance(root, str) or not folder or not root:
+        return False
+    folder, root = os.path.normpath(folder), os.path.normpath(root)
+    return folder == root or folder.startswith(root.rstrip(os.sep) + os.sep)
+
+
+def prompts(text):
+    """The prompts a Claude-format transcript shows the model received, in
+    order, once per line uuid (else per line): user lines with text, not tool
+    results, meta lines or compaction summaries, and queued commands taken
+    into a running turn. Sub-agent lines and unreadable lines are skipped."""
+    found, seen = [], set()
+    for number, line in enumerate(text.split("\n")):
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(entry, dict) or entry.get("isSidechain") is True:
+            continue
+        content = None
+        if entry.get("type") == "user" and entry.get("isMeta") is not True and entry.get("isCompactSummary") is not True:
+            message = entry.get("message")
+            content = message.get("content") if isinstance(message, dict) else None
+        elif entry.get("type") == "attachment" and isinstance(entry.get("attachment"), dict) and entry["attachment"].get("type") == "queued_command":
+            content = entry["attachment"].get("prompt")
+        if isinstance(content, list):
+            texts = [block["text"] for block in content if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str)]
+            content = "\n".join(texts) if texts else None
+        if not isinstance(content, str):
+            continue
+        key = entry["uuid"] if isinstance(entry.get("uuid"), str) and entry["uuid"] else number
+        if key not in seen:
+            seen.add(key)
+            found.append(content)
+    return found
 
 
 def read_json(path, what):
@@ -216,8 +260,8 @@ class Record:
                 self.fail("pane-links", f"child pane {child.get('id')} is not a Claude pane")
             if pane.get("parentSessionId") != child.get("parentSessionId"):
                 self.fail("pane-links", f"child pane {child.get('id')} links parent {pane.get('parentSessionId')}, not {child.get('parentSessionId')}")
-            if pane.get("workingFolder") != child.get("worktreePath"):
-                self.fail("pane-links", f"child pane {child.get('id')} works in another folder than its worktree")
+            if not within(pane.get("workingFolder"), child.get("worktreePath")):
+                self.fail("pane-links", f"child pane {child.get('id')} works outside its worktree")
 
     def rule_one_notice_per_revision(self):
         seen = set()
@@ -313,7 +357,7 @@ class Record:
         if not found:
             return None
         try:
-            return found[0].read_text(encoding="utf-8")
+            return found[0].read_text(encoding="utf-8", errors="replace")
         except OSError:
             return None
 
@@ -324,25 +368,31 @@ class Record:
             if text is None:
                 self.fail("parent-transcript", f"no Claude transcript for parent pane {parent} under {self.claude_dir.name}/projects")
             else:
-                self.transcripts[parent] = text
+                self.transcripts[parent] = prompts(text)
 
     def parent_of(self, notice):
         return (self.by_id.get(notice.get("childId")) or {}).get("parentSessionId")
 
     def rule_transcript_once(self):
         for notice in self.notices:
-            text = self.transcripts.get(self.parent_of(notice))
-            if text is None or not notice.get("id"):
+            received = self.transcripts.get(self.parent_of(notice))
+            nid = notice.get("id")
+            if received is None or not isinstance(nid, str) or not nid:
                 continue
-            count = text.count(notice["id"])
+            count = sum(1 for prompt in received if nid in prompt)
             expected = 1 if notice.get("lane") == "delivered" else 0
             if count != expected:
-                self.fail("transcript-once", f"{notice.get('lane')} notice {notice['id']} is in the transcript {count} times, not {expected}")
+                self.fail("transcript-once", f"{notice.get('lane')} notice {nid} is in {count} of the transcript's prompts, not {expected}")
 
     def rule_oldest_first(self):
-        for parent, text in self.transcripts.items():
-            delivered = [n["id"] for n in self.notices if n.get("lane") == "delivered" and n.get("id") and self.parent_of(n) == parent]
-            positions = [text.find(nid) for nid in delivered if text.count(nid) == 1]
+        for parent, received in self.transcripts.items():
+            delivered = [n["id"] for n in self.notices if n.get("lane") == "delivered" and isinstance(n.get("id"), str) and n["id"] and self.parent_of(n) == parent]
+            # Each notice in exactly one prompt, by that prompt and its place in it:
+            # held notices released together share one prompt, oldest first.
+            positions = []
+            for nid in delivered:
+                places = [(index, prompt.find(nid)) for index, prompt in enumerate(received) if nid in prompt]
+                positions += places if len(places) == 1 else []
             if positions != sorted(positions):
                 self.fail("oldest-first", f"parent {parent}'s delivered notices reach its transcript out of order")
 

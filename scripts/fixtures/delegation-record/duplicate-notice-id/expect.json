@@ -1,6 +1,16 @@
 {
   "verdict": "failed",
   "failed": [
-    "unique-ids"
-  ]
+    "unique-ids",
+    "transcript-once"
+  ],
+  "details": {
+    "unique-ids": [
+      "notice id notice-s2-2 appears more than once"
+    ],
+    "transcript-once": [
+      "delivered notice notice-s2-2 is in 2 of the transcript's prompts, not 1",
+      "delivered notice notice-s2-2 is in 2 of the transcript's prompts, not 1"
+    ]
+  }
 }

@@ -1,0 +1,43 @@
+{
+  "commits": [
+    {
+      "name": "base",
+      "parents": [],
+      "files": {
+        "README.md": "# Practice\n",
+        "app/README.md": "# App\n"
+      },
+      "message": "Start"
+    },
+    {
+      "name": "one",
+      "parents": [
+        "base"
+      ],
+      "files": {
+        "app/feature-one.txt": "one\n"
+      },
+      "message": "Add app/feature-one.txt"
+    },
+    {
+      "name": "two",
+      "parents": [
+        "base"
+      ],
+      "files": {
+        "app/feature-two.txt": "two\n"
+      },
+      "message": "Add app/feature-two.txt"
+    }
+  ],
+  "branches": {
+    "main": "one",
+    "mighty/sub-child-1": "one",
+    "mighty/sub-child-2": "two"
+  },
+  "head": "main",
+  "worktrees": [
+    "sub-child-1/app",
+    "sub-child-2/app"
+  ]
+}
