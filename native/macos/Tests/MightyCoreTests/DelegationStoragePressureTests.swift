@@ -327,13 +327,20 @@ private struct OpenPanes: DelegationHost {
 
         let repository = StateRepository(directory: profile, legacyStateURL: nil)
         var snapshot = try await repository.load()
-        // As "Add Pane" does: the child is the Claude pane used last, so it is the template.
+        // As "Add Pane" does: the child is the Claude pane used last, but a
+        // delegated child is never the template; its parent is.
         let template = try #require(RunSession.template(kind: SessionKind.claude, provider: "claude", in: snapshot.sessions))
-        #expect(template.id == "c1"); #expect(template.parentSessionId == "parent"); #expect(template.workingFolder == worktree)
+        #expect(template.id == "parent"); #expect(template.parentSessionId == nil); #expect(template.workingFolder == nil)
         var pane = RunSession(workspaceId: workspace.id, title: ProviderOptions.label("claude"), kind: SessionKind.claude, provider: "claude")
         pane.inheritSettings(from: template)
         #expect(pane.model == template.model); #expect(pane.settings == template.settings)
         #expect(pane.parentSessionId == nil); #expect(pane.workingFolder == nil)
+        // Settings taken from the child itself would carry neither, either.
+        let linked = try #require(snapshot.sessions.first { $0.id == "c1" })
+        #expect(linked.parentSessionId == "parent"); #expect(linked.workingFolder == worktree)
+        var direct = RunSession(workspaceId: workspace.id, title: ProviderOptions.label("claude"), kind: SessionKind.claude, provider: "claude")
+        direct.inheritSettings(from: linked)
+        #expect(direct.parentSessionId == nil); #expect(direct.workingFolder == nil)
         snapshot.sessions.append(pane)
         try await repository.save(snapshot)
 

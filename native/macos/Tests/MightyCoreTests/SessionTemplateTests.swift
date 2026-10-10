@@ -36,6 +36,15 @@ struct SessionTemplateTests {
         #expect(fresh.status == "idle"); #expect(fresh.graphRuns == nil)
     }
 
+    @Test func aDelegatedChildPaneIsNeverTheTemplateHoweverRecentlyUsed() {
+        var child = session("child", createdAt: "2026-09-17T09:00:00Z", logAt: "2026-09-17T12:00:00Z", settings: RunSettings(permissionMode: "plan"))
+        child.parentSessionId = "parent"
+        let sessions = [session("parent", createdAt: "2026-09-17T08:00:00Z", logAt: "2026-09-17T10:00:00Z", settings: RunSettings(permissionMode: "auto")), child]
+        // The child was used last, in the mode its parent set for its task; the human's own pane is the template.
+        #expect(RunSession.template(kind: "claude", provider: "claude", in: sessions)?.id == "parent")
+        #expect(RunSession.template(kind: "claude", provider: "claude", in: [child]) == nil)
+    }
+
     @Test func creationTimeBreaksTiesAndInvalidTimestampsSortLast() {
         let sessions = [
             session("first", createdAt: "2026-09-17T08:00:00Z", model: "a"),
