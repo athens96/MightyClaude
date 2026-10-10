@@ -21,9 +21,10 @@ extension DelegationCoordinator {
     /// delegate(task, mode) from `caller`. The first rule that applies answers:
     ///
     /// 1. A mode that is not a starting mode, or an empty task, one with a NUL
-    ///    character or one over 64 KiB (the child's first run input holds the
-    ///    whole task, and no run input may hold a NUL or be that long with
-    ///    its own text), is answered with an error.
+    ///    character or one over 64 KiB, is answered with an error. The child's
+    ///    first run input holds the whole task, and no run input may hold a
+    ///    NUL; 64 KiB is its TASK.md copy's cap, which keeps that input well
+    ///    under a run input's 100,000 characters.
     /// 2. The same call earlier in the caller's current run (the same request
     ///    key) gets that same child, in whatever state it is now.
     /// 3. `child_cannot_delegate` (the caller has a parent link), `width_cap`
