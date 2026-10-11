@@ -51,7 +51,7 @@ Mighty Claude는 Claude Code, Codex CLI, Gemini CLI를 한 창에서 나란히 �
 2. 작업할 폴더를 고릅니다.
 3. 사이드바에 워크스페이스가 생깁니다. 이제 {{ui:menu.newClaudePane}}({{kbd:⌘N}})으로 첫 실행 창을 엽니다.
 
-다른 폴더를 더 열 때도 메뉴 막대의 {{ui:menu.openProject}}나 {{kbd:⌘O}}를 씁니다. 사이드바에서 워크스페이스를 오른쪽 클릭하면 {{ui:menu.rename}}, {{ui:menu.showInFinder}}, {{ui:workspace.menu.remove}} 항목이 있습니다. 목록에서 제거해도 디스크의 프로젝트 파일은 그대로 남습니다.
+다른 폴더를 더 열려면 사이드바의 {{ui:sidebar.workspacesHeader}} 머리글 오른쪽에 있는 폴더 단추를 누르거나, 메뉴 막대의 {{ui:menu.openProject}}나 {{kbd:⌘O}}를 씁니다. 사이드바에서 워크스페이스를 오른쪽 클릭하면 {{ui:menu.rename}}, {{ui:menu.showInFinder}}, {{ui:workspace.menu.remove}} 항목이 있습니다. 목록에서 제거해도 디스크의 프로젝트 파일은 그대로 남습니다.
 
 ## 언어 바꾸기 {#language}
 1. {{ui:menu.settings}} → {{ui:settings.nav.general}}을 엽니다.

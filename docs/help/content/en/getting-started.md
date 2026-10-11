@@ -51,7 +51,7 @@ A workspace is one project folder. Panes, the tab layout and conversation histor
 2. Choose the folder you want to work in.
 3. The workspace appears in the sidebar. Open your first pane with {{ui:menu.newClaudePane}} ({{kbd:⌘N}}).
 
-To open more folders, use {{ui:menu.openProject}} in the menu bar or {{kbd:⌘O}}. Right-click a workspace in the sidebar for {{ui:menu.rename}}, {{ui:menu.showInFinder}} and {{ui:workspace.menu.remove}}. Removing it from the list leaves the project files on disk untouched.
+To open more folders, click the folder button at the right of the {{ui:sidebar.workspacesHeader}} heading in the sidebar, or use {{ui:menu.openProject}} in the menu bar or {{kbd:⌘O}}. Right-click a workspace in the sidebar for {{ui:menu.rename}}, {{ui:menu.showInFinder}} and {{ui:workspace.menu.remove}}. Removing it from the list leaves the project files on disk untouched.
 
 ## Change the language {#language}
 1. Open {{ui:menu.settings}} → {{ui:settings.nav.general}}.

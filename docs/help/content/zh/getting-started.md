@@ -51,7 +51,7 @@ Mighty Claude 是一款桌面应用，可以在一个窗口中并排使用 Claud
 2. 选择要处理的文件夹。
 3. 侧边栏中会出现该工作区。接着用{{ui:menu.newClaudePane}}（{{kbd:⌘N}}）打开第一个窗格。
 
-要再打开其他文件夹，同样使用菜单栏中的{{ui:menu.openProject}}或{{kbd:⌘O}}。在侧边栏中右键点击工作区，可以看到{{ui:menu.rename}}、{{ui:menu.showInFinder}}和{{ui:workspace.menu.remove}}。从列表中移除后，磁盘上的项目文件仍会原样保留。
+要再打开其他文件夹，可以点击侧边栏{{ui:sidebar.workspacesHeader}}标题右侧的文件夹按钮，或使用菜单栏中的{{ui:menu.openProject}}或{{kbd:⌘O}}。在侧边栏中右键点击工作区，可以看到{{ui:menu.rename}}、{{ui:menu.showInFinder}}和{{ui:workspace.menu.remove}}。从列表中移除后，磁盘上的项目文件仍会原样保留。
 
 ## 更改语言 {#language}
 1. 打开{{ui:menu.settings}} → {{ui:settings.nav.general}}。
