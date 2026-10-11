@@ -136,6 +136,22 @@ struct SessionPaneView: View {
         .accessibilityLabel(L("composer.statusLine.name")).accessibilityValue(on ? L("accessibility.on") : L("accessibility.off"))
         .accessibilityIdentifier("status-line-toggle-\(session.id)")
     }
+    /// Claude panes list their background work above the composer; the button
+    /// flips the same preference as the line's own hide button, Settings ›
+    /// Display and the pane's … menu, for every pane at once, so a hidden line
+    /// can always be brought back from here.
+    private var showsBackgroundWorkToggle: Bool { session.kind == "claude" && session.provider == "claude" }
+    private var backgroundWorkToggle: some View {
+        let on = store.showsBackgroundWork
+        return Button { store.setShowsBackgroundWork(!on) } label: {
+            Image(systemName: on ? "rectangle.stack.fill" : "rectangle.stack").font(.system(size: 12)).frame(width: 16, height: DesignMetrics.Layout.toolbar)
+                .foregroundStyle(on ? Palette.accent : Palette.ink2)
+        }
+        .buttonStyle(.plain)
+        .help(on ? L("composer.backgroundWork.hide") : L("composer.backgroundWork.show"))
+        .accessibilityLabel(L("composer.backgroundWork.name")).accessibilityValue(on ? L("accessibility.on") : L("accessibility.off"))
+        .accessibilityIdentifier("background-work-toggle-\(session.id)")
+    }
     private var statusLine: AppStore.StatusLineState? {
         guard let state = store.statusLines[session.id] else { return nil }
         let hasOutput = state.config != nil && (state.result?.lines.isEmpty == false || state.result?.error != nil)
@@ -745,9 +761,9 @@ struct SessionPaneView: View {
     private var composerToolbar: some View {
         GeometryReader { geometry in
             // Stop beside steer and queue, or send alone; the resume mark; the context ring;
-            // the status-line toggle, which shows wherever steer can.
+            // the background-work and status-line toggles of Claude panes.
             let height = ComposerToolbarMetrics.height, gap = ComposerToolbarMetrics.spacing
-            let actionsWidth = (running && canSend ? Self.compactStop + gap + height + (offersSteer ? height + gap : 0) : height) + (session.resumeId == nil ? 0 : 16 + gap) + (session.kind == "shell" ? 0 : height + gap) + (showsStatusLineToggle ? 16 + gap : 0)
+            let actionsWidth = (running && canSend ? Self.compactStop + gap + height + (offersSteer ? height + gap : 0) : height) + (session.resumeId == nil ? 0 : 16 + gap) + (session.kind == "shell" ? 0 : height + gap) + (showsBackgroundWorkToggle ? 16 + gap : 0) + (showsStatusLineToggle ? 16 + gap : 0)
             let width = max(0, geometry.size.width - actionsWidth - ComposerToolbarMetrics.spacing)
             let style = ComposerToolbarMetrics.style(width: width, model: selectedModelName, effort: showsEffort ? effortLabel(session.settings.effort) : nil, permission: permissionLabel(session.settings.permissionMode, provider: session.provider), fast: showsFast)
             HStack(alignment: .center, spacing: ComposerToolbarMetrics.spacing) {
@@ -774,6 +790,7 @@ struct SessionPaneView: View {
                         Image(systemName: "arrow.triangle.branch").font(.system(size: 11)).frame(width: 16, height: ComposerToolbarMetrics.height).foregroundStyle(Palette.ink2).help(L("composer.resume.help")).accessibilityLabel(L("composer.resume.name"))
                     }
                     if session.kind != "shell" { SessionContextButton(sessionID: session.id) }
+                    if showsBackgroundWorkToggle { backgroundWorkToggle }
                     if showsStatusLineToggle { statusLineToggle }
                     if running {
                         // With text waiting, stop shrinks beside the steer and queue
