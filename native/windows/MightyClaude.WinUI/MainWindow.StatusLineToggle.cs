@@ -44,6 +44,16 @@ public sealed partial class MainWindow
 
         private void InitializeStatusLineGlyph()
         {
+            DressComposerToggle(statusLineToggle, statusLineGlyph);
+            AutomationProperties.SetAutomationId(statusLineToggle, "status-line-toggle-" + id);
+            statusLineToggle.Checked += (_, _) => UpdateStatusLineGlyph();
+            statusLineToggle.Unchecked += (_, _) => UpdateStatusLineGlyph();
+            UpdateStatusLineGlyph();
+        }
+
+        /// <summary>The look of the composer's 16pt toggles, the status line's and the background work's, with their symbol as content.</summary>
+        private void DressComposerToggle(Microsoft.UI.Xaml.Controls.Primitives.ToggleButton toggle, IconElement glyph)
+        {
             // Retain the native ToggleButton template, focus and UIA Toggle pattern.
             // Only the light/dark brushes change, and both take the window's shared
             // token brushes (recoloured in place on a theme toggle): no fill at rest,
@@ -68,24 +78,20 @@ public sealed partial class MainWindow
                     theme["ToggleButtonForeground" + suffix] = b.Brush(DesignToken.Ink2);
                 foreach (var suffix in new[] { "Checked", "CheckedPointerOver", "CheckedPressed" })
                     theme["ToggleButtonForeground" + suffix] = b.Brush(DesignToken.Accent);
-                statusLineToggle.Resources.ThemeDictionaries[key] = theme;
+                toggle.Resources.ThemeDictionaries[key] = theme;
             }
-            statusLineToggle.Resources.ThemeDictionaries["HighContrast"] = new ResourceDictionary();
-            statusLineToggle.Content = statusLineGlyph;
-            AutomationProperties.SetAccessibilityView(statusLineGlyph, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
-            AutomationProperties.SetAutomationId(statusLineToggle, "status-line-toggle-" + id);
+            toggle.Resources.ThemeDictionaries["HighContrast"] = new ResourceDictionary();
+            toggle.Content = glyph;
+            AutomationProperties.SetAccessibilityView(glyph, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
             void BindGlyph()
             {
                 // Read the template's foreground, including hover/pressed/contrast
                 // states, instead of pinning a color directly on the icon.
-                if (VisualChildren(statusLineToggle).OfType<ContentPresenter>().FirstOrDefault(p => ReferenceEquals(p.Content, statusLineGlyph)) is { } presenter)
-                    statusLineGlyph.SetBinding(IconElement.ForegroundProperty, new Binding { Source = presenter, Path = new PropertyPath("Foreground"), Mode = BindingMode.OneWay });
+                if (VisualChildren(toggle).OfType<ContentPresenter>().FirstOrDefault(p => ReferenceEquals(p.Content, glyph)) is { } presenter)
+                    glyph.SetBinding(IconElement.ForegroundProperty, new Binding { Source = presenter, Path = new PropertyPath("Foreground"), Mode = BindingMode.OneWay });
             }
-            statusLineToggle.Loaded += (_, _) => BindGlyph();
-            statusLineToggle.ActualThemeChanged += (_, _) => statusLineToggle.DispatcherQueue.TryEnqueue(BindGlyph);
-            statusLineToggle.Checked += (_, _) => UpdateStatusLineGlyph();
-            statusLineToggle.Unchecked += (_, _) => UpdateStatusLineGlyph();
-            UpdateStatusLineGlyph();
+            toggle.Loaded += (_, _) => BindGlyph();
+            toggle.ActualThemeChanged += (_, _) => toggle.DispatcherQueue.TryEnqueue(BindGlyph);
         }
 
         private void UpdateStatusLineGlyph()

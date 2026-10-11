@@ -101,7 +101,7 @@ public sealed partial class MainWindow
 
         private bool StatusLineEligible => owner.service.Snapshot.StatusLineEnabled && Session.Kind == "claude" && Session.Provider == "claude";
 
-        /// <summary>Adds the status-line toggle to the composer's right cluster, between the context ring and stop / send.</summary>
+        /// <summary>Adds the status-line toggle to the composer's right cluster, between the background-work toggle and stop / send.</summary>
         private void InitializeStatusLineToggle(StackPanel cluster)
         {
             InitializeStatusLineGlyph();
