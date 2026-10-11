@@ -1,6 +1,6 @@
 ---
 title: 터미널·파일·브라우저 창
-order: 6
+order: 7
 section: terminal-files-browser
 ---
 에이전트 창 옆에 터미널, 파일, 브라우저 창을 함께 열어 둘 수 있습니다.

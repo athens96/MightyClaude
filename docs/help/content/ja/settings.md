@@ -1,6 +1,6 @@
 ---
 title: 設定
-order: 7
+order: 8
 section: settings
 ---
 {{ui:menu.settings}}({{kbd:⌘,}})か、サイドバー下部の設定ボタンで開きます。左側でタブを選び、{{ui:settings.closeButton}}ボタンか{{kbd:Esc}}で閉じます。最後に表示したタブが記憶されます。

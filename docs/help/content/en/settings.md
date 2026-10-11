@@ -1,6 +1,6 @@
 ---
 title: Settings
-order: 7
+order: 8
 section: settings
 ---
 Open {{ui:menu.settings}} ({{kbd:⌘,}}) or the settings button at the bottom of the sidebar. Pick a tab on the left, and close with {{ui:settings.closeButton}} or {{kbd:Esc}}. The last tab you viewed is remembered.

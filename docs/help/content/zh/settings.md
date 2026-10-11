@@ -1,6 +1,6 @@
 ---
 title: 设置
-order: 7
+order: 8
 section: settings
 ---
 通过{{ui:menu.settings}}（{{kbd:⌘,}}）或侧边栏底部的设置按钮打开。在左侧选择标签页，用{{ui:settings.closeButton}}按钮或{{kbd:Esc}}关闭。设置会记住你上次查看的标签页。

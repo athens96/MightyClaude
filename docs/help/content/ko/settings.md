@@ -1,6 +1,6 @@
 ---
 title: 설정
-order: 7
+order: 8
 section: settings
 ---
 {{ui:menu.settings}}({{kbd:⌘,}})이나 사이드바 아래의 설정 단추로 엽니다. 왼쪽에서 탭을 고르고, {{ui:settings.closeButton}} 단추나 {{kbd:Esc}}로 닫습니다. 마지막에 본 탭을 기억합니다.

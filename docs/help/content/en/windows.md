@@ -1,6 +1,6 @@
 ---
 title: How Windows differs
-order: 9
+order: 10
 section: windows
 ---
 This help is written from the Mac app. The Windows app has the same features under the same names; this page collects only what differs.
@@ -46,6 +46,7 @@ Windows has no menu bar. The same commands are in the sidebar and the {{ui:works
 | Screen view | Screen view for the phone remote works, with fewer quality options than on the Mac. |
 | Language | A new language applies after you reopen the app. |
 | File location | {{ui:menu.showInExplorer}} instead of {{ui:menu.showInFinder}}. |
+| Agent delegation | Not yet. [Agent delegation](delegation.md) is on the Mac app only. |
 
 > [!note]
 > Some Windows features haven't been checked on enough real machines yet. If something looks wrong, please tell us.

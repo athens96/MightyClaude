@@ -1,6 +1,6 @@
 ---
 title: ターミナル・ファイル・ブラウザのペイン
-order: 6
+order: 7
 section: terminal-files-browser
 ---
 エージェントペインの横に、ターミナル、ファイル、ブラウザのペインを一緒に開いておけます。
