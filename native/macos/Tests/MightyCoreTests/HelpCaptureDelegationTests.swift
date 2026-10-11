@@ -76,17 +76,24 @@ struct HelpCaptureDelegationTests {
         let workspace = try #require(profile.workspaces.first { $0.id == demo.workspace })
         #expect(workspace.name == "shop-api" && demo.workspace != profile.activeWorkspace)
         let panes = profile.panes.filter { $0.workspace == demo.workspace }
-        #expect(panes.map(\.role) == ["parent", "child-merged", "child-reported", "child-running", "child-waiting", "child-of-closed"])
+        #expect(panes.map(\.role) == ["parent", "child-reported", "child-running", "child-waiting", "child-of-closed"])
         #expect(panes.allSatisfy { $0.kind == "claude" && $0.provider == "claude" && $0.view == "default" && $0.permissionMode == "acceptEdits" })
-        #expect(demo.children.map(\.role) == Array(panes.map(\.role).dropFirst()))
-        #expect(demo.children.map(\.state) == [.merged, .reported, .running, .running, .reported])
+        #expect(demo.children.map(\.role) == ["child-merged", "child-reported", "child-running", "child-waiting", "child-of-closed"])
+        // The merged child's pane was closed after its merge; the other four are open.
+        #expect(demo.children.map(\.state) == [.closed, .reported, .running, .running, .reported])
+        #expect(demo.children.map(\.merge) == [.toolFastForward, nil, nil, nil, nil])
         #expect(demo.children.map(\.parent) == ["parent", "parent", "parent", "parent", "closed-parent"])
         #expect(demo.closedParents == ["closed-parent"] && profile.pane("closed-parent") == nil)
+        // No parent has more open children than delegate allows; this one has as many.
+        for parent in Set(demo.children.map(\.parent)) {
+            #expect(demo.children.filter { $0.parent == parent && $0.state.isOpen }.count <= DelegationCoordinator.maximumOpenChildren, "\(parent)")
+        }
+        #expect(demo.children.filter { $0.parent == "parent" && $0.state.isOpen }.count == DelegationCoordinator.maximumOpenChildren)
         for child in demo.children {
-            #expect(UUID(uuidString: child.id) != nil && child.id == child.id.lowercased(), "\(child.role)")
-            // Its first run carries its task; the pane's title is its own.
-            let pane = try #require(profile.pane(child.role))
-            #expect(!child.task.isEmpty && pane.runs.first?.input == child.task && !pane.title.isEmpty, "\(child.role)")
+            #expect(UUID(uuidString: child.id) != nil && child.id == child.id.lowercased() && child.mode == "acceptEdits", "\(child.role)")
+            // An open child has a pane whose first run carries its task; a closed one has none.
+            guard let pane = profile.pane(child.role) else { #expect(!child.state.isOpen, "\(child.role)"); continue }
+            #expect(child.state.isOpen && !child.task.isEmpty && pane.runs.first?.input == child.task && !pane.title.isEmpty, "\(child.role)")
         }
         #expect(demo.notices.allSatisfy { UUID(uuidString: $0.id) != nil })
         let layout = try #require(profile.layouts.first { $0.workspace == demo.workspace })
@@ -94,7 +101,7 @@ struct HelpCaptureDelegationTests {
     }
 
     @Test(arguments: HelpCaptureTests.languages)
-    func theSidebarListsFourChildrenUnderTheParentAndOneUnderTheClosedParent(language: String) throws {
+    func theSidebarListsTheParentsChildrenWithinTheCapAndOneUnderTheClosedParent(language: String) throws {
         let profile = try HelpCaptureTests.profile(language)
         let demo = profile.delegation
         let file = try Self.file(profile)
@@ -106,18 +113,25 @@ struct HelpCaptureDelegationTests {
         #expect(tree.top.map(\.id) == [Self.parentId])
         let children = try #require(tree.children[Self.parentId])
         #expect(children.map(\.id) == demo.children.prefix(4).map(\.id))
+        // The closed child is the record's row; the open ones are their panes, three: as many as delegate allows.
+        #expect(children.map { row in panes.contains { $0.session.id == row.id } } == [false, true, true, true])
+        #expect(DelegationSidebar.openChildCount(of: Self.parentId, children: rows, sessions: panes.map(\.session)) == DelegationCoordinator.maximumOpenChildren)
+        for parent in Set(file.children.map(\.parentSessionId)) {
+            #expect(file.children.filter { $0.parentSessionId == parent && $0.state.isOpen }.count <= DelegationCoordinator.maximumOpenChildren, "\(parent)")
+        }
         // The waiting child's run asks a permission only a human can answer, so its row reads needs you.
         func pending(_ id: String) -> ToolPermissionRequest? {
             panes.first { $0.session.id == id }?.events.compactMap(\.permission).last.flatMap { $0.state == "pending" ? $0 : nil }
         }
-        #expect(children.map { DelegationSidebar.shownState($0.state, asksHuman: pending($0.id) != nil) } == [.merged, .reported, .running, .waiting])
+        #expect(children.map { DelegationSidebar.shownState($0.state, asksHuman: pending($0.id) != nil) } == [.closed, .reported, .running, .waiting])
         let migration = try #require(pending(demo.children[3].id))
         #expect(migration.canAllow && migration.toolName == "Bash" && migration.summary == "npm run db:migrate")
         #expect(panes.first { $0.session.id == demo.children[2].id }?.session.status == "running")
-        // Merged offers undo, reported offers merge, and every child offers discard.
+        // The merged child closed after its merge still offers undo, reported offers merge, and every child offers discard.
         #expect(children.map(\.cardActions) == [[.undo, .discard], [.merge, .discard], [.discard], [.discard]])
         let merge = try #require(file.merges.first)
-        #expect(file.merges.count == 1 && file.undoableMerge(of: demo.children[0].id) == merge)
+        let closed = try #require(file.children.first)
+        #expect(file.merges.count == 1 && closed.state == .closed && closed.closedHead == merge.childHead && file.undoableMerge(of: closed.id) == merge)
         #expect(merge.kind == .toolFastForward && merge.preMergeCommit == demo.baseCommit && merge.childHead == demo.children[0].reportHead && merge.mergedCommit == merge.childHead)
         #expect(children.map(\.task) == demo.children.prefix(4).map { PaneTitle.shortened($0.task) })
         // The closed parent's child, under its own node, counts its held notice.
@@ -140,17 +154,23 @@ struct HelpCaptureDelegationTests {
         #expect(held.allSatisfy { $0.kind == .notice && $0.text.hasPrefix("[Mighty Claude notice \($0.id)] Your child \($0.childId)") })
         #expect(DelegationQueueRows.offersRunNext(busy: false, held: held.count) && DelegationQueueRows.removeRefusal(itemId: held[0].id, held: held) == .heldNotRemovable)
         #expect(file.heldItemsByPane()[Self.closedParentId]?.map(\.childId) == [demo.children[4].id])
-        // The parent delegated the four tasks, the delivered notice started its second run, and a Stop ended that run.
+        // The parent delegated three tasks, as many as a pane may have open; the delivered
+        // notice started its second run, which merged that child; once the human closed the
+        // merged child's pane it delegated the fourth, and a Stop ended that run.
         let pane = try #require(profile.pane("parent"))
         let (session, events) = HelpCaptureTests.replay(pane, id: Self.parentId)
-        #expect(session.status == "stopped" && pane.runs.map(\.finish) == ["completed", "stopped"])
-        let tasks = try Self.toolInputs(pane.runs[0], named: "mcp__mighty-delegation__delegate").map { $0["task"] as? String }
-        #expect(tasks == demo.children.prefix(4).map(\.task))
+        #expect(session.status == "stopped" && pane.runs.map(\.finish) == ["completed", "completed", "stopped"])
+        let delegated = try pane.runs.map { run in try Self.toolInputs(run, named: "mcp__mighty-delegation__delegate").compactMap { $0["task"] as? String } }
+        #expect(delegated == [demo.children.prefix(3).map(\.task), [], [demo.children[3].task]])
+        #expect(delegated[0].count == DelegationCoordinator.maximumOpenChildren)
         let delivered = try #require(file.notices.first { $0.lane == .delivered })
         #expect(delivered.childId == demo.children[0].id && delivered.reportRevision == 1 && delivered.receipt?.route == .queue)
         let notice = DelegationCoordinator.text(of: delivered)
-        #expect(pane.runs[1].input == notice && session.logs.contains { $0.kind == "user" && $0.text == notice })
+        #expect(pane.runs[1].input == notice)
         #expect(try Self.toolInputs(pane.runs[1], named: "mcp__mighty-delegation__merge").first?["expected_head"] as? String == demo.children[0].reportHead)
+        // The notice stays among the transcript's last lines, which are what the shot shows.
+        let at = try #require(session.logs.lastIndex { $0.kind == "user" && $0.text == notice })
+        #expect(session.logs.count - at <= 8, "\(session.logs.count - at - 1) entries follow the notice")
         // Each tool row: four delegate calls, child_status, merge, and the test run the Stop ended.
         let tools = Dictionary(grouping: events.compactMap(\.activity).filter { $0.kind != "turn" }, by: \.id).compactMap { $0.value.last }
         #expect(tools.filter { $0.toolName == "mcp__mighty-delegation__delegate" }.count == 4)
@@ -196,10 +216,18 @@ struct HelpCaptureDelegationTests {
         // The active workspace is seeded first; the demo needs its own.
         #expect(throws: (any Error).self) { try load { $0["workspace"] = "demo-my-app" } }
         #expect(throws: (any Error).self) { try load(child(0) { $0["parent"] = "nobody" }) }
+        // A closed child has no pane, and an open one has its pane in the demo's workspace.
         #expect(throws: (any Error).self) { try load(child(0) { $0["role"] = "mighty" }) }
+        #expect(throws: (any Error).self) { try load(child(1) { $0["role"] = "mighty" }) }
+        #expect(throws: (any Error).self) { try load(child(0) { $0["state"] = "merged" }) }
+        // A fourth open child of the parent is more than delegate allows.
+        #expect(throws: (any Error).self) { try load(child(4) { $0["parent"] = "parent" }) }
+        #expect(throws: (any Error).self) { try load(child(1) { $0["state"] = "merged" }) }
+        #expect(throws: (any Error).self) { try load(child(0) { $0["merge"] = "card_merge_commit" }) }
         #expect(throws: (any Error).self) { try load(child(1) { $0.removeValue(forKey: "reportHead") }) }
         #expect(throws: (any Error).self) { try load(child(2) { $0["id"] = "../escape" }) }
         #expect(throws: (any Error).self) { try load(child(2) { $0["state"] = "napping" }) }
+        #expect(throws: (any Error).self) { try load(child(2) { $0["mode"] = "anything" }) }
         #expect(throws: (any Error).self) {
             try load { demo in
                 var notices = demo["notices"] as? [[String: Any]] ?? []

@@ -186,16 +186,21 @@ public struct DemoProfile: Decodable, Sendable {
         public struct ChildSpec: Decodable, Sendable {
             /// The child pane's session id, which its notices and its parent's tool results name.
             public let id: String
-            /// The child's pane in `panes`.
+            /// The child's pane in `panes`; an open child has one, a closed child none.
             public let role: String
             /// The role of its parent's pane, or one of `closedParents`.
             public let parent: String
             public let state: ChildState
+            /// The permission mode its parent asked for.
+            public let mode: String
             /// Its TASK.md.
             public let task: String
             public let reportRevision: Int
             /// The head its current report was made at; a reported or merged child has one.
             public let reportHead: String?
+            /// How its report was fast-forwarded into the parent's branch, for a
+            /// merged child or one whose pane closed after its merge.
+            public let merge: MergeRecord.Kind?
         }
         public struct NoticeSpec: Decodable, Sendable {
             public let id: String
@@ -306,11 +311,12 @@ public struct DemoProfile: Decodable, Sendable {
 }
 
 extension DemoProfile.Delegation {
-    /// Refuses a demo the capture could not seed: a workspace that is not its own
-    /// (the active one is seeded first), a pane that is not a Claude pane, a child
-    /// without its pane, a parent that is neither a pane of the demo nor closed, a
-    /// report without its revision and head, or a notice from a child or revision it
-    /// does not have.
+    /// Refuses a demo the capture could not seed or the app could not reach: a
+    /// workspace that is not its own (the active one is seeded first), a pane that
+    /// is not a Claude pane, an open child without its pane or a closed one with
+    /// one, a parent that is neither a pane of the demo nor closed, a parent with
+    /// more open children than delegate allows, a report or merge without its
+    /// revision and head, or a notice from a child or revision it does not have.
     func check(in profile: DemoProfile) throws {
         guard profile.workspaces.contains(where: { $0.id == workspace }), workspace != profile.activeWorkspace else { throw MightyError("demo profile: the delegation demo needs a workspace of its own") }
         let roles = children.map(\.role)
@@ -321,11 +327,20 @@ extension DemoProfile.Delegation {
             throw MightyError("demo profile: the delegation pane \(pane.role) is not a Claude pane")
         }
         for child in children {
-            guard profile.pane(child.role)?.workspace == workspace, ChildWorktreeMaker.isSafeSessionId(child.id) else { throw MightyError("demo profile: the delegation child \(child.role) has no pane in its workspace or an id no branch can take") }
+            let pane = profile.pane(child.role)
+            let placed = child.state.isOpen ? pane?.workspace == workspace : pane == nil
+            guard placed, ChildWorktreeMaker.isSafeSessionId(child.id), DelegationCoordinator.startingModes.contains(child.mode) else {
+                throw MightyError("demo profile: the delegation child \(child.role) is open without a pane, closed with one, or has an id or mode delegate never gives")
+            }
             let openParent = profile.pane(child.parent).map { $0.workspace == workspace && !roles.contains(child.parent) } ?? false
             let closedParent = closedParents.contains(child.parent) && profile.pane(child.parent) == nil
             guard openParent || closedParent else { throw MightyError("demo profile: the delegation child \(child.role) names an unknown parent") }
-            if [.reported, .merged].contains(child.state), child.reportRevision < 1 || child.reportHead == nil { throw MightyError("demo profile: the delegation child \(child.role) reported without a revision and head") }
+            if [.reported, .merged].contains(child.state) || child.merge != nil, child.reportRevision < 1 || child.reportHead == nil { throw MightyError("demo profile: the delegation child \(child.role) reported without a revision and head") }
+            // The demo's merges are fast-forwards: the merged commit is the reported head.
+            if child.merge == .cardMergeCommit || (child.state == .merged && child.merge == nil) { throw MightyError("demo profile: the delegation child \(child.role) is merged without a fast-forward merge") }
+        }
+        for parent in Set(children.map(\.parent)) where children.filter({ $0.parent == parent && $0.state.isOpen }).count > DelegationCoordinator.maximumOpenChildren {
+            throw MightyError("demo profile: the delegation parent \(parent) has more open children than delegate allows")
         }
         for notice in notices where child(notice.child).map({ !(0...$0.reportRevision).contains(notice.revision) }) ?? true {
             throw MightyError("demo profile: the delegation notice \(notice.id) names an unknown child or revision")
@@ -344,23 +359,25 @@ public enum HelpDemoDelegation {
     /// each parent role: an open parent's pane, or an id no pane has for a closed
     /// one. The children keep the profile's order and ids, work in worktrees under
     /// `worktrees` with `checkout` as their parent's checkout, and keep their TASK
-    /// copies; a merged child has the record of its fast-forward from the base
-    /// commit to its reported head, so its card offers undo. Notices keep their
-    /// lanes, a delivered one with its receipt.
+    /// copies. A merged child has the record of its fast-forward from the base
+    /// commit to its reported head; one whose pane then closed keeps that head as
+    /// the head it was closed at, as closing a merged child does, so either card
+    /// offers undo. Notices keep their lanes, a delivered one with its receipt.
     public static func file(_ profile: DemoProfile, parents: [String: String], worktrees: ChildWorktreeMaker, checkout: String, now: Date = Date()) throws -> DelegationFile {
         let demo = profile.delegation
         var file = DelegationFile()
         for child in demo.children {
-            guard let parentId = parents[child.parent], let pane = profile.pane(child.role) else { throw MightyError("the delegation demo has no session for \(child.parent)") }
-            let mode = pane.permissionMode
-            file.children.append(ChildRecord(id: child.id, parentSessionId: parentId, worktreePath: worktrees.worktreePath(for: child.id), parentBranch: demo.parentBranch,
-                                             baseCommit: demo.baseCommit, startingMode: mode,
-                                             requestKey: DelegationRequestKey.make(parentSessionId: parentId, parentRunId: deliveredRunId, task: child.task, startingMode: mode),
-                                             reportRevision: child.reportRevision, reportHead: child.reportHead, state: child.state, parentCheckout: checkout))
+            guard let parentId = parents[child.parent] else { throw MightyError("the delegation demo has no session for \(child.parent)") }
+            var record = ChildRecord(id: child.id, parentSessionId: parentId, worktreePath: worktrees.worktreePath(for: child.id), parentBranch: demo.parentBranch,
+                                     baseCommit: demo.baseCommit, startingMode: child.mode,
+                                     requestKey: DelegationRequestKey.make(parentSessionId: parentId, parentRunId: deliveredRunId, task: child.task, startingMode: child.mode),
+                                     reportRevision: child.reportRevision, reportHead: child.reportHead, state: child.state, parentCheckout: checkout)
             file.setCopy(DelegationCopy(childId: child.id, kind: .task, revision: 0, contents: Data(child.task.utf8)))
-            if child.state == .merged, let head = child.reportHead {
-                file.merges.append(MergeRecord(childId: child.id, kind: .toolFastForward, parentBranch: demo.parentBranch, preMergeCommit: demo.baseCommit, mergedCommit: head, childHead: head))
+            if let kind = child.merge, let head = child.reportHead {
+                file.merges.append(MergeRecord(childId: child.id, kind: kind, parentBranch: demo.parentBranch, preMergeCommit: demo.baseCommit, mergedCommit: head, childHead: head))
+                if child.state == .closed { record.closedHead = head }
             }
+            file.children.append(record)
         }
         let time = ISO8601DateFormatter().string(from: now)
         for notice in demo.notices {

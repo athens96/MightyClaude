@@ -279,12 +279,13 @@ enum HelpCapture {
         guard let opened = spec.children.lazy.compactMap({ demo.panes[$0.parent] }).first else { throw MightyError("the delegation demo has no open parent") }
         // The coordinator's worktree root in a capture; each child works in a folder of its own there.
         let worktrees = ChildWorktreeMaker(root: store.dataDirectory.appendingPathComponent("worktrees", isDirectory: true))
-        for child in spec.children {
+        // A closed child has no pane: its row is the record's.
+        for child in spec.children where child.state.isOpen {
             guard let pane = profile.pane(child.role), let parent = parents[child.parent] else { throw MightyError("the delegation demo has no \(child.role) pane") }
             let folder = worktrees.worktreePath(for: child.id)
             try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
             let beside = demo.panes[child.parent] ?? opened
-            guard await store.createPane(DelegationChildPane(sessionId: child.id, parentSessionId: beside, mode: pane.permissionMode, folder: folder)) else {
+            guard await store.createPane(DelegationChildPane(sessionId: child.id, parentSessionId: beside, mode: child.mode, folder: folder)) else {
                 throw MightyError("could not open the \(child.role) pane")
             }
             demo.panes[child.role] = child.id
@@ -652,9 +653,11 @@ enum HelpCapture {
         let ownHeld = spec.notices.filter { $0.lane == .held && spec.child($0.child).flatMap { demo.panes[$0.parent] } == id }.count
         switch screen {
         case .delegationTree:
-            let expected = spec.children.filter { demo.panes[$0.parent] == id }.map(\.id)
-            guard !expected.isEmpty, tree.children[id]?.map(\.id) == expected, expected.allSatisfy({ child in store.snapshot.sessions.contains { $0.id == child } }) else {
-                throw MightyError("the parent's child panes are not listed under it")
+            let expected = spec.children.filter { demo.panes[$0.parent] == id }
+            let open = expected.filter(\.state.isOpen)
+            guard !open.isEmpty, open.count <= DelegationCoordinator.maximumOpenChildren, tree.children[id]?.map(\.id) == expected.map(\.id),
+                  expected.allSatisfy({ child in store.snapshot.sessions.contains { $0.id == child.id } == child.state.isOpen }) else {
+                throw MightyError("the parent's children are not listed under it, each open one with its pane")
             }
             guard session.logs.contains(where: { $0.kind == "user" && $0.text.hasPrefix("[Mighty Claude notice ") }) else { throw MightyError("the parent's transcript has no notice") }
         case .delegationHeld:
