@@ -1498,7 +1498,7 @@ public sealed partial class MainWindow
             Container.Width = 315; Container.UpdateLayout(); await WaitUI(() => Math.Abs(Container.ActualWidth - 315) < 1); ArrangeComposer(); Container.UpdateLayout(); await Task.Delay(40);
             var controls = selectors.Children.OfType<FrameworkElement>().Concat(toolbarActions.Children.OfType<FrameworkElement>()).Where(c => c.Visibility == Visibility.Visible).ToArray();
             var centers = controls.Select(c => c.TransformToVisual(Container).TransformPoint(new(0, 0)).Y + c.ActualHeight / 2).ToArray();
-            Require(controls.Contains(context) && controls.Contains(sendHost) && controls.Contains(statusLineToggle), "입력창 도구 줄에 컨텍스트 링, 상태줄 토글, 전송 버튼이 모두 있어야 합니다.");
+            Require(controls.Contains(context) && controls.Contains(sendHost) && controls.Contains(backgroundWorkToggle) && controls.Contains(statusLineToggle), "입력창 도구 줄에 컨텍스트 링, 백그라운드 작업 토글, 상태줄 토글, 전송 버튼이 모두 있어야 합니다.");
             Require(controls.All(c => Math.Abs(c.ActualHeight - DesignMetrics.Layout.Toolbar) < 1 && c.TransformToVisual(Container).TransformPoint(new(c.ActualWidth, 0)).X <= Container.ActualWidth + 1) && centers.Max() - centers.Min() < 1, "좁은 입력창의 버튼이 한 줄 안에 맞지 않습니다.");
             // A narrow panel folds into the model pill and one options menu (M/ComposerControls.swift:48-55, M/SessionPaneView.swift:713-720); pills never go under the right-hand cluster.
             var pillsEnd = selectors.TransformToVisual(toolbar).TransformPoint(new(selectors.ActualWidth, 0)).X; var clusterStart = toolbarActions.TransformToVisual(toolbar).TransformPoint(new(0, 0)).X;

@@ -14,7 +14,8 @@ public sealed partial class MainWindow
         /// The background work line's switches (MainWindow.BackgroundWork.cs), through the handlers its fold, its eye button
         /// and the pane's … menu use: the fold's open state is saved and the rows follow it, the eye hides the line in the
         /// default and the Mighty view and saves that, the menu item reads the saved value and brings the line back, and a
-        /// hidden line comes back as it was left. The pane and both switches are put back after.
+        /// hidden line comes back as it was left. The composer's toggle, pressed through its UIA Toggle pattern, hides the
+        /// line and brings it back and saves each, and shows on Claude panes alone. The pane and both switches are put back after.
         /// </summary>
         internal async Task<Dictionary<string, object?>> RunBackgroundWorkToggleSmoke()
         {
@@ -78,6 +79,33 @@ public sealed partial class MainWindow
                 await owner.Act(() => owner.SetShowsBackgroundWork(true));
                 await WaitUI(Shown, () => $"the settings switch's setter must show the line again; host {backgroundHost?.Visibility}");
                 checks["settingsSetter"] = true;
+
+                // The composer's toggle (M/SessionPaneView.swift backgroundWorkToggle), between the context ring and the status-line
+                // toggle, shows the saved value; a press hides the line and the next brings it back open, and each is saved.
+                var toggle = backgroundWorkToggle; var cluster = toolbarActions.Children.ToList();
+                string? Help() => ToolTipService.GetToolTip(toggle) as string;
+                void PressToggle() => ((Microsoft.UI.Xaml.Automation.Provider.IToggleProvider)new Microsoft.UI.Xaml.Automation.Peers.ToggleButtonAutomationPeer(toggle).GetPattern(Microsoft.UI.Xaml.Automation.Peers.PatternInterface.Toggle)).Toggle();
+                Require(toggle is { Visibility: Visibility.Visible, IsLoaded: true, IsChecked: true } && cluster.IndexOf(toggle) == cluster.IndexOf(context) + 1 && cluster.IndexOf(statusLineToggle) == cluster.IndexOf(toggle) + 1
+                    && AutomationProperties.GetName(toggle) == Locale.Get("composer.backgroundWork.name") && AutomationProperties.GetAutomationId(toggle) == "background-work-toggle-" + id && Help() == Locale.Get("composer.backgroundWork.hide"),
+                    $"a Claude pane's composer must hold the background-work toggle on, between the context ring and the status-line toggle, named '{Locale.Get("composer.backgroundWork.name")}' with the hide help; got {toggle.Visibility} (loaded {toggle.IsLoaded}), checked {toggle.IsChecked}, at {cluster.IndexOf(toggle)}, '{AutomationProperties.GetName(toggle)}', '{Help()}'");
+                PressToggle();
+                await WaitUI(Hidden, () => $"the composer's toggle must hide the line; host {backgroundHost?.Visibility}, children {backgroundHost?.Children.Count}");
+                stored = await Saved(s => s.ShowsBackgroundWork == false);
+                Require(stored.ShowsBackgroundWork == false && toggle.IsChecked == false && Help() == Locale.Get("composer.backgroundWork.show"),
+                    $"hiding from the composer must be saved and leave the toggle off with the show help; got stored {stored.ShowsBackgroundWork}, checked {toggle.IsChecked}, '{Help()}'");
+                checks["composerToggleHides"] = true;
+                PressToggle();
+                await WaitUI(() => Shown() && Rows(), () => $"the composer's toggle must bring the line back open; host {backgroundHost?.Visibility}, rows {Rows()}");
+                stored = await Saved(s => s.ShowsBackgroundWork == true);
+                Require(stored.ShowsBackgroundWork == true && toggle.IsChecked == true && Help() == Locale.Get("composer.backgroundWork.hide"),
+                    $"showing from the composer must be saved and leave the toggle on with the hide help; got stored {stored.ShowsBackgroundWork}, checked {toggle.IsChecked}, '{Help()}'");
+                checks["composerToggleShows"] = true; checks["composerToggleSaved"] = true;
+                // Only a Claude pane's composer carries it.
+                RefreshBackgroundWork(Session with { Provider = "codex" });
+                Require(toggle.Visibility == Visibility.Collapsed, $"a Codex pane's composer must not show the background-work toggle; got {toggle.Visibility}");
+                RefreshBackgroundWork(Session);
+                Require(toggle.Visibility == Visibility.Visible, $"the Claude pane's toggle must show again; got {toggle.Visibility}");
+                checks["composerToggleClaudeOnly"] = true;
                 return checks;
             }
             finally

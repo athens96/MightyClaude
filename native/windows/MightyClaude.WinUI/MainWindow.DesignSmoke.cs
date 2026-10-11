@@ -724,7 +724,7 @@ public sealed partial class MainWindow
         /// ink and figures (M/SessionPaneView.swift:208-251), the … menu holding Copy (decision Q4), the
         /// Default | Mighty switch (segmentTrack, segmentOn, shadow 0.12), the composer card with its
         /// focus ring and shadow (M/SessionPaneView.swift:654-656), the pills, the send / stop shape, the
-        /// context ring, the status-line toggle and the permission card. Every colour is read off the tree.
+        /// context ring, the background-work and status-line toggles and the permission card. Every colour is read off the tree.
         /// </summary>
         internal async Task RequirePaneChromeInTheme()
         {
@@ -1138,16 +1138,21 @@ public sealed partial class MainWindow
             ring.Update(96);
             o.RequireBrush(ring.View, _ => ring.ArcStroke, DesignToken.WaitText, "the context arc from 95%", key: key);
 
-            // The status-line toggle: in the composer's right cluster after the context ring, in its 16pt-wide, toolbar-high frame (M/SessionPaneView.swift:123-133, 736);
-            // ink2 off and accent on, the subtle wash under the pointer.
-            var toggleTheme = statusLineToggle.Resources.ThemeDictionaries[theme == "light" ? "Light" : "Dark"] as ResourceDictionary;
-            Require(statusLineToggle.Width == 16 && statusLineToggle.Height == DesignMetrics.Layout.Toolbar && toggleTheme is not null
-                && ReferenceEquals(toggleTheme["ToggleButtonForeground"], b.Brush(DesignToken.Ink2)) && ReferenceEquals(toggleTheme["ToggleButtonForegroundChecked"], b.Brush(DesignToken.Accent))
-                && ReferenceEquals(toggleTheme["ToggleButtonBackgroundPointerOver"], b.Subtle),
-                $"{key} ({theme}): the status-line toggle must be 16x{DesignMetrics.Layout.Toolbar} with the shared ink2 / accent / subtle brushes; got {statusLineToggle.Width}x{statusLineToggle.Height}");
+            // The background-work and status-line toggles: in the composer's right cluster after the context ring, each in its 16pt-wide, toolbar-high frame
+            // (M/SessionPaneView.swift backgroundWorkToggle, statusLineToggle); ink2 off and accent on, the subtle wash under the pointer.
+            foreach (var (toggle, what) in new[] { (backgroundWorkToggle, "background-work"), (statusLineToggle, "status-line") })
+            {
+                var toggleTheme = toggle.Resources.ThemeDictionaries[theme == "light" ? "Light" : "Dark"] as ResourceDictionary;
+                Require(toggle.Width == 16 && toggle.Height == DesignMetrics.Layout.Toolbar && toggleTheme is not null
+                    && ReferenceEquals(toggleTheme["ToggleButtonForeground"], b.Brush(DesignToken.Ink2)) && ReferenceEquals(toggleTheme["ToggleButtonForegroundChecked"], b.Brush(DesignToken.Accent))
+                    && ReferenceEquals(toggleTheme["ToggleButtonBackgroundPointerOver"], b.Subtle),
+                    $"{key} ({theme}): the {what} toggle must be 16x{DesignMetrics.Layout.Toolbar} with the shared ink2 / accent / subtle brushes; got {toggle.Width}x{toggle.Height}");
+            }
+            Require(backgroundWorkToggle.Visibility == (pane.Kind == "claude" && pane.Provider == "claude" ? Visibility.Visible : Visibility.Collapsed),
+                $"{key} ({theme}): the background-work toggle must show on Claude panes alone; got {backgroundWorkToggle.Visibility} on a {pane.Kind} / {pane.Provider} pane");
             var cluster = toolbarActions.Children.ToList();
-            Require(cluster.IndexOf(resumeHost) == 0 && cluster.IndexOf(context) == 1 && cluster.IndexOf(statusLineToggle) == 2 && cluster.IndexOf(queueStopButton!) == cluster.Count - 3 && cluster.IndexOf(steerHost) == cluster.Count - 2 && cluster.IndexOf(sendHost) == cluster.Count - 1 && !paneHeaderControls.Children.Contains(statusLineToggle),
-                $"{key} ({theme}): the right cluster must be the resume mark, the context ring, the status-line toggle, then stop, steer and send / queue, and the toggle must have left the pane header");
+            Require(cluster.IndexOf(resumeHost) == 0 && cluster.IndexOf(context) == 1 && cluster.IndexOf(backgroundWorkToggle) == 2 && cluster.IndexOf(statusLineToggle) == 3 && cluster.IndexOf(queueStopButton!) == cluster.Count - 3 && cluster.IndexOf(steerHost) == cluster.Count - 2 && cluster.IndexOf(sendHost) == cluster.Count - 1 && !paneHeaderControls.Children.Contains(statusLineToggle),
+                $"{key} ({theme}): the right cluster must be the resume mark, the context ring, the background-work and status-line toggles, then stop, steer and send / queue, and the status-line toggle must have left the pane header");
             // Steer wears the send button's look in both states, set directly here (the busy pane's own state is checked in the composer capture).
             Require(ReferenceEquals(steer.Content, steerBolt.View) && ReferenceEquals(OwnResource(steer, "ButtonBackground"), b.Transparent) && ReferenceEquals(OwnResource(steer, "ButtonBackgroundDisabled"), b.Transparent)
                 && steerDisc.Width == DesignMetrics.Layout.Toolbar && steerDisc.Height == DesignMetrics.Layout.Toolbar && steerDisc.CornerRadius == new CornerRadius(16),

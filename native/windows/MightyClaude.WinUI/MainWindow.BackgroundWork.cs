@@ -10,7 +10,7 @@ public sealed partial class MainWindow
 {
     /// <summary>
     /// The background work line above every agent pane's composer is drawn (null, older state, means shown). Settings →
-    /// General → Display, the line's hide button and the pane's … menu all set this one saved value (M/AppStore.swift showsBackgroundWork).
+    /// General → Display, the line's hide button, the pane's … menu and the composer's toggle all set this one saved value (M/AppStore.swift showsBackgroundWork).
     /// </summary>
     private bool ShowsBackgroundWork => service.Snapshot.ShowsBackgroundWork != false;
 
@@ -52,12 +52,57 @@ public sealed partial class MainWindow
         private DispatcherTimer? backgroundTicker;
 
         /// <summary>
+        /// The composer's background-work toggle (M/SessionPaneView.swift backgroundWorkToggle): the status-line toggle's
+        /// 16pt-wide, toolbar-high frame, on Claude panes alone. The Mac's <c>rectangle.stack</c> and <c>rectangle.stack.fill</c>
+        /// become the list mark the line itself starts with (Segoe's BulletedList, one shape in both states), ink2 off and
+        /// accent on, as the status-line toggle.
+        /// </summary>
+        private readonly Microsoft.UI.Xaml.Controls.Primitives.ToggleButton backgroundWorkToggle = new()
+        {
+            Width = 16, Height = DesignMetrics.Layout.Toolbar, MinWidth = 0, MinHeight = 0, VerticalAlignment = VerticalAlignment.Center,
+            Padding = new Thickness(0), BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow),
+        };
+        private readonly FontIcon backgroundWorkGlyph = new() { Glyph = "\uE8FD", FontSize = 12, IsHitTestVisible = false };
+
+        /// <summary>
+        /// Adds the background-work toggle to the composer's right cluster, between the context ring and the status-line
+        /// toggle. It sets the saved value the line's eye, the pane's … menu and Settings set, for every pane at once, so a
+        /// hidden line can always be brought back from the composer.
+        /// </summary>
+        private void InitializeBackgroundWorkToggle(StackPanel cluster)
+        {
+            DressComposerToggle(backgroundWorkToggle, backgroundWorkGlyph);
+            AutomationProperties.SetName(backgroundWorkToggle, Locale.Get("composer.backgroundWork.name"));
+            AutomationProperties.SetAutomationId(backgroundWorkToggle, "background-work-toggle-" + id);
+            backgroundWorkToggle.IsChecked = owner.ShowsBackgroundWork;
+            UpdateBackgroundWorkTip();
+            // A press (pointer, keys or the UIA Toggle pattern) flips the check and the saved value follows it. A refresh
+            // only copies the saved value onto the check, so the two already agree and nothing is saved.
+            void Flipped()
+            {
+                UpdateBackgroundWorkTip();
+                var on = backgroundWorkToggle.IsChecked == true;
+                if (on != owner.ShowsBackgroundWork) _ = owner.Act(() => owner.SetShowsBackgroundWork(on));
+            }
+            backgroundWorkToggle.Checked += (_, _) => Flipped();
+            backgroundWorkToggle.Unchecked += (_, _) => Flipped();
+            cluster.Children.Add(backgroundWorkToggle);
+        }
+
+        /// <summary>The help says what a press does next (M/SessionPaneView.swift backgroundWorkToggle).</summary>
+        private void UpdateBackgroundWorkTip() =>
+            ToolTipService.SetToolTip(backgroundWorkToggle, Locale.Get(backgroundWorkToggle.IsChecked == true ? "composer.backgroundWork.hide" : "composer.backgroundWork.show"));
+
+        /// <summary>
         /// The pane's background agents outside a style that draws its own list: in any view once the turn is over
         /// and they still run, and in the Mighty view all along — folded to one line that opens to the task rows.
         /// </summary>
         internal void RefreshBackgroundWork(RunSession pane)
         {
             if (backgroundHost is null) return;
+            // The composer's toggle shows the saved value, on Claude panes alone (M/SessionPaneView.swift showsBackgroundWorkToggle).
+            backgroundWorkToggle.IsChecked = owner.ShowsBackgroundWork;
+            backgroundWorkToggle.Visibility = pane.Kind == "claude" && pane.Provider == "claude" ? Visibility.Visible : Visibility.Collapsed;
             var mighty = pane.Kind == "claude" && pane.Provider == "claude" && pane.AgentViewMode == "mighty";
             var drawsTasks = mighty && activeStyle?.Evaluator.DrawsTasks == true;
             var work = pane.BackgroundWork;
@@ -84,7 +129,7 @@ public sealed partial class MainWindow
             fold.IsChecked = backgroundOpen;
             AutomationProperties.SetAutomationId(fold, "background-work-" + id);
             fold.Click += (_, _) => _ = ToggleBackgroundWorkOpen();
-            // The eye on the line's trailing side hides it everywhere; Settings and the pane's … menu bring it back.
+            // The eye on the line's trailing side hides it everywhere; Settings, the pane's … menu and the composer's toggle bring it back.
             var hide = new Button
             {
                 Width = 22, Height = 20, MinWidth = 0, MinHeight = 0, Padding = new Thickness(0), CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow), BorderThickness = new Thickness(0),
