@@ -1,6 +1,6 @@
 ---
 title: 终端、文件和浏览器窗格
-order: 6
+order: 7
 section: terminal-files-browser
 ---
 可以在智能体窗格旁同时打开终端、文件和浏览器窗格。

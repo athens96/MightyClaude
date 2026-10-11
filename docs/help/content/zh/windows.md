@@ -1,6 +1,6 @@
 ---
 title: Windows 上的不同之处
-order: 9
+order: 10
 section: windows
 ---
 本帮助以 Mac 界面为准编写。Windows 应用以相同的名称提供相同的功能，本页只汇总不同的部分。
@@ -46,6 +46,7 @@ Windows 没有菜单栏。相同的功能位于侧边栏和{{ui:workspace.addPan
 | 远程屏幕 | 支持手机远程的屏幕查看，但画质选项比 Mac 少。 |
 | 语言 | 更改的语言在重新打开应用后生效。 |
 | 文件位置 | 提供{{ui:menu.showInExplorer}}，而不是{{ui:menu.showInFinder}}。 |
+| 智能体委派 | 暂不支持。[智能体委派](delegation.md)目前只在 Mac 应用中提供。 |
 
 > [!note]
 > Windows 应用的部分功能尚未在真实设备上充分验证。如发现异常，请告诉我们。

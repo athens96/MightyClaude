@@ -1,6 +1,6 @@
 ---
 title: Phone remote
-order: 8
+order: 9
 section: phone
 ---
 With the phone app you can follow and drive Mighty Claude on your Mac while you're away: check on tasks, send requests, and answer approvals and questions.

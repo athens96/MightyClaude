@@ -1,6 +1,6 @@
 ---
 title: Terminal, files and browser panes
-order: 6
+order: 7
 section: terminal-files-browser
 ---
 You can keep terminal, files and browser panes open next to your agent panes.

@@ -1,6 +1,6 @@
 ---
 title: 手机远程
-order: 8
+order: 9
 section: phone
 ---
 通过手机应用，你在外面也能查看和操作 Mac 上的 Mighty Claude：查看任务状态、发送请求、回答批准和提问。

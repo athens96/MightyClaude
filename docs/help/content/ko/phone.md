@@ -1,6 +1,6 @@
 ---
 title: 휴대폰 원격
-order: 8
+order: 9
 section: phone
 ---
 휴대폰 앱으로 밖에서도 Mac의 Mighty Claude를 보고 다룰 수 있습니다. 작업 상태를 보고, 요청을 보내고, 승인과 질문에 답합니다.
