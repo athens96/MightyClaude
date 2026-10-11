@@ -1,10 +1,10 @@
 import Foundation
 
 // The help site's screenshots: the list of screens (docs/help/shots.json), the demo
-// profile they are taken with (native/contracts/fixtures/demo-profile.json), and the
+// profile they are taken with (native/contracts/fixtures/demo-profile.json), the
 // replay that turns the profile's canned CLI lines into the run events a real run
-// sends. Both files ship byte-identical in this module's bundle under Help/, which is
-// what `--help-capture` reads.
+// sends, and the delegation demo's records. Both files ship byte-identical in this
+// module's bundle under Help/, which is what `--help-capture` reads.
 
 /// A screen `--help-capture` knows how to open. shots.json names one per shot; a name
 /// that is not here stops the capture before anything is taken.
@@ -39,6 +39,9 @@ public enum HelpScreen: String, CaseIterable, Sendable {
     case settingsMobile = "settings-mobile"
     case settingsCompanion = "settings-companion"
     case settingsAbout = "settings-about"
+    case delegationTree = "delegation-tree"
+    case delegationHeld = "delegation-held"
+    case delegationParentClosed = "delegation-parent-closed"
 
     /// The demo pane (its `role` in the profile) the screen shows, if it shows one.
     public var paneRole: String? {
@@ -50,6 +53,8 @@ public enum HelpScreen: String, CaseIterable, Sendable {
         case .questionCard: "question"
         case .permissionCard: "permission"
         case .terminalPane: "shell"
+        case .delegationTree, .delegationHeld: "parent"
+        case .delegationParentClosed: "child-of-closed"
         default: nil
         }
     }
@@ -172,6 +177,45 @@ public struct DemoProfile: Decodable, Sendable {
         public let account: String?
         public let plan: String?
     }
+    /// The agent-delegation demo (macOS only): parent panes with their delegated
+    /// children, and children of a parent whose pane is closed. Its workspace and
+    /// panes are seeded when the first delegation shot is taken, so the shots before
+    /// it do not show them; the capture then loads its records into the app's
+    /// delegation coordinator (`HelpDemoDelegation`).
+    public struct Delegation: Decodable, Sendable {
+        public struct ChildSpec: Decodable, Sendable {
+            /// The child pane's session id, which its notices and its parent's tool results name.
+            public let id: String
+            /// The child's pane in `panes`.
+            public let role: String
+            /// The role of its parent's pane, or one of `closedParents`.
+            public let parent: String
+            public let state: ChildState
+            /// Its TASK.md.
+            public let task: String
+            public let reportRevision: Int
+            /// The head its current report was made at; a reported or merged child has one.
+            public let reportHead: String?
+        }
+        public struct NoticeSpec: Decodable, Sendable {
+            public let id: String
+            /// The role of the child it is from.
+            public let child: String
+            public let revision: Int
+            public let kind: Notice.Kind
+            public let lane: DeliveryLane
+        }
+        public let workspace: String
+        /// The parents' branch, and its head when the children were made.
+        public let parentBranch: String
+        public let baseCommit: String
+        /// Parents whose pane is closed: no pane has their role.
+        public let closedParents: [String]
+        public let children: [ChildSpec]
+        public let notices: [NoticeSpec]
+
+        public func child(_ role: String) -> ChildSpec? { children.first { $0.role == role } }
+    }
 
     public let version: Int
     public let languages: [String]
@@ -182,6 +226,7 @@ public struct DemoProfile: Decodable, Sendable {
     public let activeWorkspace: String
     public let terminal: Terminal
     public let resumeSessions: [ResumeRecord]
+    public let delegation: Delegation
 
     public func pane(_ role: String) -> Pane? { panes.first { $0.role == role } }
 
@@ -205,6 +250,7 @@ public struct DemoProfile: Decodable, Sendable {
         for workspace in profile.workspaces {
             for file in workspace.files where file.path.hasPrefix("/") || file.path.split(separator: "/").contains("..") { throw MightyError("demo profile: \(file.path) leaves its workspace") }
         }
+        try profile.delegation.check(in: profile)
         return profile
     }
 
@@ -256,6 +302,73 @@ public struct DemoProfile: Decodable, Sendable {
             return try array.enumerated().map { try resolve($1, language: language, languages: languages, path: path + "[\($0)]") }
         }
         return value
+    }
+}
+
+extension DemoProfile.Delegation {
+    /// Refuses a demo the capture could not seed: a workspace that is not its own
+    /// (the active one is seeded first), a pane that is not a Claude pane, a child
+    /// without its pane, a parent that is neither a pane of the demo nor closed, a
+    /// report without its revision and head, or a notice from a child or revision it
+    /// does not have.
+    func check(in profile: DemoProfile) throws {
+        guard profile.workspaces.contains(where: { $0.id == workspace }), workspace != profile.activeWorkspace else { throw MightyError("demo profile: the delegation demo needs a workspace of its own") }
+        let roles = children.map(\.role)
+        guard Set(roles).count == roles.count, Set(children.map(\.id)).count == children.count, Set(notices.map(\.id)).count == notices.count else {
+            throw MightyError("demo profile: a delegation child or notice is listed twice")
+        }
+        for pane in profile.panes where pane.workspace == workspace && (pane.kind != SessionKind.claude || pane.provider != "claude") {
+            throw MightyError("demo profile: the delegation pane \(pane.role) is not a Claude pane")
+        }
+        for child in children {
+            guard profile.pane(child.role)?.workspace == workspace, ChildWorktreeMaker.isSafeSessionId(child.id) else { throw MightyError("demo profile: the delegation child \(child.role) has no pane in its workspace or an id no branch can take") }
+            let openParent = profile.pane(child.parent).map { $0.workspace == workspace && !roles.contains(child.parent) } ?? false
+            let closedParent = closedParents.contains(child.parent) && profile.pane(child.parent) == nil
+            guard openParent || closedParent else { throw MightyError("demo profile: the delegation child \(child.role) names an unknown parent") }
+            if [.reported, .merged].contains(child.state), child.reportRevision < 1 || child.reportHead == nil { throw MightyError("demo profile: the delegation child \(child.role) reported without a revision and head") }
+        }
+        for notice in notices where child(notice.child).map({ !(0...$0.reportRevision).contains(notice.revision) }) ?? true {
+            throw MightyError("demo profile: the delegation notice \(notice.id) names an unknown child or revision")
+        }
+    }
+}
+
+/// The delegation records of the demo (macOS only): the delegation file once the
+/// demo's parents have delegated, which `--help-capture` loads into the app's
+/// coordinator after it opened the panes.
+public enum HelpDemoDelegation {
+    /// The run each delivered notice went to, as its receipt names it.
+    public static let deliveredRunId = "help-demo-run"
+
+    /// The file of `profile`'s delegation demo. `parents` gives the session id of
+    /// each parent role: an open parent's pane, or an id no pane has for a closed
+    /// one. The children keep the profile's order and ids, work in worktrees under
+    /// `worktrees` with `checkout` as their parent's checkout, and keep their TASK
+    /// copies; a merged child has the record of its fast-forward from the base
+    /// commit to its reported head, so its card offers undo. Notices keep their
+    /// lanes, a delivered one with its receipt.
+    public static func file(_ profile: DemoProfile, parents: [String: String], worktrees: ChildWorktreeMaker, checkout: String, now: Date = Date()) throws -> DelegationFile {
+        let demo = profile.delegation
+        var file = DelegationFile()
+        for child in demo.children {
+            guard let parentId = parents[child.parent], let pane = profile.pane(child.role) else { throw MightyError("the delegation demo has no session for \(child.parent)") }
+            let mode = pane.permissionMode
+            file.children.append(ChildRecord(id: child.id, parentSessionId: parentId, worktreePath: worktrees.worktreePath(for: child.id), parentBranch: demo.parentBranch,
+                                             baseCommit: demo.baseCommit, startingMode: mode,
+                                             requestKey: DelegationRequestKey.make(parentSessionId: parentId, parentRunId: deliveredRunId, task: child.task, startingMode: mode),
+                                             reportRevision: child.reportRevision, reportHead: child.reportHead, state: child.state, parentCheckout: checkout))
+            file.setCopy(DelegationCopy(childId: child.id, kind: .task, revision: 0, contents: Data(child.task.utf8)))
+            if child.state == .merged, let head = child.reportHead {
+                file.merges.append(MergeRecord(childId: child.id, kind: .toolFastForward, parentBranch: demo.parentBranch, preMergeCommit: demo.baseCommit, mergedCommit: head, childHead: head))
+            }
+        }
+        let time = ISO8601DateFormatter().string(from: now)
+        for notice in demo.notices {
+            guard let child = demo.child(notice.child) else { throw MightyError("the delegation demo has no child \(notice.child)") }
+            let receipt = notice.lane == .delivered ? DeliveryReceipt(time: time, route: .queue, runId: deliveredRunId) : nil
+            file.notices.append(Notice(id: notice.id, childId: child.id, reportRevision: notice.revision, kind: notice.kind, lane: notice.lane, receipt: receipt))
+        }
+        return file
     }
 }
 

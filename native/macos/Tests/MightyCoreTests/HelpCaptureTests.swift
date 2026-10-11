@@ -58,8 +58,8 @@ struct HelpCaptureTests {
 
     @Test func theShotListDecodesAndEveryScreenIsOneTheCaptureKnows() throws {
         let list = try HelpShotList.decode(Data(contentsOf: Self.shotsURL))
-        // The help site's table of contents (the four-language help plan, stage 4).
-        #expect(list.sections == ["getting-started", "layout", "agent-pane", "styles", "approvals", "terminal-files-browser", "settings", "phone", "windows", "faq"])
+        // The help site's table of contents (the four-language help plan, stage 4), with agent delegation after approvals.
+        #expect(list.sections == ["getting-started", "layout", "agent-pane", "styles", "approvals", "delegation", "terminal-files-browser", "settings", "phone", "windows", "faq"])
         // Every screen the capture can open is listed, so none is dead code.
         #expect(Set(list.shots.map(\.screen)) == Set(HelpScreen.allCases))
         let profile = try Self.profile("en")
@@ -108,7 +108,7 @@ struct HelpCaptureTests {
             #expect(!text.contains(forbidden), "\(forbidden)")
         }
         let profile = try Self.profile("en")
-        #expect(profile.workspaces.map(\.name) == ["my-app", "docs-site"])
+        #expect(profile.workspaces.map(\.name) == ["my-app", "docs-site", "shop-api"])
         for workspace in profile.workspaces {
             #expect(!workspace.directory.contains("/") && !workspace.directory.contains(".."))
             for file in workspace.files { #expect(!file.path.hasPrefix("/") && !file.path.contains("..")) }
@@ -225,7 +225,8 @@ struct HelpCaptureTests {
 
     @Test func theProfileNamesItsPanesAndLayouts() throws {
         let profile = try Self.profile("en")
-        #expect(Set(profile.panes.map(\.role)) == ["mighty", "plan", "codex", "shell", "result", "question", "permission"])
+        #expect(Set(profile.panes.map(\.role)) == ["mighty", "plan", "codex", "shell", "result", "question", "permission",
+                                                   "parent", "child-merged", "child-reported", "child-running", "child-waiting", "child-of-closed"])
         #expect(profile.pane("mighty")?.view == "mighty" && profile.pane("codex")?.view == "default" && profile.pane("codex")?.provider == "codex")
         #expect(profile.pane("mighty")?.draft?.isEmpty == false)
         #expect(profile.resumeSessions.count == 3 && profile.resumeSessions.allSatisfy { UUID(uuidString: $0.sessionId) != nil })

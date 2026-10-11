@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "The demo state `--help-capture` loads (docs/help/shots.json lists the screens). Everything here is fictional. A JSON object whose keys are only language codes is one user-visible string and must carry all four languages; the capture reads the one for the app's language. Program output (terminal output, command results, file contents the CLIs print) is what the program prints and stays as written. Each run's `frames` are the CLI's own stream lines (Claude stream-json, Codex exec JSONL), replayed through CLIStreamParser and the Claude permission channel, so the panes show what a real run would. Paths are relative to the workspace, which is created under the profile (or under the folder given with `--help-workspaces`, which CI points into its throwaway home). The bundled copy is native/macos/Sources/MightyCore/Resources/Help/demo-profile.json and must stay byte-identical.",
+  "note": "The demo state `--help-capture` loads (docs/help/shots.json lists the screens). Everything here is fictional. A JSON object whose keys are only language codes is one user-visible string and must carry all four languages; the capture reads the one for the app's language. Program output (terminal output, command results, file contents the CLIs print) is what the program prints and stays as written. Each run's `frames` are the CLI's own stream lines (Claude stream-json, Codex exec JSONL), replayed through CLIStreamParser and the Claude permission channel, so the panes show what a real run would. Paths are relative to the workspace, which is created under the profile (or under the folder given with `--help-workspaces`, which CI points into its throwaway home). `delegation` describes the agent-delegation demo; its workspace and panes wait for the first delegation shot. The bundled copy is native/macos/Sources/MightyCore/Resources/Help/demo-profile.json and must stay byte-identical.",
   "languages": [
     "ko",
     "en",
@@ -97,6 +97,41 @@
             "zh": "# 常见问题\n\n## 会话能保持多久？\n\n默认一天；勾选**记住我**后为 30 天。\n\n## 我忘记了密码\n\n在登录页点击**忘记密码？**。\n",
             "ja": "# よくある質問\n\n## セッションはどのくらい続きますか？\n\n既定では 1 日、**ログイン状態を保持**をオンにすると 30 日です。\n\n## パスワードを忘れました\n\nサインイン画面の**パスワードをお忘れですか？**を選んでください。\n"
           }
+        }
+      ]
+    },
+    {
+      "id": "demo-shop-api",
+      "name": "shop-api",
+      "directory": "shop-api",
+      "files": [
+        {
+          "path": "package.json",
+          "content": "{\n  \"name\": \"shop-api\",\n  \"version\": \"0.4.0\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"scripts\": {\n    \"dev\": \"node --watch src/server.js\",\n    \"test\": \"vitest run\",\n    \"db:migrate\": \"node scripts/migrate.js\"\n  }\n}\n"
+        },
+        {
+          "path": "src/server.js",
+          "content": "import express from \"express\";\nimport { checkout } from \"./routes/checkout.js\";\nimport { orders } from \"./routes/orders.js\";\nimport { products } from \"./routes/products.js\";\n\nconst app = express();\napp.use(express.json());\napp.use(\"/checkout\", checkout);\napp.use(\"/orders\", orders);\napp.use(\"/products\", products);\n\napp.listen(3000);\n"
+        },
+        {
+          "path": "src/routes/checkout.js",
+          "content": "import { Router } from \"express\";\nimport { cartTotal } from \"../cart/totals.js\";\nimport { paymentError } from \"../payments/errors.js\";\n\nexport const checkout = Router();\n\ncheckout.post(\"/\", async (req, res) => {\n  const { items, card } = req.body;\n  try {\n    const total = cartTotal(items);\n    res.json({ total, status: \"paid\" });\n  } catch (error) {\n    res.status(402).json(paymentError(error));\n  }\n});\n"
+        },
+        {
+          "path": "src/routes/orders.js",
+          "content": "import { Router } from \"express\";\nimport { db } from \"../db.js\";\n\nexport const orders = Router();\n\norders.get(\"/\", async (req, res) => res.json(await db.orders.list()));\norders.get(\"/:id\", async (req, res) => res.json(await db.orders.find(req.params.id)));\norders.post(\"/\", async (req, res) => res.status(201).json(await db.orders.create(req.body)));\n"
+        },
+        {
+          "path": "src/routes/products.js",
+          "content": "import { Router } from \"express\";\nimport { db } from \"../db.js\";\n\nexport const products = Router();\n\nproducts.get(\"/\", async (req, res) => {\n  res.json(await db.products.list());\n});\n"
+        },
+        {
+          "path": "src/cart/totals.js",
+          "content": "export function cartTotal(items, { discount = 0, taxRate = 0.1 } = {}) {\n  const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);\n  const discounted = subtotal * (1 - discount);\n  return Math.round(discounted * (1 + taxRate) * 100) / 100;\n}\n"
+        },
+        {
+          "path": "src/payments/errors.js",
+          "content": "export function paymentError(error) {\n  return { error: error.code ?? \"payment_failed\", message: error.message };\n}\n"
         }
       ]
     }
@@ -1914,6 +1949,1485 @@
           ]
         }
       ]
+    },
+    {
+      "role": "parent",
+      "workspace": "demo-shop-api",
+      "kind": "claude",
+      "provider": "claude",
+      "model": "sonnet",
+      "effort": "high",
+      "permissionMode": "acceptEdits",
+      "view": "default",
+      "title": {
+        "ko": "결제 기능 작업",
+        "en": "Checkout work",
+        "zh": "结账功能",
+        "ja": "チェックアウトの作業"
+      },
+      "runs": [
+        {
+          "input": {
+            "ko": "결제 작업을 자식 창들에 나눠 맡겨 줘. 요청 검증, 주문 API 문서, 장바구니 테스트, 그리고 더 알기 쉬운 결제 오류 메시지야.",
+            "en": "Split the checkout work between child panes: request validation, the orders API docs, cart tests and friendlier payment errors.",
+            "zh": "把结账相关的工作分给子窗格：请求校验、订单 API 文档、购物车测试，还有更易懂的支付错误提示。",
+            "ja": "チェックアウトの作業を子ペインに分けて任せて。リクエストの検証、注文 API のドキュメント、カートのテスト、わかりやすい支払いエラーの 4 つ。"
+          },
+          "finish": "completed",
+          "elapsedSeconds": 64,
+          "frames": [
+            {
+              "type": "system",
+              "subtype": "init",
+              "session_id": "d17c4e92-8a3b-4f65-b2d9-6e1a8c3f5b07",
+              "model": "claude-sonnet-5-5",
+              "permissionMode": "default"
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_l1",
+              "session_id": "d17c4e92-8a3b-4f65-b2d9-6e1a8c3f5b07",
+              "message": {
+                "id": "msg_l1",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": {
+                      "ko": "네 가지를 각각 자식 창에 맡길게요. 자식 창마다 자기 worktree에서 작업합니다.",
+                      "en": "I'll give each part to a child pane of its own; each works in its own worktree.",
+                      "zh": "我会把每一部分交给一个子窗格，每个子窗格都在自己的 worktree 中工作。",
+                      "ja": "それぞれを子ペインに任せます。子ペインはそれぞれ自分の worktree で作業します。"
+                    }
+                  },
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_l_d1",
+                    "name": "mcp__mighty-delegation__delegate",
+                    "input": {
+                      "task": {
+                        "ko": "POST /checkout 요청 본문을 검증하고, 잘못된 필드 이름을 담아 400으로 응답하게 해 줘.",
+                        "en": "Validate the POST /checkout request body and answer 400 with the name of the field that failed.",
+                        "zh": "校验 POST /checkout 的请求体，出错时返回 400，并指明是哪个字段。",
+                        "ja": "POST /checkout のリクエスト本文を検証し、不正なフィールドの名前を添えて 400 を返すようにして。"
+                      },
+                      "mode": "acceptEdits"
+                    }
+                  },
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_l_d2",
+                    "name": "mcp__mighty-delegation__delegate",
+                    "input": {
+                      "task": {
+                        "ko": "docs/api.md에 /orders 엔드포인트 문서를 쓰고, 엔드포인트마다 요청 예시를 하나씩 넣어 줘.",
+                        "en": "Document the /orders endpoints in docs/api.md, with one example request for each.",
+                        "zh": "在 docs/api.md 中为 /orders 的各个接口写文档，每个接口附一个请求示例。",
+                        "ja": "docs/api.md に /orders のエンドポイントの説明を書き、それぞれにリクエスト例を 1 つずつ付けて。"
+                      },
+                      "mode": "acceptEdits"
+                    }
+                  },
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_l_d3",
+                    "name": "mcp__mighty-delegation__delegate",
+                    "input": {
+                      "task": {
+                        "ko": "장바구니 합계 테스트를 추가해 줘. 할인, 세금, 빈 장바구니를 확인해야 해.",
+                        "en": "Add tests for cart totals: discounts, tax and an empty cart.",
+                        "zh": "为购物车合计添加测试：折扣、税费和空购物车。",
+                        "ja": "カートの合計のテストを追加して。割引、税、空のカートを確認すること。"
+                      },
+                      "mode": "acceptEdits"
+                    }
+                  },
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_l_d4",
+                    "name": "mcp__mighty-delegation__delegate",
+                    "input": {
+                      "task": {
+                        "ko": "결제 오류 메시지를 알기 쉬운 말로 다시 쓰고, 필요한 오류 코드를 추가해 줘.",
+                        "en": "Rewrite the payment error messages in plain words, and add the error codes they need.",
+                        "zh": "用通俗易懂的话重写支付错误提示，并补上需要的错误代码。",
+                        "ja": "支払いエラーのメッセージをわかりやすい言葉に書き直し、必要なエラーコードを追加して。"
+                      },
+                      "mode": "acceptEdits"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1400,
+                  "cache_read_input_tokens": 36800,
+                  "cache_creation_input_tokens": 5100,
+                  "output_tokens": 620
+                }
+              }
+            },
+            {
+              "type": "user",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_l_d1",
+                    "content": "Child 3f8a2c6e-9b14-4d7a-8e25-c1b9f04d6a73 is creating, on the branch mighty/3f8a2c6e-9b14-4d7a-8e25-c1b9f04d6a73, starting in acceptEdits mode."
+                  },
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_l_d2",
+                    "content": "Child 8b1e5d93-2c47-4f0a-b6d8-4a2c9e71f5b0 is creating, on the branch mighty/8b1e5d93-2c47-4f0a-b6d8-4a2c9e71f5b0, starting in acceptEdits mode."
+                  },
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_l_d3",
+                    "content": "Child c6d04a2f-7e15-4b9c-9a38-5f1e2d8b6c47 is creating, on the branch mighty/c6d04a2f-7e15-4b9c-9a38-5f1e2d8b6c47, starting in acceptEdits mode."
+                  },
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_l_d4",
+                    "content": "Child 51a9e7c3-0d28-4e6b-a4f1-9c3b7d2e8a05 is creating, on the branch mighty/51a9e7c3-0d28-4e6b-a4f1-9c3b7d2e8a05, starting in acceptEdits mode."
+                  }
+                ]
+              }
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_l2",
+              "session_id": "d17c4e92-8a3b-4f65-b2d9-6e1a8c3f5b07",
+              "message": {
+                "id": "msg_l2",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": {
+                      "ko": "자식 창 네 개가 작업을 시작했어요. 알림이 오는 대로 보고서를 읽고, 괜찮은 것은 병합할게요.",
+                      "en": "Four child panes are on it. I'll read each report as its notice comes in, and merge what is right.",
+                      "zh": "四个子窗格已经开始工作。每收到一条通知，我就会阅读对应的报告，没问题的就合并。",
+                      "ja": "4 つの子ペインが作業を始めました。通知が届くたびに報告を読み、問題のないものはマージします。"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1700,
+                  "cache_read_input_tokens": 41900,
+                  "cache_creation_input_tokens": 900,
+                  "output_tokens": 110
+                }
+              }
+            },
+            {
+              "type": "result",
+              "subtype": "success",
+              "is_error": false,
+              "session_id": "d17c4e92-8a3b-4f65-b2d9-6e1a8c3f5b07",
+              "result": {
+                "ko": "자식 창 네 개가 작업을 시작했어요. 알림이 오는 대로 보고서를 읽고, 괜찮은 것은 병합할게요.",
+                "en": "Four child panes are on it. I'll read each report as its notice comes in, and merge what is right.",
+                "zh": "四个子窗格已经开始工作。每收到一条通知，我就会阅读对应的报告，没问题的就合并。",
+                "ja": "4 つの子ペインが作業を始めました。通知が届くたびに報告を読み、問題のないものはマージします。"
+              },
+              "usage": {
+                "input_tokens": 1700,
+                "cache_read_input_tokens": 41900,
+                "cache_creation_input_tokens": 900,
+                "output_tokens": 110
+              },
+              "modelUsage": {
+                "claude-sonnet-5-5": {
+                  "inputTokens": 3100,
+                  "outputTokens": 730,
+                  "cacheReadInputTokens": 78700,
+                  "cacheCreationInputTokens": 6000,
+                  "contextWindow": 200000
+                }
+              },
+              "total_cost_usd": 0.08
+            }
+          ]
+        },
+        {
+          "input": "[Mighty Claude notice a4c8e1f7-3b29-4d06-9e5a-1f7b3c8d2e60] Your child 3f8a2c6e-9b14-4d7a-8e25-c1b9f04d6a73 reported revision 1. Read the report with child_status; merge it with merge when it is right.",
+          "finish": "stopped",
+          "elapsedSeconds": 41,
+          "frames": [
+            {
+              "type": "assistant",
+              "uuid": "msg_l3",
+              "session_id": "d17c4e92-8a3b-4f65-b2d9-6e1a8c3f5b07",
+              "message": {
+                "id": "msg_l3",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_l_s1",
+                    "name": "mcp__mighty-delegation__child_status",
+                    "input": {
+                      "child": "3f8a2c6e-9b14-4d7a-8e25-c1b9f04d6a73"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1900,
+                  "cache_read_input_tokens": 43100,
+                  "cache_creation_input_tokens": 700,
+                  "output_tokens": 60
+                }
+              }
+            },
+            {
+              "type": "user",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_l_s1",
+                    "content": {
+                      "ko": "Child 3f8a2c6e-9b14-4d7a-8e25-c1b9f04d6a73 is reported. Its report revision 1 was made at head 9e3b7c1f2d4a6085b1c3e7d9f2a4b6c8d0e1f3a5.\n\nREPORT.md:\n# 보고서\n\nPOST /checkout이 요청 본문을 검사하고, 잘못된 필드를 담아 400으로 응답합니다.\n\n- 테스트: test/checkout.test.js, 모두 통과\n- 남은 일 없음\n",
+                      "en": "Child 3f8a2c6e-9b14-4d7a-8e25-c1b9f04d6a73 is reported. Its report revision 1 was made at head 9e3b7c1f2d4a6085b1c3e7d9f2a4b6c8d0e1f3a5.\n\nREPORT.md:\n# Report\n\nPOST /checkout now checks the request body and answers 400 with the field that failed.\n\n- Tests: test/checkout.test.js, all passing\n- Nothing left to do\n",
+                      "zh": "Child 3f8a2c6e-9b14-4d7a-8e25-c1b9f04d6a73 is reported. Its report revision 1 was made at head 9e3b7c1f2d4a6085b1c3e7d9f2a4b6c8d0e1f3a5.\n\nREPORT.md:\n# 报告\n\nPOST /checkout 现在会校验请求体，出错时返回 400 并指明出错的字段。\n\n- 测试：test/checkout.test.js，全部通过\n- 没有遗留事项\n",
+                      "ja": "Child 3f8a2c6e-9b14-4d7a-8e25-c1b9f04d6a73 is reported. Its report revision 1 was made at head 9e3b7c1f2d4a6085b1c3e7d9f2a4b6c8d0e1f3a5.\n\nREPORT.md:\n# 報告\n\nPOST /checkout がリクエスト本文を検証し、不正なフィールドを添えて 400 を返すようになりました。\n\n- テスト: test/checkout.test.js、すべて成功\n- 残作業なし\n"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_l4",
+              "session_id": "d17c4e92-8a3b-4f65-b2d9-6e1a8c3f5b07",
+              "message": {
+                "id": "msg_l4",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": {
+                      "ko": "검증 작업이 끝났고 테스트도 통과했으니 병합할게요.",
+                      "en": "The validation work is complete and its tests pass, so I'll merge it.",
+                      "zh": "校验部分已完成，测试也通过了，我来合并。",
+                      "ja": "検証の作業は完了していてテストも通っているので、マージします。"
+                    }
+                  },
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_l_m1",
+                    "name": "mcp__mighty-delegation__merge",
+                    "input": {
+                      "child": "3f8a2c6e-9b14-4d7a-8e25-c1b9f04d6a73",
+                      "expected_head": "9e3b7c1f2d4a6085b1c3e7d9f2a4b6c8d0e1f3a5"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 2300,
+                  "cache_read_input_tokens": 44000,
+                  "cache_creation_input_tokens": 800,
+                  "output_tokens": 120
+                }
+              }
+            },
+            {
+              "type": "user",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_l_m1",
+                    "content": "Merged child 3f8a2c6e-9b14-4d7a-8e25-c1b9f04d6a73: main fast-forwarded from 4c1d9e2b7a3f5086d2e1c4b9a7f30d6e8b5a2c17 to 9e3b7c1f2d4a6085b1c3e7d9f2a4b6c8d0e1f3a5. The merge is recorded; only a human can undo it, from the child's card."
+                  }
+                ]
+              }
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_l5",
+              "session_id": "d17c4e92-8a3b-4f65-b2d9-6e1a8c3f5b07",
+              "message": {
+                "id": "msg_l5",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": {
+                      "ko": "main에 병합했어요. 이제 전체 테스트를 돌려 볼게요.",
+                      "en": "Merged into main. Next I'll run the whole test suite.",
+                      "zh": "已合并到 main。接下来运行全部测试。",
+                      "ja": "main にマージしました。次にテスト全体を実行します。"
+                    }
+                  },
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_l_t1",
+                    "name": "Bash",
+                    "input": {
+                      "command": "npm test",
+                      "description": {
+                        "ko": "전체 테스트 실행",
+                        "en": "Run all tests",
+                        "zh": "运行全部测试",
+                        "ja": "テストをすべて実行"
+                      }
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 2500,
+                  "cache_read_input_tokens": 44900,
+                  "cache_creation_input_tokens": 400,
+                  "output_tokens": 90
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "role": "child-merged",
+      "workspace": "demo-shop-api",
+      "kind": "claude",
+      "provider": "claude",
+      "model": "sonnet",
+      "effort": "medium",
+      "permissionMode": "acceptEdits",
+      "view": "default",
+      "title": {
+        "ko": "결제 요청 검증",
+        "en": "Checkout validation",
+        "zh": "结账请求校验",
+        "ja": "チェックアウトの入力検証"
+      },
+      "runs": [
+        {
+          "input": {
+            "ko": "POST /checkout 요청 본문을 검증하고, 잘못된 필드 이름을 담아 400으로 응답하게 해 줘.",
+            "en": "Validate the POST /checkout request body and answer 400 with the name of the field that failed.",
+            "zh": "校验 POST /checkout 的请求体，出错时返回 400，并指明是哪个字段。",
+            "ja": "POST /checkout のリクエスト本文を検証し、不正なフィールドの名前を添えて 400 を返すようにして。"
+          },
+          "finish": "completed",
+          "elapsedSeconds": 128,
+          "frames": [
+            {
+              "type": "system",
+              "subtype": "init",
+              "session_id": "4b8e2f61-c9d3-4a17-8f5e-0a6c3d9b2e14",
+              "model": "claude-sonnet-5-5",
+              "permissionMode": "default"
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_v1",
+              "session_id": "4b8e2f61-c9d3-4a17-8f5e-0a6c3d9b2e14",
+              "message": {
+                "id": "msg_v1",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": {
+                      "ko": "요청 본문을 받는 곳부터 볼게요.",
+                      "en": "I'll start where the request body comes in.",
+                      "zh": "我先看看请求体是在哪里接收的。",
+                      "ja": "まずリクエスト本文を受け取る箇所を見ます。"
+                    }
+                  },
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_v_read",
+                    "name": "Read",
+                    "input": {
+                      "file_path": "src/routes/checkout.js"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 900,
+                  "cache_read_input_tokens": 18200,
+                  "cache_creation_input_tokens": 2600,
+                  "output_tokens": 90
+                }
+              }
+            },
+            {
+              "type": "user",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_v_read",
+                    "content": "import { Router } from \"express\";\nimport { cartTotal } from \"../cart/totals.js\";\nimport { paymentError } from \"../payments/errors.js\";\n\nexport const checkout = Router();\n\ncheckout.post(\"/\", async (req, res) => {\n  const { items, card } = req.body;\n  try {\n    const total = cartTotal(items);\n    res.json({ total, status: \"paid\" });\n  } catch (error) {\n    res.status(402).json(paymentError(error));\n  }\n});\n"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_v2",
+              "session_id": "4b8e2f61-c9d3-4a17-8f5e-0a6c3d9b2e14",
+              "message": {
+                "id": "msg_v2",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_v_edit",
+                    "name": "Edit",
+                    "input": {
+                      "file_path": "src/routes/checkout.js",
+                      "old_string": "  const { items, card } = req.body;\n",
+                      "new_string": "  const problem = invalidField(req.body);\n  if (problem) return res.status(400).json({ error: \"invalid_field\", field: problem });\n  const { items, card } = req.body;\n"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1100,
+                  "cache_read_input_tokens": 20100,
+                  "cache_creation_input_tokens": 900,
+                  "output_tokens": 210
+                }
+              }
+            },
+            {
+              "type": "user",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_v_edit",
+                    "content": "The file src/routes/checkout.js has been updated."
+                  }
+                ]
+              }
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_v3",
+              "session_id": "4b8e2f61-c9d3-4a17-8f5e-0a6c3d9b2e14",
+              "message": {
+                "id": "msg_v3",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_v_test",
+                    "name": "Bash",
+                    "input": {
+                      "command": "npm test",
+                      "description": {
+                        "ko": "테스트 실행",
+                        "en": "Run the tests",
+                        "zh": "运行测试",
+                        "ja": "テストを実行"
+                      }
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1200,
+                  "cache_read_input_tokens": 21000,
+                  "cache_creation_input_tokens": 300,
+                  "output_tokens": 60
+                }
+              }
+            },
+            {
+              "type": "user",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_v_test",
+                    "content": "\n> shop-api@0.4.0 test\n> vitest run\n\n ✓ test/checkout.test.js (4 tests) 21ms\n\n Test Files  1 passed (1)\n      Tests  4 passed (4)\n"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_v4",
+              "session_id": "4b8e2f61-c9d3-4a17-8f5e-0a6c3d9b2e14",
+              "message": {
+                "id": "msg_v4",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_v_report",
+                    "name": "Write",
+                    "input": {
+                      "file_path": ".mighty-delegation/REPORT.md",
+                      "content": {
+                        "ko": "# 보고서\n\nPOST /checkout이 요청 본문을 검사하고, 잘못된 필드를 담아 400으로 응답합니다.\n\n- 테스트: test/checkout.test.js, 모두 통과\n- 남은 일 없음\n",
+                        "en": "# Report\n\nPOST /checkout now checks the request body and answers 400 with the field that failed.\n\n- Tests: test/checkout.test.js, all passing\n- Nothing left to do\n",
+                        "zh": "# 报告\n\nPOST /checkout 现在会校验请求体，出错时返回 400 并指明出错的字段。\n\n- 测试：test/checkout.test.js，全部通过\n- 没有遗留事项\n",
+                        "ja": "# 報告\n\nPOST /checkout がリクエスト本文を検証し、不正なフィールドを添えて 400 を返すようになりました。\n\n- テスト: test/checkout.test.js、すべて成功\n- 残作業なし\n"
+                      }
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1300,
+                  "cache_read_input_tokens": 21300,
+                  "cache_creation_input_tokens": 400,
+                  "output_tokens": 150
+                }
+              }
+            },
+            {
+              "type": "user",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_v_report",
+                    "content": "File created successfully at: .mighty-delegation/REPORT.md"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_v5",
+              "session_id": "4b8e2f61-c9d3-4a17-8f5e-0a6c3d9b2e14",
+              "message": {
+                "id": "msg_v5",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": {
+                      "ko": "끝났어요. POST /checkout이 잘못된 필드를 담아 400으로 응답합니다. 테스트를 통과했고 보고서도 썼어요.",
+                      "en": "Done: POST /checkout answers 400 with the field that failed. The tests pass and my report is written.",
+                      "zh": "完成了：POST /checkout 会返回 400 并指明出错的字段。测试通过，报告也写好了。",
+                      "ja": "完了しました。POST /checkout が不正なフィールドを添えて 400 を返します。テストは通り、報告も書きました。"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1400,
+                  "cache_read_input_tokens": 21700,
+                  "cache_creation_input_tokens": 200,
+                  "output_tokens": 70
+                }
+              }
+            },
+            {
+              "type": "result",
+              "subtype": "success",
+              "is_error": false,
+              "session_id": "4b8e2f61-c9d3-4a17-8f5e-0a6c3d9b2e14",
+              "result": {
+                "ko": "끝났어요. POST /checkout이 잘못된 필드를 담아 400으로 응답합니다. 테스트를 통과했고 보고서도 썼어요.",
+                "en": "Done: POST /checkout answers 400 with the field that failed. The tests pass and my report is written.",
+                "zh": "完成了：POST /checkout 会返回 400 并指明出错的字段。测试通过，报告也写好了。",
+                "ja": "完了しました。POST /checkout が不正なフィールドを添えて 400 を返します。テストは通り、報告も書きました。"
+              },
+              "usage": {
+                "input_tokens": 1400,
+                "cache_read_input_tokens": 21700,
+                "cache_creation_input_tokens": 200,
+                "output_tokens": 70
+              },
+              "modelUsage": {
+                "claude-sonnet-5-5": {
+                  "inputTokens": 5900,
+                  "outputTokens": 580,
+                  "cacheReadInputTokens": 102300,
+                  "cacheCreationInputTokens": 4400,
+                  "contextWindow": 200000
+                }
+              },
+              "total_cost_usd": 0.06
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "role": "child-reported",
+      "workspace": "demo-shop-api",
+      "kind": "claude",
+      "provider": "claude",
+      "model": "sonnet",
+      "effort": "medium",
+      "permissionMode": "acceptEdits",
+      "view": "default",
+      "title": {
+        "ko": "주문 API 문서",
+        "en": "Orders API docs",
+        "zh": "订单 API 文档",
+        "ja": "注文 API のドキュメント"
+      },
+      "runs": [
+        {
+          "input": {
+            "ko": "docs/api.md에 /orders 엔드포인트 문서를 쓰고, 엔드포인트마다 요청 예시를 하나씩 넣어 줘.",
+            "en": "Document the /orders endpoints in docs/api.md, with one example request for each.",
+            "zh": "在 docs/api.md 中为 /orders 的各个接口写文档，每个接口附一个请求示例。",
+            "ja": "docs/api.md に /orders のエンドポイントの説明を書き、それぞれにリクエスト例を 1 つずつ付けて。"
+          },
+          "finish": "completed",
+          "elapsedSeconds": 96,
+          "frames": [
+            {
+              "type": "system",
+              "subtype": "init",
+              "session_id": "9c5a1e38-7b2f-4d94-a6c0-e3f8b1d5a729",
+              "model": "claude-sonnet-5-5",
+              "permissionMode": "default"
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_o1",
+              "session_id": "9c5a1e38-7b2f-4d94-a6c0-e3f8b1d5a729",
+              "message": {
+                "id": "msg_o1",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": {
+                      "ko": "주문 라우트부터 읽을게요.",
+                      "en": "I'll read the orders routes first.",
+                      "zh": "我先读一下订单路由。",
+                      "ja": "まず注文のルートを読みます。"
+                    }
+                  },
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_o_read",
+                    "name": "Read",
+                    "input": {
+                      "file_path": "src/routes/orders.js"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 850,
+                  "cache_read_input_tokens": 17900,
+                  "cache_creation_input_tokens": 2500,
+                  "output_tokens": 80
+                }
+              }
+            },
+            {
+              "type": "user",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_o_read",
+                    "content": "import { Router } from \"express\";\nimport { db } from \"../db.js\";\n\nexport const orders = Router();\n\norders.get(\"/\", async (req, res) => res.json(await db.orders.list()));\norders.get(\"/:id\", async (req, res) => res.json(await db.orders.find(req.params.id)));\norders.post(\"/\", async (req, res) => res.status(201).json(await db.orders.create(req.body)));\n"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_o2",
+              "session_id": "9c5a1e38-7b2f-4d94-a6c0-e3f8b1d5a729",
+              "message": {
+                "id": "msg_o2",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_o_write",
+                    "name": "Write",
+                    "input": {
+                      "file_path": "docs/api.md",
+                      "content": "# Orders API\n\n## GET /orders\n\nLists the orders.\n\n```sh\ncurl http://localhost:3000/orders\n```\n\n## GET /orders/:id\n\nOne order.\n\n```sh\ncurl http://localhost:3000/orders/1042\n```\n\n## POST /orders\n\nPlaces an order.\n\n```sh\ncurl -X POST http://localhost:3000/orders -H 'Content-Type: application/json' -d '{\"items\":[{\"id\":7,\"quantity\":2}]}'\n```\n"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1000,
+                  "cache_read_input_tokens": 19600,
+                  "cache_creation_input_tokens": 700,
+                  "output_tokens": 420
+                }
+              }
+            },
+            {
+              "type": "user",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_o_write",
+                    "content": "File created successfully at: docs/api.md"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_o3",
+              "session_id": "9c5a1e38-7b2f-4d94-a6c0-e3f8b1d5a729",
+              "message": {
+                "id": "msg_o3",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_o_report",
+                    "name": "Write",
+                    "input": {
+                      "file_path": ".mighty-delegation/REPORT.md",
+                      "content": {
+                        "ko": "# 보고서\n\ndocs/api.md에 GET /orders, GET /orders/:id, POST /orders를 정리하고 요청 예시를 하나씩 넣었습니다.\n\n- 확인할 점: 예시의 합계는 지금 세율로 계산했습니다\n",
+                        "en": "# Report\n\ndocs/api.md now documents GET /orders, GET /orders/:id and POST /orders, each with an example request.\n\n- Check: the example totals use the current tax rate\n",
+                        "zh": "# 报告\n\ndocs/api.md 现已记录 GET /orders、GET /orders/:id 和 POST /orders，每个接口都附有请求示例。\n\n- 请检查：示例中的金额按当前税率计算\n",
+                        "ja": "# 報告\n\ndocs/api.md に GET /orders、GET /orders/:id、POST /orders をまとめ、それぞれにリクエスト例を付けました。\n\n- 確認事項: 例の合計は現在の税率で計算しています\n"
+                      }
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1100,
+                  "cache_read_input_tokens": 20300,
+                  "cache_creation_input_tokens": 500,
+                  "output_tokens": 130
+                }
+              }
+            },
+            {
+              "type": "user",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_o_report",
+                    "content": "File created successfully at: .mighty-delegation/REPORT.md"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_o4",
+              "session_id": "9c5a1e38-7b2f-4d94-a6c0-e3f8b1d5a729",
+              "message": {
+                "id": "msg_o4",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": {
+                      "ko": "주문 API 문서를 다 썼고, 보고서도 준비했어요.",
+                      "en": "The orders API docs are written, and my report is ready for review.",
+                      "zh": "订单 API 文档已写好，报告也已备好。",
+                      "ja": "注文 API のドキュメントを書き終え、報告も用意しました。"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1200,
+                  "cache_read_input_tokens": 20800,
+                  "cache_creation_input_tokens": 200,
+                  "output_tokens": 50
+                }
+              }
+            },
+            {
+              "type": "result",
+              "subtype": "success",
+              "is_error": false,
+              "session_id": "9c5a1e38-7b2f-4d94-a6c0-e3f8b1d5a729",
+              "result": {
+                "ko": "주문 API 문서를 다 썼고, 보고서도 준비했어요.",
+                "en": "The orders API docs are written, and my report is ready for review.",
+                "zh": "订单 API 文档已写好，报告也已备好。",
+                "ja": "注文 API のドキュメントを書き終え、報告も用意しました。"
+              },
+              "usage": {
+                "input_tokens": 1200,
+                "cache_read_input_tokens": 20800,
+                "cache_creation_input_tokens": 200,
+                "output_tokens": 50
+              },
+              "modelUsage": {
+                "claude-sonnet-5-5": {
+                  "inputTokens": 4150,
+                  "outputTokens": 680,
+                  "cacheReadInputTokens": 78600,
+                  "cacheCreationInputTokens": 3900,
+                  "contextWindow": 200000
+                }
+              },
+              "total_cost_usd": 0.05
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "role": "child-running",
+      "workspace": "demo-shop-api",
+      "kind": "claude",
+      "provider": "claude",
+      "model": "sonnet",
+      "effort": "medium",
+      "permissionMode": "acceptEdits",
+      "view": "default",
+      "title": {
+        "ko": "장바구니 테스트",
+        "en": "Cart tests",
+        "zh": "购物车测试",
+        "ja": "カートのテスト"
+      },
+      "runs": [
+        {
+          "input": {
+            "ko": "장바구니 합계 테스트를 추가해 줘. 할인, 세금, 빈 장바구니를 확인해야 해.",
+            "en": "Add tests for cart totals: discounts, tax and an empty cart.",
+            "zh": "为购物车合计添加测试：折扣、税费和空购物车。",
+            "ja": "カートの合計のテストを追加して。割引、税、空のカートを確認すること。"
+          },
+          "finish": null,
+          "elapsedSeconds": 58,
+          "frames": [
+            {
+              "type": "system",
+              "subtype": "init",
+              "session_id": "f0a3d7b6-2e91-4c58-9d4a-7b1e6c2f8d53",
+              "model": "claude-sonnet-5-5",
+              "permissionMode": "default"
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_c1",
+              "session_id": "f0a3d7b6-2e91-4c58-9d4a-7b1e6c2f8d53",
+              "message": {
+                "id": "msg_c1",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": {
+                      "ko": "합계를 계산하는 코드부터 볼게요.",
+                      "en": "I'll look at how totals are computed first.",
+                      "zh": "我先看看合计是怎么计算的。",
+                      "ja": "まず合計の計算方法を確認します。"
+                    }
+                  },
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_c_read",
+                    "name": "Read",
+                    "input": {
+                      "file_path": "src/cart/totals.js"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 880,
+                  "cache_read_input_tokens": 18000,
+                  "cache_creation_input_tokens": 2400,
+                  "output_tokens": 80
+                }
+              }
+            },
+            {
+              "type": "user",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_c_read",
+                    "content": "export function cartTotal(items, { discount = 0, taxRate = 0.1 } = {}) {\n  const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);\n  const discounted = subtotal * (1 - discount);\n  return Math.round(discounted * (1 + taxRate) * 100) / 100;\n}\n"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_c2",
+              "session_id": "f0a3d7b6-2e91-4c58-9d4a-7b1e6c2f8d53",
+              "message": {
+                "id": "msg_c2",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_c_write",
+                    "name": "Write",
+                    "input": {
+                      "file_path": "test/cart.test.js",
+                      "content": "import { describe, expect, it } from \"vitest\";\nimport { cartTotal } from \"../src/cart/totals.js\";\n\ndescribe(\"cartTotal\", () => {\n  it(\"applies a discount before tax\", () => {\n    expect(cartTotal([{ price: 100, quantity: 1 }], { discount: 0.2 })).toBe(88);\n  });\n\n  it(\"adds tax\", () => {\n    expect(cartTotal([{ price: 10, quantity: 3 }])).toBe(33);\n  });\n\n  it(\"is 0 for an empty cart\", () => {\n    expect(cartTotal([])).toBe(0);\n  });\n});\n"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1000,
+                  "cache_read_input_tokens": 19500,
+                  "cache_creation_input_tokens": 600,
+                  "output_tokens": 320
+                }
+              }
+            },
+            {
+              "type": "user",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_c_write",
+                    "content": "File created successfully at: test/cart.test.js"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_c3",
+              "session_id": "f0a3d7b6-2e91-4c58-9d4a-7b1e6c2f8d53",
+              "message": {
+                "id": "msg_c3",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_c_test",
+                    "name": "Bash",
+                    "input": {
+                      "command": "npm test -- cart",
+                      "description": {
+                        "ko": "장바구니 테스트 실행",
+                        "en": "Run the cart tests",
+                        "zh": "运行购物车测试",
+                        "ja": "カートのテストを実行"
+                      }
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1100,
+                  "cache_read_input_tokens": 20100,
+                  "cache_creation_input_tokens": 400,
+                  "output_tokens": 60
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "role": "child-waiting",
+      "workspace": "demo-shop-api",
+      "kind": "claude",
+      "provider": "claude",
+      "model": "sonnet",
+      "effort": "medium",
+      "permissionMode": "acceptEdits",
+      "view": "default",
+      "title": {
+        "ko": "결제 오류 메시지",
+        "en": "Payment errors",
+        "zh": "支付错误提示",
+        "ja": "支払いエラーの文言"
+      },
+      "runs": [
+        {
+          "input": {
+            "ko": "결제 오류 메시지를 알기 쉬운 말로 다시 쓰고, 필요한 오류 코드를 추가해 줘.",
+            "en": "Rewrite the payment error messages in plain words, and add the error codes they need.",
+            "zh": "用通俗易懂的话重写支付错误提示，并补上需要的错误代码。",
+            "ja": "支払いエラーのメッセージをわかりやすい言葉に書き直し、必要なエラーコードを追加して。"
+          },
+          "finish": "completed",
+          "elapsedSeconds": 47,
+          "frames": [
+            {
+              "type": "system",
+              "subtype": "init",
+              "session_id": "2d9f6b13-a4e7-4c02-b8d5-1f3a9e7c4b68",
+              "model": "claude-sonnet-5-5",
+              "permissionMode": "default"
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_e1",
+              "session_id": "2d9f6b13-a4e7-4c02-b8d5-1f3a9e7c4b68",
+              "message": {
+                "id": "msg_e1",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": {
+                      "ko": "오류 메시지가 어디서 만들어지는지 볼게요.",
+                      "en": "I'll find where the error messages are made.",
+                      "zh": "我先找找错误提示是在哪里生成的。",
+                      "ja": "エラーメッセージを作っている箇所を探します。"
+                    }
+                  },
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_e_read",
+                    "name": "Read",
+                    "input": {
+                      "file_path": "src/payments/errors.js"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 870,
+                  "cache_read_input_tokens": 17800,
+                  "cache_creation_input_tokens": 2300,
+                  "output_tokens": 80
+                }
+              }
+            },
+            {
+              "type": "user",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_e_read",
+                    "content": "export function paymentError(error) {\n  return { error: error.code ?? \"payment_failed\", message: error.message };\n}\n"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_e2",
+              "session_id": "2d9f6b13-a4e7-4c02-b8d5-1f3a9e7c4b68",
+              "message": {
+                "id": "msg_e2",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": {
+                      "ko": "새 오류 코드를 넣으려면 데이터베이스 마이그레이션(`npm run db:migrate`)이 필요해요. 진행하라고 하시면 실행할게요.",
+                      "en": "The new error codes need a database migration (`npm run db:migrate`). Tell me to go ahead and I'll run it.",
+                      "zh": "新的错误代码需要先做一次数据库迁移（`npm run db:migrate`）。你同意的话我就运行。",
+                      "ja": "新しいエラーコードにはデータベースのマイグレーション（`npm run db:migrate`）が必要です。進めてよければ実行します。"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1000,
+                  "cache_read_input_tokens": 19300,
+                  "cache_creation_input_tokens": 400,
+                  "output_tokens": 90
+                }
+              }
+            },
+            {
+              "type": "result",
+              "subtype": "success",
+              "is_error": false,
+              "session_id": "2d9f6b13-a4e7-4c02-b8d5-1f3a9e7c4b68",
+              "result": {
+                "ko": "새 오류 코드를 넣으려면 데이터베이스 마이그레이션(`npm run db:migrate`)이 필요해요. 진행하라고 하시면 실행할게요.",
+                "en": "The new error codes need a database migration (`npm run db:migrate`). Tell me to go ahead and I'll run it.",
+                "zh": "新的错误代码需要先做一次数据库迁移（`npm run db:migrate`）。你同意的话我就运行。",
+                "ja": "新しいエラーコードにはデータベースのマイグレーション（`npm run db:migrate`）が必要です。進めてよければ実行します。"
+              },
+              "usage": {
+                "input_tokens": 1000,
+                "cache_read_input_tokens": 19300,
+                "cache_creation_input_tokens": 400,
+                "output_tokens": 90
+              },
+              "modelUsage": {
+                "claude-sonnet-5-5": {
+                  "inputTokens": 1870,
+                  "outputTokens": 170,
+                  "cacheReadInputTokens": 37100,
+                  "cacheCreationInputTokens": 2700,
+                  "contextWindow": 200000
+                }
+              },
+              "total_cost_usd": 0.02
+            }
+          ]
+        },
+        {
+          "input": {
+            "ko": "마이그레이션을 실행해 줘.",
+            "en": "Go ahead and run the migration.",
+            "zh": "可以，运行迁移吧。",
+            "ja": "マイグレーションを実行して。"
+          },
+          "finish": null,
+          "elapsedSeconds": 9,
+          "frames": [
+            {
+              "type": "assistant",
+              "uuid": "msg_e3",
+              "session_id": "2d9f6b13-a4e7-4c02-b8d5-1f3a9e7c4b68",
+              "message": {
+                "id": "msg_e3",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": {
+                      "ko": "마이그레이션을 실행할게요.",
+                      "en": "Running the migration.",
+                      "zh": "正在运行迁移。",
+                      "ja": "マイグレーションを実行します。"
+                    }
+                  },
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_e_migrate",
+                    "name": "Bash",
+                    "input": {
+                      "command": "npm run db:migrate",
+                      "description": {
+                        "ko": "데이터베이스 마이그레이션",
+                        "en": "Migrate the database",
+                        "zh": "迁移数据库",
+                        "ja": "データベースを移行"
+                      }
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1100,
+                  "cache_read_input_tokens": 19700,
+                  "cache_creation_input_tokens": 300,
+                  "output_tokens": 70
+                }
+              }
+            },
+            {
+              "type": "control_request",
+              "request_id": "permission-1",
+              "request": {
+                "subtype": "can_use_tool",
+                "tool_name": "Bash",
+                "tool_use_id": "toolu_e_migrate",
+                "input": {
+                  "command": "npm run db:migrate",
+                  "description": {
+                    "ko": "데이터베이스 마이그레이션",
+                    "en": "Migrate the database",
+                    "zh": "迁移数据库",
+                    "ja": "データベースを移行"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "role": "child-of-closed",
+      "workspace": "demo-shop-api",
+      "kind": "claude",
+      "provider": "claude",
+      "model": "sonnet",
+      "effort": "medium",
+      "permissionMode": "acceptEdits",
+      "view": "default",
+      "title": {
+        "ko": "상품 검색",
+        "en": "Product search",
+        "zh": "商品搜索",
+        "ja": "商品検索"
+      },
+      "runs": [
+        {
+          "input": {
+            "ko": "GET /products에 상품 이름으로 검색하는 기능을 추가해 줘.",
+            "en": "Add search by product name to GET /products.",
+            "zh": "为 GET /products 添加按商品名称搜索的功能。",
+            "ja": "GET /products に商品名で検索できる機能を追加して。"
+          },
+          "finish": "completed",
+          "elapsedSeconds": 143,
+          "frames": [
+            {
+              "type": "system",
+              "subtype": "init",
+              "session_id": "6e4c0a9d-3f72-4b1e-8a6d-c5b2e9f1a347",
+              "model": "claude-sonnet-5-5",
+              "permissionMode": "default"
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_s1",
+              "session_id": "6e4c0a9d-3f72-4b1e-8a6d-c5b2e9f1a347",
+              "message": {
+                "id": "msg_s1",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": {
+                      "ko": "상품 목록 라우트부터 볼게요.",
+                      "en": "I'll start with the products route.",
+                      "zh": "我先看看商品列表的路由。",
+                      "ja": "まず商品一覧のルートを見ます。"
+                    }
+                  },
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_s_read",
+                    "name": "Read",
+                    "input": {
+                      "file_path": "src/routes/products.js"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 860,
+                  "cache_read_input_tokens": 17700,
+                  "cache_creation_input_tokens": 2400,
+                  "output_tokens": 80
+                }
+              }
+            },
+            {
+              "type": "user",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_s_read",
+                    "content": "import { Router } from \"express\";\nimport { db } from \"../db.js\";\n\nexport const products = Router();\n\nproducts.get(\"/\", async (req, res) => {\n  res.json(await db.products.list());\n});\n"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_s2",
+              "session_id": "6e4c0a9d-3f72-4b1e-8a6d-c5b2e9f1a347",
+              "message": {
+                "id": "msg_s2",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_s_edit",
+                    "name": "Edit",
+                    "input": {
+                      "file_path": "src/routes/products.js",
+                      "old_string": "  res.json(await db.products.list());\n",
+                      "new_string": "  const query = String(req.query.q ?? \"\").toLowerCase();\n  const all = await db.products.list();\n  res.json(query ? all.filter((product) => product.name.toLowerCase().includes(query)) : all);\n"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1050,
+                  "cache_read_input_tokens": 19400,
+                  "cache_creation_input_tokens": 700,
+                  "output_tokens": 230
+                }
+              }
+            },
+            {
+              "type": "user",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_s_edit",
+                    "content": "The file src/routes/products.js has been updated."
+                  }
+                ]
+              }
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_s3",
+              "session_id": "6e4c0a9d-3f72-4b1e-8a6d-c5b2e9f1a347",
+              "message": {
+                "id": "msg_s3",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_s_test",
+                    "name": "Bash",
+                    "input": {
+                      "command": "npm test",
+                      "description": {
+                        "ko": "테스트 실행",
+                        "en": "Run the tests",
+                        "zh": "运行测试",
+                        "ja": "テストを実行"
+                      }
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1150,
+                  "cache_read_input_tokens": 20200,
+                  "cache_creation_input_tokens": 300,
+                  "output_tokens": 60
+                }
+              }
+            },
+            {
+              "type": "user",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_s_test",
+                    "content": "\n> shop-api@0.4.0 test\n> vitest run\n\n ✓ test/products.test.js (3 tests) 15ms\n\n Test Files  1 passed (1)\n      Tests  3 passed (3)\n"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_s4",
+              "session_id": "6e4c0a9d-3f72-4b1e-8a6d-c5b2e9f1a347",
+              "message": {
+                "id": "msg_s4",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_s_report",
+                    "name": "Write",
+                    "input": {
+                      "file_path": ".mighty-delegation/REPORT.md",
+                      "content": {
+                        "ko": "# 보고서\n\nGET /products?q=가 대소문자를 가리지 않고 상품 이름을 찾습니다.\n\n- 테스트: test/products.test.js, 모두 통과\n- 확인할 점: q가 비어 있을 때 모든 상품을 보여 줄지\n",
+                        "en": "# Report\n\nGET /products?q= now matches product names, ignoring case.\n\n- Tests: test/products.test.js, all passing\n- Check: whether an empty q should list every product\n",
+                        "zh": "# 报告\n\nGET /products?q= 现在会按商品名称匹配，不区分大小写。\n\n- 测试：test/products.test.js，全部通过\n- 请确认：q 为空时是否应列出所有商品\n",
+                        "ja": "# 報告\n\nGET /products?q= で、大文字と小文字を区別せずに商品名を検索できるようになりました。\n\n- テスト: test/products.test.js、すべて成功\n- 確認事項: q が空のときに全商品を返すかどうか\n"
+                      }
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1250,
+                  "cache_read_input_tokens": 20500,
+                  "cache_creation_input_tokens": 400,
+                  "output_tokens": 140
+                }
+              }
+            },
+            {
+              "type": "user",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_s_report",
+                    "content": "File created successfully at: .mighty-delegation/REPORT.md"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_s5",
+              "session_id": "6e4c0a9d-3f72-4b1e-8a6d-c5b2e9f1a347",
+              "message": {
+                "id": "msg_s5",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": {
+                      "ko": "이름 검색이 동작해요. GET /products?q=lamp로 모든 램프를 찾습니다. 테스트를 통과했고 보고서도 썼어요.",
+                      "en": "Search by name works: GET /products?q=lamp finds every lamp. The tests pass and my report is written.",
+                      "zh": "按名称搜索已经可用：GET /products?q=lamp 能找到所有台灯。测试通过，报告也写好了。",
+                      "ja": "名前での検索ができるようになりました。GET /products?q=lamp ですべてのランプが見つかります。テストは通り、報告も書きました。"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 1350,
+                  "cache_read_input_tokens": 20900,
+                  "cache_creation_input_tokens": 200,
+                  "output_tokens": 70
+                }
+              }
+            },
+            {
+              "type": "result",
+              "subtype": "success",
+              "is_error": false,
+              "session_id": "6e4c0a9d-3f72-4b1e-8a6d-c5b2e9f1a347",
+              "result": {
+                "ko": "이름 검색이 동작해요. GET /products?q=lamp로 모든 램프를 찾습니다. 테스트를 통과했고 보고서도 썼어요.",
+                "en": "Search by name works: GET /products?q=lamp finds every lamp. The tests pass and my report is written.",
+                "zh": "按名称搜索已经可用：GET /products?q=lamp 能找到所有台灯。测试通过，报告也写好了。",
+                "ja": "名前での検索ができるようになりました。GET /products?q=lamp ですべてのランプが見つかります。テストは通り、報告も書きました。"
+              },
+              "usage": {
+                "input_tokens": 1350,
+                "cache_read_input_tokens": 20900,
+                "cache_creation_input_tokens": 200,
+                "output_tokens": 70
+              },
+              "modelUsage": {
+                "claude-sonnet-5-5": {
+                  "inputTokens": 5660,
+                  "outputTokens": 580,
+                  "cacheReadInputTokens": 98700,
+                  "cacheCreationInputTokens": 4000,
+                  "contextWindow": 200000
+                }
+              },
+              "total_cost_usd": 0.06
+            }
+          ]
+        }
+      ]
     }
   ],
   "layouts": [
@@ -1926,6 +3440,11 @@
       "workspace": "demo-docs-site",
       "preset": "columns",
       "active": "question"
+    },
+    {
+      "workspace": "demo-shop-api",
+      "preset": "tabs",
+      "active": "parent"
     }
   ],
   "activeWorkspace": "demo-my-app",
@@ -1985,5 +3504,114 @@
         "ja": "CI ワークフローを設定"
       }
     }
-  ]
+  ],
+  "delegation": {
+    "note": "The agent-delegation demo (the delegation shots): a parent pane in shop-api with four children (running, waiting on the human, reported, merged) and the child of a parent whose pane is closed. Its workspace and panes are seeded when the first delegation shot is taken, so the shots before it do not show them; the children open beside their parent as delegate opens them, and the capture then loads these records into the app's delegation coordinator (HelpDemoDelegation in MightyCore). `id`s are the child panes' session ids, which the parent's tool results and the notice that started its second run name; a child's `parent` is a pane role or one of `closedParents`. The waiting child's record is running: its pane waits on a permission, which the sidebar shows as needs you.",
+    "workspace": "demo-shop-api",
+    "parentBranch": "main",
+    "baseCommit": "4c1d9e2b7a3f5086d2e1c4b9a7f30d6e8b5a2c17",
+    "closedParents": [
+      "closed-parent"
+    ],
+    "children": [
+      {
+        "id": "3f8a2c6e-9b14-4d7a-8e25-c1b9f04d6a73",
+        "role": "child-merged",
+        "parent": "parent",
+        "state": "merged",
+        "task": {
+          "ko": "POST /checkout 요청 본문을 검증하고, 잘못된 필드 이름을 담아 400으로 응답하게 해 줘.",
+          "en": "Validate the POST /checkout request body and answer 400 with the name of the field that failed.",
+          "zh": "校验 POST /checkout 的请求体，出错时返回 400，并指明是哪个字段。",
+          "ja": "POST /checkout のリクエスト本文を検証し、不正なフィールドの名前を添えて 400 を返すようにして。"
+        },
+        "reportRevision": 1,
+        "reportHead": "9e3b7c1f2d4a6085b1c3e7d9f2a4b6c8d0e1f3a5"
+      },
+      {
+        "id": "8b1e5d93-2c47-4f0a-b6d8-4a2c9e71f5b0",
+        "role": "child-reported",
+        "parent": "parent",
+        "state": "reported",
+        "task": {
+          "ko": "docs/api.md에 /orders 엔드포인트 문서를 쓰고, 엔드포인트마다 요청 예시를 하나씩 넣어 줘.",
+          "en": "Document the /orders endpoints in docs/api.md, with one example request for each.",
+          "zh": "在 docs/api.md 中为 /orders 的各个接口写文档，每个接口附一个请求示例。",
+          "ja": "docs/api.md に /orders のエンドポイントの説明を書き、それぞれにリクエスト例を 1 つずつ付けて。"
+        },
+        "reportRevision": 1,
+        "reportHead": "2a7f4e9c1b3d5f8a0c2e4b6d8f1a3c5e7b9d0f24"
+      },
+      {
+        "id": "c6d04a2f-7e15-4b9c-9a38-5f1e2d8b6c47",
+        "role": "child-running",
+        "parent": "parent",
+        "state": "running",
+        "task": {
+          "ko": "장바구니 합계 테스트를 추가해 줘. 할인, 세금, 빈 장바구니를 확인해야 해.",
+          "en": "Add tests for cart totals: discounts, tax and an empty cart.",
+          "zh": "为购物车合计添加测试：折扣、税费和空购物车。",
+          "ja": "カートの合計のテストを追加して。割引、税、空のカートを確認すること。"
+        },
+        "reportRevision": 0
+      },
+      {
+        "id": "51a9e7c3-0d28-4e6b-a4f1-9c3b7d2e8a05",
+        "role": "child-waiting",
+        "parent": "parent",
+        "state": "running",
+        "task": {
+          "ko": "결제 오류 메시지를 알기 쉬운 말로 다시 쓰고, 필요한 오류 코드를 추가해 줘.",
+          "en": "Rewrite the payment error messages in plain words, and add the error codes they need.",
+          "zh": "用通俗易懂的话重写支付错误提示，并补上需要的错误代码。",
+          "ja": "支払いエラーのメッセージをわかりやすい言葉に書き直し、必要なエラーコードを追加して。"
+        },
+        "reportRevision": 0
+      },
+      {
+        "id": "e2b7f914-6a3c-4d85-b0e9-7c1d4a5f3b28",
+        "role": "child-of-closed",
+        "parent": "closed-parent",
+        "state": "reported",
+        "task": {
+          "ko": "GET /products에 상품 이름으로 검색하는 기능을 추가해 줘.",
+          "en": "Add search by product name to GET /products.",
+          "zh": "为 GET /products 添加按商品名称搜索的功能。",
+          "ja": "GET /products に商品名で検索できる機能を追加して。"
+        },
+        "reportRevision": 1,
+        "reportHead": "6d2c8a4e0f1b3d5c7e9a2b4d6f8c0e1a3b5d7f96"
+      }
+    ],
+    "notices": [
+      {
+        "id": "a4c8e1f7-3b29-4d06-9e5a-1f7b3c8d2e60",
+        "child": "child-merged",
+        "revision": 1,
+        "kind": "reported",
+        "lane": "delivered"
+      },
+      {
+        "id": "7d3f9b25-c1e8-4a47-8b06-2e9a5d1c7f34",
+        "child": "child-reported",
+        "revision": 1,
+        "kind": "reported",
+        "lane": "held"
+      },
+      {
+        "id": "0e6a2d84-5f17-4c9b-a3e2-8d4f1b7c6a95",
+        "child": "child-waiting",
+        "revision": 0,
+        "kind": "ended_without_report",
+        "lane": "held"
+      },
+      {
+        "id": "b9f13c57-8e24-4a6d-9c05-3a7e2f1d8b46",
+        "child": "child-of-closed",
+        "revision": 1,
+        "kind": "reported",
+        "lane": "held"
+      }
+    ]
+  }
 }
