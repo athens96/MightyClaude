@@ -113,6 +113,15 @@ struct WorkspaceView: View {
                 Text(L("sidebar.workspacesHeader")).font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.sidebarInk2)
                 Text("\(store.snapshot.workspaces.count)").font(.system(size: 10, design: .monospaced)).foregroundStyle(Palette.sidebarInk2)
                 Spacer()
+                // Adds a workspace from the sidebar too, as File › Open Project Folder… does.
+                Button { store.openWorkspace() } label: {
+                    Image(systemName: "folder.badge.plus").font(.system(size: 11)).foregroundStyle(Palette.sidebarInk2)
+                        .frame(width: 18, height: 14).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(L("menu.openProject"))
+                .accessibilityLabel(L("menu.openProject"))
+                .accessibilityIdentifier("sidebar-add-workspace")
             }
             .padding(.horizontal, DesignMetrics.Inset.sidebarSectionH).padding(.top, DesignMetrics.Inset.sidebarSectionT).padding(.bottom, DesignMetrics.Inset.sidebarSectionB)
 
