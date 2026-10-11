@@ -1,12 +1,13 @@
 {
   "version": 1,
-  "note": "The screens the help site shows, taken by `MightyClaude --help-capture --smoke-exit --profile <dir> -language <ko|en|zh|ja>` with the demo profile (native/contracts/fixtures/demo-profile.json). Each shot is written to <profile>/help-shots/<lang>/<id>-<theme>.png for every theme it lists (light and dark when it lists none). `screen` must be one the capture knows (HelpScreen in MightyCore); an unknown one stops the run. `window` is the main window's content size during the shot. The bundled copy is native/macos/Sources/MightyCore/Resources/Help/shots.json and must stay byte-identical.",
+  "note": "The screens the help site shows, taken by `MightyClaude --help-capture --smoke-exit --profile <dir> -language <ko|en|zh|ja>` with the demo profile (native/contracts/fixtures/demo-profile.json). Each shot is written to <profile>/help-shots/<lang>/<id>-<theme>.png for every theme it lists (light and dark when it lists none). `screen` must be one the capture knows (HelpScreen in MightyCore); an unknown one stops the run. `window` is the main window's content size during the shot. The delegation shots come last: their demo workspace is seeded when the first of them is taken, so no shot before them shows it. The bundled copy is native/macos/Sources/MightyCore/Resources/Help/shots.json and must stay byte-identical.",
   "sections": [
     "getting-started",
     "layout",
     "agent-pane",
     "styles",
     "approvals",
+    "delegation",
     "terminal-files-browser",
     "settings",
     "phone",
@@ -294,6 +295,36 @@
         "height": 900
       },
       "note": "Settings → Mobile remote, where a phone is paired."
+    },
+    {
+      "id": "delegation-tree",
+      "section": "delegation",
+      "screen": "delegation-tree",
+      "window": {
+        "width": 1440,
+        "height": 900
+      },
+      "note": "shop-api's parent pane with its four child panes under it in the sidebar (running, needs you, reported, merged) and the notice its transcript got."
+    },
+    {
+      "id": "delegation-held",
+      "section": "delegation",
+      "screen": "delegation-held",
+      "window": {
+        "width": 1440,
+        "height": 900
+      },
+      "note": "The parent pane after a Stop: two held notices at the top of its queued list, with Run next."
+    },
+    {
+      "id": "delegation-parent-closed",
+      "section": "delegation",
+      "screen": "delegation-parent-closed",
+      "window": {
+        "width": 1440,
+        "height": 900
+      },
+      "note": "A closed parent's child under Parent closed, its card counting its held notice."
     }
   ]
 }

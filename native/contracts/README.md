@@ -431,14 +431,24 @@ the `ko` locale selected.
 
 The demo state the macOS `--help-capture` mode loads to take the help site's
 pictures (`docs/help/shots.json` lists the screens; CI runs the capture once per
-language). Everything in it is fictional: two workspaces (`my-app`, `docs-site`)
-created under the capture's profile folder, their files, and panes whose runs
-are the CLIs' own stream lines (`frames`: Claude stream-json, Codex exec JSONL).
-`HelpDemoReplay` (`MightyCore/HelpCapture.swift`) replays them through
-`CLIStreamParser` and the Claude permission channel, so the diagram, plan,
-question and permission cards, checklist and background work are what a real
-run produces. A JSON object whose keys are only language codes is one
-user-visible string and carries all four languages; program output stays as the
-program prints it. Both files are copied byte-identically into
+language). Everything in it is fictional: three workspaces (`my-app`,
+`docs-site`, `shop-api`) created under the capture's profile folder, their
+files, and panes whose runs are the CLIs' own stream lines (`frames`: Claude
+stream-json, Codex exec JSONL). `HelpDemoReplay` (`MightyCore/HelpCapture.swift`)
+replays them through `CLIStreamParser` and the Claude permission channel, so the
+diagram, plan, question and permission cards, checklist and background work are
+what a real run produces. A JSON object whose keys are only language codes is
+one user-visible string and carries all four languages; program output stays as
+the program prints it. Both files are copied byte-identically into
 `MightyCore/Resources/Help/` for the app bundle; `HelpCaptureTests` checks the
 copies, the four languages and the replayed state.
+
+`delegation` is the agent-delegation demo in `shop-api`: a parent pane with four
+children (running, waiting on a permission, reported, merged) and the child of a
+parent whose pane is closed, with the notices held for them. Its workspace and
+panes are seeded when the first delegation shot is taken (those shots come
+last, so no other picture shows them); the children open beside their parent as
+delegate opens them, and `HelpDemoDelegation` turns the records into the
+delegation file the capture loads into the app's coordinator.
+`HelpCaptureDelegationTests` checks the records, the sidebar tree, the cards and
+the held notices they give.

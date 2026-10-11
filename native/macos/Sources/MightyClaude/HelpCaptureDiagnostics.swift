@@ -15,10 +15,26 @@ import SwiftUI
 /// The demo panes come from the profile's canned CLI lines replayed through the real
 /// parser (`HelpDemoReplay`); no CLI is started and nothing goes on the network. The
 /// shell pane is a real terminal whose one command prints the profile's canned output.
+/// The delegation demo's workspace waits for the first delegation shot, which comes
+/// last, and its records are loaded into the app's delegation coordinator.
 /// CI runs this once per language, in a fresh profile each time; never on a
 /// developer's Mac, where a second app instance breaks Korean input.
 extension AppStore {
     var helpCapturing: Bool { ProcessInfo.processInfo.arguments.contains(HelpCapture.argument) }
+
+    /// The delegation demo's records, saved as the capture profile's delegation file
+    /// and loaded the way a launch loads it, so the sidebar's tree, the children's
+    /// cards and the queued lists show them. The help capture's alone: it refuses
+    /// in any other run.
+    func loadHelpDemoDelegation(_ file: DelegationFile) async throws {
+        guard helpCapturing else { throw MightyError("Only the help capture loads the demo's delegation records.") }
+        try DelegationFileStore(directory: dataDirectory).save(file)
+        delegationChildWatch?.cancel(); delegationHeldWatch?.cancel()
+        await delegationRunEvents?.finish()
+        delegation = nil; delegationRunEvents = nil
+        startDelegation()
+        guard delegation != nil else { throw MightyError("Delegation did not load the demo's records.") }
+    }
 }
 
 @MainActor
@@ -42,6 +58,9 @@ enum HelpCapture {
         var panes: [String: String] = [:]
         var modes: [String: String] = [:]
         var terminalProblem: String?
+        /// Whether the delegation demo is seeded, or why it could not be.
+        var delegationSeeded = false
+        var delegationProblem: String?
         init(profile: DemoProfile) { self.profile = profile }
         func pane(_ role: String) throws -> String {
             guard let id = panes[role] else { throw MightyError("the demo has no \(role) pane") }
@@ -148,58 +167,21 @@ enum HelpCapture {
 
     private static func seed(_ demo: Demo, store: AppStore, main: NSWindow) async throws {
         let profile = demo.profile
+        // The delegation demo's workspace and panes wait for its first shot.
+        let later = profile.delegation.workspace
         var paths: [String: String] = [:]
         let root = try workspacesRoot(store)
-        for spec in profile.workspaces {
-            let folder = root.appendingPathComponent(spec.directory, isDirectory: true)
-            if root != store.dataDirectory {
-                // Outside the profile only a folder an earlier capture made is replaced.
-                let marker = root.appendingPathComponent(".mighty-help-demo")
-                if FileManager.default.fileExists(atPath: folder.path), !FileManager.default.fileExists(atPath: marker.path) {
-                    throw MightyError("refusing to replace \(folder.path): no earlier help capture made it")
-                }
-                try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-                try Data("Demo workspaces of Mighty Claude's help capture.\n".utf8).write(to: marker, options: .atomic)
-            }
-            try? FileManager.default.removeItem(at: folder)
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            for file in spec.files {
-                let url = folder.appendingPathComponent(file.path)
-                try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try Data(file.content.utf8).write(to: url, options: .atomic)
-            }
-            let workspace = try await store.repository.approveWorkspace(Workspace(id: spec.id, name: spec.name, path: folder.path))
-            if !store.snapshot.workspaces.contains(where: { $0.id == workspace.id }) { store.snapshot.workspaces.append(workspace) }
-            paths[spec.id] = workspace.path
-        }
-        for pane in profile.panes {
+        for spec in profile.workspaces where spec.id != later { paths[spec.id] = try await makeWorkspace(spec, root: root, store: store) }
+        for pane in profile.panes where pane.workspace != later {
             store.selectWorkspace(pane.workspace)
             guard let id = store.addSession(kind: pane.kind, provider: pane.provider, workspaceId: pane.workspace) else { throw MightyError("could not add the \(pane.role) pane") }
             demo.panes[pane.role] = id
-            store.updateSession(id) { session in
-                session.title = pane.title
-                session.titleMode = "fixed"
-                session.model = pane.model
-                session.settings = RunSettings(effort: pane.effort, permissionMode: pane.permissionMode)
-                session.agentViewMode = pane.view == "mighty" ? "mighty" : nil
-            }
-            for (index, run) in pane.runs.enumerated() {
-                let events = HelpDemoReplay.events(sessionId: id, provider: pane.provider, model: pane.model, permissionMode: pane.permissionMode,
-                                                   inputId: "help-\(pane.role)-\(index)", input: run.input, frames: run.frames, finish: run.finish)
-                store.companion.recordInput(sessionID: id, text: run.input)
-                store.companion.beginRun(sessionID: id)
-                for event in events { store.apply(event) }
-                if let seconds = run.elapsedSeconds {
-                    let now = Date()
-                    store.updateSession(id) { $0.runTiming = AgentRunTiming(startedAt: now.addingTimeInterval(-seconds), lastObservedAt: now, finishedAt: run.finish == nil ? nil : now) }
-                }
-            }
-            if let draft = pane.draft { store.drafts[id] = draft }
+            fill(pane, id: id, store: store)
         }
         for provider in profile.providers {
             store.cliAccounts[provider.id] = CLIAccountStatus(provider: provider.id, installed: true, loggedIn: provider.account != nil, account: provider.account, plan: provider.plan)
         }
-        for layout in profile.layouts {
+        for layout in profile.layouts where layout.workspace != later {
             store.selectWorkspace(layout.workspace)
             store.setPaneLayoutPreset(layout.preset)
             store.selectSession(try demo.pane(layout.active))
@@ -211,6 +193,115 @@ enum HelpCapture {
         try await Task.sleep(for: .milliseconds(800))
         do { try await prepareTerminal(demo, store: store, prompt: profile.workspaces.first { $0.id == profile.pane(profile.terminal.role)?.workspace }?.name ?? "") }
         catch { demo.terminalProblem = error.localizedDescription }
+    }
+
+    /// The workspace's folder with its files, approved and listed as one the user
+    /// opened; its path.
+    private static func makeWorkspace(_ spec: DemoProfile.WorkspaceSpec, root: URL, store: AppStore) async throws -> String {
+        let folder = root.appendingPathComponent(spec.directory, isDirectory: true)
+        if root != store.dataDirectory {
+            // Outside the profile only a folder an earlier capture made is replaced.
+            let marker = root.appendingPathComponent(".mighty-help-demo")
+            if FileManager.default.fileExists(atPath: folder.path), !FileManager.default.fileExists(atPath: marker.path) {
+                throw MightyError("refusing to replace \(folder.path): no earlier help capture made it")
+            }
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            try Data("Demo workspaces of Mighty Claude's help capture.\n".utf8).write(to: marker, options: .atomic)
+        }
+        try? FileManager.default.removeItem(at: folder)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        for file in spec.files {
+            let url = folder.appendingPathComponent(file.path)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data(file.content.utf8).write(to: url, options: .atomic)
+        }
+        let workspace = try await store.repository.approveWorkspace(Workspace(id: spec.id, name: spec.name, path: folder.path))
+        if !store.snapshot.workspaces.contains(where: { $0.id == workspace.id }) { store.snapshot.workspaces.append(workspace) }
+        return workspace.path
+    }
+
+    /// The pane `id` as the profile has it: its title, model and settings, its runs
+    /// replayed and its draft.
+    private static func fill(_ pane: DemoProfile.Pane, id: String, store: AppStore) {
+        store.updateSession(id) { session in
+            session.title = pane.title
+            session.titleMode = "fixed"
+            session.model = pane.model
+            session.settings = RunSettings(effort: pane.effort, permissionMode: pane.permissionMode)
+            session.agentViewMode = pane.view == "mighty" ? "mighty" : nil
+        }
+        for (index, run) in pane.runs.enumerated() {
+            let events = HelpDemoReplay.events(sessionId: id, provider: pane.provider, model: pane.model, permissionMode: pane.permissionMode,
+                                               inputId: "help-\(pane.role)-\(index)", input: run.input, frames: run.frames, finish: run.finish)
+            store.companion.recordInput(sessionID: id, text: run.input)
+            store.companion.beginRun(sessionID: id)
+            for event in events { store.apply(event) }
+            if let seconds = run.elapsedSeconds {
+                let now = Date()
+                store.updateSession(id) { $0.runTiming = AgentRunTiming(startedAt: now.addingTimeInterval(-seconds), lastObservedAt: now, finishedAt: run.finish == nil ? nil : now) }
+            }
+        }
+        if let draft = pane.draft { store.drafts[id] = draft }
+    }
+
+    /// The delegation demo, seeded when its first shot is taken so the shots before
+    /// it do not show it: its workspace, the parent pane, its children opened beside
+    /// it as delegate opens them (a closed parent's child is then linked to that
+    /// parent, whose pane is not in the snapshot), and then their records, loaded
+    /// into the app's delegation coordinator. A failure is kept, so each delegation
+    /// shot reports it.
+    private static func seedDelegation(_ demo: Demo, store: AppStore) async throws {
+        if demo.delegationSeeded { return }
+        if let problem = demo.delegationProblem { throw MightyError(problem) }
+        do {
+            try await makeDelegationDemo(demo, store: store)
+            demo.delegationSeeded = true
+        } catch {
+            let problem = "seeding the delegation demo failed: " + error.localizedDescription
+            demo.delegationProblem = problem
+            throw MightyError(problem)
+        }
+    }
+
+    private static func makeDelegationDemo(_ demo: Demo, store: AppStore) async throws {
+        let profile = demo.profile, spec = profile.delegation
+        guard let workspace = profile.workspaces.first(where: { $0.id == spec.workspace }) else { throw MightyError("the delegation demo has no workspace") }
+        let checkout = try await makeWorkspace(workspace, root: workspacesRoot(store), store: store)
+        var parents: [String: String] = [:]
+        for pane in profile.panes where pane.workspace == spec.workspace && spec.child(pane.role) == nil {
+            store.selectWorkspace(pane.workspace)
+            guard let id = store.addSession(kind: pane.kind, provider: pane.provider, workspaceId: pane.workspace) else { throw MightyError("could not add the \(pane.role) pane") }
+            demo.panes[pane.role] = id
+            parents[pane.role] = id
+            fill(pane, id: id, store: store)
+        }
+        for role in spec.closedParents { parents[role] = UUID().uuidString.lowercased() }
+        guard let opened = spec.children.lazy.compactMap({ demo.panes[$0.parent] }).first else { throw MightyError("the delegation demo has no open parent") }
+        // The coordinator's worktree root in a capture; each child works in a folder of its own there.
+        let worktrees = ChildWorktreeMaker(root: store.dataDirectory.appendingPathComponent("worktrees", isDirectory: true))
+        for child in spec.children {
+            guard let pane = profile.pane(child.role), let parent = parents[child.parent] else { throw MightyError("the delegation demo has no \(child.role) pane") }
+            let folder = worktrees.worktreePath(for: child.id)
+            try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
+            let beside = demo.panes[child.parent] ?? opened
+            guard await store.createPane(DelegationChildPane(sessionId: child.id, parentSessionId: beside, mode: pane.permissionMode, folder: folder)) else {
+                throw MightyError("could not open the \(child.role) pane")
+            }
+            demo.panes[child.role] = child.id
+            if parent != beside { store.updateSession(child.id) { $0.parentSessionId = parent } }
+            fill(pane, id: child.id, store: store)
+        }
+        try await store.loadHelpDemoDelegation(HelpDemoDelegation.file(profile, parents: parents, worktrees: worktrees, checkout: checkout))
+        let held = spec.notices.filter { $0.lane == .held }.count
+        try await wait("the delegation records", store: store, timeout: 10) {
+            store.delegationChildren.map(\.id) == spec.children.map(\.id) && store.delegationHeld.values.map(\.count).reduce(0, +) == held
+        }
+        if let layout = profile.layouts.first(where: { $0.workspace == spec.workspace }) {
+            store.selectWorkspace(layout.workspace)
+            store.setPaneLayoutPreset(layout.preset)
+            store.selectSession(try demo.pane(layout.active))
+            demo.modes[layout.workspace] = store.paneLayoutMode(layout.workspace)
+        }
     }
 
     /// Where the demo workspace folders go: the profile, or the folder given with
@@ -535,6 +626,46 @@ enum HelpCapture {
             let sheet = try await attachedSheet(main, store: store)
             try await Task.sleep(for: .milliseconds(900))
             return Target(window: sheet) { store.showSettings = false }
+        case .delegationTree, .delegationHeld, .delegationParentClosed:
+            let expanded = store.snapshot.expandedWorkspaceIds
+            try await seedDelegation(demo, store: store)
+            let space = demo.profile.delegation.workspace
+            try await select(space, demo: demo, store: store)
+            let id = try demo.pane(screen.paneRole!)
+            try checkDelegation(screen, id: id, demo: demo, store: store)
+            // The other workspaces' lists are closed, so the tree has the sidebar to itself.
+            store.snapshot.expandedWorkspaceIds = [space]
+            // The held notices with the parent pane on its own; the tree with the pane's tab selected.
+            if screen == .delegationHeld { store.setPaneFocus(true, sessionId: id) } else { store.selectSession(id) }
+            try await Task.sleep(for: .milliseconds(1_000))
+            return Target(window: main) { store.snapshot.expandedWorkspaceIds = expanded }
+        }
+    }
+
+    /// Checks that the delegation demo shows what the screen is meant to: the parent's
+    /// children listed under it and the notice its transcript got, the held notices of
+    /// the stopped parent, or the closed parent's child with its held notices.
+    private static func checkDelegation(_ screen: HelpScreen, id: String, demo: Demo, store: AppStore) throws {
+        let spec = demo.profile.delegation
+        guard let session = store.snapshot.sessions.first(where: { $0.id == id }) else { throw MightyError("the pane is missing") }
+        let tree = DelegationSidebar.tree(workspaceId: spec.workspace, workspaces: store.snapshot.workspaces, sessions: store.snapshot.sessions, children: store.delegationChildren)
+        let ownHeld = spec.notices.filter { $0.lane == .held && spec.child($0.child).flatMap { demo.panes[$0.parent] } == id }.count
+        switch screen {
+        case .delegationTree:
+            let expected = spec.children.filter { demo.panes[$0.parent] == id }.map(\.id)
+            guard !expected.isEmpty, tree.children[id]?.map(\.id) == expected, expected.allSatisfy({ child in store.snapshot.sessions.contains { $0.id == child } }) else {
+                throw MightyError("the parent's child panes are not listed under it")
+            }
+            guard session.logs.contains(where: { $0.kind == "user" && $0.text.hasPrefix("[Mighty Claude notice ") }) else { throw MightyError("the parent's transcript has no notice") }
+        case .delegationHeld:
+            guard session.status == "stopped", ownHeld > 0, store.delegationHeld[id]?.count == ownHeld else { throw MightyError("the stopped parent does not hold its notices") }
+        case .delegationParentClosed:
+            let row = tree.parentClosed.lazy.flatMap(\.children).first { $0.id == id }
+            guard let row, row.heldNotices > 0, !store.snapshot.sessions.contains(where: { $0.id == row.parentSessionId }) else {
+                throw MightyError("the closed parent's child is not listed with its held notices")
+            }
+        default:
+            break
         }
     }
 
