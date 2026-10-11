@@ -226,7 +226,7 @@ struct HelpCaptureTests {
     @Test func theProfileNamesItsPanesAndLayouts() throws {
         let profile = try Self.profile("en")
         #expect(Set(profile.panes.map(\.role)) == ["mighty", "plan", "codex", "shell", "result", "question", "permission",
-                                                   "parent", "child-merged", "child-reported", "child-running", "child-waiting", "child-of-closed"])
+                                                   "parent", "child-reported", "child-running", "child-waiting", "child-of-closed"])
         #expect(profile.pane("mighty")?.view == "mighty" && profile.pane("codex")?.view == "default" && profile.pane("codex")?.provider == "codex")
         #expect(profile.pane("mighty")?.draft?.isEmpty == false)
         #expect(profile.resumeSessions.count == 3 && profile.resumeSessions.allSatisfy { UUID(uuidString: $0.sessionId) != nil })

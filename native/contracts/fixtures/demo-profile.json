@@ -1974,7 +1974,7 @@
             "ja": "チェックアウトの作業を子ペインに分けて任せて。リクエストの検証、注文 API のドキュメント、カートのテスト、わかりやすい支払いエラーの 4 つ。"
           },
           "finish": "completed",
-          "elapsedSeconds": 64,
+          "elapsedSeconds": 52,
           "frames": [
             {
               "type": "system",
@@ -1995,10 +1995,10 @@
                   {
                     "type": "text",
                     "text": {
-                      "ko": "네 가지를 각각 자식 창에 맡길게요. 자식 창마다 자기 worktree에서 작업합니다.",
-                      "en": "I'll give each part to a child pane of its own; each works in its own worktree.",
-                      "zh": "我会把每一部分交给一个子窗格，每个子窗格都在自己的 worktree 中工作。",
-                      "ja": "それぞれを子ペインに任せます。子ペインはそれぞれ自分の worktree で作業します。"
+                      "ko": "한 창에서 동시에 열어 둘 수 있는 자식 창은 세 개까지라서, 지금 세 개를 시작하고 결제 오류 메시지는 하나가 끝나면 맡길게요.",
+                      "en": "A pane can have three open children at a time, so I'll start three now and hand over the payment errors once one of them is done.",
+                      "zh": "一个窗格同时最多只能有三个打开的子窗格，所以我先启动三个，等其中一个完成后再把支付错误提示交出去。",
+                      "ja": "1 つのペインで同時に開いておける子ペインは 3 つまでなので、まず 3 つを始め、支払いエラーはどれかが終わってから任せます。"
                     }
                   },
                   {
@@ -2042,27 +2042,13 @@
                       },
                       "mode": "acceptEdits"
                     }
-                  },
-                  {
-                    "type": "tool_use",
-                    "id": "toolu_l_d4",
-                    "name": "mcp__mighty-delegation__delegate",
-                    "input": {
-                      "task": {
-                        "ko": "결제 오류 메시지를 알기 쉬운 말로 다시 쓰고, 필요한 오류 코드를 추가해 줘.",
-                        "en": "Rewrite the payment error messages in plain words, and add the error codes they need.",
-                        "zh": "用通俗易懂的话重写支付错误提示，并补上需要的错误代码。",
-                        "ja": "支払いエラーのメッセージをわかりやすい言葉に書き直し、必要なエラーコードを追加して。"
-                      },
-                      "mode": "acceptEdits"
-                    }
                   }
                 ],
                 "usage": {
                   "input_tokens": 1400,
                   "cache_read_input_tokens": 36800,
                   "cache_creation_input_tokens": 5100,
-                  "output_tokens": 620
+                  "output_tokens": 540
                 }
               }
             },
@@ -2085,11 +2071,6 @@
                     "type": "tool_result",
                     "tool_use_id": "toolu_l_d3",
                     "content": "Child c6d04a2f-7e15-4b9c-9a38-5f1e2d8b6c47 is creating, on the branch mighty/c6d04a2f-7e15-4b9c-9a38-5f1e2d8b6c47, starting in acceptEdits mode."
-                  },
-                  {
-                    "type": "tool_result",
-                    "tool_use_id": "toolu_l_d4",
-                    "content": "Child 51a9e7c3-0d28-4e6b-a4f1-9c3b7d2e8a05 is creating, on the branch mighty/51a9e7c3-0d28-4e6b-a4f1-9c3b7d2e8a05, starting in acceptEdits mode."
                   }
                 ]
               }
@@ -2106,10 +2087,10 @@
                   {
                     "type": "text",
                     "text": {
-                      "ko": "자식 창 네 개가 작업을 시작했어요. 알림이 오는 대로 보고서를 읽고, 괜찮은 것은 병합할게요.",
-                      "en": "Four child panes are on it. I'll read each report as its notice comes in, and merge what is right.",
-                      "zh": "四个子窗格已经开始工作。每收到一条通知，我就会阅读对应的报告，没问题的就合并。",
-                      "ja": "4 つの子ペインが作業を始めました。通知が届くたびに報告を読み、問題のないものはマージします。"
+                      "ko": "자식 창 세 개가 작업을 시작했어요. 알림이 오는 대로 보고서를 읽을게요.",
+                      "en": "Three child panes are on it. I'll read each report as its notice comes in.",
+                      "zh": "三个子窗格已经开始工作。每收到一条通知，我就去读对应的报告。",
+                      "ja": "3 つの子ペインが作業を始めました。通知が届くたびに報告を読みます。"
                     }
                   }
                 ],
@@ -2117,7 +2098,7 @@
                   "input_tokens": 1700,
                   "cache_read_input_tokens": 41900,
                   "cache_creation_input_tokens": 900,
-                  "output_tokens": 110
+                  "output_tokens": 90
                 }
               }
             },
@@ -2127,34 +2108,34 @@
               "is_error": false,
               "session_id": "d17c4e92-8a3b-4f65-b2d9-6e1a8c3f5b07",
               "result": {
-                "ko": "자식 창 네 개가 작업을 시작했어요. 알림이 오는 대로 보고서를 읽고, 괜찮은 것은 병합할게요.",
-                "en": "Four child panes are on it. I'll read each report as its notice comes in, and merge what is right.",
-                "zh": "四个子窗格已经开始工作。每收到一条通知，我就会阅读对应的报告，没问题的就合并。",
-                "ja": "4 つの子ペインが作業を始めました。通知が届くたびに報告を読み、問題のないものはマージします。"
+                "ko": "자식 창 세 개가 작업을 시작했어요. 알림이 오는 대로 보고서를 읽을게요.",
+                "en": "Three child panes are on it. I'll read each report as its notice comes in.",
+                "zh": "三个子窗格已经开始工作。每收到一条通知，我就去读对应的报告。",
+                "ja": "3 つの子ペインが作業を始めました。通知が届くたびに報告を読みます。"
               },
               "usage": {
                 "input_tokens": 1700,
                 "cache_read_input_tokens": 41900,
                 "cache_creation_input_tokens": 900,
-                "output_tokens": 110
+                "output_tokens": 90
               },
               "modelUsage": {
                 "claude-sonnet-5-5": {
                   "inputTokens": 3100,
-                  "outputTokens": 730,
+                  "outputTokens": 630,
                   "cacheReadInputTokens": 78700,
                   "cacheCreationInputTokens": 6000,
                   "contextWindow": 200000
                 }
               },
-              "total_cost_usd": 0.08
+              "total_cost_usd": 0.07
             }
           ]
         },
         {
           "input": "[Mighty Claude notice a4c8e1f7-3b29-4d06-9e5a-1f7b3c8d2e60] Your child 3f8a2c6e-9b14-4d7a-8e25-c1b9f04d6a73 reported revision 1. Read the report with child_status; merge it with merge when it is right.",
-          "finish": "stopped",
-          "elapsedSeconds": 41,
+          "finish": "completed",
+          "elapsedSeconds": 38,
           "frames": [
             {
               "type": "assistant",
@@ -2210,15 +2191,6 @@
                 "model": "claude-sonnet-5-5",
                 "content": [
                   {
-                    "type": "text",
-                    "text": {
-                      "ko": "검증 작업이 끝났고 테스트도 통과했으니 병합할게요.",
-                      "en": "The validation work is complete and its tests pass, so I'll merge it.",
-                      "zh": "校验部分已完成，测试也通过了，我来合并。",
-                      "ja": "検証の作業は完了していてテストも通っているので、マージします。"
-                    }
-                  },
-                  {
                     "type": "tool_use",
                     "id": "toolu_l_m1",
                     "name": "mcp__mighty-delegation__merge",
@@ -2232,7 +2204,7 @@
                   "input_tokens": 2300,
                   "cache_read_input_tokens": 44000,
                   "cache_creation_input_tokens": 800,
-                  "output_tokens": 120
+                  "output_tokens": 70
                 }
               }
             },
@@ -2261,12 +2233,124 @@
                   {
                     "type": "text",
                     "text": {
-                      "ko": "main에 병합했어요. 이제 전체 테스트를 돌려 볼게요.",
-                      "en": "Merged into main. Next I'll run the whole test suite.",
-                      "zh": "已合并到 main。接下来运行全部测试。",
-                      "ja": "main にマージしました。次にテスト全体を実行します。"
+                      "ko": "검증 작업을 main에 병합했어요. 다 보셨으면 그 창을 닫아 주세요. 그러면 결제 오류 메시지를 맡길게요.",
+                      "en": "Merged the validation work into main. Close its pane when you're done with it, and I'll hand over the payment errors.",
+                      "zh": "已将校验部分合并到 main。看完后请关闭它的窗格，我再把支付错误提示交出去。",
+                      "ja": "検証の作業を main にマージしました。確認が済んだらそのペインを閉じてください。支払いエラーの作業を任せます。"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 2500,
+                  "cache_read_input_tokens": 44900,
+                  "cache_creation_input_tokens": 400,
+                  "output_tokens": 80
+                }
+              }
+            },
+            {
+              "type": "result",
+              "subtype": "success",
+              "is_error": false,
+              "session_id": "d17c4e92-8a3b-4f65-b2d9-6e1a8c3f5b07",
+              "result": {
+                "ko": "검증 작업을 main에 병합했어요. 다 보셨으면 그 창을 닫아 주세요. 그러면 결제 오류 메시지를 맡길게요.",
+                "en": "Merged the validation work into main. Close its pane when you're done with it, and I'll hand over the payment errors.",
+                "zh": "已将校验部分合并到 main。看完后请关闭它的窗格，我再把支付错误提示交出去。",
+                "ja": "検証の作業を main にマージしました。確認が済んだらそのペインを閉じてください。支払いエラーの作業を任せます。"
+              },
+              "usage": {
+                "input_tokens": 2500,
+                "cache_read_input_tokens": 44900,
+                "cache_creation_input_tokens": 400,
+                "output_tokens": 80
+              },
+              "modelUsage": {
+                "claude-sonnet-5-5": {
+                  "inputTokens": 6700,
+                  "outputTokens": 210,
+                  "cacheReadInputTokens": 132000,
+                  "cacheCreationInputTokens": 1900,
+                  "contextWindow": 200000
+                }
+              },
+              "total_cost_usd": 0.04
+            }
+          ]
+        },
+        {
+          "input": {
+            "ko": "검증 창은 닫았어. 이제 결제 오류 메시지도 자식 창에 맡겨 줘.",
+            "en": "I've closed the validation pane. Hand the payment errors to a child now.",
+            "zh": "我已经关掉校验的窗格了。现在把支付错误提示交给一个子窗格吧。",
+            "ja": "検証のペインは閉じたよ。支払いエラーの作業も子ペインに任せて。"
+          },
+          "finish": "stopped",
+          "elapsedSeconds": 27,
+          "frames": [
+            {
+              "type": "assistant",
+              "uuid": "msg_l6",
+              "session_id": "d17c4e92-8a3b-4f65-b2d9-6e1a8c3f5b07",
+              "message": {
+                "id": "msg_l6",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": {
+                      "ko": "결제 오류 메시지를 맡기고, 그동안 main에서 전체 테스트를 돌려 볼게요.",
+                      "en": "Handing over the payment errors; meanwhile I'll run the whole test suite on main.",
+                      "zh": "我把支付错误提示交给子窗格，同时在 main 上运行全部测试。",
+                      "ja": "支払いエラーの作業を任せ、その間に main でテスト全体を実行します。"
                     }
                   },
+                  {
+                    "type": "tool_use",
+                    "id": "toolu_l_d4",
+                    "name": "mcp__mighty-delegation__delegate",
+                    "input": {
+                      "task": {
+                        "ko": "결제 오류 메시지를 알기 쉬운 말로 다시 쓰고, 필요한 오류 코드를 추가해 줘.",
+                        "en": "Rewrite the payment error messages in plain words, and add the error codes they need.",
+                        "zh": "用通俗易懂的话重写支付错误提示，并补上需要的错误代码。",
+                        "ja": "支払いエラーのメッセージをわかりやすい言葉に書き直し、必要なエラーコードを追加して。"
+                      },
+                      "mode": "acceptEdits"
+                    }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 2700,
+                  "cache_read_input_tokens": 45600,
+                  "cache_creation_input_tokens": 600,
+                  "output_tokens": 110
+                }
+              }
+            },
+            {
+              "type": "user",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_l_d4",
+                    "content": "Child 51a9e7c3-0d28-4e6b-a4f1-9c3b7d2e8a05 is creating, on the branch mighty/51a9e7c3-0d28-4e6b-a4f1-9c3b7d2e8a05, starting in acceptEdits mode."
+                  }
+                ]
+              }
+            },
+            {
+              "type": "assistant",
+              "uuid": "msg_l7",
+              "session_id": "d17c4e92-8a3b-4f65-b2d9-6e1a8c3f5b07",
+              "message": {
+                "id": "msg_l7",
+                "role": "assistant",
+                "model": "claude-sonnet-5-5",
+                "content": [
                   {
                     "type": "tool_use",
                     "id": "toolu_l_t1",
@@ -2283,283 +2367,12 @@
                   }
                 ],
                 "usage": {
-                  "input_tokens": 2500,
-                  "cache_read_input_tokens": 44900,
-                  "cache_creation_input_tokens": 400,
-                  "output_tokens": 90
-                }
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "role": "child-merged",
-      "workspace": "demo-shop-api",
-      "kind": "claude",
-      "provider": "claude",
-      "model": "sonnet",
-      "effort": "medium",
-      "permissionMode": "acceptEdits",
-      "view": "default",
-      "title": {
-        "ko": "결제 요청 검증",
-        "en": "Checkout validation",
-        "zh": "结账请求校验",
-        "ja": "チェックアウトの入力検証"
-      },
-      "runs": [
-        {
-          "input": {
-            "ko": "POST /checkout 요청 본문을 검증하고, 잘못된 필드 이름을 담아 400으로 응답하게 해 줘.",
-            "en": "Validate the POST /checkout request body and answer 400 with the name of the field that failed.",
-            "zh": "校验 POST /checkout 的请求体，出错时返回 400，并指明是哪个字段。",
-            "ja": "POST /checkout のリクエスト本文を検証し、不正なフィールドの名前を添えて 400 を返すようにして。"
-          },
-          "finish": "completed",
-          "elapsedSeconds": 128,
-          "frames": [
-            {
-              "type": "system",
-              "subtype": "init",
-              "session_id": "4b8e2f61-c9d3-4a17-8f5e-0a6c3d9b2e14",
-              "model": "claude-sonnet-5-5",
-              "permissionMode": "default"
-            },
-            {
-              "type": "assistant",
-              "uuid": "msg_v1",
-              "session_id": "4b8e2f61-c9d3-4a17-8f5e-0a6c3d9b2e14",
-              "message": {
-                "id": "msg_v1",
-                "role": "assistant",
-                "model": "claude-sonnet-5-5",
-                "content": [
-                  {
-                    "type": "text",
-                    "text": {
-                      "ko": "요청 본문을 받는 곳부터 볼게요.",
-                      "en": "I'll start where the request body comes in.",
-                      "zh": "我先看看请求体是在哪里接收的。",
-                      "ja": "まずリクエスト本文を受け取る箇所を見ます。"
-                    }
-                  },
-                  {
-                    "type": "tool_use",
-                    "id": "toolu_v_read",
-                    "name": "Read",
-                    "input": {
-                      "file_path": "src/routes/checkout.js"
-                    }
-                  }
-                ],
-                "usage": {
-                  "input_tokens": 900,
-                  "cache_read_input_tokens": 18200,
-                  "cache_creation_input_tokens": 2600,
-                  "output_tokens": 90
-                }
-              }
-            },
-            {
-              "type": "user",
-              "message": {
-                "role": "user",
-                "content": [
-                  {
-                    "type": "tool_result",
-                    "tool_use_id": "toolu_v_read",
-                    "content": "import { Router } from \"express\";\nimport { cartTotal } from \"../cart/totals.js\";\nimport { paymentError } from \"../payments/errors.js\";\n\nexport const checkout = Router();\n\ncheckout.post(\"/\", async (req, res) => {\n  const { items, card } = req.body;\n  try {\n    const total = cartTotal(items);\n    res.json({ total, status: \"paid\" });\n  } catch (error) {\n    res.status(402).json(paymentError(error));\n  }\n});\n"
-                  }
-                ]
-              }
-            },
-            {
-              "type": "assistant",
-              "uuid": "msg_v2",
-              "session_id": "4b8e2f61-c9d3-4a17-8f5e-0a6c3d9b2e14",
-              "message": {
-                "id": "msg_v2",
-                "role": "assistant",
-                "model": "claude-sonnet-5-5",
-                "content": [
-                  {
-                    "type": "tool_use",
-                    "id": "toolu_v_edit",
-                    "name": "Edit",
-                    "input": {
-                      "file_path": "src/routes/checkout.js",
-                      "old_string": "  const { items, card } = req.body;\n",
-                      "new_string": "  const problem = invalidField(req.body);\n  if (problem) return res.status(400).json({ error: \"invalid_field\", field: problem });\n  const { items, card } = req.body;\n"
-                    }
-                  }
-                ],
-                "usage": {
-                  "input_tokens": 1100,
-                  "cache_read_input_tokens": 20100,
-                  "cache_creation_input_tokens": 900,
-                  "output_tokens": 210
-                }
-              }
-            },
-            {
-              "type": "user",
-              "message": {
-                "role": "user",
-                "content": [
-                  {
-                    "type": "tool_result",
-                    "tool_use_id": "toolu_v_edit",
-                    "content": "The file src/routes/checkout.js has been updated."
-                  }
-                ]
-              }
-            },
-            {
-              "type": "assistant",
-              "uuid": "msg_v3",
-              "session_id": "4b8e2f61-c9d3-4a17-8f5e-0a6c3d9b2e14",
-              "message": {
-                "id": "msg_v3",
-                "role": "assistant",
-                "model": "claude-sonnet-5-5",
-                "content": [
-                  {
-                    "type": "tool_use",
-                    "id": "toolu_v_test",
-                    "name": "Bash",
-                    "input": {
-                      "command": "npm test",
-                      "description": {
-                        "ko": "테스트 실행",
-                        "en": "Run the tests",
-                        "zh": "运行测试",
-                        "ja": "テストを実行"
-                      }
-                    }
-                  }
-                ],
-                "usage": {
-                  "input_tokens": 1200,
-                  "cache_read_input_tokens": 21000,
+                  "input_tokens": 2900,
+                  "cache_read_input_tokens": 46200,
                   "cache_creation_input_tokens": 300,
                   "output_tokens": 60
                 }
               }
-            },
-            {
-              "type": "user",
-              "message": {
-                "role": "user",
-                "content": [
-                  {
-                    "type": "tool_result",
-                    "tool_use_id": "toolu_v_test",
-                    "content": "\n> shop-api@0.4.0 test\n> vitest run\n\n ✓ test/checkout.test.js (4 tests) 21ms\n\n Test Files  1 passed (1)\n      Tests  4 passed (4)\n"
-                  }
-                ]
-              }
-            },
-            {
-              "type": "assistant",
-              "uuid": "msg_v4",
-              "session_id": "4b8e2f61-c9d3-4a17-8f5e-0a6c3d9b2e14",
-              "message": {
-                "id": "msg_v4",
-                "role": "assistant",
-                "model": "claude-sonnet-5-5",
-                "content": [
-                  {
-                    "type": "tool_use",
-                    "id": "toolu_v_report",
-                    "name": "Write",
-                    "input": {
-                      "file_path": ".mighty-delegation/REPORT.md",
-                      "content": {
-                        "ko": "# 보고서\n\nPOST /checkout이 요청 본문을 검사하고, 잘못된 필드를 담아 400으로 응답합니다.\n\n- 테스트: test/checkout.test.js, 모두 통과\n- 남은 일 없음\n",
-                        "en": "# Report\n\nPOST /checkout now checks the request body and answers 400 with the field that failed.\n\n- Tests: test/checkout.test.js, all passing\n- Nothing left to do\n",
-                        "zh": "# 报告\n\nPOST /checkout 现在会校验请求体，出错时返回 400 并指明出错的字段。\n\n- 测试：test/checkout.test.js，全部通过\n- 没有遗留事项\n",
-                        "ja": "# 報告\n\nPOST /checkout がリクエスト本文を検証し、不正なフィールドを添えて 400 を返すようになりました。\n\n- テスト: test/checkout.test.js、すべて成功\n- 残作業なし\n"
-                      }
-                    }
-                  }
-                ],
-                "usage": {
-                  "input_tokens": 1300,
-                  "cache_read_input_tokens": 21300,
-                  "cache_creation_input_tokens": 400,
-                  "output_tokens": 150
-                }
-              }
-            },
-            {
-              "type": "user",
-              "message": {
-                "role": "user",
-                "content": [
-                  {
-                    "type": "tool_result",
-                    "tool_use_id": "toolu_v_report",
-                    "content": "File created successfully at: .mighty-delegation/REPORT.md"
-                  }
-                ]
-              }
-            },
-            {
-              "type": "assistant",
-              "uuid": "msg_v5",
-              "session_id": "4b8e2f61-c9d3-4a17-8f5e-0a6c3d9b2e14",
-              "message": {
-                "id": "msg_v5",
-                "role": "assistant",
-                "model": "claude-sonnet-5-5",
-                "content": [
-                  {
-                    "type": "text",
-                    "text": {
-                      "ko": "끝났어요. POST /checkout이 잘못된 필드를 담아 400으로 응답합니다. 테스트를 통과했고 보고서도 썼어요.",
-                      "en": "Done: POST /checkout answers 400 with the field that failed. The tests pass and my report is written.",
-                      "zh": "完成了：POST /checkout 会返回 400 并指明出错的字段。测试通过，报告也写好了。",
-                      "ja": "完了しました。POST /checkout が不正なフィールドを添えて 400 を返します。テストは通り、報告も書きました。"
-                    }
-                  }
-                ],
-                "usage": {
-                  "input_tokens": 1400,
-                  "cache_read_input_tokens": 21700,
-                  "cache_creation_input_tokens": 200,
-                  "output_tokens": 70
-                }
-              }
-            },
-            {
-              "type": "result",
-              "subtype": "success",
-              "is_error": false,
-              "session_id": "4b8e2f61-c9d3-4a17-8f5e-0a6c3d9b2e14",
-              "result": {
-                "ko": "끝났어요. POST /checkout이 잘못된 필드를 담아 400으로 응답합니다. 테스트를 통과했고 보고서도 썼어요.",
-                "en": "Done: POST /checkout answers 400 with the field that failed. The tests pass and my report is written.",
-                "zh": "完成了：POST /checkout 会返回 400 并指明出错的字段。测试通过，报告也写好了。",
-                "ja": "完了しました。POST /checkout が不正なフィールドを添えて 400 を返します。テストは通り、報告も書きました。"
-              },
-              "usage": {
-                "input_tokens": 1400,
-                "cache_read_input_tokens": 21700,
-                "cache_creation_input_tokens": 200,
-                "output_tokens": 70
-              },
-              "modelUsage": {
-                "claude-sonnet-5-5": {
-                  "inputTokens": 5900,
-                  "outputTokens": 580,
-                  "cacheReadInputTokens": 102300,
-                  "cacheCreationInputTokens": 4400,
-                  "contextWindow": 200000
-                }
-              },
-              "total_cost_usd": 0.06
             }
           ]
         }
@@ -3506,7 +3319,7 @@
     }
   ],
   "delegation": {
-    "note": "The agent-delegation demo (the delegation shots): a parent pane in shop-api with four children (running, waiting on the human, reported, merged) and the child of a parent whose pane is closed. Its workspace and panes are seeded when the first delegation shot is taken, so the shots before it do not show them; the children open beside their parent as delegate opens them, and the capture then loads these records into the app's delegation coordinator (HelpDemoDelegation in MightyCore). `id`s are the child panes' session ids, which the parent's tool results and the notice that started its second run name; a child's `parent` is a pane role or one of `closedParents`. The waiting child's record is running: its pane waits on a permission, which the sidebar shows as needs you.",
+    "note": "The agent-delegation demo (the delegation shots): a parent pane in shop-api whose validation child was merged and then had its pane closed (its card still offers undo), three open children (reported, running, and running while it waits on the human), which is all delegate allows one pane at a time, and the child of a parent whose pane is closed. Its workspace and panes are seeded when the first delegation shot is taken, so the shots before it do not show them; the open children open beside their parent as delegate opens them, and the capture then loads these records into the app's delegation coordinator (HelpDemoDelegation in MightyCore). `id`s are the children's session ids, which the parent's tool results and the notice that started its second run name; a child's `parent` is a pane role or one of `closedParents`, an open child has a pane and a closed one none, and `merge` is how a child was fast-forwarded.",
     "workspace": "demo-shop-api",
     "parentBranch": "main",
     "baseCommit": "4c1d9e2b7a3f5086d2e1c4b9a7f30d6e8b5a2c17",
@@ -3518,7 +3331,8 @@
         "id": "3f8a2c6e-9b14-4d7a-8e25-c1b9f04d6a73",
         "role": "child-merged",
         "parent": "parent",
-        "state": "merged",
+        "state": "closed",
+        "mode": "acceptEdits",
         "task": {
           "ko": "POST /checkout 요청 본문을 검증하고, 잘못된 필드 이름을 담아 400으로 응답하게 해 줘.",
           "en": "Validate the POST /checkout request body and answer 400 with the name of the field that failed.",
@@ -3526,13 +3340,15 @@
           "ja": "POST /checkout のリクエスト本文を検証し、不正なフィールドの名前を添えて 400 を返すようにして。"
         },
         "reportRevision": 1,
-        "reportHead": "9e3b7c1f2d4a6085b1c3e7d9f2a4b6c8d0e1f3a5"
+        "reportHead": "9e3b7c1f2d4a6085b1c3e7d9f2a4b6c8d0e1f3a5",
+        "merge": "tool_fast_forward"
       },
       {
         "id": "8b1e5d93-2c47-4f0a-b6d8-4a2c9e71f5b0",
         "role": "child-reported",
         "parent": "parent",
         "state": "reported",
+        "mode": "acceptEdits",
         "task": {
           "ko": "docs/api.md에 /orders 엔드포인트 문서를 쓰고, 엔드포인트마다 요청 예시를 하나씩 넣어 줘.",
           "en": "Document the /orders endpoints in docs/api.md, with one example request for each.",
@@ -3547,6 +3363,7 @@
         "role": "child-running",
         "parent": "parent",
         "state": "running",
+        "mode": "acceptEdits",
         "task": {
           "ko": "장바구니 합계 테스트를 추가해 줘. 할인, 세금, 빈 장바구니를 확인해야 해.",
           "en": "Add tests for cart totals: discounts, tax and an empty cart.",
@@ -3560,6 +3377,7 @@
         "role": "child-waiting",
         "parent": "parent",
         "state": "running",
+        "mode": "acceptEdits",
         "task": {
           "ko": "결제 오류 메시지를 알기 쉬운 말로 다시 쓰고, 필요한 오류 코드를 추가해 줘.",
           "en": "Rewrite the payment error messages in plain words, and add the error codes they need.",
@@ -3573,6 +3391,7 @@
         "role": "child-of-closed",
         "parent": "closed-parent",
         "state": "reported",
+        "mode": "acceptEdits",
         "task": {
           "ko": "GET /products에 상품 이름으로 검색하는 기능을 추가해 줘.",
           "en": "Add search by product name to GET /products.",

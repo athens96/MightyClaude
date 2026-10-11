@@ -304,7 +304,7 @@
         "width": 1440,
         "height": 900
       },
-      "note": "shop-api's parent pane with its four child panes under it in the sidebar (running, needs you, reported, merged) and the notice its transcript got."
+      "note": "shop-api's parent pane with its children under it in the sidebar: three open panes (reported, running, needs you), as many as delegate allows, and the merged child whose pane was closed, its card still offering undo; and the notice its transcript got."
     },
     {
       "id": "delegation-held",

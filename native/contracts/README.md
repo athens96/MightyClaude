@@ -443,12 +443,14 @@ the program prints it. Both files are copied byte-identically into
 `MightyCore/Resources/Help/` for the app bundle; `HelpCaptureTests` checks the
 copies, the four languages and the replayed state.
 
-`delegation` is the agent-delegation demo in `shop-api`: a parent pane with four
-children (running, waiting on a permission, reported, merged) and the child of a
-parent whose pane is closed, with the notices held for them. Its workspace and
-panes are seeded when the first delegation shot is taken (those shots come
-last, so no other picture shows them); the children open beside their parent as
-delegate opens them, and `HelpDemoDelegation` turns the records into the
-delegation file the capture loads into the app's coordinator.
-`HelpCaptureDelegationTests` checks the records, the sidebar tree, the cards and
-the held notices they give.
+`delegation` is the agent-delegation demo in `shop-api`: a parent pane with
+three open children (reported, running, waiting on a permission), as many as
+delegate allows a pane, a merged child whose pane was then closed (its card
+still offers undo), and the child of a parent whose pane is closed, with the
+notices held for them. Its workspace and panes are seeded when the first
+delegation shot is taken (those shots come last, so no other picture shows
+them); the open children open beside their parent as delegate opens them, and
+`HelpDemoDelegation` turns the records into the delegation file the capture
+loads into the app's coordinator. `HelpCaptureDelegationTests` checks the
+records, the cap on open children, the sidebar tree, the cards and the held
+notices they give.
