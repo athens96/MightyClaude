@@ -56,6 +56,24 @@ internal static class Verification
                     case "control_request":
                         Console.WriteLine(JsonSerializer.Serialize(new { type = "control_response", response = new { subtype = "success", request_id = root.Text("request_id"), response = new { } } }, Wire.Json));
                         break;
+                    case "user" when line.Contains("sign-in fixture", StringComparison.Ordinal):
+                    {
+                        // What Claude Code 2.1.296 prints when its sign-in expired and could not be refreshed: the
+                        // failed message marked authentication_failed, then its text again as the error result.
+                        var text = line.Contains("expired sign-in fixture", StringComparison.Ordinal) ? "Failed to authenticate: OAuth session expired and could not be refreshed" : "Sign-in went stale · try later";
+                        var mark = line.Contains("unmarked sign-in fixture", StringComparison.Ordinal) ? "server_error" : "authentication_failed";
+                        Console.WriteLine(JsonSerializer.Serialize(new { type = "assistant", error = mark, message = new { content = new[] { new { type = "text", text } } } }, Wire.Json));
+                        // A sub-agent's own failure in between never decides the run's reason.
+                        if (line.Contains("child sign-in fixture", StringComparison.Ordinal))
+                            Console.WriteLine(JsonSerializer.Serialize(new { type = "assistant", parent_tool_use_id = "toolu_child", error = "rate_limit", message = new { content = new[] { new { type = "text", text = "Rate limited" } } } }, Wire.Json));
+                        // A different failure, or a Bedrock policy denial beside the repeated words, is no lost sign-in.
+                        var result = line.Contains("mismatched sign-in fixture", StringComparison.Ordinal) ? "API Error: 500 Internal server error" : text;
+                        string[]? errors = line.Contains("denied sign-in fixture", StringComparison.Ordinal)
+                            ? ["User: arn:aws:sts::123456789012:assumed-role/fixture/session is not authorized to perform: bedrock:InvokeModel with an explicit deny in a service control policy"] : null;
+                        Console.WriteLine(JsonSerializer.Serialize(new { type = "result", subtype = errors is null ? "success" : "error_during_execution", is_error = true, result, errors }, Wire.Json));
+                        Environment.ExitCode = 1;
+                        return;
+                    }
                     case "user" when line.Contains("background stop fixture", StringComparison.Ordinal):
                         // The turn ends while a background shell still runs; only a stop ends the process.
                         await File.WriteAllTextAsync(record + ".pid", Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
@@ -221,6 +239,7 @@ internal static class Verification
         await Test("Login recovery Gemini sign-in failures and methods a sign-in renews", CliLoginRecoveryVerification.GeminiSignalsAndMethods);
         await Test("Login recovery Gemini sign-in is the credentials file changing", CliLoginRecoveryVerification.GeminiSignInIsTheCredentialsFileChanging);
         await Test("Login recovery Gemini fake CLI run: the sign-in message on stderr is the reason, the same words as an answer are not", CliLoginRecoveryVerification.GeminiFakeCliRunRaisesTheReasonFromStderrOnly);
+        await Test("Login recovery Claude fake CLI run: a result repeating the marked sign-in failure keeps the reason, whatever its words", CliLoginRecoveryVerification.ClaudeFakeCliRunKeepsTheReasonWhenTheResultRepeatsTheMarkedFailure);
         await Test("Agent IO TerminalCleanerAndEphemeralOwnership", AgentIOVerification.TerminalCleanerAndEphemeralOwnership);
         if (OperatingSystem.IsWindows()) await Test("Agent IO real ConPTY process ownership", AgentIOVerification.RealWindowsInteractiveProcess);
         else { skipped++; Console.WriteLine("SKIP Agent IO real ConPTY process (requires Windows)"); }
