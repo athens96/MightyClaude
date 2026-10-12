@@ -1484,6 +1484,7 @@
   "phone.composer.stop": "Stop",
   "phone.composer.attach": "Attach files",
   "phone.blocks.tally": "{total} blocks · {settled} finished",
+  "phone.blocks.steps": "{count} steps along the way",
   "plan.error.emptyFeedback": "Write what you want changed in the plan.",
   "plan.error.feedbackTooLong": "The change request is too long. Keep it under 16 KiB.",
   "plan.error.invalidDecision": "That is not a known answer to a plan.",

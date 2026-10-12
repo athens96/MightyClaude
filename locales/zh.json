@@ -1484,6 +1484,7 @@
   "phone.composer.stop": "停止",
   "phone.composer.attach": "附加文件",
   "phone.blocks.tally": "{total} 个块 · {settled} 个已完成",
+  "phone.blocks.steps": "过程中的 {count} 个步骤",
   "plan.error.emptyFeedback": "请写下你希望对计划做出的更改。",
   "plan.error.feedbackTooLong": "更改请求过长。请控制在 16 KiB 以内。",
   "plan.error.invalidDecision": "这不是对计划的已知回答。",

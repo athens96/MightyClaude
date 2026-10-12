@@ -158,6 +158,15 @@ export function runResult(run: MobileMightyRun): string | undefined {
 }
 
 /**
+ * How a request opens in the Mighty view. A request that ended with a final result
+ * shows its request and that result at once, with the steps that led there folded
+ * into one row; any other request shows its steps, and only the newest starts open.
+ */
+export function runFold(run: MobileMightyRun, newest: boolean): { open: boolean; stepsOpen: boolean } {
+  return runResult(run) !== undefined ? { open: true, stepsOpen: false } : { open: newest, stepsOpen: true };
+}
+
+/**
  * The head of a long result, cut at `RESULT_PREVIEW_LINES` lines or
  * `RESULT_PREVIEW_CHARS` characters, whichever comes first. `folded` says whether
  * anything was left out, so the card offers the rest only when there is a rest.

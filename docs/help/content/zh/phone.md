@@ -40,6 +40,8 @@ Mac 与手机通过中继服务器连接。内容全程端到端加密，中继�
 
 在会话中，可以发送和停止请求，更改模型、权限和思考强度，使用斜杠命令，附加文件，以及查看工作区文件（只读）。
 
+在{{ui:phone.session.view.blocks}}视图中，已完成的请求会直接显示请求和{{ui:phone.blocks.finalResult}}。过程步骤折叠为一行，点击即可展开。仍在运行的请求会显示所有步骤。
+
 ## 批准与提问 {#approvals}
 智能体请求批准或提问时，{{ui:phone.tabs.alerts}}标签页上会显示数量。
 - 权限请求：轻点{{ui:permission.allow}}或{{ui:permission.deny}}。
