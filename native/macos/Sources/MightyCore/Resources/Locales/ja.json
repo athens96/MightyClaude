@@ -1484,6 +1484,7 @@
   "phone.composer.stop": "停止",
   "phone.composer.attach": "ファイルを添付",
   "phone.blocks.tally": "ブロック{total}件 · 完了{settled}件",
+  "phone.blocks.steps": "途中の経過 {count}件",
   "plan.error.emptyFeedback": "計画で変更してほしい点を入力してください。",
   "plan.error.feedbackTooLong": "変更リクエストが長すぎます。16 KiB未満にしてください。",
   "plan.error.invalidDecision": "計画に対する回答として認識できません。",

@@ -1484,6 +1484,7 @@
   "phone.composer.stop": "중지",
   "phone.composer.attach": "파일 첨부",
   "phone.blocks.tally": "블록 {total}개 · 끝남 {settled}",
+  "phone.blocks.steps": "진행 과정 {count}개",
   "plan.error.emptyFeedback": "수정 요청 내용을 입력해 주세요.",
   "plan.error.feedbackTooLong": "수정 요청이 너무 깁니다. 16 KiB 이내로 줄여 주세요.",
   "plan.error.invalidDecision": "알 수 없는 계획 답변입니다.",

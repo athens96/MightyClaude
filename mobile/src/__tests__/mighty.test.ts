@@ -22,6 +22,7 @@ import {
   resultPreview,
   runHeading,
   runPreview,
+  runFold,
   runResult,
 } from '@/lib/mighty';
 import { panelOf } from '@/lib/styles';
@@ -496,6 +497,24 @@ describe('what a block says folded and open', () => {
     expect(parse([])?.activity).toBeUndefined();
     // An old Mac sends none at all; the summary keeps the full prompt the Mac allows.
     expect(parse(undefined, 'ㄱ'.repeat(MAX_BLOCK_SUMMARY + 5))?.summary).toHaveLength(MAX_BLOCK_SUMMARY);
+  });
+});
+
+describe('how a request opens in the Mighty view', () => {
+  const main = (output?: string) => block({ id: 'm', kind: 'main', status: 'completed', output });
+
+  it('shows a finished request with its result and its steps folded, newest or not', () => {
+    for (const newest of [true, false]) {
+      expect(runFold(run({ result: '답', blocks: [main('답')] }), newest)).toEqual({ open: true, stepsOpen: false });
+      expect(runFold(run({ status: 'error', blocks: [main('오류 설명')] }), newest)).toEqual({ open: true, stepsOpen: false });
+    }
+  });
+
+  it('shows the steps of a request with no result yet, and opens only the newest', () => {
+    expect(runFold(run({ status: 'running', blocks: [main('중간')] }), true)).toEqual({ open: true, stepsOpen: true });
+    expect(runFold(run({ status: 'running', blocks: [main('중간')] }), false)).toEqual({ open: false, stepsOpen: true });
+    // A finished request that said nothing has only its steps to show.
+    expect(runFold(run({ blocks: [main()] }), true)).toEqual({ open: true, stepsOpen: true });
   });
 });
 

@@ -40,6 +40,8 @@ Mac에서:
 
 세션 안에서는 요청 보내기와 중지, 모델·권한·사고 강도 바꾸기, 슬래시 명령, 파일 첨부, 워크스페이스 파일 보기(읽기 전용)를 할 수 있습니다.
 
+{{ui:phone.session.view.blocks}} 보기에서는 끝난 요청이 요청과 {{ui:phone.blocks.finalResult}}로 바로 보입니다. 진행 과정은 한 줄로 접혀 있고, 누르면 펼쳐집니다. 실행 중인 요청은 모든 단계를 보여 줍니다.
+
 ## 승인과 질문 {#approvals}
 에이전트가 승인을 요청하거나 질문하면 {{ui:phone.tabs.alerts}} 탭에 개수가 표시됩니다.
 - 권한 요청: {{ui:permission.allow}} 또는 {{ui:permission.deny}}를 누릅니다.

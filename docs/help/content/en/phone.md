@@ -40,6 +40,8 @@ The phone app has four tabs.
 
 Inside a session you can send and stop requests, change the model, permission and thinking effort, run slash commands, attach files and browse the workspace's files (read-only).
 
+In the {{ui:phone.session.view.blocks}} view a finished request shows the request and its {{ui:phone.blocks.finalResult}} at once. Its steps are folded into one row that opens when you tap it. A request still running shows every step.
+
 ## Approvals and questions {#approvals}
 When an agent asks for approval or asks a question, the {{ui:phone.tabs.alerts}} tab shows a count.
 - Permission requests: tap {{ui:permission.allow}} or {{ui:permission.deny}}.

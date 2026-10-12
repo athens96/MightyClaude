@@ -28,6 +28,7 @@ import {
   blockTitle,
   resultPreview,
   runHeading,
+  runFold,
   runPreview,
   runResult,
 } from '@/lib/mighty';
@@ -304,14 +305,20 @@ function ResultCard({ run, text }: { run: MobileMightyRun; text: string }) {
   );
 }
 
-function RunGroup({ run, index, initiallyOpen }: {
+function RunGroup({ run, index, newest }: {
   run: MobileMightyRun;
   index: number;
-  /** The newest request starts open; the rest are folded away. */
-  initiallyOpen: boolean;
+  /** The newest request starts open while it runs; see `runFold`. */
+  newest: boolean;
 }) {
   const styles = useStyles(makeStyles);
-  const [open, setOpen] = useState(initiallyOpen);
+  // The fold follows the run (a request that just finished folds its steps away)
+  // until the user opens or folds it by hand.
+  const fold = runFold(run, newest);
+  const [openChoice, setOpen] = useState<boolean>();
+  const [stepsChoice, setStepsOpen] = useState<boolean>();
+  const open = openChoice ?? fold.open;
+  const stepsOpen = stepsChoice ?? fold.stepsOpen;
   const preview = runPreview(run.input);
   const result = runResult(run);
   const tally = runTally(run);
@@ -322,7 +329,7 @@ function RunGroup({ run, index, initiallyOpen }: {
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
-        onPress={() => setOpen((value) => !value)}
+        onPress={() => setOpen(!open)}
         style={({ pressed }) => [styles.runHead, pressed && styles.pressed]}
       >
         <View style={styles.runTitleRow}>
@@ -343,7 +350,21 @@ function RunGroup({ run, index, initiallyOpen }: {
       </Pressable>
       {open ? (
         <View style={styles.blocks}>
-          {run.blocks.length === 0 ? (
+          {result ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ expanded: stepsOpen }}
+              onPress={() => setStepsOpen(!stepsOpen)}
+              style={({ pressed }) => [styles.stepsRow, pressed && styles.pressed]}
+            >
+              <Text style={styles.runChevron}>{stepsOpen ? '▾' : '▸'}</Text>
+              <Text style={styles.stepsLabel}>{t('phone.blocks.steps', { count: tally.total })}</Text>
+              <Text style={styles.stepsToggle}>
+                {stepsOpen ? t('phone.blocks.collapse') : t('phone.blocks.expand')}
+              </Text>
+            </Pressable>
+          ) : null}
+          {!stepsOpen ? null : run.blocks.length === 0 ? (
             <Text style={styles.runCount}>{t('phone.blocks.none')}</Text>
           ) : (
             <>
@@ -406,7 +427,7 @@ export function MightyRunList({
       keyExtractor={(run) => run.id}
       renderItem={({ item, index }) => (
         <View style={styles.listItem}>
-          <RunGroup run={item} index={index} initiallyOpen={index === last} />
+          <RunGroup run={item} index={index} newest={index === last} />
         </View>
       )}
       contentContainerStyle={contentContainerStyle}
@@ -441,6 +462,16 @@ const makeStyles = (palette: Palette) =>
     runPreview: { color: palette.textMuted, fontSize: 13, lineHeight: 19 },
     runCount: { color: palette.textFaint, fontSize: 11.5, fontWeight: '600' },
     blocks: { paddingBottom: spacing.md },
+    // A finished request's steps, folded into one row above its result.
+    stepsRow: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: spacing.sm,
+      minHeight: 44,
+      paddingHorizontal: spacing.xs,
+    },
+    stepsLabel: { color: palette.textMuted, flex: 1, fontSize: 13, fontWeight: '600' },
+    stepsToggle: { color: palette.accent, fontSize: 12, fontWeight: '700' },
     timelineRow: { flexDirection: 'row', gap: spacing.md, paddingBottom: spacing.sm },
     block: {
       backgroundColor: palette.surface,
