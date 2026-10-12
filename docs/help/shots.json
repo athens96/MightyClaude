@@ -111,6 +111,7 @@
         "height": 900
       }
     },
+    {"id": "agent-structure", "section": "agent-pane", "screen": "agent-structure", "window": {"width": 1440, "height": 900}, "note": "The structure view: each request under its step, sub-agents grouped beneath."},
     {
       "id": "result-card",
       "section": "agent-pane",

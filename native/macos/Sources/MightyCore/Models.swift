@@ -288,7 +288,7 @@ public struct RunSession: Codable, Sendable, Equatable, Identifiable {
     /// The pending plan block's size, dragged once for the pane: the most it takes
     /// within the pane, as `graphResultSize` is the newest result's. nil is the window fit.
     public var graphPlanSize: MightyGraphBlockSize?
-    /// The Mighty view's "Diagram | Timeline" choice. nil (older saves, or a word this
+    /// The Mighty view's "Diagram | Timeline | Structure" choice. nil (older saves, or a word this
     /// build does not know) is the diagram; see `mightyViewMode`.
     public var graphViewMode: MightyGraphViewMode?
     /// Present only on browser sessions: the workspace-scoped CEF profile key.

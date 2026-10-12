@@ -533,22 +533,23 @@ enum HelpCapture {
             // The records were read above; the sheet reads them again for its rows.
             if screen == .resumeList { try await Task.sleep(for: .milliseconds(1_500)) }
             return Target(window: sheet) { store.resumePicker = nil }
-        case .agentBasic, .agentMighty, .agentTimeline, .composer, .backgroundWork, .planCard, .questionCard, .permissionCard, .terminalPane, .resultCard:
+        case .agentBasic, .agentMighty, .agentTimeline, .agentStructure, .composer, .backgroundWork, .planCard, .questionCard, .permissionCard, .terminalPane, .resultCard:
             let role = screen.paneRole!
             let id = try demo.pane(role)
             try check(screen, id: id, demo: demo, store: store)
             if screen == .agentTimeline { store.updateSession(id) { $0.graphViewMode = .timeline } }
+            if screen == .agentStructure { store.updateSession(id) { $0.graphViewMode = .structure } }
             if screen == .backgroundWork { store.setAgentViewMode(id, mode: "default") }
             // The diagram aims at the next-request block while a draft is typed; these
             // screens show the requests themselves.
-            if [.agentMighty, .agentTimeline, .backgroundWork].contains(screen) { store.drafts[id] = "" }
+            if [.agentMighty, .agentTimeline, .agentStructure, .backgroundWork].contains(screen) { store.drafts[id] = "" }
             store.setPaneFocus(true, sessionId: id)
             // SwiftUI builds its accessibility tree only for an assistive client, which
             // a CI runner has none of; these screens are checked by their state above
             // and given time to draw (the result card opens its file list by itself).
             try await Task.sleep(for: .milliseconds(screen == .resultCard || screen == .agentMighty ? 1_500 : 800))
             return Target(window: main) {
-                if screen == .agentTimeline { store.updateSession(id) { $0.graphViewMode = nil } }
+                if screen == .agentTimeline || screen == .agentStructure { store.updateSession(id) { $0.graphViewMode = nil } }
                 if screen == .backgroundWork { store.setAgentViewMode(id, mode: "mighty") }
             }
         case .agentMightyOverview:
@@ -677,7 +678,7 @@ enum HelpCapture {
         guard let session = store.snapshot.sessions.first(where: { $0.id == id }) else { throw MightyError("the pane is missing") }
         let waiting = store.toolPermissions[id]?.first
         switch screen {
-        case .agentMighty, .agentTimeline, .resultCard:
+        case .agentMighty, .agentTimeline, .agentStructure, .resultCard:
             guard session.agentViewMode == "mighty", let finished = session.graphRuns?.last(where: { $0.status == "completed" && !$0.resultEntries.isEmpty }) else { throw MightyError("the Mighty pane has no finished request") }
             let root = store.snapshot.workspaces.first { $0.id == session.workspaceId }.map { URL(fileURLWithPath: $0.path, isDirectory: true) }
             if screen == .resultCard, ReferenceLinkSupport.resultFiles(in: finished.resultEntries.map(\.text), root: root).isEmpty { throw MightyError("the result names no file in its workspace") }

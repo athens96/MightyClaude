@@ -19,6 +19,7 @@ public enum HelpScreen: String, CaseIterable, Sendable {
     case agentMighty = "agent-mighty"
     case agentMightyOverview = "agent-mighty-overview"
     case agentTimeline = "agent-timeline"
+    case agentStructure = "agent-structure"
     case resultCard = "result-card"
     case composer
     case composerSettings = "composer-settings"
@@ -47,7 +48,7 @@ public enum HelpScreen: String, CaseIterable, Sendable {
     public var paneRole: String? {
         switch self {
         case .agentBasic: "codex"
-        case .agentMighty, .agentMightyOverview, .agentTimeline, .composer, .composerSettings, .sessionInfo, .backgroundWork: "mighty"
+        case .agentMighty, .agentMightyOverview, .agentTimeline, .agentStructure, .composer, .composerSettings, .sessionInfo, .backgroundWork: "mighty"
         case .resultCard: "result"
         case .planCard, .planDocument: "plan"
         case .questionCard: "question"

@@ -20,6 +20,12 @@ struct MightyGraphView: View {
     var styleName: String? = nil
     var styleSource: StyleSource? = nil
     var stylePhase: String? = nil
+    /// The pane's own style and phase, which the structure view sorts requests by;
+    /// nil for a pane that runs no style.
+    var styleEvaluator: StyleEvaluator? = nil
+    var guidedPhase: StylePhase? = nil
+    /// The user chose to start anew: `guidedPhase` is where the next request starts.
+    var guidedStartingNew = false
     /// Model catalog for short-name resolution in all usage capsules and activity suffixes.
     var catalog: [ModelOption] = []
     var graphResultSize: MightyGraphBlockSize? = nil
@@ -37,7 +43,7 @@ struct MightyGraphView: View {
     var retainedStart = 0
     var history: SessionHistoryState? = nil
     var onLoadOlder: () -> Void = {}
-    /// "Diagram | Timeline", saved per pane (`RunSession.graphViewMode`).
+    /// "Diagram | Timeline | Structure", saved per pane (`RunSession.graphViewMode`).
     var viewMode: MightyGraphViewMode = .diagram
     var onViewMode: (MightyGraphViewMode) -> Void = { _ in }
     /// The pane's pending plan (`PlanCardSupport.pendingPlan`) and its answered
@@ -51,6 +57,13 @@ struct MightyGraphView: View {
     var planRecordCard: (PlanRecord, Bool, @escaping () -> Void) -> AnyView = { _, _, _ in AnyView(EmptyView()) }
     let onFocus: () -> Void
     @ViewState private var resized: [String: MightyGraphBlockSize] = [:]
+    /// The structure view's model and what it was built from. A reference, so
+    /// keeping it never redraws the view.
+    @ViewState private var structureCache = StructureCache()
+    private final class StructureCache {
+        var signature: MightyStructure.Signature?
+        var shape = MightyStructure.Shape.free([])
+    }
     /// The newest result's size only while its drag is in progress; the saved
     /// pane-wide size is the truth before and after.
     @ViewState private var liveResultSize: MightyGraphBlockSize?
@@ -223,6 +236,15 @@ struct MightyGraphView: View {
             Divider().overlay(Palette.border)
             if viewMode == .timeline {
                 timeline(MightyTimeline.groups(runs))
+            } else if viewMode == .structure {
+                MightyStructureView(sessionID: sessionID, provider: provider,
+                                    shape: structureShape(),
+                                    styleTitles: styleTitles, newestRunID: runs.last?.id) { nodeID in
+                    // The diagram opens with its camera on the clicked request or block.
+                    onFocus()
+                    publish(.reaim(nodeID: nodeID, alignTop: false))
+                    onViewMode(.diagram)
+                }
             } else {
             MightyGraphCanvas(graph: graph, zoom: zoom, sessionID: sessionID,
                               scrollTarget: target,
@@ -313,6 +335,20 @@ struct MightyGraphView: View {
         }
         // Cancelled when the graph leaves the screen or the pane closes.
         .task(id: ouroborosRequest) { await ouroboros.run(ouroborosRequest) }
+    }
+
+    /// The structure view's model, rebuilt only when something it draws changed: not
+    /// on every streamed line of a running request.
+    private func structureShape() -> MightyStructure.Shape {
+        let pending = planRequest?.runId
+        let signature = MightyStructure.Signature(runs: runs, style: styleEvaluator, currentPhase: guidedPhase, startingNew: guidedStartingNew,
+                                                  planHistory: planHistory, pendingPlanRunID: pending)
+        if structureCache.signature != signature {
+            structureCache.shape = MightyStructure.make(runs: runs, style: styleEvaluator, currentPhase: guidedPhase, startingNew: guidedStartingNew,
+                                                        planHistory: planHistory, pendingPlanRunID: pending)
+            structureCache.signature = signature
+        }
+        return structureCache.shape
     }
 
     /// Every camera re-aim goes through one token sequence, so a second one
@@ -564,7 +600,7 @@ struct MightyGraphView: View {
                 if selectedNodeID == node.id { blockScrollLabel(node.id, ink: onStrip ? Palette.onStatus : Palette.accent) }
                 if !onStrip {
                     MightyGraphActivityIndicator(status: status, tint: Palette.run)
-                    MightyStatusPill(text: statusLabel(status), tone: DesignTone(blockStatus: status))
+                    MightyStatusPill(text: Self.statusLabel(status), tone: DesignTone(blockStatus: status))
                 }
                 if let capsuleText = ModelUsageFormat.blockCapsule(usage: usage, records: records, nodeModelLabel: nodeModelLabel, catalog: catalog, versioned: true) {
                     let helpText = records.isEmpty ? (usage.map { usageLabel + " · " + $0.detail } ?? "") : ModelUsageFormat.blockCapsuleHelp(records: records, catalog: catalog, versioned: true)
@@ -692,7 +728,8 @@ struct MightyGraphView: View {
             .lineLimit(1).fixedSize().accessibilityIdentifier("mighty-block-scroll-" + id)
     }
 
-    private func statusLabel(_ status: String) -> String {
+    /// A status word as the diagram's pills say it; the structure view says it the same way.
+    static func statusLabel(_ status: String) -> String {
         switch status {
         case "completed": L("graph.state.completed")
         case "error", "failed": L("graph.state.error")
@@ -801,7 +838,7 @@ struct MightyGraphView: View {
                             .help(L("graph.history.tag")).accessibilityLabel(L("graph.history.tag"))
                     }
                     Spacer(minLength: DesignMetrics.Spacing.sm)
-                    MightyStatusPill(text: statusLabel(group.status), tone: DesignTone(status: group.status), height: 20)
+                    MightyStatusPill(text: Self.statusLabel(group.status), tone: DesignTone(status: group.status), height: 20)
                 }
                 Group {
                     if !prompt.isEmpty {
@@ -830,7 +867,7 @@ struct MightyGraphView: View {
         // title (`MobileMightySupport.blocks`) stays as the phone is sent it.
         let title = row.agentIndex == nil ? L("graph.timeline.requestOrdinal", ["n": "\(group.ordinal)"]) : row.block.title
         return MightyTimelineRowCard(row: row, title: title, icon: look.icon, tint: look.tint, meta: timelineMeta(row, run: run),
-                                     status: statusLabel(row.block.status), open: open, onToggle: {
+                                     status: Self.statusLabel(row.block.status), open: open, onToggle: {
             onFocus()
             if timelineOpen.insert(row.nodeID).inserted {
                 // Back in the diagram, the camera stands on the block that was opened.
