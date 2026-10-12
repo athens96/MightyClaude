@@ -340,6 +340,35 @@ final class CoreTests {
         }
     }
 
+    /// A fake Claude CLI, never the real one: what 2.1.296 prints when its sign-in expired and could not be
+    /// refreshed (the failed message marked authentication_failed, then its text again as the error result).
+    @Test func testClaudeMarkedSignInFailureRaisesTheAuthReasonWhateverItsWordsButUnmarkedWordsDoNot() async throws {
+        func claude(mark: String, text: String) throws -> URL {
+            try script("""
+            if [ "$1" = "--version" ]; then printf '2.1.296\\n'; exit 0; fi
+            /bin/cat > /dev/null
+            printf '%s\\n' '{"type":"assistant","error":"\(mark)","message":{"id":"m","content":[{"type":"text","text":"\(text)"}]}}' '{"type":"result","subtype":"success","is_error":true,"result":"\(text)"}'
+            exit 1
+            """, name: "claude")
+        }
+        let directory = try temporary()
+        let workspace = Workspace(id: "workspace", name: "Fixture", path: directory.path)
+        let plugin = directory.appendingPathComponent("plugin/.claude-plugin")
+        try FileManager.default.createDirectory(at: plugin, withIntermediateDirectories: true); try Data("{}".utf8).write(to: plugin.appendingPathComponent("plugin.json"))
+        let cases: [(String, String, String?)] = [("authentication_failed", "Failed to authenticate: OAuth session expired and could not be refreshed", "auth"),
+                                                  ("authentication_failed", "Sign-in went stale · try later", "auth"),
+                                                  ("server_error", "Sign-in went stale · try later", nil)]
+        for (mark, text, expected) in cases {
+            let events = EventRecorder(); let service = ProviderService(binaryOverrides: ["claude": try claude(mark: mark, text: text)])
+            let runner = ProcessRunner(providerService: service, pluginDirectory: plugin.deletingLastPathComponent(), onEvent: { events.append($0) })
+            try await runner.start(request: StartRunRequest(sessionId: "pane", workspaceId: workspace.id, input: "fix the bug", provider: "claude"), workspace: workspace)
+            try await waitUntil { events.hasStatus("error", id: "pane") }
+            let last = events.values().last { $0.type == "status" && $0.sessionId == "pane" }
+            #expect(last?.status == "error" && last?.reason == expected, "\(mark) \(text): \(String(describing: last))")
+            await runner.shutdown(); await service.shutdown()
+        }
+    }
+
     @Test func testCancelPendingDiscoveryDoesNotLaunchLaterOrOverwriteReplacement() async throws {
         // The version probe holds until the test releases it, so the stop lands
         // while discovery is really pending and the replacement exists before the
