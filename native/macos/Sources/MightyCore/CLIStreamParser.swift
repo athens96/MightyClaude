@@ -29,6 +29,9 @@ public final class CLIStreamParser {
     /// later failure or result replaces it, so a 401 the CLI recovered from
     /// does not mark a run that failed for another reason.
     public private(set) var authFailure = false
+    /// The text of the latest Claude message the CLI marked as a lost sign-in,
+    /// until a result ends its turn (`CLIAuthFailure.claude(result:repeating:)`).
+    private var authFailureText: String?
     private var stderrTail = ""
     /// One stdout line larger than this is dropped with a notice. Lines carry
     /// whole base64 pictures (twice, for Claude's tool_use_result echo), so
@@ -355,7 +358,8 @@ public final class CLIStreamParser {
         // Read before the Bedrock rewrite below, which would hide the original text.
         if provider == "claude", ExecutionGraphTracker.parentToolID(value) == nil, !ClaudeStream.isNotificationResult(value),
            type == "result" || (type == "assistant" && (value["error"] as? String)?.isEmpty == false) {
-            authFailure = CLIAuthFailure.claude(value)
+            authFailure = CLIAuthFailure.claude(value) || CLIAuthFailure.claude(result: value, repeating: authFailureText)
+            authFailureText = CLIAuthFailure.claudeFailureText(value)
         }
         // Normalize confirmed provider failures before both transcript and graph
         // consume them. Ordinary assistant text and tool results stay intact.

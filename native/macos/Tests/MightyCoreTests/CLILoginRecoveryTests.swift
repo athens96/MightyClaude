@@ -21,6 +21,8 @@ struct CLIAuthFailureTests {
         #expect(CLIAuthFailure.claude(assistant(error: "authentication_failed", text: "Invalid API key · Please run /login")))
         #expect(CLIAuthFailure.claude(assistant(error: "authentication_failed", text: "Anything")))
         #expect(CLIAuthFailure.claude(["type": "result", "is_error": true, "result": "OAuth token has expired. Please obtain a new token."]))
+        // How a headless run words a sign-in that expired and could not be refreshed.
+        #expect(CLIAuthFailure.claude(["type": "result", "subtype": "success", "is_error": true, "result": "Failed to authenticate: OAuth session expired and could not be refreshed"]))
         #expect(CLIAuthFailure.claude(["type": "result", "subtype": "error_during_execution", "errors": ["API Error: 401 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\"}}"]]))
         // Ordinary text quoting the phrase, a successful result, and other failures.
         #expect(!CLIAuthFailure.claude(assistant(error: nil, text: "Please run /login to continue")))
@@ -78,6 +80,42 @@ struct CLIAuthFailureTests {
         try send(["type": "error", "message": "unexpected status 500"], to: late)
         try send(["type": "turn.failed", "error": ["message": "unexpected status 401 Unauthorized"]], to: late)
         #expect(late.authFailure)
+    }
+
+    @Test func aResultRepeatingTheMarkedSignInFailureKeepsIt() throws {
+        // The CLI marks the turn's failed message `authentication_failed` and copies its
+        // text into the error result, so the result keeps the signal whatever the wording.
+        for text in ["Failed to authenticate: OAuth session expired and could not be refreshed", "Sign-in went stale · try later"] {
+            let parser = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in })
+            try send(assistant(error: "authentication_failed", text: text), to: parser)
+            try send(["type": "result", "subtype": "success", "is_error": true, "result": text], to: parser)
+            parser.flush()
+            #expect(parser.failed && parser.authFailure, "\(text)")
+        }
+        // Unmarked, the same unknown words are no sign-in signal.
+        let unmarked = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in })
+        try send(assistant(error: "server_error", text: "Sign-in went stale · try later"), to: unmarked)
+        try send(["type": "result", "subtype": "success", "is_error": true, "result": "Sign-in went stale · try later"], to: unmarked)
+        unmarked.flush()
+        #expect(unmarked.failed && !unmarked.authFailure)
+        // A sub-agent's own failure in between does not decide; a Bedrock policy denial beside the words never counts.
+        let child = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in })
+        try send(assistant(error: "authentication_failed", text: "Sign-in went stale · try later"), to: child)
+        var childError = assistant(error: "rate_limit", text: "Rate limited"); childError["parent_tool_use_id"] = "toolu_child"
+        try send(childError, to: child)
+        try send(["type": "result", "subtype": "success", "is_error": true, "result": "Sign-in went stale · try later"], to: child)
+        #expect(child.failed && child.authFailure)
+        let denied = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in })
+        try send(assistant(error: "authentication_failed", text: "Sign-in went stale · try later"), to: denied)
+        try send(["type": "result", "subtype": "error_during_execution", "is_error": true, "errors": [scpDenial], "result": "Sign-in went stale · try later"], to: denied)
+        #expect(denied.failed && !denied.authFailure)
+        // Only a message marked authentication_failed is remembered, trimmed, and only an error result repeating it counts.
+        #expect(CLIAuthFailure.claudeFailureText(assistant(error: "authentication_failed", text: "  Stale  ")) == "Stale")
+        #expect(CLIAuthFailure.claudeFailureText(assistant(error: "rate_limit", text: "Stale")) == nil)
+        #expect(CLIAuthFailure.claude(result: ["type": "result", "is_error": true, "result": "Stale\n"], repeating: "Stale"))
+        #expect(!CLIAuthFailure.claude(result: ["type": "result", "is_error": true, "result": "Stale"], repeating: nil))
+        #expect(!CLIAuthFailure.claude(result: ["type": "result", "is_error": true, "result": ""], repeating: ""))
+        #expect(!CLIAuthFailure.claude(result: ["type": "result", "is_error": false, "result": "Stale"], repeating: "Stale"))
     }
 
     @Test func theReasonTravelsOnTheStatusEvent() throws {

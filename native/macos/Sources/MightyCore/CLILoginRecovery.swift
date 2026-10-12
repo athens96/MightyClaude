@@ -11,8 +11,7 @@ public enum CLIAuthFailure {
         switch event["type"] as? String {
         case "assistant":
             guard let error = event["error"] as? String, !error.isEmpty else { return false }
-            let blocks = (event["message"] as? [String: Any])?["content"] as? [[String: Any]] ?? []
-            let texts = blocks.filter { $0["type"] as? String == "text" }.compactMap { $0["text"] as? String }
+            let texts = claudeTexts(event)
             // A Bedrock SCP denial also reaches Claude as an auth-shaped error;
             // signing in again cannot fix an organisation policy.
             if texts.contains(where: { BedrockAuthDiagnostics.runtimeFailureGuidance($0) != nil }) { return false }
@@ -27,12 +26,37 @@ public enum CLIAuthFailure {
     }
 
     /// Claude's own sign-in failures ("Invalid API key · Please run /login",
-    /// "OAuth token has expired", an API 401 authentication_error).
+    /// "OAuth token has expired", a headless run's "Failed to authenticate:
+    /// OAuth session expired and could not be refreshed", an API 401
+    /// authentication_error).
     public static func claude(text: String) -> Bool {
         guard BedrockAuthDiagnostics.runtimeFailureGuidance(text) == nil else { return false }
         let lowered = text.prefix(16_384).lowercased()
-        if ["please run /login", "oauth token has expired", "oauth token revoked", "invalid api key"].contains(where: lowered.contains) { return true }
+        if ["please run /login", "oauth token has expired", "oauth token revoked", "oauth session expired", "invalid api key"].contains(where: lowered.contains) { return true }
         return lowered.contains("401") && lowered.contains("authentication_error")
+    }
+
+    /// The text of a Claude assistant event the CLI marked as a lost sign-in
+    /// (`authentication_failed`, never a Bedrock policy denial); nil otherwise.
+    public static func claudeFailureText(_ event: [String: Any]) -> String? {
+        guard event["type"] as? String == "assistant", event["error"] as? String == "authentication_failed", claude(event) else { return nil }
+        return claudeTexts(event).joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// An error result repeating `failure`, the turn's message the CLI marked as
+    /// a lost sign-in: the CLI copies that message into the result, so the result
+    /// is the same lost sign-in whatever its words, which change between versions.
+    public static func claude(result event: [String: Any], repeating failure: String?) -> Bool {
+        guard let failure, !failure.isEmpty, event["type"] as? String == "result",
+              event["is_error"] as? Bool == true || (event["subtype"] as? String ?? "").hasPrefix("error") else { return false }
+        let texts = (event["errors"] as? [String] ?? []) + [event["result"] as? String].compactMap { $0 }
+        if texts.contains(where: { BedrockAuthDiagnostics.runtimeFailureGuidance($0) != nil }) { return false }
+        return texts.contains { $0.trimmingCharacters(in: .whitespacesAndNewlines) == failure }
+    }
+
+    private static func claudeTexts(_ event: [String: Any]) -> [String] {
+        let blocks = (event["message"] as? [String: Any])?["content"] as? [[String: Any]] ?? []
+        return blocks.filter { $0["type"] as? String == "text" }.compactMap { $0["text"] as? String }
     }
 
     /// A Codex `turn.failed` / `error` message.
