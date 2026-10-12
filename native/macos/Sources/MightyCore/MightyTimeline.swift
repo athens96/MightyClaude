@@ -1,11 +1,12 @@
 import CoreGraphics
 import Foundation
 
-/// How a Mighty pane draws its requests: the diagram, or the timeline (concept D).
-/// Saved on the pane as `RunSession.graphViewMode`; a pane saved before the timeline
-/// existed, or one holding a word this build does not know, reads as the diagram.
+/// How a Mighty pane draws its requests: the diagram, the timeline (concept D), or the
+/// structure (`MightyStructure`). Saved on the pane as `RunSession.graphViewMode`; a pane
+/// saved before a mode existed, or one holding a word this build does not know (an older
+/// build reading "structure"), reads as the diagram.
 public enum MightyGraphViewMode: String, Codable, Sendable, CaseIterable {
-    case diagram, timeline
+    case diagram, timeline, structure
 }
 
 extension DesignTone {

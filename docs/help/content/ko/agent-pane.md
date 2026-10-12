@@ -104,6 +104,15 @@ Claude와 Codex 창 머리에는 {{ui:graph.view.default}} | {{ui:graph.view.mig
 
 ![[agent-timeline]]
 
+### 구조 {#structure}
+같은 전환의 {{ui:graph.view.structure}} 항목을 고르면 요청을 단계별 열로 볼 수 있습니다. 지금은 Mac 앱에만 있습니다.
+- 스타일을 쓰는 창은 맨 위에 그 모드의 단계가 줄지어 있고, 끝난 단계는 초록색, 지금 단계는 강조색, 남은 단계는 회색입니다.
+- 요청마다 그 요청이 속한 단계 아래에 카드로 놓이고, 카드 아래 점선 상자에 하위 에이전트 트리가 묶여 있습니다.
+- 스타일이 없는 창은 요청마다 {{ui:graph.structure.column.request}} → {{ui:graph.structure.column.execution}} → {{ui:graph.structure.column.result}} 한 줄씩입니다.
+- 카드나 에이전트 줄을 누르면 다이어그램에서 그 블록을 보여 줍니다.
+
+![[agent-structure]]
+
 ### 결과 카드 {#result}
 요청이 끝나면 {{ui:graph.block.result}} 카드에 결과가 정리됩니다. 결과에 파일이 나오면 {{ui:graph.resultFiles.openButton}} 단추로 목록을 엽니다. 블록 안의 파일 경로를 누르면 미리보기가 뜹니다. 가장 최근 결과 카드는 창 크기에 맞춰지고, 크기를 직접 바꿨다면 {{ui:graph.result.fitToWindow}} 단추가 생깁니다.
 

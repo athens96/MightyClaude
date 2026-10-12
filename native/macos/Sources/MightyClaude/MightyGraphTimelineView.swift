@@ -5,7 +5,7 @@ import SwiftUI
 /// `MightyTimeline.groups`, which reads the same runs the diagram lays out; the list
 /// itself, its clicks and its loading are put together in `MightyGraphView`.
 
-/// The "다이어그램 | 타임라인" switch in the Mighty bar: a light segmented control on
+/// The "다이어그램 | 타임라인 | 구조" switch in the Mighty bar: a light segmented control on
 /// the card, the chosen side a white chip on the track.
 struct MightyViewSwitch: View {
     let sessionID: String
@@ -16,6 +16,7 @@ struct MightyViewSwitch: View {
         HStack(spacing: 2) {
             option(.diagram, title: L("graph.view.diagram"), symbol: "point.3.connected.trianglepath.dotted")
             option(.timeline, title: L("graph.view.timeline"), symbol: "list.bullet.indent")
+            option(.structure, title: L("graph.view.structure"), symbol: "rectangle.split.3x1")
         }
         .padding(2)
         .background(Palette.track, in: RoundedRectangle(cornerRadius: 8, style: .continuous))

@@ -505,12 +505,14 @@ struct SessionPaneView: View {
             if showsMightyGraph {
                 let retained = session.mightyGraphRuns
                 let history = store.graphHistory(for: session, retained: retained)
+                let phase = guidedPhase
                 MightyGraphView(sessionID: session.id, provider: session.provider, runs: history.runs + retained, draft: draft.wrappedValue, running: running,
                     blockSizes: session.graphBlockSizes ?? [:],
                     onSaveBlockSize: { id, size in store.setGraphBlockSize(session.id, nodeID: id, size: size) },
                     workspaceRoot: store.snapshot.workspaces.first { $0.id == session.workspaceId }.map { URL(fileURLWithPath: $0.path, isDirectory: true) },
                     styleTitles: styleTitles,
-                    styleName: style?.manifest.name, styleSource: style?.source, stylePhase: guidedPhase?.title,
+                    styleName: style?.manifest.name, styleSource: style?.source, stylePhase: phase?.title,
+                    styleEvaluator: style?.evaluator, guidedPhase: phase, guidedStartingNew: guidedSelection.startingNew,
                     catalog: store.providerRuntime(session.provider, workspaceId: session.workspaceId).modelCatalog.models,
                     graphResultSize: session.graphResultSize,
                     onSaveResultSize: { size in store.setGraphResultSize(session.id, size: size) },
