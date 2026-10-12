@@ -220,6 +220,40 @@ internal static class CliLoginRecoveryVerification
         }
         finally { Directory.Delete(directory, true); }
     }
+    /// <summary>
+    /// A Claude run whose sign-in expired: the CLI marks the failed message authentication_failed and copies its text
+    /// into the error result, so the result keeps the reason whatever the wording; unmarked, the same words do not.
+    /// </summary>
+    internal static async Task ClaudeFakeCliRunKeepsTheReasonWhenTheResultRepeatsTheMarkedFailure()
+    {
+        var directory = Verification.Temp(); var workspace = new Workspace { Path = directory };
+        try
+        {
+            var plugin = Path.Combine(directory, "plugin"); Directory.CreateDirectory(Path.Combine(plugin, ".claude-plugin"));
+            await File.WriteAllTextAsync(Path.Combine(plugin, ".claude-plugin", "plugin.json"), "{}");
+            foreach (var (prompt, expected) in new[] { ("expired sign-in fixture", (string?)"authentication"), ("reworded sign-in fixture", "authentication"), ("child sign-in fixture", "authentication"),
+                ("unmarked sign-in fixture", null), ("mismatched sign-in fixture", null), ("denied sign-in fixture", null) })
+            {
+                var events = new ConcurrentQueue<RunEvent>();
+                await using var catalog = new ProviderCatalog((_, _) => Task.FromResult<CliCommand?>(Verification.Self("--fake-cli", "claude", Path.Combine(directory, prompt.Split(' ')[0]))));
+                await using var manager = new RunManager(_ => Task.FromResult(workspace), catalog, plugin, events.Enqueue, _ => { });
+                await manager.StartAsync(new("claude-pane", workspace.Id, "claude", prompt, []));
+                await Verification.Until(() => events.Any(e => e.Type == "status" && e.Status is "completed" or "error" or "stopped"), 20000);
+                var last = events.Last(e => e.Type == "status");
+                var logs = string.Join(" | ", events.Where(e => e.Type == "log" && e.Entry is { Kind: "error" or "system" }).Select(e => e.Entry!.Text));
+                Check(last.Status == "error" && last.Reason == expected, $"{prompt}: expected error with reason {expected ?? "none"}, got {last.Status} with {last.Reason ?? "none"}; logs: {logs}");
+            }
+        }
+        finally { try { Directory.Delete(directory, true); } catch (IOException) { } }
+        Check(CliAuthFailure.Claude("Failed to authenticate: OAuth session expired and could not be refreshed"), "a headless run's expired sign-in wording qualifies on its own");
+        using var marked = JsonDocument.Parse("""{"type":"assistant","error":"authentication_failed","message":{"content":[{"type":"text","text":"  Stale  "}]}}""");
+        using var limited = JsonDocument.Parse("""{"type":"assistant","error":"rate_limit","message":{"content":[{"type":"text","text":"Stale"}]}}""");
+        using var repeated = JsonDocument.Parse("""{"type":"result","is_error":true,"result":"Stale\n"}""");
+        using var succeeded = JsonDocument.Parse("""{"type":"result","is_error":false,"result":"Stale"}""");
+        Check(CliAuthFailure.ClaudeFailureText(marked.RootElement) == "Stale" && CliAuthFailure.ClaudeFailureText(limited.RootElement) is null, "only a message marked authentication_failed is remembered, trimmed");
+        Check(CliAuthFailure.Claude(repeated.RootElement, "Stale") && !CliAuthFailure.Claude(repeated.RootElement, null) && !CliAuthFailure.Claude(repeated.RootElement, "")
+            && !CliAuthFailure.Claude(succeeded.RootElement, "Stale"), "only an error result repeating a remembered message keeps the signal");
+    }
     internal static async Task WaitRequiresFreshSuccessWhenAlreadySignedIn()
     {
         var reads = 0;

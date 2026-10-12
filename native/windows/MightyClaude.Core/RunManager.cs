@@ -27,6 +27,8 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         internal CodexApprovalChannel? CodexPermissions;
         internal bool ProtocolFailed;
         internal bool AuthenticationFailure;
+        /// <summary>The latest Claude message the CLI marked as a lost sign-in, until a result ends its turn.</summary>
+        internal string? AuthenticationFailureText;
         internal ExecutionGraphTracker? Tracker;
         internal Task Task = Task.CompletedTask;
         internal int Bytes;
@@ -247,8 +249,14 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                     if (request.Provider == "claude")
                     {
                         ReadPlanMode(frame);
-                        if (frame.Text("type") == "result") run.AuthenticationFailure = CliAuthFailure.Claude(frame);
-                        else if (CliAuthFailure.Claude(frame)) run.AuthenticationFailure = true;
+                        // As on the Mac, only the run's own turn decides: never a sub-agent's frame or a background task's notification result.
+                        if (!ClaudeStream.IsNotificationResult(frame) && MetadataJson.Property(frame, "parent_tool_use_id").ValueKind is System.Text.Json.JsonValueKind.Undefined or System.Text.Json.JsonValueKind.Null)
+                        {
+                            if (frame.Text("type") == "result") run.AuthenticationFailure = CliAuthFailure.Claude(frame) || CliAuthFailure.Claude(frame, run.AuthenticationFailureText);
+                            else if (CliAuthFailure.Claude(frame)) run.AuthenticationFailure = true;
+                            if (frame.Text("type") == "result" || frame.Text("type") == "assistant" && frame.Text("error") is { Length: > 0 })
+                                run.AuthenticationFailureText = CliAuthFailure.ClaudeFailureText(frame);
+                        }
                     }
                     else if (request.Provider == "codex")
                     {

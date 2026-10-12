@@ -16,7 +16,7 @@ public static class CliAuthFailure
     public static bool Claude(string text)
     {
         var value = Bounded(text);
-        return !ExternalDenial(value) && (new[] { "please run /login", "oauth token has expired", "oauth token revoked", "invalid api key" }.Any(value.Contains)
+        return !ExternalDenial(value) && (new[] { "please run /login", "oauth token has expired", "oauth token revoked", "oauth session expired", "invalid api key" }.Any(value.Contains)
             || value.Contains("401") && value.Contains("authentication_error"));
     }
     public static bool Codex(string text)
@@ -72,15 +72,38 @@ public static class CliAuthFailure
         var type = value.Text("type");
         if (type == "assistant" && value.Text("error") is { Length: > 0 } error)
         {
-            var texts = value.TryGetProperty("message", out var message) && message.ValueKind == JsonValueKind.Object && message.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.Array
-                ? content.EnumerateArray().Where(block => block.Text("type") == "text").Select(block => block.Text("text") ?? "").ToArray() : [];
+            var texts = AssistantTexts(value);
             return !texts.Any(text => ExternalDenial(Bounded(text))) && (error == "authentication_failed" || texts.Any(Claude));
         }
-        if (type != "result" || !(value.TryGetProperty("is_error", out var failed) && failed.ValueKind == JsonValueKind.True || value.Text("subtype")?.StartsWith("error", StringComparison.Ordinal) == true)) return false;
-        var errors = value.TryGetProperty("errors", out var items) && items.ValueKind == JsonValueKind.Array
-            ? items.EnumerateArray().Where(item => item.ValueKind == JsonValueKind.String).Select(item => item.GetString()!).ToList() : [];
-        if (value.Text("result") is { } result) errors.Add(result);
+        if (!IsErrorResult(value)) return false;
+        var errors = ResultTexts(value);
         return !errors.Any(text => ExternalDenial(Bounded(text))) && errors.Any(Claude);
+    }
+    /// <summary>The text of a Claude assistant frame the CLI marked as a lost sign-in (authentication_failed); null otherwise.</summary>
+    public static string? ClaudeFailureText(JsonElement value) =>
+        value.Text("type") == "assistant" && value.Text("error") == "authentication_failed" && Claude(value) ? string.Join("\n", AssistantTexts(value)).Trim() : null;
+    /// <summary>
+    /// An error result repeating <paramref name="repeating"/>, the turn's message the CLI marked as a lost sign-in
+    /// (M/CLILoginRecovery.swift claude(result:repeating:)): the CLI copies that message into the result, so the result
+    /// is the same lost sign-in whatever its words, which change between versions.
+    /// </summary>
+    public static bool Claude(JsonElement value, string? repeating)
+    {
+        if (string.IsNullOrEmpty(repeating) || !IsErrorResult(value)) return false;
+        var texts = ResultTexts(value);
+        return !texts.Any(text => ExternalDenial(Bounded(text))) && texts.Any(text => text.Trim() == repeating);
+    }
+    private static bool IsErrorResult(JsonElement value) => value.Text("type") == "result"
+        && (value.TryGetProperty("is_error", out var failed) && failed.ValueKind == JsonValueKind.True || value.Text("subtype")?.StartsWith("error", StringComparison.Ordinal) == true);
+    private static string[] AssistantTexts(JsonElement value) =>
+        value.TryGetProperty("message", out var message) && message.ValueKind == JsonValueKind.Object && message.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.Array
+            ? content.EnumerateArray().Where(block => block.Text("type") == "text").Select(block => block.Text("text") ?? "").ToArray() : [];
+    private static List<string> ResultTexts(JsonElement value)
+    {
+        var texts = value.TryGetProperty("errors", out var items) && items.ValueKind == JsonValueKind.Array
+            ? items.EnumerateArray().Where(item => item.ValueKind == JsonValueKind.String).Select(item => item.GetString()!).ToList() : [];
+        if (value.Text("result") is { } result) texts.Add(result);
+        return texts;
     }
     /// <summary>A Gemini method other than the Google sign-in (an API key, Vertex AI, Compute ADC, …) is not renewed by signing in.</summary>
     public static bool SignInCanFix(CliAccountStatus status) => Providers.Contains(status.Provider) && status.Installed && status.AccessVerified != false
