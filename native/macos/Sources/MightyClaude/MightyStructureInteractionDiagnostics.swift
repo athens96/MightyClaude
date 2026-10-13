@@ -53,13 +53,76 @@ enum MightyStructureInteractionDiagnostics {
                 scroll = probe?.scrollView
                 let bounds = range()
                 return NSApp.isActive && window.isKeyWindow && scroll != nil
-                    && bounds.maximum.x - bounds.minimum.x > 120 && bounds.maximum.y - bounds.minimum.y > 600
+                    && bounds.maximum.x - bounds.minimum.x > 120 && bounds.maximum.y - bounds.minimum.y > 100
                     && memory.follow.following && bounds.maximum.y - origin().y < 40
             }
             // The checks below speak in the scroll view's own top-down points.
             guard let probe, let scroll, scroll.isFlipped else { throw MightyError("구조 보기의 위에서 아래로 재는 네이티브 스크롤 뷰를 찾지 못했습니다. " + state()) }
             report["fixtureGeometry"] = ["origin": NSStringFromPoint(origin()), "maximum": NSStringFromPoint(range().maximum),
                                          "document": NSStringFromSize(scroll.documentView?.frame.size ?? .zero), "clip": NSStringFromSize(scroll.contentView.bounds.size)]
+
+            // 0. Finished requests mount folded and the running one open; a real click
+            // on a folded card opens it and the page grows. Read from the view's memory
+            // and the native text fields an open request draws, never accessibility.
+            let finishedIDs = runs.filter { $0.status == "completed" }.map(\.id)
+            let runningID = runs[runs.count - 1].id
+            /// The requests drawn whole: each draws its text as a native field.
+            func openRequests() -> [Int] {
+                descendants(scroll, as: NSTextField.self).compactMap { field in
+                    guard field.stringValue.hasPrefix("구조 요청 ") else { return nil }
+                    return field.stringValue.dropFirst("구조 요청 ".count).split(separator: " ").first.flatMap { Int($0) }
+                }.sorted()
+            }
+            func foldState() -> String { "folded=\(memory.foldedFrames.keys.sorted()) open=\(openRequests()) unfolded=\(memory.unfoldedCards.sorted()) " + state() }
+            try await settle(store, scroll, step: "structure page settles with its finished requests folded", detail: foldState)
+            try await store.waitForSmoke(timeout: 3, step: "finished requests mount folded, the running one open", detail: foldState) {
+                !memory.foldedFrames.isEmpty && memory.foldedFrames.keys.allSatisfy(finishedIDs.contains)
+                    && memory.foldedFrames[runningID] == nil && openRequests() == [runs.count - 1] && memory.unfoldedCards.isEmpty
+            }
+            report["finishedCardsMountFolded"] = true
+            report["runningCardOpen"] = true
+            report["mountedFolded"] = memory.foldedFrames.keys.sorted()
+            let visibleClip = scroll.contentView.frame.insetBy(dx: 6, dy: 6)
+            guard let (foldedID, foldedFrame) = memory.foldedFrames.filter({ visibleClip.intersects($0.value) }).max(by: { $0.key < $1.key }),
+                  let foldedIndex = runs.firstIndex(where: { $0.id == foldedID }) else {
+                throw MightyError("화면에 접힌 요청 카드가 없습니다. " + foldState())
+            }
+            let cardPoint = CGPoint(x: max(foldedFrame.minX, visibleClip.minX) + 24,
+                                    y: min(max(foldedFrame.midY, visibleClip.minY + 4), visibleClip.maxY - 4))
+            report["foldedCardClick"] = "id=\(foldedID) frame=\(NSStringFromRect(foldedFrame)) point=\(NSStringFromPoint(cardPoint))"
+                + " hit=\(probe.describe(probe.hitView(at: scroll.convert(cardPoint, to: nil)), in: scroll))"
+            guard foldedFrame.contains(cardPoint), probe.target(at: scroll.convert(cardPoint, to: nil), in: scroll) == .page else {
+                throw MightyError("접힌 카드를 누를 자리가 없습니다. \(report["foldedCardClick"] ?? "") " + foldState())
+            }
+            let foldedDocument = scroll.documentView?.frame.height ?? 0
+            let unfoldReplays = probe.replayedClicks
+            try click(window, scroll, at: cardPoint)
+            try await store.waitForSmoke(timeout: 3, step: "a click opens the folded request and the page grows",
+                                         detail: { "id=\(foldedID) before=\(foldedDocument) " + foldState() }) {
+                memory.unfoldedCards == [foldedID] && memory.foldedFrames[foldedID] == nil && openRequests().contains(foldedIndex)
+                    && (scroll.documentView?.frame.height ?? 0) > foldedDocument + 40
+            }
+            guard probe.replayedClicks > unfoldReplays, probe.pans == 0 else { throw MightyError("접힌 카드 클릭이 끌기로 처리됐습니다. " + foldState()) }
+            report["clickUnfoldsFoldedCard"] = true
+            report["unfoldGrowth"] = ["before": foldedDocument, "after": scroll.documentView?.frame.height ?? 0]
+
+            // The pan checks below read whole cards: every request opened, and the page
+            // brought back to its end, where it follows the newest card again.
+            memory.unfoldedCards = Set(finishedIDs)
+            try await store.waitForSmoke(timeout: 3, step: "every request open", detail: foldState) {
+                memory.foldedFrames.isEmpty && range().maximum.y - range().minimum.y > 600
+            }
+            try await settle(store, scroll, step: "structure page settles with every request open", detail: state)
+            try await store.waitForSmoke(timeout: 3, step: "page back at its end follows the newest card", detail: state) {
+                let end = range().maximum.y
+                guard memory.follow.following, abs(origin().y - end) < 1 else {
+                    // Moving the page is a scroll: at the end it follows again.
+                    scroll.contentView.scroll(to: CGPoint(x: range().minimum.x, y: abs(origin().y - end) < 1 ? end - 40 : end))
+                    scroll.reflectScrolledClipView(scroll.contentView)
+                    return false
+                }
+                return true
+            }
 
             // 1. While following, a drag down on the page moves it up, away from the
             // newest card: following stops, and new work does not pull the page back.

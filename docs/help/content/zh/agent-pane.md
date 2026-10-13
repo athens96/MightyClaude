@@ -112,6 +112,7 @@ Claude 和 Codex 窗格的标题栏中有{{ui:graph.view.default}} | {{ui:graph.
 - 请求卡片只包含请求内容，{{ui:graph.block.execution}}卡片显示进度（最新消息和工具调用）和状态。结果以及各子代理接到的任务和产出也就地显示。长文本默认折叠，点击{{ui:graph.structure.more}}即可就地展开。
 - 点击卡片标题栏中的小按钮，会在图中显示该块。
 - 和图表一样，拖动空白处即可移动视图。
+- 已结束的请求会折叠成一行，点击即可展开。
 
 ![[agent-structure]]
 

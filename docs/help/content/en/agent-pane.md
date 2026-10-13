@@ -112,6 +112,7 @@ Pick {{ui:graph.view.structure}} on the same switch to see requests in columns b
 - The request card holds only the request; the {{ui:graph.block.execution}} card shows the progress (the latest message and tool calls) and the status. The result and what each sub-agent was asked and produced show right where they are too. Long text is folded; {{ui:graph.structure.more}} opens it in place.
 - The small button in a card's header shows that block in the diagram.
 - As in the diagram, drag an empty spot to move the view.
+- Finished requests fold to one line; click one to open it.
 
 ![[agent-structure]]
 

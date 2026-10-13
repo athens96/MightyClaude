@@ -530,4 +530,56 @@ struct MightyStructureTests {
         let unknown = Data(#"{"id":"s","workspaceId":"w","graphViewMode":"structure2"}"#.utf8)
         #expect(try JSONDecoder().decode(RunSession.self, from: unknown).mightyViewMode == .diagram)
     }
+
+    // MARK: Folded cards
+
+    @Test func finishedRequestsFoldAndRunningOnesStayOpen() {
+        typealias Fold = MightyStructure.Fold
+        let running = MightyStructure.item(Self.run("a", status: "running"), index: 0)
+        let waiting = MightyStructure.item(Self.run("w", status: "waiting"), index: 1)
+        #expect(!Fold.isFolded(running, unfolded: []))
+        #expect(!Fold.isFolded(waiting, unfolded: []))
+        // The same request finishes: it folds by itself, with no event of its own.
+        for status in ["completed", "error", "stopped"] {
+            let finished = MightyStructure.item(Self.run("a", status: status), index: 0)
+            #expect(Fold.isFolded(finished, unfolded: []), "\(status)")
+        }
+        // A finished request whose sub-agent still runs is not finished yet.
+        let busy = MightyStructure.item(Self.run("b", agents: [Self.agent("x", status: "running")]), index: 0)
+        #expect(!Fold.isFolded(busy, unfolded: []))
+        let items = [running, MightyStructure.item(Self.run("c"), index: 1), MightyStructure.item(Self.run("d", status: "error"), index: 2)]
+        #expect(Fold.folded(items, unfolded: ["d"]) == ["c"])
+    }
+
+    @Test func aCardOpenedByHandStaysOpenAndFoldsBackByHand() {
+        typealias Fold = MightyStructure.Fold
+        let finished = MightyStructure.item(Self.run("a"), index: 0)
+        let opened = Fold.toggled(finished, unfolded: [])
+        #expect(opened == ["a"])
+        #expect(!Fold.isFolded(finished, unfolded: opened))
+        // A later update of the same finished request keeps the user's choice.
+        let again = MightyStructure.item(Self.run("a", final: "다시 끝났습니다"), index: 0)
+        #expect(!Fold.isFolded(again, unfolded: opened))
+        let closed = Fold.toggled(finished, unfolded: opened)
+        #expect(closed.isEmpty)
+        #expect(Fold.isFolded(finished, unfolded: closed))
+        // A running card has no fold control: toggling it changes nothing, and it
+        // still folds when it finishes.
+        let running = MightyStructure.item(Self.run("b", status: "running"), index: 1)
+        #expect(Fold.toggled(running, unfolded: []).isEmpty)
+        #expect(Fold.isFolded(MightyStructure.item(Self.run("b"), index: 1), unfolded: Fold.toggled(running, unfolded: [])))
+    }
+
+    @Test func aFoldedCardSaysHowTheRequestEnded() {
+        typealias Fold = MightyStructure.Fold
+        let answered = MightyStructure.item(Self.run("a", final: "\n## **결론**: 끝났습니다\n\n- 둘째 줄"), index: 0)
+        #expect(Fold.resultLine(answered) == "결론: 끝났습니다")
+        // A failed or stopped request says so instead of its last words.
+        #expect(Fold.resultLine(MightyStructure.item(Self.run("e", status: "error", final: "실패 이유"), index: 0)) == nil)
+        #expect(Fold.resultLine(MightyStructure.item(Self.run("s", status: "stopped"), index: 0)) == nil)
+        #expect(Fold.resultLine(MightyStructure.item(Self.run("n"), index: 0)) == nil)
+        #expect(Fold.firstLine("```swift\n1. `let` x\n") == "let x")
+        #expect(Fold.firstLine("> * 인용 목록") == "인용 목록")
+        #expect(Fold.firstLine("  \n\t\n") == nil)
+    }
 }
