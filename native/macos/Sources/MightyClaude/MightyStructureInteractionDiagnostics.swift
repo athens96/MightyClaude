@@ -44,6 +44,7 @@ enum MightyStructureInteractionDiagnostics {
                     + " document=\(NSStringFromSize(scroll?.documentView?.frame.size ?? .zero)) clip=\(NSStringFromSize(scroll?.contentView.bounds.size ?? .zero))"
                     + " following=\(memory.follow.following) panning=\(probe?.isPanning.description ?? "nil") pans=\(probe?.pans ?? -1)"
                     + " replayed=\(probe?.replayedClicks ?? -1) target=\(probe?.lastTarget.map { "\($0)" } ?? "nil")"
+                    + " pressHit=\(probe.flatMap { probe in scroll.map { probe.describe(probe.lastHitView, in: $0) } } ?? "nil")"
                     + " expanded=\(memory.expanded.sorted()) key=\(window.isKeyWindow) active=\(NSApp.isActive)"
                     + " responder=\(window.firstResponder.map { String(describing: type(of: $0)) } ?? "nil")"
             }
@@ -62,10 +63,13 @@ enum MightyStructureInteractionDiagnostics {
 
             // 1. While following, a drag down on the page moves it up, away from the
             // newest card: following stops, and new work does not pull the page back.
+            try await settle(store, scroll, step: "structure page settles before the follow drag", detail: state)
             let followStart = origin()
-            let down = try pagePoint(probe, scroll, room: CGSize(width: 0, height: 200))
+            let (down, downDetail) = try pagePoint(probe, scroll, room: CGSize(width: 0, height: 200))
+            report["followDragPoint"] = downDetail
             try drag(window, scroll, from: down, to: CGPoint(x: down.x, y: down.y + 200))
-            try await store.waitForSmoke(timeout: 3, step: "drag down while following moves the page up", detail: state) {
+            try await store.waitForSmoke(timeout: 3, step: "drag down while following moves the page up",
+                                         detail: { "start=\(NSStringFromPoint(followStart)) chosen: \(downDetail) " + state() }) {
                 !probe.isPanning && abs(origin().y - (followStart.y - 200)) <= 2
             }
             guard abs(origin().x - followStart.x) <= 2, !memory.follow.following else {
@@ -91,15 +95,18 @@ enum MightyStructureInteractionDiagnostics {
 
             // 2. A drag on the page moves it on both axes by the drag: the grabbed
             // point stays under the pointer.
+            try await settle(store, scroll, step: "structure page settles before the page drag", detail: state)
             let panStart = origin()
             let bounds = range()
             guard bounds.maximum.x - panStart.x >= 60, bounds.maximum.y - panStart.y >= 50 else {
                 throw MightyError("구조 끌기를 검증할 여유가 없습니다. " + state())
             }
-            let grab = try pagePoint(probe, scroll, room: CGSize(width: -60, height: -50))
+            let (grab, grabDetail) = try pagePoint(probe, scroll, room: CGSize(width: -60, height: -50))
+            report["pageDragPoint"] = grabDetail
             let pansBefore = probe.pans
             try drag(window, scroll, from: grab, to: CGPoint(x: grab.x - 60, y: grab.y - 50))
-            try await store.waitForSmoke(timeout: 3, step: "page drag moves the origin on both axes", detail: { "start=\(NSStringFromPoint(panStart)) " + state() }) {
+            try await store.waitForSmoke(timeout: 3, step: "page drag moves the origin on both axes",
+                                         detail: { "start=\(NSStringFromPoint(panStart)) chosen: \(grabDetail) " + state() }) {
                 !probe.isPanning && probe.pans > pansBefore && abs(origin().x - panStart.x - 60) <= 2 && abs(origin().y - panStart.y - 50) <= 2
             }
             report["dragPanMovesOriginOnBothAxes"] = true
@@ -157,20 +164,68 @@ enum MightyStructureInteractionDiagnostics {
     }
 
     /// A page point (scroll view coordinates) whose press would pan, with `room` for
-    /// the drag inside the visible page.
-    private static func pagePoint(_ probe: MightyStructurePanProbe, _ scroll: NSScrollView, room: CGSize) throws -> CGPoint {
+    /// the drag inside the visible page, chosen from the native geometry: the point
+    /// farthest from every text field, text view, control and inner scroll view (a gap
+    /// between cards or columns, a row's empty heading line, the page's padding), which
+    /// AppKit's own hit test also sends to the page. `detail` says what was chosen.
+    private static func pagePoint(_ probe: MightyStructurePanProbe, _ scroll: NSScrollView, room: CGSize) throws -> (point: CGPoint, detail: String) {
         let visible = scroll.contentView.frame.insetBy(dx: 6, dy: 6)
+        let busy = busyFrames(in: scroll)
+        var best: (point: CGPoint, clearance: CGFloat)?
         var y = visible.minY
         while y < visible.maxY {
             var x = visible.minX
             while x < visible.maxX {
-                let point = CGPoint(x: x, y: y), end = CGPoint(x: x + room.width, y: y + room.height)
-                if visible.contains(end), probe.target(at: scroll.convert(point, to: nil), in: scroll) == .page { return point }
-                x += 23
+                let point = CGPoint(x: x, y: y)
+                if visible.contains(CGPoint(x: x + room.width, y: y + room.height)) {
+                    let clearance = min(40, busy.map { distance(point, $0) }.min() ?? 40)
+                    if clearance >= 10, clearance > (best?.clearance ?? 0), probe.target(at: scroll.convert(point, to: nil), in: scroll) == .page {
+                        best = (point, clearance)
+                    }
+                }
+                x += 10
             }
-            y += 23
+            y += 10
         }
-        throw MightyError("구조 보기에서 끌 수 있는 빈 곳을 찾지 못했습니다. visible=\(NSStringFromRect(visible)) room=\(NSStringFromSize(room))")
+        guard let best else {
+            throw MightyError("구조 보기에서 끌 수 있는 빈 곳을 찾지 못했습니다. visible=\(NSStringFromRect(visible)) room=\(NSStringFromSize(room)) busy=\(busy.count)")
+        }
+        let hit = probe.hitView(at: scroll.convert(best.point, to: nil))
+        return (best.point, "point=\(NSStringFromPoint(best.point)) clearance=\(best.clearance) hit=\(probe.describe(hit, in: scroll)) busy=\(busy.count)")
+    }
+
+    /// The frames, in the scroll view's points, of everything a press would go to
+    /// instead of the page: native text, controls (the scroll bars too) and inner scroll views.
+    private static func busyFrames(in scroll: NSScrollView) -> [CGRect] {
+        var frames: [CGRect] = []
+        func visit(_ view: NSView) {
+            guard !view.isHiddenOrHasHiddenAncestor else { return }
+            if view is NSTextField || view is NSTextView || view is NSControl || (view is NSScrollView && view !== scroll) {
+                frames.append(scroll.convert(view.bounds, from: view)); return
+            }
+            view.subviews.forEach(visit)
+        }
+        visit(scroll)
+        return frames
+    }
+
+    private static func distance(_ point: CGPoint, _ rect: CGRect) -> CGFloat {
+        let dx = max(rect.minX - point.x, 0, point.x - rect.maxX), dy = max(rect.minY - point.y, 0, point.y - rect.maxY)
+        return (dx * dx + dy * dy).squareRoot()
+    }
+
+    /// Waits until the page holds still: the origin, the document's size and every
+    /// native text frame unchanged over a few polls, so a point chosen now is still
+    /// empty when the press arrives.
+    private static func settle(_ store: AppStore, _ scroll: NSScrollView, step: String, detail: @escaping () -> String) async throws {
+        var last = "", same = 0
+        try await store.waitForSmoke(timeout: 3, step: step, detail: { "polls=\(same) " + detail() }) {
+            let now = NSStringFromPoint(scroll.contentView.bounds.origin) + NSStringFromSize(scroll.documentView?.frame.size ?? .zero)
+                + busyFrames(in: scroll).map(NSStringFromRect).joined()
+            same = now == last ? same + 1 : 0
+            last = now
+            return same >= 4
+        }
     }
 
     /// A selectable text SwiftUI draws as a native text field, whose first line is in view.

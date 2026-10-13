@@ -45,6 +45,7 @@ final class MightyStructurePanProbe: NSView {
     private(set) var pans = 0
     private(set) var replayedClicks = 0
     private(set) var lastTarget: MightyStructurePan.Target?
+    private(set) weak var lastHitView: NSView?
     var isPanning: Bool { if case .panning = press { true } else { false } }
 
     override var isFlipped: Bool { true }
@@ -107,19 +108,65 @@ final class MightyStructurePanProbe: NSView {
         return nil
     }
 
-    /// What a press at `windowPoint` lands on, from AppKit's own hit test.
+    /// The view AppKit sends a press at `windowPoint` to: the same hit test the window
+    /// dispatches a mouse-down with.
+    func hitView(at windowPoint: CGPoint) -> NSView? {
+        guard let content = window?.contentView else { return nil }
+        return content.hitTest(content.superview?.convert(windowPoint, from: nil) ?? windowPoint)
+    }
+
+    /// A hit view's class and frame in the scroll view's points, for the GUI diagnostics.
+    func describe(_ view: NSView?, in scroll: NSScrollView) -> String {
+        guard let view else { return "none" }
+        return String(describing: type(of: view)) + " " + NSStringFromRect(scroll.convert(view.bounds, from: view))
+    }
+
+    /// What a press at `windowPoint` lands on, from AppKit's own hit test. Only the hit
+    /// view and its ancestors count: a text view elsewhere being first responder does not.
+    /// A text field or text view counts only where its laid-out text is, so the empty
+    /// width of a text's frame pans like the card around it.
     func target(at windowPoint: CGPoint, in scroll: NSScrollView) -> MightyStructurePan.Target {
-        guard let window, let content = window.contentView,
-              scroll.visibleRect.contains(scroll.convert(windowPoint, from: nil)),
-              let hit = content.hitTest(content.superview?.convert(windowPoint, from: nil) ?? windowPoint),
-              hit === scroll || hit.isDescendant(of: scroll) else { return .outside }
+        target(of: hitView(at: windowPoint), at: windowPoint, in: scroll)
+    }
+    private func target(of hit: NSView?, at windowPoint: CGPoint, in scroll: NSScrollView) -> MightyStructurePan.Target {
+        guard scroll.visibleRect.contains(scroll.convert(windowPoint, from: nil)),
+              let hit, hit === scroll || hit.isDescendant(of: scroll) else { return .outside }
         var view: NSView? = hit
         while let current = view, current !== scroll {
-            if current is NSTextView || current is NSControl { return .textOrControl }
+            if let text = current as? NSTextView { return Self.text(text, contains: windowPoint) ? .textOrControl : .page }
+            if let field = current as? NSTextField { return Self.text(field, contains: windowPoint) ? .textOrControl : .page }
+            if current is NSControl { return .textOrControl }
             if current is NSScrollView { return .innerScroll }
             view = current.superview
         }
         return .page
+    }
+
+    /// Points around a text's laid-out lines that still press the text.
+    private static let textSlop: CGFloat = 4
+
+    /// The point is on a text field's text, as wrapped to its width and cut to its height.
+    private static func text(_ field: NSTextField, contains windowPoint: CGPoint) -> Bool {
+        let point = field.convert(windowPoint, from: nil)
+        let inset = textSlop / 2
+        let size = field.attributedStringValue.boundingRect(with: CGSize(width: max(1, field.bounds.width - 2 * inset), height: .greatestFiniteMagnitude),
+                                                            options: [.usesLineFragmentOrigin, .usesFontLeading]).size
+        let height = min(ceil(size.height), field.bounds.height)
+        let rect = CGRect(x: inset, y: field.isFlipped ? 0 : field.bounds.height - height, width: ceil(size.width), height: height)
+        return field.visibleRect.contains(point) && rect.insetBy(dx: -textSlop, dy: -textSlop).contains(point)
+    }
+
+    /// The point is on a text view's laid-out text. TextKit 2 is asked first: reading a
+    /// TextKit 2 view's layout manager would switch it to TextKit 1.
+    private static func text(_ view: NSTextView, contains windowPoint: CGPoint) -> Bool {
+        let point = view.convert(windowPoint, from: nil)
+        var used: CGRect
+        if let layout = view.textLayoutManager { used = layout.usageBoundsForTextContainer }
+        else if let manager = view.layoutManager, let container = view.textContainer { used = manager.usedRect(for: container) }
+        else { return view.visibleRect.contains(point) }
+        used.origin.x += view.textContainerOrigin.x
+        used.origin.y += view.textContainerOrigin.y
+        return view.visibleRect.contains(point) && used.insetBy(dx: -textSlop, dy: -textSlop).contains(point)
     }
 
     /// The origins the clip may take, as the clip itself constrains them.
@@ -176,8 +223,10 @@ final class MightyStructurePanProbe: NSView {
             return nil
         }
         guard event.type == .leftMouseDown, event.window === window, let scroll = scrollView else { return event }
-        let target = target(at: event.locationInWindow, in: scroll)
+        let hit = hitView(at: event.locationInWindow)
+        let target = target(of: hit, at: event.locationInWindow, in: scroll)
         lastTarget = target
+        lastHitView = hit
         let range = Self.originRange(scroll.contentView)
         let modified = !event.modifierFlags.intersection([.control, .option, .shift, .command]).isEmpty
         guard MightyStructurePan.mayPan(target, modified: modified,
