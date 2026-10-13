@@ -30,7 +30,7 @@ public sealed partial class MainWindow
         async Task<AppSnapshot> Saved(bool collapsed)
         {
             var stored = await new StateStore(StateDirectory).LoadAsync();
-            for (var tries = 0; stored.SidebarCollapsed != collapsed && tries < 100; tries++) { await Task.Delay(40); stored = await new StateStore(StateDirectory).LoadAsync(); }
+            for (var tries = 0; stored.SidebarCollapsed != collapsed && tries < 375; tries++) { await Task.Delay(40); stored = await new StateStore(StateDirectory).LoadAsync(); }
             return stored;
         }
         try

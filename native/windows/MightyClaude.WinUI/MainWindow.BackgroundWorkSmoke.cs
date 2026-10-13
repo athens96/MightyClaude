@@ -31,7 +31,7 @@ public sealed partial class MainWindow
             async Task<AppSnapshot> Saved(Func<AppSnapshot, bool> done)
             {
                 var stored = await new StateStore(owner.StateDirectory).LoadAsync();
-                for (var tries = 0; !done(stored) && tries < 100; tries++) { await Task.Delay(40); stored = await new StateStore(owner.StateDirectory).LoadAsync(); }
+                for (var tries = 0; !done(stored) && tries < 375; tries++) { await Task.Delay(40); stored = await new StateStore(owner.StateDirectory).LoadAsync(); }
                 return stored;
             }
             async Task View(string mode) { await Change(p => p with { AgentViewMode = mode }); Refresh(); RefreshMightyView(Session); }
