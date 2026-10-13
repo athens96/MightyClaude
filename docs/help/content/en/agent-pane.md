@@ -109,7 +109,8 @@ Pick {{ui:graph.view.structure}} on the same switch to see requests in columns b
 - In a pane that uses a style, the mode's phases sit in a row on top: finished phases are green, the current one is in the accent colour and the rest are grey.
 - Each request sits as a card under the phase it belongs to, and its sub-agent trees are grouped in dashed boxes under the card.
 - In a pane without a style, each request gets one {{ui:graph.structure.column.request}} → {{ui:graph.structure.column.execution}} → {{ui:graph.structure.column.result}} row.
-- Clicking a card or an agent row shows that block in the diagram.
+- Each card shows its request, its progress (the latest message and tool calls), its result and what each sub-agent was asked and produced, right where it is. Long text is folded; {{ui:graph.structure.more}} opens it in place.
+- The small button in a card's header shows that block in the diagram.
 
 ![[agent-structure]]
 

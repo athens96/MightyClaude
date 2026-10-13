@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// The Mighty graph drawn as its structure (design "A. 단계별 열"): a styled pane's
@@ -28,7 +29,39 @@ public enum MightyStructure {
         public var status: String
         /// `MightyGraphSupport.blockKind`: "agent" or "task" (the other kinds are left out).
         public var kind: String
+        /// What the block was asked: the agent's prompt or the task's command.
+        public var prompt: Excerpt?
+        /// Its latest reply, which is its result once it settled (`recordGraph` appends
+        /// the node's output as its last assistant record).
+        public var output: Excerpt?
+        /// Its last tool calls, oldest first.
+        public var activity: [ActivityLine]
+        /// The model its first response reported (an id, shortened by the view), if any.
+        public var model: String?
         public var id: String { nodeID }
+    }
+
+    /// A text a card shows in place: bounded, with the part a folded card shows.
+    public struct Excerpt: Equatable, Sendable {
+        /// The text up to its cap; a cut text ends with "…".
+        public var text: String
+        /// The folded card's text: the first lines, bounded, so a folded card never lays
+        /// out the whole text.
+        public var preview: String
+        /// The folded card may be leaving some of it out: the preview is not the whole
+        /// text, or its lines may wrap past the folded card's lines in the narrowest column.
+        public var folds: Bool
+    }
+
+    /// One tool call, as a diagram block's activity row words it.
+    public struct ActivityLine: Equatable, Sendable, Identifiable {
+        /// The record's id.
+        public var id: String
+        /// `AgentActivity.kind`, for the row's glyph.
+        public var kind: String
+        public var state: String
+        /// Its summary on one line, else its tool's name (`MobileMightySupport.step`).
+        public var text: String
     }
 
     /// One root sub-agent's tree.
@@ -59,6 +92,15 @@ public enum MightyStructure {
         public var finished: Bool
         /// The final answer on one line, once the request finished with one.
         public var result: String?
+        /// The whole request.
+        public var request: Excerpt?
+        /// The main block's latest reply. Left out once the request finished with that
+        /// very reply as its answer, which `answer` shows.
+        public var message: Excerpt?
+        /// The main block's last tool calls, oldest first.
+        public var activity: [ActivityLine]
+        /// The final answer, from the diagram's result card's source, once the request finished with one.
+        public var answer: Excerpt?
         public var tally: Tally
         public var clusters: [Cluster]
         public var id: String { runID }
@@ -93,17 +135,21 @@ public enum MightyStructure {
     /// What `make` reads of the pane, cheap to compare: a view keeps the shape it built
     /// while this stays equal, so a streamed line that changes nothing drawn here does
     /// not rebuild it. Text is followed by its length (requests and answers only grow
-    /// or appear), records by their count; a block's title and status as they are.
+    /// or appear), records by their count and a digest of their tail — the records a
+    /// card reads (its latest reply, its last tool calls) are among the newest, and a
+    /// record replaced in place (a reply that grew, a tool call that finished) keeps the
+    /// count; a block's title and status as they are.
     public struct Signature: Equatable, Sendable {
         struct Block: Equatable, Sendable {
             var id, title, status: String
             var parentID, kind: String?
-            var entries: Int
+            var input, entries, tail, records: Int
         }
+        /// One request's part, which is all its card reads (`ItemCache` keys on it).
         struct Request: Equatable, Sendable {
             var id, status: String
             var sourceRunID: String?
-            var input, rootEntries, resultEntries, result: Int
+            var input, rootEntries, rootTail, resultEntries, result: Int
             var finalOutput: Int?
             var blocks: [Block]
         }
@@ -119,9 +165,12 @@ public enum MightyStructure {
                     planHistory: [PlanRecord] = [], pendingPlanRunID: String? = nil) {
             requests = runs.map { run in
                 Request(id: run.id, status: run.status, sourceRunID: run.sourceRunID, input: run.input.utf8.count,
-                        rootEntries: run.rootEntries.count, resultEntries: run.resultEntries.count,
+                        rootEntries: run.rootEntries.count, rootTail: MightyStructure.tail(run.rootEntries), resultEntries: run.resultEntries.count,
                         result: run.resultEntries.last?.text.utf8.count ?? 0, finalOutput: run.finalOutput?.utf8.count,
-                        blocks: run.agents.map { Block(id: $0.id, title: $0.title, status: $0.status, parentID: $0.parentID, kind: $0.kind, entries: $0.entries.count) })
+                        blocks: run.agents.map {
+                            Block(id: $0.id, title: $0.title, status: $0.status, parentID: $0.parentID, kind: $0.kind, input: $0.input.utf8.count,
+                                  entries: $0.entries.count, tail: MightyStructure.tail($0.entries), records: $0.responseRecords?.count ?? 0)
+                        })
             }
             phases = style?.manifest.orderedPhases.map(\.id) ?? []
             recognition = style?.manifest.id
@@ -132,10 +181,70 @@ public enum MightyStructure {
         }
     }
 
+    /// The cards of the last build, each built again only when its own request's part of
+    /// the signature moved: while one request streams, the other cards are kept as they
+    /// are rather than read again from their records.
+    public struct ItemCache: Sendable {
+        private var built: [String: (request: Signature.Request, item: Item)] = [:]
+        public init() {}
+
+        /// The cards of `runs`, which `signature` was taken of.
+        public mutating func items(_ runs: [MightyGraphRun], signature: Signature) -> [Item] {
+            var next: [String: (request: Signature.Request, item: Item)] = [:]
+            next.reserveCapacity(runs.count)
+            let items = runs.enumerated().map { index, run in
+                let request = index < signature.requests.count ? signature.requests[index] : nil
+                var item: Item
+                if let request, let kept = built[run.id], kept.request == request {
+                    // A trim of older requests moves a kept card's number, nothing else.
+                    item = kept.item
+                    item.runIndex = index
+                    item.ordinal = index + 1
+                } else {
+                    item = MightyStructure.item(run, index: index)
+                }
+                if let request { next[run.id] = (request, item) }
+                return item
+            }
+            built = next
+            return items
+        }
+    }
+
+    /// The newest records a card reads, as one number: how many there are, and the id,
+    /// kind, text length and tool state and summary length of the last `tailEntries`.
+    static func tail(_ entries: [LogEntry]) -> Int {
+        var hasher = Hasher()
+        hasher.combine(entries.count)
+        for entry in entries.suffix(tailEntries) {
+            hasher.combine(entry.id); hasher.combine(entry.kind); hasher.combine(entry.text.utf8.count)
+            hasher.combine(entry.activity?.state); hasher.combine(entry.activity?.summary.utf8.count)
+        }
+        return hasher.finalize()
+    }
+
     /// The deepest tree level a cluster follows, as the diagram's layout does.
     public static let maximumDepth = 64
     /// The bound of an input or result preview.
     static let previewBytes = 400
+    /// The bounds of the texts a card shows in place, and the lines each shows folded.
+    public static let requestBytes = 4_096, requestLines = 10
+    public static let messageBytes = 4_096, messageLines = 8
+    public static let answerBytes = 16_384, answerLines = 15
+    public static let promptBytes = 2_048, promptLines = 2
+    public static let outputBytes = 4_096, outputLines = 6
+    /// The tool calls a request's run card and a sub-agent's card list.
+    public static let requestActivity = 5, nodeActivity = 3
+    /// The narrowest column; wider panes share their width out between the columns.
+    public static let minimumColumnWidth: CGFloat = 300
+    /// A folded line is cut at this many characters, so a preview stays small however
+    /// long the text's lines run.
+    static let previewLineCharacters = 200
+    /// The fewest characters a line of the narrowest column holds (Hangul and kana at
+    /// the cards' size), so a text is known to fold before the view lays it out.
+    static let wrapCharacters = 20
+    /// The newest records the signature follows one by one.
+    static let tailEntries = 12
     /// Activity kinds that are a tool call, not the turn or a sub-agent's own line.
     static let toolKinds: Set<String> = ["tool", "command", "read", "edit", "search", "web"]
 
@@ -146,6 +255,7 @@ public enum MightyStructure {
     ///   next request starts in and says nothing of the requests already there.
     /// - `planHistory`: the pane's answered plans; `pendingPlanRunID`: the run id of the
     ///   plan waiting for an answer (`ToolPermissionRequest.runId`), if any.
+    /// - `items`: the runs' cards already built (`ItemCache`), in run order.
     ///
     /// The current column is the pane's phase, which is where the live or newest request
     /// sits (or will, once a request that has just started draws its block). A column
@@ -153,8 +263,8 @@ public enum MightyStructure {
     /// request that is over with that phase. An empty column is done before the current
     /// one and pending after it.
     public static func make(runs: [MightyGraphRun], style: StyleEvaluator?, currentPhase: StylePhase?, startingNew: Bool = false,
-                            planHistory: [PlanRecord] = [], pendingPlanRunID: String? = nil) -> Shape {
-        let items = runs.enumerated().map { item($1, index: $0) }
+                            planHistory: [PlanRecord] = [], pendingPlanRunID: String? = nil, items built: [Item]? = nil) -> Shape {
+        let items = built.flatMap { $0.count == runs.count ? $0 : nil } ?? runs.enumerated().map { item($1, index: $0) }
         guard let style, !style.manifest.phases.isEmpty else { return .free(items.map(row)) }
         let ordered = style.manifest.orderedPhases
         let pane = currentPhase.flatMap { phase in ordered.contains { $0.id == phase.id } ? phase : nil }
@@ -231,10 +341,21 @@ public enum MightyStructure {
         record.graphRunId == run.id || (run.sourceRunID != nil && (record.graphRunId == run.sourceRunID || record.runId == run.sourceRunID))
     }
 
+    /// A column's width: the columns share what the pane has, but never go narrower
+    /// than `minimumColumnWidth` (the view scrolls sideways then).
+    public static func columnWidth(available: CGFloat, count: Int, gap: CGFloat) -> CGFloat {
+        guard count > 0, available.isFinite else { return minimumColumnWidth }
+        return max(minimumColumnWidth, ((available - gap * CGFloat(count - 1)) / CGFloat(count)).rounded(.down))
+    }
+
     public static func item(_ run: MightyGraphRun, index: Int) -> Item {
         let finished = MightyGraphLayout.finished(run)
         let answer = run.resultEntries.last(where: { $0.kind == "assistant" && !$0.text.isEmpty })?.text ?? run.finalOutput
         let result = finished ? answer.map(preview).flatMap { $0.isEmpty ? nil : $0 } : nil
+        let full = finished ? answer.flatMap { excerpt($0, maximumBytes: answerBytes, lines: answerLines) } : nil
+        // `refreshResult` keeps the final answer in the main block too: shown once, as the answer.
+        let latest = reply(run.rootEntries)
+        let message = full != nil && latest == answer ? nil : latest.flatMap { excerpt($0, maximumBytes: messageBytes, lines: messageLines) }
         // Counted over the blocks the clusters draw, so a steer's or a question's records add nothing.
         let blocks = kept(run).map { run.agents[$0] }
         let entries = run.rootEntries + blocks.flatMap(\.entries)
@@ -242,7 +363,8 @@ public enum MightyStructure {
                           tools: entries.filter { $0.activity.map { toolKinds.contains($0.kind) } ?? false }.count)
         return Item(runIndex: index, runID: run.id, ordinal: index + 1, nodeID: MightyGraphLayout.nodeID(run, suffix: "request"),
                     input: preview(run.input), status: MobileMightySupport.status(run.status), finished: finished,
-                    result: result, tally: tally, clusters: clusters(run))
+                    result: result, request: excerpt(run.input, maximumBytes: requestBytes, lines: requestLines), message: message,
+                    activity: activity(run.rootEntries, limit: requestActivity), answer: full, tally: tally, clusters: clusters(run))
     }
 
     /// 요청 is always there; 실행 runs until every block settled, unless the request
@@ -277,7 +399,11 @@ public enum MightyStructure {
             let agent = run.agents[index]
             nodes.append(Node(agentID: agent.id, agentIndex: index, nodeID: MightyGraphLayout.nodeID(run, suffix: "agent:" + agent.id),
                               depth: depth, title: MightyGraphSupport.blockTitle(agent), status: MobileMightySupport.status(agent.status),
-                              kind: MightyGraphSupport.blockKind(agent)))
+                              kind: MightyGraphSupport.blockKind(agent),
+                              prompt: excerpt(agent.input, maximumBytes: promptBytes, lines: promptLines),
+                              output: reply(agent.entries).flatMap { excerpt($0, maximumBytes: outputBytes, lines: outputLines) },
+                              activity: activity(agent.entries, limit: nodeActivity),
+                              model: agent.responseRecords?.lazy.compactMap(\.model).first { !$0.isEmpty }))
             for child in children[agent.id] ?? [] where child != index { walk(child, depth: depth + 1, into: &nodes) }
         }
         var result: [Cluster] = []
@@ -305,5 +431,48 @@ public enum MightyStructure {
 
     static func preview(_ text: String) -> String {
         ActivitySupport.clean(text, maximumBytes: previewBytes, singleLine: true)
+    }
+
+    /// `raw` cleaned as every shown text is (`ActivitySupport.clean`) and cut at
+    /// `maximumBytes`, with its first `lines` lines as the folded preview; nil when
+    /// nothing is left.
+    public static func excerpt(_ raw: String, maximumBytes: Int, lines: Int) -> Excerpt? {
+        // Cleaning reads the whole string; a text far over its cap is cut first.
+        let cleaned = ActivitySupport.clean(ActivitySupport.prefixUTF8(raw, maximumBytes: 2 * maximumBytes + 64), maximumBytes: maximumBytes + 4)
+        guard !cleaned.isEmpty else { return nil }
+        let text = cleaned.utf8.count > maximumBytes
+            ? ActivitySupport.prefixUTF8(cleaned, maximumBytes: maximumBytes - 3).trimmingCharacters(in: .whitespacesAndNewlines) + "…"
+            : cleaned
+        let all = text.split(separator: "\n", omittingEmptySubsequences: false)
+        var preview: [Substring] = []
+        var visual = 0
+        for line in all {
+            visual += max(1, (line.count + wrapCharacters - 1) / wrapCharacters)
+            if preview.count < lines { preview.append(line.prefix(previewLineCharacters)) }
+        }
+        let shown = preview.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        return Excerpt(text: text, preview: shown, folds: visual > lines || shown != text)
+    }
+
+    /// The block's latest reply: its last assistant record with words in it, a
+    /// question's raw form left out as the phone's steps leave it out (`MobileMightySupport.step`).
+    static func reply(_ entries: [LogEntry]) -> String? {
+        entries.last { entry in
+            entry.kind == "assistant" && !entry.text.isEmpty
+                && !(entry.text.first == "{" && UserQuestionnaire.parse(inputJSON: entry.text) != nil)
+        }?.text
+    }
+
+    /// The last `limit` tool calls of a block, oldest first, worded as the phone's steps
+    /// word them (`MobileMightySupport.step`): its summary, else its tool's name. The
+    /// run's own lifecycle row ("turn") is not a tool call.
+    static func activity(_ entries: [LogEntry], limit: Int) -> [ActivityLine] {
+        var lines: [ActivityLine] = []
+        for entry in entries.reversed() {
+            guard lines.count < limit else { break }
+            guard let activity = entry.activity, activity.kind != "turn", let text = MobileMightySupport.step(entry) else { continue }
+            lines.append(ActivityLine(id: entry.id, kind: activity.kind, state: activity.state, text: text))
+        }
+        return lines.reversed()
     }
 }

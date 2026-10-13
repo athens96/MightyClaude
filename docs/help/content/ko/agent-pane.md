@@ -109,7 +109,8 @@ Claude와 Codex 창 머리에는 {{ui:graph.view.default}} | {{ui:graph.view.mig
 - 스타일을 쓰는 창은 맨 위에 그 모드의 단계가 줄지어 있고, 끝난 단계는 초록색, 지금 단계는 강조색, 남은 단계는 회색입니다.
 - 요청마다 그 요청이 속한 단계 아래에 카드로 놓이고, 카드 아래 점선 상자에 하위 에이전트 트리가 묶여 있습니다.
 - 스타일이 없는 창은 요청마다 {{ui:graph.structure.column.request}} → {{ui:graph.structure.column.execution}} → {{ui:graph.structure.column.result}} 한 줄씩입니다.
-- 카드나 에이전트 줄을 누르면 다이어그램에서 그 블록을 보여 줍니다.
+- 카드마다 그 자리에서 요청 내용, 진행 상황(최근 메시지와 도구 호출), 결과, 하위 에이전트가 맡은 일과 내놓은 출력을 보여 줍니다. 긴 글은 접혀 있고 {{ui:graph.structure.more}}를 누르면 그 자리에서 펼쳐집니다.
+- 카드 머리의 작은 버튼을 누르면 다이어그램에서 그 블록을 보여 줍니다.
 
 ![[agent-structure]]
 

@@ -63,6 +63,8 @@ struct MightyGraphView: View {
     private final class StructureCache {
         var signature: MightyStructure.Signature?
         var shape = MightyStructure.Shape.free([])
+        /// The cards, each built again only when its own request moved.
+        var items = MightyStructure.ItemCache()
     }
     /// The newest result's size only while its drag is in progress; the saved
     /// pane-wide size is the truth before and after.
@@ -239,8 +241,8 @@ struct MightyGraphView: View {
             } else if viewMode == .structure {
                 MightyStructureView(sessionID: sessionID, provider: provider,
                                     shape: structureShape(),
-                                    styleTitles: styleTitles, newestRunID: runs.last?.id) { nodeID in
-                    // The diagram opens with its camera on the clicked request or block.
+                                    styleTitles: styleTitles, newestRunID: runs.last?.id, catalog: catalog) { nodeID in
+                    // The diagram opens with its camera on the request or block whose button was clicked.
                     onFocus()
                     publish(.reaim(nodeID: nodeID, alignTop: false))
                     onViewMode(.diagram)
@@ -337,15 +339,16 @@ struct MightyGraphView: View {
         .task(id: ouroborosRequest) { await ouroboros.run(ouroborosRequest) }
     }
 
-    /// The structure view's model, rebuilt only when something it draws changed: not
-    /// on every streamed line of a running request.
+    /// The structure view's model, rebuilt only when something it draws changed, and
+    /// then only the cards of the requests that moved.
     private func structureShape() -> MightyStructure.Shape {
         let pending = planRequest?.runId
         let signature = MightyStructure.Signature(runs: runs, style: styleEvaluator, currentPhase: guidedPhase, startingNew: guidedStartingNew,
                                                   planHistory: planHistory, pendingPlanRunID: pending)
         if structureCache.signature != signature {
+            let items = structureCache.items.items(runs, signature: signature)
             structureCache.shape = MightyStructure.make(runs: runs, style: styleEvaluator, currentPhase: guidedPhase, startingNew: guidedStartingNew,
-                                                        planHistory: planHistory, pendingPlanRunID: pending)
+                                                        planHistory: planHistory, pendingPlanRunID: pending, items: items)
             structureCache.signature = signature
         }
         return structureCache.shape
