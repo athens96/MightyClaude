@@ -76,17 +76,17 @@ enum MightyGraphDiagnostics {
             window.contentView = NSHostingView(rootView: GraphFixtureView(fixture: fixture))
             window.makeKeyAndOrderFront(nil)
             let mainID = MightyGraphLayout.nodeID(first, suffix: "request")
-            try await store.waitForSmoke(timeout: 3) { window.contentView.flatMap { camera(in: $0) } != nil }
+            try await store.waitForSmoke(timeout: 3, step: "graph canvas mounted") { window.contentView.flatMap { camera(in: $0) } != nil }
             guard let content = window.contentView else { throw MightyError("그래프 캔버스가 없습니다.") }
             let latestID = MightyGraphLayout.nodeID(second, suffix: "request")
-            try await store.waitForSmoke(timeout: 3) { (camera(in: content)?.viewportSize.width ?? 0) > 0 }
+            try await store.waitForSmoke(timeout: 3, step: "graph viewport measured") { (camera(in: content)?.viewportSize.width ?? 0) > 0 }
             guard let canvas = camera(in: content) else { throw MightyError("고정 다이어그램 뷰포트를 찾지 못했습니다.") }
             guard canvas.enclosingScrollView == nil else { throw MightyError("다이어그램이 여전히 바깥 문서 스크롤에 포함되어 있습니다.") }
             report["fixedViewportWithoutOuterDocumentScroll"] = true
-            try await store.waitForSmoke(timeout: 3) { node(window, identifier: "mighty-graph-canvas-graph-fixture") != nil }
+            try await store.waitForSmoke(timeout: 3, step: "canvas exposed to accessibility") { node(window, identifier: "mighty-graph-canvas-graph-fixture") != nil }
             report["nativeCanvasAccessibilityExposed"] = true
             // The camera opens following: the newest request's lowest block right above the composer.
-            try await store.waitForSmoke(timeout: 3) {
+            try await store.waitForSmoke(timeout: 3, step: "newest block followed above the composer at open") {
                 report["initialCameraGeometry"] = ["followed": followGeometry(canvas, fixture), "cameraOffset": NSStringFromPoint(canvas.panOffset)]
                 return followsNewest(canvas, fixture) && mountedCards(window).contains(latestID)
             }
@@ -95,13 +95,13 @@ enum MightyGraphDiagnostics {
             // Move the camera to earlier history, then stream a log. A content
             // update must not recenter the fixed viewport.
             canvas.setPanOffset(.zero)
-            try await store.waitForSmoke(timeout: 3) { canvas.panOffset == .zero }
+            try await store.waitForSmoke(timeout: 3, step: "manual pan to the origin committed") { canvas.panOffset == .zero }
             let manualOrigin = canvas.panOffset
             fixture.runs[1].rootEntries.append(LogEntry(id: "live-progress", kind: "assistant", text: "진행 상황이 갱신되었습니다.", provider: "claude"))
             try await Task.sleep(for: .milliseconds(100))
             guard abs(canvas.panOffset.y - manualOrigin.y) <= 2 && abs(canvas.panOffset.x - manualOrigin.x) <= 2 else { throw MightyError("출력 갱신이 사용자의 그래프 스크롤을 바꿨습니다.") }
             report["streamingPreservesManualScroll"] = true
-            try await store.waitForSmoke(timeout: 3) {
+            try await store.waitForSmoke(timeout: 3, step: "streamed reply rendered in the graph") {
                 textViews(in: content).contains(where: { $0.string.contains("검증 완료") && $0.string.contains("let result = 42") })
             }
             let editors = textViews(in: content)
@@ -120,17 +120,17 @@ enum MightyGraphDiagnostics {
             report["screenshot"] = try store.captureSmokeWindow(window, filename: "mighty-graph.png").path
             guard let expand = node(window, identifier: "mighty-expand-\(mainID)") else { throw MightyError("그래프 카드 확장 버튼이 없습니다.") }
             press(expand)
-            try await store.waitForSmoke(timeout: 3) { label(node(window, identifier: "mighty-expand-\(mainID)")) == L("graph.block.collapse") }
+            try await store.waitForSmoke(timeout: 3, step: "card expanded") { label(node(window, identifier: "mighty-expand-\(mainID)")) == L("graph.block.collapse") }
             report["nativeCardExpansion"] = true
             if let collapse = node(window, identifier: "mighty-expand-\(mainID)") { press(collapse) }
-            try await store.waitForSmoke(timeout: 3) { label(node(window, identifier: "mighty-expand-\(mainID)")) == L("graph.block.expand") }
+            try await store.waitForSmoke(timeout: 3, step: "card collapsed") { label(node(window, identifier: "mighty-expand-\(mainID)")) == L("graph.block.expand") }
             report["nativeCardCollapse"] = true
             guard let zoom = node(window, identifier: "mighty-zoom-out-graph-fixture") else { throw MightyError("그래프 축소 버튼이 없습니다.") }
             let zoomAnchor = CGPoint(x: (canvas.viewportSize.width / 2 - canvas.panOffset.x) / canvas.zoom,
                                      y: (canvas.viewportSize.height / 2 - canvas.panOffset.y) / canvas.zoom)
             press(zoom)
-            try await store.waitForSmoke(timeout: 3) { label(node(window, identifier: "mighty-zoom-reset-graph-fixture")).contains("90%") }
-            try await store.waitForSmoke(timeout: 3) {
+            try await store.waitForSmoke(timeout: 3, step: "zoom 90% shown") { label(node(window, identifier: "mighty-zoom-reset-graph-fixture")).contains("90%") }
+            try await store.waitForSmoke(timeout: 3, step: "zoom keeps the viewport centre") {
                 abs(canvas.zoom - 0.9) < 0.001
                     && abs((canvas.viewportSize.width / 2 - canvas.panOffset.x) / canvas.zoom - zoomAnchor.x) < 1
                     && abs((canvas.viewportSize.height / 2 - canvas.panOffset.y) / canvas.zoom - zoomAnchor.y) < 1
@@ -140,7 +140,7 @@ enum MightyGraphDiagnostics {
             report["zoomScreenshot"] = try store.captureSmokeWindow(window, filename: "mighty-graph-zoom.png").path
             for percentage in [80, 70, 60, 50] {
                 if let decrease = node(window, identifier: "mighty-zoom-out-graph-fixture") { press(decrease) }
-                try await store.waitForSmoke(timeout: 3) { label(node(window, identifier: "mighty-zoom-reset-graph-fixture")).contains("\(percentage)%") }
+                try await store.waitForSmoke(timeout: 3, step: "zoom step shown") { label(node(window, identifier: "mighty-zoom-reset-graph-fixture")).contains("\(percentage)%") }
             }
             canvas.setPanOffset(.zero)
             try await Task.sleep(for: .milliseconds(80))
@@ -164,17 +164,17 @@ enum MightyGraphDiagnostics {
             store.snapshot.sessions.append(session)
             store.drafts[session.id] = "모드 전환 전 초안"
             window.contentView = NSHostingView(rootView: ModeFixtureView(store: store, sessionID: session.id))
-            try await store.waitForSmoke(timeout: 3) {
+            try await store.waitForSmoke(timeout: 3, step: "mode fixture composer mounted") {
                 window.contentView.map { textViews(in: $0).contains(where: { $0.isEditable }) } == true
             }
             guard let nativeInput = window.contentView.flatMap({ textViews(in: $0).first(where: { $0.isEditable }) }),
                   window.makeFirstResponder(nativeInput) else { throw MightyError("모드 전환용 네이티브 입력창을 찾지 못했습니다.") }
             nativeInput.insertText("한글 초안 · 그래프 전환", replacementRange: NSRange(location: 0, length: nativeInput.string.utf16.count))
-            try await store.waitForSmoke(timeout: 3) { store.drafts[session.id] == "한글 초안 · 그래프 전환" }
+            try await store.waitForSmoke(timeout: 3, step: "draft typed into the composer") { store.drafts[session.id] == "한글 초안 · 그래프 전환" }
             guard let mighty = node(window, identifier: "agent-mode-mighty-\(session.id)") else { throw MightyError("마이티 모드 선택 버튼이 없습니다.") }
             press(mighty)
             // The camera follows the newest result; the draft block below it is panned into view.
-            try await store.waitForSmoke(timeout: 3) {
+            try await store.waitForSmoke(timeout: 3, step: "Mighty mode shows the draft block") {
                 showDraft(window)
                 return label(node(window, identifier: "mighty-draft-\(session.id)")).contains("한글 초안")
             }
@@ -184,25 +184,25 @@ enum MightyGraphDiagnostics {
             report["modeScreenshot"] = try store.captureSmokeWindow(window, filename: "mighty-mode-pane.png").path
             let savedSize = MightyGraphBlockSize(width: 680, height: 230)
             store.setGraphBlockSize(session.id, nodeID: "pending-input", size: savedSize)
-            try await store.waitForSmoke(timeout: 3) {
+            try await store.waitForSmoke(timeout: 3, step: "saved draft block size applied") {
                 window.contentView.flatMap { camera(in: $0) }?.layoutFrames.first { $0.0 == "pending-input" }?.1.size == CGSize(width: 680, height: 230)
             }
             guard let normal = node(window, identifier: "agent-mode-default-\(session.id)") else { throw MightyError("기본 모드 선택 버튼이 없습니다.") }
             press(normal)
-            try await store.waitForSmoke(timeout: 3) { node(window, identifier: "mighty-graph-\(session.id)") == nil }
+            try await store.waitForSmoke(timeout: 3, step: "default mode hides the graph") { node(window, identifier: "mighty-graph-\(session.id)") == nil }
             guard window.contentView.map({ textViews(in: $0).contains(where: { $0 === nativeInput }) }) == true,
                   store.drafts[session.id] == "한글 초안 · 그래프 전환",
                   store.snapshot.sessions.first(where: { $0.id == session.id })?.logs == session.logs,
                   store.snapshot.sessions.first(where: { $0.id == session.id })?.graphRuns == session.graphRuns else { throw MightyError("기본 모드 복귀가 대화·그래프 기록 또는 초안을 지웠습니다.") }
             report["modeTogglePreservesNativeComposerAndHistory"] = true
             if let mighty = node(window, identifier: "agent-mode-mighty-\(session.id)") { press(mighty) }
-            try await store.waitForSmoke(timeout: 3) {
+            try await store.waitForSmoke(timeout: 3, step: "saved size survives the mode remount") {
                 window.contentView.flatMap { camera(in: $0) }?.layoutFrames.first { $0.0 == "pending-input" }?.1.size == CGSize(width: 680, height: 230)
             }
             guard store.snapshot.sessions.first(where: { $0.id == session.id })?.graphBlockSizes?["pending-input"] == savedSize else { throw MightyError("모드를 전환하면서 저장한 크기가 사라졌습니다.") }
             report["sessionSizesSurviveModeRemount"] = true
             store.setGraphBlockSize(session.id, nodeID: "pending-input", size: nil)
-            try await store.waitForSmoke(timeout: 3) {
+            try await store.waitForSmoke(timeout: 3, step: "reset restores the draft block size") {
                 window.contentView.flatMap { camera(in: $0) }?.layoutFrames.first { $0.0 == "pending-input" }?.1.size == CGSize(width: 500, height: 140)
             }
             report["resetRestoresDefaultSize"] = true
@@ -216,7 +216,7 @@ enum MightyGraphDiagnostics {
             fixture.draft = ""; fixture.running = false
             window.contentView = NSHostingView(rootView: GraphFixtureView(fixture: fixture))
             let newestLongResult = MightyGraphBlockSize.nodeID(runID: "long-history-23", suffix: "result")
-            try await store.waitForSmoke(timeout: 3) { node(window, identifier: "mighty-node-\(newestLongResult)") != nil }
+            try await store.waitForSmoke(timeout: 3, step: "long history newest result mounted") { node(window, identifier: "mighty-node-\(newestLongResult)") != nil }
             guard let longContent = window.contentView else { throw MightyError("긴 그래프 검증 화면이 없습니다.") }
             let mounted = textViews(in: longContent).count
             let mountedLongCards = mountedCards(window)
@@ -224,7 +224,7 @@ enum MightyGraphDiagnostics {
             // camera left outside the document culls every card and a blank
             // canvas would otherwise pass — while the far history is not.
             let oldestLongID = MightyGraphBlockSize.nodeID(runID: "long-history-0", suffix: "request")
-            try await store.waitForSmoke(timeout: 3) { camera(in: longContent).map { followsNewest($0, fixture) } == true }
+            try await store.waitForSmoke(timeout: 3, step: "long history follows the newest result") { camera(in: longContent).map { followsNewest($0, fixture) } == true }
             guard mounted > 0, mountedCards(window).contains(newestLongResult),
                   !mountedLongCards.contains(oldestLongID) else { throw MightyError("긴 기록의 화면 안팎 그래프 카드 구성이 올바르지 않습니다.") }
             guard mounted < 24 else { throw MightyError("화면 밖의 그래프까지 네이티브 출력창을 만들었습니다.") }
@@ -236,7 +236,7 @@ enum MightyGraphDiagnostics {
             fixture.running = true
             fixture.runs.append(newRun)
             let newID = MightyGraphLayout.nodeID(newRun, suffix: "request")
-            try await store.waitForSmoke(timeout: 3) {
+            try await store.waitForSmoke(timeout: 3, step: "new request followed above the composer") {
                 guard let camera = camera(in: longContent), let request = frame(node(window, identifier: "mighty-request-\(newID)")) else { return false }
                 let viewport = window.convertToScreen(camera.convert(camera.bounds, to: nil))
                 report["newRequestCameraGeometry"] = ["request": NSStringFromRect(request), "viewport": NSStringFromRect(viewport), "cameraOffset": NSStringFromPoint(camera.panOffset),
@@ -255,13 +255,13 @@ enum MightyGraphDiagnostics {
                 MightyGraphAgent(id: "branch-right", title: "오른쪽 가지", input: "오른쪽 확인", status: "running", entries: [branchEntry])
             ]
             let branchID = MightyGraphLayout.nodeID(newRun, suffix: "agent:branch-left")
-            try await store.waitForSmoke(timeout: 3) { node(window, identifier: "mighty-node-\(branchID)") != nil }
+            try await store.waitForSmoke(timeout: 3, step: "new branches mounted") { node(window, identifier: "mighty-node-\(branchID)") != nil }
             guard let afterGrowth = frame(node(window, identifier: "mighty-request-\(newID)")) else { throw MightyError("가지가 늘어난 뒤 요청 카드가 사라졌습니다.") }
             report["rootBranchGrowthGeometry"] = ["before": NSStringFromRect(beforeGrowth), "after": NSStringFromRect(afterGrowth)]
             guard abs(afterGrowth.minX - beforeGrowth.minX) < 0.5 else { throw MightyError("새 하위 블록이 이미 보이던 요청 카드를 옆으로 밀었습니다.") }
             report["rootBranchGrowthKeepsRequestX"] = true
             // The new sub-agents are followed: the camera moves down, never sideways.
-            try await store.waitForSmoke(timeout: 3) { camera(in: longContent).map { followsNewest($0, fixture) } == true }
+            try await store.waitForSmoke(timeout: 3, step: "new branches followed above the composer") { camera(in: longContent).map { followsNewest($0, fixture) } == true }
             guard let followedGrowth = frame(node(window, identifier: "mighty-request-\(newID)")),
                   abs(followedGrowth.minX - beforeGrowth.minX) < 0.5 else { throw MightyError("새 하위 블록을 따라가며 카메라가 옆으로 움직였습니다.") }
             report["newBlocksFollowedAboveComposer"] = true
@@ -272,7 +272,7 @@ enum MightyGraphDiagnostics {
             fixture.runs.removeFirst(8)
             guard fixture.runs.last?.id == beforeTrim.last, fixture.runs.count < beforeTrim.count else { throw MightyError("기록 정리 검증이 마지막 요청까지 지웠습니다.") }
             // A following camera keeps its block right above the composer through the trim.
-            try await store.waitForSmoke(timeout: 3) {
+            try await store.waitForSmoke(timeout: 3, step: "followed block kept through the history trim") {
                 guard let camera = camera(in: longContent) else { return false }
                 let cards = mountedCards(window)
                 report["historyTrimCameraGeometry"] = ["followed": followGeometry(camera, fixture),
@@ -284,10 +284,10 @@ enum MightyGraphDiagnostics {
             // appears meanwhile never pulls them back down.
             guard let reader = camera(in: longContent) else { throw MightyError("사용자 스크롤 검증용 캔버스가 없습니다.") }
             reader.setPanOffset(CGPoint(x: reader.panOffset.x, y: reader.panOffset.y + 120))
-            try await store.waitForSmoke(timeout: 3) { reader.follow?.watch.following == false }
+            try await store.waitForSmoke(timeout: 3, step: "scroll up stops following") { reader.follow?.watch.following == false }
             let readerCamera = reader.panOffset
             fixture.runs[fixture.runs.count - 1].agents.append(MightyGraphAgent(id: "branch-late", title: "늦은 가지", input: "추가 확인", status: "running", entries: [branchEntry]))
-            try await store.waitForSmoke(timeout: 3) { mountedCards(window).contains(MightyGraphLayout.nodeID(newRun, suffix: "agent:branch-late")) }
+            try await store.waitForSmoke(timeout: 3, step: "late branch mounted while scrolled up") { mountedCards(window).contains(MightyGraphLayout.nodeID(newRun, suffix: "agent:branch-late")) }
             try await Task.sleep(for: .milliseconds(700))
             guard reader.panOffset == readerCamera else { throw MightyError("위로 스크롤한 사용자를 새 블록이 다시 아래로 끌어당겼습니다.") }
             report["userScrollWinsOverNewBlocks"] = true
@@ -299,14 +299,18 @@ enum MightyGraphDiagnostics {
             var shortened = fixture.runs
             for index in shortened.indices where shortened[index].id != newRun.id { shortened[index].agents = [] }
             fixture.runs = shortened
-            try await store.waitForSmoke(timeout: 3) {
+            // The reader saw most of the new request's 실행 block, so the net brings
+            // that block back whole (`MightyGraphCamera.lostFrameIndex`). Whether the
+            // request above it fits too depends on the runner's screen height.
+            let newWork = MightyGraphLayout.nodeID(newRun, suffix: MightyGraphLayout.workSuffix)
+            try await store.waitForSmoke(timeout: 3, step: "stranded net re-aims at the read card") {
                 guard let strandedCamera = camera(in: longContent),
-                      let request = frame(node(window, identifier: "mighty-request-\(newID)")) else { return false }
-                let viewport = window.convertToScreen(strandedCamera.convert(strandedCamera.bounds, to: nil))
+                      let work = strandedCamera.frames.first(where: { $0.0 == newWork })?.1 else { return false }
                 report["strandedLayoutCameraGeometry"] = ["before": NSStringFromPoint(strandedBefore), "after": NSStringFromPoint(strandedCamera.panOffset),
-                                                          "request": NSStringFromRect(request), "viewport": NSStringFromRect(viewport)]
+                                                          "work": NSStringFromRect(work), "viewport": NSStringFromRect(strandedCamera.bounds)]
                 // Already true before the change: only a camera that moved proves the net.
-                return strandedCamera.panOffset != strandedBefore && mountedCards(window).contains(newID) && viewport.insetBy(dx: -2, dy: -2).contains(request)
+                return strandedCamera.panOffset != strandedBefore && mountedCards(window).contains(newID)
+                    && strandedCamera.bounds.insetBy(dx: -2, dy: -2).contains(work)
             }
             report["shorterLayoutReAimsWithoutARunIDChange"] = true
             report["nodeCount"] = settled.nodes.count
@@ -391,26 +395,48 @@ enum MightyGraphDiagnostics {
     private static func textViews(in view: NSView) -> [NSTextView] {
         (view as? NSTextView).map { [$0] } ?? view.subviews.flatMap { textViews(in: $0) }
     }
-    private static func node(_ element: Any, identifier: String, depth: Int = 0) -> NSObject? {
-        guard depth < 65, let object = element as? NSObject else { return nil }
-        if object.responds(to: NSSelectorFromString("accessibilityIdentifier")), object.value(forKey: "accessibilityIdentifier") as? String == identifier { return object }
-        guard object.responds(to: NSSelectorFromString("accessibilityChildren")) else { return nil }
-        for child in object.value(forKey: "accessibilityChildren") as? [Any] ?? [] {
-            if let found = node(child, identifier: identifier, depth: depth + 1) { return found }
+    /// Visits every accessibility element under `root` until `visit` says stop. The
+    /// accessibility children alone are not enough: until an assistive client asks
+    /// (a CI runner has none), AppKit leaves a hosting wrapper out of its parent's
+    /// accessibility children, and the diagram's canvas and cards live in hosting
+    /// views nested inside the pane's. So the native subviews are walked too, as
+    /// `AppStore.smokeAccessibilityElement` does; identity tracking visits each once.
+    private static func walk(_ root: Any, _ visit: (NSObject) -> Bool) {
+        var visited = Set<ObjectIdentifier>()
+        func go(_ element: Any, depth: Int) -> Bool {
+            if let view = element as? NSView, view.isHiddenOrHasHiddenAncestor { return false }
+            guard depth < 128, visited.count < 20_000, let object = element as? NSObject,
+                  visited.insert(ObjectIdentifier(object)).inserted else { return false }
+            if visit(object) { return true }
+            var children: [Any] = []
+            if object.responds(to: NSSelectorFromString("accessibilityChildren")) { children = object.value(forKey: "accessibilityChildren") as? [Any] ?? [] }
+            if let view = element as? NSView { children.append(contentsOf: view.subviews) }
+            if let window = element as? NSWindow, let content = window.contentView { children.append(content) }
+            for child in children where go(child, depth: depth + 1) { return true }
+            return false
         }
-        return nil
+        _ = go(root, depth: 0)
+    }
+    private static func identifier(of object: NSObject) -> String? {
+        object.responds(to: NSSelectorFromString("accessibilityIdentifier")) ? object.value(forKey: "accessibilityIdentifier") as? String : nil
+    }
+    private static func node(_ element: Any, identifier wanted: String) -> NSObject? {
+        var found: NSObject?
+        walk(element) { object in
+            guard identifier(of: object) == wanted else { return false }
+            found = object
+            return true
+        }
+        return found
     }
     /// Cards render as `Color.clear` once the camera leaves them behind, so
     /// this names what is actually on screen rather than what the layout holds.
-    private static func mountedCards(_ element: Any, depth: Int = 0) -> Set<String> {
-        guard depth < 65, let object = element as? NSObject else { return [] }
+    private static func mountedCards(_ element: Any) -> Set<String> {
         var result = Set<String>()
-        if object.responds(to: NSSelectorFromString("accessibilityIdentifier")),
-           let identifier = object.value(forKey: "accessibilityIdentifier") as? String, identifier.hasPrefix("mighty-node-") {
-            result.insert(String(identifier.dropFirst("mighty-node-".count)))
+        walk(element) { object in
+            if let id = identifier(of: object), id.hasPrefix("mighty-node-") { result.insert(String(id.dropFirst("mighty-node-".count))) }
+            return false
         }
-        guard object.responds(to: NSSelectorFromString("accessibilityChildren")) else { return result }
-        for child in object.value(forKey: "accessibilityChildren") as? [Any] ?? [] { result.formUnion(mountedCards(child, depth: depth + 1)) }
         return result
     }
     private static func label(_ object: NSObject?) -> String {

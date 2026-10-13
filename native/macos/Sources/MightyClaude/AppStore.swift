@@ -1535,10 +1535,17 @@ final class AppStore: ObservableObject, DelegationHost {
         return result
     }
 
-    func waitForSmoke(timeout: TimeInterval, predicate: () -> Bool) async throws {
+    /// Polls `predicate` until it holds. A timeout names what was awaited: `step`
+    /// when the caller gave one, and always the file and line of the wait, so a
+    /// failed smoke says exactly where it stopped.
+    func waitForSmoke(timeout: TimeInterval, step: String? = nil, fileID: String = #fileID, line: Int = #line,
+                      predicate: () -> Bool) async throws {
         let deadline = Date().addingTimeInterval(timeout)
         while !predicate() {
-            if Date() > deadline { throw MightyError("스모크 테스트의 실행 상태 확인 시간이 초과되었습니다.") }
+            if Date() > deadline {
+                let place = (fileID.split(separator: "/").last.map(String.init) ?? fileID) + ":\(line)"
+                throw MightyError("스모크 테스트의 실행 상태 확인 시간이 초과되었습니다. [" + (step.map { $0 + " @ " } ?? "") + place + "]")
+            }
             try await Task.sleep(for: .milliseconds(50))
         }
     }
