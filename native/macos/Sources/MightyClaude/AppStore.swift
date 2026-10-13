@@ -65,6 +65,8 @@ final class AppStore: ObservableObject, DelegationHost {
     /// Built in `configureScreenShare()` once, alongside the menu-bar item.
     var screenShareEngine: ScreenShareEngine?
     var mobileTracking = MobileRemoteTracking()
+    /// The phone's structure view per pane, kept between reads (`MobileStructureCache`).
+    let mobileStructures = MobileStructureCache()
     var mobileSubscriptions = Set<AnyCancellable>()
     var mobileRetryTask: Task<Void, Never>?
     /// Settings → Components (AppStore+Components.swift).

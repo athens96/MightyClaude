@@ -49,7 +49,8 @@ public struct MobileInfo: Codable, Sendable, Equatable {
 /// The m1 extensions this host implements. A phone shows a feature only when
 /// its name is listed, so a name appears here once the route behind it works.
 public enum MobileCapability {
-    public static let all = ["submit-mode", "queue", "pane", "history", "settings", "commands", "mighty", "status", "attachments", "style", "files"]
+    public static let all = ["submit-mode", "queue", "pane", "history", "settings", "commands", "mighty", "status", "attachments", "style", "files",
+                             "structure"]
     /// Listed on top of `all` only by a host whose screen-share engine is
     /// running (`MobileRemoteService.capabilities`).
     public static let screenShare = "screenShare"
@@ -94,6 +95,9 @@ public enum MobileWire {
     /// relay/deploy/oracle (docs/relay-oracle.md). The user's own relay field
     /// always wins over this, and an empty string turns the default off.
     public static let defaultRelayURL: String = "wss://mightyclaude.duckdns.org"
+    /// The largest reply body the host sends: the relay closes a frame over 1 MiB
+    /// (docs/relay.md), and the envelope and the seal take a little of that.
+    public static let maximumReplyBytes = 1_024 * 1_024 - 32 * 1_024
     /// The text a guided request may carry, the same ceiling `submit` has.
     public static let maximumText = 32_768
 }
@@ -443,10 +447,17 @@ public struct MobileMighty: Codable, Sendable, Equatable {
     public var panel: StylePanel?
     public var ouroboros: MobileOuroboros?
     public var paperthin: MobilePaperthin?
+    /// The Mac's structure view of the pane (`MobileStructure`). Only on a detail the
+    /// phone asked for with `?structure=<tag>`, and only when it differs from that tag.
+    public var structure: MobileStructure?
+    /// The tag of the pane's structure as it stands (0: nothing to draw); present exactly
+    /// when the phone asked for the structure.
+    public var structureTag: Int?
     public init(style: String, styleId: String = MobileWire.cliStyle, runs: [MobileMightyRun], panel: StylePanel? = nil,
-                ouroboros: MobileOuroboros? = nil, paperthin: MobilePaperthin? = nil) {
+                ouroboros: MobileOuroboros? = nil, paperthin: MobilePaperthin? = nil, structure: MobileStructure? = nil,
+                structureTag: Int? = nil) {
         self.style = style; self.styleId = styleId; self.runs = runs; self.panel = panel
-        self.ouroboros = ouroboros; self.paperthin = paperthin
+        self.ouroboros = ouroboros; self.paperthin = paperthin; self.structure = structure; self.structureTag = structureTag
     }
 }
 

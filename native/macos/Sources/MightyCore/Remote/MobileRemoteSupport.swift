@@ -52,6 +52,25 @@ public enum MobileRemoteSupport {
         }
     }
 
+    /// The session detail as it goes out. The structure travels only to a phone that
+    /// asked for it (`asked` is the tag it holds) and only when it differs from what that
+    /// phone holds; a detail whose JSON would pass `maximumReplyBytes` sheds the
+    /// structure first, keeping the tag so the phone knows it is behind.
+    public static func outgoing(_ detail: MobileSessionDetail, asked: Int?, maximumBytes: Int = MobileWire.maximumReplyBytes) -> MobileSessionDetail {
+        var detail = detail
+        guard detail.mighty != nil else { return detail }
+        guard let asked else {
+            detail.mighty?.structure = nil
+            detail.mighty?.structureTag = nil
+            return detail
+        }
+        if detail.mighty?.structureTag == asked { detail.mighty?.structure = nil }
+        if detail.mighty?.structure != nil, ((try? JSONEncoder().encode(detail).count) ?? .max) > maximumBytes {
+            detail.mighty?.structure = nil
+        }
+        return detail
+    }
+
     /// Whether the detail's newest-80 window leaves anything behind it.
     public static func hasOlder(entryCount: Int) -> Bool { entryCount > MobileSessionDetail.maximumEntries }
 
