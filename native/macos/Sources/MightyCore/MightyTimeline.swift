@@ -41,7 +41,8 @@ public enum MightyTimeline {
         public var rail: DesignTone?
     }
 
-    /// "블록 n개 · 끝남 m": the blocks present, never the blocks to come.
+    /// "블록 n개 · 끝남 m": the blocks present, never the blocks to come. The request itself is
+    /// not one of them: its 실행 block is what runs and settles.
     public struct Tally: Equatable, Sendable {
         public var total: Int
         public var settled: Int
@@ -66,6 +67,9 @@ public enum MightyTimeline {
 
     /// The kind of the 실행 row's block, which the phone is never sent.
     public static let executionKind = "execution"
+    /// The request row's status: neither running nor settled, so its node is the neutral
+    /// one (`node(status:)`) whatever became of the work.
+    public static let requestStatus = "idle"
 
     /// The card under a request once the diagram draws its result card.
     public struct Result: Equatable, Sendable {
@@ -119,11 +123,13 @@ public enum MightyTimeline {
     public static func group(_ run: MightyGraphRun, index: Int) -> Group {
         var blocks = MobileMightySupport.blocks(run, ordinal: index + 1)
         // The phone's `main` block is the request and its work at once. Here, as in the
-        // diagram, the request holds its input alone — it is settled once sent — and a
-        // 실행 block after it holds the work: its status, steps, span and answer.
+        // diagram, the request holds its input alone, in a neutral state of its own that
+        // never reads as the work's outcome, and a 실행 block after it holds the work:
+        // its status, steps, span and answer.
         if let main = blocks.first {
-            blocks[0] = MobileBlock(id: main.id, kind: main.kind, title: main.title, status: "completed", summary: main.summary)
-            blocks.insert(MobileBlock(id: run.id + ":" + executionKind, kind: executionKind, title: L("graph.block.execution"), status: main.status,
+            blocks[0] = MobileBlock(id: main.id, kind: main.kind, title: main.title, status: requestStatus, summary: main.summary)
+            blocks.insert(MobileBlock(id: run.id + ":" + executionKind, kind: executionKind,
+                                      title: L("graph.block.executionOf", ["n": String(index + 1)]), status: main.status,
                                       output: main.output, durationMs: main.durationMs, nodeModelLabel: main.nodeModelLabel, activity: main.activity), at: 1)
         }
         var rows: [Row] = []
@@ -143,7 +149,7 @@ public enum MightyTimeline {
             result = Result(nodeID: MightyGraphLayout.nodeID(run, suffix: "result"), tone: tone == .run ? .done : tone, text: text)
         }
         return Group(runIndex: index, runID: run.id, ordinal: index + 1, status: MobileMightySupport.status(run.status),
-                     input: run.input, rows: rows, tally: tally(blocks), result: result)
+                     input: run.input, rows: rows, tally: tally(Array(blocks.dropFirst())), result: result)
     }
 }
 

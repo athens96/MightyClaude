@@ -148,6 +148,56 @@ struct MightyGraphExecutionBlockTests {
         #expect(shared.nodes.first { $0.id == id("one", "request") }?.frame.height == 280)
     }
 
+    @Test func aSizeSavedBeforeTheSplitMovesToTheExecutionBlockOnce() throws {
+        let dragged = MightyGraphBlockSize(width: 1_100, height: 700)
+        let own = MightyGraphBlockSize(width: 640, height: 400)
+        let workspace = Workspace(id: "workspace", name: "Graph", path: "/tmp")
+        // A pane saved before the split: no layout marker, a request block dragged large.
+        var session = RunSession(id: "old", workspaceId: workspace.id, title: "Old")
+        session.graphRuns = [MightyGraphRun(id: "a", status: "completed"), MightyGraphRun(id: "b", status: "completed")]
+        session.graphBlockSizes = [id("a", "request"): dragged, id("b", "request"): dragged, id("b", "execution"): own]
+        var wire = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(session)) as? [String: Any])
+        wire.removeValue(forKey: "graphSizesLayout")
+        let legacy = try JSONDecoder().decode(RunSession.self, from: JSONSerialization.data(withJSONObject: wire))
+        #expect(legacy.graphSizesLayout == nil)
+        let migrated = try #require(StateRepository.normalize(AppSnapshot(workspaces: [workspace], sessions: [legacy]), restoring: true).sessions.first)
+        // The request goes back to its own short size; its old size is the 실행 block's,
+        // unless that block already had one.
+        #expect(migrated.graphBlockSizes == [id("a", "execution"): dragged, id("b", "execution"): own])
+        #expect(migrated.graphSizesLayout == MightyGraphBlockSize.splitLayout)
+        let laid = split(migrated.graphRuns ?? [], blockSizes: migrated.graphBlockSizes ?? [:])
+        #expect(try frame(laid, id("a", "request")).size == CGSize(width: MightyGraphCamera.requestWidth, height: MightyGraphLayout.requestHeight(expanded: false)))
+        #expect(try frame(laid, id("a", "execution")).size == CGSize(width: 1_100, height: 700))
+        // Once: a request size dragged after the split stays the request's.
+        var later = migrated
+        later.graphBlockSizes?[id("a", "request")] = own
+        let again = try #require(StateRepository.normalize(AppSnapshot(workspaces: [workspace], sessions: [later]), restoring: true).sessions.first)
+        #expect(again.graphBlockSizes?[id("a", "request")] == own)
+        #expect(again.graphBlockSizes?[id("a", "execution")] == dragged)
+        // A new pane is in the current layout from the start, and keeps that through a save.
+        var fresh = RunSession(workspaceId: workspace.id, title: "New")
+        #expect(fresh.graphSizesLayout == MightyGraphBlockSize.splitLayout)
+        fresh.graphRuns = [MightyGraphRun(id: "a", status: "completed")]
+        fresh.graphBlockSizes = [id("a", "request"): own]
+        let decoded = try JSONDecoder().decode(RunSession.self, from: JSONEncoder().encode(fresh))
+        let saved = try #require(StateRepository.normalize(AppSnapshot(workspaces: [workspace], sessions: [decoded]), restoring: true).sessions.first)
+        #expect(saved.graphBlockSizes == [id("a", "request"): own])
+    }
+
+    @Test func aRequestAndItsExecutionBlockShareOneSavedSizePlace() throws {
+        let size = MightyGraphBlockSize(width: 620, height: 360)
+        let runs = (0..<MightyGraphBlockSize.maximumSavedSizes).map { MightyGraphRun(id: "run-\($0)") }
+        var values: [String: MightyGraphBlockSize] = [:]
+        for run in runs {
+            values[id(run.id, "request")] = size
+            values[id(run.id, "execution")] = size
+        }
+        let saved = try #require(MightyGraphBlockSize.normalized(values, runs: runs))
+        // Every request keeps both sizes: the pair spends one place, not two.
+        #expect(saved.count == 2 * MightyGraphBlockSize.maximumSavedSizes)
+        #expect(saved[id("run-0", "request")] == size && saved[id("run-0", "execution")] == size)
+    }
+
     @Test func anExecutionBlocksSavedSizeIsKept() throws {
         let size = MightyGraphBlockSize(width: 620, height: 360)
         let runs = [MightyGraphRun(id: "live", status: "running")]

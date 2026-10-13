@@ -522,7 +522,7 @@ struct MightyGraphView: View {
             let run = runs[index]
             let runID = run.sourceRunID ?? run.id
             let runChildBlocks = GraphChildBlocks.map(responseRecords: run.responseRecords, agents: run.agents, runId: runID)
-            transcriptCard(node, title: L("graph.block.execution"), icon: Self.executionIcon, status: run.status,
+            transcriptCard(node, title: L("graph.block.executionOf", ["n": "\(index + 1)"]), icon: Self.executionIcon, status: run.status,
                            input: "", entries: run.rootEntries, tint: Palette.agentText, usage: run.usage,
                            records: run.responseRecords ?? [], nodeModelLabel: run.nodeModelLabel, childBlocks: runChildBlocks,
                            fromRecord: index < olderCount)
