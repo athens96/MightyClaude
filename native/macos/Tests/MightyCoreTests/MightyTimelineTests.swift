@@ -28,23 +28,53 @@ struct MightyTimelineTests {
             #expect(groups.map(\.ordinal) == [1, 2])
             #expect(groups.map(\.runIndex) == [0, 1])
             let rows = groups[1].rows
-            // The request first, then the agents in the order the graph recorded them.
-            #expect(rows.map(\.block.kind) == ["main", "agent", "task", "question"])
-            #expect(rows.map(\.agentIndex) == [nil, 0, 1, 2])
+            // The request first, its 실행 block, then the agents in the order the graph recorded them.
+            #expect(rows.map(\.block.kind) == ["main", MightyTimeline.executionKind, "agent", "task", "question"])
+            #expect(rows.map(\.agentIndex) == [nil, nil, 0, 1, 2])
+            #expect(rows.map(\.isExecution) == [false, true, false, false, false])
             #expect(rows[0].nodeID == MightyGraphBlockSize.nodeID(runID: "r2", suffix: "request"))
-            #expect(rows[2].nodeID == MightyGraphBlockSize.nodeID(runID: "r2", suffix: "agent:t1"))
+            #expect(rows[1].nodeID == MightyGraphBlockSize.nodeID(runID: "r2", suffix: MightyGraphLayout.workSuffix))
+            #expect(rows[3].nodeID == MightyGraphBlockSize.nodeID(runID: "r2", suffix: "agent:t1"))
             // Titles are the core's, as the diagram and the phone name them.
-            #expect(rows[2].block.title == MightyGraphSupport.blockTitle(agents[1]))
+            #expect(rows[3].block.title == MightyGraphSupport.blockTitle(agents[1]))
             #expect(rows[0].block.title == "요청 2")
+            #expect(rows[1].block.title == "실행")
             // Only a block in motion has a latest line.
-            #expect(rows[2].latest == "sh render.sh")
-            #expect(rows[1].latest == nil)
+            #expect(rows[3].latest == "sh render.sh")
+            #expect(rows[2].latest == nil)
             // The node ids are ones the diagram actually lays out.
-            let layout = MightyGraphLayout.make(runs: runs, draft: "", running: true, expanded: [])
+            let layout = MightyGraphLayout.make(runs: runs, draft: "", running: true, expanded: [], splitsExecution: true)
             let laid = Set(layout.nodes.map(\.id))
             for group in groups { for row in group.rows { #expect(laid.contains(row.nodeID)) } }
             #expect(laid.contains(groups[0].result?.nodeID ?? "missing"))
         }
+    }
+
+    @Test func theRequestRowHoldsTheInputAndTheExecutionRowTheWork() {
+        var run = Self.run("r", agents: [MightyGraphAgent(id: "a", status: "running")])
+        run.rootEntries = [Self.step("s1", summary: "rg render"), Self.step("s2", summary: "sed -n 1,40p view.swift")]
+        run.nodeModelLabel = "Opus"
+        let rows = MightyTimeline.group(run, index: 0).rows
+        // The request: what was asked, settled once sent, with nothing it did.
+        #expect(rows[0].block.summary == "do r")
+        #expect(rows[0].block.status == "completed")
+        #expect(rows[0].block.activity == nil && rows[0].block.output == nil && rows[0].block.durationMs == nil && rows[0].block.nodeModelLabel == nil)
+        #expect(rows[0].latest == nil)
+        // Its 실행 block: the run's status, steps and model, and no request text.
+        #expect(rows[1].block.summary == nil)
+        #expect(rows[1].block.status == "running")
+        #expect(rows[1].block.activity == ["rg render", "sed -n 1,40p view.swift"])
+        #expect(rows[1].block.nodeModelLabel == "Opus")
+        #expect(rows[1].latest == "sed -n 1,40p view.swift")
+        #expect(rows[1].node == MightyTimeline.node(status: "running"))
+        // A request that has nothing yet still has its 실행 row, waiting.
+        let fresh = MightyTimeline.group(Self.run("n"), index: 0).rows
+        #expect(fresh.map(\.isExecution) == [false, true])
+        #expect(fresh[1].block.status == "running" && fresh[1].block.activity == nil)
+        // The phone is still sent one main block for both.
+        let phone = MobileMightySupport.blocks(run, ordinal: 1)
+        #expect(phone.map(\.kind) == ["main", "agent"])
+        #expect(phone[0].summary == "do r" && phone[0].activity == ["rg render", "sed -n 1,40p view.swift"])
     }
 
     @Test func aResultCardAppearsExactlyWhenTheDiagramDrawsOne() {
@@ -69,8 +99,10 @@ struct MightyTimelineTests {
         let agents = [MightyGraphAgent(id: "a", status: "completed"), MightyGraphAgent(id: "b", status: "error")]
         let rows = MightyTimeline.group(Self.run("r", agents: agents), index: 0).rows
         #expect(MightyTimeline.railAbove(rows, at: 0) == nil)
-        #expect(MightyTimeline.railAbove(rows, at: 1) == .run)
-        #expect(MightyTimeline.railAbove(rows, at: 2) == .done)
+        // The request is settled once sent; its 실행 block runs.
+        #expect(MightyTimeline.railAbove(rows, at: 1) == .done)
+        #expect(MightyTimeline.railAbove(rows, at: 2) == .run)
+        #expect(MightyTimeline.railAbove(rows, at: 3) == .done)
         #expect(MightyTimeline.railAbove(rows, at: 9) == nil)
     }
 
@@ -86,7 +118,8 @@ struct MightyTimelineTests {
     @Test func theTallyCountsOnlyTheBlocksPresent() {
         let agents = ["completed", "error", "stopped", "running", "waiting"].enumerated().map { MightyGraphAgent(id: "a\($0)", status: $1) }
         let group = MightyTimeline.group(Self.run("r", agents: agents), index: 0)
-        #expect(group.tally == .init(total: 6, settled: 3, running: 2))
+        // The request (settled), its 실행 block (running) and the five agents.
+        #expect(group.tally == .init(total: 7, settled: 4, running: 2))
         #expect(MightyTimeline.tally([]) == .init(total: 0, settled: 0, running: 0))
     }
 
@@ -94,11 +127,12 @@ struct MightyTimelineTests {
         let agents = [MightyGraphAgent(id: "done", status: "completed"), MightyGraphAgent(id: "live", status: "running")]
         let runs = [Self.run("r", agents: agents)]
         let live = MightyGraphLayout.liveNodeIDs(runs)
-        #expect(live == [MightyGraphBlockSize.nodeID(runID: "r", suffix: "request"), MightyGraphBlockSize.nodeID(runID: "r", suffix: "agent:live")])
-        let layout = MightyGraphLayout.make(runs: runs, draft: "", running: true, expanded: [])
+        #expect(live == [MightyGraphBlockSize.nodeID(runID: "r", suffix: MightyGraphLayout.workSuffix), MightyGraphBlockSize.nodeID(runID: "r", suffix: "agent:live")])
+        let layout = MightyGraphLayout.make(runs: runs, draft: "", running: true, expanded: [], splitsExecution: true)
         let split = layout.routes(into: live)
         #expect(split.into.count + split.other.count == layout.routes().count)
-        #expect(split.into.count == 1)
+        // Request → 실행 and 실행 → the live agent; 실행 → the finished one is quiet.
+        #expect(split.into.count == 2)
         // Nothing near the viewport: nothing drawn either way.
         let far = layout.routes(in: CGRect(x: 1e6, y: 1e6, width: 1, height: 1), into: live)
         #expect(far.into.isEmpty && far.other.isEmpty)

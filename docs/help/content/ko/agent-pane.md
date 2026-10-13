@@ -88,7 +88,7 @@ Claude와 Codex 창 머리에는 {{ui:graph.view.default}} | {{ui:graph.view.mig
 - {{ui:graph.view.mighty}}: 요청, 하위 에이전트, 백그라운드 작업, 결과를 블록 다이어그램으로 보여 줍니다.
 
 ### 마이티 다이어그램 {#diagram}
-요청마다 블록이 하나 생기고, 하위 에이전트와 백그라운드 작업은 그 아래로 갈라져 나옵니다. 끝나면 {{ui:graph.block.result}} 카드가 붙습니다.
+요청마다 요청 블록이 생기고, 바로 아래 {{ui:graph.block.execution}} 블록이 붙습니다. 요청 블록에는 보낸 요청만 담기고, 에이전트가 그 요청으로 한 일(메시지, 도구 호출, 진행 상태)은 {{ui:graph.block.execution}} 블록에 나옵니다. 하위 에이전트와 백그라운드 작업은 {{ui:graph.block.execution}} 블록 아래로 갈라져 나옵니다. 끝나면 {{ui:graph.block.result}} 카드가 붙습니다.
 - 빈 곳을 끌거나 스크롤해서 다이어그램을 움직입니다. 확대·축소 단추로 50~150%로 볼 수 있습니다.
 - 블록을 누르면 그 블록 안만 스크롤합니다. 빈 곳을 누르거나 {{kbd:Esc}}를 누르면 선택이 풀립니다.
 - 블록 오른쪽 아래 모서리를 끌면 크기가 바뀝니다. 오른쪽 클릭하면 {{ui:graph.block.resetSize}}가 있습니다. 크기는 세션마다 저장됩니다.
@@ -100,16 +100,16 @@ Claude와 Codex 창 머리에는 {{ui:graph.view.default}} | {{ui:graph.view.mig
 ![[agent-mighty-overview]]
 
 ### 타임라인 {#timeline}
-마이티 보기 위쪽의 {{ui:graph.view.diagram}} | {{ui:graph.view.timeline}} 전환으로 요청을 시간 순서의 목록으로 볼 수 있습니다.
+마이티 보기 위쪽의 {{ui:graph.view.diagram}} | {{ui:graph.view.timeline}} 전환으로 요청을 시간 순서의 목록으로 볼 수 있습니다. 요청 줄 다음에 {{ui:graph.block.execution}} 줄이, 그 다음에 하위 에이전트 줄이 옵니다.
 
 ![[agent-timeline]]
 
 ### 구조 {#structure}
 같은 전환의 {{ui:graph.view.structure}} 항목을 고르면 요청을 단계별 열로 볼 수 있습니다. 지금은 Mac 앱에만 있습니다.
 - 스타일을 쓰는 창은 맨 위에 그 모드의 단계가 줄지어 있고, 끝난 단계는 초록색, 지금 단계는 강조색, 남은 단계는 회색입니다.
-- 요청마다 그 요청이 속한 단계 아래에 카드로 놓이고, 카드 아래 점선 상자에 하위 에이전트 트리가 묶여 있습니다.
+- 요청마다 그 요청이 속한 단계 아래에 요청 카드와 {{ui:graph.block.execution}} 카드가 차례로 놓이고, {{ui:graph.block.execution}} 카드 아래 점선 상자에 하위 에이전트 트리가 묶여 있습니다. 끝난 요청은 그 아래에 결과가 붙습니다.
 - 스타일이 없는 창은 요청마다 {{ui:graph.structure.column.request}} → {{ui:graph.structure.column.execution}} → {{ui:graph.structure.column.result}} 한 줄씩입니다.
-- 카드마다 그 자리에서 요청 내용, 진행 상황(최근 메시지와 도구 호출), 결과, 하위 에이전트가 맡은 일과 내놓은 출력을 보여 줍니다. 긴 글은 접혀 있고 {{ui:graph.structure.more}}를 누르면 그 자리에서 펼쳐집니다.
+- 요청 카드에는 보낸 요청만 담기고, {{ui:graph.block.execution}} 카드에는 진행 상황(최근 메시지와 도구 호출)과 상태가 나옵니다. 결과, 하위 에이전트가 맡은 일과 내놓은 출력도 그 자리에서 보여 줍니다. 긴 글은 접혀 있고 {{ui:graph.structure.more}}를 누르면 그 자리에서 펼쳐집니다.
 - 카드 머리의 작은 버튼을 누르면 다이어그램에서 그 블록을 보여 줍니다.
 
 ![[agent-structure]]

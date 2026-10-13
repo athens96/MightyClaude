@@ -139,7 +139,8 @@ struct MightyGraphView: View {
               executions: links.map { MightyGraphLayout.Execution(runID: $0.runID, key: $0.key) },
               galleries: MightyGraphImages.galleries(runs: runs, root: workspaceRoot, fixed: olderCount),
               retainedStart: pinnedStart, history: history != nil,
-              planRunID: planRunID, planRecords: PlanCardSupport.diagramRecords(planHistory, runs: runs), planSize: livePlanSize ?? graphPlanSize)
+              planRunID: planRunID, planRecords: PlanCardSupport.diagramRecords(planHistory, runs: runs), planSize: livePlanSize ?? graphPlanSize,
+              splitsExecution: true)
     }
     /// The diagram request the pending plan card goes under, nil when it is docked.
     private var planRunID: String? { PlanCardSupport.diagramPlanRunID(planRequest, showsDiagram: viewMode == .diagram, runs: runs) }
@@ -453,7 +454,7 @@ struct MightyGraphView: View {
 
     private func initialTarget(_ graph: MightyGraphLayout) -> String {
         if graph.nodes.contains(where: { $0.content == .draft }) { return MightyGraphCamera.pendingNodeID }
-        return runs.last.map { MightyGraphLayout.nodeID($0, suffix: "request") } ?? MightyGraphCamera.pendingNodeID
+        return graph.newestRequestTargetID(runs) ?? MightyGraphCamera.pendingNodeID
     }
 
     /// Concept D's connectors: quiet ink lines, run blue (and a little heavier) into a
@@ -508,14 +509,21 @@ struct MightyGraphView: View {
             .overlay { RoundedRectangle(cornerRadius: 12).stroke(Palette.accent.opacity(0.6), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])) }
             .accessibilityElement(children: .contain).accessibilityIdentifier("mighty-node-\(node.id)")
         case .request(let index):
+            // The request alone: what was asked. What the agent did is the 실행 block below.
             let run = runs[index]
             let title = StyleChrome.requestTitle(prefix: styleTitles.prefix(run.input), ordinal: index + 1,
                                                  providerLabel: ProviderOptions.label(provider))
             let icon = styleTitles.icon(run.input)?.rawValue ?? StyleIcon.requestDefault.rawValue
+            transcriptCard(node, title: title, titleProvider: provider, icon: icon, status: run.status,
+                           input: run.input, entries: [], tint: Palette.tint(styleTitles.tint(run.input)),
+                           fromRecord: index < olderCount, inputOnly: true)
+        case .work(let index):
+            // The main agent's own work for the request: its replies, tool calls, status and tokens.
+            let run = runs[index]
             let runID = run.sourceRunID ?? run.id
             let runChildBlocks = GraphChildBlocks.map(responseRecords: run.responseRecords, agents: run.agents, runId: runID)
-            transcriptCard(node, title: title, titleProvider: provider, icon: icon, status: run.status,
-                           input: run.input, entries: run.rootEntries, tint: Palette.tint(styleTitles.tint(run.input)), usage: run.usage,
+            transcriptCard(node, title: L("graph.block.execution"), icon: Self.executionIcon, status: run.status,
+                           input: "", entries: run.rootEntries, tint: Palette.agentText, usage: run.usage,
                            records: run.responseRecords ?? [], nodeModelLabel: run.nodeModelLabel, childBlocks: runChildBlocks,
                            fromRecord: index < olderCount)
         case .agent(let runIndex, let agentIndex):
@@ -577,13 +585,18 @@ struct MightyGraphView: View {
         }
     }
 
+    /// The 실행 block's glyph, in the diagram and on its timeline row.
+    static let executionIcon = "gearshape.2"
+
     /// `headerFill` paints the header as a strip (the result card's outcome colour) with
     /// white words on it; the other blocks keep a plain header on the white card.
+    /// `inputOnly` is the request block: its input fills the card, and it has no status of
+    /// its own — the 실행 block under it runs and settles.
     private func transcriptCard(_ node: MightyGraphLayout.Node, title: String, titleProvider: String? = nil, icon: String, status: String, input: String, entries: [LogEntry], tint: Color,
                                 usage: GraphTokenUsage? = nil, usageLabel: String = L("graph.block.blockUsageLabel"), resultFilesRunID: String? = nil,
                                 records: [GraphResponseRecord] = [], nodeModelLabel: String? = nil,
                                 childBlocks: [String: GraphChildBlock] = [:], fromRecord: Bool = false, headerFill: Color? = nil,
-                                onContentHeight: ((CGFloat) -> Void)? = nil) -> some View {
+                                inputOnly: Bool = false, onContentHeight: ((CGFloat) -> Void)? = nil) -> some View {
         let content = entries.filter { $0.kind != "user" }
         let onStrip = headerFill != nil
         let quiet = onStrip ? Palette.onStatus : Palette.ink2
@@ -603,7 +616,7 @@ struct MightyGraphView: View {
                 }
                 Spacer(minLength: 3)
                 if selectedNodeID == node.id { blockScrollLabel(node.id, ink: onStrip ? Palette.onStatus : Palette.accent) }
-                if !onStrip {
+                if !onStrip && !inputOnly {
                     MightyGraphActivityIndicator(status: status, tint: Palette.run)
                     MightyStatusPill(text: Self.statusLabel(status), tone: DesignTone(blockStatus: status))
                 }
@@ -655,13 +668,28 @@ struct MightyGraphView: View {
             }.padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).frame(height: Self.blockHeaderHeight)
             .background(headerFill ?? Color.clear)
             if !onStrip { Divider().overlay(Palette.border) }
-            if !input.isEmpty {
+            if inputOnly {
+                // The whole body is the request; a long one scrolls in place.
+                let room = node.frame.height - Self.blockHeaderHeight - 1 - 2 * DesignMetrics.Inset.graphBlockBodyV
+                VStack(spacing: 0) {
+                    if !input.isEmpty {
+                        MightyGraphInputPreview(input: input, width: node.frame.width - 2 * DesignMetrics.Inset.graphBlockBodyH, identifier: "mighty-request-\(node.id)",
+                                                maximumHeight: max(14, room))
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).padding(.vertical, DesignMetrics.Inset.graphBlockBodyV)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .background(tint.opacity(0.055))
+            } else if !input.isEmpty {
                 MightyGraphInputPreview(input: input, width: node.frame.width - 2 * DesignMetrics.Inset.graphBlockBodyH, identifier: "mighty-request-\(node.id)")
                     .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).padding(.vertical, DesignMetrics.Inset.graphBlockBodyV)
                     .background(tint.opacity(0.055))
                 Divider().overlay(Palette.border)
             }
-            if content.isEmpty {
+            if inputOnly {
+                EmptyView()
+            } else if content.isEmpty {
                 Text(MightyGraphLayout.terminal(status) ? L("graph.block.noResponse") : L("graph.block.waitingResponse"))
                     .font(.system(size: 12)).foregroundStyle(Palette.ink2)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).padding(DesignMetrics.Inset.graphBlockBodyH)
@@ -671,7 +699,7 @@ struct MightyGraphView: View {
             }
         }
         .mightyBlockCard()
-        .overlay { MightyGraphActivityOutline(tone: DesignTone(blockStatus: status)) }
+        .overlay { if !inputOnly { MightyGraphActivityOutline(tone: DesignTone(blockStatus: status)) } }
         .accessibilityElement(children: .contain).accessibilityIdentifier("mighty-node-\(node.id)")
     }
 
@@ -870,9 +898,11 @@ struct MightyGraphView: View {
         let open = timelineOpen.contains(row.nodeID)
         // The request's own block is titled by the Mac's locale; the phone payload's
         // title (`MobileMightySupport.blocks`) stays as the phone is sent it.
-        let title = row.agentIndex == nil ? L("graph.timeline.requestOrdinal", ["n": "\(group.ordinal)"]) : row.block.title
+        let request = row.agentIndex == nil && !row.isExecution
+        let title = request ? L("graph.timeline.requestOrdinal", ["n": "\(group.ordinal)"]) : row.block.title
+        // The request has no status of its own: its 실행 row runs and settles.
         return MightyTimelineRowCard(row: row, title: title, icon: look.icon, tint: look.tint, meta: timelineMeta(row, run: run),
-                                     status: Self.statusLabel(row.block.status), open: open, onToggle: {
+                                     status: request ? nil : Self.statusLabel(row.block.status), open: open, onToggle: {
             onFocus()
             if timelineOpen.insert(row.nodeID).inserted {
                 // Back in the diagram, the camera stands on the block that was opened.
@@ -892,6 +922,7 @@ struct MightyGraphView: View {
 
     /// The glyph and ink the diagram gives the block.
     private func timelineLook(_ row: MightyTimeline.Row, run: MightyGraphRun) -> (icon: String, tint: Color) {
+        if row.isExecution { return (Self.executionIcon, Palette.agentText) }
         guard let agentIndex = row.agentIndex else {
             return (styleTitles.icon(run.input)?.rawValue ?? StyleIcon.requestDefault.rawValue, Palette.tint(styleTitles.tint(run.input)))
         }
@@ -904,18 +935,22 @@ struct MightyGraphView: View {
     private func timelineMeta(_ row: MightyTimeline.Row, run: MightyGraphRun) -> [String] {
         let capsule: String? = if let agentIndex = row.agentIndex {
             ModelUsageFormat.blockCapsule(usage: run.agents[agentIndex].usage, records: run.agents[agentIndex].responseRecords ?? [], nodeModelLabel: nil, catalog: catalog, versioned: true)
-        } else {
+        } else if row.isExecution {
             ModelUsageFormat.blockCapsule(usage: run.usage, records: run.responseRecords ?? [], nodeModelLabel: run.nodeModelLabel, catalog: catalog, versioned: true)
+        } else {
+            nil
         }
         return [capsule, MightyTimelineText.duration(row.block.durationMs)].compactMap { $0 }
     }
 
-    /// What the block's diagram card holds: what it was asked, and its records.
+    /// What the block's diagram card holds: what it was asked, and its records. The
+    /// request holds its input alone and its 실행 block the records alone.
     @ViewBuilder private func timelineDetail(_ row: MightyTimeline.Row, run: MightyGraphRun, tint: Color) -> some View {
         let agent = row.agentIndex.map { run.agents[$0] }
-        let input = agent?.input ?? run.input
+        let request = agent == nil && !row.isExecution
+        let input = agent?.input ?? (row.isExecution ? "" : run.input)
         let status = agent?.status ?? run.status
-        let entries = (agent?.entries ?? run.rootEntries).filter { $0.kind != "user" }
+        let entries = request ? [] : (agent?.entries ?? run.rootEntries).filter { $0.kind != "user" }
         let runID = run.sourceRunID ?? run.id
         let records = (agent?.responseRecords ?? run.responseRecords) ?? []
         let childBlocks = GraphChildBlocks.map(responseRecords: agent?.responseRecords ?? run.responseRecords, agents: run.agents, runId: runID)
@@ -926,9 +961,11 @@ struct MightyGraphView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).padding(.vertical, DesignMetrics.Inset.graphBlockBodyV)
                     .background(tint.opacity(0.055))
-                Divider().overlay(Palette.border)
+                if !request { Divider().overlay(Palette.border) }
             }
-            if entries.isEmpty {
+            if request {
+                EmptyView()
+            } else if entries.isEmpty {
                 Text(L("phone.blocks.nothing")).font(.system(size: 12)).foregroundStyle(Palette.ink2)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(DesignMetrics.Inset.graphBlockBodyH)
             } else {
@@ -1134,6 +1171,9 @@ private struct MightyGraphInputPreview: View {
     let input: String
     let width: CGFloat
     let identifier: String
+    /// The most it takes before it scrolls: a pinned strip over a transcript, or the
+    /// whole body of a request block that holds its input alone.
+    var maximumHeight: CGFloat = 64
     @ViewState private var measuredHeight: CGFloat = 14
     var body: some View {
         // The native view scrolls within the pinned height on its own, and its
@@ -1145,7 +1185,7 @@ private struct MightyGraphInputPreview: View {
                                   accessibilityLabel: L("graph.block.promptAccessibility"), onHeight: { height in
             if height.isFinite, height > 0, abs(measuredHeight - height) > 0.5 { measuredHeight = ceil(height) }
         })
-        .frame(width: width, height: min(64, max(14, measuredHeight)))
+        .frame(width: width, height: min(maximumHeight, max(14, measuredHeight)))
     }
 }
 

@@ -91,8 +91,11 @@ public enum MightyStructure {
         public var runIndex: Int
         public var runID: String
         public var ordinal: Int
-        /// The request's own diagram node.
+        /// The request's own diagram node, which holds its input alone.
         public var nodeID: String
+        /// The diagram's 실행 block under it, which holds the main agent's work: the
+        /// latest reply, the tool calls and the status this card shows as its 실행 part.
+        public var executionNodeID: String
         /// The request on one line.
         public var input: String
         /// The request's status, bucketed as a block's is.
@@ -404,6 +407,7 @@ public enum MightyStructure {
         let tally = Tally(agents: blocks.filter { MightyGraphSupport.blockKind($0) == "agent" }.count,
                           tools: entries.filter { $0.activity.map { toolKinds.contains($0.kind) } ?? false }.count)
         return Item(runIndex: index, runID: run.id, ordinal: index + 1, nodeID: MightyGraphLayout.nodeID(run, suffix: "request"),
+                    executionNodeID: MightyGraphLayout.nodeID(run, suffix: MightyGraphLayout.workSuffix),
                     input: preview(run.input), status: MobileMightySupport.status(run.status), finished: finished,
                     result: result, request: excerpt(run.input, maximumBytes: requestBytes, lines: requestLines), message: message,
                     activity: activity(run.rootEntries, limit: requestActivity), answer: full, tally: tally, clusters: clusters(run))

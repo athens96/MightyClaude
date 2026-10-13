@@ -26,7 +26,9 @@ extension DesignTone {
 /// It reads the very `[MightyGraphRun]` the diagram lays out, through the projection the
 /// phone's timeline already reads (`MobileMightySupport.blocks`), so a block has one
 /// title, one order and one status bucket on the Mac's diagram, the Mac's timeline and
-/// the phone. Every count it gives is of blocks the pane holds; nothing here knows how
+/// the phone. Only the request is drawn as the Mac's diagram draws it, as the request and
+/// its 실행 block, where the phone keeps one `main` block for both. Every count it gives
+/// is of blocks the pane holds; nothing here knows how
 /// many blocks a request will end with, so nothing claims to.
 public enum MightyTimeline {
     /// One block's node and the rail under it.
@@ -47,17 +49,23 @@ public enum MightyTimeline {
     }
 
     public struct Row: Equatable, Sendable, Identifiable {
-        /// The block as the phone is sent it.
+        /// The block as the phone is sent it; the request and its 실행 block split the
+        /// phone's one `main` block between them (`group`).
         public var block: MobileBlock
         /// The diagram node this row stands for (`MightyGraphLayout.Node.id`).
         public var nodeID: String
-        /// Index into the run's `agents`; nil for the request's own block.
+        /// Index into the run's `agents`; nil for the request and its 실행 block.
         public var agentIndex: Int?
         public var node: Node
         /// What the block is doing now, while it is in motion.
         public var latest: String?
+        /// The 실행 block: the main agent's own work under the request.
+        public var isExecution = false
         public var id: String { nodeID }
     }
+
+    /// The kind of the 실행 row's block, which the phone is never sent.
+    public static let executionKind = "execution"
 
     /// The card under a request once the diagram draws its result card.
     public struct Result: Equatable, Sendable {
@@ -109,16 +117,24 @@ public enum MightyTimeline {
     }
 
     public static func group(_ run: MightyGraphRun, index: Int) -> Group {
-        let blocks = MobileMightySupport.blocks(run, ordinal: index + 1)
+        var blocks = MobileMightySupport.blocks(run, ordinal: index + 1)
+        // The phone's `main` block is the request and its work at once. Here, as in the
+        // diagram, the request holds its input alone — it is settled once sent — and a
+        // 실행 block after it holds the work: its status, steps, span and answer.
+        if let main = blocks.first {
+            blocks[0] = MobileBlock(id: main.id, kind: main.kind, title: main.title, status: "completed", summary: main.summary)
+            blocks.insert(MobileBlock(id: run.id + ":" + executionKind, kind: executionKind, title: L("graph.block.execution"), status: main.status,
+                                      output: main.output, durationMs: main.durationMs, nodeModelLabel: main.nodeModelLabel, activity: main.activity), at: 1)
+        }
         var rows: [Row] = []
         rows.reserveCapacity(blocks.count)
         for (position, block) in blocks.enumerated() {
-            // `blocks` is the request, then `run.agents` in order.
-            let agentIndex = position == 0 ? nil : position - 1
-            let suffix = agentIndex.map { "agent:" + run.agents[$0].id } ?? "request"
+            // `blocks` is the request, its 실행 block, then `run.agents` in order.
+            let agentIndex = position < 2 ? nil : position - 2
+            let suffix = agentIndex.map { "agent:" + run.agents[$0].id } ?? (position == 0 ? "request" : MightyGraphLayout.workSuffix)
             let latest = block.status == "running" || block.status == "waiting" ? block.activity?.last : nil
             rows.append(Row(block: block, nodeID: MightyGraphLayout.nodeID(run, suffix: suffix), agentIndex: agentIndex,
-                            node: node(status: block.status), latest: latest))
+                            node: node(status: block.status), latest: latest, isExecution: position == 1))
         }
         var result: Result?
         if MightyGraphLayout.finished(run) {
@@ -132,12 +148,13 @@ public enum MightyTimeline {
 }
 
 extension MightyGraphLayout {
-    /// The diagram nodes of requests and blocks that are running, by the same rule as
+    /// The diagram nodes of 실행 blocks and child blocks that are running, by the same rule as
     /// their pills (`DesignTone(blockStatus:)`): the edges into them are drawn blue.
     public static func liveNodeIDs(_ runs: [MightyGraphRun]) -> Set<String> {
         var ids = Set<String>()
         for run in runs {
-            if DesignTone(blockStatus: run.status) == .run { ids.insert(nodeID(run, suffix: "request")) }
+            // The request block holds its input alone; the run's own work is its 실행 block.
+            if DesignTone(blockStatus: run.status) == .run { ids.insert(nodeID(run, suffix: workSuffix)) }
             for agent in run.agents where DesignTone(blockStatus: agent.status) == .run {
                 ids.insert(nodeID(run, suffix: "agent:" + agent.id))
             }

@@ -30,9 +30,10 @@ enum MightyGraphDiagnostics {
             ], resultEntries: [answer])
             let second = MightyGraphRun(id: "graph-second", input: "다음 변경도 이어서 처리해주세요.", status: "running", rootEntries: [], agents: [MightyGraphAgent(id: "waiting", title: "진행 중인 검토", input: "추가 결과를 기다립니다.", status: "waiting")])
             let fixture = GraphFixture(runs: [first, second])
-            let layout = MightyGraphLayout.make(runs: fixture.runs, draft: "", running: true, expanded: [])
+            // The view's own layout: each request over its 실행 block.
+            let layout = MightyGraphLayout.make(runs: fixture.runs, draft: "", running: true, expanded: [], splitsExecution: true)
             try verifyGeometry(layout)
-            guard layout.nodes.count == 8, !layout.nodes.contains(where: { $0.content == .draft }),
+            guard layout.nodes.count == 10, !layout.nodes.contains(where: { $0.content == .draft }),
                   !layout.nodes.contains(where: { $0.content == .result(1) }),
                   layout.nodes.contains(where: { $0.content == .result(0) }) else { throw MightyError("진행 중인 요청에 최종 결과나 빈 다음 입력이 표시됩니다.") }
             let research = MightyGraphLayout.nodeID(first, suffix: "agent:research")
@@ -42,22 +43,28 @@ enum MightyGraphDiagnostics {
                   left.frame.minY == right.frame.minY, left.frame.maxX < right.frame.minX,
                   layout.edges.contains(where: { $0.source == research && $0.target == nested }) else { throw MightyError("형제·중첩 에이전트 연결 구조가 올바르지 않습니다.") }
             report["horizontalSiblingsAndNestedEdges"] = true
+            let firstRequest = MightyGraphLayout.nodeID(first, suffix: "request")
+            let firstWork = MightyGraphLayout.nodeID(first, suffix: MightyGraphLayout.workSuffix)
+            guard layout.edges.contains(where: { $0.source == firstRequest && $0.target == firstWork }),
+                  layout.edges.contains(where: { $0.source == firstWork && $0.target == research }),
+                  !layout.edges.contains(where: { $0.source == firstRequest && $0.target == research }) else { throw MightyError("하위 에이전트가 실행 블록이 아닌 곳에서 갈라집니다.") }
+            report["subAgentsBranchFromExecution"] = true
             report["noEarlyResultOrEmptyPending"] = true
             var parentEnded = second
             parentEnded.status = "completed"
             guard !MightyGraphLayout.finished(parentEnded) else { throw MightyError("하위 에이전트가 대기 중인데 전체 작업을 완료로 표시합니다.") }
-            let expanded = MightyGraphLayout.make(runs: fixture.runs, draft: "", running: true, expanded: [research])
+            let expanded = MightyGraphLayout.make(runs: fixture.runs, draft: "", running: true, expanded: [research], splitsExecution: true)
             try verifyGeometry(expanded)
             guard expanded.size.height > layout.size.height else { throw MightyError("카드 확장이 뒤쪽 내용을 밀지 않았습니다.") }
             report["expandedCardsNeverOverlap"] = true
 
             let resizedIDs = [MightyGraphLayout.nodeID(first, suffix: "request"), research, verify, nested,
-                              MightyGraphLayout.nodeID(first, suffix: "result"), "pending-input"]
+                              MightyGraphLayout.nodeID(first, suffix: "result"), "pending-input", firstWork]
             let sizes = Dictionary(uniqueKeysWithValues: resizedIDs.enumerated().map { index, id in
                 (id, MightyGraphBlockSize(width: index.isMultiple(of: 2) ? 1100 : 320,
                                           height: index.isMultiple(of: 2) ? 700 : 160))
             })
-            let resized = MightyGraphLayout.make(runs: fixture.runs, draft: "다음 요청", running: true, expanded: [], blockSizes: sizes)
+            let resized = MightyGraphLayout.make(runs: fixture.runs, draft: "다음 요청", running: true, expanded: [], blockSizes: sizes, splitsExecution: true)
             try verifyGeometry(resized)
             for node in resized.nodes {
                 if let size = sizes[node.id] {
@@ -104,6 +111,11 @@ enum MightyGraphDiagnostics {
                   editors.allSatisfy({ !$0.isEditable && $0.isSelectable }) else { throw MightyError("그래프의 마크다운·도구 출력이 기존 선택 가능한 렌더러와 다릅니다.") }
             guard !editors.compactMap({ $0 as? AgentTranscriptTextView }).contains(where: { $0.string.contains(first.input) }) else { throw MightyError("요청이 고정 입력 영역과 출력 기록에 중복 표시됩니다.") }
             report["requestNotDuplicatedInOutput"] = true
+            // The request block holds its input alone; the main agent's records are in its 실행 block.
+            let transcripts = Set(editors.compactMap { ($0 as? AgentTranscriptTextView)?.accessibilityIdentifier() })
+            guard transcripts.contains("transcript-graph-graph-fixture-\(firstWork)"),
+                  !transcripts.contains("transcript-graph-graph-fixture-\(mainID)") else { throw MightyError("요청 블록에 에이전트 기록이 있거나 실행 블록에 기록이 없습니다.") }
+            report["requestHoldsInputExecutionHoldsRecords"] = true
             report["nativeMarkdownAndToolRenderer"] = true
             report["nativeTranscriptCount"] = editors.count
             report["screenshot"] = try store.captureSmokeWindow(window, filename: "mighty-graph.png").path
@@ -140,7 +152,7 @@ enum MightyGraphDiagnostics {
             fixture.runs[1].resultEntries = [answer]
             fixture.running = false
             fixture.draft = "다음 요청 초안"
-            let settled = MightyGraphLayout.make(runs: fixture.runs, draft: fixture.draft, running: false, expanded: [])
+            let settled = MightyGraphLayout.make(runs: fixture.runs, draft: fixture.draft, running: false, expanded: [], splitsExecution: true)
             try verifyGeometry(settled)
             guard settled.nodes.contains(where: { $0.content == .result(1) }), settled.nodes.last?.content == .draft,
                   let nextRoot = settled.nodes.first(where: { $0.content == .request(1) }),
@@ -192,7 +204,7 @@ enum MightyGraphDiagnostics {
             }
             report["resetRestoresDefaultSize"] = true
             report["pendingDraftMirrorsComposer"] = true
-            let initial = MightyGraphLayout.make(runs: [], draft: "", running: false, expanded: [])
+            let initial = MightyGraphLayout.make(runs: [], draft: "", running: false, expanded: [], splitsExecution: true)
             guard initial.nodes.count == 1, initial.nodes.first?.content == .draft else { throw MightyError("빈 대화의 첫 입력 블록이 없습니다.") }
             report["initialPendingInput"] = true
             fixture.runs = (0..<24).map { index in

@@ -150,6 +150,7 @@ enum GraphVectors {
     static func contentKind(_ content: MightyGraphLayout.Content) -> String {
         switch content {
         case .request: return "request"
+        case .work: return "work"
         case .agent: return "agent"
         case .result: return "result"
         case .resultFiles: return "resultFiles"
