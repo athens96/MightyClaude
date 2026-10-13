@@ -36,6 +36,7 @@ import { Composer } from '@/components/composer';
 import { LogEntryView } from '@/components/log-entry-view';
 import { GuidedPanel } from '@/components/guided-panel';
 import { MightyRunList } from '@/components/mighty-blocks';
+import { MightyStructureView } from '@/components/structure-view';
 import { NextActionChips } from '@/components/next-action-chips';
 import { PermissionCard } from '@/components/permission-card';
 import { PlanCard } from '@/components/plan-card';
@@ -71,6 +72,7 @@ import { t } from '@/lib/i18n';
 import { answeredToast, isPlanRequest, pendingPlan, planAnswerBody } from '@/lib/plan';
 import { PREPEND_HOLD_MS, blocksProgressKey, entriesProgressKey, keyboardEvents } from '@/lib/follow';
 import { defaultView, normalizeMighty } from '@/lib/mighty';
+import { receiveStructure, structureQuery, type HeldStructure, type StructureState } from '@/lib/structure';
 import { fillDraft, latestNextActions } from '@/lib/next-actions';
 import { composerRunning, stopVerdict, type StopVerdict } from '@/lib/resync';
 import { guidedRequestFor, panelOf } from '@/lib/styles';
@@ -118,8 +120,8 @@ function requestKey(request: Pick<MobilePermission, 'id' | 'runId'>): string {
   return `${request.runId}:${request.id}`;
 }
 
-/** Which body the screen shows: the transcript, or the Mighty block list. */
-type BodyView = 'log' | 'blocks';
+/** Which body the screen shows: the transcript, the Mighty block list, or its structure. */
+type BodyView = 'log' | 'blocks' | 'structure';
 
 function patchFor(field: SettingField, id: string): SettingsPatch {
   switch (field) {
@@ -182,6 +184,15 @@ export default function SessionScreen() {
   const composerInput = useRef<TextInput>(null);
   /** Set once the user picks a body themselves; until then the pane's own view decides. */
   const [chosenView, setChosenView] = useState<BodyView | undefined>(undefined);
+  /**
+   * The structure view the Mac last sent and its tag. It lives apart from the detail: the
+   * Mac sends it only while the 구조 view asks, and only when it changed, so a detail
+   * without it must not take it away.
+   */
+  const [heldStructure, setHeldStructure] = useState<HeldStructure | undefined>(undefined);
+  const heldStructureRef = useRef<HeldStructure | undefined>(undefined);
+  /** Whether the poll asks for the structure: only while the 구조 view is on screen. */
+  const asksStructure = useRef(false);
   const [guidedAction, setGuidedAction] = useState<string | undefined>(undefined);
   const guidedRunning = useRef(false);
   /**
@@ -246,11 +257,21 @@ export default function SessionScreen() {
     async (since: number | undefined, signal: AbortSignal) => {
       if (!client || !sessionId) throw new Error(t('phone.session.notFound'));
       try {
-        return await client.session(sessionId, {
+        const asked = asksStructure.current;
+        const data = await client.session(sessionId, {
           since,
           wait: since === undefined ? 0 : 10,
+          ...(asked ? { structure: structureQuery(heldStructureRef.current) } : {}),
           signal,
         });
+        if (asked) {
+          const next = receiveStructure(heldStructureRef.current, (data as { mighty?: unknown }).mighty);
+          if (next !== heldStructureRef.current) {
+            heldStructureRef.current = next;
+            setHeldStructure(next);
+          }
+        }
+        return data;
       } catch (error) {
         // A pane closed on the Mac answers 404 forever; leave instead of backing off.
         if (isNotFound(error)) paneGone();
@@ -312,6 +333,8 @@ export default function SessionScreen() {
     setClosed(false);
     setSettledRevision(undefined);
     setChosenView(undefined);
+    heldStructureRef.current = undefined;
+    setHeldStructure(undefined);
     setText('');
   }, [sessionId]);
 
@@ -405,12 +428,17 @@ export default function SessionScreen() {
   // to read. Only one is mounted at a time; sending pins whichever it is.
   const logFollow = useFollowBottom(onScroll, pullRefresh);
   const blockFollow = useFollowBottom(undefined, pullRefresh);
+  // The structure follows its newest content only while the user is at the bottom: new
+  // work never pulls it back from further up (no `followProgress` below).
+  const structureFollow = useFollowBottom(undefined, pullRefresh);
   const followLog = logFollow.follow;
   const followBlocks = blockFollow.follow;
+  const followStructure = structureFollow.follow;
   const followNewest = useCallback(() => {
     followLog();
     followBlocks();
-  }, [followBlocks, followLog]);
+    followStructure();
+  }, [followBlocks, followLog, followStructure]);
 
   const onAttachmentError = useCallback((message: string) => showToast(message, 'error'), []);
   const attachments = useAttachments(onAttachmentError);
@@ -785,7 +813,24 @@ export default function SessionScreen() {
   const questionBodyHeight = Math.round(Math.min(320, windowHeight * (keyboardShown ? 0.22 : 0.4)));
   const view: BodyView = chosenView ?? defaultView(mighty);
   const blocksShown = view === 'blocks' && Boolean(mighty);
-  const pull = blocksShown ? blockFollow.pull : logFollow.pull;
+  const structureShown = view === 'structure' && Boolean(mighty);
+  // The Mac sends the structure only to a phone that asks, and only a Mac that lists
+  // "structure" knows the question; an older one answers 400 to it.
+  const canStructure = hasCapability(capabilities, 'structure');
+  asksStructure.current = structureShown && canStructure;
+  const refreshPollRef = useRef(poll.refresh);
+  refreshPollRef.current = poll.refresh;
+  // Opening the 구조 view asks at once rather than waiting out the long poll.
+  useEffect(() => {
+    if (structureShown && canStructure) refreshPollRef.current();
+  }, [canStructure, structureShown]);
+  const structureState: StructureState =
+    capabilities === undefined
+      ? { kind: 'loading' }
+      : !canStructure
+        ? { kind: 'unsupported' }
+        : (heldStructure?.state ?? { kind: 'loading' });
+  const pull = blocksShown ? blockFollow.pull : structureShown ? structureFollow.pull : logFollow.pull;
 
   // New work pulls the shown list back to its newest content, even from further up,
   // unless the user is dragging it.
@@ -797,8 +842,8 @@ export default function SessionScreen() {
     if (blocksShown) followBlockProgress();
   }, [blocksProgress, blocksShown, followBlockProgress]);
   useEffect(() => {
-    if (!blocksShown) followLogProgress();
-  }, [entriesProgress, blocksShown, followLogProgress]);
+    if (!blocksShown && !structureShown) followLogProgress();
+  }, [entriesProgress, blocksShown, structureShown, followLogProgress]);
 
   // The `next:` options of the last reply, once its turn is over and until a user
   // message follows it: under that reply in the log, above the composer in the blocks
@@ -970,9 +1015,24 @@ export default function SessionScreen() {
         <ErrorBanner message={poll.error} />
       ) : null}
 
-      <GestureDetector gesture={blocksShown ? blockFollow.pullGesture : logFollow.pullGesture}>
+      <GestureDetector
+        gesture={
+          blocksShown ? blockFollow.pullGesture : structureShown ? structureFollow.pullGesture : logFollow.pullGesture
+        }
+      >
         <View collapsable={false} style={styles.body}>
-          {view === 'blocks' && mighty ? (
+          {view === 'structure' && mighty ? (
+            <MightyStructureView
+              state={structureState}
+              hasRuns={mighty.runs.length > 0}
+              contentContainerStyle={styles.list}
+              headerStyle={styles.listHeader}
+              header={headerNode}
+              footer={footerNode}
+              attachAs={structureFollow.attachAs}
+              follow={structureFollow.props}
+            />
+          ) : view === 'blocks' && mighty ? (
             <MightyRunList
               runs={mighty.runs}
               contentContainerStyle={styles.list}
@@ -1064,7 +1124,7 @@ export default function SessionScreen() {
             onRun={runGuided}
           />
         ) : null}
-        {blocksShown && nextActions ? (
+        {(blocksShown || structureShown) && nextActions ? (
           <View style={styles.dockedNext}>
             <NextActionChips actions={nextActions.actions} onFill={fillComposer} />
           </View>
@@ -1081,6 +1141,7 @@ export default function SessionScreen() {
                   options={[
                     { id: 'log', label: t('phone.session.view.log') },
                     { id: 'blocks', label: t('phone.session.view.blocks') },
+                    { id: 'structure', label: t('phone.session.view.structure') },
                   ]}
                   value={view}
                   onChange={setChosenView}

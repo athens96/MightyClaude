@@ -1,5 +1,6 @@
 import {
   FOLLOW_THRESHOLD,
+  FollowMemory,
   PULL_REFRESH_DISTANCE,
   PULL_START_SLACK,
   blocksProgressKey,
@@ -121,5 +122,23 @@ describe('what counts as work moving on', () => {
   it('ignores older history paged in above', () => {
     const base = entriesProgressKey([{ id: '5', text: 'e' }]);
     expect(entriesProgressKey([{ id: '3', text: 'c' }, { id: '4', text: 'd' }, { id: '5', text: 'e' }])).toBe(base);
+  });
+});
+
+describe('FollowMemory', () => {
+  it('gives a page back the following it was left with', () => {
+    const memory = new FollowMemory();
+    // A page seen for the first time follows.
+    expect(memory.enter('phase:seed')).toBe(true);
+    // The reader scrolls up on it, then swipes to another page.
+    memory.leave('phase:seed', false);
+    expect(memory.enter('phase:run')).toBe(true);
+    memory.leave('phase:run', true);
+    // Back on the first page: still where they were reading, not pulled to the bottom.
+    expect(memory.enter('phase:seed')).toBe(false);
+    expect(memory.enter('phase:run')).toBe(true);
+    // Once they scroll back down and leave, it follows again next time.
+    memory.leave('phase:seed', true);
+    expect(memory.enter('phase:seed')).toBe(true);
   });
 });

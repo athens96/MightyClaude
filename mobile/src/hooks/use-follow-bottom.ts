@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { Gesture } from 'react-native-gesture-handler';
 import {
+  FollowMemory,
   PULL_GIVE_UP,
   PULL_START_SLACK,
   SETTLE_FRAMES,
@@ -103,6 +104,41 @@ export function useFollowBottom(onScroll?: (event: ScrollEvent) => void, onPull?
     // last list's would send the jump to the wrong place.
     metrics.current = { contentHeight: 0, viewportHeight: 0, offsetY: 0 };
   }, [setFollowing]);
+
+  /**
+   * `attach` for one of several lists that take turns on screen, each under its own key:
+   * a list coming back follows only if it was following when it left (`FollowMemory`).
+   * The callback is the same object for a key every time, so a render that keeps the same
+   * list on screen does not detach and attach it again.
+   */
+  const memory = useRef(new FollowMemory());
+  const attachedKey = useRef<string | undefined>(undefined);
+  const keyedAttach = useRef(new Map<string, (instance: EndScrollable | null) => void>());
+  const attachAs = useCallback(
+    (key: string) => {
+      const known = keyedAttach.current.get(key);
+      if (known) return known;
+      const callback = (instance: EndScrollable | null) => {
+        if (!instance) {
+          if (attachedKey.current !== key) return;
+          memory.current.leave(key, following.current);
+          attachedKey.current = undefined;
+          list.current = null;
+          return;
+        }
+        if (attachedKey.current !== undefined && attachedKey.current !== key) {
+          memory.current.leave(attachedKey.current, following.current);
+        }
+        attachedKey.current = key;
+        list.current = instance;
+        setFollowing(memory.current.enter(key));
+        metrics.current = { contentHeight: 0, viewportHeight: 0, offsetY: 0 };
+      };
+      keyedAttach.current.set(key, callback);
+      return callback;
+    },
+    [setFollowing],
+  );
 
   /** A finger on the list, or a flick still coasting: the user is reading. */
   const reading = useCallback(
@@ -249,5 +285,5 @@ export function useFollowBottom(onScroll?: (event: ScrollEvent) => void, onPull?
       });
   }, [onPull]);
 
-  return { attach, detached, follow, followProgress, props, pull, pullGesture };
+  return { attach, attachAs, detached, follow, followProgress, props, pull, pullGesture };
 }

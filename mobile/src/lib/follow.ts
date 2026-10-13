@@ -116,3 +116,23 @@ export function blocksProgressKey(runs: readonly ProgressRun[]): string {
 export function entriesProgressKey(entries: readonly unknown[]): string {
   return entries.length === 0 ? '' : JSON.stringify(entries[entries.length - 1]);
 }
+
+/**
+ * Following, remembered per list: a screen that swaps one list for another on the same
+ * spot (the structure view's phase pages) gives each back the state it was left in, so
+ * a reader who scrolled up on a page, moved away and came back is not pulled down. A list
+ * seen for the first time follows.
+ */
+export class FollowMemory {
+  private readonly saved = new Map<string, boolean>();
+
+  /** Whether the list under `key` follows as it comes on screen. */
+  enter(key: string): boolean {
+    return this.saved.get(key) ?? true;
+  }
+
+  /** The state the list under `key` leaves the screen in. */
+  leave(key: string, following: boolean): void {
+    this.saved.set(key, following);
+  }
+}
