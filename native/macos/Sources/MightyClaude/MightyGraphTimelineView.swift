@@ -47,7 +47,7 @@ enum MightyTimelineText {
     static func kind(_ kind: String) -> String {
         switch kind {
         case "main": L("graph.timeline.kind.request")
-        case MightyTimeline.executionKind: L("graph.timeline.kind.execution")
+        case MightyTimeline.executionKind: L("graph.block.execution")
         case "task": L("graph.block.task")
         case "steer": L("graph.block.steer")
         case "compact": L("graph.block.compact")

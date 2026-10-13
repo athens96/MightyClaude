@@ -38,7 +38,8 @@ struct MightyTimelineTests {
             // Titles are the core's, as the diagram and the phone name them.
             #expect(rows[3].block.title == MightyGraphSupport.blockTitle(agents[1]))
             #expect(rows[0].block.title == "요청 2")
-            #expect(rows[1].block.title == "실행")
+            // The 실행 block names its request, so each one reads apart from the others.
+            #expect(rows[1].block.title == "실행 · 요청 2")
             // Only a block in motion has a latest line.
             #expect(rows[3].latest == "sh render.sh")
             #expect(rows[2].latest == nil)
@@ -55,9 +56,10 @@ struct MightyTimelineTests {
         run.rootEntries = [Self.step("s1", summary: "rg render"), Self.step("s2", summary: "sed -n 1,40p view.swift")]
         run.nodeModelLabel = "Opus"
         let rows = MightyTimeline.group(run, index: 0).rows
-        // The request: what was asked, settled once sent, with nothing it did.
+        // The request: what was asked, in its neutral state, with nothing it did.
         #expect(rows[0].block.summary == "do r")
-        #expect(rows[0].block.status == "completed")
+        #expect(rows[0].block.status == MightyTimeline.requestStatus)
+        #expect(rows[0].node == .init(tone: .idle, ring: false, rail: nil))
         #expect(rows[0].block.activity == nil && rows[0].block.output == nil && rows[0].block.durationMs == nil && rows[0].block.nodeModelLabel == nil)
         #expect(rows[0].latest == nil)
         // Its 실행 block: the run's status, steps and model, and no request text.
@@ -68,9 +70,18 @@ struct MightyTimelineTests {
         #expect(rows[1].latest == "sed -n 1,40p view.swift")
         #expect(rows[1].node == MightyTimeline.node(status: "running"))
         // A request that has nothing yet still has its 실행 row, waiting.
-        let fresh = MightyTimeline.group(Self.run("n"), index: 0).rows
+        let freshGroup = MightyTimeline.group(Self.run("n"), index: 0)
+        let fresh = freshGroup.rows
         #expect(fresh.map(\.isExecution) == [false, true])
         #expect(fresh[1].block.status == "running" && fresh[1].block.activity == nil)
+        // Only the 실행 block counts: "블록 1개 · 끝남 0", not the request as a finished block.
+        #expect(freshGroup.tally == .init(total: 1, settled: 0, running: 1))
+        // A request whose work failed or stopped never reads as a success, nor as the failure.
+        for (status, tone) in [("error", DesignTone.err), ("stopped", .stop), ("completed", .done)] {
+            let ended = MightyTimeline.group(Self.run("e", status: status), index: 0).rows
+            #expect(ended[0].node.tone == .idle, "\(status)")
+            #expect(ended[1].node.tone == tone, "\(status)")
+        }
         // The phone is still sent one main block for both.
         let phone = MobileMightySupport.blocks(run, ordinal: 1)
         #expect(phone.map(\.kind) == ["main", "agent"])
@@ -99,8 +110,8 @@ struct MightyTimelineTests {
         let agents = [MightyGraphAgent(id: "a", status: "completed"), MightyGraphAgent(id: "b", status: "error")]
         let rows = MightyTimeline.group(Self.run("r", agents: agents), index: 0).rows
         #expect(MightyTimeline.railAbove(rows, at: 0) == nil)
-        // The request is settled once sent; its 실행 block runs.
-        #expect(MightyTimeline.railAbove(rows, at: 1) == .done)
+        // The request's node is neutral and leaves the track; its 실행 block runs.
+        #expect(MightyTimeline.railAbove(rows, at: 1) == nil)
         #expect(MightyTimeline.railAbove(rows, at: 2) == .run)
         #expect(MightyTimeline.railAbove(rows, at: 3) == .done)
         #expect(MightyTimeline.railAbove(rows, at: 9) == nil)
@@ -118,8 +129,8 @@ struct MightyTimelineTests {
     @Test func theTallyCountsOnlyTheBlocksPresent() {
         let agents = ["completed", "error", "stopped", "running", "waiting"].enumerated().map { MightyGraphAgent(id: "a\($0)", status: $1) }
         let group = MightyTimeline.group(Self.run("r", agents: agents), index: 0)
-        // The request (settled), its 실행 block (running) and the five agents.
-        #expect(group.tally == .init(total: 7, settled: 4, running: 2))
+        // The 실행 block (running) and the five agents; the request is not a block that settles.
+        #expect(group.tally == .init(total: 6, settled: 3, running: 2))
         #expect(MightyTimeline.tally([]) == .init(total: 0, settled: 0, running: 0))
     }
 

@@ -254,7 +254,7 @@ struct MightyStructureView: View {
                 // 실행
                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
                     execution(item, width: width, titled: false)
-                        .accessibilityLabel(stepAccessibility(steps[1].title, row.execution))
+                        .accessibilityLabel(stepAccessibility(L("graph.block.executionOf", ["n": "\(item.ordinal)"]), row.execution))
                     clusters(item.clusters, column: width)
                 }
                 .frame(width: width, alignment: .topLeading)
@@ -301,7 +301,7 @@ struct MightyStructureView: View {
             .accessibilityLabel(L("graph.structure.contentAccessibility", ["name": heading(item), "text": item.input]))
             .accessibilityIdentifier("mighty-structure-request-\(item.runID)")
             execution(item, width: width, titled: true)
-                .accessibilityLabel(L("graph.block.execution"))
+                .accessibilityLabel(L("graph.block.executionOf", ["n": "\(item.ordinal)"]))
             clusters(item.clusters, column: width)
             if item.finished {
                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
@@ -326,7 +326,7 @@ struct MightyStructureView: View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 if titled {
-                    Label(L("graph.block.execution"), systemImage: MightyGraphView.executionIcon)
+                    Label(L("graph.block.executionOf", ["n": "\(item.ordinal)"]), systemImage: MightyGraphView.executionIcon)
                         .font(.system(size: Self.outputSize, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
                 }
                 MightyStatusPill(text: MightyGraphView.statusLabel(item.status), tone: DesignTone(status: item.status))

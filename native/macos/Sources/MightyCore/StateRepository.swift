@@ -226,6 +226,9 @@ public actor StateRepository {
                 }
                 return log
             }
+            // Sizes saved before the 실행 split move once; the pane is in the current layout from then on.
+            if session.graphSizesLayout == nil { session.graphBlockSizes = MightyGraphBlockSize.splittingExecution(session.graphBlockSizes) }
+            session.graphSizesLayout = MightyGraphBlockSize.splitLayout
             session.graphBlockSizes = session.kind == "shell" ? nil : MightyGraphBlockSize.normalized(session.graphBlockSizes, runs: session.mightyGraphRuns)
             session.graphResultSize = session.kind == "shell" ? nil : session.graphResultSize?.normalized
             session.graphPlanSize = session.kind == "shell" ? nil : session.graphPlanSize?.normalized
