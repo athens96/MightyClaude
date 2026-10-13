@@ -1085,7 +1085,8 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
             MightyGraphInteraction(sessionID: sessionID, nodes: graph.nodes, zoom: zoom,
                 viewportSize: viewport.size, targetToken: scrollTarget?.token,
                 targetFrame: targetFrame,
-                alignTop: alignTop, alignBottom: alignBottom, follows: follows, followTargetID: defaultNodeID, follow: follow, selection: $selection, panOffset: panBinding, onResize: onResize, onStranded: onStranded, newestRunID: newestRunID,
+                alignTop: alignTop, alignBottom: alignBottom, follows: follows, followTargetID: defaultNodeID, follow: follow,
+                drawnNodeIDs: Set(graph.nodes.lazy.filter { visible.intersects($0.frame) }.map(\.id)), selection: $selection, panOffset: panBinding, onResize: onResize, onStranded: onStranded, newestRunID: newestRunID,
                 onUserPan: { old, new in
                     // Only the user's own move towards the top, once the top
                     // shows: re-aims and zoom never load more.
