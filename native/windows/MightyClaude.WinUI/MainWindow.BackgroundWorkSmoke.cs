@@ -30,9 +30,11 @@ public sealed partial class MainWindow
             bool Hidden() => backgroundHost is { Visibility: Visibility.Collapsed } && backgroundHost.Children.Count == 0;
             async Task<AppSnapshot> Saved(Func<AppSnapshot, bool> done)
             {
-                var stored = await new StateStore(owner.StateDirectory).LoadAsync();
-                for (var tries = 0; !done(stored) && tries < 375; tries++) { await Task.Delay(40); stored = await new StateStore(owner.StateDirectory).LoadAsync(); }
-                return stored;
+                // The app may be writing the state file at the moment it is read; that read is retried.
+                async Task<AppSnapshot?> Read() { try { return await new StateStore(owner.StateDirectory).LoadAsync(); } catch (IOException) { return null; } }
+                var stored = await Read();
+                for (var tries = 0; (stored is null || !done(stored)) && tries < 375; tries++) { await Task.Delay(40); stored = await Read() ?? stored; }
+                return stored ?? await new StateStore(owner.StateDirectory).LoadAsync();
             }
             async Task View(string mode) { await Change(p => p with { AgentViewMode = mode }); Refresh(); RefreshMightyView(Session); }
             try
