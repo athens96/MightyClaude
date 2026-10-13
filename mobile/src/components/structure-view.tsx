@@ -42,6 +42,9 @@ import {
   FOLD_LINES,
   chosenAfterMove,
   foldText,
+  foldedRequestLine,
+  foldedResultLine,
+  isCardFolded,
   itemHeading,
   nodeFolds,
   nodeMeta,
@@ -369,17 +372,98 @@ function ResultPart({ item }: { item: StructureItem }) {
 }
 
 /**
+ * Which finished requests the user opened, and how they open or fold one, from the
+ * screen's state: the cards read it through context, so the lists never see a new prop.
+ */
+interface Folds {
+  unfolded: ReadonlySet<string>;
+  onToggle: (item: StructureItem) => void;
+}
+const FoldContext = createContext<Folds>({ unfolded: new Set(), onToggle: () => undefined });
+
+/**
+ * A finished request folded to one compact card: its heading, status and tally, what was
+ * asked and how it ended, a line each. Tapping it opens the request.
+ */
+function FoldedCard({ item, onOpen }: { item: StructureItem; onOpen: () => void }) {
+  const palette = usePalette();
+  const styles = useStyles(makeStyles);
+  const answer = foldedResultLine(item);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${itemHeading(item)}, ${statusLabel(item.status)}`}
+      accessibilityHint={t('graph.structure.unfoldCard')}
+      accessibilityState={{ expanded: false }}
+      onPress={onOpen}
+      style={({ pressed }) => [styles.card, styles.folded, pressed && styles.pressed]}
+    >
+      <View style={styles.foldedHead}>
+        <Text numberOfLines={1} style={[styles.heading, styles.foldedHeading]}>
+          {itemHeading(item)}
+        </Text>
+        <StatusChip status={item.status} />
+        <Text numberOfLines={1} style={styles.tally}>
+          {t('graph.structure.tally', { agents: item.tally.agents, tools: item.tally.tools })}
+        </Text>
+        <Text style={styles.foldMark}>▾</Text>
+      </View>
+      <Text numberOfLines={1} style={styles.bodyText}>
+        {foldedRequestLine(item)}
+      </Text>
+      <Text
+        numberOfLines={1}
+        style={[styles.mutedText, answer === undefined && { color: toneColors(palette, toneOf(item.status)).ink }]}
+      >
+        {answer ?? statusLabel(item.status)}
+      </Text>
+    </Pressable>
+  );
+}
+
+/** A request's heading, and on a finished open request the control that folds it back. */
+function CardHeading({ item, onFold }: { item: StructureItem; onFold?: () => void }) {
+  const styles = useStyles(makeStyles);
+  return (
+    <View style={styles.headingRow}>
+      <Text accessibilityRole="header" numberOfLines={2} style={[styles.heading, styles.headingText]}>
+        {itemHeading(item)}
+      </Text>
+      {onFold ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t('graph.structure.foldCard')}
+          accessibilityState={{ expanded: true }}
+          hitSlop={8}
+          onPress={onFold}
+          style={({ pressed }) => pressed && styles.pressed}
+        >
+          <Text style={styles.foldMark}>▴</Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+/**
  * One request of a phase page: request, 실행, clusters, and once finished its result.
  * Memoised: `receiveStructure` keeps an unchanged request the same object, so an update
  * redraws only the cards that moved.
  */
-const PhaseCard = memo(function PhaseCard({ item }: { item: StructureItem }) {
+const PhaseCard = memo(function PhaseCard({
+  item,
+  folded,
+  onToggle,
+}: {
+  item: StructureItem;
+  folded: boolean;
+  onToggle: (item: StructureItem) => void;
+}) {
   const styles = useStyles(makeStyles);
+  if (folded) return <FoldedCard item={item} onOpen={() => onToggle(item)} />;
   return (
     <View style={styles.card}>
-      <Text accessibilityRole="header" numberOfLines={2} style={styles.heading}>
-        {itemHeading(item)}
-      </Text>
+      <CardHeading item={item} onFold={item.finished ? () => onToggle(item) : undefined} />
       <RequestPart item={item} titled />
       <ExecutionPart item={item} />
       <Clusters clusters={item.clusters} omitted={item.omittedNodes} />
@@ -389,14 +473,21 @@ const PhaseCard = memo(function PhaseCard({ item }: { item: StructureItem }) {
 });
 
 /** One request of a free pane: its own small rail, then the sections stacked. Memoised as `PhaseCard`. */
-const FreeRow = memo(function FreeRow({ row }: { row: StructureRow }) {
+const FreeRow = memo(function FreeRow({
+  row,
+  folded,
+  onToggle,
+}: {
+  row: StructureRow;
+  folded: boolean;
+  onToggle: (item: StructureItem) => void;
+}) {
   const styles = useStyles(makeStyles);
   const chips = useMemo(() => requestRail(row), [row]);
+  if (folded) return <FoldedCard item={row.item} onOpen={() => onToggle(row.item)} />;
   return (
     <View style={styles.card}>
-      <Text accessibilityRole="header" numberOfLines={2} style={styles.heading}>
-        {itemHeading(row.item)}
-      </Text>
+      <CardHeading item={row.item} onFold={row.item.finished ? () => onToggle(row.item) : undefined} />
       <Rail chips={chips} />
       <RequestPart item={row.item} titled={false} />
       <ExecutionPart item={row.item} />
@@ -453,9 +544,10 @@ function renderFreeRow({ item }: { item: StructureRow }) {
 
 function FreeRowCell({ row }: { row: StructureRow }) {
   const styles = useStyles(makeStyles);
+  const { unfolded, onToggle } = useContext(FoldContext);
   return (
     <View style={styles.listItem}>
-      <FreeRow row={row} />
+      <FreeRow row={row} folded={isCardFolded(row.item, unfolded)} onToggle={onToggle} />
     </View>
   );
 }
@@ -495,9 +587,10 @@ function renderPhaseCard({ item }: { item: StructureItem }) {
 
 function PhaseCardCell({ item }: { item: StructureItem }) {
   const styles = useStyles(makeStyles);
+  const { unfolded, onToggle } = useContext(FoldContext);
   return (
     <View style={styles.listItem}>
-      <PhaseCard item={item} />
+      <PhaseCard item={item} folded={isCardFolded(item, unfolded)} onToggle={onToggle} />
     </View>
   );
 }
@@ -674,17 +767,34 @@ function pageAccessibility(columns: readonly StructureColumn[], index: number): 
 export function MightyStructureView({
   state,
   hasRuns,
+  unfolded,
+  onToggleFold,
   ...list
-}: ListProps & { state: StructureState; hasRuns: boolean }) {
+}: ListProps & {
+  state: StructureState;
+  hasRuns: boolean;
+  /** Finished requests the user opened, by run id (`isCardFolded`), kept by the screen. */
+  unfolded: ReadonlySet<string>;
+  onToggleFold: (item: StructureItem) => void;
+}) {
+  const folds = useMemo(() => ({ unfolded, onToggle: onToggleFold }), [unfolded, onToggleFold]);
   const notice = structureNotice(state, hasRuns);
   if (state.kind === 'ok' && notice === undefined) {
     const { structure } = state;
     if (structure.shape === 'phases') {
       // A different set of phases (another style) starts the pager afresh.
       const key = structure.columns.map((column) => column.id).join('|');
-      return <PhasePager key={key} columns={structure.columns} omitted={structure.omitted} {...list} />;
+      return (
+        <FoldContext.Provider value={folds}>
+          <PhasePager key={key} columns={structure.columns} omitted={structure.omitted} {...list} />
+        </FoldContext.Provider>
+      );
     }
-    return <FreeList rows={structure.rows} omitted={structure.omitted} {...list} />;
+    return (
+      <FoldContext.Provider value={folds}>
+        <FreeList rows={structure.rows} omitted={structure.omitted} {...list} />
+      </FoldContext.Provider>
+    );
   }
   return (
     <FlatList
@@ -751,6 +861,12 @@ const makeStyles = (palette: Palette) =>
       paddingVertical: spacing.lg,
     },
     heading: { ...typeScale.heading, color: palette.text, fontSize: 15, lineHeight: 20 },
+    headingRow: { alignItems: 'flex-start', flexDirection: 'row', gap: spacing.md },
+    headingText: { flex: 1 },
+    folded: { gap: spacing.xs },
+    foldedHead: { alignItems: 'center', flexDirection: 'row', gap: spacing.md },
+    foldedHeading: { flexShrink: 1 },
+    foldMark: { color: palette.textMuted, fontSize: 14, fontWeight: '700' },
     part: {
       backgroundColor: palette.surface,
       borderRadius: radius.md,

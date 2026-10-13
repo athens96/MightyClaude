@@ -30,6 +30,7 @@ import {
   type PlanDecisionKind,
   type QuestionAnswers,
   type SettingsPatch,
+  type StructureItem,
   type SubmitMode,
 } from '@/api/types';
 import { Composer } from '@/components/composer';
@@ -72,7 +73,13 @@ import { t } from '@/lib/i18n';
 import { answeredToast, isPlanRequest, pendingPlan, planAnswerBody } from '@/lib/plan';
 import { PREPEND_HOLD_MS, blocksProgressKey, entriesProgressKey, keyboardEvents } from '@/lib/follow';
 import { defaultView, normalizeMighty } from '@/lib/mighty';
-import { receiveStructure, structureQuery, type HeldStructure, type StructureState } from '@/lib/structure';
+import {
+  receiveStructure,
+  structureQuery,
+  toggleCardFold,
+  type HeldStructure,
+  type StructureState,
+} from '@/lib/structure';
 import { fillDraft, latestNextActions } from '@/lib/next-actions';
 import { composerRunning, stopVerdict, type StopVerdict } from '@/lib/resync';
 import { guidedRequestFor, panelOf } from '@/lib/styles';
@@ -190,6 +197,12 @@ export default function SessionScreen() {
    * without it must not take it away.
    */
   const [heldStructure, setHeldStructure] = useState<HeldStructure | undefined>(undefined);
+  /** Finished requests the user opened in the 구조 view, by run id: the rest show folded. */
+  const [unfoldedCards, setUnfoldedCards] = useState<ReadonlySet<string>>(() => new Set());
+  const toggleCardFolded = useCallback(
+    (item: StructureItem) => setUnfoldedCards((previous) => toggleCardFold(item, previous)),
+    [],
+  );
   const heldStructureRef = useRef<HeldStructure | undefined>(undefined);
   /** Whether the poll asks for the structure: only while the 구조 view is on screen. */
   const asksStructure = useRef(false);
@@ -1025,6 +1038,8 @@ export default function SessionScreen() {
             <MightyStructureView
               state={structureState}
               hasRuns={mighty.runs.length > 0}
+              unfolded={unfoldedCards}
+              onToggleFold={toggleCardFolded}
               contentContainerStyle={styles.list}
               headerStyle={styles.listHeader}
               header={headerNode}

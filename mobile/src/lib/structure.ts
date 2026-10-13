@@ -524,3 +524,51 @@ export function structureItems(structure: MobileStructure): StructureItem[] {
     structure.shape === 'phases' ? structure.columns.flatMap((column) => column.items) : structure.rows.map((row) => row.item);
   return [...items].sort((a, b) => a.ordinal - b.ordinal);
 }
+
+// ------------------------------------------------------------------ folded requests
+
+/**
+ * Finished requests fold, as on the Mac (`MightyStructure.Fold`): a request that completed,
+ * failed or stopped shows as one compact card until the user opens it, a running or
+ * waiting one is always open, and one that finishes folds by itself unless the user opened
+ * it by hand. The hand-opened run ids are the only state the screen keeps.
+ */
+export function isCardFolded(item: StructureItem, unfolded: ReadonlySet<string>): boolean {
+  return item.finished && !unfolded.has(item.runId);
+}
+
+/** The hand-opened cards after the user opens or folds `item`; an unfinished card has no control. */
+export function toggleCardFold(item: StructureItem, unfolded: ReadonlySet<string>): ReadonlySet<string> {
+  if (!item.finished) return unfolded;
+  const next = new Set(unfolded);
+  if (!next.delete(item.runId)) next.add(item.runId);
+  return next;
+}
+
+/** The first line of `text` with words in it, without the Markdown that opens a line or wraps a word. */
+export function firstTextLine(text: string): string | undefined {
+  for (const raw of text.split(/\r?\n/)) {
+    let line = raw.replace(/^[ \t]+/, '');
+    if (line.startsWith('```')) continue;
+    line = line.replace(/^(?:[#>] *)+/, '');
+    line = line.replace(/^[-*+] /, '').replace(/^\d+\. /, '');
+    const cleaned = line.replace(/\*\*|__|`/g, '').trim();
+    if (cleaned.length > 0) return cleaned;
+  }
+  return undefined;
+}
+
+/** A folded card's request line: the request's first line. */
+export function foldedRequestLine(item: StructureItem): string {
+  return (item.request && firstTextLine(item.request)) ?? '';
+}
+
+/**
+ * A folded card's result line: the answer's first line once the request completed with
+ * one; undefined when it failed, stopped or completed without one, and the card says how
+ * it ended instead.
+ */
+export function foldedResultLine(item: StructureItem): string | undefined {
+  if (item.status !== 'completed' || !item.answer) return undefined;
+  return firstTextLine(item.answer);
+}
