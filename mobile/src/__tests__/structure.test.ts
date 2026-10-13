@@ -1,6 +1,6 @@
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import type { StructureColumn, StructureNode, StructureRow } from '@/api/types';
+import type { StructureColumn, StructureItem, StructureNode, StructureRow } from '@/api/types';
 import { resetLanguage } from '@/lib/i18n';
 import {
   FOLD_LINES,
@@ -11,7 +11,11 @@ import {
   MAX_STRUCTURE_PROMPT,
   chosenAfterMove,
   currentPageIndex,
+  firstTextLine,
   foldText,
+  foldedRequestLine,
+  foldedResultLine,
+  isCardFolded,
   itemHeading,
   nodeFolds,
   nodeMeta,
@@ -29,6 +33,7 @@ import {
   structureItems,
   structureNotice,
   structureQuery,
+  toggleCardFold,
   visiblePage,
   type HeldStructure,
 } from '@/lib/structure';
@@ -351,5 +356,55 @@ describe('folding', () => {
     expect(nodeFolds({ ...node, output: Array.from({ length: 7 }, () => 'o').join('\n') })).toBe(true);
     expect(nodeMeta({ ...node, model: 'Opus 5.5' }, (kind) => kind.toUpperCase())).toBe('AGENT · Opus 5.5');
     expect(nodeMeta(node, () => 'Agent')).toBe('Agent');
+  });
+});
+
+describe('folded requests', () => {
+  const item = (runId: string, status: string, finished: boolean, extra: Partial<StructureItem> = {}): StructureItem => ({
+    runId,
+    ordinal: 1,
+    status,
+    finished,
+    activity: [],
+    tally: { agents: 0, tools: 0 },
+    clusters: [],
+    ...extra,
+  });
+
+  it('folds finished requests and keeps running ones open', () => {
+    expect(isCardFolded(item('a', 'running', false), new Set())).toBe(false);
+    expect(isCardFolded(item('w', 'waiting', false), new Set())).toBe(false);
+    // The same request finishes: it folds by itself.
+    for (const status of ['completed', 'error', 'stopped']) {
+      expect(isCardFolded(item('a', status, true), new Set())).toBe(true);
+    }
+  });
+
+  it('keeps a card the user opened open until they fold it back', () => {
+    const finished = item('a', 'completed', true);
+    const opened = toggleCardFold(finished, new Set());
+    expect([...opened]).toEqual(['a']);
+    expect(isCardFolded(finished, opened)).toBe(false);
+    const closed = toggleCardFold(finished, opened);
+    expect(closed.size).toBe(0);
+    expect(isCardFolded(finished, closed)).toBe(true);
+    // A running card has no control; it still folds when it finishes.
+    const running = item('b', 'running', false);
+    const unchanged = toggleCardFold(running, opened);
+    expect(unchanged).toBe(opened);
+    expect(isCardFolded(item('b', 'completed', true), unchanged)).toBe(true);
+  });
+
+  it('says what was asked and how the request ended on one line each', () => {
+    const answered = item('a', 'completed', true, { request: '\n첫 줄 요청\n둘째 줄', answer: '\n## **결론**: 끝났습니다\n- 둘째' });
+    expect(foldedRequestLine(answered)).toBe('첫 줄 요청');
+    expect(foldedResultLine(answered)).toBe('결론: 끝났습니다');
+    expect(foldedResultLine(item('e', 'error', true, { answer: '실패 이유' }))).toBeUndefined();
+    expect(foldedResultLine(item('s', 'stopped', true))).toBeUndefined();
+    expect(foldedResultLine(item('n', 'completed', true))).toBeUndefined();
+    expect(foldedRequestLine(item('r', 'completed', true))).toBe('');
+    expect(firstTextLine('```swift\n1. `let` x\n')).toBe('let x');
+    expect(firstTextLine('> * 인용 목록')).toBe('인용 목록');
+    expect(firstTextLine('  \n\t\n')).toBeUndefined();
   });
 });
