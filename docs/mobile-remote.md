@@ -18,7 +18,7 @@ PC에서 실행 중인 Mighty Claude에 휴대폰으로 접속해 워크스페�
 |---|---|---|---|
 | GET | `/m1/info` | | `{ protocol, hostId, hostName, appVersion, platform }` |
 | GET | `/m1/state?since=<rev>&wait=<0..10>` | | `MobileState` — `revision`이 `since`보다 커질 때까지 최대 `wait`초 기다렸다가 응답. 시간 안에 변화가 없으면 같은 `revision`으로 현재 상태를 돌려준다 |
-| GET | `/m1/sessions/{id}?since=<rev>&wait=<0..10>` | | `MobileSessionDetail` — 세션 단위 `revision`으로 같은 방식 |
+| GET | `/m1/sessions/{id}?since=<rev>&wait=<0..10>[&structure=<tag>]` | | `MobileSessionDetail` — 세션 단위 `revision`으로 같은 방식. `structure`는 `"structure"` 기능이 있는 Mac에만(아래 "구조 보기" 절) |
 | POST | `/m1/sessions/{id}/submit` | `{ text }` | 202 `{ protocol, accepted: "started" \| "steered" \| "queued" }` · 실행할 수 없으면 409 |
 | POST | `/m1/sessions/{id}/stop` | | `{ protocol, stopped }` — 실행 중인 요청이 없어 멈출 것이 없었으면 `stopped: false` |
 | POST | `/m1/sessions/{id}/permission` | `{ requestId, runId, allow }` | `{ protocol, ok: true }` |
@@ -81,7 +81,7 @@ MobilePermission {
 
 기존 라우트와 필드는 그대로다. 아래는 모두 **추가**이며, 새 필드는 전부 선택(optional)이다. 업데이트하지 않은 휴대폰 앱은 모르는 필드를 무시하고 지금처럼 동작한다. 휴대폰은 `/m1/info`의 `capabilities`에 이름이 있을 때만 해당 기능을 보여 준다(없으면 구버전 호스트).
 
-`MobileInfo.capabilities: string[]` — 허용 값: `"submit-mode"`, `"queue"`, `"pane"`, `"history"`, `"settings"`, `"commands"`, `"mighty"`, `"status"`, `"attachments"`, `"style"`, `"files"`, `"screenShare"`.
+`MobileInfo.capabilities: string[]` — 허용 값: `"submit-mode"`, `"queue"`, `"pane"`, `"history"`, `"settings"`, `"commands"`, `"mighty"`, `"status"`, `"attachments"`, `"style"`, `"files"`, `"screenShare"`, `"structure"`.
 
 `"screenShare"`는 BETA 화면 보기·조작 기능의 문이다. 세션 요청 라우트와 E2EE 시그널링 메시지 규약은 `docs/relay.md`의 "화면 공유 시그널링"에 있다.
 
@@ -163,7 +163,9 @@ MobileMighty {
   ouroboros?: { phase, ready: boolean, takesText: [skill], next: [{ skill, title, help }], all: [{ skill, title, help }] },
   paperthin?: { installed: boolean, recommended?: skill,
                 domains: [{ id, title, axis, question, skills: [{ name, emoji, summary, scope, userInvoked, readOnly }] }],
-                casebook?: { name, weight: "full" | "lightweight", files: [string] } }
+                casebook?: { name, weight: "full" | "lightweight", files: [string] } },
+  structure?: MobileStructure,                                           // 아래 "구조 보기" 절 — ?structure=로 물었을 때만, 바뀌었을 때만
+  structureTag?: number                                                  // ?structure=로 물었을 때만. 0은 그릴 것이 없음
 }
 MobileBlock { id, kind, title, status, summary?, output?, durationMs?, nodeModelLabel?, activity?: [string] }
                                              // output은 2 000자까지. durationMs는 끝난 블록만(첫 기록~마지막 기록)
@@ -178,6 +180,45 @@ MobileBlock { id, kind, title, status, summary?, output?, durationMs?, nodeModel
 ```
 
 `activity.durationMs`와 `activity.provider`는 이미 전송되고 있다(도구 소요 시간 표시에 쓴다).
+
+#### 구조 보기 (`mighty.structure`)
+
+Mac의 "구조" 보기(`MightyCore/MightyStructure.swift`의 `MightyStructure.make`)를 **그 결과 그대로** 휴대폰에 보낸다.
+
+**묻는 휴대폰에게만, 바뀌었을 때만.** 이 값은 `capabilities`에 `"structure"`가 있는 Mac만 안다. 휴대폰은 구조 보기를 열어 둔 동안에만 세션 상세를 `GET /m1/sessions/{id}?since=…&wait=…&structure=<tag>`로 묻는다. `<tag>`는 휴대폰이 가진 구조의 태그(없으면 `0`, 숫자 1–12자리)이고, 다른 라우트(`/m1/state` 등)에서 이 이름은 지금처럼 400이다. 그래서 구버전 휴대폰과 대화·블록 보기는 이 값을 한 바이트도 받지 않는다. 물은 상세에는 `mighty.structureTag`(지금 구조의 태그, 그릴 것이 없으면 `0`)가 언제나 실리고, `mighty.structure`는 그 태그가 휴대폰이 보낸 것과 다를 때만 실린다. 태그는 정렬된 키로 인코딩한 값의 SHA-256 앞 8바이트를 1…999 999 999 999로 줄인 수다. 휴대폰은 구조를 상세와 따로 들고 있다가(`receiveStructure`) 태그만 같으면 그대로 쓰고, 새 값이면 바뀌지 않은 요청을 같은 객체로 남겨 그 카드만 다시 그린다. 구조 보기로 바꾸는 순간 롱 폴을 다시 시작해 곧바로 묻는다.
+
+**릴레이 프레임 안에.** 응답 하나는 릴레이 프레임 하나(1 MiB, [relay.md](relay.md))에 실린다. 호스트는 구조가 실린 상세의 JSON이 `MobileWire.maximumReplyBytes`(1 MiB − 32 KiB, 봉투·암호 머리 몫)를 넘으면 구조부터 덜어내고 태그만 남긴다(`MobileRemoteSupport.outgoing`). 휴대폰은 태그가 다른데 값이 없으면 가진 것을 그대로 보이며 옛 태그로 다시 묻는다. 휴대폰은 요청의 단계나 요청·실행·결과 단계를 스스로 계산하지 않고 받은 것만 그린다. 입력도 Mac 창과 같다: 저장된 그래프의 요청들, 승인된 스타일의 평가기, 창의 현재 단계(Mac 단계 막대와 같은 `currentPhase(session:fileSourceStates:planStage:)`), 답한 계획 기록, 답을 기다리는 계획의 run id. Mac 창에만 있는 "새로 시작" 선택은 휴대폰에 오지 않으므로 휴대폰은 언제나 이미 있는 요청 기준으로 본다. CLI 기록에서 불러온 더 오래된 요청은 `runs`처럼 보내지 않는다.
+
+```
+MobileStructure {
+  v: 1,                                       // 다른 값이면 휴대폰은 그리지 않고 "휴대폰 앱 업데이트 필요"를 보인다
+  shape: "phases" | "free",                   // 단계가 있는 스타일이면 phases, 아니면 free
+  columns?: [{ id, title, step, items: [Item] }],                       // phases: 단계 순서대로, items는 오래된 것부터
+  rows?: [{ item: Item, request: Step, execution: Step, result: Step }], // free: 요청마다 한 줄, 오래된 것부터
+  omitted?: number                            // 빠진 오래된 요청 수(없으면 필드 없음)
+}
+Step = "done" | "current" | "pending" | "error" | "stopped"           // 모르는 값은 pending(회색)으로 읽는다
+Item {
+  runId, ordinal,                             // ordinal은 창 안의 요청 번호("요청 3")
+  title?,                                     // 스타일이 붙인 요청 이름(MobileMightyRun.title과 같은 규칙)
+  status, finished: boolean,                  // status는 블록 상태 어휘
+  request?, message?,                         // 요청 전문, 메인 에이전트의 최근 답(그 답이 최종 답이면 빠짐)
+  activity: [Activity],                       // 메인 에이전트의 최근 도구 호출 최대 5개, 오래된 것부터
+  answer?,                                    // 끝난 요청의 최종 답(Markdown)
+  tally: { agents, tools },                   // 노드를 덜어내도 요청 전체를 센다
+  clusters: [{ nodes: [Node] }],              // 하위 에이전트 트리마다 하나, 뿌리부터 깊이 우선
+  omittedNodes?: number
+}
+Activity { kind, state, text }                // kind는 AgentActivity.kind, text는 한 줄
+Node { id, depth, title, status, kind: "agent" | "task", model?, prompt?, output?, activity?: Activity }
+                                              // depth는 0부터 6까지(더 깊으면 6), model은 버전 붙은 짧은 이름, activity는 마지막 도구 호출
+```
+
+**한도.** 글은 글자 경계(결합 이모지도 한 글자)에서 UTF-8 바이트로 자르고 잘린 글 끝에 "…"를 붙인다: `request`·`message` 1 KB, `answer` 4 KB(열린 코드 펜스는 한도 안에서 닫는다), 노드 `prompt` 300 B·`output` 1 KB, 활동 한 줄 200 B, 제목 160 B, 모델 80 B. 최근 요청 20개까지, 요청마다 노드 60개까지(`omittedNodes`). 값 전체의 JSON(열·줄 껍데기, 단계 이름, `omitted`까지 실제로 인코딩한 크기)은 192 KiB 이하로 맞추고, 넘치면 오래된 요청부터 뺀다. 가장 최근 요청 하나는 언제나 실리고, 그것만으로 넘치면 앞쪽 노드를 들어갈 만큼만(이분 탐색) 남긴다. 같은 run id가 두 번 있으면(손상된 저장) 가장 최근 것 하나만 싣는다. 단계가 있는 스타일은 요청이 하나도 없어도 단계 막대를 위해 `columns`를 보내고, 스타일이 없는 창에 요청이 없으면 필드 자체가 없다.
+
+**다시 만드는 때.** Mac은 휴대폰이 물을 때만, 그리고 창마다 `MightyStructure.Signature`나 키(요청 이름을 읽는 실행 가능한 스타일들의 id·해시, 모델 목록)가 바뀔 때만(스트리밍 글자는 몇 줄씩 자랄 때만) 구조를 다시 만든다. 바뀐 요청의 카드만 다시 읽고(`ItemCache`), 전송 모양과 JSON 크기도 바뀌지 않은 요청은 지난 것을 그대로 쓴다. 그 사이의 읽기는 마지막 값을 그대로 보낸다. 롱 폴을 깨우는 mighty 요약값에는 답한 계획 기록의 개수와 마지막 결과도 들어간다(계획 답이 요청의 단계를 옮긴다).
+
+**버전이 어긋날 때.** 구버전 휴대폰은 묻지 않으므로 받지도 않는다. 신버전 휴대폰이 구버전 Mac에 붙으면 `capabilities`에 `"structure"`가 없으므로 묻지 않고, 요청이 있는 창의 구조 보기는 "Mac 업데이트가 필요합니다"(`phone.structure.needsUpdate.*`)를 보인다. 휴대폰이 모르는 `v`·`shape`면 "휴대폰 앱 업데이트가 필요합니다"(`phone.structure.unreadable.*`)를 보인다. 공유 픽스처 `native/contracts/fixtures/mobile-structure.json`을 Mac(`MobileRemoteStructureTests`)과 휴대폰(`structure.test.ts`)이 함께 읽어 필드 이름이 어긋나지 않게 한다.
 
 ### 스타일 (style)
 
@@ -337,7 +378,8 @@ MobileFilePreview {
 - `MightyCore/Remote/MobileWorkspaceFiles.swift`: 파일 라우트의 경로 거르기, 목록·미리보기 모양, 응답 크기 맞추기, 썸네일(svg는 `MobileHostDelegate.mobileSVGRasterizer`로 앱이 그림).
 - `MightyCore/Styles/StylePanelProjection.swift`: `MobileMighty.panel`이 되는 `StylePanel`의 모양과 골든 직렬화. Mac 패널과 같은 함수가 만든다(스타일 엔진 계약: [mighty-styles.md](mighty-styles.md) §5.6·§7.3).
 - `MightyCore/Remote/MobileLegacyStyleAdapter.swift`: 내장 두 스타일의 `mighty.ouroboros`/`mighty.paperthin`을 같은 투영에서 만드는 레거시 어댑터.
+- `MightyCore/Remote/MobileStructure.swift`: `mighty.structure`의 모양·한도와 창별 캐시(`MobileStructureCache`). `MightyStructure.make`의 결과를 그대로 줄인다.
 
 ## 모바일 앱
 
-`mobile/README.md`를 참고한다. 화면은 페어링(QR/링크 붙여넣기) → 호스트 → 워크스페이스·세션 목록 → 세션 상세(대화, 권한·질문 카드, 입력창, 중지)이고, 워크스페이스마다 읽기 전용 파일 목록 → 파일 미리보기가 있다. 마이티 보기의 범용 스타일 패널은 `mobile/src/lib/styles.ts`(정규화·뷰 모델)와 `mobile/src/components/guided-panel.tsx`·`guided-action-chip.tsx`가 그린다.
+`mobile/README.md`를 참고한다. 화면은 페어링(QR/링크 붙여넣기) → 호스트 → 워크스페이스·세션 목록 → 세션 상세(대화, 권한·질문 카드, 입력창, 중지)이고, 워크스페이스마다 읽기 전용 파일 목록 → 파일 미리보기가 있다. 마이티 보기의 범용 스타일 패널은 `mobile/src/lib/styles.ts`(정규화·뷰 모델)와 `mobile/src/components/guided-panel.tsx`·`guided-action-chip.tsx`가 그린다. 세션 화면의 보기 전환은 대화·블록·구조 셋이고, 구조 보기는 `mobile/src/lib/structure.ts`(방어적 정규화와 쪽·단계 막대·접기 규칙)와 `mobile/src/components/structure-view.tsx`가 그린다: 스타일 창은 단계 막대 아래 단계마다 한 쪽씩 옆으로 넘기는 화면(처음에는 지금 단계, "실행 (3/6)" 표시), 스타일이 없는 창은 요청마다 요청 → 실행 → 결과를 쌓은 목록. 맨 아래에 있을 때만 새 내용을 따라가고, 사용자가 위로 올리면 그대로 둔다. 따라가기는 단계 쪽마다 따로 기억해서(`FollowMemory`), 위로 올려 읽던 쪽을 넘겼다가 돌아와도 맨 아래로 끌려가지 않는다. 고른 쪽은 단계 id로 들고, 지금 단계로 돌아오면 놓아서 다시 단계를 따라간다.

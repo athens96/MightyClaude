@@ -8,6 +8,9 @@ import os
 public protocol MobileHostDelegate: AnyObject, Sendable {
     func mobileState() async -> MobileState
     func mobileSession(id: String) async -> MobileSessionDetail?
+    /// The detail with the pane's structure view built in (`mighty.structure` and its
+    /// tag), for a phone that asked for it; the service decides whether it is sent.
+    func mobileSession(id: String, structure: Bool) async -> MobileSessionDetail?
     /// Returns what actually happened — "started", "steered" or "queued" — so
     /// the phone never shows a steer that silently became a queued item.
     /// `mode` is already checked against `MobileWire.submitModes`, and the
@@ -41,6 +44,8 @@ public protocol MobileHostDelegate: AnyObject, Sendable {
 }
 
 public extension MobileHostDelegate {
+    /// A host without a structure view answers the plain detail.
+    func mobileSession(id: String, structure: Bool) async -> MobileSessionDetail? { await mobileSession(id: id) }
     /// No drawing: an svg preview is `unsupported` ("undecodable").
     var mobileSVGRasterizer: MobileWorkspaceFiles.SVGRasterizer? { nil }
     /// A host without plan cards has nothing to answer.
@@ -745,17 +750,20 @@ public actor MobileRemoteService {
         guard let body, body.count <= (limit ?? Self.bodyLimit) else { throw Failure(body == nil ? 400 : 413, body == nil ? L("remote.error.bodyRequired") : L("remote.error.bodyTooLarge")) }
         do { return try JSONDecoder().decode(type, from: body) } catch { throw Failure(400, L("remote.error.badBody")) }
     }
-    private static func pollArguments(_ url: URLComponents) throws -> (since: Int, wait: TimeInterval) {
-        var since = 0; var wait: TimeInterval = 0
+    /// `structure` (the tag of the structure the phone holds, 0 for none) is taken only
+    /// where `structure` allows it: the session detail.
+    private static func pollArguments(_ url: URLComponents, structure allowsStructure: Bool = false) throws -> (since: Int, wait: TimeInterval, structure: Int?) {
+        var since = 0; var wait: TimeInterval = 0; var structure: Int?
         for item in url.queryItems ?? [] {
             guard let value = item.value, value.range(of: "^[0-9]{1,12}$", options: .regularExpression) != nil, let number = Int(value) else { throw Failure(400, L("remote.error.badQueryValue")) }
             switch item.name {
             case "since": since = number
             case "wait": wait = min(Double(number), maximumWait)
+            case "structure" where allowsStructure: structure = number
             default: throw Failure(400, L("remote.error.unknownQuery"))
             }
         }
-        return (since, wait)
+        return (since, wait, structure)
     }
     private static func entriesArguments(_ url: URLComponents) throws -> (before: String, limit: Int) {
         var before: String?
@@ -863,14 +871,15 @@ public actor MobileRemoteService {
             }
             if method == "GET", route.count == 2, route[0] == "sessions" {
                 let id = try sessionID(route[1])
-                let poll = try Self.pollArguments(url)
-                guard var detail = await delegate.mobileSession(id: id) else { throw Failure(404, L("remote.error.paneNotFound")) }
+                let poll = try Self.pollArguments(url, structure: true)
+                let wantsStructure = poll.structure != nil
+                guard var detail = await delegate.mobileSession(id: id, structure: wantsStructure) else { throw Failure(404, L("remote.error.paneNotFound")) }
                 if detail.revision <= poll.since {
                     await wait(scope: "session:" + id, beyond: poll.since, seconds: poll.wait)
-                    guard let fresh = await delegate.mobileSession(id: id) else { throw Failure(404, L("remote.error.paneNotFound")) }
+                    guard let fresh = await delegate.mobileSession(id: id, structure: wantsStructure) else { throw Failure(404, L("remote.error.paneNotFound")) }
                     detail = fresh
                 }
-                return reply(200, detail)
+                return reply(200, MobileRemoteSupport.outgoing(detail, asked: poll.structure))
             }
             if method == "GET", route.count == 3, route[0] == "sessions", route[2] == "entries" {
                 let id = try sessionID(route[1])

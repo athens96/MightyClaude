@@ -1,0 +1,121 @@
+{
+  "styled": {
+    "v": 1,
+    "shape": "phases",
+    "columns": [
+      { "id": "goal", "title": "Goal", "step": "done", "items": [] },
+      {
+        "id": "interview",
+        "title": "Interview",
+        "step": "done",
+        "items": [
+          {
+            "runId": "run-3",
+            "ordinal": 3,
+            "title": "Interview",
+            "status": "completed",
+            "finished": true,
+            "request": "ooo interview a todo app",
+            "activity": [{ "kind": "read", "state": "completed", "text": "README.md" }],
+            "answer": "## Questions\n\n1. Who uses it?\n2. Where does it run?",
+            "tally": { "agents": 0, "tools": 1 },
+            "clusters": []
+          }
+        ]
+      },
+      {
+        "id": "seed",
+        "title": "Seed",
+        "step": "current",
+        "items": [
+          {
+            "runId": "run-4",
+            "ordinal": 4,
+            "title": "Seed",
+            "status": "running",
+            "finished": false,
+            "request": "ooo seed",
+            "message": "Writing the seed from the interview answers.",
+            "activity": [
+              { "kind": "read", "state": "completed", "text": "interview.md" },
+              { "kind": "edit", "state": "running", "text": "seed.yaml" }
+            ],
+            "tally": { "agents": 2, "tools": 3 },
+            "clusters": [
+              {
+                "nodes": [
+                  {
+                    "id": "agent-a",
+                    "depth": 0,
+                    "title": "Check the acceptance criteria",
+                    "status": "completed",
+                    "kind": "agent",
+                    "model": "Opus 5.5",
+                    "prompt": "Read the seed draft and list missing criteria.",
+                    "output": "Two criteria have no test.",
+                    "activity": { "kind": "search", "state": "completed", "text": "criteria" }
+                  },
+                  {
+                    "id": "agent-b",
+                    "depth": 1,
+                    "title": "Draft the tests",
+                    "status": "running",
+                    "kind": "agent",
+                    "prompt": "Draft a test for each missing criterion."
+                  }
+                ]
+              }
+            ],
+            "omittedNodes": 4
+          }
+        ]
+      },
+      { "id": "run", "title": "Run", "step": "pending", "items": [] }
+    ],
+    "omitted": 2
+  },
+  "free": {
+    "v": 1,
+    "shape": "free",
+    "rows": [
+      {
+        "item": {
+          "runId": "run-1",
+          "ordinal": 1,
+          "status": "completed",
+          "finished": true,
+          "request": "Fix the login button",
+          "activity": [],
+          "answer": "Fixed. The button now waits for the form to be valid.",
+          "tally": { "agents": 0, "tools": 2 },
+          "clusters": []
+        },
+        "request": "done",
+        "execution": "done",
+        "result": "done"
+      },
+      {
+        "item": {
+          "runId": "run-2",
+          "ordinal": 2,
+          "status": "running",
+          "finished": false,
+          "request": "Add a dark mode",
+          "message": "Looking at the theme first.",
+          "activity": [{ "kind": "command", "state": "running", "text": "npm test" }],
+          "tally": { "agents": 1, "tools": 1 },
+          "clusters": [
+            {
+              "nodes": [
+                { "id": "task-1", "depth": 0, "title": "npm test", "status": "running", "kind": "task", "prompt": "npm test" }
+              ]
+            }
+          ]
+        },
+        "request": "done",
+        "execution": "current",
+        "result": "pending"
+      }
+    ]
+  }
+}

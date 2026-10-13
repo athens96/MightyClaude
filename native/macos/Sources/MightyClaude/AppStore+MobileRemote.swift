@@ -65,6 +65,9 @@ final class MobileRemoteBridge: MobileHostDelegate, @unchecked Sendable {
         await MainActor.run { store?.mobileState() ?? MobileState(revision: 0, hostName: "", workspaces: [], sessions: []) }
     }
     func mobileSession(id: String) async -> MobileSessionDetail? { await MainActor.run { store?.mobileSessionDetail(id) } }
+    func mobileSession(id: String, structure: Bool) async -> MobileSessionDetail? {
+        await MainActor.run { store?.mobileSessionDetail(id, structure: structure) }
+    }
     func mobileSubmit(sessionId: String, text: String, mode: String?, attachments: [RunAttachment]) async throws -> String {
         try await settle(MainActor.run { try store.orClosing().mobileSubmit(sessionId, text: text, mode: mode, attachments: attachments) })
     }
@@ -306,6 +309,7 @@ extension AppStore {
             nextSeen[session.id] = fingerprint; nextSummaries[session.id] = summary
         }
         for id in mobileTracking.summaries.keys where nextSummaries[id] == nil { mobileTracking.sessionRevisions.removeValue(forKey: id) }
+        mobileStructures.retain(Set(nextSummaries.keys))
         mobileTracking.seen = nextSeen; mobileTracking.summaries = nextSummaries; mobileTracking.workspaces = snapshot.workspaces
         mobileTracking.order = paneOrder
         if stateChanged { mobileTracking.stateRevision += 1 }
@@ -376,7 +380,8 @@ extension AppStore {
         snapshot.sessions.first { $0.id == id && !FilePaneKind.isFilePane($0.kind) }
     }
 
-    func mobileSessionDetail(_ id: String) -> MobileSessionDetail? {
+    /// `structure`: the phone asked for the structure view (`?structure=`); only then is it built.
+    func mobileSessionDetail(_ id: String, structure: Bool = false) -> MobileSessionDetail? {
         guard let session = mobilePane(id) else { return nil }
         let revision = mobileTracking.sessionRevisions[id, default: 1]
         let summary = mobileTracking.summaries[id] ?? mobileSummary(session, revision: revision)
@@ -393,7 +398,7 @@ extension AppStore {
                                    permissions: permissions, queued: DelegationQueueRows.mobileItems(held: delegationHeld[id] ?? [], queued: queuedInputs[id] ?? []),
                                    usage: mobileUsage(session), elapsedSeconds: session.runTiming?.elapsed(),
                                    hasOlder: MobileRemoteSupport.hasOlder(entryCount: session.logs.count), settings: mobileSettings(session),
-                                   mighty: mobileMighty(session),
+                                   mighty: mobileMighty(session, structure: structure),
                                    statusLine: mobileStatusLine(id), rateLimits: MobileRemoteSupport.rateLimits(session.sessionUsage?.rateLimits ?? []))
     }
 
@@ -402,7 +407,7 @@ extension AppStore {
     /// The Mighty view of a pane: its style, its newest runs as blocks, and the
     /// guided panel the Mac would draw beside the composer. Absent for panes
     /// the Mac is not showing in Mighty view — the phone shows the transcript.
-    func mobileMighty(_ session: RunSession) -> MobileMighty? {
+    func mobileMighty(_ session: RunSession, structure: Bool = false) -> MobileMighty? {
         guard MobileRemoteSupport.sendsMighty(kind: session.kind, agentViewMode: session.agentViewMode) else { return nil }
         let style = mobileStyle(session)
         // The saved graph as it stands, not `mightyGraphRuns`: that property
@@ -413,9 +418,12 @@ extension AppStore {
         // — and only such a pane gets style prefixes on its request blocks, so
         // the registry sweep is behind the same gate (§1.10).
         guard let registered = guidedStyle(session) else {
-            return MobileMighty(style: style, runs: MobileMightySupport.runs(saved) { _ in nil })
+            let built = structure ? mobileStructure(session, runs: saved, style: nil) : nil
+            return MobileMighty(style: style, runs: MobileMightySupport.runs(saved) { _ in nil },
+                                structure: built?.value, structureTag: built?.tag)
         }
-        let titles = StyleRequestTitles(styles: styleRegistry.runnableInPrecedence(workspace: styleWorkspaceRef(session)))
+        let runnable = styleRegistry.runnableInPrecedence(workspace: styleWorkspaceRef(session))
+        let titles = StyleRequestTitles(styles: runnable)
         let runs = MobileMightySupport.runs(saved) { titles.prefix($0) }
         // The Mac reads these when the style is chosen; a pane only ever
         // watched from a phone has never triggered that read.
@@ -424,8 +432,31 @@ extension AppStore {
         if !styleStateIsLoaded(registered, for: session) { refreshStyleState(registered, for: session) }
         let panel = mobileStylePanel(registered, for: session, runs: saved)
         let legacy = MobileLegacyStyleAdapter.payloads(style: registered, panel: panel, casebook: styleCasebooks[session.workspaceId])
+        let built = structure ? mobileStructure(session, runs: saved, style: registered, titles: titles, runnable: runnable) : nil
         return MobileMighty(style: style, styleId: registered.id, runs: runs, panel: panel,
-                            ouroboros: legacy.ouroboros, paperthin: legacy.paperthin)
+                            ouroboros: legacy.ouroboros, paperthin: legacy.paperthin,
+                            structure: built?.value, structureTag: built?.tag)
+    }
+
+    /// The structure view the Mac pane draws (`MightyGraphView.structureShape`), from the
+    /// same inputs: the pane's phase as its phase bar reads it, its answered plans and the
+    /// plan waiting for an answer. The Mac's "start anew" choice lives in the pane's own
+    /// view and never reaches here, so the phone always reads the requests already there.
+    /// Older requests the pane loaded from its CLI's record are not sent, as with `runs`.
+    /// The cache key names every input beyond the graph: the styles the request titles are
+    /// read from (`runnable`) and the model catalogue the node labels are read from.
+    private func mobileStructure(_ session: RunSession, runs: [MightyGraphRun], style: RegisteredStyle?,
+                                 titles: StyleRequestTitles? = nil, runnable: [RegisteredStyle] = []) -> MobileStructureCache.Built {
+        let phase = style.flatMap {
+            $0.evaluator.currentPhase(session: session, fileSourceStates: styleFileStates($0, for: session), planStage: stylePlanStage($0, for: session))
+        }
+        let catalog = providerRuntime(session.provider, workspaceId: session.workspaceId).modelCatalog.models
+        return mobileStructures.structure(pane: session.id, runs: runs, style: style?.evaluator, currentPhase: phase,
+                                          planHistory: session.planHistory ?? [],
+                                          pendingPlanRunID: PlanCardSupport.pendingPlan(toolPermissions[session.id])?.runId,
+                                          key: mobileStructureKey(style: style, runnable: runnable, catalog: catalog),
+                                          title: { titles?.prefix($0) },
+                                          model: { ModelUsageFormat.shortName($0, catalog: catalog, versioned: true) })
     }
 
     /// The very projection the Mac panel is drawn from. The phone has no
@@ -446,6 +477,14 @@ extension AppStore {
                                          state: styleState(style, for: session))
     }
 
+    private func mobileStructureKey(style: RegisteredStyle?, runnable: [RegisteredStyle], catalog: [ModelOption]) -> String {
+        var hasher = Hasher()
+        hasher.combine(style?.id); hasher.combine(style?.hash)
+        for each in runnable { hasher.combine(each.id); hasher.combine(each.hash) }
+        for option in catalog { hasher.combine(option.value); hasher.combine(option.displayName); hasher.combine(option.resolvedModel) }
+        return String(hasher.finalize())
+    }
+
     /// What a phone watching the Mighty view would notice change: the run and
     /// block identities with their statuses, the guided panel's own state. The
     /// streamed text is deliberately absent, or a long poll would wake on every
@@ -457,6 +496,8 @@ extension AppStore {
         // by identity alone rather than rebuilding them: this runs on every
         // snapshot publish — during a stream, every token.
         hasher.combine(MobileMightySupport.digest(session: session))
+        // An answered plan moves a request's phase in the structure view.
+        hasher.combine(session.planHistory?.count); hasher.combine(session.planHistory?.last?.outcome.rawValue)
         guard let style = guidedStyle(session) else { return hasher.finalize() }
         // The style itself, so a revocation or a changed manifest wakes the poll.
         hasher.combine(style.id); hasher.combine(style.hash)
