@@ -109,7 +109,8 @@ Claude 和 Codex 窗格的标题栏中有{{ui:graph.view.default}} | {{ui:graph.
 - 使用风格的窗格顶部会排出该模式的各个阶段：已完成的阶段为绿色，当前阶段为强调色，其余为灰色。
 - 每个请求以卡片形式放在它所属的阶段下方，卡片下方的虚线框中归组显示它的子代理树。
 - 没有风格的窗格中，每个请求占一行：{{ui:graph.structure.column.request}} → {{ui:graph.structure.column.execution}} → {{ui:graph.structure.column.result}}。
-- 点击卡片或代理行，会在图中显示该块。
+- 每张卡片就地显示请求内容、进度（最新消息和工具调用）、结果，以及各子代理接到的任务和产出。长文本默认折叠，点击{{ui:graph.structure.more}}即可就地展开。
+- 点击卡片标题栏中的小按钮，会在图中显示该块。
 
 ![[agent-structure]]
 

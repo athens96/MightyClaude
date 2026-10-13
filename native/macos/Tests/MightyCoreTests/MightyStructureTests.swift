@@ -203,6 +203,115 @@ struct MightyStructureTests {
         #expect(MightyStructure.item(run, index: 0).tally == MightyStructure.Tally(agents: 1, tools: 2))
     }
 
+    // MARK: Content shown in place
+
+    static func tool(_ id: String, kind: String = "read", state: String = "completed", summary: String) -> LogEntry {
+        LogEntry(id: id, kind: "system", text: summary, activity: AgentActivity(id: "act-" + id, provider: "claude", kind: kind, state: state, summary: summary))
+    }
+
+    @Test func aRunningRequestShowsItsLatestMessageAndActivity() {
+        var run = Self.run("r", input: "로그인 화면을 고쳐줘\n두 번째 줄", status: "running")
+        run.rootEntries = [
+            LogEntry(id: "m1", kind: "assistant", text: "먼저 읽어 볼게요"),
+            Self.tool("t1", summary: "a.swift"),
+            LogEntry(id: "turn", kind: "system", text: "turn", activity: AgentActivity(id: "turn", provider: "claude", kind: "turn", state: "running", summary: "turn")),
+            Self.tool("t2", kind: "search", summary: "login"),
+            Self.tool("t3", kind: "edit", summary: "b.swift"),
+            Self.tool("t4", kind: "command", state: "running", summary: "swift test\n--filter Login"),
+            LogEntry(id: "m2", kind: "assistant", text: "고치는 중이에요\n테스트를 돌립니다"),
+            Self.tool("t5", kind: "web", summary: ""),
+            Self.tool("t6", summary: "c.swift"),
+            // A question's raw form is not a reply.
+            LogEntry(id: "q", kind: "assistant", text: #"{"questions":[{"header":"H","question":"Q?","multiSelect":false,"options":[{"label":"A","description":""},{"label":"B","description":""}]}]}"#),
+        ]
+        let item = MightyStructure.item(run, index: 0)
+        #expect(item.request?.text == "로그인 화면을 고쳐줘\n두 번째 줄")
+        #expect(item.message?.text == "고치는 중이에요\n테스트를 돌립니다")
+        #expect(item.message?.folds == false)
+        // The last five tool calls, oldest first, on one line each; the turn row and a
+        // call with no words (nor a tool name) are not shown.
+        #expect(item.activity.map(\.id) == ["t1", "t2", "t3", "t4", "t6"])
+        #expect(item.activity.map(\.kind) == ["read", "search", "edit", "command", "read"])
+        #expect(item.activity[3].text == "swift test --filter Login")
+        #expect(item.activity[3].state == "running")
+        #expect(item.answer == nil && item.result == nil)
+    }
+
+    @Test func aFinishedRequestShowsItsResultOnce() {
+        let answer = "# 끝났어요\n\n- 로그인 수정\n- 테스트 통과"
+        let run = Self.run("r", final: answer)
+        // `refreshResult` put the answer in the main block too.
+        #expect(run.rootEntries.last?.text == answer)
+        let item = MightyStructure.item(run, index: 0)
+        #expect(item.answer?.text == answer)
+        #expect(item.answer?.preview == answer)
+        #expect(item.message == nil)
+        // A failed request has no answer; its last reply stays its message.
+        var failed = Self.run("f", status: "error")
+        failed.rootEntries = [LogEntry(id: "m", kind: "assistant", text: "권한이 없어요")]
+        let failedItem = MightyStructure.item(failed, index: 0)
+        #expect(failedItem.answer == nil)
+        #expect(failedItem.message?.text == "권한이 없어요")
+    }
+
+    @Test func agentNodesCarryTheirPromptOutputAndActivity() {
+        var agent = MightyGraphAgent(id: "a", title: "검토", input: "변경을 검토해 줘\n특히 보안", status: "running",
+                                     responseRecords: [GraphResponseRecord(responseId: "x", usage: GraphTokenUsage()),
+                                                       GraphResponseRecord(responseId: "y", model: "claude-opus-4-1", usage: GraphTokenUsage())])
+        agent.entries = [Self.tool("a1", summary: "a.swift"), LogEntry(id: "o1", kind: "assistant", text: "문제 없음"),
+                         Self.tool("a2", summary: "b.swift"), Self.tool("a3", summary: "c.swift"), Self.tool("a4", kind: "command", summary: "make")]
+        var task = MightyGraphAgent(id: "t", parentID: "a", title: "빌드", input: "make all", status: "completed", kind: "task")
+        task.entries = [LogEntry(id: "t-answer", kind: "assistant", text: "빌드 성공")]
+        let nodes = MightyStructure.clusters(Self.run("r", status: "running", agents: [agent, task])).flatMap(\.nodes)
+        #expect(nodes.map(\.agentID) == ["a", "t"])
+        #expect(nodes[0].prompt?.text == "변경을 검토해 줘\n특히 보안")
+        #expect(nodes[0].prompt?.folds == false)
+        #expect(nodes[0].output?.text == "문제 없음")
+        #expect(nodes[0].activity.map(\.id) == ["a2", "a3", "a4"])
+        #expect(nodes[0].model == "claude-opus-4-1")
+        #expect(nodes[1].prompt?.text == "make all")
+        #expect(nodes[1].output?.text == "빌드 성공")
+        #expect(nodes[1].activity.isEmpty && nodes[1].model == nil)
+    }
+
+    @Test func shownTextsAreCappedAndFolded() {
+        let long = String(repeating: "가", count: 3_000)   // 9,000 bytes
+        let request = MightyStructure.excerpt(long, maximumBytes: MightyStructure.requestBytes, lines: MightyStructure.requestLines)
+        #expect(request.map { $0.text.utf8.count <= MightyStructure.requestBytes } == true)
+        #expect(request?.text.hasSuffix("…") == true)
+        #expect(request?.folds == true)
+        // A long line is cut in the preview, so a folded card never lays out the whole text.
+        #expect(request.map { $0.preview.count <= MightyStructure.previewLineCharacters } == true)
+        // Twenty lines: the first ones fold, the text keeps them all.
+        let lines = (1...20).map { "line \($0)" }.joined(separator: "\n")
+        let folded = MightyStructure.excerpt(lines, maximumBytes: MightyStructure.messageBytes, lines: MightyStructure.messageLines)
+        #expect(folded?.text == lines)
+        #expect(folded?.preview == (1...8).map { "line \($0)" }.joined(separator: "\n"))
+        #expect(folded?.folds == true)
+        // Short text fits as it is; nothing but blanks or controls is nothing.
+        #expect(MightyStructure.excerpt("짧은 글", maximumBytes: 100, lines: 2) == MightyStructure.Excerpt(text: "짧은 글", preview: "짧은 글", folds: false))
+        #expect(MightyStructure.excerpt(" \n\u{1B}[0m ", maximumBytes: 100, lines: 2) == nil)
+        // The result and the sub-agent texts take their own caps.
+        let big = String(repeating: "result ", count: 5_000)
+        let item = MightyStructure.item(Self.run("r", input: long, final: big), index: 0)
+        #expect(item.request.map { $0.text.utf8.count <= MightyStructure.requestBytes } == true)
+        #expect(item.answer.map { $0.text.utf8.count <= MightyStructure.answerBytes && $0.text.hasSuffix("…") } == true)
+        #expect(item.answer?.folds == true)
+        var agent = MightyGraphAgent(id: "a", input: long, status: "completed")
+        agent.entries = [LogEntry(id: "o", kind: "assistant", text: big)]
+        let node = MightyStructure.clusters(Self.run("r2", agents: [agent]))[0].nodes[0]
+        #expect(node.prompt.map { $0.text.utf8.count <= MightyStructure.promptBytes } == true)
+        #expect(node.output.map { $0.text.utf8.count <= MightyStructure.outputBytes } == true)
+    }
+
+    @Test func columnsShareThePanesWidthDownToTheMinimum() {
+        // Three columns in 1,000pt with 12pt gaps: (1000 - 24) / 3.
+        #expect(MightyStructure.columnWidth(available: 1_000, count: 3, gap: 12) == 325)
+        // Too narrow: the minimum, and the view scrolls sideways.
+        #expect(MightyStructure.columnWidth(available: 700, count: 6, gap: 12) == MightyStructure.minimumColumnWidth)
+        #expect(MightyStructure.columnWidth(available: 2_000, count: 0, gap: 12) == MightyStructure.minimumColumnWidth)
+    }
+
     // MARK: Clusters
 
     @Test func clustersAreTheRootTreesFlattenedDepthFirst() {
@@ -269,6 +378,42 @@ struct MightyStructureTests {
                                                     currentPhase: style.manifest.phase("goal"), startingNew: true))
         #expect(before != MightyStructure.Signature(runs: [Self.run("r", status: "running", agents: [Self.agent("a", status: "running")])], style: style,
                                                     currentPhase: style.manifest.phase("goal"), pendingPlanRunID: "s"))
+    }
+
+    @Test func theSignatureFollowsTextThatGrowsInPlace() {
+        var run = Self.run("r", status: "running", agents: [Self.agent("a", status: "running")])
+        run.rootEntries = [LogEntry(id: "m", kind: "assistant", text: "읽는 중")]
+        run.agents[0].entries = [Self.tool("t", state: "running", summary: "a.swift")]
+        let before = MightyStructure.Signature(runs: [run], style: nil, currentPhase: nil)
+        // A reply that grew keeps its record and the count.
+        var grown = run
+        grown.rootEntries[0].text = "읽는 중, 이제 고칩니다"
+        #expect(MightyStructure.Signature(runs: [grown], style: nil, currentPhase: nil) != before)
+        // A tool call that finished, and a sub-agent's prompt that arrived.
+        var finished = run
+        finished.agents[0].entries[0].activity?.state = "completed"
+        #expect(MightyStructure.Signature(runs: [finished], style: nil, currentPhase: nil) != before)
+        var prompted = run
+        prompted.agents[0].input = "검토해 줘"
+        #expect(MightyStructure.Signature(runs: [prompted], style: nil, currentPhase: nil) != before)
+    }
+
+    @Test func theItemCacheRebuildsOnlyTheRequestThatMoved() {
+        var runs = [Self.run("r1", final: "첫 결과"), Self.run("r2", status: "running")]
+        var cache = MightyStructure.ItemCache()
+        let first = cache.items(runs, signature: MightyStructure.Signature(runs: runs, style: nil, currentPhase: nil))
+        #expect(first == runs.enumerated().map { MightyStructure.item($1, index: $0) })
+        runs[1].rootEntries.append(LogEntry(id: "m", kind: "assistant", text: "진행 중"))
+        let second = cache.items(runs, signature: MightyStructure.Signature(runs: runs, style: nil, currentPhase: nil))
+        #expect(second[1].message?.text == "진행 중")
+        #expect(second == runs.enumerated().map { MightyStructure.item($1, index: $0) })
+        // The oldest request trimmed: a kept card takes its new number.
+        let trimmed = Array(runs.dropFirst())
+        let third = cache.items(trimmed, signature: MightyStructure.Signature(runs: trimmed, style: nil, currentPhase: nil))
+        #expect(third == [MightyStructure.item(trimmed[0], index: 0)])
+        #expect(third[0].ordinal == 1)
+        // The shape built from cached cards is the shape built from scratch.
+        #expect(MightyStructure.make(runs: trimmed, style: nil, currentPhase: nil, items: third) == MightyStructure.make(runs: trimmed, style: nil, currentPhase: nil))
     }
 
     // MARK: Empty pane and the saved choice

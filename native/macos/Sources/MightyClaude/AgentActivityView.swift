@@ -64,7 +64,9 @@ struct AgentActivityRow: View {
 
     private var animating: Bool { sessionRunning && activity.state == "running" }
     private var hasDetails: Bool { !(activity.output ?? "").isEmpty || activity.summary.contains("\n") || activity.summary.count > 140 }
-    private var monospace: Bool { ["command", "read", "edit"].contains(activity.kind) }
+    /// Kinds whose summary is a command or a path, set in a fixed-width face.
+    static let monospacedKinds: Set<String> = ["command", "read", "edit"]
+    private var monospace: Bool { Self.monospacedKinds.contains(activity.kind) }
     private var stateDescription: String {
         switch activity.state {
         case "running": return sessionRunning ? L("transcript.tool.running") : L("transcript.tool.runEnded")
