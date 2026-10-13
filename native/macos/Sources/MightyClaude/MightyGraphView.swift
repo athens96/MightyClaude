@@ -65,6 +65,8 @@ struct MightyGraphView: View {
         var shape = MightyStructure.Shape.free([])
         /// The cards, each built again only when its own request moved.
         var items = MightyStructure.ItemCache()
+        /// The structure's open texts, kept while the pane shows another view.
+        let memory = MightyStructureMemory()
     }
     /// The newest result's size only while its drag is in progress; the saved
     /// pane-wide size is the truth before and after.
@@ -241,7 +243,7 @@ struct MightyGraphView: View {
             } else if viewMode == .structure {
                 MightyStructureView(sessionID: sessionID, provider: provider,
                                     shape: structureShape(),
-                                    styleTitles: styleTitles, newestRunID: runs.last?.id, catalog: catalog) { nodeID in
+                                    styleTitles: styleTitles, newestRunID: runs.last?.id, catalog: catalog, memory: structureCache.memory) { nodeID in
                     // The diagram opens with its camera on the request or block whose button was clicked.
                     onFocus()
                     publish(.reaim(nodeID: nodeID, alignTop: false))

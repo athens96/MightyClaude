@@ -1,5 +1,16 @@
+import AppKit
 import MightyCore
 import SwiftUI
+
+/// What the structure view keeps of a pane while the pane shows its diagram or timeline,
+/// so coming back finds the same cards open. Held by the pane's `MightyGraphView`.
+final class MightyStructureMemory: ObservableObject {
+    /// Texts opened past their folded lines, by `MightyStructureView.foldKey`.
+    @Published var expanded = Set<String>()
+    /// The view is at or near its bottom (`TranscriptViewport.isFollowing`), so the
+    /// newest card's growth may scroll it. Not published: scrolling redraws nothing.
+    var following = true
+}
 
 /// The Mighty graph drawn as its structure (design "A. 단계별 열"), from
 /// `MightyStructure.make`: a styled pane's phases as a rail of chips with a column of
@@ -20,24 +31,36 @@ struct MightyStructureView: View {
     let newestRunID: String?
     /// Model catalog for a sub-agent's model name, as the diagram's capsules shorten it.
     var catalog: [ModelOption] = []
+    /// The pane's open texts and follow state, kept across view switches.
+    @ObservedObject var memory: MightyStructureMemory
     /// Shows a diagram node (`MightyGraphLayout.Node.id`) in the diagram.
     let onReveal: (String) -> Void
 
-    /// Texts opened past their folded lines, by `foldKey`.
-    @ViewState private var expanded = Set<String>()
+    /// Scroll bars that always show take their width from the columns.
+    @ViewState private var legacyScrollers = NSScroller.preferredScrollerStyle == .legacy
 
-    /// A tree's indent stops growing past this depth, so a deep chain stays inside its column.
-    static let maximumIndent = 6
     private static let chipHeight: CGFloat = 20
-    /// The height of a line of the compact Markdown the answer is drawn in
-    /// (`AgentMarkdownView(compact:)`: 11pt with 2pt between lines).
-    private static let compactLineHeight: CGFloat = 15
+    private static let scrollSpace = "mighty-structure-scroll"
+    /// A card's and a sub-agent card's corners.
+    static let cardCorner: CGFloat = 10
+    private static let nodeCorner: CGFloat = 8
+    /// A sub-agent card's status bar, and the glyph column of a tool call row.
+    private static let statusBarWidth: CGFloat = 3
+    private static let glyphWidth: CGFloat = 14
+    /// The dashed outline around a sub-agent tree.
+    private static let clusterDash: [CGFloat] = [4, 3]
+    /// Type sizes: a card's texts, a sub-agent's output, its prompt.
+    private static let textSize: CGFloat = 12
+    private static let outputSize: CGFloat = 11
+    private static let promptSize: CGFloat = 10.5
 
     var body: some View {
         GeometryReader { geo in
             // The pane's width, read from outside the scroll view, so the columns'
             // width never feeds back into what is measured.
-            let available = geo.size.width - 2 * DesignMetrics.Inset.graphBlockBodyH
+            let scroller = legacyScrollers ? NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy) : 0
+            let available = geo.size.width - scroller - 2 * DesignMetrics.Inset.graphBlockBodyH
+            let visibleHeight = geo.size.height
             ScrollViewReader { proxy in
                 ScrollView([.horizontal, .vertical]) {
                     Group {
@@ -49,17 +72,43 @@ struct MightyStructureView: View {
                         }
                     }
                     .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).padding(.vertical, DesignMetrics.Spacing.md)
+                    .background(GeometryReader { content in
+                        Color.clear.preference(key: MightyStructureContentFrame.self, value: content.frame(in: .named(Self.scrollSpace)))
+                    })
                 }
+                .coordinateSpace(name: Self.scrollSpace)
                 .defaultScrollAnchor(.bottomLeading)
+                // Where the reader is, by the transcript's rule: near the bottom follows.
+                .onPreferenceChange(MightyStructureContentFrame.self) { frame in
+                    memory.following = TranscriptViewport.isFollowing(originY: Double(-frame.minY), visibleHeight: Double(visibleHeight),
+                                                                      documentHeight: Double(frame.height))
+                }
                 .onAppear { DispatchQueue.main.async { follow(proxy) } }
-                // The newest card grows as its blocks arrive and settle; it stays in view, as
-                // the timeline's newest request does.
-                .onChange(of: newestGrowth) { _, _ in follow(proxy) }
+                // A new request is the user's own: it is shown, as the timeline shows it.
+                .onChange(of: newestRunID) { _, _ in follow(proxy) }
+                // The newest card grows as its blocks arrive and settle. It stays in view
+                // only for a reader at the bottom who is not reading it opened.
+                .onChange(of: newestGrowth) { _, _ in
+                    guard memory.following, !newestOpened else { return }
+                    follow(proxy)
+                }
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSScroller.preferredScrollerStyleDidChangeNotification)) { _ in
+            legacyScrollers = NSScroller.preferredScrollerStyle == .legacy
         }
         .background(Palette.raised)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("mighty-structure-\(sessionID)")
+    }
+
+    /// One of the newest card's texts is open: its reader is not moved.
+    private var newestOpened: Bool {
+        guard let newestRunID, !memory.expanded.isEmpty else { return false }
+        let nodes = Self.foldKey("node", MightyGraphBlockSize.nodeID(runID: newestRunID, suffix: ""))
+        return memory.expanded.contains { key in
+            ["request", "message", "answer"].contains { key == Self.foldKey($0, newestRunID) } || key.hasPrefix(nodes)
+        }
     }
 
     /// The newest request with what makes its card taller or settles it: a reply by its
@@ -90,7 +139,7 @@ struct MightyStructureView: View {
             HStack(alignment: .top, spacing: DesignMetrics.Spacing.lg) {
                 ForEach(columns) { column in
                     LazyVStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
-                        ForEach(column.items) { card($0).id($0.id) }
+                        ForEach(column.items) { card($0, width: width).id($0.id) }
                     }
                     .frame(width: width, alignment: .topLeading)
                     .accessibilityElement(children: .contain)
@@ -190,10 +239,10 @@ struct MightyStructureView: View {
                 // 요청
                 HStack(alignment: .top, spacing: DesignMetrics.Spacing.xs) {
                     if let request = item.request {
-                        foldableText(request, key: foldKey("request", item.runID), lines: MightyStructure.requestLines, size: 12,
-                                     name: steps[0].title)
+                        foldableText(request, key: Self.foldKey("request", item.runID), lines: MightyStructure.requestLines, size: Self.textSize,
+                                     width: Self.cardTextWidth(width) - DesignMetrics.Layout.hitTarget - DesignMetrics.Spacing.xs, name: steps[0].title)
                     } else {
-                        Text(verbatim: " ").font(.system(size: 12)).frame(maxWidth: .infinity, alignment: .leading)
+                        Text(verbatim: " ").font(.system(size: Self.textSize)).frame(maxWidth: .infinity, alignment: .leading)
                     }
                     revealButton(item.nodeID)
                 }
@@ -210,12 +259,12 @@ struct MightyStructureView: View {
                             Spacer(minLength: 0)
                             revealButton(item.nodeID)
                         }
-                        progress(item)
+                        progress(item, width: Self.cardTextWidth(width))
                     }
                     .cardSurface()
                     .accessibilityElement(children: .contain)
                     .accessibilityLabel(stepAccessibility(steps[1].title, row.execution))
-                    clusters(item.clusters)
+                    clusters(item.clusters, column: width)
                 }
                 .frame(width: width, alignment: .topLeading)
                 // 결과
@@ -225,7 +274,8 @@ struct MightyStructureView: View {
                         Spacer(minLength: 0)
                         revealButton(MightyGraphBlockSize.nodeID(runID: item.runID, suffix: item.finished ? "result" : "request"))
                     }
-                    outcome(item)
+                    // A reply without an answer is in 실행 already; 결과 says how the request ended.
+                    outcome(item, width: Self.cardTextWidth(width), showsMessage: false)
                 }
                 .cardSurface()
                 .frame(width: width, alignment: .topLeading)
@@ -241,48 +291,51 @@ struct MightyStructureView: View {
 
     /// "Request N · Claude" and its status; the request; while it runs its latest reply
     /// and tool calls, once it finished its answer; then its sub-agent trees.
-    private func card(_ item: MightyStructure.Item) -> some View {
+    private func card(_ item: MightyStructure.Item, width: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
                 HStack(spacing: DesignMetrics.Spacing.sm) {
-                    Text(heading(item)).font(.system(size: 12, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
+                    Text(heading(item)).font(.system(size: Self.textSize, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
                     Spacer(minLength: DesignMetrics.Spacing.xs)
                     MightyStatusPill(text: MightyGraphView.statusLabel(item.status), tone: DesignTone(status: item.status))
                     revealButton(item.nodeID)
                 }
                 if let request = item.request {
-                    foldableText(request, key: foldKey("request", item.runID), lines: MightyStructure.requestLines, size: 12,
-                                 name: L("graph.structure.column.request"))
+                    foldableText(request, key: Self.foldKey("request", item.runID), lines: MightyStructure.requestLines, size: Self.textSize,
+                                 width: Self.cardTextWidth(width), name: L("graph.structure.column.request"))
                 }
                 Divider().overlay(Palette.border)
                 if item.finished {
                     resultTitle(item)
-                    outcome(item)
+                    outcome(item, width: Self.cardTextWidth(width), showsMessage: true)
                 } else {
                     tally(item)
-                    progress(item)
+                    progress(item, width: Self.cardTextWidth(width))
                 }
             }
             .cardSurface()
             .accessibilityElement(children: .contain)
             .accessibilityLabel(L("graph.structure.contentAccessibility", ["name": heading(item), "text": item.input]))
             .accessibilityIdentifier("mighty-structure-request-\(item.runID)")
-            clusters(item.clusters)
+            clusters(item.clusters, column: width)
         }
     }
 
+    /// The width a card's text has in a column of `width`.
+    private static func cardTextWidth(_ width: CGFloat) -> CGFloat { width - 2 * DesignMetrics.Inset.graphBlockBodyH }
+
     private func tally(_ item: MightyStructure.Item) -> some View {
         Text(L("graph.structure.tally", ["agents": "\(item.tally.agents)", "tools": "\(item.tally.tools)"]))
-            .font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.ink2).lineLimit(1)
+            .font(.system(size: Self.outputSize, weight: .semibold)).foregroundStyle(Palette.ink2).lineLimit(1)
     }
 
     /// The main block's latest reply and its last tool calls.
-    @ViewBuilder private func progress(_ item: MightyStructure.Item) -> some View {
+    @ViewBuilder private func progress(_ item: MightyStructure.Item, width: CGFloat) -> some View {
         if let message = item.message {
-            foldableText(message, key: foldKey("message", item.runID), lines: MightyStructure.messageLines, size: 12,
-                         name: L("graph.structure.latest"))
+            foldableText(message, key: Self.foldKey("message", item.runID), lines: MightyStructure.messageLines, size: Self.textSize,
+                         width: width, name: L("graph.structure.latest"))
         } else if !item.finished && item.activity.isEmpty {
-            Text(L("graph.block.waitingResponse")).font(.system(size: 12)).foregroundStyle(Palette.ink2)
+            Text(L("graph.block.waitingResponse")).font(.system(size: Self.textSize)).foregroundStyle(Palette.ink2)
         }
         if !item.activity.isEmpty {
             VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
@@ -301,41 +354,43 @@ struct MightyStructureView: View {
         default: (L("graph.block.result"), "checkmark.seal")
         }
         return Label(look.title, systemImage: look.icon)
-            .font(.system(size: 11, weight: .bold)).lineLimit(1)
+            .font(.system(size: Self.outputSize, weight: .bold)).lineLimit(1)
             .foregroundStyle(item.finished ? Palette.text(item.status) : Palette.ink2)
     }
 
     /// The answer as the transcript renders a reply; without one, the last reply of a
-    /// request that failed or stopped, else its state.
-    @ViewBuilder private func outcome(_ item: MightyStructure.Item) -> some View {
+    /// request that failed or stopped when `showsMessage` (a free row shows it in 실행),
+    /// else its state.
+    @ViewBuilder private func outcome(_ item: MightyStructure.Item, width: CGFloat, showsMessage: Bool) -> some View {
         if let answer = item.answer {
-            foldableMarkdown(answer, key: foldKey("answer", item.runID), lines: MightyStructure.answerLines, name: L("graph.block.result"))
-        } else if item.finished, let message = item.message {
-            foldableText(message, key: foldKey("message", item.runID), lines: MightyStructure.messageLines, size: 12,
-                         name: L("graph.structure.latest"))
+            foldableMarkdown(answer, key: Self.foldKey("answer", item.runID), name: L("graph.block.result"))
+        } else if showsMessage, item.finished, let message = item.message {
+            foldableText(message, key: Self.foldKey("message", item.runID), lines: MightyStructure.messageLines, size: Self.textSize,
+                         width: width, name: L("graph.structure.latest"))
         } else {
             Text(item.finished ? MightyGraphView.statusLabel(item.status) : L("graph.structure.resultPending"))
-                .font(.system(size: 12)).foregroundStyle(Palette.ink2)
+                .font(.system(size: Self.textSize)).foregroundStyle(Palette.ink2)
         }
     }
 
-    @ViewBuilder private func clusters(_ clusters: [MightyStructure.Cluster]) -> some View {
+    @ViewBuilder private func clusters(_ clusters: [MightyStructure.Cluster], column: CGFloat) -> some View {
         if !clusters.isEmpty {
+            // `MightyStructure.nodeTextWidth` takes these paddings off a node's width.
             VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
-                ForEach(clusters) { cluster($0) }
+                ForEach(clusters) { cluster($0, column: column) }
             }
             .padding(.leading, DesignMetrics.Spacing.lg)
         }
     }
 
-    private func cluster(_ cluster: MightyStructure.Cluster) -> some View {
+    private func cluster(_ cluster: MightyStructure.Cluster, column: CGFloat) -> some View {
         LazyVStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
-            ForEach(cluster.nodes) { nodeCard($0) }
+            ForEach(cluster.nodes) { nodeCard($0, column: column) }
         }
         .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.sm)
         .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Palette.border, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+            RoundedRectangle(cornerRadius: Self.nodeCorner, style: .continuous)
+                .strokeBorder(Palette.border, style: StrokeStyle(lineWidth: 1, dash: Self.clusterDash))
                 .allowsHitTesting(false)
         }
         .accessibilityElement(children: .contain)
@@ -346,19 +401,25 @@ struct MightyStructureView: View {
     /// glyph and ink as the diagram gives them (`MightyGraphView.agentPresentation`), its
     /// title, kind and model; then what it was asked, its latest output and its last
     /// tool call. Opened, it shows them whole and its last few tool calls.
-    private func nodeCard(_ node: MightyStructure.Node) -> some View {
+    private func nodeCard(_ node: MightyStructure.Node, column: CGFloat) -> some View {
         let task = node.kind == "task"
-        let key = foldKey("node", node.nodeID)
-        let open = expanded.contains(key)
-        let folds = node.prompt?.folds == true || node.output?.folds == true || node.activity.count > 1
+        let key = Self.foldKey("node", node.nodeID)
+        let open = memory.expanded.contains(key)
+        // Folds are judged at the width the card's text really has at its depth.
+        let textWidth = MightyStructure.nodeTextWidth(column: column, depth: node.depth)
+        let folds = node.prompt?.folds(lines: MightyStructure.promptLines,
+                                       charactersPerLine: MightyStructure.charactersPerLine(width: textWidth, fontSize: Self.promptSize)) == true
+            || node.output?.folds(lines: MightyStructure.outputLines,
+                                  charactersPerLine: MightyStructure.charactersPerLine(width: textWidth, fontSize: Self.outputSize)) == true
+            || node.activity.count > 1
         let model = node.model.map { ModelUsageFormat.shortName($0, catalog: catalog, versioned: true) }
         let meta = ([MightyTimelineText.kind(node.kind)] + [model].compactMap { $0 }).joined(separator: " · ")
-        let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: Self.nodeCorner, style: .continuous)
         return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: task ? "terminal" : "person.crop.square.filled.and.at.rectangle")
                     .font(.system(size: 9, weight: .semibold)).foregroundStyle(task ? Palette.taskText : Palette.agentText)
-                Text(verbatim: node.title).font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.ink).lineLimit(1)
+                Text(verbatim: node.title).font(.system(size: Self.outputSize, weight: .semibold)).foregroundStyle(Palette.ink).lineLimit(1)
                     .layoutPriority(1)
                 Text(meta).font(.system(size: 10)).foregroundStyle(Palette.ink2).lineLimit(1)
                 Spacer(minLength: 0)
@@ -367,29 +428,30 @@ struct MightyStructureView: View {
             if let prompt = node.prompt {
                 let shown = open ? prompt.text : prompt.preview
                 Text(verbatim: shown)
-                    .font(.system(size: 10.5)).foregroundStyle(Palette.ink2)
+                    .font(.system(size: Self.promptSize)).foregroundStyle(Palette.ink2)
                     .lineLimit(open ? nil : MightyStructure.promptLines)
                     .contentText(name: L("graph.structure.prompt"), value: shown)
             }
             if let output = node.output {
                 let shown = open ? output.text : output.preview
                 Text(verbatim: shown)
-                    .font(.system(size: 11)).foregroundStyle(Palette.ink)
+                    .font(.system(size: Self.outputSize)).foregroundStyle(Palette.ink)
                     .lineLimit(open ? nil : MightyStructure.outputLines)
                     .contentText(name: L("graph.structure.output"), value: shown)
             }
             ForEach(open ? node.activity : Array(node.activity.suffix(1))) { activityRow($0) }
             if folds { foldToggle(key, open: open) }
         }
+        // `MightyStructure.nodeTextWidth` takes this padding and the indent off too.
         .padding(.leading, DesignMetrics.Spacing.md).padding(.trailing, DesignMetrics.Spacing.xs)
         .padding(.vertical, DesignMetrics.Spacing.xs)
         .background(Palette.panel, in: shape)
         .overlay(alignment: .leading) {
-            Rectangle().fill(Palette.mark(node.status)).frame(width: 3).allowsHitTesting(false).accessibilityHidden(true)
+            Rectangle().fill(Palette.mark(node.status)).frame(width: Self.statusBarWidth).allowsHitTesting(false).accessibilityHidden(true)
         }
         .clipShape(shape)
         .overlay { shape.strokeBorder(Palette.border, lineWidth: 1).allowsHitTesting(false) }
-        .padding(.leading, CGFloat(min(node.depth, Self.maximumIndent)) * DesignMetrics.Spacing.lg)
+        .padding(.leading, CGFloat(min(node.depth, MightyStructure.maximumIndent)) * DesignMetrics.Spacing.lg)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(L("graph.structure.nodeAccessibility", ["title": node.title, "status": MightyGraphView.statusLabel(node.status)]))
         .accessibilityValue(node.output?.preview ?? node.prompt?.preview ?? "")
@@ -400,10 +462,10 @@ struct MightyStructureView: View {
     private func activityRow(_ line: MightyStructure.ActivityLine) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: DesignMetrics.Spacing.sm) {
             Image(systemName: AgentActivityRow.symbol(line.kind))
-                .font(.system(size: 10, weight: .medium)).frame(width: 14)
+                .font(.system(size: 10, weight: .medium)).frame(width: Self.glyphWidth)
                 .foregroundStyle(line.state == "error" ? Palette.errText : line.state == "running" ? Palette.accent : Palette.ink2)
             Text(verbatim: line.text)
-                .font(.system(size: 11, design: AgentActivityRow.monospacedKinds.contains(line.kind) ? .monospaced : .default))
+                .font(.system(size: Self.outputSize, design: AgentActivityRow.monospacedKinds.contains(line.kind) ? .monospaced : .default))
                 .foregroundStyle(Palette.ink2).lineLimit(1).truncationMode(.tail)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -414,50 +476,45 @@ struct MightyStructureView: View {
 
     // MARK: Texts shown in place
 
-    private func foldKey(_ part: String, _ id: String) -> String { part + ":" + id }
+    /// The key a text's open state is kept under: what it is and whose.
+    static func foldKey(_ part: String, _ id: String) -> String { part + ":" + id }
 
-    /// Plain text: its first lines folded, the whole of it (up to its cap) opened.
-    private func foldableText(_ excerpt: MightyStructure.Excerpt, key: String, lines: Int, size: CGFloat, name: String) -> some View {
-        let open = expanded.contains(key)
+    /// Plain text: its first lines folded, the whole of it (up to its cap) opened. The
+    /// toggle shows whenever the folded lines may cut it at `width`.
+    private func foldableText(_ excerpt: MightyStructure.Excerpt, key: String, lines: Int, size: CGFloat, width: CGFloat, name: String) -> some View {
+        let open = memory.expanded.contains(key)
         let shown = open ? excerpt.text : excerpt.preview
+        let folds = excerpt.folds(lines: lines, charactersPerLine: MightyStructure.charactersPerLine(width: width, fontSize: size))
         return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
             Text(verbatim: shown)
                 .font(.system(size: size)).foregroundStyle(Palette.ink)
                 .lineLimit(open ? nil : lines)
                 .contentText(name: name, value: shown)
-            if excerpt.folds { foldToggle(key, open: open) }
+            if folds { foldToggle(key, open: open) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// Markdown as the transcript renders a reply. Folded, only the preview's lines are
-    /// laid out, and no taller than the folded lines.
-    private func foldableMarkdown(_ excerpt: MightyStructure.Excerpt, key: String, lines: Int, name: String) -> some View {
-        let open = expanded.contains(key)
+    /// Markdown as the transcript renders a reply. Folded, its preview: whole lines with
+    /// any open code fence closed, so nothing is cut mid-line.
+    private func foldableMarkdown(_ excerpt: MightyStructure.Excerpt, key: String, name: String) -> some View {
+        let open = memory.expanded.contains(key)
         return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
-            Group {
-                if open || !excerpt.folds {
-                    AgentMarkdownView(source: excerpt.text, compact: true)
-                } else {
-                    AgentMarkdownView(source: excerpt.preview, compact: true)
-                        .frame(maxHeight: CGFloat(lines) * Self.compactLineHeight, alignment: .top)
-                        .clipped()
-                }
-            }
-            .foregroundStyle(Palette.ink)
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel(name)
-            if excerpt.folds { foldToggle(key, open: open) }
+            AgentMarkdownView(source: open ? excerpt.text : excerpt.preview, compact: true)
+                .foregroundStyle(Palette.ink)
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel(name)
+            if excerpt.cut { foldToggle(key, open: open) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func foldToggle(_ key: String, open: Bool) -> some View {
         Button {
-            if !expanded.insert(key).inserted { expanded.remove(key) }
+            if !memory.expanded.insert(key).inserted { memory.expanded.remove(key) }
         } label: {
             Text(open ? L("graph.structure.less") : L("graph.structure.more"))
-                .font(.system(size: 11, weight: .bold)).foregroundStyle(Palette.accent)
+                .font(.system(size: Self.outputSize, weight: .bold)).foregroundStyle(Palette.accent)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -489,7 +546,7 @@ private extension View {
     func cardSurface() -> some View {
         padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).padding(.vertical, DesignMetrics.Spacing.sm)
             .frame(maxWidth: .infinity, alignment: .topLeading)
-            .mightyBlockCard(cornerRadius: 10)
+            .mightyBlockCard(cornerRadius: MightyStructureView.cardCorner)
     }
 
     /// A text shown in place: wrapped to its column, selectable, and read out as what it is.
@@ -501,4 +558,10 @@ private extension View {
             .accessibilityLabel(name)
             .accessibilityValue(value)
     }
+}
+
+/// The structure's content frame in its scroll view's space: where the reader is.
+private struct MightyStructureContentFrame: PreferenceKey {
+    static let defaultValue = CGRect.zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) { value = nextValue() }
 }
