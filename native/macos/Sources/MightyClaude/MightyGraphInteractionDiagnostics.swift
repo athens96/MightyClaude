@@ -32,28 +32,44 @@ enum MightyGraphInteractionDiagnostics {
             window.contentView = host
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
-            try await store.waitForSmoke(timeout: 3) {
+            try await store.waitForSmoke(timeout: 3, step: "wheel fixture probe ready",
+                                         detail: { "key=\(window.isKeyWindow) probe=\(probe.map { "\(NSStringFromRect($0.bounds)) expected=\($0.expectedViewportSize) token=\($0.targetToken ?? "nil") consumed=\($0.consumedTargetToken ?? "nil")" } ?? "nil") editor=\(editor(in: host, nodeID: rootID) != nil)" }) {
                 probe = descendants(host, as: MightyGraphInteractionProbe.self).first
                 return window.isKeyWindow && probe.map(ready) == true && editor(in: host, nodeID: rootID) != nil
             }
             guard let probe, probe.enclosingScrollView == nil,
                   let editor = editor(in: host, nodeID: rootID), let inner = editor.enclosingScrollView else { throw MightyError("고정 카메라 뷰포트와 네이티브 출력창을 찾지 못했습니다.") }
+            func state() -> String {
+                "pan=\(NSStringFromPoint(probe.panOffset)) viewport=\(NSStringFromRect(probe.bounds)) selected=\(probe.selectedNodeID ?? "nil")"
+                    + " forwarded=\(probe.forwardedWheels) native=\(probe.nativeWheels) panning=\(probe.isPanning) resizing=\(probe.isResizing)"
+                    + " inner=\(NSStringFromPoint(inner.contentView.bounds.origin)) key=\(window.isKeyWindow) active=\(NSApp.isActive)"
+                    + " token=\(probe.targetToken ?? "nil") consumed=\(probe.consumedTargetToken ?? "nil")"
+            }
             // Initial centering has its own graph fixture. Here a known camera
             // origin keeps both root and child hit targets fully in view — and
-            // the setter only lands once the probe has published it back.
-            probe.setPanOffset(.zero)
-            try await store.waitForSmoke(timeout: 3) { probe.panOffset == .zero }
+            // the setter only lands once the probe has published it back. Every
+            // tree is centred on one fixed line, so this wide one reaches left of
+            // x = 0: the origin is moved right until its leftmost branch shows.
+            guard let leftFrame = probe.layoutFrames.first(where: { $0.0 == MightyGraphLayout.nodeID(run, suffix: "agent:left") })?.1,
+                  let rootFrame = probe.layoutFrames.first(where: { $0.0 == rootID })?.1 else { throw MightyError("검증 카메라 원점을 정할 블록이 없습니다.") }
+            let origin = CGPoint(x: max(0, 16 - leftFrame.minX), y: 0)
+            guard origin.x + rootFrame.maxX <= probe.bounds.width else {
+                throw MightyError("검증 블록이 한 화면에 들어오지 않습니다. left=\(leftFrame) root=\(rootFrame) viewport=\(probe.bounds)")
+            }
+            probe.setPanOffset(origin)
+            try await store.waitForSmoke(timeout: 3, step: "fixture camera at its known origin", detail: state) { probe.panOffset == origin }
             editor.cancelInitialScroll()
             scroll(inner, to: NSPoint(x: 0, y: 200))
             try await Task.sleep(for: .milliseconds(100))
             let initialPan = probe.panOffset
+            report["fixtureOrigin"] = NSStringFromPoint(origin)
             let viewportFrame = probe.convert(probe.bounds, to: nil)
             let hostBounds = host.bounds
             report["initialGeometry"] = ["pan": NSStringFromPoint(initialPan), "viewport": NSStringFromRect(viewportFrame), "hostBounds": NSStringFromRect(hostBounds), "innerClip": NSStringFromRect(inner.contentView.bounds)]
             let innerBefore = inner.contentView.bounds.origin
             let forwardedBefore = probe.forwardedWheels
             report["firstWheel"] = try postWheel(window: window, at: center(inner.contentView), dy: -65)
-            try await store.waitForSmoke(timeout: 3) { probe.forwardedWheels > forwardedBefore && changed(probe.panOffset, initialPan) }
+            try await store.waitForSmoke(timeout: 3, step: "unselected wheel pans the camera", detail: state) { probe.forwardedWheels > forwardedBefore && changed(probe.panOffset, initialPan) }
             guard !changed(inner.contentView.bounds.origin, innerBefore), pinned(probe, host: host, frame: viewportFrame, hostBounds: hostBounds) else { throw MightyError("미선택 휠이 블록 내부나 고정 뷰포트를 움직였습니다.") }
             report["unselectedWheelMovesOnlyCamera"] = true
             report["fixedViewportWithoutOuterScrollView"] = true
@@ -61,26 +77,26 @@ enum MightyGraphInteractionDiagnostics {
             probe.setPanOffset(initialPan)
             try await Task.sleep(for: .milliseconds(80))
             try click(window, at: headerPoint(probe, id: rootID))
-            try await store.waitForSmoke(timeout: 3) { probe.selectedNodeID == rootID }
+            try await store.waitForSmoke(timeout: 3, step: "click selects the root block", detail: state) { probe.selectedNodeID == rootID }
             let selectedPan = probe.panOffset
             let cardFrame = inner.convert(inner.bounds, to: nil)
             let selectedInner = inner.contentView.bounds.origin
             let nativeBefore = probe.nativeWheels
             try postWheel(window: window, at: center(inner.contentView), dy: -65)
-            try await store.waitForSmoke(timeout: 3) { probe.nativeWheels > nativeBefore && changed(inner.contentView.bounds.origin, selectedInner) }
+            try await store.waitForSmoke(timeout: 3, step: "selected wheel scrolls the transcript", detail: state) { probe.nativeWheels > nativeBefore && changed(inner.contentView.bounds.origin, selectedInner) }
             guard !changed(probe.panOffset, selectedPan), inner.convert(inner.bounds, to: nil) == cardFrame else { throw MightyError("선택 블록의 본문 휠이 카메라나 부모 영역을 움직였습니다.") }
             report["singleClickSelectsBlock"] = true
             report["selectedWheelMovesOnlyTranscript"] = true
             let headerInner = inner.contentView.bounds.origin
             let headerCount = probe.nativeWheels
             try postWheel(window: window, at: headerPoint(probe, id: rootID), dy: -35)
-            try await store.waitForSmoke(timeout: 3) { probe.nativeWheels > headerCount && changed(inner.contentView.bounds.origin, headerInner) }
+            try await store.waitForSmoke(timeout: 3, step: "selected header wheel scrolls the transcript", detail: state) { probe.nativeWheels > headerCount && changed(inner.contentView.bounds.origin, headerInner) }
             guard !changed(probe.panOffset, selectedPan), inner.convert(inner.bounds, to: nil) == cardFrame else { throw MightyError("선택 블록의 헤더 휠이 카메라나 부모 영역을 움직였습니다.") }
             report["selectedHeaderScrollsContentOnly"] = true
             scroll(inner, to: NSPoint(x: 0, y: max(0, editor.bounds.height - inner.contentView.bounds.height)))
             let edgeCount = probe.nativeWheels
             try postWheel(window: window, at: center(inner.contentView), dy: -100)
-            try await store.waitForSmoke(timeout: 3) { probe.nativeWheels > edgeCount }
+            try await store.waitForSmoke(timeout: 3, step: "wheel at the transcript edge consumed", detail: state) { probe.nativeWheels > edgeCount }
             try await Task.sleep(for: .milliseconds(80))
             guard !changed(probe.panOffset, selectedPan), inner.convert(inner.bounds, to: nil) == cardFrame,
                   pinned(probe, host: host, frame: viewportFrame, hostBounds: hostBounds) else { throw MightyError("선택 블록의 끝에서 휠이 카메라나 부모로 전파됐습니다.") }
@@ -97,27 +113,27 @@ enum MightyGraphInteractionDiagnostics {
             let phaseInner = inner.contentView.bounds.origin
             let phaseNative = probe.nativeWheels
             try postWheel(window: window, at: center(inner.contentView), dy: -25, phase: .began)
-            try await store.waitForSmoke(timeout: 3) { probe.nativeWheels > phaseNative && changed(inner.contentView.bounds.origin, phaseInner) }
+            try await store.waitForSmoke(timeout: 3, step: "phase-began wheel scrolls the selected transcript", detail: state) { probe.nativeWheels > phaseNative && changed(inner.contentView.bounds.origin, phaseInner) }
             let crossingPan = probe.panOffset
             let crossingInner = inner.contentView.bounds.origin
             let crossingChild = childScroll.contentView.bounds.origin
             let crossingCount = probe.forwardedWheels
             report["otherWheel"] = try postWheel(window: window, at: center(childScroll.contentView), dy: -25, phase: .changed)
-            try await store.waitForSmoke(timeout: 3) { probe.forwardedWheels > crossingCount && changed(probe.panOffset, crossingPan) }
+            try await store.waitForSmoke(timeout: 3, step: "phase-changed wheel over another block pans", detail: state) { probe.forwardedWheels > crossingCount && changed(probe.panOffset, crossingPan) }
             guard !changed(inner.contentView.bounds.origin, crossingInner), !changed(childScroll.contentView.bounds.origin, crossingChild) else { throw MightyError("연속 휠이 비선택 블록의 내부 출력을 움직였습니다.") }
             let endingCount = probe.forwardedWheels
             try postWheel(window: window, at: center(childScroll.contentView), phase: .ended)
-            try await store.waitForSmoke(timeout: 3) { probe.forwardedWheels > endingCount }
+            try await store.waitForSmoke(timeout: 3, step: "phase-ended wheel consumed", detail: state) { probe.forwardedWheels > endingCount }
             report["otherBlockWheelMovesOnlyCamera"] = true
             report["phasedPointerCrossingMovesOnlyCamera"] = true
             report["nativeEventPhasesVerified"] = true
             try click(window, at: headerPoint(probe, id: childID))
-            try await store.waitForSmoke(timeout: 3) { probe.selectedNodeID == childID }
+            try await store.waitForSmoke(timeout: 3, step: "click selects the child block", detail: { "child=\(probe.frames.first { $0.0 == childID }.map { NSStringFromRect($0.1) } ?? "nil") " + state() }) { probe.selectedNodeID == childID }
             let childPan = probe.panOffset
             let childOrigin = childScroll.contentView.bounds.origin
             let childCount = probe.nativeWheels
             try postWheel(window: window, at: center(childScroll.contentView), dy: 25)
-            try await store.waitForSmoke(timeout: 3) { probe.nativeWheels > childCount && changed(childScroll.contentView.bounds.origin, childOrigin) }
+            try await store.waitForSmoke(timeout: 3, step: "selected child wheel scrolls its transcript", detail: state) { probe.nativeWheels > childCount && changed(childScroll.contentView.bounds.origin, childOrigin) }
             guard !changed(probe.panOffset, childPan) else { throw MightyError("선택 하위 블록의 휠이 카메라를 움직였습니다.") }
             report["selectedChildWheelMovesOnlyTranscript"] = true
 
@@ -127,7 +143,7 @@ enum MightyGraphInteractionDiagnostics {
             let dragEnd = NSPoint(x: background.x + 55, y: background.y + 30)
             let beforeDrag = probe.panOffset
             try drag(window, from: probe.convert(background, to: nil), to: probe.convert(dragEnd, to: nil))
-            try await store.waitForSmoke(timeout: 3) { changed(probe.panOffset, beforeDrag) && !probe.isPanning }
+            try await store.waitForSmoke(timeout: 3, step: "background drag pans and clears selection", detail: state) { changed(probe.panOffset, beforeDrag) && !probe.isPanning }
             guard abs(probe.panOffset.x - beforeDrag.x - 55) < 1, abs(probe.panOffset.y - beforeDrag.y - 30) < 1,
                   probe.selectedNodeID == nil, pinned(probe, host: host, frame: viewportFrame, hostBounds: hostBounds) else { throw MightyError("배경 드래그의 카메라 이동·선택 해제·고정 뷰포트가 올바르지 않습니다.") }
             report["backgroundDragPansCameraAndClearsSelection"] = true
@@ -143,7 +159,7 @@ enum MightyGraphInteractionDiagnostics {
             guard first.location != NSNotFound, second.location != NSNotFound else { throw MightyError("네이티브 텍스트 선택 fixture가 없습니다.") }
             let textPan = probe.panOffset
             try drag(window, from: glyphPoint(editor, character: first.location), to: glyphPoint(editor, character: NSMaxRange(second)))
-            try await store.waitForSmoke(timeout: 3) { editor.selectedRange().length > 0 }
+            try await store.waitForSmoke(timeout: 3, step: "text drag selects text", detail: state) { editor.selectedRange().length > 0 }
             let selected = (editor.string as NSString).substring(with: editor.selectedRange())
             guard selected.contains("본문 0"), selected.contains("본문 1"), !changed(probe.panOffset, textPan), !probe.isPanning else { throw MightyError("본문 드래그가 문단 선택 대신 카메라를 움직였습니다.") }
             report["nativeTextDragSelectsWithoutPanning"] = true
@@ -197,7 +213,7 @@ enum MightyGraphInteractionDiagnostics {
                 report["copyFollowsSelectionAfterFocusLeavesTheCard"] = true
             }
             try escape(window)
-            try await store.waitForSmoke(timeout: 3) { probe.selectedNodeID == nil }
+            try await store.waitForSmoke(timeout: 3, step: "escape clears selection", detail: state) { probe.selectedNodeID == nil }
             report["escapeClearsSelection"] = true
 
             // Positive and negative offsets beyond the former document bounds
@@ -205,16 +221,16 @@ enum MightyGraphInteractionDiagnostics {
             let freePoint = probe.convert(try backgroundPoint(probe), to: nil)
             let positiveCount = probe.forwardedWheels
             try postWheel(window: window, at: freePoint, dx: 1600, dy: 1600)
-            try await store.waitForSmoke(timeout: 3) { probe.forwardedWheels > positiveCount && probe.panOffset.x > 500 && probe.panOffset.y > 500 }
+            try await store.waitForSmoke(timeout: 3, step: "wheel pans past the former positive bounds", detail: state) { probe.forwardedWheels > positiveCount && probe.panOffset.x > 500 && probe.panOffset.y > 500 }
             let positivePan = probe.panOffset
             let negativeCount = probe.forwardedWheels
             try postWheel(window: window, at: center(probe), dx: -4000, dy: -4000)
-            try await store.waitForSmoke(timeout: 3) { probe.forwardedWheels > negativeCount && probe.panOffset.x < -1500 && probe.panOffset.y < -1500 }
+            try await store.waitForSmoke(timeout: 3, step: "wheel pans past the former negative bounds", detail: state) { probe.forwardedWheels > negativeCount && probe.panOffset.x < -1500 && probe.panOffset.y < -1500 }
             guard pinned(probe, host: host, frame: viewportFrame, hostBounds: hostBounds) else { throw MightyError("무경계 카메라 이동이 부모 뷰 크기를 늘렸습니다.") }
             report["unboundedBothAxesBeyondFormerBounds"] = true
             report["unboundedPanGeometry"] = ["positive": NSStringFromPoint(positivePan), "negative": NSStringFromPoint(probe.panOffset), "viewport": NSStringFromRect(probe.convert(probe.bounds, to: nil))]
             probe.setPanOffset(initialPan)
-            try await store.waitForSmoke(timeout: 3) { self.editor(in: host, nodeID: rootID)?.window === window }
+            try await store.waitForSmoke(timeout: 3, step: "root transcript remounted", detail: state) { self.editor(in: host, nodeID: rootID)?.window === window }
             report["cameraScreenshot"] = try store.captureSmokeWindow(window, filename: "mighty-graph-camera.png").path
             report["forwardedWheels"] = probe.forwardedWheels
             report["nativeWheels"] = probe.nativeWheels
@@ -230,7 +246,7 @@ enum MightyGraphInteractionDiagnostics {
             report["resizeEditorRemountedAfterUnboundedPan"] = resizeEditor !== editor
             let realStart = CGPoint(x: realFrame.maxX - 3, y: realFrame.maxY - 3)
             try drag(window, from: probe.convert(realStart, to: nil), to: probe.convert(CGPoint(x: realStart.x + 80, y: realStart.y + 70), to: nil))
-            try await store.waitForSmoke(timeout: 3) {
+            try await store.waitForSmoke(timeout: 3, step: "corner drag resizes the root block", detail: state) {
                 savedSizes[rootID]?.width == realSize.width + 80 && savedSizes[rootID]?.height == realSize.height + 70 && !probe.isResizing
                     && probe.layoutFrames.first(where: { $0.0 == rootID })?.1.size == CGSize(width: realSize.width + 80, height: realSize.height + 70)
             }
@@ -255,12 +271,13 @@ enum MightyGraphInteractionDiagnostics {
             let retiredCount = probe.forwardedWheels + probe.nativeWheels
             let plainHost = NSHostingView(rootView: AgentTranscriptView(sessionId: "wheel-basic", provider: "claude", running: false, entries: entries, onFocus: {}, cards: true))
             window.contentView = plainHost
-            try await store.waitForSmoke(timeout: 3) { probe.window == nil && descendants(plainHost, as: AgentTranscriptTextView.self).first?.enclosingScrollView != nil }
+            try await store.waitForSmoke(timeout: 3, step: "plain transcript replaces the graph", detail: state) { probe.window == nil && descendants(plainHost, as: AgentTranscriptTextView.self).first?.enclosingScrollView != nil }
             guard let plain = descendants(plainHost, as: AgentTranscriptTextView.self).first, let plainScroll = plain.enclosingScrollView else { throw MightyError("기본 출력창 복귀에 실패했습니다.") }
             plain.cancelInitialScroll(); scroll(plainScroll, to: NSPoint(x: 0, y: 100))
             let plainBefore = plainScroll.contentView.bounds.origin
             try postWheel(window: window, at: center(plainScroll.contentView), dy: -65)
-            try await store.waitForSmoke(timeout: 3) { changed(plainScroll.contentView.bounds.origin, plainBefore) }
+            try await store.waitForSmoke(timeout: 3, step: "plain transcript scrolls by wheel",
+                                         detail: { "plain=\(NSStringFromPoint(plainScroll.contentView.bounds.origin)) before=\(NSStringFromPoint(plainBefore)) " + state() }) { changed(plainScroll.contentView.bounds.origin, plainBefore) }
             guard retiredCount == probe.forwardedWheels + probe.nativeWheels else { throw MightyError("제거된 카메라 모니터가 기본 출력창 휠을 처리했습니다.") }
             report["completedBasicTranscriptAndMonitorCleanup"] = true
             report["resize"] = try await resizing(store: store, window: window)
@@ -344,13 +361,18 @@ enum MightyGraphInteractionDiagnostics {
                                                     pressure: type == .leftMouseUp ? 0 : 1) else { throw MightyError("크기 조절 이벤트를 만들지 못했습니다.") }
                 NSApp.postEvent(event, atStart: false)
             }
+            func state() -> String {
+                "zoom=\(zoom) size=\(currentSize) pan=\(NSStringFromPoint(currentPan)) probePan=\(NSStringFromPoint(probe.panOffset))"
+                    + " resizing=\(probe.isResizing) panning=\(probe.isPanning) calls=\(calls.count) native=\(probe.nativeWheels)"
+                    + " inner=\(NSStringFromPoint(inner.contentView.bounds.origin)) token=\(probe.targetToken ?? "nil") consumed=\(probe.consumedTargetToken ?? "nil")"
+            }
             func startDrag() async throws -> CGPoint {
                 guard let frame = probe.frames.first?.1 else { throw MightyError("크기 조절 블록이 없습니다.") }
                 let handle = probe.resizeHandleRect(for: frame)
                 try require(handle.width >= 16 && abs(handle.width - max(16, 22 * zoom)) < 0.1, "모서리 클릭 영역")
                 let point = CGPoint(x: frame.maxX - 2, y: frame.maxY - 2)
                 try post(.leftMouseDown, at: point)
-                try await store.waitForSmoke(timeout: 3) { probe.isResizing }
+                try await store.waitForSmoke(timeout: 3, step: "corner press starts a resize", detail: state) { probe.isResizing }
                 return point
             }
             let anchor = probe.frames[0].1.origin
@@ -365,7 +387,7 @@ enum MightyGraphInteractionDiagnostics {
 
             let end = CGPoint(x: start.x + 90, y: start.y + 60)
             try post(.leftMouseDragged, at: end)
-            try await store.waitForSmoke(timeout: 3) { !calls.isEmpty }
+            try await store.waitForSmoke(timeout: 3, step: "drag reports a size", detail: state) { !calls.isEmpty }
             let expected = CGSize(width: 360 + 90 / zoom, height: 240 + 60 / zoom)
             try require(currentSize == expected, "화면 이동량이 확대 배율로 변환되지 않았습니다.")
             try require(!changed(probe.frames[0].1.origin, anchor), "레이아웃 재배치로 시작 모서리가 이동했습니다.")
@@ -373,7 +395,7 @@ enum MightyGraphInteractionDiagnostics {
             try await Task.sleep(for: .milliseconds(40))
             try require(currentSize == expected, "동일 마우스 위치에서 크기가 누적되었습니다.")
             try post(.leftMouseUp, at: end)
-            try await store.waitForSmoke(timeout: 3) { !probe.isResizing && calls.contains(where: \.1) }
+            try await store.waitForSmoke(timeout: 3, step: "release finishes the resize", detail: state) { !probe.isResizing && calls.contains(where: \.1) }
             try require(calls.filter(\.1).count == 1, "완료 콜백이 한 번이 아닙니다.")
             try require(!changed(probe.frames[0].1.origin, anchor), "완료 시 모서리 위치 변경")
 
@@ -383,20 +405,20 @@ enum MightyGraphInteractionDiagnostics {
             let leftStart = CGPoint(x: leftFrame.minX + 1, y: leftFrame.midY)
             let leftEnd = CGPoint(x: leftStart.x - 60, y: leftStart.y + 25)
             try post(.leftMouseDown, at: leftStart)
-            try await store.waitForSmoke(timeout: 3) { probe.isResizing }
+            try await store.waitForSmoke(timeout: 3, step: "left side press starts a resize", detail: state) { probe.isResizing }
             try post(.leftMouseDragged, at: leftEnd)
-            try await store.waitForSmoke(timeout: 3) { currentSize != beforeLeft }
+            try await store.waitForSmoke(timeout: 3, step: "left side drag changes the size", detail: state) { currentSize != beforeLeft }
             try require(currentSize == CGSize(width: beforeLeft.width + 60 / zoom, height: beforeLeft.height), "왼쪽 변이 너비만 바꾸지 않았습니다.")
             try require(abs((probe.frames.first?.1.maxX ?? 0) - leftFrame.maxX) < 0.5, "왼쪽 변 조절 중 오른쪽 변이 움직였습니다.")
             try post(.leftMouseUp, at: leftEnd)
-            try await store.waitForSmoke(timeout: 3) { !probe.isResizing }
+            try await store.waitForSmoke(timeout: 3, step: "left side release finishes", detail: state) { !probe.isResizing }
 
             let beforeCancel = currentSize
             let cancelStart = try await startDrag()
             try post(.leftMouseDragged, at: CGPoint(x: cancelStart.x + 50, y: cancelStart.y + 40))
-            try await store.waitForSmoke(timeout: 3) { currentSize != beforeCancel }
+            try await store.waitForSmoke(timeout: 3, step: "drag before escape changes the size", detail: state) { currentSize != beforeCancel }
             try escape(window)
-            try await store.waitForSmoke(timeout: 3) { !probe.isResizing && currentSize == beforeCancel }
+            try await store.waitForSmoke(timeout: 3, step: "escape restores the size", detail: state) { !probe.isResizing && currentSize == beforeCancel }
 
             // Mouse-up outside the viewport still ends the same drag and clamps
             // graph dimensions, independent of zoom.
@@ -404,13 +426,13 @@ enum MightyGraphInteractionDiagnostics {
             let outside = CGPoint(x: largeStart.x + 4000, y: largeStart.y + 4000)
             try post(.leftMouseDragged, at: outside)
             try post(.leftMouseUp, at: outside)
-            try await store.waitForSmoke(timeout: 3) { !probe.isResizing && currentSize == CGSize(width: 1400, height: 1200) }
+            try await store.waitForSmoke(timeout: 3, step: "outside release clamps to the maximum", detail: state) { !probe.isResizing && currentSize == CGSize(width: 1400, height: 1200) }
             currentSize = initialSize; currentPan = .zero; render()
             let smallStart = try await startDrag()
             let smallEnd = CGPoint(x: smallStart.x - 4000, y: smallStart.y - 4000)
             try post(.leftMouseDragged, at: smallEnd)
             try post(.leftMouseUp, at: smallEnd)
-            try await store.waitForSmoke(timeout: 3) { !probe.isResizing && currentSize == CGSize(width: 300, height: 140) }
+            try await store.waitForSmoke(timeout: 3, step: "outside release clamps to the minimum", detail: state) { !probe.isResizing && currentSize == CGSize(width: 300, height: 140) }
 
             // A released size the layout does not keep (the newest result
             // shrinks to its content) must not leave the corner pinned: a
@@ -425,14 +447,14 @@ enum MightyGraphInteractionDiagnostics {
             let shrinkEnd = CGPoint(x: shrinkStart.x + 40, y: shrinkStart.y + 120)
             try post(.leftMouseDragged, at: shrinkEnd)
             try post(.leftMouseUp, at: shrinkEnd)
-            try await store.waitForSmoke(timeout: 3) { !probe.isResizing && currentSize.height == 160 }
+            try await store.waitForSmoke(timeout: 3, step: "released size kept by the layout", detail: state) { !probe.isResizing && currentSize.height == 160 }
             try await Task.sleep(for: .milliseconds(40))
             render()
             let revealFrame = CGRect(x: 120, y: 1_400, width: 360, height: 240)
             let revealCamera = MightyGraphLayout.cameraOffset(for: revealFrame, viewport: probe.bounds.size, zoom: zoom, alignTop: false, alignBottom: true)
             probe.targetFrame = revealFrame; probe.alignBottom = true; probe.targetToken = "after-drag-\(zoom)"
             probe.scheduleInitialPosition()
-            try await store.waitForSmoke(timeout: 3) { probe.panOffset == revealCamera }
+            try await store.waitForSmoke(timeout: 3, step: "camera target lands after the drag", detail: state) { probe.panOffset == revealCamera }
             render()
             try require(probe.panOffset == revealCamera && currentPan == revealCamera, "끌기를 놓은 뒤 남은 고정점이 카메라를 되돌렸습니다.")
             probe.onResize = { _, size, _, phase in calls.append((size, phase != .live)); currentSize = size; render() }
@@ -444,22 +466,22 @@ enum MightyGraphInteractionDiagnostics {
             let beforeInner = probe.nativeWheels
             let innerPan = probe.panOffset
             try postWheel(window: window, at: center(inner.contentView), dy: -25)
-            try await store.waitForSmoke(timeout: 3) { probe.nativeWheels > beforeInner && changed(inner.contentView.bounds.origin, innerOrigin) }
+            try await store.waitForSmoke(timeout: 3, step: "inner wheel after resize scrolls only the block", detail: state) { probe.nativeWheels > beforeInner && changed(inner.contentView.bounds.origin, innerOrigin) }
             try require(probe.panOffset == innerPan, "크기 조절 후 선택 블록 스크롤이 카메라 이동")
             let beforePan = probe.panOffset
             try drag(window, from: probe.convert(CGPoint(x: 8, y: 8), to: nil), to: probe.convert(CGPoint(x: 48, y: 38), to: nil))
-            try await store.waitForSmoke(timeout: 3) { !probe.isPanning && changed(probe.panOffset, beforePan) }
+            try await store.waitForSmoke(timeout: 3, step: "background drag after resize pans", detail: state) { !probe.isPanning && changed(probe.panOffset, beforePan) }
             try require(abs(probe.panOffset.x - beforePan.x - 40) < 1 && abs(probe.panOffset.y - beforePan.y - 30) < 1, "크기 조절 후 배경 드래그")
 
             currentSize = initialSize; currentPan = .zero; render()
             let resignStart = try await startDrag()
             try post(.leftMouseDragged, at: CGPoint(x: resignStart.x + 35, y: resignStart.y + 25))
-            try await store.waitForSmoke(timeout: 3) { currentSize != initialSize }
+            try await store.waitForSmoke(timeout: 3, step: "drag before window resign", detail: state) { currentSize != initialSize }
             NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: window)
             try require(!probe.isResizing && currentSize == initialSize, "창 비활성화 취소")
             let disposeStart = try await startDrag()
             try post(.leftMouseDragged, at: CGPoint(x: disposeStart.x + 35, y: disposeStart.y + 25))
-            try await store.waitForSmoke(timeout: 3) { currentSize != initialSize }
+            try await store.waitForSmoke(timeout: 3, step: "drag before dispose", detail: state) { currentSize != initialSize }
             probe.dispose()
             try require(!probe.isResizing && currentSize == initialSize, "뷰 제거 취소")
             results.append(["zoom": zoom, "screenDelta": "90,60", "graphSize": NSStringFromSize(expected),
@@ -531,7 +553,12 @@ enum MightyGraphInteractionDiagnostics {
     }
     private static func headerPoint(_ probe: MightyGraphInteractionProbe, id: String) throws -> NSPoint {
         guard let frame = probe.frames.first(where: { $0.0 == id })?.1 else { throw MightyError("선택할 그래프 카드가 없습니다.") }
-        return probe.convert(NSPoint(x: frame.minX + 90, y: frame.minY + 18), to: nil)
+        let point = NSPoint(x: frame.minX + 90, y: frame.minY + 18)
+        // A click outside the canvas reaches no block: say where it would have gone.
+        guard probe.bounds.insetBy(dx: 2, dy: 2).contains(point) else {
+            throw MightyError("카드 머리글이 화면 밖입니다. id=\(id) frame=\(frame) point=\(point) viewport=\(probe.bounds) pan=\(probe.panOffset)")
+        }
+        return probe.convert(point, to: nil)
     }
     private static func click(_ window: NSWindow, at point: NSPoint) throws {
         for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
