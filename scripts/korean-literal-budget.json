@@ -20,6 +20,7 @@
     "native/macos/Sources/MightyClaude/TerminalCopyDiagnostics.swift": "A GUI smoke step: AppStore+AgentSmoke runs it under --smoke-test. Its fixtures and failure messages go to smoke-result.json, not to the UI.",
     "native/macos/Sources/MightyClaude/ComposerInputTransactionDiagnostics.swift": "A GUI smoke check that ComposerPresentationDiagnostics runs. Its Hangul fixtures exercise IME composition and must stay Korean; its report goes to smoke-result.json.",
     "native/macos/Sources/MightyClaude/MightyGraphInteractionDiagnostics.swift": "A GUI smoke check that MightyGraphDiagnostics runs. Its fixtures and failure messages go to smoke-result.json, not to the UI.",
+    "native/macos/Sources/MightyClaude/MightyStructureInteractionDiagnostics.swift": "A GUI smoke check that MightyGraphDiagnostics runs. Its fixtures and failure messages go to graph-smoke-result.json, not to the UI.",
     "native/macos/Sources/MightyClaude/UserQuestionnaireDiagnostics.swift": "A GUI smoke check that AppStore+QuestionSmoke runs. Its fixtures and failure messages go to smoke-result.json, not to the UI.",
     "native/macos/Sources/MightyClaude/HeaderSettingsDiagnostics.swift": "A GUI smoke step (verifyHeaderSettingsSmoke) with no caller at present. Its failure messages are for smoke-result.json, not the UI.",
     "native/macos/Sources/MightyClaude/InputSessionRecoveryDiagnostics.swift": "The input-recovery contract harness that scripts/tests/test_input_session_recovery.py builds and runs. Its Hangul fixtures exercise IME composition and must stay Korean.",

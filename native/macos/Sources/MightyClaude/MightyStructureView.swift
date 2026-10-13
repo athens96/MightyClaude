@@ -12,6 +12,15 @@ final class MightyStructureMemory: ObservableObject {
     var follow = MightyGraphFollow.PageWatch()
     /// The user's fingers or wheel are scrolling the page right now (macOS 15 and later).
     var userScrolling = false
+    /// The user is dragging the page's empty space (`MightyStructurePanning`), and when
+    /// the last such drag ended.
+    var panning = false
+    var panReleasedAt: TimeInterval = 0
+    /// The page is moving under the user's hand: a scroll, a drag, or the moment after
+    /// a drag whose last step the page may report late (`MightyStructurePan.releaseGrace`).
+    var userMoving: Bool {
+        userScrolling || panning || ProcessInfo.processInfo.systemUptime - panReleasedAt < MightyStructurePan.releaseGrace
+    }
 }
 
 /// The Mighty graph drawn as its structure (design "A. 단계별 열"), from
@@ -84,6 +93,8 @@ struct MightyStructureView: View {
                     })
                 }
                 .coordinateSpace(name: Self.scrollSpace)
+                // Dragging the page's empty space moves it, as in the diagram.
+                .background(MightyStructurePanning(sessionID: sessionID, memory: memory))
                 // The pane's height joins the same report: a taller composer moves no
                 // content, yet may hide the newest card.
                 .background(GeometryReader { pane in
@@ -97,7 +108,7 @@ struct MightyStructureView: View {
                     let newest = report.newest?.id == newestRunID ? report.newest.map { Double($0.bottom - content.minY) } : nil
                     let page = MightyGraphFollow.Page(originY: Double(-content.minY), visibleHeight: Double(visible),
                                                       documentHeight: Double(content.height), newestID: newestRunID, newestBottom: newest)
-                    scroll(memory.follow.observe(page, userScrolling: memory.userScrolling), proxy)
+                    scroll(memory.follow.observe(page, userScrolling: memory.userMoving), proxy)
                 }
                 .onAppear { scroll(memory.follow.appeared(newestID: newestRunID), proxy) }
                 // A new request is the user's own: shown, and followed from then on.
@@ -125,6 +136,8 @@ struct MightyStructureView: View {
         guard let target else { return }
         let free = if case .free = shape { true } else { false }
         DispatchQueue.main.async {
+            // A drag on the page is the user's: nothing scrolls under it.
+            guard !memory.panning else { return }
             switch target {
             case .bottom: proxy.scrollTo(Self.endID, anchor: .bottomLeading)
             case .card(let id): proxy.scrollTo(id, anchor: free ? .bottomLeading : .bottom)

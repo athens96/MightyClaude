@@ -111,6 +111,7 @@ Mighty表示の上部にある{{ui:graph.view.diagram}} | {{ui:graph.view.timeli
 - スタイルのないペインでは、リクエストごとに {{ui:graph.structure.column.request}} → {{ui:graph.structure.column.execution}} → {{ui:graph.structure.column.result}} の1行になります。
 - リクエストカードには送ったリクエストだけが入り、{{ui:graph.block.execution}}カードには進み具合（最新のメッセージとツール呼び出し）と状態が表示されます。結果、サブエージェントへの指示とその出力もその場に表示されます。長い文章は折りたたまれていて、{{ui:graph.structure.more}}を押すとその場で開きます。
 - カードの見出しにある小さなボタンを押すと、ダイアグラムでそのブロックを表示します。
+- ダイアグラムと同じく、何もない場所をドラッグすると表示が動きます。
 
 ![[agent-structure]]
 
