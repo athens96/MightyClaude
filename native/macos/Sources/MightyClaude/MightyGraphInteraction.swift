@@ -23,6 +23,17 @@ final class MightyGraphFollowBox {
     var watch = MightyGraphFollow.Watch()
 }
 
+/// What the diagram's own controls do, for the GUI diagnostics: the SwiftUI
+/// buttons inside the canvas's nested hosting view have no accessibility element
+/// on a machine with no assistive client (a CI runner), so the diagnostics run
+/// the very functions those buttons call.
+struct MightyGraphDiagnosticActions {
+    /// A block header's 펼치기/접기 button, for a node id.
+    var toggleExpanded: (String) -> Void = { _ in }
+    /// The header's zoom-out button.
+    var zoomOut: () -> Void = {}
+}
+
 /// The probe stays in the viewport; only the diagram behind it is translated.
 struct MightyGraphInteraction<Content: View>: NSViewRepresentable {
     let sessionID: String
@@ -40,6 +51,7 @@ struct MightyGraphInteraction<Content: View>: NSViewRepresentable {
     var follow: MightyGraphFollowBox?
     /// The blocks drawn this pass: the rest are culled to `Color.clear`.
     var drawnNodeIDs: Set<String> = []
+    var diagnosticActions = MightyGraphDiagnosticActions()
     @Binding var selection: String?
     @Binding var panOffset: CGPoint
     var onResize: (String, CGSize, ResizeEdges, MightyGraphLayout.ResizePhase) -> Void = { _, _, _, _ in }
@@ -84,6 +96,7 @@ struct MightyGraphInteraction<Content: View>: NSViewRepresentable {
         view.followTargetID = followTargetID
         view.follow = follow
         view.drawnNodeIDs = drawnNodeIDs
+        view.diagnosticActions = diagnosticActions
         view.onSelect = { selection = $0 }
         view.onPan = { panOffset = $0 }
         view.onUserPan = onUserPan
@@ -178,6 +191,7 @@ final class MightyGraphInteractionProbe: NSView {
     /// canvas's own hosting view are not reachable through accessibility on a
     /// machine with no assistive client, such as a CI runner.
     var drawnNodeIDs: Set<String> = []
+    var diagnosticActions = MightyGraphDiagnosticActions()
     private var followScheduled = false
     /// Docked chrome placement; events inside its frame are never a pan or a
     /// block selection, and its corner handle is resized here like a block.
