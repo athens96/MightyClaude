@@ -14,6 +14,15 @@ struct MightyOverlayLayout: Equatable {
     }
 }
 
+/// Whether the diagram's camera follows its newest block (`MightyGraphFollow.Watch`).
+/// Kept by the pane's `MightyGraphView` across view switches and shared with the
+/// camera probe, which judges every user move and layout pass. A reference, so
+/// keeping it never redraws the view.
+@MainActor
+final class MightyGraphFollowBox {
+    var watch = MightyGraphFollow.Watch()
+}
+
 /// The probe stays in the viewport; only the diagram behind it is translated.
 struct MightyGraphInteraction<Content: View>: NSViewRepresentable {
     let sessionID: String
@@ -24,6 +33,11 @@ struct MightyGraphInteraction<Content: View>: NSViewRepresentable {
     let targetFrame: CGRect?
     let alignTop: Bool
     var alignBottom = false
+    /// The target is a follow placement (`MightyGraphFollow.cameraOffset(follows:)`).
+    var follows = false
+    /// The block a following camera keeps above the composer, and the follow state.
+    var followTargetID: String?
+    var follow: MightyGraphFollowBox?
     @Binding var selection: String?
     @Binding var panOffset: CGPoint
     var onResize: (String, CGSize, ResizeEdges, MightyGraphLayout.ResizePhase) -> Void = { _, _, _, _ in }
@@ -64,6 +78,9 @@ struct MightyGraphInteraction<Content: View>: NSViewRepresentable {
         view.targetFrame = targetFrame
         view.alignTop = alignTop
         view.alignBottom = alignBottom
+        view.follows = follows
+        view.followTargetID = followTargetID
+        view.follow = follow
         view.onSelect = { selection = $0 }
         view.onPan = { panOffset = $0 }
         view.onUserPan = onUserPan
@@ -108,6 +125,7 @@ final class MightyGraphViewportHost<Content: View>: NSView {
         super.layout(); hosting.frame = bounds; probe.frame = bounds
         overlayHost.frame = overlayLayout?.frame(in: bounds.size) ?? .zero; overlayHost.isHidden = overlayLayout == nil
         probe.scheduleInitialPosition()
+        probe.scheduleFollow()
     }
 }
 
@@ -147,6 +165,12 @@ final class MightyGraphInteractionProbe: NSView {
     var targetFrame: CGRect?
     var alignTop = false
     var alignBottom = false
+    var follows = false
+    /// The block a following camera keeps above the composer, and the follow
+    /// state it shares with the view (`MightyGraphFollow.Watch`).
+    var followTargetID: String?
+    var follow: MightyGraphFollowBox?
+    private var followScheduled = false
     /// Docked chrome placement; events inside its frame are never a pan or a
     /// block selection, and its corner handle is resized here like a block.
     var overlayLayout: MightyOverlayLayout?
@@ -219,7 +243,7 @@ final class MightyGraphInteractionProbe: NSView {
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
-    override func layout() { super.layout(); scheduleInitialPosition() }
+    override func layout() { super.layout(); scheduleInitialPosition(); scheduleFollow() }
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         removeMonitoring()
@@ -259,7 +283,10 @@ final class MightyGraphInteractionProbe: NSView {
     func updateLayoutFrames(_ frames: [(String, CGRect)], zoom newZoom: CGFloat, panOffset incomingPan: CGPoint) {
         strandedRetriesLeft = Self.strandedRetries
         notifyIfStranded(frames, incomingZoom: newZoom, incomingPan: incomingPan)
+        // Zooming is the user's own move away: nothing follows until they come back.
+        if newZoom != zoom, !layoutFrames.isEmpty { follow?.watch.stop() }
         layoutFrames = frames; zoom = newZoom; panOffset = incomingPan
+        scheduleFollow()
         let anchor = resizeDrag.map { ResizeAnchor(id: $0.id, point: $0.anchor, unit: $0.edges.pinnedUnit) } ?? finishingAnchor
         guard let anchor else { return }
         guard let frame = frames.first(where: { $0.0 == anchor.id })?.1 else {
@@ -361,6 +388,9 @@ final class MightyGraphInteractionProbe: NSView {
     private func beginResize(id: String, point: CGPoint, frame: CGRect, edges: ResizeEdges) {
         guard zoom.isFinite, zoom > 0, let graphFrame = layoutFrames.first(where: { $0.0 == id })?.1 else { return }
         finishingAnchor = nil
+        // The dragged corner stays pinned; once released, the camera follows on only
+        // if the newest block is still in view.
+        follow?.watch.userChangedLayout()
         gestureRoute = nil; gestureTarget = nil; discardedMomentum = false
         let unit = edges.pinnedUnit
         resizeDrag = ResizeDrag(id: id, edges: edges, initialFrame: graphFrame, initialPoint: point, initialZoom: zoom,
@@ -451,7 +481,43 @@ final class MightyGraphInteractionProbe: NSView {
         commitInteractionPosition(value)
         // Only the user's own movement reports: a click that merely admits a
         // pending camera target moves the camera without being a pan.
-        if value != previous, panOffset != previous { onUserPan(previous, panOffset) }
+        if value != previous, panOffset != previous {
+            onUserPan(previous, panOffset)
+            // A move away stops following; back at the newest block it follows again.
+            follow?.watch.moved(targetID: followTargetID, target: followFrame, camera: panOffset, viewport: bounds.size, zoom: zoom)
+        }
+    }
+    private var followFrame: CGRect? { followTargetID.flatMap { id in layoutFrames.first { $0.0 == id }?.1 } }
+    /// A target landed: a follow placement follows from here, any other aim
+    /// follows only if it shows the newest block.
+    private func targetLanded() {
+        if follows { follow?.watch.start() }
+        else { follow?.watch.moved(targetID: followTargetID, target: followFrame, camera: panOffset, viewport: bounds.size, zoom: zoom) }
+        scheduleFollow()
+    }
+    /// One follow pass after the current update: the newest block, a new viewport
+    /// height or a block settling to its height moves a following camera
+    /// (`MightyGraphFollow.Watch.observe`). Never during a drag, a resize, a
+    /// pending target or the user's own scroll and its momentum: the pass waits
+    /// for the user to be done.
+    func scheduleFollow(after delay: TimeInterval = 0) {
+        guard !disposed, !followScheduled, follow?.watch.following == true else { return }
+        followScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self else { return }
+            self.followScheduled = false
+            self.followPass()
+        }
+    }
+    private func followPass() {
+        guard !disposed, let follow, follow.watch.following, window != nil, !isHiddenOrHasHiddenAncestor, admissibleViewport,
+              !isResizing, overlayResize == nil, finishingAnchor == nil, !isPanning,
+              targetToken == nil || targetToken == consumedTargetToken else { return }
+        let quiet = ProcessInfo.processInfo.systemUptime - lastUserMoveAt
+        guard quiet > Self.userMoveGrace else { scheduleFollow(after: Self.userMoveGrace - quiet + 0.05); return }
+        if let camera = follow.watch.observe(targetID: followTargetID, target: followFrame, camera: panOffset, viewport: bounds.size, zoom: zoom) {
+            applyPan(camera)
+        }
     }
     /// An input event may arrive before the deferred initial camera admission.
     /// Commit even an unchanged position once, so the SwiftUI fallback stops
@@ -463,7 +529,7 @@ final class MightyGraphInteractionProbe: NSView {
         // the admission is rescheduled so the camera still arrives.
         guard admissibleViewport else { scheduleInitialPosition(); return }
         let pendingInitialPosition = targetToken != nil && targetToken != consumedTargetToken
-        let targetCamera = targetFrame.map { MightyGraphLayout.cameraOffset(for: $0, viewport: bounds.size, zoom: zoom, alignTop: alignTop, alignBottom: alignBottom) }
+        let targetCamera = targetFrame.map { MightyGraphFollow.cameraOffset(for: $0, viewport: bounds.size, zoom: zoom, alignTop: alignTop, alignBottom: alignBottom, follows: follows) }
         guard let committed = MightyGraphCamera.admittedCamera(targetToken: targetToken, consumedToken: consumedTargetToken,
                                                                targetCamera: targetCamera, current: panOffset, requested: value) else {
             // A published target without a frame yet: leave its token pending
@@ -474,6 +540,7 @@ final class MightyGraphInteractionProbe: NSView {
         lastUserMoveAt = ProcessInfo.processInfo.systemUptime
         if pendingInitialPosition && committed == panOffset { onPan(committed) }
         else { applyPan(committed) }
+        if pendingInitialPosition { targetLanded() }
     }
     /// The camera is admitted for the viewport SwiftUI measured. A probe that
     /// was never told one — a hand-built fixture — speaks for its own bounds
@@ -498,12 +565,14 @@ final class MightyGraphInteractionProbe: NSView {
             self.consumedTargetToken = token
             // The target owns the camera now; a pin left by a drag must not pull it back.
             self.finishingAnchor = nil
-            let initial = MightyGraphLayout.cameraOffset(for: frame, viewport: self.bounds.size, zoom: self.zoom, alignTop: self.alignTop, alignBottom: self.alignBottom)
+            let initial = MightyGraphFollow.cameraOffset(for: frame, viewport: self.bounds.size, zoom: self.zoom, alignTop: self.alignTop,
+                                                         alignBottom: self.alignBottom, follows: self.follows)
             if initial == self.panOffset {
                 // The first SwiftUI render already used this offset. Commit it
                 // as camera state so later layout changes do not keep centering.
                 self.onPan(initial)
             } else { self.applyPan(initial) }
+            self.targetLanded()
         }
     }
     private func select(_ id: String?) {

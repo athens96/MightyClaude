@@ -80,8 +80,9 @@ struct MightyGraphView: View {
     /// on release. A reference, so keeping it never redraws the diagram.
     @ViewState private var measuredDuringDrag = MeasuredHeight()
     private final class MeasuredHeight { var value: (nodeID: String, height: CGFloat)? }
-    /// Holds a newly finished result above the composer until something else moves the camera.
-    @ViewState private var reveal = MightyGraphCamera.ResultReveal()
+    /// Whether the camera follows the newest block (`MightyGraphFollow`), kept
+    /// across view switches and shared with the camera probe.
+    @ViewState private var follow = MightyGraphFollowBox()
     @ViewState private var reference: MightyGraphReference?
     @ViewState private var referenceOnLeft = false
     // Remembered across sessions and panes. Height 0 means "as tall as the graph".
@@ -163,11 +164,6 @@ struct MightyGraphView: View {
     private var ownRunProgress: [MightyGraphCamera.ResultReveal.RunProgress] {
         ownRuns.map { .init(id: $0.id, finished: MightyGraphLayout.finished($0)) }
     }
-    /// Whether a result card's height is known, or needs no measuring.
-    private func resultMeasuredAlready(_ nodeID: String) -> Bool {
-        guard let run = runs.first(where: { MightyGraphLayout.nodeID($0, suffix: "result") == nodeID }) else { return true }
-        return resultHeights[nodeID] != nil || !run.resultEntries.contains(where: { $0.kind != "user" })
-    }
     /// The run that keeps its place while loaded history grows above it and
     /// trimmed runs move into it.
     private var pinnedStart: Int { history?.pinnedRunID.flatMap { id in runs.firstIndex { $0.id == id } } ?? olderCount }
@@ -209,8 +205,9 @@ struct MightyGraphView: View {
         let overlayView: AnyView = reference.map { AnyView(referenceOverlay($0)) } ?? AnyView(EmptyView())
         let overlayLayout: MightyOverlayLayout? = reference == nil ? nil
             : MightyOverlayLayout(onLeft: referenceOnLeft, storedWidth: bubbleWidth, storedHeight: bubbleHeight)
-        let fallbackNodeID = initialTarget(graph)
-        let target = scrollTarget ?? MightyGraphScrollTarget(token: "initial:" + sessionID, nodeID: fallbackNodeID, alignTop: false)
+        let fallbackNodeID = followTarget(graph)
+        // Before anything aimed it, the camera follows: the newest block right above the composer.
+        let target = scrollTarget ?? MightyGraphScrollTarget(token: "initial:" + sessionID, nodeID: fallbackNodeID, alignTop: false, follows: true)
         let live = MightyGraphLayout.liveNodeIDs(runs)
         VStack(spacing: 0) {
             HStack(spacing: DesignMetrics.Spacing.md) {
@@ -253,7 +250,7 @@ struct MightyGraphView: View {
             } else {
             MightyGraphCanvas(graph: graph, zoom: zoom, sessionID: sessionID,
                               scrollTarget: target,
-                              defaultNodeID: fallbackNodeID, selection: $selectedNodeID, edges: { graphEdges(graph, live: live, visible: $0) },
+                              defaultNodeID: fallbackNodeID, follow: follow, selection: $selectedNodeID, edges: { graphEdges(graph, live: live, visible: $0) },
                               overlay: overlayView,
                               overlayLayout: overlayLayout,
                               onOverlayResize: { size, _ in
@@ -264,63 +261,23 @@ struct MightyGraphView: View {
                               onResize: { resize(graph, $0, $1, $2, $3) }, onResetSize: resetSize,
                               onStranded: { reaim(graph, after: $0) }, newestRunID: runs.last?.id,
                               onReachTop: { if history?.phase == .idle { onLoadOlder() } },
-                              onUserMove: { if reveal.holdingID != nil { reveal.cancel() } },
                               card: { card($0, executions: linksByKey) })
-                // The whole id list, not just the last one: dropping the oldest
-                // runs moves every surviving card up without touching the last
-                // id, and nothing else would re-aim the camera.
-                .onChange(of: runs.map(\.id)) { previous, current in
-                    if let last = current.last, previous.last != last {
-                        reveal.cancel()
-                        scrollTarget = MightyGraphScrollTarget(token: "run:" + last, nodeID: MightyGraphBlockSize.nodeID(runID: last, suffix: "request"), alignTop: true)
-                        return
-                    }
-                    publish(MightyGraphCamera.trimAnchor(previousRunIDs: previous, runIDs: current, selectedNodeID: selectedNodeID,
-                                                         layoutNodeIDs: Set(graph.nodes.map(\.id))))
-                }
+                // The canvas changing height — the composer growing as a draft is typed,
+                // shrinking after a send, the pane resizing — never re-aims the camera: a
+                // following camera keeps its block above the composer, any other stays.
                 .background(GeometryReader { geo in
                     Color.clear
                         .onAppear { canvasViewport = geo.size }
                         .onChange(of: geo.size) { _, new in canvasViewport = new }
                 })
-                // Once, when a request of this pane finishes while it is
-                // watched: its result card goes right above the composer.
-                .onChange(of: ownRunProgress) { previous, current in
-                    if let id = reveal.runsChanged(previous: previous, current: current, resultID: { MightyGraphBlockSize.nodeID(runID: $0, suffix: "result") },
-                                                   measured: resultMeasuredAlready) {
-                        revealResult(id)
-                    } else if reveal.awaitingMeasure, let id = reveal.holdingID {
-                        // An answer that is never drawn is never measured.
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                            if let id = reveal.measureTimedOut(id) { revealResult(id) }
-                        }
-                    }
-                }
                 // A plan waiting for an answer is what the user has to read next.
                 .onChange(of: planNodeID) { _, id in
                     guard let id else { return }
-                    reveal.cancel()
                     scrollTarget = MightyGraphScrollTarget(token: "plan:" + id + ":" + (planRequest?.id ?? ""), nodeID: id, alignTop: true)
                 }
-                .onChange(of: zoom) { _, _ in if reveal.holdingID != nil { reveal.cancel() } }
-                .onChange(of: draft.isEmpty) { wasEmpty, isEmpty in
-                    if reveal.holdingID != nil { reveal.draftChanged(wasEmpty: wasEmpty, isEmpty: isEmpty) }
-                }
-                .onChange(of: canvasViewport) { _, _ in
-                    // A result still held above the composer stays there.
-                    if let id = reveal.viewportChanged() { revealResult(id); return }
-                    // Core decides whether a card is fitting and whether the
-                    // block the camera is on is newer work that keeps it.
-                    let resized = layout
-                    let frames = Dictionary(resized.nodes.map { ($0.id, $0.frame) }, uniquingKeysWith: { first, _ in first })
-                    let requested = scrollTarget.flatMap { frames[$0.nodeID] == nil ? nil : $0 }
-                    // A saved-size card the pane now bounds follows the pane as a fitted one does.
-                    // The pending plan block fits the pane as the newest result does, and is newer work than it.
-                    publish(MightyGraphCamera.resizeAnchor(fittedResultID: resized.fittedResultID ?? resized.viewportBoundResultID ?? planNodeID,
-                                                           targetID: requested?.nodeID ?? initialTarget(resized),
-                                                           targetAlignTop: requested?.alignTop ?? false,
-                                                           frames: frames))
-                }
+                // A block the user opened or folded never moves the camera; it follows on
+                // only if the newest block is still in view.
+                .onChange(of: expanded) { _, _ in follow.watch.userChangedLayout() }
             }
         }
         .accessibilityElement(children: .contain)
@@ -337,6 +294,26 @@ struct MightyGraphView: View {
             if let id = planNodeID {
                 scrollTarget = MightyGraphScrollTarget(token: "plan:" + id + ":" + (planRequest?.id ?? ""), nodeID: id, alignTop: true)
             }
+        }
+        // The whole id list, not just the last one: dropping the oldest
+        // runs moves every surviving card up without touching the last
+        // id, and nothing else would re-aim the camera. Watched in every view,
+        // so a send from the 구조 view or the timeline is followed in the diagram.
+        .onChange(of: runs.map(\.id)) { previous, current in
+            // A new request is the user's own send: follow it, its 실행 block and
+            // everything after it right above the composer.
+            if let last = current.last, previous.last != last {
+                publishFollow()
+                return
+            }
+            // A following camera keeps its block in place through a trim itself.
+            guard !follow.watch.following else { return }
+            publish(MightyGraphCamera.trimAnchor(previousRunIDs: previous, runIDs: current, selectedNodeID: selectedNodeID,
+                                                 layoutNodeIDs: Set(layout.nodes.map(\.id))))
+        }
+        // Back to the diagram, a following camera shows the newest block again.
+        .onChange(of: viewMode) { _, mode in
+            if mode == .diagram, follow.watch.following { publishFollow() }
         }
         // Cancelled when the graph leaves the screen or the pane closes.
         .task(id: ouroborosRequest) { await ouroboros.run(ouroborosRequest) }
@@ -361,16 +338,17 @@ struct MightyGraphView: View {
     /// lands even when it picks the block the first one did.
     private func publish(_ anchor: MightyGraphCamera.Anchor) {
         guard case .reaim(let nodeID, let alignTop) = anchor else { return }
-        reveal.cancel()
+        // Where it lands decides whether the camera follows from there.
+        follow.watch.stop()
         trimSequence += 1
         scrollTarget = MightyGraphScrollTarget(token: MightyGraphCamera.trimToken(sequence: trimSequence, nodeID: nodeID), nodeID: nodeID, alignTop: alignTop)
     }
 
-    /// The result card's bottom right above the composer, or its top when it
-    /// is taller than the canvas (`MightyGraphLayout.revealOffset`).
-    private func revealResult(_ nodeID: String) {
+    /// Follow from now on, the newest block right above the composer.
+    private func publishFollow() {
+        follow.watch.start()
         trimSequence += 1
-        scrollTarget = MightyGraphScrollTarget(token: "reveal:\(trimSequence):" + nodeID, nodeID: nodeID, alignTop: false, alignBottom: true)
+        scrollTarget = MightyGraphScrollTarget(token: "follow:\(trimSequence)", nodeID: followTarget(layout), alignTop: false, follows: true)
     }
 
     /// A result card's answer measured a new height.
@@ -380,20 +358,20 @@ struct MightyGraphView: View {
         if liveResultSize != nil { measuredDuringDrag.value = (nodeID, height); return }
         guard abs((resultHeights[nodeID] ?? -1) - height) > 0.5 else { return }
         resultHeights = [nodeID: height]
-        if let id = reveal.contentMeasured(nodeID) { revealResult(id) }
     }
 
     /// The layout moved every card off screen while the camera stood still —
     /// a trim, a collapsed card, anything else that shortens the document.
     private func reaim(_ graph: MightyGraphLayout, after loss: MightyGraphCamera.StrandedWatch.Loss) {
-        // A request that arrived since the detection aims the camera itself.
-        guard runs.last?.id == loss.newestRunID else { return }
+        // A request that arrived since the detection aims the camera itself, and a
+        // following camera keeps its own block on screen.
+        guard runs.last?.id == loss.newestRunID, !follow.watch.following else { return }
         let nodeIDs = Set(graph.nodes.map(\.id))
         // Back to the card they were reading, not somewhere they never were.
         if nodeIDs.contains(loss.lookedAtNodeID) { publish(.reaim(nodeID: loss.lookedAtNodeID, alignTop: false)); return }
         let anchor = MightyGraphCamera.reaimAnchor(newestRunID: loss.newestRunID, selectedNodeID: selectedNodeID, layoutNodeIDs: nodeIDs)
         // The net fires once per loss, so holding here would leave the blank.
-        let fallback = initialTarget(graph)
+        let fallback = followTarget(graph)
         if case .hold = anchor, nodeIDs.contains(fallback) { publish(.reaim(nodeID: fallback, alignTop: true)); return }
         publish(anchor)
     }
@@ -416,7 +394,7 @@ struct MightyGraphView: View {
     /// window fit are what the newest result card is kept within.
     private func resize(_ graph: MightyGraphLayout, _ id: String, _ size: CGSize, _ edges: ResizeEdges, _ phase: MightyGraphLayout.ResizePhase) {
         guard let value = MightyGraphBlockSize(width: size.width, height: size.height).normalized(nodeID: id) else { return }
-        if reveal.holdingID != nil { reveal.cancel() }
+        follow.watch.userChangedLayout()
         resized[id] = value
         if isRecordNode(id) { return }
         if id == planNodeID {
@@ -452,9 +430,9 @@ struct MightyGraphView: View {
         onSavePlanSize(nil)
     }
 
-    private func initialTarget(_ graph: MightyGraphLayout) -> String {
-        if graph.nodes.contains(where: { $0.content == .draft }) { return MightyGraphCamera.pendingNodeID }
-        return graph.newestRequestTargetID(runs) ?? MightyGraphCamera.pendingNodeID
+    /// The block a following camera keeps right above the composer.
+    private func followTarget(_ graph: MightyGraphLayout) -> String {
+        MightyGraphFollow.targetID(graph, runs: runs) ?? MightyGraphCamera.pendingNodeID
     }
 
     /// Concept D's connectors: quiet ink lines, run blue (and a little heavier) into a
@@ -1018,8 +996,10 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
     let sessionID: String
     let scrollTarget: MightyGraphScrollTarget?
     /// Aimed at when the target's block no longer exists, so a camera is never
-    /// committed from the document origin after a block disappeared.
+    /// committed from the document origin after a block disappeared. It is also
+    /// the block a following camera keeps above the composer.
     let defaultNodeID: String
+    let follow: MightyGraphFollowBox
     @Binding var selection: String?
     /// The connecting lines for the part of the diagram near the viewport.
     let edges: (CGRect) -> Edges
@@ -1032,8 +1012,6 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
     var newestRunID: String? = nil
     /// Scrolling up past the top of the diagram asks for older requests.
     var onReachTop: () -> Void = {}
-    /// The user dragged or scrolled the diagram.
-    var onUserMove: () -> Void = {}
     let card: (MightyGraphLayout.Node) -> Card
     @ViewState private var cameraOffset: CGPoint?
     @Environment(\.colorScheme) private var colorScheme
@@ -1044,10 +1022,11 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
             let target = requested ?? graph.nodes.first(where: { $0.id == defaultNodeID })
             let targetFrame = target?.frame
             // Top alignment belongs to the block that was asked for. The
-            // fallback is a different block, so it is simply centred.
+            // fallback is the followed block, so it is followed.
             let alignTop = requested != nil && (scrollTarget?.alignTop ?? false)
             let alignBottom = requested != nil && (scrollTarget?.alignBottom ?? false)
-            let initialOffset = targetFrame.map { MightyGraphLayout.cameraOffset(for: $0, viewport: viewport.size, zoom: zoom, alignTop: alignTop, alignBottom: alignBottom) } ?? .zero
+            let follows = requested == nil || (scrollTarget?.follows ?? false)
+            let initialOffset = targetFrame.map { MightyGraphFollow.cameraOffset(for: $0, viewport: viewport.size, zoom: zoom, alignTop: alignTop, alignBottom: alignBottom, follows: follows) } ?? .zero
             let displayedOffset = cameraOffset ?? initialOffset
             let panBinding = Binding<CGPoint>(get: { cameraOffset ?? initialOffset }, set: { cameraOffset = $0 })
             let visible = CGRect(x: floor(-displayedOffset.x / zoom / 64) * 64 - 192,
@@ -1106,9 +1085,8 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
             MightyGraphInteraction(sessionID: sessionID, nodes: graph.nodes, zoom: zoom,
                 viewportSize: viewport.size, targetToken: scrollTarget?.token,
                 targetFrame: targetFrame,
-                alignTop: alignTop, alignBottom: alignBottom, selection: $selection, panOffset: panBinding, onResize: onResize, onStranded: onStranded, newestRunID: newestRunID,
+                alignTop: alignTop, alignBottom: alignBottom, follows: follows, followTargetID: defaultNodeID, follow: follow, selection: $selection, panOffset: panBinding, onResize: onResize, onStranded: onStranded, newestRunID: newestRunID,
                 onUserPan: { old, new in
-                    onUserMove()
                     // Only the user's own move towards the top, once the top
                     // shows: re-aims and zoom never load more.
                     guard new.y > old.y, let top = graph.nodes.first(where: { $0.content == .history })?.frame.minY,
@@ -1122,7 +1100,7 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
             .onChange(of: zoom) { old, new in
                 guard old > 0 else { return }
                 let center = CGPoint(x: viewport.size.width / 2, y: viewport.size.height / 2)
-                let previous = cameraOffset ?? targetFrame.map { MightyGraphLayout.cameraOffset(for: $0, viewport: viewport.size, zoom: old, alignTop: alignTop, alignBottom: alignBottom) } ?? .zero
+                let previous = cameraOffset ?? targetFrame.map { MightyGraphFollow.cameraOffset(for: $0, viewport: viewport.size, zoom: old, alignTop: alignTop, alignBottom: alignBottom, follows: follows) } ?? .zero
                 cameraOffset = CGPoint(x: center.x - (center.x - previous.x) * new / old,
                                        y: center.y - (center.y - previous.y) * new / old)
             }
@@ -1218,4 +1196,7 @@ private struct MightyGraphScrollTarget {
     let alignTop: Bool
     /// A revealed result: its bottom right above the composer.
     var alignBottom = false
+    /// The followed block's bottom right above the composer, on the centreline,
+    /// and the camera follows from there (`MightyGraphFollow`).
+    var follows = false
 }
