@@ -176,6 +176,44 @@ jobs:
           name: MightyClaude-macos-terminal-smoke
           path: ${{ runner.temp }}/mighty-terminal-smoke/
           if-no-files-found: warn
+      - name: Smoke test the Mighty diagram
+        # The diagram in a disposable profile: block layout, resize, the 실행 split, and
+        # the follow camera (the newest block sits just above the composer; a reader who
+        # scrolled up is never pulled back when a new block appears). Only with an app to run.
+        if: (success() || failure()) && steps.build-app.outcome == 'success'
+        timeout-minutes: 5
+        run: |
+          set -u
+          profile="$RUNNER_TEMP/mighty-graph-smoke"
+          rm -rf "$profile"
+          status=0
+          if ! perl -e 'alarm shift; exec @ARGV' 180 release/native-macos/MightyClaude.app/Contents/MacOS/MightyClaude \
+              --graph-smoke-test --smoke-exit --profile "$profile"; then
+            echo "::error title=macOS graph smoke::the app exited non-zero or timed out"
+            status=1
+          fi
+          python3 - <<'PY' || status=1
+          import json, os, pathlib, sys
+          path = pathlib.Path(os.environ["RUNNER_TEMP"]) / "mighty-graph-smoke" / "graph-smoke-result.json"
+          if not path.exists():
+              print("::error title=macOS graph smoke::no graph-smoke-result.json was written", flush=True)
+              sys.exit(1)
+          result = json.loads(path.read_text())
+          print(json.dumps(result, ensure_ascii=False, sort_keys=True, indent=2)[:20000])
+          if not result.get("passed"):
+              failed = [k for k, v in result.items() if v is False or (isinstance(v, dict) and v.get("passed") is False)]
+              msg = f'failed={failed}; error={result.get("error", "")}'
+              print(f'::error title=macOS graph smoke::{msg.replace("%", "%25").replace(chr(13), "%0D").replace(chr(10), "%0A")[:1500]}', flush=True)
+              sys.exit(1)
+          PY
+          exit $status
+      - name: Upload graph smoke result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MightyClaude-macos-graph-smoke
+          path: ${{ runner.temp }}/mighty-graph-smoke/
+          if-no-files-found: warn
       - name: Smoke test delegation close paths
         # Through the store's actions and the phone's routes, in a disposable profile and
         # repository: merged children closed on the Mac and from the phone are cleaned up,
