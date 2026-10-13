@@ -120,21 +120,25 @@ enum MightyGraphDiagnostics {
             report["nativeMarkdownAndToolRenderer"] = true
             report["nativeTranscriptCount"] = editors.count
             report["screenshot"] = try store.captureSmokeWindow(window, filename: "mighty-graph.png").path
-            try await store.waitForSmoke(timeout: 3, step: "card expand button exposed", detail: { canvasIdentifiers(window) }) {
-                node(window, identifier: "mighty-expand-\(mainID)") != nil
+            // The header's 펼치기/접기, run as its button runs it (`diagnosticActions`): the
+            // card must really be laid out taller, push what follows down, and overlap nothing.
+            func mainFrame() -> CGRect? { canvas.layoutFrames.first { $0.0 == mainID }?.1 }
+            let frameDetail = { "main=\(mainFrame().map { "\($0)" } ?? "nil") overlap=\(overlappingPair(canvas) ?? "none")" }
+            guard let collapsed = mainFrame() else { throw MightyError("그래프 카드 확장 대상이 레이아웃에 없습니다.") }
+            canvas.diagnosticActions.toggleExpanded(mainID)
+            try await store.waitForSmoke(timeout: 3, step: "card expanded", detail: frameDetail) {
+                mainFrame()?.height == MightyGraphLayout.requestHeight(expanded: true) && mainFrame()?.minY == collapsed.minY && overlappingPair(canvas) == nil
             }
-            guard let expand = node(window, identifier: "mighty-expand-\(mainID)") else { throw MightyError("그래프 카드 확장 버튼이 없습니다.") }
-            press(expand)
-            try await store.waitForSmoke(timeout: 3, step: "card expanded") { label(node(window, identifier: "mighty-expand-\(mainID)")) == L("graph.block.collapse") }
             report["nativeCardExpansion"] = true
-            if let collapse = node(window, identifier: "mighty-expand-\(mainID)") { press(collapse) }
-            try await store.waitForSmoke(timeout: 3, step: "card collapsed") { label(node(window, identifier: "mighty-expand-\(mainID)")) == L("graph.block.expand") }
+            canvas.diagnosticActions.toggleExpanded(mainID)
+            try await store.waitForSmoke(timeout: 3, step: "card collapsed", detail: frameDetail) {
+                mainFrame() == collapsed && overlappingPair(canvas) == nil
+            }
             report["nativeCardCollapse"] = true
-            guard let zoom = node(window, identifier: "mighty-zoom-out-graph-fixture") else { throw MightyError("그래프 축소 버튼이 없습니다.") }
             let zoomAnchor = CGPoint(x: (canvas.viewportSize.width / 2 - canvas.panOffset.x) / canvas.zoom,
                                      y: (canvas.viewportSize.height / 2 - canvas.panOffset.y) / canvas.zoom)
-            press(zoom)
-            try await store.waitForSmoke(timeout: 3, step: "zoom 90% shown") { label(node(window, identifier: "mighty-zoom-reset-graph-fixture")).contains("90%") }
+            // The header's zoom-out button, run as the button runs it.
+            canvas.diagnosticActions.zoomOut()
             try await store.waitForSmoke(timeout: 3, step: "zoom keeps the viewport centre") {
                 abs(canvas.zoom - 0.9) < 0.001
                     && abs((canvas.viewportSize.width / 2 - canvas.panOffset.x) / canvas.zoom - zoomAnchor.x) < 1
@@ -144,8 +148,10 @@ enum MightyGraphDiagnostics {
             report["nativeZoom"] = true
             report["zoomScreenshot"] = try store.captureSmokeWindow(window, filename: "mighty-graph-zoom.png").path
             for percentage in [80, 70, 60, 50] {
-                if let decrease = node(window, identifier: "mighty-zoom-out-graph-fixture") { press(decrease) }
-                try await store.waitForSmoke(timeout: 3, step: "zoom step shown") { label(node(window, identifier: "mighty-zoom-reset-graph-fixture")).contains("\(percentage)%") }
+                canvas.diagnosticActions.zoomOut()
+                try await store.waitForSmoke(timeout: 3, step: "zoom step to \(percentage)%", detail: { "zoom=\(canvas.zoom)" }) {
+                    abs(canvas.zoom - CGFloat(percentage) / 100) < 0.001
+                }
             }
             canvas.setPanOffset(.zero)
             try await Task.sleep(for: .milliseconds(80))
@@ -176,8 +182,8 @@ enum MightyGraphDiagnostics {
                   window.makeFirstResponder(nativeInput) else { throw MightyError("모드 전환용 네이티브 입력창을 찾지 못했습니다.") }
             nativeInput.insertText("한글 초안 · 그래프 전환", replacementRange: NSRange(location: 0, length: nativeInput.string.utf16.count))
             try await store.waitForSmoke(timeout: 3, step: "draft typed into the composer") { store.drafts[session.id] == "한글 초안 · 그래프 전환" }
-            guard let mighty = node(window, identifier: "agent-mode-mighty-\(session.id)") else { throw MightyError("마이티 모드 선택 버튼이 없습니다.") }
-            press(mighty)
+            // The pane's mode chip, run as its button runs it.
+            store.selectSession(session.id); store.setAgentViewMode(session.id, mode: "mighty")
             // The camera follows the newest result; the draft block below it is panned into view.
             try await store.waitForSmoke(timeout: 3, step: "Mighty mode shows the draft block") {
                 showDraft(window)
@@ -192,15 +198,15 @@ enum MightyGraphDiagnostics {
             try await store.waitForSmoke(timeout: 3, step: "saved draft block size applied") {
                 window.contentView.flatMap { camera(in: $0) }?.layoutFrames.first { $0.0 == "pending-input" }?.1.size == CGSize(width: 680, height: 230)
             }
-            guard let normal = node(window, identifier: "agent-mode-default-\(session.id)") else { throw MightyError("기본 모드 선택 버튼이 없습니다.") }
-            press(normal)
-            try await store.waitForSmoke(timeout: 3, step: "default mode hides the graph") { node(window, identifier: "mighty-graph-\(session.id)") == nil }
+            store.selectSession(session.id); store.setAgentViewMode(session.id, mode: "default")
+            // The diagram's canvas is gone from the pane (a native view, found without accessibility).
+            try await store.waitForSmoke(timeout: 3, step: "default mode hides the graph") { window.contentView.flatMap { camera(in: $0) } == nil }
             guard window.contentView.map({ textViews(in: $0).contains(where: { $0 === nativeInput }) }) == true,
                   store.drafts[session.id] == "한글 초안 · 그래프 전환",
                   store.snapshot.sessions.first(where: { $0.id == session.id })?.logs == session.logs,
                   store.snapshot.sessions.first(where: { $0.id == session.id })?.graphRuns == session.graphRuns else { throw MightyError("기본 모드 복귀가 대화·그래프 기록 또는 초안을 지웠습니다.") }
             report["modeTogglePreservesNativeComposerAndHistory"] = true
-            if let mighty = node(window, identifier: "agent-mode-mighty-\(session.id)") { press(mighty) }
+            store.selectSession(session.id); store.setAgentViewMode(session.id, mode: "mighty")
             try await store.waitForSmoke(timeout: 3, step: "saved size survives the mode remount") {
                 window.contentView.flatMap { camera(in: $0) }?.layoutFrames.first { $0.0 == "pending-input" }?.1.size == CGSize(width: 680, height: 230)
             }
@@ -336,6 +342,7 @@ enum MightyGraphDiagnostics {
             report["passed"] = true
         } catch {
             report["error"] = error.localizedDescription
+            report["canvasIdentifiers"] = canvasIdentifiers(window)
             if let content = window.contentView {
                 report["nativeViewKinds"] = nativeViewKinds(in: content)
                 if let camera = camera(in: content) {
@@ -386,6 +393,14 @@ enum MightyGraphDiagnostics {
         let layout = MightyGraphLayout.make(runs: fixture.runs, draft: fixture.draft, running: fixture.running, expanded: [], splitsExecution: true)
         guard let id = camera.followTargetID, id == MightyGraphFollow.targetID(layout, runs: fixture.runs) else { return nil }
         return camera.frames.first { $0.0 == id }?.1
+    }
+    /// Two laid-out blocks that overlap, or nil.
+    private static func overlappingPair(_ camera: MightyGraphInteractionProbe) -> String? {
+        let frames = camera.layoutFrames
+        for (index, node) in frames.enumerated() {
+            for other in frames.dropFirst(index + 1) where node.1.intersects(other.1) { return node.0 + " / " + other.0 }
+        }
+        return nil
     }
     private static func followedMounted(_ camera: MightyGraphInteractionProbe, _ window: NSWindow) -> Bool {
         camera.followTargetID.map { mountedCards(window).contains($0) } == true
@@ -479,12 +494,6 @@ enum MightyGraphDiagnostics {
         return ["accessibilityLabel", "accessibilityTitle", "accessibilityValue"].compactMap { key in
             object.responds(to: NSSelectorFromString(key)) ? object.value(forKey: key) as? String : nil
         }.joined(separator: " ")
-    }
-    private static func press(_ object: NSObject) {
-        let selector = NSSelectorFromString("accessibilityPerformPress")
-        guard object.responds(to: selector), let implementation = object.method(for: selector) else { return }
-        typealias Press = @convention(c) (AnyObject, Selector) -> Bool
-        _ = unsafeBitCast(implementation, to: Press.self)(object, selector)
     }
     @MainActor private final class GraphFixture: ObservableObject {
         @Published var runs: [MightyGraphRun]

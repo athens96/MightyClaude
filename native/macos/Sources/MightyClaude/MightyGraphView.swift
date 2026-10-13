@@ -224,7 +224,7 @@ struct MightyGraphView: View {
                 Spacer(minLength: DesignMetrics.Spacing.md)
                 if viewMode == .diagram {
                     Group {
-                        Button { zoom = max(0.5, zoom - 0.1) } label: { Image(systemName: "minus.magnifyingglass") }
+                        Button { zoomOut() } label: { Image(systemName: "minus.magnifyingglass") }
                             .disabled(zoom <= 0.5).help(L("graph.zoom.out")).accessibilityIdentifier("mighty-zoom-out-\(sessionID)")
                         Button { zoom = 1 } label: { Text("\(Int((zoom * 100).rounded()))%").monospacedDigit().frame(width: 38) }
                             .help(L("graph.zoom.reset")).accessibilityIdentifier("mighty-zoom-reset-\(sessionID)")
@@ -250,7 +250,9 @@ struct MightyGraphView: View {
             } else {
             MightyGraphCanvas(graph: graph, zoom: zoom, sessionID: sessionID,
                               scrollTarget: target,
-                              defaultNodeID: fallbackNodeID, follow: follow, selection: $selectedNodeID, edges: { graphEdges(graph, live: live, visible: $0) },
+                              defaultNodeID: fallbackNodeID, follow: follow,
+                              diagnosticActions: MightyGraphDiagnosticActions(toggleExpanded: toggleExpanded, zoomOut: zoomOut),
+                              selection: $selectedNodeID, edges: { graphEdges(graph, live: live, visible: $0) },
                               overlay: overlayView,
                               overlayLayout: overlayLayout,
                               onOverlayResize: { size, _ in
@@ -429,6 +431,14 @@ struct MightyGraphView: View {
         livePlanSize = nil
         onSavePlanSize(nil)
     }
+
+    /// A block header's 펼치기/접기: back to its default size, opened or folded.
+    private func toggleExpanded(_ id: String) {
+        resized.removeValue(forKey: id)
+        onSaveBlockSize(id, nil)
+        if !expanded.insert(id).inserted { expanded.remove(id) }
+    }
+    private func zoomOut() { zoom = max(0.5, zoom - 0.1) }
 
     /// The block a following camera keeps right above the composer.
     private func followTarget(_ graph: MightyGraphLayout) -> String {
@@ -634,11 +644,7 @@ struct MightyGraphView: View {
                         .accessibilityIdentifier("mighty-fit-result-\(node.id)")
                 }
                 if !isFittedResult {
-                    Button {
-                        resized.removeValue(forKey: node.id)
-                        onSaveBlockSize(node.id, nil)
-                        if !expanded.insert(node.id).inserted { expanded.remove(node.id) }
-                    } label: { Image(systemName: expanded.contains(node.id) ? "rectangle.compress.vertical" : "rectangle.expand.vertical") }
+                    Button { toggleExpanded(node.id) } label: { Image(systemName: expanded.contains(node.id) ? "rectangle.compress.vertical" : "rectangle.expand.vertical") }
                         .buttonStyle(.plain).foregroundStyle(quiet).help(expanded.contains(node.id) ? L("graph.block.collapse") : L("graph.block.expand"))
                         .accessibilityLabel(expanded.contains(node.id) ? L("graph.block.collapse") : L("graph.block.expand"))
                         .accessibilityIdentifier("mighty-expand-\(node.id)")
@@ -1000,6 +1006,7 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
     /// the block a following camera keeps above the composer.
     let defaultNodeID: String
     let follow: MightyGraphFollowBox
+    var diagnosticActions = MightyGraphDiagnosticActions()
     @Binding var selection: String?
     /// The connecting lines for the part of the diagram near the viewport.
     let edges: (CGRect) -> Edges
@@ -1086,7 +1093,7 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
                 viewportSize: viewport.size, targetToken: scrollTarget?.token,
                 targetFrame: targetFrame,
                 alignTop: alignTop, alignBottom: alignBottom, follows: follows, followTargetID: defaultNodeID, follow: follow,
-                drawnNodeIDs: Set(graph.nodes.lazy.filter { visible.intersects($0.frame) }.map(\.id)), selection: $selection, panOffset: panBinding, onResize: onResize, onStranded: onStranded, newestRunID: newestRunID,
+                drawnNodeIDs: Set(graph.nodes.lazy.filter { visible.intersects($0.frame) }.map(\.id)), diagnosticActions: diagnosticActions, selection: $selection, panOffset: panBinding, onResize: onResize, onStranded: onStranded, newestRunID: newestRunID,
                 onUserPan: { old, new in
                     // Only the user's own move towards the top, once the top
                     // shows: re-aims and zoom never load more.
