@@ -38,6 +38,8 @@ struct MightyGraphInteraction<Content: View>: NSViewRepresentable {
     /// The block a following camera keeps above the composer, and the follow state.
     var followTargetID: String?
     var follow: MightyGraphFollowBox?
+    /// The blocks drawn this pass: the rest are culled to `Color.clear`.
+    var drawnNodeIDs: Set<String> = []
     @Binding var selection: String?
     @Binding var panOffset: CGPoint
     var onResize: (String, CGSize, ResizeEdges, MightyGraphLayout.ResizePhase) -> Void = { _, _, _, _ in }
@@ -81,6 +83,7 @@ struct MightyGraphInteraction<Content: View>: NSViewRepresentable {
         view.follows = follows
         view.followTargetID = followTargetID
         view.follow = follow
+        view.drawnNodeIDs = drawnNodeIDs
         view.onSelect = { selection = $0 }
         view.onPan = { panOffset = $0 }
         view.onUserPan = onUserPan
@@ -170,6 +173,11 @@ final class MightyGraphInteractionProbe: NSView {
     /// state it shares with the view (`MightyGraphFollow.Watch`).
     var followTargetID: String?
     var follow: MightyGraphFollowBox?
+    /// The blocks the canvas drew in its last pass (the rest are culled to
+    /// `Color.clear`). The GUI diagnostics read it: SwiftUI elements inside the
+    /// canvas's own hosting view are not reachable through accessibility on a
+    /// machine with no assistive client, such as a CI runner.
+    var drawnNodeIDs: Set<String> = []
     private var followScheduled = false
     /// Docked chrome placement; events inside its frame are never a pan or a
     /// block selection, and its corner handle is resized here like a block.

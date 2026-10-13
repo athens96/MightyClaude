@@ -120,6 +120,9 @@ enum MightyGraphDiagnostics {
             report["nativeMarkdownAndToolRenderer"] = true
             report["nativeTranscriptCount"] = editors.count
             report["screenshot"] = try store.captureSmokeWindow(window, filename: "mighty-graph.png").path
+            try await store.waitForSmoke(timeout: 3, step: "card expand button exposed", detail: { canvasIdentifiers(window) }) {
+                node(window, identifier: "mighty-expand-\(mainID)") != nil
+            }
             guard let expand = node(window, identifier: "mighty-expand-\(mainID)") else { throw MightyError("그래프 카드 확장 버튼이 없습니다.") }
             press(expand)
             try await store.waitForSmoke(timeout: 3, step: "card expanded") { label(node(window, identifier: "mighty-expand-\(mainID)")) == L("graph.block.collapse") }
@@ -218,7 +221,7 @@ enum MightyGraphDiagnostics {
             fixture.draft = ""; fixture.running = false
             window.contentView = NSHostingView(rootView: GraphFixtureView(fixture: fixture))
             let newestLongResult = MightyGraphBlockSize.nodeID(runID: "long-history-23", suffix: "result")
-            try await store.waitForSmoke(timeout: 3, step: "long history newest result mounted") { node(window, identifier: "mighty-node-\(newestLongResult)") != nil }
+            try await store.waitForSmoke(timeout: 3, step: "long history newest result mounted") { mountedCards(window).contains(newestLongResult) }
             guard let longContent = window.contentView else { throw MightyError("긴 그래프 검증 화면이 없습니다.") }
             let mounted = textViews(in: longContent).count
             let mountedLongCards = mountedCards(window)
@@ -263,7 +266,7 @@ enum MightyGraphDiagnostics {
                 MightyGraphAgent(id: "branch-right", title: "오른쪽 가지", input: "오른쪽 확인", status: "running", entries: [branchEntry])
             ]
             let branchID = MightyGraphLayout.nodeID(newRun, suffix: "agent:branch-left")
-            try await store.waitForSmoke(timeout: 3, step: "new branches mounted") { node(window, identifier: "mighty-node-\(branchID)") != nil }
+            try await store.waitForSmoke(timeout: 3, step: "new branches mounted") { mountedCards(window).contains(branchID) }
             guard let afterGrowth = requestFrame() else { throw MightyError("가지가 늘어난 뒤 요청 카드가 사라졌습니다.") }
             report["rootBranchGrowthGeometry"] = ["before": NSStringFromRect(beforeGrowth), "after": NSStringFromRect(afterGrowth)]
             guard abs(afterGrowth.minX - beforeGrowth.minX) < 0.5 else { throw MightyError("새 하위 블록이 이미 보이던 요청 카드를 옆으로 밀었습니다.") }
@@ -454,14 +457,22 @@ enum MightyGraphDiagnostics {
         return found
     }
     /// Cards render as `Color.clear` once the camera leaves them behind, so
-    /// this names what is actually on screen rather than what the layout holds.
-    private static func mountedCards(_ element: Any) -> Set<String> {
-        var result = Set<String>()
-        walk(element) { object in
-            if let id = identifier(of: object), id.hasPrefix("mighty-node-") { result.insert(String(id.dropFirst("mighty-node-".count))) }
-            return false
+    /// this names what is actually drawn rather than what the layout holds. Read
+    /// from the canvas's own cull pass (`MightyGraphInteractionProbe.drawnNodeIDs`):
+    /// a card's `mighty-node-` element lives in the canvas's nested hosting view,
+    /// which a CI runner (no assistive client) never exposes through accessibility.
+    private static func mountedCards(_ window: NSWindow) -> Set<String> {
+        window.contentView.flatMap { camera(in: $0) }?.drawnNodeIDs ?? []
+    }
+    /// The accessibility identifiers reachable under the canvas, for a failure report.
+    private static func canvasIdentifiers(_ window: NSWindow) -> String {
+        guard let host = window.contentView.flatMap({ camera(in: $0) })?.superview else { return "no canvas" }
+        var ids: [String] = []
+        walk(host) { object in
+            if let id = identifier(of: object), !id.isEmpty { ids.append(id) }
+            return ids.count >= 40
         }
-        return result
+        return "canvas ids=" + ids.joined(separator: ",")
     }
     private static func label(_ object: NSObject?) -> String {
         guard let object else { return "" }
