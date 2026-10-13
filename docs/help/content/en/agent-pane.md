@@ -88,7 +88,7 @@ Claude and Codex panes have a {{ui:graph.view.default}} | {{ui:graph.view.mighty
 - {{ui:graph.view.mighty}}: requests, sub-agents, background work and results as a diagram of blocks.
 
 ### The Mighty diagram {#diagram}
-Each request gets a block, and its sub-agents and background tasks branch out below it. When it ends, a {{ui:graph.block.result}} card is attached.
+Each request gets a request block with a {{ui:graph.block.execution}} block right below it. The request block holds only what you sent; what the agent did because of it (messages, tool calls, progress) shows in the {{ui:graph.block.execution}} block. Sub-agents and background tasks branch out below the {{ui:graph.block.execution}} block. When the request ends, a {{ui:graph.block.result}} card is attached.
 - Drag the empty background or scroll to move around. The zoom buttons go from 50% to 150%.
 - Click a block to scroll inside it. Click the background or press {{kbd:Esc}} to deselect.
 - Drag a block's bottom-right corner to resize it. Right-click for {{ui:graph.block.resetSize}}. Sizes are saved per session.
@@ -100,16 +100,16 @@ Each request gets a block, and its sub-agents and background tasks branch out be
 ![[agent-mighty-overview]]
 
 ### Timeline {#timeline}
-Use the {{ui:graph.view.diagram}} | {{ui:graph.view.timeline}} switch at the top of the Mighty view to see requests as a list in time order.
+Use the {{ui:graph.view.diagram}} | {{ui:graph.view.timeline}} switch at the top of the Mighty view to see requests as a list in time order. Each request row is followed by its {{ui:graph.block.execution}} row, then its sub-agents.
 
 ![[agent-timeline]]
 
 ### Structure {#structure}
 Pick {{ui:graph.view.structure}} on the same switch to see requests in columns by phase. For now it is in the Mac app only.
 - In a pane that uses a style, the mode's phases sit in a row on top: finished phases are green, the current one is in the accent colour and the rest are grey.
-- Each request sits as a card under the phase it belongs to, and its sub-agent trees are grouped in dashed boxes under the card.
+- Each request sits under the phase it belongs to as a request card followed by a {{ui:graph.block.execution}} card, with its sub-agent trees grouped in dashed boxes under the {{ui:graph.block.execution}} card. A finished request has its result below them.
 - In a pane without a style, each request gets one {{ui:graph.structure.column.request}} → {{ui:graph.structure.column.execution}} → {{ui:graph.structure.column.result}} row.
-- Each card shows its request, its progress (the latest message and tool calls), its result and what each sub-agent was asked and produced, right where it is. Long text is folded; {{ui:graph.structure.more}} opens it in place.
+- The request card holds only the request; the {{ui:graph.block.execution}} card shows the progress (the latest message and tool calls) and the status. The result and what each sub-agent was asked and produced show right where they are too. Long text is folded; {{ui:graph.structure.more}} opens it in place.
 - The small button in a card's header shows that block in the diagram.
 
 ![[agent-structure]]

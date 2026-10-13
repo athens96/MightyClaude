@@ -8,6 +8,9 @@ public struct MightyGraphLayout {
         /// `execution` is a run index and an `OuroborosExecutionLink.key`.
         /// `images` is a run index and the step it attaches to (`MightyGraphImages`).
         case request(Int), agent(Int, Int), result(Int), resultFiles(Int), execution(Int, String), images(Int, String), draft
+        /// The 실행 block under a request (`make(splitsExecution:)`): what the main
+        /// agent did because of the request, a run index.
+        case work(Int)
         /// The top of the diagram: loads older requests from the session record.
         case history
         /// A run's pending plan approval (`PlanCardSupport`), in the flow where
@@ -31,7 +34,7 @@ public struct MightyGraphLayout {
         /// blocks, and the answered plans although they hang beside it.
         public var isResizable: Bool {
             switch content {
-            case .request, .agent, .result, .draft, .plan, .planRecord: return true
+            case .request, .work, .agent, .result, .draft, .plan, .planRecord: return true
             case .resultFiles, .execution, .images, .history: return false
             }
         }
@@ -49,6 +52,10 @@ public struct MightyGraphLayout {
         public init(runID: String, key: String) { self.runID = runID; self.key = key }
     }
     public static let executionSuffix = "ouroboros-execution:"
+    /// The 실행 block's suffix (`Content.work`).
+    public static let workSuffix = "execution"
+    /// The height of a request block that holds its input alone, over its 실행 block.
+    public static func requestHeight(expanded: Bool) -> CGFloat { expanded ? 280 : 140 }
     /// An answered plan's block (`PlanRecord`), attached beside its request.
     public struct PlanRecordBlock: Hashable, Sendable {
         public var runID: String
@@ -285,6 +292,15 @@ public struct MightyGraphLayout {
         MightyGraphBlockSize.nodeID(runID: run.id, suffix: suffix)
     }
 
+    /// The block the camera stands on for the newest request: its 실행 block while
+    /// it runs, where its work shows, else the request; nil without a request.
+    public func newestRequestTargetID(_ runs: [MightyGraphRun]) -> String? {
+        guard let last = runs.last else { return nil }
+        let work = Self.nodeID(last, suffix: Self.workSuffix)
+        if !Self.finished(last), nodes.contains(where: { $0.id == work }) { return work }
+        return Self.nodeID(last, suffix: "request")
+    }
+
     public static func latestResultID(runs: [MightyGraphRun]) -> String? {
         runs.indices.last(where: { finished(runs[$0]) }).map { nodeID(runs[$0], suffix: "result") }
     }
@@ -303,8 +319,14 @@ public struct MightyGraphLayout {
     /// viewport at that zoom (`resultViewportLimit`); nil leaves its cap whole.
     /// `planSize` is the pane's saved plan block size (`RunSession.graphPlanSize`,
     /// or a drag in progress); see `planSize(saved:viewport:zoom:)`.
+    /// `splitsExecution` is the Mac diagram's own: a request block holds its input
+    /// alone and a 실행 block (`Content.work`) under it holds the main agent's work,
+    /// with the sub-agents, the step's pictures, the background executions and the
+    /// answered plans hanging off it. Off, the request block holds both, as the
+    /// shared graph vectors (`native/contracts/graph-vectors.json`) lay it out.
     public static func make(runs: [MightyGraphRun], draft: String, running: Bool, expanded: Set<String>, blockSizes: [String: MightyGraphBlockSize] = [:], resultFilesRunID: String? = nil, viewport: CGSize? = nil, zoom: CGFloat? = nil, sharedResultSize: MightyGraphBlockSize? = nil, resultContentHeight: CGFloat? = nil, executions: [Execution] = [], galleries: [ImageGallery] = [], retainedStart: Int = 0, history: Bool = false,
-                            planRunID: String? = nil, planRecords: [PlanRecordBlock] = [], planSize savedPlanSize: MightyGraphBlockSize? = nil) -> Self {
+                            planRunID: String? = nil, planRecords: [PlanRecordBlock] = [], planSize savedPlanSize: MightyGraphBlockSize? = nil,
+                            splitsExecution: Bool = false) -> Self {
         let latestResultID = Self.latestResultID(runs: runs)
 
         // The files panel reduces available width only when it is open for the latest result.
@@ -348,8 +370,11 @@ public struct MightyGraphLayout {
         var planFit: (size: CGSize, limit: CGSize?, windowFit: CGSize?)?
         for (runIndex, run) in runs.enumerated() {
             let mainID = nodeID(run, suffix: "request")
-            let mainSize = size(mainID, width: MightyGraphCamera.requestWidth, height: expanded.contains(mainID) ? 540 : 280)
+            let mainSize = size(mainID, width: MightyGraphCamera.requestWidth,
+                                height: splitsExecution ? requestHeight(expanded: expanded.contains(mainID)) : expanded.contains(mainID) ? 540 : 280)
             let mainHeight = mainSize.height
+            let workID = nodeID(run, suffix: workSuffix)
+            let workSize = splitsExecution ? size(workID, width: MightyGraphCamera.requestWidth, height: expanded.contains(workID) ? 540 : 280) : nil
             let resultID = nodeID(run, suffix: "result")
             let resultSize = size(resultID, width: MightyGraphCamera.requestWidth, height: expanded.contains(resultID) ? 440 : 200)
             var visited = Set<Int>()
@@ -391,17 +416,27 @@ public struct MightyGraphLayout {
                 if let tree = branch(index) { branches.append(tree) }
             }
             let branchWidth = branches.reduce(CGFloat(0)) { $0 + $1.width } + CGFloat(max(0, branches.count - 1)) * siblingGap
-            let width = max(mainSize.width, branchWidth, finished(run) ? resultSize.width : 0)
+            let width = max(mainSize.width, workSize?.width ?? 0, branchWidth, finished(run) ? resultSize.width : 0)
             var tree = Tree(nodes: [Node(id: mainID, content: .request(runIndex), frame: CGRect(x: (width - mainSize.width) / 2, y: 0, width: mainSize.width, height: mainHeight))], edges: [], width: width, height: mainHeight, top: mainID, leaves: [mainID])
+            // The block the sub-agents branch from: the 실행 block right under the request, or the request itself.
+            var parentID = mainID
+            if let workSize {
+                tree.nodes.append(Node(id: workID, content: .work(runIndex), frame: CGRect(x: (width - workSize.width) / 2, y: mainHeight + rowGap, width: workSize.width, height: workSize.height)))
+                tree.edges.append(Edge(source: mainID, target: workID))
+                tree.leaves = [workID]
+                tree.height += rowGap + workSize.height
+                parentID = workID
+            }
             if !branches.isEmpty {
                 tree.leaves = []
+                let top = tree.height + rowGap
                 var x = (width - branchWidth) / 2
                 for var child in branches {
-                    child.offset(x: x, y: mainHeight + rowGap)
+                    child.offset(x: x, y: top)
                     tree.nodes += child.nodes
-                    tree.edges += [Edge(source: mainID, target: child.top)] + child.edges
+                    tree.edges += [Edge(source: parentID, target: child.top)] + child.edges
                     tree.leaves += child.leaves
-                    tree.height = max(tree.height, mainHeight + rowGap + child.height)
+                    tree.height = max(tree.height, top + child.height)
                     x += child.width + siblingGap
                 }
             }
@@ -485,7 +520,8 @@ public struct MightyGraphLayout {
         // the file list — no edge, no centreline, nothing already placed moves.
         for gallery in galleries where gallery.count > 0 {
             guard let runIndex = runs.firstIndex(where: { $0.id == gallery.runID }) else { continue }
-            let stepID = nodeID(runs[runIndex], suffix: gallery.step)
+            // The request step's pictures come from the main agent's records: with a 실행 block they hang off it.
+            let stepID = nodeID(runs[runIndex], suffix: splitsExecution && gallery.step == MightyGraphImages.requestStep ? workSuffix : gallery.step)
             guard let step = result.nodes.first(where: { $0.id == stepID && !$0.isAuxiliary }) else { continue }
             let id = nodeID(runs[runIndex], suffix: imagesSuffix + gallery.step)
             guard !result.nodes.contains(where: { $0.id == id }) else { continue }
@@ -497,37 +533,41 @@ public struct MightyGraphLayout {
             result.size.width = max(result.size.width, frame.maxX + 24 - result.originX)
             result.size.height = max(result.size.height, frame.maxY + 24 - result.originY)
         }
-        // Execution blocks hang off their request's top, stacked, right of
-        // every card they would share rows with — attachments, like the file
-        // list: no edge, no centreline, and nothing already placed moves.
+        // Execution blocks hang off their request's top (its 실행 block's, when
+        // there is one: the main agent started them), stacked, right of every
+        // card they would share rows with — attachments, like the file list: no
+        // edge, no centreline, and nothing already placed moves.
+        func anchor(_ runIndex: Int) -> Node? {
+            result.nodes.first(where: { $0.content == (splitsExecution ? .work(runIndex) : .request(runIndex)) })
+        }
         var nextY: [Int: CGFloat] = [:]
         for execution in executions {
             guard let runIndex = runs.firstIndex(where: { $0.id == execution.runID }),
-                  let request = result.nodes.first(where: { $0.content == .request(runIndex) }) else { continue }
+                  let owner = anchor(runIndex) else { continue }
             let id = nodeID(runs[runIndex], suffix: executionSuffix + execution.key)
             guard !result.nodes.contains(where: { $0.id == id }) else { continue }
-            let y = nextY[runIndex] ?? request.frame.minY
+            let y = nextY[runIndex] ?? owner.frame.minY
             let height = executionHeight(expanded: expanded.contains(id))
-            let right = result.nodes.filter { $0.frame.minY < y + height && $0.frame.maxY > y }.map(\.frame.maxX).max() ?? request.frame.maxX
-            let frame = CGRect(x: max(right, request.frame.maxX) + executionGap, y: y, width: executionWidth, height: height)
+            let right = result.nodes.filter { $0.frame.minY < y + height && $0.frame.maxY > y }.map(\.frame.maxX).max() ?? owner.frame.maxX
+            let frame = CGRect(x: max(right, owner.frame.maxX) + executionGap, y: y, width: executionWidth, height: height)
             result.nodes.append(Node(id: id, content: .execution(runIndex, execution.key), frame: frame))
             result.size.width = max(result.size.width, frame.maxX + 24 - result.originX)
             result.size.height = max(result.size.height, frame.maxY + 24 - result.originY)
             nextY[runIndex] = frame.maxY + executionGap
         }
-        // Answered plans hang off their request's top as well, below its
-        // execution blocks: attachments, nothing already placed moves.
+        // Answered plans hang off the same block as well, below its execution
+        // blocks: attachments, nothing already placed moves.
         for block in planRecords {
             guard let runIndex = runs.firstIndex(where: { $0.id == block.runID }),
-                  let request = result.nodes.first(where: { $0.content == .request(runIndex) }) else { continue }
+                  let owner = anchor(runIndex) else { continue }
             let id = nodeID(runs[runIndex], suffix: planRecordSuffix + block.recordID)
             guard !result.nodes.contains(where: { $0.id == id }) else { continue }
-            let y = nextY[runIndex] ?? request.frame.minY
+            let y = nextY[runIndex] ?? owner.frame.minY
             // A dragged size wins over folded or opened, as on the other blocks.
             let recordSize = size(id, width: planRecordWidth, height: planRecordHeight(expanded: expanded.contains(id)))
             let height = recordSize.height
-            let right = result.nodes.filter { $0.frame.minY < y + height && $0.frame.maxY > y }.map(\.frame.maxX).max() ?? request.frame.maxX
-            let frame = CGRect(x: max(right, request.frame.maxX) + executionGap, y: y, width: recordSize.width, height: height)
+            let right = result.nodes.filter { $0.frame.minY < y + height && $0.frame.maxY > y }.map(\.frame.maxX).max() ?? owner.frame.maxX
+            let frame = CGRect(x: max(right, owner.frame.maxX) + executionGap, y: y, width: recordSize.width, height: height)
             result.nodes.append(Node(id: id, content: .planRecord(runIndex, block.recordID), frame: frame))
             result.size.width = max(result.size.width, frame.maxX + 24 - result.originX)
             result.size.height = max(result.size.height, frame.maxY + 24 - result.originY)

@@ -190,6 +190,32 @@ struct MightyStructureTests {
         #expect(rows[0].item.result == nil)
         #expect(rows[1].item.input == "do done")
         #expect(rows[1].item.nodeID == MightyGraphBlockSize.nodeID(runID: "done", suffix: "request"))
+        #expect(rows[1].item.executionNodeID == MightyGraphBlockSize.nodeID(runID: "done", suffix: MightyGraphLayout.workSuffix))
+    }
+
+    @Test func theRequestPartHoldsTheInputAndTheExecutionPartTheWork() {
+        var run = Self.run("r", input: "화면을 고쳐줘", status: "running")
+        run.rootEntries = [LogEntry(id: "m1", kind: "assistant", text: "읽어 볼게요"), Self.tool("t1", summary: "a.swift")]
+        let item = MightyStructure.item(run, index: 0)
+        // The request part is the input alone.
+        #expect(item.request?.text == "화면을 고쳐줘")
+        #expect(item.input == "화면을 고쳐줘")
+        // The 실행 part reads the main block's records, under the diagram's 실행 node.
+        #expect(item.message?.text == "읽어 볼게요")
+        #expect(item.activity.map(\.id) == ["t1"])
+        #expect(item.status == "running")
+        #expect(item.executionNodeID == MightyGraphBlockSize.nodeID(runID: "r", suffix: "execution"))
+        #expect(item.executionNodeID != item.nodeID)
+        // Both are nodes the diagram lays out, and its sub-agents branch from the 실행 one.
+        var branched = run
+        branched.agents = [Self.agent("a")]
+        let laid = MightyGraphLayout.make(runs: [branched], draft: "", running: true, expanded: [], splitsExecution: true)
+        let structure = MightyStructure.item(branched, index: 0)
+        #expect(laid.nodes.contains { $0.id == structure.nodeID } && laid.nodes.contains { $0.id == structure.executionNodeID })
+        #expect(laid.edges.contains { $0.source == structure.executionNodeID && $0.target == structure.clusters[0].nodes[0].nodeID })
+        // A request with nothing yet still has its 실행 part, waiting.
+        let fresh = MightyStructure.item(Self.run("n", status: "running"), index: 0)
+        #expect(fresh.message == nil && fresh.activity.isEmpty && !fresh.finished)
     }
 
     @Test func theTallyCountsSubAgentsAndToolCalls() {

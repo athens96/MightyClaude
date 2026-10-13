@@ -88,7 +88,7 @@ Claude 和 Codex 窗格的标题栏中有{{ui:graph.view.default}} | {{ui:graph.
 - {{ui:graph.view.mighty}}：以块状图表显示请求、子智能体、后台任务和结果。
 
 ### Mighty 图表 {#diagram}
-每个请求生成一个块，其子智能体和后台任务从下方分支出来。请求结束后，会附上{{ui:graph.block.result}}卡片。
+每个请求生成一个请求块，其正下方是{{ui:graph.block.execution}}块。请求块只包含发出的请求；智能体因该请求所做的事（消息、工具调用、进度）显示在{{ui:graph.block.execution}}块中。子智能体和后台任务从{{ui:graph.block.execution}}块下方分支出来。请求结束后，会附上{{ui:graph.block.result}}卡片。
 - 拖动空白处或滚动即可移动图表。用缩放按钮可以在 50% 到 150% 之间调整。
 - 点击某个块后，只在该块内部滚动。点击空白处或按{{kbd:Esc}}即可取消选择。
 - 拖动块的右下角可以调整大小。右键点击可以选择{{ui:graph.block.resetSize}}。大小按会话保存。
@@ -100,16 +100,16 @@ Claude 和 Codex 窗格的标题栏中有{{ui:graph.view.default}} | {{ui:graph.
 ![[agent-mighty-overview]]
 
 ### 时间线 {#timeline}
-用 Mighty 视图顶部的{{ui:graph.view.diagram}} | {{ui:graph.view.timeline}}切换开关，可以按时间顺序以列表形式查看请求。
+用 Mighty 视图顶部的{{ui:graph.view.diagram}} | {{ui:graph.view.timeline}}切换开关，可以按时间顺序以列表形式查看请求。每个请求行之后是它的{{ui:graph.block.execution}}行，然后是子智能体行。
 
 ![[agent-timeline]]
 
 ### 结构 {#structure}
 在同一个切换开关中选择{{ui:graph.view.structure}}，可以按阶段分列查看请求。目前只有 Mac 应用提供。
 - 使用风格的窗格顶部会排出该模式的各个阶段：已完成的阶段为绿色，当前阶段为强调色，其余为灰色。
-- 每个请求以卡片形式放在它所属的阶段下方，卡片下方的虚线框中归组显示它的子代理树。
+- 每个请求在它所属的阶段下方依次显示为请求卡片和{{ui:graph.block.execution}}卡片，{{ui:graph.block.execution}}卡片下方的虚线框中归组显示它的子代理树。已结束的请求在其下方附上结果。
 - 没有风格的窗格中，每个请求占一行：{{ui:graph.structure.column.request}} → {{ui:graph.structure.column.execution}} → {{ui:graph.structure.column.result}}。
-- 每张卡片就地显示请求内容、进度（最新消息和工具调用）、结果，以及各子代理接到的任务和产出。长文本默认折叠，点击{{ui:graph.structure.more}}即可就地展开。
+- 请求卡片只包含请求内容，{{ui:graph.block.execution}}卡片显示进度（最新消息和工具调用）和状态。结果以及各子代理接到的任务和产出也就地显示。长文本默认折叠，点击{{ui:graph.structure.more}}即可就地展开。
 - 点击卡片标题栏中的小按钮，会在图中显示该块。
 
 ![[agent-structure]]

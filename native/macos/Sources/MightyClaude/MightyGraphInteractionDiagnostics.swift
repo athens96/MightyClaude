@@ -24,7 +24,8 @@ enum MightyGraphInteractionDiagnostics {
                 MightyGraphAgent(id: "right", title: "완료", status: "completed", entries: entries),
                 MightyGraphAgent(id: "nested", parentID: "left", title: "중첩 작업", status: "running", entries: entries)
             ])
-            let rootID = MightyGraphLayout.nodeID(run, suffix: "request")
+            // The main agent's transcript is in the 실행 block under the request, and the sub-agents branch from it.
+            let rootID = MightyGraphLayout.nodeID(run, suffix: MightyGraphLayout.workSuffix)
             var savedSizes: [String: MightyGraphBlockSize] = [:]
             let host = NSHostingView(rootView: MightyGraphView(sessionID: "wheel-fixture", provider: "claude", runs: [run], draft: "", running: true,
                 onSaveBlockSize: { id, size in savedSizes[id] = size }, onFocus: {}))

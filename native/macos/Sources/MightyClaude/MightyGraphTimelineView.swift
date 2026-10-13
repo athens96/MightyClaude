@@ -47,6 +47,7 @@ enum MightyTimelineText {
     static func kind(_ kind: String) -> String {
         switch kind {
         case "main": L("graph.timeline.kind.request")
+        case MightyTimeline.executionKind: L("graph.timeline.kind.execution")
         case "task": L("graph.block.task")
         case "steer": L("graph.block.steer")
         case "compact": L("graph.block.compact")
@@ -150,7 +151,8 @@ struct MightyTimelineRowCard<Detail: View>: View {
     let icon: String
     let tint: Color
     let meta: [String]
-    let status: String
+    /// The status pill's words; nil leaves the pill out (the request, which has no status of its own).
+    let status: String?
     let open: Bool
     let onToggle: () -> Void
     @ViewBuilder var detail: () -> Detail
@@ -179,14 +181,14 @@ struct MightyTimelineRowCard<Detail: View>: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    MightyStatusPill(text: status, tone: tone, height: 19)
+                    if let status { MightyStatusPill(text: status, tone: tone, height: 19) }
                 }
                 .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).padding(.vertical, DesignMetrics.Inset.graphBlockBodyV)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help(open ? L("phone.blocks.collapse") : L("phone.blocks.expand"))
-            .accessibilityLabel(title + ", " + status)
+            .accessibilityLabel(status.map { title + ", " + $0 } ?? title)
             .accessibilityHint(open ? L("phone.blocks.collapse") : L("phone.blocks.expand"))
             .accessibilityIdentifier("mighty-timeline-row-\(row.nodeID)")
             if open {

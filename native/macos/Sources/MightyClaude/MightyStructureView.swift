@@ -17,10 +17,11 @@ final class MightyStructureMemory: ObservableObject {
 /// request cards under each, a free pane's requests as one 요청 → 실행 → 결과 row each.
 /// Under every card its sub-agent trees sit in dashed boxes.
 ///
-/// The cards read on their own: the request, the latest reply and the last tool calls
-/// while it runs, the answer once it finished, and each sub-agent's prompt, output and
-/// last tool call. A long text opens in place; the small button in a card's header
-/// shows its block in the diagram, as opening a timeline row aims the diagram's camera.
+/// The cards read on their own: the request alone, then its 실행 part with the latest
+/// reply, the last tool calls and the status, the answer once it finished, and each
+/// sub-agent's prompt, output and last tool call. A long text opens in place; the small
+/// button in a card's header shows its block in the diagram, as opening a timeline row
+/// aims the diagram's camera.
 struct MightyStructureView: View {
     let sessionID: String
     let provider: String
@@ -252,18 +253,8 @@ struct MightyStructureView: View {
                 .accessibilityLabel(stepAccessibility(steps[0].title, row.request))
                 // 실행
                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
-                    VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
-                        HStack(spacing: DesignMetrics.Spacing.sm) {
-                            MightyStatusPill(text: MightyGraphView.statusLabel(item.status), tone: DesignTone(status: item.status))
-                            tally(item)
-                            Spacer(minLength: 0)
-                            revealButton(item.nodeID)
-                        }
-                        progress(item, width: Self.cardTextWidth(width))
-                    }
-                    .cardSurface()
-                    .accessibilityElement(children: .contain)
-                    .accessibilityLabel(stepAccessibility(steps[1].title, row.execution))
+                    execution(item, width: width, titled: false)
+                        .accessibilityLabel(stepAccessibility(steps[1].title, row.execution))
                     clusters(item.clusters, column: width)
                 }
                 .frame(width: width, alignment: .topLeading)
@@ -272,10 +263,10 @@ struct MightyStructureView: View {
                     HStack(spacing: DesignMetrics.Spacing.sm) {
                         resultTitle(item)
                         Spacer(minLength: 0)
-                        revealButton(MightyGraphBlockSize.nodeID(runID: item.runID, suffix: item.finished ? "result" : "request"))
+                        revealButton(item.finished ? MightyGraphBlockSize.nodeID(runID: item.runID, suffix: "result") : item.executionNodeID)
                     }
                     // A reply without an answer is in 실행 already; 결과 says how the request ended.
-                    outcome(item, width: Self.cardTextWidth(width), showsMessage: false)
+                    outcome(item)
                 }
                 .cardSurface()
                 .frame(width: width, alignment: .topLeading)
@@ -289,36 +280,65 @@ struct MightyStructureView: View {
 
     // MARK: Cards and clusters
 
-    /// "Request N · Claude" and its status; the request; while it runs its latest reply
-    /// and tool calls, once it finished its answer; then its sub-agent trees.
+    /// The request as the diagram draws it: "Request N · Claude" and what was asked; under
+    /// it its 실행 card, with the latest reply, tool calls and status; its sub-agent trees;
+    /// and once it finished, its answer.
     private func card(_ item: MightyStructure.Item, width: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
                 HStack(spacing: DesignMetrics.Spacing.sm) {
                     Text(heading(item)).font(.system(size: Self.textSize, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
                     Spacer(minLength: DesignMetrics.Spacing.xs)
-                    MightyStatusPill(text: MightyGraphView.statusLabel(item.status), tone: DesignTone(status: item.status))
                     revealButton(item.nodeID)
                 }
                 if let request = item.request {
                     foldableText(request, key: Self.foldKey("request", item.runID), lines: MightyStructure.requestLines, size: Self.textSize,
                                  width: Self.cardTextWidth(width), name: L("graph.structure.column.request"))
                 }
-                Divider().overlay(Palette.border)
-                if item.finished {
-                    resultTitle(item)
-                    outcome(item, width: Self.cardTextWidth(width), showsMessage: true)
-                } else {
-                    tally(item)
-                    progress(item, width: Self.cardTextWidth(width))
-                }
             }
             .cardSurface()
             .accessibilityElement(children: .contain)
             .accessibilityLabel(L("graph.structure.contentAccessibility", ["name": heading(item), "text": item.input]))
             .accessibilityIdentifier("mighty-structure-request-\(item.runID)")
+            execution(item, width: width, titled: true)
+                .accessibilityLabel(L("graph.block.execution"))
             clusters(item.clusters, column: width)
+            if item.finished {
+                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
+                    HStack(spacing: DesignMetrics.Spacing.sm) {
+                        resultTitle(item)
+                        Spacer(minLength: 0)
+                        revealButton(MightyGraphBlockSize.nodeID(runID: item.runID, suffix: "result"))
+                    }
+                    // A reply without an answer is in 실행 already; the result says how the request ended.
+                    outcome(item)
+                }
+                .cardSurface()
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("mighty-structure-result-\(item.runID)")
+            }
         }
+    }
+
+    /// The 실행 part: the main agent's status, tally, latest reply and tool calls, as the
+    /// diagram's 실행 block holds them. `titled` names it; a free row's rail already does.
+    private func execution(_ item: MightyStructure.Item, width: CGFloat, titled: Bool) -> some View {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
+                if titled {
+                    Label(L("graph.block.execution"), systemImage: MightyGraphView.executionIcon)
+                        .font(.system(size: Self.outputSize, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
+                }
+                MightyStatusPill(text: MightyGraphView.statusLabel(item.status), tone: DesignTone(status: item.status))
+                tally(item)
+                Spacer(minLength: 0)
+                revealButton(item.executionNodeID)
+            }
+            progress(item, width: Self.cardTextWidth(width))
+        }
+        .cardSurface()
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("mighty-structure-execution-\(item.runID)")
     }
 
     /// The width a card's text has in a column of `width`.
@@ -358,15 +378,11 @@ struct MightyStructureView: View {
             .foregroundStyle(item.finished ? Palette.text(item.status) : Palette.ink2)
     }
 
-    /// The answer as the transcript renders a reply; without one, the last reply of a
-    /// request that failed or stopped when `showsMessage` (a free row shows it in 실행),
-    /// else its state.
-    @ViewBuilder private func outcome(_ item: MightyStructure.Item, width: CGFloat, showsMessage: Bool) -> some View {
+    /// The answer as the transcript renders a reply; without one, its state (the last
+    /// reply of a request that failed or stopped is in its 실행 part).
+    @ViewBuilder private func outcome(_ item: MightyStructure.Item) -> some View {
         if let answer = item.answer {
             foldableMarkdown(answer, key: Self.foldKey("answer", item.runID), name: L("graph.block.result"))
-        } else if showsMessage, item.finished, let message = item.message {
-            foldableText(message, key: Self.foldKey("message", item.runID), lines: MightyStructure.messageLines, size: Self.textSize,
-                         width: width, name: L("graph.structure.latest"))
         } else {
             Text(item.finished ? MightyGraphView.statusLabel(item.status) : L("graph.structure.resultPending"))
                 .font(.system(size: Self.textSize)).foregroundStyle(Palette.ink2)
