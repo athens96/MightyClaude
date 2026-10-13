@@ -359,6 +359,9 @@ enum MightyGraphDiagnostics {
             let interaction = await MightyGraphInteractionDiagnostics.run(store: store)
             report["interaction"] = interaction
             guard interaction["passed"] as? Bool == true else { throw MightyError("그래프 네이티브 스크롤·선택·진행 표시 검증에 실패했습니다.") }
+            let structure = await MightyStructureInteractionDiagnostics.run(store: store)
+            report["structure"] = structure
+            guard structure["passed"] as? Bool == true else { throw MightyError("구조 보기의 끌기·본문 선택·펼치기 검증에 실패했습니다.") }
             report["passed"] = true
         } catch {
             report["error"] = error.localizedDescription

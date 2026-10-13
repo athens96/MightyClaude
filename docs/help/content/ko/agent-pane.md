@@ -111,6 +111,7 @@ Claude와 Codex 창 머리에는 {{ui:graph.view.default}} | {{ui:graph.view.mig
 - 스타일이 없는 창은 요청마다 {{ui:graph.structure.column.request}} → {{ui:graph.structure.column.execution}} → {{ui:graph.structure.column.result}} 한 줄씩입니다.
 - 요청 카드에는 보낸 요청만 담기고, {{ui:graph.block.execution}} 카드에는 진행 상황(최근 메시지와 도구 호출)과 상태가 나옵니다. 결과, 하위 에이전트가 맡은 일과 내놓은 출력도 그 자리에서 보여 줍니다. 긴 글은 접혀 있고 {{ui:graph.structure.more}}를 누르면 그 자리에서 펼쳐집니다.
 - 카드 머리의 작은 버튼을 누르면 다이어그램에서 그 블록을 보여 줍니다.
+- 다이어그램처럼 빈 곳을 끌면 화면이 움직입니다.
 
 ![[agent-structure]]
 
