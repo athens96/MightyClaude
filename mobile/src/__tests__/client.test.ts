@@ -86,6 +86,19 @@ describe('createClient over a relay channel', () => {
     ]);
   });
 
+  it('asks for the structure view only when told to, with the tag it holds', async () => {
+    const fake = fakeChannel({ status: 200, body: { protocol: 1, ok: true } });
+    const client = createClient(fake.channel);
+    await client.session('s1', { since: 2, wait: 10, structure: 0 });
+    await client.session('s1', { since: 2, wait: 10, structure: 41 });
+    await client.session('s1', { since: 2, wait: 10, structure: -1 });
+    expect(fake.calls.map((call) => call.path)).toEqual([
+      '/m1/sessions/s1?since=2&wait=10&structure=0',
+      '/m1/sessions/s1?since=2&wait=10&structure=41',
+      '/m1/sessions/s1?since=2&wait=10',
+    ]);
+  });
+
   it('turns non-2xx statuses into ApiError with the host message', async () => {
     const fake = fakeChannel({ status: 409, body: { protocol: 1, error: '세션이 실행 중이 아닙니다' } });
     await expect(createClient(fake.channel).stop('s1')).rejects.toMatchObject({

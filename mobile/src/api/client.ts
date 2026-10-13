@@ -76,6 +76,11 @@ export interface PollOptions {
   since?: number;
   /** Seconds the server may hold the request open, clamped to 0..10. */
   wait?: number;
+  /**
+   * Session detail only, and only against a host with the "structure" capability: ask
+   * for the structure view, naming the tag of the one already held (0 for none).
+   */
+  structure?: number;
   signal?: AbortSignal;
 }
 
@@ -139,6 +144,9 @@ function pollQuery(options: PollOptions | undefined): string {
   const params = new URLSearchParams();
   if (options?.since !== undefined) params.set('since', String(options.since));
   params.set('wait', String(clampWait(options?.wait)));
+  if (options?.structure !== undefined && Number.isInteger(options.structure) && options.structure >= 0) {
+    params.set('structure', String(options.structure));
+  }
   return `?${params.toString()}`;
 }
 

@@ -84,7 +84,8 @@ export type Capability =
   | 'attachments'
   | 'style'
   | 'files'
-  | 'screenShare';
+  | 'screenShare'
+  | 'structure';
 
 export const CAPABILITIES: readonly Capability[] = [
   'submit-mode',
@@ -99,6 +100,7 @@ export const CAPABILITIES: readonly Capability[] = [
   'style',
   'files',
   'screenShare',
+  'structure',
 ] as const;
 
 export interface HostInfo {
@@ -505,6 +507,70 @@ export interface StylePanel {
   /** Computed state widgets, at most one per source (§1.16). */
   widgets?: StyleWidget[];
 }
+
+/**
+ * `mighty.structure`: the Mac's own structure view (구조) of the pane, version `v`. A
+ * styled pane sends its phases as `columns`, a pane without a style one `rows` entry per
+ * request. Sent beside `mighty.structureTag` only to a detail fetched with `structure`
+ * (`PollOptions.structure`), and only when it changed. Read through `receiveStructure`
+ * (`@/lib/structure`), never directly: `normalizeMighty` leaves both fields out.
+ */
+export type StructureStep = 'done' | 'current' | 'pending' | 'error' | 'stopped';
+
+export interface StructureActivity {
+  kind: string;
+  state: string;
+  text: string;
+}
+
+export interface StructureNode {
+  id: string;
+  depth: number;
+  title: string;
+  status: string;
+  kind: string;
+  model?: string;
+  prompt?: string;
+  output?: string;
+  activity?: StructureActivity;
+}
+
+export interface StructureCluster {
+  nodes: StructureNode[];
+}
+
+export interface StructureItem {
+  runId: string;
+  ordinal: number;
+  title?: string;
+  status: string;
+  finished: boolean;
+  request?: string;
+  message?: string;
+  activity: StructureActivity[];
+  answer?: string;
+  tally: { agents: number; tools: number };
+  clusters: StructureCluster[];
+  omittedNodes?: number;
+}
+
+export interface StructureColumn {
+  id: string;
+  title: string;
+  step: StructureStep;
+  items: StructureItem[];
+}
+
+export interface StructureRow {
+  item: StructureItem;
+  request: StructureStep;
+  execution: StructureStep;
+  result: StructureStep;
+}
+
+export type MobileStructure =
+  | { v: number; shape: 'phases'; columns: StructureColumn[]; omitted?: number }
+  | { v: number; shape: 'free'; rows: StructureRow[]; omitted?: number };
 
 export interface MobileMighty {
   style: string;
