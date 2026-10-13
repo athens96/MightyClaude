@@ -78,8 +78,14 @@ enum MightyStructureInteractionDiagnostics {
             report["dragPanStopsFollowing"] = true
             let readerOrigin = origin()
             let documentBefore = scroll.documentView?.frame.height ?? 0
-            runs[runs.count - 1].rootEntries.append(LogEntry(id: "structure-late", kind: "assistant",
-                                                             text: (0..<6).map { "늦게 온 답 \($0) · 위로 끌어 올린 사람을 아래로 당기지 않습니다." }.joined(separator: "\n"), provider: "claude"))
+            // A free row is as tall as its tallest card, the folded request, so a longer
+            // reply alone leaves the page as it was. Four sub-agents under 실행 stack in
+            // its column and make the newest row, and the page, taller.
+            runs[runs.count - 1].agents = (0..<4).map { index in
+                MightyGraphAgent(id: "structure-late-\(index)", title: "늦은 하위 에이전트 \(index)", input: "위로 끌어 둔 화면을 당기지 않는지 확인합니다.",
+                                 status: "running", entries: [LogEntry(id: "structure-late-output-\(index)", kind: "assistant",
+                                                                       text: "늦게 온 출력 \(index) · 아래에서 자라도 읽던 자리는 그대로입니다.", provider: "claude")])
+            }
             host.rootView = view()
             try await store.waitForSmoke(timeout: 3, step: "newest card grows while the reader is up the page",
                                          detail: { "before=\(documentBefore) " + state() }) { (scroll.documentView?.frame.height ?? 0) > documentBefore + 10 }
@@ -130,7 +136,16 @@ enum MightyStructureInteractionDiagnostics {
 
             // 4. A click on a fold toggle still opens its text: the press is held while
             // it might become a drag, then sent on to the button.
-            guard let toggle = foldToggle(in: scroll, memory: memory) else { throw MightyError("화면에 접힌 요청의 펼치기 버튼이 없습니다. " + state()) }
+            // The page drag moved it right, past the first column's left edge: back to
+            // the page's left edge, so whole cards and their buttons are in view.
+            scroll.contentView.scroll(to: CGPoint(x: range().minimum.x, y: origin().y))
+            scroll.reflectScrolledClipView(scroll.contentView)
+            try await settle(store, scroll, step: "structure page settles before the toggle click", detail: state)
+            guard let toggle = foldToggle(in: scroll, memory: memory) else { throw MightyError("화면에 접힌 글의 펼치기 버튼이 없습니다. " + state()) }
+            report["toggleClick"] = "key=\(toggle.key) point=\(NSStringFromPoint(toggle.point)) hit=\(probe.describe(probe.hitView(at: scroll.convert(toggle.point, to: nil)), in: scroll))"
+            guard probe.target(at: scroll.convert(toggle.point, to: nil), in: scroll) == .page else {
+                throw MightyError("펼치기 버튼 자리가 페이지로 판정되지 않습니다. \(report["toggleClick"] ?? "") " + state())
+            }
             let clickOrigin = origin()
             let replayedBefore = probe.replayedClicks
             try click(window, scroll, at: toggle.point)
@@ -238,12 +253,15 @@ enum MightyStructureInteractionDiagnostics {
         }
     }
 
-    /// A folded request's 더 보기 button, right under its text, in view.
+    /// A folded request's or reply's 더 보기 button, right under its text, in view. Both
+    /// fold: a request has 14 lines over its 10, a reply's 8 lines wrap past its 8.
     private static func foldToggle(in scroll: NSScrollView, memory: MightyStructureMemory) -> (point: CGPoint, key: String)? {
         let visible = scroll.contentView.frame.insetBy(dx: 4, dy: 4)
-        for field in descendants(scroll, as: NSTextField.self) where field.stringValue.hasPrefix("구조 요청 ") {
-            guard let index = field.stringValue.dropFirst("구조 요청 ".count).split(separator: " ").first.flatMap({ Int($0) }) else { continue }
-            let key = MightyStructureView.foldKey("request", "structure-run-\(index)")
+        let texts = [("구조 요청 ", "request"), ("답 ", "message")]
+        for field in descendants(scroll, as: NSTextField.self) {
+            guard let (prefix, part) = texts.first(where: { field.stringValue.hasPrefix($0.0) }),
+                  let index = field.stringValue.dropFirst(prefix.count).split(separator: " ").first.flatMap({ Int($0) }) else { continue }
+            let key = MightyStructureView.foldKey(part, "structure-run-\(index)")
             guard !memory.expanded.contains(key) else { continue }
             // The SwiftUI host around the field holds the text's own frame.
             let frame = scroll.convert((field.superview ?? field).bounds, from: field.superview ?? field)
