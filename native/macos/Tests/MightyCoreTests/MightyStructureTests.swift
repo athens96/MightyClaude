@@ -227,7 +227,8 @@ struct MightyStructureTests {
         let item = MightyStructure.item(run, index: 0)
         #expect(item.request?.text == "로그인 화면을 고쳐줘\n두 번째 줄")
         #expect(item.message?.text == "고치는 중이에요\n테스트를 돌립니다")
-        #expect(item.message?.folds == false)
+        #expect(item.message?.cut == false)
+        #expect(item.message?.folds(lines: MightyStructure.messageLines, charactersPerLine: 20) == false)
         // The last five tool calls, oldest first, on one line each; the turn row and a
         // call with no words (nor a tool name) are not shown.
         #expect(item.activity.map(\.id) == ["t1", "t2", "t3", "t4", "t6"])
@@ -265,7 +266,7 @@ struct MightyStructureTests {
         let nodes = MightyStructure.clusters(Self.run("r", status: "running", agents: [agent, task])).flatMap(\.nodes)
         #expect(nodes.map(\.agentID) == ["a", "t"])
         #expect(nodes[0].prompt?.text == "변경을 검토해 줘\n특히 보안")
-        #expect(nodes[0].prompt?.folds == false)
+        #expect(nodes[0].prompt?.folds(lines: MightyStructure.promptLines, charactersPerLine: 20) == false)
         #expect(nodes[0].output?.text == "문제 없음")
         #expect(nodes[0].activity.map(\.id) == ["a2", "a3", "a4"])
         #expect(nodes[0].model == "claude-opus-4-1")
@@ -279,7 +280,7 @@ struct MightyStructureTests {
         let request = MightyStructure.excerpt(long, maximumBytes: MightyStructure.requestBytes, lines: MightyStructure.requestLines)
         #expect(request.map { $0.text.utf8.count <= MightyStructure.requestBytes } == true)
         #expect(request?.text.hasSuffix("…") == true)
-        #expect(request?.folds == true)
+        #expect(request?.cut == true)
         // A long line is cut in the preview, so a folded card never lays out the whole text.
         #expect(request.map { $0.preview.count <= MightyStructure.previewLineCharacters } == true)
         // Twenty lines: the first ones fold, the text keeps them all.
@@ -287,21 +288,66 @@ struct MightyStructureTests {
         let folded = MightyStructure.excerpt(lines, maximumBytes: MightyStructure.messageBytes, lines: MightyStructure.messageLines)
         #expect(folded?.text == lines)
         #expect(folded?.preview == (1...8).map { "line \($0)" }.joined(separator: "\n"))
-        #expect(folded?.folds == true)
+        #expect(folded?.cut == true)
         // Short text fits as it is; nothing but blanks or controls is nothing.
-        #expect(MightyStructure.excerpt("짧은 글", maximumBytes: 100, lines: 2) == MightyStructure.Excerpt(text: "짧은 글", preview: "짧은 글", folds: false))
+        #expect(MightyStructure.excerpt("짧은 글", maximumBytes: 100, lines: 2) == MightyStructure.Excerpt(text: "짧은 글", preview: "짧은 글"))
         #expect(MightyStructure.excerpt(" \n\u{1B}[0m ", maximumBytes: 100, lines: 2) == nil)
         // The result and the sub-agent texts take their own caps.
         let big = String(repeating: "result ", count: 5_000)
         let item = MightyStructure.item(Self.run("r", input: long, final: big), index: 0)
         #expect(item.request.map { $0.text.utf8.count <= MightyStructure.requestBytes } == true)
         #expect(item.answer.map { $0.text.utf8.count <= MightyStructure.answerBytes && $0.text.hasSuffix("…") } == true)
-        #expect(item.answer?.folds == true)
+        #expect(item.answer?.cut == true)
         var agent = MightyGraphAgent(id: "a", input: long, status: "completed")
         agent.entries = [LogEntry(id: "o", kind: "assistant", text: big)]
         let node = MightyStructure.clusters(Self.run("r2", agents: [agent]))[0].nodes[0]
         #expect(node.prompt.map { $0.text.utf8.count <= MightyStructure.promptBytes } == true)
         #expect(node.output.map { $0.text.utf8.count <= MightyStructure.outputBytes } == true)
+    }
+
+    @Test func aDeepSubAgentsTextIsNeverCutWithoutTheToggle() {
+        // A node six levels deep in the narrowest column has 192pt for its text.
+        let width = MightyStructure.nodeTextWidth(column: MightyStructure.minimumColumnWidth, depth: 6)
+        #expect(width == 192)
+        #expect(MightyStructure.nodeTextWidth(column: MightyStructure.minimumColumnWidth, depth: 60) == width)
+        // About 17 Hangul syllables fit a 192pt line at 11pt; words wrap whole, so fewer are counted.
+        let perLine = MightyStructure.charactersPerLine(width: width, fontSize: 11)
+        #expect(perLine <= 17)
+        // 120 syllables on one line take 8 lines of 17: past the 6 an output shows folded.
+        let output = String(repeating: "가나다라마 ", count: 20)
+        let excerpt = MightyStructure.excerpt(output, maximumBytes: MightyStructure.outputBytes, lines: MightyStructure.outputLines)
+        #expect(excerpt?.cut == false)
+        #expect(excerpt?.folds(lines: MightyStructure.outputLines, charactersPerLine: perLine) == true)
+        // Any text that would wrap past its lines at the real width folds.
+        for count in stride(from: 1, through: 200, by: 7) {
+            let text = String(repeating: "가", count: count)
+            let real = (count + 16) / 17
+            let folds = MightyStructure.excerpt(text, maximumBytes: 4_096, lines: 6)?.folds(lines: 6, charactersPerLine: perLine) == true
+            #expect(real <= 6 || folds, "\(count) syllables")
+        }
+        // The prompt's two lines at its smaller size, the same way.
+        let prompt = MightyStructure.excerpt(String(repeating: "검토", count: 20), maximumBytes: MightyStructure.promptBytes, lines: MightyStructure.promptLines)
+        #expect(prompt?.folds(lines: MightyStructure.promptLines, charactersPerLine: MightyStructure.charactersPerLine(width: width, fontSize: 10.5)) == true)
+    }
+
+    @Test func aFoldedAnswerKeepsWholeLinesAndClosesItsCodeFence() throws {
+        let lines = ["# 결과", "", "```swift"] + (1...20).map { "let value\($0) = \($0)" } + ["```", "끝"]
+        let answer = lines.joined(separator: "\n")
+        let excerpt = try #require(MightyStructure.excerpt(answer, maximumBytes: MightyStructure.answerBytes, lines: MightyStructure.answerLines, markdown: true))
+        #expect(excerpt.cut)
+        // The first fifteen lines whole, and the fence they leave open closed.
+        #expect(excerpt.preview == (lines.prefix(15) + ["```"]).joined(separator: "\n"))
+        #expect(MightyStructure.openFence(excerpt.preview) == nil)
+        // A tilde fence is closed with its own mark; a closed one is left alone.
+        #expect(MightyStructure.openFence("~~~~\ncode") == "~~~~")
+        #expect(MightyStructure.openFence("```\ncode\n```") == nil)
+        // Lines stop at the preview's budget rather than being cut mid-line.
+        let long = (1...15).map { "\($0) " + String(repeating: "x", count: 300) }.joined(separator: "\n")
+        let wide = try #require(MightyStructure.excerpt(long, maximumBytes: MightyStructure.answerBytes, lines: MightyStructure.answerLines, markdown: true))
+        #expect(wide.preview.split(separator: "\n").allSatisfy { $0.count == 302 || $0.count == 303 })
+        #expect(wide.preview.count <= MightyStructure.answerLines * MightyStructure.previewLineCharacters)
+        // A short answer is shown whole, with no toggle.
+        #expect(MightyStructure.excerpt("**됐어요**", maximumBytes: 100, lines: 15, markdown: true)?.cut == false)
     }
 
     @Test func columnsShareThePanesWidthDownToTheMinimum() {
@@ -385,9 +431,9 @@ struct MightyStructureTests {
         run.rootEntries = [LogEntry(id: "m", kind: "assistant", text: "읽는 중")]
         run.agents[0].entries = [Self.tool("t", state: "running", summary: "a.swift")]
         let before = MightyStructure.Signature(runs: [run], style: nil, currentPhase: nil)
-        // A reply that grew keeps its record and the count.
+        // A reply that grew by a few lines keeps its record and the count.
         var grown = run
-        grown.rootEntries[0].text = "읽는 중, 이제 고칩니다"
+        grown.rootEntries[0].text = "읽는 중" + String(repeating: "\n이제 고칩니다", count: 20)
         #expect(MightyStructure.Signature(runs: [grown], style: nil, currentPhase: nil) != before)
         // A tool call that finished, and a sub-agent's prompt that arrived.
         var finished = run
@@ -396,6 +442,25 @@ struct MightyStructureTests {
         var prompted = run
         prompted.agents[0].input = "검토해 줘"
         #expect(MightyStructure.Signature(runs: [prompted], style: nil, currentPhase: nil) != before)
+    }
+
+    @Test func theSignatureMovesEveryFewLinesNotEveryWord() {
+        var run = Self.run("r", status: "running")
+        run.rootEntries = [Self.tool("old", state: "running", summary: "swift build")] + (1...20).map { Self.tool("t\($0)", summary: "f\($0).swift") }
+            + [LogEntry(id: "m", kind: "assistant", text: "가")]
+        let before = MightyStructure.Signature(runs: [run], style: nil, currentPhase: nil)
+        // A few more words in the streamed reply: nothing to rebuild yet.
+        var words = run
+        words.rootEntries[words.rootEntries.count - 1].text = "가 나다"
+        #expect(MightyStructure.Signature(runs: [words], style: nil, currentPhase: nil) == before)
+        // A few lines more: the card is built again.
+        var lines = run
+        lines.rootEntries[lines.rootEntries.count - 1].text = String(repeating: "한 줄의 글입니다\n", count: 12)
+        #expect(MightyStructure.Signature(runs: [lines], style: nil, currentPhase: nil) != before)
+        // A tool call older than the newest records finishing in place.
+        var settled = run
+        settled.rootEntries[0].activity?.state = "completed"
+        #expect(MightyStructure.Signature(runs: [settled], style: nil, currentPhase: nil) != before)
     }
 
     @Test func theItemCacheRebuildsOnlyTheRequestThatMoved() {

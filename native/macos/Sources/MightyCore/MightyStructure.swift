@@ -46,11 +46,19 @@ public enum MightyStructure {
         /// The text up to its cap; a cut text ends with "…".
         public var text: String
         /// The folded card's text: the first lines, bounded, so a folded card never lays
-        /// out the whole text.
+        /// out the whole text. Markdown is cut at whole lines, an open code fence closed.
         public var preview: String
-        /// The folded card may be leaving some of it out: the preview is not the whole
-        /// text, or its lines may wrap past the folded card's lines in the narrowest column.
-        public var folds: Bool
+
+        /// The preview leaves some of the text out.
+        public var cut: Bool { preview != text }
+
+        /// Whether a folded card showing `lines` lines of `charactersPerLine` characters
+        /// (`MightyStructure.charactersPerLine`) may leave some of the text out: it is
+        /// cut, or its lines wrap past the limit. A text that may be cut always gets the
+        /// toggle that opens it.
+        public func folds(lines: Int, charactersPerLine: Int) -> Bool {
+            cut || MightyStructure.visualLines(preview, charactersPerLine: charactersPerLine) > lines
+        }
     }
 
     /// One tool call, as a diagram block's activity row words it.
@@ -211,13 +219,19 @@ public enum MightyStructure {
         }
     }
 
-    /// The newest records a card reads, as one number: how many there are, and the id,
-    /// kind, text length and tool state and summary length of the last `tailEntries`.
+    /// The records a card reads, as one number: how many there are and how many of
+    /// them are tool calls that settled (an older call finishing in place moves it),
+    /// and the id, kind, text length and tool state and summary length of the last
+    /// `tailEntries`. A text's length counts in `tailTextStep` steps, so a reply that
+    /// streams in moves it every few lines, not on every word.
     static func tail(_ entries: [LogEntry]) -> Int {
         var hasher = Hasher()
         hasher.combine(entries.count)
+        var settled = 0
+        for entry in entries where entry.activity.map({ MightyGraphSupport.terminal($0.state) }) == true { settled += 1 }
+        hasher.combine(settled)
         for entry in entries.suffix(tailEntries) {
-            hasher.combine(entry.id); hasher.combine(entry.kind); hasher.combine(entry.text.utf8.count)
+            hasher.combine(entry.id); hasher.combine(entry.kind); hasher.combine(entry.text.utf8.count / tailTextStep)
             hasher.combine(entry.activity?.state); hasher.combine(entry.activity?.summary.utf8.count)
         }
         return hasher.finalize()
@@ -238,13 +252,17 @@ public enum MightyStructure {
     /// The narrowest column; wider panes share their width out between the columns.
     public static let minimumColumnWidth: CGFloat = 300
     /// A folded line is cut at this many characters, so a preview stays small however
-    /// long the text's lines run.
+    /// long the text's lines run; a Markdown preview holds this many per line it shows.
     static let previewLineCharacters = 200
-    /// The fewest characters a line of the narrowest column holds (Hangul and kana at
-    /// the cards' size), so a text is known to fold before the view lays it out.
-    static let wrapCharacters = 20
     /// The newest records the signature follows one by one.
     static let tailEntries = 12
+    /// The bytes a streamed text grows by before the signature moves: a few lines.
+    static let tailTextStep = 256
+    /// A tree's indent stops growing past this depth, so a deep chain stays inside its column.
+    public static let maximumIndent = 6
+    /// How full a wrapped line is counted: words wrap whole, so a line holds less than
+    /// its width's worth of em-wide glyphs (Hangul, kana and CJK are about one em).
+    static let wrapFill: CGFloat = 0.75
     /// Activity kinds that are a tool call, not the turn or a sub-agent's own line.
     static let toolKinds: Set<String> = ["tool", "command", "read", "edit", "search", "web"]
 
@@ -348,11 +366,35 @@ public enum MightyStructure {
         return max(minimumColumnWidth, ((available - gap * CGFloat(count - 1)) / CGFloat(count)).rounded(.down))
     }
 
+    /// The fewest characters a wrapped line of `width` points holds at `fontSize`,
+    /// counting every glyph an em wide and lines as only partly filled, so a fold is
+    /// never missed: Latin text holds more and only shows the toggle sooner.
+    public static func charactersPerLine(width: CGFloat, fontSize: CGFloat) -> Int {
+        guard width.isFinite, fontSize > 0 else { return 1 }
+        return max(1, Int((width / fontSize * wrapFill).rounded(.down)))
+    }
+
+    /// The width a sub-agent card's text has in a column: the cluster's indent and
+    /// padding, the tree's indent at `depth` and the card's own padding taken off, as
+    /// `MightyStructureView` lays them out.
+    public static func nodeTextWidth(column: CGFloat, depth: Int) -> CGFloat {
+        let S = DesignMetrics.Spacing.self
+        return column - S.lg - 2 * S.sm - CGFloat(min(max(0, depth), maximumIndent)) * S.lg - (S.md + S.xs)
+    }
+
+    /// How many lines `text` takes wrapped at `charactersPerLine`.
+    static func visualLines(_ text: String, charactersPerLine: Int) -> Int {
+        let width = max(1, charactersPerLine)
+        var count = 0
+        for line in text.split(separator: "\n", omittingEmptySubsequences: false) { count += max(1, (line.count + width - 1) / width) }
+        return count
+    }
+
     public static func item(_ run: MightyGraphRun, index: Int) -> Item {
         let finished = MightyGraphLayout.finished(run)
         let answer = run.resultEntries.last(where: { $0.kind == "assistant" && !$0.text.isEmpty })?.text ?? run.finalOutput
         let result = finished ? answer.map(preview).flatMap { $0.isEmpty ? nil : $0 } : nil
-        let full = finished ? answer.flatMap { excerpt($0, maximumBytes: answerBytes, lines: answerLines) } : nil
+        let full = finished ? answer.flatMap { excerpt($0, maximumBytes: answerBytes, lines: answerLines, markdown: true) } : nil
         // `refreshResult` keeps the final answer in the main block too: shown once, as the answer.
         let latest = reply(run.rootEntries)
         let message = full != nil && latest == answer ? nil : latest.flatMap { excerpt($0, maximumBytes: messageBytes, lines: messageLines) }
@@ -435,8 +477,11 @@ public enum MightyStructure {
 
     /// `raw` cleaned as every shown text is (`ActivitySupport.clean`) and cut at
     /// `maximumBytes`, with its first `lines` lines as the folded preview; nil when
-    /// nothing is left.
-    public static func excerpt(_ raw: String, maximumBytes: Int, lines: Int) -> Excerpt? {
+    /// nothing is left. A plain preview cuts each line at `previewLineCharacters`; a
+    /// `markdown` one keeps whole lines within `lines × previewLineCharacters`
+    /// characters and closes a code fence left open, so the folded card renders what
+    /// the opened one does, only shorter.
+    public static func excerpt(_ raw: String, maximumBytes: Int, lines: Int, markdown: Bool = false) -> Excerpt? {
         // Cleaning reads the whole string; a text far over its cap is cut first.
         let cleaned = ActivitySupport.clean(ActivitySupport.prefixUTF8(raw, maximumBytes: 2 * maximumBytes + 64), maximumBytes: maximumBytes + 4)
         guard !cleaned.isEmpty else { return nil }
@@ -444,14 +489,43 @@ public enum MightyStructure {
             ? ActivitySupport.prefixUTF8(cleaned, maximumBytes: maximumBytes - 3).trimmingCharacters(in: .whitespacesAndNewlines) + "…"
             : cleaned
         let all = text.split(separator: "\n", omittingEmptySubsequences: false)
-        var preview: [Substring] = []
-        var visual = 0
-        for line in all {
-            visual += max(1, (line.count + wrapCharacters - 1) / wrapCharacters)
-            if preview.count < lines { preview.append(line.prefix(previewLineCharacters)) }
+        var kept: [Substring] = []
+        if markdown {
+            var budget = lines * previewLineCharacters
+            for line in all.prefix(lines) {
+                if line.count > budget {
+                    // Only a first line longer than the whole budget is cut.
+                    if kept.isEmpty { kept.append(line.prefix(budget)) }
+                    break
+                }
+                kept.append(line)
+                budget -= line.count
+            }
+        } else {
+            kept = all.prefix(lines).map { $0.prefix(previewLineCharacters) }
         }
-        let shown = preview.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-        return Excerpt(text: text, preview: shown, folds: visual > lines || shown != text)
+        var shown = kept.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        if markdown, shown != text, let fence = openFence(shown) { shown += "\n" + fence }
+        return Excerpt(text: text, preview: shown)
+    }
+
+    /// The fence a Markdown text ends inside of (a line opening with ``` or ~~~ up to
+    /// its matching close), nil when every code block is closed.
+    static func openFence(_ markdown: String) -> String? {
+        var open: String?
+        for line in markdown.split(separator: "\n", omittingEmptySubsequences: false) {
+            let lead = line.drop { $0 == " " }
+            guard line.count - lead.count <= 3, let mark = lead.first, mark == "`" || mark == "~" else { continue }
+            let run = String(lead.prefix { $0 == mark })
+            guard run.count >= 3 else { continue }
+            if let fence = open {
+                // A close is the same mark, at least as long, with nothing after it.
+                if run.first == fence.first, run.count >= fence.count, lead.dropFirst(run.count).allSatisfy(\.isWhitespace) { open = nil }
+            } else {
+                open = run
+            }
+        }
+        return open
     }
 
     /// The block's latest reply: its last assistant record with words in it, a
