@@ -119,4 +119,42 @@ internal static class WorkDashboardVerification
             Check(PlanCardSupport.ShowsBackgroundStrip(work, mighty, false) && PlanCardSupport.ShowsBackgroundStrip(work, mighty, false, enabled: true) && !PlanCardSupport.ShowsBackgroundStrip(work, mighty, false, enabled: false),
                 $"a hidden line draws nothing (mighty={mighty})");
     }
+
+    // Another reader can hold the state file at the moment a save replaces it (on Windows a plain read shares no delete,
+    // so the replace is refused with "Access to the path is denied"; the GUI smoke's own polling read did exactly that).
+    // A brief block must not drop the save: rapid switches ending hidden leave the file hidden once the block lifts.
+    // On macOS an immutable flag stands in for the held file; elsewhere there is no unprivileged way to block a rename.
+    internal static async Task BackgroundWorkHideSurvivesABriefReplaceBlock()
+    {
+        var directory = Verification.Temp(); var path = Path.Combine(directory, "workspace-state.json");
+        await using var catalog = new ProviderCatalog((_, _) => Task.FromResult<CliCommand?>(null));
+        var service = new DesktopService(directory, null, "", catalog);
+        var failures = new List<Exception>(); service.PersistenceFailed += ex => { lock (failures) failures.Add(ex); };
+        FileStream? held = null;
+        static void Flag(string file, string value) { using var process = System.Diagnostics.Process.Start("chflags", [value, file])!; process.WaitForExit(); if (process.ExitCode != 0) throw new InvalidOperationException("chflags " + value + " failed"); }
+        try
+        {
+            await service.InitializeAsync();
+            await service.UpdateAsync(s => s with { ShowsBackgroundWork = true });
+            if (OperatingSystem.IsWindows()) held = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+            else Flag(path, "uchg");
+            var saves = new List<Task>();
+            for (var i = 0; i < 20; i++) { var shown = i % 2 == 1; saves.Add(service.UpdateAsync(s => s with { ShowsBackgroundWork = shown })); }
+            saves.Add(service.UpdateAsync(s => s with { ShowsBackgroundWork = false }));
+            await Task.Delay(300);
+            if (held is not null) { await held.DisposeAsync(); held = null; } else Flag(path, "nouchg");
+            Exception? last = null;
+            try { await saves[^1]; } catch (Exception ex) { last = ex; }
+            var raw = await File.ReadAllTextAsync(path);
+            var stored = await new StateStore(directory).LoadAsync();
+            Check(last is null && stored.ShowsBackgroundWork == false && service.Snapshot.ShowsBackgroundWork == false && service.SaveStatus == "saved",
+                $"the last switch (hidden) must reach the file once a brief block lifts; got memory={service.Snapshot.ShowsBackgroundWork}, stored={stored.ShowsBackgroundWork}, file has showsBackgroundWork false: {raw.Contains("\"showsBackgroundWork\":false", StringComparison.Ordinal)}, last save {last?.GetType().Name}: {last?.Message}, save {service.SaveStatus}, failures {failures.Count}");
+        }
+        finally
+        {
+            held?.Dispose();
+            if (!OperatingSystem.IsWindows() && File.Exists(path)) Flag(path, "nouchg");
+            await service.DisposeAsync(); Directory.Delete(directory, true);
+        }
+    }
 }

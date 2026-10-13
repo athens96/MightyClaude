@@ -37,6 +37,25 @@ public sealed partial class MainWindow
                 return stored ?? await new StateStore(owner.StateDirectory).LoadAsync();
             }
             async Task View(string mode) { await Change(p => p with { AgentViewMode = mode }); Refresh(); RefreshMightyView(Session); }
+            // What a failed save check needs: the in-memory value, the file's own text (read sharing everything, so this read
+            // never blocks the app's replace), the newest save's state and any save failure seen during the walk.
+            var persistence = new List<string>();
+            void Failed(Exception ex) { lock (persistence) persistence.Add(ex.GetType().Name + ": " + ex.Message); }
+            string SaveFacts()
+            {
+                string raw;
+                try
+                {
+                    using var stream = new FileStream(Path.Combine(owner.StateDirectory, "workspace-state.json"), FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                    using var reader = new StreamReader(stream);
+                    var match = System.Text.RegularExpressions.Regex.Match(reader.ReadToEnd(), "\"showsBackgroundWork\"\\s*:\\s*[^,}\\s]+");
+                    raw = match.Success ? match.Value : "no showsBackgroundWork key";
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { raw = "unreadable: " + ex.Message; }
+                string[] failed; lock (persistence) failed = [.. persistence];
+                return $"memory {owner.service.Snapshot.ShowsBackgroundWork?.ToString() ?? "null"}, file {raw}, save {owner.service.SaveStatus}, save failures [{string.Join("; ", failed)}]";
+            }
+            owner.service.PersistenceFailed += Failed;
             try
             {
                 await owner.service.UpdateAsync(s => s with { ShowsBackgroundWork = null, BackgroundWorkOpen = null });
@@ -60,7 +79,7 @@ public sealed partial class MainWindow
                 await View("mighty");
                 await WaitUI(Hidden, () => $"a hidden line must stay hidden in the Mighty view; host {backgroundHost?.Visibility}");
                 stored = await Saved(s => s.ShowsBackgroundWork == false);
-                Require(stored.ShowsBackgroundWork == false && stored.BackgroundWorkOpen == true, $"hiding must be saved and keep the open state; got shows={stored.ShowsBackgroundWork} open={stored.BackgroundWorkOpen}");
+                Require(stored.ShowsBackgroundWork == false && stored.BackgroundWorkOpen == true, $"hiding must be saved and keep the open state; got shows={stored.ShowsBackgroundWork} open={stored.BackgroundWorkOpen}; {SaveFacts()}");
                 Require(Session.Status == "running" && Session.BackgroundWork?.Running.Count == 1, $"hiding the line must leave the work and the pane alone; got {Session.Status}, {Session.BackgroundWork?.Running.Count} running");
                 checks["hiddenBothViews"] = true; checks["hideSaved"] = true;
 
@@ -70,7 +89,7 @@ public sealed partial class MainWindow
                 await ToggleBackgroundWorkShown();
                 await WaitUI(() => Shown() && Rows(), () => $"the menu must bring the line back open; host {backgroundHost?.Visibility}, rows {Rows()}");
                 stored = await Saved(s => s.ShowsBackgroundWork == true);
-                Require(stored.ShowsBackgroundWork == true && owner.ShowsBackgroundWork, $"showing again must be saved; got stored {stored.ShowsBackgroundWork}");
+                Require(stored.ShowsBackgroundWork == true && owner.ShowsBackgroundWork, $"showing again must be saved; got stored {stored.ShowsBackgroundWork}; {SaveFacts()}");
                 await View("default");
                 await WaitUI(() => Shown() && Rows(), () => $"the line must show open in the default view again; host {backgroundHost?.Visibility}, rows {Rows()}");
                 checks["menuShows"] = true; checks["showSaved"] = true; checks["openRemembered"] = true;
@@ -94,13 +113,13 @@ public sealed partial class MainWindow
                 await WaitUI(Hidden, () => $"the composer's toggle must hide the line; host {backgroundHost?.Visibility}, children {backgroundHost?.Children.Count}");
                 stored = await Saved(s => s.ShowsBackgroundWork == false);
                 Require(stored.ShowsBackgroundWork == false && toggle.IsChecked == false && Help() == Locale.Get("composer.backgroundWork.show"),
-                    $"hiding from the composer must be saved and leave the toggle off with the show help; got stored {stored.ShowsBackgroundWork}, checked {toggle.IsChecked}, '{Help()}'");
+                    $"hiding from the composer must be saved and leave the toggle off with the show help; got stored {stored.ShowsBackgroundWork}, checked {toggle.IsChecked}, '{Help()}'; {SaveFacts()}");
                 checks["composerToggleHides"] = true;
                 PressToggle();
                 await WaitUI(() => Shown() && Rows(), () => $"the composer's toggle must bring the line back open; host {backgroundHost?.Visibility}, rows {Rows()}");
                 stored = await Saved(s => s.ShowsBackgroundWork == true);
                 Require(stored.ShowsBackgroundWork == true && toggle.IsChecked == true && Help() == Locale.Get("composer.backgroundWork.hide"),
-                    $"showing from the composer must be saved and leave the toggle on with the hide help; got stored {stored.ShowsBackgroundWork}, checked {toggle.IsChecked}, '{Help()}'");
+                    $"showing from the composer must be saved and leave the toggle on with the hide help; got stored {stored.ShowsBackgroundWork}, checked {toggle.IsChecked}, '{Help()}'; {SaveFacts()}");
                 checks["composerToggleShows"] = true; checks["composerToggleSaved"] = true;
                 // Only a Claude pane's composer carries it.
                 RefreshBackgroundWork(Session with { Provider = "codex" });
@@ -112,6 +131,7 @@ public sealed partial class MainWindow
             }
             finally
             {
+                owner.service.PersistenceFailed -= Failed;
                 await owner.service.UpdateAsync(s => s with { ShowsBackgroundWork = state.ShowsBackgroundWork, BackgroundWorkOpen = state.BackgroundWorkOpen });
                 await Change(p => p with { Provider = original.Provider, AgentViewMode = original.AgentViewMode, MightyStyle = original.MightyStyle, Status = original.Status, BackgroundWork = original.BackgroundWork });
                 activeStyle = null; loadedStyleKey = null; Refresh(); RefreshMightyView(Session);

@@ -191,6 +191,8 @@ internal static class Verification
         await Test("WorkDashboardVerification SettingsSelectionSurvivesPersistence", WorkDashboardVerification.SettingsSelectionSurvivesPersistence);
         await Test("WorkDashboardVerification SidebarCollapsedPersistsAndKeepsWidth", WorkDashboardVerification.SidebarCollapsedPersistsAndKeepsWidth);
         await Test("WorkDashboardVerification BackgroundWorkLinePersistsAndHides", WorkDashboardVerification.BackgroundWorkLinePersistsAndHides);
+        if (OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()) await Test("WorkDashboardVerification BackgroundWorkHideSurvivesABriefReplaceBlock", WorkDashboardVerification.BackgroundWorkHideSurvivesABriefReplaceBlock);
+        else { skipped++; Console.WriteLine("SKIP background work hide survives a brief replace block (needs Windows file sharing or macOS file flags)"); }
         await Test("QueuedComposerVerification QueuePreservesOrderBoundsAndSettlementPolicy", QueuedComposerVerification.QueuePreservesOrderBoundsAndSettlementPolicy);
         await Test("QueuedComposerVerification SteerRequiresLiveInitializedChannelAndSuccessfulWrite", QueuedComposerVerification.SteerRequiresLiveInitializedChannelAndSuccessfulWrite);
         await Test("QueuedComposerVerification PermissionResponsesAndCancellationSettleOnlyOnce", QueuedComposerVerification.PermissionResponsesAndCancellationSettleOnlyOnce);
