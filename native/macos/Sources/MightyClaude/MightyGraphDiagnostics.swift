@@ -78,7 +78,6 @@ enum MightyGraphDiagnostics {
             let mainID = MightyGraphLayout.nodeID(first, suffix: "request")
             try await store.waitForSmoke(timeout: 3, step: "graph canvas mounted") { window.contentView.flatMap { camera(in: $0) } != nil }
             guard let content = window.contentView else { throw MightyError("그래프 캔버스가 없습니다.") }
-            let latestID = MightyGraphLayout.nodeID(second, suffix: "request")
             try await store.waitForSmoke(timeout: 3, step: "graph viewport measured") { (camera(in: content)?.viewportSize.width ?? 0) > 0 }
             guard let canvas = camera(in: content) else { throw MightyError("고정 다이어그램 뷰포트를 찾지 못했습니다.") }
             guard canvas.enclosingScrollView == nil else { throw MightyError("다이어그램이 여전히 바깥 문서 스크롤에 포함되어 있습니다.") }
@@ -86,9 +85,12 @@ enum MightyGraphDiagnostics {
             try await store.waitForSmoke(timeout: 3, step: "canvas exposed to accessibility") { node(window, identifier: "mighty-graph-canvas-graph-fixture") != nil }
             report["nativeCanvasAccessibilityExposed"] = true
             // The camera opens following: the newest request's lowest block right above the composer.
-            try await store.waitForSmoke(timeout: 3, step: "newest block followed above the composer at open") {
+            try await store.waitForSmoke(timeout: 3, step: "newest block followed above the composer at open",
+                                         detail: { followDetail(canvas, fixture, window) }) {
                 report["initialCameraGeometry"] = ["followed": followGeometry(canvas, fixture), "cameraOffset": NSStringFromPoint(canvas.panOffset)]
-                return followsNewest(canvas, fixture) && mountedCards(window).contains(latestID)
+                // The followed block is drawn; the request above it may sit mostly past
+                // the top, where it has no accessibility element to find.
+                return followsNewest(canvas, fixture) && followedMounted(canvas, window)
             }
             report["newestBlockInitiallyAboveComposer"] = true
             report["latestScreenshot"] = try store.captureSmokeWindow(window, filename: "mighty-graph-latest.png").path
@@ -224,7 +226,8 @@ enum MightyGraphDiagnostics {
             // camera left outside the document culls every card and a blank
             // canvas would otherwise pass — while the far history is not.
             let oldestLongID = MightyGraphBlockSize.nodeID(runID: "long-history-0", suffix: "request")
-            try await store.waitForSmoke(timeout: 3, step: "long history follows the newest result") { camera(in: longContent).map { followsNewest($0, fixture) } == true }
+            try await store.waitForSmoke(timeout: 3, step: "long history follows the newest result",
+                                         detail: { camera(in: longContent).map { followDetail($0, fixture, window) } ?? "no canvas" }) { camera(in: longContent).map { followsNewest($0, fixture) } == true }
             guard mounted > 0, mountedCards(window).contains(newestLongResult),
                   !mountedLongCards.contains(oldestLongID) else { throw MightyError("긴 기록의 화면 안팎 그래프 카드 구성이 올바르지 않습니다.") }
             guard mounted < 24 else { throw MightyError("화면 밖의 그래프까지 네이티브 출력창을 만들었습니다.") }
@@ -236,7 +239,8 @@ enum MightyGraphDiagnostics {
             fixture.running = true
             fixture.runs.append(newRun)
             let newID = MightyGraphLayout.nodeID(newRun, suffix: "request")
-            try await store.waitForSmoke(timeout: 3, step: "new request followed above the composer") {
+            try await store.waitForSmoke(timeout: 3, step: "new request followed above the composer",
+                                         detail: { camera(in: longContent).map { followDetail($0, fixture, window) } ?? "no canvas" }) {
                 guard let camera = camera(in: longContent), let request = frame(node(window, identifier: "mighty-request-\(newID)")) else { return false }
                 let viewport = window.convertToScreen(camera.convert(camera.bounds, to: nil))
                 report["newRequestCameraGeometry"] = ["request": NSStringFromRect(request), "viewport": NSStringFromRect(viewport), "cameraOffset": NSStringFromPoint(camera.panOffset),
@@ -248,7 +252,11 @@ enum MightyGraphDiagnostics {
             // Two root-level branches make this tree wider than a request card.
             // On the fixed centreline the request card above them keeps its x,
             // instead of every card in the document sliding sideways.
-            guard let beforeGrowth = frame(node(window, identifier: "mighty-request-\(newID)")) else { throw MightyError("새 요청 카드의 화면 위치를 읽지 못했습니다.") }
+            // Measured in the canvas (the layout through the camera), not through
+            // accessibility: once the branches are followed the request card sits
+            // mostly above the canvas, where it has no accessibility element.
+            func requestFrame() -> CGRect? { camera(in: longContent)?.frames.first { $0.0 == newID }?.1 }
+            guard let beforeGrowth = requestFrame() else { throw MightyError("새 요청 카드의 화면 위치를 읽지 못했습니다.") }
             let branchEntry = LogEntry(id: "branch-progress", kind: "assistant", text: "가지가 늘어났습니다.", provider: "claude")
             fixture.runs[fixture.runs.count - 1].agents = [
                 MightyGraphAgent(id: "branch-left", title: "왼쪽 가지", input: "왼쪽 확인", status: "running", entries: [branchEntry]),
@@ -256,14 +264,16 @@ enum MightyGraphDiagnostics {
             ]
             let branchID = MightyGraphLayout.nodeID(newRun, suffix: "agent:branch-left")
             try await store.waitForSmoke(timeout: 3, step: "new branches mounted") { node(window, identifier: "mighty-node-\(branchID)") != nil }
-            guard let afterGrowth = frame(node(window, identifier: "mighty-request-\(newID)")) else { throw MightyError("가지가 늘어난 뒤 요청 카드가 사라졌습니다.") }
+            guard let afterGrowth = requestFrame() else { throw MightyError("가지가 늘어난 뒤 요청 카드가 사라졌습니다.") }
             report["rootBranchGrowthGeometry"] = ["before": NSStringFromRect(beforeGrowth), "after": NSStringFromRect(afterGrowth)]
             guard abs(afterGrowth.minX - beforeGrowth.minX) < 0.5 else { throw MightyError("새 하위 블록이 이미 보이던 요청 카드를 옆으로 밀었습니다.") }
             report["rootBranchGrowthKeepsRequestX"] = true
             // The new sub-agents are followed: the camera moves down, never sideways.
-            try await store.waitForSmoke(timeout: 3, step: "new branches followed above the composer") { camera(in: longContent).map { followsNewest($0, fixture) } == true }
-            guard let followedGrowth = frame(node(window, identifier: "mighty-request-\(newID)")),
-                  abs(followedGrowth.minX - beforeGrowth.minX) < 0.5 else { throw MightyError("새 하위 블록을 따라가며 카메라가 옆으로 움직였습니다.") }
+            try await store.waitForSmoke(timeout: 3, step: "new branches followed above the composer",
+                                         detail: { camera(in: longContent).map { followDetail($0, fixture, window) } ?? "no canvas" }) { camera(in: longContent).map { followsNewest($0, fixture) } == true }
+            guard let followedGrowth = requestFrame(), abs(followedGrowth.minX - beforeGrowth.minX) < 0.5 else {
+                throw MightyError("새 하위 블록을 따라가며 카메라가 옆으로 움직였습니다. before=\(beforeGrowth) after=\(requestFrame().map { "\($0)" } ?? "nil")")
+            }
             report["newBlocksFollowedAboveComposer"] = true
             // A history trim drops the OLDEST runs while the last run id stays
             // the same. Every surviving card moves up; only a re-aim follows,
@@ -272,12 +282,13 @@ enum MightyGraphDiagnostics {
             fixture.runs.removeFirst(8)
             guard fixture.runs.last?.id == beforeTrim.last, fixture.runs.count < beforeTrim.count else { throw MightyError("기록 정리 검증이 마지막 요청까지 지웠습니다.") }
             // A following camera keeps its block right above the composer through the trim.
-            try await store.waitForSmoke(timeout: 3, step: "followed block kept through the history trim") {
+            try await store.waitForSmoke(timeout: 3, step: "followed block kept through the history trim",
+                                         detail: { camera(in: longContent).map { followDetail($0, fixture, window) } ?? "no canvas" }) {
                 guard let camera = camera(in: longContent) else { return false }
                 let cards = mountedCards(window)
                 report["historyTrimCameraGeometry"] = ["followed": followGeometry(camera, fixture),
                                                        "cameraOffset": NSStringFromPoint(camera.panOffset), "mountedCards": cards.count]
-                return cards.contains(newID) && followsNewest(camera, fixture)
+                return followsNewest(camera, fixture) && followedMounted(camera, window)
             }
             report["historyTrimKeepsTheFollowedBlock"] = true
             // The user scrolls up a little: following stops, and a block that
@@ -303,13 +314,14 @@ enum MightyGraphDiagnostics {
             // that block back whole (`MightyGraphCamera.lostFrameIndex`). Whether the
             // request above it fits too depends on the runner's screen height.
             let newWork = MightyGraphLayout.nodeID(newRun, suffix: MightyGraphLayout.workSuffix)
-            try await store.waitForSmoke(timeout: 3, step: "stranded net re-aims at the read card") {
+            try await store.waitForSmoke(timeout: 3, step: "stranded net re-aims at the read card",
+                                         detail: { "camera=\(camera(in: longContent).map { NSStringFromPoint($0.panOffset) } ?? "nil") before=\(NSStringFromPoint(strandedBefore)) work=\(camera(in: longContent)?.frames.first { $0.0 == newWork }?.1 ?? .null) mounted=\(mountedCards(window).contains(newWork))" }) {
                 guard let strandedCamera = camera(in: longContent),
                       let work = strandedCamera.frames.first(where: { $0.0 == newWork })?.1 else { return false }
                 report["strandedLayoutCameraGeometry"] = ["before": NSStringFromPoint(strandedBefore), "after": NSStringFromPoint(strandedCamera.panOffset),
                                                           "work": NSStringFromRect(work), "viewport": NSStringFromRect(strandedCamera.bounds)]
                 // Already true before the change: only a camera that moved proves the net.
-                return strandedCamera.panOffset != strandedBefore && mountedCards(window).contains(newID)
+                return strandedCamera.panOffset != strandedBefore && mountedCards(window).contains(newWork)
                     && strandedCamera.bounds.insetBy(dx: -2, dy: -2).contains(work)
             }
             report["shorterLayoutReAimsWithoutARunIDChange"] = true
@@ -371,6 +383,18 @@ enum MightyGraphDiagnostics {
         let layout = MightyGraphLayout.make(runs: fixture.runs, draft: fixture.draft, running: fixture.running, expanded: [], splitsExecution: true)
         guard let id = camera.followTargetID, id == MightyGraphFollow.targetID(layout, runs: fixture.runs) else { return nil }
         return camera.frames.first { $0.0 == id }?.1
+    }
+    private static func followedMounted(_ camera: MightyGraphInteractionProbe, _ window: NSWindow) -> Bool {
+        camera.followTargetID.map { mountedCards(window).contains($0) } == true
+    }
+    /// What a follow check measured, for a timeout's message.
+    private static func followDetail(_ camera: MightyGraphInteractionProbe, _ fixture: GraphFixture, _ window: NSWindow) -> String {
+        let layout = MightyGraphLayout.make(runs: fixture.runs, draft: fixture.draft, running: fixture.running, expanded: [], splitsExecution: true)
+        let frame = camera.followTargetID.flatMap { id in camera.frames.first { $0.0 == id }?.1 }
+        let expected = camera.bounds.height - MightyGraphFollow.margin
+        return "followed=\(camera.followTargetID ?? "nil") rule=\(MightyGraphFollow.targetID(layout, runs: fixture.runs) ?? "nil")"
+            + " bottom=" + (frame.map { "\($0.maxY)" } ?? "nil") + " viewport=\(camera.bounds.height) expected=\(expected)"
+            + " mounted=\(followedMounted(camera, window)) camera=" + NSStringFromPoint(camera.panOffset)
     }
     private static func followGeometry(_ camera: MightyGraphInteractionProbe, _ fixture: GraphFixture) -> String {
         "frame=" + (followedFrame(camera, fixture).map(NSStringFromRect) ?? "nil") + " viewport=" + NSStringFromRect(camera.bounds)
