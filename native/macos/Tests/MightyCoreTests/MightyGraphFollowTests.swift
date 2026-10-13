@@ -121,6 +121,29 @@ struct MightyGraphFollowTests {
         #expect(!MightyGraphFollow.isAtNewest(target: block, camera: past, viewport: viewport, zoom: 1))
     }
 
+    @Test func aReaderWhoScrolledUpBeforeALayoutLandedIsNotFollowedThroughIt() {
+        // The CI smoke's sequence: the reader scrolls up 120pt while the layout of a
+        // trim is still on its way, so the move is judged on the frames they saw. The
+        // trim then moves every block up by thousands of points, and a new block
+        // appears; neither may take the camera back to the newest block.
+        var watch = MightyGraphFollow.Watch()
+        let block = CGRect(x: 24, y: 30_000, width: 360, height: 240)
+        let aligned = MightyGraphFollow.camera(bottomOf: block, viewport: CGSize(width: 1_020, height: 611), zoom: 1, x: 236)
+        watch.start()
+        let settled = watch.observe(targetID: "b", target: block, camera: aligned, viewport: CGSize(width: 1_020, height: 611), zoom: 1)
+        #expect(settled == nil)
+        let up = CGPoint(x: aligned.x, y: aligned.y + 120)
+        watch.moved(targetID: "b", target: block, camera: up, viewport: CGSize(width: 1_020, height: 611), zoom: 1)
+        #expect(!watch.following)
+        let trimmed = block.offsetBy(dx: 0, dy: -10_112)
+        let afterTrim = watch.observe(targetID: "b", target: trimmed, camera: up, viewport: CGSize(width: 1_020, height: 611), zoom: 1)
+        #expect(afterTrim == nil)
+        let late = CGRect(x: 640, y: trimmed.minY, width: 360, height: 240)
+        let afterBlock = watch.observe(targetID: "late", target: late, camera: up, viewport: CGSize(width: 1_020, height: 611), zoom: 1)
+        #expect(afterBlock == nil)
+        #expect(!watch.following)
+    }
+
     @Test func aReaderWhoComesBackToTheNewestBlockFollowsAgain() throws {
         var watch = MightyGraphFollow.Watch()
         let block = CGRect(x: 24, y: 900, width: 500, height: 280)

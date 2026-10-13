@@ -242,7 +242,7 @@ final class MightyGraphInteractionProbe: NSView {
     private var strandedRetriesLeft = 0
     /// Wheel momentum and the tail of a drag still belong to the user.
     private static let userMoveGrace: TimeInterval = 0.5
-    private var lastUserMoveAt: TimeInterval = 0
+    private(set) var lastUserMoveAt: TimeInterval = 0
     private var dragLocation: CGPoint?
     private var monitor: Any?
     private var resignObserver: NSObjectProtocol?

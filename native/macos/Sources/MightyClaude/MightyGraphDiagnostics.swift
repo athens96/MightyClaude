@@ -291,25 +291,45 @@ enum MightyGraphDiagnostics {
             fixture.runs.removeFirst(8)
             guard fixture.runs.last?.id == beforeTrim.last, fixture.runs.count < beforeTrim.count else { throw MightyError("기록 정리 검증이 마지막 요청까지 지웠습니다.") }
             // A following camera keeps its block right above the composer through the trim.
+            // Judged only once the trim reached the canvas: before that the camera is still
+            // aligned to the untrimmed layout, and the check would pass on the old frames.
+            let trimmedID = MightyGraphBlockSize.nodeID(runID: beforeTrim[0], suffix: "request")
             try await store.waitForSmoke(timeout: 3, step: "followed block kept through the history trim",
-                                         detail: { camera(in: longContent).map { followDetail($0, fixture, window) } ?? "no canvas" }) {
-                guard let camera = camera(in: longContent) else { return false }
+                                         detail: { camera(in: longContent).map { followDetail($0, fixture, window) + " trimmedStillLaidOut=\($0.layoutFrames.contains { $0.0 == trimmedID })" } ?? "no canvas" }) {
+                guard let camera = camera(in: longContent), !camera.layoutFrames.contains(where: { $0.0 == trimmedID }) else { return false }
                 let cards = mountedCards(window)
                 report["historyTrimCameraGeometry"] = ["followed": followGeometry(camera, fixture),
                                                        "cameraOffset": NSStringFromPoint(camera.panOffset), "mountedCards": cards.count]
                 return followsNewest(camera, fixture) && followedMounted(camera, window)
             }
             report["historyTrimKeepsTheFollowedBlock"] = true
-            // The user scrolls up a little: following stops, and a block that
-            // appears meanwhile never pulls them back down.
+            // The user scrolls up 120pt with a real wheel event over the canvas, as a
+            // trackpad does: following stops, and a block that appears meanwhile
+            // never pulls them back down.
             guard let reader = camera(in: longContent) else { throw MightyError("사용자 스크롤 검증용 캔버스가 없습니다.") }
-            reader.setPanOffset(CGPoint(x: reader.panOffset.x, y: reader.panOffset.y + 120))
-            try await store.waitForSmoke(timeout: 3, step: "scroll up stops following") { reader.follow?.watch.following == false }
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            try await store.waitForSmoke(timeout: 3, step: "graph window key for the wheel") { NSApp.isActive && window.isKeyWindow }
+            let scrollStart = reader.panOffset
+            let wheelPoint = (try? MightyGraphInteractionDiagnostics.backgroundPoint(reader)).map { reader.convert($0, to: nil) }
+                ?? reader.convert(NSPoint(x: reader.bounds.midX, y: reader.bounds.midY), to: nil)
+            report["userScrollWheel"] = try MightyGraphInteractionDiagnostics.postWheel(window: window, at: wheelPoint, dy: 120)
+            func readerState() -> String {
+                "camera=\(NSStringFromPoint(reader.panOffset)) start=\(NSStringFromPoint(scrollStart)) following=\(reader.follow?.watch.following.description ?? "nil")"
+                    + " movedAt=\(reader.lastUserMoveAt) now=\(ProcessInfo.processInfo.systemUptime) target=\(reader.followTargetID ?? "nil")"
+                    + " token=\(reader.targetToken ?? "nil") consumed=\(reader.consumedTargetToken ?? "nil")"
+            }
+            try await store.waitForSmoke(timeout: 3, step: "wheel scroll up stops following", detail: readerState) {
+                abs(reader.panOffset.y - scrollStart.y - 120) < 1 && reader.follow?.watch.following == false
+            }
             let readerCamera = reader.panOffset
             fixture.runs[fixture.runs.count - 1].agents.append(MightyGraphAgent(id: "branch-late", title: "늦은 가지", input: "추가 확인", status: "running", entries: [branchEntry]))
             try await store.waitForSmoke(timeout: 3, step: "late branch mounted while scrolled up") { mountedCards(window).contains(MightyGraphLayout.nodeID(newRun, suffix: "agent:branch-late")) }
+            // Past the 0.5s user-move grace, so a follow pass would have run by now.
             try await Task.sleep(for: .milliseconds(700))
-            guard reader.panOffset == readerCamera else { throw MightyError("위로 스크롤한 사용자를 새 블록이 다시 아래로 끌어당겼습니다.") }
+            guard reader.panOffset == readerCamera else {
+                throw MightyError("위로 스크롤한 사용자를 새 블록이 다시 아래로 끌어당겼습니다. before=\(NSStringFromPoint(readerCamera)) " + readerState())
+            }
             report["userScrollWinsOverNewBlocks"] = true
             // The same run ids with shorter trees: nothing the run-id rule can
             // see, yet every later card moves up under a camera nobody touched.

@@ -540,7 +540,7 @@ enum MightyGraphInteractionDiagnostics {
         }
     }
     @discardableResult
-    private static func postWheel(window: NSWindow, at point: NSPoint, dx: Int32 = 0, dy: Int32 = 0, phase: NSEvent.Phase = []) throws -> [String: Any] {
+    static func postWheel(window: NSWindow, at point: NSPoint, dx: Int32 = 0, dy: Int32 = 0, phase: NSEvent.Phase = []) throws -> [String: Any] {
         // A CG-created wheel loses its NSWindow on conversion. Starting with a
         // public window-targeted mouse event retains AppKit's window context.
         guard let mouse = NSEvent.mouseEvent(with: .mouseMoved, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil, eventNumber: 1, clickCount: 0, pressure: 0),
@@ -584,7 +584,7 @@ enum MightyGraphInteractionDiagnostics {
     private static func pinned(_ probe: MightyGraphInteractionProbe, host: NSView, frame: NSRect, hostBounds: NSRect) -> Bool {
         probe.enclosingScrollView == nil && probe.convert(probe.bounds, to: nil) == frame && host.bounds == hostBounds
     }
-    private static func backgroundPoint(_ probe: MightyGraphInteractionProbe) throws -> NSPoint {
+    static func backgroundPoint(_ probe: MightyGraphInteractionProbe) throws -> NSPoint {
         let candidates = [NSPoint(x: 8, y: 8), NSPoint(x: 8, y: probe.bounds.height / 2), NSPoint(x: probe.bounds.width - 80, y: 8)]
         guard let point = candidates.first(where: { point in
             let path = NSRect(x: point.x, y: point.y, width: 56, height: 31)
