@@ -330,6 +330,9 @@ enum MightyGraphInteractionDiagnostics {
             probe.graphRoot = root
             container.addSubview(probe)
             let nodeID = "resize-node"
+            // As `MightyGraphInteraction.updateNSView` declares every flow block: the
+            // corner handle and the border bands only grab blocks marked resizable.
+            probe.resizableNodeIDs = [nodeID]
             let initialSize = CGSize(width: 360, height: 240)
             var currentSize = initialSize
             var currentPan = CGPoint.zero
@@ -362,7 +365,9 @@ enum MightyGraphInteractionDiagnostics {
                 NSApp.postEvent(event, atStart: false)
             }
             func state() -> String {
-                "zoom=\(zoom) size=\(currentSize) pan=\(NSStringFromPoint(currentPan)) probePan=\(NSStringFromPoint(probe.panOffset))"
+                "zoom=\(zoom) size=\(currentSize) frame=\(probe.frames.first.map { NSStringFromRect($0.1) } ?? "nil") resizable=\(probe.resizableNodeIDs.sorted())"
+                    + " key=\(window.isKeyWindow) active=\(NSApp.isActive) selected=\(probe.selectedNodeID ?? "nil")"
+                    + " pan=\(NSStringFromPoint(currentPan)) probePan=\(NSStringFromPoint(probe.panOffset))"
                     + " resizing=\(probe.isResizing) panning=\(probe.isPanning) calls=\(calls.count) native=\(probe.nativeWheels)"
                     + " inner=\(NSStringFromPoint(inner.contentView.bounds.origin)) token=\(probe.targetToken ?? "nil") consumed=\(probe.consumedTargetToken ?? "nil")"
             }
