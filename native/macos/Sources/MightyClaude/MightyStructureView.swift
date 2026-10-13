@@ -7,6 +7,12 @@ import SwiftUI
 final class MightyStructureMemory: ObservableObject {
     /// Texts opened past their folded lines, by `MightyStructureView.foldKey`.
     @Published var expanded = Set<String>()
+    /// Finished requests the user opened by hand, by run id: every other finished
+    /// request shows folded (`MightyStructure.Fold`).
+    @Published var unfoldedCards = Set<String>()
+    /// Where the folded cards sit in the scroll view, by run id, for the GUI smoke: a
+    /// SwiftUI button has no native view to find it by. Not published.
+    var foldedFrames: [String: CGRect] = [:]
     /// Whether the page follows the newest card (`MightyGraphFollow.PageWatch`). Not
     /// published: scrolling redraws nothing.
     var follow = MightyGraphFollow.PageWatch()
@@ -120,6 +126,10 @@ struct MightyStructureView: View {
                 // reader comes back to the newest card. (The diagram's blocks keep their
                 // size as they open, so there the camera only re-judges where it is.)
                 .onChange(of: memory.expanded) { _, _ in memory.follow.stop() }
+                // So is a request the user opened or folded. A request that folds as it
+                // finishes is not the user's: the follow rule judges the page it leaves.
+                .onChange(of: memory.unfoldedCards) { _, _ in memory.follow.stop() }
+                .onPreferenceChange(MightyStructureFoldedFrames.self) { memory.foldedFrames = $0 }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSScroller.preferredScrollerStyleDidChangeNotification)) { _ in
@@ -250,7 +260,17 @@ struct MightyStructureView: View {
         }
     }
 
-    private func freeRow(_ row: MightyStructure.Row, width: CGFloat) -> some View {
+    @ViewBuilder private func freeRow(_ row: MightyStructure.Row, width: CGFloat) -> some View {
+        if MightyStructure.Fold.isFolded(row.item, unfolded: memory.unfoldedCards) {
+            // One compact row across the three columns.
+            foldedCard(row.item)
+                .frame(width: 3 * width + 2 * DesignMetrics.Spacing.lg, alignment: .topLeading)
+        } else {
+            openRow(row, width: width)
+        }
+    }
+
+    private func openRow(_ row: MightyStructure.Row, width: CGFloat) -> some View {
         let item = row.item
         let steps: [(id: String, title: String, step: MightyStructure.Step)] = [
             ("request", L("graph.structure.column.request"), row.request),
@@ -258,8 +278,12 @@ struct MightyStructureView: View {
             ("result", L("graph.structure.column.result"), row.result),
         ]
         return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
-            Text(heading(item)).font(Palette.heading(13)).foregroundStyle(Palette.ink).lineLimit(1)
-                .accessibilityAddTraits(.isHeader)
+            HStack(spacing: DesignMetrics.Spacing.sm) {
+                Text(heading(item)).font(Palette.heading(13)).foregroundStyle(Palette.ink).lineLimit(1)
+                    .accessibilityAddTraits(.isHeader)
+                if item.finished { foldCardButton(item) }
+                Spacer(minLength: 0)
+            }
             rail(steps, width: width)
             HStack(alignment: .top, spacing: DesignMetrics.Spacing.lg) {
                 // 요청
@@ -308,12 +332,21 @@ struct MightyStructureView: View {
     /// The request as the diagram draws it: "Request N · Claude" and what was asked; under
     /// it its 실행 card, with the latest reply, tool calls and status; its sub-agent trees;
     /// and once it finished, its answer.
-    private func card(_ item: MightyStructure.Item, width: CGFloat) -> some View {
+    @ViewBuilder private func card(_ item: MightyStructure.Item, width: CGFloat) -> some View {
+        if MightyStructure.Fold.isFolded(item, unfolded: memory.unfoldedCards) {
+            foldedCard(item)
+        } else {
+            openCard(item, width: width)
+        }
+    }
+
+    private func openCard(_ item: MightyStructure.Item, width: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
                 HStack(spacing: DesignMetrics.Spacing.sm) {
                     Text(heading(item)).font(.system(size: Self.textSize, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
                     Spacer(minLength: DesignMetrics.Spacing.xs)
+                    if item.finished { foldCardButton(item) }
                     revealButton(item.nodeID)
                 }
                 if let request = item.request {
@@ -515,6 +548,62 @@ struct MightyStructureView: View {
         .accessibilityElement(children: .combine)
     }
 
+    // MARK: Folded requests
+
+    /// A finished request folded to one compact card: its heading, status and tally,
+    /// what was asked and how it ended, a line each. The whole card opens it.
+    private func foldedCard(_ item: MightyStructure.Item) -> some View {
+        let answer = MightyStructure.Fold.resultLine(item)
+        return Button { toggleFold(item) } label: {
+            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
+                HStack(spacing: DesignMetrics.Spacing.sm) {
+                    Text(heading(item)).font(.system(size: Self.textSize, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
+                        .layoutPriority(1)
+                    MightyStatusPill(text: MightyGraphView.statusLabel(item.status), tone: DesignTone(status: item.status))
+                    tally(item)
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.ink2)
+                        .accessibilityHidden(true)
+                }
+                Text(verbatim: item.input).font(.system(size: Self.textSize)).foregroundStyle(Palette.ink)
+                    .lineLimit(1).truncationMode(.tail)
+                Text(verbatim: answer ?? MightyGraphView.statusLabel(item.status))
+                    .font(.system(size: Self.outputSize)).foregroundStyle(answer == nil ? Palette.text(item.status) : Palette.ink2)
+                    .lineLimit(1).truncationMode(.tail)
+            }
+            .cardSurface()
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(L("graph.structure.unfoldCard"))
+        .background(GeometryReader { card in
+            Color.clear.preference(key: MightyStructureFoldedFrames.self, value: [item.runID: card.frame(in: .named(Self.scrollSpace))])
+        })
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityValue(L("graph.structure.collapsed"))
+        .accessibilityHint(L("graph.structure.unfoldCard"))
+        .accessibilityIdentifier("mighty-structure-folded-\(item.runID)")
+    }
+
+    /// The header control of an open finished request that folds it back.
+    private func foldCardButton(_ item: MightyStructure.Item) -> some View {
+        Button { toggleFold(item) } label: {
+            Image(systemName: "chevron.up").font(.system(size: 11, weight: .medium)).foregroundStyle(Palette.ink2)
+                .frame(width: DesignMetrics.Layout.hitTarget, height: DesignMetrics.Layout.hitTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(L("graph.structure.foldCard"))
+        .accessibilityLabel(L("graph.structure.foldCard"))
+        .accessibilityValue(L("graph.structure.expanded"))
+        .accessibilityIdentifier("mighty-structure-fold-\(item.runID)")
+    }
+
+    private func toggleFold(_ item: MightyStructure.Item) {
+        memory.unfoldedCards = MightyStructure.Fold.toggled(item, unfolded: memory.unfoldedCards)
+    }
+
     // MARK: Texts shown in place
 
     /// The key a text's open state is kept under: what it is and whose.
@@ -617,6 +706,15 @@ private struct MightyStructurePage: PreferenceKey {
         if let content = next.content { value.content = content }
         if let newest = next.newest { value.newest = newest }
         if let visible = next.visible { value.visible = visible }
+    }
+}
+
+/// Where each folded card sits in the scroll view's space, by run id
+/// (`MightyStructureMemory.foldedFrames`).
+private struct MightyStructureFoldedFrames: PreferenceKey {
+    static let defaultValue: [String: CGRect] = [:]
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue()) { _, next in next }
     }
 }
 
