@@ -7,9 +7,11 @@ import SwiftUI
 final class MightyStructureMemory: ObservableObject {
     /// Texts opened past their folded lines, by `MightyStructureView.foldKey`.
     @Published var expanded = Set<String>()
-    /// The view is at or near its bottom (`TranscriptViewport.isFollowing`), so the
-    /// newest card's growth may scroll it. Not published: scrolling redraws nothing.
-    var following = true
+    /// Whether the page follows the newest card (`MightyGraphFollow.PageWatch`). Not
+    /// published: scrolling redraws nothing.
+    var follow = MightyGraphFollow.PageWatch()
+    /// The user's fingers or wheel are scrolling the page right now (macOS 15 and later).
+    var userScrolling = false
 }
 
 /// The Mighty graph drawn as its structure (design "A. 단계별 열"), from
@@ -42,6 +44,7 @@ struct MightyStructureView: View {
 
     private static let chipHeight: CGFloat = 20
     private static let scrollSpace = "mighty-structure-scroll"
+    private static let endID = "mighty-structure-end"
     /// A card's and a sub-agent card's corners.
     static let cardCorner: CGFloat = 10
     private static let nodeCorner: CGFloat = 8
@@ -61,38 +64,51 @@ struct MightyStructureView: View {
             // width never feeds back into what is measured.
             let scroller = legacyScrollers ? NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy) : 0
             let available = geo.size.width - scroller - 2 * DesignMetrics.Inset.graphBlockBodyH
-            let visibleHeight = geo.size.height
             ScrollViewReader { proxy in
                 ScrollView([.horizontal, .vertical]) {
-                    Group {
-                        switch shape {
-                        case .phases(let columns):
-                            phases(columns, width: MightyStructure.columnWidth(available: available, count: columns.count, gap: DesignMetrics.Spacing.lg))
-                        case .free(let rows):
-                            free(rows, width: MightyStructure.columnWidth(available: available, count: 3, gap: DesignMetrics.Spacing.lg))
+                    VStack(alignment: .leading, spacing: 0) {
+                        Group {
+                            switch shape {
+                            case .phases(let columns):
+                                phases(columns, width: MightyStructure.columnWidth(available: available, count: columns.count, gap: DesignMetrics.Spacing.lg))
+                            case .free(let rows):
+                                free(rows, width: MightyStructure.columnWidth(available: available, count: 3, gap: DesignMetrics.Spacing.lg))
+                            }
                         }
+                        .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).padding(.vertical, DesignMetrics.Spacing.md)
+                        // The page's end, which a follow scrolls to when the newest card ends the page.
+                        Color.clear.frame(width: 1, height: 1).id(Self.endID)
                     }
-                    .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).padding(.vertical, DesignMetrics.Spacing.md)
                     .background(GeometryReader { content in
-                        Color.clear.preference(key: MightyStructureContentFrame.self, value: content.frame(in: .named(Self.scrollSpace)))
+                        Color.clear.preference(key: MightyStructurePage.self, value: .init(content: content.frame(in: .named(Self.scrollSpace))))
                     })
                 }
                 .coordinateSpace(name: Self.scrollSpace)
-                .defaultScrollAnchor(.bottomLeading)
-                // Where the reader is, by the transcript's rule: near the bottom follows.
-                .onPreferenceChange(MightyStructureContentFrame.self) { frame in
-                    memory.following = TranscriptViewport.isFollowing(originY: Double(-frame.minY), visibleHeight: Double(visibleHeight),
-                                                                      documentHeight: Double(frame.height))
+                // The pane's height joins the same report: a taller composer moves no
+                // content, yet may hide the newest card.
+                .background(GeometryReader { pane in
+                    Color.clear.preference(key: MightyStructurePage.self, value: .init(visible: pane.size.height))
+                })
+                .modifier(MightyStructureScrollRoles(memory: memory))
+                // Every report of where the page stands decides whether it follows the
+                // newest card and where it scrolls (`MightyGraphFollow.PageWatch`).
+                .onPreferenceChange(MightyStructurePage.self) { report in
+                    guard let content = report.content, let visible = report.visible else { return }
+                    let newest = report.newest?.id == newestRunID ? report.newest.map { Double($0.bottom - content.minY) } : nil
+                    let page = MightyGraphFollow.Page(originY: Double(-content.minY), visibleHeight: Double(visible),
+                                                      documentHeight: Double(content.height), newestID: newestRunID, newestBottom: newest)
+                    scroll(memory.follow.observe(page, userScrolling: memory.userScrolling), proxy)
                 }
-                .onAppear { DispatchQueue.main.async { follow(proxy) } }
-                // A new request is the user's own: it is shown, as the timeline shows it.
-                .onChange(of: newestRunID) { _, _ in follow(proxy) }
-                // The newest card grows as its blocks arrive and settle. It stays in view
-                // only for a reader at the bottom who is not reading it opened.
-                .onChange(of: newestGrowth) { _, _ in
-                    guard memory.following, !newestOpened else { return }
-                    follow(proxy)
+                .onAppear { scroll(memory.follow.appeared(newestID: newestRunID), proxy) }
+                // A new request is the user's own: shown, and followed from then on.
+                .onChange(of: newestRunID) { _, id in
+                    guard let id else { return }
+                    scroll(memory.follow.newRequest(id), proxy)
                 }
+                // An opened or folded text is being read: nothing follows until the
+                // reader comes back to the newest card. (The diagram's blocks keep their
+                // size as they open, so there the camera only re-judges where it is.)
+                .onChange(of: memory.expanded) { _, _ in memory.follow.stop() }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSScroller.preferredScrollerStyleDidChangeNotification)) { _ in
@@ -103,31 +119,27 @@ struct MightyStructureView: View {
         .accessibilityIdentifier("mighty-structure-\(sessionID)")
     }
 
-    /// One of the newest card's texts is open: its reader is not moved.
-    private var newestOpened: Bool {
-        guard let newestRunID, !memory.expanded.isEmpty else { return false }
-        let nodes = Self.foldKey("node", MightyGraphBlockSize.nodeID(runID: newestRunID, suffix: ""))
-        return memory.expanded.contains { key in
-            ["request", "message", "answer"].contains { key == Self.foldKey($0, newestRunID) } || key.hasPrefix(nodes)
+    /// The page's end, or the newest card's bottom at the viewport's bottom. After the
+    /// current update: a report arrives while the page is being laid out.
+    private func scroll(_ target: MightyGraphFollow.Scroll?, _ proxy: ScrollViewProxy) {
+        guard let target else { return }
+        let free = if case .free = shape { true } else { false }
+        DispatchQueue.main.async {
+            switch target {
+            case .bottom: proxy.scrollTo(Self.endID, anchor: .bottomLeading)
+            case .card(let id): proxy.scrollTo(id, anchor: free ? .bottomLeading : .bottom)
+            }
         }
     }
 
-    /// The newest request with what makes its card taller or settles it: a reply by its
-    /// folded lines, not by every word that streams in.
-    private var newestGrowth: [String] {
-        guard let newestRunID else { return [] }
-        let item: MightyStructure.Item? = switch shape {
-        case .phases(let columns): columns.lazy.flatMap(\.items).first { $0.runID == newestRunID }
-        case .free(let rows): rows.last { $0.id == newestRunID }?.item
+    /// Reports the newest card's bottom with the page's frame, in one report.
+    @ViewBuilder private func newestMark(_ runID: String) -> some View {
+        if runID == newestRunID {
+            GeometryReader { card in
+                Color.clear.preference(key: MightyStructurePage.self,
+                                       value: .init(newest: .init(id: runID, bottom: card.frame(in: .named(Self.scrollSpace)).maxY)))
+            }
         }
-        guard let item else { return [newestRunID] }
-        return [newestRunID, item.status, item.result == nil ? "" : "result", "\(item.clusters.reduce(0) { $0 + $1.nodes.count })",
-                item.activity.last?.id ?? "", item.message.map { "\($0.preview.reduce(1) { $1 == "\n" ? $0 + 1 : $0 })" } ?? ""]
-    }
-
-    private func follow(_ proxy: ScrollViewProxy) {
-        guard let newestRunID else { return }
-        if case .free = shape { proxy.scrollTo(newestRunID, anchor: .bottomLeading) } else { proxy.scrollTo(newestRunID, anchor: .bottom) }
     }
 
     // MARK: Styled pane
@@ -140,7 +152,7 @@ struct MightyStructureView: View {
             HStack(alignment: .top, spacing: DesignMetrics.Spacing.lg) {
                 ForEach(columns) { column in
                     LazyVStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
-                        ForEach(column.items) { card($0, width: width).id($0.id) }
+                        ForEach(column.items) { card($0, width: width).background(newestMark($0.runID)).id($0.id) }
                     }
                     .frame(width: width, alignment: .topLeading)
                     .accessibilityElement(children: .contain)
@@ -220,7 +232,7 @@ struct MightyStructureView: View {
                     .padding(.vertical, DesignMetrics.Spacing.md)
             }
             ForEach(rows) { row in
-                freeRow(row, width: width).id(row.id)
+                freeRow(row, width: width).background(newestMark(row.item.runID)).id(row.id)
             }
         }
     }
@@ -576,8 +588,46 @@ private extension View {
     }
 }
 
-/// The structure's content frame in its scroll view's space: where the reader is.
-private struct MightyStructureContentFrame: PreferenceKey {
-    static let defaultValue = CGRect.zero
-    static func reduce(value: inout CGRect, nextValue: () -> CGRect) { value = nextValue() }
+/// Where the structure's page stands in its scroll view's space: the whole page's
+/// frame, the newest card's bottom and the pane's height, merged into one report so
+/// the follow rule never judges one against a stale other.
+private struct MightyStructurePage: PreferenceKey {
+    struct Newest: Equatable { var id: String; var bottom: CGFloat }
+    struct Value: Equatable {
+        var content: CGRect?
+        var newest: Newest?
+        var visible: CGFloat?
+    }
+    static let defaultValue = Value()
+    static func reduce(value: inout Value, nextValue: () -> Value) {
+        let next = nextValue()
+        if let content = next.content { value.content = content }
+        if let newest = next.newest { value.newest = newest }
+        if let visible = next.visible { value.visible = visible }
+    }
+}
+
+/// The page opens at its end, and a page shorter than the pane sits right above the
+/// composer. From macOS 15 only the opening is anchored, so the page never keeps its
+/// end in place by itself as it grows, which is the follow rule's to decide, and a
+/// scroll the user is making is known, so it is never fought. macOS 14 keeps the
+/// single anchor it had.
+private struct MightyStructureScrollRoles: ViewModifier {
+    let memory: MightyStructureMemory
+    func body(content: Content) -> some View {
+        if #available(macOS 15.0, *) {
+            content
+                .defaultScrollAnchor(.bottomLeading, for: .initialOffset)
+                .defaultScrollAnchor(.bottomLeading, for: .alignment)
+                .onScrollPhaseChange { _, phase in
+                    memory.userScrolling = switch phase {
+                    case .tracking, .interacting, .decelerating: true
+                    case .idle, .animating: false
+                    @unknown default: false
+                    }
+                }
+        } else {
+            content.defaultScrollAnchor(.bottomLeading)
+        }
+    }
 }
