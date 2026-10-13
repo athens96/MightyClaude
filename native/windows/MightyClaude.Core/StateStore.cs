@@ -171,7 +171,18 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var temporary = path + "." + Wire.Id() + ".tmp";
-        try { await File.WriteAllBytesAsync(temporary, data); if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(temporary, UnixFileMode.UserRead | UnixFileMode.UserWrite); File.Move(temporary, path, true); }
+        try
+        {
+            await File.WriteAllBytesAsync(temporary, data); if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(temporary, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            // Another reader can hold the file for a moment (on Windows a plain read shares no delete, so the replace is
+            // refused with "Access to the path is denied"). A refused replace is tried again for about 2 s before the save
+            // fails, so a brief read never drops the newest state.
+            for (var attempt = 1; ; attempt++)
+            {
+                try { File.Move(temporary, path, true); break; }
+                catch (Exception ex) when ((ex is IOException or UnauthorizedAccessException) && attempt < 40) { await Task.Delay(50); }
+            }
+        }
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
 }
