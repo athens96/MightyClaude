@@ -85,9 +85,9 @@ The ring beside the send button shows how much context the conversation has used
 ## Default and Mighty views {#views}
 Claude and Codex panes have a {{ui:graph.view.default}} | {{ui:graph.view.mighty}} switch in the header. Switching keeps the conversation and your draft, and each pane remembers its choice. Gemini panes have only the default view.
 - {{ui:graph.view.default}}: the conversation as a log you read top to bottom.
-- {{ui:graph.view.mighty}}: requests, sub-agents, background work and results as a diagram of blocks.
+- {{ui:graph.view.mighty}}: requests, sub-agents, background work and results as a flow of blocks.
 
-### The Mighty diagram {#diagram}
+### The Mighty flow {#diagram}
 Each request gets a request block with a {{ui:graph.block.execution}} block right below it. The request block holds only what you sent; what the agent did because of it (messages, tool calls, progress) shows in the {{ui:graph.block.execution}} block. Sub-agents and background tasks branch out below the {{ui:graph.block.execution}} block. When the request ends, a {{ui:graph.block.result}} card is attached.
 - Drag the empty background or scroll to move around. The zoom buttons go from 50% to 150%.
 - Click a block to scroll inside it. Click the background or press {{kbd:Esc}} to deselect.
@@ -99,20 +99,20 @@ Each request gets a request block with a {{ui:graph.block.execution}} block righ
 
 ![[agent-mighty-overview]]
 
-### Timeline {#timeline}
+### Log {#timeline}
 Use the {{ui:graph.view.diagram}} | {{ui:graph.view.timeline}} switch at the top of the Mighty view to see requests as a list in time order. Each request row is followed by its {{ui:graph.block.execution}} row, then its sub-agents.
 
 ![[agent-timeline]]
 
-### Structure {#structure}
-Pick {{ui:graph.view.structure}} on the same switch to see requests in columns by phase.
-- In a pane that uses a style, the mode's phases sit in a row on top: finished phases are green, the current one is in the accent colour and the rest are grey.
-- Each request sits under the phase it belongs to as a request card followed by a {{ui:graph.block.execution}} card, with its sub-agent trees grouped in dashed boxes under the {{ui:graph.block.execution}} card. A finished request has its result below them.
-- In a pane without a style, each request gets one {{ui:graph.structure.column.request}} → {{ui:graph.structure.column.execution}} → {{ui:graph.structure.column.result}} row.
-- The request card holds only the request; the {{ui:graph.block.execution}} card shows the progress (the latest message and tool calls) and the status. The result and what each sub-agent was asked and produced show right where they are too. Long text is folded; {{ui:graph.structure.more}} opens it in place.
-- The small button in a card's header shows that block in the diagram.
-- As in the diagram, drag an empty spot to move the view.
-- Finished requests fold to one line; click one to open it.
+### Board {#structure}
+Pick {{ui:graph.view.structure}} on the same switch to see requests as a kanban board. The Windows app still has the earlier layout: every request laid out under its steps in columns, finished requests folded to one line, moved by dragging an empty spot.
+- The view shows one thing at a time: one request in a pane without a style, one pipeline in a pane that uses a style. A pipeline is a run of requests whose phase only moves forward; a request whose phase goes back before the previous request's starts a new pipeline.
+- ◀ {{ui:graph.structure.board.previous}} and ▶ {{ui:graph.structure.board.next}} at the top step back and forth. Click the title between them, such as "Request 3 / 7", to open the list with each one's number, title, status and steps, and pick any of them.
+- Below that is the progress: the status and the first line, then the step chips joined by lines. In a pane without a style they are {{ui:graph.structure.column.request}} → {{ui:graph.structure.column.execution}} → {{ui:graph.structure.column.result}}; in a pane that uses a style, the mode's phases. Finished steps are green, the current one is in the accent colour and the rest are grey.
+- The content sits in columns side by side, one per step, each headed by the step's name and its number of cards. Without a style, the {{ui:graph.structure.column.request}} column holds the request, the {{ui:graph.structure.column.execution}} column a card with the progress (the latest message and tool calls) and the status followed by one card per sub-agent, and the {{ui:graph.structure.column.result}} column the result. With a style, each phase column holds that phase's request cards (the request, a run summary and the result on one line) with their sub-agent cards under them. Nested sub-agents are indented and say which block they run under.
+- Long text is folded; {{ui:graph.structure.more}} opens it in place. The small button in a card's header shows that block in the flow.
+- The view opens on the newest one and, left there, moves on to each new request or pipeline. While you look at an older one, a new one leaves you where you are and puts a {{ui:graph.structure.board.newRequest}} or {{ui:graph.structure.board.newPipeline}} badge next to ▶; click it to go to the newest.
+- As in the flow, drag an empty spot, or scroll with the trackpad or the mouse wheel, to move the board. At the end of the newest one the view follows new content down; once you move it yourself, it stays where you put it.
 
 ![[agent-structure]]
 

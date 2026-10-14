@@ -85,11 +85,11 @@ Codex 和 Gemini 的命令名称略有不同（例如 Codex 的 `/new`、`/appro
 ## 默认视图与 Mighty 视图 {#views}
 Claude 和 Codex 窗格的标题栏中有{{ui:graph.view.default}} | {{ui:graph.view.mighty}}切换开关。切换后，对话和正在输入的内容保持不变。每个窗格会各自记住选择。Gemini 窗格只有默认视图。
 - {{ui:graph.view.default}}：从上到下阅读的对话记录。
-- {{ui:graph.view.mighty}}：以块状图表显示请求、子智能体、后台任务和结果。
+- {{ui:graph.view.mighty}}：以块状流程显示请求、子智能体、后台任务和结果。
 
-### Mighty 图表 {#diagram}
+### Mighty 流程 {#diagram}
 每个请求生成一个请求块，其正下方是{{ui:graph.block.execution}}块。请求块只包含发出的请求；智能体因该请求所做的事（消息、工具调用、进度）显示在{{ui:graph.block.execution}}块中。子智能体和后台任务从{{ui:graph.block.execution}}块下方分支出来。请求结束后，会附上{{ui:graph.block.result}}卡片。
-- 拖动空白处或滚动即可移动图表。用缩放按钮可以在 50% 到 150% 之间调整。
+- 拖动空白处或滚动即可移动流程。用缩放按钮可以在 50% 到 150% 之间调整。
 - 点击某个块后，只在该块内部滚动。点击空白处或按{{kbd:Esc}}即可取消选择。
 - 拖动块的右下角可以调整大小。右键点击可以选择{{ui:graph.block.resetSize}}。大小按会话保存。
 - 滚动到最顶部后，可以用{{ui:graph.history.load}}每次加载 10 个之前的请求。加载的记录仅供查看。
@@ -99,20 +99,20 @@ Claude 和 Codex 窗格的标题栏中有{{ui:graph.view.default}} | {{ui:graph.
 
 ![[agent-mighty-overview]]
 
-### 时间线 {#timeline}
+### 记录 {#timeline}
 用 Mighty 视图顶部的{{ui:graph.view.diagram}} | {{ui:graph.view.timeline}}切换开关，可以按时间顺序以列表形式查看请求。每个请求行之后是它的{{ui:graph.block.execution}}行，然后是子智能体行。
 
 ![[agent-timeline]]
 
-### 结构 {#structure}
-在同一个切换开关中选择{{ui:graph.view.structure}}，可以按阶段分列查看请求。
-- 使用风格的窗格顶部会排出该模式的各个阶段：已完成的阶段为绿色，当前阶段为强调色，其余为灰色。
-- 每个请求在它所属的阶段下方依次显示为请求卡片和{{ui:graph.block.execution}}卡片，{{ui:graph.block.execution}}卡片下方的虚线框中归组显示它的子代理树。已结束的请求在其下方附上结果。
-- 没有风格的窗格中，每个请求占一行：{{ui:graph.structure.column.request}} → {{ui:graph.structure.column.execution}} → {{ui:graph.structure.column.result}}。
-- 请求卡片只包含请求内容，{{ui:graph.block.execution}}卡片显示进度（最新消息和工具调用）和状态。结果以及各子代理接到的任务和产出也就地显示。长文本默认折叠，点击{{ui:graph.structure.more}}即可就地展开。
-- 点击卡片标题栏中的小按钮，会在图中显示该块。
-- 和图表一样，拖动空白处即可移动视图。
-- 已结束的请求会折叠成一行，点击即可展开。
+### 看板 {#structure}
+在同一个切换开关中选择{{ui:graph.view.structure}}，可以把请求看成看板。Windows 应用目前仍是旧版布局：所有请求按阶段排在各列中，已结束的请求折叠成一行，拖动空白处即可移动。
+- 视图一次只显示一项：没有风格的窗格显示一个请求，使用风格的窗格显示一条流水线。流水线是阶段只向前推进的一串请求；某个请求的阶段比前一个请求退回到更早的阶段时，就开始一条新流水线。
+- 用顶部的 ◀ {{ui:graph.structure.board.previous}}和 ▶ {{ui:graph.structure.board.next}}前后切换。点击两者之间的标题（如"请求 3 / 7"）会打开列表，显示每一项的编号、标题、状态和阶段，可直接选择。
+- 下方显示进度：状态和第一行，以及用线连起来的阶段标签。没有风格的窗格是{{ui:graph.structure.column.request}} → {{ui:graph.structure.column.execution}} → {{ui:graph.structure.column.result}}，使用风格的窗格是该模式的阶段。已完成的阶段为绿色，当前阶段为强调色，其余为灰色。
+- 内容放在并排的列中，每个阶段一列，列头显示阶段名称和卡片数。没有风格时，{{ui:graph.structure.column.request}}列放请求，{{ui:graph.structure.column.execution}}列放显示进度（最新消息和工具调用）与状态的卡片，后面每个子代理一张卡片，{{ui:graph.structure.column.result}}列放结果。使用风格时，每个阶段列放该阶段的请求卡片（请求、执行摘要和一行结果），其子代理卡片放在下方。嵌套的子代理会缩进，并注明它在哪个块之下。
+- 长文本默认折叠，点击{{ui:graph.structure.more}}即可就地展开。点击卡片标题栏中的小按钮，会在流程中显示该块。
+- 视图从最新的一项打开，停留在那里时会随新的请求或流水线前进。查看较早的一项时出现新项，位置保持不变，▶ 旁会出现{{ui:graph.structure.board.newRequest}}或{{ui:graph.structure.board.newPipeline}}标记，点击即可转到最新的一项。
+- 和流程一样，拖动空白处，或用触控板和鼠标滚轮滚动，即可移动看板。停在最新一项的末尾时，视图会跟随新内容向下；自己移动后，就停在你放的位置。
 
 ![[agent-structure]]
 

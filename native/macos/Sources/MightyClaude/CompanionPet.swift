@@ -8,30 +8,23 @@ struct CompanionPet: Identifiable {
     let pixelWidth: Int
     let pixelHeight: Int
     let source: URL
-    private final class FrameSet: NSObject {
+    /// Decoded once per pet and kept for the app's life (at most four pets), so an
+    /// animation tick never decodes the sheet again, not even a broken or mis-sized one
+    /// (kept as nine empty rows); `clearCache` drops them on reload.
+    @MainActor private static var frameStore: [String: [[NSImage]]] = [:]
+    @MainActor private static var frameStoreOrder: [String] = []
+    @MainActor static func clearCache() { frameStore.removeAll(); frameStoreOrder.removeAll() }
+    @MainActor var frames: [[NSImage]] {
+        let key = source.path
+        if let stored = Self.frameStore[key] { return stored }
         let rows: [[NSImage]]
-        init(_ rows: [[NSImage]]) { self.rows = rows }
-    }
-    private static let frameCache: NSCache<NSString, FrameSet> = {
-        let cache = NSCache<NSString, FrameSet>()
-        cache.countLimit = 2
-        cache.totalCostLimit = 32 * 1024 * 1024
-        return cache
-    }()
-    static func clearCache() { frameCache.removeAllObjects() }
-    var frames: [[NSImage]] {
-        let key = source.path as NSString
-        if let cached = Self.frameCache.object(forKey: key) { return cached.rows }
-        guard let input = CGImageSourceCreateWithURL(source as CFURL, nil),
-              let sheet = CGImageSourceCreateImageAtIndex(input, 0, nil),
-              sheet.width == pixelWidth, sheet.height == pixelHeight else { return Array(repeating: [], count: 9) }
-        let rows = Self.frameCounts.enumerated().map { row, count in
-            (0..<count).compactMap { column -> NSImage? in
-                guard let image = sheet.cropping(to: CGRect(x: column * 192, y: row * 208, width: 192, height: 208)) else { return nil }
-                return NSImage(cgImage: image, size: NSSize(width: 192, height: 208))
-            }
-        }
-        Self.frameCache.setObject(FrameSet(rows), forKey: key, cost: pixelWidth * pixelHeight * 4)
+        if let sheet = PetSpriteFrames.decode(source), sheet.width == pixelWidth, sheet.height == pixelHeight {
+            rows = PetSpriteFrames.slice(sheet, frameCounts: Self.frameCounts, cell: CGSize(width: 192, height: 208))
+                .map { row in row.map { NSImage(cgImage: $0, size: NSSize(width: 192, height: 208)) } }
+        } else { rows = Array(repeating: [], count: 9) }
+        Self.frameStore[key] = rows
+        Self.frameStoreOrder.append(key)
+        while Self.frameStoreOrder.count > 4 { Self.frameStore[Self.frameStoreOrder.removeFirst()] = nil }
         return rows
     }
     static let frameCounts = [6, 8, 8, 4, 5, 8, 6, 6, 6]
@@ -42,17 +35,18 @@ struct CompanionPet: Identifiable {
         Array(repeating: 0.14, count: 7) + [0.24], Array(repeating: 0.15, count: 5) + [0.26],
         Array(repeating: 0.12, count: 5) + [0.22], Array(repeating: 0.15, count: 5) + [0.28],
     ]
-    func frame(row: Int, elapsed: TimeInterval, reducedMotion: Bool) -> NSImage? {
+    @MainActor func frame(row: Int, elapsed: TimeInterval, reducedMotion: Bool) -> NSImage? {
         let row = min(max(0, row), 8)
-        guard !frames[row].isEmpty else { return nil }
-        if reducedMotion { return frames[row][0] }
+        let images = frames[row]
+        guard !images.isEmpty else { return nil }
+        if reducedMotion { return images[0] }
         let timing = Self.durations[row]
         var phase = max(0, elapsed).truncatingRemainder(dividingBy: timing.reduce(0, +))
         for (index, duration) in timing.enumerated() {
-            if phase < duration { return frames[row][min(index, frames[row].count - 1)] }
+            if phase < duration { return images[min(index, images.count - 1)] }
             phase -= duration
         }
-        return frames[row][0]
+        return images[0]
     }
     static func loadAvailable(dataDirectory: URL?) -> [CompanionPet] {
         var result: [CompanionPet] = []

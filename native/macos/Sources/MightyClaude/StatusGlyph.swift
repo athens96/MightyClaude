@@ -24,8 +24,7 @@ struct StatusGlyph: View {
         let ink = Palette.glyph(tone)
         switch glyph {
         case .spark:
-            // A fresh spark whenever Reduce Motion flips, so turning it off starts the turn again.
-            StatusSpark(color: ink, unit: size / 16).id(reduceMotion)
+            StatusSpark(color: ink, unit: size / 16, turning: !reduceMotion)
         case .question:
             ZStack {
                 Circle().fill(Palette.discFill(tone)).padding(size * 0.8 / 16)
@@ -59,29 +58,76 @@ struct StatusGlyph: View {
     }
 }
 
-/// The running spark: four arms and four fainter diagonals, turning once every 3.2 s;
-/// still when the user asks for reduced motion.
-private struct StatusSpark: View {
+/// The running spark: four arms and four fainter diagonals, turning clockwise once
+/// every 3.2 s; still when the user asks for reduced motion. It turns in Core Animation,
+/// so a running pane's mark never re-renders the window frame by frame.
+private struct StatusSpark: NSViewRepresentable {
     let color: Color
     let unit: CGFloat
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @ViewState private var turning = false
+    let turning: Bool
 
-    var body: some View {
-        let style = StatusGlyph.line(2, unit * 16)
-        ZStack {
-            GlyphLines(segments: [
-                [CGPoint(x: 8, y: 1.6), CGPoint(x: 8, y: 5.6)], [CGPoint(x: 8, y: 10.4), CGPoint(x: 8, y: 14.4)],
-                [CGPoint(x: 1.6, y: 8), CGPoint(x: 5.6, y: 8)], [CGPoint(x: 10.4, y: 8), CGPoint(x: 14.4, y: 8)],
-            ]).stroke(color, style: style)
-            GlyphLines(segments: [
-                [CGPoint(x: 4.6, y: 4.6), CGPoint(x: 6.1, y: 6.1)], [CGPoint(x: 9.9, y: 9.9), CGPoint(x: 11.4, y: 11.4)],
-                [CGPoint(x: 4.6, y: 11.4), CGPoint(x: 6.1, y: 9.9)], [CGPoint(x: 9.9, y: 6.1), CGPoint(x: 11.4, y: 4.6)],
-            ]).stroke(color.opacity(0.7), style: style)
+    static let arms: [[CGPoint]] = [
+        [CGPoint(x: 8, y: 1.6), CGPoint(x: 8, y: 5.6)], [CGPoint(x: 8, y: 10.4), CGPoint(x: 8, y: 14.4)],
+        [CGPoint(x: 1.6, y: 8), CGPoint(x: 5.6, y: 8)], [CGPoint(x: 10.4, y: 8), CGPoint(x: 14.4, y: 8)],
+    ]
+    static let diagonals: [[CGPoint]] = [
+        [CGPoint(x: 4.6, y: 4.6), CGPoint(x: 6.1, y: 6.1)], [CGPoint(x: 9.9, y: 9.9), CGPoint(x: 11.4, y: 11.4)],
+        [CGPoint(x: 4.6, y: 11.4), CGPoint(x: 6.1, y: 9.9)], [CGPoint(x: 9.9, y: 6.1), CGPoint(x: 11.4, y: 4.6)],
+    ]
+
+    func makeNSView(context: Context) -> StatusSparkView { StatusSparkView(frame: .zero) }
+    func updateNSView(_ view: StatusSparkView, context: Context) {
+        view.ink = NSColor(color)
+        view.repaint(scheme: context.environment.colorScheme)
+        LoopingLayerView.withoutActions { for line in [view.arms, view.diagonals] { line.lineWidth = 2 * unit } }
+        view.animating = turning
+    }
+    static func dismantleNSView(_ view: StatusSparkView, coordinator: ()) { view.animating = false }
+}
+
+private final class StatusSparkView: LoopingLayerView {
+    /// Turns about the glyph's centre, carrying both sets of strokes.
+    let rotor = CALayer()
+    let arms = CAShapeLayer()
+    let diagonals = CAShapeLayer()
+    var ink = NSColor.clear
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        for line in [arms, diagonals] {
+            line.fillColor = nil
+            line.lineCap = .round
+            line.lineJoin = .round
+            rotor.addSublayer(line)
         }
-        .rotationEffect(.degrees(turning && !reduceMotion ? 360 : 0))
-        .animation(reduceMotion ? nil : .linear(duration: 3.2).repeatForever(autoreverses: false), value: turning)
-        .onAppear { turning = true }
+        canvas.addSublayer(rotor)
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override func paint() {
+        arms.strokeColor = Self.resolved(ink)
+        diagonals.strokeColor = Self.resolved(ink, opacity: 0.7)
+    }
+
+    override func layoutCanvas(_ size: CGSize) {
+        rotor.frame = CGRect(origin: .zero, size: size)
+        let scale = min(size.width, size.height) / 16
+        for (line, segments) in [(arms, StatusSpark.arms), (diagonals, StatusSpark.diagonals)] {
+            line.frame = rotor.bounds
+            let path = CGMutablePath()
+            for points in segments {
+                guard let first = points.first else { continue }
+                path.move(to: CGPoint(x: first.x * scale, y: first.y * scale))
+                for point in points.dropFirst() { path.addLine(to: CGPoint(x: point.x * scale, y: point.y * scale)) }
+            }
+            line.path = path
+        }
+    }
+
+    /// In the canvas's y-down space a positive angle turns clockwise on screen, as
+    /// SwiftUI's positive `rotationEffect` did.
+    override func loops() -> [LayerLoop] {
+        [LayerLoop(layer: rotor, key: "turn", animation: Self.basic("transform.rotation.z", from: 0, to: 2 * Double.pi, duration: 3.2, timing: .linear))]
     }
 }
 

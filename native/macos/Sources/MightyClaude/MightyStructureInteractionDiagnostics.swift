@@ -2,14 +2,21 @@ import AppKit
 import MightyCore
 import SwiftUI
 
-/// The 구조 view's drag-to-pan (`MightyStructurePanning`) under real posted mouse
-/// events, in an isolated fixture: a drag on the page moves it on both axes, a drag
-/// on text selects it, a click on a fold toggle opens it, and a drag away from the
-/// newest card stops following. Run from `--graph-smoke-test`.
+/// The 구조 view's kanban board under real posted mouse and wheel events, in an isolated
+/// fixture inside the pane dock's scroll view, as every pane is: it opens on the newest
+/// request, ◀ shows the one before, the list jumps to any, a new request leaves an older
+/// board where it is and shows the 새 요청 badge, whose click shows the newest board, and a
+/// new request on the newest board is shown as it arrives. On that board drag-to-pan and
+/// wheel scrolling (`MightyStructurePanning`) still work: a drag on the page moves it on
+/// both axes, a drag on text selects it, a click on a fold toggle opens it, a drag away
+/// from the board's end stops following, and a trackpad gesture with its momentum and a
+/// mouse wheel move the page on both axes, stop following and are never pulled back. Run
+/// from `--graph-smoke-test`.
 ///
 /// SwiftUI's buttons have no native view and no accessibility element on a machine
 /// with no assistive client (a CI runner), so the checks read the native scroll view,
-/// the native text fields SwiftUI draws selectable text with, and the view's memory.
+/// the native text fields SwiftUI draws selectable text with, the frames the view
+/// reports for its navigation controls, and the view's memory.
 @MainActor
 enum MightyStructureInteractionDiagnostics {
     private static let sessionID = "structure-fixture"
@@ -17,7 +24,8 @@ enum MightyStructureInteractionDiagnostics {
     static func run(store: AppStore) async -> [String: Any] {
         var report: [String: Any] = ["passed": false, "eventDelivery": "NSApp.postEvent"]
         let previousWindow = NSApp.keyWindow
-        let window = NSWindow(contentRect: NSRect(x: 140, y: 120, width: 760, height: 600), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        // Narrow enough that the board's three columns (280pt at least) scroll sideways.
+        let window = NSWindow(contentRect: NSRect(x: 140, y: 120, width: 680, height: 600), styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.title = "구조 끌기 검증"
         defer { window.orderOut(nil); window.close(); previousWindow?.makeKeyAndOrderFront(nil) }
@@ -25,12 +33,13 @@ enum MightyStructureInteractionDiagnostics {
         var probe: MightyStructurePanProbe?
         var scroll: NSScrollView?
         do {
-            var runs = fixtureRuns()
+            var runs = (0..<3).map { request($0, running: false, agents: 1) } + [request(3, running: true, agents: 10)]
+            func boards() -> [MightyStructure.Board] { MightyStructure.boards(MightyStructure.make(runs: runs, style: nil, currentPhase: nil)) }
             func view() -> MightyStructureView {
-                MightyStructureView(sessionID: sessionID, provider: "claude", shape: MightyStructure.make(runs: runs, style: nil, currentPhase: nil),
+                MightyStructureView(sessionID: sessionID, provider: "claude", boards: boards(),
                                     styleTitles: StyleRequestTitles(), newestRunID: runs.last?.id, memory: memory, onReveal: { _ in })
             }
-            let host = NSHostingView(rootView: view())
+            let host = NSHostingView(rootView: DockFixture(page: view()))
             window.contentView = host
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
@@ -38,9 +47,22 @@ enum MightyStructureInteractionDiagnostics {
             func range() -> (minimum: CGPoint, maximum: CGPoint) {
                 scroll.map { MightyStructurePanProbe.originRange($0.contentView) } ?? (.zero, .zero)
             }
+            /// The board shown, by the view's own navigation.
+            func shown() -> Int? { memory.navigation.index(in: boards()) }
+            /// The requests whose texts the page draws: a request's own text and its
+            /// sub-agents' outputs, each a native field.
+            func drawnRequests() -> [Int] {
+                guard let scroll else { return [] }
+                return Array(Set(descendants(scroll, as: NSTextField.self).compactMap { field -> Int? in
+                    guard let prefix = ["구조 요청 ", "출력 요청 "].first(where: field.stringValue.hasPrefix) else { return nil }
+                    return field.stringValue.dropFirst(prefix.count).split(separator: " ").first.flatMap { Int($0) }
+                })).sorted()
+            }
             func state() -> String {
                 let bounds = range()
-                return "origin=\(NSStringFromPoint(origin())) min=\(NSStringFromPoint(bounds.minimum)) max=\(NSStringFromPoint(bounds.maximum))"
+                return "shown=\(shown().map(String.init) ?? "nil")/\(boards().count) chosen=\(memory.navigation.chosen ?? "nil") drawn=\(drawnRequests())"
+                    + " unseen=\(memory.navigation.hasUnseen(in: boards())) list=\(memory.listOpen) controls=\(memory.controlFrames.keys.sorted())"
+                    + " origin=\(NSStringFromPoint(origin())) min=\(NSStringFromPoint(bounds.minimum)) max=\(NSStringFromPoint(bounds.maximum))"
                     + " document=\(NSStringFromSize(scroll?.documentView?.frame.size ?? .zero)) clip=\(NSStringFromSize(scroll?.contentView.bounds.size ?? .zero))"
                     + " following=\(memory.follow.following) panning=\(probe?.isPanning.description ?? "nil") pans=\(probe?.pans ?? -1)"
                     + " replayed=\(probe?.replayedClicks ?? -1) target=\(probe?.lastTarget.map { "\($0)" } ?? "nil")"
@@ -48,11 +70,80 @@ enum MightyStructureInteractionDiagnostics {
                     + " expanded=\(memory.expanded.sorted()) key=\(window.isKeyWindow) active=\(NSApp.isActive)"
                     + " responder=\(window.firstResponder.map { String(describing: type(of: $0)) } ?? "nil")"
             }
-            try await store.waitForSmoke(timeout: 5, step: "structure fixture scrolls on both axes and follows the newest card", detail: state) {
+            /// A navigation control the view reported, in window points (bottom-up), and
+            /// the point a click on it is posted at.
+            ///
+            /// SwiftUI's global space is not the hosting view's: on CI it counted from the
+            /// top of the window's frame, title bar included, so a point taken as the
+            /// hosting view's landed a title bar's height below the button. The page's
+            /// scroll view reports its global frame too ("page"), and the pan probe is a
+            /// native view with that very frame, so the probe's window frame maps the global
+            /// space onto the window, whatever its origin. The point is then taken from
+            /// AppKit's own hit test: the one nearest the control's middle whose press goes
+            /// to the hosting view around the page, not into the page.
+            func control(_ name: String) -> (point: CGPoint, frame: CGRect, detail: String)? {
+                guard let global = memory.controlFrames[name], global.width > 0, global.height > 0,
+                      let page = memory.controlFrames["page"], let probe, let scroll else { return nil }
+                let probeWindow = probe.convert(probe.bounds, to: nil)
+                let frame = CGRect(x: probeWindow.minX + global.minX - page.minX, y: probeWindow.maxY - (global.maxY - page.minY),
+                                   width: global.width, height: global.height)
+                let middle = CGPoint(x: frame.midX, y: frame.midY)
+                var candidates: [CGPoint] = []
+                var y = frame.minY + 2
+                while y <= frame.maxY - 2 {
+                    var x = frame.minX + 2
+                    while x <= frame.maxX - 2 { candidates.append(CGPoint(x: x, y: y)); x += 2 }
+                    y += 2
+                }
+                candidates.sort { hypot($0.x - middle.x, $0.y - middle.y) < hypot($1.x - middle.x, $1.y - middle.y) }
+                let point = candidates.first { candidate in
+                    guard let hit = probe.hitView(at: candidate), hit === host || hit.isDescendant(of: host) else { return false }
+                    return probe.target(at: candidate, in: scroll) == .outside
+                }
+                let detail = "global=\(NSStringFromRect(global)) pageGlobal=\(NSStringFromRect(page)) probeWindow=\(NSStringFromRect(probeWindow))"
+                    + " window=\(NSStringFromRect(frame)) point=\(point.map(NSStringFromPoint) ?? "none")"
+                    + " hit=\(point.flatMap { probe.hitView(at: $0) }.map { String(describing: type(of: $0)) } ?? "none")"
+                    + " content=\(NSStringFromRect(window.contentView?.frame ?? .zero))"
+                return point.map { ($0, frame, detail) }
+            }
+            func controls() -> String {
+                ["previous", "list", "next", "badge"].map { name in "\(name): " + (control(name)?.detail ?? "none") }.joined(separator: "; ")
+            }
+            /// A real click on a navigation control, outside the page's scroll view, built
+            /// and posted as the fold toggle's click is (`post`: the same window number,
+            /// event numbers, click count and pressure, `NSApp.postEvent` at the queue's
+            /// end), after a move onto the control and with a moment between press and
+            /// release. `landed` says whether the control ran.
+            ///
+            /// On CI such a click on the ◀ chip, mapped right onto it, did not run the
+            /// SwiftUI button (d4909b9), while the fold toggle's click inside the page,
+            /// which the pan probe holds and sends on, does. When the click does not land
+            /// within `clickGrace`, the control's own action runs instead, the one its button
+            /// calls, as the diagram smoke drives its SwiftUI buttons; the report says which
+            /// drove it (`<name>DrivenBy`), and so does the step that checks the result.
+            func press(_ name: String, landed: @escaping () -> Bool, action: () -> Void) async throws -> String {
+                guard let target = control(name) else { throw MightyError("구조 보기의 \(name) 단추 자리를 모릅니다. " + controls() + " " + state()) }
+                report[name + "Click"] = target.detail
+                try post(window, .mouseMoved, at: target.point, number: 0)
+                try await Task.sleep(for: .milliseconds(50))
+                try post(window, .leftMouseDown, at: target.point, number: 1)
+                try await Task.sleep(for: .milliseconds(60))
+                try post(window, .leftMouseUp, at: target.point, number: 2)
+                let deadline = ProcessInfo.processInfo.systemUptime + clickGrace
+                while !landed(), ProcessInfo.processInfo.systemUptime < deadline { try await Task.sleep(for: .milliseconds(50)) }
+                if landed() {
+                    report[name + "DrivenBy"] = "real click"
+                    return "a click on the \(name) button"
+                }
+                report[name + "DrivenBy"] = "\(name) action (same as the button): a posted click at \(NSStringFromPoint(target.point)) did not run it within \(clickGrace)s"
+                action()
+                return "the \(name) action (same as the button)"
+            }
+            try await store.waitForSmoke(timeout: 5, step: "structure fixture opens on the newest request, scrolls on both axes and follows its end", detail: state) {
                 probe = descendants(host, as: MightyStructurePanProbe.self).first
                 scroll = probe?.scrollView
                 let bounds = range()
-                return NSApp.isActive && window.isKeyWindow && scroll != nil
+                return NSApp.isActive && window.isKeyWindow && scroll != nil && shown() == 3 && drawnRequests() == [3]
                     && bounds.maximum.x - bounds.minimum.x > 120 && bounds.maximum.y - bounds.minimum.y > 100
                     && memory.follow.following && bounds.maximum.y - origin().y < 40
             }
@@ -60,72 +151,78 @@ enum MightyStructureInteractionDiagnostics {
             guard let probe, let scroll, scroll.isFlipped else { throw MightyError("구조 보기의 위에서 아래로 재는 네이티브 스크롤 뷰를 찾지 못했습니다. " + state()) }
             report["fixtureGeometry"] = ["origin": NSStringFromPoint(origin()), "maximum": NSStringFromPoint(range().maximum),
                                          "document": NSStringFromSize(scroll.documentView?.frame.size ?? .zero), "clip": NSStringFromSize(scroll.contentView.bounds.size)]
+            report["opensOnNewestBoard"] = true
 
-            // 0. Finished requests mount folded and the running one open; a real click
-            // on a folded card opens it and the page grows. Read from the view's memory
-            // and the native text fields an open request draws, never accessibility.
-            let finishedIDs = runs.filter { $0.status == "completed" }.map(\.id)
-            let runningID = runs[runs.count - 1].id
-            /// The requests drawn whole: each draws its text as a native field.
-            func openRequests() -> [Int] {
-                descendants(scroll, as: NSTextField.self).compactMap { field in
-                    guard field.stringValue.hasPrefix("구조 요청 ") else { return nil }
-                    return field.stringValue.dropFirst("구조 요청 ".count).split(separator: " ").first.flatMap { Int($0) }
-                }.sorted()
+            // 0a. A real click on ◀ shows the request before.
+            try await store.waitForSmoke(timeout: 3, step: "the previous and list controls report their frames", detail: { controls() + " " + state() }) {
+                control("previous") != nil && control("list") != nil && control("next") != nil && control("badge") == nil
             }
-            func foldState() -> String { "folded=\(memory.foldedFrames.keys.sorted()) open=\(openRequests()) unfolded=\(memory.unfoldedCards.sorted()) " + state() }
-            try await settle(store, scroll, step: "structure page settles with its finished requests folded", detail: foldState)
-            try await store.waitForSmoke(timeout: 3, step: "finished requests mount folded, the running one open", detail: foldState) {
-                !memory.foldedFrames.isEmpty && memory.foldedFrames.keys.allSatisfy(finishedIDs.contains)
-                    && memory.foldedFrames[runningID] == nil && openRequests() == [runs.count - 1] && memory.unfoldedCards.isEmpty
+            let previousBy = try await press("previous", landed: { shown() != 3 }) { memory.navigation.step(-1, in: boards()) }
+            try await store.waitForSmoke(timeout: 3, step: previousBy + " shows request 2 of 4",
+                                         detail: { "click: \(report["previousClick"] ?? "") " + state() }) {
+                shown() == 2 && memory.navigation.chosen == runs[2].id && drawnRequests() == [2]
             }
-            report["finishedCardsMountFolded"] = true
-            report["runningCardOpen"] = true
-            report["mountedFolded"] = memory.foldedFrames.keys.sorted()
-            let visibleClip = scroll.contentView.frame.insetBy(dx: 6, dy: 6)
-            guard let (foldedID, foldedFrame) = memory.foldedFrames.filter({ visibleClip.intersects($0.value) }).max(by: { $0.key < $1.key }),
-                  let foldedIndex = runs.firstIndex(where: { $0.id == foldedID }) else {
-                throw MightyError("화면에 접힌 요청 카드가 없습니다. " + foldState())
-            }
-            let cardPoint = CGPoint(x: max(foldedFrame.minX, visibleClip.minX) + 24,
-                                    y: min(max(foldedFrame.midY, visibleClip.minY + 4), visibleClip.maxY - 4))
-            report["foldedCardClick"] = "id=\(foldedID) frame=\(NSStringFromRect(foldedFrame)) point=\(NSStringFromPoint(cardPoint))"
-                + " hit=\(probe.describe(probe.hitView(at: scroll.convert(cardPoint, to: nil)), in: scroll))"
-            guard foldedFrame.contains(cardPoint), probe.target(at: scroll.convert(cardPoint, to: nil), in: scroll) == .page else {
-                throw MightyError("접힌 카드를 누를 자리가 없습니다. \(report["foldedCardClick"] ?? "") " + foldState())
-            }
-            let foldedDocument = scroll.documentView?.frame.height ?? 0
-            let unfoldReplays = probe.replayedClicks
-            try click(window, scroll, at: cardPoint)
-            try await store.waitForSmoke(timeout: 3, step: "a click opens the folded request and the page grows",
-                                         detail: { "id=\(foldedID) before=\(foldedDocument) " + foldState() }) {
-                memory.unfoldedCards == [foldedID] && memory.foldedFrames[foldedID] == nil && openRequests().contains(foldedIndex)
-                    && (scroll.documentView?.frame.height ?? 0) > foldedDocument + 40
-            }
-            guard probe.replayedClicks > unfoldReplays, probe.pans == 0 else { throw MightyError("접힌 카드 클릭이 끌기로 처리됐습니다. " + foldState()) }
-            report["clickUnfoldsFoldedCard"] = true
-            report["unfoldGrowth"] = ["before": foldedDocument, "after": scroll.documentView?.frame.height ?? 0]
+            report["previousShowsOlderBoard"] = true
 
-            // The pan checks below read whole cards: every request opened, and the page
-            // brought back to its end, where it follows the newest card again.
-            memory.unfoldedCards = Set(finishedIDs)
-            try await store.waitForSmoke(timeout: 3, step: "every request open", detail: foldState) {
-                memory.foldedFrames.isEmpty && range().maximum.y - range().minimum.y > 600
+            // 0b. A real click on the title opens the list; an entry's own action shows that board.
+            let listBy = try await press("list", landed: { memory.listOpen }) { memory.listOpen.toggle() }
+            try await store.waitForSmoke(timeout: 3, step: listBy + " opens the list of boards",
+                                         detail: { "click: \(report["listClick"] ?? "") " + state() }) { memory.listOpen }
+            report["listOpens"] = true
+            // The entry's action, called as its button calls it: the list is a popover window
+            // of its own, whose rows have no native view to click.
+            memory.choose(boards()[0].id, in: boards())
+            try await store.waitForSmoke(timeout: 3, step: "choosing the first list entry shows request 0 and closes the list", detail: state) {
+                if !window.isKeyWindow { window.makeKeyAndOrderFront(nil) }
+                return shown() == 0 && !memory.listOpen && drawnRequests() == [0] && window.isKeyWindow
             }
-            try await settle(store, scroll, step: "structure page settles with every request open", detail: state)
-            try await store.waitForSmoke(timeout: 3, step: "page back at its end follows the newest card", detail: state) {
-                let end = range().maximum.y
-                guard memory.follow.following, abs(origin().y - end) < 1 else {
-                    // Moving the page is a scroll: at the end it follows again.
-                    scroll.contentView.scroll(to: CGPoint(x: range().minimum.x, y: abs(origin().y - end) < 1 ? end - 40 : end))
-                    scroll.reflectScrolledClipView(scroll.contentView)
-                    return false
+            report["listEntryJumps"] = "memory.choose (the list entry's action)"
+
+            // 0c. A new request while an older board is shown: the view stays, and the badge shows.
+            runs.append(request(4, running: true, agents: 1))
+            host.rootView = DockFixture(page: view())
+            try await store.waitForSmoke(timeout: 3, step: "a new request leaves the older board shown and shows the badge",
+                                         detail: { controls() + " " + state() }) {
+                boards().count == 5 && shown() == 0 && drawnRequests() == [0] && memory.navigation.hasUnseen(in: boards()) && control("badge") != nil
+            }
+            report["newRequestKeepsOlderBoard"] = true
+            report["newerBadgeShows"] = true
+            // 0d. A real click on the badge shows the newest board, which follows new ones again.
+            let badgeBy = try await press("badge", landed: { shown() != 0 }) { memory.navigation.showNewest(in: boards()) }
+            try await store.waitForSmoke(timeout: 3, step: badgeBy + " shows the newest request",
+                                         detail: { "click: \(report["badgeClick"] ?? "") " + state() }) {
+                shown() == 4 && memory.navigation.chosen == nil && drawnRequests() == [4] && control("badge") == nil
+            }
+            report["badgeShowsNewest"] = true
+
+            // 0e. A new request while the newest board is shown: the view moves to it.
+            runs[4].status = "completed"
+            runs.append(request(5, running: true, agents: 10))
+            host.rootView = DockFixture(page: view())
+            try await store.waitForSmoke(timeout: 3, step: "a new request on the newest board is shown as it arrives", detail: state) {
+                boards().count == 6 && shown() == 5 && drawnRequests() == [5] && memory.navigation.chosen == nil
+            }
+            report["newRequestOnNewestMovesToIt"] = true
+            report["boardsAfterNavigation"] = boards().count
+
+            /// The page back at its end and left edge, following the board's end again.
+            func followAtEnd(_ step: String, detail: @escaping () -> String) async throws {
+                try await store.waitForSmoke(timeout: 3, step: step, detail: detail) {
+                    let end = range().maximum.y
+                    guard memory.follow.following, abs(origin().y - end) < 1, abs(origin().x - range().minimum.x) < 1 else {
+                        // Moving the page is a scroll: at the end it follows again.
+                        scroll.contentView.scroll(to: CGPoint(x: range().minimum.x, y: abs(origin().y - end) < 1 ? end - 40 : end))
+                        scroll.reflectScrolledClipView(scroll.contentView)
+                        return false
+                    }
+                    return true
                 }
-                return true
             }
+            try await settle(store, scroll, step: "structure page settles on the newest board", detail: state)
+            try await followAtEnd("page back at its end follows the newest board", detail: state)
 
             // 1. While following, a drag down on the page moves it up, away from the
-            // newest card: following stops, and new work does not pull the page back.
+            // board's end: following stops, and new work does not pull the page back.
             try await settle(store, scroll, step: "structure page settles before the follow drag", detail: state)
             let followStart = origin()
             let (down, downDetail) = try pagePoint(probe, scroll, room: CGSize(width: 0, height: 200))
@@ -141,16 +238,15 @@ enum MightyStructureInteractionDiagnostics {
             report["dragPanStopsFollowing"] = true
             let readerOrigin = origin()
             let documentBefore = scroll.documentView?.frame.height ?? 0
-            // A free row is as tall as its tallest card, the folded request, so a longer
-            // reply alone leaves the page as it was. Four sub-agents under 실행 stack in
-            // its column and make the newest row, and the page, taller.
-            runs[runs.count - 1].agents = (0..<4).map { index in
+            // Four more sub-agents under 실행 stack in its column and make the board, and
+            // the page, taller.
+            runs[runs.count - 1].agents += (10..<14).map { index in
                 MightyGraphAgent(id: "structure-late-\(index)", title: "늦은 하위 에이전트 \(index)", input: "위로 끌어 둔 화면을 당기지 않는지 확인합니다.",
                                  status: "running", entries: [LogEntry(id: "structure-late-output-\(index)", kind: "assistant",
                                                                        text: "늦게 온 출력 \(index) · 아래에서 자라도 읽던 자리는 그대로입니다.", provider: "claude")])
             }
-            host.rootView = view()
-            try await store.waitForSmoke(timeout: 3, step: "newest card grows while the reader is up the page",
+            host.rootView = DockFixture(page: view())
+            try await store.waitForSmoke(timeout: 3, step: "newest board grows while the reader is up the page",
                                          detail: { "before=\(documentBefore) " + state() }) { (scroll.documentView?.frame.height ?? 0) > documentBefore + 10 }
             // Past the release grace and any follow pass the growth would have asked for.
             try await Task.sleep(for: .milliseconds(700))
@@ -199,9 +295,8 @@ enum MightyStructureInteractionDiagnostics {
 
             // 4. A click on a fold toggle still opens its text: the press is held while
             // it might become a drag, then sent on to the button.
-            // The page drag moved it right, past the first column's left edge: back to
-            // the page's left edge, so whole cards and their buttons are in view.
-            scroll.contentView.scroll(to: CGPoint(x: range().minimum.x, y: origin().y))
+            // Back to the page's top left, where the request card and its toggle are.
+            scroll.contentView.scroll(to: range().minimum)
             scroll.reflectScrolledClipView(scroll.contentView)
             try await settle(store, scroll, step: "structure page settles before the toggle click", detail: state)
             guard let toggle = foldToggle(in: scroll, memory: memory) else { throw MightyError("화면에 접힌 글의 펼치기 버튼이 없습니다. " + state()) }
@@ -220,6 +315,113 @@ enum MightyStructureInteractionDiagnostics {
                 throw MightyError("펼치기 클릭이 화면을 움직였거나 그대로 전달되지 않았습니다. " + state())
             }
             report["foldToggleClickToggles"] = true
+
+            // 5. A trackpad gesture with its momentum, and a mouse wheel, move the page on
+            // both axes. The dock's scroll view around the page took them all before.
+            guard let dock = scroll.enclosingScrollView else { throw MightyError("구조 보기를 감싼 창 배치 스크롤 뷰가 없습니다. " + state()) }
+            let dockStart = dock.contentView.bounds.origin
+            func wheelState() -> String {
+                "dock=\(NSStringFromPoint(dock.contentView.bounds.origin)) dockStart=\(NSStringFromPoint(dockStart))"
+                    + " pageWheels=\(probe.pageWheels) innerWheels=\(probe.innerWheels) userMoving=\(memory.userMoving)"
+                    + " reports=\(memory.reports) lastReport=" + (memory.lastReport.map { String(format: "{originY=%.1f age=%.3fs userMoving=%@}", $0.originY,
+                        ProcessInfo.processInfo.systemUptime - $0.at, $0.userMoving.description) } ?? "nil") + " " + state()
+            }
+            func dockStill() -> Bool { !changed(dock.contentView.bounds.origin, dockStart) }
+            let wheelPans = probe.pans
+            try await followAtEnd("page back at its end follows the newest board before the trackpad", detail: wheelState)
+            try await settle(store, scroll, step: "structure page settles before the trackpad scroll", detail: wheelState)
+            // 5a. Fingers moving down over empty page space, drifting a little sideways, then
+            // momentum: the page shows 180pt more above and keeps to the vertical axis.
+            let trackpadStart = origin()
+            let (space, spaceDetail) = try pagePoint(probe, scroll, room: .zero)
+            let spacePoint = scroll.convert(space, to: nil)
+            report["trackpadPoint"] = spaceDetail
+            let pageWheelsBefore = probe.pageWheels
+            report["trackpadWheel"] = try MightyGraphInteractionDiagnostics.postWheel(window: window, at: spacePoint, phase: .began)
+            for _ in 0..<5 { try MightyGraphInteractionDiagnostics.postWheel(window: window, at: spacePoint, dx: -2, dy: 30, phase: .changed) }
+            try MightyGraphInteractionDiagnostics.postWheel(window: window, at: spacePoint, phase: .ended)
+            try MightyGraphInteractionDiagnostics.postWheel(window: window, at: spacePoint, dy: 10, momentum: .began)
+            try MightyGraphInteractionDiagnostics.postWheel(window: window, at: spacePoint, dy: 10, momentum: .changed)
+            try MightyGraphInteractionDiagnostics.postWheel(window: window, at: spacePoint, dy: 10, momentum: .changed)
+            try MightyGraphInteractionDiagnostics.postWheel(window: window, at: spacePoint, momentum: .ended)
+            try await store.waitForSmoke(timeout: 3, step: "trackpad scroll over empty page space moves the page up by its deltas",
+                                         detail: { "start=\(NSStringFromPoint(trackpadStart)) expected=(+0,-180) chosen: \(spaceDetail) " + wheelState() }) {
+                abs(origin().y - (trackpadStart.y - 180)) <= 2 && abs(origin().x - trackpadStart.x) <= 2 && !memory.follow.following
+            }
+            guard dockStill(), probe.pageWheels > pageWheelsBefore, probe.pans == wheelPans else {
+                throw MightyError("트랙패드 스크롤이 구조 보기 대신 창 배치를 움직였거나 끌기로 처리됐습니다. " + wheelState())
+            }
+            report["trackpadScrollMovesPageVertically"] = true
+            report["trackpadStopsFollowing"] = true
+            // 5b. Fingers moving left over a card's text, then momentum: the page shows 80pt
+            // more to the right. Text keeps no wheel of its own.
+            try await settle(store, scroll, step: "structure page settles before the sideways trackpad scroll", detail: wheelState)
+            guard let wheelField = selectableField(in: scroll, minimumWidth: 140) else { throw MightyError("휠을 굴릴 구조 본문이 화면에 없습니다. " + wheelState()) }
+            let wheelFieldFrame = scroll.convert(wheelField.bounds, from: wheelField)
+            let textPoint = scroll.convert(CGPoint(x: wheelFieldFrame.minX + 24, y: wheelFieldFrame.minY + 7), to: nil)
+            report["wheelTextPoint"] = "field=\(NSStringFromRect(wheelFieldFrame)) hit=\(probe.describe(probe.hitView(at: textPoint), in: scroll))"
+            let sidewaysStart = origin()
+            guard range().maximum.x - sidewaysStart.x >= 80 else { throw MightyError("옆으로 굴릴 여유가 없습니다. " + wheelState()) }
+            try MightyGraphInteractionDiagnostics.postWheel(window: window, at: textPoint, phase: .began)
+            for _ in 0..<4 { try MightyGraphInteractionDiagnostics.postWheel(window: window, at: textPoint, dx: -15, dy: 1, phase: .changed) }
+            try MightyGraphInteractionDiagnostics.postWheel(window: window, at: textPoint, phase: .ended)
+            try MightyGraphInteractionDiagnostics.postWheel(window: window, at: textPoint, dx: -10, momentum: .began)
+            try MightyGraphInteractionDiagnostics.postWheel(window: window, at: textPoint, dx: -10, momentum: .changed)
+            try MightyGraphInteractionDiagnostics.postWheel(window: window, at: textPoint, momentum: .ended)
+            try await store.waitForSmoke(timeout: 3, step: "trackpad scroll over a card's text moves the page sideways by its deltas",
+                                         detail: { "start=\(NSStringFromPoint(sidewaysStart)) expected=(+80,+0) " + wheelState() }) {
+                abs(origin().x - (sidewaysStart.x + 80)) <= 2 && abs(origin().y - sidewaysStart.y) <= 2 && !memory.follow.following
+            }
+            guard dockStill() else { throw MightyError("옆으로 굴린 트랙패드가 창 배치를 움직였습니다. " + wheelState()) }
+            report["trackpadScrollMovesPageSideways"] = true
+            // 5c. The newest board grows: past the wheel's grace nothing pulls the reader back.
+            let wheelReader = origin()
+            let wheelDocument = scroll.documentView?.frame.height ?? 0
+            runs[runs.count - 1].agents += (14..<17).map { index in
+                MightyGraphAgent(id: "structure-late-\(index)", title: "늦은 하위 에이전트 \(index)", input: "휠로 올려 둔 화면을 당기지 않는지 확인합니다.",
+                                 status: "running", entries: [LogEntry(id: "structure-late-output-\(index)", kind: "assistant",
+                                                                       text: "휠 뒤에 온 출력 \(index)", provider: "claude")])
+            }
+            host.rootView = DockFixture(page: view())
+            try await store.waitForSmoke(timeout: 3, step: "newest board grows after the trackpad scroll",
+                                         detail: { "before=\(wheelDocument) " + wheelState() }) { (scroll.documentView?.frame.height ?? 0) > wheelDocument + 10 }
+            try await Task.sleep(for: .milliseconds(700))
+            guard !changed(origin(), wheelReader), !memory.follow.following else {
+                throw MightyError("트랙패드로 옮긴 구조 보기가 700ms 안에 되돌아갔습니다. reader=\(NSStringFromPoint(wheelReader)) " + wheelState())
+            }
+            report["trackpadScrollNotPulledBack"] = true
+            // 5d. A mouse wheel's steps, which count lines, over a card's text, from the end
+            // while following: four steps up and two to the right stop following.
+            try await followAtEnd("page back at its end follows the newest board before the mouse wheel", detail: wheelState)
+            try await settle(store, scroll, step: "structure page settles before the mouse wheel", detail: wheelState)
+            guard let stepField = selectableField(in: scroll, minimumWidth: 140) else { throw MightyError("마우스 휠을 굴릴 구조 본문이 화면에 없습니다. " + wheelState()) }
+            let stepFieldFrame = scroll.convert(stepField.bounds, from: stepField)
+            let stepPoint = scroll.convert(CGPoint(x: stepFieldFrame.minX + 24, y: stepFieldFrame.minY + 7), to: nil)
+            let stepStart = origin()
+            let lineY = scroll.verticalLineScroll, lineX = scroll.horizontalLineScroll
+            let expected = CGPoint(x: stepStart.x + 4 * lineX, y: stepStart.y - 8 * lineY)
+            guard memory.follow.following, lineX > 0, lineY > 0, expected.x <= range().maximum.x, expected.y >= range().minimum.y else {
+                throw MightyError("마우스 휠을 굴릴 여유가 없습니다. expected=\(NSStringFromPoint(expected)) lines=(\(lineX),\(lineY)) " + wheelState())
+            }
+            report["mouseWheel"] = try MightyGraphInteractionDiagnostics.postWheel(window: window, at: stepPoint, dy: 2, continuous: false)
+            for _ in 0..<3 { try MightyGraphInteractionDiagnostics.postWheel(window: window, at: stepPoint, dy: 2, continuous: false) }
+            try MightyGraphInteractionDiagnostics.postWheel(window: window, at: stepPoint, dx: -2, continuous: false)
+            try MightyGraphInteractionDiagnostics.postWheel(window: window, at: stepPoint, dx: -2, continuous: false)
+            try await store.waitForSmoke(timeout: 3, step: "mouse wheel steps move the page by their lines on both axes and stop following",
+                                         detail: { "start=\(NSStringFromPoint(stepStart)) expected=\(NSStringFromPoint(expected)) lines=(\(lineX),\(lineY)) " + wheelState() }) {
+                abs(origin().x - expected.x) <= 2 && abs(origin().y - expected.y) <= 2 && !memory.follow.following
+            }
+            let wheelEnd = origin()
+            try await Task.sleep(for: .milliseconds(700))
+            guard dockStill(), !changed(origin(), wheelEnd), !memory.follow.following else {
+                throw MightyError("마우스 휠로 옮긴 구조 보기가 되돌아갔거나 창 배치가 움직였습니다. end=\(NSStringFromPoint(wheelEnd)) " + wheelState())
+            }
+            report["mouseWheelMovesPageOnBothAxes"] = true
+            report["mouseWheelStopsFollowing"] = true
+            report["wheelGeometry"] = ["trackpadStart": NSStringFromPoint(trackpadStart), "sidewaysStart": NSStringFromPoint(sidewaysStart),
+                                       "wheelReader": NSStringFromPoint(wheelReader), "stepStart": NSStringFromPoint(stepStart),
+                                       "stepEnd": NSStringFromPoint(wheelEnd), "lines": "\(lineX),\(lineY)",
+                                       "dock": NSStringFromPoint(dock.contentView.bounds.origin), "pageWheels": probe.pageWheels]
             report["screenshot"] = try store.captureSmokeWindow(window, filename: "mighty-structure-pan.png").path
             report["passed"] = true
         } catch {
@@ -229,16 +431,38 @@ enum MightyStructureInteractionDiagnostics {
         return report
     }
 
-    /// Eight free requests, each long enough to fold, with a reply under each: wider
-    /// than the window (three 300pt columns) and many times its height.
-    private static func fixtureRuns() -> [MightyGraphRun] {
-        (0..<8).map { index in
-            let input = (0..<14).map { "구조 요청 \(index) · 줄 \($0) · 끌어서 옮기는 구조 보기를 검증합니다." }.joined(separator: "\n")
-            let reply = index == 7 ? "진행 중인 답 한 줄"
-                : (0..<8).map { "답 \(index) · 줄 \($0) · 카드 본문은 선택할 수 있습니다." }.joined(separator: "\n")
-            return MightyGraphRun(id: "structure-run-\(index)", input: input, status: index == 7 ? "running" : "completed",
-                                  rootEntries: [LogEntry(id: "structure-reply-\(index)", kind: "assistant", text: reply, provider: "claude")])
+    /// The pane dock around every pane (`PaneDockView`): a two-axis scroll view whose
+    /// content is its own size less the dock's inset. Left alone, it took the page's wheel.
+    private struct DockFixture: View {
+        let page: MightyStructureView
+        var body: some View {
+            GeometryReader { geometry in
+                ScrollView([.horizontal, .vertical]) {
+                    page.frame(width: max(DesignMetrics.Layout.paneMinWidth, geometry.size.width - 2 * DesignMetrics.Inset.dock),
+                               height: max(DesignMetrics.Layout.paneMinHeight, geometry.size.height - 2 * DesignMetrics.Inset.dock))
+                        .padding(DesignMetrics.Inset.dock)
+                }
+            }
         }
+    }
+
+    /// A free request long enough to fold, with a reply and `agents` sub-agents under it,
+    /// every third one nested under the one before. A board with ten is many times the
+    /// window's height; its three 280pt columns are wider than the window.
+    private static func request(_ index: Int, running: Bool, agents: Int) -> MightyGraphRun {
+        let input = (0..<14).map { "구조 요청 \(index) · 줄 \($0) · 끌어서 옮기는 구조 보기를 검증합니다." }.joined(separator: "\n")
+        let reply = running ? "진행 중인 답 한 줄"
+            : (0..<8).map { "답 \(index) · 줄 \($0) · 카드 본문은 선택할 수 있습니다." }.joined(separator: "\n")
+        let blocks = (0..<agents).map { agent in
+            MightyGraphAgent(id: "structure-\(index)-agent-\(agent)", parentID: agent % 3 == 2 ? "structure-\(index)-agent-\(agent - 1)" : nil,
+                             title: "하위 에이전트 \(agent)", input: "요청 \(index)의 일을 나눠 맡습니다.",
+                             status: running ? "running" : "completed",
+                             entries: [LogEntry(id: "structure-\(index)-output-\(agent)", kind: "assistant",
+                                                text: (0..<3).map { "출력 요청 \(index) · 하위 \(agent) · 줄 \($0) · 칸이 길어집니다." }.joined(separator: "\n"),
+                                                provider: "claude")])
+        }
+        return MightyGraphRun(id: "structure-run-\(index)", input: input, status: running ? "running" : "completed",
+                              rootEntries: [LogEntry(id: "structure-reply-\(index)", kind: "assistant", text: reply, provider: "claude")], agents: blocks)
     }
 
     /// A page point (scroll view coordinates) whose press would pan, with `room` for
@@ -334,10 +558,14 @@ enum MightyStructureInteractionDiagnostics {
         return nil
     }
 
+    /// How long a posted click on a navigation control may take to run it.
+    private static let clickGrace: TimeInterval = 1.5
+
     private static func post(_ window: NSWindow, _ type: NSEvent.EventType, at windowPoint: CGPoint, number: Int) throws {
+        let press = type == .leftMouseDown || type == .leftMouseDragged
         guard let event = NSEvent.mouseEvent(with: type, location: windowPoint, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
-                                             windowNumber: window.windowNumber, context: nil, eventNumber: number, clickCount: 1,
-                                             pressure: type == .leftMouseUp ? 0 : 1) else { throw MightyError("구조 끌기 검증 이벤트를 만들지 못했습니다.") }
+                                             windowNumber: window.windowNumber, context: nil, eventNumber: number, clickCount: type == .mouseMoved ? 0 : 1,
+                                             pressure: press ? 1 : 0) else { throw MightyError("구조 끌기 검증 이벤트를 만들지 못했습니다.") }
         NSApp.postEvent(event, atStart: false)
     }
     /// A press, two drag steps and a release, in scroll view coordinates.

@@ -510,19 +510,55 @@ enum MightyGraphInteractionDiagnostics {
         window.contentView = host
         try await Task.sleep(for: .milliseconds(160))
         let bounds = host.bounds
-        let first = try pixels(host)
+        // The spark, the bars and the border move in Core Animation, which a cached display
+        // does not see (it draws the still pose): read the frames off the presentation layers.
+        let looping = descendants(host, as: LoopingLayerView.self)
+        let first = presentation(looping), firstTurn = sparkTurn(looping)
         let firstURL = try store.captureSmokeWindow(window, filename: "mighty-graph-activity-first.png")
         try await Task.sleep(for: .milliseconds(280))
-        let second = try pixels(host)
+        let second = presentation(looping), secondTurn = sparkTurn(looping)
         let secondURL = try store.captureSmokeWindow(window, filename: "mighty-graph-activity-second.png")
         let reduced = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        guard host.bounds == bounds, reduced ? first == second : first != second else { throw MightyError("실행 표시의 실제 두 프레임 또는 고정된 크기 검증에 실패했습니다.") }
+        // The canvas is y-down on screen with its origin at the view's top-left, so a
+        // growing angle turns the spark clockwise, as SwiftUI's rotationEffect did.
+        // The spark, then (motion on) the bars and the border.
+        guard looping.count == (reduced ? 1 : 3), looping.allSatisfy(canvasStartsTopLeft) else { throw MightyError("실행 표시의 Core Animation 캔버스 방향 또는 위치가 잘못됐습니다.") }
+        let turned = firstTurn.flatMap { a in secondTurn.map { b in remainder(b - a, 2 * Double.pi) } }
+        guard host.bounds == bounds, reduced ? first.isEmpty && turned == nil
+                : (!first.isEmpty && first != second && (turned ?? 0) > 0.1) else { throw MightyError("실행 표시의 실제 두 프레임, 시계 방향 회전 또는 고정된 크기 검증에 실패했습니다.") }
         host.rootView = ActivityFixture(status: "completed")
         try await Task.sleep(for: .milliseconds(100))
         let completedFirst = try pixels(host)
         try await Task.sleep(for: .milliseconds(180))
-        guard completedFirst == (try pixels(host)) else { throw MightyError("완료된 실행 표시가 계속 움직입니다.") }
-        return ["passed": true, "activeFramesDiffer": first != second, "systemReduceMotion": reduced, "reducedMotionPolicyStatic": true, "completedFramesIdentical": true, "geometryUnchanged": true, "firstScreenshot": firstURL.path, "secondScreenshot": secondURL.path]
+        guard descendants(host, as: LoopingLayerView.self).isEmpty, completedFirst == (try pixels(host)) else { throw MightyError("완료된 실행 표시가 계속 움직입니다.") }
+        return ["passed": true, "activeFramesDiffer": first != second, "coreAnimationViews": looping.count, "sparkTurnRadians": turned ?? 0, "canvasTopLeft": true, "systemReduceMotion": reduced, "reducedMotionPolicyStatic": true, "completedFramesIdentical": true, "geometryUnchanged": true, "firstScreenshot": firstURL.path, "secondScreenshot": secondURL.path]
+    }
+
+    /// What every looping layer shows right now: its height, turn, opacity and dash phase
+    /// as the render tree has them.
+    private static func presentation(_ views: [LoopingLayerView]) -> [Double] {
+        func layers(_ layer: CALayer) -> [CALayer] { [layer] + (layer.sublayers ?? []).flatMap(layers) }
+        return views.flatMap { layers($0.canvas) }.filter { !($0.animationKeys() ?? []).isEmpty }.flatMap { layer -> [Double] in
+            let shown = layer.presentation() ?? layer
+            return [shown.bounds.height, shown.transform.m11, shown.transform.m12, Double(shown.opacity), (shown as? CAShapeLayer)?.lineDashPhase ?? 0].map { Double($0) }
+        }
+    }
+
+    /// The running spark's angle now (radians, growing clockwise in the y-down canvas);
+    /// nil when no spark turns.
+    private static func sparkTurn(_ views: [LoopingLayerView]) -> Double? {
+        guard let rotor = views.lazy.compactMap({ $0.canvas.sublayers?.first { $0.animation(forKey: "turn") != nil } }).first else { return nil }
+        let shown = (rotor.presentation() ?? rotor).transform
+        return atan2(Double(shown.m12), Double(shown.m11))
+    }
+
+    /// The canvas's (0, 0) sits on the view's top-left and its y grows down the screen.
+    private static func canvasStartsTopLeft(_ view: LoopingLayerView) -> Bool {
+        var root = view.canvas
+        while let parent = root.superlayer { root = parent }
+        let origin = view.canvas.convert(CGPoint.zero, to: root), below = view.canvas.convert(CGPoint(x: 0, y: 10), to: root)
+        let topLeft = view.convert(NSPoint.zero, to: nil)
+        return abs(origin.x - topLeft.x) < 0.5 && abs(origin.y - topLeft.y) < 0.5 && abs(below.y - (origin.y - 10)) < 0.5
     }
 
     private struct ActivityFixture: View {
@@ -530,9 +566,12 @@ enum MightyGraphInteractionDiagnostics {
         var body: some View {
             ZStack {
                 Palette.canvas
-                MightyGraphActivityIndicator(status: status, tint: Palette.run)
-                    .frame(width: 140, height: 52)
-                    .overlay { MightyGraphActivityOutline(tone: DesignTone(blockStatus: status)) }
+                HStack(spacing: DesignMetrics.Spacing.sm) {
+                    StatusGlyph(tone: DesignTone(blockStatus: status))
+                    MightyGraphActivityIndicator(status: status, tint: Palette.run)
+                        .frame(width: 140, height: 52)
+                        .overlay { MightyGraphActivityOutline(tone: DesignTone(blockStatus: status)) }
+                }
             }
         }
     }
@@ -572,7 +611,11 @@ enum MightyGraphInteractionDiagnostics {
         }
     }
     @discardableResult
-    static func postWheel(window: NSWindow, at point: NSPoint, dx: Int32 = 0, dy: Int32 = 0, phase: NSEvent.Phase = []) throws -> [String: Any] {
+    /// A wheel event as a trackpad sends it (continuous point deltas, with a gesture
+    /// `phase` or a `momentum` phase), or, `continuous` false, as a mouse wheel's step,
+    /// whose deltas count lines.
+    static func postWheel(window: NSWindow, at point: NSPoint, dx: Int32 = 0, dy: Int32 = 0, phase: NSEvent.Phase = [],
+                          momentum: NSEvent.Phase = [], continuous: Bool = true) throws -> [String: Any] {
         // A CG-created wheel loses its NSWindow on conversion. Starting with a
         // public window-targeted mouse event retains AppKit's window context.
         guard let mouse = NSEvent.mouseEvent(with: .mouseMoved, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil, eventNumber: 1, clickCount: 0, pressure: 0),
@@ -583,11 +626,16 @@ enum MightyGraphInteractionDiagnostics {
         cg.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: Int64(window.windowNumber))
         cg.setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: Int64(window.windowNumber))
         cg.setIntegerValueField(.eventTargetUnixProcessID, value: Int64(ProcessInfo.processInfo.processIdentifier))
-        cg.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
-        cg.setIntegerValueField(.scrollWheelEventPointDeltaAxis1, value: Int64(dy))
-        cg.setIntegerValueField(.scrollWheelEventPointDeltaAxis2, value: Int64(dx))
-        cg.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: Double(dy))
-        cg.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2, value: Double(dx))
+        cg.setIntegerValueField(.scrollWheelEventIsContinuous, value: continuous ? 1 : 0)
+        if continuous {
+            cg.setIntegerValueField(.scrollWheelEventPointDeltaAxis1, value: Int64(dy))
+            cg.setIntegerValueField(.scrollWheelEventPointDeltaAxis2, value: Int64(dx))
+            cg.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: Double(dy))
+            cg.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2, value: Double(dx))
+        } else {
+            cg.setIntegerValueField(.scrollWheelEventDeltaAxis1, value: Int64(dy))
+            cg.setIntegerValueField(.scrollWheelEventDeltaAxis2, value: Int64(dx))
+        }
         let rawPhase: Int64
         switch phase {
         case []: rawPhase = 0
@@ -596,10 +644,20 @@ enum MightyGraphInteractionDiagnostics {
         case .ended: rawPhase = 4
         default: throw MightyError("지원하지 않는 검증 휠 단계입니다.")
         }
+        // CoreGraphics numbers momentum as none 0, begin 1, continue 2, end 3.
+        let rawMomentum: Int64
+        switch momentum {
+        case []: rawMomentum = 0
+        case .began: rawMomentum = 1
+        case .changed: rawMomentum = 2
+        case .ended: rawMomentum = 3
+        default: throw MightyError("지원하지 않는 검증 관성 단계입니다.")
+        }
+        guard phase.isEmpty || momentum.isEmpty, continuous || (phase.isEmpty && momentum.isEmpty) else { throw MightyError("검증 휠의 단계 조합이 올바르지 않습니다.") }
         cg.setIntegerValueField(.scrollWheelEventScrollPhase, value: rawPhase)
-        cg.setIntegerValueField(.scrollWheelEventMomentumPhase, value: 0)
+        cg.setIntegerValueField(.scrollWheelEventMomentumPhase, value: rawMomentum)
         guard let event = NSEvent(cgEvent: cg), event.window === window, event.type == .scrollWheel,
-              event.phase == phase, event.momentumPhase.isEmpty,
+              event.phase == phase, event.momentumPhase == momentum, event.hasPreciseScrollingDeltas == continuous,
               abs(event.locationInWindow.x - point.x) < 1, abs(event.locationInWindow.y - point.y) < 1,
               abs(event.scrollingDeltaX - CGFloat(dx)) < 0.1, abs(event.scrollingDeltaY - CGFloat(dy)) < 0.1 else { throw MightyError("합성 휠의 창·이동량·단계가 요청한 값과 다릅니다.") }
         let hit = window.contentView.flatMap { content in
@@ -609,7 +667,7 @@ enum MightyGraphInteractionDiagnostics {
         var current = hit
         while let view = current, ancestors.count < 24 { ancestors.append(String(describing: type(of: view))); current = view.superview }
         let hitScroll = hit?.enclosingScrollView
-        let evidence: [String: Any] = ["requestedWindowPoint": NSStringFromPoint(point), "eventWindowPoint": NSStringFromPoint(event.locationInWindow), "hitAncestors": ancestors, "hitScroll": hitScroll.map { String(describing: type(of: $0)) } ?? "none", "hitScrollClip": NSStringFromRect(hitScroll?.contentView.bounds ?? .zero), "deltaX": event.scrollingDeltaX, "deltaY": event.scrollingDeltaY, "phase": event.phase.rawValue]
+        let evidence: [String: Any] = ["requestedWindowPoint": NSStringFromPoint(point), "eventWindowPoint": NSStringFromPoint(event.locationInWindow), "hitAncestors": ancestors, "hitScroll": hitScroll.map { String(describing: type(of: $0)) } ?? "none", "hitScrollClip": NSStringFromRect(hitScroll?.contentView.bounds ?? .zero), "deltaX": event.scrollingDeltaX, "deltaY": event.scrollingDeltaY, "phase": event.phase.rawValue, "momentumPhase": event.momentumPhase.rawValue, "continuous": continuous]
         NSApp.postEvent(event, atStart: false)
         return evidence
     }

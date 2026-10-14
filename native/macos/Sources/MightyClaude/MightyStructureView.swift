@@ -3,53 +3,76 @@ import MightyCore
 import SwiftUI
 
 /// What the structure view keeps of a pane while the pane shows its diagram or timeline,
-/// so coming back finds the same cards open. Held by the pane's `MightyGraphView`.
+/// so coming back finds the same board and the same cards open. Held by the pane's
+/// `MightyGraphView`.
 final class MightyStructureMemory: ObservableObject {
     /// Texts opened past their folded lines, by `MightyStructureView.foldKey`.
     @Published var expanded = Set<String>()
-    /// Finished requests the user opened by hand, by run id: every other finished
-    /// request shows folded (`MightyStructure.Fold`).
-    @Published var unfoldedCards = Set<String>()
-    /// Where the folded cards sit in the scroll view, by run id, for the GUI smoke: a
+    /// The board shown (`MightyStructure.Navigation`).
+    @Published var navigation = MightyStructure.Navigation()
+    /// The list of boards is open.
+    @Published var listOpen = false
+    /// Where the navigation controls sit in SwiftUI's global space, by name ("previous",
+    /// "next", "list", "badge"), and the page's scroll view ("page"), for the GUI smoke: a
     /// SwiftUI button has no native view to find it by. Not published.
-    var foldedFrames: [String: CGRect] = [:]
-    /// Whether the page follows the newest card (`MightyGraphFollow.PageWatch`). Not
-    /// published: scrolling redraws nothing.
+    var controlFrames: [String: CGRect] = [:]
+    /// Whether the page follows the newest board's end (`MightyGraphFollow.PageWatch`).
+    /// Not published: scrolling redraws nothing.
     var follow = MightyGraphFollow.PageWatch()
-    /// The user's fingers or wheel are scrolling the page right now (macOS 15 and later).
+    /// The system reports a scroll of the page right now, such as a drag of its scroll
+    /// bar (macOS 15 and later).
     var userScrolling = false
     /// The user is dragging the page's empty space (`MightyStructurePanning`), and when
     /// the last such drag ended.
     var panning = false
     var panReleasedAt: TimeInterval = 0
-    /// The page is moving under the user's hand: a scroll, a drag, or the moment after
-    /// a drag whose last step the page may report late (`MightyStructurePan.releaseGrace`).
+    /// The page's wheel and trackpad gestures, which `MightyStructurePanning` moves the
+    /// page by: the system never sees them, so it reports no scroll for them.
+    var wheel = MightyStructureWheel.Tracker()
+    /// For the GUI diagnostics: page reports judged so far, and the last one's origin,
+    /// time and whether it was judged as the user's move.
+    var reports = 0
+    var lastReport: (originY: Double, at: TimeInterval, userMoving: Bool)?
+    /// The page is moving under the user's hand: a scroll, a drag or the moment after it
+    /// (`MightyStructurePan.releaseGrace`), or a wheel or trackpad gesture still going.
     var userMoving: Bool {
-        userScrolling || panning || ProcessInfo.processInfo.systemUptime - panReleasedAt < MightyStructurePan.releaseGrace
+        MightyStructureWheel.userMoving(scrollPhase: userScrolling, panning: panning, panReleasedAt: panReleasedAt,
+                                        wheel: wheel, now: ProcessInfo.processInfo.systemUptime)
+    }
+
+    /// Shows board `id` of `boards` and closes the list: what a list entry does.
+    func choose(_ id: String, in boards: [MightyStructure.Board]) {
+        navigation.select(id, in: boards)
+        listOpen = false
     }
 }
 
-/// The Mighty graph drawn as its structure (design "A. 단계별 열"), from
-/// `MightyStructure.make`: a styled pane's phases as a rail of chips with a column of
-/// request cards under each, a free pane's requests as one 요청 → 실행 → 결과 row each.
-/// Under every card its sub-agent trees sit in dashed boxes.
+/// The Mighty graph drawn as its structure, as a kanban board: one request of a free pane
+/// or one pipeline of a styled pane at a time (`MightyStructure.boards`). On top, ◀ and ▶
+/// step between the boards and the title opens the list of them all; a badge says a newer
+/// board arrived while an older one is shown. Under it the board's steps (요청 → 실행 →
+/// 결과, or the style's phases) as chips joined by lines, with the board's status; then
+/// one column per step, side by side, each with its cards.
 ///
-/// The cards read on their own: the request alone, then its 실행 part with the latest
-/// reply, the last tool calls and the status, the answer once it finished, and each
-/// sub-agent's prompt, output and last tool call. A long text opens in place; the small
-/// button in a card's header shows its block in the diagram, as opening a timeline row
-/// aims the diagram's camera.
+/// The cards read on their own: the request alone, its 실행 part with the latest reply, the
+/// last tool calls and the status, the answer once it finished, and each sub-agent's
+/// prompt, output and last tool call. A long text opens in place; the small button in a
+/// card's header shows its block in the diagram, as opening a timeline row aims the
+/// diagram's camera.
 struct MightyStructureView: View {
     let sessionID: String
     let provider: String
-    let shape: MightyStructure.Shape
+    /// The pane's boards, oldest first.
+    let boards: [MightyStructure.Board]
+    /// The pane's style, which names a pipeline whose first request has no words.
+    var styleName: String? = nil
     /// Request titles' style prefixes, as the diagram and the timeline title them.
     let styleTitles: StyleRequestTitles
-    /// The newest request, kept in view as the timeline keeps it.
+    /// The newest request: a new one is the user's own send, followed on the newest board.
     let newestRunID: String?
     /// Model catalog for a sub-agent's model name, as the diagram's capsules shorten it.
     var catalog: [ModelOption] = []
-    /// The pane's open texts and follow state, kept across view switches.
+    /// The pane's board, open texts and follow state, kept across view switches.
     @ObservedObject var memory: MightyStructureMemory
     /// Shows a diagram node (`MightyGraphLayout.Node.id`) in the diagram.
     let onReveal: (String) -> Void
@@ -59,6 +82,7 @@ struct MightyStructureView: View {
 
     private static let chipHeight: CGFloat = 20
     private static let scrollSpace = "mighty-structure-scroll"
+    private static let topID = "mighty-structure-top"
     private static let endID = "mighty-structure-end"
     /// A card's and a sub-agent card's corners.
     static let cardCorner: CGFloat = 10
@@ -66,144 +90,226 @@ struct MightyStructureView: View {
     /// A sub-agent card's status bar, and the glyph column of a tool call row.
     private static let statusBarWidth: CGFloat = 3
     private static let glyphWidth: CGFloat = 14
-    /// The dashed outline around a sub-agent tree.
-    private static let clusterDash: [CGFloat] = [4, 3]
     /// Type sizes: a card's texts, a sub-agent's output, its prompt.
     private static let textSize: CGFloat = 12
     private static let outputSize: CGFloat = 11
     private static let promptSize: CGFloat = 10.5
+    /// The list of boards.
+    private static let listWidth: CGFloat = 340
+    private static let listHeight: CGFloat = 420
 
     var body: some View {
-        GeometryReader { geo in
-            // The pane's width, read from outside the scroll view, so the columns'
-            // width never feeds back into what is measured.
-            let scroller = legacyScrollers ? NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy) : 0
-            let available = geo.size.width - scroller - 2 * DesignMetrics.Inset.graphBlockBodyH
-            ScrollViewReader { proxy in
-                ScrollView([.horizontal, .vertical]) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        Group {
-                            switch shape {
-                            case .phases(let columns):
-                                phases(columns, width: MightyStructure.columnWidth(available: available, count: columns.count, gap: DesignMetrics.Spacing.lg))
-                            case .free(let rows):
-                                free(rows, width: MightyStructure.columnWidth(available: available, count: 3, gap: DesignMetrics.Spacing.lg))
-                            }
-                        }
-                        .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).padding(.vertical, DesignMetrics.Spacing.md)
-                        // The page's end, which a follow scrolls to when the newest card ends the page.
-                        Color.clear.frame(width: 1, height: 1).id(Self.endID)
-                    }
-                    .background(GeometryReader { content in
-                        Color.clear.preference(key: MightyStructurePage.self, value: .init(content: content.frame(in: .named(Self.scrollSpace))))
-                    })
-                }
-                .coordinateSpace(name: Self.scrollSpace)
-                // Dragging the page's empty space moves it, as in the diagram.
-                .background(MightyStructurePanning(sessionID: sessionID, memory: memory))
-                // The pane's height joins the same report: a taller composer moves no
-                // content, yet may hide the newest card.
-                .background(GeometryReader { pane in
-                    Color.clear.preference(key: MightyStructurePage.self, value: .init(visible: pane.size.height))
-                })
-                .modifier(MightyStructureScrollRoles(memory: memory))
-                // Every report of where the page stands decides whether it follows the
-                // newest card and where it scrolls (`MightyGraphFollow.PageWatch`).
-                .onPreferenceChange(MightyStructurePage.self) { report in
-                    guard let content = report.content, let visible = report.visible else { return }
-                    let newest = report.newest?.id == newestRunID ? report.newest.map { Double($0.bottom - content.minY) } : nil
-                    let page = MightyGraphFollow.Page(originY: Double(-content.minY), visibleHeight: Double(visible),
-                                                      documentHeight: Double(content.height), newestID: newestRunID, newestBottom: newest)
-                    scroll(memory.follow.observe(page, userScrolling: memory.userMoving), proxy)
-                }
-                .onAppear { scroll(memory.follow.appeared(newestID: newestRunID), proxy) }
-                // A new request is the user's own: shown, and followed from then on.
-                .onChange(of: newestRunID) { _, id in
-                    guard let id else { return }
-                    scroll(memory.follow.newRequest(id), proxy)
-                }
-                // An opened or folded text is being read: nothing follows until the
-                // reader comes back to the newest card. (The diagram's blocks keep their
-                // size as they open, so there the camera only re-judges where it is.)
-                .onChange(of: memory.expanded) { _, _ in memory.follow.stop() }
-                // So is a request the user opened or folded. A request that folds as it
-                // finishes is not the user's: the follow rule judges the page it leaves.
-                .onChange(of: memory.unfoldedCards) { _, _ in memory.follow.stop() }
-                .onPreferenceChange(MightyStructureFoldedFrames.self) { memory.foldedFrames = $0 }
+        let index = memory.navigation.index(in: boards)
+        let board = index.map { boards[$0] }
+        VStack(alignment: .leading, spacing: 0) {
+            if let index, let board {
+                navigationBar(index: index, board: board)
+                header(board)
+                Divider().overlay(Palette.border)
             }
+            page(board, onNewest: index.map { $0 == boards.count - 1 } ?? true)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSScroller.preferredScrollerStyleDidChangeNotification)) { _ in
             legacyScrollers = NSScroller.preferredScrollerStyle == .legacy
         }
+        .onPreferenceChange(MightyStructureControlFrames.self) { memory.controlFrames = $0 }
         .background(Palette.raised)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("mighty-structure-\(sessionID)")
     }
 
-    /// The page's end, or the newest card's bottom at the viewport's bottom. After the
-    /// current update: a report arrives while the page is being laid out.
-    private func scroll(_ target: MightyGraphFollow.Scroll?, _ proxy: ScrollViewProxy) {
-        guard let target else { return }
-        let free = if case .free = shape { true } else { false }
-        DispatchQueue.main.async {
-            // A drag on the page is the user's: nothing scrolls under it.
-            guard !memory.panning else { return }
-            switch target {
-            case .bottom: proxy.scrollTo(Self.endID, anchor: .bottomLeading)
-            case .card(let id): proxy.scrollTo(id, anchor: free ? .bottomLeading : .bottom)
+    // MARK: Navigation
+
+    /// ◀, the board's place with the list, ▶, and the badge of a newer board.
+    private func navigationBar(index: Int, board: MightyStructure.Board) -> some View {
+        let position = Self.position(board, index: index, count: boards.count)
+        return HStack(spacing: DesignMetrics.Spacing.sm) {
+            navButton("chevron.left", name: "previous", label: L("graph.structure.board.previous"), disabled: index == 0) {
+                memory.navigation.step(-1, in: boards)
             }
-        }
-    }
-
-    /// Reports the newest card's bottom with the page's frame, in one report.
-    @ViewBuilder private func newestMark(_ runID: String) -> some View {
-        if runID == newestRunID {
-            GeometryReader { card in
-                Color.clear.preference(key: MightyStructurePage.self,
-                                       value: .init(newest: .init(id: runID, bottom: card.frame(in: .named(Self.scrollSpace)).maxY)))
-            }
-        }
-    }
-
-    // MARK: Styled pane
-
-    private func phases(_ columns: [MightyStructure.Column], width: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
-            rail(columns.map { ($0.id, $0.phase.title, $0.step) }, width: width)
-                .accessibilityElement(children: .contain)
-                .accessibilityLabel(L("guidedPanel.phasesAccessibility"))
-            HStack(alignment: .top, spacing: DesignMetrics.Spacing.lg) {
-                ForEach(columns) { column in
-                    LazyVStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
-                        ForEach(column.items) { card($0, width: width).background(newestMark($0.runID)).id($0.id) }
-                    }
-                    .frame(width: width, alignment: .topLeading)
-                    .accessibilityElement(children: .contain)
-                    .accessibilityLabel(stepAccessibility(column.phase.title, column.step))
-                    .accessibilityIdentifier("mighty-structure-phase-\(column.id)")
+            Button { memory.listOpen.toggle() } label: {
+                HStack(spacing: DesignMetrics.Spacing.xs) {
+                    Text(position).font(.system(size: Self.textSize, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1).monospacedDigit()
+                    Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(Palette.ink2)
                 }
+                .frame(height: DesignMetrics.Layout.hitTarget)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .help(L("graph.structure.board.list"))
+            .accessibilityLabel(L("graph.structure.board.list"))
+            .accessibilityValue(position)
+            .accessibilityIdentifier("mighty-structure-list-\(sessionID)")
+            .background(controlMark("list"))
+            .popover(isPresented: $memory.listOpen, arrowEdge: .bottom) { boardList(index) }
+            navButton("chevron.right", name: "next", label: L("graph.structure.board.next"), disabled: index == boards.count - 1) {
+                memory.navigation.step(1, in: boards)
+            }
+            if memory.navigation.hasUnseen(in: boards) { newerBadge(board.kind) }
+            Spacer(minLength: 0)
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).padding(.top, DesignMetrics.Spacing.sm)
+    }
+
+    /// "요청 3 / 7" or "파이프라인 2 / 3".
+    static func position(_ board: MightyStructure.Board, index: Int, count: Int) -> String {
+        let subs = ["n": "\(index + 1)", "count": "\(count)"]
+        return board.kind == .request ? L("graph.structure.board.request", subs) : L("graph.structure.board.pipeline", subs)
+    }
+
+    private func navButton(_ icon: String, name: String, label: String, disabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon).font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(disabled ? Palette.ink2.opacity(0.4) : Palette.ink)
+                .frame(width: DesignMetrics.Layout.hitTarget, height: DesignMetrics.Layout.hitTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .help(label)
+        .accessibilityLabel(label)
+        .accessibilityIdentifier("mighty-structure-\(name)-\(sessionID)")
+        .background(controlMark(name))
+    }
+
+    /// A newer board arrived while an older one is shown: one click shows the newest.
+    private func newerBadge(_ kind: MightyStructure.Board.Kind) -> some View {
+        let text = kind == .request ? L("graph.structure.board.newRequest") : L("graph.structure.board.newPipeline")
+        return Button { memory.navigation.showNewest(in: boards) } label: {
+            Text(text).font(.system(size: 10, weight: .bold)).foregroundStyle(Palette.onAccent).lineLimit(1)
+                .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xxs)
+                .background(Palette.accent, in: Capsule())
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(L("graph.structure.board.showNewest"))
+        .accessibilityLabel(text)
+        .accessibilityHint(L("graph.structure.board.showNewest"))
+        .accessibilityIdentifier("mighty-structure-newer-\(sessionID)")
+        .background(controlMark("badge"))
+    }
+
+    /// Every board, newest last: its number, title, status and steps. A click shows it.
+    private func boardList(_ shown: Int) -> some View {
+        ScrollViewReader { proxy in
+            ScrollView(.vertical) {
+                LazyVStack(alignment: .leading, spacing: DesignMetrics.Inset.listGap) {
+                    ForEach(Array(boards.enumerated()), id: \.element.id) { index, board in
+                        listRow(board, index: index, shown: index == shown).id(board.id)
+                    }
+                }
+                .padding(DesignMetrics.Inset.popover)
+            }
+            .onAppear { proxy.scrollTo(boards[shown].id, anchor: .center) }
+        }
+        .frame(width: Self.listWidth).frame(maxHeight: Self.listHeight)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(L("graph.structure.board.list"))
+    }
+
+    /// One entry of the list: the board's number, status, title and steps.
+    private func listRow(_ board: MightyStructure.Board, index: Int, shown: Bool) -> some View {
+        let title = title(board)
+        let steps = stepsSummary(board)
+        let fill = shown ? Palette.track : Color.clear
+        let traits: AccessibilityTraits = shown ? [.isButton, .isSelected] : .isButton
+        return Button { memory.choose(board.id, in: boards) } label: {
+            HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
+                Text(verbatim: "\(index + 1)").font(.system(size: 11, weight: .bold)).monospacedDigit().foregroundStyle(Palette.ink2)
+                Image(systemName: Self.statusIcon(board.status)).font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Palette.mark(board.status))
+                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
+                    Text(verbatim: title).font(.system(size: Self.textSize, weight: shown ? .bold : .regular))
+                        .foregroundStyle(Palette.ink).lineLimit(1).truncationMode(.tail)
+                    Text(verbatim: steps).font(.system(size: 10)).foregroundStyle(Palette.ink2).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xs)
+            .background(fill, in: RoundedRectangle(cornerRadius: Self.nodeCorner, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Self.position(board, index: index, count: boards.count) + ", " + title)
+        .accessibilityValue(MightyGraphView.statusLabel(board.status) + ", " + steps)
+        .accessibilityAddTraits(traits)
+    }
+
+    /// The board's words: its first request's first line, else the style's name, else its place.
+    private func title(_ board: MightyStructure.Board) -> String {
+        board.headline ?? (board.kind == .pipeline ? styleName : nil)
+            ?? Self.position(board, index: board.ordinal - 1, count: boards.count)
+    }
+
+    /// "요청 ✓ → 실행 ● → 결과 ○": each step and where it stands.
+    private func stepsSummary(_ board: MightyStructure.Board) -> String {
+        board.steps.map { stepName($0) + " " + Self.stepMark($0.step) }.joined(separator: " → ")
+    }
+
+    private static func stepMark(_ step: MightyStructure.Step) -> String {
+        switch step {
+        case .done: "✓"
+        case .current: "●"
+        case .pending: "○"
+        case .error: "✕"
+        case .stopped: "■"
         }
     }
 
-    /// The chips over the columns, each joined to the next by a line that is green once
-    /// the step before it is done.
-    private func rail(_ steps: [(id: String, title: String, step: MightyStructure.Step)], width: CGFloat) -> some View {
-        HStack(alignment: .center, spacing: DesignMetrics.Spacing.lg) {
-            ForEach(Array(steps.enumerated()), id: \.element.id) { index, item in
-                HStack(spacing: 0) {
-                    chip(item.title, step: item.step)
-                    if index < steps.count - 1 {
-                        Rectangle().fill(item.step == .done ? Palette.done : Palette.track)
-                            .frame(height: 2).frame(maxWidth: .infinity)
-                            .padding(.trailing, -DesignMetrics.Spacing.lg)
+    private static func statusIcon(_ status: String) -> String {
+        switch status {
+        case "completed": "checkmark.circle.fill"
+        case "error": "exclamationmark.triangle.fill"
+        case "stopped": "stop.circle.fill"
+        case "waiting": "pause.circle.fill"
+        default: "circle.dotted"
+        }
+    }
+
+    /// Reports a navigation control's frame (`MightyStructureMemory.controlFrames`).
+    private func controlMark(_ name: String) -> some View {
+        GeometryReader { control in
+            Color.clear.preference(key: MightyStructureControlFrames.self, value: [name: control.frame(in: .global)])
+        }
+    }
+
+    // MARK: Board header
+
+    /// The board's status and first line, then its steps as chips joined by lines that
+    /// are green once the step before them is done.
+    private func header(_ board: MightyStructure.Board) -> some View {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
+                MightyStatusPill(text: MightyGraphView.statusLabel(board.status), tone: DesignTone(status: board.status))
+                Text(verbatim: title(board)).font(Palette.heading(13)).foregroundStyle(Palette.ink).lineLimit(1).truncationMode(.tail)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: 0)
+            }
+            HStack(spacing: 0) {
+                ForEach(Array(board.steps.enumerated()), id: \.element.id) { index, step in
+                    chip(stepName(step), step: step.step)
+                    if index < board.steps.count - 1 {
+                        Rectangle().fill(step.step == .done ? Palette.done : Palette.track)
+                            .frame(minWidth: DesignMetrics.Spacing.md, maxWidth: .infinity).frame(height: 2)
                             .accessibilityHidden(true)
-                    } else {
-                        Spacer(minLength: 0)
                     }
                 }
-                .frame(width: width, alignment: .leading)
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(L("guidedPanel.phasesAccessibility"))
+        }
+        .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).padding(.vertical, DesignMetrics.Spacing.sm)
+    }
+
+    /// A free step's localized name, or the phase's title.
+    private func stepName(_ step: MightyStructure.BoardStep) -> String {
+        if let title = step.title { return title }
+        switch step.id {
+        case "request": return L("graph.structure.column.request")
+        case "execution": return L("graph.structure.column.execution")
+        default: return L("graph.structure.column.result")
         }
     }
 
@@ -217,7 +323,7 @@ struct MightyStructureView: View {
         .foregroundStyle(look.ink)
         .padding(.horizontal, DesignMetrics.Spacing.md).frame(height: Self.chipHeight)
         .background(look.fill, in: Capsule())
-        // A long phase title is cut to its column; the whole title is in the help.
+        // A long phase title is cut first; the whole title is in the help.
         .layoutPriority(1)
         .help(title)
         .accessibilityElement(children: .ignore)
@@ -246,140 +352,259 @@ struct MightyStructureView: View {
         return L("graph.structure.stepAccessibility", ["name": name, "state": state])
     }
 
-    // MARK: Free pane
+    // MARK: Kanban
 
-    private func free(_ rows: [MightyStructure.Row], width: CGFloat) -> some View {
-        LazyVStack(alignment: .leading, spacing: DesignMetrics.Spacing.xl) {
-            if rows.isEmpty {
-                Text(L("graph.timeline.empty")).font(.system(size: 12)).foregroundStyle(Palette.ink2)
-                    .padding(.vertical, DesignMetrics.Spacing.md)
-            }
-            ForEach(rows) { row in
-                freeRow(row, width: width).background(newestMark(row.item.runID)).id(row.id)
-            }
-        }
-    }
-
-    @ViewBuilder private func freeRow(_ row: MightyStructure.Row, width: CGFloat) -> some View {
-        if MightyStructure.Fold.isFolded(row.item, unfolded: memory.unfoldedCards) {
-            // One compact row across the three columns.
-            foldedCard(row.item)
-                .frame(width: 3 * width + 2 * DesignMetrics.Spacing.lg, alignment: .topLeading)
-        } else {
-            openRow(row, width: width)
-        }
-    }
-
-    private func openRow(_ row: MightyStructure.Row, width: CGFloat) -> some View {
-        let item = row.item
-        let steps: [(id: String, title: String, step: MightyStructure.Step)] = [
-            ("request", L("graph.structure.column.request"), row.request),
-            ("execution", L("graph.structure.column.execution"), row.execution),
-            ("result", L("graph.structure.column.result"), row.result),
-        ]
-        return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
-            HStack(spacing: DesignMetrics.Spacing.sm) {
-                Text(heading(item)).font(Palette.heading(13)).foregroundStyle(Palette.ink).lineLimit(1)
-                    .accessibilityAddTraits(.isHeader)
-                if item.finished { foldCardButton(item) }
-                Spacer(minLength: 0)
-            }
-            rail(steps, width: width)
-            HStack(alignment: .top, spacing: DesignMetrics.Spacing.lg) {
-                // 요청
-                HStack(alignment: .top, spacing: DesignMetrics.Spacing.xs) {
-                    if let request = item.request {
-                        foldableText(request, key: Self.foldKey("request", item.runID), lines: MightyStructure.requestLines, size: Self.textSize,
-                                     width: Self.cardTextWidth(width) - DesignMetrics.Layout.hitTarget - DesignMetrics.Spacing.xs, name: steps[0].title)
+    /// The board's columns in a page that scrolls on both axes, dragged and wheeled as
+    /// the diagram is (`MightyStructurePanning`). On the newest board the page follows its
+    /// end as it grows (`MightyGraphFollow.PageWatch`); an older board opens at its top.
+    private func page(_ board: MightyStructure.Board?, onNewest: Bool) -> some View {
+        GeometryReader { geo in
+            // The pane's width, read from outside the scroll view, so the columns'
+            // width never feeds back into what is measured.
+            let scroller = legacyScrollers ? NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy) : 0
+            let available = geo.size.width - scroller - 2 * DesignMetrics.Inset.graphBlockBodyH
+            // The newest board's end is what the page follows; an older board follows nothing.
+            let followID = onNewest ? board?.id : nil
+            ScrollViewReader { proxy in
+                ScrollView([.horizontal, .vertical]) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Color.clear.frame(width: 1, height: 1).id(Self.topID)
+                        Group {
+                            if let board {
+                                kanban(board, width: MightyStructure.columnWidth(available: available, count: board.columns.count,
+                                                                                 gap: DesignMetrics.Spacing.lg))
+                                    .background(endMark(board.id, follows: onNewest))
+                                    .id(board.id)
+                            } else {
+                                Text(L("graph.timeline.empty")).font(.system(size: 12)).foregroundStyle(Palette.ink2)
+                                    .padding(.vertical, DesignMetrics.Spacing.md)
+                            }
+                        }
+                        .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).padding(.vertical, DesignMetrics.Spacing.md)
+                        // The page's end, which a follow scrolls to when the board ends the page.
+                        Color.clear.frame(width: 1, height: 1).id(Self.endID)
+                    }
+                    .background(GeometryReader { content in
+                        Color.clear.preference(key: MightyStructurePage.self, value: .init(content: content.frame(in: .named(Self.scrollSpace))))
+                    })
+                }
+                .coordinateSpace(name: Self.scrollSpace)
+                // Dragging the page's empty space moves it, as in the diagram.
+                .background(MightyStructurePanning(sessionID: sessionID, memory: memory))
+                // The page's own frame in the same space as the controls' frames: the GUI
+                // smoke maps that space onto the window through the pan probe, a native view
+                // with this very frame.
+                .background(controlMark("page"))
+                // The pane's height joins the same report: a taller composer moves no
+                // content, yet may hide the board's end.
+                .background(GeometryReader { pane in
+                    Color.clear.preference(key: MightyStructurePage.self, value: .init(visible: pane.size.height))
+                })
+                .modifier(MightyStructureScrollRoles(memory: memory))
+                // Every report of where the page stands decides whether it follows the
+                // board's end and where it scrolls (`MightyGraphFollow.PageWatch`).
+                .onPreferenceChange(MightyStructurePage.self) { report in
+                    guard let content = report.content, let visible = report.visible else { return }
+                    let newest = followID != nil && report.newest?.id == followID ? report.newest.map { Double($0.bottom - content.minY) } : nil
+                    let page = MightyGraphFollow.Page(originY: Double(-content.minY), visibleHeight: Double(visible),
+                                                      documentHeight: Double(content.height), newestID: followID, newestBottom: newest)
+                    let moving = memory.userMoving
+                    memory.reports += 1
+                    memory.lastReport = (page.originY, ProcessInfo.processInfo.systemUptime, moving)
+                    let target = memory.follow.observe(page, userScrolling: moving)
+                    if followID != nil { scroll(target, proxy) }
+                }
+                .onAppear {
+                    if let followID { scroll(memory.follow.appeared(newestID: followID), proxy) }
+                }
+                // A new request on the newest board is the user's own: shown, and followed from then on.
+                .onChange(of: newestRunID) { _, id in
+                    guard id != nil, let followID else { return }
+                    scroll(memory.follow.newRequest(followID), proxy)
+                }
+                // Another board: the newest is followed, an older one opens at its top.
+                .onChange(of: board?.id) { _, id in
+                    if let followID, id == followID {
+                        scroll(memory.follow.newRequest(followID), proxy)
                     } else {
-                        Text(verbatim: " ").font(.system(size: Self.textSize)).frame(maxWidth: .infinity, alignment: .leading)
+                        memory.follow.stop()
+                        DispatchQueue.main.async { proxy.scrollTo(Self.topID, anchor: .topLeading) }
                     }
-                    revealButton(item.nodeID)
                 }
-                .cardSurface()
+                // An opened or folded text is being read: nothing follows until the
+                // reader comes back to the board's end. (The diagram's blocks keep their
+                // size as they open, so there the camera only re-judges where it is.)
+                .onChange(of: memory.expanded) { _, _ in memory.follow.stop() }
+            }
+        }
+    }
+
+    /// The board's end, or its bottom at the viewport's bottom. After the current update:
+    /// a report arrives while the page is being laid out.
+    private func scroll(_ target: MightyGraphFollow.Scroll?, _ proxy: ScrollViewProxy) {
+        guard let target else { return }
+        DispatchQueue.main.async {
+            // A drag, a wheel or a trackpad gesture on the page is the user's: nothing
+            // scrolls under it, even a scroll asked for just before it began.
+            guard !memory.userMoving else { return }
+            switch target {
+            case .bottom: proxy.scrollTo(Self.endID, anchor: .bottomLeading)
+            case .card(let id): proxy.scrollTo(id, anchor: .bottomLeading)
+            }
+        }
+    }
+
+    /// Reports the newest board's bottom with the page's frame, in one report.
+    @ViewBuilder private func endMark(_ id: String, follows: Bool) -> some View {
+        if follows {
+            GeometryReader { board in
+                Color.clear.preference(key: MightyStructurePage.self,
+                                       value: .init(newest: .init(id: id, bottom: board.frame(in: .named(Self.scrollSpace)).maxY)))
+            }
+        }
+    }
+
+    /// One column per step, each with its header and its cards.
+    private func kanban(_ board: MightyStructure.Board, width: CGFloat) -> some View {
+        HStack(alignment: .top, spacing: DesignMetrics.Spacing.lg) {
+            ForEach(board.columns) { column in
+                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
+                    columnHeader(column)
+                    // One board holds one request's or one pipeline's cards: drawn whole,
+                    // so a follow or a jump finds every card laid out.
+                    VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
+                        ForEach(column.cards) { card($0, width: width).id($0.id) }
+                    }
+                }
                 .frame(width: width, alignment: .topLeading)
                 .accessibilityElement(children: .contain)
-                .accessibilityLabel(stepAccessibility(steps[0].title, row.request))
-                // 실행
-                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
-                    execution(item, width: width, titled: false)
-                        .accessibilityLabel(stepAccessibility(L("graph.block.executionOf", ["n": "\(item.ordinal)"]), row.execution))
-                    clusters(item.clusters, column: width)
-                }
-                .frame(width: width, alignment: .topLeading)
-                // 결과
-                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
-                    HStack(spacing: DesignMetrics.Spacing.sm) {
-                        resultTitle(item)
-                        Spacer(minLength: 0)
-                        revealButton(item.finished ? MightyGraphBlockSize.nodeID(runID: item.runID, suffix: "result") : item.executionNodeID)
-                    }
-                    // A reply without an answer is in 실행 already; 결과 says how the request ended.
-                    outcome(item)
-                }
-                .cardSurface()
-                .frame(width: width, alignment: .topLeading)
-                .accessibilityElement(children: .contain)
-                .accessibilityLabel(stepAccessibility(steps[2].title, row.result))
+                .accessibilityLabel(L("graph.structure.board.columnAccessibility",
+                                      ["name": stepName(column.step), "state": stepState(column.step.step), "count": "\(column.count)"]))
+                .accessibilityIdentifier("mighty-structure-column-\(column.id)")
             }
         }
         .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("mighty-structure-board-\(board.id)")
+    }
+
+    private func stepState(_ step: MightyStructure.Step) -> String {
+        switch step {
+        case .done: L("graph.structure.step.done")
+        case .current: L("graph.structure.step.current")
+        case .pending: L("graph.structure.step.pending")
+        case .error: L("graph.state.error")
+        case .stopped: L("graph.state.stopped")
+        }
+    }
+
+    /// The step's name in its state's ink, and how many cards it holds.
+    private func columnHeader(_ column: MightyStructure.BoardColumn) -> some View {
+        let look = Self.look(column.step.step)
+        return HStack(spacing: DesignMetrics.Spacing.sm) {
+            Image(systemName: look.icon).font(.system(size: 8, weight: .bold))
+                .foregroundStyle(column.step.step == .pending ? Palette.ink2 : look.fill)
+            Text(verbatim: stepName(column.step)).font(.system(size: Self.textSize, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
+            Text("\(column.count)").font(.system(size: 10, weight: .semibold)).monospacedDigit().foregroundStyle(Palette.ink2)
+                .padding(.horizontal, DesignMetrics.Spacing.sm).background(Palette.track, in: Capsule())
+            Spacer(minLength: 0)
+        }
+        .frame(height: Self.chipHeight)
+        .accessibilityHidden(true)
+    }
+
+    @ViewBuilder private func card(_ card: MightyStructure.Card, width: CGFloat) -> some View {
+        switch card {
+        case .request(let item): requestCard(item, width: width)
+        case .execution(let item):
+            execution(item, width: width, titled: true)
+                .accessibilityLabel(L("graph.block.executionOf", ["n": "\(item.ordinal)"]))
+        case .result(let item): resultCard(item)
+        case .summary(let item): summaryCard(item, width: width)
+        case .agent(let node, _, let parent): nodeCard(node, column: width, parent: parent)
+        }
+    }
+
+    // MARK: Cards
+
+    /// A free board's 요청: "Request N · Claude" and what was asked.
+    private func requestCard(_ item: MightyStructure.Item, width: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
+                Text(heading(item)).font(.system(size: Self.textSize, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
+                Spacer(minLength: DesignMetrics.Spacing.xs)
+                revealButton(item.nodeID)
+            }
+            if let request = item.request {
+                foldableText(request, key: Self.foldKey("request", item.runID), lines: MightyStructure.requestLines, size: Self.textSize,
+                             width: Self.cardTextWidth(width), name: L("graph.structure.column.request"))
+            }
+        }
+        .cardSurface()
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(L("graph.structure.contentAccessibility", ["name": heading(item), "text": item.input]))
         .accessibilityIdentifier("mighty-structure-request-\(item.runID)")
     }
 
-    // MARK: Cards and clusters
-
-    /// The request as the diagram draws it: "Request N · Claude" and what was asked; under
-    /// it its 실행 card, with the latest reply, tool calls and status; its sub-agent trees;
-    /// and once it finished, its answer.
-    @ViewBuilder private func card(_ item: MightyStructure.Item, width: CGFloat) -> some View {
-        if MightyStructure.Fold.isFolded(item, unfolded: memory.unfoldedCards) {
-            foldedCard(item)
-        } else {
-            openCard(item, width: width)
+    /// A free board's 결과: the answer, how the request ended, or that it is still to come.
+    private func resultCard(_ item: MightyStructure.Item) -> some View {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
+                resultTitle(item)
+                Spacer(minLength: 0)
+                revealButton(item.finished ? MightyGraphBlockSize.nodeID(runID: item.runID, suffix: "result") : item.executionNodeID)
+            }
+            // A reply without an answer is in 실행 already; 결과 says how the request ended.
+            outcome(item)
         }
+        .cardSurface()
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("mighty-structure-result-\(item.runID)")
     }
 
-    private func openCard(_ item: MightyStructure.Item, width: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
-            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
-                HStack(spacing: DesignMetrics.Spacing.sm) {
-                    Text(heading(item)).font(.system(size: Self.textSize, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
-                    Spacer(minLength: DesignMetrics.Spacing.xs)
-                    if item.finished { foldCardButton(item) }
-                    revealButton(item.nodeID)
-                }
-                if let request = item.request {
-                    foldableText(request, key: Self.foldKey("request", item.runID), lines: MightyStructure.requestLines, size: Self.textSize,
-                                 width: Self.cardTextWidth(width), name: L("graph.structure.column.request"))
-                }
+    /// A styled board's request: what was asked, its 실행 part (status, tally, latest
+    /// reply, tool calls) and how it ended, on one line.
+    private func summaryCard(_ item: MightyStructure.Item, width: CGFloat) -> some View {
+        let line = MightyStructure.Fold.resultLine(item)
+        return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
+                Text(heading(item)).font(.system(size: Self.textSize, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
+                Spacer(minLength: DesignMetrics.Spacing.xs)
+                revealButton(item.nodeID)
             }
-            .cardSurface()
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel(L("graph.structure.contentAccessibility", ["name": heading(item), "text": item.input]))
-            .accessibilityIdentifier("mighty-structure-request-\(item.runID)")
-            execution(item, width: width, titled: true)
-                .accessibilityLabel(L("graph.block.executionOf", ["n": "\(item.ordinal)"]))
-            clusters(item.clusters, column: width)
+            if let request = item.request {
+                foldableText(request, key: Self.foldKey("request", item.runID), lines: MightyStructure.requestLines, size: Self.textSize,
+                             width: Self.cardTextWidth(width), name: L("graph.structure.column.request"))
+            }
+            Divider().overlay(Palette.border)
+            HStack(spacing: DesignMetrics.Spacing.sm) {
+                Label(L("graph.block.executionOf", ["n": "\(item.ordinal)"]), systemImage: MightyGraphView.executionIcon)
+                    .font(.system(size: Self.outputSize, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
+                MightyStatusPill(text: MightyGraphView.statusLabel(item.status), tone: DesignTone(status: item.status))
+                tally(item)
+                Spacer(minLength: 0)
+                revealButton(item.executionNodeID)
+            }
+            progress(item, width: Self.cardTextWidth(width))
             if item.finished {
-                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
-                    HStack(spacing: DesignMetrics.Spacing.sm) {
-                        resultTitle(item)
-                        Spacer(minLength: 0)
-                        revealButton(MightyGraphBlockSize.nodeID(runID: item.runID, suffix: "result"))
-                    }
-                    // A reply without an answer is in 실행 already; the result says how the request ended.
-                    outcome(item)
+                HStack(alignment: .firstTextBaseline, spacing: DesignMetrics.Spacing.sm) {
+                    resultTitle(item)
+                    Text(verbatim: line ?? MightyGraphView.statusLabel(item.status))
+                        .font(.system(size: Self.outputSize)).foregroundStyle(line == nil ? Palette.text(item.status) : Palette.ink2)
+                        .lineLimit(1).truncationMode(.tail)
+                        .help(line ?? "")
+                    Spacer(minLength: 0)
+                    revealButton(MightyGraphBlockSize.nodeID(runID: item.runID, suffix: "result"))
                 }
-                .cardSurface()
-                .accessibilityElement(children: .contain)
-                .accessibilityIdentifier("mighty-structure-result-\(item.runID)")
             }
         }
+        .cardSurface()
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(L("graph.structure.contentAccessibility", ["name": heading(item), "text": item.input]))
+        .accessibilityIdentifier("mighty-structure-request-\(item.runID)")
     }
 
     /// The 실행 part: the main agent's status, tally, latest reply and tool calls, as the
-    /// diagram's 실행 block holds them. `titled` names it; a free row's rail already does.
+    /// diagram's 실행 block holds them. `titled` names it.
     private func execution(_ item: MightyStructure.Item, width: CGFloat, titled: Bool) -> some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
@@ -447,35 +672,12 @@ struct MightyStructureView: View {
         }
     }
 
-    @ViewBuilder private func clusters(_ clusters: [MightyStructure.Cluster], column: CGFloat) -> some View {
-        if !clusters.isEmpty {
-            // `MightyStructure.nodeTextWidth` takes these paddings off a node's width.
-            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
-                ForEach(clusters) { cluster($0, column: column) }
-            }
-            .padding(.leading, DesignMetrics.Spacing.lg)
-        }
-    }
-
-    private func cluster(_ cluster: MightyStructure.Cluster, column: CGFloat) -> some View {
-        LazyVStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
-            ForEach(cluster.nodes) { nodeCard($0, column: column) }
-        }
-        .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.sm)
-        .overlay {
-            RoundedRectangle(cornerRadius: Self.nodeCorner, style: .continuous)
-                .strokeBorder(Palette.border, style: StrokeStyle(lineWidth: 1, dash: Self.clusterDash))
-                .allowsHitTesting(false)
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(L("graph.structure.clusterAccessibility", ["count": "\(cluster.nodes.count)"]))
-    }
-
     /// A sub-agent or task as a small card: its status as a bar in its colour, its kind's
     /// glyph and ink as the diagram gives them (`MightyGraphView.agentPresentation`), its
-    /// title, kind and model; then what it was asked, its latest output and its last
-    /// tool call. Opened, it shows them whole and its last few tool calls.
-    private func nodeCard(_ node: MightyStructure.Node, column: CGFloat) -> some View {
+    /// title, kind and model; the block it runs under, when it is nested (indented by its
+    /// depth too); then what it was asked, its latest output and its last tool call.
+    /// Opened, it shows them whole and its last few tool calls.
+    private func nodeCard(_ node: MightyStructure.Node, column: CGFloat, parent: String?) -> some View {
         let task = node.kind == "task"
         let key = Self.foldKey("node", node.nodeID)
         let open = memory.expanded.contains(key)
@@ -499,6 +701,10 @@ struct MightyStructureView: View {
                 Spacer(minLength: 0)
                 revealButton(node.nodeID)
             }
+            if let parent {
+                Label(L("graph.structure.underParent", ["title": parent]), systemImage: "arrow.turn.down.right")
+                    .font(.system(size: 10)).foregroundStyle(Palette.ink2).lineLimit(1).truncationMode(.tail)
+            }
             if let prompt = node.prompt {
                 let shown = open ? prompt.text : prompt.preview
                 Text(verbatim: shown)
@@ -516,7 +722,7 @@ struct MightyStructureView: View {
             ForEach(open ? node.activity : Array(node.activity.suffix(1))) { activityRow($0) }
             if folds { foldToggle(key, open: open) }
         }
-        // `MightyStructure.nodeTextWidth` takes this padding and the indent off too.
+        // `MightyStructure.nodeTextWidth` takes this padding and the indent off.
         .padding(.leading, DesignMetrics.Spacing.md).padding(.trailing, DesignMetrics.Spacing.xs)
         .padding(.vertical, DesignMetrics.Spacing.xs)
         .background(Palette.panel, in: shape)
@@ -546,62 +752,6 @@ struct MightyStructureView: View {
         }
         .help(line.text)
         .accessibilityElement(children: .combine)
-    }
-
-    // MARK: Folded requests
-
-    /// A finished request folded to one compact card: its heading, status and tally,
-    /// what was asked and how it ended, a line each. The whole card opens it.
-    private func foldedCard(_ item: MightyStructure.Item) -> some View {
-        let answer = MightyStructure.Fold.resultLine(item)
-        return Button { toggleFold(item) } label: {
-            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
-                HStack(spacing: DesignMetrics.Spacing.sm) {
-                    Text(heading(item)).font(.system(size: Self.textSize, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
-                        .layoutPriority(1)
-                    MightyStatusPill(text: MightyGraphView.statusLabel(item.status), tone: DesignTone(status: item.status))
-                    tally(item)
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.ink2)
-                        .accessibilityHidden(true)
-                }
-                Text(verbatim: item.input).font(.system(size: Self.textSize)).foregroundStyle(Palette.ink)
-                    .lineLimit(1).truncationMode(.tail)
-                Text(verbatim: answer ?? MightyGraphView.statusLabel(item.status))
-                    .font(.system(size: Self.outputSize)).foregroundStyle(answer == nil ? Palette.text(item.status) : Palette.ink2)
-                    .lineLimit(1).truncationMode(.tail)
-            }
-            .cardSurface()
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(L("graph.structure.unfoldCard"))
-        .background(GeometryReader { card in
-            Color.clear.preference(key: MightyStructureFoldedFrames.self, value: [item.runID: card.frame(in: .named(Self.scrollSpace))])
-        })
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
-        .accessibilityValue(L("graph.structure.collapsed"))
-        .accessibilityHint(L("graph.structure.unfoldCard"))
-        .accessibilityIdentifier("mighty-structure-folded-\(item.runID)")
-    }
-
-    /// The header control of an open finished request that folds it back.
-    private func foldCardButton(_ item: MightyStructure.Item) -> some View {
-        Button { toggleFold(item) } label: {
-            Image(systemName: "chevron.up").font(.system(size: 11, weight: .medium)).foregroundStyle(Palette.ink2)
-                .frame(width: DesignMetrics.Layout.hitTarget, height: DesignMetrics.Layout.hitTarget)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(L("graph.structure.foldCard"))
-        .accessibilityLabel(L("graph.structure.foldCard"))
-        .accessibilityValue(L("graph.structure.expanded"))
-        .accessibilityIdentifier("mighty-structure-fold-\(item.runID)")
-    }
-
-    private func toggleFold(_ item: MightyStructure.Item) {
-        memory.unfoldedCards = MightyStructure.Fold.toggled(item, unfolded: memory.unfoldedCards)
     }
 
     // MARK: Texts shown in place
@@ -691,7 +841,7 @@ private extension View {
 }
 
 /// Where the structure's page stands in its scroll view's space: the whole page's
-/// frame, the newest card's bottom and the pane's height, merged into one report so
+/// frame, the newest board's bottom and the pane's height, merged into one report so
 /// the follow rule never judges one against a stale other.
 private struct MightyStructurePage: PreferenceKey {
     struct Newest: Equatable { var id: String; var bottom: CGFloat }
@@ -709,27 +859,27 @@ private struct MightyStructurePage: PreferenceKey {
     }
 }
 
-/// Where each folded card sits in the scroll view's space, by run id
-/// (`MightyStructureMemory.foldedFrames`).
-private struct MightyStructureFoldedFrames: PreferenceKey {
+/// Where each navigation control sits in the window's SwiftUI space, by name
+/// (`MightyStructureMemory.controlFrames`).
+private struct MightyStructureControlFrames: PreferenceKey {
     static let defaultValue: [String: CGRect] = [:]
     static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
         value.merge(nextValue()) { _, next in next }
     }
 }
 
-/// The page opens at its end, and a page shorter than the pane sits right above the
-/// composer. From macOS 15 only the opening is anchored, so the page never keeps its
-/// end in place by itself as it grows, which is the follow rule's to decide, and a
-/// scroll the user is making is known, so it is never fought. macOS 14 keeps the
-/// single anchor it had.
+/// The newest board opens at its end, and a board shorter than the pane sits at its top
+/// left, as a kanban board does. From macOS 15 only the opening is anchored at the end,
+/// so the page never keeps its end in place by itself as it grows, which is the follow
+/// rule's to decide, and a scroll the user is making is known, so it is never fought.
+/// macOS 14 takes the one anchor at the top left; the follow rule shows the end.
 private struct MightyStructureScrollRoles: ViewModifier {
     let memory: MightyStructureMemory
     func body(content: Content) -> some View {
         if #available(macOS 15.0, *) {
             content
                 .defaultScrollAnchor(.bottomLeading, for: .initialOffset)
-                .defaultScrollAnchor(.bottomLeading, for: .alignment)
+                .defaultScrollAnchor(.topLeading, for: .alignment)
                 .onScrollPhaseChange { _, phase in
                     memory.userScrolling = switch phase {
                     case .tracking, .interacting, .decelerating: true
@@ -738,7 +888,7 @@ private struct MightyStructureScrollRoles: ViewModifier {
                     }
                 }
         } else {
-            content.defaultScrollAnchor(.bottomLeading)
+            content.defaultScrollAnchor(.topLeading)
         }
     }
 }
