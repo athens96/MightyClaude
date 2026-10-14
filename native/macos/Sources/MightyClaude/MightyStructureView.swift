@@ -572,7 +572,8 @@ struct MightyStructureView: View {
         switch card {
         case .request(let item): requestCard(item, width: width)
         case .execution(let item):
-            execution(item, width: width, titled: true)
+            // The column says 실행 and the bar says which request: the card needs no title.
+            execution(item, width: width, titled: false)
                 .accessibilityLabel(L("graph.block.executionOf", ["n": "\(item.ordinal)"]))
         case .result(let item): resultCard(item)
         case .summary(let item): summaryCard(item, width: width)
@@ -584,16 +585,17 @@ struct MightyStructureView: View {
 
     /// A free board's 요청: "Request N · Claude" and what was asked.
     private func requestCard(_ item: MightyStructure.Item, width: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
-            HStack(spacing: DesignMetrics.Spacing.sm) {
-                Text(heading(item)).font(.system(size: Self.textSize, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
-                Spacer(minLength: DesignMetrics.Spacing.xs)
-                revealButton(item.nodeID)
-            }
+        // The column says 요청 and the bar above says which one: the card is what was asked.
+        HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
             if let request = item.request {
                 foldableText(request, key: Self.foldKey("request", item.runID), lines: MightyStructure.requestLines, size: Self.textSize,
-                             width: Self.cardTextWidth(width), name: L("graph.structure.column.request"))
+                             width: Self.cardTextWidth(width) - DesignMetrics.Layout.hitTarget - DesignMetrics.Spacing.sm,
+                             name: L("graph.structure.column.request"))
+            } else {
+                Text(heading(item)).font(.system(size: Self.textSize, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
             }
+            Spacer(minLength: 0)
+            revealButton(item.nodeID)
         }
         .cardSurface()
         .accessibilityElement(children: .contain)
