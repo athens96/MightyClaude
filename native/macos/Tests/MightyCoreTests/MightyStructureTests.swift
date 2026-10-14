@@ -332,11 +332,11 @@ struct MightyStructureTests {
     }
 
     @Test func aDeepSubAgentsTextIsNeverCutWithoutTheToggle() {
-        // A node six levels deep in the narrowest column has 192pt for its text.
+        // A node six levels deep in the narrowest column has 196pt for its text.
         let width = MightyStructure.nodeTextWidth(column: MightyStructure.minimumColumnWidth, depth: 6)
-        #expect(width == 192)
+        #expect(width == 196)
         #expect(MightyStructure.nodeTextWidth(column: MightyStructure.minimumColumnWidth, depth: 60) == width)
-        // About 17 Hangul syllables fit a 192pt line at 11pt; words wrap whole, so fewer are counted.
+        // About 17 Hangul syllables fit a 196pt line at 11pt; words wrap whole, so fewer are counted.
         let perLine = MightyStructure.charactersPerLine(width: width, fontSize: 11)
         #expect(perLine <= 17)
         // 120 syllables on one line take 8 lines of 17: past the 6 an output shows folded.
