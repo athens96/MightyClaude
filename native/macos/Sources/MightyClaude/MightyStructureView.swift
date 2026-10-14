@@ -299,8 +299,11 @@ struct MightyStructureView: View {
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 MightyGraphActivityIndicator(status: board.status, tint: Palette.run)
                 MightyStatusPill(text: MightyGraphView.statusLabel(board.status), tone: DesignTone(status: board.status))
-                Text(verbatim: title(board)).font(Palette.heading(13)).foregroundStyle(Palette.ink).lineLimit(1).truncationMode(.tail)
-                    .accessibilityAddTraits(.isHeader)
+                // A request's first line is its 요청 card right below; a pipeline's name is not on any card.
+                if board.kind == .pipeline {
+                    Text(verbatim: title(board)).font(Palette.heading(13)).foregroundStyle(Palette.ink).lineLimit(1).truncationMode(.tail)
+                        .accessibilityAddTraits(.isHeader)
+                }
                 Spacer(minLength: 0)
             }
             HStack(spacing: 0) {
@@ -605,14 +608,18 @@ struct MightyStructureView: View {
 
     /// A free board's 결과: the answer, how the request ended, or that it is still to come.
     private func resultCard(_ item: MightyStructure.Item) -> some View {
-        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
-            HStack(spacing: DesignMetrics.Spacing.sm) {
-                resultTitle(item)
-                Spacer(minLength: 0)
-                revealButton(item.finished ? MightyGraphBlockSize.nodeID(runID: item.runID, suffix: "result") : item.executionNodeID)
+        let reveal = revealButton(item.finished ? MightyGraphBlockSize.nodeID(runID: item.runID, suffix: "result") : item.executionNodeID)
+        return Group {
+            // The column already says 결과: only an error or a stop gets a title, in its colour.
+            if ["error", "stopped"].contains(item.status) {
+                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
+                    HStack(spacing: DesignMetrics.Spacing.sm) { resultTitle(item); Spacer(minLength: 0); reveal }
+                    // A reply without an answer is in 실행 already; 결과 says how the request ended.
+                    outcome(item)
+                }
+            } else {
+                HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) { outcome(item); Spacer(minLength: 0); reveal }
             }
-            // A reply without an answer is in 실행 already; 결과 says how the request ended.
-            outcome(item)
         }
         .cardSurface()
         .accessibilityElement(children: .contain)
