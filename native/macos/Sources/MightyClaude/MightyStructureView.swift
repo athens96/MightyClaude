@@ -16,16 +16,21 @@ final class MightyStructureMemory: ObservableObject {
     /// Whether the page follows the newest card (`MightyGraphFollow.PageWatch`). Not
     /// published: scrolling redraws nothing.
     var follow = MightyGraphFollow.PageWatch()
-    /// The user's fingers or wheel are scrolling the page right now (macOS 15 and later).
+    /// The system reports a scroll of the page right now, such as a drag of its scroll
+    /// bar (macOS 15 and later).
     var userScrolling = false
     /// The user is dragging the page's empty space (`MightyStructurePanning`), and when
     /// the last such drag ended.
     var panning = false
     var panReleasedAt: TimeInterval = 0
-    /// The page is moving under the user's hand: a scroll, a drag, or the moment after
-    /// a drag whose last step the page may report late (`MightyStructurePan.releaseGrace`).
+    /// The page's wheel and trackpad gestures, which `MightyStructurePanning` moves the
+    /// page by: the system never sees them, so it reports no scroll for them.
+    var wheel = MightyStructureWheel.Tracker()
+    /// The page is moving under the user's hand: a scroll, a drag or the moment after it
+    /// (`MightyStructurePan.releaseGrace`), or a wheel or trackpad gesture still going.
     var userMoving: Bool {
-        userScrolling || panning || ProcessInfo.processInfo.systemUptime - panReleasedAt < MightyStructurePan.releaseGrace
+        MightyStructureWheel.userMoving(scrollPhase: userScrolling, panning: panning, panReleasedAt: panReleasedAt,
+                                        wheel: wheel, now: ProcessInfo.processInfo.systemUptime)
     }
 }
 
@@ -146,8 +151,9 @@ struct MightyStructureView: View {
         guard let target else { return }
         let free = if case .free = shape { true } else { false }
         DispatchQueue.main.async {
-            // A drag on the page is the user's: nothing scrolls under it.
-            guard !memory.panning else { return }
+            // A drag, a wheel or a trackpad gesture on the page is the user's: nothing
+            // scrolls under it, even a scroll asked for just before it began.
+            guard !memory.userMoving else { return }
             switch target {
             case .bottom: proxy.scrollTo(Self.endID, anchor: .bottomLeading)
             case .card(let id): proxy.scrollTo(id, anchor: free ? .bottomLeading : .bottom)

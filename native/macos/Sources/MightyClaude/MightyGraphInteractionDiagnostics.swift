@@ -572,7 +572,11 @@ enum MightyGraphInteractionDiagnostics {
         }
     }
     @discardableResult
-    static func postWheel(window: NSWindow, at point: NSPoint, dx: Int32 = 0, dy: Int32 = 0, phase: NSEvent.Phase = []) throws -> [String: Any] {
+    /// A wheel event as a trackpad sends it (continuous point deltas, with a gesture
+    /// `phase` or a `momentum` phase), or, `continuous` false, as a mouse wheel's step,
+    /// whose deltas count lines.
+    static func postWheel(window: NSWindow, at point: NSPoint, dx: Int32 = 0, dy: Int32 = 0, phase: NSEvent.Phase = [],
+                          momentum: NSEvent.Phase = [], continuous: Bool = true) throws -> [String: Any] {
         // A CG-created wheel loses its NSWindow on conversion. Starting with a
         // public window-targeted mouse event retains AppKit's window context.
         guard let mouse = NSEvent.mouseEvent(with: .mouseMoved, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil, eventNumber: 1, clickCount: 0, pressure: 0),
@@ -583,11 +587,16 @@ enum MightyGraphInteractionDiagnostics {
         cg.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: Int64(window.windowNumber))
         cg.setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: Int64(window.windowNumber))
         cg.setIntegerValueField(.eventTargetUnixProcessID, value: Int64(ProcessInfo.processInfo.processIdentifier))
-        cg.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
-        cg.setIntegerValueField(.scrollWheelEventPointDeltaAxis1, value: Int64(dy))
-        cg.setIntegerValueField(.scrollWheelEventPointDeltaAxis2, value: Int64(dx))
-        cg.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: Double(dy))
-        cg.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2, value: Double(dx))
+        cg.setIntegerValueField(.scrollWheelEventIsContinuous, value: continuous ? 1 : 0)
+        if continuous {
+            cg.setIntegerValueField(.scrollWheelEventPointDeltaAxis1, value: Int64(dy))
+            cg.setIntegerValueField(.scrollWheelEventPointDeltaAxis2, value: Int64(dx))
+            cg.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: Double(dy))
+            cg.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2, value: Double(dx))
+        } else {
+            cg.setIntegerValueField(.scrollWheelEventDeltaAxis1, value: Int64(dy))
+            cg.setIntegerValueField(.scrollWheelEventDeltaAxis2, value: Int64(dx))
+        }
         let rawPhase: Int64
         switch phase {
         case []: rawPhase = 0
@@ -596,10 +605,20 @@ enum MightyGraphInteractionDiagnostics {
         case .ended: rawPhase = 4
         default: throw MightyError("지원하지 않는 검증 휠 단계입니다.")
         }
+        // CoreGraphics numbers momentum as none 0, begin 1, continue 2, end 3.
+        let rawMomentum: Int64
+        switch momentum {
+        case []: rawMomentum = 0
+        case .began: rawMomentum = 1
+        case .changed: rawMomentum = 2
+        case .ended: rawMomentum = 3
+        default: throw MightyError("지원하지 않는 검증 관성 단계입니다.")
+        }
+        guard phase.isEmpty || momentum.isEmpty, continuous || (phase.isEmpty && momentum.isEmpty) else { throw MightyError("검증 휠의 단계 조합이 올바르지 않습니다.") }
         cg.setIntegerValueField(.scrollWheelEventScrollPhase, value: rawPhase)
-        cg.setIntegerValueField(.scrollWheelEventMomentumPhase, value: 0)
+        cg.setIntegerValueField(.scrollWheelEventMomentumPhase, value: rawMomentum)
         guard let event = NSEvent(cgEvent: cg), event.window === window, event.type == .scrollWheel,
-              event.phase == phase, event.momentumPhase.isEmpty,
+              event.phase == phase, event.momentumPhase == momentum, event.hasPreciseScrollingDeltas == continuous,
               abs(event.locationInWindow.x - point.x) < 1, abs(event.locationInWindow.y - point.y) < 1,
               abs(event.scrollingDeltaX - CGFloat(dx)) < 0.1, abs(event.scrollingDeltaY - CGFloat(dy)) < 0.1 else { throw MightyError("합성 휠의 창·이동량·단계가 요청한 값과 다릅니다.") }
         let hit = window.contentView.flatMap { content in
@@ -609,7 +628,7 @@ enum MightyGraphInteractionDiagnostics {
         var current = hit
         while let view = current, ancestors.count < 24 { ancestors.append(String(describing: type(of: view))); current = view.superview }
         let hitScroll = hit?.enclosingScrollView
-        let evidence: [String: Any] = ["requestedWindowPoint": NSStringFromPoint(point), "eventWindowPoint": NSStringFromPoint(event.locationInWindow), "hitAncestors": ancestors, "hitScroll": hitScroll.map { String(describing: type(of: $0)) } ?? "none", "hitScrollClip": NSStringFromRect(hitScroll?.contentView.bounds ?? .zero), "deltaX": event.scrollingDeltaX, "deltaY": event.scrollingDeltaY, "phase": event.phase.rawValue]
+        let evidence: [String: Any] = ["requestedWindowPoint": NSStringFromPoint(point), "eventWindowPoint": NSStringFromPoint(event.locationInWindow), "hitAncestors": ancestors, "hitScroll": hitScroll.map { String(describing: type(of: $0)) } ?? "none", "hitScrollClip": NSStringFromRect(hitScroll?.contentView.bounds ?? .zero), "deltaX": event.scrollingDeltaX, "deltaY": event.scrollingDeltaY, "phase": event.phase.rawValue, "momentumPhase": event.momentumPhase.rawValue, "continuous": continuous]
         NSApp.postEvent(event, atStart: false)
         return evidence
     }
