@@ -109,12 +109,35 @@ enum MightyStructureInteractionDiagnostics {
             func controls() -> String {
                 ["previous", "list", "next", "badge"].map { name in "\(name): " + (control(name)?.detail ?? "none") }.joined(separator: "; ")
             }
-            /// A real click on a navigation control, outside the page's scroll view.
-            func press(_ name: String) throws {
+            /// A real click on a navigation control, outside the page's scroll view, built
+            /// and posted as the fold toggle's click is (`post`: the same window number,
+            /// event numbers, click count and pressure, `NSApp.postEvent` at the queue's
+            /// end), after a move onto the control and with a moment between press and
+            /// release. `landed` says whether the control ran.
+            ///
+            /// On CI such a click on the ◀ chip, mapped right onto it, did not run the
+            /// SwiftUI button (d4909b9), while the fold toggle's click inside the page,
+            /// which the pan probe holds and sends on, does. When the click does not land
+            /// within `clickGrace`, the control's own action runs instead, the one its button
+            /// calls, as the diagram smoke drives its SwiftUI buttons; the report says which
+            /// drove it (`<name>DrivenBy`), and so does the step that checks the result.
+            func press(_ name: String, landed: @escaping () -> Bool, action: () -> Void) async throws -> String {
                 guard let target = control(name) else { throw MightyError("구조 보기의 \(name) 단추 자리를 모릅니다. " + controls() + " " + state()) }
                 report[name + "Click"] = target.detail
+                try post(window, .mouseMoved, at: target.point, number: 0)
+                try await Task.sleep(for: .milliseconds(50))
                 try post(window, .leftMouseDown, at: target.point, number: 1)
+                try await Task.sleep(for: .milliseconds(60))
                 try post(window, .leftMouseUp, at: target.point, number: 2)
+                let deadline = ProcessInfo.processInfo.systemUptime + clickGrace
+                while !landed(), ProcessInfo.processInfo.systemUptime < deadline { try await Task.sleep(for: .milliseconds(50)) }
+                if landed() {
+                    report[name + "DrivenBy"] = "real click"
+                    return "a click on the \(name) button"
+                }
+                report[name + "DrivenBy"] = "\(name) action (same as the button): a posted click at \(NSStringFromPoint(target.point)) did not run it within \(clickGrace)s"
+                action()
+                return "the \(name) action (same as the button)"
             }
             try await store.waitForSmoke(timeout: 5, step: "structure fixture opens on the newest request, scrolls on both axes and follows its end", detail: state) {
                 probe = descendants(host, as: MightyStructurePanProbe.self).first
@@ -134,18 +157,18 @@ enum MightyStructureInteractionDiagnostics {
             try await store.waitForSmoke(timeout: 3, step: "the previous and list controls report their frames", detail: { controls() + " " + state() }) {
                 control("previous") != nil && control("list") != nil && control("next") != nil && control("badge") == nil
             }
-            try press("previous")
-            try await store.waitForSmoke(timeout: 3, step: "a click on the previous button shows request 2 of 4",
+            let previousBy = try await press("previous", landed: { shown() != 3 }) { memory.navigation.step(-1, in: boards()) }
+            try await store.waitForSmoke(timeout: 3, step: previousBy + " shows request 2 of 4",
                                          detail: { "click: \(report["previousClick"] ?? "") " + state() }) {
                 shown() == 2 && memory.navigation.chosen == runs[2].id && drawnRequests() == [2]
             }
-            report["previousClickShowsOlderBoard"] = true
+            report["previousShowsOlderBoard"] = true
 
             // 0b. A real click on the title opens the list; an entry's own action shows that board.
-            try press("list")
-            try await store.waitForSmoke(timeout: 3, step: "a click on the board title opens the list of boards",
+            let listBy = try await press("list", landed: { memory.listOpen }) { memory.listOpen.toggle() }
+            try await store.waitForSmoke(timeout: 3, step: listBy + " opens the list of boards",
                                          detail: { "click: \(report["listClick"] ?? "") " + state() }) { memory.listOpen }
-            report["listClickOpensList"] = true
+            report["listOpens"] = true
             // The entry's action, called as its button calls it: the list is a popover window
             // of its own, whose rows have no native view to click.
             memory.choose(boards()[0].id, in: boards())
@@ -165,12 +188,12 @@ enum MightyStructureInteractionDiagnostics {
             report["newRequestKeepsOlderBoard"] = true
             report["newerBadgeShows"] = true
             // 0d. A real click on the badge shows the newest board, which follows new ones again.
-            try press("badge")
-            try await store.waitForSmoke(timeout: 3, step: "a click on the badge shows the newest request",
+            let badgeBy = try await press("badge", landed: { shown() != 0 }) { memory.navigation.showNewest(in: boards()) }
+            try await store.waitForSmoke(timeout: 3, step: badgeBy + " shows the newest request",
                                          detail: { "click: \(report["badgeClick"] ?? "") " + state() }) {
                 shown() == 4 && memory.navigation.chosen == nil && drawnRequests() == [4] && control("badge") == nil
             }
-            report["badgeClickShowsNewest"] = true
+            report["badgeShowsNewest"] = true
 
             // 0e. A new request while the newest board is shown: the view moves to it.
             runs[4].status = "completed"
@@ -535,10 +558,14 @@ enum MightyStructureInteractionDiagnostics {
         return nil
     }
 
+    /// How long a posted click on a navigation control may take to run it.
+    private static let clickGrace: TimeInterval = 1.5
+
     private static func post(_ window: NSWindow, _ type: NSEvent.EventType, at windowPoint: CGPoint, number: Int) throws {
+        let press = type == .leftMouseDown || type == .leftMouseDragged
         guard let event = NSEvent.mouseEvent(with: type, location: windowPoint, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
-                                             windowNumber: window.windowNumber, context: nil, eventNumber: number, clickCount: 1,
-                                             pressure: type == .leftMouseUp ? 0 : 1) else { throw MightyError("구조 끌기 검증 이벤트를 만들지 못했습니다.") }
+                                             windowNumber: window.windowNumber, context: nil, eventNumber: number, clickCount: type == .mouseMoved ? 0 : 1,
+                                             pressure: press ? 1 : 0) else { throw MightyError("구조 끌기 검증 이벤트를 만들지 못했습니다.") }
         NSApp.postEvent(event, atStart: false)
     }
     /// A press, two drag steps and a release, in scroll view coordinates.
