@@ -3,10 +3,11 @@ namespace MightyClaude.Core;
 /// <summary>
 /// Dragging the structure view's empty space moves its page, as dragging the diagram's empty canvas moves its camera
 /// (M/MightyCore/MightyStructurePan.swift): the point that was grabbed stays under the pointer, and the page stops at its
-/// edges as a scroll does. A press on selectable text or a native control is theirs: text selects, a scroll bar scrolls.
-/// Any other press on the page waits until it moves <see cref="ClickSlop"/> points; a shorter press is a click and goes on
-/// to what was pressed, so buttons click as they always did. A pan is the user's own move, as a wheel scroll is
-/// (<see cref="MightyStructureFollow.PageWatch"/>).
+/// edges as a scroll does. The board's page moves sideways only and each column up and down on its own (<see cref="Confined"/>):
+/// a drag in a column moves that column by its vertical part and the page by its horizontal part. A press on selectable text
+/// or a native control is theirs: text selects, a scroll bar scrolls. Any other press on the page waits until it moves
+/// <see cref="ClickSlop"/> points; a shorter press is a click and goes on to what was pressed, so buttons click as they always
+/// did. A pan is the user's own move of the column, as a wheel scroll is (<see cref="MightyStructureFollow.ColumnWatch"/>).
 /// </summary>
 public static class MightyStructurePan
 {
@@ -46,6 +47,10 @@ public static class MightyStructurePan
     /// </summary>
     public static (double X, double Y) Origin((double X, double Y) start, (double X, double Y) press, (double X, double Y) cursor, (double X, double Y) minimum, (double X, double Y) maximum) =>
         (Clamp(start.X - (cursor.X - press.X), minimum.X, maximum.X, start.X), Clamp(start.Y - (cursor.Y - press.Y), minimum.Y, maximum.Y, start.Y));
+
+    /// <summary>The origins a scroll view of the board may take when it moves along <paramref name="axis"/> only, the other axis held where it is (<paramref name="current"/>): the page sideways, a column up and down.</summary>
+    public static ((double X, double Y) Minimum, (double X, double Y) Maximum) Confined((double X, double Y) minimum, (double X, double Y) maximum, (double X, double Y) current, MightyStructureWheel.Axis axis) =>
+        axis == MightyStructureWheel.Axis.Horizontal ? ((minimum.X, current.Y), (maximum.X, current.Y)) : ((current.X, minimum.Y), (current.X, maximum.Y));
 
     private static double Clamp(double value, double low, double high, double current) =>
         double.IsFinite(value) && double.IsFinite(low) && double.IsFinite(high) && low <= high ? Math.Min(Math.Max(value, low), high) : current;

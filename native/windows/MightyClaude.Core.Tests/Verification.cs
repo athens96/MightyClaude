@@ -250,6 +250,10 @@ internal static class Verification
         await Test("Mighty structure: dragging empty space pans", MightyStructureVerification.DraggingEmptySpacePans);
         await Test("Mighty structure: the page follows the newest card", MightyStructureVerification.ThePageFollowsTheNewestCard);
         await Test("Mighty structure: a user's move is judged when it happens", MightyStructureVerification.AUsersMoveIsJudgedWhenItHappens);
+        await Test("Mighty structure: a drag in a column moves it up and down and the page sideways", MightyStructureVerification.ADragInAColumnMovesTheColumnUpAndDownAndThePageSideways);
+        await Test("Mighty structure: each column follows its own end", MightyStructureVerification.EachColumnFollowsItsOwnEnd);
+        await Test("Mighty structure: a text opened in a following column leaves the reader where it begins", MightyStructureVerification.ATextOpenedInAFollowingColumnLeavesTheReaderWhereItBegins);
+        await Test("Mighty structure: a new request or another board starts the columns over", MightyStructureVerification.ANewRequestOrAnotherBoardStartsTheColumnsOver);
         await Test("Mighty structure board: a free pane has one board per request", MightyStructureBoardVerification.AFreePaneHasOneBoardPerRequest);
         await Test("Mighty structure board: a styled pane splits into pipelines where the phase goes back", MightyStructureBoardVerification.AStyledPaneSplitsIntoPipelinesWhereThePhaseGoesBack);
         await Test("Mighty structure board: the newest pipeline takes the pane's phase only when it lies ahead", MightyStructureBoardVerification.TheNewestPipelineTakesThePanesPhaseOnlyWhenItLiesAhead);
@@ -260,6 +264,7 @@ internal static class Verification
         await Test("Mighty structure board: a picked board is found again after a trim", MightyStructureBoardVerification.APickedBoardIsFoundAgainAfterItsFirstRequestIsTrimmed);
         await Test("Mighty structure wheel: the origin, the axis and the taker", MightyStructureBoardVerification.TheWheelMovesTheOriginAndStaysOnItsAxis);
         await Test("Mighty structure wheel: a gesture is decided once and is the user's until it settles", MightyStructureBoardVerification.AGestureIsDecidedOnceAndIsTheUsersUntilItSettles);
+        await Test("Mighty structure wheel: a vertical wheel moves the column and a sideways one the page", MightyStructureBoardVerification.AVerticalWheelMovesTheColumnAndASidewaysOneThePage);
         await Test("WorkDashboardVerification CountsAndAttentionMatchMac", WorkDashboardVerification.CountsAndAttentionMatchMac);
         await Test("WorkDashboardVerification CardsRespectUsageIdentityAndStablePriority", WorkDashboardVerification.CardsRespectUsageIdentityAndStablePriority);
         await Test("WorkDashboardVerification ActivityAndAgeRemainBoundedAndTruthful", WorkDashboardVerification.ActivityAndAgeRemainBoundedAndTruthful);

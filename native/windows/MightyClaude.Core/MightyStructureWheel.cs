@@ -4,11 +4,12 @@ namespace MightyClaude.Core;
 /// Wheel and trackpad scrolling of the structure view (M/MightyCore/MightyStructureWheel.swift). On the Mac the page takes the
 /// wheel events that land on it and moves the scroll view they belong to: a trackpad gesture (the fingers' scroll, then its
 /// momentum) is decided once, at its first movement, by the innermost scroll view under the pointer that can still move that
-/// way, else the page, and keeps to the axis it started along; a mouse wheel's steps have no gesture and are decided one by
-/// one. Either is the user's own move, so the follow rule never scrolls under it (<see cref="MightyStructureFollow.PageWatch"/>).
-/// On Windows the page's own scroll viewer moves itself, chaining a wheel out of an inner scroll view at its edge and keeping a
-/// touchpad pan to its rail, so the app reads only <see cref="Tracker.UserScrolling"/> and <see cref="UserMoving"/>: a Windows
-/// wheel message carries no gesture, and is a step.
+/// way, then the board's column under the pointer, which moves up and down only, and otherwise the page, which moves sideways
+/// only (<see cref="MightyStructurePan.Confined"/>), and keeps to the axis it started along; a mouse wheel's steps have no
+/// gesture and are decided one by one. Either is the user's own move, so the follow rule never scrolls the column under it
+/// (<see cref="MightyStructureFollow.ColumnWatch"/>). On Windows each column's scroll viewer and the page's move themselves,
+/// keeping a touchpad pan to its rail, so the app reads only <see cref="Tracker.UserScrolling"/> and <see cref="UserMoving"/>: a
+/// Windows wheel message carries no gesture, and is a step.
 /// </summary>
 public static class MightyStructureWheel
 {

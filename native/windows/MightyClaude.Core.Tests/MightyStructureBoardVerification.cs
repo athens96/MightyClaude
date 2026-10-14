@@ -274,4 +274,19 @@ internal static class MightyStructureBoardVerification
         Check(blind.Observe(At(1_380, 2_300), false) == Scroll.Bottom, "without the wheel known, the same report pulled the reader back down");
         return Task.CompletedTask;
     }
+
+    internal static Task AVerticalWheelMovesTheColumnAndASidewaysOneThePage()
+    {
+        // Under the pointer: the column, then the page; each confined to its own axis.
+        var page = MightyStructurePan.Confined((0, 0), (240, 0), (0, 0), Wheel.Axis.Horizontal);
+        var column = MightyStructurePan.Confined((0, 0), (0, 1_800), (0, 900), Wheel.Axis.Vertical);
+        int Takers((double X, double Y) delta, Wheel.Axis? axis, (double X, double Y) columnAt) =>
+            Wheel.Taker([Wheel.CanMove(columnAt, delta, axis, column.Minimum, column.Maximum), Wheel.CanMove((0, 0), delta, axis, page.Minimum, page.Maximum)]);
+        Check(Takers((-2, 30), Wheel.Axis.Vertical, (0, 900)) == 0 && Takers((-15, 1), Wheel.Axis.Horizontal, (0, 900)) == 1, "a vertical scroll moves the column, a sideways one the page");
+        // A mouse wheel's sideways step has no axis: the column cannot move that way, the page takes it.
+        Check(Takers((-20, 0), null, (0, 900)) == 1, "a sideways wheel step goes to the page");
+        // A column at its top shows nothing more above: the page takes the scroll and, moving sideways only, moves nothing.
+        Check(Takers((0, 30), Wheel.Axis.Vertical, (0, 0)) == 1 && Wheel.Origin((0, 0), (0, 30), Wheel.Axis.Vertical, page.Minimum, page.Maximum) == (0, 0), "a column at its top passes the scroll to a page that does not move");
+        return Task.CompletedTask;
+    }
 }
