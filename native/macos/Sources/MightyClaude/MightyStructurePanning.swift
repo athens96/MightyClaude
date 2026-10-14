@@ -11,6 +11,9 @@ import SwiftUI
 /// drag gesture: a gesture on the page would also take the drags that select text,
 /// and AppKit's own hit test is what knows a selectable text (a native text field
 /// inside SwiftUI's hosting) from the page around it.
+///
+/// The same monitor scrolls the page by wheel and trackpad (`MightyStructureWheel`):
+/// left to SwiftUI, the pane dock's scroll view around every pane takes them.
 struct MightyStructurePanning: NSViewRepresentable {
     let sessionID: String
     let memory: MightyStructureMemory
@@ -46,6 +49,12 @@ final class MightyStructurePanProbe: NSView {
     private(set) var replayedClicks = 0
     private(set) var lastTarget: MightyStructurePan.Target?
     private(set) weak var lastHitView: NSView?
+    /// For the GUI diagnostics: wheel events that moved the page, and ones that moved
+    /// a scroll view inside it.
+    private(set) var pageWheels = 0
+    private(set) var innerWheels = 0
+    /// The scroll view the current wheel gesture moves (`MightyStructureWheel.Tracker`).
+    private weak var wheelTaker: NSScrollView?
     var isPanning: Bool { if case .panning = press { true } else { false } }
 
     override var isFlipped: Bool { true }
@@ -58,9 +67,9 @@ final class MightyStructurePanProbe: NSView {
 
     func installMonitorIfNeeded() {
         guard !disposed, monitor == nil, let window else { return }
-        monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp]) { [weak self] event in
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp, .scrollWheel]) { [weak self] event in
             guard let self else { return event }
-            return self.handle(event)
+            return event.type == .scrollWheel ? self.wheel(event) : self.handle(event)
         }
         resignObserver = NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: window, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.cancel() }
@@ -233,6 +242,66 @@ final class MightyStructurePanProbe: NSView {
                                         scrollable: MightyStructurePan.scrollable(minimum: range.minimum, maximum: range.maximum)) else { return event }
         press = .pressed(down: event, at: pointer(event.locationInWindow, in: scroll), origin: scroll.contentView.bounds.origin)
         return nil
+    }
+
+    /// A wheel or trackpad event. One that lands on the page, and the rest of a gesture
+    /// that began there, moves the page or the scroll view inside it that can still move
+    /// that way, and goes no further. Like any scroll view, an inactive window scrolls too.
+    private func wheel(_ event: NSEvent) -> NSEvent? {
+        let stage = MightyStructureWheel.stage(phase: event.phase.rawValue, momentumPhase: event.momentumPhase.rawValue)
+        guard !disposed, let window, event.window === window, window.attachedSheet == nil, !isHiddenOrHasHiddenAncestor,
+              let memory, let scroll = scrollView else {
+            // A gesture beginning anywhere else ends any this page still holds open.
+            if stage == .began, let memory { _ = memory.wheel.feed(.began, overPage: false, delta: .zero, at: ProcessInfo.processInfo.systemUptime) }
+            return event
+        }
+        // A mouse wheel without precise deltas counts lines, as the scroll view's line scroll moves them.
+        let precise = event.hasPreciseScrollingDeltas
+        let delta = CGPoint(x: event.scrollingDeltaX * (precise ? 1 : scroll.horizontalLineScroll),
+                            y: event.scrollingDeltaY * (precise ? 1 : scroll.verticalLineScroll))
+        let hit = stage == .step || stage == .began ? hitView(at: event.locationInWindow) : nil
+        let overPage = hit.map { target(of: $0, at: event.locationInWindow, in: scroll) != .outside } ?? false
+        switch memory.wheel.feed(stage, overPage: overPage, delta: delta, at: ProcessInfo.processInfo.systemUptime) {
+        case .pass: return event
+        case .hold: return nil
+        case .choose:
+            // Innermost first, the page last: the first that can still move this way takes it.
+            let hitNow = hit ?? hitView(at: event.locationInWindow)
+            var candidates: [NSScrollView] = []
+            var view = hitNow
+            while let current = view, current !== scroll {
+                if let inner = current as? NSScrollView, current.isDescendant(of: scroll) { candidates.append(inner) }
+                view = current.superview
+            }
+            candidates.append(scroll)
+            let axis = memory.wheel.axis
+            let taker = candidates[MightyStructureWheel.taker(canMove: candidates.map { candidate in
+                let range = Self.originRange(candidate.contentView)
+                return MightyStructureWheel.canMove(current: candidate.contentView.bounds.origin, delta: Self.topDown(delta, in: candidate),
+                                                    axis: axis, minimum: range.minimum, maximum: range.maximum)
+            })]
+            wheelTaker = taker
+            move(taker, by: delta, axis: axis, page: scroll)
+        case .move:
+            move(wheelTaker ?? scroll, by: delta, axis: memory.wheel.axis, page: scroll)
+        }
+        return nil
+    }
+
+    /// A wheel movement in a scroll view's top-down origin space.
+    private static func topDown(_ delta: CGPoint, in scroll: NSScrollView) -> CGPoint {
+        scroll.contentView.isFlipped ? delta : CGPoint(x: delta.x, y: -delta.y)
+    }
+
+    private func move(_ target: NSScrollView, by delta: CGPoint, axis: MightyStructureWheel.Axis?, page: NSScrollView) {
+        if target === page { pageWheels += 1 } else { innerWheels += 1 }
+        let clip = target.contentView
+        let range = Self.originRange(clip)
+        let next = MightyStructureWheel.origin(current: clip.bounds.origin, delta: Self.topDown(delta, in: target), axis: axis,
+                                               minimum: range.minimum, maximum: range.maximum)
+        guard next != clip.bounds.origin else { return }
+        clip.scroll(to: next)
+        target.reflectScrolledClipView(clip)
     }
 
     private func pan(_ scroll: NSScrollView, at: CGPoint, origin: CGPoint, to point: CGPoint) {

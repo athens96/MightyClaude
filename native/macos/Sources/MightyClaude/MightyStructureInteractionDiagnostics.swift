@@ -2,10 +2,12 @@ import AppKit
 import MightyCore
 import SwiftUI
 
-/// The 구조 view's drag-to-pan (`MightyStructurePanning`) under real posted mouse
-/// events, in an isolated fixture: a drag on the page moves it on both axes, a drag
-/// on text selects it, a click on a fold toggle opens it, and a drag away from the
-/// newest card stops following. Run from `--graph-smoke-test`.
+/// The 구조 view's drag-to-pan and wheel scrolling (`MightyStructurePanning`) under real
+/// posted mouse and wheel events, in an isolated fixture inside the pane dock's scroll
+/// view, as every pane is: a drag on the page moves it on both axes, a drag on text
+/// selects it, a click on a fold toggle opens it, a drag away from the newest card stops
+/// following, and a trackpad gesture with its momentum and a mouse wheel move the page
+/// on both axes, stop following and are never pulled back. Run from `--graph-smoke-test`.
 ///
 /// SwiftUI's buttons have no native view and no accessibility element on a machine
 /// with no assistive client (a CI runner), so the checks read the native scroll view,
@@ -30,7 +32,7 @@ enum MightyStructureInteractionDiagnostics {
                 MightyStructureView(sessionID: sessionID, provider: "claude", shape: MightyStructure.make(runs: runs, style: nil, currentPhase: nil),
                                     styleTitles: StyleRequestTitles(), newestRunID: runs.last?.id, memory: memory, onReveal: { _ in })
             }
-            let host = NSHostingView(rootView: view())
+            let host = NSHostingView(rootView: DockFixture(page: view()))
             window.contentView = host
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
@@ -149,7 +151,7 @@ enum MightyStructureInteractionDiagnostics {
                                  status: "running", entries: [LogEntry(id: "structure-late-output-\(index)", kind: "assistant",
                                                                        text: "늦게 온 출력 \(index) · 아래에서 자라도 읽던 자리는 그대로입니다.", provider: "claude")])
             }
-            host.rootView = view()
+            host.rootView = DockFixture(page: view())
             try await store.waitForSmoke(timeout: 3, step: "newest card grows while the reader is up the page",
                                          detail: { "before=\(documentBefore) " + state() }) { (scroll.documentView?.frame.height ?? 0) > documentBefore + 10 }
             // Past the release grace and any follow pass the growth would have asked for.
@@ -220,6 +222,118 @@ enum MightyStructureInteractionDiagnostics {
                 throw MightyError("펼치기 클릭이 화면을 움직였거나 그대로 전달되지 않았습니다. " + state())
             }
             report["foldToggleClickToggles"] = true
+
+            // 5. A trackpad gesture with its momentum, and a mouse wheel, move the page on
+            // both axes. The dock's scroll view around the page took them all before.
+            guard let dock = scroll.enclosingScrollView else { throw MightyError("구조 보기를 감싼 창 배치 스크롤 뷰가 없습니다. " + state()) }
+            let dockStart = dock.contentView.bounds.origin
+            func wheelState() -> String {
+                "dock=\(NSStringFromPoint(dock.contentView.bounds.origin)) dockStart=\(NSStringFromPoint(dockStart))"
+                    + " pageWheels=\(probe.pageWheels) innerWheels=\(probe.innerWheels) userMoving=\(memory.userMoving) " + state()
+            }
+            func dockStill() -> Bool { !changed(dock.contentView.bounds.origin, dockStart) }
+            let wheelPans = probe.pans
+            try await store.waitForSmoke(timeout: 3, step: "page back at its end follows the newest card before the wheel", detail: wheelState) {
+                let end = range().maximum.y
+                guard memory.follow.following, abs(origin().y - end) < 1, abs(origin().x - range().minimum.x) < 1 else {
+                    scroll.contentView.scroll(to: CGPoint(x: range().minimum.x, y: abs(origin().y - end) < 1 ? end - 40 : end))
+                    scroll.reflectScrolledClipView(scroll.contentView)
+                    return false
+                }
+                return true
+            }
+            try await settle(store, scroll, step: "structure page settles before the trackpad scroll", detail: wheelState)
+            // 5a. Fingers moving down over empty page space, drifting a little sideways, then
+            // momentum: the page shows 180pt more above and keeps to the vertical axis.
+            let trackpadStart = origin()
+            let (space, spaceDetail) = try pagePoint(probe, scroll, room: .zero)
+            let spacePoint = scroll.convert(space, to: nil)
+            report["trackpadPoint"] = spaceDetail
+            let pageWheelsBefore = probe.pageWheels
+            report["trackpadWheel"] = try MightyGraphInteractionDiagnostics.postWheel(window: window, at: spacePoint, phase: .began)
+            for _ in 0..<5 { try MightyGraphInteractionDiagnostics.postWheel(window: window, at: spacePoint, dx: -2, dy: 30, phase: .changed) }
+            try MightyGraphInteractionDiagnostics.postWheel(window: window, at: spacePoint, phase: .ended)
+            try MightyGraphInteractionDiagnostics.postWheel(window: window, at: spacePoint, dy: 10, momentum: .began)
+            try MightyGraphInteractionDiagnostics.postWheel(window: window, at: spacePoint, dy: 10, momentum: .changed)
+            try MightyGraphInteractionDiagnostics.postWheel(window: window, at: spacePoint, dy: 10, momentum: .changed)
+            try MightyGraphInteractionDiagnostics.postWheel(window: window, at: spacePoint, momentum: .ended)
+            try await store.waitForSmoke(timeout: 3, step: "trackpad scroll over empty page space moves the page up by its deltas",
+                                         detail: { "start=\(NSStringFromPoint(trackpadStart)) expected=(+0,-180) chosen: \(spaceDetail) " + wheelState() }) {
+                abs(origin().y - (trackpadStart.y - 180)) <= 2 && abs(origin().x - trackpadStart.x) <= 2 && !memory.follow.following
+            }
+            guard dockStill(), probe.pageWheels > pageWheelsBefore, probe.pans == wheelPans else {
+                throw MightyError("트랙패드 스크롤이 구조 보기 대신 창 배치를 움직였거나 끌기로 처리됐습니다. " + wheelState())
+            }
+            report["trackpadScrollMovesPageVertically"] = true
+            report["trackpadStopsFollowing"] = true
+            // 5b. Fingers moving left over a card's text, then momentum: the page shows 80pt
+            // more to the right. Text keeps no wheel of its own.
+            try await settle(store, scroll, step: "structure page settles before the sideways trackpad scroll", detail: wheelState)
+            guard let wheelField = selectableField(in: scroll, minimumWidth: 140) else { throw MightyError("휠을 굴릴 구조 본문이 화면에 없습니다. " + wheelState()) }
+            let wheelFieldFrame = scroll.convert(wheelField.bounds, from: wheelField)
+            let textPoint = scroll.convert(CGPoint(x: wheelFieldFrame.minX + 24, y: wheelFieldFrame.minY + 7), to: nil)
+            report["wheelTextPoint"] = "field=\(NSStringFromRect(wheelFieldFrame)) hit=\(probe.describe(probe.hitView(at: textPoint), in: scroll))"
+            let sidewaysStart = origin()
+            guard range().maximum.x - sidewaysStart.x >= 80 else { throw MightyError("옆으로 굴릴 여유가 없습니다. " + wheelState()) }
+            try MightyGraphInteractionDiagnostics.postWheel(window: window, at: textPoint, phase: .began)
+            for _ in 0..<4 { try MightyGraphInteractionDiagnostics.postWheel(window: window, at: textPoint, dx: -15, dy: 1, phase: .changed) }
+            try MightyGraphInteractionDiagnostics.postWheel(window: window, at: textPoint, phase: .ended)
+            try MightyGraphInteractionDiagnostics.postWheel(window: window, at: textPoint, dx: -10, momentum: .began)
+            try MightyGraphInteractionDiagnostics.postWheel(window: window, at: textPoint, dx: -10, momentum: .changed)
+            try MightyGraphInteractionDiagnostics.postWheel(window: window, at: textPoint, momentum: .ended)
+            try await store.waitForSmoke(timeout: 3, step: "trackpad scroll over a card's text moves the page sideways by its deltas",
+                                         detail: { "start=\(NSStringFromPoint(sidewaysStart)) expected=(+80,+0) " + wheelState() }) {
+                abs(origin().x - (sidewaysStart.x + 80)) <= 2 && abs(origin().y - sidewaysStart.y) <= 2 && !memory.follow.following
+            }
+            guard dockStill() else { throw MightyError("옆으로 굴린 트랙패드가 창 배치를 움직였습니다. " + wheelState()) }
+            report["trackpadScrollMovesPageSideways"] = true
+            // 5c. The newest card grows: past the wheel's grace nothing pulls the reader back.
+            let wheelReader = origin()
+            let wheelDocument = scroll.documentView?.frame.height ?? 0
+            runs[runs.count - 1].agents += (4..<7).map { index in
+                MightyGraphAgent(id: "structure-late-\(index)", title: "늦은 하위 에이전트 \(index)", input: "휠로 올려 둔 화면을 당기지 않는지 확인합니다.",
+                                 status: "running", entries: [LogEntry(id: "structure-late-output-\(index)", kind: "assistant",
+                                                                       text: "휠 뒤에 온 출력 \(index)", provider: "claude")])
+            }
+            host.rootView = DockFixture(page: view())
+            try await store.waitForSmoke(timeout: 3, step: "newest card grows after the trackpad scroll",
+                                         detail: { "before=\(wheelDocument) " + wheelState() }) { (scroll.documentView?.frame.height ?? 0) > wheelDocument + 10 }
+            try await Task.sleep(for: .milliseconds(700))
+            guard !changed(origin(), wheelReader), !memory.follow.following else {
+                throw MightyError("트랙패드로 옮긴 구조 보기가 700ms 안에 되돌아갔습니다. reader=\(NSStringFromPoint(wheelReader)) " + wheelState())
+            }
+            report["trackpadScrollNotPulledBack"] = true
+            // 5d. A mouse wheel's steps, which count lines, over a card's text: three steps
+            // down and two to the left.
+            try await settle(store, scroll, step: "structure page settles before the mouse wheel", detail: wheelState)
+            guard let stepField = selectableField(in: scroll, minimumWidth: 140) else { throw MightyError("마우스 휠을 굴릴 구조 본문이 화면에 없습니다. " + wheelState()) }
+            let stepFieldFrame = scroll.convert(stepField.bounds, from: stepField)
+            let stepPoint = scroll.convert(CGPoint(x: stepFieldFrame.minX + 24, y: stepFieldFrame.minY + 7), to: nil)
+            let stepStart = origin()
+            let lineY = scroll.verticalLineScroll, lineX = scroll.horizontalLineScroll
+            let expected = CGPoint(x: stepStart.x - 4 * lineX, y: stepStart.y + 6 * lineY)
+            guard lineX > 0, lineY > 0, expected.x >= range().minimum.x, expected.y <= range().maximum.y else {
+                throw MightyError("마우스 휠을 굴릴 여유가 없습니다. expected=\(NSStringFromPoint(expected)) lines=(\(lineX),\(lineY)) " + wheelState())
+            }
+            report["mouseWheel"] = try MightyGraphInteractionDiagnostics.postWheel(window: window, at: stepPoint, dy: -2, continuous: false)
+            try MightyGraphInteractionDiagnostics.postWheel(window: window, at: stepPoint, dy: -2, continuous: false)
+            try MightyGraphInteractionDiagnostics.postWheel(window: window, at: stepPoint, dy: -2, continuous: false)
+            try MightyGraphInteractionDiagnostics.postWheel(window: window, at: stepPoint, dx: 2, continuous: false)
+            try MightyGraphInteractionDiagnostics.postWheel(window: window, at: stepPoint, dx: 2, continuous: false)
+            try await store.waitForSmoke(timeout: 3, step: "mouse wheel steps move the page by their lines on both axes",
+                                         detail: { "start=\(NSStringFromPoint(stepStart)) expected=\(NSStringFromPoint(expected)) lines=(\(lineX),\(lineY)) " + wheelState() }) {
+                abs(origin().x - expected.x) <= 2 && abs(origin().y - expected.y) <= 2
+            }
+            let wheelEnd = origin()
+            try await Task.sleep(for: .milliseconds(700))
+            guard dockStill(), !changed(origin(), wheelEnd), !memory.follow.following else {
+                throw MightyError("마우스 휠로 옮긴 구조 보기가 되돌아갔거나 창 배치가 움직였습니다. end=\(NSStringFromPoint(wheelEnd)) " + wheelState())
+            }
+            report["mouseWheelMovesPageOnBothAxes"] = true
+            report["wheelGeometry"] = ["trackpadStart": NSStringFromPoint(trackpadStart), "sidewaysStart": NSStringFromPoint(sidewaysStart),
+                                       "wheelReader": NSStringFromPoint(wheelReader), "stepStart": NSStringFromPoint(stepStart),
+                                       "stepEnd": NSStringFromPoint(wheelEnd), "lines": "\(lineX),\(lineY)",
+                                       "dock": NSStringFromPoint(dock.contentView.bounds.origin), "pageWheels": probe.pageWheels]
             report["screenshot"] = try store.captureSmokeWindow(window, filename: "mighty-structure-pan.png").path
             report["passed"] = true
         } catch {
@@ -227,6 +341,21 @@ enum MightyStructureInteractionDiagnostics {
             if let url = try? store.captureSmokeWindow(window, filename: "mighty-structure-pan-failure.png") { report["failureScreenshot"] = url.path }
         }
         return report
+    }
+
+    /// The pane dock around every pane (`PaneDockView`): a two-axis scroll view whose
+    /// content is its own size less the dock's inset. Left alone, it took the page's wheel.
+    private struct DockFixture: View {
+        let page: MightyStructureView
+        var body: some View {
+            GeometryReader { geometry in
+                ScrollView([.horizontal, .vertical]) {
+                    page.frame(width: max(DesignMetrics.Layout.paneMinWidth, geometry.size.width - 2 * DesignMetrics.Inset.dock),
+                               height: max(DesignMetrics.Layout.paneMinHeight, geometry.size.height - 2 * DesignMetrics.Inset.dock))
+                        .padding(DesignMetrics.Inset.dock)
+                }
+            }
+        }
     }
 
     /// Eight free requests, each long enough to fold, with a reply under each: wider
