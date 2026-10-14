@@ -28,28 +28,29 @@ public sealed partial class MainWindow
         /// <summary>The view (M/MightyStructureView.swift:101-119): the navigation bar, the board's header and its rule over the page.</summary>
         private Grid? structureView;
         private ScrollViewer? structureScroll;
-        /// <summary>The page inside the scroll view: a board shorter than the pane sits at its top left (M/MightyStructureView.swift:871-894).</summary>
+        /// <summary>The page inside the scroll view, the pane's height: a board narrower than the pane sits at its left (M/MightyStructureView.swift:378-407).</summary>
         private readonly Border structurePage = new()
         {
-            Padding = new Thickness(DesignMetrics.Inset.GraphBlockBodyH, DesignMetrics.Spacing.Md, DesignMetrics.Inset.GraphBlockBodyH, DesignMetrics.Spacing.Md),
-            HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top,
+            Padding = new Thickness(DesignMetrics.Inset.GraphBlockBodyH, DesignMetrics.Spacing.Md, DesignMetrics.Inset.GraphBlockBodyH, 0),
+            HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Stretch,
         };
         /// <summary>The boards and what they were built from, rebuilt only when something they draw changed (M/MightyGraphView.swift:325-339).</summary>
         private MightyStructure.Signature? structureSignature;
         private IReadOnlyList<Board> structureBoards = [];
         private readonly MightyStructure.ItemCache structureItems = new();
         /// <summary>
-        /// What the view keeps of the pane while it shows its diagram or timeline (M/MightyStructureView.swift:8-48): the texts
-        /// opened past their folded lines, by key; the board shown; whether the page follows the newest board's end; and the
-        /// wheel steps that are the user's.
+        /// What the view keeps of the pane while it shows its diagram or timeline (M/MightyStructureView.swift:8-62): the texts
+        /// opened past their folded lines, by key; the board shown; which of its columns follow their end; and the wheel steps
+        /// that are the user's.
         /// </summary>
         private readonly HashSet<string> structureExpanded = [];
         private readonly MightyStructure.Navigation structureNavigation = new();
-        private readonly MightyStructureFollow.PageWatch structureFollow = new();
+        private readonly MightyStructureFollow.ColumnWatch structureFollow = new();
         private readonly MightyStructureWheel.Tracker structureWheel = new();
         private bool structureShown, structureAppearing;
-        /// <summary>The newest request, the board drawn, and that board's id while it is the newest (what the page follows).</summary>
-        private string? structureNewestId, structureBoardId, structureFollowId;
+        /// <summary>The newest request and the board drawn, whether that board is the newest (only its columns follow), and the column the current or last drag, wheel or key moves (null for the page alone).</summary>
+        private string? structureNewestId, structureBoardId, structureMovingColumn;
+        private bool structureOnNewest;
         /// <summary>The navigation bar's controls, kept and changed in place so a press on one is never lost to a draw.</summary>
         private StackPanel? structureBar;
         private Button? structurePrevious, structureNext, structureListButton, structureBadge;
@@ -64,21 +65,16 @@ public sealed partial class MainWindow
         /// <summary>The frame (the board's columns), the column width it stands at, its columns and each card as last built.</summary>
         private string? structureFrameKey;
         private double structureWidth;
-        private StackPanel? structureKanban;
         private readonly Dictionary<string, StructureColumn> structureColumns = [];
         private readonly Dictionary<string, (object Key, FrameworkElement View)> structureCards = [];
         private readonly Dictionary<string, (RichEditBox View, string Source, bool Light)> structureAnswers = [];
-        /// <summary>A left press on the page that may become a drag (where it went down and where the page stood), the drag it became, and when the last one ended, in seconds.</summary>
-        private (Point Point, double X, double Y)? structurePress;
+        /// <summary>A left press on the page that may become a drag (where it went down, where the page stood, and the column pressed with where it stood), the drag it became, and when the last one ended, in seconds.</summary>
+        private (Point Point, double X, StructureColumn? Column, double Y)? structurePress;
         private bool structurePanning, structurePanned;
         private double structurePanReleasedAt;
-        /// <summary>
-        /// The user's own scroll (M/MightyStructureView.swift:22-41): a finger or the scroll bar moving the page in steps, a press
-        /// held on the scroll bar, when the last scrolling key came or the bar was let go (the page may report it late), and the
-        /// offset the follow rule last judged.
-        /// </summary>
-        private bool structureScrolling, structureBarHeld;
-        private double structureInputAt, structureJudgedY;
+        /// <summary>The user's own scroll (M/MightyStructureView.swift:22-41): a press held on a scroll bar, and when the last scrolling key came or the bar was let go (the column may report it late).</summary>
+        private bool structureBarHeld;
+        private double structureInputAt;
         /// <summary>
         /// What a press went down on, until it comes up; whether a part was left as it was for a press or a selection, to be built
         /// once that ends; and a draw a card's own button asked for, which waits for nothing.
@@ -95,12 +91,20 @@ public sealed partial class MainWindow
         private bool structureMotion;
         private const string StructureHeaderMarks = "header";
 
-        /// <summary>One column of the board: its frame, its header's place and what that header was built from, and its cards' panel.</summary>
-        private sealed class StructureColumn(StackPanel view, Border header, StackPanel cards)
+        /// <summary>
+        /// One column of the board: its id, its frame, its header's place and what that header was built from, its cards' panel in a
+        /// scroll view of its own, whether a finger or its scroll bar moves it in steps, and the offset the follow rule last judged.
+        /// </summary>
+        private sealed class StructureColumn(string id, Grid view, Border header, ScrollViewer scroll, StackPanel cards)
         {
-            internal readonly StackPanel View = view, Cards = cards;
+            internal readonly string Id = id;
+            internal readonly Grid View = view;
             internal readonly Border Header = header;
+            internal readonly ScrollViewer Scroll = scroll;
+            internal readonly StackPanel Cards = cards;
             internal object? HeaderKey;
+            internal bool Scrolling;
+            internal double JudgedY;
         }
 
         /// <summary>A chip's height, a card's and a sub-agent card's corners, a sub-agent card's status bar and a tool call's glyph column (M/MightyStructureView.swift:83-92).</summary>
@@ -115,10 +119,10 @@ public sealed partial class MainWindow
         // ── the view ──────────────────────────────────────────────────────────
 
         /// <summary>
-        /// The structure view (M/MightyStructureView.swift:101-119, 357-440): ◀, the board's place with the list, ▶ and the badge
-        /// of a newer board; the board's header and a rule; then the page, which scrolls both ways on <c>cardRaised</c>, its content
-        /// <c>Inset.GraphBlockBodyH</c> by <c>Spacing.Md</c> in. Dragging its empty space moves it, and every report of where it
-        /// stands decides whether it follows the newest board's end (<see cref="MightyStructureFollow.PageWatch"/>).
+        /// The structure view (M/MightyStructureView.swift:101-119, 371-424): ◀, the board's place with the list, ▶ and the badge
+        /// of a newer board; the board's header and a rule; then the page on <c>cardRaised</c>, its content <c>Inset.GraphBlockBodyH</c>
+        /// in and <c>Spacing.Md</c> down, which scrolls sideways only, when the columns do not fit; each column scrolls up and down on
+        /// its own (<see cref="BuildStructureKanban"/>). Dragging the page's empty space moves it and the column pressed.
         /// </summary>
         private void BuildMightyStructure()
         {
@@ -168,33 +172,13 @@ public sealed partial class MainWindow
 
             structureScroll = new ScrollViewer
             {
-                Content = structurePage, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-                VerticalScrollMode = ScrollMode.Auto, HorizontalScrollMode = ScrollMode.Auto, IsTabStop = true, Background = b.Brush(DesignToken.CardRaised),
+                Content = structurePage, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                VerticalScrollMode = ScrollMode.Disabled, HorizontalScrollMode = ScrollMode.Auto, IsTabStop = true, Background = b.Brush(DesignToken.CardRaised),
             };
             AutomationProperties.SetAutomationId(structureScroll, "mighty-structure-page-" + id);
             AutomationProperties.SetName(structureScroll, Locale.Get("graph.view.structure"));
-            // A move of the user's is judged the moment the page knows where it goes, not when it reports the move (M/MightyStructurePanning.swift:309-314).
-            structureScroll.ViewChanging += (_, args) =>
-            {
-                var to = args.FinalView.VerticalOffset;
-                if (StructureUserMoving && Math.Abs(to - structureJudgedY) > 0.5) structureFollow.UserScrolled(to - structureJudgedY);
-                structureJudgedY = to;
-            };
-            structureScroll.ViewChanged += (_, args) =>
-            {
-                // The page moves in steps only under the user's wheel, keys, finger or scroll bar: the view's own scrolls land at once.
-                if (args.IsIntermediate) structureScrolling = true;
-                var user = StructureUserMoving;
-                if (!args.IsIntermediate) structureScrolling = false;
-                ObserveStructurePage(user);
-            };
-            // The columns share the pane's width: a new width sizes them again. A new height (a taller composer) moves no content, yet may hide the board's end.
-            structureScroll.SizeChanged += (_, args) =>
-            {
-                if (args.NewSize.Width != args.PreviousSize.Width) QueueGraphRefresh();
-                if (args.NewSize.Height != args.PreviousSize.Height) ObserveStructurePage(false);
-            };
-            structurePage.SizeChanged += (_, _) => ObserveStructurePage(false);
+            // The columns share the pane's width: a new width sizes them again.
+            structureScroll.SizeChanged += (_, args) => { if (args.NewSize.Width != args.PreviousSize.Width) QueueGraphRefresh(); };
             structureScroll.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler(OnStructurePointerPressed), true);
             structureScroll.AddHandler(UIElement.PointerMovedEvent, new PointerEventHandler(OnStructurePointerMoved), true);
             structureScroll.AddHandler(UIElement.PointerReleasedEvent, new PointerEventHandler(OnStructurePointerReleased), true);
@@ -214,8 +198,8 @@ public sealed partial class MainWindow
         }
 
         /// <summary>
-        /// Shows or hides the view. Shown again, the page opens at its end and a following reader is taken to the newest board's end
-        /// by the next draw. The running cards' borders march only while it shows.
+        /// Shows or hides the view. Shown again, the newest board's columns open at their end and a following one is taken to it by
+        /// the next draw. The running cards' borders march only while it shows.
         /// </summary>
         private void ShowMightyStructure(bool shown)
         {
@@ -224,7 +208,11 @@ public sealed partial class MainWindow
             if (shown == structureShown) return;
             structureShown = shown;
             if (shown) structureAppearing = true;
-            else { EndStructurePan(); structurePressed = null; structureBarHeld = structureScrolling = false; structureListFlyout?.Hide(); }
+            else
+            {
+                EndStructurePan(); structurePressed = null; structureBarHeld = false; structureListFlyout?.Hide();
+                foreach (var column in structureColumns.Values) column.Scrolling = false;
+            }
             foreach (var edge in structureOutlines.Values) if (edge.March is { } march) StartStructureMarch(edge.Line, march);
         }
 
@@ -267,14 +255,17 @@ public sealed partial class MainWindow
             var viewport = structureScroll.ActualWidth > 0 ? structureScroll.ActualWidth : graphHost?.ActualWidth ?? 0;
             var width = MightyStructure.ColumnWidth(viewport - 2 * DesignMetrics.Inset.GraphBlockBodyH, board?.Columns.Count ?? 3, DesignMetrics.Spacing.Lg);
             var frameKey = string.Join('\n', board is null ? ["empty", language] : new[] { board.Id, language }.Concat(board.Columns.Select(c => c.Id)));
-            var changed = frameKey != structureFrameKey;
+            var changed = frameKey != structureFrameKey; var rebuilt = changed;
+            // A frame built again for the same board keeps where each column's reader was.
+            Dictionary<string, double> kept = [];
             if (changed)
             {
                 // A new frame takes every card out of its column: not while a press is down on the page or a card holds a selection.
                 if (structureFrameKey is not null && !structureForced && (structurePressed is not null || structureCards.Values.Any(part => StructureHeld(part.View)))) { structureDeferred = true; return; }
                 structureFrameKey = frameKey;
+                if (board?.Id == structureBoardId) kept = structureColumns.Values.ToDictionary(column => column.Id, column => column.Scroll.VerticalOffset);
                 foreach (var column in structureColumns.Values) column.Cards.Children.Clear();
-                structureColumns.Clear(); structureKanban = null;
+                structureColumns.Clear();
                 structurePage.Child = board is null ? StructureEmpty() : BuildStructureKanban(board, width);
             }
             else if (width != structureWidth)
@@ -283,9 +274,8 @@ public sealed partial class MainWindow
                 changed = true;
             }
             structureWidth = width;
-            // The newest board's end is what the page follows; an older board follows nothing.
-            var followId = index is { } shown && shown == boards.Count - 1 ? board?.Id : null;
-            structureFollowId = followId;
+            // The newest board's columns follow their end; an older board follows nothing.
+            structureOnNewest = index is { } shown && shown == boards.Count - 1;
             var drawn = new HashSet<string>();
             if (board is not null)
             {
@@ -297,6 +287,7 @@ public sealed partial class MainWindow
                     if (!Equals(place.HeaderKey, headerKey))
                     {
                         place.Header.Child = StructureColumnHeader(column); place.HeaderKey = headerKey;
+                        AutomationProperties.SetName(place.Scroll, StructureStepTitle(column.Step));
                         AutomationProperties.SetName(place.View, Locale.Get("graph.structure.board.columnAccessibility", new Dictionary<string, string>
                         {
                             ["name"] = StructureStepTitle(column.Step), ["state"] = StructureStepState(column.Step.Step), ["count"] = column.Count.ToString(CultureInfo.InvariantCulture),
@@ -342,21 +333,23 @@ public sealed partial class MainWindow
             structureNewestId = newest;
             var moved = board?.Id != structureBoardId;
             structureBoardId = board?.Id;
-            // Shown again, the page opens at its end, as the Mac's does (M/MightyStructureView.swift:871-882): a reader who had
-            // stopped following is judged there, and follows again where the newest board's end shows.
-            if (structureAppearing) { structureAppearing = false; changed = true; ScrollStructure((followId is null ? null : structureFollow.Appeared(followId)) ?? MightyStructureFollow.Scroll.Bottom); }
-            // Another board: the newest is followed, an older one opens at its top (M/MightyStructureView.swift:425-433).
-            else if (moved)
+            var appearing = structureAppearing; structureAppearing = false;
+            if (board is not null)
             {
-                changed = true;
-                if (followId is not null) ScrollStructure(structureFollow.NewRequest(followId));
-                else { structureFollow.Stop(); ScrollStructureTop(); }
+                // Shown again, or drawn in a new frame, each column appears (M/MightyStructureView.swift:491, 935-955).
+                if (appearing || rebuilt) foreach (var place in structureColumns.Values) AppearStructureColumn(board.Id, place, !appearing && kept.TryGetValue(place.Id, out var y) ? y : null);
+                // A new request on the newest board is the user's own: every column shows its end, and follows it from then on.
+                else if (arrived && newest is not null && structureOnNewest) foreach (var place in structureColumns.Values) ScrollStructureColumn(place, structureFollow.NewRequest(board.Id, place.Id));
+                // Shown again, another board, or a new request on the newest one: the page shows its first column again (M/MightyStructureView.swift:409-424).
+                if (appearing || moved || arrived && structureOnNewest) { changed = true; ScrollStructureStart(); }
             }
-            // A new request on the newest board is the user's own: shown, and followed from then on.
-            else if (arrived && newest is not null && followId is not null) { changed = true; ScrollStructure(structureFollow.NewRequest(followId)); }
-            // A card that grew in a shorter column moves the board's end without resizing the page, and a page shown again has the
-            // size it had: where it stands is reported once it is laid out.
-            if (changed) Container.DispatcherQueue.TryEnqueue(() => { if (QueuePaneAlive && ShownStructureScroll is { } scroll) { scroll.UpdateLayout(); ObserveStructurePage(false); } });
+            // A column shown again has the size it had: where each stands is reported once it is laid out.
+            if (changed) Container.DispatcherQueue.TryEnqueue(() =>
+            {
+                if (!QueuePaneAlive || ShownStructureScroll is not { } scroll) return;
+                scroll.UpdateLayout();
+                foreach (var place in structureColumns.Values) ObserveStructureColumn(place, false);
+            });
             AutoLoadGraphHistory(pane, retained);
         }
 
@@ -579,20 +572,48 @@ public sealed partial class MainWindow
         };
 
         /// <summary>
-        /// The board's columns (M/MightyStructureView.swift:467-488): one per step, <c>Spacing.Lg</c> apart and <paramref name="width"/>
-        /// wide, each its header and, <c>Spacing.Sm</c> under it, its cards <c>Spacing.Md</c> apart.
+        /// The board's columns (M/MightyStructureView.swift:426-530): one per step, <c>Spacing.Lg</c> apart, <paramref name="width"/>
+        /// wide and the page's height, each its header and, <c>Spacing.Sm</c> under it, its cards <c>Spacing.Md</c> apart in a scroll
+        /// view of their own, ending <c>Spacing.Md</c> under the last. The header stays put while the cards move. Every report of where
+        /// a column stands decides whether it follows its end (<see cref="MightyStructureFollow.ColumnWatch"/>), and a move of the
+        /// user's is judged the moment the column knows where it goes, not when it reports the move (M/MightyStructurePanning.swift:395-416).
         /// </summary>
         private StackPanel BuildStructureKanban(Board board, double width)
         {
-            var kanban = structureKanban = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Lg };
+            var kanban = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Lg };
             AutomationProperties.SetAutomationId(kanban, "mighty-structure-board-" + board.Id);
             foreach (var column in board.Columns)
             {
-                var header = new Border(); var cards = new StackPanel { Spacing = DesignMetrics.Spacing.Md };
-                var view = new StackPanel { Spacing = DesignMetrics.Spacing.Sm, Width = width, VerticalAlignment = VerticalAlignment.Top };
-                view.Children.Add(header); view.Children.Add(cards);
+                var header = new Border(); var cards = new StackPanel { Spacing = DesignMetrics.Spacing.Md, Padding = new Thickness(0, 0, 0, DesignMetrics.Spacing.Md) };
+                var scroll = new ScrollViewer
+                {
+                    Content = cards, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                    VerticalScrollMode = ScrollMode.Auto, HorizontalScrollMode = ScrollMode.Disabled,
+                };
+                AutomationProperties.SetAutomationId(scroll, "mighty-structure-column-scroll-" + column.Id);
+                var view = new Grid { RowSpacing = DesignMetrics.Spacing.Sm, Width = width };
+                view.RowDefinitions.Add(new() { Height = GridLength.Auto }); view.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
+                Grid.SetRow(scroll, 1); view.Children.Add(header); view.Children.Add(scroll);
                 AutomationProperties.SetAutomationId(view, "mighty-structure-column-" + column.Id);
-                structureColumns[column.Id] = new(view, header, cards);
+                var place = structureColumns[column.Id] = new(column.Id, view, header, scroll, cards);
+                scroll.ViewChanging += (_, args) =>
+                {
+                    var to = args.FinalView.VerticalOffset;
+                    if (StructureUserMoving(place) && Math.Abs(to - place.JudgedY) > 0.5) structureFollow.UserScrolled(place.Id, to - place.JudgedY);
+                    place.JudgedY = to;
+                };
+                scroll.ViewChanged += (_, args) =>
+                {
+                    // A column moves in steps only under the user's wheel, keys, finger or scroll bar: the view's own scrolls land at once.
+                    if (args.IsIntermediate) place.Scrolling = true;
+                    var user = StructureUserMoving(place);
+                    if (!args.IsIntermediate) place.Scrolling = false;
+                    ObserveStructureColumn(place, user);
+                };
+                // A new height (a taller composer) moves no card, yet may hide the column's end.
+                scroll.SizeChanged += (_, args) => { if (args.NewSize.Height != args.PreviousSize.Height) ObserveStructureColumn(place, false); };
+                cards.SizeChanged += (_, _) => ObserveStructureColumn(place, false);
+                view.AddHandler(UIElement.PointerWheelChangedEvent, new PointerEventHandler((_, args) => OnStructureColumnWheel(place, args)), true);
                 kanban.Children.Add(view);
             }
             return kanban;
@@ -619,85 +640,126 @@ public sealed partial class MainWindow
         private static double StructureNow => Environment.TickCount64 / 1000.0;
 
         /// <summary>
-        /// The page is moving under the user's hand (M/MightyStructureView.swift:36-41): the scroll bar or a finger moving it in steps,
-        /// the scroll bar held, or a scrolling key whose scroll the page has yet to report, as the system's scroll; a drag or the
-        /// moment after one; or a wheel step still settling (<see cref="MightyStructureWheel.UserMoving"/>).
+        /// The column is moving under the user's hand (M/MightyStructureView.swift:42-56): a finger or its scroll bar moving it in
+        /// steps, as the system's scroll; or, when the current or last drag, wheel or key moves this column, a scroll bar held, a
+        /// scrolling key whose scroll the column has yet to report, a drag or the moment after one, or a wheel step still settling
+        /// (<see cref="MightyStructureWheel.UserMoving"/>).
         /// </summary>
-        private bool StructureUserMoving
+        private bool StructureUserMoving(StructureColumn place)
         {
-            get
-            {
-                var now = StructureNow;
-                return MightyStructureWheel.UserMoving(structureScrolling || structureBarHeld || now - structureInputAt < MightyStructurePan.ReleaseGrace, structurePanning, structurePanReleasedAt, structureWheel, now);
-            }
+            var now = StructureNow;
+            return place.Scrolling || structureMovingColumn == place.Id
+                && MightyStructureWheel.UserMoving(structureBarHeld || now - structureInputAt < MightyStructurePan.ReleaseGrace, structurePanning, structurePanReleasedAt, structureWheel, now);
+        }
+
+        /// <summary>The column is the drawn board's while the view shows.</summary>
+        private bool StructureColumnShown(StructureColumn place) =>
+            QueuePaneAlive && ShownStructureScroll is not null && structureColumns.TryGetValue(place.Id, out var drawn) && ReferenceEquals(drawn, place);
+
+        /// <summary>The column a press, a wheel or a key at <paramref name="source"/> belongs to: its header, its scroll bar or one of its cards.</summary>
+        private StructureColumn? StructureColumnOf(object? source) =>
+            source is UIElement element ? structureColumns.Values.FirstOrDefault(column => StructureInside(element, column.View)) : null;
+
+        /// <summary>
+        /// Reports where a column stands, in its own top-down coordinates (M/MightyStructureView.swift:482-490): its cards' frame,
+        /// its height and its last card's bottom (the column's newest) in one report, so the follow rule never judges one against a
+        /// stale other. An older board follows nothing.
+        /// </summary>
+        private void ObserveStructureColumn(StructureColumn place, bool userScrolling)
+        {
+            if (structureBoardId is not { } board || place.Scroll is not { ViewportHeight: > 0 } scroll || !place.Cards.IsLoaded || !StructureColumnShown(place)) return;
+            var cards = place.Cards; var origin = -cards.TransformToVisual(scroll).TransformPoint(new Point()).Y;
+            place.JudgedY = scroll.VerticalOffset;
+            var page = new MightyStructureFollow.Page(origin, scroll.ViewportHeight, cards.ActualHeight, place.Id, cards.ActualHeight - cards.Padding.Bottom);
+            ScrollStructureColumn(place, structureFollow.Observe(board, structureOnNewest, place.Id, page, userScrolling || StructureUserMoving(place)));
         }
 
         /// <summary>
-        /// Reports where the page stands, in its own top-down coordinates (M/MightyStructureView.swift:398-416): the page's frame,
-        /// the pane's height and the newest board's bottom in one report, so the follow rule never judges one against a stale other.
-        /// An older board follows nothing.
+        /// A column appeared, drawn in a new frame or shown again (M/MightyStructureView.swift:491, 935-955): a following column shows
+        /// its end. Any other column of the newest board opens where its reader left it in a frame built again for the same board
+        /// (<paramref name="kept"/>), else at its end, as the Mac's does, and is judged by its first report; an older board's opens
+        /// at its top.
         /// </summary>
-        private void ObserveStructurePage(bool userScrolling)
+        private void AppearStructureColumn(string board, StructureColumn place, double? kept)
         {
-            if (ShownStructureScroll is not { ViewportHeight: > 0 } scroll || !structurePage.IsLoaded || !QueuePaneAlive) return;
-            double? bottom = null;
-            if (structureFollowId is not null && structureKanban is { IsLoaded: true, ActualHeight: > 0 } kanban)
-                bottom = kanban.TransformToVisual(structurePage).TransformPoint(new Point(0, kanban.ActualHeight)).Y;
-            var origin = -structurePage.TransformToVisual(scroll).TransformPoint(new Point()).Y;
-            structureJudgedY = scroll.VerticalOffset;
-            var target = structureFollow.Observe(new(origin, scroll.ViewportHeight, structurePage.ActualHeight, structureFollowId, bottom), userScrolling || StructureUserMoving);
-            if (structureFollowId is not null) ScrollStructure(target);
+            var target = structureFollow.Appeared(board, structureOnNewest, place.Id);
+            if (target is not null || structureOnNewest && kept is null) ScrollStructureColumn(place, MightyStructureFollow.Scroll.Bottom);
+            else PlaceStructureColumn(place, kept ?? 0);
         }
 
         /// <summary>
-        /// The page's end, or the board's bottom at the viewport's bottom, at the page's left edge, after the current layout pass: a
-        /// report arrives while the page is being laid out (M/MightyStructureView.swift:442-455).
+        /// A column at its end, after the current layout pass: a report arrives while the column is being laid out
+        /// (M/MightyStructureView.swift:509-530). A column's newest card is its last, so either target of the follow rule is its end.
+        /// Only the column moves, never the page around it.
         /// </summary>
-        private void ScrollStructure(MightyStructureFollow.Scroll? target)
+        private void ScrollStructureColumn(StructureColumn place, MightyStructureFollow.Scroll? target)
         {
-            if (target is not { } to) return;
+            if (target is null) return;
             Container.DispatcherQueue.TryEnqueue(() =>
             {
-                // A drag, a wheel step or a scroll of the user's is theirs: nothing scrolls under it, even a scroll asked for just before it began.
-                if (StructureUserMoving || !QueuePaneAlive || ShownStructureScroll is not { } scroll) return;
-                scroll.UpdateLayout();
-                if (to.Card is not null && structureKanban is { IsLoaded: true, ActualHeight: > 0 } kanban)
-                {
-                    var corner = kanban.TransformToVisual(structurePage).TransformPoint(new Point(0, kanban.ActualHeight));
-                    scroll.ChangeView(0, Math.Clamp(corner.Y - scroll.ViewportHeight, 0, scroll.ScrollableHeight), null, true);
-                }
-                else scroll.ChangeView(0, scroll.ScrollableHeight, null, true);
+                // A drag, a wheel step or a scroll of the user's in the column is theirs: nothing scrolls under it, even a scroll asked for just before it began.
+                if (StructureUserMoving(place) || !StructureColumnShown(place)) return;
+                // Nor once the column stopped following since: a text opened in it, or the user's move, after the report that asked for this scroll (M/MightyStructureView.swift:513-515).
+                if (!structureFollow.Following(place.Id)) return;
+                place.Scroll.UpdateLayout(); place.Scroll.ChangeView(null, place.Scroll.ScrollableHeight, null, true);
             });
         }
 
-        /// <summary>An older board opens at its top left.</summary>
-        private void ScrollStructureTop() => Container.DispatcherQueue.TryEnqueue(() =>
+        /// <summary>A column at <paramref name="y"/> after the current layout pass: an older board's at its top, or where its reader left it.</summary>
+        private void PlaceStructureColumn(StructureColumn place, double y) => Container.DispatcherQueue.TryEnqueue(() =>
+        {
+            if (!StructureColumnShown(place)) return;
+            place.Scroll.UpdateLayout(); place.Scroll.ChangeView(null, Math.Min(y, place.Scroll.ScrollableHeight), null, true);
+        });
+
+        /// <summary>The page back at its first column, after the current layout pass (M/MightyStructureView.swift:421-424).</summary>
+        private void ScrollStructureStart() => Container.DispatcherQueue.TryEnqueue(() =>
         {
             if (!QueuePaneAlive || ShownStructureScroll is not { } scroll) return;
-            scroll.UpdateLayout(); scroll.ChangeView(0, 0, null, true);
+            scroll.UpdateLayout(); scroll.ChangeView(0, null, null, true);
         });
 
         /// <summary>
-        /// A scrolling key is the user's scroll before the page reports it, and with Windows' animations off it moves the page in
-        /// one change, never in steps: noted when the page can still move that way (-1, 0 or 1 on each axis).
+        /// A scrolling key is the user's scroll of the column it moves before the column reports it, and with Windows' animations off
+        /// it moves the column in one change, never in steps: noted when the column can still move that way (-1 or 1).
         /// </summary>
-        private void NoteStructureInput(int across, int down)
+        private void NoteStructureInput(StructureColumn? place, int down)
         {
-            if (structureScroll is not { } scroll) return;
-            if (down < 0 && scroll.VerticalOffset > 0.5 || down > 0 && scroll.VerticalOffset < scroll.ScrollableHeight - 0.5
-                || across < 0 && scroll.HorizontalOffset > 0.5 || across > 0 && scroll.HorizontalOffset < scroll.ScrollableWidth - 0.5) structureInputAt = StructureNow;
+            if (place?.Scroll is not { } scroll || !(down < 0 && scroll.VerticalOffset > 0.5 || down > 0 && scroll.VerticalOffset < scroll.ScrollableHeight - 0.5)) return;
+            structureMovingColumn = place.Id; structureInputAt = StructureNow;
         }
 
         /// <summary>
-        /// A wheel on the page (M/MightyStructurePanning.swift:247-289). The page's scroll viewer moves itself, chaining a wheel out
-        /// of an inner scroll view at its edge, so the wheel is only noted as the user's: a Windows wheel message, a mouse's notch
-        /// or a touchpad's, carries no gesture, and is a step. A positive delta shows what is above, or what is to the right.
+        /// A wheel on the page outside the columns (M/MightyStructurePanning.swift:340-393): the page's scroll viewer moves itself,
+        /// sideways only, so the wheel is only noted as the user's: a Windows wheel message, a mouse's notch or a touchpad's,
+        /// carries no gesture, and is a step. A positive delta shows what is above, or what is to the right.
         /// </summary>
         private void OnStructureWheel(object sender, PointerRoutedEventArgs args)
         {
-            if (structureScroll is not { } scroll || args.KeyModifiers.HasFlag(VirtualKeyModifiers.Control)) return;
+            if (structureScroll is not { } scroll || args.KeyModifiers.HasFlag(VirtualKeyModifiers.Control) || StructureColumnOf(args.OriginalSource) is not null) return;
             var wheel = args.GetCurrentPoint(scroll).Properties; double delta = wheel.MouseWheelDelta;
+            structureMovingColumn = null;
             structureWheel.Feed(MightyStructureWheel.Stage.Step, true, wheel.IsHorizontalMouseWheel ? (-delta, 0) : (0, delta), StructureNow);
+        }
+
+        /// <summary>
+        /// A wheel over a column (M/MightyStructurePanning.swift:340-393), noted as the user's move of that column, or of the page
+        /// alone for a sideways one. The column's scroll viewer moves itself up and down; a step it does not take goes no further,
+        /// since the page, which moves sideways only, would turn it sideways, and one over the header moves the column by its delta.
+        /// </summary>
+        private void OnStructureColumnWheel(StructureColumn place, PointerRoutedEventArgs args)
+        {
+            if (args.KeyModifiers.HasFlag(VirtualKeyModifiers.Control)) return;
+            var wheel = args.GetCurrentPoint(place.View).Properties; double delta = wheel.MouseWheelDelta;
+            var sideways = wheel.IsHorizontalMouseWheel || args.KeyModifiers.HasFlag(VirtualKeyModifiers.Shift);
+            structureMovingColumn = sideways ? null : place.Id;
+            structureWheel.Feed(MightyStructureWheel.Stage.Step, true, wheel.IsHorizontalMouseWheel ? (-delta, 0) : (0, delta), StructureNow);
+            if (sideways || args.Handled) return;
+            args.Handled = true;
+            if (StructureInside(args.OriginalSource as UIElement, place.Scroll)) return;
+            var scroll = place.Scroll;
+            var to = MightyStructureWheel.Origin((0, scroll.VerticalOffset), (0, delta), MightyStructureWheel.Axis.Vertical, (0, 0), (0, scroll.ScrollableHeight));
+            scroll.ChangeView(null, to.Y, null);
         }
 
         private void OnStructureKeyDown(object sender, KeyRoutedEventArgs args)
@@ -706,10 +768,8 @@ public sealed partial class MainWindow
             if (StructureHit<RichEditBox>(args.OriginalSource) is not null) return;
             switch (args.Key)
             {
-                case VirtualKey.Up or VirtualKey.PageUp or VirtualKey.Home: NoteStructureInput(0, -1); break;
-                case VirtualKey.Down or VirtualKey.PageDown or VirtualKey.End: NoteStructureInput(0, 1); break;
-                case VirtualKey.Left: NoteStructureInput(-1, 0); break;
-                case VirtualKey.Right: NoteStructureInput(1, 0); break;
+                case VirtualKey.Up or VirtualKey.PageUp or VirtualKey.Home: NoteStructureInput(StructureColumnOf(args.OriginalSource), -1); break;
+                case VirtualKey.Down or VirtualKey.PageDown or VirtualKey.End: NoteStructureInput(StructureColumnOf(args.OriginalSource), 1); break;
             }
         }
 
@@ -731,9 +791,9 @@ public sealed partial class MainWindow
         }
 
         /// <summary>
-        /// What a press lands on (M/MightyStructurePanning.swift:133-152): a text where its words are laid out, a text box or a
+        /// What a press lands on (M/MightyStructurePanning.swift:205-226): a text where its words are laid out, a text box or a
         /// scroll bar takes its own drag; anything else inside the page, a button and the empty part of a text's frame too, is the
-        /// page until the press turns out to be a click.
+        /// page until the press turns out to be a click. A column's own scroll view is the page's: only one inside a card is an inner one.
         /// </summary>
         private MightyStructurePan.Target StructurePanTarget(PointerRoutedEventArgs args)
         {
@@ -748,7 +808,7 @@ public sealed partial class MainWindow
                 if (element is TextBlock { IsTextSelectionEnabled: true } words)
                     return StructureOnText(words, args.GetCurrentPoint(words).Position) ? MightyStructurePan.Target.TextOrControl : MightyStructurePan.Target.Page;
                 if (element is TextBox or ScrollBar) return MightyStructurePan.Target.TextOrControl;
-                if (element is ScrollViewer) return MightyStructurePan.Target.InnerScroll;
+                if (element is ScrollViewer viewer && !structureColumns.Values.Any(column => ReferenceEquals(column.Scroll, viewer))) return MightyStructurePan.Target.InnerScroll;
             }
             return MightyStructurePan.Target.Outside;
         }
@@ -782,11 +842,20 @@ public sealed partial class MainWindow
             if (!point.Properties.IsLeftButtonPressed) return;
             structurePressed = args.OriginalSource as UIElement;
             structureBarHeld = StructureHit<ScrollBar>(args.OriginalSource) is not null;
+            var column = StructureColumnOf(args.OriginalSource);
+            structureMovingColumn = column?.Id;
             if (args.Pointer.PointerDeviceType != PointerDeviceType.Mouse) return;
-            var movable = MightyStructurePan.Scrollable((0, 0), (scroll.ScrollableWidth, scroll.ScrollableHeight));
+            // The page moves sideways and the column pressed up and down (M/MightyStructurePanning.swift:319-337): either may make the press a pan.
+            var page = StructureRange(scroll, MightyStructureWheel.Axis.Horizontal);
+            var movable = MightyStructurePan.Scrollable(page.Minimum, page.Maximum);
+            if (column is not null) { var range = StructureRange(column.Scroll, MightyStructureWheel.Axis.Vertical); movable |= MightyStructurePan.Scrollable(range.Minimum, range.Maximum); }
             if (MightyStructurePan.MayPan(StructurePanTarget(args), args.KeyModifiers != VirtualKeyModifiers.None, movable))
-                structurePress = (point.Position, scroll.HorizontalOffset, scroll.VerticalOffset);
+                structurePress = (point.Position, scroll.HorizontalOffset, column, column?.Scroll.VerticalOffset ?? 0);
         }
+
+        /// <summary>The origins a scroll view of the board may take (M/MightyStructurePanning.swift:263-270): the page sideways only, a column up and down only.</summary>
+        private static ((double X, double Y) Minimum, (double X, double Y) Maximum) StructureRange(ScrollViewer scroll, MightyStructureWheel.Axis axis) =>
+            MightyStructurePan.Confined((0, 0), (scroll.ScrollableWidth, scroll.ScrollableHeight), (scroll.HorizontalOffset, scroll.VerticalOffset), axis);
 
         private void OnStructurePointerMoved(object sender, PointerRoutedEventArgs args)
         {
@@ -804,8 +873,14 @@ public sealed partial class MainWindow
                 structurePanning = structurePanned = true;
                 scroll.CapturePointer(args.Pointer);
             }
-            var origin = MightyStructurePan.Origin((press.X, press.Y), start, cursor, (0, 0), (scroll.ScrollableWidth, scroll.ScrollableHeight));
-            scroll.ChangeView(origin.X, origin.Y, null, true);
+            // The grabbed point stays under the pointer, the page following it sideways and the column pressed up and down (M/MightyStructurePanning.swift:416-431).
+            var page = StructureRange(scroll, MightyStructureWheel.Axis.Horizontal);
+            scroll.ChangeView(MightyStructurePan.Origin((press.X, scroll.VerticalOffset), start, cursor, page.Minimum, page.Maximum).X, null, null, true);
+            if (press.Column is { } column && StructureColumnShown(column))
+            {
+                var range = StructureRange(column.Scroll, MightyStructureWheel.Axis.Vertical);
+                column.Scroll.ChangeView(null, MightyStructurePan.Origin((column.Scroll.HorizontalOffset, press.Y), start, cursor, range.Minimum, range.Maximum).Y, null, true);
+            }
             args.Handled = true;
         }
 
@@ -1274,7 +1349,7 @@ public sealed partial class MainWindow
             toggle.HorizontalAlignment = HorizontalAlignment.Left;
             AutomationProperties.SetAutomationId(toggle, "mighty-structure-more-" + key); AutomationProperties.SetName(toggle, label);
             AutomationProperties.SetItemStatus(toggle, Locale.Get(open ? "graph.structure.expanded" : "graph.structure.collapsed"));
-            toggle.Click += (_, _) => { if (!structurePanned) ToggleStructureText(key); };
+            toggle.Click += (_, _) => { if (!structurePanned) ToggleStructureText(key, toggle); };
             return toggle;
         }
 
@@ -1289,11 +1364,12 @@ public sealed partial class MainWindow
         private Button StructureRevealButton(string nodeId, string requestNodeId) =>
             StructureButton("arrow.up.right.square", Locale.Get("graph.structure.reveal"), "mighty-structure-reveal-" + nodeId, () => RevealStructureBlock(nodeId, requestNodeId));
 
-        // An opened or folded text is being read: nothing follows until the reader comes back to the board's end (M/MightyStructureView.swift:434-437).
-        private void ToggleStructureText(string key)
+        // An opened or folded text is being read: its column follows nothing until the reader comes back to its end (M/MightyStructureView.swift:500-506).
+        private void ToggleStructureText(string key, Button toggle)
         {
             if (!structureExpanded.Add(key)) structureExpanded.Remove(key);
-            structureFollow.Stop(); RedrawStructure("mighty-structure-more-" + key);
+            if (StructureColumnOf(toggle) is { } column) structureFollow.Stop(column.Id);
+            RedrawStructure("mighty-structure-more-" + key);
         }
 
         /// <summary>

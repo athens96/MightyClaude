@@ -3,7 +3,8 @@ namespace MightyClaude.Core;
 /// <summary>
 /// Follow mode for the structure view's page (M/MightyCore/MightyGraphFollow.swift:129-237). While the reader is at the
 /// newest work, the newest card's bottom stays in view: a new card or a card that grows is shown as it arrives. A reader who
-/// scrolls or pans away is left exactly where they are until they come back to the newest card or send a request.
+/// scrolls or pans away is left exactly where they are until they come back to the newest card or send a request. The board
+/// keeps this rule for each of its columns (<see cref="ColumnWatch"/>).
 /// </summary>
 public static class MightyStructureFollow
 {
@@ -95,6 +96,57 @@ public static class MightyStructureFollow
             if (!page.NewestHidden || page.NewestId is not { } id || page.NewestBottom is not { } bottom) return null;
             if (showing is not null && --tries <= 0) showing = null;
             return page.DocumentHeight - bottom <= Slack ? Scroll.Bottom : new(id);
+        }
+    }
+
+    /// <summary>
+    /// The board's follow state (M/MightyCore/MightyGraphFollow.swift:257-318): each column of the board shown scrolls on its own and
+    /// follows its own end by the page rule (a <see cref="PageWatch"/> per column, whose newest card is the column's last). Only the
+    /// newest board follows; another board, or the board shown becoming or ceasing to be the newest, starts over: every column of
+    /// the newest board follows, no column of an older one does. A user's move or an opened text stops one column only.
+    /// </summary>
+    public sealed class ColumnWatch
+    {
+        public string? BoardId { get; private set; }
+        public bool Newest { get; private set; }
+        private readonly Dictionary<string, PageWatch> columns = [];
+
+        /// <summary>The column follows its end: on the newest board, unless the reader left it.</summary>
+        public bool Following(string column) => Newest && (!columns.TryGetValue(column, out var watch) || watch.Following);
+
+        private void Show(string board, bool newest)
+        {
+            if (board == BoardId && newest == Newest) return;
+            BoardId = board; Newest = newest; columns.Clear();
+        }
+
+        private PageWatch Watch(string column) => columns.TryGetValue(column, out var watch) ? watch : columns[column] = new();
+
+        /// <summary>A column of <paramref name="board"/> appeared: the board was shown, or the view came back to it. A following column shows its end; any other is judged by its first report.</summary>
+        public Scroll? Appeared(string board, bool newest, string column)
+        {
+            Show(board, newest);
+            return newest ? Watch(column).Appeared(column) : null;
+        }
+
+        /// <summary>A new request on the newest board is the user's own: the column shows its end and follows it from now on.</summary>
+        public Scroll NewRequest(string board, string column)
+        {
+            Show(board, true);
+            return (columns[column] = new()).NewRequest(column);
+        }
+
+        /// <summary>The user opened or folded a text in the column: nothing follows there.</summary>
+        public void Stop(string column) { if (Newest) Watch(column).Stop(); }
+
+        /// <summary>The user moved the column by <paramref name="dy"/> points (<see cref="PageWatch.UserScrolled"/>).</summary>
+        public void UserScrolled(string column, double dy) { if (Newest && columns.TryGetValue(column, out var watch)) watch.UserScrolled(dy); }
+
+        /// <summary>A column's report (<see cref="PageWatch.Observe"/>). Returns where the column scrolls; null on an older board.</summary>
+        public Scroll? Observe(string board, bool newest, string column, Page page, bool userScrolling)
+        {
+            Show(board, newest);
+            return newest ? Watch(column).Observe(page, userScrolling) : null;
         }
     }
 }

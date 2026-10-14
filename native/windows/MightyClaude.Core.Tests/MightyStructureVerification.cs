@@ -9,8 +9,9 @@ using Step = MightyClaude.Core.MightyStructure.Step;
 
 /// <summary>
 /// The Mighty structure view against the checks of the Mac's MightyStructureTests, MightyStructurePanTests and
-/// MightyStructureFollowTests: each request's phase, the phase columns' states, a free pane's request → run → result rows,
-/// the cards' texts and caps, the sub-agent clusters, folding, panning and following.
+/// MightyStructureFollowTests and MightyStructureColumnFollowTests: each request's phase, the phase columns' states, a free
+/// pane's request → run → result rows, the cards' texts and caps, the sub-agent clusters, folding, panning and following, each
+/// column on its own.
 /// </summary>
 internal static class MightyStructureVerification
 {
@@ -401,6 +402,22 @@ internal static class MightyStructureVerification
         return Task.CompletedTask;
     }
 
+    internal static Task ADragInAColumnMovesTheColumnUpAndDownAndThePageSideways()
+    {
+        // The board's page scrolls sideways only, each column up and down only.
+        var page = MightyStructurePan.Confined((0, 0), (240, 30), (100, 0), MightyStructureWheel.Axis.Horizontal);
+        var column = MightyStructurePan.Confined((0, 0), (4, 1_800), (0, 900), MightyStructureWheel.Axis.Vertical);
+        Check(page == ((0, 0), (240, 0)) && column == ((0, 0), (0, 1_800)), "the page keeps its height and a column its place sideways");
+        // The pointer moves 40 left and 70 down: the page shows 40 more to the right, the column 70 more above, each keeping its other axis.
+        (double X, double Y) press = (300, 200), cursor = (260, 270);
+        Check(MightyStructurePan.Origin((100, 0), press, cursor, page.Minimum, page.Maximum) == (140, 0) && MightyStructurePan.Origin((0, 900), press, cursor, column.Minimum, column.Maximum) == (0, 830),
+            "a drag moves the page by its horizontal part and the column by its vertical part");
+        // A column that cannot move, and a page that fits, keep every press.
+        var still = MightyStructurePan.Confined((0, 0), (0, 1_800), (0, 0), MightyStructureWheel.Axis.Horizontal);
+        Check(!MightyStructurePan.Scrollable(still.Minimum, still.Maximum), "a page that fits cannot move up and down for a column");
+        return Task.CompletedTask;
+    }
+
     internal static Task ThePageFollowsTheNewestCard()
     {
         static Page At(double origin, double document, double? newest, double visible = 600, string? id = "b") => new(origin, visible, document, id, newest);
@@ -484,6 +501,104 @@ internal static class MightyStructureVerification
         Check(!watch.Following, "a move away stops following");
         watch.UserScrolled(300);
         Check(watch.Following, "a move back to the newest card follows again");
+        return Task.CompletedTask;
+    }
+
+    /// <summary>A column 600pt tall whose last card ends 8pt above its document's end.</summary>
+    private static Page Column(string column, double origin, double document) => new(origin, 600, document, column, document - 8);
+
+    internal static Task EachColumnFollowsItsOwnEnd()
+    {
+        // The 실행 column at its end as tool calls arrive: shown to its new end each time.
+        var watch = new MightyStructureFollow.ColumnWatch();
+        Check(watch.Appeared("b", true, "execution") == new Scroll("execution"), "a column appearing on the newest board shows its end");
+        Check(watch.Observe("b", true, "execution", Column("execution", 1_400, 2_000), false) is null && watch.Observe("b", true, "execution", Column("execution", 1_400, 2_300), false) == Scroll.Bottom
+            && watch.Following("execution"), "a column at its end follows its own growth");
+        // A short column at its top is at its end too, and follows.
+        Check(watch.Observe("b", true, "result", Column("result", 0, 200), false) is null && watch.Following("result"), "a short column follows");
+
+        watch = new();
+        watch.Observe("b", true, "execution", Column("execution", 1_400, 2_000), false);
+        watch.Observe("b", true, "request", Column("request", 900, 1_500), false);
+        // A wheel moves the 실행 column 200pt up: it stops; the 요청 column follows on.
+        watch.UserScrolled("execution", -200);
+        Check(!watch.Following("execution") && watch.Following("request"), "a user's move stops its column only");
+        // Both grow: only the 요청 column is shown to its end; the reader of 실행 stays.
+        Check(watch.Observe("b", true, "execution", Column("execution", 1_200, 2_400), false) is null && watch.Observe("b", true, "request", Column("request", 900, 1_800), false) == Scroll.Bottom,
+            "only the following column is shown to its end");
+        // A scroll the system reports in one column is that column's.
+        Check(watch.Observe("b", true, "request", Column("request", 600, 1_800), true) is null && !watch.Following("request"), "a reported scroll stops its own column");
+        // Coming back to its end resumes the column's follow.
+        Check(watch.Observe("b", true, "execution", Column("execution", 1_800, 2_400), false) is null && watch.Following("execution") && !watch.Following("request"), "a column back at its end follows again");
+
+        watch = new();
+        watch.Observe("b", true, "execution", Column("execution", 1_400, 2_000), false);
+        watch.Stop("request");
+        Check(!watch.Following("request") && watch.Following("execution"), "opening a text stops its column only");
+        Check(watch.Observe("b", true, "request", Column("request", 0, 1_200), false) is null && watch.Observe("b", true, "execution", Column("execution", 1_400, 2_300), false) == Scroll.Bottom,
+            "the other column still follows");
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// A text opened in a short, following column: the toggle stops the column before the text grows, so the grown column's
+    /// report moves nothing; had the report come first, the stop right after it leaves the column not following and the view
+    /// drops the scroll it asked for (M/MightyGraphFollowTests.swift aTextOpenedInAFollowingColumnLeavesTheReaderWhereItBegins).
+    /// </summary>
+    internal static Task ATextOpenedInAFollowingColumnLeavesTheReaderWhereItBegins()
+    {
+        MightyStructureFollow.ColumnWatch Following()
+        {
+            var made = new MightyStructureFollow.ColumnWatch();
+            Check(made.Observe("b", true, "request", Column("request", 0, 300), false) is null && made.Following("request"), "a short column at its end follows");
+            return made;
+        }
+        var watch = Following(); var late = Following();
+        watch.Stop("request");
+        Check(watch.Observe("b", true, "request", Column("request", 0, 1_200), false) is null && watch.Observe("b", true, "request", Column("request", 0, 1_200), false) is null && !watch.Following("request"),
+            "a column stopped before its text grew moves for none of its reports");
+        Check(late.Observe("b", true, "request", Column("request", 0, 1_200), false) == Scroll.Bottom, "a report before the stop asks for the column's end");
+        late.Stop("request");
+        Check(!late.Following("request"), "the stop right after it leaves the column not following");
+        Check(watch.Observe("b", true, "request", Column("request", 600, 1_200), true) is null && watch.Following("request"), "the reader scrolling down to the text's end follows again");
+        return Task.CompletedTask;
+    }
+
+    internal static Task ANewRequestOrAnotherBoardStartsTheColumnsOver()
+    {
+        var watch = new MightyStructureFollow.ColumnWatch();
+        watch.Observe("p", true, "plan", Column("plan", 1_400, 2_000), false);
+        watch.UserScrolled("plan", -500);
+        watch.Stop("execute");
+        Check(!watch.Following("plan") && !watch.Following("execute"), "the reader left both columns");
+        // A styled pipeline's next request: the same board, every column back at its end.
+        Check(watch.NewRequest("p", "plan") == new Scroll("plan") && watch.NewRequest("p", "execute") == new Scroll("execute") && watch.Following("plan") && watch.Following("execute"), "a new request shows every column's end");
+        // The column lands short of its end at first: still following, and shown again.
+        Check(watch.Observe("p", true, "plan", Column("plan", 900, 2_400), false) == Scroll.Bottom && watch.Observe("p", true, "plan", Column("plan", 1_800, 2_400), false) is null && watch.Following("plan"),
+            "a column that lands short of its end is shown again");
+
+        watch = new();
+        watch.Observe("new", true, "execution", Column("execution", 1_400, 2_000), false);
+        watch.UserScrolled("execution", -300);
+        // An older board opens at its columns' tops: none follows, and its growth moves nothing.
+        Check(watch.Appeared("old", false, "execution") is null && !watch.Following("execution") && !watch.Following("result"), "an older board follows nothing");
+        Check(watch.Observe("old", false, "execution", Column("execution", 0, 2_000), false) is null, "an older board's growth moves nothing");
+        watch.Stop("execution");
+        watch.UserScrolled("execution", 100);
+        Check(watch.BoardId == "old", "the older board is the one shown");
+        // Back to the newest board: every column shows its end and follows, whatever the reader did before.
+        Check(watch.Appeared("new", true, "execution") == new Scroll("execution") && watch.Appeared("new", true, "result") == new Scroll("result") && watch.Following("execution"), "the newest board follows every column again");
+        // The board shown stops being the newest when a newer one arrives: it follows nothing from then.
+        Check(watch.Observe("new", false, "execution", Column("execution", 1_400, 2_300), false) is null && !watch.Following("execution"), "a board that is no longer the newest follows nothing");
+
+        watch = new();
+        watch.Observe("b", true, "execution", Column("execution", 1_400, 2_000), false);
+        watch.Observe("b", true, "request", Column("request", 0, 300), false);
+        watch.UserScrolled("execution", -400);
+        // The view shows the diagram and comes back: the same board, its columns appear again.
+        Check(watch.Appeared("b", true, "execution") is null && watch.Appeared("b", true, "request") == new Scroll("request"), "coming back shows only the following columns' ends");
+        // The reader of 실행 is judged by where the column opened.
+        Check(watch.Observe("b", true, "execution", Column("execution", 1_400, 2_000), false) is null && watch.Following("execution"), "a column reopened at its end follows again");
         return Task.CompletedTask;
     }
 }

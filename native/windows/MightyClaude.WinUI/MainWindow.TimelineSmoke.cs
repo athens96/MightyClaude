@@ -125,10 +125,41 @@ public sealed partial class MainWindow
                     && edge.Line.StrokeDashArray?.ToArray() is [var dash, var gap] && Math.Abs(dash / gap - 9.0 / 7) < 1e-6,
                     "a running request's board shows the capsules beside its status and its run card's, and the marching border round that card");
                 AnimationsEnabledOverride = null; RefreshMightyView(Session);
+                // Each column scrolls on its own under a header that stays put, the page sideways only, and on the newest board each
+                // column follows its own end (M/MightyStructureView.swift:426-530; the Mac's smoke moves a column by drag, trackpad
+                // and wheel, M/MightyStructureInteractionDiagnostics.swift). Many sub-agents make the 실행 column taller than the pane.
+                MightyGraphAgent Helper(int index) => new() { Id = "timeline-smoke-helper-" + index, Title = "\uD558\uC704 \uC5D0\uC774\uC804\uD2B8 " + index, Status = "completed",
+                    Entries = [new("timeline-smoke-helper-answer-" + index, "assistant", "\uD558\uC704 \uACB0\uACFC " + index, Wire.Now())] };
+                MightyGraphRun Busy(int helpers) => new() { Id = newer.Id, Input = newer.Input, Status = "running", Agents = [.. Enumerable.Range(0, helpers).Select(Helper)] };
+                ScrollViewer ColumnScroll(string column) => structureColumns[column].Scroll;
+                bool AtEnd(string column) => ColumnScroll(column) is var scroll && Math.Abs(scroll.VerticalOffset - scroll.ScrollableHeight) < 2;
+                await SetGraphRunsForSmoke([old, latest, Busy(24)]); RefreshMightyView(Session);
+                await WaitUI(() => structureBoardId == newer.Id && structureColumns.TryGetValue("execution", out var place) && place.Cards.Children.Count > 24 && place.Scroll.ScrollableHeight > 300
+                    && structureFollow.Following("execution") && AtEnd("execution"), "the execution column taller than the pane follows its own end");
+                Require(structureScroll is { VerticalScrollMode: ScrollMode.Disabled, ScrollableHeight: < 1 }, "the board's page scrolls sideways only");
+                var others = new[] { "request", "result" }.ToDictionary(column => column, column => ColumnScroll(column).VerticalOffset);
+                var executionColumn = structureColumns["execution"]; var header = executionColumn.Header; var firstCard = (FrameworkElement)executionColumn.Cards.Children[0];
+                Windows.Foundation.Point Where(FrameworkElement part) => part.TransformToVisual(structureView!).TransformPoint(default);
+                var headerAt = Where(header); var cardAt = Where(firstCard); var pageX = structureScroll!.HorizontalOffset; var start = executionColumn.Scroll.VerticalOffset;
+                // A Page Up in the 실행 column, as its key would: the column alone moves up, away from its end, and stops following.
+                NoteStructureInput(executionColumn, -1); executionColumn.Scroll.ChangeView(null, start - 200, null, true);
+                await WaitUI(() => Math.Abs(executionColumn.Scroll.VerticalOffset - (start - 200)) < 2 && !structureFollow.Following("execution"), "a move up the execution column stops its follow");
+                owner.root.UpdateLayout();
+                Require(Math.Abs(Where(header).Y - headerAt.Y) < 0.5 && Math.Abs(Where(firstCard).Y - cardAt.Y - 200) < 2, "the column's header stays put while its cards move");
+                Require(others.All(pair => Math.Abs(ColumnScroll(pair.Key).VerticalOffset - pair.Value) < 0.5) && Math.Abs(structureScroll.HorizontalOffset - pageX) < 0.5
+                    && structureFollow.Following("request") && structureFollow.Following("result"), "the other columns and the page stay where they were, and keep following");
+                // More sub-agents under 실행: the reader up the column is not pulled back.
+                var reader = executionColumn.Scroll.VerticalOffset; var tall = executionColumn.Scroll.ScrollableHeight; var cards = executionColumn.Cards.Children.Count;
+                await SetGraphRunsForSmoke([old, latest, Busy(28)]); RefreshMightyView(Session);
+                await WaitUI(() => executionColumn.Cards.Children.Count == cards + 4 && executionColumn.Scroll.ScrollableHeight > tall + 10, "the execution column grows while its reader is up it");
+                await Task.Delay(TimeSpan.FromSeconds(MightyStructurePan.ReleaseGrace + 0.1)); owner.root.UpdateLayout();
+                Require(Math.Abs(executionColumn.Scroll.VerticalOffset - reader) < 2 && !structureFollow.Following("execution"), "a column its reader moved stays where they left it as it grows");
                 // Back to the request with the sub-agent through the list, and its result's own button shows that block in the diagram.
                 await OpenStructureList(3);
                 Invoke(StructureEntry(latest.Id));
                 await WaitUI(() => structureBoardId == latest.Id && StructureButtons("mighty-structure-reveal-" + resultId).Length == 1, "the list shows the request with the sub-agent again");
+                // An older board opens with every column at its top, following nothing.
+                await WaitUI(() => structureColumns.Values.All(column => column.Scroll.VerticalOffset < 1 && !structureFollow.Following(column.Id)), "the older board's columns open at their tops and follow nothing");
                 Require(VisualChildren(structureView!).OfType<Border>().Any(card => AutomationProperties.GetAutomationId(card) == "mighty-structure-node-" + agentId) && StructureButtons("mighty-structure-reveal-" + requestId).Length == 1,
                     "its board shows the sub-agent's card and the request's reveal button");
                 // The result's own button, so the selection the timeline row left on the request cannot pass for it.
@@ -157,7 +188,7 @@ public sealed partial class MainWindow
                 finally { Container.Width = width; Container.HorizontalAlignment = horizontal; owner.root.UpdateLayout(); }
                 await WaitUI(() => paneHeader is { ActualWidth: >= NarrowHeader } && HeaderFitsSmoke(false), "Growing the pane must show the switch words again with every header control inside the line");
                 await WaitUI(() => ViewWordsShown, "Growing the pane must show the Diagram | Timeline switch's words again");
-                return new() { ["modePersists"] = true, ["groupAndRowExpansion"] = true, ["sameTranscriptActions"] = true, ["resultFilesOpenSharedPreview"] = true, ["unchangedRefreshKeepsControls"] = true, ["diagramAndDraftPreserved"] = true, ["structureBoardAndReveal"] = true, ["structureListOpenedBy"] = string.Join(",", listOpenedBy), ["historyAffordance"] = true, ["narrowToolbar"] = true, ["screenshots"] = captures };
+                return new() { ["modePersists"] = true, ["groupAndRowExpansion"] = true, ["sameTranscriptActions"] = true, ["resultFilesOpenSharedPreview"] = true, ["unchangedRefreshKeepsControls"] = true, ["diagramAndDraftPreserved"] = true, ["structureBoardAndReveal"] = true, ["structureColumnScrollsOnItsOwn"] = true, ["structureListOpenedBy"] = string.Join(",", listOpenedBy), ["historyAffordance"] = true, ["narrowToolbar"] = true, ["screenshots"] = captures };
             }
             finally
             {
