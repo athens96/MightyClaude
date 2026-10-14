@@ -2,15 +2,19 @@ import MightyCore
 import SwiftUI
 
 /// Keeps animation inside tiny decoration subtrees. Transcript contents and
-/// graph coordinates do not receive frame-by-frame state changes.
+/// graph coordinates do not receive frame-by-frame state changes: the bars and the
+/// marching border run in Core Animation, sampled from these values over one period.
 enum MightyGraphActivityStyle {
     static func isActive(_ status: String) -> Bool {
         ["running", "starting", "queued"].contains(status)
     }
 
+    /// One cycle of the bars and of the border's march, in seconds.
+    static let period: Double = 1.6
+
     static func phase(at date: Date, reducedMotion: Bool) -> Double {
         guard !reducedMotion else { return 0 }
-        return date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.6) / 1.6
+        return date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: period) / period
     }
 
     static func barHeight(_ index: Int, phase: Double) -> CGFloat {
@@ -55,16 +59,7 @@ struct MightyGraphActivityIndicator: View {
                     Image(systemName: "bolt.fill").font(.system(size: 10)).foregroundStyle(tint)
                         .frame(width: 18, height: 14)
                 } else {
-                    TimelineView(.animation(minimumInterval: 1.0 / 24)) { context in
-                        let phase = MightyGraphActivityStyle.phase(at: context.date, reducedMotion: false)
-                        HStack(alignment: .center, spacing: DesignMetrics.Spacing.xxs) {
-                            ForEach(0..<4) { index in
-                                Capsule().fill(tint)
-                                    .frame(width: 3, height: MightyGraphActivityStyle.barHeight(index, phase: phase))
-                            }
-                        }
-                        .frame(width: 18, height: 14)
-                    }
+                    MightyGraphActivityBars(tint: tint).frame(width: 18, height: 14)
                 }
             } else if status == "waiting" {
                 Image(systemName: "pause.circle").font(.system(size: 12)).foregroundStyle(Palette.waitText)
@@ -73,6 +68,118 @@ struct MightyGraphActivityIndicator: View {
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true) // The adjacent status text carries the state.
+    }
+}
+
+/// Four capsules rising and falling as `MightyGraphActivityStyle.barHeight` says, in
+/// step with the wall clock; each bar's height is a keyframe animation sampled over
+/// one period.
+private struct MightyGraphActivityBars: NSViewRepresentable {
+    let tint: Color
+
+    func makeNSView(context: Context) -> MightyGraphActivityBarsView { MightyGraphActivityBarsView(frame: .zero) }
+    func updateNSView(_ view: MightyGraphActivityBarsView, context: Context) {
+        view.tint = NSColor(tint)
+        view.repaint(scheme: context.environment.colorScheme)
+        view.animating = true
+    }
+    static func dismantleNSView(_ view: MightyGraphActivityBarsView, coordinator: ()) { view.animating = false }
+}
+
+private final class MightyGraphActivityBarsView: LoopingLayerView {
+    static let barWidth: CGFloat = 3
+    /// Keyframes per period: the bars' sine, smooth at 120 Hz.
+    static let samples = 64
+    let bars = (0..<4).map { _ in CALayer() }
+    var tint = NSColor.clear
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        for bar in bars {
+            bar.cornerRadius = Self.barWidth / 2
+            canvas.addSublayer(bar)
+        }
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override func paint() {
+        let fill = Self.resolved(tint)
+        for bar in bars { bar.backgroundColor = fill }
+    }
+
+    /// The bars as the HStack laid them out: centred in the frame, `Spacing.xxs` apart.
+    override func layoutCanvas(_ size: CGSize) {
+        let gap = DesignMetrics.Spacing.xxs
+        let width = CGFloat(bars.count) * Self.barWidth + CGFloat(bars.count - 1) * gap
+        for (index, bar) in bars.enumerated() {
+            // Still (and in a view-drawn capture), a bar holds its height at phase 0.
+            bar.bounds = CGRect(x: 0, y: 0, width: Self.barWidth, height: MightyGraphActivityStyle.barHeight(index, phase: 0))
+            bar.position = CGPoint(x: (size.width - width) / 2 + CGFloat(index) * (Self.barWidth + gap) + Self.barWidth / 2, y: size.height / 2)
+        }
+    }
+
+    override func loops() -> [LayerLoop] {
+        bars.enumerated().map { index, bar in
+            let animation = CAKeyframeAnimation(keyPath: "bounds.size.height")
+            animation.values = (0...Self.samples).map { MightyGraphActivityStyle.barHeight(index, phase: Double($0) / Double(Self.samples)) }
+            animation.calculationMode = .linear
+            animation.duration = MightyGraphActivityStyle.period
+            return LayerLoop(layer: bar, key: "bar", animation: animation, clockAligned: true)
+        }
+    }
+}
+
+/// A running block's 2pt dashed border walking forward along the card's outline, one
+/// dash period per `MightyGraphActivityStyle.period`, in step with the wall clock.
+private struct MightyGraphMarchingBorder: NSViewRepresentable {
+    let color: Color
+    let cornerRadius: CGFloat
+
+    func makeNSView(context: Context) -> MightyGraphMarchingBorderView { MightyGraphMarchingBorderView(frame: .zero) }
+    func updateNSView(_ view: MightyGraphMarchingBorderView, context: Context) {
+        view.ink = NSColor(color)
+        view.repaint(scheme: context.environment.colorScheme)
+        if view.cornerRadius != cornerRadius { view.cornerRadius = cornerRadius; view.needsLayout = true }
+        view.animating = true
+    }
+    static func dismantleNSView(_ view: MightyGraphMarchingBorderView, coordinator: ()) { view.animating = false }
+}
+
+private final class MightyGraphMarchingBorderView: LoopingLayerView {
+    let border = CAShapeLayer()
+    var ink = NSColor.clear
+    var cornerRadius: CGFloat = 12
+    private var dash: [CGFloat] = []
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        border.fillColor = nil
+        border.lineWidth = 2
+        border.lineCap = .butt
+        canvas.addSublayer(border)
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override func paint() { border.strokeColor = Self.resolved(ink) }
+
+    override func layoutCanvas(_ size: CGSize) {
+        border.frame = CGRect(origin: .zero, size: size)
+        let rect = border.bounds.insetBy(dx: 1, dy: 1)
+        let radius = max(0, cornerRadius - 1)
+        // The same path SwiftUI stroked, so the dashes start and walk where they did.
+        border.path = RoundedRectangle(cornerRadius: radius, style: .circular).path(in: rect).cgPath
+        let fitted = MightyGraphActivityStyle.dash(fitting: MightyGraphActivityStyle.perimeter(rect.size, cornerRadius: radius))
+        border.lineDashPattern = fitted.map { NSNumber(value: Double($0)) }
+        guard fitted != dash else { return }
+        dash = fitted
+        restartLoops()
+    }
+
+    override func loops() -> [LayerLoop] {
+        guard !dash.isEmpty else { return [] }
+        let animation = Self.basic("lineDashPhase", from: 0, to: MightyGraphActivityStyle.dashPhase(1, dash: dash),
+                                   duration: MightyGraphActivityStyle.period, timing: .linear)
+        return [LayerLoop(layer: border, key: "march", animation: animation, clockAligned: true)]
     }
 }
 
@@ -94,19 +201,9 @@ struct MightyGraphActivityOutline: View {
                     if reduceMotion {
                         shape.inset(by: 1).stroke(Palette.run, lineWidth: 2)
                     } else {
-                        // Only this stroke redraws each frame: the card under it, its
-                        // transcript and the graph's layout never see the clock.
-                        TimelineView(.animation(minimumInterval: 1.0 / 24)) { context in
-                            let phase = MightyGraphActivityStyle.phase(at: context.date, reducedMotion: false)
-                            Canvas { canvas, size in
-                                let rect = CGRect(origin: .zero, size: size).insetBy(dx: 1, dy: 1)
-                                let radius = max(0, cornerRadius - 1)
-                                let dash = MightyGraphActivityStyle.dash(fitting: MightyGraphActivityStyle.perimeter(rect.size, cornerRadius: radius))
-                                canvas.stroke(RoundedRectangle(cornerRadius: radius, style: .circular).path(in: rect), with: .color(Palette.run),
-                                              style: StrokeStyle(lineWidth: 2, lineCap: .butt, dash: dash,
-                                                                 dashPhase: MightyGraphActivityStyle.dashPhase(phase, dash: dash)))
-                            }
-                        }
+                        // The march runs in Core Animation: the card under it, its transcript,
+                        // the graph's layout and SwiftUI itself never see the clock.
+                        MightyGraphMarchingBorder(color: Palette.run, cornerRadius: cornerRadius)
                     }
                 }
                 .background { shape.inset(by: -2).stroke(Palette.runSoft, lineWidth: 4) }
