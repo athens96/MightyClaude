@@ -377,15 +377,20 @@ enum MightyStructureInteractionDiagnostics {
             guard probe.target(at: scroll.convert(toggle.point, to: nil), in: scroll) == .page else {
                 throw MightyError("펼치기 버튼 자리가 페이지로 판정되지 않습니다. \(report["toggleClick"] ?? "") " + state())
             }
-            let clickOrigin = origin(), requestHeight = columnHeight("request")
+            let clickOrigin = origin(), requestHeight = columnHeight("request"), requestOrigin = columnOrigin("request")
             let replayedBefore = probe.replayedClicks
             try click(window, scroll, at: toggle.point)
             try await store.waitForSmoke(timeout: 3, step: "click on a fold toggle opens the request and stops the 요청 column's follow only",
                                          detail: { "toggle=\(toggle.key) at=\(NSStringFromPoint(toggle.point)) " + state() }) {
                 memory.expanded.contains(toggle.key) && !memory.columns.following("request") && columnHeight("request") > requestHeight + 10
             }
-            guard probe.replayedClicks > replayedBefore, !changed(origin(), clickOrigin), !probe.isPanning, memory.columns.following("result") else {
-                throw MightyError("펼치기 클릭이 화면을 움직였거나, 그대로 전달되지 않았거나, 다른 칸의 따라가기를 멈췄습니다. " + state())
+            // Past any follow pass the opened text's new size would have asked for: the
+            // reader stays where the text begins, and the column still follows nothing.
+            try await Task.sleep(for: .milliseconds(700))
+            guard probe.replayedClicks > replayedBefore, !changed(origin(), clickOrigin), !changed(columnOrigin("request"), requestOrigin),
+                  !memory.columns.following("request"), !probe.isPanning, memory.columns.following("result") else {
+                throw MightyError("펼치기 클릭이 화면이나 요청 칸을 움직였거나, 그대로 전달되지 않았거나, 다른 칸의 따라가기를 멈췄습니다. "
+                                  + "request=\(NSStringFromPoint(requestOrigin)) " + state())
             }
             report["foldToggleClickToggles"] = true
             report["foldStopsOnlyItsColumn"] = true
