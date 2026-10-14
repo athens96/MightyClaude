@@ -929,14 +929,16 @@ public sealed partial class MainWindow
             static bool Folds(MightyStructure.Excerpt? text, int lines, double size, double width) => text?.Folds(lines, MightyStructure.CharactersPerLine(width, size)) == true;
             bool Open(string part, string id) => structureExpanded.Contains(part + ":" + id);
             var requestFolds = Folds(item.Request, MightyStructure.RequestLines, StructureTextSize, textWidth);
+            // A free board's 요청 card holds the text beside its reveal button (M/MightyStructureView.swift:592-594).
+            var requestCardFolds = Folds(item.Request, MightyStructure.RequestLines, StructureTextSize, textWidth - DesignMetrics.Layout.HitTarget - DesignMetrics.Spacing.Sm);
             var messageFolds = Folds(item.Message, MightyStructure.MessageLines, StructureTextSize, textWidth);
             var activity = string.Join('\n', item.Activity);
             object key; Func<FrameworkElement> build;
             switch (card.Kind)
             {
                 case MightyStructure.CardKind.Request:
-                    key = (heading, item.Request, item.Input, item.NodeId, Open("request", item.RunId), requestFolds, language);
-                    build = () => StructureRequestCard(item, heading, requestFolds);
+                    key = (heading, item.Request, item.Input, item.NodeId, Open("request", item.RunId), requestCardFolds, language);
+                    build = () => StructureRequestCard(item, heading, requestCardFolds);
                     break;
                 case MightyStructure.CardKind.Execution:
                     key = (item.Ordinal, item.Status, item.Tally, item.Message, activity, item.Finished, Open("message", item.RunId), messageFolds, item.ExecutionNodeId, item.NodeId, language, structureMotion);
@@ -979,12 +981,18 @@ public sealed partial class MainWindow
         private bool StructureHeld(FrameworkElement part) => !structureForced && (StructureInside(structurePressed, part)
             || VisualChildren(part).Any(child => child is TextBlock { SelectedText.Length: > 0 } || child is RichEditBox { FocusState: not FocusState.Unfocused } answer && answer.Document.Selection.Length != 0));
 
-        /// <summary>A free board's request (M/MightyStructureView.swift:529-546): "Request N · Claude" (12 bold) with its reveal button, and what was asked.</summary>
+        /// <summary>
+        /// A free board's request (M/MightyStructureView.swift:586-603): the column says 요청 and the bar above which one, so the card
+        /// is what was asked beside its reveal button; "Request N · Claude" (12 bold) only when there is no text.
+        /// </summary>
         private Border StructureRequestCard(MightyStructure.Item item, string heading, bool folds)
         {
-            var request = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
-            request.Children.Add(StructureHeader(StructureWords(heading, StructureTextSize, owner.brushes.Brush(DesignToken.Ink), FontWeights.Bold), StructureRevealButton(item.NodeId, item.NodeId)));
-            if (item.Request is { } text) request.Children.Add(StructureText(text, "request:" + item.RunId, MightyStructure.RequestLines, StructureTextSize, folds, Locale.Get("graph.structure.column.request")));
+            var request = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
+            request.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); request.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+            request.Children.Add(item.Request is { } text
+                ? StructureText(text, "request:" + item.RunId, MightyStructure.RequestLines, StructureTextSize, folds, Locale.Get("graph.structure.column.request"))
+                : StructureWords(heading, StructureTextSize, owner.brushes.Brush(DesignToken.Ink), FontWeights.Bold));
+            var reveal = StructureRevealButton(item.NodeId, item.NodeId); reveal.VerticalAlignment = VerticalAlignment.Top; Grid.SetColumn(reveal, 1); request.Children.Add(reveal);
             var card = StructureSurface(request);
             AutomationProperties.SetAutomationId(card, "mighty-structure-request-" + item.RunId);
             AutomationProperties.SetName(card, Locale.Get("graph.structure.contentAccessibility", new Dictionary<string, string> { ["name"] = heading, ["text"] = item.Input }));
@@ -995,19 +1003,23 @@ public sealed partial class MainWindow
         /// The run part's header line: the gears and "Run · Request N" (11 bold), the diagram's activity mark while the main agent
         /// runs (M/MightyStructureView.swift:583, 619), its status pill and its tally (11 semibold <c>ink2</c>), and its reveal button.
         /// </summary>
-        private Grid StructureExecutionHeader(MightyStructure.Item item, string marks)
+        private Grid StructureExecutionHeader(MightyStructure.Item item, string marks, bool titled)
         {
             var b = owner.brushes;
-            var name = Locale.Get("graph.block.executionOf", new Dictionary<string, string> { ["n"] = item.Ordinal.ToString(CultureInfo.InvariantCulture) });
             var lead = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Center };
             void Lead(FrameworkElement part, GridLength size)
             {
                 Grid.SetColumn(part, lead.ColumnDefinitions.Count); lead.ColumnDefinitions.Add(new() { Width = size }); lead.Children.Add(part);
             }
-            // The Mac's gearshape.2 (M/MightyGraphView.swift:577).
-            var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs, VerticalAlignment = VerticalAlignment.Center };
-            label.Children.Add(MightySymbols.Create("gearshape.2", StructureOutputSize, b.Brush(DesignToken.Ink))); label.Children.Add(StructureWords(name, StructureOutputSize, b.Brush(DesignToken.Ink), FontWeights.Bold));
-            Lead(label, GridLength.Auto);
+            // A free board's 실행 card needs no title: its column says 실행 and the bar which request (M/MightyStructureView.swift:575-576).
+            if (titled)
+            {
+                var name = Locale.Get("graph.block.executionOf", new Dictionary<string, string> { ["n"] = item.Ordinal.ToString(CultureInfo.InvariantCulture) });
+                // The Mac's gearshape.2 (M/MightyGraphView.swift:577).
+                var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs, VerticalAlignment = VerticalAlignment.Center };
+                label.Children.Add(MightySymbols.Create("gearshape.2", StructureOutputSize, b.Brush(DesignToken.Ink))); label.Children.Add(StructureWords(name, StructureOutputSize, b.Brush(DesignToken.Ink), FontWeights.Bold));
+                Lead(label, GridLength.Auto);
+            }
             if (StructureIndicator(item.Status, marks) is { } running) Lead(running, GridLength.Auto);
             Lead(StatusPill(MightyGraphBlockModel.StateLabel(item.Status), StatusGlyph.Tone(item.Status), 18), GridLength.Auto);
             Lead(StructureTally(item), new GridLength(1, GridUnitType.Star));
@@ -1033,7 +1045,7 @@ public sealed partial class MainWindow
         private FrameworkElement StructureExecution(MightyStructure.Item item, bool folds, string marks)
         {
             var body = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
-            body.Children.Add(StructureExecutionHeader(item, marks));
+            body.Children.Add(StructureExecutionHeader(item, marks, titled: false));
             StructureProgress(body, item, folds);
             var card = StructureSurface(body);
             AutomationProperties.SetAutomationId(card, "mighty-structure-execution-" + item.RunId);
@@ -1089,7 +1101,7 @@ public sealed partial class MainWindow
             var rule = new Border { Height = DesignMetrics.Stroke.Line, Background = b.Brush(DesignToken.Line) };
             AutomationProperties.SetAccessibilityView(rule, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
             body.Children.Add(rule);
-            body.Children.Add(StructureExecutionHeader(item, marks));
+            body.Children.Add(StructureExecutionHeader(item, marks, titled: true));
             StructureProgress(body, item, messageFolds);
             if (item.Finished)
             {
