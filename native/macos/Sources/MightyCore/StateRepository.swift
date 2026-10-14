@@ -7,6 +7,9 @@ public actor StateRepository {
     private var loaded = false
     private var snapshot = AppSnapshot()
     private var approved: [String: Workspace] = [:]
+    /// The last save's sessions: what came in, the shares it got, what was stored and its bytes.
+    private struct CachedSession { var input: RunSession; var logBudget: Int; var graphBudget: Int; var output: RunSession; var data: Data? }
+    private var sessionCache: [String: CachedSession] = [:]
 
     public nonisolated static func defaultLegacyStateURL() -> URL? {
         guard let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return nil }
@@ -65,24 +68,90 @@ public actor StateRepository {
         return item
     }
 
-    public func save(_ value: AppSnapshot) throws {
+    public func save(_ value: AppSnapshot, at date: Date = Date()) throws {
         try ensureLoaded()
         guard value.version == 1, value.workspaces.count <= 64, value.sessions.count <= 128 else { throw MightyError(L("state.error.badSnapshot")) }
         for workspace in value.workspaces {
             guard let known = approved[workspace.id], workspace.path == known.path else { throw MightyError(L("state.error.notApproved")) }
         }
-        let result = Self.normalize(value, restoring: false)
-        try persist(result)
+        // A streaming run saves every second or two while the other panes stand
+        // still: a session equal to last time's input with the same shares gets
+        // last time's output and bytes. A running one reads `date`, so it is redone.
+        var next: [String: CachedSession] = [:]
+        let result = Self.normalize(value) { input, logBudget, graphBudget in
+            if input.status != "running", let cached = sessionCache[input.id], cached.logBudget == logBudget, cached.graphBudget == graphBudget, cached.input == input {
+                next[input.id] = cached
+                return cached.output
+            }
+            let output = Self.normalizedSession(input, logBudget: logBudget, graphBudget: graphBudget, restoring: false, at: date, knownStyleIds: nil)
+            if input.status != "running" { next[input.id] = CachedSession(input: input, logBudget: logBudget, graphBudget: graphBudget, output: output, data: nil) }
+            return output
+        }
+        let encoder = JSONEncoder()
+        let sessions = try result.sessions.map { session -> Data in
+            if let data = next[session.id]?.data { return data }
+            let data = try encoder.encode(session)
+            next[session.id]?.data = data
+            return data
+        }
+        // Sessions no longer saved leave the cache with this assignment.
+        sessionCache = next
+        try persist(Self.encodedSnapshot(result, sessions: sessions))
         snapshot = result
     }
     public func flush() throws { try ensureLoaded() }
 
-    private func persist(_ value: AppSnapshot) throws {
-        let data = try JSONEncoder().encode(value)
+    private func persist(_ value: AppSnapshot) throws { try persist(JSONEncoder().encode(value)) }
+    private func persist(_ data: Data) throws {
         guard data.count <= Self.maximumStateBytes else { throw MightyError(L("state.error.timingTooLarge")) }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         try data.write(to: stateURL, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: stateURL.path)
+    }
+
+    /// The snapshot as `JSONEncoder().encode(value)` would write it, with `sessions`
+    /// (each one session's JSON, in order) put into the `"sessions"` array of the
+    /// snapshot encoded without them. Falls back to a full encode if that array
+    /// is not found exactly once at the top level.
+    nonisolated static func encodedSnapshot(_ value: AppSnapshot, sessions: [Data]) throws -> Data {
+        var shell = value; shell.sessions = []
+        let base = try JSONEncoder().encode(shell)
+        guard sessions.count == value.sessions.count, let close = emptySessionsClose(in: base) else { return try JSONEncoder().encode(value) }
+        var data = Data(capacity: base.count + sessions.reduce(sessions.count) { $0 + $1.count })
+        data.append(base[base.startIndex..<close])
+        for (index, session) in sessions.enumerated() {
+            if index > 0 { data.append(UInt8(ascii: ",")) }
+            data.append(session)
+        }
+        data.append(base[close...])
+        return data
+    }
+
+    /// The index of `]` in the top-level `"sessions":[]`, or nil when it is missing or
+    /// repeated. Strings are skipped, so a value or nested key never matches.
+    nonisolated static func emptySessionsClose(in data: Data) -> Data.Index? {
+        let key = Array(#""sessions":[]"#.utf8), bytes = Array(data)
+        var depth = 0, inString = false, escaped = false, found: Int?, index = 0
+        while index < bytes.count {
+            let byte = bytes[index]
+            if inString {
+                if escaped { escaped = false } else if byte == UInt8(ascii: "\\") { escaped = true } else if byte == UInt8(ascii: "\"") { inString = false }
+                index += 1; continue
+            }
+            switch byte {
+            case UInt8(ascii: "\""):
+                if depth == 1, bytes[index...].starts(with: key) {
+                    guard found == nil else { return nil }
+                    found = index + key.count - 1; index += key.count; continue
+                }
+                inString = true
+            case UInt8(ascii: "{"), UInt8(ascii: "["): depth += 1
+            case UInt8(ascii: "}"), UInt8(ascii: "]"): depth -= 1
+            default: break
+            }
+            index += 1
+        }
+        return found.map { data.index(data.startIndex, offsetBy: $0) }
     }
 
     public nonisolated static func absolutePath(_ path: String) -> Bool {
@@ -178,6 +247,15 @@ public actor StateRepository {
 
     public nonisolated static func normalize(_ value: AppSnapshot, restoring: Bool, at date: Date = Date(),
                                              knownStyleIds: Set<String>? = nil) -> AppSnapshot {
+        normalize(value) { original, logBudget, graphBudget in
+            normalizedSession(original, logBudget: logBudget, graphBudget: graphBudget, restoring: restoring, at: date, knownStyleIds: knownStyleIds)
+        }
+    }
+
+    /// Everything that spans sessions (ids, fair shares, layouts) is decided here;
+    /// `session` turns one surviving session and its two shares into the stored
+    /// one, so a caller may answer it from a cache of an earlier, equal call.
+    nonisolated static func normalize(_ value: AppSnapshot, session normalizeOne: (RunSession, Int, Int) -> RunSession) -> AppSnapshot {
         var output = AppSnapshot(); var workspaceIds = Set<String>(); var sessionIds = Set<String>()
         for var workspace in value.workspaces.prefix(64) {
             guard CoreValidation.identifier(workspace.id), !workspaceIds.contains(workspace.id), absolutePath(workspace.path) else { continue }
@@ -191,79 +269,7 @@ public actor StateRepository {
         let logShares = fairShares(demands: candidates.map { approximateLogBytes(TranscriptRetention.trimmed($0.logs)) }, total: totalLogBudget)
         let graphShares = fairShares(demands: candidates.map { approximateGraphBytes($0.graphRuns ?? []) }, total: totalGraphBudget)
         for (position, original) in candidates.enumerated() {
-            var session = original
-            var logBudget = logShares[position], graphBudget = graphShares[position]
-            session.title = legacyNumberedTitle(String(session.title.prefix(120)))
-            session.provider = ProviderOptions.normalizeProvider(session.provider); session.model = CoreValidation.model(session.model) ? session.model : "default"
-            session.settings = ProviderOptions.normalizedSettings(provider: session.provider, settings: session.settings)
-            if !["idle", "running", "completed", "error", "stopped"].contains(session.status) { session.status = "idle" }
-            // A shell starts again at its prompt; an agent's run did not survive the quit.
-            if restoring && session.status == "running" { session.status = session.kind == SessionKind.shell ? "idle" : "stopped" }
-            if let id = session.resumeId, !CoreValidation.identifier(id) { session.resumeId = nil }
-            session.agentViewMode = ["default", "mighty"].contains(session.agentViewMode ?? "") ? session.agentViewMode : nil
-            session.mightyStyle = normalizedStyle(session, knownStyleIds: knownStyleIds)
-            if session.mightyStyle == nil { session.mightyStyleHash = nil; session.mightyStyleSince = nil }
-            if let since = session.mightyStyleSince, since.count > 64 || AgentRunTiming.parseTimestamp(since) == nil { session.mightyStyleSince = nil }
-            session.graphRuns = session.graphRuns.map { MightyGraphSupport.normalized($0, restoring: restoring, budget: &graphBudget, provider: session.provider) }
-            // A history the budget emptied is not "no history": drop the empty
-            // array so the graph is rebuilt from the logs, as for old sessions.
-            if let runs = session.graphRuns, runs.isEmpty, !session.logs.isEmpty { session.graphRuns = nil }
-            session.logs = TranscriptRetention.trimmed(session.logs).compactMap { entry in
-                guard CoreValidation.identifier(entry.id), LogEntryKinds.stored.contains(entry.kind), logBudget > 0 else { return nil }
-                var log = entry; log.text = ActivitySupport.prefixUTF8(log.text, maximumBytes: min(log.kind == "assistant" ? 131_072 : 32_768, logBudget)); logBudget -= log.text.utf8.count
-                // Pictures stay references; the cache, not the profile, holds their bytes.
-                log.images = log.kind == "image" ? AgentImageSupport.normalized(log.images) : nil
-                logBudget -= AgentImageSupport.approximateBytes(log.images)
-                if let provider = log.provider, !ProviderOptions.ids.contains(provider) { log.provider = nil }
-                if let activity = log.activity {
-                    log.activity = ActivitySupport.normalized(activity, restoring: restoring)
-                    if var clean = log.activity {
-                        clean.output = clean.output.map { ActivitySupport.clean($0, maximumBytes: max(0, min(ActivitySupport.maximumOutputBytes, logBudget))) }
-                        if clean.output?.isEmpty == true { clean.output = nil }
-                        logBudget -= clean.summary.utf8.count + (clean.toolName?.utf8.count ?? 0) + (clean.output?.utf8.count ?? 0)
-                        log.activity = clean
-                    }
-                }
-                return log
-            }
-            // Sizes saved before the 실행 split move once; the pane is in the current layout from then on.
-            if session.graphSizesLayout == nil { session.graphBlockSizes = MightyGraphBlockSize.splittingExecution(session.graphBlockSizes) }
-            session.graphSizesLayout = MightyGraphBlockSize.splitLayout
-            session.graphBlockSizes = session.kind == "shell" ? nil : MightyGraphBlockSize.normalized(session.graphBlockSizes, runs: session.mightyGraphRuns)
-            session.graphResultSize = session.kind == "shell" ? nil : session.graphResultSize?.normalized
-            session.graphPlanSize = session.kind == "shell" ? nil : session.graphPlanSize?.normalized
-            if session.kind == "shell" { session.graphViewMode = nil }
-            if session.kind == "shell" { session.runTiming = nil; session.sessionUsage = nil }
-            else {
-                session.sessionUsage = session.sessionUsage.flatMap { $0.provider == session.provider ? SessionUsageSupport.normalized($0) : nil }
-                if session.runTiming?.isValid == false { session.runTiming = nil }
-                if session.runTiming == nil { session.runTiming = AgentRunTiming.inferred(from: session.logs, running: !restoring && session.status == "running") }
-                if restoring || session.status != "running" { session.runTiming?.interrupt() }
-                else { session.runTiming?.observe(at: date) }
-            }
-            if session.kind == SessionKind.claude && session.provider == "claude" {
-                session.planHistory = ClaudePlanMode.normalizedHistory(session.planHistory)
-                session.todoProgress = TodoProgress.normalized(session.todoProgress)
-                session.backgroundWork = BackgroundWork.normalized(session.backgroundWork, restoring: restoring || session.status != "running")
-            } else { session.planHistory = nil; session.todoProgress = nil; session.backgroundWork = nil }
-            // A child's links stay even when its parent pane is gone: a closed parent keeps
-            // its children. Only agent panes can be children; a malformed value is dropped.
-            if session.kind == SessionKind.claude {
-                if let parent = session.parentSessionId, !CoreValidation.identifier(parent) || parent == session.id { session.parentSessionId = nil }
-                if let folder = session.workingFolder, !absolutePath(folder) { session.workingFolder = nil }
-            } else { session.parentSessionId = nil; session.workingFolder = nil }
-            // Migration: retitle automatic agent panes from their most recent user request.
-            // A nil titleMode (saved before this feature) is treated as "auto".
-            if restoring && session.kind == SessionKind.claude {
-                let isAuto = session.titleMode == nil || session.titleMode == "auto"
-                if isAuto {
-                    // A pane that continued an earlier session keeps that
-                    // session's title until it sends a request of its own.
-                    let fallback = session.resumeId != nil && !session.title.isEmpty ? session.title : ProviderOptions.label(session.provider)
-                    session.title = PaneTitle.autoTitle(for: session, defaultTitle: fallback)
-                }
-            }
-            output.sessions.append(session)
+            output.sessions.append(normalizeOne(original, logShares[position], graphShares[position]))
         }
         output.activeWorkspaceId = value.activeWorkspaceId.flatMap { workspaceIds.contains($0) ? $0 : nil } ?? output.workspaces.first?.id
         output.activeSessionId = output.sessions.first { $0.id == value.activeSessionId && $0.workspaceId == output.activeWorkspaceId }?.id ?? output.sessions.first { $0.workspaceId == output.activeWorkspaceId }?.id
@@ -298,6 +304,85 @@ public actor StateRepository {
         return output
     }
 
+    /// One session as `normalize` stores it, given its log and graph shares. It reads
+    /// nothing outside its arguments; `date` matters only for a running session.
+    nonisolated static func normalizedSession(_ original: RunSession, logBudget: Int, graphBudget: Int, restoring: Bool,
+                                              at date: Date, knownStyleIds: Set<String>?) -> RunSession {
+        var session = original
+        var logBudget = logBudget, graphBudget = graphBudget
+        session.title = legacyNumberedTitle(String(session.title.prefix(120)))
+        session.provider = ProviderOptions.normalizeProvider(session.provider); session.model = CoreValidation.model(session.model) ? session.model : "default"
+        session.settings = ProviderOptions.normalizedSettings(provider: session.provider, settings: session.settings)
+        if !["idle", "running", "completed", "error", "stopped"].contains(session.status) { session.status = "idle" }
+        // A shell starts again at its prompt; an agent's run did not survive the quit.
+        if restoring && session.status == "running" { session.status = session.kind == SessionKind.shell ? "idle" : "stopped" }
+        if let id = session.resumeId, !CoreValidation.identifier(id) { session.resumeId = nil }
+        session.agentViewMode = ["default", "mighty"].contains(session.agentViewMode ?? "") ? session.agentViewMode : nil
+        session.mightyStyle = normalizedStyle(session, knownStyleIds: knownStyleIds)
+        if session.mightyStyle == nil { session.mightyStyleHash = nil; session.mightyStyleSince = nil }
+        if let since = session.mightyStyleSince, since.count > 64 || AgentRunTiming.parseTimestamp(since) == nil { session.mightyStyleSince = nil }
+        session.graphRuns = session.graphRuns.map { MightyGraphSupport.normalized($0, restoring: restoring, budget: &graphBudget, provider: session.provider) }
+        // A history the budget emptied is not "no history": drop the empty
+        // array so the graph is rebuilt from the logs, as for old sessions.
+        if let runs = session.graphRuns, runs.isEmpty, !session.logs.isEmpty { session.graphRuns = nil }
+        session.logs = TranscriptRetention.trimmed(session.logs).compactMap { entry in
+            guard CoreValidation.identifier(entry.id), LogEntryKinds.stored.contains(entry.kind), logBudget > 0 else { return nil }
+            var log = entry; log.text = ActivitySupport.prefixUTF8(log.text, maximumBytes: min(log.kind == "assistant" ? 131_072 : 32_768, logBudget)); logBudget -= log.text.utf8.count
+            // Pictures stay references; the cache, not the profile, holds their bytes.
+            log.images = log.kind == "image" ? AgentImageSupport.normalized(log.images) : nil
+            logBudget -= AgentImageSupport.approximateBytes(log.images)
+            if let provider = log.provider, !ProviderOptions.ids.contains(provider) { log.provider = nil }
+            if let activity = log.activity {
+                log.activity = ActivitySupport.normalized(activity, restoring: restoring)
+                if var clean = log.activity {
+                    clean.output = clean.output.map { ActivitySupport.clean($0, maximumBytes: max(0, min(ActivitySupport.maximumOutputBytes, logBudget))) }
+                    if clean.output?.isEmpty == true { clean.output = nil }
+                    logBudget -= clean.summary.utf8.count + (clean.toolName?.utf8.count ?? 0) + (clean.output?.utf8.count ?? 0)
+                    log.activity = clean
+                }
+            }
+            return log
+        }
+        // Sizes saved before the 실행 split move once; the pane is in the current layout from then on.
+        if session.graphSizesLayout == nil { session.graphBlockSizes = MightyGraphBlockSize.splittingExecution(session.graphBlockSizes) }
+        session.graphSizesLayout = MightyGraphBlockSize.splitLayout
+        session.graphBlockSizes = session.kind == "shell" ? nil : MightyGraphBlockSize.normalized(session.graphBlockSizes, runs: session.mightyGraphRuns)
+        session.graphResultSize = session.kind == "shell" ? nil : session.graphResultSize?.normalized
+        session.graphPlanSize = session.kind == "shell" ? nil : session.graphPlanSize?.normalized
+        if session.kind == "shell" { session.graphViewMode = nil }
+        if session.kind == "shell" { session.runTiming = nil; session.sessionUsage = nil }
+        else {
+            session.sessionUsage = session.sessionUsage.flatMap { $0.provider == session.provider ? SessionUsageSupport.normalized($0) : nil }
+            if session.runTiming?.isValid == false { session.runTiming = nil }
+            if session.runTiming == nil { session.runTiming = AgentRunTiming.inferred(from: session.logs, running: !restoring && session.status == "running") }
+            if restoring || session.status != "running" { session.runTiming?.interrupt() }
+            else { session.runTiming?.observe(at: date) }
+        }
+        if session.kind == SessionKind.claude && session.provider == "claude" {
+            session.planHistory = ClaudePlanMode.normalizedHistory(session.planHistory)
+            session.todoProgress = TodoProgress.normalized(session.todoProgress)
+            session.backgroundWork = BackgroundWork.normalized(session.backgroundWork, restoring: restoring || session.status != "running")
+        } else { session.planHistory = nil; session.todoProgress = nil; session.backgroundWork = nil }
+        // A child's links stay even when its parent pane is gone: a closed parent keeps
+        // its children. Only agent panes can be children; a malformed value is dropped.
+        if session.kind == SessionKind.claude {
+            if let parent = session.parentSessionId, !CoreValidation.identifier(parent) || parent == session.id { session.parentSessionId = nil }
+            if let folder = session.workingFolder, !absolutePath(folder) { session.workingFolder = nil }
+        } else { session.parentSessionId = nil; session.workingFolder = nil }
+        // Migration: retitle automatic agent panes from their most recent user request.
+        // A nil titleMode (saved before this feature) is treated as "auto".
+        if restoring && session.kind == SessionKind.claude {
+            let isAuto = session.titleMode == nil || session.titleMode == "auto"
+            if isAuto {
+                // A pane that continued an earlier session keeps that
+                // session's title until it sends a request of its own.
+                let fallback = session.resumeId != nil && !session.title.isEmpty ? session.title : ProviderOptions.label(session.provider)
+                session.title = PaneTitle.autoTitle(for: session, defaultTitle: fallback)
+            }
+        }
+        return session
+    }
+
     /// Panes used to be named "Claude 1", "터미널 2" (Korean "Terminal 2"). New panes carry the bare
     /// name, and saved auto-generated names are folded the same way. A title the
     /// user typed is left alone unless it exactly matches that generated form.
@@ -308,5 +393,16 @@ public actor StateRepository {
             if !suffix.isEmpty, suffix.allSatisfy({ $0.isASCII && $0.isNumber }) { return base }
         }
         return title
+    }
+}
+
+/// When the app's next save may start. A streaming run asks for a save after
+/// every event and a large profile takes a good part of a second to write, so
+/// the debounce alone let saves run back to back for the whole run; a new one
+/// now waits until `minimumGap` after the previous one started.
+public enum SaveSchedule {
+    public static func delay(sinceLastStart: TimeInterval?, debounce: TimeInterval = 0.22, minimumGap: TimeInterval = 1.5) -> TimeInterval {
+        guard let since = sinceLastStart, since.isFinite else { return debounce }
+        return max(debounce, minimumGap - max(0, since))
     }
 }

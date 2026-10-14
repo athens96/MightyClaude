@@ -245,6 +245,8 @@ final class AppStore: ObservableObject, DelegationHost {
     private(set) var ending = false
     private var canSave = false
     private var saveTask: Task<Void, Never>?
+    /// When the latest save began writing; the next one keeps `SaveSchedule`'s gap from it.
+    private var lastSaveStart: ContinuousClock.Instant?
     private var pollTask: Task<Void, Never>?
     private var runtimeTask: Task<Void, Never>?
     @Published private(set) var pendingRuns = Set<String>()
@@ -1233,9 +1235,11 @@ final class AppStore: ObservableObject, DelegationHost {
     private func scheduleSave() {
         guard isLoaded, canSave, !ending else { return }
         saveTask?.cancel()
+        let delay = SaveSchedule.delay(sinceLastStart: lastSaveStart.map { (ContinuousClock.now - $0) / .seconds(1) })
         saveTask = Task { [weak self] in
-            do { try await Task.sleep(for: .milliseconds(220)) } catch { return }
+            do { try await Task.sleep(for: .seconds(delay)) } catch { return }
             guard let self, !Task.isCancelled else { return }
+            self.lastSaveStart = .now
             do { try await self.repository.save(self.snapshot) }
             catch { if !Task.isCancelled { self.error = L("store.error.saveFailed", ["error": error.localizedDescription]) } }
         }
@@ -1246,6 +1250,7 @@ final class AppStore: ObservableObject, DelegationHost {
         saveTask?.cancel()
         await saveTask?.value
         saveTask = nil
+        lastSaveStart = .now
         try await repository.save(snapshot)
     }
 
