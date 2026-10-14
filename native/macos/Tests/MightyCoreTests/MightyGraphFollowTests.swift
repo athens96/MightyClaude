@@ -460,6 +460,31 @@ struct MightyStructureColumnFollowTests {
         #expect(watch.observe(board: "b", newest: true, column: "execution", page("execution", origin: 1_400, document: 2_300), userScrolling: false) == .bottom)
     }
 
+    @Test func aTextOpenedInAFollowingColumnLeavesTheReaderWhereItBegins() {
+        // Symptom (CI, 보드 smoke): a request opened in its short, following 요청 column
+        // scrolled the column to the opened text's end and kept following. The report of
+        // the grown text was judged while the column still followed.
+        var watch = MightyGraphFollow.ColumnWatch()
+        #expect(watch.observe(board: "b", newest: true, column: "request", page("request", origin: 0, document: 300), userScrolling: false) == nil)
+        #expect(watch.following("request"))
+        var late = watch
+        // The toggle stops the column before the text changes size: the grown column's
+        // report moves nothing, and neither does any later one.
+        watch.stop("request")
+        #expect(watch.observe(board: "b", newest: true, column: "request", page("request", origin: 0, document: 1_200), userScrolling: false) == nil)
+        #expect(watch.observe(board: "b", newest: true, column: "request", page("request", origin: 0, document: 1_200), userScrolling: false) == nil)
+        #expect(!watch.following("request"))
+        // Had the report come first, it asks for the column's end; the stop right after
+        // it leaves the column not following, and the view drops a scroll for a column
+        // that no longer follows.
+        #expect(late.observe(board: "b", newest: true, column: "request", page("request", origin: 0, document: 1_200), userScrolling: false) == .bottom)
+        late.stop("request")
+        #expect(!late.following("request"))
+        // The reader scrolling down to the opened text's end follows again.
+        #expect(watch.observe(board: "b", newest: true, column: "request", page("request", origin: 600, document: 1_200), userScrolling: true) == nil)
+        #expect(watch.following("request"))
+    }
+
     @Test func aNewRequestShowsEveryColumnsEnd() {
         var watch = MightyGraphFollow.ColumnWatch()
         _ = watch.observe(board: "p", newest: true, column: "plan", page("plan", origin: 1_400, document: 2_000), userScrolling: false)

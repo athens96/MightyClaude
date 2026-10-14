@@ -448,7 +448,6 @@ struct MightyStructureView: View {
     private func columnCards(_ column: MightyStructure.BoardColumn, board: String, onNewest: Bool, width: CGFloat) -> some View {
         let id = column.id
         let end = Self.endID + "-" + id
-        let keys = Set(column.cards.flatMap(Self.foldKeys))
         return ScrollViewReader { proxy in
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 0) {
@@ -497,29 +496,27 @@ struct MightyStructureView: View {
                 guard run != nil, onNewest else { return }
                 scroll(memory.columns.newRequest(board: board, column: id), proxy, to: end, column: id)
             }
-            // A text opened or folded in this column is being read: the column follows
-            // nothing until the reader comes back to its end. (The diagram's blocks keep
-            // their size as they open, so there the camera only re-judges where it is.)
-            .onChange(of: memory.expanded) { old, new in
-                if !old.symmetricDifference(new).isDisjoint(with: keys) { memory.columns.stop(id) }
-            }
         }
     }
 
     /// A column's end at its bottom, after the current update: a report arrives while
     /// the column is being laid out. A column's newest card is its last, so either
-    /// target of the follow rule is the column's end. The column's own native clip moves,
-    /// laid out first so its end is where the report saw it: a scroll to a view inside
-    /// the column may scroll the page around it too. Before the column's native view is
-    /// known, its end is scrolled to.
+    /// target of the follow rule is the column's own end. The column's native clip moves:
+    /// a scroll to a view inside the column may scroll the page around it too. Before
+    /// the column's native view is known, its end is scrolled to.
     private func scroll(_ target: MightyGraphFollow.Scroll?, _ proxy: ScrollViewProxy, to end: String, column: String) {
         guard target != nil else { return }
         DispatchQueue.main.async {
             // A drag, a wheel or a trackpad gesture in the column is the user's: nothing
             // scrolls under it, even a scroll asked for just before it began.
             guard !memory.userMoving(column) else { return }
+            // Nor once the column stopped following since: a text opened in it, or the
+            // user's move, after the report that asked for this scroll.
+            guard memory.columns.following(column) else { return }
+            // Laid out first: a board just shown has its columns' native views and ends
+            // where the report saw them.
+            memory.columnProbes.allObjects.lazy.compactMap(\.window).first?.layoutIfNeeded()
             guard let scroll = memory.columnScroll(column) else { proxy.scrollTo(end, anchor: .bottom); return }
-            scroll.window?.layoutIfNeeded()
             let clip = scroll.contentView
             let range = MightyStructurePanProbe.originRange(clip)
             let bottom = CGPoint(x: clip.bounds.origin.x, y: clip.isFlipped ? range.maximum.y : range.minimum.y)
@@ -529,8 +526,14 @@ struct MightyStructureView: View {
         }
     }
 
+    /// The column of the board shown whose cards hold the text `key` (`foldKey`).
+    private func column(holding key: String) -> String? {
+        guard let index = memory.navigation.index(in: boards) else { return nil }
+        return boards[index].columns.first { $0.cards.contains { Self.foldKeys($0).contains(key) } }?.id
+    }
+
     /// The keys of the texts a card opens in place (`foldKey`).
-    static func foldKeys(_ card: MightyStructure.Card) -> [String] {
+    private static func foldKeys(_ card: MightyStructure.Card) -> [String] {
         switch card {
         case .request(let item): [foldKey("request", item.runID)]
         case .execution(let item): [foldKey("message", item.runID)]
@@ -851,6 +854,12 @@ struct MightyStructureView: View {
 
     private func foldToggle(_ key: String, open: Bool) -> some View {
         Button {
+            // A text opened or folded is being read: its column follows nothing until the
+            // reader comes back to its end. Stopped before the text changes size, so no
+            // report of the new size can follow the column to its end first. (The
+            // diagram's blocks keep their size as they open, so there the camera only
+            // re-judges where it is.)
+            if let column = column(holding: key) { memory.columns.stop(column) }
             if !memory.expanded.insert(key).inserted { memory.expanded.remove(key) }
         } label: {
             Text(open ? L("graph.structure.less") : L("graph.structure.more"))
