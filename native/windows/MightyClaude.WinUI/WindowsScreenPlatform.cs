@@ -40,7 +40,7 @@ internal sealed class WindowsScreenPlatform : IScreenSharePlatform, IAsyncDispos
     public IReadOnlyList<ScreenDisplay> Displays => capture.Displays;
     public ScreenSafety Safety => input.Safety;
     internal WindowsScreenPlatform(DispatcherQueue dispatcher, Panel host)
-    { this.dispatcher = dispatcher; markers = new(dispatcher); host.Children.Add(browser); capture.DisplayLost += () => _ = StopFor("display-gone"); input.KillRequested += () => { Halt(); KillRequested?.Invoke(); }; }
+    { this.dispatcher = dispatcher; markers = new(dispatcher); host.Children.Add(browser); capture.DisplayLost += () => _ = DisplayLost(); capture.Failed += () => _ = CaptureFailed(); input.KillRequested += () => { Halt(); KillRequested?.Invoke(); }; }
     internal async Task InitializeAsync(string directory)
     {
         var environment = await CoreWebView2Environment.CreateWithOptionsAsync("", Path.Combine(directory, "screen-webview"), new());
@@ -164,13 +164,20 @@ internal sealed class WindowsScreenPlatform : IScreenSharePlatform, IAsyncDispos
         Interlocked.Increment(ref generation); lock (sync) { captureCancellation?.Cancel(); captureRunning = false; } capture.Halt(); _ = ReleaseAllInputs(); markers.Clear();
         _ = OnUI(() => { if (!disposed && browser.CoreWebView2 is { } core) core.PostWebMessageAsJson("{\"type\":\"halt\",\"id\":0}"); return Task.CompletedTask; });
     }
+    /// The captured display went away. The hub moves the viewers to the main display,
+    /// or ends them when no display is left (M/MightyCore/Remote/ScreenShareCapture.swift:244-253).
+    private async Task DisplayLost() { try { if (Hub is { } hub) await hub.DisplayLostAsync(); } catch (Exception ex) when (ex is not OutOfMemoryException) { } }
+    /// A frame could not be read or encoded: capture is not started again, as the Mac starts it again only when the stream ended.
+    private async Task CaptureFailed() { try { if (Hub is { } hub) await hub.CaptureFailedAsync(); } catch (Exception ex) when (ex is not OutOfMemoryException) { } }
     private async Task StopFor(string reason) { Halt(); if (Hub is { } hub) try { await hub.KillAllAsync(reason); } catch (OperationCanceledException) { } }
-    public async Task SetDisplayAsync(int displayId, CancellationToken token)
+    public async Task<bool> SetDisplayAsync(int displayId, CancellationToken token)
     {
         var ticket = Interlocked.Read(ref generation);
-        if (!Displays.Any(d => d.DisplayId == displayId)) return;
+        if (!Displays.Any(d => d.DisplayId == displayId)) return false;
         await lifecycle.WaitAsync(token);
-        try { if (ticket != Interlocked.Read(ref generation)) throw new OperationCanceledException(); display = displayId; region = new(); lock (sync) foreach (var id in peers.Keys.ToArray()) peers[id] = peers[id] with { DisplayId = displayId }; await Command(new { type = "display", displayId }, token); await StartCapture(token, ticket); }
+        try { if (ticket != Interlocked.Read(ref generation)) throw new OperationCanceledException(); display = displayId; region = new(); lock (sync) foreach (var id in peers.Keys.ToArray()) peers[id] = peers[id] with { DisplayId = displayId }; await Command(new { type = "display", displayId }, token); await StartCapture(token, ticket); return true; }
+        // The monitor went away between the check and the start (WindowsScreenCapture.StartAsync).
+        catch (ArgumentException) when (!Displays.Any(d => d.DisplayId == displayId)) { return false; }
         finally { lifecycle.Release(); }
     }
     public void SetRegion(ScreenRegion value) { region = value; capture.Configure(Quality, region); }
@@ -192,7 +199,7 @@ internal sealed class WindowsScreenPlatform : IScreenSharePlatform, IAsyncDispos
     public async Task<bool> ShowMarkerAsync(string sessionId, JsonElement value, CancellationToken token)
     {
         token.ThrowIfCancellationRequested(); var safety = Safety; if (safety.Locked || safety.SecureInput) return false;
-        var display = Displays.FirstOrDefault(d => d.DisplayId == value.GetProperty("displayId").GetInt32());
+        var display = ScreenSharePolicy.DisplayFor(Displays, value.GetProperty("displayId").GetInt32());
         return display is not null && await markers.ShowAsync(display, value.GetProperty("x").GetDouble(), value.GetProperty("y").GetDouble(), value.Text("marker")!);
     }
     public async Task ReleaseButtonsAsync(string sessionId)

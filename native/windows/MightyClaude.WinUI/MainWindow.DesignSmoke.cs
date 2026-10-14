@@ -150,9 +150,9 @@ public sealed partial class MainWindow
             $"{key} ({theme}): the sidebar column must be bounded by Layout.SidebarMin {DesignMetrics.Layout.SidebarMin} and SidebarMax {DesignMetrics.Layout.SidebarMax}; got {column.MinWidth}..{column.MaxWidth}");
 
         var workspace = service.Snapshot.Workspaces.First(w => w.Id == service.Snapshot.ActiveWorkspaceId);
-        // Over the dock the error banner, then the header (M/WorkspaceView.swift:16-22).
+        // Over the dock the resource band (hidden: the smoke's copy has every file), the error banner, then the header (M/WorkspaceView.swift:16-22).
         Require(workspaceHeader.Visibility == Visibility.Visible && workspaceHeaderName.Text == workspace.Name && Grid.GetRow(detailTop) == 0 && Grid.GetColumn(detailTop) == 1
-            && detailTop.Children.Count == 2 && ReferenceEquals(detailTop.Children[0], errorBanner) && ReferenceEquals(detailTop.Children[1], workspaceHeader),
+            && detailTop.Children.Count == 3 && ReferenceEquals(detailTop.Children[0], resourceBanner) && resourceBanner.Visibility == Visibility.Collapsed && ReferenceEquals(detailTop.Children[1], errorBanner) && ReferenceEquals(detailTop.Children[2], workspaceHeader),
             $"{key} ({theme}): the workspace header must show the active workspace '{workspace.Name}' over the dock, under the error banner; got '{workspaceHeaderName.Text}', {workspaceHeader.Visibility}, row {Grid.GetRow(detailTop)} column {Grid.GetColumn(detailTop)}, {detailTop.Children.Count} parts");
         Require(workspaceHeader.Padding == new Thickness(DesignMetrics.Inset.WorkspaceHeaderH, DesignMetrics.Inset.WorkspaceHeaderT, DesignMetrics.Inset.WorkspaceHeaderH, DesignMetrics.Inset.WorkspaceHeaderB),
             $"{key} ({theme}): the workspace header padding must be Inset.WorkspaceHeader h{DesignMetrics.Inset.WorkspaceHeaderH} t{DesignMetrics.Inset.WorkspaceHeaderT} b{DesignMetrics.Inset.WorkspaceHeaderB}; got {workspaceHeader.Padding}");
@@ -235,7 +235,7 @@ public sealed partial class MainWindow
             $"{key} ({theme}): the status bar's trailing parts must be the pane count, a dot, the running count, the update badge, a line, the usage chips, their line and the pet controls (paw, then capsule, 10 apart), {StatusBarSpacing} apart; got {parts.Count} parts: {string.Join(", ", parts.Select(p => p.GetType().Name + "'" + AutomationProperties.GetAutomationId(p) + "'"))}");
         string Count(int value) => value.ToString(System.Globalization.CultureInfo.InvariantCulture);
         var panesWant = Locale.Get("window.status.paneCount", new Dictionary<string, string> { ["count"] = Count(state.Sessions.Count(s => s.WorkspaceId == state.ActiveWorkspaceId)) });
-        var runningWant = Locale.Get("window.status.runningCount", new Dictionary<string, string> { ["count"] = Count(state.Sessions.Count(s => s.Status == "running")) });
+        var runningWant = Locale.Get("window.status.runningCount", new Dictionary<string, string> { ["count"] = Count(state.Sessions.Count(s => s.Status == "running" && WorkDashboard.IsCounted(s.Kind))) });
         Require(statusPanes.Text == panesWant && statusRunning.Text == runningWant, $"{key} ({theme}): the status bar must count '{panesWant}' and '{runningWant}'; got '{statusPanes.Text}' and '{statusRunning.Text}'");
         var dot = (TextBlock)parts[1];
         Require(dot.Margin == new Thickness(DesignMetrics.Spacing.Xxs, 0, DesignMetrics.Spacing.Xxs, 0), $"{key} ({theme}): the dot between the counts must have {DesignMetrics.Spacing.Xxs} on either side; got {dot.Margin}");
@@ -514,11 +514,11 @@ public sealed partial class MainWindow
         Require(Math.Abs(inactiveRow.ActualHeight - paneRowHeight) <= 0.6 && Math.Abs(activeRow.ActualHeight - paneRowHeight) <= 0.6, $"{key} ({theme}): a pane row must be {paneRowHeight} high ({DesignMetrics.Inset.PaneRowV} + the 17 title line + the 15 meta line + {DesignMetrics.Inset.PaneRowV}); got {inactiveRow.ActualHeight:F1} and, selected, {activeRow.ActualHeight:F1}");
         // The rows whose height is their words' measure as the Mac's, held to the rows' least heights: the workspace row (the row
         // inset around the 12pt line's 14, at least 24), the add row (around the 11pt line's 13, at least 22), the section header's
-        // 10pt line 12 (M/WorkspaceView.swift:81-86, 189, 343).
+        // folder button's 14 around its 10pt line's 12 (M/WorkspaceView.swift:112-125, 189, 343).
         var (workspaceRow, addRow) = ((Grid)group.Children[0], (Microsoft.UI.Xaml.Controls.Button)group.Children[^1]);
         var (workspaceRowHeight, addRowHeight) = (Math.Max(SidebarWorkspaceRowMin, 2 * DesignMetrics.Inset.SidebarRowV + 14), Math.Max(SidebarAddRowMin, 2 * DesignMetrics.Inset.SidebarRowV + 13));
-        Require(Math.Abs(workspaceRow.ActualHeight - workspaceRowHeight) <= 0.6 && Math.Abs(addRow.ActualHeight - addRowHeight) <= 0.6 && Math.Abs(sessionsHeaderRow.ActualHeight - 12) <= 0.6,
-            $"{key} ({theme}): the workspace row must be {workspaceRowHeight} high, the add row {addRowHeight} and the section header's line 12, as on the Mac; got {workspaceRow.ActualHeight:F1}, {addRow.ActualHeight:F1}, {sessionsHeaderRow.ActualHeight:F1}");
+        Require(Math.Abs(workspaceRow.ActualHeight - workspaceRowHeight) <= 0.6 && Math.Abs(addRow.ActualHeight - addRowHeight) <= 0.6 && Math.Abs(sessionsHeaderRow.ActualHeight - SidebarAddWorkspaceHeight) <= 0.6,
+            $"{key} ({theme}): the workspace row must be {workspaceRowHeight} high, the add row {addRowHeight} and the section header its folder button's {SidebarAddWorkspaceHeight}, as on the Mac; got {workspaceRow.ActualHeight:F1}, {addRow.ActualHeight:F1}, {sessionsHeaderRow.ActualHeight:F1}");
         var rowLeft = activeRow.TransformToVisual(sidebarSurface).TransformPoint(new Windows.Foundation.Point()).X;
         var rowLeftWant = DesignMetrics.Spacing.Sm + 22;
         Require(workspaces.Margin.Left == DesignMetrics.Spacing.Sm && Math.Abs(rowLeft - rowLeftWant) <= 0.5, $"{key} ({theme}): a pane row must start {rowLeftWant} from the sidebar's edge (the list's {DesignMetrics.Spacing.Sm} and the row's 22); got {rowLeft:F1}, the list's {workspaces.Margin.Left}");

@@ -23,10 +23,19 @@ public sealed partial class MainWindow
             });
             if (await dialog.ShowAsync() != ContentDialogResult.Primary || closing) return;
             // Keep the ID the user approved even if a remote selection changed.
-            if (service.Snapshot.Workspaces.Any(w => w.Id == id)) { await service.RemoveWorkspaceAsync(id); Render(); }
+            await RemoveWorkspaceConfirmed(id);
         }
         finally { dialogOpen = false; }
     });
+
+    /// <summary>
+    /// The removal the human confirmed. While delegation has open children or child worktrees not cleaned up there it is refused
+    /// with its message and changes nothing (M/AppStore.swift:627-642).
+    /// </summary>
+    private async Task RemoveWorkspaceConfirmed(string id)
+    {
+        if (service.Snapshot.Workspaces.Any(w => w.Id == id)) { await service.RemoveWorkspaceAsync(id); Render(); }
+    }
 
     private sealed partial class PaneView
     {

@@ -117,7 +117,8 @@ public sealed partial class MainWindow
                         {
                             if (!StyleRegistry.Unchanged(style)) throw new IOException(Locale.Get("guidedPanel.approvalRequired"));
                             var root = WorkspaceFiles.RealPath(Path.Combine(StateDirectory, "styles")); if (root is null || !WorkspaceFiles.Contains(style.Path, root)) throw new IOException(Locale.Get("guidedPanel.approvalRequired"));
-                            new StyleTrustStore(Path.Combine(StateDirectory, "style-trust")).Decide(style, "revoked"); File.Delete(style.Path);
+                            // The decision goes with the file (M/AppStore+Styles.swift:609-613): the same style registered again is asked about afresh.
+                            new StyleTrustStore(Path.Combine(StateDirectory, "style-trust")).Forget(style); File.Delete(style.Path);
                         }); await Populate();
                     })), SettingsControlSize.Small, destructive: true); remove.IsEnabled = !registry.TrustLocked; controls.Children.Add(remove);
                 }
@@ -141,6 +142,44 @@ public sealed partial class MainWindow
         if (!StyleRegistry.Unchanged(style)) throw new IOException(Locale.Get("guidedPanel.approvalRequired"));
         new StyleTrustStore(Path.Combine(StateDirectory, "style-trust")).Decide(style, "approved");
     });
+    /// <summary>
+    /// What the panes' styles read from disk, watched for changes (M/StyleStateWatcher.swift:4-8): the profile's style files and
+    /// its decisions, and each workspace a pane shows its style rows in. Nothing reads them on a timer. A workspace is let go
+    /// once no pane needs it, and every watch goes with the window.
+    /// </summary>
+    private readonly Dictionary<string, StyleChangeWatcher> styleWatchers = new(StringComparer.OrdinalIgnoreCase);
+    private bool styleWatchHooked;
+    /// <summary>Set by the GUI smoke for its own check of the watch; otherwise a smoke run reads styles only when it says so.</summary>
+    private bool smokeStyleWatch;
+    /// <summary>How long a workspace's changes are gathered: a workspace an agent is busy in makes its panes read no more often than the 2 s timer this replaces did.</summary>
+    private static readonly TimeSpan StyleWorkspaceLatency = TimeSpan.FromSeconds(2);
+    private string[] ProfileStyleFolders => [Path.Combine(StateDirectory, "styles"), Path.Combine(StateDirectory, "style-trust")];
+    private bool WatchesProfileStyles(string folder) => ProfileStyleFolders.Any(known => StyleTrustStore.SamePath(known, folder));
+    private void WatchStyles(string workspace)
+    {
+        if (closing || options.SmokeTest && !smokeStyleWatch) return;
+        if (!styleWatchHooked) { styleWatchHooked = true; Closed += (_, _) => StopWatchingStyles(); }
+        foreach (var folder in ProfileStyleFolders.Append(workspace))
+        {
+            if (styleWatchers.ContainsKey(folder)) continue;
+            // Reported on a worker thread; the panes are told on the window's own.
+            styleWatchers[folder] = new(folder, changed => DispatcherQueue.TryEnqueue(() =>
+            {
+                if (closing || !styleWatchers.ContainsKey(folder)) return;
+                foreach (var pane in views.Values.ToArray()) pane.StyleFilesChanged(folder, changed);
+            }), WatchesProfileStyles(folder) ? null : StyleWorkspaceLatency);
+        }
+        PruneStyleWatchers();
+    }
+    private void StopWatchingStyles() { foreach (var watcher in styleWatchers.Values) watcher.Dispose(); styleWatchers.Clear(); }
+    /// <summary>Lets go of the watch on every workspace no pane shows its style rows in any more (M/AppStore+Styles.swift pruneStyleStateWatchers).</summary>
+    private void PruneStyleWatchers()
+    {
+        if (styleWatchers.Count == 0) return;
+        var workspaces = views.Values.Select(pane => pane.WatchedStyleWorkspace).OfType<string>().ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var folder in styleWatchers.Keys.Where(folder => !workspaces.Contains(folder) && (workspaces.Count == 0 || !WatchesProfileStyles(folder))).ToArray())
+        { styleWatchers[folder].Dispose(); styleWatchers.Remove(folder); }
+    }
     private sealed partial class PaneView
     {
         /// <summary>The Mighty rows over the editor (M/SessionPaneView.swift:520-541): the style row, a pending style's strip and the guide panel, 9 apart like the rest of the composer.</summary>
@@ -170,7 +209,11 @@ public sealed partial class MainWindow
         private readonly TextBlock styleEnterPrefix=new(){FontSize=10,FontFamily=new FontFamily(DesignMetrics.Font.Mono),TextWrapping=TextWrapping.NoWrap,TextTrimming=TextTrimming.CharacterEllipsis,MaxWidth=260};
         private string? styleGroup;
         private bool styleStartingNew,styleLoading;
-        private readonly DispatcherTimer styleTimer=new(){Interval=TimeSpan.FromSeconds(2)};
+        /// <summary>A watched file changed while a read was out: the styles are read once more when it lands.</summary>
+        private bool styleAgain;
+        /// <summary>The pane's workspace while its style rows are up, so the window watches it (<see cref="MainWindow.WatchStyles"/>).</summary>
+        private string? styleWatched;
+        internal string? WatchedStyleWorkspace=>styleWatched;
         private string? loadedStyleKey;
         private void InitializeStyles()
         {
@@ -187,19 +230,28 @@ public sealed partial class MainWindow
             styleEnterChip.Child=styleEnterPrefix;styleEnterChip.Background=b.Brush(DesignToken.Accent,StyleEnterTint);styleEnterPrefix.Foreground=b.Brush(DesignToken.Accent);
             AutomationProperties.SetAutomationId(styleEnterChip,"mighty-enter-armed-"+id);
             styleHost.Children.Add(row);styleHost.Children.Add(styleNotice);styleHost.Children.Add(guidedBody);
-            styleTimer.Tick+=async(_,_)=>await LoadStyles();styleHost.Loaded+=(_,_)=>{if(!owner.options.SmokeTest)styleTimer.Start();};styleHost.Unloaded+=(_,_)=>styleTimer.Stop();
         }
         private void RefreshStyles()
         {
             if(owner.closing||!owner.service.Snapshot.Sessions.Any(p=>p.Id==id))return;
             var pane=Session;var visible=pane.Kind=="claude"&&pane.Provider=="claude"&&pane.AgentViewMode=="mighty";
             styleHost.Visibility=visible?Visibility.Visible:Visibility.Collapsed;
-            if(!visible){activeStyle=null;return;}
+            if(!visible)
+            {
+                // A question or a plan's answers the style's panel was showing go back over the composer with the panel.
+                var styled=activeStyle is not null;activeStyle=null;
+                if(styleWatched is not null){styleWatched=null;owner.PruneStyleWatchers();}
+                if(styled)RenderToolPermissions(preserveQuestionnaire:true);
+                return;
+            }
+            if(styleWatched is null)owner.WatchStyles(styleWatched=Workspace.Path);
             var key=pane.MightyStyle+"|"+pane.MightyStyleHash+"|"+pane.MightyStyleSince+"|"+pane.Logs.Count+"|"+pane.Status;
             if(loadedStyleKey!=key&&!styleLoading)_=LoadStyles();
             RenderGuidedStyle();
         }
-        private async Task LoadStyles()
+        private Task LoadStyles()=>LoadStyles(false);
+        /// <param name="quiet">The phone asked: a failure leaves the desktop's error line alone and is not read again until the pane moves.</param>
+        private async Task LoadStyles(bool quiet)
         {
             if(styleLoading||owner.closing||!owner.service.Snapshot.Sessions.Any(p=>p.Id==id))return;
             var pane=Session;if(pane.Kind!="claude"||pane.Provider!="claude"||pane.AgentViewMode!="mighty")return;
@@ -213,7 +265,7 @@ public sealed partial class MainWindow
                     return (Registry:registry,Chosen:chosen,Reading:chosen is null?null:StyleStateEngine.Read(chosen.Manifest,workspace,since,pane),Prerequisites:chosen is null?null:StylePrerequisites.Read(chosen.Manifest,workspace,owner.options.SmokeTest?owner.StateDirectory:null),Capabilities:chosen is null?(new Dictionary<string,string>(),new List<StyleAttachmentItem>()):StylePrerequisites.Capabilities(chosen.Manifest,workspace));
                 });
                 if(owner.closing||!owner.service.Snapshot.Sessions.Any(p=>p.Id==id)||Session.MightyStyle!=pane.MightyStyle||Session.MightyStyleHash!=pane.MightyStyleHash||Session.MightyStyleSince!=pane.MightyStyleSince)return;
-                styleRegistry=data.Registry;activeStyle=data.Chosen;styleReading=data.Reading;stylePrerequisites=data.Prerequisites;styleCapabilities=data.Capabilities.Item1;styleCapabilityFiles=data.Capabilities.Item2;loadedStyleKey=key;
+                var before=activeStyle;styleRegistry=data.Registry;activeStyle=data.Chosen;styleReading=data.Reading;stylePrerequisites=data.Prerequisites;styleCapabilities=data.Capabilities.Item1;styleCapabilityFiles=data.Capabilities.Item2;loadedStyleKey=key;
                 if(styleGroup is null&&activeStyle is {} chosen)styleGroup=chosen.Evaluator.InitialGroup(styleCapabilities)?.Id;
                 // The style menu (M/GuidedPanel.swift:26-33, MightyCore/Styles/StyleSurfaces.swift:195-222): CLI, then every style this
                 // pane may see — its name, its source unless built in and, while it waits for a yes or is blocked, why — the current one checked.
@@ -228,10 +280,21 @@ public sealed partial class MainWindow
                     };
                     var item=Choice(StylePresentation.Name(candidate)+why,()=>ChooseStyle(candidate),candidate.Id==pane.MightyStyle,candidate.Manifest.Summary);item.IsEnabled=candidate.Approval!="revoked"&&(!data.Registry.TrustLocked||candidate.Runnable);menu.Items.Add(item);
                 }
-                stylePicker.Flyout=menu;RenderGuidedStyle();RefreshMightyView(Session);
+                // Which card a waiting question or plan shows in follows the style, so the requests are drawn again when it changed.
+                stylePicker.Flyout=menu;if(before?.Id!=activeStyle?.Id||before?.Hash!=activeStyle?.Hash)RenderToolPermissions(preserveQuestionnaire:true);else RenderGuidedStyle();RefreshMightyView(Session);
             }
-            catch(Exception ex){owner.error.Text=ex.Message;activeStyle=null;}
-            finally{styleLoading=false;}
+            catch(Exception ex){if(quiet)loadedStyleKey=key;else owner.error.Text=ex.Message;activeStyle=null;RenderToolPermissions(preserveQuestionnaire:true);}
+            finally{styleLoading=false;if(styleAgain){styleAgain=false;_=LoadStyles();}}
+        }
+        /// <summary>
+        /// A watched folder changed (M/AppStore+Styles.swift:324-331): the pane reads its styles again when the change is in the
+        /// profile's style files or decisions, or under its own workspace where its style reads (<see cref="StyleChangeWatcher.Concerns"/>).
+        /// </summary>
+        internal void StyleFilesChanged(string folder,IReadOnlyList<string> changed)
+        {
+            if(owner.closing||styleWatched is not {} workspace)return;
+            if(StyleTrustStore.SamePath(folder,workspace)?!StyleChangeWatcher.Concerns(changed,workspace,activeStyle?.Manifest):!owner.WatchesProfileStyles(folder))return;
+            if(styleLoading)styleAgain=true;else _=LoadStyles();
         }
         private Task ChooseStyle(RegisteredStyle? selected)=>owner.Act(async()=>
         {
@@ -258,7 +321,7 @@ public sealed partial class MainWindow
             styleEnterChip.Visibility=Visibility.Collapsed;
             if(activeStyle is not {} style||Session.AgentViewMode!="mighty")return;
             var pane=Session;var evaluator=style.Evaluator;var phase=evaluator.EffectivePhase(GuidedPhase(style),styleStartingNew);
-            var answering=toolPermissions.Any(p=>p.State=="pending"&&p.CanAnswerQuestions);
+            var answering=GuidedQuestion is not null;
             // An empty placeholder is the manifest asking for the app's own (M/SessionPaneView.swift:92-95).
             if(evaluator.Placeholder(phase,pane.Status=="running"||starting,answering,evaluator.JobOpen(pane)) is {Length:>0} placeholder)input.PlaceholderText=placeholder;
             foreach(var action in style.Manifest.Actions)if(styleActionButtons.TryGetValue(action.Id,out var button))button.IsEnabled=!answering&&(!action.RequiresText||!string.IsNullOrWhiteSpace(input.Text));
@@ -309,8 +372,9 @@ public sealed partial class MainWindow
         /// <summary>
         /// Draws the Mighty rows over the editor (M/SessionPaneView.swift:520-541, M/GuidedPanel.swift:94-127): the style chip with
         /// what the style is for; a strip for a style that still needs a yes; and the chosen style's guide panel — the phase
-        /// bar, what is missing, the state widgets, the group map, the built-in feature's files, the action chips (or a
-        /// spinner while a sequence runs) and the guidance line.
+        /// bar, then the agent's waiting question or a plan's answers when there is one (M/GuidedPanel.swift:112-119), else what
+        /// is missing, the state widgets, the group map, the built-in feature's files, the action chips (or a spinner while a
+        /// sequence runs) and the guidance line.
         /// </summary>
         private void RenderGuidedStyle()
         {
@@ -321,7 +385,10 @@ public sealed partial class MainWindow
             var badged=activeStyle is {Source:not "bundled"};stylePickerBadge.Visibility=badged?Visibility.Visible:Visibility.Collapsed;
             if(badged){stylePickerBadge.Child=new TextBlock{Text=StylePresentation.Source(activeStyle!.Source),FontSize=9,Foreground=ink2};stylePickerBadge.Padding=new(DesignMetrics.Spacing.Xs,1,DesignMetrics.Spacing.Xs,1);stylePickerBadge.CornerRadius=new(8);stylePickerBadge.Background=b.Subtle;}
             styleHint.Text=activeStyle?.Manifest.Subtitle??Locale.Get("composer.style.free");
-            guidedBody.Children.Clear();styleActionButtons.Clear();styleNotice.Children.Clear();styleNotice.Visibility=Visibility.Collapsed;guidedBody.Visibility=Visibility.Collapsed;
+            // The plan's answers keep their place across renders: taken out and put back, a change request being typed would lose the keyboard.
+            var planActions=GuidedQuestion is null&&PanelPlan is {} panelPlan?PlanCard(panelPlan,PendingCount,PlanPlace.Actions):null;
+            for(var kept=guidedBody.Children.Count-1;kept>=0;kept--)if(!ReferenceEquals(guidedBody.Children[kept],planActions))guidedBody.Children.RemoveAt(kept);
+            styleActionButtons.Clear();styleNotice.Children.Clear();styleNotice.Visibility=Visibility.Collapsed;guidedBody.Visibility=Visibility.Collapsed;
             if(activeStyle is not {} style)
             {
                 if(pane.MightyStyle is not null)
@@ -350,12 +417,13 @@ public sealed partial class MainWindow
                     if(index<ordered.Length-1)phases.Children.Add(ComposerGlyph.ChevronRight(7,0.9).Ink(tertiary).View);
                 }
                 AutomationProperties.SetAutomationId(phases,"mighty-phases-"+id);AutomationProperties.SetName(phases,Locale.Get("guidedPanel.phasesAccessibility"));
-                guidedBody.Children.Add(new ScrollViewer{Content=phases,HorizontalScrollBarVisibility=ScrollBarVisibility.Hidden,HorizontalScrollMode=ScrollMode.Auto,VerticalScrollBarVisibility=ScrollBarVisibility.Disabled,VerticalScrollMode=ScrollMode.Disabled});
+                guidedBody.Children.Insert(0,new ScrollViewer{Content=phases,HorizontalScrollBarVisibility=ScrollBarVisibility.Hidden,HorizontalScrollMode=ScrollMode.Auto,VerticalScrollBarVisibility=ScrollBarVisibility.Disabled,VerticalScrollMode=ScrollMode.Disabled});
             }
             guidedBody.Visibility=guidedBody.Children.Count>0?Visibility.Visible:Visibility.Collapsed;
-            // The questionnaire already has its own native renderer. No style
-            // action may replace it or rewrite an answer in the main composer.
-            if(toolPermissions.Any(p=>p.State=="pending"&&p.CanAnswerQuestions))return;
+            // A waiting question always wins: nothing else may hide it, and no style action may replace it (M/GuidedPanel.swift:112-114).
+            if(GuidedQuestion is {} asked){guidedBody.Children.Add(QuestionPanel(asked.Request,asked.Questionnaire));guidedBody.Visibility=Visibility.Visible;return;}
+            // The diagram draws the plan; its answers wait here, as a question does (M/GuidedPanel.swift:115-119).
+            if(planActions is not null){if(!guidedBody.Children.Contains(planActions)){Detach(planActions);guidedBody.Children.Add(planActions);}guidedBody.Visibility=Visibility.Visible;return;}
             if(stylePrerequisites is {Ready:false} prerequisites)
             {
                 // What the style still needs (M/GuidedPanel.swift:161-178): each missing thing in 11 medium, the first behind a box mark, the hint in ink2, then small buttons.
@@ -475,12 +543,13 @@ public sealed partial class MainWindow
                     button.Opacity=button.IsEnabled?1:ChipDisabled;button.IsEnabledChanged+=(_,_)=>button.Opacity=button.IsEnabled?1:ChipDisabled;
                     ToolTipService.SetToolTip(button,StylePresentation.ActionHelp(action));AutomationProperties.SetAutomationId(button,"style-action-"+action.Id);chips.Add(button);styleActionButtons[action.Id]=button;
                 }
-                // The reset chip: back to the start row, or out of it again (M/GuidedPanel.swift:349-362).
+                // The reset chip: back to the start row, or out of it again (M/GuidedPanel.swift:349-362). The structure view's
+                // current column follows the choice (MainWindow.MightyStructure.cs), so the Mighty view is drawn again with it.
                 Button? reset=null;
-                if(styleStartingNew){reset=SmallButton(Locale.Get("guidedPanel.cancelButton"),()=>{styleStartingNew=false;RenderGuidedStyle();return Task.CompletedTask;});AutomationProperties.SetAutomationId(reset,"mighty-reset-cancel-"+id);}
+                if(styleStartingNew){reset=SmallButton(Locale.Get("guidedPanel.cancelButton"),()=>{styleStartingNew=false;RenderGuidedStyle();RefreshDraftBlock();return Task.CompletedTask;});AutomationProperties.SetAutomationId(reset,"mighty-reset-cancel-"+id);}
                 else if(!evaluator.AtStart(phase)&&evaluator.ResetTitle is {} title)
                 {
-                    reset=SmallButton(title,()=>{styleStartingNew=true;RenderGuidedStyle();return Task.CompletedTask;});
+                    reset=SmallButton(title,()=>{styleStartingNew=true;RenderGuidedStyle();RefreshDraftBlock();return Task.CompletedTask;});
                     var again=new StackPanel{Orientation=Orientation.Horizontal,Spacing=DesignMetrics.Spacing.Xs};again.Children.Add(new FontIcon{Glyph="",FontSize=9,VerticalAlignment=VerticalAlignment.Center});again.Children.Add(new TextBlock{Text=title,FontSize=11,VerticalAlignment=VerticalAlignment.Center});
                     reset.Content=again;ToolTipService.SetToolTip(reset,Locale.Get("guidedPanel.resetHelp"));AutomationProperties.SetAutomationId(reset,"mighty-reset-"+id);
                 }
@@ -538,9 +607,48 @@ public sealed partial class MainWindow
                 Require(content.IsReadOnly&&content.AcceptsReturn&&content.Text.Contains("autoAllow",StringComparison.Ordinal),"approval omits manifest permissions (readOnly="+content.IsReadOnly+", multiline="+content.AcceptsReturn+", textLength="+content.Text.Length+", sourceBytes="+activeStyle!.Bytes.Length+")");
                 Require(content.Text.Replace("\r\n","\n",StringComparison.Ordinal).Replace('\r','\n')==Encoding.UTF8.GetString(activeStyle!.Bytes.Span).Replace("\r\n","\n",StringComparison.Ordinal).Replace('\r','\n'),"Approval text differs from the immutable reviewed bytes.");
                 guidedBody.Children.Remove(content);
+                // Under a style a waiting question is answered in the style's panel, one question at a time (M/GuidedPanel.swift:113-114,
+                // M/AgentQuestionPanel.swift:28-59): no question card over the composer, a single-choice tile sends at a tap, Enter sends
+                // what was typed, and 답하지 않기 denies it.
+                var answered=new List<(string Request,IReadOnlyDictionary<string,UserQuestionAnswer> Answers)>();
+                owner.smokeQuestionAnswerer=(_,asked,answers)=>answered.Add((asked,answers));owner.smokePermissionResponses=[];
+                try
+                {
+                    ToolPermissionRequest Ask(string requestId,bool multiple)=>new(requestId,id,"toolu_"+requestId,"AskUserQuestion","{\"questions\":[{\"header\":\"Scope\",\"question\":\"How far?\",\"multiSelect\":"+(multiple?"true":"false")+",\"options\":[{\"label\":\"Narrow\",\"description\":\"\"},{\"label\":\"Wide\",\"description\":\"All of it\"}]}]}","ask",CanAllow:false,CanAnswerQuestions:true);
+                    bool Panel()=>FindById<Border>(guidedBody,"agent-question-panel-"+id) is not null;
+                    ReceiveToolPermission(Ask("smoke-style-question-1",false));
+                    await WaitUI(()=>FindById<Button>(guidedBody,"agent-question-option-1-"+id) is {IsLoaded:true});
+                    Require(Panel()&&questionnaireCard is null&&toolPermissionHost.Visibility==Visibility.Collapsed&&styleActionButtons.Count==0,"a question under a style must wait in the style's panel, not on the question card over the composer");
+                    await SettleDesktopCapture(owner.root);await CaptureElement(Container,Path.Combine(owner.options.ProfileDirectory!,"smoke-composer-style-question.png"));
+                    Press(FindById<Button>(guidedBody,"agent-question-option-1-"+id)!);
+                    await WaitUI(()=>answered.Count==1&&!Panel());
+                    Require(answered[0].Request=="smoke-style-question-1"&&answered[0].Answers["How far?"].SelectedOptions.SequenceEqual(["Wide"]),"a single-choice tile in the style's panel must answer at a tap");
+                    ReceiveToolPermission(Ask("smoke-style-question-2",true));
+                    await WaitUI(Panel);
+                    input.Text="By hand";
+                    Require(await AnswerGuidedQuestion()&&answered.Count==2&&answered[1].Answers["How far?"] is {CustomText:"By hand",SelectedOptions.Count:0}&&input.Text.Length==0&&!Panel(),"Enter must send the typed answer and clear the draft");
+                    ReceiveToolPermission(Ask("smoke-style-question-3",true));
+                    await WaitUI(()=>FindById<Button>(guidedBody,"agent-question-skip-"+id) is {IsLoaded:true});
+                    Press(FindById<Button>(guidedBody,"agent-question-skip-"+id)!);
+                    await WaitUI(()=>!Panel());
+                    Require(owner.smokePermissionResponses.TryGetValue("smoke-style-question-3",out var skipped)&&!skipped&&answered.Count==2,"the skip button must deny the question and answer nothing");
+                }
+                finally{owner.smokeQuestionAnswerer=null;owner.smokePermissionResponses=null;ClearToolPermissions();input.Text=draft;}
+                // The style rows are read again when a watched file changes, with no timer behind them (M/StyleStateWatcher.swift:4-8):
+                // a file written into the profile's styles folder, made here if it was not there yet.
+                var watched=Path.Combine(owner.StateDirectory,"styles");var probe=Path.Combine(watched,"smoke-style-watch.txt");var read=styleRegistry;
+                owner.smokeStyleWatch=true;
+                try
+                {
+                    owner.WatchStyles(styleWatched??Workspace.Path);
+                    Directory.CreateDirectory(watched);await File.WriteAllTextAsync(probe,"changed");
+                    await WaitUI(()=>!styleLoading&&!ReferenceEquals(styleRegistry,read),seconds:20);
+                    Require(activeStyle is {Id:"ouroboros"},"the style must still resolve after its files were read again");
+                }
+                finally{owner.smokeStyleWatch=false;owner.StopWatchingStyles();if(File.Exists(probe))File.Delete(probe);}
                 var request=await PrepareStyleRunRequest(new StartRunRequest(id,Session.WorkspaceId,"claude","fixture",[]));
                 Require(request.StyleAutoAllow is {Count:>0},"run does not snapshot selected style tools");
-                return new(){["bundledCount"]=styleRegistry!.Styles.Count(s=>s.Source=="bundled"),["picker"]=true,["guidedActions"]=actions.Length,["fullApprovalContents"]=true,["localRunPermissionSnapshot"]=true,["userFilesRead"]=false};
+                return new(){["bundledCount"]=styleRegistry!.Styles.Count(s=>s.Source=="bundled"),["picker"]=true,["guidedActions"]=actions.Length,["fullApprovalContents"]=true,["localRunPermissionSnapshot"]=true,["questionAnsweredInStylePanel"]=true,["stylesReadAgainOnFileChange"]=true,["userFilesRead"]=false};
             }
             finally
             {

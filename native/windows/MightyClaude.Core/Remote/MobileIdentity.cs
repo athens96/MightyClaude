@@ -7,7 +7,9 @@ using System.Text.RegularExpressions;
 
 namespace MightyClaude.Core;
 
-public sealed record MobileDeviceInfo(string Id, string Name, string FirstSeen, string LastSeen, bool Legacy);
+/// <param name="Connected">A connection that proved itself as this device is open now.</param>
+/// <param name="IsNew">Registered within the last day: an arrival the user did not make themselves must show at a glance (M/MightyCore/Remote/MobileDeviceRegistry.swift:182-214).</param>
+public sealed record MobileDeviceInfo(string Id, string Name, string FirstSeen, string LastSeen, bool Legacy, bool Connected = false, bool IsNew = false);
 public sealed record MobileAuthResult(string? DeviceId, string? DeviceToken = null, string? Error = null)
 { public override string ToString() => $"MobileAuthResult {{ DeviceId = {DeviceId}, Error = {Error}, DeviceToken = [redacted] }}"; }
 
@@ -28,7 +30,11 @@ public sealed class MobileIdentity
     internal byte[] Secret => Convert.FromBase64String(state.SecretKeyB64);
     public string PublicKey => Convert.ToBase64String(RelayCipher.PublicKey(Secret));
     public string ServerId => Hash(state.HostToken);
-    public IReadOnlyList<MobileDeviceInfo> Devices { get { lock (sync) return state.Devices.Select(d => new MobileDeviceInfo(d.Id, d.Name, d.FirstSeen, d.LastSeen, d.TokenHash is null)).ToArray(); } }
+    /// <summary>How long a newly registered phone is marked as an arrival.</summary>
+    public static readonly TimeSpan NewDeviceWindow = TimeSpan.FromDays(1);
+    public static bool IsNew(string firstSeen, DateTimeOffset now) => DateTimeOffset.TryParse(firstSeen, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal, out var seen) && now - seen is var age && age >= TimeSpan.Zero && age < NewDeviceWindow;
+    /// <summary>The paired phones as the settings list draws them. The row that stands for every app without a device token is named in the user's language.</summary>
+    public IReadOnlyList<MobileDeviceInfo> Devices { get { var now = DateTimeOffset.UtcNow; lock (sync) return state.Devices.Select(d => new MobileDeviceInfo(d.Id, d.Id == "legacy" ? Locale.Get("mobileRemote.device.legacyName") : d.Name, d.FirstSeen, d.LastSeen, d.TokenHash is null, IsNew: IsNew(d.FirstSeen, now))).ToArray(); } }
     public MobileIdentity(string directory)
     {
         SecureDirectory(directory); path = Path.Combine(directory, "mobile-identity.json");
@@ -79,7 +85,7 @@ public sealed class MobileIdentity
                 var old = devices.Where(d => DateTimeOffset.TryParse(d.LastSeen, out var last) && now - last > TimeSpan.FromDays(90)).OrderBy(d => d.LastSeen).FirstOrDefault();
                 if (old is null) return new(null, Error: "device-limit"); devices.Remove(old);
             }
-            var fresh = RandomToken(32); var name = Wire.Clean(auth.Text("clientName") ?? "Phone", 40);
+            var fresh = RandomToken(32); var name = Wire.Clean(auth.Text("clientName") is { Length: > 0 } given ? given : Locale.Get("mobileRemote.device.defaultName"), 40);
             devices.Add(new(id, name, Hash(fresh), Wire.Now(), Wire.Now()));
             Save(state with { Devices = devices }); registrations.Add(now); return new(id, fresh);
         }

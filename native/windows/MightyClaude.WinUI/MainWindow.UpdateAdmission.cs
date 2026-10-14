@@ -28,7 +28,7 @@ public sealed partial class MainWindow
                 if (closing) throw new OperationCanceledException();
                 if (options.SmokeTest && smokeCliUpdater is null)
                 { completion.TrySetResult(new(provider, "skipped", Detail: CliUpdateStrings.DetailInspectFailed)); return; }
-                if (loginBusy.ContainsKey(provider) || accountChanges.ContainsKey(provider) || pluginOperations.IsRunning || service.HasActiveProvider(provider)
+                if (loginBusy.ContainsKey(provider) || accountChanges.ContainsKey(provider) || accountLoginWaits.ContainsKey(provider) || pluginOperations.IsRunning || service.HasActiveProvider(provider)
                     || views.Values.Any(p => p.UpdateProvider == provider && p.UpdateStarting))
                 { completion.TrySetResult(new(provider, "busy", Detail: CliUpdateStrings.DetailBusy)); return; }
                 manuallyUpdatingProvider = provider;

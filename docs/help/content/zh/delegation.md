@@ -3,21 +3,31 @@ title: 智能体委派
 order: 6
 section: delegation
 ---
-借助智能体委派，一个 Claude 窗格（父窗格）可以把工作拆开，交给其他 Claude 窗格（子窗格）去做。每个子窗格在自己的 git worktree 中工作，完成后留下报告。父窗格收到通知，阅读报告，再决定是否合并结果。此功能仅在 Mac 应用中提供。
+借助智能体委派，一个 Claude 窗格（父窗格）可以把工作拆开，交给其他 Claude 窗格（子窗格）去做。每个子窗格在自己的 git worktree 中工作，完成后留下报告。父窗格收到通知，阅读报告，再决定是否合并结果。Mac 应用和 Windows 应用都提供此功能。
 
 > [!warning]
 > 这是实验性功能，默认关闭，也没有设置界面。请先在练习用的仓库中试用。
 
 ## 开启和关闭 {#enable}
-先退出应用，在终端中运行下面的命令，然后重新打开应用。
+先退出应用，运行下面的命令，然后重新打开应用。
+
+{{platform:mac}} 在终端中：
 
 ```sh
 defaults write dev.mightyclaude.native delegation.enabled -bool true
 ```
 
+{{platform:windows}} 在命令提示符或 PowerShell 中：
+
+```
+reg add "HKCU\Software\MightyClaudeNative" /v delegation.enabled /t REG_DWORD /d 1 /f
+```
+
+在 Windows 上，`HKEY_CURRENT_USER\Software\MightyClaudeNative` 下的 `delegation.enabled` 值（REG_DWORD）不为 0 时即为开启。没有这个值或值为 0 时为关闭。
+
 - 开启后，Claude 窗格每次开始新的运行时都会带上委派工具。已经在进行中的运行不会带上。
 - 父窗格可用的工具有 `delegate`（交出任务）、`list_children`（子窗格列表）、`child_status`（状态和报告）、`merge`（合并）和 `follow_up`（后续指示）。父窗格永远不能使用 `discard`（丢弃），只有你能在子窗格的卡片上丢弃。
-- 要关闭，请运行 `defaults delete dev.mightyclaude.native delegation.enabled`。关闭后只会去掉工具，已有的子窗格、卡片和清理都照常工作。
+- 要关闭，请在 Mac 上运行 `defaults delete dev.mightyclaude.native delegation.enabled`，在 Windows 上运行 `reg delete "HKCU\Software\MightyClaudeNative" /v delegation.enabled /f`，然后重新打开应用。关闭后只会去掉工具，已有的子窗格、卡片和清理都照常工作。
 
 ## 交出工作 {#delegate}
 1. 把一个 git 仓库文件夹作为工作区打开，再打开一个 Claude 窗格。这个窗格就是父窗格。
@@ -26,7 +36,7 @@ defaults write dev.mightyclaude.native delegation.enabled -bool true
 
 ![[delegation-tree]]
 
-- 每个子窗格都有一个分支 `mighty/<子窗格 id>` 和一个 worktree（`~/.mightyclaude/worktrees/<子窗格 id>`）。worktree 位于项目文件夹之外，不会动到父窗格的工作。
+- 每个子窗格都有一个分支 `mighty/<子窗格 id>` 和一个 worktree（Mac 上为 `~/.mightyclaude/worktrees/<子窗格 id>`，Windows 上为 `%USERPROFILE%\.mightyclaude\worktrees\<子窗格 id>`）。worktree 位于项目文件夹之外，不会动到父窗格的工作。
 - 子窗格从父窗格的最后一次提交开始。父窗格文件夹中尚未提交的更改不会带给子窗格。
 - 交出的任务写在 TASK.md 中，结果写在 REPORT.md 中。这两个文件位于 worktree 内被 git 忽略的文件夹里，不会被提交。
 - 子窗格以父窗格选择的权限模式开始，这个模式不能比父窗格自己的模式更宽。只有你能在两次运行之间，从子窗格输入框的权限菜单或手机设置中放宽它。
@@ -94,9 +104,10 @@ defaults write dev.mightyclaude.native delegation.enabled -bool true
 ## 关闭窗格和清理 {#close}
 - **关闭已合并的子窗格时**，如果它的工作已全部合并且没有留下未提交的更改，应用会删除它的 worktree 和分支（`git branch -d`，从不强制删除）。否则只会关闭窗格，worktree 保留。
 - **在合并之前关闭子窗格时**，应用就不能再合并它了。卡片上只剩丢弃，分支和 worktree 会一直保留到你丢弃为止。
-- **关闭还有打开子窗格的父窗格时**，Mac 应用会先询问（{{ui:delegation.parentClose.title}}）。只关闭父窗格，子窗格继续工作。
+- **关闭还有打开子窗格的父窗格时**，桌面应用会先询问（{{ui:delegation.parentClose.title}}）。只关闭父窗格，子窗格继续工作。
 - 父窗格已关闭的子窗格会作为卡片留在侧边栏的{{ui:delegation.tree.parentClosed}}项目下面。它们的通知保留在卡片上并显示数量，也不再接收后续指示。
 - 还有打开的子窗格，或者还有尚未清理的子窗格 worktree 的工作区，无法删除。
+- {{platform:windows}} 如果子窗格的 worktree 中有目录联接（junction）或符号链接（例如用链接创建的 `node_modules`），关闭已合并的子窗格时应用不会清理，而是保留 worktree，以免顺着链接把它指向的文件夹也删掉。这时请用卡片上的{{ui:delegation.card.discard}}按钮删除：丢弃会先只移除链接本身，不会动链接指向的文件夹。
 
 ![[delegation-parent-closed]]
 
@@ -110,4 +121,4 @@ defaults write dev.mightyclaude.native delegation.enabled -bool true
 | 所需磁盘剩余空间 | 10 GB |
 
 - 父窗格和子窗格都必须是 Claude 窗格。Codex 和 Gemini 窗格不能委派。
-- Windows 应用暂时还没有这个功能。手机没有新的界面，但保留的行也会显示在手机的队列中。
+- Mac 应用和 Windows 应用都通过隐藏开关开启（[开启和关闭](#enable)）。手机没有新的界面，但保留的行也会显示在手机的队列中。

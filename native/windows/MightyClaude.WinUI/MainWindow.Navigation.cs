@@ -25,9 +25,10 @@ public sealed partial class MainWindow
     /// at the top, the 12.5pt title (medium once the pane has settled, semibold otherwise) over the
     /// meta line, and on the right only the amber words of what waits on the user ("1 question");
     /// <paramref name="active"/> is the selected row, whose meta line is <c>ink2</c>. No row is
-    /// filled with a status colour. Tabs are <see cref="TabIndicator"/>.
+    /// filled with a status colour. Tabs are <see cref="TabIndicator"/>. A delegated <paramref name="child"/>'s row always
+    /// carries its state there instead (M/WorkspaceView.swift:257-296).
     /// </summary>
-    private FrameworkElement SessionIndicator(RunSession session, bool active = false)
+    private FrameworkElement SessionIndicator(RunSession session, bool active = false, DelegationChildRow? child = null)
     {
         var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Center };
         row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
@@ -43,7 +44,8 @@ public sealed partial class MainWindow
         ToolTipService.SetToolTip(title, PaneTitle.Help(session));
         // The Mac's Spacer stands between the words and the title, 8 from each (M/WorkspaceView.swift:222-245).
         var state = new TextBlock { FontSize = 10.5, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = brushes.Brush(DesignToken.WaitText), MinHeight = 17, Margin = new Thickness(DesignMetrics.Spacing.Sm, 0, 0, 0) };
-        ShowSidebarWait(state, DashboardAttention(session.Id));
+        if (child is not null) { sidebarChildStates[session.Id] = child; ShowChildState(state, child, DashboardAttention(session.Id)); }
+        else ShowSidebarWait(state, DashboardAttention(session.Id));
         // Sidebar metadata already contains the elapsed time below the title.
         var elapsed = new TextBlock { Text = session.Kind == "shell" ? "" : session.RunTiming?.Label() ?? "", FontSize = 10, Opacity = .7, Visibility = Visibility.Collapsed };
         var trailing = new StackPanel { Spacing = 1, VerticalAlignment = VerticalAlignment.Top }; trailing.Children.Add(state); trailing.Children.Add(elapsed); Grid.SetColumn(trailing, 2); row.Children.Add(trailing);
@@ -67,8 +69,12 @@ public sealed partial class MainWindow
         Grid.SetColumnSpan(edge, 3); Grid.SetRowSpan(edge, 2); row.Children.Add(edge);
         sidebarRowEdges[session.Id] = edge;
         sessionIndicators[session.Id] = (mark, state, elapsed);
-        AutomationProperties.SetName(row, session.Title + (ProviderCatalog.ShowsBetaBadge(session) ? ", " + Locale.Get("badge.betaAccessibility") : "") + ", " + StateLabel(shown)); return row;
+        AutomationProperties.SetName(row, SidebarRowName(session, shown)); return row;
     }
+    /// <summary>A sidebar row's spoken name: its title, its beta capsule and its state, or a delegated child's own sentence with its state (M/WorkspaceView.swift:290-293).</summary>
+    private string SidebarRowName(RunSession session, string shown) => sidebarChildStates.TryGetValue(session.Id, out var child)
+        ? Locale.Get("delegation.child.accessibility", new Dictionary<string, string> { ["title"] = session.Title, ["state"] = DelegationText.State(DelegationSidebar.ShownState(child.State, DashboardAttention(session.Id).Total > 0)) })
+        : session.Title + (ProviderCatalog.ShowsBetaBadge(session) ? ", " + Locale.Get("badge.betaAccessibility") : "") + ", " + StateLabel(shown);
     /// <summary>A sidebar pane row's padding: <c>Spacing.Sm</c> at the sides, <c>Inset.PaneRowV</c> over and under (M/WorkspaceView.swift:260).</summary>
     internal static readonly Thickness SidebarPaneRowPadding = new(DesignMetrics.Spacing.Sm, DesignMetrics.Inset.PaneRowV, DesignMetrics.Spacing.Sm, DesignMetrics.Inset.PaneRowV);
     /// <summary>Each sidebar pane row's hairline overlay, by session id.</summary>
@@ -160,14 +166,14 @@ public sealed partial class MainWindow
         foreach (var session in state.Sessions)
         {
             var pending = PendingRequests(session.Id); var shown = StatusGlyph.DisplayStatus(session.Status, pending);
-            if (sidebarSessionButtons.TryGetValue(session.Id, out var sidebarButton))
-                AutomationProperties.SetName(sidebarButton, session.Title + (ProviderCatalog.ShowsBetaBadge(session) ? ", " + Locale.Get("badge.betaAccessibility") : "") + ", " + StateLabel(shown));
+            if (sidebarSessionButtons.TryGetValue(session.Id, out var sidebarButton)) AutomationProperties.SetName(sidebarButton, SidebarRowName(session, shown));
             if (sidebarDetails.TryGetValue(session.Id, out var meta)) meta.Text = SidebarMeta(session);
             if (sidebarTitles.TryGetValue(session.Id, out var title)) title.FontWeight = SidebarTitleWeight(shown);
             if (sessionIndicators.TryGetValue(session.Id, out var row))
             {
                 row.Mark.Update(session.Status, session.Kind, pending, dark);
-                ShowSidebarWait(row.Status, DashboardAttention(session.Id));
+                if (sidebarChildStates.TryGetValue(session.Id, out var child)) ShowChildState(row.Status, child, DashboardAttention(session.Id));
+                else ShowSidebarWait(row.Status, DashboardAttention(session.Id));
             }
             if (tabIndicators.TryGetValue(session.Id, out var tab)) { tab.Update(session.Status, session.Kind, pending, dark); ShowTabMark(tab, session, pending); }
             if (views.TryGetValue(session.Id, out var pane)) { pane.RefreshElapsed(session); pane.RefreshHeaderStatus(session, dark); }
@@ -304,10 +310,11 @@ public sealed partial class MainWindow
         return menu;
     }
     /// <summary>
-    /// A sidebar pane row's menu, the Mac's two items (M/WorkspaceView.swift:259-262): Rename… and Close
-    /// pane. Focus view and a terminal's history stay in the pane's own menus (<see cref="SessionMenu(string)"/>).
+    /// A sidebar pane row's menu, the Mac's two items (M/WorkspaceView.swift:259-268): Rename… and Close
+    /// pane, and a delegated child's card actions behind a separator. Focus view and a terminal's history stay in the
+    /// pane's own menus (<see cref="SessionMenu(string)"/>).
     /// </summary>
-    private MenuFlyout SidebarPaneMenu(string id)
+    private MenuFlyout SidebarPaneMenu(string id, DelegationChildRow? child = null)
     {
         var rename = new MenuFlyoutItem { Text = RenameStrings.MenuEntry };
         rename.Click += async (_, _) => await RenameSession(id);
@@ -315,6 +322,7 @@ public sealed partial class MainWindow
         menu.Opening += (_, _) => rename.IsEnabled = !dialogOpen;
         menu.Items.Add(rename);
         menu.Items.Add(MenuItem(Locale.Get("menu.closePane"), () => CloseSession(id)));
+        if (child is not null) { menu.Items.Add(new MenuFlyoutSeparator()); AddChildCardItems(menu, child); }
         return menu;
     }
     private MenuFlyout SessionMenu(string id) => SessionMenu(id, out _);
@@ -332,7 +340,15 @@ public sealed partial class MainWindow
         menu.Items.Add(close = MenuItem(Locale.Get("session.menu.close"), () => CloseSession(id)));
         return menu;
     }
-    private Task CloseSession(string id) => Act(async () => { await service.StopAsync(id); await service.UpdateAsync(s => s with { Sessions = s.Sessions.Where(p => p.Id != id).ToList() }); Render(); });
+    /// <summary>
+    /// A human's close of the pane from the window: a parent pane with open children asks first, and then closes only the
+    /// parent (M/AppStore+Delegation.swift:207-218); any other pane closes now. Either way through the service (<see cref="ClosePane"/>).
+    /// </summary>
+    private Task CloseSession(string id) => Act(async () =>
+    {
+        if (service.ParentCloseQuestion(id) is { } question && !await ConfirmParentClose(question)) return;
+        await ClosePane(id);
+    });
     /// <summary>The rename sheet's width, the spacing of its lines, its caption size and its padding (M/RenameViews.swift:30, 38, 59; SwiftUI's caption is 10pt on macOS).</summary>
     internal const double RenameSheetWidth = 360, RenameSpacing = DesignMetrics.Spacing.Md, RenameCaption = 10, RenameSheetPadding = DesignMetrics.Inset.Sheet + DesignMetrics.Spacing.Xxs;
     /// <summary>

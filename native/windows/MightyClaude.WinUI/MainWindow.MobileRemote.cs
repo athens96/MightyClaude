@@ -15,24 +15,36 @@ public sealed partial class MainWindow
     private MobileRelayHost? mobileHost;
     private MobileDesktopRouter? mobileRouter;
     private readonly DispatcherTimer mobileNotify = new() { Interval = TimeSpan.FromMilliseconds(250) };
-    private long mobileNotified;
-    private bool mobileNotifying;
+    private bool mobileNotifying, mobileWatchesPower;
     private async Task InitializeMobileRemote()
     {
         if (options.SmokeTest || mobileHost is not null) return;
         var directory = Path.Combine(StateDirectory, "mobile-remote");
-        mobileRouter = new(service, directory, Environment.MachineName, MobileAction, MobileExtras) { AppVersion = AppVersionText, ImagePreview = MakeMobileImagePreview, QueueCount = id => views.TryGetValue(id, out var pane) ? pane.MobileQueuedCount : 0 };
+        mobileRouter = new(service, directory, Environment.MachineName, MobileAction, MobileExtras) { AppVersion = AppVersionText, ImagePreview = MakeMobileImagePreview, QueueCount = id => views.TryGetValue(id, out var pane) ? pane.MobileQueuedCount : 0, Structure = MobileStructureFor,
+            Digest = pane => pane.Kind == "claude" && views.TryGetValue(pane.Id, out var view) ? view.MobileDigest() : null, ActiveStyle = MobileRunningStyle };
         mobileHost = new(directory, Environment.MachineName, MobileDesktopRouter.Capabilities, MobileRoute) { AppVersion = AppVersionText };
         mobileRouter.HostId = mobileHost.HostId;
         await InitializeScreenShare(directory);
+        // What a phone shows of each pane is read again four times a second while a phone is connected, and a phone is told
+        // only of the panes (and the list) that moved (M/MightyClaude/AppStore+MobileRemote.swift:271-323).
         mobileNotify.Tick += async (_, _) =>
         {
-            if (closing || mobileNotifying || mobileRouter is null || mobileHost is null || mobileRouter.Revision == mobileNotified) return;
+            if (closing || mobileNotifying || mobileRouter is null || mobileHost is null || mobileHost.Status.Connections == 0) return;
             mobileNotifying = true;
-            try { mobileNotified = mobileRouter.Revision; await mobileHost.NotifyAsync("state", mobileNotified); foreach (var pane in service.Snapshot.Sessions.Where(s => s.Kind == "claude")) await mobileHost.NotifyAsync("session:" + pane.Id, mobileNotified); }
+            try { mobileRouter.Changed(); mobileRouter.Observe(); foreach (var (scope, revision) in mobileRouter.TakeNotifications()) await mobileHost.NotifyAsync(scope, revision); }
+            catch (Exception ex) when (ex is not OutOfMemoryException) { }
             finally { mobileNotifying = false; }
         };
+        // Asleep, the PC missed the relay's pings and its control socket may be gone on the relay's side while it still
+        // looks open here (M/MightyClaude/AppStore+MobileRemote.swift:209-213).
+        try { Microsoft.Windows.System.Power.PowerManager.SystemSuspendStatusChanged += MobilePowerChanged; mobileWatchesPower = true; }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { }
         mobileNotify.Start(); await mobileHost.ApplyAsync(service.Snapshot.MobileRemote);
+    }
+    private void MobilePowerChanged(object? sender, object e)
+    {
+        try { if (Microsoft.Windows.System.Power.PowerManager.SystemSuspendStatus is Microsoft.Windows.System.Power.SystemSuspendStatus.AutoResume or Microsoft.Windows.System.Power.SystemSuspendStatus.ManualResume) mobileHost?.ReconnectSoon(); }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { }
     }
     private Task<MobileReply> MobileRoute(string method, string path, JsonElement? body, string device, CancellationToken token)
     {
@@ -49,14 +61,16 @@ public sealed partial class MainWindow
     }
     private async Task ShutdownMobileRemote()
     {
-        mobileNotify.Stop(); await ShutdownScreenShare(); if (mobileHost is not null) await mobileHost.DisposeAsync(); mobileHost = null; mobileRouter?.Dispose(); mobileRouter = null;
+        mobileNotify.Stop(); if (mobileWatchesPower) { mobileWatchesPower = false; try { Microsoft.Windows.System.Power.PowerManager.SystemSuspendStatusChanged -= MobilePowerChanged; } catch (Exception ex) when (ex is not OutOfMemoryException) { } }
+        await ShutdownScreenShare(); if (mobileHost is not null) await mobileHost.DisposeAsync(); mobileHost = null; mobileRouter?.Dispose(); mobileRouter = null;
     }
     // 모바일 리모트 (M/MobileRemoteSettingsView.swift:17-110): the allow switch over its explanation; the
     // relay's label, the address used while the field is empty, the field and the apply button; the four
-    // steps; the state dot and words beside the reconnect button; the pairing QR (160) beside the host id
+    // steps; the state dot and words beside the reconnect button, and under them what the host is doing (the
+    // retry it waits for, why the relay refused it, no network); the pairing QR (160) beside the host id
     // under its label, the key and the link and key buttons; the legacy-apps switch; then the paired
-    // phones, a row each. The switches take effect as they are switched and the apply button is the
-    // address's own, as on the Mac.
+    // phones, a row each with its "connected" and "new device" marks. The switches take effect as they are
+    // switched and the apply button is the address's own, as on the Mac.
     private StackPanel BuildMobileRemoteSection()
     {
         var rows = new StackPanel(); const string deviceRow = "mobile-device";
@@ -67,7 +81,8 @@ public sealed partial class MainWindow
         AutomationProperties.SetName(relay, relayLabel); AutomationProperties.SetAutomationId(relay, "settings-mobile-relay");
         var legacyLabel = Locale.Get("settings.mobileRemote.legacyAppsToggle");
         var legacy = SettingsSwitch(legacyLabel, service.Snapshot.MobileRemote.AllowLegacyPhones, "settings-mobile-legacy-toggle");
-        var status = SettingsText("", 11, DesignToken.Ink2);
+        var status = SettingsText("", 11, DesignToken.Ink2); var detail = SettingsText("", 11, DesignToken.Ink2);
+        AutomationProperties.SetAutomationId(detail, "settings-mobile-detail");
         var dot = new Microsoft.UI.Xaml.Shapes.Ellipse { Width = 8, Height = 8, VerticalAlignment = VerticalAlignment.Center };
         var qr = new Image { Width = MobileQrSize, Height = MobileQrSize }; AutomationProperties.SetName(qr, Locale.Get("settings.mobileRemote.qrAccessibility")); AutomationProperties.SetAutomationId(qr, "settings-mobile-qr");
         Button reconnect = null!; Border identityRow = null!, devicesTitleRow = null!;
@@ -181,6 +196,7 @@ public sealed partial class MainWindow
         var state = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
         state.Children.Add(dot); state.Children.Add(status);
         SettingsRow(rows, SettingsLabeled(state, reconnect));
+        SettingsRow(rows, detail);
 
         var copy = SettingsPush(Button(Locale.Get("settings.mobileRemote.copyLinkButton"), () => { if (mobileHost is not null && service.Snapshot.MobileRemote.Enabled) { var package = new DataPackage(); package.SetText(mobileHost.PairingUrl); Clipboard.SetContent(package); } return Task.CompletedTask; }), SettingsControlSize.Small);
         copy.Content = SettingsGlyphLabel("", Locale.Get("settings.mobileRemote.copyLinkButton"), 11);
@@ -210,7 +226,10 @@ public sealed partial class MainWindow
         {
             if (mobileHost is null || options.SmokeTest || id is not null && !mobileHost.Devices.Any(device => device.Id == id)) return;
             var host = mobileHost;
-            var dialog = StyledDialog(new ContentDialog { XamlRoot = SettingsXamlRoot, Title = Locale.Get(id is null ? "settings.mobileRemote.regenerateKeyButton" : "settings.mobileRemote.revokeDialogTitle"), Content = Locale.Get("windows.mobile.rotationConfirm"), PrimaryButtonText = Locale.Get("settings.mobileRemote.revokeConfirmButton"), CloseButtonText = Locale.Get("settings.mobileRemote.cancelButton"), DefaultButton = ContentDialogButton.Close });
+            // The note names the phone being unpaired (M/MobileRemoteSettingsView.swift:104-124); what follows is Windows' own
+            // rule, where a new key unpairs every phone.
+            var named = id is null ? null : host.Devices.FirstOrDefault(device => device.Id == id)?.Name;
+            var dialog = StyledDialog(new ContentDialog { XamlRoot = SettingsXamlRoot, Title = Locale.Get(id is null ? "settings.mobileRemote.regenerateKeyButton" : "settings.mobileRemote.revokeDialogTitle"), Content = (named is null ? "" : named + "\n\n") + Locale.Get("windows.mobile.rotationConfirm"), PrimaryButtonText = Locale.Get("settings.mobileRemote.revokeConfirmButton"), CloseButtonText = Locale.Get("settings.mobileRemote.cancelButton"), DefaultButton = ContentDialogButton.Close });
             if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
             if (closing || !ReferenceEquals(host, mobileHost) || id is not null && !host.Devices.Any(device => device.Id == id)) return;
             if (screenHub is not null) await screenHub.ResetAsync("rekey-pairing"); await host.RotateKeyAsync(id); mobileRouter?.ResetUploads(); showsKey = false; await Refresh();
@@ -225,6 +244,14 @@ public sealed partial class MainWindow
             dot.Fill = brushes.Brush(!on ? DesignToken.Ink3 : connected?.Connected == true ? DesignToken.Done : DesignToken.WaitText);
             status.Text = !on ? Locale.Get("settings.mobileRemote.statusOff") : connected?.Connected != true ? Locale.Get("settings.mobileRemote.statusConnecting")
                 : connected.Connections > 0 ? Locale.Get("settings.mobileRemote.statusConnectedTemplate", new Dictionary<string, string> { ["count"] = connected.Connections.ToString() }) : Locale.Get("settings.mobileRemote.statusRelayConnected");
+            // Under it, what the host is doing (M/MobileRemoteSettingsView.swift:48): until the host has been read, off or connecting.
+            detail.Text = MobileRelayStatusText.Detail(!on ? new(false, 0, "disabled") : connected ?? new(false, 0, "connecting"));
+        }
+        // The "connected" and "new device" marks (M/MobileRemoteSettingsView.swift:150-163): 9pt medium on the soft fill, a capsule.
+        Border Mark(string text, DesignToken ink, DesignToken fill, string id)
+        {
+            var mark = new Border { Child = SettingsText(text, 9, ink, medium: true), Background = brushes.Brush(fill), CornerRadius = new CornerRadius(DesignMetrics.Radius.Row), Padding = new Thickness(DesignMetrics.Spacing.Xs, 1, DesignMetrics.Spacing.Xs, 1), VerticalAlignment = VerticalAlignment.Center };
+            AutomationProperties.SetAutomationId(mark, id); return mark;
         }
         void HidePairing() { identityRow.Visibility = devicesTitleRow.Visibility = Visibility.Collapsed; ReplaceSettingsRows(rows, deviceRow, []); qr.Source = null; }
         async Task Refresh()
@@ -245,9 +272,12 @@ public sealed partial class MainWindow
                 var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
                 AutomationProperties.SetAutomationId(row, "settings-mobile-device-" + device.Id);
                 row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-                row.Children.Add(SettingsSymbol(device.Legacy ? "" : "", 14, DesignToken.Ink2));
+                row.Children.Add(SettingsSymbol(device.Legacy ? "" : "", 14, device.Connected ? DesignToken.DoneText : DesignToken.Ink2));
                 var words = new StackPanel { Spacing = 1, VerticalAlignment = VerticalAlignment.Center };
-                words.Children.Add(SettingsText(device.Name + (device.Legacy ? " · Legacy" : ""), 12));
+                var name = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm }; name.Children.Add(SettingsText(device.Name, 12));
+                if (device.Connected) name.Children.Add(Mark(Locale.Get("settings.mobileRemote.connectedBadge"), DesignToken.DoneText, DesignToken.DoneSoft, "settings-mobile-connected-badge-" + device.Id));
+                if (device.IsNew) name.Children.Add(Mark(Locale.Get("settings.mobileRemote.newDeviceBadge"), DesignToken.WaitText, DesignToken.WaitSoft, "settings-mobile-new-badge-" + device.Id));
+                words.Children.Add(name);
                 var seenAt = SettingsText(Locale.Get("settings.mobileRemote.seenTemplate", new Dictionary<string, string> { ["first"] = Stamp(device.FirstSeen), ["last"] = Stamp(device.LastSeen) }), 10, DesignToken.Ink2);
                 seenAt.TextWrapping = TextWrapping.NoWrap; seenAt.TextTrimming = TextTrimming.CharacterEllipsis; words.Children.Add(seenAt);
                 Grid.SetColumn(words, 1); row.Children.Add(words);
@@ -277,15 +307,52 @@ public sealed partial class MainWindow
         if (!views.TryGetValue(id, out var pane)) { pane = new(this, id); views[id] = pane; pane.InitRefresher(); }
         return pane;
     }
+    /// <summary>Each workspace's styles as a pane with no view of its own reads them, and when they were read.</summary>
+    private readonly Dictionary<string, (StyleRegistry? Registry, DateTime Read, bool Reading)> mobileStyleRegistries = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>How long a workspace's styles are taken as read for those panes: approvals and edited style files show within it.</summary>
+    private static readonly TimeSpan MobileStyleRefresh = TimeSpan.FromSeconds(5);
+    /// <summary>
+    /// The style a pane really runs (M/MightyClaude/AppStore+MobileRemote.swift:346-351). A pane with a view answers from it; one
+    /// without is never given a view for this — the phone reads every pane's style four times a second — and answers from its
+    /// workspace's approved styles, read off the window's thread, none until they have been read.
+    /// </summary>
+    private string? MobileRunningStyle(RunSession pane)
+    {
+        if (pane.Kind != "claude") return null;
+        if (views.TryGetValue(pane.Id, out var view)) return view.MobileStyleId;
+        if (!MobileRemoteSupport.GuidedStylesAvailable(pane.Kind, pane.Provider, MobileRemoteSupport.ViewMode(pane.AgentViewMode)) || pane.MightyStyle is null) return null;
+        if (service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == pane.WorkspaceId)?.Path is not { } workspace) return null;
+        var known = mobileStyleRegistries.GetValueOrDefault(workspace);
+        if (!known.Reading && DateTime.UtcNow - known.Read >= MobileStyleRefresh) { mobileStyleRegistries[workspace] = known with { Reading = true }; _ = ReadMobileStyles(workspace, known.Registry); }
+        return known.Registry?.Runnable(pane.MightyStyle, pane.MightyStyleHash)?.Id;
+    }
+    private async Task ReadMobileStyles(string workspace, StyleRegistry? prior)
+    {
+        var registry = prior;
+        try { registry = await Task.Run(() => StyleRegistry.Load(StateDirectory, workspace)); }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { }
+        mobileStyleRegistries[workspace] = (registry, DateTime.UtcNow, false);
+        // The panes are read again only when what may run changed.
+        static string Approved(StyleRegistry? styles) => string.Join("|", (styles?.Styles ?? []).Where(s => s.Runnable).Select(s => s.Id + ":" + s.Source + ":" + s.Hash));
+        if (Approved(registry) != Approved(prior)) mobileRouter?.Changed();
+    }
     private MobilePaneExtras MobileExtras(RunSession pane)
         => pane.Kind == "claude" ? MobilePane(pane.Id).MobileSnapshot() : new([]);
+    /// <summary>Each pane's structure as the phone was last sent it, built again only when what it draws moved.</summary>
+    private readonly MobileStructureCache mobileStructures = new();
+    private MobileStructureCache.Built? MobileStructureFor(RunSession pane)
+    {
+        if (pane.Kind != "claude") return null;
+        mobileStructures.Retain(service.Snapshot.Sessions.Select(p => p.Id).ToHashSet());
+        return MobilePane(pane.Id).MobileStructureSnapshot();
+    }
     private async Task<object?> MobileAction(MobileDesktopAction request, CancellationToken token)
     {
         token.ThrowIfCancellationRequested(); if (closing) throw new OperationCanceledException();
         if (request.Action == "create")
         {
             var created = SessionTemplate.Inherit(new RunSession { WorkspaceId = request.SessionId, Provider = request.Body.Text("provider") ?? "claude", Kind = "claude", Title = ProviderCatalog.Name(request.Body.Text("provider") ?? "claude") }, service.Snapshot.Sessions);
-            await service.UpdateAsync(s => s.Workspaces.Any(w => w.Id == request.SessionId) ? s with { Sessions = s.Sessions.Append(created).ToList() } : throw new MobileRequestException(404, "Workspace not found.")); Render(); return created.Id;
+            await service.UpdateAsync(s => !s.Workspaces.Any(w => w.Id == request.SessionId) ? throw new MobileRequestException(404, "Workspace not found.") : PaneLayout.HasRoom(s) ? s with { Sessions = s.Sessions.Append(created).ToList() } : throw new MobileRequestException(409, Locale.Get("workspace.paneLimit"))); Render(); return created.Id;
         }
         var pane = MobilePane(request.SessionId); var body = request.Body;
         switch (request.Action)
@@ -295,7 +362,8 @@ public sealed partial class MainWindow
             case "queue-remove": pane.MobileQueueRemove(body.Text("id") ?? ""); return null;
             case "queue-next": return await pane.MobileRunNext(token);
             case "rename": if (body.Text("titleMode") == "auto") await service.SetSessionAutoTitleAsync(request.SessionId); else await service.RenameSessionAsync(request.SessionId, body.Text("title")!.Trim()); Render(); return null;
-            case "close": pane.MobileCancelQueue(); await service.StopAsync(request.SessionId); token.ThrowIfCancellationRequested(); await service.UpdateAsync(s => s with { Sessions = s.Sessions.Where(p => p.Id != request.SessionId).ToList() }); Render(); return null;
+            // The phone's close never asks, a parent's with open children included (M/AppStore+Delegation.swift:204-206), and goes through the service like the desktop's.
+            case "close": pane.MobileCancelQueue(); token.ThrowIfCancellationRequested(); await ClosePane(request.SessionId); return null;
             case "settings": await pane.MobileSettings(body, token); return null;
             case "guided": return await pane.MobileGuided(body, token);
             case "command":
@@ -326,7 +394,7 @@ public sealed partial class MainWindow
         internal void MobileStopQueue()
         {
             queueKeptOnStop = BackgroundQueuePolicy.StopKeepsQueue(Session.BackgroundWork);
-            if (!queueKeptOnStop) MobileCancelQueue(); else { composerSubmissionVersion++; queueDrainTimer.Stop(); }
+            if (!queueKeptOnStop) { CancelQueueOnStop(); MobileCancelQueue(); } else { composerSubmissionVersion++; queueDrainTimer.Stop(); }
         }
         internal void MobileCancelQueue() { composerSubmissionVersion++; queueDrainTimer.Stop(); queuedInputs.Clear(); RenderQueuedInputs(); RefreshComposerState(); }
         internal async Task<string> MobileSubmit(string text, string? mode, IReadOnlyList<RunAttachment> files, CancellationToken token, bool prepared = false, string? queueId = null)
@@ -339,49 +407,111 @@ public sealed partial class MainWindow
                 // The composer's rule (§1.17.4): a plan-mode style never steers into a turn that only waits on background work.
                 var plans = LaunchesInPlanMode;
                 if (BackgroundQueuePolicy.PhoneSteers(mode, pane.BackgroundWork, plans) && files.Count == 0 && pane.Provider == "claude" && await owner.service.TrySteerAsync(id, text)) return "steered";
-                token.ThrowIfCancellationRequested(); queuedInputs.Add(text, files, BackgroundQueuePolicy.QueuedOverride(plans)); RenderQueuedInputs(); RefreshComposerState(); if (!MobileBusy) queueDrainTimer.Start(); return "queued";
+                token.ThrowIfCancellationRequested(); queuedInputs.Add(text, files, BackgroundQueuePolicy.QueuedOverride(plans), prepared); RenderQueuedInputs(); RefreshComposerState(); if (!MobileBusy) queueDrainTimer.Start(); return "queued";
             }
             var submission = ++composerSubmissionVersion; starting = true; RefreshComposerState();
             try
             {
+                // The model list as the CLI has it now comes first; the request takes the pane's model and effort after it.
+                await PrepareModels(); token.ThrowIfCancellationRequested();
+                if (!QueuePaneAlive || submission != composerSubmissionVersion) throw new OperationCanceledException();
+                request = request with { Model = Session.Model, Settings = Session.Settings };
                 var submitted = prepared ? text : await PrepareStyleSubmission(text, files.Count > 0); request = await PrepareStyleRunRequest(request with { Input = submitted });
                 // A queued item keeps the launch decision made when it was queued (§1.17.4).
                 if (queueId is not null && queuedInputs.Items.FirstOrDefault(q => q.Id == queueId) is { } queuedItem) request = request with { PermissionModeOverride = queuedItem.PermissionModeOverride };
-                token.ThrowIfCancellationRequested(); if (!QueuePaneAlive || submission != composerSubmissionVersion || queueId is not null && !queuedInputs.Items.Any(q => q.Id == queueId)) throw new OperationCanceledException(); await owner.StartFromComposer(request); return "started";
+                token.ThrowIfCancellationRequested(); if (!QueuePaneAlive || submission != composerSubmissionVersion || queueId is not null && !queuedInputs.Items.Any(q => q.Id == queueId)) throw new OperationCanceledException();
+                // A phone send no run took is dropped, and never put in the composer (M/AppStore+Delegation.swift:196-198).
+                return await owner.StartFromComposer(request) is DelegationRelease.NotStarted ? throw new MobileRequestException(409, Locale.Get("remote.error.dropped")) : "started";
             }
             finally { starting = false; if (QueuePaneAlive) Refresh(); }
         }
+        /// <summary>
+        /// The phone's run next (M/AppStore+MobileRemote.swift:688-707): the items delegation holds for the pane go first, all of them
+        /// in one run, also during a run; with nothing held, the first queued row runs as before. Held items no run took stay held.
+        /// </summary>
         internal async Task<object?> MobileRunNext(CancellationToken token)
         {
+            if (owner.service.HeldItems(id).Count > 0)
+            {
+                if (owner.DelegatedRunBlockReason(Session) is { } blocked) throw new MobileRequestException(409, blocked);
+                var release = await owner.service.RunNextAsync(id); token.ThrowIfCancellationRequested();
+                if (release is DelegationRelease.NotStarted) throw new MobileRequestException(409, Locale.Get("remote.error.startFailed"));
+                if (release is DelegationRelease.Released) { if (QueuePaneAlive) { RenderQueuedInputs(); RefreshComposerState(); } return null; }
+            }
             if (MobileBusy) throw new MobileRequestException(409, "Session is still running.");
             var next = queuedInputs.Items.FirstOrDefault() ?? throw new MobileRequestException(409, "The queue is empty.");
-            await MobileSubmit(next.Text, "queue", next.Attachments, token, queueId: next.Id); queuedInputs.Remove(next.Id); RenderQueuedInputs(); RefreshComposerState(); return null;
+            await MobileSubmit(next.Text, "queue", next.Attachments, token, next.Prepared, next.Id); queuedInputs.Remove(next.Id); RenderQueuedInputs(); RefreshComposerState(); return null;
+        }
+        /// <summary>
+        /// The style this pane is really running: a Claude pane in the Mighty view whose stored style is registered, approved and
+        /// unchanged. Anything else answers none, so nothing an approval hid shows through (M/MightyClaude/AppStore+MobileRemote.swift:346-351).
+        /// A pane only ever watched from a phone has never read its style, so it is read here: when the stored style moved, and
+        /// again when a run starts or ends. A read the phone causes never writes the desktop's error line (M/MightyClaude/AppStore+MobileRemote.swift:649-659).
+        /// </summary>
+        private RegisteredStyle? MobileActiveStyle
+        {
+            get
+            {
+                var pane = Session; if (!MobileRemoteSupport.GuidedStylesAvailable(pane.Kind, pane.Provider, MobileRemoteSupport.ViewMode(pane.AgentViewMode))) return null;
+                var identity = pane.MightyStyle + "|" + pane.MightyStyleHash + "|" + pane.MightyStyleSince + "|";
+                if (!styleLoading && (loadedStyleKey is not { } loaded || !loaded.StartsWith(identity, StringComparison.Ordinal) || !loaded.EndsWith("|" + pane.Status, StringComparison.Ordinal))) _ = LoadStyles(quiet: true);
+                return activeStyle is { } style && style.Id == pane.MightyStyle ? style : null;
+            }
+        }
+        internal string? MobileStyleId => MobileActiveStyle?.Id;
+        /// <summary>
+        /// The pickers the phone shows, from the same sources as the composer's menus (M/MightyClaude/AppStore+MobileRemote.swift:547-569).
+        /// <paramref name="model"/> and <paramref name="viewMode"/> let a request that also changes them be checked against the pane
+        /// it is switching to. Styles are offered only to a Claude pane in the Mighty view; elsewhere "cli" is the one choice.
+        /// </summary>
+        private MobileSettingsOptions MobileOptions(RunSession pane, string? model = null, string? viewMode = null)
+        {
+            var catalog = owner.Runtime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
+            IReadOnlyList<RegisteredStyle> styles = MobileRemoteSupport.GuidedStylesAvailable(pane.Kind, pane.Provider, viewMode ?? MobileRemoteSupport.ViewMode(pane.AgentViewMode)) ? (styleRegistry ??= StyleRegistry.Load(owner.StateDirectory, Workspace.Path)).Styles : [];
+            return new(ModelLabel.PickerOptions(pane, catalog).Select(m => new MobileOption(m.Value, m.DisplayName)).ToArray(), (Capabilities.PermissionModes ?? []).Select(m => new MobileOption(m, PermissionLabel(pane.Provider, m))).ToArray(),
+                MobileRemoteSupport.EffortOptions(Capabilities.Effort, ProviderCatalog.Efforts(pane.Provider, model ?? pane.Model, catalog, RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot))), MobileRemoteSupport.LegacyStyleOptions(styles), MobileRemoteSupport.StyleOptions(styles));
+        }
+        /// <summary>
+        /// What the pane's revision is read from beside its record (M/MightyClaude/AppStore+MobileRemote.swift:353-363, 488-529): whether
+        /// the phone may use its pickers, what they would offer, and the Mighty payload's identity — its runs and blocks, the
+        /// answered plans, and the running style with its phase, widgets, prerequisites and casebook. Never the streamed text.
+        /// </summary>
+        internal MobilePaneDigest MobileDigest()
+        {
+            var pane = Session; var offered = MobileOptions(pane); var options = new HashCode();
+            foreach (var item in offered.Models) { options.Add(item.Id); options.Add(item.Label); }
+            foreach (var item in offered.PermissionModes) options.Add(item.Id);
+            foreach (var item in offered.MightyStyles) options.Add(item.Id);
+            foreach (var item in offered.Styles) { options.Add(item.Id); options.Add(item.Source); }
+            foreach (var item in offered.Efforts ?? []) options.Add(item.Id);
+            var mighty = new HashCode(); mighty.Add(MobileMightySupport.Digest(pane)); mighty.Add(pane.PlanHistory?.Count); mighty.Add(pane.PlanHistory?.LastOrDefault()?.Outcome);
+            if (MobileActiveStyle is { } style)
+            {
+                mighty.Add(style.Id); mighty.Add(style.Hash); mighty.Add(GuidedPhase(style)?.Id); mighty.Add(pane.Status == "running"); mighty.Add(stylePrerequisites?.Ready);
+                foreach (var missing in stylePrerequisites?.Missing ?? []) mighty.Add(missing);
+                foreach (var state in styleCapabilities.OrderBy(p => p.Key, StringComparer.Ordinal)) { mighty.Add(state.Key); mighty.Add(state.Value); }
+                foreach (var file in styleCapabilityFiles) mighty.Add(file.Path);
+                mighty.Add(JsonSerializer.Serialize(LiveStyleReading(style).Widgets.Select(StylePresentation.Payload), Wire.Json));
+            }
+            return new(!MobileBusy, options.ToHashCode(), mighty.ToHashCode());
         }
         internal MobilePaneExtras MobileSnapshot()
         {
-            var pane = Session; var catalog = owner.Runtime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
-            var registered = RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot);
-            var registry = styleRegistry ??= StyleRegistry.Load(owner.StateDirectory, Workspace.Path); var styles = (registry?.Styles ?? []).Where(s => s.Runnable).Select(s => new { id = s.Id, label = s.Manifest.Name, source = s.Source }).ToArray();
-            var settings = new { editable = !MobileBusy, model = pane.Model, permissionMode = pane.Settings.PermissionMode, effort = pane.Settings.Effort, agentViewMode = pane.AgentViewMode == "mighty" ? "mighty" : "plain", mightyStyle = pane.MightyStyle is "ouroboros" or "paperthin" ? pane.MightyStyle : "cli", styleId = pane.MightyStyle ?? "cli", options = new { models = ModelLabel.PickerOptions(pane, catalog).Select(m => new { id = m.Value, label = m.DisplayName }), permissionModes = (Capabilities.PermissionModes ?? []).Select(m => new { id = m, label = PermissionLabel(pane.Provider, m) }), efforts = new[] { "default" }.Concat(ProviderCatalog.Efforts(pane.Provider, pane.Model, catalog, registered)).Select(m => new { id = m, label = m }), mightyStyles = new[] { new { id = "cli", label = "CLI" } }.Concat(styles.Where(s => s.id is "ouroboros" or "paperthin").Select(s => new { s.id, s.label })), styles } };
-            var mighty = new { style = pane.MightyStyle is "ouroboros" or "paperthin" ? pane.MightyStyle : "cli", styleId = pane.MightyStyle ?? "cli", runs = (pane.GraphRuns ?? []).TakeLast(8).Select(run => new { run.Id, run.Input, run.Status, result = run.FinalOutput, blocks = new[] { new { id = run.Id + ":main", kind = "main", title = "Main", status = run.Status, summary = run.Input, output = string.Join("\n", run.RootEntries.Where(e => e.Kind is "assistant" or "output").Select(e => e.Text)), nodeModelLabel = run.NodeModelLabel } }.Concat(run.Agents.Select(a => new { id = a.Id, kind = a.Kind ?? "agent", title = a.Title, status = a.Status, summary = a.Input, output = string.Join("\n", a.Entries.Where(e => e.Kind is "assistant" or "output").Select(e => e.Text)), nodeModelLabel = (string?)null })) }), panel = MobileStylePanel() };
+            var pane = Session; var style = MobileActiveStyle; var styleId = style?.Id ?? MobileWire.CliStyle; var options = MobileOptions(pane);
+            var settings = new MobileSettings(!MobileBusy, pane.Model, pane.Settings.PermissionMode, options.Efforts is null ? null : pane.Settings.Effort, MobileRemoteSupport.ViewMode(pane.AgentViewMode), MobileRemoteSupport.Style(styleId), styleId, options);
+            // Only a pane that really runs an approved style carries a panel, the two payloads an older phone reads, and the
+            // style's own names on its requests (M/MightyClaude/AppStore+MobileRemote.swift:410-439).
+            var styles = style is null ? null : styleRegistry?.Styles;
+            var legacy = style is null ? default : MobileLegacyStyleAdapter.Make(style, GuidedPhase(style), stylePrerequisites?.Ready ?? false, style.Evaluator.RecommendedAction(styleCapabilities), styleCapabilityFiles);
+            var mighty = new { style = MobileRemoteSupport.Style(styleId), styleId, runs = MobileMightySupport.Runs(MobileMightySupport.SavedRuns(pane), styles is null ? null : input => StylePresentation.RequestPrefix(styles, input)), panel = MobileStylePanel(style), legacy.Ouroboros, legacy.Paperthin };
             var statusLine = Refresher?.Result is { } statusResult ? new { lines = statusResult.Lines.Select(line => line.Select(s => new { s.Text, fg = Terminal(s.Foreground) is { } color ? $"#{color.R:X2}{color.G:X2}{color.B:X2}" : null, bold = s.Bold })) } : null;
-            return new(queuedInputs.Items.Select(q => new MobileQueuedItem(q.Id, q.Text)).ToArray(), settings, mighty, statusLine);
+            // The rows delegation holds for the pane come first, as on the desktop (M/AppStore+MobileRemote.swift:398).
+            return new(DelegationQueueRows.MobileItems(owner.service.HeldItems(id), queuedInputs.Items), settings, mighty, statusLine);
         }
-        private object? MobileStylePanel()
-        {
-            if (activeStyle is not { } style) return null; var phase = GuidedPhase(style); var job = style.Evaluator.JobOpen(Session);
-            var group = style.Manifest.Groups.FirstOrDefault(g=>g.Id==styleGroup) ?? style.Evaluator.InitialGroup(styleCapabilities); var next = style.Evaluator.VisibleActions(phase, group, MobileBusy, job).Select(a => a.Id).ToArray();
-            var phases = style.Manifest.Phases.OrderBy(p => p.Order).ToArray();
-            return new {
-                style = new { id = style.Id, name = style.Manifest.Name, source = style.Source, icon = StyleManifest.Text(style.Manifest.Root.GetProperty("presentation"),"icon"), tint = StyleManifest.Text(style.Manifest.Root.GetProperty("presentation"),"tint") },
-                phase = phase is null ? null : new { phase.Id, phase.Title, index = Array.FindIndex(phases, p => p.Id == phase.Id), count = phases.Length },
-                groups = style.Manifest.Groups.Select(g => new { g.Id, g.Title, g.Axis, g.Question, selected = g.Id == group?.Id, g.Actions }),
-                actions = style.Manifest.Actions.Select(a => new { a.Id, a.Title, a.Help, a.Icon, a.Glyph, a.Scope, a.TakesText, a.RequiresText, flags = a.Flags ?? [], prominent = next.FirstOrDefault() == a.Id }),
-                next, recommended = style.Evaluator.RecommendedAction(styleCapabilities), attachments = styleCapabilityFiles.Select(file => new { id = StyleText.Safe(Path.GetFileName(file.Path),120), title = file.Title, detail = file.Detail, readOnly = file.ReadOnly }),
-                setup = new { ready = stylePrerequisites?.Ready ?? false, missing = stylePrerequisites?.Missing ?? [], hint = stylePrerequisites?.Hint, installCommand = stylePrerequisites?.InstallCommand },
-                guidance = style.Evaluator.Guidance(phase, MobileBusy, job), presentation = new { headerTitle = style.Manifest.Name + (phase is null ? "" : " · " + phase.Title), source = style.Source, icon = StyleManifest.Text(style.Manifest.Root.GetProperty("presentation"),"icon"), tint = StyleManifest.Text(style.Manifest.Root.GetProperty("presentation"),"tint") }, widgets = LiveStyleReading(style).Widgets is {Count:>0} live ? live.Select(StylePresentation.Payload).ToArray() : null
-            };
-        }
+        /// <summary>The style panel the phone draws, in the shared golden shape (M/MightyCore/Styles/StylePanelProjection.swift).</summary>
+        private object? MobileStylePanel(RegisteredStyle? chosen) => chosen is { } style
+            ? StylePanelProjection.Make(style, Session, styleGroup, styleCapabilities, styleCapabilityFiles, stylePrerequisites ?? new StylePrerequisiteResult(false, [], null, null), MobileBusy, LiveStyleReading(style))
+            : null;
         internal async Task MobileSettings(JsonElement value, CancellationToken token)
         {
             if (MobileBusy) throw new MobileRequestException(409, "Stop the session before changing settings.");
@@ -389,26 +519,37 @@ public sealed partial class MainWindow
             var pane = Session; var catalog = owner.Runtime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider); var model = value.Text("model") ?? pane.Model; var mode = value.Text("permissionMode") ?? pane.Settings.PermissionMode; var effort = value.Text("effort") ?? pane.Settings.Effort;
             if (!ModelLabel.PickerOptions(pane, catalog).Any(m => m.Value == model) || !(Capabilities.PermissionModes ?? []).Contains(mode) || effort != "default" && !ProviderCatalog.Efforts(pane.Provider, model, catalog, RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot)).Contains(effort)) throw new MobileRequestException(400, "Unsupported model, permission, or effort.");
             var view = value.Text("agentViewMode") ?? (pane.AgentViewMode == "mighty" ? "mighty" : "plain"); if (view is not ("plain" or "mighty")) throw new MobileRequestException(400, "Unsupported view.");
-            var styleId = value.Text("styleId") ?? value.Text("mightyStyle") ?? pane.MightyStyle ?? "cli"; RegisteredStyle? selected = null;
-            if (styleId != "cli")
+            // What this sender was last told, read before anything is changed: a pane in the plain view reports "cli" whatever it
+            // has stored, so a phone handing that back while it turns the Mighty view on leaves the stored style alone
+            // (M/MightyClaude/AppStore+MobileRemote.swift:783-795). The style is judged against the view this same request asks for.
+            var shown = MobileStyleId ?? MobileWire.CliStyle; var requested = value.Text("styleId") ?? value.Text("mightyStyle"); var offered = MobileOptions(pane, model, view);
+            if (requested is not null && !(value.Text("styleId") is not null ? offered.Styles.Any(s => s.Id == requested) : offered.MightyStyles.Any(s => s.Id == requested))) throw new MobileRequestException(400, Locale.Get("remote.error.unknownStyle"));
+            // A style other than the one shown is picked anew, so a stored one the pane did not run is approved again as it is now.
+            var style = MobileRemoteSupport.StyleAfter(requested, shown, pane.MightyStyle); var changes = requested is not null && requested != shown; RegisteredStyle? selected = null;
+            if (changes && style is not null)
             {
-                if (pane.Provider != "claude") throw new MobileRequestException(400, "Styles require Claude.");
-                var registry = await Task.Run(() => StyleRegistry.Load(owner.StateDirectory, Workspace.Path), token); selected = registry.Styles.FirstOrDefault(s => s.Id == styleId && s.Runnable) ?? throw new MobileRequestException(400, "Unknown or unapproved style.");
+                var registry = await Task.Run(() => StyleRegistry.Load(owner.StateDirectory, Workspace.Path), token); selected = registry.Styles.FirstOrDefault(s => s.Id == style && s.Runnable) ?? throw new MobileRequestException(400, Locale.Get("remote.error.unknownStyle"));
                 if (!StyleRegistry.Unchanged(selected)) throw new MobileRequestException(409, "Style changed.");
             }
             token.ThrowIfCancellationRequested(); if (MobileBusy || Session.Provider != pane.Provider || Session.Model != pane.Model || Session.MightyStyle != pane.MightyStyle || Session.Settings != pane.Settings) throw new MobileRequestException(409, "The pane changed.");
-            await Change(p => p with { Model = model, Settings = p.Settings with { PermissionMode = mode, Effort = effort, NetworkAccess = mode is ("acceptEdits" or "onRequest") && p.Settings.NetworkAccess }, AgentViewMode = view == "mighty" ? "mighty" : "default", MightyStyle = selected?.Id, MightyStyleHash = selected?.Hash, MightyStyleSince = p.MightyStyle == selected?.Id ? p.MightyStyleSince : null }); loadedStyleKey = null; await LoadStyles(); Refresh();
+            await Change(p => p with { Model = model, Settings = p.Settings with { PermissionMode = mode, Effort = effort, NetworkAccess = mode is ("acceptEdits" or "onRequest") && p.Settings.NetworkAccess }, AgentViewMode = view == "mighty" ? "mighty" : "default", MightyStyle = changes ? style : p.MightyStyle, MightyStyleHash = changes ? selected?.Hash : p.MightyStyleHash, MightyStyleSince = !changes || p.MightyStyle == style ? p.MightyStyleSince : null }); loadedStyleKey = null; await LoadStyles(quiet: true); Refresh();
         }
+        /// <summary>
+        /// A style's button pressed on the phone (M/MightyClaude/AppStore+MobileRemote.swift:634-647). The prompt is built by the
+        /// style's own action and then travels the ordinary send path, so into a running pane it steers or queues, and
+        /// <c>accepted</c> means what it does there. An unregistered style and an unapproved one answer alike.
+        /// </summary>
         internal async Task<string> MobileGuided(JsonElement body, CancellationToken token)
         {
-            var pane = Session; var chosen = body.Text("styleId") ?? body.Text("style"); var actionId = body.Text("actionId") ?? body.Text("skill"); var text = body.Text("text") ?? "";
-            if (MobileBusy || pane.Provider != "claude" || pane.AgentViewMode != "mighty" || chosen != pane.MightyStyle || text.Length > 32768) throw new MobileRequestException(409, "The guided pane is unavailable.");
-            var registry = await Task.Run(() => StyleRegistry.Load(owner.StateDirectory, Workspace.Path), token); var style = registry.Runnable(chosen, pane.MightyStyleHash) ?? throw new MobileRequestException(400, "Unknown or unapproved style.");
-            var action = style.Manifest.Actions.FirstOrDefault(a => a.Id == actionId) ?? throw new MobileRequestException(400, "Unknown guided action.");
-            if (action.RequiresText && string.IsNullOrWhiteSpace(text)) throw new MobileRequestException(400, "This action needs text.");
-            if (!StylePrerequisites.Read(style.Manifest, Workspace.Path).Ready) throw new MobileRequestException(409, "Install the style prerequisites on the desktop.");
-            token.ThrowIfCancellationRequested(); if (MobileBusy || Session.MightyStyle != chosen || !StyleRegistry.Unchanged(style)) throw new MobileRequestException(409, "Style changed.");
-            return await MobileSubmit(action.Prompt(text), "queue", [], token, true);
+            var pane = Session; var request = MobileRemoteSupport.GuidedRequest(body);
+            var registry = await Task.Run(() => StyleRegistry.Load(owner.StateDirectory, Workspace.Path), token);
+            if (pane.Provider != "claude" || registry.Styles.FirstOrDefault(s => s.Id == request.Style) is not { Runnable: true }) throw new MobileRequestException(400, Locale.Get("remote.error.unknownStyle"));
+            if (pane.AgentViewMode != "mighty" || request.Style != pane.MightyStyle || registry.Runnable(pane.MightyStyle, pane.MightyStyleHash) is not { } style) throw new MobileRequestException(409, Locale.Get("remote.error.otherStyle", new Dictionary<string, string> { ["style"] = request.Style }));
+            var action = style.Manifest.Actions.FirstOrDefault(a => a.Id == request.Action) ?? throw new MobileRequestException(400, Locale.Get("remote.error.unknownSkill"));
+            if (action.RequiresText && request.Text.Length == 0) throw new MobileRequestException(400, "This action needs text.");
+            token.ThrowIfCancellationRequested(); if (Session.MightyStyle != request.Style || !StyleRegistry.Unchanged(style)) throw new MobileRequestException(409, "Style changed.");
+            // An action reads its argument up to the first line break, so the phone's text is folded to one line first.
+            return await MobileSubmit(action.Prompt(action.TakesText ? MobileRemoteSupport.SingleLine(request.Text) : ""), null, [], token, true);
         }
     }
 }

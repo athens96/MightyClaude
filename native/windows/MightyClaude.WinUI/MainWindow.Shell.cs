@@ -40,7 +40,13 @@ public sealed partial class MainWindow
     /// triangle in <c>errText</c>, the 12pt message and a close button, <c>Spacing.Sm</c> apart, padding <c>Spacing.Md</c> on <c>errSoft</c>.
     /// </summary>
     private readonly Border errorBanner = new() { Padding = new Thickness(DesignMetrics.Spacing.Md), Visibility = Visibility.Collapsed };
-    /// <summary>The detail column's top row: the error banner over the workspace header (M/WorkspaceView.swift:16-22).</summary>
+    /// <summary>
+    /// The resource band over the error banner (M/WorkspaceView.swift:16, 595-601): the warning triangle in <c>waitText</c>, the
+    /// 12pt sentence that names the files the app could not find beside it (ResourceHealth) and a close button, on <c>waitSoft</c>.
+    /// </summary>
+    private readonly Border resourceBanner = new() { Padding = new Thickness(DesignMetrics.Spacing.Md), Visibility = Visibility.Collapsed };
+    private readonly TextBlock resourceWarning = new() { TextWrapping = TextWrapping.Wrap };
+    /// <summary>The detail column's top row: the resource band and the error banner over the workspace header (M/WorkspaceView.swift:16-22).</summary>
     private readonly StackPanel detailTop = new();
     /// <summary>
     /// The active workspace's name, path, Git state, counts and files button, padded by <c>Inset.WorkspaceHeader</c>,
@@ -87,7 +93,7 @@ public sealed partial class MainWindow
         statusBar.Background = brushes.Subtle; statusBar.BorderBrush = Separator;
         AutomationProperties.SetAutomationId(statusBar, "status-bar");
         status.Foreground = statusPanes.Foreground = statusRunning.Foreground = brushes.Brush(DesignToken.Ink2);
-        BuildErrorBanner();
+        BuildErrorBanner(); BuildResourceBanner();
 
         workspaceHeader.BorderBrush = Separator;
         // The name stands on the Mac's 17pt line (about 20 high; Segoe's is 23), so with a Git capsule the header is the Mac's:
@@ -120,7 +126,37 @@ public sealed partial class MainWindow
         Grid.SetColumn(counts.View, 1); workspaceHeader.Children.Add(counts.View);
         workspaceHeaderFiles.Click += async (_, _) => { if (!dialogOpen && workspaceHeaderId is { } id) await OpenFilePane(id); };
         Grid.SetColumn(workspaceHeaderFiles, 2); workspaceHeader.Children.Add(workspaceHeaderFiles);
-        detailTop.Children.Add(errorBanner); detailTop.Children.Add(workspaceHeader);
+        detailTop.Children.Add(resourceBanner); detailTop.Children.Add(errorBanner); detailTop.Children.Add(workspaceHeader);
+    }
+
+    /// <summary>The resource band's parts, the error banner's in the warning colours; its close button only hides it, as the Mac's does.</summary>
+    private void BuildResourceBanner()
+    {
+        resourceBanner.Background = brushes.Brush(DesignToken.WaitSoft);
+        AutomationProperties.SetAutomationId(resourceBanner, "resource-warning-banner");
+        var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
+        row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        var warning = new FontIcon { Glyph = "\uE7BA", FontSize = 13, Foreground = brushes.Brush(DesignToken.WaitText), VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 1, 0, 0) };
+        AutomationProperties.SetAccessibilityView(warning, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+        row.Children.Add(warning);
+        resourceWarning.Foreground = brushes.Brush(DesignToken.Ink); resourceWarning.FontSize = DesignMetrics.Type.Row; resourceWarning.IsTextSelectionEnabled = true;
+        Grid.SetColumn(resourceWarning, 1); row.Children.Add(resourceWarning);
+        var dismiss = Button(Locale.Get("window.warning.dismiss"), () => { resourceBanner.Visibility = Visibility.Collapsed; return Task.CompletedTask; });
+        dismiss.Content = new FontIcon { Glyph = "\uE711", FontSize = 11 };
+        dismiss.MinWidth = 0; dismiss.MinHeight = 0; dismiss.Padding = new Thickness(DesignMetrics.Spacing.Xs); dismiss.Margin = new Thickness(0, -DesignMetrics.Spacing.Xs, -DesignMetrics.Spacing.Xs, -DesignMetrics.Spacing.Xs); dismiss.BorderThickness = new Thickness(0);
+        dismiss.CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow); dismiss.VerticalAlignment = VerticalAlignment.Top;
+        PaintPlainButton(dismiss, brushes.Transparent, brushes.Subtle, ink: brushes.Brush(DesignToken.Ink));
+        AutomationProperties.SetAutomationId(dismiss, "resource-warning-dismiss");
+        Grid.SetColumn(dismiss, 2); row.Children.Add(dismiss);
+        resourceBanner.Child = row;
+    }
+
+    /// <summary>Looks once, as the window starts, for the files the app needs beside it, and shows the band when any is missing (M/AppStore.swift:420-431).</summary>
+    private async Task CheckResources()
+    {
+        var missing = await Task.Run(() => ResourceHealth.Missing(AppContext.BaseDirectory));
+        if (closing || ResourceHealth.Warning(missing) is not { } said) return;
+        resourceWarning.Text = said; resourceBanner.Visibility = Visibility.Visible;
     }
 
     /// <summary>
@@ -209,7 +245,7 @@ public sealed partial class MainWindow
     /// <summary>
     /// The status bar's words and counts for the state and the language: the machine at rest, what
     /// is being checked while a runtime check runs, the active workspace's panes, every running
-    /// pane, and the update badge while a newer version is available or ready.
+    /// pane the dashboard counts, and the update badge while a newer version is available or ready.
     /// </summary>
     private void RefreshStatusBar()
     {
@@ -218,7 +254,8 @@ public sealed partial class MainWindow
         status.Text = Locale.Get(runtimeChecks > 0 ? "window.status.checkingRuntimeAndModels" : runtime is null ? "window.status.checkingRuntime" : "window.status.thisMachine");
         string Count(int value) => value.ToString(CultureInfo.InvariantCulture);
         statusPanes.Text = Locale.Get("window.status.paneCount", new Dictionary<string, string> { ["count"] = Count(state.Sessions.Count(s => s.WorkspaceId == state.ActiveWorkspaceId)) });
-        statusRunning.Text = Locale.Get("window.status.runningCount", new Dictionary<string, string> { ["count"] = Count(state.Sessions.Count(s => s.Status == "running")) });
+        // Only the panes the dashboard counts (M/WorkspaceView.swift:580): an agent's own terminal or browser and the files pane are left out.
+        statusRunning.Text = Locale.Get("window.status.runningCount", new Dictionary<string, string> { ["count"] = Count(WorkDashboard.Count(state.Sessions, DashboardAttention).Running) });
         var version = appUpdate?.State is { Phase: AppUpdatePhase.Available or AppUpdatePhase.Ready, Availability.Manifest.Version: { Length: > 0 } newer } ? newer : null;
         updateBadge.Visibility = version is null ? Visibility.Collapsed : Visibility.Visible;
         if (version is null) return;

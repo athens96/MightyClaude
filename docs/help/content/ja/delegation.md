@@ -3,21 +3,31 @@ title: エージェント委任
 order: 6
 section: delegation
 ---
-エージェント委任では、Claudeのペイン(親)が作業を分けて、ほかのClaudeのペイン(子)に任せます。子はそれぞれ自分のgit worktreeで作業し、終わるとレポートを残します。親は通知を受け取ってレポートを読み、結果をマージするかどうかを決めます。Macアプリだけの機能です。
+エージェント委任では、Claudeのペイン(親)が作業を分けて、ほかのClaudeのペイン(子)に任せます。子はそれぞれ自分のgit worktreeで作業し、終わるとレポートを残します。親は通知を受け取ってレポートを読み、結果をマージするかどうかを決めます。MacアプリとWindowsアプリで使えます。
 
 > [!warning]
 > 実験的な機能です。初期状態ではオフで、設定画面もありません。まずは練習用のリポジトリで試してください。
 
 ## オンとオフ {#enable}
-アプリを終了した状態でターミナルから次のコマンドを実行し、アプリをもう一度開きます。
+アプリを終了した状態で次のコマンドを実行し、アプリをもう一度開きます。
+
+{{platform:mac}} ターミナルで:
 
 ```sh
 defaults write dev.mightyclaude.native delegation.enabled -bool true
 ```
 
+{{platform:windows}} コマンドプロンプトまたはPowerShellで:
+
+```
+reg add "HKCU\Software\MightyClaudeNative" /v delegation.enabled /t REG_DWORD /d 1 /f
+```
+
+Windowsでは、`HKEY_CURRENT_USER\Software\MightyClaudeNative`の下の`delegation.enabled`の値(REG_DWORD)が0以外ならオンです。値がないか0ならオフです。
+
 - オンにすると、Claudeのペインで新しい実行を始めるたびに委任ツールが付きます。すでに動いている実行には付きません。
 - 親が使うツールは`delegate`(任せる)、`list_children`(子の一覧)、`child_status`(状態とレポート)、`merge`(マージ)、`follow_up`(追加の指示)です。`discard`(破棄)は親には使えず、子のカードからあなただけが行えます。
-- オフにするには`defaults delete dev.mightyclaude.native delegation.enabled`を実行します。外れるのはツールだけで、既存の子ペイン、カード、後片付けはそのまま動きます。
+- オフにするには、Macでは`defaults delete dev.mightyclaude.native delegation.enabled`、Windowsでは`reg delete "HKCU\Software\MightyClaudeNative" /v delegation.enabled /f`を実行し、アプリをもう一度開きます。外れるのはツールだけで、既存の子ペイン、カード、後片付けはそのまま動きます。
 
 ## 作業を任せる {#delegate}
 1. gitリポジトリのフォルダーをワークスペースとして開き、Claudeのペインを開きます。このペインが親です。
@@ -26,7 +36,7 @@ defaults write dev.mightyclaude.native delegation.enabled -bool true
 
 ![[delegation-tree]]
 
-- 子ごとにブランチ`mighty/<子のid>`とworktree(`~/.mightyclaude/worktrees/<子のid>`)ができます。worktreeはプロジェクトフォルダーの外にあるので、親の作業には触れません。
+- 子ごとにブランチ`mighty/<子のid>`とworktree(Macは`~/.mightyclaude/worktrees/<子のid>`、Windowsは`%USERPROFILE%\.mightyclaude\worktrees\<子のid>`)ができます。worktreeはプロジェクトフォルダーの外にあるので、親の作業には触れません。
 - 子は親の最後のコミットから始まります。親のフォルダーでまだコミットしていない変更は、子には渡りません。
 - 任せた作業はTASK.mdに、結果はREPORT.mdに書かれます。どちらもworktree内のgitが無視するフォルダーにあり、コミットされません。
 - 子は親が選んだ権限モードで始まり、そのモードは親のペイン自身のモードより広くできません。広げられるのはあなただけで、実行と実行の合間に、子ペインの入力欄の権限メニューかスマートフォンの設定から行います。
@@ -94,9 +104,10 @@ defaults write dev.mightyclaude.native delegation.enabled -bool true
 ## ペインを閉じる・後片付け {#close}
 - **マージ済みの子ペインを閉じると**、作業がすべてマージ済みで未コミットの変更が残っていなければ、アプリがworktreeとブランチを片付けます(`git branch -d`、強制削除はしません)。条件に合わなければペインだけが閉じ、worktreeは残ります。
 - **マージする前に子ペインを閉じると**、アプリではもうマージできません。カードには破棄だけが残り、ブランチとworktreeは破棄するまでそのまま残ります。
-- **開いている子がある親のペインを閉じると**、Macアプリはまず確認します({{ui:delegation.parentClose.title}})。閉じるのは親のペインだけで、子は作業を続けます。
+- **開いている子がある親のペインを閉じると**、デスクトップアプリはまず確認します({{ui:delegation.parentClose.title}})。閉じるのは親のペインだけで、子は作業を続けます。
 - 親ペインが閉じられた子は、サイドバーの{{ui:delegation.tree.parentClosed}}の項目の下にカードとして残ります。その子の通知はカードに保留されて件数が表示され、追加の指示はもう受け取りません。
 - 開いている子がある、または片付けていない子のworktreeが残っているワークスペースは削除できません。
+- {{platform:windows}} 子のworktreeの中にジャンクションやシンボリックリンク(リンクで作った`node_modules`など)があると、マージ済みの子ペインを閉じてもアプリはworktreeを片付けずに残します。リンクをたどってリンク先のフォルダーまで消してしまわないためです。この場合はカードの{{ui:delegation.card.discard}}ボタンで削除します。破棄はリンクそのものだけを先に外し、リンク先のフォルダーには触れません。
 
 ![[delegation-parent-closed]]
 
@@ -110,4 +121,4 @@ defaults write dev.mightyclaude.native delegation.enabled -bool true
 | 必要なディスクの空き | 10 GB |
 
 - 親も子もClaudeのペインである必要があります。CodexとGeminiのペインは委任しません。
-- Windowsアプリにはまだありません。スマートフォンに新しい画面はありませんが、保留された行はスマートフォンのキューにも表示されます。
+- MacアプリもWindowsアプリも隠しスイッチでオンにします([オンとオフ](#enable))。スマートフォンに新しい画面はありませんが、保留された行はスマートフォンのキューにも表示されます。

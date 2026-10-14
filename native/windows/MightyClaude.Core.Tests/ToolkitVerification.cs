@@ -486,7 +486,7 @@ internal static class ToolkitVerification
 
             // Error must be set.
             Check(error is not null, "error is non-null when toolkit.json is unreadable");
-            Check(error == Locale.Get("settings.toolkit.errorBanner"), "error uses the errorBanner locale key");
+            Check(error == Locale.Get("toolkit.error.unreadable"), "the error is the app's own sentence for an unreadable file (M/MightyCore/ToolkitStore.swift:167); the banner's words are put before it where it is shown");
 
             // Bundled entry is present and is first.
             Check(entries.Count == 1, "only the bundled row when the file is unreadable");
@@ -687,13 +687,14 @@ internal static class ToolkitVerification
         Check(source.Contains("options.ProfileDirectory ??"),
             "toolkit.json must sit in the StateStore folder, which follows --profile");
 
-        // One confirm view lists every argv, and nothing runs unless it is
-        // accepted. The plan itself is Core's, and only approved+missing entries
-        // are in it.
+        // One confirm view lists every tool of the plan under its name — every argv
+        // it will run, or the line that says it is left out — and nothing runs unless
+        // it is accepted. The plan itself is Core's, and so are the rows' words
+        // (ToolkitPresentation.PlanRows, proved by "composer parity: the toolkit names its tools…").
         Check(source.Contains("var plan = runner.Plan();"), "the plan must come from ToolkitRunner.Plan");
         Check(source.Contains("if (plan.Count == 0) return;"), "an empty plan must run nothing");
-        Check(source.Contains("string.Join(\" \", argv)"), "the confirm view must list every argv");
-        Check(source.Contains("item.Commands"), "the confirm view must read the argv list from the plan item");
+        Check(source.Contains("foreach (var row in ToolkitPresentation.PlanRows(plan))"), "the confirm view must list every tool of the plan as Core words it");
+        Check(source.Contains("foreach (var line in row.Lines)") && source.Contains("SettingsText(row.Name, 12, medium: true)"), "the confirm view must show each tool's name over every one of its lines");
         Check(source.Contains("new ContentDialog") && source.Contains("settings.toolkit.confirmTitle"),
             "the confirm view must be one dialog titled settings.toolkit.confirmTitle");
         Check(source.Contains("if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;"),
@@ -709,6 +710,13 @@ internal static class ToolkitVerification
             Check(source.Contains(verdict), "the result table must read " + verdict);
         Check(source.Contains("FillToolkitResults(toolkitResultsPanel, results)"),
             "the result table must be filled from the run results");
+        Check(source.Contains("ToolkitPresentation.ResultName(item, entries)"),
+            "a result row must be named as its tool is");
+        // While an install runs every button of the box waits, and a file action that fails says why over the tools.
+        Check(source.Contains("HoldToolkit(true, store);") && source.Contains("finally { HoldToolkit(false, store); }") && source.Contains("foreach (var button in toolkitFileButtons) button.IsEnabled = !running;"),
+            "add, export and import must wait while an install runs");
+        Check(source.Contains("ToolkitPresentation.ErrorBanner(reason)") && source.Contains("catch (Exception ex) when (ex is not OutOfMemoryException) { ShowToolkitError(ex.Message); return; }"),
+            "a file error must be shown over the tools with its reason");
         Check(source.Contains("FillToolkitList(toolkitListPanel, store, reloaded)"),
             "the list must be rebuilt from a fresh probe after the run");
 
@@ -740,7 +748,7 @@ internal static class ToolkitVerification
                      "settings.toolkit.removeButton", "settings.toolkit.approveButton",
                      "settings.toolkit.exportButton", "settings.toolkit.importButton",
                      "settings.toolkit.installButton", "settings.toolkit.confirmTitle",
-                     "settings.toolkit.cancelButton", "settings.toolkit.errorBanner",
+                     "settings.toolkit.cancelButton",
                      "settings.toolkit.verdictInstalled", "settings.toolkit.verdictFailed",
                      "settings.toolkit.verdictSkipped",
                  })

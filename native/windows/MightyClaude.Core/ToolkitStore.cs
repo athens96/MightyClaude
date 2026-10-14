@@ -12,7 +12,8 @@ namespace MightyClaude.Core;
 /// list() always returns bundled entries first, then this-OS user entries.
 /// Other-OS entries (brew/repoScript on Windows) are preserved in the file
 /// byte-identical and never shown in the list.
-/// If toolkit.json exists but is unreadable the error is surfaced and the file
+/// If toolkit.json exists but is unreadable the error is surfaced with its reason
+/// (why the read failed, or that the file is not a version 1 toolkit) and the file
 /// is never modified.
 /// </summary>
 public sealed class ToolkitStore
@@ -174,9 +175,9 @@ public sealed class ToolkitStore
             var json = File.ReadAllText(filePath);
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
-            if (root.ValueKind != JsonValueKind.Object) { fileError = Locale.Get("settings.toolkit.errorBanner"); return; }
-            if (!root.TryGetProperty("version", out var ver) || !ver.TryGetInt32(out int version) || version != 1) { fileError = Locale.Get("settings.toolkit.errorBanner"); return; }
-            if (!root.TryGetProperty("entries", out var entriesEl) || entriesEl.ValueKind != JsonValueKind.Array) { fileError = Locale.Get("settings.toolkit.errorBanner"); return; }
+            if (root.ValueKind != JsonValueKind.Object) { fileError = Locale.Get("toolkit.error.unreadable"); return; }
+            if (!root.TryGetProperty("version", out var ver) || !ver.TryGetInt32(out int version) || version != 1) { fileError = Locale.Get("toolkit.error.unreadable"); return; }
+            if (!root.TryGetProperty("entries", out var entriesEl) || entriesEl.ValueKind != JsonValueKind.Array) { fileError = Locale.Get("toolkit.error.unreadable"); return; }
 
             foreach (var item in entriesEl.EnumerateArray())
             {
@@ -208,7 +209,8 @@ public sealed class ToolkitStore
                 }
             }
         }
-        catch { fileError = Locale.Get("settings.toolkit.errorBanner"); }
+        // Said in the app's words, as on the Mac (M/MightyCore/ToolkitStore.swift:160-167), never the runtime's own text.
+        catch (Exception) { fileError = Locale.Get("toolkit.error.unreadable"); }
     }
 
     private void RequireLoaded()

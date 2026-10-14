@@ -33,19 +33,24 @@ public static class ComponentSection
         foreach (var id in Wire.Providers)
         {
             var provider = runtime.Providers.FirstOrDefault(p => p.Id == id);
-            rows.Add(ProviderRow(id, provider));
+            rows.Add(ProviderRow(id, provider, runtime.Mods?.MinimumVersion ?? "2.1.271"));
         }
         return rows;
     }
 
-    private static ComponentStatus ProviderRow(string id, ProviderRuntime? provider)
+    /// <summary>
+    /// The row's detail says what the Mac's does in the same case (M/AppStore+Components.swift:20-40): a missing CLI its
+    /// runtime's words and the install command to run in a terminal (a CLI not yet looked for the Mac's fallback words), an
+    /// old Claude the Mods version it needs, a ready CLI its own ready sentence.
+    /// </summary>
+    private static ComponentStatus ProviderRow(string id, ProviderRuntime? provider, string modsVersion)
     {
         var title = ProviderTitle(id);
 
         if (provider is null || !provider.Available)
         {
-            var detail = provider?.Detail ?? Locale.Get("provider.notInstalled");
             var command = InstallCommand(id);
+            var detail = (provider?.Detail ?? Locale.Get("provider.fallback.checkInstall")) + (command is null ? "" : Locale.Get("settings.components.installInTerminal", new Dictionary<string, string> { ["command"] = command }));
             return new ComponentStatus
             {
                 Id = id,
@@ -53,7 +58,7 @@ public static class ComponentSection
                 State = "missing",
                 Version = provider?.Version,
                 Detail = detail,
-                Actions = command is null ? [] : [new ComponentAction { Id = "copy-command", Title = Locale.Get("settings.components.statusMissing") }],
+                Actions = command is null ? [] : [new ComponentAction { Id = "copy-command", Title = Locale.Get("settings.components.copyInstallCommand") }],
             };
         }
 
@@ -66,8 +71,8 @@ public static class ComponentSection
                 Title = title,
                 State = "attention",
                 Version = provider.Version,
-                Detail = Locale.Get("provider.unsupportedVersion"),
-                Actions = [new ComponentAction { Id = "update", Title = Locale.Get("settings.components.statusAttention") }],
+                Detail = Locale.Get("settings.components.modsNeedsVersion", new Dictionary<string, string> { ["version"] = modsVersion }),
+                Actions = [new ComponentAction { Id = "update", Title = Locale.Get("settings.components.updateCLI") }],
             };
         }
 
@@ -77,10 +82,18 @@ public static class ComponentSection
             Title = title,
             State = "installed",
             Version = provider.Version,
-            Detail = Locale.Get("provider.available"),
+            Detail = Locale.Get(id switch { "claude" => "settings.components.readyClaude", "codex" => "settings.components.readyCodex", _ => "settings.components.ready" }),
             Actions = [],
         };
     }
+
+    /// What the section says once a row's install command is on the clipboard (M/AppStore+Components.swift:57-62).
+    public static string CopiedMessage(string command) => Locale.Get("settings.components.copied", new Dictionary<string, string> { ["command"] = command });
+
+    /// How often the open section looks again, and whether it has to: only while a row still needs the
+    /// user, since an install lands outside the app (M/ComponentsSettingsView.swift:28-38).
+    public static readonly TimeSpan RecheckInterval = TimeSpan.FromSeconds(5);
+    public static bool NeedsRecheck(IEnumerable<ComponentStatus> rows) => rows.Any(row => row.State != "installed");
 
     /// npm install commands, matching ComponentCatalog.installCommand() on macOS.
     public static string? InstallCommand(string provider) => provider switch

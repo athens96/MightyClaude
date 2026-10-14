@@ -238,6 +238,41 @@ public static class CliLoginWait
     }
 }
 
+/// <summary>How the wait on a terminal sign-in ended. StartedSignedOut: the account read as signed out when the wait began.</summary>
+public sealed record CliTerminalLoginResult(CliLoginOutcome Outcome, CliAccountStatus Status, bool StartedSignedOut);
+
+/// <summary>
+/// The wait after a sign-in was started in a terminal the app cannot read (M/AppStore+CLIAccounts.swift:9-10, 95-124): the
+/// account's status is read every 5 s for up to 10 minutes, and the wait ends once it reads as signed in. The wait cannot see
+/// the terminal's command end, so only a status that turned from signed out to signed in may send the waiting requests again:
+/// signed out is the status held before the terminal opened (<c>before</c>, M/AppStore+CLIAccounts.swift:98), or the first
+/// reading when that one says so, since a first reading taken while the sign-in starts may time out and read as unknown.
+/// A terminal whose window is known to have closed (<c>closed</c>) ends the wait with one last reading. Cancellation throws.
+/// </summary>
+public static class CliTerminalLogin
+{
+    public static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5), PollLimit = TimeSpan.FromMinutes(10);
+    public static bool SignedIn(CliAccountStatus status) => status.LoggedIn == true && status.AccessVerified != false;
+    public static bool Resends(CliTerminalLoginResult result) => result.StartedSignedOut && result.Outcome == CliLoginOutcome.LoggedIn;
+    public static async Task<CliTerminalLoginResult> RunAsync(Func<CancellationToken, Task<CliAccountStatus>> status, CancellationToken cancellation = default,
+        Task? closed = null, TimeSpan? interval = null, TimeSpan? limit = null, CliAccountStatus? before = null)
+    {
+        var watch = Stopwatch.StartNew(); var polling = interval ?? PollInterval; var timeout = limit ?? PollLimit;
+        var first = await status(cancellation); cancellation.ThrowIfCancellationRequested();
+        var startedSignedOut = before?.LoggedIn == false || first.LoggedIn == false;
+        if (SignedIn(first)) return new(CliLoginOutcome.LoggedIn, first, before?.LoggedIn == false);
+        while (true)
+        {
+            var pause = Task.Delay(polling, cancellation);
+            if (closed is null) await pause; else { await Task.WhenAny(pause, closed); cancellation.ThrowIfCancellationRequested(); }
+            var value = await status(cancellation); cancellation.ThrowIfCancellationRequested();
+            if (SignedIn(value)) return new(CliLoginOutcome.LoggedIn, value, startedSignedOut);
+            if (closed is { IsCompleted: true }) return new(CliLoginOutcome.Exited, value, startedSignedOut);
+            if (watch.Elapsed >= timeout) return new(CliLoginOutcome.TimedOut, value, startedSignedOut);
+        }
+    }
+}
+
 /// <summary>
 /// Gemini has no sign-in command: its sign-in is the interactive CLI itself ("Login with Google"), so it runs in a
 /// terminal the user sees (M/CLILoginRecovery.swift CLIGeminiLogin). A dropped sign-in usually leaves oauth_creds.json

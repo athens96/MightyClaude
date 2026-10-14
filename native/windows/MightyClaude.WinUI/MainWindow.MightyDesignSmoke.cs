@@ -104,11 +104,13 @@ public sealed partial class MainWindow
             const string key = MightyDesignKey; var o = owner; var theme = o.SmokeTheme; var b = o.brushes;
             var (done, live) = (runs[0], runs[1]);
             var liveRequest = MightyGraphLayout.NodeID(live, "request"); var doneRequest = MightyGraphLayout.NodeID(done, "request");
+            // Each request stands over its execution block, which holds the main agent's work.
+            var liveWork = MightyGraphLayout.NodeID(live, MightyGraphLayout.WorkSuffix); var doneWork = MightyGraphLayout.NodeID(done, MightyGraphLayout.WorkSuffix);
             var doneResult = MightyGraphLayout.NodeID(done, "result"); var waiting = MightyGraphLayout.NodeID(live, "agent:design-smoke-live-waiting");
             var draftId = MightyGraphCamera.PendingNodeID;
             await SetGraphPresentation("diagram");
-            await WaitUI(() => graphViewport is { Visibility: Visibility.Visible, ActualWidth: > 0 } && new[] { liveRequest, doneRequest, doneResult, waiting, draftId }.All(graphCards.ContainsKey)
-                && graphCards[liveRequest].IsLoaded && graphDraftOutline is { IsLoaded: true },
+            await WaitUI(() => graphViewport is { Visibility: Visibility.Visible, ActualWidth: > 0 } && new[] { liveRequest, liveWork, doneRequest, doneWork, doneResult, waiting, draftId }.All(graphCards.ContainsKey)
+                && graphCards[liveRequest].IsLoaded && graphCards[liveWork].IsLoaded && graphDraftOutline is { IsLoaded: true },
                 () => $"{key} ({theme}): the diagram did not draw the fixture's blocks and draft; blocks [{string.Join(", ", graphCards.Keys)}]");
             o.root.UpdateLayout();
 
@@ -175,7 +177,7 @@ public sealed partial class MainWindow
             Require(track.CornerRadius == new CornerRadius(DesignMetrics.Radius.Row) && track.Padding == new Thickness(DesignMetrics.Spacing.Xxs) && track.Spacing == DesignMetrics.Spacing.Xxs, $"{key} ({theme}): the view switch track must be radius {DesignMetrics.Radius.Row}, padding and gap Spacing.Xxs {DesignMetrics.Spacing.Xxs}; got {track.CornerRadius}, {track.Padding}, {track.Spacing}");
             o.RequireBrush(track, e => ((StackPanel)e).Background, DesignToken.Track, "the view switch track", key: key);
             Require(ViewWordsShown, $"{key} ({theme}): a bar this wide ({bar.ActualWidth:F0}) must show the view switch's words");
-            foreach (var (option, selected, what) in new[] { (diagramButton!, true, "the chosen view (Diagram)"), (timelineButton!, false, "the other view (Timeline)") })
+            foreach (var (option, selected, what) in new[] { (diagramButton!, true, "the chosen view (Diagram)"), (timelineButton!, false, "the other view (Timeline)"), (structureButton!, false, "the other view (Structure)") })
             {
                 // The look is on the option's chip, symbol and words; the button keeps the resources written once.
                 var (chip, optionSymbol, optionWords) = ViewOptionParts(option);
@@ -197,8 +199,17 @@ public sealed partial class MainWindow
             foreach (var zoom in new[] { zoomOutButton!, zoomResetButton, zoomInButton! })
                 o.RequireBrush(zoom, e => ((Control)e).Foreground, DesignToken.Ink2, "the zoom control " + AutomationProperties.GetAutomationId(zoom), key: key);
 
-            // A block: the D card, its Layout.BlockHead header over a line, the title and mark, the request band, the pill, the capsule.
+            // A block: the D card, its Layout.BlockHead header over a line, the title and mark. The request block holds its request alone,
+            // on a band that fills it; the execution block under it holds the pill, the capsule, the activity mark and the outline.
             var view = graphCardViews[liveRequest]; var card = view.Card;
+            var workView = graphCardViews[liveWork]; var workCard = workView.Card;
+            Require(graphBlockKinds[liveRequest] == "request" && graphBlockKinds[liveWork] == MightyGraphLayout.WorkKind && Canvas.GetTop(workCard) > Canvas.GetTop(card) + card.Height
+                    && Math.Abs(Canvas.GetLeft(workCard) + workCard.Width / 2 - (Canvas.GetLeft(card) + card.Width / 2)) < 1e-9 && card.Height == MightyGraphLayout.RequestHeight(false),
+                $"{key} ({theme}): the request block must be {MightyGraphLayout.RequestHeight(false)} tall over its execution block, on one centre line; got a {card.Width}x{card.Height} {graphBlockKinds[liveRequest]} at ({Canvas.GetLeft(card)}, {Canvas.GetTop(card)}) and a {workCard.Width}x{workCard.Height} {graphBlockKinds[liveWork]} at ({Canvas.GetLeft(workCard)}, {Canvas.GetTop(workCard)})");
+            // It is named for its request, by the request's number in the diagram (requests read back from the record come first).
+            var ordinal = graphLayout!.Nodes.Where(n => n.Kind == "request").Select(n => n.Id).ToList().IndexOf(liveRequest) + 1;
+            Require(graphTitles[liveWork] is TextBlock { Text: var workTitle } && workTitle == MightyGraphBlockModel.ExecutionTitle(ordinal),
+                $"{key} ({theme}): the execution block must be titled '{MightyGraphBlockModel.ExecutionTitle(ordinal)}' with no agent mark; got {(graphTitles[liveWork] as TextBlock)?.Text ?? graphTitles[liveWork].GetType().Name}");
             RequireRadius(card, DesignMetrics.Radius.Block, $"({theme}) a block card (Radius.Block)", key);
             RequireThickness(card, DesignMetrics.Stroke.Line, $"({theme}) a block card (Stroke.Line)", key);
             Require(card.Padding == new Thickness(0), $"{key} ({theme}): a block card insets nothing, so its header and band run edge to edge; got padding {card.Padding}");
@@ -214,7 +225,7 @@ public sealed partial class MainWindow
             Require(view.Symbol is { IsLoaded: true } headed && Math.Abs(headed.ActualWidth - (headed is IconElement ? 13 : Math.Round(13 * MightySymbols.DrawnScale * 2) / 2)) < .5 && ReferenceEquals(header.Children[0], headed),
                 $"{key} ({theme}): a block header must start with its 13pt symbol (a drawn one {MightySymbols.DrawnScale} times as wide, as on the Mac); got {view.Symbol?.GetType().Name ?? "none"} {view.Symbol?.ActualWidth}");
             o.RequireBrush(view.Symbol!, SymbolInk, TintToken(RequestStyleLook(live.Input).Tint), "the request block's symbol", key: key);
-            foreach (var (agentId, token, what) in new[] { (waiting, DesignToken.AgentText, "the waiting sub-agent"), (MightyGraphLayout.NodeID(live, "agent:design-smoke-live-finished"), DesignToken.AgentText, "the finished sub-agent") })
+            foreach (var (agentId, token, what) in new[] { (liveWork, DesignToken.AgentText, "the running execution block"), (waiting, DesignToken.AgentText, "the waiting sub-agent"), (MightyGraphLayout.NodeID(live, "agent:design-smoke-live-finished"), DesignToken.AgentText, "the finished sub-agent") })
                 o.RequireBrush(graphCardViews[agentId].Symbol ?? throw new InvalidOperationException($"{key} ({theme}): {what}'s header has no symbol"), SymbolInk, token, what + "'s symbol", key: key);
             // It ends with the expand control, the last of its parts (M/MightyGraphView.swift:538-547), 12 from the card's edge.
             var expand = view.Expand ?? throw new InvalidOperationException($"{key} ({theme}): the request block's header has no expand control");
@@ -229,19 +240,30 @@ public sealed partial class MainWindow
             foreach (var word in words) o.RequireBrush(word, e => ((TextBlock)e).Foreground, DesignToken.Ink, $"the request header word '{word.Text}'", key: key);
             if (ProviderMark.MarkedProvider(Session.Provider) is { } marked)
                 Require(ProviderMarkView.LabelledProvider(title) == marked, $"{key} ({theme}): the request header must carry the {marked} mark before its name; got {ProviderMarkView.LabelledProvider(title) ?? "none"}");
-            // The request keeps its place between the header and the transcript, its words 14 to 64 tall and scrolling within (M/MightyGraphView.swift:551-556, 1025-1042).
+            // The request block holds its request alone (M/MightyGraphView.swift:655-667): the band fills the card under the header, down to
+            // its bottom corners, with no rule under it, and a long request scrolls in place; no transcript, no words standing for one.
             var band = view.RequestBand!;
-            Require(band.Visibility == Visibility.Visible && band.Padding == new Thickness(DesignMetrics.Inset.GraphBlockBodyH - edge, DesignMetrics.Inset.GraphBlockBodyV, DesignMetrics.Inset.GraphBlockBodyH - edge, DesignMetrics.Inset.GraphBlockBodyV) && band.BorderThickness == new Thickness(0, 0, 0, DesignMetrics.Stroke.Line),
-                $"{key} ({theme}): the request band must show with padding Inset.GraphBlockBody h{DesignMetrics.Inset.GraphBlockBodyH} (from the card's edge) v{DesignMetrics.Inset.GraphBlockBodyV} over a Stroke.Line rule; got {band.Visibility}, {band.Padding}, {band.BorderThickness}");
-            Require(view.Body!.Children.Contains(band) && Grid.GetRow(band) == 1 && band.Child is ScrollViewer { MaxHeight: 64 } && view.Request!.MinHeight == 14 && graphBodies.TryGetValue(liveRequest, out var transcriptScroll) && Grid.GetRow(transcriptScroll) == 2,
-                $"{key} ({theme}): the request band must stand between the header and the scrolling transcript, its words at most 64 tall; got row {Grid.GetRow(band)}, {band.Child?.GetType().Name}");
+            Require(band.Visibility == Visibility.Visible && band.Padding == new Thickness(DesignMetrics.Inset.GraphBlockBodyH - edge, DesignMetrics.Inset.GraphBlockBodyV, DesignMetrics.Inset.GraphBlockBodyH - edge, DesignMetrics.Inset.GraphBlockBodyV) && band.BorderThickness == new Thickness(0)
+                    && band.CornerRadius == new CornerRadius(0, 0, DesignMetrics.Radius.Block - edge, DesignMetrics.Radius.Block - edge),
+                $"{key} ({theme}): the request block's band must show with padding Inset.GraphBlockBody h{DesignMetrics.Inset.GraphBlockBodyH} (from the card's edge) v{DesignMetrics.Inset.GraphBlockBodyV}, no rule under it and the card's inner curve at the bottom; got {band.Visibility}, {band.Padding}, {band.BorderThickness}, {band.CornerRadius}");
+            Require(view.Body!.Children.Contains(band) && Grid.GetRow(band) == 1 && view.Body.RowDefinitions.Count == 2 && view.Body.RowDefinitions[1].Height.IsStar && band.Child is ScrollViewer { MaxHeight: double.PositiveInfinity } requestScroll && view.Request!.MinHeight == 14
+                    && graphBodies.TryGetValue(liveRequest, out var requestBody) && ReferenceEquals(requestBody, requestScroll) && view.Transcript is null && view.Placeholder is null && Math.Abs(band.ActualHeight - (card.Height - 2 * edge - header.Height)) < 1.5,
+                $"{key} ({theme}): the request block's band must fill the card under the header and scroll its request in place, with no transcript; got row {Grid.GetRow(band)} of {view.Body.RowDefinitions.Count}, {band.Child?.GetType().Name}, {band.ActualHeight:F1} high in a {card.Height} card under a {header.Height} header");
+            // A block with records keeps a request between its header and the scrolling transcript, 14 to 64 tall (M/MightyGraphView.swift:668-673, 1156-1176); the execution block has none to show.
+            var workBand = workView.RequestBand!;
+            Require(workBand.Visibility == Visibility.Collapsed && workBand.BorderThickness == new Thickness(0, 0, 0, DesignMetrics.Stroke.Line) && Grid.GetRow(workBand) == 1 && workBand.Child is ScrollViewer { MaxHeight: 64 }
+                    && graphBodies.TryGetValue(liveWork, out var transcriptScroll) && Grid.GetRow(transcriptScroll) == 2 && workView.Transcript is not null,
+                $"{key} ({theme}): the execution block must hold the main agent's transcript and show no request band; got band {workBand.Visibility} in row {Grid.GetRow(workBand)}, transcript {(workView.Transcript is null ? "missing" : "present")}");
             o.RequireBrush(band, e => ((Border)e).Background, TintToken(RequestStyleLook(live.Input).Tint), "the request band (inputPreview)", DesignMetrics.Opacity.InputPreview, key);
             Require(view.Request!.FontSize == DesignMetrics.Type.Pill, $"{key} ({theme}): the request text must be {DesignMetrics.Type.Pill}pt; got {view.Request.FontSize}");
             o.RequireBrush(view.Request, e => ((TextBlock)e).Foreground, DesignToken.Ink, "the request text", key: key);
-            RequirePill(view.StatePill, DesignTone.Run, 18, "the running request's status pill");
-            RequirePill(graphCardViews[doneRequest].StatePill, DesignTone.Done, 18, "the finished request's status pill");
+            // The request has no status of its own (M/MightyGraphView.swift:607-610): its execution block runs and settles.
+            foreach (var (asked, what) in new[] { (view, "the running request's block"), (graphCardViews[doneRequest], "the finished request's block") })
+                Require(asked.StatePill is null && asked.Capsule is null && asked.Activity is null, $"{key} ({theme}): {what} must show no status pill, usage capsule or activity mark of its own");
+            RequirePill(workView.StatePill, DesignTone.Run, 18, "the running execution block's status pill");
+            RequirePill(graphCardViews[doneWork].StatePill, DesignTone.Done, 18, "the finished execution block's status pill");
             RequirePill(graphCardViews[waiting].StatePill, DesignTone.Wait, 18, "the waiting sub-agent's status pill");
-            var capsule = view.Capsule ?? throw new InvalidOperationException($"{key} ({theme}): the running request shows no usage capsule");
+            var capsule = workView.Capsule ?? throw new InvalidOperationException($"{key} ({theme}): the running execution block shows no usage capsule");
             Require(capsule.Padding == new Thickness(DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xxs, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xxs) && capsule.Child is TextBlock { FontSize: DesignMetrics.Type.Small } capsuleWords && capsuleWords.FontFamily?.Source == DesignMetrics.Font.Mono,
                 $"{key} ({theme}): the usage capsule must be Font.Mono at Type.Small {DesignMetrics.Type.Small}pt with padding h6 v2; got {capsule.Padding}");
             o.RequireBrush(capsule, e => ((Border)e).Background, DesignToken.CardRaised, "the usage capsule", key: key);
@@ -249,7 +271,7 @@ public sealed partial class MainWindow
 
             // The activity mark: four run capsules, 3 wide and 2 apart, in an 18x14 box, each 12 tall and
             // scaled to its height by the pane's one running timer (no layout per tick).
-            var activity = view.Activity ?? throw new InvalidOperationException($"{key} ({theme}): the running request shows no activity capsules (indicator {Session.GraphRuns?[1].Status})");
+            var activity = workView.Activity ?? throw new InvalidOperationException($"{key} ({theme}): the running execution block shows no activity capsules (indicator {Session.GraphRuns?[1].Status})");
             var bars = activity.Children.OfType<Border>().ToList();
             Require(activity.Width == MightyGraphActivity.BarBoxWidth && activity.Height == MightyGraphActivity.BarBoxHeight && bars.Count == MightyGraphActivity.Bars && activity.Children.Count == MightyGraphActivity.Bars,
                 $"{key} ({theme}): the activity mark must be {MightyGraphActivity.Bars} capsules in an {MightyGraphActivity.BarBoxWidth}x{MightyGraphActivity.BarBoxHeight} box; got {activity.Children.Count} in {activity.Width}x{activity.Height}");
@@ -257,7 +279,7 @@ public sealed partial class MainWindow
             {
                 var scale = bars[i].RenderTransform as ScaleTransform;
                 Require(bars[i].Width == MightyGraphActivity.BarWidth && bars[i].Height == MightyGraphActivity.BarTallest && Math.Abs(Canvas.GetLeft(bars[i]) - i * (MightyGraphActivity.BarWidth + MightyGraphActivity.BarGap)) < 1e-9
-                    && Math.Abs(Canvas.GetTop(bars[i]) - 1) < 1e-9 && scale is not null && ReferenceEquals(scale, graphActivitySets.GetValueOrDefault(liveRequest)?[i]) && scale.ScaleY * MightyGraphActivity.BarTallest is >= 4 - 1e-6 and <= 12 + 1e-6,
+                    && Math.Abs(Canvas.GetTop(bars[i]) - 1) < 1e-9 && scale is not null && ReferenceEquals(scale, graphActivitySets.GetValueOrDefault(liveWork)?[i]) && scale.ScaleY * MightyGraphActivity.BarTallest is >= 4 - 1e-6 and <= 12 + 1e-6,
                     $"{key} ({theme}): activity capsule {i} must be {MightyGraphActivity.BarWidth}x{MightyGraphActivity.BarTallest} at ({i * (MightyGraphActivity.BarWidth + MightyGraphActivity.BarGap)}, 1), scaled to 4..12 by the pane's wave; got {bars[i].Width}x{bars[i].Height} at ({Canvas.GetLeft(bars[i])}, {Canvas.GetTop(bars[i])}), scale {scale?.ScaleY.ToString() ?? "none"}");
                 o.RequireBrush(bars[i], e => ((Border)e).Background, DesignToken.Run, $"activity capsule {i}", key: key);
             }
@@ -265,14 +287,15 @@ public sealed partial class MainWindow
                 $"{key} ({theme}): one pane timer must wave the one running block's capsules while the diagram shows; timer {(graphActivityTimer?.IsEnabled == true ? "running" : "stopped")}, {graphActivitySets.Count} sets");
 
             // The running outline: run at 2pt in the card's fitted 9/7 dashes, counted in stroke widths, over the runSoft halo.
-            Require(graphOutlines.TryGetValue(liveRequest, out var marching) && marching.Kind == MightyGraphActivity.Marching, $"{key} ({theme}): the running request has no marching outline");
+            Require(graphOutlines.TryGetValue(liveWork, out var marching) && marching.Kind == MightyGraphActivity.Marching, $"{key} ({theme}): the running execution block has no marching outline");
+            Require(!graphOutlines.ContainsKey(liveRequest) && !graphOutlines.ContainsKey(doneRequest), $"{key} ({theme}): a request block, which holds its input alone, must have no activity outline");
             var outline = marching.Line;
-            var expectedDash = DesignMetrics.Dash.InStrokeUnits(MightyGraphActivity.DashForCard(card.Width, card.Height), MightyGraphActivity.LineWidth);
+            var expectedDash = DesignMetrics.Dash.InStrokeUnits(MightyGraphActivity.DashForCard(workCard.Width, workCard.Height), MightyGraphActivity.LineWidth);
             var dash = outline.StrokeDashArray?.ToArray() ?? [];
             Require(outline.StrokeThickness == DesignMetrics.Dash.RunningWidth && dash.Length == 2 && dash.Zip(expectedDash).All(p => Math.Abs(p.First - p.Second) < 1e-6),
-                $"{key} ({theme}): the running outline must be {DesignMetrics.Dash.RunningWidth}pt in Dash.InStrokeUnits(DashForCard({card.Width}, {card.Height}), 2) = [{string.Join(", ", expectedDash.Select(d => d.ToString("F4")))}]; got {outline.StrokeThickness}pt [{string.Join(", ", dash.Select(d => d.ToString("F4")))}]");
+                $"{key} ({theme}): the running outline must be {DesignMetrics.Dash.RunningWidth}pt in Dash.InStrokeUnits(DashForCard({workCard.Width}, {workCard.Height}), 2) = [{string.Join(", ", expectedDash.Select(d => d.ToString("F4")))}]; got {outline.StrokeThickness}pt [{string.Join(", ", dash.Select(d => d.ToString("F4")))}]");
             o.RequireBrush(outline, e => ((Rectangle)e).Stroke, DesignToken.Run, "the running outline", key: key);
-            var halo = graphOutlineViews[liveRequest].Halo ?? throw new InvalidOperationException($"{key} ({theme}): the running outline has no halo");
+            var halo = graphOutlineViews[liveWork].Halo ?? throw new InvalidOperationException($"{key} ({theme}): the running outline has no halo");
             Require(halo.StrokeThickness == 2 * MightyGraphActivity.LineWidth, $"{key} ({theme}): the run halo must be {2 * MightyGraphActivity.LineWidth}pt; got {halo.StrokeThickness}");
             o.RequireBrush(halo, e => ((Rectangle)e).Stroke, DesignToken.RunSoft, "the run halo", key: key);
             Require(graphOutlines.TryGetValue(waiting, out var still) && still.Kind == MightyGraphActivity.Waiting && (still.Line.StrokeDashArray?.Count ?? 0) == 0 && still.Line.StrokeThickness == 2,
@@ -323,10 +346,11 @@ public sealed partial class MainWindow
 
             // Edges (M/MightyGraphView.swift:372-398): each turns once on its way down and ends under an arrow head 4 to
             // either side and 6 back; the quiet ones are one ink2 x 0.45 stroke at 1.5pt, those into a running block one run stroke at 2pt.
-            var into = graphEdgeRoutes.FirstOrDefault(e => e.Target == liveRequest); var quiet = graphEdgeRoutes.FirstOrDefault(e => e.Target == draftId);
-            Require(into.Route is not null && into.Live && quiet.Route is not null && !quiet.Live,
-                $"{key} ({theme}): the diagram must draw a run edge into the running request and a quiet one into the draft; edges into [{string.Join(", ", graphEdgeRoutes.Select(e => e.Target + (e.Live ? " (run)" : "")))}]");
-            foreach (var (edgeRoute, what) in new[] { (into, "the edge into the running request"), (quiet, "the edge into the draft") })
+            // The run edge is the one from the request into its running execution block; the edge into the request itself, which has no status, is quiet.
+            var into = graphEdgeRoutes.FirstOrDefault(e => e.Target == liveWork); var quiet = graphEdgeRoutes.FirstOrDefault(e => e.Target == draftId);
+            Require(into.Route is not null && into.Live && quiet.Route is not null && !quiet.Live && graphEdgeRoutes.Any(e => e.Target == liveRequest) && graphEdgeRoutes.Where(e => e.Target == liveRequest).All(e => !e.Live),
+                $"{key} ({theme}): the diagram must draw a run edge into the running execution block and quiet ones into its request and the draft; edges into [{string.Join(", ", graphEdgeRoutes.Select(e => e.Target + (e.Live ? " (run)" : "")))}]");
+            foreach (var (edgeRoute, what) in new[] { (into, "the edge into the running execution block"), (quiet, "the edge into the draft") })
             {
                 var (route, head) = (edgeRoute.Route, edgeRoute.Head);
                 Require(route.Length == 4 && route[0].X == route[1].X && route[1].Y == route[2].Y && route[2].X == route[3].X && route[3].Y > route[0].Y
@@ -385,13 +409,15 @@ public sealed partial class MainWindow
             try
             {
                 await Capture("");
+                // The pictures below stand where they are put: a following camera would take them back to the newest block.
+                graphFollow.Stop();
                 graphPan.Y = 16 - Canvas.GetTop(graphCards[doneResult]) * graphZoom;
                 await Capture("-result");
                 SetGraphZoom(MightyGraphViewModel.ZoomLevels()[1]); owner.root.UpdateLayout();
                 graphPan.X = (graphViewport!.ActualWidth - graphCanvas.Width * graphZoom) / 2; graphPan.Y = 8 - Canvas.GetTop(graphCards[liveRequest]) * graphZoom;
                 await Capture("-all");
             }
-            finally { SetGraphZoom(zoom); graphPan.X = panX; graphPan.Y = panY; owner.root.UpdateLayout(); }
+            finally { SetGraphZoom(zoom); graphPan.X = panX; graphPan.Y = panY; JudgeGraphFollow(); owner.root.UpdateLayout(); }
         }
 
         private async Task<(Border RowCard, Border ResultCard, Grid ResultHead)> RequireMightyTimeline(IReadOnlyList<MightyGraphRun> runs, MightyDesignViews? before)
@@ -399,16 +425,18 @@ public sealed partial class MainWindow
             const string key = MightyDesignKey; var o = owner; var theme = o.SmokeTheme;
             var (done, live) = (runs[0], runs[1]);
             var liveRequest = MightyGraphLayout.NodeID(live, "request"); var doneResult = MightyGraphLayout.NodeID(done, "result");
+            // The running row is the request's execution row; the request's own row before it is neutral.
+            var liveWork = MightyGraphLayout.NodeID(live, MightyGraphLayout.WorkSuffix);
             var waiting = MightyGraphLayout.NodeID(live, "agent:design-smoke-live-waiting"); var finished = MightyGraphLayout.NodeID(live, "agent:design-smoke-live-finished");
             // The dark pass reads the timeline the light pass left on screen: no redraw in between.
             if (before is null) await SetGraphPresentation("timeline");
-            await WaitUI(() => timelineScroll is { Visibility: Visibility.Visible } && timelineHeads.ContainsKey(live.Id) && new[] { liveRequest, waiting, finished }.All(timelineRows.ContainsKey) && timelineResults.ContainsKey(doneResult)
-                && timelineRows[liveRequest].Card.IsLoaded && timelineResults[doneResult].Card.IsLoaded,
+            await WaitUI(() => timelineScroll is { Visibility: Visibility.Visible } && timelineHeads.ContainsKey(live.Id) && new[] { liveRequest, liveWork, waiting, finished }.All(timelineRows.ContainsKey) && timelineResults.ContainsKey(doneResult)
+                && timelineRows[liveWork].Card.IsLoaded && timelineResults[doneResult].Card.IsLoaded,
                 () => $"{key} ({theme}): the timeline did not show the fixture's open request, its rows and the finished result");
             Require(graphActivityTimer?.IsEnabled != true, $"{key} ({theme}): the capsule timer must stop while the timeline hides the diagram");
             o.root.UpdateLayout();
             if (before is not null)
-                Require(ReferenceEquals(timelineRows[liveRequest].Card, before.RowCard) && ReferenceEquals(timelineResults[doneResult].Card, before.ResultCard) && ReferenceEquals(timelineResults[doneResult].Head, before.ResultHead),
+                Require(ReferenceEquals(timelineRows[liveWork].Card, before.RowCard) && ReferenceEquals(timelineResults[doneResult].Card, before.ResultCard) && ReferenceEquals(timelineResults[doneResult].Head, before.ResultHead),
                     $"{key} ({theme}): the theme toggle rebuilt the timeline instead of recolouring it in place");
 
             o.RequireBrush(timelineScroll!, e => ((ScrollViewer)e).Background, DesignToken.CardRaised, "the timeline list", key: key);
@@ -429,14 +457,17 @@ public sealed partial class MainWindow
             o.RequireBrush(head.Tally, e => ((TextBlock)e).Foreground, DesignToken.Ink2, "the timeline tally", key: key);
             RequirePill(head.Pill, DesignTone.Run, 20, "the timeline request's status pill");
 
-            // The open request's parts stand Spacing.Sm apart and its rows TimelineRowGap (M/MightyGraphView.swift:733-736): the header, the rows, no result yet.
+            // The open request's parts stand Spacing.Sm apart and its rows TimelineRowGap (M/MightyGraphView.swift:733-736): the header, the rows
+            // (the request, its execution block and the two sub-agents), no result yet.
             var group = timelineGroups[live.Id].View;
-            Require(group.Spacing == DesignMetrics.Spacing.Sm && group.Children.Count == 2 && group.Children[1] is StackPanel { Spacing: TimelineRowGap, Children.Count: 3 },
-                $"{key} ({theme}): the open request must hold its header and its three rows, {DesignMetrics.Spacing.Sm} and {TimelineRowGap} apart; got {group.Children.Count} parts {group.Spacing} apart, rows {(group.Children.Count > 1 && group.Children[1] is StackPanel listed ? $"{listed.Children.Count} at {listed.Spacing}" : "missing")}");
+            Require(group.Spacing == DesignMetrics.Spacing.Sm && group.Children.Count == 2 && group.Children[1] is StackPanel { Spacing: TimelineRowGap, Children.Count: 4 },
+                $"{key} ({theme}): the open request must hold its header and its four rows, {DesignMetrics.Spacing.Sm} and {TimelineRowGap} apart; got {group.Children.Count} parts {group.Spacing} apart, rows {(group.Children.Count > 1 && group.Children[1] is StackPanel listed ? $"{listed.Children.Count} at {listed.Spacing}" : "missing")}");
+            // The tally counts the execution block and the sub-agents, not the request (M/MightyCore/MightyTimeline.swift:44-45, 152).
+            Require(head.Tally.Text == Locale.Get("phone.blocks.tally", new Dictionary<string, string> { ["total"] = "3", ["settled"] = "1" }), $"{key} ({theme}): the tally must count the execution block and the two sub-agents, one of them finished; got '{head.Tally.Text}'");
 
             // The rows: card r14, run 2pt while running, wait 2pt while waiting, line 1pt once finished, padding Inset.GraphBlockBody from the
             // card's own edge (the Mac strokes the edge over the row); the node on its rail with the block's symbol in heroInk.
-            foreach (var (node, edge, width, tone, what) in new[] { (liveRequest, DesignToken.Run, DesignMetrics.Stroke.Active, DesignTone.Run, "the running row"), (waiting, DesignToken.Wait, DesignMetrics.Stroke.Active, DesignTone.Wait, "the waiting row"), (finished, DesignToken.Line, DesignMetrics.Stroke.Line, DesignTone.Done, "a finished row") })
+            foreach (var (node, edge, width, tone, what) in new[] { (liveRequest, DesignToken.Line, DesignMetrics.Stroke.Line, DesignTone.Idle, "the request's row"), (liveWork, DesignToken.Run, DesignMetrics.Stroke.Active, DesignTone.Run, "the running row"), (waiting, DesignToken.Wait, DesignMetrics.Stroke.Active, DesignTone.Wait, "the waiting row"), (finished, DesignToken.Line, DesignMetrics.Stroke.Line, DesignTone.Done, "a finished row") })
             {
                 var row = timelineRows[node];
                 RequireRadius(row.Card, DesignMetrics.Radius.TimelineRow, $"({theme}) {what} (Radius.TimelineRow)", key);
@@ -449,13 +480,15 @@ public sealed partial class MainWindow
                 o.RequireBrush(row.Node, e => ((Border)e).Background, DesignPalette.FillToken(tone), what + "'s node (heroFill)", key: key);
                 o.RequireBrush(row.Node, e => ((Border)e).BorderBrush, DesignToken.CardRaised, what + "'s node ring", key: key);
                 o.RequireBrush(row.Node.Child as FrameworkElement ?? throw new InvalidOperationException($"{key} ({theme}): {what}'s node has no symbol"), SymbolInk, DesignPalette.FillInkToken(tone), what + "'s node symbol (heroInk)", key: key);
-                RequirePill(row.Pill, tone, 19, what + "'s status pill");
+                // The request has no status of its own (M/MightyGraphView.swift:885-889): its row is drawn neutral, without a pill.
+                if (node == liveRequest) Require(row.Pill is null, $"{key} ({theme}): {what} must show no status pill");
+                else RequirePill(row.Pill, tone, 19, what + "'s status pill");
             }
             // A settled row is its title over one line, as high as the Mac's: the row inset around the 13pt title on 16, 2, and the 11pt line on 14 (M/MightyGraphTimelineView.swift:160-183).
             var twoLines = DesignMetrics.Inset.GraphBlockBodyV + TimelineTitleLine + DesignMetrics.Spacing.Xxs + TimelineMetaLine + DesignMetrics.Inset.GraphBlockBodyV;
             Require(Math.Abs(timelineRows[finished].Card.ActualHeight - twoLines) < .6, $"{key} ({theme}): a timeline row of a title and one line must be {twoLines} high; got {timelineRows[finished].Card.ActualHeight:F1}");
             // The running row's latest step follows the pulsing run dot, 7 across (M/MightyGraphTimelineView.swift:171).
-            var pulse = VisualChildren(timelineRows[liveRequest].Card).OfType<Microsoft.UI.Xaml.Shapes.Ellipse>().FirstOrDefault(dot => dot.Width == 7)
+            var pulse = VisualChildren(timelineRows[liveWork].Card).OfType<Microsoft.UI.Xaml.Shapes.Ellipse>().FirstOrDefault(dot => dot.Width == 7)
                 ?? throw new InvalidOperationException($"{key} ({theme}): the running row shows no pulse dot beside its latest step");
             o.RequireBrush(pulse, e => ((Microsoft.UI.Xaml.Shapes.Ellipse)e).Fill, DesignToken.Run, "the running row's pulse dot", key: key);
             Require(!VisualChildren(timelineRows[waiting].Card).OfType<Microsoft.UI.Xaml.Shapes.Ellipse>().Any(), $"{key} ({theme}): only a running row carries the pulse dot");
@@ -484,7 +517,7 @@ public sealed partial class MainWindow
             o.RequireBrush(more, e => ((Control)e).Foreground, DesignToken.Accent, "the 'show all' link", key: key);
             // A picture of the fixture's timeline for the design review; nothing is redrawn for it.
             await SettleDesktopCapture(Container); await o.CaptureSmoke(Path.Combine(o.options.ProfileDirectory!, $"smoke-mighty-timeline-{theme}.png"));
-            return (timelineRows[liveRequest].Card, result.Card, result.Head);
+            return (timelineRows[liveWork].Card, result.Card, result.Head);
         }
 
         /// <summary>Every word of a title line: one text, or the head and name around an agent mark.</summary>

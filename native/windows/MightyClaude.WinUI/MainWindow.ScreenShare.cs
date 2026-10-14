@@ -30,9 +30,11 @@ public sealed partial class MainWindow
         stop.BorderThickness = new(0); PaintPlainButton(stop, brushes.Brush(DesignToken.Err), brushes.Brush(DesignToken.Err), ink: brushes.Brush(DesignToken.OnStatus));
         screenBanner = new Border { Child = stop, Background = brushes.Brush(DesignToken.Err), CornerRadius = new(DesignMetrics.Radius.Row), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Visibility = Visibility.Collapsed, Margin = new(DesignMetrics.Spacing.Md) };
         Grid.SetColumnSpan(screenBanner, 2); Grid.SetRowSpan(screenBanner, 3); Canvas.SetZIndex(screenBanner, 100); root.Children.Add(screenBanner);
-        // The error banner's close button stands in the same corner: while the banner shows, the stop control stands under it.
-        void Place() { if (screenBanner is not null) screenBanner.Margin = new(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Md + (errorBanner.Visibility == Visibility.Visible ? errorBanner.ActualHeight : 0), DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Md); }
-        errorBanner.SizeChanged += (_, _) => Place(); errorBanner.RegisterPropertyChangedCallback(UIElement.VisibilityProperty, (_, _) => Place()); Place();
+        // The resource and error banners' close buttons stand in the same corner: while either shows, the stop control stands under them.
+        static double Shown(FrameworkElement banner) => banner.Visibility == Visibility.Visible ? banner.ActualHeight : 0;
+        void Place() { if (screenBanner is not null) screenBanner.Margin = new(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Md + Shown(resourceBanner) + Shown(errorBanner), DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Md); }
+        foreach (var banner in new FrameworkElement[] { resourceBanner, errorBanner }) { banner.SizeChanged += (_, _) => Place(); banner.RegisterPropertyChangedCallback(UIElement.VisibilityProperty, (_, _) => Place()); }
+        Place();
     }
     private void ScreenChanged() => DispatcherQueue.TryEnqueue(() => { if (screenBanner is not null) screenBanner.Visibility = screenHub?.Sessions.Count > 0 ? Visibility.Visible : Visibility.Collapsed; mobileRouter?.Changed(); });
     private Task<bool> ConfirmScreenKey(string device, string fingerprint, CancellationToken token)

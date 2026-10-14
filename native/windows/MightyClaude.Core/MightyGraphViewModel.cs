@@ -37,6 +37,17 @@ public static class MightyGraphViewModel
     /// <summary>True when zoom-out should be disabled (already at min).</summary>
     public static bool ZoomOutDisabled(double zoom) => zoom <= ZoomMin;
 
+    /// <summary>
+    /// The pan after the zoom went from <paramref name="previous"/> to <paramref name="zoom"/>: what stood in the middle of
+    /// the viewport stays there (macOS MightyGraphCanvas <c>onChange(of: zoom)</c>). A broken zoom leaves the pan as it is.
+    /// </summary>
+    public static (double X, double Y) ZoomAnchored((double X, double Y) pan, (double W, double H) viewport, double previous, double zoom)
+    {
+        if (!double.IsFinite(previous) || previous <= 0 || !double.IsFinite(zoom) || zoom <= 0) return pan;
+        var (centreX, centreY) = (viewport.W / 2, viewport.H / 2);
+        return (centreX - (centreX - pan.X) * zoom / previous, centreY - (centreY - pan.Y) * zoom / previous);
+    }
+
     /// <summary>Formatted zoom label for the percent button, e.g. "100%".</summary>
     public static string ZoomLabel(double zoom) => ((int)Math.Round(zoom * 100)) + "%";
 
@@ -82,8 +93,11 @@ public static class MightyGraphViewModel
         IReadOnlyDictionary<string, GraphBlockSize>? blockSizes = null,
         string? planRunID = null,
         IReadOnlyList<(string RunID, string RecordID)>? planRecords = null,
-        GraphBlockSize? planSize = null)
-        => MightyGraphLayout.Make(graphRuns, draft, running, expanded, resultFilesRunID, viewport, zoom: zoom, sharedResultSize: sharedResultSize, retainedStart: retainedStart, history: history, resultContentHeight: resultContentHeight, blockSizes: blockSizes, planRunID: planRunID, planRecords: planRecords, planSize: planSize);
+        GraphBlockSize? planSize = null,
+        bool splitsExecution = false,
+        IReadOnlyList<(string RunID, string Step, int Count)>? galleries = null,
+        IReadOnlyList<(string RunID, string Key)>? executions = null)
+        => MightyGraphLayout.Make(graphRuns, draft, running, expanded, resultFilesRunID, viewport, zoom: zoom, sharedResultSize: sharedResultSize, retainedStart: retainedStart, history: history, resultContentHeight: resultContentHeight, blockSizes: blockSizes, planRunID: planRunID, planRecords: planRecords, planSize: planSize, splitsExecution: splitsExecution, galleries: galleries, executions: executions);
 
     // ── block capsule ─────────────────────────────────────────────────────────
 
@@ -115,6 +129,14 @@ public static class MightyGraphViewModel
     public static bool WheelScrollsBlock(string? selectedNodeID) => selectedNodeID is not null;
 
     /// <summary>
+    /// The block whose body a wheel turn scrolls, or null when it pans the canvas (macOS MightyGraphInteraction
+    /// <c>handle(.scrollWheel)</c>): the block under the pointer, when it is the selected one or an attachment beside
+    /// the flow, which scrolls at once. The selected block does not take the wheel while the pointer is elsewhere.
+    /// </summary>
+    public static string? WheelScrollTarget(string? selectedNodeID, string? hoveredNodeID, bool hoveredIsAuxiliary) =>
+        hoveredNodeID is not null && (hoveredNodeID == selectedNodeID || hoveredIsAuxiliary) ? hoveredNodeID : null;
+
+    /// <summary>
     /// How far one wheel event pans the canvas camera. A vertical wheel moves
     /// it up and down; a horizontal wheel or tilt, and Shift with the vertical
     /// wheel (the Windows convention), move it left and right — the macOS
@@ -132,28 +154,39 @@ public static class MightyGraphViewModel
     // ── result files panel ────────────────────────────────────────────────────
 
     /// <summary>
-    /// Determines which run's result-files panel should be open after a new layout
-    /// has been produced.  Rules match macOS MightyGraphResultFilesView:
-    /// - A new completed run with files auto-opens its panel (unless manually closed).
-    /// - A manual close sticks until the next new result.
-    /// - Only one panel is open per graph at a time.
+    /// Which result's file list is open beside its card (macOS MightyGraphResultFilesModel). Every result card
+    /// carries its own request's files and opens its own list; one list is open per graph. The newest result
+    /// that names files opens by itself, once: closed or changed by hand it stays as the user left it until a
+    /// newer result names files.
     /// </summary>
-    public static string? NextResultFilesRunID(
-        string? currentRunID,
-        bool manuallyClosed,
-        string? latestCompletedRunID,
-        bool latestHasFiles)
+    public sealed class ResultFilesPanel
     {
-        if (latestCompletedRunID is null) return null;
-        // A brand-new result with files always auto-opens (manuallyClosed was for a previous run).
-        if (latestCompletedRunID != currentRunID && latestHasFiles)
-            return latestCompletedRunID;
-        // Same run: manual close sticks; otherwise keep the panel open.
-        if (latestCompletedRunID == currentRunID)
-            return manuallyClosed ? null : currentRunID;
-        return null;
-    }
+        public string? SelectedRunID { get; private set; }
+        private string? lastAutoRunID;
 
+        /// <summary>The toggle in a result card's header; a result that names no file has none.</summary>
+        public void Toggle(string runID, bool hasFiles)
+        {
+            if (hasFiles) SelectedRunID = SelectedRunID == runID ? null : runID;
+        }
+
+        public void Close() => SelectedRunID = null;
+
+        /// <summary>
+        /// The lists as resolved for this pass: the pane's own completed requests in order, each with whether
+        /// its result names files. An open list whose result no longer names any closes.
+        /// </summary>
+        public void Publish(IReadOnlyList<(string RunID, bool HasFiles)> sources)
+        {
+            if (SelectedRunID is { } selected && !sources.Any(source => source.RunID == selected && source.HasFiles)) SelectedRunID = null;
+            for (var index = sources.Count - 1; index >= 0; index--)
+            {
+                if (!sources[index].HasFiles) continue;
+                if (sources[index].RunID != lastAutoRunID) SelectedRunID = lastAutoRunID = sources[index].RunID;
+                return;
+            }
+        }
+    }
     // ── running indicators ────────────────────────────────────────────────────
 
     /// <summary>
@@ -191,7 +224,7 @@ public static class MightyGraphViewModel
 /// state, request and output text, the usage capsule and its tooltip, the
 /// running/waiting indicator choice, the card's activity outline
 /// (<see cref="MightyGraphActivity"/>) and the status its colours follow (empty for the
-/// draft and the files panel). WinUI renders these and decides nothing.
+/// draft, the files panel and a request over its 실행 block). WinUI renders these and decides nothing.
 /// </summary>
 public sealed record MightyGraphBlock(
     string Id,
@@ -224,6 +257,10 @@ public static class MightyGraphBlockModel
         _ => Locale.Get("graph.state.running"),
     };
 
+    /// <summary>The 실행 block's title (`graph.block.executionOf`, "실행 · 요청 N"): it names its request, so each one reads apart from the others.</summary>
+    public static string ExecutionTitle(int ordinal) =>
+        Locale.Get("graph.block.executionOf", new Dictionary<string, string> { ["n"] = ordinal.ToString(System.Globalization.CultureInfo.InvariantCulture) });
+
     /// <summary>The app-owned request title tail (`graph.block.requestTitle`, "Request N · Claude"); guided views may prepend an approved style title.</summary>
     public static string RequestTitle(int ordinal, string providerLabel) =>
         Locale.Get("graph.block.requestTitle", new Dictionary<string, string> { ["ordinal"] = ordinal.ToString(), ["provider"] = providerLabel });
@@ -240,7 +277,7 @@ public static class MightyGraphBlockModel
     /// <summary>
     /// The tone a block's status pill, result strip and incoming edge take (macOS
     /// <c>DesignTone(blockStatus:)</c>): anything unfinished that is not waiting runs. A block with
-    /// no status (the draft, the files panel) is idle.
+    /// no status (the draft, the files panel, a request over its 실행 block) is idle.
     /// </summary>
     public static DesignTone Tone(MightyGraphBlock block) =>
         block.Status.Length == 0 ? DesignTone.Idle : StatusGlyph.Tone(MightyTimeline.Status(block.Status));
@@ -282,6 +319,8 @@ public static class MightyGraphBlockModel
         IReadOnlyList<ModelOption>? catalog = null)
     {
         var blocks = new List<MightyGraphBlock>();
+        // Laid out with its 실행 blocks (MightyGraphLayout.Make splitsExecution), a request block holds what was asked alone.
+        var split = layout.Nodes.Any(n => n.Kind == MightyGraphLayout.WorkKind);
         foreach (var node in layout.Nodes)
         {
             var (runIndex, agentId) = Locate(node, runs);
@@ -291,6 +330,20 @@ public static class MightyGraphBlockModel
                 case "draft":
                     blocks.Add(new(node.Id, "draft", node.Frame, DraftTitle(runs.Count > 0), DraftState(draft),
                         draft, [], null, "", "none", null));
+                    break;
+                // The request alone, with no status of its own: the 실행 block under it runs and settles (macOS transcriptCard inputOnly).
+                case "request" when run is not null && split:
+                    blocks.Add(new(node.Id, "request", node.Frame, RequestTitle(runIndex + 1, providerLabel), "", run.Input, [], null, "", "none", null));
+                    break;
+                // The main agent's own work for the request: its replies, tool calls, status and tokens.
+                case MightyGraphLayout.WorkKind when run is not null:
+                    blocks.Add(new(node.Id, MightyGraphLayout.WorkKind, node.Frame, ExecutionTitle(runIndex + 1),
+                        StateLabel(run.Status), "",
+                        run.RootEntries.Where(e => e.Kind != "user").ToList(),
+                        ModelUsageFormat.BlockCapsule(run.Usage, run.ResponseRecords ?? [], run.NodeModelLabel, catalog, versioned: true),
+                        Help(run.Usage, run.ResponseRecords ?? [], Locale.Get("graph.block.blockUsageLabel"), catalog),
+                        MightyGraphViewModel.BlockIndicator(run.Status, animationsEnabled), null,
+                        MightyGraphActivity.Outline(run.Status, animationsEnabled), run.Status));
                     break;
                 case "request" when run is not null:
                     blocks.Add(new(node.Id, "request", node.Frame, RequestTitle(runIndex + 1, providerLabel),
@@ -327,6 +380,13 @@ public static class MightyGraphBlockModel
                     blocks.Add(new(node.Id, "resultFiles", node.Frame, Locale.Get("graph.resultFiles.title"),
                         "", "", [], null, "", "none", run.Id));
                     break;
+                // A step's picture preview and a background execution's block: the step, or the execution's key, in the record slot.
+                case MightyGraphLayout.ImagesKind when run is not null && agentId is not null:
+                    blocks.Add(new(node.Id, MightyGraphLayout.ImagesKind, node.Frame, Locale.Get("graph.images.title"), "", "", [], null, "", "none", null, RecordId: agentId));
+                    break;
+                case MightyGraphLayout.ExecutionKind when run is not null && agentId is not null:
+                    blocks.Add(new(node.Id, MightyGraphLayout.ExecutionKind, node.Frame, Locale.Get("graph.ouroboros.title"), "", "", [], null, "", "none", null, RecordId: agentId));
+                    break;
             }
         }
         return blocks;
@@ -344,12 +404,17 @@ public static class MightyGraphBlockModel
         {
             var run = runs[i];
             if (node.Id == MightyGraphLayout.NodeID(run, "request") && node.Kind == "request") return (i, null);
+            if (node.Id == MightyGraphLayout.NodeID(run, MightyGraphLayout.WorkSuffix) && node.Kind == MightyGraphLayout.WorkKind) return (i, null);
             if (node.Id == MightyGraphLayout.NodeID(run, "result") && node.Kind == "result") return (i, null);
             if (node.Id == MightyGraphLayout.NodeID(run, "result-files") && node.Kind == "resultFiles") return (i, null);
             if (node.Id == MightyGraphLayout.NodeID(run, MightyGraphLayout.PlanSuffix) && node.Kind == "plan") return (i, null);
             // An answered plan's block: its record id in the agent slot.
             if (node.Kind == "planRecord" && node.Id.StartsWith(MightyGraphLayout.NodeID(run, MightyGraphLayout.PlanRecordSuffix), StringComparison.Ordinal))
                 return (i, node.Id[MightyGraphLayout.NodeID(run, MightyGraphLayout.PlanRecordSuffix).Length..]);
+            if (node.Kind == MightyGraphLayout.ImagesKind && node.Id.StartsWith(MightyGraphLayout.NodeID(run, MightyGraphLayout.ImagesSuffix), StringComparison.Ordinal))
+                return (i, node.Id[MightyGraphLayout.NodeID(run, MightyGraphLayout.ImagesSuffix).Length..]);
+            if (node.Kind == MightyGraphLayout.ExecutionKind && node.Id.StartsWith(MightyGraphLayout.NodeID(run, MightyGraphLayout.ExecutionSuffix), StringComparison.Ordinal))
+                return (i, node.Id[MightyGraphLayout.NodeID(run, MightyGraphLayout.ExecutionSuffix).Length..]);
             if (node.Kind != "agent") continue;
             foreach (var agent in run.Agents)
                 if (node.Id == MightyGraphLayout.NodeID(run, "agent:" + agent.Id)) return (i, agent.Id);

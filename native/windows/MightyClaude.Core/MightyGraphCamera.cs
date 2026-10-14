@@ -16,6 +16,7 @@ public static class MightyGraphCamera
 
     public const string PendingNodeID = "pending-input";
     public static bool IsAuxiliary(string nodeID) => nodeID == PendingNodeID || nodeID == MightyGraphLayout.HistoryNodeID || nodeID.EndsWith(":result-files", StringComparison.Ordinal)
+        || nodeID.Contains(":" + MightyGraphLayout.ExecutionSuffix, StringComparison.Ordinal) || nodeID.Contains(":" + MightyGraphLayout.ImagesSuffix, StringComparison.Ordinal)
         || nodeID.Contains(":" + MightyGraphLayout.PlanRecordSuffix, StringComparison.Ordinal);
 
     /// <summary>
@@ -169,6 +170,8 @@ public static class MightyGraphCamera
         }
         var last = runIDs[^1];
         if (last != (previousRunIDs.Count > 0 ? previousRunIDs[^1] : null) || new HashSet<string>(previousRunIDs).SetEquals(runIDs)) return Anchor.Hold;
+        // Older requests loaded above the first one are laid out at negative y: nothing already placed moved.
+        if (runIDs.Count > previousRunIDs.Count && runIDs.Skip(runIDs.Count - previousRunIDs.Count).SequenceEqual(previousRunIDs)) return Anchor.Hold;
         return ReaimAnchor(last, selectedNodeID, layoutNodeIDs);
     }
 
@@ -222,6 +225,52 @@ public static class MightyGraphCamera
         }
         if (bestIndex is null) return null;
         return currentFrames.Any(f => Shown(f, strandedResidue) is not null) ? null : bestIndex;
+    }
+
+    /// <summary>
+    /// The memory the stranded rule needs between layout passes (macOS <c>MightyGraphCamera.StrandedWatch</c>). A pass is
+    /// judged against the last frames seen through the SAME camera: whoever moved the camera since (the user or an
+    /// admitted target) owns what it shows, and a pass that arrives mid-interaction is judged later rather than
+    /// dropped, so the net cannot be disarmed by bad timing.
+    /// </summary>
+    public sealed class StrandedWatch
+    {
+        /// <param name="LookedAtNodeID">The card the user saw most of before the layout took it away.</param>
+        public sealed record Loss(string LookedAtNodeID, string? NewestRunID);
+
+        private List<GraphRect> frames = [];
+        private List<string> nodeIDs = [];
+        private (double X, double Y)? camera;
+        private double zoom = 1;
+        private string? newestRunID;
+        /// A move arrived while unsettled and still waits for its verdict.
+        public bool IsWithholding { get; private set; }
+
+        /// <paramref name="settled"/> is false while a drag, a resize, a recent user move or a
+        /// pending camera target is still deciding where the camera goes.
+        public Loss? Observe(IReadOnlyList<(string Id, GraphRect Frame)> nodes, (double X, double Y) camera, double zoom, (double W, double H) viewport, string? newestRunID, bool settled)
+        {
+            // The draft block comes and goes with the composer's text: it is
+            // neither something that moved nor something the user lost.
+            var after = nodes.Where(n => n.Id != PendingNodeID).ToList();
+            // A new or removed newest request has its own camera rule.
+            if (camera != this.camera || zoom != this.zoom || newestRunID != this.newestRunID) { Rebase(after, camera, zoom, newestRunID); return null; }
+            var moved = nodeIDs.Count != after.Count || after.Where((n, i) => n.Id != nodeIDs[i] || n.Frame != frames[i]).Any();
+            // Back at the baseline: there is no longer a move to judge.
+            if (!moved) { IsWithholding = false; return null; }
+            if (!settled) { IsWithholding = true; return null; }
+            var lost = LostFrameIndex(frames, after.Select(n => n.Frame).ToList(), camera, viewport, zoom);
+            var loss = lost is { } index ? new Loss(nodeIDs[index], newestRunID) : null;
+            Rebase(after, camera, zoom, newestRunID);
+            return loss;
+        }
+
+        private void Rebase(List<(string Id, GraphRect Frame)> nodes, (double X, double Y) camera, double zoom, string? newestRunID)
+        {
+            nodeIDs = nodes.Select(n => n.Id).ToList(); frames = nodes.Select(n => n.Frame).ToList();
+            this.camera = camera; this.zoom = zoom; this.newestRunID = newestRunID;
+            IsWithholding = false;
+        }
     }
 
     public static string TrimToken(int sequence, string nodeID) => "trim:" + sequence + ":" + nodeID;

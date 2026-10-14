@@ -15,7 +15,8 @@ public interface IScreenSharePlatform
     Task ReceiveSignalAsync(string sessionId, JsonElement signal, CancellationToken token);
     Task StopPeerAsync(string sessionId);
     void Halt();
-    Task SetDisplayAsync(int displayId, CancellationToken token);
+    /// <summary>Moves capture to the display; false when it is not attached (any longer), which undocking makes happen between one monitor and the next.</summary>
+    Task<bool> SetDisplayAsync(int displayId, CancellationToken token);
     void SetRegion(ScreenRegion region);
     Task InjectAsync(string sessionId, JsonElement input, CancellationToken token);
     Task ReleaseButtonsAsync(string sessionId);
@@ -51,6 +52,8 @@ public sealed class ScreenShareHub : IAsyncDisposable
     private readonly Dictionary<string, Session> sessions = [];
     private readonly Dictionary<string, Challenge> challenges = [];
     private readonly Dictionary<string, DateTimeOffset> refusedKeys = [];
+    /// <summary>When capture was last started again after it ended on its own (<see cref="ScreenSharePolicy.MayRestartCapture"/>).</summary>
+    private readonly List<DateTimeOffset> restarts = [];
     private readonly CancellationTokenSource lifetime = new();
     private readonly Task watcher;
     private bool confirming, disposed;
@@ -156,8 +159,9 @@ public sealed class ScreenShareHub : IAsyncDisposable
                         if (challenge is null || challenge.Expires < now() || grant.ControlKeyPublic is null || value.Text("controlSignatureB64") is not { } signature || !ScreenSharePolicy.Verify(challenge.Bytes, Convert.FromBase64String(signature), Convert.FromBase64String(grant.ControlKeyPublic))) throw new ScreenShareException("control-signature");
                     }
                     if (!ScreenSharePolicy.CanJoin(mode, sessions.Values.Select(s => s.Value)) || sessions.Values.Any(s => s.Value.DeviceId == device)) throw new ScreenShareException("concurrency-limit");
-                    var display = platform.Displays.FirstOrDefault(d => d.DisplayId == displayId) ?? platform.Displays.FirstOrDefault(d => d.Main) ?? throw new ScreenShareException("screen-permission");
-                    if (sessions.Values.FirstOrDefault() is { } first && first.Value.DisplayId != display.DisplayId) display = platform.Displays.First(d => d.DisplayId == first.Value.DisplayId);
+                    var display = ScreenSharePolicy.DisplayFor(platform.Displays, displayId) ?? throw new ScreenShareException("screen-permission");
+                    // One capture serves every phone: a phone that joins sees the display already captured (M/MightyCore/Remote/ScreenShareEngine.swift:457).
+                    if (sessions.Values.FirstOrDefault() is { } first && first.Value.DisplayId != display.DisplayId) display = ScreenSharePolicy.DisplayFor(platform.Displays, first.Value.DisplayId) ?? display;
                     var decodes = value.TryGetProperty("decodes", out var codecs) && codecs.ValueKind == JsonValueKind.Array ? codecs.EnumerateArray().Where(c => c.ValueKind == JsonValueKind.String).Select(c => c.GetString()).ToArray() : ["H264"];
                     if (!decodes.Contains("H264")) throw new ScreenShareException("bad-request", 400);
                     session = new(new(Wire.Id(), device, mode, display.DisplayId, "H264", ScreenQuality.For(value.Text("network") == "cellular"), now())); sessions.Add(session.Value.SessionId, session);
@@ -232,7 +236,13 @@ public sealed class ScreenShareHub : IAsyncDisposable
             {
                 lock (sync) if (!trustedDevice(session.Value.DeviceId) || !ScreenSharePolicy.GrantAllows(grants.GetValueOrDefault(session.Value.DeviceId), session.Value.Mode) || confirming || platform.Safety.Locked || platform.Safety.SecureInput || session.Value.Mode != "control" && sessions.Count != 1) return;
                 if (type == "zoom") platform.SetRegion(ScreenRegion.Parse(value.GetProperty("region"))!);
-                else { var displayId = value.GetProperty("displayId").GetInt32(); if (!platform.Displays.Any(d => d.DisplayId == displayId)) return; await platform.SetDisplayAsync(displayId, token); lock (sync) foreach (var active in sessions.Values) active.Value = active.Value with { DisplayId = displayId }; Changed?.Invoke(); }
+                else
+                {
+                    // A switch that cannot start anywhere ends every session, as the Mac's does (M/MightyCore/Remote/ScreenShareEngine.swift:642-648).
+                    int? moved; try { moved = await Capture(value.GetProperty("displayId").GetInt32(), token); } catch (Exception ex) when (ex is not (OperationCanceledException or OutOfMemoryException)) { moved = null; }
+                    if (moved is not { } display) { await EndAll("display-gone", false); return; }
+                    lock (sync) foreach (var active in sessions.Values) active.Value = active.Value with { DisplayId = display }; Changed?.Invoke();
+                }
                 return;
             }
             if (!MayControl(session)) { if (type == "tap" && value.Text("marker") is { } marker) await platform.SendDataAsync(sessionId, new { t = "marker", id = marker, shown = false }, token); return; }
@@ -253,12 +263,50 @@ public sealed class ScreenShareHub : IAsyncDisposable
     public async Task DeviceDisconnected(string device)
     { string[] ids; lock (sync) ids = sessions.Values.Where(s => s.Value.DeviceId == device).Select(s => s.Value.SessionId).ToArray(); foreach (var id in ids) await Stop(id, "peer-left", false); }
     public Task StopSessionAsync(string sessionId) => Stop(sessionId, "user-stop", false);
-    public async Task KillAllAsync(string reason = "kill-switch")
+    public Task KillAllAsync(string reason = "kill-switch") => EndAll(reason, true);
+    private async Task EndAll(string reason, bool killed)
     {
-        Session[] stopped; lock (sync) { stopped = sessions.Values.ToArray(); sessions.Clear(); foreach (var session in stopped) session.Cancel.Cancel(); }
+        Session[] stopped; lock (sync) { stopped = sessions.Values.ToArray(); sessions.Clear(); restarts.Clear(); foreach (var session in stopped) session.Cancel.Cancel(); }
         try { platform.Halt(); } catch { /* Continue closing each peer even if the native gate failed. */ }
-        await Task.WhenAll(stopped.Select(session => CloseSession(session, reason, true))); Changed?.Invoke();
+        await Task.WhenAll(stopped.Select(session => CloseSession(session, reason, killed))); Changed?.Invoke();
     }
+    /// <summary>
+    /// Capture on the display a phone means (<see cref="ScreenSharePolicy.DisplayFor"/>), picked once more when that one went
+    /// away while capture moved to it, as undocking removes monitors one after another. Null when it could start nowhere.
+    /// </summary>
+    private async Task<int?> Capture(int wanted, CancellationToken token)
+    {
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            if (ScreenSharePolicy.DisplayFor(platform.Displays, wanted) is not { } display) return null;
+            if (await platform.SetDisplayAsync(display.DisplayId, token)) return display.DisplayId;
+        }
+        return null;
+    }
+    /// <summary>
+    /// The capture ended on its own: the display was unplugged, or Windows took the stream. The viewers move to the main display
+    /// instead of being stopped (M/MightyCore/Remote/ScreenShareCapture.swift:244-253, ScreenShareEngine.swift:657-663) and each
+    /// phone is told the displays there are now; with no display left, when capture cannot start there, or when it keeps ending
+    /// (<see cref="ScreenSharePolicy.MayRestartCapture"/>), the sessions end as <c>display-gone</c>. A locked PC or a password
+    /// field ends them at once with that reason, as the watcher would: capture has already stopped.
+    /// </summary>
+    public async Task DisplayLostAsync()
+    {
+        int lost; lock (sync) { if (sessions.Values.FirstOrDefault() is not { } first) return; lost = first.Value.DisplayId; }
+        var safety = platform.Safety; if (safety.Locked || safety.SecureInput) { await KillAllAsync(safety.Locked ? "lock-screen" : "secure-input"); return; }
+        try
+        {
+            bool again; lock (sync) again = ScreenSharePolicy.MayRestartCapture(restarts, now()); if (!again) throw new IOException("Capture keeps ending.");
+            var display = await Capture(lost, lifetime.Token) ?? throw new IOException("No display is left to capture.");
+            (string Device, ScreenDeviceGrant? Grant)[] phones;
+            lock (sync) { foreach (var active in sessions.Values) active.Value = active.Value with { DisplayId = display }; phones = sessions.Values.Select(s => (s.Value.DeviceId, grants.GetValueOrDefault(s.Value.DeviceId))).Distinct().ToArray(); }
+            Changed?.Invoke();
+            foreach (var phone in phones) { try { await send(phone.Device, new { type = "screen-grant", allowed = phone.Grant?.Allowed ?? false, grant = phone.Grant?.Grant ?? "none", displays = DisplaysWire(), iceServers = IceServers }).WaitAsync(TimeSpan.FromSeconds(1)); } catch { } }
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { await EndAll("display-gone", false); }
+    }
+    /// <summary>Capture failed rather than ended (a frame that could not be read or encoded): it is not started again, and the sessions end as <c>display-gone</c>.</summary>
+    public async Task CaptureFailedAsync() { bool any; lock (sync) any = sessions.Count > 0; if (any) await EndAll("display-gone", false); }
     private async Task Stop(string id, string reason, bool killed)
     {
         Session? session; lock (sync) { if (!sessions.Remove(id, out session)) return; session.Cancel.Cancel(); }

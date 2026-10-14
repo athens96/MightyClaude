@@ -25,7 +25,7 @@ public sealed partial class MainWindow
     private sealed partial class PaneView
     {
         /// <summary>The bubble's width until it is dragged, its least size, its distance from the area's edges and its tail (M/MightyGraphReferenceBubble.swift:24-30, 169).</summary>
-        private const double ReferenceDefaultWidth = 420, ReferenceMinimumWidth = 300, ReferenceMinimumHeight = 200, ReferenceMargin = 12, ReferenceTail = 12;
+        private const double ReferenceDefaultWidth = ReferencePreview.BubbleDefaultWidth, ReferenceMinimumWidth = ReferencePreview.BubbleMinimumWidth, ReferenceMinimumHeight = ReferencePreview.BubbleMinimumHeight, ReferenceMargin = 12, ReferenceTail = 12;
         /// <summary>The bubble's shadow: black at 0.18 (M/MightyGraphReferenceBubble.swift:59), cast the way every card's is (decision Q5).</summary>
         private const double ReferenceShadow = 0.18;
         /// <summary>The bubble with its tail: the element the pane shows and hides.</summary>
@@ -37,8 +37,12 @@ public sealed partial class MainWindow
         private Button? referenceFlip, referenceReveal, referenceOpen;
         private LocalHtmlView? referenceHtml;
         private bool referenceOnLeft;
-        /// <summary>The dragged size; a height of 0 is "as tall as the room".</summary>
+        /// <summary>
+        /// The dragged size, remembered across panes and launches (M/MightyGraphView.swift:88-90): the saved one, or the drag in
+        /// progress. A height of 0 is "as tall as the room".
+        /// </summary>
         private double referenceWidth = ReferenceDefaultWidth, referenceHeight;
+        private bool referenceResizing, referenceResized;
         private int referenceGeneration;
         private ReferencePreview.Target? referenceTarget;
         private CancellationTokenSource? referenceCancellation;
@@ -185,10 +189,18 @@ public sealed partial class MainWindow
             var thumb = new Thumb { Opacity = 0 };
             AutomationProperties.SetName(thumb, Locale.Get("reference.resize")); AutomationProperties.SetAutomationId(thumb, "mighty-reference-resize-" + id);
             ToolTipService.SetToolTip(thumb, Locale.Get("reference.resize"));
-            thumb.DragStarted += (_, _) => { if (referenceHeight <= 0 && referencePanel is { ActualHeight: > 0 } shown) referenceHeight = shown.ActualHeight; };
-            thumb.DragDelta += (_, args) => { referenceWidth += (referenceOnLeft ? 1 : -1) * args.HorizontalChange; referenceHeight = Math.Max(ReferenceMinimumHeight, referenceHeight + args.VerticalChange); FitReferencePreview(); };
+            thumb.DragStarted += (_, _) => { referenceResizing = true; referenceResized = false; if (referenceHeight <= 0 && referencePanel is { ActualHeight: > 0 } shown) referenceHeight = shown.ActualHeight; };
+            thumb.DragDelta += (_, args) => { referenceResized = true; referenceWidth += (referenceOnLeft ? 1 : -1) * args.HorizontalChange; referenceHeight = Math.Max(ReferenceMinimumHeight, referenceHeight + args.VerticalChange); FitReferencePreview(); };
+            // Released, the size is every pane's; a press that moved nothing saves nothing. The dragged size stays on screen until
+            // the save lands, so a layout in between never shows the old one.
+            thumb.DragCompleted += async (_, _) =>
+            {
+                if (referenceResized) await SaveReferenceSize(referenceWidth, referenceHeight);
+                if (thumb.IsDragging) return;
+                referenceResizing = false; FitReferencePreview();
+            };
             // Back to the size it opens at: 420 wide and as tall as the room.
-            thumb.DoubleTapped += (_, args) => { referenceWidth = ReferenceDefaultWidth; referenceHeight = 0; FitReferencePreview(); args.Handled = true; };
+            thumb.DoubleTapped += (_, args) => { _ = SaveReferenceSize(null, null); args.Handled = true; };
             referenceGrip = new Grid { Width = 22, Height = 22, Margin = new Thickness(DesignMetrics.Spacing.Xxs - DesignMetrics.Stroke.Line), VerticalAlignment = VerticalAlignment.Bottom };
             referenceGrip.Children.Add(new Border { CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow), Background = b.Brush(DesignToken.Card, GripOpacity), Child = arrows });
             referenceGrip.Children.Add(thumb);
@@ -229,6 +241,13 @@ public sealed partial class MainWindow
             AutomationProperties.SetName(button, name); ToolTipService.SetToolTip(button, name);
         }
 
+        /// <summary>Keeps the bubble's size for every pane (none: the size it opens at); the other panes take it at their next layout.</summary>
+        private Task SaveReferenceSize(double? width, double? height) => owner.Act(async () =>
+        {
+            await owner.service.UpdateAsync(s => s with { ReferenceBubbleWidth = width, ReferenceBubbleHeight = height > 0 ? height : null });
+            FitReferencePreview();
+        });
+
         /// <summary>
         /// Sizes and places the bubble (M/MightyGraphReferenceBubble.swift:33-45): 12 inside the diagram or
         /// timeline (the whole content row while the pane shows its transcript), on the right until flipped,
@@ -237,6 +256,7 @@ public sealed partial class MainWindow
         private void FitReferencePreview()
         {
             if (referencePanel is null || referenceCard is null || Container.Child is not Grid grid || grid.RowDefinitions.Count < 2) return;
+            if (!referenceResizing) (referenceWidth, referenceHeight) = (owner.service.Snapshot.ReferenceBubbleWidth ?? ReferenceDefaultWidth, owner.service.Snapshot.ReferenceBubbleHeight ?? 0);
             // Under the Mighty bar while the Mighty view shows: the bar starts one row gap above this row.
             var top = graphHost is { Visibility: Visibility.Visible } && graphToolbar is { ActualHeight: > 0 } bar ? Math.Max(0, bar.ActualHeight + graphHost.Margin.Top) : 0;
             var roomWidth = Math.Max(0, grid.ActualWidth - grid.Padding.Left - grid.Padding.Right - 2 * ReferenceMargin);

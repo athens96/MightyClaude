@@ -172,6 +172,9 @@ public sealed partial class MainWindow
             Checkpoint("addPaneMenu", "running");
             result["addPaneMenu"] = await RunAddPaneMenuSmoke(workspace, other);
             Checkpoint("addPaneMenu", "passed");
+            Checkpoint("delegation", "running");
+            result["delegation"] = await RunDelegationSmoke();
+            Checkpoint("delegation", "passed");
             await ApplyLayoutPreset("focus"); await SelectWorkspace(other.Id);
             Require(LayoutMode(service.Snapshot, workspace.Id) == "focus" && LayoutMode(service.Snapshot, other.Id) != "focus", "집중 모드가 다른 워크스페이스에 영향을 주었습니다.");
             await SelectWorkspace(workspace.Id); Require(service.Snapshot.ActiveSessionId == sessions[0].Id, "워크스페이스의 마지막 탭 선택이 복원되지 않았습니다.");
@@ -847,7 +850,7 @@ public sealed partial class MainWindow
         var reading = pane.ReadGraphForSmoke();
         Require(reading.Blocks >= 3, "mighty 스모크: 블록이 3개 미만입니다: " + reading.Blocks);
         Require(reading.Edges >= 2, "mighty 스모크: 엣지가 2개 미만입니다: " + reading.Edges);
-        Require(reading.Kinds.Contains("request") && reading.Kinds.Contains("result"), "mighty 스모크: 요청·결과 블록이 없습니다.");
+        Require(reading.Kinds.Contains("request") && reading.Kinds.Contains(MightyGraphLayout.WorkKind) && reading.Kinds.Contains("result"), "mighty 스모크: 요청·실행·결과 블록이 없습니다.");
         await WaitUI(() => pane.GraphNativeViewsForSmoke().Values.All(view => view.Card is FrameworkElement { IsLoaded: true }
             && (view.Document is null || view.Document is FrameworkElement { IsLoaded: true })));
         var nativeViews = pane.GraphNativeViewsForSmoke();
@@ -949,14 +952,15 @@ public sealed partial class MainWindow
 
     /// Running blocks have the slowly moving dashed outline (macOS MightyGraphActivityOutline):
     /// 9/7 dashes fitted to the card, solid with Windows animations off; a waiting block
-    /// keeps a still amber line. The first request is set running, then waiting, then put back.
+    /// keeps a still amber line. The first request is set running, then waiting, then put back:
+    /// its 실행 block carries the outline, and the request block over it, which has no status, none.
     private async Task<Dictionary<string, object?>> RunActivityOutlineSmoke(PaneView pane)
     {
         // SessionForSmoke is a copy of the saved snapshot: the runs change through the
         // service (as RunResultRevealSmoke does) so the canvas really draws the new status.
         var original = (pane.SessionForSmoke.GraphRuns ?? []).Select(r => r.Copy()).ToList();
         Require(original.Count > 0, "실행 표시 테두리 스모크: 요청 블록이 없습니다.");
-        var requestId = MightyGraphLayout.NodeID(original[0], "request");
+        var requestId = MightyGraphLayout.NodeID(original[0], "request"); var workId = MightyGraphLayout.NodeID(original[0], MightyGraphLayout.WorkSuffix);
         async Task<(string Kind, double[] Dash)> Draw(string next, bool animations)
         {
             PaneView.AnimationsEnabledOverride = animations;
@@ -964,8 +968,9 @@ public sealed partial class MainWindow
             await pane.SetGraphRunsForSmoke(runs);
             Require((pane.SessionForSmoke.GraphRuns ?? []).FirstOrDefault()?.Status == next, "실행 표시 테두리 스모크: 요청 상태가 " + next + "(으)로 저장되지 않았습니다.");
             pane.RefreshMightyView(pane.SessionForSmoke); root.UpdateLayout(); await Task.Delay(30);
-            Require(pane.GraphOutlinesForSmoke.TryGetValue(requestId, out var drawn),
-                "실행 표시 테두리 스모크: " + next + " 요청 블록에 테두리가 없습니다.");
+            Require(pane.GraphOutlinesForSmoke.TryGetValue(workId, out var drawn),
+                "실행 표시 테두리 스모크: " + next + " 요청의 실행 블록에 테두리가 없습니다.");
+            Require(!pane.GraphOutlinesForSmoke.ContainsKey(requestId), "실행 표시 테두리 스모크: 입력만 담는 요청 블록에 " + next + " 테두리가 있습니다.");
             return drawn;
         }
         try
@@ -1068,11 +1073,11 @@ public sealed partial class MainWindow
 
     /// A new result right above the composer (macOS 1e7b48d): the pane runs a
     /// request and its finished diagram arrives while it still runs (RunManager
-    /// emits graph_run before the state event). The camera scrolls once so the
-    /// new card's bottom sits 16pt above the diagram's bottom edge — the
-    /// composer — with the card as tall as its short answer under the saved
-    /// size, which is never rewritten. A resize keeps the card there; the
-    /// user's own pan ends the hold.
+    /// emits graph_run before the state event). The camera follows the new
+    /// request (macOS 3f575129), so the new card's bottom sits 16pt above the
+    /// diagram's bottom edge — the composer — with the card as tall as its
+    /// short answer under the saved size, which is never rewritten. A resize
+    /// keeps the card there; the user's own pan away from it stops the following.
     private async Task<Dictionary<string, object?>> RunResultRevealSmoke(PaneView pane)
     {
         var before = pane.SessionForSmoke.GraphRuns ?? [];
@@ -1117,12 +1122,13 @@ public sealed partial class MainWindow
         var followsResize = await Settle();
         Require(followsResize, "창 크기가 바뀐 뒤 새 결과가 입력창 바로 위에 남지 않았습니다.");
 
-        pane.PanGraphForSmoke(-40);
+        // 120pt up, past the slack behind the composer: the reader left the newest block.
+        pane.PanGraphForSmoke(120);
         var panned = pane.GraphPan;
         pane.SetGraphViewportSizeForSmoke(1000, 700);
         root.UpdateLayout(); await Task.Delay(60);
         pane.RefreshMightyView(pane.SessionForSmoke); root.UpdateLayout(); await Task.Delay(30);
-        var userPanStops = pane.GraphRevealHoldingForSmoke is null && pane.GraphPan == panned && !AtComposer();
+        var userPanStops = !pane.GraphFollowingForSmoke && pane.GraphPan == panned && !AtComposer();
         Require(userPanStops, "사용자가 스크롤한 뒤에도 새 결과를 계속 따라갑니다.");
 
         await pane.SetGraphRunsForSmoke([.. before]);

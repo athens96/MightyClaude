@@ -83,7 +83,8 @@ public sealed class StyleEvaluator(StyleManifest manifest)
         string? text;
         if(jobOpen)text=Manifest.Root.TryGetProperty("job",out var job)?S(job,"guidance"):null;
         else if(phase is not null&&OwnLine(Manifest.Root.GetProperty("guidance"),phase.Id,running) is {} own)text=own;
-        else text=S(Manifest.Root.GetProperty("guidance"),running?"running":S(Manifest.Rules.GetProperty("start"),"phase")==phase?.Id?"start":"next");
+        // The start line belongs to a start rule's own phase; a style without that rule has no phase to match (M/Styles/StyleEvaluator.swift:258).
+        else text=S(Manifest.Root.GetProperty("guidance"),running?"running":AtStart(phase)?"start":"next");
         if(string.IsNullOrEmpty(text))return null;
         return phase!=null?text.Replace("{phase}",phase.Title,StringComparison.Ordinal):text.Replace("{phase} ","",StringComparison.Ordinal).Replace("{phase}","",StringComparison.Ordinal);
     }

@@ -38,7 +38,7 @@ Claude 在计划模式（Plan mode 或 Claude 计划风格）中完成计划后�
 
 在 Mighty 图表中，计划显示在请求下方的块里，四种答复位于输入区域（使用风格时位于风格面板中）。计划块会像结果卡片一样适应窗格大小；如果你手动调整过大小，会出现{{ui:graph.result.fitToWindow}}按钮。在默认视图和时间线中，计划和答复会一起显示在输入框上方的一张卡片里。
 
-桌面宠物也会显示完成的计划：收到的时间、计划的前几行以及答复按钮。可以直接在宠物上点击{{ui:plan.card.approveAuto}}或{{ui:plan.card.cancel}}。要写修改请求或阅读整个计划，请点击{{ui:companion.plan.review}}（在 Mac 上也可以点击{{ui:plan.card.revise}}）。计划会在一个带有全部四种答复的小窗口中打开，答复计划后窗口会自动关闭。
+桌面宠物也会显示完成的计划：收到的时间和完整的计划，计划较长时可以在气泡内滚动。可以直接在宠物上点击{{ui:plan.card.approveAuto}}、{{ui:plan.card.approveConfirm}}或{{ui:plan.card.cancel}}。点击{{ui:plan.card.revise}}会在一个小窗口中打开计划，供你填写修改内容；点击{{ui:companion.plan.review}}会在同一个窗口中放大阅读计划。这个窗口带有全部四种答复，答复计划后窗口会自动关闭。
 
 已答复的计划会保留在记录中，可以再次查看。
 

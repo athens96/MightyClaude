@@ -19,7 +19,7 @@ public sealed partial class MainWindow
     {
         private StackPanel? graphZoomControls, graphToolbarLead;
         private Grid? graphToolbar;
-        private Button? diagramButton, timelineButton;
+        private Button? diagramButton, timelineButton, structureButton;
         /// <summary>The badge after the bar's title for a style that is not built in (M/GuidedActionChip.swift:83-93).</summary>
         private Border? graphStyleBadge;
         private readonly TextBlock graphStyleHeader = new() { FontSize = DesignMetrics.Type.Block, FontWeight = FontWeights.Bold, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, VerticalAlignment = VerticalAlignment.Center };
@@ -34,24 +34,25 @@ public sealed partial class MainWindow
         private bool timelineDrawing, timelineDeferred, timelineWasRunning, timelineRestoring;
         private int timelineGeneration;
         private bool timelineHistoryArmed;
-        /// <summary>The Diagram | Timeline track (<c>track</c>, r8, padding 2).</summary>
+        /// <summary>The Diagram | Timeline | Structure track (<c>track</c>, r8, padding 2).</summary>
         private StackPanel? graphViewSwitch;
         // The timeline's parts as last built, by request (heads) or block (rows, results), for the design smoke.
         private readonly Dictionary<string, (FrameworkElement Title, FontIcon Chevron, TextBlock? Prompt, TextBlock Tally, Border Pill)> timelineHeads = [];
-        private readonly Dictionary<string, (Border Card, Border Node, Border Pill)> timelineRows = [];
+        private readonly Dictionary<string, (Border Card, Border Node, Border? Pill)> timelineRows = [];
         private readonly Dictionary<string, (Border Card, Grid Head, TextBlock Title, TextBlock Caption, TextBlock? Body)> timelineResults = [];
 
         /// <summary>
-        /// The Diagram | Timeline switch that leads the Mighty bar (M/MightyGraphTimelineView.swift:10-42): a
+        /// The Diagram | Timeline | Structure switch that leads the Mighty bar (M/MightyGraphTimelineView.swift:8-43): a
         /// <c>track</c> rail, radius 8, padding and gap <c>Spacing.Xxs</c>; each option <c>Layout.HitTarget</c> tall, <c>Spacing.Md</c> at the sides, radius 6, its
-        /// symbol (three joined nodes for the diagram, an indented list for the timeline) before its 11pt word.
+        /// symbol (three joined nodes for the diagram, an indented list for the timeline, three columns for the structure) before its 11pt word.
         /// </summary>
         private FrameworkElement BuildGraphPresentationSwitch()
         {
             var switcher = graphViewSwitch = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xxs, Padding = new Thickness(DesignMetrics.Spacing.Xxs), Background = owner.brushes.Brush(DesignToken.Track), CornerRadius = new CornerRadius(DesignMetrics.Radius.Row), VerticalAlignment = VerticalAlignment.Center };
             diagramButton = ViewOption(Locale.Get("graph.view.diagram"), "point.3.connected.trianglepath.dotted", "mighty-view-diagram-" + id, () => _ = SetGraphPresentation("diagram"));
             timelineButton = ViewOption(Locale.Get("graph.view.timeline"), "list.bullet.indent", "mighty-view-timeline-" + id, () => _ = SetGraphPresentation("timeline"));
-            switcher.Children.Add(diagramButton); switcher.Children.Add(timelineButton);
+            structureButton = ViewOption(Locale.Get("graph.view.structure"), "rectangle.split.3x1", "mighty-view-structure-" + id, () => _ = SetGraphPresentation("structure"));
+            switcher.Children.Add(diagramButton); switcher.Children.Add(timelineButton); switcher.Children.Add(structureButton);
             AutomationProperties.SetName(switcher, Locale.Get("graph.view.switch"));
             return switcher;
         }
@@ -95,7 +96,7 @@ public sealed partial class MainWindow
 
         private void ShowViewWords(bool shown)
         {
-            foreach (var option in new[] { diagramButton, timelineButton })
+            foreach (var option in new[] { diagramButton, timelineButton, structureButton })
                 if (option is not null) ViewOptionParts(option).Words.Visibility = shown ? Visibility.Visible : Visibility.Collapsed;
         }
 
@@ -132,14 +133,15 @@ public sealed partial class MainWindow
         internal Task SetGraphPresentation(string mode) => owner.Act(async () =>
         {
             if (graphResizing) EndResultResize(MightyGraphLayout.ResizePhase.Cancelled, null);
-            CancelResultReveal();
             await Change(p => MightyTimeline.ApplyMode(p, mode));
             if (!QueuePaneAlive) return;
             Refresh(); RefreshMightyView(Session);
         });
 
-        private void RefreshGraphPresentationSwitch(bool timeline)
+        /// <summary><paramref name="presentation"/> is the view the Mighty bar leads: "diagram", "timeline" or "structure".</summary>
+        private void RefreshGraphPresentationSwitch(string presentation)
         {
+            var diagram = presentation == "diagram";
             // "Mighty · <style> · <phase>", the style by its own name (M/MightyCore/Styles/StyleSurfaces.swift:22-27); where it
             // came from follows in the badge when it is not built in (M/MightyGraphView.swift:181-183).
             var phase = activeStyle is null ? null : GuidedPhase(activeStyle);
@@ -151,12 +153,12 @@ public sealed partial class MainWindow
                 source.Text = named ?? ""; graphStyleBadge.Visibility = named is null ? Visibility.Collapsed : Visibility.Visible;
                 AutomationProperties.SetName(graphStyleBadge, named is null ? "" : Locale.Get("guidedPanel.sourcePrefix") + named);
             }
-            if (graphZoomControls is not null) graphZoomControls.Visibility = timeline ? Visibility.Collapsed : Visibility.Visible;
+            if (graphZoomControls is not null) graphZoomControls.Visibility = diagram ? Visibility.Visible : Visibility.Collapsed;
             // The Mac's summary is followed by the row's Spacing.Md and a Spacer(minLength: Spacing.Md): 2 × Spacing.Md to the bar's
-            // padding on the timeline (this Spacing.Md and the grid's), and with the row's Spacing.Md again before the zoom on the
-            // diagram, 3 × Spacing.Md (this 2 × Spacing.Md and the grid's).
-            graphTotal.Margin = new Thickness(0, 0, timeline ? DesignMetrics.Spacing.Md : 2 * DesignMetrics.Spacing.Md, 0);
-            foreach (var (button, selected, text) in new[] { (diagramButton, !timeline, Locale.Get("graph.view.diagram")), (timelineButton, timeline, Locale.Get("graph.view.timeline")) })
+            // padding on the timeline and the structure (this Spacing.Md and the grid's), and with the row's Spacing.Md again before
+            // the zoom on the diagram, 3 × Spacing.Md (this 2 × Spacing.Md and the grid's).
+            graphTotal.Margin = new Thickness(0, 0, diagram ? 2 * DesignMetrics.Spacing.Md : DesignMetrics.Spacing.Md, 0);
+            foreach (var (button, selected, text) in new[] { (diagramButton, diagram, Locale.Get("graph.view.diagram")), (timelineButton, presentation == "timeline", Locale.Get("graph.view.timeline")), (structureButton, presentation == "structure", Locale.Get("graph.view.structure")) })
             {
                 if (button is null) continue;
                 var (chip, symbol, words) = ViewOptionParts(button);
@@ -296,7 +298,8 @@ public sealed partial class MainWindow
         private void ToggleTimelineRow(string nodeId)
         {
             ToggleTimelineSet(timelineOpen, nodeId);
-            if (timelineOpen.Contains(nodeId)) { graphSelection = nodeId; graphAimedRunId = null; }
+            // The diagram opens with its camera on the block whose row was opened: after the run-id rules, so a send is followed first and this wins.
+            if (timelineOpen.Contains(nodeId)) { ObserveGraphRuns(Session); graphSelection = nodeId; PublishGraphAim(MightyGraphCamera.Anchor.Reaim(nodeId, false)); }
             RefreshMightyView(Session);
         }
 
@@ -368,8 +371,8 @@ public sealed partial class MainWindow
             return stack;
         }
 
-        /// <summary>The ink a timeline row's icon and request band take: the request's style tint, a sub-agent its kind's ink.</summary>
-        private DesignToken RowTint(MightyTimeline.Row row, MightyGraphRun run) => row.AgentIndex is null ? TintToken(RequestStyleLook(run.Input).Tint) : row.Kind switch
+        /// <summary>The ink a timeline row's icon and request band take: the request's style tint, its 실행 block the agent ink, a sub-agent its kind's ink (M/MightyGraphView.swift:909).</summary>
+        private DesignToken RowTint(MightyTimeline.Row row, MightyGraphRun run) => row.IsExecution ? DesignToken.AgentText : row.AgentIndex is null ? TintToken(RequestStyleLook(run.Input).Tint) : row.Kind switch
         {
             "task" => DesignToken.TaskText, "steer" => DesignToken.SteerText, "compact" => DesignToken.CompactText,
             "question" => DesignToken.QuestionText, _ => DesignToken.AgentText,
@@ -381,7 +384,8 @@ public sealed partial class MainWindow
         /// <c>Inset.GraphBlockBodyH</c> by <c>Inset.GraphBlockBodyV</c> from the card's own edge; the title 13 bold <c>ink</c>, "kind · meta" 11 <c>ink2</c> after its
         /// symbol (9 bold) in the block's tint, the latest step 10.8 mono <c>ink2</c> after the pulsing run dot,
         /// the 19pt status pill. Open, the request on its tint × 0.055 band and the transcript follow a 1pt
-        /// <c>line</c>. The rail and node stand to its left.
+        /// <c>line</c>. The rail and node stand to its left. The request's own row has no pill and no usage, and opens to
+        /// its input alone; the 실행 row after it has the work (M/MightyGraphView.swift:885-889, 919-938).
         /// </summary>
         private FrameworkElement BuildTimelineRow(MightyTimeline.Row row, int index, MightyTimeline.Group group, MightyGraphRun run, RunSession pane)
         {
@@ -390,7 +394,7 @@ public sealed partial class MainWindow
             var edge = tone switch { DesignTone.Run => DesignToken.Run, DesignTone.Wait => DesignToken.Wait, _ => DesignToken.Line };
             // The Mac strokes the edge over the card's content, so the row's padding is measured through it.
             var line = edge == DesignToken.Line ? DesignMetrics.Stroke.Line : DesignMetrics.Stroke.Active;
-            var symbol = row.AgentIndex is null ? RequestStyleLook(run.Input).Symbol : BlockSymbol(row.Kind);
+            var symbol = row.IsExecution ? ExecutionSymbol : row.AgentIndex is null ? RequestStyleLook(run.Input).Symbol : BlockSymbol(row.Kind);
             var grid = new Grid { ColumnSpacing = TimelineMarkerGap }; grid.ColumnDefinitions.Add(new() { Width = new GridLength(TimelineMarkerWidth) }); grid.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
             var marker = TimelineMarker(row, index, group.Rows, symbol, out var node);
             grid.Children.Add(marker);
@@ -399,7 +403,9 @@ public sealed partial class MainWindow
             var body = new StackPanel(); var text = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
             text.Children.Add(new TextBlock { Text = row.Title, FontSize = DesignMetrics.Type.Title, FontWeight = FontWeights.Bold, Foreground = b.Brush(DesignToken.Ink), MaxLines = 2, TextWrapping = TextWrapping.Wrap, TextTrimming = TextTrimming.CharacterEllipsis, LineHeight = TimelineTitleLine, LineStackingStrategy = LineStackingStrategy.BlockLineHeight });
             var agent = row.AgentIndex is { } n ? run.Agents[n] : null;
-            var capsule = ModelUsageFormat.BlockCapsule(agent?.Usage ?? (agent is null ? run.Usage : null), agent?.ResponseRecords ?? (agent is null ? run.ResponseRecords : null) ?? [], agent is null ? run.NodeModelLabel : null, owner.Runtime(pane.Provider)?.ModelCatalog?.Models, versioned: true);
+            // The request has no status and no usage of its own: its 실행 row runs and settles.
+            var request = agent is null && !row.IsExecution;
+            var capsule = request ? null : ModelUsageFormat.BlockCapsule(agent?.Usage ?? (agent is null ? run.Usage : null), agent?.ResponseRecords ?? (agent is null ? run.ResponseRecords : null) ?? [], agent is null ? run.NodeModelLabel : null, owner.Runtime(pane.Provider)?.ModelCatalog?.Models, versioned: true);
             var meta = new Grid { ColumnSpacing = DesignMetrics.Spacing.Xs, Height = TimelineMetaLine }; meta.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); meta.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
             meta.Children.Add(MightySymbols.Create(symbol, 9, b.Brush(tint), MightySymbols.Weight.Bold, b.Brush(DesignToken.Card)));
             var description = new TextBlock { Text = string.Join(" · ", new[] { MightyTimeline.KindLabel(row.Kind), capsule, MightyTimeline.DurationLabel(row.DurationMs) }.Where(s => s is { Length: > 0 })), FontSize = DesignMetrics.Type.Pill, Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center, LineHeight = TimelineMetaLine, LineStackingStrategy = LineStackingStrategy.BlockLineHeight };
@@ -417,28 +423,30 @@ public sealed partial class MainWindow
                 doing.Margin = new Thickness(0, DesignMetrics.Spacing.Xxs, 0, 0); text.Children.Add(doing);
             }
             var header = TimelineHeading(); header.Children.Add(text);
-            var pill = StatusPill(MightyGraphBlockModel.StateLabel(row.Status), tone, 19); pill.VerticalAlignment = VerticalAlignment.Top;
-            Grid.SetColumn(pill, 1); header.Children.Add(pill);
+            var pill = request ? null : StatusPill(MightyGraphBlockModel.StateLabel(row.Status), tone, 19);
+            if (pill is not null) { pill.VerticalAlignment = VerticalAlignment.Top; Grid.SetColumn(pill, 1); header.Children.Add(pill); }
             var button = TimelineButton(header, "mighty-timeline-row-" + row.NodeId, new Thickness(DesignMetrics.Inset.GraphBlockBodyH - line, DesignMetrics.Inset.GraphBlockBodyV - line, DesignMetrics.Inset.GraphBlockBodyH - line, DesignMetrics.Inset.GraphBlockBodyV - line), () => ToggleTimelineRow(row.NodeId));
             // The wash under the pointer follows the card's inner curve (square below while the block is open).
             var inner = DesignMetrics.Radius.TimelineRow - line;
             button.CornerRadius = open ? new CornerRadius(inner, inner, 0, 0) : new CornerRadius(inner);
-            AutomationProperties.SetName(button, row.Title + ", " + MightyGraphBlockModel.StateLabel(row.Status));
+            AutomationProperties.SetName(button, request ? row.Title : row.Title + ", " + MightyGraphBlockModel.StateLabel(row.Status));
             ToolTipService.SetToolTip(button, Locale.Get(open ? "phone.blocks.collapse" : "phone.blocks.expand")); body.Children.Add(button);
             if (open)
             {
                 var detail = new StackPanel(); AutomationProperties.SetAutomationId(detail, "mighty-timeline-detail-" + row.NodeId);
-                var input = agent?.Input ?? run.Input;
+                // What the block's diagram card holds: the request its input alone, its 실행 block the records alone.
+                var input = agent?.Input ?? (row.IsExecution ? "" : run.Input);
                 if (input.Length > 0)
                     detail.Children.Add(new Border
                     {
                         Background = b.Brush(tint, DesignMetrics.Opacity.InputPreview), Padding = new Thickness(DesignMetrics.Inset.GraphBlockBodyH - line, DesignMetrics.Inset.GraphBlockBodyV, DesignMetrics.Inset.GraphBlockBodyH - line, DesignMetrics.Inset.GraphBlockBodyV),
-                        BorderThickness = new Thickness(0, 0, 0, DesignMetrics.Stroke.Line), BorderBrush = b.Brush(DesignToken.Line),
+                        // Nothing follows the request's band: no rule under it, and it ends on the card's inner curve.
+                        BorderThickness = new Thickness(0, 0, 0, request ? 0 : DesignMetrics.Stroke.Line), BorderBrush = b.Brush(DesignToken.Line), CornerRadius = request ? new CornerRadius(0, 0, inner, inner) : new CornerRadius(0),
                         Child = new TextBlock { Text = input, FontSize = DesignMetrics.Type.Pill, Foreground = b.Brush(DesignToken.Ink), MaxLines = 6, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true },
                     });
                 var entries = (agent?.Entries ?? run.RootEntries).Where(e => e.Kind != "user").ToList();
-                if (entries.Count == 0) detail.Children.Add(new TextBlock { Text = Locale.Get("phone.blocks.nothing"), FontSize = DesignMetrics.Type.Block, Foreground = ink2, Margin = new Thickness(DesignMetrics.Inset.GraphBlockBodyH - line, DesignMetrics.Inset.GraphBlockBodyH, DesignMetrics.Inset.GraphBlockBodyH - line, DesignMetrics.Inset.GraphBlockBodyH - line) });
-                else detail.Children.Add(TimelineTranscript(row.NodeId, entries, pane, 260, new Thickness(DesignMetrics.Inset.Transcript - line, DesignMetrics.Inset.Transcript, DesignMetrics.Inset.Transcript - line, DesignMetrics.Inset.Transcript + 22)));
+                if (!request && entries.Count == 0) detail.Children.Add(new TextBlock { Text = Locale.Get("phone.blocks.nothing"), FontSize = DesignMetrics.Type.Block, Foreground = ink2, Margin = new Thickness(DesignMetrics.Inset.GraphBlockBodyH - line, DesignMetrics.Inset.GraphBlockBodyH, DesignMetrics.Inset.GraphBlockBodyH - line, DesignMetrics.Inset.GraphBlockBodyH - line) });
+                else if (!request) detail.Children.Add(TimelineTranscript(row.NodeId, entries, pane, 260, new Thickness(DesignMetrics.Inset.Transcript - line, DesignMetrics.Inset.Transcript, DesignMetrics.Inset.Transcript - line, DesignMetrics.Inset.Transcript + 22)));
                 body.Children.Add(new Border { Height = DesignMetrics.Stroke.Line, Background = b.Brush(DesignToken.Line) }); body.Children.Add(detail);
             }
             var card = new Border

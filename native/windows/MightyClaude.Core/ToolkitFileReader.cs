@@ -60,6 +60,24 @@ public static class ToolkitFileReader
         return new ToolkitFile(entries);
     }
 
+    /// <summary>
+    /// The one tool a file given to "Add" holds (M/AppStore+Toolkit.swift:40-52, M/MightyCore/ToolkitEntry.swift:64-82): a
+    /// JSON object that is a tool entry, its approval dropped, nothing at its root but the entry's own fields (a stale
+    /// <c>platforms</c> is let through). Null for anything else, a whole toolkit.json or an exported list among them:
+    /// Import reads those.
+    /// </summary>
+    public static ToolkitFileEntry? ParseAddedEntry(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object || root.EnumerateObject().Any(field => field.Name is not ("id" or "displayName" or "install" or "platforms" or "approval"))) return null;
+            return ParseEntry(root) is { } entry ? entry with { Approval = null } : null;
+        }
+        catch (JsonException) { return null; }
+    }
+
     public static ToolkitFileEntry? ParseEntry(JsonElement item)
     {
         if (!item.TryGetProperty("id", out var idEl) || idEl.ValueKind != JsonValueKind.String) return null;

@@ -309,7 +309,7 @@ internal static class AgentImageVerification
             await foreach (var line in limit is { } value ? OutputParser.LinesAsync(reader, default, value) : OutputParser.LinesAsync(reader)) lines.Add(line);
             return lines;
         }
-        var kept = await Read(AgentImageSupport.MaximumLineCharacters);
+        var kept = await Read(OutputParser.MaximumLineBytes("claude"));
         Check(kept.Count == 3 && kept[1].Length == big.Length && kept[2] == "after", "an agent's 3 MiB line arrives whole");
         var dropped = await Read(null);
         Check(dropped.SequenceEqual(new[] { "short", "after" }), "other output keeps the 1 MiB line");

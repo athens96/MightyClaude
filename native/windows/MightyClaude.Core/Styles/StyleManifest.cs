@@ -64,6 +64,16 @@ public sealed class StyleManifest
 public static class StyleManifestDecoder
 {
     public const int MaximumBytes = 262144;
+    /// Every code a manifest is refused with (M/Styles/StyleManifest.swift StyleErrorCodes): the decoder's own and the
+    /// registry's E_ID_COLLISION. The conformance corpus holds a file for each but the two no file can stand for.
+    public static readonly IReadOnlySet<string> Codes = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "E_TOO_LARGE","E_TOO_DEEP","E_DUPLICATE_KEY","E_SCHEMA_NOT_FIRST","E_KEY_ESCAPE","E_NOT_JSON","E_SCHEMA_MISSING","E_SCHEMA_VERSION","E_UNKNOWN_FIELD","E_MISSING_FIELD","E_TYPE","E_STRING_LENGTH",
+        "E_CONTROL_CHAR","E_RESERVED_SEPARATOR","E_ID_SHAPE","E_RESERVED_ID","E_RESERVED_NAME","E_DUPLICATE_ID","E_LIMIT","E_PROMPT_PLACEHOLDER","E_TAKES_TEXT_MISMATCH","E_FOLD_TEXT","E_PROMPT_RECOGNITION",
+        "E_UNKNOWN_FLAG","E_UNKNOWN_REFERENCE","E_ALIAS_COLLISION","E_UNKNOWN_RULE","E_RULE_INCOMPLETE","E_START_PHASE","E_PHASE_RULE_NONE","E_ENTER_ACTION_TEXT","E_UNKNOWN_CAPABILITY","E_CAPABILITY_UNDECLARED",
+        "E_CAPABILITY_MAP","E_UNKNOWN_TINT","E_UNKNOWN_ICON","E_UNKNOWN_PROBE","E_PROBE_NAME_SHAPE","E_SCOPES","E_AUTOALLOW_SERVER","E_AUTOALLOW_SHAPE","E_AUTOALLOW_FOREIGN_SERVER","E_AUTOALLOW_TOOLSEARCH_BUNDLED",
+        "E_AUTOALLOW_QUESTION","E_AUTOALLOW_DUPLICATE","E_PLACEHOLDER_INITIAL","E_JOB_MATCHER_LITERAL","E_ID_COLLISION","E_STATE_PARSER","E_STATE_WIDGET","E_STATE_AGGREGATE","E_STATE_PATH_ESCAPE","E_STATE_RUN_EVENT","E_STATE_RUN_STATE",
+    };
     private static void Fail(string code,string path="") => throw new StyleManifestException(code,path);
     private static readonly HashSet<string> Icons = ["point.3.connected.trianglepath.dotted","questionmark.bubble","wand.and.stars","leaf","play.fill","checkmark.seal","arrow.triangle.2.circlepath","infinity","gauge.with.dots.needle.33percent","lightbulb","square.grid.2x2","arrow.up.message","questionmark.square.dashed","arrow.right","arrow.clockwise","arrow.triangle.branch","bolt","book","bookmark","calendar","chart.bar","cube","doc.text","flag","folder","hammer","list.bullet","magnifyingglass","map","paintbrush","puzzlepiece","sparkles","tray"];
     private static readonly HashSet<string> Tints = ["accent","purple","teal","indigo","mint","orange","green","red","secondary"];

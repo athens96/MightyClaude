@@ -216,45 +216,43 @@ internal static class MightyViewModelVerification
 
     internal static Task ResultFilesPanelRulesMatchMacOS()
     {
-        // Auto-opens for a new result with files
-        var opened = MightyGraphViewModel.NextResultFilesRunID(
-            currentRunID: null, manuallyClosed: false,
-            latestCompletedRunID: "run-2", latestHasFiles: true);
-        Check(opened == "run-2", "must auto-open for a new result with files");
+        // The newest result that names files opens by itself.
+        var panel = new MightyGraphViewModel.ResultFilesPanel();
+        panel.Publish([("run-1", true), ("run-2", false)]);
+        Check(panel.SelectedRunID == "run-1", "the newest result that names files must open, not a newer one that names none");
+        // Every result opens its own list, one at a time; a result that names no file has nothing to open.
+        panel.Publish([("run-1", true), ("run-2", true)]);
+        Check(panel.SelectedRunID == "run-2", "a newer result with files must open");
+        panel.Toggle("run-1", hasFiles: true);
+        Check(panel.SelectedRunID == "run-1", "an older result must open its own list");
+        panel.Publish([("run-1", true), ("run-2", true)]);
+        Check(panel.SelectedRunID == "run-1", "the newest result opens by itself once only: the user's choice stays");
+        panel.Toggle("run-3", hasFiles: false);
+        Check(panel.SelectedRunID == "run-1", "a result that names no file opens nothing");
+        panel.Toggle("run-1", hasFiles: true);
+        Check(panel.SelectedRunID is null, "the open result's toggle must close its list");
+        // A manual close sticks until a newer result names files.
+        panel.Toggle("run-2", hasFiles: true); panel.Close();
+        panel.Publish([("run-1", true), ("run-2", true)]);
+        Check(panel.SelectedRunID is null, "a manual close must stick for the same results");
+        panel.Publish([("run-1", true), ("run-2", true), ("run-3", true)]);
+        Check(panel.SelectedRunID == "run-3", "a new result with files must open even after a manual close");
+        // An open list whose result is gone, or names nothing any more, closes.
+        panel.Publish([("run-1", true), ("run-3", false)]);
+        Check(panel.SelectedRunID == "run-1", "a list with no files left closes, and the newest result that still names files opens");
+        panel.Publish([]);
+        Check(panel.SelectedRunID is null, "no completed run means no panel");
 
-        // Does not auto-open when there are no files
-        var notOpened = MightyGraphViewModel.NextResultFilesRunID(
-            currentRunID: null, manuallyClosed: false,
-            latestCompletedRunID: "run-2", latestHasFiles: false);
-        Check(notOpened is null, "must not auto-open when latest result has no files");
-
-        // Manual close sticks until the next new result
-        var stuckClosed = MightyGraphViewModel.NextResultFilesRunID(
-            currentRunID: "run-1", manuallyClosed: true,
-            latestCompletedRunID: "run-1", latestHasFiles: true);
-        Check(stuckClosed is null, "manual close must stick for the same run");
-
-        // A new result with files re-opens even after a manual close
-        var reopened = MightyGraphViewModel.NextResultFilesRunID(
-            currentRunID: "run-1", manuallyClosed: true,
-            latestCompletedRunID: "run-2", latestHasFiles: true);
-        Check(reopened == "run-2", "new result with files must re-open even after manual close");
-
-        // Only one panel at a time: when already open for run-2, stay open
-        var kept = MightyGraphViewModel.NextResultFilesRunID(
-            currentRunID: "run-2", manuallyClosed: false,
-            latestCompletedRunID: "run-2", latestHasFiles: true);
-        Check(kept == "run-2", "panel for current run must stay open");
-
-        // No completed run → no panel
-        var none = MightyGraphViewModel.NextResultFilesRunID(
-            currentRunID: null, manuallyClosed: false,
-            latestCompletedRunID: null, latestHasFiles: false);
-        Check(none is null, "no completed run means no panel");
+        // The selected block takes the wheel only while the pointer is over it; an attachment beside the flow scrolls at once.
+        Check(MightyGraphViewModel.WheelScrollTarget("node-1", "node-1", false) == "node-1", "the selected block under the pointer scrolls");
+        Check(MightyGraphViewModel.WheelScrollTarget("node-1", "node-2", false) is null && MightyGraphViewModel.WheelScrollTarget("node-1", null, false) is null,
+            "with the pointer elsewhere the wheel pans, selection or not");
+        Check(MightyGraphViewModel.WheelScrollTarget(null, "files", true) == "files" && MightyGraphViewModel.WheelScrollTarget("node-1", "files", true) == "files", "an attachment scrolls with no selection");
+        Check(MightyGraphLayout.IsAuxiliary("resultFiles") && MightyGraphLayout.IsAuxiliary("planRecord") && MightyGraphLayout.IsAuxiliary(MightyGraphLayout.ExecutionKind) && MightyGraphLayout.IsAuxiliary(MightyGraphLayout.ImagesKind)
+            && !MightyGraphLayout.IsAuxiliary("result") && !MightyGraphLayout.IsAuxiliary(MightyGraphLayout.WorkKind) && !MightyGraphLayout.IsAuxiliary("history"), "the attachments are the file list, the answered plan, the execution and the pictures");
 
         return Task.CompletedTask;
     }
-
     // ── 8: mighty indicators respect animations off ───────────────────────────
 
     internal static Task IndicatorsRespectAnimationsOff()

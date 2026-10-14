@@ -39,9 +39,13 @@ public sealed partial class MainWindow
     private string? companionPlanSending;
     /// <summary>The open plan window's answers, turned on or off with <see cref="companionPlanSending"/>.</summary>
     private Action? companionPlanWindowSync;
-    private sealed class CompanionQuestionDraft(string input)
+    /// <summary>Puts the keyboard in the open plan window's change request (M/AgentCompanion.swift:276).</summary>
+    private Action? companionPlanWindowRevise;
+    private sealed class CompanionQuestionDraft(string key, string input)
     {
         internal readonly string Input = input;
+        /// <summary>Where the user is in the questions the bubble answers itself (M/AgentCompanion.swift:76-80).</summary>
+        internal readonly QuestionnaireProgress Progress = new(key);
         internal int Step;
         internal readonly Dictionary<int, HashSet<string>> Picks = [];
         internal readonly Dictionary<int, string> Custom = [];
@@ -188,48 +192,42 @@ public sealed partial class MainWindow
         return new(key, snapshot.Theme == "light", status, workspace, current?.Title ?? "", state, current?.RunTiming, request, work, position, count, pending,
             permission is null ? null : CompanionRequest(permission, workspace.Length == 0 ? current?.Title ?? "" : workspace + " · " + current?.Title));
     }
-    /// <summary>The approval or the question in the bubble (M/AgentCompanionViews.swift:299-373), with the buttons Windows answers it by.</summary>
+    /// <summary>
+    /// The approval, the question or the finished plan in the bubble (M/AgentCompanionViews.swift:299-452), with Core's
+    /// buttons for it (<see cref="CompanionBubble"/>): each is answered there, without a window.
+    /// </summary>
     private CompanionOverlayRequest CompanionRequest(ToolPermissionRequest permission, string origin)
     {
         var error = companionRequestError is { } failed && failed.Key == PermissionKey(permission) ? failed.Message : null;
         if (permission.CanAnswerPlan && permission.Plan is { } plan)
         {
-            // A finished plan (M/AgentCompanionViews.swift CompanionPlanBubble): when it came, its first line and the few
-            // after it, and the plan's own answers. Cancel is the plan's cancel, not a generic deny; a change request needs
-            // the keyboard, which the pet never takes, so 계획 검토 opens the plan in a window of its own.
-            var lines = plan.Split('\n').Select(line => line.Trim().TrimStart('#').Trim()).Where(line => line.Length > 0).Skip(1).Take(3).ToArray();
-            // While its answer is on its way the plan's own buttons are off (M/AgentCompanion.swift approvalBusy).
+            // A finished plan (M/AgentCompanionViews.swift:398-452): when it came, the whole plan (scrolling once it outgrows
+            // the bubble) and its answers. Cancel is the plan's cancel, not a generic deny; a change request needs the
+            // keyboard, which the pet never takes, so 수정 요청 opens the plan in a window of its own, as its symbol does to
+            // read it. While an answer is on its way every button is off (M/AgentCompanion.swift approvalBusy).
             var sending = companionPlanSending == PermissionKey(permission);
-            return new(false, Locale.Get("plan.card.title"), origin, permission.ReceivedAt is { } received ? PlanCardSupport.ReceivedText(received) : "", PlanCardSupport.Headline(plan),
-                lines.Length == 0 ? null : string.Join('\n', lines), false, false, [],
-                [new("open", Locale.Get("companion.button.open"), Glyph: true), new("plan-cancel", Locale.Get("plan.card.cancel"), Disabled: sending), new("plan-review", Locale.Get("companion.plan.review"), Disabled: sending),
-                    new("plan-approve", Locale.Get("plan.card.approveAuto"), Prominent: true, OwnRow: true, Disabled: sending)], error);
+            return new(false, Locale.Get("plan.card.title"), origin, "", null, null, false, false, [], CompanionBubble.Plan(sending), error,
+                plan, permission.ReceivedAt is { } received ? PlanCardSupport.ReceivedText(received) : null, sending);
         }
         if (permission.CanAnswerQuestions && UserQuestionnaire.Parse(permission.InputJson) is { } questionnaire)
         {
-            var draft = CompanionDraft(permission); var step = Math.Clamp(draft.Step, 0, questionnaire.Questions.Count - 1); var question = questionnaire.Questions[step];
-            var picks = draft.Picks.GetValueOrDefault(step);
-            // "선택 요청 2/3" while stepping through several questions (M/AgentCompanionViews.swift:376-380).
-            var progress = Locale.Get("phone.questionnaire.title") + (questionnaire.Questions.Count > 1 ? " " + (step + 1) + "/" + questionnaire.Questions.Count : "");
-            // The full questionnaire opens as its own window only after this
-            // explicit action; automatic requests never acquire keyboard focus.
-            return new(true, progress, origin, "", question.Question, null, false, question.MultiSelect,
-                question.Options.Select(option => new CompanionOverlayOption(option.Label, option.Description, picks?.Contains(option.Label) == true)).ToArray(),
-                [new("open", Locale.Get("companion.button.open"), Glyph: true), new("questions", Locale.Get("companion.button.answer"), Prominent: true), new("deny", Locale.Get("phone.questionnaire.cancel"))], error);
+            // One question at a time, its choices answered in the bubble (M/AgentCompanionViews.swift:318-325,
+            // M/AgentCompanion.swift:42-46). The bubble takes no typing: an answer written out still needs the window.
+            var progress = CompanionDraft(permission).Progress; var question = progress.Current(questionnaire) ?? questionnaire.Questions[^1];
+            return new(true, CompanionBubble.QuestionTitle(questionnaire, progress), origin, "", question.Question, null, false, question.MultiSelect,
+                question.Options.Select(option => new CompanionOverlayOption(option.Label, option.Description, CompanionBubble.Picked(option.Label, questionnaire, progress))).ToArray(),
+                CompanionBubble.Question(questionnaire, progress), error);
         }
         var presentation = ToolPermissionPresentation.Make(permission.ToolName, permission.InputJson);
         var code = presentation.Fields.FirstOrDefault(field => field.Code)?.Value;
-        var buttons = new List<CompanionOverlayButton> { new("open", Locale.Get("companion.button.open")), new("deny", ToolPermissionStrings.ButtonDeny) };
-        // The native preview can be ellipsized at any DPI or bubble size.
-        // Approval always opens the complete scrollable request first.
-        if (permission.CanAllow) buttons.Add(new("review", Locale.Get("companion.button.review"), Prominent: true));
+        // The preview can be ellipsized at any DPI or bubble size; the whole request, scrolling, is a press away in its window.
         return new(false, Locale.Get("companion.approval.title"), origin, presentation.Title + " · " + permission.ToolName, presentation.Headline,
-            code ?? (presentation.Headline is null ? permission.Summary : null), code is not null, false, [], buttons, error);
+            code ?? (presentation.Headline is null ? permission.Summary : null), code is not null, false, [], CompanionBubble.Approval(permission.CanAllow), error);
     }
     private CompanionQuestionDraft CompanionDraft(ToolPermissionRequest request)
     {
         var key = PermissionKey(request);
-        if (!companionQuestions.TryGetValue(key, out var draft) || draft.Input != request.InputJson) companionQuestions[key] = draft = new(request.InputJson);
+        if (!companionQuestions.TryGetValue(key, out var draft) || draft.Input != request.InputJson) companionQuestions[key] = draft = new(key, request.InputJson);
         return draft;
     }
     private void CompanionAction(string key, string action)
@@ -249,17 +247,51 @@ public sealed partial class MainWindow
         if (action == "open") { if (companionShown is { } shown) FocusSession(shown); else AppWindow.Show(); return; }
         if (companionPresentedPermission is not { } presented || !companionPermissions.TryGetValue(PermissionKey(presented), out var request)
             || request != presented || request.State != "pending" || request.RunId != companionShown) return;
-        if (action == "questions" && request.CanAnswerQuestions) { ShowCompanionQuestions(request); return; }
-        if (action == "review" && request.CanAllow && !request.CanAnswerQuestions) { ShowCompanionApproval(request); return; }
+        if (action == CompanionBubble.Custom && request.CanAnswerQuestions) { ShowCompanionQuestions(request); return; }
+        if (action == CompanionBubble.Review && request.CanAllow && !request.CanAnswerQuestions) { ShowCompanionApproval(request); return; }
         if (request.CanAnswerPlan && request.Plan is not null)
         {
-            if (action == "plan-review") ShowCompanionPlan(request);
-            else if (action is "plan-cancel" or "plan-approve") _ = AnswerCompanionPlan(request, action == "plan-cancel" ? PlanDecision.Cancel : PlanDecision.ApproveAutoEdit);
+            switch (action)
+            {
+                case CompanionBubble.PlanReview: ShowCompanionPlan(request); break;
+                case CompanionBubble.PlanRevise: ShowCompanionPlan(request, revising: true); break;
+                case CompanionBubble.PlanCancel: _ = AnswerCompanionPlan(request, PlanDecision.Cancel); break;
+                case CompanionBubble.PlanApproveConfirm: _ = AnswerCompanionPlan(request, PlanDecision.ApproveConfirmEach); break;
+                case CompanionBubble.PlanApprove: _ = AnswerCompanionPlan(request, PlanDecision.ApproveAutoEdit); break;
+            }
             return;
         }
-        if (action != "deny") return;
-        try { service.RespondToToolPermission(request.RunId, request.Id, false); }
+        if (request.CanAnswerQuestions && UserQuestionnaire.Parse(request.InputJson) is { } questionnaire && AnswerCompanionQuestion(request, questionnaire, action)) return;
+        // 이번만 허용 / 거부 from the bubble itself (M/AgentCompanionViews.swift:358-361).
+        if (action != CompanionBubble.Deny && !(action == CompanionBubble.Allow && request.CanAllow && !request.CanAnswerQuestions)) return;
+        try { service.RespondToToolPermission(request.RunId, request.Id, action == CompanionBubble.Allow); }
         catch (Exception ex) { companionError = ex.Message; companionRequestError = (PermissionKey(request), ex.Message); RefreshCompanion(); }
+    }
+    /// <summary>
+    /// A press in the bubble's question (M/AgentCompanion.swift:295-332): a choice answers a single-choice question and
+    /// toggles in a multi-choice one, 이전 goes back, 다음 / 보내기 records what was picked. The answers are sent once every
+    /// question has one; a send that fails stays on the bubble with what was answered. False for any other press.
+    /// </summary>
+    private bool AnswerCompanionQuestion(ToolPermissionRequest request, UserQuestionnaire questionnaire, string action)
+    {
+        var progress = CompanionDraft(request).Progress; IReadOnlyDictionary<string, UserQuestionAnswer>? answers = null;
+        if (action.StartsWith(CompanionBubble.Choice, StringComparison.Ordinal))
+        {
+            if (!int.TryParse(action.AsSpan(CompanionBubble.Choice.Length), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var index)
+                || progress.Current(questionnaire) is not { } question || index >= question.Options.Count) return true;
+            answers = CompanionBubble.Choose(question.Options[index].Label, questionnaire, progress);
+        }
+        else if (action == CompanionBubble.Back) progress.Back(questionnaire);
+        else if (action == CompanionBubble.Next) answers = CompanionBubble.Commit(questionnaire, progress);
+        else return false;
+        if (companionRequestError?.Key == PermissionKey(request)) companionRequestError = null;
+        if (answers is not null)
+        {
+            try { service.AnswerQuestionnaire(request.RunId, request.Id, answers); }
+            catch (Exception ex) { companionError = ex.Message; companionRequestError = (PermissionKey(request), ex.Message); }
+        }
+        RefreshCompanion();
+        return true;
     }
     /// <summary>
     /// The frame of a window the pet's bubble opens: the app's page in the app's theme, and on it the wait card
@@ -287,6 +319,12 @@ public sealed partial class MainWindow
         companionQuestionWindow?.Close();
         if (UserQuestionnaire.Parse(request.InputJson) is not { } questionnaire) return;
         var draft = CompanionDraft(request); var window = new Window { Title = Locale.Get("phone.questionnaire.title") }; var host = new StackPanel { Spacing = DesignMetrics.Spacing.Md };
+        // Each window starts where the bubble stands, with the picks made there; words written in an earlier window stay.
+        draft.Picks.Clear();
+        for (var index = 0; index < questionnaire.Questions.Count; index++)
+            if (draft.Progress.Answers.TryGetValue(questionnaire.Questions[index].Question, out var given)) { draft.Picks[index] = [.. given.SelectedOptions]; if (given.CustomText is { } typed) draft.Custom[index] = typed; }
+        draft.Step = Math.Min(draft.Progress.Index, questionnaire.Questions.Count - 1);
+        if (draft.Progress.Selected.Count > 0) draft.Picks[draft.Step] = [.. draft.Progress.Selected];
         window.Content = CompanionWindowFrame(new ScrollViewer { Content = host, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }); window.AppWindow.Resize(new(460, 580)); brushes.ApplyTitleBar(window.AppWindow);
         companionQuestionWindow = window; companionQuestionWindowKey = key;
         window.Closed += (_, _) => { if (companionQuestionWindow == window) { companionQuestionWindow = null; companionQuestionWindowKey = null; } };
@@ -383,13 +421,15 @@ public sealed partial class MainWindow
     }
     /// <summary>
     /// The plan the bubble shows, in a window that takes the keyboard (M/CompanionPlanWindow.swift): the plan's Markdown, a change
-    /// request box and the plan's four answers on the wait card. It closes with its request, as the question window does.
+    /// request box and the plan's four answers on the wait card. The bubble's symbol opens it to read, its 수정 요청 to ask for a
+    /// change. It closes with its request, as the question window does.
     /// </summary>
     /// <param name="aside">Shown without being brought forward, for the GUI smoke.</param>
-    private void ShowCompanionPlan(ToolPermissionRequest request, bool aside = false)
+    /// <param name="revising">Opened by 수정 요청: the keyboard starts in the change request (M/AgentCompanion.swift:273-289).</param>
+    private void ShowCompanionPlan(ToolPermissionRequest request, bool aside = false, bool revising = false)
     {
         var key = PermissionKey(request);
-        if (companionQuestionWindowKey == key && companionQuestionWindow is { } existing) { if (!aside) existing.Activate(); return; }
+        if (companionQuestionWindowKey == key && companionQuestionWindow is { } existing) { if (!aside) existing.Activate(); if (revising) companionPlanWindowRevise?.Invoke(); return; }
         companionQuestionWindow?.Close();
         if (request.Plan is not { } plan) return;
         var ink2 = brushes.Brush(DesignToken.Ink2);
@@ -451,9 +491,12 @@ public sealed partial class MainWindow
         var footer = new StackPanel { Spacing = DesignMetrics.Spacing.Sm }; footer.Children.Add(error); footer.Children.Add(actions); Grid.SetRow(footer, 3); content.Children.Add(footer);
         window.Content = CompanionWindowFrame(content); window.AppWindow.Resize(new(560, 620)); brushes.ApplyTitleBar(window.AppWindow); companionQuestionWindow = window; companionQuestionWindowKey = key;
         Action sync = Check; companionPlanWindowSync = sync;
+        Action startRevising = () => field.Focus(FocusState.Programmatic); companionPlanWindowRevise = startRevising;
+        if (revising) field.Loaded += (_, _) => startRevising();
         window.Closed += (_, _) =>
         {
             if (companionPlanWindowSync == sync) companionPlanWindowSync = null;
+            if (companionPlanWindowRevise == startRevising) companionPlanWindowRevise = null;
             if (companionQuestionWindow == window) { companionQuestionWindow = null; companionQuestionWindowKey = null; }
         };
         if (aside) window.AppWindow.Show(false); else window.Activate();
@@ -727,7 +770,8 @@ public sealed partial class MainWindow
         }
         try
         {
-            CompanionDraft(question).Picks[0] = ["The Mac's"];
+            var form = UserQuestionnaire.Parse(question.InputJson) ?? throw new InvalidOperationException("the smoke's question did not parse");
+            CompanionBubble.Choose("The Mac's", form, CompanionDraft(question).Progress);
             var origin = snapshot.Workspaces.First(w => w.Id == agent.WorkspaceId).Name + " · " + agent.Title;
             foreach (var light in new[] { false, true })
             {
@@ -744,7 +788,9 @@ public sealed partial class MainWindow
                 Drawn("approval", Locale.Get("companion.approval.title"), 11, 600, DesignToken.Ink); Drawn("approval", origin, 9, 400, DesignToken.Ink2);
                 Drawn("approval", ToolPermissionStrings.TitleBash + " · Bash", 10, 400, DesignToken.Ink2); Drawn("approval", "Run the Windows core tests before the commit", 11, 500, DesignToken.Ink);
                 Drawn("approval", "dotnet test native/windows/MightyClaude.Core.Tests -c Release --no-build --logger trx", 10, 400, DesignToken.Ink, fonts.Mono);
-                Drawn("approval", Locale.Get("companion.button.open"), 11, 400, DesignToken.Ink); Drawn("approval", ToolPermissionStrings.ButtonDeny, 11, 400, DesignToken.Ink); Drawn("approval", Locale.Get("companion.button.review"), 11, 400, DesignToken.OnAccent);
+                // Open, Deny and Allow once in the bubble itself, as on the Mac (M/AgentCompanionViews.swift:341-361); the whole request's window is a symbol beside open.
+                Drawn("approval", Locale.Get("companion.button.open"), 11, 400, DesignToken.Ink); Drawn("approval", ToolPermissionStrings.ButtonDeny, 11, 400, DesignToken.Ink); Drawn("approval", ToolPermissionStrings.ButtonAllowOnce, 11, 400, DesignToken.OnAccent);
+                Require(!overlay.SmokeTexts!.Any(item => item.Value == Locale.Get("companion.button.review")), "the approval's review window must be a symbol, not words");
                 if (overlay.SmokeGeometry.Scale == Math.Floor(overlay.SmokeGeometry.Scale))
                 {
                     // Around a request the hairline is the amber at 45% (M/AgentCompanionViews.swift:367), on the card.
@@ -756,34 +802,74 @@ public sealed partial class MainWindow
 
                 overlay.SetCard(CompanionCard("smoke-question", snapshot, agent, "waiting", question) with { Light = light }, true); overlay.Draw(6, 0);
                 await CaptureCompanionSmoke(overlay, "smoke-companion-question-" + theme + ".png");
-                Drawn("question", Locale.Get("phone.questionnaire.title") + " 1/2", 11, 600, DesignToken.Ink); Drawn("question", "Which layout should the pet's bubble follow?", 11, 500, DesignToken.Ink);
+                Drawn("question", Locale.Get("companion.question.titleProgress", new Dictionary<string, string> { ["current"] = "1", ["total"] = "2" }), 11, 600, DesignToken.Ink); Drawn("question", "Which layout should the pet's bubble follow?", 11, 500, DesignToken.Ink);
                 Drawn("question", "The Mac's", 11, 500, DesignToken.Ink); Drawn("question", "The same order, type and paddings", 9, 400, DesignToken.Ink2); Drawn("question", "The earlier Windows card", 11, 500, DesignToken.Ink);
-                Drawn("question", Locale.Get("companion.button.answer"), 11, 400, DesignToken.OnAccent); Drawn("question", Locale.Get("phone.questionnaire.cancel"), 11, 400, DesignToken.Ink);
+                // A multi-choice question that is not the last: Next (on, something is picked) and Cancel as words (M/AgentCompanionViews.swift:351-356); open and the answer window are symbols.
+                Drawn("question", Locale.Get("companion.question.next"), 11, 400, DesignToken.OnAccent); Drawn("question", Locale.Get("phone.questionnaire.cancel"), 11, 400, DesignToken.Ink);
+                Require(!overlay.SmokeTexts!.Any(item => item.Value == Locale.Get("companion.button.answer") || item.Value == Locale.Get("companion.question.back")), "the first question must show no Back, and its answer window as a symbol");
 
-                // A finished plan in the taller window: when it came, its first line and the next three, and its answers, the approve on a row of its own.
+                // A finished plan in the taller window (M/AgentCompanionViews.swift:403-436): when it came, the whole plan as small Markdown, and its
+                // six buttons: two symbols, Cancel and Request changes, then each approval on a row of its own, as wide as the bubble.
                 overlay.SetCard(CompanionCard("smoke-plan", snapshot, agent, "waiting", plan) with { Light = light }, true); overlay.Draw(6, 0);
                 await CaptureCompanionSmoke(overlay, "smoke-companion-plan-" + theme + ".png");
                 Require(overlay.SmokeGeometry.Width == 282 && overlay.SmokeGeometry.Height == CompanionBubbleLayout.TallHeight && overlay.SmokeGeometry.Bubble.Bottom == CompanionBubbleLayout.TallHeight - 145,
                     $"a plan must stand in the taller window, on the pet; got {overlay.SmokeGeometry.Width} × {overlay.SmokeGeometry.Height}");
                 Drawn("plan", Locale.Get("plan.card.title"), 11, 600, DesignToken.Ink); Drawn("plan", origin, 9, 400, DesignToken.Ink2);
-                Drawn("plan", PlanCardSupport.ReceivedText(plan.ReceivedAt!), 10, 400, DesignToken.Ink2); Drawn("plan", "Ship the pet's plan bubble", 11, 500, DesignToken.Ink);
-                Drawn("plan", "1. Draw the plan in the bubble\n2. Route its buttons\n3. Open the plan window", 10, 400, DesignToken.Ink, fonts.Mono);
-                Drawn("plan", Locale.Get("plan.card.cancel"), 11, 400, DesignToken.Ink); Drawn("plan", Locale.Get("companion.plan.review"), 11, 400, DesignToken.Ink);
-                Drawn("plan", Locale.Get("plan.card.approveAuto"), 11, 400, DesignToken.OnAccent);
-                var approve = overlay.SmokeTexts!.First(item => item.Value == Locale.Get("plan.card.approveAuto")); var cancel = overlay.SmokeTexts!.First(item => item.Value == Locale.Get("plan.card.cancel"));
-                Require(approve.Bounds.Top > cancel.Bounds.Bottom && !approve.Trimmed, $"the plan's approve ({theme}) must be whole, on a row under the others; got {approve.Bounds} under {cancel.Bounds}, trimmed {approve.Trimmed}");
+                Drawn("plan", PlanCardSupport.ReceivedText(plan.ReceivedAt!), 9, 400, DesignToken.Ink2); Drawn("plan", "Ship the pet's plan bubble", 13, 600, DesignToken.Ink);
+                foreach (var step in new[] { "Draw the plan in the bubble", "Route its buttons", "Open the plan window", "Fake an answer" }) Drawn("plan", step, 11, 400, DesignToken.Ink);
+                Drawn("plan", Locale.Get("plan.card.cancel"), 11, 400, DesignToken.Ink); Drawn("plan", Locale.Get("plan.card.revise"), 11, 400, DesignToken.Ink);
+                Drawn("plan", Locale.Get("plan.card.approveConfirm"), 11, 400, DesignToken.Ink); Drawn("plan", Locale.Get("plan.card.approveAuto"), 11, 400, DesignToken.OnAccent);
+                Require(!overlay.SmokeTexts!.Any(item => item.Value == Locale.Get("companion.plan.review")), "the plan's own window must be a symbol, not words");
+                var approve = overlay.SmokeTexts!.First(item => item.Value == Locale.Get("plan.card.approveAuto")); var confirm = overlay.SmokeTexts!.First(item => item.Value == Locale.Get("plan.card.approveConfirm")); var cancel = overlay.SmokeTexts!.First(item => item.Value == Locale.Get("plan.card.cancel"));
+                Require(confirm.Bounds.Top > cancel.Bounds.Bottom && approve.Bounds.Top > confirm.Bounds.Bottom && !approve.Trimmed && !confirm.Trimmed,
+                    $"the plan's approvals ({theme}) must be whole, each on a row under the others; got {confirm.Bounds} and {approve.Bounds} under {cancel.Bounds}, trimmed {confirm.Trimmed} {approve.Trimmed}");
+                var shortPlan = overlay.SmokePlan;
+                Require(shortPlan.Extent <= shortPlan.Box.Height + 0.01 && shortPlan.Scroll == 0, $"a short plan ({theme}) must show whole, without scrolling; got {shortPlan.Extent} in {shortPlan.Box.Height}");
             }
-            // A choice, the answer button and the cancel all belong to the question shown; the approval's to the approval. None of them brings a window forward.
+            // A choice, Next, the answer window and the cancel all belong to the question shown; the approval's to the approval. None of them brings a window forward.
             // Each card is put up again before its clicks: the faces above end on the plan, not the question.
             overlay.SetCard(CompanionCard("smoke-question", snapshot, agent, "waiting", question), true); overlay.Draw(6, 0);
             var before = clicks.Count; var front = CompanionOverlay.ForegroundWindow;
-            Require(overlay.SmokeClick("questions") && overlay.SmokeClick("deny") && overlay.SmokeClick("open") && clicks.Skip(before).SequenceEqual(new[] { "smoke-question:questions", "smoke-question:deny", "smoke-question:open" }), "The question's buttons did not answer for the question shown.");
+            Require(overlay.SmokeClick("choice-1") && overlay.SmokeClick("question-commit") && overlay.SmokeClick("questions") && overlay.SmokeClick("deny") && overlay.SmokeClick("open") && !overlay.SmokeClick("question-back") && !overlay.SmokeClick("allow")
+                && clicks.Skip(before).SequenceEqual(new[] { "smoke-question:choice-1", "smoke-question:question-commit", "smoke-question:questions", "smoke-question:deny", "smoke-question:open" }), "The question's choices and buttons did not answer for the question shown.");
             overlay.SetCard(CompanionCard("smoke-approval", snapshot, agent, "waiting", approval), true); overlay.Draw(6, 0); before = clicks.Count;
-            Require(overlay.SmokeClick("review") && overlay.SmokeClick("deny") && clicks.Skip(before).SequenceEqual(new[] { "smoke-approval:review", "smoke-approval:deny" }), "The approval's buttons did not answer for the approval shown.");
+            Require(overlay.SmokeClick("allow") && overlay.SmokeClick("review") && overlay.SmokeClick("deny") && overlay.SmokeClick("open")
+                && clicks.Skip(before).SequenceEqual(new[] { "smoke-approval:allow", "smoke-approval:review", "smoke-approval:deny", "smoke-approval:open" }), "The approval's buttons did not answer for the approval shown.");
+            // A request that cannot be allowed here keeps Allow once, off: no press reaches it, and there is no window to review it in.
+            overlay.SetCard(CompanionCard("smoke-approval", snapshot, agent, "waiting", approval with { CanAllow = false }), true); overlay.Draw(6, 0); before = clicks.Count;
+            Require(!overlay.SmokeClick("allow") && !overlay.SmokeClick("review") && overlay.SmokeClick("deny") && clicks.Count == before + 1 && overlay.SmokeTexts!.Any(item => item.Value == ToolPermissionStrings.ButtonAllowOnce),
+                "A request that cannot be allowed must show Allow once without taking a press.");
             overlay.SetCard(CompanionCard("smoke-plan", snapshot, agent, "waiting", plan), true); overlay.Draw(6, 0); before = clicks.Count;
-            Require(overlay.SmokeClick("plan-approve") && overlay.SmokeClick("plan-review") && overlay.SmokeClick("plan-cancel") && overlay.SmokeClick("open") && !overlay.SmokeClick("deny")
-                && clicks.Skip(before).SequenceEqual(new[] { "smoke-plan:plan-approve", "smoke-plan:plan-review", "smoke-plan:plan-cancel", "smoke-plan:open" }), "The plan's buttons did not answer for the plan shown.");
+            Require(overlay.SmokeClick("plan-approve") && overlay.SmokeClick("plan-approve-confirm") && overlay.SmokeClick("plan-revise") && overlay.SmokeClick("plan-review") && overlay.SmokeClick("plan-cancel") && overlay.SmokeClick("open") && !overlay.SmokeClick("deny")
+                && clicks.Skip(before).SequenceEqual(new[] { "smoke-plan:plan-approve", "smoke-plan:plan-approve-confirm", "smoke-plan:plan-revise", "smoke-plan:plan-review", "smoke-plan:plan-cancel", "smoke-plan:open" }), "The plan's six buttons did not answer for the plan shown.");
             Require(CompanionOverlay.ForegroundWindow == front && front != overlay.Handle && !overlay.TookThread, "Companion requests acquired foreground focus.");
+            // A plan longer than the taller window has room for scrolls inside the bubble (M/AgentCompanionViews.swift:413-417): the
+            // bubble stays within that window, the wheel moves the plan to its last step, and the answers stay under it.
+            var steps = Enumerable.Range(1, 60).Select(index => "Long plan step " + index).ToArray();
+            var longPlan = plan with { Id = "smoke-plan-long", InputJson = System.Text.Json.JsonSerializer.Serialize(new { plan = "# A long plan\n\n" + string.Join("\n", steps.Select((step, index) => (index + 1) + ". " + step)) }) };
+            overlay.SetCard(CompanionCard("smoke-plan-long", snapshot, agent, "waiting", longPlan), true); overlay.Draw(6, 0);
+            var scrolling = overlay.SmokePlan; var room = CompanionBubbleLayout.TallHeight - CompanionBubbleLayout.Chrome;
+            Require(overlay.SmokeGeometry.Height == CompanionBubbleLayout.TallHeight && overlay.SmokeLayout.Height <= room && scrolling.Extent > scrolling.Box.Height && scrolling.Scroll == 0,
+                $"a long plan must scroll inside a bubble that fits the taller window; got a bubble of {overlay.SmokeLayout.Height} in {room}, {scrolling.Extent} of plan in {scrolling.Box.Height}");
+            Require(overlay.SmokeTexts!.Any(item => item.Value == steps[0]) && !overlay.SmokeTexts!.Any(item => item.Value == steps[^1]), "a long plan must start at its first step");
+            overlay.SmokeWheelPlan(1); overlay.Draw(6, 0);
+            Require(overlay.SmokePlan.Scroll > 0 && overlay.SmokePlan.Scroll < scrolling.Extent - scrolling.Box.Height, $"one notch of the wheel must move the plan a little; got {overlay.SmokePlan.Scroll}");
+            overlay.SmokeWheelPlan(60); overlay.Draw(6, 0);
+            var last = overlay.SmokeTexts!.FirstOrDefault(item => item.Value == steps[^1]);
+            Require(Math.Abs(overlay.SmokePlan.Scroll - (scrolling.Extent - scrolling.Box.Height)) < 0.01 && last is not null && last.Bounds.Bottom <= scrolling.Box.Bottom + 0.01 && !overlay.SmokeTexts!.Any(item => item.Value == steps[0]),
+                $"the wheel must bring the plan's last step into the bubble; scrolled {overlay.SmokePlan.Scroll} of {scrolling.Extent - scrolling.Box.Height}");
+            before = clicks.Count;
+            Require(overlay.SmokeClick("plan-approve") && overlay.SmokeClick("plan-cancel") && clicks.Count == before + 2 && CompanionOverlay.ForegroundWindow == front && !overlay.TookThread, "A scrolled plan must keep its answers, and the wheel must not bring the pet forward.");
+            await CaptureCompanionSmoke(overlay, "smoke-companion-plan-long-dark.png");
+            // The same presses through the app's own handler, short of sending: a multi-choice press toggles, Next moves on, Back
+            // shows the earlier picks again, and a press that is no part of the question is left to the request's own buttons.
+            var both = Locale.Get("companion.question.titleProgress", new Dictionary<string, string> { ["current"] = "2", ["total"] = "2" });
+            Require(AnswerCompanionQuestion(question, form, "choice-1") && CompanionRequest(question, "").Options.All(option => option.Picked), "A press on a multi-choice answer must toggle it.");
+            Require(AnswerCompanionQuestion(question, form, CompanionBubble.Next) && CompanionRequest(question, "") is { } second && second.Title == both && second.Buttons.Any(button => button.Id == CompanionBubble.Back) && !second.Options.Any(option => option.Picked),
+                "Next must move the bubble to the second question.");
+            Require(AnswerCompanionQuestion(question, form, CompanionBubble.Back) && CompanionRequest(question, "") is { } first && first.Options.All(option => option.Picked) && !first.Buttons.Any(button => button.Id == CompanionBubble.Back),
+                "Back must return to the first question with its picks.");
+            Require(!AnswerCompanionQuestion(question, form, CompanionBubble.Deny) && !AnswerCompanionQuestion(question, form, CompanionBubble.Open), "Cancel and open are not answers to the question.");
             // Without a pet image the paw stands in the pet's frame, in the accent with 35 clear around it (M/AgentCompanionViews.swift:137-140).
             using var bare = new CompanionOverlay(new CompanionPreferences()); bare.SetAtlas([]);
             bare.SetCard(CompanionCard("smoke-paw", snapshot, agent, agent.Status, null) with { Light = false }, false); bare.Draw(0, 0);

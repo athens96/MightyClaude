@@ -65,8 +65,18 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
 
     public static bool SupportsCodexApprovals(string? version) => Regex.Match(version ?? "", @"(?<!\d)(\d+)\.(\d+)\.(\d+)(?![\d-])") is { Success: true } m && Version.Parse($"{m.Groups[1]}.{m.Groups[2]}.{m.Groups[3]}") >= new Version(0, 153, 4);
 
+    /// <summary>
+    /// Has <paramref name="provider"/> found as <paramref name="command"/> until it is set back with null, when it is looked for
+    /// again: the GUI smoke's scripted stand-in for one step, never a real launch (M/AppStore+DelegationSmoke.swift:7-12).
+    /// </summary>
+    public void Override(string provider, CliCommand? command)
+    {
+        lock (commands) { if (command is null) overrides.Remove(provider); else overrides[provider] = command; commands.Remove(provider); }
+    }
+    private readonly Dictionary<string, CliCommand> overrides = [];
     public async Task<CliCommand?> FindAsync(string provider, CancellationToken token = default)
     {
+        lock (commands) if (overrides.TryGetValue(provider, out var forced)) return forced;
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, closing.Token);
         await RefreshEnvironmentAsync(false, linked.Token);
         lock (commands) if (commands.TryGetValue(provider, out var saved)) return saved;
@@ -87,15 +97,41 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
             if (!force && cachedDirectory == directory && cached is not null && DateTimeOffset.UtcNow - refreshed < TimeSpan.FromMinutes(1)) return cached;
             if (force) lock (commands) commands.Clear();
             var providers = new List<ProviderRuntime>();
-            foreach (var id in Wire.Providers)
-            {
-                var command = await FindAsync(id, closing.Token);
-                var catalog = command is not null && id != "gemini" ? await ReadModelsAsync(id, command, closing.Token, directory) : Fallback(id);
-                providers.Add(new(id, Name(id), command is not null && (id != "claude" || SupportsMods(command.Version)), command?.Version, command is null ? Locale.Get("provider.notInstalled") : id == "claude" && !SupportsMods(command.Version) ? Locale.Get("provider.unsupportedVersion") : Locale.Get("provider.available"), catalog, Capabilities(id, command?.Version)));
-            }
-            var claude = providers[0];
-            cached = new(OperatingSystem.IsWindows() ? "win32" : OperatingSystem.IsMacOS() ? "darwin" : "linux", "0.1.0", claude.Version is not null, claude.Version, claude.ModelCatalog, providers, new(claude.Available ? "available" : claude.Version is null ? "unavailable" : "unsupported", "2.1.271", claude.Detail));
+            foreach (var id in Wire.Providers) providers.Add(await ReadProviderAsync(id, directory));
+            cached = Info(providers);
             cachedDirectory = directory; refreshed = DateTimeOffset.UtcNow; return cached;
+        }
+        finally { gate.Release(); }
+    }
+    private async Task<ProviderRuntime> ReadProviderAsync(string id, string directory)
+    {
+        var command = await FindAsync(id, closing.Token);
+        var catalog = command is not null && id != "gemini" ? await ReadModelsAsync(id, command, closing.Token, directory) : Fallback(id);
+        return new(id, Name(id), command is not null && (id != "claude" || SupportsMods(command.Version)), command?.Version, command is null ? Locale.Get("provider.notInstalled") : id == "claude" && !SupportsMods(command.Version) ? Locale.Get("provider.unsupportedVersion") : Locale.Get("provider.available"), catalog, Capabilities(id, command?.Version));
+    }
+    private static RuntimeInfo Info(List<ProviderRuntime> providers)
+    {
+        var claude = providers[0];
+        return new(OperatingSystem.IsWindows() ? "win32" : OperatingSystem.IsMacOS() ? "darwin" : "linux", "0.1.0", claude.Version is not null, claude.Version, claude.ModelCatalog, providers, new(claude.Available ? "available" : claude.Version is null ? "unavailable" : "unsupported", "2.1.271", claude.Detail));
+    }
+    /// <summary>The runtime with one provider's reading replaced by a newer one.</summary>
+    public static RuntimeInfo With(RuntimeInfo runtime, ProviderRuntime provider) => Info(runtime.Providers.Select(p => p.Id == provider.Id ? provider : p).ToList());
+    /// <summary>
+    /// One provider read again for a folder: its model list is asked of its CLI anew (macOS
+    /// ProviderService.providerRuntime(forceRefresh:)), and a runtime kept for that folder takes the new reading. The CLI
+    /// is the one already found, unless <paramref name="rediscover"/> asks for it to be looked for again (a reading that would drop
+    /// waiting requests must not rest on one held from before an update); a forced <see cref="GetRuntimeAsync"/> looks for every CLI again.
+    /// </summary>
+    public async Task<ProviderRuntime> RefreshProviderAsync(string provider, string? workingDirectory = null, bool rediscover = false)
+    {
+        await gate.WaitAsync(closing.Token);
+        try
+        {
+            if (rediscover) lock (commands) commands.Remove(provider);
+            var directory = workingDirectory ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            var value = await ReadProviderAsync(provider, directory);
+            if (cached is not null && cachedDirectory == directory) cached = With(cached, value);
+            return value;
         }
         finally { gate.Release(); }
     }
@@ -143,9 +179,10 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
         return result.ToString();
     }
     public static async Task DrainAsync(StreamReader reader, CancellationToken token) { var buffer = new char[4096]; while (await reader.ReadAsync(buffer.AsMemory(), token) > 0) { } }
-    public static async Task<ModelCatalog> ReadModelsAsync(string provider, CliCommand command, CancellationToken cancellation = default, string? workingDirectory = null)
+    /// <summary>A provider's model list from its CLI, or the fallback list; <paramref name="limit"/> (7 s) bounds the read unless the caller's token does (Timeout.InfiniteTimeSpan).</summary>
+    public static async Task<ModelCatalog> ReadModelsAsync(string provider, CliCommand command, CancellationToken cancellation = default, string? workingDirectory = null, TimeSpan? limit = null)
     {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation); timeout.CancelAfter(TimeSpan.FromSeconds(7));
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation); timeout.CancelAfter(limit ?? TimeSpan.FromSeconds(7));
         var token = timeout.Token;
         var args = provider == "codex" ? new List<string> { "app-server", "--listen", "stdio://" } : ["--print", "--verbose", "--input-format", "stream-json", "--output-format", "stream-json", "--no-session-persistence", "--permission-mode", "dontAsk", "--permission-prompts", "none", "--strict-mcp-config", "--mcp-config", "{\"mcpServers\":{}}", "--tools", "", "--safe-mode"];
         var env = QuietEnvironment();

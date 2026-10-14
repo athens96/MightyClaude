@@ -30,17 +30,27 @@ public sealed partial class MainWindow
             await service.UpdateAsync(_ => saved); Render();
         }
     }
+    /// <summary>
+    /// Opens a terminal pane and puts <paramref name="command"/> at its prompt for the user. A command with a line break is
+    /// not put in at all and Enter follows only where <paramref name="autoRun"/> says so (TerminalInputPolicy). A pane
+    /// that could not be added (the 129th) has already said why, and a command with a line break opens no pane at all.
+    /// </summary>
     private async Task RunTerminalCommandAsync(string command, string title, bool autoRun = true)
     {
+        if (TerminalInputPolicy.HasLineBreak(command)) throw new InvalidOperationException(TerminalInputPolicy.NewlineRefusal);
         var paneId = Wire.Id();
-        await AddPane("shell", shape: pane => pane with { Id = paneId, Title = title });
+        if (!await AddPane("shell", shape: pane => pane with { Id = paneId, Title = title })) return;
         var deadline = DateTimeOffset.UtcNow.AddSeconds(20);
         while (!closing && DateTimeOffset.UtcNow < deadline)
         {
             if (!views.TryGetValue(paneId, out var pane)) throw new InvalidOperationException(Locale.Get("terminal.failed"));
             if (pane.CurrentTerminal is { } process)
             {
-                if (!process.TryWrite(command + (autoRun ? "\r" : ""))) throw new InvalidOperationException(Locale.Get("terminal.inputBusy"));
+                switch (TerminalInputPolicy.Apply(command, autoRun, process.TryWrite))
+                {
+                    case TerminalInputPolicy.Outcome.Refused: throw new InvalidOperationException(TerminalInputPolicy.NewlineRefusal);
+                    case TerminalInputPolicy.Outcome.Failed: throw new InvalidOperationException(Locale.Get("terminal.inputBusy"));
+                }
                 return;
             }
             if (pane.TerminalClosed) break;
@@ -57,6 +67,40 @@ public sealed partial class MainWindow
     {
         await Task.WhenAll(views.Values.Select(p => p.DisposeTerminalAsync()).Concat(terminalClosures));
         terminalClosures.Clear();
+    }
+    /// <summary>
+    /// A shell pane's status as its terminal reports it (M/AppStore+Terminals.swift:25-27), drawn where an agent pane's
+    /// is: the sidebar row, the tab, the header capsule, the dashboard and the status bar. The phone reads it next.
+    /// </summary>
+    private void ShellStatusChanged(string id, string status)
+    {
+        if (closing || !service.SetShellStatus(id, status)) return;
+        RefreshRunningIndicators(); mobileRouter?.Changed();
+    }
+    /// <summary>
+    /// Reads whether each attached shell runs a command, at the Mac's interval (M/LocalTerminalSession.swift:211-216): one
+    /// timer for the window and one reading off the UI thread for every shell pane. It turns only while a shell is attached.
+    /// </summary>
+    private DispatcherTimer? shellActivity;
+    private bool shellActivityReading;
+    private void WatchShellActivity()
+    {
+        if (shellActivity is null) { shellActivity = new() { Interval = TimeSpan.FromMilliseconds(500) }; shellActivity.Tick += async (_, _) => await ReadShellActivity(); }
+        shellActivity.Start();
+    }
+    /// <summary>A reading that could not be taken, or that a restart or an exit overtook, changes nothing (PaneView.ApplyShellActivity).</summary>
+    private async Task ReadShellActivity()
+    {
+        if (shellActivityReading) return;
+        var shells = views.Values.Select(pane => (Pane: pane, Terminal: pane.AttachedShell)).Where(shell => shell.Terminal is not null).ToArray();
+        if (closing || shells.Length == 0) { shellActivity?.Stop(); return; }
+        shellActivityReading = true;
+        try
+        {
+            var readings = await Task.Run(() => shells.Select(shell => ShellProcessProbe.IsBusy(shell.Terminal!)).ToArray());
+            for (var i = 0; i < shells.Length && !closing; i++) shells[i].Pane.ApplyShellActivity(shells[i].Terminal!, readings[i]);
+        }
+        finally { shellActivityReading = false; }
     }
 
     private sealed partial class PaneView
@@ -160,7 +204,7 @@ public sealed partial class MainWindow
                 core.WebMessageReceived += ReceiveTerminalMessage;
                 core.Navigate("https://" + TerminalHost + "/index.html");
             }
-            catch (Exception ex) { if (!terminalClosed && terminalNotice is not null) { terminalNotice.Text = Locale.Get("terminal.failed") + "\n" + ex.Message; if (terminalRestart is not null) terminalRestart.IsEnabled = true; } }
+            catch (Exception ex) { if (!terminalClosed && terminalNotice is not null) { terminalNotice.Text = Locale.Get("terminal.failed") + "\n" + ex.Message; if (terminalRestart is not null) terminalRestart.IsEnabled = true; owner.ShellStatusChanged(id, "error"); } }
         }
         private static bool IsTerminalAddress(string value) => Uri.TryCreate(value, UriKind.Absolute, out var uri) && uri.Scheme == "https" && uri.Host == TerminalHost && uri.IsDefaultPort && uri.AbsolutePath == "/index.html";
 
@@ -214,7 +258,7 @@ public sealed partial class MainWindow
                         break;
                 }
             }
-            catch (Exception ex) { if (!terminalClosed) { owner.error.Text = ex.Message; if (terminal is null && terminalNotice is not null) { terminalNotice.Text = Locale.Get("terminal.failed") + "\n" + ex.Message; if (terminalRestart is not null) terminalRestart.IsEnabled = true; } } }
+            catch (Exception ex) { if (!terminalClosed) { owner.error.Text = ex.Message; if (terminal is null && terminalNotice is not null) { terminalNotice.Text = Locale.Get("terminal.failed") + "\n" + ex.Message; if (terminalRestart is not null) terminalRestart.IsEnabled = true; owner.ShellStatusChanged(id, "error"); } } }
         }
         private void ShowTerminalDirectory(string path)
         {
@@ -255,11 +299,25 @@ public sealed partial class MainWindow
             if (terminalClosed) { await terminal.DisposeAsync(); return; }
             terminalNotice!.Visibility = Visibility.Collapsed; terminalRestart!.Visibility = Visibility.Collapsed;
             terminalFlush.Start(); RefreshTerminalTheme(); _ = ObserveTerminalExit(terminal);
+            // Attached: idle until a reading says a command runs (M/LocalTerminalSession.swift:144).
+            owner.ShellStatusChanged(id, "idle"); owner.WatchShellActivity();
+        }
+        /// <summary>The shell this shell pane has attached and running, the one the window's reading asks about; null for any other pane.</summary>
+        internal PseudoTerminal? AttachedShell => Session.Kind == "shell" && !terminalClosed && terminal is { Completion.IsCompleted: false } process ? process : null;
+        /// <summary>
+        /// Sets the pane running while a command occupies its shell's terminal and idle at its prompt (M/LocalTerminalSession.swift:211-216):
+        /// a pane that has exited or failed keeps that, and a reading of a shell the pane no longer has changes nothing.
+        /// </summary>
+        internal void ApplyShellActivity(PseudoTerminal process, bool? busy)
+        {
+            if (terminalClosed || !ReferenceEquals(terminal, process) || process.Completion.IsCompleted) return;
+            if (owner.service.SessionStatus(id) is { } current && ShellActivity.NextStatus(current, busy) is { } next) owner.ShellStatusChanged(id, next);
         }
         private async Task RestartTerminalAsync()
         {
             if (terminalClosed || terminalRestarting || owner.service.Snapshot.Sessions.FirstOrDefault(p => p.Id == id)?.Kind != "shell") return;
             terminalRestarting = true; terminalRestart!.IsEnabled = false;
+            owner.ShellStatusChanged(id, "idle");
             try
             {
                 var previous = terminal; terminal = null;
@@ -274,7 +332,7 @@ public sealed partial class MainWindow
                 }
                 else { PostTerminal(new { type = "reset" }); await StartTerminalShellAsync(); }
             }
-            catch (Exception ex) { if (!terminalClosed) { terminalNotice!.Text = Locale.Get("terminal.failed") + "\n" + ex.Message; terminalRestart.Visibility = Visibility.Visible; terminalRestart.IsEnabled = true; } }
+            catch (Exception ex) { if (!terminalClosed) { terminalNotice!.Text = Locale.Get("terminal.failed") + "\n" + ex.Message; terminalRestart.Visibility = Visibility.Visible; terminalRestart.IsEnabled = true; owner.ShellStatusChanged(id, "error"); } }
             finally { terminalRestarting = false; }
         }
         private void ReceiveTerminalOutput(string text)
@@ -316,6 +374,8 @@ public sealed partial class MainWindow
             }
             if (terminalClosed || !ReferenceEquals(terminal, process)) return;
             FlushTerminal(); terminalFlush.Stop();
+            // The shell is gone: completed, or error when its exit could not be read (M/LocalTerminalSession.swift:204).
+            owner.ShellStatusChanged(id, failure is null ? "completed" : "error");
             terminalNotice!.Text = failure is null
                 ? Locale.Get("terminal.exited", new Dictionary<string, string> { ["code"] = code!.Value.ToString() })
                 : Locale.Get("terminal.failed") + "\n" + failure.Message;
@@ -350,7 +410,9 @@ public sealed partial class MainWindow
             Require(process.TryWrite("exit\r"), "Terminal did not accept a shell exit.");
             await process.Completion.WaitAsync(TimeSpan.FromSeconds(15));
             await WaitUI(() => terminalRestart?.IsEnabled == true && terminalRestart.Visibility == Visibility.Visible);
+            Require(owner.service.SessionStatus(id) == "completed", "A shell that exited must leave its pane completed; got " + owner.service.SessionStatus(id));
             await RestartTerminalAsync();
+            Require(owner.service.SessionStatus(id) is "idle" or "running", "A restarted shell must take its pane out of completed; got " + owner.service.SessionStatus(id));
             var restarted = terminal;
             Require(restarted is not null && restarted.ProcessId != process.ProcessId && ReferenceEquals(core, terminalView?.CoreWebView2), "Restart must replace only the owned shell and retain its renderer.");
             Require(terminalTitle?.Text.Length > 0 && terminalDirectory?.Text.Length > 0 && terminalGrid?.Text.Contains('×') == true, "Terminal footer metadata is missing.");

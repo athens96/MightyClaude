@@ -12,25 +12,23 @@ using Tint = Windows.UI.Color;
 
 namespace MightyClaude.WinUI;
 
-/// <param name="Glyph">Drawn as the open-in-app symbol instead of its words (M/AgentCompanionViews.swift:337-340).</param>
-/// <param name="OwnRow">On a row of its own under the others, at the right edge: an answer too long to share
-/// the row, as the plan's approve (M/AgentCompanionViews.swift CompanionPlanBubble).</param>
-/// <param name="Disabled">Drawn faded and not clickable, as while the plan's answer is on its way.</param>
-internal sealed record CompanionOverlayButton(string Id, string Label, bool Prominent = false, bool Glyph = false, bool OwnRow = false, bool Disabled = false);
 internal sealed record CompanionOverlayOption(string Label, string Description, bool Picked);
 
 /// <summary>
-/// The request a bubble shows in place of the task (M/AgentCompanionViews.swift:299-373): an approval
+/// The request a bubble shows in place of the task (M/AgentCompanionViews.swift:299-452): an approval
 /// (<paramref name="Detail"/>, <paramref name="Headline"/> and its <paramref name="Code"/>, in a box when
-/// <paramref name="Boxed"/>), or one question (<paramref name="Headline"/>) with its choices. The first
-/// button stands at the left, the others at the right.
+/// <paramref name="Boxed"/>), one question (<paramref name="Headline"/>) with its choices, or a finished
+/// <paramref name="Plan"/> — its Markdown, whole — with when it was <paramref name="Received"/>. Its
+/// <paramref name="Buttons"/> are Core's (<see cref="CompanionBubble"/>); <paramref name="Busy"/> turns the small
+/// spinner before the answers while one is on its way.
 /// </summary>
 internal sealed record CompanionOverlayRequest(bool Question, string Title, string Origin, string Detail, string? Headline, string? Code, bool Boxed,
-    bool MultiSelect, IReadOnlyList<CompanionOverlayOption> Options, IReadOnlyList<CompanionOverlayButton> Buttons, string? Error = null)
+    bool MultiSelect, IReadOnlyList<CompanionOverlayOption> Options, IReadOnlyList<CompanionBubbleButton> Buttons, string? Error = null,
+    string? Plan = null, string? Received = null, bool Busy = false)
 {
-    internal string Drawn => string.Join('\u001e', Question, Title, Origin, Detail, Headline, Code, Boxed, MultiSelect, Error,
+    internal string Drawn => string.Join('\u001e', Question, Title, Origin, Detail, Headline, Code, Boxed, MultiSelect, Error, Plan, Received, Busy,
         string.Join('\u001d', Options.Select(o => o.Label + '\u001c' + o.Description + '\u001c' + o.Picked)),
-        string.Join('\u001d', Buttons.Select(b => b.Id + '\u001c' + b.Label + '\u001c' + b.Prominent + '\u001c' + b.Glyph + '\u001c' + b.OwnRow + '\u001c' + b.Disabled)));
+        string.Join('\u001d', Buttons.Select(b => b.Id + '\u001c' + b.Label + '\u001c' + b.Prominent + '\u001c' + b.Icon + '\u001c' + b.Leading + '\u001c' + b.OwnRow + '\u001c' + b.Disabled)));
 }
 
 /// <summary>
@@ -62,6 +60,10 @@ internal sealed class CompanionOverlay : IDisposable
     private const float DisabledOpacity = 0.45f;
     /// A small system button (`.controlSize(.small)`, M/AgentCompanionViews.swift:336-362) and the gap between two.
     private const double ButtonHeight = 20, ButtonRadius = DesignMetrics.Radius.FileRow, ButtonGap = 6;
+    /// The plan's text in its box (M/AgentCompanionViews.swift:448-451): padding h8 v6, its blocks 6 apart; a list's marker in
+    /// a column of 17 with 6 after it (M/AgentMarkdownView.swift:212-219), each deeper level 14 further in. One notch of the
+    /// wheel moves three lines.
+    private const double PlanInsetH = DesignMetrics.Spacing.Md, PlanInsetV = DesignMetrics.Spacing.Sm, PlanGap = DesignMetrics.Spacing.Sm, PlanMarker = 17, PlanIndent = 14, PlanMinimum = 40, PlanNotch = 39;
     /// The pager's row and its chevron capsules (M/AgentCompanionViews.swift:262-294).
     private const double PagerHeight = 16, PagerButton = 22;
     /// The pet's menu: rows of 26 with 13pt words, 4 inside a radius of 8, the row under the pointer on a wash of radius 4.
@@ -98,6 +100,12 @@ internal sealed class CompanionOverlay : IDisposable
     private bool menuOpen;
     private int menuHover = -1;
     private Vector2? spinner;
+    /// <summary>The plan a bubble shows (M/AgentCompanionViews.swift:413-419): its box in the bubble, how tall its whole text is, and how far it is scrolled.</summary>
+    private Area planArea;
+    private double planExtent, planScroll;
+    /// <summary>The plan's blocks and where each stands, measured once for a plan and a width.</summary>
+    private sealed record PlanMeasure(string Plan, double Width, IReadOnlyList<CompanionPlanBlock> Blocks, double[] Tops, double[] Heights, double Total);
+    private PlanMeasure? planMeasure;
     private bool mouseDown, dragged, disposed, showBubble, scaling, scalingMissed;
     private int walkingRow = 1, swipeDirection, wheelDelta;
     private long walkedAt;
@@ -157,6 +165,17 @@ internal sealed class CompanionOverlay : IDisposable
         if (cancel) CancelResize(); else SendMessage(window, 0x0202, 0, 0);
     }
     internal void SmokeResetSize() => ResetSize();
+    /// <summary>The plan's box in the bubble, how tall its whole text is and how far it is scrolled.</summary>
+    internal (Area Box, double Extent, double Scroll) SmokePlan { get { if (cardDirty) RenderCard(); return (planArea, planExtent, planScroll); } }
+    /// <summary>The wheel turned over the plan's text: a positive <paramref name="notches"/> moves on through the plan.</summary>
+    internal void SmokeWheelPlan(int notches)
+    {
+        if (cardDirty) RenderCard();
+        int x = left + (int)((planArea.Left + planArea.Width / 2) * scale), y = top + (int)((planArea.Top + planArea.Height / 2) * scale);
+        // One message a notch, as a wheel sends them: the turn is a signed 16-bit count in the high word.
+        for (var notch = 0; notch < Math.Abs(notches); notch++)
+            SendMessage(window, 0x020e, unchecked((nuint)(nint)((notches > 0 ? -120 : 120) << 16)), (nint)(((y & 0xffff) << 16) | (x & 0xffff)));
+    }
     /// <summary>The display scale changes, as when the pet is carried to another monitor.</summary>
     internal void SmokeDpi(int dpi) => SendMessage(window, 0x02e0, (nuint)(dpi | dpi << 16), 0);
     // The isolated window's own rendered buffer; this never reads the desktop.
@@ -198,6 +217,7 @@ internal sealed class CompanionOverlay : IDisposable
         var shown = visible && value is not null;
         if (mouseDown && resizeEdges != CompanionResizeEdges.None && (!shown || card?.Key != value?.Key)) CancelResize();
         var changed = showBubble != shown || card?.Drawn != value?.Drawn;
+        if (card?.Key != value?.Key) planScroll = 0;
         card = value; showBubble = shown;
         if (!changed) return;
         cardDirty = true;
@@ -407,21 +427,26 @@ internal sealed class CompanionOverlay : IDisposable
         return cursor - y;
     }
 
-    /// <summary>An approval or one question (M/AgentCompanionViews.swift:299-373), laid out and drawn like the task: 7 between its parts.</summary>
+    /// <summary>An approval, one question or a finished plan (M/AgentCompanionViews.swift:299-452), laid out and drawn like the task: 7 between its parts.</summary>
     private double RequestContent(CanvasDrawingSession? session, CompanionOverlayCard current, CompanionOverlayRequest request, DesignPalette palette, double x, double y, double w)
     {
         const double spacing = 7;
-        // The header (M:307-314): the symbol in the amber ink, "승인 요청" or "선택 요청 2/3", and where it comes from, which keeps its end.
-        double iconWidth = request.Question ? 14 : 10.5, iconHeight = 13.5;
+        var plan = request.Plan is not null;
+        // The header (M:310-317, 404-412): the symbol in the amber ink, "승인 요청", "선택 요청 2/3" or "계획" with when it came, and where it comes from, which keeps its end.
+        double iconWidth = request.Question ? 14 : plan ? 12 : 10.5, iconHeight = 13.5;
         using var title = Text(request.Title, 11, 600, Wide, tabular: true);
-        var kept = KeepEnd(request.Origin, 9, 400, Math.Max(1, w - iconWidth - 6 - title.LayoutBounds.Width - 12));
+        using var received = request.Received is { Length: > 0 } came ? Text(came, 9, 400, Wide, tabular: true) : null;
+        var titled = iconWidth + 6 + title.LayoutBounds.Width + (received is null ? 0 : 6 + received.LayoutBounds.Width);
+        var kept = KeepEnd(request.Origin, 9, 400, Math.Max(1, w - titled - 12));
         using var origin = Text(kept, 9, 400, Wide);
         var head = Math.Ceiling(Math.Max(iconHeight, Math.Max(title.LayoutBounds.Height, origin.LayoutBounds.Height)));
         if (session is not null)
         {
             if (request.Question) QuestionBubble(session, x + iconWidth / 2, y + head / 2, palette);
+            else if (plan) Icon(session, Icons, "\uE9D5", 12, x + iconWidth / 2, y + head / 2, Paint(palette.WaitText));
             else Icon(session, Symbols, "\u270B", iconHeight, x + iconWidth / 2, y + head / 2, Paint(palette.WaitText));
             Put(session, title, request.Title, x + iconWidth + 6, Math.Round(y + (head - title.LayoutBounds.Height) / 2), palette, DesignToken.Ink);
+            if (received is not null) Put(session, received, request.Received!, x + iconWidth + 6 + title.LayoutBounds.Width + 6, Math.Round(y + (head - received.LayoutBounds.Height) / 2), palette, DesignToken.Ink2);
             Put(session, origin, kept, x + w - origin.LayoutBounds.Width, Math.Round(y + (head - origin.LayoutBounds.Height) / 2), palette, DesignToken.Ink2);
         }
         var cursor = y + head;
@@ -433,12 +458,69 @@ internal sealed class CompanionOverlay : IDisposable
             if (session is not null) Put(session, words, value, x, cursor, palette, ink);
             cursor += Math.Ceiling(words.LayoutBounds.Height);
         }
-        if (request.Question)
+        // What stands under the body: what went wrong, the buttons and the pager. A plan's text takes the room they leave,
+        // so they are measured (no target) before they are drawn.
+        double Tail(CanvasDrawingSession? target, double top)
+        {
+            var at = top;
+            if (request.Error is { Length: > 0 } error)
+            {
+                at += spacing;
+                using var words = Text(error, 9, 400, w, 2);
+                if (target is not null) Put(target, words, error, x, at, palette, DesignToken.ErrText);
+                at += Math.Ceiling(words.LayoutBounds.Height);
+            }
+            var row = request.Buttons.Where(button => !button.OwnRow).ToList();
+            if (row.Count > 0)
+            {
+                // Open (and what else Windows opens a window for) from the left, the answers from the right edge, 6 apart (M:339-365, 422-431).
+                at += spacing;
+                var edge = x + w; var free = w - row.Sum(button => ButtonWidth(button, Wide)) - (row.Count - 1) * ButtonGap;
+                // Words too long for the row end one button in an ellipsis: the prominent one, else the longest.
+                var squeezed = free < 0 ? row.Where(button => !button.Icon).OrderByDescending(button => button.Prominent).ThenByDescending(button => ButtonWidth(button, Wide)).FirstOrDefault() : null;
+                foreach (var button in row.Where(button => !button.Leading).Reverse())
+                {
+                    var wide = ButtonWidth(button, ReferenceEquals(button, squeezed) ? ButtonWidth(button, Wide) + free : Wide);
+                    edge -= wide; if (target is not null) Button(target, button, palette, edge, at, wide); edge -= ButtonGap;
+                }
+                // The small spinner before the answers while one is on its way (M:346, 428).
+                if (request.Busy && target is not null) spinner = new((float)(edge - 5), (float)(at + ButtonHeight / 2));
+                var next = x;
+                foreach (var button in row.Where(button => button.Leading))
+                {
+                    var wide = ButtonWidth(button, Wide);
+                    if (target is not null) Button(target, button, palette, next, at, wide); next += wide + ButtonGap;
+                }
+                at += ButtonHeight;
+            }
+            var under = row.Count > 0;
+            foreach (var button in request.Buttons.Where(button => button.OwnRow))
+            {
+                // A long answer on a row of its own, as wide as the bubble (M:432-435).
+                at += under ? ButtonGap : spacing; under = true;
+                if (target is not null) Button(target, button, palette, x, at, w);
+                at += ButtonHeight;
+            }
+            if (current.Count > 1 || current.Pending) { at += spacing; if (target is not null) Pager(target, current, palette, x, at, w); at += PagerHeight; }
+            return at - top;
+        }
+        if (plan)
+        {
+            // The plan in small Markdown on the ink at 6% (M:413-419): whole while the taller window has room for it under
+            // the header and over the buttons, scrolling in that room once it has not.
+            var measure = MeasurePlan(request.Plan!, w - 2 * PlanInsetH, palette);
+            var room = Math.Max(PlanMinimum, CompanionBubbleLayout.TallHeight - CompanionBubbleLayout.Chrome - 2 * Inset - head - spacing - Tail(null, 0));
+            var box = new Area(x, cursor + spacing, w, Math.Ceiling(Math.Min(measure.Total + 2 * PlanInsetV, room)));
+            if (session is not null) DrawPlan(session, measure, palette, box);
+            cursor = box.Bottom;
+        }
+        else if (request.Question)
         {
             Stack(request.Headline, 11, 500, 3, DesignToken.Ink);
-            // A choice (M:391-412): its label over its description on the subtle wash, or on the accent at 16% once picked.
-            foreach (var option in request.Options)
+            // A choice (M:457-475): its label over its description on the subtle wash, or on the accent at 16% once picked. A press answers with it.
+            for (var index = 0; index < request.Options.Count; index++)
             {
+                var option = request.Options[index];
                 cursor += spacing;
                 var lead = request.MultiSelect ? 10 + 6 : 0;
                 using var label = Text(option.Label, 11, 500, Math.Max(1, w - 16 - lead));
@@ -451,7 +533,7 @@ internal sealed class CompanionOverlay : IDisposable
                     if (request.MultiSelect) Icon(session, Icons, option.Picked ? "\uE73D" : "\uE739", 10, x + 8 + 5, cursor + 5 + 1 + 5, Paint(option.Picked ? palette.Accent : palette.Ink2));
                     Put(session, label, option.Label, x + 8 + lead, cursor + 5, palette, DesignToken.Ink);
                     if (description is not null) Put(session, description, option.Description, x + 8 + lead, cursor + 5 + label.LayoutBounds.Height + 1, palette, DesignToken.Ink2);
-                    hitButtons.Add((new(x, cursor, w, rowHeight), "questions"));
+                    hitButtons.Add((new(x, cursor, w, rowHeight), CompanionBubble.Choice + index));
                 }
                 cursor += rowHeight;
             }
@@ -462,7 +544,7 @@ internal sealed class CompanionOverlay : IDisposable
             Stack(request.Headline, 11, 500, 2, DesignToken.Ink);
             if (request.Boxed && request.Code is { Length: > 0 } code)
             {
-                // The command, three lines in a box of the primary ink at 6% (M:327-330).
+                // The command, three lines in a box of the primary ink at 6% (M:330-333).
                 cursor += spacing;
                 using var words = Text(code, 10, 400, Math.Max(1, w - 14), 3, Mono);
                 var boxHeight = Math.Ceiling(words.LayoutBounds.Height) + 10;
@@ -475,32 +557,103 @@ internal sealed class CompanionOverlay : IDisposable
             }
             else Stack(request.Code, 10, 400, 3, DesignToken.Ink, Mono);
         }
-        Stack(request.Error, 9, 400, 2, DesignToken.ErrText);
-        var row = request.Buttons.Where(button => !button.OwnRow).ToList();
-        if (row.Count > 0)
-        {
-            // The first button at the left, the others from the right edge, 6 apart (M:336-362).
-            cursor += spacing;
-            var edge = x + w; var free = w - row.Sum(button => ButtonWidth(button, Wide)) - (row.Count - 1) * ButtonGap;
-            for (var index = row.Count - 1; index >= 1; index--)
-            {
-                var button = row[index]; var wide = ButtonWidth(button, button.Prominent && free < 0 ? ButtonWidth(button, Wide) + free : Wide);
-                edge -= wide; if (session is not null) Button(session, button, palette, edge, cursor, wide); edge -= ButtonGap;
-            }
-            if (session is not null) Button(session, row[0], palette, x, cursor, ButtonWidth(row[0], Wide));
-            cursor += ButtonHeight;
-        }
-        var under = row.Count > 0;
-        foreach (var button in request.Buttons.Where(button => button.OwnRow))
-        {
-            // A long answer under the row, at the right edge, as wide as its words within the bubble.
-            cursor += under ? ButtonGap : spacing; under = true;
-            var wide = ButtonWidth(button, w);
-            if (session is not null) Button(session, button, palette, x + w - wide, cursor, wide);
-            cursor += ButtonHeight;
-        }
-        if (current.Count > 1 || current.Pending) { cursor += spacing; if (session is not null) Pager(session, current, palette, x, cursor, w); cursor += PagerHeight; }
+        cursor += Tail(session, cursor);
         return cursor - y;
+    }
+
+    /// <summary>The plan's blocks and where each stands at this width, kept while the plan and the width stay.</summary>
+    private PlanMeasure MeasurePlan(string plan, double width, DesignPalette palette)
+    {
+        if (planMeasure is { } known && known.Width == width && known.Plan == plan) return known;
+        var blocks = CompanionBubble.PlanBlocks(plan); var tops = new double[blocks.Count]; var heights = new double[blocks.Count]; double total = 0;
+        for (var index = 0; index < blocks.Count; index++)
+        {
+            if (index > 0) total += PlanGap;
+            tops[index] = total; heights[index] = PlanBlock(null, blocks[index], palette, 0, 0, width); total += heights[index];
+        }
+        return planMeasure = new(plan, width, blocks, tops, heights, total);
+    }
+
+    /// <summary>
+    /// The plan's text in its box: clipped to it and moved up by what was scrolled, only the blocks in sight drawn, with a
+    /// slim thumb at the right edge once the text outgrows the box. A press on it is no button's.
+    /// </summary>
+    private void DrawPlan(CanvasDrawingSession session, PlanMeasure measure, DesignPalette palette, Area box)
+    {
+        var radius = (float)DesignMetrics.Radius.Row;
+        session.FillRoundedRectangle(box, radius, radius, Paint(palette.Ink, 0.06));
+        planArea = box; planExtent = measure.Total + 2 * PlanInsetV;
+        planScroll = Math.Clamp(planScroll, 0, Math.Max(0, planExtent - box.Height));
+        using (session.CreateLayer(1f, box))
+        {
+            double inner = box.X + PlanInsetH, first = box.Y + PlanInsetV - planScroll, wide = box.Width - 2 * PlanInsetH;
+            for (var index = 0; index < measure.Blocks.Count; index++)
+            {
+                var at = first + measure.Tops[index];
+                if (at + measure.Heights[index] >= box.Top && at <= box.Bottom) PlanBlock(session, measure.Blocks[index], palette, inner, at, wide);
+            }
+        }
+        if (planExtent > box.Height)
+        {
+            var thumb = Math.Max(16, box.Height * box.Height / planExtent); var travel = box.Height - 4 - thumb;
+            session.FillRoundedRectangle((float)(box.Right - 5), (float)(box.Y + 2 + travel * planScroll / (planExtent - box.Height)), 3, (float)thumb, 1.5f, 1.5f, Paint(palette.Ink, 0.25));
+        }
+        hitButtons.Add((box, "plan-text"));
+    }
+
+    /// <summary>
+    /// One block of the plan in the bubble's small Markdown (M/AgentMarkdownView.swift:139-180, compact): a heading in 13, 12
+    /// or 11 semibold with 2 over it, a paragraph in 11, a list item behind its bullet, number or check box, a quote behind
+    /// its accent bar in the secondary ink, code in 10pt mono on a wash, a rule. Laid out, drawn when given a session, and
+    /// its height returned.
+    /// </summary>
+    private double PlanBlock(CanvasDrawingSession? session, CompanionPlanBlock block, DesignPalette palette, double x, double y, double w)
+    {
+        if (block.Kind == "rule")
+        {
+            session?.FillRectangle((float)x, (float)(y + DesignMetrics.Spacing.Xs), (float)w, (float)DesignMetrics.Stroke.Line, Paint(palette.Line));
+            return DesignMetrics.Spacing.Xs + DesignMetrics.Stroke.Line + DesignMetrics.Spacing.Xs;
+        }
+        if (block.Kind == "code")
+        {
+            using var code = Text(block.Text, 10, 400, Math.Max(1, w - 12), 0, Mono);
+            var high = Math.Ceiling(code.LayoutBounds.Height) + 8;
+            if (session is not null)
+            {
+                session.FillRoundedRectangle((float)x, (float)y, (float)w, (float)high, (float)DesignMetrics.Radius.Segment, (float)DesignMetrics.Radius.Segment, Paint(palette.Ink, 0.06));
+                Put(session, code, block.Text, x + 6, y + 4, palette, DesignToken.Ink);
+            }
+            return high;
+        }
+        bool heading = block.Kind == "heading", item = block.Kind == "item", quote = block.Kind == "quote";
+        double size = heading ? block.Level == 1 ? 13 : block.Level == 2 ? 12 : 11 : 11, over = heading ? DesignMetrics.Spacing.Xxs : 0;
+        var lead = item ? block.Level * PlanIndent + PlanMarker + 6 : quote ? 3 + 8 : 0;
+        using var words = Text(block.Text, size, heading ? 600 : 400, Math.Max(1, w - lead), 0);
+        foreach (var span in block.Spans ?? [])
+        {
+            if (span.Length <= 0 || span.Start < 0 || span.Start + span.Length > block.Text.Length) continue;
+            if (span.Style == "bold") words.SetFontWeight(span.Start, span.Length, new Windows.UI.Text.FontWeight { Weight = 700 });
+            else if (span.Style == "italic") words.SetFontStyle(span.Start, span.Length, Windows.UI.Text.FontStyle.Italic);
+            else { words.SetFontFamily(span.Start, span.Length, Mono); words.SetFontSize(span.Start, span.Length, (float)(size - 1)); }
+        }
+        var tall = Math.Ceiling(words.LayoutBounds.Height);
+        if (session is not null)
+        {
+            if (quote) session.FillRoundedRectangle((float)x, (float)(y + over), 3, (float)tall, 2, 2, Paint(palette.Accent, 0.6));
+            if (item && block.Marker is { } marker)
+            {
+                // The marker ends its column of 17, level with the item's first line.
+                var column = x + block.Level * PlanIndent + PlanMarker; var line = words.LineCount > 0 ? words.LayoutBounds.Height / words.LineCount : tall;
+                if (marker is "\u2610" or "\u2611") Icon(session, Icons, marker == "\u2611" ? "\uE73D" : "\uE739", 10, column - 5, y + over + line / 2, Paint(marker == "\u2611" ? palette.Accent : palette.Ink2));
+                else
+                {
+                    using var mark = Text(marker, 11, 400, Wide, tabular: true);
+                    session.DrawTextLayout(mark, (float)(column - mark.LayoutBounds.Width), (float)(y + over), Paint(marker == "\u2022" ? palette.Accent : palette.Ink2));
+                }
+            }
+            Put(session, words, block.Text, x + lead, y + over, palette, quote ? DesignToken.Ink2 : DesignToken.Ink);
+        }
+        return over + tall;
     }
 
     /// The presence mark in its 15pt frame (M/AgentCompanionViews.swift:107-115): a turning arc while it runs, the raised
@@ -558,14 +711,17 @@ internal sealed class CompanionOverlay : IDisposable
             hitButtons.Add((new(cursor - 2, y - 3, 20, PagerHeight + 6), "pending"));
         }
     }
-    private double ButtonWidth(CompanionOverlayButton button, double limit)
+    private double ButtonWidth(CompanionBubbleButton button, double limit)
     {
-        if (button.Glyph) return 26;
+        if (button.Icon) return 26;
         using var label = Text(button.Label, 11, 400, Wide);
         return Math.Max(26, Math.Min(limit, Math.Ceiling(label.LayoutBounds.Width) + 16));
     }
-    /// A small system button: bordered on the raised card with a line, or prominent in the accent (M/AgentCompanionViews.swift:336-362).
-    private void Button(CanvasDrawingSession session, CompanionOverlayButton button, DesignPalette palette, double x, double y, double wide)
+    /// The symbol a button is drawn as: the plan or the request in a window of its own (arrow.up.left.and.arrow.down.right,
+    /// M/AgentCompanionViews.swift:425), an answer written out, else the pane (arrow.up.forward.app, M:342, 423).
+    private static string ButtonSymbol(string id) => id switch { CompanionBubble.Review or CompanionBubble.PlanReview => "\uE740", CompanionBubble.Custom => "\uE70F", _ => "\uE8A7" };
+    /// A small system button: bordered on the raised card with a line, or prominent in the accent (M/AgentCompanionViews.swift:339-365).
+    private void Button(CanvasDrawingSession session, CompanionBubbleButton button, DesignPalette palette, double x, double y, double wide)
     {
         float radius = (float)ButtonRadius;
         // A disabled button at the pane's disabled-button opacity (MainWindow.ToolPermission.cs CardButtonDisabled), with no hit area.
@@ -577,13 +733,14 @@ internal sealed class CompanionOverlay : IDisposable
             session.DrawRoundedRectangle((float)x + .5f, (float)y + .5f, (float)wide - 1, (float)ButtonHeight - 1, radius - .5f, radius - .5f, Paint(palette.Line), (float)DesignMetrics.Stroke.Line);
         }
         var ink = button.Prominent ? DesignToken.OnAccent : DesignToken.Ink;
-        if (button.Glyph) Icon(session, Icons, "\uE8A7", 11, x + wide / 2, y + ButtonHeight / 2, Paint(palette[ink]));
+        if (button.Icon) Icon(session, Icons, ButtonSymbol(button.Id), 11, x + wide / 2, y + ButtonHeight / 2, Paint(palette[ink]));
         else
         {
             using var label = Text(button.Label, 11, 400, Math.Max(1, wide - 16));
             Put(session, label, button.Label, x + (wide - label.LayoutBounds.Width) / 2, Math.Round(y + (ButtonHeight - label.LayoutBounds.Height) / 2), palette, ink);
         }
-        if (!button.Disabled) hitButtons.Add((new(x, y, wide, ButtonHeight), button.Id));
+        // A disabled button still owns its place: a press there is nobody's, never the bubble's own "open", which would bring the app forward.
+        hitButtons.Add((new(x, y, wide, ButtonHeight), button.Disabled ? "disabled" : button.Id));
     }
     /// questionmark.bubble.fill: no Windows icon font has it, so the bubble and its tail are drawn, and the mark is cut in the card's colour.
     private void QuestionBubble(CanvasDrawingSession session, double x, double y, DesignPalette palette)
@@ -864,6 +1021,14 @@ internal sealed class CompanionOverlay : IDisposable
                 case 0x020e:
                     // Only over a bubble: a stray scroll on the pet must not turn a page (M/AgentCompanionViews.swift:446-447).
                     var wheelX = ((short)lParam.ToInt64() - left) / scale; var wheelY = ((short)(lParam.ToInt64() >> 16) - top) / scale;
+                    // Over a plan that outgrew its box the wheel moves the plan (M/AgentCompanionViews.swift:416).
+                    if (cardDirty && cardLayer is not null) RenderCard();
+                    if (showBubble && !menuOpen && card?.Approval?.Plan is not null && planExtent > planArea.Height && Inside(planArea, wheelX, wheelY))
+                    {
+                        var moved = Math.Clamp(planScroll - unchecked((short)(wParam >> 16)) / 120.0 * PlanNotch, 0, planExtent - planArea.Height);
+                        if (moved != planScroll) { planScroll = moved; cardDirty = true; }
+                        return 0;
+                    }
                     if (!showBubble || menuOpen || card is not { Count: > 1 } || !Inside(BubbleArea, wheelX, wheelY)) return 0;
                     wheelDelta += unchecked((short)(wParam >> 16));
                     if (Math.Abs(wheelDelta) >= 120) { Action?.Invoke(card.Key, wheelDelta > 0 ? "next" : "previous"); wheelDelta = 0; } return 0;

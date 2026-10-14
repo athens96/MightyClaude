@@ -95,11 +95,19 @@ public sealed partial class MainWindow
             if (stopping) return;
             composerSubmissionVersion++;
             queueKeptOnStop = BackgroundQueuePolicy.StopKeepsQueue(Session.BackgroundWork);
-            queueDrainTimer.Stop(); if (!queueKeptOnStop) queuedInputs.Clear(); RenderQueuedInputs();
+            queueDrainTimer.Stop(); if (!queueKeptOnStop) CancelQueueOnStop(); RenderQueuedInputs();
             stopping = true; RefreshComposerState();
             try { await owner.service.StopAsync(id); }
             finally { stopping = false; if (QueuePaneAlive) Refresh(); }
         });
+
+        /// <summary>A stop cancels what waited, and the transcript says how many requests that was (M/AppStore.swift:926-927).</summary>
+        private void CancelQueueOnStop()
+        {
+            var notice = QueuedInputBuffer.SettleNotice("stopped", queuedInputs.Items.Count);
+            queuedInputs.Clear();
+            if (notice is not null && QueuePaneAlive) _ = SlashNote(notice);
+        }
 
         private void RefreshQueuedComposer(bool busy)
         {
@@ -124,6 +132,8 @@ public sealed partial class MainWindow
         {
             if (value.Type != "status") return;
             var kept = value.Status == "stopped" && queueKeptOnStop; if (value.Status is "stopped" or "completed" or "idle" or "error") queueKeptOnStop = false;
+            // A stop from anywhere cancels what still waits and an error holds it: either is said in the transcript (M/AppStore.swift:922-929).
+            if (QueuedInputBuffer.SettleNotice(value.Status ?? "", queuedInputs.Items.Count, kept) is { } notice && QueuePaneAlive) _ = SlashNote(notice);
             if (queuedInputs.Settle(value.Status ?? "", kept)) queueDrainTimer.Start();
             else if (value.Status is "error" or "stopped") queueDrainTimer.Stop();
             RenderQueuedInputs();
@@ -132,40 +142,55 @@ public sealed partial class MainWindow
         /// <summary>The editor sits 9 under the card's edge, or straight under the attachments or the queue, and the queue 6 under the attachments (M/SessionPaneView.swift:557, 583).</summary>
         private void FitComposerSpacing()
         {
-            var attached = pendingAttachments.Count > 0; var queued = queuedInputs.Items.Count > 0;
+            var attached = pendingAttachments.Count > 0; var queued = queuedInputs.Items.Count > 0 || owner.service.HeldItems(id).Count > 0;
             queuedInputHost.Margin = new Thickness(DesignMetrics.Inset.ComposerInnerH, attached ? DesignMetrics.Spacing.Sm : DesignMetrics.Spacing.Md, DesignMetrics.Inset.ComposerInnerH, 0);
             if (inputRow is not null) inputRow.Margin = new Thickness(DesignMetrics.Inset.ComposerInnerH, attached || queued ? 0 : DesignMetrics.Spacing.Sm, DesignMetrics.Inset.ComposerInnerH, 0);
         }
 
         /// <summary>
-        /// The waiting requests (M/QueuedInputsView.swift:15-44): a line that counts them behind an accent clock, with
-        /// "run next" while the pane is idle; then each request on the subtle wash at radius 8 — its number in 10
-        /// semibold <c>ink2</c>, its words in 11 (two lines), its attachments' names in 10 <c>ink2</c> and a remove button.
+        /// The waiting requests (M/QueuedInputsView.swift:15-63): a line that counts them behind an accent clock, with
+        /// "run next" while the pane is idle or anything is held; then delegation's held notices and follow-ups first, each
+        /// with a pin and no remove button; then each request on the subtle wash at radius 8 — its number in 10 semibold
+        /// <c>ink2</c>, its words in 11 (two lines), its attachments' names in 10 <c>ink2</c> and a remove button.
         /// </summary>
         private void RenderQueuedInputs()
         {
             var b = owner.brushes; var ink2 = b.Brush(DesignToken.Ink2); var accent = b.Brush(DesignToken.Accent);
-            queuedInputHost.Children.Clear(); queuedInputHost.Visibility = queuedInputs.Items.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+            var held = owner.service.HeldItems(id); var total = held.Count + queuedInputs.Items.Count;
+            queuedInputHost.Children.Clear(); queuedInputHost.Visibility = total == 0 ? Visibility.Collapsed : Visibility.Visible;
             FitComposerSpacing();
-            if (queuedInputs.Items.Count == 0) return;
+            if (total == 0) return;
             var busy = Session.Status == "running" || starting || queueStarting || owner.BackgroundUpdateHolds(Session);
             var header = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm }; header.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); header.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             header.Children.Add(new FontIcon { Glyph = "", FontSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = accent, VerticalAlignment = VerticalAlignment.Center });
             var waitsOnBackground = BackgroundQueuePolicy.WaitsOnBackground(Session.BackgroundWork, LaunchesInPlanMode, queuedInputs.Items.Count);
-            var count = new TextBlock { Text = Locale.Get(busy ? "queue.waitingBusy" : "queue.waiting", new Dictionary<string, string> { ["count"] = queuedInputs.Items.Count.ToString() }) + (waitsOnBackground ? "\n" + Locale.Get("queue.waitingOnBackground.windows") : ""), FontSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = ink2, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
+            var count = new TextBlock { Text = Locale.Get(busy ? "queue.waitingBusy" : "queue.waiting", new Dictionary<string, string> { ["count"] = total.ToString() }) + (waitsOnBackground ? "\n" + Locale.Get("queue.waitingOnBackground.windows") : ""), FontSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = ink2, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
             if (waitsOnBackground) AutomationProperties.SetAutomationId(count, "queue-background-" + id);
             Grid.SetColumn(count, 1); header.Children.Add(count);
-            if (!busy)
+            if (DelegationQueueRows.OffersRunNext(busy, held.Count))
             {
                 var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs };
                 label.Children.Add(new FontIcon { Glyph = "", FontSize = 8, VerticalAlignment = VerticalAlignment.Center });
                 label.Children.Add(new TextBlock { Text = Locale.Get("queue.runNext"), FontSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.Medium, VerticalAlignment = VerticalAlignment.Center });
-                var next = Button(Locale.Get("queue.runNext"), StartNextQueuedInput); next.Content = label; next.Padding = new(DesignMetrics.Spacing.Xs, 1, DesignMetrics.Spacing.Xs, 1); next.MinWidth = 0; next.MinHeight = 0; next.BorderThickness = new(0); next.CornerRadius = new(DesignMetrics.Radius.FileRow);
+                var next = Button(Locale.Get("queue.runNext"), RunNext); next.Content = label; next.Padding = new(DesignMetrics.Spacing.Xs, 1, DesignMetrics.Spacing.Xs, 1); next.MinWidth = 0; next.MinHeight = 0; next.BorderThickness = new(0); next.CornerRadius = new(DesignMetrics.Radius.FileRow);
                 owner.PaintPlainButton(next, b.Transparent, b.Subtle, ink: accent);
                 AutomationProperties.SetAutomationId(next, "queue-run-" + id); Grid.SetColumn(next, 2); header.Children.Add(next);
             }
             queuedInputHost.Children.Add(header);
             var index = 0;
+            foreach (var item in held)
+            {
+                var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, Padding = new(DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xs, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xs) }; row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+                var number = new TextBlock { Text = (++index).ToString(), FontSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink2, Width = 14, TextAlignment = TextAlignment.Right, Margin = new(0, 1, 0, 0), VerticalAlignment = VerticalAlignment.Top };
+                Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(number, FontNumeralAlignment.Tabular); row.Children.Add(number);
+                var words = new TextBlock { Text = item.Text, FontSize = 11, Foreground = b.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis };
+                Grid.SetColumn(words, 1); row.Children.Add(words);
+                // Held for the pane, not the human's request: a pin where the remove button would be (M/QueuedInputsView.swift:39-41).
+                var pin = new FontIcon { Glyph = "", FontSize = 9, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink2, Width = 18, Height = 16, VerticalAlignment = VerticalAlignment.Top };
+                ToolTipService.SetToolTip(pin, Locale.Get("queue.heldHelp")); AutomationProperties.SetName(pin, Locale.Get("queue.held")); Grid.SetColumn(pin, 2); row.Children.Add(pin);
+                AutomationProperties.SetAutomationId(row, "queue-held-" + item.Id);
+                queuedInputHost.Children.Add(new Border { Child = row, CornerRadius = new(DesignMetrics.Radius.Row), Background = b.Subtle });
+            }
             foreach (var item in queuedInputs.Items)
             {
                 var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, Padding = new(DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xs, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xs) }; row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
@@ -184,21 +209,67 @@ public sealed partial class MainWindow
             }
         }
 
+        /// <summary>
+        /// Run next (M/AppStore.swift:865-885): the items delegation holds for the pane go first, all of them in one run, steered
+        /// into its running Claude run when it has one; only with nothing held does the first queued row run, as before. Held
+        /// items no run took stay held.
+        /// </summary>
+        private Task RunNext() => owner.Act(async () =>
+        {
+            if (!QueuePaneAlive) return;
+            // Nothing held: the first queued row runs at once, as before.
+            if (owner.service.HeldItems(id).Count == 0) { await StartNextQueuedInput(); return; }
+            if (owner.DelegatedRunBlockReason(Session) is { } blocked) throw new InvalidOperationException(blocked);
+            switch (await owner.service.RunNextAsync(id))
+            {
+                case DelegationRelease.NotStarted: throw new InvalidOperationException(Locale.Get("remote.error.startFailed"));
+                case DelegationRelease.NothingHeld: await StartNextQueuedInput(); break;
+            }
+            if (QueuePaneAlive) { RenderQueuedInputs(); RefreshComposerState(); }
+        });
+
         private Task StartNextQueuedInput() => owner.Act(async () =>
         {
+            // An update or a plugin change, by hand or in the background, only holds what waited: it passes (M/AppStore.swift:902-903).
             if (!QueuePaneAlive || starting || queueStarting || Session.Status == "running" || owner.service.IsSessionRunning(id) || owner.BackgroundUpdateHolds(Session) || owner.ManualMutationBlockReason(Session) is not null || queuedInputs.Items.FirstOrDefault() is not { } item) return;
+            // A pane that cannot run at all drops what waited and says why (M/AppStore.swift:904-908), but only once a fresh reading,
+            // the CLI looked for again rather than the one held, says so too: a reading taken mid-update may be wrong.
+            if (RunBlock.Reason(Session, owner.Runtime(Session.Provider)) is not null)
+            {
+                queueStarting = true; RefreshComposerState();
+                ProviderRuntime fresh;
+                try { fresh = await owner.ReadProviderAfresh(Session.Provider, Workspace.Path); }
+                finally { queueStarting = false; if (QueuePaneAlive) RefreshComposerState(); }
+                if (!QueuePaneAlive || !queuedInputs.Items.Contains(item)) return;
+                if (RunBlock.Reason(Session, fresh) is { } blocked)
+                {
+                    var notice = QueuedInputBuffer.UnrunnableNotice(queuedInputs.Items.Count, blocked);
+                    queuedInputs.Clear(); RenderQueuedInputs(); await SlashNote(notice);
+                    return;
+                }
+            }
             queueStarting = true; RefreshComposerState();
+            string? last = null;
             try
             {
-                var pane = Session;
-                var submitted = await PrepareStyleSubmission(item.Text, item.Attachments.Count > 0);
+                await PrepareModels();
+                if (!QueuePaneAlive || !queuedInputs.Items.Any(queued => queued.Id == item.Id)) return;
+                var pane = Session; last = pane.Logs.LastOrDefault()?.Id;
+                var submitted = item.Prepared ? item.Text : await PrepareStyleSubmission(item.Text, item.Attachments.Count > 0);
                 var request = await PrepareStyleRunRequest(new StartRunRequest(pane.Id, pane.WorkspaceId, pane.Kind, submitted, RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot), pane.Model, pane.Provider, pane.Settings, pane.ResumeId, item.Attachments.ToList()));
                 // The decision made when the item was queued wins (§1.17.4).
                 request = request with { PermissionModeOverride = item.PermissionModeOverride };
                 // Stop or removal while style consent was open must prevent this request from starting.
                 if (!QueuePaneAlive || !queuedInputs.Items.Any(queued => queued.Id == item.Id)) return;
-                await owner.StartFromComposer(request);
+                // No run took it (the items held for the pane stay held): it stays at the head of the queue, and the transcript says so (M/AppStore+Delegation.swift:191-195).
+                if (await owner.StartFromComposer(request) is DelegationRelease.NotStarted) { if (QueuePaneAlive) await SlashNote(QueuedInputBuffer.KeptNotice(Locale.Get("remote.error.startFailed"))); return; }
                 queuedInputs.Remove(item.Id);
+            }
+            // Refused before its run began (nothing of it reached the transcript): the request stays, and the transcript says why (M/AppStore.swift:917-921).
+            catch (Exception ex) when (ex is not (OutOfMemoryException or OperationCanceledException) && QueuePaneAlive && Session.Logs.LastOrDefault()?.Id == last)
+            {
+                await SlashNote(QueuedInputBuffer.KeptNotice(ex.Message));
+                throw;
             }
             finally { queueStarting = false; if (QueuePaneAlive) { RenderQueuedInputs(); RefreshComposerState(); } }
         });

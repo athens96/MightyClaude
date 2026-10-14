@@ -9,8 +9,8 @@ section: layout
 
 ## 侧边栏 {#sidebar}
 侧边栏从上到下依次是：
-- {{ui:phone.dashboard.title}}：在一处查看所有工作区中窗格的状态。
 - {{ui:sidebar.searchPlaceholder}}：按{{kbd:⌘K}}可直接跳到搜索框。
+- {{ui:phone.dashboard.title}}：在一处查看所有工作区中窗格的状态。
 - {{ui:sidebar.workspacesHeader}}列表：点击工作区即可切换到该工作区。点击旁边的箭头可以展开或收起其窗格列表。
 - 底部：主题按钮（深色、浅色）和设置按钮。
 
@@ -32,7 +32,7 @@ section: layout
 ![[sidebar-collapsed]]
 
 ## 工作状态 {#dashboard}
-点击侧边栏最上方的{{ui:phone.dashboard.title}}，可以按状态汇总查看所有工作区的窗格。
+点击侧边栏搜索框下方的{{ui:phone.dashboard.title}}，可以按状态汇总查看所有工作区的窗格。
 - 顶部的格子显示{{ui:phone.dashboard.stat.running}}、{{ui:phone.dashboard.stat.waiting}}和{{ui:phone.dashboard.stat.done}}的数量。
 - {{ui:dashboard.usage.title}}卡片显示账户用量。此限额与使用同一账户的其他应用和会话共享。
 - 每个工作区都有{{ui:files.pane.title}}按钮和{{ui:workspace.addPane}}菜单。

@@ -22,7 +22,10 @@ public sealed partial class MainWindow
     internal const double SearchRowHeight = 15;
     /// <summary>The count beside the section header's words, 10pt mono.</summary>
     private readonly TextBlock sessionsCount = new() { FontSize = DesignMetrics.Type.Small, FontFamily = new FontFamily(DesignMetrics.Font.Mono), VerticalAlignment = VerticalAlignment.Center };
-    private readonly StackPanel sessionsHeaderRow = new() { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, Margin = new Thickness(DesignMetrics.Inset.SidebarSectionH, DesignMetrics.Inset.SidebarSectionT, DesignMetrics.Inset.SidebarSectionH, DesignMetrics.Inset.SidebarSectionB) };
+    /// <summary>The section header's folder-plus button, and its frame: 18 wide, 14 high (M/WorkspaceView.swift:117-119).</summary>
+    private Button? sidebarAddWorkspaceButton;
+    internal const double SidebarAddWorkspaceWidth = 18, SidebarAddWorkspaceHeight = 14;
+    private readonly Grid sessionsHeaderRow = new() { ColumnSpacing = DesignMetrics.Spacing.Sm, Margin = new Thickness(DesignMetrics.Inset.SidebarSectionH, DesignMetrics.Inset.SidebarSectionT, DesignMetrics.Inset.SidebarSectionH, DesignMetrics.Inset.SidebarSectionB) };
     /// <summary>What the list says when it lists no workspace: none match the search, or none yet (M/WorkspaceView.swift:89-93).</summary>
     private readonly TextBlock sidebarEmpty = new() { FontSize = 12, TextWrapping = TextWrapping.Wrap, Padding = new Thickness(DesignMetrics.Spacing.Lg), Margin = new Thickness(DesignMetrics.Spacing.Sm, 0, DesignMetrics.Spacing.Sm, 0), Visibility = Visibility.Collapsed };
     /// <summary>The open-folder button's words, set again when the language changes.</summary>
@@ -61,13 +64,27 @@ public sealed partial class MainWindow
         return sidebarSearchBox;
     }
 
-    /// <summary>The section header "워크스페이스 6": 10pt semibold words and a 10pt mono count, both <c>sidebarInk2</c>, padding h20 t20 b11.</summary>
+    /// <summary>
+    /// The section header "워크스페이스 6" (M/WorkspaceView.swift:112-125): 10pt semibold words and a 10pt mono count,
+    /// both <c>sidebarInk2</c>, padding h20 t20 b11; at its trailing edge the plain folder-plus button, an 11pt
+    /// symbol in the same ink, which opens a project folder as a workspace the way Open Project Folder… does.
+    /// </summary>
     private FrameworkElement BuildSidebarSectionHeader()
     {
         sessionsHeader.Foreground = sessionsCount.Foreground = sidebarEmpty.Foreground = brushes.Brush(DesignToken.SidebarInk2);
         // The Mac's 10pt line is 12 high where Segoe's is 14.
         sessionsHeader.Margin = sessionsCount.Margin = MacLine();
-        sessionsHeaderRow.Children.Add(sessionsHeader); sessionsHeaderRow.Children.Add(sessionsCount);
+        foreach (var width in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto }) sessionsHeaderRow.ColumnDefinitions.Add(new() { Width = width });
+        sessionsCount.HorizontalAlignment = HorizontalAlignment.Left;
+        var add = sidebarAddWorkspaceButton = Button("", () => dialogOpen ? Task.CompletedTask : PickFolder());
+        add.Content = MightySymbols.Create("folder.badge.plus", 11, null);
+        add.Width = SidebarAddWorkspaceWidth; add.Height = SidebarAddWorkspaceHeight; add.MinWidth = add.MinHeight = 0; add.Padding = new Thickness(0);
+        add.Foreground = brushes.Brush(DesignToken.SidebarInk2); add.VerticalAlignment = VerticalAlignment.Center;
+        PlainSidebarButton(add, brushes.Transparent, brushes.Transparent);
+        AutomationProperties.SetAutomationId(add, "sidebar-add-workspace");
+        sessionsHeaderRow.Children.Add(sessionsHeader);
+        Grid.SetColumn(sessionsCount, 1); sessionsHeaderRow.Children.Add(sessionsCount);
+        Grid.SetColumn(add, 2); sessionsHeaderRow.Children.Add(add);
         return sessionsHeaderRow;
     }
 
@@ -233,7 +250,7 @@ public sealed partial class MainWindow
             var expanded = WorkspaceDisclosure.Expanded(state);
             sidebarDrawnForDashboard = showsDashboard;
             workspaces.Children.Clear(); workspaceStatusCounts.Clear(); sidebarSessionButtons.Clear(); workspaceDisclosureButtons.Clear();
-            sessionIndicators.Clear(); sidebarDetails.Clear(); sidebarMarks.Clear(); sidebarBetas.Clear(); sidebarTitles.Clear(); sidebarKindLines.Clear(); sidebarRowEdges.Clear();
+            sessionIndicators.Clear(); sidebarDetails.Clear(); sidebarMarks.Clear(); sidebarBetas.Clear(); sidebarTitles.Clear(); sidebarKindLines.Clear(); sidebarRowEdges.Clear(); sidebarChildStates.Clear();
             sessionsCount.Text = state.Workspaces.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
             addFolderButton.Visibility = listed.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             sidebarEmpty.Text = listed.Count == 0 ? Locale.Get(search.Text.Trim().Length > 0 ? "sidebar.noSearchResults" : "dashboard.empty") : "";
@@ -279,16 +296,14 @@ public sealed partial class MainWindow
                     // Each pane row is set in SidebarPaneRowsMargin, the group's list gap under the workspace row,
                     // between rows and over the add row (M/WorkspaceView.swift:178, 266).
                     var children = new StackPanel { Spacing = DesignMetrics.Inset.ListGap, Margin = SidebarPaneRowsMargin };
-                    foreach (var session in state.Sessions.Where(session => session.WorkspaceId == workspace.Id))
+                    // Delegated children one step in under their parent pane, and a closed parent's under its node (M/WorkspaceView.swift:239-245).
+                    var tree = service.SidebarTree(state, workspace.Id);
+                    foreach (var session in tree.Top)
                     {
-                        var active = !showsDashboard && state.ActiveSessionId == session.Id;
-                        var button = SidebarButton(session.Title, () => SelectLayoutSession(session.Id));
-                        button.Content = SessionIndicator(session, active: active); button.ContextFlyout = SidebarPaneMenu(session.Id);
-                        StyleSidebarPaneRow(button, active);
-                        AutomationProperties.SetAutomationId(button, "sidebar-session-" + session.Id);
-                        AutomationProperties.SetName(button, AutomationProperties.GetName((DependencyObject)button.Content));
-                        sidebarSessionButtons[session.Id] = button; children.Children.Add(button);
+                        children.Children.Add(SidebarPaneButton(session, state));
+                        foreach (var child in tree.Children.GetValueOrDefault(session.Id) ?? []) children.Children.Add(SidebarChildRow(child, state, false));
                     }
+                    foreach (var node in tree.ParentClosed) children.Children.Add(SidebarParentClosedNode(node, state));
                     if (children.Children.Count > 0) group.Children.Add(children);
                     // The add row, the list's last (M/WorkspaceView.swift:322-343): plus 10 semibold and 11pt words in sidebarAccent, padding l28 r12 and the row inset over and under.
                     var add = SidebarButton(Locale.Get("workspace.addPane"), () => Task.CompletedTask);
@@ -305,6 +320,19 @@ public sealed partial class MainWindow
             }
         }
         finally { rendering = previous; }
+    }
+
+    /// <summary>A pane's sidebar row: its button, which selects it, with the row's look, its menu and its names; a delegated <paramref name="child"/>'s carries its state and card actions.</summary>
+    private Button SidebarPaneButton(RunSession session, AppSnapshot state, DelegationChildRow? child = null)
+    {
+        var active = !showsDashboard && state.ActiveSessionId == session.Id;
+        var button = SidebarButton(session.Title, () => SelectLayoutSession(session.Id));
+        button.Content = SessionIndicator(session, active: active, child: child); button.ContextFlyout = SidebarPaneMenu(session.Id, child);
+        StyleSidebarPaneRow(button, active);
+        AutomationProperties.SetAutomationId(button, "sidebar-session-" + session.Id);
+        AutomationProperties.SetName(button, AutomationProperties.GetName((DependencyObject)button.Content));
+        sidebarSessionButtons[session.Id] = button;
+        return button;
     }
 
     /// <summary>
@@ -382,7 +410,7 @@ internal sealed class StatusCountsView
     };
 
     /// <summary>The status a tone's glyph is drawn for.</summary>
-    private static string Status(DesignTone tone) => tone switch
+    internal static string Status(DesignTone tone) => tone switch
     {
         DesignTone.Wait => "waiting", DesignTone.Run => "running", DesignTone.Err => "error",
         DesignTone.Done => "completed", DesignTone.Stop => "stopped", _ => "idle",

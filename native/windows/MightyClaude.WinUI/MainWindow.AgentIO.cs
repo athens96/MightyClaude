@@ -9,7 +9,8 @@ public sealed partial class MainWindow
 {
     private AgentIOPipe? agentIO;
     private readonly Dictionary<string, AgentTerminal> agentTerminals = [];
-    private readonly HashSet<Task> agentTerminalClosures = [];
+    /// <summary>Each closed agent terminal still ending, by its agent pane's id.</summary>
+    private readonly Dictionary<string, Task> agentTerminalClosures = [];
     private readonly AgentWebOpenPrompts agentUrlPrompts = new();
 
     private void InitializeAgentIO()
@@ -83,7 +84,7 @@ public sealed partial class MainWindow
         var paneId = AgentIOPaneKind.PaneId(agentPaneId, kind);
         var parent = state.Sessions.FirstOrDefault(p => p.Id == agentPaneId && p.WorkspaceId == workspaceId) ?? throw new InvalidOperationException("Agent pane closed.");
         if (state.Sessions.Any(p => p.Id == paneId)) return state;
-        if (state.Sessions.Count >= 128) throw new InvalidOperationException("Close a pane before opening another.");
+        if (!PaneLayout.HasRoom(state)) throw new InvalidOperationException("Close a pane before opening another.");
         var before = EffectiveLayout(state, workspaceId);
         var target = PaneLayout.Groups(before).FirstOrDefault(g => g.SessionIds.Contains(agentPaneId));
         // Titled as on the Mac, "터미널" or "브라우저" (M/AppStore+AgentIO.swift:97-98, 114-115); it opens beside its agent.
@@ -157,11 +158,16 @@ public sealed partial class MainWindow
         {
             agentIO?.Bindings.Revoke(id);
             var terminal = agentTerminals[id]; agentTerminals.Remove(id);
-            var task = terminal.DisposeAsync().AsTask(); agentTerminalClosures.Add(task);
-            _ = task.ContinueWith(_ => DispatcherQueue.TryEnqueue(() => agentTerminalClosures.Remove(task)), TaskScheduler.Default);
+            TrackAgentTerminalClosure(id, terminal.DisposeAsync().AsTask());
         }
         foreach (var id in agentBoundPanes.Except(ids).ToArray()) { agentIO?.Bindings.Revoke(id); agentBoundPanes.Remove(id); }
         agentBoundPanes.UnionWith(ids);
+    }
+    /// <summary>Keeps an agent terminal's end until it is over, for the quit and for a delegated child's close to wait on.</summary>
+    private void TrackAgentTerminalClosure(string paneId, Task ending)
+    {
+        var task = agentTerminalClosures.TryGetValue(paneId, out var earlier) ? Task.WhenAll(earlier, ending) : ending; agentTerminalClosures[paneId] = task;
+        _ = task.ContinueWith(_ => DispatcherQueue.TryEnqueue(() => { if (agentTerminalClosures.GetValueOrDefault(paneId) == task) agentTerminalClosures.Remove(paneId); }), TaskScheduler.Default);
     }
     private readonly HashSet<string> agentBoundPanes = [];
     private async Task ShutdownAgentIO()
@@ -170,7 +176,7 @@ public sealed partial class MainWindow
         agentUrlPrompts.Dispose();
         service.ConfigureAgentIO(null);
         if (agentIO is not null) { await agentIO.DisposeAsync(); agentIO = null; }
-        await Task.WhenAll(agentTerminals.Values.Select(t => t.DisposeAsync().AsTask()).Concat(agentTerminalClosures)); agentTerminals.Clear(); agentTerminalClosures.Clear();
+        await Task.WhenAll(agentTerminals.Values.Select(t => t.DisposeAsync().AsTask()).Concat(agentTerminalClosures.Values)); agentTerminals.Clear(); agentTerminalClosures.Clear();
     }
     private sealed partial class PaneView
     {

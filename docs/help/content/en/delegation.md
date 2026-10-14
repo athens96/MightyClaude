@@ -3,21 +3,31 @@ title: Agent delegation
 order: 6
 section: delegation
 ---
-With agent delegation, a Claude pane (the parent) splits its work and hands parts of it to other Claude panes (its children). Each child works in its own git worktree and leaves a report when it is done. The parent gets a notice, reads the report and decides whether to merge the result. It works in the Mac app only.
+With agent delegation, a Claude pane (the parent) splits its work and hands parts of it to other Claude panes (its children). Each child works in its own git worktree and leaves a report when it is done. The parent gets a notice, reads the report and decides whether to merge the result. It works in the Mac app and the Windows app.
 
 > [!warning]
 > This is an experimental feature. It is off by default and has no settings screen. Try it in a practice repository first.
 
 ## Turn it on or off {#enable}
-Quit the app, run this command in a terminal, and open the app again.
+Quit the app, run this command, and open the app again.
+
+{{platform:mac}} In Terminal:
 
 ```sh
 defaults write dev.mightyclaude.native delegation.enabled -bool true
 ```
 
+{{platform:windows}} In Command Prompt or PowerShell:
+
+```
+reg add "HKCU\Software\MightyClaudeNative" /v delegation.enabled /t REG_DWORD /d 1 /f
+```
+
+On Windows it is on while the `delegation.enabled` value (REG_DWORD) under `HKEY_CURRENT_USER\Software\MightyClaudeNative` is not zero. A missing value or zero means off.
+
 - Once it is on, every new run in a Claude pane gets the delegation tools. A run that is already going does not.
 - The parent's tools are `delegate` (hand over a task), `list_children` (list the children), `child_status` (state and report), `merge` and `follow_up` (send a follow-up). The parent can never use `discard`; only you can discard, from a child's card.
-- To turn it off, run `defaults delete dev.mightyclaude.native delegation.enabled`. Only the tools go away; existing child panes, their cards and their cleanup keep working.
+- To turn it off, run `defaults delete dev.mightyclaude.native delegation.enabled` on the Mac or `reg delete "HKCU\Software\MightyClaudeNative" /v delegation.enabled /f` on Windows, and open the app again. Only the tools go away; existing child panes, their cards and their cleanup keep working.
 
 ## Hand over work {#delegate}
 1. Open a git repository folder as a workspace and open a Claude pane. That pane is the parent.
@@ -26,7 +36,7 @@ defaults write dev.mightyclaude.native delegation.enabled -bool true
 
 ![[delegation-tree]]
 
-- Each child gets a branch `mighty/<child id>` and a worktree in `~/.mightyclaude/worktrees/<child id>`. The worktree lives outside your project folder, so it never touches the parent's work.
+- Each child gets a branch `mighty/<child id>` and a worktree in `~/.mightyclaude/worktrees/<child id>` on the Mac, `%USERPROFILE%\.mightyclaude\worktrees\<child id>` on Windows. The worktree lives outside your project folder, so it never touches the parent's work.
 - A child starts from the parent's last commit. Changes you have not committed in the parent's folder do not reach it.
 - The task goes into TASK.md and the result into REPORT.md. Both sit in a folder git ignores inside the worktree, so they are never committed.
 - A child starts in the permission mode the parent chose, which can be no wider than the parent pane's own mode. Only you can widen it, between runs, from the permission menu in the child's composer or in the phone's settings.
@@ -94,9 +104,10 @@ The card's {{ui:delegation.card.discard}} button removes the child's worktree an
 ## Closing panes and cleanup {#close}
 - **When you close a merged child's pane**, the app removes its worktree and branch if all of its work is merged and nothing is left uncommitted (`git branch -d`, never forced). Otherwise only the pane closes and the worktree stays.
 - **When you close a child's pane before merging**, the app can no longer merge it. Its card only offers discard, and its branch and worktree stay until you discard it.
-- **When you close a parent that has open children**, the Mac app asks first ({{ui:delegation.parentClose.title}}). Only the parent pane closes; its children keep working.
+- **When you close a parent that has open children**, the desktop app asks first ({{ui:delegation.parentClose.title}}). Only the parent pane closes; its children keep working.
 - Children of a closed parent stay as cards under the {{ui:delegation.tree.parentClosed}} item in the sidebar. Their notices are held on their cards, which show how many, and they take no more follow-ups.
 - A workspace with open children, or with child worktrees not yet cleaned up, cannot be removed.
+- {{platform:windows}} If a child's worktree holds a junction or a symbolic link (a linked `node_modules`, for example), closing the merged child's pane leaves the worktree in place instead of cleaning it up, so that nothing follows the link and empties the folder it points to. Remove it with the {{ui:delegation.card.discard}} button on its card: discard takes the link itself away first and never touches the folder it points to.
 
 ![[delegation-parent-closed]]
 
@@ -110,4 +121,4 @@ The card's {{ui:delegation.card.discard}} button removes the child's worktree an
 | Free disk needed | 10 GB |
 
 - Both the parent and its children must be Claude panes. Codex and Gemini panes do not delegate.
-- The Windows app does not have it yet. The phone has no new screen, but held rows show in its queue too.
+- Both the Mac app and the Windows app turn it on with a hidden switch ([Turn it on or off](#enable)). The phone has no new screen, but held rows show in its queue too.

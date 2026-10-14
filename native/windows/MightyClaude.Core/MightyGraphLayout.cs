@@ -50,6 +50,30 @@ public sealed class MightyGraphLayout
     public const string PlanRecordSuffix = "plan-record:";
     public const double PlanRecordWidth = 320;
     public static double PlanRecordHeight(bool expanded) => expanded ? 420 : 104;
+    /// <summary>The 실행 block under a request (<see cref="Make"/> <c>splitsExecution</c>): its node id suffix (macOS workSuffix) and its node kind (macOS <c>Content.work</c>).</summary>
+    public const string WorkSuffix = "execution";
+    public const string WorkKind = "work";
+    /// <summary>A background execution's block, attached beside the block that started it (macOS <c>Content.execution</c>, executionSuffix).</summary>
+    public const string ExecutionKind = "execution";
+    public const string ExecutionSuffix = "ouroboros-execution:";
+    public const double ExecutionWidth = 380;
+    /// <summary>Collapsed, it holds the goal, progress, counts, one phase line, a three-line note and the footer without clipping (macOS executionHeight).</summary>
+    public static double ExecutionHeight(bool expanded) => expanded ? 470 : 290;
+    /// <summary>A step's picture preview, attached beside the block that produced them (macOS <c>Content.images</c>, imagesSuffix).</summary>
+    public const string ImagesKind = "images";
+    public const string ImagesSuffix = "images:";
+    public const double ImagesWidth = 304;
+    /// <summary>Thumbnails per row and on screen: two rows folded, four unfolded; the last visible tile carries "+k" for the rest (macOS imagesColumns, visibleImages).</summary>
+    public const int ImagesColumns = 3;
+    public static int VisibleImages(int count, bool expanded) => Math.Min(count, ImagesColumns * (expanded ? 4 : 2));
+    public const double ImagesTile = 88;
+    public static double ImagesHeight(int count, bool expanded)
+    {
+        var rows = Math.Max(1, (VisibleImages(count, expanded) + ImagesColumns - 1) / ImagesColumns);
+        return 38 + 24 + rows * ImagesTile + (rows - 1) * 8;
+    }
+    /// <summary>The height of a request block that holds its input alone, over its 실행 block (macOS requestHeight).</summary>
+    public static double RequestHeight(bool expanded) => expanded ? 280 : 140;
 
     /// <summary>The least a drag may make a block of <paramref name="kind"/> (macOS Node.minimumSize).</summary>
     /// An answered plan's least is its folded height, so its first drag starts where it stands.
@@ -61,6 +85,16 @@ public sealed class MightyGraphLayout
     };
     private const double AttachmentGap = 8;
 
+    /// <summary>Attachments beside the flow: scrolled at once, with no selection (macOS Node.isAuxiliary).</summary>
+    public static bool IsAuxiliary(string kind) => kind is "resultFiles" or "planRecord" or ExecutionKind or ImagesKind;
+    /// <summary>
+    /// Blocks with the corner handle and the edge bands (macOS Node.isResizable): the flow's own blocks, and the
+    /// answered plans although they hang beside it.
+    /// </summary>
+    public static bool IsResizable(string kind) => kind is "request" or WorkKind or "agent" or "result" or "draft" or "plan" or "planRecord";
+    /// <summary>The block that holds a point given in node coordinates, the first laid out when two overlap (macOS <c>frames.first { contains }</c>).</summary>
+    public Node? NodeAt(double x, double y) => Nodes.FirstOrDefault(n => x >= n.Frame.X && x < n.Frame.MaxX && y >= n.Frame.Y && y < n.Frame.MaxY);
+
     public static bool Terminal(string state) =>
         state is "completed" or "error" or "failed" or "stopped" or "cancelled" or "interrupted";
 
@@ -69,6 +103,16 @@ public sealed class MightyGraphLayout
 
     public static string NodeID(MightyGraphRun run, string suffix) =>
         MightyGraphBlockSize.NodeId(run.Id, suffix);
+
+    /// The block the camera stands on for the newest request: its 실행 block while
+    /// it runs, where its work shows, else the request; null without a request
+    /// (macOS <c>newestRequestTargetID</c>).
+    public string? NewestRequestTargetID(IReadOnlyList<MightyGraphRun> runs)
+    {
+        if (runs.Count == 0) return null;
+        var work = NodeID(runs[^1], WorkSuffix);
+        return !Finished(runs[^1]) && Nodes.Any(n => n.Id == work) ? work : NodeID(runs[^1], "request");
+    }
 
     public static string? LatestResultID(IReadOnlyList<MightyGraphRun> runs)
     {
@@ -210,6 +254,12 @@ public sealed class MightyGraphLayout
         }
     }
 
+    /// <paramref name="splitsExecution"/> is the diagram's own (macOS <c>make(splitsExecution:)</c>): a request block
+    /// holds its input alone and a 실행 block (<see cref="WorkKind"/>) under it holds the main agent's work, with the
+    /// sub-agents and the answered plans hanging off it. Off, the request block holds both, as the shared graph
+    /// vectors (native/contracts/graph-vectors.json) lay it out. <paramref name="galleries"/> are the steps that produced
+    /// pictures (<see cref="MightyGraphImages.Galleries"/>) and <paramref name="executions"/> the background executions a
+    /// request's agents started (<see cref="OuroborosExecutionLinks"/>): each gets a block attached beside the flow.
     public static MightyGraphLayout Make(
         IReadOnlyList<MightyGraphRun> runs,
         string draft,
@@ -226,7 +276,10 @@ public sealed class MightyGraphLayout
         IReadOnlyDictionary<string, GraphBlockSize>? blockSizes = null,
         string? planRunID = null,
         IReadOnlyList<(string RunID, string RecordID)>? planRecords = null,
-        GraphBlockSize? planSize = null)
+        GraphBlockSize? planSize = null,
+        bool splitsExecution = false,
+        IReadOnlyList<(string RunID, string Step, int Count)>? galleries = null,
+        IReadOnlyList<(string RunID, string Key)>? executions = null)
     {
         var latestResultID = LatestResultID(runs);
         var filesPanelOpenForLatest = FilesPanelOpen(runs, resultFilesRunID);
@@ -259,8 +312,10 @@ public sealed class MightyGraphLayout
         {
             var run = runs[runIndex];
             var mainID = NodeID(run, "request");
-            var mainSize = Size(mainID, MightyGraphCamera.RequestWidth, expanded.Contains(mainID) ? 540 : 280);
+            var mainSize = Size(mainID, MightyGraphCamera.RequestWidth, splitsExecution ? RequestHeight(expanded.Contains(mainID)) : expanded.Contains(mainID) ? 540 : 280);
             var mainHeight = mainSize.H;
+            var workID = NodeID(run, WorkSuffix);
+            (double W, double H)? workSize = splitsExecution ? Size(workID, MightyGraphCamera.RequestWidth, expanded.Contains(workID) ? 540 : 280) : null;
             var resultID = NodeID(run, "result");
             var resultSize = Size(resultID, MightyGraphCamera.RequestWidth, expanded.Contains(resultID) ? 440 : 200);
 
@@ -323,21 +378,32 @@ public sealed class MightyGraphLayout
             }
 
             var branchWidth = branches.Sum(b => b.Width) + Math.Max(0, branches.Count - 1) * SiblingGap;
-            var treeWidth = Math.Max(mainSize.W, Math.Max(branchWidth, Finished(run) ? resultSize.W : 0));
+            var treeWidth = Math.Max(Math.Max(mainSize.W, workSize?.W ?? 0), Math.Max(branchWidth, Finished(run) ? resultSize.W : 0));
             var mainNode = new Node(mainID, "request", new((treeWidth - mainSize.W) / 2, 0, mainSize.W, mainHeight));
             var tree = new Tree { Nodes = [mainNode], Width = treeWidth, Height = mainHeight, Top = mainID, Leaves = [mainID] };
+            // The block the sub-agents branch from: the 실행 block right under the request, or the request itself.
+            var parentID = mainID;
+            if (workSize is { } work)
+            {
+                tree.Nodes.Add(new Node(workID, WorkKind, new((treeWidth - work.W) / 2, mainHeight + RowGap, work.W, work.H)));
+                tree.Edges.Add(new Edge(mainID, workID));
+                tree.Leaves = [workID];
+                tree.Height += RowGap + work.H;
+                parentID = workID;
+            }
             if (branches.Count > 0)
             {
                 tree.Leaves = [];
+                var top = tree.Height + RowGap;
                 var x = (treeWidth - branchWidth) / 2;
                 foreach (var branch in branches)
                 {
-                    branch.Offset(x, mainHeight + RowGap);
+                    branch.Offset(x, top);
                     tree.Nodes.AddRange(branch.Nodes);
-                    tree.Edges.Add(new Edge(mainID, branch.Top));
+                    tree.Edges.Add(new Edge(parentID, branch.Top));
                     tree.Edges.AddRange(branch.Edges);
                     tree.Leaves.AddRange(branch.Leaves);
-                    tree.Height = Math.Max(tree.Height, mainHeight + RowGap + branch.Height);
+                    tree.Height = Math.Max(tree.Height, top + branch.Height);
                     x += branch.Width + SiblingGap;
                 }
             }
@@ -434,15 +500,52 @@ public sealed class MightyGraphLayout
                 }
             }
         }
-        // Answered plans hang off their request's top, stacked, right of every card they would share rows
-        // with: attachments, nothing already placed moves (macOS MightyGraphLayout planRecords).
+        int RunIndex(string runID) { for (var i = 0; i < runs.Count; i++) if (runs[i].Id == runID) return i; return -1; }
+        double RightOf(double top, double height, GraphRect owner)
+        {
+            var sharing = layout.Nodes.Where(n => n.Frame.Y < top + height && n.Frame.MaxY > top).Select(n => n.Frame.MaxX).ToList();
+            return Math.Max(sharing.Count > 0 ? sharing.Max() : owner.MaxX, owner.MaxX) + AttachmentGap;
+        }
+        void Grow(GraphRect frame) => layout.Size = (Math.Max(layout.Size.W, frame.MaxX + 24 - layout.OriginX), Math.Max(layout.Size.H, frame.MaxY + 24 - layout.OriginY));
+        // A picture preview hangs off the top of the step that produced it, right of every card it would share rows
+        // with: an attachment, like the file list (no edge, no centreline, nothing already placed moves).
+        foreach (var gallery in galleries ?? [])
+        {
+            if (gallery.Count <= 0 || RunIndex(gallery.RunID) is not (>= 0 and var runIndex)) continue;
+            // The request step's pictures come from the main agent's records: with a 실행 block they hang off it.
+            var stepID = NodeID(runs[runIndex], splitsExecution && gallery.Step == MightyGraphImages.RequestStep ? WorkSuffix : gallery.Step);
+            if (layout.Nodes.FirstOrDefault(n => n.Id == stepID && !IsAuxiliary(n.Kind)) is not { } step) continue;
+            var id = NodeID(runs[runIndex], ImagesSuffix + gallery.Step);
+            if (layout.Nodes.Any(n => n.Id == id)) continue;
+            var height = ImagesHeight(gallery.Count, expanded.Contains(id));
+            var frame = new GraphRect(RightOf(step.Frame.Y, height, step.Frame), step.Frame.Y, ImagesWidth, height);
+            layout.Nodes.Add(new Node(id, ImagesKind, frame));
+            Grow(frame);
+        }
+        // Execution blocks hang off their request's top (its 실행 block's, when there is one: the main agent started
+        // them), stacked, right of every card they would share rows with.
         var nextY = new Dictionary<int, double>();
+        foreach (var execution in executions ?? [])
+        {
+            if (RunIndex(execution.RunID) is not (>= 0 and var runIndex)) continue;
+            if (layout.Nodes.FirstOrDefault(n => splitsExecution ? n.Kind == WorkKind && n.Id == NodeID(runs[runIndex], WorkSuffix) : n.Kind == "request" && n.Id == NodeID(runs[runIndex], "request")) is not { } owner) continue;
+            var id = NodeID(runs[runIndex], ExecutionSuffix + execution.Key);
+            if (layout.Nodes.Any(n => n.Id == id)) continue;
+            var top = nextY.TryGetValue(runIndex, out var stacked) ? stacked : owner.Frame.Y;
+            var height = ExecutionHeight(expanded.Contains(id));
+            var frame = new GraphRect(RightOf(top, height, owner.Frame), top, ExecutionWidth, height);
+            layout.Nodes.Add(new Node(id, ExecutionKind, frame));
+            Grow(frame);
+            nextY[runIndex] = frame.MaxY + AttachmentGap;
+        }
+        // Answered plans hang off the same block as well, below its execution blocks: attachments, nothing already
+        // placed moves (macOS MightyGraphLayout planRecords).
         foreach (var (runID, recordID) in planRecords ?? [])
         {
             var runIndex = -1;
             for (var i = 0; i < runs.Count; i++) if (runs[i].Id == runID) { runIndex = i; break; }
             if (runIndex < 0) continue;
-            var request = layout.Nodes.FirstOrDefault(n => n.Kind == "request" && n.Id == NodeID(runs[runIndex], "request"));
+            var request = layout.Nodes.FirstOrDefault(n => splitsExecution ? n.Kind == WorkKind && n.Id == NodeID(runs[runIndex], WorkSuffix) : n.Kind == "request" && n.Id == NodeID(runs[runIndex], "request"));
             if (request is null) continue;
             var id = NodeID(runs[runIndex], PlanRecordSuffix + recordID);
             if (layout.Nodes.Any(n => n.Id == id)) continue;

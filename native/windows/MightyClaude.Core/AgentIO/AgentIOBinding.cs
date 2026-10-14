@@ -25,6 +25,17 @@ public sealed class AgentIOBinding(string paneId, string workspaceId, string wor
     public string PipeName { get; } = pipeName;
     public string Executable { get; } = executable;
     internal string Token { get; } = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
+    /// <summary>The pane's kind. Bindings are only made for agent-pane runs (M/AgentPaneMCPBinding.swift:30-31).</summary>
+    public string Kind => "claude";
+    /// <summary>
+    /// Whether this run also gets the delegation MCP server (<see cref="DelegationMcp"/>) on the same token: only a Claude pane's run
+    /// started while the hidden <see cref="DelegationSwitch"/> was on (M/AgentPaneMCPBinding.swift:32-35).
+    /// </summary>
+    public bool Delegation { get; private set; }
+    /// <summary>The app's side of the delegation server for calls on this token; null answers them as a run without the server.</summary>
+    public IDelegationRequestHandler? DelegationHandler { get; private set; }
+    /// <summary>The run path connects a new binding before its CLI starts: who answers its delegation calls, and whether the server is attached to this run.</summary>
+    public void ConnectDelegation(IDelegationRequestHandler? handler, bool attached) { DelegationHandler = handler; Delegation = attached && DelegationSwitch.IsClaudePane(Kind, Provider); }
     public IReadOnlyDictionary<string, string> Environment => new Dictionary<string, string> { [TokenKey] = Token, [PipeKey] = PipeName };
     public override string ToString() => $"AgentIOBinding({PaneId}, token=<redacted>)";
     public string Redact(string value) => value.Replace(Token, "<pane-token-redacted>", StringComparison.Ordinal);
@@ -33,7 +44,10 @@ public sealed class AgentIOBinding(string paneId, string workspaceId, string wor
         var commandArgs = new[] { "--agent-io-mcp" };
         if (Provider == "claude")
         {
-            arguments.AddRange(["--mcp-config", JsonSerializer.Serialize(new { mcpServers = new Dictionary<string, object> { [ServerName] = new { type = "stdio", command = Executable, args = commandArgs } } }, Wire.Json)]);
+            var servers = new Dictionary<string, object> { [ServerName] = new { type = "stdio", command = Executable, args = commandArgs } };
+            // The delegation server is its own entry, so mighty-terminal keeps its four tools (M/AgentPaneMCPBinding.swift:74-78).
+            if (Delegation) servers[DelegationMcp.ServerName] = new { type = "stdio", command = Executable, args = new[] { DelegationMcp.HeadlessArgument } };
+            arguments.AddRange(["--mcp-config", JsonSerializer.Serialize(new { mcpServers = servers }, Wire.Json)]);
         }
         else if (Provider == "codex")
         {

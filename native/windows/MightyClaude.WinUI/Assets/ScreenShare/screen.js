@@ -27,15 +27,24 @@
     return sdp;
   }
   async function offer(p, restart) {
-    p.offered = false;
-    const created = await p.connection.createOffer({ iceRestart: restart });
+    p.offered = false; p.offering = true;
+    try {
+      const created = await p.connection.createOffer({ iceRestart: restart });
+      if (!live(p)) return;
+      await p.connection.setLocalDescription({ type: 'offer', sdp: namedSdp(p, created.sdp) });
+      if (!live(p)) return;
+      emit(p, { type: 'screen-offer', sessionId: p.session.sessionId, sdp: p.connection.localDescription.sdp,
+        mode: p.session.mode, displayId: p.session.displayId, codec: 'H264', quality: p.session.quality, iceRestart: restart });
+      p.offered = true;
+      for (const candidate of p.localIce.splice(0)) emit(p, candidate);
+    } finally { p.offering = false; }
+  }
+  // Only a peer in `stable` takes a new offer; one still waiting for its answer (or making an offer) gets a single
+  // renegotiation once it is stable again, so offers never overlap.
+  function renegotiate(p) {
     if (!live(p)) return;
-    await p.connection.setLocalDescription({ type: 'offer', sdp: namedSdp(p, created.sdp) });
-    if (!live(p)) return;
-    emit(p, { type: 'screen-offer', sessionId: p.session.sessionId, sdp: p.connection.localDescription.sdp,
-      mode: p.session.mode, displayId: p.session.displayId, codec: 'H264', quality: p.session.quality, iceRestart: restart });
-    p.offered = true;
-    for (const candidate of p.localIce.splice(0)) emit(p, candidate);
+    if (p.offering || p.connection.signalingState !== 'stable') { p.renegotiate = true; return; }
+    p.renegotiate = false; offer(p, true).catch(() => {});
   }
   async function rates(p, relay) {
     for (let i = 0; i < p.senders.length; i++) {
@@ -52,7 +61,7 @@
     const connection = new RTCPeerConnection({ iceServers, bundlePolicy: 'max-bundle', rtcpMuxPolicy: 'require' });
     const surfaces = [canvas(), canvas()], streams = surfaces.map(c => c.captureStream(0));
     const channel = connection.createDataChannel('screen-control', { ordered: true });
-    const p = { session, connection, channel, surfaces, streams, closed: false, senders: [], localIce: [], remoteIce: [], offered: false, statsBusy: false };
+    const p = { session, connection, channel, surfaces, streams, closed: false, senders: [], localIce: [], remoteIce: [], offered: false, offering: false, renegotiate: false, statsBusy: false };
     peers.set(session.sessionId, p);
     try {
       const codecs = RTCRtpSender.getCapabilities('video').codecs.filter(c => /^(video\/H264|video\/rtx|video\/red|video\/ulpfec)$/i.test(c.mimeType));
@@ -89,6 +98,7 @@
     if (message.type === 'screen-answer') {
       await p.connection.setRemoteDescription({ type: 'answer', sdp: message.sdp });
       for (const candidate of p.remoteIce.splice(0)) await p.connection.addIceCandidate(candidate);
+      if (p.renegotiate) renegotiate(p);
     } else if (message.type === 'screen-ice') {
       const candidate = message.candidate ? { candidate: message.candidate, sdpMid: message.sdpMid ?? null, sdpMLineIndex: message.sdpMLineIndex ?? null, usernameFragment: message.usernameFragment ?? undefined } : null;
       if (!p.connection.remoteDescription) p.remoteIce.push(candidate); else await p.connection.addIceCandidate(candidate);
@@ -131,7 +141,8 @@
         case 'signal': await signal(m.sessionId, m.signal); break;
         case 'frame': await draw(m.frame); break;
         case 'data': await sendData(m.sessionId, m.message); break;
-        case 'display': for (const p of peers.values()) p.session.displayId = m.displayId; break;
+        // A new display means new geometry: every phone gets a fresh offer that names it (docs/relay.md, the `display` input).
+        case 'display': for (const p of peers.values()) { p.session.displayId = m.displayId; renegotiate(p); } break;
         case 'stop': stop(m.sessionId); break;
         case 'halt': epoch++; for (const id of Array.from(peers.keys())) stop(id); break;
         default: throw new Error('unsupported command');

@@ -44,9 +44,12 @@ public sealed partial class MainWindow
     /// "Add pane" for an agent: Claude and Codex first look for a session this
     /// folder recorded (the head of each record only, nested runs hidden, open
     /// panes' sessions left out). With one, the user picks Start new or Resume…;
-    /// without one the pane is made at once. Gemini never asks, and Ctrl+N
-    /// (AddPaneFromShortcut) never comes here. It runs under Act: a menu click
-    /// awaits it from an async void handler, so no exception may escape.
+    /// without one the pane is made at once. A look-up that takes longer than
+    /// <see cref="AddPaneMenu.QuietLookUp"/> shows the choice first, in a checking
+    /// state where Start new already works (M/AppStore+ResumeSession.swift:36-40).
+    /// Gemini never asks, and Ctrl+N (AddPaneFromShortcut) never comes here. It
+    /// runs under Act: a menu click awaits it from an async void handler, so no
+    /// exception may escape.
     /// </summary>
     private Task AddAgentPane(string provider, string? groupId) => Act(async () =>
     {
@@ -58,19 +61,20 @@ public sealed partial class MainWindow
         }
         if (resumeLookup) return;
         resumeLookup = true;
-        ResumableSessionListing probe;
+        ContentDialogResult picked;
         try
         {
             var query = ResumeQuery(workspace.Path) with { HeadOnly = true, MaximumSessions = 1 };
-            probe = await Task.Run(() => ResumableSessions.Listing(query, provider));
+            // Any failure reading the records (a malformed file, a race with the CLI) means nothing to offer.
+            var reading = Task.Run(() => { try { return ResumableSessions.Listing(query, provider); } catch (Exception) { return ResumableSessionListing.Empty; } });
+            // The smoke answers every sheet itself, so it always waits for the look-up.
+            var quiet = options.SmokeTest || await Task.WhenAny(reading, Task.Delay(AddPaneMenu.QuietLookUp)) == reading;
+            // Moved to another workspace meanwhile: the answer is about another folder.
+            if (service.Snapshot.ActiveWorkspaceId != workspaceId) return;
+            if (quiet && !AddPaneMenu.AsksResume(provider, (await reading).Items, ResumableSessions.InUse(service.Snapshot.Sessions))) { await AddPane("claude", provider, groupId); return; }
+            picked = await ShowResumeDialog(ResumeChoiceDialog(provider, quiet ? null : reading));
         }
-        // Any failure reading the records (a malformed file, a race with the CLI) means nothing to offer.
-        catch (Exception) { probe = ResumableSessionListing.Empty; }
         finally { resumeLookup = false; }
-        // Moved to another workspace meanwhile: the answer is about another folder.
-        if (service.Snapshot.ActiveWorkspaceId != workspaceId) return;
-        if (probe.Items.Count == 0) { await AddPane("claude", provider, groupId); return; }
-        var picked = await ShowResumeDialog(ResumeChoiceDialog(provider));
         if (picked == ContentDialogResult.Primary) await AddPane("claude", provider, groupId);
         else if (picked == ContentDialogResult.Secondary) await PickResumedSession(provider, workspace, groupId);
     });
@@ -80,8 +84,11 @@ public sealed partial class MainWindow
     /// apart. First the agent's mark (18, in a 22-wide column, 1 down) 10 from the 13pt bold title over the 12pt
     /// <c>ink2</c> sentence, 4 apart; then the buttons 8 apart: Cancel (Esc) at the leading edge, and after a
     /// spacer Resume… and Start new (the default, Enter). What was picked is left in the sheet's <c>Tag</c>.
+    /// With <paramref name="checking"/>, the look-up still reading the folder's records (:20-26, 40), a small ring and
+    /// "reading" stand in the sentence's place and Resume… waits; Start new and Cancel already work. Its answer then
+    /// fills the sheet, or closes it and adds the pane when there is nothing to continue after all.
     /// </summary>
-    private ContentDialog ResumeChoiceDialog(string provider)
+    private ContentDialog ResumeChoiceDialog(string provider, Task<ResumableSessionListing>? checking = null)
     {
         var agent = ProviderMark.Label(provider);
         var title = Locale.Get("resume.choice.title", new Dictionary<string, string> { ["provider"] = agent });
@@ -92,10 +99,17 @@ public sealed partial class MainWindow
         top.Children.Add(mark);
         var words = new StackPanel { Spacing = DesignMetrics.Spacing.Xs };
         words.Children.Add(SheetTitle(title));
-        words.Children.Add(new TextBlock { Text = Locale.Get("resume.choice.message", new Dictionary<string, string> { ["provider"] = agent }), FontSize = 12, LineHeight = 15, LineStackingStrategy = LineStackingStrategy.BlockLineHeight, Foreground = brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap });
+        var message = new TextBlock { Text = Locale.Get("resume.choice.message", new Dictionary<string, string> { ["provider"] = agent }), FontSize = 12, LineHeight = 15, LineStackingStrategy = LineStackingStrategy.BlockLineHeight, Foreground = brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap };
+        var reading = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
+        reading.Children.Add(new ProgressRing { IsActive = checking is not null, Width = 16, Height = 16, MinWidth = 0, MinHeight = 0, VerticalAlignment = VerticalAlignment.Center, Foreground = brushes.Brush(DesignToken.Ink2) });
+        reading.Children.Add(new TextBlock { Text = Locale.Get("resume.loading"), FontSize = 12, Foreground = brushes.Brush(DesignToken.Ink2), VerticalAlignment = VerticalAlignment.Center });
+        AutomationProperties.SetAutomationId(reading, "add-pane-choice-checking");
+        message.Visibility = checking is null ? Visibility.Visible : Visibility.Collapsed; reading.Visibility = checking is null ? Visibility.Collapsed : Visibility.Visible;
+        words.Children.Add(message); words.Children.Add(reading);
         Grid.SetColumn(words, 1); top.Children.Add(words);
 
         var cancel = PushButton(Locale.Get("resume.cancel")); var resume = PushButton(Locale.Get("resume.choice.resume")); var startNew = PushButton(Locale.Get("resume.choice.startNew"), prominent: true);
+        resume.IsEnabled = checking is null;
         AutomationProperties.SetAutomationId(cancel, "add-pane-choice-cancel"); AutomationProperties.SetAutomationId(resume, "add-pane-choice-resume"); AutomationProperties.SetAutomationId(startNew, "add-pane-choice-new");
         var buttons = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
         foreach (var width in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto, GridLength.Auto }) buttons.ColumnDefinitions.Add(new() { Width = width });
@@ -110,7 +124,19 @@ public sealed partial class MainWindow
         // Start new is the default: first in the tab order, it takes the focus as the sheet opens (a dialog gives it to
         // its first control), so Enter starts a new session; Esc closes the sheet with nothing picked.
         startNew.TabIndex = 0; cancel.TabIndex = 1; resume.TabIndex = 2;
-        choice.Opened += (_, _) => { choice.Tag = null; startNew.Focus(FocusState.Programmatic); };
+        var closed = false;
+        choice.Closed += (_, _) => closed = true;
+        choice.Opened += async (_, _) =>
+        {
+            choice.Tag = null; closed = false; startNew.Focus(FocusState.Programmatic);
+            if (checking is null) return;
+            var found = await checking;
+            // Start new or Cancel was picked meanwhile: the answer is dropped.
+            if (closed || choice.Tag is not null) return;
+            // Nothing to continue after all: the pane is added as Start new adds it (M/AppStore+ResumeSession.swift:58-60).
+            if (!AddPaneMenu.AsksResume(provider, found.Items, ResumableSessions.InUse(service.Snapshot.Sessions))) { Pick(ContentDialogResult.Primary); return; }
+            reading.Visibility = Visibility.Collapsed; message.Visibility = Visibility.Visible; resume.IsEnabled = true;
+        };
         return choice;
     }
 

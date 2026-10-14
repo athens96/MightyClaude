@@ -150,7 +150,7 @@ internal static class MobileRemoteVerification
         try
         {
             await app.StartAsync(timeout.Token); var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
-            host = new MobileRelayHost(Path.Combine(directory, "identity"), "Fixture", [], (method, path, body, device, ct) => Task.FromResult(new MobileReply(200, new { protocol = 1, ok = true })));
+            host = new MobileRelayHost(Path.Combine(directory, "identity"), "Fixture", [], (method, path, body, device, ct) => Task.FromResult(new MobileReply(200, new { protocol = 1, ok = true }))) { WatchesNetwork = false };
             await host.ApplyAsync(new(true, address, false)); await completed.Task.WaitAsync(timeout.Token); Check(host.Devices.Count == 1, "device registered through live WebSocket handshake");
             var link = host.PairingUrl; var serverId = host.PairingServerId;
             Check(host.PairingKeyForDisplay == Query(link, "key"), "manual pairing key matches QR key");
@@ -168,7 +168,7 @@ internal static class MobileRemoteVerification
         var directory = Temp();
         try
         {
-            await using var host = new MobileRelayHost(directory, "Fixture", [], (_, _, _, _, _) => Task.FromResult(new MobileReply(200, new { ok = true })));
+            await using var host = new MobileRelayHost(directory, "Fixture", [], (_, _, _, _, _) => Task.FromResult(new MobileReply(200, new { ok = true }))) { WatchesNetwork = false };
             var pairing = host.PairingUrl;
             await host.DisposeAsync(); await host.DisposeAsync();
             foreach (var operation in new Func<Task>[] { host.ReconnectAsync, () => host.ApplyAsync(new()), () => host.RotateKeyAsync() })

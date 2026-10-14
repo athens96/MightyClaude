@@ -49,12 +49,6 @@ public static class AgentImageSupport
     public const int ThumbnailPixels = 960;
     public const long MaximumPixels = 64_000_000;
     public const int MaximumSide = 8_000;
-    /// <summary>
-    /// One stream-json line may carry a whole picture in base64, so an agent's standard
-    /// output reads lines up to this many characters (macOS: 64 MiB per line, 32 MiB for
-    /// a Codex frame). Error output keeps the 1 MiB line.
-    /// </summary>
-    public const int MaximumLineCharacters = 32 * 1_048_576;
     internal const int MaximumSourceBytes = 240;
 
     /// <summary>The picture formats kept, with the file extension each is stored under.</summary>

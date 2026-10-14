@@ -11,7 +11,7 @@ internal static class NativeSvgRaster
 {
     internal sealed record Result(byte[] Png, int Width, int Height, double OriginalWidth, double OriginalHeight);
     private static readonly SemaphoreSlim slots = new(2, 2);
-    internal static async Task<Result> Render(byte[] bytes, int maximumEdge, CancellationToken cancellation = default)
+    internal static async Task<Result> Render(byte[] bytes, int maximumEdge, CancellationToken cancellation = default, bool enlarge = false)
     {
         maximumEdge = Math.Clamp(maximumEdge, 1, 4096);
         await slots.WaitAsync(cancellation);
@@ -21,7 +21,8 @@ internal static class NativeSvgRaster
             {
                 cancellation.ThrowIfCancellationRequested();
                 var source = SafeSvgDocument.Parse(bytes);
-                var scale = Math.Min(1, maximumEdge / Math.Max(source.Width, source.Height));
+                // Drawn no larger than its own size, unless a zoom asks to (enlarge): a vector stays sharp at any size.
+                var scale = enlarge ? maximumEdge / Math.Max(source.Width, source.Height) : Math.Min(1, maximumEdge / Math.Max(source.Width, source.Height));
                 var width = (int)Math.Max(1, Math.Round(source.Width * scale));
                 var height = (int)Math.Max(1, Math.Round(source.Height * scale));
                 var device = CanvasDevice.GetSharedDevice(forceSoftwareRenderer: true);

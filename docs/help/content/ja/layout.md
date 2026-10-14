@@ -9,8 +9,8 @@ section: layout
 
 ## サイドバー {#sidebar}
 サイドバーには上から順に次のものがあります。
-- {{ui:phone.dashboard.title}}: すべてのワークスペースのペインの状態を1か所で確認します。
 - {{ui:sidebar.searchPlaceholder}}: {{kbd:⌘K}}を押すと検索欄に直接移動します。
+- {{ui:phone.dashboard.title}}: すべてのワークスペースのペインの状態を1か所で確認します。
 - {{ui:sidebar.workspacesHeader}}の一覧: ワークスペースをクリックすると、そのワークスペースに切り替わります。横の矢印をクリックすると、ペインの一覧を展開したり折りたたんだりします。
 - 下部: 画面テーマのボタン(ダーク/ライト)と設定ボタン。
 
@@ -32,7 +32,7 @@ section: layout
 ![[sidebar-collapsed]]
 
 ## 作業状況 {#dashboard}
-サイドバーの一番上にある{{ui:phone.dashboard.title}}をクリックすると、すべてのワークスペースのペインを状態順にまとめて表示します。
+サイドバーの検索欄の下にある{{ui:phone.dashboard.title}}をクリックすると、すべてのワークスペースのペインを状態順にまとめて表示します。
 - 上部の欄で、{{ui:phone.dashboard.stat.running}}、{{ui:phone.dashboard.stat.waiting}}、{{ui:phone.dashboard.stat.done}}の件数を確認します。
 - {{ui:dashboard.usage.title}}カードでアカウントの使用量を確認します。同じアカウントを使うほかのアプリやセッションと共有する上限です。
 - ワークスペースごとに{{ui:files.pane.title}}ボタンと{{ui:workspace.addPane}}メニューがあります。

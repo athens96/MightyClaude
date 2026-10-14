@@ -14,25 +14,57 @@ internal static class MightyTimelineVerification
         var agents = new[] { new MightyGraphAgent { Id = "child", Title = "Inspect", Status = "completed" }, new MightyGraphAgent { Id = "task", Kind = "task", Status = "running", Entries = [new("step", "system", "tool", "2026-10-04T10:00:00Z", Activity: new("step", "claude", "tool", "running", "read 한국어.cs", "Read"))] }, new MightyGraphAgent { Id = "ask", Kind = "question", Status = "waiting" } };
         var runs = new[] { Run("old", "completed", "done"), Run("new", agents: agents) };
         var groups = MightyTimeline.Groups(runs); var rows = groups[1].Rows;
-        Check(groups.Select(g => g.Ordinal).SequenceEqual([1, 2]) && rows.Select(r => r.Kind).SequenceEqual(["main", "agent", "task", "question"]), "same request and child ordering as Mac and diagram");
-        Check(rows.Select(r => r.AgentIndex).SequenceEqual(new int?[] { null, 0, 1, 2 }) && rows[2].Latest == "read 한국어.cs" && rows[1].Latest is null, "live activity only on unfinished blocks");
-        var diagram = MightyGraphLayout.Make(runs, "", true, new HashSet<string>());
+        // The request first, its 실행 block, then the agents in the order the graph recorded them.
+        Check(groups.Select(g => g.Ordinal).SequenceEqual([1, 2]) && rows.Select(r => r.Kind).SequenceEqual(["main", MightyTimeline.ExecutionKind, "agent", "task", "question"]), "same request and child ordering as Mac and diagram");
+        Check(rows.Select(r => r.AgentIndex).SequenceEqual(new int?[] { null, null, 0, 1, 2 }) && rows.Select(r => r.IsExecution).SequenceEqual([false, true, false, false, false]) && rows[3].Latest == "read 한국어.cs" && rows[2].Latest is null, "live activity only on unfinished blocks");
+        Check(rows[0].NodeId == MightyGraphBlockSize.NodeId("new", "request") && rows[1].NodeId == MightyGraphBlockSize.NodeId("new", MightyGraphLayout.WorkSuffix) && rows[3].NodeId == MightyGraphBlockSize.NodeId("new", "agent:task"), "each row stands for its diagram node");
+        // The 실행 block names its request, so each one reads apart from the others.
+        Check(rows[0].Title == Locale.Get("graph.timeline.requestOrdinal", new Dictionary<string, string> { ["n"] = "2" }) && rows[1].Title == Locale.Get("graph.block.executionOf", new Dictionary<string, string> { ["n"] = "2" }) && rows[1].Title != groups[0].Rows[1].Title
+            && MightyTimeline.KindLabel(MightyTimeline.ExecutionKind) == Locale.Get("graph.block.execution"), "the 실행 row is named for its request");
+        var diagram = MightyGraphLayout.Make(runs, "", true, new HashSet<string>(), splitsExecution: true);
         Check(groups.SelectMany(g => g.Rows).All(r => diagram.Nodes.Any(n => n.Id == r.NodeId)), "every timeline row shares a real diagram node identity");
         Check(groups[0].Result is { Text: "done", Tone: DesignTone.Done } result && diagram.Nodes.Any(n => n.Id == result.NodeId), "result identity and final answer are shared");
         Check(MightyTimeline.Groups([Run("pending-child", "completed", "premature", new MightyGraphAgent { Id = "still-running" })])[0].Result is null, "an unfinished child prevents a premature result");
         Check(MightyTimeline.Groups([Run("failure", "failed")])[0].Result is { Tone: DesignTone.Err, Text: null } && MightyTimeline.Groups([Run("stop", "interrupted")])[0].Result?.Tone == DesignTone.Stop, "terminal aliases match diagram result states");
         return Task.CompletedTask;
     }
+    /// macOS MightyTimelineTests.theRequestRowHoldsTheInputAndTheExecutionRowTheWork.
+    internal static Task TheRequestRowHoldsTheInputAndTheExecutionRowTheWork()
+    {
+        static LogEntry Step(string id, string summary) => new(id, "system", "tool", "2026-10-04T10:00:00Z", Activity: new(id, "claude", "tool", "running", summary, "Bash"));
+        var run = Run("r", agents: new MightyGraphAgent { Id = "a", Status = "running" });
+        run.RootEntries = [Step("s1", "rg render"), Step("s2", "sed -n 1,40p view.swift")];
+        var rows = MightyTimeline.Groups([run])[0].Rows;
+        // The request: what was asked, in its neutral state, with nothing it did.
+        Check(rows[0] is { Kind: "main", Status: MightyTimeline.RequestStatus, Latest: null, DurationMs: null, IsExecution: false, AgentIndex: null }
+            && rows[0].Node == MightyTimeline.RequestNode && MightyTimeline.RequestNode == new MightyTimeline.Node(DesignTone.Idle, false, null), "the request row is neutral and holds no work");
+        // Its 실행 block: the run's status and steps.
+        Check(rows[1] is { Kind: MightyTimeline.ExecutionKind, Status: "running", Latest: "sed -n 1,40p view.swift", IsExecution: true, AgentIndex: null } && rows[1].Node == MightyTimeline.NodeFor("running"), "the 실행 row holds the work");
+        // A request that has nothing yet still has its 실행 row, waiting.
+        var fresh = MightyTimeline.Groups([Run("n")])[0];
+        Check(fresh.Rows.Select(r => r.IsExecution).SequenceEqual([false, true]) && fresh.Rows[1] is { Status: "running", Latest: null }, "a new request has its 실행 row at once");
+        // Only the 실행 block counts: one block, none finished, not the request as a finished block.
+        Check(fresh.Tally == new MightyTimeline.Tally(1, 0, 1), "the tally leaves the request out");
+        // A request whose work failed or stopped never reads as a success, nor as the failure.
+        foreach (var (status, tone) in new[] { ("error", DesignTone.Err), ("stopped", DesignTone.Stop), ("completed", DesignTone.Done) })
+        {
+            var ended = MightyTimeline.Groups([Run("e", status)])[0];
+            Check(ended.Rows[0].Node.Tone == DesignTone.Idle && ended.Rows[1].Node.Tone == tone && ended.Tally == new MightyTimeline.Tally(1, 1, 0), "the request row stays neutral when its work ends: " + status);
+        }
+        return Task.CompletedTask;
+    }
     internal static Task StatusRailsCountsAndDurationStayHonest()
     {
         var run = Run("mixed", agents: new[] { "completed", "error", "stopped", "running", "waiting" }.Select((s, i) => new MightyGraphAgent { Id = "a" + i, Status = s }).ToArray());
         var group = MightyTimeline.Groups([run])[0];
+        // The 실행 block (running) and the five agents; the request is not a block that settles.
         Check(group.Tally == new MightyTimeline.Tally(6, 3, 2), "tally counts only blocks present");
-        Check(MightyTimeline.RailAbove(group.Rows, 0) is null && MightyTimeline.RailAbove(group.Rows, 1) == DesignTone.Run && MightyTimeline.RailAbove(group.Rows, 2) == DesignTone.Done && MightyTimeline.RailAbove(group.Rows, 3) is null, "only running and completed nodes light the following rail");
+        // The request's node is neutral and leaves the track; its 실행 block runs.
+        Check(MightyTimeline.RailAbove(group.Rows, 0) is null && MightyTimeline.RailAbove(group.Rows, 1) is null && MightyTimeline.RailAbove(group.Rows, 2) == DesignTone.Run && MightyTimeline.RailAbove(group.Rows, 3) == DesignTone.Done && MightyTimeline.RailAbove(group.Rows, 4) is null && MightyTimeline.RailAbove(group.Rows, 9) is null, "only running and completed nodes light the following rail");
         foreach (var status in new[] { "idle", "starting", "queued", "future-state" }) Check(MightyTimeline.NodeFor(status) is { Tone: DesignTone.Run, Ring: true }, "unknown in-flight status remains running: " + status);
         var timed = Run("timed", "completed"); timed.RootEntries = [new("1", "user", "prompt", "2026-10-04T10:00:00Z"), new("2", "assistant", "answer", "2026-10-04T10:00:01.234Z")];
-        Check(MightyTimeline.Groups([timed])[0].Rows[0].DurationMs == 1234, "settled block reports measured own record span");
-        timed.Status = "running"; Check(MightyTimeline.Groups([timed])[0].Rows[0].DurationMs is null, "running blocks cannot claim final duration");
+        Check(MightyTimeline.Groups([timed])[0].Rows is [{ DurationMs: null }, { DurationMs: 1234 }], "settled block reports measured own record span, on the 실행 row");
+        timed.Status = "running"; Check(MightyTimeline.Groups([timed])[0].Rows[1].DurationMs is null, "running blocks cannot claim final duration");
         Check(MightyTimeline.DurationLabel(double.NaN) is null && MightyTimeline.DurationLabel(-1) is null && MightyTimeline.DurationLabel(999) == "999ms", "invalid duration never reaches labels");
         Check(!MightyTimeline.Folds(string.Concat(Enumerable.Repeat("👨‍👩‍👧", 600))) && MightyTimeline.Folds(string.Concat(Enumerable.Repeat("가", 601))) && MightyTimeline.Folds("1\n2\n3\n4\n5\n6\n7\n8\n9"), "result folding counts graphemes or actual lines, not UTF16 units");
         var groups = MightyTimeline.Groups([Run("older"), Run("latest")]); var flipped = new HashSet<string>();

@@ -49,7 +49,7 @@ internal static class ClaudePlanStyleVerification
         new() { Id = "plan-pane", WorkspaceId = "ws", Provider = "claude", AgentViewMode = "mighty", MightyStyle = "claude-plan", GraphRuns = runs, PlanHistory = plans, TodoProgress = todos, BackgroundWork = work };
 
     /// <summary>The golden's fixed run state (M/StyleGoldenSupport.swift stateRunState).</summary>
-    private static (TodoProgress Todos, BackgroundWork Work) Fixture()
+    internal static (TodoProgress Todos, BackgroundWork Work) Fixture()
     {
         var items = Enumerable.Range(1, 7).Select(i => new TodoItem("step " + i, i <= 3 ? "completed" : i == 4 ? "in_progress" : "pending", "doing step " + i)).ToList();
         var work = new BackgroundWork([

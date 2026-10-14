@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace MightyClaude.Core;
 
@@ -43,13 +44,29 @@ public sealed class OutputParser
         var origin = Stopwatch.GetTimestamp(); clock = activityClock ?? (() => Stopwatch.GetElapsedTime(origin).TotalMilliseconds);
         imageCache = images; this.imageEntry = imageEntry;
     }
-    public static async IAsyncEnumerable<string> LinesAsync(StreamReader reader, [EnumeratorCancellation] CancellationToken token = default, int maximumLineCharacters = 1024 * 1024)
+    /// <summary>
+    /// The longest standard-output line an agent's run reads (M/MightyCore/CLIStreamParser.swift:36-42): 64 MiB, since a line carries
+    /// whole pictures in base64 (twice, in Claude's tool_use_result echo), and 8 MiB for Gemini, whose stream never carries one.
+    /// Counted in UTF-8 bytes, as the Mac counts them.
+    /// </summary>
+    public static int MaximumLineBytes(string provider) => (provider == "gemini" ? 8 : 64) * 1_048_576;
+    /// <summary>A line buffer grown past this is let go after its line, so one huge line does not keep its memory for the whole run.</summary>
+    public const int RetainedLineCapacity = 1_048_576;
+    /// <param name="maximumLineBytes">The longest line read, in UTF-8 bytes (M/MightyCore/AgentOutputLines.swift).</param>
+    /// <param name="tooLong">Hears once of each line longer than the limit, which is skipped up to its line break.</param>
+    public static async IAsyncEnumerable<string> LinesAsync(StreamReader reader, [EnumeratorCancellation] CancellationToken token = default, int maximumLineBytes = 1024 * 1024, Action? tooLong = null)
     {
-        var buffer = new char[4096]; var line = new StringBuilder(); var dropping = false; int count;
+        var buffer = new char[4096]; var line = new StringBuilder(); var dropping = false; long bytes = 0; int count;
+        void Reset() { if (line.Capacity > RetainedLineCapacity) line = new StringBuilder(); else line.Clear(); bytes = 0; }
         while ((count = await reader.ReadAsync(buffer.AsMemory(), token)) > 0)
             for (var i = 0; i < count; i++)
-                if (buffer[i] == '\n') { if (!dropping && line.Length > 0) yield return line.ToString(); line.Clear(); dropping = false; }
-                else if (!dropping) { line.Append(buffer[i]); if (line.Length > maximumLineCharacters) { dropping = true; line.Clear(); } }
+                if (buffer[i] == '\n') { if (!dropping && line.Length > 0) yield return line.ToString(); Reset(); dropping = false; }
+                else if (!dropping)
+                {
+                    // A surrogate is half of a 4-byte character.
+                    var c = buffer[i]; line.Append(c); bytes += c < 0x80 ? 1 : c < 0x800 || char.IsSurrogate(c) ? 2 : 3;
+                    if (bytes > maximumLineBytes) { dropping = true; Reset(); tooLong?.Invoke(); }
+                }
         if (!dropping && line.Length > 0) yield return line.ToString();
     }
     /// <summary>
@@ -199,6 +216,8 @@ public sealed class OutputParser
                         if (block.Text("tool_use_id") is { Length: > 0 } toolId && Encoding.UTF8.GetByteCount(toolId) <= 512) Images(AgentImageSupport.Payloads(MetadataJson.Property(block, "content")), toolId, toolId, child);
                     }
                 if (type == "system" && root.Text("subtype") == "permission_denied") Tool(root.Text("tool_use_id"), "error", root.Text("tool_name"), output: Error(MetadataJson.Property(root, "message"), Locale.Get("run.tool.permissionDenied")));
+                // The CLI summarized its own context mid-turn: the transcript says so (M/MightyCore/CLIStreamParser.swift:383-384).
+                if (type == "system" && root.Text("subtype") == "compact_boundary" && !child) log("system", ContextCompaction.Title + " · " + ContextCompaction.ClaudeSummary(MetadataJson.Property(root, "compact_metadata")));
                 if (type == "result" && !child && !ClaudeStream.IsNotificationResult(root))
                 {
                     if (SuppressInterruptedResult && root.Text("subtype") == "error_during_execution") { }
@@ -221,6 +240,11 @@ public sealed class OutputParser
                         case "agent_message": if (ended) Assistant(item.Text("text") ?? "", Wire.Clean(item.Text("id"), 128)); break;
                         case "command_execution": Tool(item.Text("id"), state, "command_execution", item, ended ? item.Text("aggregated_output") : null); if (activity is null && ended && item.Text("aggregated_output") is { Length: > 0 } output) log("output", output); break;
                         case "file_change": case "web_search": Tool(item.Text("id"), state, item.Text("type"), item); break;
+                        case "context_compaction": if (ended) log("system", ContextCompaction.Title + " · " + ContextCompaction.CodexSummary); break;
+                        // Starting, instructing, waiting for and closing a sub-agent are tool rows (M/MightyCore/CLIStreamParser.swift:433-437).
+                        case "collab_tool_call": case "collab_agent_tool_call":
+                            if (CodexCollaborationItem.Parse(item) is { } collaboration) Tool(collaboration.Id, state, collaboration.Tool, output: collaboration.Output, summary: collaboration.Summary);
+                            break;
                         case "mcp_tool_call":
                             var name = string.Join('.', new[] { item.Text("server"), item.Text("tool") }.Where(v => !string.IsNullOrEmpty(v)));
                             Tool(item.Text("id"), state, name.Length > 0 ? name : "MCP", MetadataJson.Property(item, "arguments"), ActivitySupport.Output(MetadataJson.Property(item, "error").ValueKind != JsonValueKind.Undefined ? MetadataJson.Property(item, "error") : MetadataJson.Property(item, "result")));
@@ -273,6 +297,40 @@ public static class ClaudeStream
     // before it even reads the new request. It is not the request's result: OutputParser and
     // SessionUsageTracker must not treat it as the turn ending.
     public static bool IsNotificationResult(JsonElement value) => value.Text("type") == "result" && MetadataJson.Property(value, "origin").Text("kind") == "task-notification";
+    /// <summary>
+    /// A frame whose confirmed failure is a Bedrock policy denial, written again with those words replaced by guidance
+    /// (M/MightyCore/CLIStreamParser.swift:137-156, BedrockSettings.RuntimeFailureGuidance): a failed result's errors and
+    /// result, and the text of a message the CLI itself marked as an error. Null for every other frame: an ordinary answer or a
+    /// tool's result stays as it was written. The transcript and the graph both read the frame returned here.
+    /// </summary>
+    public static string? PresentFailure(JsonElement value)
+    {
+        JsonObject? shown = null;
+        JsonObject Shown() => shown ??= JsonNode.Parse(value.GetRawText())!.AsObject();
+        var type = value.Text("type");
+        if (type == "result" && (MetadataJson.Flag(value, "is_error") || value.Text("subtype")?.StartsWith("error", StringComparison.Ordinal) == true))
+        {
+            var errors = MetadataJson.Property(value, "errors");
+            if (errors.ValueKind == JsonValueKind.Array && errors.EnumerateArray().All(e => e.ValueKind == JsonValueKind.String))
+            {
+                var texts = errors.EnumerateArray().Select(e => e.GetString()!).ToArray(); var guided = texts.Select(BedrockSettings.RuntimeFailureGuidance).ToArray();
+                if (guided.Any(g => g is not null)) Shown()["errors"] = new JsonArray(texts.Select((text, index) => (JsonNode?)JsonValue.Create(guided[index] ?? text)).ToArray());
+            }
+            if (value.Text("result") is { } result && BedrockSettings.RuntimeFailureGuidance(result) is { } guidance) Shown()["result"] = guidance;
+        }
+        else if (type == "assistant" && value.Text("error") is { Length: > 0 })
+        {
+            var content = MetadataJson.Property(MetadataJson.Property(value, "message"), "content");
+            if (content.ValueKind != JsonValueKind.Array || content.EnumerateArray().Any(block => block.ValueKind != JsonValueKind.Object)) return null;
+            var index = 0;
+            foreach (var block in content.EnumerateArray())
+            {
+                if (block.Text("type") == "text" && block.Text("text") is { } text && BedrockSettings.RuntimeFailureGuidance(text) is { } guidance) Shown()["message"]!["content"]![index]!["text"] = guidance;
+                index++;
+            }
+        }
+        return shown?.ToJsonString();
+    }
     /// <summary>
     /// A point where the CLI may have nothing left to do once the request answered: any top-level result (the
     /// request's own or a task notification's) or `session_state_changed: idle`.

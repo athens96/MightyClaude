@@ -8,14 +8,22 @@ namespace MightyClaude.Core;
 public static class MightyTimeline
 {
     public sealed record Node(DesignTone Tone, bool Ring, DesignTone? Rail);
+    /// <summary><paramref name="AgentIndex"/> is null for the request and its 실행 block; <paramref name="IsExecution"/> is the 실행 block, the main agent's own work under the request.</summary>
     public sealed record Row(string NodeId, int? AgentIndex, string Kind, string Title, string Status,
-        Node Node, string? Latest, double? DurationMs);
+        Node Node, string? Latest, double? DurationMs, bool IsExecution = false);
+    /// <summary>The blocks present. The request itself is not one of them: its 실행 block is what runs and settles.</summary>
     public sealed record Tally(int Total, int Settled, int Running);
+    /// <summary>The kind of the 실행 row (macOS executionKind).</summary>
+    public const string ExecutionKind = "execution";
+    /// <summary>The request row's status and node: neither running nor settled, so it is the neutral one whatever became of the work (macOS requestStatus).</summary>
+    public const string RequestStatus = "idle";
+    public static readonly Node RequestNode = new(DesignTone.Idle, false, null);
     public sealed record Result(string NodeId, DesignTone Tone, string? Text);
     public sealed record Group(int RunIndex, string RunId, int Ordinal, string Status, string Input,
         IReadOnlyList<Row> Rows, Tally Tally, Result? Result);
 
-    public static string? NormalizeMode(string? value) => value is "diagram" or "timeline" ? value : null;
+    /// <summary>The diagram, the timeline or the structure (<see cref="MightyStructure"/>); a word this build does not know reads as the diagram (M/MightyCore/MightyTimeline.swift:4-10).</summary>
+    public static string? NormalizeMode(string? value) => value is "diagram" or "timeline" or "structure" ? value : null;
     public static string Mode(RunSession session) => NormalizeMode(session.GraphViewMode) ?? "diagram";
     public static RunSession ApplyMode(RunSession session, string value) =>
         session.Kind == "claude" && MightyGraphViewModel.ShowsModeSwitch(session) && NormalizeMode(value) is { } mode
@@ -40,13 +48,16 @@ public static class MightyTimeline
     private static Group Project(MightyGraphRun run, int index)
     {
         var rows = new List<Row>();
-        void Add(int? agentIndex, string suffix, string kind, string title, string rawStatus, IReadOnlyList<LogEntry> entries)
+        void Add(int? agentIndex, string suffix, string kind, string title, string rawStatus, IReadOnlyList<LogEntry> entries, bool execution = false)
         {
             var status = Status(rawStatus);
             rows.Add(new(MightyGraphLayout.NodeID(run, suffix), agentIndex, kind, title, status, NodeFor(status),
-                status is "running" or "waiting" ? Latest(entries) : null, Duration(entries, status)));
+                status is "running" or "waiting" ? Latest(entries) : null, Duration(entries, status), execution));
         }
-        Add(null, "request", "main", Locale.Get("graph.timeline.requestOrdinal", new Dictionary<string, string> { ["n"] = (index + 1).ToString(CultureInfo.InvariantCulture) }), run.Status, run.RootEntries);
+        // As in the diagram, the request holds its input alone, in a neutral state of its own that never reads as the
+        // work's outcome, and a 실행 block after it holds the work: its status, steps and span (macOS MightyTimeline.group).
+        rows.Add(new(MightyGraphLayout.NodeID(run, "request"), null, "main", Locale.Get("graph.timeline.requestOrdinal", new Dictionary<string, string> { ["n"] = (index + 1).ToString(CultureInfo.InvariantCulture) }), RequestStatus, RequestNode, null, null));
+        Add(null, MightyGraphLayout.WorkSuffix, ExecutionKind, MightyGraphBlockModel.ExecutionTitle(index + 1), run.Status, run.RootEntries, execution: true);
         for (var i = 0; i < run.Agents.Count; i++)
         {
             var agent = run.Agents[i];
@@ -59,8 +70,9 @@ public static class MightyTimeline
             result = new(MightyGraphLayout.NodeID(run, "result"), tone == DesignTone.Run ? DesignTone.Done : tone,
                 run.ResultEntries.LastOrDefault(e => e.Kind == "assistant" && e.Text.Length > 0)?.Text);
         }
+        var blocks = rows.Skip(1).ToList();
         return new(index, run.Id, index + 1, Status(run.Status), run.Input, rows,
-            new(rows.Count, rows.Count(r => r.Status is "completed" or "error" or "stopped"), rows.Count(r => r.Status == "running")), result);
+            new(blocks.Count, blocks.Count(r => r.Status is "completed" or "error" or "stopped"), blocks.Count(r => r.Status == "running")), result);
     }
 
     private static string? Latest(IReadOnlyList<LogEntry> entries)
@@ -93,7 +105,7 @@ public static class MightyTimeline
     }
     public static string KindLabel(string kind) => kind switch
     {
-        "main" => Locale.Get("graph.timeline.kind.request"), "task" => Locale.Get("graph.block.task"),
+        "main" => Locale.Get("graph.timeline.kind.request"), ExecutionKind => Locale.Get("graph.block.execution"), "task" => Locale.Get("graph.block.task"),
         "steer" => Locale.Get("graph.block.steer"), "compact" => Locale.Get("graph.block.compact"),
         "question" => Locale.Get("graph.block.question"), _ => Locale.Get("graph.block.agent"),
     };

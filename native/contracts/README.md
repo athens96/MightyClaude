@@ -14,13 +14,14 @@ Only `running` states become `stopped` during restore.
 Native profiles are separate from the Electron profile. Initial migration reads
 the old snapshot and saves a copy; it never overwrites the old file.
 
-Mac-only, optional: a delegated child pane's `RunSession` may carry
+Optional, on both desktops: a delegated child pane's `RunSession` may carry
 `parentSessionId` (its parent pane's session id) and `workingFolder` (the absolute
 path of its worktree). Restore and normalize keep them on agent panes, including
 a child whose parent pane was closed, and drop malformed values. A new pane never
 copies them from its template, and `RunSettings` never carries them. Snapshots
-without them load unchanged. The delegation side file is their authority; Windows
-neither reads nor writes them.
+without them load unchanged. The delegation side file is their authority; the
+Windows app reads and writes them the same way (`MightyClaude.Core/Models.cs`,
+`StateStore.cs`).
 
 ## Mobile protocol (m1) over the relay
 

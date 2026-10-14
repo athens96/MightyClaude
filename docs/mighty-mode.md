@@ -126,12 +126,12 @@ Windows 앱에서도 Claude·Codex 실행 창 머리에 **기본 / 마이티** �
 - 이동: 휠은 캔버스를 상하로, 가로 휠·휠 기울이기와 Shift+휠(Windows 관례)은 좌우로 옮긴다. 빈 배경을 누른 채 드래그해도 이동한다. 바깥 화면은 스크롤하지 않는다.
 - 선택과 안쪽 스크롤: 블록을 클릭해 선택하면 휠이 그 블록의 내용만 스크롤하고 제목줄에 **블록 스크롤**이 표시된다. 빈 배경을 클릭하거나 그래프에 포커스가 있을 때 Esc를 누르면 선택이 풀린다.
 - 실행 표시: 실행 중인 블록은 움직이는 상태 막대, 대기 중인 블록은 정적인 일시정지 표시, 끝난 블록은 움직임 없음. Windows 설정에서 애니메이션 효과를 끄면(`UISettings.AnimationsEnabled`가 false) 움직임 대신 정적인 표시와 강조 테두리를 쓴다.
-- 최신 결과 카드 창 맞춤과, 새 요청·새 결과가 오면 시점을 다시 맞추는 동작(`MightyGraphCamera`). 결과 카드를 내용 높이에 맞춰 줄이는 것과 새 결과를 입력창 바로 위에 보여 주는 것(아래 "Result card fits the window")도 macOS와 같은 규칙(Core `MightyGraphLayout.ResultSize`·`MightyGraphCamera.RevealOffset`·`ResultReveal`)을 쓴다. Windows는 요청이 끝날 때만 다이어그램을 기록하므로, 실행 중이던 창에 처음 나타난 최신 완료 요청을 방금 끝난 요청으로 본다. 타임라인 보기는 Windows에 없다.
+- 최신 결과 카드 창 맞춤과, 새 요청·새 결과가 오면 시점을 다시 맞추는 동작(`MightyGraphCamera`). 결과 카드를 내용 높이에 맞춰 줄이는 것과 새 결과를 입력창 바로 위에 보여 주는 것(아래 "Result card fits the window")도 macOS와 같은 규칙(Core `MightyGraphLayout.ResultSize`·`MightyGraphCamera.RevealOffset`·`ResultReveal`)을 쓴다. Windows는 요청이 끝날 때만 다이어그램을 기록하므로, 실행 중이던 창에 처음 나타난 최신 완료 요청을 방금 끝난 요청으로 본다. 타임라인과 구조 보기도 Windows에 있다(`MainWindow.MightyTimeline.cs`·`MainWindow.MightyStructure.cs`, Core `MightyTimeline.cs`·`MightyStructure*.cs`).
 - **결과에 나온 파일** 패널: 최신 성공 결과 옆에 열리고 개수와 **파일 목록 닫기** 버튼을 보여준다. 파일이 있는 새 결과가 나오면 자동으로 열리고, 한 그래프에는 한 패널만 열리며, 직접 닫으면 다음 결과까지 다시 열리지 않는다.
 
-**Windows에서 바꾼 것**: macOS는 결과 파일을 클릭하면 미리보기 말풍선을 열지만, Windows는 그 파일을 기본 앱으로 연다. 워크스페이스 폴더 안의 실제 파일만 열고, 폴더 밖을 가리키는 경로는 열지 않는다.
+**Windows에서 바꾼 것**(이 묶음 당시): macOS는 결과 파일을 클릭하면 미리보기 말풍선을 열지만, Windows는 그 파일을 기본 앱으로 연다. 워크스페이스 폴더 안의 실제 파일만 열고, 폴더 밖을 가리키는 경로는 열지 않는다. 지금은 Windows도 결과 파일 목록의 클릭을 참조 미리보기로 연다(`MainWindow.ReferencePreview.cs`).
 
-**이번 묶음 범위 밖**: 블록 크기 조절(모서리 손잡이·저장한 크기·공유 결과 크기와 **창에 맞추기** 버튼), 참조 링크 말풍선과 파일 미리보기, 요청 스타일 속성.
+**이번 묶음 범위 밖**(이후 들어옴): 블록 크기 조절(모서리 손잡이·저장한 크기·공유 결과 크기와 **창에 맞추기** 버튼, 지금은 네 가장자리에서도 — `MainWindow.GraphBlockSizes.cs`·`ResizeEdges.cs`), 참조 링크 말풍선과 파일 미리보기, 요청 스타일 속성. 요청 / 실행 분리, 따라가기 카메라, 그림 블록, Ouroboros 실행 블록도 이후 들어왔다. 현황은 [windows-parity.md](windows-parity.md).
 
 화면은 4a단계 Core(`MightyGraphLayout`·`MightyGraphCamera`·`ModelUsageFormat`·`ResultFiles`와 트래커)를 그대로 부르고, 두 플랫폼이 함께 읽는 `native/contracts/graph-vectors.json`으로 결과가 같음을 확인한다. 화면의 결정(스위치 대상, 블록 목록, 캡슐과 툴팁, 줌 단계, 휠 경로, 결과 파일 패널 규칙, 실행 표시)은 Core `MightyGraphViewModel`·`MightyGraphBlockModel`에 있고 WinUI는 그리기만 한다.
 

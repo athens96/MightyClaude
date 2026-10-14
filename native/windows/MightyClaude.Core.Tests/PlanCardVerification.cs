@@ -51,6 +51,27 @@ internal static class PlanCardVerification
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// One place for a pending plan's answers (macOS theComposerShowsOnlyTheAnswersWhileTheDiagramDrawsThePlan): the whole card
+    /// while the diagram does not draw the plan, else the answers alone — in the style's panel under a style, over the composer without one.
+    /// </summary>
+    internal static Task ThePlanAnswersHaveOnePlace()
+    {
+        IReadOnlyList<MightyGraphRun> runs = [Run("g1", "completed"), Run("g2")];
+        Check(PlanCardSupport.ComposerPlace(Plan(), true, runs, guided: false) == PlanCardSupport.ComposerPlaces.BarActions, "the diagram draws it, no style: the answers over the composer");
+        Check(PlanCardSupport.ComposerPlace(Plan(), true, runs, guided: true) == PlanCardSupport.ComposerPlaces.PanelActions, "the diagram draws it, under a style: the answers in the style's panel");
+        foreach (var guided in new[] { false, true })
+        {
+            // The diagram does not draw it (default view, timeline, no request, request ended): the whole card docks.
+            Check(PlanCardSupport.ComposerPlace(Plan(), false, runs, guided) == PlanCardSupport.ComposerPlaces.Card, "outside the diagram: the whole card");
+            Check(PlanCardSupport.ComposerPlace(Plan(), true, [], guided) == PlanCardSupport.ComposerPlaces.Card && PlanCardSupport.ComposerPlace(Plan(), true, [Run("g1", "completed")], guided) == PlanCardSupport.ComposerPlaces.Card, "no request, or one that ended: the whole card");
+            // Anything but a pending answerable plan has no plan place.
+            Check(PlanCardSupport.ComposerPlace(null, true, runs, guided) is null && PlanCardSupport.ComposerPlace(Bash, true, runs, guided) is null
+                && PlanCardSupport.ComposerPlace(Plan(state: "allowed"), true, runs, guided) is null && PlanCardSupport.ComposerPlace(Plan(answerable: false), true, runs, guided) is null, "only a pending plan that can be answered");
+        }
+        return Task.CompletedTask;
+    }
+
     internal static Task LayoutPlacesThePlanCard()
     {
         var running = Run("g2"); running.Agents.Add(new MightyGraphAgent { Id = "a1", Title = "조사", Status = "running" });

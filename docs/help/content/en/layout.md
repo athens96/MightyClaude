@@ -9,8 +9,8 @@ The window has a sidebar on the left and a work area on the right. In the work a
 
 ## Sidebar {#sidebar}
 From the top, the sidebar has:
-- {{ui:phone.dashboard.title}}: the state of every pane in every workspace, in one place.
 - {{ui:sidebar.searchPlaceholder}}: press {{kbd:⌘K}} to jump to the search field.
+- {{ui:phone.dashboard.title}}: the state of every pane in every workspace, in one place.
 - The {{ui:sidebar.workspacesHeader}} list: click a workspace to switch to it. Click the arrow beside it to show or hide its panes.
 - At the bottom: the theme button (dark or light) and the settings button.
 
@@ -32,7 +32,7 @@ The sidebar stays collapsed after you reopen the app. Pressing {{kbd:⌘K}} whil
 ![[sidebar-collapsed]]
 
 ## Work status {#dashboard}
-Click {{ui:phone.dashboard.title}} at the top of the sidebar to see the panes of all workspaces, sorted by state.
+Click {{ui:phone.dashboard.title}} under the search field in the sidebar to see the panes of all workspaces, sorted by state.
 - The tiles at the top count {{ui:phone.dashboard.stat.running}}, {{ui:phone.dashboard.stat.waiting}} and {{ui:phone.dashboard.stat.done}}.
 - The {{ui:dashboard.usage.title}} card shows your account usage. The limits are shared with other apps and sessions on the same account.
 - Each workspace has a {{ui:files.pane.title}} button and an {{ui:workspace.addPane}} menu.

@@ -15,14 +15,16 @@ public sealed class AgentIOMcp(Func<string, JsonElement, CancellationToken, Task
         using var output = new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false)) { AutoFlush = true };
         await server.Serve(input, output, CancellationToken.None); return 0;
     }
-    public async Task Serve(TextReader input, TextWriter output, CancellationToken cancellation)
+    public Task Serve(TextReader input, TextWriter output, CancellationToken cancellation) => Serve(input, output, Handle, cancellation);
+    /// <summary>The stdio loop both headless servers run: each line goes to <paramref name="handle"/>, and each reply is written whole on its own line.</summary>
+    public static async Task Serve(TextReader input, TextWriter output, Func<string, CancellationToken, Task<string?>> handle, CancellationToken cancellation)
     {
         using var limit = new SemaphoreSlim(16); using var writer = new SemaphoreSlim(1); var pending = new HashSet<Task>();
         async Task Dispatch(string line)
         {
             try
             {
-                if (await Handle(line, cancellation) is not { } response) return;
+                if (await handle(line, cancellation) is not { } response) return;
                 await writer.WaitAsync(cancellation);
                 try { await output.WriteLineAsync(response.AsMemory(), cancellation); await output.FlushAsync(cancellation); }
                 finally { writer.Release(); }

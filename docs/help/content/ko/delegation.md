@@ -3,21 +3,31 @@ title: 에이전트 위임
 order: 6
 section: delegation
 ---
-에이전트 위임은 Claude 창(부모)이 일을 나눠 다른 Claude 창(자식)에게 맡기는 기능입니다. 자식은 저마다 자기 git worktree에서 일하고, 끝나면 보고서를 남깁니다. 부모는 알림을 받아 보고서를 읽고, 결과를 병합할지 정합니다. Mac 앱에서만 됩니다.
+에이전트 위임은 Claude 창(부모)이 일을 나눠 다른 Claude 창(자식)에게 맡기는 기능입니다. 자식은 저마다 자기 git worktree에서 일하고, 끝나면 보고서를 남깁니다. 부모는 알림을 받아 보고서를 읽고, 결과를 병합할지 정합니다. Mac 앱과 Windows 앱에서 됩니다.
 
 > [!warning]
 > 실험 기능입니다. 기본으로 꺼져 있고 설정 화면이 없습니다. 연습용 저장소에서 먼저 써 보세요.
 
 ## 켜고 끄기 {#enable}
-앱을 끈 채로 터미널에서 다음 명령을 실행하고 앱을 다시 엽니다.
+앱을 끈 채로 다음 명령을 실행하고 앱을 다시 엽니다.
+
+{{platform:mac}} 터미널에서:
 
 ```sh
 defaults write dev.mightyclaude.native delegation.enabled -bool true
 ```
 
+{{platform:windows}} 명령 프롬프트나 PowerShell에서:
+
+```
+reg add "HKCU\Software\MightyClaudeNative" /v delegation.enabled /t REG_DWORD /d 1 /f
+```
+
+Windows에서는 `HKEY_CURRENT_USER\Software\MightyClaudeNative` 아래의 `delegation.enabled` 값(REG_DWORD)이 0이 아니면 켜진 것입니다. 값이 없거나 0이면 꺼져 있습니다.
+
 - 켜면 Claude 창에서 새 실행을 시작할 때마다 위임 도구가 붙습니다. 이미 돌고 있는 실행에는 붙지 않습니다.
 - 부모가 쓰는 도구는 `delegate`(맡기기), `list_children`(자식 목록), `child_status`(상태와 보고서 읽기), `merge`(병합), `follow_up`(후속 지시)입니다. `discard`(폐기)는 부모가 부를 수 없고 사람만 카드에서 합니다.
-- 끄려면 `defaults delete dev.mightyclaude.native delegation.enabled`를 실행합니다. 꺼도 도구만 떨어지고, 이미 있는 자식 창과 카드, 정리는 그대로 동작합니다.
+- 끄려면 Mac에서는 `defaults delete dev.mightyclaude.native delegation.enabled`, Windows에서는 `reg delete "HKCU\Software\MightyClaudeNative" /v delegation.enabled /f`를 실행하고 앱을 다시 엽니다. 꺼도 도구만 떨어지고, 이미 있는 자식 창과 카드, 정리는 그대로 동작합니다.
 
 ## 일을 맡기기 {#delegate}
 1. git 저장소 폴더를 작업 공간으로 열고 Claude 창을 엽니다. 이 창이 부모입니다.
@@ -26,7 +36,7 @@ defaults write dev.mightyclaude.native delegation.enabled -bool true
 
 ![[delegation-tree]]
 
-- 자식마다 브랜치 `mighty/<자식 id>`와 worktree(`~/.mightyclaude/worktrees/<자식 id>`)가 생깁니다. worktree는 프로젝트 폴더 밖에 있어서 부모의 작업을 건드리지 않습니다.
+- 자식마다 브랜치 `mighty/<자식 id>`와 worktree(Mac은 `~/.mightyclaude/worktrees/<자식 id>`, Windows는 `%USERPROFILE%\.mightyclaude\worktrees\<자식 id>`)가 생깁니다. worktree는 프로젝트 폴더 밖에 있어서 부모의 작업을 건드리지 않습니다.
 - 자식은 부모의 마지막 커밋에서 시작합니다. 부모 폴더에서 아직 커밋하지 않은 변경은 자식에게 가지 않습니다.
 - 맡긴 일은 TASK.md에, 결과는 REPORT.md에 적힙니다. 두 파일은 worktree 안의 git이 무시하는 폴더에 있어 커밋되지 않습니다.
 - 자식의 권한 모드는 부모가 고른 모드이고, 부모 창의 모드보다 넓을 수 없습니다. 넓히는 것은 사람만, 실행과 실행 사이에 자식 창 입력창의 권한 메뉴나 휴대폰 설정에서 할 수 있습니다.
@@ -94,9 +104,10 @@ defaults write dev.mightyclaude.native delegation.enabled -bool true
 ## 창 닫기와 정리 {#close}
 - **병합된 자식 창을 닫으면** 작업이 모두 병합되어 있고 남은 변경이 없을 때 앱이 worktree와 브랜치를 정리합니다(`git branch -d`, 강제 삭제는 하지 않음). 조건이 맞지 않으면 창만 닫히고 worktree는 남습니다.
 - **병합하기 전에 자식 창을 닫으면** 앱에서는 더 이상 병합할 수 없습니다. 카드에는 폐기만 남고, 브랜치와 worktree는 폐기할 때까지 그대로 있습니다.
-- **열린 자식이 있는 부모 창을 닫으면** Mac에서 먼저 묻습니다({{ui:delegation.parentClose.title}}). 부모 창만 닫히고 자식은 계속 일합니다.
+- **열린 자식이 있는 부모 창을 닫으면** 데스크톱 앱에서 먼저 묻습니다({{ui:delegation.parentClose.title}}). 부모 창만 닫히고 자식은 계속 일합니다.
 - 부모가 닫힌 자식은 사이드바의 {{ui:delegation.tree.parentClosed}} 항목 아래 카드로 남습니다. 그 자식의 알림은 카드에 보류되어 개수가 보이고, 후속 지시는 더 받지 않습니다.
 - 열린 자식이 있거나 정리되지 않은 자식 worktree가 남은 작업 공간은 제거할 수 없습니다.
+- {{platform:windows}} 자식 worktree 안에 정션이나 심볼릭 링크(예: 링크로 만든 `node_modules`)가 있으면, 병합된 자식 창을 닫아도 앱이 worktree를 정리하지 않고 남깁니다. 링크를 따라가 그 대상 폴더까지 지우는 일을 막기 위해서입니다. 이때는 카드의 {{ui:delegation.card.discard}} 단추로 지웁니다. 폐기는 링크 자체만 먼저 떼고, 링크가 가리키는 폴더는 건드리지 않습니다.
 
 ![[delegation-parent-closed]]
 
@@ -110,4 +121,4 @@ defaults write dev.mightyclaude.native delegation.enabled -bool true
 | 필요한 디스크 여유 | 10 GB |
 
 - 부모와 자식 모두 Claude 창이어야 합니다. Codex와 Gemini 창은 위임하지 않습니다.
-- Windows 앱에는 아직 없습니다. 휴대폰에는 새 화면이 없고, 보류된 행은 휴대폰 대기열에도 보입니다.
+- Mac 앱과 Windows 앱 모두 숨은 스위치로 켭니다([켜고 끄기](#enable)). 휴대폰에는 새 화면이 없고, 보류된 행은 휴대폰 대기열에도 보입니다.

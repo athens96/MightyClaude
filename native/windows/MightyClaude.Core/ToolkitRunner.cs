@@ -31,6 +31,24 @@ public sealed class ToolkitRunItem
     public IReadOnlyList<ToolkitStepResult> Steps { get; init; } = [];
 }
 
+/// <summary>What the toolkit box says about a plan, a run and a file that went wrong (M/ComponentsSettingsView.swift).</summary>
+public static class ToolkitPresentation
+{
+    /// <summary>One tool of the confirmation: its name over every command it will run, or over the one line that says it is left out.</summary>
+    public sealed record PlanRow(string Name, IReadOnlyList<string> Lines, bool Skipped);
+
+    /// <summary>The confirmation's rows, one per tool of the plan in its order (M/ComponentsSettingsView.swift:215-252): nothing runs that is not listed, and a tool that will not run says so.</summary>
+    public static IReadOnlyList<PlanRow> PlanRows(IReadOnlyList<ToolkitPlanItem> plan) => plan.Select(item => item.Action == ToolkitPlanItem.PlanAction.Skip
+        ? new PlanRow(item.Entry.DisplayName, ["→ " + Locale.Get("settings.toolkit.verdictSkipped")], true)
+        : new PlanRow(item.Entry.DisplayName, item.Commands.Select(argv => string.Join(" ", argv)).ToList(), false)).ToList();
+
+    /// <summary>A result row's name: the tool's own, or its id once the tool is no longer listed (M/ComponentsSettingsView.swift:205).</summary>
+    public static string ResultName(ToolkitRunItem item, IEnumerable<ToolkitFileEntry> entries) => entries.FirstOrDefault(entry => entry.Id == item.EntryId)?.DisplayName ?? item.EntryId;
+
+    /// <summary>The line over the tools when toolkit.json could not be read or changed: that it failed, then why (M/ComponentsSettingsView.swift:113).</summary>
+    public static string ErrorBanner(string reason) => Locale.Get("settings.toolkit.errorBanner") + " " + reason;
+}
+
 // ── Executor ─────────────────────────────────────────────────────────────────
 
 public sealed class ToolkitCommandOutput(int exitCode = 0, string output = "")

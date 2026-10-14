@@ -105,7 +105,7 @@ Mighty表示の上部にある{{ui:graph.view.diagram}} | {{ui:graph.view.timeli
 ![[agent-timeline]]
 
 ### 構造 {#structure}
-同じ切り替えで{{ui:graph.view.structure}}を選ぶと、リクエストをフェーズごとの列で表示できます。今のところ Mac アプリだけの機能です。
+同じ切り替えで{{ui:graph.view.structure}}を選ぶと、リクエストをフェーズごとの列で表示できます。
 - スタイルを使うペインでは、上部にそのモードのフェーズが並びます。終わったフェーズは緑、今のフェーズはアクセントカラー、残りはグレーです。
 - 各リクエストは属するフェーズの下にリクエストカードと{{ui:graph.block.execution}}カードの順に置かれ、{{ui:graph.block.execution}}カードの下の破線の枠にサブエージェントのツリーがまとめられます。終わったリクエストには、その下に結果が付きます。
 - スタイルのないペインでは、リクエストごとに {{ui:graph.structure.column.request}} → {{ui:graph.structure.column.execution}} → {{ui:graph.structure.column.result}} の1行になります。
