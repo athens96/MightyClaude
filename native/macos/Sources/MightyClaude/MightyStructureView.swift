@@ -16,28 +16,42 @@ final class MightyStructureMemory: ObservableObject {
     /// "next", "list", "badge"), and the page's scroll view ("page"), for the GUI smoke: a
     /// SwiftUI button has no native view to find it by. Not published.
     var controlFrames: [String: CGRect] = [:]
-    /// Whether the page follows the newest board's end (`MightyGraphFollow.PageWatch`).
+    /// Which of the board's columns follow their end (`MightyGraphFollow.ColumnWatch`).
     /// Not published: scrolling redraws nothing.
-    var follow = MightyGraphFollow.PageWatch()
-    /// The system reports a scroll of the page right now, such as a drag of its scroll
-    /// bar (macOS 15 and later).
-    var userScrolling = false
-    /// The user is dragging the page's empty space (`MightyStructurePanning`), and when
+    var columns = MightyGraphFollow.ColumnWatch()
+    /// The columns the system reports a scroll of right now, such as a drag of a
+    /// column's scroll bar (macOS 15 and later).
+    var scrollingColumns = Set<String>()
+    /// The user is dragging the board's empty space (`MightyStructurePanning`), and when
     /// the last such drag ended.
     var panning = false
     var panReleasedAt: TimeInterval = 0
-    /// The page's wheel and trackpad gestures, which `MightyStructurePanning` moves the
-    /// page by: the system never sees them, so it reports no scroll for them.
+    /// The board's wheel and trackpad gestures, which `MightyStructurePanning` moves the
+    /// columns and the page by: the system never sees them, so it reports no scroll for them.
     var wheel = MightyStructureWheel.Tracker()
-    /// For the GUI diagnostics: page reports judged so far, and the last one's origin,
-    /// time and whether it was judged as the user's move.
+    /// The column the current or last drag or wheel gesture moves; nil when it moves
+    /// the page only.
+    var movingColumn: String?
+    /// Each column's native probe (`MightyStructureColumnScrolling`), held weakly: the
+    /// page's probe and the GUI smoke reach a column's scroll view by it. A board shown
+    /// before may leave its own for a moment; they are out of the window.
+    let columnProbes = NSHashTable<MightyStructureColumnProbe>.weakObjects()
+    /// For the GUI diagnostics: column reports judged so far, and the last one's column,
+    /// origin, time and whether it was judged as the user's move.
     var reports = 0
-    var lastReport: (originY: Double, at: TimeInterval, userMoving: Bool)?
-    /// The page is moving under the user's hand: a scroll, a drag or the moment after it
-    /// (`MightyStructurePan.releaseGrace`), or a wheel or trackpad gesture still going.
-    var userMoving: Bool {
-        MightyStructureWheel.userMoving(scrollPhase: userScrolling, panning: panning, panReleasedAt: panReleasedAt,
-                                        wheel: wheel, now: ProcessInfo.processInfo.systemUptime)
+    var lastReport: (column: String, originY: Double, at: TimeInterval, userMoving: Bool)?
+    /// Column `column` is moving under the user's hand: a scroll the system reports, a
+    /// drag or the moment after it (`MightyStructurePan.releaseGrace`), or a wheel or
+    /// trackpad gesture still going, that moves this column.
+    func userMoving(_ column: String) -> Bool {
+        scrollingColumns.contains(column)
+            || (movingColumn == column
+                && MightyStructureWheel.userMoving(scrollPhase: false, panning: panning, panReleasedAt: panReleasedAt,
+                                                   wheel: wheel, now: ProcessInfo.processInfo.systemUptime))
+    }
+    /// The native scroll view of column `id`.
+    @MainActor func columnScroll(_ id: String) -> NSScrollView? {
+        columnProbes.allObjects.lazy.filter { $0.columnID == id }.compactMap(\.scrollView).first
     }
 
     /// Shows board `id` of `boards` and closes the list: what a list entry does.
@@ -52,7 +66,8 @@ final class MightyStructureMemory: ObservableObject {
 /// step between the boards and the title opens the list of them all; a badge says a newer
 /// board arrived while an older one is shown. Under it the board's steps (요청 → 실행 →
 /// 결과, or the style's phases) as chips joined by lines, with the board's status; then
-/// one column per step, side by side, each with its cards.
+/// one column per step, side by side, each with its header and its cards, which scroll
+/// on their own.
 ///
 /// The cards read on their own: the request alone, its 실행 part with the latest reply, the
 /// last tool calls and the status, the answer once it finished, and each sub-agent's
@@ -77,12 +92,12 @@ struct MightyStructureView: View {
     /// Shows a diagram node (`MightyGraphLayout.Node.id`) in the diagram.
     let onReveal: (String) -> Void
 
-    /// Scroll bars that always show take their width from the columns.
+    /// Scroll bars that always show take their width from the columns' cards.
     @ViewState private var legacyScrollers = NSScroller.preferredScrollerStyle == .legacy
 
     private static let chipHeight: CGFloat = 20
+    /// Each column's scroll space, and the prefix of its end's id.
     private static let scrollSpace = "mighty-structure-scroll"
-    private static let topID = "mighty-structure-top"
     private static let endID = "mighty-structure-end"
     /// A card's and a sub-agent card's corners.
     static let cardCorner: CGFloat = 10
@@ -355,129 +370,68 @@ struct MightyStructureView: View {
 
     // MARK: Kanban
 
-    /// The board's columns in a page that scrolls on both axes, dragged and wheeled as
-    /// the diagram is (`MightyStructurePanning`). On the newest board the page follows its
-    /// end as it grows (`MightyGraphFollow.PageWatch`); an older board opens at its top.
+    /// The board's columns side by side in a page that scrolls sideways, only when they
+    /// do not fit. Each column keeps its header on top and scrolls its cards on its own;
+    /// the page and the columns are dragged and wheeled as the diagram is
+    /// (`MightyStructurePanning`). On the newest board each column follows its own end as
+    /// it grows (`MightyGraphFollow.ColumnWatch`); an older board opens at its columns' tops.
     private func page(_ board: MightyStructure.Board?, onNewest: Bool) -> some View {
         GeometryReader { geo in
-            // The pane's width, read from outside the scroll view, so the columns'
-            // width never feeds back into what is measured.
+            // The pane's size, read from outside the scroll view, so the columns' size
+            // never feeds back into what is measured.
+            let available = geo.size.width - 2 * DesignMetrics.Inset.graphBlockBodyH
+            let gap = DesignMetrics.Spacing.lg
+            let count = board?.columns.count ?? 0
+            let width = MightyStructure.columnWidth(available: available, count: count, gap: gap)
+            // Scroll bars that always show: a column's takes its cards' width, and the
+            // page's, when the columns do not fit, the columns' height.
             let scroller = legacyScrollers ? NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy) : 0
-            let available = geo.size.width - scroller - 2 * DesignMetrics.Inset.graphBlockBodyH
-            // The newest board's end is what the page follows; an older board follows nothing.
-            let followID = onNewest ? board?.id : nil
+            let overflows = CGFloat(count) * width + gap * CGFloat(max(0, count - 1)) > available + 0.5
+            let height = max(0, geo.size.height - DesignMetrics.Spacing.md - (overflows ? scroller : 0))
             ScrollViewReader { proxy in
-                ScrollView([.horizontal, .vertical]) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        Color.clear.frame(width: 1, height: 1).id(Self.topID)
-                        Group {
-                            if let board {
-                                kanban(board, width: MightyStructure.columnWidth(available: available, count: board.columns.count,
-                                                                                 gap: DesignMetrics.Spacing.lg))
-                                    .background(endMark(board.id, follows: onNewest))
-                                    .id(board.id)
-                            } else {
-                                Text(L("graph.timeline.empty")).font(.system(size: 12)).foregroundStyle(Palette.ink2)
-                                    .padding(.vertical, DesignMetrics.Spacing.md)
-                            }
+                ScrollView(.horizontal) {
+                    Group {
+                        if let board {
+                            kanban(board, onNewest: onNewest, width: width, cardWidth: width - scroller, height: height)
+                                .id(board.id)
+                        } else {
+                            Text(L("graph.timeline.empty")).font(.system(size: 12)).foregroundStyle(Palette.ink2)
+                                .padding(.vertical, DesignMetrics.Spacing.md)
                         }
-                        .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).padding(.vertical, DesignMetrics.Spacing.md)
-                        // The page's end, which a follow scrolls to when the board ends the page.
-                        Color.clear.frame(width: 1, height: 1).id(Self.endID)
                     }
-                    .background(GeometryReader { content in
-                        Color.clear.preference(key: MightyStructurePage.self, value: .init(content: content.frame(in: .named(Self.scrollSpace))))
-                    })
+                    .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).padding(.top, DesignMetrics.Spacing.md)
                 }
-                .coordinateSpace(name: Self.scrollSpace)
-                // Dragging the page's empty space moves it, as in the diagram.
+                // Dragging the board's empty space moves it, as in the diagram.
                 .background(MightyStructurePanning(sessionID: sessionID, memory: memory))
                 // The page's own frame in the same space as the controls' frames: the GUI
                 // smoke maps that space onto the window through the pan probe, a native view
                 // with this very frame.
                 .background(controlMark("page"))
-                // The pane's height joins the same report: a taller composer moves no
-                // content, yet may hide the board's end.
-                .background(GeometryReader { pane in
-                    Color.clear.preference(key: MightyStructurePage.self, value: .init(visible: pane.size.height))
-                })
-                .modifier(MightyStructureScrollRoles(memory: memory))
-                // Every report of where the page stands decides whether it follows the
-                // board's end and where it scrolls (`MightyGraphFollow.PageWatch`).
-                .onPreferenceChange(MightyStructurePage.self) { report in
-                    guard let content = report.content, let visible = report.visible else { return }
-                    let newest = followID != nil && report.newest?.id == followID ? report.newest.map { Double($0.bottom - content.minY) } : nil
-                    let page = MightyGraphFollow.Page(originY: Double(-content.minY), visibleHeight: Double(visible),
-                                                      documentHeight: Double(content.height), newestID: followID, newestBottom: newest)
-                    let moving = memory.userMoving
-                    memory.reports += 1
-                    memory.lastReport = (page.originY, ProcessInfo.processInfo.systemUptime, moving)
-                    let target = memory.follow.observe(page, userScrolling: moving)
-                    if followID != nil { scroll(target, proxy) }
-                }
-                .onAppear {
-                    if let followID { scroll(memory.follow.appeared(newestID: followID), proxy) }
-                }
-                // A new request on the newest board is the user's own: shown, and followed from then on.
+                // Another board, or a new request on the newest one: the page shows its
+                // first column again; the columns follow or open at their top themselves.
+                .onChange(of: board?.id) { _, id in toFirstColumn(id, proxy) }
                 .onChange(of: newestRunID) { _, id in
-                    guard id != nil, let followID else { return }
-                    scroll(memory.follow.newRequest(followID), proxy)
+                    if id != nil, onNewest { toFirstColumn(board?.id, proxy) }
                 }
-                // Another board: the newest is followed, an older one opens at its top.
-                .onChange(of: board?.id) { _, id in
-                    if let followID, id == followID {
-                        scroll(memory.follow.newRequest(followID), proxy)
-                    } else {
-                        memory.follow.stop()
-                        DispatchQueue.main.async { proxy.scrollTo(Self.topID, anchor: .topLeading) }
-                    }
-                }
-                // An opened or folded text is being read: nothing follows until the
-                // reader comes back to the board's end. (The diagram's blocks keep their
-                // size as they open, so there the camera only re-judges where it is.)
-                .onChange(of: memory.expanded) { _, _ in memory.follow.stop() }
             }
         }
     }
 
-    /// The board's end, or its bottom at the viewport's bottom. After the current update:
-    /// a report arrives while the page is being laid out.
-    private func scroll(_ target: MightyGraphFollow.Scroll?, _ proxy: ScrollViewProxy) {
-        guard let target else { return }
-        DispatchQueue.main.async {
-            // A drag, a wheel or a trackpad gesture on the page is the user's: nothing
-            // scrolls under it, even a scroll asked for just before it began.
-            guard !memory.userMoving else { return }
-            switch target {
-            case .bottom: proxy.scrollTo(Self.endID, anchor: .bottomLeading)
-            case .card(let id): proxy.scrollTo(id, anchor: .bottomLeading)
-            }
-        }
-    }
-
-    /// Reports the newest board's bottom with the page's frame, in one report.
-    @ViewBuilder private func endMark(_ id: String, follows: Bool) -> some View {
-        if follows {
-            GeometryReader { board in
-                Color.clear.preference(key: MightyStructurePage.self,
-                                       value: .init(newest: .init(id: id, bottom: board.frame(in: .named(Self.scrollSpace)).maxY)))
-            }
-        }
+    /// The page back at its first column, after the current update.
+    private func toFirstColumn(_ boardID: String?, _ proxy: ScrollViewProxy) {
+        guard let boardID else { return }
+        DispatchQueue.main.async { proxy.scrollTo(boardID, anchor: .topLeading) }
     }
 
     /// One column per step, each with its header and its cards.
-    private func kanban(_ board: MightyStructure.Board, width: CGFloat) -> some View {
+    private func kanban(_ board: MightyStructure.Board, onNewest: Bool, width: CGFloat, cardWidth: CGFloat, height: CGFloat) -> some View {
         HStack(alignment: .top, spacing: DesignMetrics.Spacing.lg) {
             ForEach(board.columns) { column in
                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
                     columnHeader(column)
-                    // One board holds one request's or one pipeline's cards: drawn whole,
-                    // so a follow or a jump finds every card laid out.
-                    VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
-                        ForEach(column.cards) { card($0, width: width).id($0.id) }
-                    }
+                    columnCards(column, board: board.id, onNewest: onNewest, width: cardWidth)
                 }
-                .frame(width: width, alignment: .topLeading)
+                .frame(width: width, height: height, alignment: .topLeading)
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel(L("graph.structure.board.columnAccessibility",
                                       ["name": stepName(column.step), "state": stepState(column.step.step), "count": "\(column.count)"]))
@@ -486,6 +440,104 @@ struct MightyStructureView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("mighty-structure-board-\(board.id)")
+    }
+
+    /// A column's cards in a scroll view of their own, under its header. Every report of
+    /// where the column stands decides whether it follows its end and where it scrolls
+    /// (`MightyGraphFollow.ColumnWatch`), on the newest board only.
+    private func columnCards(_ column: MightyStructure.BoardColumn, board: String, onNewest: Bool, width: CGFloat) -> some View {
+        let id = column.id
+        let end = Self.endID + "-" + id
+        let keys = Set(column.cards.flatMap(Self.foldKeys))
+        return ScrollViewReader { proxy in
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: 0) {
+                    // One board holds one request's or one pipeline's cards: drawn whole,
+                    // so a follow finds every card laid out.
+                    VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
+                        ForEach(column.cards) { card($0, width: width).id($0.id) }
+                    }
+                    // The column's last card is its newest.
+                    .background(GeometryReader { cards in
+                        Color.clear.preference(key: MightyStructurePage.self, value: .init(newestBottom: cards.frame(in: .named(Self.scrollSpace)).maxY))
+                    })
+                    .padding(.bottom, DesignMetrics.Spacing.md)
+                    // The column's end, under its padding, which a follow scrolls to.
+                    Color.clear.frame(width: 1, height: 1).id(end)
+                }
+                .frame(width: width, alignment: .topLeading)
+                .background(GeometryReader { content in
+                    Color.clear.preference(key: MightyStructurePage.self, value: .init(content: content.frame(in: .named(Self.scrollSpace))))
+                })
+            }
+            .coordinateSpace(name: Self.scrollSpace)
+            // The page's probe finds the column's native scroll view by this one.
+            .background(MightyStructureColumnScrolling(sessionID: sessionID, columnID: id, memory: memory))
+            // The column's height joins the same report: a taller composer moves no
+            // content, yet may hide the column's end.
+            .background(GeometryReader { pane in
+                Color.clear.preference(key: MightyStructurePage.self, value: .init(visible: pane.size.height))
+            })
+            .modifier(MightyStructureScrollRoles(memory: memory, column: id, opensAtEnd: onNewest))
+            .onPreferenceChange(MightyStructurePage.self) { report in
+                guard let content = report.content, let visible = report.visible else { return }
+                let page = MightyGraphFollow.Page(originY: Double(-content.minY), visibleHeight: Double(visible), documentHeight: Double(content.height),
+                                                  newestID: id, newestBottom: report.newestBottom.map { Double($0 - content.minY) })
+                let moving = memory.userMoving(id)
+                memory.reports += 1
+                memory.lastReport = (id, page.originY, ProcessInfo.processInfo.systemUptime, moving)
+                scroll(memory.columns.observe(board: board, newest: onNewest, column: id, page, userScrolling: moving), proxy, to: end, column: id)
+            }
+            .onAppear { scroll(memory.columns.appeared(board: board, newest: onNewest, column: id), proxy, to: end, column: id) }
+            // A column torn down in the middle of a scroll bar's drag never reports its end.
+            .onDisappear { memory.scrollingColumns.remove(id) }
+            // A new request on the newest board is the user's own: every column shows its
+            // end, and follows it from then on.
+            .onChange(of: newestRunID) { _, run in
+                guard run != nil, onNewest else { return }
+                scroll(memory.columns.newRequest(board: board, column: id), proxy, to: end, column: id)
+            }
+            // A text opened or folded in this column is being read: the column follows
+            // nothing until the reader comes back to its end. (The diagram's blocks keep
+            // their size as they open, so there the camera only re-judges where it is.)
+            .onChange(of: memory.expanded) { old, new in
+                if !old.symmetricDifference(new).isDisjoint(with: keys) { memory.columns.stop(id) }
+            }
+        }
+    }
+
+    /// A column's end at its bottom, after the current update: a report arrives while
+    /// the column is being laid out. A column's newest card is its last, so either
+    /// target of the follow rule is the column's end. The column's own native clip moves,
+    /// laid out first so its end is where the report saw it: a scroll to a view inside
+    /// the column may scroll the page around it too. Before the column's native view is
+    /// known, its end is scrolled to.
+    private func scroll(_ target: MightyGraphFollow.Scroll?, _ proxy: ScrollViewProxy, to end: String, column: String) {
+        guard target != nil else { return }
+        DispatchQueue.main.async {
+            // A drag, a wheel or a trackpad gesture in the column is the user's: nothing
+            // scrolls under it, even a scroll asked for just before it began.
+            guard !memory.userMoving(column) else { return }
+            guard let scroll = memory.columnScroll(column) else { proxy.scrollTo(end, anchor: .bottom); return }
+            scroll.window?.layoutIfNeeded()
+            let clip = scroll.contentView
+            let range = MightyStructurePanProbe.originRange(clip)
+            let bottom = CGPoint(x: clip.bounds.origin.x, y: clip.isFlipped ? range.maximum.y : range.minimum.y)
+            guard abs(bottom.y - clip.bounds.origin.y) > 0.5 else { return }
+            clip.scroll(to: bottom)
+            scroll.reflectScrolledClipView(clip)
+        }
+    }
+
+    /// The keys of the texts a card opens in place (`foldKey`).
+    static func foldKeys(_ card: MightyStructure.Card) -> [String] {
+        switch card {
+        case .request(let item): [foldKey("request", item.runID)]
+        case .execution(let item): [foldKey("message", item.runID)]
+        case .result(let item): [foldKey("answer", item.runID)]
+        case .summary(let item): [foldKey("request", item.runID), foldKey("message", item.runID)]
+        case .agent(let node, _, _): [foldKey("node", node.nodeID)]
+        }
     }
 
     private func stepState(_ step: MightyStructure.Step) -> String {
@@ -848,21 +900,20 @@ private extension View {
     }
 }
 
-/// Where the structure's page stands in its scroll view's space: the whole page's
-/// frame, the newest board's bottom and the pane's height, merged into one report so
-/// the follow rule never judges one against a stale other.
+/// Where a column of the board stands in its scroll view's space: its cards' frame,
+/// its last card's bottom and the column's height, merged into one report so the follow
+/// rule never judges one against a stale other.
 private struct MightyStructurePage: PreferenceKey {
-    struct Newest: Equatable { var id: String; var bottom: CGFloat }
     struct Value: Equatable {
         var content: CGRect?
-        var newest: Newest?
+        var newestBottom: CGFloat?
         var visible: CGFloat?
     }
     static let defaultValue = Value()
     static func reduce(value: inout Value, nextValue: () -> Value) {
         let next = nextValue()
         if let content = next.content { value.content = content }
-        if let newest = next.newest { value.newest = newest }
+        if let newestBottom = next.newestBottom { value.newestBottom = newestBottom }
         if let visible = next.visible { value.visible = visible }
     }
 }
@@ -876,27 +927,28 @@ private struct MightyStructureControlFrames: PreferenceKey {
     }
 }
 
-/// The newest board opens at its end, and a board shorter than the pane sits at its top
-/// left, as a kanban board does. From macOS 15 only the opening is anchored at the end,
-/// so the page never keeps its end in place by itself as it grows, which is the follow
-/// rule's to decide, and a scroll the user is making is known, so it is never fought.
-/// macOS 14 takes the one anchor at the top left; the follow rule shows the end.
+/// A column of the newest board opens at its end, and one of an older board at its top;
+/// a column shorter than its height sits at its top. From macOS 15 only the opening is
+/// anchored, so a column never keeps its end in place by itself as it grows, which is the
+/// follow rule's to decide, and a scroll the user is making is known, so it is never
+/// fought. macOS 14 takes the one anchor at the top; the follow rule shows the end.
 private struct MightyStructureScrollRoles: ViewModifier {
     let memory: MightyStructureMemory
+    let column: String
+    let opensAtEnd: Bool
     func body(content: Content) -> some View {
         if #available(macOS 15.0, *) {
             content
-                .defaultScrollAnchor(.bottomLeading, for: .initialOffset)
-                .defaultScrollAnchor(.topLeading, for: .alignment)
+                .defaultScrollAnchor(opensAtEnd ? .bottom : .top, for: .initialOffset)
+                .defaultScrollAnchor(.top, for: .alignment)
                 .onScrollPhaseChange { _, phase in
-                    memory.userScrolling = switch phase {
-                    case .tracking, .interacting, .decelerating: true
-                    case .idle, .animating: false
-                    @unknown default: false
+                    switch phase {
+                    case .tracking, .interacting, .decelerating: memory.scrollingColumns.insert(column)
+                    default: memory.scrollingColumns.remove(column)
                     }
                 }
         } else {
-            content.defaultScrollAnchor(.topLeading)
+            content.defaultScrollAnchor(.top)
         }
     }
 }

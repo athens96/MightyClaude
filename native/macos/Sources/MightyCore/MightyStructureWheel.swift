@@ -12,11 +12,12 @@ import Foundation
 ///
 /// A trackpad gesture (the fingers' scroll, then its momentum) is decided once, at its
 /// first movement: the innermost scroll view under the pointer that can still move that
-/// way takes it, such as a code block that scrolls sideways, and otherwise the page. It
-/// keeps to the axis it started along, as a scroll view that scrolls along the
-/// predominant axis does. A mouse wheel's steps have no gesture and are decided one by
-/// one. Either is the user's own move, so the follow rule never scrolls under it
-/// (`MightyGraphFollow.PageWatch`).
+/// way takes it, such as a code block that scrolls sideways, then the board's column
+/// under the pointer, which moves up and down only, and otherwise the page, which moves
+/// sideways only (`MightyStructurePan.confined`). It keeps to the axis it started along,
+/// as a scroll view that scrolls along the predominant axis does. A mouse wheel's steps
+/// have no gesture and are decided one by one. Either is the user's own move, so the
+/// follow rule never scrolls the column under it (`MightyGraphFollow.ColumnWatch`).
 public enum MightyStructureWheel {
     /// After a wheel step, or the last event of a gesture, the page is still the user's
     /// this long: its report of the last step may arrive later, and momentum starts

@@ -253,4 +253,67 @@ public enum MightyGraphFollow {
             return page.documentHeight - bottom <= Double(slack) ? .bottom : .card(id)
         }
     }
+
+    /// The 보드 view's follow state: each column of the board shown scrolls on its own
+    /// and follows its own end, by the page rule (`PageWatch`, one per column, whose
+    /// newest card is the column's last). Only the newest board follows; another board,
+    /// or the board shown becoming or ceasing to be the newest, starts over: every column
+    /// of the newest board follows, no column of an older one does. A user's move or an
+    /// opened text stops one column only.
+    public struct ColumnWatch: Equatable, Sendable {
+        public private(set) var boardID: String?
+        public private(set) var newest = false
+        private var columns: [String: PageWatch] = [:]
+        public init() {}
+
+        /// The column follows its end: on the newest board, unless the reader left it.
+        public func following(_ column: String) -> Bool { newest && (columns[column]?.following ?? true) }
+
+        private mutating func show(_ board: String, newest: Bool) {
+            guard board != boardID || newest != self.newest else { return }
+            boardID = board
+            self.newest = newest
+            columns = [:]
+        }
+
+        /// A column of `board` appeared: the board was shown, or the view came back to it.
+        /// A following column shows its end; any other is judged by its first report.
+        public mutating func appeared(board: String, newest: Bool, column: String) -> Scroll? {
+            show(board, newest: newest)
+            guard newest else { return nil }
+            var watch = columns[column] ?? PageWatch()
+            defer { columns[column] = watch }
+            return watch.appeared(newestID: column)
+        }
+        /// A new request on the newest board is the user's own: the column shows its end
+        /// and follows it from now on.
+        public mutating func newRequest(board: String, column: String) -> Scroll {
+            show(board, newest: true)
+            var watch = PageWatch()
+            defer { columns[column] = watch }
+            return watch.newRequest(column)
+        }
+        /// The user opened or folded a text in the column: nothing follows there.
+        public mutating func stop(_ column: String) {
+            guard newest else { return }
+            var watch = columns[column] ?? PageWatch()
+            watch.stop()
+            columns[column] = watch
+        }
+        /// The user moved the column by `dy` points (`PageWatch.userScrolled`).
+        public mutating func userScrolled(_ column: String, byY dy: Double) {
+            guard newest, var watch = columns[column] else { return }
+            watch.userScrolled(byY: dy)
+            columns[column] = watch
+        }
+        /// A column's report (`PageWatch.observe`). Returns where the column scrolls;
+        /// nil on an older board.
+        public mutating func observe(board: String, newest: Bool, column: String, _ page: Page, userScrolling: Bool) -> Scroll? {
+            show(board, newest: newest)
+            guard newest else { return nil }
+            var watch = columns[column] ?? PageWatch()
+            defer { columns[column] = watch }
+            return watch.observe(page, userScrolling: userScrolling)
+        }
+    }
 }
