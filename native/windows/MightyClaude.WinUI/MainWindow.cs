@@ -85,11 +85,11 @@ public sealed partial class MainWindow : Window
             }
         });
         InitializeLoginRecovery(); InitializeDelegation();
-        service.RunEventReceived += value => DispatcherQueue.TryEnqueue(() => { if (closing) return; RecordProviderActivity(value); ReceiveLoginSignal(value); if (views.TryGetValue(value.SessionId, out var pane)) { pane.Refresh(); pane.ReceiveQueueRunEvent(value); if (value.Type == "status" && value.Status is "stopped" or "completed" or "error") pane.ClearToolPermissions(); } RefreshRunningIndicators(); HandleRunEventForNotification(value); });
+        service.RunEventReceived += value => DispatcherQueue.TryEnqueue(() => { if (closing) return; RecordProviderActivity(value); ReceiveLoginSignal(value); if (views.TryGetValue(value.SessionId, out var pane) && pane.Refresh()) { pane.ReceiveQueueRunEvent(value); if (value.Type == "status" && value.Status is "stopped" or "completed" or "error") pane.ClearToolPermissions(); } RefreshRunningIndicators(); HandleRunEventForNotification(value); });
         // Claude's extra tool-permission requests never travel as a RunEvent:
         // they are ephemeral, so they reach the pane that can show the bar and
         // nowhere else — not the snapshot.
-        service.ToolPermissionChanged += value => DispatcherQueue.TryEnqueue(() => { if (closing) return; if (views.TryGetValue(value.RunId, out var pane)) pane.ReceiveToolPermission(value); try { ReceiveCompanionPermission(value); } catch (Exception ex) { companionError = ex.Message; } });
+        service.ToolPermissionChanged += value => DispatcherQueue.TryEnqueue(() => { if (closing) return; if (views.TryGetValue(value.RunId, out var pane) && service.Snapshot.Sessions.Any(s => s.Id == value.RunId)) pane.ReceiveToolPermission(value); try { ReceiveCompanionPermission(value); } catch (Exception ex) { companionError = ex.Message; } });
         service.PersistenceFailed += ex => DispatcherQueue.TryEnqueue(() => error.Text = Locale.Get("window.error.saveFailed", new Dictionary<string, string> { ["reason"] = ex.Message }));
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(DesignMetrics.Layout.SidebarDefault), MinWidth = DesignMetrics.Layout.SidebarMin, MaxWidth = DesignMetrics.Layout.SidebarMax }); root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -831,12 +831,14 @@ public sealed partial class MainWindow : Window
             }
             return menu;
         }
-        internal void Refresh()
+        /// <returns>False when the pane is gone: an event queued before its close (a run's end, a status) finds nothing to draw.</returns>
+        internal bool Refresh()
         {
+            if (owner.service.Snapshot.Sessions.FirstOrDefault(s => s.Id == id) is not { } pane) return false;
             // A files pane runs nothing: it draws its tree and preview instead (MainWindow.Files.cs).
-            if (FilePaneKind.IsFilePane(Session.Kind)) { EnsureFilesView(); RethemeFilesMarkdown(); return; }
+            if (FilePaneKind.IsFilePane(pane.Kind)) { EnsureFilesView(); RethemeFilesMarkdown(); return true; }
             RefreshTerminalTheme(); RethemeMightyTranscripts(owner.service.Snapshot.Theme == "light"); RethemePlanViews(); RethemeStructureAnswers(); FitReferencePreview();
-            var pane = Session; updating = true; var runtime = owner.Runtime(pane.Provider); var catalog = runtime?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
+            updating = true; var runtime = owner.Runtime(pane.Provider); var catalog = runtime?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
             var state = owner.service.Snapshot; RefreshHeaderStatus(pane, state.Theme != "light"); output.Update(pane, state.Theme == "light", owner.pictures, state.Workspaces.FirstOrDefault(w => w.Id == pane.WorkspaceId)?.Path); RefreshEmptyOutput(pane); RefreshElapsed(pane); RefreshPlanHistory(pane); RefreshBackgroundWork(pane); RedecidePlanPlace();
             // Do not rewrite or recreate the editor during output/metadata refreshes.
             if (!draftLoaded) { input.Text = pane.Draft; draftLoaded = true; RefreshPalette(input.Text); }
@@ -846,6 +848,7 @@ public sealed partial class MainWindow : Window
             RequestStatusLineRefresh();
             RenderLoginRecovery();
             updating = false;
+            return true;
         }
         private Task CustomModel() => owner.Act(async () =>
         {
