@@ -105,7 +105,7 @@ Claude와 Codex 창 머리에는 {{ui:graph.view.default}} | {{ui:graph.view.mig
 ![[agent-timeline]]
 
 ### 보드 {#structure}
-같은 전환의 {{ui:graph.view.structure}} 항목을 고르면 요청을 칸반 보드로 볼 수 있습니다. Windows 앱에는 아직 이전 모양이 있습니다. 모든 요청을 단계별 열에 펼쳐 보여 주고, 끝난 요청은 한 줄로 접히며, 빈 곳을 끌어 움직입니다.
+같은 전환의 {{ui:graph.view.structure}} 항목을 고르면 요청을 칸반 보드로 볼 수 있습니다.
 - 화면에는 한 번에 하나만 나옵니다. 스타일이 없는 창은 요청 하나, 스타일을 쓰는 창은 파이프라인 하나입니다. 파이프라인은 단계가 앞으로만 나아가는 요청들의 묶음이고, 요청의 단계가 앞 요청보다 이전으로 돌아가면 새 파이프라인이 시작됩니다.
 - 맨 위의 ◀ {{ui:graph.structure.board.previous}}과 ▶ {{ui:graph.structure.board.next}}으로 앞뒤를 오가고, 가운데의 "요청 3 / 7" 같은 제목을 누르면 목록이 열려 번호, 제목, 상태, 단계를 보고 바로 고를 수 있습니다.
 - 그 아래에는 진행 상황이 나옵니다. 상태와 첫 줄, 그리고 단계 칩이 선으로 이어져 있습니다. 스타일이 없는 창은 {{ui:graph.structure.column.request}} → {{ui:graph.structure.column.execution}} → {{ui:graph.structure.column.result}}, 스타일을 쓰는 창은 그 모드의 단계입니다. 끝난 단계는 초록색, 지금 단계는 강조색, 남은 단계는 회색입니다.

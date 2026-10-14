@@ -54,9 +54,9 @@ internal static class MightySymbols
         "list.bullet" => "\uE8FD", "magnifyingglass" => "\uE721", "map" => "\uE707", "paintbrush" => "\uE771", "puzzlepiece" => "\uEA86",
         // Drawn the other way round on Windows: the glyph's arrows run along the rising diagonal.
         "arrow.down.right.and.arrow.up.left" => "\uE73F",
-        // The structure view (M/MightyStructureView.swift): its chips' marks, the run part's gears, a card's reveal and fold
-        // buttons, and a tool call's kind (M/AgentActivityView.swift:118-129).
-        "checkmark" => "\uE73E", "chevron.up" => "\uE70E", "arrow.up.right.square" => "\uE8A7",
+        // The structure view (M/MightyStructureView.swift): its chips' marks, the run part's gears, a card's reveal button, the
+        // board's \u25C0, and a tool call's kind (M/AgentActivityView.swift:118-129).
+        "checkmark" => "\uE73E", "chevron.up" => "\uE70E", "arrow.up.right.square" => "\uE8A7", "chevron.left" => "\uE76B",
         "doc.text.magnifyingglass" => "\uE8A5", "pencil.line" => "\uE70F", "person.2" => "\uE716", "wrench.and.screwdriver" => "\uE90F",
         _ => null,
     };
@@ -66,6 +66,7 @@ internal static class MightySymbols
         "point.3.connected.trianglepath.dotted", "list.bullet.indent", "arrow.up.message", "checkmark.seal", "checkmark.seal.fill",
         "stop.circle", "stop.circle.fill", "pause.circle", "arrow.up.circle", "rectangle.expand.vertical", "rectangle.compress.vertical",
         "arrow.up.left.and.arrow.down.right", "doc.on.doc", "doc.on.doc.fill", "rectangle.split.3x1", "circle", "circle.fill", "stop.fill",
+        "arrow.turn.down.right",
     ];
 
     /// <summary>Whether <see cref="Create"/> can make this symbol; a style manifest's icon is asked before it is drawn.</summary>
@@ -176,6 +177,8 @@ internal static class MightySymbols
             case "circle": return Stroke(Ring(8, 8, 5.6));
             case "circle.fill": return Fill("M 2 8 A 6 6 1 1 14 8 A 6 6 1 1 2 8 Z", ink);
             case "stop.fill": return Fill("M 3.2 3.2 L 12.8 3.2 L 12.8 12.8 L 3.2 12.8 Z", ink);
+            // arrow.turn.down.right: a nested sub-agent's line to the block it runs under, down and round to an arrow pointing right.
+            case "arrow.turn.down.right": return Stroke("M 3.4 2.4 L 3.4 7.6 A 3 3 0 0 6.4 10.6 L 13.4 10.6 M 10.6 7.8 L 13.4 10.6 L 10.6 13.4");
             default: throw new ArgumentOutOfRangeException(nameof(symbol), symbol, "no Mighty symbol by that name");
         }
     }

@@ -76,20 +76,54 @@ public sealed partial class MainWindow
                 Invoke(diagramButton!);
                 await WaitUI(() => Session.GraphViewMode == "diagram" && graphViewport?.Visibility == Visibility.Visible);
                 Require(graphZoom == zoom && Session.Draft == original.Draft && ReadGraphForSmoke().Blocks >= 5, "returning to diagram retains blocks, zoom and draft");
-                // The structure is the switch's third choice (M/MightyGraphTimelineView.swift:17-19): the same requests as cards, a finished one
-                // folded until it is opened, and a card's small button back to its block in the diagram (M/MightyStructureView.swift).
-                Button[] StructureButtons(string prefix) => VisualChildren(structureScroll!).OfType<Button>().Where(b => AutomationProperties.GetAutomationId(b).StartsWith(prefix, StringComparison.Ordinal)).ToArray();
+                // The board is the switch's third choice (M/MightyGraphTimelineView.swift:17-19): one request at a time, ◀ and the list to
+                // move between them, the badge of a newer one while an older one is shown, and a card's small button back to its block in
+                // the diagram (M/MightyStructureView.swift; the Mac smoke drives the same steps, M/MightyStructureInteractionDiagnostics.swift).
+                Button[] StructureButtons(string prefix) => VisualChildren(structureView!).OfType<Button>().Where(b => AutomationProperties.GetAutomationId(b).StartsWith(prefix, StringComparison.Ordinal)).ToArray();
+                var agentId = MightyGraphLayout.NodeID(latest, "agent:timeline-child"); var listOpenedBy = new List<string>();
+                // The title's click opens the list; if it has not within 1.5 s, the flyout is shown as the button shows it, and which drove each step is recorded (as the Mac's smoke does).
+                async Task OpenStructureList(int count)
+                {
+                    Invoke(structureListButton!);
+                    try { await WaitUI(() => structureListFlyout?.IsOpen == true, "the title's click opens the list", 1.5); listOpenedBy.Add("click"); }
+                    catch (TimeoutException) { structureListFlyout!.ShowAt(structureListButton!); listOpenedBy.Add("ShowAt"); }
+                    await WaitUI(() => structureListFlyout?.IsOpen == true && structureList?.Children.Count == count, "the list holds every request: " + count);
+                }
+                Button StructureEntry(string run) => structureList!.Children.OfType<Button>().Single(b => AutomationProperties.GetAutomationId(b) == "mighty-structure-entry-" + run);
                 Invoke(structureButton!);
-                await WaitUI(() => Session.GraphViewMode == "structure" && structureScroll?.Visibility == Visibility.Visible && structureCards.Count == 2 && StructureButtons("mighty-structure-folded-").Length == 2,
-                    "the structure view shows both finished requests as folded cards");
-                Require(graphViewport?.Visibility == Visibility.Collapsed && timelineScroll?.Visibility == Visibility.Collapsed && graphZoomControls?.Visibility == Visibility.Collapsed, "structure replaces canvas, timeline and zoom");
-                Require(Session.Draft == original.Draft && graphZoom == zoom, "structure switch preserves composer draft and diagram camera zoom");
-                Invoke(StructureButtons("mighty-structure-folded-" + latest.Id).Single());
-                await WaitUI(() => structureUnfolded.Contains(latest.Id) && StructureButtons("mighty-structure-fold-" + latest.Id).Length == 1 && StructureButtons("mighty-structure-reveal-" + requestId).Length == 1,
-                    "a folded request opens to its request, run and result cards");
-                Require(VisualChildren(structureScroll!).OfType<Border>().Any(card => AutomationProperties.GetAutomationId(card) == "mighty-structure-node-" + MightyGraphLayout.NodeID(latest, "agent:timeline-child")), "an open request shows its sub-agent as a card");
+                await WaitUI(() => Session.GraphViewMode == "structure" && structureView?.Visibility == Visibility.Visible && structureBoardId == latest.Id && structureCards.ContainsKey("result:" + latest.Id),
+                    "the board opens on the newest request");
+                Require(graphViewport?.Visibility == Visibility.Collapsed && timelineScroll?.Visibility == Visibility.Collapsed && graphZoomControls?.Visibility == Visibility.Collapsed, "the board replaces canvas, timeline and zoom");
+                Require(Session.Draft == original.Draft && graphZoom == zoom, "the board switch preserves composer draft and diagram camera zoom");
+                Require(structureColumns.Keys.SequenceEqual(["request", "execution", "result"]) && new[] { "request:", "execution:", "result:" }.All(part => structureCards.ContainsKey(part + latest.Id)) && structureCards.ContainsKey("agent:" + agentId),
+                    "a free request's board holds its request, its run with the sub-agent under it, and its result");
+                Require(structurePrevious is { IsEnabled: true } && structureNext is { IsEnabled: false } && structureBadge?.Visibility == Visibility.Collapsed && structurePosition?.Text == Locale.Get("graph.structure.board.request", new Dictionary<string, string> { ["n"] = "2", ["count"] = "2" }),
+                    "on the newest of two requests the previous button is on, the next off, no badge, and the title says 2 / 2");
+                // The previous button shows the request before, kept by its id.
+                Invoke(structurePrevious!);
+                await WaitUI(() => structureBoardId == old.Id && structureNavigation.Chosen == old.Id && structureCards.ContainsKey("request:" + old.Id) && !structureCards.ContainsKey("request:" + latest.Id) && structureBadge?.Visibility == Visibility.Collapsed,
+                    "the previous button shows the request before, with no badge");
+                // The title opens the list; an entry shows its board and closes the list.
+                await OpenStructureList(2);
+                Invoke(StructureEntry(latest.Id));
+                await WaitUI(() => structureListFlyout?.IsOpen == false && structureBoardId == latest.Id && structureNavigation.Chosen is null, "a list entry shows its board and closes the list");
+                // A new request while an older board is shown leaves it there and shows the badge, whose click shows the newest.
+                Invoke(structurePrevious!);
+                await WaitUI(() => structureBoardId == old.Id, "the previous button shows the older request again");
+                var newer = new MightyGraphRun { Id = "timeline-smoke-newer", Input = "\uC0C8 \uC694\uCCAD", Status = "running" };
+                await SetGraphRunsForSmoke([old, latest, newer]); RefreshMightyView(Session);
+                await WaitUI(() => structureBoards.Count == 3 && structureBoardId == old.Id && structureBadge?.Visibility == Visibility.Visible && structureBadgeWords?.Text == Locale.Get("graph.structure.board.newRequest"),
+                    "a new request leaves the older board shown and shows the badge");
+                Invoke(structureBadge!);
+                await WaitUI(() => structureBoardId == newer.Id && structureNavigation.Chosen is null && structureBadge?.Visibility == Visibility.Collapsed, "the badge shows the newest request");
+                // Back to the request with the sub-agent through the list, and its result's own button shows that block in the diagram.
+                await OpenStructureList(3);
+                Invoke(StructureEntry(latest.Id));
+                await WaitUI(() => structureBoardId == latest.Id && StructureButtons("mighty-structure-reveal-" + resultId).Length == 1, "the list shows the request with the sub-agent again");
+                Require(VisualChildren(structureView!).OfType<Border>().Any(card => AutomationProperties.GetAutomationId(card) == "mighty-structure-node-" + agentId) && StructureButtons("mighty-structure-reveal-" + requestId).Length == 1,
+                    "its board shows the sub-agent's card and the request's reveal button");
                 // The result's own button, so the selection the timeline row left on the request cannot pass for it.
-                Require(StructureButtons("mighty-structure-reveal-" + requestId).Length == 1 && graphSelection != resultId, "the request card has its reveal button, and the result is not selected yet");
+                Require(graphSelection != resultId, "the result is not selected yet");
                 Invoke(StructureButtons("mighty-structure-reveal-" + resultId).Single());
                 await WaitUI(() => Session.GraphViewMode == "diagram" && graphViewport?.Visibility == Visibility.Visible && graphSelection == resultId, "a card's reveal button shows its own block in the diagram");
                 var width = Container.Width; var horizontal = Container.HorizontalAlignment;
@@ -114,11 +148,13 @@ public sealed partial class MainWindow
                 finally { Container.Width = width; Container.HorizontalAlignment = horizontal; owner.root.UpdateLayout(); }
                 await WaitUI(() => paneHeader is { ActualWidth: >= NarrowHeader } && HeaderFitsSmoke(false), "Growing the pane must show the switch words again with every header control inside the line");
                 await WaitUI(() => ViewWordsShown, "Growing the pane must show the Diagram | Timeline switch's words again");
-                return new() { ["modePersists"] = true, ["groupAndRowExpansion"] = true, ["sameTranscriptActions"] = true, ["resultFilesOpenSharedPreview"] = true, ["unchangedRefreshKeepsControls"] = true, ["diagramAndDraftPreserved"] = true, ["structureFoldAndReveal"] = true, ["historyAffordance"] = true, ["narrowToolbar"] = true, ["screenshots"] = captures };
+                return new() { ["modePersists"] = true, ["groupAndRowExpansion"] = true, ["sameTranscriptActions"] = true, ["resultFilesOpenSharedPreview"] = true, ["unchangedRefreshKeepsControls"] = true, ["diagramAndDraftPreserved"] = true, ["structureBoardAndReveal"] = true, ["structureListOpenedBy"] = string.Join(",", listOpenedBy), ["historyAffordance"] = true, ["narrowToolbar"] = true, ["screenshots"] = captures };
             }
             finally
             {
                 CloseReferencePreview();
+                // The board the smoke left shown is not the pane's: the restored pane opens on its newest.
+                structureNavigation.ShowNewest(structureBoards);
                 await owner.Act(async () => { await Change(p => p with { GraphRuns = original.GraphRuns, AgentViewMode = original.AgentViewMode, GraphViewMode = original.GraphViewMode }); Refresh(); });
             }
         }

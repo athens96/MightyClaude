@@ -105,7 +105,7 @@ Claude 和 Codex 窗格的标题栏中有{{ui:graph.view.default}} | {{ui:graph.
 ![[agent-timeline]]
 
 ### 看板 {#structure}
-在同一个切换开关中选择{{ui:graph.view.structure}}，可以把请求看成看板。Windows 应用目前仍是旧版布局：所有请求按阶段排在各列中，已结束的请求折叠成一行，拖动空白处即可移动。
+在同一个切换开关中选择{{ui:graph.view.structure}}，可以把请求看成看板。
 - 视图一次只显示一项：没有风格的窗格显示一个请求，使用风格的窗格显示一条流水线。流水线是阶段只向前推进的一串请求；某个请求的阶段比前一个请求退回到更早的阶段时，就开始一条新流水线。
 - 用顶部的 ◀ {{ui:graph.structure.board.previous}}和 ▶ {{ui:graph.structure.board.next}}前后切换。点击两者之间的标题（如"请求 3 / 7"）会打开列表，显示每一项的编号、标题、状态和阶段，可直接选择。
 - 下方显示进度：状态和第一行，以及用线连起来的阶段标签。没有风格的窗格是{{ui:graph.structure.column.request}} → {{ui:graph.structure.column.execution}} → {{ui:graph.structure.column.result}}，使用风格的窗格是该模式的阶段。已完成的阶段为绿色，当前阶段为强调色，其余为灰色。

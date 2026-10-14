@@ -204,10 +204,10 @@ internal static class MightyStructureVerification
         var node = MightyStructure.Clusters(Run("r2", agents: [new MightyGraphAgent { Id = "a", Input = syllables, Status = "completed", Entries = [Said("o", big)] }]))[0].Nodes[0];
         Check(Bytes(node.Prompt?.Text) <= MightyStructure.PromptBytes && Bytes(node.Output?.Text) <= MightyStructure.OutputBytes, "a sub-agent's prompt and output take their own caps");
 
-        // A node six levels deep in the narrowest column has 192pt for its text.
+        // A node six levels deep in the narrowest column has 196pt for its text.
         var width = MightyStructure.NodeTextWidth(MightyStructure.MinimumColumnWidth, 6);
-        Check(width == 192 && MightyStructure.NodeTextWidth(MightyStructure.MinimumColumnWidth, 60) == width, "a deep node's text width stops shrinking at the indent cap: " + width);
-        // About 17 Hangul syllables fit a 192pt line at 11pt; words wrap whole, so fewer are counted.
+        Check(width == 196 && MightyStructure.NodeTextWidth(MightyStructure.MinimumColumnWidth, 60) == width, "a deep node's text width stops shrinking at the indent cap: " + width);
+        // About 17 Hangul syllables fit a 196pt line at 11pt; words wrap whole, so fewer are counted.
         var perLine = MightyStructure.CharactersPerLine(width, 11);
         Check(perLine <= 17, "a wrapped line is counted as only partly filled: " + perLine);
         // 120 syllables on one line take 8 lines of 17: past the 6 an output shows folded.
@@ -451,6 +451,39 @@ internal static class MightyStructureVerification
         // An empty pane follows its page's end.
         var empty = new MightyStructureFollow.PageWatch();
         Check(empty.Observe(At(0, 40, null, id: null), false) is null && empty.Following, "an empty pane follows its page's end");
+        return Task.CompletedTask;
+    }
+
+    internal static Task AUsersMoveIsJudgedWhenItHappens()
+    {
+        static Page At(double origin, double document, double newest, double visible = 600) => new(origin, visible, document, "b", newest);
+        // Symptom (Mac CI, trackpad smoke): the page moved 180pt up from the newest card, yet kept following. Its report arrived late, together with a layout change, and was judged as layout.
+        var watch = new MightyStructureFollow.PageWatch();
+        watch.Observe(At(1_523, 2_100, 2_091, 577), false);
+        Check(watch.Following, "the page follows at the newest card");
+        var blind = new MightyStructureFollow.PageWatch(); blind.Observe(At(1_523, 2_100, 2_091, 577), false);
+        Check(blind.Observe(At(1_343, 2_130, 2_121, 577), false) == Scroll.Bottom && blind.Following, "a late report with no move known pulls the reader back");
+        // The page tells the rule the moment it moves.
+        watch.UserScrolled(-180);
+        Check(!watch.Following && watch.Observe(At(1_343, 2_130, 2_121, 577), false) is null && !watch.Following, "a user's move is judged when it happens, and the late report keeps the reader where they are");
+
+        watch = new(); watch.Observe(At(1_400, 2_000, 1_992), false);
+        // 20pt up: the newest card's bottom is hidden by less than the slack. A sideways move keeps the state it had.
+        watch.UserScrolled(-20);
+        Check(watch.Following, "a move near the newest card keeps following");
+        watch.UserScrolled(0);
+        Check(watch.Following, "a sideways move keeps the state");
+        // Its report is judged as the scroll it is: still at the newest card, nothing moves. A growth after it is followed.
+        Check(watch.Observe(At(1_380, 2_000, 1_992), false) is null && watch.Observe(At(1_380, 2_300, 2_292), false) == Scroll.Bottom && watch.Following, "the move's report is a scroll, and a growth after it is followed");
+
+        watch = new();
+        watch.UserScrolled(-300);
+        Check(watch.Following, "a move before any report judges nothing");
+        watch.Observe(At(1_400, 2_000, 1_992), false);
+        watch.UserScrolled(-300);
+        Check(!watch.Following, "a move away stops following");
+        watch.UserScrolled(300);
+        Check(watch.Following, "a move back to the newest card follows again");
         return Task.CompletedTask;
     }
 }

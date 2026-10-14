@@ -11,8 +11,8 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Windows.Foundation;
 using Windows.UI.Text;
+using Board = MightyClaude.Core.MightyStructure.Board;
 using PointOptions = Microsoft.UI.Text.PointOptions;
-using Rectangle = Microsoft.UI.Xaml.Shapes.Rectangle;
 using TextRangeUnit = Microsoft.UI.Text.TextRangeUnit;
 using VirtualKey = Windows.System.VirtualKey;
 using VirtualKeyModifiers = Windows.System.VirtualKeyModifiers;
@@ -23,44 +23,60 @@ public sealed partial class MainWindow
 {
     private sealed partial class PaneView
     {
+        /// <summary>The view (M/MightyStructureView.swift:101-119): the navigation bar, the board's header and its rule over the page.</summary>
+        private Grid? structureView;
         private ScrollViewer? structureScroll;
-        /// <summary>The page inside the scroll view: a page shorter than the pane sits right above the composer (M/MightyStructureView.swift:721-744).</summary>
+        /// <summary>The page inside the scroll view: a board shorter than the pane sits at its top left (M/MightyStructureView.swift:871-894).</summary>
         private readonly Border structurePage = new()
         {
             Padding = new Thickness(DesignMetrics.Inset.GraphBlockBodyH, DesignMetrics.Spacing.Md, DesignMetrics.Inset.GraphBlockBodyH, DesignMetrics.Spacing.Md),
-            HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Bottom,
+            HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top,
         };
-        /// <summary>The model and what it was built from, rebuilt only when something it draws changed (M/MightyGraphView.swift:60-70, 326-337).</summary>
+        /// <summary>The boards and what they were built from, rebuilt only when something they draw changed (M/MightyGraphView.swift:325-339).</summary>
         private MightyStructure.Signature? structureSignature;
-        private MightyStructure.Shape structureShape = MightyStructure.Shape.Free([]);
+        private IReadOnlyList<Board> structureBoards = [];
         private readonly MightyStructure.ItemCache structureItems = new();
         /// <summary>
-        /// What the view keeps of the pane while it shows its diagram or timeline (M/MightyStructureView.swift:7-30): the texts
-        /// opened past their folded lines, by key; the finished requests the user opened by hand, by run id; and whether the page
-        /// follows the newest card.
+        /// What the view keeps of the pane while it shows its diagram or timeline (M/MightyStructureView.swift:8-48): the texts
+        /// opened past their folded lines, by key; the board shown; whether the page follows the newest board's end; and the
+        /// wheel steps that are the user's.
         /// </summary>
         private readonly HashSet<string> structureExpanded = [];
-        private HashSet<string> structureUnfolded = [];
+        private readonly MightyStructure.Navigation structureNavigation = new();
         private readonly MightyStructureFollow.PageWatch structureFollow = new();
+        private readonly MightyStructureWheel.Tracker structureWheel = new();
         private bool structureShown, structureAppearing;
-        private string? structureNewestId;
-        /// <summary>The frame (the rail and its columns, or the rows), the column width it stands at, and each request's card as last built.</summary>
+        /// <summary>The newest request, the board drawn, and that board's id while it is the newest (what the page follows).</summary>
+        private string? structureNewestId, structureBoardId, structureFollowId;
+        /// <summary>The navigation bar's controls, kept and changed in place so a press on one is never lost to a draw.</summary>
+        private StackPanel? structureBar;
+        private Button? structurePrevious, structureNext, structureListButton, structureBadge;
+        private TextBlock? structurePosition, structureBadgeWords;
+        private Flyout? structureListFlyout;
+        private StackPanel? structureList;
+        private string? structureBarLanguage;
+        /// <summary>The board's header and its rule, the header's chips (cut to a new width in place) and what it was built from.</summary>
+        private Border? structureHeader, structureRule;
+        private readonly List<Border> structureChips = [];
+        private string? structureHeaderKey;
+        /// <summary>The frame (the board's columns), the column width it stands at, its columns and each card as last built.</summary>
         private string? structureFrameKey;
         private double structureWidth;
-        private StackPanel? structureRail;
-        private readonly Dictionary<string, StackPanel> structureColumns = [];
-        private readonly Dictionary<string, StructureCard> structureCards = [];
+        private StackPanel? structureKanban;
+        private readonly Dictionary<string, StructureColumn> structureColumns = [];
+        private readonly Dictionary<string, (object Key, FrameworkElement View)> structureCards = [];
         private readonly Dictionary<string, (RichEditBox View, string Source, bool Light)> structureAnswers = [];
-        /// <summary>A left press on the page that may become a drag (where it went down and where the page stood), the drag it became, and when the last one ended.</summary>
+        /// <summary>A left press on the page that may become a drag (where it went down and where the page stood), the drag it became, and when the last one ended, in seconds.</summary>
         private (Point Point, double X, double Y)? structurePress;
         private bool structurePanning, structurePanned;
-        private long structurePanReleasedAt;
+        private double structurePanReleasedAt;
         /// <summary>
-        /// The user's own scroll (M/MightyStructureView.swift:733-739): the wheel, a key, a finger or the scroll bar moving the page
-        /// in steps, a press held on the scroll bar, and when the last wheel notch or scrolling key came that the page may report late.
+        /// The user's own scroll (M/MightyStructureView.swift:22-41): a finger or the scroll bar moving the page in steps, a press
+        /// held on the scroll bar, when the last scrolling key came or the bar was let go (the page may report it late), and the
+        /// offset the follow rule last judged.
         /// </summary>
         private bool structureScrolling, structureBarHeld;
-        private long structureInputAt;
+        private double structureInputAt, structureJudgedY;
         /// <summary>
         /// What a press went down on, until it comes up; whether a part was left as it was for a press or a selection, to be built
         /// once that ends; and a draw a card's own button asked for, which waits for nothing.
@@ -68,48 +84,91 @@ public sealed partial class MainWindow
         private DependencyObject? structurePressed;
         private bool structureDeferred, structureForced;
 
-        private readonly record struct StructureCardKey(MightyStructure.Item Item, bool Free, double Width, bool Folded, string Open, string Heading, string Language, IReadOnlyList<ModelOption>? Catalog);
-
-        /// <summary>
-        /// One request's card as last built: the element that keeps its place in its column, what the card and its frame (folded,
-        /// open under a phase, or an open row) were built from, and its parts (the request, the run, the result, each sub-agent's
-        /// card) with what each was built from, so a streamed step builds again only the part it changed. An open card's sub-agent
-        /// trees stand in one panel; an open row's three cells are a grid whose columns a new width resizes.
-        /// </summary>
-        private sealed class StructureCard
+        /// <summary>One column of the board: its frame, its header's place and what that header was built from, and its cards' panel.</summary>
+        private sealed class StructureColumn(StackPanel view, Border header, StackPanel cards)
         {
-            internal readonly Grid View = new();
-            internal StructureCardKey? Key;
-            internal string Frame = "";
-            internal readonly Dictionary<string, (object Key, FrameworkElement View)> Parts = [];
-            internal StackPanel? Clusters;
-            internal string ClustersKey = "";
-            internal Grid? Cells;
+            internal readonly StackPanel View = view, Cards = cards;
+            internal readonly Border Header = header;
+            internal object? HeaderKey;
         }
 
-        /// <summary>A phase chip's height, a card's and a sub-agent card's corners, a sub-agent card's status bar and a tool call's glyph column (M/MightyStructureView.swift:60-68).</summary>
+        /// <summary>A chip's height, a card's and a sub-agent card's corners, a sub-agent card's status bar and a tool call's glyph column (M/MightyStructureView.swift:83-92).</summary>
         private const double StructureChipHeight = 20, StructureCardCorner = DesignMetrics.Radius.Entry, StructureNodeCorner = DesignMetrics.Radius.Row, StructureStatusBar = DesignMetrics.Stroke.Rail, StructureGlyphWidth = 14;
-        /// <summary>Type sizes: a card's texts, a sub-agent's output, its prompt (M/MightyStructureView.swift:71-74).</summary>
+        /// <summary>Type sizes: a card's texts, a sub-agent's output, its prompt (M/MightyStructureView.swift:93-96).</summary>
         private const double StructureTextSize = DesignMetrics.Type.Block, StructureOutputSize = DesignMetrics.Type.Pill, StructurePromptSize = 10.5;
-        /// <summary>Points around a text's laid-out words that still press the text (M/MightyStructurePanning.swift:145-146).</summary>
+        /// <summary>The list of boards (M/MightyStructureView.swift:97-99).</summary>
+        private const double StructureListWidth = 340, StructureListHeight = 420;
+        /// <summary>Points around a text's laid-out words that still press the text (M/MightyStructurePanning.swift:154-155).</summary>
         private const double StructureTextSlop = 4;
 
-        // ── the page ──────────────────────────────────────────────────────────
+        // ── the view ──────────────────────────────────────────────────────────
 
         /// <summary>
-        /// The structure page (M/MightyStructureView.swift:76-141): it scrolls both ways on <c>cardRaised</c>, its content
+        /// The structure view (M/MightyStructureView.swift:101-119, 357-440): ◀, the board's place with the list, ▶ and the badge
+        /// of a newer board; the board's header and a rule; then the page, which scrolls both ways on <c>cardRaised</c>, its content
         /// <c>Inset.GraphBlockBodyH</c> by <c>Spacing.Md</c> in. Dragging its empty space moves it, and every report of where it
-        /// stands decides whether it follows the newest card (<see cref="MightyStructureFollow.PageWatch"/>).
+        /// stands decides whether it follows the newest board's end (<see cref="MightyStructureFollow.PageWatch"/>).
         /// </summary>
         private void BuildMightyStructure()
         {
+            var b = owner.brushes;
+            structureView = new Grid { Visibility = Visibility.Collapsed, Background = b.Brush(DesignToken.CardRaised) };
+            for (var row = 0; row < 3; row++) structureView.RowDefinitions.Add(new() { Height = GridLength.Auto });
+            structureView.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
+            AutomationProperties.SetAutomationId(structureView, "mighty-structure-" + id);
+
+            structurePrevious = StructureButton("chevron.left", "", "mighty-structure-previous-" + id, () => MoveStructureBoard(n => n.Step(-1, structureBoards), "mighty-structure-previous-" + id));
+            structureNext = StructureButton("chevron.right", "", "mighty-structure-next-" + id, () => MoveStructureBoard(n => n.Step(1, structureBoards), "mighty-structure-next-" + id));
+            var place = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs, VerticalAlignment = VerticalAlignment.Center };
+            place.Children.Add(structurePosition = StructureWords("", StructureTextSize, b.Brush(DesignToken.Ink), FontWeights.Bold));
+            place.Children.Add(MightySymbols.Create("chevron.down", 9, b.Brush(DesignToken.Ink2), MightySymbols.Weight.Semibold));
+            structureListButton = HeaderButton(place, b.Brush(DesignToken.Ink));
+            AutomationProperties.SetAutomationId(structureListButton, "mighty-structure-list-" + id);
+            structureList = new StackPanel { Spacing = DesignMetrics.Inset.ListGap, Width = StructureListWidth - 2 * PopoverPadding };
+            structureListFlyout = new Flyout { Content = new ScrollViewer { Content = structureList, MaxHeight = StructureListHeight }, Placement = FlyoutPlacementMode.Bottom, FlyoutPresenterStyle = owner.CardFlyoutStyle };
+            structureListFlyout.Opening += (_, _) => FillStructureList();
+            structureListButton.Flyout = structureListFlyout;
+            structureBadgeWords = new TextBlock { FontSize = DesignMetrics.Type.Small, FontWeight = FontWeights.Bold, TextTrimming = TextTrimming.CharacterEllipsis };
+            structureBadge = new Button
+            {
+                Content = structureBadgeWords, MinWidth = 0, MinHeight = 0, Padding = new Thickness(DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xxs, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xxs),
+                CornerRadius = new CornerRadius(DesignMetrics.Layout.HitTarget / 2), BorderThickness = new Thickness(0), VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed,
+            };
+            owner.PaintPlainButton(structureBadge, b.Brush(DesignToken.Accent), b.Brush(DesignToken.Accent), ink: b.Brush(DesignToken.OnAccent));
+            AutomationProperties.SetAutomationId(structureBadge, "mighty-structure-newer-" + id);
+            structureBadge.Click += (_, _) => MoveStructureBoard(n => n.ShowNewest(structureBoards), "mighty-structure-list-" + id);
+            structureBar = new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, Visibility = Visibility.Collapsed,
+                Padding = new Thickness(DesignMetrics.Inset.GraphBlockBodyH, DesignMetrics.Spacing.Sm, DesignMetrics.Inset.GraphBlockBodyH, 0),
+            };
+            foreach (var control in new UIElement[] { structurePrevious, structureListButton, structureNext, structureBadge }) structureBar.Children.Add(control);
+            structureView.Children.Add(structureBar);
+
+            structureHeader = new Border
+            {
+                Padding = new Thickness(DesignMetrics.Inset.GraphBlockBodyH, DesignMetrics.Spacing.Sm, DesignMetrics.Inset.GraphBlockBodyH, DesignMetrics.Spacing.Sm), Visibility = Visibility.Collapsed,
+            };
+            structureHeader.SizeChanged += (_, args) => { if (args.NewSize.Width != args.PreviousSize.Width) SizeStructureChips(args.NewSize.Width); };
+            Grid.SetRow(structureHeader, 1); structureView.Children.Add(structureHeader);
+            structureRule = new Border { Height = DesignMetrics.Stroke.Line, Background = b.Brush(DesignToken.Line), Visibility = Visibility.Collapsed };
+            AutomationProperties.SetAccessibilityView(structureRule, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+            Grid.SetRow(structureRule, 2); structureView.Children.Add(structureRule);
+
             structureScroll = new ScrollViewer
             {
-                Content = structurePage, Visibility = Visibility.Collapsed, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-                VerticalScrollMode = ScrollMode.Auto, HorizontalScrollMode = ScrollMode.Auto, IsTabStop = true, Background = owner.brushes.Brush(DesignToken.CardRaised),
+                Content = structurePage, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                VerticalScrollMode = ScrollMode.Auto, HorizontalScrollMode = ScrollMode.Auto, IsTabStop = true, Background = b.Brush(DesignToken.CardRaised),
             };
-            AutomationProperties.SetAutomationId(structureScroll, "mighty-structure-" + id);
+            AutomationProperties.SetAutomationId(structureScroll, "mighty-structure-page-" + id);
             AutomationProperties.SetName(structureScroll, Locale.Get("graph.view.structure"));
+            // A move of the user's is judged the moment the page knows where it goes, not when it reports the move (M/MightyStructurePanning.swift:309-314).
+            structureScroll.ViewChanging += (_, args) =>
+            {
+                var to = args.FinalView.VerticalOffset;
+                if (StructureUserMoving && Math.Abs(to - structureJudgedY) > 0.5) structureFollow.UserScrolled(to - structureJudgedY);
+                structureJudgedY = to;
+            };
             structureScroll.ViewChanged += (_, args) =>
             {
                 // The page moves in steps only under the user's wheel, keys, finger or scroll bar: the view's own scrolls land at once.
@@ -118,7 +177,7 @@ public sealed partial class MainWindow
                 if (!args.IsIntermediate) structureScrolling = false;
                 ObserveStructurePage(user);
             };
-            // The columns share the pane's width: a new width sizes them again. A new height (a taller composer) moves no content, yet may hide the newest card.
+            // The columns share the pane's width: a new width sizes them again. A new height (a taller composer) moves no content, yet may hide the board's end.
             structureScroll.SizeChanged += (_, args) =>
             {
                 if (args.NewSize.Width != args.PreviousSize.Width) QueueGraphRefresh();
@@ -137,19 +196,23 @@ public sealed partial class MainWindow
             }), true);
             structureScroll.AddHandler(UIElement.PointerWheelChangedEvent, new PointerEventHandler(OnStructureWheel), true);
             structureScroll.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(OnStructureKeyDown), true);
-            Grid.SetRow(structureScroll, 1); graphHost!.Children.Add(structureScroll);
+            Grid.SetRow(structureScroll, 3); structureView.Children.Add(structureScroll);
+            Grid.SetRow(structureView, 1); graphHost!.Children.Add(structureView);
         }
 
-        /// <summary>Shows or hides the page. Shown again, a following reader is taken to the newest card by the next draw (M/MightyStructureView.swift:119).</summary>
+        /// <summary>Shows or hides the view. Shown again, the page opens at its end and a following reader is taken to the newest board's end by the next draw.</summary>
         private void ShowMightyStructure(bool shown)
         {
-            if (structureScroll is null) return;
-            structureScroll.Visibility = shown ? Visibility.Visible : Visibility.Collapsed;
+            if (structureView is null) return;
+            structureView.Visibility = shown ? Visibility.Visible : Visibility.Collapsed;
             if (shown == structureShown) return;
             structureShown = shown;
             if (shown) structureAppearing = true;
-            else { EndStructurePan(); structurePressed = null; structureBarHeld = structureScrolling = false; }
+            else { EndStructurePan(); structurePressed = null; structureBarHeld = structureScrolling = false; structureListFlyout?.Hide(); }
         }
+
+        /// <summary>The scroll view while the view shows.</summary>
+        private ScrollViewer? ShownStructureScroll => structureView is { Visibility: Visibility.Visible } && structureScroll is { } scroll ? scroll : null;
 
         /// <summary>
         /// What the structure reads beside the runs: the pane's style, its phase as the phase bar shows it, and the request whose
@@ -163,10 +226,9 @@ public sealed partial class MainWindow
         }
 
         /// <summary>
-        /// Draws the pane's structure (M/MightyStructureView.swift:76-187, 251-261): a styled pane's phases as a rail of chips
-        /// with a column of request cards under each, a free pane's requests as one request → run → result row each. A card is
-        /// brought up to date part by part (<see cref="DrawStructureCard"/>), so the others keep their selection and their place;
-        /// a new width is set on what is there.
+        /// Draws the board shown (M/MightyStructureView.swift:101-119, 357-488): the navigation bar and the header changed in place,
+        /// and one column per step with its cards. A card is built again only when what it shows changed
+        /// (<see cref="StructureCardView"/>), so the others keep their selection and their place; a new width is set on what is there.
         /// </summary>
         private void DrawMightyStructure(RunSession pane)
         {
@@ -179,64 +241,80 @@ public sealed partial class MainWindow
             var signature = new MightyStructure.Signature(runs, style, phase, styleStartingNew, pane.PlanHistory, pending);
             if (signature != structureSignature)
             {
-                structureShape = MightyStructure.Make(runs, style, phase, styleStartingNew, pane.PlanHistory, pending, structureItems.Items(runs, signature));
+                structureBoards = MightyStructure.Boards(MightyStructure.Make(runs, style, phase, styleStartingNew, pane.PlanHistory, pending, structureItems.Items(runs, signature)));
                 structureSignature = signature;
             }
-            var columns = structureShape.Columns; var free = columns is null; var language = Locale.LanguagePreference;
+            var boards = structureBoards; var index = structureNavigation.Index(boards); var board = index is { } at ? boards[at] : null;
+            var language = Locale.LanguagePreference;
             // The pane's width, read from outside the page, so the columns' width never feeds back into what is measured.
             var viewport = structureScroll.ActualWidth > 0 ? structureScroll.ActualWidth : graphHost?.ActualWidth ?? 0;
-            var width = MightyStructure.ColumnWidth(viewport - 2 * DesignMetrics.Inset.GraphBlockBodyH, columns?.Count ?? 3, DesignMetrics.Spacing.Lg);
-            var frameKey = string.Join('\n', columns is null
-                ? ["free", runs.Count == 0 ? "empty" : "", language]
-                : new[] { "phases", language }.Concat(columns.SelectMany(c => new[] { c.Id, c.Phase.Title, MightyStructure.Word(c.Step) })));
+            var width = MightyStructure.ColumnWidth(viewport - 2 * DesignMetrics.Inset.GraphBlockBodyH, board?.Columns.Count ?? 3, DesignMetrics.Spacing.Lg);
+            var frameKey = string.Join('\n', board is null ? ["empty", language] : new[] { board.Id, language }.Concat(board.Columns.Select(c => c.Id)));
             var changed = frameKey != structureFrameKey;
             if (changed)
             {
-                // A new frame takes every card out of its column and back: not while a press is down on the page.
-                if (structurePressed is not null && structureFrameKey is not null && !structureForced) { structureDeferred = true; return; }
+                // A new frame takes every card out of its column: not while a press is down on the page or a card holds a selection.
+                if (structureFrameKey is not null && !structureForced && (structurePressed is not null || structureCards.Values.Any(part => StructureHeld(part.View)))) { structureDeferred = true; return; }
                 structureFrameKey = frameKey;
-                foreach (var panel in structureColumns.Values) panel.Children.Clear();
-                structureColumns.Clear(); structureRail = null;
-                structurePage.Child = columns is null ? BuildStructureRows(runs.Count == 0) : BuildStructurePhases(columns, width);
+                foreach (var column in structureColumns.Values) column.Cards.Children.Clear();
+                structureColumns.Clear(); structureKanban = null;
+                structurePage.Child = board is null ? StructureEmpty() : BuildStructureKanban(board, width);
             }
             else if (width != structureWidth)
             {
-                if (structureRail is not null) SizeStructureRail(structureRail, width);
-                foreach (var panel in structureColumns.Values) if (!free) panel.Width = width;
+                foreach (var column in structureColumns.Values) column.View.Width = width;
                 changed = true;
             }
             structureWidth = width;
-            var catalog = owner.Runtime(pane.Provider)?.ModelCatalog?.Models;
+            // The newest board's end is what the page follows; an older board follows nothing.
+            var followId = index is { } shown && shown == boards.Count - 1 ? board?.Id : null;
+            structureFollowId = followId;
             var drawn = new HashSet<string>();
-            void Fill(string column, IEnumerable<MightyStructure.Item> items)
+            if (board is not null)
             {
-                var desired = new List<UIElement>();
-                foreach (var item in items)
+                var catalog = owner.Runtime(pane.Provider)?.ModelCatalog?.Models;
+                foreach (var column in board.Columns)
                 {
-                    // A run id the pane repeats (a damaged save) is drawn once.
-                    if (!drawn.Add(item.RunId)) continue;
-                    var key = new StructureCardKey(item, free, width, MightyStructure.Fold.IsFolded(item, structureUnfolded), StructureOpenKeys(item), GraphRequestTitle(runs[item.RunIndex], item.Ordinal), language, catalog);
-                    if (!structureCards.TryGetValue(item.RunId, out var card)) structureCards[item.RunId] = card = new();
-                    if ((card.Key is not { } built || built != key) && DrawStructureCard(card, key)) changed = true;
-                    desired.Add(card.View);
-                }
-                var panel = structureColumns[column];
-                for (var index = panel.Children.Count - 1; index >= 0; index--) if (!desired.Contains(panel.Children[index])) { panel.Children.RemoveAt(index); changed = true; }
-                for (var index = 0; index < desired.Count; index++)
-                {
-                    if (index < panel.Children.Count && ReferenceEquals(panel.Children[index], desired[index])) continue;
-                    // A request that moved to another phase takes its card with it.
-                    if (desired[index] is FrameworkElement { Parent: Panel parent }) parent.Children.Remove(desired[index]);
-                    panel.Children.Insert(index, desired[index]); changed = true;
+                    if (!structureColumns.TryGetValue(column.Id, out var place)) continue;
+                    var headerKey = (StructureStepTitle(column.Step), column.Step.Step, column.Count, language);
+                    if (!Equals(place.HeaderKey, headerKey))
+                    {
+                        place.Header.Child = StructureColumnHeader(column); place.HeaderKey = headerKey;
+                        AutomationProperties.SetName(place.View, Locale.Get("graph.structure.board.columnAccessibility", new Dictionary<string, string>
+                        {
+                            ["name"] = StructureStepTitle(column.Step), ["state"] = StructureStepState(column.Step.Step), ["count"] = column.Count.ToString(CultureInfo.InvariantCulture),
+                        }));
+                    }
+                    var desired = new List<UIElement>();
+                    foreach (var card in column.Cards)
+                    {
+                        // A run id the pane repeats (a damaged save) is drawn once.
+                        if (!drawn.Add(card.Id)) continue;
+                        var (view, built) = StructureCardView(card, width, GraphRequestTitle(runs[card.Item.RunIndex], card.Item.Ordinal), language, catalog);
+                        if (built) changed = true;
+                        desired.Add(view);
+                    }
+                    var panel = place.Cards;
+                    for (var slot = panel.Children.Count - 1; slot >= 0; slot--) if (!desired.Contains(panel.Children[slot])) { panel.Children.RemoveAt(slot); changed = true; }
+                    for (var slot = 0; slot < desired.Count; slot++)
+                    {
+                        if (slot < panel.Children.Count && ReferenceEquals(panel.Children[slot], desired[slot])) continue;
+                        // A request that moved to another phase takes its card with it.
+                        if (desired[slot] is FrameworkElement { Parent: Panel parent }) parent.Children.Remove(desired[slot]);
+                        panel.Children.Insert(slot, desired[slot]); changed = true;
+                    }
                 }
             }
-            if (columns is null) Fill("", (structureShape.Rows ?? []).Select(row => row.Item));
-            else foreach (var column in columns) Fill(column.Id, column.Items);
-            foreach (var gone in structureCards.Keys.Where(run => !drawn.Contains(run)).ToArray()) { structureCards.Remove(gone); structureAnswers.Remove(gone); }
-            // What the user opened follows the cards: only what is still drawn is kept (as the timeline's, MainWindow.MightyTimeline.cs:276).
-            structureUnfolded.IntersectWith(drawn);
-            if (structureExpanded.Count > 0) structureExpanded.IntersectWith(structureShape.Items.SelectMany(StructureTextKeys));
+            foreach (var gone in structureCards.Keys.Where(card => !drawn.Contains(card)).ToArray())
+            {
+                structureCards.Remove(gone);
+                if (gone.StartsWith("result:", StringComparison.Ordinal)) structureAnswers.Remove(gone["result:".Length..]);
+            }
+            // What the user opened follows the requests: only what the pane still holds is kept (as the timeline's, MainWindow.MightyTimeline.cs:276).
+            if (structureExpanded.Count > 0) structureExpanded.IntersectWith(boards.SelectMany(b => b.Items).SelectMany(StructureTextKeys));
             RethemeStructureAnswers();
+            DrawStructureBar(boards, index, board);
+            if (board is not null) DrawStructureHeader(board, boards.Count);
             // The total counts the retained requests; loaded ones are named apart.
             graphTotal.Text = MightyGraphBlockModel.ToolbarSummary(retained) + (older.Count > 0 ? " · " + Locale.Get("graph.history.headerLoaded", new Dictionary<string, string> { ["count"] = older.Count.ToString() }) : "");
             var help = MightyGraphBlockModel.ToolbarHelp(retained);
@@ -244,14 +322,23 @@ public sealed partial class MainWindow
 
             var newest = runs.Count > 0 ? runs[^1].Id : null; var arrived = newest != structureNewestId;
             structureNewestId = newest;
-            // Shown again, the page opens at its end as the Mac's does (M/MightyStructureView.swift:729-732): a reader who had stopped
-            // following is judged there, and follows again where the newest card ends the page.
-            if (structureAppearing) { structureAppearing = false; changed = true; ScrollStructure(structureFollow.Appeared(newest) ?? MightyStructureFollow.Scroll.Bottom); }
-            // A new request is the user's own: shown, and followed from then on.
-            else if (arrived && newest is not null) { changed = true; ScrollStructure(structureFollow.NewRequest(newest)); }
-            // A card that grew in a shorter column moves the newest card's bottom without resizing the page, and a page shown
-            // again has the size it had: where it stands is reported once it is laid out.
-            if (changed) Container.DispatcherQueue.TryEnqueue(() => { if (QueuePaneAlive && structureScroll is { Visibility: Visibility.Visible } scroll) { scroll.UpdateLayout(); ObserveStructurePage(false); } });
+            var moved = board?.Id != structureBoardId;
+            structureBoardId = board?.Id;
+            // Shown again, the page opens at its end, as the Mac's does (M/MightyStructureView.swift:871-882): a reader who had
+            // stopped following is judged there, and follows again where the newest board's end shows.
+            if (structureAppearing) { structureAppearing = false; changed = true; ScrollStructure((followId is null ? null : structureFollow.Appeared(followId)) ?? MightyStructureFollow.Scroll.Bottom); }
+            // Another board: the newest is followed, an older one opens at its top (M/MightyStructureView.swift:425-433).
+            else if (moved)
+            {
+                changed = true;
+                if (followId is not null) ScrollStructure(structureFollow.NewRequest(followId));
+                else { structureFollow.Stop(); ScrollStructureTop(); }
+            }
+            // A new request on the newest board is the user's own: shown, and followed from then on.
+            else if (arrived && newest is not null && followId is not null) { changed = true; ScrollStructure(structureFollow.NewRequest(followId)); }
+            // A card that grew in a shorter column moves the board's end without resizing the page, and a page shown again has the
+            // size it had: where it stands is reported once it is laid out.
+            if (changed) Container.DispatcherQueue.TryEnqueue(() => { if (QueuePaneAlive && ShownStructureScroll is { } scroll) { scroll.UpdateLayout(); ObserveStructurePage(false); } });
             AutoLoadGraphHistory(pane, retained);
         }
 
@@ -259,79 +346,337 @@ public sealed partial class MainWindow
         private static IEnumerable<string> StructureTextKeys(MightyStructure.Item item) =>
             new[] { "request:" + item.RunId, "message:" + item.RunId, "answer:" + item.RunId }.Concat(item.Clusters.SelectMany(cluster => cluster.Nodes).Select(node => "node:" + node.NodeId));
 
-        /// <summary>The texts of a request opened past their folded lines, as one key.</summary>
-        private string StructureOpenKeys(MightyStructure.Item item) => structureExpanded.Count == 0 ? "" : string.Join('\n', StructureTextKeys(item).Where(structureExpanded.Contains));
+        // ── navigation ────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// The navigation bar (M/MightyStructureView.swift:123-191): ◀ and ▶ off at the ends, "Request 3 / 7" (or "Pipeline 2 / 3")
+        /// over the list, and the badge while a board newer than the one shown is unseen. Hidden with no board.
+        /// </summary>
+        private void DrawStructureBar(IReadOnlyList<Board> boards, int? index, Board? board)
+        {
+            var visibility = board is null ? Visibility.Collapsed : Visibility.Visible;
+            foreach (var part in new FrameworkElement?[] { structureBar, structureHeader, structureRule }) if (part is not null) part.Visibility = visibility;
+            if (board is null || index is not { } at || structurePrevious is null || structureNext is null || structureListButton is null || structureBadge is null) return;
+            if (structureBarLanguage != Locale.LanguagePreference)
+            {
+                structureBarLanguage = Locale.LanguagePreference;
+                foreach (var (control, key) in new[] { (structurePrevious, "graph.structure.board.previous"), (structureNext, "graph.structure.board.next"), (structureListButton, "graph.structure.board.list") })
+                {
+                    AutomationProperties.SetName(control, Locale.Get(key)); ToolTipService.SetToolTip(control, Locale.Get(key));
+                }
+                ToolTipService.SetToolTip(structureBadge, Locale.Get("graph.structure.board.showNewest")); AutomationProperties.SetHelpText(structureBadge, Locale.Get("graph.structure.board.showNewest"));
+            }
+            structurePrevious.IsEnabled = at > 0; structureNext.IsEnabled = at < boards.Count - 1;
+            var position = StructurePosition(board, at, boards.Count);
+            structurePosition!.Text = position; AutomationProperties.SetItemStatus(structureListButton, position);
+            var unseen = structureNavigation.HasUnseen(boards);
+            structureBadge.Visibility = unseen ? Visibility.Visible : Visibility.Collapsed;
+            if (!unseen) return;
+            var text = Locale.Get(board.Kind == MightyStructure.BoardKind.Request ? "graph.structure.board.newRequest" : "graph.structure.board.newPipeline");
+            structureBadgeWords!.Text = text; AutomationProperties.SetName(structureBadge, text);
+        }
+
+        /// <summary>"Request 3 / 7" or "Pipeline 2 / 3" (M/MightyStructureView.swift:155-159).</summary>
+        private static string StructurePosition(Board board, int index, int count) => Locale.Get(board.Kind == MightyStructure.BoardKind.Request ? "graph.structure.board.request" : "graph.structure.board.pipeline",
+            new Dictionary<string, string> { ["n"] = (index + 1).ToString(CultureInfo.InvariantCulture), ["count"] = count.ToString(CultureInfo.InvariantCulture) });
+
+        /// <summary>The board's words: its first request's first line, else the style's name, else its place (M/MightyStructureView.swift:240-244).</summary>
+        private string StructureTitle(Board board, int count) =>
+            board.Headline ?? (board.Kind == MightyStructure.BoardKind.Pipeline ? activeStyle?.Manifest.Name : null) ?? StructurePosition(board, board.Ordinal - 1, count);
+
+        /// <summary>A navigation control moved the board: drawn now, its focus kept (<see cref="RedrawStructure"/>).</summary>
+        private void MoveStructureBoard(Action<MightyStructure.Navigation> move, string automationId)
+        {
+            if (structurePanned) return;
+            move(structureNavigation); RedrawStructure(automationId);
+        }
+
+        /// <summary>
+        /// The list of boards (M/MightyStructureView.swift:193-238), built as it opens: every board, newest last, each its number,
+        /// its status's mark, its title (bold for the one shown, on <c>track</c>) and its steps. A click shows it and closes the list.
+        /// </summary>
+        private void FillStructureList()
+        {
+            if (structureList is null) return;
+            var b = owner.brushes; var boards = structureBoards; var shown = structureNavigation.Index(boards);
+            structureList.Children.Clear();
+            AutomationProperties.SetName(structureList, Locale.Get("graph.structure.board.list"));
+            for (var index = 0; index < boards.Count; index++)
+            {
+                var board = boards[index]; var title = StructureTitle(board, boards.Count); var steps = StructureStepsSummary(board); var selected = index == shown;
+                var face = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
+                face.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); face.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); face.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
+                var number = StructureWords((index + 1).ToString(CultureInfo.InvariantCulture), DesignMetrics.Type.Pill, b.Brush(DesignToken.Ink2), FontWeights.Bold); number.VerticalAlignment = VerticalAlignment.Top;
+                face.Children.Add(number);
+                var mark = MightySymbols.Create(StructureStatusSymbol(board.Status), DesignMetrics.Type.Pill, b.Brush(StructureMark(StatusGlyph.Tone(board.Status))), MightySymbols.Weight.Semibold, b.Brush(DesignToken.Card));
+                mark.VerticalAlignment = VerticalAlignment.Top; Grid.SetColumn(mark, 1); face.Children.Add(mark);
+                var words = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
+                words.Children.Add(StructureWords(title, StructureTextSize, b.Brush(DesignToken.Ink), selected ? FontWeights.Bold : FontWeights.Normal));
+                words.Children.Add(StructureWords(steps, DesignMetrics.Type.Small, b.Brush(DesignToken.Ink2)));
+                Grid.SetColumn(words, 2); face.Children.Add(words);
+                var entry = new Button
+                {
+                    Content = face, MinWidth = 0, MinHeight = 0, BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(StructureNodeCorner),
+                    Padding = new Thickness(DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xs, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xs),
+                    HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                };
+                owner.PaintPlainButton(entry, selected ? b.Brush(DesignToken.Track) : b.Transparent, b.Subtle);
+                AutomationProperties.SetAutomationId(entry, "mighty-structure-entry-" + board.Id);
+                AutomationProperties.SetName(entry, StructurePosition(board, index, boards.Count) + ", " + title);
+                AutomationProperties.SetItemStatus(entry, MightyGraphBlockModel.StateLabel(board.Status) + ", " + steps);
+                var target = board.Id;
+                entry.Click += (_, _) => { structureListFlyout?.Hide(); MoveStructureBoard(n => n.Select(target, structureBoards), "mighty-structure-list-" + id); };
+                structureList.Children.Add(entry);
+            }
+            // The shown board is brought into view as the list opens.
+            if (shown is { } at && at < structureList.Children.Count && structureList.Children[at] is FrameworkElement current)
+                Container.DispatcherQueue.TryEnqueue(() => current.StartBringIntoView(new BringIntoViewOptions { VerticalAlignmentRatio = 0.5, AnimationDesired = false }));
+        }
+
+        /// <summary>"Request ✓ → Run ● → Result ○": each step and where it stands (M/MightyStructureView.swift:246-259).</summary>
+        private static string StructureStepsSummary(Board board) => string.Join(" → ", board.Steps.Select(step => StructureStepTitle(step) + " " + step.Step switch
+        {
+            MightyStructure.Step.Done => "✓", MightyStructure.Step.Current => "●", MightyStructure.Step.Pending => "○", MightyStructure.Step.Error => "✕", _ => "■",
+        }));
+
+        /// <summary>A status as the list marks it (M/MightyStructureView.swift:261-269); Windows draws the waiting pause as an outline, and a running board's dotted circle as its ringed glyph.</summary>
+        private static string StructureStatusSymbol(string status) => status switch
+        {
+            "completed" => "checkmark.circle.fill", "error" => "exclamationmark.triangle.fill", "stopped" => "stop.circle.fill", "waiting" => "pause.circle", _ => "circle.dotted.circle",
+        };
+
+        // ── the header ────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// The board's header (M/MightyStructureView.swift:280-304): its status pill and its title (13 bold in the heading font),
+        /// then its steps as chips joined by 2pt lines, <c>done</c> once the step before them is done, <c>track</c> until then.
+        /// </summary>
+        private void DrawStructureHeader(Board board, int count)
+        {
+            if (structureHeader is null) return;
+            var title = StructureTitle(board, count);
+            var key = string.Join('\n', new[] { board.Id, board.Status, title, Locale.LanguagePreference }.Concat(board.Steps.Select(step => step.Id + "\u001F" + step.Title + "\u001F" + MightyStructure.Word(step.Step))));
+            if (key == structureHeaderKey) return;
+            structureHeaderKey = key;
+            var b = owner.brushes;
+            var lead = new PaneHeaderLine { Spacing = DesignMetrics.Spacing.Sm };
+            lead.Add(StatusPill(MightyGraphBlockModel.StateLabel(board.Status), StatusGlyph.Tone(board.Status), 18), PaneHeaderLine.Role.Fixed);
+            var heading = StructureWords(title, DesignMetrics.Type.Title, b.Brush(DesignToken.Ink), FontWeights.Bold); heading.FontFamily = new FontFamily(DesignMetrics.Font.Heading);
+            AutomationProperties.SetHeadingLevel(heading, Microsoft.UI.Xaml.Automation.Peers.AutomationHeadingLevel.Level2);
+            lead.Add(heading, PaneHeaderLine.Role.Shrink);
+            var steps = new Grid();
+            structureChips.Clear();
+            for (var index = 0; index < board.Steps.Count; index++)
+            {
+                var step = board.Steps[index];
+                steps.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+                var chip = StructureChip(StructureStepTitle(step), step.Step);
+                Grid.SetColumn(chip, steps.ColumnDefinitions.Count - 1); steps.Children.Add(chip); structureChips.Add(chip);
+                if (index == board.Steps.Count - 1) continue;
+                steps.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star), MinWidth = DesignMetrics.Spacing.Md });
+                var line = new Border
+                {
+                    Height = DesignMetrics.Stroke.Active, VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false,
+                    Background = b.Brush(step.Step == MightyStructure.Step.Done ? DesignToken.Done : DesignToken.Track),
+                };
+                AutomationProperties.SetAccessibilityView(line, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+                Grid.SetColumn(line, steps.ColumnDefinitions.Count - 1); steps.Children.Add(line);
+            }
+            AutomationProperties.SetName(steps, Locale.Get("guidedPanel.phasesAccessibility"));
+            var stack = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
+            stack.Children.Add(lead); stack.Children.Add(steps);
+            structureHeader.Child = stack;
+            SizeStructureChips(structureHeader.ActualWidth);
+        }
+
+        /// <summary>A long step title is cut so every chip and the least line between them fit the header's width; the whole title is in the chip's tooltip.</summary>
+        private void SizeStructureChips(double width)
+        {
+            var available = width - 2 * DesignMetrics.Inset.GraphBlockBodyH;
+            if (structureChips.Count == 0 || available <= 0) return;
+            var most = Math.Max(0, (available - (structureChips.Count - 1) * DesignMetrics.Spacing.Md) / structureChips.Count);
+            foreach (var chip in structureChips) chip.MaxWidth = most;
+        }
+
+        /// <summary>A step's fill, ink and mark (M/MightyStructureView.swift:333-342): done is green, current the accent, pending grey; an error or a stop in its own fill.</summary>
+        private (Brush Fill, Brush Ink, string Symbol) StructureLook(MightyStructure.Step step)
+        {
+            var b = owner.brushes;
+            return step switch
+            {
+                MightyStructure.Step.Done => (b.Fill(DesignTone.Done), b.FillInk(DesignTone.Done), "checkmark"),
+                MightyStructure.Step.Current => (b.Brush(DesignToken.Accent), b.Brush(DesignToken.OnAccent), "circle.fill"),
+                MightyStructure.Step.Error => (b.Fill(DesignTone.Err), b.FillInk(DesignTone.Err), "xmark"),
+                MightyStructure.Step.Stopped => (b.Fill(DesignTone.Stop), b.FillInk(DesignTone.Stop), "stop.fill"),
+                _ => (b.Brush(DesignToken.Track), b.Brush(DesignToken.Ink2), "circle"),
+            };
+        }
+
+        /// <summary>
+        /// One step as a chip (M/MightyStructureView.swift:316-331): a capsule 20 tall, padding <c>Spacing.Md</c>, its 8pt bold mark
+        /// and its 11pt title (bold while current) <c>Spacing.Xs</c> apart, in its step's look.
+        /// </summary>
+        private Border StructureChip(string title, MightyStructure.Step step)
+        {
+            var (fill, ink, symbol) = StructureLook(step);
+            var face = new Grid { ColumnSpacing = DesignMetrics.Spacing.Xs, VerticalAlignment = VerticalAlignment.Center };
+            face.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); face.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
+            face.Children.Add(MightySymbols.Create(symbol, 8, ink, MightySymbols.Weight.Bold));
+            var words = StructureWords(title, DesignMetrics.Type.Pill, ink, step == MightyStructure.Step.Current ? FontWeights.Bold : FontWeights.SemiBold);
+            Grid.SetColumn(words, 1); face.Children.Add(words);
+            var chip = new Border
+            {
+                Child = face, Height = StructureChipHeight, CornerRadius = new CornerRadius(StructureChipHeight / 2), Background = fill,
+                Padding = new Thickness(DesignMetrics.Spacing.Md, 0, DesignMetrics.Spacing.Md, 0), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center,
+            };
+            ToolTipService.SetToolTip(chip, title); AutomationProperties.SetName(chip, StructureStepName(title, step));
+            return chip;
+        }
+
+        /// <summary>A free step's localized name, or the phase's title (M/MightyStructureView.swift:306-314).</summary>
+        private static string StructureStepTitle(MightyStructure.BoardStep step) => step.Title ?? Locale.Get(step.Id switch
+        {
+            "request" => "graph.structure.column.request", "execution" => "graph.structure.column.execution", _ => "graph.structure.column.result",
+        });
+
+        private static string StructureStepState(MightyStructure.Step step) => Locale.Get(step switch
+        {
+            MightyStructure.Step.Done => "graph.structure.step.done", MightyStructure.Step.Current => "graph.structure.step.current",
+            MightyStructure.Step.Pending => "graph.structure.step.pending", MightyStructure.Step.Error => "graph.state.error", _ => "graph.state.stopped",
+        });
+
+        private static string StructureStepName(string name, MightyStructure.Step step) =>
+            Locale.Get("graph.structure.stepAccessibility", new Dictionary<string, string> { ["name"] = name, ["state"] = StructureStepState(step) });
+
+        // ── the kanban ────────────────────────────────────────────────────────
+
+        /// <summary>No request yet: the timeline's own words for that (M/MightyStructureView.swift:378-381).</summary>
+        private TextBlock StructureEmpty() => new()
+        {
+            Text = Locale.Get("graph.timeline.empty"), FontSize = StructureTextSize, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, DesignMetrics.Spacing.Md, 0, DesignMetrics.Spacing.Md),
+        };
+
+        /// <summary>
+        /// The board's columns (M/MightyStructureView.swift:467-488): one per step, <c>Spacing.Lg</c> apart and <paramref name="width"/>
+        /// wide, each its header and, <c>Spacing.Sm</c> under it, its cards <c>Spacing.Md</c> apart.
+        /// </summary>
+        private StackPanel BuildStructureKanban(Board board, double width)
+        {
+            var kanban = structureKanban = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Lg };
+            AutomationProperties.SetAutomationId(kanban, "mighty-structure-board-" + board.Id);
+            foreach (var column in board.Columns)
+            {
+                var header = new Border(); var cards = new StackPanel { Spacing = DesignMetrics.Spacing.Md };
+                var view = new StackPanel { Spacing = DesignMetrics.Spacing.Sm, Width = width, VerticalAlignment = VerticalAlignment.Top };
+                view.Children.Add(header); view.Children.Add(cards);
+                AutomationProperties.SetAutomationId(view, "mighty-structure-column-" + column.Id);
+                structureColumns[column.Id] = new(view, header, cards);
+                kanban.Children.Add(view);
+            }
+            return kanban;
+        }
+
+        /// <summary>A column's header (M/MightyStructureView.swift:500-513): its step's mark (8 bold, in the step's fill, <c>ink2</c> while pending), its name (12 bold) and its count (10 semibold <c>ink2</c> on a <c>track</c> capsule).</summary>
+        private PaneHeaderLine StructureColumnHeader(MightyStructure.BoardColumn column)
+        {
+            var b = owner.brushes; var (fill, _, symbol) = StructureLook(column.Step.Step);
+            var head = new PaneHeaderLine { Spacing = DesignMetrics.Spacing.Sm, Height = StructureChipHeight };
+            head.Add(MightySymbols.Create(symbol, 8, column.Step.Step == MightyStructure.Step.Pending ? b.Brush(DesignToken.Ink2) : fill, MightySymbols.Weight.Bold), PaneHeaderLine.Role.Fixed);
+            head.Add(StructureWords(StructureStepTitle(column.Step), StructureTextSize, b.Brush(DesignToken.Ink), FontWeights.Bold), PaneHeaderLine.Role.Shrink);
+            head.Add(new Border
+            {
+                Child = StructureWords(column.Count.ToString(CultureInfo.InvariantCulture), DesignMetrics.Type.Small, b.Brush(DesignToken.Ink2), FontWeights.SemiBold), Background = b.Brush(DesignToken.Track),
+                CornerRadius = new CornerRadius(StructureChipHeight / 2), Padding = new Thickness(DesignMetrics.Spacing.Sm, 0, DesignMetrics.Spacing.Sm, 0), VerticalAlignment = VerticalAlignment.Center,
+            }, PaneHeaderLine.Role.Fixed);
+            AutomationProperties.SetAccessibilityView(head, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+            return head;
+        }
 
         // ── follow ────────────────────────────────────────────────────────────
 
+        private static double StructureNow => Environment.TickCount64 / 1000.0;
+
         /// <summary>
-        /// The page is moving under the user's hand (M/MightyStructureView.swift:25-29): a drag or the moment after one, a scroll
-        /// in steps, the scroll bar held, or a wheel notch or key whose scroll the page has yet to report.
+        /// The page is moving under the user's hand (M/MightyStructureView.swift:36-41): the scroll bar or a finger moving it in steps,
+        /// the scroll bar held, or a scrolling key whose scroll the page has yet to report, as the system's scroll; a drag or the
+        /// moment after one; or a wheel step still settling (<see cref="MightyStructureWheel.UserMoving"/>).
         /// </summary>
         private bool StructureUserMoving
         {
             get
             {
-                var now = Environment.TickCount64; const double grace = MightyStructurePan.ReleaseGrace * 1000;
-                return structurePanning || structureScrolling || structureBarHeld || now - structurePanReleasedAt < grace || now - structureInputAt < grace;
+                var now = StructureNow;
+                return MightyStructureWheel.UserMoving(structureScrolling || structureBarHeld || now - structureInputAt < MightyStructurePan.ReleaseGrace, structurePanning, structurePanReleasedAt, structureWheel, now);
             }
         }
 
         /// <summary>
-        /// Reports where the page stands, in its own top-down coordinates (M/MightyStructureView.swift:110-118): the page's frame,
-        /// the pane's height and the newest card's bottom in one report, so the follow rule never judges one against a stale other.
+        /// Reports where the page stands, in its own top-down coordinates (M/MightyStructureView.swift:398-416): the page's frame,
+        /// the pane's height and the newest board's bottom in one report, so the follow rule never judges one against a stale other.
+        /// An older board follows nothing.
         /// </summary>
         private void ObserveStructurePage(bool userScrolling)
         {
-            if (structureScroll is not { Visibility: Visibility.Visible, ViewportHeight: > 0 } scroll || !structurePage.IsLoaded || !QueuePaneAlive) return;
+            if (ShownStructureScroll is not { ViewportHeight: > 0 } scroll || !structurePage.IsLoaded || !QueuePaneAlive) return;
             double? bottom = null;
-            if (structureNewestId is { } newest && structureCards.TryGetValue(newest, out var card) && card.View is { IsLoaded: true, ActualHeight: > 0 } view)
-                bottom = view.TransformToVisual(structurePage).TransformPoint(new Point(0, view.ActualHeight)).Y;
+            if (structureFollowId is not null && structureKanban is { IsLoaded: true, ActualHeight: > 0 } kanban)
+                bottom = kanban.TransformToVisual(structurePage).TransformPoint(new Point(0, kanban.ActualHeight)).Y;
             var origin = -structurePage.TransformToVisual(scroll).TransformPoint(new Point()).Y;
-            ScrollStructure(structureFollow.Observe(new(origin, scroll.ViewportHeight, structurePage.ActualHeight, structureNewestId, bottom), userScrolling || StructureUserMoving));
+            structureJudgedY = scroll.VerticalOffset;
+            var target = structureFollow.Observe(new(origin, scroll.ViewportHeight, structurePage.ActualHeight, structureFollowId, bottom), userScrolling || StructureUserMoving);
+            if (structureFollowId is not null) ScrollStructure(target);
         }
 
         /// <summary>
-        /// The page's end, or the newest card's bottom at the viewport's bottom (in a styled pane its column in the middle),
-        /// after the current layout pass: a report arrives while the page is being laid out (M/MightyStructureView.swift:143-156).
+        /// The page's end, or the board's bottom at the viewport's bottom, at the page's left edge, after the current layout pass: a
+        /// report arrives while the page is being laid out (M/MightyStructureView.swift:442-455).
         /// </summary>
         private void ScrollStructure(MightyStructureFollow.Scroll? target)
         {
             if (target is not { } to) return;
             Container.DispatcherQueue.TryEnqueue(() =>
             {
-                // A drag or a scroll of the user's is theirs: nothing scrolls under it, and a view change would stop the wheel's own.
-                if (structurePanning || structureScrolling || !QueuePaneAlive || structureScroll is not { Visibility: Visibility.Visible } scroll) return;
+                // A drag, a wheel step or a scroll of the user's is theirs: nothing scrolls under it, even a scroll asked for just before it began.
+                if (StructureUserMoving || !QueuePaneAlive || ShownStructureScroll is not { } scroll) return;
                 scroll.UpdateLayout();
-                if (to.Card is { } run && structureCards.TryGetValue(run, out var card) && card.View is { IsLoaded: true, ActualHeight: > 0 } view)
+                if (to.Card is not null && structureKanban is { IsLoaded: true, ActualHeight: > 0 } kanban)
                 {
-                    var corner = view.TransformToVisual(structurePage).TransformPoint(new Point(0, view.ActualHeight));
-                    double? x = structureShape.Columns is null ? null : Math.Clamp(corner.X + view.ActualWidth / 2 - scroll.ViewportWidth / 2, 0, scroll.ScrollableWidth);
-                    scroll.ChangeView(x, Math.Clamp(corner.Y - scroll.ViewportHeight, 0, scroll.ScrollableHeight), null, true);
+                    var corner = kanban.TransformToVisual(structurePage).TransformPoint(new Point(0, kanban.ActualHeight));
+                    scroll.ChangeView(0, Math.Clamp(corner.Y - scroll.ViewportHeight, 0, scroll.ScrollableHeight), null, true);
                 }
-                else scroll.ChangeView(null, scroll.ScrollableHeight, null, true);
+                else scroll.ChangeView(0, scroll.ScrollableHeight, null, true);
             });
         }
 
+        /// <summary>An older board opens at its top left.</summary>
+        private void ScrollStructureTop() => Container.DispatcherQueue.TryEnqueue(() =>
+        {
+            if (!QueuePaneAlive || ShownStructureScroll is not { } scroll) return;
+            scroll.UpdateLayout(); scroll.ChangeView(0, 0, null, true);
+        });
+
         /// <summary>
-        /// A wheel notch or a scrolling key is the user's scroll before the page reports it, and with Windows' animations off it
-        /// moves the page in one change, never in steps: noted when the page can still move that way (-1, 0 or 1 on each axis).
+        /// A scrolling key is the user's scroll before the page reports it, and with Windows' animations off it moves the page in
+        /// one change, never in steps: noted when the page can still move that way (-1, 0 or 1 on each axis).
         /// </summary>
         private void NoteStructureInput(int across, int down)
         {
             if (structureScroll is not { } scroll) return;
             if (down < 0 && scroll.VerticalOffset > 0.5 || down > 0 && scroll.VerticalOffset < scroll.ScrollableHeight - 0.5
-                || across < 0 && scroll.HorizontalOffset > 0.5 || across > 0 && scroll.HorizontalOffset < scroll.ScrollableWidth - 0.5) structureInputAt = Environment.TickCount64;
+                || across < 0 && scroll.HorizontalOffset > 0.5 || across > 0 && scroll.HorizontalOffset < scroll.ScrollableWidth - 0.5) structureInputAt = StructureNow;
         }
 
+        /// <summary>
+        /// A wheel on the page (M/MightyStructurePanning.swift:247-289). The page's scroll viewer moves itself, chaining a wheel out
+        /// of an inner scroll view at its edge, so the wheel is only noted as the user's: a Windows wheel message, a mouse's notch
+        /// or a touchpad's, carries no gesture, and is a step. A positive delta shows what is above, or what is to the right.
+        /// </summary>
         private void OnStructureWheel(object sender, PointerRoutedEventArgs args)
         {
             if (structureScroll is not { } scroll || args.KeyModifiers.HasFlag(VirtualKeyModifiers.Control)) return;
-            var wheel = args.GetCurrentPoint(scroll).Properties; var step = Math.Sign(wheel.MouseWheelDelta);
-            // A tilted wheel moves the page across; so does a shifted one, or any wheel on a page that cannot move down.
-            if (wheel.IsHorizontalMouseWheel) NoteStructureInput(step, 0);
-            else if (args.KeyModifiers.HasFlag(VirtualKeyModifiers.Shift) || scroll.ScrollableHeight <= 0.5) NoteStructureInput(-step, 0);
-            else NoteStructureInput(0, -step);
+            var wheel = args.GetCurrentPoint(scroll).Properties; double delta = wheel.MouseWheelDelta;
+            structureWheel.Feed(MightyStructureWheel.Stage.Step, true, wheel.IsHorizontalMouseWheel ? (-delta, 0) : (0, delta), StructureNow);
         }
 
         private void OnStructureKeyDown(object sender, KeyRoutedEventArgs args)
@@ -365,7 +710,7 @@ public sealed partial class MainWindow
         }
 
         /// <summary>
-        /// What a press lands on (M/MightyStructurePanning.swift:124-143): a text where its words are laid out, a text box or a
+        /// What a press lands on (M/MightyStructurePanning.swift:133-152): a text where its words are laid out, a text box or a
         /// scroll bar takes its own drag; anything else inside the page, a button and the empty part of a text's frame too, is the
         /// page until the press turns out to be a click.
         /// </summary>
@@ -387,12 +732,12 @@ public sealed partial class MainWindow
             return MightyStructurePan.Target.Outside;
         }
 
-        /// <summary>The point is on the words a text block laid out: its measured text, not the frame it was given (M/MightyStructurePanning.swift:148-157).</summary>
+        /// <summary>The point is on the words a text block laid out: its measured text, not the frame it was given (M/MightyStructurePanning.swift:157-166).</summary>
         private static bool StructureOnText(TextBlock words, Point point) =>
             point.X <= words.DesiredSize.Width + StructureTextSlop && point.Y <= words.DesiredSize.Height + StructureTextSlop;
 
         /// <summary>
-        /// The point is on the answer's laid-out text (M/MightyStructurePanning.swift:159-170): the character nearest to it, a
+        /// The point is on the answer's laid-out text (M/MightyStructurePanning.swift:168-179): the character nearest to it, a
         /// character's width to either side, in the document's own points inside the text box's padding.
         /// </summary>
         private static bool StructureOnText(RichEditBox answer, Point point)
@@ -453,7 +798,7 @@ public sealed partial class MainWindow
         {
             structurePress = null;
             if (!structurePanning) return;
-            structurePanning = false; structurePanReleasedAt = Environment.TickCount64;
+            structurePanning = false; structurePanReleasedAt = StructureNow;
             // A click this release raises on what was pressed is the drag's, not the user's; forgotten once the release is over.
             Container.DispatcherQueue.TryEnqueue(() => structurePanned = false);
         }
@@ -461,7 +806,7 @@ public sealed partial class MainWindow
         /// <summary>The press is over: the scroll bar's last step may still be reported, and a part it kept as it was is built now.</summary>
         private void EndStructurePress()
         {
-            if (structureBarHeld) structureInputAt = Environment.TickCount64;
+            if (structureBarHeld) structureInputAt = StructureNow;
             structurePressed = null; structureBarHeld = false;
             ResumeStructure();
         }
@@ -475,340 +820,120 @@ public sealed partial class MainWindow
             structureDeferred = false; QueueGraphRefresh();
         }
 
-        // ── the frame ─────────────────────────────────────────────────────────
-
-        /// <summary>
-        /// A styled pane (M/MightyStructureView.swift:170-187): the rail of phase chips, and <c>Spacing.Md</c> under it one column
-        /// per phase, <c>Spacing.Lg</c> apart, its cards <c>Spacing.Md</c> apart.
-        /// </summary>
-        private StackPanel BuildStructurePhases(IReadOnlyList<MightyStructure.Column> columns, double width)
-        {
-            var frame = new StackPanel { Spacing = DesignMetrics.Spacing.Md };
-            var rail = structureRail = StructureRail(columns.Select(column => (column.Phase.Title, column.Step)).ToList(), width);
-            AutomationProperties.SetName(rail, Locale.Get("guidedPanel.phasesAccessibility"));
-            frame.Children.Add(rail);
-            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Lg };
-            foreach (var column in columns)
-            {
-                var stack = structureColumns[column.Id] = new StackPanel { Spacing = DesignMetrics.Spacing.Md, Width = width, VerticalAlignment = VerticalAlignment.Top };
-                AutomationProperties.SetAutomationId(stack, "mighty-structure-phase-" + column.Id);
-                AutomationProperties.SetName(stack, StructureStepName(column.Phase.Title, column.Step));
-                row.Children.Add(stack);
-            }
-            frame.Children.Add(row);
-            return frame;
-        }
-
-        /// <summary>A free pane (M/MightyStructureView.swift:251-261): one row per request, <c>Spacing.Xl</c> apart; with no request yet, the timeline's own words for that.</summary>
-        private StackPanel BuildStructureRows(bool empty)
-        {
-            var rows = structureColumns[""] = new StackPanel { Spacing = DesignMetrics.Spacing.Xl };
-            if (!empty) return rows;
-            var frame = new StackPanel();
-            frame.Children.Add(new TextBlock { Text = Locale.Get("graph.timeline.empty"), FontSize = StructureTextSize, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, DesignMetrics.Spacing.Md, 0, DesignMetrics.Spacing.Md) });
-            frame.Children.Add(rows);
-            return frame;
-        }
-
-        /// <summary>
-        /// The chips over the columns (M/MightyStructureView.swift:189-208), each in its column's width and joined to the next by
-        /// a 2pt line that is <c>done</c> once the step before it is done, <c>track</c> until then.
-        /// </summary>
-        private StackPanel StructureRail(IReadOnlyList<(string Title, MightyStructure.Step Step)> steps, double width)
-        {
-            var b = owner.brushes;
-            var rail = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Lg };
-            for (var index = 0; index < steps.Count; index++)
-            {
-                var cell = new Grid { Width = width };
-                cell.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); cell.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
-                cell.Children.Add(StructureChip(steps[index].Title, steps[index].Step, width));
-                if (index < steps.Count - 1)
-                {
-                    // The line runs on through the gap to the next chip.
-                    var line = new Border
-                    {
-                        Height = DesignMetrics.Stroke.Active, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, -DesignMetrics.Spacing.Lg, 0), IsHitTestVisible = false,
-                        Background = b.Brush(steps[index].Step == MightyStructure.Step.Done ? DesignToken.Done : DesignToken.Track),
-                    };
-                    AutomationProperties.SetAccessibilityView(line, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
-                    Grid.SetColumn(line, 1); cell.Children.Add(line);
-                }
-                rail.Children.Add(cell);
-            }
-            return rail;
-        }
-
-        /// <summary>A rail at a new column width: each cell, and the chip cut to it.</summary>
-        private static void SizeStructureRail(StackPanel rail, double width)
-        {
-            foreach (var cell in rail.Children.OfType<Grid>())
-            {
-                cell.Width = width;
-                if (cell.Children[0] is Border chip) chip.MaxWidth = width;
-            }
-        }
-
-        /// <summary>
-        /// One step as a chip (M/MightyStructureView.swift:210-236): a capsule 20 tall, padding <c>Spacing.Md</c>, its 8pt bold mark
-        /// and its 11pt title (bold while current) <c>Spacing.Xs</c> apart. Done is the <c>done</c> fill, current <c>accent</c>,
-        /// pending <c>track</c> with <c>ink2</c>; an error or a stop in its own fill. A long title is cut to its column; the whole
-        /// title is in the tooltip.
-        /// </summary>
-        private Border StructureChip(string title, MightyStructure.Step step, double width)
-        {
-            var b = owner.brushes;
-            var (fill, ink, symbol) = step switch
-            {
-                MightyStructure.Step.Done => (b.Fill(DesignTone.Done), b.FillInk(DesignTone.Done), "checkmark"),
-                MightyStructure.Step.Current => (b.Brush(DesignToken.Accent), b.Brush(DesignToken.OnAccent), "circle.fill"),
-                MightyStructure.Step.Error => (b.Fill(DesignTone.Err), b.FillInk(DesignTone.Err), "xmark"),
-                MightyStructure.Step.Stopped => (b.Fill(DesignTone.Stop), b.FillInk(DesignTone.Stop), "stop.fill"),
-                _ => (b.Brush(DesignToken.Track), b.Brush(DesignToken.Ink2), "circle"),
-            };
-            var face = new Grid { ColumnSpacing = DesignMetrics.Spacing.Xs, VerticalAlignment = VerticalAlignment.Center };
-            face.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); face.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
-            face.Children.Add(MightySymbols.Create(symbol, 8, ink, MightySymbols.Weight.Bold));
-            var words = StructureWords(title, DesignMetrics.Type.Pill, ink, step == MightyStructure.Step.Current ? FontWeights.Bold : FontWeights.SemiBold);
-            Grid.SetColumn(words, 1); face.Children.Add(words);
-            var chip = new Border
-            {
-                Child = face, Height = StructureChipHeight, MaxWidth = width, CornerRadius = new CornerRadius(StructureChipHeight / 2), Background = fill,
-                Padding = new Thickness(DesignMetrics.Spacing.Md, 0, DesignMetrics.Spacing.Md, 0), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center,
-            };
-            ToolTipService.SetToolTip(chip, title); AutomationProperties.SetName(chip, StructureStepName(title, step));
-            return chip;
-        }
-
-        private static string StructureStepName(string name, MightyStructure.Step step) => Locale.Get("graph.structure.stepAccessibility", new Dictionary<string, string>
-        {
-            ["name"] = name,
-            ["state"] = Locale.Get(step switch
-            {
-                MightyStructure.Step.Done => "graph.structure.step.done", MightyStructure.Step.Current => "graph.structure.step.current",
-                MightyStructure.Step.Pending => "graph.structure.step.pending", MightyStructure.Step.Error => "graph.state.error", _ => "graph.state.stopped",
-            }),
-        });
-
         // ── cards ─────────────────────────────────────────────────────────────
 
         /// <summary>
-        /// Brings a request's card up to <paramref name="key"/> (M/MightyStructureView.swift:263-379): folded to one compact card
-        /// once it finished (<see cref="MightyStructure.Fold"/>), else open, in a free pane as wide as its three columns. Only a
-        /// part whose content changed is built again, in its old place; a part with a press down in it or a selection in one of
-        /// its texts waits (<see cref="StructureHeld"/>), and the whole card waits when its frame changes. A new width is set on
-        /// what is there, and builds only a part whose folded lines it changes. Returns whether anything was built.
+        /// A card of the board as it should be now (M/MightyStructureView.swift:515-525): built again only when what it shows changed,
+        /// in its old place. Its folds are judged at the width its text really has, so a new width builds only a card whose folded
+        /// lines it changes. A card with a press down in it or a selection in one of its texts waits (<see cref="StructureHeld"/>).
         /// </summary>
-        private bool DrawStructureCard(StructureCard card, StructureCardKey key)
+        private (FrameworkElement View, bool Built) StructureCardView(MightyStructure.Card card, double width, string heading, string language, IReadOnlyList<ModelOption>? catalog)
         {
-            var item = key.Item; var free = key.Free; var width = key.Width; var heading = key.Heading; var language = key.Language;
-            var frame = key.Folded ? "folded" : free ? "row" : item.Finished ? "finished" : "open";
-            var reframed = frame != card.Frame;
-            if (reframed && card.Parts.Values.Any(part => StructureHeld(part.View))) { structureDeferred = true; return false; }
-            var live = new HashSet<string>(); var waits = false; var built = reframed;
-            FrameworkElement Part(string name, object content, Func<FrameworkElement> build)
+            var item = card.Item; var textWidth = width - 2 * DesignMetrics.Inset.GraphBlockBodyH;
+            static bool Folds(MightyStructure.Excerpt? text, int lines, double size, double width) => text?.Folds(lines, MightyStructure.CharactersPerLine(width, size)) == true;
+            bool Open(string part, string id) => structureExpanded.Contains(part + ":" + id);
+            var requestFolds = Folds(item.Request, MightyStructure.RequestLines, StructureTextSize, textWidth);
+            var messageFolds = Folds(item.Message, MightyStructure.MessageLines, StructureTextSize, textWidth);
+            var activity = string.Join('\n', item.Activity);
+            object key; Func<FrameworkElement> build;
+            switch (card.Kind)
             {
-                live.Add(name);
-                if (card.Parts.TryGetValue(name, out var part))
-                {
-                    if (Equals(part.Key, content)) return part.View;
-                    if (StructureHeld(part.View)) { waits = true; return part.View; }
-                }
-                var view = build();
-                if (part.View?.Parent is Panel place) { Grid.SetColumn(view, Grid.GetColumn(part.View)); place.Children[place.Children.IndexOf(part.View)] = view; }
-                card.Parts[name] = (content, view); built = true;
-                return view;
+                case MightyStructure.CardKind.Request:
+                    key = (heading, item.Request, item.Input, item.NodeId, Open("request", item.RunId), requestFolds, language);
+                    build = () => StructureRequestCard(item, heading, requestFolds);
+                    break;
+                case MightyStructure.CardKind.Execution:
+                    key = (item.Ordinal, item.Status, item.Tally, item.Message, activity, item.Finished, Open("message", item.RunId), messageFolds, item.ExecutionNodeId, item.NodeId, language);
+                    build = () => StructureExecution(item, messageFolds);
+                    break;
+                case MightyStructure.CardKind.Result:
+                    key = (item.Status, item.Finished, item.Answer, Open("answer", item.RunId), item.ExecutionNodeId, item.NodeId, language);
+                    build = () => StructureResult(item);
+                    break;
+                case MightyStructure.CardKind.Summary:
+                    var line = MightyStructure.Fold.ResultLine(item);
+                    key = ((heading, item.Request, item.Input, item.NodeId, Open("request", item.RunId), requestFolds, language), (item.Ordinal, item.Status, item.Tally, item.Message, activity, item.Finished, Open("message", item.RunId), messageFolds), (item.ExecutionNodeId, line));
+                    build = () => StructureSummary(item, heading, requestFolds, messageFolds, line);
+                    break;
+                default:
+                    var node = card.Node!; var open = Open("node", node.NodeId); var nodeWidth = MightyStructure.NodeTextWidth(width, node.Depth);
+                    var folds = Folds(node.Prompt, MightyStructure.PromptLines, StructurePromptSize, nodeWidth) || Folds(node.Output, MightyStructure.OutputLines, StructureOutputSize, nodeWidth) || node.Activity.Count > 1;
+                    var model = node.Model is { } named ? ModelUsageFormat.ShortName(named, catalog, versioned: true) : null;
+                    key = (node, card.Parent, open, folds, model, language);
+                    build = () => StructureNodeCard(node, card.Parent, open, folds, model);
+                    break;
             }
-            card.View.Width = free ? 3 * width + 2 * DesignMetrics.Spacing.Lg : double.NaN;
-            card.View.HorizontalAlignment = free ? HorizontalAlignment.Left : HorizontalAlignment.Stretch;
-            if (key.Folded)
+            if (structureCards.TryGetValue(card.Id, out var part))
             {
-                var answer = MightyStructure.Fold.ResultLine(item);
-                var folded = Part("folded", (heading, item.Status, item.Tally, item.Input, answer, language), () => StructureFoldedCard(item, heading, answer));
-                if (reframed) { card.View.Children.Clear(); Adopt(card.View, folded); }
+                if (Equals(part.Key, key)) return (part.View, false);
+                if (StructureHeld(part.View)) { structureDeferred = true; return (part.View, false); }
             }
-            else
-            {
-                var textWidth = width - 2 * DesignMetrics.Inset.GraphBlockBodyH;
-                var row = free ? MightyStructure.RowFor(item) : null;
-                var open = (Request: structureExpanded.Contains("request:" + item.RunId), Message: structureExpanded.Contains("message:" + item.RunId), Answer: structureExpanded.Contains("answer:" + item.RunId));
-                var requestFolds = item.Request?.Folds(MightyStructure.RequestLines, MightyStructure.CharactersPerLine(free ? textWidth - DesignMetrics.Layout.HitTarget - DesignMetrics.Spacing.Xs : textWidth, StructureTextSize)) == true;
-                var messageFolds = item.Message?.Folds(MightyStructure.MessageLines, MightyStructure.CharactersPerLine(textWidth, StructureTextSize)) == true;
-                var request = Part("request", (heading, item.Finished, item.Request, item.Input, item.NodeId, open.Request, requestFolds, row?.Request, language),
-                    () => StructureRequest(item, heading, requestFolds, row?.Request));
-                var execution = Part("execution", (item.Ordinal, item.Status, item.Tally, item.Message, string.Join('\n', item.Activity), item.Finished, open.Message, messageFolds, row?.Execution, item.ExecutionNodeId, item.NodeId, language),
-                    () => StructureExecution(item, messageFolds, row?.Execution));
-                // Until the request finished there is no result block: a free row's button shows the run instead.
-                var reveal = item.Finished ? MightyGraphBlockSize.NodeId(item.RunId, "result") : item.ExecutionNodeId;
-                var result = free || item.Finished ? Part("result", (item.Status, item.Finished, item.Answer, open.Answer, reveal, item.NodeId, row?.Result, language), () => StructureResult(item, reveal, row?.Result)) : null;
-                var head = free ? Part("head", (heading, item.Finished), () => StructureRowHead(item, heading)) : null;
-                var rail = row is not null ? Part("rail", (row.Request, row.Execution, row.Result, language), () => StructureRail(StructureRowSteps(row), width)) : null;
-                // Folds are judged at the width a sub-agent card's text really has at its depth.
-                var nodes = item.Clusters.Select(cluster => cluster.Nodes.Select(node =>
-                {
-                    var nodeOpen = structureExpanded.Contains("node:" + node.NodeId); var nodeWidth = MightyStructure.NodeTextWidth(width, node.Depth);
-                    var folds = node.Prompt?.Folds(MightyStructure.PromptLines, MightyStructure.CharactersPerLine(nodeWidth, StructurePromptSize)) == true
-                        || node.Output?.Folds(MightyStructure.OutputLines, MightyStructure.CharactersPerLine(nodeWidth, StructureOutputSize)) == true || node.Activity.Count > 1;
-                    var model = node.Model is { } id ? ModelUsageFormat.ShortName(id, key.Catalog, versioned: true) : null;
-                    return Part("node:" + node.NodeId, (node, nodeOpen, folds, model, language), () => StructureNodeCard(node, nodeOpen, folds, model));
-                }).ToList()).ToList();
-                if (reframed) { card.Clusters = new StackPanel { Spacing = DesignMetrics.Spacing.Xs, Margin = new Thickness(DesignMetrics.Spacing.Lg, 0, 0, 0) }; card.ClustersKey = ""; }
-                var clusters = card.Clusters!;
-                var shape = string.Join('|', item.Clusters.Select(cluster => string.Join(',', cluster.Nodes.Select(node => node.NodeId))).Append(language));
-                // A new tree or a new node lays the trees out again, moving their cards: not while one of them holds a press or a selection.
-                if (shape != card.ClustersKey && !card.Parts.Where(part => part.Key.StartsWith("node:", StringComparison.Ordinal) && live.Contains(part.Key)).Any(part => StructureHeld(part.Value.View)))
-                {
-                    clusters.Children.Clear();
-                    for (var index = 0; index < item.Clusters.Count; index++) clusters.Children.Add(StructureClusterBox(item.Clusters[index].Nodes.Count, nodes[index]));
-                    card.ClustersKey = shape; built = true;
-                }
-                else if (shape != card.ClustersKey) waits = true;
-                if (reframed)
-                {
-                    card.View.Children.Clear();
-                    if (free)
-                    {
-                        var view = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
-                        Adopt(view, head!); Adopt(view, rail!);
-                        var cells = card.Cells = new Grid { ColumnSpacing = DesignMetrics.Spacing.Lg };
-                        for (var index = 0; index < 3; index++) cells.ColumnDefinitions.Add(new() { Width = new GridLength(width) });
-                        Adopt(cells, request);
-                        var run = new StackPanel { Spacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Top };
-                        Adopt(run, execution); if (item.Clusters.Count > 0) run.Children.Add(clusters);
-                        Grid.SetColumn(run, 1); cells.Children.Add(run);
-                        Grid.SetColumn(result!, 2); Adopt(cells, result!);
-                        view.Children.Add(cells);
-                        AutomationProperties.SetAutomationId(view, "mighty-structure-request-" + item.RunId);
-                        card.View.Children.Add(view);
-                    }
-                    else
-                    {
-                        var stack = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
-                        Adopt(stack, request); Adopt(stack, execution);
-                        if (item.Clusters.Count > 0) stack.Children.Add(clusters);
-                        if (result is not null) Adopt(stack, result);
-                        card.View.Children.Add(stack);
-                    }
-                }
-                // The trees' place comes after the run part once the request has a tree.
-                else if ((item.Clusters.Count > 0) != (clusters.Parent is not null) && execution.Parent is Panel host)
-                {
-                    if (clusters.Parent is Panel holder) holder.Children.Remove(clusters);
-                    else host.Children.Insert(host.Children.IndexOf(execution) + 1, clusters);
-                }
-                if (free && card.Cells is { } grid) { foreach (var column in grid.ColumnDefinitions) column.Width = new GridLength(width); SizeStructureRail((StackPanel)rail!, width); }
-            }
-            foreach (var gone in card.Parts.Keys.Where(name => !live.Contains(name)).ToArray()) card.Parts.Remove(gone);
-            if (!live.Contains("result")) structureAnswers.Remove(item.RunId);
-            card.Frame = frame;
-            // A part that waited keeps the card's key open, so the next draw comes back for it.
-            card.Key = waits ? null : key;
-            if (waits) structureDeferred = true;
-            return built;
-        }
-
-        /// <summary>Moves a part that is kept into its card's new frame.</summary>
-        private static void Adopt(Panel panel, FrameworkElement part)
-        {
-            if (part.Parent is Panel old) old.Children.Remove(part);
-            panel.Children.Add(part);
+            var view = build();
+            if (part.View?.Parent is Panel place) place.Children[place.Children.IndexOf(part.View)] = view;
+            structureCards[card.Id] = (key, view);
+            return (view, true);
         }
 
         /// <summary>
-        /// A press is down in the part, or one of its texts holds a selection: built again now, the drag would lose its text and
-        /// the click its button, so the part waits until that ends (as the diagram and the timeline wait for a selection,
+        /// A press is down in the card, or one of its texts holds a selection: built again now, the drag would lose its text and
+        /// the click its button, so the card waits until that ends (as the diagram and the timeline wait for a selection,
         /// MainWindow.MightyGraph.cs:411, MainWindow.MightyTimeline.cs:216). A draw a card's own button asked for waits for nothing.
         /// </summary>
         private bool StructureHeld(FrameworkElement part) => !structureForced && (StructureInside(structurePressed, part)
             || VisualChildren(part).Any(child => child is TextBlock { SelectedText.Length: > 0 } || child is RichEditBox { FocusState: not FocusState.Unfocused } answer && answer.Document.Selection.Length != 0));
 
-        /// <summary>
-        /// What was asked. Under a phase (M/MightyStructureView.swift:345-360) its card leads with "Request N · Claude" (12 bold),
-        /// the fold button once the request finished and the reveal button; in a free row (M/MightyStructureView.swift:290-302)
-        /// its column's card holds the text beside the reveal button, the row's heading standing over the rail.
-        /// </summary>
-        private Border StructureRequest(MightyStructure.Item item, string heading, bool folds, MightyStructure.Step? step)
+        /// <summary>A free board's request (M/MightyStructureView.swift:529-546): "Request N · Claude" (12 bold) with its reveal button, and what was asked.</summary>
+        private Border StructureRequestCard(MightyStructure.Item item, string heading, bool folds)
         {
-            var name = Locale.Get("graph.structure.column.request");
-            if (step is { } stands)
-            {
-                var cell = new Grid { ColumnSpacing = DesignMetrics.Spacing.Xs };
-                cell.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); cell.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-                if (item.Request is { } asked) cell.Children.Add(StructureText(asked, "request:" + item.RunId, MightyStructure.RequestLines, StructureTextSize, folds, name));
-                var reveal = StructureRevealButton(item.NodeId, item.NodeId); reveal.VerticalAlignment = VerticalAlignment.Top;
-                Grid.SetColumn(reveal, 1); cell.Children.Add(reveal);
-                var surface = StructureSurface(cell); surface.VerticalAlignment = VerticalAlignment.Top;
-                AutomationProperties.SetName(surface, StructureStepName(name, stands));
-                return surface;
-            }
             var request = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
-            var title = StructureWords(heading, StructureTextSize, owner.brushes.Brush(DesignToken.Ink), FontWeights.Bold);
-            request.Children.Add(item.Finished ? StructureHeader(title, StructureFoldButton(item), StructureRevealButton(item.NodeId, item.NodeId)) : StructureHeader(title, StructureRevealButton(item.NodeId, item.NodeId)));
-            if (item.Request is { } text) request.Children.Add(StructureText(text, "request:" + item.RunId, MightyStructure.RequestLines, StructureTextSize, folds, name));
+            request.Children.Add(StructureHeader(StructureWords(heading, StructureTextSize, owner.brushes.Brush(DesignToken.Ink), FontWeights.Bold), StructureRevealButton(item.NodeId, item.NodeId)));
+            if (item.Request is { } text) request.Children.Add(StructureText(text, "request:" + item.RunId, MightyStructure.RequestLines, StructureTextSize, folds, Locale.Get("graph.structure.column.request")));
             var card = StructureSurface(request);
             AutomationProperties.SetAutomationId(card, "mighty-structure-request-" + item.RunId);
             AutomationProperties.SetName(card, Locale.Get("graph.structure.contentAccessibility", new Dictionary<string, string> { ["name"] = heading, ["text"] = item.Input }));
             return card;
         }
 
-        /// <summary>
-        /// A free row's heading (M/MightyStructureView.swift:281-286): 13 bold in the heading font, its fold button right after
-        /// it once the request finished. A long heading is cut so the button stays on the line.
-        /// </summary>
-        private PaneHeaderLine StructureRowHead(MightyStructure.Item item, string heading)
+        /// <summary>The run part's header line: the gears and "Run · Request N" (11 bold), the main agent's status pill and its tally (11 semibold <c>ink2</c>), and its reveal button.</summary>
+        private Grid StructureExecutionHeader(MightyStructure.Item item)
         {
-            var title = StructureWords(heading, DesignMetrics.Type.Title, owner.brushes.Brush(DesignToken.Ink), FontWeights.Bold); title.FontFamily = new FontFamily(DesignMetrics.Font.Heading);
-            AutomationProperties.SetHeadingLevel(title, Microsoft.UI.Xaml.Automation.Peers.AutomationHeadingLevel.Level2);
-            var head = new PaneHeaderLine { Spacing = DesignMetrics.Spacing.Sm };
-            head.Add(title, PaneHeaderLine.Role.Shrink);
-            if (item.Finished) head.Add(StructureFoldButton(item), PaneHeaderLine.Role.Fixed);
-            return head;
-        }
-
-        /// <summary>A free row's three steps as its rail names them (M/MightyStructureView.swift:275-279).</summary>
-        private static List<(string Title, MightyStructure.Step Step)> StructureRowSteps(MightyStructure.Row row) =>
-        [
-            (Locale.Get("graph.structure.column.request"), row.Request), (Locale.Get("graph.structure.column.execution"), row.Execution), (Locale.Get("graph.structure.column.result"), row.Result),
-        ];
-
-        /// <summary>
-        /// The run part (M/MightyStructureView.swift:381-425): the main agent's status pill, its tally (11 semibold <c>ink2</c>),
-        /// its latest reply and its last tool calls, as the diagram's run block holds them. With no <paramref name="step"/> it
-        /// names itself (the gears and "Run · Request N", 11 bold); a free row's rail already does, and its card stands at the top of its cell.
-        /// </summary>
-        private Border StructureExecution(MightyStructure.Item item, bool folds, MightyStructure.Step? step)
-        {
-            var b = owner.brushes; var ink2 = b.Brush(DesignToken.Ink2);
+            var b = owner.brushes;
             var name = Locale.Get("graph.block.executionOf", new Dictionary<string, string> { ["n"] = item.Ordinal.ToString(CultureInfo.InvariantCulture) });
             var lead = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Center };
             void Lead(FrameworkElement part, GridLength size)
             {
                 Grid.SetColumn(part, lead.ColumnDefinitions.Count); lead.ColumnDefinitions.Add(new() { Width = size }); lead.Children.Add(part);
             }
-            if (step is null)
-            {
-                // The Mac's gearshape.2 (M/MightyGraphView.swift:577).
-                var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs, VerticalAlignment = VerticalAlignment.Center };
-                label.Children.Add(MightySymbols.Create("gearshape.2", StructureOutputSize, b.Brush(DesignToken.Ink))); label.Children.Add(StructureWords(name, StructureOutputSize, b.Brush(DesignToken.Ink), FontWeights.Bold));
-                Lead(label, GridLength.Auto);
-            }
+            // The Mac's gearshape.2 (M/MightyGraphView.swift:577).
+            var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs, VerticalAlignment = VerticalAlignment.Center };
+            label.Children.Add(MightySymbols.Create("gearshape.2", StructureOutputSize, b.Brush(DesignToken.Ink))); label.Children.Add(StructureWords(name, StructureOutputSize, b.Brush(DesignToken.Ink), FontWeights.Bold));
+            Lead(label, GridLength.Auto);
             Lead(StatusPill(MightyGraphBlockModel.StateLabel(item.Status), StatusGlyph.Tone(item.Status), 18), GridLength.Auto);
             Lead(StructureTally(item), new GridLength(1, GridUnitType.Star));
-            var body = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
-            body.Children.Add(StructureHeader(lead, StructureRevealButton(item.ExecutionNodeId, item.NodeId)));
+            return StructureHeader(lead, StructureRevealButton(item.ExecutionNodeId, item.NodeId));
+        }
+
+        /// <summary>The main block's latest reply, or that it is waiting for one, and its last tool calls (M/MightyStructureView.swift:635-650).</summary>
+        private void StructureProgress(Panel body, MightyStructure.Item item, bool folds)
+        {
             if (item.Message is { } message) body.Children.Add(StructureText(message, "message:" + item.RunId, MightyStructure.MessageLines, StructureTextSize, folds, Locale.Get("graph.structure.latest")));
-            else if (!item.Finished && item.Activity.Count == 0) body.Children.Add(new TextBlock { Text = Locale.Get("graph.block.waitingResponse"), FontSize = StructureTextSize, Foreground = ink2, TextWrapping = TextWrapping.Wrap });
-            if (item.Activity.Count > 0)
-            {
-                var calls = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
-                foreach (var line in item.Activity) calls.Children.Add(StructureActivityRow(line));
-                AutomationProperties.SetName(calls, Locale.Get("graph.structure.activity"));
-                body.Children.Add(calls);
-            }
+            else if (!item.Finished && item.Activity.Count == 0) body.Children.Add(new TextBlock { Text = Locale.Get("graph.block.waitingResponse"), FontSize = StructureTextSize, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap });
+            if (item.Activity.Count == 0) return;
+            var calls = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
+            foreach (var line in item.Activity) calls.Children.Add(StructureActivityRow(line));
+            AutomationProperties.SetName(calls, Locale.Get("graph.structure.activity"));
+            body.Children.Add(calls);
+        }
+
+        /// <summary>A free board's 실행 card (M/MightyStructureView.swift:606-625): the main agent's status, tally, latest reply and tool calls, as the diagram's run block holds them.</summary>
+        private Border StructureExecution(MightyStructure.Item item, bool folds)
+        {
+            var body = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
+            body.Children.Add(StructureExecutionHeader(item));
+            StructureProgress(body, item, folds);
             var card = StructureSurface(body);
-            if (step is not null) card.VerticalAlignment = VerticalAlignment.Top;
             AutomationProperties.SetAutomationId(card, "mighty-structure-execution-" + item.RunId);
-            AutomationProperties.SetName(card, step is { } stands ? StructureStepName(name, stands) : name);
+            AutomationProperties.SetName(card, Locale.Get("graph.block.executionOf", new Dictionary<string, string> { ["n"] = item.Ordinal.ToString(CultureInfo.InvariantCulture) }));
             return card;
         }
 
@@ -817,34 +942,68 @@ public sealed partial class MainWindow
             ["agents"] = item.Tally.Agents.ToString(CultureInfo.InvariantCulture), ["tools"] = item.Tally.Tools.ToString(CultureInfo.InvariantCulture),
         }), StructureOutputSize, owner.brushes.Brush(DesignToken.Ink2), FontWeights.SemiBold);
 
-        /// <summary>
-        /// The result card (M/MightyStructureView.swift:427-448): its header words and symbol (11 bold) in the outcome's ink once
-        /// there is one, then the answer as the transcript renders a reply; without one, how the request ended (its last reply is
-        /// in the run part already). In a free row it is named by its <paramref name="step"/> and stands at the top of its cell.
-        /// </summary>
-        private Border StructureResult(MightyStructure.Item item, string revealNodeId, MightyStructure.Step? step)
+        /// <summary>The result's header words and symbol (11 bold), in the outcome's ink once there is one (M/MightyStructureView.swift:652-662).</summary>
+        private StackPanel StructureResultTitle(MightyStructure.Item item)
         {
-            structureAnswers.Remove(item.RunId);
             var b = owner.brushes; var ink = item.Finished ? b.Text(StatusGlyph.Tone(item.Status)) : b.Brush(DesignToken.Ink2);
             var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs, VerticalAlignment = VerticalAlignment.Center };
             label.Children.Add(MightySymbols.Create(item.Status switch { "error" => "exclamationmark.triangle", "stopped" => "stop.circle", _ => "checkmark.seal" }, StructureOutputSize, ink, MightySymbols.Weight.Bold));
             label.Children.Add(StructureWords(MightyGraphBlockModel.ResultTitle(item.Status), StructureOutputSize, ink, FontWeights.Bold));
+            return label;
+        }
+
+        /// <summary>
+        /// A free board's 결과 card (M/MightyStructureView.swift:548-562, 664-673): its header words, then the answer as the transcript
+        /// renders a reply; without one, how the request ended (its last reply is in the run part already) or that it is still to
+        /// come. Until the request finished there is no result block: its button shows the run instead.
+        /// </summary>
+        private Border StructureResult(MightyStructure.Item item)
+        {
+            structureAnswers.Remove(item.RunId);
+            var reveal = item.Finished ? MightyGraphBlockSize.NodeId(item.RunId, "result") : item.ExecutionNodeId;
             var body = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
-            body.Children.Add(StructureHeader(label, StructureRevealButton(revealNodeId, item.NodeId)));
+            body.Children.Add(StructureHeader(StructureResultTitle(item), StructureRevealButton(reveal, item.NodeId)));
             if (item.Answer is { } answer) body.Children.Add(StructureAnswer(item, answer));
-            else body.Children.Add(new TextBlock { Text = item.Finished ? MightyGraphBlockModel.StateLabel(item.Status) : Locale.Get("graph.structure.resultPending"), FontSize = StructureTextSize, Foreground = b.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap });
+            else body.Children.Add(new TextBlock { Text = item.Finished ? MightyGraphBlockModel.StateLabel(item.Status) : Locale.Get("graph.structure.resultPending"), FontSize = StructureTextSize, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap });
             var card = StructureSurface(body);
             AutomationProperties.SetAutomationId(card, "mighty-structure-result-" + item.RunId);
-            if (step is { } stands)
-            {
-                card.VerticalAlignment = VerticalAlignment.Top;
-                AutomationProperties.SetName(card, StructureStepName(Locale.Get("graph.structure.column.result"), stands));
-            }
             return card;
         }
 
         /// <summary>
-        /// The answer as Markdown (M/MightyStructureView.swift:628-640). Folded, its preview: whole lines with any open code
+        /// A styled board's request (M/MightyStructureView.swift:564-604): "Request N · Claude" with its reveal button and what was
+        /// asked; a rule; its 실행 part (the run's header line, latest reply and tool calls); and once it finished, how it ended on
+        /// one line (11): the answer's first line in <c>ink2</c>, else the outcome in its ink, beside the result's reveal button.
+        /// </summary>
+        private Border StructureSummary(MightyStructure.Item item, string heading, bool requestFolds, bool messageFolds, string? line)
+        {
+            var b = owner.brushes;
+            var body = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
+            body.Children.Add(StructureHeader(StructureWords(heading, StructureTextSize, b.Brush(DesignToken.Ink), FontWeights.Bold), StructureRevealButton(item.NodeId, item.NodeId)));
+            if (item.Request is { } text) body.Children.Add(StructureText(text, "request:" + item.RunId, MightyStructure.RequestLines, StructureTextSize, requestFolds, Locale.Get("graph.structure.column.request")));
+            var rule = new Border { Height = DesignMetrics.Stroke.Line, Background = b.Brush(DesignToken.Line) };
+            AutomationProperties.SetAccessibilityView(rule, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+            body.Children.Add(rule);
+            body.Children.Add(StructureExecutionHeader(item));
+            StructureProgress(body, item, messageFolds);
+            if (item.Finished)
+            {
+                var ended = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
+                ended.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); ended.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
+                ended.Children.Add(StructureResultTitle(item));
+                var words = StructureWords(line ?? MightyGraphBlockModel.StateLabel(item.Status), StructureOutputSize, line is null ? b.Text(StatusGlyph.Tone(item.Status)) : b.Brush(DesignToken.Ink2));
+                if (line is not null) ToolTipService.SetToolTip(words, line);
+                Grid.SetColumn(words, 1); ended.Children.Add(words);
+                body.Children.Add(StructureHeader(ended, StructureRevealButton(MightyGraphBlockSize.NodeId(item.RunId, "result"), item.NodeId)));
+            }
+            var card = StructureSurface(body);
+            AutomationProperties.SetAutomationId(card, "mighty-structure-request-" + item.RunId);
+            AutomationProperties.SetName(card, Locale.Get("graph.structure.contentAccessibility", new Dictionary<string, string> { ["name"] = heading, ["text"] = item.Input }));
+            return card;
+        }
+
+        /// <summary>
+        /// The answer as Markdown (M/MightyStructureView.swift:778-790). Folded, its preview: whole lines with any open code
         /// fence closed, so nothing is cut mid-line. The page scrolls, never the answer inside it.
         /// </summary>
         private FrameworkElement StructureAnswer(MightyStructure.Item item, MightyStructure.Excerpt answer)
@@ -874,33 +1033,14 @@ public sealed partial class MainWindow
         }
 
         /// <summary>
-        /// One sub-agent tree (M/MightyStructureView.swift:450-472): its cards <c>Spacing.Xs</c> apart in a dashed <c>line</c> box of
-        /// radius 8, padding <c>Spacing.Sm</c>. The trees stand <c>Spacing.Lg</c> in from the request's cards, <c>Spacing.Xs</c> apart;
-        /// <see cref="MightyStructure.NodeTextWidth"/> takes these paddings off a node's width.
-        /// </summary>
-        private Grid StructureClusterBox(int count, IReadOnlyList<FrameworkElement> cards)
-        {
-            var nodes = new StackPanel { Spacing = DesignMetrics.Spacing.Xs, Padding = new Thickness(DesignMetrics.Spacing.Sm) };
-            foreach (var node in cards) Adopt(nodes, node);
-            var outline = new Rectangle
-            {
-                RadiusX = StructureNodeCorner, RadiusY = StructureNodeCorner, Stroke = owner.brushes.Brush(DesignToken.Line), StrokeThickness = DesignMetrics.Stroke.Line,
-                StrokeDashArray = [4, 3], IsHitTestVisible = false,
-            };
-            AutomationProperties.SetAccessibilityView(outline, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
-            var box = new Grid(); box.Children.Add(nodes); box.Children.Add(outline);
-            AutomationProperties.SetName(box, Locale.Get("graph.structure.clusterAccessibility", new Dictionary<string, string> { ["count"] = count.ToString(CultureInfo.InvariantCulture) }));
-            return box;
-        }
-
-        /// <summary>
-        /// A sub-agent or task as a small card (M/MightyStructureView.swift:474-533): radius 8 on <c>card</c> with a <c>line</c>
+        /// A sub-agent or task as a small card (M/MightyStructureView.swift:675-739): radius 8 on <c>card</c> with a <c>line</c>
         /// edge and its status as a 3pt bar in its mark colour; its kind's symbol (9) in its ink, its title (11 semibold, cut last)
-        /// and "kind · model" (10 <c>ink2</c>) on one line; then what it was asked (10.5 <c>ink2</c>, two lines), its latest output
-        /// (11, six lines) and its last tool call. Opened, it shows them whole and its last few tool calls. Each level of the tree
-        /// stands <c>Spacing.Lg</c> further in, up to <see cref="MightyStructure.MaximumIndent"/>.
+        /// and "kind · model" (10 <c>ink2</c>) on one line; the block it runs under when it is nested (10 <c>ink2</c>); then what it
+        /// was asked (10.5 <c>ink2</c>, two lines), its latest output (11, six lines) and its last tool call. Opened, it shows them
+        /// whole and its last few tool calls. Each level of the tree stands <c>Spacing.Lg</c> further in, up to
+        /// <see cref="MightyStructure.MaximumIndent"/>; <see cref="MightyStructure.NodeTextWidth"/> takes the indent and the padding off.
         /// </summary>
-        private Border StructureNodeCard(MightyStructure.Node node, bool open, bool folds, string? model)
+        private Border StructureNodeCard(MightyStructure.Node node, string? parent, bool open, bool folds, string? model)
         {
             var b = owner.brushes; var task = node.Kind == "task"; var key = "node:" + node.NodeId;
             var head = new PaneHeaderLine { Spacing = DesignMetrics.Spacing.Sm };
@@ -914,6 +1054,15 @@ public sealed partial class MainWindow
                 Margin = new Thickness(DesignMetrics.Spacing.Md - BlockEdge, DesignMetrics.Spacing.Xs - BlockEdge, DesignMetrics.Spacing.Xs - BlockEdge, DesignMetrics.Spacing.Xs - BlockEdge),
             };
             body.Children.Add(head);
+            if (parent is not null)
+            {
+                var under = new Grid { ColumnSpacing = DesignMetrics.Spacing.Xs };
+                under.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); under.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
+                under.Children.Add(MightySymbols.Create("arrow.turn.down.right", DesignMetrics.Type.Small, b.Brush(DesignToken.Ink2)));
+                var words = StructureWords(Locale.Get("graph.structure.underParent", new Dictionary<string, string> { ["title"] = parent }), DesignMetrics.Type.Small, b.Brush(DesignToken.Ink2));
+                Grid.SetColumn(words, 1); under.Children.Add(words);
+                body.Children.Add(under);
+            }
             if (node.Prompt is { } prompt)
             {
                 var words = StructureSelectable(open ? prompt.Text : prompt.Preview, StructurePromptSize, DesignToken.Ink2, open ? 0 : MightyStructure.PromptLines);
@@ -948,7 +1097,7 @@ public sealed partial class MainWindow
         };
 
         /// <summary>
-        /// One tool call (M/MightyStructureView.swift:535-549): its kind's glyph (10, in a 14 column; <c>errText</c> when it
+        /// One tool call (M/MightyStructureView.swift:741-755): its kind's glyph (10, in a 14 column; <c>errText</c> when it
         /// failed, <c>accent</c> while it runs, else <c>ink2</c>) and its words on one line, 11 <c>ink2</c>, mono for a command, a
         /// read or an edit. The whole line is in the tooltip.
         /// </summary>
@@ -973,43 +1122,10 @@ public sealed partial class MainWindow
             return row;
         }
 
-        /// <summary>
-        /// A finished request folded to one compact card (M/MightyStructureView.swift:553-587): its heading (12 bold, cut last),
-        /// status pill and tally (cut first) over a chevron at the right; what was asked on one line (12); and how it ended on one
-        /// line (11): the answer's first line in <c>ink2</c>, else the outcome in its ink. The whole card opens it; a drag on it
-        /// moves the page.
-        /// </summary>
-        private Button StructureFoldedCard(MightyStructure.Item item, string heading, string? answer)
-        {
-            var b = owner.brushes; var state = MightyGraphBlockModel.StateLabel(item.Status);
-            var lead = new PaneHeaderLine { Spacing = DesignMetrics.Spacing.Sm };
-            lead.Add(StructureWords(heading, StructureTextSize, b.Brush(DesignToken.Ink), FontWeights.Bold), PaneHeaderLine.Role.Shrink);
-            lead.Add(StatusPill(state, StatusGlyph.Tone(item.Status), 18), PaneHeaderLine.Role.Fixed);
-            lead.Add(StructureTally(item), PaneHeaderLine.Role.Fill);
-            lead.Add(MightySymbols.Create("chevron.down", 10, b.Brush(DesignToken.Ink2)), PaneHeaderLine.Role.Fixed);
-            var lines = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
-            lines.Children.Add(lead);
-            lines.Children.Add(StructureWords(item.Input, StructureTextSize, b.Brush(DesignToken.Ink)));
-            lines.Children.Add(StructureWords(answer ?? state, StructureOutputSize, answer is null ? b.Text(StatusGlyph.Tone(item.Status)) : b.Brush(DesignToken.Ink2)));
-            var button = new Button
-            {
-                Content = StructureSurface(lines), MinWidth = 0, MinHeight = 0, Padding = new Thickness(0), BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(StructureCardCorner),
-                HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch,
-            };
-            owner.PaintPlainButton(button, b.Transparent, b.Transparent);
-            var hint = Locale.Get("graph.structure.unfoldCard");
-            AutomationProperties.SetAutomationId(button, "mighty-structure-folded-" + item.RunId);
-            AutomationProperties.SetName(button, Locale.Get("graph.structure.nodeAccessibility", new Dictionary<string, string> { ["title"] = heading, ["status"] = state }));
-            AutomationProperties.SetItemStatus(button, Locale.Get("graph.structure.collapsed")); AutomationProperties.SetHelpText(button, hint);
-            ToolTipService.SetToolTip(button, hint);
-            button.Click += (_, _) => { if (!structurePanned) ToggleStructureFold(item); };
-            return button;
-        }
-
         // ── parts ─────────────────────────────────────────────────────────────
 
         /// <summary>
-        /// A card of the structure (M/MightyStructureView.swift:676-680): the diagram's block card (<c>card</c>, a 1pt
+        /// A card of the structure (M/MightyStructureView.swift:824-830): the diagram's block card (<c>card</c>, a 1pt
         /// <c>line</c> edge) at radius 10, its content <c>Inset.GraphBlockBodyH</c> by <c>Spacing.Sm</c> in from the card's edge.
         /// </summary>
         private Border StructureSurface(UIElement content) => new()
@@ -1038,7 +1154,7 @@ public sealed partial class MainWindow
         };
 
         /// <summary>
-        /// A text shown in place (M/MightyStructureView.swift:682-690): wrapped to its column and selectable, at most
+        /// A text shown in place (M/MightyStructureView.swift:832-840): wrapped to its column and selectable, at most
         /// <paramref name="lines"/> lines (0: all of it). Its frame ends with its words, so the card beside them still moves the page.
         /// </summary>
         private TextBlock StructureSelectable(string text, double size, DesignToken ink, int lines)
@@ -1053,7 +1169,7 @@ public sealed partial class MainWindow
         }
 
         /// <summary>
-        /// Plain text (M/MightyStructureView.swift:614-626): its first lines folded, the whole of it (up to its cap) opened. The
+        /// Plain text (M/MightyStructureView.swift:762-776): its first lines folded, the whole of it (up to its cap) opened. The
         /// toggle shows whenever the folded lines may cut it at its width (<paramref name="folds"/>).
         /// </summary>
         private FrameworkElement StructureText(MightyStructure.Excerpt excerpt, string key, int lines, double size, bool folds, string name)
@@ -1067,7 +1183,7 @@ public sealed partial class MainWindow
             return stack;
         }
 
-        /// <summary>The toggle under a folded text (M/MightyStructureView.swift:642-654): "more" or "less", 11 bold <c>accent</c>.</summary>
+        /// <summary>The toggle under a folded text (M/MightyStructureView.swift:792-804): "more" or "less", 11 bold <c>accent</c>.</summary>
         private Button StructureMoreButton(string key, bool open)
         {
             var label = Locale.Get(open ? "graph.structure.less" : "graph.structure.more");
@@ -1080,41 +1196,26 @@ public sealed partial class MainWindow
         }
 
         /// <summary>
-        /// A card's small header button (M/MightyStructureView.swift:589-601, 656-667): plain, <c>Layout.HitTarget</c> square, its
+        /// A small button of the view (M/MightyStructureView.swift:161-174, 806-817): plain, <c>Layout.HitTarget</c> square, its
         /// 11pt symbol in <c>ink2</c>. A press that became a drag of the page is not its click.
         /// </summary>
         private Button StructureButton(string symbol, string name, string automationId, Action act) =>
             ZoomButton(MightySymbols.Create(symbol, 11, null), name, automationId, () => { if (!structurePanned) act(); });
 
-        /// <summary>The header control of an open finished request that folds it back.</summary>
-        private Button StructureFoldButton(MightyStructure.Item item)
-        {
-            var button = StructureButton("chevron.up", Locale.Get("graph.structure.foldCard"), "mighty-structure-fold-" + item.RunId, () => ToggleStructureFold(item));
-            AutomationProperties.SetItemStatus(button, Locale.Get("graph.structure.expanded"));
-            return button;
-        }
-
         /// <summary>The small header button that shows the block in the diagram.</summary>
         private Button StructureRevealButton(string nodeId, string requestNodeId) =>
             StructureButton("arrow.up.right.square", Locale.Get("graph.structure.reveal"), "mighty-structure-reveal-" + nodeId, () => RevealStructureBlock(nodeId, requestNodeId));
 
-        // An opened or folded text or request is being read: nothing follows until the reader comes back to the newest card.
-        // A request that folds as it finishes is not the user's: the follow rule judges the page it leaves (M/MightyStructureView.swift:125-131).
+        // An opened or folded text is being read: nothing follows until the reader comes back to the board's end (M/MightyStructureView.swift:434-437).
         private void ToggleStructureText(string key)
         {
             if (!structureExpanded.Add(key)) structureExpanded.Remove(key);
             structureFollow.Stop(); RedrawStructure("mighty-structure-more-" + key);
         }
 
-        private void ToggleStructureFold(MightyStructure.Item item)
-        {
-            structureUnfolded = MightyStructure.Fold.Toggled(item, structureUnfolded);
-            structureFollow.Stop(); RedrawStructure((structureUnfolded.Contains(item.RunId) ? "mighty-structure-fold-" : "mighty-structure-folded-") + item.RunId);
-        }
-
         /// <summary>
-        /// Draws the page again for one of its own buttons, which its click ends the press of. That button is built again with
-        /// its part, and focus on a control that leaves the tree moves on to the next one, which the page would bring into view
+        /// Draws the view again for one of its own buttons, which its click ends the press of. A card's button is built again with
+        /// its card, and focus on a control that leaves the tree moves on to the next one, which the page would bring into view
         /// (<see cref="ScrollViewer.BringIntoViewOnFocusChange"/>): focus waits on the page instead, and a keyboard's focus goes
         /// to the button built in the old one's place (<paramref name="automationId"/>).
         /// </summary>
@@ -1122,16 +1223,16 @@ public sealed partial class MainWindow
         {
             structurePressed = null;
             var held = structureScroll?.XamlRoot is { } root ? FocusManager.GetFocusedElement(root) as Control : null;
-            var state = held is not null && StructureInside(held, structurePage) ? held.FocusState : FocusState.Unfocused;
+            var state = held is not null && structureView is not null && StructureInside(held, structureView) ? held.FocusState : FocusState.Unfocused;
             if (state != FocusState.Unfocused) structureScroll!.Focus(FocusState.Programmatic);
             structureForced = true;
             try { RefreshMightyView(Session); } finally { structureForced = false; }
             if (state is FocusState.Unfocused or FocusState.Pointer) return;
             Container.DispatcherQueue.TryEnqueue(() =>
             {
-                if (!QueuePaneAlive || structureScroll is not { Visibility: Visibility.Visible } scroll) return;
+                if (!QueuePaneAlive || ShownStructureScroll is not { } scroll || structureView is null) return;
                 scroll.UpdateLayout();
-                VisualChildren(structurePage).OfType<Button>().FirstOrDefault(button => AutomationProperties.GetAutomationId(button) == automationId)?.Focus(state);
+                VisualChildren(structureView).OfType<Button>().FirstOrDefault(button => AutomationProperties.GetAutomationId(button) == automationId)?.Focus(state);
             });
         }
 
