@@ -81,7 +81,8 @@ internal static class CliEnvironmentVerification
         var command = Encoding.Unicode.GetString(Convert.FromBase64String(arguments[^1]));
         command = "$env:MIGHTY_ENV_FIXTURE='token-\uD55C\uAE00=fixture';$env:MIGHTY_ENV_REMOVED=$null;" + command;
         arguments[^1] = Convert.ToBase64String(Encoding.Unicode.GetBytes(command));
-        using var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+        // What is checked is the capture, not its speed: a CI runner's first PowerShell start has run past 12 s.
+        using var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         await using var child = ChildProcess.Start(ChildProcess.StartInfo(shell, arguments, Path.GetTempPath(), new Dictionary<string, string> { ["MIGHTY_ENV_REMOVED"] = "inherited-fixture" }));
         using var kill = cancel.Token.Register(child.Kill); child.Input.Close();
         var output = ProviderCatalog.ReadBoundedAsync(child.Output, WindowsShellEnvironment.MaximumOutput, cancel.Token);

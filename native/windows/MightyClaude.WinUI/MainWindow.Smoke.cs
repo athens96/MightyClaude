@@ -1111,7 +1111,15 @@ public sealed partial class MainWindow
 
         var revealed = await Settle();
         Require(revealed, $"새 결과가 입력창 바로 위에 오지 않았습니다: 카드 {pane.GraphCardFrameForSmoke(resultId)}, 이동 {pane.GraphPan}, 창 {pane.GraphViewportSizeForSmoke}");
-        var card = pane.GraphCardSizeForSmoke(resultId) ?? throw new InvalidOperationException("새 결과 카드가 그려지지 않았습니다.");
+        // The follow camera can put the card above the composer before its measured height has shrunk it, so the fit is
+        // waited for (a pass or two) rather than read at the first frame that is in place.
+        (double W, double H) card = default;
+        for (var pass = 0; pass < 20; pass++)
+        {
+            card = pane.GraphCardSizeForSmoke(resultId) ?? throw new InvalidOperationException("새 결과 카드가 그려지지 않았습니다.");
+            if (card.H < saved.Height - 0.5) break;
+            root.UpdateLayout(); await Task.Delay(50);
+        }
         var contentFit = card.H < saved.Height - 0.5 && card.H >= MightyGraphLayout.MinimumResultHeight - 0.5 && card.W <= saved.Width + 0.5;
         Require(contentFit, $"짧은 결과가 내용 높이로 줄지 않았습니다: {card.W}×{card.H}, 저장한 크기 {saved.Width}×{saved.Height}");
         var savedKept = pane.SessionForSmoke.GraphResultSize == saved;
