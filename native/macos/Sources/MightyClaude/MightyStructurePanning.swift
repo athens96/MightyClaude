@@ -2,18 +2,20 @@ import AppKit
 import MightyCore
 import SwiftUI
 
-/// Drag-to-pan for the 구조 view (`MightyStructurePan`). Placed behind the view's
-/// SwiftUI `ScrollView`, it finds the native scroll view SwiftUI draws it with and
-/// moves that scroll view's clip, the way a wheel scroll moves it, so the lazy page,
-/// its scroll bars and its page reports all see an ordinary scroll.
+/// Drag-to-pan for the 구조 view (`MightyStructurePan`). Placed behind the board's
+/// SwiftUI `ScrollView`, the page that scrolls sideways, it finds the native scroll view
+/// SwiftUI draws it with and moves that scroll view's clip, and the clip of the column
+/// pressed (`MightyStructureColumnScrolling`), the way a wheel scroll moves them, so the
+/// columns, their scroll bars and their reports all see an ordinary scroll.
 ///
 /// A local event monitor, as the diagram's camera probe uses, rather than a SwiftUI
 /// drag gesture: a gesture on the page would also take the drags that select text,
 /// and AppKit's own hit test is what knows a selectable text (a native text field
 /// inside SwiftUI's hosting) from the page around it.
 ///
-/// The same monitor scrolls the page by wheel and trackpad (`MightyStructureWheel`):
-/// left to SwiftUI, the pane dock's scroll view around every pane takes them.
+/// The same monitor scrolls the columns and the page by wheel and trackpad
+/// (`MightyStructureWheel`): left to SwiftUI, the pane dock's scroll view around every
+/// pane takes them.
 struct MightyStructurePanning: NSViewRepresentable {
     let sessionID: String
     let memory: MightyStructureMemory
@@ -27,14 +29,51 @@ struct MightyStructurePanning: NSViewRepresentable {
     static func dismantleNSView(_ probe: MightyStructurePanProbe, coordinator: ()) { probe.dispose() }
 }
 
+/// Marks a column's SwiftUI `ScrollView` for the page's probe: placed behind it, its
+/// native view finds the native scroll view the column is drawn with, and the memory
+/// keeps it (`MightyStructureMemory.columnProbes`).
+struct MightyStructureColumnScrolling: NSViewRepresentable {
+    let sessionID: String
+    let columnID: String
+    let memory: MightyStructureMemory
+
+    func makeNSView(context: Context) -> MightyStructureColumnProbe { MightyStructureColumnProbe() }
+    func updateNSView(_ probe: MightyStructureColumnProbe, context: Context) {
+        probe.columnID = columnID
+        probe.setAccessibilityIdentifier("mighty-structure-column-scroll-\(sessionID)-\(columnID)")
+        memory.columnProbes.add(probe)
+    }
+}
+
+@MainActor
+final class MightyStructureColumnProbe: NSView {
+    var columnID = ""
+    private weak var cachedScroll: NSScrollView?
+    override var isFlipped: Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    /// The column's native scroll view: the one with this probe's frame.
+    var scrollView: NSScrollView? {
+        let found = MightyStructurePanProbe.scrollView(behind: self, cached: cachedScroll)
+        cachedScroll = found
+        return found
+    }
+}
+
 @MainActor
 final class MightyStructurePanProbe: NSView {
     var memory: MightyStructureMemory?
+    /// Where a drag starts: the page's origin, and the column pressed with its origin.
+    private struct Start {
+        var page: CGPoint
+        weak var column: NSScrollView?
+        var columnID: String?
+        var columnOrigin: CGPoint
+    }
     /// A press on the page that has not moved `MightyStructurePan.clickSlop` yet, then
-    /// the drag it became. Points are the scroll view's, top-down.
+    /// the drag it became. Points are the window's.
     private enum Press {
-        case pressed(down: NSEvent, at: CGPoint, origin: CGPoint)
-        case panning(at: CGPoint, origin: CGPoint)
+        case pressed(down: NSEvent, at: CGPoint, start: Start)
+        case panning(at: CGPoint, start: Start)
     }
     private var press: Press?
     /// A click on the page that was held back while it might have become a drag,
@@ -49,12 +88,18 @@ final class MightyStructurePanProbe: NSView {
     private(set) var replayedClicks = 0
     private(set) var lastTarget: MightyStructurePan.Target?
     private(set) weak var lastHitView: NSView?
-    /// For the GUI diagnostics: wheel events that moved the page, and ones that moved
-    /// a scroll view inside it.
+    /// For the GUI diagnostics: the column the last press or wheel gesture was over.
+    private(set) var lastColumn: String?
+    /// For the GUI diagnostics: wheel events that moved the page, a column, and a scroll
+    /// view inside a card.
     private(set) var pageWheels = 0
+    private(set) var columnWheels = 0
     private(set) var innerWheels = 0
     /// The scroll view the current wheel gesture moves (`MightyStructureWheel.Tracker`).
     private weak var wheelTaker: NSScrollView?
+    /// The column the current wheel gesture is over, and its scroll view.
+    private var wheelColumnID: String?
+    private weak var wheelColumnScroll: NSScrollView?
     var isPanning: Bool { if case .panning = press { true } else { false } }
 
     override var isFlipped: Bool { true }
@@ -94,27 +139,54 @@ final class MightyStructurePanProbe: NSView {
     /// The SwiftUI scroll view this probe sits behind: the native scroll view with the
     /// probe's own frame.
     var scrollView: NSScrollView? {
-        guard let window else { return nil }
-        let frame = convert(bounds, to: nil)
+        let found = Self.scrollView(behind: self, cached: cachedScroll)
+        cachedScroll = found
+        return found
+    }
+
+    /// The native scroll view with `probe`'s frame, near it in the view tree: the one a
+    /// SwiftUI `ScrollView` is drawn with, when the probe is its background.
+    static func scrollView(behind probe: NSView, cached: NSScrollView?) -> NSScrollView? {
+        guard let window = probe.window else { return nil }
+        let frame = probe.convert(probe.bounds, to: nil)
         func matches(_ scroll: NSScrollView) -> Bool {
             let other = scroll.convert(scroll.bounds, to: nil)
             return scroll.window === window && abs(other.minX - frame.minX) < 2 && abs(other.minY - frame.minY) < 2
                 && abs(other.width - frame.width) < 2 && abs(other.height - frame.height) < 2
         }
-        if let cachedScroll, matches(cachedScroll) { return cachedScroll }
+        if let cached, matches(cached) { return cached }
         func find(_ view: NSView, depth: Int) -> NSScrollView? {
             guard depth < 24 else { return nil }
             if let scroll = view as? NSScrollView, matches(scroll) { return scroll }
             for child in view.subviews { if let found = find(child, depth: depth + 1) { return found } }
             return nil
         }
-        var ancestor = superview
+        var ancestor = probe.superview
         for _ in 0..<8 {
             guard let current = ancestor else { break }
-            if let found = find(current, depth: 0) { cachedScroll = found; return found }
+            if let found = find(current, depth: 0) { return found }
             ancestor = current.superview
         }
         return nil
+    }
+
+    /// The board's columns in `page`, each with its native scroll view.
+    func columns(in page: NSScrollView) -> [(id: String, scroll: NSScrollView)] {
+        (memory?.columnProbes.allObjects ?? []).compactMap { probe in
+            guard let scroll = probe.scrollView, scroll.isDescendant(of: page) else { return nil }
+            return (probe.columnID, scroll)
+        }
+    }
+
+    /// The column a press or a wheel at `windowPoint` belongs to: the one whose scroll
+    /// view holds the hit view, else the one whose width spans the point (its header).
+    func column(at windowPoint: CGPoint, hit: NSView?, in page: NSScrollView) -> (id: String, scroll: NSScrollView)? {
+        let all = columns(in: page)
+        if let hit, let found = all.first(where: { hit === $0.scroll || hit.isDescendant(of: $0.scroll) }) { return found }
+        return all.first { column in
+            let frame = column.scroll.convert(column.scroll.bounds, to: nil)
+            return windowPoint.x >= frame.minX && windowPoint.x < frame.maxX
+        }
     }
 
     /// The view AppKit sends a press at `windowPoint` to: the same hit test the window
@@ -133,19 +205,21 @@ final class MightyStructurePanProbe: NSView {
     /// What a press at `windowPoint` lands on, from AppKit's own hit test. Only the hit
     /// view and its ancestors count: a text view elsewhere being first responder does not.
     /// A text field or text view counts only where its laid-out text is, so the empty
-    /// width of a text's frame pans like the card around it.
+    /// width of a text's frame pans like the card around it. A column's own scroll view
+    /// is the page's: only a scroll view inside a card is an inner one.
     func target(at windowPoint: CGPoint, in scroll: NSScrollView) -> MightyStructurePan.Target {
         target(of: hitView(at: windowPoint), at: windowPoint, in: scroll)
     }
     private func target(of hit: NSView?, at windowPoint: CGPoint, in scroll: NSScrollView) -> MightyStructurePan.Target {
         guard scroll.visibleRect.contains(scroll.convert(windowPoint, from: nil)),
               let hit, hit === scroll || hit.isDescendant(of: scroll) else { return .outside }
+        let columnScrolls = columns(in: scroll).map(\.scroll)
         var view: NSView? = hit
         while let current = view, current !== scroll {
             if let text = current as? NSTextView { return Self.text(text, contains: windowPoint) ? .textOrControl : .page }
             if let field = current as? NSTextField { return Self.text(field, contains: windowPoint) ? .textOrControl : .page }
             if current is NSControl { return .textOrControl }
-            if current is NSScrollView { return .innerScroll }
+            if current is NSScrollView, !columnScrolls.contains(where: { $0 === current }) { return .innerScroll }
             view = current.superview
         }
         return .page
@@ -186,11 +260,20 @@ final class MightyStructurePanProbe: NSView {
                 clip.constrainBoundsRect(NSRect(origin: CGPoint(x: far, y: far), size: size)).origin)
     }
 
-    /// A window point in the scroll view's own space, top-down as the clip scrolls.
-    private func pointer(_ windowPoint: CGPoint, in scroll: NSScrollView) -> CGPoint {
-        let point = scroll.convert(windowPoint, from: nil)
-        let topDown = scroll.isFlipped ? point.y : scroll.bounds.height - point.y
-        return CGPoint(x: point.x, y: scroll.contentView.isFlipped ? topDown : -topDown)
+    /// The origins a board's scroll view may take: the page moves sideways only, a
+    /// column up and down only (`MightyStructurePan.confined`), a scroll view inside a
+    /// card either way.
+    func range(_ target: NSScrollView, page: NSScrollView, column: NSScrollView?) -> (minimum: CGPoint, maximum: CGPoint) {
+        let range = Self.originRange(target.contentView)
+        guard target === page || target === column else { return range }
+        return MightyStructurePan.confined(minimum: range.minimum, maximum: range.maximum, current: target.contentView.bounds.origin,
+                                           to: target === page ? .horizontal : .vertical)
+    }
+
+    /// A window point as a clip scrolls: y counted top-down when the clip counts top-down.
+    /// Window points hold still while the page and the columns move under them.
+    private static func pointer(_ windowPoint: CGPoint, for scroll: NSScrollView) -> CGPoint {
+        CGPoint(x: windowPoint.x, y: scroll.contentView.isFlipped ? -windowPoint.y : windowPoint.y)
     }
 
     private func handle(_ event: NSEvent) -> NSEvent? {
@@ -203,12 +286,11 @@ final class MightyStructurePanProbe: NSView {
         guard NSApp.isActive, window.isKeyWindow else { cancel(); return event }
         if let press {
             guard event.type != .leftMouseDown else { cancel(); return event }
-            let windowPoint = event.window === window ? event.locationInWindow
+            let point = event.window === window ? event.locationInWindow
                 : window.convertPoint(fromScreen: event.window?.convertPoint(toScreen: event.locationInWindow) ?? event.locationInWindow)
             guard let scroll = scrollView else { cancel(); return event }
-            let point = pointer(windowPoint, in: scroll)
             switch press {
-            case .pressed(let down, let at, let origin):
+            case .pressed(let down, let at, let start):
                 if event.type == .leftMouseUp {
                     // A click: it goes to what was pressed, a fold toggle or a reveal button.
                     self.press = nil
@@ -216,13 +298,14 @@ final class MightyStructurePanProbe: NSView {
                     return nil
                 }
                 guard MightyStructurePan.isDrag(from: at, to: point) else { return nil }
-                self.press = .panning(at: at, origin: origin)
+                self.press = .panning(at: at, start: start)
                 pans += 1
                 memory?.panning = true
+                memory?.movingColumn = start.columnID
                 NSCursor.closedHand.push()
-                pan(scroll, at: at, origin: origin, to: point)
-            case .panning(let at, let origin):
-                pan(scroll, at: at, origin: origin, to: point)
+                pan(scroll, at: at, start: start, to: point)
+            case .panning(let at, let start):
+                pan(scroll, at: at, start: start, to: point)
                 if event.type == .leftMouseUp {
                     self.press = nil
                     NSCursor.pop()
@@ -236,17 +319,24 @@ final class MightyStructurePanProbe: NSView {
         let target = target(of: hit, at: event.locationInWindow, in: scroll)
         lastTarget = target
         lastHitView = hit
-        let range = Self.originRange(scroll.contentView)
+        let column = target == .page ? column(at: event.locationInWindow, hit: hit, in: scroll) : nil
+        lastColumn = column?.id
         let modified = !event.modifierFlags.intersection([.control, .option, .shift, .command]).isEmpty
-        guard MightyStructurePan.mayPan(target, modified: modified,
-                                        scrollable: MightyStructurePan.scrollable(minimum: range.minimum, maximum: range.maximum)) else { return event }
-        press = .pressed(down: event, at: pointer(event.locationInWindow, in: scroll), origin: scroll.contentView.bounds.origin)
+        let scrollable = [scroll, column?.scroll].compactMap { $0 }.contains { candidate in
+            let range = range(candidate, page: scroll, column: column?.scroll)
+            return MightyStructurePan.scrollable(minimum: range.minimum, maximum: range.maximum)
+        }
+        guard MightyStructurePan.mayPan(target, modified: modified, scrollable: scrollable) else { return event }
+        press = .pressed(down: event, at: event.locationInWindow,
+                         start: Start(page: scroll.contentView.bounds.origin, column: column?.scroll, columnID: column?.id,
+                                      columnOrigin: column?.scroll.contentView.bounds.origin ?? .zero))
         return nil
     }
 
     /// A wheel or trackpad event. One that lands on the page, and the rest of a gesture
-    /// that began there, moves the page or the scroll view inside it that can still move
-    /// that way, and goes no further. Like any scroll view, an inactive window scrolls too.
+    /// that began there, moves the scroll view under the pointer that can still move that
+    /// way, and goes no further: a scroll view inside a card, the column (up and down), or
+    /// the page (sideways). Like any scroll view, an inactive window scrolls too.
     private func wheel(_ event: NSEvent) -> NSEvent? {
         let stage = MightyStructureWheel.stage(phase: event.phase.rawValue, momentumPhase: event.momentumPhase.rawValue)
         guard !disposed, let window, event.window === window, window.attachedSheet == nil, !isHiddenOrHasHiddenAncestor,
@@ -255,32 +345,41 @@ final class MightyStructurePanProbe: NSView {
             if stage == .began, let memory { _ = memory.wheel.feed(.began, overPage: false, delta: .zero, at: ProcessInfo.processInfo.systemUptime) }
             return event
         }
-        // A mouse wheel without precise deltas counts lines, as the scroll view's line scroll moves them.
-        let precise = event.hasPreciseScrollingDeltas
-        let delta = CGPoint(x: event.scrollingDeltaX * (precise ? 1 : scroll.horizontalLineScroll),
-                            y: event.scrollingDeltaY * (precise ? 1 : scroll.verticalLineScroll))
         let hit = stage == .step || stage == .began ? hitView(at: event.locationInWindow) : nil
         let overPage = hit.map { target(of: $0, at: event.locationInWindow, in: scroll) != .outside } ?? false
+        // A mouse wheel without precise deltas counts lines, as the scroll view it moves
+        // counts them: the page's sideways, the column's up and down.
+        let precise = event.hasPreciseScrollingDeltas
+        let lines = precise ? nil : (column(at: event.locationInWindow, hit: hit ?? hitView(at: event.locationInWindow), in: scroll)?.scroll ?? scroll)
+        let delta = CGPoint(x: event.scrollingDeltaX * (lines == nil ? 1 : scroll.horizontalLineScroll),
+                            y: event.scrollingDeltaY * (lines?.verticalLineScroll ?? 1))
         switch memory.wheel.feed(stage, overPage: overPage, delta: delta, at: ProcessInfo.processInfo.systemUptime) {
         case .pass: return event
         case .hold: return nil
         case .choose:
-            // Innermost first, the page last: the first that can still move this way takes it.
+            // Innermost first, then the column, the page last: the first that can still
+            // move this way takes it.
             let hitNow = hit ?? hitView(at: event.locationInWindow)
+            let column = column(at: event.locationInWindow, hit: hitNow, in: scroll)
             var candidates: [NSScrollView] = []
             var view = hitNow
             while let current = view, current !== scroll {
-                if let inner = current as? NSScrollView, current.isDescendant(of: scroll) { candidates.append(inner) }
+                if let inner = current as? NSScrollView, inner !== column?.scroll, current.isDescendant(of: scroll) { candidates.append(inner) }
                 view = current.superview
             }
+            if let column { candidates.append(column.scroll) }
             candidates.append(scroll)
             let axis = memory.wheel.axis
             let taker = candidates[MightyStructureWheel.taker(canMove: candidates.map { candidate in
-                let range = Self.originRange(candidate.contentView)
+                let range = range(candidate, page: scroll, column: column?.scroll)
                 return MightyStructureWheel.canMove(current: candidate.contentView.bounds.origin, delta: Self.topDown(delta, in: candidate),
                                                     axis: axis, minimum: range.minimum, maximum: range.maximum)
             })]
             wheelTaker = taker
+            wheelColumnID = column?.id
+            wheelColumnScroll = column?.scroll
+            lastColumn = column?.id
+            memory.movingColumn = taker === column?.scroll ? column?.id : nil
             move(taker, by: delta, axis: axis, page: scroll)
         case .move:
             move(wheelTaker ?? scroll, by: delta, axis: memory.wheel.axis, page: scroll)
@@ -294,34 +393,41 @@ final class MightyStructurePanProbe: NSView {
     }
 
     private func move(_ target: NSScrollView, by delta: CGPoint, axis: MightyStructureWheel.Axis?, page: NSScrollView) {
-        if target === page { pageWheels += 1 } else { innerWheels += 1 }
+        let column = target === wheelColumnScroll ? wheelColumnID : nil
+        if target === page { pageWheels += 1 } else if column != nil { columnWheels += 1 } else { innerWheels += 1 }
         let clip = target.contentView
-        let range = Self.originRange(clip)
+        let range = range(target, page: page, column: column == nil ? nil : target)
         let next = MightyStructureWheel.origin(current: clip.bounds.origin, delta: Self.topDown(delta, in: target), axis: axis,
                                                minimum: range.minimum, maximum: range.maximum)
         guard next != clip.bounds.origin else { return }
         let previous = clip.bounds.origin
         clip.scroll(to: next)
         target.reflectScrolledClipView(clip)
-        if target === page { judgeFollow(page, from: previous) }
+        if let column { judgeFollow(column, target, from: previous) }
     }
 
-    /// The user moved the page: the follow rule judges it now (`PageWatch.userScrolled`),
-    /// not when the page's report of it arrives.
-    private func judgeFollow(_ scroll: NSScrollView, from previous: CGPoint) {
+    /// The user moved a column: the follow rule judges it now (`ColumnWatch.userScrolled`),
+    /// not when the column's report of it arrives.
+    private func judgeFollow(_ id: String, _ scroll: NSScrollView, from previous: CGPoint) {
         let moved = scroll.contentView.bounds.origin.y - previous.y
-        memory?.follow.userScrolled(byY: Double(scroll.contentView.isFlipped ? moved : -moved))
+        memory?.columns.userScrolled(id, byY: Double(scroll.contentView.isFlipped ? moved : -moved))
     }
 
-    private func pan(_ scroll: NSScrollView, at: CGPoint, origin: CGPoint, to point: CGPoint) {
-        let clip = scroll.contentView
-        let range = Self.originRange(clip)
-        let next = MightyStructurePan.origin(start: origin, press: at, cursor: point, minimum: range.minimum, maximum: range.maximum)
-        guard next != clip.bounds.origin else { return }
-        let previous = clip.bounds.origin
-        clip.scroll(to: next)
-        scroll.reflectScrolledClipView(clip)
-        judgeFollow(scroll, from: previous)
+    /// A drag step: the grabbed point stays under the pointer, the page following it
+    /// sideways and the column pressed up and down.
+    private func pan(_ page: NSScrollView, at: CGPoint, start: Start, to point: CGPoint) {
+        for (scroll, origin) in [(page, start.page), (start.column, start.columnOrigin)] {
+            guard let scroll else { continue }
+            let clip = scroll.contentView
+            let range = range(scroll, page: page, column: start.column)
+            let next = MightyStructurePan.origin(start: origin, press: Self.pointer(at, for: scroll), cursor: Self.pointer(point, for: scroll),
+                                                 minimum: range.minimum, maximum: range.maximum)
+            guard next != clip.bounds.origin else { continue }
+            let previous = clip.bounds.origin
+            clip.scroll(to: next)
+            scroll.reflectScrolledClipView(clip)
+            if scroll === start.column, let id = start.columnID { judgeFollow(id, scroll, from: previous) }
+        }
     }
 
     private func replay(_ down: NSEvent, _ up: NSEvent) {

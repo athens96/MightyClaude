@@ -409,3 +409,106 @@ struct MightyStructureFollowTests {
         #expect(empty.following)
     }
 }
+
+/// The 보드 view's columns each scroll on their own and follow their own end.
+struct MightyStructureColumnFollowTests {
+    private typealias Page = MightyGraphFollow.Page
+    /// A column 600pt tall whose last card ends 8pt above its document's end.
+    private func page(_ column: String, origin: Double, document: Double) -> Page {
+        Page(originY: origin, visibleHeight: 600, documentHeight: document, newestID: column, newestBottom: document - 8)
+    }
+
+    @Test func aColumnAtItsEndFollowsItsOwnGrowth() {
+        // The 실행 column at its end as tool calls arrive: shown to its new end each time.
+        var watch = MightyGraphFollow.ColumnWatch()
+        #expect(watch.appeared(board: "b", newest: true, column: "execution") == .card("execution"))
+        #expect(watch.observe(board: "b", newest: true, column: "execution", page("execution", origin: 1_400, document: 2_000), userScrolling: false) == nil)
+        #expect(watch.observe(board: "b", newest: true, column: "execution", page("execution", origin: 1_400, document: 2_300), userScrolling: false) == .bottom)
+        #expect(watch.following("execution"))
+        // A short column at its top is at its end too, and follows.
+        #expect(watch.observe(board: "b", newest: true, column: "result", page("result", origin: 0, document: 200), userScrolling: false) == nil)
+        #expect(watch.following("result"))
+    }
+
+    @Test func aUsersMoveStopsItsColumnOnly() {
+        var watch = MightyGraphFollow.ColumnWatch()
+        _ = watch.observe(board: "b", newest: true, column: "execution", page("execution", origin: 1_400, document: 2_000), userScrolling: false)
+        _ = watch.observe(board: "b", newest: true, column: "request", page("request", origin: 900, document: 1_500), userScrolling: false)
+        // A wheel moves the 실행 column 200pt up: it stops; the 요청 column follows on.
+        watch.userScrolled("execution", byY: -200)
+        #expect(!watch.following("execution"))
+        #expect(watch.following("request"))
+        // Both grow: only the 요청 column is shown to its end; the reader of 실행 stays.
+        #expect(watch.observe(board: "b", newest: true, column: "execution", page("execution", origin: 1_200, document: 2_400), userScrolling: false) == nil)
+        #expect(watch.observe(board: "b", newest: true, column: "request", page("request", origin: 900, document: 1_800), userScrolling: false) == .bottom)
+        // A scroll the system reports in one column is that column's.
+        #expect(watch.observe(board: "b", newest: true, column: "request", page("request", origin: 600, document: 1_800), userScrolling: true) == nil)
+        #expect(!watch.following("request"))
+        // Coming back to its end resumes the column's follow.
+        #expect(watch.observe(board: "b", newest: true, column: "execution", page("execution", origin: 1_800, document: 2_400), userScrolling: false) == nil)
+        #expect(watch.following("execution"))
+        #expect(!watch.following("request"))
+    }
+
+    @Test func openingATextStopsItsColumnOnly() {
+        var watch = MightyGraphFollow.ColumnWatch()
+        _ = watch.observe(board: "b", newest: true, column: "execution", page("execution", origin: 1_400, document: 2_000), userScrolling: false)
+        watch.stop("request")
+        #expect(!watch.following("request"))
+        #expect(watch.following("execution"))
+        #expect(watch.observe(board: "b", newest: true, column: "request", page("request", origin: 0, document: 1_200), userScrolling: false) == nil)
+        #expect(watch.observe(board: "b", newest: true, column: "execution", page("execution", origin: 1_400, document: 2_300), userScrolling: false) == .bottom)
+    }
+
+    @Test func aNewRequestShowsEveryColumnsEnd() {
+        var watch = MightyGraphFollow.ColumnWatch()
+        _ = watch.observe(board: "p", newest: true, column: "plan", page("plan", origin: 1_400, document: 2_000), userScrolling: false)
+        watch.userScrolled("plan", byY: -500)
+        watch.stop("execute")
+        #expect(!watch.following("plan"))
+        #expect(!watch.following("execute"))
+        // A styled pipeline's next request: the same board, every column back at its end.
+        #expect(watch.newRequest(board: "p", column: "plan") == .card("plan"))
+        #expect(watch.newRequest(board: "p", column: "execute") == .card("execute"))
+        #expect(watch.following("plan"))
+        #expect(watch.following("execute"))
+        // The column lands short of its end at first: still following, and shown again.
+        #expect(watch.observe(board: "p", newest: true, column: "plan", page("plan", origin: 900, document: 2_400), userScrolling: false) == .bottom)
+        #expect(watch.observe(board: "p", newest: true, column: "plan", page("plan", origin: 1_800, document: 2_400), userScrolling: false) == nil)
+        #expect(watch.following("plan"))
+    }
+
+    @Test func anOlderBoardFollowsNothingAndTheNewestFollowsAgain() {
+        var watch = MightyGraphFollow.ColumnWatch()
+        _ = watch.observe(board: "new", newest: true, column: "execution", page("execution", origin: 1_400, document: 2_000), userScrolling: false)
+        watch.userScrolled("execution", byY: -300)
+        // An older board opens at its columns' tops: none follows, and its growth moves nothing.
+        #expect(watch.appeared(board: "old", newest: false, column: "execution") == nil)
+        #expect(!watch.following("execution"))
+        #expect(!watch.following("result"))
+        #expect(watch.observe(board: "old", newest: false, column: "execution", page("execution", origin: 0, document: 2_000), userScrolling: false) == nil)
+        watch.stop("execution")
+        watch.userScrolled("execution", byY: 100)
+        #expect(watch.boardID == "old")
+        // Back to the newest board: every column shows its end and follows, whatever the reader did before.
+        #expect(watch.appeared(board: "new", newest: true, column: "execution") == .card("execution"))
+        #expect(watch.appeared(board: "new", newest: true, column: "result") == .card("result"))
+        #expect(watch.following("execution"))
+        // The board shown stops being the newest when a newer one arrives: it follows nothing from then.
+        #expect(watch.observe(board: "new", newest: false, column: "execution", page("execution", origin: 1_400, document: 2_300), userScrolling: false) == nil)
+        #expect(!watch.following("execution"))
+    }
+
+    @Test func comingBackShowsOnlyTheFollowingColumnsEnds() {
+        var watch = MightyGraphFollow.ColumnWatch()
+        _ = watch.observe(board: "b", newest: true, column: "execution", page("execution", origin: 1_400, document: 2_000), userScrolling: false)
+        _ = watch.observe(board: "b", newest: true, column: "request", page("request", origin: 0, document: 300), userScrolling: false)
+        watch.userScrolled("execution", byY: -400)
+        // The view shows the diagram and comes back: the same board, its columns appear again.
+        #expect(watch.appeared(board: "b", newest: true, column: "execution") == nil)
+        #expect(watch.appeared(board: "b", newest: true, column: "request") == .card("request"))
+        // The reader of 실행 is judged by where the column opened.
+        #expect(watch.observe(board: "b", newest: true, column: "execution", page("execution", origin: 1_400, document: 2_000), userScrolling: false) == nil)
+        #expect(watch.following("execution"))
+    }
+}
