@@ -244,7 +244,9 @@ private struct PaneDockTab: View {
                     else if session.kind == FilePaneKind.kind { Image(systemName: "folder").font(.system(size: 10)) }
                     else { ProviderIcon(provider: session.provider, size: 10) }
                 }
-                Text(session.title).font(.system(size: 11, weight: selected ? .semibold : .regular)).lineLimit(1).frame(maxWidth: 125).help(session.titleHelp)
+                // The shown pane's name lives only here (its header has the status), so its tab gives it more room.
+                Text(session.title).font(.system(size: 11, weight: selected ? .semibold : .regular)).lineLimit(1).truncationMode(.tail)
+                    .frame(maxWidth: selected ? 240 : 125).help(session.titleHelp)
                 if session.kind == "claude" && ProviderOptions.isBeta(session.provider) { BetaBadge() }
                 if let tone = tabTone { StatusGlyph(tone: tone, kind: session.kind, size: 12) }
             }

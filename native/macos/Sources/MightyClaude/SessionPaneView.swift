@@ -236,9 +236,10 @@ struct SessionPaneView: View {
         return WorkDashboard.card(shown, permissions: store.toolPermissions[session.id], activity: false)
     }
 
-    /// Glyph, title, a small status word in its ink, then the figures in mono, which
-    /// give way (faded at the right) before the title does; the Default | Mighty switch and
-    /// the pane's buttons stay at the right.
+    /// A small status word in its ink, then the figures in mono, which fade at the right
+    /// before the word does; the Default | Mighty switch and the pane's buttons stay at the
+    /// right. The pane's name and status glyph are on its tab right above, so they are not
+    /// said twice here.
     private var agentHeader: some View {
         let card = headerCard
         let usageModel = ModelLabel.reportedModel(session)
@@ -247,12 +248,6 @@ struct SessionPaneView: View {
         let figures = PaneHero.figures(session)
         let ticking = running && figures.contains { if case .elapsed(let timing) = $0 { timing.finishedAt == nil } else { false } }
         return HStack(spacing: DesignMetrics.Spacing.sm) {
-            StatusGlyph(tone: card.tone, kind: session.kind)
-            Text(session.title).font(.system(size: 13, weight: .bold)).tracking(-0.1).foregroundStyle(Palette.ink)
-                .lineLimit(1).truncationMode(.tail)
-                .help(session.titleTooltip ?? session.title)
-                .accessibilityAddTraits(.isHeader)
-                .layoutPriority(1)
             // A turn that is over while its background agents still run says so.
             Text(card.attention.total > 0 ? L("phone.card.attention", ["count": "\(card.attention.total)"]) : (session.status == "running" ? PlanCardSupport.backgroundStatus(session.backgroundWork) : nil) ?? Palette.word(card.tone))
                 .font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Palette.text(card.tone)).lineLimit(1).fixedSize()
@@ -279,6 +274,8 @@ struct SessionPaneView: View {
         .contentShape(Rectangle())
         .simultaneousGesture(TapGesture().onEnded { store.selectSession(session.id) })
         .accessibilityElement(children: .contain)
+        .accessibilityLabel(session.title)
+        .accessibilityAddTraits(.isHeader)
         .accessibilityIdentifier("pane-header-\(session.id)")
     }
 

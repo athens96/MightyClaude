@@ -104,10 +104,8 @@ struct SlimPaneHeader<Trailing: View>: View {
     @ViewBuilder var trailing: () -> Trailing
 
     var body: some View {
+        // The pane's name and kind mark are on its tab right above; the bar says what it is.
         HStack(spacing: DesignMetrics.Spacing.md) {
-            Image(systemName: paneSymbol(kind)).font(.system(size: 11, weight: .semibold)).accessibilityHidden(true)
-            Text(title).font(.system(size: 13, weight: .bold)).lineLimit(1).truncationMode(.tail)
-                .accessibilityAddTraits(.isHeader)
             Text(subtitle).font(.system(size: 11.5)).lineLimit(1).truncationMode(.tail)
             Spacer(minLength: DesignMetrics.Spacing.sm)
             if let status { HeroStatusPill(text: status, ink: Palette.onStatus) }
@@ -118,6 +116,8 @@ struct SlimPaneHeader<Trailing: View>: View {
         .background(Palette.idle, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
         .padding(.horizontal, DesignMetrics.Spacing.xs).padding(.top, DesignMetrics.Spacing.xs).padding(.bottom, DesignMetrics.Spacing.xxs)
         .accessibilityElement(children: .contain)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(.isHeader)
     }
 }
 
