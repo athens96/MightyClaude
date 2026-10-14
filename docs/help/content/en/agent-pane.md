@@ -105,7 +105,7 @@ Use the {{ui:graph.view.diagram}} | {{ui:graph.view.timeline}} switch at the top
 ![[agent-timeline]]
 
 ### Board {#structure}
-Pick {{ui:graph.view.structure}} on the same switch to see requests as a kanban board. The Windows app still has the earlier layout: every request laid out under its steps in columns, finished requests folded to one line, moved by dragging an empty spot.
+Pick {{ui:graph.view.structure}} on the same switch to see requests as a kanban board.
 - The view shows one thing at a time: one request in a pane without a style, one pipeline in a pane that uses a style. A pipeline is a run of requests whose phase only moves forward; a request whose phase goes back before the previous request's starts a new pipeline.
 - ◀ {{ui:graph.structure.board.previous}} and ▶ {{ui:graph.structure.board.next}} at the top step back and forth. Click the title between them, such as "Request 3 / 7", to open the list with each one's number, title, status and steps, and pick any of them.
 - Below that is the progress: the status and the first line, then the step chips joined by lines. In a pane without a style they are {{ui:graph.structure.column.request}} → {{ui:graph.structure.column.execution}} → {{ui:graph.structure.column.result}}; in a pane that uses a style, the mode's phases. Finished steps are green, the current one is in the accent colour and the rest are grey.

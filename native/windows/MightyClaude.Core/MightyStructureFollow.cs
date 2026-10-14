@@ -40,9 +40,25 @@ public static class MightyStructureFollow
         private const int ShowTries = 3;
         /// <summary>The page came back without following: its first report says where the reader is.</summary>
         private bool judging;
+        /// <summary>The user's moves since the last report (<see cref="UserScrolled"/>).</summary>
+        private double userMove;
 
         /// <summary>The user opened or folded a text: they are reading, nothing follows.</summary>
         public void Stop() { Following = false; showing = null; judging = false; }
+
+        /// <summary>
+        /// The user moved the page by <paramref name="dy"/> points (top-down) with a wheel, a touchpad, a key or a drag
+        /// (M/MightyCore/MightyGraphFollow.swift:182-202). Judged at once, from the last report moved by all such moves since, like
+        /// a report of a scroll the user is making: the page's own report of the move may arrive late, or together with a layout
+        /// change, and must not keep a reader who left the newest card following. Before any report there is nothing to judge from.
+        /// </summary>
+        public void UserScrolled(double dy)
+        {
+            showing = null; judging = false;
+            if (last is null) return;
+            userMove += dy;
+            Following = (last with { OriginY = last.OriginY + userMove }).AtNewest;
+        }
 
         /// <summary>The view appeared again: a following reader is shown the newest card; any other reader follows from the first report if the page opened at the newest card.</summary>
         public Scroll? Appeared(string? newestId)
@@ -70,7 +86,7 @@ public static class MightyStructureFollow
         /// </summary>
         public Scroll? Observe(Page page, bool userScrolling)
         {
-            var previous = last; last = page;
+            var previous = last; last = page; userMove = 0;
             if (judging) { judging = false; Following = page.AtNewest; return null; }
             if (userScrolling) { showing = null; Following = page.AtNewest; return null; }
             if (previous is not null && page.Moved(previous) && !page.LaidOut(previous) && showing is null) { Following = page.AtNewest; return null; }

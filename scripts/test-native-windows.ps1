@@ -248,7 +248,7 @@ try {
         $msg = "addPaneMenu.shortcuts 값이 'Ctrl+O, Ctrl+N'이 아닙니다: $($ap.shortcuts)"
         Write-SmokeAnnotation $msg; throw $msg
     }
-    foreach ($key in @("modePersists", "groupAndRowExpansion", "sameTranscriptActions", "resultFilesOpenSharedPreview", "unchangedRefreshKeepsControls", "diagramAndDraftPreserved", "structureFoldAndReveal", "historyAffordance", "narrowToolbar")) {
+    foreach ($key in @("modePersists", "groupAndRowExpansion", "sameTranscriptActions", "resultFilesOpenSharedPreview", "unchangedRefreshKeepsControls", "diagramAndDraftPreserved", "structureBoardAndReveal", "historyAffordance", "narrowToolbar")) {
         if ($result.mightyTimeline.$key -ne $true) { throw "Mighty timeline smoke failed: mightyTimeline.$key" }
     }
     $mg = $result.mightyGraph

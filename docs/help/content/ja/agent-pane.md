@@ -105,7 +105,7 @@ Mighty表示の上部にある{{ui:graph.view.diagram}} | {{ui:graph.view.timeli
 ![[agent-timeline]]
 
 ### ボード {#structure}
-同じ切り替えで{{ui:graph.view.structure}}を選ぶと、リクエストをかんばんボードで表示できます。Windows アプリはまだ以前のレイアウトです。すべてのリクエストをステップごとの列に並べ、終わったリクエストは1行に折りたたまれ、何もない場所をドラッグして動かします。
+同じ切り替えで{{ui:graph.view.structure}}を選ぶと、リクエストをかんばんボードで表示できます。
 - 表示は一度に一つです。スタイルのないペインではリクエスト一つ、スタイルを使うペインではパイプライン一つです。パイプラインはフェーズが前にだけ進むリクエストのまとまりで、前のリクエストより前のフェーズに戻ったリクエストから新しいパイプラインが始まります。
 - 上部の ◀ {{ui:graph.structure.board.previous}}と ▶ {{ui:graph.structure.board.next}}で前後に移動します。その間の「リクエスト 3 / 7」のようなタイトルを押すと一覧が開き、番号、タイトル、状態、ステップを見てすぐに選べます。
 - その下に進み具合が表示されます。状態と最初の行、そして線でつながったステップのチップです。スタイルのないペインでは{{ui:graph.structure.column.request}} → {{ui:graph.structure.column.execution}} → {{ui:graph.structure.column.result}}、スタイルを使うペインではそのモードのフェーズです。終わったステップは緑、今のステップはアクセントカラー、残りはグレーです。

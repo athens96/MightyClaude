@@ -3,10 +3,12 @@ namespace MightyClaude.Core;
 public static partial class MightyStructure
 {
     /// <summary>
-    /// Finished requests fold in the structure view, so a long pane reads as a list (M/MightyCore/MightyStructureFold.swift): a
-    /// request that completed, failed or stopped shows as one compact card until the user opens it. A running or waiting
+    /// Finished requests fold in the phone's structure view, so a long pane reads as a list (M/MightyCore/MightyStructureFold.swift):
+    /// a request that completed, failed or stopped shows as one compact card until the user opens it. A running or waiting
     /// request is always open, and one that finishes folds by itself unless the user opened it by hand. The open cards are the
-    /// only state: a card is folded exactly while it is finished and the user has not opened it.
+    /// only state: a card is folded exactly while it is finished and the user has not opened it. The desktop view shows one
+    /// board at a time (<see cref="Boards"/>), so it folds no whole request; a styled board's request card still says how it
+    /// ended with <see cref="ResultLine"/>.
     /// </summary>
     public static class Fold
     {

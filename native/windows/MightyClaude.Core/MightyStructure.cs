@@ -6,8 +6,9 @@ namespace MightyClaude.Core;
 /// <summary>
 /// Mac MightyStructure (M/MightyCore/MightyStructure.swift): the Mighty graph drawn as its structure. A styled pane's
 /// requests stand under the phase each belongs to, a free pane's as one request → run → result row each, and under every
-/// request its sub-agent trees as clusters. It reads the runs the diagram and the timeline draw and stores nothing: a
-/// request's phase is worked out again from its input on every read.
+/// request its sub-agent trees as clusters. The view shows it one board at a time (<see cref="Boards"/>); the phone reads the
+/// shape as it is. It reads the runs the diagram and the timeline draw and stores nothing: a request's phase is worked out
+/// again from its input on every read.
 /// </summary>
 public static partial class MightyStructure
 {
@@ -180,8 +181,8 @@ public static partial class MightyStructure
         PromptBytes = 2_048, PromptLines = 2, OutputBytes = 4_096, OutputLines = 6;
     /// <summary>The tool calls a request's run card and a sub-agent's card list.</summary>
     public const int RequestActivity = 5, NodeActivity = 3;
-    /// <summary>The narrowest column; wider panes share their width out between the columns.</summary>
-    public const double MinimumColumnWidth = 300;
+    /// <summary>The narrowest kanban column; wider panes share their width out between the columns.</summary>
+    public const double MinimumColumnWidth = 280;
     /// <summary>A folded line is cut at this many characters; a Markdown preview holds this many per line it shows.</summary>
     public const int PreviewLineCharacters = 200;
     /// <summary>The newest records the signature follows one by one, and the bytes a streamed text grows by before it moves.</summary>
@@ -285,9 +286,9 @@ public static partial class MightyStructure
     public static int CharactersPerLine(double width, double fontSize) =>
         double.IsFinite(width) && fontSize > 0 ? Math.Max(1, (int)Math.Floor(width / fontSize * WrapFill)) : 1;
 
-    /// <summary>The width a sub-agent card's text has in a column: the cluster's indent and padding, the tree's indent at <paramref name="depth"/> and the card's own padding taken off.</summary>
+    /// <summary>The width a sub-agent card's text has in a column: the tree's indent at <paramref name="depth"/> and the card's own padding taken off.</summary>
     public static double NodeTextWidth(double column, int depth) =>
-        column - DesignMetrics.Spacing.Lg - 2 * DesignMetrics.Spacing.Sm - Math.Clamp(depth, 0, MaximumIndent) * DesignMetrics.Spacing.Lg - (DesignMetrics.Spacing.Md + DesignMetrics.Spacing.Xs);
+        column - Math.Clamp(depth, 0, MaximumIndent) * DesignMetrics.Spacing.Lg - (DesignMetrics.Spacing.Md + DesignMetrics.Spacing.Xs);
 
     /// <summary>How many lines <paramref name="text"/> takes wrapped at <paramref name="charactersPerLine"/>.</summary>
     private static int VisualLines(string text, int charactersPerLine)
