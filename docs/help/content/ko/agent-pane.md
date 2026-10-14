@@ -84,12 +84,12 @@ Codex와 Gemini는 이름이 조금 다릅니다(예: Codex `/new`, `/approvals`
 
 ## 기본 보기와 마이티 보기 {#views}
 Claude와 Codex 창 머리에는 {{ui:graph.view.default}} | {{ui:graph.view.mighty}} 전환이 있습니다. 바꿔도 대화와 입력 중인 글은 그대로입니다. 창마다 따로 기억합니다. Gemini 창은 기본 보기만 있습니다.
-- {{ui:graph.view.default}}: 대화를 위에서 아래로 읽는 기록입니다.
-- {{ui:graph.view.mighty}}: 요청, 하위 에이전트, 백그라운드 작업, 결과를 블록 다이어그램으로 보여 줍니다.
+- {{ui:graph.view.default}}: 대화를 위에서 아래로 읽는 보기입니다.
+- {{ui:graph.view.mighty}}: 요청, 하위 에이전트, 백그라운드 작업, 결과를 블록 흐름으로 보여 줍니다.
 
-### 마이티 다이어그램 {#diagram}
+### 마이티 흐름 {#diagram}
 요청마다 요청 블록이 생기고, 바로 아래 {{ui:graph.block.execution}} 블록이 붙습니다. 요청 블록에는 보낸 요청만 담기고, 에이전트가 그 요청으로 한 일(메시지, 도구 호출, 진행 상태)은 {{ui:graph.block.execution}} 블록에 나옵니다. 하위 에이전트와 백그라운드 작업은 {{ui:graph.block.execution}} 블록 아래로 갈라져 나옵니다. 끝나면 {{ui:graph.block.result}} 카드가 붙습니다.
-- 빈 곳을 끌거나 스크롤해서 다이어그램을 움직입니다. 확대·축소 단추로 50~150%로 볼 수 있습니다.
+- 빈 곳을 끌거나 스크롤해서 흐름을 움직입니다. 확대·축소 단추로 50~150%로 볼 수 있습니다.
 - 블록을 누르면 그 블록 안만 스크롤합니다. 빈 곳을 누르거나 {{kbd:Esc}}를 누르면 선택이 풀립니다.
 - 블록 오른쪽 아래 모서리를 끌면 크기가 바뀝니다. 오른쪽 클릭하면 {{ui:graph.block.resetSize}}가 있습니다. 크기는 세션마다 저장됩니다.
 - 맨 위까지 스크롤하면 {{ui:graph.history.load}}로 예전 요청을 10개씩 불러옵니다. 불러온 기록은 보기 전용입니다.
@@ -99,20 +99,20 @@ Claude와 Codex 창 머리에는 {{ui:graph.view.default}} | {{ui:graph.view.mig
 
 ![[agent-mighty-overview]]
 
-### 타임라인 {#timeline}
+### 기록 {#timeline}
 마이티 보기 위쪽의 {{ui:graph.view.diagram}} | {{ui:graph.view.timeline}} 전환으로 요청을 시간 순서의 목록으로 볼 수 있습니다. 요청 줄 다음에 {{ui:graph.block.execution}} 줄이, 그 다음에 하위 에이전트 줄이 옵니다.
 
 ![[agent-timeline]]
 
-### 구조 {#structure}
-같은 전환의 {{ui:graph.view.structure}} 항목을 고르면 요청을 단계별 열로 볼 수 있습니다.
-- 스타일을 쓰는 창은 맨 위에 그 모드의 단계가 줄지어 있고, 끝난 단계는 초록색, 지금 단계는 강조색, 남은 단계는 회색입니다.
-- 요청마다 그 요청이 속한 단계 아래에 요청 카드와 {{ui:graph.block.execution}} 카드가 차례로 놓이고, {{ui:graph.block.execution}} 카드 아래 점선 상자에 하위 에이전트 트리가 묶여 있습니다. 끝난 요청은 그 아래에 결과가 붙습니다.
-- 스타일이 없는 창은 요청마다 {{ui:graph.structure.column.request}} → {{ui:graph.structure.column.execution}} → {{ui:graph.structure.column.result}} 한 줄씩입니다.
-- 요청 카드에는 보낸 요청만 담기고, {{ui:graph.block.execution}} 카드에는 진행 상황(최근 메시지와 도구 호출)과 상태가 나옵니다. 결과, 하위 에이전트가 맡은 일과 내놓은 출력도 그 자리에서 보여 줍니다. 긴 글은 접혀 있고 {{ui:graph.structure.more}}를 누르면 그 자리에서 펼쳐집니다.
-- 카드 머리의 작은 버튼을 누르면 다이어그램에서 그 블록을 보여 줍니다.
-- 다이어그램처럼 빈 곳을 끌면 화면이 움직입니다.
-- 끝난 요청은 한 줄로 접히고, 누르면 펼쳐집니다.
+### 보드 {#structure}
+같은 전환의 {{ui:graph.view.structure}} 항목을 고르면 요청을 칸반 보드로 볼 수 있습니다. Windows 앱에는 아직 이전 모양이 있습니다. 모든 요청을 단계별 열에 펼쳐 보여 주고, 끝난 요청은 한 줄로 접히며, 빈 곳을 끌어 움직입니다.
+- 화면에는 한 번에 하나만 나옵니다. 스타일이 없는 창은 요청 하나, 스타일을 쓰는 창은 파이프라인 하나입니다. 파이프라인은 단계가 앞으로만 나아가는 요청들의 묶음이고, 요청의 단계가 앞 요청보다 이전으로 돌아가면 새 파이프라인이 시작됩니다.
+- 맨 위의 ◀ {{ui:graph.structure.board.previous}}과 ▶ {{ui:graph.structure.board.next}}으로 앞뒤를 오가고, 가운데의 "요청 3 / 7" 같은 제목을 누르면 목록이 열려 번호, 제목, 상태, 단계를 보고 바로 고를 수 있습니다.
+- 그 아래에는 진행 상황이 나옵니다. 상태와 첫 줄, 그리고 단계 칩이 선으로 이어져 있습니다. 스타일이 없는 창은 {{ui:graph.structure.column.request}} → {{ui:graph.structure.column.execution}} → {{ui:graph.structure.column.result}}, 스타일을 쓰는 창은 그 모드의 단계입니다. 끝난 단계는 초록색, 지금 단계는 강조색, 남은 단계는 회색입니다.
+- 내용은 단계마다 하나씩 나란히 놓인 칸에 담깁니다. 칸 머리에는 단계 이름과 카드 수가 있습니다. 스타일이 없는 창은 {{ui:graph.structure.column.request}} 칸에 보낸 요청, {{ui:graph.structure.column.execution}} 칸에 진행 상황(최근 메시지와 도구 호출)과 상태가 담긴 카드와 하위 에이전트마다 한 장씩의 카드, {{ui:graph.structure.column.result}} 칸에 결과가 놓입니다. 스타일을 쓰는 창은 단계 칸마다 그 단계의 요청 카드(요청, 실행 요약, 결과 한 줄)와 그 아래 하위 에이전트 카드가 놓입니다. 안쪽 하위 에이전트는 들여 쓰고 어느 블록 아래인지 적어 둡니다.
+- 긴 글은 접혀 있고 {{ui:graph.structure.more}}를 누르면 그 자리에서 펼쳐집니다. 카드 머리의 작은 버튼을 누르면 흐름에서 그 블록을 보여 줍니다.
+- 보기는 가장 최근 것에서 열리고, 그대로 두면 새 요청이나 새 파이프라인으로 따라갑니다. 이전 것을 보는 동안 새로 생기면 자리는 그대로이고 ▶ 옆에 {{ui:graph.structure.board.newRequest}} 또는 {{ui:graph.structure.board.newPipeline}} 표시가 붙습니다. 표시를 누르면 가장 최근 것으로 갑니다.
+- 흐름처럼 빈 곳을 끌거나 트랙패드와 마우스 휠로 굴리면 보드가 움직입니다. 가장 최근 것의 끝을 보고 있으면 새 내용을 따라 내려가고, 직접 옮기면 그 자리에 머뭅니다.
 
 ![[agent-structure]]
 

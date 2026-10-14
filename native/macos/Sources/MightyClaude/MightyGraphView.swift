@@ -62,10 +62,11 @@ struct MightyGraphView: View {
     @ViewState private var structureCache = StructureCache()
     private final class StructureCache {
         var signature: MightyStructure.Signature?
-        var shape = MightyStructure.Shape.free([])
+        /// The shape's boards (`MightyStructure.boards`), one shown at a time.
+        var boards: [MightyStructure.Board] = []
         /// The cards, each built again only when its own request moved.
         var items = MightyStructure.ItemCache()
-        /// The structure's open texts, kept while the pane shows another view.
+        /// The structure's board and open texts, kept while the pane shows another view.
         let memory = MightyStructureMemory()
     }
     /// The newest result's size only while its drag is in progress; the saved
@@ -240,7 +241,7 @@ struct MightyGraphView: View {
                 timeline(MightyTimeline.groups(runs))
             } else if viewMode == .structure {
                 MightyStructureView(sessionID: sessionID, provider: provider,
-                                    shape: structureShape(),
+                                    boards: structureBoards(), styleName: styleName,
                                     styleTitles: styleTitles, newestRunID: runs.last?.id, catalog: catalog, memory: structureCache.memory) { nodeID in
                     // The diagram opens with its camera on the request or block whose button was clicked.
                     onFocus()
@@ -321,19 +322,20 @@ struct MightyGraphView: View {
         .task(id: ouroborosRequest) { await ouroboros.run(ouroborosRequest) }
     }
 
-    /// The structure view's model, rebuilt only when something it draws changed, and
+    /// The structure view's boards, rebuilt only when something they draw changed, and
     /// then only the cards of the requests that moved.
-    private func structureShape() -> MightyStructure.Shape {
+    private func structureBoards() -> [MightyStructure.Board] {
         let pending = planRequest?.runId
         let signature = MightyStructure.Signature(runs: runs, style: styleEvaluator, currentPhase: guidedPhase, startingNew: guidedStartingNew,
                                                   planHistory: planHistory, pendingPlanRunID: pending)
         if structureCache.signature != signature {
             let items = structureCache.items.items(runs, signature: signature)
-            structureCache.shape = MightyStructure.make(runs: runs, style: styleEvaluator, currentPhase: guidedPhase, startingNew: guidedStartingNew,
-                                                        planHistory: planHistory, pendingPlanRunID: pending, items: items)
+            structureCache.boards = MightyStructure.boards(MightyStructure.make(runs: runs, style: styleEvaluator, currentPhase: guidedPhase,
+                                                                                startingNew: guidedStartingNew, planHistory: planHistory,
+                                                                                pendingPlanRunID: pending, items: items))
             structureCache.signature = signature
         }
-        return structureCache.shape
+        return structureCache.boards
     }
 
     /// Every camera re-aim goes through one token sequence, so a second one

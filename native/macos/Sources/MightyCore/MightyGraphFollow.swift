@@ -179,10 +179,27 @@ public enum MightyGraphFollow {
         private static let showTries = 3
         /// The page came back without following: its first report says where the reader is.
         private var judging = false
+        /// The user's moves since the last report (`userScrolled`).
+        private var userMove: Double = 0
         public init() {}
 
         /// The user opened or folded a text: they are reading, nothing follows.
         public mutating func stop() { following = false; showing = nil; judging = false }
+        /// The user moved the page by `dy` points (top-down) with a wheel, a trackpad or a
+        /// drag. Judged at once, from the last report moved by all such moves since, like a
+        /// report of a scroll the user is making: the page's own report of the move may
+        /// arrive late, after the move's grace, or together with a layout change, and must
+        /// not keep a reader who left the newest card following. That report is still
+        /// judged against the last one, as before. Before any report there is nothing to
+        /// judge from.
+        public mutating func userScrolled(byY dy: Double) {
+            showing = nil
+            judging = false
+            guard var page = last else { return }
+            userMove += dy
+            page.originY += userMove
+            following = page.atNewest
+        }
         /// The view appeared again: a following reader is shown the newest card; any
         /// other reader follows from the first report if the page opened at the newest card.
         public mutating func appeared(newestID: String?) -> Scroll? {
@@ -211,6 +228,7 @@ public enum MightyGraphFollow {
         public mutating func observe(_ page: Page, userScrolling: Bool) -> Scroll? {
             let previous = last
             last = page
+            userMove = 0
             if judging {
                 judging = false
                 following = page.atNewest

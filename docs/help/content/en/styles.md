@@ -36,7 +36,7 @@ When Claude finishes a plan in plan mode (Plan mode, or the Claude plan style), 
    - {{ui:plan.card.revise}}: write what to change and click {{ui:plan.card.reviseSend}}; Claude plans again.
    - {{ui:plan.card.cancel}}: turn the plan down and stop this task.
 
-In the Mighty diagram, the plan shows in a block under its request, and the four answers sit in the input area (in the style's panel when you use a style). The plan block fits the pane like the result card; if you resized it yourself, a {{ui:graph.result.fitToWindow}} button appears. In the default view and the timeline, the plan and its answers show together in one card above the input.
+In the Mighty flow, the plan shows in a block under its request, and the four answers sit in the input area (in the style's panel when you use a style). The plan block fits the pane like the result card; if you resized it yourself, a {{ui:graph.result.fitToWindow}} button appears. In the default view and the log, the plan and its answers show together in one card above the input.
 
 The desktop pet shows a finished plan too: when it came and the whole plan, which scrolls inside the bubble when it is long. Click {{ui:plan.card.approveAuto}}, {{ui:plan.card.approveConfirm}} or {{ui:plan.card.cancel}} right on the pet. {{ui:plan.card.revise}} opens the plan in a small window where you write the change, and {{ui:companion.plan.review}} opens the same window to read the plan at full size. That window has all four answers, and it closes once the plan is answered.
 

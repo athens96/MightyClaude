@@ -96,7 +96,7 @@ struct MightyTimelineMarker: View {
                     .padding(.top, Self.centre).padding(.bottom, -gap)
             }
             ZStack {
-                if node.ring { MightyTimelineRing(color: Palette.heroFill(node.tone)) }
+                if node.ring { MightyTimelineRing(color: Palette.heroFill(node.tone), diameter: Self.nodeSize) }
                 Circle().fill(Palette.heroFill(node.tone))
                     .overlay { Circle().strokeBorder(Palette.raised, lineWidth: 3) }
                 Image(systemName: icon).font(.system(size: 9, weight: .bold))
@@ -120,8 +120,9 @@ struct MightyTimelineMarker: View {
 /// Under Reduce Motion it holds still as two soft rings.
 struct MightyTimelineRing: View {
     let color: Color
+    /// The node's disc, which the halo starts as.
+    let diameter: CGFloat
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @ViewState private var spread = false
 
     var body: some View {
         Group {
@@ -129,12 +130,9 @@ struct MightyTimelineRing: View {
                 Circle().fill(color.opacity(0.10)).frame(width: 42, height: 42)
                     .overlay { Circle().fill(color.opacity(0.28)).frame(width: 32, height: 32) }
             } else {
-                Circle().fill(color)
-                    .scaleEffect(spread ? 1.95 : 1)
-                    .opacity(spread ? 0 : 0.55)
-                    .onAppear {
-                        withAnimation(.easeOut(duration: 1.6).repeatForever(autoreverses: false)) { spread = true }
-                    }
+                // Framed at its largest and run in Core Animation, so it never re-renders the window.
+                RippleLayer(color: color, fromScale: 1, toScale: 1.95, fromOpacity: 0.55, duration: 1.6)
+                    .frame(width: diameter * 1.95, height: diameter * 1.95)
             }
         }
         .allowsHitTesting(false)
