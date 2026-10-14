@@ -475,9 +475,13 @@ public sealed partial class MainWindow
             DropStructureMarks(StructureHeaderMarks);
             if (StructureIndicator(board.Status, StructureHeaderMarks) is { } running) lead.Add(running, PaneHeaderLine.Role.Fixed);
             lead.Add(StatusPill(MightyGraphBlockModel.StateLabel(board.Status), StatusGlyph.Tone(board.Status), 18), PaneHeaderLine.Role.Fixed);
-            var heading = StructureWords(title, DesignMetrics.Type.Title, b.Brush(DesignToken.Ink), FontWeights.Bold); heading.FontFamily = new FontFamily(DesignMetrics.Font.Heading);
-            AutomationProperties.SetHeadingLevel(heading, Microsoft.UI.Xaml.Automation.Peers.AutomationHeadingLevel.Level2);
-            lead.Add(heading, PaneHeaderLine.Role.Shrink);
+            // A request's first line is its 요청 card right below; a pipeline's name is not on any card (M/MightyStructureView.swift:302-306).
+            if (board.Kind == MightyStructure.BoardKind.Pipeline)
+            {
+                var heading = StructureWords(title, DesignMetrics.Type.Title, b.Brush(DesignToken.Ink), FontWeights.Bold); heading.FontFamily = new FontFamily(DesignMetrics.Font.Heading);
+                AutomationProperties.SetHeadingLevel(heading, Microsoft.UI.Xaml.Automation.Peers.AutomationHeadingLevel.Level2);
+                lead.Add(heading, PaneHeaderLine.Role.Shrink);
+            }
             var steps = new Grid();
             structureChips.Clear();
             for (var index = 0; index < board.Steps.Count; index++)
@@ -1076,11 +1080,24 @@ public sealed partial class MainWindow
         private Border StructureResult(MightyStructure.Item item)
         {
             structureAnswers.Remove(item.RunId);
-            var reveal = item.Finished ? MightyGraphBlockSize.NodeId(item.RunId, "result") : item.ExecutionNodeId;
-            var body = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
-            body.Children.Add(StructureHeader(StructureResultTitle(item), StructureRevealButton(reveal, item.NodeId)));
-            if (item.Answer is { } answer) body.Children.Add(StructureAnswer(item, answer));
-            else body.Children.Add(new TextBlock { Text = item.Finished ? MightyGraphBlockModel.StateLabel(item.Status) : Locale.Get("graph.structure.resultPending"), FontSize = StructureTextSize, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap });
+            var reveal = StructureRevealButton(item.Finished ? MightyGraphBlockSize.NodeId(item.RunId, "result") : item.ExecutionNodeId, item.NodeId);
+            FrameworkElement outcome = item.Answer is { } answer ? StructureAnswer(item, answer)
+                : new TextBlock { Text = item.Finished ? MightyGraphBlockModel.StateLabel(item.Status) : Locale.Get("graph.structure.resultPending"), FontSize = StructureTextSize, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap };
+            FrameworkElement body;
+            // The column already says 결과: only an error or a stop gets a title, in its colour (M/MightyStructureView.swift:611-623).
+            if (item.Status is "error" or "stopped")
+            {
+                var titled = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
+                titled.Children.Add(StructureHeader(StructureResultTitle(item), reveal)); titled.Children.Add(outcome);
+                body = titled;
+            }
+            else
+            {
+                var plain = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
+                plain.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); plain.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+                plain.Children.Add(outcome); reveal.VerticalAlignment = VerticalAlignment.Top; Grid.SetColumn(reveal, 1); plain.Children.Add(reveal);
+                body = plain;
+            }
             var card = StructureSurface(body);
             AutomationProperties.SetAutomationId(card, "mighty-structure-result-" + item.RunId);
             return card;
