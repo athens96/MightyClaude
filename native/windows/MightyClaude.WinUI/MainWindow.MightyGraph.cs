@@ -40,6 +40,9 @@ public sealed partial class MainWindow
         private readonly TextBlock graphTotal = new() { FontSize = DesignMetrics.Type.Small, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
         private Button? zoomOutButton, zoomResetButton, zoomInButton;
         private Border? graphViewport;
+        /// <summary>The viewport's surface, which shows the resize cursor over a block's border (M/MightyGraphInteraction.swift:483-497).</summary>
+        private GraphSurface? graphSurface;
+        private ResizeEdges graphHoverEdges;
         /// <summary>The Win2D dots under the canvas, following its pan and zoom (M/MightyGraphView.swift:995-1015).</summary>
         private MightyDotGrid? graphDotGrid;
         /// <summary>The draft card's dashed accent edge, kept across redraws (M/MightyGraphView.swift:416).</summary>
@@ -62,6 +65,8 @@ public sealed partial class MainWindow
         private readonly Dictionary<string, AgentTranscript> graphTranscripts = [];
         private bool graphDeferredDraw;
         private readonly Dictionary<string, Border> graphCards = [];
+        /// <summary>The strip inside each resizable block's border, over its card (<see cref="GraphBand"/>).</summary>
+        private readonly Dictionary<string, Border> graphBands = [];
         /// <summary>The pending plan's block in the diagram, and the plan the camera last went to.</summary>
         private string? graphPlanNodeId, graphAimedPlanKey;
 
@@ -110,8 +115,14 @@ public sealed partial class MainWindow
         }
         private Windows.Foundation.Point graphDragOrigin;
         private double graphDragPanX, graphDragPanY;
-        private string? graphResultFilesRunId, graphResultFilesLastRunId, graphAimedRunId, graphAimedResultId;
-        private bool graphResultFilesClosedByHand;
+        /// <summary>
+        /// The open result-files list (Core's rule) and each of the pane's own results' files, resolved once per result
+        /// text and workspace (M/MightyGraphResultFilesView.swift:20-31).
+        /// </summary>
+        private readonly MightyGraphViewModel.ResultFilesPanel graphResultFiles = new();
+        private readonly Dictionary<string, (int Key, List<ResultFiles.ResultFile> Files)> graphResultFilesByRun = [];
+        private readonly HashSet<(string RunId, int Key)> graphResultFilesLooking = [];
+        private string? graphResultFilesRunId => graphResultFiles.SelectedRunID;
         // The newest result card's drag (macOS MightyGraphView.resize): the layout
         // it started on carries the pane limit and window fit it is kept within.
         private MightyGraphLayout? graphLayout, graphResizeLayout;
@@ -123,15 +134,33 @@ public sealed partial class MainWindow
         private bool graphResizing;
         private Windows.Foundation.Point graphResizeOrigin;
         private (double W, double H) graphResizeStart;
-        // A new result right above the composer (macOS MightyGraphView reveal):
-        // the rule is Core's; the pane's own runs, running state, draft and
-        // viewport as last drawn are what it compares. Null progress is a view
-        // just shown, whose runs were not watched finishing.
-        private MightyGraphCamera.ResultReveal graphReveal = new();
-        private List<MightyGraphCamera.ResultReveal.RunProgress>? graphRunProgress;
-        private bool graphWasRunning, graphDraftWasEmpty = true;
-        private (double W, double H)? graphLastViewport;
-        private string? graphRevealPendingId;
+        /// <summary>
+        /// The sides a drag moves (the corner handle's are the right and the bottom) and where the card stood when it began;
+        /// and the corner across from them, as a point of the viewport, which the camera keeps where it was once the layout
+        /// carries the new size (M/MightyGraphInteraction.swift:305-336).
+        /// </summary>
+        private ResizeEdges graphResizeEdges = ResizeEdges.BottomRight;
+        private (double X, double Y) graphResizeCardOrigin;
+        private (string NodeID, (double X, double Y) Anchor, (double X, double Y) Unit)? graphResizeAnchor, graphResizePin;
+        // The follow camera (M/MightyCore/MightyGraphFollow.swift): the rule is Core's. The run ids as last drawn (null before
+        // the first pass), the block it keeps above the composer, a camera target that has not landed yet (a null block is
+        // the followed one) and the time of the user's last own move are what the pass after each layout gives it.
+        private readonly MightyGraphFollow.Watch graphFollow = new();
+        private List<string>? graphRunIds;
+        private string? graphFollowTargetId;
+        private (string? NodeID, bool AlignTop)? graphAim;
+        private long graphUserMoveAt = long.MinValue / 2;
+        private bool graphCameraPassQueued;
+        /// <summary>
+        /// The net under every camera rule (M/MightyCore/MightyGraphCamera.swift:245-288): a layout pass that left no block on
+        /// screen under a camera nobody moved. A verdict withheld while the user was busy is asked for again, a few times.
+        /// </summary>
+        private readonly MightyGraphCamera.StrandedWatch graphStranded = new();
+        private int graphStrandedRetries;
+        private const int GraphStrandedRetries = 6;
+        private IReadOnlyList<MightyGraphRun>? graphDrawnRuns;
+        /// <summary>Wheel turns and the tail of a drag still belong to the user (M/MightyGraphInteraction.swift:244).</summary>
+        private const int GraphUserMoveGrace = 500;
         // The newest result card's natural height (chrome, header and answer),
         // measured as drawn; the layout fits the card to it under its cap.
         private readonly Dictionary<string, double> graphResultHeights = [];
@@ -189,7 +218,7 @@ public sealed partial class MainWindow
             graphCanvas.RenderTransform = new TransformGroup { Children = { graphScale, graphPan } };
             // The page surface edge to edge (no radius) with the dot grid under the blocks.
             var dots = graphDotGrid = new MightyDotGrid(owner.brushes.Brush(DesignToken.Line));
-            var surface = new Grid(); surface.Children.Add(dots.View); surface.Children.Add(graphCanvas);
+            var surface = graphSurface = new GraphSurface(); surface.Children.Add(dots.View); surface.Children.Add(graphCanvas);
             graphViewport = new Border { Child = surface, Background = owner.brushes.Brush(DesignToken.Page) };
             // Every camera move (pan, zoom, a re-aim, older requests loaded above) moves the dots with it.
             void FollowCamera() => dots.Follow(graphScale.ScaleX, graphPan.X, graphPan.Y);
@@ -212,7 +241,13 @@ public sealed partial class MainWindow
             graphViewport.PointerPressed += OnGraphPointerPressed;
             graphViewport.PointerMoved += OnGraphPointerMoved;
             graphViewport.PointerReleased += OnGraphPointerReleased;
-            graphViewport.PointerCaptureLost += (_, _) => { graphDragging = false; if (graphResizing) EndResultResize(MightyGraphLayout.ResizePhase.Cancelled, null); };
+            graphViewport.PointerCaptureLost += (_, _) =>
+            {
+                EndGraphDrag();
+                if (graphResizing) { EndResultResize(MightyGraphLayout.ResizePhase.Cancelled, null); ShowGraphResizeCursor(ResizeEdges.None); }
+            };
+            // A captured resize keeps its cursor wherever the pointer goes.
+            graphViewport.PointerExited += (_, _) => { if (!graphResizing) ShowGraphResizeCursor(ResizeEdges.None); };
             graphViewport.KeyDown += (_, args) =>
             {
                 if (args.Key != Windows.System.VirtualKey.Escape) return;
@@ -223,10 +258,10 @@ public sealed partial class MainWindow
             };
             graphViewport.IsTabStop = true;
             // A pane moved to a hidden tab stops waving its capsules, and starts again when it shows.
-            graphViewport.Loaded += (_, _) => UpdateActivityTimer();
-            graphViewport.Unloaded += (sender, _) => { if (!((FrameworkElement)sender).IsLoaded) graphActivityTimer?.Stop(); };
+            graphViewport.Loaded += (_, _) => { UpdateActivityTimer(); ScheduleOuroboros(); };
+            graphViewport.Unloaded += (sender, _) => { if (!((FrameworkElement)sender).IsLoaded) { graphActivityTimer?.Stop(); StopOuroboros(); } };
             Grid.SetRow(graphViewport, 1); graphHost.Children.Add(graphViewport);
-            BuildMightyTimeline();
+            BuildMightyTimeline(); BuildMightyStructure();
             Grid.SetRow(graphHost, 1); grid.Children.Add(graphHost);
 
             // A finished request records a graph run on this session; redraw the
@@ -383,15 +418,25 @@ public sealed partial class MainWindow
             var diagramWasHidden = graphHost.Visibility != Visibility.Visible || graphViewport?.Visibility != Visibility.Visible;
             graphHost.Visibility = mighty ? Visibility.Visible : Visibility.Collapsed;
             output.View.Visibility = mighty ? Visibility.Collapsed : Visibility.Visible;
-            var timeline = mighty && MightyTimeline.Mode(pane) == "timeline";
-            RefreshGraphPresentationSwitch(timeline);
-            if (graphViewport is not null) graphViewport.Visibility = timeline ? Visibility.Collapsed : Visibility.Visible;
-            if (mighty && !timeline && diagramWasHidden) graphDotGrid?.Redraw();
+            var presentation = mighty ? MightyTimeline.Mode(pane) : "diagram";
+            var timeline = presentation == "timeline"; var structure = presentation == "structure";
+            RefreshGraphPresentationSwitch(presentation);
+            if (graphViewport is not null) graphViewport.Visibility = timeline || structure ? Visibility.Collapsed : Visibility.Visible;
+            if (mighty && !timeline && !structure && diagramWasHidden) graphDotGrid?.Redraw();
             if (timelineScroll is not null) timelineScroll.Visibility = timeline ? Visibility.Visible : Visibility.Collapsed;
+            ShowMightyStructure(structure);
+            // The diagram's executions are read only while it shows; a read on its way stops (M/MightyGraphView.swift:320-321).
+            if (!mighty || timeline || structure) StopOuroboros();
+            // The run-id rules are watched in every view, so a send from here is followed when the diagram shows again.
+            if (mighty && (timeline || structure)) ObserveGraphRuns(pane);
             if (mighty && timeline) DrawMightyTimeline(pane);
-            else if (mighty) DrawGraph(pane);
-            // Hidden, the diagram watches nothing: a result that finishes meanwhile is not revealed.
-            else { graphReveal = new(); graphRunProgress = null; graphRevealPendingId = null; }
+            else if (mighty && structure) DrawMightyStructure(pane);
+            else if (mighty)
+            {
+                // Back to the diagram, a following camera shows the newest block again (M/MightyGraphView.swift:317-319).
+                if (diagramWasHidden && graphRunIds is not null && graphFollow.Following) PublishGraphFollow();
+                DrawGraph(pane);
+            }
             // The view changed: a waiting plan is docked or drawn by the same rule, and answered plans show
             // as the strip only outside the diagram (MainWindow.PlanCard.cs).
             RedecidePlanPlace(); RefreshPlanHistory(Session); RefreshBackgroundWork(Session);
@@ -431,25 +476,20 @@ public sealed partial class MainWindow
             var retained = (IReadOnlyList<MightyGraphRun>)(pane.GraphRuns ?? []);
             var older = GraphHistoryRuns(pane, retained);
             var runs = (IReadOnlyList<MightyGraphRun>)[.. older, .. retained];
-            var latest = MightyGraphBlockModel.LatestCompletedRun(runs);
-            List<ResultFiles.ResultFile> files = latest is null ? [] : MightyGraphBlockModel.FilesFor(latest, Workspace.Path);
-            // A new result clears a previous manual close; only one panel is open.
-            if (latest?.Id != graphResultFilesLastRunId) { graphResultFilesClosedByHand = false; graphResultFilesLastRunId = latest?.Id; }
-            graphResultFilesRunId = MightyGraphViewModel.NextResultFilesRunID(graphResultFilesRunId, graphResultFilesClosedByHand, latest?.Id, files.Count > 0);
+            // Each result card names its own request's files; the newest that names any opens its list by itself, once.
+            var files = ResolveResultFiles(retained);
+            graphResultFiles.Publish(retained.Where(run => files.ContainsKey(run.Id)).Select(run => (run.Id, files[run.Id].Count > 0)).ToList());
 
-            var viewport = graphViewport is { ActualWidth: > 0 } v ? ((double W, double H)?)(v.ActualWidth, v.ActualHeight) : null;
-            // The newest result card takes its saved size (or the window fit) kept
-            // within the pane at this zoom, so it shrinks with the pane and grows
-            // back to the saved size when the pane does. Under that cap it is as
-            // tall as its measured content; a drag in progress shows its own size.
-            var latestResultId = MightyGraphLayout.LatestResultID(runs);
-            double? resultContentHeight = graphLiveResultSize is null && latestResultId is not null && graphResultHeights.TryGetValue(latestResultId, out var measured) ? measured : null;
+            // A viewport with no height yet is none: an aim waits for one it can land in.
+            var viewport = GraphViewportSize;
             // A plan waiting for an answer is drawn where the request's result will go (MainWindow.PlanCard.cs).
             var planRunId = PlanCardSupport.DiagramPlanRunID(PendingPlan, true, runs);
-            // Answered plans hang beside the requests they belong to.
-            var layout = MightyGraphViewModel.CanvasLayout(runs, pane.Draft, pane.Status == "running", graphExpanded, graphResultFilesRunId, viewport,
-                graphZoom, graphLiveResultSize ?? pane.GraphResultSize, older.Count, ShowsHistoryBlock(pane, retained), resultContentHeight, pane.GraphBlockSizes, planRunId,
-                PlanCardSupport.DiagramRecords(pane.PlanHistory, runs), graphLivePlanSize ?? pane.GraphPlanSize);
+            // Background executions the pane's agents started outlive the request that started them. Requests read back from the
+            // session record are history: their executions are not polled again (M/MightyGraphView.swift:178-182).
+            var executions = graphExecutionLinks = OuroborosExecutionLinks.Extract(retained);
+            WatchOuroboros();
+            var layout = GraphCanvasLayout(pane, older, retained, viewport, executions);
+            graphDrawnRuns = runs;
             graphPlanNodeId = planRunId is null ? null : MightyGraphBlockSize.NodeId(planRunId, MightyGraphLayout.PlanSuffix);
             graphLayout = layout; graphLatestResultId = MightyGraphLayout.LatestResultID(runs);
             TraceGraphSmoke($"layout:nodes={layout.Nodes.Count}:size={layout.Size.W:F2}x{layout.Size.H:F2}");
@@ -462,11 +502,13 @@ public sealed partial class MainWindow
                 var at = blocks.FindIndex(block => block.Id == nodeId);
                 if (at >= 0) blocks[at] = blocks[at] with { Title = GraphRequestTitle(runs[i], i + 1) };
             }
+            for (var i = 0; i < blocks.Count; i++)
+                if (blocks[i].Kind == MightyGraphLayout.ExecutionKind) blocks[i] = ExecutionBlock(blocks[i]);
 
             var live = blocks.Select(block => block.Id).ToHashSet();
             foreach (var stale in graphCards.Keys.Where(key => !live.Contains(key)).ToArray())
             {
-                graphCards.Remove(stale); graphCardViews.Remove(stale); graphBodies.Remove(stale); graphTranscripts.Remove(stale);
+                graphCards.Remove(stale); graphCardViews.Remove(stale); graphBodies.Remove(stale); graphTranscripts.Remove(stale); graphBands.Remove(stale);
                 graphOutlines.Remove(stale);
                 if (graphOutlineViews.Remove(stale, out var oldOutline)) oldOutline.Stop?.Invoke();
                 graphBlockKinds.Remove(stale); graphTitles.Remove(stale); graphActivitySets.Remove(stale);
@@ -482,8 +524,11 @@ public sealed partial class MainWindow
             }
             // Loading older requests grows the canvas upward: shift the pan by as
             // much so nothing already on screen moves.
-            if (graphOriginY is { } previousOrigin && previousOrigin != layout.OriginY) graphPan.Y += (layout.OriginY - previousOrigin) * graphZoom;
+            if (graphOriginY is { } previousOrigin && previousOrigin != layout.OriginY) ShiftGraphPan(0, (layout.OriginY - previousOrigin) * graphZoom);
             graphOriginY = layout.OriginY;
+            // A tree wider than a request card moves the canvas's leading edge the same way (M/MightyCore/MightyGraphCamera.swift:33-42).
+            if (graphOriginX is { } previousLeading && previousLeading != layout.OriginX) ShiftGraphPan((layout.OriginX - previousLeading) * graphZoom, 0);
+            graphOriginX = layout.OriginX;
             // Edges (M/MightyGraphView.swift:372-398, M/MightyCore/MightyGraphLayout.swift:212-218): each leaves its block's
             // bottom centre, turns once on the way (26 from the block it joins, or from the one it leaves) and enters
             // the next block's top centre under an arrow head 4 to either side and 6 back.
@@ -503,13 +548,14 @@ public sealed partial class MainWindow
             desired.Add(graphQuietEdges); desired.Add(graphLiveEdges);
             foreach (var block in blocks)
             {
-                // Only a request block says where it was read from (M/MightyGraphView.swift:431).
+                // Only a request block and its 실행 block say where they were read from (M/MightyGraphView.swift:507, 516).
                 var fromRecord = LoadedFromRecord(block.Id, older);
-                var card = BuildGraphCard(block, files, pane, fromRecord && block.Kind == "request");
+                var card = BuildGraphCard(block, block.ResultFilesRunId is { } filesRun && files.TryGetValue(filesRun, out var named) ? named : [], pane, fromRecord && block.Kind is "request" or MightyGraphLayout.WorkKind);
                 Canvas.SetLeft(card, frames[block.Id].X); Canvas.SetTop(card, frames[block.Id].Y);
                 card.Width = frames[block.Id].W; card.Height = frames[block.Id].H;
                 graphCards[block.Id] = card; graphBlockKinds[block.Id] = block.Kind; desired.Add(card);
                 AddActivityOutline(block, frames[block.Id], desired);
+                if (MightyGraphLayout.IsResizable(block.Kind)) desired.Add(GraphBand(block.Id, frames[block.Id]));
                 if (block.Kind == "draft") desired.Add(DraftOutline(frames[block.Id]));
                 if (fromRecord) ToolTipService.SetToolTip(card, Locale.Get("graph.history.tag"));
             }
@@ -540,9 +586,33 @@ public sealed partial class MainWindow
             var help = MightyGraphBlockModel.ToolbarHelp(retained);
             ToolTipService.SetToolTip(graphTotal, help); AutomationProperties.SetHelpText(graphTotal, help);
             ApplyGraphSelectionStyle();
-            ReaimGraphCamera(runs, layout, frames, viewport, ObserveResultReveal(pane, retained, viewport));
+            AimGraphCamera(runs, layout, viewport);
             AutoLoadGraphHistory(pane, retained);
             UpdateActivityTimer();
+        }
+
+        /// <summary>
+        /// The diagram's own layout of the pane (M/MightyGraphView.swift:144): each request over its 실행 block, with the answered
+        /// plans, pictures and executions hung beside the flow. The diagram draws it, and the 구조 view and the run-id rules ask it
+        /// which blocks there are.
+        /// </summary>
+        private MightyGraphLayout GraphCanvasLayout(RunSession pane, IReadOnlyList<MightyGraphRun> older, IReadOnlyList<MightyGraphRun> retained, (double W, double H)? viewport, IReadOnlyList<OuroborosExecutionLink> executions)
+        {
+            var runs = (IReadOnlyList<MightyGraphRun>)[.. older, .. retained];
+            // The newest result card takes its saved size (or the window fit) kept
+            // within the pane at this zoom, so it shrinks with the pane and grows
+            // back to the saved size when the pane does. Under that cap it is as
+            // tall as its measured content; a drag in progress shows its own size.
+            var latestResultId = MightyGraphLayout.LatestResultID(runs);
+            double? resultContentHeight = graphLiveResultSize is null && latestResultId is not null && graphResultHeights.TryGetValue(latestResultId, out var measured) ? measured : null;
+            // The run that keeps its place while loaded history grows above it and trimmed runs move into it (M/MightyGraphView.swift:167-169):
+            // a trim that hands its runs to the history moves no block under the reader.
+            var pinnedStart = older.Count > 0 && graphHistory.PinnedRunID is { } pinned && runs.Select(run => run.Id).ToList().IndexOf(pinned) is >= 0 and var kept ? kept : older.Count;
+            return MightyGraphViewModel.CanvasLayout(runs, pane.Draft, pane.Status == "running", graphExpanded, graphResultFilesRunId, viewport,
+                graphZoom, graphLiveResultSize ?? pane.GraphResultSize, pinnedStart, ShowsHistoryBlock(pane, retained), resultContentHeight, GraphBlockSizes(pane),
+                PlanCardSupport.DiagramPlanRunID(PendingPlan, true, runs), PlanCardSupport.DiagramRecords(pane.PlanHistory, runs), graphLivePlanSize ?? pane.GraphPlanSize, splitsExecution: true,
+                // The pictures a step produced hang beside it (M/MightyGraphView.swift:141); requests read back from the record never change.
+                galleries: MightyGraphImages.Galleries(runs, Workspace.Path, older.Count), executions: executions.Select(link => (link.RunID, link.Key)).ToList());
         }
 
         /// <summary>A stroke that carries edges: round caps and joins, under every card, taking no input.</summary>
@@ -567,96 +637,188 @@ public sealed partial class MainWindow
             stroke.Data = geometry; stroke.Stroke = ink; stroke.StrokeThickness = width;
         }
 
-        /// One observation for the reveal rule: the pane's own runs (not those
-        /// read back from the record), its running state, its draft and the
-        /// viewport. Returns the result card to place above the composer now.
-        private string? ObserveResultReveal(RunSession pane, IReadOnlyList<MightyGraphRun> own, (double W, double H)? viewport)
-        {
-            var running = pane.Status == "running";
-            var draftEmpty = string.IsNullOrEmpty(pane.Draft);
-            var current = own.Select(r => new MightyGraphCamera.ResultReveal.RunProgress(r.Id, MightyGraphLayout.Finished(r))).ToList();
-            var shown = graphRunProgress is not null;
-            graphReveal.PaneRunning(shown && graphWasRunning, running);
-            if (shown) graphReveal.DraftChanged(graphDraftWasEmpty, draftEmpty);
-            var (holding, awaiting) = (graphReveal.HoldingID, graphReveal.AwaitingMeasure);
-            var place = graphReveal.RunsChanged(graphRunProgress ?? current, current, run => MightyGraphBlockSize.NodeId(run, "result"), graphResultHeights.ContainsKey);
-            // An answer that is never drawn is never measured: place it at its cap.
-            if (graphReveal.AwaitingMeasure && graphReveal.HoldingID is { } held && (!awaiting || held != holding)) RevealAfterTimeout(held);
-            if (graphRevealPendingId is { } pending && pending == graphReveal.HoldingID) place ??= pending;
-            graphRevealPendingId = null;
-            // A result still held above the composer stays there when the pane resizes.
-            if (place is null && shown && graphLastViewport is not null && viewport is not null && viewport != graphLastViewport) place = graphReveal.ViewportChanged();
-            graphRunProgress = current; graphWasRunning = running; graphDraftWasEmpty = draftEmpty; graphLastViewport = viewport;
-            return place;
-        }
-
-        private void RevealAfterTimeout(string nodeId) =>
-            _ = Task.Delay(300).ContinueWith(_ => Container.DispatcherQueue.TryEnqueue(() =>
-            {
-                if (!QueuePaneAlive || graphHost?.Visibility != Visibility.Visible ||
-                    owner.service.Snapshot.Sessions.FirstOrDefault(p => p.Id == id) is not { } current) return;
-                if (graphReveal.MeasureTimedOut(nodeId) is not { } place) return;
-                graphRevealPendingId = place;
-                RefreshMightyView(current);
-            }), TaskScheduler.Default);
-
         /// The newest result card's content measured a new height: the card fits
-        /// it, and a card held above the composer is placed again at that height.
+        /// it, and a following camera keeps its bottom where it was.
         private void ResultMeasured(string nodeId, double height)
         {
             TraceGraphSmoke($"result-measured:{height:F2}:previous={graphResultHeights.GetValueOrDefault(nodeId, -1):F2}");
             if (graphResizing || graphLiveResultSize is not null || !double.IsFinite(height)) return;
             if (graphResultHeights.TryGetValue(nodeId, out var known) && Math.Abs(known - height) <= 0.5) return;
             graphResultHeights.Clear(); graphResultHeights[nodeId] = height;
-            if (graphReveal.ContentMeasured(nodeId) is { } place) graphRevealPendingId = place;
             QueueGraphRefresh();
         }
 
-        /// The user's own scroll, drag or zoom, or any other re-aim: the result
-        /// above the composer is no longer followed.
-        private void CancelResultReveal() { graphReveal.Cancel(); graphRevealPendingId = null; }
-
-        /// A new request or a new result re-aims the camera the way macOS does;
-        /// <paramref name="reveal"/>, a result of the pane's own that just
-        /// finished, goes right above the composer instead.
-        private void ReaimGraphCamera(IReadOnlyList<MightyGraphRun> runs, MightyGraphLayout layout, Dictionary<string, GraphRect> frames, (double W, double H)? viewport, string? reveal)
+        /// <summary>
+        /// The camera in node coordinates, as Core's rules have it. The canvas is drawn from the diagram's own
+        /// leading edge and top, so the pan carries that origin (M/MightyCore/MightyGraphCamera.swift:33-42).
+        /// </summary>
+        private (double X, double Y) GraphCamera => (graphPan.X - (graphLayout?.OriginX ?? 0) * graphZoom, graphPan.Y - (graphLayout?.OriginY ?? 0) * graphZoom);
+        private void SetGraphCamera((double X, double Y) camera)
         {
-            if (viewport is not { } size) return;
-            var newestRunId = runs.Count > 0 ? runs[^1].Id : null;
-            var latestResultId = MightyGraphLayout.LatestResultID(runs);
-            if (reveal is not null && frames.TryGetValue(reveal, out var revealed))
-            {
-                graphAimedRunId = newestRunId; graphAimedResultId = latestResultId;
-                var place = MightyGraphCamera.CameraOffset(revealed, size, graphZoom, alignTop: false, alignBottom: true);
-                graphPan.X = place.X; graphPan.Y = place.Y;
-                return;
-            }
-            // A plan that just arrived is what the user reads next: its top at the top of the canvas.
-            var planKey = graphPlanNodeId is { } planNode ? planNode + "|" + PendingPlan?.Id : null;
-            if (planKey is not null && planKey != graphAimedPlanKey && frames.TryGetValue(graphPlanNodeId!, out var planFrame))
-            {
-                graphAimedPlanKey = planKey; graphAimedRunId = newestRunId; graphAimedResultId = latestResultId;
-                CancelResultReveal();
-                var aim = MightyGraphCamera.CameraOffset(planFrame, size, graphZoom, alignTop: true);
-                graphPan.X = aim.X; graphPan.Y = aim.Y;
-                return;
-            }
-            graphAimedPlanKey = planKey;
-            if (newestRunId == graphAimedRunId && latestResultId == graphAimedResultId) return;
-            var newResult = latestResultId is not null && latestResultId != graphAimedResultId;
-            graphAimedRunId = newestRunId; graphAimedResultId = latestResultId;
-            // The held result waits for its height, so it lands once, not twice.
-            if (latestResultId is not null && graphReveal.HoldingID == latestResultId) return;
-            var ids = layout.Nodes.Select(n => n.Id).ToHashSet();
-            var anchor = newResult && graphSelection is null
-                ? MightyGraphCamera.Anchor.Reaim(latestResultId!, true)
-                : MightyGraphCamera.ReaimAnchor(newestRunId, graphSelection, ids);
-            if (anchor.NodeID is not { } target || !frames.TryGetValue(target, out var frame)) return;
-            CancelResultReveal();
-            var camera = MightyGraphCamera.CameraOffset(frame, size, graphZoom, anchor.AlignTop);
-            graphPan.X = camera.X; graphPan.Y = camera.Y;
+            if (!double.IsFinite(camera.X) || !double.IsFinite(camera.Y)) return;
+            ShiftGraphPan(camera.X + (graphLayout?.OriginX ?? 0) * graphZoom - graphPan.X, camera.Y + (graphLayout?.OriginY ?? 0) * graphZoom - graphPan.Y);
         }
 
+        /// <summary>
+        /// Moves the pan other than by the background drag itself (a camera rule, the canvas's origin, a zoom, the wheel). A drag in
+        /// progress sets the pan from where it began, so its base moves as much: the next pointer move neither undoes this nor jumps.
+        /// </summary>
+        private void ShiftGraphPan(double dx, double dy)
+        {
+            graphPan.X += dx; graphPan.Y += dy;
+            if (graphDragging) { graphDragPanX += dx; graphDragPanY += dy; }
+        }
+        private (double W, double H)? GraphViewportSize => graphViewport is { ActualWidth: > 0, ActualHeight: > 0 } v ? (v.ActualWidth, v.ActualHeight) : null;
+        private GraphRect? GraphNodeFrame(string? nodeId) => nodeId is null ? null : graphLayout?.Nodes.FirstOrDefault(n => n.Id == nodeId)?.Frame;
+
+        /// <summary>Every re-aim the app makes (M/MightyGraphView.swift:341-347): where it lands decides whether the camera follows from there.</summary>
+        private void PublishGraphAim(MightyGraphCamera.Anchor anchor)
+        {
+            if (anchor.NodeID is not { } nodeId) return;
+            graphFollow.Stop();
+            graphAim = (nodeId, anchor.AlignTop);
+        }
+
+        /// <summary>Follow from now on, the newest block right above the composer (M/MightyGraphView.swift:350-354).</summary>
+        private void PublishGraphFollow() { graphFollow.Start(); graphAim = (null, false); }
+
+        /// <summary>The user moved the camera, or an aim landed: it follows from here only if it shows the newest block (M/MightyGraphInteraction.swift:506-519).</summary>
+        private void JudgeGraphFollow()
+        {
+            if (GraphViewportSize is { } size) graphFollow.Moved(graphFollowTargetId, GraphNodeFrame(graphFollowTargetId), GraphCamera, size, graphZoom);
+        }
+
+        /// <summary>
+        /// The camera after a layout pass (M/MightyGraphView.swift:208-210, 276-279, 304-315; M/MightyGraphInteraction.swift:513-543).
+        /// The first pass and a new request follow: the newest request's lowest block right above the composer. A plan that
+        /// just arrived is aimed at; a trim under a reader who is not following re-aims by Core's rule. A target lands once
+        /// there is a viewport and no drag or resize, and then a following camera keeps its block above the composer.
+        /// </summary>
+        private void AimGraphCamera(IReadOnlyList<MightyGraphRun> runs, MightyGraphLayout layout, (double W, double H)? viewport, bool retry = false)
+        {
+            var ids = runs.Select(r => r.Id).ToList();
+            // A later pass over the diagram as drawn has no runs of its own to observe: those may be older than what another view saw since.
+            if (!retry) ObserveGraphRuns(runs, () => layout);
+            graphFollowTargetId = MightyGraphFollow.TargetID(layout, runs) ?? MightyGraphCamera.PendingNodeID;
+            // A plan waiting for an answer is what the user has to read next: its top at the top of the canvas.
+            var planKey = graphPlanNodeId is { } planNode ? planNode + "|" + PendingPlan?.Id : null;
+            if (planKey is not null && planKey != graphAimedPlanKey) graphAim = (graphPlanNodeId, true);
+            graphAimedPlanKey = planKey;
+            if (viewport is not { } size) return;
+            ReaimStrandedGraph(layout, ids.LastOrDefault(), size, retry);
+            // A drag sets the pan itself on every move: the target waits for the release (EndGraphDrag).
+            if (graphAim is { } aim && !graphResizing && !graphDragging)
+            {
+                var requested = GraphNodeFrame(aim.NodeID);
+                // The block that was asked for, or the followed one when it is gone (M/MightyGraphView.swift:1028-1036).
+                if ((requested ?? GraphNodeFrame(graphFollowTargetId)) is { } target)
+                {
+                    // The target owns the camera now; a pin left by a drag must not pull it back.
+                    graphAim = null; graphResizePin = null;
+                    SetGraphCamera(MightyGraphFollow.CameraOffset(target, size, graphZoom, requested is not null && aim.AlignTop, false, requested is null));
+                    if (requested is null) graphFollow.Start(); else JudgeGraphFollow();
+                }
+            }
+            // A finished block drag: once the layout carries the new size, the corner across from the dragged sides is put back where it was.
+            if (graphResizePin is { } pin && !graphResizing)
+            {
+                var camera = GraphCamera;
+                if (GraphNodeFrame(pin.NodeID) is not { } frame) graphResizePin = null;
+                else if (ResizeEdgeRules.PinnedCamera(pin.Anchor, pin.Unit, frame, graphZoom) is var pinned && (Math.Abs(pinned.X - camera.X) > 0.01 || Math.Abs(pinned.Y - camera.Y) > 0.01))
+                {
+                    graphResizePin = null;
+                    SetGraphCamera(pinned);
+                }
+            }
+            FollowGraphCamera(size);
+        }
+
+        /// <summary>
+        /// The run-id rules (Core's <see cref="MightyGraphFollow.RunsChanged"/>; M/MightyGraphView.swift:300-315), applied as the runs
+        /// change in whichever view shows, so a send from the 구조 view or the timeline is followed first and a block revealed after
+        /// it still wins. <paramref name="layout"/> is the diagram's layout of these runs, built only when a trim needs its blocks.
+        /// </summary>
+        private void ObserveGraphRuns(IReadOnlyList<MightyGraphRun> runs, Func<MightyGraphLayout> layout)
+        {
+            var ids = runs.Select(r => r.Id).ToList();
+            var previous = graphRunIds; graphRunIds = ids;
+            switch (MightyGraphFollow.RunsChanged(previous, ids, graphFollow.Following))
+            {
+                // Before anything aimed it, the camera follows.
+                case MightyGraphFollow.RunChange.First: graphAim ??= (null, false); break;
+                // A new request is the user's own send: follow it, its 실행 block and everything after it.
+                case MightyGraphFollow.RunChange.Follow: PublishGraphFollow(); break;
+                case MightyGraphFollow.RunChange.Trim: PublishGraphAim(MightyGraphCamera.TrimAnchor(previous!, ids, graphSelection, layout().Nodes.Select(n => n.Id).ToHashSet())); break;
+            }
+        }
+
+        /// <summary>The run-id rules for the pane's runs as they stand, from a view that does not draw the diagram.</summary>
+        private void ObserveGraphRuns(RunSession pane)
+        {
+            var retained = (IReadOnlyList<MightyGraphRun>)(pane.GraphRuns ?? []);
+            var older = GraphHistoryRuns(pane, retained);
+            ObserveGraphRuns([.. older, .. retained], () => GraphCanvasLayout(pane, older, retained, GraphViewportSize, OuroborosExecutionLinks.Extract(retained)));
+        }
+
+        /// <summary>
+        /// The layout moved every block off screen while the camera stood still: a trim, a folded block, anything else that
+        /// shortens the diagram (M/MightyGraphInteraction.swift:337-374, M/MightyGraphView.swift:365-379). Only a settled pass
+        /// is judged; the reader goes back to the block they saw most of, and a following camera keeps its own block on screen.
+        /// </summary>
+        private void ReaimStrandedGraph(MightyGraphLayout layout, string? newestRunId, (double W, double H) size, bool retry)
+        {
+            if (!retry) graphStrandedRetries = GraphStrandedRetries;
+            var settled = graphAim is null && !graphResizing && graphResizePin is null && !graphDragging && Environment.TickCount64 - graphUserMoveAt > GraphUserMoveGrace;
+            // The pan carries the canvas's origin: rounded, the same camera reads the same after the origin moved under it.
+            var camera = GraphCamera;
+            var loss = graphStranded.Observe(layout.Nodes.Select(n => (n.Id, n.Frame)).ToList(), (Math.Round(camera.X, 2), Math.Round(camera.Y, 2)), graphZoom, size, newestRunId, settled);
+            if (loss is null)
+            {
+                // The withheld pass may have been the last one of a burst, and then no later pass would come to judge it.
+                if (graphStranded.IsWithholding && graphStrandedRetries-- > 0) QueueGraphCameraPass(GraphUserMoveGrace + 50);
+                return;
+            }
+            if (graphFollow.Following) return;
+            var nodes = layout.Nodes.Select(n => n.Id).ToHashSet();
+            // Back to the block they were reading, not somewhere they never were.
+            if (nodes.Contains(loss.LookedAtNodeID)) { PublishGraphAim(MightyGraphCamera.Anchor.Reaim(loss.LookedAtNodeID, false)); return; }
+            var anchor = MightyGraphCamera.ReaimAnchor(newestRunId, graphSelection, nodes);
+            // The net fires once per loss, so holding here would leave the blank.
+            PublishGraphAim(anchor.NodeID is null && graphFollowTargetId is { } fallback && nodes.Contains(fallback) ? MightyGraphCamera.Anchor.Reaim(fallback, true) : anchor);
+        }
+
+        /// <summary>
+        /// One follow pass (M/MightyGraphInteraction.swift:520-543): the newest block, a new viewport height or a block settling
+        /// to its height moves a following camera. Never during a drag, a resize, a pending target or the user's own scroll:
+        /// the pass waits for the user to be done.
+        /// </summary>
+        private void FollowGraphCamera((double W, double H) size)
+        {
+            if (!graphFollow.Following || graphResizing || graphDragging || graphAim is not null || graphResizePin is not null) return;
+            var quiet = Environment.TickCount64 - graphUserMoveAt;
+            if (quiet <= GraphUserMoveGrace) { QueueGraphCameraPass(GraphUserMoveGrace - quiet + 50); return; }
+            if (graphFollow.Observe(graphFollowTargetId, GraphNodeFrame(graphFollowTargetId), GraphCamera, size, graphZoom) is { } camera) SetGraphCamera(camera);
+        }
+
+        /// <summary>Another camera pass over the diagram as drawn, once the user has been still for the grace.</summary>
+        private void QueueGraphCameraPass(long milliseconds)
+        {
+            if (graphCameraPassQueued) return;
+            graphCameraPassQueued = true;
+            _ = Task.Delay(TimeSpan.FromMilliseconds(milliseconds)).ContinueWith(_ => Container.DispatcherQueue.TryEnqueue(() =>
+            {
+                graphCameraPassQueued = false;
+                if (QueuePaneAlive && !graphDrawing && graphHost?.Visibility == Visibility.Visible && graphViewport?.Visibility == Visibility.Visible && graphLayout is { } layout && graphDrawnRuns is { } runs)
+                    AimGraphCamera(runs, layout, GraphViewportSize, retry: true);
+            }), TaskScheduler.Default);
+        }
+
+        /// <summary>The user's own move of the camera: nothing follows for the grace, and it follows on only at the newest block.</summary>
+        private void UserMovedGraphCamera()
+        {
+            graphUserMoveAt = Environment.TickCount64; graphResizePin = null;
+            JudgeGraphFollow();
+        }
         /// <summary>
         /// The 1pt edge a block card draws inside itself. The Mac strokes it over the card's content
         /// (M/MightyGraphActivityView.swift:142-146), so what a block measures from its edge (the 38pt head, the 12 of
@@ -685,23 +847,25 @@ public sealed partial class MainWindow
                 };
                 view = new GraphCardView { Card = card }; graphCardViews[block.Id] = view;
                 AutomationProperties.SetAutomationId(card, "mighty-node-" + block.Id);
-                card.PointerPressed += (_, args) => { SelectGraphBlock(block.Id); graphViewport?.Focus(FocusState.Pointer); args.Handled = true; };
+                card.PointerPressed += (_, args) => PressGraphCard(block.Id, args);
                 if (block.Kind == "draft") BuildDraftCard(view, block.Id);
                 else if (block.Kind is "plan" or "planRecord")
                 {
                     // The plan or the answered plan goes in under the corner handle, as every other block has it.
                     view.Body = new Grid(); view.Body.Children.Add(BuildResultResizeGrip(view, block.Id)); view.Card.Child = view.Body;
                 }
-                else if (block.Kind != "resultFiles") BuildBlockBody(view, block.Id);
+                else if (block.Kind == "request") BuildRequestBody(view, block.Id);
+                else if (block.Kind is not ("resultFiles" or MightyGraphLayout.ImagesKind or MightyGraphLayout.ExecutionKind)) BuildBlockBody(view, block.Id);
             }
             // Frame is deliberately excluded. Resizing or camera movement must
             // never tear down a RichEditBox while native text services load it.
             var look = block.Kind == "request" ? RequestStyleLook(block.Request) : (Symbol: "", Tint: "");
+            var pictures = block.Kind == MightyGraphLayout.ImagesKind ? GraphImageItems(block) : [];
             var fingerprint = JsonSerializer.Serialize(new
             {
                 block.Kind, block.Title, block.Request, block.Entries, block.State, block.Status, block.Indicator,
                 block.Capsule, block.CapsuleHelp, block.ResultFilesRunId,
-                Files = block.Kind is "result" or "resultFiles" ? files : [],
+                Files = block.Kind is "result" or "resultFiles" ? files : [], Pictures = pictures.Select(picture => picture.Id), Execution = ExecutionState(block),
                 FilesOpen = graphResultFilesRunId, FromRecord = fromRecord,
                 Latest = graphLatestResultId == block.Id, SavedResult = pane.GraphResultSize is not null,
                 SavedPlan = block.Kind == "plan" && pane.GraphPlanSize is not null,
@@ -720,6 +884,8 @@ public sealed partial class MainWindow
             view.Fingerprint = fingerprint;
             AutomationProperties.SetName(view.Card, block.Title);
             if (block.Kind == "resultFiles") { view.Card.Child = BuildResultFilesPanel(block, files); return view.Card; }
+            if (block.Kind == MightyGraphLayout.ImagesKind) { view.Card.Child = BuildImagesCard(block, pictures); return view.Card; }
+            if (block.Kind == MightyGraphLayout.ExecutionKind) { view.Card.Child = BuildOuroborosCard(block, view); return view.Card; }
             if (block.Kind == "plan")
             {
                 // The plan alone, the same for the whole wait: its document is never rebuilt, and its answers
@@ -757,8 +923,10 @@ public sealed partial class MainWindow
             var currentView = view;
             header.SizeChanged += (_, _) => QueueGraphCardMeasure(block.Id, currentView);
             view.Request!.Text = block.Request;
-            view.RequestBand!.Visibility = block.Request.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+            view.RequestBand!.Visibility = block.Request.Length == 0 && block.Kind != "request" ? Visibility.Collapsed : Visibility.Visible;
             view.RequestBand.Background = b.Brush(BlockTint(block, look.Tint), DesignMetrics.Opacity.InputPreview);
+            // The request alone: what was asked. What the agent did is the 실행 block below (M/MightyGraphView.swift:499-507).
+            if (block.Kind == "request") return view.Card;
             if (block.Entries.Count > 0 && view.Transcript is null)
             {
                 var transcript = new AgentTranscript { OpenReference = OpenReferencePreview, OpenImage = OpenTranscriptImage };
@@ -828,6 +996,28 @@ public sealed partial class MainWindow
         }
 
         /// <summary>
+        /// What a request block holds under its header (M/MightyGraphView.swift:655-667): the request alone, on its tint × 0.055 band,
+        /// which fills the card (padded by <c>Inset.GraphBlockBody</c>) down to its bottom corners and scrolls a long request in
+        /// place; and the corner handle over it. No rule under it and nothing after it: the 실행 block below holds what the agent did.
+        /// </summary>
+        private void BuildRequestBody(GraphCardView view, string blockId)
+        {
+            var b = owner.brushes;
+            view.Body = new Grid();
+            foreach (var height in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star) }) view.Body.RowDefinitions.Add(new RowDefinition { Height = height });
+            view.Request = new TextBlock { FontSize = DesignMetrics.Type.Pill, TextWrapping = TextWrapping.Wrap, Foreground = b.Brush(DesignToken.Ink), MinHeight = 14 };
+            var scroll = new ScrollViewer { Content = view.Request, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled };
+            view.RequestBand = new Border
+            {
+                Padding = new Thickness(DesignMetrics.Inset.GraphBlockBodyH - BlockEdge, DesignMetrics.Inset.GraphBlockBodyV, DesignMetrics.Inset.GraphBlockBodyH - BlockEdge, DesignMetrics.Inset.GraphBlockBodyV),
+                CornerRadius = new CornerRadius(0, 0, DesignMetrics.Radius.Block - BlockEdge, DesignMetrics.Radius.Block - BlockEdge), Child = scroll,
+            };
+            graphBodies[blockId] = scroll; Grid.SetRow(view.RequestBand, 1); view.Body.Children.Add(view.RequestBand);
+            view.Body.Children.Add(BuildResultResizeGrip(view, blockId));
+            view.Card.Child = view.Body;
+        }
+
+        /// <summary>
         /// The draft (M/MightyGraphView.swift:404-420, 1048-1063): padding <c>Spacing.Lg</c>, its parts <c>Spacing.Md</c> apart. "Next request" 12
         /// semibold <c>ink</c> after its pencil, the state word 11 <c>ink2</c> at the right; under them the draft, 12pt
         /// in at most four lines. No header rule, no size control, only the corner handle.
@@ -867,7 +1057,7 @@ public sealed partial class MainWindow
         {
             "request" => TintToken(requestTint),
             "task" => DesignToken.TaskText, "steer" => DesignToken.SteerText, "compact" => DesignToken.CompactText,
-            "question" => DesignToken.QuestionText, "agent" => DesignToken.AgentText,
+            "question" => DesignToken.QuestionText, "agent" or MightyGraphLayout.WorkKind => DesignToken.AgentText,
             _ => DesignToken.Accent,
         };
 
@@ -898,13 +1088,16 @@ public sealed partial class MainWindow
 
         /// <summary>
         /// The symbol that heads a sub-agent's block, by kind (M/MightyGraphView.swift:91-100): a mid-run request, a
-        /// context compaction, a question, a background task, or a sub-agent.
+        /// context compaction, a question, a background task, or a sub-agent; and the 실행 block's two gears.
         /// </summary>
         private static string BlockSymbol(string kind) => kind switch
         {
             "steer" => "text.bubble", "compact" => "arrow.down.right.and.arrow.up.left", "question" => "questionmark.bubble.fill",
-            "task" => "terminal", _ => "person.crop.square.filled.and.at.rectangle",
+            "task" => "terminal", MightyGraphLayout.WorkKind => ExecutionSymbol, _ => "person.crop.square.filled.and.at.rectangle",
         };
+
+        /// <summary>The 실행 block's glyph, in the diagram and on its timeline row (M/MightyGraphView.swift:577).</summary>
+        private const string ExecutionSymbol = "gearshape.2";
 
         /// <summary>
         /// A block's <c>Layout.BlockHead</c> header (M/MightyGraphView.swift:483-550): padding <c>Inset.GraphBlockBodyH</c>, its parts <c>Spacing.Sm</c> apart, over a 1pt
@@ -1300,8 +1493,43 @@ public sealed partial class MainWindow
             }
             var scroll = new ScrollViewer { Content = list, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled };
             AutomationProperties.SetAutomationId(scroll, "mighty-result-files-scroll-" + block.Id);
+            // An attachment beside the flow: the wheel scrolls it at once, with no selection (M/MightyGraphInteraction.swift:715).
+            graphBodies[block.Id] = scroll;
             Grid.SetRow(scroll, 1); panel.Children.Add(scroll);
             return panel;
+        }
+
+        /// <summary>
+        /// The files each of the pane's own completed requests names in its result (requests read back from the session
+        /// record are not looked through), kept until that result's text or the workspace changes. A result not looked
+        /// through yet is looked through off the UI thread, and the diagram draws again once it is (M/MightyGraphView.swift:288-290).
+        /// </summary>
+        private Dictionary<string, List<ResultFiles.ResultFile>> ResolveResultFiles(IReadOnlyList<MightyGraphRun> own)
+        {
+            var resolved = new Dictionary<string, List<ResultFiles.ResultFile>>();
+            var finished = new HashSet<string>(StringComparer.Ordinal);
+            var missing = new List<(MightyGraphRun Run, int Key)>();
+            foreach (var run in own.Where(run => run.Status == "completed" && MightyGraphLayout.Finished(run)))
+            {
+                finished.Add(run.Id);
+                var key = HashCode.Combine(Workspace.Path, run.ResultEntries.Count, run.ResultEntries.Sum(entry => (long)entry.Text.Length), run.ResultEntries.LastOrDefault()?.Id, run.FinalOutput?.Length);
+                if (graphResultFilesByRun.TryGetValue(run.Id, out var kept) && kept.Key == key) resolved[run.Id] = kept.Files;
+                else if (graphResultFilesLooking.Add((run.Id, key))) missing.Add((run.Copy(), key));
+            }
+            foreach (var stale in graphResultFilesByRun.Keys.Where(runId => !finished.Contains(runId)).ToArray()) graphResultFilesByRun.Remove(stale);
+            if (missing.Count > 0) _ = LookThroughResultFiles(missing, Workspace.Path);
+            return resolved;
+        }
+
+        /// <summary>Looks results through for the files they name, off the UI thread, and draws again with what was found.</summary>
+        private async Task LookThroughResultFiles(List<(MightyGraphRun Run, int Key)> runs, string root)
+        {
+            List<(string Id, int Key, List<ResultFiles.ResultFile> Files)> found;
+            try { found = await Task.Run(() => runs.Select(run => (run.Run.Id, run.Key, MightyGraphBlockModel.FilesFor(run.Run, root))).ToList()); }
+            // A result that cannot be looked through names nothing, rather than being looked through again on every draw.
+            catch (Exception ex) when (ex is not OutOfMemoryException) { found = [.. runs.Select(run => (run.Run.Id, run.Key, new List<ResultFiles.ResultFile>()))]; }
+            foreach (var (runId, key, files) in found) { graphResultFilesLooking.Remove((runId, key)); graphResultFilesByRun[runId] = (key, files); }
+            if (QueuePaneAlive) QueueGraphRefresh();
         }
 
         /// Both transcript paths and result-list entries open the same in-pane viewer.
@@ -1310,19 +1538,20 @@ public sealed partial class MainWindow
 
         private void ToggleResultFiles(string runId)
         {
-            if (graphResultFilesRunId == runId) { CloseResultFiles(); return; }
-            graphResultFilesRunId = runId; graphResultFilesClosedByHand = false; Refresh();
+            graphResultFiles.Toggle(runId, graphResultFilesByRun.TryGetValue(runId, out var named) && named.Files.Count > 0);
+            RefreshMightyView(Session);
         }
 
-        /// A manual close sticks until the next result.
-        private void CloseResultFiles() { graphResultFilesRunId = null; graphResultFilesClosedByHand = true; RefreshMightyView(Session); }
+        /// A manual close sticks until a newer result names files.
+        private void CloseResultFiles() { graphResultFiles.Close(); RefreshMightyView(Session); }
 
         // ── the newest result card's size ─────────────────────────────────────
 
         /// <summary>
         /// A block's corner handle (M/MightyGraphView.swift:928-942): the two resize arrows, 10 semibold in
         /// <c>ink2</c> (<c>accent</c> on the selected block), in a 22 square of <c>card</c> × 0.95, radius 5, 2
-        /// from the card's corner. Dragging it sizes the block; its menu and a double click put the size back.
+        /// from the card's corner. Dragging it sizes the block, as dragging a band along any of its four borders
+        /// does (<see cref="GraphResizeTarget"/>); its menu and a double click put the size back.
         /// The viewport captures the pointer, so the drag goes on when the pointer leaves the handle.
         /// </summary>
         private Border BuildResultResizeGrip(GraphCardView view, string nodeId)
@@ -1338,41 +1567,116 @@ public sealed partial class MainWindow
                 HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom, Child = view.GripSymbol,
             };
             Grid.SetRowSpan(grip, 3);
-            var reset = new MenuFlyoutItem { Text = Locale.Get("graph.block.reset") };
+            var reset = new MenuFlyoutItem { Text = Locale.Get("graph.block.resetSize") };
             AutomationProperties.SetAutomationId(reset, "mighty-reset-" + nodeId);
             reset.Click += async (_, _) => await ResetGraphBlockSize(nodeId);
             var menu = new MenuFlyout(); menu.Items.Add(reset); grip.ContextFlyout = menu;
             ToolTipService.SetToolTip(grip, Locale.Get("graph.block.resize"));
             AutomationProperties.SetAutomationId(grip, "mighty-resize-result-" + nodeId);
-            grip.PointerPressed += (_, args) =>
-            {
-                if (graphViewport is null || !graphCards.TryGetValue(nodeId, out var card)) return;
-                graphViewport.Focus(FocusState.Pointer);
-                graphResizing = true; graphDragging = false; CancelResultReveal();
-                graphResizeOrigin = args.GetCurrentPoint(graphViewport).Position;
-                graphResizeStart = (card.Width, card.Height);
-                graphResizeLayout = graphLayout; graphResizeNodeId = nodeId;
-                graphViewport.CapturePointer(args.Pointer);
-                args.Handled = true;
-            };
+            // Only the left button drags; the right one leaves the press to the handle's menu.
+            grip.PointerPressed += (_, args) => { if (LeftPress(args)) BeginGraphResize(nodeId, ResizeEdges.BottomRight, args); };
             grip.DoubleTapped += async (_, args) => { args.Handled = true; await ResetGraphBlockSize(nodeId); };
             AutomationProperties.SetName(grip, Locale.Get("graph.block.resize"));
             return grip;
         }
 
-        /// The size under the cursor, in diagram coordinates.
-        private (double W, double H) DraggedResultSize(Windows.Foundation.Point point)
+        /// <summary>
+        /// The block and sides a press at a point of the viewport would resize (M/MightyGraphInteraction.swift:375-394):
+        /// the corner handle first, then a band along each border, 6pt outside it at 100% and 2pt inside.
+        /// </summary>
+        private (string Id, GraphRect Frame, ResizeEdges Edges)? GraphResizeTarget(Windows.Foundation.Point point)
         {
-            var scale = graphZoom > 0 ? graphZoom : 1;
-            return (graphResizeStart.W + (point.X - graphResizeOrigin.X) / scale, graphResizeStart.H + (point.Y - graphResizeOrigin.Y) / scale);
+            if (graphLayout is not { } layout || graphResizing) return null;
+            var camera = GraphCamera;
+            var frames = layout.Nodes.Where(n => MightyGraphLayout.IsResizable(n.Kind) && graphCards.ContainsKey(n.Id))
+                .Select(n => (n.Id, new GraphRect(n.Frame.X * graphZoom + camera.X, n.Frame.Y * graphZoom + camera.Y, n.Frame.W * graphZoom, n.Frame.H * graphZoom))).ToList();
+            return ResizeEdgeRules.Target((point.X, point.Y), frames, graphZoom);
         }
 
-        /// A block other than the newest result never goes below the least its kind takes
-        /// (<see cref="MightyGraphLayout.MinimumBlockSize"/>): the plan card keeps its answers inside it.
-        private (double W, double H) BlockAtLeast((double W, double H) size)
+        /// <summary>A press on the corner handle or on a border's band: the block is selected and its drag begins (M/MightyGraphInteraction.swift:410-423).</summary>
+        private void BeginGraphResize(string nodeId, ResizeEdges edges, PointerRoutedEventArgs args)
         {
-            var least = MightyGraphLayout.MinimumBlockSize(graphResizeNodeId is { } node ? graphBlockKinds.GetValueOrDefault(node) ?? "" : "");
-            return (Math.Max(least.W, size.W), Math.Max(least.H, size.H));
+            if (graphViewport is null || !graphCards.TryGetValue(nodeId, out var card)) return;
+            SelectGraphBlock(nodeId);
+            graphViewport.Focus(FocusState.Pointer);
+            // Nothing moves for the drag; released, the camera follows on only if the newest block is still in view.
+            graphResizing = true; graphDragging = false; graphResizePin = null; graphFollow.UserChangedLayout();
+            graphResizeOrigin = args.GetCurrentPoint(graphViewport).Position;
+            graphResizeStart = (card.Width, card.Height); graphResizeEdges = edges;
+            graphResizeCardOrigin = (Canvas.GetLeft(card), Canvas.GetTop(card));
+            var (unit, camera) = (edges.PinnedUnit(), GraphCamera);
+            graphResizeAnchor = GraphNodeFrame(nodeId) is { } frame
+                ? (nodeId, (camera.X + (frame.X + unit.X * frame.W) * graphZoom, camera.Y + (frame.Y + unit.Y * frame.H) * graphZoom), unit) : null;
+            graphResizeLayout = graphLayout; graphResizeNodeId = nodeId;
+            graphViewport.CapturePointer(args.Pointer);
+            args.Handled = true;
+        }
+
+        /// <summary>A press of the left button, a pen tip or a touch: the only press that drags a side (M/MightyGraphInteraction.swift:695).</summary>
+        private bool LeftPress(PointerRoutedEventArgs args) => args.GetCurrentPoint(graphViewport).Properties.IsLeftButtonPressed;
+
+        /// <summary>
+        /// A press on a block: the thin strip inside a border, or a neighbour's band reaching over this card, resizes
+        /// (M/MightyGraphInteraction.swift:697-701); anywhere else selects the block.
+        /// </summary>
+        private void PressGraphCard(string nodeId, PointerRoutedEventArgs args)
+        {
+            if (graphViewport is not null && LeftPress(args) && GraphResizeTarget(args.GetCurrentPoint(graphViewport).Position) is { } target) { BeginGraphResize(target.Id, target.Edges, args); return; }
+            SelectGraphBlock(nodeId); graphViewport?.Focus(FocusState.Pointer); args.Handled = true;
+        }
+
+        /// <summary>
+        /// The strip inside a resizable block's border (<see cref="ResizeEdgeRules.BandInside"/> on screen), laid over the card as the
+        /// Mac's four edge bands lie over it, so the body's scroller under the right edge cannot take a press meant for that side.
+        /// Only its edge takes input: every other press goes through to the card.
+        /// </summary>
+        private Border GraphBand(string nodeId, GraphRect frame)
+        {
+            if (!graphBands.TryGetValue(nodeId, out var band))
+            {
+                band = graphBands[nodeId] = new Border { BorderBrush = owner.brushes.Transparent, CornerRadius = new CornerRadius(DesignMetrics.Radius.Block) };
+                AutomationProperties.SetAccessibilityView(band, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+                band.PointerPressed += (_, args) => PressGraphCard(nodeId, args);
+            }
+            band.BorderThickness = new Thickness(ResizeEdgeRules.BandInside / graphZoom);
+            band.Width = frame.W; band.Height = frame.H;
+            Canvas.SetLeft(band, frame.X); Canvas.SetTop(band, frame.Y);
+            return band;
+        }
+
+        /// <summary>The resize cursor of the sides under the pointer, and the arrow again once it leaves them (M/MightyGraphInteraction.swift:395-409).</summary>
+        private void ShowGraphResizeCursor(ResizeEdges edges)
+        {
+            if (edges == graphHoverEdges) return;
+            graphHoverEdges = edges;
+            var rising = edges is (ResizeEdges.Left | ResizeEdges.Bottom) or (ResizeEdges.Right | ResizeEdges.Top);
+            graphSurface?.ShowCursor(edges == ResizeEdges.None ? null
+                : edges.Horizontal() && edges.Vertical() ? rising ? Microsoft.UI.Input.InputSystemCursorShape.SizeNortheastSouthwest : Microsoft.UI.Input.InputSystemCursorShape.SizeNorthwestSoutheast
+                : edges.Horizontal() ? Microsoft.UI.Input.InputSystemCursorShape.SizeWestEast : Microsoft.UI.Input.InputSystemCursorShape.SizeNorthSouth);
+        }
+
+        /// The size under the cursor, in diagram coordinates: the dragged sides follow the pointer, never below the least
+        /// the block's kind takes (<see cref="MightyGraphLayout.MinimumBlockSize"/>) nor above the most a block may be.
+        private (double W, double H) DraggedResultSize(Windows.Foundation.Point point) =>
+            graphResizeEdges.Size(graphResizeStart, (point.X - graphResizeOrigin.X, point.Y - graphResizeOrigin.Y), graphZoom,
+                MightyGraphLayout.MinimumBlockSize(graphResizeNodeId is { } node ? graphBlockKinds.GetValueOrDefault(node) ?? "" : ""),
+                (MightyGraphBlockSize.MaximumWidth, MightyGraphBlockSize.MaximumHeight));
+
+        /// A dragged left or top side moves that side: the card's far corner stays where it was.
+        private void PlaceResizedCard(Border card)
+        {
+            if (graphResizeEdges.HasFlag(ResizeEdges.Left)) Canvas.SetLeft(card, graphResizeCardOrigin.X + graphResizeStart.W - card.Width);
+            if (graphResizeEdges.HasFlag(ResizeEdges.Top)) Canvas.SetTop(card, graphResizeCardOrigin.Y + graphResizeStart.H - card.Height);
+            // The selection's outline follows the card it is drawn on.
+            ApplyGraphSelectionStyle();
+        }
+
+        /// The drag's last redraw: the layout carries the new size by now, so the far corner's pin has done its work.
+        private void SettleGraphResize()
+        {
+            RefreshMightyView(Session);
+            if (graphResizePin is null) return;
+            graphResizePin = null; QueueGraphRefresh();
         }
 
         /// Live: the card follows the cursor up to the pane's edge and stops there.
@@ -1386,14 +1690,14 @@ public sealed partial class MainWindow
                 if (planDrag.Live is not { } livePlan || !graphCards.TryGetValue(planNode, out var planCard)) return;
                 graphLivePlanSize = livePlan;
                 planCard.Width = livePlan.Width; planCard.Height = livePlan.Height;
-                ApplyGraphSelectionStyle();
+                PlaceResizedCard(planCard);
                 return;
             }
             if (graphResizeNodeId != graphLatestResultId)
             {
-                var raw = BlockAtLeast(DraggedResultSize(point));
+                var raw = DraggedResultSize(point);
                 if (graphResizeNodeId is { } node && new GraphBlockSize(raw.W, raw.H).NormalizedFor(node) is { } custom && graphCards.TryGetValue(node, out var changed))
-                { changed.Width = custom.Width; changed.Height = custom.Height; ApplyGraphSelectionStyle(); }
+                { changed.Width = custom.Width; changed.Height = custom.Height; PlaceResizedCard(changed); }
                 return;
             }
             var drag = MightyGraphLayout.ResultDrag(DraggedResultSize(point), true, true, MightyGraphLayout.ResizePhase.Live,
@@ -1401,8 +1705,7 @@ public sealed partial class MainWindow
             if (drag.Live is not { } live || graphLatestResultId is null || !graphCards.TryGetValue(graphLatestResultId, out var card)) return;
             graphLiveResultSize = live;
             card.Width = live.Width; card.Height = live.Height;
-            // The selection's outline follows the card it is drawn on.
-            ApplyGraphSelectionStyle();
+            PlaceResizedCard(card);
         }
 
         /// Released or abandoned. A release saves the new remembered maximum
@@ -1417,30 +1720,31 @@ public sealed partial class MainWindow
             var dragged = point is { } at ? DraggedResultSize(at) : graphResizeStart;
             var sides = MightyGraphLayout.ResultDragSides(graphResizeStart, dragged);
             if (sides is (false, false)) phase = MightyGraphLayout.ResizePhase.Cancelled;
+            // A drag that changed the block keeps the corner across from the dragged sides where it was.
+            graphResizePin = phase == MightyGraphLayout.ResizePhase.Cancelled ? null : graphResizeAnchor;
+            graphResizeAnchor = null;
             if (graphResizeNodeId is { } planNode && planNode == graphPlanNodeId)
             {
                 var planDrag = MightyGraphLayout.ResultDrag(dragged, sides.Horizontal, sides.Vertical, phase,
                     Session.GraphPlanSize, graphResizeLayout?.PlanLimit, graphResizeLayout?.PlanWindowFit);
                 graphResizeNodeId = null; graphResizeLayout = null; graphLivePlanSize = null;
-                if (planDrag.Save is { } savePlan) _ = owner.Act(async () => { await Change(p => p with { GraphPlanSize = savePlan }); RefreshMightyView(Session); });
-                else RefreshMightyView(Session);
+                if (planDrag.Save is { } savePlan) _ = owner.Act(async () => { await Change(p => p with { GraphPlanSize = savePlan }); SettleGraphResize(); });
+                else SettleGraphResize();
                 return;
             }
             if (graphResizeNodeId is { } nodeId && nodeId != graphLatestResultId)
             {
-                var size = BlockAtLeast(dragged);
                 graphResizeNodeId = null; graphResizeLayout = null;
-                if (phase != MightyGraphLayout.ResizePhase.Cancelled)
-                    _ = owner.Act(async () => { await Change(p => GraphBlockPreferences.Set(p, nodeId, new(size.W, size.H))); RefreshMightyView(Session); });
-                else RefreshMightyView(Session);
+                if (phase != MightyGraphLayout.ResizePhase.Cancelled) _ = SaveGraphBlockSize(nodeId, new(dragged.W, dragged.H));
+                else SettleGraphResize();
                 return;
             }
             graphResizeNodeId = null;
             var drag = MightyGraphLayout.ResultDrag(dragged, sides.Horizontal, sides.Vertical, phase,
                 Session.GraphResultSize, graphResizeLayout?.ResultLimit, graphResizeLayout?.ResultWindowFit);
             graphResizeLayout = null; graphLiveResultSize = null;
-            if (drag.Save is { } save) _ = owner.Act(async () => { await Change(p => p with { GraphResultSize = save }); RefreshMightyView(Session); });
-            else RefreshMightyView(Session);
+            if (drag.Save is { } save) _ = owner.Act(async () => { await Change(p => p with { GraphResultSize = save }); SettleGraphResize(); });
+            else SettleGraphResize();
         }
 
         /// Clears the saved size: the newest result card fits the window again.
@@ -1453,15 +1757,27 @@ public sealed partial class MainWindow
 
         // ── zoom, pan and selection ───────────────────────────────────────────
 
+        /// <summary>
+        /// A new zoom keeps the middle of the viewport where it is (M/MightyGraphView.swift:1108-1113), and it is the user's own
+        /// move away: nothing follows until they come back to the newest block (M/MightyGraphInteraction.swift:308-309).
+        /// </summary>
         internal void SetGraphZoom(double value)
         {
             var changed = graphZoom != value;
+            if (changed && graphLayout is not null)
+            {
+                graphFollow.Stop();
+                if (GraphViewportSize is { } size)
+                {
+                    var pan = MightyGraphViewModel.ZoomAnchored((graphPan.X, graphPan.Y), size, graphZoom, value);
+                    ShiftGraphPan(pan.X - graphPan.X, pan.Y - graphPan.Y);
+                }
+            }
             graphZoom = value; graphScale.ScaleX = graphScale.ScaleY = value;
             if (zoomResetButton is not null) ((TextBlock)zoomResetButton.Content).Text = MightyGraphViewModel.ZoomLabel(value);
             if (zoomOutButton is not null) zoomOutButton.IsEnabled = !MightyGraphViewModel.ZoomOutDisabled(value);
             if (zoomInButton is not null) zoomInButton.IsEnabled = !MightyGraphViewModel.ZoomInDisabled(value);
             // The newest result card's pane limit is in diagram coordinates at this zoom.
-            if (changed) CancelResultReveal();
             if (changed && graphHost?.Visibility == Visibility.Visible) RefreshMightyView(Session);
         }
 
@@ -1469,35 +1785,43 @@ public sealed partial class MainWindow
         internal string? GraphSelection => graphSelection;
         internal int GraphBlockCount => graphCards.Count;
 
-        /// The wheel scrolls the selected block's body; with nothing selected it
-        /// pans the canvas up and down, and left and right for a horizontal
+        /// The wheel scrolls the selected block's body while the pointer is over that
+        /// block, and a block attached beside the flow at once (M/MightyGraphInteraction.swift:713-722);
+        /// anywhere else it pans the canvas up and down, and left and right for a horizontal
         /// wheel, a tilt or Shift+wheel. Either way it never reaches the outer page.
         private void OnGraphWheel(object sender, PointerRoutedEventArgs args)
         {
-            var properties = args.GetCurrentPoint(graphViewport).Properties;
+            args.Handled = true;
+            // A wheel turned during a block drag does nothing (M/MightyGraphInteraction.swift:616).
+            if (graphResizing) return;
+            var pointer = args.GetCurrentPoint(graphViewport);
+            var properties = pointer.Properties;
             var shift = (args.KeyModifiers & Windows.System.VirtualKeyModifiers.Shift) != 0;
             var (panX, panY) = MightyGraphViewModel.WheelPan(properties.MouseWheelDelta, properties.IsHorizontalMouseWheel, shift);
-            if (MightyGraphViewModel.WheelScrollsBlock(graphSelection) && graphSelection is { } selected && graphBodies.TryGetValue(selected, out var body))
+            // The selected block scrolls only while the pointer is over it; a block attached beside the flow scrolls at once.
+            var camera = GraphCamera;
+            var hovered = graphLayout?.NodeAt((pointer.Position.X - camera.X) / graphZoom, (pointer.Position.Y - camera.Y) / graphZoom);
+            if (MightyGraphViewModel.WheelScrollTarget(graphSelection, hovered?.Id, hovered is not null && MightyGraphLayout.IsAuxiliary(hovered.Kind)) is { } target)
             {
-                // The block body only scrolls up and down.
-                if (panY != 0) body.ChangeView(null, Math.Max(0, body.VerticalOffset - panY), null, true);
+                // The block body only scrolls up and down; a block with nothing to scroll still takes the wheel.
+                if (panY != 0 && graphBodies.TryGetValue(target, out var body)) body.ChangeView(null, Math.Max(0, body.VerticalOffset - panY), null, true);
             }
             else UserPan(panX, panY);
-            args.Handled = true;
         }
 
-        /// The user's own wheel pan: it ends a result held above the composer,
-        /// and only a move towards the top loads more.
+        /// The user's own wheel pan: a move away from the newest block stops the
+        /// camera following, and only a move towards the top loads more.
         private void UserPan(double dx, double dy)
         {
-            CancelResultReveal();
-            graphPan.X += dx; graphPan.Y += dy;
+            ShiftGraphPan(dx, dy);
+            if (dx != 0 || dy != 0) UserMovedGraphCamera();
             if (dy > 0) LoadOlderAtTop();
         }
 
         private void OnGraphPointerPressed(object sender, PointerRoutedEventArgs args)
         {
-            // Only the empty background reaches here: a card handles its own press.
+            // Only the empty background reaches here: a card handles its own press. Just outside a block's border it is that side's band.
+            if (LeftPress(args) && GraphResizeTarget(args.GetCurrentPoint(graphViewport).Position) is { } target) { BeginGraphResize(target.Id, target.Edges, args); return; }
             ClearGraphSelection();
             // Take keyboard focus so Esc clears a selection after a mouse click.
             graphViewport?.Focus(FocusState.Pointer);
@@ -1510,13 +1834,14 @@ public sealed partial class MainWindow
         private void OnGraphPointerMoved(object sender, PointerRoutedEventArgs args)
         {
             if (graphResizing) { MoveResultResize(args.GetCurrentPoint(graphViewport).Position); args.Handled = true; return; }
-            if (!graphDragging) return;
             var point = args.GetCurrentPoint(graphViewport).Position;
+            if (!graphDragging) { ShowGraphResizeCursor(GraphResizeTarget(point)?.Edges ?? ResizeEdges.None); return; }
             var previousY = graphPan.Y;
-            // A click alone keeps a result held above the composer; a move does not.
-            if (point != graphDragOrigin) CancelResultReveal();
-            graphPan.X = graphDragPanX + (point.X - graphDragOrigin.X);
-            graphPan.Y = graphDragPanY + (point.Y - graphDragOrigin.Y);
+            var (panX, panY) = (graphDragPanX + (point.X - graphDragOrigin.X), graphDragPanY + (point.Y - graphDragOrigin.Y));
+            // A click alone moves nothing: only a move is judged.
+            var moved = panX != graphPan.X || panY != graphPan.Y;
+            graphPan.X = panX; graphPan.Y = panY;
+            if (moved) UserMovedGraphCamera();
             // Only the user's own move towards the top loads more.
             if (graphPan.Y > previousY) LoadOlderAtTop();
             args.Handled = true;
@@ -1524,8 +1849,22 @@ public sealed partial class MainWindow
 
         private void OnGraphPointerReleased(object sender, PointerRoutedEventArgs args)
         {
-            if (graphResizing) EndResultResize(MightyGraphLayout.ResizePhase.Finished, args.GetCurrentPoint(graphViewport).Position);
-            graphDragging = false; graphViewport?.ReleasePointerCapture(args.Pointer);
+            var point = args.GetCurrentPoint(graphViewport).Position;
+            if (graphResizing) EndResultResize(MightyGraphLayout.ResizePhase.Finished, point);
+            EndGraphDrag(); graphViewport?.ReleasePointerCapture(args.Pointer);
+            // Released, the cursor is that of the sides under the pointer again, or the arrow away from them.
+            ShowGraphResizeCursor(GraphResizeTarget(point)?.Edges ?? ResizeEdges.None);
+        }
+
+        /// <summary>
+        /// The background drag ends. What it held back (a target that waited for the release, a follow pass) gets its pass once the
+        /// user has been still for the grace (M/MightyGraphInteraction.swift:244).
+        /// </summary>
+        private void EndGraphDrag()
+        {
+            if (!graphDragging) return;
+            graphDragging = false;
+            QueueGraphCameraPass(GraphUserMoveGrace + 50);
         }
 
         internal void SelectGraphBlock(string? nodeId)
@@ -1605,7 +1944,7 @@ public sealed partial class MainWindow
         internal double? GraphResultContentHeightForSmoke(string nodeId) => graphResultHeights.TryGetValue(nodeId, out var height) ? height : null;
         internal GraphRect? GraphCardFrameForSmoke(string nodeId) =>
             graphCards.TryGetValue(nodeId, out var card) ? new GraphRect(Canvas.GetLeft(card), Canvas.GetTop(card), card.Width, card.Height) : null;
-        internal string? GraphRevealHoldingForSmoke => graphReveal.HoldingID;
+        internal bool GraphFollowingForSmoke => graphFollow.Following;
         internal Task SetPaneStatusForSmoke(string status) =>
             owner.Act(async () => { await Change(p => p with { Status = status }); RefreshMightyView(Session); });
         internal void PanGraphForSmoke(double dy) => UserPan(0, dy);
@@ -1638,4 +1977,14 @@ public sealed partial class MainWindow
             return texts;
         }
     }
+}
+
+/// <summary>
+/// The Mighty diagram's surface. A block's border shows the cursor of the sides a drag there would move; the cursor
+/// is a protected property, so it lives on this parent and the blocks inherit it.
+/// </summary>
+internal sealed partial class GraphSurface : Grid
+{
+    internal void ShowCursor(Microsoft.UI.Input.InputSystemCursorShape? shape) =>
+        ProtectedCursor = shape is { } value ? Microsoft.UI.Input.InputSystemCursor.Create(value) : null;
 }

@@ -59,6 +59,9 @@ public sealed class StyleTrustStore(string directory)
             finally{if(File.Exists(temp))File.Delete(temp);}
         }
     }
+    /// Drops every decision kept for the style's place, as removing its file does (M/Styles/StyleTrustStore.swift:120-122):
+    /// the same file registered again is asked about afresh, never met by an earlier refusal.
+    public void Forget(RegisteredStyle style)=>Decide(style,"unblock");
     private static bool Private(string path,bool directory)
     {
         if((File.GetAttributes(path)&FileAttributes.ReparsePoint)!=0)return false;

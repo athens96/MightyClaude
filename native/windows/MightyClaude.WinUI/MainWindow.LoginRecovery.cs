@@ -125,7 +125,7 @@ public sealed partial class MainWindow
     private void StartAutomaticLoginIfAllowed(CliLoginRetry retry, CliAccountStatus status)
     {
         var provider = retry.Request.Provider;
-        var changing = loginJobs.ContainsKey(provider) || loginBusy.ContainsKey(provider) || accountChanges.ContainsKey(provider) || AnyCliUpdateRunning;
+        var changing = loginJobs.ContainsKey(provider) || loginBusy.ContainsKey(provider) || accountChanges.ContainsKey(provider) || accountLoginWaits.ContainsKey(provider) || AnyCliUpdateRunning;
         bool Allowed(bool active) => autoLogin.ShouldStart(provider, service.Snapshot.AutoLoginCLIs != false, status, active, DateTimeOffset.UtcNow, retry.Resent, retry.SentAt);
         if (closing) return;
         if (!changing && service.HasActiveProvider(provider)) { if (Allowed(false)) deferredAutoLogins[provider] = (retry, status); return; }
@@ -147,7 +147,8 @@ public sealed partial class MainWindow
             loginJobs[provider] = new LoginJob { Phase = "waiting", Automatic = automatic, Terminal = provider == "gemini" }; loginFailures.Remove(provider); RefreshLoginCards();
             return smokeLoginStarter(provider);
         }
-        if (loginBusy.ContainsKey(provider) || accountChanges.ContainsKey(provider) || AnyCliUpdateRunning || service.HasActiveProvider(provider))
+        // A sign-in waited on in a terminal holds the account as the Mac's cliLoginPending does.
+        if (loginBusy.ContainsKey(provider) || accountChanges.ContainsKey(provider) || accountLoginWaits.ContainsKey(provider) || AnyCliUpdateRunning || service.HasActiveProvider(provider))
         {
             loginFailures[provider] = Locale.Get(AnyCliUpdateRunning ? "loginRecovery.updating" : "loginRecovery.busy"); RefreshLoginCards(); return Task.CompletedTask;
         }
@@ -208,6 +209,11 @@ public sealed partial class MainWindow
         if (loginBusy.GetValueOrDefault(provider) == job) loginBusy.TryRemove(provider, out _);
         await RefreshCliAccounts();
         if (closing) return;
+        await ResendWaitingLoginRequests(provider);
+    }
+    /// <summary>Signed in again, in the background or in a terminal: each request of the provider that lost the sign-in is sent again.</summary>
+    private async Task ResendWaitingLoginRequests(string provider)
+    {
         foreach (var id in loginRetries.Requests.Values.Where(value => value.Request.Provider == provider).Select(value => value.Request.SessionId).ToArray())
             await ResendLoginRequest(id);
     }
@@ -311,6 +317,8 @@ public sealed partial class MainWindow
     private async Task ShutdownLoginRecovery()
     {
         foreach (var provider in loginJobs.Keys.ToArray()) CancelBackgroundLogin(provider);
+        foreach (var wait in accountLoginWaits.Values.ToArray()) wait.Cancel();
+        modelResetClosing.Cancel();
         await Task.WhenAll(loginTasks.ToArray()); loginTasks.Clear(); loginRetries.Clear(); loginNotes.Clear(); loginResendsAwaitingUpdate.Clear(); deferredAutoLogins.Clear();
     }
     private sealed partial class PaneView
@@ -325,7 +333,9 @@ public sealed partial class MainWindow
             var provider = retry.Request.Provider;
             var job = owner.loginJobs.GetValueOrDefault(provider); var progress = job?.Process?.Output;
             var failure = owner.loginFailures.GetValueOrDefault(provider); var note = owner.loginNotes.GetValueOrDefault(id);
-            var fingerprint = $"{owner.service.Snapshot.LanguagePreference}:{retry.Generation}:{job?.Phase}:{job?.Automatic}:{progress?.Url}:{progress?.AsksForCode}:{failure}:{note}";
+            // The sign-in goes on in a terminal the app opened and is waiting on (M/CLILoginRecoveryCard.swift:29, 68).
+            var pending = job is null && failure is null && owner.accountLoginWaits.ContainsKey(provider);
+            var fingerprint = $"{owner.service.Snapshot.LanguagePreference}:{retry.Generation}:{job?.Phase}:{job?.Automatic}:{progress?.Url}:{progress?.AsksForCode}:{failure}:{note}:{pending}";
             if (loginCardFingerprint == fingerprint) return;
             loginCardFingerprint = fingerprint; loginRecoveryHost.Children.Clear(); loginRecoveryHost.Visibility = Visibility.Visible;
             // The Mac's card (M/CLILoginRecoveryCard.swift:15-69), one 11pt row: the amber account mark; the title in medium
@@ -352,7 +362,7 @@ public sealed partial class MainWindow
                 Grid.SetColumn(state, 1); busy.Children.Add(state); words.Children.Add(busy);
             }
             else if (failure is not null) words.Children.Add(Line(failure, wait));
-            else words.Children.Add(Line(Locale.Get("loginRecovery.body"), ink2));
+            else words.Children.Add(Line(pending ? Locale.Get("loginRecovery.terminalPending") : Locale.Get("loginRecovery.body"), ink2));
             if (progress?.Url is { } url)
             {
                 var link = Small(Locale.Get("loginRecovery.openLink"), () => { Process.Start(new ProcessStartInfo(url.AbsoluteUri) { UseShellExecute = true }); return Task.CompletedTask; });
@@ -380,7 +390,8 @@ public sealed partial class MainWindow
             }
             else
             {
-                buttons.Children.Add(Small(Locale.Get("loginRecovery.loginButton"), () => owner.StartBackgroundLogin(provider, session: id)));
+                var login = Small(Locale.Get("loginRecovery.loginButton"), () => owner.StartBackgroundLogin(provider, session: id)); login.IsEnabled = !pending;
+                buttons.Children.Add(login);
                 if (failure is not null && provider != "gemini") buttons.Children.Add(Small(Locale.Get("loginRecovery.terminalButton"), () => owner.TerminalLoginFallback(provider)));
                 var resend = Small(Locale.Get("loginRecovery.resendButton"), () => owner.ResendLoginRequest(id)); ToolTipService.SetToolTip(resend, Locale.Get("loginRecovery.resendHelp")); buttons.Children.Add(resend);
             }
@@ -397,6 +408,7 @@ public sealed partial class MainWindow
             starting = true; var submission = ++composerSubmissionVersion; RefreshComposerState();
             try
             {
+                await PrepareModels();
                 var pane = Session;
                 if (owner.Runtime(pane.Provider)?.Available != true) throw new InvalidOperationException(Locale.Get("composer.hint.refreshRuntime"));
                 var request = await PrepareStyleRunRequest(new StartRunRequest(id, pane.WorkspaceId, pane.Kind, retry.Request.Input,
@@ -404,8 +416,10 @@ public sealed partial class MainWindow
                 if (!QueuePaneAlive || submission != composerSubmissionVersion || Session.Provider != retry.Request.Provider || !owner.loginRetries.IsCurrent(retry)) return false;
                 // Its own sign-in failure, if any, only raises the card again (never an automatic start).
                 owner.loginRetries.ExpectResend(id);
-                try { await owner.StartFromComposer(request); }
+                DelegationRelease release;
+                try { release = await owner.StartFromComposer(request); }
                 catch { owner.loginRetries.CancelResend(id); throw; }
+                if (release is DelegationRelease.NotStarted) { owner.loginRetries.CancelResend(id); return false; }
                 return true;
             }
             finally { starting = false; if (QueuePaneAlive) Refresh(); }

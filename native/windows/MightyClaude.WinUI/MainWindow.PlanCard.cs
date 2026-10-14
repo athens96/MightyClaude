@@ -66,23 +66,27 @@ public sealed partial class MainWindow
         private ToolPermissionRequest? PendingPlan => PlanCardSupport.PendingPlan(toolPermissions);
         private int PendingCount => toolPermissions.Count(p => p.State == "pending");
 
-        /// <summary>The pane shows its Mighty diagram, not the default view or the timeline.</summary>
+        /// <summary>The pane shows its Mighty diagram, not the default view, the timeline or the structure (M/MightyCore/PlanCardSupport.swift:34-37).</summary>
         private bool InMightyDiagram
         {
             get
             {
                 var pane = Session;
-                return pane.Kind == "claude" && MightyGraphSupport.Providers.Contains(pane.Provider) && pane.AgentViewMode == "mighty" && MightyTimeline.Mode(pane) != "timeline";
+                return pane.Kind == "claude" && MightyGraphSupport.Providers.Contains(pane.Provider) && pane.AgentViewMode == "mighty" && MightyTimeline.Mode(pane) == "diagram";
             }
         }
 
-        /// <summary>The Mighty diagram draws the pending plan where its unfinished request's result will go.</summary>
-        private bool DiagramShowsPlan(ToolPermissionRequest plan) => PlanCardSupport.ComposerShowsPlanActions(plan, InMightyDiagram, Session.GraphRuns ?? []);
+        /// <summary>Where the composer shows this plan's answers (M/PlanCardSupport.swift:58-62); a pane with a style is the guided one.</summary>
+        private PlanCardSupport.ComposerPlaces? ComposerPlanPlace(ToolPermissionRequest plan) => PlanCardSupport.ComposerPlace(plan, InMightyDiagram, Session.GraphRuns ?? [], activeStyle is not null);
+
+        /// <summary>The waiting plan whose answers the style's panel shows, as it shows a question (M/GuidedPanel.swift:93-100); null otherwise.</summary>
+        private ToolPermissionRequest? PanelPlan => activeStyle is not null && CardRequests.FirstOrDefault() is { } first && ComposerPlanPlace(first) == PlanCardSupport.ComposerPlaces.PanelActions ? first : null;
 
         /// <summary>
-        /// The plan card in place of the generic permission card: the whole card docked over the composer, or only
-        /// its answers there while the diagram draws the plan, as a style's choices sit in the composer area
-        /// (macOS PlanCardSupport.composerPlace). Exactly one set of answers shows. False for any other request.
+        /// The plan card in place of the generic permission card (macOS PlanCardSupport.composerPlace): the whole card docked
+        /// over the composer; or, while the diagram draws the plan, only its answers — over the composer, or under a style
+        /// in the style's panel, which draws them itself (RenderGuidedStyle). Exactly one set of answers shows. False for
+        /// any other request.
         /// </summary>
         private bool TryRenderPlan(ToolPermissionRequest current, int count)
         {
@@ -92,7 +96,15 @@ public sealed partial class MainWindow
             if (questionnaireCard is not null) HideQuestionnaire();
             // The generic card never shows beside a plan, wherever the plan is drawn.
             permissionCard.Visibility = Visibility.Collapsed;
-            var card = PlanCard(current, count, DiagramShowsPlan(current) ? PlanPlace.Actions : PlanPlace.Dock);
+            var place = ComposerPlanPlace(current);
+            if (place == PlanCardSupport.ComposerPlaces.PanelActions)
+            {
+                // Nothing docks here: the answers are in the style's panel.
+                if (planDockCard is not null) { toolPermissionHost.Children.Remove(planDockCard); planDockCard = null; }
+                toolPermissionHost.Visibility = Visibility.Collapsed;
+                return true;
+            }
+            var card = PlanCard(current, count, place == PlanCardSupport.ComposerPlaces.BarActions ? PlanPlace.Actions : PlanPlace.Dock);
             if (!ReferenceEquals(planDockCard, card) && planDockCard is not null) toolPermissionHost.Children.Remove(planDockCard);
             planDockCard = card;
             if (!toolPermissionHost.Children.Contains(card)) { Detach(card); toolPermissionHost.Children.Add(card); }
@@ -493,8 +505,10 @@ public sealed partial class MainWindow
             // Folding or opening drops a dragged size, as the other blocks' size control does (AddGraphBlockSizeControls).
             return PlanRecordRow(record, graphExpanded.Contains(blockId), () => _ = owner.Act(async () =>
             {
+                graphRecordSizes.Remove(blockId); graphFollow.UserChangedLayout();
                 await Change(p => GraphBlockPreferences.Set(p, blockId, null));
                 if (!graphExpanded.Remove(blockId)) graphExpanded.Add(blockId);
+                graphFollow.UserChangedLayout();
                 RefreshMightyView(Session);
             }), inDiagram: true);
         }
@@ -636,6 +650,7 @@ public sealed partial class MainWindow
                 await Mode("default", "diagram", false, "the default view");
                 await Mode("mighty", "diagram", true, "the diagram");
                 await Mode("mighty", "timeline", false, "the timeline");
+                await Mode("mighty", "structure", false, "the structure");
                 await Mode("mighty", "diagram", true, "the diagram again");
                 await Mode("default", "diagram", false, "the default view again");
                 checks["oneCardAfterEachViewSwitch"] = true;

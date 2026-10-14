@@ -11,7 +11,8 @@ public sealed partial class MainWindow
         /// <summary>
         /// The bundled plan style on a fake pane (docs/mighty-styles.md §1.17): the phase bar goes plan → approve → execute
         /// with a fake plan, plan answer, checklist and background work, the progress widget and the task list draw, a new
-        /// request starts in plan mode, and the background strip shows outside the style. No CLI runs; the pane is restored.
+        /// request starts in plan mode, and the background strip shows outside the style. A waiting plan's answers sit in the
+        /// style's panel while the diagram draws the plan, and on the docked card in the timeline. No CLI runs; the pane is restored.
         /// </summary>
         internal async Task<Dictionary<string, object?>> RunClaudePlanStyleSmoke()
         {
@@ -42,12 +43,25 @@ public sealed partial class MainWindow
                 Require(styleActionButtons.ContainsKey("new-plan") && !styleActionButtons.ContainsKey("verify"), "planning offers a new plan only");
                 checks["planning"] = CurrentPhase();
 
-                // A plan waits for its answer: the approve phase, a sequence in flight with no chips.
-                await Change(p => p with { GraphRuns = [Run("running")], Status = "running" });
+                // A plan waits for its answer: the approve phase. The diagram draws the plan, so under the style its answers wait in
+                // the style's panel, as a question does (M/GuidedPanel.swift:115-119, PlanCardSupport.ComposerPlace), with no chips
+                // and nothing docked over the composer.
+                await Change(p => p with { GraphRuns = [Run("running")], Status = "running", GraphViewMode = "diagram" });
                 ReceiveToolPermission(SmokePlan("smoke-plan-style")); Refresh();
                 await WaitUI(() => CurrentPhase() == Title("approve"));
-                Require(FindById<ProgressRing>(guidedBody, "mighty-progress-" + id) is not null && styleActionButtons.Count == 0, "awaiting approval shows progress, not chips");
-                checks["awaitingApproval"] = CurrentPhase();
+                await WaitUI(() => FindById<Border>(guidedBody, "plan-actions-" + id) is not null && FindById<Button>(guidedBody, "plan-approve-auto-" + id) is { IsLoaded: true });
+                Require(styleActionButtons.Count == 0 && FindById<ProgressRing>(guidedBody, "mighty-progress-" + id) is null, "awaiting approval in the diagram shows the plan's answers in the style panel, not chips or progress");
+                Require(planDockCard is null && toolPermissionHost.Visibility == Visibility.Collapsed && FindById<Button>(toolPermissionHost, "plan-approve-auto-" + id) is null, "the plan's answers must not also dock over the composer");
+                foreach (var automation in new[] { "plan-cancel", "plan-revise", "plan-approve-confirm", "plan-approve-auto" })
+                    Require(FindById<Button>(guidedBody, automation + "-" + id) is not null, "the answers in the style panel must have " + automation);
+                // In the timeline the diagram does not draw the plan: the whole card docks over the composer, and the style panel
+                // shows the sequence in flight with no chips.
+                await Change(p => p with { GraphViewMode = "timeline" }); Refresh(); RefreshMightyView(Session);
+                await WaitUI(() => planDockCard is not null && toolPermissionHost.Visibility == Visibility.Visible && toolPermissionHost.Children.Contains(planDockCard) && FindById<ProgressRing>(guidedBody, "mighty-progress-" + id) is not null);
+                Require(styleActionButtons.Count == 0 && FindById<Border>(guidedBody, "plan-actions-" + id) is null, "awaiting approval shows progress, not chips");
+                await Change(p => p with { GraphViewMode = "diagram" }); Refresh(); RefreshMightyView(Session);
+                await WaitUI(() => FindById<Border>(guidedBody, "plan-actions-" + id) is not null && planDockCard is null);
+                checks["awaitingApproval"] = CurrentPhase(); checks["planAnswersInStylePanel"] = true;
 
                 // Approved and carried out, the turn and its background work both over: the next chips.
                 ClearToolPermissions();
@@ -87,7 +101,7 @@ public sealed partial class MainWindow
             finally
             {
                 ClearToolPermissions();
-                await Change(p => p with { Provider = original.Provider, AgentViewMode = original.AgentViewMode, MightyStyle = original.MightyStyle, MightyStyleHash = original.MightyStyleHash, MightyStyleSince = original.MightyStyleSince, Status = original.Status, GraphRuns = original.GraphRuns, PlanHistory = original.PlanHistory, TodoProgress = original.TodoProgress, BackgroundWork = original.BackgroundWork });
+                await Change(p => p with { Provider = original.Provider, AgentViewMode = original.AgentViewMode, MightyStyle = original.MightyStyle, MightyStyleHash = original.MightyStyleHash, MightyStyleSince = original.MightyStyleSince, Status = original.Status, GraphRuns = original.GraphRuns, GraphViewMode = original.GraphViewMode, PlanHistory = original.PlanHistory, TodoProgress = original.TodoProgress, BackgroundWork = original.BackgroundWork });
                 input.Text = draft; activeStyle = null; loadedStyleKey = null; stylePrerequisites = savedPrerequisites; Refresh(); RefreshMightyView(Session);
                 await WaitUI(() => !styleLoading);
             }

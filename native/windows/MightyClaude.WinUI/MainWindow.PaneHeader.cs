@@ -418,7 +418,8 @@ public sealed partial class MainWindow
             var rename = Add(Locale.Get("menu.rename"), () => owner.RenameSession(id));
             var focus = Add(Locale.Get("menu.focusPane"), () => owner.TogglePaneFocus(id));
             if (shell) Add(Locale.Get("terminal.history.title") + "…", () => owner.Act(() => owner.ShowTerminalHistory(id)));
-            var copy = Add(Locale.Get("pane.menu.copyLog"), () => { Copy(output.Text); return Task.CompletedTask; });
+            // The log as the Mac copies it: each entry behind its role (RunLogText).
+            var copy = Add(Locale.Get("pane.menu.copyLog"), () => { Copy(RunLogText.Copy(Session)); return Task.CompletedTask; });
             AutomationProperties.SetAutomationId(copy, "pane-menu-copy-" + id);
             var restart = shell ? null : Add(Locale.Get("pane.menu.newConversation"), () => owner.Act(ResetConversation));
             // The background work line's switch (M/SessionPaneView.swift paneMenu): the mark is the saved setting's, so a

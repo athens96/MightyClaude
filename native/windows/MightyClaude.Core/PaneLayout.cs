@@ -14,6 +14,25 @@ public sealed record PaneLayoutNode
 
 public static class PaneLayout
 {
+    /// <summary>The most panes the app holds, every workspace together (M/MightyCore/PaneLayout.swift:37).</summary>
+    public const int MaximumSessions = 128;
+    /// <summary>Whether one more pane may be added: the 129th is refused (M/AppStore.swift:573).</summary>
+    public static bool HasRoom(AppSnapshot state) => state.Sessions.Count < MaximumSessions;
+    /// <summary>How far down a tab group the strip over its tabs reaches for a drop, and the share of the group an edge's zone takes (M/PaneDockDrag.swift:81, M/PaneDockView.swift:13).</summary>
+    public const double DropMergeStrip = 36, DropEdgeShare = .24;
+    /// <summary>
+    /// Where a tab dropped at (<paramref name="x"/>, <paramref name="y"/>) on a group <paramref name="width"/> × <paramref name="height"/>
+    /// goes, off its tabs (M/PaneDockDrag.swift:79-82, M/PaneDockView.swift:8-15): the strip over the tabs joins them ("center"),
+    /// the nearest edge within <see cref="DropEdgeShare"/> of the group splits that way (a tie goes left, right, top, bottom),
+    /// and the rest joins the tabs too.
+    /// </summary>
+    public static string DropZone(double x, double y, double width, double height)
+    {
+        if (y < DropMergeStrip || !(width > 0) || !(height > 0)) return "center";
+        double across = Math.Clamp(x / width, 0, 1), down = Math.Clamp(y / height, 0, 1);
+        var (edge, distance) = new[] { ("left", across), ("right", 1 - across), ("top", down), ("bottom", 1 - down) }.MinBy(zone => zone.Item2);
+        return distance < DropEdgeShare ? edge : "center";
+    }
     public static IEnumerable<PaneLayoutNode> Groups(PaneLayoutNode? node) => node is null ? [] : node.Kind == "tabs" ? [node] : node.Children.SelectMany(Groups);
     public static IEnumerable<string> Sessions(PaneLayoutNode? node) => Groups(node).SelectMany(g => g.SessionIds);
     private static PaneLayoutNode Tabs(IEnumerable<string> ids, string? active = null) { var values = ids.ToList(); return new() { SessionIds = values, SelectedSessionId = values.Contains(active ?? "") ? active : values.FirstOrDefault() }; }

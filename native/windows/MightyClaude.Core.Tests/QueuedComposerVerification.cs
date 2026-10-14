@@ -20,6 +20,7 @@ internal static class QueuedComposerVerification
         Check(!queue.Settle("running") && !queue.Settle("error") && queue.Items.Count == 2, "errors keep work paused for explicit retry");
         Check(queue.Settle("completed") && queue.Settle("idle"), "a successful turn may drain the queue");
         Check(queue.Remove(first.Id) && !queue.Remove(first.Id) && queue.Items[0].Id == second.Id, "removal is scoped and preserves FIFO order");
+        Check(!second.Prepared && queue.Add("/ouroboros:interview goal", [], prepared: true) is { Prepared: true } prepared && queue.Remove(prepared.Id), "a style's prompt queued from the phone says it is already prepared, so draining it never rewrites it again");
         while (queue.Items.Count < QueuedInputBuffer.MaximumItems) queue.Add("queued", []);
         Reject(() => queue.Add("overflow", []));
         Check(queue.Items.Count == QueuedInputBuffer.MaximumItems, "capacity is bounded without evicting prior instructions");

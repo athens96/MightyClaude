@@ -347,6 +347,12 @@ public enum SlashChoiceEffect { Insert, AppAction, ArgumentCompletion }
 // action to run when there is one. ActionArg carries SetModel / SetPermission.
 public sealed record SlashChoice(string Draft, SlashChoiceEffect Effect, SlashCommandAction? Action = null, string? ActionArg = null);
 
+// What sending a draft that names a built-in does instead of handing it to the CLI as prompt text
+// (SessionPaneView.submitComposer): Command is chosen as from the list ("/clear" runs, "/model opus" applies,
+// "/model" opens its choices); Mismatch is the notice for an argument that matches no choice ("/model zzz"),
+// which goes to the transcript and clears the draft.
+public sealed record SlashSubmission(SlashCommand? Command, string? Mismatch = null);
+
 // Pure open/closed state for the completion list above the composer.
 // Open when Commands is non-empty; the highlight wraps on MoveUp / MoveDown
 // and is clamped when read, exactly as SessionPaneView.swift does.
@@ -430,6 +436,29 @@ public static class SlashPalette
         var rows = Rows(provider, kind, text, scanned, argumentChoices);
         if (rows.Length == 0) return SlashPaletteState.Closed;
         return SlashPaletteState.Open(rows.Length > MaximumRows ? rows[..MaximumRows] : rows);
+    }
+
+    // The built-in the trimmed draft names exactly ("/clear", "/model", "/model opus"), or null (SessionPaneView.typedBuiltin).
+    public static SlashCommand? TypedBuiltin(string provider, string draft)
+    {
+        var text = draft.Trim();
+        var name = SlashCommandCatalog.Query(text) ?? SlashCommandCatalog.ArgumentQuery(text)?.Command;
+        return name is null ? null : Builtins(provider).FirstOrDefault(c => c.Invocation == name);
+    }
+
+    // A send of a built-in typed out in full, however the list was left (closed with Esc, or the send button): null when the
+    // draft is ordinary text for the CLI. A shell has no built-ins, and a draft with attachments is a request.
+    public static SlashSubmission? Submitted(string provider, string kind, string draft, bool hasAttachments,
+        Func<SlashArgument, string, SlashCommand[]>? argumentChoices = null)
+    {
+        if (kind == "shell" || hasAttachments || TypedBuiltin(provider, draft) is not { } builtin) return null;
+        if (builtin.Argument is not { } argument) return new(builtin);
+        var query = SlashCommandCatalog.ArgumentQuery(draft.Trim())?.Query ?? "";
+        var choices = Rows(provider, kind, "/" + builtin.Invocation + " ", [], argumentChoices);
+        if (choices.FirstOrDefault(c => c.Invocation == builtin.Invocation + " " + query) is { } exact) return new(exact);
+        if (query.Length == 0) return new(builtin);
+        var values = new Dictionary<string, string> { ["query"] = ExecutionGraphSupport.Prefix(query, 80), ["command"] = builtin.Invocation };
+        return new(null, argument == SlashArgument.Model ? Locale.Get("slash.note.noModelMatch", values) : Locale.Get("slash.note.noPermissionMatch", values));
     }
 
     // The model rows "/model " lists, invoked as "model <value>" so the

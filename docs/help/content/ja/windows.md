@@ -21,7 +21,7 @@ Windows 10(バージョン2004)以降またはWindows 11で動作します。必
 アップデートは、Macと同じく{{ui:menu.settings}} → {{ui:settings.nav.about}}で行います。
 
 ## ショートカット {#shortcuts}
-{{kbd:⌘}}の代わりに{{kbd:Ctrl}}を使います。サイドバーの折りたたみだけはキーが異なります。
+{{kbd:⌘}}の代わりに{{kbd:Ctrl}}を使います。サイドバーの折りたたみとリモート画面の停止だけはキーが異なります。
 
 | Mac | Windows | 動作 |
 |---|---|---|
@@ -33,20 +33,22 @@ Windows 10(バージョン2004)以降またはWindows 11で動作します。必
 | {{kbd:⌃⌘S}} | {{kbd:Ctrl+B}} | {{ui:sidebar.collapse}} / {{ui:sidebar.expand}} |
 | {{kbd:⌘,}} | {{kbd:Ctrl+,}} | {{ui:menu.settings}} |
 | {{kbd:⌘Enter}} | {{kbd:Ctrl+Enter}} | 実行中のClaudeにすぐに伝える |
+| {{kbd:⌃⌥⌘K}} | {{kbd:Ctrl+Alt+Esc}} | スマートフォンからのリモート画面セッションをすべて止める([リモート画面](phone.md#screen)) |
 
 Windowsにはメニューバーがありません。同じ機能は、サイドバーと{{ui:workspace.addPane}}メニューにあります。
 
 ## 異なる点 {#differences}
 | 機能 | Windowsでは |
 |---|---|
-| CLIのサインイン | アプリ内のターミナルではなく、別のWindowsターミナルのウインドウで行います。 |
+| CLIのサインイン | アプリ内のターミナルではなく、別のWindowsターミナルのウインドウで行います。サインインが終わると、Macと同じく失敗したリクエストを自動で送り直します。 |
 | ターミナルペイン | Windows PowerShellを使います。 |
 | ブラウザペイン | Microsoft Edge WebView2で開きます。Macと同じく、{{ui:settings.display.browserToggle}}をオンにしてアプリを開き直す必要があります。 |
 | 完了通知 | {{ui:windows.notifications.toggleLabel}}でオンにします。 |
-| リモート画面 | モバイルリモートのリモート画面は使えます。画質のオプションはMacより少なくなります。 |
+| リモート画面 | モバイルリモートのリモート画面は使えます。画質のオプションはMacより少なくなります。{{kbd:Ctrl+Alt+Esc}}を押すと、すべてのリモート画面セッションがすぐに止まります。 |
+| ペットの吹き出し | 承認と質問の吹き出しに記号のボタンが1つ多くあります。承認ではリクエスト全体を見るウインドウを、質問では回答を自分で書いて送るウインドウを開きます。 |
 | 言語 | 変更した言語は、アプリを開き直すと適用されます。 |
 | ファイルの場所 | {{ui:menu.showInFinder}}の代わりに{{ui:menu.showInExplorer}}があります。 |
-| エージェント委任 | まだありません。[エージェント委任](delegation.md)はMacアプリだけの機能です。 |
+| エージェント委任 | レジストリの値でオンとオフを切り替えます([オンとオフ](delegation.md#enable))。worktreeは`%USERPROFILE%\.mightyclaude\worktrees`にでき、中にジャンクションやシンボリックリンクがあると自動では片付けません([ペインを閉じる・後片付け](delegation.md#close))。 |
 
 > [!note]
 > Windowsアプリの一部の機能は、まだ実機で十分に確認されていません。気になる点があればお知らせください。

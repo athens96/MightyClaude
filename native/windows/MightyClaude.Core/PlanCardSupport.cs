@@ -32,6 +32,29 @@ public static class PlanCardSupport
     public static bool ComposerShowsPlanActions(ToolPermissionRequest? request, bool showsDiagram, IReadOnlyList<MightyGraphRun> runs) =>
         DiagramPlanRunID(request, showsDiagram, runs) is not null;
 
+    /// <summary>Where the composer shows a pending plan's answers (M/PlanCardSupport.swift:40-47).</summary>
+    public enum ComposerPlaces
+    {
+        /// <summary>The whole card, plan and answers, docked above the composer: the diagram does not draw the plan.</summary>
+        Card,
+        /// <summary>Only the answers, in the style's panel, where a style shows its choices.</summary>
+        PanelActions,
+        /// <summary>Only the answers, docked above the composer (no style).</summary>
+        BarActions,
+    }
+
+    /// <summary>
+    /// One place for each pending plan, so its answers never show twice (M/PlanCardSupport.swift:58-62): the whole card
+    /// while the diagram does not draw the plan, else only its answers — in the style's panel under a style, docked above
+    /// the composer without one. Null for anything but an answerable pending plan.
+    /// </summary>
+    public static ComposerPlaces? ComposerPlace(ToolPermissionRequest? request, bool showsDiagram, IReadOnlyList<MightyGraphRun> runs, bool guided)
+    {
+        if (request is not { CanAnswerPlan: true, State: "pending", Plan: not null }) return null;
+        if (!ComposerShowsPlanActions(request, showsDiagram, runs)) return ComposerPlaces.Card;
+        return guided ? ComposerPlaces.PanelActions : ComposerPlaces.BarActions;
+    }
+
     /// <summary>Answered plans whose request the diagram draws, oldest first: the graph run's id and the record's.</summary>
     public static List<(string RunID, string RecordID)> DiagramRecords(IReadOnlyList<PlanRecord>? history, IReadOnlyList<MightyGraphRun> runs)
     {

@@ -105,7 +105,7 @@ Claude 和 Codex 窗格的标题栏中有{{ui:graph.view.default}} | {{ui:graph.
 ![[agent-timeline]]
 
 ### 结构 {#structure}
-在同一个切换开关中选择{{ui:graph.view.structure}}，可以按阶段分列查看请求。目前只有 Mac 应用提供。
+在同一个切换开关中选择{{ui:graph.view.structure}}，可以按阶段分列查看请求。
 - 使用风格的窗格顶部会排出该模式的各个阶段：已完成的阶段为绿色，当前阶段为强调色，其余为灰色。
 - 每个请求在它所属的阶段下方依次显示为请求卡片和{{ui:graph.block.execution}}卡片，{{ui:graph.block.execution}}卡片下方的虚线框中归组显示它的子代理树。已结束的请求在其下方附上结果。
 - 没有风格的窗格中，每个请求占一行：{{ui:graph.structure.column.request}} → {{ui:graph.structure.column.execution}} → {{ui:graph.structure.column.result}}。

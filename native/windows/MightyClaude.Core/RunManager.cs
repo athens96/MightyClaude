@@ -16,11 +16,11 @@ public interface IRunManager : IAsyncDisposable
 /// <param name="images">The picture cache agent runs write what they show into (macOS ProcessRunner.imageCache); null leaves pictures out.</param>
 public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, ProviderCatalog providers, string pluginDirectory, Action<RunEvent> emit, Action<ToolPermissionRequest>? permissionRequested = null, AgentImageCache? images = null) : IRunManager
 {
-    private sealed class Run(StartRunRequest request)
+    private sealed class Run(StartRunRequest request, bool awaited)
     {
         internal readonly StartRunRequest Request = request;
         internal readonly CancellationTokenSource Cancel = new();
-        internal readonly TaskCompletionSource? Accepted = request.Attachments is { Count: > 0 } ? new(TaskCreationOptions.RunContinuationsAsynchronously) : null;
+        internal readonly TaskCompletionSource? Accepted = awaited || request.Attachments is { Count: > 0 } ? new(TaskCreationOptions.RunContinuationsAsynchronously) : null;
         internal ChildProcess? Child;
         internal AgentIOBinding? PaneBinding;
         internal ClaudePermissionChannel? Permissions;
@@ -48,12 +48,23 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
     /// <summary>After the last background task ends, how long a silent CLI may keep stdin before the runner closes it.</summary>
     public TimeSpan BackgroundIdleClose { get; set; } = TimeSpan.FromSeconds(120);
     public Func<StartRunRequest, Workspace, AgentIOBinding?>? AgentIOBindingFactory { get; set; }
+    /// <summary>The hidden switch, read at each run start (M/ProcessRunner.swift:564-565): while it is on, a Claude pane's run also gets the delegation server.</summary>
+    public Func<bool> DelegationEnabled { get; set; } = DelegationSwitch.IsOn;
+    /// <summary>The app's side of the delegation server, which each run's binding is connected to; null leaves every delegation call unanswered.</summary>
+    public IDelegationRequestHandler? DelegationHandler { get; set; }
     private readonly ConcurrentDictionary<string, Run> runs = [];
     private readonly object lifecycle = new();
     private readonly ModBridge bridge = new();
     private bool disposed;
     public bool IsRunning(string id) => runs.ContainsKey(id);
-    public Task StartAsync(StartRunRequest value)
+    public Task StartAsync(StartRunRequest value) => Begin(value, false);
+    /// <summary>
+    /// Starts the run and returns once its process is up with its input open, or throws why it never got that far
+    /// (M/AppStore.swift:1049 startReachedRunner). A one-shot run has its prompt written by then. A stream-json run has only begun
+    /// its initialize handshake: its prompt is written after the CLI answers it, so a CLI that never answers never gets it.
+    /// </summary>
+    public Task StartReachedAsync(StartRunRequest value) => Begin(value, true);
+    private Task Begin(StartRunRequest value, bool awaited)
     {
         var request = value.Validate();
         if (request.Provider == "codex" && request.Settings!.PermissionMode == "onRequest" && permissionRequested is null)
@@ -62,7 +73,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         {
             ObjectDisposedException.ThrowIf(disposed, this);
             if (runs.Count >= 16) throw new InvalidOperationException(Locale.Get("run.error.tooManyConcurrent"));
-            var run = new Run(request);
+            var run = new Run(request, awaited);
             if (!runs.TryAdd(request.SessionId, run)) throw new InvalidOperationException(Locale.Get("run.error.alreadyRunning"));
             run.Task = Task.Run(() => ExecuteAsync(run)); return run.Accepted?.Task ?? Task.CompletedTask;
         }
@@ -175,6 +186,8 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         try
         {
             var workspace = await resolveWorkspace(request.WorkspaceId); token.ThrowIfCancellationRequested();
+            // A delegated child's run, its terminal tool and its MCP binding work in its worktree folder, never in its parent's checkout (M/AppStore.swift:1001-1002).
+            if (request.WorkingFolder is { } folder) workspace = Directory.Exists(folder) ? workspace with { Path = folder } : throw new DirectoryNotFoundException(Locale.Get("run.blocked.worktreeMissing"));
             parser.ImageRoot = workspace.Path;
             await providers.RefreshEnvironmentAsync(true, token);
             var environment = ProviderCatalog.QuietEnvironment();
@@ -209,6 +222,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                 if (request.Provider is "claude" or "codex" && AgentIOBindingFactory?.Invoke(request, workspace) is { } binding)
                 {
                     run.PaneBinding = binding;
+                    binding.ConnectDelegation(DelegationHandler, DelegationSwitch.IsClaudePane(request.Kind, request.Provider) && DelegationEnabled());
                     foreach (var pair in binding.Environment) environment[pair.Key] = pair.Value;
                     binding.AppendArguments(providerArguments);
                 }
@@ -242,10 +256,14 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
             void Consume(string line)
             {
                 line = run.PaneBinding?.Redact(line) ?? line;
+                // A confirmed Bedrock policy denial reads as guidance in the graph and the transcript; the sign-in reading below keeps the CLI's own words.
+                string? shown = null;
                 try
                 {
                     using var doc = System.Text.Json.JsonDocument.Parse(line); var frame = doc.RootElement;
-                    tracker?.Consume(frame);
+                    shown = request.Provider == "claude" ? ClaudeStream.PresentFailure(frame) : null;
+                    using var presented = shown is null ? null : System.Text.Json.JsonDocument.Parse(shown);
+                    tracker?.Consume(presented?.RootElement ?? frame);
                     if (request.Provider == "claude")
                     {
                         ReadPlanMode(frame);
@@ -270,7 +288,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                     }
                 }
                 catch (System.Text.Json.JsonException) { }
-                parser.Parse(line);
+                parser.Parse(shown ?? line);
             }
             if (codexApprovals)
             {
@@ -286,7 +304,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
             emit(RunEvent.State(request.SessionId, "running"));
             if (request.Kind != "shell") Activity(run, new(run.ActivityId, request.Provider, "turn", "running", Locale.Get("run.activity.running", new Dictionary<string, string> { ["name"] = ProviderCatalog.Name(request.Provider) })));
             // An agent's stream-json line may carry a whole picture in base64.
-            var output = PumpAsync(child.Output, request.Kind == "shell" ? 1024 * 1024 : codexApprovals ? CodexApprovalChannel.MaximumFrameBytes : AgentImageSupport.MaximumLineCharacters, line =>
+            var output = PumpAsync(child.Output, request.Kind == "shell" ? 1024 * 1024 : codexApprovals ? CodexApprovalChannel.MaximumFrameBytes : OutputParser.MaximumLineBytes(request.Provider), line =>
             {
                 if (run.Finalizing) return;
                 if (request.Kind == "shell") { Log(run, "output", line); return; }
@@ -307,7 +325,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                     if (ClaudeStream.IsTurnResult(line)) run.TurnResultSeen = true;
                     SettleInput();
                 }
-            }, token);
+            }, token, request.Kind == "shell" ? null : () => { if (!run.Finalizing) Log(run, "system", Locale.Get("run.notice.lineTooLong")); });
             var error = PumpAsync(child.Error, 1024 * 1024, line =>
             {
                 // Only Gemini reports a lost sign-in on stderr ("Please set an Auth method", "Error authenticating: …").
@@ -422,7 +440,8 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         }
         catch { }
     }
-    private static async Task PumpAsync(StreamReader reader, int maximumLineCharacters, Action<string> consume, CancellationToken token) { await foreach (var line in OutputParser.LinesAsync(reader, token, maximumLineCharacters)) consume(line); }
+    /// <param name="tooLong">Hears of each line that was skipped for being longer than the limit.</param>
+    private static async Task PumpAsync(StreamReader reader, int maximumLineBytes, Action<string> consume, CancellationToken token, Action? tooLong = null) { await foreach (var line in OutputParser.LinesAsync(reader, token, maximumLineBytes, tooLong)) consume(line); }
     public async Task StopAsync(string sessionId)
     {
         if (!Wire.Identifier(sessionId)) throw new ArgumentException(Locale.Get("run.error.invalidId"));

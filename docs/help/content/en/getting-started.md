@@ -49,7 +49,7 @@ A workspace is one project folder. Panes, the tab layout and conversation histor
 
 1. Click {{ui:layout.welcome.openProject}} or press {{kbd:⌘O}}.
 2. Choose the folder you want to work in.
-3. The workspace appears in the sidebar. Open your first pane with {{ui:menu.newClaudePane}} ({{kbd:⌘N}}).
+3. The workspace appears in the sidebar, and a folder with no panes gets a Claude pane right away. Open more panes with {{ui:menu.newClaudePane}} ({{kbd:⌘N}}).
 
 To open more folders, click the folder button at the right of the {{ui:sidebar.workspacesHeader}} heading in the sidebar, or use {{ui:menu.openProject}} in the menu bar or {{kbd:⌘O}}. Right-click a workspace in the sidebar for {{ui:menu.rename}}, {{ui:menu.showInFinder}} and {{ui:workspace.menu.remove}}. Removing it from the list leaves the project files on disk untouched.
 
@@ -62,5 +62,5 @@ To open more folders, click the folder button at the right of the {{ui:sidebar.w
 You can open this help straight from the app. It opens in the language you chose in the app.
 
 - Mac: {{ui:menu.help}} ({{kbd:⌘?}}) in the menu bar, or the {{ui:settings.appInfo.openHelpButton}} button in {{ui:menu.settings}} → {{ui:settings.nav.about}}
-- Windows: the help button at the bottom of the sidebar, or {{kbd:F1}}
+- Windows: the help button at the bottom of the sidebar, {{kbd:F1}}, or the {{ui:settings.appInfo.openHelpButton}} button in {{ui:menu.settings}} → {{ui:settings.nav.about}}
 - Phone: the {{ui:phone.hosts.help}} button on the {{ui:phone.tabs.hosts}} tab

@@ -288,8 +288,31 @@ public sealed partial class MainWindow
             return true;
         }
 
-        private Task SlashNote(string text) =>
-            Change(p => p with { Logs = [.. p.Logs, new LogEntry(Wire.Id(), "system", text, Wire.Now(), p.Provider)] });
+        /// <summary>A line the app itself says in the pane's transcript, drawn at once; the save follows.</summary>
+        private Task SlashNote(string text)
+        {
+            var saving = Change(p => p with { Logs = [.. p.Logs, new LogEntry(Wire.Id(), "system", text, Wire.Now(), p.Provider)] });
+            if (QueuePaneAlive) Refresh();
+            return saving;
+        }
+
+        /// <summary>
+        /// A built-in typed out in full never reaches the CLI as prompt text, however the list was left — closed with Esc, or
+        /// sent with the button (M/SessionPaneView.swift:931-942): <c>/clear</c> runs, <c>/model opus</c> applies, <c>/model</c>
+        /// opens its choices, and an argument that matches none is explained in the transcript and the draft cleared. Only a
+        /// draft that could be sent or queued now is read this way. True when the send was taken here.
+        /// </summary>
+        private async Task<bool> SubmitTypedBuiltin()
+        {
+            if (composingInput || attachmentsLoading || stopping) return false;
+            var pane = Session;
+            if (SlashPalette.Submitted(pane.Provider, pane.Kind, input.Text, pendingAttachments.Count > 0, ArgumentChoices) is not { } submission) return false;
+            if (pane.Status != "running" && !starting && !queueStarting && !owner.BackgroundUpdateHolds(pane)) { RefreshComposerState(); if (!canSend) return false; }
+            if (submission.Command is { } command) { await ChooseSlashCommand(command); return true; }
+            await SlashNote(submission.Mismatch!);
+            RefreshPalette(""); await SetDraft("");
+            return true;
+        }
 
         /// <summary>
         /// Rescans this pane's commands when the cache is missing or older than

@@ -68,9 +68,8 @@ public static class StyleStateEngine
 {
     public static StyleStateReading Read(StyleManifest manifest,string workspace,DateTimeOffset? since,RunSession? session=null)
     {
-        var states=new Dictionary<int,StyleFileState>();var widgets=new List<StyleStateWidget>();
-        if(!manifest.Root.TryGetProperty("stateSources",out var sources))return new(states,widgets);
-        var index=0;
+        var files=new List<(StyleFileState,StyleStateWidget)>();var events=new List<(string,string)>();
+        if(!manifest.Root.TryGetProperty("stateSources",out var sources))return Reading(manifest,files,events);
         foreach(var source in StyleManifest.Items(sources,"files"))
         {
             var kind=StyleManifest.Text(source,"widget")!;var state=new StyleFileState(false,false);var widget=new StyleStateWidget(kind);
@@ -79,25 +78,62 @@ public static class StyleStateEngine
                 var current=StyleFiles.Matches(workspace,StyleManifest.Text(source,"path")!).Select(path=>new{Path=path,Time=File.GetLastWriteTimeUtc(Path.Combine(workspace,path))}).Where(f=>f.Time>since.Value.UtcDateTime).OrderByDescending(f=>f.Time).ThenByDescending(f=>f.Path,StringComparer.Ordinal).FirstOrDefault();
                 if(current!=null){state=new(true,false);if(StyleFiles.Read(workspace,current.Path) is {} bytes){try{(state,widget)=Parse(new UTF8Encoding(false,true).GetString(bytes),StyleManifest.Text(source,"parser")!,kind);}catch(DecoderFallbackException){}}}
             }
-            states[index++]=state;widgets.Add(widget);
+            files.Add((state,widget));
+        }
+        // A log entry is one activity updated in place: a sub-agent counts once as started and once more when it ended.
+        if(since!=null&&session!=null)foreach(var log in session.Logs)
+        {
+            if(log.Activity is not {} a||a.ToolName is null||!DateTimeOffset.TryParse(log.Timestamp,out var at)||at<since)continue;
+            if(a.Kind=="agent"&&new[]{"task","agent"}.Contains(a.ToolName.ToLowerInvariant())){events.Add(("subagent.start",StyleText.Safe(a.Summary,400)));if(new[]{"completed","error","stopped"}.Contains(a.State))events.Add(("subagent.finish",StyleText.Safe(a.Summary,400)));}
+            else if(new[]{"tool","command","read","edit","search","web"}.Contains(a.Kind))events.Add(("tool.call",StyleText.Safe(a.ToolName,400)));
+        }
+        return Reading(manifest,files,events);
+    }
+    /// <summary>
+    /// Pure (M/Styles/StyleStateEngine.swift reading): what each file source read, the pane's own events and, for a style that
+    /// reads it, the plan stage with its checklist and background work, as one reading — a widget per source, files first,
+    /// then run events, then run state, each in declaration order.
+    /// </summary>
+    public static StyleStateReading Reading(StyleManifest manifest,IReadOnlyList<(StyleFileState State,StyleStateWidget Widget)> files,IReadOnlyList<(string Event,string Value)> runEvents,string? planStage=null,TodoProgress? todos=null,BackgroundWork? work=null)
+    {
+        var states=new Dictionary<int,StyleFileState>();var widgets=new List<StyleStateWidget>();
+        if(!manifest.Root.TryGetProperty("stateSources",out var sources))return new(states,widgets,planStage);
+        var index=0;
+        foreach(var source in StyleManifest.Items(sources,"files"))
+        {
+            var read=index<files.Count?files[index]:(State:new StyleFileState(false,false),Widget:Empty(StyleManifest.Text(source,"widget")!));
+            states[index++]=read.State;widgets.Add(read.Widget);
         }
         foreach(var source in StyleManifest.Items(sources,"runEvents"))
         {
-            var type=StyleManifest.Text(source,"event")!;var kind=StyleManifest.Text(source,"widget")!;var aggregate=StyleManifest.Text(source,"aggregate");
-            var values=new List<string>();
-            if(since!=null&&session!=null)foreach(var log in session.Logs)
-            {
-                if(log.Activity is not {} a||a.ToolName is null||!DateTimeOffset.TryParse(log.Timestamp,out var at)||at<since)continue;
-                var agent=a.Kind=="agent"&&new[]{"task","agent"}.Contains(a.ToolName.ToLowerInvariant());
-                if(type=="subagent.start"&&agent||type=="subagent.finish"&&agent&&new[]{"completed","error","stopped"}.Contains(a.State))values.Add(StyleText.Safe(a.Summary,400));
-                else if(type=="tool.call"&&new[]{"tool","command","read","edit","search","web"}.Contains(a.Kind))values.Add(StyleText.Safe(a.ToolName,400));
-            }
-            widgets.Add(kind switch{
-                "progressBar"=>new(kind,Value:values.Count),
-                "list"=>new(kind,Items:aggregate=="count"?values.TakeLast(8).ToArray():values.TakeLast(1).ToArray()),
-                _=>new(kind,aggregate=="lastValue"?values.LastOrDefault()??"":Locale.Get(type=="subagent.start"?"styles.state.subagentStartCount":type=="subagent.finish"?"styles.state.subagentFinishCount":"styles.state.toolCallCount",new Dictionary<string,string>{{"count",values.Count.ToString()}}))});
+            var type=StyleManifest.Text(source,"event")!;
+            widgets.Add(Aggregate(type,StyleManifest.Text(source,"widget")!,StyleManifest.Text(source,"aggregate"),runEvents.Where(e=>e.Event==type).Select(e=>e.Value).ToArray()));
         }
-        return new(states,widgets);
+        if(planStage is not null)widgets.AddRange(RunStateWidgets(manifest,planStage,todos,work));
+        return new(states,widgets,planStage);
+    }
+    /// <summary><c>count</c> and <c>lastValue</c>, each drawn by the widget the source names; a bar from events has no total.</summary>
+    public static StyleStateWidget Aggregate(string type,string kind,string? aggregate,IReadOnlyList<string> values)=>kind switch{
+        "progressBar"=>new(kind,Value:values.Count),
+        "list"=>new(kind,Items:aggregate=="count"?values.TakeLast(8).ToArray():values.TakeLast(1).ToArray()),
+        _=>new(kind,aggregate=="lastValue"?values.LastOrDefault()??"":Locale.Get(type=="subagent.start"?"styles.state.subagentStartCount":type=="subagent.finish"?"styles.state.subagentFinishCount":"styles.state.toolCallCount",new Dictionary<string,string>{{"count",values.Count.ToString()}}))};
+    /// <summary>
+    /// Whether a change reported at <paramref name="changedPath"/> (a folder or a file) can move any file source
+    /// (M/Styles/StyleStateEngine.swift affects): it is under a source's fixed leading folder, or is one of that folder's
+    /// parents (a folder being created on the way). The watcher asks this; nothing is read.
+    /// </summary>
+    public static bool Affects(StyleManifest manifest,string workspace,string changedPath)
+    {
+        if(!manifest.Root.TryGetProperty("stateSources",out var sources))return false;
+        foreach(var source in StyleManifest.Items(sources,"files"))
+        {
+            var parts=StyleManifest.Text(source,"path")!.Replace('\\','/').Split('/',StringSplitOptions.RemoveEmptyEntries);
+            var leading=parts.TakeWhile(part=>!part.Contains('*')&&!part.Contains('?')).ToArray();
+            // A literal path's last part is the file; its folder is what changes.
+            if(leading.Length==parts.Length&&leading.Length>0)leading=leading[..^1];
+            if(StyleChangeWatcher.Touches(changedPath,leading.Aggregate(workspace,Path.Combine)))return true;
+        }
+        return false;
     }
     // ── §1.17 (v6): the pane's plan-mode state ────────────────────────────────
 

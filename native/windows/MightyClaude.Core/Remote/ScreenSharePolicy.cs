@@ -29,6 +29,18 @@ public static class ScreenSharePolicy
 {
     public const int ControlIdleSeconds = 600, ViewIdleSeconds = 1800, LocalInputPauseSeconds = 2, BackgroundSeconds = 30;
     public static bool GrantAllows(ScreenDeviceGrant? grant, string mode) => grant?.Allowed == true && mode is "view" or "control" && (grant.Grant == "control" || mode == "view" && grant.Grant == "view");
+    /// <summary>The display a phone means: the one it named, or the main display when that one is not attached (any longer) — never a stop (M/MightyCore/Remote/ScreenShareCapture.swift:244-253). Null only with no display at all.</summary>
+    public static ScreenDisplay? DisplayFor(IReadOnlyList<ScreenDisplay> displays, int displayId) => displays.FirstOrDefault(d => d.DisplayId == displayId) ?? displays.FirstOrDefault(d => d.Main) ?? displays.FirstOrDefault();
+    /// <summary>Capture that ended on its own is started again at most this often within the window; past that it keeps failing and the sessions end as <c>display-gone</c>.</summary>
+    public const int CaptureRestarts = 3;
+    public static readonly TimeSpan CaptureRestartWindow = TimeSpan.FromSeconds(10);
+    /// <summary>True, and counted in <paramref name="recent"/>, when capture may be started again now (<see cref="CaptureRestarts"/>).</summary>
+    public static bool MayRestartCapture(List<DateTimeOffset> recent, DateTimeOffset now)
+    {
+        recent.RemoveAll(at => now - at >= CaptureRestartWindow);
+        if (recent.Count >= CaptureRestarts) return false;
+        recent.Add(now); return true;
+    }
     public static bool CanJoin(string mode, IEnumerable<ScreenLiveSession> sessions) => mode switch { "control" => sessions.Count(s => s.Mode == "control") < 1, "view" => sessions.Count(s => s.Mode == "view") < 2, _ => false };
     public static string Fingerprint(byte[] key)
     { var hex = Convert.ToHexString(SHA256.HashData(key).AsSpan(0, 8)); return string.Join("-", Enumerable.Range(0, 4).Select(i => hex.Substring(i * 4, 4))); }

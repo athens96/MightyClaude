@@ -260,6 +260,11 @@ public sealed partial class MainWindow
     private StackPanel? toolkitListPanel;
     private StackPanel? toolkitResultsPanel;
     private Button? toolkitInstallButton;
+    /// <summary>Add, export and import: with install they wait while an install runs (M/ComponentsSettingsView.swift:125-137).</summary>
+    private Button[] toolkitFileButtons = [];
+    /// <summary>The row over the tools that says toolkit.json could not be read or changed, and why (M/ComponentsSettingsView.swift:110-115).</summary>
+    private Border? toolkitErrorRow;
+    private TextBlock? toolkitErrorWords;
 
     private string StateDirectory =>
         options.ProfileDirectory ?? Path.Combine(
@@ -277,8 +282,8 @@ public sealed partial class MainWindow
         LocalAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
     };
 
-    // 구성 요소 (M/ComponentsSettingsView.swift:11-91): one row per CLI, then the explanation beside the
-    // recheck button. The toolkit is the next box (BuildToolkitSection).
+    // 구성 요소 (M/ComponentsSettingsView.swift:11-91): one row per CLI, what the last button did, then the
+    // explanation beside the recheck button. The toolkit is the next box (BuildToolkitSection).
     private StackPanel BuildComponentsSection()
     {
         // CLI rows — re-filled by the recheck button; the last row stays under them.
@@ -287,23 +292,71 @@ public sealed partial class MainWindow
         // Recheck button — re-probes the runtime without closing the dialog.
         var recheckLabel = Locale.Get("settings.components.recheckButton");
         var checkingLabel = Locale.Get("settings.components.checkingButton");
-        var recheckBtn = SettingsPush(new Button { Content = recheckLabel });
+        // It waits while it checks and while a row's button works (M/ComponentsSettingsView.swift:25); the rows set it as they are drawn.
+        var recheckBtn = componentsRecheck = SettingsPush(new Button { Content = componentsChecking ? checkingLabel : recheckLabel });
         AutomationProperties.SetAutomationId(recheckBtn, "components-refresh");
-        recheckBtn.Click += async (_, _) => await Act(async () =>
+        async Task Recheck()
         {
-            recheckBtn.Content = checkingLabel;
-            recheckBtn.IsEnabled = false;
-            await RefreshRuntime();
-            FillComponentCliRows(rows);
-            recheckBtn.Content = recheckLabel;
-            recheckBtn.IsEnabled = true;
-        });
+            if (componentsChecking || componentAction is not null) return;
+            componentsChecking = true; recheckBtn.Content = checkingLabel; recheckBtn.IsEnabled = false;
+            try { await RefreshRuntime(); }
+            finally
+            {
+                componentsChecking = false;
+                // The section that shows now: a tab switch meanwhile built another.
+                if (componentsRecheck is { } live) live.Content = recheckLabel;
+                if (!closing) RefillComponentCliRows();
+            }
+        }
+        recheckBtn.Click += async (_, _) => await Act(Recheck);
         SettingsRow(rows, SettingsLabeled(SettingsText(Locale.Get("settings.components.sectionDescription"), 11, DesignToken.Ink2), recheckBtn), tag: ComponentsFooterRow);
         FillComponentCliRows(rows);
+        // Checked again as the section opens, then looked at every 5 s while a row still needs the user
+        // (M/ComponentsSettingsView.swift:28-38). As on the Mac the timed look reads the runtime the app holds, which a
+        // CLI update or another check renews; it draws the rows again only when they differ.
+        var look = new DispatcherTimer { Interval = ComponentSection.RecheckInterval };
+        look.Tick += (_, _) =>
+        {
+            if (closing || settingsWindow is null || !rows.IsLoaded) { look.Stop(); return; }
+            if (componentsChecking || componentAction is not null || !ComponentSection.NeedsRecheck(componentRowsShown)) return;
+            if (ComponentRowsKey(ComponentSection.SectionRows(ComponentRuntime)) != ComponentRowsKey(componentRowsShown)) FillComponentCliRows(rows);
+        };
+        rows.Loaded += async (_, _) => { if (options.SmokeTest) return; look.Start(); await Act(Recheck); };
+        rows.Unloaded += (_, _) => look.Stop();
         return rows;
     }
 
-    private const string ComponentsFooterRow = "components-footer", ComponentRow = "component", ToolkitEntryRow = "toolkit-entry", ToolkitFooterRow = "toolkit-footer", ToolkitResultsRow = "toolkit-results";
+    /// <summary>The runtime the CLI rows are read from; before the first check, none of the CLIs is known.</summary>
+    private RuntimeInfo ComponentRuntime => runtime ?? new RuntimeInfo("win32", "0.0.0", false, null, null, [], null);
+    private static string ComponentRowsKey(IEnumerable<ComponentStatus> rows) => string.Join("\n", rows.Select(row => row.Id + "\t" + row.State + "\t" + row.Version + "\t" + row.Detail));
+    /// <summary>The CLI rows as last drawn, the button that is working ("claude:update"), and what the last one did.</summary>
+    private IReadOnlyList<ComponentStatus> componentRowsShown = [];
+    private string? componentAction, componentMessage;
+    /// <summary>The recheck button of the section built last, and whether a check it started is under way.</summary>
+    private Button? componentsRecheck;
+    private bool componentsChecking;
+
+    /// <summary>
+    /// A CLI row's button (M/AppStore+Components.swift:50-73), one at a time: its words say it is working meanwhile;
+    /// copying puts the install command on the clipboard and the section says so; updating starts the update
+    /// Settings › CLI's update-now button starts. The rows are drawn again a second later.
+    /// </summary>
+    private async Task PerformComponentAction(string component, string action, string? command)
+    {
+        if (componentAction is not null || closing) return;
+        componentAction = component + ":" + action; componentMessage = null; RefillComponentCliRows();
+        try
+        {
+            if (action == "update") { if (!AnyCliUpdateRunning && !pluginOperations.IsRunning) coordinator.Start(); }
+            else if (command is not null) { Copy(command); componentMessage = ComponentSection.CopiedMessage(command); }
+            await Task.Delay(TimeSpan.FromSeconds(1));
+        }
+        finally { componentAction = null; if (!closing) RefillComponentCliRows(); }
+    }
+    /// <summary>The CLI rows again in the section that shows now: the tab is built anew each time it is chosen.</summary>
+    private void RefillComponentCliRows() { if (componentsCliPanel is { } panel) FillComponentCliRows(panel); }
+
+    private const string ComponentsFooterRow = "components-footer", ComponentMessageRow = "components-message", ComponentRow = "component", ToolkitEntryRow = "toolkit-entry", ToolkitFooterRow = "toolkit-footer", ToolkitResultsRow = "toolkit-results";
 
     // 내 작업 도구 모음 (M/ComponentsSettingsView.swift:105-214): the file error, one row per tool, the
     // results of the last run, then the explanation beside the add, export, import and install buttons.
@@ -315,16 +368,15 @@ public sealed partial class MainWindow
         var store = GetToolkitStore();
         var (entries, fileError) = store.List();
 
-        if (fileError is not null)
-        {
-            var banner = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
-            banner.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); banner.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
-            var mark = SettingsSymbol("", 12, DesignToken.WaitText); mark.VerticalAlignment = VerticalAlignment.Top; mark.Margin = new Thickness(0, 1, 0, 0);
-            banner.Children.Add(mark);
-            var words = SettingsText(Locale.Get("settings.toolkit.errorBanner"), 11, selectable: true);
-            Grid.SetColumn(words, 1); banner.Children.Add(words);
-            SettingsRow(rows, banner);
-        }
+        // The row is always there and shows only while there is something to say: a file action that fails later says so in it.
+        var banner = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
+        banner.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); banner.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
+        var mark = SettingsSymbol("", 12, DesignToken.WaitText); mark.VerticalAlignment = VerticalAlignment.Top; mark.Margin = new Thickness(0, 1, 0, 0);
+        banner.Children.Add(mark);
+        toolkitErrorWords = SettingsText("", 11, selectable: true);
+        Grid.SetColumn(toolkitErrorWords, 1); banner.Children.Add(toolkitErrorWords);
+        toolkitErrorRow = SettingsRow(rows, banner);
+        ShowToolkitError(fileError);
 
         // Results from the last install run.
         toolkitResultsPanel = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs, Margin = new Thickness(0, DesignMetrics.Spacing.Xs, 0, DesignMetrics.Spacing.Xs) };
@@ -334,16 +386,17 @@ public sealed partial class MainWindow
 
         // Action buttons row.
         var btnRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
-        var addBtn = SettingsPush(new Button { Content = Locale.Get("settings.toolkit.addButton") }, SettingsControlSize.Small);
+        var addBtn = SettingsPush(new Button { Content = Locale.Get("settings.toolkit.addButton"), IsEnabled = !toolkitRunning }, SettingsControlSize.Small);
         AutomationProperties.SetAutomationId(addBtn, "settings-toolkit-add");
-        addBtn.Click += async (_, _) => await Act(() => AddToolkitEntry(store));
-        var exportBtn = SettingsPush(new Button { Content = Locale.Get("settings.toolkit.exportButton") }, SettingsControlSize.Small);
+        addBtn.Click += async (_, _) => await Act(() => ToolkitFileAction(store, () => AddToolkitEntry(store)));
+        var exportBtn = SettingsPush(new Button { Content = Locale.Get("settings.toolkit.exportButton"), IsEnabled = !toolkitRunning }, SettingsControlSize.Small);
         AutomationProperties.SetAutomationId(exportBtn, "settings-toolkit-export");
-        exportBtn.Click += async (_, _) => await Act(() => ExportToolkit(store));
-        var importBtn = SettingsPush(new Button { Content = Locale.Get("settings.toolkit.importButton") }, SettingsControlSize.Small);
+        exportBtn.Click += async (_, _) => await Act(() => ToolkitFileAction(store, () => ExportToolkit(store), reload: false));
+        var importBtn = SettingsPush(new Button { Content = Locale.Get("settings.toolkit.importButton"), IsEnabled = !toolkitRunning }, SettingsControlSize.Small);
         AutomationProperties.SetAutomationId(importBtn, "settings-toolkit-import");
-        importBtn.Click += async (_, _) => await Act(() => ImportToolkit(store));
-        toolkitInstallButton = SettingsPush(new Button { Content = Locale.Get("settings.toolkit.installButton"), IsEnabled = !toolkitRunning });
+        importBtn.Click += async (_, _) => await Act(() => ToolkitFileAction(store, () => ImportToolkit(store)));
+        toolkitFileButtons = [addBtn, exportBtn, importBtn];
+        toolkitInstallButton = SettingsPush(new Button { Content = toolkitRunning ? Locale.Get("settings.toolkit.installingButton") : Locale.Get("settings.toolkit.installButton"), IsEnabled = !toolkitRunning });
         AutomationProperties.SetAutomationId(toolkitInstallButton, "settings-toolkit-install");
         toolkitInstallButton.Click += async (_, _) => await Act(() => RunToolkitInstall(store));
         btnRow.Children.Add(addBtn);
@@ -358,12 +411,13 @@ public sealed partial class MainWindow
 
     // Renders one row per CLI provider (claude/codex/gemini), above the box's last row.
     // M/ComponentsSettingsView.swift:42-74: the mark, the 13pt medium name, the 베타 capsule, the version
-    // in 10pt mono and the state word at the trailing edge; the 11pt detail; then the row's small buttons.
+    // in 10pt mono and the state word at the trailing edge; the 11pt detail; then the row's small buttons, which
+    // all wait while one of them works. Under the rows, what the last button did (M/ComponentsSettingsView.swift:14-20).
     private void FillComponentCliRows(StackPanel panel)
     {
-        var rt = runtime ?? new RuntimeInfo("win32", "0.0.0", false, null, null, [], null);
+        var rt = ComponentRuntime;
         var contents = new List<FrameworkElement>();
-        foreach (var row in ComponentSection.SectionRows(rt))
+        foreach (var row in componentRowsShown = ComponentSection.SectionRows(rt))
         {
             var rowPanel = new StackPanel { Spacing = DesignMetrics.Spacing.Sm, Margin = new Thickness(0, DesignMetrics.Spacing.Xs, 0, DesignMetrics.Spacing.Xs) };
             AutomationProperties.SetAutomationId(rowPanel, "component-" + row.Id);
@@ -387,17 +441,34 @@ public sealed partial class MainWindow
                 foreach (var action in row.Actions)
                 {
                     var actionId = action.Id;
-                    var btn = SettingsPush(new Button { Content = action.Title }, SettingsControlSize.Small);
+                    var title = componentAction == row.Id + ":" + actionId ? Locale.Get("settings.components.inProgressLabel") : action.Title;
+                    var btn = SettingsPush(new Button { Content = title, IsEnabled = componentAction is null }, SettingsControlSize.Small);
                     AutomationProperties.SetAutomationId(btn, "component-" + row.Id + "-" + actionId);
-                    if (actionId == "copy-command" && ComponentSection.InstallCommand(row.Id) is { } cmd)
-                        btn.Click += (_, _) => Copy(cmd);
+                    var command = actionId == "copy-command" ? ComponentSection.InstallCommand(row.Id) : null;
+                    btn.Click += async (_, _) => await Act(() => PerformComponentAction(row.Id, actionId, command));
                     actionsPanel.Children.Add(btn);
                 }
                 rowPanel.Children.Add(actionsPanel);
             }
             contents.Add(rowPanel);
         }
-        ReplaceSettingsRows(panel, ComponentRow, contents, panel.Children.OfType<Border>().FirstOrDefault(row => Equals(row.Tag, ComponentsFooterRow)));
+        var footer = panel.Children.OfType<Border>().FirstOrDefault(row => Equals(row.Tag, ComponentsFooterRow));
+        var said = new List<FrameworkElement>();
+        if (componentMessage is { } message)
+        {
+            // checkmark.circle in doneText a point down, beside the 11pt words (M/ComponentsSettingsView.swift:15-19).
+            var line = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
+            line.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); line.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
+            var mark = SettingsSymbol("", 12, DesignToken.DoneText); mark.VerticalAlignment = VerticalAlignment.Top; mark.Margin = new Thickness(0, 1, 0, 0);
+            line.Children.Add(mark);
+            var words = SettingsText(message, 11, DesignToken.Ink2, selectable: true);
+            Grid.SetColumn(words, 1); line.Children.Add(words);
+            AutomationProperties.SetAutomationId(line, "components-message");
+            said.Add(line);
+        }
+        if (componentsRecheck is { } recheck) recheck.IsEnabled = componentAction is null && !componentsChecking;
+        ReplaceSettingsRows(panel, ComponentMessageRow, said, footer);
+        ReplaceSettingsRows(panel, ComponentRow, contents, panel.Children.OfType<Border>().FirstOrDefault(row => row.Tag is ComponentMessageRow or ComponentsFooterRow));
     }
 
     /// <summary>A provider's mark beside a 13pt name: the Mac draws it in a 13 × 1.15 box (M/ProviderIcon.swift:18).</summary>
@@ -457,27 +528,15 @@ public sealed partial class MainWindow
                 {
                     actions.Children.Add(SettingsText(Locale.Get("settings.toolkit.needsApproval"), 11, DesignToken.Ink2));
                     var entryId = entry.Id;
-                    var approveBtn = SettingsPush(new Button { Content = Locale.Get("settings.toolkit.approveButton") }, SettingsControlSize.Mini);
+                    var approveBtn = SettingsPush(new Button { Content = Locale.Get("settings.toolkit.approveButton"), IsEnabled = !toolkitRunning }, SettingsControlSize.Mini);
                     AutomationProperties.SetAutomationId(approveBtn, "toolkit-approve-" + entryId);
-                    approveBtn.Click += async (_, _) => await Act(async () =>
-                    {
-                        store.Approve(entryId);
-                        var (reloaded, _) = store.List();
-                        FillToolkitList(toolkitListPanel!, store, reloaded);
-                        await Task.CompletedTask;
-                    });
+                    approveBtn.Click += async (_, _) => await Act(() => ToolkitFileAction(store, () => { store.Approve(entryId); return Task.CompletedTask; }));
                     actions.Children.Add(approveBtn);
                 }
                 var removeEntryId = entry.Id;
-                var removeBtn = SettingsPush(new Button { Content = Locale.Get("settings.toolkit.removeButton") }, SettingsControlSize.Mini);
+                var removeBtn = SettingsPush(new Button { Content = Locale.Get("settings.toolkit.removeButton"), IsEnabled = !toolkitRunning }, SettingsControlSize.Mini);
                 AutomationProperties.SetAutomationId(removeBtn, "toolkit-remove-" + removeEntryId);
-                removeBtn.Click += async (_, _) => await Act(async () =>
-                {
-                    store.Remove(removeEntryId);
-                    var (reloaded, _) = store.List();
-                    FillToolkitList(toolkitListPanel!, store, reloaded);
-                    await Task.CompletedTask;
-                });
+                removeBtn.Click += async (_, _) => await Act(() => ToolkitFileAction(store, () => { store.Remove(removeEntryId); return Task.CompletedTask; }));
                 actions.Children.Add(removeBtn);
                 row.Children.Add(actions);
             }
@@ -489,11 +548,46 @@ public sealed partial class MainWindow
     /// <summary>The bundled chip's tint: the secondary ink at 0.15 (M/ComponentsSettingsView.swift:155).</summary>
     private const double ToolkitBadgeTint = 0.15;
 
+    /// <summary>The line over the tools: shown with its reason while toolkit.json could not be read or changed (ToolkitPresentation.ErrorBanner), else hidden.</summary>
+    private void ShowToolkitError(string? reason)
+    {
+        if (toolkitErrorWords is not null) toolkitErrorWords.Text = reason is null ? "" : ToolkitPresentation.ErrorBanner(reason);
+        if (toolkitErrorRow is not null) toolkitErrorRow.Visibility = reason is null ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    /// <summary>
+    /// A change to the tools or their file (approve, add, remove, export, import; M/AppStore+Toolkit.swift:24-93): never while an
+    /// install runs; what goes wrong is said over the tools with its reason; what works draws the list again, and with it
+    /// whatever the file itself still has to say.
+    /// </summary>
+    private async Task ToolkitFileAction(ToolkitStore store, Func<Task> action, bool reload = true)
+    {
+        if (toolkitRunning) return;
+        try { await action(); }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { ShowToolkitError(ex.Message); return; }
+        if (!reload || closing) return;
+        var (entries, fileError) = store.List();
+        ShowToolkitError(fileError);
+        if (toolkitListPanel is not null) FillToolkitList(toolkitListPanel, store, entries);
+    }
+
+    /// <summary>While an install runs every button of the box waits (M/ComponentsSettingsView.swift:125-137, 171-181).</summary>
+    private void HoldToolkit(bool running, ToolkitStore store)
+    {
+        toolkitRunning = running;
+        if (toolkitInstallButton is not null) { toolkitInstallButton.Content = running ? Locale.Get("settings.toolkit.installingButton") : Locale.Get("settings.toolkit.installButton"); toolkitInstallButton.IsEnabled = !running; }
+        foreach (var button in toolkitFileButtons) button.IsEnabled = !running;
+        // The rows' own buttons wait with them, and after a run the list is probed again.
+        var (reloaded, _) = store.List();
+        if (toolkitListPanel is not null) FillToolkitList(toolkitListPanel, store, reloaded);
+    }
+
     // Fills the result table after a run: one line per tool with its verdict's mark and word
     // (M/ComponentsSettingsView.swift:199-214), in a row of its own that shows once there is a result.
     private void FillToolkitResults(StackPanel panel, IReadOnlyList<ToolkitRunItem> results)
     {
         panel.Children.Clear();
+        var entries = GetToolkitStore().List().Entries;
         foreach (var item in results)
         {
             var (label, glyph, ink) = item.RunVerdict switch
@@ -505,14 +599,15 @@ public sealed partial class MainWindow
             var line = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             line.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); line.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); line.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             line.Children.Add(SettingsSymbol(glyph, 11, ink));
-            var name = SettingsText(item.EntryId, 11); Grid.SetColumn(name, 1); line.Children.Add(name);
+            var name = SettingsText(ToolkitPresentation.ResultName(item, entries), 11); Grid.SetColumn(name, 1); line.Children.Add(name);
             var verdict = SettingsText(label, 10, ink, medium: true); Grid.SetColumn(verdict, 2); line.Children.Add(verdict);
             panel.Children.Add(line);
         }
         if (panel.Parent is Border row) row.Visibility = results.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    // One confirm view that lists every argv before anything runs.
+    // One confirm view that lists every tool before anything runs (M/ComponentsSettingsView.swift:215-252): its name over
+    // each command it will run, or over the line that says it is left out.
     private async Task RunToolkitInstall(ToolkitStore store)
     {
         if (toolkitRunning) return;
@@ -523,62 +618,39 @@ public sealed partial class MainWindow
         var plan = runner.Plan();
         if (plan.Count == 0) return;
 
-        // Show confirm dialog: list every argv before running anything.
-        var argsList = new StackPanel { Spacing = DesignMetrics.Spacing.Xs };
-        argsList.Children.Add(new TextBlock
+        var tools = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
+        foreach (var row in ToolkitPresentation.PlanRows(plan))
         {
-            Text = Locale.Get("settings.toolkit.confirmDescription"),
-            TextWrapping = TextWrapping.Wrap,
-            FontSize = 12,
-            Margin = new Thickness(0, 0, 0, DesignMetrics.Spacing.Sm),
-        });
-        foreach (var item in plan.Where(i => i.Action == ToolkitPlanItem.PlanAction.Run))
-            foreach (var argv in item.Commands)
-                argsList.Children.Add(new TextBlock
-                {
-                    Text = string.Join(" ", argv),
-                    FontSize = 11,
-                    FontFamily = new Microsoft.UI.Xaml.Media.FontFamily(DesignMetrics.Font.Mono),
-                    TextWrapping = TextWrapping.Wrap,
-                    Opacity = .85,
-                });
+            var tool = new StackPanel { Spacing = DesignMetrics.Spacing.Xs, Margin = new Thickness(0, DesignMetrics.Spacing.Xxs, 0, DesignMetrics.Spacing.Xxs) };
+            tool.Children.Add(SettingsText(row.Name, 12, medium: true));
+            foreach (var line in row.Lines) tool.Children.Add(SettingsText(line, 11, row.Skipped ? DesignToken.Ink2 : DesignToken.Ink, mono: true, selectable: !row.Skipped));
+            tools.Children.Add(tool);
+        }
+        var content = new StackPanel { Spacing = DesignMetrics.Spacing.Md };
+        content.Children.Add(SettingsText(Locale.Get("settings.toolkit.confirmDescription"), 12, DesignToken.Ink2));
+        content.Children.Add(new ScrollViewer { Content = tools, MaxHeight = 300 });
 
         var confirm = StyledDialog(new ContentDialog
         {
             Title = Locale.Get("settings.toolkit.confirmTitle"),
-            Content = new ScrollViewer { Content = argsList, MaxHeight = 240 },
+            Content = content,
             PrimaryButtonText = Locale.Get("settings.toolkit.confirmInstall"),
             CloseButtonText = Locale.Get("settings.toolkit.cancelButton"),
             XamlRoot = SettingsXamlRoot,
         });
         if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
 
-        toolkitRunning = true;
-        if (toolkitInstallButton is not null)
-        {
-            toolkitInstallButton.Content = Locale.Get("settings.toolkit.installingButton");
-            toolkitInstallButton.IsEnabled = false;
-        }
+        HoldToolkit(true, store);
         try
         {
             var results = await Task.Run(() => runner.Run(plan, new CliToolkitExecutor()));
             toolkitRunResults = results;
             if (toolkitResultsPanel is not null) FillToolkitResults(toolkitResultsPanel, results);
-            var (reloaded, _) = store.List();
-            if (toolkitListPanel is not null) FillToolkitList(toolkitListPanel, store, reloaded);
         }
-        finally
-        {
-            toolkitRunning = false;
-            if (toolkitInstallButton is not null)
-            {
-                toolkitInstallButton.Content = Locale.Get("settings.toolkit.installButton");
-                toolkitInstallButton.IsEnabled = true;
-            }
-        }
+        finally { HoldToolkit(false, store); }
     }
 
-    // Adds one entry from a JSON file the user picks.
+    // Adds the one entry a JSON file the user picks holds, as the Mac's add does (ToolkitFileReader.ParseAddedEntry); a whole file goes through import.
     private async Task AddToolkitEntry(ToolkitStore store)
     {
         var picker = new FileOpenPicker();
@@ -587,22 +659,9 @@ public sealed partial class MainWindow
         var file = await picker.PickSingleFileAsync();
         if (file is null) return;
         var json = await Windows.Storage.FileIO.ReadTextAsync(file);
-        var parsed = ToolkitFileReader.Parse(json);
-        if (parsed.Entries.Count == 0)
-        {
-            await StyledDialog(new ContentDialog
-            {
-                Title = "toolkit",
-                Content = new TextBlock { Text = Locale.Get("settings.toolkit.errorEntryFileTemplate").Replace("{name}", file.Name), TextWrapping = TextWrapping.Wrap },
-                CloseButtonText = Locale.Get("settings.toolkit.cancelButton"),
-                XamlRoot = SettingsXamlRoot,
-            }).ShowAsync();
-            return;
-        }
-        foreach (var entry in parsed.Entries)
-            store.Add(entry);
-        var (reloaded, _) = store.List();
-        if (toolkitListPanel is not null) FillToolkitList(toolkitListPanel, store, reloaded);
+        // A file that is not one tool is said over the tools, like every other file error (M/AppStore+Toolkit.swift:44-52).
+        var entry = ToolkitFileReader.ParseAddedEntry(json) ?? throw new InvalidDataException(Locale.Get("settings.toolkit.errorEntryFileTemplate", new Dictionary<string, string> { ["name"] = file.Name }));
+        store.Add(entry);
     }
 
     // Exports every entry, other-OS ones included, without approvals.
@@ -629,8 +688,6 @@ public sealed partial class MainWindow
         if (file is null) return;
         var json = await Windows.Storage.FileIO.ReadTextAsync(file);
         store.Import(json);
-        var (reloaded, _) = store.List();
-        if (toolkitListPanel is not null) FillToolkitList(toolkitListPanel, store, reloaded);
     }
 
     // Runs one toolkit argv synchronously; called from a background thread by ToolkitRunner.Run.
@@ -724,8 +781,9 @@ public sealed partial class MainWindow
         var rows = new StackPanel();
         var shown = statuses.ToList();
         // What holds a row while one of its buttons works: its ring turns and its buttons wait (.disabled(busy)).
-        // The rows are drawn again whenever any of them finishes, so the ones still working are held again as they are drawn.
-        var holds = new Dictionary<string, Action>(); var working = new HashSet<string>();
+        // The rows are drawn again whenever any of them finishes, so the ones still working are held again as they are drawn;
+        // which rows work is the window's (accountRowsWorking), so a section built again by a tab switch holds them too.
+        var holds = new Dictionary<string, Action>(); var working = accountRowsWorking;
         void Fill()
         {
             rows.Children.Clear(); holds.Clear();
@@ -745,16 +803,16 @@ public sealed partial class MainWindow
             for (var i = 0; i < shown.Count; i++) if (accountsCoordinator.Statuses.TryGetValue(shown[i].Provider, out var fresh)) shown[i] = fresh;
             Fill();
         }
-        // A button's action, then the rows again.
+        // A button's action, then the rows again: the rows that show by then, which a tab switch may have built anew.
         Func<Task> Then(string provider, Func<Task> action) => async () =>
         {
             working.Add(provider);
             if (holds.TryGetValue(provider, out var hold)) hold();
             try { await action(); }
-            finally { working.Remove(provider); if (!closing) Refill(); }
+            finally { working.Remove(provider); if (!closing) RedrawAccountRows(); }
         };
         // The tab's own read of the statuses draws these rows again through this, in place (RefreshVisibleSettingsAccountsAsync).
-        rows.Tag = new Action(Refill);
+        rows.Tag = accountRowsRedraw = new Action(Refill);
         Grid AccountRow(CliAccountStatus status)
         {
             var provider = status.Provider;
@@ -795,6 +853,19 @@ public sealed partial class MainWindow
             // The detail of a signed-in account is the Mac's tertiary line; one that says what went wrong (not signed in, a
             // status that could not be read) has to be read, so it keeps the secondary ink.
             if (status.Detail.Length > 0 && status.Detail != status.Summary) words.Children.Add(status.LoggedIn == true ? SettingsTertiary(status.Detail) : SettingsText(status.Detail, 10, DesignToken.Ink2));
+            // While the app waits for the sign-in in the terminal it opened, the row says so (M/CLIAccountsSettingsView.swift:48).
+            var pending = accountLoginWaits.ContainsKey(provider);
+            if (pending) words.Children.Add(SettingsTertiary(CliAccountStrings.StatusPending));
+            // What a button of the row has to say: the warning mark and 10pt words in waitText (M/CLIAccountsSettingsView.swift:49-52).
+            if (accountMessages.TryGetValue(provider, out var said))
+            {
+                var line = new Grid { ColumnSpacing = DesignMetrics.Spacing.Xs };
+                line.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); line.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
+                var warning = SettingsSymbol("", 10, DesignToken.WaitText); warning.VerticalAlignment = VerticalAlignment.Top; warning.Margin = new Thickness(0, 1, 0, 0);
+                line.Children.Add(warning);
+                var message = SettingsText(said, 10, DesignToken.WaitText); Grid.SetColumn(message, 1); line.Children.Add(message);
+                AutomationProperties.SetAutomationId(line, "cli-account-message-" + provider); words.Children.Add(line);
+            }
             Place(words, new(AccountGive, GridUnitType.Star), Natural(words));
             row.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
 
@@ -809,12 +880,21 @@ public sealed partial class MainWindow
                 var missing = SettingsText(CliAccountStrings.StatusNotInstalled, 11, DesignToken.Ink2);
                 missing.VerticalAlignment = VerticalAlignment.Top; Place(missing, GridLength.Auto);
             }
+            else if (pending)
+            {
+                // Not held with the row's other buttons: it is what ends the wait (M/CLIAccountsSettingsView.swift:58-59).
+                var cancel = SettingsPush(SafeButton(CliAccountStrings.ButtonCancelWait, () => { if (accountLoginWaits.TryGetValue(provider, out var wait)) wait.Cancel(); return Task.CompletedTask; }));
+                cancel.VerticalAlignment = VerticalAlignment.Top; AutomationProperties.SetAutomationId(cancel, "cli-account-cancel-wait-" + provider); Place(cancel, GridLength.Auto);
+            }
             else if (status.LoggedIn == true)
             {
-                var change = Held(SettingsPush(SafeButton(CliAccountStrings.ButtonChange, Then(provider, () => StartCliSignIn(provider, CliLoginOption.Account)))));
-                AutomationProperties.SetAutomationId(change, "cli-account-change-" + provider); Place(change, GridLength.Auto);
-                // Sign-out is offered only where the app can undo the sign-in.
-                if (status.CanSignOut) Place(Held(SettingsPush(SafeButton(CliAccountStrings.ButtonLogout, Then(provider, () => ConfirmCliSignOut(provider))))), GridLength.Auto);
+                // Changing the account is a sign-out and a new sign-in, so both are offered only where the app can undo the sign-in (M/CLIAccountsSettingsView.swift:60-64).
+                if (status.CanSignOut)
+                {
+                    var change = Held(SettingsPush(SafeButton(CliAccountStrings.ButtonChange, Then(provider, () => ConfirmCliSignOut(provider, relogin: true)))));
+                    AutomationProperties.SetAutomationId(change, "cli-account-change-" + provider); Place(change, GridLength.Auto);
+                    Place(Held(SettingsPush(SafeButton(CliAccountStrings.ButtonLogout, Then(provider, () => ConfirmCliSignOut(provider))))), GridLength.Auto);
+                }
             }
             else if (provider == "claude")
             {
@@ -851,7 +931,7 @@ public sealed partial class MainWindow
                 resetBedrock = Held(SettingsPush(SafeButton(Locale.Get("settings.cliAccounts.resetBedrockButton"), Then(provider, ResetClaudeBedrock))));
                 AutomationProperties.SetAutomationId(resetBedrock, "cli-account-reset-bedrock-claude");
             }
-            var refresh = Held(SettingsIconButton("", CliAccountStrings.RefreshTooltip, () => Act(Then(provider, () => accountsCoordinator.RefreshAsync([provider])))));
+            var refresh = Held(SettingsIconButton("", CliAccountStrings.RefreshTooltip, () => Act(Then(provider, () => { accountMessages.Remove(provider); return accountsCoordinator.RefreshAsync([provider]); }))));
             AutomationProperties.SetAutomationId(refresh, "cli-account-refresh-" + provider); Place(refresh, GridLength.Auto);
             // The symbol stands on the buttons' line a point over their middle (the Mac sets it at the line's top).
             refresh.Margin = new Thickness(refresh.Margin.Left, -1, 0, 0);
@@ -891,47 +971,111 @@ public sealed partial class MainWindow
         return button;
     }
 
-    // Opens the external sign-in terminal and refreshes the status when it closes.
-    // The app never types or receives credentials; it only starts the CLI's own
-    // login command. The terminal rule lives in Core (CliAccountTerminal).
+    // Opens the external sign-in terminal on the CLI's own login command, then waits for the sign-in
+    // (AwaitTerminalSignIn). The app never types or receives credentials. The terminal rule lives in Core
+    // (CliAccountTerminal). The account is held only while the terminal opens: sends go on meanwhile, as on the
+    // Mac. Bedrock's setup is no sign-in to wait for: it holds the account until its window closes, and then the
+    // status is read once.
     private async Task StartCliSignIn(string provider, CliLoginOption option)
     {
         RequireIdleAccount(provider);
         if (CliAccountSupport.LoginArguments(provider, option) is not { } argv) return;
+        accountMessages.Remove(provider);
+        // A sign-in started here replaces the wait on the one before it (M/AppStore+CLIAccounts.swift:89).
+        if (accountLoginWaits.Remove(provider, out var replaced)) replaced.Cancel();
+        // Whether the account was signed out before the terminal opened decides a resend (M/AppStore+CLIAccounts.swift:98).
+        var before = accountsCoordinator.Statuses.GetValueOrDefault(provider);
         accountChanges.TryAdd(provider, 0);
+        var opened = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task window;
         try
         {
-            await accountsCoordinator.StartSignInAsync(argv); await RefreshCliAccounts();
-            // A confirmed sign-in from the terminal ends the automatic-start cooldown the way a background one does.
-            if (accountsCoordinator.Statuses.TryGetValue(provider, out var status) && status.LoggedIn == true && CliAuthFailure.SignInCanFix(status)) autoLogin.Succeeded(provider, DateTimeOffset.UtcNow);
+            window = accountsCoordinator.StartSignInAsync(argv, opened: closesWithWindow => opened.TrySetResult(closesWithWindow));
+            await Task.WhenAny(window, opened.Task);
+            // A terminal that never opened ends with why.
+            if (option == CliLoginOption.Bedrock || !opened.Task.IsCompleted) await window;
         }
         finally { accountChanges.TryRemove(provider, out _); }
+        if (option == CliLoginOption.Bedrock || !opened.Task.IsCompleted) { await RefreshCliAccounts(); NoteTerminalSignIn(provider); return; }
+        // Only the console host's window ends with the sign-in's process; a Windows Terminal tab hands off at once. The wait goes on
+        // by itself: the button that opened the terminal is done, and its row shows only the pending line and "cancel waiting".
+        var closed = await opened.Task ? window : null;
+        TrackLoginTask(Act(() => AwaitTerminalSignIn(provider, closed, before)));
+    }
+
+    /// <summary>
+    /// After a sign-in was started in a terminal (M/AppStore+CLIAccounts.swift:95-124): the account's status is read every
+    /// 5 s for up to ten minutes, whatever terminal it is (CliTerminalLogin). Meanwhile the account's row in Settings and the
+    /// sign-in cards say so, and "cancel waiting" ends the wait and leaves the terminal to the user
+    /// (M/CLIAccountsSettingsView.swift:48, 58-59). Once the account turns from signed out to signed in, every request
+    /// that lost the sign-in is sent again by itself.
+    /// </summary>
+    private async Task AwaitTerminalSignIn(string provider, Task? closed, CliAccountStatus? before)
+    {
+        using var wait = new CancellationTokenSource();
+        void Redraw() { RedrawAccountRows(); RefreshLoginCards(); }
+        accountLoginWaits[provider] = wait; Redraw();
+        CliTerminalLoginResult? result = null;
+        try { result = await CliTerminalLogin.RunAsync(token => accountsCoordinator.StatusAsync(provider, token), wait.Token, closed, before: before); }
+        catch (OperationCanceledException) when (wait.IsCancellationRequested) { }
+        finally { if (accountLoginWaits.GetValueOrDefault(provider) == wait) accountLoginWaits.Remove(provider); }
+        if (closing) return;
+        await RefreshCliAccounts(); Redraw();
+        NoteTerminalSignIn(provider);
+        if (result is not null && CliTerminalLogin.Resends(result)) await ResendWaitingLoginRequests(provider);
+    }
+    /// <summary>A confirmed sign-in from a terminal ends the automatic-start cooldown the way a background one does.</summary>
+    private void NoteTerminalSignIn(string provider)
+    {
+        if (accountsCoordinator.Statuses.TryGetValue(provider, out var status) && CliTerminalLogin.SignedIn(status)) autoLogin.Succeeded(provider, DateTimeOffset.UtcNow);
     }
 
     // The macOS confirmation: the stored sign-in of that CLI is removed, and this
-    // also applies to the CLI used directly in a terminal.
-    private async Task ConfirmCliSignOut(string provider)
+    // also applies to the CLI used directly in a terminal. "계정 변경" (`relogin`) asks the same way under its own
+    // title, then signs in again once the sign-out has taken; a sign-out that did not take is said in the row
+    // and nothing follows it (M/CLIAccountsSettingsView.swift:16-23, M/AppStore+CLIAccounts.swift:44-60).
+    private async Task ConfirmCliSignOut(string provider, bool relogin = false)
     {
         RequireIdleAccount(provider);
+        accountMessages.Remove(provider);
         var label = CliUpdateService.ProviderLabel(provider);
         var dialog = StyledDialog(new ContentDialog
         {
-            Title = CliAccountStrings.ConfirmLogoutTitleTemplate.Replace("{provider}", label),
+            Title = (relogin ? CliAccountStrings.ConfirmChangeTitleTemplate : CliAccountStrings.ConfirmLogoutTitleTemplate).Replace("{provider}", label),
             Content = new TextBlock
             {
                 Text = CliAccountStrings.ConfirmMessageTemplate.Replace("{provider}", label),
                 TextWrapping = TextWrapping.Wrap,
             },
-            PrimaryButtonText = CliAccountStrings.ButtonLogout,
+            PrimaryButtonText = relogin ? Locale.Get("settings.cliAccounts.macReloginButton") : CliAccountStrings.ButtonLogout,
             CloseButtonText = CliAccountStrings.ButtonCancel,
             XamlRoot = SettingsXamlRoot,
         });
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
         RequireIdleAccount(provider);
         accountChanges.TryAdd(provider, 0);
-        try { await accountsCoordinator.LogoutAsync(provider); await RefreshCliAccounts(); }
+        CliAccountStatus after;
+        // A sign-in still waited on ends with the sign-out (M endCLILogin).
+        if (accountLoginWaits.Remove(provider, out var waiting)) waiting.Cancel();
+        try { after = await accountsCoordinator.LogoutAsync(provider); await RefreshCliAccounts(); }
         finally { accountChanges.TryRemove(provider, out _); }
+        if (after.LoggedIn == true) accountMessages[provider] = Locale.Get("settings.cliAccounts.signOutUnconfirmed");
+        else if (relogin) await StartCliSignIn(provider, CliLoginOption.Account);
     }
+
+    /// <summary>What each account's row says under its status: a sign-out that did not take, or how the model reset went (M/CLIAccountsSettingsView.swift:49-52).</summary>
+    private readonly Dictionary<string, string> accountMessages = [];
+    /// <summary>The terminal sign-ins the app is waiting on, per provider, each with what ends its wait.</summary>
+    private readonly Dictionary<string, CancellationTokenSource> accountLoginWaits = [];
+    /// <summary>The CLI accounts rows last built, drawn again in place: a wait that began from a sign-in card reaches the rows Settings shows.</summary>
+    private Action? accountRowsRedraw;
+    /// <summary>The providers whose account row has a button at work, held whichever section draws them.</summary>
+    private readonly HashSet<string> accountRowsWorking = [];
+    /// <summary>
+    /// Draws the CLI accounts rows again through the section that shows now: the CLI tab is built anew each time it is chosen,
+    /// so a button's closure still names the section it was pressed in (RefreshVisibleSettingsAccountsAsync does the same).
+    /// </summary>
+    private void RedrawAccountRows() { if (dialogOpen && settingsCategory == "cli") accountRowsRedraw?.Invoke(); }
 
     // Read the statuses when the section opens and after a sign-in terminal closes.
     internal async Task RefreshCliAccounts()
@@ -947,9 +1091,13 @@ public sealed partial class MainWindow
         var workspaceId = state.ActiveWorkspaceId;
         var path = state.Workspaces.FirstOrDefault(w => w.Id == workspaceId)?.Path;
         var revision = ++modelRefreshRevision;
+        var contexts = workspaceId is null || path is null ? [] : Wire.Providers.Select(provider => new ModelContext(workspaceId, path, provider)).ToArray();
+        foreach (var key in contexts) RememberModelSelections(key, state);
         var next = await service.Providers.GetRuntimeAsync(true, path);
         if (closing || revision != modelRefreshRevision || service.Snapshot.ActiveWorkspaceId != workspaceId) return false;
-        runtime = next;
+        runtime = next; runtimePath = path;
+        // The lists just read are each provider's newest for this folder: its panes are reconciled with them (AcceptModels).
+        foreach (var key in contexts) if (next.Providers.FirstOrDefault(p => p.Id == key.Provider) is { } read) ModelRefreshes.Store(key, read);
         return true;
     }
 
@@ -959,11 +1107,38 @@ public sealed partial class MainWindow
         if (AnyCliUpdateRunning) throw new InvalidOperationException(Locale.Get("loginRecovery.updating"));
         if (service.HasActiveProvider(provider)) throw new InvalidOperationException(Locale.Get("settings.cliAccounts.waitForRuns"));
     }
+    private bool claudeModelReset;
+    /// <summary>Ends a model reset's list reads when the window closes.</summary>
+    private readonly CancellationTokenSource modelResetClosing = new();
+    /// <summary>
+    /// 모델 초기화·다시 불러오기 (M/AppStore+ClaudeModelReset.swift:7-47): not while a Claude run is under way, which the row
+    /// says; otherwise every Claude pane goes back to the default model and effort, the CLIs are found again, every
+    /// workspace's model list is read from the CLI off the UI thread (ClaudeModelReset.ReloadAsync), the row says how many
+    /// were read, and the requests that were waiting on a sign-in are sent again (:38). Windows keeps the active
+    /// workspace's list only (the others are read again when they are selected), so theirs go into the count.
+    /// </summary>
     private async Task ResetClaudeModels()
     {
+        if (claudeModelReset) return;
+        void Say(string message) { accountMessages["claude"] = message; RedrawAccountRows(); }
+        if (service.HasActiveProvider("claude")) { Say(Locale.Get("settings.cliAccounts.modelReset.running")); return; }
         RequireIdleAccount("claude");
-        await service.UpdateAsync(snapshot => snapshot with { Sessions = snapshot.Sessions.Select(pane => pane.Kind == "claude" && pane.Provider == "claude" ? pane with { Model = "default", Settings = pane.Settings with { Effort = "default" } } : pane).ToList() });
-        await RefreshCliAccounts(); Render();
+        claudeModelReset = true;
+        try
+        {
+            Say(Locale.Get("settings.cliAccounts.modelReset.reloading"));
+            await service.UpdateAsync(ClaudeModelReset.Apply);
+            await RefreshCliAccounts(); Render();
+            var command = await service.Providers.FindAsync("claude");
+            var said = await ClaudeModelReset.ReloadAsync(service.Snapshot.Workspaces, (workspace, token) => command is null ? Task.FromResult(ProviderCatalog.Fallback("claude"))
+                : ProviderCatalog.ReadModelsAsync("claude", command, token, workspace.Path, Timeout.InfiniteTimeSpan), modelResetClosing.Token);
+            if (closing) return;
+            Say(said);
+            await ResendWaitingLoginRequests("claude");
+        }
+        catch (OperationCanceledException) when (closing) { }
+        catch { accountMessages.Remove("claude"); throw; }
+        finally { claudeModelReset = false; }
     }
     private async Task ResetClaudeBedrock()
     {
@@ -978,13 +1153,17 @@ public sealed partial class MainWindow
         await ResetClaudeModels();
     }
 
-    // 앱 정보 (M/SettingsViews.swift:313-320): the version beside its label, the 11pt note (on Windows the
-    // usage notes), the state folder's label beside the button that shows it, and its path in 10pt mono.
+    // 앱 정보 (M/SettingsViews.swift:313-322): the version beside its label, the 11pt note (on Windows the
+    // usage notes), the help's name beside the button that opens the guide, the state folder's label beside
+    // the button that shows it, and its path in 10pt mono.
     private StackPanel BuildAppInfoSection()
     {
         var rows = new StackPanel();
         SettingsRow(rows, SettingsLabeled(SettingsText(Locale.Get("settings.appInfo.versionLabel")), SettingsText(AppVersionText, 13, DesignToken.Ink2, selectable: true)));
         SettingsRow(rows, SettingsText(Locale.Get("settings.appInfo.windowsNote"), 11, DesignToken.Ink2));
+        var help = SettingsPush(SafeButton(Locale.Get("settings.appInfo.openHelpButton"), OpenHelp));
+        AutomationProperties.SetAutomationId(help, "settings-open-help");
+        SettingsRow(rows, SettingsLabeled(SettingsText(Locale.Get("menu.help")), help));
         var folder = StateDirectory;
         var show = SettingsPush(SafeButton(Locale.Get("menu.showInExplorer"), async () => await Windows.System.Launcher.LaunchFolderPathAsync(folder)));
         AutomationProperties.SetAutomationId(show, "settings-state-folder");

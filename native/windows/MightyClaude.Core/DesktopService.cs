@@ -1,10 +1,10 @@
 namespace MightyClaude.Core;
 
 /// <summary>Single owner of persisted state and local pane routing.</summary>
-public sealed class DesktopService : IAsyncDisposable
+public sealed partial class DesktopService : IAsyncDisposable
 {
     private readonly object sync = new();
-    private sealed class Route { internal bool Started, Cancelled; }
+    private sealed class Route { internal bool Started, Cancelled; internal readonly TaskCompletionSource Ended = new(TaskCreationOptions.RunContinuationsAsynchronously); }
     private readonly Dictionary<string, Route> routes = [];
     private readonly StateStore store;
     private readonly RunManager local;
@@ -26,12 +26,40 @@ public sealed class DesktopService : IAsyncDisposable
     public AppSnapshot Snapshot { get { lock (sync) { var copy = Wire.Clone(snapshot); return copy with { Sessions = copy.Sessions.Select(s => s with { CurrentActivity = snapshot.Sessions.FirstOrDefault(original => original.Id == s.Id)?.CurrentActivity }).ToList() }; } } }
     /// <summary>The active pane's id alone, for a caller that asks on every pointer press and needs no copy of the state.</summary>
     public string? ActiveSessionId { get { lock (sync) return snapshot.ActiveSessionId; } }
+    /// <summary>One pane's status alone, for the terminal that reads its shell twice a second and needs no copy of the state.</summary>
+    public string? SessionStatus(string id) { lock (sync) return snapshot.Sessions.FirstOrDefault(s => s.Id == id)?.Status; }
     /// <summary>The newest queued save: "pending", "saved", or "faulted: reason" — for a check that reads the file back.</summary>
     public string SaveStatus { get { lock (sync) return !saved.IsCompleted ? "pending" : saved.IsFaulted ? "faulted: " + saved.Exception?.GetBaseException().Message : "saved"; } }
-    public DesktopService(string directory, string? legacyDirectory, string pluginDirectory, ProviderCatalog? providers = null)
+    /// <param name="delegationEnabled">The hidden delegation switch; null reads <see cref="DelegationSwitch.IsOn()"/>.</param>
+    /// <param name="worktrees">Makes delegated children's worktrees; null makes them under <see cref="ChildWorktreeMaker.DefaultRoot"/>.</param>
+    public DesktopService(string directory, string? legacyDirectory, string pluginDirectory, ProviderCatalog? providers = null, Func<bool>? delegationEnabled = null, ChildWorktreeMaker? worktrees = null)
     {
         store = new(directory, legacyDirectory); Providers = providers ?? new(); Images = new(Path.Combine(directory, "image-cache"));
-        local = new(ResolveLocal, Providers, pluginDirectory, Receive, value => ToolPermissionChanged?.Invoke(value), Images);
+        local = new(ResolveLocal, Providers, pluginDirectory, Receive, ReceiveToolPermission, Images);
+        this.delegationEnabled = delegationEnabled ?? DelegationSwitch.IsOn; this.worktrees = worktrees; local.DelegationEnabled = this.delegationEnabled;
+    }
+    /// <summary>Requests a style is allowing by itself, by run and request: their settling is not news for the pane.</summary>
+    private readonly HashSet<string> styleAllowing = [];
+    /// <summary>
+    /// A request the pane's style lists as its own is allowed here, once, without a card (M/AppStore.swift:1160,
+    /// <see cref="StyleRunPermissions.AutoAllows"/>); every other request, and one whose allowance did not go through,
+    /// reaches the pane as before.
+    /// </summary>
+    private void ReceiveToolPermission(ToolPermissionRequest value)
+    {
+        var key = value.RunId + "|" + value.Id;
+        if (value.State != "pending") { lock (styleAllowing) if (styleAllowing.Remove(key)) return; ToolPermissionChanged?.Invoke(value); return; }
+        RunSession? pane; string? workspace;
+        lock (sync) { pane = snapshot.Sessions.FirstOrDefault(s => s.Id == value.RunId); workspace = snapshot.Workspaces.FirstOrDefault(w => w.Id == pane?.WorkspaceId)?.Path; }
+        if (workspace is not null && StyleRunPermissions.AutoAllows(value, pane, store.DirectoryPath, workspace))
+        {
+            lock (styleAllowing) styleAllowing.Add(key);
+            try { local.RespondToToolPermission(value.RunId, value.Id, true); }
+            catch (InvalidOperationException) { }
+            // Still marked: nothing settled it, so it waits for the user like any other.
+            lock (styleAllowing) if (!styleAllowing.Remove(key)) return;
+        }
+        ToolPermissionChanged?.Invoke(value);
     }
     /// <summary>이번만 허용 / 거부 — the only way a request is ever answered, one request at a time.</summary>
     public bool HasActiveProvider(string provider)
@@ -51,7 +79,15 @@ public sealed class DesktopService : IAsyncDisposable
         => local.AnswerQuestionnaire(sessionId, requestId, answers);
     /// <summary>Answers one pending ExitPlanMode request (approve auto-edit / confirm-each, revise, cancel).</summary>
     public PlanRecord AnswerPlan(string sessionId, string requestId, PlanDecision decision) => local.AnswerPlan(sessionId, requestId, decision);
-    public async Task InitializeAsync() { var loaded = await store.LoadAsync(); lock (sync) snapshot = loaded; }
+    public async Task InitializeAsync()
+    {
+        StartDelegation();
+        var loaded = await store.LoadAsync(); lock (sync) snapshot = loaded;
+        // Children whose runs quitting killed come back interrupted, before any pane runs again (M/AppStore.swift:373-374).
+        // Whatever goes wrong there, the app starts all the same.
+        if (delegation is { } coordinator)
+            try { await coordinator.InterruptRunsKilledByQuit(); } catch (Exception ex) when (ex is not OutOfMemoryException) { }
+    }
     private Task<Workspace> ResolveLocal(string id)
     {
         lock (sync) if (!snapshot.Workspaces.Any(w => w.Id == id)) throw new ArgumentException(Locale.Get("run.error.localWorkspaceNotRegistered"));
@@ -64,15 +100,41 @@ public sealed class DesktopService : IAsyncDisposable
     }
     public async Task RemoveWorkspaceAsync(string id)
     {
+        // Refused, changing nothing, while delegation has open children or child worktrees not cleaned up there (M/AppStore.swift:627-642).
+        if (WorkspaceRemovalRefusal(id) is { } reason) throw new InvalidOperationException(Locale.Get("delegation.workspace.hasChildren", new Dictionary<string, string> { ["code"] = DelegationNames.Of(reason) }));
         foreach (var pane in Snapshot.Sessions.Where(s => s.WorkspaceId == id)) await StopAsync(pane.Id);
         await UpdateAsync(s => s with { Workspaces = s.Workspaces.Where(w => w.Id != id).ToList(), Sessions = s.Sessions.Where(p => p.WorkspaceId != id).ToList(), ActiveWorkspaceId = s.ActiveWorkspaceId == id ? s.Workspaces.FirstOrDefault(w => w.Id != id)?.Id : s.ActiveWorkspaceId });
+    }
+    /// <summary>
+    /// A shell pane's status from its own terminal (M/AppStore+Terminals.swift:25-27): idle at the prompt, running while a
+    /// command runs, completed once the shell has exited, error when it could not start. It is not a run event: no run
+    /// starts or ends with it. Only an exit or a failure is saved: a restart reads running as idle (M/MightyCore/StateStore.swift:201).
+    /// False when nothing changed (no such shell pane, or the status it already has).
+    /// </summary>
+    public bool SetShellStatus(string id, string status)
+    {
+        lock (sync)
+        {
+            if (closing || status is not ("idle" or "running" or "completed" or "error") || !snapshot.Sessions.Any(s => s.Id == id && s.Kind == "shell" && s.Status != status)) return false;
+            snapshot = snapshot with { Sessions = snapshot.Sessions.Select(s => s.Id == id ? s with { Status = status } : s).ToList() };
+            if (status is "completed" or "error") _ = QueueSave();
+            return true;
+        }
     }
     public Task RenameWorkspaceAsync(string id, string name) => UpdateAsync(s => RenameSupport.RenameWorkspace(s, id, name));
     public Task RenameSessionAsync(string id, string name) => UpdateAsync(s => RenameSupport.RenameSession(s, id, name));
     public Task SetSessionAutoTitleAsync(string id) => UpdateAsync(s => PaneTitle.SetAutomatic(s, id));
     public Task UpdateAsync(Func<AppSnapshot, AppSnapshot> update)
     {
-        lock (sync) { ObjectDisposedException.ThrowIf(closing, this); snapshot = StateStore.Normalize(update(snapshot), false); return QueueSave(); }
+        List<RunSession> closed; Task save;
+        lock (sync)
+        {
+            ObjectDisposedException.ThrowIf(closing, this);
+            var next = StateStore.Normalize(update(snapshot), false); var open = next.Sessions.Select(s => s.Id).ToHashSet();
+            closed = snapshot.Sessions.Where(s => !open.Contains(s.Id)).ToList(); snapshot = next; save = QueueSave();
+        }
+        foreach (var pane in closed) PaneClosed(pane);
+        return save;
     }
     private Task QueueSave()
     {
@@ -82,9 +144,17 @@ public sealed class DesktopService : IAsyncDisposable
     private void Receive(RunEvent value)
     {
         if (!value.Valid()) return;
-        lock (sync) { snapshot = snapshot.Apply(value); if (value.Type == "status" && value.Status is "stopped" or "completed" or "error") routes.Remove(value.SessionId); _ = QueueSave(); }
+        var ended = false;
+        lock (sync)
+        {
+            snapshot = snapshot.Apply(value);
+            if (value.Type == "status" && value.Status is "stopped" or "completed" or "error") { if (routes.Remove(value.SessionId, out var route)) route.Ended.TrySetResult(); ended = DelegationRunEnded(value.SessionId, value.Status!); }
+            _ = QueueSave();
+        }
         if (value.Type == "resume" && value.ResumeId is { } resumed) RememberSession(resumed);
         RunEventReceived?.Invoke(value);
+        // A run that is up takes what its start could not, and a pane's end offers again what it could not take while ending (M/AppStore.swift:1023, M/AppStore+Delegation.swift:82-92).
+        if (ended || value.Type == "status" && value.Status == "running") OfferDelegationPending();
     }
     // Session ids this app's panes started or resumed (macOS KnownSessionIDs):
     // the "기존 세션 이어가기" list never hides them as automated runs.
@@ -106,19 +176,28 @@ public sealed class DesktopService : IAsyncDisposable
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { PersistenceFailed?.Invoke(ex); }
         }
     }
-    public async Task StartAsync(StartRunRequest value)
+    public Task StartAsync(StartRunRequest value) => Launch(value, null, false);
+    /// <summary>
+    /// Starts a run. <paramref name="titleFrom"/> is what an automatic title follows when it is not the input: a run delegation
+    /// starts on its own sets none (""). With <paramref name="reach"/> it returns only once the run's process is up with its input open (<see cref="RunManager.StartReachedAsync"/>), or
+    /// throws why it never got it. The run's id as delegation names it; null when it was stopped before it started (M/AppStore.swift:938-1052).
+    /// </summary>
+    private async Task<string?> Launch(StartRunRequest value, string? titleFrom, bool reach)
     {
-        var request = value.Validate(); Route route;
+        var request = value.Validate(); Route route; string runId;
         lock (sync)
         {
             ObjectDisposedException.ThrowIf(closing, this);
             if (!snapshot.Workspaces.Any(w => w.Id == request.WorkspaceId)) throw new ArgumentException(Locale.Get("run.error.workspaceNotRegistered"));
-            if (!snapshot.Sessions.Any(s => s.Id == request.SessionId && s.WorkspaceId == request.WorkspaceId && s.Kind == request.Kind)) throw new ArgumentException(Locale.Get("run.error.sessionNotInWorkspace"));
+            if (snapshot.Sessions.FirstOrDefault(s => s.Id == request.SessionId && s.WorkspaceId == request.WorkspaceId && s.Kind == request.Kind) is not { } pane) throw new ArgumentException(Locale.Get("run.error.sessionNotInWorkspace"));
+            // A delegated child runs only in its own worktree, never in its parent's checkout (M/AppStore.swift:490-491).
+            if (DelegationPanes.RunRefusal(pane) is not null) throw new InvalidOperationException(Locale.Get("run.blocked.worktreeMissing"));
             // A resumed conversation continues its checklist (task tools keep their ids).
-            request = request with { PhaseModels = PhaseModelPreferences.Normalize(snapshot.PhaseModels), TodoProgress = request.ResumeId is null ? null : snapshot.Sessions.First(s => s.Id == request.SessionId).TodoProgress };
+            request = request with { PhaseModels = PhaseModelPreferences.Normalize(snapshot.PhaseModels), TodoProgress = request.ResumeId is null ? null : pane.TodoProgress, WorkingFolder = pane.WorkingFolder };
             route = new();
             if (!routes.TryAdd(request.SessionId, route)) throw new InvalidOperationException(Locale.Get("run.error.alreadyRunning"));
-            snapshot = snapshot with { Sessions = snapshot.Sessions.Select(s => s.Id == request.SessionId ? PaneTitle.Requested(s, request.Input) with { SessionUsage = request.ResumeId is null || s.Provider != request.Provider ? null : s.SessionUsage, Provider = request.Provider, CurrentActivity = null, RunTiming = request.Kind == "shell" ? null : AgentRunTiming.Begin() } : s).ToList() };
+            runId = DelegationRunBegan(pane);
+            snapshot = snapshot with { Sessions = snapshot.Sessions.Select(s => s.Id == request.SessionId ? PaneTitle.Requested(s, titleFrom ?? request.Input) with { SessionUsage = request.ResumeId is null || s.Provider != request.Provider ? null : s.SessionUsage, Provider = request.Provider, CurrentActivity = null, RunTiming = request.Kind == "shell" ? null : AgentRunTiming.Begin() } : s).ToList() };
             var history = request.Input + (request.Attachments is { Count: > 0 } ? "\n\n" + AttachmentSupport.Summary(request.Attachments) : "");
             snapshot = snapshot.Apply(RunEvent.State(request.SessionId, "running")).Apply(RunEvent.Log(request.SessionId, "user", history, request.Kind == "claude" ? request.Provider : null)); _ = QueueSave();
         }
@@ -129,10 +208,11 @@ public sealed class DesktopService : IAsyncDisposable
             Task started;
             lock (sync)
             {
-                if (closing || route.Cancelled) { Receive(RunEvent.State(request.SessionId, "stopped")); if (request.Attachments is { Count: > 0 }) throw new OperationCanceledException(Locale.Get("run.error.attachmentSendCancelled")); return; }
-                route.Started = true; started = local.StartAsync(request);
+                if (closing || route.Cancelled) { Receive(RunEvent.State(request.SessionId, "stopped")); if (request.Attachments is { Count: > 0 }) throw new OperationCanceledException(Locale.Get("run.error.attachmentSendCancelled")); return null; }
+                route.Started = true; started = reach ? local.StartReachedAsync(request) : local.StartAsync(request);
             }
             await started;
+            return runId;
         }
         catch (OperationCanceledException) { Receive(RunEvent.State(request.SessionId, "stopped")); throw; }
         catch (Exception ex) { Receive(RunEvent.Log(request.SessionId, "error", ex.Message)); Receive(RunEvent.State(request.SessionId, "error")); throw; }
@@ -146,6 +226,7 @@ public sealed class DesktopService : IAsyncDisposable
     {
         lock (sync) { if (closing) return; closing = true; }
         await Providers.DisposeAsync(); await local.DisposeAsync();
+        await StopDelegation();
         Task flush; lock (sync) flush = QueueSave(); await flush;
     }
 }

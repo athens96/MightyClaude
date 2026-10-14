@@ -107,7 +107,7 @@ public sealed partial class MainWindow
                 foreach (var group in PaneLayout.Groups(EffectiveLayout(current, workspace)))
                     if (tabStrips.TryGetValue(group.Id, out var strip))
                         strip.Rule.Background = group.SessionIds.Contains(sessionId) ? brushes.Brush(DesignToken.Accent, DesignMetrics.Opacity.TabActiveRule) : brushes.Brush(DesignToken.Line);
-                RenderSidebar(); mobileRouter?.Changed();
+                RenderSidebar(); mobileRouter?.Changed(); RefreshSelectedPaneModels();
             }
             await saving;
         }
@@ -233,11 +233,8 @@ public sealed partial class MainWindow
     });
 
     private bool IsPaneDrag(DragEventArgs args, string workspace) => draggedSessionId is not null && draggedWorkspaceId == workspace && args.DataView.Contains(PaneDragFormat);
-    private static string DropEdge(Windows.Foundation.Point position, FrameworkElement view)
-    {
-        var x = position.X / Math.Max(1, view.ActualWidth); var y = position.Y / Math.Max(1, view.ActualHeight);
-        if (x < .2) return "left"; if (x > .8) return "right"; if (y < .2) return "top"; if (y > .8) return "bottom"; return "center";
-    }
+    /// <summary>The zone a tab dragged over a group, off its tabs, would land in: the Mac's rule (PaneLayout.DropZone).</summary>
+    private static string DropEdge(Windows.Foundation.Point position, FrameworkElement view) => PaneLayout.DropZone(position.X, position.Y, view.ActualWidth, view.ActualHeight);
 
     /// <summary>
     /// Each tab group's strip and its bottom rule, by group id, and each tab's cell, its drawn shape,

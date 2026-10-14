@@ -7,6 +7,16 @@ public static class ReferencePreview
 {
     public sealed record Target(string RelativePath, int? Line);
 
+    /// <summary>The bubble's width until it is dragged and the least a drag makes it (macOS MightyGraphReferenceBubble defaultWidth, minimumWidth, minimumHeight).</summary>
+    public const double BubbleDefaultWidth = 420, BubbleMinimumWidth = 300, BubbleMinimumHeight = 200;
+    /// <summary>
+    /// The bubble's saved size as it is kept (<see cref="AppSnapshot.ReferenceBubbleWidth"/>): a width or height that is
+    /// not a number is none (the default width, as tall as the room), and neither goes below its least. How much of the
+    /// pane it may take is decided where it is drawn, so a size saved in a wide pane comes back in one.
+    /// </summary>
+    public static (double? Width, double? Height) BubbleSize(double? width, double? height) =>
+        (width is { } w && double.IsFinite(w) && w > 0 ? Math.Max(BubbleMinimumWidth, w) : null, height is { } h && double.IsFinite(h) && h > 0 ? Math.Max(BubbleMinimumHeight, h) : null);
+
     private static readonly Regex ReferencePattern = new(@"(?<![\p{L}\p{N}_])((?:[A-Za-z]:[\\/]|\.{1,2}[\\/]|/)?(?:[\p{L}\p{N}_.@-]+[\\/])*[\p{L}\p{N}_.@-]+\.[A-Za-z0-9]{1,12})(?::(\d{1,6}))?", RegexOptions.Compiled, TimeSpan.FromMilliseconds(100));
 
     /// <summary>The file-like text under a click; resolution still checks the workspace boundary.</summary>

@@ -69,7 +69,7 @@ public sealed partial class MainWindow
             ?? throw new InvalidOperationException(Locale.Get("window.error.addWorkspaceFirst"));
         var id = FilePaneKind.PaneId(workspace.Id);
         if (state.Sessions.Any(s => s.Id == id)) { await SelectLayoutSession(id); return; }
-        if (state.Sessions.Count >= 128) throw new InvalidOperationException(Locale.Get("files.error.noRoom"));
+        if (!PaneLayout.HasRoom(state)) throw new InvalidOperationException(Locale.Get("files.error.noRoom"));
         var current = state.ActiveWorkspaceId == workspace.Id ? state.ActiveSessionId : state.PaneLayoutActiveSessionIds?.GetValueOrDefault(workspace.Id);
         await service.UpdateAsync(s =>
         {
@@ -679,7 +679,9 @@ public sealed partial class MainWindow
             // source view draws at most FilePaneDrawing.MaximumSourceUnits.
             var markdown = data.Kind.Tag == FilePreviewKindTag.Markdown && data.MarkdownRenderable ? TranscriptRtf.RenderMarkdown(full, light) : null;
             var (text, renderCapped) = FilePaneDrawing.SourceText(full);
-            if (renderCapped) data = data with { Text = text };
+            // The view holds each line break as one character, so a find's match is where the text says (CRLF is kept by a copy as LF).
+            if (text.Contains("\r\n", StringComparison.Ordinal)) text = text.Replace("\r\n", "\n", StringComparison.Ordinal);
+            if (renderCapped || !ReferenceEquals(text, full)) data = data with { Text = text };
             var (starts, longest) = SourceLines.Scan(text);
             var language = data.Kind.Tag == FilePreviewKindTag.Source ? data.Kind.Language : SourceLanguage.Plain;
             cancellation.ThrowIfCancellationRequested();
@@ -842,13 +844,16 @@ public sealed partial class MainWindow
             };
             var paragraph = new Paragraph();
             var position = 0;
+            // Each run with where it starts in the text, for the find bar to select a match by.
+            var runs = new List<(int Start, Run Run)>();
+            void Add(int start, Run run) { runs.Add((start, run)); paragraph.Inlines.Add(run); }
             foreach (var token in prepared.Tokens)
             {
-                if (token.Location > position) paragraph.Inlines.Add(new Run { Text = text[position..token.Location] });
-                paragraph.Inlines.Add(new Run { Text = text.Substring(token.Location, token.Length), Foreground = TokenBrush(token.Kind) });
+                if (token.Location > position) Add(position, new Run { Text = text[position..token.Location] });
+                Add(token.Location, new Run { Text = text.Substring(token.Location, token.Length), Foreground = TokenBrush(token.Kind) });
                 position = token.Location + token.Length;
             }
-            if (position < text.Length) paragraph.Inlines.Add(new Run { Text = text[position..] });
+            if (position < text.Length) Add(position, new Run { Text = text[position..] });
             body.Blocks.Add(paragraph);
             var grid = new Grid();
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -887,7 +892,84 @@ public sealed partial class MainWindow
                 viewer.SizeChanged += (_, args) => grid.MinHeight = args.NewSize.Height;
             }
             Grid.SetColumn(body, 1); grid.Children.Add(body);
-            return viewer;
+            return WithFind(viewer, body, grid, text, runs);
+        }
+
+        /// <summary>
+        /// The find bar over the source (M/FilePaneView.swift:384-385, AppKit's find bar with incremental search): Ctrl+F (the Mac's
+        /// ⌘F) in the text shows it with its field focused; typing marks every match (SourceFind) and selects the first from the one
+        /// selected, Enter and Shift+Enter (or the arrows) go to the next and the previous, wrapping round, and Esc (or Done) closes it,
+        /// leaving the match selected. The bar is the subtle wash with a <c>line</c> under it, padding <c>Spacing.Sm</c>.
+        /// </summary>
+        private FrameworkElement WithFind(ScrollViewer viewer, RichTextBlock body, FrameworkElement content, string text, List<(int Start, Run Run)> runs)
+        {
+            var b = owner.brushes; var ink = b.Brush(DesignToken.Ink);
+            var host = new Grid();
+            host.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); host.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            Grid.SetRow(viewer, 1); host.Children.Add(viewer);
+            var bar = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, Padding = new Thickness(DesignMetrics.Spacing.Sm), Background = b.Subtle, BorderBrush = b.Brush(DesignToken.Line), BorderThickness = new Thickness(0, 0, 0, DesignMetrics.Stroke.Line), Visibility = Visibility.Collapsed };
+            foreach (var width in new[] { new GridLength(1, GridUnitType.Star), GridLength.Auto, GridLength.Auto, GridLength.Auto }) bar.ColumnDefinitions.Add(new ColumnDefinition { Width = width });
+            AutomationProperties.SetAutomationId(bar, "files-find-bar");
+            var field = new TextBox { PlaceholderText = Locale.Get("files.find.placeholder"), FontSize = DesignMetrics.Type.Block, VerticalAlignment = VerticalAlignment.Center };
+            AutomationProperties.SetName(field, Locale.Get("files.find.placeholder")); AutomationProperties.SetAutomationId(field, "files-find-field");
+            bar.Children.Add(field);
+            var marks = new TextHighlighter { Background = b.Brush(DesignToken.Accent, DesignMetrics.Opacity.FileSelection) };
+            IReadOnlyList<int> matches = []; var at = -1;
+            // A text position from a place in the text: inside its run, where positions are the run's own characters.
+            TextPointer Pointer(int index)
+            {
+                int low = 0, high = runs.Count - 1;
+                while (low < high) { var middle = (low + high + 1) / 2; if (runs[middle].Start <= index) low = middle; else high = middle - 1; }
+                return runs[low].Run.ContentStart.GetPositionAtOffset(index - runs[low].Start, LogicalDirection.Forward);
+            }
+            void Go(int index)
+            {
+                at = index;
+                if (index < 0 || runs.Count == 0) return;
+                var from = Pointer(matches[index]);
+                body.Select(from, Pointer(matches[index] + field.Text.Length));
+                var place = from.GetCharacterRect(LogicalDirection.Forward);
+                var point = body.TransformToVisual(content).TransformPoint(new Windows.Foundation.Point(place.X, place.Y));
+                viewer.ChangeView(Math.Max(0, point.X - viewer.ViewportWidth / 2), Math.Max(0, point.Y - viewer.ViewportHeight / 3), null, true);
+            }
+            void Search()
+            {
+                var from = at >= 0 && at < matches.Count ? matches[at] : 0;
+                matches = SourceFind.Matches(text, field.Text);
+                // A highlighter takes its ranges as it is added, so it is put back with the new ones.
+                body.TextHighlighters.Remove(marks); marks.Ranges.Clear();
+                foreach (var start in matches) marks.Ranges.Add(new TextRange { StartIndex = start, Length = field.Text.Length });
+                if (matches.Count > 0) body.TextHighlighters.Add(marks);
+                Go(SourceFind.Step(matches, -1, true, from));
+            }
+            void Open() { bar.Visibility = Visibility.Visible; field.Focus(FocusState.Keyboard); field.SelectAll(); if (field.Text.Length > 0) Search(); }
+            void Close() { bar.Visibility = Visibility.Collapsed; body.TextHighlighters.Remove(marks); body.Focus(FocusState.Keyboard); }
+            Button Tool(string glyph, string key, Action action)
+            {
+                var button = PreviewToolButton(new FontIcon { Glyph = glyph, FontSize = 12 }, key, ink);
+                button.Click += (_, _) => action();
+                return button;
+            }
+            var previous = Tool("\uE70E", "files.find.previous", () => Go(SourceFind.Step(matches, at, false)));
+            var next = Tool("\uE70D", "files.find.next", () => Go(SourceFind.Step(matches, at, true)));
+            var done = owner.PushButton(Locale.Get("files.find.done")); done.VerticalAlignment = VerticalAlignment.Center; done.Click += (_, _) => Close();
+            AutomationProperties.SetAutomationId(done, "files-find-done");
+            Grid.SetColumn(previous, 1); Grid.SetColumn(next, 2); Grid.SetColumn(done, 3);
+            bar.Children.Add(previous); bar.Children.Add(next); bar.Children.Add(done);
+            host.Children.Add(bar);
+            field.TextChanged += (_, _) => Search();
+            field.KeyDown += (_, args) =>
+            {
+                if (args.Key == VirtualKey.Enter) { args.Handled = true; Go(SourceFind.Step(matches, at, !IsInputKeyDown(VirtualKey.Shift))); }
+                else if (args.Key == VirtualKey.Escape) { args.Handled = true; Close(); }
+            };
+            // Ctrl+F reaches the host from the text or the bar, whoever handled the key first.
+            host.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler((_, args) =>
+            {
+                if (args.Key != VirtualKey.F || !IsInputKeyDown(VirtualKey.Control) || IsInputKeyDown(VirtualKey.Shift) || IsInputKeyDown(VirtualKey.Menu)) return;
+                args.Handled = true; Open();
+            }), true);
+            return host;
         }
 
         /// <summary>
@@ -905,11 +987,11 @@ public sealed partial class MainWindow
         /// <summary>
         /// Rendered with the transcript's Markdown renderer: no images, no local links. Padding
         /// <see cref="FilesMarkdownInset"/>, and the page stops 860 from the pane's leading edge however wide the
-        /// pane is (M/FilePaneView.swift:246).
+        /// pane is (M/FilePaneView.swift:246). A card that pads its own content passes <paramref name="inset"/> 0.
         /// </summary>
-        internal static RichEditBox MarkdownView(string rtf)
+        internal static RichEditBox MarkdownView(string rtf, double inset = FilesMarkdownInset)
         {
-            const double inset = FilesMarkdownInset, page = 860;
+            const double page = 860;
             var view = new RichEditBox { IsReadOnly = true, IsSpellCheckEnabled = false, IsTextPredictionEnabled = false, TextWrapping = TextWrapping.Wrap, BorderThickness = new Thickness(0), Background = new SolidColorBrush(Colors.Transparent), Padding = new Thickness(inset) };
             view.SizeChanged += (_, args) =>
             {
@@ -942,7 +1024,8 @@ public sealed partial class MainWindow
         /// Bitmaps decode through WIC: fitted from a decode at most 4,096 pixels on its long
         /// side, at 1:1 or zoom from a full decode made only when asked for and only under
         /// 100 MP; nothing over 250 MP decodes at all. svg (already checked for outside
-        /// references) uses the shared bounded SVG rasterizer; PDF shows its first page.
+        /// references) uses the shared bounded SVG rasterizer and PDF shows its first page; both
+        /// are vectors with the four controls, as on the Mac (M/FilePaneModel.swift:400-403).
         /// </summary>
         private async Task<FrameworkElement> ImageView(FilePreviewData data, int request)
         {
@@ -953,12 +1036,23 @@ public sealed partial class MainWindow
             var extension = FilePreviewClassifier.FileExtension(data.Name);
             try
             {
+                var screen = owner.root.XamlRoot?.RasterizationScale ?? 1;
+                // A vector drawn again for a zoom: as many pixels as the zoom puts on the screen, at most MaximumFitPixels on its long side.
+                int Edge(double longest, double zoom) => (int)Math.Clamp(Math.Ceiling(longest * zoom * screen), 1, FilePreviewClassifier.MaximumFitPixels);
                 if (extension == "svg")
                 {
                     var raster = await NativeSvgRaster.Render(bytes, FilePreviewClassifier.MaximumFitPixels);
                     if (request != previewRequest) return stale;
                     var svg = new BitmapImage(); using var rendered = await Buffer(raster.Png); await svg.SetSourceAsync(rendered);
-                    return FittedImage(new Image { Source = svg, Stretch = Stretch.Uniform });
+                    if (request != previewRequest) return stale;
+                    var longest = Math.Max(raster.OriginalWidth, raster.OriginalHeight);
+                    var named = PixelsLabel((long)raster.OriginalWidth, (long)raster.OriginalHeight);
+                    return ZoomableImage(svg, raster.OriginalWidth, raster.OriginalHeight, true, named, async zoom =>
+                    {
+                        var again = await NativeSvgRaster.Render(bytes, Edge(longest, zoom), enlarge: true);
+                        var image = new BitmapImage(); using var drawn = await Buffer(again.Png); await image.SetSourceAsync(drawn);
+                        return image;
+                    });
                 }
                 if (extension == "pdf")
                 {
@@ -972,8 +1066,18 @@ public sealed partial class MainWindow
                     rendered.Seek(0);
                     var pageImage = new BitmapImage(); await pageImage.SetSourceAsync(rendered);
                     if (request != previewRequest) return stale;
-                    PixelsLabel((long)page.Size.Width, (long)page.Size.Height);
-                    return FittedImage(new Image { Source = pageImage, Stretch = Stretch.Uniform, MaxWidth = page.Size.Width, MaxHeight = page.Size.Height });
+                    var named = PixelsLabel((long)page.Size.Width, (long)page.Size.Height);
+                    var (pageWide, pageHigh) = (page.Size.Width, page.Size.Height);
+                    return ZoomableImage(pageImage, pageWide, pageHigh, true, named, async zoom =>
+                    {
+                        var edge = Edge(Math.Max(pageWide, pageHigh), zoom) / Math.Max(pageWide, pageHigh);
+                        using var first = document.GetPage(0);
+                        var drawn = new InMemoryRandomAccessStream();
+                        await first.RenderToStreamAsync(drawn, new PdfPageRenderOptions { DestinationWidth = (uint)Math.Max(1, pageWide * edge), DestinationHeight = (uint)Math.Max(1, pageHigh * edge) });
+                        drawn.Seek(0);
+                        var image = new BitmapImage(); await image.SetSourceAsync(drawn);
+                        return image;
+                    });
                 }
                 var stream = await Buffer(bytes);
                 var decoder = await BitmapDecoder.CreateAsync(stream);
@@ -991,9 +1095,14 @@ public sealed partial class MainWindow
                 if (request != previewRequest) return stale;
                 var fullAllowed = pixels <= FilePreviewClassifier.MaximumFullPixels;
                 if (!fullAllowed) Banner(Locale.Get("files.image.fitOnly", new Dictionary<string, string> { ["count"] = (FilePreviewClassifier.MaximumFullPixels / 1_000_000).ToString(CultureInfo.CurrentCulture) }));
-                PixelsLabel(width, height);
+                var label = PixelsLabel(width, height);
                 FilesPreviewPixels = (width, height);
-                return ZoomableImage(fit, bytes, width, height, fullAllowed);
+                BitmapImage? full = null;
+                return ZoomableImage(fit, width / screen, height / screen, fullAllowed, label, async _ =>
+                {
+                    if (full is null) { full = new BitmapImage(); await full.SetSourceAsync(await Buffer(bytes)); }
+                    return full;
+                });
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
@@ -1014,46 +1123,47 @@ public sealed partial class MainWindow
             return stream;
         }
 
-        /// <summary>The image's size in the head (M/FilePaneView.swift:204-205): 10pt tabular <c>ink2</c>, before the zoom tools.</summary>
-        private void PixelsLabel(long width, long height)
+        /// <summary>The image's size in the head (M/FilePaneView.swift:204-205): 10pt tabular <c>ink2</c>, before the zoom tools. Returns its words.</summary>
+        private string PixelsLabel(long width, long height)
         {
             var label = new TextBlock { Text = Locale.Get("files.image.pixels", new Dictionary<string, string> { ["width"] = width.ToString(CultureInfo.InvariantCulture), ["height"] = height.ToString(CultureInfo.InvariantCulture) }), FontSize = DesignMetrics.Type.Small, Foreground = owner.brushes.Brush(DesignToken.Ink2), VerticalAlignment = VerticalAlignment.Center };
             Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(label, FontNumeralAlignment.Tabular);
             AddPreviewTool(label, first: true);
+            return label.Text;
         }
 
         /// <summary>An image lies on the page colour, 12 clear of the pane's edges (M/FilePaneView.swift:342-352).</summary>
         private const double FilesImageInset = 12;
 
-        private FrameworkElement FittedImage(Image image) => new Border { Child = image, Padding = new Thickness(FilesImageInset), Background = owner.brushes.Brush(DesignToken.Page) };
-
-        /// <summary>Fit (never larger than 1:1), zoom out, 1:1 and zoom in, the macOS controls.</summary>
-        private FrameworkElement ZoomableImage(BitmapImage fit, byte[] bytes, long width, long height, bool fullAllowed)
+        /// <summary>
+        /// Fit (never larger than actual size), zoom out, 1:1 and zoom in, the macOS controls (M/FilePaneView.swift:202-216, 327-331).
+        /// The image's actual size is <paramref name="pointsWide"/> × <paramref name="pointsHigh"/>: a bitmap's pixels at the screen's
+        /// scale, a vector's own size. A zoom draws <paramref name="sharp"/>'s image for it: a bitmap's one full decode, a vector
+        /// drawn again for that zoom. The image is <paramref name="name"/>d by its size. All four rest when <paramref name="zoomable"/> is false (a bitmap too large to draw whole).
+        /// </summary>
+        private FrameworkElement ZoomableImage(BitmapImage fit, double pointsWide, double pointsHigh, bool zoomable, string name, Func<double, Task<BitmapImage>> sharp)
         {
-            var scale = owner.root.XamlRoot?.RasterizationScale ?? 1;
-            double pointsWide = width / scale, pointsHigh = height / scale;
+            pointsWide = Math.Max(1, pointsWide); pointsHigh = Math.Max(1, pointsHigh);
             var image = new Image { Source = fit, Stretch = Stretch.Uniform, MaxWidth = pointsWide, MaxHeight = pointsHigh };
             var viewer = new ScrollViewer { Content = image, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled, VerticalScrollMode = ScrollMode.Disabled, Padding = new Thickness(FilesImageInset), Background = owner.brushes.Brush(DesignToken.Page) };
-            BitmapImage? full = null; double? zoom = null;
+            double? zoom = null; var drawing = 0;
             async Task Apply(double? next)
             {
                 if (next is { } wanted)
                 {
                     var largest = FilePreviewClassifier.MaximumZoomPoints / Math.Max(pointsWide, pointsHigh);
                     zoom = Math.Clamp(wanted, .05, Math.Max(.05, largest));
-                    if (full is null)
-                    {
-                        full = new BitmapImage();
-                        await full.SetSourceAsync(await Buffer(bytes));
-                    }
-                    image.Source = full; image.Stretch = Stretch.Fill; image.MaxWidth = image.MaxHeight = double.PositiveInfinity;
+                    // Only the newest zoom's drawing is shown when two are under way.
+                    var mine = ++drawing; var source = await sharp(zoom.Value);
+                    if (mine != drawing || zoom is null) return;
+                    image.Source = source; image.Stretch = Stretch.Fill; image.MaxWidth = image.MaxHeight = double.PositiveInfinity;
                     image.Width = pointsWide * zoom.Value; image.Height = pointsHigh * zoom.Value;
                     viewer.HorizontalScrollBarVisibility = viewer.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
                     viewer.HorizontalScrollMode = viewer.VerticalScrollMode = ScrollMode.Auto;
                 }
                 else
                 {
-                    zoom = null;
+                    zoom = null; drawing++;
                     image.Source = fit; image.Stretch = Stretch.Uniform; image.Width = image.Height = double.NaN; image.MaxWidth = pointsWide; image.MaxHeight = pointsHigh;
                     viewer.HorizontalScrollBarVisibility = viewer.VerticalScrollBarVisibility = ScrollBarVisibility.Disabled;
                     viewer.HorizontalScrollMode = viewer.VerticalScrollMode = ScrollMode.Disabled;
@@ -1065,15 +1175,15 @@ public sealed partial class MainWindow
             var ink = owner.brushes.Brush(DesignToken.Ink);
             void Tool(FrameworkElement face, string key, Func<Task> action)
             {
-                var button = PreviewToolButton(face, key, ink, fullAllowed);
+                var button = PreviewToolButton(face, key, ink, zoomable);
                 button.Click += async (_, _) => await owner.Act(action);
                 AddPreviewTool(button);
             }
             Tool(new FontIcon { Glyph = "\uE71F", FontSize = 15 }, "files.image.zoomOut", () => Apply(Current() / 1.25));
-            Tool(PanelSymbol.Fit(fullAllowed ? ink : owner.brushes.Brush(DesignToken.Ink3)), "files.image.fit", () => Apply(null));
+            Tool(PanelSymbol.Fit(zoomable ? ink : owner.brushes.Brush(DesignToken.Ink3)), "files.image.fit", () => Apply(null));
             Tool(new TextBlock { Text = "1:1", FontSize = DesignMetrics.Type.Small, FontWeight = FontWeights.Medium }, "files.image.actualSize", () => Apply(1));
             Tool(new FontIcon { Glyph = "\uE8A3", FontSize = 15 }, "files.image.zoomIn", () => Apply(Current() * 1.25));
-            AutomationProperties.SetName(image, Locale.Get("files.image.pixels", new Dictionary<string, string> { ["width"] = width.ToString(CultureInfo.InvariantCulture), ["height"] = height.ToString(CultureInfo.InvariantCulture) }));
+            AutomationProperties.SetName(image, name);
             return viewer;
         }
 

@@ -67,7 +67,7 @@ public sealed record LogEntry(string Id, string Kind, string Text, string Timest
     /// <summary>The entry kinds a transcript keeps (macOS LogEntry.stored).</summary>
     public static readonly IReadOnlySet<string> Stored = new HashSet<string>(StringComparer.Ordinal) { "user", "assistant", "system", "output", "error", "image" };
 }
-public sealed record RunSession
+public sealed record RunSession : IJsonOnDeserializing
 {
     public string Id { get; init; } = Wire.Id();
     public string WorkspaceId { get; init; } = "";
@@ -100,6 +100,13 @@ public sealed record RunSession
     // (macOS RunSession.graphPlanSize); null means the window fit.
     [JsonPropertyName("graphPlanSize")] public GraphBlockSize? GraphPlanSize { get; init; }
     [JsonPropertyName("graphBlockSizes")] public Dictionary<string, GraphBlockSize>? GraphBlockSizes { get; init; }
+    // The diagram layout GraphBlockSizes were dragged in (GraphBlockPreferences.SplitLayout; macOS RunSession.graphSizesLayout).
+    // A new pane starts in the current one; null is a pane saved before the 실행 split (the field absent), whose
+    // sizes are moved once when it is read (GraphBlockPreferences.SplittingExecution).
+    [JsonPropertyName("graphSizesLayout"), JsonConverter(typeof(GraphSizesLayoutConverter))]
+    public int? GraphSizesLayout { get => graphSizesLayout; init => graphSizesLayout = value; }
+    private int? graphSizesLayout = GraphBlockPreferences.SplitLayout;
+    void IJsonOnDeserializing.OnDeserializing() => graphSizesLayout = null;
     // The Mighty presentation, independent of the outer default/Mighty choice.
     [JsonPropertyName("graphViewMode"), JsonConverter(typeof(MightyGraphViewModeConverter))]
     public string? GraphViewMode { get; init; }
@@ -114,6 +121,11 @@ public sealed record RunSession
     [JsonPropertyName("planHistory"), JsonConverter(typeof(LenientListConverter<PlanRecord>))] public List<PlanRecord>? PlanHistory { get; init; }
     [JsonPropertyName("todoProgress"), JsonConverter(typeof(LenientJsonConverter<TodoProgress>))] public TodoProgress? TodoProgress { get; init; }
     [JsonPropertyName("backgroundWork"), JsonConverter(typeof(LenientJsonConverter<BackgroundWork>))] public BackgroundWork? BackgroundWork { get; init; }
+    // Present only on a delegated child pane (macOS RunSession.parentSessionId/workingFolder): its parent pane's session id, which stays
+    // after the parent pane closes, and the full path of its worktree, where its runs work instead of the workspace folder. The delegation
+    // file is the authority. Damage in either loads as nothing instead of failing the snapshot.
+    [JsonPropertyName("parentSessionId"), JsonConverter(typeof(LenientJsonConverter<string>))] public string? ParentSessionId { get; init; }
+    [JsonPropertyName("workingFolder"), JsonConverter(typeof(LenientJsonConverter<string>))] public string? WorkingFolder { get; init; }
 
     internal RunSession Apply(RunEvent ev)
     {
@@ -137,7 +149,7 @@ public sealed record RunSession
         {
             var logs = value.Logs.ToList(); var index = logs.FindIndex(l => l.Id == entry.Id);
             if (index >= 0) logs[index] = entry; else logs.Add(entry);
-            return value with { Logs = logs.TakeLast(300).ToList() };
+            return value with { Logs = TranscriptRetention.Trimmed(logs) };
         }
         // The run pipeline hands the finished execution graph of one request to
         // its own session; Gemini and shell panes never produce one.
@@ -186,6 +198,38 @@ internal sealed class LenientNullableBoolConverter : JsonConverter<bool?>
     public override void Write(Utf8JsonWriter writer, bool? value, JsonSerializerOptions options)
     {
         if (value is bool b) writer.WriteBooleanValue(b);
+        else writer.WriteNullValue();
+    }
+}
+// Reads a whole number only; any other JSON token loads as null, as the field absent does
+// (macOS RunSession.graphSizesLayout), so layout damage never discards the saved conversation.
+internal sealed class GraphSizesLayoutConverter : JsonConverter<int?>
+{
+    public override int? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.Number && reader.TryGetInt32(out var value)) return value;
+        reader.Skip();
+        return null;
+    }
+    public override void Write(Utf8JsonWriter writer, int? value, JsonSerializerOptions options)
+    {
+        if (value is int layout) writer.WriteNumberValue(layout);
+        else writer.WriteNullValue();
+    }
+}
+// Reads a number only; any other JSON token loads as null, as the field absent does, so a damaged size never
+// discards the saved panes. StateStore.Normalize keeps what is read within its limits.
+internal sealed class LenientNullableDoubleConverter : JsonConverter<double?>
+{
+    public override double? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.Number && reader.TryGetDouble(out var value)) return value;
+        reader.Skip();
+        return null;
+    }
+    public override void Write(Utf8JsonWriter writer, double? value, JsonSerializerOptions options)
+    {
+        if (value is double number && double.IsFinite(number)) writer.WriteNumberValue(number);
         else writer.WriteNullValue();
     }
 }
@@ -255,6 +299,12 @@ public sealed record AppSnapshot
     // That line was left open on its task rows. Null (older state) means folded, matching the Mac's backgroundWorkOpen.
     [JsonConverter(typeof(LenientNullableBoolConverter))]
     public bool? BackgroundWorkOpen { get; init; }
+    // The reference bubble's dragged size, one for every pane (the Mac's mighty.referenceBubble.width and .height).
+    // Null (older state, or its corner's double click) is the size it opens at: its default width, as tall as the room.
+    [JsonConverter(typeof(LenientNullableDoubleConverter))]
+    public double? ReferenceBubbleWidth { get; init; }
+    [JsonConverter(typeof(LenientNullableDoubleConverter))]
+    public double? ReferenceBubbleHeight { get; init; }
     // Additive with a default, so Version stays 1: StateStore resets every
     // field when Version is not 1. Off out of the box — nothing is looked up
     // directly until the user switches it on in the usage popover.
@@ -295,6 +345,9 @@ public sealed record StartRunRequest(string SessionId, string WorkspaceId, strin
     [JsonIgnore] public string? PermissionModeOverride { get; init; }
     // The pane's saved checklist, which a resumed Claude run continues.
     [JsonIgnore] public TodoProgress? TodoProgress { get; init; }
+    // A delegated child pane's worktree folder, where its run works instead of the workspace folder. Captured from the pane's saved
+    // record at acceptance, never supplied by remote JSON.
+    [JsonIgnore] public string? WorkingFolder { get; init; }
     private readonly IReadOnlyList<RunAttachment>? attachments = Attachments;
     public IReadOnlyList<RunAttachment>? Attachments { get => attachments is { Count: > 0 } ? attachments : null; init => attachments = value; }
     public IReadOnlyList<RegisteredModelEntry> RegisteredModels { get; init; } = RegisteredModels ?? [];
@@ -309,6 +362,7 @@ public sealed record StartRunRequest(string SessionId, string WorkspaceId, strin
         if (settings.PermissionMode == "onRequest" && (Provider != "codex" || Kind != "claude")) throw new ArgumentException(Locale.Get("wire.startRun.codexOnlyFeatures"));
         if (settings.PermissionMode == "auto" && (Kind != "claude" || Provider != "claude")) throw new ArgumentException(Locale.Get("wire.startRun.autoModeClaudeOnly"));
         if (PermissionModeOverride is { } mode && (mode != "plan" || Kind != "claude" || Provider != "claude")) throw new ArgumentException(Locale.Get("plan.error.overrideClaudeOnly"));
+        if (WorkingFolder is not null && (Kind != "claude" || !DelegationPanes.IsWorkingFolder(WorkingFolder))) throw new ArgumentException(Locale.Get("wire.startRun.invalidFormat"));
         if ((Provider != "codex" || Kind != "claude") && (settings.FastMode || settings.WebSearch != "default" || settings.NetworkAccess) || settings.NetworkAccess && settings.PermissionMode is not ("acceptEdits" or "onRequest")) throw new ArgumentException(Locale.Get("wire.startRun.codexOnlyFeatures"));
         if (Kind == "claude" && (Provider != "claude" && (settings.MaxTurns is not null || settings.MaxBudgetUsd is not null) || Provider == "codex" && settings.PermissionMode == "plan" || Provider == "gemini" && settings.Effort != "default" || Provider == "claude" && Model.Contains("haiku", StringComparison.OrdinalIgnoreCase) && settings.Effort != "default")) throw new ArgumentException(Locale.Get("wire.startRun.unsupportedSettings"));
         if (StyleAutoAllow is { Count: > 0 } grants && (Provider != "claude" || Kind != "claude" || grants.Count > 32 || grants.Any(g => !StyleRunPermissions.ValidWireName(g))))

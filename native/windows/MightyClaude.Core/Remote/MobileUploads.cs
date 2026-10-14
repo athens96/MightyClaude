@@ -3,7 +3,8 @@ using System.Text;
 
 namespace MightyClaude.Core;
 
-public sealed class MobileRequestException(int status, string message) : Exception(message) { public int Status { get; } = status; }
+/// <param name="code">A machine-readable reason beside the message; the file routes send one, and the phone words it itself.</param>
+public sealed class MobileRequestException(int status, string message, string? code = null) : Exception(message) { public int Status { get; } = status; public string? Code { get; } = code; }
 public sealed record MobileUploadTicket(int Protocol, string UploadId, int ChunkSize);
 public sealed record MobileUploadAttachment(string Id, string Name, int Size);
 public sealed record MobileUploadClaim(string Id, IReadOnlyList<string> UploadIds, IReadOnlyList<RunAttachment> Attachments);

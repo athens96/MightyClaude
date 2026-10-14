@@ -14,6 +14,23 @@ public static class StyleRunPermissions
         return parts.Length==3&&parts[0]=="mcp"&&parts[1].StartsWith("plugin_",StringComparison.Ordinal)&&!parts[1].EndsWith('_')&&Regex.IsMatch(parts[1],"^[A-Za-z0-9_-]{1,64}$",RegexOptions.CultureInvariant)
             &&parts[2]!="AskUserQuestion"&&!parts[2].StartsWith('_')&&Regex.IsMatch(parts[2],"^[A-Za-z0-9_-]{1,64}$",RegexOptions.CultureInvariant);
     }
+    /// <summary>
+    /// Whether the pane's style allows this request by itself (M/AppStore.swift:1160, M/AppStore+Styles.swift:539-541). Judged
+    /// at each request against the style as it stands right then — the pane's own choice, the trust record and the file's
+    /// bytes are read again — so a revoked or changed style, or a pane that left it, stops allowing at once (§4.6).
+    /// </summary>
+    public static bool AutoAllows(ToolPermissionRequest request,RunSession? pane,string profile,string workspace)
+    {
+        if(request.State!="pending"||!request.CanAllow||request.ToolName=="AskUserQuestion"||!ValidWireName(request.ToolName))return false;
+        if(pane is null||pane.Kind!="claude"||pane.Provider!="claude"||pane.AgentViewMode!="mighty"||pane.MightyStyle is null)return false;
+        try{return StyleRegistry.Load(profile,workspace).Runnable(pane.MightyStyle,pane.MightyStyleHash) is {} style&&StyleRegistry.Unchanged(style)&&style.Evaluator.AutoAllowed(request.ToolName);}
+        catch(Exception e)when(e is IOException or UnauthorizedAccessException){return false;}
+    }
+    /// <summary>
+    /// The run-start list a host without the approval card still launches with (<see cref="ProviderCatalog.Arguments"/>'s
+    /// <c>--allowedTools</c>). A host that shows the card judges each request instead (<see cref="AutoAllows"/>) and
+    /// launches without it (<see cref="ProviderInput.HostPrompts"/>).
+    /// </summary>
     public static StartRunRequest Bind(StartRunRequest request,RunSession selected,string profile,string workspace)
     {
         if(selected.Kind!="claude"||selected.Provider!="claude"||selected.AgentViewMode!="mighty"||selected.MightyStyle is null)return request with{StyleAutoAllow=null};

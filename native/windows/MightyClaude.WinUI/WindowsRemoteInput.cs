@@ -88,7 +88,8 @@ internal sealed class WindowsRemoteInput : IDisposable
             var type = value.Text("t");
             if (type is "tap" or "drag" or "scroll")
             {
-                var display = displays.FirstOrDefault(d => d.DisplayId == value.GetProperty("displayId").GetInt32()); if (display is null) return;
+                // A display that is no longer attached reads as the main one, where its viewers were moved.
+                var display = ScreenSharePolicy.DisplayFor(displays, value.GetProperty("displayId").GetInt32()); if (display is null) return;
                 var x = display.Left + Math.Clamp(value.GetProperty("x").GetDouble(), 0, 1) * Math.Max(0, display.Width - 1);
                 var y = display.Top + Math.Clamp(value.GetProperty("y").GetDouble(), 0, 1) * Math.Max(0, display.Height - 1);
                 var width = GetSystemMetrics(78); var height = GetSystemMetrics(79); if (width < 2 || height < 2) return;

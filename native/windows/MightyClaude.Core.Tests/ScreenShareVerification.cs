@@ -20,7 +20,7 @@ internal static class ScreenShareVerification
         public Task ReceiveSignalAsync(string id, JsonElement signal, CancellationToken token) => Task.CompletedTask;
         public Task StopPeerAsync(string id) { Stopped.Add(id); return Task.CompletedTask; }
         public void Halt() => Halts++;
-        public Task SetDisplayAsync(int id, CancellationToken token) => Task.CompletedTask;
+        public Task<bool> SetDisplayAsync(int id, CancellationToken token) => Task.FromResult(true);
         public void SetRegion(ScreenRegion region) { }
         public Task InjectAsync(string id, JsonElement value, CancellationToken token) { Inputs.Add(value.Text("t")!); return Task.CompletedTask; }
         public Task<bool> ShowMarkerAsync(string id, JsonElement value, CancellationToken token) => Task.FromResult(true);

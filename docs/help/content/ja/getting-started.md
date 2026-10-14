@@ -49,7 +49,7 @@ Mighty Claudeは、Claude Code、Codex CLI、Gemini CLIを1つのウインドウ
 
 1. {{ui:layout.welcome.openProject}}ボタンをクリックするか、{{kbd:⌘O}}を押します。
 2. 作業するフォルダを選びます。
-3. サイドバーにワークスペースが追加されます。続けて{{ui:menu.newClaudePane}}({{kbd:⌘N}})で最初のペインを開きます。
+3. サイドバーにワークスペースが追加され、ペインがまだないフォルダならClaudeのペインがすぐに1つ開きます。ペインをさらに開くには{{ui:menu.newClaudePane}}({{kbd:⌘N}})を使います。
 
 ほかのフォルダを開くときは、サイドバーの{{ui:sidebar.workspacesHeader}}見出しの右にあるフォルダボタンを押すか、メニューバーの{{ui:menu.openProject}}か{{kbd:⌘O}}を使います。サイドバーでワークスペースを右クリックすると、{{ui:menu.rename}}、{{ui:menu.showInFinder}}、{{ui:workspace.menu.remove}}の項目があります。一覧から削除しても、ディスク上のプロジェクトファイルはそのまま残ります。
 
@@ -62,5 +62,5 @@ Mighty Claudeは、Claude Code、Codex CLI、Gemini CLIを1つのウインドウ
 このヘルプはアプリから直接開けます。アプリで選んだ言語で表示されます。
 
 - Mac：メニューバーの{{ui:menu.help}}（{{kbd:⌘?}}）、または{{ui:menu.settings}} → {{ui:settings.nav.about}}の{{ui:settings.appInfo.openHelpButton}}ボタン
-- Windows：サイドバー下部のヘルプボタン、または{{kbd:F1}}
+- Windows：サイドバー下部のヘルプボタン、{{kbd:F1}}、または{{ui:menu.settings}} → {{ui:settings.nav.about}}の{{ui:settings.appInfo.openHelpButton}}ボタン
 - スマートフォン：{{ui:phone.tabs.hosts}}タブの{{ui:phone.hosts.help}}ボタン

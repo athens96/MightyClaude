@@ -9,8 +9,8 @@ section: layout
 
 ## 사이드바 {#sidebar}
 사이드바에는 위에서부터 다음이 있습니다.
-- {{ui:phone.dashboard.title}}: 모든 워크스페이스의 실행 창 상태를 한곳에서 봅니다.
 - {{ui:sidebar.searchPlaceholder}}: {{kbd:⌘K}}를 누르면 검색칸으로 바로 갑니다.
+- {{ui:phone.dashboard.title}}: 모든 워크스페이스의 실행 창 상태를 한곳에서 봅니다.
 - {{ui:sidebar.workspacesHeader}} 목록: 워크스페이스를 누르면 그 워크스페이스로 바뀝니다. 옆의 화살표를 누르면 실행 창 목록을 펼치거나 접습니다.
 - 아래쪽: 화면 테마 단추(다크·라이트)와 설정 단추.
 
@@ -32,7 +32,7 @@ section: layout
 ![[sidebar-collapsed]]
 
 ## 작업 현황 {#dashboard}
-사이드바 맨 위의 {{ui:phone.dashboard.title}}을 누르면 모든 워크스페이스의 실행 창을 상태 순으로 모아 봅니다.
+사이드바 검색칸 아래의 {{ui:phone.dashboard.title}}을 누르면 모든 워크스페이스의 실행 창을 상태 순으로 모아 봅니다.
 - 위쪽 칸에서 {{ui:phone.dashboard.stat.running}}, {{ui:phone.dashboard.stat.waiting}}, {{ui:phone.dashboard.stat.done}} 개수를 봅니다.
 - {{ui:dashboard.usage.title}} 카드에서 계정 사용량을 봅니다. 같은 계정을 쓰는 다른 앱·세션과 함께 쓰는 한도입니다.
 - 워크스페이스마다 {{ui:files.pane.title}} 단추와 {{ui:workspace.addPane}} 메뉴가 있습니다.

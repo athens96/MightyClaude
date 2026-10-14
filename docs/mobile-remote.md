@@ -18,7 +18,7 @@ PC에서 실행 중인 Mighty Claude에 휴대폰으로 접속해 워크스페�
 |---|---|---|---|
 | GET | `/m1/info` | | `{ protocol, hostId, hostName, appVersion, platform }` |
 | GET | `/m1/state?since=<rev>&wait=<0..10>` | | `MobileState` — `revision`이 `since`보다 커질 때까지 최대 `wait`초 기다렸다가 응답. 시간 안에 변화가 없으면 같은 `revision`으로 현재 상태를 돌려준다 |
-| GET | `/m1/sessions/{id}?since=<rev>&wait=<0..10>[&structure=<tag>]` | | `MobileSessionDetail` — 세션 단위 `revision`으로 같은 방식. `structure`는 `"structure"` 기능이 있는 Mac에만(아래 "구조 보기" 절) |
+| GET | `/m1/sessions/{id}?since=<rev>&wait=<0..10>[&structure=<tag>]` | | `MobileSessionDetail` — 세션 단위 `revision`으로 같은 방식. `structure`는 `"structure"` 기능이 있는 호스트(Mac·Windows)에만(아래 "구조 보기" 절) |
 | POST | `/m1/sessions/{id}/submit` | `{ text }` | 202 `{ protocol, accepted: "started" \| "steered" \| "queued" }` · 실행할 수 없으면 409 |
 | POST | `/m1/sessions/{id}/stop` | | `{ protocol, stopped }` — 실행 중인 요청이 없어 멈출 것이 없었으면 `stopped: false` |
 | POST | `/m1/sessions/{id}/permission` | `{ requestId, runId, allow }` | `{ protocol, ok: true }` |
@@ -183,9 +183,9 @@ MobileBlock { id, kind, title, status, summary?, output?, durationMs?, nodeModel
 
 #### 구조 보기 (`mighty.structure`)
 
-Mac의 "구조" 보기(`MightyCore/MightyStructure.swift`의 `MightyStructure.make`)를 **그 결과 그대로** 휴대폰에 보낸다.
+데스크톱 앱의 "구조" 보기(Mac `MightyCore/MightyStructure.swift`의 `MightyStructure.make`, Windows `MightyClaude.Core/MightyStructure.cs`의 `MightyStructure.Make`)를 **그 결과 그대로** 휴대폰에 보낸다. Windows 호스트의 전송 모양·한도·창별 캐시는 `MightyClaude.Core/Remote/MobileStructure.cs`가 Mac의 `MobileStructure.swift`와 같게 지킨다.
 
-**묻는 휴대폰에게만, 바뀌었을 때만.** 이 값은 `capabilities`에 `"structure"`가 있는 Mac만 안다. 휴대폰은 구조 보기를 열어 둔 동안에만 세션 상세를 `GET /m1/sessions/{id}?since=…&wait=…&structure=<tag>`로 묻는다. `<tag>`는 휴대폰이 가진 구조의 태그(없으면 `0`, 숫자 1–12자리)이고, 다른 라우트(`/m1/state` 등)에서 이 이름은 지금처럼 400이다. 그래서 구버전 휴대폰과 대화·블록 보기는 이 값을 한 바이트도 받지 않는다. 물은 상세에는 `mighty.structureTag`(지금 구조의 태그, 그릴 것이 없으면 `0`)가 언제나 실리고, `mighty.structure`는 그 태그가 휴대폰이 보낸 것과 다를 때만 실린다. 태그는 정렬된 키로 인코딩한 값의 SHA-256 앞 8바이트를 1…999 999 999 999로 줄인 수다. 휴대폰은 구조를 상세와 따로 들고 있다가(`receiveStructure`) 태그만 같으면 그대로 쓰고, 새 값이면 바뀌지 않은 요청을 같은 객체로 남겨 그 카드만 다시 그린다. 구조 보기로 바꾸는 순간 롱 폴을 다시 시작해 곧바로 묻는다.
+**묻는 휴대폰에게만, 바뀌었을 때만.** 이 값은 `capabilities`에 `"structure"`가 있는 호스트(같은 버전 이상의 Mac·Windows 앱)만 안다. 휴대폰은 구조 보기를 열어 둔 동안에만 세션 상세를 `GET /m1/sessions/{id}?since=…&wait=…&structure=<tag>`로 묻는다. `<tag>`는 휴대폰이 가진 구조의 태그(없으면 `0`, 숫자 1–12자리)이고, 다른 라우트(`/m1/state` 등)에서 이 이름은 지금처럼 400이다. 그래서 구버전 휴대폰과 대화·블록 보기는 이 값을 한 바이트도 받지 않는다. 물은 상세에는 `mighty.structureTag`(지금 구조의 태그, 그릴 것이 없으면 `0`)가 언제나 실리고, `mighty.structure`는 그 태그가 휴대폰이 보낸 것과 다를 때만 실린다. 태그는 정렬된 키로 인코딩한 값의 SHA-256 앞 8바이트를 1…999 999 999 999로 줄인 수다. 휴대폰은 구조를 상세와 따로 들고 있다가(`receiveStructure`) 태그만 같으면 그대로 쓰고, 새 값이면 바뀌지 않은 요청을 같은 객체로 남겨 그 카드만 다시 그린다. 구조 보기로 바꾸는 순간 롱 폴을 다시 시작해 곧바로 묻는다.
 
 **릴레이 프레임 안에.** 응답 하나는 릴레이 프레임 하나(1 MiB, [relay.md](relay.md))에 실린다. 호스트는 구조가 실린 상세의 JSON이 `MobileWire.maximumReplyBytes`(1 MiB − 32 KiB, 봉투·암호 머리 몫)를 넘으면 구조부터 덜어내고 태그만 남긴다(`MobileRemoteSupport.outgoing`). 휴대폰은 태그가 다른데 값이 없으면 가진 것을 그대로 보이며 옛 태그로 다시 묻는다. 휴대폰은 요청의 단계나 요청·실행·결과 단계를 스스로 계산하지 않고 받은 것만 그린다. 입력도 Mac 창과 같다: 저장된 그래프의 요청들, 승인된 스타일의 평가기, 창의 현재 단계(Mac 단계 막대와 같은 `currentPhase(session:fileSourceStates:planStage:)`), 답한 계획 기록, 답을 기다리는 계획의 run id. Mac 창에만 있는 "새로 시작" 선택은 휴대폰에 오지 않으므로 휴대폰은 언제나 이미 있는 요청 기준으로 본다. CLI 기록에서 불러온 더 오래된 요청은 `runs`처럼 보내지 않는다.
 
@@ -216,9 +216,9 @@ Node { id, depth, title, status, kind: "agent" | "task", model?, prompt?, output
 
 **한도.** 글은 글자 경계(결합 이모지도 한 글자)에서 UTF-8 바이트로 자르고 잘린 글 끝에 "…"를 붙인다: `request`·`message` 1 KB, `answer` 4 KB(열린 코드 펜스는 한도 안에서 닫는다), 노드 `prompt` 300 B·`output` 1 KB, 활동 한 줄 200 B, 제목 160 B, 모델 80 B. 최근 요청 20개까지, 요청마다 노드 60개까지(`omittedNodes`). 값 전체의 JSON(열·줄 껍데기, 단계 이름, `omitted`까지 실제로 인코딩한 크기)은 192 KiB 이하로 맞추고, 넘치면 오래된 요청부터 뺀다. 가장 최근 요청 하나는 언제나 실리고, 그것만으로 넘치면 앞쪽 노드를 들어갈 만큼만(이분 탐색) 남긴다. 같은 run id가 두 번 있으면(손상된 저장) 가장 최근 것 하나만 싣는다. 단계가 있는 스타일은 요청이 하나도 없어도 단계 막대를 위해 `columns`를 보내고, 스타일이 없는 창에 요청이 없으면 필드 자체가 없다.
 
-**다시 만드는 때.** Mac은 휴대폰이 물을 때만, 그리고 창마다 `MightyStructure.Signature`나 키(요청 이름을 읽는 실행 가능한 스타일들의 id·해시, 모델 목록)가 바뀔 때만(스트리밍 글자는 몇 줄씩 자랄 때만) 구조를 다시 만든다. 바뀐 요청의 카드만 다시 읽고(`ItemCache`), 전송 모양과 JSON 크기도 바뀌지 않은 요청은 지난 것을 그대로 쓴다. 그 사이의 읽기는 마지막 값을 그대로 보낸다. 롱 폴을 깨우는 mighty 요약값에는 답한 계획 기록의 개수와 마지막 결과도 들어간다(계획 답이 요청의 단계를 옮긴다).
+**다시 만드는 때.** 호스트는 휴대폰이 물을 때만, 그리고 창마다 `MightyStructure.Signature`나 키(요청 이름을 읽는 실행 가능한 스타일들의 id·해시, 모델 목록)가 바뀔 때만(스트리밍 글자는 몇 줄씩 자랄 때만) 구조를 다시 만든다. 바뀐 요청의 카드만 다시 읽고(`ItemCache`), 전송 모양과 JSON 크기도 바뀌지 않은 요청은 지난 것을 그대로 쓴다. 그 사이의 읽기는 마지막 값을 그대로 보낸다. 롱 폴을 깨우는 mighty 요약값에는 답한 계획 기록의 개수와 마지막 결과도 들어간다(계획 답이 요청의 단계를 옮긴다).
 
-**버전이 어긋날 때.** 구버전 휴대폰은 묻지 않으므로 받지도 않는다. 신버전 휴대폰이 구버전 Mac에 붙으면 `capabilities`에 `"structure"`가 없으므로 묻지 않고, 요청이 있는 창의 구조 보기는 "Mac 업데이트가 필요합니다"(`phone.structure.needsUpdate.*`)를 보인다. 휴대폰이 모르는 `v`·`shape`면 "휴대폰 앱 업데이트가 필요합니다"(`phone.structure.unreadable.*`)를 보인다. 공유 픽스처 `native/contracts/fixtures/mobile-structure.json`을 Mac(`MobileRemoteStructureTests`)과 휴대폰(`structure.test.ts`)이 함께 읽어 필드 이름이 어긋나지 않게 한다.
+**버전이 어긋날 때.** 구버전 휴대폰은 묻지 않으므로 받지도 않는다. 신버전 휴대폰이 구버전 데스크톱 앱(Mac·Windows)에 붙으면 `capabilities`에 `"structure"`가 없으므로 묻지 않고, 요청이 있는 창의 구조 보기는 "Mac 업데이트가 필요합니다"(`phone.structure.needsUpdate.*`)를 보인다. 이 문구(와 `phone.structure.omitted`·`phone.structure.unreadable.*`)는 아직 Mac만 말하지만, Windows 호스트도 같은 기능 이름으로 구조를 보낸다. 휴대폰이 모르는 `v`·`shape`면 "휴대폰 앱 업데이트가 필요합니다"(`phone.structure.unreadable.*`)를 보인다. 공유 픽스처 `native/contracts/fixtures/mobile-structure.json`을 Mac(`MobileRemoteStructureTests`), Windows(`MobileStructureVerification.cs`)와 휴대폰(`structure.test.ts`)이 함께 읽어 필드 이름이 어긋나지 않게 한다.
 
 ### 스타일 (style)
 
@@ -294,7 +294,7 @@ POST /m1/sessions/{id}/guided
 - **구버전 휴대폰이 신버전 호스트를 볼 때**: `capabilities`에서 `"style"`을 모르므로 `styleId`·`panel`·`options.styles`를 전부 무시한다. `mightyStyle`은 여전히 셋 중 하나이므로 내장 둘은 그대로 보이고, 그 밖의 스타일이 도는 실행 창은 `cli`로 보인다(일반 CLI 화면). 내장 두 스타일의 레거시 페이로드는 그대로 나가므로 오늘과 똑같이 동작한다.
 - **신버전 휴대폰이 구버전 호스트를 볼 때**: `capabilities`에 `"style"`이 없으므로 `mighty.panel`도 `options.styles`도 오지 않고, 새 렌더러는 `mighty.ouroboros`/`mighty.paperthin`(있는 경우)만으로 패널을 그린다. `/guided`는 레거시 본문 `{style, skill}`을 보내고, `/settings`는 `mightyStyle`만 보낸다.
 
-**휴대폰은 스타일을 등록·승인·취소·재스캔할 수 없다.** 그 넷은 Mac에서만 한다(마이티 스타일 계약 §4.5). 휴대폰의 승인 여부는 오직 `styleId`·`options.styles`의 결과로만 드러난다.
+**휴대폰은 스타일을 등록·승인·취소·재스캔할 수 없다.** 그 넷은 데스크톱 앱(Mac·Windows)에서만 한다(마이티 스타일 계약 §4.5). 휴대폰의 승인 여부는 오직 `styleId`·`options.styles`의 결과로만 드러난다.
 
 ### 파일 (files)
 
@@ -357,7 +357,7 @@ MobileFilePreview {
 
 ### 휴대폰에서 의도적으로 제외한 Mac 기능
 
-알림(푸시·로컬), 터미널 실행 창 조작, 워크스페이스 추가·이름 변경·제거, 그래프 배치·블록 크기 조절·참조 말풍선, CLI 계정 전환·CLI 업데이트·앱 자체 업데이트·앱 설정, 펫, 다국어, **스타일 등록·승인·취소·재스캔과 마이티 스타일 설정 화면**(Mac 전용).
+알림(푸시·로컬), 터미널 실행 창 조작, 워크스페이스 추가·이름 변경·제거, 그래프 배치·블록 크기 조절·참조 말풍선, CLI 계정 전환·CLI 업데이트·앱 자체 업데이트·앱 설정, 펫, 다국어, **스타일 등록·승인·취소·재스캔과 마이티 스타일 설정 화면**(데스크톱 앱 전용).
 
 **리셋권(한도 리셋 자격):** 휴대폰은 CLI가 보고하는 `rateLimits` 상태 줄(`resetsAt` 포함)을 그대로 표시한다. 리셋권 자격 조회(cedar_ember·juniper_tide 두 프로그램의 일곱 상태)는 데스크톱 앱 전용이며, 휴대폰에 릴레이 계약 확장으로 전달하는 것은 이후 작업으로 미룬다.
 

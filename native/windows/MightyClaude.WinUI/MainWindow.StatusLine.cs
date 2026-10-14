@@ -35,6 +35,11 @@ public sealed partial class MainWindow
         private StatusLineRefresher? _refresher;
         private Task statusLineStopping = Task.CompletedTask;
         private bool statusLineRestartPending;
+        /// <summary>
+        /// Asks for the status line again by itself, every 10 s while the pane's run goes on and every 60 s at rest
+        /// (StatusLineRefresher.TickInterval). It turns while the pane shows a status line, and never in a smoke run.
+        /// </summary>
+        private readonly DispatcherTimer statusLineTick = new();
         private readonly Microsoft.UI.Xaml.Controls.Primitives.ToggleButton statusLineToggle = new()
         {
             // The toggle sits in the composer's right cluster in a 16pt-wide, toolbar-high frame (M/SessionPaneView.swift:123-133, 736).
@@ -45,6 +50,7 @@ public sealed partial class MainWindow
         internal StatusLineRefresher? Refresher => _refresher;
         internal Task CloseStatusLine()
         {
+            statusLineTick.Stop();
             if (_refresher is { } previous) { previous.Close(); statusLineStopping = Task.WhenAll(statusLineStopping, previous.WhenStopped); _refresher = null; }
             return statusLineStopping;
         }
@@ -76,6 +82,7 @@ public sealed partial class MainWindow
             statusLineToggle.Visibility = Session.Kind == "claude" && Session.Provider == "claude" ? Visibility.Visible : Visibility.Collapsed;
             if (!StatusLineEligible)
             {
+                statusLineTick.Stop();
                 if (_refresher is { } previous) { previous.Close(); statusLineStopping = Task.WhenAll(statusLineStopping, previous.WhenStopped); _refresher = null; }
                 RenderStatusLine(null, null, null);
                 return;
@@ -87,6 +94,11 @@ public sealed partial class MainWindow
             }
             InitRefresher();
             _refresher?.RequestRefresh(BuildStatusLineContext(), force);
+            if (owner.options.SmokeTest) return;
+            var interval = StatusLineRefresher.TickInterval(owner.service.SessionStatus(id) == "running");
+            if (statusLineTick.Interval != interval) statusLineTick.Interval = interval;
+            // The timed reading runs only while the pane is on screen, as the Mac's .task does; one hidden is read again as it is shown (Refresh).
+            if (!statusLineTick.IsEnabled && owner.paneHosts.ContainsKey(id)) statusLineTick.Start();
         }
 
         private async Task RestartStatusLineAfterStop()
@@ -105,6 +117,7 @@ public sealed partial class MainWindow
         private void InitializeStatusLineToggle(StackPanel cluster)
         {
             InitializeStatusLineGlyph();
+            statusLineTick.Tick += (_, _) => { if (QueuePaneAlive && owner.paneHosts.ContainsKey(id)) RequestStatusLineRefresh(); else statusLineTick.Stop(); };
             AutomationProperties.SetName(statusLineToggle, Locale.Get("settings.display.statusLineToggle"));
             statusLineToggle.Click += async (_, _) => await owner.Act(() => owner.SetStatusLineEnabled(statusLineToggle.IsChecked == true));
             cluster.Children.Add(statusLineToggle);

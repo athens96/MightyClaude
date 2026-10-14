@@ -21,7 +21,7 @@ It runs on Windows 10 (version 2004) or later, or Windows 11. The .NET runtime i
 Updates come from {{ui:menu.settings}} → {{ui:settings.nav.about}}, as on the Mac.
 
 ## Keyboard shortcuts {#shortcuts}
-Use {{kbd:Ctrl}} instead of {{kbd:⌘}}. Only collapsing the sidebar uses a different key.
+Use {{kbd:Ctrl}} instead of {{kbd:⌘}}. Only collapsing the sidebar and stopping remote screen sessions use different keys.
 
 | Mac | Windows | Action |
 |---|---|---|
@@ -33,20 +33,22 @@ Use {{kbd:Ctrl}} instead of {{kbd:⌘}}. Only collapsing the sidebar uses a diff
 | {{kbd:⌃⌘S}} | {{kbd:Ctrl+B}} | {{ui:sidebar.collapse}} / {{ui:sidebar.expand}} |
 | {{kbd:⌘,}} | {{kbd:Ctrl+,}} | {{ui:menu.settings}} |
 | {{kbd:⌘Enter}} | {{kbd:Ctrl+Enter}} | Send to the running Claude now |
+| {{kbd:⌃⌥⌘K}} | {{kbd:Ctrl+Alt+Esc}} | Stop every remote screen session from phones ([Screen view](phone.md#screen)) |
 
 Windows has no menu bar. The same commands are in the sidebar and the {{ui:workspace.addPane}} menu.
 
 ## Differences {#differences}
 | Feature | On Windows |
 |---|---|
-| CLI sign-in | Runs in a separate Windows terminal window, not a terminal inside the app. |
+| CLI sign-in | Runs in a separate Windows terminal window, not a terminal inside the app. Once you are signed in, the failed request is sent again on its own, as on the Mac. |
 | Terminal panes | Use Windows PowerShell. |
 | Browser panes | Use Microsoft Edge WebView2. As on the Mac, turn on {{ui:settings.display.browserToggle}} and reopen the app. |
 | Completion notification | Turn on {{ui:windows.notifications.toggleLabel}}. |
-| Screen view | Screen view for the phone remote works, with fewer quality options than on the Mac. |
+| Screen view | Screen view for the phone remote works, with fewer quality options than on the Mac. {{kbd:Ctrl+Alt+Esc}} stops every remote screen session at once. |
+| Pet bubble | Approval and question bubbles have one more symbol button. On an approval it opens a window with the whole request; on a question it opens a window where you type your own answer. |
 | Language | A new language applies after you reopen the app. |
 | File location | {{ui:menu.showInExplorer}} instead of {{ui:menu.showInFinder}}. |
-| Agent delegation | Not yet. [Agent delegation](delegation.md) is on the Mac app only. |
+| Agent delegation | Turned on and off with a registry value ([Turn it on or off](delegation.md#enable)). Worktrees go in `%USERPROFILE%\.mightyclaude\worktrees`, and one holding a junction or symbolic link is not cleaned up automatically ([Closing panes and cleanup](delegation.md#close)). |
 
 > [!note]
 > Some Windows features haven't been checked on enough real machines yet. If something looks wrong, please tell us.

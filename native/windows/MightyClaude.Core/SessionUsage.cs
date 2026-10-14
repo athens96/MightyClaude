@@ -39,6 +39,27 @@ public static class SessionUsageSupport
     internal static long? Count(JsonElement value, string key) => Count(MetadataJson.Integer(value, key));
     internal static long? Sum(IEnumerable<long?> values) { var all = values.ToArray(); return all.Length == 0 || all.Any(v => v is null) ? null : Count(all.Sum(v => v!.Value)); }
     internal static double? Cost(double? value) => value is double number && double.IsFinite(number) && number is >= 0 and <= 1_000_000_000 ? number : null;
+    /// <summary>
+    /// The windows in <c>rate_limit_info</c> of a Claude stream event (M/MightyCore/SessionUsage.swift:117-139):
+    /// <c>unifiedWindows</c> keyed by window kind, each with a utilization of 0…1 and an epoch-second reset time; without any
+    /// usable one, the single window the event names in <c>rateLimitType</c>.
+    /// </summary>
+    internal static List<SessionRateLimit> RateLimitWindows(JsonElement info)
+    {
+        static SessionRateLimit? Window(string kind, JsonElement row)
+        {
+            double? percent = MetadataJson.Number(row, "utilization") is >= 0 and <= 1 and var used ? used * 100 : null;
+            var reset = MetadataJson.Number(row, "resetsAt") is > 0 and < 4_102_444_800 and var seconds ? DateTimeOffset.FromUnixTimeSeconds((long)seconds).ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", System.Globalization.CultureInfo.InvariantCulture) : null;
+            return (percent is not null || reset is not null) && kind.Length > 0 && Encoding.UTF8.GetByteCount(kind) <= 80 ? new(kind, percent, reset) : null;
+        }
+        var unified = MetadataJson.Property(info, "unifiedWindows");
+        if (unified.ValueKind == JsonValueKind.Object)
+        {
+            var windows = unified.EnumerateObject().OrderBy(p => p.Name, StringComparer.Ordinal).Take(16).Select(p => Window(p.Name, p.Value)).OfType<SessionRateLimit>().ToList();
+            if (windows.Count > 0) return windows;
+        }
+        return info.Text("rateLimitType") is { } kind && Window(kind, info) is { } only ? [only] : [];
+    }
     public static SessionUsage? Normalize(SessionUsage? value)
     {
         if (value is null || !Wire.Providers.Contains(value.Provider) || !Scope(value.TokenScope) || string.IsNullOrEmpty(value.Source) || value.Source != ActivitySupport.Clean(value.Source, 80, true) || AgentRunTiming.Parse(value.UpdatedAt) is null) return null;
@@ -113,6 +134,8 @@ internal sealed class SessionUsageTracker
         Identity(root.Text("session_id"));
         if (type == "system" && root.Text("subtype") == "init") { Model(root.Text("model")); Publish(); }
         if (type == "system" && root.Text("subtype") == "compact_boundary") { value = value with { ContextUsedTokens = null }; authoritativeContext = false; Publish(); }
+        // The CLI reports the account's rate-limit windows with every turn (M/MightyCore/SessionUsage.swift:245-250).
+        if (type == "rate_limit_event" && SessionUsageSupport.RateLimitWindows(MetadataJson.Property(root, "rate_limit_info")) is { Count: > 0 } windows) { value = value with { RateLimits = windows, RateLimitsUpdatedAt = Wire.Now() }; Publish(); }
         var message = MetadataJson.Property(root, "message");
         if (type == "assistant" && message.ValueKind == JsonValueKind.Object)
         {

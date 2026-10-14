@@ -89,6 +89,10 @@ internal static class Program
         // waits for the app to exit, verifies the package again and replaces the
         // install. It opens no window and reads no saved state.
         if (args.SequenceEqual(new[] { "--agent-io-mcp" })) return AgentIOMcp.MainAsync().GetAwaiter().GetResult();
+        // The delegation MCP server, which a Claude pane's run gets beside mighty-terminal while the hidden switch is on (M/DelegationMCPServer.swift).
+        if (args.SequenceEqual(new[] { DelegationMcp.HeadlessArgument })) return DelegationMcp.MainAsync().GetAwaiter().GetResult();
+        // The scripted Claude the delegation smoke starts in the CLI's place, the app's own binary in a second mode (M/AppStore+DelegationSmoke.swift:7-12).
+        if (args.Length >= 2 && args[0] == DelegationFakeClaude.Argument && Path.IsPathFullyQualified(args[1])) return DelegationFakeClaude.RunAsync(args[1], args[2..]).GetAwaiter().GetResult();
         if (AppUpdateInstallPlan.TryParse(args) is { } plan) return RunUpdateHelper(plan);
 
         StartupOptions? options = null;

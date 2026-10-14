@@ -25,7 +25,7 @@ public sealed partial class MainWindow
         private CancellationTokenSource? graphHistoryLoad;
         private List<MightyGraphRun> graphHistoryRetained = [];
         private bool graphHistoryAutoLoaded;
-        private double? graphOriginY;
+        private double? graphOriginY, graphOriginX;
         /// The smoke reads its own fixture record instead of the user's.
         internal static string? HistoryHomeOverride;
 
@@ -82,7 +82,8 @@ public sealed partial class MainWindow
             if (!QueuePaneAlive || owner.service.Snapshot.Sessions.FirstOrDefault(p => p.Id == id) is not { } pane) return;
             if (pane.Kind != "claude" || !SessionHistory.Providers.Contains(pane.Provider)) return;
             var retained = pane.GraphRuns ?? [];
-            var template = new SessionHistoryRequest(pane.Provider, pane.ResumeId ?? "", Workspace.Path)
+            // A delegated child's conversations are its worktree's, where its runs work (DelegationPanes.RunWorkspace).
+            var template = new SessionHistoryRequest(pane.Provider, pane.ResumeId ?? "", DelegationPanes.RunWorkspace(pane, Workspace).Path)
             {
                 Environment = HistoryEnvironment(),
                 Home = HistoryHomeOverride ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
@@ -119,10 +120,10 @@ public sealed partial class MainWindow
             // Waiting for another event with that closed ID would retain all
             // cached native documents through the service's event delegate.
             owner.service.RunEventReceived -= OnGraphRunEvent;
-            CancelResultReveal();
             foreach (var outline in graphOutlineViews.Values) outline.Stop?.Invoke();
             graphDotGrid?.Close(); graphDotGrid = null;
             graphActivityTimer?.Stop(); graphActivitySets.Clear();
+            StopOuroboros();
             timelineHeads.Clear(); timelineRows.Clear(); timelineResults.Clear();
         }
 

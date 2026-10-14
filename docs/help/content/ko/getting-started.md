@@ -49,7 +49,7 @@ Mighty Claude는 Claude Code, Codex CLI, Gemini CLI를 한 창에서 나란히 �
 
 1. {{ui:layout.welcome.openProject}} 단추를 누르거나 {{kbd:⌘O}}를 누릅니다.
 2. 작업할 폴더를 고릅니다.
-3. 사이드바에 워크스페이스가 생깁니다. 이제 {{ui:menu.newClaudePane}}({{kbd:⌘N}})으로 첫 실행 창을 엽니다.
+3. 사이드바에 워크스페이스가 생기고, 실행 창이 없는 폴더이면 Claude 실행 창이 하나 바로 열립니다. 창을 더 열려면 {{ui:menu.newClaudePane}}({{kbd:⌘N}}) 항목을 씁니다.
 
 다른 폴더를 더 열려면 사이드바의 {{ui:sidebar.workspacesHeader}} 머리글 오른쪽에 있는 폴더 단추를 누르거나, 메뉴 막대의 {{ui:menu.openProject}}나 {{kbd:⌘O}}를 씁니다. 사이드바에서 워크스페이스를 오른쪽 클릭하면 {{ui:menu.rename}}, {{ui:menu.showInFinder}}, {{ui:workspace.menu.remove}} 항목이 있습니다. 목록에서 제거해도 디스크의 프로젝트 파일은 그대로 남습니다.
 
@@ -62,5 +62,5 @@ Mighty Claude는 Claude Code, Codex CLI, Gemini CLI를 한 창에서 나란히 �
 이 도움말은 앱에서 바로 열 수 있습니다. 앱에서 고른 언어로 열립니다.
 
 - Mac: 메뉴 막대의 {{ui:menu.help}}({{kbd:⌘?}})이나 {{ui:menu.settings}} → {{ui:settings.nav.about}}의 {{ui:settings.appInfo.openHelpButton}} 단추
-- Windows: 사이드바 아래의 도움말 단추나 {{kbd:F1}}
+- Windows: 사이드바 아래의 도움말 단추, {{kbd:F1}}, {{ui:menu.settings}} → {{ui:settings.nav.about}}의 {{ui:settings.appInfo.openHelpButton}} 단추
 - 폰: {{ui:phone.tabs.hosts}} 탭의 {{ui:phone.hosts.help}} 단추

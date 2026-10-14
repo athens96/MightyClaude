@@ -60,6 +60,7 @@ public sealed partial class MainWindow : Window
         this.options = options;
         DesignBrushes.ApplyControlResources(Application.Current.Resources); root.Background = WindowBackground();
         AppWindow.Resize(new SizeInt32(1440, 920));
+        root.Loaded += (_, _) => { ApplyWindowMinimum(); root.XamlRoot.Changed += (_, _) => ApplyWindowMinimum(); AppWindow.Changed += (_, args) => { if (args.DidPositionChange) ApplyWindowMinimum(); }; };
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "MightyClaude.ico"));
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         var legacy = new[] { "MightyClaude", "mighty-claude" }.Select(name => Path.Combine(appData, name)).FirstOrDefault(path => File.Exists(Path.Combine(path, "workspace-state.json")));
@@ -67,7 +68,11 @@ public sealed partial class MainWindow : Window
         // The splash paints before the state loads: give it the saved theme, not a navy flash.
         var savedTheme = StateStore.SavedTheme(profile);
         brushes.Apply(DesignTokens.Palette(savedTheme)); root.RequestedTheme = savedTheme == "light" ? ElementTheme.Light : ElementTheme.Dark; brushes.ApplyTitleBar(AppWindow);
-        service = new(profile, options.ProfileDirectory is null ? legacy : null, Path.Combine(AppContext.BaseDirectory, "claude-mods"));
+        // A smoke run's delegation switch is off and its children's worktrees go under its disposable profile: never the
+        // registry, never %USERPROFILE%\.mightyclaude (M/AppStore+Delegation.swift:56-59).
+        service = options.SmokeTest
+            ? new(profile, null, Path.Combine(AppContext.BaseDirectory, "claude-mods"), delegationEnabled: () => false, worktrees: new ChildWorktreeMaker(Path.Combine(profile, "worktrees")))
+            : new(profile, options.ProfileDirectory is null ? legacy : null, Path.Combine(AppContext.BaseDirectory, "claude-mods"));
         pictures = new(service.Images, DispatcherQueue);
         cliUpdateService = new(new CliRunner());
         coordinator = new(UpdateManualProvider);
@@ -79,7 +84,7 @@ public sealed partial class MainWindow : Window
                 if (!closing) TrackLoginTask(ManualUpdateFinished());
             }
         });
-        InitializeLoginRecovery();
+        InitializeLoginRecovery(); InitializeDelegation();
         service.RunEventReceived += value => DispatcherQueue.TryEnqueue(() => { if (closing) return; RecordProviderActivity(value); ReceiveLoginSignal(value); if (views.TryGetValue(value.SessionId, out var pane)) { pane.Refresh(); pane.ReceiveQueueRunEvent(value); if (value.Type == "status" && value.Status is "stopped" or "completed" or "error") pane.ClearToolPermissions(); } RefreshRunningIndicators(); HandleRunEventForNotification(value); });
         // Claude's extra tool-permission requests never travel as a RunEvent:
         // they are ephemeral, so they reach the pane that can show the bar and
@@ -104,7 +109,7 @@ public sealed partial class MainWindow : Window
         Grid.SetColumn(detailTop, 1); root.Children.Add(detailTop); Grid.SetRow(panes, 1); Grid.SetColumn(panes, 1); root.Children.Add(panes);
         // The bottom status bar, in the Mac's order (MainWindow.Shell.cs).
         statusBar.Child = BuildStatusBar(); ApplyChromeText(); Grid.SetRow(statusBar, 2); Grid.SetColumn(statusBar, 1); root.Children.Add(statusBar); Content = root;
-        AppWindow.Closing += async (_, args) => { if (canClose) return; args.Cancel = true; if (closing) return; closing = true; ShutdownCompanion(); settingsWindow?.Close(); foreach (var pane in views.Values) { pane.CloseReferencePreview(); pane.CloseBrowserView(); } clock.Stop(); StopWorkspaceGit(); root.IsHitTestVisible = false; try { await ShutdownAutomaticUpdates(); await coordinator.ShutdownAsync(); await ShutdownAppUpdateAsync(); await ShutdownAccountUsageAsync(); await ShutdownLoginRecovery(); await ShutdownStatusLines(); await CloseTerminalsAsync(); await ShutdownAgentIO(); await ShutdownMobileRemote(); await service.DisposeAsync(); canClose = true; Close(); } catch (Exception ex) { error.Text = Locale.Get("window.error.shutdownFailed", new Dictionary<string, string> { ["reason"] = ex.Message }); root.IsHitTestVisible = true; closing = false; } };
+        AppWindow.Closing += async (_, args) => { if (canClose) return; args.Cancel = true; if (closing) return; closing = true; ShutdownCompanion(); settingsWindow?.Close(); foreach (var pane in views.Values) { pane.CloseReferencePreview(); pane.CloseBrowserView(); } clock.Stop(); modelRefreshes?.Shutdown(); StopWorkspaceGit(); root.IsHitTestVisible = false; try { await ShutdownAutomaticUpdates(); await coordinator.ShutdownAsync(); await ShutdownAppUpdateAsync(); await ShutdownAccountUsageAsync(); await ShutdownLoginRecovery(); await ShutdownStatusLines(); await CloseTerminalsAsync(); await ShutdownAgentIO(); await ShutdownMobileRemote(); await service.DisposeAsync(); canClose = true; Close(); } catch (Exception ex) { error.Text = Locale.Get("window.error.shutdownFailed", new Dictionary<string, string> { ["reason"] = ex.Message }); root.IsHitTestVisible = true; closing = false; modelRefreshes = null; } };
         clock.Tick += (_, _) => RefreshRunningIndicators(); clock.Start();
         InitFilePane(); InitAddPaneShortcuts(); InitHelpShortcut();
         ShowLaunchSplash(); InitParityShortcuts(); InitWorkspaceGit(); InitDashboard();
@@ -114,11 +119,32 @@ public sealed partial class MainWindow : Window
     {
         try
         {
-        if (!options.SmokeTest) { await Act(async () => { await service.InitializeAsync(); Locale.LanguagePreference = service.Snapshot.LanguagePreference; root.Language = WindowLanguage(); ApplyChromeText(); Render(); HideLaunchSplash(); InitializeAgentIO(); await InitializeCompanionAsync(); await InitializeMobileRemote(); await InitNotifierAsync(); await RefreshRuntime(); BeginAutomaticUpdates(); BeginAutomaticAppUpdateCheck(); }); return; }
-        try { await service.InitializeAsync(); Locale.LanguagePreference = service.Snapshot.LanguagePreference; root.Language = WindowLanguage(); ApplyChromeText(); Render(); HideLaunchSplash(); await RunUISmoke(); }
+        if (!options.SmokeTest) { await Act(async () => { await service.InitializeAsync(); Locale.LanguagePreference = service.Snapshot.LanguagePreference; root.Language = WindowLanguage(); ApplyChromeText(); Render(); delegationRedrawReady = true; HideLaunchSplash(); await CheckResources(); InitializeAgentIO(); await InitializeCompanionAsync(); await InitializeMobileRemote(); await InitNotifierAsync(); await RefreshRuntime(); BeginAutomaticUpdates(); BeginAutomaticAppUpdateCheck(); }); return; }
+        try { await service.InitializeAsync(); Locale.LanguagePreference = service.Snapshot.LanguagePreference; root.Language = WindowLanguage(); ApplyChromeText(); Render(); delegationRedrawReady = true; HideLaunchSplash(); await RunUISmoke(); }
         catch (Exception ex) { options.WriteStartupFailure(ex); await FinishSmoke(false); }
         }
         finally { HideLaunchSplash(); }
+    }
+    /// <summary>The window's least size in points, the Mac's (M/MightyClaudeApp.swift:50).</summary>
+    internal const double WindowMinimumWidth = 940, WindowMinimumHeight = 650;
+    private (int Width, int Height) windowMinimum;
+    /// <summary>
+    /// Keeps the window at least <see cref="WindowMinimumWidth"/> × <see cref="WindowMinimumHeight"/> points at its display's
+    /// scale, but never more than the display's work area: set once the window is up and again when its display or scale
+    /// changes, and a window that is smaller is brought up to it.
+    /// </summary>
+    private void ApplyWindowMinimum()
+    {
+        if (AppWindow.Presenter is not Microsoft.UI.Windowing.OverlappedPresenter presenter || presenter.State == Microsoft.UI.Windowing.OverlappedPresenterState.Minimized) return;
+        var scale = root.XamlRoot?.RasterizationScale ?? 1;
+        var area = Microsoft.UI.Windowing.DisplayArea.GetFromWindowId(AppWindow.Id, Microsoft.UI.Windowing.DisplayAreaFallback.Nearest)?.WorkArea;
+        static int Fit(double points, double scale, int? available) => Math.Min((int)Math.Round(points * scale), available is int room && room > 0 ? room : int.MaxValue);
+        var (width, height) = (Fit(WindowMinimumWidth, scale, area?.Width), Fit(WindowMinimumHeight, scale, area?.Height));
+        if ((width, height) == windowMinimum) return;
+        windowMinimum = (width, height);
+        presenter.PreferredMinimumWidth = width; presenter.PreferredMinimumHeight = height;
+        var size = AppWindow.Size;
+        if (size.Width < width || size.Height < height) AppWindow.Resize(new SizeInt32(Math.Max(size.Width, width), Math.Max(size.Height, height)));
     }
     /// <summary>
     /// The XAML language tag of the app's chosen language, so Chinese and Japanese text take their own
@@ -139,6 +165,7 @@ public sealed partial class MainWindow : Window
             item.Content = Locale.Get((string)item.Tag switch { "grid" => "layout.mode.grid", "columns" => "layout.mode.columns", "focus" => "layout.mode.focus", "tabs" => "layout.mode.tabs", _ => "layout.mode.custom" });
         addFolderLabel.Text = Locale.Get("sidebar.openFolder"); AutomationProperties.SetName(addFolderButton, addFolderLabel.Text);
         sessionsHeader.Text = Locale.Get("sidebar.workspacesHeader");
+        if (sidebarAddWorkspaceButton is { } addWorkspace) { AutomationProperties.SetName(addWorkspace, Locale.Get(AddPaneMenu.OpenProjectKey)); ToolTipService.SetToolTip(addWorkspace, Locale.Get(AddPaneMenu.OpenProjectKey)); }
         RefreshSidebarThemeButton(); RefreshSidebarHelpButton(); RefreshSidebarToggles();
         AutomationProperties.SetName(settingsButton, Locale.Get("settings.settingsWindowTitle"));
         ToolTipService.SetToolTip(settingsButton, Locale.Get("settings.settingsWindowTitle"));
@@ -159,12 +186,27 @@ public sealed partial class MainWindow : Window
     private Button SafeButton(string title, Func<Task> action) => Button(title, () => Act(action));
     private async Task PickFolder()
     {
-        await Act(async () => { var picker = new FolderPicker(); picker.FileTypeFilter.Add("*"); WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this)); if (await picker.PickSingleFolderAsync() is { } folder) { await service.AddWorkspaceAsync(folder.Path); HideDashboard(); Render(); } });
+        await Act(async () => { var picker = new FolderPicker(); picker.FileTypeFilter.Add("*"); WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this)); if (await picker.PickSingleFolderAsync() is { } folder) await OpenWorkspaceFolder(folder.Path); });
+    }
+    /// <summary>
+    /// Lists the folder as a workspace and selects it; one that has no pane yet gets a Claude pane at once, the way
+    /// Ctrl+N adds one, without asking start-new or resume (M/AppStore.swift:528-533).
+    /// </summary>
+    private async Task OpenWorkspaceFolder(string path)
+    {
+        var workspace = await service.AddWorkspaceAsync(path); HideDashboard(); Render();
+        if (!service.Snapshot.Sessions.Any(s => s.WorkspaceId == workspace.Id)) await AddPane("claude", AddPaneMenu.NewPaneShortcutProvider);
     }
     private Task RemoveWorkspace() => service.Snapshot.ActiveWorkspaceId is { } id ? ConfirmRemoveWorkspace(id) : Task.CompletedTask;
-    private async Task AddPane(string kind, string provider = "claude", string? groupId = null, Func<RunSession, RunSession>? shape = null)
+    /// <summary>
+    /// Every way the window adds a shell, browser or agent pane comes here; a 129th pane is refused with the Mac's sentence
+    /// (M/AppStore.swift:573), decided in the update itself as the phone's create does. True when the pane was added.
+    /// </summary>
+    private async Task<bool> AddPane(string kind, string provider = "claude", string? groupId = null, Func<RunSession, RunSession>? shape = null)
     {
-        await Act(async () => { var workspace = service.Snapshot.ActiveWorkspaceId ?? throw new InvalidOperationException(Locale.Get("window.error.addWorkspaceFirst")); HideDashboard(); var pane = new RunSession { WorkspaceId = workspace, Kind = kind, Provider = provider, Title = kind == "shell" ? Locale.Get("session.title.shell") : ProviderCatalog.Name(provider) }; pane = SessionTemplate.Inherit(pane, service.Snapshot.Sessions); if (shape is not null) pane = shape(pane); await service.UpdateAsync(s => AddToLayout(s, workspace, pane, groupId)); Render(); });
+        var added = false;
+        await Act(async () => { var state = service.Snapshot; var workspace = state.ActiveWorkspaceId ?? throw new InvalidOperationException(Locale.Get("window.error.addWorkspaceFirst")); var pane = new RunSession { WorkspaceId = workspace, Kind = kind, Provider = provider, Title = kind == "shell" ? Locale.Get("session.title.shell") : ProviderCatalog.Name(provider) }; pane = SessionTemplate.Inherit(pane, state.Sessions); if (shape is not null) pane = shape(pane); await service.UpdateAsync(s => PaneLayout.HasRoom(s) ? AddToLayout(s, workspace, pane, groupId) : throw new InvalidOperationException(Locale.Get("workspace.paneLimit"))); added = true; HideDashboard(); Render(); });
+        return added;
     }
     // While a check runs the status bar says so; at rest it names the machine, as the Mac's does (RefreshStatusBar).
     private async Task RefreshRuntime() { await Act(async () => { runtimeChecks++; RefreshStatusBar(); try { if (await ReloadProviderModels()) RefreshEnvironment(); } finally { runtimeChecks--; RefreshStatusBar(); } }); }
@@ -180,7 +222,7 @@ public sealed partial class MainWindow : Window
     }
     private void Render()
     {
-        if (closing) return; rendering = true; var state = service.Snapshot;
+        if (closing) return; rendering = true; var state = service.Snapshot; renderedSessionIds = state.Sessions.Select(s => s.Id).ToHashSet();
         brushes.Apply(DesignTokens.Palette(state.Theme));
         root.RequestedTheme = state.Theme == "light" ? ElementTheme.Light : ElementTheme.Dark; darkTheme = state.Theme != "light";
         // Every open window of this app shares the theme; ApplyTitleBar skips a bar already in this palette.
@@ -199,6 +241,7 @@ public sealed partial class MainWindow : Window
         RenderDashboard();
         ReconcileAgentIO();
         RefreshLoginCards();
+        RefreshSelectedPaneModels();
         mobileRouter?.Changed();
         if (settingsWindow?.Content is FrameworkElement settingsRoot) { settingsRoot.RequestedTheme = root.RequestedTheme; if (settingsRoot is Grid settingsFrame) settingsFrame.Background = WindowBackground(); }
     }
@@ -426,30 +469,48 @@ public sealed partial class MainWindow : Window
         private Task Send(bool steering = false) => owner.Act(async () =>
         {
             if (owner.ManualMutationBlockReason(Session) is not null) { RefreshComposerState(); return; }
+            if (await AnswerGuidedQuestion()) return;
+            if (await SubmitTypedBuiltin()) return;
             if (await DeferBusyComposer(steering)) return;
             RefreshComposerState(); if (!canSend || starting || composingInput) return;
-            starting = true; var submissionVersion = ++composerSubmissionVersion; RefreshComposerState();
+            starting = true; var submissionVersion = ++composerSubmissionVersion;
+            // The draft and its attachments are taken and cleared at submit, before the model list is read (M/AppStore.swift:946-951):
+            // what is typed or pasted meanwhile is the next draft, and the editor shows that the models are being checked.
+            var submitted = input.Text; var files = pendingAttachments.ToArray(); var started = false;
+            var taken = files.Select(file => file.Id).ToHashSet(); pendingAttachments.RemoveAll(file => taken.Contains(file.Id)); RefreshAttachments();
+            updating = true; input.Text = ""; updating = false;
+            RefreshComposerState();
             try
             {
-            var pane = Session; var submitted = input.Text; var files = pendingAttachments.ToArray();
+            // The model list as the CLI has it now comes first: the request takes the pane's model and effort after it.
+            await PrepareModels();
+            if (!QueuePaneAlive || submissionVersion != composerSubmissionVersion) return;
+            var pane = Session;
             var styledSubmission = await PrepareStyleSubmission(submitted, files.Length > 0);
             var request = await PrepareStyleRunRequest(new StartRunRequest(
                 pane.Id, pane.WorkspaceId, pane.Kind, styledSubmission,
                 RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot),
                 pane.Model, pane.Provider, pane.Settings, pane.ResumeId, files));
             if (!QueuePaneAlive || submissionVersion != composerSubmissionVersion) return;
-            await owner.StartFromComposer(request);
+            // A send no run took (the items held for the pane stay held) puts the draft back, as a refused start does.
+            started = await owner.StartFromComposer(request) is not DelegationRelease.NotStarted;
+            if (!started) { owner.error.Text = Locale.Get("remote.error.startFailed"); return; }
             if (!owner.service.Snapshot.Sessions.Any(p => p.Id == id)) return;
-            var consumed = files.Select(file => file.Id).ToHashSet(); pendingAttachments.RemoveAll(file => consumed.Contains(file.Id)); RefreshAttachments();
-            // Only consume the submitted draft. A newer draft typed while start
-            // was awaiting must remain untouched, and a rejected start keeps input.
-            if (input.Text == submitted)
-            {
-                updating = true; input.Text = ""; updating = false;
-                await Change(p => p with { Draft = "" });
-            }
+            // Only the submitted draft is consumed: a newer draft typed while start was awaiting remains untouched.
+            if (input.Text.Length == 0) await Change(p => p with { Draft = "" });
             Refresh();
-            } finally { starting = false; if (owner.service.Snapshot.Sessions.Any(p => p.Id == id)) Refresh(); }
+            }
+            finally
+            {
+                starting = false;
+                // A start that did not happen puts the draft back where nothing new was typed, and its attachments beside what was added (M/AppStore.swift:1004-1010).
+                if (!started && QueuePaneAlive)
+                {
+                    if (input.Text.Length == 0) { updating = true; input.Text = submitted; updating = false; }
+                    var kept = pendingAttachments.Select(file => file.Id).ToHashSet(); pendingAttachments.InsertRange(0, files.Where(file => !kept.Contains(file.Id))); RefreshAttachments();
+                }
+                if (owner.service.Snapshot.Sessions.Any(p => p.Id == id)) Refresh();
+            }
         });
         private Task PrimaryAction() => ComposerPrimaryAction();
         private void RefreshComposerState()
@@ -476,7 +537,7 @@ public sealed partial class MainWindow : Window
             var said = reason.Length > 0 ? reason : attachmentsLoading && !busy ? Locale.Get("composer.hint.attachmentsLoading") : "";
             AutomationProperties.SetHelpText(input, said.Length == 0 ? InputShortcuts : said + " " + InputShortcuts);
             // While a run is busy the editor says what Enter will do with the next request (M/SessionPaneView.swift:98-99).
-            input.PlaceholderText = busy ? Locale.Get(pane.Kind == "claude" && pane.Provider == "claude" ? "composer.placeholder.busy" : "composer.placeholder.busyQueue") : pane.Kind == "shell" ? Locale.Get("composer.placeholder.shell") : Locale.Get("composer.placeholder.idle");
+            input.PlaceholderText = checkingModels ? Locale.Get("composer.placeholder.checkingModels") : busy ? Locale.Get(pane.Kind == "claude" && pane.Provider == "claude" ? "composer.placeholder.busy" : "composer.placeholder.busyQueue") : pane.Kind == "shell" ? Locale.Get("composer.placeholder.shell") : Locale.Get("composer.placeholder.idle");
             canSend = mutationBlock is null && !busy && !attachmentsLoading && (pane.Kind == "shell" || runtime?.Available == true) && !unsupportedEffort && unsupportedSettings is null && (!string.IsNullOrWhiteSpace(input.Text) || pendingAttachments.Count > 0);
             send.IsEnabled = busy ? !stopping : canSend; ShowSendSymbol(busy ? "stop" : "send");
             AutomationProperties.SetName(send, busy ? Locale.Get("composer.stop.name") : Locale.Get("composer.send.name")); ToolTipService.SetToolTip(send, busy ? Locale.Get("composer.stop.tooltip") : Locale.Get("composer.send.tooltip"));
@@ -774,7 +835,7 @@ public sealed partial class MainWindow : Window
         {
             // A files pane runs nothing: it draws its tree and preview instead (MainWindow.Files.cs).
             if (FilePaneKind.IsFilePane(Session.Kind)) { EnsureFilesView(); RethemeFilesMarkdown(); return; }
-            RefreshTerminalTheme(); RethemeMightyTranscripts(owner.service.Snapshot.Theme == "light"); RethemePlanViews(); FitReferencePreview();
+            RefreshTerminalTheme(); RethemeMightyTranscripts(owner.service.Snapshot.Theme == "light"); RethemePlanViews(); RethemeStructureAnswers(); FitReferencePreview();
             var pane = Session; updating = true; var runtime = owner.Runtime(pane.Provider); var catalog = runtime?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
             var state = owner.service.Snapshot; RefreshHeaderStatus(pane, state.Theme != "light"); output.Update(pane, state.Theme == "light", owner.pictures, state.Workspaces.FirstOrDefault(w => w.Id == pane.WorkspaceId)?.Path); RefreshEmptyOutput(pane); RefreshElapsed(pane); RefreshPlanHistory(pane); RefreshBackgroundWork(pane); RedecidePlanPlace();
             // Do not rewrite or recreate the editor during output/metadata refreshes.

@@ -54,6 +54,25 @@ internal sealed class CodexCollaborationItem
         return new() { Id = id, Tool = tool, Sender = Key(MetadataJson.Property(item, "sender_thread_id")), Receivers = receivers, States = states, Prompt = string.IsNullOrEmpty(prompt) ? null : prompt, Status = item.Text("status") ?? "in_progress" };
     }
     public IReadOnlyList<string> Threads => Receivers.Concat(States.Keys.OrderBy(k => k, StringComparer.Ordinal).Where(k => !Receivers.Contains(k))).Take(ExecutionGraphSupport.MaximumNodes).ToList();
+    /// <summary>The call's one line as a tool row: what it does, its prompt, and the first agents it names (macOS CodexCollaborationItem.summary).</summary>
+    public string Summary
+    {
+        get
+        {
+            var action = Tool switch { "spawn_agent" => Locale.Get("run.agent.spawn"), "send_input" => Locale.Get("run.agent.sendInput"), "wait" => Locale.Get("run.agent.wait"), _ => Locale.Get("run.agent.close") };
+            var targets = string.Join(", ", Threads.Take(4).Select(thread => ExecutionGraphSupport.Prefix(thread, 12)));
+            return ActivitySupport.Clean(string.Join(" · ", new[] { action, Prompt, targets.Length == 0 ? null : targets }.OfType<string>()), ActivitySupport.MaximumSummaryBytes, true);
+        }
+    }
+    /// <summary>Each named agent's state and what it said, or null while none has reported (macOS CodexCollaborationItem.output).</summary>
+    public string? Output
+    {
+        get
+        {
+            var rows = Threads.Where(States.ContainsKey).Select(thread => { var state = States[thread]; var label = ExecutionGraphSupport.Prefix(thread, 12) + " · " + state.Status; return state.Message is { } message ? label + "\n" + message : label; }).ToList();
+            return rows.Count == 0 ? null : ActivitySupport.Clean(string.Join("\n\n", rows), ActivitySupport.MaximumOutputBytes);
+        }
+    }
 }
 
 /// Observes public CLI/Mods events for one run and emits node snapshots. It

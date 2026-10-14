@@ -128,6 +128,24 @@ public sealed class PseudoTerminal : IAsyncDisposable
         lock (lifecycle) return disposal is null && !Completion.IsCompleted && writes.Writer.TryWrite(Encoding.UTF8.GetBytes(text));
     }
 
+    /// <summary>The ids of the processes in the shell's job object, the shell and everything started under it; null once closed or when Windows gives no list.</summary>
+    public IReadOnlyList<int>? JobProcessIds()
+    {
+        lock (lifecycle)
+        {
+            if (disposal is not null || job == 0) return null;
+            // A list too short for the job fails with ERROR_MORE_DATA and is asked for again, larger.
+            for (var room = 64; room <= 4096; room *= 4)
+            {
+                var list = new byte[8 + room * nint.Size];
+                if (Native.QueryInformationJobObject(job, 3, list, (uint)list.Length, 0))
+                    return MemoryMarshal.Cast<byte, nint>(list.AsSpan(8, BitConverter.ToInt32(list, 4) * nint.Size)).ToArray().Select(id => (int)id).ToArray();
+                if (Marshal.GetLastWin32Error() != 234) return null;
+            }
+            return null;
+        }
+    }
+
     public void Resize(int columns, int rows)
     {
         lock (lifecycle) if (disposal is null && console != 0) Marshal.ThrowExceptionForHR(Native.ResizePseudoConsole(console, Size(columns, rows)));
@@ -162,6 +180,8 @@ public sealed class PseudoTerminal : IAsyncDisposable
         [DllImport("kernel32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool InitializeProcThreadAttributeList(nint list, int count, uint flags, ref nuint bytes);
         [DllImport("kernel32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool UpdateProcThreadAttribute(nint list, uint flags, nuint attribute, nint value, nuint size, nint previous, nint returned);
         [DllImport("kernel32.dll")] internal static extern void DeleteProcThreadAttributeList(nint list);
+        /// <summary>QueryInformationJobObject for JobObjectBasicProcessIdList (3): two counts, then the ids.</summary>
+        [DllImport("kernel32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool QueryInformationJobObject(nint job, int type, byte[] list, uint length, nint returned);
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "CreateProcessW")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool CreateProcess(string application, StringBuilder command, nint processAttributes, nint threadAttributes, bool inherit, uint flags, nint environment, string directory, ref StartupInfoEx startup, out ChildProcess.Native.ProcessInformation child);
     }
 }

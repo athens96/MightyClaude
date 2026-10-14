@@ -34,13 +34,17 @@ internal static class MightySymbols
     {
         "minus.magnifyingglass" => "\uE71F", "plus.magnifyingglass" => "\uE8A3",
         "square.and.pencil" => "\uE932",
-        "terminal" => "\uE756", "person.crop.square.filled.and.at.rectangle" => "\uE8D4", "text.bubble" => "\uE8BD",
+        "terminal" => "\uE756", "person.crop.square.filled.and.at.rectangle" => "\uE8D4", "text.bubble" => "\uE8BD", "gearshape.2" => "\uE9F5",
         "questionmark.bubble" or "questionmark.bubble.fill" or "questionmark.square.dashed" or "questionmark.folder" or "doc.questionmark" => "\uE9CE",
         "exclamationmark.triangle" => "\uE7BA", "exclamationmark.triangle.fill" => "\uE814",
         "clock.arrow.circlepath" => "\uE81C", "chevron.down" => "\uE70D", "chevron.right" => "\uE76C", "xmark" => "\uE711",
         "arrow.clockwise" => "\uE72C", "flag" => "\uE7C1", "bolt" or "bolt.fill" => "\uE945",
-        "doc.text" => "\uE8A5", "doc.richtext" => "\uE8A1", "globe" => "\uE774", "photo" => "\uE91B", "folder" => "\uE8B7",
+        "doc.text" => "\uE8A5", "doc.richtext" => "\uE8A1", "globe" => "\uE774", "photo" => "\uE91B", "folder" => "\uE8B7", "folder.badge.plus" => "\uE8F4",
         "arrow.up.forward.app" => "\uE8A7",
+        // A step's picture preview in the diagram, and a picture that can no longer be read (M/MightyGraphImagesView.swift:26, 73).
+        "photo.on.rectangle.angled" => "\uE8B9", "photo.badge.exclamationmark" => "\uE7BA",
+        // An acceptance criterion's state in an execution's list (M/MightyGraphOuroborosView.swift:296-303): waiting, at work, done, failed.
+        "circle" => "\uECCA", "circle.dotted.circle" => "\uECCB", "checkmark.circle.fill" => "\uEC61", "xmark.circle.fill" => "\uEB90",
         "rectangle.righthalf.inset.filled.arrow.right" => "\uE90D", "rectangle.lefthalf.inset.filled.arrow.left" => "\uE90C",
         // The style manifest's closed icon list (M/MightyCore/Styles/StyleManifest.swift:219-227).
         "wand.and.stars" or "sparkles" => "\uF4A5", "leaf" => "\uE8BE", "play.fill" => "\uF5B0",
@@ -50,6 +54,10 @@ internal static class MightySymbols
         "list.bullet" => "\uE8FD", "magnifyingglass" => "\uE721", "map" => "\uE707", "paintbrush" => "\uE771", "puzzlepiece" => "\uEA86",
         // Drawn the other way round on Windows: the glyph's arrows run along the rising diagonal.
         "arrow.down.right.and.arrow.up.left" => "\uE73F",
+        // The structure view (M/MightyStructureView.swift): its chips' marks, the run part's gears, a card's reveal and fold
+        // buttons, and a tool call's kind (M/AgentActivityView.swift:118-129).
+        "checkmark" => "\uE73E", "chevron.up" => "\uE70E", "arrow.up.right.square" => "\uE8A7",
+        "doc.text.magnifyingglass" => "\uE8A5", "pencil.line" => "\uE70F", "person.2" => "\uE716", "wrench.and.screwdriver" => "\uE90F",
         _ => null,
     };
 
@@ -57,7 +65,7 @@ internal static class MightySymbols
     [
         "point.3.connected.trianglepath.dotted", "list.bullet.indent", "arrow.up.message", "checkmark.seal", "checkmark.seal.fill",
         "stop.circle", "stop.circle.fill", "pause.circle", "arrow.up.circle", "rectangle.expand.vertical", "rectangle.compress.vertical",
-        "arrow.up.left.and.arrow.down.right", "doc.on.doc", "doc.on.doc.fill",
+        "arrow.up.left.and.arrow.down.right", "doc.on.doc", "doc.on.doc.fill", "rectangle.split.3x1", "circle", "circle.fill", "stop.fill",
     ];
 
     /// <summary>Whether <see cref="Create"/> can make this symbol; a style manifest's icon is asked before it is drawn.</summary>
@@ -161,6 +169,13 @@ internal static class MightySymbols
                 return Stroke(frontDocument + " M 3.6 11.8 L 3.4 11.8 A 1.6 1.6 0 1 1.8 10.2 L 1.8 2.6 A 1.6 1.6 0 1 3.4 1 L 9 1 A 1.6 1.6 0 1 10.6 2.6 L 10.6 2.8");
             case "doc.on.doc.fill":
                 return Fill(frontDocument + " M 1.8 2.6 A 1.6 1.6 0 1 3.4 1 L 9 1 A 1.6 1.6 0 1 10.6 2.6 L 10.6 3.4 L 6.2 3.4 A 2 2 0 0 4.2 5.4 L 4.2 11.8 L 3.4 11.8 A 1.6 1.6 0 1 1.8 10.2 Z", ink);
+            // rectangle.split.3x1: a wide rounded rectangle cut into three columns.
+            case "rectangle.split.3x1":
+                return Stroke("M 2.6 3.2 L 13.4 3.2 A 1.6 1.6 0 1 15 4.8 L 15 11.2 A 1.6 1.6 0 1 13.4 12.8 L 2.6 12.8 A 1.6 1.6 0 1 1 11.2 L 1 4.8 A 1.6 1.6 0 1 2.6 3.2 Z M 5.7 3.2 L 5.7 12.8 M 10.3 3.2 L 10.3 12.8");
+            // circle, circle.fill and stop.fill: a phase chip's mark while it waits, is current, or was stopped.
+            case "circle": return Stroke(Ring(8, 8, 5.6));
+            case "circle.fill": return Fill("M 2 8 A 6 6 1 1 14 8 A 6 6 1 1 2 8 Z", ink);
+            case "stop.fill": return Fill("M 3.2 3.2 L 12.8 3.2 L 12.8 12.8 L 3.2 12.8 Z", ink);
             default: throw new ArgumentOutOfRangeException(nameof(symbol), symbol, "no Mighty symbol by that name");
         }
     }

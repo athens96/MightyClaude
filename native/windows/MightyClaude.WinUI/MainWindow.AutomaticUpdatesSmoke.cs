@@ -54,8 +54,9 @@ public sealed partial class MainWindow
                 var refused = false;
                 try { await MobileSubmit("keep blocked phone request", "queue", [], CancellationToken.None); } catch (MobileRequestException) { refused = true; }
                 Require(refused && queuedInputs.Items.Count == 0 && started == 0, "Blocked mobile request must be refused before queue admission.");
+                // A manual update is a passing block: what waited is held, not dropped, and nothing starts (RunBlock keeps drops for lasting reasons).
                 queuedInputs.Add("keep blocked queued request", []); await StartNextQueuedInput();
-                Require(queuedInputs.Items.Count == 1 && started == 0, "Blocked queue start must preserve the queued item.");
+                Require(queuedInputs.Items.Count == 1 && started == 0, "A queue start under a manual update must hold the queued item and start nothing.");
                 queuedInputs.Clear(); queueDrainTimer.Stop(); release.TrySetResult(); await WaitUI(() => !owner.coordinator.IsUpdating);
 
                 var browser = new ClaudePluginBrowser("claude", Workspace); browser.Apply(PluginSmokeSnapshot); browser.Scope = "user";

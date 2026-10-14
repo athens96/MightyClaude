@@ -365,6 +365,10 @@ public sealed record ProviderInput(List<string> Arguments, byte[] StandardInput)
             arguments.AddRange(["--permission-prompt-tool", "stdio"]);
         }
         if (!arguments.Contains("--input-format")) arguments.AddRange(["--input-format", "stream-json"]);
+        // A style's own tools are judged at each request here (StyleRunPermissions.AutoAllows): listed at launch, the CLI
+        // would allow them for the whole run, whatever became of the style meanwhile.
+        var allowed = arguments.IndexOf("--allowedTools");
+        if (allowed >= 0 && allowed + 1 < arguments.Count) arguments.RemoveRange(allowed, 2);
         return arguments;
     }
 

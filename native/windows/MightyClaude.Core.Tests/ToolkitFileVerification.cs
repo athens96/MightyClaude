@@ -169,4 +169,16 @@ internal static class ToolkitFileVerification
             "npm package entry parsed");
         return Task.CompletedTask;
     }
+
+    // M/AppStore+Toolkit.swift:40-52, M/MightyCore/ToolkitEntry.swift:64-82: "Add" takes one entry object, as the Mac's does.
+    internal static Task AddTakesOneEntryObjectAsTheMacDoes()
+    {
+        const string entry = """{ "id": "rg", "displayName": "ripgrep", "install": { "kind": "package", "manager": "npm", "name": "typescript" }, "approval": { "contentHash": "abc" }, "platforms": ["macos"] }""";
+        Check(ToolkitFileReader.ParseAddedEntry(entry) is { Id: "rg", Approval: null, Install: ToolkitFileReader.PackageSpec { Name: "typescript" } }, "one entry object is added, its approval dropped and a stale platforms let through");
+        Check(ToolkitFileReader.ParseAddedEntry(AllFiveTemplates) is null, "a whole toolkit.json is not one tool: Import reads it");
+        Check(ToolkitFileReader.ParseAddedEntry("[" + entry + "]") is null, "an exported list is not one tool either");
+        Check(ToolkitFileReader.ParseAddedEntry(entry.Replace("\"platforms\"", "\"extra\"", StringComparison.Ordinal)) is null, "an unknown field at the entry's root refuses it, as on the Mac");
+        Check(ToolkitFileReader.ParseAddedEntry("""{ "id": "x", "displayName": "X" }""") is null && ToolkitFileReader.ParseAddedEntry("not json") is null, "a file that is no tool entry is refused");
+        return Task.CompletedTask;
+    }
 }

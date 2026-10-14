@@ -46,4 +46,22 @@ public static class AddPaneMenu
     /// Gemini and Ctrl+N start at once.
     /// </summary>
     public static bool MayAskResume(string provider, bool fromMenu) => fromMenu && ResumableSessions.OffersResume("claude", provider);
+
+    /// <summary>
+    /// How long the look-up for earlier sessions runs before the choice sheet shows in its checking state, so a slow folder
+    /// never leaves the click without an answer (macOS <c>AddAgentPane.quietLookUp</c>).
+    /// </summary>
+    public static readonly TimeSpan QuietLookUp = TimeSpan.FromMilliseconds(300);
+
+    /// <summary>
+    /// Whether the look-up found something to ask about: a session of this agent that no open pane continues.
+    /// <paramref name="inUse"/> is read again when the look-up ends, since a pane may have taken one while it ran
+    /// (macOS <c>AddAgentPane.step</c>). False adds the pane at once.
+    /// </summary>
+    public static bool AsksResume(string provider, IEnumerable<ResumableSession> sessions, IEnumerable<string> inUse)
+    {
+        if (!ResumableSessions.OffersResume("claude", provider)) return false;
+        var used = inUse.Select(id => id.ToLowerInvariant()).ToHashSet();
+        return sessions.Any(session => session.Provider == provider && !used.Contains(session.SessionID.ToLowerInvariant()));
+    }
 }

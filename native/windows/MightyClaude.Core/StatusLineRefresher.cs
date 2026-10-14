@@ -20,6 +20,11 @@ public sealed class StatusLineRefresher
 {
     /// <summary>Minimum interval between runs — mirrors macOS statusLineMinimumInterval = 2 s.</summary>
     public static readonly TimeSpan MinimumInterval = TimeSpan.FromSeconds(2);
+    /// <summary>
+    /// How often a pane asks again by itself, so elapsed time and repository figures stay fresh: every 10 s while its run
+    /// goes on and every 60 s at rest (M/SessionPaneView.swift:719-726).
+    /// </summary>
+    public static TimeSpan TickInterval(bool running) => TimeSpan.FromSeconds(running ? 10 : 60);
 
     private readonly Func<StatusLineDiscovery> _discover;
     private readonly Func<AppSnapshot> _getSnapshot;

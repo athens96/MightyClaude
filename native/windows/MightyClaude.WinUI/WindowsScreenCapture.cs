@@ -32,7 +32,8 @@ internal sealed class WindowsScreenCapture : IAsyncDisposable
     private bool active, disposed;
     private long generation, lastFrame, lastOverview;
     private int lostNotified;
-    public event Action? DisplayLost;
+    /// <summary>The capture itself ended (its display went away, or Windows took the stream): the owner may start it again. A frame that fails ends capture with <see cref="Failed"/> instead.</summary>
+    public event Action? DisplayLost, Failed;
     public static bool Supported { get { try { return GraphicsCaptureSession.IsSupported(); } catch { return false; } } }
     public IReadOnlyList<ScreenDisplay> Displays => EnumerateMonitors().Select(m => m.Display).ToArray();
 
@@ -105,11 +106,11 @@ internal sealed class WindowsScreenCapture : IAsyncDisposable
         }
         finally { processing.Release(); }
     }
-    private void OnClosed(GraphicsCaptureItem sender, object args) => Lost();
-    private void Lost()
+    private void OnClosed(GraphicsCaptureItem sender, object args) => Lost(true);
+    private void Lost(bool closed = false)
     {
         Halt();
-        if (Interlocked.Exchange(ref lostNotified, 1) == 0) { try { DisplayLost?.Invoke(); } catch { } }
+        if (Interlocked.Exchange(ref lostNotified, 1) == 0) { try { (closed ? DisplayLost : Failed)?.Invoke(); } catch { } }
     }
     private void OnFrameArrived(Direct3D11CaptureFramePool sender, object args)
     {

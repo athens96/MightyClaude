@@ -181,7 +181,9 @@ public sealed partial class MainWindow
         private Task ChangeProvider(string value) => owner.Act(async () =>
         {
             if (Session.Status == "running" || starting || Session.Provider == value) return;
-            await Change(p => p with { Provider = value, Title = p.Title == ProviderCatalog.Name(p.Provider) ? ProviderCatalog.Name(value) : p.Title, Model = "default", Settings = new(), ResumeId = null }); Refresh(); input.Focus(FocusState.Programmatic);
+            // The switch says so in the transcript, drops the old agent's usage and reads the new agent's models (M/AppStore.swift:705-717).
+            await Change(p => SessionTemplate.SwitchProvider(p, value)); Refresh(); input.Focus(FocusState.Programmatic);
+            owner.RefreshModels(id, invalidate: true);
         });
 
         /// <summary>
@@ -460,27 +462,41 @@ public sealed partial class MainWindow
 
     }
 
-    // The composer's send path: a send waits out the provider's automatic sign-in, then is admitted.
-    // Under --smoke-test the start goes to the smoke's own stand-in (smokeStart), never to a CLI.
-    private Task StartFromComposer(StartRunRequest request) =>
+    // The composer's send path: a send waits out the provider's automatic sign-in, then is admitted. Every human send, from the
+    // composer, the queue or the phone, goes through the service's SendAsync, so the items delegation holds for the pane go with it.
+    // Under --smoke-test the start goes to the smoke's own stand-in (smokeStart, or smokeSend for the delegation smoke), never to a CLI.
+    // What it did: NotStarted when no run took the send, and the caller gives it back where it came from.
+    private Task<DelegationRelease> StartFromComposer(StartRunRequest request) =>
         AutomaticLoginOf(request.Provider) is { } login ? StartAfterAutomaticLogin(request, login.Task) : StartAdmitted(request);
     /// <summary>
     /// A send while the provider's automatic sign-in runs cancels it (holding the next automatic start for the
     /// cooldown) and goes ahead once its process is gone. The checks and the start below stay one synchronous step.
     /// </summary>
-    private async Task StartAfterAutomaticLogin(StartRunRequest request, Task login)
+    private async Task<DelegationRelease> StartAfterAutomaticLogin(StartRunRequest request, Task login)
     {
         CancelBackgroundLogin(request.Provider); RefreshLoginCards();
         try { await login.WaitAsync(TimeSpan.FromSeconds(10)); } catch (TimeoutException) { }
-        await StartAdmitted(request);
+        return await StartAdmitted(request);
     }
-    private Task StartAdmitted(StartRunRequest request)
+    private async Task<DelegationRelease> StartAdmitted(StartRunRequest request)
+    {
+        if (AdmissionRefusal(request.Kind, request.Provider) is { } refusal) throw new InvalidOperationException(refusal);
+        if (!options.SmokeTest) return await service.SendAsync(request);
+        if (smokeSend is { } send) return await send(request);
+        await (smokeStart?.Invoke(request) ?? throw new InvalidOperationException(SmokeNeverStartsCli));
+        return new DelegationRelease.NothingHeld();
+    }
+    private const string SmokeNeverStartsCli = "The GUI smoke never starts a real CLI.";
+    /// <summary>
+    /// Why the window refuses a run of <paramref name="provider"/> now, the same for its own sends and the runs delegation starts:
+    /// a sign-in or account change in the background, an update of that CLI, a plugin operation; null when one may start.
+    /// </summary>
+    private string? AdmissionRefusal(string kind, string provider)
     {
         // Gemini's terminal sign-in changes nothing in the background, so its sends go ahead.
-        if (loginJobs.GetValueOrDefault(request.Provider) is { Terminal: false }) throw new InvalidOperationException(Locale.Get("loginRecovery.busySignIn", new Dictionary<string, string> { ["provider"] = ProviderCatalog.Name(request.Provider) }));
-        if (loginBusy.GetValueOrDefault(request.Provider) is { Terminal: false } || accountChanges.ContainsKey(request.Provider)) throw new InvalidOperationException(Locale.Get("loginRecovery.busy"));
-        if (automaticUpdateRunning && automaticallyUpdatingProvider == request.Provider) throw new InvalidOperationException(Locale.Get("loginRecovery.updating"));
-        if (ManualMutationBlockReason(new RunSession { Kind = request.Kind, Provider = request.Provider }) is { } block) throw new InvalidOperationException(block);
-        return options.SmokeTest ? smokeStart?.Invoke(request) ?? throw new InvalidOperationException("The GUI smoke never starts a real CLI.") : service.StartAsync(request);
+        if (loginJobs.GetValueOrDefault(provider) is { Terminal: false }) return Locale.Get("loginRecovery.busySignIn", new Dictionary<string, string> { ["provider"] = ProviderCatalog.Name(provider) });
+        if (loginBusy.GetValueOrDefault(provider) is { Terminal: false } || accountChanges.ContainsKey(provider)) return Locale.Get("loginRecovery.busy");
+        if (automaticUpdateRunning && automaticallyUpdatingProvider == provider) return Locale.Get("loginRecovery.updating");
+        return ManualMutationBlockReason(new RunSession { Kind = kind, Provider = provider });
     }
 }

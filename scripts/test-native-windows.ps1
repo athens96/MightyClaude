@@ -104,6 +104,11 @@ try {
     foreach ($key in @('shortcutBound', 'toggleCollapses', 'contentTakesSpace', 'toggleRestoresWidth', 'statePersists', 'automationNameFollows', 'focusLeavesFoldedSidebar')) {
         if ($result.sidebarToggle.$key -ne $true) { throw "Windows sidebar fold smoke failed: sidebarToggle.$key" }
     }
+    # Parent -> child delegation's close paths, driven through the window with the app's scripted Claude (MainWindow.DelegationSmoke.cs).
+    foreach ($key in @('childrenListed', 'sidebarTree', 'heldRowPinned', 'windowCloseMergedChild', 'phoneCloseMergedChild', 'phoneSendReleasedHeldNotice', 'windowParentCloseAsks', 'phoneParentCloseKeepsChild', 'removeRefusedKeptWorktree', 'removedAfterDiscard')) {
+        if ($result.delegation.$key -ne $true) { throw "Windows delegation smoke failed: delegation.$key" }
+    }
+    if ($result.delegation.removeRefusedOpenChild -ne 'workspace_has_children') { throw "Windows delegation smoke failed: delegation.removeRefusedOpenChild=$($result.delegation.removeRefusedOpenChild)" }
     if ($result.mightyGraph.retainedNativeDocuments -ne $true) { throw 'Graph redraw replaced a retained native document or its parent.' }
     $screenshot = Join-Path $ProfileDirectory 'smoke-window.png'
     if (-not (Test-Path $screenshot -PathType Leaf) -or (Get-Item $screenshot).Length -eq 0) { throw 'GUI 스크린샷이 없습니다.' }
@@ -243,7 +248,7 @@ try {
         $msg = "addPaneMenu.shortcuts 값이 'Ctrl+O, Ctrl+N'이 아닙니다: $($ap.shortcuts)"
         Write-SmokeAnnotation $msg; throw $msg
     }
-    foreach ($key in @("modePersists", "groupAndRowExpansion", "sameTranscriptActions", "resultFilesOpenSharedPreview", "unchangedRefreshKeepsControls", "diagramAndDraftPreserved", "historyAffordance", "narrowToolbar")) {
+    foreach ($key in @("modePersists", "groupAndRowExpansion", "sameTranscriptActions", "resultFilesOpenSharedPreview", "unchangedRefreshKeepsControls", "diagramAndDraftPreserved", "structureFoldAndReveal", "historyAffordance", "narrowToolbar")) {
         if ($result.mightyTimeline.$key -ne $true) { throw "Mighty timeline smoke failed: mightyTimeline.$key" }
     }
     $mg = $result.mightyGraph

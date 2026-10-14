@@ -11,6 +11,29 @@ public static class BedrockSettings
     public static string ConfigurationOnly => Locale.Get("settings.cliAccounts.bedrockConfigurationOnly");
     public static string ExternalConfigurationOnly => Locale.Get("settings.cliAccounts.externalConfigurationOnly");
     public static string ConflictMessage => Locale.Get("settings.cliAccounts.bedrockConflict");
+    public static string ScpInvokeModelDeniedMessage => Locale.Get("bedrock.scpDenied");
+    private static readonly Regex ApiError403 = new(@"(?:^|\bAPI Error:\s*)403\s+(?=\{)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    private static readonly Regex ScpDenial = new(@"\AUser:\s+\S+\s+is not authorized to perform:?\s+bedrock:(?:InvokeModel|InvokeModelWithResponseStream)(?:\s+on resource:\s+\S+)?\s+(?:with|because of) an explicit deny in a service control policy(?::\s+arn:aws:organizations::[0-9]{12}:policy/o-[a-z0-9]{10,32}/service_control_policy/p-[a-z0-9]{8,128})?\.?\z", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    /// <summary>
+    /// What to say in place of a Bedrock 403 that an organization's service control policy caused, or null for any other text
+    /// (M/MightyCore/BedrockAuthDiagnostics.swift:11-29). The CLI may put generic credential advice before any Bedrock 403; only
+    /// the bounded AWS JSON message after it can establish this narrower cause. The guidance names no account, role or policy.
+    /// </summary>
+    public static string? RuntimeFailureGuidance(string text)
+    {
+        if (Encoding.UTF8.GetByteCount(text) > 65_536 || ApiError403.Match(text) is not { Success: true } marker) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(text[(marker.Index + marker.Length)..]); var body = doc.RootElement;
+            if (body.ValueKind != JsonValueKind.Object) return null;
+            var message = body.TryGetProperty("Message", out var upper) ? upper : body.TryGetProperty("message", out var lower) ? lower : default;
+            if (message.ValueKind != JsonValueKind.String) return null;
+            foreach (var key in new[] { "__type", "code", "Code" })
+                if (body.Text(key) is { } code && code.Split('#', StringSplitOptions.RemoveEmptyEntries).LastOrDefault()?.Split(':', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() != "AccessDeniedException") return null;
+            return ScpDenial.IsMatch(message.GetString()!.Trim()) ? ScpInvokeModelDeniedMessage : null;
+        }
+        catch (JsonException) { return null; }
+    }
     public static string SettingsPath(string home, IReadOnlyDictionary<string, string> environment) => Path.Combine(environment.TryGetValue("CLAUDE_CONFIG_DIR", out var directory) && !string.IsNullOrWhiteSpace(directory) ? Path.GetFullPath(directory, home) : Path.Combine(home, ".claude"), "settings.json");
     public static string? ConflictDetail(IReadOnlyDictionary<string, string> environment, string? json)
     {

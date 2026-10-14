@@ -105,7 +105,7 @@ Use the {{ui:graph.view.diagram}} | {{ui:graph.view.timeline}} switch at the top
 ![[agent-timeline]]
 
 ### Structure {#structure}
-Pick {{ui:graph.view.structure}} on the same switch to see requests in columns by phase. For now it is in the Mac app only.
+Pick {{ui:graph.view.structure}} on the same switch to see requests in columns by phase.
 - In a pane that uses a style, the mode's phases sit in a row on top: finished phases are green, the current one is in the accent colour and the rest are grey.
 - Each request sits under the phase it belongs to as a request card followed by a {{ui:graph.block.execution}} card, with its sub-agent trees grouped in dashed boxes under the {{ui:graph.block.execution}} card. A finished request has its result below them.
 - In a pane without a style, each request gets one {{ui:graph.structure.column.request}} → {{ui:graph.structure.column.execution}} → {{ui:graph.structure.column.result}} row.

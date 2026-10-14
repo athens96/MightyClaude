@@ -189,7 +189,7 @@ public sealed partial class MainWindow
 
         private void RenderToolPermissions(bool preserveQuestionnaire = false)
         {
-            var pending = toolPermissions.Where(p => p.State == "pending").ToList();
+            var pending = CardRequests;
             RenderGuidedStyle();
             if (pending.Count == 0) { HideQuestionnaire(); HidePlanDock(); NotePlanShown(null); permissionShown = null; toolPermissionHost.Visibility = Visibility.Collapsed; return; }
             var current = pending[0];
@@ -240,7 +240,7 @@ public sealed partial class MainWindow
 
         private void OnPermissionAllow()
         {
-            var current = toolPermissions.FirstOrDefault(p => p.State == "pending");
+            var current = CardRequests.FirstOrDefault();
             if (current is null || !current.CanAllow) return;
             if (owner.smokePermissionResponses is { } dict) { dict[current.Id] = true; ReceiveToolPermission(current with { State = "allowed" }); return; }
             try { owner.service.RespondToToolPermission(id, current.Id, true); } catch (Exception ex) { owner.error.Text = ex.Message; }
@@ -248,7 +248,7 @@ public sealed partial class MainWindow
 
         private void OnPermissionDeny()
         {
-            var current = toolPermissions.FirstOrDefault(p => p.State == "pending");
+            var current = CardRequests.FirstOrDefault();
             if (current is null) return;
             if (owner.smokePermissionResponses is { } dict) { dict[current.Id] = false; ReceiveToolPermission(current with { State = "denied" }); return; }
             try { owner.service.RespondToToolPermission(id, current.Id, false); } catch (Exception ex) { owner.error.Text = ex.Message; }
