@@ -83,15 +83,15 @@ public sealed partial class MainWindow
     /// <summary>
     /// A tab's content, the Mac's PaneDockTab order (M/PaneDockView.swift:238-250): the 10pt kind
     /// symbol or agent mark, the 11pt title (semibold and <c>ink</c> on the selected tab, else regular
-    /// <c>ink2</c>, at most 125 wide), the beta capsule, and last the 12pt status mark, which shows
-    /// only for a counted pane that is not idle (<see cref="ShowTabMark"/>). No state word or clock.
+    /// <c>ink2</c>, at most <see cref="SelectedTabTitleWidth"/> or <see cref="TabTitleWidth"/> wide), the beta capsule, and last the
+    /// 12pt status mark, which shows only for a counted pane that is not idle (<see cref="ShowTabMark"/>). No state word or clock.
     /// </summary>
     private StackPanel TabIndicator(RunSession session, bool selected)
     {
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Center };
         var title = new TextBlock
         {
-            Text = session.Title, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center, MaxWidth = 125,
+            Text = session.Title, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center, MaxWidth = selected ? SelectedTabTitleWidth : TabTitleWidth,
             FontSize = DesignMetrics.Type.Pill, FontWeight = selected ? Microsoft.UI.Text.FontWeights.SemiBold : Microsoft.UI.Text.FontWeights.Normal,
             Foreground = brushes.Brush(selected ? DesignToken.Ink : DesignToken.Ink2),
         };
@@ -106,6 +106,12 @@ public sealed partial class MainWindow
         AutomationProperties.SetName(row, session.Title + (ProviderCatalog.ShowsBetaBadge(session) ? ", " + Locale.Get("badge.betaAccessibility") : "") + ", " + StateLabel(StatusGlyph.DisplayStatus(session.Status, pending)));
         return row;
     }
+
+    /// <summary>
+    /// The widest a tab's title gets; the shown pane's name lives only on its tab (its header has the status),
+    /// so the selected tab gives it more room (M/PaneDockView.swift:247-249).
+    /// </summary>
+    private const double TabTitleWidth = 125, SelectedTabTitleWidth = 240;
 
     /// <summary>A tab's mark shows for a counted pane that is not idle; an agent's terminal or browser and the files pane carry none (M/PaneDockView.swift:228-234).</summary>
     private static void ShowTabMark(StatusMark mark, RunSession session, int pending) =>
@@ -176,7 +182,7 @@ public sealed partial class MainWindow
                 else ShowSidebarWait(row.Status, DashboardAttention(session.Id));
             }
             if (tabIndicators.TryGetValue(session.Id, out var tab)) { tab.Update(session.Status, session.Kind, pending, dark); ShowTabMark(tab, session, pending); }
-            if (views.TryGetValue(session.Id, out var pane)) { pane.RefreshElapsed(session); pane.RefreshHeaderStatus(session, dark); }
+            if (views.TryGetValue(session.Id, out var pane)) { pane.RefreshElapsed(session); pane.RefreshHeaderStatus(session); }
         }
         RenderDashboard();
     }

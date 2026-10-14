@@ -727,11 +727,11 @@ public sealed partial class MainWindow
     {
         /// <summary>The brushes the pane's long-lived chrome holds; a theme toggle must recolour these instances, never replace them.</summary>
         internal Brush?[] PaneChromeBrushes() =>
-            [paneHeader?.Background, paneHeader?.BorderBrush, headerTitle.Foreground, label.Foreground, elapsed.Foreground, modeSwitch?.Background, modeDefaultChip?.Fill, composerCard.Background, composerShadow.Fill];
+            [paneHeader?.Background, paneHeader?.BorderBrush, label.Foreground, elapsed.Foreground, modeSwitch?.Background, modeDefaultChip?.Fill, composerCard.Background, composerShadow.Fill];
 
         /// <summary>
         /// Stage 4 in the theme just rendered, on this (reused) pane: the tab strip and the pane's tab
-        /// (M/PaneDockView.swift:194-262), the Layout.PaneHeader header with its title, state word in each tone's
+        /// (M/PaneDockView.swift:194-262), the Layout.PaneHeader header named for the pane, its state word in each tone's
         /// ink and figures (M/SessionPaneView.swift:208-251), the … menu holding Copy (decision Q4), the
         /// Default | Mighty switch (segmentTrack, segmentOn, shadow 0.12), the composer card with its
         /// focus ring and shadow (M/SessionPaneView.swift:654-656), the pills, the send / stop shape, the
@@ -784,7 +784,7 @@ public sealed partial class MainWindow
                 && tab.MinWidth == 56 && tab.Padding == new Thickness(DesignMetrics.Inset.TabLeading, 0, DesignMetrics.Inset.TabTrailing, 0),
                 $"{key} ({theme}): the selected tab must be a radius {DesignMetrics.Radius.Segment} shape with a Stroke.Line border filling its cell, at least 56 wide, padding Inset.Tab l{DesignMetrics.Inset.TabLeading} r{DesignMetrics.Inset.TabTrailing}; got {shape.CornerRadius}, {shape.BorderThickness}, {shape.ActualHeight:F1}/{cell.ActualHeight:F1}, {tab.MinWidth}, {tab.Padding}");
             RequireFont(title, DesignMetrics.Type.Pill, Microsoft.UI.Text.FontWeights.SemiBold, $"({theme}) the selected tab's title", key);
-            Require(title.MaxWidth == 125, $"{key} ({theme}): a tab title must be at most 125 wide; got {title.MaxWidth}");
+            Require(title.MaxWidth == SelectedTabTitleWidth, $"{key} ({theme}): the selected tab's title must be at most {SelectedTabTitleWidth} wide; got {title.MaxWidth}");
             o.RequireBrush(title, e => ((TextBlock)e).Foreground, DesignToken.Ink, "the selected tab's title", key: key);
             var closeRow = cell.Children.OfType<StackPanel>().Single();
             Require(close.Width == 20 && close.Height == DesignMetrics.Layout.Tab && close.Content is FontIcon && closeRow.Spacing == 0 && closeRow.Padding == new Thickness(0, 0, DesignMetrics.Spacing.Xxs, 0) && ReferenceEquals(closeRow.Children[closeRow.Children.Count - 1], close),
@@ -804,6 +804,7 @@ public sealed partial class MainWindow
                 o.RequireClear(other.Shape.Background, "an unselected tab", key);
                 o.RequireClear(other.Shape.BorderBrush, "an unselected tab's border", key);
                 RequireFont(other.Title, DesignMetrics.Type.Pill, Microsoft.UI.Text.FontWeights.Normal, $"({theme}) an unselected tab's title", key);
+                Require(other.Title.MaxWidth == TabTitleWidth, $"{key} ({theme}): an unselected tab's title must be at most {TabTitleWidth} wide; got {other.Title.MaxWidth}");
                 o.RequireBrush(other.Title, e => ((TextBlock)e).Foreground, DesignToken.Ink2, "an unselected tab's title", key: key);
             }
 
@@ -816,10 +817,12 @@ public sealed partial class MainWindow
             o.RequireBrush(header, e => ((Grid)e).Background, DesignToken.Card, "the pane header", key: key);
             o.RequireBrush(header, e => ((Grid)e).BorderBrush, DesignToken.Line, "the line under the pane header", key: key);
             Require(header.BorderThickness == new Thickness(0, 0, 0, DesignMetrics.Stroke.Line), $"{key} ({theme}): the line under the header must be a bottom Stroke.Line only; got {header.BorderThickness}");
-            Require(headerMark.View.Width == StatusGlyph.HeaderSize && StatusGlyph.HeaderSize == 14, $"{key} ({theme}): the header glyph must be 14; got {headerMark.View.Width}");
-            RequireFont(headerTitle, DesignMetrics.Type.Title, Microsoft.UI.Text.FontWeights.Bold, $"({theme}) the header title", key);
-            Require(headerTitle.Text == pane.Title, $"{key} ({theme}): the header title must be the pane's title '{pane.Title}'; got '{headerTitle.Text}'");
-            o.RequireBrush(headerTitle, e => ((TextBlock)e).Foreground, DesignToken.Ink, "the header title", key: key);
+            // The pane's name and status glyph are on its tab right above: the header shows the word, the figures and the
+            // controls, and carries the name as its accessible name, as a heading (M/SessionPaneView.swift:239-242, 277-278).
+            Require(headerLine!.Children.SequenceEqual(new UIElement[] { label, figuresHost!, paneHeaderControls }),
+                $"{key} ({theme}): the header must hold only the state word, the figures and the controls; got {string.Join(", ", headerLine.Children.Select(child => child.GetType().Name))}");
+            Require(AutomationProperties.GetName(header) == pane.Title && AutomationProperties.GetHeadingLevel(header) == PaneHeadingLevel,
+                $"{key} ({theme}): the header must be named for the pane '{pane.Title}' as a {PaneHeadingLevel} heading; got '{AutomationProperties.GetName(header)}', {AutomationProperties.GetHeadingLevel(header)}");
             RequireFont(label, DesignMetrics.Type.State, Microsoft.UI.Text.FontWeights.SemiBold, $"({theme}) the header state word", key);
             foreach (var figures in new[] { elapsed, figuresRest })
             {
@@ -827,14 +830,13 @@ public sealed partial class MainWindow
                     $"{key} ({theme}): the header figures must be untrimmed Font.Mono at Type.Mono {DesignMetrics.Type.Mono}; got '{figures.FontFamily?.Source}' at {figures.FontSize}, {figures.TextTrimming}");
                 o.RequireBrush(figures, e => ((TextBlock)e).Foreground, DesignToken.Ink2, "the header figures", key: key);
             }
-            var dark = theme == "dark";
             // The state words below are the pane's own; a pending request would turn every one amber.
             Require(PendingRequests == 0, $"{key} ({theme}): the header colour check needs a pane with no pending requests; pane {id} has {PendingRequests}");
             try
             {
                 foreach (var (status, tone) in new[] { ("running", DesignTone.Run), ("completed", DesignTone.Done), ("error", DesignTone.Err), ("stopped", DesignTone.Stop), ("idle", DesignTone.Idle) })
                 {
-                    RefreshHeaderStatus(pane with { Status = status }, dark);
+                    RefreshHeaderStatus(pane with { Status = status });
                     o.RequireHex(label.Foreground, o.ToneTextHex(tone), $"derived.tones.{tone.ToString().ToLowerInvariant()}.text", $"the header state word while {status}", key);
                 }
                 // The figures (C/PaneHero.swift:21-30, M/PaneChrome.swift:61): the clock, the context, the cost and the tool
@@ -847,7 +849,7 @@ public sealed partial class MainWindow
                     SessionUsage = new() { Provider = pane.Provider, Source = "smoke.fixture", ContextUsedTokens = 41, ContextWindowTokens = 100, CostUSD = 0.38 },
                     Logs = [Tool("earlier", "command"), new("smoke-request", "user", "request", Wire.Now(), pane.Provider), Tool("turn", "turn"), .. Enumerable.Range(0, 12).Select(i => Tool("tool-" + i, "command"))],
                 };
-                RefreshElapsed(counted); RefreshHeaderStatus(counted, dark);
+                RefreshElapsed(counted); RefreshHeaderStatus(counted);
                 var figuresWant = "02:14 · 41% · $0.38 · " + Locale.Get("pane.hero.figure", new Dictionary<string, string> { ["label"] = Locale.Get("phone.session.hero.tools"), ["value"] = "12" });
                 Require(elapsed.Text + figuresRest.Text == figuresWant, $"{key} ({theme}): the header figures must read '{figuresWant}'; got '{elapsed.Text + figuresRest.Text}'");
                 // Their tooltip names every figure, then the agent, and says under them what the clock counts (M/PaneChrome.swift:58-59, 71); the accessible name is its first line.
@@ -857,22 +859,24 @@ public sealed partial class MainWindow
                 Require(tip.StartsWith(tipLead, StringComparison.Ordinal) && tip == tipName + "\n" + Locale.Get("pane.hero.elapsed.finished"),
                     $"{key} ({theme}): the figures' tooltip must start '{tipLead}' and end with what the clock counts under its accessible name; got '{tip}' for the name '{tipName}'");
                 var bare = pane with { RunTiming = null, SessionUsage = null, Logs = [] };
-                RefreshElapsed(bare); RefreshHeaderStatus(bare, dark);
+                RefreshElapsed(bare); RefreshHeaderStatus(bare);
                 Require((elapsed.Text + figuresRest.Text).Length == 0, $"{key} ({theme}): a pane with nothing to count must show no figures; got '{elapsed.Text + figuresRest.Text}'");
             }
-            finally { RefreshElapsed(Session); RefreshHeaderStatus(Session, dark); }
+            finally { RefreshElapsed(Session); RefreshHeaderStatus(Session); }
             o.root.UpdateLayout();
             Require(HeaderFitsSmoke(false), $"{key} ({theme}): the header controls must sit inside its one {DesignMetrics.Layout.PaneHeader}pt line at width {header.ActualWidth:F1}");
             var wrongAtRest = HeaderGivesWaySmoke();
             Require(wrongAtRest is null, $"{key} ({theme}): the header at its own width ({header.ActualWidth:F1}): {wrongAtRest}");
-            // The header gives way as the Mac's does (M/SessionPaneView.swift:215-239), here with a title too long for any
-            // pane: at the dock's least pane width, at a third of the default window (three panes side by side) and at
-            // the pane's own width. The figures go first, then the title trims; the word and the controls stay whole.
+            // The header gives way as the Mac's does (M/SessionPaneView.swift:239-242), here with the clock, the context and
+            // the cost all shown: at the dock's least pane width, at a third of the default window (three panes side by side)
+            // and at the pane's own width. The figures fade at the right first; the word and the controls stay whole.
             var paneWidth = Container.Width; var paneAlignment = Container.HorizontalAlignment;
             try
             {
-                // The pane itself takes the title for the while, so the one-second tick redraws the header with it too.
-                await Change(p => p with { Title = string.Join(" ", Enumerable.Repeat("A pane title too long for any header to show whole.", 8)) }); RefreshHeaderStatus(Session, dark);
+                // The pane itself takes the figures for the while, so the one-second tick redraws the header with them too.
+                var finished = DateTimeOffset.UtcNow;
+                await Change(p => p with { RunTiming = new(finished.AddSeconds(-134), finished, finished), SessionUsage = new() { Provider = p.Provider, Source = "smoke.fixture", ContextUsedTokens = 41, ContextWindowTokens = 100, CostUSD = 0.38 } });
+                RefreshElapsed(Session); RefreshHeaderStatus(Session);
                 foreach (var width in new[] { DesignMetrics.Layout.PaneMinWidth, 372, double.NaN })
                 {
                     Container.Width = width; Container.HorizontalAlignment = double.IsNaN(width) ? paneAlignment : HorizontalAlignment.Left;
@@ -881,15 +885,15 @@ public sealed partial class MainWindow
                     Require(HeaderFitsSmoke(false), $"{key} ({theme}): at {at} ({header.ActualWidth:F1}) a header control left the one {DesignMetrics.Layout.PaneHeader}pt line or the switch lost its words");
                     var wrong = HeaderGivesWaySmoke();
                     Require(wrong is null, $"{key} ({theme}): the header at {at} ({header.ActualWidth:F1}): {wrong}");
-                    var (line, figuresRoom) = (headerLine!, figuresHost!);
-                    // A title is at most 120 characters, which a wide pane may still show whole; a narrow one never can.
+                    // The figures' words are measured unbounded; the line gives them only what is left.
+                    var (line, figuresRoom) = (headerLine!, figuresHost!); var figuresWidth = elapsed.DesiredSize.Width + figuresRest.DesiredSize.Width;
                     if (!double.IsNaN(width))
-                        Require(headerTitle.ActualWidth < line.Ideal(headerTitle) - 1.01 && headerTitle.IsTextTrimmed && figuresRoom.ActualWidth < .5 && Math.Abs(label.ActualWidth - line.Ideal(label)) < 1.01,
-                            $"{key} ({theme}): at {at} a title too long must trim with an ellipsis after the figures gave way, before the state word; title {headerTitle.ActualWidth:F1} of {line.Ideal(headerTitle):F1} (trimmed {headerTitle.IsTextTrimmed}), figures {figuresRoom.ActualWidth:F1}, word {label.ActualWidth:F1} of {line.Ideal(label):F1}");
+                        Require(Math.Abs(label.ActualWidth - line.Ideal(label)) < 1.01 && (width != DesignMetrics.Layout.PaneMinWidth || figuresRoom.ActualWidth < figuresWidth - .5),
+                            $"{key} ({theme}): at {at} the state word must stay whole, the figures fading at the right first; word {label.ActualWidth:F1} of {line.Ideal(label):F1}, figures {figuresRoom.ActualWidth:F1} of {figuresWidth:F1}");
                     await CaptureElement(Container, Path.Combine(o.options.ProfileDirectory!, $"smoke-chrome-header-{at}-{theme}.png"));
                 }
             }
-            finally { Container.Width = paneWidth; Container.HorizontalAlignment = paneAlignment; await Change(p => p with { Title = pane.Title }); RefreshHeaderStatus(Session, dark); o.root.UpdateLayout(); }
+            finally { Container.Width = paneWidth; Container.HorizontalAlignment = paneAlignment; await Change(p => p with { RunTiming = pane.RunTiming, SessionUsage = pane.SessionUsage }); RefreshElapsed(Session); RefreshHeaderStatus(Session); o.root.UpdateLayout(); }
 
             // The … menu is the Mac's (M/SessionPaneView.swift:281-295): rename, focus view, copy the run log (decision
             // Q4), start a new conversation, show the background work line, then close behind a separator. The header has no Copy button.
@@ -920,11 +924,11 @@ public sealed partial class MainWindow
             {
                 foreach (var (mode, shown) in new[] { ("mighty", pane.Provider is "claude" or "codex"), ("default", false) })
                 {
-                    RefreshHeaderStatus(pane with { AgentViewMode = mode }, dark);
+                    RefreshHeaderStatus(pane with { AgentViewMode = mode });
                     Require((pluginButton!.Visibility == Visibility.Visible) == shown, $"{key} ({theme}): the plugin button of a {pane.Provider} pane in the {mode} view must be {(shown ? "shown" : "hidden")}; got {pluginButton.Visibility}");
                 }
             }
-            finally { RefreshHeaderStatus(Session, dark); }
+            finally { RefreshHeaderStatus(Session); }
 
             // The Default | Mighty switch.
             Require(modeSwitch is not null && modeDefaultChip is not null && modeMightyChip is not null && modeDefaultButton is not null && modeMightyButton is not null,

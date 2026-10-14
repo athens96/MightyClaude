@@ -75,10 +75,8 @@ public static class StatusGlyph
     /// <summary>The spark turns once every 3.2 s, as on macOS.</summary>
     public const double SparkTurnSeconds = 3.2;
 
-    /// <summary>The mark's size in the sidebar rows; the tabs draw <see cref="TabSize"/>, the pane header <see cref="HeaderSize"/>.</summary>
+    /// <summary>The mark's size in the sidebar rows; the tabs draw <see cref="TabSize"/>.</summary>
     public const double RowSize = 14;
-    /// <summary>The pane header's mark: 14, as in the sidebar (design doc §5, M/SessionPaneView.swift:216).</summary>
-    public const double HeaderSize = 14;
     /// <summary>A tab's mark (M/PaneDockView.swift:249).</summary>
     public const double TabSize = 12;
 

@@ -135,14 +135,15 @@ public sealed partial class MainWindow
 
     /// <summary>
     /// The terminal's slim ink bar (M/PaneChrome.swift:99-122): Layout.PaneHeader high on the shared <c>idle</c> brush,
-    /// radius 11, padding Inset.PaneHeaderLeading; the 11pt symbol, the 13pt bold title, the 11.5pt kind words and the 11pt
-    /// bold status word in its <see cref="SlimPillHeight"/>-high capsule with a 1.5pt edge, all <c>onStatus</c>.
+    /// radius 11, padding Inset.PaneHeaderLeading; the 11.5pt kind words and the 11pt bold status word in its
+    /// <see cref="SlimPillHeight"/>-high capsule with a 1.5pt edge, all <c>onStatus</c>. The pane's name and symbol are on its
+    /// tab: the bar shows neither and carries the name as its accessible name, as a heading (M/PaneChrome.swift:107, 119-120).
     /// </summary>
     private (Grid Header, TextBlock Word) RequireTerminalHeaderInTheme(PaneView terminal, PaletteLandmarks? light)
     {
         const string key = PaletteDesignKey; var theme = SmokeTheme;
         var slim = terminal.SlimHeaderForSmoke ?? throw new InvalidOperationException($"{key} ({theme}): the terminal pane has no slim header");
-        Require(slim.Header is not null && slim.Symbol is not null && slim.Subtitle is not null && slim.Pill is not null, $"{key} ({theme}): the terminal header is missing a part");
+        Require(slim.Header is not null && slim.Subtitle is not null && slim.Pill is not null, $"{key} ({theme}): the terminal header is missing a part");
         var header = slim.Header!;
         if (light is not null) Require(ReferenceEquals(header, light.Header), $"{key} ({theme}): the toggle rebuilt the terminal header instead of recolouring it");
         Require(header.Height == DesignMetrics.Layout.PaneHeader && Math.Abs(header.ActualHeight - DesignMetrics.Layout.PaneHeader) < .5,
@@ -151,11 +152,11 @@ public sealed partial class MainWindow
             $"{key} ({theme}): the terminal header must be radius {DesignMetrics.Radius.Pane}, padding h{DesignMetrics.Inset.PaneHeaderLeading}, no border; got {header.CornerRadius}, {header.Padding}, {header.BorderThickness}");
         RequirePaletteShared(header.Background, brushes.Brush(DesignToken.Idle), "the terminal header's fill");
         RequireBrush(header, e => ((Grid)e).Background, DesignToken.Idle, "the terminal header's fill", key: key);
-        RequireBrush(slim.Symbol!, e => ((FontIcon)e).Foreground, DesignToken.OnStatus, "the terminal header's symbol", key: key);
-        // The Mac's 11pt terminal symbol draws 12.7 wide; Segoe's CommandPrompt needs 13 to draw as large (PaneSymbol).
-        Require(slim.Symbol!.FontSize == 13 && slim.Symbol.Width == 15 && slim.Symbol.FontWeight.Weight == FontWeights.SemiBold.Weight, $"{key} ({theme}): the terminal symbol must be the 13pt semibold glyph in its 15-wide slot; got {slim.Symbol.FontSize}pt in {slim.Symbol.Width}, weight {slim.Symbol.FontWeight.Weight}");
-        RequireFont(slim.Title, DesignMetrics.Type.Title, FontWeights.Bold, $"({theme}) the terminal title", key);
-        RequireBrush(slim.Title, e => ((TextBlock)e).Foreground, DesignToken.OnStatus, "the terminal title", key: key);
+        var title = terminal.SessionForSmoke.Title;
+        // Its line holds the kind words, the room before the capsule, the capsule and the menu, and nothing else.
+        Require(header.Children.SingleOrDefault() is PaneHeaderLine { Children.Count: 4 } line && ReferenceEquals(line.Children[0], slim.Subtitle) && ReferenceEquals(line.Children[2], slim.Pill)
+            && AutomationProperties.GetName(header) == title && AutomationProperties.GetHeadingLevel(header) == PaneHeadingLevel,
+            $"{key} ({theme}): the terminal header must show no symbol and no title, and be named '{title}' as a {PaneHeadingLevel} heading; got {string.Join(", ", (header.Children.SingleOrDefault() as Panel)?.Children.Select(child => child.GetType().Name) ?? [])}, '{AutomationProperties.GetName(header)}', {AutomationProperties.GetHeadingLevel(header)}");
         Require(slim.Subtitle!.FontSize == DesignMetrics.Type.State && slim.Subtitle.Text.Length > 0, $"{key} ({theme}): the terminal kind words must be {DesignMetrics.Type.State}pt and not empty; got {slim.Subtitle.FontSize}pt '{slim.Subtitle.Text}'");
         RequireBrush(slim.Subtitle, e => ((TextBlock)e).Foreground, DesignToken.OnStatus, "the terminal kind words", key: key);
         RequireFont(slim.Word, DesignMetrics.Type.Pill, FontWeights.Bold, $"({theme}) the terminal status word", key);
@@ -172,21 +173,22 @@ public sealed partial class MainWindow
         Require(Math.Abs(at.X - edge - setIn) < .6 && Math.Abs(at.Y - edge - setIn) < .6 && Math.Abs(card.ActualWidth - at.X - header.ActualWidth - edge - setIn) < .6,
             $"{key} ({theme}): the terminal header must be set in {setIn} from the leading, top and trailing edges inside the card's border; got {at.X - edge:F1}, {at.Y - edge:F1}, {card.ActualWidth - at.X - header.ActualWidth - edge:F1}");
         double Left(FrameworkElement part) => part.TransformToVisual(header).TransformPoint(new Windows.Foundation.Point()).X;
-        // Symbol, title, kind, then after at least SlimBarSpacer of room the capsule and the 22-wide menu against the trailing padding, each SlimSpacing from
-        // the one before; a text that had to trim ends short of its place, so the texts are held to "at least".
+        // The kind from the leading padding, then after at least SlimBarSpacer of room the capsule and the 22-wide menu against the trailing padding, each
+        // SlimSpacing from the one before; a text that had to trim ends short of its place, so the texts are held to "at least".
         double End(FrameworkElement part) => Left(part) + part.ActualWidth;
         const double pad = DesignMetrics.Inset.PaneHeaderLeading, gap = PaneHeaderLine.SlimSpacing;
-        Require(gap == DesignMetrics.Spacing.Md && Math.Abs(Left(slim.Symbol) - pad) < .6 && Math.Abs(Left(slim.Title) - (End(slim.Symbol) + gap)) < .6 && Left(slim.Subtitle) >= End(slim.Title) + gap - .6
+        Require(gap == DesignMetrics.Spacing.Md && Math.Abs(Left(slim.Subtitle) - pad) < .6
             && Left(pill) >= End(slim.Subtitle) + gap + SlimBarSpacer + gap - .6 && Math.Abs(End(pill) - (header.ActualWidth - pad - 22 - gap)) < .6,
-            $"{key} ({theme}): the terminal header must read symbol, title, kind, then the capsule {gap} before the menu, from its {pad} padding and {gap} apart; got symbol {Left(slim.Symbol):F1}..{End(slim.Symbol):F1}, title {Left(slim.Title):F1}..{End(slim.Title):F1}, kind {Left(slim.Subtitle):F1}..{End(slim.Subtitle):F1}, capsule {Left(pill):F1}..{End(pill):F1} of {header.ActualWidth:F1}");
+            $"{key} ({theme}): the terminal header must read the kind, then the capsule {gap} before the menu, from its {pad} padding and {gap} apart; got kind {Left(slim.Subtitle):F1}..{End(slim.Subtitle):F1}, capsule {Left(pill):F1}..{End(pill):F1} of {header.ActualWidth:F1}");
         return (header, slim.Word);
     }
 
     /// <summary>
     /// The slim ink bar a tab group draws over a pane that is not a conversation (M/PaneChrome.swift:99-141,
     /// M/PaneDockView.swift:178-180), here the files pane's: between the tab strip and the pane, set in <see cref="SlimBarMargin"/>,
-    /// Layout.PaneHeader high on <c>idle</c>, radius 11, padding Inset.PaneHeaderLeading; the folder, the title in 13pt bold and the kind in 11.5pt,
-    /// all <c>onStatus</c>, with no status capsule and no menu. The pane under it draws no header and no outline.
+    /// Layout.PaneHeader high on <c>idle</c>, radius 11, padding Inset.PaneHeaderLeading; only the kind in 11.5pt <c>onStatus</c>,
+    /// with no status capsule and no menu, named for the pane as a heading (its folder and title are on its tab, M/PaneChrome.swift:107,
+    /// 119-120). The pane under it draws no header and no outline.
     /// </summary>
     private void RequireGroupSlimHeaderInTheme(PaneView files)
     {
@@ -199,12 +201,11 @@ public sealed partial class MainWindow
             $"{key} ({theme}): the files header must be {DesignMetrics.Layout.PaneHeader} high, set in h{DesignMetrics.Spacing.Xs} t{DesignMetrics.Spacing.Xs} b{DesignMetrics.Spacing.Xxs}, radius {DesignMetrics.Radius.Pane}, padding h{DesignMetrics.Inset.PaneHeaderLeading}; got {bar.Height} (laid out {bar.ActualHeight:F1}), {bar.Margin}, {bar.CornerRadius}, {bar.Padding}");
         RequirePaletteShared(bar.Background, brushes.Brush(DesignToken.Idle), "the files header's fill");
         RequireBrush(bar, e => ((Grid)e).Background, DesignToken.Idle, "the files header's fill", key: key);
-        Require(slim.Symbol.Glyph == "\uE8B7" && slim.Symbol.FontSize == 12.5 && slim.Symbol.FontWeight.Weight == FontWeights.SemiBold.Weight, $"{key} ({theme}): the files header must lead with the 12.5pt semibold folder (the Mac's 11pt folder draws 12.3 wide); got {slim.Symbol.FontSize}pt");
-        RequireBrush(slim.Symbol, e => ((FontIcon)e).Foreground, DesignToken.OnStatus, "the files header's symbol", key: key);
-        RequireFont(slim.Title, DesignMetrics.Type.Title, FontWeights.Bold, $"({theme}) the files header's title", key);
-        Require(slim.Title.Text == session.Title && slim.Subtitle.Text == Locale.Get("files.pane.title") && slim.Subtitle.FontSize == DesignMetrics.Type.State,
-            $"{key} ({theme}): the files header must read the pane's title and its kind in {DesignMetrics.Type.State}pt; got '{slim.Title.Text}' and '{slim.Subtitle.Text}' at {slim.Subtitle.FontSize}pt");
-        RequireBrush(slim.Title, e => ((TextBlock)e).Foreground, DesignToken.OnStatus, "the files header's title", key: key);
+        Require(bar.Children.SingleOrDefault() is PaneHeaderLine { Children.Count: 2 } line && ReferenceEquals(line.Children[0], slim.Subtitle)
+            && slim.Subtitle.Text == Locale.Get("files.pane.title") && slim.Subtitle.FontSize == DesignMetrics.Type.State,
+            $"{key} ({theme}): the files header must read only its kind in {DesignMetrics.Type.State}pt, no folder and no title; got '{slim.Subtitle.Text}' at {slim.Subtitle.FontSize}pt among {string.Join(", ", (bar.Children.SingleOrDefault() as Panel)?.Children.Select(child => child.GetType().Name) ?? [])}");
+        Require(AutomationProperties.GetName(bar) == session.Title && AutomationProperties.GetHeadingLevel(bar) == PaneHeadingLevel,
+            $"{key} ({theme}): the files header must be named for the pane '{session.Title}' as a {PaneHeadingLevel} heading; got '{AutomationProperties.GetName(bar)}', {AutomationProperties.GetHeadingLevel(bar)}");
         RequireBrush(slim.Subtitle, e => ((TextBlock)e).Foreground, DesignToken.OnStatus, "the files header's kind", key: key);
         Require(!VisualChildren(bar).OfType<Button>().Any(), $"{key} ({theme}): the files header carries no button (M/PaneChrome.swift:131-141)");
         // Under the strip, over the pane; the pane itself shows no header and no outline of its own.

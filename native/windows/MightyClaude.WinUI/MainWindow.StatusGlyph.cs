@@ -11,8 +11,8 @@ using ShapePath = Microsoft.UI.Xaml.Shapes.Path;
 namespace MightyClaude.WinUI;
 
 /// <summary>
-/// The status mark in front of a pane's title in the sidebar rows, the pane tabs and the pane
-/// header (status v2, concept A, the glyph row — macOS StatusGlyph.swift). Which glyph a state gets,
+/// The status mark beside a pane's title in the sidebar rows and the pane tabs (status v2,
+/// concept A, the glyph row — macOS StatusGlyph.swift). Which glyph a state gets,
 /// its colours and its 16-unit geometry are <see cref="StatusGlyph"/> in Core; this only draws
 /// them. The spark turns once every 3.2 s and stands still when Windows animations are off.
 /// </summary>
@@ -139,9 +139,10 @@ internal sealed class StatusMark
 public sealed partial class MainWindow
 {
     /// <summary>
-    /// Smoke key <c>statusGlyph</c>: the sidebar rows, the tabs and the pane header draw design A's
-    /// glyph (no spinning ring), each state reaches its own glyph, a pending request turns a running
-    /// pane amber, and the spark turns only while Windows animations are on.
+    /// Smoke key <c>statusGlyph</c>: the sidebar rows and the tabs draw design A's glyph (no spinning
+    /// ring; the pane header has none, M/SessionPaneView.swift:239-242), each state reaches its own
+    /// glyph, a pending request turns a running pane amber, and the spark turns only while Windows
+    /// animations are on.
     /// </summary>
     private async Task<Dictionary<string, object?>> RunStatusGlyphSmoke()
     {
@@ -164,7 +165,7 @@ public sealed partial class MainWindow
                 await service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => p.Id == id ? p with { Status = status } : p).ToList() });
                 RefreshRunningIndicators(); views[id].Refresh();
                 Require(sessionIndicators[id].Mark.Glyph == expected, $"sidebar row glyph for {status} is not {expected}");
-                Require(views[id].HeaderMark.Glyph == expected, $"pane header glyph for {status} is not {expected}");
+                Require(tabIndicators[id].Glyph == expected, $"tab glyph for {status} is not {expected}");
                 seen[status] = expected.ToString();
             }
             checks["eachStateReachesItsGlyph"] = seen;
@@ -172,7 +173,7 @@ public sealed partial class MainWindow
             await service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => p.Id == id ? p with { Status = "running" } : p).ToList() });
             RefreshRunningIndicators(); views[id].Refresh();
             Require(sessionIndicators[id].Mark.Glyph == StatusGlyphKind.Spark && !sessionIndicators[id].Mark.Spinning, "the running sidebar glyph turns with animations off");
-            Require(views[id].HeaderMark.Glyph == StatusGlyphKind.Spark && !views[id].HeaderMark.Spinning, "the running header glyph turns with animations off");
+            Require(tabIndicators[id].Glyph == StatusGlyphKind.Spark && !tabIndicators[id].Spinning, "the running tab glyph turns with animations off");
             checks["sparkStillWithAnimationsOff"] = true;
             StatusMark.AnimationsEnabledOverride = true;
             var turning = new StatusMark(); turning.Update("running", "claude", 0, true);
@@ -218,23 +219,19 @@ public sealed partial class MainWindow
 
     private sealed partial class PaneView
     {
-        /// <summary>The pane header's mark, before the state word (design A's one-line header).</summary>
-        private readonly StatusMark headerMark = new(StatusGlyph.HeaderSize);
         internal int PendingRequests => toolPermissions.Count(p => p.State == "pending");
-        internal StatusMark HeaderMark => headerMark;
 
         /// <summary>
-        /// Redraws the header's mark, title and word for the pane's status and its pending requests,
-        /// from the session and theme the caller already read (no snapshot copy per call). The word
-        /// takes its tone's ink, <c>text(tone)</c> (M/SessionPaneView.swift:219-221); on a terminal's slim bar it
+        /// Redraws the header's word for the pane's status and its pending requests, and its accessible
+        /// name for the pane's title, from the session the caller already read (no snapshot copy per call).
+        /// The word takes its tone's ink, <c>text(tone)</c> (M/SessionPaneView.swift:252-253); on a terminal's slim bar it
         /// is the bar's <c>onStatus</c> ink inside its capsule (M/PaneChrome.swift:111).
         /// </summary>
-        internal void RefreshHeaderStatus(RunSession pane, bool dark)
+        internal void RefreshHeaderStatus(RunSession pane)
         {
             var pending = PendingRequests; var shown = StatusGlyph.DisplayStatus(pane.Status, pending);
-            headerMark.Update(pane.Status, pane.Kind, pending, dark);
             label.Text = StateLabel(shown); label.Foreground = slimHeader ? owner.brushes.Brush(DesignToken.OnStatus) : owner.brushes.Text(StatusGlyph.Tone(shown));
-            if (headerTitle.Text != pane.Title) { headerTitle.Text = pane.Title; ToolTipService.SetToolTip(headerTitle, PaneTitle.Help(pane)); }
+            if (paneHeader is not null && AutomationProperties.GetName(paneHeader) != pane.Title) AutomationProperties.SetName(paneHeader, pane.Title);
             RefreshHeaderLine(pane);
         }
     }

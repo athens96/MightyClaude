@@ -87,7 +87,7 @@ public sealed partial class MainWindow
     /// </summary>
     private static readonly FontFamily BodyFont = new(DesignMetrics.Font.Body);
     /// <summary>Each group's slim bar and its parts, by the session it stands over (read by the paneChromeDesign smoke).</summary>
-    private readonly Dictionary<string, (Grid Bar, FontIcon Symbol, TextBlock Title, TextBlock Subtitle)> groupSlimHeaders = [];
+    private readonly Dictionary<string, (Grid Bar, TextBlock Subtitle)> groupSlimHeaders = [];
 
     /// <summary>
     /// The symbol of a pane that is not a conversation (the Mac's paneSymbol, M/DashboardView.swift:81-87):
@@ -96,7 +96,7 @@ public sealed partial class MainWindow
     /// 12.7×10.2pt, its folder 12.3×10) and sits in a slot as wide as the symbol's own, so what follows
     /// it starts where it does on the Mac.
     /// </summary>
-    private static FontIcon PaneSymbol(string kind, double macSize, Brush ink, bool semibold = false)
+    private static FontIcon PaneSymbol(string kind, double macSize, Brush ink)
     {
         var (glyph, scale, slot) = kind switch
         {
@@ -105,7 +105,6 @@ public sealed partial class MainWindow
             _ => ("\uE756", 1.2, 1.4),
         };
         var icon = new FontIcon { Glyph = glyph, FontSize = Math.Round(macSize * scale * 2) / 2, Width = Math.Round(macSize * slot), Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
-        if (semibold) icon.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold;
         AutomationProperties.SetAccessibilityView(icon, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
         return icon;
     }
@@ -136,24 +135,27 @@ public sealed partial class MainWindow
 
     /// <summary>
     /// The slim ink bar a tab group draws over a pane that is not a conversation (M/PaneChrome.swift:99-141,
-    /// M/PaneDockView.swift:178-180): the kind's symbol 11 semibold, the title 13 bold and the kind in words
-    /// 11.5, in <c>onStatus</c> on the <c>idle</c> fill, set in <see cref="SlimBarMargin"/>. It carries no status and no menu.
+    /// M/PaneDockView.swift:178-180): the kind in words 11.5, in <c>onStatus</c> on the <c>idle</c> fill, set in
+    /// <see cref="SlimBarMargin"/>. It carries no status and no menu. The pane's name and kind symbol are on its
+    /// tab right above, so the bar only names itself with the title, as a heading (M/PaneChrome.swift:107, 119-120).
     /// </summary>
     private Grid BuildGroupSlimHeader(RunSession session)
     {
         var onStatus = brushes.Brush(DesignToken.OnStatus);
         var bar = new Grid { Margin = SlimBarMargin };
         PaintSlimBar(bar, brushes);
-        var symbol = PaneSymbol(session.Kind, 11, onStatus, semibold: true);
-        var title = new TextBlock { Text = session.Title, FontFamily = BodyFont, FontSize = DesignMetrics.Type.Title, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = onStatus, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, VerticalAlignment = VerticalAlignment.Center };
         var subtitle = SlimBarWords(PaneKindWords(session.Kind), onStatus);
         var line = new PaneHeaderLine { Spacing = PaneHeaderLine.SlimSpacing };
-        line.Add(symbol, PaneHeaderLine.Role.Fixed); line.Add(title, PaneHeaderLine.Role.Shrink); line.Add(subtitle, PaneHeaderLine.Role.Shrink); line.Add(new Border(), PaneHeaderLine.Role.Fill, SlimBarSpacer);
+        line.Add(subtitle, PaneHeaderLine.Role.Shrink); line.Add(new Border(), PaneHeaderLine.Role.Fill, SlimBarSpacer);
         bar.Children.Add(line);
         AutomationProperties.SetAutomationId(bar, "pane-slim-header-" + session.Id);
-        groupSlimHeaders[session.Id] = (bar, symbol, title, subtitle);
+        AutomationProperties.SetName(bar, session.Title); AutomationProperties.SetHeadingLevel(bar, PaneHeadingLevel);
+        groupSlimHeaders[session.Id] = (bar, subtitle);
         return bar;
     }
+
+    /// <summary>A pane header's heading level: the pane's name heads what the pane shows, whose boards head at level 2.</summary>
+    private const Microsoft.UI.Xaml.Automation.Peers.AutomationHeadingLevel PaneHeadingLevel = Microsoft.UI.Xaml.Automation.Peers.AutomationHeadingLevel.Level1;
 
     private sealed partial class PaneView
     {
@@ -174,8 +176,6 @@ public sealed partial class MainWindow
         /// Default | Mighty switch, the plugin button, the agent's terminal button and the … menu.
         /// </summary>
         private readonly StackPanel paneHeaderControls = new() { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, Margin = new Thickness(DesignMetrics.Spacing.Xs, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-        /// <summary>The pane title: 13 bold, tracking −0.1, in <c>ink</c> (M/SessionPaneView.swift:217).</summary>
-        private readonly TextBlock headerTitle = new() { FontFamily = BodyFont, FontSize = DesignMetrics.Type.Title, FontWeight = Microsoft.UI.Text.FontWeights.Bold, CharacterSpacing = -8, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, VerticalAlignment = VerticalAlignment.Center };
         private Button? paneMenuButton, pluginButton, terminalButton;
         /// <summary>The figures after the clock, " · 41% · $0.38 · 도구 12", in the clock's own mono (M/PaneChrome.swift:61-62); <c>elapsed</c> holds the clock.</summary>
         private readonly TextBlock figuresRest = new() { FontSize = DesignMetrics.Type.Mono, FontFamily = new FontFamily(DesignMetrics.Font.Mono), TextWrapping = TextWrapping.NoWrap, VerticalAlignment = VerticalAlignment.Center };
@@ -188,17 +188,18 @@ public sealed partial class MainWindow
         private string paneKind = "";
         /// <summary>A shell pane wears the Mac's slim ink bar inside its card instead of the agent header (M/SessionPaneView.swift:184-190).</summary>
         private bool slimHeader;
-        /// <summary>The slim bar's kind symbol, kind words and status capsule (null on an agent header).</summary>
-        private FontIcon? slimSymbol;
+        /// <summary>The slim bar's kind words and status capsule (null on an agent header).</summary>
         private TextBlock? slimSubtitle;
         private Border? slimStatusPill;
 
         /// <summary>
         /// The agent pane's one 34pt line (M/SessionPaneView.swift:208-251): padding l14 r10 on <c>card</c>
-        /// with a 1pt <c>line</c> under it; the glyph, the title, the state word, the figures (which give
-        /// way first), then the controls, <c>Spacing.Sm</c> apart. It runs edge to edge over the pane grid's <see cref="PaneInset"/>,
-        /// its top corners following the card's inner curve. A pane that is not a conversation shows none
-        /// of its own: its tab group draws the slim bar over it (M/PaneDockView.swift:178-180).
+        /// with a 1pt <c>line</c> under it; the state word, the figures (which give way first), then the
+        /// controls, <c>Spacing.Sm</c> apart. The pane's name and status glyph are on its tab right above, so
+        /// the header only carries the name as its accessible name, as a heading (M/SessionPaneView.swift:277-278).
+        /// It runs edge to edge over the pane grid's <see cref="PaneInset"/>, its top corners following the card's
+        /// inner curve. A pane that is not a conversation shows none of its own: its tab group draws the slim bar
+        /// over it (M/PaneDockView.swift:178-180).
         /// </summary>
         private Grid BuildPaneHeader()
         {
@@ -210,7 +211,7 @@ public sealed partial class MainWindow
                 Background = owner.brushes.Brush(DesignToken.Card), BorderBrush = owner.brushes.Brush(DesignToken.Line), BorderThickness = new Thickness(0, 0, 0, DesignMetrics.Stroke.Line),
                 CornerRadius = new CornerRadius(inner, inner, 0, 0),
             };
-            headerTitle.Foreground = owner.brushes.Brush(DesignToken.Ink); elapsed.Foreground = figuresRest.Foreground = owner.brushes.Brush(DesignToken.Ink2);
+            elapsed.Foreground = figuresRest.Foreground = owner.brushes.Brush(DesignToken.Ink2);
             label.FontFamily = BodyFont;
             var kind = paneKind = Session.Kind;
             slimHeader = kind == "shell";
@@ -218,12 +219,12 @@ public sealed partial class MainWindow
             if (slimHeader) SlimHeaderParts(header, line);
             else
             {
-                line.Add(headerMark.View, PaneHeaderLine.Role.Fixed); line.Add(headerTitle, PaneHeaderLine.Role.Shrink); line.Add(label, PaneHeaderLine.Role.Soft);
-                line.Add(BuildHeaderFigures(), PaneHeaderLine.Role.Fill); line.Add(paneHeaderControls, PaneHeaderLine.Role.Fixed);
+                line.Add(label, PaneHeaderLine.Role.Soft); line.Add(BuildHeaderFigures(), PaneHeaderLine.Role.Fill); line.Add(paneHeaderControls, PaneHeaderLine.Role.Fixed);
             }
             header.Children.Add(line);
             if (GroupSlimHeaderKinds.Contains(kind)) header.Visibility = Visibility.Collapsed;
             AutomationProperties.SetAutomationId(header, "pane-header-" + id); AutomationProperties.SetAutomationId(label, "pane-status-" + id);
+            AutomationProperties.SetName(header, Session.Title); AutomationProperties.SetHeadingLevel(header, PaneHeadingLevel);
             return paneHeader = header;
         }
 
@@ -258,7 +259,7 @@ public sealed partial class MainWindow
         }
 
         /// <summary>
-        /// What the agent header shows beyond its mark, title and word, redrawn with them on every refresh
+        /// What the agent header shows beyond its word, redrawn with it on every refresh
         /// and on the one-second tick: the count of what waits on the user in the word ("응답 대기 2",
         /// M/SessionPaneView.swift:222), the figures, and which of the plugin and terminal buttons show.
         /// </summary>
@@ -337,10 +338,9 @@ public sealed partial class MainWindow
         /// <summary>
         /// The slim ink bar of a shell pane (M/PaneChrome.swift:99-122, M/SessionPaneView.swift:185-190):
         /// Layout.PaneHeader high on the <c>idle</c> fill, radius 11, padded by Inset.PaneHeaderLeading, set in <see cref="SlimBarMargin"/>
-        /// from the pane's edge; the terminal symbol 11 semibold, the title 13 bold, the kind 11.5, then after what room is left the
-        /// status word in an 11 bold, 18-high capsule with a 1.5pt edge, all in <c>onStatus</c>, and the …
-        /// menu, <see cref="PaneHeaderLine.SlimSpacing"/> apart. The status mark is still kept up to date (the header's word and its accessibility
-        /// follow it) but not shown, as on the Mac.
+        /// from the pane's edge; the kind 11.5, then after what room is left the status word in an 11 bold, 18-high
+        /// capsule with a 1.5pt edge, all in <c>onStatus</c>, and the … menu, <see cref="PaneHeaderLine.SlimSpacing"/> apart.
+        /// The pane's name and terminal symbol are on its tab right above (M/PaneChrome.swift:107).
         /// </summary>
         private void SlimHeaderParts(Grid header, PaneHeaderLine line)
         {
@@ -348,10 +348,7 @@ public sealed partial class MainWindow
             var onStatus = owner.brushes.Brush(DesignToken.OnStatus);
             PaintSlimBar(header, owner.brushes);
             header.Margin = new Thickness(SlimBarMargin.Left - inset, SlimBarMargin.Top - inset, SlimBarMargin.Right - inset, 0);
-            // The slim bar's title is 13 bold without the agent header's tracking (M/PaneChrome.swift:109).
-            headerTitle.Foreground = onStatus; headerTitle.CharacterSpacing = 0;
             label.Foreground = onStatus; label.FontSize = DesignMetrics.Type.Pill; label.FontWeight = Microsoft.UI.Text.FontWeights.Bold;
-            slimSymbol = PaneSymbol("shell", 11, onStatus, semibold: true);
             slimSubtitle = SlimBarWords(Locale.Get("dashboard.kind.shell") + " · " + Locale.Get("phone.card.localTerminal"), onStatus);
             // The capsule's edge is drawn inside its h Spacing.Md padding, as the Mac's strokeBorder is (M/PaneChrome.swift:41-42).
             slimStatusPill = new Border
@@ -362,13 +359,13 @@ public sealed partial class MainWindow
             AutomationProperties.SetAutomationId(slimStatusPill, "pane-status-pill-" + id);
             // The menu follows the capsule at the bar's own spacing, without the agent header's margin before its controls.
             paneHeaderControls.Margin = new Thickness(0);
-            line.Add(slimSymbol, PaneHeaderLine.Role.Fixed); line.Add(headerTitle, PaneHeaderLine.Role.Shrink); line.Add(slimSubtitle, PaneHeaderLine.Role.Shrink);
-            line.Add(new Border(), PaneHeaderLine.Role.Fill, SlimBarSpacer); line.Add(slimStatusPill, PaneHeaderLine.Role.Fixed); line.Add(paneHeaderControls, PaneHeaderLine.Role.Fixed);
+            line.Add(slimSubtitle, PaneHeaderLine.Role.Shrink); line.Add(new Border(), PaneHeaderLine.Role.Fill, SlimBarSpacer);
+            line.Add(slimStatusPill, PaneHeaderLine.Role.Fixed); line.Add(paneHeaderControls, PaneHeaderLine.Role.Fixed);
         }
 
         /// <summary>The slim bar's parts the design smoke reads (all null on an agent pane).</summary>
-        internal (Grid? Header, FontIcon? Symbol, TextBlock Title, TextBlock? Subtitle, Border? Pill, TextBlock Word)? SlimHeaderForSmoke =>
-            slimHeader ? (paneHeader, slimSymbol, headerTitle, slimSubtitle, slimStatusPill, label) : null;
+        internal (Grid? Header, TextBlock? Subtitle, Border? Pill, TextBlock Word)? SlimHeaderForSmoke =>
+            slimHeader ? (paneHeader, slimSubtitle, slimStatusPill, label) : null;
 
         /// <summary>
         /// The header's buttons after the switch, each 22×24 in the header's ink (M/SessionPaneView.swift:258-302):
@@ -477,8 +474,8 @@ public sealed partial class MainWindow
         /// The agent header at the width it has now, for the design smoke: null when all is well, else what
         /// is wrong. Its parts stand in the Mac's order without overlapping; the controls are whole and
         /// against the trailing padding, the plugin and terminal buttons too when they show; and the parts
-        /// gave way in the Mac's order (M/SessionPaneView.swift:215-239) — the figures before the title, the
-        /// title (trimmed with an ellipsis) before the state word, the controls never.
+        /// gave way in the Mac's order (M/SessionPaneView.swift:239-242) — the figures before the state word,
+        /// the controls never.
         /// </summary>
         internal string? HeaderGivesWaySmoke()
         {
@@ -488,12 +485,12 @@ public sealed partial class MainWindow
                 var left = part.TransformToVisual(header).TransformPoint(new Point()).X;
                 return (left, left + part.ActualWidth);
             }
-            var parts = new (string Name, FrameworkElement View)[] { ("mark", headerMark.View), ("title", headerTitle), ("state word", label), ("figures", figures), ("controls", paneHeaderControls) };
+            var parts = new (string Name, FrameworkElement View)[] { ("state word", label), ("figures", figures), ("controls", paneHeaderControls) };
             var spans = parts.Select(part => Span(part.View)).ToArray();
             for (var i = 1; i < spans.Length; i++)
                 if (spans[i].Left < spans[i - 1].Right - .5) return $"the {parts[i].Name} starts at {spans[i].Left:F1}, before the {parts[i - 1].Name} ends at {spans[i - 1].Right:F1}";
             var edge = header.ActualWidth - header.Padding.Right;
-            if (Math.Abs(spans[4].Right - edge) > .5) return $"the controls end at {spans[4].Right:F1}, not against the trailing padding at {edge:F1}";
+            if (Math.Abs(spans[^1].Right - edge) > .5) return $"the controls end at {spans[^1].Right:F1}, not against the trailing padding at {edge:F1}";
             if (paneHeaderControls.ActualWidth + paneHeaderControls.Margin.Left < line.Ideal(paneHeaderControls) - .5) return $"the controls were squeezed to {paneHeaderControls.ActualWidth:F1} of {line.Ideal(paneHeaderControls):F1}";
             foreach (var button in new[] { pluginButton, terminalButton, paneMenuButton }.OfType<Button>().Where(button => button.Visibility == Visibility.Visible))
             {
@@ -501,10 +498,7 @@ public sealed partial class MainWindow
                 if (left < -.5 || right > header.ActualWidth + .5 || button.ActualWidth < button.Width - .5) return $"the header button {AutomationProperties.GetAutomationId(button)} is cut: {left:F1}..{right:F1} of {header.ActualWidth:F1}";
             }
             // A text's own width is fractional while the width it asks for is rounded up to a whole point, so a point of slack is not a cut.
-            var titleCut = headerTitle.ActualWidth < line.Ideal(headerTitle) - 1.01; var wordCut = label.ActualWidth < line.Ideal(label) - 1.01;
-            if (titleCut && figures.ActualWidth > .5) return $"the title was trimmed to {headerTitle.ActualWidth:F1} of {line.Ideal(headerTitle):F1} while the figures still hold {figures.ActualWidth:F1}";
-            if (titleCut && headerTitle.ActualWidth > 12 && !headerTitle.IsTextTrimmed) return $"the title was cut to {headerTitle.ActualWidth:F1} of {line.Ideal(headerTitle):F1} without an ellipsis";
-            if (wordCut && headerTitle.ActualWidth > .5) return $"the state word was cut to {label.ActualWidth:F1} of {line.Ideal(label):F1} while the title still holds {headerTitle.ActualWidth:F1}";
+            if (label.ActualWidth < line.Ideal(label) - 1.01 && figures.ActualWidth > .5) return $"the state word was cut to {label.ActualWidth:F1} of {line.Ideal(label):F1} while the figures still hold {figures.ActualWidth:F1}";
             return null;
         }
     }
@@ -517,7 +511,7 @@ public sealed partial class MainWindow
 /// least width. Then the <see cref="Role.Shrink"/> texts, which trim with an ellipsis and share what is
 /// left as an HStack does: each up to an equal share, the shorter one served first. Only when those are
 /// gone, and the gaps they kept with them, does the <see cref="Role.Soft"/> state word go as well.
-/// <see cref="Role.Fixed"/> parts (the mark, the controls) are never squeezed, and what follows the Fill
+/// <see cref="Role.Fixed"/> parts (a status capsule, the controls) are never squeezed, and what follows the Fill
 /// part stays against the trailing edge. A Grid cannot do this: its Auto columns never give way, so a
 /// long title pushed the controls out of the pane.
 /// </summary>
@@ -607,8 +601,8 @@ internal sealed partial class PaneHeaderLine : Panel
         }
         // No room for the texts at all: they and the Fill part go, and their gaps with them. If the rest
         // still does not fit, the Soft part goes too, whole: a word cut mid-letter reads as a fault, and the
-        // mark before it says the same. What is then spare stays empty where the Fill part stood, so the
-        // parts after it keep the trailing edge: figures never show in a line that has lost its title.
+        // tab's mark above says the same. What is then spare stays empty where the Fill part stood, so the
+        // parts after it keep the trailing edge: figures never show in a line that has lost its words.
         var (sizes, spaces) = (widths, gaps);
         void Drop(int i)
         {
