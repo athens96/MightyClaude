@@ -70,19 +70,51 @@ enum MightyStructureInteractionDiagnostics {
                     + " expanded=\(memory.expanded.sorted()) key=\(window.isKeyWindow) active=\(NSApp.isActive)"
                     + " responder=\(window.firstResponder.map { String(describing: type(of: $0)) } ?? "nil")"
             }
-            /// The window point at the middle of a navigation control the view reported.
-            /// SwiftUI's global space is the hosting view's, top-down.
-            func control(_ name: String) -> CGPoint? {
-                guard let frame = memory.controlFrames[name], frame.width > 0, frame.height > 0 else { return nil }
-                return host.convert(CGPoint(x: frame.midX, y: host.isFlipped ? frame.midY : host.bounds.height - frame.midY), to: nil)
+            /// A navigation control the view reported, in window points (bottom-up), and
+            /// the point a click on it is posted at.
+            ///
+            /// SwiftUI's global space is not the hosting view's: on CI it counted from the
+            /// top of the window's frame, title bar included, so a point taken as the
+            /// hosting view's landed a title bar's height below the button. The page's
+            /// scroll view reports its global frame too ("page"), and the pan probe is a
+            /// native view with that very frame, so the probe's window frame maps the global
+            /// space onto the window, whatever its origin. The point is then taken from
+            /// AppKit's own hit test: the one nearest the control's middle whose press goes
+            /// to the hosting view around the page, not into the page.
+            func control(_ name: String) -> (point: CGPoint, frame: CGRect, detail: String)? {
+                guard let global = memory.controlFrames[name], global.width > 0, global.height > 0,
+                      let page = memory.controlFrames["page"], let probe, let scroll else { return nil }
+                let probeWindow = probe.convert(probe.bounds, to: nil)
+                let frame = CGRect(x: probeWindow.minX + global.minX - page.minX, y: probeWindow.maxY - (global.maxY - page.minY),
+                                   width: global.width, height: global.height)
+                let middle = CGPoint(x: frame.midX, y: frame.midY)
+                var candidates: [CGPoint] = []
+                var y = frame.minY + 2
+                while y <= frame.maxY - 2 {
+                    var x = frame.minX + 2
+                    while x <= frame.maxX - 2 { candidates.append(CGPoint(x: x, y: y)); x += 2 }
+                    y += 2
+                }
+                candidates.sort { hypot($0.x - middle.x, $0.y - middle.y) < hypot($1.x - middle.x, $1.y - middle.y) }
+                let point = candidates.first { candidate in
+                    guard let hit = probe.hitView(at: candidate), hit === host || hit.isDescendant(of: host) else { return false }
+                    return probe.target(at: candidate, in: scroll) == .outside
+                }
+                let detail = "global=\(NSStringFromRect(global)) pageGlobal=\(NSStringFromRect(page)) probeWindow=\(NSStringFromRect(probeWindow))"
+                    + " window=\(NSStringFromRect(frame)) point=\(point.map(NSStringFromPoint) ?? "none")"
+                    + " hit=\(point.flatMap { probe.hitView(at: $0) }.map { String(describing: type(of: $0)) } ?? "none")"
+                    + " content=\(NSStringFromRect(window.contentView?.frame ?? .zero))"
+                return point.map { ($0, frame, detail) }
+            }
+            func controls() -> String {
+                ["previous", "list", "next", "badge"].map { name in "\(name): " + (control(name)?.detail ?? "none") }.joined(separator: "; ")
             }
             /// A real click on a navigation control, outside the page's scroll view.
             func press(_ name: String) throws {
-                guard let point = control(name) else { throw MightyError("구조 보기의 \(name) 단추 자리를 모릅니다. " + state()) }
-                report[name + "Click"] = "point=\(NSStringFromPoint(point)) frame=\(NSStringFromRect(memory.controlFrames[name] ?? .zero))"
-                    + " hit=\(probe.map { $0.describe($0.hitView(at: point), in: scroll ?? NSScrollView()) } ?? "nil")"
-                try post(window, .leftMouseDown, at: point, number: 1)
-                try post(window, .leftMouseUp, at: point, number: 2)
+                guard let target = control(name) else { throw MightyError("구조 보기의 \(name) 단추 자리를 모릅니다. " + controls() + " " + state()) }
+                report[name + "Click"] = target.detail
+                try post(window, .leftMouseDown, at: target.point, number: 1)
+                try post(window, .leftMouseUp, at: target.point, number: 2)
             }
             try await store.waitForSmoke(timeout: 5, step: "structure fixture opens on the newest request, scrolls on both axes and follows its end", detail: state) {
                 probe = descendants(host, as: MightyStructurePanProbe.self).first
@@ -99,18 +131,20 @@ enum MightyStructureInteractionDiagnostics {
             report["opensOnNewestBoard"] = true
 
             // 0a. A real click on ◀ shows the request before.
-            try await store.waitForSmoke(timeout: 3, step: "the previous and list controls report their frames", detail: state) {
+            try await store.waitForSmoke(timeout: 3, step: "the previous and list controls report their frames", detail: { controls() + " " + state() }) {
                 control("previous") != nil && control("list") != nil && control("next") != nil && control("badge") == nil
             }
             try press("previous")
-            try await store.waitForSmoke(timeout: 3, step: "a click on the previous button shows request 2 of 4", detail: state) {
+            try await store.waitForSmoke(timeout: 3, step: "a click on the previous button shows request 2 of 4",
+                                         detail: { "click: \(report["previousClick"] ?? "") " + state() }) {
                 shown() == 2 && memory.navigation.chosen == runs[2].id && drawnRequests() == [2]
             }
             report["previousClickShowsOlderBoard"] = true
 
             // 0b. A real click on the title opens the list; an entry's own action shows that board.
             try press("list")
-            try await store.waitForSmoke(timeout: 3, step: "a click on the board title opens the list of boards", detail: state) { memory.listOpen }
+            try await store.waitForSmoke(timeout: 3, step: "a click on the board title opens the list of boards",
+                                         detail: { "click: \(report["listClick"] ?? "") " + state() }) { memory.listOpen }
             report["listClickOpensList"] = true
             // The entry's action, called as its button calls it: the list is a popover window
             // of its own, whose rows have no native view to click.
@@ -124,14 +158,16 @@ enum MightyStructureInteractionDiagnostics {
             // 0c. A new request while an older board is shown: the view stays, and the badge shows.
             runs.append(request(4, running: true, agents: 1))
             host.rootView = DockFixture(page: view())
-            try await store.waitForSmoke(timeout: 3, step: "a new request leaves the older board shown and shows the badge", detail: state) {
+            try await store.waitForSmoke(timeout: 3, step: "a new request leaves the older board shown and shows the badge",
+                                         detail: { controls() + " " + state() }) {
                 boards().count == 5 && shown() == 0 && drawnRequests() == [0] && memory.navigation.hasUnseen(in: boards()) && control("badge") != nil
             }
             report["newRequestKeepsOlderBoard"] = true
             report["newerBadgeShows"] = true
             // 0d. A real click on the badge shows the newest board, which follows new ones again.
             try press("badge")
-            try await store.waitForSmoke(timeout: 3, step: "a click on the badge shows the newest request", detail: state) {
+            try await store.waitForSmoke(timeout: 3, step: "a click on the badge shows the newest request",
+                                         detail: { "click: \(report["badgeClick"] ?? "") " + state() }) {
                 shown() == 4 && memory.navigation.chosen == nil && drawnRequests() == [4] && control("badge") == nil
             }
             report["badgeClickShowsNewest"] = true
