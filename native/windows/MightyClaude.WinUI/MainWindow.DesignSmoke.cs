@@ -143,7 +143,18 @@ public sealed partial class MainWindow
             $"{key} ({theme}): the sidebar surface must fill the window height; got row {Grid.GetRow(sidebarSurface)} span {Grid.GetRowSpan(sidebarSurface)} of {root.RowDefinitions.Count}, height {sidebarSurface.ActualHeight:F1} of {root.ActualHeight:F1}");
         RequireBrush(sidebarSurface, e => ((Border)e).Background, DesignToken.Sidebar, "the sidebar surface background", key: key);
         // The split view's divider is darker than both surfaces on the Mac: #CACECF by day, where the separator stands for it, and black by night.
-        RequireSplitLine(sidebarSurface, e => ((Border)e).BorderBrush, DesignToken.Ink, SeparatorOpacity, "the sidebar's trailing divider", key);
+        // A pointer resting over the grip on a shared desktop lights the divider as it should; that is checked as such, and the
+        // smoke never puts keyboard focus on the grip, so a divider lit by focus or a drag fails as before.
+        if (SidebarGripLit is "pointer")
+        {
+            options.TraceStartup($"smoke:{key}:{theme}:sidebar-divider-lit-by-pointer");
+            Require(ReferenceEquals(sidebarSurface.BorderBrush, brushes.Brush(DesignToken.Accent)), $"{key} ({theme}): the sidebar's divider under the pointer must be the accent; got {Describe(sidebarSurface.BorderBrush)}");
+        }
+        else
+        {
+            Require(SidebarGripLit is null, $"{key} ({theme}): the sidebar's grip must be at rest during the check; it is lit by {SidebarGripLit}");
+            RequireSplitLine(sidebarSurface, e => ((Border)e).BorderBrush, DesignToken.Ink, SeparatorOpacity, "the sidebar's trailing divider", key);
+        }
         Require(sidebarSurface.BorderThickness == new Thickness(0, 0, DesignMetrics.Stroke.Line, 0), $"{key} ({theme}): the sidebar divider must be Stroke.Line {DesignMetrics.Stroke.Line} on the trailing edge only; got {sidebarSurface.BorderThickness}");
         var column = root.ColumnDefinitions[0];
         Require(column.MinWidth == DesignMetrics.Layout.SidebarMin && column.MaxWidth == DesignMetrics.Layout.SidebarMax,

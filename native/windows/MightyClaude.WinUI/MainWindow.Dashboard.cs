@@ -75,21 +75,31 @@ public sealed partial class MainWindow
         AutomationProperties.SetName(grip, Locale.Get("sidebar.resize")); AutomationProperties.SetAutomationId(grip, "sidebar-resize"); ToolTipService.SetToolTip(grip, Locale.Get("sidebar.resizeTooltip"));
         var gripHost = sidebarGripHost = new ResizeCursorHost(grip, horizontal: true) { Width = 8, HorizontalAlignment = HorizontalAlignment.Right, Visibility = sidebarSurface.Visibility };
         Grid.SetRowSpan(gripHost, 3); root.Children.Add(gripHost);
-        var gripHovered = false;
-        void ShowGrip() => sidebarSurface.BorderBrush = gripHovered || grip.IsDragging || grip.FocusState == FocusState.Keyboard ? brushes.Brush(DesignToken.Accent) : SidebarEdge;
-        grip.PointerEntered += (_, _) => { gripHovered = true; ShowGrip(); }; grip.PointerExited += (_, _) => { gripHovered = false; ShowGrip(); };
-        grip.GotFocus += (_, _) => ShowGrip(); grip.LostFocus += (_, _) => ShowGrip(); grip.DragCompleted += (_, _) => ShowGrip();
+        sidebarGrip = grip;
+        void ShowGrip() => sidebarSurface.BorderBrush = SidebarGripLit is not null ? brushes.Brush(DesignToken.Accent) : SidebarEdge;
+        grip.PointerEntered += (_, _) => { sidebarGripHovered = true; ShowGrip(); }; grip.PointerExited += (_, _) => { sidebarGripHovered = false; ShowGrip(); };
+        // As the first tab stop of the window, the grip is where WinUI puts focus when a focused menu, popup or field goes away,
+        // marked as keyboard focus when a key was the last input. Only a grip the user tabbed or arrowed to lights the divider
+        // and takes the arrow keys, so a closed menu neither leaves the divider blue nor turns ← → into a resize.
+        grip.GettingFocus += (_, args) => sidebarGripNavigated = args.FocusState == FocusState.Keyboard && args.Direction != FocusNavigationDirection.None;
+        grip.GotFocus += (_, _) => ShowGrip(); grip.LostFocus += (_, _) => { sidebarGripNavigated = false; ShowGrip(); }; grip.DragCompleted += (_, _) => ShowGrip();
         grip.DragStarted += (_, _) => SidebarGripStarted();
         grip.DragDelta += async (_, args) => await SidebarGripDragged(args.HorizontalChange);
         grip.DragCompleted += async (_, args) => await SidebarGripReleased(args.Canceled);
         grip.DoubleTapped += async (_, args) => { args.Handled = true; await Act(() => service.UpdateAsync(s => s with { SidebarWidth = DesignMetrics.Layout.SidebarDefault })); root.ColumnDefinitions[0].Width = new(DesignMetrics.Layout.SidebarDefault); };
         grip.KeyDown += async (_, args) =>
         {
-            if (args.Key is not (Windows.System.VirtualKey.Left or Windows.System.VirtualKey.Right)) return;
+            if (args.Key is not (Windows.System.VirtualKey.Left or Windows.System.VirtualKey.Right) || !sidebarGripNavigated) return;
             args.Handled = true; var width = Math.Clamp(service.Snapshot.SidebarWidth + (args.Key == Windows.System.VirtualKey.Right ? 10 : -10), DesignMetrics.Layout.SidebarMin, DesignMetrics.Layout.SidebarMax);
             await Act(() => service.UpdateAsync(s => s with { SidebarWidth = width })); root.ColumnDefinitions[0].Width = new(width);
         };
     }
+    private Thumb? sidebarGrip;
+    private bool sidebarGripHovered;
+    /// <summary>Whether the grip's keyboard focus came from the user's tab or arrow navigation, not from WinUI's fallback.</summary>
+    private bool sidebarGripNavigated;
+    /// <summary>Why the sidebar's divider is drawn in the accent (the grip pointed at, dragged or navigated to), or null at rest.</summary>
+    private string? SidebarGripLit => sidebarGrip is not { } grip ? null : grip.IsDragging ? "dragging" : sidebarGripNavigated && grip.FocusState == FocusState.Keyboard ? "keyboard" : sidebarGripHovered ? "pointer" : null;
     /// <summary>The sidebar column's width when the grip was pressed, and how far the pointer has gone since.</summary>
     private double sidebarGripStart, sidebarGripTravel;
     /// <summary>Whether the press has gone past <see cref="DividerSlack"/> and become a drag.</summary>
