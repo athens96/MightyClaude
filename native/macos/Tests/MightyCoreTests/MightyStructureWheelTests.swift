@@ -183,6 +183,24 @@ struct MightyStructureWheelTests {
         #expect(Wheel.userMoving(scrollPhase: false, panning: false, panReleasedAt: 0, wheel: wheel, now: 100))
     }
 
+    @Test func aVerticalWheelMovesTheColumnAndASidewaysOneThePage() {
+        // Under the pointer: the column, then the page; each confined to its own axis.
+        let page = MightyStructurePan.confined(minimum: .zero, maximum: CGPoint(x: 240, y: 0), current: .zero, to: .horizontal)
+        let column = MightyStructurePan.confined(minimum: .zero, maximum: CGPoint(x: 0, y: 1_800), current: CGPoint(x: 0, y: 900), to: .vertical)
+        func takers(_ delta: CGPoint, axis: Wheel.Axis?, columnAt: CGPoint) -> Int {
+            Wheel.taker(canMove: [Wheel.canMove(current: columnAt, delta: delta, axis: axis, minimum: column.minimum, maximum: column.maximum),
+                                  Wheel.canMove(current: .zero, delta: delta, axis: axis, minimum: page.minimum, maximum: page.maximum)])
+        }
+        #expect(takers(CGPoint(x: -2, y: 30), axis: .vertical, columnAt: CGPoint(x: 0, y: 900)) == 0)
+        #expect(takers(CGPoint(x: -15, y: 1), axis: .horizontal, columnAt: CGPoint(x: 0, y: 900)) == 1)
+        // A mouse wheel's sideways step has no axis: the column cannot move that way, the page takes it.
+        #expect(takers(CGPoint(x: -20, y: 0), axis: nil, columnAt: CGPoint(x: 0, y: 900)) == 1)
+        // A column at its top shows nothing more above: the page takes the scroll and,
+        // moving sideways only, moves nothing.
+        #expect(takers(CGPoint(x: 0, y: 30), axis: .vertical, columnAt: .zero) == 1)
+        #expect(Wheel.origin(current: .zero, delta: CGPoint(x: 0, y: 30), axis: .vertical, minimum: page.minimum, maximum: page.maximum) == .zero)
+    }
+
     @Test func followNeverScrollsWhileAWheelGestureIsGoing() {
         // Symptom: a trackpad scroll on the 구조 page never reached the system's scroll
         // phase, so a page that grew under it was read as a layout and followed back.

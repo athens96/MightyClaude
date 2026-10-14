@@ -65,6 +65,26 @@ struct MightyStructurePanTests {
         #expect(MightyStructurePan.isDrag(from: start, to: CGPoint(x: 100, y: 96)))
     }
 
+    @Test func aDragInAColumnMovesTheColumnUpAndDownAndThePageSideways() {
+        // The 보드 page scrolls sideways only, each column up and down only.
+        let page = MightyStructurePan.confined(minimum: .zero, maximum: CGPoint(x: 240, y: 30), current: CGPoint(x: 100, y: 0), to: .horizontal)
+        #expect(page.minimum == CGPoint(x: 0, y: 0))
+        #expect(page.maximum == CGPoint(x: 240, y: 0))
+        let column = MightyStructurePan.confined(minimum: .zero, maximum: CGPoint(x: 4, y: 1_800), current: CGPoint(x: 0, y: 900), to: .vertical)
+        #expect(column.minimum == CGPoint(x: 0, y: 0))
+        #expect(column.maximum == CGPoint(x: 0, y: 1_800))
+        // The pointer moves 40 left and 70 down: the page shows 40 more to the right, the
+        // column 70 more above, each keeping its other axis.
+        let press = CGPoint(x: 300, y: 200), cursor = CGPoint(x: 260, y: 270)
+        #expect(MightyStructurePan.origin(start: CGPoint(x: 100, y: 0), press: press, cursor: cursor,
+                                          minimum: page.minimum, maximum: page.maximum) == CGPoint(x: 140, y: 0))
+        #expect(MightyStructurePan.origin(start: CGPoint(x: 0, y: 900), press: press, cursor: cursor,
+                                          minimum: column.minimum, maximum: column.maximum) == CGPoint(x: 0, y: 830))
+        // A column that cannot move, and a page that fits, keep every press.
+        let still = MightyStructurePan.confined(minimum: .zero, maximum: CGPoint(x: 0, y: 1_800), current: .zero, to: .horizontal)
+        #expect(!MightyStructurePan.scrollable(minimum: still.minimum, maximum: still.maximum))
+    }
+
     @Test func aDragPanAwayStopsFollowingAndIsNeverFought() {
         // The page follows the newest card at its end, 2_000pt tall in a 600pt pane.
         var watch = MightyGraphFollow.PageWatch()
