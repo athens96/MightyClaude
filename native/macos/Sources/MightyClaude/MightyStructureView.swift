@@ -12,9 +12,9 @@ final class MightyStructureMemory: ObservableObject {
     @Published var navigation = MightyStructure.Navigation()
     /// The list of boards is open.
     @Published var listOpen = false
-    /// Where the navigation controls sit in the window's SwiftUI space, by name
-    /// ("previous", "next", "list", "badge"), for the GUI smoke: a SwiftUI button has no
-    /// native view to find it by. Not published.
+    /// Where the navigation controls sit in SwiftUI's global space, by name ("previous",
+    /// "next", "list", "badge"), and the page's scroll view ("page"), for the GUI smoke: a
+    /// SwiftUI button has no native view to find it by. Not published.
     var controlFrames: [String: CGRect] = [:]
     /// Whether the page follows the newest board's end (`MightyGraphFollow.PageWatch`).
     /// Not published: scrolling redraws nothing.
@@ -391,6 +391,10 @@ struct MightyStructureView: View {
                 .coordinateSpace(name: Self.scrollSpace)
                 // Dragging the page's empty space moves it, as in the diagram.
                 .background(MightyStructurePanning(sessionID: sessionID, memory: memory))
+                // The page's own frame in the same space as the controls' frames: the GUI
+                // smoke maps that space onto the window through the pan probe, a native view
+                // with this very frame.
+                .background(controlMark("page"))
                 // The pane's height joins the same report: a taller composer moves no
                 // content, yet may hide the board's end.
                 .background(GeometryReader { pane in
