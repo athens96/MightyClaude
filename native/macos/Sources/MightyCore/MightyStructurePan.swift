@@ -5,11 +5,15 @@ import Foundation
 /// empty canvas moves its camera: the point that was grabbed stays under the
 /// pointer, and the page stops at its edges as a scroll does.
 ///
+/// The board's page moves sideways only and each column up and down on its own
+/// (`confined`): a drag in a column moves that column by its vertical part and the page
+/// by its horizontal part.
+///
 /// A press on selectable text or a native control is theirs: text selects, a scroller
 /// scrolls. Any other press on the page waits until it moves `clickSlop` points; a
 /// shorter press is a click and goes on to what was pressed (a fold toggle, a reveal
-/// button), so buttons click as they always did. A pan is the user's own move, as a
-/// wheel scroll is (`MightyGraphFollow.PageWatch`).
+/// button), so buttons click as they always did. A pan is the user's own move of the
+/// column, as a wheel scroll is (`MightyGraphFollow.ColumnWatch`).
 public enum MightyStructurePan {
     /// Screen points a press moves before it is a drag.
     public static let clickSlop: CGFloat = 3
@@ -54,6 +58,15 @@ public enum MightyStructurePan {
     public static func origin(start: CGPoint, press: CGPoint, cursor: CGPoint, minimum: CGPoint, maximum: CGPoint) -> CGPoint {
         CGPoint(x: clamp(start.x - (cursor.x - press.x), minimum.x, maximum.x, keeping: start.x),
                 y: clamp(start.y - (cursor.y - press.y), minimum.y, maximum.y, keeping: start.y))
+    }
+
+    /// The origins a scroll view of the board may take when it moves along `axis` only,
+    /// the other axis held where it is (`current`): the page sideways, a column up and down.
+    public static func confined(minimum: CGPoint, maximum: CGPoint, current: CGPoint,
+                                to axis: MightyStructureWheel.Axis) -> (minimum: CGPoint, maximum: CGPoint) {
+        axis == .horizontal
+            ? (CGPoint(x: minimum.x, y: current.y), CGPoint(x: maximum.x, y: current.y))
+            : (CGPoint(x: current.x, y: minimum.y), CGPoint(x: current.x, y: maximum.y))
     }
 
     private static func clamp(_ value: CGFloat, _ low: CGFloat, _ high: CGFloat, keeping current: CGFloat) -> CGFloat {
