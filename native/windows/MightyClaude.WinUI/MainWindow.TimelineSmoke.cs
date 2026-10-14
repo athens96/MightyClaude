@@ -116,6 +116,15 @@ public sealed partial class MainWindow
                     "a new request leaves the older board shown and shows the badge");
                 Invoke(structureBadge!);
                 await WaitUI(() => structureBoardId == newer.Id && structureNavigation.Chosen is null && structureBadge?.Visibility == Visibility.Collapsed, "the badge shows the newest request");
+                // The running request wears the diagram's running marks (M/MightyStructureView.swift:285, 619, 628): the capsules beside the
+                // board's status and its 실행 card's, waved by the pane's one timer, and the border marching round that card in its fitted 9/7 dashes.
+                AnimationsEnabledOverride = true; RefreshMightyView(Session);
+                var running = "execution:" + newer.Id;
+                await WaitUI(() => structureActivitySets.ContainsKey(StructureHeaderMarks) && structureActivitySets.ContainsKey(running) && graphActivityTimer?.IsEnabled == true
+                    && structureOutlines.TryGetValue(running, out var edge) && edge.Kind == MightyGraphActivity.Marching && edge.March?.GetCurrentState() == Microsoft.UI.Xaml.Media.Animation.ClockState.Active
+                    && edge.Line.StrokeDashArray?.ToArray() is [var dash, var gap] && Math.Abs(dash / gap - 9.0 / 7) < 1e-6,
+                    "a running request's board shows the capsules beside its status and its run card's, and the marching border round that card");
+                AnimationsEnabledOverride = null; RefreshMightyView(Session);
                 // Back to the request with the sub-agent through the list, and its result's own button shows that block in the diagram.
                 await OpenStructureList(3);
                 Invoke(StructureEntry(latest.Id));
@@ -152,7 +161,7 @@ public sealed partial class MainWindow
             }
             finally
             {
-                CloseReferencePreview();
+                AnimationsEnabledOverride = null; CloseReferencePreview();
                 // The board the smoke left shown is not the pane's: the restored pane opens on its newest.
                 structureNavigation.ShowNewest(structureBoards);
                 await owner.Act(async () => { await Change(p => p with { GraphRuns = original.GraphRuns, AgentViewMode = original.AgentViewMode, GraphViewMode = original.GraphViewMode }); Refresh(); });

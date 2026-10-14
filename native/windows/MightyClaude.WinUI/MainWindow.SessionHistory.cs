@@ -121,8 +121,10 @@ public sealed partial class MainWindow
             // cached native documents through the service's event delegate.
             owner.service.RunEventReceived -= OnGraphRunEvent;
             foreach (var outline in graphOutlineViews.Values) outline.Stop?.Invoke();
+            foreach (var edge in structureOutlines.Values) edge.March?.Stop();
+            structureOutlines.Clear();
             graphDotGrid?.Close(); graphDotGrid = null;
-            graphActivityTimer?.Stop(); graphActivitySets.Clear();
+            graphActivityTimer?.Stop(); graphActivitySets.Clear(); structureActivitySets.Clear();
             StopOuroboros();
             timelineHeads.Clear(); timelineRows.Clear(); timelineResults.Clear();
         }
