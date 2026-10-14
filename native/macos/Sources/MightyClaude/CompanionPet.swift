@@ -9,17 +9,19 @@ struct CompanionPet: Identifiable {
     let pixelHeight: Int
     let source: URL
     /// Decoded once per pet and kept for the app's life (at most four pets), so an
-    /// animation tick never decodes the sheet again; `clearCache` drops them on reload.
+    /// animation tick never decodes the sheet again, not even a broken or mis-sized one
+    /// (kept as nine empty rows); `clearCache` drops them on reload.
     @MainActor private static var frameStore: [String: [[NSImage]]] = [:]
     @MainActor private static var frameStoreOrder: [String] = []
     @MainActor static func clearCache() { frameStore.removeAll(); frameStoreOrder.removeAll() }
     @MainActor var frames: [[NSImage]] {
         let key = source.path
         if let stored = Self.frameStore[key] { return stored }
-        guard let sheet = PetSpriteFrames.decode(source),
-              sheet.width == pixelWidth, sheet.height == pixelHeight else { return Array(repeating: [], count: 9) }
-        let rows = PetSpriteFrames.slice(sheet, frameCounts: Self.frameCounts, cell: CGSize(width: 192, height: 208))
-            .map { row in row.map { NSImage(cgImage: $0, size: NSSize(width: 192, height: 208)) } }
+        let rows: [[NSImage]]
+        if let sheet = PetSpriteFrames.decode(source), sheet.width == pixelWidth, sheet.height == pixelHeight {
+            rows = PetSpriteFrames.slice(sheet, frameCounts: Self.frameCounts, cell: CGSize(width: 192, height: 208))
+                .map { row in row.map { NSImage(cgImage: $0, size: NSSize(width: 192, height: 208)) } }
+        } else { rows = Array(repeating: [], count: 9) }
         Self.frameStore[key] = rows
         Self.frameStoreOrder.append(key)
         while Self.frameStoreOrder.count > 4 { Self.frameStore[Self.frameStoreOrder.removeFirst()] = nil }

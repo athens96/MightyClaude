@@ -247,6 +247,8 @@ final class AppStore: ObservableObject, DelegationHost {
     private var saveTask: Task<Void, Never>?
     /// When the latest save began writing; the next one keeps `SaveSchedule`'s gap from it.
     private var lastSaveStart: ContinuousClock.Instant?
+    /// When the save now waiting (not yet writing) was first asked for; see `SaveSchedule.keepsPending`.
+    private var pendingSaveSince: ContinuousClock.Instant?
     private var pollTask: Task<Void, Never>?
     private var runtimeTask: Task<Void, Never>?
     @Published private(set) var pendingRuns = Set<String>()
@@ -1234,11 +1236,16 @@ final class AppStore: ObservableObject, DelegationHost {
 
     private func scheduleSave() {
         guard isLoaded, canSave, !ending else { return }
+        let now = ContinuousClock.now
+        let sinceLastStart = lastSaveStart.map { (now - $0) / .seconds(1) }
+        if let pending = pendingSaveSince, SaveSchedule.keepsPending(sinceLastStart: sinceLastStart, sinceFirstRequest: (now - pending) / .seconds(1)) { return }
         saveTask?.cancel()
-        let delay = SaveSchedule.delay(sinceLastStart: lastSaveStart.map { (ContinuousClock.now - $0) / .seconds(1) })
+        pendingSaveSince = pendingSaveSince ?? now
+        let delay = SaveSchedule.delay(sinceLastStart: sinceLastStart)
         saveTask = Task { [weak self] in
             do { try await Task.sleep(for: .seconds(delay)) } catch { return }
             guard let self, !Task.isCancelled else { return }
+            self.pendingSaveSince = nil
             self.lastSaveStart = .now
             do { try await self.repository.save(self.snapshot) }
             catch { if !Task.isCancelled { self.error = L("store.error.saveFailed", ["error": error.localizedDescription]) } }
@@ -1250,6 +1257,7 @@ final class AppStore: ObservableObject, DelegationHost {
         saveTask?.cancel()
         await saveTask?.value
         saveTask = nil
+        pendingSaveSince = nil
         lastSaveStart = .now
         try await repository.save(snapshot)
     }

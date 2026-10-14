@@ -304,8 +304,10 @@ public actor StateRepository {
         return output
     }
 
-    /// One session as `normalize` stores it, given its log and graph shares. It reads
-    /// nothing outside its arguments; `date` matters only for a running session.
+    /// One session as `normalize` stores it, given its log and graph shares. It reads no
+    /// other app state; `date` matters only for a running session. Not strictly a pure
+    /// function of its arguments: a settled Mighty graph run whose result has no
+    /// timestamp of its own gets the current time (`MightyGraphRun.refreshResult()`).
     nonisolated static func normalizedSession(_ original: RunSession, logBudget: Int, graphBudget: Int, restoring: Bool,
                                               at date: Date, knownStyleIds: Set<String>?) -> RunSession {
         var session = original
@@ -404,5 +406,15 @@ public enum SaveSchedule {
     public static func delay(sinceLastStart: TimeInterval?, debounce: TimeInterval = 0.22, minimumGap: TimeInterval = 1.5) -> TimeInterval {
         guard let since = sinceLastStart, since.isFinite else { return debounce }
         return max(debounce, minimumGap - max(0, since))
+    }
+
+    /// Whether a save that is already waiting stays as it is when another change comes,
+    /// instead of being cancelled and scheduled again. Without a cap, changes arriving
+    /// faster than the debounce would push the save back for ever; so once `minimumGap`
+    /// has passed since the last save began, or since the waiting save was first asked
+    /// for, it is left to fire (it writes the state as it is then, the new change too).
+    public static func keepsPending(sinceLastStart: TimeInterval?, sinceFirstRequest: TimeInterval, minimumGap: TimeInterval = 1.5) -> Bool {
+        if let since = sinceLastStart, since.isFinite, since >= minimumGap { return true }
+        return sinceFirstRequest.isFinite && sinceFirstRequest >= minimumGap
     }
 }

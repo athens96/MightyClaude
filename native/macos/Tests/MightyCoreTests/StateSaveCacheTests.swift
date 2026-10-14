@@ -16,6 +16,22 @@ struct StateSaveCacheTests {
         #expect(SaveSchedule.delay(sinceLastStart: 0.3, debounce: 0.1, minimumGap: 2) == 1.7)
     }
 
+    @Test func aWaitingSaveIsNotPushedBackPastTheGap() {
+        // Inside the gap and freshly asked for: a new change may restart the debounce.
+        #expect(!SaveSchedule.keepsPending(sinceLastStart: 0.5, sinceFirstRequest: 0.1))
+        #expect(!SaveSchedule.keepsPending(sinceLastStart: nil, sinceFirstRequest: 1.49))
+        // The gap since the last save began has passed: the waiting save fires.
+        #expect(SaveSchedule.keepsPending(sinceLastStart: 1.5, sinceFirstRequest: 0))
+        #expect(SaveSchedule.keepsPending(sinceLastStart: 60, sinceFirstRequest: 0.05))
+        // Changes every 0.1 s with nothing saved yet: capped 1.5 s after the first request.
+        #expect(SaveSchedule.keepsPending(sinceLastStart: nil, sinceFirstRequest: 1.5))
+        #expect(SaveSchedule.keepsPending(sinceLastStart: 0.2, sinceFirstRequest: 3))
+        // A clock that went backwards or a broken value never keeps it.
+        #expect(!SaveSchedule.keepsPending(sinceLastStart: -5, sinceFirstRequest: -5))
+        #expect(!SaveSchedule.keepsPending(sinceLastStart: .nan, sinceFirstRequest: .nan))
+        #expect(SaveSchedule.keepsPending(sinceLastStart: 0.3, sinceFirstRequest: 2, minimumGap: 2))
+    }
+
     private static let date = Date(timeIntervalSince1970: 1_790_000_000)
 
     private func logs(_ prefix: String, count: Int, size: Int) -> [LogEntry] {
