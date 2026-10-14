@@ -304,6 +304,54 @@ struct MightyStructureFollowTests {
         #expect(!watch.following)
     }
 
+    @Test func aUsersMoveIsJudgedWhenItHappensNotWhenItsReportArrives() {
+        // Symptom (CI, 구조 trackpad smoke): the page moved 180pt up from the newest card,
+        // yet kept following. Its report arrived late, after the move's grace, together
+        // with a layout change, and was judged as layout.
+        var watch = MightyGraphFollow.PageWatch()
+        _ = watch.observe(page(origin: 1_523, visible: 577, document: 2_100, newest: 2_091), userScrolling: false)
+        #expect(watch.following)
+        var blind = watch
+        // The late report: moved and laid out at once, no move known. Following stays on,
+        // and the reader is pulled back to the newest card.
+        #expect(blind.observe(page(origin: 1_343, visible: 577, document: 2_130, newest: 2_121), userScrolling: false) == .bottom)
+        #expect(blind.following)
+        // The probe tells the rule the moment it moves the page.
+        watch.userScrolled(byY: -180)
+        #expect(!watch.following)
+        // The same late report then keeps the reader where they are.
+        #expect(watch.observe(page(origin: 1_343, visible: 577, document: 2_130, newest: 2_121), userScrolling: false) == nil)
+        #expect(!watch.following)
+    }
+
+    @Test func aUsersMoveNearTheNewestCardKeepsFollowing() {
+        var watch = MightyGraphFollow.PageWatch()
+        _ = watch.observe(page(origin: 1_400, document: 2_000, newest: 1_992), userScrolling: false)
+        // 20pt up: the newest card's bottom is hidden by less than the slack.
+        watch.userScrolled(byY: -20)
+        #expect(watch.following)
+        // A sideways move keeps the state it had.
+        watch.userScrolled(byY: 0)
+        #expect(watch.following)
+        // Its report is judged as the scroll it is: still at the newest card, nothing moves.
+        // A growth after it is followed.
+        #expect(watch.observe(page(origin: 1_380, document: 2_000, newest: 1_992), userScrolling: false) == nil)
+        #expect(watch.observe(page(origin: 1_380, document: 2_300, newest: 2_292), userScrolling: false) == .bottom)
+        #expect(watch.following)
+    }
+
+    @Test func aUsersMoveBeforeAnyReportJudgesNothing() {
+        var watch = MightyGraphFollow.PageWatch()
+        watch.userScrolled(byY: -300)
+        #expect(watch.following)
+        // Back from a user move, a later return to the newest card follows again.
+        _ = watch.observe(page(origin: 1_400, document: 2_000, newest: 1_992), userScrolling: false)
+        watch.userScrolled(byY: -300)
+        #expect(!watch.following)
+        watch.userScrolled(byY: 300)
+        #expect(watch.following)
+    }
+
     @Test func aTallerComposerKeepsTheNewestCardAboveIt() {
         var watch = MightyGraphFollow.PageWatch()
         _ = watch.observe(page(origin: 1_400, document: 2_000, newest: 1_992), userScrolling: false)

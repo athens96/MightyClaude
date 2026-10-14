@@ -300,8 +300,17 @@ final class MightyStructurePanProbe: NSView {
         let next = MightyStructureWheel.origin(current: clip.bounds.origin, delta: Self.topDown(delta, in: target), axis: axis,
                                                minimum: range.minimum, maximum: range.maximum)
         guard next != clip.bounds.origin else { return }
+        let previous = clip.bounds.origin
         clip.scroll(to: next)
         target.reflectScrolledClipView(clip)
+        if target === page { judgeFollow(page, from: previous) }
+    }
+
+    /// The user moved the page: the follow rule judges it now (`PageWatch.userScrolled`),
+    /// not when the page's report of it arrives.
+    private func judgeFollow(_ scroll: NSScrollView, from previous: CGPoint) {
+        let moved = scroll.contentView.bounds.origin.y - previous.y
+        memory?.follow.userScrolled(byY: Double(scroll.contentView.isFlipped ? moved : -moved))
     }
 
     private func pan(_ scroll: NSScrollView, at: CGPoint, origin: CGPoint, to point: CGPoint) {
@@ -309,8 +318,10 @@ final class MightyStructurePanProbe: NSView {
         let range = Self.originRange(clip)
         let next = MightyStructurePan.origin(start: origin, press: at, cursor: point, minimum: range.minimum, maximum: range.maximum)
         guard next != clip.bounds.origin else { return }
+        let previous = clip.bounds.origin
         clip.scroll(to: next)
         scroll.reflectScrolledClipView(clip)
+        judgeFollow(scroll, from: previous)
     }
 
     private func replay(_ down: NSEvent, _ up: NSEvent) {

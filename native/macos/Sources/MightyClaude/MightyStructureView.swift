@@ -26,6 +26,10 @@ final class MightyStructureMemory: ObservableObject {
     /// The page's wheel and trackpad gestures, which `MightyStructurePanning` moves the
     /// page by: the system never sees them, so it reports no scroll for them.
     var wheel = MightyStructureWheel.Tracker()
+    /// For the GUI diagnostics: page reports judged so far, and the last one's origin,
+    /// time and whether it was judged as the user's move.
+    var reports = 0
+    var lastReport: (originY: Double, at: TimeInterval, userMoving: Bool)?
     /// The page is moving under the user's hand: a scroll, a drag or the moment after it
     /// (`MightyStructurePan.releaseGrace`), or a wheel or trackpad gesture still going.
     var userMoving: Bool {
@@ -119,7 +123,10 @@ struct MightyStructureView: View {
                     let newest = report.newest?.id == newestRunID ? report.newest.map { Double($0.bottom - content.minY) } : nil
                     let page = MightyGraphFollow.Page(originY: Double(-content.minY), visibleHeight: Double(visible),
                                                       documentHeight: Double(content.height), newestID: newestRunID, newestBottom: newest)
-                    scroll(memory.follow.observe(page, userScrolling: memory.userMoving), proxy)
+                    let moving = memory.userMoving
+                    memory.reports += 1
+                    memory.lastReport = (page.originY, ProcessInfo.processInfo.systemUptime, moving)
+                    scroll(memory.follow.observe(page, userScrolling: moving), proxy)
                 }
                 .onAppear { scroll(memory.follow.appeared(newestID: newestRunID), proxy) }
                 // A new request is the user's own: shown, and followed from then on.

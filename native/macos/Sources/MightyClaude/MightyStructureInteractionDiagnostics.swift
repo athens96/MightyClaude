@@ -229,19 +229,25 @@ enum MightyStructureInteractionDiagnostics {
             let dockStart = dock.contentView.bounds.origin
             func wheelState() -> String {
                 "dock=\(NSStringFromPoint(dock.contentView.bounds.origin)) dockStart=\(NSStringFromPoint(dockStart))"
-                    + " pageWheels=\(probe.pageWheels) innerWheels=\(probe.innerWheels) userMoving=\(memory.userMoving) " + state()
+                    + " pageWheels=\(probe.pageWheels) innerWheels=\(probe.innerWheels) userMoving=\(memory.userMoving)"
+                    + " reports=\(memory.reports) lastReport=" + (memory.lastReport.map { String(format: "{originY=%.1f age=%.3fs userMoving=%@}", $0.originY,
+                        ProcessInfo.processInfo.systemUptime - $0.at, $0.userMoving.description) } ?? "nil") + " " + state()
             }
             func dockStill() -> Bool { !changed(dock.contentView.bounds.origin, dockStart) }
             let wheelPans = probe.pans
-            try await store.waitForSmoke(timeout: 3, step: "page back at its end follows the newest card before the wheel", detail: wheelState) {
-                let end = range().maximum.y
-                guard memory.follow.following, abs(origin().y - end) < 1, abs(origin().x - range().minimum.x) < 1 else {
-                    scroll.contentView.scroll(to: CGPoint(x: range().minimum.x, y: abs(origin().y - end) < 1 ? end - 40 : end))
-                    scroll.reflectScrolledClipView(scroll.contentView)
-                    return false
+            /// The page back at its end and left edge, following the newest card again.
+            func followAtEnd(_ step: String) async throws {
+                try await store.waitForSmoke(timeout: 3, step: step, detail: wheelState) {
+                    let end = range().maximum.y
+                    guard memory.follow.following, abs(origin().y - end) < 1, abs(origin().x - range().minimum.x) < 1 else {
+                        scroll.contentView.scroll(to: CGPoint(x: range().minimum.x, y: abs(origin().y - end) < 1 ? end - 40 : end))
+                        scroll.reflectScrolledClipView(scroll.contentView)
+                        return false
+                    }
+                    return true
                 }
-                return true
             }
+            try await followAtEnd("page back at its end follows the newest card before the trackpad")
             try await settle(store, scroll, step: "structure page settles before the trackpad scroll", detail: wheelState)
             // 5a. Fingers moving down over empty page space, drifting a little sideways, then
             // momentum: the page shows 180pt more above and keeps to the vertical axis.
@@ -303,26 +309,26 @@ enum MightyStructureInteractionDiagnostics {
                 throw MightyError("트랙패드로 옮긴 구조 보기가 700ms 안에 되돌아갔습니다. reader=\(NSStringFromPoint(wheelReader)) " + wheelState())
             }
             report["trackpadScrollNotPulledBack"] = true
-            // 5d. A mouse wheel's steps, which count lines, over a card's text: three steps
-            // down and two to the left.
+            // 5d. A mouse wheel's steps, which count lines, over a card's text, from the end
+            // while following: four steps up and two to the right stop following.
+            try await followAtEnd("page back at its end follows the newest card before the mouse wheel")
             try await settle(store, scroll, step: "structure page settles before the mouse wheel", detail: wheelState)
             guard let stepField = selectableField(in: scroll, minimumWidth: 140) else { throw MightyError("마우스 휠을 굴릴 구조 본문이 화면에 없습니다. " + wheelState()) }
             let stepFieldFrame = scroll.convert(stepField.bounds, from: stepField)
             let stepPoint = scroll.convert(CGPoint(x: stepFieldFrame.minX + 24, y: stepFieldFrame.minY + 7), to: nil)
             let stepStart = origin()
             let lineY = scroll.verticalLineScroll, lineX = scroll.horizontalLineScroll
-            let expected = CGPoint(x: stepStart.x - 4 * lineX, y: stepStart.y + 6 * lineY)
-            guard lineX > 0, lineY > 0, expected.x >= range().minimum.x, expected.y <= range().maximum.y else {
+            let expected = CGPoint(x: stepStart.x + 4 * lineX, y: stepStart.y - 8 * lineY)
+            guard memory.follow.following, lineX > 0, lineY > 0, expected.x <= range().maximum.x, expected.y >= range().minimum.y else {
                 throw MightyError("마우스 휠을 굴릴 여유가 없습니다. expected=\(NSStringFromPoint(expected)) lines=(\(lineX),\(lineY)) " + wheelState())
             }
-            report["mouseWheel"] = try MightyGraphInteractionDiagnostics.postWheel(window: window, at: stepPoint, dy: -2, continuous: false)
-            try MightyGraphInteractionDiagnostics.postWheel(window: window, at: stepPoint, dy: -2, continuous: false)
-            try MightyGraphInteractionDiagnostics.postWheel(window: window, at: stepPoint, dy: -2, continuous: false)
-            try MightyGraphInteractionDiagnostics.postWheel(window: window, at: stepPoint, dx: 2, continuous: false)
-            try MightyGraphInteractionDiagnostics.postWheel(window: window, at: stepPoint, dx: 2, continuous: false)
-            try await store.waitForSmoke(timeout: 3, step: "mouse wheel steps move the page by their lines on both axes",
+            report["mouseWheel"] = try MightyGraphInteractionDiagnostics.postWheel(window: window, at: stepPoint, dy: 2, continuous: false)
+            for _ in 0..<3 { try MightyGraphInteractionDiagnostics.postWheel(window: window, at: stepPoint, dy: 2, continuous: false) }
+            try MightyGraphInteractionDiagnostics.postWheel(window: window, at: stepPoint, dx: -2, continuous: false)
+            try MightyGraphInteractionDiagnostics.postWheel(window: window, at: stepPoint, dx: -2, continuous: false)
+            try await store.waitForSmoke(timeout: 3, step: "mouse wheel steps move the page by their lines on both axes and stop following",
                                          detail: { "start=\(NSStringFromPoint(stepStart)) expected=\(NSStringFromPoint(expected)) lines=(\(lineX),\(lineY)) " + wheelState() }) {
-                abs(origin().x - expected.x) <= 2 && abs(origin().y - expected.y) <= 2
+                abs(origin().x - expected.x) <= 2 && abs(origin().y - expected.y) <= 2 && !memory.follow.following
             }
             let wheelEnd = origin()
             try await Task.sleep(for: .milliseconds(700))
@@ -330,6 +336,7 @@ enum MightyStructureInteractionDiagnostics {
                 throw MightyError("마우스 휠로 옮긴 구조 보기가 되돌아갔거나 창 배치가 움직였습니다. end=\(NSStringFromPoint(wheelEnd)) " + wheelState())
             }
             report["mouseWheelMovesPageOnBothAxes"] = true
+            report["mouseWheelStopsFollowing"] = true
             report["wheelGeometry"] = ["trackpadStart": NSStringFromPoint(trackpadStart), "sidewaysStart": NSStringFromPoint(sidewaysStart),
                                        "wheelReader": NSStringFromPoint(wheelReader), "stepStart": NSStringFromPoint(stepStart),
                                        "stepEnd": NSStringFromPoint(wheelEnd), "lines": "\(lineX),\(lineY)",
