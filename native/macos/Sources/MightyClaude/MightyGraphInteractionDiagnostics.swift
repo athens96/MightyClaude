@@ -510,19 +510,55 @@ enum MightyGraphInteractionDiagnostics {
         window.contentView = host
         try await Task.sleep(for: .milliseconds(160))
         let bounds = host.bounds
-        let first = try pixels(host)
+        // The spark, the bars and the border move in Core Animation, which a cached display
+        // does not see (it draws the still pose): read the frames off the presentation layers.
+        let looping = descendants(host, as: LoopingLayerView.self)
+        let first = presentation(looping), firstTurn = sparkTurn(looping)
         let firstURL = try store.captureSmokeWindow(window, filename: "mighty-graph-activity-first.png")
         try await Task.sleep(for: .milliseconds(280))
-        let second = try pixels(host)
+        let second = presentation(looping), secondTurn = sparkTurn(looping)
         let secondURL = try store.captureSmokeWindow(window, filename: "mighty-graph-activity-second.png")
         let reduced = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        guard host.bounds == bounds, reduced ? first == second : first != second else { throw MightyError("실행 표시의 실제 두 프레임 또는 고정된 크기 검증에 실패했습니다.") }
+        // The canvas is y-down on screen with its origin at the view's top-left, so a
+        // growing angle turns the spark clockwise, as SwiftUI's rotationEffect did.
+        // The spark, then (motion on) the bars and the border.
+        guard looping.count == (reduced ? 1 : 3), looping.allSatisfy(canvasStartsTopLeft) else { throw MightyError("실행 표시의 Core Animation 캔버스 방향 또는 위치가 잘못됐습니다.") }
+        let turned = firstTurn.flatMap { a in secondTurn.map { b in remainder(b - a, 2 * Double.pi) } }
+        guard host.bounds == bounds, reduced ? first.isEmpty && turned == nil
+                : (!first.isEmpty && first != second && (turned ?? 0) > 0.1) else { throw MightyError("실행 표시의 실제 두 프레임, 시계 방향 회전 또는 고정된 크기 검증에 실패했습니다.") }
         host.rootView = ActivityFixture(status: "completed")
         try await Task.sleep(for: .milliseconds(100))
         let completedFirst = try pixels(host)
         try await Task.sleep(for: .milliseconds(180))
-        guard completedFirst == (try pixels(host)) else { throw MightyError("완료된 실행 표시가 계속 움직입니다.") }
-        return ["passed": true, "activeFramesDiffer": first != second, "systemReduceMotion": reduced, "reducedMotionPolicyStatic": true, "completedFramesIdentical": true, "geometryUnchanged": true, "firstScreenshot": firstURL.path, "secondScreenshot": secondURL.path]
+        guard descendants(host, as: LoopingLayerView.self).isEmpty, completedFirst == (try pixels(host)) else { throw MightyError("완료된 실행 표시가 계속 움직입니다.") }
+        return ["passed": true, "activeFramesDiffer": first != second, "coreAnimationViews": looping.count, "sparkTurnRadians": turned ?? 0, "canvasTopLeft": true, "systemReduceMotion": reduced, "reducedMotionPolicyStatic": true, "completedFramesIdentical": true, "geometryUnchanged": true, "firstScreenshot": firstURL.path, "secondScreenshot": secondURL.path]
+    }
+
+    /// What every looping layer shows right now: its height, turn, opacity and dash phase
+    /// as the render tree has them.
+    private static func presentation(_ views: [LoopingLayerView]) -> [Double] {
+        func layers(_ layer: CALayer) -> [CALayer] { [layer] + (layer.sublayers ?? []).flatMap(layers) }
+        return views.flatMap { layers($0.canvas) }.filter { !($0.animationKeys() ?? []).isEmpty }.flatMap { layer -> [Double] in
+            let shown = layer.presentation() ?? layer
+            return [shown.bounds.height, shown.transform.m11, shown.transform.m12, Double(shown.opacity), (shown as? CAShapeLayer)?.lineDashPhase ?? 0].map { Double($0) }
+        }
+    }
+
+    /// The running spark's angle now (radians, growing clockwise in the y-down canvas);
+    /// nil when no spark turns.
+    private static func sparkTurn(_ views: [LoopingLayerView]) -> Double? {
+        guard let rotor = views.lazy.compactMap({ $0.canvas.sublayers?.first { $0.animation(forKey: "turn") != nil } }).first else { return nil }
+        let shown = (rotor.presentation() ?? rotor).transform
+        return atan2(Double(shown.m12), Double(shown.m11))
+    }
+
+    /// The canvas's (0, 0) sits on the view's top-left and its y grows down the screen.
+    private static func canvasStartsTopLeft(_ view: LoopingLayerView) -> Bool {
+        var root = view.canvas
+        while let parent = root.superlayer { root = parent }
+        let origin = view.canvas.convert(CGPoint.zero, to: root), below = view.canvas.convert(CGPoint(x: 0, y: 10), to: root)
+        let topLeft = view.convert(NSPoint.zero, to: nil)
+        return abs(origin.x - topLeft.x) < 0.5 && abs(origin.y - topLeft.y) < 0.5 && abs(below.y - (origin.y - 10)) < 0.5
     }
 
     private struct ActivityFixture: View {
@@ -530,9 +566,12 @@ enum MightyGraphInteractionDiagnostics {
         var body: some View {
             ZStack {
                 Palette.canvas
-                MightyGraphActivityIndicator(status: status, tint: Palette.run)
-                    .frame(width: 140, height: 52)
-                    .overlay { MightyGraphActivityOutline(tone: DesignTone(blockStatus: status)) }
+                HStack(spacing: DesignMetrics.Spacing.sm) {
+                    StatusGlyph(tone: DesignTone(blockStatus: status))
+                    MightyGraphActivityIndicator(status: status, tint: Palette.run)
+                        .frame(width: 140, height: 52)
+                        .overlay { MightyGraphActivityOutline(tone: DesignTone(blockStatus: status)) }
+                }
             }
         }
     }

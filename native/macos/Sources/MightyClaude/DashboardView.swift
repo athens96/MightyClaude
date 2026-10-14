@@ -357,20 +357,19 @@ struct DashboardRow: View {
 /// user asks for reduced motion.
 struct PulseDot: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @ViewState private var spread = false
 
     var body: some View {
         ZStack {
-            Circle().fill(Palette.run.opacity(0.22)).frame(width: 13, height: 13)
-                .scaleEffect(reduceMotion ? 1 : (spread ? 1.35 : 0.8))
-                .opacity(reduceMotion ? 1 : (spread ? 0 : 1))
+            if reduceMotion {
+                Circle().fill(Palette.run.opacity(0.22)).frame(width: 13, height: 13)
+            } else {
+                // The breath runs in Core Animation, so it never re-renders the window.
+                RippleLayer(color: Palette.run, colorOpacity: 0.22, fromScale: 0.8, toScale: 1.35, fromOpacity: 1, duration: 1.4)
+                    .frame(width: 13 * 1.35, height: 13 * 1.35)
+            }
             Circle().fill(Palette.run).frame(width: 7, height: 7)
         }
         .frame(width: 14, height: 14)
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeOut(duration: 1.4).repeatForever(autoreverses: false)) { spread = true }
-        }
         .accessibilityHidden(true)
     }
 }
