@@ -1247,9 +1247,10 @@ public sealed partial class MainWindow
         /// <summary>
         /// The running block's activity mark (M/MightyGraphActivityView.swift:46-77), in an 18×14 box: four
         /// <c>run</c> capsules in a wave while it runs; a still <c>run</c> bolt (10) with Windows animations off;
-        /// the circled <c>waitText</c> pause (12) while it waits; nothing once it finished. Core makes the choice.
+        /// the circled <c>waitText</c> pause (12) while it waits; nothing once it finished. Core makes the choice. The 보드
+        /// view passes its own <paramref name="sets"/> and no card view.
         /// </summary>
-        private FrameworkElement? BuildIndicator(string indicator, GraphCardView view, string blockId)
+        private FrameworkElement? BuildIndicator(string indicator, GraphCardView? view, string blockId, Dictionary<string, ScaleTransform[]>? sets = null)
         {
             FrameworkElement Boxed(FrameworkElement symbol)
             {
@@ -1259,12 +1260,13 @@ public sealed partial class MainWindow
             }
             FrameworkElement? mark = indicator switch
             {
-                "animating" => view.Activity = ActivityBars(blockId),
+                "animating" => ActivityBars(blockId, sets ?? graphActivitySets),
                 "static" => Boxed(MightySymbols.Create("bolt.fill", 10, owner.brushes.Brush(DesignToken.Run))),
                 "waiting" => Boxed(MightySymbols.Create("pause.circle", 12, owner.brushes.Brush(DesignToken.WaitText))),
                 _ => null,
             };
             if (mark is null) return null;
+            if (view is not null) view.Activity = mark as Canvas;
             mark.Width = MightyGraphActivity.BarBoxWidth; mark.Height = MightyGraphActivity.BarBoxHeight;
             mark.VerticalAlignment = VerticalAlignment.Center; mark.IsHitTestVisible = false;
             // The status pill beside it carries the state.
@@ -1290,7 +1292,7 @@ public sealed partial class MainWindow
         /// middle. The pane's one timer (<see cref="UpdateActivityTimer"/>) moves only the scales, so a tick
         /// costs no layout, and the card around them never sees the clock.
         /// </summary>
-        private Canvas ActivityBars(string blockId)
+        private Canvas ActivityBars(string blockId, Dictionary<string, ScaleTransform[]> sets)
         {
             var box = new Canvas();
             var scales = new ScaleTransform[MightyGraphActivity.Bars];
@@ -1307,7 +1309,7 @@ public sealed partial class MainWindow
                 box.Children.Add(bar);
             }
             WaveActivity(scales, ActivityPhase());
-            graphActivitySets[blockId] = scales;
+            sets[blockId] = scales;
             return box;
         }
 
@@ -1320,12 +1322,14 @@ public sealed partial class MainWindow
         }
 
         /// <summary>
-        /// Runs the pane's one 24 fps capsule timer only while the diagram shows (its host and viewport
-        /// visible and loaded) and at least one running block has capsules; stops it otherwise.
+        /// Runs the pane's one 24 fps capsule timer only while the diagram or the 보드 view shows (its host and view
+        /// visible and loaded) and at least one running block or card of it has capsules; stops it otherwise.
         /// </summary>
         private void UpdateActivityTimer()
         {
-            var wave = graphActivitySets.Count > 0 && graphHost?.Visibility == Visibility.Visible && graphViewport is { Visibility: Visibility.Visible, IsLoaded: true };
+            var shown = graphHost?.Visibility == Visibility.Visible;
+            var wave = shown && (graphActivitySets.Count > 0 && graphViewport is { Visibility: Visibility.Visible, IsLoaded: true }
+                || structureActivitySets.Count > 0 && structureView is { Visibility: Visibility.Visible, IsLoaded: true });
             if (!wave) { graphActivityTimer?.Stop(); return; }
             if (graphActivityTimer is null)
             {
@@ -1333,7 +1337,7 @@ public sealed partial class MainWindow
                 graphActivityTimer.Tick += (_, _) =>
                 {
                     var phase = ActivityPhase();
-                    foreach (var scales in graphActivitySets.Values) WaveActivity(scales, phase);
+                    foreach (var scales in (structureShown ? structureActivitySets : graphActivitySets).Values) WaveActivity(scales, phase);
                 };
             }
             if (!graphActivityTimer.IsEnabled) graphActivityTimer.Start();
@@ -1367,45 +1371,18 @@ public sealed partial class MainWindow
             Rectangle? glow = null; Action? stop = null;
             if (MightyGraphActivity.HaloToken(outline) is { } halo)
             {
-                // Rectangle strokes sit inside their bounds: the halo is the 4pt band outside the card, its middle
-                // line the card's outline 2 further out, radius 14 (M/MightyGraphActivityView.swift:112).
                 var band = 2 * MightyGraphActivity.LineWidth;
-                glow = new Rectangle
-                {
-                    Width = frame.W + 2 * band, Height = frame.H + 2 * band,
-                    RadiusX = MightyGraphActivity.CornerRadius + band / 2, RadiusY = MightyGraphActivity.CornerRadius + band / 2,
-                    Stroke = owner.brushes.Brush(halo), StrokeThickness = band, IsHitTestVisible = false,
-                };
+                glow = ActivityHalo(halo, MightyGraphActivity.CornerRadius);
+                glow.Width = frame.W + 2 * band; glow.Height = frame.H + 2 * band;
                 Canvas.SetLeft(glow, frame.X - band); Canvas.SetTop(glow, frame.Y - band);
                 desired.Insert(Math.Max(0, desired.Count - 1), glow);
             }
-            var line = new Rectangle
-            {
-                Width = frame.W, Height = frame.H,
-                RadiusX = MightyGraphActivity.CornerRadius - 1, RadiusY = MightyGraphActivity.CornerRadius - 1,
-                Stroke = owner.brushes.Brush(MightyGraphActivity.StrokeToken(outline)), StrokeThickness = MightyGraphActivity.LineWidth,
-                StrokeDashCap = PenLineCap.Flat, IsHitTestVisible = false,
-            };
+            var (line, story) = ActivityLine(outline, MightyGraphActivity.CornerRadius);
+            line.Width = frame.W; line.Height = frame.H;
             AutomationProperties.SetAutomationId(line, "mighty-outline-" + block.Id);
-            AutomationProperties.SetAccessibilityView(line, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
-            if (outline == MightyGraphActivity.Marching)
+            if (story is not null)
             {
-                // XAML dash lengths and offsets count in stroke widths.
-                var dash = MightyGraphActivity.DashForCard(frame.W, frame.H);
-                var dashes = new DoubleCollection();
-                foreach (var length in DesignMetrics.Dash.InStrokeUnits(dash, MightyGraphActivity.LineWidth)) dashes.Add(length);
-                line.StrokeDashArray = dashes;
-                var offsets = DesignMetrics.Dash.InStrokeUnits([MightyGraphActivity.DashOffset(0, dash), MightyGraphActivity.DashOffset(1, dash)], MightyGraphActivity.LineWidth);
-                var march = new Microsoft.UI.Xaml.Media.Animation.DoubleAnimation
-                {
-                    From = offsets[0], To = offsets[1],
-                    Duration = new Duration(MightyGraphActivity.Period),
-                    RepeatBehavior = Microsoft.UI.Xaml.Media.Animation.RepeatBehavior.Forever,
-                    EnableDependentAnimation = true,
-                };
-                Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(march, line);
-                Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(march, "StrokeDashOffset");
-                var story = new Microsoft.UI.Xaml.Media.Animation.Storyboard(); story.Children.Add(march);
+                FitActivityMarch(line, story, frame.W, frame.H, MightyGraphActivity.CornerRadius);
                 line.Loaded += (_, _) => story.Begin(); line.Unloaded += (_, _) => story.Stop();
                 stop = story.Stop;
             }
@@ -1413,6 +1390,58 @@ public sealed partial class MainWindow
             desired.Add(line);
             graphOutlines[block.Id] = (outline, line);
             graphOutlineViews[block.Id] = (fingerprint, glow, line, stop);
+        }
+
+        /// <summary>
+        /// The soft halo outside a running card of radius <paramref name="corner"/>. Rectangle strokes sit inside their bounds: the
+        /// halo is the 4pt band outside the card, its bounds the card grown by the band, its middle line the card's outline 2
+        /// further out, radius <paramref name="corner"/> + 2 (M/MightyGraphActivityView.swift:112).
+        /// </summary>
+        private Rectangle ActivityHalo(DesignToken halo, double corner)
+        {
+            var band = 2 * MightyGraphActivity.LineWidth;
+            return new Rectangle { RadiusX = corner + band / 2, RadiusY = corner + band / 2, Stroke = owner.brushes.Brush(halo), StrokeThickness = band, IsHitTestVisible = false };
+        }
+
+        /// <summary>
+        /// The outline's 2pt line in its token, 1pt inside a card of radius <paramref name="corner"/> at that radius less 1, its
+        /// dashes flat-capped; marching, the storyboard that walks them too, which <see cref="FitActivityMarch"/> fits to the card.
+        /// </summary>
+        private (Rectangle Line, Microsoft.UI.Xaml.Media.Animation.Storyboard? March) ActivityLine(string outline, double corner)
+        {
+            var line = new Rectangle
+            {
+                RadiusX = corner - 1, RadiusY = corner - 1,
+                Stroke = owner.brushes.Brush(MightyGraphActivity.StrokeToken(outline)), StrokeThickness = MightyGraphActivity.LineWidth,
+                StrokeDashCap = PenLineCap.Flat, IsHitTestVisible = false,
+            };
+            AutomationProperties.SetAccessibilityView(line, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+            if (outline != MightyGraphActivity.Marching) return (line, null);
+            var march = new Microsoft.UI.Xaml.Media.Animation.DoubleAnimation
+            {
+                Duration = new Duration(MightyGraphActivity.Period),
+                RepeatBehavior = Microsoft.UI.Xaml.Media.Animation.RepeatBehavior.Forever,
+                EnableDependentAnimation = true,
+            };
+            Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(march, line);
+            Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(march, "StrokeDashOffset");
+            var story = new Microsoft.UI.Xaml.Media.Animation.Storyboard(); story.Children.Add(march);
+            return (line, story);
+        }
+
+        /// <summary>
+        /// The march fitted to a card of this size and radius: its 9/7 dashes and the offset that walks them one period per cycle,
+        /// both in stroke widths as XAML counts them. Set on a stopped storyboard.
+        /// </summary>
+        private static void FitActivityMarch(Rectangle line, Microsoft.UI.Xaml.Media.Animation.Storyboard story, double width, double height, double corner)
+        {
+            var dash = MightyGraphActivity.DashForCard(width, height, corner);
+            var dashes = new DoubleCollection();
+            foreach (var length in DesignMetrics.Dash.InStrokeUnits(dash, MightyGraphActivity.LineWidth)) dashes.Add(length);
+            line.StrokeDashArray = dashes;
+            var offsets = DesignMetrics.Dash.InStrokeUnits([MightyGraphActivity.DashOffset(0, dash), MightyGraphActivity.DashOffset(1, dash)], MightyGraphActivity.LineWidth);
+            var march = (Microsoft.UI.Xaml.Media.Animation.DoubleAnimation)story.Children[0];
+            march.From = offsets[0]; march.To = offsets[1];
         }
 
         /// <summary>

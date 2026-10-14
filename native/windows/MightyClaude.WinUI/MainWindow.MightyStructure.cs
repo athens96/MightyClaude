@@ -13,6 +13,8 @@ using Windows.Foundation;
 using Windows.UI.Text;
 using Board = MightyClaude.Core.MightyStructure.Board;
 using PointOptions = Microsoft.UI.Text.PointOptions;
+using Rectangle = Microsoft.UI.Xaml.Shapes.Rectangle;
+using Storyboard = Microsoft.UI.Xaml.Media.Animation.Storyboard;
 using TextRangeUnit = Microsoft.UI.Text.TextRangeUnit;
 using VirtualKey = Windows.System.VirtualKey;
 using VirtualKeyModifiers = Windows.System.VirtualKeyModifiers;
@@ -83,6 +85,15 @@ public sealed partial class MainWindow
         /// </summary>
         private DependencyObject? structurePressed;
         private bool structureDeferred, structureForced;
+        /// <summary>
+        /// What runs on the board as the diagram shows it (M/MightyStructureView.swift:285, 583, 604, 619, 628, 708, 741): the capsules
+        /// the pane's one timer waves (<see cref="UpdateActivityTimer"/>) and each outlined card's line and march, by card id (the
+        /// header's under <see cref="StructureHeaderMarks"/>); and whether Windows animations were on for the draw.
+        /// </summary>
+        private readonly Dictionary<string, ScaleTransform[]> structureActivitySets = [];
+        private readonly Dictionary<string, (string Kind, Rectangle Line, Storyboard? March)> structureOutlines = [];
+        private bool structureMotion;
+        private const string StructureHeaderMarks = "header";
 
         /// <summary>One column of the board: its frame, its header's place and what that header was built from, and its cards' panel.</summary>
         private sealed class StructureColumn(StackPanel view, Border header, StackPanel cards)
@@ -197,10 +208,15 @@ public sealed partial class MainWindow
             structureScroll.AddHandler(UIElement.PointerWheelChangedEvent, new PointerEventHandler(OnStructureWheel), true);
             structureScroll.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(OnStructureKeyDown), true);
             Grid.SetRow(structureScroll, 3); structureView.Children.Add(structureScroll);
+            // A pane shown again on its tab waves its running cards' capsules again (as the diagram's, MainWindow.MightyGraph.cs:261).
+            structureView.Loaded += (_, _) => UpdateActivityTimer();
             Grid.SetRow(structureView, 1); graphHost!.Children.Add(structureView);
         }
 
-        /// <summary>Shows or hides the view. Shown again, the page opens at its end and a following reader is taken to the newest board's end by the next draw.</summary>
+        /// <summary>
+        /// Shows or hides the view. Shown again, the page opens at its end and a following reader is taken to the newest board's end
+        /// by the next draw. The running cards' borders march only while it shows.
+        /// </summary>
         private void ShowMightyStructure(bool shown)
         {
             if (structureView is null) return;
@@ -209,6 +225,7 @@ public sealed partial class MainWindow
             structureShown = shown;
             if (shown) structureAppearing = true;
             else { EndStructurePan(); structurePressed = null; structureBarHeld = structureScrolling = false; structureListFlyout?.Hide(); }
+            foreach (var edge in structureOutlines.Values) if (edge.March is { } march) StartStructureMarch(edge.Line, march);
         }
 
         /// <summary>The scroll view while the view shows.</summary>
@@ -233,7 +250,7 @@ public sealed partial class MainWindow
         private void DrawMightyStructure(RunSession pane)
         {
             if (structureScroll is null) return;
-            structureDeferred = false;
+            structureDeferred = false; structureMotion = AnimationsEnabled;
             var retained = (IReadOnlyList<MightyGraphRun>)(pane.GraphRuns ?? []);
             var older = GraphHistoryRuns(pane, retained);
             IReadOnlyList<MightyGraphRun> runs = [.. older, .. retained];
@@ -307,7 +324,7 @@ public sealed partial class MainWindow
             }
             foreach (var gone in structureCards.Keys.Where(card => !drawn.Contains(card)).ToArray())
             {
-                structureCards.Remove(gone);
+                structureCards.Remove(gone); DropStructureMarks(gone);
                 if (gone.StartsWith("result:", StringComparison.Ordinal)) structureAnswers.Remove(gone["result:".Length..]);
             }
             // What the user opened follows the requests: only what the pane still holds is kept (as the timeline's, MainWindow.MightyTimeline.cs:276).
@@ -315,6 +332,7 @@ public sealed partial class MainWindow
             RethemeStructureAnswers();
             DrawStructureBar(boards, index, board);
             if (board is not null) DrawStructureHeader(board, boards.Count);
+            else { DropStructureMarks(StructureHeaderMarks); structureHeaderKey = null; }
             // The total counts the retained requests; loaded ones are named apart.
             graphTotal.Text = MightyGraphBlockModel.ToolbarSummary(retained) + (older.Count > 0 ? " · " + Locale.Get("graph.history.headerLoaded", new Dictionary<string, string> { ["count"] = older.Count.ToString() }) : "");
             var help = MightyGraphBlockModel.ToolbarHelp(retained);
@@ -448,18 +466,21 @@ public sealed partial class MainWindow
         // ── the header ────────────────────────────────────────────────────────
 
         /// <summary>
-        /// The board's header (M/MightyStructureView.swift:280-304): its status pill and its title (13 bold in the heading font),
-        /// then its steps as chips joined by 2pt lines, <c>done</c> once the step before them is done, <c>track</c> until then.
+        /// The board's header (M/MightyStructureView.swift:280-304): the diagram's activity mark while it runs, its status pill and
+        /// its title (13 bold in the heading font), then its steps as chips joined by 2pt lines, <c>done</c> once the step before them
+        /// is done, <c>track</c> until then.
         /// </summary>
         private void DrawStructureHeader(Board board, int count)
         {
             if (structureHeader is null) return;
             var title = StructureTitle(board, count);
-            var key = string.Join('\n', new[] { board.Id, board.Status, title, Locale.LanguagePreference }.Concat(board.Steps.Select(step => step.Id + "\u001F" + step.Title + "\u001F" + MightyStructure.Word(step.Step))));
+            var key = string.Join('\n', new[] { board.Id, board.Status, title, Locale.LanguagePreference, structureMotion.ToString() }.Concat(board.Steps.Select(step => step.Id + "\u001F" + step.Title + "\u001F" + MightyStructure.Word(step.Step))));
             if (key == structureHeaderKey) return;
             structureHeaderKey = key;
             var b = owner.brushes;
             var lead = new PaneHeaderLine { Spacing = DesignMetrics.Spacing.Sm };
+            DropStructureMarks(StructureHeaderMarks);
+            if (StructureIndicator(board.Status, StructureHeaderMarks) is { } running) lead.Add(running, PaneHeaderLine.Role.Fixed);
             lead.Add(StatusPill(MightyGraphBlockModel.StateLabel(board.Status), StatusGlyph.Tone(board.Status), 18), PaneHeaderLine.Role.Fixed);
             var heading = StructureWords(title, DesignMetrics.Type.Title, b.Brush(DesignToken.Ink), FontWeights.Bold); heading.FontFamily = new FontFamily(DesignMetrics.Font.Heading);
             AutomationProperties.SetHeadingLevel(heading, Microsoft.UI.Xaml.Automation.Peers.AutomationHeadingLevel.Level2);
@@ -843,8 +864,8 @@ public sealed partial class MainWindow
                     build = () => StructureRequestCard(item, heading, requestFolds);
                     break;
                 case MightyStructure.CardKind.Execution:
-                    key = (item.Ordinal, item.Status, item.Tally, item.Message, activity, item.Finished, Open("message", item.RunId), messageFolds, item.ExecutionNodeId, item.NodeId, language);
-                    build = () => StructureExecution(item, messageFolds);
+                    key = (item.Ordinal, item.Status, item.Tally, item.Message, activity, item.Finished, Open("message", item.RunId), messageFolds, item.ExecutionNodeId, item.NodeId, language, structureMotion);
+                    build = () => StructureExecution(item, messageFolds, card.Id);
                     break;
                 case MightyStructure.CardKind.Result:
                     key = (item.Status, item.Finished, item.Answer, Open("answer", item.RunId), item.ExecutionNodeId, item.NodeId, language);
@@ -852,15 +873,15 @@ public sealed partial class MainWindow
                     break;
                 case MightyStructure.CardKind.Summary:
                     var line = MightyStructure.Fold.ResultLine(item);
-                    key = ((heading, item.Request, item.Input, item.NodeId, Open("request", item.RunId), requestFolds, language), (item.Ordinal, item.Status, item.Tally, item.Message, activity, item.Finished, Open("message", item.RunId), messageFolds), (item.ExecutionNodeId, line));
-                    build = () => StructureSummary(item, heading, requestFolds, messageFolds, line);
+                    key = ((heading, item.Request, item.Input, item.NodeId, Open("request", item.RunId), requestFolds, language), (item.Ordinal, item.Status, item.Tally, item.Message, activity, item.Finished, Open("message", item.RunId), messageFolds), (item.ExecutionNodeId, line, structureMotion));
+                    build = () => StructureSummary(item, heading, requestFolds, messageFolds, line, card.Id);
                     break;
                 default:
                     var node = card.Node!; var open = Open("node", node.NodeId); var nodeWidth = MightyStructure.NodeTextWidth(width, node.Depth);
                     var folds = Folds(node.Prompt, MightyStructure.PromptLines, StructurePromptSize, nodeWidth) || Folds(node.Output, MightyStructure.OutputLines, StructureOutputSize, nodeWidth) || node.Activity.Count > 1;
                     var model = node.Model is { } named ? ModelUsageFormat.ShortName(named, catalog, versioned: true) : null;
-                    key = (node, card.Parent, open, folds, model, language);
-                    build = () => StructureNodeCard(node, card.Parent, open, folds, model);
+                    key = (node, card.Parent, open, folds, model, language, structureMotion);
+                    build = () => StructureNodeCard(node, card.Parent, open, folds, model, card.Id);
                     break;
             }
             if (structureCards.TryGetValue(card.Id, out var part))
@@ -868,6 +889,7 @@ public sealed partial class MainWindow
                 if (Equals(part.Key, key)) return (part.View, false);
                 if (StructureHeld(part.View)) { structureDeferred = true; return (part.View, false); }
             }
+            DropStructureMarks(card.Id);
             var view = build();
             if (part.View?.Parent is Panel place) place.Children[place.Children.IndexOf(part.View)] = view;
             structureCards[card.Id] = (key, view);
@@ -894,8 +916,11 @@ public sealed partial class MainWindow
             return card;
         }
 
-        /// <summary>The run part's header line: the gears and "Run · Request N" (11 bold), the main agent's status pill and its tally (11 semibold <c>ink2</c>), and its reveal button.</summary>
-        private Grid StructureExecutionHeader(MightyStructure.Item item)
+        /// <summary>
+        /// The run part's header line: the gears and "Run · Request N" (11 bold), the diagram's activity mark while the main agent
+        /// runs (M/MightyStructureView.swift:583, 619), its status pill and its tally (11 semibold <c>ink2</c>), and its reveal button.
+        /// </summary>
+        private Grid StructureExecutionHeader(MightyStructure.Item item, string marks)
         {
             var b = owner.brushes;
             var name = Locale.Get("graph.block.executionOf", new Dictionary<string, string> { ["n"] = item.Ordinal.ToString(CultureInfo.InvariantCulture) });
@@ -908,6 +933,7 @@ public sealed partial class MainWindow
             var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs, VerticalAlignment = VerticalAlignment.Center };
             label.Children.Add(MightySymbols.Create("gearshape.2", StructureOutputSize, b.Brush(DesignToken.Ink))); label.Children.Add(StructureWords(name, StructureOutputSize, b.Brush(DesignToken.Ink), FontWeights.Bold));
             Lead(label, GridLength.Auto);
+            if (StructureIndicator(item.Status, marks) is { } running) Lead(running, GridLength.Auto);
             Lead(StatusPill(MightyGraphBlockModel.StateLabel(item.Status), StatusGlyph.Tone(item.Status), 18), GridLength.Auto);
             Lead(StructureTally(item), new GridLength(1, GridUnitType.Star));
             return StructureHeader(lead, StructureRevealButton(item.ExecutionNodeId, item.NodeId));
@@ -925,16 +951,19 @@ public sealed partial class MainWindow
             body.Children.Add(calls);
         }
 
-        /// <summary>A free board's 실행 card (M/MightyStructureView.swift:606-625): the main agent's status, tally, latest reply and tool calls, as the diagram's run block holds them.</summary>
-        private Border StructureExecution(MightyStructure.Item item, bool folds)
+        /// <summary>
+        /// A free board's 실행 card (M/MightyStructureView.swift:610-631): the main agent's status, tally, latest reply and tool calls,
+        /// as the diagram's run block holds them, in the run block's edge while it runs or waits.
+        /// </summary>
+        private FrameworkElement StructureExecution(MightyStructure.Item item, bool folds, string marks)
         {
             var body = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
-            body.Children.Add(StructureExecutionHeader(item));
+            body.Children.Add(StructureExecutionHeader(item, marks));
             StructureProgress(body, item, folds);
             var card = StructureSurface(body);
             AutomationProperties.SetAutomationId(card, "mighty-structure-execution-" + item.RunId);
             AutomationProperties.SetName(card, Locale.Get("graph.block.executionOf", new Dictionary<string, string> { ["n"] = item.Ordinal.ToString(CultureInfo.InvariantCulture) }));
-            return card;
+            return StructureOutlined(card, item.Status, StructureCardCorner, marks);
         }
 
         private TextBlock StructureTally(MightyStructure.Item item) => StructureWords(Locale.Get("graph.structure.tally", new Dictionary<string, string>
@@ -973,9 +1002,10 @@ public sealed partial class MainWindow
         /// <summary>
         /// A styled board's request (M/MightyStructureView.swift:564-604): "Request N · Claude" with its reveal button and what was
         /// asked; a rule; its 실행 part (the run's header line, latest reply and tool calls); and once it finished, how it ended on
-        /// one line (11): the answer's first line in <c>ink2</c>, else the outcome in its ink, beside the result's reveal button.
+        /// one line (11): the answer's first line in <c>ink2</c>, else the outcome in its ink, beside the result's reveal button. It
+        /// wears the run block's edge while the run runs or waits (M/MightyStructureView.swift:603-604).
         /// </summary>
-        private Border StructureSummary(MightyStructure.Item item, string heading, bool requestFolds, bool messageFolds, string? line)
+        private FrameworkElement StructureSummary(MightyStructure.Item item, string heading, bool requestFolds, bool messageFolds, string? line, string marks)
         {
             var b = owner.brushes;
             var body = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
@@ -984,7 +1014,7 @@ public sealed partial class MainWindow
             var rule = new Border { Height = DesignMetrics.Stroke.Line, Background = b.Brush(DesignToken.Line) };
             AutomationProperties.SetAccessibilityView(rule, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
             body.Children.Add(rule);
-            body.Children.Add(StructureExecutionHeader(item));
+            body.Children.Add(StructureExecutionHeader(item, marks));
             StructureProgress(body, item, messageFolds);
             if (item.Finished)
             {
@@ -999,7 +1029,7 @@ public sealed partial class MainWindow
             var card = StructureSurface(body);
             AutomationProperties.SetAutomationId(card, "mighty-structure-request-" + item.RunId);
             AutomationProperties.SetName(card, Locale.Get("graph.structure.contentAccessibility", new Dictionary<string, string> { ["name"] = heading, ["text"] = item.Input }));
-            return card;
+            return StructureOutlined(card, item.Status, StructureCardCorner, marks);
         }
 
         /// <summary>
@@ -1039,14 +1069,17 @@ public sealed partial class MainWindow
         /// was asked (10.5 <c>ink2</c>, two lines), its latest output (11, six lines) and its last tool call. Opened, it shows them
         /// whole and its last few tool calls. Each level of the tree stands <c>Spacing.Lg</c> further in, up to
         /// <see cref="MightyStructure.MaximumIndent"/>; <see cref="MightyStructure.NodeTextWidth"/> takes the indent and the padding off.
+        /// While it runs or waits, the diagram's activity mark stands before its reveal button and the card wears the block's edge
+        /// (M/MightyStructureView.swift:708, 741).
         /// </summary>
-        private Border StructureNodeCard(MightyStructure.Node node, string? parent, bool open, bool folds, string? model)
+        private FrameworkElement StructureNodeCard(MightyStructure.Node node, string? parent, bool open, bool folds, string? model, string marks)
         {
             var b = owner.brushes; var task = node.Kind == "task"; var key = "node:" + node.NodeId;
             var head = new PaneHeaderLine { Spacing = DesignMetrics.Spacing.Sm };
             head.Add(MightySymbols.Create(BlockSymbol(node.Kind), 9, b.Brush(task ? DesignToken.TaskText : DesignToken.AgentText), MightySymbols.Weight.Semibold), PaneHeaderLine.Role.Fixed);
             head.Add(StructureWords(node.Title, StructureOutputSize, b.Brush(DesignToken.Ink), FontWeights.SemiBold), PaneHeaderLine.Role.Shrink);
             head.Add(StructureWords(MightyTimeline.KindLabel(node.Kind) + (model is null ? "" : " · " + model), DesignMetrics.Type.Small, b.Brush(DesignToken.Ink2)), PaneHeaderLine.Role.Fill);
+            if (StructureIndicator(node.Status, marks) is { } running) head.Add(running, PaneHeaderLine.Role.Fixed);
             head.Add(StructureRevealButton(node.NodeId, node.NodeId), PaneHeaderLine.Role.Fixed);
             var body = new StackPanel
             {
@@ -1086,7 +1119,7 @@ public sealed partial class MainWindow
             };
             AutomationProperties.SetAutomationId(card, "mighty-structure-node-" + node.NodeId);
             AutomationProperties.SetName(card, Locale.Get("graph.structure.nodeAccessibility", new Dictionary<string, string> { ["title"] = node.Title, ["status"] = MightyGraphBlockModel.StateLabel(node.Status) }));
-            return card;
+            return StructureOutlined(card, node.Status, StructureNodeCorner, marks);
         }
 
         /// <summary>The colour of a status as a mark (M/Palette.swift:94-103): 3:1 on page, card and sidebar.</summary>
@@ -1134,6 +1167,56 @@ public sealed partial class MainWindow
             BorderThickness = new Thickness(BlockEdge), BorderBrush = owner.brushes.Brush(DesignToken.Line),
             Padding = new Thickness(DesignMetrics.Inset.GraphBlockBodyH - BlockEdge, DesignMetrics.Spacing.Sm - BlockEdge, DesignMetrics.Inset.GraphBlockBodyH - BlockEdge, DesignMetrics.Spacing.Sm - BlockEdge),
         };
+
+        /// <summary>The diagram's activity mark for a status (<see cref="BuildIndicator"/>), its capsules waved under <paramref name="marks"/>.</summary>
+        private FrameworkElement? StructureIndicator(string status, string marks) =>
+            BuildIndicator(MightyGraphViewModel.BlockIndicator(status, structureMotion), null, marks, structureActivitySets);
+
+        /// <summary>
+        /// A card in the diagram's edge while it runs or waits (macOS MightyGraphActivityOutline, <see cref="AddActivityOutline"/>):
+        /// the marching 2pt <c>run</c> line over the <c>runSoft</c> halo, still and solid with Windows animations off, or the still
+        /// <c>wait</c> line, at the card's own <paramref name="corner"/>. The indent stays outside the edge. The march is fitted to the
+        /// card each time it grows (<see cref="StartStructureMarch"/>); any other card is returned as it is.
+        /// </summary>
+        private FrameworkElement StructureOutlined(Border card, string status, double corner, string marks)
+        {
+            var outline = MightyGraphActivity.Outline(status, structureMotion);
+            if (outline == MightyGraphActivity.None) return card;
+            var frame = new Grid { Margin = card.Margin }; card.Margin = default;
+            if (MightyGraphActivity.HaloToken(outline) is { } halo)
+            {
+                var glow = ActivityHalo(halo, corner); glow.Margin = new Thickness(-2 * MightyGraphActivity.LineWidth);
+                frame.Children.Add(glow);
+            }
+            frame.Children.Add(card);
+            var (line, march) = ActivityLine(outline, corner);
+            frame.Children.Add(line);
+            structureOutlines[marks] = (outline, line, march);
+            if (march is null) return frame;
+            line.SizeChanged += (_, args) => { march.Stop(); FitActivityMarch(line, march, args.NewSize.Width, args.NewSize.Height, corner); StartStructureMarch(line, march); };
+            line.Loaded += (_, _) => StartStructureMarch(line, march);
+            // A card moved to another column is loaded again before the old place unloads it.
+            line.Unloaded += (_, _) => { if (!line.IsLoaded) march.Stop(); };
+            return frame;
+        }
+
+        /// <summary>
+        /// Walks a card's dashes from where the wall clock has them, so a refit or a return to the view moves on without a jump (the
+        /// Mac's loops are clock-aligned, M/LoopingLayerView.swift); only while the view shows and the line is laid out.
+        /// </summary>
+        private void StartStructureMarch(Rectangle line, Storyboard march)
+        {
+            march.Stop();
+            if (!structureShown || !line.IsLoaded || line.ActualWidth <= 0) return;
+            march.Begin(); march.Seek(MightyGraphActivity.Period * ActivityPhase());
+        }
+
+        /// <summary>A card's running marks go with it: its capsules leave the pane's timer and its march stops.</summary>
+        private void DropStructureMarks(string marks)
+        {
+            structureActivitySets.Remove(marks);
+            if (structureOutlines.Remove(marks, out var edge)) edge.March?.Stop();
+        }
 
         /// <summary>A card's header line: what names it, then its small buttons at the right, <c>Spacing.Sm</c> apart.</summary>
         private static Grid StructureHeader(FrameworkElement lead, params Button[] buttons)

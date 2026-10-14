@@ -69,11 +69,12 @@ public static class MightyGraphActivity
     public static double DashOffset(double phase, IReadOnlyList<double> dash) => -phase * dash.Sum();
 
     /// <summary>
-    /// The outline drawn on a card of this size: the card inset by 1pt, its radius 1pt
-    /// smaller, and the dash fitted to that path.
+    /// The outline drawn on a card of this size and corner radius (the diagram's 12 unless
+    /// given, as macOS <c>MightyGraphActivityOutline.cornerRadius</c>): the card inset by 1pt,
+    /// its radius 1pt smaller, and the dash fitted to that path.
     /// </summary>
-    public static IReadOnlyList<double> DashForCard(double width, double height) =>
-        DashFitting(Perimeter(Math.Max(0, width - LineWidth), Math.Max(0, height - LineWidth), CornerRadius - 1));
+    public static IReadOnlyList<double> DashForCard(double width, double height, double cornerRadius = CornerRadius) =>
+        DashFitting(Perimeter(Math.Max(0, width - LineWidth), Math.Max(0, height - LineWidth), cornerRadius - 1));
 
     /// <summary>The outline's token: run blue, or wait amber while the block waits (the same in both modes).</summary>
     public static DesignToken StrokeToken(string outline) => outline == Waiting ? DesignToken.Wait : DesignToken.Run;
