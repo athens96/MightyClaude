@@ -282,6 +282,7 @@ struct MightyStructureView: View {
     private func header(_ board: MightyStructure.Board) -> some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
+                MightyGraphActivityIndicator(status: board.status, tint: Palette.run)
                 MightyStatusPill(text: MightyGraphView.statusLabel(board.status), tone: DesignTone(status: board.status))
                 Text(verbatim: title(board)).font(Palette.heading(13)).foregroundStyle(Palette.ink).lineLimit(1).truncationMode(.tail)
                     .accessibilityAddTraits(.isHeader)
@@ -579,6 +580,7 @@ struct MightyStructureView: View {
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 Label(L("graph.block.executionOf", ["n": "\(item.ordinal)"]), systemImage: MightyGraphView.executionIcon)
                     .font(.system(size: Self.outputSize, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
+                MightyGraphActivityIndicator(status: item.status, tint: Palette.run)
                 MightyStatusPill(text: MightyGraphView.statusLabel(item.status), tone: DesignTone(status: item.status))
                 tally(item)
                 Spacer(minLength: 0)
@@ -598,6 +600,8 @@ struct MightyStructureView: View {
             }
         }
         .cardSurface()
+        // Running, the card wears the diagram's marching border, so the board shows what moves.
+        .overlay { MightyGraphActivityOutline(tone: DesignTone(blockStatus: item.status), cornerRadius: Self.cardCorner).allowsHitTesting(false) }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(L("graph.structure.contentAccessibility", ["name": heading(item), "text": item.input]))
         .accessibilityIdentifier("mighty-structure-request-\(item.runID)")
@@ -612,6 +616,7 @@ struct MightyStructureView: View {
                     Label(L("graph.block.executionOf", ["n": "\(item.ordinal)"]), systemImage: MightyGraphView.executionIcon)
                         .font(.system(size: Self.outputSize, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
                 }
+                MightyGraphActivityIndicator(status: item.status, tint: Palette.run)
                 MightyStatusPill(text: MightyGraphView.statusLabel(item.status), tone: DesignTone(status: item.status))
                 tally(item)
                 Spacer(minLength: 0)
@@ -620,6 +625,7 @@ struct MightyStructureView: View {
             progress(item, width: Self.cardTextWidth(width))
         }
         .cardSurface()
+        .overlay { MightyGraphActivityOutline(tone: DesignTone(blockStatus: item.status), cornerRadius: Self.cardCorner).allowsHitTesting(false) }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("mighty-structure-execution-\(item.runID)")
     }
@@ -699,6 +705,7 @@ struct MightyStructureView: View {
                     .layoutPriority(1)
                 Text(meta).font(.system(size: 10)).foregroundStyle(Palette.ink2).lineLimit(1)
                 Spacer(minLength: 0)
+                MightyGraphActivityIndicator(status: node.status, tint: Palette.run)
                 revealButton(node.nodeID)
             }
             if let parent {
@@ -731,6 +738,7 @@ struct MightyStructureView: View {
         }
         .clipShape(shape)
         .overlay { shape.strokeBorder(Palette.border, lineWidth: 1).allowsHitTesting(false) }
+        .overlay { MightyGraphActivityOutline(tone: DesignTone(blockStatus: node.status), cornerRadius: Self.nodeCorner).allowsHitTesting(false) }
         .padding(.leading, CGFloat(min(node.depth, MightyStructure.maximumIndent)) * DesignMetrics.Spacing.lg)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(L("graph.structure.nodeAccessibility", ["title": node.title, "status": MightyGraphView.statusLabel(node.status)]))
