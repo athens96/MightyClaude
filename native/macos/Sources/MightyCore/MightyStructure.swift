@@ -3,7 +3,8 @@ import Foundation
 
 /// The Mighty graph drawn as its structure (design "A. 단계별 열"): a styled pane's
 /// requests under the phase each belongs to, a free pane's as one 요청 → 실행 → 결과 row
-/// each, and under every request its sub-agent trees as clusters.
+/// each, and under every request its sub-agent trees as clusters. The Mac view shows it
+/// one board at a time (`boards`); the phone reads the shape as it is.
 ///
 /// It reads the very `[MightyGraphRun]` the diagram and the timeline draw, and the
 /// pane's style through the frozen evaluator's public rules only. Nothing here is
@@ -252,8 +253,8 @@ public enum MightyStructure {
     public static let outputBytes = 4_096, outputLines = 6
     /// The tool calls a request's run card and a sub-agent's card list.
     public static let requestActivity = 5, nodeActivity = 3
-    /// The narrowest column; wider panes share their width out between the columns.
-    public static let minimumColumnWidth: CGFloat = 300
+    /// The narrowest kanban column; wider panes share their width out between the columns.
+    public static let minimumColumnWidth: CGFloat = 280
     /// A folded line is cut at this many characters, so a preview stays small however
     /// long the text's lines run; a Markdown preview holds this many per line it shows.
     static let previewLineCharacters = 200
@@ -377,12 +378,11 @@ public enum MightyStructure {
         return max(1, Int((width / fontSize * wrapFill).rounded(.down)))
     }
 
-    /// The width a sub-agent card's text has in a column: the cluster's indent and
-    /// padding, the tree's indent at `depth` and the card's own padding taken off, as
-    /// `MightyStructureView` lays them out.
+    /// The width a sub-agent card's text has in a column: the tree's indent at `depth`
+    /// and the card's own padding taken off, as `MightyStructureView` lays them out.
     public static func nodeTextWidth(column: CGFloat, depth: Int) -> CGFloat {
         let S = DesignMetrics.Spacing.self
-        return column - S.lg - 2 * S.sm - CGFloat(min(max(0, depth), maximumIndent)) * S.lg - (S.md + S.xs)
+        return column - CGFloat(min(max(0, depth), maximumIndent)) * S.lg - (S.md + S.xs)
     }
 
     /// How many lines `text` takes wrapped at `charactersPerLine`.

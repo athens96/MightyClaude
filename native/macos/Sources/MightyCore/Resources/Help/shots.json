@@ -111,7 +111,7 @@
         "height": 900
       }
     },
-    {"id": "agent-structure", "section": "agent-pane", "screen": "agent-structure", "window": {"width": 1440, "height": 900}, "note": "The structure view: each request under its step, sub-agents grouped beneath."},
+    {"id": "agent-structure", "section": "agent-pane", "screen": "agent-structure", "window": {"width": 1440, "height": 900}, "note": "The structure view as a kanban board: the newest request with its progress header and one column per step."},
     {
       "id": "result-card",
       "section": "agent-pane",

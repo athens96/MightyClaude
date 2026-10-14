@@ -105,14 +105,14 @@ Claude 和 Codex 窗格的标题栏中有{{ui:graph.view.default}} | {{ui:graph.
 ![[agent-timeline]]
 
 ### 结构 {#structure}
-在同一个切换开关中选择{{ui:graph.view.structure}}，可以按阶段分列查看请求。目前只有 Mac 应用提供。
-- 使用风格的窗格顶部会排出该模式的各个阶段：已完成的阶段为绿色，当前阶段为强调色，其余为灰色。
-- 每个请求在它所属的阶段下方依次显示为请求卡片和{{ui:graph.block.execution}}卡片，{{ui:graph.block.execution}}卡片下方的虚线框中归组显示它的子代理树。已结束的请求在其下方附上结果。
-- 没有风格的窗格中，每个请求占一行：{{ui:graph.structure.column.request}} → {{ui:graph.structure.column.execution}} → {{ui:graph.structure.column.result}}。
-- 请求卡片只包含请求内容，{{ui:graph.block.execution}}卡片显示进度（最新消息和工具调用）和状态。结果以及各子代理接到的任务和产出也就地显示。长文本默认折叠，点击{{ui:graph.structure.more}}即可就地展开。
-- 点击卡片标题栏中的小按钮，会在图中显示该块。
-- 和图表一样，拖动空白处即可移动视图。
-- 已结束的请求会折叠成一行，点击即可展开。
+在同一个切换开关中选择{{ui:graph.view.structure}}，可以把请求看成看板。目前只有 Mac 应用提供。
+- 视图一次只显示一项：没有风格的窗格显示一个请求，使用风格的窗格显示一条流水线。流水线是阶段只向前推进的一串请求；某个请求的阶段比前一个请求退回到更早的阶段时，就开始一条新流水线。
+- 用顶部的 ◀ {{ui:graph.structure.board.previous}}和 ▶ {{ui:graph.structure.board.next}}前后切换。点击两者之间的标题（如"请求 3 / 7"）会打开列表，显示每一项的编号、标题、状态和阶段，可直接选择。
+- 下方显示进度：状态和第一行，以及用线连起来的阶段标签。没有风格的窗格是{{ui:graph.structure.column.request}} → {{ui:graph.structure.column.execution}} → {{ui:graph.structure.column.result}}，使用风格的窗格是该模式的阶段。已完成的阶段为绿色，当前阶段为强调色，其余为灰色。
+- 内容放在并排的列中，每个阶段一列，列头显示阶段名称和卡片数。没有风格时，{{ui:graph.structure.column.request}}列放请求，{{ui:graph.structure.column.execution}}列放显示进度（最新消息和工具调用）与状态的卡片，后面每个子代理一张卡片，{{ui:graph.structure.column.result}}列放结果。使用风格时，每个阶段列放该阶段的请求卡片（请求、执行摘要和一行结果），其子代理卡片放在下方。嵌套的子代理会缩进，并注明它在哪个块之下。
+- 长文本默认折叠，点击{{ui:graph.structure.more}}即可就地展开。点击卡片标题栏中的小按钮，会在图中显示该块。
+- 视图从最新的一项打开，停留在那里时会随新的请求或流水线前进。查看较早的一项时出现新项，位置保持不变，▶ 旁会出现{{ui:graph.structure.board.newRequest}}或{{ui:graph.structure.board.newPipeline}}标记，点击即可转到最新的一项。
+- 和图表一样，拖动空白处，或用触控板和鼠标滚轮滚动，即可移动看板。停在最新一项的末尾时，视图会跟随新内容向下；自己移动后，就停在你放的位置。
 
 ![[agent-structure]]
 

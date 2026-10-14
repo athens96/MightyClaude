@@ -1,7 +1,7 @@
 import Foundation
 
 extension MightyStructure {
-    /// Finished requests fold in the 구조 view, so a long pane reads as a list: a request
+    /// Finished requests fold in the phone's 구조 view, so a long pane reads as a list: a request
     /// that completed, failed or stopped shows as one compact card (its heading, status,
     /// what was asked and how it ended on one line each) until the user opens it. A
     /// running or waiting request is always open, and one that finishes folds by itself
@@ -9,7 +9,9 @@ extension MightyStructure {
     ///
     /// The open cards are the only state: a card is folded exactly while it is finished
     /// and the user has not opened it, so the fold on finishing needs no event of its own.
-    /// The phone keeps the same rules (`mobile/src/lib/structure.ts`).
+    /// The phone keeps these rules (`mobile/src/lib/structure.ts`). The Mac view shows one
+    /// board at a time (`boards`), so it folds no whole request; a styled board's request
+    /// card still says how it ended with `resultLine`.
     public enum Fold {
         /// The card shows folded: finished, and not opened by hand.
         public static func isFolded(_ item: Item, unfolded: Set<String>) -> Bool {
