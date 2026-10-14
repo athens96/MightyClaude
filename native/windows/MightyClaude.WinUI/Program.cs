@@ -47,6 +47,28 @@ public sealed record StartupOptions(string? ProfileDirectory = null, bool SmokeT
         catch { /* Diagnostics must not change startup behavior. */ }
     }
 
+    [ThreadStatic] private static bool tracingThrown;
+    private int thrownTraced;
+
+    /// <summary>
+    /// One thrown exception, handled or not, in the smoke's log with the frames that threw it, at most 2,000 per run. An exception
+    /// in a dispatcher callback ends a WinUI process as a stowed exception that no unhandled-exception handler sees; this trail is
+    /// then the only record of what threw.
+    /// </summary>
+    internal void TraceThrown(Exception error)
+    {
+        if (tracingThrown || Interlocked.Increment(ref thrownTraced) > 2000) return;
+        tracingThrown = true;
+        try
+        {
+            var frames = string.Join(" < ", (new StackTrace(2, false).GetFrames() ?? []).Take(8).Select(frame => frame.GetMethod() is { } method ? method.DeclaringType?.Name + "." + method.Name : "?"));
+            var message = error.Message.ReplaceLineEndings(" ");
+            TraceStartup($"thrown {error.GetType().FullName}: {(message.Length > 240 ? message[..240] : message)} @ {frames}");
+        }
+        catch { /* Diagnostics must not change startup behavior. */ }
+        finally { tracingThrown = false; }
+    }
+
     private bool failureWritten;
 
     /// <summary>The smoke has written its own record of a failed run: nothing thrown afterwards replaces it.</summary>
@@ -105,6 +127,7 @@ internal static class Program
             {
                 if (args.ExceptionObject is Exception error) startup.WriteStartupFailure(error);
             };
+            if (startup.SmokeTest) AppDomain.CurrentDomain.FirstChanceException += (_, args) => startup.TraceThrown(args.Exception);
             WinRT.ComWrappersSupport.InitializeComWrappers();
             startup.TraceStartup("com-wrappers-ready");
             Application.Start(parameters =>
