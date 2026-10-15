@@ -458,9 +458,11 @@ extension AppStore {
     /// The child's Claude pane, as a tab beside its parent: in the mode the
     /// parent asked for, never the last-used pane's, linked to its parent and
     /// working in its worktree folder. Its title is its task, kept as the
-    /// pane's name. The link is saved before its first run. A child the human
-    /// started takes its parent's model and is selected and focused, unless
-    /// the human has moved on or is typing in the parent.
+    /// pane's name. The link is saved before its first run. It shows its
+    /// requests in its parent's view (basic or Mighty; diagram, timeline or
+    /// pipeline). A child the human started takes its parent's model and
+    /// Mighty style and is selected and focused, unless the human has moved
+    /// on or is typing in the parent.
     func createPane(_ pane: DelegationChildPane) async -> Bool {
         guard !ending, isLoaded, snapshot.sessions.count < 128, !snapshot.sessions.contains(where: { $0.id == pane.sessionId }),
               let parent = snapshot.sessions.first(where: { $0.id == pane.parentSessionId }), !closingSessions.contains(parent.id),
