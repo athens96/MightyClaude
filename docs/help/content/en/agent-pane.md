@@ -19,7 +19,7 @@ An {{kbd:Enter}} pressed while an input method is still composing (Korean, for e
 ### Keep asking while it runs {#queue}
 You can write the next request while a task is running. Once the composer holds text, round buttons like send appear beside stop.
 - {{kbd:Enter}} or the {{ui:queue.add}} button: queue it as the next request. Queued requests run in order once the current task ends. A pane holds up to 16.
-- {{kbd:⌘Enter}} or the {{ui:queue.worktree}} button: in a Claude pane on this Mac with Mighty Orchestration on, in a git repository on a branch with a commit, run it right away in a new child pane with its own git worktree, beside this one, while the running task goes on ([Run in a new worktree](delegation.md#worktree)).
+- {{kbd:⌘Enter}} or the {{ui:queue.worktree}} button: in a Claude pane on this Mac with Mighty Orchestration on, in a git repository on a branch with a commit, run it right away in a new child pane with its own git worktree, beside this one, while the running task goes on; when the child is done, merge its result from its card in the sidebar ([Run in a new worktree](delegation.md#worktree)).
 - In a child pane, outside such a repository, or with Mighty Orchestration off, {{kbd:⌘Enter}} or the {{ui:phone.composer.steer}} button sends it to the running Claude right away instead. This works only in Claude panes on this Mac. The Mighty view shows it as an orange {{ui:graph.block.steer}} block.
 - Click {{ui:queue.runNext}} in the queue to run the first queued request now.
 
