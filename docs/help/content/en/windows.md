@@ -49,7 +49,7 @@ Windows has no menu bar. The same commands are in the sidebar and the {{ui:works
 | Pet bubble | Approval and question bubbles have one more symbol button. On an approval it opens a window with the whole request; on a question it opens a window where you type your own answer. |
 | Language | A new language applies after you reopen the app. |
 | File location | {{ui:menu.showInExplorer}} instead of {{ui:menu.showInFinder}}. |
-| Mighty Orchestration | Turned on and off with a registry value ([Turn it on or off](delegation.md#enable)). Worktrees go in `%USERPROFILE%\.mightyclaude\worktrees`, and one holding a junction or symbolic link is not cleaned up automatically ([Closing panes and cleanup](delegation.md#close)). |
+| Mighty Orchestration | Turned on and off with a registry value ([Turn it on or off](delegation.md#enable)). There is no starting a child pane yourself with {{kbd:⌘Enter}}; only letting Claude split the work. Worktrees go in `%USERPROFILE%\.mightyclaude\worktrees`, and one holding a junction or symbolic link is not cleaned up automatically ([Closing panes and cleanup](delegation.md#close)). |
 
 > [!note]
 > Some Windows features haven't been checked on enough real machines yet. If something looks wrong, please tell us.

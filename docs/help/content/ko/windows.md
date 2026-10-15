@@ -49,7 +49,7 @@ Windows에는 메뉴 막대가 없습니다. 같은 기능은 사이드바와 {{
 | 펫 말풍선 | 승인과 질문 말풍선에 기호 단추가 하나 더 있습니다. 승인에서는 요청 전체를 보는 창을, 질문에서는 답을 직접 써서 보내는 창을 엽니다. |
 | 언어 | 바꾼 언어는 앱을 다시 열면 적용됩니다. |
 | 파일 위치 | {{ui:menu.showInFinder}} 대신 {{ui:menu.showInExplorer}}가 있습니다. |
-| 마이티 오케스트레이션 | 레지스트리 값으로 켜고 끕니다([켜고 끄기](delegation.md#enable)). worktree는 `%USERPROFILE%\.mightyclaude\worktrees`에 생기고, 안에 정션이나 심볼릭 링크가 있으면 자동으로 정리하지 않습니다([창 닫기와 정리](delegation.md#close)). |
+| 마이티 오케스트레이션 | 레지스트리 값으로 켜고 끕니다([켜고 끄기](delegation.md#enable)). {{kbd:⌘Enter}}로 자식 창을 직접 띄우는 기능은 없고, Claude에게 나눠 맡기기만 됩니다. worktree는 `%USERPROFILE%\.mightyclaude\worktrees`에 생기고, 안에 정션이나 심볼릭 링크가 있으면 자동으로 정리하지 않습니다([창 닫기와 정리](delegation.md#close)). |
 
 > [!note]
 > Windows 앱의 일부 기능은 아직 실제 기기에서 충분히 확인되지 않았습니다. 이상한 점이 있으면 알려 주세요.
