@@ -214,19 +214,19 @@ struct MobileRemoteTests {
                 try await Task.sleep(for: .milliseconds(20))
             }
             #expect(await service.parkedPolls(scope: "state") == 1)
+            let notifiedAt = Date()
             host.bump(state: true, session: false); await service.notify(scope: "state", revision: 2)
             #expect(await service.parkedPolls(scope: "state") == 0)
             let woken = try await waiting
-            // The requirement is "answers on notify, not when `wait` runs out". A poll
-            // nobody wakes answers only a full `wait` (the 10 s maximum) after it
-            // parked, and it parked after `unparkedAt`, so any answer inside `wait`
-            // of that proves the wake. The bound is that wait itself rather than a
-            // latency guess: the wake needs only a few actor hops, which a starved
-            // CI runner delayed past the old 4 s bound, while a real miss can never
-            // beat it. Timed from the request instead, a busy runner's delay in
-            // merely starting the request counted too and could use up the wait.
+            // The requirement is "answers on notify, not when `wait` runs out". The
+            // poll parked after `unparkedAt`, so its own timeout cannot fire before
+            // `unparkedAt + wait`; notify came before that and took the poll off the
+            // parked list (0 above), so notify is what resumed it. That is judged at
+            // the notify, not when the answer arrives: on a starved CI runner the
+            // woken poll's reply itself can take seconds to come back, which says
+            // nothing about whether the wake happened.
             #expect(woken.0 == 200 && woken.1["revision"] as? Int == 2)
-            #expect(Date().timeIntervalSince(unparkedAt) < wait)
+            #expect(notifiedAt.timeIntervalSince(unparkedAt) < wait)
             let timedOut = try await call(service, "GET", "/m1/state?since=2&wait=1")
             #expect(timedOut.1["revision"] as? Int == 2)
             #expect(try await call(service, "GET", "/m1/state?since=abc").0 == 400)
