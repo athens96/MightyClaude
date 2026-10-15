@@ -318,6 +318,8 @@ final class AppStore: ObservableObject, DelegationHost {
     @Published var delegationCardBusy: Set<String> = []
     /// A discard from a child's card waiting on the human's confirmation.
     @Published var pendingChildDiscard: PendingChildDiscard?
+    /// A merge from a child's card went through: the offer to discard the child now.
+    @Published var pendingMergedDiscard: PendingChildDiscard?
     /// A Mac close of a parent pane with open children, waiting on the
     /// human's confirmation. The phone's close never asks.
     @Published var pendingParentClose: PendingParentClose?
@@ -366,7 +368,7 @@ final class AppStore: ObservableObject, DelegationHost {
         let needle = search.trimmingCharacters(in: .whitespacesAndNewlines)
         return snapshot.workspaces.filter { needle.isEmpty || $0.name.localizedCaseInsensitiveContains(needle) || $0.path.localizedCaseInsensitiveContains(needle) }
     }
-    var hasModal: Bool { showSettings || renameTarget != nil || settingsSession != nil || sessionInfoSessionID != nil || pendingRemoval != nil || pendingChildDiscard != nil || pendingParentClose != nil || attachmentPanelSession != nil || terminalHistorySession != nil || pluginBrowser != nil || resumePicker != nil || planDocument != nil }
+    var hasModal: Bool { showSettings || renameTarget != nil || settingsSession != nil || sessionInfoSessionID != nil || pendingRemoval != nil || pendingChildDiscard != nil || pendingMergedDiscard != nil || pendingParentClose != nil || attachmentPanelSession != nil || terminalHistorySession != nil || pluginBrowser != nil || resumePicker != nil || planDocument != nil }
 
     func canEditAttachments(_ id: String) -> Bool {
         !ending && !closingSessions.contains(id) && snapshot.sessions.contains { $0.id == id }

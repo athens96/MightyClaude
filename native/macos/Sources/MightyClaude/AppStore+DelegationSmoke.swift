@@ -179,6 +179,9 @@ extension AppStore {
         mergeChildFromCard(id)
         try await waitForSmoke(timeout: 30) { self.delegationCardNotes[id] != nil }
         guard delegationCardNotes[id]?.result == .done else { throw MightyError("The card merge of \(id) was \(String(describing: delegationCardNotes[id]?.result)).") }
+        // A merge that went through offers to discard the child; the smoke keeps it ("Later") and closes it itself.
+        try await waitForSmoke(timeout: 10) { self.pendingMergedDiscard?.id == id }
+        pendingMergedDiscard = nil
     }
 
     /// Waits for the close of the merged child `id` to clean it up, and checks

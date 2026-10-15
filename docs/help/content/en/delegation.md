@@ -94,6 +94,7 @@ There are two ways to bring a child's result into the parent's branch.
 
 1. **The parent's `merge` tool** fast-forwards only. The parent passes the child's head that `child_status` gave it. The merge is refused, changing nothing, when the child has not reported, when the child's or the parent's folder has uncommitted changes, when the child's head moved, when the parent's branch has moved on since (diverged), or when the parent's branch is not checked out. Whether an approval card appears for this tool follows the parent pane's permission mode.
 2. **The card's {{ui:delegation.card.merge}} button** is for you. It fast-forwards when it can and otherwise makes exactly one merge commit. It checks for conflicts first and shows the reason on the card when it refuses.
+   Once the merge goes through, you are asked whether to discard that child right away. {{ui:delegation.mergedDiscard.confirm}} closes the child pane and removes its worktree and branch; the merged work stays in the parent's branch, but the merge can no longer be undone. {{ui:delegation.mergedDiscard.later}} keeps the card.
 
 > [!tip]
 > Merging one child moves the parent's branch forward, so the `merge` tool usually refuses the other children as diverged. Merge those with the card's {{ui:delegation.card.merge}} button.

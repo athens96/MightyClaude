@@ -94,6 +94,7 @@ Windows에서는 `HKEY_CURRENT_USER\Software\MightyClaudeNative` 아래의 `dele
 
 1. **부모의 `merge` 도구**: 빨리 감기(fast-forward)만 합니다. 부모는 `child_status`가 준 자식의 head를 함께 넘깁니다. 자식이 아직 보고하지 않았거나, 자식이나 부모 폴더에 커밋하지 않은 변경이 있거나, 자식의 head가 움직였거나, 부모 브랜치가 그새 더 나아갔거나(갈라짐), 부모 브랜치가 체크아웃되어 있지 않으면 거절하고 아무것도 바꾸지 않습니다. 이 도구에 승인 카드가 뜨는지는 부모 창의 권한 모드에 따릅니다.
 2. **카드의 {{ui:delegation.card.merge}} 단추**: 사람이 누릅니다. 빨리 감기가 되면 그렇게 하고, 안 되면 병합 커밋을 정확히 하나 만듭니다. 먼저 충돌을 미리 살펴 보고, 거절되면 그 이유를 카드에 보여 줍니다.
+   병합이 되면 그 자식 창을 바로 폐기할지 묻습니다. {{ui:delegation.mergedDiscard.confirm}}를 고르면 자식 창을 닫고 worktree와 브랜치를 지웁니다. 병합된 내용은 부모 브랜치에 그대로 남지만, 그 병합은 더 이상 되돌릴 수 없습니다. {{ui:delegation.mergedDiscard.later}}를 고르면 카드가 그대로 남습니다.
 
 > [!tip]
 > 자식 하나를 병합하면 부모 브랜치가 앞으로 가므로, 나머지 자식은 보통 `merge` 도구에서 갈라짐으로 거절됩니다. 그때는 카드의 {{ui:delegation.card.merge}} 단추로 병합하세요.

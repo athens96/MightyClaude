@@ -89,6 +89,12 @@ struct WorkspaceView: View {
                 Button(L("common.close"), role: .cancel) { store.pendingChildDiscard = nil }
             }
         } message: { pending in Text(DelegationText.discardMessage(pending)) }
+        // Right after a merge from a child's card: discard the merged child now, or keep it for later.
+        .confirmationDialog(L("delegation.mergedDiscard.title"), isPresented: Binding(get: { store.pendingMergedDiscard != nil }, set: { if !$0 { store.pendingMergedDiscard = nil } }),
+                            titleVisibility: .visible, presenting: store.pendingMergedDiscard) { pending in
+            Button(L("delegation.mergedDiscard.confirm"), role: .destructive) { store.discardMergedChild(pending) }
+            Button(L("delegation.mergedDiscard.later"), role: .cancel) { store.pendingMergedDiscard = nil }
+        } message: { pending in Text(DelegationText.mergedDiscardMessage(pending)) }
         // A parent's close from the Mac while its children are open; the phone's close never asks.
         .confirmationDialog(L("delegation.parentClose.title"), isPresented: Binding(get: { store.pendingParentClose != nil }, set: { if !$0 { store.pendingParentClose = nil } }),
                             titleVisibility: .visible, presenting: store.pendingParentClose) { pending in
@@ -954,6 +960,12 @@ enum DelegationText {
 
     /// The discard confirmation's text: what goes, and the nested worktrees that
     /// go with it; or, when those could not be listed, why nothing can go now.
+    /// After a merge: the merged work stays in the parent's branch; what the discard removes, and that the undo goes.
+    static func mergedDiscardMessage(_ pending: PendingChildDiscard) -> String {
+        let nested = (pending.nested ?? []).isEmpty ? "" : "\n\n" + L("delegation.discard.nested", ["count": "\(pending.nested?.count ?? 0)", "paths": (pending.nested ?? []).joined(separator: "\n")])
+        return L("delegation.mergedDiscard.message", ["title": pending.title, "branch": pending.branch]) + nested
+    }
+
     static func discardMessage(_ pending: PendingChildDiscard) -> String {
         guard let paths = pending.nested else { return L("delegation.discard.unavailable", ["title": pending.title]) }
         let nested = paths.isEmpty ? L("delegation.discard.noNested") : L("delegation.discard.nested", ["count": "\(paths.count)", "paths": paths.joined(separator: "\n")])

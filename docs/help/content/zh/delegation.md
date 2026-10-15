@@ -94,6 +94,7 @@ reg add "HKCU\Software\MightyClaudeNative" /v delegation.enabled /t REG_DWORD /d
 
 1. **父窗格的 `merge` 工具**只做快进（fast-forward）。父窗格要一起传入 `child_status` 给出的子窗格 head。子窗格尚未报告、子窗格或父窗格文件夹中有未提交的更改、子窗格的 head 已移动、父窗格的分支在此期间已经前进（分叉），或者父窗格的分支没有被检出时，合并会被拒绝，并且不做任何更改。这个工具是否会弹出批准卡片，取决于父窗格的权限模式。
 2. **卡片上的{{ui:delegation.card.merge}}按钮**由你来点。能快进时就快进，否则只创建一个合并提交。它会先检查冲突，拒绝时会在卡片上显示原因。
+   合并成功后，会询问是否立即丢弃该子窗格。选择{{ui:delegation.mergedDiscard.confirm}}会关闭子窗格并删除其 worktree 和分支；已合并的内容仍保留在父分支中，但这次合并将无法撤销。选择{{ui:delegation.mergedDiscard.later}}则保留卡片。
 
 > [!tip]
 > 合并一个子窗格后，父窗格的分支会向前移动，所以其余子窗格通常会被 `merge` 工具以分叉为由拒绝。这时请用卡片上的{{ui:delegation.card.merge}}按钮合并。
