@@ -341,7 +341,9 @@ extension AppStore {
 
     // MARK: Child cards
 
-    /// The human's merge from the child's card.
+    /// The human's merge from the child's card. Once it went through, the
+    /// human is offered to discard the child right away: its work is in the
+    /// parent's branch, so only its worktree, its branch and the undo go.
     func mergeChildFromCard(_ id: String) {
         runCardAction(id, .merge) { delegation in
             switch await delegation.mergeFromCard(id) {
@@ -350,7 +352,30 @@ extension AppStore {
             case .refused(let reason): .refused(reason)
             case .failed(let message): .failed(message)
             }
+        } then: { [weak self] result in
+            guard let self, case .done = result else { return }
+            offerDiscardAfterMerge(id)
         }
+    }
+
+    /// Asks whether the merged child goes now, naming the worktrees nested in
+    /// its own. Nothing is asked when those cannot be listed (the card's own
+    /// discard says why) or another confirmation is already up.
+    private func offerDiscardAfterMerge(_ id: String) {
+        guard let delegation, pendingMergedDiscard == nil, pendingChildDiscard == nil,
+              let row = delegationChildren.first(where: { $0.id == id }) else { return }
+        let title = snapshot.sessions.first(where: { $0.id == id })?.title ?? row.task ?? L("delegation.child.untitled")
+        Task { [weak self] in
+            guard let nested = await delegation.nestedWorktrees(of: id), let self,
+                  pendingMergedDiscard == nil, pendingChildDiscard == nil else { return }
+            pendingMergedDiscard = PendingChildDiscard(id: id, title: title, branch: ChildRecord.branchName(for: id), nested: nested)
+        }
+    }
+
+    /// The discard the human chose right after a merge.
+    func discardMergedChild(_ pending: PendingChildDiscard) {
+        pendingMergedDiscard = nil
+        discardChildConfirmed(pending)
     }
 
     /// The human's undo of the child's last merge from its card.
