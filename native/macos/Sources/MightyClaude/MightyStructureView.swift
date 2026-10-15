@@ -292,8 +292,8 @@ struct MightyStructureView: View {
 
     // MARK: Board header
 
-    /// The board's status and first line, then its steps as chips joined by lines that
-    /// are green once the step before them is done.
+    /// The board's status (and a pipeline's name). Its steps are the columns' own
+    /// headers below, so the pipeline is not drawn twice.
     private func header(_ board: MightyStructure.Board) -> some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
@@ -306,18 +306,6 @@ struct MightyStructureView: View {
                 }
                 Spacer(minLength: 0)
             }
-            HStack(spacing: 0) {
-                ForEach(Array(board.steps.enumerated()), id: \.element.id) { index, step in
-                    chip(stepName(step), step: step.step)
-                    if index < board.steps.count - 1 {
-                        Rectangle().fill(step.step == .done ? Palette.done : Palette.track)
-                            .frame(minWidth: DesignMetrics.Spacing.md, maxWidth: .infinity).frame(height: 2)
-                            .accessibilityHidden(true)
-                    }
-                }
-            }
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel(L("guidedPanel.phasesAccessibility"))
         }
         .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).padding(.vertical, DesignMetrics.Spacing.sm)
     }
@@ -431,7 +419,7 @@ struct MightyStructureView: View {
         HStack(alignment: .top, spacing: DesignMetrics.Spacing.lg) {
             ForEach(board.columns) { column in
                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
-                    columnHeader(column)
+                    columnHeader(column, last: column.id == board.columns.last?.id)
                     columnCards(column, board: board.id, onNewest: onNewest, width: cardWidth)
                 }
                 .frame(width: width, height: height, alignment: .topLeading)
@@ -557,15 +545,19 @@ struct MightyStructureView: View {
     }
 
     /// The step's name in its state's ink, and how many cards it holds.
-    private func columnHeader(_ column: MightyStructure.BoardColumn) -> some View {
-        let look = Self.look(column.step.step)
-        return HStack(spacing: DesignMetrics.Spacing.sm) {
-            Image(systemName: look.icon).font(.system(size: 8, weight: .bold))
-                .foregroundStyle(column.step.step == .pending ? Palette.ink2 : look.fill)
-            Text(verbatim: stepName(column.step)).font(.system(size: Self.textSize, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
+    /// The column's step as the pipeline's chip, in its state's colours, with how many
+    /// cards it holds; a line runs on to the next column, green once this step is done.
+    private func columnHeader(_ column: MightyStructure.BoardColumn, last: Bool) -> some View {
+        HStack(spacing: DesignMetrics.Spacing.sm) {
+            chip(stepName(column.step), step: column.step.step)
             Text("\(column.count)").font(.system(size: 10, weight: .semibold)).monospacedDigit().foregroundStyle(Palette.ink2)
                 .padding(.horizontal, DesignMetrics.Spacing.sm).background(Palette.track, in: Capsule())
-            Spacer(minLength: 0)
+            if last { Spacer(minLength: 0) }
+            else {
+                // Across the gap too, so the chips read as one pipeline from column to column.
+                Rectangle().fill(column.step.step == .done ? Palette.done : Palette.track).frame(maxWidth: .infinity).frame(height: 2)
+                    .padding(.trailing, -DesignMetrics.Spacing.lg).accessibilityHidden(true)
+            }
         }
         .frame(height: Self.chipHeight)
         .accessibilityHidden(true)
