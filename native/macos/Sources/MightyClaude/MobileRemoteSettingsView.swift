@@ -20,14 +20,14 @@ struct MobileRemoteSettingsSection: View {
                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                     Text(L("settings.mobileRemote.allowToggle"))
                     Text(L("settings.mobileRemote.allowDescription"))
-                        .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        .font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
             }
             .disabled(store.mobileBusy)
             .accessibilityIdentifier("settings-mobile-toggle")
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 Text(L("settings.mobileRemote.relayLabel"))
-                TextField(MobileWire.defaultRelayURL.isEmpty ? "wss://relay.example.com" : MobileWire.defaultRelayURL, text: $relayText).textFieldStyle(.roundedBorder).font(.system(size: 11, design: .monospaced))
+                TextField(MobileWire.defaultRelayURL.isEmpty ? "wss://relay.example.com" : MobileWire.defaultRelayURL, text: $relayText).textFieldStyle(.roundedBorder).font(.ui(size: 11, design: .monospaced))
                     .onSubmit(applyRelay).accessibilityIdentifier("settings-mobile-relay")
                 Button(L("settings.mobileRemote.applyButton"), action: applyRelay).disabled(store.mobileBusy || !relayDirty || RelayEndpoint.normalize(relayText) == nil)
             }
@@ -37,7 +37,7 @@ struct MobileRemoteSettingsSection: View {
                 Text(status.relayConnected
                      ? (status.clients > 0 ? L("settings.mobileRemote.statusConnectedTemplate", ["count": "\(status.clients)"]) : L("settings.mobileRemote.statusRelayConnected"))
                      : settings.enabled ? L("settings.mobileRemote.statusConnecting") : L("settings.mobileRemote.statusOff"))
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .font(.ui(size: 11)).foregroundStyle(.secondary)
                 Spacer()
                 // Shown while connected too: a socket a network change left
                 // half-open still reads as connected until its ping times out.
@@ -45,7 +45,7 @@ struct MobileRemoteSettingsSection: View {
                     Button(L("settings.mobileRemote.reconnectButton")) { Task { await store.mobileRemote.reconnect(); store.refreshMobileStatus() } }.controlSize(.small).disabled(store.mobileBusy)
                 }
             }
-            Text(status.detail).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text(status.detail).font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 // What the host pushes can still go missing on the way; while
                 // this is on screen, read the host's own state now and then.
                 .task {
@@ -55,7 +55,7 @@ struct MobileRemoteSettingsSection: View {
                     }
                 }
             if settings.enabled, settings.effectiveRelayURL == nil {
-                Text(L("settings.mobileRemote.relayHint")).font(.system(size: 11)).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true)
+                Text(L("settings.mobileRemote.relayHint")).font(.ui(size: 11)).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true)
             }
             if status.relayConnected, let pairing = status.pairingURL {
                 HStack(alignment: .top, spacing: DesignMetrics.Spacing.lg) {
@@ -65,11 +65,11 @@ struct MobileRemoteSettingsSection: View {
                             .accessibilityLabel(L("settings.mobileRemote.qrAccessibility")).accessibilityIdentifier("settings-mobile-qr")
                     }
                     VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
-                        Text(L("settings.mobileRemote.scanInstruction")).font(.system(size: 11)).foregroundStyle(.secondary)
-                        LabeledContent(L("settings.mobileRemote.hostIdLabel")) { Text(status.serverId).font(.system(size: 11, design: .monospaced)).textSelection(.enabled).lineLimit(1) }
+                        Text(L("settings.mobileRemote.scanInstruction")).font(.ui(size: 11)).foregroundStyle(.secondary)
+                        LabeledContent(L("settings.mobileRemote.hostIdLabel")) { Text(status.serverId).font(.ui(size: 11, design: .monospaced)).textSelection(.enabled).lineLimit(1) }
                         LabeledContent(L("settings.mobileRemote.keyLabel")) {
                             HStack(spacing: DesignMetrics.Spacing.sm) {
-                                Text(showsKey ? (status.key ?? "") : String(repeating: "•", count: 16)).font(.system(size: 11, design: .monospaced)).textSelection(.enabled).lineLimit(1)
+                                Text(showsKey ? (status.key ?? "") : String(repeating: "•", count: 16)).font(.ui(size: 11, design: .monospaced)).textSelection(.enabled).lineLimit(1)
                                 Button(showsKey ? L("settings.mobileRemote.hideKeyButton") : L("settings.mobileRemote.showKeyButton")) { showsKey.toggle() }.controlSize(.small)
                             }
                         }
@@ -89,13 +89,13 @@ struct MobileRemoteSettingsSection: View {
                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                     Text(L("settings.mobileRemote.legacyAppsToggle"))
                     Text(L("settings.mobileRemote.legacyAppsDescription"))
-                        .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        .font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
             }
             .disabled(store.mobileBusy)
             .accessibilityIdentifier("settings-mobile-legacy-toggle")
             if let warning = status.registryWarning {
-                Text(warning).font(.system(size: 11)).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true)
+                Text(warning).font(.ui(size: 11)).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("settings-mobile-registry-warning")
             }
             if !status.devices.isEmpty { devices }
@@ -126,17 +126,17 @@ struct MobileRemoteSettingsSection: View {
     /// The phones this host has admitted. A "구버전 앱" row stands for every
     /// app that predates device tokens, because such phones cannot be told apart.
     @ViewBuilder private var devices: some View {
-        Text(L("settings.mobileRemote.connectedDevicesTitle")).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+        Text(L("settings.mobileRemote.connectedDevicesTitle")).font(.ui(size: 11, weight: .medium)).foregroundStyle(.secondary)
         ForEach(status.devices) { device in
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: device.legacy ? "questionmark.app" : "iphone").foregroundStyle(device.connected ? Palette.doneText : .secondary)
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: DesignMetrics.Spacing.sm) {
-                        Text(device.name).font(.system(size: 12))
+                        Text(device.name).font(.ui(size: 12))
                         if device.connected { connectedBadge }
                         if device.isNew { newBadge }
                     }
-                    Text(seenLabel(device)).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                    Text(seenLabel(device)).font(.ui(size: 10)).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer(minLength: 8)
                 Button(L("settings.mobileRemote.revokeRowButton")) { revoking = device }
@@ -148,7 +148,7 @@ struct MobileRemoteSettingsSection: View {
     }
 
     private var connectedBadge: some View {
-        Text(L("settings.mobileRemote.connectedBadge")).font(.system(size: 9, weight: .medium)).foregroundStyle(Palette.doneText)
+        Text(L("settings.mobileRemote.connectedBadge")).font(.ui(size: 9, weight: .medium)).foregroundStyle(Palette.doneText)
             .padding(.horizontal, DesignMetrics.Spacing.xs).padding(.vertical, 1)
             .background(Palette.doneSoft, in: Capsule())
     }
@@ -156,7 +156,7 @@ struct MobileRemoteSettingsSection: View {
     /// A phone registered in the last day. An arrival the user did not make
     /// themselves is the one thing this list has to show at a glance.
     private var newBadge: some View {
-        Text(L("settings.mobileRemote.newDeviceBadge")).font(.system(size: 9, weight: .medium)).foregroundStyle(Palette.waitText)
+        Text(L("settings.mobileRemote.newDeviceBadge")).font(.ui(size: 9, weight: .medium)).foregroundStyle(Palette.waitText)
             .padding(.horizontal, DesignMetrics.Spacing.xs).padding(.vertical, 1)
             .background(Palette.waitSoft, in: Capsule())
             .accessibilityIdentifier("settings-mobile-new-badge")
@@ -185,8 +185,8 @@ struct MobileRemoteSettingsSection: View {
 
     private func guideStep(_ n: Int, _ text: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: DesignMetrics.Spacing.xs) {
-            Text("\(n).").font(.system(size: 11)).foregroundStyle(.secondary).frame(width: 14, alignment: .trailing)
-            Text(text).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text("\(n).").font(.ui(size: 11)).foregroundStyle(.secondary).frame(width: 14, alignment: .trailing)
+            Text(text).font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
 

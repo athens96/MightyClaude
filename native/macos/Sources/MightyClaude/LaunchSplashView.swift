@@ -23,13 +23,13 @@ struct LaunchSplashView: View {
                     .padding(.bottom, DesignMetrics.Spacing.xl)
 
                 Text("Mighty Claude")
-                    .font(.system(size: 30, weight: .semibold, design: .rounded))
+                    .font(.ui(size: 30, weight: .semibold, design: .rounded))
                     .tracking(-0.6)
                     .foregroundStyle(.primary)
                     .padding(.bottom, DesignMetrics.Spacing.md)
 
                 Text(L("launch.preparing"))
-                    .font(.system(size: 13))
+                    .font(.ui(size: 13))
                     .foregroundStyle(.secondary)
 
                 ProgressView()
@@ -53,7 +53,7 @@ struct LaunchSplashView: View {
                     .scaledToFit()
             } else {
                 Image(systemName: "sparkles")
-                    .font(.system(size: 52, weight: .light))
+                    .font(.ui(size: 52, weight: .light))
                     .foregroundStyle(Palette.accent)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(Palette.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 24))

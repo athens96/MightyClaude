@@ -57,7 +57,7 @@ final class AgentImageAttachmentCell: NSTextAttachmentCell {
             frame.fill()
             let text: String
             if case .loading = picture { text = L("images.loading") } else { text = L("images.missing") }
-            let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor]
+            let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.ui(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor]
             let size = (text as NSString).size(withAttributes: attributes)
             (text as NSString).draw(at: NSPoint(x: frame.midX - size.width / 2, y: frame.midY - size.height / 2), withAttributes: attributes)
         }

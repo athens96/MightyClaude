@@ -90,7 +90,7 @@ struct ScreenSharePermissionsView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: "lock.shield").foregroundStyle(.secondary)
-                Text(L("settings.screenShare.permissions.title")).font(.system(size: 14, weight: .semibold))
+                Text(L("settings.screenShare.permissions.title")).font(.ui(size: 14, weight: .semibold))
                 BetaBadge()
                 Spacer()
             }
@@ -99,12 +99,12 @@ struct ScreenSharePermissionsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.lg) {
                     Text(L("settings.screenShare.permissions.intro"))
-                        .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        .font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     ForEach(ScreenSharePermission.allCases, id: \.self) { permission in
                         row(permission)
                     }
                     Label(L("settings.screenShare.permissions.signingNote"), systemImage: "info.circle")
-                        .font(.system(size: 11)).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true)
+                        .font(.ui(size: 11)).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("screen-share-permissions-signing-note")
                 }
                 .padding(DesignMetrics.Inset.sheet)
@@ -135,7 +135,7 @@ struct ScreenSharePermissionsView: View {
         return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: Self.symbol(permission)).frame(width: 18).foregroundStyle(.secondary)
-                Text(Self.title(permission)).font(.system(size: 12, weight: .medium))
+                Text(Self.title(permission)).font(.ui(size: 12, weight: .medium))
                 statusChip(status)
                 Spacer(minLength: 8)
                 Group {
@@ -158,7 +158,7 @@ struct ScreenSharePermissionsView: View {
                 .accessibilityIdentifier("screen-share-permission-open-\(permission.rawValue)")
             }
             Text(Self.explanation(permission))
-                .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                .font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 .padding(.leading, 18 + DesignMetrics.Spacing.sm) // under the title: the icon column and its gap
         }
         .accessibilityIdentifier("screen-share-permission-\(permission.rawValue)")
@@ -173,7 +173,7 @@ struct ScreenSharePermissionsView: View {
             case .unknown: return (L("settings.screenShare.permissions.statusUnknown"), Color.secondary, Color.secondary.opacity(0.12))
             }
         }()
-        return Text(text).font(.system(size: 9, weight: .medium)).foregroundStyle(foreground)
+        return Text(text).font(.ui(size: 9, weight: .medium)).foregroundStyle(foreground)
             .padding(.horizontal, DesignMetrics.Spacing.xs).padding(.vertical, 1)
             .background(background, in: Capsule())
     }

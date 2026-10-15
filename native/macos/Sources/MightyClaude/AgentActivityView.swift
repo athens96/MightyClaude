@@ -16,16 +16,16 @@ struct AgentLogEntryView: View {
                     ProviderIcon(provider: entry.provider ?? fallbackProvider, size: 12)
                     Text(ProviderOptions.label(entry.provider ?? fallbackProvider)).fontWeight(.semibold)
                     Spacer()
-                    Text(shortTime).font(.system(size: 9, design: .monospaced)).foregroundStyle(.tertiary)
-                }.font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text(shortTime).font(.ui(size: 9, design: .monospaced)).foregroundStyle(.tertiary)
+                }.font(.ui(size: 11)).foregroundStyle(.secondary)
                 AgentMarkdownView(source: entry.text)
             }
             .padding(.vertical, DesignMetrics.Spacing.sm)
             .accessibilityIdentifier("markdown-\(entry.id)")
         } else if entry.kind == "user" {
             HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
-                Image(systemName: "arrow.up.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.accent).padding(.top, DesignMetrics.Spacing.xxs)
-                Text(entry.text).font(.system(size: 13)).lineSpacing(4).textSelection(.enabled)
+                Image(systemName: "arrow.up.right").font(.ui(size: 11, weight: .semibold)).foregroundStyle(Palette.accent).padding(.top, DesignMetrics.Spacing.xxs)
+                Text(entry.text).font(.ui(size: 13)).lineSpacing(4).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.md)
@@ -34,7 +34,7 @@ struct AgentLogEntryView: View {
             .accessibilityLabel(L("transcript.sentMessage"))
         } else if entry.kind == "output" {
             ScrollView(.horizontal) {
-                Text(entry.text).font(.system(size: 11, design: .monospaced)).lineSpacing(3).textSelection(.enabled)
+                Text(entry.text).font(.ui(size: 11, design: .monospaced)).lineSpacing(3).textSelection(.enabled)
                     .fixedSize(horizontal: true, vertical: false).padding(DesignMetrics.Spacing.md)
             }
             .background(Palette.subtle, in: RoundedRectangle(cornerRadius: 7))
@@ -42,8 +42,8 @@ struct AgentLogEntryView: View {
         } else {
             HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: entry.kind == "error" ? "exclamationmark.circle" : "info.circle")
-                    .font(.system(size: 11)).frame(width: 15).padding(.top, DesignMetrics.Spacing.xxs)
-                Text(entry.text).font(.system(size: 12)).lineSpacing(3).textSelection(.enabled)
+                    .font(.ui(size: 11)).frame(width: 15).padding(.top, DesignMetrics.Spacing.xxs)
+                Text(entry.text).font(.ui(size: 12)).lineSpacing(3).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .foregroundStyle(entry.kind == "error" ? Palette.errText : Color.secondary)
@@ -81,25 +81,25 @@ struct AgentActivityRow: View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: Self.symbol(activity.kind))
-                    .font(.system(size: 11, weight: .medium)).frame(width: 15, height: 17)
+                    .font(.ui(size: 11, weight: .medium)).frame(width: 15, height: 17)
                     .foregroundStyle(activity.state == "error" ? Palette.errText : animating ? Palette.accent : Color.secondary)
                 Text(activity.summary.isEmpty ? activity.toolName ?? L("transcript.tool.fallback") : activity.summary)
-                    .font(.system(size: 12, design: monospace ? .monospaced : .default))
+                    .font(.ui(size: 12, design: monospace ? .monospaced : .default))
                     .lineSpacing(3).lineLimit(expanded ? nil : 2).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if animating { AgentRunningIndicator().padding(.top, DesignMetrics.Spacing.xxs) }
-                else if sessionRunning && activity.state == "waiting" { Image(systemName: "clock").font(.system(size: 10)).foregroundStyle(Palette.accent).help(L("transcript.tool.waiting")) }
-                else if activity.state == "error" { Text(L("transcript.tool.failed")).font(.system(size: 10, weight: .medium)).foregroundStyle(Palette.errText) }
+                else if sessionRunning && activity.state == "waiting" { Image(systemName: "clock").font(.ui(size: 10)).foregroundStyle(Palette.accent).help(L("transcript.tool.waiting")) }
+                else if activity.state == "error" { Text(L("transcript.tool.failed")).font(.ui(size: 10, weight: .medium)).foregroundStyle(Palette.errText) }
                 if hasDetails {
                     Button { expanded.toggle() } label: {
-                        Image(systemName: expanded ? "chevron.up" : "chevron.down").font(.system(size: 9, weight: .medium)).frame(width: 18, height: 18)
+                        Image(systemName: expanded ? "chevron.up" : "chevron.down").font(.ui(size: 9, weight: .medium)).frame(width: 18, height: 18)
                     }.buttonStyle(.plain).foregroundStyle(.secondary)
                         .accessibilityLabel(expanded ? L("transcript.tool.collapseDetail") : L("transcript.tool.expandDetail"))
                 }
             }
             if expanded, let output = activity.output, !output.isEmpty {
                 ScrollView([.horizontal, .vertical]) {
-                    Text(output).font(.system(size: 11, design: .monospaced)).lineSpacing(3)
+                    Text(output).font(.ui(size: 11, design: .monospaced)).lineSpacing(3)
                         .fixedSize(horizontal: true, vertical: false).textSelection(.enabled).padding(DesignMetrics.Spacing.md)
                 }
                 .frame(maxHeight: 220)
@@ -136,7 +136,7 @@ struct AgentRunningIndicator: View {
 
     var body: some View {
         Group {
-            if reduceMotion { Image(systemName: "circle.dotted").font(.system(size: 12)).foregroundStyle(Palette.accent) }
+            if reduceMotion { Image(systemName: "circle.dotted").font(.ui(size: 12)).foregroundStyle(Palette.accent) }
             else { ProgressView().controlSize(.mini).progressViewStyle(.circular).tint(Palette.accent) }
         }
         .frame(width: 12, height: 12)

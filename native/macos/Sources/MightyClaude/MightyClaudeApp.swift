@@ -47,6 +47,9 @@ struct MightyClaudeApp: App {
                 }
             }
             .environmentObject(store)
+            // Text that names no font of its own is the body size at the user's text size; at
+            // the standard setting nothing is set, so small controls keep their own size.
+            .font(store.textAppearance.isStandard ? nil : .ui(size: 13))
             .frame(minWidth: 940, minHeight: 650)
             .preferredColorScheme(store.snapshot.theme == "light" ? .light : .dark)
             .tint(Palette.accent)
@@ -72,6 +75,19 @@ struct MightyClaudeApp: App {
                 }
                 .keyboardShortcut("s", modifiers: [.control, .command])
                 .disabled(!store.isLoaded || store.hasModal)
+            }
+            // View menu: the text size of the whole app, terminals included.
+            CommandGroup(after: .sidebar) {
+                Divider()
+                Button(L("menu.textBigger")) { store.setTextAppearance(store.textAppearance.stepped(1)) }
+                    .keyboardShortcut("=", modifiers: .command)
+                    .disabled(!store.textAppearance.canGrow)
+                Button(L("menu.textSmaller")) { store.setTextAppearance(store.textAppearance.stepped(-1)) }
+                    .keyboardShortcut("-", modifiers: .command)
+                    .disabled(!store.textAppearance.canShrink)
+                Button(L("menu.textActualSize")) { store.setTextAppearance(TextAppearance(family: store.textAppearance.family)) }
+                    .keyboardShortcut("0", modifiers: .command)
+                    .disabled(store.textAppearance.scale == 1)
             }
             CommandMenu(L("menu.workspace")) {
                 Button(L("menu.searchWorkspaces")) { store.focusSearch = true }

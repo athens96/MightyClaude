@@ -170,7 +170,7 @@ struct MightyGraphOuroborosCard: View {
         VStack(spacing: 0) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: "infinity").foregroundStyle(tint)
-                Text(L("graph.ouroboros.title")).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                Text(L("graph.ouroboros.title")).font(.ui(size: 12, weight: .semibold)).lineLimit(1)
                 Spacer(minLength: 3)
                 MightyGraphActivityIndicator(status: indicatorStatus, tint: Palette.run)
                 MightyStatusPill(text: statusLabel, tone: DesignTone(status: indicatorStatus))
@@ -184,15 +184,15 @@ struct MightyGraphOuroborosCard: View {
             Divider()
             VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
                 if let goal = snapshot?.goal {
-                    Text(goal).font(.system(size: 12)).lineLimit(expanded ? 2 : 1).help(goal)
+                    Text(goal).font(.ui(size: 12)).lineLimit(expanded ? 2 : 1).help(goal)
                         .accessibilityIdentifier("mighty-ouroboros-goal-\(nodeID)")
                 }
                 progress
                 counts
                 if let line = [snapshot?.phase, snapshot?.activity].compactMap({ $0 }).joined(separator: " · ").nilIfEmpty {
-                    Text(line).font(.system(size: 11)).foregroundStyle(Palette.ink2).lineLimit(expanded ? 2 : 1).help(line)
+                    Text(line).font(.ui(size: 11)).foregroundStyle(Palette.ink2).lineLimit(expanded ? 2 : 1).help(line)
                 }
-                if let note { Text(note).font(.system(size: 11)).foregroundStyle(Palette.ink2).lineLimit(3).fixedSize(horizontal: false, vertical: true) }
+                if let note { Text(note).font(.ui(size: 11)).foregroundStyle(Palette.ink2).lineLimit(3).fixedSize(horizontal: false, vertical: true) }
                 if expanded { acList } else { Spacer(minLength: 0) }
                 footer
             }
@@ -220,7 +220,7 @@ struct MightyGraphOuroborosCard: View {
             VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
                 ProgressView(value: Double(completed), total: Double(total)).tint(status == .failed ? Palette.err : tint)
                 Text(L("graph.ouroboros.progress", ["completed": "\(completed)", "total": "\(total)"]))
-                    .font(.system(size: 11, weight: .medium)).monospacedDigit()
+                    .font(.ui(size: 11, weight: .medium)).monospacedDigit()
                     .accessibilityIdentifier("mighty-ouroboros-progress-\(nodeID)")
             }
         }
@@ -236,7 +236,7 @@ struct MightyGraphOuroborosCard: View {
         if values.contains(where: { $0.1 != nil }) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 ForEach(values.indices, id: \.self) { index in
-                    Text(values[index].0).font(.system(size: 10)).monospacedDigit().lineLimit(1)
+                    Text(values[index].0).font(.ui(size: 10)).monospacedDigit().lineLimit(1)
                         .foregroundStyle(values[index].1 ?? 0 > 0 ? values[index].2 : Palette.ink2)
                         .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xxs).background(Palette.raised, in: Capsule())
                 }
@@ -248,16 +248,16 @@ struct MightyGraphOuroborosCard: View {
     @ViewBuilder private var acList: some View {
         if let items = snapshot?.items {
             if items.isEmpty {
-                Text(L("graph.ouroboros.noACs")).font(.system(size: 11)).foregroundStyle(Palette.ink2)
+                Text(L("graph.ouroboros.noACs")).font(.ui(size: 11)).foregroundStyle(Palette.ink2)
                 Spacer(minLength: 0)
             } else {
                 ScrollView(.vertical) {
                     LazyVStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                         ForEach(items.prefix(300)) { item in
                             HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
-                                Image(systemName: Self.icon(item.status)).font(.system(size: 11)).foregroundStyle(Self.color(item.status, tint: tint))
+                                Image(systemName: Self.icon(item.status)).font(.ui(size: 11)).foregroundStyle(Self.color(item.status, tint: tint))
                                     .padding(.top, 1)
-                                Text(item.title).font(.system(size: 11)).lineLimit(2).help(item.title)
+                                Text(item.title).font(.ui(size: 11)).lineLimit(2).help(item.title)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
                             .padding(.leading, CGFloat(item.depth) * 12).padding(.vertical, DesignMetrics.Spacing.xxs).padding(.horizontal, DesignMetrics.Spacing.sm)
@@ -270,7 +270,7 @@ struct MightyGraphOuroborosCard: View {
                 .accessibilityIdentifier("mighty-ouroboros-acs-\(nodeID)")
             }
         } else {
-            Text(L("graph.ouroboros.loadingACs")).font(.system(size: 11)).foregroundStyle(Palette.ink2)
+            Text(L("graph.ouroboros.loadingACs")).font(.ui(size: 11)).foregroundStyle(Palette.ink2)
             Spacer(minLength: 0)
         }
     }
@@ -278,16 +278,16 @@ struct MightyGraphOuroborosCard: View {
     private var footer: some View {
         HStack(spacing: DesignMetrics.Spacing.sm) {
             if openFailed {
-                Text(L("graph.ouroboros.openFailed")).font(.system(size: 10)).foregroundStyle(Palette.errText).lineLimit(1)
+                Text(L("graph.ouroboros.openFailed")).font(.ui(size: 10)).foregroundStyle(Palette.errText).lineLimit(1)
                     .accessibilityIdentifier("mighty-ouroboros-open-failed-\(nodeID)")
             } else {
                 Text(link.executionID.map { L("graph.ouroboros.executionID", ["id": $0]) } ?? L("graph.ouroboros.jobID", ["id": link.jobID ?? ""]))
-                    .font(.system(size: 9, design: .monospaced)).foregroundStyle(Palette.ink2).lineLimit(1).truncationMode(.middle)
+                    .font(.ui(size: 9, design: .monospaced)).foregroundStyle(Palette.ink2).lineLimit(1).truncationMode(.middle)
                     .textSelection(.enabled)
             }
             Spacer(minLength: 4)
             Button(action: onOpenDashboard) {
-                Label(L("graph.ouroboros.openDashboard"), systemImage: "safari").font(.system(size: 11))
+                Label(L("graph.ouroboros.openDashboard"), systemImage: "safari").font(.ui(size: 11))
             }
             .buttonStyle(.plain).foregroundStyle(Palette.accent).disabled(opening)
             .accessibilityIdentifier("mighty-ouroboros-dashboard-\(nodeID)")

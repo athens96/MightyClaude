@@ -1155,6 +1155,16 @@ final class AppStore: ObservableObject, DelegationHost {
         snapshot.showsBackgroundWork = shown
     }
 
+    /// The text size and font every pane, sheet and terminal draws with (Settings → General →
+    /// Display and View → ⌘= / ⌘− / ⌘0); saved in the app's defaults by `TextSettings`.
+    var textAppearance: TextAppearance { TextSettings.shared.appearance }
+
+    func setTextAppearance(_ value: TextAppearance) {
+        guard value != TextSettings.shared.current else { return }
+        objectWillChange.send()
+        TextSettings.shared.set(value)
+    }
+
     /// That line is open on its task rows; saved, so it opens the same way next time.
     var backgroundWorkOpen: Bool { snapshot.backgroundWorkOpen == true }
 
@@ -1686,7 +1696,7 @@ final class AppStore: ObservableObject, DelegationHost {
         guard wrappedHeight > emptyHeight + 10 else { throw MightyError("자동 줄바꿈을 입력창 높이에 반영하지 못했습니다.") }
         try await replaceDraft(Array(repeating: "여러 줄 입력", count: 20).joined(separator: "\n"))
         let cappedHeight = viewportHeight()
-        let lineHeight = NSLayoutManager().defaultLineHeight(for: editor.font ?? NSFont.systemFont(ofSize: 13))
+        let lineHeight = NSLayoutManager().defaultLineHeight(for: editor.font ?? NSFont.ui(ofSize: 13))
         diagnostic["cappedViewportHeight"] = cappedHeight
         diagnostic["heightCapped"] = cappedHeight > multilineHeight && cappedHeight <= emptyHeight + lineHeight * 5 + 4
         report(diagnostic)

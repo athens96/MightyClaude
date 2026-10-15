@@ -239,13 +239,13 @@ private struct PaneDockTab: View {
             // button, padding included, so the tab's visible shape is its hit area.
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 Group {
-                    if session.kind == "shell" || session.kind == AgentIOPaneKind.terminal { Image(systemName: "terminal").font(.system(size: 10)) }
-                    else if session.kind == "browser" || session.kind == AgentIOPaneKind.browser { Image(systemName: "globe").font(.system(size: 10)) }
-                    else if session.kind == FilePaneKind.kind { Image(systemName: "folder").font(.system(size: 10)) }
+                    if session.kind == "shell" || session.kind == AgentIOPaneKind.terminal { Image(systemName: "terminal").font(.ui(size: 10)) }
+                    else if session.kind == "browser" || session.kind == AgentIOPaneKind.browser { Image(systemName: "globe").font(.ui(size: 10)) }
+                    else if session.kind == FilePaneKind.kind { Image(systemName: "folder").font(.ui(size: 10)) }
                     else { ProviderIcon(provider: session.provider, size: 10) }
                 }
                 // The shown pane's name lives only here (its header has the status), so its tab gives it more room.
-                Text(session.title).font(.system(size: 11, weight: selected ? .semibold : .regular)).lineLimit(1).truncationMode(.tail)
+                Text(session.title).font(.ui(size: 11, weight: selected ? .semibold : .regular)).lineLimit(1).truncationMode(.tail)
                     .frame(maxWidth: selected ? 240 : 125).help(session.titleHelp)
                 if session.kind == "claude" && ProviderOptions.isBeta(session.provider) { BetaBadge() }
                 if let tone = tabTone { StatusGlyph(tone: tone, kind: session.kind, size: 12) }
@@ -254,7 +254,7 @@ private struct PaneDockTab: View {
             .frame(minWidth: 56, minHeight: DesignMetrics.Layout.tab, maxHeight: DesignMetrics.Layout.tab, alignment: .leading)
             .allowsHitTesting(false).accessibilityHidden(true)
             .overlay { PaneDockTabHandle(store: store, sessionId: session.id, workspaceId: session.workspaceId, groupId: groupId, title: session.title, nextSessionId: nextSessionId) }
-            Button { store.requestCloseSession(session.id) } label: { Image(systemName: "xmark").font(.system(size: 8, weight: .medium)).frame(width: 20, height: DesignMetrics.Layout.tab).contentShape(Rectangle()) }
+            Button { store.requestCloseSession(session.id) } label: { Image(systemName: "xmark").font(.ui(size: 8, weight: .medium)).frame(width: 20, height: DesignMetrics.Layout.tab).contentShape(Rectangle()) }
                 .buttonStyle(.plain).foregroundStyle(Palette.ink2).accessibilityLabel(L("layout.tab.closeTabAccessibility", ["title": session.title]))
         }
         .padding(.trailing, DesignMetrics.Spacing.xxs).frame(height: DesignMetrics.Layout.tab)

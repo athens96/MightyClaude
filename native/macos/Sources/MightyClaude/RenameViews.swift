@@ -28,21 +28,21 @@ struct RenameSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.lg) {
-            Text(heading).font(.headline)
+            Text(heading).font(.ui(size: 13, weight: .bold))
             TextField(L("pane.rename.namePlaceholder"), text: $name)
                 .textFieldStyle(.roundedBorder)
                 .focused($nameFocused)
                 .onSubmit { save() }
                 .accessibilityIdentifier("rename-name-field")
             Text(target.kind == .workspace ? L("pane.rename.workspaceNote") : L("pane.rename.paneNote"))
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.ui(size: 10)).foregroundStyle(.secondary)
             if trimmedName.count > 120 {
-                Text(L("pane.rename.tooLong")).font(.caption).foregroundStyle(Palette.errText)
+                Text(L("pane.rename.tooLong")).font(.ui(size: 10)).foregroundStyle(Palette.errText)
             }
             if hasControlCharacters {
-                Text(L("pane.rename.noNewlines")).font(.caption).foregroundStyle(Palette.errText)
+                Text(L("pane.rename.noNewlines")).font(.ui(size: 10)).foregroundStyle(Palette.errText)
             }
-            if let saveError { Text(saveError).font(.caption).foregroundStyle(Palette.errText) }
+            if let saveError { Text(saveError).font(.ui(size: 10)).foregroundStyle(Palette.errText) }
             HStack {
                 if target.kind == .session {
                     Button(L("pane.rename.automatic")) { setAutomatic() }

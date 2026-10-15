@@ -33,9 +33,9 @@ struct MightyStylePicker: View {
             }
         } label: {
             HStack(spacing: DesignMetrics.Spacing.xs) {
-                Text(verbatim: label).font(.system(size: 10, weight: .medium)).lineLimit(1)
+                Text(verbatim: label).font(.ui(size: 10, weight: .medium)).lineLimit(1)
                 if let source = current?.source, let badge = StyleChrome.sourceBadge(source) { SourceBadge(text: badge) }
-                Image(systemName: "chevron.down").font(.system(size: 7)).foregroundStyle(.secondary)
+                Image(systemName: "chevron.down").font(.ui(size: 7)).foregroundStyle(.secondary)
             }
             .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xxs)
             .background(Palette.subtle, in: RoundedRectangle(cornerRadius: 6))
@@ -124,13 +124,13 @@ struct GuidedPanel: View {
                     groupMap
                     // The chosen group's question belongs to the map (§6.1).
                     if let question = group?.question, !question.isEmpty {
-                        Text(verbatim: question).font(.system(size: 11)).foregroundStyle(.secondary)
+                        Text(verbatim: question).font(.ui(size: 11)).foregroundStyle(.secondary)
                     }
                 }
                 if showsAttachments { attachmentRow }
                 if chips.progress { progressRow } else { actionRow(chips) }
                 if let guidance = evaluator.guidanceLine(phase: chips.phaseId.flatMap { manifest.phase($0) }, running: running, jobOpen: jobOpen) {
-                    Text(verbatim: guidance).font(.system(size: 10)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
+                    Text(verbatim: guidance).font(.ui(size: 10)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
@@ -158,9 +158,9 @@ struct GuidedPanel: View {
                 let isCurrent = item.id == currentId
                 let reached = reachedIndex.map { index <= $0 } ?? false
                 HStack(spacing: DesignMetrics.Spacing.xs) {
-                    Text(verbatim: item.title).font(.system(size: 10, weight: isCurrent ? .semibold : .regular))
+                    Text(verbatim: item.title).font(.ui(size: 10, weight: isCurrent ? .semibold : .regular))
                         .foregroundStyle(isCurrent ? Palette.accent : reached ? Color.primary.opacity(0.75) : Color.secondary.opacity(0.6))
-                    if index < ordered.count - 1 { Image(systemName: "chevron.right").font(.system(size: 7)).foregroundStyle(.tertiary) }
+                    if index < ordered.count - 1 { Image(systemName: "chevron.right").font(.ui(size: 7)).foregroundStyle(.tertiary) }
                 }
             }
             Spacer(minLength: 0)
@@ -175,11 +175,11 @@ struct GuidedPanel: View {
     private func setupBlock(_ result: StylePrerequisiteResult) -> some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
             ForEach(Array(result.missing.enumerated()), id: \.offset) { index, line in
-                if index == 0 { Label(line, systemImage: "shippingbox").font(.system(size: 11, weight: .medium)) }
-                else { Text(verbatim: line).font(.system(size: 11, weight: .medium)) }
+                if index == 0 { Label(line, systemImage: "shippingbox").font(.ui(size: 11, weight: .medium)) }
+                else { Text(verbatim: line).font(.ui(size: 11, weight: .medium)) }
             }
             if let hint = result.hint, !hint.isEmpty {
-                Text(verbatim: hint).font(.system(size: 11)).foregroundStyle(.secondary)
+                Text(verbatim: hint).font(.ui(size: 11)).foregroundStyle(.secondary)
                     .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
             }
             HStack(spacing: DesignMetrics.Spacing.sm) {
@@ -216,18 +216,18 @@ struct GuidedPanel: View {
                     }
                 }
                 .frame(height: 6)
-                Text(verbatim: text).font(.system(size: 10, weight: .semibold).monospacedDigit()).foregroundStyle(Palette.accent)
+                Text(verbatim: text).font(.ui(size: 10, weight: .semibold).monospacedDigit()).foregroundStyle(Palette.accent)
             }
             .accessibilityElement(children: .ignore).accessibilityLabel(L("guidedPanel.stateProgressAccessibility"))
             .accessibilityValue(text)
         case .list(let items):
             VStack(alignment: .leading, spacing: 1) {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                    Text(verbatim: item).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                    Text(verbatim: item).font(.ui(size: 10)).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
         case .label(let text):
-            Text(verbatim: text).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+            Text(verbatim: text).font(.ui(size: 11)).foregroundStyle(.secondary).lineLimit(1)
         case .taskList(let items):
             // §1.17: the pane's background agents and shells, with their elapsed time.
             BackgroundTaskRows(tasks: items)
@@ -242,8 +242,8 @@ struct GuidedPanel: View {
                 let selected = item.id == group?.id
                 Button { selection.groupId = item.id } label: {
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(verbatim: item.title).font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        Text(verbatim: item.axis ?? "").font(.system(size: 9)).foregroundStyle(.secondary)
+                        Text(verbatim: item.title).font(.ui(size: 11, weight: .semibold, design: .monospaced))
+                        Text(verbatim: item.axis ?? "").font(.ui(size: 9)).foregroundStyle(.secondary)
                     }
                     .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xs).frame(maxWidth: .infinity, alignment: .leading)
                     .background(selected ? Palette.accent.opacity(0.16) : Palette.subtle, in: RoundedRectangle(cornerRadius: 7))
@@ -274,15 +274,15 @@ struct GuidedPanel: View {
     private var attachmentRow: some View {
         let items = store.styleChips(style, for: session)
         return HStack(spacing: DesignMetrics.Spacing.sm) {
-            Image(systemName: "folder").font(.system(size: 10)).foregroundStyle(.secondary)
+            Image(systemName: "folder").font(.ui(size: 10)).foregroundStyle(.secondary)
             if items.isEmpty {
-                Text(verbatim: attachmentEmptyDetail).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                Text(verbatim: attachmentEmptyDetail).font(.ui(size: 11)).foregroundStyle(.secondary).lineLimit(1)
                 Spacer(minLength: 0)
             } else {
                 attachmentChips(items)
             }
             Button { store.refreshStyleCapabilities(style, for: session) } label: {
-                Image(systemName: "arrow.clockwise").font(.system(size: 9))
+                Image(systemName: "arrow.clockwise").font(.ui(size: 9))
             }
             .buttonStyle(.plain).help(L("guidedPanel.reloadHelp"))
         }
@@ -294,13 +294,13 @@ struct GuidedPanel: View {
         return ScrollView(.horizontal) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 if !detail.isEmpty {
-                    Text(verbatim: detail).font(.system(size: 10)).foregroundStyle(.secondary)
+                    Text(verbatim: detail).font(.ui(size: 10)).foregroundStyle(.secondary)
                         .padding(.horizontal, DesignMetrics.Spacing.xs).padding(.vertical, 1).background(Palette.subtle, in: Capsule()).lineLimit(1)
                 }
                 // Six chips on screen however many the payload carries (§1.8).
                 ForEach(items.prefix(StyleLimits.maximumCasebookChips)) { item in
                     Button(action: { open(item) }) { Text(verbatim: item.title) }
-                        .buttonStyle(.plain).font(.system(size: 10, design: .monospaced))
+                        .buttonStyle(.plain).font(.ui(size: 10, design: .monospaced))
                         .foregroundStyle(item.openPath == nil ? Color.secondary : Palette.accent)
                         .disabled(item.openPath == nil)
                         .help(item.openPath.map { L("guidedPanel.openPathPrefix") + $0 } ?? item.title)

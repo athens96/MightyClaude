@@ -17,8 +17,8 @@ struct PlanDocumentSheet: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: "list.bullet.clipboard").foregroundStyle(Palette.accent)
-                Text(document.title).font(.system(size: 14, weight: .bold)).foregroundStyle(Palette.ink)
-                Text(document.subtitle).font(.system(size: 11)).foregroundStyle(Palette.ink2).lineLimit(1)
+                Text(document.title).font(.ui(size: 14, weight: .bold)).foregroundStyle(Palette.ink)
+                Text(document.subtitle).font(.ui(size: 11)).foregroundStyle(Palette.ink2).lineLimit(1)
                 Spacer(minLength: 0)
                 Button(L("plan.card.close"), action: onClose).buttonStyle(PaneCardButtonStyle())
                     .keyboardShortcut(.cancelAction)
@@ -94,7 +94,7 @@ struct PlanBody: View {
             PlanCardTitle(request: request, count: count) {
                 if let onFitToWindow {
                     Button(L("graph.result.fitToWindow"), action: onFitToWindow)
-                        .buttonStyle(.plain).font(.system(size: 10)).foregroundStyle(Palette.accent)
+                        .buttonStyle(.plain).font(.ui(size: 10)).foregroundStyle(Palette.accent)
                         .accessibilityIdentifier("plan-fit-to-window")
                 }
                 if showsExpand {
@@ -130,13 +130,13 @@ private struct PlanCardTitle<Trailing: View>: View {
     var body: some View {
         HStack(spacing: DesignMetrics.Spacing.sm) {
             PaneWaitBadge(systemImage: "list.bullet.clipboard")
-            Text(L("plan.card.title")).font(.system(size: 13, weight: .bold)).foregroundStyle(Palette.ink)
+            Text(L("plan.card.title")).font(.ui(size: 13, weight: .bold)).foregroundStyle(Palette.ink)
             if request.receivedAt != nil {
-                Text(PlanCardSupport.receivedText(request.receivedAt ?? "")).font(.system(size: 11)).foregroundStyle(Palette.ink2).monospacedDigit()
+                Text(PlanCardSupport.receivedText(request.receivedAt ?? "")).font(.ui(size: 11)).foregroundStyle(Palette.ink2).monospacedDigit()
                     .accessibilityIdentifier("plan-received")
             }
             Spacer(minLength: 0)
-            if count > 1 { Text(L("phone.questionnaire.waiting", ["count": "\(count)"])).font(.system(size: 11)).foregroundStyle(Palette.ink2) }
+            if count > 1 { Text(L("phone.questionnaire.waiting", ["count": "\(count)"])).font(.ui(size: 11)).foregroundStyle(Palette.ink2) }
             trailing()
         }
     }
@@ -184,13 +184,13 @@ struct PlanActions: View {
             if revising {
                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
                     TextField(L("plan.card.revisePlaceholder"), text: $feedback, axis: .vertical)
-                        .textFieldStyle(.plain).font(.system(size: 12)).lineLimit(2...6)
+                        .textFieldStyle(.plain).font(.ui(size: 12)).lineLimit(2...6)
                         .padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.sm)
                         .background(Palette.panel, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                         .overlay { RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(Palette.border, lineWidth: 1).allowsHitTesting(false) }
                         .accessibilityIdentifier("plan-revise-text")
                     if PlanCardSupport.feedbackTooLong(feedback) {
-                        Text(L("plan.error.feedbackTooLong")).font(.system(size: 11)).foregroundStyle(Palette.errText)
+                        Text(L("plan.error.feedbackTooLong")).font(.ui(size: 11)).foregroundStyle(Palette.errText)
                             .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("plan-revise-too-long")
                     }
                     HStack(spacing: DesignMetrics.Spacing.sm) {
@@ -206,14 +206,14 @@ struct PlanActions: View {
             }
 
             if let error = store.permissionErrors[sessionId] {
-                Text(error).font(.system(size: 11)).foregroundStyle(Palette.errText)
+                Text(error).font(.ui(size: 11)).foregroundStyle(Palette.errText)
                     .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                     .accessibilityIdentifier("plan-error")
             }
 
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: DesignMetrics.Spacing.sm) {
-                    Text(L("plan.card.hint")).font(.system(size: 11)).foregroundStyle(Palette.ink2).lineLimit(1)
+                    Text(L("plan.card.hint")).font(.ui(size: 11)).foregroundStyle(Palette.ink2).lineLimit(1)
                     Spacer(minLength: 0)
                     buttons
                 }
@@ -273,9 +273,9 @@ struct PlanRecordView: View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: "list.bullet.clipboard").foregroundStyle(Palette.accent)
-                Text(L("plan.card.title")).font(.system(size: 12, weight: .bold)).foregroundStyle(Palette.ink)
+                Text(L("plan.card.title")).font(.ui(size: 12, weight: .bold)).foregroundStyle(Palette.ink)
                 MightyStatusPill(text: PlanCardSupport.outcomeTitle(record.outcome), tone: tone)
-                Text(PlanCardSupport.timeText(record.decidedAt)).font(.system(size: 10)).foregroundStyle(Palette.ink2).monospacedDigit()
+                Text(PlanCardSupport.timeText(record.decidedAt)).font(.ui(size: 10)).foregroundStyle(Palette.ink2).monospacedDigit()
                 Spacer(minLength: 0)
                 Button {
                     store.planDocument = PlanDocument(id: record.id, title: L("plan.card.title") + " · " + PlanCardSupport.outcomeTitle(record.outcome),
@@ -295,14 +295,14 @@ struct PlanRecordView: View {
                     VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
                         AgentMarkdownView(source: record.plan).textSelection(.enabled)
                         if record.planTruncated == true {
-                            Text(L("plan.history.truncated")).font(.system(size: 10)).foregroundStyle(Palette.ink2)
+                            Text(L("plan.history.truncated")).font(.ui(size: 10)).foregroundStyle(Palette.ink2)
                         }
                         feedbackView
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .frame(maxHeight: inDiagram ? .infinity : 320)
             } else {
-                Text(PlanCardSupport.headline(record.plan)).font(.system(size: 11)).foregroundStyle(Palette.ink2)
+                Text(PlanCardSupport.headline(record.plan)).font(.ui(size: 11)).foregroundStyle(Palette.ink2)
                     .lineLimit(inDiagram ? 2 : 1).frame(maxWidth: .infinity, alignment: .leading)
                 feedbackView
             }
@@ -318,7 +318,7 @@ struct PlanRecordView: View {
     @ViewBuilder private var feedbackView: some View {
         if let feedback = record.feedback, !feedback.isEmpty {
             (Text(L("plan.history.feedback") + " · ").bold() + Text(feedback))
-                .font(.system(size: 10.5)).foregroundStyle(Palette.waitText)
+                .font(.ui(size: 10.5)).foregroundStyle(Palette.waitText)
                 .lineLimit(expanded ? nil : 1).textSelection(.enabled)
         }
     }
@@ -337,13 +337,13 @@ struct PlanHistoryStrip: View {
             Button { open.toggle() } label: {
                 HStack(spacing: DesignMetrics.Spacing.sm) {
                     Image(systemName: "list.bullet.clipboard").foregroundStyle(Palette.accent)
-                    Text(L("plan.history.title", ["count": "\(records.count)"])).font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.ink)
+                    Text(L("plan.history.title", ["count": "\(records.count)"])).font(.ui(size: 11, weight: .semibold)).foregroundStyle(Palette.ink)
                     if let last = records.last {
                         Text(PlanCardSupport.outcomeTitle(last.outcome) + " · " + PlanCardSupport.headline(last.plan))
-                            .font(.system(size: 11)).foregroundStyle(Palette.ink2).lineLimit(1)
+                            .font(.ui(size: 11)).foregroundStyle(Palette.ink2).lineLimit(1)
                     }
                     Spacer(minLength: 0)
-                    Image(systemName: open ? "chevron.up" : "chevron.down").font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.ink2)
+                    Image(systemName: open ? "chevron.up" : "chevron.down").font(.ui(size: 10, weight: .semibold)).foregroundStyle(Palette.ink2)
                 }.contentShape(Rectangle())
             }
             .buttonStyle(.plain)

@@ -14,12 +14,12 @@ struct ComponentsSettingsSection: View {
             if let message = store.componentMessage {
                 HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
                     Image(systemName: store.componentMessageIsError ? "exclamationmark.triangle.fill" : "checkmark.circle").foregroundStyle(store.componentMessageIsError ? Palette.waitText : Palette.doneText).padding(.top, 1)
-                    Text(message).font(.system(size: 11)).foregroundStyle(store.componentMessageIsError ? .primary : .secondary).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                    Text(message).font(.ui(size: 11)).foregroundStyle(store.componentMessageIsError ? .primary : .secondary).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                 }
                 .accessibilityIdentifier("components-message")
             }
             HStack {
-                Text(L("settings.components.sectionDescription")).font(.system(size: 11)).foregroundStyle(.secondary)
+                Text(L("settings.components.sectionDescription")).font(.ui(size: 11)).foregroundStyle(.secondary)
                 Spacer()
                 Button(store.componentsRefreshing ? L("settings.components.checkingButton") : L("settings.components.recheckButton")) { Task { await store.refreshComponents() } }
                     .disabled(store.componentsRefreshing || store.componentAction != nil).accessibilityIdentifier("components-refresh")
@@ -43,13 +43,13 @@ struct ComponentsSettingsSection: View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 icon(component)
-                Text(component.title).font(.system(size: 13, weight: .medium))
+                Text(component.title).font(.ui(size: 13, weight: .medium))
                 if ProviderOptions.isBeta(component.id) { BetaBadge() }
-                if let version = component.version { Text(version).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1) }
+                if let version = component.version { Text(version).font(.ui(size: 10, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1) }
                 Spacer()
                 stateLabel(component.state)
             }
-            Text(component.detail).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+            Text(component.detail).font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
             if !component.actions.isEmpty {
                 HStack(spacing: DesignMetrics.Spacing.sm) {
                     ForEach(component.actions) { action in
@@ -75,7 +75,7 @@ struct ComponentsSettingsSection: View {
 
     @ViewBuilder private func icon(_ component: ComponentStatus) -> some View {
         if ProviderOptions.ids.contains(component.id) { ProviderIcon(provider: component.id, size: 13) }
-        else { Image(systemName: "puzzlepiece.extension").font(.system(size: 13)) }
+        else { Image(systemName: "puzzlepiece.extension").font(.ui(size: 13)) }
     }
 
     private func stateLabel(_ state: String) -> some View {
@@ -86,7 +86,7 @@ struct ComponentsSettingsSection: View {
         case "unsupported": (L("settings.components.statusUnsupported"), Palette.errText)
         default: (L("settings.components.statusChecking"), .secondary)
         }
-        return Text(text).font(.system(size: 10, weight: .medium)).foregroundStyle(color)
+        return Text(text).font(.ui(size: 10, weight: .medium)).foregroundStyle(color)
     }
 }
 
@@ -110,7 +110,7 @@ struct ToolkitSettingsSection: View {
             if let err = store.toolkitFileError {
                 HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
                     Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Palette.waitText).padding(.top, 1)
-                    Text(L("settings.toolkit.errorBanner") + " " + err).font(.system(size: 11)).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                    Text(L("settings.toolkit.errorBanner") + " " + err).font(.ui(size: 11)).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                 }
             }
             ForEach(store.toolkitEntries, id: \.entryId) { entry in
@@ -120,7 +120,7 @@ struct ToolkitSettingsSection: View {
                 toolkitResultTable(results)
             }
             HStack(spacing: DesignMetrics.Spacing.sm) {
-                Text(L("settings.toolkit.sectionDescription")).font(.system(size: 11)).foregroundStyle(.secondary)
+                Text(L("settings.toolkit.sectionDescription")).font(.ui(size: 11)).foregroundStyle(.secondary)
                 Spacer()
                 Button(L("settings.toolkit.addButton")) { addEntryFromFile() }
                     .controlSize(.small).disabled(store.toolkitRunning)
@@ -149,22 +149,22 @@ struct ToolkitSettingsSection: View {
         let approval = store.toolkitApprovals[entry.entryId]
         return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
-                Image(systemName: "wrench.and.screwdriver").font(.system(size: 12))
-                Text(entry.displayName).font(.system(size: 13, weight: .medium))
+                Image(systemName: "wrench.and.screwdriver").font(.ui(size: 12))
+                Text(entry.displayName).font(.ui(size: 13, weight: .medium))
                 if entry.source == .bundled {
-                    Text(L("settings.toolkit.bundledBadge")).font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary).padding(.horizontal, DesignMetrics.Spacing.xs).padding(.vertical, 1).background(Color.secondary.opacity(0.15)).clipShape(RoundedRectangle(cornerRadius: 3))
+                    Text(L("settings.toolkit.bundledBadge")).font(.ui(size: 9, weight: .medium)).foregroundStyle(.secondary).padding(.horizontal, DesignMetrics.Spacing.xs).padding(.vertical, 1).background(Color.secondary.opacity(0.15)).clipShape(RoundedRectangle(cornerRadius: 3))
                 } else if approval != nil {
-                    Text(L("settings.toolkit.approvedBadge")).font(.system(size: 9, weight: .medium)).foregroundStyle(Palette.doneText).padding(.horizontal, DesignMetrics.Spacing.xs).padding(.vertical, 1).background(Palette.doneSoft).clipShape(RoundedRectangle(cornerRadius: 3))
+                    Text(L("settings.toolkit.approvedBadge")).font(.ui(size: 9, weight: .medium)).foregroundStyle(Palette.doneText).padding(.horizontal, DesignMetrics.Spacing.xs).padding(.vertical, 1).background(Palette.doneSoft).clipShape(RoundedRectangle(cornerRadius: 3))
                 }
                 Spacer()
                 Text(isInstalled ? L("settings.toolkit.statusInstalled") : L("settings.toolkit.statusMissing"))
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.ui(size: 10, weight: .medium))
                     .foregroundStyle(isInstalled ? Palette.doneText : Palette.waitText)
             }
             if entry.source == .user {
                 HStack(spacing: DesignMetrics.Spacing.sm) {
                     if approval == nil {
-                        Text(L("settings.toolkit.needsApproval")).font(.system(size: 11)).foregroundStyle(.secondary)
+                        Text(L("settings.toolkit.needsApproval")).font(.ui(size: 11)).foregroundStyle(.secondary)
                         Button(L("settings.toolkit.approveButton")) {
                             store.approveToolkitEntry(entry.entryId)
                         }
@@ -202,9 +202,9 @@ struct ToolkitSettingsSection: View {
                 let entry = store.toolkitEntries.first { $0.entryId == item.entryId }
                 HStack(spacing: DesignMetrics.Spacing.sm) {
                     verdictIcon(item.verdict)
-                    Text(entry?.displayName ?? item.entryId).font(.system(size: 11))
+                    Text(entry?.displayName ?? item.entryId).font(.ui(size: 11))
                     Spacer()
-                    Text(verdictLabel(item.verdict)).font(.system(size: 10, weight: .medium)).foregroundStyle(verdictColor(item.verdict))
+                    Text(verdictLabel(item.verdict)).font(.ui(size: 10, weight: .medium)).foregroundStyle(verdictColor(item.verdict))
                 }
             }
         }
@@ -215,8 +215,8 @@ struct ToolkitSettingsSection: View {
 
     private func toolkitConfirmationSheet() -> some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
-            Text(L("settings.toolkit.confirmTitle")).font(.headline)
-            Text(L("settings.toolkit.confirmDescription")).font(.system(size: 12)).foregroundStyle(.secondary)
+            Text(L("settings.toolkit.confirmTitle")).font(.ui(size: 13, weight: .bold))
+            Text(L("settings.toolkit.confirmDescription")).font(.ui(size: 12)).foregroundStyle(.secondary)
             ScrollView {
                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
                     ForEach(store.toolkitPlan, id: \.entry.entryId) { item in
@@ -241,13 +241,13 @@ struct ToolkitSettingsSection: View {
 
     private func confirmationPlanRow(_ item: ToolkitPlanItem) -> some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
-            Text(item.entry.displayName).font(.system(size: 12, weight: .medium))
+            Text(item.entry.displayName).font(.ui(size: 12, weight: .medium))
             switch item.action {
             case .skip:
-                Text("→ " + L("settings.toolkit.verdictSkipped")).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
+                Text("→ " + L("settings.toolkit.verdictSkipped")).font(.ui(size: 11, design: .monospaced)).foregroundStyle(.secondary)
             case .run(commands: let commands):
                 ForEach(Array(commands.enumerated()), id: \.offset) { _, cmd in
-                    Text(cmd.joined(separator: " ")).font(.system(size: 11, design: .monospaced)).foregroundStyle(.primary).textSelection(.enabled)
+                    Text(cmd.joined(separator: " ")).font(.ui(size: 11, design: .monospaced)).foregroundStyle(.primary).textSelection(.enabled)
                 }
             }
         }
@@ -256,9 +256,9 @@ struct ToolkitSettingsSection: View {
 
     @ViewBuilder private func verdictIcon(_ verdict: ToolkitRunItem.Verdict) -> some View {
         switch verdict {
-        case .installed: Image(systemName: "checkmark.circle.fill").foregroundStyle(Palette.doneText).font(.system(size: 11))
-        case .failed: Image(systemName: "xmark.circle.fill").foregroundStyle(Palette.errText).font(.system(size: 11))
-        case .skipped: Image(systemName: "minus.circle").foregroundStyle(.secondary).font(.system(size: 11))
+        case .installed: Image(systemName: "checkmark.circle.fill").foregroundStyle(Palette.doneText).font(.ui(size: 11))
+        case .failed: Image(systemName: "xmark.circle.fill").foregroundStyle(Palette.errText).font(.ui(size: 11))
+        case .skipped: Image(systemName: "minus.circle").foregroundStyle(.secondary).font(.ui(size: 11))
         }
     }
 

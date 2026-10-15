@@ -127,6 +127,7 @@ final class AgentTranscriptCoordinator: NSObject, NSTextViewDelegate {
         var catalog: [ModelOption]
         var imageRoot: URL?
         var cards: Bool
+        var text: TextAppearance
     }
     private struct Cached {
         let entry: LogEntry
@@ -140,6 +141,7 @@ final class AgentTranscriptCoordinator: NSObject, NSTextViewDelegate {
         let catalog: [ModelOption]
         let imageRoot: URL?
         let cards: Bool
+        let text: TextAppearance
         let value: NSAttributedString
     }
     var onReference: ((String, Int?) -> Void)?
@@ -181,6 +183,7 @@ final class AgentTranscriptCoordinator: NSObject, NSTextViewDelegate {
         scroll.documentView = editor
         textView = editor; scrollView = scroll
         NotificationCenter.default.addObserver(self, selector: #selector(imageDidLoad(_:)), name: AgentImageLibrary.didLoad, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(textAppearanceDidChange), name: TextSettings.didChange, object: nil)
         return scroll
     }
 
@@ -197,9 +200,15 @@ final class AgentTranscriptCoordinator: NSObject, NSTextViewDelegate {
         }
     }
 
+    /// The user changed the text size or font: every entry is formatted again.
+    @objc private func textAppearanceDidChange() {
+        latest?.text = TextSettings.shared.current
+        applyLatest()
+    }
+
     func update(entries: [LogEntry], provider: String, running: Bool, dark: Bool, references: Bool = false,
                 records: [GraphResponseRecord] = [], childBlocks: [String: GraphChildBlock] = [:], catalog: [ModelOption] = [], imageRoot: URL? = nil, cards: Bool = false) {
-        latest = Input(entries: entries, provider: provider, running: running, dark: dark, references: references, records: records, childBlocks: childBlocks, catalog: catalog, imageRoot: imageRoot, cards: cards)
+        latest = Input(entries: entries, provider: provider, running: running, dark: dark, references: references, records: records, childBlocks: childBlocks, catalog: catalog, imageRoot: imageRoot, cards: cards, text: TextSettings.shared.current)
         applyLatest()
     }
 
@@ -217,10 +226,10 @@ final class AgentTranscriptCoordinator: NSObject, NSTextViewDelegate {
             if let old = cache[entry.id], old.entry == entry, old.provider == input.provider,
                old.running == input.running, old.dark == input.dark, old.expanded == isExpanded, old.references == input.references,
                old.records == input.records, old.childBlocks == input.childBlocks,
-               old.catalog == input.catalog, old.imageRoot == input.imageRoot, old.cards == input.cards { value = old.value }
+               old.catalog == input.catalog, old.imageRoot == input.imageRoot, old.cards == input.cards, old.text == input.text { value = old.value }
             else {
                 value = AgentTranscriptFormat.entry(entry, provider: input.provider, running: input.running, expanded: isExpanded, references: input.references, records: input.records, childBlocks: input.childBlocks, catalog: input.catalog, imageRoot: input.imageRoot, cards: input.cards)
-                cache[entry.id] = Cached(entry: entry, provider: input.provider, running: input.running, dark: input.dark, expanded: isExpanded, references: input.references, records: input.records, childBlocks: input.childBlocks, catalog: input.catalog, imageRoot: input.imageRoot, cards: input.cards, value: value)
+                cache[entry.id] = Cached(entry: entry, provider: input.provider, running: input.running, dark: input.dark, expanded: isExpanded, references: input.references, records: input.records, childBlocks: input.childBlocks, catalog: input.catalog, imageRoot: input.imageRoot, cards: input.cards, text: input.text, value: value)
             }
             segments.append(.init(id: entry.id, range: NSRange(location: output.length, length: value.length), value: value))
             output.append(value)

@@ -24,11 +24,11 @@ struct StyleSettingsSection: View {
                 Spacer(minLength: 0)
             }
             if let registerError {
-                Label(registerError, systemImage: "exclamationmark.triangle").font(.system(size: 11)).foregroundStyle(Palette.waitText)
+                Label(registerError, systemImage: "exclamationmark.triangle").font(.ui(size: 11)).foregroundStyle(Palette.waitText)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Text(L("settings.styles.description"))
-                .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                .font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             ForEach(rows) { row in styleRow(row) }
             ForEach(store.styleRejections, id: \.path) { rejection in rejectionRow(rejection) }
         } header: {
@@ -42,9 +42,9 @@ struct StyleSettingsSection: View {
     private var lockBanner: some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
             Label(StyleSettingsList.lockedMessage(store.styleTrustPath), systemImage: "exclamationmark.triangle")
-                .font(.system(size: 11, weight: .medium)).foregroundStyle(Palette.waitText)
+                .font(.ui(size: 11, weight: .medium)).foregroundStyle(Palette.waitText)
             Text(L("settings.styles.lockBanner"))
-                .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                .font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .textSelection(.enabled)
         .accessibilityIdentifier("settings-style-locked")
@@ -60,13 +60,13 @@ struct StyleSettingsSection: View {
         ].joined(separator: " " + StyleChrome.separator + " ")
         return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
-                Text(verbatim: head).font(.system(size: 12, weight: .medium))
-                Text(verbatim: row.stateLabel).font(.system(size: 10)).foregroundStyle(.secondary)
+                Text(verbatim: head).font(.ui(size: 12, weight: .medium))
+                Text(verbatim: row.stateLabel).font(.ui(size: 10)).foregroundStyle(.secondary)
                     .padding(.horizontal, DesignMetrics.Spacing.xs).padding(.vertical, 1).background(Palette.subtle, in: Capsule())
                 Spacer(minLength: 0)
             }
-            Text(verbatim: detail).font(.system(size: 10)).foregroundStyle(.secondary)
-            Text(verbatim: row.path).font(.system(size: 10, design: .monospaced)).foregroundStyle(.tertiary)
+            Text(verbatim: detail).font(.ui(size: 10)).foregroundStyle(.secondary)
+            Text(verbatim: row.path).font(.ui(size: 10, design: .monospaced)).foregroundStyle(.tertiary)
                 .textSelection(.enabled).lineLimit(1).truncationMode(.middle)
             buttons(row)
         }
@@ -99,8 +99,8 @@ struct StyleSettingsSection: View {
     private func rejectionRow(_ rejection: StyleRejection) -> some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
             Text(verbatim: rejection.error.code + " " + StyleChrome.separator + " " + rejection.error.message)
-                .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Text(verbatim: rejection.path).font(.system(size: 10, design: .monospaced)).foregroundStyle(.tertiary)
+                .font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text(verbatim: rejection.path).font(.ui(size: 10, design: .monospaced)).foregroundStyle(.tertiary)
                 .textSelection(.enabled).lineLimit(1).truncationMode(.middle)
         }
         .padding(.vertical, DesignMetrics.Spacing.xxs).opacity(0.7)

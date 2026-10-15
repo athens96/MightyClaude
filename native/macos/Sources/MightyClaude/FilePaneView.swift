@@ -31,11 +31,11 @@ private struct FilePaneContent: View {
     private var tree: some View {
         VStack(spacing: 0) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
-                Image(systemName: "line.3.horizontal.decrease").font(.system(size: 10)).foregroundStyle(.tertiary)
+                Image(systemName: "line.3.horizontal.decrease").font(.ui(size: 10)).foregroundStyle(.tertiary)
                 TextField(L("files.tree.filter"), text: $model.filter)
-                    .textFieldStyle(.plain).font(.system(size: 11))
+                    .textFieldStyle(.plain).font(.ui(size: 11))
                     .accessibilityLabel(L("files.tree.filter"))
-                Button { model.refresh() } label: { Image(systemName: "arrow.clockwise").font(.system(size: 11)) }
+                Button { model.refresh() } label: { Image(systemName: "arrow.clockwise").font(.ui(size: 11)) }
                     .buttonStyle(.plain).foregroundStyle(.secondary)
                     .help(L("files.tree.refresh")).accessibilityLabel(L("files.tree.refresh"))
                     .accessibilityIdentifier("files-refresh")
@@ -80,7 +80,7 @@ private struct FilePaneContent: View {
     }
 
     private func note(_ text: String) -> some View {
-        Text(text).font(.system(size: 10)).foregroundStyle(.secondary).padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.sm)
+        Text(text).font(.ui(size: 10)).foregroundStyle(.secondary).padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.sm)
     }
 }
 
@@ -102,16 +102,16 @@ private struct FilePaneRow: View, Equatable {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: DesignMetrics.Spacing.xs) {
                 Group {
-                    if entry.isDirectory, !filtering { Image(systemName: row.isExpanded ? "chevron.down" : "chevron.right").font(.system(size: 8, weight: .semibold)) }
+                    if entry.isDirectory, !filtering { Image(systemName: row.isExpanded ? "chevron.down" : "chevron.right").font(.ui(size: 8, weight: .semibold)) }
                     else { Color.clear }
                 }.frame(width: 10).foregroundStyle(.secondary)
                 Image(systemName: entry.isDirectory ? "folder" : FilePaneIcons.symbol(for: entry.name))
-                    .font(.system(size: 11)).frame(width: 14)
+                    .font(.ui(size: 11)).frame(width: 14)
                     .foregroundStyle(entry.isDirectory ? Palette.accent : Color.secondary)
-                Text(entry.name).font(.system(size: 11)).lineLimit(1).truncationMode(.middle)
-                if entry.isSymlink { Image(systemName: "arrow.turn.up.right").font(.system(size: 8)).foregroundStyle(.tertiary) }
+                Text(entry.name).font(.ui(size: 11)).lineLimit(1).truncationMode(.middle)
+                if entry.isSymlink { Image(systemName: "arrow.turn.up.right").font(.ui(size: 8)).foregroundStyle(.tertiary) }
                 if filtering, entry.relativePath != entry.name {
-                    Text(entry.relativePath).font(.system(size: 9, design: .monospaced)).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.head)
+                    Text(entry.relativePath).font(.ui(size: 9, design: .monospaced)).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.head)
                 }
                 Spacer(minLength: 0)
             }
@@ -131,7 +131,7 @@ private struct FilePaneRow: View, Equatable {
     }
 
     private func caption(_ text: String) -> some View {
-        Text(text).font(.system(size: 10)).foregroundStyle(.tertiary)
+        Text(text).font(.ui(size: 10)).foregroundStyle(.tertiary)
             .padding(.leading, 8 + CGFloat(row.depth + 1) * 14 + 29).padding(.vertical, DesignMetrics.Spacing.xxs)
     }
 }
@@ -171,15 +171,15 @@ private struct FilePanePreviewView: View {
         HStack(spacing: DesignMetrics.Spacing.sm) {
             Image(systemName: FilePaneIcons.symbol(for: info.name)).foregroundStyle(Palette.accent)
             VStack(alignment: .leading, spacing: 1) {
-                Text(info.name).font(.system(size: 12, weight: .semibold)).lineLimit(1)
-                Text(info.relativePath).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                Text(info.name).font(.ui(size: 12, weight: .semibold)).lineLimit(1)
+                Text(info.relativePath).font(.ui(size: 10, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
             }
             Spacer(minLength: 6)
             controls
             Button { NSWorkspace.shared.activateFileViewerSelecting([info.url]) } label: { Image(systemName: "folder") }
                 .help(L("menu.showInFinder")).accessibilityLabel(L("menu.showInFinder"))
         }
-        .buttonStyle(.plain).font(.system(size: 12))
+        .buttonStyle(.plain).font(.ui(size: 12))
         .padding(.horizontal, DesignMetrics.Spacing.md).frame(height: DesignMetrics.Layout.previewHead)
         .background(Palette.subtle)
     }
@@ -202,13 +202,13 @@ private struct FilePanePreviewView: View {
             let limit = FileImagePreview.zoomLimit(image, scale: displayScale)
             let zoomable = image.isVector || image.fullSizeAllowed
             Text(L("files.image.pixels", ["width": "\(Int(image.size.width))", "height": "\(Int(image.size.height))"]))
-                .font(.system(size: 10)).foregroundStyle(.secondary).monospacedDigit()
+                .font(.ui(size: 10)).foregroundStyle(.secondary).monospacedDigit()
             Group {
                 Button { model.setImageZoom(min(limit, max(0.1, (model.imageZoom ?? 1) / 1.25))) } label: { Image(systemName: "minus.magnifyingglass") }
                     .help(L("files.image.zoomOut")).accessibilityLabel(L("files.image.zoomOut"))
                 Button { model.setImageZoom(nil) } label: { Image(systemName: "arrow.up.left.and.down.right.and.arrow.up.right.and.down.left") }
                     .help(L("files.image.fit")).accessibilityLabel(L("files.image.fit"))
-                Button { model.setImageZoom(min(1, limit)) } label: { Text("1:1").font(.system(size: 10, weight: .medium)) }
+                Button { model.setImageZoom(min(1, limit)) } label: { Text("1:1").font(.ui(size: 10, weight: .medium)) }
                     .help(L("files.image.actualSize")).accessibilityLabel(L("files.image.actualSize"))
                 Button { model.setImageZoom(min(limit, (model.imageZoom ?? 1) * 1.25)) } label: { Image(systemName: "plus.magnifyingglass") }
                     .help(L("files.image.zoomIn")).accessibilityLabel(L("files.image.zoomIn"))
@@ -220,7 +220,7 @@ private struct FilePanePreviewView: View {
     }
 
     private func encoding(_ encoding: TextEncoding) -> some View {
-        Text(encoding.displayName).font(.system(size: 10)).foregroundStyle(.secondary)
+        Text(encoding.displayName).font(.ui(size: 10)).foregroundStyle(.secondary)
             .help(L("files.preview.encoding")).accessibilityLabel(L("files.preview.encoding") + " " + encoding.displayName)
             .accessibilityIdentifier("files-encoding")
     }
@@ -256,9 +256,9 @@ private struct FilePanePreviewView: View {
             }
         case .unsupported(let info, let reason):
             VStack(spacing: DesignMetrics.Spacing.sm) {
-                Image(systemName: "doc.questionmark").font(.system(size: 30, weight: .light)).foregroundStyle(.secondary)
-                Text(L("files.preview.unsupported")).font(.system(size: 13, weight: .semibold))
-                Text(info.name).font(.system(size: 12)).lineLimit(2).multilineTextAlignment(.center)
+                Image(systemName: "doc.questionmark").font(.ui(size: 30, weight: .light)).foregroundStyle(.secondary)
+                Text(L("files.preview.unsupported")).font(.ui(size: 13, weight: .semibold))
+                Text(info.name).font(.ui(size: 12)).lineLimit(2).multilineTextAlignment(.center)
                 Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 3) {
                     GridRow {
                         Text(L("files.preview.size")).foregroundStyle(.secondary)
@@ -270,8 +270,8 @@ private struct FilePanePreviewView: View {
                             Text(modified.formatted(date: .abbreviated, time: .shortened))
                         }
                     }
-                }.font(.system(size: 11))
-                if let reason { Text(reason).font(.system(size: 11)).foregroundStyle(.secondary).multilineTextAlignment(.center) }
+                }.font(.ui(size: 11))
+                if let reason { Text(reason).font(.ui(size: 11)).foregroundStyle(.secondary).multilineTextAlignment(.center) }
                 Button(L("menu.showInFinder")) { NSWorkspace.shared.activateFileViewerSelecting([info.url]) }
                     .padding(.top, DesignMetrics.Spacing.xs).accessibilityIdentifier("files-show-in-finder")
             }
@@ -298,16 +298,16 @@ private struct FilePanePreviewView: View {
             Text(text)
             Spacer(minLength: 0)
         }
-        .font(.system(size: 10)).foregroundStyle(.secondary)
+        .font(.ui(size: 10)).foregroundStyle(.secondary)
         .padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.sm)
         .background(Palette.waitSoft)
     }
 
     private func notice(symbol: String, title: String, detail: String?) -> some View {
         VStack(spacing: DesignMetrics.Spacing.sm) {
-            Image(systemName: symbol).font(.system(size: 24, weight: .light)).foregroundStyle(.secondary)
-            Text(title).font(.system(size: 12)).foregroundStyle(.secondary).multilineTextAlignment(.center)
-            if let detail { Text(detail).font(.system(size: 11)).foregroundStyle(.tertiary) }
+            Image(systemName: symbol).font(.ui(size: 24, weight: .light)).foregroundStyle(.secondary)
+            Text(title).font(.ui(size: 12)).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            if let detail { Text(detail).font(.ui(size: 11)).foregroundStyle(.tertiary) }
         }
         .padding(DesignMetrics.Spacing.xl)
     }
@@ -430,7 +430,7 @@ struct FileSourceTextView: NSViewRepresentable {
     /// Safe off the main thread: the model builds it while loading.
     nonisolated static func attributed(_ text: String, tokens: [SourceToken]) -> NSAttributedString {
         let result = NSMutableAttributedString(string: text, attributes: [
-            .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
+            .font: NSFont.uiMonospaced(ofSize: 12, weight: .regular),
             .foregroundColor: NSColor.labelColor,
         ])
         let length = result.length
@@ -490,7 +490,7 @@ final class FileLineNumberRuler: NSRulerView {
             let middle = (low + high + 1) / 2
             if lineStarts[middle] <= characters.location { low = middle } else { high = middle - 1 }
         }
-        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular), .foregroundColor: NSColor.tertiaryLabelColor]
+        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.uiMonospacedDigit(ofSize: 10, weight: .regular), .foregroundColor: NSColor.tertiaryLabelColor]
         let origin = textView.textContainerOrigin.y
         var line = low
         while line < lineStarts.count, lineStarts[line] <= NSMaxRange(characters) {

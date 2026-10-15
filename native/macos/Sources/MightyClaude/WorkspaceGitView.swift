@@ -44,7 +44,7 @@ struct WorkspaceGitBadge: View {
             if let ahead = info.ahead, ahead > 0 { Text("↑\(ahead)").monospacedDigit() }
             if let behind = info.behind, behind > 0 { Text("↓\(behind)").monospacedDigit() }
         }
-        .font(.system(size: 10, weight: .medium)).foregroundStyle(Palette.ink2)
+        .font(.ui(size: 10, weight: .medium)).foregroundStyle(Palette.ink2)
         .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xxs)
         .background(Palette.subtle, in: Capsule())
         .frame(maxWidth: 260)

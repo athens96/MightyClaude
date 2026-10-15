@@ -33,7 +33,7 @@ struct SettingsGroup<Content: View, Header: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
             header
-                .font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+                .font(.ui(size: 12, weight: .semibold)).foregroundStyle(.secondary)
                 .padding(.leading, DesignMetrics.Spacing.xs)
                 .accessibilityAddTraits(.isHeader)
             VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) { content }

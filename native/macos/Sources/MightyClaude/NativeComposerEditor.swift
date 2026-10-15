@@ -30,7 +30,7 @@ struct NativeComposerEditor: NSViewRepresentable {
         editor.autoresizingMask = [.width]
         editor.textContainer?.widthTracksTextView = true
         editor.textContainerInset = NSSize(width: 0, height: 1)
-        editor.font = monospaced ? .monospacedSystemFont(ofSize: 13, weight: .regular) : .systemFont(ofSize: 13)
+        editor.font = font
         editor.textColor = .labelColor; editor.insertionPointColor = .labelColor
         editor.isAutomaticQuoteSubstitutionEnabled = false
         editor.isAutomaticDashSubstitutionEnabled = false
@@ -59,8 +59,15 @@ struct NativeComposerEditor: NSViewRepresentable {
         coordinator.inputController = inputController
         editor.setAccessibilityLabel(accessibilityLabel)
         editor.setAccessibilityIdentifier(accessibilityIdentifier)
+        // A changed text size or font (`TextSettings`), never in the middle of a composition.
+        // Compared by setting, not by `editor.font`, which reads back a substituted face
+        // (Apple SD Gothic Neo) once the draft holds Hangul.
+        let appearance = TextSettings.shared.current
+        if coordinator.appliedText != appearance, !editor.hasMarkedText() { editor.font = font; coordinator.appliedText = appearance }
         coordinator.receiveModelText(text)
     }
+
+    private var font: NSFont { monospaced ? .uiMonospaced(ofSize: 13, weight: .regular) : .ui(ofSize: 13) }
 
     static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
         coordinator.detach()
@@ -69,6 +76,8 @@ struct NativeComposerEditor: NSViewRepresentable {
     @MainActor
     final class Coordinator: NSObject, NSTextViewDelegate {
         var text: Binding<String>
+        /// The text setting the editor's font was last set from.
+        var appliedText = TextSettings.shared.current
         weak var editor: ComposerTextView?
         weak var inputController: ComposerInputController?
         private var observedModelText: String

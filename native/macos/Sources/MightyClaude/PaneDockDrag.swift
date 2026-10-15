@@ -137,7 +137,7 @@ final class PaneDockGroupAnchorView: NSView {
         let path = NSBezierPath(roundedRect: rect, xRadius: 9, yRadius: 9)
         color.withAlphaComponent(0.16).setFill(); path.fill()
         color.setStroke(); path.lineWidth = 2; path.setLineDash([6, 4], count: 2, phase: 0); path.stroke()
-        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 12, weight: .semibold), .foregroundColor: color]
+        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.ui(ofSize: 12, weight: .semibold), .foregroundColor: color]
         let text = target.zone.title as NSString; let size = text.size(withAttributes: attributes)
         let textRect = NSRect(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2, width: size.width, height: size.height)
         Palette.nsToken(\.page, alpha: 0.95).setFill()

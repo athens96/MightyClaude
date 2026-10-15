@@ -12,24 +12,24 @@ struct CLIUpdateSettingsSection: View {
             ))
             .accessibilityIdentifier("cli-auto-update")
             Text(L("settings.cliUpdate.sectionDescriptionMac"))
-                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .font(.ui(size: 11)).foregroundStyle(.secondary)
             Toggle(L("settings.cliUpdate.autoUpdatePluginsToggle"), isOn: Binding(
                 get: { store.snapshot.autoUpdatePlugins != false },
                 set: { store.snapshot.autoUpdatePlugins = $0 }
             ))
             .accessibilityIdentifier("plugin-auto-update")
             Text(L("settings.cliUpdate.autoUpdatePluginsDescription"))
-                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .font(.ui(size: 11)).foregroundStyle(.secondary)
             HStack(spacing: DesignMetrics.Spacing.md) {
                 if store.isUpdatingCLIs {
                     ProgressView().controlSize(.small)
                     Text(store.updatingCLI.map { L("settings.cliUpdate.progressProviderTemplate", ["provider": ProviderOptions.label($0)]) }
                          ?? store.updatingPluginsFor.map { L("settings.cliUpdate.progressPluginsTemplate", ["provider": ProviderOptions.label($0)]) }
                          ?? L("settings.cliUpdate.progressInspecting"))
-                        .font(.system(size: 11)).accessibilityIdentifier("cli-update-progress")
+                        .font(.ui(size: 11)).accessibilityIdentifier("cli-update-progress")
                 } else if let finished = store.cliUpdateFinishedAt {
                     Text(L("settings.cliUpdate.lastRunTemplate", ["time": finished.formatted(date: .omitted, time: .shortened)]))
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .font(.ui(size: 11)).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button(store.isUpdatingCLIs ? L("settings.cliUpdate.updatingButton") : L("settings.cliUpdate.updateButton")) { store.startCLIUpdates() }
@@ -43,13 +43,13 @@ struct CLIUpdateSettingsSection: View {
                             Image(systemName: icon(result.status))
                                 .foregroundStyle(result.status == "failed" ? Palette.waitText : Color.secondary)
                             Text(L("settings.cliUpdate.resultRowTemplate", ["provider": ProviderOptions.label(provider), "status": label(result.status)]))
-                                .font(.system(size: 11, weight: .medium))
+                                .font(.ui(size: 11, weight: .medium))
                             if ProviderOptions.isBeta(provider) { BetaBadge() }
                         }
                         if let before = result.beforeVersion, let after = result.afterVersion, before != after {
-                            Text(L("settings.cliUpdate.versionChangeTemplate", ["before": before, "after": after])).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+                            Text(L("settings.cliUpdate.versionChangeTemplate", ["before": before, "after": after])).font(.ui(size: 10, design: .monospaced)).foregroundStyle(.secondary)
                         }
-                        Text(result.detail).font(.system(size: 11)).foregroundStyle(.secondary)
+                        Text(result.detail).font(.ui(size: 11)).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                     }
                     .accessibilityElement(children: .combine)
@@ -61,10 +61,10 @@ struct CLIUpdateSettingsSection: View {
                             Image(systemName: icon(result.status == "succeeded" ? "updated" : result.status))
                                 .foregroundStyle(result.status == "failed" ? Palette.waitText : Color.secondary)
                             Text(L("settings.cliUpdate.pluginRowTemplate", ["provider": ProviderOptions.label(provider), "status": label(result.status == "succeeded" ? "updated" : result.status)]))
-                                .font(.system(size: 11, weight: .medium))
+                                .font(.ui(size: 11, weight: .medium))
                             if ProviderOptions.isBeta(provider) { BetaBadge() }
                         }
-                        Text(result.detail).font(.system(size: 11)).foregroundStyle(.secondary)
+                        Text(result.detail).font(.ui(size: 11)).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                     }
                     .accessibilityElement(children: .combine)

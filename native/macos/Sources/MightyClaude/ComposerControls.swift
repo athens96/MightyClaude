@@ -15,9 +15,9 @@ struct ComposerPill: View {
     var body: some View {
         HStack(spacing: 5) {
             if let provider { ProviderIcon(provider: provider, size: 12).frame(width: 14, height: 14) }
-            else if let systemImage { Image(systemName: systemImage).font(.system(size: 12, weight: .medium)).frame(width: 14, height: 14) }
-            if !compact { Text(title).font(.system(size: 11, weight: .medium)).lineLimit(1).truncationMode(.tail).frame(width: min(ComposerToolbarMetrics.textWidth(title), maximumTextWidth ?? .greatestFiniteMagnitude)) }
-            if chevron && !compact { Image(systemName: "chevron.down").font(.system(size: 7, weight: .semibold)).foregroundStyle(Palette.ink2).frame(width: 7) }
+            else if let systemImage { Image(systemName: systemImage).font(.ui(size: 12, weight: .medium)).frame(width: 14, height: 14) }
+            if !compact { Text(title).font(.ui(size: 11, weight: .medium)).lineLimit(1).truncationMode(.tail).frame(width: min(ComposerToolbarMetrics.textWidth(title), maximumTextWidth ?? .greatestFiniteMagnitude)) }
+            if chevron && !compact { Image(systemName: "chevron.down").font(.ui(size: 7, weight: .semibold)).foregroundStyle(Palette.ink2).frame(width: 7) }
         }
         // Concept D: a white pill with the D border; the run blue when the setting is on.
         .foregroundStyle(active ? Palette.accent : Palette.ink)
@@ -41,7 +41,7 @@ enum ComposerToolbarMetrics {
     static let height = DesignMetrics.Layout.toolbar
     static let spacing = DesignMetrics.Spacing.sm
     static func textWidth(_ title: String) -> CGFloat {
-        ceil((title as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 11, weight: .medium)]).width)
+        ceil((title as NSString).size(withAttributes: [.font: NSFont.ui(ofSize: 11, weight: .medium)]).width)
     }
     static func pillWidth(_ title: String, cap: CGFloat, chevron: Bool = true) -> CGFloat {
         min(textWidth(title), cap) + 16 + 14 + 5 + (chevron ? 12 : 0)

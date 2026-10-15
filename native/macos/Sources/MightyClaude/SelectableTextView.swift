@@ -147,6 +147,8 @@ final class MightyGraphPreviewTextView: SelectableTextView {
         /// 0 wraps without limit; a positive value truncates like `lineLimit`.
         var maximumLines: Int
         var width: CGFloat
+        /// The user's text size and font, so a change lays the text out again.
+        var appearance = TextSettings.shared.current
     }
     private var applied: Input?
     private var reportedHeight: CGFloat?
@@ -168,7 +170,7 @@ final class MightyGraphPreviewTextView: SelectableTextView {
             paragraph.lineBreakMode = input.maximumLines > 0 ? .byTruncatingTail : .byWordWrapping
             let color = input.secondary ? NSColor.secondaryLabelColor : NSColor.labelColor
             storage.setAttributedString(NSAttributedString(string: input.text, attributes: [
-                .font: NSFont.systemFont(ofSize: input.fontSize), .foregroundColor: color, .paragraphStyle: paragraph,
+                .font: NSFont.ui(ofSize: input.fontSize), .foregroundColor: color, .paragraphStyle: paragraph,
             ]))
         }
         manager.ensureLayout(for: container)
@@ -254,7 +256,7 @@ struct MightyGraphSelectableText: NSViewRepresentable {
         // Always assigned: a label left over from an earlier draft would
         // describe text that is no longer there.
         view.setAccessibilityLabel(accessibilityLabel)
-        let height = view.apply(.init(text: text, fontSize: fontSize, secondary: secondary, maximumLines: maximumLines, width: width))
+        let height = view.apply(.init(text: text, fontSize: fontSize, secondary: secondary, maximumLines: maximumLines, width: width, appearance: TextSettings.shared.appearance))
         // Publishing a SwiftUI value from inside updateNSView is undefined;
         // report the measured height after this layout pass instead, and only
         // when it actually moved.

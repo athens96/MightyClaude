@@ -23,9 +23,9 @@ struct MightyGraphImagesCard: View {
         VStack(spacing: 0) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: "photo.on.rectangle.angled").foregroundStyle(tint)
-                Text(L("graph.images.title")).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                Text(L("graph.images.title")).font(.ui(size: 12, weight: .semibold)).lineLimit(1)
                 Spacer(minLength: 3)
-                Text(L("graph.images.count", ["count": "\(items.count)"])).font(.system(size: 10)).foregroundStyle(Palette.ink2).monospacedDigit()
+                Text(L("graph.images.count", ["count": "\(items.count)"])).font(.ui(size: 10)).foregroundStyle(Palette.ink2).monospacedDigit()
                 if foldable {
                     Button(action: onToggle) { Image(systemName: expanded ? "rectangle.compress.vertical" : "rectangle.expand.vertical") }
                         .buttonStyle(.plain).foregroundStyle(expanded ? Palette.accent : Palette.ink2)
@@ -70,7 +70,7 @@ struct MightyGraphImagesCard: View {
                     }
                     if more > 0 {
                         Color.black.opacity(0.45)
-                        Text(L("graph.images.more", ["count": "\(more)"])).font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+                        Text(L("graph.images.more", ["count": "\(more)"])).font(.ui(size: 15, weight: .semibold)).foregroundStyle(.white)
                     }
                 }
                 .frame(width: MightyGraphLayout.imagesTile, height: MightyGraphLayout.imagesTile)

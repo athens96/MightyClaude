@@ -140,7 +140,7 @@ struct AgentMarkdownView: View {
             ForEach(AgentMarkdownDocument.parse(source).blocks) { block in AgentMarkdownBlockView(block: block, compact: compact) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .font(.system(size: compact ? 11 : 13)).lineSpacing(compact ? 2 : 4)
+        .font(.ui(size: compact ? 11 : 13)).lineSpacing(compact ? 2 : 4)
         .textSelection(.enabled)
         .tint(Palette.accent)
         .environment(\.openURL, OpenURLAction { url in AgentMarkdownDocument.safeLink(url) ? .systemAction : .discarded })
@@ -157,7 +157,7 @@ private struct AgentMarkdownBlockView: View {
             inline(block.text).fixedSize(horizontal: false, vertical: true)
         case .header(let level):
             inline(block.text)
-                .font(.system(size: compact ? (level == 1 ? 13 : level == 2 ? 12 : 11) : level == 1 ? 22 : level == 2 ? 18 : level == 3 ? 15 : 13, weight: .semibold))
+                .font(.ui(size: compact ? (level == 1 ? 13 : level == 2 ? 12 : 11) : level == 1 ? 22 : level == 2 ? 18 : level == 3 ? 15 : 13, weight: .semibold))
                 .padding(.top, compact ? DesignMetrics.Spacing.xxs : level <= 2 ? 6 : 2)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
@@ -193,7 +193,7 @@ private struct AgentMarkdownBlockView: View {
     private func inline(_ text: AttributedString) -> Text {
         var styled = text
         for run in Array(styled.runs) where run.inlinePresentationIntent?.contains(.code) == true {
-            styled[run.range].font = .system(size: compact ? 10 : 12, design: .monospaced)
+            styled[run.range].font = .ui(size: compact ? 10 : 12, design: .monospaced)
             styled[run.range].backgroundColor = Palette.subtle
         }
         return Text(styled)
@@ -212,7 +212,7 @@ private struct AgentMarkdownBlockView: View {
                 HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
                     Group {
                         if let checked = task.checked {
-                            Image(systemName: checked ? "checkmark.square.fill" : "square").foregroundStyle(checked ? Palette.accent : Color.secondary).font(.system(size: 12))
+                            Image(systemName: checked ? "checkmark.square.fill" : "square").foregroundStyle(checked ? Palette.accent : Color.secondary).font(.ui(size: 12))
                         } else if ordered, case .listItem(let ordinal) = item.kind {
                             Text("\(ordinal).").monospacedDigit().foregroundStyle(.secondary)
                         } else { Text("•").foregroundStyle(Palette.accent) }
@@ -240,20 +240,20 @@ private struct AgentCodeBlock: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text(language?.split(separator: " ").first.map(String.init) ?? L("markdown.code.fallbackLanguage")).font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundStyle(.secondary)
+                Text(language?.split(separator: " ").first.map(String.init) ?? L("markdown.code.fallbackLanguage")).font(.ui(size: 10, weight: .medium, design: .monospaced)).foregroundStyle(.secondary)
                 Spacer(minLength: 10)
                 Button {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(code, forType: .string)
                     copied = true
                     Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
-                } label: { Label(copied ? L("markdown.code.copied") : L("pane.copyButton"), systemImage: copied ? "checkmark" : "doc.on.doc").font(.system(size: 10)) }
+                } label: { Label(copied ? L("markdown.code.copied") : L("pane.copyButton"), systemImage: copied ? "checkmark" : "doc.on.doc").font(.ui(size: 10)) }
                 .buttonStyle(.plain).foregroundStyle(.secondary).help(L("markdown.code.copyHelp"))
             }.padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.sm).background(Palette.subtle)
             Divider()
             ScrollView(.horizontal) {
                 Text(code.hasSuffix("\n") ? String(code.dropLast()) : code)
-                    .font(.system(size: 12, design: .monospaced)).lineSpacing(3)
+                    .font(.ui(size: 12, design: .monospaced)).lineSpacing(3)
                     .fixedSize(horizontal: true, vertical: false)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(DesignMetrics.Spacing.md)
             }
@@ -278,7 +278,7 @@ private struct AgentMarkdownTable: View {
                         ForEach(columns.indices, id: \.self) { column in
                             let cell = row.children.first { if case .tableCell(let index) = $0.kind { return index == column }; return false }
                             Text(cell?.text ?? AttributedString(""))
-                                .font(.system(size: 12, weight: row.kind == .tableHeaderRow ? .semibold : .regular))
+                                .font(.ui(size: 12, weight: row.kind == .tableHeaderRow ? .semibold : .regular))
                                 .fixedSize(horizontal: false, vertical: true)
                                 .frame(width: widths[column] - DesignMetrics.Spacing.md * 2, alignment: alignment(columns[column].alignment))
                                 .padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.sm)
@@ -301,7 +301,7 @@ private struct AgentMarkdownTable: View {
     private func columnWidths() -> [CGFloat] {
         columns.indices.map { column in
             let widest = block.children.flatMap(\.children).filter { if case .tableCell(let index) = $0.kind { return index == column }; return false }
-                .map { ($0.plainText as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 12, weight: .medium)]).width }.max() ?? 0
+                .map { ($0.plainText as NSString).size(withAttributes: [.font: NSFont.ui(ofSize: 12, weight: .medium)]).width }.max() ?? 0
             return min(260, max(85, ceil(widest) + DesignMetrics.Spacing.md * 2))
         }
     }

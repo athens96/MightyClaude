@@ -70,7 +70,7 @@ extension AppStore {
             settings.withCustom("command", shellCommand)
             settings.withCustom("wait-after-command", "false")
             settings.withFontFamily("Menlo")
-            settings.withFontSize(12)
+            settings.withFontSize(Float(TextSettings.shared.current.terminalSize))
             settings.withWindowPaddingX(10)
             settings.withWindowPaddingY(10)
             settings.withCustom("clipboard-read", "deny")
@@ -78,7 +78,10 @@ extension AppStore {
             settings.withCustom("scrollback-limit", "10000000")
             // These shortcuts belong to the host menu. Ghostty's built-in
             // new-tab/window actions otherwise consume them without a host.
-            for key in ["t", "n", "o", "k", "q", "comma"] {
+            // ⌘= / ⌘- / ⌘0 are the app's text size, which the terminals follow. Ghostty's
+            // own font-size defaults use the unicode triggers (`super+=`, `super++`,
+            // `super+-`, `super+0`), and so does `super+,`; the physical names stay too.
+            for key in ["t", "n", "o", "k", "q", "comma", ",", "equal", "minus", "digit_0", "=", "+", "-", "0"] {
                 settings.withCustom("keybind", "super+\(key)=unbind")
             }
         }

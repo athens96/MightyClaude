@@ -57,7 +57,7 @@ struct UserQuestionnaireCard: View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 PaneWaitBadge(systemImage: "questionmark")
-                Text(L("phone.questionnaire.title")).font(.system(size: 13, weight: .bold)).foregroundStyle(Palette.ink)
+                Text(L("phone.questionnaire.title")).font(.ui(size: 13, weight: .bold)).foregroundStyle(Palette.ink)
                 Text(progressText)
                     .foregroundStyle(Palette.ink2).monospacedDigit()
                     .accessibilityLabel(L("questionnaire.progressAccessibility", ["total": "\(questionnaire.questions.count)", "current": "\(currentStep + 1)", "answered": "\(answeredCount)"]))
@@ -65,7 +65,7 @@ struct UserQuestionnaireCard: View {
                 if questionnaire.questions.count > 1 { stepDots }
                 Spacer(minLength: 0)
                 if count > 1 { Text(L("phone.questionnaire.waiting", ["count": "\(count)"])).foregroundStyle(Palette.ink2) }
-            }.font(.system(size: 12))
+            }.font(.ui(size: 12))
 
             ScrollView {
                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.lg) {
@@ -87,18 +87,18 @@ struct UserQuestionnaireCard: View {
 
             if !canAnswer {
                 Text(L("questionnaire.cannotAnswer"))
-                    .font(.system(size: 10)).foregroundStyle(Palette.ink2)
+                    .font(.ui(size: 10)).foregroundStyle(Palette.ink2)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
             if let error = store.permissionErrors[sessionId] {
-                Text(error).font(.system(size: 11)).foregroundStyle(Palette.errText)
+                Text(error).font(.ui(size: 11)).foregroundStyle(Palette.errText)
                     .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
             }
 
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 Text(currentStep < lastStep ? L("phone.questionnaire.hintNext") : L("phone.questionnaire.hintSubmit"))
-                    .font(.system(size: 11)).foregroundStyle(Palette.ink2)
+                    .font(.ui(size: 11)).foregroundStyle(Palette.ink2)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
                 if busy { ProgressView().controlSize(.mini).accessibilityIdentifier("questionnaire-sending") }
@@ -139,7 +139,7 @@ struct UserQuestionnaireCard: View {
             ForEach(questionnaire.questions.indices, id: \.self) { index in
                 Button { if canJump(to: index) { step = index } } label: {
                     // The question on screen is the amber dot; one answered keeps a soft amber.
-                    Text("\(index + 1)").font(.system(size: 10, weight: .bold)).monospacedDigit()
+                    Text("\(index + 1)").font(.ui(size: 10, weight: .bold)).monospacedDigit()
                         .foregroundStyle(index == currentStep ? Palette.onWait : answered(index) ? Palette.waitText : Palette.ink2)
                         .frame(width: 18, height: 18)
                         .background(index == currentStep ? Palette.wait : answered(index) ? Palette.waitSoft : Palette.track, in: Circle())
@@ -155,12 +155,12 @@ struct UserQuestionnaireCard: View {
     private func questionSection(_ question: UserQuestionnaire.Question, index: Int) -> some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
-                Text(question.header).font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.waitText)
+                Text(question.header).font(.ui(size: 11, weight: .semibold)).foregroundStyle(Palette.waitText)
                 Spacer(minLength: 0)
                 Text(question.multiSelect ? L("phone.questionnaire.multiple") : L("phone.questionnaire.single"))
-                    .font(.system(size: 10.5)).foregroundStyle(Palette.ink2)
+                    .font(.ui(size: 10.5)).foregroundStyle(Palette.ink2)
             }
-            Text(question.question).font(.system(size: 14.5, weight: .bold)).foregroundStyle(Palette.ink)
+            Text(question.question).font(.ui(size: 14.5, weight: .bold)).foregroundStyle(Palette.ink)
                 .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
 
             // Two tiles a row where the pane is wide enough, one where it is not.
@@ -190,7 +190,7 @@ struct UserQuestionnaireCard: View {
             if customQuestions.contains(index) {
                 TextField(L("phone.questionnaire.customPlaceholder"), text: Binding(get: { customText[index, default: ""] },
                     set: { customText[index] = $0 }), axis: .vertical)
-                    .textFieldStyle(.roundedBorder).font(.system(size: 12))
+                    .textFieldStyle(.roundedBorder).font(.ui(size: 12))
                     .lineLimit(1...4)
                     .accessibilityLabel(L("phone.questionnaire.customLabel", ["header": question.header]))
                     .accessibilityIdentifier("questionnaire-custom-text-\(index)")
@@ -209,11 +209,11 @@ struct UserQuestionnaireCard: View {
                 Image(systemName: multiple ? (selected ? "checkmark.square.fill" : "square") :
                         (selected ? "largecircle.fill.circle" : "circle"))
                     .foregroundStyle(selected ? Palette.waitText : Palette.ink2)
-                    .font(.system(size: 14)).frame(width: 17).padding(.top, 1)
+                    .font(.ui(size: 14)).frame(width: 17).padding(.top, 1)
                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
-                    Text(label).font(.system(size: 13, weight: .bold)).foregroundStyle(Palette.ink)
+                    Text(label).font(.ui(size: 13, weight: .bold)).foregroundStyle(Palette.ink)
                     if let description, !description.isEmpty {
-                        Text(description).font(.system(size: 11.5)).foregroundStyle(Palette.ink2)
+                        Text(description).font(.ui(size: 11.5)).foregroundStyle(Palette.ink2)
                     }
                 }.fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)

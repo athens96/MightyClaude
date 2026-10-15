@@ -31,11 +31,11 @@ struct SlashCommandPalette: View {
             }
             Divider()
             HStack(spacing: DesignMetrics.Spacing.md) {
-                Text(L("slash.palette.move")).font(.system(size: 10)).foregroundStyle(.secondary)
-                Text(L("slash.palette.select")).font(.system(size: 10)).foregroundStyle(.secondary)
-                Text(L("slash.palette.dismiss")).font(.system(size: 10)).foregroundStyle(.secondary)
+                Text(L("slash.palette.move")).font(.ui(size: 10)).foregroundStyle(.secondary)
+                Text(L("slash.palette.select")).font(.ui(size: 10)).foregroundStyle(.secondary)
+                Text(L("slash.palette.dismiss")).font(.ui(size: 10)).foregroundStyle(.secondary)
                 Spacer()
-                Text(L("slash.palette.count", ["count": "\(commands.count)"])).font(.system(size: 10)).foregroundStyle(.tertiary)
+                Text(L("slash.palette.count", ["count": "\(commands.count)"])).font(.ui(size: 10)).foregroundStyle(.tertiary)
             }
             .padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.xs)
         }
@@ -46,21 +46,21 @@ struct SlashCommandPalette: View {
 
     private func row(_ command: SlashCommand, highlighted: Bool) -> some View {
         HStack(alignment: .top, spacing: DesignMetrics.Spacing.md) {
-            Text("/" + command.invocation).font(.system(size: 12, weight: .semibold, design: .monospaced)).lineLimit(1)
+            Text("/" + command.invocation).font(.ui(size: 12, weight: .semibold, design: .monospaced)).lineLimit(1)
                 .foregroundStyle(highlighted ? Palette.onAccent : .primary)
             VStack(alignment: .leading, spacing: 1) {
-                Text(command.description.isEmpty ? L("slash.palette.noDescription") : command.description).font(.system(size: 11)).lineLimit(1)
+                Text(command.description.isEmpty ? L("slash.palette.noDescription") : command.description).font(.ui(size: 11)).lineLimit(1)
                     .foregroundStyle(highlighted ? Palette.onAccent.opacity(0.9) : .secondary)
-                Text(command.source).font(.system(size: 9, weight: .medium))
+                Text(command.source).font(.ui(size: 9, weight: .medium))
                     .foregroundStyle(highlighted ? Palette.onAccent.opacity(0.75) : Color.secondary.opacity(0.7))
             }
             Spacer(minLength: 0)
             if command.action != nil {
-                Image(systemName: "arrow.turn.down.left").font(.system(size: 9, weight: .semibold))
+                Image(systemName: "arrow.turn.down.left").font(.ui(size: 9, weight: .semibold))
                     .foregroundStyle(highlighted ? Palette.onAccent.opacity(0.75) : Color.secondary.opacity(0.7))
                     .help(L("slash.palette.actionHelp"))
             } else if command.argument != nil {
-                Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold))
+                Image(systemName: "chevron.right").font(.ui(size: 9, weight: .semibold))
                     .foregroundStyle(highlighted ? Palette.onAccent.opacity(0.75) : Color.secondary.opacity(0.7))
                     .help(L("slash.palette.argumentHelp"))
             }

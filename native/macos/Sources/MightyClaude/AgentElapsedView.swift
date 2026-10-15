@@ -16,7 +16,7 @@ struct AgentElapsedView: View {
 
     private func label(at date: Date) -> some View {
         Label(timing.label(at: date), systemImage: "clock")
-            .font(.system(size: 10, design: .monospaced)).monospacedDigit()
+            .font(.ui(size: 10, design: .monospaced)).monospacedDigit()
             .foregroundStyle(.secondary).fixedSize()
             .help(Self.help(timing))
             .accessibilityLabel(L(timing.finishedAt == nil ? "pane.elapsed.runningAccessibility" : "pane.elapsed.finishedAccessibility", ["time": timing.label(at: date)]))

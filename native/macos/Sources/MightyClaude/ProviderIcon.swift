@@ -70,7 +70,8 @@ enum ProviderBadgeIcon {
     /// the brand colours; nil for a provider the app has no mark of its own for.
     static func mark(provider: String, font: NSFont) -> Text? {
         guard let provider = ProviderMark.markedProvider(provider) else { return nil }
-        let side = min(15, max(11, font.pointSize.rounded()))
+        let grow = TextSettings.shared.current.scale
+        let side = min((15 * grow).rounded(), max((11 * grow).rounded(), font.pointSize.rounded()))
         guard let image = image(provider: provider, side: side) else { return nil }
         return Text(Image(decorative: image, scale: scale)).baselineOffset((font.capHeight - side) / 2)
     }

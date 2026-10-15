@@ -168,7 +168,7 @@ struct SessionContextRing: View {
                     .rotationEffect(.degrees(-90))
             }
             Text(SessionUsagePresentation.percent(usage))
-                .font(.system(size: size > 32 ? 13 : 8.5, weight: .semibold, design: .rounded))
+                .font(.ui(size: size > 32 ? 13 : 8.5, weight: .semibold, design: .rounded))
                 .monospacedDigit().foregroundStyle(percent == nil ? Color.secondary : Color.primary)
                 .lineLimit(1).minimumScaleFactor(0.8).padding(.horizontal, DesignMetrics.Spacing.xxs)
         }.frame(width: size, height: size)
@@ -197,8 +197,8 @@ struct SessionInfoView: View {
             if let session = store.snapshot.sessions.first(where: { $0.id == sessionID }) { content(session) }
             else {
                 VStack(spacing: DesignMetrics.Spacing.sm) {
-                    Image(systemName: "rectangle.slash").font(.title2).foregroundStyle(.secondary)
-                    Text(L("composer.sessionInfo.closedPane")).font(.system(size: 13, weight: .medium))
+                    Image(systemName: "rectangle.slash").font(.ui(size: 17)).foregroundStyle(.secondary)
+                    Text(L("composer.sessionInfo.closedPane")).font(.ui(size: 13, weight: .medium))
                 }.frame(maxWidth: .infinity).padding(DesignMetrics.Spacing.xl)
             }
         }
@@ -217,15 +217,15 @@ struct SessionInfoView: View {
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 ProviderIcon(provider: session.provider, size: 20)
                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
-                    Text(session.title).font(.system(size: 14, weight: .semibold)).lineLimit(1).help(session.titleHelp)
+                    Text(session.title).font(.ui(size: 14, weight: .semibold)).lineLimit(1).help(session.titleHelp)
                     HStack(spacing: DesignMetrics.Spacing.sm) {
-                        Text(ProviderOptions.label(session.provider)).font(.system(size: 11)).foregroundStyle(.secondary)
+                        Text(ProviderOptions.label(session.provider)).font(.ui(size: 11)).foregroundStyle(.secondary)
                             .accessibilityIdentifier("session-info-provider-\(sessionID)")
                         if ProviderOptions.isBeta(session.provider) { BetaBadge() }
                     }
                 }
                 Spacer(minLength: 0)
-                HStack(spacing: DesignMetrics.Spacing.xs) { StatusDot(status: session.status); Text(Palette.status(session.status)).font(.system(size: 10)) }
+                HStack(spacing: DesignMetrics.Spacing.xs) { StatusDot(status: session.status); Text(Palette.status(session.status)).font(.ui(size: 10)) }
                     .foregroundStyle(.secondary)
             }.frame(height: headerHeight)
             ScrollView(.vertical) {
@@ -233,8 +233,8 @@ struct SessionInfoView: View {
                     HStack(spacing: DesignMetrics.Spacing.md) {
                         SessionContextRing(usage: usage, size: 42)
                         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
-                            Text(L("composer.sessionInfo.contextUsage")).font(.system(size: 12, weight: .semibold))
-                            Text(SessionUsagePresentation.context(usage)).font(.system(size: 11)).foregroundStyle(.secondary)
+                            Text(L("composer.sessionInfo.contextUsage")).font(.ui(size: 12, weight: .semibold))
+                            Text(SessionUsagePresentation.context(usage)).font(.ui(size: 11)).foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer(minLength: 0)
@@ -251,18 +251,18 @@ struct SessionInfoView: View {
                             Text(L("composer.sessionInfo.latestRequestTime")).foregroundStyle(.secondary)
                             Spacer()
                             AgentElapsedView(timing: timing)
-                        }.font(.system(size: 11))
+                        }.font(.ui(size: 11))
                     }
                     if let workspace {
                         row(L("composer.sessionInfo.workspace"), workspace.name, key: "workspace")
-                        Text(workspace.path).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+                        Text(workspace.path).font(.ui(size: 10, design: .monospaced)).foregroundStyle(.secondary)
                             .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .accessibilityIdentifier("session-info-path-\(sessionID)")
                     }
                     Divider()
                     if let usage, SessionUsagePresentation.hasTokens(usage) {
-                        Text(L("composer.sessionInfo.tokenScope", ["scope": SessionUsagePresentation.scope(usage.tokenScope)])).font(.system(size: 11, weight: .semibold))
+                        Text(L("composer.sessionInfo.tokenScope", ["scope": SessionUsagePresentation.scope(usage.tokenScope)])).font(.ui(size: 11, weight: .semibold))
                         if let count = usage.inputTokens { tokenRow(L("composer.sessionInfo.input"), count, key: "input") }
                         if let count = usage.outputTokens { tokenRow(L("composer.sessionInfo.output"), count, key: "output") }
                         if let count = usage.cacheReadTokens { tokenRow(L("composer.sessionInfo.cacheRead"), count, key: "cache-read") }
@@ -271,19 +271,19 @@ struct SessionInfoView: View {
                         if let count = usage.totalTokens { tokenRow(L("composer.sessionInfo.total"), count, key: "total") }
                         if usage.cacheReadTokens != nil || usage.cacheWriteTokens != nil || usage.reasoningTokens != nil {
                             Text(L("composer.sessionInfo.note"))
-                                .font(.system(size: 10)).foregroundStyle(.tertiary)
+                                .font(.ui(size: 10)).foregroundStyle(.tertiary)
                         }
                     }
                     if let cost = usage?.costUSD, cost.isFinite, cost >= 0 {
                         row(L("composer.sessionInfo.costWithScope", ["scope": SessionUsagePresentation.scope(usage?.costScope)]), cost.formatted(.currency(code: "USD").precision(.fractionLength(0...4))), key: "cost")
                     }
                     if usage.map({ !SessionUsagePresentation.hasTokens($0) && $0.costUSD == nil && $0.contextUsedTokens == nil && $0.contextWindowTokens == nil }) ?? true {
-                        Text(L("composer.sessionInfo.noUsage")).font(.system(size: 11)).foregroundStyle(.secondary)
+                        Text(L("composer.sessionInfo.noUsage")).font(.ui(size: 11)).foregroundStyle(.secondary)
                     }
                     Button { showsIdentifiers.toggle() } label: {
                         HStack(spacing: DesignMetrics.Spacing.xs) {
-                            Image(systemName: showsIdentifiers ? "chevron.down" : "chevron.right").font(.system(size: 8, weight: .semibold))
-                            Text(L("composer.sessionInfo.sessionId")).font(.system(size: 11))
+                            Image(systemName: showsIdentifiers ? "chevron.down" : "chevron.right").font(.ui(size: 8, weight: .semibold))
+                            Text(L("composer.sessionInfo.sessionId")).font(.ui(size: 11))
                             Spacer(minLength: 0)
                         }.contentShape(Rectangle()).accessibilityElement(children: .ignore)
                     }
@@ -298,7 +298,7 @@ struct SessionInfoView: View {
                         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                             Text(L("composer.sessionInfo.reported", ["provider": ProviderOptions.label(session.provider)])).help(usage.source)
                             if let date = AgentRunTiming.parseTimestamp(usage.updatedAt) { Text(L("composer.sessionInfo.lastReceived", ["time": date.formatted(date: .omitted, time: .standard)])) }
-                        }.font(.system(size: 10)).foregroundStyle(.tertiary)
+                        }.font(.ui(size: 10)).foregroundStyle(.tertiary)
                     }
                 }
                 // Keep a bounded line width without a greedy outer geometry
@@ -331,10 +331,10 @@ struct SessionInfoView: View {
             Text(title).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 .layoutPriority(1)
             Spacer(minLength: 0)
-            Text(value).font(.system(size: 11, design: monospaced ? .monospaced : .default))
+            Text(value).font(.ui(size: 11, design: monospaced ? .monospaced : .default))
                 .multilineTextAlignment(.trailing).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
         }
-        .font(.system(size: 11))
+        .font(.ui(size: 11))
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(title) \(value)")

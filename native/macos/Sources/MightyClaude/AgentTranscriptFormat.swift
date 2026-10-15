@@ -34,19 +34,19 @@ enum AgentTranscriptFormat {
             let color = activity.state == "error" ? Palette.nsErrText : live ? accent : .secondaryLabelColor
             let line = NSMutableAttributedString(attributedString: symbol(AgentActivityRow.symbol(activity.kind), color: color))
             let summary = activity.summary.isEmpty ? activity.toolName ?? L("transcript.tool.fallback") : activity.summary
-            let font = ["command", "read", "edit"].contains(activity.kind) ? NSFont.monospacedSystemFont(ofSize: 12, weight: .regular) : .systemFont(ofSize: 12)
+            let font = ["command", "read", "edit"].contains(activity.kind) ? NSFont.uiMonospaced(ofSize: 12, weight: .regular) : .ui(ofSize: 12)
             builder.appendText("  " + summary, attributes: [.font: font, .foregroundColor: NSColor.secondaryLabelColor], to: line)
             if let duration = ActivitySupport.durationLabel(activity) {
-                line.append(NSAttributedString(string: "  · " + duration, attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular), .foregroundColor: NSColor.secondaryLabelColor]))
+                line.append(NSAttributedString(string: "  · " + duration, attributes: [.font: NSFont.uiMonospacedDigit(ofSize: 10, weight: .regular), .foregroundColor: NSColor.secondaryLabelColor]))
             }
-            if live { line.append(NSAttributedString(string: "  · " + toolState(activity.state), attributes: [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: accent])) }
-            else if activity.state == "error" { line.append(NSAttributedString(string: "  · " + toolState(activity.state), attributes: [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: Palette.nsErrText])) }
+            if live { line.append(NSAttributedString(string: "  · " + toolState(activity.state), attributes: [.font: NSFont.ui(ofSize: 10), .foregroundColor: accent])) }
+            else if activity.state == "error" { line.append(NSAttributedString(string: "  · " + toolState(activity.state), attributes: [.font: NSFont.ui(ofSize: 10), .foregroundColor: Palette.nsErrText])) }
             if !records.isEmpty,
                let suffix = ModelUsageFormat.activitySuffix(activityId: activity.id, records: records, childBlock: childBlocks[activity.id], catalog: catalog, versioned: true) {
-                line.append(NSAttributedString(string: "  " + suffix, attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular), .foregroundColor: NSColor.secondaryLabelColor]))
+                line.append(NSAttributedString(string: "  " + suffix, attributes: [.font: NSFont.uiMonospacedDigit(ofSize: 10, weight: .regular), .foregroundColor: NSColor.secondaryLabelColor]))
             }
             if !(activity.output ?? "").isEmpty, let link = disclosureLink(entry.id) {
-                line.append(NSAttributedString(string: "  " + disclosureLabel(expanded), attributes: [.font: NSFont.systemFont(ofSize: 10), .link: link, .foregroundColor: accent]))
+                line.append(NSAttributedString(string: "  " + disclosureLabel(expanded), attributes: [.font: NSFont.ui(ofSize: 10), .link: link, .foregroundColor: accent]))
             }
             builder.paragraph(line, font: font, color: .secondaryLabelColor, spacing: 6)
             if expanded, let output = activity.output, !output.isEmpty { builder.code(output, language: nil) }
@@ -56,7 +56,7 @@ enum AgentTranscriptFormat {
             if cards { builder.container = Builder.card() }
             let header = NSMutableAttributedString(attributedString: providerSymbol(selectedProvider, color: accent))
             let timestamp = time(entry.timestamp)
-            header.append(NSAttributedString(string: "  \(ProviderOptions.label(selectedProvider))\(timestamp.isEmpty ? "" : "  ·  " + timestamp)", attributes: [.font: NSFont.systemFont(ofSize: cards ? 12 : 11, weight: cards ? .semibold : .medium), .foregroundColor: builder.secondary]))
+            header.append(NSAttributedString(string: "  \(ProviderOptions.label(selectedProvider))\(timestamp.isEmpty ? "" : "  ·  " + timestamp)", attributes: [.font: NSFont.ui(ofSize: cards ? 12 : 11, weight: cards ? .semibold : .medium), .foregroundColor: builder.secondary]))
             builder.paragraph(header, spacing: 10)
             if let questions = UserQuestionnaire.parse(inputJSON: entry.text) {
                 builder.questionnaire(questions)
@@ -73,12 +73,12 @@ enum AgentTranscriptFormat {
         } else if entry.kind == "image", let refs = entry.images, !refs.isEmpty {
             // A tool's pictures, in order, under its row; the entry text names them.
             for ref in refs { builder.paragraph(AgentImageAttachmentCell.attachment(.stored(ref), caption: ref.source), spacing: 4) }
-            builder.paragraph(NSAttributedString(string: entry.text), font: .systemFont(ofSize: 10), color: builder.secondary, spacing: 7)
+            builder.paragraph(NSAttributedString(string: entry.text), font: .ui(ofSize: 10), color: builder.secondary, spacing: 7)
         } else {
             let color: NSColor = entry.kind == "error" ? Palette.nsErrText : builder.secondary
             let line = NSMutableAttributedString(attributedString: symbol(entry.kind == "error" ? "exclamationmark.circle" : "info.circle", color: color))
             builder.appendText("  " + entry.text, attributes: [:], to: line)
-            builder.paragraph(line, font: .systemFont(ofSize: 12), color: color, spacing: 7)
+            builder.paragraph(line, font: .ui(ofSize: 12), color: color, spacing: 7)
         }
         builder.separation()
         return NSAttributedString(attributedString: builder.result)
@@ -213,7 +213,7 @@ enum AgentTranscriptFormat {
             if !timestamp.isEmpty {
                 let style = style(spacing: 0)
                 style.alignment = .right
-                paragraph(NSAttributedString(string: timestamp), font: .systemFont(ofSize: 10.5), color: ink, box: bubble, paragraphStyle: style)
+                paragraph(NSAttributedString(string: timestamp), font: .ui(ofSize: 10.5), color: ink, box: bubble, paragraphStyle: style)
             }
         }
 
@@ -230,23 +230,23 @@ enum AgentTranscriptFormat {
             chip.setWidth(DesignMetrics.Inset.toolChipH, type: .absoluteValueType, for: .padding, edge: .maxX)
             chip.setWidth(DesignMetrics.Inset.toolChipV, type: .absoluteValueType, for: .padding, edge: .minY)
             chip.setWidth(DesignMetrics.Inset.toolChipV, type: .absoluteValueType, for: .padding, edge: .maxY)
-            let mono = NSFont.monospacedSystemFont(ofSize: 11.5, weight: .regular)
+            let mono = NSFont.uiMonospaced(ofSize: 11.5, weight: .regular)
             let line = NSMutableAttributedString(attributedString: AgentTranscriptFormat.statusSquare(activity.state, live: live))
             let name = activity.toolName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             if !name.isEmpty {
-                line.append(NSAttributedString(string: "  " + name, attributes: [.font: NSFont.systemFont(ofSize: 12.5, weight: .bold), .foregroundColor: NSColor.labelColor]))
+                line.append(NSAttributedString(string: "  " + name, attributes: [.font: NSFont.ui(ofSize: 12.5, weight: .bold), .foregroundColor: NSColor.labelColor]))
             }
             let detail = activity.summary.isEmpty ? (name.isEmpty ? L("transcript.tool.fallback") : "") : activity.summary
             if !detail.isEmpty { appendText("  " + detail, attributes: [.font: mono, .foregroundColor: secondary], to: line) }
-            let small = NSFont.systemFont(ofSize: 10.5)
+            let small = NSFont.ui(ofSize: 10.5)
             if let duration = ActivitySupport.durationLabel(activity) {
-                line.append(NSAttributedString(string: "  · " + duration, attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 10.5, weight: .regular), .foregroundColor: secondary]))
+                line.append(NSAttributedString(string: "  · " + duration, attributes: [.font: NSFont.uiMonospacedDigit(ofSize: 10.5, weight: .regular), .foregroundColor: secondary]))
             }
             if live { line.append(NSAttributedString(string: "  · " + AgentTranscriptFormat.toolState(activity.state), attributes: [.font: small, .foregroundColor: activity.state == "waiting" ? Palette.nsToken(\.waitText) : AgentTranscriptFormat.accent])) }
             else if activity.state == "error" { line.append(NSAttributedString(string: "  · " + AgentTranscriptFormat.toolState(activity.state), attributes: [.font: small, .foregroundColor: Palette.nsErrText])) }
             if !records.isEmpty,
                let suffix = ModelUsageFormat.activitySuffix(activityId: activity.id, records: records, childBlock: childBlocks[activity.id], catalog: catalog, versioned: true) {
-                line.append(NSAttributedString(string: "  " + suffix, attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 10.5, weight: .regular), .foregroundColor: secondary]))
+                line.append(NSAttributedString(string: "  " + suffix, attributes: [.font: NSFont.uiMonospacedDigit(ofSize: 10.5, weight: .regular), .foregroundColor: secondary]))
             }
             if !(activity.output ?? "").isEmpty, let link = AgentTranscriptFormat.disclosureLink(entry.id) {
                 line.append(NSAttributedString(string: "  " + AgentTranscriptFormat.disclosureLabel(expanded), attributes: [.font: small, .link: link, .foregroundColor: AgentTranscriptFormat.accent]))
@@ -270,7 +270,7 @@ enum AgentTranscriptFormat {
                 }
                 note = L("images.remote")
             } else { note = L("images.refused") }
-            result.append(NSAttributedString(string: " (" + note + ")", attributes: [.font: NSFont.systemFont(ofSize: max(10, font.pointSize - 2)), .foregroundColor: secondary]))
+            result.append(NSAttributedString(string: " (" + note + ")", attributes: [.font: NSFont.ui(ofSize: max(10, font.pointSize / TextSettings.shared.current.scale - 2)), .foregroundColor: secondary]))
             return result
         }
 
@@ -301,7 +301,7 @@ enum AgentTranscriptFormat {
         func separation() {
             let paragraph = style(spacing: 2)
             if let container { paragraph.textBlocks = [container] }
-            result.append(NSAttributedString(string: "\n", attributes: [.font: NSFont.systemFont(ofSize: 4), .paragraphStyle: paragraph]))
+            result.append(NSAttributedString(string: "\n", attributes: [.font: NSFont.ui(ofSize: 4), .paragraphStyle: paragraph]))
         }
 
         func style(indent: CGFloat = 0, spacing: CGFloat = 8) -> NSMutableParagraphStyle {
@@ -313,7 +313,7 @@ enum AgentTranscriptFormat {
             return style
         }
 
-        func paragraph(_ value: NSAttributedString, font: NSFont = .systemFont(ofSize: 13), color: NSColor = .labelColor, indent: CGFloat = 0, spacing: CGFloat = 8, box: NSTextBlock? = nil, paragraphStyle: NSMutableParagraphStyle? = nil) {
+        func paragraph(_ value: NSAttributedString, font: NSFont = .ui(ofSize: 13), color: NSColor = .labelColor, indent: CGFloat = 0, spacing: CGFloat = 8, box: NSTextBlock? = nil, paragraphStyle: NSMutableParagraphStyle? = nil) {
             let paragraph = paragraphStyle ?? style(indent: indent, spacing: spacing)
             let blocks = [container, box].compactMap { $0 }
             if !blocks.isEmpty { paragraph.textBlocks = blocks }
@@ -328,11 +328,11 @@ enum AgentTranscriptFormat {
             result.append(text)
         }
 
-        func inline(_ source: AttributedString, font: NSFont = .systemFont(ofSize: 13), color: NSColor = .labelColor) -> NSAttributedString {
+        func inline(_ source: AttributedString, font: NSFont = .ui(ofSize: 13), color: NSColor = .labelColor) -> NSAttributedString {
             let result = NSMutableAttributedString(string: "")
             for run in source.runs {
                 let intent = run.inlinePresentationIntent
-                var selectedFont = intent?.contains(.code) == true ? NSFont.monospacedSystemFont(ofSize: min(font.pointSize, 12), weight: .regular) : font
+                var selectedFont = intent?.contains(.code) == true ? NSFont.uiMonospaced(ofSize: min(font.pointSize / TextSettings.shared.current.scale, 12), weight: .regular) : font
                 if intent?.contains(.stronglyEmphasized) == true { selectedFont = NSFontManager.shared.convert(selectedFont, toHaveTrait: .boldFontMask) }
                 if intent?.contains(.emphasized) == true { selectedFont = NSFontManager.shared.convert(selectedFont, toHaveTrait: .italicFontMask) }
                 var attributes: [NSAttributedString.Key: Any] = [.font: selectedFont, .foregroundColor: color]
@@ -362,7 +362,7 @@ enum AgentTranscriptFormat {
             case .paragraph:
                 paragraph(inline(block.text, color: quote == nil ? .labelColor : secondary), indent: indent, box: quote)
             case .header(let level):
-                let font = NSFont.systemFont(ofSize: level == 1 ? 22 : level == 2 ? 18 : level == 3 ? 15 : 13, weight: .semibold)
+                let font = NSFont.ui(ofSize: level == 1 ? 22 : level == 2 ? 18 : level == 3 ? 15 : 13, weight: .semibold)
                 let paragraphStyle = style(indent: indent, spacing: 10)
                 paragraphStyle.paragraphSpacingBefore = level <= 2 ? 5 : 2
                 paragraph(inline(block.text, font: font), font: font, indent: indent, box: quote, paragraphStyle: paragraphStyle)
@@ -395,13 +395,13 @@ enum AgentTranscriptFormat {
         func questionnaire(_ form: UserQuestionnaire) {
             for (index, question) in form.questions.enumerated() {
                 let title = "\(index + 1). \(question.header)  ·  \(question.multiSelect ? L("transcript.question.multiple") : L("transcript.question.single"))"
-                paragraph(NSAttributedString(string: title), font: .systemFont(ofSize: 11, weight: .semibold), color: AgentTranscriptFormat.accent, spacing: 6,
+                paragraph(NSAttributedString(string: title), font: .ui(ofSize: 11, weight: .semibold), color: AgentTranscriptFormat.accent, spacing: 6,
                           box: box(background: AgentTranscriptFormat.accentWash, border: .clear))
-                paragraph(NSAttributedString(string: question.question), font: .systemFont(ofSize: 14, weight: .semibold), spacing: 10)
+                paragraph(NSAttributedString(string: question.question), font: .ui(ofSize: 14, weight: .semibold), spacing: 10)
                 for option in question.options {
-                    paragraph(NSAttributedString(string: "\(question.multiSelect ? "☐" : "○")  \(option.label)"), font: .systemFont(ofSize: 13, weight: .medium), spacing: 3)
+                    paragraph(NSAttributedString(string: "\(question.multiSelect ? "☐" : "○")  \(option.label)"), font: .ui(ofSize: 13, weight: .medium), spacing: 3)
                     if !option.description.isEmpty {
-                        paragraph(NSAttributedString(string: option.description), font: .systemFont(ofSize: 12), color: secondary, indent: 20, spacing: 10)
+                        paragraph(NSAttributedString(string: option.description), font: .ui(ofSize: 12), color: secondary, indent: 20, spacing: 10)
                     }
                 }
                 separation()
@@ -455,11 +455,11 @@ enum AgentTranscriptFormat {
             let ink: NSColor = cards ? Palette.nsToken(\.codeText) : .labelColor
             let start = result.length
             if let language, !language.isEmpty {
-                paragraph(NSAttributedString(string: language.split(separator: " ").first.map(String.init) ?? language), font: .monospacedSystemFont(ofSize: 10, weight: .medium), color: cards ? ink : secondary, indent: indent, spacing: 5, box: background)
+                paragraph(NSAttributedString(string: language.split(separator: " ").first.map(String.init) ?? language), font: .uiMonospaced(ofSize: 10, weight: .medium), color: cards ? ink : secondary, indent: indent, spacing: 5, box: background)
             }
             let paragraphStyle = style(indent: indent, spacing: cards ? 2 : 8)
             paragraphStyle.lineBreakMode = .byCharWrapping
-            paragraph(NSAttributedString(string: code), font: .monospacedSystemFont(ofSize: 12, weight: .regular), color: ink, indent: indent, box: background, paragraphStyle: paragraphStyle)
+            paragraph(NSAttributedString(string: code), font: .uiMonospaced(ofSize: 12, weight: .regular), color: ink, indent: indent, box: background, paragraphStyle: paragraphStyle)
             result.addAttribute(AgentTranscriptFormat.codeAttribute, value: code, range: NSRange(location: start, length: result.length - start))
         }
 
@@ -481,7 +481,7 @@ enum AgentTranscriptFormat {
                     if row.kind == .tableHeaderRow { box.backgroundColor = NSColor.labelColor.withAlphaComponent(0.04) }
                     let paragraphStyle = style(spacing: 0)
                     switch columns[column].alignment { case .left: paragraphStyle.alignment = .left; case .center: paragraphStyle.alignment = .center; case .right: paragraphStyle.alignment = .right; @unknown default: break }
-                    let font = NSFont.systemFont(ofSize: 12, weight: row.kind == .tableHeaderRow ? .semibold : .regular)
+                    let font = NSFont.ui(ofSize: 12, weight: row.kind == .tableHeaderRow ? .semibold : .regular)
                     paragraph(inline(cell?.text ?? AttributedString(""), font: font), font: font, box: box, paragraphStyle: paragraphStyle)
                 }
             }

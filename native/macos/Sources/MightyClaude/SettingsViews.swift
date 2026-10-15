@@ -33,34 +33,34 @@ struct RunSettingsView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text(L("settings.run.title")).font(.system(size: 14, weight: .semibold))
+                Text(L("settings.run.title")).font(.ui(size: 14, weight: .semibold))
                 Spacer()
-                Text(ProviderOptions.label(session.provider)).font(.system(size: 11)).foregroundStyle(.secondary)
+                Text(ProviderOptions.label(session.provider)).font(.ui(size: 11)).foregroundStyle(.secondary)
                 if ProviderOptions.isBeta(session.provider) { BetaBadge() }
             }.padding(.horizontal, DesignMetrics.Inset.popover).padding(.vertical, DesignMetrics.Spacing.md)
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
                     VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
-                        Text(store.modelLabel(for: currentSession)).font(.system(size: 13, weight: .medium))
-                        if let description = selectedModel?.description, !description.isEmpty { Text(description).font(.system(size: 11)).foregroundStyle(.secondary).textSelection(.enabled) }
+                        Text(store.modelLabel(for: currentSession)).font(.ui(size: 13, weight: .medium))
+                        if let description = selectedModel?.description, !description.isEmpty { Text(description).font(.ui(size: 11)).foregroundStyle(.secondary).textSelection(.enabled) }
                         Label(runtime.modelCatalog.source == "cli" ? L("settings.run.modelSourceCli") : L("settings.run.modelSourceDefault"), systemImage: "info.circle")
-                            .font(.system(size: 10)).foregroundStyle(.secondary)
+                            .font(.ui(size: 10)).foregroundStyle(.secondary)
                     }
                     Divider()
                     VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
-                        Text(permissionLabel(currentSession.settings.permissionMode, provider: session.provider)).font(.system(size: 12, weight: .medium))
-                        Text(permissionDescription(currentSession.settings.permissionMode, provider: session.provider)).font(.system(size: 11)).foregroundStyle(.secondary)
+                        Text(permissionLabel(currentSession.settings.permissionMode, provider: session.provider)).font(.ui(size: 12, weight: .medium))
+                        Text(permissionDescription(currentSession.settings.permissionMode, provider: session.provider)).font(.ui(size: 11)).foregroundStyle(.secondary)
                         if currentSession.settings.permissionMode != "fullAccess" {
                             if session.provider == "claude" || (session.provider == "codex" && currentSession.settings.permissionMode == "onRequest") {
-                                Text(L("settings.run.approvalInApp")).font(.system(size: 11)).foregroundStyle(.secondary)
+                                Text(L("settings.run.approvalInApp")).font(.ui(size: 11)).foregroundStyle(.secondary)
                             } else {
-                                Text(L("settings.run.approvalUnsupported")).font(.system(size: 11)).foregroundStyle(.secondary)
+                                Text(L("settings.run.approvalUnsupported")).font(.ui(size: 11)).foregroundStyle(.secondary)
                             }
                         }
                     }
                     if runtime.capabilities.fastMode {
-                        Text(L("settings.run.fastModeNote")).font(.system(size: 11)).foregroundStyle(.secondary)
+                        Text(L("settings.run.fastModeNote")).font(.ui(size: 11)).foregroundStyle(.secondary)
                     }
                     if runtime.capabilities.webSearch {
                         Divider()
@@ -71,7 +71,7 @@ struct RunSettingsView: View {
                                 Text(L("settings.run.webSearchCached")).tag("cached")
                                 Text(L("settings.run.webSearchLive")).tag("live")
                             }.pickerStyle(.menu).accessibilityLabel(L("settings.run.webSearchLabel"))
-                            Text(webSearchDescription(webSearch)).font(.system(size: 11)).foregroundStyle(.secondary)
+                            Text(webSearchDescription(webSearch)).font(.ui(size: 11)).foregroundStyle(.secondary)
                         }
                     }
                     if runtime.capabilities.networkAccess {
@@ -79,31 +79,31 @@ struct RunSettingsView: View {
                             Toggle(L("settings.run.shellNetworkToggle"), isOn: $networkAccess).toggleStyle(.switch).controlSize(.small)
                                 .disabled(!["acceptEdits", "onRequest"].contains(currentSession.settings.permissionMode)).accessibilityLabel(L("settings.run.shellNetworkToggle"))
                             Text(currentSession.settings.permissionMode == "fullAccess" ? L("settings.run.shellNetworkFullAccess") : ["acceptEdits", "onRequest"].contains(currentSession.settings.permissionMode) ? L("settings.run.shellNetworkAcceptEdits") : L("settings.run.shellNetworkLocked"))
-                                .font(.system(size: 11)).foregroundStyle(.secondary)
+                                .font(.ui(size: 11)).foregroundStyle(.secondary)
                         }
                     }
                     if runtime.capabilities.maxTurns || runtime.capabilities.maxBudgetUsd {
                         Divider()
                         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
-                            Text(L("settings.run.limitsTitle")).font(.system(size: 12, weight: .medium))
+                            Text(L("settings.run.limitsTitle")).font(.ui(size: 12, weight: .medium))
                             if runtime.capabilities.maxTurns {
                                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
-                                    Text(L("settings.run.maxTurnsLabel")).font(.system(size: 11))
+                                    Text(L("settings.run.maxTurnsLabel")).font(.ui(size: 11))
                                     TextField(L("settings.run.maxTurnsLabel"), text: $maxTurns, prompt: Text(L("settings.run.unlimitedPlaceholder"))).textFieldStyle(.roundedBorder).accessibilityLabel(L("settings.run.maxTurnsLabel"))
                                 }
                             }
                             if runtime.capabilities.maxBudgetUsd {
                                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
-                                    Text(L("settings.run.maxBudgetLabel")).font(.system(size: 11))
+                                    Text(L("settings.run.maxBudgetLabel")).font(.ui(size: 11))
                                     TextField(L("settings.run.maxBudgetLabel"), text: $maxBudget, prompt: Text(L("settings.run.unlimitedPlaceholder"))).textFieldStyle(.roundedBorder).accessibilityLabel(L("settings.run.maxBudgetLabel"))
                                 }
                             }
-                            Text(L("settings.run.limitsNote")).font(.system(size: 11)).foregroundStyle(.secondary)
+                            Text(L("settings.run.limitsNote")).font(.ui(size: 11)).foregroundStyle(.secondary)
                         }
                     }
                     if unsupportedSettings {
                         Divider()
-                        Text(L("settings.run.unsupportedNotice")).font(.system(size: 11)).foregroundStyle(.secondary)
+                        Text(L("settings.run.unsupportedNotice")).font(.ui(size: 11)).foregroundStyle(.secondary)
                         Button(L("settings.run.unsupportedResetButton")) {
                             if !runtime.capabilities.fastMode { fastMode = false }
                             if !runtime.capabilities.webSearch { webSearch = "default" }
@@ -111,12 +111,12 @@ struct RunSettingsView: View {
                         }
                     }
                 }
-                .font(.system(size: 12)).fixedSize(horizontal: false, vertical: true).padding(DesignMetrics.Inset.popover).disabled(running)
+                .font(.ui(size: 12)).fixedSize(horizontal: false, vertical: true).padding(DesignMetrics.Inset.popover).disabled(running)
             }
-            if let validationError { Text(validationError).font(.system(size: 11)).foregroundStyle(Palette.errText).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, DesignMetrics.Inset.popover).padding(.bottom, DesignMetrics.Spacing.md) }
+            if let validationError { Text(validationError).font(.ui(size: 11)).foregroundStyle(Palette.errText).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, DesignMetrics.Inset.popover).padding(.bottom, DesignMetrics.Spacing.md) }
             Divider()
             HStack {
-                Text(L("settings.run.appliesNextRequest")).font(.system(size: 10)).foregroundStyle(.secondary)
+                Text(L("settings.run.appliesNextRequest")).font(.ui(size: 10)).foregroundStyle(.secondary)
                 Spacer()
                 Button(L("settings.run.cancelButton")) { dismiss() }.keyboardShortcut(.cancelAction)
                 Button(L("settings.run.applyButton")) { save() }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction).disabled(running)
@@ -214,6 +214,47 @@ struct AppSettingsView: View {
         .frame(width: 200)
     }
 
+    /// The text size and font of the whole app (`TextSettings`); View → ⌘= / ⌘− / ⌘0 step the same size.
+    private var textGroup: some View {
+        let text = store.textAppearance
+        let families = TextSettings.families
+        return SettingsGroup(L("settings.text.sectionTitle")) {
+            Picker(L("settings.text.sizeLabel"), selection: Binding(
+                get: { text.scale },
+                set: { store.setTextAppearance(TextAppearance(scale: $0, family: store.textAppearance.family)) }
+            )) {
+                ForEach(TextAppearance.scales, id: \.self) { scale in
+                    let percent = "\(Int((scale * 100).rounded()))"
+                    Text(scale == 1 ? L("settings.text.sizeStandard", ["percent": percent]) : "\(percent)%").tag(scale)
+                }
+            }
+            .accessibilityIdentifier("settings-text-size")
+            Picker(L("settings.text.fontLabel"), selection: Binding(
+                get: { text.family ?? "" },
+                set: { store.setTextAppearance(store.textAppearance.with(family: $0.isEmpty ? nil : $0)) }
+            )) {
+                Text(L("settings.text.fontSystem")).tag("")
+                Divider()
+                // A saved family that is no longer installed stays listed; it draws as the system font.
+                ForEach(families + (text.family.map { families.contains($0) ? [] : [$0] } ?? []), id: \.self) { Text(verbatim: $0).tag($0) }
+            }
+            .accessibilityIdentifier("settings-text-font")
+            Text(L("settings.text.preview"))
+                .font(.ui(size: 13))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(DesignMetrics.Spacing.sm)
+                .background(Palette.subtle, in: RoundedRectangle(cornerRadius: 6))
+                .accessibilityIdentifier("settings-text-preview")
+            HStack(alignment: .firstTextBaseline) {
+                Text(L("settings.text.note")).font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Spacer()
+                Button(L("settings.text.reset")) { store.setTextAppearance(.standard) }
+                    .disabled(text.isStandard)
+                    .accessibilityIdentifier("settings-text-reset")
+            }
+        }
+    }
+
     @ViewBuilder
     private func detail(_ pane: SettingsPane) -> some View {
         switch pane {
@@ -226,12 +267,12 @@ struct AppSettingsView: View {
                 )) {
                     ForEach(AppLanguage.pickerChoices, id: \.self) { Text(L($0.labelKey)).tag($0) }
                 }.pickerStyle(.segmented).accessibilityIdentifier("settings-language")
-                Text(L("settings.display.languageMenuNote")).font(.system(size: 11)).foregroundStyle(.secondary)
+                Text(L("settings.display.languageMenuNote")).font(.ui(size: 11)).foregroundStyle(.secondary)
                 Toggle(isOn: Binding(get: { store.statusLineEnabled }, set: { store.statusLineEnabled = $0 })) {
                     VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                         Text(L("settings.display.statusLineToggle"))
                         Text(L("settings.display.statusLineDescription"))
-                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                            .font(.ui(size: 11)).foregroundStyle(.secondary)
                     }
                 }
                 .accessibilityIdentifier("settings-status-line")
@@ -245,7 +286,7 @@ struct AppSettingsView: View {
                     VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                         Text(L("settings.delegation.toggle"))
                         Text(L("settings.delegation.description"))
-                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                            .font(.ui(size: 11)).foregroundStyle(.secondary)
                     }
                 }
                 .accessibilityIdentifier("settings-delegation")
@@ -256,11 +297,12 @@ struct AppSettingsView: View {
                     VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                         Text(L("settings.display.browserToggle"))
                         Text(L("settings.display.browserDescription"))
-                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                            .font(.ui(size: 11)).foregroundStyle(.secondary)
                     }
                 }
                 .accessibilityIdentifier("settings-browser-engine")
             }
+            textGroup
             // Per-workspace destination for URLs the agent opens. Writes to the
             // same persisted store the open agent panes read (and the dialog's
             // "remember" writes), so a change here is in force on their very
@@ -293,16 +335,16 @@ struct AppSettingsView: View {
                     let provider = store.runtime?.providers?.first { $0.id == id } ?? ProviderOptions.fallbackRuntime(id)
                     VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                         HStack {
-                            HStack(spacing: DesignMetrics.Spacing.sm) { ProviderIcon(provider: id, size: 13); Text(provider.name); if ProviderOptions.isBeta(id) { BetaBadge() } }.font(.system(size: 13, weight: .medium))
+                            HStack(spacing: DesignMetrics.Spacing.sm) { ProviderIcon(provider: id, size: 13); Text(provider.name); if ProviderOptions.isBeta(id) { BetaBadge() } }.font(.ui(size: 13, weight: .medium))
                             Spacer()
-                            Text(provider.available ? L("settings.providers.statusReady") : L("settings.providers.statusNeedsSetup")).font(.system(size: 10)).foregroundStyle(provider.available ? Palette.doneText : Palette.waitText)
+                            Text(provider.available ? L("settings.providers.statusReady") : L("settings.providers.statusNeedsSetup")).font(.ui(size: 10)).foregroundStyle(provider.available ? Palette.doneText : Palette.waitText)
                         }
-                        if let version = provider.version { Text(version).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary) }
-                        Text(provider.detail).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                        if let version = provider.version { Text(version).font(.ui(size: 10, design: .monospaced)).foregroundStyle(.secondary) }
+                        Text(provider.detail).font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                     }
                 }
                 HStack {
-                    Text(L("settings.providers.loginNote")).font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text(L("settings.providers.loginNote")).font(.ui(size: 11)).foregroundStyle(.secondary)
                     Spacer()
                     Button(store.isRefreshingRuntime ? L("settings.providers.checkingButton") : L("settings.providers.checkButton")) { Task { await store.refreshRuntime() } }.disabled(store.isRefreshingRuntime)
                 }
@@ -310,7 +352,7 @@ struct AppSettingsView: View {
             CLIAccountsSettingsSection()
             if let mods = store.runtime?.mods {
                 SettingsGroup("Claude Mods") {
-                    Text(mods.detail).font(.system(size: 12)).foregroundStyle(.secondary).textSelection(.enabled)
+                    Text(mods.detail).font(.ui(size: 12)).foregroundStyle(.secondary).textSelection(.enabled)
                     LabeledContent(L("settings.claudeMods.compatLabel"), value: mods.minimumVersion)
                 }
             }
@@ -324,14 +366,14 @@ struct AppSettingsView: View {
             AppUpdateSettingsSection()
             SettingsGroup(L("settings.appInfo.sectionTitle")) {
                 LabeledContent(L("settings.appInfo.versionLabel"), value: store.runtime?.appVersion ?? "0.2.0")
-                Text(L("settings.appInfo.runtimeNote")).font(.system(size: 11)).foregroundStyle(.secondary)
+                Text(L("settings.appInfo.runtimeNote")).font(.ui(size: 11)).foregroundStyle(.secondary)
                 LabeledContent(L("menu.help")) {
                     Button(L("settings.appInfo.openHelpButton")) { NSWorkspace.shared.open(HelpSite.current) }
                 }
                 LabeledContent(L("settings.appInfo.stateLocationLabel")) {
                     Button(L("settings.appInfo.openFinderButton")) { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: store.dataDirectory.path) }
                 }
-                Text(store.dataDirectory.path).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled)
+                Text(store.dataDirectory.path).font(.ui(size: 10, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled)
             }
         }
     }
@@ -345,10 +387,10 @@ struct SheetHeading: View {
 
     var body: some View {
         HStack(spacing: DesignMetrics.Spacing.md) {
-            Image(systemName: systemImage).font(.system(size: 19, weight: .light)).foregroundStyle(Palette.accent).frame(width: 26)
-            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) { Text(title).font(.system(size: 17, weight: .semibold)); Text(subtitle).font(.system(size: 11)).foregroundStyle(.secondary) }
+            Image(systemName: systemImage).font(.ui(size: 19, weight: .light)).foregroundStyle(Palette.accent).frame(width: 26)
+            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) { Text(title).font(.ui(size: 17, weight: .semibold)); Text(subtitle).font(.ui(size: 11)).foregroundStyle(.secondary) }
             Spacer()
-            Button(action: dismiss) { Image(systemName: "xmark.circle.fill").font(.system(size: 17)).foregroundStyle(.tertiary) }.buttonStyle(.plain).accessibilityLabel(L("settings.closeButton"))
+            Button(action: dismiss) { Image(systemName: "xmark.circle.fill").font(.ui(size: 17)).foregroundStyle(.tertiary) }.buttonStyle(.plain).accessibilityLabel(L("settings.closeButton"))
         }.padding(.horizontal, DesignMetrics.Inset.sheet).padding(.vertical, DesignMetrics.Spacing.md).frame(maxWidth: .infinity, alignment: .leading).overlay(alignment: .bottom) { Divider() }
     }
 }
