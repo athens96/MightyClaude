@@ -923,6 +923,10 @@ enum DelegationText {
         case (.merge, .doneUnsaved(let error)): return (L("delegation.card.mergedUnsaved", ["branch": branch, "error": error]), .err)
         case (.undo, .doneUnsaved(let error)): return (L("delegation.card.undoneUnsaved", ["branch": branch, "error": error]), .err)
         case (.discard, .done), (.discard, .doneUnsaved), (_, .reconfirm): return nil
+        // Said while the child works on it; once it reports again (or ends without a report) its state says the rest.
+        case (.merge, .conflictSent): return [.creating, .running, .waiting].contains(child.state) ? (L("delegation.card.conflictSent", ["branch": branch]), .wait) : nil
+        case (.merge, .conflictNotStarted): return (L("delegation.card.conflictNotStarted", ["branch": branch]), .err)
+        case (.undo, .conflictSent), (.discard, .conflictSent), (.undo, .conflictNotStarted), (.discard, .conflictNotStarted): return nil
         case (.merge, .refused(let reason)): return (L("delegation.card.mergeRefused", ["reason": Self.reason(reason)]), .wait)
         case (.undo, .refused(let reason)): return (L("delegation.card.undoRefused", ["reason": Self.reason(reason)]), .wait)
         case (.discard, .refused(let reason)): return (L("delegation.card.discardFailed", ["error": Self.reason(reason)]), .err)

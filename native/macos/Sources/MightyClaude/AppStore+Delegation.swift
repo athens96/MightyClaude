@@ -14,6 +14,12 @@ struct DelegationCardNote: Equatable {
         /// More worktrees are nested in the child's than its discard's
         /// confirmation named: nothing was removed, and it asks again with these.
         case reconfirm([String])
+        /// The merge was refused with `merge_conflict`, and the child's pane
+        /// was asked to resolve the conflict and report again.
+        case conflictSent
+        /// The merge was refused with `merge_conflict`, and the child's pane
+        /// took the request to resolve it but did not start it.
+        case conflictNotStarted
     }
 
     var action: DelegationCardAction
@@ -344,6 +350,8 @@ extension AppStore {
     /// The human's merge from the child's card. Once it went through, the
     /// human is offered to discard the child right away: its work is in the
     /// parent's branch, so only its worktree, its branch and the undo go.
+    /// When it conflicts, the child's pane is asked once per report to bring
+    /// the parent branch in, resolve the conflict and report again.
     func mergeChildFromCard(_ id: String) {
         runCardAction(id, .merge) { delegation in
             switch await delegation.mergeFromCard(id) {
@@ -353,8 +361,41 @@ extension AppStore {
             case .failed(let message): .failed(message)
             }
         } then: { [weak self] result in
-            guard let self, case .done = result else { return }
-            offerDiscardAfterMerge(id)
+            guard let self else { return }
+            switch result {
+            case .done: offerDiscardAfterMerge(id)
+            case .refused(.mergeConflict): askChildToResolveConflict(id)
+            default: break
+            }
+        }
+    }
+
+    /// Starts the request for the child `id` to resolve its conflict with the
+    /// parent branch as its pane's next run, once per report
+    /// (``DelegationCoordinator/conflictResolution(for:)``), and the card says
+    /// so. A pane that would refuse the start now (busy, a CLI update, a model
+    /// reset, its worktree gone…) is not asked: the refusal stays on the card
+    /// and the next merge that conflicts asks again. A start that was taken
+    /// but did not reach the CLI may already have ended the child's report,
+    /// so the card then says the request did not start.
+    private func askChildToResolveConflict(_ id: String) {
+        guard let delegation, let session = snapshot.sessions.first(where: { $0.id == id }), !delegationCardBusy.contains(id),
+              let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }),
+              startRefusal(session, in: workspace, input: "conflict", attachments: []) == nil else { return }
+        delegationCardBusy.insert(id)
+        Task { [weak self] in
+            let text = await delegation.conflictResolution(for: id)
+            guard let self else { return }
+            guard let text else { delegationCardBusy.remove(id); return }
+            let runId = await startRun(sessionId: id, input: text)
+            delegationCardBusy.remove(id)
+            let refused = DelegationCardNote(action: .merge, result: .refused(.mergeConflict))
+            guard runId != nil else {
+                await delegation.conflictResolutionNotStarted(id)
+                if delegationCardNotes[id] == refused { delegationCardNotes[id] = DelegationCardNote(action: .merge, result: .conflictNotStarted) }
+                return
+            }
+            if delegationCardNotes[id] == refused { delegationCardNotes[id] = DelegationCardNote(action: .merge, result: .conflictSent) }
         }
     }
 
@@ -431,7 +472,7 @@ extension AppStore {
             case .reconfirm(let nested):
                 delegationCardNotes[id] = nil
                 if pendingChildDiscard == nil { pendingChildDiscard = PendingChildDiscard(id: id, title: pending.title, branch: pending.branch, nested: nested) }
-            case .doneUnsaved, .refused, .failed:
+            case .doneUnsaved, .refused, .failed, .conflictSent, .conflictNotStarted:
                 break
             }
         }
