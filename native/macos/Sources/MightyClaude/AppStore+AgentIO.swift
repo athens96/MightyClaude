@@ -14,7 +14,7 @@ enum AgentIOMCPCommand {
 }
 
 /// Handles `--agent-delegation-mcp`: the delegation MCP server a Claude pane's
-/// run launches while the hidden delegation switch is on. Like
+/// run launches while the delegation switch is on. Like
 /// ``AgentIOMCPCommand`` it runs before any initialisation and exits when
 /// stdin closes.
 enum DelegationMCPCommand {
@@ -71,7 +71,7 @@ extension AppStore {
             }
         }
         // Delegation calls share the socket and the pane tokens. They reach
-        // nothing while the hidden switch is off, and only Claude panes may
+        // nothing while the delegation switch is off, and only Claude panes may
         // make them. Without its coordinator (an unreadable delegation file)
         // they reach no tool.
         let delegationHandler: any DelegationRequestHandler = delegation.map { $0 as any DelegationRequestHandler } ?? DelegationIOHandler()

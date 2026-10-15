@@ -28,7 +28,8 @@ extension DelegationCoordinator {
     public static let maximumFollowUpBytes = 48 * 1024
 
     /// merge(child, expected_head) from `caller`. A child that is not the
-    /// caller's is answered with an error. Otherwise the merge waits for its
+    /// caller's is answered with an error, and one the human started from the
+    /// caller's composer is refused with `human_started`. Otherwise the merge waits for its
     /// turn (one tool merge at a time) and runs
     /// ``ChildMerge/toolMerge(_:expectedHead:parentCheckout:)`` in the
     /// parent's checkout recorded when the child was made. Its refusal is
@@ -43,6 +44,7 @@ extension DelegationCoordinator {
     func merge(_ id: String, expectedHead: String, caller: PaneMCPBinding) async -> DelegationResponse {
         let id = id.trimmingCharacters(in: .whitespacesAndNewlines)
         guard isChild(id, of: caller) else { return .failure(Self.notYourChildMessage(id)) }
+        if isHumanStarted(id) { return .refusal(.humanStarted) }
         await takeMergeTurn()
         defer { passMergeTurn() }
         // Read again after the wait: an earlier merge may have taken this child.
@@ -71,12 +73,14 @@ extension DelegationCoordinator {
     /// 1. An empty text, a text over 48 KiB or with a NUL character (no run
     ///    input may hold one, so a held one would block the child's pane), or
     ///    a child that is not the caller's is answered with an error.
-    /// 2. `parent_closed`: the caller's pane is closed. A closed parent's
+    /// 2. `human_started`: the human started the child from the caller's
+    ///    composer, so only the human sends it work.
+    /// 3. `parent_closed`: the caller's pane is closed. A closed parent's
     ///    children keep their cards, and nothing more is sent to them.
-    /// 3. `child_closed`: the child is not open (its pane closed, its start
+    /// 4. `child_closed`: the child is not open (its pane closed, its start
     ///    failed or a human discarded it).
-    /// 4. `follow_up_limit`: the child already has its two follow-ups.
-    /// 5. `store_full`: even after pruning, the delegation file has no room for it.
+    /// 5. `follow_up_limit`: the child already has its two follow-ups.
+    /// 6. `store_full`: even after pruning, the delegation file has no room for it.
     ///
     /// Every refusal changes nothing. Otherwise the follow-up is saved in the
     /// delegation file, pending, with its own id, and the child's count goes
@@ -91,6 +95,7 @@ extension DelegationCoordinator {
         guard !text.contains("\0") else { return .failure("A follow-up's text may not contain a NUL character.") }
         let id = id.trimmingCharacters(in: .whitespacesAndNewlines)
         guard isChild(id, of: caller) else { return .failure(Self.notYourChildMessage(id)) }
+        if isHumanStarted(id) { return .refusal(.humanStarted) }
         // Asks the host about every parent with children, the caller among them.
         let context = await pruneContext()
         // Nothing below suspends until the follow-up is saved, so two calls
@@ -121,6 +126,10 @@ extension DelegationCoordinator {
     private func isChild(_ id: String, of caller: PaneMCPBinding) -> Bool {
         file.children.contains { $0.id == id && $0.parentSessionId == caller.agentPaneId }
     }
+
+    /// Whether `id` names a child the human started from its parent's
+    /// composer: the human's to merge and to send work, never the parent's tools'.
+    private func isHumanStarted(_ id: String) -> Bool { file.children.contains { $0.id == id && !$0.notifiesParent } }
 
     /// Waits until no other merge or undo is going, then holds the turn.
     func takeMergeTurn() async {

@@ -926,9 +926,16 @@ enum DelegationText {
         }
     }
 
-    /// Why a card's merge or undo was refused, ending in its reason code.
+    /// Why a card's merge or undo, or a new worktree from the composer, was
+    /// refused, ending in its reason code.
     static func reason(_ reason: DelegationReasonCode) -> String {
         switch reason {
+        case .notGit: L("delegation.reason.notGit")
+        case .detachedHead: L("delegation.reason.detachedHead")
+        case .unbornBranch: L("delegation.reason.unbornBranch")
+        case .widthCap: L("delegation.reason.widthCap")
+        case .lowDisk: L("delegation.reason.lowDisk")
+        case .storeFull: L("delegation.reason.storeFull")
         case .notReported: L("delegation.reason.notReported")
         case .branchNotCheckedOut: L("delegation.reason.branchNotCheckedOut")
         case .trackedChanges: L("delegation.reason.trackedChanges")

@@ -3,21 +3,21 @@ title: 智能体委派
 order: 6
 section: delegation
 ---
-借助智能体委派，一个 Claude 窗格（父窗格）可以把工作拆开，交给其他 Claude 窗格（子窗格）去做。每个子窗格在自己的 git worktree 中工作，完成后留下报告。父窗格收到通知，阅读报告，再决定是否合并结果。Mac 应用和 Windows 应用都提供此功能。
+借助智能体委派，一个 Claude 窗格（父窗格）可以把工作拆开，交给其他 Claude 窗格（子窗格）去做。每个子窗格在自己的 git worktree 中工作，完成后留下报告。父窗格收到通知，阅读报告，再决定是否合并结果。Mac 应用和 Windows 应用都提供此功能。在 Mac 上，你也可以在运行中的 Claude 窗格的输入框里亲自启动子窗格（[在新的 worktree 中运行](#worktree)）。
 
 > [!warning]
-> 这是实验性功能，默认关闭，也没有设置界面。请先在练习用的仓库中试用。
+> 这是实验性功能。在 Mac 上默认开启，可以在设置中关闭；在 Windows 上默认关闭，也没有设置界面。请先在练习用的仓库中试用。
 
 ## 开启和关闭 {#enable}
-先退出应用，运行下面的命令，然后重新打开应用。
-
-{{platform:mac}} 在终端中：
+{{platform:mac}} 除非你关闭，否则它一直开启。在设置的{{ui:settings.nav.general}}标签页中切换{{ui:settings.delegation.toggle}}；无需重新打开应用，从下一次开始的运行起生效。同一个开关就是 defaults 键 `delegation.enabled`，因此在终端中运行下面的命令也能关闭它，运行 `defaults delete dev.mightyclaude.native delegation.enabled` 则重新开启：
 
 ```sh
-defaults write dev.mightyclaude.native delegation.enabled -bool true
+defaults write dev.mightyclaude.native delegation.enabled -bool false
 ```
 
-{{platform:windows}} 在命令提示符或 PowerShell 中：
+{{platform:mac}} 以前的版本只有设置了该键才会开启，关闭的方法是 `defaults delete …`。现在这样做会让它保持开启，所以要继续关闭，请在设置中关闭{{ui:settings.delegation.toggle}}。
+
+{{platform:windows}} 默认关闭。先退出应用，在命令提示符或 PowerShell 中运行下面的命令，然后重新打开应用：
 
 ```
 reg add "HKCU\Software\MightyClaudeNative" /v delegation.enabled /t REG_DWORD /d 1 /f
@@ -27,7 +27,7 @@ reg add "HKCU\Software\MightyClaudeNative" /v delegation.enabled /t REG_DWORD /d
 
 - 开启后，Claude 窗格每次开始新的运行时都会带上委派工具。已经在进行中的运行不会带上。
 - 父窗格可用的工具有 `delegate`（交出任务）、`list_children`（子窗格列表）、`child_status`（状态和报告）、`merge`（合并）和 `follow_up`（后续指示）。父窗格永远不能使用 `discard`（丢弃），只有你能在子窗格的卡片上丢弃。
-- 要关闭，请在 Mac 上运行 `defaults delete dev.mightyclaude.native delegation.enabled`，在 Windows 上运行 `reg delete "HKCU\Software\MightyClaudeNative" /v delegation.enabled /f`，然后重新打开应用。关闭后只会去掉工具，已有的子窗格、卡片和清理都照常工作。
+- 要在 Windows 上关闭，请运行 `reg delete "HKCU\Software\MightyClaudeNative" /v delegation.enabled /f`，然后重新打开应用。关闭后只会去掉工具（在 Mac 上，{{kbd:⌘Enter}} 会重新立即发送给正在运行的 Claude），已有的子窗格、卡片和清理都照常工作。
 
 ## 交出工作 {#delegate}
 1. 把一个 git 仓库文件夹作为工作区打开，再打开一个 Claude 窗格。这个窗格就是父窗格。
@@ -41,7 +41,18 @@ reg add "HKCU\Software\MightyClaudeNative" /v delegation.enabled /t REG_DWORD /d
 - 交出的任务写在 TASK.md 中，结果写在 REPORT.md 中。这两个文件位于 worktree 内被 git 忽略的文件夹里，不会被提交。
 - 子窗格以父窗格选择的权限模式开始，这个模式不能比父窗格自己的模式更宽。只有你能在两次运行之间，从子窗格输入框的权限菜单或手机设置中放宽它。
 - 父窗格不能回答子窗格的批准卡片。子窗格中出现卡片时，请你在那个窗格中亲自回答。
-- 一个父窗格最多可以有 3 个打开的子窗格，子窗格不能再委派。已报告或已合并的子窗格只要窗格还开着也会计入，关闭已完成的子窗格就能腾出名额。磁盘剩余空间不足 10 GB 时，委派会被拒绝。
+- 一个父窗格最多可以有 3 个由 `delegate` 工具创建的打开的子窗格（在 Mac 上，另外还可以有最多 3 个你亲自启动的子窗格，请参阅[在新的 worktree 中运行](#worktree)），子窗格不能再委派。已报告或已合并的子窗格只要窗格还开着也会计入，关闭已完成的子窗格就能腾出名额。磁盘剩余空间不足 10 GB 时，委派会被拒绝。
+
+## 在新的 worktree 中运行 {#worktree}
+{{platform:mac}} 你也可以亲自启动子窗格。在 Claude 窗格运行时写下请求，按 {{kbd:⌘Enter}}，或点击停止按钮旁的圆形{{ui:queue.worktree}}按钮（分支图标）。正在运行的任务不受打扰，你的请求会立即在拥有自己 worktree 的新子窗格中运行，新子窗格列在侧边栏中该窗格下方。除非你在此期间已经开始在父窗格中输入，新窗格会立即显示出来。
+
+- 只有在能创建 worktree 的地方，{{kbd:⌘Enter}} 才会使用新的 worktree：必须是检出了有提交的分支的 git 仓库。在其他地方（不是 git 仓库、还没有提交、检出的是提交而不是分支），它会像以前一样立即发送给正在运行的 Claude。
+- 子窗格的创建方式与父窗格的 `delegate` 相同：从父窗格的最新提交创建分支 `mighty/<子窗格 id>`，worktree 位于项目之外，并且需要 10 GB 可用磁盘空间。每个窗格最多可以有 3 个你亲自启动的打开的子窗格，与 `delegate` 可创建的 3 个分开计算，两者互不阻挡。
+- 它以父窗格的权限模式运行，并使用父窗格的模型和{{ui:composer.effort.label}}。在每个请求都以计划模式开始的样式中，它以计划模式开始。附件也会一起带上。
+- 它的第一条消息先是你的文字，随后是应用附加的说明：告诉子窗格在哪里工作，并要求它完成后提交并写入 REPORT.md，这样它的卡片才能合并。斜杠命令（以 `/` 开头的文字）会按你输入的样子单独运行，说明则作为子窗格的下一个请求随后发送，因此不会变成命令的参数。
+- 对于你亲自启动的子窗格，父窗格不会收到通知，因为这不是父窗格要求的；父窗格的工具也不会列出它，也不能合并它或向它发送后续指示（`human_started`）。请在侧边栏中查看它的状态，并亲自使用卡片上的{{ui:delegation.card.merge}}和{{ui:delegation.card.discard}}按钮。
+- 无法创建子窗格或创建后无法启动时（该窗格已有 3 个你亲自启动的打开的子窗格、磁盘空间不足、worktree 或第一次运行失败等），窗格的对话中会写明原因。随后，如果正在运行的 Claude 能接收（没有附件），你的文字会立即发给它；否则会像按 {{kbd:Enter}} 那样成为该窗格的下一个请求；队列已满时会放回输入框。启动失败的子窗格会一直列出，直到你在其卡片上丢弃它。
+- 在子窗格中，或关闭委派时，{{kbd:⌘Enter}} 会像以前一样立即发送给正在运行的 Claude；Codex 和 Antigravity 窗格仍然放入队列。手机的发送方式不变：从手机立即发送仍会发给正在运行的 Claude。
 
 ## 子窗格的状态 {#states}
 侧边栏会显示每个子窗格的状态。
@@ -114,11 +125,11 @@ reg add "HKCU\Software\MightyClaudeNative" /v delegation.enabled /t REG_DWORD /d
 ## 限制和支持范围 {#limits}
 | 项目 | 限制 |
 |---|---|
-| 一个父窗格的打开子窗格 | 3 个 |
+| 一个父窗格的打开子窗格 | `delegate` 创建的 3 个，加上你亲自启动的 3 个（Mac） |
 | 委派深度 | 一层（子窗格不能再委派） |
 | 一个子窗格的后续指示 | 2 条，每条最多 48 KiB |
 | 交出的任务（TASK.md） | 64 KiB |
 | 所需磁盘剩余空间 | 10 GB |
 
 - 父窗格和子窗格都必须是 Claude 窗格。Codex 和 Antigravity（Gemini）窗格不能委派。
-- Mac 应用和 Windows 应用都通过隐藏开关开启（[开启和关闭](#enable)）。手机没有新的界面，但保留的行也会显示在手机的队列中。
+- Mac 应用默认开启，并在设置中提供开关；Windows 应用通过隐藏开关开启（[开启和关闭](#enable)）。手机没有新的界面，但保留的行也会显示在手机的队列中。

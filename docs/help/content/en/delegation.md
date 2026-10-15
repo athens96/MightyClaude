@@ -3,21 +3,21 @@ title: Agent delegation
 order: 6
 section: delegation
 ---
-With agent delegation, a Claude pane (the parent) splits its work and hands parts of it to other Claude panes (its children). Each child works in its own git worktree and leaves a report when it is done. The parent gets a notice, reads the report and decides whether to merge the result. It works in the Mac app and the Windows app.
+With agent delegation, a Claude pane (the parent) splits its work and hands parts of it to other Claude panes (its children). Each child works in its own git worktree and leaves a report when it is done. The parent gets a notice, reads the report and decides whether to merge the result. It works in the Mac app and the Windows app. On the Mac you can also start a child yourself, from the composer of a running Claude pane ([Run in a new worktree](#worktree)).
 
 > [!warning]
-> This is an experimental feature. It is off by default and has no settings screen. Try it in a practice repository first.
+> This is an experimental feature. On the Mac it is on by default and can be turned off in Settings; on Windows it is off by default and has no settings screen. Try it in a practice repository first.
 
 ## Turn it on or off {#enable}
-Quit the app, run this command, and open the app again.
-
-{{platform:mac}} In Terminal:
+{{platform:mac}} It is on unless you turn it off. Switch {{ui:settings.delegation.toggle}} on the {{ui:settings.nav.general}} tab of Settings; it applies from the next run that starts, with no relaunch. The same switch is the defaults key `delegation.enabled`, so this command in Terminal turns it off too, and `defaults delete dev.mightyclaude.native delegation.enabled` turns it back on:
 
 ```sh
-defaults write dev.mightyclaude.native delegation.enabled -bool true
+defaults write dev.mightyclaude.native delegation.enabled -bool false
 ```
 
-{{platform:windows}} In Command Prompt or PowerShell:
+{{platform:mac}} Earlier versions were off unless that key was set, and turning it off meant `defaults delete …`. That now leaves it on, so to keep it off, switch off {{ui:settings.delegation.toggle}} in Settings.
+
+{{platform:windows}} It is off by default. Quit the app, run this command in Command Prompt or PowerShell, and open the app again:
 
 ```
 reg add "HKCU\Software\MightyClaudeNative" /v delegation.enabled /t REG_DWORD /d 1 /f
@@ -27,7 +27,7 @@ On Windows it is on while the `delegation.enabled` value (REG_DWORD) under `HKEY
 
 - Once it is on, every new run in a Claude pane gets the delegation tools. A run that is already going does not.
 - The parent's tools are `delegate` (hand over a task), `list_children` (list the children), `child_status` (state and report), `merge` and `follow_up` (send a follow-up). The parent can never use `discard`; only you can discard, from a child's card.
-- To turn it off, run `defaults delete dev.mightyclaude.native delegation.enabled` on the Mac or `reg delete "HKCU\Software\MightyClaudeNative" /v delegation.enabled /f` on Windows, and open the app again. Only the tools go away; existing child panes, their cards and their cleanup keep working.
+- To turn it off on Windows, run `reg delete "HKCU\Software\MightyClaudeNative" /v delegation.enabled /f` and open the app again. Turned off, only the tools go away (and on the Mac {{kbd:⌘Enter}} sends to the running Claude again); existing child panes, their cards and their cleanup keep working.
 
 ## Hand over work {#delegate}
 1. Open a git repository folder as a workspace and open a Claude pane. That pane is the parent.
@@ -41,7 +41,18 @@ On Windows it is on while the `delegation.enabled` value (REG_DWORD) under `HKEY
 - The task goes into TASK.md and the result into REPORT.md. Both sit in a folder git ignores inside the worktree, so they are never committed.
 - A child starts in the permission mode the parent chose, which can be no wider than the parent pane's own mode. Only you can widen it, between runs, from the permission menu in the child's composer or in the phone's settings.
 - The parent cannot answer a child's approval cards. When a card appears in a child pane, answer it there yourself.
-- A parent can have up to 3 open children, and a child cannot delegate further. Children that reported or were merged still count while their panes are open, so close finished child panes to make room. Delegation is refused when less than 10 GB of disk is free.
+- A parent can have up to 3 open children made by its `delegate` tool (on the Mac, plus up to 3 you start yourself, see [Run in a new worktree](#worktree)), and a child cannot delegate further. Children that reported or were merged still count while their panes are open, so close finished child panes to make room. Delegation is refused when less than 10 GB of disk is free.
+
+## Run in a new worktree {#worktree}
+{{platform:mac}} You can start a child yourself. While a Claude pane is running, type a request and press {{kbd:⌘Enter}} or the round {{ui:queue.worktree}} button (the branch icon) beside stop. The running task goes on undisturbed, and your request runs right away in a new child pane with its own worktree, listed under the pane in the sidebar. The new pane is shown at once, unless you have started typing in the parent pane meanwhile.
+
+- {{kbd:⌘Enter}} offers a new worktree only where one can be made: a git repository with a branch checked out that has a commit. Anywhere else (not a git repository, no commit yet, a commit checked out instead of a branch) it sends to the running Claude as before.
+- The child is made the way the parent's `delegate` makes one: a branch `mighty/<child id>` from the parent's last commit, a worktree outside your project, and 10 GB of free disk. A pane can have up to 3 open children you started, apart from the 3 its `delegate` may make; neither kind blocks the other.
+- It runs in the parent pane's permission mode, with its model and {{ui:composer.effort.label}}. In a style that starts every request in plan mode, it starts in plan mode. Your attachments go with it.
+- Its first message is your text, followed by a note from the app on where the child works, asking it to commit and write REPORT.md when it is done, so that its card can merge it. A slash command (text starting with `/`) runs alone, as you typed it, and the note follows as the child's next request, so it never becomes the command's arguments.
+- The parent gets no notices about a child you started, since it never asked for it, and its tools neither list it nor merge it or send it follow-ups (`human_started`). Follow its state in the sidebar and use its card's {{ui:delegation.card.merge}} and {{ui:delegation.card.discard}} buttons yourself.
+- When the child cannot be made or cannot start after all (the pane already has 3 open children you started, the disk is low, its worktree or first run fails, and so on), the pane's transcript says why. Your text then goes to the running Claude if it can take it (no attachments), and otherwise becomes the pane's next request, as {{kbd:Enter}} would make it; with the queue full it goes back to the composer. A child that failed to start stays listed until you discard it from its card.
+- In a child pane, or with delegation turned off, {{kbd:⌘Enter}} sends to the running Claude as before, and Codex and Antigravity panes keep queuing. The phone's send modes are unchanged: sending now from the phone still goes to the running Claude.
 
 ## A child's state {#states}
 The sidebar shows each child's state.
@@ -114,11 +125,11 @@ The card's {{ui:delegation.card.discard}} button removes the child's worktree an
 ## Limits and support {#limits}
 | Item | Limit |
 |---|---|
-| Open children per parent | 3 |
+| Open children per parent | 3 made by `delegate`, plus 3 you start yourself (Mac) |
 | Delegation depth | One level (children cannot delegate) |
 | Follow-ups per child | 2, up to 48 KiB each |
 | Task (TASK.md) | 64 KiB |
 | Free disk needed | 10 GB |
 
 - Both the parent and its children must be Claude panes. Codex and Antigravity (Gemini) panes do not delegate.
-- Both the Mac app and the Windows app turn it on with a hidden switch ([Turn it on or off](#enable)). The phone has no new screen, but held rows show in its queue too.
+- The Mac app has it on by default, with a switch in Settings; the Windows app turns it on with a hidden switch ([Turn it on or off](#enable)). The phone has no new screen, but held rows show in its queue too.

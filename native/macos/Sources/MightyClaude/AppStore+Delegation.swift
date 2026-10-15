@@ -50,7 +50,7 @@ struct PendingParentClose: Identifiable, Equatable {
 /// makes panes, starts and steers runs and reports what its panes do.
 extension AppStore {
     /// Makes the coordinator from the profile's delegation file, whether or
-    /// not the hidden switch is on: switching it off only detaches the
+    /// not the delegation switch is on: switching it off only detaches the
     /// delegation server, so existing children keep working. Worktrees go
     /// under `~/.mightyclaude/worktrees`, or the profile for smoke runs.
     func startDelegation() {
@@ -199,6 +199,119 @@ extension AppStore {
         }
     }
 
+    // MARK: The composer's new worktree
+
+    /// The folder a top-level Claude pane's runs work in, where its children's
+    /// worktrees branch from; nil for a pane without its workspace.
+    func worktreeHostFolder(_ session: RunSession) -> String? {
+        snapshot.workspaces.first { $0.id == session.workspaceId }.map { DelegationPanes.runWorkspace(for: session, in: $0).path }
+    }
+
+    /// Checks again whether `session`'s folder can host a child worktree, for
+    /// ``composerSecondSend(_:)``: a top-level Claude pane, with delegation
+    /// on. One check per folder at a time.
+    func refreshWorktreeReadiness(for session: RunSession) {
+        guard let delegation, DelegationSwitch.isOn(), session.parentSessionId == nil, DelegationSwitch.isClaudePane(kind: session.kind, provider: session.provider),
+              let folder = worktreeHostFolder(session), worktreeReadinessChecks.insert(folder).inserted else { return }
+        Task { [weak self] in
+            let ready = await delegation.worktrees.check(workspace: folder).canHostWorktree
+            guard let self else { return }
+            worktreeReadinessChecks.remove(folder)
+            if worktreeReadiness[folder] != ready { worktreeReadiness[folder] = ready }
+        }
+    }
+
+    /// The composer's second send on the busy Claude pane `id`
+    /// (``ComposerSecondSend/worktree``): the text and its attachments run now
+    /// in a new child pane, in its own worktree beside the pane, made by
+    /// delegation as delegate makes one, in plan mode when the pane's style
+    /// starts every request so. The pane's run goes on undisturbed, and the
+    /// new child shows at once. When no child can be made, or it cannot
+    /// start after all, the pane's transcript says why and the text goes on
+    /// by ``runAfterNoWorktree(_:input:attachments:draft:reason:)``.
+    func runInNewWorktree(_ id: String, input: String, attachments: [RunAttachment], draft: String) {
+        guard let delegation, let parent = snapshot.sessions.first(where: { $0.id == id }) else { return }
+        // Taken from the composer now, so a second ⌘Enter cannot send it again.
+        drafts[id] = ""
+        let submittedIds = Set(attachments.map(\.id))
+        attachmentDrafts[id]?.removeAll { submittedIds.contains($0.id) }
+        let starter = HumanChildStarter(start: { [weak self] childId, run in
+            await self?.startHumanChildRun(childId, run: run, attachments: attachments)
+        }, failed: { [weak self] childId in
+            await self?.humanChildFailedToStart(childId, parentId: id, input: input, attachments: attachments, draft: draft)
+        })
+        let planFirst = styleLaunchesInPlanMode(parent)
+        Task { [weak self] in
+            let outcome = await delegation.startHumanChild(input, parentId: id, planFirst: planFirst, starter: starter)
+            guard let self else { return }
+            let reason: String
+            switch outcome {
+            case .started: return
+            case .refused(let code): reason = DelegationText.reason(code)
+            case .failed(let message): reason = message
+            }
+            runAfterNoWorktree(id, input: input, attachments: attachments, draft: draft, reason: reason)
+        }
+    }
+
+    /// The first run of a child the human started, with the send's
+    /// attachments: its id, or nil when it did not start. A slash command's
+    /// note follows as the child's next request.
+    private func startHumanChildRun(_ childId: String, run: HumanChildFirstRun, attachments: [RunAttachment]) async -> String? {
+        guard let runId = await startDelivered(childId, input: run.input, attachments: attachments, restoringDraft: nil, titleFrom: "") else { return nil }
+        if let note = run.followingNote, !ending, !closingSessions.contains(childId), snapshot.sessions.contains(where: { $0.id == childId }) {
+            queuedInputs[childId, default: []].append(QueuedInput(text: note, attachments: []))
+            // The command's run already ended: the note runs now.
+            if snapshot.sessions.first(where: { $0.id == childId })?.status != "running", !pendingRuns.contains(childId) { runNextQueuedRow(childId) }
+        }
+        return runId
+    }
+
+    /// A child the human started whose worktree, pane or first run could not
+    /// be made after all: it stays listed as failed to start, and the text
+    /// and its attachments go on from the parent as if no child had been made.
+    private func humanChildFailedToStart(_ childId: String, parentId: String, input: String, attachments: [RunAttachment], draft: String) {
+        // A failed start puts the run's attachments in the child's composer; they go with the text instead.
+        let ids = Set(attachments.map(\.id))
+        attachmentDrafts[childId]?.removeAll { ids.contains($0.id) }
+        runAfterNoWorktree(parentId, input: input, attachments: attachments, draft: draft, reason: L("delegation.human.error.startFailed"))
+    }
+
+    /// The text of a second send that no new child runs
+    /// (``ComposerSecondSend/fallback(steerable:)``): steered into the
+    /// pane's running Claude turn when that can take it, otherwise the pane's
+    /// next request, queued behind the run or started now when the run ended
+    /// meanwhile, with any items held for the pane ahead of it. With the queue
+    /// full it goes back to the composer instead. The pane's transcript says
+    /// which, and why; a draft typed meanwhile is never touched.
+    private func runAfterNoWorktree(_ id: String, input: String, attachments: [RunAttachment], draft: String, reason: String) {
+        guard !ending, !closingSessions.contains(id), let session = snapshot.sessions.first(where: { $0.id == id }),
+              let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return }
+        let busy = session.status == "running" || pendingRuns.contains(id)
+        let fallback = ComposerSecondSend.fallback(steerable: busy && canSteer(session) && attachments.isEmpty)
+        func note(_ key: String) {
+            updateSession(id) { $0.logs.append(LogEntry(kind: "system", text: L(key, ["reason": reason]))); $0.logs = TranscriptRetention.trimmed($0.logs) }
+        }
+        guard (queuedInputs[id]?.count ?? 0) < QueuedInput.maximumItems else {
+            note("delegation.human.returned")
+            error = L("queue.fullCount", ["count": "\(QueuedInput.maximumItems)"])
+            giveBack(id, attachments: attachments, from: .composer(draft: draft))
+            return
+        }
+        note(fallback == .steer ? "delegation.human.steered" : "delegation.human.queued")
+        let item = QueuedInput(text: input, attachments: attachments, permissionModeOverride: BackgroundQueuePolicy.queuedOverride(launchesInPlan: styleLaunchesInPlanMode(session)))
+        if busy {
+            // A turn that ends before taking the steer runs it next instead.
+            deferInput(id, session: session, workspace: workspace, item: item, steering: fallback == .steer, takingDraft: false)
+            return
+        }
+        let waiting = queuedInputs[id]?.isEmpty == false
+        queuedInputs[id, default: []].append(item)
+        // The run ended meanwhile: it is the next request now. A queue paused
+        // after an error stays paused, this text behind it.
+        if !waiting { runNextQueuedRow(id) }
+    }
+
     // MARK: Closing panes and removing workspaces
 
     /// A human's close of the pane `id` from the Mac: a parent pane with open
@@ -320,28 +433,34 @@ extension AppStore {
     /// The child's Claude pane, as a tab beside its parent: in the mode the
     /// parent asked for, never the last-used pane's, linked to its parent and
     /// working in its worktree folder. Its title is its task, kept as the
-    /// pane's name. The link is saved before its first run.
+    /// pane's name. The link is saved before its first run. A child the human
+    /// started takes its parent's model and is selected and focused, unless
+    /// the human has moved on or is typing in the parent.
     func createPane(_ pane: DelegationChildPane) async -> Bool {
         guard !ending, isLoaded, snapshot.sessions.count < 128, !snapshot.sessions.contains(where: { $0.id == pane.sessionId }),
               let parent = snapshot.sessions.first(where: { $0.id == pane.parentSessionId }), !closingSessions.contains(parent.id),
               snapshot.workspaces.contains(where: { $0.id == parent.workspaceId }) else { return false }
         let file = await delegation?.file
         let task = file?.copy(childId: pane.sessionId, kind: .task)?.text
-        var session = DelegationPanes.childSession(pane, workspaceId: parent.workspaceId, title: task.flatMap(PaneTitle.shortened) ?? ProviderOptions.label("claude"))
+        var session = DelegationPanes.childSession(pane, workspaceId: parent.workspaceId, title: task.flatMap(PaneTitle.shortened) ?? ProviderOptions.label("claude"), parent: parent)
         session.titleMode = "fixed"
         // Checked again: the pane list may have changed while the task was read.
         guard !ending, !snapshot.sessions.contains(where: { $0.id == session.id }), snapshot.sessions.contains(where: { $0.id == parent.id }) else { return false }
         reconcilePaneLayout(parent.workspaceId)
         let root = layoutForWorkspace(parent.workspaceId)
         let group = root?.group(containing: parent.id)
-        // A new tab is selected on insert; the group keeps showing what it showed.
+        // The human's own child shows at once while they are still on its
+        // parent and not typing there; otherwise the new tab is selected on insert and the group
+        // keeps showing what it showed.
+        let shows = pane.startedByHuman && snapshot.activeSessionId == parent.id && !showsDashboard && (drafts[parent.id] ?? "").isEmpty
         guard let next = PaneLayouts.selecting(root: PaneLayouts.inserting(root: root, sessionId: session.id, targetGroupId: group?.id, placement: "tab"),
-                                               id: group?.selectedSessionId ?? parent.id),
+                                               id: shows ? session.id : group?.selectedSessionId ?? parent.id),
               next.group(containing: session.id) != nil else { return false }
         let mode = paneLayoutMode(parent.workspaceId)
         snapshot.sessions.append(session)
         savePaneLayout(next, workspaceId: parent.workspaceId)
         if mode != "focus" { setPaneLayoutMode(next.kind == "split" ? "custom" : "tabs", workspaceId: parent.workspaceId) }
+        if shows { selectSession(session.id) }
         do { try await flush() } catch { NSLog("MightyClaude could not save a new child pane: %@", error.localizedDescription) }
         return snapshot.sessions.contains { $0.id == session.id }
     }

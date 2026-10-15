@@ -6,10 +6,15 @@ public enum DelegationPanes {
     /// A new Claude pane for `pane` in the workspace `workspaceId`. Its mode is
     /// the starting mode the parent asked for, written here once and never
     /// copied from the last-used pane; it is linked to its parent and works in
-    /// its worktree folder.
-    public static func childSession(_ pane: DelegationChildPane, workspaceId: String, title: String) -> RunSession {
+    /// its worktree folder. A child the human started also takes `parent`'s
+    /// model and effort; any other runs Claude's default.
+    public static func childSession(_ pane: DelegationChildPane, workspaceId: String, title: String, parent: RunSession? = nil) -> RunSession {
         var session = RunSession(id: pane.sessionId, workspaceId: workspaceId, title: title, kind: SessionKind.claude, provider: "claude",
                                  settings: RunSettings(permissionMode: pane.mode))
+        if pane.startedByHuman, let parent, DelegationSwitch.isClaudePane(kind: parent.kind, provider: parent.provider) {
+            session.model = parent.model
+            session.settings.effort = parent.settings.effort
+        }
         session.parentSessionId = pane.parentSessionId
         session.workingFolder = pane.folder
         return session

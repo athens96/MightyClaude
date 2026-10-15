@@ -43,7 +43,7 @@ If you already signed in somewhere else, click {{ui:loginRecovery.resendButton}}
 Claude sometimes runs long commands or sub-agents in the background. Then work is still going on after Claude's answer is done.
 - A strip above the composer says the turn is done but background work is still running. Click {{ui:plan.background.show}} to see each task's kind, state and time.
 - The Mighty view shows them as {{ui:graph.block.task}} blocks.
-- A request you send now starts after the background work ends. To send it in right away, press {{kbd:⌘Enter}}.
+- A request you send now starts after the background work ends. To send it in right away, press {{kbd:⌘Enter}}. In a Claude pane with [agent delegation](delegation.md#worktree) on, in a git repository, {{kbd:⌘Enter}} runs it right away in a new worktree instead.
 - If the line is in the way, click the eye button ({{ui:plan.background.hideStrip}}) on its right. It goes away in every pane; the background work keeps running.
 - To see it again, click the {{ui:composer.backgroundWork.name}} button at the right of the composer. You can also turn on {{ui:settings.display.backgroundWorkToggle}} in {{ui:menu.settings}} → {{ui:settings.nav.general}} → {{ui:settings.display.sectionTitle}}, or choose {{ui:pane.menu.backgroundWork}} in the pane's … menu. Whether you left the line open is remembered too.
 

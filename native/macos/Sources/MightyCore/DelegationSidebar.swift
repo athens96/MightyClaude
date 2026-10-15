@@ -39,7 +39,7 @@ public struct DelegationChildRow: Sendable, Equatable, Identifiable {
 /// parent pane with its state, and the children of a closed parent under a
 /// 'parent closed' node. The delegation file is the authority for each
 /// child's link and state; the open panes come from the snapshot. The tree
-/// does not depend on the hidden switch, so existing children stay listed
+/// does not depend on the delegation switch, so existing children stay listed
 /// with it off.
 public enum DelegationSidebar {
     /// Every child the file holds except discarded ones, in the order they were made.

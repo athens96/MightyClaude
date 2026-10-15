@@ -19,7 +19,8 @@ section: agent-pane
 ### 실행 중에 이어서 요청하기 {#queue}
 작업이 도는 동안에도 다음 요청을 쓸 수 있습니다. 입력창에 글이 있으면 중지 단추 옆에 보내기 단추와 같은 둥근 단추가 생깁니다.
 - {{kbd:Enter}} 또는 {{ui:queue.add}} 단추: 다음 요청으로 대기열에 넣습니다. 지금 작업이 끝나면 순서대로 실행합니다. 한 창에 16개까지 넣을 수 있습니다.
-- {{kbd:⌘Enter}} 또는 {{ui:phone.composer.steer}} 단추: 실행 중인 Claude에 바로 전달합니다. 이 Mac의 Claude 창에서만 됩니다. 마이티 보기에는 주황색 {{ui:graph.block.steer}} 블록으로 보입니다.
+- {{kbd:⌘Enter}} 또는 {{ui:queue.worktree}} 단추: 에이전트 위임이 켜진 이 Mac의 Claude 창이 커밋이 있는 브랜치의 git 저장소에 있으면, 이 창 옆에 자기 git worktree를 가진 새 자식 창을 열어 바로 실행합니다. 돌고 있는 작업은 그대로 이어집니다([새 worktree에서 실행하기](delegation.md#worktree)).
+- 자식 창, 그런 저장소 밖의 창, 위임을 끈 창에서는 {{kbd:⌘Enter}} 또는 {{ui:phone.composer.steer}} 단추가 대신 실행 중인 Claude에 바로 전달합니다. 이 Mac의 Claude 창에서만 됩니다. 마이티 보기에는 주황색 {{ui:graph.block.steer}} 블록으로 보입니다.
 - 대기열의 {{ui:queue.runNext}}을 누르면 첫 대기 요청을 지금 실행합니다.
 
 작업을 중지하면 대기 중인 요청도 취소됩니다. 앱을 다시 열면 대기열은 비워집니다.

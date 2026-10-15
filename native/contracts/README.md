@@ -23,6 +23,17 @@ without them load unchanged. The delegation side file is their authority; the
 Windows app reads and writes them the same way (`MightyClaude.Core/Models.cs`,
 `StateStore.cs`).
 
+Mac only: a child record in that side file (`delegation-state.json`) may carry
+`startedByHuman: true`, for a child the human started from the Mac composer's
+second send (⌘Enter on a busy Claude pane, with delegation on — on by default on
+the Mac, the defaults key `delegation.enabled` false turns it off). Such a child
+sends its parent no notices, the parent's delegation tools neither list it nor
+act on it (merge and follow_up refuse with reason code `human_started`), and it
+counts toward its own cap of 3 open children per parent, apart from the 3 the
+parent's `delegate` may make; records without the key are agent-made and load
+unchanged. The phone wire is unchanged: `POST /m1/sessions/{id}/submit` with mode
+`steer` still steers into a running Claude pane, `queue` still queues.
+
 ## Mobile protocol (m1) over the relay
 
 Phones reach the desktop through a relay (`relay/`, Node + `ws`) that both sides dial outbound; the relay only forwards ciphertext. The host keeps a control socket (`/ws?serverId=…&role=server&v=1&hostToken=…`) and opens one data socket per phone (`…&connectionId=…`, same `hostToken`); `serverId` is the lowercase hex SHA-256 of `hostToken`, which the relay checks on every host socket (4401 otherwise). On each data socket: plaintext `hello`/`ready` (X25519 keys + 16-byte nonces), HKDF-SHA256 (`mightyclaude-relay-v1`), then ChaCha20-Poly1305 frames `[12B nonce = direction ‖ 0,0,0 ‖ counter][ciphertext+tag]` with strictly increasing counters. The first encrypted message is `auth` carrying the pairing key; the host answers `auth_ok` or `auth_error`. Full text: `docs/relay.md`.

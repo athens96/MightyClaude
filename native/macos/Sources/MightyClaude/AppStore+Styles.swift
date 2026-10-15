@@ -256,7 +256,9 @@ extension AppStore {
 
     /// §1.17: a style whose every new request starts in plan mode. Its new
     /// input never joins a turn that only waits on background work, so the
-    /// request starts fresh in plan mode instead (⌘Enter still steers).
+    /// request starts fresh in plan mode instead (⌘Enter still does the
+    /// second send: it steers, or runs the text in a new child worktree that
+    /// starts in plan mode).
     func styleLaunchesInPlanMode(_ session: RunSession) -> Bool {
         guidedStyle(session)?.manifest.launch?.permissionMode == .plan
     }

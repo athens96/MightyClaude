@@ -32,20 +32,20 @@ private func toolCall(_ name: String, _ arguments: Any, id: Int = 5) -> String {
 
 private func errorCode(_ response: [String: Any]?) -> Int? { (response?["error"] as? [String: Any])?["code"] as? Int }
 
-/// The hidden switch: one defaults key, off unless it is set.
+/// The switch: one defaults key, on unless it is set to false.
 @Suite(.delegationLane) struct DelegationSwitchTests {
-    @Test func theSwitchIsOffUntilTheHiddenKeyTurnsItOn() throws {
+    @Test func theSwitchIsOnUntilItsKeyTurnsItOff() throws {
         let suite = "dev.mightyclaude.tests.delegation.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         #expect(DelegationSwitch.defaultsKey == "delegation.enabled")
-        #expect(!DelegationSwitch.isOn(defaults))
-        defaults.set(true, forKey: DelegationSwitch.defaultsKey)
         #expect(DelegationSwitch.isOn(defaults))
         defaults.set(false, forKey: DelegationSwitch.defaultsKey)
         #expect(!DelegationSwitch.isOn(defaults))
+        defaults.set(true, forKey: DelegationSwitch.defaultsKey)
+        #expect(DelegationSwitch.isOn(defaults))
         defaults.removeObject(forKey: DelegationSwitch.defaultsKey)
-        #expect(!DelegationSwitch.isOn(defaults))
+        #expect(DelegationSwitch.isOn(defaults))
     }
 
     @Test func onlyAnAgentPaneRunningClaudeIsAClaudePane() {
@@ -62,7 +62,7 @@ private func errorCode(_ response: [String: Any]?) -> Int? { (response?["error"]
             "claude_only", "child_cannot_delegate", "width_cap", "low_disk", "store_full", "not_git", "unborn_branch", "detached_head",
             "wider_mode", "discard_human_only", "not_reported", "tracked_changes", "head_moved", "diverged", "branch_not_checked_out",
             "child_closed", "parent_closed", "follow_up_limit", "worktree_missing", "merge_conflict", "undo_parent_moved", "parent_busy",
-            "workspace_has_children", "held_not_removable",
+            "workspace_has_children", "held_not_removable", "human_started",
         ])
     }
 }

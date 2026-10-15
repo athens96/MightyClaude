@@ -17,7 +17,7 @@ enum MightyClaudeLauncher {
         if CommandLine.arguments.contains(PaneMCPServerLocation.headlessArgument) {
             AgentIOMCPCommand.run()
         }
-        // The delegation MCP server a Claude run gets while the hidden switch is on: stdio only, no GUI.
+        // The delegation MCP server a Claude run gets while the delegation switch is on: stdio only, no GUI.
         if CommandLine.arguments.contains(DelegationMCPServer.headlessArgument) {
             DelegationMCPCommand.run()
         }

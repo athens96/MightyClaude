@@ -3,21 +3,21 @@ title: 에이전트 위임
 order: 6
 section: delegation
 ---
-에이전트 위임은 Claude 창(부모)이 일을 나눠 다른 Claude 창(자식)에게 맡기는 기능입니다. 자식은 저마다 자기 git worktree에서 일하고, 끝나면 보고서를 남깁니다. 부모는 알림을 받아 보고서를 읽고, 결과를 병합할지 정합니다. Mac 앱과 Windows 앱에서 됩니다.
+에이전트 위임은 Claude 창(부모)이 일을 나눠 다른 Claude 창(자식)에게 맡기는 기능입니다. 자식은 저마다 자기 git worktree에서 일하고, 끝나면 보고서를 남깁니다. 부모는 알림을 받아 보고서를 읽고, 결과를 병합할지 정합니다. Mac 앱과 Windows 앱에서 됩니다. Mac에서는 실행 중인 Claude 창의 입력창에서 자식을 직접 띄울 수도 있습니다([새 worktree에서 실행하기](#worktree)).
 
 > [!warning]
-> 실험 기능입니다. 기본으로 꺼져 있고 설정 화면이 없습니다. 연습용 저장소에서 먼저 써 보세요.
+> 실험 기능입니다. Mac에서는 기본으로 켜져 있고 설정에서 끌 수 있습니다. Windows에서는 기본으로 꺼져 있고 설정 화면이 없습니다. 연습용 저장소에서 먼저 써 보세요.
 
 ## 켜고 끄기 {#enable}
-앱을 끈 채로 다음 명령을 실행하고 앱을 다시 엽니다.
-
-{{platform:mac}} 터미널에서:
+{{platform:mac}} 끄지 않는 한 켜져 있습니다. 설정의 {{ui:settings.nav.general}} 탭에서 {{ui:settings.delegation.toggle}}을 켜고 끕니다. 앱을 다시 열지 않아도 다음에 시작하는 실행부터 적용됩니다. 같은 스위치가 defaults 키 `delegation.enabled`이므로 터미널에서 다음 명령으로 꺼도 되고, `defaults delete dev.mightyclaude.native delegation.enabled`로 다시 켭니다.
 
 ```sh
-defaults write dev.mightyclaude.native delegation.enabled -bool true
+defaults write dev.mightyclaude.native delegation.enabled -bool false
 ```
 
-{{platform:windows}} 명령 프롬프트나 PowerShell에서:
+{{platform:mac}} 예전 버전은 그 키를 켜야만 켜졌고, 끄는 방법이 `defaults delete …`였습니다. 이제 그렇게 하면 켜진 채로 남으므로, 계속 꺼 두려면 설정에서 {{ui:settings.delegation.toggle}}을 끄세요.
+
+{{platform:windows}} 기본으로 꺼져 있습니다. 앱을 끈 채로 명령 프롬프트나 PowerShell에서 다음 명령을 실행하고 앱을 다시 엽니다.
 
 ```
 reg add "HKCU\Software\MightyClaudeNative" /v delegation.enabled /t REG_DWORD /d 1 /f
@@ -27,7 +27,7 @@ Windows에서는 `HKEY_CURRENT_USER\Software\MightyClaudeNative` 아래의 `dele
 
 - 켜면 Claude 창에서 새 실행을 시작할 때마다 위임 도구가 붙습니다. 이미 돌고 있는 실행에는 붙지 않습니다.
 - 부모가 쓰는 도구는 `delegate`(맡기기), `list_children`(자식 목록), `child_status`(상태와 보고서 읽기), `merge`(병합), `follow_up`(후속 지시)입니다. `discard`(폐기)는 부모가 부를 수 없고 사람만 카드에서 합니다.
-- 끄려면 Mac에서는 `defaults delete dev.mightyclaude.native delegation.enabled`, Windows에서는 `reg delete "HKCU\Software\MightyClaudeNative" /v delegation.enabled /f`를 실행하고 앱을 다시 엽니다. 꺼도 도구만 떨어지고, 이미 있는 자식 창과 카드, 정리는 그대로 동작합니다.
+- Windows에서 끄려면 `reg delete "HKCU\Software\MightyClaudeNative" /v delegation.enabled /f`를 실행하고 앱을 다시 엽니다. 꺼도 도구만 떨어지고(Mac에서는 {{kbd:⌘Enter}}가 다시 실행 중인 Claude에 바로 전달합니다), 이미 있는 자식 창과 카드, 정리는 그대로 동작합니다.
 
 ## 일을 맡기기 {#delegate}
 1. git 저장소 폴더를 작업 공간으로 열고 Claude 창을 엽니다. 이 창이 부모입니다.
@@ -41,7 +41,18 @@ Windows에서는 `HKEY_CURRENT_USER\Software\MightyClaudeNative` 아래의 `dele
 - 맡긴 일은 TASK.md에, 결과는 REPORT.md에 적힙니다. 두 파일은 worktree 안의 git이 무시하는 폴더에 있어 커밋되지 않습니다.
 - 자식의 권한 모드는 부모가 고른 모드이고, 부모 창의 모드보다 넓을 수 없습니다. 넓히는 것은 사람만, 실행과 실행 사이에 자식 창 입력창의 권한 메뉴나 휴대폰 설정에서 할 수 있습니다.
 - 부모는 자식의 승인 카드에 답하지 못합니다. 자식 창에 카드가 뜨면 그 창에서 직접 답하세요.
-- 부모 하나에 열린 자식은 3개까지이고, 자식은 다시 위임하지 못합니다. 보고했거나 병합된 자식도 창이 열려 있으면 3개에 들어가므로, 끝난 자식 창을 닫으면 자리가 납니다. 디스크 여유가 10 GB보다 적으면 맡기기가 거절됩니다.
+- 부모 하나에 `delegate` 도구로 만든 열린 자식은 3개까지이고(Mac에서는 직접 띄운 자식 3개가 따로 더 있습니다. [새 worktree에서 실행하기](#worktree)를 보세요), 자식은 다시 위임하지 못합니다. 보고했거나 병합된 자식도 창이 열려 있으면 3개에 들어가므로, 끝난 자식 창을 닫으면 자리가 납니다. 디스크 여유가 10 GB보다 적으면 맡기기가 거절됩니다.
+
+## 새 worktree에서 실행하기 {#worktree}
+{{platform:mac}} 자식을 직접 띄울 수도 있습니다. Claude 창이 실행 중일 때 요청을 쓰고 {{kbd:⌘Enter}}를 누르거나, 중지 단추 옆의 둥근 {{ui:queue.worktree}} 단추(브랜치 아이콘)를 누릅니다. 돌고 있는 작업은 그대로 이어지고, 요청은 자기 worktree를 가진 새 자식 창에서 바로 실행됩니다. 새 자식 창은 사이드바에서 그 창 아래에 나타납니다. 그사이 부모 창에 글을 쓰기 시작하지 않았다면 새 창이 곧바로 화면에 보입니다.
+
+- {{kbd:⌘Enter}}는 worktree를 만들 수 있는 곳에서만 새 worktree를 씁니다. 커밋이 있는 브랜치가 체크아웃된 git 저장소여야 합니다. 그 밖의 곳(git 저장소가 아님, 커밋이 아직 없음, 브랜치가 아닌 커밋이 체크아웃됨)에서는 예전처럼 실행 중인 Claude에 바로 전달합니다.
+- 부모의 `delegate`가 만들 때와 같은 방식으로 만들어집니다. 부모의 마지막 커밋에서 브랜치 `mighty/<자식 id>`를 만들고, worktree는 프로젝트 밖에 두며, 디스크 여유 10GB가 필요합니다. 직접 띄운 열린 자식은 창 하나에 3개까지이고, `delegate`가 만들 수 있는 3개와는 따로 셉니다. 어느 쪽도 다른 쪽을 막지 않습니다.
+- 부모 창의 권한 모드로, 부모 창의 모델과 {{ui:composer.effort.label}}로 실행합니다. 모든 요청을 계획 모드로 시작하는 스타일에서는 계획 모드로 시작합니다. 첨부 파일도 함께 갑니다.
+- 첫 메시지에는 입력한 글이 먼저 오고, 그 뒤에 앱이 자식이 일하는 곳을 알려 주며 끝나면 커밋하고 REPORT.md를 쓰라고 덧붙입니다. 그래야 카드에서 병합할 수 있습니다. 슬래시 명령(`/`로 시작하는 글)은 입력한 그대로 혼자 실행되고, 앱의 안내는 자식 창의 다음 요청으로 따라가므로 명령의 인자가 되지 않습니다.
+- 직접 띄운 자식에 대해서는 부모가 알림을 받지 않습니다. 부모가 맡긴 일이 아니기 때문입니다. 부모의 도구도 이 자식을 목록에 보여 주지 않고, 병합하거나 후속 지시를 보내지 못합니다(`human_started`). 사이드바에서 상태를 보고, 카드의 {{ui:delegation.card.merge}}과 {{ui:delegation.card.discard}} 단추를 직접 씁니다.
+- 자식을 만들 수 없거나 만든 뒤 시작하지 못하면(직접 띄운 열린 자식이 이미 3개, 디스크 부족, worktree나 첫 실행 실패 등) 창의 대화에 이유가 남습니다. 그러면 글은 실행 중인 Claude가 받을 수 있을 때(첨부 파일 없음) 그쪽에 바로 전달되고, 아니면 {{kbd:Enter}}를 누른 것처럼 그 창의 다음 요청이 됩니다. 대기열이 가득 차 있으면 입력창으로 돌아갑니다. 시작하지 못한 자식은 카드에서 폐기할 때까지 목록에 남습니다.
+- 자식 창이나 위임을 끈 창에서는 {{kbd:⌘Enter}}가 예전처럼 실행 중인 Claude에 바로 전달하고, Codex와 Antigravity 창은 계속 대기열에 넣습니다. 휴대폰의 보내기 방식은 그대로여서, 휴대폰에서 바로 보내면 여전히 실행 중인 Claude로 갑니다.
 
 ## 자식의 상태 {#states}
 사이드바에서 자식마다 상태가 보입니다.
@@ -114,11 +125,11 @@ Windows에서는 `HKEY_CURRENT_USER\Software\MightyClaudeNative` 아래의 `dele
 ## 한도와 지원 범위 {#limits}
 | 항목 | 한도 |
 |---|---|
-| 부모 하나의 열린 자식 | 3개 |
+| 부모 하나의 열린 자식 | `delegate`로 만든 3개, 직접 띄운 3개(Mac) |
 | 위임 깊이 | 한 층(자식은 다시 위임하지 못함) |
 | 자식 하나의 후속 지시 | 2개, 하나에 48 KiB |
 | 맡기는 일(TASK.md) | 64 KiB |
 | 필요한 디스크 여유 | 10 GB |
 
 - 부모와 자식 모두 Claude 창이어야 합니다. Codex와 Antigravity(Gemini) 창은 위임하지 않습니다.
-- Mac 앱과 Windows 앱 모두 숨은 스위치로 켭니다([켜고 끄기](#enable)). 휴대폰에는 새 화면이 없고, 보류된 행은 휴대폰 대기열에도 보입니다.
+- Mac 앱은 기본으로 켜져 있고 설정에 스위치가 있습니다. Windows 앱은 숨은 스위치로 켭니다([켜고 끄기](#enable)). 휴대폰에는 새 화면이 없고, 보류된 행은 휴대폰 대기열에도 보입니다.

@@ -491,7 +491,7 @@ public actor ProcessRunner {
     /// Live per-pane tokens, shared with the socket server that resolves them.
     /// Memory only, revoked on pane close and on quit.
     private let paneMCPBindings: PaneMCPBindingRegistry
-    /// Whether the hidden delegation switch is on, asked at each Claude pane's
+    /// Whether the delegation switch is on, asked at each Claude pane's
     /// run start: that run then also gets the delegation server. Off unless given.
     private let delegationEnabled: @Sendable () -> Bool
     /// Panes this runner minted tokens for, so shutdown revokes only its own.
@@ -567,7 +567,7 @@ public actor ProcessRunner {
                 let codexApprovals = request.provider == "codex" && request.settings.permissionMode == "onRequest"
                 // Every Claude and Codex run gets its own MCP server with a fresh random
                 // token bound to this agent pane alone. The token rides in the CLI
-                // environment only, never in argv. While the hidden delegation switch
+                // environment only, never in argv. While the delegation switch
                 // is on, a Claude pane's run also gets the delegation server on that token.
                 let paneBinding = ["claude", "codex"].contains(request.provider) ? paneMCPServer.map {
                     paneMCPBindings.bind(agentPaneId: request.sessionId, server: $0, workspaceId: workspace.id, workspacePath: workspace.path, provider: request.provider,

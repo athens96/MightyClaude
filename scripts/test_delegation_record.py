@@ -93,7 +93,7 @@ def load_script():
 
 
 class DelegationRecordFixtureTests(unittest.TestCase):
-    CASES = ["s1-like", "s2-like", "subfolder-workspace", "duplicate-notice-id", "deleted-unmerged-branch", "missing-panes", "no-transcript"]
+    CASES = ["s1-like", "s2-like", "subfolder-workspace", "duplicate-notice-id", "deleted-unmerged-branch", "missing-panes", "no-transcript", "human-started-child"]
 
     def test_every_case_is_listed_here(self):
         self.assertEqual(sorted(p.name for p in FIXTURES.iterdir() if p.is_dir()), sorted(self.CASES))
