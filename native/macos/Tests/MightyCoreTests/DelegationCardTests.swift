@@ -96,6 +96,33 @@ struct DelegationCardTests {
         #expect(DelegationCoordinator.unsavedReason(CocoaError(.fileWriteNoPermission)).hasSuffix(".") == false)
     }
 
+    @Test func aConflictingMergeAsksTheChildToResolveItOncePerReport() async throws {
+        let place = try MergePlace(); defer { place.remove() }
+        let (coordinator, _, _, _) = try await reportedChild(place)
+        _ = try await place.commit(in: place.repo.path, "a.txt", "parent\n")
+        #expect(await coordinator.mergeFromCard("c1") == .refused(.mergeConflict))
+
+        // The request names the parent branch to bring in, the child's own branch and its REPORT.md.
+        let text = try #require(await coordinator.conflictResolution(for: "c1"))
+        let child = try #require(await coordinator.file.children.first)
+        #expect(text.contains("`git merge main`")); #expect(text.contains(child.branch))
+        #expect(text.contains(ChildWorktree.reportFile(worktreePath: child.worktreePath)))
+        #expect(text.contains("Do not push, rebase or switch branches."))
+
+        // Once per report; a request the pane did not start is asked again.
+        #expect(await coordinator.conflictResolution(for: "c1") == nil)
+        await coordinator.conflictResolutionNotStarted("c1")
+        #expect(await coordinator.conflictResolution(for: "c1") == text)
+        #expect(await coordinator.conflictResolution(for: "c1") == nil)
+
+        // The next report may be asked once more; a child that is not reported, or not there, is never asked.
+        await coordinator.nextReport("c1")
+        #expect(await coordinator.conflictResolution(for: "c1") == text)
+        await coordinator.nextReport("c1"); await coordinator.markRunning("c1")
+        #expect(await coordinator.conflictResolution(for: "c1") == nil)
+        #expect(await coordinator.conflictResolution(for: "nobody") == nil)
+    }
+
     @Test func refusesWithItsReasonAndChangesNothing() async throws {
         let place = try MergePlace(); defer { place.remove() }
         let (coordinator, _, base, _) = try await reportedChild(place)
@@ -234,6 +261,10 @@ extension DelegationCoordinator {
     fileprivate func addPending(_ notice: Notice) { file.notices.append(notice) }
     /// The panes a card's merge or undo would be changing.
     fileprivate func holdCardPanes(_ ids: Set<String>) { cardPanes = ids }
+    /// The child's next report revision, as its next reported run leaves it.
+    fileprivate func nextReport(_ id: String) { if let index = file.children.firstIndex(where: { $0.id == id }) { file.children[index].reportRevision += 1 } }
+    /// The child running again.
+    fileprivate func markRunning(_ id: String) { if let index = file.children.firstIndex(where: { $0.id == id }) { file.children[index].state = .running } }
 }
 
 private func store(_ place: MergePlace) -> DelegationFileStore {

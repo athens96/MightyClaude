@@ -220,6 +220,10 @@ public actor DelegationCoordinator: DelegationRequestHandler {
     /// whether another pass was asked for meanwhile.
     var isDelivering = false
     var wantsDelivery = false
+    /// The report revision at which each child was last asked to resolve its
+    /// conflict with the parent branch, by child id, so a card's merge that
+    /// conflicts asks once per report and never loops.
+    var conflictAsked: [String: Int] = [:]
 
     /// Loads the delegation file from `store`; throws when it is unreadable.
     public init(store: DelegationFileStore, host: any DelegationHost, worktrees: ChildWorktreeMaker = ChildWorktreeMaker(), isSwitchOn: @escaping @Sendable () -> Bool = { DelegationSwitch.isOn() }, answerSeconds: TimeInterval = DelegationCoordinator.answerSeconds) throws {

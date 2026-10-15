@@ -1347,6 +1347,8 @@
   "delegation.card.mergedUnsaved": "{branch}에 병합했지만 위임 기록을 저장하지 못했습니다: {error}. 다음에 저장할 때 다시 씁니다.",
   "delegation.card.undoneUnsaved": "{branch} 병합을 되돌렸지만 위임 기록을 저장하지 못했습니다: {error}. 다음에 저장할 때 다시 씁니다.",
   "delegation.card.mergeRefused": "병합 거부: {reason}",
+  "delegation.card.conflictSent": "충돌해서 병합하지 못했습니다. 자식 창에 {branch} 쪽 변경을 가져와 충돌을 풀고 다시 보고하라고 요청했습니다. 보고하면 다시 병합하세요.",
+  "delegation.card.conflictNotStarted": "충돌해서 병합하지 못했고, 자식 창이 충돌을 풀라는 요청을 시작하지 못했습니다. 자식 창에 {branch} 쪽 변경을 가져와 충돌을 풀고 다시 보고하라고 직접 요청하세요.",
   "delegation.card.undoRefused": "되돌리기 거부: {reason}",
   "delegation.card.mergeFailed": "병합 실패: {error}",
   "delegation.card.undoFailed": "되돌리기 실패: {error}",

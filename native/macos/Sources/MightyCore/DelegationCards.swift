@@ -73,6 +73,23 @@ extension DelegationCoordinator {
         return outcome
     }
 
+    /// The request for the child `id` to resolve its conflict with the
+    /// parent branch (``ChildMerge/conflictPrompt(_:)``), after its card's
+    /// merge was refused with `merge_conflict`: once per report, so nil when
+    /// the child is not reported or was already asked at this report. A
+    /// request that did not start is given back with
+    /// ``conflictResolutionNotStarted(_:)``.
+    public func conflictResolution(for id: String) -> String? {
+        guard let child = file.children.first(where: { $0.id == id }), child.state == .reported,
+              conflictAsked[id] != child.reportRevision else { return nil }
+        conflictAsked[id] = child.reportRevision
+        return ChildMerge.conflictPrompt(child)
+    }
+
+    /// The child's pane did not start the request to resolve its conflict,
+    /// so the next merge that conflicts at this report asks again.
+    public func conflictResolutionNotStarted(_ id: String) { conflictAsked[id] = nil }
+
     private func cardMerge(_ id: String) async -> ChildMergeOutcome {
         guard let child = file.children.first(where: { $0.id == id }) else { return .failed(L("delegation.card.error.noChild")) }
         cardPanes = [child.parentSessionId, child.id]

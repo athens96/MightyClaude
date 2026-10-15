@@ -1347,6 +1347,8 @@
   "delegation.card.mergedUnsaved": "已合并到 {branch}，但无法保存委派记录：{error}。下次保存时会重新写入。",
   "delegation.card.undoneUnsaved": "已撤销到 {branch} 的合并，但无法保存委派记录：{error}。下次保存时会重新写入。",
   "delegation.card.mergeRefused": "合并被拒绝：{reason}",
+  "delegation.card.conflictSent": "存在冲突，未能合并。已请子窗格并入 {branch} 的更改、解决冲突并重新报告。报告后请再次合并。",
+  "delegation.card.conflictNotStarted": "存在冲突，未能合并，子窗格也未能开始解决冲突的请求。请直接让子窗格并入 {branch} 的更改、解决冲突并重新报告。",
   "delegation.card.undoRefused": "撤销被拒绝：{reason}",
   "delegation.card.mergeFailed": "合并失败：{error}",
   "delegation.card.undoFailed": "撤销失败：{error}",

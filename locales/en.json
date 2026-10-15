@@ -1347,6 +1347,8 @@
   "delegation.card.mergedUnsaved": "Merged into {branch}, but the delegation record could not be saved: {error}. It is written again with the next save.",
   "delegation.card.undoneUnsaved": "The merge into {branch} was undone, but the delegation record could not be saved: {error}. It is written again with the next save.",
   "delegation.card.mergeRefused": "Merge refused: {reason}",
+  "delegation.card.conflictSent": "It conflicts, so it was not merged. The child's pane was asked to bring in {branch}, resolve the conflict and report again. Merge once it has reported.",
+  "delegation.card.conflictNotStarted": "It conflicts, so it was not merged, and the child's pane could not start the request to resolve it. Ask the child pane yourself to bring in {branch}, resolve the conflict and report again.",
   "delegation.card.undoRefused": "Undo refused: {reason}",
   "delegation.card.mergeFailed": "Merge failed: {error}",
   "delegation.card.undoFailed": "Undo failed: {error}",

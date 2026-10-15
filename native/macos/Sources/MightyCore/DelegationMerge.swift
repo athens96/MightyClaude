@@ -96,6 +96,14 @@ public enum ChildMerge {
     /// waits on these, not a tool call.
     public static let cardTimeout: TimeInterval = 120
 
+    /// The request that asks a reported `child` whose card merge was refused
+    /// with `merge_conflict` to bring its parent branch in, resolve the
+    /// conflicts on its own branch and report again, so the human's next
+    /// merge from its card goes through.
+    public static func conflictPrompt(_ child: ChildRecord) -> String {
+        "[Mighty Claude] Merging your branch \(child.branch) into \(child.parentBranch) from the app was refused: the two conflict. In this worktree, bring \(child.parentBranch) into your branch with `git merge \(child.parentBranch)`, resolve every conflict so that the changes on both sides are kept (ask when a choice is unclear), run the checks that apply, and commit the merge on \(child.branch), leaving no uncommitted changes to tracked files. Then add a short section to \(ChildWorktree.reportFile(worktreePath: child.worktreePath)) saying what conflicted and how you resolved it. The person who sent this merges your branch from the app again. Do not push, rebase or switch branches."
+    }
+
     /// A human's merge from the child's card. The reported head goes into the
     /// recorded parent branch by fast-forward when the branch's head is an
     /// ancestor of it, and otherwise as exactly one merge commit whose parents
