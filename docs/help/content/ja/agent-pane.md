@@ -53,6 +53,7 @@ Macでは、GoogleのエージェントはAntigravity CLI(`agy`)で動きます�
 - サインイン: ターミナルペインで`agy`を一度実行し、ブラウザでGoogleアカウントにサインインします。{{ui:settings.nav.cli}}タブの{{ui:settings.cliAccounts.buttonLogin}}をクリックすると、アプリが代わりに実行します。Antigravityにはサインアウトのコマンドがないため、アカウントを切り替えるには`agy`の中で`/logout`を使います。
 - 権限: Antigravityはアプリの中で確認できません。{{ui:permission.label.default}}はagyに保存されたAgent Modeに従います(agyの`/config`で変えていなければレビュー)。ワークスペースのファイルは読めますが、確認が必要なファイル編集とシェルコマンドは拒否し、拒否した操作をペインに表示します。{{ui:permission.label.plan}}はagy自身のフォルダに計画を書き、プロジェクトを変更せずに止まります。実行するには、次のリクエストを別のモードで送ってください。`~/.gemini/antigravity-cli/settings.json`の`permissions.allow`に許可ルール(例: `command(git)`)を追加するか、{{ui:permission.label.acceptEdits}}(ファイル編集)または{{ui:permission.label.fullAccess}}(すべて許可)を選んでください。
 - Antigravityのモデルは名前に思考の深さが含まれているため、{{ui:composer.effort.label}}を別に選びません。
+- {{ui:graph.view.mighty}}表示はClaudeやCodexと同じです。Antigravityが起動したサブエージェントはリクエストの下にそれぞれのブロックになり、その内容(受けた指示、メッセージ、ツール呼び出し、送り返した答え)は`~/.gemini/antigravity-cli`に残るサブエージェント自身の記録から読みます。読んだファイルは名前だけが表示され、中身は写しません。会話の以前のリクエストも同じ記録から読み込み、{{ui:resume.choice.resume}}にはこのフォルダのAntigravityの会話が表示されます。
 - 以前Gemini CLIで実行していたペインは、履歴はそのままですが次のリクエストから新しい会話になり、Gemini CLIのモデルを選んでいた場合は既定に戻ります。
 
 ### その他の実行設定 {#run-settings}
@@ -84,7 +85,7 @@ Macでは、GoogleのエージェントはAntigravity CLI(`agy`)で動きます�
 | `/rename` | {{ui:slash.builtin.rename}} |
 | `/help` | {{ui:slash.builtin.help}} |
 
-CodexとAntigravityでは名前が少し異なります(例: Codexの`/new`、`/approvals`、`/status`、Antigravityの`/usage`、`/config`)。一覧にない`/名前`は、CLIのスキル、ユーザーコマンド、プラグインのコマンドとしてそのまま渡されます。Antigravityのスキルもこうして実行されます。ただし`/help`や`/skills`のようなAntigravity自身の読み取り専用コマンドは、ターミナルで`agy -p "/help"`のように別に実行したときだけ答えるため、アプリではagyのエラーで終わります。
+CodexとAntigravityでは名前が少し異なります(例: Codexの`/new`、`/approvals`、`/status`、Antigravityの`/usage`、`/config`)。一覧にない`/名前`は、CLIのスキル、ユーザーコマンド、プラグインのコマンドとしてそのまま渡されます。Antigravityのスキルもこうして実行され、一覧にはagyに入っているスキル、`~/.gemini/antigravity-cli/skills`の自分のスキル、フォルダの`.agents/skills`が表示されます。ただし`/help`や`/skills`のようなAntigravity自身の読み取り専用コマンドは、ターミナルで`agy -p "/help"`のように別に実行したときだけ答えるため、アプリではagyのエラーで終わります。
 
 ### コンテキストと使用量 {#session-info}
 送信ボタンの横の円形のリングは、会話がコンテキストをどれだけ使ったかを示します。クリックすると、{{ui:composer.sessionInfo.contextUsage}}、入力・出力・キャッシュのトークン、コスト、使用したモデル、セッションIDを確認できます。CLIが報告した値だけを表示し、不明な値は推定しません。
@@ -92,7 +93,7 @@ CodexとAntigravityでは名前が少し異なります(例: Codexの`/new`、`/
 ![[session-info]]
 
 ## 標準表示とMighty表示 {#views}
-ClaudeとCodexのペインのヘッダーには、{{ui:graph.view.default}} | {{ui:graph.view.mighty}}の切り替えがあります。切り替えても、会話と入力中の文章はそのまま残ります。ペインごとに別々に記憶されます。AntigravityとGeminiのペインには標準表示しかありません。
+Claude、Codex、Antigravityのペインのヘッダーには、{{ui:graph.view.default}} | {{ui:graph.view.mighty}}の切り替えがあります。切り替えても、会話と入力中の文章はそのまま残ります。ペインごとに別々に記憶されます。Geminiのペイン(Windows)には標準表示しかありません。
 - {{ui:graph.view.default}}: 会話を上から下へ読む記録です。
 - {{ui:graph.view.mighty}}: リクエスト、サブエージェント、バックグラウンドタスク、結果をブロックのフローで表示します。
 
@@ -102,7 +103,7 @@ ClaudeとCodexのペインのヘッダーには、{{ui:graph.view.default}} | {{
 - ブロックをクリックすると、そのブロックの中だけがスクロールします。何もない場所をクリックするか{{kbd:Esc}}を押すと、選択が解除されます。
 - ブロックの右下の角をドラッグするとサイズが変わります。右クリックすると{{ui:graph.block.resetSize}}があります。サイズはセッションごとに保存されます。
 - 一番上までスクロールすると、{{ui:graph.history.load}}で以前のリクエストを10件ずつ読み込みます。読み込んだ履歴は閲覧専用です。
-- ヘッダーのパズルのボタンで、インストール済みのプラグインとマーケットプレイスを開きます。
+- ClaudeとCodexのペインでは、ヘッダーのパズルのボタンで、インストール済みのプラグインとマーケットプレイスを開きます。
 
 ![[agent-mighty]]
 

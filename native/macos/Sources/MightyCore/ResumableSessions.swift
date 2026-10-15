@@ -1,8 +1,9 @@
 import Darwin
 import Foundation
 
-/// An earlier Claude or Codex session recorded for a workspace folder that a
-/// new pane can continue with `--resume` / `exec resume`.
+/// An earlier Claude, Codex or Antigravity session recorded for a workspace
+/// folder that a new pane can continue with `--resume` / `exec resume` /
+/// `--conversation`.
 public struct ResumableSession: Sendable, Equatable, Identifiable {
     public var provider: String
     /// The provider's own session id: the pane's `resumeId`.
@@ -73,10 +74,9 @@ public struct ResumableSessionQuery: Sendable {
 /// Lists the sessions a workspace folder's CLIs recorded, read-only and
 /// bounded: only the head of a record (and its tail for the model) unless it
 /// is small enough to read whole for a request count. Synchronous and
-/// file-bound: call it off the main actor. Antigravity is not listed: the app does
-/// not read its records.
+/// file-bound: call it off the main actor.
 public enum ResumableSessions {
-    public static let providers = ["claude", "codex"]
+    public static let providers = ["claude", "codex", "gemini"]
     public static let maximumAge: TimeInterval = 60 * 86_400
     public static let maximumCandidates = 600
     public static let maximumScanned = 6_000
@@ -101,9 +101,9 @@ public enum ResumableSessions {
 
     public static func listing(_ query: ResumableSessionQuery) -> ResumableSessionListing {
         var budget = countBudget
-        let claude = claude(query, budget: &budget), codex = codex(query, budget: &budget)
-        let items = (claude.items + codex.items).sorted { $0.modified != $1.modified ? $0.modified > $1.modified : $0.id < $1.id }
-        return ResumableSessionListing(items: items, hidden: claude.hidden + codex.hidden)
+        let claude = claude(query, budget: &budget), codex = codex(query, budget: &budget), antigravity = antigravity(query, budget: &budget)
+        let items = (claude.items + codex.items + antigravity.items).sorted { $0.modified != $1.modified ? $0.modified > $1.modified : $0.id < $1.id }
+        return ResumableSessionListing(items: items, hidden: claude.hidden + codex.hidden + antigravity.hidden)
     }
 
     /// One agent's sessions alone: the other agent's records are not read. An agent
@@ -113,6 +113,7 @@ public enum ResumableSessions {
         switch provider {
         case "claude": return claude(query, budget: &budget)
         case "codex": return codex(query, budget: &budget)
+        case "gemini": return antigravity(query, budget: &budget)
         default: return ResumableSessionListing()
         }
     }
@@ -329,6 +330,76 @@ public enum ResumableSessions {
     }
 
     static func codexModel(_ line: Data) -> String? { HistoryReplay.codexModel([line]) }
+
+    // MARK: Antigravity
+
+    /// `conversation_summaries.db` rows whose folders include the workspace,
+    /// without sub-agents' conversations (a parent), that still have their
+    /// transcript. The title is the first request typed, as for the others;
+    /// agy's own summary title stands in when none was read.
+    static func antigravity(_ query: ResumableSessionQuery, budget: inout Int) -> ResumableSessionListing {
+        guard let rows = AntigravityRecords.summaries(database: AntigravityRecords.database(home: query.home)) else { return ResumableSessionListing() }
+        let paths = workspacePaths(query.workspacePath)
+        let brain = AntigravityRecords.brain(home: query.home)
+        let keys: Set<URLResourceKey> = [.isRegularFileKey, .isSymbolicLinkKey, .contentModificationDateKey]
+        var candidates: [(url: URL, id: String, modified: Date)] = []
+        var titles: [String: String] = [:]
+        var seen = Set<String>()
+        // Rows share a few folders: each is resolved once.
+        var matched: [String: Bool] = [:]
+        func here(_ path: String) -> Bool {
+            if let known = matched[path] { return known }
+            let value = matches(path, paths); matched[path] = value
+            return value
+        }
+        for row in rows where row.parent.isEmpty && row.paths.contains(where: here) {
+            guard seen.insert(row.conversation.lowercased()).inserted, let url = AntigravityRecords.transcript(brain: brain, conversation: row.conversation),
+                  let values = try? url.resourceValues(forKeys: keys), values.isSymbolicLink != true, values.isRegularFile == true,
+                  let modified = values.contentModificationDate else { continue }
+            candidates.append((url, row.conversation, modified))
+            if !row.title.isEmpty { titles[row.conversation] = row.title }
+        }
+        var listing = ResumableSessionListing(), read = 0
+        for candidate in recent(candidates, query: query) {
+            guard listing.items.count < query.maximumSessions, read < query.maximumCandidates, !Task.isCancelled else { break }
+            guard !query.excluding.contains(candidate.id.lowercased()) else { continue }
+            switch antigravitySession(candidate.url, id: candidate.id, modified: candidate.modified, summary: titles[candidate.id],
+                                      known: query.known.contains(candidate.id.lowercased()), includeAutomated: query.includeAutomated, headOnly: query.headOnly, budget: &budget) {
+            case .listed(let item): read += 1; listing.items.append(item)
+            case .hidden: listing.hidden += 1
+            case .skipped: read += 1
+            }
+        }
+        return listing
+    }
+
+    static func antigravitySession(_ url: URL, id: String, modified: Date, summary: String?, known: Bool = false,
+                                   includeAutomated: Bool = true, headOnly: Bool = false, budget: inout Int) -> Outcome {
+        guard let fd = CodexSessionFiles.open(url) else { return .skipped }
+        defer { Darwin.close(fd) }
+        guard let size = CodexSessionFiles.size(fd), size > 0 else { return .skipped }
+        var title: String?
+        let headComplete = forEachLine(fd, size: size, limit: headBytes) { line in
+            title = AntigravityRecords.opening(line)?.prompt
+            return title == nil
+        }
+        // A conversation without a single request has nothing to continue.
+        if title == nil && headComplete { return .skipped }
+        let automated = !known && automatedPrompt(title)
+        if automated && !includeAutomated { return .hidden }
+        var requests: Int?
+        if !headOnly && size <= countBytes && budget >= size {
+            budget -= size
+            var count = 0
+            let complete = forEachLine(fd, size: size, limit: size) { line in
+                if AntigravityRecords.opening(line) != nil { count += 1 }
+                return true
+            }
+            if complete { requests = count }
+        }
+        return .listed(ResumableSession(provider: "gemini", sessionID: id, title: (title ?? summary).map(oneLine), modified: modified,
+                                        requests: requests, model: nil, url: url, automated: automated))
+    }
 
     /// Every day folder, newest first, at most 4 000; links are not followed.
     static func dayFolders(_ sessions: URL) -> [URL] {

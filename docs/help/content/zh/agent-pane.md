@@ -53,6 +53,7 @@ section: agent-pane
 - 登录：在终端窗格中运行一次 `agy`，并在浏览器中用 Google 账户登录。点击{{ui:settings.nav.cli}}标签页中的{{ui:settings.cliAccounts.buttonLogin}}，应用会替你运行。Antigravity 没有退出登录命令；要切换账户，请在 `agy` 中使用 `/logout`。
 - 权限：Antigravity 无法在应用中询问你。{{ui:permission.label.default}}遵循 agy 中保存的 Agent Mode（如果没有在 agy 的 `/config` 中更改，则为审核）：它可以读取工作区的文件，但会拒绝需要询问的文件编辑和 shell 命令，并在窗格中说明拒绝了什么。{{ui:permission.label.plan}}会在 agy 自己的文件夹中写下计划，然后停止，不会修改项目；要执行计划，请用其他模式发送下一个请求。请在 `~/.gemini/antigravity-cli/settings.json` 的 `permissions.allow` 中添加允许规则（例如 `command(git)`），或选择{{ui:permission.label.acceptEdits}}（文件编辑）或{{ui:permission.label.fullAccess}}（全部允许）。
 - Antigravity 的每个模型名称中已包含思考深度，因此没有单独的{{ui:composer.effort.label}}。
+- {{ui:graph.view.mighty}}视图与 Claude、Codex 相同：Antigravity 启动的每个子代理都会在请求下方成为单独的块，其内容（收到的指示、消息、工具调用和发回的答复）从 `~/.gemini/antigravity-cli` 中子代理自己的记录读取；读取过的文件只显示名称，不会复制内容。对话中较早的请求也从同样的记录加载，{{ui:resume.choice.resume}}会列出此文件夹中的 Antigravity 对话。
 - 以前运行 Gemini CLI 的窗格会保留记录，但下一个请求会开始新的对话；如果选过 Gemini CLI 的模型，会改回默认。
 
 ### 更多运行设置 {#run-settings}
@@ -84,7 +85,7 @@ section: agent-pane
 | `/rename` | {{ui:slash.builtin.rename}} |
 | `/help` | {{ui:slash.builtin.help}} |
 
-Codex 和 Antigravity 的命令名称略有不同（例如 Codex 的 `/new`、`/approvals`、`/status`，Antigravity 的 `/usage`、`/config`）。列表中没有的 `/名称` 会作为 CLI 的技能、用户命令或插件命令原样传递。Antigravity 的技能也是这样运行的；但 `/help`、`/skills` 等 Antigravity 自身的只读命令只有在终端中以 `agy -p "/help"` 单独运行时才会回答，因此在应用中会以 agy 的错误结束。
+Codex 和 Antigravity 的命令名称略有不同（例如 Codex 的 `/new`、`/approvals`、`/status`，Antigravity 的 `/usage`、`/config`）。列表中没有的 `/名称` 会作为 CLI 的技能、用户命令或插件命令原样传递。Antigravity 的技能也是这样运行的，列表中会显示 agy 自带的技能、`~/.gemini/antigravity-cli/skills` 中你的技能以及文件夹的 `.agents/skills`；但 `/help`、`/skills` 等 Antigravity 自身的只读命令只有在终端中以 `agy -p "/help"` 单独运行时才会回答，因此在应用中会以 agy 的错误结束。
 
 ### 上下文与用量 {#session-info}
 发送按钮旁的圆环显示对话已使用了多少上下文。点击它可以查看{{ui:composer.sessionInfo.contextUsage}}、输入/输出/缓存 token、费用、所用模型和会话 ID。只显示 CLI 报告的值，不会估算未知的值。
@@ -92,7 +93,7 @@ Codex 和 Antigravity 的命令名称略有不同（例如 Codex 的 `/new`、`/
 ![[session-info]]
 
 ## 默认视图与 Mighty 视图 {#views}
-Claude 和 Codex 窗格的标题栏中有{{ui:graph.view.default}} | {{ui:graph.view.mighty}}切换开关。切换后，对话和正在输入的内容保持不变。每个窗格会各自记住选择。Antigravity 和 Gemini 窗格只有默认视图。
+Claude、Codex 和 Antigravity 窗格的标题栏中有{{ui:graph.view.default}} | {{ui:graph.view.mighty}}切换开关。切换后，对话和正在输入的内容保持不变。每个窗格会各自记住选择。Gemini 窗格（Windows）只有默认视图。
 - {{ui:graph.view.default}}：从上到下阅读的对话记录。
 - {{ui:graph.view.mighty}}：以块状流程显示请求、子智能体、后台任务和结果。
 
@@ -102,7 +103,7 @@ Claude 和 Codex 窗格的标题栏中有{{ui:graph.view.default}} | {{ui:graph.
 - 点击某个块后，只在该块内部滚动。点击空白处或按{{kbd:Esc}}即可取消选择。
 - 拖动块的右下角可以调整大小。右键点击可以选择{{ui:graph.block.resetSize}}。大小按会话保存。
 - 滚动到最顶部后，可以用{{ui:graph.history.load}}每次加载 10 个之前的请求。加载的记录仅供查看。
-- 用标题栏中的拼图按钮可以打开已安装的插件和插件市场。
+- 在 Claude 和 Codex 窗格中，用标题栏中的拼图按钮可以打开已安装的插件和插件市场。
 
 ![[agent-mighty]]
 

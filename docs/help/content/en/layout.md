@@ -53,7 +53,7 @@ Shortcuts: {{ui:menu.newClaudePane}} is {{kbd:⌘N}}, {{ui:menu.addTerminalPane}
 > Codex and Antigravity (Gemini) panes carry a {{ui:badge.beta}} label.
 
 ### Continue an earlier session {#resume}
-When you add a Claude or Codex pane and this folder has earlier sessions, you are asked what to do.
+When you add a Claude, Codex or Antigravity pane and this folder has earlier sessions, you are asked what to do. Antigravity's are its conversations in this folder; the ones its sub-agents ran are not listed.
 1. Click {{ui:resume.choice.startNew}} for a new conversation, or {{ui:resume.choice.resume}} for an earlier one.
 2. Pick a session in {{ui:resume.title}}. Use {{ui:resume.search}} to find it.
 3. The new pane continues that session.

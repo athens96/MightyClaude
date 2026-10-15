@@ -53,6 +53,7 @@ Mac에서는 Google 에이전트가 Antigravity CLI(`agy`)로 실행됩니다. A
 - 로그인: 터미널 창에서 `agy`를 한 번 실행하고 브라우저에서 Google 계정으로 로그인합니다. {{ui:settings.nav.cli}} 탭의 {{ui:settings.cliAccounts.buttonLogin}}을 누르면 앱이 대신 실행합니다. Antigravity에는 로그아웃 명령이 없으므로, 계정을 바꿀 때는 `agy` 안에서 `/logout`을 씁니다.
 - 권한: Antigravity는 앱 안에서 물어볼 수 없습니다. {{ui:permission.label.default}}은 agy에 저장된 Agent Mode를 따릅니다(agy의 `/config`에서 바꾸지 않았다면 검토). 작업 폴더의 파일은 읽을 수 있지만, 물어봐야 하는 파일 수정과 셸 명령은 거절하고 실행 창에 거절한 작업을 알려 줍니다. {{ui:permission.label.plan}}은 agy 자체 폴더에 계획을 쓰고 프로젝트는 고치지 않은 채 멈춥니다. 실행하려면 다음 요청을 다른 모드로 보내세요. `~/.gemini/antigravity-cli/settings.json`의 `permissions.allow`에 허용 규칙(예: `command(git)`)을 추가하거나, {{ui:permission.label.acceptEdits}}(파일 수정) 또는 {{ui:permission.label.fullAccess}}(모두 허용)를 고르세요.
 - Antigravity 모델은 이름에 생각 깊이가 들어 있어 {{ui:composer.effort.label}}를 따로 고르지 않습니다.
+- {{ui:graph.view.mighty}} 보기는 Claude, Codex와 같습니다. Antigravity가 띄운 하위 에이전트는 요청 아래에 따로 블록이 되고, 그 내용(받은 지시, 메시지, 도구 호출, 돌려보낸 답)은 `~/.gemini/antigravity-cli`에 남는 하위 에이전트 자신의 기록에서 읽습니다. 읽은 파일은 이름만 보이고 내용은 옮기지 않습니다. 대화의 이전 요청도 같은 기록에서 불러오고, {{ui:resume.choice.resume}}에는 이 폴더의 Antigravity 대화가 나옵니다.
 - 전에 Gemini CLI로 실행하던 창은 기록은 그대로지만 다음 요청부터 새 대화로 시작하고, Gemini CLI 모델을 골라 두었다면 기본값으로 바뀝니다.
 
 ### 추가 실행 설정 {#run-settings}
@@ -84,7 +85,7 @@ Mac에서는 Google 에이전트가 Antigravity CLI(`agy`)로 실행됩니다. A
 | `/rename` | {{ui:slash.builtin.rename}} |
 | `/help` | {{ui:slash.builtin.help}} |
 
-Codex와 Antigravity는 이름이 조금 다릅니다(예: Codex `/new`, `/approvals`, `/status`, Antigravity `/usage`, `/config`). 목록에 없는 `/이름`은 CLI의 스킬·사용자 명령·플러그인 명령으로 그대로 전달됩니다. Antigravity의 스킬도 이렇게 실행됩니다. 다만 `/help`, `/skills` 같은 Antigravity 자체의 조회 명령은 터미널에서 `agy -p "/help"`처럼 따로 실행할 때만 답하므로, 앱에서는 agy의 오류로 끝납니다.
+Codex와 Antigravity는 이름이 조금 다릅니다(예: Codex `/new`, `/approvals`, `/status`, Antigravity `/usage`, `/config`). 목록에 없는 `/이름`은 CLI의 스킬·사용자 명령·플러그인 명령으로 그대로 전달됩니다. Antigravity의 스킬도 이렇게 실행되며, 목록에는 agy에 들어 있는 스킬, `~/.gemini/antigravity-cli/skills`의 내 스킬, 폴더의 `.agents/skills`가 나옵니다. 다만 `/help`, `/skills` 같은 Antigravity 자체의 조회 명령은 터미널에서 `agy -p "/help"`처럼 따로 실행할 때만 답하므로, 앱에서는 agy의 오류로 끝납니다.
 
 ### 컨텍스트와 사용량 {#session-info}
 보내기 단추 옆의 동그란 고리는 대화가 컨텍스트를 얼마나 썼는지 보여 줍니다. 누르면 {{ui:composer.sessionInfo.contextUsage}}, 입력·출력·캐시 토큰, 비용, 쓴 모델, 세션 ID를 봅니다. CLI가 알려 준 값만 보여 주고, 모르는 값은 추정하지 않습니다.
@@ -92,7 +93,7 @@ Codex와 Antigravity는 이름이 조금 다릅니다(예: Codex `/new`, `/appro
 ![[session-info]]
 
 ## 기본 보기와 마이티 보기 {#views}
-Claude와 Codex 창 머리에는 {{ui:graph.view.default}} | {{ui:graph.view.mighty}} 전환이 있습니다. 바꿔도 대화와 입력 중인 글은 그대로입니다. 창마다 따로 기억합니다. Antigravity와 Gemini 창은 기본 보기만 있습니다.
+Claude, Codex, Antigravity 창 머리에는 {{ui:graph.view.default}} | {{ui:graph.view.mighty}} 전환이 있습니다. 바꿔도 대화와 입력 중인 글은 그대로입니다. 창마다 따로 기억합니다. Gemini 창(Windows)은 기본 보기만 있습니다.
 - {{ui:graph.view.default}}: 대화를 위에서 아래로 읽는 보기입니다.
 - {{ui:graph.view.mighty}}: 요청, 하위 에이전트, 백그라운드 작업, 결과를 블록 흐름으로 보여 줍니다.
 
@@ -102,7 +103,7 @@ Claude와 Codex 창 머리에는 {{ui:graph.view.default}} | {{ui:graph.view.mig
 - 블록을 누르면 그 블록 안만 스크롤합니다. 빈 곳을 누르거나 {{kbd:Esc}}를 누르면 선택이 풀립니다.
 - 블록 오른쪽 아래 모서리를 끌면 크기가 바뀝니다. 오른쪽 클릭하면 {{ui:graph.block.resetSize}}가 있습니다. 크기는 세션마다 저장됩니다.
 - 맨 위까지 스크롤하면 {{ui:graph.history.load}}로 예전 요청을 10개씩 불러옵니다. 불러온 기록은 보기 전용입니다.
-- 머리의 퍼즐 단추로 설치된 플러그인과 마켓플레이스를 엽니다.
+- Claude와 Codex 창에서는 머리의 퍼즐 단추로 설치된 플러그인과 마켓플레이스를 엽니다.
 
 ![[agent-mighty]]
 

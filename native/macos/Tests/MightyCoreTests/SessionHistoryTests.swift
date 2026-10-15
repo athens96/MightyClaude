@@ -283,7 +283,7 @@ struct SessionHistoryTests {
         let home = try folder()
         let missing = SessionHistoryRequest(provider: "claude", resumeID: "6f1c2a9e-1111-4222-8333-444455556666", workspacePath: "/x", home: home)
         #expect(throws: SessionHistoryError.missing) { try SessionHistory.load(missing) }
-        let unsupported = SessionHistoryRequest(provider: "gemini", resumeID: "s", workspacePath: "/x", home: home)
+        let unsupported = SessionHistoryRequest(provider: "shell", resumeID: "s", workspacePath: "/x", home: home)
         #expect(throws: SessionHistoryError.unsupported) { try SessionHistory.load(unsupported) }
 
         let url = home.appendingPathComponent("session.jsonl")

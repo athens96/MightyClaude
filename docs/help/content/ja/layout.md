@@ -53,7 +53,7 @@ section: layout
 > CodexとAntigravity(Gemini)のペインには{{ui:badge.beta}}の表示が付きます。
 
 ### 以前のセッションを続ける {#resume}
-ClaudeやCodexのペインを追加するとき、このフォルダに以前のセッションがあると選択画面が表示されます。
+Claude、Codex、Antigravityのペインを追加するとき、このフォルダに以前のセッションがあると選択画面が表示されます。Antigravityはこのフォルダの会話が表示され、サブエージェントが実行した会話は表示されません。
 1. 新しい会話なら{{ui:resume.choice.startNew}}、以前の会話なら{{ui:resume.choice.resume}}ボタンをクリックします。
 2. {{ui:resume.title}}の一覧からセッションを選びます。{{ui:resume.search}}で探すこともできます。
 3. 新しいペインがそのセッションの続きから始まります。

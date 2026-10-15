@@ -87,8 +87,9 @@ public struct MightyGraphRun: Codable, Sendable, Equatable, Identifiable {
 
 public enum MightyGraphSupport {
     /// AI panes whose runs produce a graph: Claude via stream-json + Mods,
-    /// Codex via exec JSONL. Antigravity's subagent steps are not read yet.
-    public static let providers = ["claude", "codex"]
+    /// Codex via exec JSONL, Antigravity (`gemini`) via agy's stream-json and
+    /// its sub-agents' transcripts.
+    public static let providers = ["claude", "codex", "gemini"]
     public static func terminal(_ status: String) -> Bool { ["completed", "error", "stopped"].contains(status) }
 
     /// The child-block kinds the core records; anything else is a sub-agent.
@@ -323,11 +324,12 @@ extension RunSession {
                 let parent = node.parentId == ExecutionGraphSupport.mainNodeID(runId: node.runId) ? nil : node.parentId
                 var agent = MightyGraphAgent(id: node.id, parentID: parent, title: node.title, input: node.input ?? "", status: node.state, entries: node.entries, kind: ["task", "steer", "compact", "question"].contains(node.kind) ? node.kind : nil, usage: node.usage, activityGeneration: node.activityGeneration, responseRecords: node.responseRecords)
                 if let output = node.output, !output.isEmpty {
-                    let answerID = provider == "codex"
+                    // Codex and Antigravity children take new assignments: one answer per generation.
+                    let answerID = ["codex", "gemini"].contains(provider)
                         ? ExecutionGraphSupport.identifier(node.runId, node.id + ":answer:\(node.activityGeneration ?? 0)")
                         : node.id + "-answer"
                     let hasAnswer = agent.entries.contains {
-                        provider == "codex" ? $0.id == answerID : $0.kind == "assistant" && $0.text == output
+                        provider == "codex" ? $0.id == answerID : $0.id == answerID || ($0.kind == "assistant" && $0.text == output)
                     }
                     if !hasAnswer { agent.entries.append(LogEntry(id: answerID, kind: "assistant", text: output, provider: provider)) }
                 }
@@ -340,7 +342,9 @@ extension RunSession {
                     guard incomingGeneration >= previousGeneration else { return }
                     let newerActivity = incomingGeneration > previousGeneration
                     if newerActivity && runs[index].status != "running" { return }
-                    if !(newerActivity && runs[index].status == "running") {
+                    // An Antigravity sub-agent whose helper reported back goes on with the same assignment.
+                    let continuing = provider == "gemini" && previous.status == "completed" && agent.status == "running" && runs[index].status == "running"
+                    if !(newerActivity && runs[index].status == "running") && !continuing {
                         agent.status = MightyGraphSupport.nextState(previous.status, agent.status)
                     }
                     if agent.activityGeneration == nil { agent.activityGeneration = previous.activityGeneration }

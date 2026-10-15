@@ -257,12 +257,11 @@ struct ExecutionGraphTests {
 
     @Test func nodeIDsAreRunScopedAndOtherProvidersEmitNoClaudeGraph() throws {
         #expect(ExecutionGraphSupport.agentNodeID(runId: "one", toolUseId: "shared") != ExecutionGraphSupport.agentNodeID(runId: "two", toolUseId: "shared"))
-        for provider in ["gemini"] {
-            var nodes: [ExecutionGraphNode] = []
-            let parser = CLIStreamParser(provider: provider, log: { _, _ in }, resume: { _ in }, graph: { nodes.append($0) })
-            try send(["type": "result", "status": "success"], to: parser); parser.finishGraph(state: "completed")
-            #expect(nodes.isEmpty)
-        }
+        // Antigravity draws its own graph; Claude-shaped lines add nothing to it.
+        var nodes: [ExecutionGraphNode] = []
+        let parser = CLIStreamParser(provider: "gemini", log: { _, _ in }, resume: { _ in }, graph: { nodes.append($0) })
+        try send(["type": "result", "status": "success"], to: parser); parser.finishGraph(state: "completed")
+        #expect(Set(nodes.map(\.kind)) == ["main"] && nodes.last?.state == "completed" && nodes.last?.output == nil)
     }
 
     @Test func graphWireNormalizesBoundsAndRestoresInterruptedSnapshots() throws {

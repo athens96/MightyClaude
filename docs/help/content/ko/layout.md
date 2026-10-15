@@ -53,7 +53,7 @@ section: layout
 > Codex와 Antigravity(Gemini) 실행 창에는 {{ui:badge.beta}} 표시가 붙습니다.
 
 ### 이전 세션 이어가기 {#resume}
-Claude나 Codex 창을 추가할 때 이 폴더에 이전 세션이 있으면 고르는 창이 뜹니다.
+Claude, Codex, Antigravity 창을 추가할 때 이 폴더에 이전 세션이 있으면 고르는 창이 뜹니다. Antigravity는 이 폴더의 대화가 나오고, 하위 에이전트가 실행한 대화는 나오지 않습니다.
 1. 새 대화는 {{ui:resume.choice.startNew}}, 이전 대화는 {{ui:resume.choice.resume}} 단추를 누릅니다.
 2. {{ui:resume.title}} 목록에서 세션을 고릅니다. {{ui:resume.search}}으로 찾을 수 있습니다.
 3. 새 창이 그 세션을 이어갑니다.

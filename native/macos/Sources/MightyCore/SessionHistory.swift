@@ -2,8 +2,9 @@ import Darwin
 import Foundation
 
 /// The session record a pane's CLI keeps on disk: Claude's
-/// `<config>/projects/<escaped cwd>/<session>.jsonl` or Codex's
-/// `sessions/YYYY/MM/DD/rollout-…-<thread>.jsonl`. The device and inode tell a
+/// `<config>/projects/<escaped cwd>/<session>.jsonl`, Codex's
+/// `sessions/YYYY/MM/DD/rollout-…-<thread>.jsonl` or Antigravity's
+/// `brain/<conversation>/.system_generated/logs/transcript_full.jsonl`. The device and inode tell a
 /// rotated or replaced file apart from the one a cursor points into.
 public struct SessionHistoryFile: Sendable, Equatable {
     public let url: URL
@@ -92,7 +93,7 @@ public struct SessionHistoryChunk: Sendable {
 }
 
 public enum SessionHistoryError: Error, Equatable {
-    /// The pane's CLI keeps no record the graph can read (Antigravity, a shell).
+    /// The pane's CLI keeps no record the graph can read (a shell).
     case unsupported
     /// No record for this session exists, or it is not a readable regular file.
     case missing
@@ -153,6 +154,9 @@ public enum SessionHistory {
         case "codex":
             guard let sessions = CodexSessionFiles.sessions(codexHome: CLIAccountSupport.codexHome(home: home, environment: environment)) else { return nil }
             return codexRollout(sessions: sessions, thread: resumeID)
+        case "gemini":
+            guard let url = AntigravityRecords.transcript(brain: AntigravityRecords.brain(home: home), conversation: resumeID), regularFile(url) else { return nil }
+            return url
         default: return nil
         }
     }
@@ -229,14 +233,24 @@ public enum SessionHistory {
         let end = request.end ?? size
         guard end <= size, end >= 0 else { throw SessionHistoryError.changed }
         var reader = JSONLBackwardReader(fd: fd, end: end, maximumLineBytes: maximumLineBytes)
-        let format: HistoryFormat = request.provider == "codex"
-            ? .codex(thread: CodexSessionFiles.thread(fileName: url.lastPathComponent) ?? request.resumeID) : .claude
+        let format: HistoryFormat
+        switch request.provider {
+        case "codex": format = .codex(thread: CodexSessionFiles.thread(fileName: url.lastPathComponent) ?? request.resumeID)
+        case "gemini": format = .antigravity(conversation: request.resumeID, brain: AntigravityRecords.brain(transcript: url))
+        default: format = .claude
+        }
+        // Where the chunk ends a newer request starts: its time ends the oldest
+        // one read here (Antigravity's sub-agents may get work from later requests).
+        var newer: Date?
+        if case .antigravity = format, let end = request.end { newer = HistoryScan.opening(fd, at: end, format: format)?.timestamp.flatMap(AgentRunTiming.parseTimestamp) }
         let scan = try HistoryScan.run(&reader, format: format, anchor: request.end == nil ? request.anchor : nil,
-                                       turns: max(1, request.turns), maximumBytes: request.maximumBytes)
+                                       turns: max(1, request.turns), maximumBytes: request.maximumBytes, newer: newer)
         var runs: [MightyGraphRun] = []
+        // Sub-agents' transcripts the chunk's requests read, together.
+        var childBytes = min(HistoryReplay.antigravityChildBytes, max(0, request.maximumBytes))
         for turn in scan.turns {
             try Task.checkCancellation()
-            if let run = HistoryReplay.run(turn, format: format) { runs.append(run) }
+            if let run = HistoryReplay.run(turn, format: format, childBytes: &childBytes) { runs.append(run) }
         }
         return SessionHistoryChunk(runs: runs, file: file, end: scan.end, reachedStart: scan.reachedStart)
     }
@@ -332,6 +346,8 @@ struct JSONLBackwardReader {
 enum HistoryFormat: Equatable {
     case claude
     case codex(thread: String)
+    /// The brain folder also holds the request's sub-agents' transcripts.
+    case antigravity(conversation: String, brain: URL)
 }
 
 struct HistoryTurn {
@@ -343,6 +359,9 @@ struct HistoryTurn {
     var key: String?
     /// The request's lines in file order, after its opening line.
     var lines: [Data]
+    /// When the next request was sent, when known: work recorded after it
+    /// belongs to that request.
+    var until: Date? = nil
 }
 
 enum HistoryScan {
@@ -353,6 +372,14 @@ enum HistoryScan {
 
     /// The line that opens a request, cheaply rejected on raw bytes first: a
     /// key in raw JSON (`"toolUseResult":`) can never appear inside a string.
+    /// The opening read forward from `offset` (where a newer request starts), if it is one.
+    static func opening(_ fd: Int32, at offset: Int, format: HistoryFormat) -> Opening? {
+        var bytes = [UInt8](repeating: 0, count: 1_048_576)
+        let count = bytes.withUnsafeMutableBytes { pread(fd, $0.baseAddress, $0.count, off_t(offset)) }
+        guard count > 0, let newline = bytes[..<count].firstIndex(of: 10) else { return nil }
+        return opening(Data(bytes[..<newline]), format: format)
+    }
+
     static func opening(_ line: Data, format: HistoryFormat) -> Opening? {
         switch format {
         case .claude:
@@ -365,6 +392,9 @@ enum HistoryScan {
                   object["type"] as? String == "event_msg", let payload = object["payload"] as? [String: Any],
                   payload["type"] as? String == "task_started" else { return nil }
             return Opening(prompt: nil, timestamp: object["timestamp"] as? String, key: payload["turn_id"] as? String)
+        case .antigravity:
+            guard let opening = AntigravityRecords.opening(line) else { return nil }
+            return Opening(prompt: opening.prompt, timestamp: opening.timestamp, key: opening.key)
         }
     }
 
@@ -487,7 +517,8 @@ enum HistoryScan {
     /// `maximumBytes` were read and at least one request was found. A failed
     /// read throws `unreadable`; a cancelled task stops between requests.
     static func run(_ reader: inout JSONLBackwardReader, format: HistoryFormat, anchor: SessionHistoryAnchor?,
-                    turns wanted: Int, maximumBytes: Int) throws -> Result {
+                    turns wanted: Int, maximumBytes: Int, newer: Date? = nil) throws -> Result {
+        var newer = newer
         var collected: [HistoryTurn] = []
         var pending: [Data] = [], pendingBytes = 0
         // Requests near the retained one, newest first, until it is placed.
@@ -529,8 +560,9 @@ enum HistoryScan {
             if case .codex = format { lines.insert(line, at: 0) }
             let prompt = opening.prompt ?? codexPrompt(lines)
             let date = opening.timestamp.flatMap(AgentRunTiming.parseTimestamp)
+            let until = newer; newer = date
             guard let prompt else { end = offset; continue }
-            let turn = HistoryTurn(start: offset, prompt: prompt, timestamp: opening.timestamp, date: date, key: opening.key, lines: lines)
+            let turn = HistoryTurn(start: offset, prompt: prompt, timestamp: opening.timestamp, date: date, key: opening.key, lines: lines, until: until)
             if !past, let anchor {
                 end = offset
                 if anchor.below(date) {
@@ -602,12 +634,14 @@ final class HistoryReplay {
         return key.flatMap { CoreValidation.identifier($0) ? $0 : nil } ?? runPrefix + "o\(turn.start)"
     }
 
-    static func run(_ turn: HistoryTurn, format: HistoryFormat) -> MightyGraphRun? {
+    /// `childBytes`: what reading sub-agents' transcripts may still spend.
+    static func run(_ turn: HistoryTurn, format: HistoryFormat, childBytes: inout Int) -> MightyGraphRun? {
         let provider: String
         let model: String?
         switch format {
         case .claude: provider = "claude"; model = nil
         case .codex: provider = "codex"; model = codexModel(turn.lines)
+        case .antigravity: provider = "gemini"; model = nil
         }
         let formatter = ISO8601DateFormatter()
         let first = turn.date.map { formatter.string(from: $0) } ?? mightyTimestamp()
@@ -622,6 +656,8 @@ final class HistoryReplay {
         switch format {
         case .claude: status = replay.claude(turn.lines, parser: parser)
         case .codex(let thread): status = replay.codex(turn.lines, thread: thread, parser: parser)
+        case .antigravity(let conversation, let brain):
+            status = replay.antigravity(turn.lines, conversation: conversation, brain: brain, namespace: runID, until: turn.until, childBytes: &childBytes, parser: parser)
         }
         parser.flush()
         parser.finishActivities(stopped: true)
@@ -780,6 +816,43 @@ final class HistoryReplay {
         if aborted { return "stopped" }
         if completed { return "completed" }
         return parser.failed ? "error" : "stopped"
+    }
+}
+
+extension HistoryReplay {
+    // MARK: Antigravity records
+
+    /// Sub-agents' transcripts one chunk's requests may read together.
+    static let antigravityChildBytes = 32 * 1_048_576
+
+    /// A transcript step is mapped back to the stream-json event agy printed
+    /// for it (`AntigravityRecords.streamEvents`); the request's sub-agents are
+    /// read from their own transcripts, as a live run's watcher reads them, up
+    /// to when the next request was sent.
+    func antigravity(_ lines: [Data], conversation: String, brain: URL, namespace: String, until: Date?, childBytes: inout Int, parser: CLIStreamParser) -> String {
+        var steps: [[String: Any]] = []
+        for line in lines {
+            guard let object = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any] else { continue }
+            steps.append(object)
+        }
+        let replay = AntigravityRecords.streamEvents(steps, conversation: conversation)
+        var stamps = steps.makeIterator()
+        for event in replay.events {
+            // Each step's event carries that step's time; the result the last one's.
+            if event["event"] as? String == "step_update", let index = (event["step_update"] as? [String: Any])?["step_index"] as? Int, index >= 0 {
+                while let step = stamps.next() {
+                    at(step["created_at"])
+                    if step["step_index"] as? Int == index { break }
+                }
+            }
+            parser.receive(object: event)
+        }
+        if childBytes > 0, !parser.antigravitySubagents.isEmpty {
+            let children = AntigravitySubagentWatcher(brain: brain, namespace: namespace, root: conversation, until: until, limits: .init(finalBytes: childBytes))
+            parser.receiveAntigravitySessions(children.finish(parser.antigravitySubagents))
+            childBytes -= children.bytesRead
+        }
+        return replay.status
     }
 }
 

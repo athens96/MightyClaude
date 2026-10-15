@@ -13,13 +13,13 @@ struct AddAgentPaneTests {
     @Test func onlyAgentsTheAppCanResumeOfferTheChoice() {
         #expect(AddAgentPane.offersResume("claude"))
         #expect(AddAgentPane.offersResume("codex"))
-        #expect(!AddAgentPane.offersResume("gemini"))
+        #expect(AddAgentPane.offersResume("gemini"))
         #expect(!AddAgentPane.offersResume(""))
         #expect(ProviderOptions.ids.filter(AddAgentPane.offersResume) == ResumableSessions.providers)
     }
 
     @Test func anAgentWithoutResumeStartsAtOnceEvenWithSessionsListed() {
-        #expect(AddAgentPane.step(provider: "gemini", sessions: [session("gemini", "g1"), session("claude", "c1")], inUse: []) == .startNew)
+        #expect(AddAgentPane.step(provider: "shell", sessions: [session("shell", "g1"), session("claude", "c1")], inUse: []) == .startNew)
     }
 
     @Test func theChoiceIsSkippedWhenThisAgentHasNothingToContinue() {

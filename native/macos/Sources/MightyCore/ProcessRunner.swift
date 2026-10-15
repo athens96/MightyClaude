@@ -472,6 +472,10 @@ private final class ManagedProcess {
     var codexHome: URL?
     var codexSessions: CodexSessionWatcher?
     var codexSessionTask: Task<Void, Never>?
+    /// Where this Antigravity run's sub-agents keep their transcripts.
+    var antigravityBrain: URL?
+    var antigravitySubagents: AntigravitySubagentWatcher?
+    var antigravitySubagentTask: Task<Void, Never>?
     init(_ request: StartRunRequest) { self.request = request }
 }
 
@@ -570,9 +574,10 @@ public actor ProcessRunner {
                                          kind: request.kind, delegation: DelegationSwitch.isClaudePane(kind: request.kind, provider: request.provider) && delegationEnabled())
                 } : nil
                 if let paneBinding { boundPaneIds.insert(request.sessionId); environment.merge(paneBinding.environment) { _, new in new } }
-                if request.provider == "codex" {
+                if ["codex", "gemini"].contains(request.provider) {
                     let home = environment["HOME"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true) } ?? FileManager.default.homeDirectoryForCurrentUser
-                    run.codexHome = CLIAccountSupport.codexHome(home: home, environment: environment)
+                    if request.provider == "codex" { run.codexHome = CLIAccountSupport.codexHome(home: home, environment: environment) }
+                    else { run.antigravityBrain = AntigravityRecords.brain(home: home) }
                 }
                 if codexApprovals {
                     arguments = try ProviderService.arguments(request, pluginDirectory: pluginDirectory, allowPermissionPrompts: allowPermissionPrompts, paneMCPBinding: paneBinding, codexHome: run.codexHome)
@@ -849,7 +854,7 @@ public actor ProcessRunner {
                 }
             }
         }
-        watchCodexSessions(run)
+        watchCodexSessions(run); watchAntigravitySubagents(run)
     }
     private func receive(_ event: ChildEvent, run: ManagedProcess) async {
         guard !run.finished else { return }
@@ -864,7 +869,7 @@ public actor ProcessRunner {
             emitLog(run, kind: "output", text: text)
         case .exit(let code): await finish(run, code: code)
         }
-        watchCodexSessions(run)
+        watchCodexSessions(run); watchAntigravitySubagents(run)
     }
     /// Multi-agent v2 `codex exec` output does not name spawned threads, so
     /// once the root thread is known its children are read from the session
@@ -881,6 +886,25 @@ public actor ProcessRunner {
                 return await self.receiveCodexSessions(agents, run: run)
             }
         }
+    }
+    /// agy's stream names each sub-agent's conversation but not its work.
+    /// Once a run starts one, the sub-agents' own transcripts are read about
+    /// once a second until the run ends, off this actor.
+    private func watchAntigravitySubagents(_ run: ManagedProcess) {
+        guard run.antigravitySubagents == nil, !run.finished, let brain = run.antigravityBrain, run.parser?.antigravitySubagents.isEmpty == false else { return }
+        let watcher = AntigravitySubagentWatcher(brain: brain, namespace: run.activityId, root: run.parser?.antigravityConversation)
+        run.antigravitySubagents = watcher
+        run.antigravitySubagentTask = Task.detached { [weak self, weak run] in
+            await CodexSessionWatcher.drive(sleep: { try await Task.sleep(for: .seconds(1)) }) {
+                guard let self, let run, let known = await self.antigravitySubagents(run) else { return false }
+                return await self.receiveAntigravitySubagents(watcher.poll(known), run: run)
+            }
+        }
+    }
+    private func antigravitySubagents(_ run: ManagedProcess) -> [AntigravitySubagent]? { run.finished ? nil : run.parser?.antigravitySubagents }
+    private func receiveAntigravitySubagents(_ agents: [CodexSessionAgent], run: ManagedProcess) -> Bool {
+        if !agents.isEmpty { run.parser?.receiveAntigravitySessions(agents) }
+        return !run.finished
     }
     /// Snapshots already taken are delivered even while the run finishes;
     /// the graph ignores them once it is final.
@@ -929,6 +953,12 @@ public actor ProcessRunner {
             run.codexSessionTask?.cancel()
             await run.codexSessionTask?.value
             run.parser?.receiveCodexSessions(await Task.detached { watcher.finish() }.value)
+        }
+        if let watcher = run.antigravitySubagents {
+            run.antigravitySubagentTask?.cancel()
+            await run.antigravitySubagentTask?.value
+            let known = run.parser?.antigravitySubagents ?? []
+            run.parser?.receiveAntigravitySessions(await Task.detached { watcher.finish(known) }.value)
         }
         run.parser?.finishActivities(stopped: status == "stopped")
         run.parser?.finishGraph(state: status)
