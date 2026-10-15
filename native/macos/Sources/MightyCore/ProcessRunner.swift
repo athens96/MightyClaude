@@ -12,6 +12,10 @@ public struct ProcessResult: Sendable {
 final class NativeChildProcess: @unchecked Sendable {
     private let lock = NSLock()
     private let writer = DispatchQueue(label: "dev.mightyclaude.stdin")
+    /// The exit report, the stop's SIGKILL and wait timeouts run here, a
+    /// serial queue of this child's own: work on the global queues waits
+    /// whenever they are saturated, and a child's end must not.
+    private let control = DispatchQueue(label: "dev.mightyclaude.child")
     private var stdinFD: Int32 = -1
     /// Set under `lock` when a close is requested, before the writer queue
     /// runs it, so `inputIsOpen` never waits on that queue.
@@ -86,15 +90,16 @@ final class NativeChildProcess: @unchecked Sendable {
             let readers = DispatchGroup()
             read(fd: output[0], group: readers, callback: stdout)
             read(fd: errors[0], group: readers, callback: stderr)
-            DispatchQueue.global(qos: .utility).async { [self] in
+            let reaped = childPID
+            startBlockingThread("dev.mightyclaude.child.reaper") { [self] in
                 var status: Int32 = 0
-                while waitpid(childPID, &status, 0) < 0 { if errno != EINTR { status = 127 << 8; break } }
+                while waitpid(reaped, &status, 0) < 0 { if errno != EINTR { status = 127 << 8; break } }
                 lock.lock(); exitedAt = Date(); if status & 0x7f != 0 { signal = status & 0x7f }; lock.unlock()
                 closeInput()
                 // The parent can exit while a background child still holds a pipe.
                 terminateGroup()
                 let exitCode: Int32 = status & 0x7f == 0 ? (status >> 8) & 0xff : 128 + (status & 0x7f)
-                readers.notify(queue: .global(qos: .utility)) { [self] in
+                readers.notify(queue: control) { [self] in
                     lock.lock(); result = exitCode; let pending = Array(waiters.values); waiters.removeAll(); lock.unlock()
                     exited(exitCode)
                     for continuation in pending { continuation.resume(returning: exitCode) }
@@ -106,7 +111,7 @@ final class NativeChildProcess: @unchecked Sendable {
     private func read(fd: Int32, group: DispatchGroup, callback: @escaping @Sendable (Data) -> Void) {
         _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
         group.enter()
-        DispatchQueue.global(qos: .utility).async { [self] in
+        startBlockingThread("dev.mightyclaude.child.reader") { [self] in
             defer { Darwin.close(fd); group.leave() }
             var bytes = [UInt8](repeating: 0, count: 16_384)
             // Time the callback held this thread after the child exited. A
@@ -234,7 +239,7 @@ final class NativeChildProcess: @unchecked Sendable {
         guard shouldStop else { return }
         closeInput()
         signalGroup(SIGTERM)
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.2) { [self] in signalGroup(SIGKILL) }
+        control.asyncAfter(deadline: .now() + 0.2) { [self] in signalGroup(SIGKILL) }
     }
     /// SIGKILL to the child's group now, unless it was already reaped.
     func kill() { signalGroup(SIGKILL) }
@@ -245,7 +250,7 @@ final class NativeChildProcess: @unchecked Sendable {
             if let result { lock.unlock(); continuation.resume(returning: result); return }
             waiters[id] = continuation; lock.unlock()
             if let timeout {
-                DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { [self] in
+                control.asyncAfter(deadline: .now() + timeout) { [self] in
                     lock.lock(); let waiting = waiters.removeValue(forKey: id); lock.unlock()
                     if let waiting { stop(); waiting.resume(returning: -1) }
                 }

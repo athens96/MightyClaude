@@ -201,23 +201,32 @@ struct MobileRemoteTests {
             // Notify only once the poll is really parked, not after a guessed sleep:
             // on a busy CI runner the request may not even have started after 300 ms,
             // and then the already-advanced path answers instead of the wake path.
-            let started = Date()
             let wait = MobileRemoteService.maximumWait
+            // The last instant the poll was seen not yet parked: it parked after
+            // this, so a poll nobody wakes cannot answer before this plus `wait`.
+            var unparkedAt = Date()
             async let waiting = call(service, "GET", "/m1/state?since=1&wait=\(Int(wait))")
             let parkBy = Date().addingTimeInterval(60)
-            while await service.parkedPolls(scope: "state") == 0, Date() < parkBy { try await Task.sleep(for: .milliseconds(20)) }
+            while Date() < parkBy {
+                let asked = Date()
+                if await service.parkedPolls(scope: "state") > 0 { break }
+                unparkedAt = asked
+                try await Task.sleep(for: .milliseconds(20))
+            }
             #expect(await service.parkedPolls(scope: "state") == 1)
             host.bump(state: true, session: false); await service.notify(scope: "state", revision: 2)
             #expect(await service.parkedPolls(scope: "state") == 0)
             let woken = try await waiting
             // The requirement is "answers on notify, not when `wait` runs out". A poll
             // nobody wakes answers only a full `wait` (the 10 s maximum) after it
-            // parked, and it parked after `started`, so any answer inside `wait`
-            // proves the wake. The bound is that wait itself rather than a latency
-            // guess: the wake needs only a few actor hops, which a starved CI runner
-            // delayed past the old 4 s bound, while a real miss can never beat it.
+            // parked, and it parked after `unparkedAt`, so any answer inside `wait`
+            // of that proves the wake. The bound is that wait itself rather than a
+            // latency guess: the wake needs only a few actor hops, which a starved
+            // CI runner delayed past the old 4 s bound, while a real miss can never
+            // beat it. Timed from the request instead, a busy runner's delay in
+            // merely starting the request counted too and could use up the wait.
             #expect(woken.0 == 200 && woken.1["revision"] as? Int == 2)
-            #expect(Date().timeIntervalSince(started) < wait)
+            #expect(Date().timeIntervalSince(unparkedAt) < wait)
             let timedOut = try await call(service, "GET", "/m1/state?since=2&wait=1")
             #expect(timedOut.1["revision"] as? Int == 2)
             #expect(try await call(service, "GET", "/m1/state?since=abc").0 == 400)

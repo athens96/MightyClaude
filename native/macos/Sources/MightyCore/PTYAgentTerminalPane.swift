@@ -123,7 +123,7 @@ public final class PTYAgentTerminalPane: AgentTerminalPane, @unchecked Sendable 
             emit(Self.header(for: command, after: transcript.last))
         }
         reader.resume()
-        DispatchQueue.global(qos: .utility).async { [weak self] in
+        startBlockingThread("dev.mightyclaude.agent-terminal.reaper") { [weak self] in
             var status: Int32 = 0
             while waitpid(pid, &status, 0) < 0 { if errno != EINTR { status = 127 << 8; break } }
             self?.io.async { self?.exited(handle, status: status) }
