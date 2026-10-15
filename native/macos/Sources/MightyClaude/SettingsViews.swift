@@ -237,6 +237,18 @@ struct AppSettingsView: View {
                 .accessibilityIdentifier("settings-status-line")
                 Toggle(L("settings.display.backgroundWorkToggle"), isOn: Binding(get: { store.showsBackgroundWork }, set: { store.setShowsBackgroundWork($0) }))
                     .accessibilityIdentifier("settings-background-work")
+                // Agent delegation is on unless turned off here (or by its defaults key).
+                Toggle(isOn: Binding(
+                    get: { DelegationSwitch.isOn() },
+                    set: { store.objectWillChange.send(); UserDefaults.standard.set($0, forKey: DelegationSwitch.defaultsKey) }
+                )) {
+                    VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
+                        Text(L("settings.delegation.toggle"))
+                        Text(L("settings.delegation.description"))
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
+                }
+                .accessibilityIdentifier("settings-delegation")
                 Toggle(isOn: Binding(
                     get: { CefBrowserEngine.isEnabledInSettings },
                     set: { store.objectWillChange.send(); CefBrowserEngine.isEnabledInSettings = $0 }

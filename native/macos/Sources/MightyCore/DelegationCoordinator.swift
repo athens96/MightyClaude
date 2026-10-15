@@ -1,7 +1,7 @@
 import Foundation
 
 /// The tools the delegation MCP server lists (macOS only): exactly these six.
-/// The server is attached only to a Claude pane's run while the hidden
+/// The server is attached only to a Claude pane's run while the
 /// ``DelegationSwitch`` is on, so with the switch on a Claude pane sees these
 /// and with it off none. Every argument is a required string.
 public enum DelegationToolManifest {
@@ -21,7 +21,7 @@ public enum DelegationToolManifest {
 
     public static let delegate = Tool(
         name: "delegate",
-        description: "Start a child Claude pane that works on a task in its own git worktree, on the flat branch mighty/<child id> made from your current branch head. The child starts in the permission mode you ask for, which must be no wider than your own (plan < manual < acceptEdits < auto < fullAccess). Answers as soon as the child exists; its run goes on in the background. The child writes its result to REPORT.md, and you get one notice per report. At most 3 open children per pane, and a child cannot delegate. The same call twice in one of your runs returns the same child.",
+        description: "Start a child Claude pane that works on a task in its own git worktree, on the flat branch mighty/<child id> made from your current branch head. Use it only when the user asks for parallel or delegated work, or when the task clearly splits into independent parts that can run at the same time; never fan out speculatively, and do the work yourself otherwise. The child starts in the permission mode you ask for, which must be no wider than your own (plan < manual < acceptEdits < auto < fullAccess). Answers as soon as the child exists; its run goes on in the background. The child writes its result to REPORT.md, and you get one notice per report. At most 3 open children per pane, and a child cannot delegate. The same call twice in one of your runs returns the same child.",
         arguments: [
             Argument(name: "task", description: "What the child should do. It is saved as the child's TASK.md."),
             Argument(name: "mode", description: "The child's starting permission mode: plan, manual (always ask), acceptEdits, auto or fullAccess. No wider than yours."),
@@ -90,9 +90,12 @@ public struct DelegationChildPane: Sendable, Equatable {
     public var mode: String
     /// The folder the child works in, inside its worktree.
     public var folder: String
+    /// The human started it from the parent's composer: it takes the
+    /// parent's model and effort, and the app shows it at once.
+    public var startedByHuman: Bool
 
-    public init(sessionId: String, parentSessionId: String, mode: String, folder: String) {
-        self.sessionId = sessionId; self.parentSessionId = parentSessionId; self.mode = mode; self.folder = folder
+    public init(sessionId: String, parentSessionId: String, mode: String, folder: String, startedByHuman: Bool = false) {
+        self.sessionId = sessionId; self.parentSessionId = parentSessionId; self.mode = mode; self.folder = folder; self.startedByHuman = startedByHuman
     }
 }
 
@@ -174,8 +177,8 @@ public actor DelegationCoordinator: DelegationRequestHandler {
     let host: any DelegationHost
     /// Makes each child's worktree: under `~/.mightyclaude/worktrees` in the
     /// app, under a temp folder in tests.
-    nonisolated let worktrees: ChildWorktreeMaker
-    private nonisolated let isSwitchOn: @Sendable () -> Bool
+    public nonisolated let worktrees: ChildWorktreeMaker
+    nonisolated let isSwitchOn: @Sendable () -> Bool
     private nonisolated let answerSeconds: TimeInterval
     /// The delegation file as last loaded or saved. The exceptions: a
     /// child's start, a merge or an undo that the disk refused to save is

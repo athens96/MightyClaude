@@ -3,7 +3,7 @@ import Foundation
 /// The delegation MCP server: the app binary run as `--agent-delegation-mcp`.
 ///
 /// A separate server from mighty-terminal, so that one keeps exactly its four
-/// tools. A run gets it only in a Claude pane and only while the hidden
+/// tools. A run gets it only in a Claude pane and only while the
 /// ``DelegationSwitch`` is on, and it lists exactly the six tools of
 /// ``DelegationToolManifest``. It shares that pane's token and socket: each
 /// `tools/call` is forwarded to the app with `MIGHTY_PANE_TOKEN` over

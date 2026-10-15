@@ -11,6 +11,7 @@ section: settings
 - {{ui:settings.display.languageLabel}}: 앱의 언어. [언어 바꾸기](getting-started.md#language)를 보세요.
 - {{ui:settings.display.statusLineToggle}}: Claude 설정의 상태 줄 명령을 실행해 입력창 아래에 보여 줍니다.
 - {{ui:settings.display.browserToggle}}: 브라우저 창을 켭니다. 앱을 다시 열어야 적용됩니다.
+- {{platform:mac}} {{ui:settings.delegation.toggle}}: 기본으로 켜져 있습니다. Claude 창이 자기 worktree를 가진 자식 창을 열 수 있고, 실행 중인 Claude 창에서 {{kbd:⌘Enter}}를 누르면 요청이 새 자식 창에서 실행됩니다. [에이전트 위임](delegation.md#enable)을 보세요.
 - {{ui:agentTerminal.urlOpen.settingTitle}}: 에이전트가 연 링크를 어디서 열지 정합니다.
 
 ![[settings-general]]

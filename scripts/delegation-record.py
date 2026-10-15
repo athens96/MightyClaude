@@ -57,10 +57,10 @@ RULES = [
     ("unique-ids", "child, notice and follow-up ids are each unique"),
     ("child-records", "each child has its parent link, branch mighty/<id>, base commit, a known starting mode and a known state"),
     ("one-layer", "no child is the parent of another child"),
-    ("width-cap", "a parent has at most 3 open children"),
+    ("width-cap", "a parent has at most 3 open children its delegate made and at most 3 the human started"),
     ("follow-up-cap", "a child has at most 2 follow-ups"),
     ("pane-links", "parent and child panes are Claude panes, and each child pane carries its parent link and works in its worktree or a folder inside it"),
-    ("one-notice-per-revision", "a notice names a child and a revision it reached, one reported notice per revision, one for each open child's current report"),
+    ("one-notice-per-revision", "a notice names a child its parent's delegate made and a revision it reached, one reported notice per revision, one for each such open child's current report; a child the human started (startedByHuman) has none"),
     ("receipts", "delivered notices and follow-ups carry one receipt (time, steer or queue, run); pending and held ones none"),
     ("merge-records", "each merge record lands its child head: a fast-forward to it, or one merge commit of the old parent head and it"),
     ("merged-in-parent", "a merged child has a merge record of its reported head, and that head is in its parent branch"),
@@ -71,6 +71,11 @@ RULES = [
     ("oldest-first", "a parent's delivered notices reach its transcript oldest first, by prompt and then within the prompt"),
 ]
 RULE_NAMES = [name for name, _ in RULES]
+
+
+def started_by_human(child):
+    """A child the human started from its parent's composer: it sends its parent no notices."""
+    return child.get("startedByHuman") is True
 
 
 class Invalid(Exception):
@@ -277,13 +282,15 @@ class Record:
                 self.fail("one-layer", f"child {child.get('id')} has child {child.get('parentSessionId')} as its parent")
 
     def rule_width_cap(self):
+        # Each kind has its own cap: the children a parent's delegate made, and
+        # those the human started from the parent's composer.
         open_by_parent = {}
         for child in self.children:
             if child.get("state") not in CLOSED_STATES:
-                open_by_parent.setdefault(child.get("parentSessionId"), []).append(child.get("id"))
-        for parent, ids in open_by_parent.items():
+                open_by_parent.setdefault((child.get("parentSessionId"), started_by_human(child)), []).append(child.get("id"))
+        for (parent, human), ids in open_by_parent.items():
             if len(ids) > OPEN_CHILDREN_CAP:
-                self.fail("width-cap", f"parent {parent} has {len(ids)} open children")
+                self.fail("width-cap", f"parent {parent} has {len(ids)} open children {'the human started' if human else 'its delegate made'}")
 
     def rule_follow_up_cap(self):
         for child in self.children:
@@ -314,6 +321,9 @@ class Record:
             if notice.get("kind") not in NOTICE_KINDS or child is None:
                 self.fail("one-notice-per-revision", f"notice {notice.get('id')} has kind {notice.get('kind')} for child {notice.get('childId')}")
                 continue
+            if started_by_human(child):
+                self.fail("one-notice-per-revision", f"notice {notice.get('id')} is for child {notice.get('childId')}, which the human started and which sends no notices")
+                continue
             if (notice.get("reportRevision") or 0) > (child.get("reportRevision") or 0):
                 self.fail("one-notice-per-revision", f"notice {notice.get('id')} names revision {notice.get('reportRevision')}, beyond its child's")
             if notice.get("kind") == "reported":
@@ -323,6 +333,8 @@ class Record:
                 seen.add(key)
         for child in self.children:
             revision = child.get("reportRevision") or 0
+            if started_by_human(child):
+                continue
             if child.get("state") not in CLOSED_STATES and revision >= 1 and (child.get("id"), revision) not in seen:
                 self.fail("one-notice-per-revision", f"child {child.get('id')} has no notice for its revision {revision}")
 

@@ -46,9 +46,18 @@ struct SessionPaneView: View {
         // Multi-select picks in the question panel are confirmed with Enter on an empty draft.
         return guided && store.guidedCanConfirm(session.id)
     }
-    private var steers: Bool { store.canSteer(session) }
-    /// Steer is offered only for a draft the running turn can take: files always queue.
-    private var offersSteer: Bool { steers && attachments.isEmpty }
+    /// What ⌘Enter and the second round button do while a run is busy.
+    private var secondSend: ComposerSecondSend { store.composerSecondSend(session) }
+    /// The second button is offered for a new worktree while the draft has words
+    /// for its task (files go with them), and for steer only with a draft the
+    /// running turn can take: files always queue.
+    private var offersSecondSend: Bool {
+        switch secondSend {
+        case .worktree: !draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .steer: attachments.isEmpty
+        case .queue: false
+        }
+    }
     /// The registered style this pane actually runs, if any.
     private var style: RegisteredStyle? { store.guidedStyle(session) }
     /// A guided style: the composer answers the agent's questions itself.
@@ -98,8 +107,21 @@ struct SessionPaneView: View {
             if !value.isEmpty { return value }
         }
         if store.pendingRuns.contains(session.id), session.status != "running" { return L("composer.placeholder.checkingModels") }
-        if running { return steers ? L("composer.placeholder.busyMac") : L("composer.placeholder.busyQueue") }
+        if running {
+            switch secondSend {
+            case .worktree: return L("composer.placeholder.busyWorktreeMac")
+            case .steer: return L("composer.placeholder.busyMac")
+            case .queue: return L("composer.placeholder.busyQueue")
+            }
+        }
         return session.kind == "shell" ? L("composer.placeholder.shell") : L("composer.placeholder.idle")
+    }
+    private var inputHelpWhileBusy: String {
+        switch secondSend {
+        case .worktree: L("composer.inputHelp.worktree")
+        case .steer: L("composer.inputHelp.steer")
+        case .queue: L("composer.inputHelp.queue")
+        }
     }
     /// The draft while it is a `/name` being typed or a built-in's `/name arg`,
     /// or nil when the palette should be closed.
@@ -606,7 +628,7 @@ struct SessionPaneView: View {
                 QueuedInputsView(sessionID: session.id, held: held, items: queued, running: running || store.hasModal,
                                  onRemove: { store.removeQueuedInput(session.id, itemId: $0) }, onRunNext: { store.runNextQueuedInput(session.id) },
                                  notice: BackgroundQueuePolicy.waitsOnBackground(work: session.backgroundWork, launchesInPlan: store.styleLaunchesInPlanMode(session),
-                                                                                 queued: queued.count) ? L("queue.waitingOnBackground.mac") : nil)
+                                                                                 queued: queued.count) ? L(secondSend == .worktree ? "queue.waitingOnBackground.macWorktree" : "queue.waitingOnBackground.mac") : nil)
                     .padding(.horizontal, DesignMetrics.Inset.composerInnerH).padding(.top, attachments.isEmpty ? DesignMetrics.Spacing.sm : 0)
             }
             if paletteVisible {
@@ -634,7 +656,7 @@ struct SessionPaneView: View {
                     .background(TextEditorHeightReader(inputController: composerInput, height: $editorHeight, placeholder: composerPlaceholder).allowsHitTesting(false))
             }
                 .padding(.horizontal, DesignMetrics.Inset.composerInnerH).padding(.top, attachments.isEmpty && queued.isEmpty ? DesignMetrics.Spacing.sm : 0)
-                .help(running ? (steers ? L("composer.inputHelp.steer") : L("composer.inputHelp.queue")) : L("composer.inputHelp.idle"))
+                .help(running ? inputHelpWhileBusy : L("composer.inputHelp.idle"))
             if importingAttachments {
                 HStack(spacing: DesignMetrics.Spacing.sm) {
                     ProgressView().controlSize(.mini)
@@ -732,6 +754,8 @@ struct SessionPaneView: View {
         .task(id: styleIdentity) { if let style { store.refreshStyle(style, for: session) } }
         // A run may have installed the plugin or written a new cycle folder.
         .onChange(of: running) { _, busy in if !busy, let style { store.refreshStyle(style, for: session) } }
+        // Whether ⌘Enter may promise a new worktree here: asked again as each run starts.
+        .task(id: "\(session.workspaceId)|\(running)") { if running { store.refreshWorktreeReadiness(for: session) } }
         // The first request in the style is where its state sources start (§1.16).
         .onChange(of: session.mightyStyleSince) { _, _ in if let style { store.refreshStyleState(style, for: session) } }
         // A different style means a different catalogue: the group the user
@@ -759,10 +783,10 @@ struct SessionPaneView: View {
 
     private var composerToolbar: some View {
         GeometryReader { geometry in
-            // Stop beside steer and queue, or send alone; the resume mark; the context ring;
+            // Stop beside the second send (new worktree or steer) and queue, or send alone; the resume mark; the context ring;
             // the background-work and status-line toggles of Claude panes.
             let height = ComposerToolbarMetrics.height, gap = ComposerToolbarMetrics.spacing
-            let actionsWidth = (running && canSend ? Self.compactStop + gap + height + (offersSteer ? height + gap : 0) : height) + (session.resumeId == nil ? 0 : 16 + gap) + (session.kind == "shell" ? 0 : height + gap) + (showsBackgroundWorkToggle ? 16 + gap : 0) + (showsStatusLineToggle ? 16 + gap : 0)
+            let actionsWidth = (running && canSend ? Self.compactStop + gap + height + (offersSecondSend ? height + gap : 0) : height) + (session.resumeId == nil ? 0 : 16 + gap) + (session.kind == "shell" ? 0 : height + gap) + (showsBackgroundWorkToggle ? 16 + gap : 0) + (showsStatusLineToggle ? 16 + gap : 0)
             let width = max(0, geometry.size.width - actionsWidth - ComposerToolbarMetrics.spacing)
             let style = ComposerToolbarMetrics.style(width: width, model: selectedModelName, effort: showsEffort ? effortLabel(session.settings.effort) : nil, permission: permissionLabel(session.settings.permissionMode, provider: session.provider), fast: showsFast)
             HStack(alignment: .center, spacing: ComposerToolbarMetrics.spacing) {
@@ -792,8 +816,8 @@ struct SessionPaneView: View {
                     if showsBackgroundWorkToggle { backgroundWorkToggle }
                     if showsStatusLineToggle { statusLineToggle }
                     if running {
-                        // With text waiting, stop shrinks beside the steer and queue
-                        // buttons so Enter and ⌘Enter keep their round buttons.
+                        // With text waiting, stop shrinks beside the second send and
+                        // queue buttons so Enter and ⌘Enter keep their round buttons.
                         let compact = canSend
                         // Concept D: stop is the red square, send the round run blue.
                         Button(action: stopRun) {
@@ -808,11 +832,16 @@ struct SessionPaneView: View {
                         .accessibilityIdentifier("composer-stop-" + session.id)
                         .background(AccessibilityStateProbe(identifier: "composer-stop-" + session.id, enabled: !stopping))
                         // A busy pane offers the draft both ways, each the send button's
-                        // round disc: steer (⌘Enter) hands it to the running turn, queue
-                        // (Enter) waits for the next request, at the far right where send sits.
+                        // round disc: the second send (⌘Enter) runs it now in a new child
+                        // worktree, or hands it to the running turn; queue (Enter) waits
+                        // for the next request, at the far right where send sits.
                         if canSend {
-                            if offersSteer {
-                                roundSendButton(systemImage: "bolt.fill", size: 12, help: L("queue.steerHintMac"), label: L("phone.composer.steer"), identifier: "composer-steer-" + session.id) { submitComposer(command: true) }
+                            if offersSecondSend {
+                                if secondSend == .worktree {
+                                    roundSendButton(systemImage: "arrow.triangle.branch", size: 12, help: L("queue.worktreeHintMac"), label: L("queue.worktree"), identifier: "composer-worktree-" + session.id) { submitComposer(command: true) }
+                                } else {
+                                    roundSendButton(systemImage: "bolt.fill", size: 12, help: L("queue.steerHintMac"), label: L("phone.composer.steer"), identifier: "composer-steer-" + session.id) { submitComposer(command: true) }
+                                }
                             }
                             roundSendButton(systemImage: "text.badge.plus", size: 12, help: L("queue.addHint"), label: L("queue.add"), identifier: "send-" + session.id) { submitComposer() }
                         }
@@ -826,10 +855,10 @@ struct SessionPaneView: View {
         .popover(item: settingsPopover, arrowEdge: .bottom) { selected in RunSettingsView(session: selected).environmentObject(store) }
     }
 
-    /// The stop square beside steer and queue while text waits: 4pt under the toolbar's height.
+    /// The stop square beside the second send and queue while text waits: 4pt under the toolbar's height.
     private static let compactStop = ComposerToolbarMetrics.height - 4
 
-    /// The send button's look, shared by send, steer and queue: the toolbar-high
+    /// The send button's look, shared by send, new worktree, steer and queue: the toolbar-high
     /// circle in run blue while the draft can go, the track grey (and disabled) while not.
     private func roundSendButton(systemImage: String, size: CGFloat, help: String, label: String, identifier: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
@@ -901,7 +930,8 @@ struct SessionPaneView: View {
     /// be prompt text: `/clear` runs, `/model opus` applies the choice, and a
     /// `/model` with no or an unknown argument reopens (or explains) the list.
     /// Enter sends now, or queues for the next request while a run is busy;
-    /// ⌘Enter hands the text to the running Claude turn instead.
+    /// ⌘Enter then does the second send: a new child worktree, or the running
+    /// Claude turn (`ComposerSecondSend`).
     private func submitComposer(command: Bool = false) {
         guard canSend, !store.hasModal else { return }
         if let style {

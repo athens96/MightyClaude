@@ -110,15 +110,25 @@ public struct ChildRecord: Codable, Sendable, Equatable, Identifiable {
     /// The SHA-256 of the whole REPORT.md at the current revision, so only a
     /// changed report makes the next one. nil before the first report.
     public var reportDigest: String?
+    /// True for a child the human started from its parent's composer (the
+    /// second send), not by the parent's delegate call. Its parent's run
+    /// never asked for it, so it sends the parent no notices: the human
+    /// merges or discards it from its card. nil (agent-made) in every record
+    /// kept before it was stored.
+    public var startedByHuman: Bool?
 
-    public init(id: String, parentSessionId: String, worktreePath: String, parentBranch: String, baseCommit: String, startingMode: String, requestKey: String, followUpCount: Int = 0, reportRevision: Int = 0, reportHead: String? = nil, state: ChildState = .creating, parentCheckout: String? = nil) {
+    public init(id: String, parentSessionId: String, worktreePath: String, parentBranch: String, baseCommit: String, startingMode: String, requestKey: String, followUpCount: Int = 0, reportRevision: Int = 0, reportHead: String? = nil, state: ChildState = .creating, parentCheckout: String? = nil, startedByHuman: Bool? = nil) {
         self.id = id; self.parentSessionId = parentSessionId; self.worktreePath = worktreePath; branch = Self.branchName(for: id)
         self.parentBranch = parentBranch; self.baseCommit = baseCommit; self.startingMode = startingMode; self.requestKey = requestKey
         self.followUpCount = followUpCount; self.reportRevision = reportRevision; self.reportHead = reportHead; self.state = state
-        self.parentCheckout = parentCheckout
+        self.parentCheckout = parentCheckout; self.startedByHuman = startedByHuman
     }
 
     public static func branchName(for sessionId: String) -> String { "mighty/" + sessionId }
+
+    /// Whether the child's events send its parent notices: only a child its
+    /// parent's delegate call made.
+    public var notifiesParent: Bool { startedByHuman != true }
 
     /// Moves the child by `event`. A refused event changes nothing and returns false.
     @discardableResult public mutating func apply(_ event: ChildStateEvent) -> Bool {

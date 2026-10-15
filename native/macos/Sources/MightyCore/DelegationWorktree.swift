@@ -42,6 +42,17 @@ public enum ChildWorktreeCheck: Sendable, Equatable {
     case ready(ChildWorktreeBase)
     /// Refused before anything was made.
     case refused(DelegationReasonCode)
+
+    /// Whether the folder is a git checkout that can host a child worktree:
+    /// a repository with a branch checked out that has a commit. Free disk
+    /// changes from minute to minute, so a low disk still counts as one; the
+    /// child's own check refuses it then.
+    public var canHostWorktree: Bool {
+        switch self {
+        case .ready, .refused(.lowDisk): true
+        case .refused: false
+        }
+    }
 }
 
 public enum ChildWorktreeOutcome: Sendable, Equatable {

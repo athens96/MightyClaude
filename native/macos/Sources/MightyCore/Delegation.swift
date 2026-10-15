@@ -1,24 +1,57 @@
 import Foundation
 
-/// The hidden switch for parent → child delegation between Claude panes
-/// (macOS only). It is a defaults key with no settings UI and is off by
-/// default:
+/// The switch for parent → child delegation between Claude panes (macOS
+/// only). It is on unless the human turned it off, in Settings › General or
+/// with its defaults key:
 ///
-///     defaults write dev.mightyclaude.native delegation.enabled -bool true
+///     defaults write dev.mightyclaude.native delegation.enabled -bool false
 ///
 /// While it is on, each new run in a Claude pane also gets the delegation MCP
-/// server (``DelegationMCPServer``) beside mighty-terminal. While it is off, no
-/// run gets it and delegation calls reach nothing. Turning it off only detaches
-/// the server.
+/// server (``DelegationMCPServer``) beside mighty-terminal, and the Mac
+/// composer's second send on a busy Claude pane runs the text in a new child
+/// worktree (``ComposerSecondSend``). While it is off, no run gets the server,
+/// delegation calls reach nothing and the second send steers as before.
+/// Turning it off only detaches the server: existing children keep working.
 public enum DelegationSwitch {
     public static let defaultsKey = "delegation.enabled"
 
-    /// Read at each run start and at each delegation call. A missing key is off.
-    public static func isOn(_ defaults: UserDefaults = .standard) -> Bool { defaults.bool(forKey: defaultsKey) }
+    /// Read at each run start, at each delegation call and by the composer.
+    /// A missing key is on; a stored one reads as defaults reads a Bool.
+    public static func isOn(_ defaults: UserDefaults = .standard) -> Bool { defaults.object(forKey: defaultsKey) == nil || defaults.bool(forKey: defaultsKey) }
 
     /// A Claude pane: an agent pane (kind claude) running the Claude CLI. Only
     /// these get the delegation server or may call it.
     public static func isClaudePane(kind: String, provider: String) -> Bool { kind == SessionKind.claude && provider == "claude" }
+}
+
+/// What the Mac composer's second send (⌘Enter, and its round button) does
+/// with the text while the pane is busy. Enter always queues it as the next
+/// request; the phone's send modes do not go through this.
+public enum ComposerSecondSend: String, Sendable, CaseIterable {
+    /// A new child Claude pane in its own worktree, beside this one, runs the
+    /// text now (``DelegationCoordinator/startHumanChild(_:parentId:start:)``).
+    case worktree
+    /// The text joins the running Claude turn.
+    case steer
+    /// The text waits for the next request, as Enter does.
+    case queue
+
+    /// The first rule that applies: a Claude pane that may have children
+    /// (delegation on, not a child itself) in a folder that can host a child
+    /// worktree (``ChildWorktreeCheck/canHostWorktree``) opens a new worktree;
+    /// any other pane whose running turn takes text steers (a delegated
+    /// child, a Claude pane with delegation off or outside a usable git
+    /// checkout); every other pane (Codex, Antigravity) queues.
+    public static func choose(kind: String, provider: String, isChild: Bool, delegationOn: Bool, canHostWorktree: Bool, steerable: Bool) -> ComposerSecondSend {
+        if delegationOn, !isChild, canHostWorktree, DelegationSwitch.isClaudePane(kind: kind, provider: provider) { return .worktree }
+        return steerable ? .steer : .queue
+    }
+
+    /// What a text does when its new worktree could not be made or its child
+    /// could not start: it goes to the running turn when that can take it,
+    /// and is otherwise the pane's next request, as Enter would make it. It
+    /// is never dropped.
+    public static func fallback(steerable: Bool) -> ComposerSecondSend { steerable ? .steer : .queue }
 }
 
 /// Why a delegation call was refused. A refused call carries exactly one of
@@ -49,6 +82,9 @@ public enum DelegationReasonCode: String, Codable, Sendable, CaseIterable {
     case parentBusy = "parent_busy"
     case workspaceHasChildren = "workspace_has_children"
     case heldNotRemovable = "held_not_removable"
+    /// The child was started by the human from its parent's composer, not by
+    /// the parent's delegate call: only the human merges it or sends it work.
+    case humanStarted = "human_started"
 }
 
 /// One delegation tool call forwarded by the delegation MCP server. Like

@@ -101,6 +101,9 @@ extension DelegationCoordinator {
     ///    parent awaits (delegate's first run, or the run a follow-up went
     ///    to) the parent gets one ended_without_report notice.
     ///
+    /// A child the human started (``ChildRecord/startedByHuman``) is recorded
+    /// the same way but never sends its parent a notice.
+    ///
     /// Only the run going now is recorded, or the child's first run, whose
     /// start the host may not have reported yet. A second report of the same
     /// end, or the end of any other run, changes nothing. The notice sent, if
@@ -139,10 +142,10 @@ extension DelegationCoordinator {
         } else if let report, let head, report.digest != child.reportDigest, child.recordReport(head: head) {
             child.reportDigest = report.digest
             next.setCopy(DelegationCopy(childId: id, kind: .report, revision: child.reportRevision, contents: report.start, totalBytes: report.totalBytes))
-            notice = Notice(id: UUID().uuidString.lowercased(), childId: id, reportRevision: child.reportRevision, kind: .reported)
+            if child.notifiesParent { notice = Notice(id: UUID().uuidString.lowercased(), childId: id, reportRevision: child.reportRevision, kind: .reported) }
         } else {
             child.apply(.endWithoutReport)
-            if child.awaitedRunId == runId { notice = Notice(id: UUID().uuidString.lowercased(), childId: id, reportRevision: child.reportRevision, kind: .endedWithoutReport) }
+            if child.awaitedRunId == runId, child.notifiesParent { notice = Notice(id: UUID().uuidString.lowercased(), childId: id, reportRevision: child.reportRevision, kind: .endedWithoutReport) }
         }
         next.children[index] = child
         if let notice { next.notices.append(notice) }
@@ -177,7 +180,7 @@ extension DelegationCoordinator {
         var next = file
         var child = next.children[index]
         var notice: Notice?
-        if child.runId == runId, child.state == .ended {
+        if child.runId == runId, child.state == .ended, child.notifiesParent {
             let sent = Notice(id: UUID().uuidString.lowercased(), childId: id, reportRevision: child.reportRevision, kind: .endedWithoutReport)
             next.notices.append(sent); notice = sent
         } else if child.runId != runId, Self.isIdleBetweenRuns(child.state) {

@@ -286,7 +286,7 @@ final class AppStore: ObservableObject, DelegationHost {
     /// How runs launch their per-pane MCP server; nil until the agent IO socket listens.
     var agentIOLocation: PaneMCPServerLocation?
     /// Parent → child delegation between Claude panes: its records, tools,
-    /// delivery and git actions. Made at load whether or not the hidden switch
+    /// delivery and git actions. Made at load whether or not the delegation switch
     /// is on, so existing children keep working; nil when its file is unreadable.
     var delegation: DelegationCoordinator?
     /// Child panes' run starts and ends on their way to `delegation`, in order.
@@ -294,6 +294,12 @@ final class AppStore: ObservableObject, DelegationHost {
     /// The id of each pane's run as delegation names it, and which panes
     /// finished their last run normally since this launch.
     var delegationRuns = DelegationRunLedger()
+    /// Whether each folder a top-level Claude pane runs in can host a child
+    /// worktree (``ChildWorktreeCheck/canHostWorktree``), as last checked; a
+    /// folder not checked yet reads as no, so ⌘Enter never promises one there.
+    @Published var worktreeReadiness: [String: Bool] = [:]
+    /// The folders whose readiness check is going.
+    var worktreeReadinessChecks: Set<String> = []
     /// The delegated children as the sidebar lists them, as `delegation`'s
     /// file has them; empty while it is unavailable.
     @Published var delegationChildren: [DelegationChildRow] = []
@@ -754,8 +760,10 @@ final class AppStore: ObservableObject, DelegationHost {
         refreshModels(for: id, invalidate: true)
     }
 
-    /// `steering`: while a run is busy, hand the text to the running Claude
-    /// turn (⌘Enter) instead of queueing it for the next request (Enter).
+    /// `steering`: the second send (⌘Enter) while a run is busy, which does
+    /// what ``composerSecondSend(_:)`` says — runs the text in a new child
+    /// worktree, hands it to the running Claude turn, or queues it — instead
+    /// of queueing it for the next request (Enter).
     func submit(_ id: String, steering: Bool = false) {
         guard !ending, !closingSessions.contains(id), !importingAttachments.contains(id), let session = snapshot.sessions.first(where: { $0.id == id }),
               let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return }
@@ -768,6 +776,11 @@ final class AppStore: ObservableObject, DelegationHost {
         let held = backgroundUpdateHolds(session)
         if session.status == "running" || pendingRuns.contains(id) || held {
             if held { heldForUpdate.insert(id) }
+            // A new worktree needs written words for its task; files alone wait.
+            if steering, !held, !input.isEmpty, composerSecondSend(session) == .worktree {
+                runInNewWorktree(id, input: input, attachments: attachments, draft: originalDraft)
+                return
+            }
             // A turn that is over but still running background agents takes new
             // input in the same process; the queue is the fallback. A plan-mode
             // style's new request waits and starts fresh in plan mode (§1.17.4).
@@ -780,6 +793,16 @@ final class AppStore: ObservableObject, DelegationHost {
         // Items held for the pane go first, in this one run.
         if !(delegationHeld[id] ?? []).isEmpty { releaseHeld(id, input: input, attachments: attachments, from: .composer(draft: originalDraft)); return }
         start(id, session: session, workspace: workspace, input: input, attachments: attachments, restoringDraft: originalDraft)
+    }
+
+    /// What the composer's second send does with the text while the pane is
+    /// busy: a new child worktree for a Claude pane that may have children
+    /// (delegation on and loaded), otherwise steer or queue as before.
+    func composerSecondSend(_ session: RunSession) -> ComposerSecondSend {
+        ComposerSecondSend.choose(kind: session.kind, provider: session.provider,
+                                  isChild: session.parentSessionId != nil || delegationChildren.contains { $0.id == session.id },
+                                  delegationOn: delegation != nil && DelegationSwitch.isOn(),
+                                  canHostWorktree: worktreeHostFolder(session).flatMap { worktreeReadiness[$0] } == true, steerable: canSteer(session))
     }
 
     /// A local Claude run reads follow-ups on its open stdin frame, so the text
@@ -796,12 +819,16 @@ final class AppStore: ObservableObject, DelegationHost {
         case steering(Task<SubmitOutcome, Never>)
     }
 
+    /// `takingDraft` false: the text left the composer earlier, so a draft
+    /// typed since is left as it is.
     @discardableResult
-    func deferInput(_ id: String, session: RunSession, workspace: Workspace, item: QueuedInput, steering: Bool = true) -> DeferOutcome {
+    func deferInput(_ id: String, session: RunSession, workspace: Workspace, item: QueuedInput, steering: Bool = true, takingDraft: Bool = true) -> DeferOutcome {
         guard (queuedInputs[id]?.count ?? 0) < QueuedInput.maximumItems else { error = L("queue.fullCount", ["count": "\(QueuedInput.maximumItems)"]); return .refused }
-        drafts[id] = ""
-        let submittedIds = Set(item.attachments.map(\.id))
-        attachmentDrafts[id]?.removeAll { submittedIds.contains($0.id) }
+        if takingDraft {
+            drafts[id] = ""
+            let submittedIds = Set(item.attachments.map(\.id))
+            attachmentDrafts[id]?.removeAll { submittedIds.contains($0.id) }
+        }
         guard steering, canSteer(session), item.attachments.isEmpty else {
             queuedInputs[id, default: []].append(item)
             return .queued
@@ -1686,15 +1713,22 @@ final class AppStore: ObservableObject, DelegationHost {
         let actionIdentifier = (running ? "composer-stop-" : "send-") + sessionId
         let absentIdentifier = (running ? "send-" : "composer-stop-") + sessionId
         func secondaryMatches(_ value: Bool?) -> Bool { sendsWhileRunning ? value == true : value == nil }
-        // Steer stands beside queue, enabled, exactly while that draft can go, carries
-        // no files and the pane can steer.
+        // The second send stands beside queue, enabled, exactly while that draft can
+        // go: a new worktree for written text in a Claude pane that may have children,
+        // otherwise steer for a draft with no files in a pane that can steer.
+        let secondSend = composerSecondSend(snapshot.sessions.first { $0.id == sessionId } ?? session)
         func steerMatches(_ value: Bool?) -> Bool {
-            let steers = sendsWhileRunning && (attachmentDrafts[sessionId] ?? []).isEmpty && canSteer(snapshot.sessions.first { $0.id == sessionId } ?? session)
+            let steers = sendsWhileRunning && (attachmentDrafts[sessionId] ?? []).isEmpty && secondSend == .steer
             return steers ? value == true : value == nil
+        }
+        func worktreeMatches(_ value: Bool?) -> Bool {
+            let shown = sendsWhileRunning && secondSend == .worktree && !(drafts[sessionId] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            return shown ? value == true : value == nil
         }
         var action: Bool?
         var duplicate: Bool?
         var steer: Bool?
+        var worktree: Bool?
         let actionDeadline = Date().addingTimeInterval(3)
         repeat {
             // SwiftUI publishes virtual accessibility children after the layout
@@ -1704,7 +1738,8 @@ final class AppStore: ObservableObject, DelegationHost {
             action = smokeAccessibilityElement(window, identifier: actionIdentifier, tree: &tree)
             duplicate = smokeAccessibilityElement(window, identifier: absentIdentifier, tree: &tree)
             steer = smokeAccessibilityElement(window, identifier: "composer-steer-" + sessionId, tree: &tree)
-            if action == (running || expectedSendEnabled), secondaryMatches(duplicate), steerMatches(steer) { break }
+            worktree = smokeAccessibilityElement(window, identifier: "composer-worktree-" + sessionId, tree: &tree)
+            if action == (running || expectedSendEnabled), secondaryMatches(duplicate), steerMatches(steer), worktreeMatches(worktree) { break }
             try await Task.sleep(for: .milliseconds(50))
         } while Date() < actionDeadline
         diagnostic["primaryAction"] = running ? "stop" : "send"
@@ -1713,8 +1748,10 @@ final class AppStore: ObservableObject, DelegationHost {
         diagnostic["sendWhileRunning"] = sendsWhileRunning
         diagnostic["steerShown"] = steer != nil
         diagnostic["steerMatchesState"] = steerMatches(steer)
+        diagnostic["worktreeShown"] = worktree != nil
+        diagnostic["worktreeMatchesState"] = worktreeMatches(worktree)
         report(diagnostic)
-        guard let action, secondaryMatches(duplicate), steerMatches(steer) else {
+        guard let action, secondaryMatches(duplicate), steerMatches(steer), worktreeMatches(worktree) else {
             let data = try JSONSerialization.data(withJSONObject: tree, options: [.prettyPrinted, .sortedKeys])
             try data.write(to: dataDirectory.appendingPathComponent("composer-accessibility.json"), options: .atomic)
             throw MightyError("단일 실행·중지 버튼의 접근성 상태를 확인하지 못했습니다.")

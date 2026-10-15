@@ -40,17 +40,20 @@ public struct DelegationChildStatus: Codable, Sendable, Equatable {
 /// Both only read the delegation file, so neither changes anything.
 extension DelegationCoordinator {
     /// list_children from `caller`: its children in the order they were made,
-    /// each with its id, state and current report revision. None is an empty list.
+    /// each with its id, state and current report revision. None is an empty
+    /// list. A child the human started from the caller's composer is the
+    /// human's, not the caller's, and is not listed.
     func listChildren(caller: PaneMCPBinding) -> DelegationResponse {
-        DelegationResponse(children: file.children.filter { $0.parentSessionId == caller.agentPaneId }.map(DelegationChildSummary.init))
+        DelegationResponse(children: file.children.filter { $0.parentSessionId == caller.agentPaneId && $0.notifiesParent }.map(DelegationChildSummary.init))
     }
 
     /// child_status(child) from `caller`: that child's state, the head of its
     /// current report and that report's body. An id that is not one of the
-    /// caller's children is answered with an error.
+    /// caller's children, a child the human started among them, is answered
+    /// with an error.
     func childStatus(_ id: String, caller: PaneMCPBinding) -> DelegationResponse {
         let id = id.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let child = file.children.first(where: { $0.id == id && $0.parentSessionId == caller.agentPaneId }) else { return .failure(Self.notYourChildMessage(id)) }
+        guard let child = file.children.first(where: { $0.id == id && $0.parentSessionId == caller.agentPaneId && $0.notifiesParent }) else { return .failure(Self.notYourChildMessage(id)) }
         return DelegationResponse(status: DelegationChildStatus(child, report: file.copy(childId: child.id, kind: .report)))
     }
 

@@ -30,7 +30,7 @@ public struct PaneMCPBinding: Sendable, Equatable, CustomStringConvertible, Cust
     /// The pane's kind. Bindings are only made for agent-pane runs.
     public let kind: String
     /// Whether this run also gets the delegation MCP server (``DelegationMCPServer``)
-    /// on the same token: only a Claude pane's run started while the hidden
+    /// on the same token: only a Claude pane's run started while the
     /// ``DelegationSwitch`` was on.
     public let delegation: Bool
 
