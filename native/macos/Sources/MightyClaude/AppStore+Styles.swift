@@ -133,6 +133,8 @@ extension AppStore {
         // found by the workspace they were read in.
         for (id, entry) in styleFileReadings where entry.key.workspacePath == workspace.path { forgetStyleState(id) }
         styleStateWatchers.removeValue(forKey: workspace.path)
+        // Its children's worktrees are watched under their own paths.
+        pruneStyleStateWatchers()
         stylePrerequisites = stylePrerequisites.filter { $0.key.workspacePath != workspace.path }
         stylePrerequisiteAgain = stylePrerequisiteAgain.filter { $0.workspacePath != workspace.path }
         // The rescan is what drops that workspace's discovered files, and with
@@ -204,11 +206,13 @@ extension AppStore {
     // MARK: State sources (§1.16)
 
     /// Nil when the style declares no file source or the pane has no local
-    /// workspace: there is nothing on disk to read then.
+    /// workspace: there is nothing on disk to read then. A delegated child's
+    /// state is read in its worktree, where its runs write it.
     func styleStateKey(_ style: RegisteredStyle, for session: RunSession) -> StyleStateKey? {
         guard let sources = style.manifest.stateSources, !sources.files.isEmpty,
               let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return nil }
-        return StyleStateKey(styleHash: style.hash, workspacePath: workspace.path, since: session.mightyStyleSince)
+        let path = DelegationPanes.runWorkspace(for: session, in: workspace).path
+        return StyleStateKey(styleHash: style.hash, workspacePath: path, since: session.mightyStyleSince)
     }
 
     /// The file readings for the pane as it stands; a reading made for another
