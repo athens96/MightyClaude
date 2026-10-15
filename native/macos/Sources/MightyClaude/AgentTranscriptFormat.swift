@@ -149,6 +149,15 @@ enum AgentTranscriptFormat {
         return NSAttributedString(attachment: attachment)
     }
 
+    /// A paragraph text block needs an explicit content width. Left unset, TextKit 1
+    /// (seen on macOS 26) lays the block out zero wide: its bounds stay empty, so
+    /// `drawBackground` is never called and no fill, border or rounded rect is painted,
+    /// which left the user's card-coloured words on the bare page. 100% of what the
+    /// margins, border and padding leave is the width the blocks always meant.
+    nonisolated static func fillWidth(_ block: NSTextBlock) {
+        block.setContentWidth(100, type: .percentageValueType)
+    }
+
     private static func symbol(_ name: String, color: NSColor) -> NSAttributedString {
         guard let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 11, weight: .medium).applying(.init(paletteColors: [color]))) else { return NSAttributedString(string: "•") }
         let attachment = NSTextAttachment()
@@ -366,6 +375,7 @@ enum AgentTranscriptFormat {
                 else { code(block.plainText, language: language, indent: indent) }
             case .blockQuote:
                 let border = NSTextBlock()
+                AgentTranscriptFormat.fillWidth(border)
                 border.setWidth(DesignMetrics.Inset.quote, type: .absoluteValueType, for: .padding)
                 border.setWidth(3, type: .absoluteValueType, for: .border, edge: .minX)
                 border.setBorderColor(Palette.nsToken(\.accent, alpha: 0.55), for: .minX)
@@ -424,6 +434,7 @@ enum AgentTranscriptFormat {
 
         func box(background: NSColor, border: NSColor = .separatorColor) -> NSTextBlock {
             let block = NSTextBlock()
+            AgentTranscriptFormat.fillWidth(block)
             block.backgroundColor = background
             block.setWidth(DesignMetrics.Inset.codeBlock, type: .absoluteValueType, for: .padding)
             block.setWidth(0.5, type: .absoluteValueType, for: .border)
@@ -485,6 +496,12 @@ enum AgentTranscriptFormat {
 /// count); only the painting differs, so selection and copying are unchanged.
 final class RoundedTextBlock: NSTextBlock {
     static let radius: CGFloat = 11
+
+    override init() {
+        super.init()
+        AgentTranscriptFormat.fillWidth(self)
+    }
+    required init?(coder: NSCoder) { super.init(coder: coder) }
 
     override func drawBackground(withFrame frameRect: NSRect, in controlView: NSView?, characterRange charRange: NSRange, layoutManager: NSLayoutManager) {
         // A margin may be a percentage (the user bubble keeps the right 85%); the text
