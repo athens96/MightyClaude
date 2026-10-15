@@ -91,5 +91,5 @@ Claude, Codex, Antigravity 창을 추가할 때 이 폴더에 이전 세션이 �
 | {{kbd:⌘,}} | {{ui:menu.settings}} |
 | {{kbd:Enter}} | 요청 보내기 |
 | {{kbd:⇧Enter}} | 줄바꿈 |
-| {{kbd:⌘Enter}} | 새 worktree에서 바로 실행([에이전트 위임](delegation.md#worktree)이 켜진, git 저장소의 Claude 창). 그 밖에는 실행 중인 Claude에 바로 전달 |
+| {{kbd:⌘Enter}} | 새 worktree에서 바로 실행([마이티 오케스트레이션](delegation.md#worktree)이 켜진, git 저장소의 Claude 창). 그 밖에는 실행 중인 Claude에 바로 전달 |
 | {{kbd:Esc}} | 시트 닫기, 슬래시 목록 닫기 |
