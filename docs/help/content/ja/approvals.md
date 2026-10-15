@@ -43,7 +43,7 @@ CLIのサインインの有効期限が切れてリクエストが失敗する�
 Claudeは、時間のかかるコマンドやサブエージェントをバックグラウンドで実行することがあります。この場合、Claudeの応答が終わっても作業が残っています。
 - 入力欄の上に、ターンは終わったもののバックグラウンドタスクが実行中であることを示す行が表示されます。{{ui:plan.background.show}}をクリックすると、タスクごとの種類、状態、経過時間を確認できます。
 - Mighty表示では{{ui:graph.block.task}}ブロックとして表示されます。
-- この間に送信したリクエストは、バックグラウンドタスクが終わってから始まります。すぐに割り込ませるには{{kbd:⌘Enter}}を押します。[エージェント委任](delegation.md#worktree)がオンで、gitリポジトリにあるClaudeペインでは、{{kbd:⌘Enter}}は代わりに新しいworktreeですぐ実行します。
+- この間に送信したリクエストは、バックグラウンドタスクが終わってから始まります。すぐに割り込ませるには{{kbd:⌘Enter}}を押します。[Mightyオーケストレーション](delegation.md#worktree)がオンで、gitリポジトリにあるClaudeペインでは、{{kbd:⌘Enter}}は代わりに新しいworktreeですぐ実行します。
 - この行が邪魔なときは、右側の目のボタン（{{ui:plan.background.hideStrip}}）をクリックします。すべてのペインで行が消え、バックグラウンドタスクはそのまま実行されます。
 - もう一度表示するには、入力欄の右にある{{ui:composer.backgroundWork.name}}のボタンを押します。「{{ui:menu.settings}} → {{ui:settings.nav.general}} → {{ui:settings.display.sectionTitle}}」で{{ui:settings.display.backgroundWorkToggle}}をオンにするか、ペインの「…」メニューで{{ui:pane.menu.backgroundWork}}を選んでも表示できます。行を開いたままにしたかどうかも記憶されます。
 

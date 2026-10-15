@@ -91,5 +91,5 @@ section: layout
 | {{kbd:⌘,}} | {{ui:menu.settings}} |
 | {{kbd:Enter}} | 发送请求 |
 | {{kbd:⇧Enter}} | 换行 |
-| {{kbd:⌘Enter}} | 立即在新的 worktree 中运行（开启了[智能体委派](delegation.md#worktree)、位于 git 仓库中的 Claude 窗格）；否则立即发送给正在运行的 Claude |
+| {{kbd:⌘Enter}} | 立即在新的 worktree 中运行（开启了[Mighty 编排](delegation.md#worktree)、位于 git 仓库中的 Claude 窗格）；否则立即发送给正在运行的 Claude |
 | {{kbd:Esc}} | 关闭弹出面板、关闭斜杠命令列表 |

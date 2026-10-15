@@ -1,9 +1,9 @@
 ---
-title: Agent delegation
+title: Mighty Orchestration
 order: 6
 section: delegation
 ---
-With agent delegation, a Claude pane (the parent) splits its work and hands parts of it to other Claude panes (its children). Each child works in its own git worktree and leaves a report when it is done. The parent gets a notice, reads the report and decides whether to merge the result. It works in the Mac app and the Windows app. On the Mac you can also start a child yourself, from the composer of a running Claude pane ([Run in a new worktree](#worktree)).
+With Mighty Orchestration, a Claude pane (the parent) splits its work and hands parts of it to other Claude panes (its children). Each child works in its own git worktree and leaves a report when it is done. The parent gets a notice, reads the report and decides whether to merge the result. It works in the Mac app and the Windows app. On the Mac you can also start a child yourself, from the composer of a running Claude pane ([Run in a new worktree](#worktree)). It used to be called agent delegation.
 
 > [!warning]
 > This is an experimental feature. On the Mac it is on by default and can be turned off in Settings; on Windows it is off by default and has no settings screen. Try it in a practice repository first.
@@ -52,7 +52,7 @@ On Windows it is on while the `delegation.enabled` value (REG_DWORD) under `HKEY
 - Its first message is your text, followed by a note from the app on where the child works, asking it to commit and write REPORT.md when it is done, so that its card can merge it. A slash command (text starting with `/`) runs alone, as you typed it, and the note follows as the child's next request, so it never becomes the command's arguments.
 - The parent gets no notices about a child you started, since it never asked for it, and its tools neither list it nor merge it or send it follow-ups (`human_started`). Follow its state in the sidebar and use its card's {{ui:delegation.card.merge}} and {{ui:delegation.card.discard}} buttons yourself.
 - When the child cannot be made or cannot start after all (the pane already has 3 open children you started, the disk is low, its worktree or first run fails, and so on), the pane's transcript says why. Your text then goes to the running Claude if it can take it (no attachments), and otherwise becomes the pane's next request, as {{kbd:Enter}} would make it; with the queue full it goes back to the composer. A child that failed to start stays listed until you discard it from its card.
-- In a child pane, or with delegation turned off, {{kbd:⌘Enter}} sends to the running Claude as before, and Codex and Antigravity panes keep queuing. The phone's send modes are unchanged: sending now from the phone still goes to the running Claude.
+- In a child pane, or with Mighty Orchestration turned off, {{kbd:⌘Enter}} sends to the running Claude as before, and Codex and Antigravity panes keep queuing. The phone's send modes are unchanged: sending now from the phone still goes to the running Claude.
 
 ## A child's state {#states}
 The sidebar shows each child's state.
