@@ -187,7 +187,7 @@ struct StatusBarUsageView: View {
                 Text(controller.refreshing ? L("windows.accountUsage.chipChecking") : "—").foregroundStyle(.secondary)
             }
         }
-        .font(.system(size: 10)).padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xxs)
+        .font(.ui(size: 10)).padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xxs)
         .background(Palette.subtle, in: Capsule())
         .accessibilityIdentifier("statusbar-usage-\(provider)")
     }
@@ -215,7 +215,7 @@ struct StatusBarUsageDetails: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
             HStack {
-                Label(L("windows.accountUsage.title"), systemImage: "chart.pie").font(.system(size: 13, weight: .semibold))
+                Label(L("windows.accountUsage.title"), systemImage: "chart.pie").font(.ui(size: 13, weight: .semibold))
                 Spacer()
                 Button { controller.refresh(force: true, interactive: true) } label: {
                     if controller.refreshing { ProgressView().controlSize(.mini) } else { Image(systemName: "arrow.clockwise") }
@@ -227,15 +227,15 @@ struct StatusBarUsageDetails: View {
             if controller.providers.contains("claude") {
                 Toggle(isOn: $controller.claudeKeychainEnabled) {
                     VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
-                        Text(L("usage.keychain.toggle")).font(.system(size: 11))
-                        Text(L("usage.keychain.toggleDescription")).font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        Text(L("usage.keychain.toggle")).font(.ui(size: 11))
+                        Text(L("usage.keychain.toggleDescription")).font(.ui(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 .toggleStyle(.switch).controlSize(.mini)
                 .accessibilityIdentifier("statusbar-usage-keychain-toggle")
             }
             Text(L("usage.sharedNoteMac"))
-                .font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                .font(.ui(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .padding(DesignMetrics.Inset.popover).frame(width: 320)
         .accessibilityIdentifier("statusbar-usage-details")
@@ -246,11 +246,11 @@ struct StatusBarUsageDetails: View {
         return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 ProviderIcon(provider: provider, size: 12)
-                Text(ProviderOptions.label(provider)).font(.system(size: 12, weight: .semibold))
+                Text(ProviderOptions.label(provider)).font(.ui(size: 12, weight: .semibold))
                 if ProviderOptions.isBeta(provider) { BetaBadge() }
                 Spacer()
                 if let usage, usage.accountLabel != nil || usage.plan != nil {
-                    Text([usage.accountLabel, usage.plan].compactMap { $0 }.joined(separator: " · ")).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                    Text([usage.accountLabel, usage.plan].compactMap { $0 }.joined(separator: " · ")).font(.ui(size: 10)).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
             if let usage {
@@ -260,15 +260,15 @@ struct StatusBarUsageDetails: View {
                             Text(StatusBarUsageView.windowLabel(window.kind) + (window.windowMinutes.map { $0 == 300 ? L("windows.accountUsage.windowFiveHourSuffix") : $0 == 10080 ? L("windows.accountUsage.windowSevenDaySuffix") : "" } ?? ""))
                             Spacer()
                             Text(L("usage.usedSuffix", ["percent": StatusBarUsageView.percent(window.usedPercent)])).monospacedDigit()
-                        }.font(.system(size: 11))
+                        }.font(.ui(size: 11))
                         ProgressView(value: min(1, max(0, window.usedPercent / 100))).tint(window.usedPercent >= 90 ? Palette.waitText : Palette.accent)
                         if let reset = window.resetsAt, let date = AccountUsageStatusController.date(reset) {
-                            Text(L("windows.accountUsage.resetTemplate", ["date": date.formatted(date: .abbreviated, time: .shortened)])).font(.system(size: 10)).foregroundStyle(.secondary)
+                            Text(L("windows.accountUsage.resetTemplate", ["date": date.formatted(date: .abbreviated, time: .shortened)])).font(.ui(size: 10)).foregroundStyle(.secondary)
                         }
                     }
                 }
                 if usage.status != "available" || usage.windows.isEmpty {
-                    Text(usage.detail).font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Text(usage.detail).font(.ui(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 if usage.status == "permission" {
                     Button { controller.refresh(force: true, interactive: true) } label: { Label(L("usage.keychain.allowAndCheck"), systemImage: "key") }
@@ -278,12 +278,12 @@ struct StatusBarUsageDetails: View {
                 resetSection(provider: provider, usage: usage)
                 if let fetched = usage.fetchedAt, let date = AccountUsageStatusController.date(fetched) {
                     Text((["error", "stale"].contains(usage.status) ? L("windows.accountUsage.lastKnownPrefix") : "") + L("windows.accountUsage.checkedAtTemplate", ["time": date.formatted(date: .omitted, time: .shortened)]))
-                        .font(.system(size: 9)).foregroundStyle(.tertiary)
+                        .font(.ui(size: 9)).foregroundStyle(.tertiary)
                 }
             } else if provider == "claude", !controller.claudeKeychainEnabled {
-                Text(L("windows.accountUsage.claudeBeforeFirstRunNote")).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text(L("windows.accountUsage.claudeBeforeFirstRunNote")).font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             } else {
-                Text(controller.refreshing ? L("windows.accountUsage.cardChecking") : L("windows.accountUsage.cardNotCheckedYet")).font(.system(size: 11)).foregroundStyle(.secondary)
+                Text(controller.refreshing ? L("windows.accountUsage.cardChecking") : L("windows.accountUsage.cardNotCheckedYet")).font(.ui(size: 11)).foregroundStyle(.secondary)
             }
         }
         .padding(DesignMetrics.Spacing.md).frame(maxWidth: .infinity, alignment: .leading)
@@ -302,18 +302,18 @@ struct StatusBarUsageDetails: View {
         if !rows.isEmpty {
             Divider()
             VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
-                Text(L("usage.reset.title")).font(.system(size: 11, weight: .medium))
+                Text(L("usage.reset.title")).font(.ui(size: 11, weight: .medium))
                 ForEach(rows) { row in
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(row.label).font(.system(size: 10)).foregroundStyle(.secondary)
-                        Text(row.line).font(.system(size: 11)).fixedSize(horizontal: false, vertical: true)
+                        Text(row.label).font(.ui(size: 10)).foregroundStyle(.secondary)
+                        Text(row.line).font(.ui(size: 11)).fixedSize(horizontal: false, vertical: true)
                     }
                     .accessibilityIdentifier("statusbar-usage-reset-\(row.program)")
                 }
                 // There is no reset button: the only action is this link, and
                 // it is live in every one of the seven states.
                 Link(AccountResetEntitlement.linkLabel, destination: URL(string: AccountResetEntitlement.linkTarget)!)
-                    .font(.system(size: 11))
+                    .font(.ui(size: 11))
                     .accessibilityIdentifier("statusbar-usage-reset-link")
             }
         }

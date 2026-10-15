@@ -344,7 +344,7 @@ private struct AgentImageViewerView: View {
             HStack(spacing: DesignMetrics.Spacing.md) {
                 if let picture {
                     Text(L("files.image.pixels", ["width": "\(Int(picture.pixelSize.width))", "height": "\(Int(picture.pixelSize.height))"]))
-                        .font(.system(size: 11)).foregroundStyle(.secondary).monospacedDigit()
+                        .font(.ui(size: 11)).foregroundStyle(.secondary).monospacedDigit()
                 }
                 Spacer()
                 if let picture {
@@ -360,7 +360,7 @@ private struct AgentImageViewerView: View {
                     Image(nsImage: picture.image).resizable().interpolation(.high).scaledToFit().padding(DesignMetrics.Spacing.md)
                         .accessibilityLabel(key.label)
                 } else {
-                    Text(finished ? L("images.missing") : L("images.loading")).font(.system(size: 12)).foregroundStyle(.secondary)
+                    Text(finished ? L("images.missing") : L("images.loading")).font(.ui(size: 12)).foregroundStyle(.secondary)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

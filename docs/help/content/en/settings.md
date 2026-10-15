@@ -16,6 +16,14 @@ Under {{ui:settings.display.sectionTitle}} on the {{ui:settings.nav.general}} ta
 
 ![[settings-general]]
 
+### Text size and font {#text}
+{{platform:mac}} The {{ui:settings.text.sectionTitle}} group on the same tab changes the text of the whole app.
+- {{ui:settings.text.sizeLabel}}: pick from 85% to 150%. Conversations, the composer, the sidebar, Settings and terminals grow and shrink together.
+- {{ui:settings.text.fontLabel}}: pick any font installed on this Mac. {{ui:settings.text.fontSystem}} is the macOS font. Code and terminals keep their monospaced font and follow only the size.
+- {{ui:settings.text.reset}} puts the size and font back as they were.
+
+The View menu's {{ui:menu.textBigger}} ({{kbd:⌘=}}), {{ui:menu.textSmaller}} ({{kbd:⌘-}}) and {{ui:menu.textActualSize}} ({{kbd:⌘0}}) change the size too. A change applies at once and stays after the app is reopened.
+
 ## Models {#models}
 {{ui:settings.phaseModels.sectionTitle}} on the {{ui:settings.nav.models}} tab sets which model each phase of work uses, for this whole Mac. The phases are {{ui:settings.phaseModels.phase.planning}}, {{ui:settings.phaseModels.phase.execution}}, {{ui:settings.phaseModels.phase.review}} and {{ui:settings.phaseModels.phase.subagents}}.
 - Leave a phase at {{ui:settings.phaseModels.defaultOption}} and the CLI decides.

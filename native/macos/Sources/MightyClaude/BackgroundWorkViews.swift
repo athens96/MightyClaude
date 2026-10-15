@@ -27,9 +27,9 @@ struct BackgroundTaskRows: View {
         let detail = [task.kindTitle, task.statusTitle, task.elapsed(now: now)].filter { !$0.isEmpty }.joined(separator: " · ")
         return HStack(spacing: DesignMetrics.Spacing.sm) {
             Circle().fill(color(task.status)).frame(width: 6, height: 6)
-            Text(verbatim: task.text).font(.system(size: 11)).foregroundStyle(Palette.ink).lineLimit(1)
+            Text(verbatim: task.text).font(.ui(size: 11)).foregroundStyle(Palette.ink).lineLimit(1)
             Spacer(minLength: 4)
-            Text(verbatim: detail).font(.system(size: 10).monospacedDigit()).foregroundStyle(Palette.ink2).lineLimit(1)
+            Text(verbatim: detail).font(.ui(size: 10).monospacedDigit()).foregroundStyle(Palette.ink2).lineLimit(1)
         }
         .accessibilityElement(children: .combine)
     }
@@ -61,10 +61,10 @@ struct BackgroundWorkStrip: View {
                 Button { store.setBackgroundWorkOpen(!open) } label: {
                     HStack(spacing: DesignMetrics.Spacing.sm) {
                         Image(systemName: "square.stack.3d.up").foregroundStyle(Palette.accent)
-                        Text(L("plan.background.listTitle", ["count": "\(work.tasks.count)"])).font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.ink)
-                        Text(verbatim: PlanCardSupport.backgroundSummary(work)).font(.system(size: 11)).foregroundStyle(Palette.ink2).lineLimit(1)
+                        Text(L("plan.background.listTitle", ["count": "\(work.tasks.count)"])).font(.ui(size: 11, weight: .semibold)).foregroundStyle(Palette.ink)
+                        Text(verbatim: PlanCardSupport.backgroundSummary(work)).font(.ui(size: 11)).foregroundStyle(Palette.ink2).lineLimit(1)
                         Spacer(minLength: 0)
-                        Image(systemName: open ? "chevron.up" : "chevron.down").font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.ink2)
+                        Image(systemName: open ? "chevron.up" : "chevron.down").font(.ui(size: 10, weight: .semibold)).foregroundStyle(Palette.ink2)
                     }.contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -72,7 +72,7 @@ struct BackgroundWorkStrip: View {
                 .accessibilityValue(open ? L("plan.background.hide") : L("plan.background.show"))
                 .accessibilityIdentifier("background-work-\(sessionId)")
                 Button { store.setShowsBackgroundWork(false) } label: {
-                    Image(systemName: "eye.slash").font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.ink2)
+                    Image(systemName: "eye.slash").font(.ui(size: 10, weight: .semibold)).foregroundStyle(Palette.ink2)
                         .frame(width: 18, height: 16).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)

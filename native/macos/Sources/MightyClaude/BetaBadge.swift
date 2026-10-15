@@ -6,7 +6,7 @@ import MightyCore
 struct BetaBadge: View {
     var body: some View {
         Text(verbatim: L("badge.beta"))
-            .font(.system(size: 9, weight: .medium))
+            .font(.ui(size: 9, weight: .medium))
             .foregroundStyle(Palette.stopText)
             .padding(.horizontal, DesignMetrics.Spacing.xs).padding(.vertical, 1)
             .background(Palette.stopSoft, in: Capsule())

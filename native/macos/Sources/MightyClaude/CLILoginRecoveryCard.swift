@@ -68,10 +68,10 @@ struct CLILoginRecoveryCard: View {
                     .disabled(store.cliLoginPending.contains(provider))
                 resendButton
             }
-            Button { store.dismissLoginRequired(sessionID) } label: { Image(systemName: "xmark").font(.system(size: 9)).frame(width: 18, height: 16) }
+            Button { store.dismissLoginRequired(sessionID) } label: { Image(systemName: "xmark").font(.ui(size: 9)).frame(width: 18, height: 16) }
                 .buttonStyle(.plain).accessibilityLabel(L("loginRecovery.dismiss"))
         }
-        .font(.system(size: 11)).lineSpacing(2).padding(.horizontal, DesignMetrics.Spacing.md)
+        .font(.ui(size: 11)).lineSpacing(2).padding(.horizontal, DesignMetrics.Spacing.md)
         .accessibilityIdentifier("login-required-\(sessionID)")
     }
 

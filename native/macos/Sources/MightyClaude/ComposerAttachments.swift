@@ -13,16 +13,16 @@ struct AttachmentChip: View {
         HStack(spacing: DesignMetrics.Spacing.sm) {
             Group {
                 if let thumbnail { Image(nsImage: thumbnail).resizable().scaledToFill() }
-                else { Image(systemName: attachment.mediaType == "application/pdf" ? "doc.richtext" : "doc").font(.system(size: 17)).foregroundStyle(Palette.accent) }
+                else { Image(systemName: attachment.mediaType == "application/pdf" ? "doc.richtext" : "doc").font(.ui(size: 17)).foregroundStyle(Palette.accent) }
             }
             .frame(width: 34, height: 34).clipped()
             .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 5))
             .clipShape(RoundedRectangle(cornerRadius: 5))
             VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
-                Text(attachment.name).font(.system(size: 11, weight: .medium)).lineLimit(1).truncationMode(.middle)
-                Text(AttachmentImport.sizeLabel(attachment)).font(.system(size: 10)).foregroundStyle(.secondary)
+                Text(attachment.name).font(.ui(size: 11, weight: .medium)).lineLimit(1).truncationMode(.middle)
+                Text(AttachmentImport.sizeLabel(attachment)).font(.ui(size: 10)).foregroundStyle(.secondary)
             }.frame(width: 106, alignment: .leading)
-            Button(action: remove) { Image(systemName: "xmark").font(.system(size: 9, weight: .semibold)).frame(width: 20, height: 26).contentShape(Rectangle()) }
+            Button(action: remove) { Image(systemName: "xmark").font(.ui(size: 9, weight: .semibold)).frame(width: 20, height: 26).contentShape(Rectangle()) }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
                 .help(L("composer.attachment.removeHelp")).accessibilityLabel(L("composer.attachment.remove", ["name": attachment.name]))
                 .accessibilityIdentifier("remove-attachment-\(attachment.id)")

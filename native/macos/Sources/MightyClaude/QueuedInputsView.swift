@@ -19,25 +19,25 @@ struct QueuedInputsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
-                Image(systemName: "clock.arrow.circlepath").font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.accent)
-                Text(running ? L("queue.waitingBusy", ["count": "\(held.count + items.count)"]) : L("queue.waiting", ["count": "\(held.count + items.count)"])).font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
+                Image(systemName: "clock.arrow.circlepath").font(.ui(size: 10, weight: .semibold)).foregroundStyle(Palette.accent)
+                Text(running ? L("queue.waitingBusy", ["count": "\(held.count + items.count)"]) : L("queue.waiting", ["count": "\(held.count + items.count)"])).font(.ui(size: 10, weight: .medium)).foregroundStyle(.secondary)
                 Spacer(minLength: 0)
                 if DelegationQueueRows.offersRunNext(busy: running, held: held.count) {
-                    Button(action: onRunNext) { Label(L("queue.runNext"), systemImage: "play.fill").font(.system(size: 10, weight: .medium)) }
+                    Button(action: onRunNext) { Label(L("queue.runNext"), systemImage: "play.fill").font(.ui(size: 10, weight: .medium)) }
                         .buttonStyle(.plain).foregroundStyle(Palette.accent)
                         .help(L("queue.runNextHelp")).accessibilityIdentifier("queue-run-\(sessionID)")
                 }
             }
             if let notice {
-                Text(verbatim: notice).font(.system(size: 10)).foregroundStyle(Palette.ink2)
+                Text(verbatim: notice).font(.ui(size: 10)).foregroundStyle(Palette.ink2)
                     .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("queue-background-\(sessionID)")
             }
             ForEach(Array(held.enumerated()), id: \.element.id) { index, item in
                 HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
-                    Text("\(index + 1)").font(.system(size: 10, weight: .semibold)).monospacedDigit().foregroundStyle(.secondary).frame(width: 14, alignment: .trailing).padding(.top, 1)
-                    Text(item.text).font(.system(size: 11)).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
+                    Text("\(index + 1)").font(.ui(size: 10, weight: .semibold)).monospacedDigit().foregroundStyle(.secondary).frame(width: 14, alignment: .trailing).padding(.top, 1)
+                    Text(item.text).font(.ui(size: 11)).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
                     // Held, not the human's request: no remove button.
-                    Image(systemName: "pin.fill").font(.system(size: 9, weight: .semibold)).frame(width: 18, height: 16)
+                    Image(systemName: "pin.fill").font(.ui(size: 9, weight: .semibold)).frame(width: 18, height: 16)
                         .foregroundStyle(.secondary).help(L("queue.heldHelp")).accessibilityLabel(L("queue.held"))
                 }
                 .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xs)
@@ -46,14 +46,14 @@ struct QueuedInputsView: View {
             }
             ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                 HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
-                    Text("\(held.count + index + 1)").font(.system(size: 10, weight: .semibold)).monospacedDigit().foregroundStyle(.secondary).frame(width: 14, alignment: .trailing).padding(.top, 1)
+                    Text("\(held.count + index + 1)").font(.ui(size: 10, weight: .semibold)).monospacedDigit().foregroundStyle(.secondary).frame(width: 14, alignment: .trailing).padding(.top, 1)
                     VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
-                        Text(item.text.isEmpty ? L("queue.attachmentsOnly") : item.text).font(.system(size: 11)).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
+                        Text(item.text.isEmpty ? L("queue.attachmentsOnly") : item.text).font(.ui(size: 11)).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
                         if !item.attachments.isEmpty {
-                            Text(item.attachments.map(\.name).joined(separator: ", ")).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                            Text(item.attachments.map(\.name).joined(separator: ", ")).font(.ui(size: 10)).foregroundStyle(.secondary).lineLimit(1)
                         }
                     }
-                    Button { onRemove(item.id) } label: { Image(systemName: "xmark").font(.system(size: 9, weight: .semibold)).frame(width: 18, height: 16) }
+                    Button { onRemove(item.id) } label: { Image(systemName: "xmark").font(.ui(size: 9, weight: .semibold)).frame(width: 18, height: 16) }
                         .buttonStyle(.plain).foregroundStyle(.secondary).help(L("queue.removeHelp")).accessibilityLabel(L("queue.remove"))
                         .accessibilityIdentifier("queue-remove-\(item.id)")
                 }

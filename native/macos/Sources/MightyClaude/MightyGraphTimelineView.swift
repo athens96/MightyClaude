@@ -30,7 +30,7 @@ struct MightyViewSwitch: View {
         let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
         return Button { onSelect(value) } label: {
             Label(title, systemImage: symbol)
-                .font(.system(size: 11, weight: selected ? .bold : .semibold)).lineLimit(1)
+                .font(.ui(size: 11, weight: selected ? .bold : .semibold)).lineLimit(1)
                 .foregroundStyle(selected ? Palette.ink : Palette.ink2)
                 .padding(.horizontal, DesignMetrics.Spacing.md).frame(height: DesignMetrics.Layout.hitTarget)
                 .background(selected ? Palette.panel : Color.clear, in: shape)
@@ -99,7 +99,7 @@ struct MightyTimelineMarker: View {
                 if node.ring { MightyTimelineRing(color: Palette.heroFill(node.tone), diameter: Self.nodeSize) }
                 Circle().fill(Palette.heroFill(node.tone))
                     .overlay { Circle().strokeBorder(Palette.raised, lineWidth: 3) }
-                Image(systemName: icon).font(.system(size: 9, weight: .bold))
+                Image(systemName: icon).font(.ui(size: 9, weight: .bold))
                     .foregroundStyle(Palette.heroInk(node.tone))
             }
             .frame(width: Self.nodeSize, height: Self.nodeSize)
@@ -162,18 +162,18 @@ struct MightyTimelineRowCard<Detail: View>: View {
             Button(action: onToggle) {
                 HStack(alignment: .top, spacing: DesignMetrics.Spacing.md) {
                     VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
-                        Text(title).font(.system(size: 13, weight: .bold)).foregroundStyle(Palette.ink)
+                        Text(title).font(.ui(size: 13, weight: .bold)).foregroundStyle(Palette.ink)
                             .lineLimit(2).multilineTextAlignment(.leading)
                         HStack(spacing: 4) {
-                            Image(systemName: icon).font(.system(size: 9, weight: .bold)).foregroundStyle(tint)
+                            Image(systemName: icon).font(.ui(size: 9, weight: .bold)).foregroundStyle(tint)
                             Text(([MightyTimelineText.kind(row.block.kind)] + meta).joined(separator: " · "))
                                 .lineLimit(1).truncationMode(.tail)
                         }
-                        .font(.system(size: 11)).foregroundStyle(Palette.ink2)
+                        .font(.ui(size: 11)).foregroundStyle(Palette.ink2)
                         if let latest = row.latest {
                             HStack(spacing: 6) {
                                 if tone == .run { PulseDot() }
-                                Text(latest).font(.system(size: 10.8, design: .monospaced)).lineLimit(1).truncationMode(.tail)
+                                Text(latest).font(.ui(size: 10.8, design: .monospaced)).lineLimit(1).truncationMode(.tail)
                             }
                             .foregroundStyle(Palette.ink2).padding(.top, 2)
                         }
@@ -224,25 +224,25 @@ struct MightyTimelineResultCard<Files: View>: View {
         let ink = Palette.heroInk(result.tone)
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
-                Image(systemName: Self.icon(result.tone)).font(.system(size: 11, weight: .bold))
-                Text(title).font(.system(size: 12, weight: .heavy)).lineLimit(1)
+                Image(systemName: Self.icon(result.tone)).font(.ui(size: 11, weight: .bold))
+                Text(title).font(.ui(size: 12, weight: .heavy)).lineLimit(1)
                 Spacer(minLength: 6)
                 files()
-                Text(caption).font(.system(size: 10.5, weight: .semibold, design: .monospaced)).lineLimit(1)
+                Text(caption).font(.ui(size: 10.5, weight: .semibold, design: .monospaced)).lineLimit(1)
             }
             .foregroundStyle(ink)
             .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).padding(.vertical, DesignMetrics.Inset.graphBlockBodyV)
             .background(Palette.heroFill(result.tone))
             if let text = result.text {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(text).font(.system(size: 12.5)).foregroundStyle(Palette.ink)
+                    Text(text).font(.ui(size: 12.5)).foregroundStyle(Palette.ink)
                         .lineLimit(full ? nil : Self.previewLines)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     if Self.folds(text) {
                         Button(action: onToggleFull) {
                             Text(full ? L("phone.blocks.resultLess") : L("phone.blocks.resultMore"))
-                                .font(.system(size: 12, weight: .bold)).foregroundStyle(Palette.accent)
+                                .font(.ui(size: 12, weight: .bold)).foregroundStyle(Palette.accent)
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("mighty-timeline-result-more-\(result.nodeID)")

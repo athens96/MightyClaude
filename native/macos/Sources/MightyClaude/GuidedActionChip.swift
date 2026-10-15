@@ -34,13 +34,13 @@ struct GuidedActionChip: View {
 
     var body: some View {
         let label = HStack(spacing: DesignMetrics.Spacing.xs) {
-            if let glyph = action.glyph { Text(verbatim: glyph).font(.system(size: 11)) }
-            else if let icon = action.icon { Image(systemName: icon.rawValue).font(.system(size: 10)) }
+            if let glyph = action.glyph { Text(verbatim: glyph).font(.ui(size: 11)) }
+            else if let icon = action.icon { Image(systemName: icon.rawValue).font(.ui(size: 10)) }
             Text(verbatim: action.title)
-                .font(.system(size: 11, weight: emphasised ? .semibold : .regular))
+                .font(.ui(size: 11, weight: emphasised ? .semibold : .regular))
                 .lineLimit(1)
-            if action.flags.contains(.userInvoked) { Image(systemName: "person.fill").font(.system(size: 8)).foregroundStyle(.secondary) }
-            if action.flags.contains(.readOnly) { Image(systemName: "eye").font(.system(size: 8)).foregroundStyle(.secondary) }
+            if action.flags.contains(.userInvoked) { Image(systemName: "person.fill").font(.ui(size: 8)).foregroundStyle(.secondary) }
+            if action.flags.contains(.readOnly) { Image(systemName: "eye").font(.ui(size: 8)).foregroundStyle(.secondary) }
         }
         .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xs)
         .frame(minHeight: DesignMetrics.Layout.hitTarget)
@@ -68,10 +68,10 @@ struct GuidedApprovalStrip: View {
 
     var body: some View {
         HStack(spacing: DesignMetrics.Spacing.sm) {
-            Image(systemName: "questionmark.square.dashed").font(.system(size: 10)).foregroundStyle(.secondary)
-            Text(verbatim: name).font(.system(size: 11, weight: .medium)).lineLimit(1)
+            Image(systemName: "questionmark.square.dashed").font(.ui(size: 10)).foregroundStyle(.secondary)
+            Text(verbatim: name).font(.ui(size: 11, weight: .medium)).lineLimit(1)
             if let badge = StyleChrome.sourceBadge(source) { SourceBadge(text: badge) }
-            Text(L("guidedPanel.approvalRequired")).font(.system(size: 11)).foregroundStyle(.secondary)
+            Text(L("guidedPanel.approvalRequired")).font(.ui(size: 11)).foregroundStyle(.secondary)
             Button(L("guidedPanel.viewContentsButton"), action: onOpen).controlSize(.small)
             Spacer(minLength: 0)
         }
@@ -85,7 +85,7 @@ struct SourceBadge: View {
     let text: String
     var body: some View {
         Text(verbatim: text)
-            .font(.system(size: 9))
+            .font(.ui(size: 9))
             .foregroundStyle(.secondary)
             .padding(.horizontal, DesignMetrics.Spacing.xs).padding(.vertical, 1)
             .background(Palette.subtle, in: Capsule())

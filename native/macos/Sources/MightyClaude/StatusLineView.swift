@@ -15,13 +15,13 @@ struct StatusLineView: View {
             if let untrusted = state.untrusted {
                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
                     Label(L("statusLine.untrustedPrompt", ["source": untrusted.sourceLabel]), systemImage: "terminal")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
-                    Text(untrusted.command).font(.system(size: 11, design: .monospaced)).lineLimit(3).textSelection(.enabled)
+                        .font(.ui(size: 11)).foregroundStyle(.secondary)
+                    Text(untrusted.command).font(.ui(size: 11, design: .monospaced)).lineLimit(3).textSelection(.enabled)
                         .padding(DesignMetrics.Spacing.sm).frame(maxWidth: .infinity, alignment: .leading).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 6))
                     HStack(spacing: DesignMetrics.Spacing.sm) {
                         Button(L("statusLine.trust")) { onTrust(untrusted) }.controlSize(.small).accessibilityIdentifier("status-line-trust-\(sessionID)")
                         Button(L("statusLine.notNow")) { onDismiss() }.controlSize(.small)
-                        Text(L("statusLine.reaskNote")).font(.system(size: 10)).foregroundStyle(.tertiary)
+                        Text(L("statusLine.reaskNote")).font(.ui(size: 10)).foregroundStyle(.tertiary)
                     }
                 }
                 .padding(.bottom, DesignMetrics.Spacing.xs)
@@ -37,7 +37,7 @@ struct StatusLineView: View {
                 }
             }
         }
-        .font(.system(size: 11, design: .monospaced))
+        .font(.ui(size: 11, design: .monospaced))
         .textSelection(.enabled)
         .padding(.leading, CGFloat(padding) * 6)
         .padding(.horizontal, DesignMetrics.Spacing.md).padding(.top, DesignMetrics.Spacing.xxs).padding(.bottom, DesignMetrics.Spacing.sm)
@@ -56,8 +56,8 @@ struct StatusLineView: View {
             if segment.dim { color = color.opacity(0.55) }
             piece.foregroundColor = color
             if let background = segment.background { piece.backgroundColor = Self.color(background).opacity(0.35) }
-            if segment.bold { piece.font = .system(size: 11, weight: .semibold, design: .monospaced) }
-            if segment.italic { piece.font = (segment.bold ? Font.system(size: 11, weight: .semibold, design: .monospaced) : Font.system(size: 11, design: .monospaced)).italic() }
+            if segment.bold { piece.font = .ui(size: 11, weight: .semibold, design: .monospaced) }
+            if segment.italic { piece.font = (segment.bold ? Font.ui(size: 11, weight: .semibold, design: .monospaced) : Font.ui(size: 11, design: .monospaced)).italic() }
             if segment.underline { piece.underlineStyle = .single }
             result.append(piece)
         }

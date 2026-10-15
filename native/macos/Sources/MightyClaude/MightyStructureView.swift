@@ -144,8 +144,8 @@ struct MightyStructureView: View {
             }
             Button { memory.listOpen.toggle() } label: {
                 HStack(spacing: DesignMetrics.Spacing.xs) {
-                    Text(position).font(.system(size: Self.textSize, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1).monospacedDigit()
-                    Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(Palette.ink2)
+                    Text(position).font(.ui(size: Self.textSize, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1).monospacedDigit()
+                    Image(systemName: "chevron.down").font(.ui(size: 9, weight: .semibold)).foregroundStyle(Palette.ink2)
                 }
                 .frame(height: DesignMetrics.Layout.hitTarget)
                 .contentShape(Rectangle())
@@ -175,7 +175,7 @@ struct MightyStructureView: View {
 
     private func navButton(_ icon: String, name: String, label: String, disabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: icon).font(.system(size: 11, weight: .semibold))
+            Image(systemName: icon).font(.ui(size: 11, weight: .semibold))
                 .foregroundStyle(disabled ? Palette.ink2.opacity(0.4) : Palette.ink)
                 .frame(width: DesignMetrics.Layout.hitTarget, height: DesignMetrics.Layout.hitTarget)
                 .contentShape(Rectangle())
@@ -192,7 +192,7 @@ struct MightyStructureView: View {
     private func newerBadge(_ kind: MightyStructure.Board.Kind) -> some View {
         let text = kind == .request ? L("graph.structure.board.newRequest") : L("graph.structure.board.newPipeline")
         return Button { memory.navigation.showNewest(in: boards) } label: {
-            Text(text).font(.system(size: 10, weight: .bold)).foregroundStyle(Palette.onAccent).lineLimit(1)
+            Text(text).font(.ui(size: 10, weight: .bold)).foregroundStyle(Palette.onAccent).lineLimit(1)
                 .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xxs)
                 .background(Palette.accent, in: Capsule())
                 .contentShape(Capsule())
@@ -231,13 +231,13 @@ struct MightyStructureView: View {
         let traits: AccessibilityTraits = shown ? [.isButton, .isSelected] : .isButton
         return Button { memory.choose(board.id, in: boards) } label: {
             HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
-                Text(verbatim: "\(index + 1)").font(.system(size: 11, weight: .bold)).monospacedDigit().foregroundStyle(Palette.ink2)
-                Image(systemName: Self.statusIcon(board.status)).font(.system(size: 11, weight: .semibold))
+                Text(verbatim: "\(index + 1)").font(.ui(size: 11, weight: .bold)).monospacedDigit().foregroundStyle(Palette.ink2)
+                Image(systemName: Self.statusIcon(board.status)).font(.ui(size: 11, weight: .semibold))
                     .foregroundStyle(Palette.mark(board.status))
                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
-                    Text(verbatim: title).font(.system(size: Self.textSize, weight: shown ? .bold : .regular))
+                    Text(verbatim: title).font(.ui(size: Self.textSize, weight: shown ? .bold : .regular))
                         .foregroundStyle(Palette.ink).lineLimit(1).truncationMode(.tail)
-                    Text(verbatim: steps).font(.system(size: 10)).foregroundStyle(Palette.ink2).lineLimit(1)
+                    Text(verbatim: steps).font(.ui(size: 10)).foregroundStyle(Palette.ink2).lineLimit(1)
                 }
                 Spacer(minLength: 0)
             }
@@ -323,8 +323,8 @@ struct MightyStructureView: View {
     private func chip(_ title: String, step: MightyStructure.Step) -> some View {
         let look = Self.look(step)
         return HStack(spacing: DesignMetrics.Spacing.xs) {
-            Image(systemName: look.icon).font(.system(size: 8, weight: .bold))
-            Text(verbatim: title).font(.system(size: 11, weight: step == .current ? .bold : .semibold))
+            Image(systemName: look.icon).font(.ui(size: 8, weight: .bold))
+            Text(verbatim: title).font(.ui(size: 11, weight: step == .current ? .bold : .semibold))
                 .lineLimit(1).truncationMode(.tail)
         }
         .foregroundStyle(look.ink)
@@ -386,7 +386,7 @@ struct MightyStructureView: View {
                             kanban(board, onNewest: onNewest, width: width, cardWidth: width - scroller, height: height)
                                 .id(board.id)
                         } else {
-                            Text(L("graph.timeline.empty")).font(.system(size: 12)).foregroundStyle(Palette.ink2)
+                            Text(L("graph.timeline.empty")).font(.ui(size: 12)).foregroundStyle(Palette.ink2)
                                 .padding(.vertical, DesignMetrics.Spacing.md)
                         }
                     }
@@ -550,7 +550,7 @@ struct MightyStructureView: View {
     private func columnHeader(_ column: MightyStructure.BoardColumn, last: Bool) -> some View {
         HStack(spacing: DesignMetrics.Spacing.sm) {
             chip(stepName(column.step), step: column.step.step)
-            Text("\(column.count)").font(.system(size: 10, weight: .semibold)).monospacedDigit().foregroundStyle(Palette.ink2)
+            Text("\(column.count)").font(.ui(size: 10, weight: .semibold)).monospacedDigit().foregroundStyle(Palette.ink2)
                 .padding(.horizontal, DesignMetrics.Spacing.sm).background(Palette.track, in: Capsule())
             if last { Spacer(minLength: 0) }
             else {
@@ -587,7 +587,7 @@ struct MightyStructureView: View {
                              width: Self.cardTextWidth(width) - DesignMetrics.Layout.hitTarget - DesignMetrics.Spacing.sm,
                              name: L("graph.structure.column.request"))
             } else {
-                Text(heading(item)).font(.system(size: Self.textSize, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
+                Text(heading(item)).font(.ui(size: Self.textSize, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
             }
             Spacer(minLength: 0)
             revealButton(item.nodeID)
@@ -624,7 +624,7 @@ struct MightyStructureView: View {
         let line = MightyStructure.Fold.resultLine(item)
         return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
-                Text(heading(item)).font(.system(size: Self.textSize, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
+                Text(heading(item)).font(.ui(size: Self.textSize, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
                 Spacer(minLength: DesignMetrics.Spacing.xs)
                 revealButton(item.nodeID)
             }
@@ -635,7 +635,7 @@ struct MightyStructureView: View {
             Divider().overlay(Palette.border)
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 Label(L("graph.block.executionOf", ["n": "\(item.ordinal)"]), systemImage: MightyGraphView.executionIcon)
-                    .font(.system(size: Self.outputSize, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
+                    .font(.ui(size: Self.outputSize, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
                 MightyGraphActivityIndicator(status: item.status, tint: Palette.run)
                 MightyStatusPill(text: MightyGraphView.statusLabel(item.status), tone: DesignTone(status: item.status))
                 tally(item)
@@ -647,7 +647,7 @@ struct MightyStructureView: View {
                 HStack(alignment: .firstTextBaseline, spacing: DesignMetrics.Spacing.sm) {
                     resultTitle(item)
                     Text(verbatim: line ?? MightyGraphView.statusLabel(item.status))
-                        .font(.system(size: Self.outputSize)).foregroundStyle(line == nil ? Palette.text(item.status) : Palette.ink2)
+                        .font(.ui(size: Self.outputSize)).foregroundStyle(line == nil ? Palette.text(item.status) : Palette.ink2)
                         .lineLimit(1).truncationMode(.tail)
                         .help(line ?? "")
                     Spacer(minLength: 0)
@@ -670,7 +670,7 @@ struct MightyStructureView: View {
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 if titled {
                     Label(L("graph.block.executionOf", ["n": "\(item.ordinal)"]), systemImage: MightyGraphView.executionIcon)
-                        .font(.system(size: Self.outputSize, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
+                        .font(.ui(size: Self.outputSize, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
                 }
                 MightyGraphActivityIndicator(status: item.status, tint: Palette.run)
                 MightyStatusPill(text: MightyGraphView.statusLabel(item.status), tone: DesignTone(status: item.status))
@@ -691,7 +691,7 @@ struct MightyStructureView: View {
 
     private func tally(_ item: MightyStructure.Item) -> some View {
         Text(L("graph.structure.tally", ["agents": "\(item.tally.agents)", "tools": "\(item.tally.tools)"]))
-            .font(.system(size: Self.outputSize, weight: .semibold)).foregroundStyle(Palette.ink2).lineLimit(1)
+            .font(.ui(size: Self.outputSize, weight: .semibold)).foregroundStyle(Palette.ink2).lineLimit(1)
     }
 
     /// The main block's latest reply and its last tool calls.
@@ -700,7 +700,7 @@ struct MightyStructureView: View {
             foldableText(message, key: Self.foldKey("message", item.runID), lines: MightyStructure.messageLines, size: Self.textSize,
                          width: width, name: L("graph.structure.latest"))
         } else if !item.finished && item.activity.isEmpty {
-            Text(L("graph.block.waitingResponse")).font(.system(size: Self.textSize)).foregroundStyle(Palette.ink2)
+            Text(L("graph.block.waitingResponse")).font(.ui(size: Self.textSize)).foregroundStyle(Palette.ink2)
         }
         if !item.activity.isEmpty {
             VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
@@ -719,7 +719,7 @@ struct MightyStructureView: View {
         default: (L("graph.block.result"), "checkmark.seal")
         }
         return Label(look.title, systemImage: look.icon)
-            .font(.system(size: Self.outputSize, weight: .bold)).lineLimit(1)
+            .font(.ui(size: Self.outputSize, weight: .bold)).lineLimit(1)
             .foregroundStyle(item.finished ? Palette.text(item.status) : Palette.ink2)
     }
 
@@ -730,7 +730,7 @@ struct MightyStructureView: View {
             foldableMarkdown(answer, key: Self.foldKey("answer", item.runID), name: L("graph.block.result"))
         } else {
             Text(item.finished ? MightyGraphView.statusLabel(item.status) : L("graph.structure.resultPending"))
-                .font(.system(size: Self.textSize)).foregroundStyle(Palette.ink2)
+                .font(.ui(size: Self.textSize)).foregroundStyle(Palette.ink2)
         }
     }
 
@@ -746,9 +746,9 @@ struct MightyStructureView: View {
         // Folds are judged at the width the card's text really has at its depth.
         let textWidth = MightyStructure.nodeTextWidth(column: column, depth: node.depth)
         let folds = node.prompt?.folds(lines: MightyStructure.promptLines,
-                                       charactersPerLine: MightyStructure.charactersPerLine(width: textWidth, fontSize: Self.promptSize)) == true
+                                       charactersPerLine: MightyStructure.charactersPerLine(width: textWidth, fontSize: CGFloat(TextSettings.current.size(Double(Self.promptSize))))) == true
             || node.output?.folds(lines: MightyStructure.outputLines,
-                                  charactersPerLine: MightyStructure.charactersPerLine(width: textWidth, fontSize: Self.outputSize)) == true
+                                  charactersPerLine: MightyStructure.charactersPerLine(width: textWidth, fontSize: CGFloat(TextSettings.current.size(Double(Self.outputSize))))) == true
             || node.activity.count > 1
         let model = node.model.map { ModelUsageFormat.shortName($0, catalog: catalog, versioned: true) }
         let meta = ([MightyTimelineText.kind(node.kind)] + [model].compactMap { $0 }).joined(separator: " · ")
@@ -756,29 +756,29 @@ struct MightyStructureView: View {
         return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: task ? "terminal" : "person.crop.square.filled.and.at.rectangle")
-                    .font(.system(size: 9, weight: .semibold)).foregroundStyle(task ? Palette.taskText : Palette.agentText)
-                Text(verbatim: node.title).font(.system(size: Self.outputSize, weight: .semibold)).foregroundStyle(Palette.ink).lineLimit(1)
+                    .font(.ui(size: 9, weight: .semibold)).foregroundStyle(task ? Palette.taskText : Palette.agentText)
+                Text(verbatim: node.title).font(.ui(size: Self.outputSize, weight: .semibold)).foregroundStyle(Palette.ink).lineLimit(1)
                     .layoutPriority(1)
-                Text(meta).font(.system(size: 10)).foregroundStyle(Palette.ink2).lineLimit(1)
+                Text(meta).font(.ui(size: 10)).foregroundStyle(Palette.ink2).lineLimit(1)
                 Spacer(minLength: 0)
                 MightyGraphActivityIndicator(status: node.status, tint: Palette.run)
                 revealButton(node.nodeID)
             }
             if let parent {
                 Label(L("graph.structure.underParent", ["title": parent]), systemImage: "arrow.turn.down.right")
-                    .font(.system(size: 10)).foregroundStyle(Palette.ink2).lineLimit(1).truncationMode(.tail)
+                    .font(.ui(size: 10)).foregroundStyle(Palette.ink2).lineLimit(1).truncationMode(.tail)
             }
             if let prompt = node.prompt {
                 let shown = open ? prompt.text : prompt.preview
                 Text(verbatim: shown)
-                    .font(.system(size: Self.promptSize)).foregroundStyle(Palette.ink2)
+                    .font(.ui(size: Self.promptSize)).foregroundStyle(Palette.ink2)
                     .lineLimit(open ? nil : MightyStructure.promptLines)
                     .contentText(name: L("graph.structure.prompt"), value: shown)
             }
             if let output = node.output {
                 let shown = open ? output.text : output.preview
                 Text(verbatim: shown)
-                    .font(.system(size: Self.outputSize)).foregroundStyle(Palette.ink)
+                    .font(.ui(size: Self.outputSize)).foregroundStyle(Palette.ink)
                     .lineLimit(open ? nil : MightyStructure.outputLines)
                     .contentText(name: L("graph.structure.output"), value: shown)
             }
@@ -806,10 +806,10 @@ struct MightyStructureView: View {
     private func activityRow(_ line: MightyStructure.ActivityLine) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: DesignMetrics.Spacing.sm) {
             Image(systemName: AgentActivityRow.symbol(line.kind))
-                .font(.system(size: 10, weight: .medium)).frame(width: Self.glyphWidth)
+                .font(.ui(size: 10, weight: .medium)).frame(width: Self.glyphWidth)
                 .foregroundStyle(line.state == "error" ? Palette.errText : line.state == "running" ? Palette.accent : Palette.ink2)
             Text(verbatim: line.text)
-                .font(.system(size: Self.outputSize, design: AgentActivityRow.monospacedKinds.contains(line.kind) ? .monospaced : .default))
+                .font(.ui(size: Self.outputSize, design: AgentActivityRow.monospacedKinds.contains(line.kind) ? .monospaced : .default))
                 .foregroundStyle(Palette.ink2).lineLimit(1).truncationMode(.tail)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -828,10 +828,10 @@ struct MightyStructureView: View {
     private func foldableText(_ excerpt: MightyStructure.Excerpt, key: String, lines: Int, size: CGFloat, width: CGFloat, name: String) -> some View {
         let open = memory.expanded.contains(key)
         let shown = open ? excerpt.text : excerpt.preview
-        let folds = excerpt.folds(lines: lines, charactersPerLine: MightyStructure.charactersPerLine(width: width, fontSize: size))
+        let folds = excerpt.folds(lines: lines, charactersPerLine: MightyStructure.charactersPerLine(width: width, fontSize: CGFloat(TextSettings.current.size(Double(size)))))
         return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
             Text(verbatim: shown)
-                .font(.system(size: size)).foregroundStyle(Palette.ink)
+                .font(.ui(size: size)).foregroundStyle(Palette.ink)
                 .lineLimit(open ? nil : lines)
                 .contentText(name: name, value: shown)
             if folds { foldToggle(key, open: open) }
@@ -864,7 +864,7 @@ struct MightyStructureView: View {
             if !memory.expanded.insert(key).inserted { memory.expanded.remove(key) }
         } label: {
             Text(open ? L("graph.structure.less") : L("graph.structure.more"))
-                .font(.system(size: Self.outputSize, weight: .bold)).foregroundStyle(Palette.accent)
+                .font(.ui(size: Self.outputSize, weight: .bold)).foregroundStyle(Palette.accent)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -876,7 +876,7 @@ struct MightyStructureView: View {
     /// The small header button that shows the block in the diagram.
     private func revealButton(_ nodeID: String) -> some View {
         Button { onReveal(nodeID) } label: {
-            Image(systemName: "arrow.up.right.square").font(.system(size: 11, weight: .medium)).foregroundStyle(Palette.ink2)
+            Image(systemName: "arrow.up.right.square").font(.ui(size: 11, weight: .medium)).foregroundStyle(Palette.ink2)
                 .frame(width: DesignMetrics.Layout.hitTarget, height: DesignMetrics.Layout.hitTarget)
                 .contentShape(Rectangle())
         }

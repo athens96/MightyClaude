@@ -14,17 +14,17 @@ struct NextActionButtons: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
             Text(L("pane.nextActions.label"))
-                .font(.system(size: 11.5, weight: .bold)).foregroundStyle(Palette.ink2)
+                .font(.ui(size: 11.5, weight: .bold)).foregroundStyle(Palette.ink2)
                 .padding(.horizontal, DesignMetrics.Spacing.xxs)
                 .accessibilityHidden(true)
             ForEach(Array(actions.enumerated()), id: \.offset) { index, action in
                 Button { onFill(action.fill) } label: {
                     HStack(spacing: DesignMetrics.Spacing.md) {
                         Text(verbatim: action.displayLabel)
-                            .font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.ink)
+                            .font(.ui(size: 13, weight: .semibold)).foregroundStyle(Palette.ink)
                             .lineLimit(2).truncationMode(.tail).multilineTextAlignment(.leading)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        Image(systemName: "arrow.right").font(.system(size: 13, weight: .bold)).foregroundStyle(Palette.accent)
+                        Image(systemName: "arrow.right").font(.ui(size: 13, weight: .bold)).foregroundStyle(Palette.accent)
                             .accessibilityHidden(true)
                     }
                     .padding(.horizontal, DesignMetrics.Spacing.lg).padding(.vertical, DesignMetrics.Spacing.sm)

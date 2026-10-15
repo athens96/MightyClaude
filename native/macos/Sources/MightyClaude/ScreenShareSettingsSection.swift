@@ -23,7 +23,7 @@ struct ScreenShareSettingsSection: View {
     var body: some View {
         SettingsGroup {
             Text(L("settings.screenShare.description"))
-                .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                .font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 Button { showsPermissions = true } label: {
                     Label(L("settings.screenShare.permissions.openButton"), systemImage: "lock.shield")
@@ -38,9 +38,9 @@ struct ScreenShareSettingsSection: View {
                 Spacer()
             }
             Text(L("settings.screenShare.scene.description"))
-                .font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                .font(.ui(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if devices.isEmpty {
-                Text(L("settings.screenShare.noPhones")).font(.system(size: 11)).foregroundStyle(.secondary)
+                Text(L("settings.screenShare.noPhones")).font(.ui(size: 11)).foregroundStyle(.secondary)
             }
             ForEach(devices) { device in
                 if device.legacy { legacyRow(device) } else { phoneRow(device) }
@@ -94,9 +94,9 @@ struct ScreenShareSettingsSection: View {
         HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
             Image(systemName: "questionmark.app").foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
-                Text(device.name).font(.system(size: 12))
+                Text(device.name).font(.ui(size: 12))
                 Text(L("settings.screenShare.legacyUnsupported"))
-                    .font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    .font(.ui(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }
         .accessibilityIdentifier("settings-screen-share-legacy")
@@ -108,7 +108,7 @@ struct ScreenShareSettingsSection: View {
         return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: "iphone").foregroundStyle(live.isEmpty ? Color.secondary : Palette.doneText)
-                Text(device.name).font(.system(size: 12))
+                Text(device.name).font(.ui(size: 12))
                 Spacer(minLength: 8)
                 Toggle(L("settings.screenShare.allowToggle"), isOn: Binding(
                     get: { row.allowed },
@@ -134,7 +134,7 @@ struct ScreenShareSettingsSection: View {
                 if row.grant == .control { keyLine(device, row: row) }
             }
             if live.isEmpty {
-                Text(L("settings.screenShare.noSession")).font(.system(size: 10)).foregroundStyle(.secondary)
+                Text(L("settings.screenShare.noSession")).font(.ui(size: 10)).foregroundStyle(.secondary)
             }
             ForEach(live, id: \.sessionId) { session in
                 HStack(spacing: DesignMetrics.Spacing.sm) {
@@ -142,7 +142,7 @@ struct ScreenShareSettingsSection: View {
                     Text(session.mode == .control
                          ? L("settings.screenShare.sessionControl", ["time": Self.clock(session.startedAt)])
                          : L("settings.screenShare.sessionView", ["time": Self.clock(session.startedAt)]))
-                        .font(.system(size: 11))
+                        .font(.ui(size: 11))
                     Spacer(minLength: 8)
                     Button(L("settings.screenShare.stopButton"), role: .destructive) {
                         store.stopScreenShareSession(sessionId: session.sessionId)
@@ -160,9 +160,9 @@ struct ScreenShareSettingsSection: View {
     @ViewBuilder private func keyLine(_ device: MobileDeviceInfo, row: ScreenShareDeviceSettings) -> some View {
         if let key = row.controlKeyPublicData {
             HStack(spacing: DesignMetrics.Spacing.sm) {
-                Image(systemName: "key").font(.system(size: 10)).foregroundStyle(.secondary)
+                Image(systemName: "key").font(.ui(size: 10)).foregroundStyle(.secondary)
                 Text(L("settings.screenShare.keyFingerprint", ["fingerprint": ScreenShareControlKey.fingerprint(key)]))
-                    .font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
+                    .font(.ui(size: 11, design: .monospaced)).textSelection(.enabled)
                 Spacer(minLength: 8)
                 Button(L("settings.screenShare.removeKeyButton")) { removingKey = device }
                     .controlSize(.small)
@@ -170,7 +170,7 @@ struct ScreenShareSettingsSection: View {
             }
         } else {
             Text(L("settings.screenShare.keyMissing"))
-                .font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                .font(.ui(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
 

@@ -11,7 +11,7 @@ struct CLIAccountsSettingsSection: View {
         SettingsGroup(L("settings.cliAccounts.sectionTitle")) {
             ForEach(ProviderOptions.ids, id: \.self) { provider in row(provider) }
             Text(L("settings.cliAccounts.sectionDescriptionMac"))
-                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .font(.ui(size: 11)).foregroundStyle(.secondary)
                 .task { store.refreshCLIAccounts() }
                 .confirmationDialog(confirming.map { title($0) } ?? "", isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }), presenting: confirming) { pending in
                     Button(pending.relogin ? L("settings.cliAccounts.macReloginButton") : L("settings.cliAccounts.buttonLogout"), role: .destructive) {
@@ -27,7 +27,7 @@ struct CLIAccountsSettingsSection: View {
             ))
             .accessibilityIdentifier("cli-auto-login")
             Text(L("settings.cliAccounts.autoLoginDescriptionMac"))
-                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .font(.ui(size: 11)).foregroundStyle(.secondary)
         }
     }
 
@@ -44,24 +44,24 @@ struct CLIAccountsSettingsSection: View {
             ProviderIcon(provider: provider, size: 14).frame(width: 18).padding(.top, 1)
             VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                 HStack(spacing: DesignMetrics.Spacing.sm) {
-                    Text(ProviderOptions.label(provider)).font(.system(size: 12, weight: .medium))
+                    Text(ProviderOptions.label(provider)).font(.ui(size: 12, weight: .medium))
                     if ProviderOptions.isBeta(provider) { BetaBadge() }
                 }
-                Text(status?.summary ?? L("settings.cliAccounts.statusChecking")).font(.system(size: 11)).foregroundStyle(status?.loggedIn == false ? Palette.waitText : Color.secondary).lineLimit(1).textSelection(.enabled)
+                Text(status?.summary ?? L("settings.cliAccounts.statusChecking")).font(.ui(size: 11)).foregroundStyle(status?.loggedIn == false ? Palette.waitText : Color.secondary).lineLimit(1).textSelection(.enabled)
                     .accessibilityIdentifier("cli-account-status-\(provider)")
                 if let status, !status.canSignOut, !status.detail.isEmpty, status.detail != status.summary {
-                    Text(status.detail).font(.system(size: 10)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
+                    Text(status.detail).font(.ui(size: 10)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
                 }
-                if pending { Text(L("settings.cliAccounts.statusPending")).font(.system(size: 10)).foregroundStyle(.tertiary) }
+                if pending { Text(L("settings.cliAccounts.statusPending")).font(.ui(size: 10)).foregroundStyle(.tertiary) }
                 if let message = store.cliAccountMessages[provider] {
-                    Label(message, systemImage: "exclamationmark.triangle").font(.system(size: 10)).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true)
+                    Label(message, systemImage: "exclamationmark.triangle").font(.ui(size: 10)).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("cli-account-message-\(provider)")
                 }
             }
             Spacer()
             if busy || store.cliAccountRefreshing.contains(provider) { ProgressView().controlSize(.small) }
             if status?.installed == false {
-                Text(L("settings.cliAccounts.statusNotInstalled")).font(.system(size: 11)).foregroundStyle(.secondary)
+                Text(L("settings.cliAccounts.statusNotInstalled")).font(.ui(size: 11)).foregroundStyle(.secondary)
             } else if pending {
                 Button(L("settings.cliAccounts.buttonCancelWait")) { store.endCLILogin(provider); store.refreshCLIAccounts([provider]) }
             } else if status?.loggedIn == true {

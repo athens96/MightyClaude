@@ -10,7 +10,7 @@ struct AppUpdateSettingsSection: View {
             if store.appUpdatePublicKey == nil {
                 // Rule 1: keyless builds do not support update checks — no bypass.
                 Text(L("settings.appUpdate.noPublicKeyNotice"))
-                    .font(.system(size: 11)).foregroundStyle(Palette.waitText)
+                    .font(.ui(size: 11)).foregroundStyle(Palette.waitText)
                 HStack(spacing: DesignMetrics.Spacing.md) {
                     Spacer()
                     Button(L("settings.appUpdate.checkButton")) {}.disabled(true)
@@ -19,27 +19,27 @@ struct AppUpdateSettingsSection: View {
                 // Rule 3: when the build carries a URL it is the only address; show it read-only.
                 if let builtIn = store.builtInUpdateManifestURL {
                     LabeledContent(L("settings.appUpdate.manifestUrlAddressLabel")) {
-                        Text(builtIn).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled)
+                        Text(builtIn).font(.ui(size: 11, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled)
                     }
                 } else {
                     TextField(L("settings.appUpdate.manifestUrlPlaceholder"), text: Binding(get: { store.appUpdateManifestURLOverride }, set: { store.appUpdateManifestURLOverride = $0 }))
-                        .textFieldStyle(.roundedBorder).font(.system(size: 12, design: .monospaced))
+                        .textFieldStyle(.roundedBorder).font(.ui(size: 12, design: .monospaced))
                         .accessibilityIdentifier("app-update-url")
                     if store.appUpdateManifestURL == nil {
-                        Text(L("settings.appUpdate.manifestUrlHint")).font(.system(size: 11)).foregroundStyle(.secondary)
+                        Text(L("settings.appUpdate.manifestUrlHint")).font(.ui(size: 11)).foregroundStyle(.secondary)
                     }
                 }
                 Toggle(L("settings.appUpdate.autoCheckToggle"), isOn: Binding(get: { store.appUpdateAutomatic }, set: { store.appUpdateAutomatic = $0 }))
                     .accessibilityIdentifier("app-update-automatic")
                 Text(L("settings.appUpdate.signatureVerified"))
-                    .font(.system(size: 10)).foregroundStyle(.secondary)
+                    .font(.ui(size: 10)).foregroundStyle(.secondary)
                 HStack(spacing: DesignMetrics.Spacing.md) {
                     statusView
                     Spacer()
                     actionButton
                 }
                 if let manifest = store.appUpdate.availability?.manifest, store.appUpdate.availability?.isNewer == true, let notes = manifest.notes, !notes.isEmpty {
-                    Text(notes).font(.system(size: 11)).foregroundStyle(.secondary).textSelection(.enabled).lineLimit(8)
+                    Text(notes).font(.ui(size: 11)).foregroundStyle(.secondary).textSelection(.enabled).lineLimit(8)
                 }
             }
         }
@@ -50,23 +50,23 @@ struct AppUpdateSettingsSection: View {
         case .idle:
             Text(store.appUpdate.checkedAt.map {
                 L("settings.appUpdate.lastCheckedTemplate", ["time": $0.formatted(date: .omitted, time: .shortened)])
-            } ?? L("settings.appUpdate.notCheckedYet")).font(.system(size: 11)).foregroundStyle(.secondary)
+            } ?? L("settings.appUpdate.notCheckedYet")).font(.ui(size: 11)).foregroundStyle(.secondary)
         case .checking:
-            ProgressView().controlSize(.small); Text(L("settings.appUpdate.checking")).font(.system(size: 11))
+            ProgressView().controlSize(.small); Text(L("settings.appUpdate.checking")).font(.ui(size: 11))
         case .upToDate:
-            Label(L("settings.appUpdate.upToDate"), systemImage: "checkmark.circle").font(.system(size: 11)).foregroundStyle(.secondary)
+            Label(L("settings.appUpdate.upToDate"), systemImage: "checkmark.circle").font(.ui(size: 11)).foregroundStyle(.secondary)
         case .available:
-            Label(L("settings.appUpdate.availableTemplate", ["version": store.appUpdate.availability?.manifest.version ?? ""]), systemImage: "arrow.down.circle").font(.system(size: 11, weight: .medium)).foregroundStyle(Palette.accent)
+            Label(L("settings.appUpdate.availableTemplate", ["version": store.appUpdate.availability?.manifest.version ?? ""]), systemImage: "arrow.down.circle").font(.ui(size: 11, weight: .medium)).foregroundStyle(Palette.accent)
         case .downloading(let fraction):
-            ProgressView(value: fraction).frame(width: 140); Text(L("settings.appUpdate.downloadingTemplate", ["percent": "\(Int(fraction * 100))"])).font(.system(size: 11))
+            ProgressView(value: fraction).frame(width: 140); Text(L("settings.appUpdate.downloadingTemplate", ["percent": "\(Int(fraction * 100))"])).font(.ui(size: 11))
         case .staging:
-            ProgressView().controlSize(.small); Text(L("settings.appUpdate.stagingProgress")).font(.system(size: 11))
+            ProgressView().controlSize(.small); Text(L("settings.appUpdate.stagingProgress")).font(.ui(size: 11))
         case .ready:
-            Label(L("settings.appUpdate.readyTemplate", ["version": store.appUpdate.availability?.manifest.version ?? ""]), systemImage: "shippingbox").font(.system(size: 11)).foregroundStyle(.secondary)
+            Label(L("settings.appUpdate.readyTemplate", ["version": store.appUpdate.availability?.manifest.version ?? ""]), systemImage: "shippingbox").font(.ui(size: 11)).foregroundStyle(.secondary)
         case .installing:
-            ProgressView().controlSize(.small); Text(L("settings.appUpdate.installing")).font(.system(size: 11))
+            ProgressView().controlSize(.small); Text(L("settings.appUpdate.installing")).font(.ui(size: 11))
         case .failed(let message):
-            Label(message, systemImage: "exclamationmark.triangle").font(.system(size: 11)).foregroundStyle(Palette.waitText).lineLimit(3).textSelection(.enabled)
+            Label(message, systemImage: "exclamationmark.triangle").font(.ui(size: 11)).foregroundStyle(Palette.waitText).lineLimit(3).textSelection(.enabled)
         }
     }
 

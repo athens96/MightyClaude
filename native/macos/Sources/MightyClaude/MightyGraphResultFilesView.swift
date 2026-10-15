@@ -86,8 +86,8 @@ struct MightyGraphResultFilesView: View {
         VStack(spacing: 0) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: "doc.on.doc").foregroundStyle(Palette.accent)
-                Text(L("graph.resultFiles.title")).font(.system(size: 12, weight: .semibold))
-                Text("\(files.count)").font(.system(size: 10)).foregroundStyle(Palette.ink2)
+                Text(L("graph.resultFiles.title")).font(.ui(size: 12, weight: .semibold))
+                Text("\(files.count)").font(.ui(size: 10)).foregroundStyle(Palette.ink2)
                 Spacer(minLength: 4)
                 Button(action: onClose) { Image(systemName: "xmark").foregroundStyle(Palette.ink2) }
                     .buttonStyle(.plain).help(L("graph.resultFiles.closeButton"))
@@ -100,13 +100,13 @@ struct MightyGraphResultFilesView: View {
                     ForEach(files) { file in
                         Button { onOpen(file) } label: {
                             HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
-                                Image(systemName: "doc.text").font(.system(size: 12)).foregroundStyle(Palette.accent)
+                                Image(systemName: "doc.text").font(.ui(size: 12)).foregroundStyle(Palette.accent)
                                     .padding(.top, DesignMetrics.Spacing.xxs)
                                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
-                                    Text(file.url.lastPathComponent).font(.system(size: 12, weight: .medium))
+                                    Text(file.url.lastPathComponent).font(.ui(size: 12, weight: .medium))
                                         .lineLimit(1).truncationMode(.middle)
                                     Text(file.path + (file.line.map { ":\($0)" } ?? ""))
-                                        .font(.system(size: 10, design: .monospaced)).foregroundStyle(Palette.ink2)
+                                        .font(.ui(size: 10, design: .monospaced)).foregroundStyle(Palette.ink2)
                                         .lineLimit(2).truncationMode(.middle)
                                 }.frame(maxWidth: .infinity, alignment: .leading)
                             }

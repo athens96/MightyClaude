@@ -56,13 +56,13 @@ struct MightyGraphActivityIndicator: View {
         Group {
             if MightyGraphActivityStyle.isActive(status) {
                 if reduceMotion {
-                    Image(systemName: "bolt.fill").font(.system(size: 10)).foregroundStyle(tint)
+                    Image(systemName: "bolt.fill").font(.ui(size: 10)).foregroundStyle(tint)
                         .frame(width: 18, height: 14)
                 } else {
                     MightyGraphActivityBars(tint: tint).frame(width: 18, height: 14)
                 }
             } else if status == "waiting" {
-                Image(systemName: "pause.circle").font(.system(size: 12)).foregroundStyle(Palette.waitText)
+                Image(systemName: "pause.circle").font(.ui(size: 12)).foregroundStyle(Palette.waitText)
                     .frame(width: 18, height: 14)
             }
         }
@@ -226,7 +226,7 @@ struct MightyStatusPill: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 10, weight: .bold)).lineLimit(1)
+            .font(.ui(size: 10, weight: .bold)).lineLimit(1)
             .foregroundStyle(Palette.text(tone))
             .padding(.horizontal, DesignMetrics.Spacing.sm).frame(height: height)
             .background(Palette.soft(tone), in: Capsule())

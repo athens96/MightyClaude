@@ -73,11 +73,20 @@ final class LocalTerminalSession: NSObject, ObservableObject, TerminalSurfaceTit
         // A per-surface command forces Ghostty's wait-after-command mode.
         // The shared controller supplies the shell command instead, so exit
         // reaches the close callback immediately without another key press.
-        view.configuration = TerminalSurfaceOptions(backend: backend, fontSize: 12, workingDirectory: directory, envVars: environment, waitAfterCommand: false, resizeThrottleMilliseconds: 25)
+        view.configuration = TerminalSurfaceOptions(backend: backend, fontSize: Float(TextSettings.shared.current.terminalSize), workingDirectory: directory, envVars: environment, waitAfterCommand: false, resizeThrottleMilliseconds: 25)
         view.delegate = self
         view.controller = controller
         view.setAccessibilityLabel(L("terminal.accessibility"))
         view.setAccessibilityIdentifier("terminal-\(id)")
+        NotificationCenter.default.addObserver(self, selector: #selector(textAppearanceDidChange), name: TextSettings.didChange, object: nil)
+    }
+
+    /// The user changed the text size: the open surface takes it through Ghostty's own
+    /// action. `view.configuration` is left alone, since changing it rebuilds the
+    /// surface and ends the shell.
+    @objc private func textAppearanceDidChange() {
+        guard !disposed else { return }
+        _ = surface?.performBindingAction("set_font_size:\(String(format: "%g", TextSettings.shared.current.terminalSize))")
     }
 
     func mounted() {
@@ -141,6 +150,10 @@ final class LocalTerminalSession: NSObject, ObservableObject, TerminalSurfaceTit
 
     func terminalDidAttachSurface(_ surface: TerminalSurface) {
         self.surface = surface
+        // The text size may have changed since this session was made (a hidden or not yet
+        // shown pane); the surface starts at the size it was configured with.
+        let size = TextSettings.shared.current.terminalSize
+        if view.configuration.fontSize != Float(size) { _ = surface.performBindingAction("set_font_size:\(String(format: "%g", size))") }
         publish { $0.ready = true; $0.failure = nil; $0.statusChanged("idle") }
         // Text the app wants in the shell once it is up (a CLI sign-in, a
         // style's install command). The retries and the delay stay here; the

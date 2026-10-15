@@ -48,7 +48,7 @@ struct StatusGlyph: View {
         case .ring:
             Circle().stroke(ink, lineWidth: 1.8 * size / 16).padding(4.4 * size / 16)
         case .pane:
-            Image(systemName: paneSymbol(kind)).font(.system(size: size * 0.78, weight: .medium)).foregroundStyle(ink)
+            Image(systemName: paneSymbol(kind)).font(.ui(size: size * 0.78, weight: .medium)).foregroundStyle(ink)
         }
     }
 

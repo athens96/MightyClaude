@@ -48,7 +48,7 @@ struct LocalTerminalPane: View {
                 LocalTerminalContent(terminal: terminal, restart: { Task { await store.restartTerminal(session.id) } })
             } else if let failure = store.terminalErrors[session.id] {
                 VStack(spacing: DesignMetrics.Spacing.md) {
-                    Text(failure).font(.system(size: 12)).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    Text(failure).font(.ui(size: 12)).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     Button(L("terminal.restart")) { Task { await store.ensureLocalTerminal(session.id) } }
                 }.padding(DesignMetrics.Spacing.xl).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -71,7 +71,7 @@ private struct LocalTerminalContent: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             if terminal.exited || terminal.failure != nil {
                 HStack(spacing: DesignMetrics.Spacing.sm) {
-                    Text(terminal.failure ?? L("terminal.shellExited")).font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text(terminal.failure ?? L("terminal.shellExited")).font(.ui(size: 11)).foregroundStyle(.secondary)
                     Spacer(minLength: 4)
                     Button(L("terminal.restart"), action: restart).controlSize(.small)
                 }.padding(DesignMetrics.Spacing.md).background(Palette.subtle)
@@ -84,7 +84,7 @@ private struct LocalTerminalContent: View {
                 Text(terminal.workingDirectory).lineLimit(1).truncationMode(.middle).help(terminal.workingDirectory)
                 if let grid = terminal.grid { Text("\(grid.columns)×\(grid.rows)").monospacedDigit().foregroundStyle(.tertiary) }
             }
-            .font(.system(size: 9)).foregroundStyle(.secondary).padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.sm)
+            .font(.ui(size: 9)).foregroundStyle(.secondary).padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.sm)
             .background(Palette.subtle)
         }
         .onAppear { focusIfActive() }
@@ -182,11 +182,11 @@ struct LegacyTerminalHistory: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.lg) {
-            HStack { Text(L("terminal.history.title")).font(.headline); Spacer(); Button(L("settings.closeButton")) { dismiss() }.keyboardShortcut(.cancelAction) }
-            Text(L("terminal.history.helpMac")).font(.system(size: 12)).foregroundStyle(.secondary)
+            HStack { Text(L("terminal.history.title")).font(.ui(size: 13, weight: .bold)); Spacer(); Button(L("settings.closeButton")) { dismiss() }.keyboardShortcut(.cancelAction) }
+            Text(L("terminal.history.helpMac")).font(.ui(size: 12)).foregroundStyle(.secondary)
             ScrollView {
                 Text(session.logs.isEmpty ? L("terminal.history.empty") : session.logs.map { "[\($0.kind)] \($0.text)" }.joined(separator: "\n\n"))
-                    .font(.system(size: 11, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(DesignMetrics.Spacing.md)
+                    .font(.ui(size: 11, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(DesignMetrics.Spacing.md)
             }.background(Palette.subtle, in: RoundedRectangle(cornerRadius: 8))
         }.padding(DesignMetrics.Inset.sheet).frame(width: 630, height: 450)
     }

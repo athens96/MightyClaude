@@ -15,13 +15,14 @@ extension Palette {
         }
     }
 
-    /// Avenir Next Bold for headings and big numbers, the system bold where it is missing.
-    static func heading(_ size: CGFloat) -> Font {
-        NSFont(name: "AvenirNext-Bold", size: size) != nil ? .custom("AvenirNext-Bold", size: size) : .system(size: size, weight: .bold)
-    }
+    /// Avenir Next Bold for headings and big numbers at the user's text size, the chosen
+    /// family's bold when one is set (`TextSettings`), the system bold where Avenir is missing.
+    static func heading(_ size: CGFloat) -> Font { Font(headingNSFont(size) as CTFont) }
     /// The AppKit font `heading` draws with, for measuring it.
     static func headingNSFont(_ size: CGFloat) -> NSFont {
-        NSFont(name: "AvenirNext-Bold", size: size) ?? .systemFont(ofSize: size, weight: .bold)
+        let text = TextSettings.current
+        guard text.family == nil, let avenir = NSFont(name: "AvenirNext-Bold", size: CGFloat(text.size(Double(size)))) else { return .ui(ofSize: size, weight: .bold) }
+        return avenir
     }
 }
 
@@ -106,14 +107,14 @@ struct DashboardView: View {
                         Text(L("phone.dashboard.title")).font(Palette.heading(29)).foregroundStyle(Palette.ink)
                             .accessibilityAddTraits(.isHeader)
                         Text(L("dashboard.subtitle", ["workspaces": "\(store.snapshot.workspaces.count)", "panes": "\(sessions.count)"]))
-                            .font(.system(size: 12)).foregroundStyle(Palette.ink2)
+                            .font(.ui(size: 12)).foregroundStyle(Palette.ink2)
                     }
                 }
                 .leadingPastTrafficLights(inset)
                 VStack(alignment: .leading, spacing: 0) {
                     statRow(stats).padding(.top, DesignMetrics.Spacing.md)
                     if store.snapshot.workspaces.isEmpty {
-                        Text(L("dashboard.empty")).font(.system(size: 13)).foregroundStyle(Palette.ink2).padding(.top, DesignMetrics.Spacing.lg)
+                        Text(L("dashboard.empty")).font(.ui(size: 13)).foregroundStyle(Palette.ink2).padding(.top, DesignMetrics.Spacing.lg)
                     }
                     ForEach(store.snapshot.workspaces) { workspace in
                         group(workspace, sessions: sessions.filter { $0.workspaceId == workspace.id }).padding(.top, DesignMetrics.Spacing.lg)
@@ -150,7 +151,7 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 0) {
             Text("\(count)").font(Palette.heading(34)).monospacedDigit().foregroundStyle(number)
             Spacer(minLength: DesignMetrics.Spacing.xxs)
-            Text(label).font(.system(size: 12.5, weight: .bold)).foregroundStyle(ink).lineLimit(1)
+            Text(label).font(.ui(size: 12.5, weight: .bold)).foregroundStyle(ink).lineLimit(1)
         }
         .padding(.horizontal, DesignMetrics.Inset.dashboardTileH).padding(.vertical, DesignMetrics.Inset.dashboardTileV)
         .frame(minWidth: 110, maxWidth: usageRows.isEmpty ? .infinity : 220, minHeight: Self.tileHeight, maxHeight: Self.tileHeight, alignment: .leading)
@@ -173,16 +174,16 @@ struct DashboardView: View {
     private func usageCard(_ rows: [(provider: String, windows: [AccountUsageWindow])]) -> some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
-                Image(systemName: "waveform.path.ecg").font(.system(size: 11)).foregroundStyle(Palette.ink2)
-                Text(L("dashboard.usage.title")).font(.system(size: 12, weight: .bold)).foregroundStyle(Palette.ink)
+                Image(systemName: "waveform.path.ecg").font(.ui(size: 11)).foregroundStyle(Palette.ink2)
+                Text(L("dashboard.usage.title")).font(.ui(size: 12, weight: .bold)).foregroundStyle(Palette.ink)
                 Spacer(minLength: 6)
-                Text(L("dashboard.usage.shared")).font(.system(size: 11)).foregroundStyle(Palette.ink2).lineLimit(1)
+                Text(L("dashboard.usage.shared")).font(.ui(size: 11)).foregroundStyle(Palette.ink2).lineLimit(1)
             }
             ForEach(rows, id: \.provider) { row in
                 HStack(spacing: DesignMetrics.Spacing.lg) {
                     HStack(spacing: DesignMetrics.Spacing.sm) {
                         ProviderIcon(provider: row.provider, size: 11)
-                        Text(ProviderOptions.label(row.provider)).font(.system(size: 11.5, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
+                        Text(ProviderOptions.label(row.provider)).font(.ui(size: 11.5, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
                     }.frame(width: 78, alignment: .leading)
                     ForEach(Array(row.windows.enumerated()), id: \.offset) { _, window in usageBar(window) }
                 }
@@ -198,7 +199,7 @@ struct DashboardView: View {
     private func usageBar(_ window: AccountUsageWindow) -> some View {
         let fraction = min(1, max(0, window.usedPercent / 100))
         return HStack(spacing: 8) {
-            Text(StatusBarUsageView.windowLabel(window.kind)).font(.system(size: 11.5)).foregroundStyle(Palette.ink2).lineLimit(1)
+            Text(StatusBarUsageView.windowLabel(window.kind)).font(.ui(size: 11.5)).foregroundStyle(Palette.ink2).lineLimit(1)
             Capsule().fill(Palette.runSoft).frame(height: 6)
                 .overlay(alignment: .leading) {
                     GeometryReader { proxy in
@@ -207,7 +208,7 @@ struct DashboardView: View {
                 }
                 .frame(minWidth: 40)
                 .accessibilityHidden(true)
-            Text(StatusBarUsageView.percent(window.usedPercent)).font(.system(size: 11.5, weight: .bold)).monospacedDigit()
+            Text(StatusBarUsageView.percent(window.usedPercent)).font(.ui(size: 11.5, weight: .bold)).monospacedDigit()
                 .foregroundStyle(Palette.ink).frame(minWidth: 30, alignment: .trailing)
         }
     }
@@ -220,12 +221,12 @@ struct DashboardView: View {
             HStack(spacing: DesignMetrics.Spacing.md) {
                 Text(workspace.name).font(Palette.heading(17)).foregroundStyle(Palette.ink).lineLimit(1)
                     .accessibilityAddTraits(.isHeader)
-                Text(workspace.path).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(Palette.ink2)
+                Text(workspace.path).font(.ui(size: 11.5, design: .monospaced)).foregroundStyle(Palette.ink2)
                     .lineLimit(1).truncationMode(.middle).help(workspace.path)
                 if let git = gitState.info(for: workspace) { WorkspaceGitBadge(info: git) }
                 Spacer(minLength: 8)
                 Button { store.openFilePane(workspaceId: workspace.id) } label: {
-                    Label(L("files.pane.title"), systemImage: "folder").font(.system(size: 11.5, weight: .bold))
+                    Label(L("files.pane.title"), systemImage: "folder").font(.ui(size: 11.5, weight: .bold))
                         .foregroundStyle(Palette.ink)
                         .padding(.horizontal, DesignMetrics.Spacing.md).frame(height: 24)
                         .background(Palette.panel, in: Capsule())
@@ -235,7 +236,7 @@ struct DashboardView: View {
                 .help(L("menu.showFiles"))
                 .accessibilityIdentifier("dashboard-open-files-\(workspace.id)")
                 Menu { WorkspaceAddMenuItems(store: store, workspace: workspace) } label: {
-                    Label(L("workspace.addPane"), systemImage: "plus").font(.system(size: 11.5, weight: .bold))
+                    Label(L("workspace.addPane"), systemImage: "plus").font(.ui(size: 11.5, weight: .bold))
                         .foregroundStyle(Palette.panel)
                         .padding(.horizontal, DesignMetrics.Spacing.md).frame(height: 24)
                         .background(Palette.ink, in: Capsule())
@@ -249,7 +250,7 @@ struct DashboardView: View {
             }
             .padding(.horizontal, 2)
             if cards.isEmpty {
-                Text(L("phone.workspaces.noSessions")).font(.system(size: 12)).foregroundStyle(Palette.ink2).padding(.horizontal, 2)
+                Text(L("phone.workspaces.noSessions")).font(.ui(size: 12)).foregroundStyle(Palette.ink2).padding(.horizontal, 2)
             } else {
                 // One white group per workspace, its panes as glyph rows (status v2).
                 VStack(spacing: 0) {
@@ -287,7 +288,7 @@ struct DashboardRow: View {
             HStack(alignment: .top, spacing: Self.glyphGap) {
                 StatusGlyph(tone: card.tone, kind: card.kind, size: Self.glyphSize).padding(.top, 1).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(card.title).font(.system(size: 14, weight: settled ? .medium : .semibold)).foregroundStyle(Palette.ink).lineLimit(1)
+                    Text(card.title).font(.ui(size: 14, weight: settled ? .medium : .semibold)).foregroundStyle(Palette.ink).lineLimit(1)
                         .frame(minHeight: 20)
                     if card.isRunning, let timing = card.timing, timing.finishedAt == nil {
                         TimelineView(.periodic(from: .now, by: 1)) { context in meta(at: context.date) }
@@ -295,14 +296,14 @@ struct DashboardRow: View {
                         TimelineView(.everyMinute) { context in meta(at: context.date) }
                     }
                     if let last = card.lastActivity, card.isRunning {
-                        Text(last.text).font(.system(size: 11.3, design: .monospaced))
+                        Text(last.text).font(.ui(size: 11.3, design: .monospaced))
                             .foregroundStyle(last.isError ? Palette.errText : Palette.ink2)
                             .lineLimit(1).truncationMode(.tail).padding(.top, DesignMetrics.Spacing.xxs)
                     }
                 }
                 Spacer(minLength: 4)
                 if card.attention.total > 0 {
-                    Text(DashboardText.status(card)).font(.system(size: 12, weight: .bold)).foregroundStyle(Palette.waitText)
+                    Text(DashboardText.status(card)).font(.ui(size: 12, weight: .bold)).foregroundStyle(Palette.waitText)
                         .lineLimit(1).fixedSize().frame(minHeight: 20)
                 }
             }
@@ -329,7 +330,7 @@ struct DashboardRow: View {
     private func meta(at date: Date) -> some View {
         HStack(spacing: 4) {
             if card.isAgent {
-                ProviderBadgeIcon.labelled(ProviderOptions.label(card.provider), provider: card.provider, font: .systemFont(ofSize: 12))
+                ProviderBadgeIcon.labelled(ProviderOptions.label(card.provider), provider: card.provider, font: .ui(ofSize: 12))
                 if ProviderOptions.isBeta(card.provider) { BetaBadge() }
                 let rest = ([modelText] + WorkDashboard.sidebarMeta(card, now: date).map { part -> String? in
                     switch part {
@@ -349,7 +350,7 @@ struct DashboardRow: View {
                 if AgentIOPaneKind.isAgentIOPane(card.kind) { Text("· " + ProviderOptions.label(card.provider)) }
             }
         }
-        .font(.system(size: 12)).monospacedDigit().foregroundStyle(Palette.ink2).lineLimit(1)
+        .font(.ui(size: 12)).monospacedDigit().foregroundStyle(Palette.ink2).lineLimit(1)
     }
 }
 

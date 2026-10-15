@@ -72,7 +72,7 @@ struct MightyGraphReferenceBubble: View {
 
     private var resizeGlyph: some View {
         Image(systemName: "arrow.up.left.and.arrow.down.right")
-            .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+            .font(.ui(size: 10, weight: .semibold)).foregroundStyle(.secondary)
             .frame(width: 22, height: 22)
             .background(Palette.panel.opacity(0.95), in: RoundedRectangle(cornerRadius: 5))
             .padding(DesignMetrics.Spacing.xxs)
@@ -86,8 +86,8 @@ struct MightyGraphReferenceBubble: View {
         HStack(spacing: DesignMetrics.Spacing.sm) {
             Image(systemName: icon).foregroundStyle(Palette.accent)
             VStack(alignment: .leading, spacing: 1) {
-                Text(reference.line.map { L("reference.line", ["title": reference.title, "line": "\($0)"]) } ?? reference.title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
-                Text(reference.path).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).help(reference.path)
+                Text(reference.line.map { L("reference.line", ["title": reference.title, "line": "\($0)"]) } ?? reference.title).font(.ui(size: 12, weight: .semibold)).lineLimit(1)
+                Text(reference.path).font(.ui(size: 10, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).help(reference.path)
             }
             Spacer(minLength: 4)
             Button(action: onFlip) { Image(systemName: onLeft ? "rectangle.righthalf.inset.filled.arrow.right" : "rectangle.lefthalf.inset.filled.arrow.left") }
@@ -103,7 +103,7 @@ struct MightyGraphReferenceBubble: View {
                 .help(L("reference.closeHelp")).accessibilityLabel(L("reference.closeAccessibility"))
                 .accessibilityIdentifier("mighty-reference-close-\(sessionID)")
         }
-        .buttonStyle(.plain).font(.system(size: 12))
+        .buttonStyle(.plain).font(.ui(size: 12))
         .padding(.horizontal, DesignMetrics.Spacing.md).frame(height: DesignMetrics.Layout.previewHead)
     }
 
@@ -125,7 +125,7 @@ struct MightyGraphReferenceBubble: View {
             ScrollView { AgentMarkdownView(source: source).padding(DesignMetrics.Spacing.lg).padding(.bottom, Self.handleClearance) }
         case .text(let text):
             ScrollView([.vertical, .horizontal]) {
-                Text(text).font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
+                Text(text).font(.ui(size: 11, design: .monospaced)).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .topLeading).padding(DesignMetrics.Spacing.lg).padding(.bottom, Self.handleClearance)
             }
         case .image(let image):
@@ -143,9 +143,9 @@ struct MightyGraphReferenceBubble: View {
 
     private func notice(_ title: String, detail: String) -> some View {
         VStack(spacing: DesignMetrics.Spacing.sm) {
-            Image(systemName: "doc.questionmark").font(.system(size: 24, weight: .light)).foregroundStyle(.secondary)
-            Text(title).font(.system(size: 12, weight: .medium))
-            Text(detail).font(.system(size: 11)).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            Image(systemName: "doc.questionmark").font(.ui(size: 24, weight: .light)).foregroundStyle(.secondary)
+            Text(title).font(.ui(size: 12, weight: .medium))
+            Text(detail).font(.ui(size: 11)).foregroundStyle(.secondary).multilineTextAlignment(.center)
         }
         .padding(DesignMetrics.Spacing.xl).frame(maxWidth: .infinity, maxHeight: .infinity)
     }

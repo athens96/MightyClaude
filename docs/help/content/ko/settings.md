@@ -16,6 +16,14 @@ section: settings
 
 ![[settings-general]]
 
+### 글자 크기와 글꼴 {#text}
+{{platform:mac}} 같은 탭의 {{ui:settings.text.sectionTitle}} 항목에서 앱 전체의 글자를 바꿉니다.
+- {{ui:settings.text.sizeLabel}}: 85%에서 150% 사이에서 고릅니다. 대화, 입력창, 사이드바, 설정, 터미널이 함께 커지고 작아집니다.
+- {{ui:settings.text.fontLabel}}: 이 Mac에 설치된 글꼴 가운데 고릅니다. {{ui:settings.text.fontSystem}}은 macOS의 기본 글꼴입니다. 코드와 터미널은 고정폭 글꼴을 그대로 쓰고 크기만 따라갑니다.
+- {{ui:settings.text.reset}} 단추는 크기와 글꼴을 처음 상태로 되돌립니다.
+
+보기 메뉴의 {{ui:menu.textBigger}}({{kbd:⌘=}}), {{ui:menu.textSmaller}}({{kbd:⌘-}}), {{ui:menu.textActualSize}}({{kbd:⌘0}})로도 크기를 바꿉니다. 바꾼 값은 바로 적용되고, 앱을 다시 열어도 그대로입니다.
+
 ## 모델 {#models}
 {{ui:settings.nav.models}} 탭의 {{ui:settings.phaseModels.sectionTitle}}에서 작업 단계별로 쓸 모델을 이 Mac 전체에 정합니다. 단계는 {{ui:settings.phaseModels.phase.planning}}, {{ui:settings.phaseModels.phase.execution}}, {{ui:settings.phaseModels.phase.review}}, {{ui:settings.phaseModels.phase.subagents}}입니다.
 - {{ui:settings.phaseModels.defaultOption}}으로 두면 CLI가 정합니다.

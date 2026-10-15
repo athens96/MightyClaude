@@ -9,10 +9,10 @@ struct PhaseModelSettingsSection: View {
     var body: some View {
         SettingsGroup {
             Text(L("settings.phaseModels.description"))
-                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .font(.ui(size: 11)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Text(L("settings.phaseModels.effortNote"))
-                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .font(.ui(size: 11)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             PhaseModelProviderBlock(provider: "claude").environmentObject(store)
             Divider()
@@ -44,7 +44,7 @@ private struct PhaseModelProviderBlock: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
-                Text(ProviderOptions.label(provider)).font(.system(size: 12, weight: .medium))
+                Text(ProviderOptions.label(provider)).font(.ui(size: 12, weight: .medium))
                 if ProviderOptions.isBeta(provider) { BetaBadge() }
             }
             if provider == "claude" { claudePhaseRows } else { codexPhaseRows }
@@ -52,13 +52,13 @@ private struct PhaseModelProviderBlock: View {
             if provider == "claude" { claudeKnobDetails } else { codexKnobDetails }
             Divider()
             Text(L("settings.phaseModels.registeredTitle"))
-                .font(.system(size: 11, weight: .medium))
+                .font(.ui(size: 11, weight: .medium))
             ForEach(registered, id: \.name) { entry in
                 registeredRow(entry)
             }
             addRow
             if let err = validationError {
-                Text(err).font(.system(size: 11)).foregroundStyle(Palette.errText)
+                Text(err).font(.ui(size: 11)).foregroundStyle(Palette.errText)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("phaseModels-error-\(provider)")
             }
@@ -129,7 +129,7 @@ private struct PhaseModelProviderBlock: View {
     /// choice the CLI would ignore.
     private func phaseRow(_ phase: PhaseModelRouting.Phase, model: ModelCell?, effort: EffortCell?) -> some View {
         HStack(spacing: DesignMetrics.Spacing.sm) {
-            Text(phaseTitle(phase)).font(.system(size: 11))
+            Text(phaseTitle(phase)).font(.ui(size: 11))
             Spacer(minLength: 4)
             if let model {
                 Picker("", selection: Binding(get: { model.selection }, set: { if $0 != mixedSentinel { model.onPick($0) } })) {
@@ -139,7 +139,7 @@ private struct PhaseModelProviderBlock: View {
                 .labelsHidden().pickerStyle(.menu).frame(maxWidth: 220)
                 .accessibilityIdentifier("phaseModels-model-\(provider)-\(phase.rawValue)")
             } else {
-                Text(L("settings.phaseModels.paneModel")).font(.system(size: 11)).foregroundStyle(.secondary).frame(maxWidth: 220, alignment: .trailing)
+                Text(L("settings.phaseModels.paneModel")).font(.ui(size: 11)).foregroundStyle(.secondary).frame(maxWidth: 220, alignment: .trailing)
             }
             if let effort {
                 Picker("", selection: Binding(get: { effort.selection }, set: { effort.onPick($0) })) {
@@ -149,7 +149,7 @@ private struct PhaseModelProviderBlock: View {
                 .labelsHidden().pickerStyle(.menu).frame(width: 110)
                 .accessibilityIdentifier("phaseModels-effort-\(provider)-\(phase.rawValue)")
             } else {
-                Text(L("settings.phaseModels.effortUnsupported")).font(.system(size: 10)).foregroundStyle(.tertiary).frame(width: 110, alignment: .leading)
+                Text(L("settings.phaseModels.effortUnsupported")).font(.ui(size: 10)).foregroundStyle(.tertiary).frame(width: 110, alignment: .leading)
             }
         }
     }
@@ -216,7 +216,7 @@ private struct PhaseModelProviderBlock: View {
 
     private func knobRow(label: String, keyPath: WritableKeyPath<PhaseModelHardcodedConfig, String>) -> some View {
         HStack(spacing: DesignMetrics.Spacing.sm) {
-            Text(label).font(.system(size: 11)).foregroundStyle(.secondary)
+            Text(label).font(.ui(size: 11)).foregroundStyle(.secondary)
             Spacer(minLength: 4)
             Picker("", selection: Binding(
                 get: { phaseConfig[keyPath: keyPath] },
@@ -233,10 +233,10 @@ private struct PhaseModelProviderBlock: View {
     private func registeredRow(_ entry: RegisteredModelEntry) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
-                Text(verbatim: entry.name).font(.system(size: 11, design: .monospaced))
+                Text(verbatim: entry.name).font(.ui(size: 11, design: .monospaced))
                 if entry.supportsEffort {
                     Text(L("settings.phaseModels.supportsEffortLabel"))
-                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                        .font(.ui(size: 10)).foregroundStyle(.secondary)
                 }
             }
             Spacer(minLength: 0)
@@ -253,7 +253,7 @@ private struct PhaseModelProviderBlock: View {
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 TextField(L("settings.phaseModels.addPlaceholder"), text: $addName)
                     .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.ui(size: 11, design: .monospaced))
                     .onSubmit { addModel() }
                     .accessibilityIdentifier("phaseModels-add-\(provider)")
                 Button(L("settings.phaseModels.addButton")) { addModel() }
@@ -261,13 +261,13 @@ private struct PhaseModelProviderBlock: View {
                     .accessibilityIdentifier("phaseModels-addButton-\(provider)")
             }
             Toggle(L("settings.phaseModels.supportsEffortLabel"), isOn: $addSupportsEffort)
-                .font(.system(size: 11))
+                .font(.ui(size: 11))
                 .accessibilityIdentifier("phaseModels-addEffort-\(provider)")
                 .onChange(of: addSupportsEffort) { _, on in if !on { addEffortLevels = [] } }
             if addSupportsEffort {
                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                     Text(L("settings.phaseModels.effortLevelsLabel"))
-                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                        .font(.ui(size: 10)).foregroundStyle(.secondary)
                     HStack(spacing: DesignMetrics.Spacing.xs) {
                         ForEach(ProviderOptions.efforts, id: \.self) { level in
                             let selected = addEffortLevels.contains(level)

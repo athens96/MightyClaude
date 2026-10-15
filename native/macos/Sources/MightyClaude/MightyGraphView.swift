@@ -217,10 +217,10 @@ struct MightyGraphView: View {
                     onViewMode(mode)
                 }
                 Text(StyleChrome.graphHeader(styleName: styleName, phaseTitle: stylePhase))
-                    .font(.system(size: 12, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1).fixedSize()
+                    .font(.ui(size: 12, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1).fixedSize()
                 if let styleSource, let badge = StyleChrome.sourceBadge(styleSource) { SourceBadge(text: badge) }
                 Text(summary)
-                    .font(.system(size: 10)).foregroundStyle(Palette.ink2).lineLimit(1)
+                    .font(.ui(size: 10)).foregroundStyle(Palette.ink2).lineLimit(1)
                     .help(tokens.isEmpty ? "" : L("graph.header.totalHelp", ["detail": tokens.detail]))
                 Spacer(minLength: DesignMetrics.Spacing.md)
                 if viewMode == .diagram {
@@ -484,9 +484,9 @@ struct MightyGraphView: View {
         case .draft:
             VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
                 HStack {
-                    Label(runs.isEmpty ? L("graph.block.firstRequest") : L("graph.block.nextRequest"), systemImage: "square.and.pencil").font(.system(size: 12, weight: .semibold))
+                    Label(runs.isEmpty ? L("graph.block.firstRequest") : L("graph.block.nextRequest"), systemImage: "square.and.pencil").font(.ui(size: 12, weight: .semibold))
                     Spacer()
-                    Text(draft.isEmpty ? L("graph.state.draftIdle") : L("graph.state.draftTyping")).font(.system(size: 11)).foregroundStyle(Palette.ink2)
+                    Text(draft.isEmpty ? L("graph.state.draftIdle") : L("graph.state.draftTyping")).font(.ui(size: 11)).foregroundStyle(Palette.ink2)
                 }
                 // A native selectable view, not Text(...).textSelection: the
                 // canvas monitor hands first responder back to itself for every
@@ -594,12 +594,12 @@ struct MightyGraphView: View {
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: icon).foregroundStyle(onStrip ? Palette.onStatus : tint)
                 // A request block's title ends with its agent's name; its mark goes before it.
-                (titleProvider.map { ProviderBadgeIcon.labelled(title, provider: $0, font: .systemFont(ofSize: 12, weight: .bold)) } ?? Text(title))
-                    .font(.system(size: 12, weight: .bold)).lineLimit(1).help(title)
+                (titleProvider.map { ProviderBadgeIcon.labelled(title, provider: $0, font: .ui(ofSize: 12, weight: .bold)) } ?? Text(title))
+                    .font(.ui(size: 12, weight: .bold)).lineLimit(1).help(title)
                     .foregroundStyle(onStrip ? Palette.onStatus : Palette.ink)
                 if fromRecord {
                     // Read back from the CLI's own session record, not kept by the app.
-                    Image(systemName: "clock.arrow.circlepath").font(.system(size: 10)).foregroundStyle(quiet)
+                    Image(systemName: "clock.arrow.circlepath").font(.ui(size: 10)).foregroundStyle(quiet)
                         .help(L("graph.history.tag"))
                         .accessibilityLabel(L("graph.history.tag"))
                         .accessibilityIdentifier("mighty-record-\(node.id)")
@@ -612,7 +612,7 @@ struct MightyGraphView: View {
                 }
                 if let capsuleText = ModelUsageFormat.blockCapsule(usage: usage, records: records, nodeModelLabel: nodeModelLabel, catalog: catalog, versioned: true) {
                     let helpText = records.isEmpty ? (usage.map { usageLabel + " · " + $0.detail } ?? "") : ModelUsageFormat.blockCapsuleHelp(records: records, catalog: catalog, versioned: true)
-                    Text(capsuleText).font(.system(size: 10, design: .monospaced)).foregroundStyle(quiet).lineLimit(1)
+                    Text(capsuleText).font(.ui(size: 10, design: .monospaced)).foregroundStyle(quiet).lineLimit(1)
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(onStrip ? Color.black.opacity(0.18) : Palette.raised, in: Capsule())
                         .help(helpText)
@@ -623,7 +623,7 @@ struct MightyGraphView: View {
                     Button { resultFiles.toggle(resultFilesRunID) } label: {
                         HStack(spacing: 3) {
                             Image(systemName: resultFiles.selectedRunID == resultFilesRunID ? "doc.on.doc.fill" : "doc.on.doc")
-                            Text("\(resultFiles.files(for: resultFilesRunID).count)").font(.system(size: 10)).monospacedDigit()
+                            Text("\(resultFiles.files(for: resultFilesRunID).count)").font(.ui(size: 10)).monospacedDigit()
                         }
                         .foregroundStyle(onStrip ? Palette.onStatus : resultFiles.selectedRunID == resultFilesRunID ? Palette.accent : Palette.ink2)
                     }
@@ -641,7 +641,7 @@ struct MightyGraphView: View {
                         onSaveResultSize(nil)
                     }
                         .buttonStyle(.plain)
-                        .font(.system(size: 10, weight: onStrip ? .bold : .regular))
+                        .font(.ui(size: 10, weight: onStrip ? .bold : .regular))
                         .foregroundStyle(onStrip ? Palette.onStatus : Palette.accent)
                         .accessibilityIdentifier("mighty-fit-result-\(node.id)")
                 }
@@ -677,7 +677,7 @@ struct MightyGraphView: View {
                 EmptyView()
             } else if content.isEmpty {
                 Text(MightyGraphLayout.terminal(status) ? L("graph.block.noResponse") : L("graph.block.waitingResponse"))
-                    .font(.system(size: 12)).foregroundStyle(Palette.ink2)
+                    .font(.ui(size: 12)).foregroundStyle(Palette.ink2)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).padding(DesignMetrics.Inset.graphBlockBodyH)
             } else {
                 blockTranscript(id: "graph-\(sessionID)-\(node.id)", status: status, entries: content, records: records, childBlocks: childBlocks,
@@ -732,7 +732,7 @@ struct MightyGraphView: View {
                 Text("· " + L("graph.history.loaded", ["count": "\(loaded)"]))
             }
         }
-        .font(.system(size: 11)).foregroundStyle(Palette.ink2).lineLimit(1).minimumScaleFactor(0.8)
+        .font(.ui(size: 11)).foregroundStyle(Palette.ink2).lineLimit(1).minimumScaleFactor(0.8)
         .padding(.horizontal, DesignMetrics.Spacing.lg)
         .frame(width: width, height: height)
         .background(Palette.panel, in: Capsule())
@@ -743,7 +743,7 @@ struct MightyGraphView: View {
     }
 
     private func blockScrollLabel(_ id: String, ink: Color) -> some View {
-        Text(L("graph.block.scrolling")).font(.system(size: 9, weight: .medium)).foregroundStyle(ink)
+        Text(L("graph.block.scrolling")).font(.ui(size: 9, weight: .medium)).foregroundStyle(ink)
             .lineLimit(1).fixedSize().accessibilityIdentifier("mighty-block-scroll-" + id)
     }
 
@@ -775,7 +775,7 @@ struct MightyGraphView: View {
                             .id(Self.timelineHistoryID)
                     }
                     if groups.isEmpty {
-                        Text(L("graph.timeline.empty")).font(.system(size: 12)).foregroundStyle(Palette.ink2)
+                        Text(L("graph.timeline.empty")).font(.ui(size: 12)).foregroundStyle(Palette.ink2)
                             .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, DesignMetrics.Spacing.md)
                             .id("timeline-empty")
                     }
@@ -849,11 +849,11 @@ struct MightyGraphView: View {
             VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                 HStack(spacing: DesignMetrics.Spacing.md) {
                     Image(systemName: open ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 10, weight: .bold)).foregroundStyle(Palette.ink2).frame(width: Self.timelineChevronWidth)
+                        .font(.ui(size: 10, weight: .bold)).foregroundStyle(Palette.ink2).frame(width: Self.timelineChevronWidth)
                     ProviderBadgeIcon.labelled(title, provider: provider, font: Palette.headingNSFont(16))
                         .font(Palette.heading(16)).foregroundStyle(Palette.ink).lineLimit(1)
                     if group.runIndex < olderCount {
-                        Image(systemName: "clock.arrow.circlepath").font(.system(size: 11)).foregroundStyle(Palette.ink2)
+                        Image(systemName: "clock.arrow.circlepath").font(.ui(size: 11)).foregroundStyle(Palette.ink2)
                             .help(L("graph.history.tag")).accessibilityLabel(L("graph.history.tag"))
                     }
                     Spacer(minLength: DesignMetrics.Spacing.sm)
@@ -861,11 +861,11 @@ struct MightyGraphView: View {
                 }
                 Group {
                     if !prompt.isEmpty {
-                        Text(prompt).font(.system(size: 12)).foregroundStyle(Palette.ink2).lineLimit(2)
+                        Text(prompt).font(.ui(size: 12)).foregroundStyle(Palette.ink2).lineLimit(2)
                             .multilineTextAlignment(.leading)
                     }
                     Text(L("phone.blocks.tally", ["total": "\(group.tally.total)", "settled": "\(group.tally.settled)"]))
-                        .font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.ink2)
+                        .font(.ui(size: 11, weight: .semibold)).foregroundStyle(Palette.ink2)
                 }
                 .padding(.leading, Self.timelineRequestIndent)
             }
@@ -942,7 +942,7 @@ struct MightyGraphView: View {
         let childBlocks = GraphChildBlocks.map(responseRecords: agent?.responseRecords ?? run.responseRecords, agents: run.agents, runId: runID)
         VStack(alignment: .leading, spacing: 0) {
             if !input.isEmpty {
-                Text(input).font(.system(size: 11)).foregroundStyle(Palette.ink).lineLimit(6)
+                Text(input).font(.ui(size: 11)).foregroundStyle(Palette.ink).lineLimit(6)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).padding(.vertical, DesignMetrics.Inset.graphBlockBodyV)
@@ -952,7 +952,7 @@ struct MightyGraphView: View {
             if request {
                 EmptyView()
             } else if entries.isEmpty {
-                Text(L("phone.blocks.nothing")).font(.system(size: 12)).foregroundStyle(Palette.ink2)
+                Text(L("phone.blocks.nothing")).font(.ui(size: 12)).foregroundStyle(Palette.ink2)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(DesignMetrics.Inset.graphBlockBodyH)
             } else {
                 blockTranscript(id: "timeline-\(sessionID)-\(row.nodeID)", status: status, entries: entries, records: records, childBlocks: childBlocks, inTimeline: true)
@@ -982,7 +982,7 @@ struct MightyGraphView: View {
                 } label: {
                     HStack(spacing: 3) {
                         Image(systemName: "doc.on.doc")
-                        Text("\(files.count)").font(.system(size: 10)).monospacedDigit()
+                        Text("\(files.count)").font(.ui(size: 10)).monospacedDigit()
                     }
                     .foregroundStyle(Palette.heroInk(result.tone))
                 }
@@ -1061,7 +1061,7 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
                         .overlay(alignment: .bottomTrailing) {
                             if node.isResizable {
                                 Image(systemName: "arrow.up.left.and.arrow.down.right")
-                                    .font(.system(size: 10, weight: .semibold))
+                                    .font(.ui(size: 10, weight: .semibold))
                                     .foregroundStyle(selection == node.id ? Palette.accent : Palette.ink2)
                                     .frame(width: 22, height: 22)
                                     .background(Palette.panel.opacity(0.95), in: RoundedRectangle(cornerRadius: 5))

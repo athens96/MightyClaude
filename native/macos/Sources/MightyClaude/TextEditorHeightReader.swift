@@ -78,7 +78,7 @@ struct TextEditorHeightReader: NSViewRepresentable {
         func synchronizePlaceholder() {
             guard let editor, let label = placeholderLabel else { return }
             label.stringValue = placeholder
-            label.font = editor.font ?? .systemFont(ofSize: 13)
+            label.font = editor.font ?? .ui(ofSize: 13)
             label.isHidden = placeholder.isEmpty || !editor.string.isEmpty || editor.hasMarkedText()
             let origin = editor.textContainerOrigin
             let padding = editor.textContainer?.lineFragmentPadding ?? 0
@@ -108,6 +108,10 @@ struct TextEditorHeightReader: NSViewRepresentable {
                     self?.scheduleMeasurement()
                 })
             }
+            // A new text size or font reaches the editor on SwiftUI's next update; measure after it.
+            textObservers.append(NotificationCenter.default.addObserver(forName: TextSettings.didChange, object: nil, queue: .main) { [weak self] _ in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { self?.scheduleMeasurement() }
+            })
             synchronizePlaceholder()
         }
 
@@ -132,7 +136,7 @@ struct TextEditorHeightReader: NSViewRepresentable {
             synchronizePlaceholder()
             let width = sourceContainer.size.width
             guard width.isFinite, width > 1 else { return }
-            let font = editor.font ?? NSFont.systemFont(ofSize: 13)
+            let font = editor.font ?? NSFont.ui(ofSize: 13)
             let storage = NSTextStorage(attributedString: editor.attributedString())
             let layout = NSLayoutManager()
             let container = NSTextContainer(size: NSSize(width: width, height: .greatestFiniteMagnitude))

@@ -62,13 +62,13 @@ private struct ToolPermissionCard: View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 PaneWaitBadge(systemImage: "hand.raised.fill")
-                Text(L("permission.bar.title", ["title": presentation.title])).font(.system(size: 13, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
-                Text(request.toolName).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(Palette.ink2).lineLimit(1)
+                Text(L("permission.bar.title", ["title": presentation.title])).font(.ui(size: 13, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
+                Text(request.toolName).font(.ui(size: 11.5, design: .monospaced)).foregroundStyle(Palette.ink2).lineLimit(1)
                 Spacer(minLength: 0)
                 if count > 1 { Text(L("phone.questionnaire.waiting", ["count": "\(count)"])).foregroundStyle(Palette.ink2) }
-            }.font(.system(size: 12))
+            }.font(.ui(size: 12))
             if let headline = presentation.headline {
-                Text(headline).font(.system(size: 14, weight: .bold)).foregroundStyle(Palette.ink).textSelection(.enabled)
+                Text(headline).font(.ui(size: 14, weight: .bold)).foregroundStyle(Palette.ink).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityIdentifier("permission-headline")
             }
@@ -76,38 +76,38 @@ private struct ToolPermissionCard: View {
                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
                     ForEach(Array(presentation.fields.enumerated()), id: \.offset) { _, field in
                         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
-                            Text(field.label).font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.ink2)
+                            Text(field.label).font(.ui(size: 10, weight: .semibold)).foregroundStyle(Palette.ink2)
                             if field.code {
-                                Text(field.value).font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
+                                Text(field.value).font(.ui(size: 11, design: .monospaced)).textSelection(.enabled)
                                     .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.sm)
                                     .background(Palette.raised, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                             } else {
-                                Text(field.value).font(.system(size: 11)).textSelection(.enabled)
+                                Text(field.value).font(.ui(size: 11)).textSelection(.enabled)
                                     .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }
                     }
                     if presentation.fields.isEmpty, presentation.headline == nil {
-                        Text(request.summary).font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
+                        Text(request.summary).font(.ui(size: 12, design: .monospaced)).textSelection(.enabled)
                     }
-                    if let path = request.blockedPath, !path.isEmpty { Text(L("permission.bar.blockedPath", ["path": path])).font(.system(size: 10)) }
-                    if let reason = request.reason, !reason.isEmpty { Text(reason).font(.system(size: 10)).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true) }
+                    if let path = request.blockedPath, !path.isEmpty { Text(L("permission.bar.blockedPath", ["path": path])).font(.ui(size: 10)) }
+                    if let reason = request.reason, !reason.isEmpty { Text(reason).font(.ui(size: 10)).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true) }
                     DisclosureGroup(L("styles.approval.raw"), isExpanded: $showsJSON) {
-                        Text(request.inputJSON).font(.system(size: 10, design: .monospaced)).textSelection(.enabled)
+                        Text(request.inputJSON).font(.ui(size: 10, design: .monospaced)).textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading).padding(.top, DesignMetrics.Spacing.xs)
-                    }.font(.system(size: 10)).accessibilityIdentifier("permission-json")
+                    }.font(.ui(size: 10)).accessibilityIdentifier("permission-json")
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(.trailing, DesignMetrics.Spacing.xs)
             }.frame(maxHeight: 180)
             if !request.canAllow {
                 Text(L("permission.bar.cannotAllow"))
-                    .font(.system(size: 10)).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
+                    .font(.ui(size: 10)).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
             }
             if let error = store.permissionErrors[sessionId] {
-                Text(error).font(.system(size: 10)).foregroundStyle(Palette.errText).lineLimit(2)
+                Text(error).font(.ui(size: 10)).foregroundStyle(Palette.errText).lineLimit(2)
             }
             HStack(spacing: DesignMetrics.Spacing.sm) {
-                Text(L("permission.bar.thisRequestOnly")).font(.system(size: 11)).foregroundStyle(Palette.ink2)
+                Text(L("permission.bar.thisRequestOnly")).font(.ui(size: 11)).foregroundStyle(Palette.ink2)
                 Spacer(minLength: 0)
                 if busy { ProgressView().controlSize(.mini) }
                 Button(L("permission.deny")) { answer(false) }.buttonStyle(PaneCardButtonStyle()).accessibilityIdentifier("permission-deny")

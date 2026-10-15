@@ -16,16 +16,16 @@ struct ResumeChoiceSheet: View {
             HStack(alignment: .top, spacing: DesignMetrics.Spacing.md) {
                 ProviderIcon(provider: provider, size: 18).foregroundStyle(.secondary).frame(width: 22).padding(.top, 1)
                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
-                    Text(L("resume.choice.title", ["provider": agent])).font(.headline)
+                    Text(L("resume.choice.title", ["provider": agent])).font(.ui(size: 13, weight: .bold))
                     if checking {
                         HStack(spacing: DesignMetrics.Spacing.sm) {
                             ProgressView().controlSize(.small)
-                            Text(L("resume.loading")).font(.system(size: 12)).foregroundStyle(.secondary)
+                            Text(L("resume.loading")).font(.ui(size: 12)).foregroundStyle(.secondary)
                         }
                         .accessibilityElement(children: .combine)
                         .accessibilityIdentifier("add-pane-choice-checking")
                     } else {
-                        Text(L("resume.choice.message", ["provider": agent])).font(.system(size: 12)).foregroundStyle(.secondary)
+                        Text(L("resume.choice.message", ["provider": agent])).font(.ui(size: 12)).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -76,29 +76,29 @@ struct ResumeSessionSheet: View {
             VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                 HStack(spacing: DesignMetrics.Spacing.sm) {
                     ProviderIcon(provider: provider, size: 14).foregroundStyle(.secondary)
-                    Text(L("resume.title")).font(.headline)
+                    Text(L("resume.title")).font(.ui(size: 13, weight: .bold))
                 }
-                Text(workspace.path).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
+                Text(workspace.path).font(.ui(size: 11, design: .monospaced)).foregroundStyle(.secondary)
                     .lineLimit(1).truncationMode(.middle)
             }
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.tertiary)
-                TextField(L("resume.search"), text: $search).textFieldStyle(.plain).font(.system(size: 12))
+                TextField(L("resume.search"), text: $search).textFieldStyle(.plain).font(.ui(size: 12))
                     .focused($searchFocused)
                     .accessibilityIdentifier("resume-search")
             }
             .padding(DesignMetrics.Spacing.sm).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 7))
             content.frame(maxWidth: .infinity, minHeight: 300, maxHeight: .infinity)
             HStack(spacing: DesignMetrics.Spacing.md) {
-                Toggle(L("resume.showAll"), isOn: $showAll).toggleStyle(.checkbox).font(.caption)
+                Toggle(L("resume.showAll"), isOn: $showAll).toggleStyle(.checkbox).font(.ui(size: 10))
                     .accessibilityIdentifier("resume-show-all")
                 if !showAll, let hidden = listing?.hidden, hidden > 0 {
-                    Text(L("resume.hiddenCount", ["count": "\(hidden)"])).font(.caption).foregroundStyle(.secondary)
+                    Text(L("resume.hiddenCount", ["count": "\(hidden)"])).font(.ui(size: 10)).foregroundStyle(.secondary)
                 }
                 Spacer()
             }
             HStack {
-                Text(L("resume.note")).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text(L("resume.note")).font(.ui(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Spacer()
                 Button(L("resume.cancel")) { store.resumePicker = nil }.keyboardShortcut(.cancelAction)
             }
@@ -116,12 +116,12 @@ struct ResumeSessionSheet: View {
             ProgressView(L("resume.loading")).frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if shown.isEmpty {
             VStack(spacing: DesignMetrics.Spacing.sm) {
-                Image(systemName: "clock.arrow.circlepath").font(.system(size: 26, weight: .light)).foregroundStyle(.tertiary)
+                Image(systemName: "clock.arrow.circlepath").font(.ui(size: 26, weight: .light)).foregroundStyle(.tertiary)
                 if search.trimmingCharacters(in: .whitespaces).isEmpty {
-                    Text(L("resume.empty")).font(.system(size: 13, weight: .medium))
-                    Text(L("resume.emptyReason", ["provider": ProviderOptions.label(provider)])).font(.system(size: 11)).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    Text(L("resume.empty")).font(.ui(size: 13, weight: .medium))
+                    Text(L("resume.emptyReason", ["provider": ProviderOptions.label(provider)])).font(.ui(size: 11)).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 } else {
-                    Text(L("resume.noMatch")).font(.system(size: 13, weight: .medium))
+                    Text(L("resume.noMatch")).font(.ui(size: 13, weight: .medium))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity).padding(DesignMetrics.Spacing.xl)
@@ -148,13 +148,13 @@ struct ResumeSessionSheet: View {
                 ProviderIcon(provider: item.provider, size: 14).foregroundStyle(.secondary).frame(width: 18).padding(.top, DesignMetrics.Spacing.xxs)
                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
                     HStack(spacing: DesignMetrics.Spacing.sm) {
-                        Text(title).font(.system(size: 12, weight: .medium)).lineLimit(2).foregroundStyle(item.title == nil ? .secondary : .primary)
+                        Text(title).font(.ui(size: 12, weight: .medium)).lineLimit(2).foregroundStyle(item.title == nil ? .secondary : .primary)
                         if ProviderOptions.isBeta(item.provider) { BetaBadge() }
                     }
-                    Text(details).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                    Text(details).font(.ui(size: 10)).foregroundStyle(.secondary).lineLimit(1)
                     if busy {
                         Label(L("resume.recentlyModified"), systemImage: "exclamationmark.circle")
-                            .font(.system(size: 10)).foregroundStyle(Palette.waitText).lineLimit(1)
+                            .font(.ui(size: 10)).foregroundStyle(Palette.waitText).lineLimit(1)
                             .accessibilityIdentifier("resume-busy-\(item.sessionID)")
                     }
                 }

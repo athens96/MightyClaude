@@ -16,6 +16,14 @@ section: settings
 
 ![[settings-general]]
 
+### 文字サイズとフォント {#text}
+{{platform:mac}} 同じタブの {{ui:settings.text.sectionTitle}} で、アプリ全体の文字を変更します。
+- {{ui:settings.text.sizeLabel}}：85% から 150% の間で選びます。会話、入力欄、サイドバー、設定、ターミナルが一緒に大きく・小さくなります。
+- {{ui:settings.text.fontLabel}}：この Mac にインストールされているフォントから選びます。{{ui:settings.text.fontSystem}} は macOS の標準フォントです。コードとターミナルは等幅フォントのまま、サイズだけが変わります。
+- {{ui:settings.text.reset}} ボタンで、サイズとフォントを最初の状態に戻します。
+
+表示メニューの {{ui:menu.textBigger}}（{{kbd:⌘=}}）、{{ui:menu.textSmaller}}（{{kbd:⌘-}}）、{{ui:menu.textActualSize}}（{{kbd:⌘0}}）でもサイズを変更できます。変更はすぐに反映され、アプリを開き直してもそのままです。
+
 ## モデル {#models}
 {{ui:settings.nav.models}}タブの{{ui:settings.phaseModels.sectionTitle}}で、作業の段階ごとに使うモデルをこのMac全体で設定します。段階は{{ui:settings.phaseModels.phase.planning}}、{{ui:settings.phaseModels.phase.execution}}、{{ui:settings.phaseModels.phase.review}}、{{ui:settings.phaseModels.phase.subagents}}です。
 - {{ui:settings.phaseModels.defaultOption}}のままにすると、CLIが決めます。

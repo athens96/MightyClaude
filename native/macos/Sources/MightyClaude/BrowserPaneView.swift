@@ -42,7 +42,7 @@ struct BrowserPaneView: View {
             Button {
                 engine.goBack()
             } label: {
-                Image(systemName: "chevron.left").font(.system(size: 12))
+                Image(systemName: "chevron.left").font(.ui(size: 12))
             }
             .buttonStyle(.plain)
             .disabled(!engine.canGoBack)
@@ -52,7 +52,7 @@ struct BrowserPaneView: View {
             Button {
                 engine.goForward()
             } label: {
-                Image(systemName: "chevron.right").font(.system(size: 12))
+                Image(systemName: "chevron.right").font(.ui(size: 12))
             }
             .buttonStyle(.plain)
             .disabled(!engine.canGoForward)
@@ -62,7 +62,7 @@ struct BrowserPaneView: View {
             Button {
                 engine.reload()
             } label: {
-                Image(systemName: "arrow.clockwise").font(.system(size: 12))
+                Image(systemName: "arrow.clockwise").font(.ui(size: 12))
             }
             .buttonStyle(.plain)
             .disabled(!engine.isAvailable)
@@ -71,7 +71,7 @@ struct BrowserPaneView: View {
 
             TextField(L("browser.address.placeholder"), text: $addressText)
                 .textFieldStyle(.roundedBorder)
-                .font(.system(size: 12))
+                .font(.ui(size: 12))
                 .accessibilityLabel(L("browser.address.placeholder"))
                 .disabled(!engine.isAvailable)
                 .onSubmit {
@@ -94,9 +94,9 @@ struct BrowserPaneView: View {
 
             if let reason = engine.failureReason {
                 VStack(spacing: DesignMetrics.Spacing.md) {
-                    Image(systemName: "globe.slash").font(.system(size: 36)).foregroundStyle(.secondary)
+                    Image(systemName: "globe.slash").font(.ui(size: 36)).foregroundStyle(.secondary)
                     Text(reason)
-                        .font(.system(size: 13))
+                        .font(.ui(size: 13))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 380)

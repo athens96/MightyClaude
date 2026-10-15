@@ -36,7 +36,7 @@ struct HeroStatusPill: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 11, weight: .bold)).lineLimit(1)
+            .font(.ui(size: 11, weight: .bold)).lineLimit(1)
             .foregroundStyle(ink)
             .padding(.horizontal, DesignMetrics.Spacing.md).frame(height: 18)
             .overlay { Capsule().strokeBorder(ink, lineWidth: 1.5) }
@@ -59,7 +59,7 @@ struct PaneHeaderFigures: View {
             + [ProviderOptions.label(provider)] + (model.map { [$0] } ?? [])).joined(separator: " · ")
         let timing = figures.lazy.compactMap { if case .elapsed(let timing) = $0 { timing } else { nil } }.first
         Text(figures.map { if case .tools = $0 { L("pane.hero.figure", ["label": label($0), "value": value($0)]) } else { value($0) } }.joined(separator: " · "))
-            .font(.system(size: 11, design: .monospaced)).foregroundStyle(Palette.ink2)
+            .font(.ui(size: 11, design: .monospaced)).foregroundStyle(Palette.ink2)
             .lineLimit(1).fixedSize()
             .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
             .clipped()
@@ -106,7 +106,7 @@ struct SlimPaneHeader<Trailing: View>: View {
     var body: some View {
         // The pane's name and kind mark are on its tab right above; the bar says what it is.
         HStack(spacing: DesignMetrics.Spacing.md) {
-            Text(subtitle).font(.system(size: 11.5)).lineLimit(1).truncationMode(.tail)
+            Text(subtitle).font(.ui(size: 11.5)).lineLimit(1).truncationMode(.tail)
             Spacer(minLength: DesignMetrics.Spacing.sm)
             if let status { HeroStatusPill(text: status, ink: Palette.onStatus) }
             trailing()
@@ -160,7 +160,7 @@ struct PaneCardButtonStyle: ButtonStyle {
         var body: some View {
             let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
             configuration.label
-                .font(.system(size: 12, weight: .bold)).lineLimit(1)
+                .font(.ui(size: 12, weight: .bold)).lineLimit(1)
                 .foregroundStyle(accent ? Palette.onAccent : prominent ? Palette.panel : Palette.ink)
                 .padding(.horizontal, DesignMetrics.Spacing.lg).frame(minHeight: 24)
                 .background(accent ? Palette.accent : prominent ? Palette.ink : Palette.raised, in: shape)
@@ -177,7 +177,7 @@ struct PaneWaitBadge: View {
 
     var body: some View {
         Circle().fill(Palette.wait).frame(width: 22, height: 22)
-            .overlay { Image(systemName: systemImage).font(.system(size: 11, weight: .heavy)).foregroundStyle(Palette.onWait) }
+            .overlay { Image(systemName: systemImage).font(.ui(size: 11, weight: .heavy)).foregroundStyle(Palette.onWait) }
             .accessibilityHidden(true)
     }
 }

@@ -16,6 +16,14 @@ section: settings
 
 ![[settings-general]]
 
+### 文字大小与字体 {#text}
+{{platform:mac}} 在同一标签页的 {{ui:settings.text.sectionTitle}} 中更改整个应用的文字。
+- {{ui:settings.text.sizeLabel}}：在 85% 到 150% 之间选择。对话、输入框、侧边栏、设置和终端会一起放大或缩小。
+- {{ui:settings.text.fontLabel}}：从这台 Mac 上安装的字体中选择。{{ui:settings.text.fontSystem}} 是 macOS 的默认字体。代码和终端保留等宽字体，只跟随大小变化。
+- {{ui:settings.text.reset}} 按钮把大小和字体恢复到最初的状态。
+
+也可以用“显示”菜单中的 {{ui:menu.textBigger}}（{{kbd:⌘=}}）、{{ui:menu.textSmaller}}（{{kbd:⌘-}}）和 {{ui:menu.textActualSize}}（{{kbd:⌘0}}）更改大小。更改会立即生效，重新打开应用后仍然保留。
+
 ## 模型 {#models}
 在{{ui:settings.nav.models}}标签页的{{ui:settings.phaseModels.sectionTitle}}中，为整台 Mac 设置各工作阶段使用的模型。阶段包括{{ui:settings.phaseModels.phase.planning}}、{{ui:settings.phaseModels.phase.execution}}、{{ui:settings.phaseModels.phase.review}}和{{ui:settings.phaseModels.phase.subagents}}。
 - 保持{{ui:settings.phaseModels.defaultOption}}时，由 CLI 决定。

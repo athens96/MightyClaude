@@ -101,7 +101,7 @@ struct WorkspaceView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: "magnifyingglass").foregroundStyle(Palette.sidebarInk2)
-                TextField(L("sidebar.searchPlaceholder"), text: $store.search).textFieldStyle(.plain).font(.system(size: 12))
+                TextField(L("sidebar.searchPlaceholder"), text: $store.search).textFieldStyle(.plain).font(.ui(size: 12))
                     .focused($searchFocused)
                     .accessibilityLabel(L("sidebar.searchPlaceholder"))
             }
@@ -110,12 +110,12 @@ struct WorkspaceView: View {
             dashboardEntry.padding(.horizontal, DesignMetrics.Spacing.sm).padding(.top, DesignMetrics.Spacing.sm)
 
             HStack {
-                Text(L("sidebar.workspacesHeader")).font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.sidebarInk2)
-                Text("\(store.snapshot.workspaces.count)").font(.system(size: 10, design: .monospaced)).foregroundStyle(Palette.sidebarInk2)
+                Text(L("sidebar.workspacesHeader")).font(.ui(size: 10, weight: .semibold)).foregroundStyle(Palette.sidebarInk2)
+                Text("\(store.snapshot.workspaces.count)").font(.ui(size: 10, design: .monospaced)).foregroundStyle(Palette.sidebarInk2)
                 Spacer()
                 // Adds a workspace from the sidebar too, as File › Open Project Folder… does.
                 Button { store.openWorkspace() } label: {
-                    Image(systemName: "folder.badge.plus").font(.system(size: 11)).foregroundStyle(Palette.sidebarInk2)
+                    Image(systemName: "folder.badge.plus").font(.ui(size: 11)).foregroundStyle(Palette.sidebarInk2)
                         .frame(width: 18, height: 14).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -130,7 +130,7 @@ struct WorkspaceView: View {
                     ForEach(store.filteredWorkspaces) { workspace in workspaceRow(workspace) }
                     if store.filteredWorkspaces.isEmpty {
                         Text(store.search.isEmpty ? L("dashboard.empty") : L("sidebar.noSearchResults"))
-                            .font(.system(size: 12)).foregroundStyle(Palette.sidebarInk2).padding(DesignMetrics.Spacing.lg)
+                            .font(.ui(size: 12)).foregroundStyle(Palette.sidebarInk2).padding(DesignMetrics.Spacing.lg)
                     }
                 }
                 .padding(.horizontal, DesignMetrics.Spacing.sm)
@@ -141,7 +141,7 @@ struct WorkspaceView: View {
             // sidebar's way in.
             if store.filteredWorkspaces.isEmpty {
                 Button { store.openWorkspace() } label: {
-                    Label(L("sidebar.openFolder"), systemImage: "folder.badge.plus").font(.system(size: 12)).frame(maxWidth: .infinity, alignment: .leading).padding(DesignMetrics.Spacing.sm)
+                    Label(L("sidebar.openFolder"), systemImage: "folder.badge.plus").font(.ui(size: 12)).frame(maxWidth: .infinity, alignment: .leading).padding(DesignMetrics.Spacing.sm)
                 }
                 .buttonStyle(.plain).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 7)).padding(.horizontal, DesignMetrics.Spacing.md).padding(.bottom, DesignMetrics.Spacing.md)
             }
@@ -152,8 +152,8 @@ struct WorkspaceView: View {
                     else { Image(systemName: "sparkles").resizable().scaledToFit().foregroundStyle(Palette.sidebarAccent) }
                 }.frame(width: 20, height: 20).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
-                    Text("Mighty Claude").font(.system(size: 12, weight: .semibold)).lineLimit(1)
-                    Text("v\(store.appVersion)").font(.system(size: 10, design: .monospaced))
+                    Text("Mighty Claude").font(.ui(size: 12, weight: .semibold)).lineLimit(1)
+                    Text("v\(store.appVersion)").font(.ui(size: 10, design: .monospaced))
                         .foregroundStyle(Palette.sidebarInk2).lineLimit(1)
                         .accessibilityIdentifier("sidebar-app-version")
                 }
@@ -177,9 +177,9 @@ struct WorkspaceView: View {
         return Button { store.showsDashboard = true } label: {
             HStack(spacing: DesignMetrics.Spacing.md) {
                 RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Palette.run).frame(width: 22, height: 22)
-                    .overlay { Image(systemName: "square.grid.2x2.fill").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.onStatus) }
+                    .overlay { Image(systemName: "square.grid.2x2.fill").font(.ui(size: 11, weight: .semibold)).foregroundStyle(Palette.onStatus) }
                     .accessibilityHidden(true)
-                Text(L("phone.dashboard.title")).font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.ink).lineLimit(1)
+                Text(L("phone.dashboard.title")).font(.ui(size: 13, weight: .semibold)).foregroundStyle(Palette.ink).lineLimit(1)
                 Spacer(minLength: 0)
                 StatusCounts(badges: badges)
             }
@@ -205,9 +205,9 @@ struct WorkspaceView: View {
             HStack(spacing: 0) {
             Button { store.selectWorkspace(workspace.id) } label: {
                 HStack(spacing: DesignMetrics.Spacing.md) {
-                    Image(systemName: "folder").font(.system(size: 14)).foregroundStyle(selected ? Palette.sidebarAccent : Palette.sidebarInk2)
+                    Image(systemName: "folder").font(.ui(size: 14)).foregroundStyle(selected ? Palette.sidebarAccent : Palette.sidebarInk2)
                     VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
-                        Text(workspace.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                        Text(workspace.name).font(.ui(size: 12, weight: .medium)).lineLimit(1)
                     }
                     Spacer(minLength: 0)
                     workspaceBadges(badges, workspace: workspace)
@@ -219,7 +219,7 @@ struct WorkspaceView: View {
             // The disclosure is separate from selection: opening or closing a
             // list never changes the active workspace, and selecting never closes others.
             Button { store.toggleWorkspaceExpanded(workspace.id) } label: {
-                Image(systemName: expanded ? "chevron.down" : "chevron.right").font(.system(size: 8, weight: .semibold)).foregroundStyle(Palette.sidebarInk2)
+                Image(systemName: expanded ? "chevron.down" : "chevron.right").font(.ui(size: 8, weight: .semibold)).foregroundStyle(Palette.sidebarInk2)
                     .frame(width: 18, height: 18).contentShape(Rectangle())
             }
             .buttonStyle(.plain).padding(.trailing, DesignMetrics.Spacing.sm)
@@ -270,7 +270,7 @@ struct WorkspaceView: View {
                 StatusGlyph(tone: card.tone, kind: session.kind).padding(.top, 1.5).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: DesignMetrics.Spacing.sm) {
-                        Text(session.title).font(.system(size: 12.5, weight: settled ? .medium : .semibold)).foregroundStyle(Palette.ink)
+                        Text(session.title).font(.ui(size: 12.5, weight: settled ? .medium : .semibold)).foregroundStyle(Palette.ink)
                             .lineLimit(1).help(session.titleHelp)
                         if beta { BetaBadge() }
                     }
@@ -289,7 +289,7 @@ struct WorkspaceView: View {
                 if let childState {
                     childStateWord(childState)
                 } else if card.attention.total > 0 {
-                    Text(status).font(.system(size: 10.5, weight: .bold)).foregroundStyle(Palette.waitText).lineLimit(1).fixedSize()
+                    Text(status).font(.ui(size: 10.5, weight: .bold)).foregroundStyle(Palette.waitText).lineLimit(1).fixedSize()
                         .frame(minHeight: 17)
                 }
             }
@@ -355,11 +355,11 @@ struct WorkspaceView: View {
             HStack(spacing: DesignMetrics.Spacing.md) {
                 if busy {
                     ProgressView().controlSize(.mini).accessibilityHidden(true)
-                    Text(L("delegation.card.working")).font(.system(size: 10.5)).foregroundStyle(Palette.sidebarInk2).lineLimit(1)
+                    Text(L("delegation.card.working")).font(.ui(size: 10.5)).foregroundStyle(Palette.sidebarInk2).lineLimit(1)
                 } else {
                     ForEach(child.cardActions, id: \.self) { action in
                         Button { perform(action, child) } label: {
-                            Text(DelegationText.action(action)).font(.system(size: 10.5, weight: .semibold))
+                            Text(DelegationText.action(action)).font(.ui(size: 10.5, weight: .semibold))
                                 .foregroundStyle(action == .discard ? Palette.sidebarInk2 : Palette.sidebarAccent).lineLimit(1).fixedSize()
                         }
                         .buttonStyle(.plain)
@@ -371,13 +371,13 @@ struct WorkspaceView: View {
                 Spacer(minLength: 0)
             }
             if heldNotices > 0 {
-                Text(L("delegation.card.heldNotices", ["count": "\(heldNotices)"])).font(.system(size: 10.5)).foregroundStyle(Palette.sidebarInk2)
+                Text(L("delegation.card.heldNotices", ["count": "\(heldNotices)"])).font(.ui(size: 10.5)).foregroundStyle(Palette.sidebarInk2)
                     .fixedSize(horizontal: false, vertical: true)
                     .help(L("delegation.card.heldNoticesHelp"))
                     .accessibilityIdentifier("child-card-held-\(child.id)")
             }
             if let note, !busy, let line = DelegationText.note(note, child) {
-                Text(line.text).font(.system(size: 10.5)).foregroundStyle(Palette.text(line.tone))
+                Text(line.text).font(.ui(size: 10.5)).foregroundStyle(Palette.text(line.tone))
                     .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                     .accessibilityIdentifier("child-card-note-\(child.id)")
             }
@@ -409,7 +409,7 @@ struct WorkspaceView: View {
         let status = DelegationText.state(child.state)
         return sidebarListRow(nested: true, HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
             StatusGlyph(tone: DelegationSidebar.tone(child.state)).padding(.top, 1.5).accessibilityHidden(true)
-            Text(title).font(.system(size: 12.5, weight: .medium)).foregroundStyle(Palette.sidebarInk2)
+            Text(title).font(.ui(size: 12.5, weight: .medium)).foregroundStyle(Palette.sidebarInk2)
                 .lineLimit(1).truncationMode(.tail).frame(minHeight: 17).help(title)
             Spacer(minLength: 0)
             childStateWord(child.state)
@@ -427,15 +427,15 @@ struct WorkspaceView: View {
     private func parentClosedNode(_ node: DelegationSidebar.ParentClosed) -> some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Inset.listGap) {
             sidebarListRow(nested: false, HStack(spacing: DesignMetrics.Spacing.sm) {
-                Image(systemName: "rectangle.badge.xmark").font(.system(size: 11)).foregroundStyle(Palette.sidebarInk2).frame(width: 14)
+                Image(systemName: "rectangle.badge.xmark").font(.ui(size: 11)).foregroundStyle(Palette.sidebarInk2).frame(width: 14)
                     .accessibilityHidden(true)
-                Text(L("delegation.tree.parentClosed")).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Palette.sidebarInk2).lineLimit(1)
+                Text(L("delegation.tree.parentClosed")).font(.ui(size: 11.5, weight: .semibold)).foregroundStyle(Palette.sidebarInk2).lineLimit(1)
                 if !node.parentBranch.isEmpty {
-                    Text(verbatim: node.parentBranch).font(.system(size: 10.5, design: .monospaced)).foregroundStyle(Palette.sidebarInk2)
+                    Text(verbatim: node.parentBranch).font(.ui(size: 10.5, design: .monospaced)).foregroundStyle(Palette.sidebarInk2)
                         .lineLimit(1).truncationMode(.middle)
                 }
                 Spacer(minLength: 0)
-                Text("\(node.children.count)").font(.system(size: 10, design: .monospaced)).foregroundStyle(Palette.sidebarInk2)
+                Text("\(node.children.count)").font(.ui(size: 10, design: .monospaced)).foregroundStyle(Palette.sidebarInk2)
             }
             .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Inset.paneRowV)
             .frame(maxWidth: .infinity, alignment: .leading))
@@ -450,7 +450,7 @@ struct WorkspaceView: View {
     /// A child's state in words, in its tone's ink (a quiet state in the sidebar's muted ink).
     private func childStateWord(_ state: ChildState) -> some View {
         let tone = DelegationSidebar.tone(state)
-        return Text(DelegationText.state(state)).font(.system(size: 10.5, weight: .bold))
+        return Text(DelegationText.state(state)).font(.ui(size: 10.5, weight: .bold))
             .foregroundStyle(tone == .idle ? Palette.sidebarInk2 : Palette.text(tone)).lineLimit(1).fixedSize()
             .frame(minHeight: 17)
     }
@@ -467,7 +467,7 @@ struct WorkspaceView: View {
             case .age(let age): DashboardText.age(age)
             }
             guard let words else { return nil }
-            if part == .provider, let mark = ProviderBadgeIcon.mark(provider: card.provider, font: .systemFont(ofSize: 11)) {
+            if part == .provider, let mark = ProviderBadgeIcon.mark(provider: card.provider, font: .ui(ofSize: 11)) {
                 return mark + Text(verbatim: " " + words)
             }
             return Text(verbatim: words)
@@ -475,7 +475,7 @@ struct WorkspaceView: View {
         let line = parts.first.map { first in parts.dropFirst().reduce(first) { $0 + Text(verbatim: " · ") + $1 } }
             ?? Text(verbatim: DashboardText.kindLine(card, localTerminal: localTerminal))
         return line
-            .font(.system(size: 11)).monospacedDigit().lineLimit(1).truncationMode(.tail)
+            .font(.ui(size: 11)).monospacedDigit().lineLimit(1).truncationMode(.tail)
             .frame(minHeight: 15)
     }
 
@@ -485,12 +485,12 @@ struct WorkspaceView: View {
                 SidebarToggleButton()
                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                     HStack(spacing: DesignMetrics.Spacing.md) {
-                        Text(workspace.name).font(.system(size: 17, weight: .semibold)).lineLimit(1)
+                        Text(workspace.name).font(.ui(size: 17, weight: .semibold)).lineLimit(1)
                         Spacer(minLength: 0)
                     }
                     .overlay { WorkspaceTitlebarRegion(enabled: !store.hasModal, rename: { store.beginRenameWorkspace(workspace.id) }) }
                     HStack(spacing: DesignMetrics.Spacing.md) {
-                        Text(workspace.path).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+                        Text(workspace.path).font(.ui(size: 11, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
                         if let git = gitState.info(for: workspace) { WorkspaceGitBadge(info: git) }
                         Spacer(minLength: 0)
                             .overlay { WorkspaceTitlebarRegion(enabled: !store.hasModal, rename: { store.beginRenameWorkspace(workspace.id) }) }
@@ -502,7 +502,7 @@ struct WorkspaceView: View {
                          runningIdentifier: "workspace-header-running-\(workspace.id)", long: true)
                 .accessibilityIdentifier("workspace-header-status-\(workspace.id)")
             Button { store.openFilePane(workspaceId: workspace.id) } label: {
-                Image(systemName: "folder").font(.system(size: 13)).frame(width: 26, height: 24).contentShape(Rectangle())
+                Image(systemName: "folder").font(.ui(size: 13)).frame(width: 26, height: 24).contentShape(Rectangle())
             }
             .buttonStyle(.plain).foregroundStyle(.secondary)
             .disabled(store.hasModal)
@@ -521,8 +521,8 @@ struct WorkspaceView: View {
             WorkspaceAddMenuItems(store: store, workspace: workspace)
         } label: {
             HStack(spacing: DesignMetrics.Spacing.sm) {
-                Image(systemName: "plus").font(.system(size: 10, weight: .semibold)).frame(width: 12)
-                Text(L("workspace.addPane")).font(.system(size: 11))
+                Image(systemName: "plus").font(.ui(size: 10, weight: .semibold)).frame(width: 12)
+                Text(L("workspace.addPane")).font(.ui(size: 11))
                 Spacer(minLength: 0)
             }
             .foregroundStyle(Palette.sidebarAccent)
@@ -548,16 +548,16 @@ struct WorkspaceView: View {
     private var welcome: some View {
         VStack(spacing: 18) {
             Spacer()
-            Image(systemName: "rectangle.split.2x1").font(.system(size: 50, weight: .ultraLight)).foregroundStyle(Palette.accent)
-            Text(L("layout.welcome.title")).font(.system(size: 27, weight: .semibold))
+            Image(systemName: "rectangle.split.2x1").font(.ui(size: 50, weight: .ultraLight)).foregroundStyle(Palette.accent)
+            Text(L("layout.welcome.title")).font(.ui(size: 27, weight: .semibold))
             Text(L("layout.welcome.bodyMac"))
-                .font(.system(size: 14)).foregroundStyle(.secondary).multilineTextAlignment(.center).lineSpacing(5)
+                .font(.ui(size: 14)).foregroundStyle(.secondary).multilineTextAlignment(.center).lineSpacing(5)
             HStack(spacing: 10) {
                 Button { store.openWorkspace() } label: { Label(L("layout.welcome.openProject"), systemImage: "folder.badge.plus").padding(.horizontal, 10).padding(.vertical, 5) }.buttonStyle(.borderedProminent)
             }.padding(.top, 8)
-            Text(L("layout.welcome.shortcutsMac")).font(.system(size: 11)).foregroundStyle(.tertiary).padding(.top, 10)
+            Text(L("layout.welcome.shortcutsMac")).font(.ui(size: 11)).foregroundStyle(.tertiary).padding(.top, 10)
             Spacer()
-            Text(L("layout.welcome.footerMac")).font(.system(size: 11)).foregroundStyle(.tertiary).padding(.bottom, 25)
+            Text(L("layout.welcome.footerMac")).font(.ui(size: 11)).foregroundStyle(.tertiary).padding(.bottom, 25)
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay(alignment: .topLeading) { SidebarToggleButton().leadingPastTrafficLights(DesignMetrics.Inset.workspaceHeaderH).padding(.top, DesignMetrics.Inset.workspaceHeaderT) }
     }
@@ -572,7 +572,7 @@ struct WorkspaceView: View {
 
     private var statusBar: some View {
         HStack(spacing: DesignMetrics.Spacing.sm) {
-            Image(systemName: "desktopcomputer").font(.system(size: 10))
+            Image(systemName: "desktopcomputer").font(.ui(size: 10))
             Text(L("window.status.thisMac"))
             Spacer()
             Text(L("window.status.paneCount", ["count": "\(store.activeSessions.count)"]))
@@ -580,7 +580,7 @@ struct WorkspaceView: View {
             Text(L("window.status.runningCount", ["count": "\(WorkDashboard.stats(sessions: store.snapshot.sessions, permissions: store.toolPermissions).running)"]))
             if let version = store.appUpdate.availability?.manifest.version, [.available, .ready].contains(store.appUpdate.phase) {
                 Button { store.showSettings = true } label: {
-                    Label(L("window.status.updateBadge", ["version": version]), systemImage: "arrow.down.circle.fill").font(.system(size: 10, weight: .medium)).foregroundStyle(Palette.accent)
+                    Label(L("window.status.updateBadge", ["version": version]), systemImage: "arrow.down.circle.fill").font(.ui(size: 10, weight: .medium)).foregroundStyle(Palette.accent)
                 }
                 .buttonStyle(.plain).help(L("window.status.updateBadgeHelp")).accessibilityIdentifier("app-update-badge")
             }
@@ -588,14 +588,14 @@ struct WorkspaceView: View {
             StatusBarUsageView(controller: accountUsage)
             AgentStatusControls(companion: store.companion)
         }
-        .font(.system(size: 10)).foregroundStyle(.secondary).padding(.horizontal, DesignMetrics.Inset.statusBarH).padding(.vertical, DesignMetrics.Inset.statusBarV)
+        .font(.ui(size: 10)).foregroundStyle(.secondary).padding(.horizontal, DesignMetrics.Inset.statusBarH).padding(.vertical, DesignMetrics.Inset.statusBarV)
         .background(Palette.subtle).overlay(alignment: .top) { Divider() }
     }
 
     private func resourceWarningBanner(_ message: String) -> some View {
         HStack(alignment: .top, spacing: 9) {
             Image(systemName: "exclamationmark.triangle").foregroundStyle(Palette.waitText)
-            Text(message).font(.system(size: 12)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+            Text(message).font(.ui(size: 12)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
             Button { store.resourceWarning = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel(L("window.warning.dismiss"))
         }.padding([.vertical, .trailing], DesignMetrics.Spacing.md).leadingPastTrafficLights(DesignMetrics.Spacing.md).background(Palette.waitSoft)
     }
@@ -603,7 +603,7 @@ struct WorkspaceView: View {
     private func errorBanner(_ message: String) -> some View {
         HStack(alignment: .top, spacing: 9) {
             Image(systemName: "exclamationmark.triangle").foregroundStyle(Palette.errText)
-            Text(message).font(.system(size: 12)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+            Text(message).font(.ui(size: 12)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
             Button { store.error = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel(L("window.error.dismiss"))
         }.padding([.vertical, .trailing], DesignMetrics.Spacing.md).leadingPastTrafficLights(DesignMetrics.Spacing.md).background(Palette.errSoft)
     }
@@ -621,7 +621,7 @@ struct SidebarToggleButton: View {
     var body: some View {
         let label = L(store.sidebarCollapsed ? "sidebar.expand" : "sidebar.collapse")
         Button { withAnimation(.easeInOut(duration: 0.2)) { store.toggleSidebar() } } label: {
-            Image(systemName: "sidebar.left").font(.system(size: 13)).frame(width: 26, height: 24).contentShape(Rectangle())
+            Image(systemName: "sidebar.left").font(.ui(size: 13)).frame(width: 26, height: 24).contentShape(Rectangle())
         }
         .buttonStyle(.plain).foregroundStyle(.secondary)
         .help(label + " (⌃⌘S)")
@@ -817,8 +817,8 @@ private struct StatusCounts: View {
     private func count(_ entry: Entry) -> some View {
         HStack(spacing: 3) {
             StatusGlyph(tone: entry.tone, size: 12)
-            Text("\(entry.count)").font(.system(size: 11, weight: .bold)).monospacedDigit().foregroundStyle(Palette.ink)
-            if long { Text(Palette.word(entry.tone)).font(.system(size: 11, weight: .medium)).foregroundStyle(Palette.ink2).padding(.leading, 1) }
+            Text("\(entry.count)").font(.ui(size: 11, weight: .bold)).monospacedDigit().foregroundStyle(Palette.ink)
+            if long { Text(Palette.word(entry.tone)).font(.ui(size: 11, weight: .medium)).foregroundStyle(Palette.ink2).padding(.leading, 1) }
         }
         .help(entry.label)
         .accessibilityElement(children: .ignore)

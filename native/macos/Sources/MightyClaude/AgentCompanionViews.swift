@@ -30,12 +30,12 @@ struct AgentStatusPopover: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
             HStack {
-                Text(L("companion.status.title")).font(.system(size: 14, weight: .semibold))
+                Text(L("companion.status.title")).font(.ui(size: 14, weight: .semibold))
                 Spacer()
-                Text(L("companion.status.busyCount", ["count": "\(companion.runningCount)"])).font(.system(size: 11)).foregroundStyle(.secondary)
+                Text(L("companion.status.busyCount", ["count": "\(companion.runningCount)"])).font(.ui(size: 11)).foregroundStyle(.secondary)
             }
             if companion.agents.isEmpty {
-                Text(L("companion.status.empty")).font(.system(size: 12)).foregroundStyle(.secondary).padding(.vertical, DesignMetrics.Spacing.md)
+                Text(L("companion.status.empty")).font(.ui(size: 12)).foregroundStyle(.secondary).padding(.vertical, DesignMetrics.Spacing.md)
             } else {
                 ScrollView {
                     LazyVStack(spacing: DesignMetrics.Spacing.sm) {
@@ -44,18 +44,18 @@ struct AgentStatusPopover: View {
                                 HStack(alignment: .top, spacing: DesignMetrics.Spacing.md) {
                                     PresenceIndicator(status: agent.status).padding(.top, DesignMetrics.Spacing.xxs)
                                     VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
-                                        HStack { Text(agent.title).font(.system(size: 12, weight: .medium)); Spacer(); Text(presenceLabel(agent.status)).font(.system(size: 10)).foregroundStyle(.secondary) }
+                                        HStack { Text(agent.title).font(.ui(size: 12, weight: .medium)); Spacer(); Text(presenceLabel(agent.status)).font(.ui(size: 10)).foregroundStyle(.secondary) }
                                         HStack {
-                                            Text(agent.workspace).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                                            Text(agent.workspace).font(.ui(size: 10)).foregroundStyle(.secondary).lineLimit(1)
                                             Spacer(minLength: 0)
                                             if let timing = agent.timing { AgentElapsedView(timing: timing) }
                                         }
                                         if let input = agent.input, !input.isEmpty {
-                                            Label(input, systemImage: "arrow.up.right").font(.system(size: 11)).lineLimit(2)
+                                            Label(input, systemImage: "arrow.up.right").font(.ui(size: 11)).lineLimit(2)
                                         }
-                                        Text(agent.summary).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(2)
+                                        Text(agent.summary).font(.ui(size: 11)).foregroundStyle(.secondary).lineLimit(2)
                                     }
-                                    Image(systemName: "arrow.up.forward").font(.system(size: 9)).foregroundStyle(.tertiary)
+                                    Image(systemName: "arrow.up.forward").font(.ui(size: 9)).foregroundStyle(.tertiary)
                                 }.padding(DesignMetrics.Spacing.md).frame(maxWidth: .infinity, alignment: .leading).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 10))
                             }.buttonStyle(.plain).accessibilityLabel(L("companion.status.rowAccessibility", ["title": agent.title, "status": presenceLabel(agent.status)]))
                         }
@@ -88,19 +88,19 @@ struct CompanionSettingsSection: View {
                 }
             }
             Text(L("companion.settings.petsNote"))
-                .font(.system(size: 10)).foregroundStyle(.secondary)
+                .font(.ui(size: 10)).foregroundStyle(.secondary)
             Toggle(L("companion.settings.task"), isOn: $companion.preferences.showsTask)
             Toggle(L("companion.settings.motion"), isOn: $companion.preferences.reducedMotion)
             Toggle(L("companion.settings.macNotifications"), isOn: $companion.preferences.notifications)
                 .onChange(of: companion.preferences.notifications) { _, enabled in Task { await companion.refreshNotificationStatus(request: enabled) } }
             HStack {
-                Text(companion.notificationStatus).font(.system(size: 11)).foregroundStyle(.secondary)
+                Text(companion.notificationStatus).font(.ui(size: 11)).foregroundStyle(.secondary)
                 Spacer()
                 Button(L("windows.notifications.settingsButton")) {
                     if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") { NSWorkspace.shared.open(url) }
                 }.controlSize(.small)
             }
-            if let message = companion.message { Text(message).font(.system(size: 11)).foregroundStyle(.secondary) }
+            if let message = companion.message { Text(message).font(.ui(size: 11)).foregroundStyle(.secondary) }
         }
     }
 }
@@ -220,27 +220,27 @@ struct CompanionTaskBubble: View {
                 // Several agents can be busy at once; the workspace says which one this is.
                 VStack(alignment: .leading, spacing: 1) {
                     if !current.workspace.isEmpty {
-                        Text(current.workspace).font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
+                        Text(current.workspace).font(.ui(size: 9, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
                             .accessibilityIdentifier("pet-workspace-\(current.id)")
                     }
-                    Text(current.title).font(.system(size: 11, weight: .semibold)).lineLimit(1)
+                    Text(current.title).font(.ui(size: 11, weight: .semibold)).lineLimit(1)
                 }
                 Spacer(minLength: 0)
                 VStack(alignment: .trailing, spacing: DesignMetrics.Spacing.xxs) {
-                    Text(presenceLabel(current.status)).font(.system(size: 9)).foregroundStyle(.secondary)
+                    Text(presenceLabel(current.status)).font(.ui(size: 9)).foregroundStyle(.secondary)
                     if let timing = current.timing { AgentElapsedView(timing: timing).accessibilityIdentifier("pet-elapsed-\(current.id)") }
                 }
             }
             if let input = current.input, !input.isEmpty {
                 HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
-                    Text(L("graph.timeline.kind.request")).font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary).padding(.top, DesignMetrics.Spacing.xxs)
-                    Text(input).font(.system(size: 11)).lineLimit(lines).frame(maxWidth: .infinity, alignment: .leading)
+                    Text(L("graph.timeline.kind.request")).font(.ui(size: 9, weight: .medium)).foregroundStyle(.secondary).padding(.top, DesignMetrics.Spacing.xxs)
+                    Text(input).font(.ui(size: 11)).lineLimit(lines).frame(maxWidth: .infinity, alignment: .leading)
                 }
                 Divider()
             }
             HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
-                Text(L("transcript.tool.fallback")).font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary).padding(.top, DesignMetrics.Spacing.xxs)
-                Text(current.summary).font(.system(size: 11)).lineLimit(lines).frame(maxWidth: .infinity, alignment: .leading)
+                Text(L("transcript.tool.fallback")).font(.ui(size: 9, weight: .medium)).foregroundStyle(.secondary).padding(.top, DesignMetrics.Spacing.xxs)
+                Text(current.summary).font(.ui(size: 11)).lineLimit(lines).frame(maxWidth: .infinity, alignment: .leading)
                     .layoutPriority(1)
             }
         }
@@ -272,12 +272,12 @@ struct CompanionPager: View {
                     }
                 }.accessibilityHidden(true)
             }
-            Text("\(position) / \(count)").font(.system(size: 9, weight: .medium)).monospacedDigit().foregroundStyle(.secondary)
+            Text("\(position) / \(count)").font(.ui(size: 9, weight: .medium)).monospacedDigit().foregroundStyle(.secondary)
                 .accessibilityLabel(L("companion.pager.position", ["count": "\(count)", "position": "\(position)"]))
                 .accessibilityIdentifier("pet-page-label")
             if companion.hiddenApproval != nil {
                 Button { companion.showApprovalAgent() } label: {
-                    Image(systemName: "hand.raised.fill").font(.system(size: 9)).foregroundStyle(Palette.waitText).frame(width: 16, height: 16).contentShape(Rectangle())
+                    Image(systemName: "hand.raised.fill").font(.ui(size: 9)).foregroundStyle(Palette.waitText).frame(width: 16, height: 16).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain).help(L("companion.pager.approvalHelp")).accessibilityLabel(L("companion.pager.approvalAccessibility"))
                 .accessibilityIdentifier("pet-page-approval")
@@ -289,7 +289,7 @@ struct CompanionPager: View {
 
     private func pageButton(_ symbol: String, offset: Int, label: String) -> some View {
         Button { companion.showNeighbour(offset) } label: {
-            Image(systemName: symbol).font(.system(size: 9, weight: .semibold)).frame(width: 22, height: 16)
+            Image(systemName: symbol).font(.ui(size: 9, weight: .semibold)).frame(width: 22, height: 16)
                 .background(Palette.subtle, in: Capsule()).contentShape(Capsule())
         }
         .buttonStyle(.plain).help(label).accessibilityLabel(label)
@@ -309,33 +309,33 @@ struct CompanionApprovalBubble: View {
         return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: questionnaire == nil ? "hand.raised.fill" : "questionmark.bubble.fill").foregroundStyle(Palette.waitText)
-                Text(Self.title(questionnaire, progress: companion.questionProgress)).font(.system(size: 11, weight: .semibold)).monospacedDigit()
+                Text(Self.title(questionnaire, progress: companion.questionProgress)).font(.ui(size: 11, weight: .semibold)).monospacedDigit()
                     .accessibilityIdentifier("pet-question-progress")
                 Spacer(minLength: 0)
                 Text(approval.workspaceName.isEmpty ? approval.sessionTitle : approval.workspaceName + " · " + approval.sessionTitle)
-                    .font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
+                    .font(.ui(size: 9)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
             }
             if let question {
-                Text(question.question).font(.system(size: 11, weight: .medium)).lineLimit(3).fixedSize(horizontal: false, vertical: true)
+                Text(question.question).font(.ui(size: 11, weight: .medium)).lineLimit(3).fixedSize(horizontal: false, vertical: true)
                 ForEach(Array(question.options.enumerated()), id: \.offset) { index, option in
                     CompanionOptionRow(option: option, multiple: question.multiSelect, picked: Self.picked(option.label, question: question, progress: companion.questionProgress)) {
                         companion.chooseOption(option.label)
                     }.accessibilityIdentifier("pet-choice-\(index)")
                 }
             } else {
-                Text(presentation.title + " · " + approval.request.toolName).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                Text(presentation.title + " · " + approval.request.toolName).font(.ui(size: 10)).foregroundStyle(.secondary).lineLimit(1)
                 if let headline = presentation.headline {
-                    Text(headline).font(.system(size: 11, weight: .medium)).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    Text(headline).font(.ui(size: 11, weight: .medium)).lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 }
                 if let code = presentation.primaryCode {
-                    Text(code.value).font(.system(size: 10, design: .monospaced)).lineLimit(3)
+                    Text(code.value).font(.ui(size: 10, design: .monospaced)).lineLimit(3)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xs)
                         .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
                 } else if presentation.headline == nil {
-                    Text(approval.request.summary).font(.system(size: 10, design: .monospaced)).lineLimit(3)
+                    Text(approval.request.summary).font(.ui(size: 10, design: .monospaced)).lineLimit(3)
                 }
             }
-            if let error = companion.approvalError { Text(error).font(.system(size: 9)).foregroundStyle(Palette.errText).lineLimit(2) }
+            if let error = companion.approvalError { Text(error).font(.ui(size: 9)).foregroundStyle(Palette.errText).lineLimit(2) }
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 // Four buttons share 238pt (258 less the bubble's inset) while a questionnaire is up, so "Open" shrinks to its icon there.
                 Button { companion.openApproval() } label: {
@@ -403,12 +403,12 @@ struct CompanionPlanBubble: View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: "list.bullet.clipboard").foregroundStyle(Palette.waitText)
-                Text(L("plan.card.title")).font(.system(size: 11, weight: .semibold))
+                Text(L("plan.card.title")).font(.ui(size: 11, weight: .semibold))
                 if let received = approval.request.receivedAt {
-                    Text(PlanCardSupport.receivedText(received)).font(.system(size: 9)).foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
+                    Text(PlanCardSupport.receivedText(received)).font(.ui(size: 9)).foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
                 }
                 Spacer(minLength: 0)
-                Text(place).font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
+                Text(place).font(.ui(size: 9)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
             }
             // A short plan shows whole; a long one scrolls in the room the window leaves.
             ViewThatFits(in: .vertical) {
@@ -417,7 +417,7 @@ struct CompanionPlanBubble: View {
             }
             .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
             .accessibilityIdentifier("pet-plan-text")
-            if let error = companion.approvalError { Text(error).font(.system(size: 9)).foregroundStyle(Palette.errText).lineLimit(2) }
+            if let error = companion.approvalError { Text(error).font(.ui(size: 9)).foregroundStyle(Palette.errText).lineLimit(2) }
             VStack(spacing: DesignMetrics.Spacing.sm) {
                 HStack(spacing: DesignMetrics.Spacing.sm) {
                     Button { companion.openApproval() } label: { Image(systemName: "arrow.up.forward.app") }
@@ -459,10 +459,10 @@ private struct CompanionOptionRow: View {
     var body: some View {
         Button(action: action) {
             HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
-                if multiple { Image(systemName: picked ? "checkmark.square.fill" : "square").font(.system(size: 10)).foregroundStyle(picked ? Palette.accent : Color.secondary).padding(.top, 1) }
+                if multiple { Image(systemName: picked ? "checkmark.square.fill" : "square").font(.ui(size: 10)).foregroundStyle(picked ? Palette.accent : Color.secondary).padding(.top, 1) }
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(option.label).font(.system(size: 11, weight: .medium)).lineLimit(1)
-                    if !option.description.isEmpty { Text(option.description).font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1) }
+                    Text(option.label).font(.ui(size: 11, weight: .medium)).lineLimit(1)
+                    if !option.description.isEmpty { Text(option.description).font(.ui(size: 9)).foregroundStyle(.secondary).lineLimit(1) }
                 }
                 Spacer(minLength: 0)
             }

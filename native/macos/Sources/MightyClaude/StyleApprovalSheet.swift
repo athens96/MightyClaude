@@ -57,7 +57,7 @@ struct StyleApprovalSheet: View {
 
     private var header: some View {
         HStack(spacing: DesignMetrics.Spacing.sm) {
-            Text(verbatim: style.manifest.name).font(.system(size: 15, weight: .semibold))
+            Text(verbatim: style.manifest.name).font(.ui(size: 15, weight: .semibold))
             if let badge = StyleChrome.sourceBadge(style.source) { SourceBadge(text: badge) }
             Spacer(minLength: 0)
             Toggle(L("styles.approval.expandAll"), isOn: $expanded).toggleStyle(.switch).controlSize(.mini)
@@ -68,10 +68,10 @@ struct StyleApprovalSheet: View {
     @ViewBuilder private func sectionView(_ section: StyleApprovalSection) -> some View {
         let hidden = section.foldable && !expanded
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
-            Text(verbatim: section.title).font(.system(size: 12, weight: .semibold))
+            Text(verbatim: section.title).font(.ui(size: 12, weight: .semibold))
             if hidden {
                 Text(L("styles.approval.collapsedLines", ["count": "\(section.lines.count)", "separator": StyleChrome.separator]))
-                    .font(.system(size: 11)).foregroundStyle(.tertiary)
+                    .font(.ui(size: 11)).foregroundStyle(.tertiary)
             } else {
                 ForEach(Array(section.lines.enumerated()), id: \.offset) { _, line in
                     lineView(line, monospaced: section.monospaced)
@@ -86,7 +86,7 @@ struct StyleApprovalSheet: View {
     /// A manifest string is data: plain text, never markdown (§4.6).
     private func lineView(_ line: String, monospaced: Bool) -> some View {
         Text(verbatim: line)
-            .font(.system(size: 11, design: monospaced ? .monospaced : .default))
+            .font(.ui(size: 11, design: monospaced ? .monospaced : .default))
             .foregroundStyle(.secondary)
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
@@ -95,14 +95,14 @@ struct StyleApprovalSheet: View {
 
     private var rawSection: some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
-            Text(L("styles.approval.raw")).font(.system(size: 12, weight: .semibold))
+            Text(L("styles.approval.raw")).font(.ui(size: 12, weight: .semibold))
             if expanded {
                 Text(verbatim: rawText)
-                    .font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+                    .font(.ui(size: 10, design: .monospaced)).foregroundStyle(.secondary)
                     .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                Text(L("styles.approval.collapsedHint")).font(.system(size: 11)).foregroundStyle(.tertiary)
+                Text(L("styles.approval.collapsedHint")).font(.ui(size: 11)).foregroundStyle(.tertiary)
             }
         }
         .accessibilityIdentifier("style-approval-raw")
@@ -112,10 +112,10 @@ struct StyleApprovalSheet: View {
         HStack(spacing: DesignMetrics.Spacing.sm) {
             if confirming {
                 Text(verbatim: StyleApprovalCard.secondConfirmation(count: autoAllowCount))
-                    .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    .font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             } else if store.styleTrustLocked {
                 Text(verbatim: StyleSettingsList.lockedMessage(store.styleTrustPath))
-                    .font(.system(size: 11)).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true)
+                    .font(.ui(size: 11)).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
             Button(candidate.readOnly ? L("settings.closeButton") : L("statusLine.notNow"), action: onClose)

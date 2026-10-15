@@ -150,7 +150,7 @@ struct SessionPaneView: View {
     private var statusLineToggle: some View {
         let on = store.statusLineEnabled
         return Button { store.statusLineEnabled.toggle() } label: {
-            Image(systemName: on ? "rectangle.bottomthird.inset.filled" : "rectangle").font(.system(size: 12)).frame(width: 16, height: DesignMetrics.Layout.toolbar)
+            Image(systemName: on ? "rectangle.bottomthird.inset.filled" : "rectangle").font(.ui(size: 12)).frame(width: 16, height: DesignMetrics.Layout.toolbar)
                 .foregroundStyle(on ? Palette.accent : Palette.ink2)
         }
         .buttonStyle(.plain)
@@ -166,7 +166,7 @@ struct SessionPaneView: View {
     private var backgroundWorkToggle: some View {
         let on = store.showsBackgroundWork
         return Button { store.setShowsBackgroundWork(!on) } label: {
-            Image(systemName: on ? "rectangle.stack.fill" : "rectangle.stack").font(.system(size: 12)).frame(width: 16, height: DesignMetrics.Layout.toolbar)
+            Image(systemName: on ? "rectangle.stack.fill" : "rectangle.stack").font(.ui(size: 12)).frame(width: 16, height: DesignMetrics.Layout.toolbar)
                 .foregroundStyle(on ? Palette.accent : Palette.ink2)
         }
         .buttonStyle(.plain)
@@ -272,7 +272,7 @@ struct SessionPaneView: View {
         return HStack(spacing: DesignMetrics.Spacing.sm) {
             // A turn that is over while its background agents still run says so.
             Text(card.attention.total > 0 ? L("phone.card.attention", ["count": "\(card.attention.total)"]) : (session.status == "running" ? PlanCardSupport.backgroundStatus(session.backgroundWork) : nil) ?? Palette.word(card.tone))
-                .font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Palette.text(card.tone)).lineLimit(1).fixedSize()
+                .font(.ui(size: 11.5, weight: .semibold)).foregroundStyle(Palette.text(card.tone)).lineLimit(1).fixedSize()
                 .accessibilityIdentifier("pane-status-\(session.id)")
             Group {
                 if ticking {
@@ -311,7 +311,7 @@ struct SessionPaneView: View {
             .fixedSize()
             if session.agentViewMode == "mighty", ["claude", "codex"].contains(session.provider) {
                 Button { store.openPluginBrowser(sessionID: session.id) } label: {
-                    Image(systemName: "puzzlepiece.extension").font(.system(size: 12, weight: .semibold))
+                    Image(systemName: "puzzlepiece.extension").font(.ui(size: 12, weight: .semibold))
                         .frame(width: 22, height: 24).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain).disabled(store.hasModal)
@@ -322,7 +322,7 @@ struct SessionPaneView: View {
         }
         if store.agentTerminals[session.id] != nil {
             Button { store.openAgentTerminalPane(session.id, select: true) } label: {
-                Image(systemName: "terminal").font(.system(size: 12, weight: .semibold)).frame(width: 22, height: 24).contentShape(Rectangle())
+                Image(systemName: "terminal").font(.ui(size: 12, weight: .semibold)).frame(width: 22, height: 24).contentShape(Rectangle())
             }
             .buttonStyle(.plain).disabled(store.hasModal)
             .help(L("agentTerminal.terminalPane.open")).accessibilityLabel(L("agentTerminal.terminalPane.open"))
@@ -351,7 +351,7 @@ struct SessionPaneView: View {
             Divider()
             Button(L("menu.closePane"), role: .destructive) { store.requestCloseSession(session.id) }
         } label: {
-            Image(systemName: "ellipsis").font(.system(size: 13, weight: .bold)).foregroundStyle(ink)
+            Image(systemName: "ellipsis").font(.ui(size: 13, weight: .bold)).foregroundStyle(ink)
                 .frame(width: 22, height: 24).contentShape(Rectangle())
         }
         .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
@@ -367,7 +367,7 @@ struct SessionPaneView: View {
             store.setAgentViewMode(session.id, mode: mode)
         } label: {
             Label(title, systemImage: symbol)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.ui(size: 11, weight: .semibold))
                 .foregroundStyle(selected ? Palette.ink : Palette.ink2)
                 .padding(.horizontal, 8).frame(height: 20)
                 // The chip's shadow sits on its shape only, never on the words.
@@ -575,16 +575,16 @@ struct SessionPaneView: View {
     private var emptyOutput: some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
             Group {
-                if session.kind == "shell" { Image(systemName: "terminal").font(.system(size: 24, weight: .light)) }
+                if session.kind == "shell" { Image(systemName: "terminal").font(.ui(size: 24, weight: .light)) }
                 else { ProviderIcon(provider: session.provider, size: 24, weight: .light) }
             }.foregroundStyle(Palette.accent.opacity(0.75)).padding(.bottom, DesignMetrics.Spacing.xs)
             HStack(spacing: 8) {
                 Text(session.kind == "shell" ? L("pane.empty.shellTitle") : L("pane.empty.agentTitle", ["provider": ProviderOptions.label(session.provider)]))
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.ui(size: 16, weight: .medium))
                 if session.kind != "shell" && ProviderOptions.isBeta(session.provider) { BetaBadge() }
             }
             Text(session.kind == "shell" ? L("pane.empty.shellBody") : L("pane.empty.agentBody"))
-                .font(.system(size: 12)).foregroundStyle(Palette.ink2).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
+                .font(.ui(size: 12)).foregroundStyle(Palette.ink2).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
         }.frame(maxWidth: .infinity, alignment: .leading).padding(DesignMetrics.Spacing.xl)
     }
 
@@ -593,7 +593,7 @@ struct SessionPaneView: View {
             if offersMightyStyle {
                 HStack(spacing: DesignMetrics.Spacing.md) {
                     MightyStylePicker(session: session, onApprove: { openApproval($0) })
-                    Text(verbatim: styleHint).font(.system(size: 10)).foregroundStyle(.tertiary).lineLimit(1)
+                    Text(verbatim: styleHint).font(.ui(size: 10)).foregroundStyle(.tertiary).lineLimit(1)
                     Spacer(minLength: 0)
                 }.padding(.horizontal, DesignMetrics.Inset.composerInnerH).padding(.top, DesignMetrics.Spacing.sm)
                 // One state, one message: a manifest that changed on disk is
@@ -604,7 +604,7 @@ struct SessionPaneView: View {
                         .padding(.horizontal, DesignMetrics.Inset.composerInnerH)
                 } else if store.styleNeedsRechoosing(session) {
                     Text(L("composer.style.changed"))
-                        .font(.system(size: 10)).foregroundStyle(Palette.waitText).padding(.horizontal, DesignMetrics.Inset.composerInnerH)
+                        .font(.ui(size: 10)).foregroundStyle(Palette.waitText).padding(.horizontal, DesignMetrics.Inset.composerInnerH)
                         .accessibilityIdentifier("mighty-style-changed-\(session.id)")
                 }
                 if let style {
@@ -641,7 +641,7 @@ struct SessionPaneView: View {
                 // manifest's own placeholder cannot be trusted to (§1.6).
                 if let armedPrefix {
                     Text(verbatim: armedPrefix)
-                        .font(.system(size: 10, design: .monospaced)).foregroundStyle(Palette.accent).lineLimit(1)
+                        .font(.ui(size: 10, design: .monospaced)).foregroundStyle(Palette.accent).lineLimit(1)
                         .padding(.horizontal, 6).padding(.vertical, 3)
                         .background(Palette.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 5))
                         .accessibilityLabel(L("composer.armedCommand", ["command": armedPrefix]))
@@ -660,17 +660,17 @@ struct SessionPaneView: View {
             if importingAttachments {
                 HStack(spacing: DesignMetrics.Spacing.sm) {
                     ProgressView().controlSize(.mini)
-                    Text(L("composer.hint.attachmentsLoading")).font(.system(size: 11)).foregroundStyle(Palette.ink2)
+                    Text(L("composer.hint.attachmentsLoading")).font(.ui(size: 11)).foregroundStyle(Palette.ink2)
                 }.padding(.horizontal, DesignMetrics.Inset.composerInnerH)
             }
             if let attachmentError = store.attachmentErrors[session.id] {
                 HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
                     Image(systemName: "exclamationmark.circle").foregroundStyle(Palette.accent)
                     Text(attachmentError).frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
-                    Button { store.attachmentErrors.removeValue(forKey: session.id) } label: { Image(systemName: "xmark").font(.system(size: 9)).frame(width: 18, height: 16) }
+                    Button { store.attachmentErrors.removeValue(forKey: session.id) } label: { Image(systemName: "xmark").font(.ui(size: 9)).frame(width: 18, height: 16) }
                         .buttonStyle(.plain).accessibilityLabel(L("composer.attachment.dismissError"))
                 }
-                .font(.system(size: 11)).foregroundStyle(Palette.ink2).padding(.horizontal, DesignMetrics.Inset.composerInnerH)
+                .font(.ui(size: 11)).foregroundStyle(Palette.ink2).padding(.horizontal, DesignMetrics.Inset.composerInnerH)
                 .accessibilityIdentifier("attachment-error-\(session.id)")
             }
             if let problem = store.inputMethodProblem, composerFocused {
@@ -680,15 +680,15 @@ struct SessionPaneView: View {
                         Text(problem.recoveryState == .reconnected ? L("inputRecovery.noticeReconnected") : L("inputRecovery.noticeCheck")).fontWeight(.medium)
                         Text(problem.recoveryState.message)
                             .foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
-                        if let file = problem.file { Text(L("inputRecovery.diagnosticsFile", ["path": file.path])).font(.system(size: 10, design: .monospaced)).foregroundStyle(.tertiary).textSelection(.enabled).lineLimit(1) }
+                        if let file = problem.file { Text(L("inputRecovery.diagnosticsFile", ["path": file.path])).font(.ui(size: 10, design: .monospaced)).foregroundStyle(.tertiary).textSelection(.enabled).lineLimit(1) }
                     }
                     Spacer(minLength: 4)
                     Button(L("menu.reconnectInputMethod")) { store.reconnectInputMethod(editor: composerInput.editor) }.controlSize(.small)
                         .disabled(problem.recoveryState.isPending)
-                    Button { store.dismissInputMethodProblem() } label: { Image(systemName: "xmark").font(.system(size: 9)).frame(width: 18, height: 16) }
+                    Button { store.dismissInputMethodProblem() } label: { Image(systemName: "xmark").font(.ui(size: 9)).frame(width: 18, height: 16) }
                         .buttonStyle(.plain).accessibilityLabel(L("inputRecovery.dismiss"))
                 }
-                .font(.system(size: 11)).lineSpacing(2).padding(.horizontal, DesignMetrics.Inset.composerInnerH)
+                .font(.ui(size: 11)).lineSpacing(2).padding(.horizontal, DesignMetrics.Inset.composerInnerH)
                 .accessibilityIdentifier("input-method-problem-\(session.id)")
             }
             if let provider = store.loginRequired[session.id] {
@@ -700,7 +700,7 @@ struct SessionPaneView: View {
                     Text(L("settings.cliUpdate.backgroundUpdateQueued", ["provider": ProviderOptions.label(session.provider)]))
                         .foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
                 }
-                .font(.system(size: 11)).lineSpacing(2).padding(.horizontal, DesignMetrics.Inset.composerInnerH)
+                .font(.ui(size: 11)).lineSpacing(2).padding(.horizontal, DesignMetrics.Inset.composerInnerH)
                 .accessibilityElement(children: .combine).accessibilityIdentifier("background-update-\(session.id)")
             }
             if let reason = blockedReason {
@@ -711,7 +711,7 @@ struct SessionPaneView: View {
                         Text(reason).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                .font(.system(size: 11)).lineSpacing(2)
+                .font(.ui(size: 11)).lineSpacing(2)
                 .padding(.horizontal, DesignMetrics.Inset.composerInnerH)
                 .accessibilityElement(children: .combine).accessibilityIdentifier("run-blocked-\(session.id)")
                 .background(AccessibilityStateProbe(identifier: "run-blocked-\(session.id)", enabled: true))
@@ -805,12 +805,12 @@ struct SessionPaneView: View {
                     .fixedSize(horizontal: true, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
-                    Text(L("composer.shell.title")).font(.system(size: 11)).foregroundStyle(Palette.ink2).lineLimit(1)
+                    Text(L("composer.shell.title")).font(.ui(size: 11)).foregroundStyle(Palette.ink2).lineLimit(1)
                     Spacer(minLength: 0)
                 }
                 HStack(alignment: .center, spacing: ComposerToolbarMetrics.spacing) {
                     if session.resumeId != nil {
-                        Image(systemName: "arrow.triangle.branch").font(.system(size: 11)).frame(width: 16, height: ComposerToolbarMetrics.height).foregroundStyle(Palette.ink2).help(L("composer.resume.help")).accessibilityLabel(L("composer.resume.name"))
+                        Image(systemName: "arrow.triangle.branch").font(.ui(size: 11)).frame(width: 16, height: ComposerToolbarMetrics.height).foregroundStyle(Palette.ink2).help(L("composer.resume.help")).accessibilityLabel(L("composer.resume.name"))
                     }
                     if session.kind != "shell" { SessionContextButton(sessionID: session.id) }
                     if showsBackgroundWorkToggle { backgroundWorkToggle }
@@ -821,7 +821,7 @@ struct SessionPaneView: View {
                         let compact = canSend
                         // Concept D: stop is the red square, send the round run blue.
                         Button(action: stopRun) {
-                            Image(systemName: "stop.fill").font(.system(size: compact ? 9 : 11, weight: .semibold)).frame(width: compact ? Self.compactStop : ComposerToolbarMetrics.height, height: compact ? Self.compactStop : ComposerToolbarMetrics.height)
+                            Image(systemName: "stop.fill").font(.ui(size: compact ? 9 : 11, weight: .semibold)).frame(width: compact ? Self.compactStop : ComposerToolbarMetrics.height, height: compact ? Self.compactStop : ComposerToolbarMetrics.height)
                                 .foregroundStyle(Palette.onStatus)
                                 .background(Palette.err, in: RoundedRectangle(cornerRadius: compact ? 7 : 8, style: .continuous))
                                 .contentShape(RoundedRectangle(cornerRadius: compact ? 7 : 8, style: .continuous))
@@ -862,7 +862,7 @@ struct SessionPaneView: View {
     /// circle in run blue while the draft can go, the track grey (and disabled) while not.
     private func roundSendButton(systemImage: String, size: CGFloat, help: String, label: String, identifier: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: systemImage).font(.system(size: size, weight: .semibold)).frame(width: ComposerToolbarMetrics.height, height: ComposerToolbarMetrics.height)
+            Image(systemName: systemImage).font(.ui(size: size, weight: .semibold)).frame(width: ComposerToolbarMetrics.height, height: ComposerToolbarMetrics.height)
                 .foregroundStyle(canSend ? Palette.onStatus : Palette.ink2)
                 .background(canSend ? Palette.run : Palette.track, in: Circle()).contentShape(Circle())
         }

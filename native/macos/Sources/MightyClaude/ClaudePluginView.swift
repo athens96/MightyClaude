@@ -184,20 +184,20 @@ struct ClaudePluginView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.lg) {
             HStack(alignment: .top, spacing: DesignMetrics.Spacing.md) {
-                Image(systemName: "puzzlepiece.extension").font(.system(size: 25)).foregroundStyle(Palette.accent)
+                Image(systemName: "puzzlepiece.extension").font(.ui(size: 25)).foregroundStyle(Palette.accent)
                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
-                    Text(L("plugins.titleTemplate", ["provider": model.providerLabel])).font(.system(size: 18, weight: .semibold))
-                    Text(model.workspace.name).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
-                    Text(model.workspace.path).font(.system(size: 10, design: .monospaced)).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle).help(model.workspace.path)
+                    Text(L("plugins.titleTemplate", ["provider": model.providerLabel])).font(.ui(size: 18, weight: .semibold))
+                    Text(model.workspace.name).font(.ui(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+                    Text(model.workspace.path).font(.ui(size: 10, design: .monospaced)).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle).help(model.workspace.path)
                 }
                 Spacer(minLength: 12)
-                if let version = model.snapshot?.cliVersion { Text(version).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary) }
+                if let version = model.snapshot?.cliVersion { Text(version).font(.ui(size: 10, design: .monospaced)).foregroundStyle(.secondary) }
             }
             browser
             HStack {
                 if model.isBusy {
                     ProgressView().controlSize(.small)
-                    Text(progressLabel).font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text(progressLabel).font(.ui(size: 11)).foregroundStyle(.secondary)
                         .accessibilityIdentifier("\(model.provider)-plugin-progress")
                 }
                 Spacer()
@@ -250,40 +250,40 @@ struct ClaudePluginView: View {
                         .disabled(model.isBusy || model.blockedReason != nil || model.snapshot?.status != "ready" || model.refreshableMarketplaces.isEmpty)
                         .accessibilityIdentifier("\(model.provider)-plugin-refresh-marketplaces")
                 }
-                Text(scopeExplanation).font(.system(size: 10)).foregroundStyle(.secondary)
+                Text(scopeExplanation).font(.ui(size: 10)).foregroundStyle(.secondary)
                 if model.provider == "codex", model.refreshableMarketplaces.isEmpty {
                     Text(L("plugins.codex.refreshGitOnly"))
-                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                        .font(.ui(size: 10)).foregroundStyle(.secondary)
                         .accessibilityIdentifier("codex-plugin-refresh-unavailable")
                 }
             }
             if !model.isMutating, let reason = model.blockedReason {
-                Label(reason, systemImage: "info.circle").font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Label(reason, systemImage: "info.circle").font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("\(model.provider)-plugin-blocked")
             }
             if let snapshot = model.snapshot, snapshot.status != "ready" || (model.provider == "codex" && !snapshot.detail.isEmpty) {
-                Text(snapshot.detail).font(.system(size: 11))
+                Text(snapshot.detail).font(.ui(size: 11))
                     .foregroundStyle(snapshot.status != "ready" || !snapshot.diagnosticOutput.isEmpty ? Palette.waitText : Color.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("\(model.provider)-plugin-load-status")
             }
             if let result = model.lastResult {
                 Label(result.detail, systemImage: result.status == "succeeded" ? "checkmark.circle.fill" : "info.circle")
-                    .font(.system(size: 11)).foregroundStyle(result.status == "succeeded" ? Palette.doneText : Palette.waitText)
+                    .font(.ui(size: 11)).foregroundStyle(result.status == "succeeded" ? Palette.doneText : Palette.waitText)
                     .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                     .accessibilityIdentifier("\(model.provider)-plugin-status")
 
             }
             if !diagnosticOutput.isEmpty {
                 DisclosureGroup(L("plugins.diagnosticsDisclosure"), isExpanded: $showsOutput) {
-                    ScrollView { Text(String(diagnosticOutput.suffix(16_384))).font(.system(size: 10, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
+                    ScrollView { Text(String(diagnosticOutput.suffix(16_384))).font(.ui(size: 10, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
                         .frame(height: 80)
-                }.font(.system(size: 10))
+                }.font(.ui(size: 10))
             }
             Text(model.provider == "codex"
                  ? L("plugins.codex.footerNoteMac")
                  : L("plugins.claude.footerNote"))
-                .font(.system(size: 10)).foregroundStyle(.secondary)
+                .font(.ui(size: 10)).foregroundStyle(.secondary)
             Divider()
             GeometryReader { viewport in
                 ScrollView(.vertical) {
@@ -304,7 +304,7 @@ struct ClaudePluginView: View {
 
     private func tab(_ title: String, value: String, count: Int) -> some View {
         Button { model.tab = value } label: {
-            Text("\(title) \(count)").font(.system(size: 12, weight: model.tab == value ? .semibold : .regular))
+            Text("\(title) \(count)").font(.ui(size: 12, weight: model.tab == value ? .semibold : .regular))
                 .padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.sm)
                 .background(model.tab == value ? Palette.accent.opacity(0.17) : Palette.subtle, in: RoundedRectangle(cornerRadius: 7))
         }.buttonStyle(.plain).accessibilityIdentifier("\(model.provider)-plugin-tab-\(value)")
@@ -312,17 +312,17 @@ struct ClaudePluginView: View {
     private func installedRow(_ plugin: ClaudeInstalledPlugin) -> some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             HStack(alignment: .firstTextBaseline, spacing: DesignMetrics.Spacing.sm) {
-                Text(plugin.name).font(.system(size: 13, weight: .semibold)).lineLimit(2)
-                if let version = plugin.version { Text(version).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary) }
+                Text(plugin.name).font(.ui(size: 13, weight: .semibold)).lineLimit(2)
+                if let version = plugin.version { Text(version).font(.ui(size: 10, design: .monospaced)).foregroundStyle(.secondary) }
                 Spacer(minLength: 8)
                 Text(plugin.enabled.map { $0 ? L("plugins.state.enabled") : L("plugins.state.disabled") } ?? L("plugins.state.unknown"))
-                    .font(.system(size: 10, weight: .medium)).foregroundStyle(plugin.enabled == true ? Palette.doneText : Color.secondary)
+                    .font(.ui(size: 10, weight: .medium)).foregroundStyle(plugin.enabled == true ? Palette.doneText : Color.secondary)
             }
-            if !plugin.description.isEmpty { Text(plugin.description).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).lineLimit(3) }
-            Text("\(plugin.marketplace ?? L("plugins.directInstall")) · \(scopeLabel(plugin.scope))").font(.system(size: 10)).foregroundStyle(.secondary)
-            if let path = plugin.projectPath { Text(path).font(.system(size: 10, design: .monospaced)).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle).help(path) }
-            ForEach(Array(plugin.errors.enumerated()), id: \.offset) { _, error in Text(error).font(.system(size: 10)).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true) }
-            ForEach(Array(plugin.notes.enumerated()), id: \.offset) { _, note in Text(note).font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+            if !plugin.description.isEmpty { Text(plugin.description).font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).lineLimit(3) }
+            Text("\(plugin.marketplace ?? L("plugins.directInstall")) · \(scopeLabel(plugin.scope))").font(.ui(size: 10)).foregroundStyle(.secondary)
+            if let path = plugin.projectPath { Text(path).font(.ui(size: 10, design: .monospaced)).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle).help(path) }
+            ForEach(Array(plugin.errors.enumerated()), id: \.offset) { _, error in Text(error).font(.ui(size: 10)).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true) }
+            ForEach(Array(plugin.notes.enumerated()), id: \.offset) { _, note in Text(note).font(.ui(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
         }
         .padding(DesignMetrics.Spacing.md).frame(maxWidth: .infinity, alignment: .leading).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 9))
         .accessibilityElement(children: .contain).accessibilityIdentifier("\(model.provider)-plugin-row-\(plugin.id)")
@@ -332,12 +332,12 @@ struct ClaudePluginView: View {
         return HStack(alignment: .top, spacing: DesignMetrics.Spacing.lg) {
             VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
                 HStack(spacing: DesignMetrics.Spacing.sm) {
-                    Text(plugin.name).font(.system(size: 13, weight: .semibold)).lineLimit(2)
-                    if let version = plugin.version { Text(version).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary) }
+                    Text(plugin.name).font(.ui(size: 13, weight: .semibold)).lineLimit(2)
+                    if let version = plugin.version { Text(version).font(.ui(size: 10, design: .monospaced)).foregroundStyle(.secondary) }
                 }
                 Text(plugin.description.isEmpty ? L("plugins.noDescription") : plugin.description)
-                    .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).lineLimit(3)
-                Text("\(plugin.marketplace) · \(plugin.sourceKind)").font(.system(size: 10)).foregroundStyle(.tertiary)
+                    .font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).lineLimit(3)
+                Text("\(plugin.marketplace) · \(plugin.sourceKind)").font(.ui(size: 10)).foregroundStyle(.tertiary)
             }.frame(maxWidth: .infinity, alignment: .leading)
             Button(model.activePluginID == plugin.id ? L("settings.toolkit.installingButton") : installed ? L("settings.toolkit.verdictInstalled") : L("settings.toolkit.installButton")) { model.install(pluginID: plugin.id) }
                 .disabled(installed || model.isBusy || model.blockedReason != nil || model.snapshot?.status != "ready")
@@ -348,14 +348,14 @@ struct ClaudePluginView: View {
     }
     private var emptyList: some View {
         VStack(spacing: DesignMetrics.Spacing.md) {
-            Text(emptyMessage).font(.system(size: 12)).foregroundStyle(.secondary)
+            Text(emptyMessage).font(.ui(size: 12)).foregroundStyle(.secondary)
             if model.snapshot?.status == "ready", model.tab == "marketplace", model.snapshot?.marketplaces.isEmpty == true {
                 if model.provider == "codex" {
                     Text(L("plugins.codex.marketplaceHelp"))
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .font(.ui(size: 11)).foregroundStyle(.secondary)
                 } else {
                     Link(L("plugins.marketplaceHelpLink"), destination: URL(string: "https://code.claude.com/docs/en/discover-plugins#add-marketplaces")!)
-                        .font(.system(size: 11))
+                        .font(.ui(size: 11))
                 }
             }
         }.frame(maxWidth: .infinity, alignment: .center).padding(.vertical, 28)
