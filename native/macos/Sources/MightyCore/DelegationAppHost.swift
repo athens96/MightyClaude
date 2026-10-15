@@ -6,14 +6,24 @@ public enum DelegationPanes {
     /// A new Claude pane for `pane` in the workspace `workspaceId`. Its mode is
     /// the starting mode the parent asked for, written here once and never
     /// copied from the last-used pane; it is linked to its parent and works in
-    /// its worktree folder. A child the human started also takes `parent`'s
-    /// model and effort; any other runs Claude's default.
+    /// its worktree folder. Every child of a Claude `parent` shows its
+    /// requests the way the parent does: basic or Mighty, and in Mighty the
+    /// diagram, timeline or pipeline. A child the human started also takes the
+    /// parent's model, effort and Mighty style; any other runs Claude's
+    /// default in plain Mighty.
     public static func childSession(_ pane: DelegationChildPane, workspaceId: String, title: String, parent: RunSession? = nil) -> RunSession {
         var session = RunSession(id: pane.sessionId, workspaceId: workspaceId, title: title, kind: SessionKind.claude, provider: "claude",
                                  settings: RunSettings(permissionMode: pane.mode))
-        if pane.startedByHuman, let parent, DelegationSwitch.isClaudePane(kind: parent.kind, provider: parent.provider) {
-            session.model = parent.model
-            session.settings.effort = parent.settings.effort
+        if let parent, DelegationSwitch.isClaudePane(kind: parent.kind, provider: parent.provider) {
+            session.agentViewMode = parent.agentViewMode
+            session.graphViewMode = parent.graphViewMode
+            if pane.startedByHuman {
+                session.model = parent.model
+                session.settings.effort = parent.settings.effort
+                // The same approved bytes; its state starts over at the child's own first request.
+                session.mightyStyle = parent.mightyStyle
+                session.mightyStyleHash = parent.mightyStyleHash
+            }
         }
         session.parentSessionId = pane.parentSessionId
         session.workingFolder = pane.folder
