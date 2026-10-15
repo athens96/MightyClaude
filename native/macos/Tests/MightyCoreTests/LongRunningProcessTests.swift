@@ -198,7 +198,11 @@ struct LongRunningProcessTests {
         let elapsed = Date().timeIntervalSince(began)
         #expect(stopped.status == .done)
         #expect(stopped.signal == SIGKILL)
-        #expect(elapsed < 10)
+        // The escalation itself keeps to its 10 s deadline (the fake-clock test above
+        // checks that exactly). Here the wall clock also counts how late a busy CI
+        // runner wakes each 50 ms poll, which has added up to a second; what matters
+        // is that SIGKILL ended it, not a timeout, so the bound allows that slack.
+        #expect(elapsed < AgentTerminalRunner.stopDeadlineSeconds + 3)
         #expect(elapsed >= AgentTerminalRunner.sigintToSIGTERMSeconds + AgentTerminalRunner.sigtermToSIGKILLSeconds - 0.5)
         #expect(!pane.isRunning(handle: run.handle))
     }
