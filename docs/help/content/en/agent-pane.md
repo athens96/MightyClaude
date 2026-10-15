@@ -114,8 +114,8 @@ Use the {{ui:graph.view.diagram}} | {{ui:graph.view.timeline}} switch at the top
 
 ![[agent-timeline]]
 
-### Board {#structure}
-Pick {{ui:graph.view.structure}} on the same switch to see requests as a kanban board.
+### Pipeline {#structure}
+Pick {{ui:graph.view.structure}} on the same switch to see requests as a kanban-style pipeline.
 - The view shows one thing at a time: one request in a pane without a style, one pipeline in a pane that uses a style. A pipeline is a run of requests whose phase only moves forward; a request whose phase goes back before the previous request's starts a new pipeline.
 - ◀ {{ui:graph.structure.board.previous}} and ▶ {{ui:graph.structure.board.next}} at the top step back and forth. Click the title between them, such as "Request 3 / 7", to open the list with each one's number, title, status and steps, and pick any of them.
 - Below that is the status (and, in a pane with a style, the pipeline's name). The steps are the chips at the top of each column, joined by lines. In a pane without a style they are {{ui:graph.structure.column.request}} → {{ui:graph.structure.column.execution}} → {{ui:graph.structure.column.result}}; in a pane that uses a style, the mode's phases. Finished steps are green, the current one is in the accent colour and the rest are grey.
@@ -123,7 +123,7 @@ Pick {{ui:graph.view.structure}} on the same switch to see requests as a kanban 
 - Long text is folded; {{ui:graph.structure.more}} opens it in place. The small button in a card's header shows that block in the flow.
 - The view opens on the newest one and, left there, moves on to each new request or pipeline. While you look at an older one, a new one leaves you where you are and puts a {{ui:graph.structure.board.newRequest}} or {{ui:graph.structure.board.newPipeline}} badge next to ▶; click it to go to the newest.
 - Each column moves on its own: its header stays on top while its cards move up and down. Scroll up or down over a column with the trackpad or the mouse wheel, or drag an empty spot in it, to move that column only; when the columns don't all fit, scroll or drag sideways to move the board sideways.
-- On the newest one, a column showing its end follows new content down. A column you moved yourself, or one where you opened a text, stays where it is until you come back to its end. A new request shows every column's end, and an older one opens with every column at its top. In the Windows app the whole board still moves as one.
+- On the newest one, a column showing its end follows new content down. A column you moved yourself, or one where you opened a text, stays where it is until you come back to its end. A new request shows every column's end, and an older one opens with every column at its top. In the Windows app the whole pipeline still moves as one.
 
 ![[agent-structure]]
 
