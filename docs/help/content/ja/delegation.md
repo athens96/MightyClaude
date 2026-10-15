@@ -120,5 +120,5 @@ Windowsでは、`HKEY_CURRENT_USER\Software\MightyClaudeNative`の下の`delegat
 | 任せる作業(TASK.md) | 64 KiB |
 | 必要なディスクの空き | 10 GB |
 
-- 親も子もClaudeのペインである必要があります。CodexとGeminiのペインは委任しません。
+- 親も子もClaudeのペインである必要があります。CodexとAntigravity(Gemini)のペインは委任しません。
 - MacアプリもWindowsアプリも隠しスイッチでオンにします([オンとオフ](#enable))。スマートフォンに新しい画面はありませんが、保留された行はスマートフォンのキューにも表示されます。

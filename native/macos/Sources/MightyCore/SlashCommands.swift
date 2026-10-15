@@ -73,7 +73,10 @@ public enum SlashCommandCatalog {
     public static var permissionSource: String { L("composer.label.permission") }
 
     /// The CLI's own slash commands that the app answers itself, using the
-    /// names each CLI's users already know. Gemini has no plugin browser here.
+    /// names each CLI's users already know. Antigravity has no plugin browser here.
+    /// Any other `/name` goes to agy as typed: it expands skills, while its own
+    /// read-only commands (`/help`, `/skills`, …) answer only in a separate
+    /// `agy -p` run, so through this app's stdin they end with agy's error.
     public static func builtins(provider: String) -> [SlashCommand] {
         func app(_ name: String, _ description: String, action: SlashCommandAction? = nil, argument: SlashArgument? = nil) -> SlashCommand {
             SlashCommand(invocation: name, description: description, source: appSource, origin: .app, action: action, argument: argument)
@@ -95,10 +98,10 @@ public enum SlashCommandCatalog {
                     app("status", L("slash.builtin.usage"), action: .showUsage),
                     app("settings", L("slash.builtin.settings"), action: .openSettings), rename, help]
         case "gemini":
-            return [model, app("approval-mode", L("slash.builtin.permission"), argument: .permission),
+            return [model, app("permissions", L("slash.builtin.permission"), argument: .permission),
                     app("clear", L("slash.builtin.newConversation"), action: .newConversation),
-                    app("stats", L("slash.builtin.usage"), action: .showUsage),
-                    app("settings", L("slash.builtin.settings"), action: .openSettings), rename, help]
+                    app("usage", L("slash.builtin.usage"), action: .showUsage),
+                    app("config", L("slash.builtin.settings"), action: .openSettings), rename, help]
         default: return []
         }
     }

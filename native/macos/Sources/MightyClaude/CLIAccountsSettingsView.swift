@@ -26,7 +26,7 @@ struct CLIAccountsSettingsSection: View {
                 set: { store.snapshot.autoLoginCLIs = $0 }
             ))
             .accessibilityIdentifier("cli-auto-login")
-            Text(L("settings.cliAccounts.autoLoginDescription"))
+            Text(L("settings.cliAccounts.autoLoginDescriptionMac"))
                 .font(.system(size: 11)).foregroundStyle(.secondary)
         }
     }

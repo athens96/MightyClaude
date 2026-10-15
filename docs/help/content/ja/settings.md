@@ -30,7 +30,7 @@ section: settings
 
 ## コンポーネント {#components}
 {{ui:settings.nav.tools}}タブでは、アプリに必要なものが準備できているかを確認できます。
-- {{ui:settings.components.sectionTitle}}: Claude、Codex、Gemini CLIと、必要なプラグインの状態です。{{ui:settings.components.statusInstalled}}、{{ui:settings.components.statusMissing}}、{{ui:settings.components.statusAttention}}のいずれかで表示されます。インストールが必要な場合は、インストールコマンドをコピーしてターミナルで実行してから、{{ui:settings.components.recheckButton}}をクリックします。
+- {{ui:settings.components.sectionTitle}}: Claude、Codex、Antigravity CLI(WindowsではGemini CLI)と、必要なプラグインの状態です。{{ui:settings.components.statusInstalled}}、{{ui:settings.components.statusMissing}}、{{ui:settings.components.statusAttention}}のいずれかで表示されます。インストールが必要な場合は、インストールコマンドをコピーしてターミナルで実行してから、{{ui:settings.components.recheckButton}}をクリックします。
 - {{ui:settings.toolkit.sectionTitle}}: よく使うツールの一覧です。インストールの前に実行するコマンドをすべて表示し、{{ui:settings.toolkit.confirmTitle}}を求めます。一覧を{{ui:settings.toolkit.exportButton}}したり{{ui:settings.toolkit.importButton}}したりできます。
 
 ![[settings-tools]]

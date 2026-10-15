@@ -64,7 +64,10 @@ Nodes may carry an optional `usage` object (`inputTokens`, `outputTokens`,
 the engine's per-message `usage` on the execution host. Older clients ignore it.
 
 `kind: "claude"` remains the compatible wire name for an AI pane. `provider`
-selects `claude`, `codex`, or `gemini`; `kind: "shell"` starts a command.
+selects `claude`, `codex`, or `gemini`; `kind: "shell"` starts a command. The
+`gemini` id is kept on the wire and in saved panes: Windows runs Gemini CLI
+(`gemini`) for it, while macOS runs Google's Antigravity CLI (`agy`) and labels
+the agent "Antigravity".
 Prompts travel over stdin. CLI argument arrays are never assembled by shell
 interpolation. Provider changes reset model, settings, and resume identity.
 
@@ -91,8 +94,9 @@ can understand every file format. Empty text is valid only for AI requests with
 at least one attachment; shell requests cannot carry attachments.
 
 Claude receives images and PDFs as structured stream-JSON content blocks.
-Codex receives image paths through `--image`. Gemini receives platform-escaped `@file`
-references and access to the single temporary attachment directory. Other files
+Codex receives image paths through `--image`. Gemini (Windows) receives platform-escaped `@file`
+references and access to the single temporary attachment directory; Antigravity
+(macOS) gets that directory through `--add-dir` and each copy's plain path in the prompt. Other files
 are referenced by staged paths in the prompt. Files are staged under generated
 names in a private per-run directory and removed after completion, cancellation,
 or startup failure. Originals are untouched. Attachments must be sent again if
@@ -124,8 +128,24 @@ interactive approval requests. Its permission modes map to `read-only`,
 `workspace-write`, and `danger-full-access`. The workspace sandbox's outbound
 network flag is separate from the model's web search setting. `fullAccess` removes
 that sandbox restriction; it is not a default. Claude maps `fullAccess` to
-`bypassPermissions`, and Gemini maps it to `yolo`. Their `manual` modes retain CLI
-permission rules and do not promise a read-only filesystem sandbox.
+`bypassPermissions`, Gemini (Windows) maps it to `yolo` and Antigravity (macOS) to
+`--dangerously-skip-permissions`. Their `manual` modes retain CLI permission rules
+and do not promise a read-only filesystem sandbox. Antigravity runs headless
+(`agy --print= --input-format stream-json --output-format stream-json`, the prompt
+as one `{"event":"user",…}` stdin line): `plan` and `acceptEdits` map to
+`--mode plan` / `--mode accept-edits`. agy 1.3.5 has no `--mode default`
+(it warns and ignores it), so `manual` follows the Agent Mode saved in agy (review
+unless changed there); in review mode what it would ask about (file edits, shell
+commands) is declined unless its own `permissions.allow` rules allow it, and the
+result's `denied_actions` are shown as a notice. Headless `plan` writes its plan in
+agy's own folder and stops without editing the project. agy expands skills sent
+as `/name`; its read-only commands (`/help`, `/skills`, …) answer only in their own
+`agy -p "/help"` run and end with an error result when sent over stdin. Token
+usage is per conversation; agy's `input_tokens` excludes `cache_read_tokens`, so
+macOS adds them to keep input inclusive of cached input. Once per profile
+(`antigravityMigrated` in the Mac snapshot), `gemini` panes drop the resume id and
+any model Gemini CLI saved that agy does not list; a model agy's live list lacks is
+reset to `default` before a run, since agy refuses an unknown `--model`.
 
 The local Claude runners (macOS, and Windows where the app shows the approval
 bar) explicitly opt into the SDK stdio approval channel. Ephemeral `permission` events carry the run/request/tool IDs and complete
@@ -163,7 +183,9 @@ request. Mac and Windows snapshots may also include `autoLoginCLIs`, an optional
 Boolean; anything but explicit `false` keeps the automatic sign-in on: a run that
 lost its Claude or Codex sign-in starts one background sign-in per provider (Gemini,
 which has no sign-in command, opens one sign-in terminal running `gemini` instead and
-counts as signed in once `~/.gemini/oauth_creds.json` appears or is rewritten), and
+counts as signed in once `~/.gemini/oauth_creds.json` appears or is rewritten; on
+macOS that terminal runs `agy`, opens only when `agy models` reports signed out, and
+counts as signed in once `agy models` succeeds), and
 none again for two minutes after one failed, was cancelled or succeeded. A request
 that login recovery itself resent, or that started before the last sign-in, only
 shows the card.
@@ -190,6 +212,8 @@ interaction patterns described or shown in these official references:
 
 CLI argument availability was also checked against installed Claude Code 2.1.273,
 Codex CLI 0.153.4, and Gemini CLI 0.43.0 help output. No AI prompt was sent for these checks.
+The macOS Antigravity arguments and its stream-json events were checked against
+Antigravity CLI 1.3.5 (`agy --help` and small `gemini-3.8-flash-low` runs).
 
 ### Windows structured events and saved measurements
 
@@ -204,7 +228,7 @@ do not discard otherwise valid saved conversation text.
 `SessionUsage` distinguishes `response`, `run`, and `session` token scopes.
 Input includes cached input, while cache and reasoning counts are subsets.
 Claude's authenticated Mods snapshots can supply actual context occupancy and
-capacity. Codex/Gemini cumulative result counters replace prior snapshots and do
+capacity. Codex/Gemini/Antigravity cumulative result counters replace prior snapshots and do
 not imply current context size or a context percentage. Quota observations retain
 their separate `rateLimitsUpdatedAt`; ordinary output does not make them fresh.
 
@@ -372,7 +396,10 @@ own name and add the resolved model after ` · `. `[1m]` adds ` (1M)`; a Bedrock
 `model-label.test.ts` (jest) both read the fixture
 `[{model, resolved?, fallback?, expected}]`. The graph vectors below keep the
 catalogue-only names (`ModelUsageFormat` with `versioned: false`); the Mac views
-pass `versioned: true`. Windows does not apply these labels yet.
+pass `versioned: true`. Windows does not apply these labels yet. macOS alone reads
+an Antigravity slug's last `low`/`medium`/`high` as its effort
+(`gemini-3.8-flash-low` → `Gemini 3.8 Flash (Low)`, as `agy models` names it); the
+phone shows such ids as `Gemini 3.8 Flash Low`, so they are not in the shared fixture.
 
 ## Help site (`fixtures/help-site.json`)
 

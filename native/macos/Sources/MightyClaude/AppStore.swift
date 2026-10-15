@@ -148,8 +148,8 @@ final class AppStore: ObservableObject, DelegationHost {
     @Published var loginRequired: [String: String] = [:]
     @Published var backgroundLogins: [String: BackgroundLoginState] = [:]
     var backgroundLoginJobs: [String: BackgroundLoginJob] = [:]
-    /// The terminal pane Gemini's last sign-in opened, used again while it is open.
-    var geminiLoginTerminal: String?
+    /// The terminal pane Antigravity's last sign-in opened, used again while it is open.
+    var antigravityLoginTerminal: String?
     var loginRetries = CLILoginRetryBook()
     /// When a lost sign-in may start its provider's sign-in by itself.
     var autoLoginGate = CLIAutoLoginGate()
@@ -978,7 +978,15 @@ final class AppStore: ObservableObject, DelegationHost {
                       currentWorkspace.path == workspace.path else { throw CancellationError() }
                 if let reason = runBlockedReason(current) { throw MightyError(reason) }
                 let registered = providerRegisteredModels(current.provider)
-                var request = StartRunRequest(sessionId: id, workspaceId: workspace.id, kind: current.kind, input: input, model: current.model, provider: current.provider, settings: current.settings, resumeId: current.resumeId, attachments: attachments, registeredModels: registered)
+                var model = current.model
+                // agy refuses a model its list lacks, so the run starts on its default instead.
+                if current.kind == "claude", current.provider == "gemini",
+                   AntigravityMigration.modelUnavailable(model, catalog: providerRuntime(current.provider, workspaceId: workspace.id).modelCatalog) {
+                    let missing = model
+                    updateSession(id) { $0.model = "default"; $0.logs.append(LogEntry(kind: "system", text: L("run.notice.antigravityModelReset", ["model": missing]))) }
+                    model = "default"
+                }
+                var request = StartRunRequest(sessionId: id, workspaceId: workspace.id, kind: current.kind, input: input, model: model, provider: current.provider, settings: current.settings, resumeId: current.resumeId, attachments: attachments, registeredModels: registered)
                 // A resumed conversation continues its checklist (task tools keep their ids).
                 if current.resumeId != nil { request.todoProgress = current.todoProgress }
                 // §1.17: a plan-mode style starts every new request in plan mode,
@@ -992,7 +1000,7 @@ final class AppStore: ObservableObject, DelegationHost {
                     // Settings > Models: pins and effort for every run of this provider.
                     // The pane's own model and effort still win.
                     request.phaseModels = (snapshot.phaseModels ?? PhaseModelHardcodedConfig()).toPhaseModelConfig(omcAgents: nil, ouroborosKeys: nil)
-                    request.settings.effort = request.phaseModels.runEffort(provider: current.provider, paneEffort: current.settings.effort, paneModel: current.model,
+                    request.settings.effort = request.phaseModels.runEffort(provider: current.provider, paneEffort: current.settings.effort, paneModel: model,
                                                                             catalog: provider.modelCatalog, registeredModels: registered)
                     try CoreValidation.validateSelection(request, catalog: provider.modelCatalog, registeredModels: registered)
                     try CoreValidation.validateCapabilities(request, capabilities: provider.capabilities)

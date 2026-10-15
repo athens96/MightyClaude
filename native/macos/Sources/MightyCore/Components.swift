@@ -47,7 +47,7 @@ public enum ComponentCatalog {
         switch provider {
         case "claude": return "npm install -g @anthropic-ai/claude-code"
         case "codex": return "npm install -g @openai/codex"
-        case "gemini": return "npm install -g @google/gemini-cli"
+        case "gemini": return "curl -fsSL https://antigravity.google/cli/install.sh | bash"
         default: return nil
         }
     }

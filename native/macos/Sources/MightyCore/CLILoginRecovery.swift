@@ -73,39 +73,14 @@ public enum CLIAuthFailure {
         text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix("reconnecting")
     }
 
-    /// One line of Gemini CLI's own console output (stderr, or a stdout line
-    /// that is not JSON) that says its sign-in is gone. Only the CLI's own
-    /// sign-in messages count here, since this output also carries API error
-    /// dumps that quote other text:
-    /// - a stale or revoked Google sign-in: the CLI cannot open a browser
-    ///   headless, so it prints its consent prompt ("Opening authentication
-    ///   page in your browser. Do you want to continue? [Y/n]") to stdout, reads
-    ///   the request as the answer and reports "Error authenticating:
-    ///   FatalCancellationError: Authentication cancelled by user." on stderr;
-    /// - no method chosen: "Please set an Auth method in your …settings.json"
-    ///   (or "No authentication method selected.");
-    /// - with the browser suppressed: "Manual authorization is required but
-    ///   the current session is non-interactive".
-    public static func geminiConsole(line: String) -> Bool {
-        let lowered = line.prefix(16_384).lowercased()
-        if ["please set an auth method", "no authentication method selected", "opening authentication page in your browser",
-            "manual authorization is required"].contains(where: lowered.contains) { return true }
-        return lowered.contains("error authenticating")
-            && (lowered.contains("fatalauthenticationerror") || lowered.contains("authentication cancelled by user"))
-    }
-
-    /// The message of a failed Gemini `result` / `error` event, never model or
-    /// tool text: the console messages above, or a token rejected mid-run —
-    /// OAuth `invalid_grant` ("Token has been expired or revoked") or the API's
-    /// 401 UNAUTHENTICATED ("Request had invalid authentication credentials").
-    /// An invalid API key ("API key not valid") is not matched, and a 401 under
-    /// Vertex or an API key is ruled out by `signInCanFix`.
-    public static func gemini(text: String) -> Bool {
-        if geminiConsole(line: text) { return true }
+    /// Antigravity CLI's own sign-in failures, in its own words, on stderr, a
+    /// plain stdout line or a failed result: "Error: authentication required.
+    /// Run 'agy' to log in, then retry." and "Print mode: auth error: …". A
+    /// sign-in that timed out, or a proxy's "407 Proxy Authentication
+    /// Required", is not a lost sign-in.
+    public static func antigravity(text: String) -> Bool {
         let lowered = text.prefix(16_384).lowercased()
-        if ["authentication consent could not be obtained", "invalid_grant", "token has been expired or revoked",
-            "request had invalid authentication credentials"].contains(where: lowered.contains) { return true }
-        return lowered.contains("401") && lowered.contains("unauthenticated")
+        return lowered.contains("authentication required. run ") || lowered.contains("print mode: auth error")
     }
 
     /// Whether signing in again can fix a run that failed with a sign-in
@@ -113,12 +88,12 @@ public enum CLIAuthFailure {
     /// status still says signed in (or cannot tell): that does not rule it out.
     /// Only a method a browser sign-in does not renew does: no CLI, Bedrock /
     /// Vertex / Foundry or a Claude API key (status reports those as
-    /// configuration, `accessVerified == false`), a Codex API-key login, or a
-    /// Gemini method other than the Google sign-in (an API key, Vertex AI,
-    /// Compute ADC, …).
+    /// configuration, `accessVerified == false`) or a Codex API-key login.
+    /// Antigravity's status is a live call: only one that reads signed out
+    /// asks for a sign-in; unknown (offline, a timeout) does not open one.
     public static func signInCanFix(_ status: CLIAccountStatus) -> Bool {
         guard status.installed, status.accessVerified != false else { return false }
-        if status.provider == "gemini" { return status.methodId == nil || status.methodId == CLIAccountMethod.geminiGoogle }
+        if status.provider == "gemini" { return status.loggedIn == false }
         return !(status.provider == "codex" && status.methodId == CLIAccountMethod.codexAPIKey)
     }
 
@@ -126,52 +101,29 @@ public enum CLIAuthFailure {
     public static let providers = ["claude", "codex", "gemini"]
 }
 
-/// Gemini has no sign-in command: its sign-in is the interactive CLI itself
-/// ("Login with Google"), so it runs in a terminal the user sees. A dropped
-/// sign-in usually leaves `oauth_creds.json` on disk, so a new sign-in is told
-/// apart from the stale one by the file appearing or being rewritten after the
-/// terminal opened. Only the file's modification time is read, never its contents.
-public enum CLIGeminiLogin {
-    public static func credentialsURL(home: URL) -> URL {
-        home.appendingPathComponent(".gemini", isDirectory: true).appendingPathComponent("oauth_creds.json")
-    }
-
-    /// When the credentials file was last written; nil while it does not exist.
-    public static func credentialsStamp(home: URL) -> Date? {
-        // A linked file is read through its target, as the CLI reads it.
-        guard let values = try? credentialsURL(home: home).resolvingSymlinksInPath().resourceValues(forKeys: [.contentModificationDateKey, .isRegularFileKey]),
-              values.isRegularFile == true else { return nil }
-        return values.contentModificationDate
-    }
-
-    /// Signed in since `baseline` (the stamp when the terminal opened): the
-    /// file is newer than it, or appeared, and the status reads as a Google sign-in.
-    public static func signedIn(since baseline: Date?, stamp: Date?, status: CLIAccountStatus) -> Bool {
-        guard let stamp, baseline.map({ stamp > $0 }) ?? true else { return false }
-        return status.provider == "gemini" && status.loggedIn == true && CLIAuthFailure.signInCanFix(status)
-    }
-
-    /// Waits for a sign-in in the terminal. The stamp is checked every `tick`;
-    /// the status is read only once the stamp moved (then at most every
-    /// `interval` until it confirms), and once more when the terminal closed
-    /// (`exited`) or `limit` passed (`timedOut`).
-    public static func wait(baseline: Date?, stamp: @Sendable () -> Date?, status: @Sendable () async -> CLIAccountStatus,
-                            isOpen: @Sendable () async -> Bool, interval: TimeInterval, limit: TimeInterval, tick: TimeInterval = 1,
+/// Antigravity has no sign-in command: its sign-in is the interactive CLI
+/// itself (the browser opens on its first run), so it runs in a terminal the
+/// user sees. Its credentials live in the keychain, so the sign-in is seen by
+/// asking its status (`CLIAccountSupport.antigravityStatus`) every `interval`.
+public enum CLIAntigravityLogin {
+    /// Waits for a sign-in in the terminal: signed in once the status reads
+    /// so; once more when the terminal closed (`exited`) or `limit` passed
+    /// (`timedOut`). The terminal being open is checked every `tick`.
+    public static func wait(status: @Sendable () async -> CLIAccountStatus, isOpen: @Sendable () async -> Bool,
+                            interval: TimeInterval, limit: TimeInterval, tick: TimeInterval = 1,
                             now: @Sendable () -> Date = { Date() }) async -> CLILoginWaitOutcome {
         let started = now()
-        var lastRead: Date?
+        var lastRead = started
         while !Task.isCancelled {
             try? await Task.sleep(for: .seconds(tick))
             guard !Task.isCancelled else { return .cancelled }
             let open = await isOpen(), current = now()
             let expired = current.timeIntervalSince(started) >= limit
-            let moved = stamp().map { value in baseline.map { value > $0 } ?? true } ?? false
-            let final = !open || expired
-            guard final || (moved && lastRead.map { current.timeIntervalSince($0) >= interval } ?? true) else { continue }
+            guard !open || expired || current.timeIntervalSince(lastRead) >= interval else { continue }
             lastRead = current
             let value = await status()
             guard !Task.isCancelled else { return .cancelled }
-            if signedIn(since: baseline, stamp: stamp(), status: value) { return .loggedIn(value) }
+            if value.provider == "gemini", value.loggedIn == true { return .loggedIn(value) }
             if !open { return .exited(value) }
             if expired { return .timedOut(value) }
         }

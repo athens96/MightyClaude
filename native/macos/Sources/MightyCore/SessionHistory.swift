@@ -92,7 +92,7 @@ public struct SessionHistoryChunk: Sendable {
 }
 
 public enum SessionHistoryError: Error, Equatable {
-    /// The pane's CLI keeps no record the graph can read (Gemini, a shell).
+    /// The pane's CLI keeps no record the graph can read (Antigravity, a shell).
     case unsupported
     /// No record for this session exists, or it is not a readable regular file.
     case missing

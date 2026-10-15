@@ -107,9 +107,12 @@ private final class AttachmentEvents: @unchecked Sendable {
                     #expect(String(decoding: input.standardInput, as: UTF8.self).contains(prepared.files[1].url.path.replacingOccurrences(of: "/", with: "\\/")) || String(decoding: input.standardInput, as: UTF8.self).contains(prepared.files[1].url.path))
                     if resume != nil { #expect(input.arguments.contains("resume")) }
                 } else {
-                    #expect(input.arguments.suffix(2) == ["--include-directories", folder.path])
-                    let text = String(decoding: input.standardInput, as: UTF8.self)
-                    #expect(text.contains("\\ space\\,\\[test\\]\\!")); #expect(text.contains("@/")); #expect(!text.contains("@\""))
+                    // Antigravity: the folder is added and the prompt names each copy by its plain path.
+                    #expect(input.arguments.suffix(2) == ["--add-dir", folder.path])
+                    let json = try #require(JSONSerialization.jsonObject(with: input.standardInput) as? [String: Any])
+                    #expect(json["event"] as? String == "user" && input.standardInput.last == 10)
+                    let content = try #require((json["message"] as? [String: Any])?["content"] as? String)
+                    #expect(prepared.files.allSatisfy { content.contains($0.url.path) })
                 }
             }
         }
@@ -120,17 +123,17 @@ private final class AttachmentEvents: @unchecked Sendable {
     @Test func fakeCLIReadsAttachmentsAndCleansCopiesOnExitErrorAndStop() async throws {
         try await LocaleOverride.$language.withValue(.ko) { () async throws in
             let root = try directory(); defer { try? FileManager.default.removeItem(at: root) }
-            let binary = root.appendingPathComponent("gemini")
-            // Gemini metadata is static; this executable only captures local bytes.
+            let binary = root.appendingPathComponent("agy")
+            // This Antigravity stand-in only captures local bytes; its model list is never asked for.
             let script = #"""
             #!/bin/sh
-            if [ "$1" = "--version" ]; then printf '0.43.0\n'; exit 0; fi
+            if [ "$1" = "--version" ]; then printf '1.3.5\n'; exit 0; fi
             folder="$(/usr/bin/dirname "$0")"
             printf '%s\n' "$@" > "$folder/args"
             /bin/cat > "$folder/input"
             previous=''
             for value in "$@"; do
-              if [ "$previous" = '--include-directories' ]; then
+              if [ "$previous" = '--add-dir' ]; then
                 /bin/cat "$value"/* > "$folder/copied" || exit 1
                 # Publish readiness only after the bytes have been copied. The HOLD
                 # case stops this process as soon as the stage marker appears.
@@ -141,7 +144,7 @@ private final class AttachmentEvents: @unchecked Sendable {
             done
             if /usr/bin/grep -q HOLD "$folder/input"; then /bin/sleep 60; fi
             if /usr/bin/grep -q FAIL "$folder/input"; then exit 1; fi
-            printf '{"type":"result","status":"success"}\n'
+            printf '{"event":"result","result":{"status":"SUCCESS"}}\n'
             """#
             try Data(script.utf8).write(to: binary); try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: binary.path)
             let service = ProviderService(binaryOverrides: ["gemini": binary]); let events = AttachmentEvents()
@@ -160,7 +163,7 @@ private final class AttachmentEvents: @unchecked Sendable {
                     let stage = try String(contentsOf: root.appendingPathComponent("stage"))
                     #expect(!stage.isEmpty && stage.hasPrefix("/"))
                     #expect(!FileManager.default.fileExists(atPath: stage))
-                    #expect(try String(contentsOf: root.appendingPathComponent("input")).contains("@/"))
+                    #expect(try String(contentsOf: root.appendingPathComponent("input")).contains("\"event\":\"user\""))
                 }
             } catch { await runner.shutdown(); await service.shutdown(); throw error }
             await runner.shutdown(); await service.shutdown()
@@ -169,7 +172,7 @@ private final class AttachmentEvents: @unchecked Sendable {
 
     @Test func cancelledAttachmentAdmissionThrowsBeforeDraftCanBeCleared() async throws {
         let root = try directory(); defer { try? FileManager.default.removeItem(at: root) }
-        let binary = root.appendingPathComponent("gemini")
+        let binary = root.appendingPathComponent("agy")
         // The version probe holds until released, so the stop lands while the
         // admission is really pending instead of guessing 50 ms into a 0.4 s probe.
         try Data("#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then folder=\"$(/usr/bin/dirname \"$0\")\"; : > \"$folder/probing\"; while [ ! -e \"$folder/release\" ]; do /bin/sleep 0.05; done; printf '0.43.0\\n'; exit 0; fi\nprintf BAD_LAUNCH\n".utf8).write(to: binary)

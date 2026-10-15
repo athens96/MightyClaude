@@ -2,7 +2,7 @@ import Foundation
 import MightyCore
 
 /// Signing the three CLIs in and out. Status comes from the CLIs themselves
-/// (or Gemini's account files); sign-in is interactive, so it runs in a
+/// (Antigravity: its model list); sign-in is interactive, so it runs in a
 /// terminal pane of a local workspace with the command run for the user.
 /// Settings is a sheet, so problems are reported per provider in its row.
 extension AppStore {

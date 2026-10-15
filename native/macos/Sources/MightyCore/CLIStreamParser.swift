@@ -29,6 +29,13 @@ public final class CLIStreamParser {
     /// later failure or result replaces it, so a 401 the CLI recovered from
     /// does not mark a run that failed for another reason.
     public private(set) var authFailure = false
+    /// Antigravity streamed this turn's text as deltas, so its result's full
+    /// `response` repeats it.
+    private var antigravityStreamed = false
+    /// The conversation an Antigravity run was asked to continue; agy starts a
+    /// new one when it cannot find it, and says so once.
+    private let requestedResume: String?
+    private var newConversationNoted = false
     /// The text of the latest Claude message the CLI marked as a lost sign-in,
     /// until a result ends its turn (`CLIAuthFailure.claude(result:repeating:)`).
     private var authFailureText: String?
@@ -37,7 +44,7 @@ public final class CLIStreamParser {
     /// whole base64 pictures (twice, for Claude's tool_use_result echo), so
     /// the cap leaves room for a picture at `AgentImageSupport.maximumImageBytes`.
     public static let maximumLineBytes = 64 * 1_048_576
-    /// Gemini's stream never carries pictures, so its lines get a smaller cap.
+    /// Antigravity's stream never carries pictures, so its lines get a smaller cap.
     /// Codex approval runs use `CodexApprovalChannel.maximumFrameBytes`.
     public static func maximumLineBytes(provider: String) -> Int { provider == "gemini" ? 8 * 1_048_576 : maximumLineBytes }
     private let maximumLineBytes: Int
@@ -67,8 +74,8 @@ public final class CLIStreamParser {
     public init(provider: String, log: @escaping (String, String) -> Void, resume: @escaping (String) -> Void, activityNamespace: String = UUID().uuidString, activity: ((AgentActivity) -> Void)? = nil, control: ((Data) -> Void)? = nil, result: (() -> Void)? = nil, activityClock: (() -> TimeInterval)? = nil, usage: ((SessionUsage) -> Void)? = nil, graph: ((ExecutionGraphNode) -> Void)? = nil, graphInput: String? = nil, configuredModel: String? = nil,
                 images: AgentImageCache? = nil, imageRoot: URL? = nil, imageEntry: ((LogEntry) -> Void)? = nil, maximumLineBytes: Int = CLIStreamParser.maximumLineBytes,
                 todos: ((TodoProgress) -> Void)? = nil, background: ((BackgroundWork) -> Void)? = nil, backgroundClock: @escaping () -> Date = Date.init,
-                savedTodos: TodoProgress? = nil, settled: (() -> Void)? = nil) {
-        self.provider = provider; self.log = log; self.resume = resume
+                savedTodos: TodoProgress? = nil, settled: (() -> Void)? = nil, requestedResume: String? = nil) {
+        self.provider = provider; self.log = log; self.resume = resume; self.requestedResume = requestedResume
         self.todos = provider == "claude" ? todos : nil; self.background = provider == "claude" ? background : nil
         todoTracker = TodoProgressTracker(progress: savedTodos); self.settled = settled
         backgroundTracker = BackgroundTaskTracker(clock: backgroundClock)
@@ -96,22 +103,33 @@ public final class CLIStreamParser {
         if let line = lines.finish() { consume(AgentOutputLine(line)) }
         flushText()
     }
-    /// The CLI's stderr. Only Gemini reports a lost sign-in there ("Please set
-    /// an Auth method", "Error authenticating: …"). Each complete line is
-    /// matched on its own (`CLIAuthFailure.geminiConsole`); an unfinished last
-    /// line waits for the rest of it, or for `finishStderr`.
+    /// The CLI's stderr. Only Antigravity reports a lost sign-in there
+    /// ("Error: authentication required. Run 'agy' to log in, then retry.").
+    /// Each complete line is matched on its own (`CLIAuthFailure.antigravity`);
+    /// an unfinished last line waits for the rest of it, or for `finishStderr`.
     public func receiveStderr(_ text: String) {
         guard provider == "gemini", !text.isEmpty else { return }
         var lines = (stderrTail + text).split(separator: "\n", omittingEmptySubsequences: false)
         // Only the start of a line is matched, so a runaway line keeps just that.
         stderrTail = String(lines.removeLast().prefix(16_384))
-        if lines.contains(where: { CLIAuthFailure.geminiConsole(line: String($0)) }) { authFailure = true }
+        for line in lines { antigravityStderr(String(line)) }
     }
     /// The process ended: its last stderr line is complete.
     public func finishStderr() {
         guard provider == "gemini", !stderrTail.isEmpty else { return }
-        if CLIAuthFailure.geminiConsole(line: stderrTail) { authFailure = true }
+        antigravityStderr(stderrTail)
         stderrTail = ""
+    }
+    /// One complete stderr line of agy: a lost sign-in, or the conversation it
+    /// was asked to continue missing (`warning: conversation "…" not found`).
+    private func antigravityStderr(_ line: String) {
+        if CLIAuthFailure.antigravity(text: line) { authFailure = true }
+        let lowered = line.prefix(1_024).lowercased()
+        if lowered.hasPrefix("warning: conversation"), lowered.contains("not found") { noteNewConversation() }
+    }
+    private func noteNewConversation() {
+        guard !newConversationNoted else { return }
+        newConversationNoted = true; log("system", L("run.notice.antigravityNewConversation"))
     }
     /// A line the runner already cut and parsed (`AgentOutputLines`).
     func receive(_ line: AgentOutputLine) { consume(line) }
@@ -349,10 +367,16 @@ public final class CLIStreamParser {
             let head = data.prefix(32_771)
             var text = String(decoding: head, as: UTF8.self)
             if head.count < data.count, text.last == "\u{FFFD}" { text.removeLast() }
-            // Gemini prints its sign-in consent prompt as a plain line, never as JSON;
+            // Antigravity prints a lost sign-in as a plain line, never as JSON;
             // a cut-off JSON line may quote anything, so it never counts.
-            if provider == "gemini", !text.drop(while: \.isWhitespace).hasPrefix("{"), CLIAuthFailure.geminiConsole(line: text) { authFailure = true }
+            if provider == "gemini", !text.drop(while: \.isWhitespace).hasPrefix("{"), CLIAuthFailure.antigravity(text: text) { authFailure = true }
             log("output", String(text.prefix(32_768))); return
+        }
+        if provider == "gemini" {
+            guard let value = object as? [String: Any], let event = value["event"] as? String else { return }
+            usageTracker.consume(value)
+            antigravity(value, event: event)
+            return
         }
         guard var value = object as? [String: Any], let type = value["type"] as? String else { return }
         // Read before the Bedrock rewrite below, which would hide the original text.
@@ -464,46 +488,99 @@ public final class CLIStreamParser {
                 log("error", text)
             }
             if type == "turn.completed" { authFailure = false }
-        case "gemini":
-            if type == "init" { resumeIfValid(value["session_id"]); turn(L("run.turn.generating", ["name": "Gemini"])) }
-            if type == "message", value["role"] as? String == "assistant", let text = value["content"] as? String {
-                if value["delta"] as? Bool == true {
+        default: break
+        }
+    }
+
+    /// Antigravity CLI (`agy --output-format stream-json`): each line names its
+    /// `event` and carries the payload under that same key. `init` opens the
+    /// session, `step_update` streams the turn's steps (the request, the
+    /// agent's text as deltas, tool calls, checkpoints) and `result` closes it.
+    /// Subagent steps (`subagent_info`) are not shown yet.
+    private func antigravity(_ value: [String: Any], event: String) {
+        let payload = value[event] as? [String: Any] ?? [:]
+        let name = ProviderOptions.label(provider)
+        switch event {
+        case "init":
+            if let requestedResume, let id = value["conversation_id"] as? String, !id.isEmpty, id != requestedResume { noteNewConversation() }
+            resumeIfValid(value["conversation_id"]); turn(L("run.turn.generating", ["name": name]))
+        case "step_update":
+            let state = (payload["state"] as? String ?? "").uppercased()
+            switch payload["step_type"] as? String {
+            case "agent_response":
+                // A long answer arrives as ACTIVE deltas before its DONE step.
+                if let text = payload["text_delta"] as? String, !text.isEmpty {
                     let remaining = max(0, 131_072 - pendingText.utf8.count)
                     if text.utf8.count > remaining { pendingTextTruncated = true }
                     pendingText += ActivitySupport.prefixUTF8(text, maximumBytes: remaining)
+                    antigravityStreamed = true
                 }
-                else { flushText(); if !text.isEmpty { log("assistant", text) } }
-            } else if type == "tool_use" {
+                if state != "ACTIVE" { flushText() }
+            case "tool":
                 flushText()
-                if let name = value["tool_name"] as? String {
-                    tool(id: value["tool_id"] as? String, name: name, input: value["parameters"], state: "running")
-                    if activity == nil { log("system", L("run.tool.started", ["name": String(name.prefix(160))])) }
-                }
-            } else if type == "tool_result" {
-                flushText()
-                let failed = value["status"] as? String == "error"
-                tool(id: value["tool_id"] as? String, state: failed ? "error" : "completed", output: failed ? errorText(value["error"], fallback: L("run.tool.geminiFailed")) : value["output"] as? String)
+                guard let index = payload["step_index"] as? Int else { return }
+                let info = payload["tool_info"] as? [String: Any]
+                let tool = info?["name"] as? String ?? payload["tool_name"] as? String ?? "Tool"
+                let failure = info?["error"].flatMap { $0 is NSNull ? nil : $0 }.map { errorText($0, fallback: L("run.tool.antigravityFailed")) }
+                let toolState = ["CANCELED", "CANCELLED", "INTERRUPTED"].contains(state) ? "stopped" : state == "ERROR" || (state == "DONE" && failure != nil) ? "error" : state == "DONE" ? "completed" : "running"
+                let key = "step:\(index)"
+                let started = toolActivities[ActivitySupport.id(namespace: activityNamespace, key: key)] != nil
+                let ended = toolState != "running"
+                self.tool(id: key, name: tool, input: Self.antigravityParameters(info?["parameters"]), state: toolState, output: ended ? failure ?? info?["output"] as? String : nil)
                 if activity == nil {
-                    if let text = value["output"] as? String, !text.isEmpty { log("output", text) }
-                    if failed { log("system", errorText(value["error"], fallback: L("run.tool.geminiFailed"))) }
+                    if !started, !ended { log("system", L("run.tool.started", ["name": String(tool.prefix(160))])) }
+                    if ended, let text = info?["output"] as? String, !text.isEmpty { log("output", text) }
+                    if let failure { log("system", failure) }
                 }
-            } else if type == "error" {
-                flushText(); let warning = value["severity"] as? String == "warning"
-                let text = errorText(value["message"], fallback: L("run.error.providerRunFailed", ["name": "Gemini"]))
-                if !warning { failed = true; authFailure = CLIAuthFailure.gemini(text: text) }
-                log(warning ? "system" : "error", text)
-            } else if type == "result" {
-                flushText()
-                if value["status"] as? String == "error" {
-                    failed = true
-                    let text = errorText(value["error"], fallback: L("run.error.providerRunFailed", ["name": "Gemini"]))
-                    authFailure = CLIAuthFailure.gemini(text: text)
-                    log("error", text)
-                } else { authFailure = false }
-                turn(L("run.turn.finishing", ["name": "Gemini"]))
+            default: break
             }
-        default: break
+        case "result":
+            flushText()
+            resumeIfValid(payload["conversation_id"])
+            // The full text of the turn repeats what the deltas already showed.
+            if !antigravityStreamed, let text = payload["response"] as? String, !text.isEmpty { log("assistant", text) }
+            antigravityStreamed = false
+            // What headless mode could not ask about was declined and the turn went on.
+            let denied = (payload["denied_actions"] as? [[String: Any]] ?? []).prefix(16).compactMap { ($0["display_name"] ?? $0["action"]) as? String }
+            if !denied.isEmpty { log("system", L("run.notice.antigravityDenied", ["actions": ActivitySupport.clean(denied.joined(separator: ", "), maximumBytes: 512, singleLine: true)])) }
+            let status = (payload["status"] as? String ?? "").uppercased()
+            switch status {
+            case "SUCCESS": authFailure = false
+            case "ERROR", "INVALID", "CANCELED", "CANCELLED", "INTERRUPTED":
+                // A stop the user asked for ends the run as stopped in the runner;
+                // agy ending the turn by itself is a failure.
+                failed = true
+                let fallback = status == "ERROR" || status == "INVALID" ? L("run.error.providerRunFailed", ["name": name]) : L("run.error.antigravityEnded", ["status": status])
+                let text = errorText(payload["error"], fallback: fallback)
+                authFailure = CLIAuthFailure.antigravity(text: text)
+                log("error", text)
+            default:
+                // WAITING, RUNNING or a status this app does not know yet.
+                log("system", L("run.notice.antigravityStatus", ["status": ActivitySupport.clean(status.isEmpty ? "?" : status, maximumBytes: 64, singleLine: true)]))
+            }
+            turn(L("run.turn.finishing", ["name": name]))
+        // A read-only slash command's own payload; its result carries the same text.
+        case "command_result": break
+        default:
+            // An event this app does not read yet is shown, not dropped.
+            if let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]) { log("output", String(decoding: data.prefix(32_768), as: UTF8.self)) }
         }
+    }
+
+    /// agy names its tool parameters in PascalCase (`AbsolutePath`,
+    /// `CommandLine`, `TargetFile`); the activity summary reads snake_case.
+    static func antigravityParameters(_ value: Any?) -> [String: Any]? {
+        guard let fields = value as? [String: Any] else { return nil }
+        var result: [String: Any] = [:]
+        for (key, field) in fields.prefix(64) {
+            var snake = ""
+            for character in key {
+                if character.isUppercase, !snake.isEmpty, snake.last != "_" { snake.append("_") }
+                snake += character.lowercased()
+            }
+            result[snake] = field
+        }
+        return result
     }
 }
 

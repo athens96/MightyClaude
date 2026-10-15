@@ -3,7 +3,7 @@ title: 에이전트 창
 order: 3
 section: agent-pane
 ---
-에이전트 창은 Claude, Codex, Gemini 중 하나와 대화하는 실행 창입니다. 아래쪽 입력창에 요청을 쓰고, 위쪽에서 진행과 결과를 봅니다.
+에이전트 창은 Claude, Codex, Antigravity(Windows에서는 Gemini) 중 하나와 대화하는 실행 창입니다. 아래쪽 입력창에 요청을 쓰고, 위쪽에서 진행과 결과를 봅니다.
 
 ![[agent-basic]]
 
@@ -28,10 +28,10 @@ section: agent-pane
 입력창 아래 줄에는 왼쪽부터 첨부, 모델, 사고 강도, 권한, 추가 실행 설정(…)이 있습니다. 창이 좁으면 일부가 메뉴 하나로 접힙니다. 실행 중에는 바꿀 수 없고, 바꾼 값은 다음 요청부터 적용됩니다.
 
 ### 모델 {#model}
-모델 칩을 누르면 {{ui:composer.label.runner}}(Claude, Codex, Gemini)와 {{ui:composer.label.model}} 항목을 고를 수 있습니다. 목록이 맞지 않으면 {{ui:composer.model.refresh}}을 누르세요. 에이전트를 바꾸면 대화가 새로 시작됩니다.
+모델 칩을 누르면 {{ui:composer.label.runner}}(Claude, Codex, Antigravity)와 {{ui:composer.label.model}} 항목을 고를 수 있습니다. 목록이 맞지 않으면 {{ui:composer.model.refresh}}을 누르세요. 에이전트를 바꾸면 대화가 새로 시작됩니다.
 
 ### 사고 강도 {#effort}
-{{ui:composer.effort.label}}는 모델이 얼마나 깊이 생각할지 정합니다. Auto, Low, Medium, High, XHigh, Max 중에서 고릅니다. 모델이 지원하는 단계만 보입니다. Gemini에는 없습니다.
+{{ui:composer.effort.label}}는 모델이 얼마나 깊이 생각할지 정합니다. Auto, Low, Medium, High, XHigh, Max 중에서 고릅니다. 모델이 지원하는 단계만 보입니다. Antigravity와 Gemini에는 없습니다.
 
 ### 작업 권한 {#permission}
 권한은 에이전트가 묻지 않고 할 수 있는 일의 범위입니다.
@@ -40,11 +40,20 @@ section: agent-pane
 |---|---|
 | Claude | Plan mode · Always ask · Accept file edits · Auto mode · Bypass |
 | Codex | {{ui:permission.label.defaultCodex}} · {{ui:permission.label.acceptEditsCodex}} · {{ui:permission.label.onRequest}} · {{ui:permission.label.fullAccess}} |
-| Gemini | {{ui:permission.label.default}} · {{ui:permission.label.plan}} · {{ui:permission.label.acceptEdits}} · {{ui:permission.label.fullAccess}} |
+| Antigravity (Windows: Gemini) | {{ui:permission.label.default}} · {{ui:permission.label.plan}} · {{ui:permission.label.acceptEdits}} · {{ui:permission.label.fullAccess}} |
 
 - Claude의 Always ask와 Codex의 {{ui:permission.label.onRequest}} 권한은 추가 권한이 필요할 때 창 안에서 승인을 묻습니다. [승인과 질문](approvals.md#permission)을 보세요.
 - Auto mode는 설치된 Claude CLI가 지원할 때만 보입니다.
 - Bypass와 {{ui:permission.label.fullAccess}} 권한은 프로젝트 밖의 파일과 명령에도 접근합니다. 꼭 필요할 때만 쓰세요.
+
+### Mac의 Antigravity {#antigravity}
+Mac에서는 Google 에이전트가 Antigravity CLI(`agy`)로 실행됩니다. Antigravity는 Claude와 GPT-OSS 모델도 실행할 수 있습니다. Windows 앱은 아직 Gemini CLI를 씁니다.
+
+- 설치: `curl -fsSL https://antigravity.google/cli/install.sh | bash`를 실행하면 `~/.local/bin`에 `agy`가 설치됩니다. 업데이트는 앱이 `agy update`로 합니다.
+- 로그인: 터미널 창에서 `agy`를 한 번 실행하고 브라우저에서 Google 계정으로 로그인합니다. {{ui:settings.nav.cli}} 탭의 {{ui:settings.cliAccounts.buttonLogin}}을 누르면 앱이 대신 실행합니다. Antigravity에는 로그아웃 명령이 없으므로, 계정을 바꿀 때는 `agy` 안에서 `/logout`을 씁니다.
+- 권한: Antigravity는 앱 안에서 물어볼 수 없습니다. {{ui:permission.label.default}}은 agy에 저장된 Agent Mode를 따릅니다(agy의 `/config`에서 바꾸지 않았다면 검토). 작업 폴더의 파일은 읽을 수 있지만, 물어봐야 하는 파일 수정과 셸 명령은 거절하고 실행 창에 거절한 작업을 알려 줍니다. {{ui:permission.label.plan}}은 agy 자체 폴더에 계획을 쓰고 프로젝트는 고치지 않은 채 멈춥니다. 실행하려면 다음 요청을 다른 모드로 보내세요. `~/.gemini/antigravity-cli/settings.json`의 `permissions.allow`에 허용 규칙(예: `command(git)`)을 추가하거나, {{ui:permission.label.acceptEdits}}(파일 수정) 또는 {{ui:permission.label.fullAccess}}(모두 허용)를 고르세요.
+- Antigravity 모델은 이름에 생각 깊이가 들어 있어 {{ui:composer.effort.label}}를 따로 고르지 않습니다.
+- 전에 Gemini CLI로 실행하던 창은 기록은 그대로지만 다음 요청부터 새 대화로 시작하고, Gemini CLI 모델을 골라 두었다면 기본값으로 바뀝니다.
 
 ### 추가 실행 설정 {#run-settings}
 … 단추를 누르면 {{ui:settings.run.title}}이 열립니다.
@@ -75,7 +84,7 @@ section: agent-pane
 | `/rename` | {{ui:slash.builtin.rename}} |
 | `/help` | {{ui:slash.builtin.help}} |
 
-Codex와 Gemini는 이름이 조금 다릅니다(예: Codex `/new`, `/approvals`, `/status`). 목록에 없는 `/이름`은 CLI의 스킬·사용자 명령·플러그인 명령으로 그대로 전달됩니다.
+Codex와 Antigravity는 이름이 조금 다릅니다(예: Codex `/new`, `/approvals`, `/status`, Antigravity `/usage`, `/config`). 목록에 없는 `/이름`은 CLI의 스킬·사용자 명령·플러그인 명령으로 그대로 전달됩니다. Antigravity의 스킬도 이렇게 실행됩니다. 다만 `/help`, `/skills` 같은 Antigravity 자체의 조회 명령은 터미널에서 `agy -p "/help"`처럼 따로 실행할 때만 답하므로, 앱에서는 agy의 오류로 끝납니다.
 
 ### 컨텍스트와 사용량 {#session-info}
 보내기 단추 옆의 동그란 고리는 대화가 컨텍스트를 얼마나 썼는지 보여 줍니다. 누르면 {{ui:composer.sessionInfo.contextUsage}}, 입력·출력·캐시 토큰, 비용, 쓴 모델, 세션 ID를 봅니다. CLI가 알려 준 값만 보여 주고, 모르는 값은 추정하지 않습니다.
@@ -83,7 +92,7 @@ Codex와 Gemini는 이름이 조금 다릅니다(예: Codex `/new`, `/approvals`
 ![[session-info]]
 
 ## 기본 보기와 마이티 보기 {#views}
-Claude와 Codex 창 머리에는 {{ui:graph.view.default}} | {{ui:graph.view.mighty}} 전환이 있습니다. 바꿔도 대화와 입력 중인 글은 그대로입니다. 창마다 따로 기억합니다. Gemini 창은 기본 보기만 있습니다.
+Claude와 Codex 창 머리에는 {{ui:graph.view.default}} | {{ui:graph.view.mighty}} 전환이 있습니다. 바꿔도 대화와 입력 중인 글은 그대로입니다. 창마다 따로 기억합니다. Antigravity와 Gemini 창은 기본 보기만 있습니다.
 - {{ui:graph.view.default}}: 대화를 위에서 아래로 읽는 보기입니다.
 - {{ui:graph.view.mighty}}: 요청, 하위 에이전트, 백그라운드 작업, 결과를 블록 흐름으로 보여 줍니다.
 

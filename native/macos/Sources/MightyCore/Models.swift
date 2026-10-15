@@ -414,6 +414,9 @@ public struct AppSnapshot: Codable, Sendable, Equatable {
     public var showsBackgroundWork: Bool?
     /// That line was left open on its task rows. nil (older state) means folded.
     public var backgroundWorkOpen: Bool?
+    /// The profile's Antigravity panes were moved off what Gemini CLI saved
+    /// (`AntigravityMigration`). nil (older state) means not yet; Mac only.
+    public var antigravityMigrated: Bool? = nil
     public init(version: Int = 1, workspaces: [Workspace] = [], sessions: [RunSession] = [], activeWorkspaceId: String? = nil, activeSessionId: String? = nil, layout: String = "grid", theme: String = "dark", sidebarWidth: Double = SidebarFold.defaultWidth, paneLayouts: [String: PaneLayoutNode]? = nil, paneLayoutModes: [String: String]? = nil, paneLayoutActiveSessionIds: [String: String]? = nil, autoUpdateCLIs: Bool? = nil, expandedWorkspaceIds: [String]? = nil, mobileRemote: MobileRemoteSettings? = nil, modelDefaults: ModelDefaultsConfig? = nil, phaseModels: PhaseModelHardcodedConfig? = nil, autoUpdatePlugins: Bool? = nil, sidebarCollapsed: Bool? = nil, autoLoginCLIs: Bool? = nil, showsBackgroundWork: Bool? = nil, backgroundWorkOpen: Bool? = nil) {
         self.autoUpdatePlugins = autoUpdatePlugins
         self.sidebarCollapsed = sidebarCollapsed
@@ -630,16 +633,30 @@ public enum ProviderOptions {
         return ["manual", "plan", "acceptEdits", "fullAccess"]
     }
     public static func normalizeProvider(_ value: String) -> String { ids.contains(value) ? value : "claude" }
-    public static func label(_ id: String) -> String { ["claude": "Claude", "codex": "Codex", "gemini": "Gemini"][id] ?? "Claude" }
-    /// Claude is official; Codex and Gemini are beta. The one Mac answer every beta badge asks.
+    /// The `gemini` id is kept for stored panes and the wire; on the Mac it is
+    /// Google's Antigravity CLI (`agy`), which also runs Claude and GPT-OSS models.
+    public static func label(_ id: String) -> String { ["claude": "Claude", "codex": "Codex", "gemini": "Antigravity"][id] ?? "Claude" }
+    /// The executable the Mac runs, finds, version-checks, updates and signs in with.
+    public static func executable(_ id: String) -> String { id == "gemini" ? "agy" : id }
+    /// Claude is official; Codex and Antigravity are beta. The one Mac answer every beta badge asks.
     /// The badge is drawn beside the name and never becomes part of `label`.
     public static func isBeta(_ id: String) -> Bool { id == "codex" || id == "gemini" }
     /// Menu rows cannot host the badge view, so there the badge rides in the row's text.
     public static func betaTitle(_ id: String, _ text: String) -> String { isBeta(id) ? text + " · " + L("badge.beta") : text }
     public static func fallbackCatalog(_ id: String) -> ModelCatalog {
-        let names = id == "codex" ? ["default", "gpt-5.6-sol", "gpt-6-astra"] : id == "gemini" ? ["default", "auto", "gemini-3-pro-preview", "gemini-3-flash-preview", "gemini-2.5-pro", "gemini-2.5-flash"] : ["default", "best", "fable", "opus", "sonnet", "haiku", "opusplan"]
-        return ModelCatalog(models: names.map { ModelOption(value: $0, displayName: $0 == "default" ? L("provider.fallback.defaultLabel", ["name": label(id)]) : $0, description: $0 == "default" ? (id == "claude" ? L("provider.fallback.claudeDefaultDescription") : L("provider.fallback.sessionDefaultDescription")) : L("provider.fallback.exampleOption"), supportsEffort: $0 == "haiku" ? false : nil) }, detail: L("provider.fallback.exampleDetail"))
+        let names = id == "codex" ? ["default", "gpt-5.6-sol", "gpt-6-astra"] : id == "gemini" ? ["default"] + antigravityModels.map(\.slug) : ["default", "best", "fable", "opus", "sonnet", "haiku", "opusplan"]
+        let named = Dictionary(uniqueKeysWithValues: id == "gemini" ? antigravityModels.map { ($0.slug, $0.name) } : [])
+        return ModelCatalog(models: names.map { ModelOption(value: $0, displayName: $0 == "default" ? L("provider.fallback.defaultLabel", ["name": label(id)]) : named[$0] ?? $0, description: $0 == "default" ? (id == "claude" ? L("provider.fallback.claudeDefaultDescription") : L("provider.fallback.sessionDefaultDescription")) : L("provider.fallback.exampleOption"), supportsEffort: $0 == "haiku" ? false : nil) }, detail: L("provider.fallback.exampleDetail"))
     }
+    /// What `agy models` listed when this was written. Each slug carries its
+    /// effort, so Antigravity has no separate effort setting.
+    static let antigravityModels: [(slug: String, name: String)] = [
+        ("gemini-4-argon-medium", "Gemini 4 Argon (Medium)"), ("gemini-4-argon-high", "Gemini 4 Argon (High)"), ("gemini-4-argon-low", "Gemini 4 Argon (Low)"),
+        ("gemini-3.8-flash-high", "Gemini 3.8 Flash (High)"), ("gemini-3.8-flash-medium", "Gemini 3.8 Flash (Medium)"), ("gemini-3.8-flash-low", "Gemini 3.8 Flash (Low)"),
+        ("claude-opus-5-5-low", "Claude Opus 5.5 (Low)"), ("claude-opus-5-5-medium", "Claude Opus 5.5 (Medium)"), ("claude-opus-5-5-high", "Claude Opus 5.5 (High)"),
+        ("claude-sonnet-5-5-low", "Claude Sonnet 5.5 (Low)"), ("claude-sonnet-5-5-medium", "Claude Sonnet 5.5 (Medium)"), ("claude-sonnet-5-5-high", "Claude Sonnet 5.5 (High)"),
+        ("gpt-oss-120b-medium", "GPT-OSS 120B (Medium)"),
+    ]
     public static func fallbackRuntime(_ id: String) -> ProviderRuntime {
         ProviderRuntime(id: id, name: id == "claude" ? "Claude Code" : "\(label(id)) CLI", detail: L("provider.fallback.checkInstall"), modelCatalog: fallbackCatalog(id), capabilities: ProviderCapabilities(effort: id != "gemini", permissionModes: permissionModes(provider: id, includeAuto: false, includeOnRequest: false), maxTurns: id == "claude", maxBudgetUsd: id == "claude", fastMode: id == "codex", webSearch: id == "codex", networkAccess: id == "codex", attachments: true))
     }

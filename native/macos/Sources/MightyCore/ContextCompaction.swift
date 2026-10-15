@@ -2,8 +2,8 @@ import Foundation
 
 /// A CLI summarizing its own context mid-turn. Claude Code reports it as a
 /// `system` frame with `subtype: compact_boundary` and token counts; Codex as
-/// a `context_compaction` item without counts. Gemini's headless output has
-/// no such event, so Gemini panes never get this block.
+/// a `context_compaction` item without counts. Antigravity's headless output
+/// has no such event, so its panes never get this block.
 public enum ContextCompaction {
     public static var title: String { L("graph.block.compact") }
 

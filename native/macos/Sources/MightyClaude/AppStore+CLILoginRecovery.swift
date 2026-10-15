@@ -11,7 +11,7 @@ struct BackgroundLoginState: Equatable {
     var asksForCode = false
     /// Started by the app on a lost sign-in, not by the card's button.
     var automatic = false
-    /// Gemini signs in in this visible terminal pane rather than in the background.
+    /// Antigravity signs in in this visible terminal pane rather than in the background.
     var terminalSessionId: String?
 }
 
@@ -115,7 +115,7 @@ extension AppStore {
         if !loginRequired.values.contains(provider) { cancelBackgroundLogin(provider) }
     }
 
-    /// `sessionId`: the pane whose run lost the sign-in; Gemini's terminal opens beside it.
+    /// `sessionId`: the pane whose run lost the sign-in; Antigravity's terminal opens beside it.
     func startBackgroundLogin(_ provider: String, automatic: Bool = false, sessionId: String? = nil) {
         guard !ending, CLIAuthFailure.providers.contains(provider), backgroundLoginJobs[provider] == nil,
               let command = CLIAccountSupport.loginCommand(provider: provider, option: .account) else { return }
@@ -124,7 +124,7 @@ extension AppStore {
             backgroundLogins[provider] = BackgroundLoginState(id: id, phase: .failed(reason)); return
         }
         cliAccountMessages[provider] = nil
-        if provider == "gemini" { startGeminiTerminalLogin(id: id, command: command, automatic: automatic, sessionId: sessionId); return }
+        if provider == "gemini" { startAntigravityTerminalLogin(id: id, command: command, automatic: automatic, sessionId: sessionId); return }
         backgroundLogins[provider] = BackgroundLoginState(id: id, phase: .starting, automatic: automatic)
         let job = BackgroundLoginJob(id: id)
         backgroundLoginJobs[provider] = job
@@ -196,26 +196,25 @@ extension AppStore {
         backgroundLogins.removeValue(forKey: provider)
     }
 
-    /// Gemini has no sign-in command: its sign-in is the interactive CLI
-    /// ("Login with Google"), which cannot run hidden, so it runs in a terminal
-    /// pane beside the failed pane (to its right, or a tab in its group when no
-    /// split fits). It counts as signed in once `oauth_creds.json` appears or is
-    /// rewritten after the start (`CLIGeminiLogin`), and then resends like a
-    /// background sign-in.
+    /// Antigravity has no sign-in command: its sign-in is the interactive CLI
+    /// (`agy` opens the browser on its first run), which cannot run hidden, so
+    /// it runs in a terminal pane beside the failed pane (to its right, or a tab
+    /// in its group when no split fits). It counts as signed in once its status
+    /// reads so (`CLIAntigravityLogin`), and then resends like a background sign-in.
     /// - An automatic start never moves the user: the pane is added without
     ///   being selected, switching workspace or changing the layout mode. With a
     ///   sheet open no pane can be added, so the card just keeps its button and
     ///   nothing is held.
     /// - The pane of an earlier sign-in, while still open, is used again (and
     ///   selected for the card's button) instead of stacking another. Nothing is
-    ///   typed into it, since Gemini may still be running there.
+    ///   typed into it, since Antigravity may still be running there.
     /// - The pane stays open after signing in, as a Settings sign-in terminal
-    ///   does: it now holds a live Gemini session the user may be typing in, and
+    ///   does: it now holds a live Antigravity session the user may be typing in, and
     ///   closing it would end that session. Closing it before signing in ends the wait.
-    private func startGeminiTerminalLogin(id: UUID, command: String, automatic: Bool, sessionId: String?) {
+    private func startAntigravityTerminalLogin(id: UUID, command: String, automatic: Bool, sessionId: String?) {
         let provider = "gemini"
         let failed = sessionId.flatMap { id in snapshot.sessions.first { $0.id == id } }
-        let reused = geminiLoginTerminal.flatMap { terminalPaneOpen($0) ? $0 : nil }
+        let reused = antigravityLoginTerminal.flatMap { terminalPaneOpen($0) ? $0 : nil }
         if reused == nil, automatic, hasModal { return }
         let job = BackgroundLoginJob(id: id)
         backgroundLoginJobs[provider] = job
@@ -232,10 +231,8 @@ extension AppStore {
             error = previous
         }
         guard let pane else { failBackgroundLogin(provider, id: id, message: L("loginRecovery.startFailed")); return }
-        geminiLoginTerminal = pane
+        antigravityLoginTerminal = pane
         let service = cliAccountService
-        // Taken before the CLI starts, so its own write counts as new.
-        let baseline = service.geminiCredentialsStamp()
         if reused == nil {
             updateSession(pane) { $0.title = L("loginRecovery.terminalTitle", ["provider": ProviderOptions.label(provider)]) }
             // The app wrote this command itself, so it presses Enter for the user (§1.5).
@@ -244,10 +241,9 @@ extension AppStore {
         backgroundLogins[provider]?.phase = .waiting
         backgroundLogins[provider]?.terminalSessionId = pane
         job.task = Task { [weak self] in
-            let outcome = await CLIGeminiLogin.wait(baseline: baseline, stamp: { service.geminiCredentialsStamp() },
-                                                    status: { await service.status(provider: provider) },
-                                                    isOpen: { [weak self] in await self?.terminalPaneOpen(pane) ?? false },
-                                                    interval: Self.cliLoginPollInterval, limit: Self.cliLoginPollLimit)
+            let outcome = await CLIAntigravityLogin.wait(status: { await service.status(provider: provider) },
+                                                         isOpen: { [weak self] in await self?.terminalPaneOpen(pane) ?? false },
+                                                         interval: Self.cliLoginPollInterval, limit: Self.cliLoginPollLimit)
             guard let self, self.backgroundLoginJobs[provider]?.id == id else { return }
             switch outcome {
             case .loggedIn(let status):

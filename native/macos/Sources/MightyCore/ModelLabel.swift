@@ -16,7 +16,8 @@ public enum ModelLabel {
     ///   unwrapped. Any other trailing `v<n>` stays as a suffix (`Opus 4 v2`).
     /// - `gpt-5.2-codex` → `GPT-5.2 Codex` (a trailing `yyyy-mm-dd` is dropped).
     /// - `gemini-3-pro-preview` → `Gemini 3 Pro` (`preview`/`exp`/`latest` and what
-    ///   follows, and number-only tags, are dropped).
+    ///   follows, and number-only tags, are dropped); `gemini-3.8-flash-low` →
+    ///   `Gemini 3.8 Flash (Low)`.
     /// - A trailing `[1m]` adds ` (1M)`.
     public static func format(_ id: String) -> String? { cache.value(id, read) }
 
@@ -182,14 +183,19 @@ public enum ModelLabel {
         return (["GPT-" + version] + rest.map(word)).joined(separator: " ")
     }
 
+    /// A last `low`/`medium`/`high` is the effort an Antigravity slug carries
+    /// (`gemini-4-argon-medium` → `Gemini 4 Argon (Medium)`, as `agy models`
+    /// names it). Mac only: the phone and Windows do not run Antigravity.
     private static func gemini(_ tokens: [String]) -> String? {
         guard let version = tokens.first, startsWithDigit(version) else { return nil }
         var words: [String] = []
-        for token in tokens.dropFirst() {
+        var rest = Array(tokens.dropFirst())
+        let effort = rest.count >= 2 && ["low", "medium", "high"].contains(rest.last!) ? rest.removeLast() : nil
+        for token in rest {
             if ["preview", "exp", "latest"].contains(token) { break }
             if !digits(token) { words.append(word(token)) }
         }
-        return (["Gemini", version] + words).joined(separator: " ")
+        return (["Gemini", version] + words).joined(separator: " ") + (effort.map { " (" + capitalized($0) + ")" } ?? "")
     }
 }
 

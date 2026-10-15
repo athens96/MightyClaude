@@ -94,7 +94,7 @@ public actor AccountUsageService {
                 return try await CodexAccountProbe.read(command: command, environment: environment)
             }
             throw AccountUsageFailure.unavailable(provider == "gemini"
-                ? L("windows.accountUsage.detailGeminiUnavailable")
+                ? L("accountUsage.detailAntigravityUnavailable")
                 : L("windows.accountUsage.detailUnsupportedProvider"))
         }
         now = { Date() }

@@ -75,34 +75,17 @@ struct CLIAccountTests {
         }
     }
 
-    @Test func geminiStatusAndLogoutWorkOnItsAccountFiles() throws {
+    @Test func antigravityStatusReadsItsModelList() throws {
         try LocaleOverride.$language.withValue(.ko) { () throws in
-            let home = FileManager.default.temporaryDirectory.appendingPathComponent("gemini-" + UUID().uuidString, isDirectory: true)
-            defer { try? FileManager.default.removeItem(at: home) }
-            let directory = home.appendingPathComponent(".gemini", isDirectory: true)
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            #expect(CLIAccountSupport.geminiStatus(home: home, environment: [:]).loggedIn == false)
-            try Data(#"{"security":{"auth":{"selectedType":"oauth-personal"}}}"#.utf8).write(to: directory.appendingPathComponent("settings.json"))
-            try Data(#"{"access_token":"x"}"#.utf8).write(to: directory.appendingPathComponent("oauth_creds.json"))
-            try Data(#"{"active":"g@example.com","old":["first@example.com"]}"#.utf8).write(to: directory.appendingPathComponent("google_accounts.json"))
-            let status = CLIAccountSupport.geminiStatus(home: home, environment: [:])
-            #expect(status.loggedIn == true && status.account == "g@example.com" && status.method == "Google 계정")
-            try CLIAccountSupport.geminiLogout(home: home)
-            #expect(!FileManager.default.fileExists(atPath: directory.appendingPathComponent("oauth_creds.json").path))
-            let accounts = try JSONSerialization.jsonObject(with: Data(contentsOf: directory.appendingPathComponent("google_accounts.json"))) as? [String: Any]
-            #expect(accounts?["active"] is NSNull && (accounts?["old"] as? [String]) == ["first@example.com", "g@example.com"])
-            #expect(CLIAccountSupport.geminiStatus(home: home, environment: [:]).loggedIn == false)
-            try CLIAccountSupport.geminiLogout(home: home) // idempotent
-            try Data(#"{"security":{"auth":{"selectedType":"gemini-api-key"}}}"#.utf8).write(to: directory.appendingPathComponent("settings.json"))
-            let keyed = CLIAccountSupport.geminiStatus(home: home, environment: ["GEMINI_API_KEY": "k"])
-            #expect(keyed.method == "Gemini API 키" && keyed.loggedIn == true && !keyed.canSignOut && !keyed.detail.contains("k\""))
-            #expect(CLIAccountSupport.geminiStatus(home: home, environment: [:]).loggedIn == nil)
-            try Data(#"{"security":{"auth":{"selectedType":"vertex-ai"}}}"#.utf8).write(to: directory.appendingPathComponent("settings.json"))
-            #expect(CLIAccountSupport.geminiStatus(home: home, environment: [:]).loggedIn == nil)
-            let vertex = CLIAccountSupport.geminiStatus(home: home, environment: ["GOOGLE_CLOUD_PROJECT": "p"])
-            #expect(vertex.loggedIn == true && !vertex.canSignOut)
+            let status = CLIAccountSupport.antigravityStatus(exitCode: 0, output: "Fetching available models...\ngemini-3.8-flash-low\tGemini 3.8 Flash (Low)\n")
+            #expect(status.loggedIn == true && status.method == "Google 계정" && status.account == nil && !status.canSignOut)
+            #expect(CLIAccountSupport.antigravityStatus(exitCode: 1, output: "Error: authentication required. Run 'agy' to log in, then retry.").loggedIn == false)
+            #expect(CLIAccountSupport.antigravityStatus(exitCode: 1, output: "upstream request failed").loggedIn == nil)
             // Oversized or non-regular account files are ignored, and CODEX_HOME relocates Codex.
-            #expect(CLIAccountSupport.boundedData(directory) == nil)
+            let home = FileManager.default.temporaryDirectory.appendingPathComponent("accounts-" + UUID().uuidString, isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: home) }
+            try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+            #expect(CLIAccountSupport.boundedData(home) == nil)
             #expect(CLIAccountSupport.codexHome(home: home, environment: ["CODEX_HOME": "/opt/codex"]).path == "/opt/codex")
             #expect(CLIAccountSupport.codexHome(home: home, environment: [:]).path == home.appendingPathComponent(".codex").path)
         }
@@ -112,9 +95,9 @@ struct CLIAccountTests {
         #expect(CLIAccountSupport.loginCommand(provider: "claude") == "claude auth login")
         #expect(CLIAccountSupport.loginCommand(provider: "claude", option: .console) == "claude auth login --console")
         #expect(CLIAccountSupport.loginCommand(provider: "claude", option: .bedrock) == "CLAUDE_CODE_USE_BEDROCK=1 claude /setup-bedrock")
-        #expect(CLIAccountSupport.loginCommand(provider: "codex") == "codex login" && CLIAccountSupport.loginCommand(provider: "gemini") == "gemini")
+        #expect(CLIAccountSupport.loginCommand(provider: "codex") == "codex login" && CLIAccountSupport.loginCommand(provider: "gemini") == "agy")
         #expect(CLIAccountSupport.loginCommand(provider: "other") == nil)
-        #expect(CLIAccountSupport.statusArguments(provider: "claude") == ["claude", "auth", "status", "--json"] && CLIAccountSupport.statusArguments(provider: "gemini") == nil)
+        #expect(CLIAccountSupport.statusArguments(provider: "claude") == ["claude", "auth", "status", "--json"] && CLIAccountSupport.statusArguments(provider: "gemini") == ["agy", "models"])
         #expect(CLIAccountSupport.logoutArguments(provider: "codex") == ["codex", "logout"] && CLIAccountSupport.logoutArguments(provider: "gemini") == nil)
     }
 
@@ -131,14 +114,6 @@ struct CLIAccountTests {
         #expect(claude(#"{"loggedIn":false,"authMethod":"none"}"#) == nil)
         #expect(CLIAccountSupport.parseCodexStatus(text: "Logged in using ChatGPT", authJSON: nil).methodId == CLIAccountMethod.codexChatGPT)
         #expect(CLIAccountSupport.parseCodexStatus(text: "Logged in using an API key - sk-***", authJSON: nil).methodId == CLIAccountMethod.codexAPIKey)
-        let home = FileManager.default.temporaryDirectory.appendingPathComponent("gemini-id-" + UUID().uuidString, isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: home) }
-        let directory = home.appendingPathComponent(".gemini", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try Data(#"{"access_token":"x"}"#.utf8).write(to: directory.appendingPathComponent("oauth_creds.json"))
-        for (type, id) in [("oauth-personal", CLIAccountMethod.geminiGoogle), ("gemini-api-key", CLIAccountMethod.geminiAPIKey), ("vertex-ai", CLIAccountMethod.geminiVertex), ("compute-default-credentials", CLIAccountMethod.geminiOther)] {
-            try Data("{\"security\":{\"auth\":{\"selectedType\":\"\(type)\"}}}".utf8).write(to: directory.appendingPathComponent("settings.json"))
-            #expect(CLIAccountSupport.geminiStatus(home: home, environment: [:]).methodId == id, "\(type)")
-        }
+        #expect(CLIAccountSupport.antigravityStatus(exitCode: 0, output: "").methodId == CLIAccountMethod.geminiGoogle)
     }
 }

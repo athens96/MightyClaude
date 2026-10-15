@@ -120,5 +120,5 @@ reg add "HKCU\Software\MightyClaudeNative" /v delegation.enabled /t REG_DWORD /d
 | 交出的任务（TASK.md） | 64 KiB |
 | 所需磁盘剩余空间 | 10 GB |
 
-- 父窗格和子窗格都必须是 Claude 窗格。Codex 和 Gemini 窗格不能委派。
+- 父窗格和子窗格都必须是 Claude 窗格。Codex 和 Antigravity（Gemini）窗格不能委派。
 - Mac 应用和 Windows 应用都通过隐藏开关开启（[开启和关闭](#enable)）。手机没有新的界面，但保留的行也会显示在手机的队列中。

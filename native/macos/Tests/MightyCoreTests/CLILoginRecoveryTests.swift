@@ -156,8 +156,10 @@ struct CLIAuthFailureTests {
         }
         #expect(!CLIAuthFailure.signInCanFix(CLIAccountStatus(provider: "codex", loggedIn: true, method: "any label", methodId: CLIAccountMethod.codexAPIKey)))
         #expect(CLIAuthFailure.signInCanFix(CLIAccountStatus(provider: "codex", loggedIn: true, method: CLIAccountSupport.codexAPIKeyMethod, methodId: CLIAccountMethod.codexChatGPT)))
-        #expect(CLIAuthFailure.signInCanFix(CLIAccountStatus(provider: "gemini", loggedIn: true, method: "Google account", methodId: CLIAccountMethod.geminiGoogle)))
-        #expect(!CLIAuthFailure.signInCanFix(CLIAccountStatus(provider: "gemini", loggedIn: true, method: CLIAccountSupport.geminiGoogleMethod, methodId: CLIAccountMethod.geminiVertex)))
+        // Antigravity's status is a live call: only signed out asks for a sign-in.
+        #expect(!CLIAuthFailure.signInCanFix(CLIAccountStatus(provider: "gemini", loggedIn: true, method: "Google account", methodId: CLIAccountMethod.geminiGoogle)))
+        #expect(CLIAuthFailure.signInCanFix(CLIAccountStatus(provider: "gemini", loggedIn: false, method: CLIAccountSupport.geminiGoogleMethod, methodId: CLIAccountMethod.geminiGoogle)))
+        #expect(!CLIAuthFailure.signInCanFix(CLIAccountStatus(provider: "gemini", detail: "offline")))
         for json in [#"{"loggedIn":true,"authMethod":"third_party","apiProvider":"bedrock"}"#, #"{"loggedIn":true,"apiProvider":"vertex"}"#,
                      #"{"loggedIn":true,"apiProvider":"foundry"}"#, #"{"loggedIn":true,"authMethod":"api_key"}"#] {
             #expect(!CLIAuthFailure.signInCanFix(CLIAccountSupport.parseClaudeStatus(Data(json.utf8))), "\(json)")
@@ -166,190 +168,103 @@ struct CLIAuthFailureTests {
     }
 }
 
-struct CLIGeminiAuthFailureTests {
+struct CLIAntigravityAuthFailureTests {
     private func send(_ value: [String: Any], to parser: CLIStreamParser) throws {
         parser.push(try JSONSerialization.data(withJSONObject: value)); parser.push("\n")
     }
-    private func gemini() -> CLIStreamParser { CLIStreamParser(provider: "gemini", log: { _, _ in }, resume: { _ in }) }
+    private func antigravity() -> CLIStreamParser { CLIStreamParser(provider: "gemini", log: { _, _ in }, resume: { _ in }) }
 
-    /// What Gemini CLI 0.43 printed for each case in a headless stream-json run (temp HOME, fake credentials).
-    @Test func geminiMatchesItsSignInFailures() {
-        for text in [
-            "Opening authentication page in your browser. Do you want to continue? [Y/n]: fix the bug",
-            "Error authenticating: FatalCancellationError: Authentication cancelled by user.\n    at initOauthClient (file:///…/chunk.js:245553:15)",
-            "Please set an Auth method in your /Users/me/.gemini/settings.json or specify one of the following environment variables before running: GEMINI_API_KEY, GOOGLE_GENAI_USE_VERTEXAI, GOOGLE_GENAI_USE_GCA",
-            "Manual authorization is required but the current session is non-interactive. Please run the Gemini CLI in an interactive terminal to log in, provide a GEMINI_API_KEY, or ensure Application Default Credentials are configured.",
-            "No authentication method selected.",
-            "[API Error: invalid_grant]",
-            "Token has been expired or revoked.",
-            "[API Error: Request had invalid authentication credentials. Expected OAuth 2 access token, login cookie or other valid authentication credential. (Status: UNAUTHENTICATED)]",
-            #"{"error":{"code":401,"message":"…","status":"UNAUTHENTICATED"}}"#,
-        ] { #expect(CLIAuthFailure.gemini(text: text), "\(text)") }
-        for text in [
-            #"[API Error: {"error":{"code":400,"message":"API key not valid. Please pass a valid API key.","status":"INVALID_ARGUMENT"}}]"#,
-            "[API Error: Resource has been exhausted (e.g. check quota). (Status: RESOURCE_EXHAUSTED)]",
-            "[API Error: The caller does not have permission (Status: PERMISSION_DENIED)]",
-            "[API Error: Internal error encountered. (Status: INTERNAL)]",
-            "No input provided via stdin. Input can be provided by piping data into gemini or using the --prompt option.",
-            "Gemini CLI is not running in a trusted directory.",
-            "401 files changed",
-            "Error authenticating: getaddrinfo ENOTFOUND oauth2.googleapis.com",
-        ] { #expect(!CLIAuthFailure.gemini(text: text), "\(text)") }
-        // On stderr and plain stdout lines only the CLI's own sign-in messages count: its API error
-        // dumps there may quote anything, so token rejections are left to the failed result.
-        for line in ["Error authenticating: FatalCancellationError: Authentication cancelled by user.",
-                     "Error authenticating: FatalAuthenticationError: Failed to authenticate with user code.",
-                     "Please set an Auth method in your /Users/me/.gemini/settings.json", "No authentication method selected.",
-                     "Manual authorization is required but the current session is non-interactive.",
-                     "Opening authentication page in your browser. Do you want to continue? [Y/n]: "] {
-            #expect(CLIAuthFailure.geminiConsole(line: line), "\(line)")
+    /// agy's own sign-in failures (its print-mode and missing-credentials errors).
+    @Test func antigravityMatchesItsSignInFailures() {
+        for text in ["Error: authentication required. Run 'agy' to log in, then retry.", "Error: authentication required. Run 'agy' to log in.",
+                     "Print mode: auth error: oauth2: token expired"] {
+            #expect(CLIAuthFailure.antigravity(text: text), "\(text)")
         }
-        for line in ["Error when talking to Gemini API Full report available at: /tmp/x.json _ApiError: {\"error\":{\"code\":401,\"status\":\"UNAUTHENTICATED\"}}",
-                     "GaxiosError: invalid_grant", "Token has been expired or revoked.", "Request had invalid authentication credentials.",
-                     "Error authenticating: getaddrinfo ENOTFOUND oauth2.googleapis.com", "Authentication consent could not be obtained."] {
-            #expect(!CLIAuthFailure.geminiConsole(line: line), "\(line)")
+        for text in ["warning: conversation \"0000\" not found", "Error: --print took \"--input-format\" as its prompt",
+                     "jetski: no output produced — a tool required the \"command\" permission that headless mode cannot prompt for, so it was auto-denied.",
+                     "no model configuration is available for this account", "401 files changed",
+                     "Print mode: auth timed out", "407 Proxy Authentication Required", "authentication required"] {
+            #expect(!CLIAuthFailure.antigravity(text: text), "\(text)")
         }
     }
 
-    @Test func onlyAGoogleSignInIsSomethingASignInCanFix() throws {
-        let home = FileManager.default.temporaryDirectory.appendingPathComponent("mighty-gemini-method-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: home) }
-        let directory = home.appendingPathComponent(".gemini")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        func select(_ type: String?) throws -> CLIAccountStatus {
-            let settings: [String: Any] = type.map { ["security": ["auth": ["selectedType": $0]]] } ?? [:]
-            try JSONSerialization.data(withJSONObject: settings).write(to: directory.appendingPathComponent("settings.json"))
-            return CLIAccountSupport.geminiStatus(home: home, environment: ["GEMINI_API_KEY": "fixture", "GOOGLE_CLOUD_PROJECT": "fixture"])
-        }
-        // Signed out, and a stale Google sign-in whose file is still there.
-        #expect(CLIAuthFailure.signInCanFix(try select("oauth-personal")))
-        try Data("{}".utf8).write(to: directory.appendingPathComponent("oauth_creds.json"))
-        #expect(CLIAuthFailure.signInCanFix(try select("oauth-personal")))
-        #expect(CLIAuthFailure.signInCanFix(try select(nil)))
-        // A key, Vertex AI or any other method is not renewed by a Google sign-in.
-        for type in ["gemini-api-key", "vertex-ai", "compute-default-credentials"] {
-            #expect(!CLIAuthFailure.signInCanFix(try select(type)), "\(type)")
-        }
+    @Test func aRunThatCannotSignInIsSomethingASignInCanFix() {
+        #expect(CLIAuthFailure.signInCanFix(CLIAccountSupport.antigravityStatus(exitCode: 1, output: "Error: authentication required. Run 'agy' to log in.")))
+        #expect(!CLIAuthFailure.signInCanFix(CLIAccountSupport.antigravityStatus(exitCode: 0, output: "")))
         #expect(!CLIAuthFailure.signInCanFix(CLIAccountStatus(provider: "gemini", installed: false, loggedIn: false)))
         let gate = CLIAutoLoginGate()
-        #expect(!gate.shouldStart(provider: "gemini", enabled: true, status: try select("gemini-api-key"), loginActive: false))
-        #expect(!gate.shouldStart(provider: "gemini", enabled: true, status: try select("vertex-ai"), loginActive: false))
-        #expect(gate.shouldStart(provider: "gemini", enabled: true, status: try select("oauth-personal"), loginActive: false))
+        #expect(gate.shouldStart(provider: "gemini", enabled: true, status: CLIAccountSupport.antigravityStatus(exitCode: 1, output: "Error: authentication required. Run 'agy' to log in."), loginActive: false))
+        #expect(!gate.shouldStart(provider: "gemini", enabled: true, status: CLIAccountSupport.antigravityStatus(exitCode: 0, output: ""), loginActive: false))
     }
 
     @Test func theParserRaisesTheSignalFromStderrPlainLinesAndFailedResultsOnly() throws {
-        // A stale sign-in: the consent prompt on stdout, the cancellation on stderr, no JSON at all.
-        let stale = gemini()
-        stale.push("\nOpening authentication page in your browser. Do you want to continue? [Y/n]: fix the bug\n")
-        #expect(stale.authFailure)
-        let cancelled = gemini()
-        cancelled.receiveStderr("Error authenticating: FatalCancel")
-        cancelled.receiveStderr("lationError: Authentication cancelled by user.\n")
-        #expect(cancelled.authFailure)
+        // No sign-in: agy says so on stderr, before any JSON.
+        let missing = antigravity()
+        missing.receiveStderr("Error: authentication requ")
+        missing.receiveStderr("ired. Run 'agy' to log in, then retry.\n")
+        #expect(missing.authFailure)
         // A last line without a newline counts once the process ended.
-        let unset = gemini()
-        unset.receiveStderr("Please set an Auth method in your /Users/me/.gemini/settings.json or specify one of the following environment variables before running: GEMINI_API_KEY")
-        #expect(!unset.authFailure)
-        unset.finishStderr()
-        #expect(unset.authFailure)
-        // An API error dump on stderr, and a cut-off JSON line quoting the prompt, never count.
-        let dump = gemini()
-        dump.receiveStderr("Error when talking to Gemini API _ApiError: {\"error\":{\"code\":401,\"message\":\"invalid_grant\",\"status\":\"UNAUTHENTICATED\"}}\n")
-        dump.push(#"{"type":"message","role":"assistant","content":"Opening authentication page in your browser"# + "\n")
-        dump.finishStderr()
-        #expect(!dump.authFailure)
-        // A token rejected mid-run arrives as the failed result.
-        let rejected = gemini()
-        try send(["type": "init", "session_id": "s"], to: rejected)
-        try send(["type": "result", "status": "error", "error": ["type": "unknown", "message": "[API Error: Request had invalid authentication credentials. (Status: UNAUTHENTICATED)]"]], to: rejected)
+        let unfinished = antigravity()
+        unfinished.receiveStderr("Print mode: auth error: token revoked")
+        #expect(!unfinished.authFailure)
+        unfinished.finishStderr()
+        #expect(unfinished.authFailure)
+        let plain = antigravity()
+        plain.push("Error: authentication required. Run 'agy' to log in, then retry.\n")
+        #expect(plain.authFailure)
+        // A cut-off JSON line quoting the words never counts.
+        let cut = antigravity()
+        cut.push(#"{"event":"step_update","step_update":{"text_delta":"Error: authentication required. Run 'agy' to log in"# + "\n")
+        #expect(!cut.authFailure)
+        // A failed result saying so counts; another failure does not.
+        let rejected = antigravity()
+        try send(["event": "result", "result": ["status": "ERROR", "error": "Print mode: auth error: token revoked"]], to: rejected)
         #expect(rejected.failed && rejected.authFailure)
-        // A bad API key, a quota error, and the phrase in the model's own text or another CLI's stderr never count.
-        let key = gemini()
-        try send(["type": "result", "status": "error", "error": ["type": "unknown", "message": #"[API Error: {"error":{"code":400,"message":"API key not valid. Please pass a valid API key."}}]"#]], to: key)
-        #expect(key.failed && !key.authFailure)
-        let quoted = gemini()
-        try send(["type": "message", "role": "assistant", "content": "Fix the invalid_grant error by signing in again.", "delta": false], to: quoted)
-        try send(["type": "tool_result", "tool_id": "t", "status": "success", "output": "Please set an Auth method"], to: quoted)
+        let quota = antigravity()
+        try send(["event": "result", "result": ["status": "ERROR", "error": ["message": "Resource has been exhausted"]]], to: quota)
+        #expect(quota.failed && !quota.authFailure)
+        // The phrase in the model's own text or a tool's output, or another CLI's stderr, never counts.
+        let quoted = antigravity()
+        try send(["event": "step_update", "step_update": ["step_index": 1, "state": "DONE", "step_type": "agent_response", "text_delta": "Error: authentication required. Run 'agy' to log in."]], to: quoted)
+        try send(["event": "step_update", "step_update": ["step_index": 2, "state": "DONE", "step_type": "tool", "tool_info": ["name": "run_command", "output": "Error: authentication required. Run 'agy' to log in."]]], to: quoted)
         #expect(!quoted.authFailure)
         let claude = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in })
-        claude.receiveStderr("Please set an Auth method")
+        claude.receiveStderr("Error: authentication required. Run 'agy' to log in.\n")
         #expect(!claude.authFailure)
-        // The run's last word decides: a retry that recovered, or a later other failure.
-        let recovered = gemini()
-        try send(["type": "error", "severity": "error", "message": "[API Error: Request had invalid authentication credentials.]"], to: recovered)
+        // The run's last word decides: a later successful result clears it.
+        let recovered = antigravity()
+        recovered.receiveStderr("Print mode: auth error: token revoked\n")
         #expect(recovered.authFailure)
-        try send(["type": "result", "status": "success"], to: recovered)
-        recovered.receiveStderr("[STARTUP] Phase 'cleanup_ops' was started but never ended.\n")
+        try send(["event": "result", "result": ["status": "SUCCESS", "response": "ok"]], to: recovered)
         #expect(!recovered.authFailure)
-        let other = gemini()
-        try send(["type": "error", "severity": "error", "message": "[API Error: Request had invalid authentication credentials.]"], to: other)
-        try send(["type": "result", "status": "error", "error": ["message": "[API Error: Internal error encountered. (Status: INTERNAL)]"]], to: other)
-        #expect(other.failed && !other.authFailure)
     }
 }
 
-struct CLIGeminiLoginTests {
-    private func home() throws -> URL {
-        let home = FileManager.default.temporaryDirectory.appendingPathComponent("mighty-gemini-login-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: home.appendingPathComponent(".gemini"), withIntermediateDirectories: true)
-        return home
-    }
-    private func write(_ home: URL, at date: Date) throws {
-        let url = CLIGeminiLogin.credentialsURL(home: home)
-        // Fixture contents only; the code under test reads nothing but the file's dates.
-        try Data(#"{"fixture":true}"#.utf8).write(to: url)
-        try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: url.path)
-    }
-    private let google = CLIAccountStatus(provider: "gemini", loggedIn: true, method: CLIAccountSupport.geminiGoogleMethod, methodId: CLIAccountMethod.geminiGoogle)
-
-    @Test func aNewSignInIsTheCredentialsFileAppearingOrRewrittenAfterTheTerminalOpened() throws {
-        let home = try home(); defer { try? FileManager.default.removeItem(at: home) }
-        let opened = Date(timeIntervalSince1970: 1_800_000_000)
-        #expect(CLIGeminiLogin.credentialsStamp(home: home) == nil)
-        // Signed out when the terminal opened: the file appearing counts.
-        try write(home, at: opened)
-        let stamp = try #require(CLIGeminiLogin.credentialsStamp(home: home))
-        #expect(abs(stamp.timeIntervalSince(opened)) < 1)
-        #expect(CLIGeminiLogin.signedIn(since: nil, stamp: stamp, status: google))
-        // A stale file left from the dropped sign-in does not, until it is rewritten.
-        #expect(!CLIGeminiLogin.signedIn(since: stamp, stamp: CLIGeminiLogin.credentialsStamp(home: home), status: google))
-        try write(home, at: opened.addingTimeInterval(30))
-        #expect(CLIGeminiLogin.signedIn(since: stamp, stamp: CLIGeminiLogin.credentialsStamp(home: home), status: google))
-        // The status must read as a Google sign-in, not a key or Vertex, and must be signed in.
-        let later = CLIGeminiLogin.credentialsStamp(home: home)
-        #expect(!CLIGeminiLogin.signedIn(since: stamp, stamp: later, status: CLIAccountStatus(provider: "gemini", loggedIn: true, method: "Gemini API key", methodId: CLIAccountMethod.geminiAPIKey)))
-        #expect(!CLIGeminiLogin.signedIn(since: stamp, stamp: later, status: CLIAccountStatus(provider: "gemini", loggedIn: false)))
-        #expect(!CLIGeminiLogin.signedIn(since: stamp, stamp: nil, status: google))
-        // The status read from the same files agrees.
-        #expect(CLIGeminiLogin.signedIn(since: stamp, stamp: later, status: CLIAccountSupport.geminiStatus(home: home, environment: [:])))
-    }
+struct CLIAntigravityLoginTests {
+    private let signedOut = CLIAccountStatus(provider: "gemini", loggedIn: false, method: CLIAccountSupport.geminiGoogleMethod, methodId: CLIAccountMethod.geminiGoogle, canSignOut: false)
+    private let signedIn = CLIAccountStatus(provider: "gemini", loggedIn: true, method: CLIAccountSupport.geminiGoogleMethod, methodId: CLIAccountMethod.geminiGoogle, canSignOut: false)
 
     @Test func theWaitEndsSignedInClosedOrTimedOut() async throws {
-        let home = try home(); defer { try? FileManager.default.removeItem(at: home) }
-        try write(home, at: Date().addingTimeInterval(-3_600))
-        let baseline = CLIGeminiLogin.credentialsStamp(home: home)
         let reads = LockedBox(0)
-        let status: @Sendable () async -> CLIAccountStatus = { reads.update { $0 += 1 }; return CLIAccountSupport.geminiStatus(home: home, environment: [:]) }
-        // Nothing changed and the terminal stays open: the status is never read until the limit.
-        let idle = await CLIGeminiLogin.wait(baseline: baseline, stamp: { CLIGeminiLogin.credentialsStamp(home: home) }, status: status,
-                                             isOpen: { true }, interval: 0.05, limit: 0.3, tick: 0.02)
-        #expect(idle == .timedOut(CLIAccountSupport.geminiStatus(home: home, environment: [:])))
+        let signedOut = signedOut, signedIn = signedIn
+        let status: @Sendable () async -> CLIAccountStatus = { reads.update { $0 += 1 }; return signedOut }
+        // The status is read once per interval while the terminal stays open, then once more at the limit.
+        let idle = await CLIAntigravityLogin.wait(status: status, isOpen: { true }, interval: 10, limit: 0.3, tick: 0.02)
+        #expect(idle == .timedOut(signedOut))
         #expect(reads.get() == 1)
         // The terminal closed without a sign-in.
-        let closed = await CLIGeminiLogin.wait(baseline: baseline, stamp: { CLIGeminiLogin.credentialsStamp(home: home) }, status: status,
-                                               isOpen: { false }, interval: 0.05, limit: 20, tick: 0.02)
-        guard case .exited = closed else { Issue.record("expected exited, got \(closed)"); return }
-        // The CLI rewrites the file while the terminal is open.
-        let task = Task {
-            await CLIGeminiLogin.wait(baseline: baseline, stamp: { CLIGeminiLogin.credentialsStamp(home: home) }, status: status,
-                                      isOpen: { true }, interval: 0.05, limit: 20, tick: 0.02)
-        }
+        let closed = await CLIAntigravityLogin.wait(status: status, isOpen: { false }, interval: 10, limit: 20, tick: 0.02)
+        #expect(closed == .exited(signedOut))
+        // The status turns signed in while the terminal is open.
+        let turned = LockedBox(false)
+        let task = Task { await CLIAntigravityLogin.wait(status: { turned.get() ? signedIn : signedOut }, isOpen: { true }, interval: 0.05, limit: 20, tick: 0.02) }
         try await Task.sleep(for: .milliseconds(100))
-        try write(home, at: Date())
-        let outcome = await task.value
-        guard case .loggedIn(let value) = outcome else { Issue.record("expected loggedIn, got \(outcome)"); return }
-        #expect(value.methodId == CLIAccountMethod.geminiGoogle)
-        let cancelled = Task { await CLIGeminiLogin.wait(baseline: nil, stamp: { nil }, status: status, isOpen: { true }, interval: 1, limit: 20, tick: 0.02) }
+        turned.update { $0 = true }
+        #expect(await task.value == .loggedIn(signedIn))
+        // Another provider's status never counts.
+        let other = await CLIAntigravityLogin.wait(status: { CLIAccountStatus(provider: "claude", loggedIn: true) }, isOpen: { true }, interval: 0, limit: 0.1, tick: 0.02)
+        #expect(other == .timedOut(CLIAccountStatus(provider: "claude", loggedIn: true)))
+        let cancelled = Task { await CLIAntigravityLogin.wait(status: status, isOpen: { true }, interval: 1, limit: 20, tick: 0.02) }
         cancelled.cancel()
         #expect(await cancelled.value == .cancelled)
     }
@@ -366,8 +281,10 @@ struct CLIAutoLoginGateTests {
         #expect(!gate.shouldStart(provider: "claude", enabled: true, status: signedIn, loginActive: true, now: start))
         // Another provider is decided on its own.
         #expect(gate.shouldStart(provider: "codex", enabled: true, status: CLIAccountStatus(provider: "codex"), loginActive: false, now: start))
-        // Gemini starts its terminal sign-in through the same gate, and a status of another provider never counts.
-        #expect(gate.shouldStart(provider: "gemini", enabled: true, status: CLIAccountStatus(provider: "gemini"), loginActive: false, now: start))
+        // Antigravity starts its terminal sign-in through the same gate, and a status of another provider never counts.
+        #expect(gate.shouldStart(provider: "gemini", enabled: true, status: CLIAccountStatus(provider: "gemini", loggedIn: false), loginActive: false, now: start))
+        // An Antigravity status that cannot be read (offline) never opens a sign-in.
+        #expect(!gate.shouldStart(provider: "gemini", enabled: true, status: CLIAccountStatus(provider: "gemini"), loginActive: false, now: start))
         #expect(!gate.shouldStart(provider: "gemini", enabled: true, status: signedIn, loginActive: false, now: start))
         #expect(!gate.shouldStart(provider: "codex", enabled: true, status: signedIn, loginActive: false, now: start))
     }

@@ -361,6 +361,9 @@ func permissionDescription(_ mode: String, provider: String) -> String {
     if mode == "fullAccess" { return L("permission.other.fullAccess") }
     if provider == "codex", mode == "onRequest" { return L("permission.codex.onRequest") }
     if provider == "codex" { return mode == "acceptEdits" ? L("permission.codex.acceptEdits") : L("permission.codex.default") }
+    // Headless Antigravity declines what it would ask about instead of asking.
+    if provider == "gemini", mode == "manual" { return L("permission.antigravity.default") }
+    if provider == "gemini", mode == "acceptEdits" { return L("permission.antigravity.acceptEdits") }
     switch mode {
     case "plan": return L("permission.other.plan")
     case "acceptEdits": return L("permission.other.acceptEdits")

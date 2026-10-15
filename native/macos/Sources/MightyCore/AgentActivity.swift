@@ -67,12 +67,14 @@ public enum ActivitySupport {
 
     static func kind(tool: String) -> String {
         let name = tool.lowercased()
-        if ["bash", "run_shell_command", "command_execution", "exec_command", "shell"].contains(name) { return "command" }
-        if ["read", "read_file", "read_many_files", "list_directory", "ls"].contains(name) { return "read" }
-        if ["edit", "write", "write_file", "replace", "apply_patch", "file_change", "notebookedit"].contains(name) { return "edit" }
-        if ["grep", "glob", "search_file_content", "glob_search"].contains(name) { return "search" }
-        if ["websearch", "webfetch", "web_search", "google_web_search", "web_fetch"].contains(name) { return "web" }
-        if ["agent", "task", "spawn_agent", "send_input", "wait", "close_agent", "delegate_to_agent"].contains(name) { return "agent" }
+        if ["bash", "run_shell_command", "command_execution", "exec_command", "shell", "run_command", "send_command_input", "command_status"].contains(name) { return "command" }
+        if ["read", "read_file", "read_many_files", "list_directory", "ls", "view_file", "list_dir", "read_resource", "list_resources"].contains(name) { return "read" }
+        if ["edit", "write", "write_file", "replace", "apply_patch", "file_change", "notebookedit", "write_to_file", "replace_file_content", "multi_replace_file_content", "sed_file", "notebook_edit"].contains(name) { return "edit" }
+        if ["grep", "glob", "search_file_content", "glob_search", "grep_search", "find_by_name"].contains(name) { return "search" }
+        if ["websearch", "webfetch", "web_search", "google_web_search", "web_fetch", "search_web", "read_url_content"].contains(name) { return "web" }
+        // Antigravity's browser tools act on web pages.
+        if name.hasPrefix("browser_") || ["open_browser_url", "read_browser_page", "list_browser_pages", "click_browser_pixel", "execute_browser_javascript", "capture_browser_screenshot", "capture_browser_console_logs"].contains(name) { return "web" }
+        if ["agent", "task", "spawn_agent", "send_input", "wait", "close_agent", "delegate_to_agent", "invoke_subagent", "define_subagent", "manage_subagents"].contains(name) { return "agent" }
         return "tool"
     }
 
@@ -81,7 +83,7 @@ public enum ActivitySupport {
     static func summary(tool: String, input: Any?) -> String {
         var fields = input as? [String: Any]
         if let raw = input as? String, raw.utf8.count <= 65_536, let data = raw.data(using: .utf8) { fields = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] }
-        for key in ["command", "file_path", "absolute_path", "path", "pattern", "query", "url", "description", "target_file", "filename", "glob"] {
+        for key in ["command", "command_line", "file_path", "absolute_path", "path", "pattern", "query", "url", "description", "target_file", "filename", "glob", "directory_path", "search_path", "search_directory"] {
             if let value = fields?[key] as? String, !value.isEmpty { return clean(value, maximumBytes: maximumSummaryBytes, singleLine: true) }
             if let values = fields?[key] as? [String], !values.isEmpty { return clean(values.prefix(8).joined(separator: " "), maximumBytes: maximumSummaryBytes, singleLine: true) }
         }

@@ -4,7 +4,7 @@ import MightyCore
 /// Shown in a pane whose last run lost its CLI sign-in. With automatic sign-in
 /// on (Settings → CLI accounts) the sign-in has already started; otherwise
 /// nothing opens until the button is pressed. Then the CLI signs in in the
-/// background (Gemini: in a terminal pane beside this one) and the failed
+/// background (Antigravity: in a terminal pane beside this one) and the failed
 /// request goes out again on its own.
 struct CLILoginRecoveryCard: View {
     @EnvironmentObject private var store: AppStore
@@ -13,7 +13,7 @@ struct CLILoginRecoveryCard: View {
     @ViewState private var code = ""
 
     private var state: BackgroundLoginState? { store.backgroundLogins[provider] }
-    /// Gemini signs in in a terminal pane already, so it has no second terminal button.
+    /// Antigravity signs in in a terminal pane already, so it has no second terminal button.
     private var signsInInTerminal: Bool { provider == "gemini" }
 
     var body: some View {
@@ -36,7 +36,7 @@ struct CLILoginRecoveryCard: View {
                     progress(L("loginRecovery.starting"))
                 case .waiting?:
                     automaticNote
-                    progress(state?.terminalSessionId != nil ? L("loginRecovery.geminiTerminal") : L("loginRecovery.waiting"))
+                    progress(state?.terminalSessionId != nil ? L("loginRecovery.antigravityTerminal") : L("loginRecovery.waiting"))
                     if let url = state?.url {
                         Link(L("loginRecovery.openLink"), destination: url).help(url.absoluteString)
                             .accessibilityIdentifier("login-link-\(sessionID)")

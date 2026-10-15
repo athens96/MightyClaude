@@ -61,16 +61,16 @@ struct RunnerBackpressureTests {
 
     @Test func aSlowConsumerReceivesEveryLineInOrder() async throws {
         let directory = try temporary(); defer { try? FileManager.default.removeItem(at: directory) }
-        let binary = directory.appendingPathComponent("gemini")
+        let binary = directory.appendingPathComponent("agy")
         // 5,000 messages, each padded to about 2 KiB: roughly 10 MB of stdout
         // written at once, well past the old 256-chunk buffer.
         let source = #"""
         #!/bin/sh
         if [ "$1" = "--version" ]; then printf '0.20.0\n'; exit 0; fi
         input="$(/bin/cat)"
-        printf '%s\n' '{"type":"init","session_id":"fixture-session"}'
-        /usr/bin/awk 'BEGIN { pad = sprintf("%2000s", ""); gsub(/ /, "x", pad); for (i = 0; i < 5000; i++) printf "{\"type\":\"message\",\"role\":\"assistant\",\"content\":\"line-%d\",\"pad\":\"%s\"}\n", i, pad }'
-        printf '%s\n' '{"type":"result","status":"success"}'
+        printf '%s\n' '{"event":"init","conversation_id":"fixture-session"}'
+        /usr/bin/awk 'BEGIN { pad = sprintf("%2000s", ""); gsub(/ /, "x", pad); for (i = 0; i < 5000; i++) printf "{\"event\":\"step_update\",\"step_update\":{\"step_index\":%d,\"state\":\"DONE\",\"step_type\":\"agent_response\",\"text_delta\":\"line-%d\",\"pad\":\"%s\"}}\n", i, i, pad }'
+        printf '%s\n' '{"event":"result","result":{"status":"SUCCESS"}}'
         """#
         try Data(source.utf8).write(to: binary)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: binary.path)
@@ -153,13 +153,13 @@ struct RunnerBackpressureTests {
 
     @Test func stopEndsAFloodingRunWithASlowConsumerWithinSeconds() async throws {
         let directory = try temporary(); defer { try? FileManager.default.removeItem(at: directory) }
-        let binary = directory.appendingPathComponent("gemini")
+        let binary = directory.appendingPathComponent("agy")
         let source = #"""
         #!/bin/sh
         if [ "$1" = "--version" ]; then printf '0.20.0\n'; exit 0; fi
         /bin/cat > /dev/null
-        printf '%s\n' '{"type":"init","session_id":"fixture-session"}'
-        exec /usr/bin/yes '{"type":"message","role":"assistant","content":"flood"}'
+        printf '%s\n' '{"event":"init","conversation_id":"fixture-session"}'
+        exec /usr/bin/yes '{"event":"step_update","step_update":{"step_index":1,"state":"DONE","step_type":"agent_response","text_delta":"flood"}}'
         """#
         try Data(source.utf8).write(to: binary)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: binary.path)
@@ -181,15 +181,15 @@ struct RunnerBackpressureTests {
     }
 
     /// A flooding fixture that records its pid; `exec` keeps that pid.
-    private func floodingGemini(in directory: URL) throws -> URL {
-        let binary = directory.appendingPathComponent("gemini")
+    private func floodingAntigravity(in directory: URL) throws -> URL {
+        let binary = directory.appendingPathComponent("agy")
         let source = #"""
         #!/bin/sh
         if [ "$1" = "--version" ]; then printf '0.20.0\n'; exit 0; fi
         /bin/cat > /dev/null
         echo $$ > "$PWD/child.pid"
-        printf '%s\n' '{"type":"init","session_id":"fixture-session"}'
-        exec /usr/bin/yes '{"type":"message","role":"assistant","content":"flood"}'
+        printf '%s\n' '{"event":"init","conversation_id":"fixture-session"}'
+        exec /usr/bin/yes '{"event":"step_update","step_update":{"step_index":1,"state":"DONE","step_type":"agent_response","text_delta":"flood"}}'
         """#
         try Data(source.utf8).write(to: binary)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: binary.path)
@@ -201,7 +201,7 @@ struct RunnerBackpressureTests {
     /// once: the signal does not wait for the runner's actor.
     @Test func aBackgroundStopEndsAFloodingChildAtOnce() async throws {
         let directory = try temporary(); defer { try? FileManager.default.removeItem(at: directory) }
-        let service = ProviderService(binaryOverrides: ["gemini": try floodingGemini(in: directory)])
+        let service = ProviderService(binaryOverrides: ["gemini": try floodingAntigravity(in: directory)])
         let events = BackpressureRecorder()
         let runner = ProcessRunner(providerService: service, pluginDirectory: directory, onEvent: { events.append($0); if $0.entry?.kind == "assistant" { usleep(1_000) } })
         let workspace = Workspace(id: "workspace", name: "Fixture", path: directory.path)
@@ -235,7 +235,7 @@ struct RunnerBackpressureTests {
     /// starved either.
     @Test func aMediumStopIsNotStarvedByTheConsumer() async throws {
         let directory = try temporary(); defer { try? FileManager.default.removeItem(at: directory) }
-        let service = ProviderService(binaryOverrides: ["gemini": try floodingGemini(in: directory)])
+        let service = ProviderService(binaryOverrides: ["gemini": try floodingAntigravity(in: directory)])
         let events = BackpressureRecorder()
         let runner = ProcessRunner(providerService: service, pluginDirectory: directory, onEvent: { events.append($0); if $0.entry?.kind == "assistant" { usleep(1_000) } })
         let workspace = Workspace(id: "workspace", name: "Fixture", path: directory.path)
@@ -267,7 +267,7 @@ struct RunnerBackpressureTests {
     /// full and its reader waits, as with a slow consumer.
     @Test func shutdownEndsFourFloodingRunsWithinTheQuitDeadline() async throws {
         let directory = try temporary(); defer { try? FileManager.default.removeItem(at: directory) }
-        let service = ProviderService(binaryOverrides: ["gemini": try floodingGemini(in: directory)])
+        let service = ProviderService(binaryOverrides: ["gemini": try floodingAntigravity(in: directory)])
         // What the runner emitted, except the flood lines, which only mark
         // their pane: thousands a second, too many to keep.
         let events = BackpressureRecorder()
@@ -371,17 +371,17 @@ struct RunnerBackpressureTests {
     /// The run still ends, with a notice, and the writer loses its pipe.
     @Test func aDetachedWriterCannotKeepTheRunAliveAfterExit() async throws {
         let directory = try temporary(); defer { try? FileManager.default.removeItem(at: directory) }
-        let binary = directory.appendingPathComponent("gemini")
+        let binary = directory.appendingPathComponent("agy")
         // `set -m` gives the background job its own process group, so the
         // runner's group kill at exit does not reach it.
         let source = #"""
         #!/bin/sh
         if [ "$1" = "--version" ]; then printf '0.20.0\n'; exit 0; fi
         /bin/cat > /dev/null
-        printf '%s\n' '{"type":"init","session_id":"fixture-session"}'
+        printf '%s\n' '{"event":"init","conversation_id":"fixture-session"}'
         pad=$(/usr/bin/awk 'BEGIN { s = sprintf("%2000s", ""); gsub(/ /, "x", s); print s }')
         set -m
-        /usr/bin/yes "{\"type\":\"message\",\"role\":\"assistant\",\"content\":\"$pad\"}" &
+        /usr/bin/yes "{\"event\":\"step_update\",\"step_update\":{\"step_index\":1,\"state\":\"DONE\",\"step_type\":\"agent_response\",\"text_delta\":\"$pad\"}}" &
         echo $! > "$(/usr/bin/dirname "$0")/stray.pid"
         exit 0
         """#
@@ -460,13 +460,13 @@ struct RunnerBackpressureTests {
     /// it already holds is still handed on.
     @Test func aTimedOutStopKeepsTheUnterminatedLastLine() async throws {
         let directory = try temporary(); defer { try? FileManager.default.removeItem(at: directory) }
-        let binary = directory.appendingPathComponent("gemini")
+        let binary = directory.appendingPathComponent("agy")
         let source = #"""
         #!/bin/sh
         if [ "$1" = "--version" ]; then printf '0.20.0\n'; exit 0; fi
         /bin/cat > /dev/null
-        printf '%s\n' '{"type":"init","session_id":"fixture-session"}'
-        printf '%s' '{"type":"message","role":"assistant","content":"tail"}'
+        printf '%s\n' '{"event":"init","conversation_id":"fixture-session"}'
+        printf '%s' '{"event":"step_update","step_update":{"step_index":1,"state":"DONE","step_type":"agent_response","text_delta":"tail"}}'
         /bin/sleep 0.5
         /usr/bin/head -c 8000000 /dev/zero | /usr/bin/tr '\0' 'x' >&2
         exec /bin/sleep 30

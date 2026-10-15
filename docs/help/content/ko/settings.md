@@ -30,7 +30,7 @@ section: settings
 
 ## 구성 요소 {#components}
 {{ui:settings.nav.tools}} 탭은 앱에 필요한 것이 준비됐는지 보여 줍니다.
-- {{ui:settings.components.sectionTitle}}: Claude, Codex, Gemini CLI와 필요한 플러그인의 상태입니다. {{ui:settings.components.statusInstalled}}, {{ui:settings.components.statusMissing}}, {{ui:settings.components.statusAttention}} 중 하나로 보입니다. 설치가 필요하면 설치 명령을 복사해 터미널에서 실행한 뒤 {{ui:settings.components.recheckButton}}을 누릅니다.
+- {{ui:settings.components.sectionTitle}}: Claude, Codex, Antigravity CLI(Windows에서는 Gemini CLI)와 필요한 플러그인의 상태입니다. {{ui:settings.components.statusInstalled}}, {{ui:settings.components.statusMissing}}, {{ui:settings.components.statusAttention}} 중 하나로 보입니다. 설치가 필요하면 설치 명령을 복사해 터미널에서 실행한 뒤 {{ui:settings.components.recheckButton}}을 누릅니다.
 - {{ui:settings.toolkit.sectionTitle}}: 자주 쓰는 도구 목록입니다. 설치 전에 실행할 명령을 모두 보여 주고 {{ui:settings.toolkit.confirmTitle}}을 받습니다. 목록을 {{ui:settings.toolkit.exportButton}}하거나 {{ui:settings.toolkit.importButton}}할 수 있습니다.
 
 ![[settings-tools]]
