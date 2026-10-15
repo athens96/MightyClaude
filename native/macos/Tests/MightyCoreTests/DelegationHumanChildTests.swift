@@ -217,6 +217,29 @@ private func openChild(_ id: String, byHuman: Bool = false) -> ChildRecord {
         let agent = DelegationPanes.childSession(DelegationChildPane(sessionId: "c2", parentSessionId: "parent", mode: "plan", folder: "/w/c2"), workspaceId: "ws", title: "Fix it", parent: parent)
         #expect(agent.model == RunSession(workspaceId: "ws", title: "x").model && agent.settings.effort == "default")
     }
+
+    @Test func everyChildShowsItsParentsViewAndAHumansChildTakesItsStyle() {
+        var parent = RunSession(id: "parent", workspaceId: "ws", title: "Parent", kind: SessionKind.claude, provider: "claude", settings: RunSettings(permissionMode: "auto"))
+        parent.agentViewMode = "mighty"
+        parent.graphViewMode = .structure
+        parent.mightyStyle = "superpowers"
+        parent.mightyStyleHash = "h1"
+        parent.mightyStyleSince = "2026-10-15T00:00:00Z"
+        let human = DelegationPanes.childSession(DelegationChildPane(sessionId: "c1", parentSessionId: "parent", mode: "auto", folder: "/w/c1", startedByHuman: true), workspaceId: "ws", title: "Fix it", parent: parent)
+        #expect(human.agentViewMode == "mighty" && human.mightyViewMode == .structure)
+        #expect(human.mightyStyle == "superpowers" && human.mightyStyleHash == "h1" && human.mightyStyleSince == nil)
+        // A delegate call's child shows the same view, without the style.
+        let agent = DelegationPanes.childSession(DelegationChildPane(sessionId: "c2", parentSessionId: "parent", mode: "plan", folder: "/w/c2"), workspaceId: "ws", title: "Fix it", parent: parent)
+        #expect(agent.agentViewMode == "mighty" && agent.mightyViewMode == .structure)
+        #expect(agent.mightyStyle == nil && agent.mightyStyleHash == nil)
+        // A parent in the basic view, or no parent, leaves the defaults.
+        parent.agentViewMode = "default"
+        parent.graphViewMode = nil
+        let basic = DelegationPanes.childSession(DelegationChildPane(sessionId: "c3", parentSessionId: "parent", mode: "auto", folder: "/w/c3", startedByHuman: true), workspaceId: "ws", title: "t", parent: parent)
+        #expect(basic.agentViewMode == "default" && basic.mightyViewMode == .diagram)
+        let orphan = DelegationPanes.childSession(DelegationChildPane(sessionId: "c4", parentSessionId: "parent", mode: "auto", folder: "/w/c4"), workspaceId: "ws", title: "t")
+        #expect(orphan.agentViewMode == nil && orphan.graphViewMode == nil)
+    }
 }
 
 /// Real temp repositories and a fake host: the human's new worktree from the

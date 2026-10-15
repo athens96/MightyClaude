@@ -101,7 +101,18 @@ internal static class WindowsParityVerification
             }
             finally { await terminal.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(15)); }
         }
-        finally { Directory.Delete(path, true); }
+        // The GUI program (wscript) can outlive the pane for a moment and still hold the
+        // folder; the temp folder goes once it lets go, and a failure to tidy it is no failure of the test.
+        finally { await DeleteWhenFree(path); }
+    }
+
+    private static async Task DeleteWhenFree(string path)
+    {
+        for (var attempt = 0; attempt < 40; attempt++)
+        {
+            try { if (Directory.Exists(path)) Directory.Delete(path, true); return; }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { await Task.Delay(250); }
+        }
     }
 
     // M/AppStore+Components.swift:29, 34, 57-62, M/ComponentsSettingsView.swift:28-38.
