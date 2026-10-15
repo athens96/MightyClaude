@@ -43,7 +43,7 @@ CLI 로그인이 만료되어 요청이 실패하면 입력창 위에 로그인 
 Claude는 오래 걸리는 명령이나 하위 에이전트를 백그라운드에서 돌리기도 합니다. 이때는 Claude의 답이 끝나도 일이 남아 있습니다.
 - 입력창 위에 턴이 끝났지만 백그라운드 작업이 실행 중이라는 줄이 보입니다. {{ui:plan.background.show}}를 누르면 작업별 종류, 상태, 걸린 시간을 봅니다.
 - 마이티 보기에는 {{ui:graph.block.task}} 블록으로 보입니다.
-- 이때 보낸 요청은 백그라운드 작업이 끝난 뒤 시작합니다. 바로 끼워 넣으려면 {{kbd:⌘Enter}}를 누릅니다. [에이전트 위임](delegation.md#worktree)이 켜진 git 저장소의 Claude 창에서는 {{kbd:⌘Enter}}가 대신 새 worktree에서 바로 실행합니다.
+- 이때 보낸 요청은 백그라운드 작업이 끝난 뒤 시작합니다. 바로 끼워 넣으려면 {{kbd:⌘Enter}}를 누릅니다. [마이티 오케스트레이션](delegation.md#worktree)이 켜진 git 저장소의 Claude 창에서는 {{kbd:⌘Enter}}가 대신 새 worktree에서 바로 실행합니다.
 - 이 줄이 거슬리면 줄 오른쪽의 눈 가림 버튼({{ui:plan.background.hideStrip}})을 누릅니다. 모든 창에서 줄이 사라지고, 백그라운드 작업은 그대로 실행됩니다.
 - 다시 보려면 입력창 오른쪽의 {{ui:composer.backgroundWork.name}} 단추를 누릅니다. {{ui:menu.settings}} → {{ui:settings.nav.general}} → {{ui:settings.display.sectionTitle}}에서 {{ui:settings.display.backgroundWorkToggle}}를 켜거나, 창의 … 메뉴에서 {{ui:pane.menu.backgroundWork}}를 골라도 됩니다. 줄을 펼쳐 둔 상태도 기억합니다.
 

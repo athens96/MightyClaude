@@ -19,8 +19,8 @@ section: agent-pane
 ### 実行中に続けてリクエストする {#queue}
 タスクの実行中でも、次のリクエストを書けます。入力欄に文字があると、停止ボタンの横に送信ボタンと同じ丸いボタンが表示されます。
 - {{kbd:Enter}}または{{ui:queue.add}}ボタン: 次のリクエストとしてキューに入れます。現在のタスクが終わると順番に実行します。1つのペインに16件まで入れられます。
-- {{kbd:⌘Enter}}または{{ui:queue.worktree}}ボタン: エージェント委任がオンのこのMacのClaudeペインが、コミットのあるブランチのgitリポジトリにあるときは、このペインの隣に専用のgit worktreeを持つ新しい子ペインを開いてすぐに実行します。実行中のタスクはそのまま続きます([新しいworktreeで実行する](delegation.md#worktree))。
-- 子ペイン、そのようなリポジトリの外のペイン、委任をオフにしたペインでは、{{kbd:⌘Enter}}または{{ui:phone.composer.steer}}ボタンは代わりに実行中のClaudeにすぐに伝えます。このMacのClaudeペインでのみ使えます。Mighty表示ではオレンジ色の{{ui:graph.block.steer}}ブロックとして表示されます。
+- {{kbd:⌘Enter}}または{{ui:queue.worktree}}ボタン: MightyオーケストレーションがオンのこのMacのClaudeペインが、コミットのあるブランチのgitリポジトリにあるときは、このペインの隣に専用のgit worktreeを持つ新しい子ペインを開いてすぐに実行します。実行中のタスクはそのまま続きます([新しいworktreeで実行する](delegation.md#worktree))。
+- 子ペイン、そのようなリポジトリの外のペイン、Mightyオーケストレーションをオフにしたペインでは、{{kbd:⌘Enter}}または{{ui:phone.composer.steer}}ボタンは代わりに実行中のClaudeにすぐに伝えます。このMacのClaudeペインでのみ使えます。Mighty表示ではオレンジ色の{{ui:graph.block.steer}}ブロックとして表示されます。
 - キューの{{ui:queue.runNext}}をクリックすると、待機中の最初のリクエストを今すぐ実行します。
 
 タスクを停止すると、待機中のリクエストもキャンセルされます。アプリを開き直すとキューは空になります。
