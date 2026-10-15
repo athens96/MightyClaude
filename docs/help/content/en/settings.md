@@ -11,7 +11,7 @@ Under {{ui:settings.display.sectionTitle}} on the {{ui:settings.nav.general}} ta
 - {{ui:settings.display.languageLabel}}: the app's language. See [Change the language](getting-started.md#language).
 - {{ui:settings.display.statusLineToggle}}: runs the status line command from your Claude settings and shows it under the composer.
 - {{ui:settings.display.browserToggle}}: turns browser panes on. Takes effect after you reopen the app.
-- {{platform:mac}} {{ui:settings.delegation.toggle}}: on by default. Claude panes can open child panes in their own worktrees, and {{kbd:⌘Enter}} in a running Claude pane runs your request in a new one. See [Agent delegation](delegation.md#enable).
+- {{platform:mac}} {{ui:settings.delegation.toggle}}: on by default. Claude panes can open child panes in their own worktrees, and {{kbd:⌘Enter}} in a running Claude pane runs your request in a new one. See [Mighty Orchestration](delegation.md#enable).
 - {{ui:agentTerminal.urlOpen.settingTitle}}: where links opened by an agent go.
 
 ![[settings-general]]

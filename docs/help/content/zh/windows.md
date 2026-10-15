@@ -49,7 +49,7 @@ Windows 没有菜单栏。相同的功能位于侧边栏和{{ui:workspace.addPan
 | 宠物气泡 | 批准和提问的气泡多一个图标按钮。批准时它打开显示完整请求的窗口，提问时它打开可以自己输入答案的窗口。 |
 | 语言 | 更改的语言在重新打开应用后生效。 |
 | 文件位置 | 提供{{ui:menu.showInExplorer}}，而不是{{ui:menu.showInFinder}}。 |
-| 智能体委派 | 用注册表值开启和关闭（[开启和关闭](delegation.md#enable)）。worktree 位于 `%USERPROFILE%\.mightyclaude\worktrees`，其中含有目录联接或符号链接时不会自动清理（[关闭窗格和清理](delegation.md#close)）。 |
+| Mighty 编排 | 用注册表值开启和关闭（[开启和关闭](delegation.md#enable)）。worktree 位于 `%USERPROFILE%\.mightyclaude\worktrees`，其中含有目录联接或符号链接时不会自动清理（[关闭窗格和清理](delegation.md#close)）。 |
 
 > [!note]
 > Windows 应用的部分功能尚未在真实设备上充分验证。如发现异常，请告诉我们。
