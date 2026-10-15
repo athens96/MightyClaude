@@ -550,7 +550,7 @@ struct WorkspaceView: View {
             Spacer()
             Image(systemName: "rectangle.split.2x1").font(.system(size: 50, weight: .ultraLight)).foregroundStyle(Palette.accent)
             Text(L("layout.welcome.title")).font(.system(size: 27, weight: .semibold))
-            Text(L("layout.welcome.body"))
+            Text(L("layout.welcome.bodyMac"))
                 .font(.system(size: 14)).foregroundStyle(.secondary).multilineTextAlignment(.center).lineSpacing(5)
             HStack(spacing: 10) {
                 Button { store.openWorkspace() } label: { Label(L("layout.welcome.openProject"), systemImage: "folder.badge.plus").padding(.horizontal, 10).padding(.vertical, 5) }.buttonStyle(.borderedProminent)

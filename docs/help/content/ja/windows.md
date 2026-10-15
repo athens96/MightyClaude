@@ -41,6 +41,7 @@ Windowsにはメニューバーがありません。同じ機能は、サイド�
 | 機能 | Windowsでは |
 |---|---|
 | CLIのサインイン | アプリ内のターミナルではなく、別のWindowsターミナルのウインドウで行います。サインインが終わると、Macと同じく失敗したリクエストを自動で送り直します。 |
+| Googleのエージェント | 現在もGemini CLI(`gemini`)を使います。MacはAntigravity CLIを使います([MacのAntigravity](agent-pane.md#antigravity))。 |
 | ターミナルペイン | Windows PowerShellを使います。 |
 | ブラウザペイン | Microsoft Edge WebView2で開きます。Macと同じく、{{ui:settings.display.browserToggle}}をオンにしてアプリを開き直す必要があります。 |
 | 完了通知 | {{ui:windows.notifications.toggleLabel}}でオンにします。 |

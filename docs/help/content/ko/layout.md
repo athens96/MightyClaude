@@ -41,16 +41,16 @@ section: layout
 ![[dashboard]]
 
 ## 실행 창 추가 {#add-pane}
-실행 창은 AI 에이전트(Claude, Codex, Gemini), 터미널, 브라우저, 파일 중 하나입니다.
+실행 창은 AI 에이전트(Claude, Codex, Antigravity, Windows에서는 Gemini), 터미널, 브라우저, 파일 중 하나입니다.
 
 1. 사이드바의 {{ui:workspace.addPane}} 단추를 누릅니다.
-2. 만들 창을 고릅니다: Claude·Codex·Gemini 실행 창, {{ui:workspace.newTerminal}}, {{ui:browser.newTab}}. 다른 폴더는 같은 메뉴의 {{ui:menu.openProject}}로 엽니다.
+2. 만들 창을 고릅니다: Claude·Codex·Antigravity 실행 창, {{ui:workspace.newTerminal}}, {{ui:browser.newTab}}. 다른 폴더는 같은 메뉴의 {{ui:menu.openProject}}로 엽니다.
 3. 새 AI 실행 창은 같은 에이전트로 가장 최근에 쓴 창의 모델·사고 강도·권한·보기 방식을 이어받습니다. 대화는 새로 시작합니다.
 
 단축키: {{ui:menu.newClaudePane}}은 {{kbd:⌘N}}, {{ui:menu.addTerminalPane}} 항목은 {{kbd:⌘T}}, {{ui:menu.showFiles}} 항목은 {{kbd:⇧⌘E}}입니다.
 
 > [!note]
-> Codex와 Gemini 실행 창에는 {{ui:badge.beta}} 표시가 붙습니다.
+> Codex와 Antigravity(Gemini) 실행 창에는 {{ui:badge.beta}} 표시가 붙습니다.
 
 ### 이전 세션 이어가기 {#resume}
 Claude나 Codex 창을 추가할 때 이 폴더에 이전 세션이 있으면 고르는 창이 뜹니다.

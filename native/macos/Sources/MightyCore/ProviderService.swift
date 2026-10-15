@@ -95,7 +95,7 @@ public actor ProviderService {
             }
             let override = binaryOverrides[provider], env = snapshot.values, probeTimeout = versionProbeTimeout
             let task = Task<ProviderCommand?, Never> {
-                let paths = override.map { [$0] } ?? (env["PATH"] ?? "").split(separator: ":").prefix(64).map { URL(fileURLWithPath: String($0)).appendingPathComponent(provider) }
+                let paths = override.map { [$0] } ?? (env["PATH"] ?? "").split(separator: ":").prefix(64).map { URL(fileURLWithPath: String($0)).appendingPathComponent(ProviderOptions.executable(provider)) }
                 for path in paths {
                     if Task.isCancelled { return nil }
                     guard FileManager.default.isExecutableFile(atPath: path.path) else { continue }
@@ -122,7 +122,7 @@ public actor ProviderService {
     }
 
     func modelCatalog(provider: String, workspacePath: String?, forceRefresh: Bool = false, snapshot: CLIEnvironmentSnapshot) async -> ModelCatalog {
-        guard !closing, provider == "codex" || provider == "claude" else { return ProviderOptions.fallbackCatalog(provider) }
+        guard !closing, ProviderOptions.ids.contains(provider) else { return ProviderOptions.fallbackCatalog(provider) }
         let cwd = workspacePath.map { URL(fileURLWithPath: $0, isDirectory: true).standardizedFileURL }
         let key = CatalogKey(provider: provider, workspacePath: cwd?.path)
         let entry: CatalogEntry
@@ -141,6 +141,7 @@ public actor ProviderService {
             let task = Task<ModelCatalog, Never> {
                 guard let command = await self.command(provider: provider, workspacePath: workspacePath, snapshot: snapshot), !Task.isCancelled,
                       !self.closing, generation == self.cacheGeneration else { return ProviderOptions.fallbackCatalog(provider) }
+                if provider == "gemini" { return await Self.antigravityCatalog(command: command, environment: snapshot.values, workspace: cwd) }
                 return await CLIModelProbe.read(command: command, environment: snapshot.values, workspace: cwd)
             }
             entry = CatalogEntry(id: UUID(), created: Date(), task: task, inFlight: true, forced: forceRefresh, environment: snapshot.values)
@@ -266,10 +267,20 @@ public actor ProviderService {
             if s.effort != "default" { args += ["-c", "model_reasoning_effort=\"\(s.effort)\""] }
             return args + ["-"]
         case "gemini":
-            let mode = ["manual": "default", "plan": "plan", "acceptEdits": "auto_edit", "fullAccess": "yolo"][s.permissionMode]!
-            var args = ["--output-format", "stream-json", "--approval-mode", mode]
+            // Antigravity CLI: `--print=` with no text takes the prompt from the
+            // stream-json line on stdin (`ProviderInput`), one turn per line;
+            // closing stdin ends the session. `--print-timeout 0` waits for the turn.
+            // Manual keeps agy's own review mode: headless, what it would ask
+            // about (shell commands, file edits) is declined unless its settings allow it.
+            var args = ["--print=", "--input-format", "stream-json", "--output-format", "stream-json", "--print-timeout", "0"]
+            switch s.permissionMode {
+            case "plan": args += ["--mode", "plan"]
+            case "acceptEdits": args += ["--mode", "accept-edits"]
+            case "fullAccess": args += ["--dangerously-skip-permissions"]
+            default: break
+            }
             if request.model != "default" { args += ["--model", request.model] }
-            if let resume = request.resumeId { args += ["--resume", resume] }
+            if let resume = request.resumeId { args += ["--conversation", resume] }
             return args
         default: throw MightyError(L("common.unsupportedCli"))
         }
@@ -289,6 +300,24 @@ public actor ProviderService {
             }
         }
         return models.count > 1 ? ModelCatalog(source: "cli", models: models, detail: L("provider.catalog.codexSource")) : fallback
+    }
+    /// `agy models`: a "Fetching available models..." line, then one
+    /// `slug<TAB>Display Name` line per model. It needs the network and a
+    /// sign-in; anything else keeps the fallback list.
+    public nonisolated static func normalizeAntigravityCatalog(_ text: String) -> ModelCatalog {
+        let fallback = ProviderOptions.fallbackCatalog("gemini")
+        var models = [fallback.models[0]]; var seen = Set(["default"])
+        for line in text.split(whereSeparator: \.isNewline).prefix(256) {
+            let fields = line.split(separator: "\t", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+            guard fields.count == 2, CoreValidation.model(fields[0]), !fields[1].isEmpty, seen.insert(fields[0]).inserted, models.count <= 128 else { continue }
+            models.append(ModelOption(value: fields[0], displayName: ActivitySupport.clean(fields[1], maximumBytes: 160, singleLine: true)))
+        }
+        return models.count > 1 ? ModelCatalog(source: "cli", models: models, detail: L("provider.catalog.antigravitySource")) : fallback
+    }
+    static func antigravityCatalog(command: ProviderCommand, environment: [String: String], workspace: URL?) async -> ModelCatalog {
+        guard let result = try? await ProcessCapture.run(executable: command.executable, arguments: ["models"], environment: environment, cwd: workspace ?? FileManager.default.temporaryDirectory, timeout: 15, maximumBytes: 262_144),
+              result.exitCode == 0 else { return ProviderOptions.fallbackCatalog("gemini") }
+        return normalizeAntigravityCatalog(String(decoding: result.stdout, as: UTF8.self))
     }
     public nonisolated static func normalizeClaudeCatalog(_ rows: [[String: Any]]) -> ModelCatalog {
         let fallback = ProviderOptions.fallbackCatalog("claude")

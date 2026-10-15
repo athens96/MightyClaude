@@ -171,7 +171,7 @@ public extension RunSession {
 }
 
 /// One parser owns one process. Totals are replacement snapshots: resumed
-/// Codex/Gemini totals and repeated result messages are never added together.
+/// Codex/Antigravity totals and repeated result messages are never added together.
 final class SessionUsageTracker {
     private var value: SessionUsage
     private var emitted: SessionUsage?
@@ -181,11 +181,12 @@ final class SessionUsageTracker {
     private var claudeResultSeen = false
 
     init(provider: String, callback: ((SessionUsage) -> Void)?) {
-        value = SessionUsage(provider: provider, source: provider + ".stream-json", tokenScope: provider == "claude" ? "response" : "session")
+        value = SessionUsage(provider: provider, source: provider == "gemini" ? "antigravity.stream-json" : provider + ".stream-json", tokenScope: provider == "claude" ? "response" : "session")
         self.callback = callback
     }
     func consume(_ event: [String: Any]) {
-        guard callback != nil, let type = event["type"] as? String else { return }
+        // Antigravity names each line's kind in `event`, the others in `type`.
+        guard callback != nil, let type = event[value.provider == "gemini" ? "event" : "type"] as? String else { return }
         switch value.provider {
         case "claude": consumeClaude(event, type: type)
         case "codex":
@@ -203,16 +204,22 @@ final class SessionUsageTracker {
                 publish()
             }
         case "gemini":
-            if type == "init" { setIdentity(event["session_id"]); setModel(event["model"]); publish() }
-            if type == "result", let stats = event["stats"] as? [String: Any] {
-                guard let input = SessionUsageSupport.count(stats["input_tokens"]), let output = SessionUsageSupport.count(stats["output_tokens"]), let total = SessionUsageSupport.count(stats["total_tokens"]) else { return }
-                value.source = "gemini.stream-json"; value.tokenScope = "session"
+            if type == "init" {
+                setIdentity(event["conversation_id"]); setModel((event["init"] as? [String: Any])?["model"]); publish()
+            }
+            // The result's usage counts the whole conversation, resumed turns
+            // included. agy's input_tokens leaves out cache_read_tokens (its
+            // total is input + output); here input includes cached input.
+            if type == "result", let result = event["result"] as? [String: Any], let usage = result["usage"] as? [String: Any] {
+                guard let fresh = SessionUsageSupport.count(usage["input_tokens"]), let output = SessionUsageSupport.count(usage["output_tokens"]) else { return }
+                let cached = usage["cache_read_tokens"] == nil ? 0 : SessionUsageSupport.count(usage["cache_read_tokens"])
+                guard let cached, let input = SessionUsageSupport.sum([fresh, cached]) else { return }
+                setIdentity(result["conversation_id"])
+                value.source = "antigravity.stream-json"; value.tokenScope = "session"
                 value.inputTokens = input; value.outputTokens = output
-                value.cacheReadTokens = SessionUsageSupport.count(stats["cached"])
-                value.totalTokens = total
-                // Gemini's total may include internal categories that stdout
-                // doesn't expose separately. Preserve its declared total.
-                if let models = stats["models"] as? [String: Any], models.count == 1 { setModel(models.keys.first) }
+                value.cacheReadTokens = cached
+                value.reasoningTokens = SessionUsageSupport.count(usage["thinking_tokens"])
+                value.totalTokens = SessionUsageSupport.sum([input, output])
                 publish()
             }
         default: break

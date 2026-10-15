@@ -2,7 +2,7 @@ import Testing
 @testable import MightyCore
 
 struct ProviderBetaTests {
-    @Test func codexAndGeminiAreBetaAndClaudeIsOfficial() {
+    @Test func codexAndAntigravityAreBetaAndClaudeIsOfficial() {
         #expect(!ProviderOptions.isBeta("claude"))
         #expect(ProviderOptions.isBeta("codex"))
         #expect(ProviderOptions.isBeta("gemini"))
@@ -11,7 +11,7 @@ struct ProviderBetaTests {
     }
 
     @Test func theBadgeNeverChangesTheProviderName() {
-        #expect(ProviderOptions.ids.map(ProviderOptions.label) == ["Claude", "Codex", "Gemini"])
+        #expect(ProviderOptions.ids.map(ProviderOptions.label) == ["Claude", "Codex", "Antigravity"])
     }
 
     @Test func menuTitlesCarryTheBadgeOnlyForBetaProviders() {
@@ -20,6 +20,6 @@ struct ProviderBetaTests {
         #expect(L("badge.betaAccessibility") != "badge.betaAccessibility")
         #expect(ProviderOptions.betaTitle("claude", "Claude") == "Claude")
         #expect(ProviderOptions.betaTitle("codex", "Codex") == "Codex · " + badge)
-        #expect(ProviderOptions.betaTitle("gemini", "새 Gemini 실행 창") == "새 Gemini 실행 창 · " + badge)
+        #expect(ProviderOptions.betaTitle("gemini", "새 Antigravity 실행 창") == "새 Antigravity 실행 창 · " + badge)
     }
 }

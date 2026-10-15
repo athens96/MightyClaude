@@ -3,7 +3,7 @@ title: Agent panes
 order: 3
 section: agent-pane
 ---
-An agent pane is a conversation with Claude, Codex or Gemini. You write requests in the composer at the bottom and follow the progress and results above it.
+An agent pane is a conversation with Claude, Codex or Antigravity (Gemini on Windows). You write requests in the composer at the bottom and follow the progress and results above it.
 
 ![[agent-basic]]
 
@@ -28,10 +28,10 @@ Stopping the task cancels the queued requests too. The queue is emptied when the
 The row under the composer has, from the left: attach, model, thinking effort, permission and more run settings (…). In a narrow pane some of them fold into one menu. They can't be changed while a task runs, and a change applies from the next request.
 
 ### Model {#model}
-Click the model chip to choose the {{ui:composer.label.runner}} (Claude, Codex or Gemini) and the {{ui:composer.label.model}}. If the list looks wrong, click {{ui:composer.model.refresh}}. Switching agents starts a new conversation.
+Click the model chip to choose the {{ui:composer.label.runner}} (Claude, Codex or Antigravity) and the {{ui:composer.label.model}}. If the list looks wrong, click {{ui:composer.model.refresh}}. Switching agents starts a new conversation.
 
 ### Thinking effort {#effort}
-{{ui:composer.effort.label}} sets how deeply the model thinks: Auto, Low, Medium, High, XHigh or Max. Only the levels the model supports are shown. Gemini has none.
+{{ui:composer.effort.label}} sets how deeply the model thinks: Auto, Low, Medium, High, XHigh or Max. Only the levels the model supports are shown. Antigravity and Gemini have none.
 
 ### Permissions {#permission}
 The permission mode sets what the agent may do without asking.
@@ -40,11 +40,20 @@ The permission mode sets what the agent may do without asking.
 |---|---|
 | Claude | Plan mode · Always ask · Accept file edits · Auto mode · Bypass |
 | Codex | {{ui:permission.label.defaultCodex}} · {{ui:permission.label.acceptEditsCodex}} · {{ui:permission.label.onRequest}} · {{ui:permission.label.fullAccess}} |
-| Gemini | {{ui:permission.label.default}} · {{ui:permission.label.plan}} · {{ui:permission.label.acceptEdits}} · {{ui:permission.label.fullAccess}} |
+| Antigravity (Gemini on Windows) | {{ui:permission.label.default}} · {{ui:permission.label.plan}} · {{ui:permission.label.acceptEdits}} · {{ui:permission.label.fullAccess}} |
 
 - Claude's Always ask and Codex's {{ui:permission.label.onRequest}} ask for approval in the pane when extra permission is needed. See [Approvals and questions](approvals.md#permission).
 - Auto mode appears only when the installed Claude CLI supports it.
 - Bypass and {{ui:permission.label.fullAccess}} reach files and commands outside the project too. Use them only when you must.
+
+### Antigravity on the Mac {#antigravity}
+On the Mac, Google's agent runs through Antigravity CLI (`agy`), which can also run Claude and GPT-OSS models. The Windows app still uses Gemini CLI for now.
+
+- Install: `curl -fsSL https://antigravity.google/cli/install.sh | bash` puts `agy` in `~/.local/bin`. The app updates it with `agy update`.
+- Sign in: run `agy` once in a terminal pane and sign in with your Google account in the browser. {{ui:settings.cliAccounts.buttonLogin}} on the {{ui:settings.nav.cli}} tab does this for you. Antigravity has no sign-out command; to switch accounts, use `/logout` inside `agy`.
+- Permissions: Antigravity cannot ask you in the app. {{ui:permission.label.default}} follows the Agent Mode saved in agy (review, unless you changed it in agy's `/config`): it reads the workspace's files but declines the file edits and shell commands it would ask about, and the pane says what it declined. {{ui:permission.label.plan}} writes a plan in agy's own folder and stops without editing the project; send the next request in another mode to carry it out. Allow them under `permissions.allow` in `~/.gemini/antigravity-cli/settings.json` (for example `command(git)`), or choose {{ui:permission.label.acceptEdits}} (file edits) or {{ui:permission.label.fullAccess}} (everything).
+- Each Antigravity model carries its effort in its name, so there is no separate {{ui:composer.effort.label}}.
+- A pane that ran Gemini CLI before keeps its history, but its next request starts a new conversation, and a Gemini CLI model it had is set back to the default.
 
 ### More run settings {#run-settings}
 Click the … button to open {{ui:settings.run.title}}.
@@ -75,7 +84,7 @@ Type `/` in the composer to see the command list. Move with {{kbd:↑}}{{kbd:↓
 | `/rename` | {{ui:slash.builtin.rename}} |
 | `/help` | {{ui:slash.builtin.help}} |
 
-Codex and Gemini use slightly different names (Codex: `/new`, `/approvals`, `/status`, for example). Any other `/name` is passed to the CLI as a skill, user command or plugin command.
+Codex and Antigravity use slightly different names (Codex: `/new`, `/approvals`, `/status`; Antigravity: `/usage`, `/config`, for example). Any other `/name` is passed to the CLI as a skill, user command or plugin command. Antigravity expands its skills this way; its own read-only commands such as `/help` or `/skills` answer only when you run them as `agy -p "/help"` in a terminal, so in the app they end with agy's error.
 
 ### Context and usage {#session-info}
 The ring beside the send button shows how much context the conversation has used. Click it for {{ui:composer.sessionInfo.contextUsage}}, input, output and cache tokens, cost, the model used and the session IDs. Only values the CLI reported are shown; nothing is estimated.
@@ -83,7 +92,7 @@ The ring beside the send button shows how much context the conversation has used
 ![[session-info]]
 
 ## Default and Mighty views {#views}
-Claude and Codex panes have a {{ui:graph.view.default}} | {{ui:graph.view.mighty}} switch in the header. Switching keeps the conversation and your draft, and each pane remembers its choice. Gemini panes have only the default view.
+Claude and Codex panes have a {{ui:graph.view.default}} | {{ui:graph.view.mighty}} switch in the header. Switching keeps the conversation and your draft, and each pane remembers its choice. Antigravity and Gemini panes have only the default view.
 - {{ui:graph.view.default}}: the conversation as a log you read top to bottom.
 - {{ui:graph.view.mighty}}: requests, sub-agents, background work and results as a flow of blocks.
 

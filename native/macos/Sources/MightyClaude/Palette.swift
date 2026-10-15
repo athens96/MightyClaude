@@ -133,7 +133,7 @@ enum Palette {
     }
 
     static func name(_ provider: String) -> String {
-        switch provider { case "codex": return "Codex"; case "gemini": return "Gemini"; default: return "Claude" }
+        switch provider { case "codex": return "Codex"; case "gemini": return "Antigravity"; default: return "Claude" }
     }
 
     /// A pane's status in words, through the locale (`session.state.*`).

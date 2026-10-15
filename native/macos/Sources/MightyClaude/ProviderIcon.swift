@@ -33,7 +33,7 @@ enum ProviderBrand {
     }
     /// The first brand colour, for text and tints next to the mark.
     static func color(_ provider: String) -> Color { Color(nsColor: nsColors(provider).first ?? .labelColor) }
-    /// One colour for Claude and Codex; Gemini's blue-to-rose sweep.
+    /// One colour for Claude and Codex; Antigravity's Gemini blue-to-rose sweep.
     static func gradient(_ provider: String) -> LinearGradient {
         LinearGradient(colors: nsColors(provider).map { Color(nsColor: $0) }, startPoint: .bottomLeading, endPoint: .topTrailing)
     }

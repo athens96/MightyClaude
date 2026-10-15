@@ -3,7 +3,7 @@ title: Getting started
 order: 1
 section: getting-started
 ---
-Mighty Claude is a desktop app for using Claude Code, Codex CLI and Gemini CLI side by side in one window. You open several panes on one project folder, and each pane keeps its own conversation and settings.
+Mighty Claude is a desktop app for using Claude Code, Codex CLI and Google's Antigravity CLI (Gemini CLI on Windows) side by side in one window. You open several panes on one project folder, and each pane keeps its own conversation and settings.
 
 ## What you need {#requirements}
 - macOS 14 or later. On Windows: Windows 10 (version 2004) or later, or Windows 11.
@@ -13,7 +13,8 @@ Mighty Claude is a desktop app for using Claude Code, Codex CLI and Gemini CLI s
 |---|---|
 | Claude Code | `npm install -g @anthropic-ai/claude-code` |
 | Codex CLI | `npm install -g @openai/codex` |
-| Gemini CLI | `npm install -g @google/gemini-cli` |
+| Antigravity CLI (Mac) | [Antigravity on the Mac](agent-pane.md#antigravity) |
+| Gemini CLI (Windows) | `npm install -g @google/gemini-cli` |
 
 > [!tip]
 > Once the app is open, {{ui:settings.nav.tools}} shows which CLIs are ready and lets you copy the install commands. You sign in on the {{ui:settings.nav.cli}} tab. See [Settings](settings.md#components).

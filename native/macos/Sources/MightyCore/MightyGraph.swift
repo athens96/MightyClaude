@@ -87,7 +87,7 @@ public struct MightyGraphRun: Codable, Sendable, Equatable, Identifiable {
 
 public enum MightyGraphSupport {
     /// AI panes whose runs produce a graph: Claude via stream-json + Mods,
-    /// Codex via exec JSONL. Gemini's stream has no agent structure.
+    /// Codex via exec JSONL. Antigravity's subagent steps are not read yet.
     public static let providers = ["claude", "codex"]
     public static func terminal(_ status: String) -> Bool { ["completed", "error", "stopped"].contains(status) }
 

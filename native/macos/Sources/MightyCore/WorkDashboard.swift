@@ -225,7 +225,7 @@ public enum WorkDashboard {
 
     /// What the sidebar row's second line holds, in order.
     public enum MetaPart: Equatable, Sendable {
-        /// The agent's provider (Claude, Codex, Gemini).
+        /// The agent's provider (Claude, Codex, Antigravity).
         case provider
         case elapsed
         case context(Int)

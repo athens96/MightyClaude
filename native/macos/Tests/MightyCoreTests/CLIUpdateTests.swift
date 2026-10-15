@@ -86,7 +86,7 @@ final class CLIUpdateTests {
     }
 
     @Test func homebrewUsesActualCaskOrFormulaAndOnlyNamedPackage() async throws {
-        for (container, provider, package) in [("Caskroom", "codex", "codex"), ("Cellar", "gemini", "gemini-cli")] {
+        for (container, provider, package) in [("Caskroom", "codex", "codex"), ("Cellar", "claude", "claude-code")] {
             let root = try fixture(); let brewRoot = root.appendingPathComponent("brew installation")
             let binary = brewRoot.appendingPathComponent("\(container)/\(package)/1.0.0/bin/\(provider)")
             try script(versionScript + "exit 91\n", at: binary)
@@ -105,7 +105,7 @@ final class CLIUpdateTests {
     }
 
     @Test func npmTargetsOfficialPackageAndOriginalPrefixWithPairedNode() async throws {
-        for (provider, name) in [("claude", "@anthropic-ai/claude-code"), ("codex", "@openai/codex"), ("gemini", "@google/gemini-cli")] {
+        for (provider, name) in [("claude", "@anthropic-ai/claude-code"), ("codex", "@openai/codex")] {
             let root = try fixture(); let prefix = try npmFixture(root, provider: provider, packageName: name)
             var env = environment(root); env["npm_config_prefix"] = root.appendingPathComponent("wrong prefix").path
             let service = CLIUpdateService(environment: env, homeDirectory: root)
@@ -138,32 +138,46 @@ final class CLIUpdateTests {
 
     @Test func npmRejectsWrongManifestAndPreservesPrereleaseChannels() async throws {
         for version in ["0.44.0-preview.1", "0.44.0-nightly.20260916", "not-semver"] {
-            let root = try fixture(); _ = try npmFixture(root, provider: "gemini", packageName: "@google/gemini-cli", version: version)
+            let root = try fixture(); _ = try npmFixture(root, provider: "codex", packageName: "@openai/codex", version: version)
             let service = CLIUpdateService(environment: environment(root), homeDirectory: root)
-            let result = await service.update(provider: "gemini")
+            let result = await service.update(provider: "codex")
             #expect(result.status == "skipped" && result.method == "npm")
             #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("arguments").path))
             await service.shutdown()
         }
-        let root = try fixture(); let prefix = try npmFixture(root, provider: "gemini", packageName: "@google/gemini-cli")
-        let packageRoot = prefix.appendingPathComponent("lib/node_modules/@google/gemini-cli")
-        try package(packageRoot, name: "unrelated-package", binary: "gemini", entry: "bin/entry.js")
+        let root = try fixture(); let prefix = try npmFixture(root, provider: "codex", packageName: "@openai/codex")
+        let packageRoot = prefix.appendingPathComponent("lib/node_modules/@openai/codex")
+        try package(packageRoot, name: "unrelated-package", binary: "codex", entry: "bin/entry.js")
         let service = CLIUpdateService(environment: environment(root), homeDirectory: root)
-        #expect(await service.update(provider: "gemini").status == "skipped")
-        try package(packageRoot, name: "@google/gemini-cli", binary: "gemini", entry: "../outside.js")
-        #expect(await service.update(provider: "gemini").status == "skipped")
+        #expect(await service.update(provider: "codex").status == "skipped")
+        try package(packageRoot, name: "@openai/codex", binary: "codex", entry: "../outside.js")
+        #expect(await service.update(provider: "codex").status == "skipped")
         #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("arguments").path))
         await service.shutdown()
     }
 
     @Test func failureDoesNotBlockSubsequentProviderUpdate() async throws {
         let root = try fixture(); _ = try native(root, update: "printf 'network unavailable' >&2\nexit 23\n")
-        _ = try npmFixture(root, provider: "gemini", packageName: "@google/gemini-cli")
-        let service = CLIUpdateService(environment: environment(root), homeDirectory: root)
+        // Antigravity's one binary updates itself with `agy update` where its installer puts it.
+        try script(versionScript + successfulUpdate, at: root.appendingPathComponent(".local/bin/agy"))
+        let service = CLIUpdateService(environment: environment(root, extraBins: [root.appendingPathComponent(".local/bin")]), homeDirectory: root)
         let failed = await service.update(provider: "claude")
         #expect(failed.status == "failed" && failed.beforeVersion == "1.0.0" && failed.afterVersion == nil)
         #expect(failed.detail.contains("23")); #expect(failed.output.contains("network unavailable"))
-        #expect(await service.update(provider: "gemini").status == "updated")
+        let antigravity = await service.update(provider: "gemini")
+        #expect(antigravity.status == "updated" && antigravity.method == "native" && antigravity.afterVersion == "2.0.0")
+        #expect(try String(contentsOf: root.appendingPathComponent("arguments"), encoding: .utf8) == "<update>\n")
+        await service.shutdown()
+    }
+
+    @Test func antigravityElsewhereIsNeverUpdated() async throws {
+        let root = try fixture()
+        try script(versionScript + "printf 'MUST_NOT_RUN' > \"$FIXTURE_LOG\"\n", at: root.appendingPathComponent("bin/agy"))
+        let service = CLIUpdateService(environment: environment(root), homeDirectory: root)
+        let inspected = await service.inspect(provider: "gemini")
+        #expect(!inspected.canUpdate && inspected.version == "1.0.0" && inspected.detail.contains("install.sh"))
+        #expect(await service.update(provider: "gemini").status == "skipped")
+        #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("arguments").path))
         await service.shutdown()
     }
 

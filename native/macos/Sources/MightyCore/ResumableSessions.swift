@@ -73,7 +73,7 @@ public struct ResumableSessionQuery: Sendable {
 /// Lists the sessions a workspace folder's CLIs recorded, read-only and
 /// bounded: only the head of a record (and its tail for the model) unless it
 /// is small enough to read whole for a request count. Synchronous and
-/// file-bound: call it off the main actor. Gemini is not listed: the app does
+/// file-bound: call it off the main actor. Antigravity is not listed: the app does
 /// not read its records.
 public enum ResumableSessions {
     public static let providers = ["claude", "codex"]

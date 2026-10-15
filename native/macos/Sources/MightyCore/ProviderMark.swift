@@ -5,7 +5,8 @@ import Foundation
 /// system symbols. Each outline sits in a 24×24 box and uses only absolute
 /// move / line / cubic / close commands (arcs and quadratics were converted
 /// when the data was prepared). Claude and Gemini follow the Simple Icons
-/// outlines (CC0); the Codex pane carries OpenAI's mark. The marks remain
+/// outlines (CC0); the Codex pane carries OpenAI's mark and the Antigravity
+/// pane (the `gemini` id) Gemini's. The marks remain
 /// trademarks of Anthropic, OpenAI and Google and only identify their CLIs.
 public enum ProviderMark {
     public static let box: CGFloat = 24

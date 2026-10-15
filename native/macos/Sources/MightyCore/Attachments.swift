@@ -120,6 +120,12 @@ public struct ProviderInput {
         var data = try JSONSerialization.data(withJSONObject: ["type": "user", "message": ["role": "user", "content": content], "parent_tool_use_id": NSNull()], options: [.sortedKeys, .withoutEscapingSlashes])
         data.append(10); return data
     }
+    /// The one stdin line of an Antigravity run (`agy --input-format stream-json`):
+    /// each line is a turn, and closing stdin after it ends the session.
+    public static func antigravityUserMessage(_ text: String) throws -> Data {
+        var data = try JSONSerialization.data(withJSONObject: ["event": "user", "message": ["content": text]], options: [.sortedKeys, .withoutEscapingSlashes])
+        data.append(10); return data
+    }
     public static func prepare(_ request: StartRunRequest, pluginDirectory: URL, attachments: AttachmentPreparation, allowPermissionPrompts: Bool = false, paneMCPBinding: PaneMCPBinding? = nil, codexHome: URL? = nil) throws -> ProviderInput {
         guard request.provider != "codex" || request.settings.permissionMode != "onRequest" else {
             throw MightyError(L("attachments.error.codexOnRequest"))
@@ -129,6 +135,7 @@ public struct ProviderInput {
             if request.provider == "claude", allowPermissionPrompts {
                 return ProviderInput(arguments: arguments, standardInput: try claudeUserMessage(request.input))
             }
+            if request.provider == "gemini" { return ProviderInput(arguments: arguments, standardInput: try antigravityUserMessage(request.input)) }
             return ProviderInput(arguments: arguments, standardInput: Data(request.input.utf8))
         }
         guard attachments.files.map(\.attachment) == request.attachments, let directory = attachments.directory else { throw MightyError(L("attachments.error.notPrepared")) }
@@ -150,15 +157,11 @@ public struct ProviderInput {
             let references = attachments.files.filter { !$0.attachment.mediaType.hasPrefix("image/") }.map(AttachmentSupport.reference)
             return ProviderInput(arguments: arguments, standardInput: Data(([prompt] + references).joined(separator: "\n\n").utf8))
         case "gemini":
-            arguments += ["--include-directories", directory.path]
-            let references = attachments.files.map { file -> String in
-                // Gemini's POSIX parser unescapes backslashes; quotes are only
-                // stripped on Windows. Escape delimiters in this Mac path.
-                let delimiters = CharacterSet(charactersIn: " \t\n\r,;!?()[]{}\"'\\|*?$`#&<>~")
-                let path = file.url.path.unicodeScalars.map { delimiters.contains($0) ? "\\\($0)" : String($0) }.joined()
-                return "@\(path)\n\(AttachmentSupport.reference(file))"
-            }
-            return ProviderInput(arguments: arguments, standardInput: Data(([prompt] + references).joined(separator: "\n\n").utf8))
+            // agy reads a file outside the workspace once its folder is added;
+            // the prompt names each copy by its plain path (JSON's `\/` unescaped).
+            arguments += ["--add-dir", directory.path]
+            let references = attachments.files.map { AttachmentSupport.reference($0).replacingOccurrences(of: "\\/", with: "/") }
+            return ProviderInput(arguments: arguments, standardInput: try antigravityUserMessage(([prompt] + references).joined(separator: "\n\n")))
         default: throw MightyError(L("attachments.error.unsupportedProvider"))
         }
     }

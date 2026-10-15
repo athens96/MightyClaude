@@ -48,10 +48,8 @@ public enum CLIAccountMethod {
     public static let claudeOther = "claude-other"
     public static let codexChatGPT = "codex-chatgpt"
     public static let codexAPIKey = "codex-api-key"
+    /// Antigravity's one sign-in: a Google account (personal, or Business for Gemini Enterprise).
     public static let geminiGoogle = "gemini-google"
-    public static let geminiAPIKey = "gemini-api-key"
-    public static let geminiVertex = "gemini-vertex"
-    public static let geminiOther = "gemini-other"
 }
 
 public enum CLILoginOption: String, Sendable, CaseIterable {
@@ -112,53 +110,22 @@ public enum CLIAccountSupport {
         return CLIAccountStatus(provider: "codex", loggedIn: true, method: method, methodId: methodId, account: account, plan: plan)
     }
 
-    /// The method label of Gemini's Google sign-in, the only one a sign-in renews.
+    /// The method label of Antigravity's Google sign-in.
     public static var geminiGoogleMethod: String { L("windows.cli.method.googleAccount") }
-    /// Gemini has no status command: the selected auth type is in
-    /// `settings.json`, the Google account in `google_accounts.json`, and the
-    /// OAuth session exists while `oauth_creds.json` does.
-    public static func geminiStatus(home: URL = FileManager.default.homeDirectoryForCurrentUser, environment: [String: String] = ProcessInfo.processInfo.environment) -> CLIAccountStatus {
-        let directory = home.appendingPathComponent(".gemini", isDirectory: true)
-        func object(_ name: String) -> [String: Any]? {
-            guard let data = boundedData(directory.appendingPathComponent(name)) else { return nil }
-            return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    /// Antigravity has no status command, and its credentials live in the
+    /// keychain, so the app asks it for its model list (`agy models`): that
+    /// works only while signed in, and fails with "authentication required"
+    /// once the sign-in is gone. Anything else (no network, a timeout) stays
+    /// unknown. It has no sign-out command either.
+    public static func antigravityStatus(exitCode: Int32, output: String) -> CLIAccountStatus {
+        let noSignOut = L("settings.cliAccounts.detailAntigravityNoSignOut")
+        if exitCode == 0 {
+            return CLIAccountStatus(provider: "gemini", loggedIn: true, method: geminiGoogleMethod, methodId: CLIAccountMethod.geminiGoogle, detail: noSignOut, canSignOut: false)
         }
-        let settings = object("settings.json")
-        let selected = ((settings?["security"] as? [String: Any])?["auth"] as? [String: Any])?["selectedType"] as? String ?? settings?["selectedAuthType"] as? String
-        let hasOAuth = FileManager.default.fileExists(atPath: directory.appendingPathComponent("oauth_creds.json").path)
-        let active = (object("google_accounts.json")?["active"] as? String).map(clean)
-        switch selected {
-        case "oauth-personal", nil:
-            guard hasOAuth else { return CLIAccountStatus(provider: "gemini", loggedIn: false) }
-            return CLIAccountStatus(provider: "gemini", loggedIn: true, method: geminiGoogleMethod, methodId: CLIAccountMethod.geminiGoogle, account: active)
-        case "gemini-api-key":
-            let present = environment["GEMINI_API_KEY"]?.isEmpty == false
-            return CLIAccountStatus(provider: "gemini", loggedIn: present ? true : nil, method: L("windows.cli.method.geminiApiKey"), methodId: CLIAccountMethod.geminiAPIKey,
-                                    detail: present ? L("settings.cliAccounts.detailGeminiApiKeyPresent") : L("settings.cliAccounts.detailGeminiApiKeyAbsent"), canSignOut: false)
-        case "vertex-ai":
-            let configured = environment["GOOGLE_APPLICATION_CREDENTIALS"]?.isEmpty == false || environment["GOOGLE_CLOUD_PROJECT"]?.isEmpty == false
-                || FileManager.default.fileExists(atPath: home.appendingPathComponent(".config/gcloud/application_default_credentials.json").path)
-            return CLIAccountStatus(provider: "gemini", loggedIn: configured ? true : nil, method: "Vertex AI", methodId: CLIAccountMethod.geminiVertex,
-                                    detail: configured ? L("settings.cliAccounts.detailVertexPresent") : L("settings.cliAccounts.detailVertexAbsent"), canSignOut: false)
-        default: return CLIAccountStatus(provider: "gemini", loggedIn: hasOAuth ? true : nil, method: selected.map(clean), methodId: selected == nil ? nil : CLIAccountMethod.geminiOther, account: active, canSignOut: hasOAuth)
+        if CLIAuthFailure.antigravity(text: output) {
+            return CLIAccountStatus(provider: "gemini", loggedIn: false, method: geminiGoogleMethod, methodId: CLIAccountMethod.geminiGoogle, canSignOut: false)
         }
-    }
-
-    /// Signs Gemini out the way its `/auth` screen does: drop the OAuth
-    /// session and move the active Google account to the old list.
-    public static func geminiLogout(home: URL = FileManager.default.homeDirectoryForCurrentUser) throws {
-        let directory = home.appendingPathComponent(".gemini", isDirectory: true)
-        let credentials = directory.appendingPathComponent("oauth_creds.json")
-        if FileManager.default.fileExists(atPath: credentials.path) { try FileManager.default.removeItem(at: credentials) }
-        let accounts = directory.appendingPathComponent("google_accounts.json")
-        guard let data = try? Data(contentsOf: accounts), var object = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let active = object["active"] as? String else { return }
-        var old = object["old"] as? [String] ?? []
-        if !old.contains(active) { old.append(active) }
-        object["old"] = old; object["active"] = NSNull()
-        // Another tool owns this file: keep its mode across the atomic rewrite.
-        let mode = try? FileManager.default.attributesOfItem(atPath: accounts.path)[.posixPermissions]
-        try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted]).write(to: accounts, options: .atomic)
-        if let mode { try? FileManager.default.setAttributes([.posixPermissions: mode], ofItemAtPath: accounts.path) }
+        return CLIAccountStatus(provider: "gemini", detail: exitCode == -1 ? L("settings.cliAccounts.detailAntigravityTimeout") : L("settings.cliAccounts.detailAntigravityUnknown"), canSignOut: false)
     }
 
     /// The command typed into the in-app terminal. Bedrock uses the CLI's
@@ -172,13 +139,15 @@ public enum CLIAccountSupport {
             case .bedrock: return "CLAUDE_CODE_USE_BEDROCK=1 claude /setup-bedrock"
             }
         case "codex": return "codex login"
-        case "gemini": return "gemini"
+        // Antigravity signs in the first time it runs interactively.
+        case "gemini": return ProviderOptions.executable(provider)
         default: return nil
         }
     }
-    /// argv for the CLI's own status / logout command (Gemini has neither).
+    /// argv for the CLI's own status / logout command. Antigravity has
+    /// neither; its model list stands in for the status (`antigravityStatus`).
     public static func statusArguments(provider: String) -> [String]? {
-        switch provider { case "claude": return ["claude", "auth", "status", "--json"]; case "codex": return ["codex", "login", "status"]; default: return nil }
+        switch provider { case "claude": return ["claude", "auth", "status", "--json"]; case "codex": return ["codex", "login", "status"]; case "gemini": return [ProviderOptions.executable(provider), "models"]; default: return nil }
     }
     public static func logoutArguments(provider: String) -> [String]? {
         switch provider { case "claude": return ["claude", "auth", "logout"]; case "codex": return ["codex", "logout"]; default: return nil }
@@ -221,9 +190,6 @@ public actor CLIAccountService {
         if fixedEnvironment == nil { await environmentResolver.invalidate(workspacePath: home.path) }
     }
 
-    /// When Gemini's credentials file was last written (`CLIGeminiLogin`).
-    public nonisolated func geminiCredentialsStamp() -> Date? { CLIGeminiLogin.credentialsStamp(home: home) }
-
     /// The environment the status and logout commands run with, for a sign-in
     /// the app runs in the background itself.
     public func commandEnvironment() async -> [String: String] { await environmentSnapshot().values }
@@ -237,13 +203,10 @@ public actor CLIAccountService {
 
     private func status(provider: String, snapshot: CLIEnvironmentSnapshot) async -> CLIAccountStatus {
         let environment = snapshot.values
-        if provider == "gemini" {
-            guard installed("gemini", environment: environment) else { return CLIAccountStatus(provider: provider, installed: false, detail: L("settings.cliAccounts.detailGeminiNotInstalled")) }
-            return CLIAccountSupport.geminiStatus(home: home, environment: environment)
-        }
         guard let arguments = CLIAccountSupport.statusArguments(provider: provider) else { return CLIAccountStatus(provider: provider, installed: false, detail: L("settings.cliAccounts.detailUnsupportedProvider")) }
         guard installed(arguments[0], environment: environment) else { return CLIAccountStatus(provider: provider, installed: false, detail: L("settings.cliAccounts.detailNotInstalledTemplate", ["provider": ProviderOptions.label(provider)])) }
         guard let result = await run(arguments, environment: environment, timeout: 20) else { return CLIAccountStatus(provider: provider, detail: L("settings.cliAccounts.detailRunFailed")) }
+        if provider == "gemini" { return CLIAccountSupport.antigravityStatus(exitCode: result.exitCode, output: String(decoding: result.stdout + result.stderr, as: UTF8.self)) }
         if provider == "claude" {
             var status = CLIAccountSupport.parseClaudeStatus(result.stdout)
             // Only the CLI's own JSON says "signed out"; a timeout or an old
@@ -259,12 +222,11 @@ public actor CLIAccountService {
         return CLIAccountSupport.parseCodexStatus(text: text, authJSON: auth)
     }
 
-    /// Runs the CLI's logout (or Gemini's file-level sign-out) and reports the new status.
+    /// Runs the CLI's logout and reports the new status. Antigravity has no
+    /// logout command, so its status comes back unchanged.
     public func logout(provider: String) async -> CLIAccountStatus {
         let snapshot = await environmentSnapshot()
-        if provider == "gemini" {
-            do { try CLIAccountSupport.geminiLogout(home: home) } catch { return CLIAccountStatus(provider: provider, detail: L("settings.cliAccounts.detailGeminiLogoutFailedTemplate", ["reason": error.localizedDescription])) }
-        } else if let arguments = CLIAccountSupport.logoutArguments(provider: provider) {
+        if let arguments = CLIAccountSupport.logoutArguments(provider: provider) {
             _ = await run(arguments, environment: snapshot.values, timeout: 30)
         }
         var result = await status(provider: provider, snapshot: snapshot)

@@ -25,7 +25,8 @@ public actor StateRepository {
         guard !loaded else { return }
         let exists = FileManager.default.fileExists(atPath: stateURL.path)
         let source = exists ? stateURL : legacyStateURL.flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
-        var restored = AppSnapshot()
+        // A new profile never held Gemini CLI panes.
+        var restored = AppSnapshot(); restored.antigravityMigrated = true
         if let source {
             do {
                 let values = try source.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
@@ -167,7 +168,9 @@ public actor StateRepository {
         // computer. It is dropped here, and normalize then drops everything
         // keyed by its id, so its path never passes as a local folder.
         let workspaces = ((object["workspaces"] as? [Any]) ?? []).prefix(64).filter { (($0 as? [String: Any])?["remote"]).map { $0 is NSNull } ?? true }.compactMap { decode($0, Workspace.self) }
-        let sessions = ((object["sessions"] as? [Any]) ?? []).prefix(128).compactMap { decode($0, RunSession.self) }
+        // Once per profile, on load: `gemini` panes now run Antigravity (`AntigravityMigration`).
+        let migrating = restoring && object["antigravityMigrated"] as? Bool != true
+        let sessions = ((object["sessions"] as? [Any]) ?? []).prefix(128).compactMap { decode($0, RunSession.self) }.map { migrating ? AntigravityMigration.migrated($0) : $0 }
         var paneLayouts: [String: PaneLayoutNode]?
         if let layouts = object["paneLayouts"] as? [String: Any] {
             paneLayouts = [:]
@@ -194,7 +197,9 @@ public actor StateRepository {
             guard let bytes = try? JSONSerialization.data(withJSONObject: value) else { return nil }
             return try? decoder.decode(MobileRemoteSettings.self, from: bytes)
         }
-        return normalize(AppSnapshot(workspaces: workspaces, sessions: sessions, activeWorkspaceId: object["activeWorkspaceId"] as? String, activeSessionId: object["activeSessionId"] as? String, layout: object["layout"] as? String ?? "grid", theme: object["theme"] as? String ?? "dark", sidebarWidth: object["sidebarWidth"] as? Double ?? SidebarFold.defaultWidth, paneLayouts: paneLayouts, paneLayoutModes: workspaceStrings("paneLayoutModes"), paneLayoutActiveSessionIds: workspaceStrings("paneLayoutActiveSessionIds"), autoUpdateCLIs: autoUpdateCLIs, expandedWorkspaceIds: object["expandedWorkspaceIds"] as? [String], mobileRemote: mobileRemote, autoUpdatePlugins: jsonBool("autoUpdatePlugins"), sidebarCollapsed: jsonBool("sidebarCollapsed"), autoLoginCLIs: jsonBool("autoLoginCLIs"), showsBackgroundWork: jsonBool("showsBackgroundWork"), backgroundWorkOpen: jsonBool("backgroundWorkOpen")), restoring: restoring)
+        var snapshot = AppSnapshot(workspaces: workspaces, sessions: sessions, activeWorkspaceId: object["activeWorkspaceId"] as? String, activeSessionId: object["activeSessionId"] as? String, layout: object["layout"] as? String ?? "grid", theme: object["theme"] as? String ?? "dark", sidebarWidth: object["sidebarWidth"] as? Double ?? SidebarFold.defaultWidth, paneLayouts: paneLayouts, paneLayoutModes: workspaceStrings("paneLayoutModes"), paneLayoutActiveSessionIds: workspaceStrings("paneLayoutActiveSessionIds"), autoUpdateCLIs: autoUpdateCLIs, expandedWorkspaceIds: object["expandedWorkspaceIds"] as? [String], mobileRemote: mobileRemote, autoUpdatePlugins: jsonBool("autoUpdatePlugins"), sidebarCollapsed: jsonBool("sidebarCollapsed"), autoLoginCLIs: jsonBool("autoLoginCLIs"), showsBackgroundWork: jsonBool("showsBackgroundWork"), backgroundWorkOpen: jsonBool("backgroundWorkOpen"))
+        snapshot.antigravityMigrated = migrating ? true : jsonBool("antigravityMigrated")
+        return normalize(snapshot, restoring: restoring)
     }
 
     public static let totalLogBudget = 4 * 1024 * 1024
@@ -299,6 +304,7 @@ public actor StateRepository {
         output.autoLoginCLIs = value.autoLoginCLIs
         output.showsBackgroundWork = value.showsBackgroundWork
         output.backgroundWorkOpen = value.backgroundWorkOpen
+        output.antigravityMigrated = value.antigravityMigrated
         output.expandedWorkspaceIds = value.expandedWorkspaceIds.map { Array(Set($0).intersection(workspaceIds)).sorted() }
         output.mobileRemote = value.mobileRemote?.normalized
         return output

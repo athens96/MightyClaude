@@ -3,7 +3,7 @@ title: 快速入门
 order: 1
 section: getting-started
 ---
-Mighty Claude 是一款桌面应用，可以在一个窗口中并排使用 Claude Code、Codex CLI 和 Gemini CLI。你可以在一个项目文件夹中打开多个窗格，每个窗格各自保留对话和设置。
+Mighty Claude 是一款桌面应用，可以在一个窗口中并排使用 Claude Code、Codex CLI 和 Google 的 Antigravity CLI（Windows 上为 Gemini CLI）。你可以在一个项目文件夹中打开多个窗格，每个窗格各自保留对话和设置。
 
 ## 准备工作 {#requirements}
 - macOS 14 或更高版本。Windows 需要 Windows 10（版本 2004）或更高版本，或 Windows 11。
@@ -13,7 +13,8 @@ Mighty Claude 是一款桌面应用，可以在一个窗口中并排使用 Claud
 |---|---|
 | Claude Code | `npm install -g @anthropic-ai/claude-code` |
 | Codex CLI | `npm install -g @openai/codex` |
-| Gemini CLI | `npm install -g @google/gemini-cli` |
+| Antigravity CLI (Mac) | [Mac 上的 Antigravity](agent-pane.md#antigravity) |
+| Gemini CLI (Windows) | `npm install -g @google/gemini-cli` |
 
 > [!tip]
 > 打开应用后，可以在{{ui:settings.nav.tools}}标签页中查看哪些 CLI 已就绪，并复制安装命令。登录在{{ui:settings.nav.cli}}标签页中进行。请参阅[设置](settings.md#components)。

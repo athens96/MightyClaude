@@ -23,20 +23,6 @@ struct SessionUsageTests {
             try await Task.sleep(for: .milliseconds(10))
         }
     }
-    private func gemini(_ directory: URL) throws -> URL {
-        let file = directory.appendingPathComponent("gemini")
-        let source = #"""
-        #!/bin/sh
-        if [ "$1" = '--version' ]; then printf '0.43.0\n'; exit 0; fi
-        /bin/cat >/dev/null
-        printf '%s\n' '{"type":"init","session_id":"gemini-fixture","model":"gemini-2.5-pro"}'
-        printf '%s\n' '{"type":"result","status":"success","stats":{"input_tokens":1200,"output_tokens":80,"total_tokens":1300,"cached":400}}'
-        """#
-        try Data(source.utf8).write(to: file)
-        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: file.path)
-        return file
-    }
-
     @Test func codexTotalsReplaceAcrossResumeAndNeverBecomeContext() throws {
         var samples: [SessionUsage] = []
         let parser = CLIStreamParser(provider: "codex", log: { _, _ in }, resume: { _ in }, usage: { samples.append($0) })
@@ -61,18 +47,23 @@ struct SessionUsageTests {
         #expect(resumed.last?.totalTokens == 1100)
     }
 
-    @Test func geminiCumulativePromptIncludesCacheAndKeepsExactContextUnknown() throws {
+    @Test func antigravityConversationTotalsReplaceEachOtherAndKeepContextUnknown() throws {
         var samples: [SessionUsage] = []
         let parser = CLIStreamParser(provider: "gemini", log: { _, _ in }, resume: { _ in }, usage: { samples.append($0) })
-        try push(["type": "init", "session_id": "gemini-one", "model": "auto"], into: parser)
-        let result: [String: Any] = ["type": "result", "stats": ["input_tokens": 1000, "input": 400, "cached": 600, "output_tokens": 100, "total_tokens": 1150, "models": ["gemini-2.5-pro": [:]]]]
+        try push(["event": "init", "conversation_id": "agy-one", "init": ["model": "gemini-4-argon-medium"]], into: parser)
+        #expect(samples.last?.model == "gemini-4-argon-medium" && samples.last?.providerSessionId == "agy-one" && samples.last?.source == "antigravity.stream-json")
+        // A step's own usage is not the conversation's; only the result's counts.
+        try push(["event": "step_update", "step_update": ["step_index": 1, "state": "DONE", "step_type": "agent_response", "usage": ["input_tokens": 5, "output_tokens": 5, "total_tokens": 10]]], into: parser)
+        #expect(samples.last?.inputTokens == nil)
+        let result: [String: Any] = ["event": "result", "result": ["conversation_id": "agy-one", "status": "SUCCESS", "usage": ["input_tokens": 1000, "output_tokens": 100, "thinking_tokens": 40, "cache_read_tokens": 600, "total_tokens": 1100]]]
         try push(result, into: parser); let count = samples.count; try push(result, into: parser)
         #expect(samples.count == count)
-        #expect(samples.last?.inputTokens == 1000 && samples.last?.cacheReadTokens == 600 && samples.last?.totalTokens == 1150)
-        #expect(samples.last?.model == "gemini-2.5-pro" && samples.last?.tokenScope == "session")
-        #expect(samples.last?.contextPercent == nil && samples.last?.reasoningTokens == nil)
+        // agy's input_tokens leaves cached input out; here input includes it.
+        #expect(samples.last?.inputTokens == 1600 && samples.last?.cacheReadTokens == 600 && samples.last?.reasoningTokens == 40 && samples.last?.totalTokens == 1700)
+        #expect(samples.last?.model == "gemini-4-argon-medium" && samples.last?.tokenScope == "session")
+        #expect(samples.last?.contextPercent == nil)
         let last = samples.last
-        try push(["type": "result", "stats": ["input_tokens": -1, "output_tokens": 0, "total_tokens": 0]], into: parser)
+        try push(["event": "result", "result": ["usage": ["input_tokens": -1, "output_tokens": 0, "total_tokens": 0]]], into: parser)
         #expect(samples.last == last)
     }
 

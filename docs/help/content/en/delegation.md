@@ -120,5 +120,5 @@ The card's {{ui:delegation.card.discard}} button removes the child's worktree an
 | Task (TASK.md) | 64 KiB |
 | Free disk needed | 10 GB |
 
-- Both the parent and its children must be Claude panes. Codex and Gemini panes do not delegate.
+- Both the parent and its children must be Claude panes. Codex and Antigravity (Gemini) panes do not delegate.
 - Both the Mac app and the Windows app turn it on with a hidden switch ([Turn it on or off](#enable)). The phone has no new screen, but held rows show in its queue too.

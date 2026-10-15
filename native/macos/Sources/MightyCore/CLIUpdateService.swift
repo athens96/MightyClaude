@@ -135,7 +135,7 @@ public actor CLIUpdateService {
             return CLIUpdatePlan(installation: CLIUpdateInstallation(provider: provider, detail: L("settings.cliUpdate.detailUnsupportedProvider")), invocation: nil)
         }
         guard let command = try await installedCommand(provider: provider, configuration: configuration) else {
-            let present = executableCandidates(provider, environment: configuration.environment).contains { FileManager.default.isExecutableFile(atPath: $0.path) }
+            let present = executableCandidates(ProviderOptions.executable(provider), environment: configuration.environment).contains { FileManager.default.isExecutableFile(atPath: $0.path) }
             return CLIUpdatePlan(installation: CLIUpdateInstallation(provider: provider, method: present ? "unknown" : "missing",
                 detail: present ? L("settings.cliUpdate.detailVersionUnknown") : L("settings.cliUpdate.detailMissing")), invocation: nil)
         }
@@ -143,6 +143,18 @@ public actor CLIUpdateService {
         var installation = CLIUpdateInstallation(provider: provider, version: command.version, executablePath: command.executable.path,
             detail: L("settings.cliUpdate.detailUnknownMethod"))
         var environment = configuration.environment
+        if provider == "gemini" {
+            // Antigravity's installer (`curl … install.sh | bash`) puts one binary in
+            // ~/.local/bin, which `agy update` replaces; a copy anywhere else is left alone.
+            let official = configuration.home.appendingPathComponent(".local/bin/agy").resolvingSymlinksInPath().standardizedFileURL
+            guard resolved == official else {
+                installation.detail = L("settings.cliUpdate.detailAntigravityElsewhere", ["command": ComponentCatalog.installCommand(provider: provider) ?? ""])
+                return CLIUpdatePlan(installation: installation, invocation: nil)
+            }
+            installation.method = "native"; installation.canUpdate = true
+            installation.detail = L("settings.cliUpdate.detailNativeAntigravity")
+            return CLIUpdatePlan(installation: installation, invocation: CLIUpdateInvocation(executable: command.executable, arguments: ["update"], environment: environment))
+        }
         if let brew = brewInstallation(resolved, provider: provider) {
             installation.method = brew.cask ? "brew-cask" : "brew-formula"
             guard FileManager.default.isExecutableFile(atPath: brew.executable.path) else {
@@ -193,7 +205,7 @@ public actor CLIUpdateService {
 
     private static func installedCommand(provider: String, configuration: CLIUpdateConfiguration) async throws -> ProviderCommand? {
         guard ProviderOptions.ids.contains(provider) else { return nil }
-        for path in executableCandidates(provider, environment: configuration.environment) where FileManager.default.isExecutableFile(atPath: path.path) {
+        for path in executableCandidates(ProviderOptions.executable(provider), environment: configuration.environment) where FileManager.default.isExecutableFile(atPath: path.path) {
             try Task.checkCancellation()
             do {
                 let result = try await ProcessCapture.run(executable: path, arguments: ["--version"], environment: configuration.environment,
@@ -218,7 +230,7 @@ public actor CLIUpdateService {
     private static func validAbsolutePath(_ path: String) -> Bool { path.hasPrefix("/") && !path.contains("\0") }
 
     private static func brewInstallation(_ path: URL, provider: String) -> (executable: URL, package: String, cask: Bool)? {
-        let package = ["claude": "claude-code", "codex": "codex", "gemini": "gemini-cli"][provider]!
+        guard let package = ["claude": "claude-code", "codex": "codex"][provider] else { return nil }
         let parts = path.pathComponents
         guard let index = parts.firstIndex(where: { $0 == "Caskroom" || $0 == "Cellar" }), index > 1,
               parts.count > index + 3, parts[index + 1] == package else { return nil }
@@ -227,7 +239,7 @@ public actor CLIUpdateService {
     }
 
     private static func npmInstallation(_ path: URL, provider: String) -> (prefix: URL, name: String, version: String)? {
-        let name = ["claude": "@anthropic-ai/claude-code", "codex": "@openai/codex", "gemini": "@google/gemini-cli"][provider]!
+        guard let name = ["claude": "@anthropic-ai/claude-code", "codex": "@openai/codex"][provider] else { return nil }
         let components = path.pathComponents
         for index in components.indices where components[index] == "lib" && index + 3 < components.count && components[index + 1] == "node_modules" {
             let prefix = URL(fileURLWithPath: NSString.path(withComponents: Array(components.prefix(index))))

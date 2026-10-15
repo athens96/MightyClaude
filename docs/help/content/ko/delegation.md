@@ -120,5 +120,5 @@ Windows에서는 `HKEY_CURRENT_USER\Software\MightyClaudeNative` 아래의 `dele
 | 맡기는 일(TASK.md) | 64 KiB |
 | 필요한 디스크 여유 | 10 GB |
 
-- 부모와 자식 모두 Claude 창이어야 합니다. Codex와 Gemini 창은 위임하지 않습니다.
+- 부모와 자식 모두 Claude 창이어야 합니다. Codex와 Antigravity(Gemini) 창은 위임하지 않습니다.
 - Mac 앱과 Windows 앱 모두 숨은 스위치로 켭니다([켜고 끄기](#enable)). 휴대폰에는 새 화면이 없고, 보류된 행은 휴대폰 대기열에도 보입니다.

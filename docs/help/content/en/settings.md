@@ -30,7 +30,7 @@ The {{ui:settings.nav.styles}} tab manages {{ui:settings.styles.sectionTitle}}: 
 
 ## Components {#components}
 The {{ui:settings.nav.tools}} tab shows whether everything the app needs is ready.
-- {{ui:settings.components.sectionTitle}}: the state of the Claude, Codex and Gemini CLIs and the plugins they need, shown as {{ui:settings.components.statusInstalled}}, {{ui:settings.components.statusMissing}} or {{ui:settings.components.statusAttention}}. If something needs installing, copy its install command, run it in a terminal, then click {{ui:settings.components.recheckButton}}.
+- {{ui:settings.components.sectionTitle}}: the state of the Claude, Codex and Antigravity CLIs (Gemini CLI on Windows) and the plugins they need, shown as {{ui:settings.components.statusInstalled}}, {{ui:settings.components.statusMissing}} or {{ui:settings.components.statusAttention}}. If something needs installing, copy its install command, run it in a terminal, then click {{ui:settings.components.recheckButton}}.
 - {{ui:settings.toolkit.sectionTitle}}: tools you use often. Every command is shown before anything is installed, and you get a {{ui:settings.toolkit.confirmTitle}} step. You can {{ui:settings.toolkit.exportButton}} or {{ui:settings.toolkit.importButton}} the list.
 
 ![[settings-tools]]

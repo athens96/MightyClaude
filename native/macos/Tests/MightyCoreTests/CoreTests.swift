@@ -50,7 +50,7 @@ final class CoreTests {
         #expect(codex.contains("sandbox_mode=\"workspace-write\"")); #expect(codex.contains("approval_policy=\"never\"")); #expect(codex.contains("resume")); #expect((codex.last) == ("-"))
         request.provider = "gemini"; request.settings = RunSettings(permissionMode: "plan")
         let gemini = try ProviderService.arguments(request, pluginDirectory: plugin)
-        #expect((gemini) == (["--output-format", "stream-json", "--approval-mode", "plan", "--model", "company/model@2026", "--resume", "resume-id"]))
+        #expect((gemini) == (["--print=", "--input-format", "stream-json", "--output-format", "stream-json", "--print-timeout", "0", "--mode", "plan", "--model", "company/model@2026", "--conversation", "resume-id"]))
         for args in [claude, codex, gemini] { #expect(!(args.contains(request.input))); #expect(!(args.contains("--yolo"))); #expect(!(args.contains("--dangerously-skip-permissions"))) }
         request.model = "--model injected"; #expect(throws: (any Error).self) { try CoreValidation.validate(request) }
         request.model = "default"; request.settings.effort = "high"; #expect(throws: (any Error).self) { try CoreValidation.validate(request) }
@@ -116,7 +116,14 @@ final class CoreTests {
         request.provider = "claude"
         #expect(try ProviderService.arguments(request, pluginDirectory: plugin).contains("bypassPermissions"))
         request.provider = "gemini"
-        #expect(try ProviderService.arguments(request, pluginDirectory: plugin).contains("yolo"))
+        #expect(try ProviderService.arguments(request, pluginDirectory: plugin).contains("--dangerously-skip-permissions"))
+        request.settings = RunSettings(permissionMode: "acceptEdits")
+        let edits = try ProviderService.arguments(request, pluginDirectory: plugin)
+        #expect(edits.firstIndex(of: "--mode").map { edits[$0 + 1] } == "accept-edits" && !edits.contains("--dangerously-skip-permissions"))
+        // Manual keeps agy's own review mode: no mode and no bypass.
+        request.settings = RunSettings(permissionMode: "manual")
+        let manual = try ProviderService.arguments(request, pluginDirectory: plugin)
+        #expect(!manual.contains("--mode") && !manual.contains("--dangerously-skip-permissions") && manual.starts(with: ["--print="]))
     }
 
     @Test func testUnsupportedOptionsAndLegacyCapabilitiesFailClosed() throws {
@@ -207,15 +214,17 @@ final class CoreTests {
         #expect((logs.map { $0.1 }) == (["완료", "Login required"])); #expect(codex.failed); #expect((resumes) == (["codex-resume"]))
     }
 
-    @Test func testGeminiParserGroupsDeltasAndBoundsMalformedOutput() throws {
+    @Test func testAntigravityParserGroupsDeltasAndBoundsMalformedOutput() throws {
         try LocaleOverride.$language.withValue(.ko) { () throws in
             var logs: [String] = []
             // A small line cap keeps the over-long line below cheap to build; the
             // drop-and-notice path is the same at the production cap.
             let parser = CLIStreamParser(provider: "gemini", log: { logs.append($1) }, resume: { _ in }, maximumLineBytes: 1024 * 1024)
-            parser.push(try jsonLines([["type": "message", "role": "user", "content": "secret prompt"], ["type": "message", "role": "assistant", "delta": true, "content": "안녕"], ["type": "message", "role": "assistant", "delta": true, "content": "하세요"], ["type": "error", "severity": "warning", "message": "Retrying"], ["type": "result", "status": "success"]])); parser.flush()
-            #expect((logs) == (["안녕하세요", "Retrying"])); #expect(!(parser.failed))
-            parser.push(String(repeating: "x", count: 1024 * 1024 + 1)); parser.push("\nplain warning\n{\"type\":\"result\",\"status\":\"error\",\"error\":{\"message\":\"Quota\"}}\n"); parser.flush()
+            func step(_ index: Int, _ state: String, _ text: String) -> [String: Any] { ["event": "step_update", "step_update": ["step_index": index, "state": state, "step_type": "agent_response", "text_delta": text]] }
+            parser.push(try jsonLines([["event": "step_update", "step_update": ["step_index": 0, "state": "DONE", "step_type": "user_input"]], step(1, "ACTIVE", "안녕"), step(1, "DONE", "하세요"),
+                                       ["event": "result", "result": ["status": "SUCCESS", "response": "안녕하세요"]]])); parser.flush()
+            #expect((logs) == (["안녕하세요"])); #expect(!(parser.failed))
+            parser.push(String(repeating: "x", count: 1024 * 1024 + 1)); parser.push("\nplain warning\n{\"event\":\"result\",\"result\":{\"status\":\"ERROR\",\"error\":\"Quota\"}}\n"); parser.flush()
             #expect(parser.failed); #expect(logs.contains("너무 긴 출력 한 줄을 생략했습니다.")); #expect((logs.last) == ("Quota"))
         }
     }
@@ -256,6 +265,17 @@ final class CoreTests {
     }
 
     private func fakeCLI(_ provider: String) throws -> URL {
+        if provider == "gemini" {
+            // Antigravity: `agy models` is its metadata; a run reads one stream-json line.
+            return try script("""
+            if [ "$1" = "--version" ]; then printf '1.3.5\\n'; exit 0; fi
+            folder="$(/usr/bin/dirname "$0")"
+            if [ "$1" = "models" ]; then printf 'Fetching available models...\\ngemini-3.8-flash-low\\tGemini 3.8 Flash (Low)\\n'; : > "$folder/metadata"; exit 0; fi
+            printf '%s\\n' "$@" > "$folder/args"
+            /bin/cat > "$folder/input"
+            printf '%s\\n' '{"event":"init","conversation_id":"gemini-session","init":{"model":"gemini-3.8-flash-low"}}' '{"event":"step_update","step_update":{"step_index":1,"state":"DONE","step_type":"agent_response","text_delta":"Antigravity answer"}}' '{"event":"result","result":{"status":"SUCCESS","response":"Antigravity answer"}}'
+            """, name: "agy")
+        }
         let version = provider == "claude" ? "2.1.271 (Claude Code)" : "1.0.0"
         return try script("""
         if [ "$1" = "--version" ]; then printf '%s\\n' '\(version)'; exit 0; fi
@@ -280,7 +300,6 @@ final class CoreTests {
         case '\(provider)' in
           claude) printf '{"type":"assistant","session_id":"claude-session","message":{"id":"m","content":[{"type":"text","text":"Claude answer"}]}}\\n';;
           codex) printf '{"type":"thread.started","thread_id":"codex-session"}\\n{"type":"item.completed","item":{"id":"m","type":"agent_message","text":"Codex answer"}}\\n';;
-          gemini) printf '{"type":"init","session_id":"gemini-session"}\\n{"type":"message","role":"assistant","delta":true,"content":"Gemini answer"}\\n{"type":"result","status":"success"}\\n';;
         esac
         """, name: provider)
     }
@@ -294,6 +313,7 @@ final class CoreTests {
             let info = await service.runtimeInfo()
             #expect(info.providers?.allSatisfy(\.available) == true)
             #expect((info.modelCatalog?.source) == ("cli")); #expect((info.providers?.first { $0.id == "codex" }?.modelCatalog.source) == ("cli"))
+            #expect((info.providers?.first { $0.id == "gemini" }?.modelCatalog.models.map(\.value)) == (["default", "gemini-3.8-flash-low"]))
             for provider in ["claude", "codex"] {
                 let metadata = try String(contentsOf: binaries[provider]!.deletingLastPathComponent().appendingPathComponent("metadata"))
                 #expect(!(metadata.contains("\"type\":\"user\""))); #expect(!(metadata.contains("turn/start"))); #expect(!(metadata.contains("thread/start")))
@@ -310,23 +330,24 @@ final class CoreTests {
             for provider in ProviderOptions.ids {
                 #expect(events.values().contains { $0.sessionId == provider && $0.resumeId == provider + "-session" })
                 #expect(events.values().contains { $0.sessionId == provider && $0.entry?.kind == "assistant" && $0.entry?.provider == provider })
-                let input = try String(contentsOf: binaries[provider]!.deletingLastPathComponent().appendingPathComponent("input")); #expect((input) == ("한글 prompt"))
+                let input = try String(contentsOf: binaries[provider]!.deletingLastPathComponent().appendingPathComponent("input"))
+                #expect((input) == (provider == "gemini" ? "{\"event\":\"user\",\"message\":{\"content\":\"한글 prompt\"}}\n" : "한글 prompt"))
                 let args = try String(contentsOf: binaries[provider]!.deletingLastPathComponent().appendingPathComponent("args")); #expect(!(args.contains("한글 prompt"))); #expect(!(args.contains("--yolo")))
             }
             await runner.shutdown(); await service.shutdown()
         }
     }
 
-    /// A fake Gemini CLI, never the real one: what 0.43 prints on stderr when its stored Google sign-in is stale.
-    @Test func testGeminiSignInLostOnStderrRaisesTheAuthReasonButTheSameTextAsAnAnswerDoesNot() async throws {
-        let message = "Error authenticating: FatalCancellationError: Authentication cancelled by user."
-        let lost = try script("if [ \"$1\" = \"--version\" ]; then printf '1.0.0\\n'; exit 0; fi\n/bin/cat > /dev/null\nprintf '%s\\n' '\(message)' >&2\nexit 1\n", name: "gemini")
+    /// A fake Antigravity CLI, never the real one: what agy prints on stderr when it has no sign-in.
+    @Test func testAntigravitySignInLostOnStderrRaisesTheAuthReasonButTheSameTextAsAnAnswerDoesNot() async throws {
+        let message = "Error: authentication required. Run 'agy' to log in, then retry."
+        let lost = try script("if [ \"$1\" = \"--version\" ]; then printf '1.3.5\\n'; exit 0; fi\n/bin/cat > /dev/null\nprintf '%s\\n' \"\(message)\" >&2\nexit 1\n", name: "agy")
         let quoted = try script("""
-        if [ "$1" = "--version" ]; then printf '1.0.0\\n'; exit 0; fi
+        if [ "$1" = "--version" ]; then printf '1.3.5\\n'; exit 0; fi
         /bin/cat > /dev/null
-        printf '%s\\n' '{"type":"message","role":"assistant","content":"\(message)","delta":false}' '{"type":"result","status":"error","error":{"type":"unknown","message":"[API Error: Internal error encountered. (Status: INTERNAL)]"}}'
+        printf '%s\\n' '{"event":"step_update","step_update":{"step_index":1,"state":"DONE","step_type":"agent_response","text_delta":"Error: authentication required."}}' '{"event":"result","result":{"status":"ERROR","error":"Internal error encountered."}}'
         exit 1
-        """, name: "gemini")
+        """, name: "agy")
         let directory = try temporary()
         let workspace = Workspace(id: "workspace", name: "Fixture", path: directory.path)
         for (binary, expected) in [(lost, "auth"), (quoted, nil)] as [(URL, String?)] {
@@ -374,7 +395,7 @@ final class CoreTests {
         // while discovery is really pending and the replacement exists before the
         // discovery returns. A guessed 50 ms inside a 0.4 s probe was a race on a
         // busy CI runner: the start might not have begun, or already launched.
-        let binary = try script("if [ \"$1\" = \"--version\" ]; then folder=\"$(/usr/bin/dirname \"$0\")\"; : > \"$folder/probing\"; while [ ! -e \"$folder/release\" ]; do /bin/sleep 0.05; done; printf '1.0.0\\n'; exit 0; fi\nprintf BAD_LAUNCH\n", name: "gemini")
+        let binary = try script("if [ \"$1\" = \"--version\" ]; then folder=\"$(/usr/bin/dirname \"$0\")\"; : > \"$folder/probing\"; while [ ! -e \"$folder/release\" ]; do /bin/sleep 0.05; done; printf '1.0.0\\n'; exit 0; fi\nprintf BAD_LAUNCH\n", name: "agy")
         let probing = binary.deletingLastPathComponent().appendingPathComponent("probing"), release = binary.deletingLastPathComponent().appendingPathComponent("release")
         let directory = try temporary(); let events = EventRecorder(); let service = ProviderService(binaryOverrides: ["gemini": binary])
         let runner = ProcessRunner(providerService: service, pluginDirectory: directory, onEvent: { events.append($0) })

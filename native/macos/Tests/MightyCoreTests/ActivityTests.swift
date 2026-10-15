@@ -28,17 +28,17 @@ struct ActivityTests {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
     }
-    private func fakeGemini(_ directory: URL, gated: Bool = false) throws -> URL {
-        let binary = directory.appendingPathComponent("gemini")
+    private func fakeAntigravity(_ directory: URL, gated: Bool = false) throws -> URL {
+        let binary = directory.appendingPathComponent("agy")
         let source = """
         #!/bin/sh
-        if [ "$1" = "--version" ]; then printf '0.20.0\\n'; exit 0; fi
+        if [ "$1" = "--version" ]; then printf '1.3.5\\n'; exit 0; fi
         input="$(/bin/cat)"
-        printf '%s\\n' '{"type":"init","session_id":"fixture-session"}'
-        printf '%s\\n' '{"type":"tool_use","tool_id":"read-1","tool_name":"read_file","parameters":{"path":"README.md"}}'
-        printf '%s\\n' '{"type":"tool_result","tool_id":"read-1","status":"success","output":"file contents"}'
-        printf '%s\\n' '{"type":"result","status":"success"}'
-        \(gated ? "if [ \"$input\" = stop ]; then sleep 30; else while [ ! -f exit-gate ]; do sleep 0.02; done; fi" : "")
+        printf '%s\\n' '{"event":"init","conversation_id":"fixture-session","init":{"model":"gemini-3.8-flash-low"}}'
+        printf '%s\\n' '{"event":"step_update","step_update":{"step_index":1,"state":"ACTIVE","step_type":"tool","tool_name":"view_file","tool_info":{"name":"view_file","parameters":{"AbsolutePath":"README.md"}}}}'
+        printf '%s\\n' '{"event":"step_update","step_update":{"step_index":1,"state":"DONE","step_type":"tool","tool_name":"view_file","tool_info":{"name":"view_file","parameters":{"AbsolutePath":"README.md"},"output":"file contents"}}}'
+        printf '%s\\n' '{"event":"result","result":{"status":"SUCCESS","response":""}}'
+        \(gated ? "case \"$input\" in *'\"stop\"'*) sleep 30;; *) while [ ! -f exit-gate ]; do sleep 0.02; done;; esac" : "")
         """
         try Data(source.utf8).write(to: binary)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: binary.path)
@@ -126,18 +126,26 @@ struct ActivityTests {
         #expect(activities.contains { $0.toolName == "docs.lookup" && $0.state == "error" && $0.output == "boom" })
     }
 
-    @Test func geminiEventsPairToolIDsAndDoNotInferWaitingOrWholeTurnFailure() throws {
+    @Test func antigravityStepsPairByIndexAndDoNotInferWaitingOrWholeTurnFailure() throws {
         var activities: [AgentActivity] = []; var logs: [String] = []
         let parser = CLIStreamParser(provider: "gemini", log: { logs.append($1) }, resume: { _ in }, activityNamespace: "run-one", activity: { activities.append($0) })
+        func tool(_ index: Int, _ state: String, _ name: String, _ parameters: [String: Any], output: String? = nil, error: String? = nil) -> [String: Any] {
+            var info: [String: Any] = ["name": name, "parameters": parameters]
+            if let output { info["output"] = output }
+            if let error { info["error"] = ["type": "TOOL_ERROR", "message": error] }
+            return ["event": "step_update", "step_update": ["step_index": index, "state": state, "step_type": "tool", "tool_name": name, "tool_info": info]]
+        }
         parser.push(try lines([
-            ["type": "tool_use", "tool_id": "read", "tool_name": "read_file", "parameters": ["absolute_path": "/tmp/a.swift"]],
-            ["type": "tool_result", "tool_id": "read", "status": "error", "error": ["message": "File missing"]],
-            ["type": "tool_use", "tool_id": "write", "tool_name": "write_file", "parameters": ["file_path": "/tmp/a.swift", "content": "full file not copied"]],
-            ["type": "message", "role": "assistant", "delta": true, "content": "OK"],
-            ["type": "result", "status": "success"]
+            tool(2, "ACTIVE", "view_file", ["AbsolutePath": "/tmp/a.swift"]),
+            tool(2, "DONE", "view_file", ["AbsolutePath": "/tmp/a.swift"], error: "File missing"),
+            tool(3, "ACTIVE", "write_to_file", ["TargetFile": "/tmp/a.swift", "CodeContent": "full file not copied"]),
+            ["event": "step_update", "step_update": ["step_index": 4, "state": "DONE", "step_type": "agent_response", "text_delta": "OK"]],
+            ["event": "result", "result": ["status": "SUCCESS", "response": "OK"]]
         ])); parser.flush(); parser.finishActivities(stopped: true)
-        #expect(activities.filter { $0.toolName == "read_file" }.map(\.state) == ["running", "error"])
-        #expect(activities.filter { $0.toolName == "write_file" }.map(\.state) == ["running", "stopped"])
+        #expect(activities.filter { $0.toolName == "view_file" }.map(\.state) == ["running", "error"])
+        #expect(activities.filter { $0.toolName == "view_file" }.last?.output == "File missing")
+        #expect(activities.filter { $0.toolName == "write_to_file" }.map(\.state) == ["running", "stopped"])
+        #expect(activities.first { $0.toolName == "write_to_file" }?.summary == "/tmp/a.swift")
         #expect(!activities.contains { $0.state == "waiting" })
         #expect(!parser.failed); #expect(logs == ["OK"])
     }
@@ -158,8 +166,8 @@ struct ActivityTests {
                     start = ["type": "item.started", "item": ["id": "call", "type": "command_execution", "command": "printf fixture"]]
                     end = ["type": "item.completed", "item": ["id": "call", "type": "command_execution", "command": "printf fixture"]]
                 default:
-                    start = ["type": "tool_use", "tool_id": "call", "tool_name": "run_shell_command", "parameters": ["command": "printf fixture"]]
-                    end = ["type": "tool_result", "tool_id": "call", "status": "success", "output": "fixture"]
+                    start = ["event": "step_update", "step_update": ["step_index": 7, "state": "ACTIVE", "step_type": "tool", "tool_info": ["name": "run_command", "parameters": ["CommandLine": "printf fixture"]]]]
+                    end = ["event": "step_update", "step_update": ["step_index": 7, "state": "DONE", "step_type": "tool", "tool_info": ["name": "run_command", "parameters": ["CommandLine": "printf fixture"], "output": "fixture"]]]
                 }
                 parser.push(try lines([start])); now = 10.125
                 parser.push(try lines([start])) // A repeated start never resets the clock.
@@ -242,36 +250,36 @@ struct ActivityTests {
         for slice in stride(from: 0, to: markdown.count, by: 301) {
             let start = markdown.index(markdown.startIndex, offsetBy: slice)
             let end = markdown.index(start, offsetBy: 301, limitedBy: markdown.endIndex) ?? markdown.endIndex
-            parser.push(try lines([["type": "message", "role": "assistant", "delta": true, "content": String(markdown[start..<end])]]))
+            parser.push(try lines([["event": "step_update", "step_update": ["step_index": 1, "state": "ACTIVE", "step_type": "agent_response", "text_delta": String(markdown[start..<end])]]]))
         }
         #expect(logs.isEmpty)
-        parser.push(try lines([["type": "result", "status": "success"]])); parser.flush()
+        parser.push(try lines([["event": "result", "result": ["status": "SUCCESS", "response": markdown]]])); parser.flush()
         #expect(logs.count == 1); #expect(logs.first?.0 == "assistant"); #expect(logs.first?.1 == markdown)
         let workspace = Workspace(id: "workspace", name: "Fixture", path: "/tmp")
         let snapshot = AppSnapshot(workspaces: [workspace], sessions: [RunSession(id: "pane", workspaceId: workspace.id, title: "Markdown", logs: [LogEntry(kind: "assistant", text: markdown)])])
         #expect(StateRepository.decodeSnapshot(try JSONEncoder().encode(snapshot)).sessions.first?.logs.first?.text == markdown)
-        parser.push(try lines([["type": "message", "role": "assistant", "delta": true, "content": String(repeating: "🦀", count: 40_000)], ["type": "result", "status": "success"]]))
+        parser.push(try lines([["event": "step_update", "step_update": ["step_index": 2, "state": "ACTIVE", "step_type": "agent_response", "text_delta": String(repeating: "🦀", count: 40_000)]], ["event": "result", "result": ["status": "SUCCESS"]]]))
         #expect(logs.filter { $0.0 == "assistant" }.last!.1.utf8.count <= 131_072)
         #expect(logs.last?.0 == "system")
     }
 
     @Test func realChildExitAndStopAreTheOnlyTerminalTurnActivities() async throws {
         let directory = try temporary(); defer { try? FileManager.default.removeItem(at: directory) }
-        let binary = try fakeGemini(directory, gated: true)
+        let binary = try fakeAntigravity(directory, gated: true)
         let service = ProviderService(binaryOverrides: ["gemini": binary])
         let events = ActivityRecorder<RunEvent>()
         let runner = ProcessRunner(providerService: service, pluginDirectory: directory, onEvent: { events.append($0) })
         let workspace = Workspace(id: "workspace", name: "Fixture", path: directory.path)
         do {
             try await runner.start(request: StartRunRequest(sessionId: "pane", workspaceId: workspace.id, input: "complete", provider: "gemini"), workspace: workspace)
-            try await wait { events.values().contains { $0.activity?.summary == L("run.turn.finishing", ["name": "Gemini"]) } }
+            try await wait { events.values().contains { $0.activity?.summary == L("run.turn.finishing", ["name": "Antigravity"]) } }
             #expect(!events.values().contains { $0.activity?.kind == "turn" && $0.activity?.state == "completed" })
             try Data().write(to: directory.appendingPathComponent("exit-gate"))
             try await wait { events.values().contains { $0.status == "completed" } }
             let firstTurn = try #require(events.values().first { $0.activity?.kind == "turn" && $0.activity?.state == "completed" }?.activity)
             #expect(events.values().filter { $0.activity?.kind == "turn" && $0.activity?.state == "completed" }.count == 1)
             try await runner.start(request: StartRunRequest(sessionId: "pane", workspaceId: workspace.id, input: "stop", provider: "gemini"), workspace: workspace)
-            try await wait { events.values().filter { $0.activity?.summary == L("run.turn.finishing", ["name": "Gemini"]) }.count == 2 }
+            try await wait { events.values().filter { $0.activity?.summary == L("run.turn.finishing", ["name": "Antigravity"]) }.count == 2 }
             await runner.stop(id: "pane")
             let last = try #require(events.values().last { $0.activity?.kind == "turn" }?.activity)
             #expect(last.state == "stopped"); #expect(last.id != firstTurn.id)
