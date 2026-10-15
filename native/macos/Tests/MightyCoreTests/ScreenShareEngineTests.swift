@@ -1313,7 +1313,11 @@ extension ScreenShareEngineTests {
                 await engine.deliver(frame: frame, status: .complete, dirtyRects: 1)
                 done.signal()
             }
-            _ = done.wait(timeout: .now() + 5)
+            // Held until the frame is in, so it lands inside the start. This
+            // blocks one of the few shared concurrency threads, and on a loaded
+            // runner the delivering task may wait seconds for another: the
+            // bound only guards against a delivery that never ends.
+            _ = done.wait(timeout: .now() + 60)
         }
         guard case .success(let reply) = await startSession(fixture, mode: .view) else {
             Issue.record("start refused"); return

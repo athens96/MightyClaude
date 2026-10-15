@@ -515,18 +515,23 @@ import Testing
     }
 
     @Test func anEventStreamThatSendsNothingIsLeftAfterTheFirstEventDeadlineNotTheWholeOne() async throws {
+        // Half a second to the first event against a minute for the whole read
+        // and for the server's late answer. The bound sits halfway: a loaded
+        // runner that is slow to wake the read's watchdog stays far below it,
+        // while a read that waited for either minute cannot get under it.
+        let whole: TimeInterval = 60
         let server = HTTPServer(address: "127.0.0.1", port: 0) { _ in
-            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            try? await Task.sleep(nanoseconds: UInt64(whole * 1_000_000_000))
             return HTTPResponse(status: 200, body: Data())
         }
         let port = try await server.start()
         let started = Date()
         let data = await LoopbackDashboardTransport().readEvents(URL(string: "http://127.0.0.1:\(port)/events?run=exec_1")!,
-                                                                 firstEvent: 0.5, quiet: 1.2, deadline: 8, maximumBytes: 1024)
+                                                                 firstEvent: 0.5, quiet: 1.2, deadline: whole, maximumBytes: 1024)
         let elapsed = Date().timeIntervalSince(started)
         await server.stop()
         #expect(data == nil)
-        #expect(elapsed < 4, "\(elapsed)")
+        #expect(elapsed < whole / 2, "\(elapsed)")
     }
 
     @Test func aCancelledReadEndsAtOnceWhateverPointItReached() async throws {

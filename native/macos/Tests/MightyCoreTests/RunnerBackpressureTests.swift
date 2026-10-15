@@ -31,7 +31,7 @@ private final class Blocking: @unchecked Sendable {
     private let lock = NSLock()
     private var done = false
     init(_ body: @escaping @Sendable () -> Void) {
-        DispatchQueue.global().async { [self] in body(); lock.lock(); done = true; lock.unlock() }
+        startBlockingThread("blocking-call") { [self] in body(); lock.lock(); done = true; lock.unlock() }
     }
     var returned: Bool { lock.lock(); defer { lock.unlock() }; return done }
     /// Whether it returned within `seconds`.

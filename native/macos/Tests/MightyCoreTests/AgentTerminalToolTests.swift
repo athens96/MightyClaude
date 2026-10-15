@@ -80,7 +80,7 @@ final class MCPPipeReader: @unchecked Sendable {
     /// The next response line as JSON, waiting at most `timeout` seconds.
     func next(timeout: TimeInterval = 20) async -> [String: Any]? {
         await withCheckedContinuation { continuation in
-            DispatchQueue.global().async { [self] in continuation.resume(returning: blockingNext(timeout: timeout)) }
+            startBlockingThread("mcp-pipe-reader") { [self] in continuation.resume(returning: blockingNext(timeout: timeout)) }
         }
     }
 

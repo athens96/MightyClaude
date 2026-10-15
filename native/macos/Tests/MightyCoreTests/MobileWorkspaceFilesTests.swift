@@ -58,7 +58,7 @@ private final class PreviewGate: @unchecked Sendable {
     func open() { gate.signal() }
     func waitUntilEntered() async {
         await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
-            DispatchQueue.global().async { [entered] in _ = entered.wait(timeout: .now() + 20); done.resume() }
+            startBlockingThread("preview-gate") { [entered] in _ = entered.wait(timeout: .now() + 20); done.resume() }
         }
     }
     var rasterizer: MobileWorkspaceFiles.SVGRasterizer {

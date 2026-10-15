@@ -66,7 +66,9 @@ final class MCPStdioServer: @unchecked Sendable {
         guard let message = parse(line) else { return }
         if case .call(let id, let name, let arguments) = message {
             inFlight.enter()
-            DispatchQueue.global(qos: .userInitiated).async { [self] in
+            // A call waits on the app for as long as the tool takes (a 12 s
+            // run, a 10 s stop), so it gets a thread of its own.
+            startBlockingThread("dev.mightyclaude.mcp.call", qualityOfService: .userInitiated) { [self] in
                 write(Self.result(id: id, surface.call(name, arguments: arguments)), fd: outFD)
                 inFlight.leave()
             }
