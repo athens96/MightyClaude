@@ -47,9 +47,9 @@ struct AntigravityTests {
         try LocaleOverride.$language.withValue(.en) { () throws in
             let recorder = Recorder(); let parser = makeParser(recorder)
             parser.push(Self.recorded); parser.flush()
-            // The deltas make one answer; the result's full response is not logged again.
+            // The deltas make one answer (its closing newline trimmed); the result's full response is not logged again.
             #expect(recorder.logs.map { $0.0 } == ["assistant"])
-            #expect(recorder.logs.first?.1 == "DONE\n")
+            #expect(recorder.logs.first?.1 == "DONE")
             #expect(recorder.resumes == ["11111111-2222-4333-8444-555555555555"])
             #expect(!parser.failed && !parser.authFailure)
             let tools = recorder.activities.filter { $0.kind != "turn" }

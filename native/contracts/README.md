@@ -147,6 +147,37 @@ macOS adds them to keep input inclusive of cached input. Once per profile
 any model Gemini CLI saved that agy does not list; a model agy's live list lacks is
 reset to `default` before a run, since agy refuses an unknown `--model`.
 
+On macOS an Antigravity pane has the Mighty views (the `gemini` id joins
+`MightyGraphSupport.providers`; Windows' Gemini CLI panes still have none). The
+graph comes from agy's stream: each `agent_response` step's usage is summed on the
+request block (`input_tokens` without `cache_read_tokens`, which is its own field),
+the latest streamed reply, trimmed, is both the transcript's message and the
+request's answer, and a `subagent` step (`invoke_subagent`, `subagent_info.subagents`)
+is one tool row plus one `agent` node per sub-agent conversation, titled
+`role (type_name)` with `initial_prompt` as its input. The stream says nothing
+of a sub-agent's work, so the host reads the sub-agent's own
+`~/.gemini/antigravity-cli/brain/<conversation>/.system_generated/logs/transcript_full.jsonl`
+about once a second while the run lasts and once more when it ends
+(`AntigravitySubagentWatcher`): instructions from its parent (SYSTEM_MESSAGE
+`sender=<parent> … content=`) are its input and later assignments, PLANNER_RESPONSE
+text and tool calls are its entries and usage, the GENERIC steps that follow
+settle those calls (output kept for commands and failures only; file contents
+are never copied), a `send_message` to the parent is its answer, and a nested
+`invoke_subagent` adds a child under it. A sub-agent is not done while a helper
+it started has not reported back; a helper's message continues its assignment
+(completed → running without a new generation). Statuses other than DONE and
+ERROR (CANCELED, …) end a step as stopped. Older requests load from the
+conversation's own `transcript_full.jsonl` (a USER_INPUT step's `<USER_REQUEST>`
+opens a request; its steps are replayed as the stream events agy printed, and
+its sub-agents' transcripts are read the same way, only up to when the next
+request was sent and within one byte budget per chunk). The resume list reads
+`conversation_summaries.db` read-only (SQLite, `mode=ro`, or `immutable=1` while
+agy is not running; newest rows first): rows whose `workspace_uris` include the workspace and whose
+`parent_conversation_id` is empty, with a transcript; the title is the first
+request. Continuing one passes `--conversation <id>`. The composer's slash list
+offers agy's built-in skills (`builtin/skills`), the user's
+(`~/.gemini/antigravity-cli/skills`) and the workspace's `.agents/skills`.
+
 The local Claude runners (macOS, and Windows where the app shows the approval
 bar) explicitly opt into the SDK stdio approval channel. Ephemeral `permission` events carry the run/request/tool IDs and complete
 bounded input for an allow-once or deny response. These requests are not saved in

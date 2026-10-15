@@ -254,7 +254,8 @@ struct ActivityTests {
         }
         #expect(logs.isEmpty)
         parser.push(try lines([["event": "result", "result": ["status": "SUCCESS", "response": markdown]]])); parser.flush()
-        #expect(logs.count == 1); #expect(logs.first?.0 == "assistant"); #expect(logs.first?.1 == markdown)
+        // One message, its closing newline trimmed (the graph's answer is the same text).
+        #expect(logs.count == 1); #expect(logs.first?.0 == "assistant"); #expect(logs.first?.1 == markdown.trimmingCharacters(in: .whitespacesAndNewlines))
         let workspace = Workspace(id: "workspace", name: "Fixture", path: "/tmp")
         let snapshot = AppSnapshot(workspaces: [workspace], sessions: [RunSession(id: "pane", workspaceId: workspace.id, title: "Markdown", logs: [LogEntry(kind: "assistant", text: markdown)])])
         #expect(StateRepository.decodeSnapshot(try JSONEncoder().encode(snapshot)).sessions.first?.logs.first?.text == markdown)

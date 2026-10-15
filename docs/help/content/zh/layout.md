@@ -53,7 +53,7 @@ section: layout
 > Codex 和 Antigravity（Gemini）窗格带有{{ui:badge.beta}}标记。
 
 ### 继续之前的会话 {#resume}
-添加 Claude 或 Codex 窗格时，如果此文件夹中有之前的会话，会弹出选择窗口。
+添加 Claude、Codex 或 Antigravity 窗格时，如果此文件夹中有之前的会话，会弹出选择窗口。Antigravity 会列出此文件夹中的对话，子代理运行的对话不会列出。
 1. 要开始新对话，请点击{{ui:resume.choice.startNew}}；要继续之前的对话，请点击{{ui:resume.choice.resume}}按钮。
 2. 在{{ui:resume.title}}列表中选择会话。可以用{{ui:resume.search}}查找。
 3. 新窗格会继续该会话。

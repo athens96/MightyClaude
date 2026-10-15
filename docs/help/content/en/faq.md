@@ -32,7 +32,7 @@ Browser panes are off at first. Turn on {{ui:settings.display.browserToggle}} on
 - A sleeping Mac can't be reached.
 
 ## Does closing a pane lose the conversation? {#history}
-No. The conversation stays as a CLI session. When you add a Claude or Codex pane on the same folder, choose {{ui:resume.choice.resume}} to continue it. See [Continue an earlier session](layout.md#resume).
+No. The conversation stays as a CLI session. When you add a Claude, Codex or Antigravity pane on the same folder, choose {{ui:resume.choice.resume}} to continue it. See [Continue an earlier session](layout.md#resume).
 
 ## Where is my data kept? {#data}
 The app's settings and history stay on this computer. See where under {{ui:settings.appInfo.stateLocationLabel}} on the {{ui:settings.nav.about}} tab. Requests to the AI are sent by each CLI to its own company's service. With the phone remote, content passes the relay encrypted.

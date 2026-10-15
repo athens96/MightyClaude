@@ -53,6 +53,7 @@ On the Mac, Google's agent runs through Antigravity CLI (`agy`), which can also 
 - Sign in: run `agy` once in a terminal pane and sign in with your Google account in the browser. {{ui:settings.cliAccounts.buttonLogin}} on the {{ui:settings.nav.cli}} tab does this for you. Antigravity has no sign-out command; to switch accounts, use `/logout` inside `agy`.
 - Permissions: Antigravity cannot ask you in the app. {{ui:permission.label.default}} follows the Agent Mode saved in agy (review, unless you changed it in agy's `/config`): it reads the workspace's files but declines the file edits and shell commands it would ask about, and the pane says what it declined. {{ui:permission.label.plan}} writes a plan in agy's own folder and stops without editing the project; send the next request in another mode to carry it out. Allow them under `permissions.allow` in `~/.gemini/antigravity-cli/settings.json` (for example `command(git)`), or choose {{ui:permission.label.acceptEdits}} (file edits) or {{ui:permission.label.fullAccess}} (everything).
 - Each Antigravity model carries its effort in its name, so there is no separate {{ui:composer.effort.label}}.
+- The {{ui:graph.view.mighty}} view works as for Claude and Codex: each sub-agent Antigravity starts is a block of its own under the request, filled from the sub-agent's own record in `~/.gemini/antigravity-cli` (its instructions, messages, tool calls and the answer it sent back; files it read are named, not copied). Earlier requests of the conversation load from the same records, and {{ui:resume.choice.resume}} lists this folder's Antigravity conversations.
 - A pane that ran Gemini CLI before keeps its history, but its next request starts a new conversation, and a Gemini CLI model it had is set back to the default.
 
 ### More run settings {#run-settings}
@@ -84,7 +85,7 @@ Type `/` in the composer to see the command list. Move with {{kbd:↑}}{{kbd:↓
 | `/rename` | {{ui:slash.builtin.rename}} |
 | `/help` | {{ui:slash.builtin.help}} |
 
-Codex and Antigravity use slightly different names (Codex: `/new`, `/approvals`, `/status`; Antigravity: `/usage`, `/config`, for example). Any other `/name` is passed to the CLI as a skill, user command or plugin command. Antigravity expands its skills this way; its own read-only commands such as `/help` or `/skills` answer only when you run them as `agy -p "/help"` in a terminal, so in the app they end with agy's error.
+Codex and Antigravity use slightly different names (Codex: `/new`, `/approvals`, `/status`; Antigravity: `/usage`, `/config`, for example). Any other `/name` is passed to the CLI as a skill, user command or plugin command. Antigravity expands its skills this way, and the list offers agy's built-in skills, yours in `~/.gemini/antigravity-cli/skills` and the folder's `.agents/skills`; its own read-only commands such as `/help` or `/skills` answer only when you run them as `agy -p "/help"` in a terminal, so in the app they end with agy's error.
 
 ### Context and usage {#session-info}
 The ring beside the send button shows how much context the conversation has used. Click it for {{ui:composer.sessionInfo.contextUsage}}, input, output and cache tokens, cost, the model used and the session IDs. Only values the CLI reported are shown; nothing is estimated.
@@ -92,7 +93,7 @@ The ring beside the send button shows how much context the conversation has used
 ![[session-info]]
 
 ## Default and Mighty views {#views}
-Claude and Codex panes have a {{ui:graph.view.default}} | {{ui:graph.view.mighty}} switch in the header. Switching keeps the conversation and your draft, and each pane remembers its choice. Antigravity and Gemini panes have only the default view.
+Claude, Codex and Antigravity panes have a {{ui:graph.view.default}} | {{ui:graph.view.mighty}} switch in the header. Switching keeps the conversation and your draft, and each pane remembers its choice. Gemini panes (Windows) have only the default view.
 - {{ui:graph.view.default}}: the conversation as a log you read top to bottom.
 - {{ui:graph.view.mighty}}: requests, sub-agents, background work and results as a flow of blocks.
 
@@ -102,7 +103,7 @@ Each request gets a request block with a {{ui:graph.block.execution}} block righ
 - Click a block to scroll inside it. Click the background or press {{kbd:Esc}} to deselect.
 - Drag a block's bottom-right corner to resize it. Right-click for {{ui:graph.block.resetSize}}. Sizes are saved per session.
 - Scroll to the top and use {{ui:graph.history.load}} to load earlier requests, 10 at a time. Loaded history is view-only.
-- The puzzle button in the header opens the installed plugins and the marketplace.
+- In Claude and Codex panes, the puzzle button in the header opens the installed plugins and the marketplace.
 
 ![[agent-mighty]]
 

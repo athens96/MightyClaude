@@ -142,8 +142,10 @@ public final class CLIStreamParser {
         preparedImages = images; defer { preparedImages = [:] }
         body()
     }
+    /// Antigravity's streamed reply; the latest one is also the graph's answer.
     private func flushText() {
-        if !pendingText.isEmpty { log("assistant", pendingText) }
+        let text = Self.trailingTrimmed(pendingText)
+        if !text.isEmpty { log("assistant", text); graphTracker?.antigravityAnswer(text) }
         if pendingTextTruncated { log("system", L("run.notice.messageTruncated")) }
         pendingText = ""; pendingTextTruncated = false
     }
@@ -348,6 +350,12 @@ public final class CLIStreamParser {
     var codexRootThread: String? { graphTracker?.codexRootThread }
     /// Subagents read from Codex's own session records.
     func receiveCodexSessions(_ agents: [CodexSessionAgent]) { for agent in agents { graphTracker?.codexSession(agent) } }
+    /// The Antigravity conversation the run continues or started.
+    var antigravityConversation: String? { graphTracker?.antigravityConversation }
+    /// Sub-agents an Antigravity run started, oldest first.
+    var antigravitySubagents: [AntigravitySubagent] { graphTracker?.antigravitySubagents ?? [] }
+    /// Sub-agents read from their own Antigravity transcripts.
+    func receiveAntigravitySessions(_ agents: [CodexSessionAgent]) { for agent in agents { graphTracker?.antigravitySession(agent) } }
     /// A follow-up the runner wrote to Claude's stdin during this turn.
     public func steer(id: String, text: String) { graphTracker?.steer(id: id, text: text) }
     func permissionActivity(_ request: ToolPermissionRequest, state: String) {
@@ -375,6 +383,7 @@ public final class CLIStreamParser {
         if provider == "gemini" {
             guard let value = object as? [String: Any], let event = value["event"] as? String else { return }
             usageTracker.consume(value)
+            graphTracker?.consume(value)
             antigravity(value, event: event)
             return
         }
@@ -495,8 +504,9 @@ public final class CLIStreamParser {
     /// Antigravity CLI (`agy --output-format stream-json`): each line names its
     /// `event` and carries the payload under that same key. `init` opens the
     /// session, `step_update` streams the turn's steps (the request, the
-    /// agent's text as deltas, tool calls, checkpoints) and `result` closes it.
-    /// Subagent steps (`subagent_info`) are not shown yet.
+    /// agent's text as deltas, tool calls, sub-agents started, checkpoints) and
+    /// `result` closes it. What a sub-agent does is not in this stream; the
+    /// graph reads it from the sub-agent's own transcript.
     private func antigravity(_ value: [String: Any], event: String) {
         let payload = value[event] as? [String: Any] ?? [:]
         let name = ProviderOptions.label(provider)
@@ -532,13 +542,25 @@ public final class CLIStreamParser {
                     if ended, let text = info?["output"] as? String, !text.isEmpty { log("output", text) }
                     if let failure { log("system", failure) }
                 }
+            case "subagent":
+                // Started sub-agents: one row here, one block each in the graph.
+                flushText()
+                guard let index = payload["step_index"] as? Int else { return }
+                let specs = (payload["subagent_info"] as? [String: Any])?["subagents"] as? [[String: Any]] ?? []
+                let names = specs.prefix(8).compactMap { AntigravityRecords.title(role: $0["role"], typeName: $0["type_name"]) }
+                let tool = payload["tool_name"] as? String ?? "invoke_subagent"
+                let stopped = ["CANCELED", "CANCELLED", "INTERRUPTED"].contains(state)
+                self.tool(id: "step:\(index)", name: tool, state: stopped ? "stopped" : state == "ERROR" ? "error" : state == "DONE" ? "completed" : "running",
+                          summary: names.isEmpty ? tool : names.joined(separator: ", "))
             default: break
             }
         case "result":
             flushText()
             resumeIfValid(payload["conversation_id"])
             // The full text of the turn repeats what the deltas already showed.
-            if !antigravityStreamed, let text = payload["response"] as? String, !text.isEmpty { log("assistant", text) }
+            if !antigravityStreamed, let text = (payload["response"] as? String).map(Self.trailingTrimmed), !text.isEmpty {
+                log("assistant", text); graphTracker?.antigravityAnswer(text)
+            }
             antigravityStreamed = false
             // What headless mode could not ask about was declined and the turn went on.
             let denied = (payload["denied_actions"] as? [[String: Any]] ?? []).prefix(16).compactMap { ($0["display_name"] ?? $0["action"]) as? String }
@@ -565,6 +587,14 @@ public final class CLIStreamParser {
             // An event this app does not read yet is shown, not dropped.
             if let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]) { log("output", String(decoding: data.prefix(32_768), as: UTF8.self)) }
         }
+    }
+
+    /// agy ends a reply with a newline; a reply's start (an indented code
+    /// block, say) is kept as written.
+    static func trailingTrimmed(_ text: String) -> String {
+        var end = text.endIndex
+        while end > text.startIndex, text[text.index(before: end)].isWhitespace { end = text.index(before: end) }
+        return String(text[..<end])
     }
 
     /// agy names its tool parameters in PascalCase (`AbsolutePath`,

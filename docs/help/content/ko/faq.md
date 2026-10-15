@@ -32,7 +32,7 @@ section: faq
 - Mac이 잠자기 상태이면 연결되지 않습니다.
 
 ## 실행 창을 닫으면 대화가 사라지나요? {#history}
-아니요. 대화 기록은 CLI의 세션으로 남습니다. 같은 폴더에서 Claude나 Codex 창을 새로 추가할 때 {{ui:resume.choice.resume}} 단추를 고르면 이어갈 수 있습니다. [이전 세션 이어가기](layout.md#resume)를 보세요.
+아니요. 대화 기록은 CLI의 세션으로 남습니다. 같은 폴더에서 Claude, Codex, Antigravity 창을 새로 추가할 때 {{ui:resume.choice.resume}} 단추를 고르면 이어갈 수 있습니다. [이전 세션 이어가기](layout.md#resume)를 보세요.
 
 ## 내 데이터는 어디에 저장되나요? {#data}
 앱의 설정과 기록은 이 컴퓨터에만 저장됩니다. 위치는 {{ui:settings.nav.about}} 탭의 {{ui:settings.appInfo.stateLocationLabel}}에서 봅니다. AI에게 보내는 요청은 각 CLI가 그 회사의 서비스로 보냅니다. 휴대폰 원격을 쓰면 내용이 암호화된 채로 릴레이를 지나갑니다.

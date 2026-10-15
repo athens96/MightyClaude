@@ -32,7 +32,7 @@ section: faq
 - Mac 处于睡眠状态时无法连接。
 
 ## 关闭窗格后，对话会消失吗？ {#history}
-不会。对话记录会作为 CLI 的会话保留下来。在同一文件夹中新添加 Claude 或 Codex 窗格时，选择{{ui:resume.choice.resume}}按钮即可继续。请参阅[继续之前的会话](layout.md#resume)。
+不会。对话记录会作为 CLI 的会话保留下来。在同一文件夹中新添加 Claude、Codex 或 Antigravity 窗格时，选择{{ui:resume.choice.resume}}按钮即可继续。请参阅[继续之前的会话](layout.md#resume)。
 
 ## 我的数据保存在哪里？ {#data}
 应用的设置和记录只保存在这台电脑上。位置可以在{{ui:settings.nav.about}}标签页的{{ui:settings.appInfo.stateLocationLabel}}中查看。发送给 AI 的请求由各个 CLI 发送到各自公司的服务。使用手机远程时，内容会以加密状态经过中继。

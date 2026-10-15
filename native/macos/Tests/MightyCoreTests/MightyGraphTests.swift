@@ -57,7 +57,7 @@ struct MightyGraphTests {
         #expect(MightyGraphSupport.legacyRuns(RunSession(workspaceId: "w", title: "t"))[...].allSatisfy { $0.totalUsage == nil })
     }
 
-    @Test func codexSessionsKeepGraphHistoryButGeminiSessionsDoNot() {
+    @Test func codexAndAntigravitySessionsKeepGraphHistoryButShellsDoNot() {
         var codex = RunSession(workspaceId: "workspace", title: "Codex"); codex.provider = "codex"
         codex.beginGraphRun(input: "Ship it", id: "request-one", configuredModel: "default")
         receive(node("process-one"), &codex)
@@ -66,10 +66,13 @@ struct MightyGraphTests {
         receive(node("process-one", agent: "a", state: "completed", output: "Checked"), &codex)
         #expect(codex.mightyGraphRuns.count == 1); #expect(codex.mightyGraphRuns[0].agents.count == 1)
         #expect(codex.mightyGraphRuns[0].resultEntries.map(\.text) == ["Done"])
-        var gemini = RunSession(workspaceId: "workspace", title: "Gemini"); gemini.provider = "gemini"
+        var gemini = RunSession(workspaceId: "workspace", title: "Antigravity"); gemini.provider = "gemini"
         gemini.beginGraphRun(input: "Ship it", id: "request-one", configuredModel: "default")
-        #expect(gemini.graphRuns == nil)
-        #expect(MightyGraphSupport.providers == ["claude", "codex"])
+        #expect(gemini.graphRuns?.map(\.input) == ["Ship it"])
+        var shell = RunSession(workspaceId: "workspace", title: "Shell", kind: "shell")
+        shell.beginGraphRun(input: "ls", id: "request-one", configuredModel: "default")
+        #expect(shell.graphRuns == nil)
+        #expect(MightyGraphSupport.providers == ["claude", "codex", "gemini"])
     }
 
     @Test func resultWaitsForEveryChildAndAppearsInMainAndResult() {

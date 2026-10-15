@@ -6,7 +6,8 @@ import Foundation
 /// children spawned from this run's root thread, only work done since the run
 /// started, and only readable parts. Sealed message bodies, role instructions
 /// and history a child copied from its parent are never shown; command output
-/// is, as for the root's exec items.
+/// is, as for the root's exec items. Antigravity's sub-agents are read the same
+/// way from their own transcripts (`AntigravitySubagentWatcher`).
 final class ExecutionGraphTracker {
     private enum Owner: Equatable { case node(String), agent(String) }
     private struct PendingAgent {
@@ -15,7 +16,8 @@ final class ExecutionGraphTracker {
     }
     private let runID: String
     private let mainID: String
-    /// "claude" observes stream-json plus Mods; "codex" observes exec JSONL.
+    /// "claude" observes stream-json plus Mods; "codex" observes exec JSONL;
+    /// "gemini" observes Antigravity's (`agy`) stream-json.
     let provider: String
     /// Model the run was configured with; used for Codex response records.
     private let configuredModel: String?
@@ -27,6 +29,13 @@ final class ExecutionGraphTracker {
     private var codexCallOrder: [String] = []
     private var codexCallGenerations: [String: [String: Int]] = [:]
     private var codexObservedCallOrder: [String] = []
+    /// The Antigravity conversation this run continues or started.
+    private(set) var antigravityConversation: String?
+    /// Sub-agents the stream named, oldest first, for the runner's watcher.
+    private(set) var antigravitySubagents: [AntigravitySubagent] = []
+    private var antigravityAgents: [String: String] = [:]
+    private var antigravityTurns: [String: Int] = [:]
+    private var antigravityModel: String?
     private var nodes: [String: ExecutionGraphNode] = [:]
     private var order: [String] = []
     private var aliases: [String: String] = [:]
@@ -117,16 +126,19 @@ final class ExecutionGraphTracker {
         nodes[id] = value; order.append(id); emit(value)
         return id
     }
-    private func update(_ id: String, reopening: Bool = false, _ change: (inout ExecutionGraphNode) -> Void) {
+    /// `continuing`: an Antigravity sub-agent that answered while helpers it
+    /// started were still out goes on with the same assignment when one reports.
+    private func update(_ id: String, reopening: Bool = false, continuing: Bool = false, _ change: (inout ExecutionGraphNode) -> Void) {
         guard !finished, let previous = nodes[id] else { return }
         var value = previous; change(&value)
-        let restart = reopening && provider == "codex" && previous.kind == "agent"
+        let restart = reopening && ["codex", "gemini"].contains(provider) && previous.kind == "agent"
             && (previous.activityGeneration ?? 0) < ExecutionGraphSupport.maximumActivityGeneration
         if restart { value.activityGeneration = (previous.activityGeneration ?? 0) + 1 }
         // Late starts and stdout fallbacks must not resurrect a final snapshot.
         if !restart, ["error", "stopped"].contains(previous.state), value.state != previous.state {
             value.state = previous.state; value.output = previous.output ?? value.output
-        } else if !restart, ExecutionGraphSupport.terminal(previous.state), !ExecutionGraphSupport.terminal(value.state) { value.state = previous.state }
+        } else if !restart, ExecutionGraphSupport.terminal(previous.state), !ExecutionGraphSupport.terminal(value.state),
+                  !(continuing && provider == "gemini" && previous.kind == "agent" && previous.state == "completed" && value.state == "running") { value.state = previous.state }
         guard var normalized = ExecutionGraphSupport.normalized(value), normalized != previous else { return }
         normalized.updatedAt = mightyTimestamp(); nodes[id] = normalized; emit(normalized)
     }
@@ -181,6 +193,7 @@ final class ExecutionGraphTracker {
     func consume(_ value: [String: Any]) {
         guard !finished else { return }
         if provider == "codex" { consumeCodex(value); return }
+        if provider == "gemini" { consumeAntigravity(value); return }
         let parentTool = Self.parentToolID(value)
         if let parentTool { ensureAgent(toolID: parentTool) }
         // Over-cap child events are omitted, never reclassified as main text.
@@ -439,6 +452,96 @@ final class ExecutionGraphTracker {
                 if !known, agent.answers.contains(entry.id), node.entries.contains(where: { $0.kind == "assistant" && $0.text == entry.text }) { continue }
                 Self.upsert(entry, into: &node.entries)
             }
+            if reopening || agent.output != nil { node.output = agent.output }
+            node.state = agent.state
+            if let records {
+                node.usage = replaced.reduce(node.usage ?? GraphTokenUsage()) { $0 - $1.previous + $1.usage }
+                node.responseRecords = records
+            }
+        }
+    }
+
+    // MARK: Antigravity stream-json
+    // agy has no hook bridge either. Each `agent_response` step carries its
+    // own usage; the reply text reaches the main block through the parser
+    // (`antigravityAnswer`), so it is exactly what the transcript shows. A
+    // `subagent` step names each sub-agent's conversation, role and prompt;
+    // what the sub-agent does is read from its own transcript.
+    private func consumeAntigravity(_ value: [String: Any]) {
+        guard let event = value["event"] as? String else { return }
+        let payload = value[event] as? [String: Any] ?? [:]
+        switch event {
+        case "init":
+            if let conversation = Self.key(value["conversation_id"]) { antigravityConversation = conversation; alias(conversation, to: mainID) }
+            if let model = payload["model"] as? String, CoreValidation.model(model) { antigravityModel = model }
+        case "step_update":
+            let index = payload["step_index"] as? Int ?? -1
+            switch payload["step_type"] as? String {
+            case "agent_response":
+                guard let usage = AntigravityRecords.usage(payload["usage"]) else { return }
+                recordUsage(usage, message: "step:\(index)", node: mainID, model: antigravityModel ?? configuredModel, markedAsConfigured: antigravityModel == nil && configuredModel != nil)
+            case "subagent":
+                let failed = (payload["state"] as? String)?.uppercased() == "ERROR"
+                for spec in ((payload["subagent_info"] as? [String: Any])?["subagents"] as? [[String: Any]] ?? []).prefix(ExecutionGraphSupport.maximumNodes) {
+                    guard let conversation = AntigravityRecords.conversationID(spec["conversation_id"]), conversation != antigravityConversation,
+                          let id = ensureAntigravityAgent(conversation: conversation) else { continue }
+                    let title = AntigravityRecords.title(role: spec["role"], typeName: spec["type_name"])
+                    let prompt = (spec["initial_prompt"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+                    if !antigravitySubagents.contains(where: { $0.conversation == conversation }) {
+                        antigravitySubagents.append(AntigravitySubagent(conversation: conversation, parent: antigravityConversation ?? "", title: title, prompt: prompt))
+                    }
+                    update(id) { node in
+                        if let title { node.title = title }
+                        if node.input == nil, let prompt { node.input = prompt }
+                        // The step ends once the sub-agent is started; only a failed start ends the block.
+                        if failed { node.state = "error" }
+                    }
+                }
+            default: break
+            }
+        default: break
+        }
+    }
+    /// The reply the parser just showed for an `agent_response` step (or the
+    /// result's full response when nothing was streamed): the latest one is
+    /// the request's answer.
+    func antigravityAnswer(_ text: String) {
+        guard !finished, provider == "gemini", !text.isEmpty else { return }
+        update(mainID) { $0.output = text }
+    }
+    @discardableResult private func ensureAntigravityAgent(conversation: String) -> String? {
+        if let id = antigravityAgents[conversation] { return id }
+        guard nodes.count < ExecutionGraphSupport.maximumNodes else { return nil }
+        let id = ExecutionGraphSupport.identifier(runID, "agy-agent:" + conversation)
+        let value = ExecutionGraphNode(id: id, runId: runID, parentId: mainID, kind: "agent", state: "running", title: L("graph.block.agent"))
+        nodes[id] = value; order.append(id); antigravityAgents[conversation] = id; emit(value)
+        alias(conversation, to: id)
+        return id
+    }
+    /// A sub-agent's transcript snapshot (`AntigravityChildRecord`). A new
+    /// instruction on a settled sub-agent is new work, as Codex's `send_input`.
+    func antigravitySession(_ agent: CodexSessionAgent) {
+        guard !finished, provider == "gemini", agent.thread != antigravityConversation, let id = ensureAntigravityAgent(conversation: agent.thread) else { return }
+        setParent(id, owner: agent.parentThread == antigravityConversation ? .node(mainID) : .agent(agent.parentThread))
+        let seenTurns = antigravityTurns[agent.thread] ?? 0
+        antigravityTurns[agent.thread] = max(seenTurns, agent.turns)
+        let reopening = seenTurns > 0 && agent.turns > seenTurns && nodes[id].map { ExecutionGraphSupport.terminal($0.state) } == true
+        var replaced: [(previous: GraphTokenUsage, usage: GraphTokenUsage)] = []
+        for record in agent.usage {
+            guard let previous = noteUsage(record.usage, message: record.responseId, node: id, model: antigravityModel ?? configuredModel,
+                                           activityIds: record.activityIds, markedAsConfigured: antigravityModel == nil && configuredModel != nil) else { continue }
+            replaced.append((previous, record.usage))
+        }
+        let records = replaced.isEmpty ? nil : buildResponseRecords(for: id)
+        // The previous assignment's answer stays in the block above the new one.
+        if reopening, let node = nodes[id], let output = node.output, !output.isEmpty, !node.entries.contains(where: { $0.kind == "assistant" && $0.text == output }) {
+            append(LogEntry(id: ExecutionGraphSupport.identifier(runID, id + ":answer:\(node.activityGeneration ?? 0)"), kind: "assistant", text: output, provider: provider), to: id)
+        }
+        let continuing = !reopening && agent.state == "running" && nodes[id]?.state == "completed"
+        update(id, reopening: reopening, continuing: continuing) { node in
+            if let title = agent.title { node.title = title }
+            if node.input == nil, let input = agent.input, !input.isEmpty { node.input = input }
+            for entry in agent.entries { Self.upsert(entry, into: &node.entries) }
             if reopening || agent.output != nil { node.output = agent.output }
             node.state = agent.state
             if let records {

@@ -1968,6 +1968,7 @@
   "slash.palette.noDescription": "No description",
   "slash.palette.select": "Enter · Tab Select",
   "slash.pluginSourceTemplate": "Plugin {plugin}",
+  "slash.source.antigravitySkill": "Antigravity skill",
   "slash.source.app": "App",
   "slash.source.codexSkill": "Codex skill",
   "slash.source.projectCommand": "Project command",

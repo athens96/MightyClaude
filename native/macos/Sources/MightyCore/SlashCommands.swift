@@ -143,6 +143,12 @@ public enum SlashCommandCatalog {
         case "codex":
             found += skills(in: home.appendingPathComponent(".codex/skills"), source: L("slash.source.codexSkill"), origin: .user)
             if let workspace { found += skills(in: workspace.appendingPathComponent(".codex/skills"), source: L("slash.source.projectSkill"), origin: .project) }
+        case "gemini":
+            // agy's own skills, then the user's, then the workspace's `.agents/skills`.
+            let agy = AntigravityRecords.folder(home: home)
+            found += skills(in: agy.appendingPathComponent("builtin/skills"), source: L("slash.source.antigravitySkill"), origin: .user)
+            found += skills(in: agy.appendingPathComponent("skills"), source: L("slash.source.antigravitySkill"), origin: .user)
+            if let workspace { found += skills(in: workspace.appendingPathComponent(".agents/skills"), source: L("slash.source.projectSkill"), origin: .project) }
         default: break
         }
         // Later sources (project) win over earlier ones (user, plugins).
