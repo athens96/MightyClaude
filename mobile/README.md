@@ -184,8 +184,8 @@ mightyclaude://pair?v=2&sid=<serverId>&pk=<base64url 공개키 32B>&relay=<wss:/
   `rename`은 이름 변경, `clear`·`usage`·`help`는 `/command` 호출(본문이 오면 시트로 표시).
   `action`이 없으면 입력창에 `/이름 `만 넣습니다.
 - 프로바이더 표시는 Mac과 **같은 아웃라인**을 브랜드 색으로 그립니다(Claude `#D97757`,
-  Codex `#10A37F`, Gemini는 `#4285F4`→`#9B72CB`→`#D96570` 그라디언트를 왼쪽 아래에서
-  오른쪽 위로). 아웃라인 데이터는 Mac의 `MightyCore/ProviderMark.swift`와 같은 24×24 경로로
+  Codex `#10A37F`, Antigravity(`gemini` id)는 Gemini의 `#4285F4`→`#9B72CB`→`#D96570`
+  그라디언트를 왼쪽 아래에서 오른쪽 위로). 아웃라인 데이터는 Mac의 `MightyCore/ProviderMark.swift`와 같은 24×24 경로로
   `src/lib/provider-marks.ts`에 있고, `react-native-svg`로 그립니다.
   **모르는 프로바이더는 아웃라인이 없으므로 중립 칩**으로 둡니다.
 
@@ -354,7 +354,7 @@ src/
              session-card.tsx(세션 카드), host-workspaces.tsx(작업 공간 묶음), host-poller.tsx
              host-status.tsx(연결 점), icons.tsx(탭·전송·중지 선 아이콘)
              sheets.tsx(선택·입력·확인·본문·목록 모달), permission-card.tsx(한 번에 한 질문)
-             mighty-blocks.tsx(요청·블록 타임라인), guided-panel.tsx
+             mighty-blocks.tsx(요청·블록 타임라인), structure-view.tsx(파이프라인 보드), guided-panel.tsx
   hooks/     use-long-poll.ts (AbortController + 포커스 + notify 연동)
              use-capabilities.ts (호스트별 /m1/info 캐시)
              use-attachments.ts (picker → 한도 → 청크 업로드 → uploadId)

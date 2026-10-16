@@ -6,7 +6,7 @@ import { isAgentIOPane, type MobileSessionSummary, type MobileState } from '@/ap
 import { NewSessionSheet, type NewSessionChoice } from '@/components/new-session-sheet';
 import { SessionRow } from '@/components/session-card';
 import { Button, EmptyState } from '@/components/ui';
-import { useCapabilities } from '@/hooks/use-capabilities';
+import { useCapabilities, useRunsAntigravity } from '@/hooks/use-capabilities';
 import { hasCapability } from '@/lib/capabilities';
 import { t } from '@/lib/i18n';
 import { groupSessionsByWorkspace } from '@/lib/merge';
@@ -45,6 +45,7 @@ export function HostWorkspaces({
   const client = useHostClient(hostId);
   // A Mac older than the files routes never shows the button.
   const canBrowseFiles = hasCapability(useCapabilities(hostId, client), 'files');
+  const antigravity = useRunsAntigravity(hostId);
   const [creatingFor, setCreatingFor] = useState<string | undefined>(undefined);
   const [creating, setCreating] = useState(false);
 
@@ -116,6 +117,7 @@ export function HostWorkspaces({
                       session={session}
                       glance={glance}
                       first={index === 0}
+                      nested={group.children.has(session.id)}
                       onPress={() => openSession(hostId, session)}
                     />
                   ))}
@@ -130,6 +132,7 @@ export function HostWorkspaces({
         visible={creatingFor !== undefined}
         workspaceName={activeWorkspace?.workspace.name ?? ''}
         busy={creating}
+        antigravity={antigravity}
         onCancel={() => setCreatingFor(undefined)}
         onCreate={(choice) => void createSession(choice)}
       />

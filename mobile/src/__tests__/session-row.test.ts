@@ -1,6 +1,6 @@
 import type { MobileSessionSummary } from '@/api/types';
 import { resetLanguage } from '@/lib/i18n';
-import { rowMark, rowMeta, rowNote, waitLabel } from '@/lib/session-row';
+import { childStateLabel, rowMark, rowMeta, rowNote, waitLabel } from '@/lib/session-row';
 
 beforeAll(() => resetLanguage('ko'));
 afterAll(() => resetLanguage());
@@ -70,6 +70,23 @@ describe('rowMeta', () => {
     expect(named({ model: 'opusplan', resolvedModel: 'claude-opus-5-5' })).toEqual(['opusplan · Opus 5.5']);
     expect(named({ provider: 'gemini', model: 'gemini-3-pro-preview' })).toEqual(['Gemini 3 Pro']);
   });
+
+  it('names an Antigravity pane and its agy models as the Mac does', () => {
+    const meta = (overrides: Partial<MobileSessionSummary>) => rowMeta(session({ provider: 'gemini', ...overrides }), undefined, undefined);
+    expect(meta({ model: 'gemini-4-argon-medium' }).lead).toEqual(['Antigravity']);
+    expect(meta({}).beta).toBe(true);
+    expect(meta({ model: 'gemini-4-argon-medium' }).rest).toEqual(['Gemini 4 Argon (Medium)']);
+    expect(meta({ model: 'claude-opus-5-5-high' }).rest).toEqual(['Claude Opus 5.5 (High)']);
+    expect(meta({ model: 'gpt-oss-120b-medium' }).rest).toEqual(['GPT-OSS 120B (Medium)']);
+    expect(meta({ model: 'default' }).rest).toEqual(['Antigravity 설정 따름']);
+    // A host still on Gemini CLI: Gemini, and no agy names.
+    const older = rowMeta(session({ provider: 'gemini', model: 'claude-opus-5-5-high' }), undefined, undefined, false);
+    expect(older.lead).toEqual(['Gemini']);
+    expect(older.rest).toEqual(['claude-opus-5-5-high']);
+    expect(rowMeta(session({ provider: 'gemini', model: 'default' }), undefined, undefined, false).rest).toEqual(['Gemini 설정 따름']);
+    // Outside an Antigravity pane the agy-only slugs stay as written.
+    expect(rowMeta(session({ model: 'claude-opus-5-5-high' }), undefined, undefined).rest).toEqual(['claude-opus-5-5-high']);
+  });
 });
 
 describe('rowMark', () => {
@@ -119,5 +136,20 @@ describe('waitLabel', () => {
     expect(waitLabel(session({ pendingQuestions: 1, pendingPermissions: 2 }))).toBe('질문 1');
     expect(waitLabel(session({ pendingPermissions: 2 }))).toBe('권한 2');
     expect(waitLabel(session({ status: 'running' }))).toBeUndefined();
+  });
+});
+
+describe('childStateLabel', () => {
+  it("says a child pane's state in the Mac sidebar's tone", () => {
+    expect(childStateLabel(session({}))).toBeUndefined();
+    expect(childStateLabel(session({ childState: 'running' }))?.tone).toBe('run');
+    expect(childStateLabel(session({ childState: 'waiting' }))?.tone).toBe('wait');
+    expect(childStateLabel(session({ childState: 'reported' }))).toEqual({ text: '보고함', tone: 'done' });
+    expect(childStateLabel(session({ childState: 'merged' }))?.tone).toBe('done');
+    expect(childStateLabel(session({ childState: 'failed' }))?.tone).toBe('err');
+    expect(childStateLabel(session({ childState: 'interrupted' }))?.tone).toBe('stop');
+    expect(childStateLabel(session({ childState: 'closed' }))?.tone).toBe('idle');
+    // A state a newer Mac adds reads as any other pane.
+    expect(childStateLabel(session({ childState: 'paused' }))).toBeUndefined();
   });
 });

@@ -144,6 +144,41 @@ describe('groupSessionsByWorkspace', () => {
   });
 });
 
+describe('Mighty Orchestration children in the pane list', () => {
+  it('puts a child right after its parent, one step in, in the order the host made them', () => {
+    const groups = groupSessionsByWorkspace(
+      state(1, [
+        session({ id: 'parent', status: 'idle' }),
+        session({ id: 'c1', parentSessionId: 'parent', childState: 'reported', status: 'completed' }),
+        session({ id: 'busy', status: 'running' }),
+        session({ id: 'c2', parentSessionId: 'parent', childState: 'running', status: 'running' }),
+      ]),
+    );
+    const group = groups[0]!;
+    expect(group.sessions.map((entry) => entry.id)).toEqual(['busy', 'parent', 'c1', 'c2']);
+    expect([...group.children]).toEqual(['c1', 'c2']);
+  });
+
+  it('keeps a child at the top level when its parent is not listed or is a child itself', () => {
+    const groups = groupSessionsByWorkspace(
+      state(1, [
+        session({ id: 'orphan', parentSessionId: 'closed', childState: 'reported' }),
+        session({ id: 'other', workspaceId: 'w2', parentSessionId: 'parent' }),
+        session({ id: 'parent' }),
+        session({ id: 'child', parentSessionId: 'parent' }),
+        session({ id: 'grandchild', parentSessionId: 'child' }),
+        session({ id: 'self', parentSessionId: 'self' }),
+      ]),
+    );
+    expect(groups[0]!.children.has('orphan')).toBe(false);
+    expect(groups[0]!.children.has('grandchild')).toBe(false);
+    expect(groups[0]!.children.has('self')).toBe(false);
+    expect([...groups[0]!.children]).toEqual(['child']);
+    expect(groups[1]!.children.size).toBe(0);
+    expect(groups.flatMap((group) => group.sessions)).toHaveLength(6);
+  });
+});
+
 describe('countAttention', () => {
   it('sums pending permissions and questions', () => {
     expect(

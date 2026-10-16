@@ -6,7 +6,7 @@ describe('beta providers', () => {
     resetLanguage();
   });
 
-  it('marks Codex and Gemini as beta and keeps Claude official', () => {
+  it('marks Codex and Antigravity as beta and keeps Claude official', () => {
     expect(providerIsBeta('claude')).toBe(false);
     expect(providerIsBeta('codex')).toBe(true);
     expect(providerIsBeta('gemini')).toBe(true);
@@ -15,7 +15,9 @@ describe('beta providers', () => {
   });
 
   it('never changes the provider name itself', () => {
-    expect(['claude', 'codex', 'gemini'].map(providerLabel)).toEqual(['Claude', 'Codex', 'Gemini']);
+    expect(['claude', 'codex', 'gemini'].map((provider) => providerLabel(provider))).toEqual(['Claude', 'Codex', 'Antigravity']);
+    // A host still on Gemini CLI names its `gemini` panes Gemini; the others keep their names.
+    expect(['claude', 'codex', 'gemini'].map((provider) => providerLabel(provider, false))).toEqual(['Claude', 'Codex', 'Gemini']);
   });
 
   it('reads the badge text from the shared locale key in both languages', () => {

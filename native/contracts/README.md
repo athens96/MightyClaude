@@ -462,10 +462,12 @@ own name and add the resolved model after ` · `. `[1m]` adds ` (1M)`; a Bedrock
 `model-label.test.ts` (jest) both read the fixture
 `[{model, resolved?, fallback?, expected}]`. The graph vectors below keep the
 catalogue-only names (`ModelUsageFormat` with `versioned: false`); the Mac views
-pass `versioned: true`. Windows does not apply these labels yet. macOS alone reads
-an Antigravity slug's last `low`/`medium`/`high` as its effort
-(`gemini-3.8-flash-low` → `Gemini 3.8 Flash (Low)`, as `agy models` names it); the
-phone shows such ids as `Gemini 3.8 Flash Low`, so they are not in the shared fixture.
+pass `versioned: true`. Windows does not apply these labels yet. macOS and the phone
+read an Antigravity slug's last `low`/`medium`/`high` as its effort
+(`gemini-3.8-flash-low` → `Gemini 3.8 Flash (Low)`, as `agy models` names it), and the
+phone names an Antigravity pane's Claude and GPT-OSS slugs as the Mac's catalogue does
+(`claude-opus-5-5-high` → `Claude Opus 5.5 (High)`, `gpt-oss-120b-medium` →
+`GPT-OSS 120B (Medium)`); these ids are tested per client, not in the shared fixture.
 
 ## Help site (`fixtures/help-site.json`)
 

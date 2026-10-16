@@ -110,7 +110,7 @@ function ActivityRow({ activity }: { activity: LogActivity }) {
 }
 
 /** Who is speaking, above a reply card: the provider's mark on its square and its name. */
-function Speaker({ provider }: { provider: string }) {
+function Speaker({ provider, antigravity }: { provider: string; antigravity: boolean }) {
   const palette = usePalette();
   const styles = useStyles(makeStyles);
   const [brand = palette.idle] = providerColorsFor(palette, provider);
@@ -119,12 +119,13 @@ function Speaker({ provider }: { provider: string }) {
       <View style={[styles.speakerMark, { backgroundColor: brand }]}>
         <ProviderMark provider={provider} size={12} color={palette.onStatus} />
       </View>
-      <Text style={styles.speakerName}>{providerLabel(provider)}</Text>
+      <Text style={styles.speakerName}>{providerLabel(provider, antigravity)}</Text>
     </View>
   );
 }
 
-export function LogEntryView({ entry }: { entry: LogEntry }) {
+/** `antigravity`: the host runs Antigravity for `gemini` (`hostRunsAntigravity`); else it is named Gemini. */
+export function LogEntryView({ entry, antigravity = true }: { entry: LogEntry; antigravity?: boolean }) {
   const palette = usePalette();
   const styles = useStyles(makeStyles);
 
@@ -145,7 +146,7 @@ export function LogEntryView({ entry }: { entry: LogEntry }) {
   if (entry.kind === 'assistant') {
     return (
       <View style={styles.assistant}>
-        {entry.provider ? <Speaker provider={entry.provider} /> : null}
+        {entry.provider ? <Speaker provider={entry.provider} antigravity={antigravity} /> : null}
         <AssistantMarkdown text={entry.text} />
       </View>
     );

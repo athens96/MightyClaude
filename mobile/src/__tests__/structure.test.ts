@@ -1,6 +1,6 @@
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import type { StructureColumn, StructureItem, StructureNode, StructureRow } from '@/api/types';
+import type { StructureColumn, StructureItem, StructureNode } from '@/api/types';
 import { resetLanguage } from '@/lib/i18n';
 import {
   FOLD_LINES,
@@ -9,8 +9,6 @@ import {
   MAX_STRUCTURE_ITEMS,
   MAX_STRUCTURE_NODES,
   MAX_STRUCTURE_PROMPT,
-  chosenAfterMove,
-  currentPageIndex,
   firstTextLine,
   foldText,
   foldedRequestLine,
@@ -22,11 +20,8 @@ import {
   normalizeStructure,
   openFence,
   pageAtOffset,
-  pageLabel,
   parseStep,
-  phaseRail,
   receiveStructure,
-  requestRail,
   resultHeading,
   stabilizeStructure,
   stepLook,
@@ -34,7 +29,6 @@ import {
   structureNotice,
   structureQuery,
   toggleCardFold,
-  visiblePage,
   type HeldStructure,
 } from '@/lib/structure';
 
@@ -257,60 +251,22 @@ describe('what the phone holds', () => {
   });
 });
 
-describe('phase pages', () => {
+describe('steps', () => {
   const columns = [column('goal', 'done'), column('interview', 'done', [1, 2]), column('seed', 'current'), column('run', 'pending')];
 
-  it('opens on the current phase', () => {
-    expect(currentPageIndex(columns)).toBe(2);
-    expect(visiblePage(columns, undefined)).toBe(2);
-    // A chosen phase the list no longer has falls back to the current one.
-    expect(visiblePage(columns, 'gone')).toBe(2);
-    // With no current phase, the newest phase holding a request; with none, the first.
-    expect(currentPageIndex([column('a', 'done', [1]), column('b', 'done', [2]), column('c', 'pending')])).toBe(1);
-    expect(currentPageIndex([column('a', 'pending'), column('b', 'pending')])).toBe(0);
-    expect(visiblePage([], undefined)).toBe(0);
-  });
-
-  it('keeps the page the user moved to until they come back to the current one', () => {
-    expect(visiblePage(columns, 'goal')).toBe(0);
-    expect(visiblePage(columns, 'run')).toBe(3);
-    expect(chosenAfterMove(columns, 0)).toBe('goal');
-    expect(chosenAfterMove(columns, 3)).toBe('run');
-    // Back on the current phase: no choice is held, so the pager follows the phase again.
-    expect(chosenAfterMove(columns, 2)).toBeUndefined();
-    // Phases that move on under a held choice keep it on its phase, not its index.
-    const moved = [column('setup', 'done'), ...columns];
-    expect(visiblePage(moved, 'goal')).toBe(1);
+  it('finds the page a pager rests on', () => {
     expect(pageAtOffset(780, 390, 4)).toBe(2);
     expect(pageAtOffset(600, 390, 4)).toBe(2);
     expect(pageAtOffset(5_000, 390, 4)).toBe(3);
     expect(pageAtOffset(100, 0, 4)).toBe(0);
   });
 
-  it('labels the page with its place', () => {
-    expect(pageLabel(columns, 2)).toBe('seed (3/4)');
-    expect(pageLabel(columns, 7)).toBe('');
-  });
-
-  it('colours the rail by step', () => {
-    expect(phaseRail(columns).map((chip) => chip.look.tone)).toEqual(['done', 'done', 'current', 'pending']);
-    expect(phaseRail(columns)[2]?.label).toBe('seed: In progress');
+  it('colours and names a step by where it stands', () => {
+    expect(stepLook('done')).toEqual({ tone: 'done', mark: '✓' });
+    expect(stepLook('current').tone).toBe('current');
     expect(stepLook('error')).toEqual({ tone: 'err', mark: '✕' });
     expect(stepLook('stopped').tone).toBe('stop');
-  });
-
-  it('gives a free request its own small rail', () => {
-    const row: StructureRow = {
-      item: columns[1]!.items[0]!,
-      request: 'done',
-      execution: 'current',
-      result: 'pending',
-    };
-    expect(requestRail(row).map((chip) => [chip.id, chip.look.mark])).toEqual([
-      ['request', '✓'],
-      ['execution', '●'],
-      ['result', '○'],
-    ]);
+    expect(stepLook('pending').mark).toBe('○');
   });
 
   it('names requests and results as the Mac does', () => {

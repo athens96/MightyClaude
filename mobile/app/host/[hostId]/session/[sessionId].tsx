@@ -56,7 +56,7 @@ import { SessionPanel } from '@/components/session-panel';
 import { ConfirmDialog, MessageSheet, PickerSheet, PromptDialog, Sheet } from '@/components/sheets';
 import { Button, EmptyState, ErrorBanner, SegmentedControl } from '@/components/ui';
 import { useAttachments } from '@/hooks/use-attachments';
-import { useCapabilities } from '@/hooks/use-capabilities';
+import { useCapabilities, useRunsAntigravity } from '@/hooks/use-capabilities';
 import { useFollowBottom } from '@/hooks/use-follow-bottom';
 import { useLongPoll } from '@/hooks/use-long-poll';
 import { usePanelExpanded } from '@/hooks/use-panel-expanded';
@@ -158,6 +158,7 @@ export default function SessionScreen() {
   const setCommands = useLiveStore((store) => store.setCommands);
   const commands = useSessionCommands(hostId, sessionId);
   const capabilities = useCapabilities(hostId, client);
+  const antigravity = useRunsAntigravity(hostId);
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
   const { height: windowHeight } = useWindowDimensions();
@@ -868,6 +869,8 @@ export default function SessionScreen() {
     () => (running || terminalPane ? undefined : latestNextActions(entries)),
     [entries, running, terminalPane],
   );
+  // The rows redraw when the next actions move or the host's name for `gemini` arrives.
+  const entriesExtra = useMemo(() => ({ nextActions, antigravity }), [nextActions, antigravity]);
   /** A fresh object per fill, so filling the same text twice still moves the caret. */
   const [filled, setFilled] = useState<{ end: number } | undefined>(undefined);
   const fillComposer = useCallback(
@@ -1063,15 +1066,15 @@ export default function SessionScreen() {
               ref={logFollow.attach}
               data={entries}
               keyExtractor={(entry) => entry.id}
-              extraData={nextActions}
+              extraData={entriesExtra}
               renderItem={({ item }) =>
                 nextActions?.entryId === item.id ? (
                   <View>
-                    <LogEntryView entry={item} />
+                    <LogEntryView entry={item} antigravity={antigravity} />
                     <NextActionChips actions={nextActions.actions} onFill={fillComposer} />
                   </View>
                 ) : (
-                  <LogEntryView entry={item} />
+                  <LogEntryView entry={item} antigravity={antigravity} />
                 )
               }
               contentContainerStyle={styles.list}

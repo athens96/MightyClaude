@@ -16,12 +16,15 @@ export function NewSessionSheet({
   visible,
   workspaceName,
   busy,
+  antigravity = true,
   onCancel,
   onCreate,
 }: {
   visible: boolean;
   workspaceName: string;
   busy: boolean;
+  /** The host runs Antigravity for `gemini` (`hostRunsAntigravity`); else it is named Gemini. */
+  antigravity?: boolean;
   onCancel: () => void;
   onCreate: (choice: NewSessionChoice) => void;
 }) {
@@ -65,7 +68,7 @@ export function NewSessionSheet({
                 {PROVIDERS.map((value) => (
                   <Chip
                     key={value}
-                    label={providerLabel(value)}
+                    label={providerLabel(value, antigravity)}
                     beta={providerIsBeta(value)}
                     color={palette.accent}
                     selected={provider === value}

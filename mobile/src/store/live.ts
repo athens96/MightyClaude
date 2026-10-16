@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { acquireHostClient, type HostCredentials, type MobileClient } from '@/api/client';
 import type { Capability, MobileCommand, MobileSessionDetail, MobileState } from '@/api/types';
 import { KEY_SEPARATOR } from '@/lib/keys';
+import type { HostIdentity } from '@/lib/provider-host';
 import { mergeSessionDetail, mergeState } from '@/lib/merge';
 import { hostLeaseOptions, useHostsStore } from '@/store/hosts';
 
@@ -33,7 +34,9 @@ interface LiveStore {
     incoming: MobileSessionDetail,
     fresh?: boolean,
   ) => void;
-  setCapabilities: (hostId: string, capabilities: Capability[]) => void;
+  /** `/m1/info`'s platform and app version per host, cached with its capabilities. */
+  hostIdentity: Record<string, HostIdentity>;
+  setCapabilities: (hostId: string, capabilities: Capability[], identity?: HostIdentity) => void;
   setCommands: (hostId: string, sessionId: string, commands: MobileCommand[]) => void;
   clearHost: (hostId: string) => void;
 }
@@ -43,6 +46,7 @@ export const useLiveStore = create<LiveStore>((set) => ({
   details: {},
   detailReceivedAt: {},
   capabilities: {},
+  hostIdentity: {},
   commands: {},
 
   applyState: (hostId, incoming, fresh) =>
@@ -64,8 +68,12 @@ export const useLiveStore = create<LiveStore>((set) => ({
       };
     }),
 
-  setCapabilities: (hostId, capabilities) =>
-    set((prev) => ({ ...prev, capabilities: { ...prev.capabilities, [hostId]: capabilities } })),
+  setCapabilities: (hostId, capabilities, identity) =>
+    set((prev) => ({
+      ...prev,
+      capabilities: { ...prev.capabilities, [hostId]: capabilities },
+      hostIdentity: identity ? { ...prev.hostIdentity, [hostId]: identity } : prev.hostIdentity,
+    })),
 
   setCommands: (hostId, sessionId, commands) =>
     set((prev) => ({
@@ -77,8 +85,10 @@ export const useLiveStore = create<LiveStore>((set) => ({
     set((prev) => {
       const states = { ...prev.states };
       const capabilities = { ...prev.capabilities };
+      const hostIdentity = { ...prev.hostIdentity };
       delete states[hostId];
       delete capabilities[hostId];
+      delete hostIdentity[hostId];
       const belongsToHost = ([key]: [string, unknown]) =>
         !key.startsWith(`${hostId}${KEY_SEPARATOR}`);
       const details = Object.fromEntries(Object.entries(prev.details).filter(belongsToHost));
@@ -86,7 +96,7 @@ export const useLiveStore = create<LiveStore>((set) => ({
         Object.entries(prev.detailReceivedAt).filter(belongsToHost),
       );
       const commands = Object.fromEntries(Object.entries(prev.commands).filter(belongsToHost));
-      return { ...prev, states, details, detailReceivedAt, capabilities, commands };
+      return { ...prev, states, details, detailReceivedAt, capabilities, hostIdentity, commands };
     }),
 }));
 
