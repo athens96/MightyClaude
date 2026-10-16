@@ -123,8 +123,10 @@ public sealed partial class DelegationCoordinator
     /// </summary>
     public Task<Notice?> ChildRunEnded(string id, string runId, ChildRunEnd end) => Isolated(async () =>
     {
-        var notice = await RecordRunEnd(id, runId, end);
-        var waited = EndingRuns.Finish(id);
+        Notice? notice = null; var waited = false;
+        // The end is no longer marked ending however its record went, so the child's queue and delivery are never held for ever.
+        try { notice = await RecordRunEnd(id, runId, end); }
+        finally { waited = EndingRuns.Finish(id); }
         if (notice is not null || waited) await DeliverPending();
         return notice;
     });

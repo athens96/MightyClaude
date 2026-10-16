@@ -34,6 +34,8 @@ public sealed partial class MainWindow
     private void SetDelegationOn(bool on)
     {
         if (options.SmokeTest) smokeDelegationOn = on; else DelegationSwitch.Set(on);
+        // A pane already running learns whether its folder can host a child worktree, so its Ctrl+Enter follows at once.
+        service.RefreshRunningWorktreeReadiness();
         foreach (var view in views.Values) view.RefreshHeldRows();
     }
 
@@ -404,8 +406,8 @@ public sealed partial class MainWindow
         /// <summary>
         /// The text of a second send that no new child runs (<see cref="ComposerSecondSends.Fallback"/>): steered into the pane's
         /// running Claude turn when that can take it, otherwise the pane's next request, queued behind the run or started now when
-        /// the run ended meanwhile. With the queue full it goes back to the composer instead, unless something was typed there
-        /// meanwhile. The transcript says which, and why.
+        /// the run ended meanwhile. With the queue full it goes back to the composer instead, ahead of anything typed there
+        /// meanwhile, so it is never lost. The transcript says which, and why.
         /// </summary>
         private async Task RunAfterNoWorktree(string text, IReadOnlyList<RunAttachment> files, string reason)
         {
@@ -417,7 +419,8 @@ public sealed partial class MainWindow
             {
                 await SlashNote(Locale.Get("delegation.human.returned", words));
                 owner.error.Text = Locale.Get("queue.full");
-                if (input.Text.Length == 0) { updating = true; input.Text = text; updating = false; await Change(p => p with { Draft = text }); }
+                var draft = input.Text.Length == 0 ? text : text + "\n\n" + input.Text;
+                updating = true; input.Text = draft; updating = false; await Change(p => p with { Draft = draft });
                 var kept = pendingAttachments.Select(file => file.Id).ToHashSet(); pendingAttachments.InsertRange(0, files.Where(file => !kept.Contains(file.Id))); RefreshAttachments();
                 RefreshComposerState();
                 return;

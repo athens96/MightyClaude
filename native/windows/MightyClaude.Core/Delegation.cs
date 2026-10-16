@@ -20,23 +20,41 @@ public static class DelegationSwitch
 {
     public const string RegistryKey = @"Software\MightyClaudeNative", ValueName = "delegation.enabled";
 
-    /// <summary>Read at each run start, at each delegation call and by the composer. A missing value is on.</summary>
+    /// <summary>How long a reading of the registry value stands: the composer asks on every refresh, the registry is read at most this often.</summary>
+    private static readonly TimeSpan ReadFor = TimeSpan.FromSeconds(2);
+    private static readonly object gate = new();
+    private static (bool On, long At)? last;
+
+    /// <summary>Read at each run start, at each delegation call and by the composer, from a reading at most 2 s old. A missing value is on.</summary>
     public static bool IsOn()
     {
         if (!OperatingSystem.IsWindows()) return false;
-        try { using var key = Registry.CurrentUser.OpenSubKey(RegistryKey); return IsOn(key?.GetValue(ValueName)); }
-        catch (Exception ex) when (ex is SecurityException or IOException or UnauthorizedAccessException) { return true; }
+        var now = System.Diagnostics.Stopwatch.GetTimestamp();
+        lock (gate) if (last is { } reading && System.Diagnostics.Stopwatch.GetElapsedTime(reading.At, now) < ReadFor) return reading.On;
+        bool on;
+        try { using var key = Registry.CurrentUser.OpenSubKey(RegistryKey); on = IsOn(key?.GetValue(ValueName)); }
+        catch (Exception ex) when (ex is SecurityException or IOException or UnauthorizedAccessException) { on = true; }
+        lock (gate) last = (on, now);
+        return on;
     }
 
-    /// <summary>A missing value, or one that is not a REG_DWORD, is on; a REG_DWORD is on unless it is zero.</summary>
-    public static bool IsOn(object? value) => value is not int number || number != 0;
+    /// <summary>A missing value is on. Zero as a REG_DWORD or REG_QWORD, and <c>0</c> or <c>false</c> as a string, are off; anything else is on.</summary>
+    public static bool IsOn(object? value) => value switch
+    {
+        int number => number != 0,
+        long number => number != 0,
+        string text => text.Trim() is var word && word != "0" && !word.Equals("false", StringComparison.OrdinalIgnoreCase),
+        _ => true,
+    };
 
-    /// <summary>Settings › General's switch: writes the value (1 on, 0 off). False when the registry refused it.</summary>
+    /// <summary>Settings › General's switch: writes the value (1 on, 0 off), and reads take it at once. False when the registry refused it.</summary>
     public static bool Set(bool on)
     {
         if (!OperatingSystem.IsWindows()) return false;
-        try { using var key = Registry.CurrentUser.CreateSubKey(RegistryKey); key.SetValue(ValueName, on ? 1 : 0, RegistryValueKind.DWord); return true; }
-        catch (Exception ex) when (ex is SecurityException or IOException or UnauthorizedAccessException) { return false; }
+        try { using var key = Registry.CurrentUser.CreateSubKey(RegistryKey); key.SetValue(ValueName, on ? 1 : 0, RegistryValueKind.DWord); }
+        catch (Exception ex) when (ex is SecurityException or IOException or UnauthorizedAccessException) { lock (gate) last = null; return false; }
+        lock (gate) last = (on, System.Diagnostics.Stopwatch.GetTimestamp());
+        return true;
     }
 
     /// <summary>A Claude pane: an agent pane (kind claude) running the Claude CLI.</summary>

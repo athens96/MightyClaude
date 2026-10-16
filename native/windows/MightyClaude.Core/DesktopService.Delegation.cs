@@ -123,6 +123,7 @@ public sealed partial class DesktopService : IDelegationHost
         });
         // The sidebar's tree and the held rows of each pane's queued list follow the file, switch on or off.
         delegationWatch = Task.WhenAll(Watch(coordinator.ChildRows), Watch(coordinator.HeldRows));
+        RefreshRunningWorktreeReadiness();
     }
 
     private async Task Watch<T>(ChannelReader<T> rows)
@@ -327,8 +328,8 @@ public sealed partial class DesktopService : IDelegationHost
 
     /// <summary>A delegated child's worktree when its runs work in a folder inside it, for a Codex or Antigravity run to write REPORT.md there; null for any other pane.</summary>
     private string? DelegationWorktreeRoot(RunSession pane) =>
-        pane.ParentSessionId is not null && pane.Provider is "codex" or "gemini" && pane.WorkingFolder is { } folder && delegation?.Worktrees.WorktreePath(pane.Id) is { } root
-        && folder != root && folder.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal) ? root : null;
+        pane.ParentSessionId is not null && pane.Provider is "codex" or "gemini" && pane.WorkingFolder is { } working && delegation?.Worktrees.WorktreePath(pane.Id) is { } made
+        && DelegationPaths.Standardized(working) is var folder && DelegationPaths.Standardized(made) is var root && !DelegationPaths.Same(folder, root) && DelegationPaths.IsInside(folder, root) ? root : null;
 
     /// <summary>
     /// What the composer's second send (Ctrl+Enter) does with the text while the pane is busy: a new child worktree for a Claude,
@@ -338,8 +339,8 @@ public sealed partial class DesktopService : IDelegationHost
     public ComposerSecondSend SecondSend(RunSession session)
     {
         var folder = WorktreeHostFolder(session); bool ready; lock (sync) ready = folder is not null && worktreeReadiness.GetValueOrDefault(folder);
-        return ComposerSecondSends.Choose(session.Kind, session.Provider, session.Settings.PermissionMode,
-            session.ParentSessionId is not null || DelegationChildren.Any(child => child.Id == session.Id), delegation is not null && delegationEnabled(), ready, DelegationProviders.CanSteer(session.Kind, session.Provider));
+        var isChild = session.ParentSessionId is not null || delegation?.File.Children.Any(child => child.Id == session.Id) == true;
+        return ComposerSecondSends.Choose(session.Kind, session.Provider, session.Settings.PermissionMode, isChild, delegation is not null && delegationEnabled(), ready, DelegationProviders.CanSteer(session.Kind, session.Provider));
     }
 
     /// <summary>
@@ -361,6 +362,13 @@ public sealed partial class DesktopService : IDelegationHost
             lock (sync) { worktreeReadinessChecks.Remove(folder); changed = worktreeReadiness.GetValueOrDefault(folder) != ready || !worktreeReadiness.ContainsKey(folder); worktreeReadiness[folder] = ready; }
             if (changed) RaiseDelegationChanged();
         });
+    }
+
+    /// <summary>Checks again, for every pane running now, whether its folder can host a child worktree: after delegation loads or its switch turns on.</summary>
+    public void RefreshRunningWorktreeReadiness()
+    {
+        List<RunSession> running; lock (sync) running = snapshot.Sessions.Where(s => s.Status == "running").ToList();
+        foreach (var session in running) RefreshWorktreeReadiness(session);
     }
 
     /// <summary>

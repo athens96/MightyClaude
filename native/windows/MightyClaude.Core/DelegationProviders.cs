@@ -98,12 +98,22 @@ public static class ChildAutoCommit
     /// <summary>The message of the commit for report revision <paramref name="revision"/>.</summary>
     public static string Message(string childId, int revision) => $"mighty: {childId} report r{revision}";
 
-    /// <summary>Whether a new file at <paramref name="path"/> (relative to the worktree) looks like a secret: <c>.env*</c>, <c>*.pem</c>, <c>*.key</c>, <c>id_rsa*</c> or <c>credentials*</c>.</summary>
+    /// <summary>The name starts that look like a secret.</summary>
+    private static readonly string[] SecretStarts = [".env", "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa", "credentials", "secrets."];
+    /// <summary>The name ends that look like a secret.</summary>
+    private static readonly string[] SecretEnds = [".pem", ".key", ".pfx", ".p12", ".ppk"];
+    /// <summary>The whole names that look like a secret.</summary>
+    private static readonly string[] SecretNames = [".npmrc", ".pypirc"];
+
+    /// <summary>
+    /// Whether a new file at <paramref name="path"/> (relative to the worktree) looks like a secret: <c>.env*</c>, <c>*.pem</c>,
+    /// <c>*.key</c>, <c>*.pfx</c>, <c>*.p12</c>, <c>*.ppk</c>, <c>id_rsa*</c>, <c>id_ed25519*</c>, <c>id_ecdsa*</c>, <c>id_dsa*</c>,
+    /// <c>credentials*</c>, <c>secrets.*</c>, <c>.npmrc</c> or <c>.pypirc</c>, in any case.
+    /// </summary>
     public static bool LooksSecret(string path)
     {
         var name = path.Replace('\\', '/').TrimEnd('/').Split('/')[^1].ToLowerInvariant();
-        return name.StartsWith(".env", StringComparison.Ordinal) || name.EndsWith(".pem", StringComparison.Ordinal) || name.EndsWith(".key", StringComparison.Ordinal)
-            || name.StartsWith("id_rsa", StringComparison.Ordinal) || name.StartsWith("credentials", StringComparison.Ordinal);
+        return SecretStarts.Any(start => name.StartsWith(start, StringComparison.Ordinal)) || SecretEnds.Any(end => name.EndsWith(end, StringComparison.Ordinal)) || SecretNames.Contains(name);
     }
 
     /// <summary>What the app found or did in the child's worktree.</summary>
@@ -148,16 +158,7 @@ public static class ChildAutoCommit
         var fresh = others.Stdout.Split('\0', StringSplitOptions.RemoveEmptyEntries);
         var leftOut = fresh.Where(path => LooksSecret(path) || Size(Path.Combine(worktreePath, path)) > MaximumNewFileBytes).ToArray();
         var taken = fresh.Where(path => !leftOut.Contains(path)).ToArray();
-        // One git write; a run the app gave up on leaves its lock removed.
-        async Task<string?> Write(IReadOnlyList<string> arguments, string? input = null)
-        {
-            if (await DelegationGit.Run(arguments, worktreePath, Timeout, input) is not { } result)
-            {
-                try { File.Delete(lockFile); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
-                return "Git did not finish.";
-            }
-            return result.ExitCode == 0 ? null : DelegationGit.Message(result);
-        }
+        Task<string?> Write(IReadOnlyList<string> arguments, string? input = null) => WriteStep(worktreePath, lockFile, arguments, input, Timeout);
         if (await Write(["add", "-u"]) is { } addFailed) return Result.Failing(addFailed, leftOut);
         if (taken.Length > 0 && await Write(["--literal-pathspecs", "add", "--pathspec-from-file=-", "--pathspec-file-nul"], string.Join('\0', taken)) is { } newFailed) return Result.Failing(newFailed, leftOut);
         if (await DelegationGit.Run(["diff", "--cached", "--quiet"], worktreePath, Timeout) is not { ExitCode: 0 or 1 } staged) return Result.Failing("Git could not read the worktree.", leftOut);
@@ -166,6 +167,26 @@ public static class ChildAutoCommit
         // An app commit never waits on a signing prompt or a hook.
         if (await Write(["-c", "commit.gpgsign=false", "commit", "-q", "--no-verify", "-m", Message(childId, revision)]) is { } commitFailed) return Result.Failing(commitFailed, leftOut);
         return new(Outcome.Committed, leftOut);
+    }
+
+    /// <summary>
+    /// One git write of the commit: null when it went through, otherwise why not. Only a git the app itself killed on its
+    /// deadline has its <c>index.lock</c> removed, since that lock is its own; a lock from any other failure (another git working
+    /// there, one that never started, one that stopped reading its input) is left as it is.
+    /// </summary>
+    public static async Task<string?> WriteStep(string worktreePath, string lockFile, IReadOnlyList<string> arguments, string? input, double timeout)
+    {
+        var run = await DelegationGit.RunDetailed(arguments, worktreePath, timeout, input);
+        switch (run.Failure)
+        {
+            case GitFailure.None: return run.Result!.ExitCode == 0 ? null : DelegationGit.Message(run.Result);
+            case GitFailure.TimedOut:
+                try { File.Delete(lockFile); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+                return "Git did not finish in time.";
+            case GitFailure.NotStarted: return "Git could not be started.";
+            case GitFailure.BrokenPipe: return run.Result is { ExitCode: not 0 } stopped ? DelegationGit.Message(stopped) : "Git stopped reading the list of new files.";
+            default: return "Git did not finish.";
+        }
     }
 
     /// <summary>The size of the file at <paramref name="path"/>, not following a link; 0 when unknown.</summary>

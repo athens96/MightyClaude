@@ -371,7 +371,7 @@ internal static class Verification
         await Test("Login recovery requires fresh successful sign-in", CliLoginRecoveryVerification.WaitRequiresFreshSuccessWhenAlreadySignedIn);
         await Test("Login recovery automatic start once per provider with cooldown", CliLoginRecoveryVerification.AutomaticStartOncePerProviderWithCooldown);
         await Test("Login recovery Antigravity sign-in failures, and only a signed-out status asks for a sign-in", CliLoginRecoveryVerification.GeminiSignalsAndMethods);
-        await Test("Login recovery Antigravity sign-in is its status reading signed in", CliLoginRecoveryVerification.GeminiSignInIsTheCredentialsFileChanging);
+        await Test("Login recovery Antigravity sign-in is its status reading signed in", CliLoginRecoveryVerification.AntigravitySignInIsItsStatusReadingSignedIn);
         await Test("Login recovery Antigravity fake CLI run: the sign-in message on stderr is the reason, the same words as an answer are not", CliLoginRecoveryVerification.GeminiFakeCliRunRaisesTheReasonFromStderrOnly);
         await Test("Login recovery Claude fake CLI run: a result repeating the marked sign-in failure keeps the reason, whatever its words", CliLoginRecoveryVerification.ClaudeFakeCliRunKeepsTheReasonWhenTheResultRepeatsTheMarkedFailure);
         // The `gemini` provider runs Antigravity CLI (agy), ported from the Mac's AntigravityTests and AntigravityGraphTests.
@@ -435,6 +435,7 @@ internal static class Verification
         await Test("delegation: the parent's tools and caps leave the human's child alone", DelegationHumanChildVerification.TheParentsToolsAndCapsLeaveTheHumansChildAlone);
         await Test("delegation: the app commits a Codex or Antigravity child's work", DelegationHumanChildVerification.TheAppCommitsACodexOrAntigravityChildsWork);
         await Test("delegation: a card merge that conflicts asks the child once per report", DelegationHumanChildVerification.ACardMergeThatConflictsAsksTheChildOncePerReport);
+        await Test("delegation: git says why it gave no result, and only its own lock goes", DelegationHumanChildVerification.GitSaysWhyItGaveNoResultAndOnlyItsOwnLockGoes);
         await Test("delegation scenario S1: two children, a human's approval, a fast-forward and a discard", DelegationScenarioVerification.S1);
         await Test("delegation scenario S2: held notices released together by a send or run next after a relaunch", DelegationScenarioVerification.S2);
         await Test("delegation scenario S3: a diverged child's held follow-ups reach it once after a relaunch", DelegationScenarioVerification.S3);
@@ -932,7 +933,7 @@ internal static class Verification
         await Test("cli account strings match macOS", StringsVerification.CliAccountStringsMatchMacOS);
         await Test("cli account claude and codex statuses expose account labels only", CliAccountVerification.ClaudeAndCodexStatusesExposeAccountLabelsOnly);
         await Test("cli account token never survives the read", CliAccountVerification.TokenNeverSurvivesTheRead);
-        await Test("cli account antigravity status is its model list, with no sign-out", CliAccountVerification.GeminiStatusAndLogoutWorkOnItsAccountFiles);
+        await Test("cli account antigravity status is its model list, with no sign-out", CliAccountVerification.AntigravityStatusIsItsModelListWithNoSignOut);
         await Test("cli account commands are the CLIs own", CliAccountVerification.CommandsAreTheCLIsOwn);
         await Test("cli account coordinator reads statuses and calls logout", CliAccountVerification.CoordinatorReadsStatusesAndCallsLogout);
         await Test("cli account smoke shows fixture statuses and confirmation flow works", CliAccountVerification.SmokeShowsFixtureStatusesAndConfirmationFlowWorks);
