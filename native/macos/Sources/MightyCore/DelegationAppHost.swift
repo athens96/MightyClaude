@@ -4,28 +4,39 @@ import Foundation
 /// (macOS only). AppStore applies these rules; tests check them without the app.
 public enum DelegationPanes {
     /// A new agent pane for `pane` in the workspace `workspaceId`, running
-    /// `pane.provider` (its parent's agent). Its mode is the starting mode the
+    /// `pane.provider` (the child's agent). Its mode is the starting mode the
     /// parent asked for, written here once and never copied from the
     /// last-used pane; it is linked to its parent and works in its worktree
-    /// folder. Every child of a `parent` running the same agent shows its
-    /// requests the way the parent does: basic or Mighty, and in Mighty the
-    /// diagram, timeline or pipeline. A child the human started also takes
-    /// the parent's model and effort, and a Claude one its Mighty style; any
-    /// other runs its agent's default (plain Mighty for Claude).
-    public static func childSession(_ pane: DelegationChildPane, workspaceId: String, title: String, parent: RunSession? = nil) -> RunSession {
+    /// folder. Every child of an agent pane `parent` shows its requests the
+    /// way the parent does: basic or Mighty, and in Mighty the diagram,
+    /// timeline or pipeline, which every agent's pane has. A child of the
+    /// parent's own agent that the human started also takes the parent's
+    /// model and effort, and a Claude one its Mighty style; any other of the
+    /// parent's agent runs its agent's default (plain Mighty for Claude). A
+    /// child of another agent that the human started runs the model and
+    /// effort a new pane of that agent would: those of `agentDefaults`, the
+    /// agent's last-used pane, or its defaults without one; one its parent's
+    /// delegate made runs its agent's defaults, as a child of the parent's
+    /// agent does.
+    public static func childSession(_ pane: DelegationChildPane, workspaceId: String, title: String, parent: RunSession? = nil, agentDefaults: RunSession? = nil) -> RunSession {
         var session = RunSession(id: pane.sessionId, workspaceId: workspaceId, title: title, kind: SessionKind.claude, provider: pane.provider,
                                  settings: RunSettings(permissionMode: pane.mode))
-        if let parent, parent.provider == pane.provider, DelegationProviders.isAgentPane(kind: parent.kind, provider: parent.provider) {
+        if let parent, DelegationProviders.isAgentPane(kind: parent.kind, provider: parent.provider) {
             session.agentViewMode = parent.agentViewMode
             session.graphViewMode = parent.graphViewMode
-            if pane.startedByHuman {
-                session.model = parent.model
-                session.settings.effort = parent.settings.effort
-                if pane.provider == "claude" {
-                    // The same approved bytes; its state starts over at the child's own first request.
-                    session.mightyStyle = parent.mightyStyle
-                    session.mightyStyleHash = parent.mightyStyleHash
+            if parent.provider == pane.provider {
+                if pane.startedByHuman {
+                    session.model = parent.model
+                    session.settings.effort = parent.settings.effort
+                    if pane.provider == "claude" {
+                        // The same approved bytes; its state starts over at the child's own first request.
+                        session.mightyStyle = parent.mightyStyle
+                        session.mightyStyleHash = parent.mightyStyleHash
+                    }
                 }
+            } else if pane.startedByHuman, let agentDefaults, agentDefaults.provider == pane.provider {
+                session.model = agentDefaults.model
+                session.settings.effort = agentDefaults.settings.effort
             }
         }
         session.parentSessionId = pane.parentSessionId

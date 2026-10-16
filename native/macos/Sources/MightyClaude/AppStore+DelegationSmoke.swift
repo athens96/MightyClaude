@@ -17,8 +17,10 @@ extension AppStore {
     /// phone send releases a held notice, a workspace with an open child or
     /// a kept child worktree is refused with `workspace_has_children`, and a
     /// parent with an open child asks first on the Mac and closes from the
-    /// phone, its child kept under a 'parent closed' node. No model runs: the
-    /// parent's run is FakeClaude's (`--fake-claude`). The result goes to
+    /// phone, its child kept under a 'parent closed' node. Then the store's
+    /// send for another agent (what a worktree menu pick calls) starts a
+    /// Claude child of a Codex pane. No model runs: every Claude run is FakeClaude's
+    /// (`--fake-claude`), and the Codex pane never runs. The result goes to
     /// `delegation-smoke-result.json` in the profile.
     func runDelegationSmokeTest() async {
         let arguments = ProcessInfo.processInfo.arguments
@@ -161,6 +163,40 @@ extension AppStore {
             guard await removeWorkspace(workspace).value == nil else { throw MightyError("The workspace was refused after its children were gone.") }
             try await waitForSmoke(timeout: 15) { !self.snapshot.workspaces.contains(where: { $0.id == workspace.id }) }
             checks["removedAfterDiscard"] = true
+
+            // 9. A child of another agent: the store's send for another agent,
+            //    as a worktree menu pick makes it, from a Codex pane (which
+            //    never runs) starts a Claude child, run by FakeClaude. The
+            //    menu itself is not shown here. Delegation starts again with
+            //    the free space stood in for: a runner's disk may hold less
+            //    than a child's 10 GB, and this child is tiny.
+            stage = "other-agent-child"
+            delegationChildWatch?.cancel(); delegationHeldWatch?.cancel()
+            await delegationRunEvents?.finish()
+            self.delegation = nil; delegationRunEvents = nil
+            startDelegation(freeBytes: { _ in .max })
+            guard let crossDelegation = self.delegation else { throw MightyError("Delegation did not load again.") }
+            let crossRepo = base.appendingPathComponent("cross", isDirectory: true)
+            try FileManager.default.createDirectory(at: crossRepo, withIntermediateDirectories: true)
+            try await delegationSmokeGit(["init", "-q", "-b", "main"], in: crossRepo)
+            try Data("# Cross-agent smoke\n".utf8).write(to: crossRepo.appendingPathComponent("README.md"))
+            try await delegationSmokeGit(["add", "-A"], in: crossRepo)
+            try await delegationSmokeCommit("Start", in: crossRepo)
+            let crossWorkspace = try await repository.approveWorkspace(Workspace(name: "Cross Agent Smoke", path: crossRepo.path))
+            addWorkspace(crossWorkspace)
+            guard let codexPane = addSession(kind: "claude", provider: "codex", workspaceId: crossWorkspace.id) else { throw MightyError("No Codex pane.") }
+            let crossText = "Smoke cross-agent child: write a note."
+            runInNewWorktree(codexPane, input: crossText, attachments: [], draft: crossText, agent: "claude")
+            let crossChild = try await delegationSmokeAwait("the Codex pane's Claude child", timeout: 60) { () -> ChildRecord? in
+                await crossDelegation.file.children.first { $0.parentSessionId == codexPane && $0.startedByHuman == true && $0.state != .creating }
+            }
+            guard crossChild.state != .failed, crossChild.provider == nil, crossChild.agent == "claude",
+                  let crossPane = snapshot.sessions.first(where: { $0.id == crossChild.id }), crossPane.provider == "claude", crossPane.parentSessionId == codexPane,
+                  snapshot.sessions.first(where: { $0.id == codexPane })?.provider == "codex",
+                  delegationChildren.first(where: { $0.id == crossChild.id })?.agent == "claude" else {
+                throw MightyError("The Codex pane's send for Claude did not start a Claude child (\(crossChild.state.rawValue)).")
+            }
+            checks["otherAgentChildStarted"] = ["parent": "codex", "child": crossPane.provider, "mode": crossChild.startingMode, "state": crossChild.state.rawValue]
 
             stage = "done"
             result["passed"] = true

@@ -219,7 +219,9 @@ jobs:
         # repository: merged children closed on the Mac and from the phone are cleaned up,
         # a phone send releases a held notice, a workspace with children is refused with
         # workspace_has_children, and a parent's close asks first on the Mac and closes only
-        # the parent from the phone. The parent's run is the scripted FakeClaude the app
+        # the parent from the phone, and the store's send for another agent (what a worktree menu
+        # pick calls; the menu itself is not shown) starts a Claude child of a Codex pane. Every
+        # Claude run is the scripted FakeClaude the app
         # build made beside the app's binary; no model runs. Only with an app to run.
         if: (success() || failure()) && steps.build-app.outcome == 'success'
         timeout-minutes: 5
@@ -249,7 +251,8 @@ jobs:
           result = json.loads(path.read_text())
           print(json.dumps(result, ensure_ascii=False, sort_keys=True, indent=2))
           expected = ["childrenListed", "macCloseMergedChild", "phoneCloseMergedChild", "phoneSendReleasedHeldNotice",
-                      "removeRefusedOpenChild", "macParentCloseAsks", "phoneParentCloseKeepsChild", "removeRefusedKeptWorktree", "removedAfterDiscard"]
+                      "removeRefusedOpenChild", "macParentCloseAsks", "phoneParentCloseKeepsChild", "removeRefusedKeptWorktree", "removedAfterDiscard",
+                      "otherAgentChildStarted"]
           missing = [name for name in expected if name not in result.get("checks", {})]
           if not result.get("passed") or missing:
               msg = f'stage={result.get("failedStage", "?")}; error={result.get("error", "unknown")}; missing={missing}'

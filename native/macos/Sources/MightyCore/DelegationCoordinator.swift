@@ -3,17 +3,19 @@ import Foundation
 /// The tools the delegation MCP server lists (macOS only): exactly these six.
 /// The server is attached only to a Claude or Codex pane's run while the
 /// ``DelegationSwitch`` is on, so with the switch on such a pane sees these
-/// and with it off none. Every argument is a required string.
+/// and with it off none. Every argument is a string, and every one is
+/// required but delegate's `agent`.
 public enum DelegationToolManifest {
     public struct Argument: Sendable, Equatable {
         public let name: String
         public let description: String
+        public var required = true
     }
 
     public struct Tool: Sendable, Equatable {
         public let name: String
         public let description: String
-        /// All strings, all required, no others.
+        /// All strings, no others.
         public let arguments: [Argument]
     }
 
@@ -21,22 +23,23 @@ public enum DelegationToolManifest {
 
     public static let delegate = Tool(
         name: "delegate",
-        description: "Start a child pane running your own agent CLI that works on a task in its own git worktree, on the flat branch mighty/<child id> made from your current branch head. Use it only when the user asks for parallel or delegated work, or when the task clearly splits into independent parts that can run at the same time; never fan out speculatively, and do the work yourself otherwise. The child starts in the permission mode you ask for, which must be one of your pane's modes and no wider than your own (Claude: plan < manual < acceptEdits < auto < fullAccess; Codex: manual < acceptEdits < onRequest < fullAccess). Answers as soon as the child exists; its run goes on in the background. The child writes its result to REPORT.md, and you get one notice per report. At most 3 open children per pane, and a child cannot delegate. The same call twice in one of your runs returns the same child.",
+        description: "Start a child pane that works on a task in its own git worktree, on the flat branch mighty/<child id> made from your current branch head. It runs your own agent CLI unless agent names another: claude, codex or antigravity, each only if installed and signed in on this Mac. Use it only when the user asks for parallel or delegated work, or when the task clearly splits into independent parts that can run at the same time; never fan out speculatively, and do the work yourself otherwise. The child starts in the permission mode you ask for, which must be one of the child agent's modes and one in which it can change files. For your own agent it must be no wider than your own mode (Claude: plan < manual < acceptEdits < auto < fullAccess; Codex: manual < acceptEdits < onRequest < fullAccess). For another agent, the child's mode may do nothing yours may not: edit files without asking only if yours does (Claude acceptEdits and auto, Codex onRequest and acceptEdits, Antigravity acceptEdits, any fullAccess), edit after asking only if yours edits at all, run shell commands without asking only if yours does (Claude auto, Codex manual and acceptEdits, any fullAccess), and have full access only from your fullAccess. So from Claude acceptEdits a Codex child gets onRequest, not acceptEdits (which runs commands without asking), and from Claude plan or manual no Codex or Antigravity child can start. Answers as soon as the child exists; its run goes on in the background. The child writes its result to REPORT.md, and you get one notice per report. At most 3 open children per pane, of all agents together, and a child cannot delegate. The same call twice in one of your runs returns the same child.",
         arguments: [
             Argument(name: "task", description: "What the child should do. It is saved as the child's TASK.md."),
-            Argument(name: "mode", description: "The child's starting permission mode, one of your pane's: plan, manual, acceptEdits, auto or fullAccess for Claude; acceptEdits, onRequest or fullAccess for Codex (a manual Codex child cannot change files). No wider than yours."),
+            Argument(name: "mode", description: "The child's starting permission mode, one of the child agent's in which it can change files, no wider than yours: plan, manual, acceptEdits, auto or fullAccess for a Claude child; acceptEdits, onRequest or fullAccess for a Codex child; acceptEdits or fullAccess for an Antigravity child."),
+            Argument(name: "agent", description: "Optional: the agent CLI the child runs, claude, codex or antigravity. Leave it out for your own agent.", required: false),
         ]
     )
 
     public static let listChildren = Tool(
         name: "list_children",
-        description: "List your children with their id, state and current report revision.",
+        description: "List your children with their id, agent, state and current report revision.",
         arguments: []
     )
 
     public static let childStatus = Tool(
         name: "child_status",
-        description: "Read one of your children: its state, its head and the body of its latest REPORT.md.",
+        description: "Read one of your children: its agent, its state, its head and the body of its latest REPORT.md.",
         arguments: [child]
     )
 
@@ -73,7 +76,7 @@ public enum DelegationToolManifest {
             "inputSchema": [
                 "type": "object",
                 "properties": properties,
-                "required": tool.arguments.map(\.name),
+                "required": tool.arguments.filter(\.required).map(\.name),
                 "additionalProperties": false,
             ] as [String: Any],
         ]
@@ -90,10 +93,12 @@ public struct DelegationChildPane: Sendable, Equatable {
     public var mode: String
     /// The folder the child works in, inside its worktree.
     public var folder: String
-    /// The agent CLI the child runs: its parent's.
+    /// The agent CLI the child runs: its parent's, or the one the parent's
+    /// delegate call or the human's menu chose.
     public var provider: String
-    /// The human started it from the parent's composer: it takes the
-    /// parent's model and effort, and the app shows it at once.
+    /// The human started it from the parent's composer: a child of the
+    /// parent's agent takes the parent's model and effort, and the app shows
+    /// it at once.
     public var startedByHuman: Bool
 
     public init(sessionId: String, parentSessionId: String, mode: String, folder: String, startedByHuman: Bool = false, provider: String = "claude") {
@@ -155,11 +160,17 @@ public protocol DelegationHost: Sendable {
     /// Shows `text` in the pane's transcript as the app's note. Does nothing
     /// for a closed pane.
     func note(_ text: String, in sessionId: String) async
+    /// Whether the `provider` agent's CLI can run a child, as the app last
+    /// learnt it, for a child of an agent other than its parent's. The app
+    /// never asks a CLI for this.
+    func agentAvailability(_ provider: String) async -> DelegationAgentAvailability
 }
 
 extension DelegationHost {
     /// A host that shows no notes.
     public func note(_ text: String, in sessionId: String) async {}
+    /// A host that knows nothing against any agent.
+    public func agentAvailability(_ provider: String) async -> DelegationAgentAvailability { .ready }
 }
 
 /// The app's delegation service (macOS only). It owns the child records (the
@@ -285,7 +296,7 @@ public actor DelegationCoordinator: DelegationRequestHandler {
     private func perform(_ tool: DelegationToolManifest.Tool, _ arguments: [String: String], caller: PaneMCPBinding) async -> DelegationResponse {
         switch tool {
         case DelegationToolManifest.delegate:
-            return await delegate(task: arguments["task"] ?? "", mode: arguments["mode"] ?? "", caller: caller)
+            return await delegate(task: arguments["task"] ?? "", mode: arguments["mode"] ?? "", agent: arguments["agent"], caller: caller)
         case DelegationToolManifest.listChildren:
             return listChildren(caller: caller)
         case DelegationToolManifest.childStatus:
@@ -304,11 +315,14 @@ public actor DelegationCoordinator: DelegationRequestHandler {
         "\(tool) did not finish within \(Int(seconds)) seconds. Its work goes on in Mighty Claude; call list_children to see where your children stand."
     }
 
-    /// Why `arguments` are not exactly `tool`'s, or nil when they are.
+    /// Why `arguments` are not `tool`'s (every required one, and no other),
+    /// or nil when they are.
     static func argumentProblem(_ arguments: [String: String], for tool: DelegationToolManifest.Tool) -> String? {
-        let names = tool.arguments.map(\.name)
-        guard Set(arguments.keys) == Set(names) else {
-            return names.isEmpty ? "\(tool.name) takes no arguments." : "\(tool.name) takes exactly these string arguments: \(names.joined(separator: ", "))."
+        let names = tool.arguments.map(\.name), required = tool.arguments.filter(\.required).map(\.name)
+        guard Set(arguments.keys).isSubset(of: names), Set(required).isSubset(of: arguments.keys) else {
+            if names.isEmpty { return "\(tool.name) takes no arguments." }
+            let optional = tool.arguments.filter { !$0.required }.map(\.name)
+            return "\(tool.name) takes exactly these string arguments: \(required.joined(separator: ", "))" + (optional.isEmpty ? "." : ", and optionally \(optional.joined(separator: ", ")).")
         }
         return nil
     }

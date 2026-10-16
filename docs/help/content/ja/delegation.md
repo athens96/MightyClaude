@@ -3,7 +3,7 @@ title: Mightyオーケストレーション
 order: 6
 section: delegation
 ---
-Mightyオーケストレーションは、エージェントのペインが作業している間に、別の作業を隣の子ペインに任せて並行して進める機能です。子は親と同じエージェント(Claude、Codex、Antigravity)で実行されます([CodexとAntigravity](#agents))。子ペインはそれぞれ自分のgit worktreeとブランチで作業するので互いのファイルに触れず、終わったらサイドバーのカードから結果を親のブランチにマージします。以前の名前はエージェント委任です。
+Mightyオーケストレーションは、エージェントのペインが作業している間に、別の作業を隣の子ペインに任せて並行して進める機能です。子は親と同じエージェント(Claude、Codex、Antigravity)で実行され、Macでは3つのうち別のエージェントでも実行できます([CodexとAntigravity](#agents))。子ペインはそれぞれ自分のgit worktreeとブランチで作業するので互いのファイルに触れず、終わったらサイドバーのカードから結果を親のブランチにマージします。以前の名前はエージェント委任です。
 
 子ペインを開く方法は二つあります。
 
@@ -39,8 +39,9 @@ Claude・Codex・Antigravityペインの実行中にリクエストを書いて{
 - 実行中のペインで{{kbd:Enter}}を押すと、リクエストはキューに入り、今の作業が終わったあとに実行されます。入力欄の案内文に、二つのキーの働きが表示されます。
 - 新しいworktreeは、作れる場所でだけ使います。コミットのあるブランチをチェックアウトしたgitリポジトリである必要があります。それ以外の場所(gitリポジトリでない、まだコミットがない、ブランチではなくコミットをチェックアウトしている)では、{{kbd:⌘Enter}}はこれまでどおり実行中のClaudeにすぐ送信し、CodexとAntigravityのペインはキューに入れます。
 - 子は親の最後のコミットから始まります。ブランチ`mighty/<子のid>`ができ、worktreeはプロジェクトフォルダーの外(Macは`~/.mightyclaude/worktrees/<子のid>`、Windowsは`%USERPROFILE%\.mightyclaude\worktrees\<子のid>`)にできるので、親の作業には触れません。親のフォルダーでまだコミットしていない変更は、子には渡りません。
-- 親ペインの権限モードで、親ペインのモデルと{{ui:composer.effort.label}}で実行します。すべてのリクエストをプランモードで始めるスタイルでは、プランモードで始まります。親と同じ表示で開き、親がマイティ表示でスタイルを使っていたなら同じスタイルで始まります(スタイルの進み具合は子の最初のリクエストから別に数えます)。添付ファイルも一緒に渡ります。
+- ペインと同じエージェントの子は、親ペインの権限モードで、親ペインのモデルと{{ui:composer.effort.label}}で実行します。すべてのリクエストをプランモードで始めるスタイルでは、プランモードで始まります。親と同じ表示で開き、親がマイティ表示でスタイルを使っていたなら同じスタイルで始まります(スタイルの進み具合は子の最初のリクエストから別に数えます)。添付ファイルも一緒に渡ります。
 - 最初のメッセージは入力したテキストが先に来て、その後にアプリが、子がどこで作業するかを伝え、終わったらコミットしてREPORT.mdを書くよう添えます。そうするとカードからマージできます。スラッシュコマンド(`/`で始まるテキスト)は入力したとおり単独で実行され、アプリの案内は子ペインの次のリクエストとして続くため、コマンドの引数になりません。
+- {{platform:mac}} 別のエージェントでリクエストを実行するには、{{ui:queue.worktree}}ボタンを右クリック(またはControlクリック)して、Claude、Codex、Antigravityから選びます。{{kbd:⌘Enter}}とふつうのクリックは、ペインと同じエージェントのままです。グレーの項目には実行できない理由が出ます。CLIがインストールされていないかサインインしていない(設定 › CLIで確認)、ペインのモードが許す範囲でファイルを変更できるモードがない、自分で始めた子がすでに3つ開いている、のいずれかです。別のエージェントの子は、ファイルを変更でき、ペインのモードが許さないことはしない自分のモードのうち一番広いモードで始まり([CodexとAntigravity](#agents))、そのエージェントの新しいペインが受け取るモデルと{{ui:composer.effort.label}}を使い、ペインと同じ表示で開きますが、スタイルは引き継ぎません。その子を作れないか始められないときは、テキストと添付ファイルは入力欄に戻り、会話に理由が書かれます。ペイン自身には送りません。ペインのエージェントはそのモードで子を持てないが別のエージェントなら持てるときは、ボタンはそのまま表示され、クリックでメニューが開き、{{kbd:⌘Enter}}はこれまでどおりに動きます。
 - 子ペインは同じエージェントのふつうのペインと同じように使えます。承認カードに答え、追加のリクエストを送り、権限モードを変えられます。
 - 自分で起動した子について、親ペインのClaudeは通知を受け取りません。親が任せた作業ではないからです。親のツールもこの子を一覧に出さず、マージも追加の指示もできません(`human_started`)。サイドバーで状態を確かめ、カードのボタンを自分で使ってください。
 - 開いておける子は親ペイン一つにつき3つまでで、ディスクの空きが10 GB必要です。終わった子ペインを閉じるか破棄すると空きができます。
@@ -48,27 +49,31 @@ Claude・Codex・Antigravityペインの実行中にリクエストを書いて{
 - 子ペインやMightyオーケストレーションをオフにしたペインでは、{{kbd:⌘Enter}}はこれまでどおり実行中のClaudeにすぐ送信し、CodexとAntigravityのペインはキューに入れます。スマートフォンの送信方法は変わらず、スマートフォンからすぐ送信すると今までどおり実行中のClaudeに届きます。
 
 ## Claudeに分けて任せる {#delegate}
-ClaudeかCodexのペイン(親)が作業を分けて、同じエージェントのほかのペイン(子)に任せることもできます。子がレポートすると、親が通知を受け取ってレポートを読み、結果をマージするかどうかを決めます。ClaudeとCodexの親は、MacアプリとWindowsアプリの両方で使えます。
+ClaudeかCodexのペイン(親)が作業を分けて、ほかのペイン(子)に任せることもできます。別のエージェントを指定しなければ、子は親と同じエージェントです。子がレポートすると、親が通知を受け取ってレポートを読み、結果をマージするかどうかを決めます。ClaudeとCodexの親は、MacアプリとWindowsアプリの両方で使えます。
 
 1. gitリポジトリのフォルダーをワークスペースとして開き、Claudeのペインを開きます。このペインが親です。
 2. 「delegateツールでMightyの子ペインを二つ開いて、この作業を分けて任せて」のように、ツール名を入れて頼みます。「分けてやって」とだけ言うと、Claudeが自分の中のサブエージェントで済ませることがあります。
 3. 子ペインは親の隣に開き、サイドバーでは親の下に一段下げて表示されます。
 
-- 親が使うツールは`delegate`(任せる)、`list_children`(子の一覧)、`child_status`(状態とレポートを読む)、`merge`(マージ)、`follow_up`(追加の指示)です。`discard`(破棄)は親には使えず、カードからあなただけが行えます。
+- 親が使うツールは`delegate`(任せる。{{platform:mac}} Macでは`agent`で子のエージェントを`claude`、`codex`、`antigravity`から指定できます)、`list_children`(子の一覧)、`child_status`(状態とレポートを読む)、`merge`(マージ)、`follow_up`(追加の指示)です。`discard`(破棄)は親には使えず、カードからあなただけが行えます。
 - 子ごとにブランチ`mighty/<子のid>`とworktree(Macは`~/.mightyclaude/worktrees/<子のid>`、Windowsは`%USERPROFILE%\.mightyclaude\worktrees\<子のid>`)ができます。子は親の最後のコミットから始まります。
 - 任せた作業はTASK.mdに、結果はREPORT.mdに書かれます。どちらもworktree内のgitが無視するフォルダーにあり、コミットされません。
-- 子の権限モードは親が選んだモードで、親のペインのモードより広くできません。広げられるのはあなただけで、実行と実行の合間に、子ペインの入力欄の権限メニューかスマートフォンの設定から行います。
+- 子の権限モードは親が選んだモードで、親のペインのモードより広くできません。別のエージェントの子は、親のモードがしないことはできません。親のモードが確認せずにファイルを変更するとき(編集承認モードかautoモードのClaude、{{ui:permission.label.onRequest}}か{{ui:permission.label.acceptEditsCodex}}モードのCodex、{{ui:permission.label.acceptEdits}}モードのAntigravity、{{ui:permission.label.fullAccess}}モードのどのエージェントも)だけ確認せずにファイルを変更し、親のモードがファイルを変更できるときだけ確認したうえでファイルを変更し、親のモードが確認せずにシェルコマンドを実行するとき(autoモードのClaude、{{ui:permission.label.defaultCodex}}か{{ui:permission.label.acceptEditsCodex}}モードのCodex、{{ui:permission.label.fullAccess}}モードのどのエージェントも)だけ確認せずに実行し、{{ui:permission.label.fullAccess}}の下でだけフルアクセスを持ちます。そのため、シェルコマンドの前に確認するClaudeの編集承認モードの下では、Codexの子は{{ui:permission.label.acceptEditsCodex}}ではなく{{ui:permission.label.onRequest}}になり、プランモードか手動モードのClaudeのペインはCodexやAntigravityの子をまったく持てません。広げられるのはあなただけで、実行と実行の合間に、子ペインの入力欄の権限メニューかスマートフォンの設定から行います。
 - 子ペインは親ペインと同じ表示({{ui:graph.view.default}} | {{ui:graph.view.mighty}}、マイティ表示なら{{ui:graph.view.diagram}}, {{ui:graph.view.timeline}}, {{ui:graph.view.structure}}のうち同じもの)で開きます。親がマイティ表示の{{ui:graph.view.structure}}を使っていたなら、子も{{ui:graph.view.structure}}で表示されます。
 - 親は子の承認カードに答えられません。子ペインにカードが出たら、そのペインであなたが答えてください。
 - 一つの親が`delegate`ツールで作って開いておける子は3つまでで、自分で起動した子の3つとは別に数えます。どちらも相手を妨げません。子はさらに委任できません。レポート済みやマージ済みの子も、ペインが開いていれば3つに入るので、終わった子ペインを閉じると空きができます。ディスクの空きが10 GB未満だと委任は断られます。
 - 親は通知で子のレポートを知り([通知と保留](#notices))、`follow_up`で追加の指示を送り([追加の指示](#follow-up))、`merge`でマージします([マージ](#merge))。
 
 ## CodexとAntigravity {#agents}
-MightyオーケストレーションはCodexとAntigravityのペインでも使えます。子はいつも親のエージェントで実行されます。Codexペインの子はCodexペイン、Antigravityペインの子はAntigravityペインです。ClaudeのペインがCodexの子に任せたり、その逆をしたりはできません。
+MightyオーケストレーションはCodexとAntigravityのペインでも使えます。既定では、子は親のエージェントで実行されます。Codexペインの子はCodexペイン、Antigravityペインの子はAntigravityペインです。
+
+{{platform:mac}} Macでは、どのエージェントも3つのエージェントのどれの子でも持てます。{{ui:queue.worktree}}ボタンのメニューから選ぶか([新しいworktreeで実行](#worktree))、ClaudeかCodexの親が`delegate`の`agent`(`claude`、`codex`、`antigravity`)で指定します。子は下に書いた自分のエージェントのルールで動きます。モードも、作業を誰がコミットするかも(Claudeの子は自分でコミットし、CodexとAntigravityの子の作業はアプリがコミットします)子のエージェントに従います。通知とマージは親のエージェントに従います。`delegate`は、知らないエージェント(`agent_unknown`)、インストールされていないかサインインしていないエージェント(`agent_unavailable`)、子のエージェントのモードでないか、そのモードではファイルを変更できないか、親のモードより多くのことができるモードを拒否します(モードの比べ方は[Claudeに分けて任せる](#delegate)にあります)。
+
+{{platform:windows}} Windowsでは、子はいつも親のエージェントで実行されます。
 
 - **子が作業できるモード**: 子は親の権限モードで始まるため、CodexとAntigravityのペインは、子がファイルを変更できるモードでだけ{{kbd:⌘Enter}}で子を起動します。Codexは{{ui:permission.label.acceptEditsCodex}}・{{ui:permission.label.onRequest}}・{{ui:permission.label.fullAccess}}、Antigravityは{{ui:permission.label.acceptEdits}}・{{ui:permission.label.fullAccess}}です。それ以外のモードでは、{{kbd:⌘Enter}}はこれまでどおりリクエストをキューに入れます。
 - **Codex**のペインに委任ツールが付くのは{{ui:permission.label.acceptEditsCodex}}と{{ui:permission.label.fullAccess}}のときだけです。{{ui:permission.label.defaultCodex}}ではCodexがツールを断り、{{ui:permission.label.onRequest}}ではアプリが表示できない方法で確認を求めるためです。`delegate`は、ファイルを変更できない子のモードを断ります。Codexが`merge`を呼べるのは、実行が{{ui:permission.label.fullAccess}}で始まったときだけで、それ以外は断られる(`merge_human_only`)ので、カードからマージします。実行中のCodexのターンはテキストを受け取れないため、実行中のCodexの親への通知は、その実行が正常に終わったあと次の実行として届き、停止やエラーで終わったときは保留されます。
-- **Antigravity**のペインには委任ツールがありません。子は{{kbd:⌘Enter}}でだけ起動します。
+- **Antigravity**のペインには委任ツールがありません(Antigravityはグローバル設定からしかツールを受け取らず、アプリはその設定を変えません)。子は{{kbd:⌘Enter}}か{{ui:queue.worktree}}ボタンでだけ起動します。
 - CodexとAntigravityの子は、{{ui:permission.label.fullAccess}}でなければ自分のworktreeでコミットできないので、変更をそのまま残すよう案内されます。子の実行がREPORT.mdを変えて正常に終わると、アプリが変更を子のブランチにコミットし(`mighty: <子のid> report r<n>`)、そのコミットで報告を記録します。停止やエラーで終わったときは、次の正常な終了を待ちます。.gitignoreが除く新しいファイル、秘密情報に見える新しいファイル(`.env*`、`*.pem`、`*.key`、`*.pfx`、`*.p12`、`*.ppk`、`id_rsa*`、`id_ed25519*`、`id_ecdsa*`、`id_dsa*`、`credentials*`、`secrets.*`、`.npmrc`、`.pypirc`)、5 MBを超える新しいファイルはコミットせず、後の二つは子ペインに名前を表示します。コミットにはgitに設定した名前とメールアドレスを使い(ないと失敗し、ペインにそう表示します)、署名はしません。worktreeに未解決のマージ競合があるときは何もコミットせず、ペインにそう表示します。
 - カードのマージが競合で断られたとき、競合の解決を頼むのはコミットできる子({{ui:permission.label.fullAccess}})だけです。それ以外は、子を{{ui:permission.label.fullAccess}}に切り替えてから子ペインで頼むか、そのworktreeのターミナルで自分で競合を解決してコミットしてください。
 - リポジトリのサブフォルダーをワークスペースとして開いた場合、Codexの子はREPORT.mdがあるworktreeの最上位フォルダーにも書き込めて、Antigravityの子にはそのフォルダーが追加されます。
@@ -172,5 +177,5 @@ reg add "HKCU\Software\MightyClaudeNative" /v delegation.enabled /t REG_DWORD /d
 | 任せる作業(TASK.md、自分で起動したリクエスト) | 64 KiB |
 | 必要なディスクの空き | 10 GB |
 
-- 子は親と同じエージェントで実行されます。ClaudeとCodexのペインはツールと{{kbd:⌘Enter}}で、Antigravityのペインは{{kbd:⌘Enter}}でだけ子を作ります([CodexとAntigravity](#agents))。
+- 子は親と同じエージェントで実行され、Macでは別のエージェントでも実行されます([CodexとAntigravity](#agents))。ClaudeとCodexのペインはツールと{{kbd:⌘Enter}}で、Antigravityのペインは{{kbd:⌘Enter}}でだけ子を作ります([CodexとAntigravity](#agents))。
 - MacアプリもWindowsアプリも初期状態でオンで、設定にスイッチがあります([オンとオフ](#enable))。スマートフォンに新しい画面はなく、保留された行はスマートフォンのキューにも表示されます。

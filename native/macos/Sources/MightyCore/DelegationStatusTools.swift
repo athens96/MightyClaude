@@ -3,17 +3,21 @@ import Foundation
 /// One child as list_children shows it (macOS only).
 public struct DelegationChildSummary: Codable, Sendable, Equatable {
     public var id: String
+    /// The agent the child runs, as delegate's `agent` names it.
+    public var agent: String
     public var state: ChildState
     /// The current report revision: 0 until the first report.
     public var revision: Int
 
-    public init(_ child: ChildRecord) { id = child.id; state = child.state; revision = child.reportRevision }
+    public init(_ child: ChildRecord) { id = child.id; agent = DelegationProviders.agentName(child.agent); state = child.state; revision = child.reportRevision }
 }
 
 /// One child as child_status shows it: where it stands and what it last
 /// reported (macOS only).
 public struct DelegationChildStatus: Codable, Sendable, Equatable {
     public var id: String
+    /// The agent the child runs, as delegate's `agent` names it.
+    public var agent: String
     public var state: ChildState
     /// The current report revision: 0 until the first report.
     public var revision: Int
@@ -30,7 +34,7 @@ public struct DelegationChildStatus: Codable, Sendable, Equatable {
     /// `child` with `report`, its stored REPORT.md copy, when that copy holds
     /// the current revision.
     public init(_ child: ChildRecord, report: DelegationCopy?) {
-        id = child.id; state = child.state; revision = child.reportRevision; head = child.reportHead
+        id = child.id; agent = DelegationProviders.agentName(child.agent); state = child.state; revision = child.reportRevision; head = child.reportHead
         let current = report.flatMap { $0.childId == child.id && $0.kind == .report && $0.revision == child.reportRevision && child.reportRevision > 0 ? $0 : nil }
         self.report = current?.text; reportTruncated = current?.truncated ?? false
     }
@@ -40,7 +44,7 @@ public struct DelegationChildStatus: Codable, Sendable, Equatable {
 /// Both only read the delegation file, so neither changes anything.
 extension DelegationCoordinator {
     /// list_children from `caller`: its children in the order they were made,
-    /// each with its id, state and current report revision. None is an empty
+    /// each with its id, agent, state and current report revision. None is an empty
     /// list. A child the human started from the caller's composer is the
     /// human's, not the caller's, and is not listed.
     func listChildren(caller: PaneMCPBinding) -> DelegationResponse {
@@ -63,23 +67,23 @@ extension DelegationCoordinator {
 extension DelegationMCPServer {
     /// list_children's answer as text and as structured content.
     static func result(_ children: [DelegationChildSummary]) -> [String: Any] {
-        let lines = children.map { "- \($0.id): \($0.state.rawValue), report revision \($0.revision)" }
+        let lines = children.map { "- \($0.id): \($0.agent), \($0.state.rawValue), report revision \($0.revision)" }
         let text = children.isEmpty ? "You have no children." : (["Your children:"] + lines).joined(separator: "\n")
-        let data: [[String: Any]] = children.map { ["id": $0.id, "state": $0.state.rawValue, "revision": $0.revision] }
+        let data: [[String: Any]] = children.map { ["id": $0.id, "agent": $0.agent, "state": $0.state.rawValue, "revision": $0.revision] }
         return ["content": [["type": "text", "text": text]], "structuredContent": ["children": data]]
     }
 
     /// child_status's answer as text and as structured content; the report
     /// body is in both.
     static func result(_ status: DelegationChildStatus) -> [String: Any] {
-        var text = "Child \(status.id) is \(status.state.rawValue)."
+        var text = "Child \(status.id) runs \(status.agent) and is \(status.state.rawValue)."
         if status.revision == 0 {
             text += " It has not reported yet."
         } else {
             text += " Its report revision \(status.revision) was made at head \(status.head ?? "unknown")."
             text += status.report.map { "\n\nREPORT.md:\n\($0)" } ?? " Its REPORT.md copy is no longer kept."
         }
-        let data: [String: Any] = ["id": status.id, "state": status.state.rawValue, "revision": status.revision, "head": status.head ?? NSNull(),
+        let data: [String: Any] = ["id": status.id, "agent": status.agent, "state": status.state.rawValue, "revision": status.revision, "head": status.head ?? NSNull(),
                                    "report": status.report ?? NSNull(), "reportTruncated": status.reportTruncated]
         return ["content": [["type": "text", "text": text]], "structuredContent": ["status": data]]
     }

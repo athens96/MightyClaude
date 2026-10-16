@@ -58,12 +58,14 @@ extension AppStore {
     /// Makes the coordinator from the profile's delegation file, whether or
     /// not the delegation switch is on: switching it off only detaches the
     /// delegation server, so existing children keep working. Worktrees go
-    /// under `~/.mightyclaude/worktrees`, or the profile for smoke runs.
-    func startDelegation() {
+    /// under `~/.mightyclaude/worktrees`, or the profile for smoke runs;
+    /// `freeBytes` stands in for the disk's free space only in the delegation smoke.
+    func startDelegation(freeBytes: (@Sendable (URL) -> Int64?)? = nil) {
         guard delegation == nil else { return }
         let root = smokeTesting ? dataDirectory.appendingPathComponent("worktrees", isDirectory: true) : ChildWorktreeMaker.defaultRoot
+        let maker = freeBytes.map { ChildWorktreeMaker(root: root, freeBytes: $0) } ?? ChildWorktreeMaker(root: root)
         do {
-            let coordinator = try DelegationCoordinator(store: DelegationFileStore(directory: dataDirectory), host: self, worktrees: ChildWorktreeMaker(root: root))
+            let coordinator = try DelegationCoordinator(store: DelegationFileStore(directory: dataDirectory), host: self, worktrees: maker)
             delegation = coordinator
             // A child's end is recorded (the app's commit of its work among
             // it) before its queue or delivery may start its next run.
@@ -241,10 +243,11 @@ extension AppStore {
     }
 
     /// Checks again whether `session`'s folder can host a child worktree, for
-    /// ``composerSecondSend(_:)``: a top-level Claude, Codex or Antigravity
-    /// pane whose child could change files, with delegation on. One check per folder at a time.
+    /// ``composerSecondSend(_:)`` and the worktree button's menu: a top-level
+    /// Claude, Codex or Antigravity pane whose child, of its own agent or
+    /// another, could change files, with delegation on. One check per folder at a time.
     func refreshWorktreeReadiness(for session: RunSession) {
-        guard let delegation, DelegationSwitch.isOn(), session.parentSessionId == nil, DelegationProviders.canParentByHuman(kind: session.kind, provider: session.provider, mode: session.settings.permissionMode),
+        guard let delegation, DelegationSwitch.isOn(), session.parentSessionId == nil, DelegationProviders.mayHaveHumanChild(kind: session.kind, provider: session.provider, mode: session.settings.permissionMode),
               let folder = worktreeHostFolder(session), worktreeReadinessChecks.insert(folder).inserted else { return }
         Task { [weak self] in
             let ready = await delegation.worktrees.check(workspace: folder).canHostWorktree
@@ -254,16 +257,38 @@ extension AppStore {
         }
     }
 
+    /// What the worktree button's menu on the agent pane `session` offers:
+    /// Claude, Codex and Antigravity, each with why it cannot run the text
+    /// now. Read from what the app already knows (its CLI search and the
+    /// sign-in status it last read), never by asking a CLI.
+    func worktreeChildChoices(_ session: RunSession) -> [DelegationChildChoice] {
+        DelegationProviders.humanChildChoices(parent: session.provider, parentMode: session.settings.permissionMode, planFirst: styleLaunchesInPlanMode(session),
+                                              openHumanChildren: DelegationSidebar.openHumanChildCount(of: session.id, children: delegationChildren),
+                                              availability: agentAvailabilityNow)
+    }
+
+    /// Whether the `provider` agent's CLI can run a child, as the app last
+    /// learnt it: found by its CLI search (``refreshRuntime()``), and not
+    /// signed out by the account status Settings last read.
+    func agentAvailabilityNow(_ provider: String) -> DelegationAgentAvailability {
+        if smokeProvidersTreatedAvailable.contains(provider) { return .ready }
+        return DelegationProviders.availability(installed: runtime?.providers?.first { $0.id == provider }?.available, account: cliAccounts[provider])
+    }
+
     /// The composer's second send on the busy agent pane `id`
-    /// (``ComposerSecondSend/worktree``): the text and its attachments run now
+    /// (``ComposerSecondSend/worktree``), or the worktree button's menu
+    /// naming the child's `agent`: the text and its attachments run now
     /// in a new child pane, in its own worktree beside the pane, made by
     /// delegation as delegate makes one, in plan mode when the pane's style
-    /// starts every request so. The pane's run goes on undisturbed, and the
+    /// starts every request so and the child runs the pane's agent. The pane's run goes on undisturbed, and the
     /// new child shows at once. When no child can be made, or it cannot
     /// start after all, the pane's transcript says why and the text goes on
-    /// by ``runAfterNoWorktree(_:input:attachments:draft:reason:)``.
-    func runInNewWorktree(_ id: String, input: String, attachments: [RunAttachment], draft: String) {
+    /// by ``runAfterNoWorktree(_:input:attachments:draft:reason:)``; a text
+    /// meant for another agent goes back to the composer instead
+    /// (``ComposerSecondSend/returnsToComposer(childAgent:parentAgent:)``).
+    func runInNewWorktree(_ id: String, input: String, attachments: [RunAttachment], draft: String, agent: String? = nil) {
         guard let delegation, let parent = snapshot.sessions.first(where: { $0.id == id }) else { return }
+        let toComposer = ComposerSecondSend.returnsToComposer(childAgent: agent, parentAgent: parent.provider)
         // Taken from the composer now, so a second ⌘Enter cannot send it again.
         drafts[id] = ""
         let submittedIds = Set(attachments.map(\.id))
@@ -271,11 +296,11 @@ extension AppStore {
         let starter = HumanChildStarter(start: { [weak self] childId, run in
             await self?.startHumanChildRun(childId, run: run, attachments: attachments)
         }, failed: { [weak self] childId in
-            await self?.humanChildFailedToStart(childId, parentId: id, input: input, attachments: attachments, draft: draft)
+            await self?.humanChildFailedToStart(childId, parentId: id, input: input, attachments: attachments, draft: draft, toComposer: toComposer)
         })
         let planFirst = styleLaunchesInPlanMode(parent)
         Task { [weak self] in
-            let outcome = await delegation.startHumanChild(input, parentId: id, planFirst: planFirst, starter: starter)
+            let outcome = await delegation.startHumanChild(input, parentId: id, planFirst: planFirst, agent: agent, starter: starter)
             guard let self else { return }
             let reason: String
             switch outcome {
@@ -283,8 +308,18 @@ extension AppStore {
             case .refused(let code): reason = DelegationText.reason(code)
             case .failed(let message): reason = message
             }
-            runAfterNoWorktree(id, input: input, attachments: attachments, draft: draft, reason: reason)
+            if toComposer { returnToComposer(id, attachments: attachments, draft: draft, reason: reason) }
+            else { runAfterNoWorktree(id, input: input, attachments: attachments, draft: draft, reason: reason) }
         }
+    }
+
+    /// The text of a child of another agent that could not be made or
+    /// started goes back to the composer with its attachments (a draft typed
+    /// meanwhile is kept), and the pane's transcript says why. It never runs in the pane.
+    private func returnToComposer(_ id: String, attachments: [RunAttachment], draft: String, reason: String) {
+        guard !ending, !closingSessions.contains(id), snapshot.sessions.contains(where: { $0.id == id }) else { return }
+        updateSession(id) { $0.logs.append(LogEntry(kind: "system", text: L("delegation.human.returnedToComposer", ["reason": reason]))); $0.logs = TranscriptRetention.trimmed($0.logs) }
+        giveBack(id, attachments: attachments, from: .composer(draft: draft))
     }
 
     /// The first run of a child the human started, with the send's
@@ -303,11 +338,12 @@ extension AppStore {
     /// A child the human started whose worktree, pane or first run could not
     /// be made after all: it stays listed as failed to start, and the text
     /// and its attachments go on from the parent as if no child had been made.
-    private func humanChildFailedToStart(_ childId: String, parentId: String, input: String, attachments: [RunAttachment], draft: String) {
+    private func humanChildFailedToStart(_ childId: String, parentId: String, input: String, attachments: [RunAttachment], draft: String, toComposer: Bool) {
         // A failed start puts the run's attachments in the child's composer; they go with the text instead.
         let ids = Set(attachments.map(\.id))
         attachmentDrafts[childId]?.removeAll { ids.contains($0.id) }
-        runAfterNoWorktree(parentId, input: input, attachments: attachments, draft: draft, reason: L("delegation.human.error.startFailed"))
+        if toComposer { returnToComposer(parentId, attachments: attachments, draft: draft, reason: L("delegation.human.error.startFailed")) }
+        else { runAfterNoWorktree(parentId, input: input, attachments: attachments, draft: draft, reason: L("delegation.human.error.startFailed")) }
     }
 
     /// The text of a second send that no new child runs
@@ -526,21 +562,25 @@ extension AppStore {
 
     // MARK: DelegationHost
 
-    /// The child's pane of its parent's agent, as a tab beside its parent: in the mode the
+    /// The child's pane of its own agent, as a tab beside its parent: in the mode the
     /// parent asked for, never the last-used pane's, linked to its parent and
     /// working in its worktree folder. Its title is its task, kept as the
     /// pane's name. The link is saved before its first run. It shows its
     /// requests in its parent's view (basic or Mighty; diagram, timeline or
-    /// pipeline). A child the human started takes its parent's model and
-    /// Mighty style and is selected and focused, unless the human has moved
-    /// on or is typing in the parent.
+    /// pipeline). A child of its parent's agent that the human started takes
+    /// its parent's model and Mighty style; a child of another agent takes
+    /// the model and effort that agent's last-used pane has, as a new pane of
+    /// it would. A child the human started is selected and focused, unless
+    /// the human has moved on or is typing in the parent.
     func createPane(_ pane: DelegationChildPane) async -> Bool {
         guard !ending, isLoaded, snapshot.sessions.count < 128, !snapshot.sessions.contains(where: { $0.id == pane.sessionId }),
               let parent = snapshot.sessions.first(where: { $0.id == pane.parentSessionId }), !closingSessions.contains(parent.id),
               snapshot.workspaces.contains(where: { $0.id == parent.workspaceId }) else { return false }
         let file = await delegation?.file
         let task = file?.copy(childId: pane.sessionId, kind: .task)?.text
-        var session = DelegationPanes.childSession(pane, workspaceId: parent.workspaceId, title: task.flatMap(PaneTitle.shortened) ?? ProviderOptions.label(pane.provider), parent: parent)
+        let agentDefaults = parent.provider == pane.provider ? nil : RunSession.template(kind: SessionKind.claude, provider: pane.provider, in: snapshot.sessions)
+        var session = DelegationPanes.childSession(pane, workspaceId: parent.workspaceId, title: task.flatMap(PaneTitle.shortened) ?? ProviderOptions.label(pane.provider),
+                                                   parent: parent, agentDefaults: agentDefaults)
         session.titleMode = "fixed"
         // Checked again: the pane list may have changed while the task was read.
         guard !ending, !snapshot.sessions.contains(where: { $0.id == session.id }), snapshot.sessions.contains(where: { $0.id == parent.id }) else { return false }
@@ -601,6 +641,8 @@ extension AppStore {
     }
 
     func stopRun(sessionId: String) async { await stop(sessionId) }
+
+    func agentAvailability(_ provider: String) async -> DelegationAgentAvailability { agentAvailabilityNow(provider) }
 
     /// The app's note in the pane's transcript, as a system line.
     func note(_ text: String, in sessionId: String) async {

@@ -121,7 +121,7 @@ import Testing
             "claude_only", "child_cannot_delegate", "width_cap", "low_disk", "store_full", "not_git", "unborn_branch", "detached_head",
             "wider_mode", "discard_human_only", "not_reported", "tracked_changes", "head_moved", "diverged", "branch_not_checked_out",
             "child_closed", "parent_closed", "follow_up_limit", "worktree_missing", "merge_conflict", "undo_parent_moved", "parent_busy",
-            "workspace_has_children", "held_not_removable", "human_started", "merge_human_only",
+            "workspace_has_children", "held_not_removable", "human_started", "merge_human_only", "agent_unknown", "agent_unavailable",
         ])
     }
 
@@ -147,7 +147,7 @@ import Testing
         #expect(followUp.receipt == nil); #expect(notice.receipt?.runId == "run-2")
     }
 
-    @Test func theRequestKeyComesFromTheParentSessionRunTaskAndModeAndNothingElse() {
+    @Test func theRequestKeyComesFromTheParentSessionRunTaskModeAndAnotherAgentOnly() {
         let key = DelegationRequestKey.make(parentSessionId: "parent-1", parentRunId: "run-1", task: "Fix the login bug", startingMode: "acceptEdits")
         // Golden values pin the encoding: each part as an 8-byte big-endian UTF-8 byte count and its bytes, then SHA-256.
         #expect(key == "0767d17eeeaaa20c3f5c0e3a11dc260bd005cc116a76ea02adb2c78fb3a48ef7")
@@ -169,5 +169,11 @@ import Testing
         #expect(DelegationRequestKey.make(parentSessionId: "p", parentRunId: "r", task: "do it plan", startingMode: "")
                 != DelegationRequestKey.make(parentSessionId: "p", parentRunId: "r", task: "do it", startingMode: " plan"))
         #expect(key.count == 64); #expect(key.allSatisfy { $0.isHexDigit && !$0.isUppercase })
+        // A child of another agent than the caller's adds that agent as a fifth part; the caller's own adds nothing.
+        #expect(DelegationRequestKey.make(parentSessionId: "parent-1", parentRunId: "run-1", task: "Fix the login bug", startingMode: "acceptEdits", otherAgent: nil) == key)
+        #expect(DelegationRequestKey.make(parentSessionId: "parent-1", parentRunId: "run-1", task: "Fix the login bug", startingMode: "onRequest", otherAgent: "codex")
+                == "f5d8e4774027e8b07399c0626082e92741ee5da77e00157f93ad25ea1ee6c399")
+        #expect(DelegationRequestKey.make(parentSessionId: "parent-1", parentRunId: "run-1", task: "Fix the login bug", startingMode: "acceptEdits", otherAgent: "gemini")
+                == "28e97194accdf6d2519a39c9a1144dda67ee4d149fd3193204edc986fc040e3c")
     }
 }

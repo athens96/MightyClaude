@@ -116,8 +116,9 @@ public struct ChildRecord: Codable, Sendable, Equatable, Identifiable {
     /// merges or discards it from its card. nil (agent-made) in every record
     /// kept before it was stored.
     public var startedByHuman: Bool?
-    /// The agent CLI the child runs, its parent's: "codex" or "gemini". nil
-    /// is Claude, as in every record kept before it was stored.
+    /// The agent CLI the child runs, its parent's unless the parent's
+    /// delegate call or the human chose another: "codex" or "gemini". nil is
+    /// Claude, as in every record kept before it was stored.
     public var provider: String?
 
     public init(id: String, parentSessionId: String, worktreePath: String, parentBranch: String, baseCommit: String, startingMode: String, requestKey: String, followUpCount: Int = 0, reportRevision: Int = 0, reportHead: String? = nil, state: ChildState = .creating, parentCheckout: String? = nil, startedByHuman: Bool? = nil, provider: String? = nil) {
@@ -224,13 +225,15 @@ public struct MergeRecord: Codable, Sendable, Equatable {
 
 /// The idempotency key of one delegate call. The server derives it from the
 /// calling pane's session id, that pane's current run id, the task text and
-/// the starting mode, with no extra argument, so a repeat within the same
-/// parent run gets the same child. Each part is length-prefixed before
-/// hashing, so no two different part lists share a key.
+/// the starting mode, and the child's agent when it is not the caller's own,
+/// with no extra argument, so a repeat within the same parent run gets the
+/// same child. Each part is length-prefixed before hashing, so no two
+/// different part lists share a key; a child of the caller's own agent keeps
+/// the key it always had.
 public enum DelegationRequestKey {
-    public static func make(parentSessionId: String, parentRunId: String, task: String, startingMode: String) -> String {
+    public static func make(parentSessionId: String, parentRunId: String, task: String, startingMode: String, otherAgent: String? = nil) -> String {
         var bytes = Data()
-        for part in [parentSessionId, parentRunId, task, startingMode] {
+        for part in [parentSessionId, parentRunId, task, startingMode] + (otherAgent.map { [$0] } ?? []) {
             let utf8 = Data(part.utf8)
             withUnsafeBytes(of: UInt64(utf8.count).bigEndian) { bytes.append(contentsOf: $0) }
             bytes.append(utf8)

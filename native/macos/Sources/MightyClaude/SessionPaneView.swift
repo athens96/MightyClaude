@@ -55,9 +55,12 @@ struct SessionPaneView: View {
         switch secondSend {
         case .worktree: !draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .steer: attachments.isEmpty
-        case .queue: false
+        case .queue: worktreeMenuOnly && !draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
     }
+    /// The worktree button shows for its menu alone: this pane's own agent cannot have a child
+    /// in its mode, another can (`AppStore.worktreeMenuOnly`).
+    private var worktreeMenuOnly: Bool { secondSend == .queue && store.worktreeMenuOnly(session) }
     /// The registered style this pane actually runs, if any.
     private var style: RegisteredStyle? { store.guidedStyle(session) }
     /// A guided style: the composer answers the agent's questions itself.
@@ -838,7 +841,9 @@ struct SessionPaneView: View {
                         if canSend {
                             if offersSecondSend {
                                 if secondSend == .worktree {
-                                    roundSendButton(systemImage: "arrow.triangle.branch", size: 12, help: L("queue.worktreeHintMac"), label: L("queue.worktree"), identifier: "composer-worktree-" + session.id) { submitComposer(command: true) }
+                                    worktreeButton
+                                } else if worktreeMenuOnly {
+                                    worktreeMenuButton
                                 } else {
                                     roundSendButton(systemImage: "bolt.fill", size: 12, help: L("queue.steerHintMac"), label: L("phone.composer.steer"), identifier: "composer-steer-" + session.id) { submitComposer(command: true) }
                                 }
@@ -861,16 +866,72 @@ struct SessionPaneView: View {
     /// The send button's look, shared by send, new worktree, steer and queue: the toolbar-high
     /// circle in run blue while the draft can go, the track grey (and disabled) while not.
     private func roundSendButton(systemImage: String, size: CGFloat, help: String, label: String, identifier: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage).font(.ui(size: size, weight: .semibold)).frame(width: ComposerToolbarMetrics.height, height: ComposerToolbarMetrics.height)
-                .foregroundStyle(canSend ? Palette.onStatus : Palette.ink2)
-                .background(canSend ? Palette.run : Palette.track, in: Circle()).contentShape(Circle())
-        }
+        Button(action: action) { roundSendDisc(systemImage: systemImage, size: size) }
         .buttonStyle(.plain).disabled(!canSend)
         .help(help)
         .accessibilityLabel(label)
         .accessibilityIdentifier(identifier)
         .background(AccessibilityStateProbe(identifier: identifier, enabled: canSend))
+    }
+
+    private func roundSendDisc(systemImage: String, size: CGFloat) -> some View {
+        Image(systemName: systemImage).font(.ui(size: size, weight: .semibold)).frame(width: ComposerToolbarMetrics.height, height: ComposerToolbarMetrics.height)
+            .foregroundStyle(canSend ? Palette.onStatus : Palette.ink2)
+            .background(canSend ? Palette.run : Palette.track, in: Circle()).contentShape(Circle())
+    }
+
+    /// The new-worktree button: a click (as ⌘Enter) runs the draft in a child of this pane's
+    /// agent; a right-click or Control-click picks the child's agent among Claude, Codex and
+    /// Antigravity.
+    private var worktreeButton: some View {
+        roundSendButton(systemImage: "arrow.triangle.branch", size: 12, help: L("queue.worktreeHintMac"), label: L("queue.worktree"), identifier: "composer-worktree-" + session.id) { submitComposer(command: true) }
+            .contextMenu { worktreeAgentMenu }
+    }
+
+    /// The same button where this pane's own agent cannot have a child in its mode: any click
+    /// opens the agent menu, and ⌘Enter does what it did before.
+    private var worktreeMenuButton: some View {
+        let identifier = "composer-worktree-" + session.id
+        // The label stays one accessibility element, so the identifier names the whole disc (as `ComposerPill`'s).
+        return Menu { worktreeAgentMenu } label: { roundSendDisc(systemImage: "arrow.triangle.branch", size: 12).accessibilityElement(children: .combine) }
+            .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+            .disabled(!canSend)
+            .help(L("queue.worktreeMenuHintMac"))
+            .accessibilityLabel(L("queue.worktree"))
+            .accessibilityIdentifier(identifier)
+            .background(AccessibilityStateProbe(identifier: identifier, enabled: canSend))
+    }
+
+    /// One row per agent, the pane's own marked as ⌘Enter's; an agent that cannot run the
+    /// child now is greyed out with why.
+    @ViewBuilder private var worktreeAgentMenu: some View {
+        Section(L("composer.worktreeMenu.title")) {
+            ForEach(store.worktreeChildChoices(session)) { choice in
+                Button { submitComposer(command: true, agent: choice.agent) } label: {
+                    Label { Text(ProviderOptions.betaTitle(choice.agent, Self.worktreeChoiceTitle(choice, parent: session.provider))) } icon: {
+                        if let image = ProviderIconImage.image(provider: choice.agent, pointSize: 12) { Image(nsImage: image) }
+                    }
+                }
+                .disabled(choice.blocked != nil || !canSend)
+                .accessibilityIdentifier("composer-worktree-\(choice.agent)-" + session.id)
+            }
+        }
+    }
+
+    /// `Codex · Working folder`, `Claude · Accept file edits (⌘Enter)`, or `Codex — not signed in`.
+    static func worktreeChoiceTitle(_ choice: DelegationChildChoice, parent: String) -> String {
+        let agent = ProviderOptions.label(choice.agent)
+        let reason: String
+        switch choice.blocked {
+        case nil:
+            let mode = permissionLabel(choice.mode ?? "", provider: choice.agent)
+            return choice.agent == parent ? L("composer.worktreeMenu.sameAgent", ["agent": agent, "mode": mode]) : L("composer.worktreeMenu.agent", ["agent": agent, "mode": mode])
+        case .notInstalled?: reason = L("composer.worktreeMenu.notInstalled")
+        case .signedOut?: reason = L("composer.worktreeMenu.signedOut")
+        case .noMode?: reason = L("composer.worktreeMenu.noMode")
+        case .cap?: reason = L("composer.worktreeMenu.cap")
+        }
+        return L("composer.worktreeMenu.blocked", ["agent": agent, "reason": reason])
     }
 
     /// Arrows move the highlight, Enter/Tab insert it, Esc closes the list for
@@ -931,8 +992,9 @@ struct SessionPaneView: View {
     /// `/model` with no or an unknown argument reopens (or explains) the list.
     /// Enter sends now, or queues for the next request while a run is busy;
     /// ⌘Enter then does the second send: a new child worktree, or the running
-    /// Claude turn (`ComposerSecondSend`).
-    private func submitComposer(command: Bool = false) {
+    /// Claude turn (`ComposerSecondSend`). `agent`, from the worktree button's
+    /// menu, is the agent of that new child.
+    private func submitComposer(command: Bool = false, agent: String? = nil) {
         guard canSend, !store.hasModal else { return }
         if let style {
             composerInput.prepareForSubmission()
@@ -968,7 +1030,7 @@ struct SessionPaneView: View {
             applyCompletion(builtin); return
         }
         composerInput.prepareForSubmission()
-        store.submit(session.id, steering: command)
+        store.submit(session.id, steering: command, agent: agent)
     }
 
     /// The built-in the trimmed draft names exactly (`/clear`, `/model`, `/model opus`).

@@ -20,10 +20,16 @@ public struct DelegationChildRow: Sendable, Equatable, Identifiable {
     /// How many of the child's notices are held. With its parent pane
     /// closed nothing releases them, and the child's card shows the count.
     public var heldNotices: Int
+    /// The human started it from its parent's composer.
+    public var startedByHuman: Bool
+    /// The agent CLI it runs (``ChildRecord/agent``).
+    public var agent: String
 
-    public init(id: String, parentSessionId: String, state: ChildState, task: String? = nil, parentBranch: String = "", parentCheckout: String? = nil, canUndo: Bool = false, heldNotices: Int = 0) {
+    public init(id: String, parentSessionId: String, state: ChildState, task: String? = nil, parentBranch: String = "", parentCheckout: String? = nil, canUndo: Bool = false, heldNotices: Int = 0,
+                startedByHuman: Bool = false, agent: String = "claude") {
         self.id = id; self.parentSessionId = parentSessionId; self.state = state; self.task = task
         self.parentBranch = parentBranch; self.parentCheckout = parentCheckout; self.canUndo = canUndo; self.heldNotices = heldNotices
+        self.startedByHuman = startedByHuman; self.agent = agent
     }
 
     /// The row of `record`, its task read from `file`'s stored copy.
@@ -31,7 +37,8 @@ public struct DelegationChildRow: Sendable, Equatable, Identifiable {
         self.init(id: record.id, parentSessionId: record.parentSessionId, state: record.state,
                   task: file.copy(childId: record.id, kind: .task).flatMap { PaneTitle.shortened($0.text) },
                   parentBranch: record.parentBranch, parentCheckout: record.parentCheckout,
-                  canUndo: file.undoableMerge(of: record.id) != nil, heldNotices: file.heldNotices(of: record.id).count)
+                  canUndo: file.undoableMerge(of: record.id) != nil, heldNotices: file.heldNotices(of: record.id).count,
+                  startedByHuman: !record.notifiesParent, agent: record.agent)
     }
 }
 
@@ -55,6 +62,12 @@ public enum DelegationSidebar {
         let listed = children.filter { $0.parentSessionId == parentId }
         let known = Set(listed.map(\.id))
         return listed.filter { $0.state.isOpen }.count + sessions.filter { $0.parentSessionId == parentId && !known.contains($0.id) }.count
+    }
+
+    /// How many open children the human started from the parent pane
+    /// `parentId`, as the worktree button's menu counts them toward its cap.
+    public static func openHumanChildCount(of parentId: String, children: [DelegationChildRow]) -> Int {
+        children.filter { $0.parentSessionId == parentId && $0.startedByHuman && $0.state.isOpen }.count
     }
 
     /// The state a child's row shows: waiting while a running child's pane

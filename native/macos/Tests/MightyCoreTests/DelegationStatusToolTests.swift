@@ -123,7 +123,8 @@ private func report(_ id: String, revision: Int, _ text: String) -> DelegationCo
         #expect(data.compactMap { $0["state"] as? String } == expected.map(\.1.rawValue))
         #expect(data.compactMap { $0["revision"] as? Int } == expected.map(\.2))
         let text = try #require((result["content"] as? [[String: Any]])?.first?["text"] as? String)
-        #expect(text.hasPrefix("Your children:\n- running: running, report revision 0\n- reported: reported, report revision 2\n"))
+        #expect(data.compactMap { $0["agent"] as? String } == expected.map { _ in "claude" })
+        #expect(text.hasPrefix("Your children:\n- running: claude, running, report revision 0\n- reported: claude, reported, report revision 2\n"))
         #expect(!text.contains("someone-elses"))
         let none = DelegationMCPServer.result(await fixture.call("list_children", from: "lonely"))
         #expect((none["structuredContent"] as? [String: Any])?["children"] as? [[String: Any]] != nil)
@@ -155,20 +156,21 @@ private func report(_ id: String, revision: Int, _ text: String) -> DelegationCo
         #expect(result["isError"] == nil)
         let data = try #require((result["structuredContent"] as? [String: Any])?["status"] as? [String: Any])
         #expect(data["id"] as? String == "reported")
+        #expect(data["agent"] as? String == "claude")
         #expect(data["state"] as? String == "reported")
         #expect(data["revision"] as? Int == 2)
         #expect(data["head"] as? String == reportedHead)
         #expect(data["report"] as? String == Self.reportText)
         #expect(data["reportTruncated"] as? Bool == false)
         let text = try #require((result["content"] as? [[String: Any]])?.first?["text"] as? String)
-        #expect(text == "Child reported is reported. Its report revision 2 was made at head \(reportedHead).\n\nREPORT.md:\n\(Self.reportText)")
+        #expect(text == "Child reported runs claude and is reported. Its report revision 2 was made at head \(reportedHead).\n\nREPORT.md:\n\(Self.reportText)")
 
         // Before its first report a child has no head and no report body.
         let running = try #require(await fixture.call("child_status", ["child": "running"]).status)
         #expect(running.state == .running && running.revision == 0 && running.head == nil && running.report == nil && !running.reportTruncated)
         let runningData = try #require((DelegationMCPServer.result(.init(status: running))["structuredContent"] as? [String: Any])?["status"] as? [String: Any])
         #expect(runningData["head"] is NSNull && runningData["report"] is NSNull)
-        #expect((DelegationMCPServer.result(.init(status: running))["content"] as? [[String: Any]])?.first?["text"] as? String == "Child running is running. It has not reported yet.")
+        #expect((DelegationMCPServer.result(.init(status: running))["content"] as? [[String: Any]])?.first?["text"] as? String == "Child running runs claude and is running. It has not reported yet.")
 
         // A merged child keeps its head and report; a closed one whose copy was pruned keeps its head only.
         let merged = try #require(await fixture.call("child_status", ["child": " merged\n"]).status)
@@ -176,7 +178,7 @@ private func report(_ id: String, revision: Int, _ text: String) -> DelegationCo
         let closed = try #require(await fixture.call("child_status", ["child": "closed"]).status)
         #expect(closed.state == .closed && closed.revision == 3 && closed.head == String(repeating: "d", count: 40) && closed.report == nil)
         #expect((DelegationMCPServer.result(.init(status: closed))["content"] as? [[String: Any]])?.first?["text"] as? String
-            == "Child closed is closed. Its report revision 3 was made at head \(String(repeating: "d", count: 40)). Its REPORT.md copy is no longer kept.")
+            == "Child closed runs claude and is closed. Its report revision 3 was made at head \(String(repeating: "d", count: 40)). Its REPORT.md copy is no longer kept.")
         #expect(await fixture.call("child_status", ["child": "discarded"]).status?.state == .discarded)
         #expect(await fixture.call("child_status", ["child": "failed"]).status?.state == .failed)
 

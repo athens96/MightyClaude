@@ -208,7 +208,7 @@ struct DelegationDelegateToolTests {
         // Through the delegation MCP server the child is tool data.
         let result = DelegationMCPServer.result(answer)
         #expect(result["isError"] == nil)
-        #expect(result["structuredContent"] as? [String: [String: String]] == ["child": ["id": info.id, "state": "creating", "branch": info.branch, "mode": "acceptEdits"]])
+        #expect(result["structuredContent"] as? [String: [String: String]] == ["child": ["id": info.id, "state": "creating", "agent": "claude", "branch": info.branch, "mode": "acceptEdits"]])
     }
 
     @Test func theSameCallTwiceInOneParentRunReturnsTheSameChild() async throws {

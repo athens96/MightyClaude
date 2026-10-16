@@ -101,6 +101,8 @@ private actor Latch {
         #expect(Set(sixTools).isDisjoint(with: PaneMCPToolManifest.all.map(\.name)))
 
         let expected = ["delegate": ["task", "mode"], "list_children": [], "child_status": ["child"], "merge": ["child", "expected_head"], "follow_up": ["child", "text"], "discard": ["child"]]
+        // delegate's agent is its one optional argument.
+        let optional = ["delegate": ["agent"]]
         for tool in tools {
             let name = try #require(tool["name"] as? String)
             #expect(!(tool["description"] as? String ?? "").isEmpty, "\(name)")
@@ -109,7 +111,7 @@ private actor Latch {
             #expect(schema["additionalProperties"] as? Bool == false)
             let properties = try #require(schema["properties"] as? [String: [String: Any]])
             #expect(schema["required"] as? [String] == expected[name], "\(name)")
-            #expect(Set(properties.keys) == Set(expected[name] ?? ["?"]), "\(name)")
+            #expect(Set(properties.keys) == Set((expected[name] ?? ["?"]) + (optional[name] ?? [])), "\(name)")
             #expect(properties.values.allSatisfy { $0["type"] as? String == "string" && !($0["description"] as? String ?? "").isEmpty }, "\(name)")
         }
     }
