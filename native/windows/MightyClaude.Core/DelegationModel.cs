@@ -99,10 +99,10 @@ public sealed partial record ChildRecord(string Id, string ParentSessionId, stri
     public static string BranchName(string sessionId) => "mighty/" + sessionId;
 
     /// <summary>Whether the child's events send its parent notices: only a child its parent's delegate call made.</summary>
-    public bool NotifiesParent => StartedByHuman != true;
+    [JsonIgnore] public bool NotifiesParent => StartedByHuman != true;
 
     /// <summary>The agent CLI the child runs.</summary>
-    public string Agent => Provider ?? "claude";
+    [JsonIgnore] public string Agent => Provider ?? "claude";
 
     /// <summary>The child moved by <paramref name="change"/>, or null when the event is refused and nothing changes.</summary>
     public ChildRecord? Applying(ChildStateEvent change) => State.After(change) is { } next ? this with { State = next } : null;
