@@ -11,7 +11,7 @@ section: settings
 - {{ui:settings.display.languageLabel}}: 앱의 언어. [언어 바꾸기](getting-started.md#language)를 보세요.
 - {{ui:settings.display.statusLineToggle}}: Claude 설정의 상태 줄 명령을 실행해 입력창 아래에 보여 줍니다.
 - {{ui:settings.display.browserToggle}}: 브라우저 창을 켭니다. 앱을 다시 열어야 적용됩니다.
-- {{platform:mac}} {{ui:settings.delegation.toggle}}: 기본으로 켜져 있습니다. Claude 창이 자기 worktree를 가진 자식 창을 열 수 있고, 실행 중인 Claude 창에서 {{kbd:⌘Enter}}를 누르면 요청이 새 자식 창에서 실행됩니다. [마이티 오케스트레이션](delegation.md#enable)을 보세요.
+- {{ui:settings.delegation.toggle}}: 기본으로 켜져 있습니다. Claude 창이 자기 worktree를 가진 자식 창을 열 수 있고, 실행 중인 Claude 창에서 {{kbd:⌘Enter}}를 누르면 요청이 새 자식 창에서 실행됩니다. [마이티 오케스트레이션](delegation.md#enable)을 보세요.
 - {{ui:agentTerminal.urlOpen.settingTitle}}: 에이전트가 연 링크를 어디서 열지 정합니다.
 
 ![[settings-general]]
@@ -39,7 +39,7 @@ section: settings
 
 ## 구성 요소 {#components}
 {{ui:settings.nav.tools}} 탭은 앱에 필요한 것이 준비됐는지 보여 줍니다.
-- {{ui:settings.components.sectionTitle}}: Claude, Codex, Antigravity CLI(Windows에서는 Gemini CLI)와 필요한 플러그인의 상태입니다. {{ui:settings.components.statusInstalled}}, {{ui:settings.components.statusMissing}}, {{ui:settings.components.statusAttention}} 중 하나로 보입니다. 설치가 필요하면 설치 명령을 복사해 터미널에서 실행한 뒤 {{ui:settings.components.recheckButton}}을 누릅니다.
+- {{ui:settings.components.sectionTitle}}: Claude, Codex, Antigravity CLI와 필요한 플러그인의 상태입니다. {{ui:settings.components.statusInstalled}}, {{ui:settings.components.statusMissing}}, {{ui:settings.components.statusAttention}} 중 하나로 보입니다. 설치가 필요하면 설치 명령을 복사해 터미널에서 실행한 뒤 {{ui:settings.components.recheckButton}}을 누릅니다.
 - {{ui:settings.toolkit.sectionTitle}}: 자주 쓰는 도구 목록입니다. 설치 전에 실행할 명령을 모두 보여 주고 {{ui:settings.toolkit.confirmTitle}}을 받습니다. 목록을 {{ui:settings.toolkit.exportButton}}하거나 {{ui:settings.toolkit.importButton}}할 수 있습니다.
 
 ![[settings-tools]]

@@ -83,15 +83,26 @@ public static class ChildStates
 /// <param name="AwaitedRunId">The run that carries the parent's work: the child's first run, which delegate started, or the run a
 /// follow-up went to. It stays named after that run ends, so its end sends the parent one notice, never two.</param>
 /// <param name="ReportDigest">The SHA-256 of the whole REPORT.md at the current revision, so only a changed report makes the next one.</param>
+/// <param name="StartedByHuman">True for a child the human started from its parent's composer (the second send), not by the parent's
+/// delegate call (M/DelegationModel.swift:113-118). Its parent's run never asked for it, so it sends the parent no notices: the
+/// human merges or discards it from its card. null (agent-made) in every record kept before it was stored.</param>
+/// <param name="Provider">The agent CLI the child runs, its parent's: "codex" or "gemini". null is Claude, as in every record kept before it was stored.</param>
 public sealed partial record ChildRecord(string Id, string ParentSessionId, string WorktreePath, string Branch, string ParentBranch, string BaseCommit, string StartingMode, string RequestKey,
     int FollowUpCount, int ReportRevision, ChildState State, string? ReportHead = null, string? ParentCheckout = null, string? ClosedHead = null, string? RunId = null,
-    string? AwaitedRunId = null, string? ReportDigest = null)
+    string? AwaitedRunId = null, string? ReportDigest = null, bool? StartedByHuman = null, string? Provider = null)
 {
     public static ChildRecord Make(string id, string parentSessionId, string worktreePath, string parentBranch, string baseCommit, string startingMode, string requestKey,
-        int followUpCount = 0, int reportRevision = 0, string? reportHead = null, ChildState state = ChildState.Creating, string? parentCheckout = null) =>
-        new(id, parentSessionId, worktreePath, BranchName(id), parentBranch, baseCommit, startingMode, requestKey, followUpCount, reportRevision, state, reportHead, parentCheckout);
+        int followUpCount = 0, int reportRevision = 0, string? reportHead = null, ChildState state = ChildState.Creating, string? parentCheckout = null, bool? startedByHuman = null, string? provider = null) =>
+        new(id, parentSessionId, worktreePath, BranchName(id), parentBranch, baseCommit, startingMode, requestKey, followUpCount, reportRevision, state, reportHead, parentCheckout,
+            StartedByHuman: startedByHuman, Provider: provider == "claude" ? null : provider);
 
     public static string BranchName(string sessionId) => "mighty/" + sessionId;
+
+    /// <summary>Whether the child's events send its parent notices: only a child its parent's delegate call made.</summary>
+    public bool NotifiesParent => StartedByHuman != true;
+
+    /// <summary>The agent CLI the child runs.</summary>
+    public string Agent => Provider ?? "claude";
 
     /// <summary>The child moved by <paramref name="change"/>, or null when the event is refused and nothing changes.</summary>
     public ChildRecord? Applying(ChildStateEvent change) => State.After(change) is { } next ? this with { State = next } : null;

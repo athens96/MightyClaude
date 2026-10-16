@@ -41,7 +41,7 @@ internal static class AddPaneMenuVerification
     internal static Task OnlyClaudeAndCodexFromTheMenuMayAskToResume()
     {
         Check(AddPaneMenu.MayAskResume("claude", fromMenu: true) && AddPaneMenu.MayAskResume("codex", fromMenu: true), "Claude and Codex may ask from the menu");
-        Check(!AddPaneMenu.MayAskResume("gemini", fromMenu: true), "Gemini starts at once");
+        Check(AddPaneMenu.MayAskResume("gemini", fromMenu: true), "Antigravity may ask, as its conversations can be continued");
         foreach (var provider in Wire.Providers) Check(!AddPaneMenu.MayAskResume(provider, fromMenu: false), provider + ": Ctrl+N starts at once");
         Check(AddPaneMenu.NewPaneShortcutProvider == "claude", "Ctrl+N adds a Claude pane");
         Check(!AddPaneMenu.MayAskResume("unknown", fromMenu: true), "an unknown agent never asks");

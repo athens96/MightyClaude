@@ -5,7 +5,7 @@ namespace MightyClaude.Core;
 /// <summary>
 /// The providers' own marks, drawn from outline data instead of look-alike symbols. Each
 /// outline sits in a 24×24 box and uses only absolute move / line / cubic / close commands.
-/// Claude and Gemini follow the Simple Icons outlines (CC0); the Codex pane carries OpenAI's
+/// Claude and Gemini follow the Simple Icons outlines (CC0) — the Antigravity pane (the gemini id) carries Gemini's; the Codex pane carries OpenAI's
 /// mark. The marks remain trademarks of Anthropic, OpenAI and Google and only identify their
 /// CLIs. The outlines are copied verbatim from macOS <c>ProviderMark</c>
 /// (MightyCore/ProviderMark.swift) so both apps draw the same shapes.
@@ -30,7 +30,7 @@ public static class ProviderMark
     public static string? MarkedProvider(string? provider) => provider is not null && Wire.Providers.Contains(provider) ? provider : null;
 
     /// <summary>The short name the mark stands before (macOS <c>ProviderOptions.label</c>).</summary>
-    public static string Label(string provider) => provider switch { "codex" => "Codex", "gemini" => "Gemini", _ => "Claude" };
+    public static string Label(string provider) => provider switch { "codex" => "Codex", "gemini" => "Antigravity", _ => "Claude" };
 
     /// <summary>
     /// The provider whose mark a sidebar row draws before its name, or null. Only an agent's row

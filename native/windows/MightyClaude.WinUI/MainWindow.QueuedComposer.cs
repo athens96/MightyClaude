@@ -23,6 +23,14 @@ public sealed partial class MainWindow
         private readonly Border steerDisc = new() { Width = DesignMetrics.Layout.Toolbar, Height = DesignMetrics.Layout.Toolbar, CornerRadius = new CornerRadius(16), IsHitTestVisible = false };
         private readonly Grid steerHost = new() { Width = DesignMetrics.Layout.Toolbar, Height = DesignMetrics.Layout.Toolbar, VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
         private readonly ComposerGlyph steerBolt = ComposerGlyph.SteerBolt();
+        /// <summary>
+        /// The second send in steer's place when it opens a new child worktree (<see cref="ComposerSecondSend.Worktree"/>): the same
+        /// disc with the branch, shown while the draft has words for the child's task (M/SessionPaneView.swift:834-842).
+        /// </summary>
+        private Button worktreeButton = null!;
+        private readonly ComposerGlyph worktreeBranch = ComposerGlyph.WorktreeBranch();
+        /// <summary>The second send offers a new worktree now: the disc carries the branch, not the bolt.</summary>
+        private bool offersWorktree;
         private bool queueStarting;
         private int composerSubmissionVersion;
         private bool HasComposerContent => !string.IsNullOrWhiteSpace(input.Text) || pendingAttachments.Count > 0;
@@ -46,7 +54,12 @@ public sealed partial class MainWindow
             // Like send, the button draws nothing of its own; the disc and the bolt carry its look (PaintSteer).
             owner.PaintPlainButton(steer, owner.brushes.Transparent, owner.brushes.Transparent);
             steer.IsEnabledChanged += (_, _) => PaintSteer();
-            steerHost.Children.Add(steerDisc); steerHost.Children.Add(steer); actions.Children.Add(steerHost);
+            worktreeButton = new Button { Width = DesignMetrics.Layout.Toolbar, Height = DesignMetrics.Layout.Toolbar, MinWidth = 0, MinHeight = 0, Padding = new(0), CornerRadius = new(16), BorderThickness = new(0), Content = worktreeBranch.View, Visibility = Visibility.Collapsed };
+            worktreeButton.Click += async (_, _) => await Send(steering: true);
+            AutomationProperties.SetName(worktreeButton, Locale.Get("queue.worktree")); AutomationProperties.SetAutomationId(worktreeButton, "composer-worktree-" + id); ToolTipService.SetToolTip(worktreeButton, Locale.Get("queue.worktreeHint"));
+            owner.PaintPlainButton(worktreeButton, owner.brushes.Transparent, owner.brushes.Transparent);
+            worktreeButton.IsEnabledChanged += (_, _) => PaintSteer();
+            steerHost.Children.Add(steerDisc); steerHost.Children.Add(steer); steerHost.Children.Add(worktreeButton); actions.Children.Add(steerHost);
             queueDrainTimer.Tick += async (_, _) =>
             {
                 if (!QueuePaneAlive) { queueDrainTimer.Stop(); return; }
@@ -70,6 +83,16 @@ public sealed partial class MainWindow
             // A turn that is over but still running background agents takes new input in the same process
             // (M/AppStore.swift submit); the queue is the fallback. A plan-mode style's new request waits and
             // starts fresh in plan mode (§1.17.4), and the queued item keeps that decision.
+            // Ctrl+Enter on a pane that may have children runs written words now in a new child worktree; files alone wait.
+            if (steering && !owner.BackgroundUpdateHolds(pane) && !string.IsNullOrWhiteSpace(text) && owner.service.SecondSend(pane) == ComposerSecondSend.Worktree)
+            {
+                // Taken from the composer now, so a second Ctrl+Enter cannot send it again.
+                var sent = files.Select(file => file.Id).ToHashSet(); pendingAttachments.RemoveAll(file => sent.Contains(file.Id)); RefreshAttachments();
+                if (input.Text == text) { updating = true; input.Text = ""; updating = false; await Change(s => s with { Draft = "" }); }
+                RunInNewWorktree(text, files);
+                RefreshComposerState();
+                return true;
+            }
             var plans = LaunchesInPlanMode;
             var joins = BackgroundQueuePolicy.ComposerJoins(steering, pane.BackgroundWork, plans);
             var steered = joins && files.Length == 0 && pane.Provider == "claude" && !starting && await owner.service.TrySteerAsync(id, text);
@@ -116,22 +139,28 @@ public sealed partial class MainWindow
             // as a new queue item (which would also disable the primary button).
             var queueable = busy && !starting && !queueStarting && Session.Kind == "claude" && HasComposerContent;
             if (queueStopButton is not null) { queueStopButton.Visibility = queueable ? Visibility.Visible : Visibility.Collapsed; queueStopButton.IsEnabled = !stopping; }
-            // Steer only for a Claude turn and a draft without files: files always queue (DeferBusyComposer).
-            var steers = queueable && Session.Provider == "claude" && pendingAttachments.Count == 0;
-            steerHost.Visibility = steers ? Visibility.Visible : Visibility.Collapsed;
+            // The second send: a new worktree for written words in a pane that may have children, otherwise steer for a Claude turn
+            // and a draft without files: files always queue (DeferBusyComposer).
+            var second = queueable ? owner.service.SecondSend(Session) : ComposerSecondSend.Queue;
+            var steers = second == ComposerSecondSend.Steer && pendingAttachments.Count == 0;
+            offersWorktree = second == ComposerSecondSend.Worktree && !string.IsNullOrWhiteSpace(input.Text);
+            steerHost.Visibility = steers || offersWorktree ? Visibility.Visible : Visibility.Collapsed;
+            steer.Visibility = offersWorktree ? Visibility.Collapsed : Visibility.Visible; worktreeButton.Visibility = offersWorktree ? Visibility.Visible : Visibility.Collapsed;
             if (queueable)
             {
                 ShowSendSymbol("queue"); send.IsEnabled = !starting && !queueStarting && !attachmentsLoading && !stopping && queuedInputs.Items.Count < QueuedInputBuffer.MaximumItems;
                 AutomationProperties.SetName(send, Locale.Get("queue.add")); ToolTipService.SetToolTip(send, Locale.Get("queue.addHint"));
             }
-            steer.IsEnabled = steers && send.IsEnabled;
-            RenderQueuedInputs();
+            steer.IsEnabled = steers && send.IsEnabled; worktreeButton.IsEnabled = offersWorktree && send.IsEnabled;
+            PaintSteer(); RenderQueuedInputs();
         }
 
         internal void ReceiveQueueRunEvent(RunEvent value)
         {
             if (value.Type != "status") return;
             var kept = value.Status == "stopped" && queueKeptOnStop; if (value.Status is "stopped" or "completed" or "idle" or "error") queueKeptOnStop = false;
+            // A busy pane learns whether its folder can host a child worktree for Ctrl+Enter.
+            if (value.Status == "running") owner.service.RefreshWorktreeReadiness(Session);
             // A stop from anywhere cancels what still waits and an error holds it: either is said in the transcript (M/AppStore.swift:922-929).
             if (QueuedInputBuffer.SettleNotice(value.Status ?? "", queuedInputs.Items.Count, kept) is { } notice && QueuePaneAlive) _ = SlashNote(notice);
             if (queuedInputs.Settle(value.Status ?? "", kept)) queueDrainTimer.Start();
@@ -164,7 +193,7 @@ public sealed partial class MainWindow
             var header = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm }; header.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); header.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             header.Children.Add(new FontIcon { Glyph = "", FontSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = accent, VerticalAlignment = VerticalAlignment.Center });
             var waitsOnBackground = BackgroundQueuePolicy.WaitsOnBackground(Session.BackgroundWork, LaunchesInPlanMode, queuedInputs.Items.Count);
-            var count = new TextBlock { Text = Locale.Get(busy ? "queue.waitingBusy" : "queue.waiting", new Dictionary<string, string> { ["count"] = total.ToString() }) + (waitsOnBackground ? "\n" + Locale.Get("queue.waitingOnBackground.windows") : ""), FontSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = ink2, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
+            var count = new TextBlock { Text = Locale.Get(busy ? "queue.waitingBusy" : "queue.waiting", new Dictionary<string, string> { ["count"] = total.ToString() }) + (waitsOnBackground ? "\n" + Locale.Get(owner.service.SecondSend(Session) == ComposerSecondSend.Worktree ? "queue.waitingOnBackground.windowsWorktree" : "queue.waitingOnBackground.windows") : ""), FontSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = ink2, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
             if (waitsOnBackground) AutomationProperties.SetAutomationId(count, "queue-background-" + id);
             Grid.SetColumn(count, 1); header.Children.Add(count);
             if (DelegationQueueRows.OffersRunNext(busy, held.Count))

@@ -25,9 +25,9 @@ public sealed partial class MainWindow
     private readonly Dictionary<string, (CliLoginRetry Retry, CliAccountStatus Status)> deferredAutoLogins = [];
     // The smoke never runs a CLI: when set, this stands in for the sign-in process (MainWindow.SmallParitySmoke.cs).
     private Func<string, Task>? smokeLoginStarter;
-    // The console window Gemini's last sign-in opened; while it is still open a new start waits on it instead of opening another.
-    private GeminiLoginWindow? geminiLoginWindow;
-    private sealed class GeminiLoginWindow
+    // The console window Antigravity's last sign-in opened; while it is still open a new start waits on it instead of opening another.
+    private AntigravityLoginWindow? antigravityLoginWindow;
+    private sealed class AntigravityLoginWindow
     {
         internal Task Exit = Task.CompletedTask;
         // True once the console host opened it: its closing then ends Exit (a Windows Terminal tab hands off at once).
@@ -40,7 +40,7 @@ public sealed partial class MainWindow
         internal CliBackgroundLogin? Process;
         internal string Phase = "starting";
         internal bool Automatic;
-        // Gemini signs in in the external sign-in terminal rather than a hidden one.
+        // Antigravity signs in in the external sign-in terminal rather than a hidden one.
         internal bool Terminal;
         internal Task Task = Task.CompletedTask;
     }
@@ -134,10 +134,10 @@ public sealed partial class MainWindow
         _ = StartBackgroundLogin(provider, automatic: true, session: retry.Request.SessionId);
     }
     /// <summary>The provider's automatic sign-in, running or still shutting down; a send cancels it (M sends never wait on one).</summary>
-    /// Gemini's terminal sign-in runs nothing in the background, so sends never wait on it (StartAdmitted).
+    /// Antigravity's terminal sign-in runs nothing in the background, so sends never wait on it (StartAdmitted).
     private LoginJob? AutomaticLoginOf(string provider) =>
         loginJobs.GetValueOrDefault(provider) is { Automatic: true, Terminal: false } job ? job : loginBusy.GetValueOrDefault(provider) is { Automatic: true, Terminal: false } ending ? ending : null;
-    /// <summary>session: the pane whose run lost the sign-in; Gemini's terminal starts in its workspace.</summary>
+    /// <summary>session: the pane whose run lost the sign-in; Antigravity's terminal starts in its workspace.</summary>
     private Task StartBackgroundLogin(string provider, bool automatic = false, string? session = null)
     {
         if (closing || loginJobs.ContainsKey(provider) || !CliAuthFailure.Providers.Contains(provider)) return Task.CompletedTask;
@@ -153,7 +153,7 @@ public sealed partial class MainWindow
             loginFailures[provider] = Locale.Get(AnyCliUpdateRunning ? "loginRecovery.updating" : "loginRecovery.busy"); RefreshLoginCards(); return Task.CompletedTask;
         }
         var job = new LoginJob { Automatic = automatic, Terminal = provider == "gemini" }; loginJobs[provider] = job; loginBusy[provider] = job; loginFailures.Remove(provider);
-        job.Task = job.Terminal ? RunGeminiTerminalLogin(job, session) : RunBackgroundLogin(provider, job); TrackLoginTask(job.Task); RefreshLoginCards();
+        job.Task = job.Terminal ? RunAntigravityTerminalLogin(job, session) : RunBackgroundLogin(provider, job); TrackLoginTask(job.Task); RefreshLoginCards();
         return Task.CompletedTask;
     }
     private async Task RunBackgroundLogin(string provider, LoginJob job)
@@ -218,20 +218,20 @@ public sealed partial class MainWindow
             await ResendLoginRequest(id);
     }
     /// <summary>
-    /// Gemini has no sign-in command (M/AppStore+CLILoginRecovery.swift startGeminiTerminalLogin): its sign-in is the
-    /// interactive CLI ("Login with Google"), which cannot run hidden, so it runs in the external sign-in terminal that
-    /// Settings opens, started in the failed pane's workspace. It counts once oauth_creds.json appears or is rewritten
-    /// after the terminal opened (CliGeminiLogin), then resends like a background sign-in. The window stays the user's:
+    /// Antigravity has no sign-in command (M/AppStore+CLILoginRecovery.swift startAntigravityTerminalLogin): its sign-in is the
+    /// interactive CLI (agy opens the browser on its first run), which cannot run hidden, so it runs in the external sign-in
+    /// terminal that Settings opens, started in the failed pane's workspace. It is opened only when agy's status reads signed
+    /// out, counts once the status reads signed in (CliAntigravityLogin), then resends like a background sign-in. The window stays the user's:
     /// the app does not close it (the CLI in it is now a live session) and does not read its closing as the end, since
     /// a Windows Terminal tab hands off at once; the wait ends signed in, cancelled or after ten minutes. A console-host
     /// window is the exception: it is known to close with its process, so closing it ends the wait, and while it is still
     /// open a new start waits on it again instead of opening another window.
     /// </summary>
-    private async Task RunGeminiTerminalLogin(LoginJob job, string? session)
+    private async Task RunAntigravityTerminalLogin(LoginJob job, string? session)
     {
         const string provider = "gemini";
         var cancellation = job.Cancellation.Token;
-        GeminiLoginWindow? window = null;
+        AntigravityLoginWindow? window = null;
         try
         {
             if (!CliAuthFailure.SignInCanFix(await accountsCoordinator.StatusAsync(provider, cancellation))) throw new InvalidOperationException();
@@ -239,19 +239,17 @@ public sealed partial class MainWindow
             var state = service.Snapshot;
             var workspace = state.Sessions.FirstOrDefault(p => p.Id == session)?.WorkspaceId ?? state.ActiveWorkspaceId;
             var directory = state.Workspaces.FirstOrDefault(w => w.Id == workspace)?.Path;
-            // Taken before the CLI starts, so its own write counts as new.
-            var baseline = accountsCoordinator.GeminiCredentialsStamp();
             cancellation.ThrowIfCancellationRequested();
-            if (geminiLoginWindow is { Open: true } open) window = open;
+            if (antigravityLoginWindow is { Open: true } open) window = open;
             else
             {
-                var opened = new GeminiLoginWindow(); window = geminiLoginWindow = opened;
+                var opened = new AntigravityLoginWindow(); window = antigravityLoginWindow = opened;
                 opened.Exit = accountsCoordinator.StartSignInAsync(argv, CancellationToken.None, directory, value => opened.ClosesWithWindow = value);
                 // Not tracked: shutting down never waits for the user's window.
                 _ = opened.Exit.ContinueWith(exit => _ = exit.Exception, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
             }
             job.Phase = "waiting"; RefreshLoginCards();
-            var outcome = await CliGeminiLogin.RunAsync(baseline, accountsCoordinator.GeminiCredentialsStamp, token => accountsCoordinator.StatusAsync(provider, token),
+            var outcome = await CliAntigravityLogin.RunAsync(token => accountsCoordinator.StatusAsync(provider, token),
                 () => !window.Exit.IsFaulted && !(window.ClosesWithWindow && window.Exit.IsCompleted), cancellation);
             cancellation.ThrowIfCancellationRequested();
             if (loginJobs.GetValueOrDefault(provider) != job) return;
@@ -354,11 +352,11 @@ public sealed partial class MainWindow
             if (job is not null)
             {
                 if (job.Automatic) words.Children.Add(Line(Locale.Get("loginRecovery.autoStarted"), ink2));
-                // Gemini's terminal sentence is long: a star column lets it wrap beside the ring.
+                // Antigravity's terminal sentence is long: a star column lets it wrap beside the ring.
                 var busy = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
                 busy.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); busy.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
                 busy.Children.Add(new ProgressRing { IsActive = true, Width = 12, Height = 12, MinWidth = 0, MinHeight = 0, VerticalAlignment = VerticalAlignment.Center, Foreground = ink2 });
-                var state = Line(Locale.Get(job.Phase == "starting" ? "loginRecovery.starting" : job.Terminal ? "loginRecovery.geminiTerminal" : "loginRecovery.waiting"), ink2);
+                var state = Line(Locale.Get(job.Phase == "starting" ? "loginRecovery.starting" : job.Terminal ? "loginRecovery.antigravityTerminal" : "loginRecovery.waiting"), ink2);
                 Grid.SetColumn(state, 1); busy.Children.Add(state); words.Children.Add(busy);
             }
             else if (failure is not null) words.Children.Add(Line(failure, wait));
@@ -385,7 +383,7 @@ public sealed partial class MainWindow
             {
                 // Sends of the provider wait while its sign-in runs, so resending is offered again once it ends.
                 buttons.Children.Add(Small(Locale.Get("loginRecovery.cancel"), () => { owner.CancelBackgroundLogin(provider); owner.RefreshLoginCards(); return Task.CompletedTask; }));
-                // Gemini signs in in a terminal already, so it has no second terminal button.
+                // Antigravity signs in in a terminal already, so it has no second terminal button.
                 if (provider != "gemini") buttons.Children.Add(Small(Locale.Get("loginRecovery.terminalButton"), () => owner.TerminalLoginFallback(provider)));
             }
             else

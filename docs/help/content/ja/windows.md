@@ -32,7 +32,7 @@ Windows 10(バージョン2004)以降またはWindows 11で動作します。必
 | {{kbd:⌘K}} | {{kbd:Ctrl+K}} | {{ui:menu.searchWorkspaces}} |
 | {{kbd:⌃⌘S}} | {{kbd:Ctrl+B}} | {{ui:sidebar.collapse}} / {{ui:sidebar.expand}} |
 | {{kbd:⌘,}} | {{kbd:Ctrl+,}} | {{ui:menu.settings}} |
-| {{kbd:⌘Enter}} | {{kbd:Ctrl+Enter}} | 実行中のClaudeにすぐに伝える |
+| {{kbd:⌘Enter}} | {{kbd:Ctrl+Enter}} | 新しいworktreeですぐに実行、または実行中のClaudeにすぐに伝える |
 | {{kbd:⌃⌥⌘K}} | {{kbd:Ctrl+Alt+Esc}} | スマートフォンからのリモート画面セッションをすべて止める([リモート画面](phone.md#screen)) |
 
 Windowsにはメニューバーがありません。同じ機能は、サイドバーと{{ui:workspace.addPane}}メニューにあります。
@@ -41,7 +41,7 @@ Windowsにはメニューバーがありません。同じ機能は、サイド�
 | 機能 | Windowsでは |
 |---|---|
 | CLIのサインイン | アプリ内のターミナルではなく、別のWindowsターミナルのウインドウで行います。サインインが終わると、Macと同じく失敗したリクエストを自動で送り直します。 |
-| Googleのエージェント | 現在もGemini CLI(`gemini`)を使います。MacはAntigravity CLIを使います([MacのAntigravity](agent-pane.md#antigravity))。 |
+| Antigravity | PowerShellのインストーラーで`%LOCALAPPDATA%\agy\bin`に入り、記録は`%USERPROFILE%\.gemini\antigravity-cli`に残ります([Antigravity](agent-pane.md#antigravity))。 |
 | ターミナルペイン | Windows PowerShellを使います。 |
 | ブラウザペイン | Microsoft Edge WebView2で開きます。Macと同じく、{{ui:settings.display.browserToggle}}をオンにしてアプリを開き直す必要があります。 |
 | 完了通知 | {{ui:windows.notifications.toggleLabel}}でオンにします。 |
@@ -49,7 +49,8 @@ Windowsにはメニューバーがありません。同じ機能は、サイド�
 | ペットの吹き出し | 承認と質問の吹き出しに記号のボタンが1つ多くあります。承認ではリクエスト全体を見るウインドウを、質問では回答を自分で書いて送るウインドウを開きます。 |
 | 言語 | 変更した言語は、アプリを開き直すと適用されます。 |
 | ファイルの場所 | {{ui:menu.showInFinder}}の代わりに{{ui:menu.showInExplorer}}があります。 |
-| Mightyオーケストレーション | レジストリの値でオンとオフを切り替えます([オンとオフ](delegation.md#enable))。{{kbd:⌘Enter}}で子ペインを自分で起動する機能はなく、Claudeに分けて任せる使い方だけができます。worktreeは`%USERPROFILE%\.mightyclaude\worktrees`にでき、中にジャンクションやシンボリックリンクがあると自動では片付けません([ペインを閉じる・後片付け](delegation.md#close))。 |
+| Mightyオーケストレーション | 初期状態でオンで、設定のスイッチでオフにできます。このスイッチはレジストリの値でもあります([オンとオフ](delegation.md#enable))。worktreeは`%USERPROFILE%\.mightyclaude\worktrees`にでき、中にジャンクションやシンボリックリンクがあると自動では片付けません([ペインを閉じる・後片付け](delegation.md#close))。 |
+| 文字サイズとフォント | Windowsアプリにはまだありません。Windowsの設定 › アクセシビリティ › テキストのサイズで、アプリの文字を大きくできます。 |
 
 > [!note]
 > Windowsアプリの一部の機能は、まだ実機で十分に確認されていません。気になる点があればお知らせください。

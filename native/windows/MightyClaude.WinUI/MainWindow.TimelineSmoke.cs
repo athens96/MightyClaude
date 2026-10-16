@@ -116,6 +116,13 @@ public sealed partial class MainWindow
                     "a new request leaves the older board shown and shows the badge");
                 Invoke(structureBadge!);
                 await WaitUI(() => structureBoardId == newer.Id && structureNavigation.Chosen is null && structureBadge?.Visibility == Visibility.Collapsed, "the badge shows the newest request");
+                // The pipeline is drawn once (M/MightyStructureView.swift:547-563): each column is headed by its step's chip, joined by a
+                // line to the next column's, and the board's header above holds no chips of its own.
+                bool Chip(string column) => VisualChildren(structureColumns[column].Header).OfType<Border>().Any(part => AutomationProperties.GetName(part).StartsWith(StructureStepTitle(structureBoards[^1].Columns.Single(c => c.Id == column).Step), StringComparison.Ordinal));
+                bool Connector(string column) => VisualChildren(structureColumns[column].Header).OfType<Border>().Any(part => AutomationProperties.GetAutomationId(part) == "mighty-structure-connector-" + column);
+                Require(new[] { "request", "execution", "result" }.All(Chip) && Connector("request") && Connector("execution") && !Connector("result")
+                    && !VisualChildren(structureHeader!).OfType<Border>().Any(part => AutomationProperties.GetName(part).StartsWith(StructureStepTitle(structureBoards[^1].Columns[0].Step), StringComparison.Ordinal)),
+                    "each column's header is its step's chip joined by a line to the next, and the board's header holds no chips");
                 // The running request wears the diagram's running marks (M/MightyStructureView.swift:285, 619, 628): the capsules beside the
                 // board's status and its 실행 card's, waved by the pane's one timer, and the border marching round that card in its fitted 9/7 dashes.
                 AnimationsEnabledOverride = true; RefreshMightyView(Session);

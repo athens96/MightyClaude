@@ -11,7 +11,7 @@ Under {{ui:settings.display.sectionTitle}} on the {{ui:settings.nav.general}} ta
 - {{ui:settings.display.languageLabel}}: the app's language. See [Change the language](getting-started.md#language).
 - {{ui:settings.display.statusLineToggle}}: runs the status line command from your Claude settings and shows it under the composer.
 - {{ui:settings.display.browserToggle}}: turns browser panes on. Takes effect after you reopen the app.
-- {{platform:mac}} {{ui:settings.delegation.toggle}}: on by default. Claude panes can open child panes in their own worktrees, and {{kbd:⌘Enter}} in a running Claude pane runs your request in a new one. See [Mighty Orchestration](delegation.md#enable).
+- {{ui:settings.delegation.toggle}}: on by default. Claude panes can open child panes in their own worktrees, and {{kbd:⌘Enter}} in a running Claude pane runs your request in a new one. See [Mighty Orchestration](delegation.md#enable).
 - {{ui:agentTerminal.urlOpen.settingTitle}}: where links opened by an agent go.
 
 ![[settings-general]]
@@ -39,7 +39,7 @@ The {{ui:settings.nav.styles}} tab manages {{ui:settings.styles.sectionTitle}}: 
 
 ## Components {#components}
 The {{ui:settings.nav.tools}} tab shows whether everything the app needs is ready.
-- {{ui:settings.components.sectionTitle}}: the state of the Claude, Codex and Antigravity CLIs (Gemini CLI on Windows) and the plugins they need, shown as {{ui:settings.components.statusInstalled}}, {{ui:settings.components.statusMissing}} or {{ui:settings.components.statusAttention}}. If something needs installing, copy its install command, run it in a terminal, then click {{ui:settings.components.recheckButton}}.
+- {{ui:settings.components.sectionTitle}}: the state of the Claude, Codex and Antigravity CLIs and the plugins they need, shown as {{ui:settings.components.statusInstalled}}, {{ui:settings.components.statusMissing}} or {{ui:settings.components.statusAttention}}. If something needs installing, copy its install command, run it in a terminal, then click {{ui:settings.components.recheckButton}}.
 - {{ui:settings.toolkit.sectionTitle}}: tools you use often. Every command is shown before anything is installed, and you get a {{ui:settings.toolkit.confirmTitle}} step. You can {{ui:settings.toolkit.exportButton}} or {{ui:settings.toolkit.importButton}} the list.
 
 ![[settings-tools]]

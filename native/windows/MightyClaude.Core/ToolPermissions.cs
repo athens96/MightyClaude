@@ -348,7 +348,7 @@ public sealed record ProviderInput(List<string> Arguments, byte[] StandardInput)
         var request = value.Validate();
         var args = ProviderCatalog.Arguments(request, pluginDirectory);
         if (allowPermissionPrompts && request.Provider == "claude") HostPrompts(args);
-        return new(args, System.Text.Encoding.UTF8.GetBytes(PromptFrame(request.Input)));
+        return new(args, System.Text.Encoding.UTF8.GetBytes(request.Provider == "gemini" ? AntigravityUserMessage(request.Input) : PromptFrame(request.Input)));
     }
 
     /// <summary>
@@ -375,4 +375,11 @@ public sealed record ProviderInput(List<string> Arguments, byte[] StandardInput)
     /// <summary>The single stream-json user frame the channel sends once the handshake succeeds.</summary>
     public static string PromptFrame(string input)
         => JsonSerializer.Serialize(new { type = "user", message = new { content = input } }, Wire.Json) + "\n";
+
+    /// <summary>
+    /// The one stdin line of an Antigravity run (<c>agy --input-format stream-json</c>, M/MightyCore/Attachments.swift
+    /// antigravityUserMessage): each line is a turn, and closing stdin after it ends the session.
+    /// </summary>
+    public static string AntigravityUserMessage(string text)
+        => JsonSerializer.Serialize(new { @event = "user", message = new { content = text } }, Wire.Json) + "\n";
 }

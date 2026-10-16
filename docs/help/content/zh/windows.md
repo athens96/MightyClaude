@@ -32,7 +32,7 @@ section: windows
 | {{kbd:⌘K}} | {{kbd:Ctrl+K}} | {{ui:menu.searchWorkspaces}} |
 | {{kbd:⌃⌘S}} | {{kbd:Ctrl+B}} | {{ui:sidebar.collapse}} / {{ui:sidebar.expand}} |
 | {{kbd:⌘,}} | {{kbd:Ctrl+,}} | {{ui:menu.settings}} |
-| {{kbd:⌘Enter}} | {{kbd:Ctrl+Enter}} | 立即发送给正在运行的 Claude |
+| {{kbd:⌘Enter}} | {{kbd:Ctrl+Enter}} | 立即在新的 worktree 中运行，或立即发送给正在运行的 Claude |
 | {{kbd:⌃⌥⌘K}} | {{kbd:Ctrl+Alt+Esc}} | 停止来自手机的所有远程屏幕会话（[远程屏幕](phone.md#screen)） |
 
 Windows 没有菜单栏。相同的功能位于侧边栏和{{ui:workspace.addPane}}菜单中。
@@ -41,7 +41,7 @@ Windows 没有菜单栏。相同的功能位于侧边栏和{{ui:workspace.addPan
 | 功能 | 在 Windows 上 |
 |---|---|
 | CLI 登录 | 不在应用内的终端中进行，而是在单独的 Windows 终端窗口中进行。登录完成后，与 Mac 一样会自动重新发送失败的请求。 |
-| Google 的智能体 | 目前仍使用 Gemini CLI（`gemini`）；Mac 使用 Antigravity CLI（[Mac 上的 Antigravity](agent-pane.md#antigravity)）。 |
+| Antigravity | 通过 PowerShell 安装程序安装到 `%LOCALAPPDATA%\agy\bin`，记录保存在 `%USERPROFILE%\.gemini\antigravity-cli`（[Antigravity](agent-pane.md#antigravity)）。 |
 | 终端窗格 | 使用 Windows PowerShell。 |
 | 浏览器窗格 | 使用 Microsoft Edge WebView2 打开。与 Mac 一样，需要打开{{ui:settings.display.browserToggle}}并重新打开应用。 |
 | 完成通知 | 通过{{ui:windows.notifications.toggleLabel}}开启。 |
@@ -49,7 +49,8 @@ Windows 没有菜单栏。相同的功能位于侧边栏和{{ui:workspace.addPan
 | 宠物气泡 | 批准和提问的气泡多一个图标按钮。批准时它打开显示完整请求的窗口，提问时它打开可以自己输入答案的窗口。 |
 | 语言 | 更改的语言在重新打开应用后生效。 |
 | 文件位置 | 提供{{ui:menu.showInExplorer}}，而不是{{ui:menu.showInFinder}}。 |
-| Mighty 编排 | 用注册表值开启和关闭（[开启和关闭](delegation.md#enable)）。没有用 {{kbd:⌘Enter}} 亲自启动子窗格的功能，只能让 Claude 拆分工作并交给子窗格。worktree 位于 `%USERPROFILE%\.mightyclaude\worktrees`，其中含有目录联接或符号链接时不会自动清理（[关闭窗格和清理](delegation.md#close)）。 |
+| Mighty 编排 | 默认开启，可用设置中的开关关闭，这个开关也是一个注册表值（[开启和关闭](delegation.md#enable)）。worktree 位于 `%USERPROFILE%\.mightyclaude\worktrees`，其中含有目录联接或符号链接时不会自动清理（[关闭窗格和清理](delegation.md#close)）。 |
+| 文字大小和字体 | Windows 应用中还没有。可以在 Windows 设置 › 辅助功能 › 文本大小中放大应用的文字。 |
 
 > [!note]
 > Windows 应用的部分功能尚未在真实设备上充分验证。如发现异常，请告诉我们。

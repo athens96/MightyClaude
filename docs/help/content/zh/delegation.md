@@ -7,14 +7,14 @@ section: delegation
 
 打开子窗格有两种方法。
 
-- **亲自启动**（{{platform:mac}}）：在运行中的 Claude 窗格，或处于子窗格能更改文件的模式的 Codex、Antigravity 窗格（[Codex 和 Antigravity](#agents)）里写下下一个请求，按 {{kbd:⌘Enter}}。请求会立即在新 worktree 的子窗格中运行（[在新的 worktree 中运行](#worktree)）。
+- **亲自启动**：在运行中的 Claude 窗格，或处于子窗格能更改文件的模式的 Codex、Antigravity 窗格（[Codex 和 Antigravity](#agents)）里写下下一个请求，按 {{kbd:⌘Enter}}。请求会立即在新 worktree 的子窗格中运行（[在新的 worktree 中运行](#worktree)）。
 - **让 Claude 分工**：请 Claude（或 Codex）把工作拆开交给子窗格。代理会创建子窗格、阅读报告，并一直做到合并（[让 Claude 分工](#delegate)）。
 
 > [!warning]
-> 这是实验性功能。在 Mac 上默认开启，可以在设置中关闭。在 Windows 上默认关闭，没有亲自启动，只能让 Claude 分工。请先在练习用的仓库中试用。
+> 这是实验性功能。默认开启，可以在设置中关闭。请先在练习用的仓库中试用。
 
 ## 概览 {#overview}
-{{platform:mac}} 亲自启动时的流程如下。
+亲自启动时的流程如下。
 
 1. 把一个 git 仓库文件夹作为工作区打开，在 Claude 窗格中交给它一项工作。
 2. Claude 工作期间，写下下一个请求并按 {{kbd:⌘Enter}}。正在运行的任务继续进行，这个窗格旁边会打开一个子窗格，立即运行你的请求。
@@ -34,11 +34,11 @@ section: delegation
 | 丢弃结果 | 卡片上的{{ui:delegation.card.discard}}按钮 |
 
 ## 在新的 worktree 中运行 {#worktree}
-{{platform:mac}} 在 Claude、Codex 或 Antigravity 窗格运行时写下请求，按 {{kbd:⌘Enter}}，或点击停止按钮旁的圆形{{ui:queue.worktree}}按钮（分支图标）。正在运行的任务不受打扰，你的请求会立即在拥有自己 worktree 的新子窗格中运行。除非你在此期间已经开始在父窗格中输入，新窗格会立即显示出来。
+在 Claude、Codex 或 Antigravity 窗格运行时写下请求，按 {{kbd:⌘Enter}}，或点击停止按钮旁的圆形{{ui:queue.worktree}}按钮（分支图标）。正在运行的任务不受打扰，你的请求会立即在拥有自己 worktree 的新子窗格中运行。除非你在此期间已经开始在父窗格中输入，新窗格会立即显示出来。
 
 - 在运行中的窗格里，{{kbd:Enter}} 会把请求放入队列，等当前任务结束后再运行。输入框的提示文字会说明这两个键的作用。
 - 只有在能创建 worktree 的地方才会使用新的 worktree：必须是检出了有提交的分支的 git 仓库。在其他地方（不是 git 仓库、还没有提交、检出的是提交而不是分支），{{kbd:⌘Enter}} 会像以前一样立即发送给正在运行的 Claude，Codex 和 Antigravity 窗格则放入队列。
-- 子窗格从父窗格的最后一次提交开始。会创建分支 `mighty/<子窗格 id>`，worktree 位于项目文件夹之外（`~/.mightyclaude/worktrees/<子窗格 id>`），不会动到父窗格的工作。父窗格文件夹中尚未提交的更改不会带给子窗格。
+- 子窗格从父窗格的最后一次提交开始。会创建分支 `mighty/<子窗格 id>`，worktree 位于项目文件夹之外（Mac 上为 `~/.mightyclaude/worktrees/<子窗格 id>`，Windows 上为 `%USERPROFILE%\.mightyclaude\worktrees\<子窗格 id>`），不会动到父窗格的工作。父窗格文件夹中尚未提交的更改不会带给子窗格。
 - 它以父窗格的权限模式运行，并使用父窗格的模型和{{ui:composer.effort.label}}。在每个请求都以计划模式开始的样式中，它以计划模式开始。它以与父窗格相同的视图打开；如果父窗格在 Mighty 视图中使用某个样式，它也以同一样式开始（样式的进度从子窗格的第一个请求起单独计算）。附件也会一起带上。
 - 第一条消息先是你输入的文字，随后应用会告诉子窗格在哪里工作，并要求它完成后提交并写入 REPORT.md，这样才能在卡片上合并。斜杠命令（以 `/` 开头的文字）会按你输入的样子单独运行，应用的说明则作为子窗格的下一个请求随后发送，因此不会变成命令的参数。
 - 子窗格的用法和同一代理的普通窗格一样：可以回答批准卡片、发送后续请求、更改权限模式。
@@ -48,7 +48,7 @@ section: delegation
 - 在子窗格中，或关闭 Mighty 编排的窗格中，{{kbd:⌘Enter}} 会像以前一样立即发送给正在运行的 Claude；Codex 和 Antigravity 窗格放入队列。手机的发送方式不变：从手机立即发送仍会发给正在运行的 Claude。
 
 ## 让 Claude 分工 {#delegate}
-Claude 或 Codex 窗格（父窗格）也可以把工作拆开，交给同一代理的其他窗格（子窗格）。子窗格报告后，父窗格收到通知，阅读报告，再决定是否合并结果。Claude 父窗格在 Mac 应用和 Windows 应用中都可使用，Codex 父窗格仅限 Mac。
+Claude 或 Codex 窗格（父窗格）也可以把工作拆开，交给同一代理的其他窗格（子窗格）。子窗格报告后，父窗格收到通知，阅读报告，再决定是否合并结果。Claude 和 Codex 父窗格在 Mac 应用和 Windows 应用中都可使用。
 
 1. 把一个 git 仓库文件夹作为工作区打开，再打开一个 Claude 窗格。这个窗格就是父窗格。
 2. 在请求中写明工具名称，例如“用 delegate 工具打开两个 Mighty 子窗格，把这件事分给它们”。如果只说“分开做”，Claude 可能会改用它自己内置的子智能体。
@@ -58,13 +58,13 @@ Claude 或 Codex 窗格（父窗格）也可以把工作拆开，交给同一代
 - 每个子窗格都有一个分支 `mighty/<子窗格 id>` 和一个 worktree（Mac 上为 `~/.mightyclaude/worktrees/<子窗格 id>`，Windows 上为 `%USERPROFILE%\.mightyclaude\worktrees\<子窗格 id>`）。子窗格从父窗格的最后一次提交开始。
 - 交出的任务写在 TASK.md 中，结果写在 REPORT.md 中。这两个文件位于 worktree 内被 git 忽略的文件夹里，不会被提交。
 - 子窗格的权限模式是父窗格选择的模式，不能比父窗格自己的模式更宽。只有你能在两次运行之间，从子窗格输入框的权限菜单或手机设置中放宽它。
-- {{platform:mac}} 子窗格以与父窗格相同的视图打开（{{ui:graph.view.default}} | {{ui:graph.view.mighty}}，在 Mighty 视图中则是 {{ui:graph.view.diagram}}, {{ui:graph.view.timeline}}, {{ui:graph.view.structure}} 中相同的那一个）。如果父窗格在 Mighty 视图中使用{{ui:graph.view.structure}}，子窗格也显示为{{ui:graph.view.structure}}。
+- 子窗格以与父窗格相同的视图打开（{{ui:graph.view.default}} | {{ui:graph.view.mighty}}，在 Mighty 视图中则是 {{ui:graph.view.diagram}}, {{ui:graph.view.timeline}}, {{ui:graph.view.structure}} 中相同的那一个）。如果父窗格在 Mighty 视图中使用{{ui:graph.view.structure}}，子窗格也显示为{{ui:graph.view.structure}}。
 - 父窗格不能回答子窗格的批准卡片。子窗格中出现卡片时，请你在那个窗格中亲自回答。
-- 一个父窗格最多可以有 3 个由 `delegate` 工具创建的打开的子窗格，与在 Mac 上亲自启动的 3 个分开计算，两者互不阻挡。子窗格不能再委派。已报告或已合并的子窗格只要窗格还开着也会计入这 3 个，关闭已完成的子窗格就能腾出名额。磁盘剩余空间不足 10 GB 时，交出任务会被拒绝。
+- 一个父窗格最多可以有 3 个由 `delegate` 工具创建的打开的子窗格，与亲自启动的 3 个分开计算，两者互不阻挡。子窗格不能再委派。已报告或已合并的子窗格只要窗格还开着也会计入这 3 个，关闭已完成的子窗格就能腾出名额。磁盘剩余空间不足 10 GB 时，交出任务会被拒绝。
 - 父窗格通过通知得知子窗格的报告（[通知和保留](#notices)），用 `follow_up` 发送后续指示（[后续指示](#follow-up)），用 `merge` 合并（[合并](#merge)）。
 
 ## Codex 和 Antigravity {#agents}
-{{platform:mac}} Mighty 编排也适用于 Codex 和 Antigravity 窗格。子窗格总是运行父窗格的代理：Codex 窗格的子窗格是 Codex 窗格，Antigravity 窗格的子窗格是 Antigravity 窗格。Claude 窗格不能把工作交给 Codex 子窗格，反之亦然。
+Mighty 编排也适用于 Codex 和 Antigravity 窗格。子窗格总是运行父窗格的代理：Codex 窗格的子窗格是 Codex 窗格，Antigravity 窗格的子窗格是 Antigravity 窗格。Claude 窗格不能把工作交给 Codex 子窗格，反之亦然。
 
 - **子窗格能工作的模式**：子窗格以父窗格的权限模式启动，因此 Codex 和 Antigravity 窗格只有在子窗格能更改文件的模式下才会用 {{kbd:⌘Enter}} 启动子窗格：Codex 为{{ui:permission.label.acceptEditsCodex}}、{{ui:permission.label.onRequest}}或{{ui:permission.label.fullAccess}}，Antigravity 为{{ui:permission.label.acceptEdits}}或{{ui:permission.label.fullAccess}}。在其他模式下，{{kbd:⌘Enter}} 会像以前一样把请求放入队列。
 - **Codex** 窗格只有在{{ui:permission.label.acceptEditsCodex}}或{{ui:permission.label.fullAccess}}模式下才会获得委派工具：在{{ui:permission.label.defaultCodex}}模式下 Codex 会拒绝这些工具，在{{ui:permission.label.onRequest}}模式下它会以应用无法显示的方式请求批准。`delegate` 会拒绝无法更改文件的子窗格模式。只有当运行以{{ui:permission.label.fullAccess}}模式开始时，Codex 才能调用 `merge`，否则会被拒绝（`merge_human_only`），请在卡片上合并。运行中的 Codex 回合无法接收文字，因此发给运行中 Codex 父窗格的通知会在这次运行正常结束后作为下一次运行送达；如果因停止或错误而结束，则会被保留。
@@ -152,25 +152,25 @@ defaults write dev.mightyclaude.native delegation.enabled -bool false
 
 {{platform:mac}} 以前的版本只有设置了该键才会开启，关闭的方法是 `defaults delete …`。现在这样做会让它保持开启，所以要继续关闭，请在设置中关闭{{ui:settings.delegation.toggle}}。
 
-{{platform:windows}} 默认关闭。先退出应用，在命令提示符或 PowerShell 中运行下面的命令，然后重新打开应用。
+{{platform:windows}} 除非你关闭，否则它一直开启。在设置的{{ui:settings.nav.general}}标签页中切换{{ui:settings.delegation.toggle}}；无需重新打开应用，从下一次开始的运行起生效。同一个开关就是 `HKEY_CURRENT_USER\Software\MightyClaudeNative` 下的 `delegation.enabled` 值（REG_DWORD）：为 0 时关闭，没有这个值或为其他值时开启。因此在命令提示符或 PowerShell 中运行下面的命令也能关闭它，运行 `reg delete "HKCU\Software\MightyClaudeNative" /v delegation.enabled /f` 则重新开启。
 
 ```
-reg add "HKCU\Software\MightyClaudeNative" /v delegation.enabled /t REG_DWORD /d 1 /f
+reg add "HKCU\Software\MightyClaudeNative" /v delegation.enabled /t REG_DWORD /d 0 /f
 ```
 
-在 Windows 上，`HKEY_CURRENT_USER\Software\MightyClaudeNative` 下的 `delegation.enabled` 值（REG_DWORD）不为 0 时即为开启。没有这个值或值为 0 时为关闭。要关闭，请运行 `reg delete "HKCU\Software\MightyClaudeNative" /v delegation.enabled /f`，然后重新打开应用。
+{{platform:windows}} 早期版本只有把这个值设为 1 时才开启。那时留下的 1 会让它保持开启。
 
 - 开启后，Claude 或 Codex 窗格每次开始新的运行时都会带上委派工具。已经在进行中的运行不会带上。
-- 关闭后只会去掉工具，在 Mac 上 {{kbd:⌘Enter}} 会重新立即发送给正在运行的 Claude。已有的子窗格、卡片和清理都照常工作。
+- 关闭后只会去掉工具，{{kbd:⌘Enter}} 会重新立即发送给正在运行的 Claude。已有的子窗格、卡片和清理都照常工作。
 
 ## 限制和支持范围 {#limits}
 | 项目 | 限制 |
 |---|---|
-| 一个父窗格的打开子窗格 | 亲自启动的 3 个（Mac），`delegate` 创建的 3 个 |
+| 一个父窗格的打开子窗格 | 亲自启动的 3 个，`delegate` 创建的 3 个 |
 | 委派深度 | 一层（子窗格不能再创建子窗格） |
 | 一个子窗格的后续指示（`follow_up`） | 2 条，每条最多 48 KiB |
 | 交出的任务（TASK.md、亲自启动的请求） | 64 KiB |
 | 所需磁盘剩余空间 | 10 GB |
 
-- 子窗格运行与父窗格相同的代理。Claude 和 Codex 窗格可以通过工具和 {{kbd:⌘Enter}} 创建子窗格，Antigravity 窗格只能通过 {{kbd:⌘Enter}}（[Codex 和 Antigravity](#agents)）。Codex 和 Antigravity 子窗格仅限 Mac。
-- Mac 应用默认开启，并在设置中提供开关。Windows 应用通过隐藏开关开启（[开启和关闭](#enable)），没有亲自启动。手机没有新的界面，保留的行也会显示在手机的队列中。
+- 子窗格运行与父窗格相同的代理。Claude 和 Codex 窗格可以通过工具和 {{kbd:⌘Enter}} 创建子窗格，Antigravity 窗格只能通过 {{kbd:⌘Enter}}（[Codex 和 Antigravity](#agents)）。
+- Mac 应用和 Windows 应用都默认开启，并在设置中提供开关（[开启和关闭](#enable)）。手机没有新的界面，保留的行也会显示在手机的队列中。

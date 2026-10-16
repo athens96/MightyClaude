@@ -6,8 +6,8 @@ using Microsoft.Win32.SafeHandles;
 namespace MightyClaude.Core;
 
 /// <summary>
-/// An earlier Claude or Codex session recorded for a workspace folder that a new
-/// pane can continue with <c>--resume</c> / <c>exec resume</c>.
+/// An earlier Claude, Codex or Antigravity session recorded for a workspace folder that
+/// a new pane can continue with <c>--resume</c> / <c>exec resume</c> / <c>--conversation</c>.
 /// </summary>
 public sealed record ResumableSession(string Provider, string SessionID, string? Title, DateTimeOffset Modified, int? Requests, string? Model, string Path, bool Automated = false)
 {
@@ -44,12 +44,11 @@ public sealed record ResumableSessionQuery(string WorkspacePath)
 
 /// <summary>
 /// Lists the sessions a workspace folder's CLIs recorded, read-only and bounded.
-/// Synchronous and file-bound: call it off the UI thread. Gemini is not listed:
-/// the app does not read its records. Port of macOS MightyCore/ResumableSessions.swift.
+/// Synchronous and file-bound: call it off the UI thread. Port of macOS MightyCore/ResumableSessions.swift.
 /// </summary>
 public static class ResumableSessions
 {
-    public static readonly string[] Providers = ["claude", "codex"];
+    public static readonly string[] Providers = ["claude", "codex", "gemini"];
     public static readonly TimeSpan MaximumAge = TimeSpan.FromDays(60);
     public const int MaximumCandidates = 600;
     public const int MaximumScanned = 6_000;
@@ -70,16 +69,16 @@ public static class ResumableSessions
     public static ResumableSessionListing Listing(ResumableSessionQuery query, CancellationToken token = default)
     {
         var budget = CountBudget;
-        var claude = Claude(query, ref budget, token); var codex = Codex(query, ref budget, token);
-        var items = claude.Items.Concat(codex.Items).OrderByDescending(i => i.Modified).ThenBy(i => i.Id, StringComparer.Ordinal).ToList();
-        return new(items, claude.Hidden + codex.Hidden);
+        var claude = Claude(query, ref budget, token); var codex = Codex(query, ref budget, token); var antigravity = Antigravity(query, ref budget, token);
+        var items = claude.Items.Concat(codex.Items).Concat(antigravity.Items).OrderByDescending(i => i.Modified).ThenBy(i => i.Id, StringComparer.Ordinal).ToList();
+        return new(items, claude.Hidden + codex.Hidden + antigravity.Hidden);
     }
 
     /// One agent's sessions alone: the other agent's records are not read.
     public static ResumableSessionListing Listing(ResumableSessionQuery query, string provider, CancellationToken token = default)
     {
         var budget = CountBudget;
-        return provider switch { "claude" => Claude(query, ref budget, token), "codex" => Codex(query, ref budget, token), _ => ResumableSessionListing.Empty };
+        return provider switch { "claude" => Claude(query, ref budget, token), "codex" => Codex(query, ref budget, token), "gemini" => Antigravity(query, ref budget, token), _ => ResumableSessionListing.Empty };
     }
 
     /// <summary>
@@ -277,6 +276,62 @@ public static class ResumableSessions
         var requests = Count(handle, size, headOnly, ref budget, line => { headModel ??= HistoryReplay.CodexModel([line]); return HistoryScan.OpeningOf(line, format) is not null; });
         var model = headOnly ? headModel : RecordFiles.TailValue(handle, size, line => HistoryReplay.CodexModel([line])) ?? headModel;
         return (Outcome.Listed, new ResumableSession("codex", id, title is null ? null : OneLine(title), modified, requests, model, path, automated));
+    }
+
+    // ── Antigravity ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// <c>conversation_summaries.db</c> rows whose folders include the workspace, without sub-agents' conversations (a parent),
+    /// that still have their transcript (M/MightyCore/ResumableSessions.swift antigravity). The title is the first request typed,
+    /// as for the others; agy's own summary title stands in when none was read.
+    /// </summary>
+    private static ResumableSessionListing Antigravity(ResumableSessionQuery query, ref long budget, CancellationToken token)
+    {
+        if (AntigravityRecords.Summaries(AntigravityRecords.Database(query.Home)) is not { } rows) return ResumableSessionListing.Empty;
+        var paths = WorkspacePaths(query.WorkspacePath);
+        var brain = AntigravityRecords.Brain(query.Home);
+        var candidates = new List<(string Path, string Id, DateTimeOffset Modified)>();
+        var titles = new Dictionary<string, string>();
+        var seen = new HashSet<string>();
+        // Rows share a few folders: each is resolved once.
+        var matched = new Dictionary<string, bool>();
+        bool Here(string path) => matched.TryGetValue(path, out var known) ? known : matched[path] = Matches(path, paths);
+        foreach (var row in rows)
+        {
+            if (row.Parent.Length > 0 || !row.Paths.Any(Here) || !seen.Add(row.Conversation.ToLowerInvariant())
+                || AntigravityRecords.Transcript(brain, row.Conversation) is not { } transcript || !RecordFiles.Regular(transcript)) continue;
+            candidates.Add((transcript, row.Conversation, new DateTimeOffset(File.GetLastWriteTimeUtc(transcript), TimeSpan.Zero)));
+            if (row.Title.Length > 0) titles[row.Conversation] = row.Title;
+        }
+        var items = new List<ResumableSession>(); int hidden = 0, read = 0;
+        foreach (var candidate in Recent(candidates, query))
+        {
+            if (items.Count >= query.MaximumSessions || read >= query.MaximumCandidates || token.IsCancellationRequested) break;
+            var lowered = candidate.Id.ToLowerInvariant();
+            if (query.Excluding.Contains(lowered)) continue;
+            var (outcome, item) = AntigravitySession(candidate.Path, candidate.Id, candidate.Modified, titles.GetValueOrDefault(candidate.Id), query.Known.Contains(lowered), query.IncludeAutomated, query.HeadOnly, ref budget);
+            if (outcome == Outcome.Listed) { read++; items.Add(item!); }
+            else if (outcome == Outcome.Hidden) hidden++;
+            else read++;
+        }
+        return new(items, hidden);
+    }
+
+    private static (Outcome, ResumableSession?) AntigravitySession(string path, string id, DateTimeOffset modified, string? summary, bool known, bool includeAutomated, bool headOnly, ref long budget)
+    {
+        using var handle = RecordFiles.Open(path);
+        if (handle is null) return (Outcome.Skipped, null);
+        var size = RandomAccess.GetLength(handle);
+        if (size <= 0) return (Outcome.Skipped, null);
+        string? title = null;
+        var headComplete = RecordFiles.ForEachLine(handle, size, HeadBytes, line => { title = AntigravityRecords.Opening(line)?.Prompt; return title is null; });
+        // A conversation without a single request has nothing to continue.
+        if (title is null && headComplete) return (Outcome.Skipped, null);
+        var automated = !known && AutomatedPrompt(title);
+        if (automated && !includeAutomated) return (Outcome.Hidden, null);
+        var requests = Count(handle, size, headOnly, ref budget, line => AntigravityRecords.Opening(line) is not null);
+        var shown = title ?? summary;
+        return (Outcome.Listed, new ResumableSession("gemini", id, shown is null ? null : OneLine(shown), modified, requests, null, path, automated));
     }
 
     // ── reading ───────────────────────────────────────────────────────────

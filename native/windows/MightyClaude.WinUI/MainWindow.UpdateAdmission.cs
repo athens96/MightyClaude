@@ -49,6 +49,8 @@ public sealed partial class MainWindow
     private string? ManualMutationBlockReason(RunSession pane)
     {
         if (pane.Kind != "claude") return null;
+        // A child whose last run's end is still being recorded (the app's commit of its work among it) starts nothing yet.
+        if (service.Delegation?.EndingRuns.Contains(pane.Id) == true) return Locale.Get("delegation.child.recordingEnd");
         if (manuallyUpdatingProvider == pane.Provider)
             return Locale.Get("windows.updates.manualProvider", new Dictionary<string, string> { ["provider"] = ProviderCatalog.Name(pane.Provider) });
         return pane.Provider is "claude" or "codex" && pluginOperations.IsRunning && !(automaticUpdateRunning && automaticallyUpdatingPlugins)

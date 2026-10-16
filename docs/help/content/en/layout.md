@@ -41,7 +41,7 @@ Click {{ui:phone.dashboard.title}} under the search field in the sidebar to see 
 ![[dashboard]]
 
 ## Add a pane {#add-pane}
-A pane is an AI agent (Claude, Codex or Antigravity; Gemini on Windows), a terminal, a browser or a files pane.
+A pane is an AI agent (Claude, Codex or Antigravity), a terminal, a browser or a files pane.
 
 1. Click {{ui:workspace.addPane}} in the sidebar.
 2. Pick what to add: a Claude, Codex or Antigravity pane, {{ui:workspace.newTerminal}} or {{ui:browser.newTab}}. Another folder opens with {{ui:menu.openProject}} in the same menu.
@@ -50,7 +50,7 @@ A pane is an AI agent (Claude, Codex or Antigravity; Gemini on Windows), a termi
 Shortcuts: {{ui:menu.newClaudePane}} is {{kbd:⌘N}}, {{ui:menu.addTerminalPane}} is {{kbd:⌘T}} and {{ui:menu.showFiles}} is {{kbd:⇧⌘E}}.
 
 > [!note]
-> Codex and Antigravity (Gemini) panes carry a {{ui:badge.beta}} label.
+> Codex and Antigravity panes carry a {{ui:badge.beta}} label.
 
 ### Continue an earlier session {#resume}
 When you add a Claude, Codex or Antigravity pane and this folder has earlier sessions, you are asked what to do. Antigravity's are its conversations in this folder; the ones its sub-agents ran are not listed.

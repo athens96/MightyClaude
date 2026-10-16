@@ -33,7 +33,7 @@ internal static class ProviderMarkVerification
         Check(ProviderMark.Colors("claude").SequenceEqual(new uint[] { 0xD97757 }), "Claude orange");
         Check(ProviderMark.Colors("codex").SequenceEqual(new uint[] { 0x10A37F }), "Codex green");
         Check(ProviderMark.Colors("gemini").SequenceEqual(new uint[] { 0x4285F4, 0x9B72CB, 0xD96570 }), "Gemini gradient");
-        Check(ProviderMark.Label("claude") == "Claude" && ProviderMark.Label("codex") == "Codex" && ProviderMark.Label("gemini") == "Gemini", "labels match macOS ProviderOptions.label");
+        Check(ProviderMark.Label("claude") == "Claude" && ProviderMark.Label("codex") == "Codex" && ProviderMark.Label("gemini") == "Antigravity", "labels match macOS ProviderOptions.label");
         // The outlines are the macOS data, byte for byte.
         var swift = MacSource();
         if (swift is not null)
@@ -67,7 +67,7 @@ internal static class ProviderMarkVerification
         var request = ProviderMark.SplitTrailingLabel("요청 3 · Claude", "claude");
         Check(request is { Head: "요청 3 · ", Label: "Claude" }, "the mark goes between '요청 3 · ' and 'Claude'");
         Check(ProviderMark.SplitTrailingLabel("Claude", "claude") is { Head: "", Label: "Claude" }, "a bare name splits with an empty head");
-        Check(ProviderMark.SplitTrailingLabel("Request 2 · Gemini", "gemini") is { Head: "Request 2 · ", Label: "Gemini" }, "English request titles split the same way");
+        Check(ProviderMark.SplitTrailingLabel("Request 2 · Antigravity", "gemini") is { Head: "Request 2 · ", Label: "Antigravity" }, "English request titles split the same way");
         Check(ProviderMark.SplitTrailingLabel("Codex", "claude") is null, "another provider's name is left alone");
         Check(ProviderMark.SplitTrailingLabel("요청 3 · Claude", "unknown") is null, "a provider with no mark is left alone");
         Check(ProviderMark.SplitTrailingLabel("요청 3 · Claude Code", "claude") is null, "a title that does not end with the short name is left alone");

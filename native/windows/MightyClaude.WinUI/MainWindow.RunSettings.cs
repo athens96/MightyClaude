@@ -229,6 +229,8 @@ public sealed partial class MainWindow
             if (provider == "claude") return Locale.Get(mode switch { "plan" => "permission.claude.plan", "acceptEdits" => "permission.claude.acceptEdits", "auto" => "permission.claude.auto", "fullAccess" => "permission.claude.fullAccess", _ => "permission.claude.default" });
             if (mode == "fullAccess") return Locale.Get("permission.other.fullAccess");
             if (provider == "codex") return Locale.Get(mode == "onRequest" ? "permission.codex.onRequest" : mode == "acceptEdits" ? "permission.codex.acceptEdits" : "permission.codex.default");
+            // Headless Antigravity declines what it would ask about instead of asking.
+            if (provider == "gemini" && mode is "manual" or "acceptEdits") return Locale.Get(mode == "manual" ? "permission.antigravity.default" : "permission.antigravity.acceptEdits");
             return Locale.Get(mode switch { "plan" => "permission.other.plan", "acceptEdits" => "permission.other.acceptEdits", _ => "permission.other.default" });
         }
     }

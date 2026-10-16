@@ -4,7 +4,7 @@ namespace MightyClaude.Core;
 
 /// <summary>
 /// The tools the delegation MCP server lists (M/DelegationCoordinator.swift:3-81): exactly these six. The server is attached
-/// only to a Claude pane's run while the hidden <see cref="DelegationSwitch"/> is on, so with the switch on a Claude pane sees
+/// only to a Claude or Codex pane's run while the <see cref="DelegationSwitch"/> is on, so with the switch on such a pane sees
 /// these and with it off none. Every argument is a required string. The words are the Mac's, byte for byte: the agent reads them.
 /// </summary>
 public static class DelegationToolManifest
@@ -16,15 +16,15 @@ public static class DelegationToolManifest
     private static readonly Argument Child = new("child", "The child's id, as delegate or list_children gave it.");
 
     public static readonly Tool Delegate = new("delegate",
-        "Start a child Claude pane that works on a task in its own git worktree, on the flat branch mighty/<child id> made from your current branch head. The child starts in the permission mode you ask for, which must be no wider than your own (plan < manual < acceptEdits < auto < fullAccess). Answers as soon as the child exists; its run goes on in the background. The child writes its result to REPORT.md, and you get one notice per report. At most 3 open children per pane, and a child cannot delegate. The same call twice in one of your runs returns the same child.",
-        [new("task", "What the child should do. It is saved as the child's TASK.md."), new("mode", "The child's starting permission mode: plan, manual (always ask), acceptEdits, auto or fullAccess. No wider than yours.")]);
+        "Start a child pane running your own agent CLI that works on a task in its own git worktree, on the flat branch mighty/<child id> made from your current branch head. Use it only when the user asks for parallel or delegated work, or when the task clearly splits into independent parts that can run at the same time; never fan out speculatively, and do the work yourself otherwise. The child starts in the permission mode you ask for, which must be one of your pane's modes and no wider than your own (Claude: plan < manual < acceptEdits < auto < fullAccess; Codex: manual < acceptEdits < onRequest < fullAccess). Answers as soon as the child exists; its run goes on in the background. The child writes its result to REPORT.md, and you get one notice per report. At most 3 open children per pane, and a child cannot delegate. The same call twice in one of your runs returns the same child.",
+        [new("task", "What the child should do. It is saved as the child's TASK.md."), new("mode", "The child's starting permission mode, one of your pane's: plan, manual, acceptEdits, auto or fullAccess for Claude; acceptEdits, onRequest or fullAccess for Codex (a manual Codex child cannot change files). No wider than yours.")]);
 
     public static readonly Tool ListChildren = new("list_children", "List your children with their id, state and current report revision.", []);
 
     public static readonly Tool ChildStatus = new("child_status", "Read one of your children: its state, its head and the body of its latest REPORT.md.", [Child]);
 
     public static readonly Tool Merge = new("merge",
-        "Fast-forward your recorded branch to a reported child's head. Refused, changing nothing, unless the child has reported at exactly expected_head with no tracked changes, your recorded branch is checked out with no tracked changes and it can fast-forward. Follows your permission mode.",
+        "Fast-forward your recorded branch to a reported child's head. Refused, changing nothing, unless the child has reported at exactly expected_head with no tracked changes, your recorded branch is checked out with no tracked changes and it can fast-forward. Follows your permission mode; a Codex pane may merge only when its run started in fullAccess and is otherwise refused with merge_human_only, so the human merges from the child's card.",
         [Child, new("expected_head", "The child's reported head commit, as child_status gave it.")]);
 
     public static readonly Tool FollowUp = new("follow_up",
@@ -44,7 +44,9 @@ public static class DelegationToolManifest
 /// <param name="SessionId">Chosen by the coordinator, so the branch <c>mighty/&lt;session id&gt;</c> and the worktree exist before the pane does.</param>
 /// <param name="Mode">The starting permission mode the parent asked for, written once.</param>
 /// <param name="Folder">The folder the child works in, inside its worktree.</param>
-public sealed record DelegationChildPane(string SessionId, string ParentSessionId, string Mode, string Folder);
+/// <param name="StartedByHuman">The human started it from the parent's composer: it takes the parent's model and effort, and the app shows it at once.</param>
+/// <param name="Provider">The agent CLI the child runs: its parent's.</param>
+public sealed record DelegationChildPane(string SessionId, string ParentSessionId, string Mode, string Folder, bool StartedByHuman = false, string Provider = "claude");
 
 /// <summary>What a pane is doing, as delivery needs to know it (M/DelegationCoordinator.swift:99-109).</summary>
 public enum DelegationPaneActivity
@@ -71,7 +73,7 @@ public sealed record DelegationPaneState(string SessionId, string PermissionMode
 /// </summary>
 public interface IDelegationHost
 {
-    /// <summary>Opens the child's Claude pane in <c>pane.Mode</c>, working in <c>pane.Folder</c> and linked to its parent. False when no pane could be made.</summary>
+    /// <summary>Opens the child's pane of <c>pane.Provider</c> in <c>pane.Mode</c>, working in <c>pane.Folder</c> and linked to its parent. False when no pane could be made.</summary>
     Task<bool> CreatePane(DelegationChildPane pane);
     /// <summary>Starts a run with <paramref name="input"/> in the pane: the new run's id, or null when none started.</summary>
     Task<string?> StartRun(string sessionId, string input);
@@ -84,14 +86,44 @@ public interface IDelegationHost
     Task<DelegationPaneState?> PaneState(string sessionId);
     /// <summary>Stops the pane's run, if one is going, and returns once it has ended. Does nothing for an idle or closed pane.</summary>
     Task StopRun(string sessionId);
+    /// <summary>Shows <paramref name="text"/> in the pane's transcript as the app's note. Does nothing for a closed pane; a host that shows no notes keeps this.</summary>
+    Task Note(string text, string sessionId) => Task.CompletedTask;
+}
+
+/// <summary>
+/// The children whose run end is reported but not yet recorded (M/DelegationCoordinator.swift ChildRunsEnding): the host marks
+/// one as it reports the end, and the coordinator clears it once the end is recorded. A child reported twice before the first is
+/// recorded stays marked until both are. Until then delivery hands the child nothing and the app starts no run in its pane, so
+/// the app's commit of a Codex or Antigravity child's work and its head read come first.
+/// </summary>
+public sealed class ChildRunsEnding
+{
+    private readonly object gate = new();
+    private readonly Dictionary<string, int> counts = [];
+
+    /// <summary>The host is about to report an end of the child <paramref name="id"/>'s run.</summary>
+    public void Begin(string id) { lock (gate) counts[id] = counts.GetValueOrDefault(id) + 1; }
+
+    public bool Contains(string id) { lock (gate) return counts.ContainsKey(id); }
+
+    /// <summary>One reported end of the child <paramref name="id"/> is recorded; false when none was marked.</summary>
+    internal bool Finish(string id)
+    {
+        lock (gate)
+        {
+            if (!counts.TryGetValue(id, out var count)) return false;
+            if (count > 1) counts[id] = count - 1; else counts.Remove(id);
+            return true;
+        }
+    }
 }
 
 /// <summary>
 /// The app's delegation service (M/DelegationCoordinator.swift:152-311). It owns the child records (the delegation file is their
 /// authority), the six tools, delivery and the git actions, and reaches panes only through its <see cref="IDelegationHost"/>.
 /// Each call is answered by the first rule that applies:
-/// 1. The gates of <see cref="DelegationIOHandler"/>: switched off or a run without the server reaches nothing; a pane that is
-///    not a Claude pane is refused with <c>claude_only</c>.
+/// 1. The gates of <see cref="DelegationIOHandler"/>: switched off or a run without the server reaches nothing; a pane whose
+///    agent has no delegation tools is refused with <c>claude_only</c>.
 /// 2. A name that is not one of the six tools reaches nothing.
 /// 3. <c>discard</c> is always refused with <c>discard_human_only</c>, whatever it names: only a human discards, from the child's card.
 /// 4. A call without exactly the tool's string arguments is answered with an error and changes nothing.
@@ -108,6 +140,18 @@ public sealed partial class DelegationCoordinator : IDelegationRequestHandler
     private readonly IDelegationHost host;
     /// <summary>Makes each child's worktree: under <c>%USERPROFILE%\.mightyclaude\worktrees</c> in the app, under a temp folder in tests.</summary>
     private readonly ChildWorktreeMaker worktrees;
+    /// <summary>Makes each child's worktree: the composer asks it whether a folder can host one (<see cref="ChildWorktreeCheck.CanHostWorktree"/>).</summary>
+    public ChildWorktreeMaker Worktrees => worktrees;
+    /// <summary>
+    /// The children whose run end the host reported and this coordinator has not recorded yet. Until it is (the app's commit of a
+    /// Codex or Antigravity child's work and its head read among it), delivery hands the child nothing and the app starts no run in its pane.
+    /// </summary>
+    public ChildRunsEnding EndingRuns { get; } = new();
+    /// <summary>
+    /// The report revision at which each child was last asked to resolve its conflict with the parent branch, by child id, so a
+    /// card's merge that conflicts asks once per report and never loops (M/DelegationCoordinator.swift conflictAsked).
+    /// </summary>
+    private readonly Dictionary<string, int> conflictAsked = [];
     private readonly Func<bool> isSwitchOn;
     private readonly double answerSeconds;
     private readonly TaskScheduler scheduler = new ConcurrentExclusiveSchedulerPair().ExclusiveScheduler;
