@@ -157,6 +157,28 @@ public sealed class ChildWorktreeMaker(string? root = null, Func<string, long?>?
 
 public sealed record GitResult(int ExitCode, string Stdout, string Stderr);
 
+/// <summary>Why a delegation git gave no usable result.</summary>
+public enum GitFailure
+{
+    None,
+    /// <summary>Git is missing, the hooks folder is not empty, or git could not be started.</summary>
+    NotStarted,
+    /// <summary>Git closed its standard input before it had read all of it.</summary>
+    BrokenPipe,
+    /// <summary>Git did not finish in time, and the app killed it.</summary>
+    TimedOut,
+    /// <summary>Git wrote more than 1 MiB, and the app killed it.</summary>
+    TooMuchOutput,
+    /// <summary>Reading git's output failed.</summary>
+    Unreadable,
+}
+
+/// <summary>One delegation git: its result when it finished (also for <see cref="GitFailure.BrokenPipe"/>, should git have exited), and why not otherwise.</summary>
+public sealed record GitRun(GitResult? Result, GitFailure Failure)
+{
+    public static GitRun Failed(GitFailure failure) => new(null, failure);
+}
+
 /// <summary>
 /// Git for delegation (M/DelegationWorktree.swift:148-172): the user's own settings, line endings among them, but no hooks,
 /// fsmonitor, auto gc, prompts or inherited GIT_* variables. Every command of a child's life runs through here with the same
@@ -191,25 +213,48 @@ public static class DelegationGit
     }
 
     /// <summary>
-    /// null when git is missing, could not start, wrote more than 1 MiB or did not finish in time, or the hooks folder is not
-    /// empty. <paramref name="input"/> is written to git's standard input before it is closed.
+    /// null when git is missing, could not start, wrote more than 1 MiB, did not finish in time or did not take all of
+    /// <paramref name="input"/>, or the hooks folder is not empty (<see cref="RunDetailed"/> tells these apart).
     /// </summary>
-    public static async Task<GitResult?> Run(IReadOnlyList<string> arguments, string directory, double timeout = 10, string? input = null)
+    public static async Task<GitResult?> Run(IReadOnlyList<string> arguments, string directory, double timeout = 10, string? input = null) =>
+        await RunDetailed(arguments, directory, timeout, input) is { Failure: GitFailure.None, Result: var result } ? result : null;
+
+    /// <summary>
+    /// Runs git as <see cref="Run"/> does and says why it gave no result. <paramref name="input"/> is written to git's standard
+    /// input while its output is read, within the same deadline, and then closed.
+    /// </summary>
+    public static async Task<GitRun> RunDetailed(IReadOnlyList<string> arguments, string directory, double timeout = 10, string? input = null)
     {
-        if (Executable is not { } executable || !HooksEmpty()) return null;
+        if (Executable is not { } executable || !HooksEmpty()) return GitRun.Failed(GitFailure.NotStarted);
         try
         {
             string[] settings = ["-c", "core.fsmonitor=false", "-c", "core.hooksPath=" + NoHooks, "-c", "gc.auto=0", .. OperatingSystem.IsWindows() ? new[] { "-c", "core.longpaths=true" } : [], "-C", directory];
             var info = ChildProcess.StartInfo(executable, [.. settings, .. arguments], directory);
             foreach (var key in info.Environment.Keys.Where(key => key.StartsWith("GIT_", StringComparison.OrdinalIgnoreCase)).ToArray()) info.Environment.Remove(key);
             info.Environment["GIT_OPTIONAL_LOCKS"] = "0"; info.Environment["GIT_TERMINAL_PROMPT"] = "0"; info.Environment["LC_ALL"] = "C";
-            await using var process = ChildProcess.Start(info);
-            if (input is not null) { await process.Input.WriteAsync(input).ConfigureAwait(false); await process.Input.FlushAsync().ConfigureAwait(false); }
-            process.Input.Close();
+            ChildProcess started;
+            try { started = ChildProcess.Start(info); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Win32Exception or InvalidOperationException) { return GitRun.Failed(GitFailure.NotStarted); }
+            await using var process = started;
             using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(Math.Max(0.01, timeout)));
             // A process git started can keep its output open after git exits: the deadline ends the whole job, so the reads end too.
-            using var kill = deadline.Token.Register(process.Kill);
-            var total = new int[1]; var over = false;
+            var timedOut = false;
+            var kill = deadline.Token.Register(() => { timedOut = true; process.Kill(); });
+            var total = new int[1]; var over = false; var brokenPipe = false;
+            // The input goes in while the output is read, so a git that writes before it has read everything never stalls on a full pipe.
+            async Task Write()
+            {
+                try
+                {
+                    if (input is not null) { await process.Input.WriteAsync(input.AsMemory(), deadline.Token).ConfigureAwait(false); await process.Input.FlushAsync(deadline.Token).ConfigureAwait(false); }
+                }
+                catch (IOException) { brokenPipe = true; }
+                catch (ObjectDisposedException) { brokenPipe = true; }
+                finally
+                {
+                    try { process.Input.Close(); } catch (IOException) { if (input is not null) brokenPipe = true; }
+                }
+            }
             async Task<string> Read(StreamReader reader)
             {
                 var text = new StringBuilder(); var buffer = new char[8192]; int count;
@@ -220,20 +265,27 @@ public static class DelegationGit
                 }
                 return text.ToString();
             }
-            var stdout = Read(process.Output); var stderr = Read(process.Error);
+            var stdout = Read(process.Output); var stderr = Read(process.Error); var writing = Write();
             try
             {
                 var exit = await process.Completion.WaitAsync(deadline.Token).ConfigureAwait(false);
-                await Task.WhenAll(stdout, stderr).WaitAsync(deadline.Token).ConfigureAwait(false);
-                return over ? null : new(exit, await stdout.ConfigureAwait(false), await stderr.ConfigureAwait(false));
+                await Task.WhenAll(stdout, stderr, writing).WaitAsync(deadline.Token).ConfigureAwait(false);
+                if (over) return GitRun.Failed(GitFailure.TooMuchOutput);
+                GitResult result = new(exit, await stdout.ConfigureAwait(false), await stderr.ConfigureAwait(false));
+                return new(result, brokenPipe ? GitFailure.BrokenPipe : GitFailure.None);
+            }
+            catch (Exception ex) when (ex is IOException or OperationCanceledException or ObjectDisposedException or TimeoutException or InvalidOperationException)
+            {
+                return GitRun.Failed(timedOut || deadline.IsCancellationRequested ? GitFailure.TimedOut : over ? GitFailure.TooMuchOutput : GitFailure.Unreadable);
             }
             finally
             {
-                process.Kill(); deadline.Cancel();
-                try { await Task.WhenAll(stdout, stderr).WaitAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(false); } catch (Exception ex) when (ex is OperationCanceledException or IOException or ObjectDisposedException or TimeoutException) { }
+                // Ending the job here is the app's own clean-up, not a timeout.
+                kill.Dispose(); process.Kill(); deadline.Cancel();
+                try { await Task.WhenAll(stdout, stderr, writing).WaitAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(false); } catch (Exception ex) when (ex is OperationCanceledException or IOException or ObjectDisposedException or TimeoutException) { }
             }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OperationCanceledException or Win32Exception or TimeoutException or InvalidOperationException) { return null; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Win32Exception or InvalidOperationException) { return GitRun.Failed(GitFailure.NotStarted); }
     }
 
     public static string Line(string output) => output.Trim();

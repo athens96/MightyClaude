@@ -396,7 +396,8 @@ internal static class DelegationVerification
     {
         // The switch, Mighty Orchestration: on unless a REG_DWORD of zero turns it off, read at each call. The checks never write the registry.
         Check(DelegationSwitch.RegistryKey == @"Software\MightyClaudeNative" && DelegationSwitch.ValueName == "delegation.enabled", "the switch is delegation.enabled under the app's key");
-        Check(DelegationSwitch.IsOn(null) && !DelegationSwitch.IsOn(0) && DelegationSwitch.IsOn(1) && DelegationSwitch.IsOn(-1) && DelegationSwitch.IsOn("0") && DelegationSwitch.IsOn(0L) && DelegationSwitch.IsOn(false), "only a DWORD of zero turns it off; a missing value is on");
+        Check(DelegationSwitch.IsOn(null) && !DelegationSwitch.IsOn(0) && DelegationSwitch.IsOn(1) && DelegationSwitch.IsOn(-1) && !DelegationSwitch.IsOn(0L) && DelegationSwitch.IsOn(2L) && !DelegationSwitch.IsOn("0") && !DelegationSwitch.IsOn(" FALSE ") && DelegationSwitch.IsOn("1") && DelegationSwitch.IsOn("yes") && DelegationSwitch.IsOn(new byte[] { 0 }),
+            "zero as a DWORD or QWORD, and 0 or false as a string, turn it off; a missing value or any other is on");
         _ = DelegationSwitch.IsOn();
         Check(DelegationSwitch.IsClaudePane("claude", "claude") && !DelegationSwitch.IsClaudePane("claude", "codex") && !DelegationSwitch.IsClaudePane("claude", "gemini") && !DelegationSwitch.IsClaudePane("shell", "claude") && !DelegationSwitch.IsClaudePane("browser", "claude"), "only an agent pane running Claude is a Claude pane");
 

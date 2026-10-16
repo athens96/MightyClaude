@@ -294,7 +294,11 @@ public static partial class AntigravityRecords
             var names = OperatingSystem.IsWindows() ? new[] { "winsqlite3.dll" } : OperatingSystem.IsMacOS() ? ["/usr/lib/libsqlite3.dylib", "libsqlite3.dylib"] : ["libsqlite3.so.0", "libsqlite3.so"];
             foreach (var name in names)
             {
-                if (!NativeLibrary.TryLoad(name, out var library)) continue;
+                // Windows' own copy only, from System32: never a winsqlite3.dll planted beside the app or in the working folder.
+                var loaded = OperatingSystem.IsWindows()
+                    ? NativeLibrary.TryLoad(name, typeof(Sqlite).Assembly, DllImportSearchPath.System32, out var library)
+                    : NativeLibrary.TryLoad(name, out library);
+                if (!loaded) continue;
                 try { return new Sqlite(library); }
                 catch (EntryPointNotFoundException) { NativeLibrary.Free(library); }
             }

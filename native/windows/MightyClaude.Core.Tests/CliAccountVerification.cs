@@ -76,7 +76,7 @@ internal static class CliAccountVerification
     }
 
     // Mirrors AntigravityTests.statusComesFromTheModelListAndThereIsNoSignOut
-    internal static Task GeminiStatusAndLogoutWorkOnItsAccountFiles()
+    internal static Task AntigravityStatusIsItsModelListWithNoSignOut()
     {
         var home = Verification.Temp();
         try

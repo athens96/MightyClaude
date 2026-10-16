@@ -100,8 +100,9 @@ internal static class DelegationHumanChildVerification
             && !DelegationProviders.AgentMayMerge("codex", "acceptEdits") && DelegationProviders.AgentMayMerge("codex", "fullAccess") && DelegationProviders.CanSteer("claude", "claude") && !DelegationProviders.CanSteer("claude", "codex"), "only Claude commits and merges in any mode");
         Check(!ChildAutoCommit.ShouldCommit("claude", true, true, false) && new[] { "codex", "gemini" }.All(provider => ChildAutoCommit.ShouldCommit(provider, true, true, false) && !ChildAutoCommit.ShouldCommit(provider, false, true, false)
             && !ChildAutoCommit.ShouldCommit(provider, true, false, false) && !ChildAutoCommit.ShouldCommit(provider, true, true, true)) && ChildAutoCommit.Message("c1", 2) == "mighty: c1 report r2", "the app commits only for another agent's changed report");
-        foreach (var name in new[] { ".env", ".ENV.production", "a/b/cert.pem", "x.key", "id_rsa.pub", "credentials", @"keys\deploy.key" }) Check(ChildAutoCommit.LooksSecret(name), name + " looks secret");
-        foreach (var name in new[] { "environment.txt", "keyboard.swift", "a/.envoy/config", "my-credentials.txt" }) Check(!ChildAutoCommit.LooksSecret(name), name + " does not");
+        foreach (var name in new[] { ".env", ".ENV.production", "a/b/cert.pem", "x.key", "id_rsa.pub", "credentials", @"keys\deploy.key", "cert.PFX", "store.p12", "putty.ppk", "id_ed25519", "id_ed25519.pub",
+                     "id_ecdsa", "id_dsa.pub", ".npmrc", "home/.pypirc", "secrets.json", "Secrets.yaml" }) Check(ChildAutoCommit.LooksSecret(name), name + " looks secret");
+        foreach (var name in new[] { "environment.txt", "keyboard.swift", "a/.envoy/config", "my-credentials.txt", "npmrc", ".npmrc.example", "my-secrets.json", "secrets", "pfx.txt" }) Check(!ChildAutoCommit.LooksSecret(name), name + " does not");
 
         // A Claude child's words are as before; another agent's name no Claude pane and leave the commit to the app.
         var worktree = new ChildWorktree("c1", @"C:\w\c1", @"C:\w\c1", "mighty/c1", "main", Commit);
@@ -407,6 +408,30 @@ internal static class DelegationHumanChildVerification
             Check(await fixture.GitIn(child.WorktreePath, "rev-parse", "HEAD") == start && await fixture.GitIn(child.WorktreePath, "status", "--porcelain") == "?? note.txt" && fixture.Only.ReportHead == start, "a Claude child commits its own work");
         }
         finally { fixture.Remove(); }
+    }
+
+    internal static async Task GitSaysWhyItGaveNoResultAndOnlyItsOwnLockGoes()
+    {
+        var place = new DelegationPlace();
+        try
+        {
+            await place.Repository(1);
+            var head = await place.Git("rev-parse", "HEAD");
+            // A git that does not read its input closes the pipe: told apart, with its own result.
+            var unread = await DelegationGit.RunDetailed(["rev-parse", "HEAD"], place.Repo, 60, new string('x', 8_000_000));
+            Check(unread is { Failure: GitFailure.BrokenPipe, Result: { ExitCode: 0 } result } && result.Stdout.Trim() == head && await DelegationGit.Run(["rev-parse", "HEAD"], place.Repo, 60, new string('x', 8_000_000)) is null, "a broken pipe is told apart");
+            // Input is written while the output is read, within the deadline: one too short ends it as a timeout.
+            var big = new string('x', 20_000_000);
+            var late = await DelegationGit.RunDetailed(["hash-object", "--stdin"], place.Repo, 0.01, big);
+            Check(late is { Failure: GitFailure.TimedOut, Result: null }, "the app's own kill on its deadline is a timeout: " + late);
+            Check(await DelegationGit.RunDetailed(["hash-object", "--stdin"], place.Repo, 60, "hello\n") is { Failure: GitFailure.None, Result: { ExitCode: 0, Stdout: var hash } } && DelegationGit.IsObjectName(hash.Trim()), "input reaches git");
+            // A lock git refuses on is not the app's: it stays. One the app's killed git left is removed.
+            var lockFile = Path.Combine(place.Repo, ".git", "index.lock");
+            File.WriteAllText(Path.Combine(place.Repo, "file-0.txt"), "changed\n"); File.WriteAllText(lockFile, "");
+            Check(await ChildAutoCommit.WriteStep(place.Repo, lockFile, ["add", "-u"], null, 60) is { } refused && refused.Contains("index.lock", StringComparison.Ordinal) && File.Exists(lockFile), "another git's lock stays");
+            Check(await ChildAutoCommit.WriteStep(place.Repo, lockFile, ["hash-object", "--stdin"], big, 0.01) == "Git did not finish in time." && !File.Exists(lockFile), "the lock of the app's own killed git goes");
+        }
+        finally { place.Remove(); }
     }
 
     internal static async Task ACardMergeThatConflictsAsksTheChildOncePerReport()

@@ -13,10 +13,12 @@ public sealed partial class DesktopService : IAsyncDisposable
     private bool closing;
     /// <summary>Starts the save a run's events asked for, once <see cref="SaveSchedule"/> says so.</summary>
     private readonly Timer saveTimer;
-    /// <summary>When the latest save began; the next one keeps <see cref="SaveSchedule"/>'s gap from it.</summary>
-    private DateTime? lastSaveStart;
-    /// <summary>When the save now waiting was first asked for; null while none waits.</summary>
-    private DateTime? pendingSaveSince;
+    /// <summary>When the latest save began, on the monotonic <see cref="System.Diagnostics.Stopwatch"/> clock; the next one keeps <see cref="SaveSchedule"/>'s gap from it.</summary>
+    private long? lastSaveStart;
+    /// <summary>When the save now waiting was first asked for, on the same clock; null while none waits.</summary>
+    private long? pendingSaveSince;
+    /// <summary>The save timer is disposed: nothing schedules on it any more, and the final save has been queued.</summary>
+    private bool saveTimerDisposed;
     public ProviderCatalog Providers { get; }
     /// <summary>Pictures agents showed, under the app data folder (macOS <c>image-cache</c>); transcripts hold only references.</summary>
     public AgentImageCache Images { get; }
@@ -43,7 +45,8 @@ public sealed partial class DesktopService : IAsyncDisposable
         store = new(directory, legacyDirectory); Providers = providers ?? new(); Images = new(Path.Combine(directory, "image-cache"));
         local = new(ResolveLocal, Providers, pluginDirectory, Receive, ReceiveToolPermission, Images);
         this.delegationEnabled = delegationEnabled ?? DelegationSwitch.IsOn; this.worktrees = worktrees; local.DelegationEnabled = this.delegationEnabled;
-        saveTimer = new(_ => { lock (sync) if (pendingSaveSince is not null && !closing) _ = QueueSave(); });
+        // A save already asked for is still written while the app closes: closing only stops new work.
+        saveTimer = new(_ => { lock (sync) if (pendingSaveSince is not null) _ = QueueSave(); });
     }
     /// <summary>Requests a style is allowing by itself, by run and request: their settling is not news for the pane.</summary>
     private readonly HashSet<string> styleAllowing = [];
@@ -149,7 +152,7 @@ public sealed partial class DesktopService : IAsyncDisposable
     /// </summary>
     private Task QueueSave()
     {
-        pendingSaveSince = null; lastSaveStart = DateTime.UtcNow;
+        pendingSaveSince = null; lastSaveStart = System.Diagnostics.Stopwatch.GetTimestamp();
         var value = Wire.Clone(snapshot);
         return saved = saved.ContinueWith(async _ => { try { await store.SaveAsync(value); } catch (Exception ex) { PersistenceFailed?.Invoke(ex); throw; } }, CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default).Unwrap();
     }
@@ -161,8 +164,9 @@ public sealed partial class DesktopService : IAsyncDisposable
         {
             snapshot = snapshot.Apply(value);
             if (value.Type == "status" && value.Status is "stopped" or "completed" or "error") { if (routes.Remove(value.SessionId, out var route)) route.Ended.TrySetResult(); ended = DelegationRunEnded(value.SessionId, value.Status!); }
-            // A streaming run sends many events a second: each asks for a save, which starts at most every 1.5 s (M/AppStore.swift scheduleSave).
-            ScheduleSave();
+            // A streaming run sends many events a second: each asks for a save, which starts at most every 1.5 s (M/AppStore.swift
+            // scheduleSave). A run's end is saved at once.
+            if (value.Type == "status" && value.Status is "stopped" or "completed" or "error") _ = QueueSave(); else ScheduleSave();
         }
         if (value.Type == "resume" && value.ResumeId is { } resumed) RememberSession(resumed);
         RunEventReceived?.Invoke(value);
@@ -242,8 +246,11 @@ public sealed partial class DesktopService : IAsyncDisposable
     /// </summary>
     private void ScheduleSave()
     {
-        var now = DateTime.UtcNow; double? since = lastSaveStart is { } last ? (now - last).TotalSeconds : null;
-        if (pendingSaveSince is { } waiting && SaveSchedule.KeepsPending(since, (now - waiting).TotalSeconds)) return;
+        // Closing, the final save covers everything; it may already have disposed the timer.
+        if (closing || saveTimerDisposed) return;
+        var now = System.Diagnostics.Stopwatch.GetTimestamp();
+        double? since = lastSaveStart is { } last ? System.Diagnostics.Stopwatch.GetElapsedTime(last, now).TotalSeconds : null;
+        if (pendingSaveSince is { } waiting && SaveSchedule.KeepsPending(since, System.Diagnostics.Stopwatch.GetElapsedTime(waiting, now).TotalSeconds)) return;
         pendingSaveSince ??= now;
         saveTimer.Change(TimeSpan.FromSeconds(SaveSchedule.Delay(since)), Timeout.InfiniteTimeSpan);
     }
@@ -251,9 +258,13 @@ public sealed partial class DesktopService : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         lock (sync) { if (closing) return; closing = true; }
-        await Providers.DisposeAsync(); await local.DisposeAsync();
-        await StopDelegation();
-        Task flush; lock (sync) flush = QueueSave(); await flush;
-        await saveTimer.DisposeAsync();
+        try { await Providers.DisposeAsync(); await local.DisposeAsync(); await StopDelegation(); }
+        finally
+        {
+            // The final save runs whatever the shutdown above threw.
+            Task flush; lock (sync) { saveTimerDisposed = true; flush = QueueSave(); }
+            try { await flush; }
+            finally { await saveTimer.DisposeAsync(); }
+        }
     }
 }

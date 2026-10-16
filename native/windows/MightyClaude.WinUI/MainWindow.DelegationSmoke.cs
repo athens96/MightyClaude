@@ -102,33 +102,38 @@ public sealed partial class MainWindow
 
             // 3b. With Mighty Orchestration on, the second send runs a text in a new child worktree beside the parent: the child is
             // the human's, shows at once, runs the text, and reports to its card with no notice for its parent.
+            // The human is on the parent with nothing typed there, so the new child shows at once.
+            await service.UpdateAsync(s => s with { ActiveWorkspaceId = workspace.Id, ActiveSessionId = parent, Sessions = s.Sessions.Select(p => p.Id == parent ? p with { Draft = "" } : p).ToList() });
             var parentPane = service.Snapshot.Sessions.First(s => s.Id == parent);
             Require(service.SecondSend(parentPane with { Status = "running" }) != ComposerSecondSend.Worktree, "The second send offered a new worktree with Mighty Orchestration off.");
             SetDelegationOn(true);
-            service.RefreshWorktreeReadiness(parentPane);
-            await DelegationSmokeUntil("the parent's folder to be ready for worktrees", 30, () => service.SecondSend(parentPane with { Status = "running" }) == ComposerSecondSend.Worktree);
-            const string phrase = "Smoke humanChild child";
-            File.WriteAllText(Path.Combine(fake, "child-scripts.json"), new System.Text.Json.Nodes.JsonArray(new System.Text.Json.Nodes.JsonObject
+            try
             {
-                ["phrase"] = phrase,
-                ["steps"] = new System.Text.Json.Nodes.JsonArray(
-                    new System.Text.Json.Nodes.JsonObject { ["write"] = "note-h.txt", ["text"] = "Note h\n" },
-                    new System.Text.Json.Nodes.JsonObject { ["run"] = new System.Text.Json.Nodes.JsonArray(new System.Text.Json.Nodes.JsonArray("git", "add", "note-h.txt"), new System.Text.Json.Nodes.JsonArray("git", "commit", "-q", "-m", "Note h")), ["ask"] = false },
-                    new System.Text.Json.Nodes.JsonObject { ["write"] = ".mighty-delegation/REPORT.md", ["text"] = "# Report\n\nWrote note h.\n" }),
-            }).ToJsonString());
-            MobilePane(parent).DelegationSmokeRunInNewWorktree(phrase + ": write note h.");
-            var humanChild = await DelegationSmokeWait("the human's child to report", 90, () => delegation.File.Children.FirstOrDefault(child => child.StartedByHuman == true && child.State == ChildState.Reported));
-            Require(service.Snapshot.Sessions.FirstOrDefault(s => s.Id == humanChild.Id) is { ParentSessionId: var linked, Provider: "claude" } && linked == parent && service.Snapshot.ActiveSessionId == humanChild.Id
-                && humanChild.StartingMode == mode && delegation.File.Notices.All(n => n.ChildId != humanChild.Id) && service.HeldItems(parent).Count == 0, "The human's child did not open beside its parent, run its text and report with no notice.");
-            Render();
-            Require(DelegationSmokeFind(workspaces, "child-card-merge-" + humanChild.Id) is Button, "The human's child's card offers no merge.");
-            checks["secondSendNewWorktree"] = true;
-            // Its card's discard, through its confirmation, removes it again.
-            smokeDelegationDialog = _ => Task.FromResult(ContentDialogResult.Primary);
-            await DiscardChild(humanChild.Id);
-            smokeDelegationDialog = null;
-            Require(delegation.File.Children.First(child => child.Id == humanChild.Id).State == ChildState.Discarded && !Directory.Exists(humanChild.WorktreePath), "The human's child was not discarded.");
-            SetDelegationOn(false);
+                service.RefreshWorktreeReadiness(parentPane);
+                await DelegationSmokeUntil("the parent's folder to be ready for worktrees", 30, () => service.SecondSend(parentPane with { Status = "running" }) == ComposerSecondSend.Worktree);
+                const string phrase = "Smoke human child";
+                File.WriteAllText(Path.Combine(fake, "child-scripts.json"), new System.Text.Json.Nodes.JsonArray(new System.Text.Json.Nodes.JsonObject
+                {
+                    ["phrase"] = phrase,
+                    ["steps"] = new System.Text.Json.Nodes.JsonArray(
+                        new System.Text.Json.Nodes.JsonObject { ["write"] = "note-h.txt", ["text"] = "Note h\n" },
+                        new System.Text.Json.Nodes.JsonObject { ["run"] = new System.Text.Json.Nodes.JsonArray(new System.Text.Json.Nodes.JsonArray("git", "add", "note-h.txt"), new System.Text.Json.Nodes.JsonArray("git", "commit", "-q", "-m", "Note h")), ["ask"] = false },
+                        new System.Text.Json.Nodes.JsonObject { ["write"] = ".mighty-delegation/REPORT.md", ["text"] = "# Report\n\nWrote note h.\n" }),
+                }).ToJsonString());
+                MobilePane(parent).DelegationSmokeRunInNewWorktree(phrase + ": write note h.");
+                var humanChild = await DelegationSmokeWait("the human's child to report", 90, () => delegation.File.Children.FirstOrDefault(child => child.StartedByHuman == true && child.State == ChildState.Reported));
+                Require(service.Snapshot.Sessions.FirstOrDefault(s => s.Id == humanChild.Id) is { ParentSessionId: var linked, Provider: "claude" } && linked == parent && service.Snapshot.ActiveSessionId == humanChild.Id
+                    && humanChild.StartingMode == mode && delegation.File.Notices.All(n => n.ChildId != humanChild.Id) && service.HeldItems(parent).Count == 0, "The human's child did not open beside its parent, run its text and report with no notice.");
+                Render();
+                Require(DelegationSmokeFind(workspaces, "child-card-merge-" + humanChild.Id) is Button, "The human's child's card offers no merge.");
+                checks["secondSendNewWorktree"] = true;
+                // Its card's discard, through its confirmation, removes it again.
+                smokeDelegationDialog = _ => Task.FromResult(ContentDialogResult.Primary);
+                await DiscardChild(humanChild.Id);
+                smokeDelegationDialog = null;
+                Require(delegation.File.Children.First(child => child.Id == humanChild.Id).State == ChildState.Discarded && !Directory.Exists(humanChild.WorktreePath), "The human's child was not discarded.");
+            }
+            finally { smokeDelegationDialog = null; SetDelegationOn(false); }
             await service.UpdateAsync(s => s with { ActiveSessionId = parent });
 
             // 4. A workspace with an open child is not removed.

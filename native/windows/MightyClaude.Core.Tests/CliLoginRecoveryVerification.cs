@@ -122,7 +122,7 @@ internal static class CliLoginRecoveryVerification
         return Task.CompletedTask;
     }
     /// <summary>The terminal sign-in waits for agy's status to read signed in (M/MightyCore/Tests AntigravityTests.theTerminalSignInWaitsForTheStatus).</summary>
-    internal static async Task GeminiSignInIsTheCredentialsFileChanging()
+    internal static async Task AntigravitySignInIsItsStatusReadingSignedIn()
     {
         var signedOut = new CliAccountStatus { Provider = "gemini", LoggedIn = false, MethodId = CliAccountMethod.GeminiGoogle, CanSignOut = false };
         var signedIn = signedOut with { LoggedIn = true };
@@ -141,6 +141,9 @@ internal static class CliLoginRecoveryVerification
         var plan = CliAccountTerminal.LaunchPlan(CliAccountSupport.LoginArguments("gemini")!, windowsTerminalAvailable: true, directory: @"C:\Projects\app");
         Check(plan.Arguments.SequenceEqual(["new-tab", "-d", @"C:\Projects\app", "--", "agy"]), "the Antigravity sign-in terminal starts in the pane's workspace");
         Check(CliAccountTerminal.LaunchPlan(["agy"], true, @"C:\a;b").Arguments.SequenceEqual(["new-tab", "--", "agy"]), "a folder Windows Terminal would split is not passed on");
+        Check(CliAccountTerminal.LaunchPlan(["agy"], true, @"C:\work", @"C:\Tools;x\agy.exe") is ("conhost.exe", var resolved) && resolved.SequenceEqual([@"C:\Tools;x\agy.exe"])
+            && CliAccountTerminal.LaunchPlan(["agy", "a;b"], true).Executable == "conhost.exe" && CliAccountTerminal.LaunchPlan(["agy"], true, null, @"C:\Tools\agy.exe").Executable == "wt.exe",
+            "a command Windows Terminal would split runs in conhost");
         Check(CliAccountTerminal.LaunchPlan(["agy"], false, @"C:\Projects\app").Arguments.SequenceEqual(["agy"]), "the console host inherits the folder instead");
         Check(CliAccountTerminal.LaunchPlan([@"C:\Users\me\AppData\Local\agy\bin\agy.exe"], false, null, @"C:\Users\me\AppData\Local\agy\bin\agy.exe").Arguments.SequenceEqual([@"C:\Users\me\AppData\Local\agy\bin\agy.exe"]),
             "the console host runs agy by its full path");

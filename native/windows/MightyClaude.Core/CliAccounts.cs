@@ -492,12 +492,14 @@ public static class CliAccountTerminal
     /// working directory of the process that starts it. conhost only finds an
     /// .exe by name, so `resolvedBinary` (the command's full path, when known)
     /// replaces the name there, and a .cmd/.bat shim runs through `cmd /c`.
+    /// A command (or its resolved path) holding `;` would be split by Windows
+    /// Terminal too, so it runs in conhost instead.
     public static (string Executable, IReadOnlyList<string> Arguments) LaunchPlan(
         IReadOnlyList<string> loginArgv, bool windowsTerminalAvailable, string? directory = null, string? resolvedBinary = null)
     {
         if (loginArgv.Count == 0 || loginArgv[0].Length == 0)
             throw new ArgumentException("a login command is required", nameof(loginArgv));
-        if (windowsTerminalAvailable)
+        if (windowsTerminalAvailable && resolvedBinary?.Contains(';') != true && !loginArgv.Any(argument => argument.Contains(';')))
             return ("wt.exe", directory is null || directory.Contains(';') ? ["new-tab", "--", .. loginArgv] : ["new-tab", "-d", directory, "--", .. loginArgv]);
         if (resolvedBinary is null) return ("conhost.exe", [.. loginArgv]);
         var shim = resolvedBinary.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) || resolvedBinary.EndsWith(".bat", StringComparison.OrdinalIgnoreCase);
