@@ -699,17 +699,24 @@ public actor MobileRemoteService {
 
     /// The app calls this whenever the state or a session changed. Scope is
     /// "state" or "session:<id>"; waiters wake and connected phones are told.
-    public func notify(scope: String, revision: Int) {
+    /// Returns how many parked polls this notify woke (a test can then tell a wake
+    /// from a poll's own timeout without timing anything).
+    @discardableResult
+    public func notify(scope: String, revision: Int) -> Int {
         if revisions[scope] == nil, revisions.count >= 512, let stale = revisions.keys.first(where: { $0 != "state" && $0 != scope }) { revisions.removeValue(forKey: stale) }
         revisions[scope] = revision
-        resumeWaiters(scope: scope)
+        let woken = resumeWaiters(scope: scope)
         for client in clients.values { Task { await client.notify(scope: scope, revision: revision) } }
+        return woken
     }
-    private func resumeWaiters(scope: String?) {
+    @discardableResult
+    private func resumeWaiters(scope: String?) -> Int {
         let keys = scope.map { [$0] } ?? Array(waiters.keys)
+        var woken = 0
         for key in keys {
-            if let pending = waiters.removeValue(forKey: key) { for continuation in pending.values { continuation.resume() } }
+            if let pending = waiters.removeValue(forKey: key) { for continuation in pending.values { continuation.resume() }; woken += pending.count }
         }
+        return woken
     }
     private func wait(scope: String, beyond since: Int, seconds: TimeInterval) async {
         guard seconds > 0, (revisions[scope] ?? 0) <= since else { return }

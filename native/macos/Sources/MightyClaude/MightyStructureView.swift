@@ -384,13 +384,14 @@ struct MightyStructureView: View {
                     Group {
                         if let board {
                             kanban(board, onNewest: onNewest, width: width, cardWidth: width - scroller, height: height)
-                                .id(board.id)
                         } else {
                             Text(L("graph.timeline.empty")).font(.ui(size: 12)).foregroundStyle(Palette.ink2)
                                 .padding(.vertical, DesignMetrics.Spacing.md)
                         }
                     }
                     .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).padding(.top, DesignMetrics.Spacing.md)
+                    // The id sits outside the padding, so going back to the first column shows its margin too.
+                    .id(board?.id ?? "")
                 }
                 // Dragging the board's empty space moves it, as in the diagram.
                 .background(MightyStructurePanning(sessionID: sessionID, memory: memory))

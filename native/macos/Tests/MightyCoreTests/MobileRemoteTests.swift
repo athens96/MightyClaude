@@ -202,31 +202,22 @@ struct MobileRemoteTests {
             // on a busy CI runner the request may not even have started after 300 ms,
             // and then the already-advanced path answers instead of the wake path.
             let wait = MobileRemoteService.maximumWait
-            // The last instant the poll was seen not yet parked: it parked after
-            // this, so a poll nobody wakes cannot answer before this plus `wait`.
-            var unparkedAt = Date()
             async let waiting = call(service, "GET", "/m1/state?since=1&wait=\(Int(wait))")
             let parkBy = Date().addingTimeInterval(60)
             while Date() < parkBy {
-                let asked = Date()
                 if await service.parkedPolls(scope: "state") > 0 { break }
-                unparkedAt = asked
                 try await Task.sleep(for: .milliseconds(20))
             }
             #expect(await service.parkedPolls(scope: "state") == 1)
-            let notifiedAt = Date()
-            host.bump(state: true, session: false); await service.notify(scope: "state", revision: 2)
+            host.bump(state: true, session: false)
+            // The requirement is "answers on notify, not when `wait` runs out": notify
+            // reports the parked poll it woke, inside the same actor turn that takes it
+            // off the parked list, so a poll its own timeout ended is never counted.
+            // Nothing is timed: a starved CI runner once took 12 s between two checks here.
+            #expect(await service.notify(scope: "state", revision: 2) == 1)
             #expect(await service.parkedPolls(scope: "state") == 0)
             let woken = try await waiting
-            // The requirement is "answers on notify, not when `wait` runs out". The
-            // poll parked after `unparkedAt`, so its own timeout cannot fire before
-            // `unparkedAt + wait`; notify came before that and took the poll off the
-            // parked list (0 above), so notify is what resumed it. That is judged at
-            // the notify, not when the answer arrives: on a starved CI runner the
-            // woken poll's reply itself can take seconds to come back, which says
-            // nothing about whether the wake happened.
             #expect(woken.0 == 200 && woken.1["revision"] as? Int == 2)
-            #expect(notifiedAt.timeIntervalSince(unparkedAt) < wait)
             let timedOut = try await call(service, "GET", "/m1/state?since=2&wait=1")
             #expect(timedOut.1["revision"] as? Int == 2)
             #expect(try await call(service, "GET", "/m1/state?since=abc").0 == 400)
