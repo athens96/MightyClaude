@@ -50,6 +50,7 @@ Windows에는 메뉴 막대가 없습니다. 같은 기능은 사이드바와 {{
 | 언어 | 바꾼 언어는 앱을 다시 열면 적용됩니다. |
 | 파일 위치 | {{ui:menu.showInFinder}} 대신 {{ui:menu.showInExplorer}}가 있습니다. |
 | 마이티 오케스트레이션 | 기본으로 켜져 있고 설정의 스위치로 끕니다. 이 스위치는 레지스트리 값이기도 합니다([켜고 끄기](delegation.md#enable)). worktree는 `%USERPROFILE%\.mightyclaude\worktrees`에 생기고, 안에 정션이나 심볼릭 링크가 있으면 자동으로 정리하지 않습니다([창 닫기와 정리](delegation.md#close)). |
+| 글자 크기와 글꼴 | 아직 Windows 앱에는 없습니다. 대신 Windows 설정 › 접근성 › 텍스트 크기로 앱의 글자를 키울 수 있습니다. |
 
 > [!note]
 > Windows 앱의 일부 기능은 아직 실제 기기에서 충분히 확인되지 않았습니다. 이상한 점이 있으면 알려 주세요.
