@@ -32,16 +32,17 @@ public final class DelegationMCPServer: @unchecked Sendable {
     public func handle(line: String) -> String? { core.handle(line: line) }
 
     /// The `tools/call` result for the app's answer. A refusal names its one
-    /// reason code in the text and as structured content, with a word on what
-    /// to do for a code whose name does not say it; a child is tool data in
-    /// both too.
+    /// reason code in the text and as structured content, with what it is
+    /// about when the app said, or else a word on what to do for a code whose
+    /// name does not say it; a child is tool data in both too.
     static func result(_ response: DelegationResponse) -> [String: Any] {
         if let reason = response.refused {
-            return ["content": [["type": "text", "text": "Refused: \(reason.rawValue)\(hint(reason)). Nothing was changed."]], "structuredContent": ["refused": reason.rawValue], "isError": true]
+            let about = response.error.map { " (\($0))" } ?? hint(reason)
+            return ["content": [["type": "text", "text": "Refused: \(reason.rawValue)\(about). Nothing was changed."]], "structuredContent": ["refused": reason.rawValue], "isError": true]
         }
         if let child = response.child {
-            let text = "Child \(child.id) is \(child.state.rawValue), on the branch \(child.branch), starting in \(child.startingMode) mode."
-            let data = ["id": child.id, "state": child.state.rawValue, "branch": child.branch, "mode": child.startingMode]
+            let text = "Child \(child.id) is \(child.state.rawValue), runs \(child.agent), on the branch \(child.branch), starting in \(child.startingMode) mode."
+            let data = ["id": child.id, "state": child.state.rawValue, "agent": child.agent, "branch": child.branch, "mode": child.startingMode]
             return ["content": [["type": "text", "text": text]], "structuredContent": ["child": data]]
         }
         if let children = response.children { return result(children) }
@@ -56,6 +57,7 @@ public final class DelegationMCPServer: @unchecked Sendable {
         switch reason {
         case .claudeOnly: " (this pane's agent cannot use the delegation tools)"
         case .mergeHumanOnly: " (in this permission mode only the human merges, from the child's card in the app; tell the user the child is ready)"
+        case .agentUnknown: " (agent must be claude, codex or antigravity, or left out for your own)"
         default: ""
         }
     }

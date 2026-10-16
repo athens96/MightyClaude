@@ -1,23 +1,35 @@
 import Foundation
 
 /// Which agent panes take part in delegation, and how (macOS only). A child
-/// always runs its parent's agent CLI.
+/// runs the agent its parent chose: its own by default, or (on the Mac) any
+/// of Claude, Codex and Antigravity.
 ///
 /// - Claude and Codex panes may be parents by agent: their runs get the
-///   delegation server, and their delegate call makes children. A Codex run
-///   gets it only where its tool calls can work: acceptEdits or fullAccess.
-///   Manual is read-only and refuses every MCP call it cannot ask about, and
-///   onRequest declines the MCP prompts the app cannot show.
+///   delegation server, and their delegate call makes children, of their own
+///   agent unless the call names another (`agent`). A Codex run gets it only
+///   where its tool calls can work: acceptEdits or fullAccess. Manual is
+///   read-only and refuses every MCP call it cannot ask about, and onRequest
+///   declines the MCP prompts the app cannot show.
 /// - Claude, Codex and Antigravity panes may be parents by human: ⌘Enter on a
-///   busy one runs the text in a new child worktree, in the parent's mode. A
-///   Codex or Antigravity parent offers it only in a mode where its child can
-///   change files (``childCanWrite(provider:mode:)``). Antigravity has no
-///   delegation tools, so its children come only from ⌘Enter.
+///   busy one runs the text in a new child worktree of the same agent, in the
+///   parent's mode; the worktree button's menu picks any agent, in
+///   ``widestChildMode(child:parent:parentMode:)``. A Codex or Antigravity parent
+///   offers it only in a mode where its own child can change files
+///   (``childCanWrite(provider:mode:)``). Antigravity has no delegation
+///   tools (agy takes MCP servers only from its global config, which the app
+///   never touches), so its children come only from the human.
+/// - A child of the parent's agent may start in a mode no wider than the
+///   parent's by ``modeRank``. A child of another agent may start in a mode
+///   that may do nothing the parent's mode may not
+///   (``capabilities(provider:mode:)``). A child's mode is always one of its
+///   own agent's.
 /// - Only a Claude run takes text while it runs (steer).
 /// - A Claude child commits its own work. A Codex or Antigravity child
 ///   cannot commit outside fullAccess (the Codex sandbox keeps a worktree's
 ///   git folder read-only, and Antigravity declines `git commit`), so the app
 ///   commits what it leaves when its report changes (``ChildAutoCommit``).
+///   Everything that runs or reads the child follows the child's agent;
+///   notices and merges follow the parent's.
 /// - A Claude parent's merge tool call follows its CLI's permission mode; any
 ///   other parent may merge by tool only when its run started in fullAccess,
 ///   and is otherwise refused with `merge_human_only`: the human merges from
@@ -29,8 +41,60 @@ public enum DelegationProviders {
     static let agents: Set<String> = ["claude", "codex", "gemini"]
 
     /// Every permission mode of any provider, narrowest first: how freely the
-    /// agent acts without asking. Modes are compared within one provider.
+    /// agent acts without asking. Modes are compared by it within one agent.
     static let modeRank = ["plan", "manual", "acceptEdits", "onRequest", "auto", "fullAccess"]
+
+    /// What a run of `provider` in `mode` may do, as the app starts it
+    /// (``ProviderService/arguments(_:pluginDirectory:allowPermissionPrompts:phaseModels:paneMCPBinding:codexHome:)``):
+    ///
+    /// - Claude (`--permission-mode` as stored, fullAccess as
+    ///   bypassPermissions): plan edits nothing until its plan is approved;
+    ///   manual asks the human before each edit; acceptEdits edits unasked and
+    ///   still asks before Bash; auto also runs commands unasked; fullAccess
+    ///   is full access.
+    /// - Codex: manual (read-only sandbox, approval never) runs commands
+    ///   unasked but edits nothing; onRequest (workspace-write, on-request)
+    ///   edits in its sandbox unasked and asks to go beyond it; acceptEdits
+    ///   (workspace-write, approval never) edits and runs commands unasked;
+    ///   fullAccess (danger-full-access) is full access.
+    /// - Antigravity: plan and manual edit nothing (manual declines what it
+    ///   would ask about, headless); acceptEdits (`--mode accept-edits`)
+    ///   edits unasked and declines the shell commands its own permission
+    ///   rules do not allow; fullAccess (`--dangerously-skip-permissions`) is
+    ///   full access.
+    public static func capabilities(provider: String, mode: String) -> Set<ModeCapability> {
+        switch (provider, mode) {
+        case ("claude", "manual"): [.writesAsking]
+        case ("claude", "acceptEdits"), ("codex", "onRequest"), ("gemini", "acceptEdits"): [.writesUnasked]
+        case ("claude", "auto"), ("codex", "acceptEdits"): [.writesUnasked, .runsUnasked]
+        case ("codex", "manual"): [.runsUnasked]
+        case (_, "fullAccess"): Set(ModeCapability.allCases)
+        default: []
+        }
+    }
+
+    /// Whether a mode with `child` capabilities does nothing a mode with
+    /// `parent` capabilities may not: each is the parent's too, except that
+    /// editing after asking is covered by editing unasked.
+    public static func isCovered(_ child: Set<ModeCapability>, by parent: Set<ModeCapability>) -> Bool {
+        child.allSatisfy { parent.contains($0) || ($0 == .writesAsking && parent.contains(.writesUnasked)) }
+    }
+
+    /// The provider id the delegate tool's `agent` argument names: claude,
+    /// codex or antigravity (or Antigravity's provider id, gemini), in any
+    /// case; nil for any other word.
+    public static func agent(named name: String) -> String? {
+        switch name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "claude": "claude"
+        case "codex": "codex"
+        case "antigravity", "gemini": "gemini"
+        default: nil
+        }
+    }
+
+    /// The name the delegation tools give the agent `provider`: its `agent`
+    /// argument's word (antigravity for gemini).
+    public static func agentName(_ provider: String) -> String { provider == "gemini" ? "antigravity" : provider }
 
     /// An agent pane (kind claude) running Claude, Codex or Antigravity.
     public static func isAgentPane(kind: String, provider: String) -> Bool { kind == SessionKind.claude && agents.contains(provider) }
@@ -67,6 +131,13 @@ public enum DelegationProviders {
         isAgentPane(kind: kind, provider: provider) && childCanWrite(provider: provider, mode: mode)
     }
 
+    /// Whether the pane, in `mode` now, may have a child the human starts of
+    /// any agent: its own (``canParentByHuman(kind:provider:mode:)``), or
+    /// another with a mode in which its child can change files.
+    public static func mayHaveHumanChild(kind: String, provider: String, mode: String) -> Bool {
+        isAgentPane(kind: kind, provider: provider) && ProviderOptions.ids.contains { humanChildMode(child: $0, parent: provider, parentMode: mode, planFirst: false) != nil }
+    }
+
     /// Whether a running turn of this pane takes text (steer): Claude only.
     public static func canSteer(kind: String, provider: String) -> Bool { kind == SessionKind.claude && provider == "claude" }
 
@@ -80,9 +151,72 @@ public enum DelegationProviders {
     /// `stored` does. A mode that is not one of the provider's, on either
     /// side, is never no wider.
     public static func isNoWider(_ mode: String, than stored: String, provider: String) -> Bool {
-        let modes = startingModes(provider: provider)
-        guard let asked = modes.firstIndex(of: mode), let own = modes.firstIndex(of: stored) else { return false }
-        return asked <= own
+        isNoWider(mode, child: provider, than: stored, parent: provider)
+    }
+
+    /// Whether `mode`, one of the `child` agent's modes, lets it act no more
+    /// freely than the `parent` agent's `stored` mode. For one agent this is
+    /// its own modes' order (``modeRank``); for another, the child's mode may
+    /// do nothing the parent's may not (``capabilities(provider:mode:)``). A
+    /// mode that is not its own agent's, on either side, is never no wider.
+    public static func isNoWider(_ mode: String, child: String, than stored: String, parent: String) -> Bool {
+        guard startingModes(provider: child).contains(mode), startingModes(provider: parent).contains(stored),
+              let asked = modeRank.firstIndex(of: mode), let own = modeRank.firstIndex(of: stored) else { return false }
+        guard child != parent else { return asked <= own }
+        return isCovered(capabilities(provider: child, mode: mode), by: capabilities(provider: parent, mode: stored))
+    }
+
+    /// The widest of the `child` agent's modes that is no wider than the
+    /// `parent` agent's `parentMode` (``isNoWider(_:child:than:parent:)``) and
+    /// in which that child can change files, or nil when it has none: the one
+    /// with the most capabilities, then the later in its own order. For the
+    /// parent's own agent it is the last by its own order: the parent's mode
+    /// whenever its child can write in it.
+    public static func widestChildMode(child: String, parent: String, parentMode: String) -> String? {
+        let fitting = startingModes(provider: child).filter { isNoWider($0, child: child, than: parentMode, parent: parent) && childCanWrite(provider: child, mode: $0) }
+        guard child != parent else { return fitting.last }
+        return fitting.enumerated().max { (capabilities(provider: child, mode: $0.element).count, $0.offset) < (capabilities(provider: child, mode: $1.element).count, $1.offset) }?.element
+    }
+
+    /// The mode a child of the `child` agent that the human starts from a
+    /// `parent` pane in `parentMode` begins in, or nil when there is none in
+    /// which it could change files. A child of the parent's own agent starts
+    /// in the parent's mode, or in plan mode when `planFirst` (the parent's
+    /// style starts every request so) and the agent has one, as ⌘Enter
+    /// always did; any other agent's in ``widestChildMode(child:parent:parentMode:)``.
+    public static func humanChildMode(child: String, parent: String, parentMode: String, planFirst: Bool) -> String? {
+        guard child == parent else { return widestChildMode(child: child, parent: parent, parentMode: parentMode) }
+        let mode = planFirst && startingModes(provider: child).contains("plan") ? "plan" : parentMode
+        return childCanWrite(provider: child, mode: mode) ? mode : nil
+    }
+
+    /// Whether an agent's CLI can run a child, as the app last learnt it:
+    /// `installed` from its CLI search, `account` from its sign-in status.
+    /// Either one unknown (nil) does not hold a child back; the app never asks
+    /// a CLI for this.
+    public static func availability(installed: Bool?, account: CLIAccountStatus?) -> DelegationAgentAvailability {
+        if installed == false || account?.installed == false { return .notInstalled }
+        if account?.loggedIn == false { return .signedOut }
+        return .ready
+    }
+
+    /// What the worktree button's menu offers on a `parent` pane in
+    /// `parentMode` with `openHumanChildren` open children the human started:
+    /// one row per agent, Claude, Codex, Antigravity. A row says why it cannot
+    /// run: the agent's CLI (not for the parent's own agent, whose run is
+    /// going), no mode in which its child could change files, or the cap.
+    public static func humanChildChoices(parent: String, parentMode: String, planFirst: Bool, openHumanChildren: Int,
+                                         availability: (String) -> DelegationAgentAvailability) -> [DelegationChildChoice] {
+        ProviderOptions.ids.map { agent in
+            let mode = humanChildMode(child: agent, parent: parent, parentMode: parentMode, planFirst: planFirst)
+            let blocked: DelegationChildChoice.Blocked?
+            switch agent == parent ? .ready : availability(agent) {
+            case .notInstalled: blocked = .notInstalled
+            case .signedOut: blocked = .signedOut
+            case .ready: blocked = mode == nil ? .noMode : openHumanChildren >= DelegationCoordinator.maximumOpenChildren ? .cap : nil
+            }
+            return DelegationChildChoice(agent: agent, mode: mode, blocked: blocked)
+        }
     }
 
     /// Whether a `provider` child in `mode` can commit on its own branch.
@@ -91,6 +225,52 @@ public enum DelegationProviders {
     /// Whether a `provider` parent whose run started in `mode` may merge a
     /// child by its merge tool.
     public static func agentMayMerge(provider: String, mode: String) -> Bool { provider == "claude" || mode == "fullAccess" }
+}
+
+/// What a run in a permission mode may do on its own, to compare the modes
+/// of different agents (``DelegationProviders/capabilities(provider:mode:)``).
+public enum ModeCapability: Sendable, Hashable, CaseIterable {
+    /// It changes files only after the human approves each change.
+    case writesAsking
+    /// It changes files without asking, sandboxed or not.
+    case writesUnasked
+    /// It runs shell commands without asking the human, sandboxed or not.
+    case runsUnasked
+    /// No sandbox and no asking.
+    case fullAccess
+}
+
+/// Whether an agent's CLI can run a child now, as the app last learnt it.
+public enum DelegationAgentAvailability: Sendable, Equatable {
+    case ready
+    /// The CLI was not found, or says it is not installed.
+    case notInstalled
+    /// The CLI says it is signed out.
+    case signedOut
+}
+
+/// One agent the composer's worktree button offers in its menu.
+public struct DelegationChildChoice: Sendable, Equatable, Identifiable {
+    /// Why the agent cannot run the child now.
+    public enum Blocked: Sendable, Equatable {
+        case notInstalled
+        case signedOut
+        /// No mode of the agent, no wider than the parent's, lets its child change files.
+        case noMode
+        /// The parent has its 3 open children the human started.
+        case cap
+    }
+
+    /// The provider id.
+    public var agent: String
+    /// The mode the child would start in; nil when none would do.
+    public var mode: String?
+    /// nil when the child can start.
+    public var blocked: Blocked?
+
+    public var id: String { agent }
+
+    public init(agent: String, mode: String?, blocked: Blocked?) { self.agent = agent; self.mode = mode; self.blocked = blocked }
 }
 
 /// The app's commit of a Codex or Antigravity child's work (macOS only): when

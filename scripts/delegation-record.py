@@ -41,7 +41,7 @@ COPY_CAP = 64 * 1024
 TRUNCATION_MARKER = "\n\n[truncated at 64 KiB: the full file stays in the child's worktree until cleanup]\n"
 OPEN_CHILDREN_CAP = 3
 FOLLOW_UP_CAP = 2
-# Every agent's modes: Claude's, and Codex's onRequest (a child runs its parent's agent).
+# Every agent's modes: Claude's, and Codex's onRequest (a child runs its own agent, its parent's or another).
 MODES = ["plan", "manual", "acceptEdits", "onRequest", "auto", "fullAccess"]
 # The agents of agent panes (kind claude) that take part: a record without a
 # provider is a Claude child.
@@ -63,7 +63,7 @@ RULES = [
     ("one-layer", "no child is the parent of another child"),
     ("width-cap", "a parent has at most 3 open children its delegate made and at most 3 the human started"),
     ("follow-up-cap", "a child has at most 2 follow-ups"),
-    ("pane-links", "parent and child panes are agent panes, each child pane runs its parent's agent (the one its record names) and carries its parent link and works in its worktree or a folder inside it"),
+    ("pane-links", "parent and child panes are agent panes, each child pane runs the agent its record names (its parent's or, on the Mac, another) and carries its parent link and works in its worktree or a folder inside it"),
     ("one-notice-per-revision", "a notice names a child its parent's delegate made and a revision it reached, one reported notice per revision, one for each such open child's current report; a child the human started (startedByHuman) has none"),
     ("receipts", "delivered notices and follow-ups carry one receipt (time, steer or queue, run); pending and held ones none"),
     ("merge-records", "each merge record lands its child head: a fast-forward to it, or one merge commit of the old parent head and it"),
@@ -323,9 +323,9 @@ class Record:
                 continue
             if pane.get("kind") != "claude" or agent_of(pane) not in AGENTS:
                 self.fail("pane-links", f"child pane {child.get('id')} is not an agent pane")
-            parent = self.panes.get(child.get("parentSessionId"))
-            if agent_of(pane) != agent_of(child) or (parent and agent_of(parent) != agent_of(pane)):
-                self.fail("pane-links", f"child pane {child.get('id')} runs {agent_of(pane)}, its record names {agent_of(child)} and its parent runs {agent_of(parent) if parent else 'no pane'}")
+            # A child may run another agent than its parent's (the Mac's delegate `agent` and worktree menu).
+            if agent_of(pane) != agent_of(child):
+                self.fail("pane-links", f"child pane {child.get('id')} runs {agent_of(pane)}, but its record names {agent_of(child)}")
             if pane.get("parentSessionId") != child.get("parentSessionId"):
                 self.fail("pane-links", f"child pane {child.get('id')} links parent {pane.get('parentSessionId')}, not {child.get('parentSessionId')}")
             if not within(pane.get("workingFolder"), child.get("worktreePath")):
@@ -437,9 +437,12 @@ class Record:
     def rule_parent_transcript(self):
         self.transcripts = {}
         # A Codex or Antigravity parent keeps no Claude-format transcript, so its notices are not judged there.
-        claude_parents = {c.get("parentSessionId") for c in self.children if agent_of(c) == "claude" and agent_of(self.panes.get(c.get("parentSessionId")) or {}) == "claude"}
+        # The parent pane's agent alone decides, whatever its children run.
+        def parent_agent(parent):
+            return agent_of(self.panes.get(parent) or {})
+        claude_parents = {p for p in {c.get("parentSessionId") for c in self.children} if parent_agent(p) == "claude"}
         for parent in sorted({c.get("parentSessionId") for c in self.children} - claude_parents, key=str):
-            agent = agent_of(self.panes.get(parent) or next(c for c in self.children if c.get("parentSessionId") == parent))
+            agent = parent_agent(parent)
             noticed = sum(1 for n in self.notices if self.parent_of(n) == parent)
             for rule in ("parent-transcript", "transcript-once", "oldest-first"):
                 self.skip(rule, f"{agent} parent {parent} keeps no Claude-format transcript; its {noticed} notice(s) are not judged")

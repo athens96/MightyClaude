@@ -93,7 +93,7 @@ def load_script():
 
 
 class DelegationRecordFixtureTests(unittest.TestCase):
-    CASES = ["s1-like", "s2-like", "subfolder-workspace", "duplicate-notice-id", "deleted-unmerged-branch", "missing-panes", "no-transcript", "human-started-child"]
+    CASES = ["s1-like", "s2-like", "subfolder-workspace", "duplicate-notice-id", "deleted-unmerged-branch", "missing-panes", "no-transcript", "human-started-child", "cross-agent-children"]
 
     def test_every_case_is_listed_here(self):
         self.assertEqual(sorted(p.name for p in FIXTURES.iterdir() if p.is_dir()), sorted(self.CASES))
@@ -266,8 +266,9 @@ class TranscriptReadingTests(unittest.TestCase):
 
 
 class AgentRecordTests(unittest.TestCase):
-    """A child runs its parent's agent: Codex parents and children are judged
-    like Claude ones, except that no Claude transcript is looked for."""
+    """A child runs its own agent, its parent's or (on the Mac) another: Codex
+    parents and children are judged like Claude ones, except that no Claude
+    transcript is looked for a parent that does not run Claude."""
 
     def judge_s1_like(self, agents):
         """s1-like with each named pane, and each named child's record, running `agents[id]`."""
@@ -296,8 +297,12 @@ class AgentRecordTests(unittest.TestCase):
         # The same record with Claude panes needs the transcript that was taken away.
         self.assertIn("parent-transcript", self.judge_s1_like({})["failed"])
 
-    def test_a_child_that_runs_another_agent_than_its_parent_or_its_record_fails_pane_links(self):
-        self.assertIn("pane-links", self.judge_s1_like({"s1-parent": "codex"})["failed"])
+    def test_a_child_pane_that_runs_another_agent_than_its_record_fails_pane_links(self):
+        # Another agent than its parent's is a child of another agent, and passes.
+        codex_parent = self.judge_s1_like({"s1-parent": "codex"})
+        self.assertNotIn("pane-links", codex_parent["failed"])
+        # Its Claude child's notices are not judged: the parent keeps no Claude transcript.
+        self.assertIn("codex parent s1-parent", next(r["notJudged"] for r in codex_parent["rules"] if r["rule"] == "parent-transcript")[0])
         with tempfile.TemporaryDirectory(prefix="mighty-record-") as folder:
             root = Path(folder).resolve()
             materialize(FIXTURES / "s1-like", root)

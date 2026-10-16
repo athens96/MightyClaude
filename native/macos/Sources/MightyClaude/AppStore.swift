@@ -765,8 +765,9 @@ final class AppStore: ObservableObject, DelegationHost {
     /// `steering`: the second send (⌘Enter) while a run is busy, which does
     /// what ``composerSecondSend(_:)`` says — runs the text in a new child
     /// worktree, hands it to the running Claude turn, or queues it — instead
-    /// of queueing it for the next request (Enter).
-    func submit(_ id: String, steering: Bool = false) {
+    /// of queueing it for the next request (Enter). `agent`, from the
+    /// worktree button's menu, is that new child's agent.
+    func submit(_ id: String, steering: Bool = false, agent: String? = nil) {
         guard !ending, !closingSessions.contains(id), !importingAttachments.contains(id), let session = snapshot.sessions.first(where: { $0.id == id }),
               let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return }
         guard !usesLocalTerminal(session) else { error = L("composer.localTerminalInput"); return }
@@ -774,6 +775,14 @@ final class AppStore: ObservableObject, DelegationHost {
         let input = originalDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         let attachments = attachmentDrafts[id] ?? []
         guard !input.isEmpty || !attachments.isEmpty else { return }
+        // A pick from the worktree menu runs the text in a new child, of
+        // another agent too, and never in this pane: offered no more, the
+        // draft stays where it is.
+        if let agent {
+            guard !input.isEmpty, offersWorktreeMenu(session) else { return }
+            runInNewWorktree(id, input: input, attachments: attachments, draft: originalDraft, agent: agent)
+            return
+        }
         if let reason = runBlockedReason(session) { error = reason; return }
         let held = backgroundUpdateHolds(session)
         if session.status == "running" || pendingRuns.contains(id) || held {
@@ -802,10 +811,25 @@ final class AppStore: ObservableObject, DelegationHost {
     /// may have children (delegation on and loaded), otherwise steer or queue as before.
     func composerSecondSend(_ session: RunSession) -> ComposerSecondSend {
         ComposerSecondSend.choose(kind: session.kind, provider: session.provider, mode: session.settings.permissionMode,
-                                  isChild: session.parentSessionId != nil || delegationChildren.contains { $0.id == session.id },
-                                  delegationOn: delegation != nil && DelegationSwitch.isOn(),
-                                  canHostWorktree: worktreeHostFolder(session).flatMap { worktreeReadiness[$0] } == true, steerable: canSteer(session))
+                                  isChild: isDelegatedChild(session), delegationOn: delegation != nil && DelegationSwitch.isOn(),
+                                  canHostWorktree: canHostWorktree(session), steerable: canSteer(session))
     }
+
+    /// Whether the busy pane shows the worktree button for its menu alone: its
+    /// own agent's child could not change files in its mode, but another
+    /// agent's could (``ComposerSecondSend/menuOnly(kind:provider:mode:isChild:delegationOn:canHostWorktree:choices:)``).
+    func worktreeMenuOnly(_ session: RunSession) -> Bool {
+        ComposerSecondSend.menuOnly(kind: session.kind, provider: session.provider, mode: session.settings.permissionMode, isChild: isDelegatedChild(session),
+                                    delegationOn: delegation != nil && DelegationSwitch.isOn(), canHostWorktree: canHostWorktree(session),
+                                    choices: worktreeChildChoices(session))
+    }
+
+    /// Whether the worktree button, and its menu, shows on the busy pane.
+    func offersWorktreeMenu(_ session: RunSession) -> Bool { composerSecondSend(session) == .worktree || worktreeMenuOnly(session) }
+
+    private func isDelegatedChild(_ session: RunSession) -> Bool { session.parentSessionId != nil || delegationChildren.contains { $0.id == session.id } }
+
+    private func canHostWorktree(_ session: RunSession) -> Bool { worktreeHostFolder(session).flatMap { worktreeReadiness[$0] } == true }
 
     /// A local Claude run reads follow-ups on its open stdin frame, so the text
     /// joins the running turn. Everything else waits for the current request.
@@ -1737,8 +1761,9 @@ final class AppStore: ObservableObject, DelegationHost {
             let steers = sendsWhileRunning && (attachmentDrafts[sessionId] ?? []).isEmpty && secondSend == .steer
             return steers ? value == true : value == nil
         }
+        let worktreeOffered = offersWorktreeMenu(snapshot.sessions.first { $0.id == sessionId } ?? session)
         func worktreeMatches(_ value: Bool?) -> Bool {
-            let shown = sendsWhileRunning && secondSend == .worktree && !(drafts[sessionId] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let shown = sendsWhileRunning && worktreeOffered && !(drafts[sessionId] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             return shown ? value == true : value == nil
         }
         var action: Bool?

@@ -27,7 +27,8 @@ public enum DelegationSwitch {
 /// request; the phone's send modes do not go through this.
 public enum ComposerSecondSend: String, Sendable, CaseIterable {
     /// A new child pane of the same agent in its own worktree, beside this
-    /// one, runs the text now (``DelegationCoordinator/startHumanChild(_:parentId:start:)``).
+    /// one, runs the text now (``DelegationCoordinator/startHumanChild(_:parentId:planFirst:agent:starter:)``).
+    /// The round button's menu runs it in a child of another agent instead.
     case worktree
     /// The text joins the running Claude turn.
     case steer
@@ -49,8 +50,24 @@ public enum ComposerSecondSend: String, Sendable, CaseIterable {
     /// What a text does when its new worktree could not be made or its child
     /// could not start: it goes to the running turn when that can take it,
     /// and is otherwise the pane's next request, as Enter would make it. It
-    /// is never dropped.
+    /// is never dropped. A text the human meant for another agent never goes
+    /// to the pane (``returnsToComposer(childAgent:parentAgent:)``).
     public static func fallback(steerable: Bool) -> ComposerSecondSend { steerable ? .steer : .queue }
+
+    /// Whether a text whose child could not be made or started goes back to
+    /// the composer instead of to the pane: the human picked another agent
+    /// than the pane's from the worktree button's menu.
+    public static func returnsToComposer(childAgent: String?, parentAgent: String) -> Bool { childAgent.map { $0 != parentAgent } ?? false }
+
+    /// Whether the worktree button shows for its menu alone: where ``choose``
+    /// does not open a new worktree because the pane's own agent's child
+    /// could not change files in `mode`, yet the pane may have a child of
+    /// another agent, and one of `choices` can run now. Its click then opens
+    /// the menu, and ⌘Enter does what it did before.
+    public static func menuOnly(kind: String, provider: String, mode: String, isChild: Bool, delegationOn: Bool, canHostWorktree: Bool, choices: [DelegationChildChoice]) -> Bool {
+        delegationOn && !isChild && canHostWorktree && DelegationProviders.isAgentPane(kind: kind, provider: provider)
+            && !DelegationProviders.canParentByHuman(kind: kind, provider: provider, mode: mode) && choices.contains { $0.blocked == nil }
+    }
 }
 
 /// Why a delegation call was refused. A refused call carries exactly one of
@@ -91,6 +108,11 @@ public enum DelegationReasonCode: String, Codable, Sendable, CaseIterable {
     /// but Claude) may merge by tool only in fullAccess: the human merges
     /// from the child's card.
     case mergeHumanOnly = "merge_human_only"
+    /// delegate's `agent` names no agent a child can run (macOS only).
+    case agentUnknown = "agent_unknown"
+    /// The agent delegate named is not installed or not signed in on this
+    /// Mac, as the app last learnt it (macOS only).
+    case agentUnavailable = "agent_unavailable"
 }
 
 /// One delegation tool call forwarded by the delegation MCP server. Like
@@ -117,7 +139,8 @@ public struct DelegationResponse: Codable, Sendable, Equatable {
     public var refused: DelegationReasonCode?
     /// The call reached no delegation tool (the pane is gone, the server is
     /// not attached to its run, or no tool has that name), or the tool could
-    /// not take it as given.
+    /// not take it as given. With `refused`, what the refusal is about (the
+    /// agent it names), shown after its code.
     public var error: String?
     /// The child the call is about: the one delegate just made, or the same
     /// one again when that call is repeated in the same parent run.
@@ -138,6 +161,7 @@ public struct DelegationResponse: Codable, Sendable, Equatable {
     }
 
     public static func refusal(_ reason: DelegationReasonCode) -> DelegationResponse { DelegationResponse(refused: reason) }
+    public static func refusal(_ reason: DelegationReasonCode, detail: String) -> DelegationResponse { DelegationResponse(refused: reason, error: detail) }
     public static func failure(_ message: String) -> DelegationResponse { DelegationResponse(error: message) }
     public static func delegated(_ child: ChildRecord) -> DelegationResponse { DelegationResponse(child: DelegationChildInfo(child)) }
 }
@@ -150,8 +174,12 @@ public struct DelegationChildInfo: Codable, Sendable, Equatable {
     public var branch: String
     /// The permission mode the parent asked for in delegate.
     public var startingMode: String
+    /// The agent the child runs, as delegate's `agent` names it.
+    public var agent: String
 
-    public init(_ child: ChildRecord) { id = child.id; state = child.state; branch = child.branch; startingMode = child.startingMode }
+    public init(_ child: ChildRecord) {
+        id = child.id; state = child.state; branch = child.branch; startingMode = child.startingMode; agent = DelegationProviders.agentName(child.agent)
+    }
 }
 
 /// Serves one delegation call, already resolved to the pane its token belongs to.

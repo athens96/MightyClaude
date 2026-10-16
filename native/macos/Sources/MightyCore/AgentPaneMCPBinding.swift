@@ -248,7 +248,7 @@ public struct PaneMCPToolManifest {
     /// What a Codex run with the delegation server is told about it, after
     /// ``codexDeveloperInstructions``.
     public static var codexDelegationInstructions: String {
-        "It also gives you a \(DelegationMCPServer.serverName) MCP server: delegate starts a child Codex pane on a task in its own git worktree. Use it only when the user asks for parallel or delegated work, or when the task clearly splits into independent parts. Messages starting with [Mighty Claude notice ...] are about your children: read a report with child_status. Unless your permission mode is fullAccess, merge is refused and the user merges a child from its card in the app."
+        "It also gives you a \(DelegationMCPServer.serverName) MCP server: delegate starts a child pane on a task in its own git worktree, running Codex unless its agent argument names claude or antigravity. Use it only when the user asks for parallel or delegated work, or when the task clearly splits into independent parts. Messages starting with [Mighty Claude notice ...] are about your children: read a report with child_status. Unless your permission mode is fullAccess, merge is refused and the user merges a child from its card in the app."
     }
 
     public static let runInTerminal = Tool(
