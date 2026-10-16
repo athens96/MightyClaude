@@ -11,17 +11,19 @@ private final class HumanChildHost: DelegationHost, @unchecked Sendable {
     private var made: [DelegationChildPane] = []
     private var hostRuns: [String] = []
     private var paneFails = false
+    private var shown: [(sessionId: String, text: String)] = []
 
     func set(_ pane: DelegationPaneState) { lock.withLock { panes[pane.sessionId] = pane } }
     func failPanes() { lock.withLock { paneFails = true } }
     var createdPanes: [DelegationChildPane] { lock.withLock { made } }
     var hostStartedRuns: [String] { lock.withLock { hostRuns } }
+    var notes: [(sessionId: String, text: String)] { lock.withLock { shown } }
 
     func createPane(_ pane: DelegationChildPane) async -> Bool {
         lock.withLock {
             made.append(pane)
             guard !paneFails else { return false }
-            panes[pane.sessionId] = DelegationPaneState(sessionId: pane.sessionId, permissionMode: pane.mode, folder: pane.folder, parentSessionId: pane.parentSessionId)
+            panes[pane.sessionId] = DelegationPaneState(sessionId: pane.sessionId, provider: pane.provider, permissionMode: pane.mode, folder: pane.folder, parentSessionId: pane.parentSessionId)
             return true
         }
     }
@@ -30,6 +32,7 @@ private final class HumanChildHost: DelegationHost, @unchecked Sendable {
     func deliver(_ input: String, to sessionId: String, route: DeliveryRoute) async -> String? { "run-1" }
     func paneState(sessionId: String) async -> DelegationPaneState? { lock.withLock { panes[sessionId] } }
     func stopRun(sessionId: String) async {}
+    func note(_ text: String, in sessionId: String) async { lock.withLock { shown.append((sessionId, text)) } }
 }
 
 /// The runs the human's send started in child panes, with their first run,
@@ -117,6 +120,21 @@ private struct Fixture {
         #expect(sends.started.isEmpty && host.hostStartedRuns.isEmpty)
     }
 
+    /// Fixture git's exit code, for a command that may fail.
+    func gitExitCode(_ arguments: [String], in directory: String) async throws -> Int32 {
+        let executable = try #require(DelegationGit.executable)
+        var environment = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("GIT_") }
+        environment["GIT_CONFIG_GLOBAL"] = "/dev/null"; environment["GIT_CONFIG_NOSYSTEM"] = "1"
+        for key in ["GIT_AUTHOR", "GIT_COMMITTER"] { environment[key + "_NAME"] = "Fixture"; environment[key + "_EMAIL"] = "fixture@example.invalid" }
+        return try await ProcessCapture.run(executable: executable, arguments: ["-C", directory] + arguments, environment: environment, cwd: URL(fileURLWithPath: directory), timeout: 120).exitCode
+    }
+
+    /// The repository's own identity, so the app's git (the user's settings)
+    /// can commit in a child's worktree on any machine.
+    func setIdentity() async throws {
+        try await git(["config", "user.name", "Fixture"]); try await git(["config", "user.email", "fixture@example.invalid"])
+    }
+
     /// Fixture git, kept away from the user's and the system's settings.
     @discardableResult
     func git(_ arguments: [String], in directory: String? = nil) async throws -> String {
@@ -149,25 +167,40 @@ private func openChild(_ id: String, byHuman: Bool = false) -> ChildRecord {
 /// The composer's second send on a busy pane, and the default-on switch.
 @Suite(.delegationLane) struct ComposerSecondSendTests {
     @Test func aClaudePaneThatMayHaveChildrenInAUsableCheckoutOpensANewWorktree() {
-        #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: "claude", isChild: false, delegationOn: true, canHostWorktree: true, steerable: true) == .worktree)
+        #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: "claude", mode: "acceptEdits", isChild: false, delegationOn: true, canHostWorktree: true, steerable: true) == .worktree)
         // Whether its running turn could take the text does not matter: a new worktree takes files too.
-        #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: "claude", isChild: false, delegationOn: true, canHostWorktree: true, steerable: false) == .worktree)
+        #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: "claude", mode: "acceptEdits", isChild: false, delegationOn: true, canHostWorktree: true, steerable: false) == .worktree)
     }
 
     @Test func aChildASwitchedOffPaneOrAFolderWithNoUsableCheckoutSteersAsBefore() {
-        #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: "claude", isChild: true, delegationOn: true, canHostWorktree: true, steerable: true) == .steer)
-        #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: "claude", isChild: false, delegationOn: false, canHostWorktree: true, steerable: true) == .steer)
-        #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: "claude", isChild: false, delegationOn: true, canHostWorktree: false, steerable: true) == .steer)
+        #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: "claude", mode: "acceptEdits", isChild: true, delegationOn: true, canHostWorktree: true, steerable: true) == .steer)
+        #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: "claude", mode: "acceptEdits", isChild: false, delegationOn: false, canHostWorktree: true, steerable: true) == .steer)
+        #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: "claude", mode: "acceptEdits", isChild: false, delegationOn: true, canHostWorktree: false, steerable: true) == .steer)
         // A Claude run still starting cannot take it yet: it queues.
-        #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: "claude", isChild: false, delegationOn: true, canHostWorktree: false, steerable: false) == .queue)
+        #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: "claude", mode: "acceptEdits", isChild: false, delegationOn: true, canHostWorktree: false, steerable: false) == .queue)
     }
 
-    @Test func codexAndAntigravityPanesKeepTodaysBehaviour() {
+    @Test func codexAndAntigravityPanesOpenANewWorktreeTooAndOtherwiseQueueAsBefore() {
         for provider in ["codex", "gemini"] {
-            #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: provider, isChild: false, delegationOn: true, canHostWorktree: true, steerable: false) == .queue, "\(provider)")
-            #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: provider, isChild: false, delegationOn: true, canHostWorktree: true, steerable: true) == .steer, "\(provider)")
+            #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: provider, mode: "acceptEdits", isChild: false, delegationOn: true, canHostWorktree: true, steerable: false) == .worktree, "\(provider)")
+            // A child, the switch off or no usable checkout: their runs take no text, so it queues.
+            #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: provider, mode: "acceptEdits", isChild: true, delegationOn: true, canHostWorktree: true, steerable: false) == .queue, "\(provider)")
+            #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: provider, mode: "acceptEdits", isChild: false, delegationOn: false, canHostWorktree: true, steerable: false) == .queue, "\(provider)")
+            #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: provider, mode: "acceptEdits", isChild: false, delegationOn: true, canHostWorktree: false, steerable: false) == .queue, "\(provider)")
         }
-        #expect(ComposerSecondSend.choose(kind: SessionKind.shell, provider: "claude", isChild: false, delegationOn: true, canHostWorktree: true, steerable: false) == .queue)
+        #expect(ComposerSecondSend.choose(kind: SessionKind.shell, provider: "claude", mode: "acceptEdits", isChild: false, delegationOn: true, canHostWorktree: true, steerable: false) == .queue)
+    }
+
+    @Test func aCodexOrAntigravityPaneInAModeItsChildCouldNotWriteInQueuesAsBefore() {
+        for (provider, mode, worktree) in [("codex", "manual", false), ("codex", "acceptEdits", true), ("codex", "onRequest", true), ("codex", "fullAccess", true),
+                                           ("gemini", "manual", false), ("gemini", "plan", false), ("gemini", "acceptEdits", true), ("gemini", "fullAccess", true)] {
+            let chosen = ComposerSecondSend.choose(kind: SessionKind.claude, provider: provider, mode: mode, isChild: false, delegationOn: true, canHostWorktree: true, steerable: false)
+            #expect(chosen == (worktree ? .worktree : .queue), "\(provider) \(mode)")
+        }
+        // Claude's child asks the human in any mode, so every Claude mode opens one.
+        for mode in DelegationProviders.startingModes(provider: "claude") {
+            #expect(ComposerSecondSend.choose(kind: SessionKind.claude, provider: "claude", mode: mode, isChild: false, delegationOn: true, canHostWorktree: true, steerable: true) == .worktree, "\(mode)")
+        }
     }
 
     @Test func aTextNoNewChildRunsSteersWhenItCanAndIsOtherwiseQueuedNeverDropped() {
@@ -402,11 +435,11 @@ struct DelegationHumanChildTests {
         let fixture = try await Fixture.make()
         defer { fixture.remove() }
         let empty = try Data(contentsOf: fixture.store.fileURL)
-        // A child pane cannot have children, a Codex pane does not delegate, a closed pane has no composer.
+        // A child pane cannot have children, a pane that is no agent pane has none, a closed pane has no composer.
         fixture.host.set(DelegationPaneState(sessionId: "child", permissionMode: "auto", folder: fixture.repo.path, parentSessionId: "parent", runId: "run-c", activity: .running))
-        fixture.host.set(DelegationPaneState(sessionId: "codex", provider: "codex", permissionMode: "acceptEdits", folder: fixture.repo.path, runId: "run-x", activity: .running))
+        fixture.host.set(DelegationPaneState(sessionId: "shell", kind: SessionKind.shell, permissionMode: "acceptEdits", folder: fixture.repo.path, runId: "run-x", activity: .running))
         #expect(await fixture.send("Split further.", from: "child") == .refused(.childCannotDelegate))
-        #expect(await fixture.send("Try it.", from: "codex") == .refused(.claudeOnly))
+        #expect(await fixture.send("Try it.", from: "shell") == .refused(.claudeOnly))
         #expect(await fixture.send("Try it.", from: "gone") == .refused(.parentClosed))
         // No text to be a task: a failure, as is a switched-off delegation.
         #expect(await fixture.send("  \n") == .failed(L("delegation.human.error.invalidTask")))
@@ -418,5 +451,164 @@ struct DelegationHumanChildTests {
         let offBefore = try Data(contentsOf: off.store.fileURL)
         #expect(await off.send("Try it.") == .failed(L("delegation.human.error.switchedOff")))
         try await off.expectNothingMade(since: offBefore)
+    }
+
+    @Test func aCodexOrAntigravityParentsChildRunsItsAgentAndLeavesItsCommitToTheApp() async throws {
+        for provider in ["codex", "gemini"] {
+            let fixture = try await Fixture.make(provider: provider)
+            defer { fixture.remove() }
+            guard case .started(let child) = await fixture.send("Try the other parser.") else { Issue.record("The send made no child."); return }
+            #expect(child.provider == provider && child.agent == provider, "\(provider)")
+            #expect(await fixture.waitFor(child.id, .running))
+            #expect(fixture.host.createdPanes.map(\.provider) == [provider])
+            #expect(try fixture.store.load().children.first?.provider == provider)
+            // The app's note names no Claude pane and leaves the commit to the app.
+            let run = try #require(fixture.sends.started.first)
+            #expect(run.input.hasPrefix("Try the other parser.") && !run.input.contains("Claude pane") && !run.input.contains("commit your work"), "\(provider)")
+            #expect(run.input.contains("Do not commit") && run.input.contains(ChildWorktree.reportFile(worktreePath: child.worktreePath)), "\(provider)")
+        }
+        // Codex has no plan mode: a plan-first style leaves its child in the parent's mode.
+        let codex = try await Fixture.make(parentMode: "onRequest", provider: "codex")
+        defer { codex.remove() }
+        guard case .started(let child) = await codex.send("Plan it.", planFirst: true) else { Issue.record("The send made no child."); return }
+        #expect(child.startingMode == "onRequest")
+    }
+
+    @Test func aCodexOrAntigravityPaneWhoseChildCouldNotWriteMakesNoChild() async throws {
+        for (provider, mode) in [("codex", "manual"), ("gemini", "manual"), ("gemini", "plan")] {
+            let fixture = try await Fixture.make(parentMode: mode, provider: provider)
+            defer { fixture.remove() }
+            let before = try Data(contentsOf: fixture.store.fileURL)
+            #expect(await fixture.send("Try it.") == .failed(L("delegation.human.error.readOnlyMode")), "\(provider) \(mode)")
+            try await fixture.expectNothingMade(since: before)
+        }
+    }
+
+    @Test func theAppCommitsACodexChildsWorkWhenItsReportChangesAndTheCardMergesIt() async throws {
+        let fixture = try await Fixture.make(provider: "codex")
+        defer { fixture.remove() }
+        try await fixture.setIdentity()
+        try Data("*.log\n".utf8).write(to: fixture.repo.appendingPathComponent(".gitignore"))
+        try await fixture.git(["add", ".gitignore"]); try await fixture.git(["commit", "-q", "-m", "ignore logs"])
+        let base = try await fixture.git(["rev-parse", "HEAD"])
+        guard case .started(let child) = await fixture.send("Add a note.") else { Issue.record("The send made no child."); return }
+        #expect(await fixture.waitFor(child.id, .running))
+        let worktree = URL(fileURLWithPath: child.worktreePath), report = URL(fileURLWithPath: ChildWorktree.reportFile(worktreePath: child.worktreePath))
+
+        // A run that leaves changes but no report: nothing is committed.
+        try Data("changed\n".utf8).write(to: worktree.appendingPathComponent("file-0.txt"))
+        try Data("Note\n".utf8).write(to: worktree.appendingPathComponent("note.txt"))
+        try Data("noise\n".utf8).write(to: worktree.appendingPathComponent("build.log"))
+        await fixture.coordinator.childRunEnded(child.id, runId: "send-run-of-\(child.id)", end: .finished)
+        #expect(try await fixture.git(["rev-parse", "HEAD"], in: child.worktreePath) == base)
+        #expect(await fixture.coordinator.file.children.first?.state == .ended)
+
+        // A run that writes its report but is stopped: nothing is committed and the report is not new yet.
+        await fixture.coordinator.childRunStarted(child.id, runId: "run-stopped")
+        try Data("# Report\n\nAdded the note.\n".utf8).write(to: report)
+        await fixture.coordinator.childRunEnded(child.id, runId: "run-stopped", end: .stopped)
+        #expect(try await fixture.git(["rev-parse", "HEAD"], in: child.worktreePath) == base)
+        #expect(await fixture.coordinator.file.children.first?.reportRevision == 0)
+
+        // The next run finishes normally: the app commits what .gitignore lets in, then records the report at that head.
+        await fixture.coordinator.childRunStarted(child.id, runId: "run-2")
+        #expect(await fixture.coordinator.childRunEnded(child.id, runId: "run-2", end: .finished) == nil)
+        let head = try await fixture.git(["rev-parse", "HEAD"], in: child.worktreePath)
+        #expect(head != base)
+        #expect(try await fixture.git(["log", "-1", "--format=%s"], in: child.worktreePath) == ChildAutoCommit.message(childId: child.id, revision: 1))
+        #expect(try await fixture.git(["rev-parse", "HEAD^"], in: child.worktreePath) == base)
+        #expect(try await fixture.git(["diff", "--name-only", base, head], in: child.worktreePath).split(separator: "\n") == ["file-0.txt", "note.txt"])
+        #expect(try await fixture.git(["status", "--porcelain"], in: child.worktreePath).isEmpty)
+        let record = await fixture.coordinator.file.children.first
+        #expect(record?.state == .reported && record?.reportRevision == 1 && record?.reportHead == head)
+        #expect(fixture.host.notes.isEmpty)
+
+        // The human merges it from its card into the parent's branch.
+        guard case .merged = await fixture.coordinator.mergeFromCard(child.id) else { Issue.record("The card did not merge the child."); return }
+        #expect(try await fixture.git(["rev-parse", "HEAD"]) == head)
+        #expect(FileManager.default.fileExists(atPath: fixture.repo.appendingPathComponent("note.txt").path))
+
+        // A run that ends with the same report commits nothing more.
+        await fixture.coordinator.childRunStarted(child.id, runId: "run-3")
+        try Data("more\n".utf8).write(to: worktree.appendingPathComponent("note.txt"))
+        await fixture.coordinator.childRunEnded(child.id, runId: "run-3", end: .finished)
+        #expect(try await fixture.git(["rev-parse", "HEAD"], in: child.worktreePath) == head)
+    }
+
+    @Test func newFilesThatLookSecretOrAreLargeStayUncommittedAndThePaneNamesThem() async throws {
+        let fixture = try await Fixture.make(provider: "gemini")
+        defer { fixture.remove() }
+        try await fixture.setIdentity()
+        guard case .started(let child) = await fixture.send("Add the config.") else { Issue.record("The send made no child."); return }
+        #expect(await fixture.waitFor(child.id, .running))
+        let worktree = URL(fileURLWithPath: child.worktreePath)
+        try FileManager.default.createDirectory(at: worktree.appendingPathComponent("keys"), withIntermediateDirectories: true)
+        let secrets = [".env.local", "keys/server.pem", "keys/deploy.key", "id_rsa", "credentials.json"]
+        for name in secrets + ["config.json"] { try Data("x\n".utf8).write(to: worktree.appendingPathComponent(name)) }
+        try Data(count: ChildAutoCommit.maximumNewFileBytes + 1).write(to: worktree.appendingPathComponent("big.bin"))
+        try Data("changed\n".utf8).write(to: worktree.appendingPathComponent("file-0.txt"))
+        try Data("# Report\n".utf8).write(to: URL(fileURLWithPath: ChildWorktree.reportFile(worktreePath: child.worktreePath)))
+        await fixture.coordinator.childRunEnded(child.id, runId: "send-run-of-\(child.id)", end: .finished)
+        let committed = try await fixture.git(["show", "--name-only", "--format=", "HEAD"], in: child.worktreePath)
+        #expect(committed.split(separator: "\n").sorted() == ["config.json", "file-0.txt"])
+        let left = try await fixture.git(["ls-files", "--others", "--exclude-standard"], in: child.worktreePath)
+        #expect(Set(left.split(separator: "\n").map(String.init)) == Set(secrets + ["big.bin"]))
+        let note = try #require(fixture.host.notes.last)
+        #expect(note.sessionId == child.id && note.text.hasPrefix(L("delegation.autoCommit.leftOut", ["count": "6", "paths": ""])))
+        for name in secrets + ["big.bin"] { #expect(note.text.contains(name), "\(name)") }
+        #expect(await fixture.coordinator.file.children.first?.state == .reported)
+        for name in [".env", ".ENV.production", "a/b/cert.pem", "x.key", "id_rsa.pub", "credentials"] { #expect(ChildAutoCommit.looksSecret(name), "\(name)") }
+        for name in ["environment.txt", "keyboard.swift", "a/.envoy/config", "my-credentials.txt"] { #expect(!ChildAutoCommit.looksSecret(name), "\(name)") }
+    }
+
+    @Test func anUnresolvedConflictIsNeverCommittedAndThePaneSaysSo() async throws {
+        let fixture = try await Fixture.make(provider: "codex")
+        defer { fixture.remove() }
+        try await fixture.setIdentity()
+        try await fixture.git(["checkout", "-q", "-b", "other"])
+        try Data("theirs\n".utf8).write(to: fixture.repo.appendingPathComponent("file-0.txt"))
+        try await fixture.git(["commit", "-q", "-am", "theirs"]); try await fixture.git(["checkout", "-q", "main"])
+        guard case .started(let child) = await fixture.send("Change file-0.") else { Issue.record("The send made no child."); return }
+        #expect(await fixture.waitFor(child.id, .running))
+        let worktree = URL(fileURLWithPath: child.worktreePath)
+        try Data("ours\n".utf8).write(to: worktree.appendingPathComponent("file-0.txt"))
+        try await fixture.git(["commit", "-q", "-am", "ours"], in: child.worktreePath)
+        let ours = try await fixture.git(["rev-parse", "HEAD"], in: child.worktreePath)
+        // The child brought the other branch in and left the conflict unresolved.
+        #expect(try await fixture.gitExitCode(["merge", "-q", "other"], in: child.worktreePath) != 0)
+        try Data("# Report\n\nMerged other.\n".utf8).write(to: URL(fileURLWithPath: ChildWorktree.reportFile(worktreePath: child.worktreePath)))
+        await fixture.coordinator.childRunEnded(child.id, runId: "send-run-of-\(child.id)", end: .finished)
+        #expect(try await fixture.git(["rev-parse", "HEAD"], in: child.worktreePath) == ours)
+        let unmerged = try await fixture.git(["ls-files", "-u"], in: child.worktreePath)
+        #expect(!unmerged.isEmpty)
+        // No new report: nothing for the card to merge, and the child's pane says why.
+        let record = await fixture.coordinator.file.children.first
+        #expect(record?.state == .ended && record?.reportRevision == 0 && record?.reportDigest == nil)
+        #expect(fixture.host.notes.map(\.sessionId) == [child.id] && fixture.host.notes.map(\.text) == [L("delegation.autoCommit.unmerged")])
+
+        // Resolved, the next run's end commits the merge and records the report.
+        try Data("both\n".utf8).write(to: worktree.appendingPathComponent("file-0.txt"))
+        try await fixture.git(["add", "file-0.txt"], in: child.worktreePath)
+        await fixture.coordinator.childRunStarted(child.id, runId: "run-2")
+        await fixture.coordinator.childRunEnded(child.id, runId: "run-2", end: .finished)
+        let head = try await fixture.git(["rev-parse", "HEAD"], in: child.worktreePath)
+        let parents = try await fixture.git(["rev-list", "--parents", "-n", "1", "HEAD"], in: child.worktreePath)
+        #expect(head != ours && parents.split(separator: " ").count == 3)
+        #expect(await fixture.coordinator.file.children.first?.reportHead == head)
+    }
+
+    @Test func theAppNeverCommitsForAClaudeChild() async throws {
+        let fixture = try await Fixture.make()
+        defer { fixture.remove() }
+        try await fixture.setIdentity()
+        let base = try await fixture.git(["rev-parse", "HEAD"])
+        guard case .started(let child) = await fixture.send("Add a note.") else { Issue.record("The send made no child."); return }
+        #expect(await fixture.waitFor(child.id, .running))
+        try Data("Note\n".utf8).write(to: URL(fileURLWithPath: child.worktreePath).appendingPathComponent("note.txt"))
+        try Data("# Report\n".utf8).write(to: URL(fileURLWithPath: ChildWorktree.reportFile(worktreePath: child.worktreePath)))
+        await fixture.coordinator.childRunEnded(child.id, runId: "send-run-of-\(child.id)", end: .finished)
+        #expect(try await fixture.git(["rev-parse", "HEAD"], in: child.worktreePath) == base)
+        #expect(try await fixture.git(["status", "--porcelain"], in: child.worktreePath) == "?? note.txt")
+        #expect(await fixture.coordinator.file.children.first?.reportHead == base)
     }
 }

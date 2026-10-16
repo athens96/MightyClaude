@@ -243,6 +243,9 @@ public actor ProviderService {
             let sandbox = s.permissionMode == "fullAccess" ? "danger-full-access" : ["acceptEdits", "onRequest"].contains(s.permissionMode) ? "workspace-write" : "read-only"
             var args = ["-c", "approval_policy=\"\(asks ? "on-request" : "never")\"", "-c", "sandbox_mode=\"\(sandbox)\"", "-c", "sandbox_workspace_write.network_access=\(s.networkAccess)", "-c", "features.fast_mode=\(s.fastMode)", "-c", "service_tier=\"\(s.fastMode ? "fast" : "default")\""]
             if s.webSearch != "default" { args += ["-c", "web_search=\"\(s.webSearch)\""] }
+            if sandbox == "workspace-write", let root = request.delegationWorktreeRoot {
+                args += ["-c", "sandbox_workspace_write.writable_roots=\(PaneMCPBinding.tomlLiteral([root]))"]
+            }
             // Phase model knobs: review_model, subagent model and effort, plan_mode_reasoning_effort.
             if phaseModels.codexReviewModel != "default" { args += ["-c", "review_model=\"\(phaseModels.codexReviewModel)\""] }
             if phaseModels.codexSubagentDefault != "default" { args += ["-c", "agents.default_subagent_model=\"\(phaseModels.codexSubagentDefault)\""] }
@@ -251,7 +254,7 @@ public actor ProviderService {
             if let binding = paneMCPBinding {
                 let home = codexHome ?? CLIAccountSupport.codexHome(home: FileManager.default.homeDirectoryForCurrentUser, environment: ProcessInfo.processInfo.environment)
                 let user = CodexUserInstructions.effective(codexHome: home, workingDirectory: URL(fileURLWithPath: binding.workspacePath, isDirectory: true))
-                args += binding.codexMCPArgs(userInstructions: user)
+                args += binding.codexMCPArgs(userInstructions: user, mode: s.permissionMode)
             }
             if asks {
                 // Never inherit delegated automatic approval from a user profile.
@@ -281,6 +284,7 @@ public actor ProviderService {
             }
             if request.model != "default" { args += ["--model", request.model] }
             if let resume = request.resumeId { args += ["--conversation", resume] }
+            if let root = request.delegationWorktreeRoot { args += ["--add-dir", root] }
             return args
         default: throw MightyError(L("common.unsupportedCli"))
         }

@@ -22,8 +22,15 @@ private final class ActionHost: DelegationHost, @unchecked Sendable {
     private let lock = NSLock()
     private var recorded: [String] = []
     private var closed: Set<String> = []
+    private var paneMode = "acceptEdits"
 
     init(folder: String) { self.folder = folder }
+
+    /// Every pane's permission mode from now on.
+    var mode: String {
+        get { lock.withLock { paneMode } }
+        set { lock.withLock { paneMode = newValue } }
+    }
 
     var calls: [String] { lock.withLock { recorded } }
     func close(_ pane: String) { lock.withLock { _ = closed.insert(pane) } }
@@ -35,7 +42,7 @@ private final class ActionHost: DelegationHost, @unchecked Sendable {
     func paneState(sessionId: String) async -> DelegationPaneState? {
         note("paneState \(sessionId)")
         guard !lock.withLock({ closed.contains(sessionId) }) else { return nil }
-        return DelegationPaneState(sessionId: sessionId, permissionMode: "acceptEdits", folder: folder, runId: "run-\(sessionId)", activity: .running)
+        return DelegationPaneState(sessionId: sessionId, permissionMode: mode, folder: folder, runId: "run-\(sessionId)", activity: .running)
     }
     func stopRun(sessionId: String) async { note("stopRun \(sessionId)") }
 }
@@ -76,13 +83,14 @@ struct DelegationActionToolTests {
             try DelegationCoordinator(store: store, host: host, worktrees: ChildWorktreeMaker(root: place.root, freeBytes: { _ in 50_000_000_000 }), isSwitchOn: { true })
         }
 
-        func binding(_ pane: String) -> PaneMCPBinding {
+        /// `mode`: the permission mode the caller's run started in.
+        func binding(_ pane: String, provider: String = "claude", mode: String = "acceptEdits") -> PaneMCPBinding {
             PaneMCPBinding(agentPaneId: pane, token: "token-\(pane)", server: PaneMCPServerLocation(socketPath: "/tmp/unused-io.sock", executable: appExecutable),
-                           workspaceId: "ws-1", workspacePath: place.repo.path, provider: "claude", delegation: true)
+                           workspaceId: "ws-1", workspacePath: place.repo.path, provider: provider, delegation: true, permissionMode: mode)
         }
 
-        func call(_ tool: String, _ arguments: [String: String], from pane: String = "parent") async -> DelegationResponse {
-            await coordinator.handle(DelegationRequest(tool: tool, arguments: arguments), binding: binding(pane))
+        func call(_ tool: String, _ arguments: [String: String], from pane: String = "parent", provider: String = "claude", mode: String = "acceptEdits") async -> DelegationResponse {
+            await coordinator.handle(DelegationRequest(tool: tool, arguments: arguments), binding: binding(pane, provider: provider, mode: mode))
         }
 
         /// The same calls all at once; the answers in the calls' order.
@@ -135,6 +143,30 @@ struct DelegationActionToolTests {
         let file = await fixture.coordinator.file, context = await fixture.coordinator.pruneContext()
         try await fixture.coordinator.commit(file, context: context)
         #expect(try fixture.store.load().merges.map(\.childId) == ["c1"])
+    }
+
+    @Test func aCodexParentMergesByToolOnlyWhenItsRunStartedInFullAccess() async throws {
+        let place = try MergePlace(); defer { place.remove() }
+        _ = try await place.repository()
+        let (made, head) = try await Self.reportedChild(place, "c1", files: ["a.txt"])
+        var child = made
+        child.parentCheckout = place.repo.path
+        let fixture = try Fixture(place, children: [child])
+        let before = try await place.git(["rev-parse", "HEAD"]), bytes = try fixture.fileBytes()
+        // The pane switched to fullAccess since does not matter: its run started in another mode.
+        fixture.host.mode = "fullAccess"
+        for mode in ["manual", "acceptEdits", "onRequest"] {
+            #expect(await fixture.call("merge", ["child": "c1", "expected_head": head], provider: "codex", mode: mode) == .refusal(.mergeHumanOnly), "\(mode)")
+        }
+        #expect(try await place.git(["rev-parse", "HEAD"]) == before)
+        #expect(try fixture.fileBytes() == bytes)
+        // The agent hears who merges instead.
+        let refused = try #require(text(of: DelegationMCPServer.result(.refusal(.mergeHumanOnly))))
+        #expect(refused.hasPrefix("Refused: merge_human_only (") && refused.contains("child's card") && refused.hasSuffix("Nothing was changed."))
+        // A run started in fullAccess merges as a Claude parent does, whatever the pane's mode now.
+        fixture.host.mode = "acceptEdits"
+        #expect(await fixture.call("merge", ["child": "c1", "expected_head": head], provider: "codex", mode: "fullAccess").merged?.mergedCommit == head)
+        #expect(try await place.git(["rev-parse", "HEAD"]) == head)
     }
 
     @Test func mergeFastForwardsAReportedChildAndWritesItsMergeRecord() async throws {

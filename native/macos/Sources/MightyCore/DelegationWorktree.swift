@@ -163,13 +163,13 @@ enum DelegationGit {
         .first(where: { FileManager.default.isExecutableFile(atPath: $0) }).map { URL(fileURLWithPath: $0) }
 
     /// nil when git is missing, could not start or did not finish in time.
-    static func run(_ arguments: [String], in directory: String, timeout: TimeInterval = 10) async -> ProcessResult? {
+    static func run(_ arguments: [String], in directory: String, timeout: TimeInterval = 10, input: Data? = nil) async -> ProcessResult? {
         guard let executable else { return nil }
         var environment = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("GIT_") }
         environment["GIT_OPTIONAL_LOCKS"] = "0"; environment["GIT_TERMINAL_PROMPT"] = "0"; environment["LC_ALL"] = "C"
         let settings = ["-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-c", "gc.auto=0", "-C", directory]
         return try? await ProcessCapture.run(executable: executable, arguments: settings + arguments, environment: environment,
-                                             cwd: URL(fileURLWithPath: directory), timeout: timeout, maximumBytes: 1_048_576)
+                                             cwd: URL(fileURLWithPath: directory), input: input, timeout: timeout, maximumBytes: 1_048_576)
     }
 
     static func line(_ data: Data) -> String { String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) }

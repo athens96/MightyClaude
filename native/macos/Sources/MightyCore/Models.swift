@@ -490,6 +490,11 @@ public struct StartRunRequest: Codable, Sendable, Equatable {
     public var permissionModeOverride: String?
     /// The pane's saved checklist, which a resumed Claude run continues.
     public var todoProgress: TodoProgress?
+    /// A delegated child's worktree when its run works in a folder inside it
+    /// (a workspace that is a subfolder of its repository): REPORT.md lies
+    /// outside that folder, so a Codex run may also write here and an
+    /// Antigravity run adds it. Not persisted.
+    public var delegationWorktreeRoot: String?
     public init(sessionId: String, workspaceId: String, kind: String = "claude", input: String, model: String = "default", provider: String = "claude", settings: RunSettings = .init(), resumeId: String? = nil, attachments: [RunAttachment] = [], registeredModels: [RegisteredModelEntry] = []) {
         self.sessionId = sessionId; self.workspaceId = workspaceId; self.kind = kind; self.input = input; self.model = model; self.provider = provider; self.settings = settings; self.resumeId = resumeId; self.attachments = attachments; self.registeredModels = registeredModels
     }

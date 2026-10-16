@@ -25,14 +25,38 @@ Windows app reads and writes them the same way (`MightyClaude.Core/Models.cs`,
 
 Mac only: a child record in that side file (`delegation-state.json`) may carry
 `startedByHuman: true`, for a child the human started from the Mac composer's
-second send (⌘Enter on a busy Claude pane, with delegation on — on by default on
-the Mac, the defaults key `delegation.enabled` false turns it off). Such a child
+second send (⌘Enter on a busy Claude, Codex or Antigravity pane, with delegation
+on — on by default on the Mac, the defaults key `delegation.enabled` false turns
+it off). Such a child
 sends its parent no notices, the parent's delegation tools neither list it nor
 act on it (merge and follow_up refuse with reason code `human_started`), and it
 counts toward its own cap of 3 open children per parent, apart from the 3 the
 parent's `delegate` may make; records without the key are agent-made and load
 unchanged. The phone wire is unchanged: `POST /m1/sessions/{id}/submit` with mode
 `steer` still steers into a running Claude pane, `queue` still queues.
+
+Mac only: a child runs its parent's agent, and a record may carry `provider`
+(`codex` or `gemini`); records without it are Claude children and load
+unchanged, and a Claude child's record never stores it. Claude panes, and Codex
+panes in acceptEdits or fullAccess, get the delegation tools (a manual Codex run
+refuses MCP calls it cannot ask about, and the app declines an onRequest run's
+MCP prompts); Antigravity panes have none and make children only with ⌘Enter.
+A Codex or Antigravity pane makes children only in a mode where the child can
+change files (Codex acceptEdits, onRequest, fullAccess; Antigravity acceptEdits,
+fullAccess). A Codex or Antigravity child's work is committed by the app on its
+branch (`mighty: <child id> report r<n>`) when a run finishes normally with
+REPORT.md changed, never while `git ls-files -u` lists paths, never outside the
+child's own worktree, and never with new files that look like secrets or are
+over 5 MB. A parent whose agent is not Claude may merge by tool only when its
+run started in fullAccess, and is otherwise refused with reason code
+`merge_human_only` (the human merges from the child's card); the Windows enum
+carries the name in the shared list but never refuses with it. A Codex exec run
+pre-approves mighty-terminal only in fullAccess (in acceptEdits only
+`read_latest_output` and `open_url`) and mighty-delegation in acceptEdits and
+fullAccess; onRequest asks the human. A parent whose agent is not
+Claude may merge by tool only in fullAccess, and is otherwise refused with
+reason code `merge_human_only` (the human merges from the child's card); the
+Windows enum carries the name in the shared list but never refuses with it.
 
 ## Mobile protocol (m1) over the relay
 

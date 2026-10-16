@@ -116,13 +116,19 @@ public struct ChildRecord: Codable, Sendable, Equatable, Identifiable {
     /// merges or discards it from its card. nil (agent-made) in every record
     /// kept before it was stored.
     public var startedByHuman: Bool?
+    /// The agent CLI the child runs, its parent's: "codex" or "gemini". nil
+    /// is Claude, as in every record kept before it was stored.
+    public var provider: String?
 
-    public init(id: String, parentSessionId: String, worktreePath: String, parentBranch: String, baseCommit: String, startingMode: String, requestKey: String, followUpCount: Int = 0, reportRevision: Int = 0, reportHead: String? = nil, state: ChildState = .creating, parentCheckout: String? = nil, startedByHuman: Bool? = nil) {
+    public init(id: String, parentSessionId: String, worktreePath: String, parentBranch: String, baseCommit: String, startingMode: String, requestKey: String, followUpCount: Int = 0, reportRevision: Int = 0, reportHead: String? = nil, state: ChildState = .creating, parentCheckout: String? = nil, startedByHuman: Bool? = nil, provider: String? = nil) {
         self.id = id; self.parentSessionId = parentSessionId; self.worktreePath = worktreePath; branch = Self.branchName(for: id)
         self.parentBranch = parentBranch; self.baseCommit = baseCommit; self.startingMode = startingMode; self.requestKey = requestKey
         self.followUpCount = followUpCount; self.reportRevision = reportRevision; self.reportHead = reportHead; self.state = state
-        self.parentCheckout = parentCheckout; self.startedByHuman = startedByHuman
+        self.parentCheckout = parentCheckout; self.startedByHuman = startedByHuman; self.provider = provider == "claude" ? nil : provider
     }
+
+    /// The agent CLI the child runs.
+    public var agent: String { provider ?? "claude" }
 
     public static func branchName(for sessionId: String) -> String { "mighty/" + sessionId }
 

@@ -97,6 +97,13 @@ extension DelegationCoordinator {
     /// 2. REPORT.md holds text that differs from the current revision's: the
     ///    next revision is recorded at the head the child has checked out,
     ///    with a copy of the report, and the parent gets one reported notice.
+    ///    A child of an agent other than Claude has what it left in its
+    ///    worktree committed by the app first (``ChildAutoCommit``), and only
+    ///    when its run finished normally: after a stop or an error its report
+    ///    counts as not new yet. When the commit finds an unresolved conflict
+    ///    or git fails, nothing is committed, the child's pane says why and
+    ///    its report counts as not new yet, so the next run's end tries
+    ///    again. New files the commit left out are named in the pane.
     /// 3. Otherwise the child has ended, and when the run was the one its
     ///    parent awaits (delegate's first run, or the run a follow-up went
     ///    to) the parent gets one ended_without_report notice.
@@ -108,9 +115,13 @@ extension DelegationCoordinator {
     /// start the host may not have reported yet. A second report of the same
     /// end, or the end of any other run, changes nothing. The notice sent, if
     /// any, as it was made: delivery then offers it to the parent's pane.
+    ///
+    /// Once it is recorded, the child is no longer marked ending
+    /// (``DelegationCoordinator/endingRuns``), and what waited for it is offered.
     @discardableResult public func childRunEnded(_ id: String, runId: String, end: ChildRunEnd) async -> Notice? {
         let notice = await recordRunEnd(id, runId: runId, end: end)
-        if notice != nil { await deliverPending() }
+        let waited = endingRuns.finish(id)
+        if notice != nil || waited { await deliverPending() }
         return notice
     }
 
@@ -118,13 +129,20 @@ extension DelegationCoordinator {
         await takeRunTurn()
         defer { passRunTurn() }
         guard let found = file.children.first(where: { $0.id == id }), Self.mayEnd(found, runId: runId) else { return nil }
-        var report: ChildReportFile?, head: String?
+        var report: ChildReportFile?, head: String?, committed = ChildAutoCommit.Result(outcome: .nothing)
         if end != .quit {
             let path = ChildWorktree.reportFile(worktreePath: found.worktreePath)
             report = await Task.detached { ChildReportFile.read(path) }.value
-            // A report whose head git cannot read counts as no new report; its
-            // change is still there for the next run's end.
-            if let report, report.digest != found.reportDigest { head = await ChildMerge.head(of: found.worktreePath) }
+            if let report, report.digest != found.reportDigest {
+                if found.agent != "claude" {
+                    committed = end == .finished
+                        ? await ChildAutoCommit.run(worktreePath: found.worktreePath, childId: id, revision: found.reportRevision + 1, provider: found.agent)
+                        : ChildAutoCommit.Result(outcome: .afterNormalFinish)
+                }
+                // A report whose head git cannot read counts as no new report; its
+                // change is still there for the next run's end.
+                if [.nothing, .committed].contains(committed.outcome) { head = await ChildMerge.head(of: found.worktreePath) }
+            }
         }
         let context = await pruneContext()
         // Nothing below suspends until the end is saved, so the same end
@@ -150,6 +168,16 @@ extension DelegationCoordinator {
         next.children[index] = child
         if let notice { next.notices.append(notice) }
         keep(next, context: context)
+        switch committed.outcome {
+        case .unmerged: await host.note(L("delegation.autoCommit.unmerged"), in: id)
+        case .failed(let why): await host.note(L("delegation.autoCommit.failed", ["error": why]), in: id)
+        // A stop or an error: nothing to say, the next normal finish commits.
+        case .afterNormalFinish, .nothing, .committed: break
+        }
+        if !committed.leftOut.isEmpty {
+            let shown = committed.leftOut.prefix(10).joined(separator: ", ") + (committed.leftOut.count > 10 ? ", …" : "")
+            await host.note(L("delegation.autoCommit.leftOut", ["count": "\(committed.leftOut.count)", "paths": shown]), in: id)
+        }
         return notice
     }
 

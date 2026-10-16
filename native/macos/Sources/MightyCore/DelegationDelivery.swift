@@ -84,7 +84,7 @@ extension DelegationFile {
     /// The follow-up as its child's pane gets it; nil without the child.
     func deliveryItem(of followUp: FollowUp) -> DelegationDeliveryItem? {
         guard let child = children.first(where: { $0.id == followUp.childId }) else { return nil }
-        let text = DelegationCoordinator.text(of: followUp, reportFile: ChildWorktree.reportFile(worktreePath: child.worktreePath))
+        let text = DelegationCoordinator.text(of: followUp, reportFile: ChildWorktree.reportFile(worktreePath: child.worktreePath), provider: child.agent)
         return DelegationDeliveryItem(id: followUp.id, kind: .followUp, childId: followUp.childId, sessionId: followUp.childId, text: text)
     }
 }
@@ -94,12 +94,17 @@ extension DelegationFile {
 ///
 /// A new item is offered to its pane at once, by the first rule that applies:
 ///
+/// 0. The pane is a child whose run end is not recorded yet
+///    (``DelegationCoordinator/endingRuns``): the item stays pending, and the
+///    end's record offers it again.
 /// 1. Items are held for the pane already: the item is held behind them,
 ///    whatever the pane is doing, so it never reaches the pane before them.
 /// 2. The pane runs Claude now: the item is steered into that run.
-/// 3. The pane is idle after a run that finished normally since this launch,
+/// 3. The pane runs another agent now, whose run takes no text: the item
+///    stays pending, and the end of that run offers it again.
+/// 4. The pane is idle after a run that finished normally since this launch,
 ///    and a run can start in it now: the item starts its next run.
-/// 4. Otherwise (the pane stopped, errored, has had no run since this launch,
+/// 5. Otherwise (the pane stopped, errored, has had no run since this launch,
 ///    cannot start a run now, or is closed) the item is held.
 ///
 /// Only the human's next send or run next releases held items, all of the
@@ -177,7 +182,7 @@ extension DelegationCoordinator {
     /// Offers the pending item `id` to its pane as the pane is now.
     private func offer(_ id: String, _ kind: DelegationDeliveryItem.Kind) async {
         for _ in 0..<Self.deliveryOffers {
-            guard let found = lookUp(id, kind, in: .pending) else { return }
+            guard let found = lookUp(id, kind, in: .pending), !endingRuns.contains(found.sessionId) else { return }
             let pane = await host.paneState(sessionId: found.sessionId)
             let context = await pruneContext()
             // Nothing below suspends until the item's lane is saved, so
@@ -185,7 +190,12 @@ extension DelegationCoordinator {
             guard let item = lookUp(id, kind, in: .pending) else { return }
             // Behind items already held for the pane it is held too, so the
             // human's next send or run next releases them all, oldest first.
-            guard items(for: item.sessionId, in: .held).isEmpty, let route = Self.automaticRoute(to: pane) else {
+            let route: DeliveryRoute
+            switch items(for: item.sessionId, in: .held).isEmpty ? Self.automaticDelivery(to: pane) : .hold {
+            case .route(let chosen): route = chosen
+            // A run that takes no text: its end offers the item again.
+            case .later: return
+            case .hold:
                 keep(moving: [item], to: .held, receipt: nil, context: context)
                 return
             }
@@ -208,7 +218,7 @@ extension DelegationCoordinator {
     private func release(in sessionId: String, ahead text: String?, start: (@Sendable (String) async -> String?)?) async -> DelegationRelease {
         guard !items(for: sessionId, in: .held).isEmpty else { return .nothingHeld }
         guard let pane = await host.paneState(sessionId: sessionId) else { return .notStarted }
-        let steers = text == nil && pane.activity == .running && DelegationSwitch.isClaudePane(kind: pane.kind, provider: pane.provider)
+        let steers = text == nil && pane.activity == .running && DelegationProviders.canSteer(kind: pane.kind, provider: pane.provider)
         let context = await pruneContext()
         // Nothing below suspends until the release is saved, so two sends at
         // once never take the same item.
@@ -238,15 +248,30 @@ extension DelegationCoordinator {
         for childId in Set(items.filter { $0.kind == .followUp }.map(\.childId)) { await awaitRun(runId, of: childId) }
     }
 
+    /// How an item reaches a pane with no human.
+    enum AutomaticDelivery: Sendable, Equatable {
+        /// Steered into its running Claude run, or as its next run.
+        case route(DeliveryRoute)
+        /// Not now: the pane runs an agent whose run takes no text. The item
+        /// stays pending, and the run's end offers it again: as the pane's
+        /// next run after a normal finish, held otherwise.
+        case later
+        /// Held until the human's next send or run next.
+        case hold
+    }
+
     /// How an item reaches `pane` with no human: steered into its running
-    /// Claude run, or as the next run of a pane idle after a run that finished
-    /// normally since this launch. nil when it is held.
-    static func automaticRoute(to pane: DelegationPaneState?) -> DeliveryRoute? {
-        guard let pane else { return nil }
+    /// Claude run, later for any other running agent, or as the next run of
+    /// a pane idle after a run that finished normally since this launch.
+    /// Held otherwise.
+    static func automaticDelivery(to pane: DelegationPaneState?) -> AutomaticDelivery {
+        guard let pane else { return .hold }
         switch pane.activity {
-        case .running: return DelegationSwitch.isClaudePane(kind: pane.kind, provider: pane.provider) ? .steer : nil
-        case .finished: return .queue
-        case .idle: return nil
+        case .running:
+            if DelegationProviders.canSteer(kind: pane.kind, provider: pane.provider) { return .route(.steer) }
+            return DelegationProviders.isAgentPane(kind: pane.kind, provider: pane.provider) ? .later : .hold
+        case .finished: return .route(.queue)
+        case .idle: return .hold
         }
     }
 
@@ -264,14 +289,18 @@ extension DelegationCoordinator {
         }
     }
 
-    /// A follow-up as its child's run reads it.
-    static func text(of followUp: FollowUp, reportFile: String) -> String {
-        """
+    /// A follow-up as its child's run reads it. A child of an agent other
+    /// than Claude leaves its work for the app's commit.
+    static func text(of followUp: FollowUp, reportFile: String, provider: String = "claude") -> String {
+        let done = provider == "claude"
+            ? "When you are done, commit your work on your branch and write your updated report to \(reportFile)."
+            : "When you are done, write your updated report to \(reportFile). Do not commit: leave your changes, and Mighty Claude commits them on your branch when your run ends with that file changed."
+        return """
         [Mighty Claude follow-up \(followUp.id)] Your parent sent you this follow-up:
 
         \(followUp.text)
 
-        When you are done, commit your work on your branch and write your updated report to \(reportFile).
+        \(done)
         """
     }
 

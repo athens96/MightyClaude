@@ -124,7 +124,7 @@ internal static class DelegationVerification
             "claude_only", "child_cannot_delegate", "width_cap", "low_disk", "store_full", "not_git", "unborn_branch", "detached_head",
             "wider_mode", "discard_human_only", "not_reported", "tracked_changes", "head_moved", "diverged", "branch_not_checked_out",
             "child_closed", "parent_closed", "follow_up_limit", "worktree_missing", "merge_conflict", "undo_parent_moved", "parent_busy",
-            "workspace_has_children", "held_not_removable"], "the reason codes are the ontology list in order");
+            "workspace_has_children", "held_not_removable", "merge_human_only"], "the reason codes are the ontology list in order");
         SameList(Enum.GetValues<NoticeKind>().Select(DelegationNames.Of), ["reported", "ended_without_report", "failed_to_start"], "notice kinds");
         SameList(Enum.GetValues<DeliveryLane>().Select(DelegationNames.Of), ["pending", "held", "delivered"], "lanes");
         SameList(Enum.GetValues<DeliveryRoute>().Select(DelegationNames.Of), ["steer", "queue"], "routes");

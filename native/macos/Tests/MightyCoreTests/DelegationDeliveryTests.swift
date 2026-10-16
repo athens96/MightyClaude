@@ -128,14 +128,72 @@ private struct Fixture {
         func pane(_ activity: DelegationPaneActivity, kind: String = SessionKind.claude, provider: String = "claude") -> DelegationPaneState {
             DelegationPaneState(sessionId: "p", kind: kind, provider: provider, permissionMode: "auto", folder: "/tmp", runId: "p-run", activity: activity)
         }
-        #expect(DelegationCoordinator.automaticRoute(to: pane(.running)) == .steer)
-        #expect(DelegationCoordinator.automaticRoute(to: pane(.finished)) == .queue)
+        #expect(DelegationCoordinator.automaticDelivery(to: pane(.running)) == .route(.steer))
+        #expect(DelegationCoordinator.automaticDelivery(to: pane(.finished)) == .route(.queue))
+        #expect(DelegationCoordinator.automaticDelivery(to: pane(.finished, provider: "codex")) == .route(.queue))
         // Stopped, errored, or no run since this launch.
-        #expect(DelegationCoordinator.automaticRoute(to: pane(.idle)) == nil)
-        // Only a running Claude pane is steered into; a closed pane gets nothing.
-        #expect(DelegationCoordinator.automaticRoute(to: pane(.running, provider: "codex")) == nil)
-        #expect(DelegationCoordinator.automaticRoute(to: pane(.running, kind: "terminal")) == nil)
-        #expect(DelegationCoordinator.automaticRoute(to: nil) == nil)
+        #expect(DelegationCoordinator.automaticDelivery(to: pane(.idle)) == .hold)
+        #expect(DelegationCoordinator.automaticDelivery(to: pane(.idle, provider: "codex")) == .hold)
+        // Only a running Claude pane is steered into; a running Codex or Antigravity
+        // pane takes it when its run ends; a closed pane gets nothing.
+        #expect(DelegationCoordinator.automaticDelivery(to: pane(.running, provider: "codex")) == .later)
+        #expect(DelegationCoordinator.automaticDelivery(to: pane(.running, provider: "gemini")) == .later)
+        #expect(DelegationCoordinator.automaticDelivery(to: pane(.running, kind: "terminal")) == .hold)
+        #expect(DelegationCoordinator.automaticDelivery(to: nil) == .hold)
+    }
+
+    @Test func nothingReachesAChildWhoseRunEndIsNotRecordedYet() async throws {
+        let fixture = try Fixture.make(parent: .running)
+        defer { fixture.remove() }
+        // The host reported the end of c1's run: its pane looks idle after a normal finish,
+        // but the end (the app's commit of its work among it) is not recorded yet.
+        fixture.host.set("c1", .finished, runId: "r-c1")
+        fixture.coordinator.endingRuns.begin("c1")
+        let answer = await fixture.followUp("c1", "Also add tests.")
+        let followUp = try #require(answer.followUp)
+        // The follow-up waits pending; no run starts in the child's pane.
+        #expect(followUp.lane == .pending)
+        #expect(!fixture.host.handed.contains { $0.sessionId == "c1" })
+        await fixture.coordinator.deliverPending()
+        #expect(!fixture.host.handed.contains { $0.sessionId == "c1" })
+        // Once the end is recorded, the follow-up starts the child's next run.
+        await fixture.coordinator.childRunEnded("c1", runId: "r-c1", end: .finished)
+        #expect(!fixture.coordinator.endingRuns.contains("c1"))
+        let run = try #require(fixture.host.taken.first { $0.sessionId == "c1" })
+        #expect(run.route == .queue && run.input.contains("Also add tests."))
+        // The record came first: by the time the follow-up was handed over, the end was on disk.
+        #expect(run.onDisk?.children.first { $0.id == "c1" }?.runId == "r-c1" && run.onDisk?.children.first { $0.id == "c1" }?.state == .ended)
+    }
+
+    @Test func aRunningCodexParentGetsItsNoticesAsItsNextRunOrHeldWhenItsRunStops() async throws {
+        for ending in [DelegationPaneActivity.finished, .idle] {
+            let fixture = try Fixture.make(parent: nil)
+            defer { fixture.remove() }
+            fixture.host.set("parent", .running, runId: "p-run", provider: "codex")
+            let first = try await fixture.end("c1"), second = try await fixture.end("c2")
+            // A Codex run takes no steer: nothing reaches the pane and nothing is held; both wait pending, oldest first.
+            #expect(fixture.host.handed.isEmpty, "\(ending)")
+            #expect(try fixture.saved(first)?.lane == .pending && fixture.saved(second)?.lane == .pending, "\(ending)")
+            #expect(await fixture.coordinator.heldItems(for: "parent").isEmpty, "\(ending)")
+
+            // The run ends, and the app offers what is pending again.
+            fixture.host.set("parent", ending, runId: "p-run", provider: "codex")
+            await fixture.coordinator.deliverPending()
+            if ending == .finished {
+                // After a normal finish the oldest starts the next run; the newer waits for that run's end.
+                let run = try #require(fixture.host.taken.first)
+                #expect(fixture.host.taken.count == 1 && run.route == .queue && run.input == DelegationCoordinator.text(of: first))
+                #expect(try fixture.saved(first)?.lane == .delivered && fixture.saved(second)?.lane == .pending)
+                fixture.host.set("parent", .finished, runId: run.runId, provider: "codex")
+                await fixture.coordinator.deliverPending()
+                #expect(fixture.host.taken.map(\.input) == [DelegationCoordinator.text(of: first), DelegationCoordinator.text(of: second)])
+            } else {
+                // Stopped or errored: both are held for the human's next send or run next.
+                #expect(fixture.host.handed.isEmpty)
+                #expect(try fixture.saved(first)?.lane == .held && fixture.saved(second)?.lane == .held)
+                #expect(await fixture.coordinator.heldItems(for: "parent").map(\.id) == [first.id, second.id])
+            }
+        }
     }
 
     @Test func aNoticeIsSteeredIntoTheParentsRunningClaudeRunOnceAndSavedDeliveredBeforeTheRunGetsIt() async throws {

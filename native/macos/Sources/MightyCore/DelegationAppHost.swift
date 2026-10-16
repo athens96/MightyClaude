@@ -3,26 +3,29 @@ import Foundation
 /// How the app's ``DelegationHost`` makes and runs a delegated child's pane
 /// (macOS only). AppStore applies these rules; tests check them without the app.
 public enum DelegationPanes {
-    /// A new Claude pane for `pane` in the workspace `workspaceId`. Its mode is
-    /// the starting mode the parent asked for, written here once and never
-    /// copied from the last-used pane; it is linked to its parent and works in
-    /// its worktree folder. Every child of a Claude `parent` shows its
+    /// A new agent pane for `pane` in the workspace `workspaceId`, running
+    /// `pane.provider` (its parent's agent). Its mode is the starting mode the
+    /// parent asked for, written here once and never copied from the
+    /// last-used pane; it is linked to its parent and works in its worktree
+    /// folder. Every child of a `parent` running the same agent shows its
     /// requests the way the parent does: basic or Mighty, and in Mighty the
-    /// diagram, timeline or pipeline. A child the human started also takes the
-    /// parent's model, effort and Mighty style; any other runs Claude's
-    /// default in plain Mighty.
+    /// diagram, timeline or pipeline. A child the human started also takes
+    /// the parent's model and effort, and a Claude one its Mighty style; any
+    /// other runs its agent's default (plain Mighty for Claude).
     public static func childSession(_ pane: DelegationChildPane, workspaceId: String, title: String, parent: RunSession? = nil) -> RunSession {
-        var session = RunSession(id: pane.sessionId, workspaceId: workspaceId, title: title, kind: SessionKind.claude, provider: "claude",
+        var session = RunSession(id: pane.sessionId, workspaceId: workspaceId, title: title, kind: SessionKind.claude, provider: pane.provider,
                                  settings: RunSettings(permissionMode: pane.mode))
-        if let parent, DelegationSwitch.isClaudePane(kind: parent.kind, provider: parent.provider) {
+        if let parent, parent.provider == pane.provider, DelegationProviders.isAgentPane(kind: parent.kind, provider: parent.provider) {
             session.agentViewMode = parent.agentViewMode
             session.graphViewMode = parent.graphViewMode
             if pane.startedByHuman {
                 session.model = parent.model
                 session.settings.effort = parent.settings.effort
-                // The same approved bytes; its state starts over at the child's own first request.
-                session.mightyStyle = parent.mightyStyle
-                session.mightyStyleHash = parent.mightyStyleHash
+                if pane.provider == "claude" {
+                    // The same approved bytes; its state starts over at the child's own first request.
+                    session.mightyStyle = parent.mightyStyle
+                    session.mightyStyleHash = parent.mightyStyleHash
+                }
             }
         }
         session.parentSessionId = pane.parentSessionId

@@ -41,7 +41,11 @@ COPY_CAP = 64 * 1024
 TRUNCATION_MARKER = "\n\n[truncated at 64 KiB: the full file stays in the child's worktree until cleanup]\n"
 OPEN_CHILDREN_CAP = 3
 FOLLOW_UP_CAP = 2
-MODES = ["plan", "manual", "acceptEdits", "auto", "fullAccess"]
+# Every agent's modes: Claude's, and Codex's onRequest (a child runs its parent's agent).
+MODES = ["plan", "manual", "acceptEdits", "onRequest", "auto", "fullAccess"]
+# The agents of agent panes (kind claude) that take part: a record without a
+# provider is a Claude child.
+AGENTS = {"claude", "codex", "gemini"}
 STATES = ["creating", "running", "waiting", "reported", "ended", "interrupted", "merged", "failed", "closed", "discarded"]
 CLOSED_STATES = {"failed", "closed", "discarded"}
 LANES = {"pending", "held", "delivered"}
@@ -59,14 +63,14 @@ RULES = [
     ("one-layer", "no child is the parent of another child"),
     ("width-cap", "a parent has at most 3 open children its delegate made and at most 3 the human started"),
     ("follow-up-cap", "a child has at most 2 follow-ups"),
-    ("pane-links", "parent and child panes are Claude panes, and each child pane carries its parent link and works in its worktree or a folder inside it"),
+    ("pane-links", "parent and child panes are agent panes, each child pane runs its parent's agent (the one its record names) and carries its parent link and works in its worktree or a folder inside it"),
     ("one-notice-per-revision", "a notice names a child its parent's delegate made and a revision it reached, one reported notice per revision, one for each such open child's current report; a child the human started (startedByHuman) has none"),
     ("receipts", "delivered notices and follow-ups carry one receipt (time, steer or queue, run); pending and held ones none"),
     ("merge-records", "each merge record lands its child head: a fast-forward to it, or one merge commit of the old parent head and it"),
     ("merged-in-parent", "a merged child has a merge record of its reported head, and that head is in its parent branch"),
     ("unmerged-kept", "work that is not merged keeps its branch; only a closed child's merged branch may be gone"),
     ("discarded-gone", "a discarded child's branch and worktree are gone"),
-    ("parent-transcript", "each parent pane's Claude-format transcript is found"),
+    ("parent-transcript", "each Claude parent pane's Claude-format transcript is found (a Codex or Antigravity parent's is not judged)"),
     ("transcript-once", "each delivered notice id is in exactly one prompt of its parent's transcript, a held or pending one in none"),
     ("oldest-first", "a parent's delivered notices reach its transcript oldest first, by prompt and then within the prompt"),
 ]
@@ -78,6 +82,11 @@ def started_by_human(child):
     return child.get("startedByHuman") is True
 
 
+def agent_of(item):
+    """The agent CLI a pane or a child record runs: its provider, Claude when it names none."""
+    return item.get("provider") or "claude"
+
+
 class Invalid(Exception):
     pass
 
@@ -87,7 +96,7 @@ class Invalid(Exception):
 # file is not one the app wrote and is not judged.
 FIELD_TYPES = {
     "children": {"id": str, "parentSessionId": str, "state": str, "worktreePath": str, "branch": str, "parentBranch": str,
-                 "reportHead": str, "reportRevision": int, "followUpCount": int, "runId": str, "startingMode": str},
+                 "reportHead": str, "reportRevision": int, "followUpCount": int, "runId": str, "startingMode": str, "provider": str},
     "notices": {"id": str, "childId": str, "kind": str, "lane": str, "reportRevision": int, "receipt": dict},
     "followUps": {"id": str, "childId": str, "lane": str, "text": str, "receipt": dict},
     "merges": {"childId": str, "kind": str, "parentBranch": str, "childHead": str, "mergedCommit": str, "preMergeCommit": str},
@@ -198,6 +207,8 @@ class Record:
     def __init__(self, profile, repo, claude_dir):
         self.profile, self.repo, self.claude_dir = profile, repo, claude_dir
         self.failures = {name: [] for name in RULE_NAMES}
+        # What a rule could not judge, and why: never a failure, always named.
+        self.not_judged = {name: [] for name in RULE_NAMES}
         path = profile / DELEGATION_FILE
         self.file_bytes = path.stat().st_size if path.is_file() else 0
         self.file = read_json(path, "the delegation file")
@@ -236,6 +247,9 @@ class Record:
 
     def fail(self, rule, detail):
         self.failures[rule].append(detail)
+
+    def skip(self, rule, detail):
+        self.not_judged[rule].append(detail)
 
     def check(self):
         for name in RULE_NAMES:
@@ -301,14 +315,17 @@ class Record:
     def rule_pane_links(self):
         for parent in sorted({c.get("parentSessionId") for c in self.children}, key=str):
             pane = self.panes.get(parent)
-            if pane and (pane.get("kind"), pane.get("provider")) != ("claude", "claude"):
-                self.fail("pane-links", f"parent pane {parent} is not a Claude pane")
+            if pane and (pane.get("kind") != "claude" or agent_of(pane) not in AGENTS):
+                self.fail("pane-links", f"parent pane {parent} is not an agent pane")
         for child in self.children:
             pane = self.panes.get(child.get("id"))
             if not pane:
                 continue
-            if (pane.get("kind"), pane.get("provider")) != ("claude", "claude"):
-                self.fail("pane-links", f"child pane {child.get('id')} is not a Claude pane")
+            if pane.get("kind") != "claude" or agent_of(pane) not in AGENTS:
+                self.fail("pane-links", f"child pane {child.get('id')} is not an agent pane")
+            parent = self.panes.get(child.get("parentSessionId"))
+            if agent_of(pane) != agent_of(child) or (parent and agent_of(parent) != agent_of(pane)):
+                self.fail("pane-links", f"child pane {child.get('id')} runs {agent_of(pane)}, its record names {agent_of(child)} and its parent runs {agent_of(parent) if parent else 'no pane'}")
             if pane.get("parentSessionId") != child.get("parentSessionId"):
                 self.fail("pane-links", f"child pane {child.get('id')} links parent {pane.get('parentSessionId')}, not {child.get('parentSessionId')}")
             if not within(pane.get("workingFolder"), child.get("worktreePath")):
@@ -419,7 +436,14 @@ class Record:
 
     def rule_parent_transcript(self):
         self.transcripts = {}
-        for parent in sorted({c.get("parentSessionId") for c in self.children}, key=str):
+        # A Codex or Antigravity parent keeps no Claude-format transcript, so its notices are not judged there.
+        claude_parents = {c.get("parentSessionId") for c in self.children if agent_of(c) == "claude" and agent_of(self.panes.get(c.get("parentSessionId")) or {}) == "claude"}
+        for parent in sorted({c.get("parentSessionId") for c in self.children} - claude_parents, key=str):
+            agent = agent_of(self.panes.get(parent) or next(c for c in self.children if c.get("parentSessionId") == parent))
+            noticed = sum(1 for n in self.notices if self.parent_of(n) == parent)
+            for rule in ("parent-transcript", "transcript-once", "oldest-first"):
+                self.skip(rule, f"{agent} parent {parent} keeps no Claude-format transcript; its {noticed} notice(s) are not judged")
+        for parent in sorted(claude_parents, key=str):
             text = self.transcript(parent)
             if text is None:
                 self.fail("parent-transcript", f"no Claude transcript for parent pane {parent} under {self.claude_dir.name}/projects")
@@ -460,8 +484,11 @@ def main(argv=None):
     parser.add_argument("--claude-dir", required=True, type=Path, help="Claude config folder holding projects/")
     parser.add_argument("--json", action="store_true", help="print the result as JSON")
     args = parser.parse_args(argv)
+    not_judged = {}
     try:
-        failures = Record(args.profile, args.repo, args.claude_dir).check()
+        record = Record(args.profile, args.repo, args.claude_dir)
+        failures = record.check()
+        not_judged = record.not_judged
         failed = [name for name in RULE_NAMES if failures[name]]
         verdict, reason = ("failed" if failed else "passed"), None
     except Invalid as error:
@@ -475,7 +502,7 @@ def main(argv=None):
         failures, failed, verdict, reason = None, [], "invalid", f"{what} ({type(error).__name__}: {error}; {frame.name}, line {frame.lineno})"
     if args.json:
         rules = [{"rule": name, "checks": text, "result": "skipped" if failures is None else ("failed" if failures[name] else "passed"),
-                  "details": [] if failures is None else failures[name]} for name, text in RULES]
+                  "details": [] if failures is None else failures[name], "notJudged": not_judged.get(name, [])} for name, text in RULES]
         print(json.dumps({"verdict": verdict, "failed": failed, "reason": reason, "rules": rules}, indent=2))
     else:
         print(f"Delegation record: {len(RULES)} rules")
@@ -484,6 +511,8 @@ def main(argv=None):
             print(f"  {mark}  {name:<24} {text}")
             for detail in (failures or {}).get(name, []):
                 print(f"        - {detail}")
+            for detail in not_judged.get(name, []):
+                print(f"        ~ not judged: {detail}")
         print(f"Verdict: {verdict}" + (f" ({', '.join(failed)})" if failed else "") + (f": {reason}" if reason else ""))
     return {"passed": 0, "failed": 1, "invalid": 2}[verdict]
 

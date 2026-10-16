@@ -172,14 +172,22 @@ private actor Latch {
         let on = try Fixture()
         defer { on.tearDown() }
         let bytes = try on.fileBytes()
-        let codex = on.bind("codex", provider: "codex"), shell = on.bind("shell", kind: SessionKind.shell)
-        for caller in [codex, shell] {
+        // Antigravity has no delegation tools, nor has a pane that is not an agent pane.
+        let gemini = on.bind("gemini", provider: "gemini"), shell = on.bind("shell", kind: SessionKind.shell)
+        for caller in [gemini, shell] {
             for tool in DelegationToolManifest.all {
                 #expect(on.send(tool.name, Self.arguments(tool), caller) == .refusal(.claudeOnly), "\(caller.agentPaneId) \(tool.name)")
             }
         }
         let detached = on.bind("detached", delegation: false)
         #expect(on.send("discard", ["child": "child-1"], detached) == .failure(DelegationIOHandler.detachedMessage))
+        // A Codex pane passes the gates: its run without the server reaches nothing, with it the tools answer.
+        #expect(on.send("list_children", [:], on.bind("codex-detached", provider: "codex", delegation: false)) == .failure(DelegationIOHandler.detachedMessage))
+        #expect(on.send("discard", ["child": "child-1"], on.bind("codex", provider: "codex")) == .refusal(.discardHumanOnly))
+        // A Codex parent may not ask for a child that could not change files, and is told which modes it may ask for.
+        let readOnly = on.send("delegate", ["task": "Write the notes.", "mode": "manual"], on.bind("codex", provider: "codex"))
+        #expect(readOnly.error == "A Codex child in manual mode cannot change files, so it could not do the task or leave its work for a merge. Ask for one of acceptEdits, onRequest, fullAccess, no wider than your own mode.")
+        #expect(on.send("delegate", ["task": "Write the notes.", "mode": "plan"], on.bind("codex", provider: "codex")).error == "mode must be one of manual, acceptEdits, onRequest, fullAccess.")
         #expect(on.send("no_such_tool", [:], on.bind("parent")) == .failure(DelegationIOHandler.unknownToolMessage("no_such_tool")))
         #expect(try on.fileBytes() == bytes)
         #expect(off.host.calls.isEmpty && on.host.calls.isEmpty)

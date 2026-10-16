@@ -29,7 +29,10 @@ extension DelegationCoordinator {
 
     /// merge(child, expected_head) from `caller`. A child that is not the
     /// caller's is answered with an error, and one the human started from the
-    /// caller's composer is refused with `human_started`. Otherwise the merge waits for its
+    /// caller's composer is refused with `human_started`. A caller whose
+    /// agent's tool call is not gated by its CLI's permission mode (Codex)
+    /// and whose run did not start in fullAccess is refused with
+    /// `merge_human_only`: the human merges from the child's card. Otherwise the merge waits for its
     /// turn (one tool merge at a time) and runs
     /// ``ChildMerge/toolMerge(_:expectedHead:parentCheckout:)`` in the
     /// parent's checkout recorded when the child was made. Its refusal is
@@ -38,13 +41,14 @@ extension DelegationCoordinator {
     /// `diverged`) and changes nothing. A fast-forward writes its MergeRecord
     /// and moves the child to merged; should the child have moved on during
     /// the merge (its pane closed), the record is written all the same, so
-    /// the merge can be undone from its card. Whether the call needs the
-    /// human's approval first follows the parent pane's permission mode, in
-    /// the Claude CLI, before the call reaches the app.
+    /// the merge can be undone from its card. For a Claude parent, whether
+    /// the call needs the human's approval first follows its pane's
+    /// permission mode, in the Claude CLI, before the call reaches the app.
     func merge(_ id: String, expectedHead: String, caller: PaneMCPBinding) async -> DelegationResponse {
         let id = id.trimmingCharacters(in: .whitespacesAndNewlines)
         guard isChild(id, of: caller) else { return .failure(Self.notYourChildMessage(id)) }
         if isHumanStarted(id) { return .refusal(.humanStarted) }
+        guard DelegationProviders.agentMayMerge(provider: caller.provider, mode: caller.permissionMode) else { return .refusal(.mergeHumanOnly) }
         await takeMergeTurn()
         defer { passMergeTurn() }
         // Read again after the wait: an earlier merge may have taken this child.

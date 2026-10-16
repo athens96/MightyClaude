@@ -491,8 +491,8 @@ public actor ProcessRunner {
     /// Live per-pane tokens, shared with the socket server that resolves them.
     /// Memory only, revoked on pane close and on quit.
     private let paneMCPBindings: PaneMCPBindingRegistry
-    /// Whether the delegation switch is on, asked at each Claude pane's
-    /// run start: that run then also gets the delegation server. Off unless given.
+    /// Whether the delegation switch is on, asked at each Claude or Codex
+    /// pane's run start: that run then also gets the delegation server. Off unless given.
     private let delegationEnabled: @Sendable () -> Bool
     /// Panes this runner minted tokens for, so shutdown revokes only its own.
     private var boundPaneIds = Set<String>()
@@ -568,10 +568,12 @@ public actor ProcessRunner {
                 // Every Claude and Codex run gets its own MCP server with a fresh random
                 // token bound to this agent pane alone. The token rides in the CLI
                 // environment only, never in argv. While the delegation switch
-                // is on, a Claude pane's run also gets the delegation server on that token.
+                // is on, a Claude or Codex pane's run also gets the delegation server on that token
+                // (a Codex run only in acceptEdits or fullAccess, where its tools can work).
                 let paneBinding = ["claude", "codex"].contains(request.provider) ? paneMCPServer.map {
                     paneMCPBindings.bind(agentPaneId: request.sessionId, server: $0, workspaceId: workspace.id, workspacePath: workspace.path, provider: request.provider,
-                                         kind: request.kind, delegation: DelegationSwitch.isClaudePane(kind: request.kind, provider: request.provider) && delegationEnabled())
+                                         kind: request.kind, delegation: DelegationProviders.attachesDelegation(kind: request.kind, provider: request.provider, mode: request.settings.permissionMode) && delegationEnabled(),
+                                         permissionMode: request.permissionModeOverride ?? request.settings.permissionMode)
                 } : nil
                 if let paneBinding { boundPaneIds.insert(request.sessionId); environment.merge(paneBinding.environment) { _, new in new } }
                 if ["codex", "gemini"].contains(request.provider) {
