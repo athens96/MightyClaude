@@ -193,7 +193,7 @@ public sealed partial class DesktopService : IAsyncDisposable
             // A delegated child runs only in its own worktree, never in its parent's checkout (M/AppStore.swift:490-491).
             if (DelegationPanes.RunRefusal(pane) is not null) throw new InvalidOperationException(Locale.Get("run.blocked.worktreeMissing"));
             // A resumed conversation continues its checklist (task tools keep their ids).
-            request = request with { PhaseModels = PhaseModelPreferences.Normalize(snapshot.PhaseModels), TodoProgress = request.ResumeId is null ? null : pane.TodoProgress, WorkingFolder = pane.WorkingFolder };
+            request = request with { PhaseModels = PhaseModelPreferences.Normalize(snapshot.PhaseModels), TodoProgress = request.ResumeId is null ? null : pane.TodoProgress, WorkingFolder = pane.WorkingFolder, DelegationWorktreeRoot = DelegationWorktreeRoot(pane) };
             route = new();
             if (!routes.TryAdd(request.SessionId, route)) throw new InvalidOperationException(Locale.Get("run.error.alreadyRunning"));
             runId = DelegationRunBegan(pane);

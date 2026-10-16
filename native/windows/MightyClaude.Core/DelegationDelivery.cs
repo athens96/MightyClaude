@@ -76,7 +76,7 @@ public sealed partial record DelegationFile
 
     /// <summary>The follow-up as its child's pane gets it; null without the child.</summary>
     public DelegationDeliveryItem? DeliveryItem(FollowUp followUp) => Children.Find(child => child.Id == followUp.ChildId) is { } child
-        ? new(followUp.Id, DelegationDeliveryKind.FollowUp, followUp.ChildId, followUp.ChildId, DelegationCoordinator.Text(followUp, ChildWorktree.ReportFileIn(child.WorktreePath))) : null;
+        ? new(followUp.Id, DelegationDeliveryKind.FollowUp, followUp.ChildId, followUp.ChildId, DelegationCoordinator.Text(followUp, ChildWorktree.ReportFileIn(child.WorktreePath), child.Agent)) : null;
 
     /// <summary>This file with the lane and receipt of each of <paramref name="items"/> changed.</summary>
     internal DelegationFile Updating(IEnumerable<DelegationDeliveryItem> items, Func<DeliveryLane, DeliveryReceipt?, (DeliveryLane Lane, DeliveryReceipt? Receipt)> change)
@@ -106,10 +106,12 @@ public sealed partial record DelegationFile
 /// <summary>
 /// Delivery (M/DelegationDelivery.swift:92-314): each notice goes to its child's parent pane and each follow-up to its child's
 /// pane, exactly once. A new item is offered to its pane at once, by the first rule that applies:
+/// 0. The pane is a child whose run end is not recorded yet (<see cref="EndingRuns"/>): the item stays pending, and the end's record offers it again.
 /// 1. Items are held for the pane already: the item is held behind them, whatever the pane is doing, so it never reaches the pane before them.
 /// 2. The pane runs Claude now: the item is steered into that run.
-/// 3. The pane is idle after a run that finished normally since this launch, and a run can start in it now: the item starts its next run.
-/// 4. Otherwise (the pane stopped, errored, has had no run since this launch, cannot start a run now, or is closed) the item is held.
+/// 3. The pane runs another agent now, whose run takes no text: the item stays pending, and the end of that run offers it again.
+/// 4. The pane is idle after a run that finished normally since this launch, and a run can start in it now: the item starts its next run.
+/// 5. Otherwise (the pane stopped, errored, has had no run since this launch, cannot start a run now, or is closed) the item is held.
 /// Only the human's next send or run next releases held items, all of the pane's together, oldest first, in one run. A closed
 /// parent's held notices stay on its children's cards. Before a pane gets an item, the item is saved delivered with its
 /// receipt, so it is never handed over twice; should the pane not take it after all, it goes back as it was. Should the pane
@@ -183,16 +185,21 @@ public sealed partial class DelegationCoordinator
     {
         for (var offer = 0; offer < DeliveryOffers; offer++)
         {
-            if (LookUp(id, kind, DeliveryLane.Pending) is not { } found) return;
+            if (LookUp(id, kind, DeliveryLane.Pending) is not { } found || EndingRuns.Contains(found.SessionId)) return;
             var pane = await Host(() => host.PaneState(found.SessionId));
             var context = await PruneContext();
             // Nothing below suspends until the item's lane is saved, so nothing else moves it meanwhile.
             if (LookUp(id, kind, DeliveryLane.Pending) is not { } item) return;
             // Behind items already held for the pane it is held too, so the human's next send or run next releases them all, oldest first.
-            if (Items(item.SessionId, DeliveryLane.Held).Count > 0 || AutomaticRoute(pane) is not { } route)
+            DeliveryRoute route;
+            switch (Items(item.SessionId, DeliveryLane.Held).Count > 0 ? new AutomaticDelivery.Hold() : Automatic(pane))
             {
-                KeepMoving([item], DeliveryLane.Held, null, context);
-                return;
+                case AutomaticDelivery.Route chosen: route = chosen.Way; break;
+                // A run that takes no text: its end offers the item again.
+                case AutomaticDelivery.Later: return;
+                default:
+                    KeepMoving([item], DeliveryLane.Held, null, context);
+                    return;
             }
             // A card's merge or undo is changing the pane's checkout: no run starts there now, and the item is offered again once it is over.
             if (route == DeliveryRoute.Queue && cardPanes.Contains(item.SessionId)) return;
@@ -215,7 +222,7 @@ public sealed partial class DelegationCoordinator
     {
         if (Items(sessionId, DeliveryLane.Held).Count == 0) return new DelegationRelease.NothingHeld();
         if (await Host(() => host.PaneState(sessionId)) is not { } pane) return new DelegationRelease.NotStarted();
-        var steers = text is null && pane.Activity == DelegationPaneActivity.Running && DelegationSwitch.IsClaudePane(pane.Kind, pane.Provider);
+        var steers = text is null && pane.Activity == DelegationPaneActivity.Running && DelegationProviders.CanSteer(pane.Kind, pane.Provider);
         var context = await PruneContext();
         // Nothing below suspends until the release is saved, so two sends at once never take the same item.
         var held = Items(sessionId, DeliveryLane.Held);
@@ -240,15 +247,30 @@ public sealed partial class DelegationCoordinator
         foreach (var childId in items.Where(item => item.Kind == DelegationDeliveryKind.FollowUp).Select(item => item.ChildId).Distinct().ToList()) await AwaitRun(runId, childId);
     }
 
-    /// <summary>
-    /// How an item reaches <paramref name="pane"/> with no human: steered into its running Claude run, or as the next run of a
-    /// pane idle after a run that finished normally since this launch. null when it is held.
-    /// </summary>
-    public static DeliveryRoute? AutomaticRoute(DelegationPaneState? pane) => pane is null ? null : pane.Activity switch
+    /// <summary>How an item reaches a pane with no human (M/DelegationDelivery.swift AutomaticDelivery).</summary>
+    public abstract record AutomaticDelivery
     {
-        DelegationPaneActivity.Running => DelegationSwitch.IsClaudePane(pane.Kind, pane.Provider) ? DeliveryRoute.Steer : null,
-        DelegationPaneActivity.Finished => DeliveryRoute.Queue,
-        _ => null,
+        /// <summary>Steered into its running Claude run, or as its next run.</summary>
+        public sealed record Route(DeliveryRoute Way) : AutomaticDelivery;
+        /// <summary>
+        /// Not now: the pane runs an agent whose run takes no text. The item stays pending, and the run's end offers it again: as
+        /// the pane's next run after a normal finish, held otherwise.
+        /// </summary>
+        public sealed record Later : AutomaticDelivery;
+        /// <summary>Held until the human's next send or run next.</summary>
+        public sealed record Hold : AutomaticDelivery;
+    }
+
+    /// <summary>
+    /// How an item reaches <paramref name="pane"/> with no human: steered into its running Claude run, later for any other
+    /// running agent, or as the next run of a pane idle after a run that finished normally since this launch. Held otherwise.
+    /// </summary>
+    public static AutomaticDelivery Automatic(DelegationPaneState? pane) => pane?.Activity switch
+    {
+        DelegationPaneActivity.Running when DelegationProviders.CanSteer(pane.Kind, pane.Provider) => new AutomaticDelivery.Route(DeliveryRoute.Steer),
+        DelegationPaneActivity.Running when DelegationProviders.IsAgentPane(pane.Kind, pane.Provider) => new AutomaticDelivery.Later(),
+        DelegationPaneActivity.Finished => new AutomaticDelivery.Route(DeliveryRoute.Queue),
+        _ => new AutomaticDelivery.Hold(),
     };
 
     /// <summary>A notice as its parent's run reads it: a pointer naming the notice and the child. The report itself is read through child_status.</summary>
@@ -263,9 +285,14 @@ public sealed partial class DelegationCoordinator
         };
     }
 
-    /// <summary>A follow-up as its child's run reads it.</summary>
-    public static string Text(FollowUp followUp, string reportFile) =>
-        $"[Mighty Claude follow-up {followUp.Id}] Your parent sent you this follow-up:\n\n{followUp.Text}\n\nWhen you are done, commit your work on your branch and write your updated report to {reportFile}.";
+    /// <summary>A follow-up as its child's run reads it. A child of an agent other than Claude leaves its work for the app's commit.</summary>
+    public static string Text(FollowUp followUp, string reportFile, string provider = "claude")
+    {
+        var done = provider == "claude"
+            ? $"When you are done, commit your work on your branch and write your updated report to {reportFile}."
+            : $"When you are done, write your updated report to {reportFile}. Do not commit: leave your changes, and Mighty Claude commits them on your branch when your run ends with that file changed.";
+        return $"[Mighty Claude follow-up {followUp.Id}] Your parent sent you this follow-up:\n\n{followUp.Text}\n\n{done}";
+    }
 
     /// <summary>The items for the pane <paramref name="sessionId"/> in <paramref name="lane"/>, oldest first.</summary>
     private IReadOnlyList<DelegationDeliveryItem> Items(string sessionId, DeliveryLane lane) => File.Items(lane).Where(item => item.SessionId == sessionId).ToList();

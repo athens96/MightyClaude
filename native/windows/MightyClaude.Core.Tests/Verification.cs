@@ -395,7 +395,7 @@ internal static class Verification
         await Test("delegation: TASK and REPORT copies are cut at 64 KiB as stored", DelegationVerification.CopiesAreCutAt64KiB);
         await Test("delegation: pruning goes oldest first and keeps what it must", DelegationVerification.PruningGoesOldestFirstAndKeepsWhatItMust);
         await Test("delegation: a new child needs room, and saving near the cap prunes", DelegationVerification.ANewChildNeedsRoomAndSavingNearTheCapPrunes);
-        await Test("delegation: the hidden switch, the gates and the six tools", DelegationVerification.SwitchGatesAndTheSixTools);
+        await Test("delegation: the switch, the gates and the six tools", DelegationVerification.SwitchGatesAndTheSixTools);
         await Test("delegation: the sidebar tree, rows and card actions", DelegationVerification.SidebarTreeRowsAndCards);
         await Test("delegation: child panes, the run ledger and the pane's snapshot keys", DelegationVerification.PanesLedgerAndSnapshotKeys);
         await Test("delegation: worktrees are made beside the checkout, on a flat branch, with ignored notes", DelegationGitVerification.WorktreesAreMadeBesideTheCheckout);
@@ -427,6 +427,13 @@ internal static class Verification
         await Test("delegation: the window says each state, action and answer in the app's language", DelegationAppVerification.TheWindowSaysEachStateActionAndAnswerInTheAppsLanguage);
         await Test("delegation: a host that throws is a host that did not take the call", DelegationAppVerification.AHostThatThrowsIsAHostThatDidNotTakeTheCall);
         await Test("delegation: git ends on its deadline, and reports and the file read the Windows way", DelegationAppVerification.GitEndsOnItsDeadlineAndReadsTheWindowsWay);
+        await Test("delegation: the second send opens a worktree only where a child can work", DelegationHumanChildVerification.TheSecondSendChoosesAWorktreeOnlyWhereAChildCanWork);
+        await Test("delegation: each agent has its modes, its words and its way to commit", DelegationHumanChildVerification.EachAgentHasItsModesAndItsWayToCommit);
+        await Test("delegation: records and panes carry the human's mark and the parent's agent", DelegationHumanChildVerification.RecordsAndPanesCarryTheMarkAndTheParentsAgent);
+        await Test("delegation: the human's send makes a child that never notifies its parent", DelegationHumanChildVerification.TheSendMakesAChildThatNeverNotifiesItsParent);
+        await Test("delegation: the parent's tools and caps leave the human's child alone", DelegationHumanChildVerification.TheParentsToolsAndCapsLeaveTheHumansChildAlone);
+        await Test("delegation: the app commits a Codex or Antigravity child's work", DelegationHumanChildVerification.TheAppCommitsACodexOrAntigravityChildsWork);
+        await Test("delegation: a card merge that conflicts asks the child once per report", DelegationHumanChildVerification.ACardMergeThatConflictsAsksTheChildOncePerReport);
         await Test("delegation scenario S1: two children, a human's approval, a fast-forward and a discard", DelegationScenarioVerification.S1);
         await Test("delegation scenario S2: held notices released together by a send or run next after a relaunch", DelegationScenarioVerification.S2);
         await Test("delegation scenario S3: a diverged child's held follow-ups reach it once after a relaunch", DelegationScenarioVerification.S3);

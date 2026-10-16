@@ -14,6 +14,10 @@ public abstract record DelegationCardResult
     public sealed record Failed(string Message) : DelegationCardResult;
     /// <summary>More worktrees are nested in the child's than its discard's confirmation named: nothing was removed, and it asks again with these.</summary>
     public sealed record Reconfirm(IReadOnlyList<string> Nested) : DelegationCardResult;
+    /// <summary>The merge was refused with <c>merge_conflict</c>, and the child's pane was asked to resolve the conflict and report again.</summary>
+    public sealed record ConflictSent : DelegationCardResult;
+    /// <summary>The merge was refused with <c>merge_conflict</c>, and the child's pane took the request to resolve it but did not start it.</summary>
+    public sealed record ConflictNotStarted : DelegationCardResult;
 }
 
 /// <summary>The last answer a child's card got, shown on the card until its next action (M/AppStore+Delegation.swift:4-21).</summary>
@@ -36,7 +40,7 @@ public sealed record PendingChildDiscard(string Id, string Title, string Branch,
 public sealed record PendingParentClose(string Id, string Title, int OpenChildren);
 
 /// <summary>
-/// The app side of parent → child delegation between Claude panes (M/AppStore+Delegation.swift:47-51): the service is the
+/// The app side of parent → child delegation between agent panes (M/AppStore+Delegation.swift:47-51): the service is the
 /// coordinator's <see cref="IDelegationHost"/>. The coordinator owns the records, the tools, delivery and the git actions; the
 /// service only makes panes, starts and steers runs and reports what its panes do.
 /// </summary>
@@ -57,6 +61,18 @@ public sealed partial class DesktopService : IDelegationHost
     /// <summary>Child panes' run starts and ends on their way to <see cref="delegation"/>, in order.</summary>
     private DelegationRunEventPump? delegationRunEvents;
     private Task delegationWatch = Task.CompletedTask;
+    /// <summary>
+    /// Whether each folder a top-level agent pane runs in can host a child worktree (<see cref="ChildWorktreeCheck.CanHostWorktree"/>),
+    /// as last checked; a folder not checked yet reads as no, so Ctrl+Enter never promises one there.
+    /// </summary>
+    private readonly Dictionary<string, bool> worktreeReadiness = [];
+    /// <summary>The folders whose readiness check is going.</summary>
+    private readonly HashSet<string> worktreeReadinessChecks = [];
+    /// <summary>
+    /// The app's note that follows a slash command a child the human started ran first, by child id: it starts as the child's
+    /// next request once that run's end is recorded after a normal finish, and is dropped after any other end.
+    /// </summary>
+    private readonly Dictionary<string, string> followingNotes = [];
 
     /// <summary>
     /// Delegation's records, tools, delivery and git actions. Made at launch from the profile's delegation file whether or not
@@ -69,6 +85,8 @@ public sealed partial class DesktopService : IDelegationHost
     /// pane was made. Always raised later, on a thread-pool thread, never on the caller's; what a handler throws goes no further.
     /// </summary>
     public event Action? DelegationChanged;
+    /// <summary>Delegation said something in a pane's transcript (the app's commit of a child's work, among others): the pane with this id. Raised on a thread-pool thread.</summary>
+    public event Action<string>? DelegationNoted;
     /// <summary>
     /// Set by the window: ends the pane's agent terminal and everything it started, and returns once they have exited. A child's
     /// discard and its close's cleanup wait for it before they look for links in its worktree. Called on thread-pool threads.
@@ -95,7 +113,14 @@ public sealed partial class DesktopService : IDelegationHost
         // the app starts without it (M/AppStore+Delegation.swift:77-79).
         try { DelegationGit.UseProfile(store.DirectoryPath); coordinator = new(new DelegationFileStore(store.DirectoryPath), this, worktrees, delegationEnabled); }
         catch (Exception ex) when (ex is not OutOfMemoryException) { return; }
-        delegation = coordinator; delegationRunEvents = new(coordinator); local.DelegationHandler = coordinator;
+        delegation = coordinator; local.DelegationHandler = coordinator;
+        // A child's end is recorded (the app's commit of its work among it) before its queue or delivery may start its next run.
+        delegationRunEvents = new(change => change switch
+        {
+            DelegationRunEvent.Started started => coordinator.ChildRunStarted(started.ChildId, started.RunId),
+            DelegationRunEvent.Ended ended => ChildRunEndRecorded(coordinator, ended),
+            _ => Task.CompletedTask,
+        });
         // The sidebar's tree and the held rows of each pane's queued list follow the file, switch on or off.
         delegationWatch = Task.WhenAll(Watch(coordinator.ChildRows), Watch(coordinator.HeldRows));
     }
@@ -147,15 +172,33 @@ public sealed partial class DesktopService : IDelegationHost
     }
 
     /// <summary>
-    /// A run of the pane ended with <paramref name="status"/>, under <see cref="sync"/> (M/AppStore+Delegation.swift:82-92). A
-    /// child's end reaches the coordinator after its start; while the app quits it counts as killed by quitting. False when no
-    /// run of this launch was going there.
+    /// A run of the pane ended with <paramref name="status"/>, under <see cref="sync"/> (M/AppStore+Delegation.swift:82-108). A
+    /// child's end reaches the coordinator after its start; while the app quits it counts as killed by quitting. Until it is
+    /// recorded the child is marked ending, so its queue and delivery start nothing there. False when no run of this launch was
+    /// going there.
     /// </summary>
     private bool DelegationRunEnded(string sessionId, string status)
     {
         if (delegationRuns.End(sessionId, status, closing) is not { } ended) return false;
-        if (childRuns.Remove(sessionId)) delegationRunEvents?.Send(new DelegationRunEvent.Ended(sessionId, ended.RunId, ended.End));
+        if (childRuns.Remove(sessionId) && delegationRunEvents is { } events)
+        {
+            delegation?.EndingRuns.Begin(sessionId);
+            events.Send(new DelegationRunEvent.Ended(sessionId, ended.RunId, ended.End));
+        }
         return true;
+    }
+
+    /// <summary>
+    /// Records the end of a child's run, and then what waited on it: the note that follows a slash command the human's child ran
+    /// first, after a normal finish. The window's queue of the child, which waits while the end is recorded, runs on its own.
+    /// </summary>
+    private async Task ChildRunEndRecorded(DelegationCoordinator coordinator, DelegationRunEvent.Ended ended)
+    {
+        await coordinator.ChildRunEnded(ended.ChildId, ended.RunId, ended.End);
+        RaiseDelegationChanged();
+        string? note;
+        lock (sync) note = followingNotes.Remove(ended.ChildId, out var waiting) && ended.End == ChildRunEnd.Finished && !closing && !coordinator.EndingRuns.Contains(ended.ChildId) ? waiting : null;
+        if (note is not null) await StartDelegatedRun(ended.ChildId, note);
     }
 
     /// <summary>Has delegation offer its pending notices and follow-ups to their panes as they are now: a running Claude run takes them by steer.</summary>
@@ -164,8 +207,10 @@ public sealed partial class DesktopService : IDelegationHost
     // The coordinator's host (M/AppStore+Delegation.swift:318-386).
 
     /// <summary>
-    /// The child's Claude pane, as a tab beside its parent: in the mode the parent asked for, never the last-used pane's, linked
-    /// to its parent and working in its worktree folder. The link is saved before its first run.
+    /// The child's pane of its parent's agent, as a tab beside its parent: in the mode the parent asked for, never the last-used
+    /// pane's, linked to its parent and working in its worktree folder. The link is saved before its first run. It shows its
+    /// requests in its parent's view; a child the human started takes its parent's model and Mighty style and is selected,
+    /// unless the human has moved on or is typing in the parent (<see cref="DelegationPanes.AddingChild"/>).
     /// </summary>
     async Task<bool> IDelegationHost.CreatePane(DelegationChildPane pane)
     {
@@ -188,13 +233,13 @@ public sealed partial class DesktopService : IDelegationHost
     /// null when the pane cannot run now (a child without its worktree among them) or its start failed or was stopped, so what
     /// it carried is not lost. Its words are delegation's, so they never title the pane.
     /// </summary>
-    private async Task<string?> StartDelegatedRun(string sessionId, string input)
+    private async Task<string?> StartDelegatedRun(string sessionId, string input, IReadOnlyList<RunAttachment>? attachments = null)
     {
         RunSession? pane; lock (sync) pane = closing ? null : snapshot.Sessions.FirstOrDefault(s => s.Id == sessionId);
-        if (pane is null || DelegatedRunBlocked?.Invoke(pane) is not null) return null;
+        if (pane is null || delegation?.EndingRuns.Contains(sessionId) == true || DelegatedRunBlocked?.Invoke(pane) is not null) return null;
         try
         {
-            var request = new StartRunRequest(pane.Id, pane.WorkspaceId, pane.Kind, input, [], pane.Model, pane.Provider, pane.Settings, pane.ResumeId);
+            var request = new StartRunRequest(pane.Id, pane.WorkspaceId, pane.Kind, input, [], pane.Model, pane.Provider, pane.Settings, pane.ResumeId, attachments);
             if (DelegatedRunRequest is { } finish) request = await finish(request);
             return await Launch(request, "", true);
         }
@@ -206,7 +251,7 @@ public sealed partial class DesktopService : IDelegationHost
     {
         if (route == DeliveryRoute.Queue) return await StartDelegatedRun(sessionId, input);
         bool steerable;
-        lock (sync) steerable = !closing && snapshot.Sessions.Any(s => s.Id == sessionId && s.Status == "running" && DelegationSwitch.IsClaudePane(s.Kind, s.Provider)) && delegationRuns.RunId(sessionId) is not null;
+        lock (sync) steerable = !closing && snapshot.Sessions.Any(s => s.Id == sessionId && s.Status == "running" && DelegationProviders.CanSteer(s.Kind, s.Provider)) && delegationRuns.RunId(sessionId) is not null;
         if (!steerable || !await TrySteerAsync(sessionId, input)) return null;
         // The receipt names the run that took it, read once it has.
         lock (sync) return delegationRuns.RunId(sessionId);
@@ -236,6 +281,20 @@ public sealed partial class DesktopService : IDelegationHost
         catch (ArgumentException) { return false; }
     }
 
+    /// <summary>The app's note in the pane's transcript, as a system line. Does nothing for a closed pane.</summary>
+    async Task IDelegationHost.Note(string text, string sessionId)
+    {
+        Task save;
+        lock (sync)
+        {
+            if (closing || snapshot.Sessions.All(s => s.Id != sessionId)) return;
+            snapshot = StateStore.Normalize(snapshot with { Sessions = snapshot.Sessions.Select(s => s.Id == sessionId ? s with { Logs = [.. s.Logs, new LogEntry(Wire.Id(), "system", text, Wire.Now(), s.Provider)] } : s).ToList() }, false);
+            save = QueueSave();
+        }
+        if (DelegationNoted is { } noted) ThreadPool.QueueUserWorkItem(_ => { try { noted(sessionId); } catch (Exception ex) when (ex is not OutOfMemoryException) { } });
+        try { await save; } catch (Exception ex) when (ex is not OutOfMemoryException) { }
+    }
+
     /// <summary>A discard's stop: the child's run and then its agent terminal, each ended before the discard looks at its worktree.</summary>
     async Task IDelegationHost.StopRun(string sessionId) { await StopAndWait(sessionId); await EndTerminal(sessionId); }
 
@@ -256,6 +315,74 @@ public sealed partial class DesktopService : IDelegationHost
     {
         if (EndAgentTerminal is not { } end) return;
         try { await end(sessionId); } catch (Exception ex) when (ex is not OutOfMemoryException) { }
+    }
+
+    // The composer's new worktree (M/AppStore+Delegation.swift:225-340).
+
+    /// <summary>The folder a top-level agent pane's runs work in, where its children's worktrees branch from; null for a pane without its workspace.</summary>
+    private string? WorktreeHostFolder(RunSession session)
+    {
+        lock (sync) return snapshot.Workspaces.FirstOrDefault(w => w.Id == session.WorkspaceId) is { } workspace ? DelegationPanes.RunWorkspace(session, workspace).Path : null;
+    }
+
+    /// <summary>A delegated child's worktree when its runs work in a folder inside it, for a Codex or Antigravity run to write REPORT.md there; null for any other pane.</summary>
+    private string? DelegationWorktreeRoot(RunSession pane) =>
+        pane.ParentSessionId is not null && pane.Provider is "codex" or "gemini" && pane.WorkingFolder is { } folder && delegation?.Worktrees.WorktreePath(pane.Id) is { } root
+        && folder != root && folder.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal) ? root : null;
+
+    /// <summary>
+    /// What the composer's second send (Ctrl+Enter) does with the text while the pane is busy: a new child worktree for a Claude,
+    /// Codex or Antigravity pane that may have children (delegation on and loaded, its folder last checked able to host one),
+    /// otherwise steer or queue as before (<see cref="ComposerSecondSends.Choose"/>).
+    /// </summary>
+    public ComposerSecondSend SecondSend(RunSession session)
+    {
+        var folder = WorktreeHostFolder(session); bool ready; lock (sync) ready = folder is not null && worktreeReadiness.GetValueOrDefault(folder);
+        return ComposerSecondSends.Choose(session.Kind, session.Provider, session.Settings.PermissionMode,
+            session.ParentSessionId is not null || DelegationChildren.Any(child => child.Id == session.Id), delegation is not null && delegationEnabled(), ready, DelegationProviders.CanSteer(session.Kind, session.Provider));
+    }
+
+    /// <summary>
+    /// Checks again whether <paramref name="session"/>'s folder can host a child worktree, for <see cref="SecondSend"/>: a
+    /// top-level Claude, Codex or Antigravity pane whose child could change files, with delegation on. One check per folder at a
+    /// time; a changed answer raises <see cref="DelegationChanged"/>.
+    /// </summary>
+    public void RefreshWorktreeReadiness(RunSession session)
+    {
+        if (delegation is not { } coordinator || session.ParentSessionId is not null || !DelegationProviders.CanParentByHuman(session.Kind, session.Provider, session.Settings.PermissionMode)
+            || WorktreeHostFolder(session) is not { } folder || !delegationEnabled()) return;
+        lock (sync) if (!worktreeReadinessChecks.Add(folder)) return;
+        _ = Task.Run(async () =>
+        {
+            bool ready;
+            try { ready = (await coordinator.Worktrees.Check(folder)).CanHostWorktree; }
+            catch (Exception ex) when (ex is not OutOfMemoryException) { ready = false; }
+            bool changed;
+            lock (sync) { worktreeReadinessChecks.Remove(folder); changed = worktreeReadiness.GetValueOrDefault(folder) != ready || !worktreeReadiness.ContainsKey(folder); worktreeReadiness[folder] = ready; }
+            if (changed) RaiseDelegationChanged();
+        });
+    }
+
+    /// <summary>
+    /// The composer's second send on the busy agent pane <paramref name="parentId"/> (<see cref="ComposerSecondSend.Worktree"/>):
+    /// <paramref name="text"/> and its attachments run now in a new child pane, in its own worktree beside the pane, made by
+    /// delegation as delegate makes one, in plan mode when <paramref name="planFirst"/> (the pane's style starts every request
+    /// so). The pane's run goes on undisturbed, and the new child shows at once. What delegation answered; when the child's
+    /// worktree, pane or first run could not be made after the answer, <paramref name="failed"/> hears it with the child's id
+    /// (the child stays listed as failed to start), and the text needs another way.
+    /// </summary>
+    public async Task<HumanChildStart> StartHumanChildAsync(string parentId, string text, IReadOnlyList<RunAttachment> attachments, bool planFirst, Func<string, Task> failed)
+    {
+        if (delegation is not { } coordinator) return new HumanChildStart.Failed(Locale.Get("delegation.human.error.switchedOff"));
+        var starter = new HumanChildStarter(async (childId, run) =>
+        {
+            // Kept before the run starts, so a command that ends at once still finds its note.
+            if (run.FollowingNote is { } note) lock (sync) followingNotes[childId] = note;
+            var runId = await StartDelegatedRun(childId, run.Input, attachments);
+            if (runId is null) lock (sync) followingNotes.Remove(childId);
+            return runId;
+        }, failed);
+        return await coordinator.StartHumanChild(text, parentId, starter, planFirst);
     }
 
     // What the window calls and draws.
@@ -375,15 +502,71 @@ public sealed partial class DesktopService : IDelegationHost
     /// <summary>Whether an action of the child's card is going: its buttons wait.</summary>
     public bool IsCardBusy(string id) { lock (sync) return cardBusy.Contains(id); }
 
-    /// <summary>The human's merge from the child's card. Its answer, kept for the card; null when an action of this card is going.</summary>
-    public Task<DelegationCardNote?> MergeChildAsync(string id) => CardAction(id, DelegationCardAction.Merge, async coordinator => await coordinator.MergeFromCard(id) switch
+    /// <summary>
+    /// The human's merge from the child's card. Its answer, kept for the card; null when an action of this card is going. Once it
+    /// went through, the window offers to discard the child right away (<see cref="MergedDiscardOffer"/>). When it conflicts, the
+    /// child's pane is asked once per report to bring the parent branch in, resolve the conflict and report again.
+    /// </summary>
+    public async Task<DelegationCardNote?> MergeChildAsync(string id)
     {
-        ChildMergeOutcome.Merged => new DelegationCardResult.Done(),
-        ChildMergeOutcome.MergedUnsaved unsaved => new DelegationCardResult.DoneUnsaved(unsaved.Reason),
-        ChildMergeOutcome.Refused refused => new DelegationCardResult.Refused(refused.Reason),
-        ChildMergeOutcome.Failed failed => new DelegationCardResult.Failed(failed.Message),
-        _ => throw new InvalidOperationException(),
-    });
+        var note = await CardAction(id, DelegationCardAction.Merge, async coordinator => await coordinator.MergeFromCard(id) switch
+        {
+            ChildMergeOutcome.Merged => new DelegationCardResult.Done(),
+            ChildMergeOutcome.MergedUnsaved unsaved => new DelegationCardResult.DoneUnsaved(unsaved.Reason),
+            ChildMergeOutcome.Refused refused => new DelegationCardResult.Refused(refused.Reason),
+            ChildMergeOutcome.Failed failed => new DelegationCardResult.Failed(failed.Message),
+            _ => throw new InvalidOperationException(),
+        });
+        return note?.Result is DelegationCardResult.Refused { Reason: DelegationReasonCode.MergeConflict } ? await AskChildToResolveConflict(id, note) : note;
+    }
+
+    /// <summary>
+    /// Starts the request for the child <paramref name="id"/> to resolve its conflict with the parent branch as its pane's next
+    /// run, once per report (<see cref="DelegationCoordinator.ConflictResolution"/>), and the card says so
+    /// (M/AppStore+Delegation.swift askChildToResolveConflict). A pane that would refuse the start now (busy, a CLI update, its
+    /// worktree gone…) is not asked: the refusal stays on the card and the next merge that conflicts asks again. A child that
+    /// cannot commit in its permission mode now (a Codex or Antigravity child outside fullAccess) cannot merge either, so it is
+    /// not asked. A start that did not happen gives the request back, and the card says it did not start.
+    /// </summary>
+    private async Task<DelegationCardNote> AskChildToResolveConflict(string id, DelegationCardNote refused)
+    {
+        RunSession? pane;
+        lock (sync)
+        {
+            pane = closing || cardBusy.Contains(id) || routes.ContainsKey(id) ? null : snapshot.Sessions.FirstOrDefault(s => s.Id == id && s.Status != "running");
+            if (pane is null || !DelegationProviders.CanCommit(pane.Provider, pane.Settings.PermissionMode) || DelegationPanes.RunRefusal(pane) is not null) return refused;
+            cardBusy.Add(id);
+        }
+        DelegationCardNote? said = null;
+        try
+        {
+            if (DelegatedRunBlocked?.Invoke(pane) is not null || delegation is not { } coordinator || await coordinator.ConflictResolution(id) is not { } text) return refused;
+            if (await StartDelegatedRun(id, text) is null)
+            {
+                await coordinator.ConflictResolutionNotStarted(id);
+                said = new(DelegationCardAction.Merge, new DelegationCardResult.ConflictNotStarted());
+            }
+            else said = new(DelegationCardAction.Merge, new DelegationCardResult.ConflictSent());
+            return said;
+        }
+        finally
+        {
+            lock (sync) { cardBusy.Remove(id); if (said is not null && cardNotes.GetValueOrDefault(id) == refused) cardNotes[id] = said; }
+            RaiseDelegationChanged();
+        }
+    }
+
+    /// <summary>
+    /// After a merge from the child's card went through: the offer to discard the child now, naming the worktrees nested in its
+    /// own (its work stays in the parent's branch; only its worktree, its branch and the undo go). null, offering nothing, when
+    /// those cannot be listed (the card's own discard says why) or the child is not listed.
+    /// </summary>
+    public async Task<PendingChildDiscard?> MergedDiscardOffer(string id)
+    {
+        if (delegation is not { } coordinator || DelegationChildren.FirstOrDefault(child => child.Id == id) is not { } row) return null;
+        string? title; lock (sync) title = snapshot.Sessions.FirstOrDefault(s => s.Id == id)?.Title;
+        return await coordinator.NestedWorktrees(id) is { } nested ? new(id, title ?? row.Task ?? Locale.Get("delegation.child.untitled"), ChildRecord.BranchName(id), nested) : null;
+    }
 
     /// <summary>The human's undo of the child's last merge from its card.</summary>
     public Task<DelegationCardNote?> UndoChildMergeAsync(string id) => CardAction(id, DelegationCardAction.Undo, async coordinator => await coordinator.UndoMergeFromCard(id) switch

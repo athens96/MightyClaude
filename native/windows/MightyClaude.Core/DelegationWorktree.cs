@@ -33,6 +33,13 @@ public abstract record ChildWorktreeCheck
     public sealed record Ready(ChildWorktreeBase Base) : ChildWorktreeCheck;
     /// <summary>Refused before anything was made.</summary>
     public sealed record Refused(DelegationReasonCode Reason) : ChildWorktreeCheck;
+
+    /// <summary>
+    /// Whether the folder is a checkout that can host a child worktree: a repository with a branch checked out that has a
+    /// commit (M/DelegationWorktree.swift:46-55). Free disk changes from minute to minute, so a low disk still counts as one;
+    /// the child's own check refuses it then.
+    /// </summary>
+    public bool CanHostWorktree => this is Ready or Refused { Reason: DelegationReasonCode.LowDisk };
 }
 
 public abstract record ChildWorktreeOutcome
@@ -183,8 +190,11 @@ public static class DelegationGit
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { return false; }
     }
 
-    /// <summary>null when git is missing, could not start, wrote more than 1 MiB or did not finish in time, or the hooks folder is not empty.</summary>
-    public static async Task<GitResult?> Run(IReadOnlyList<string> arguments, string directory, double timeout = 10)
+    /// <summary>
+    /// null when git is missing, could not start, wrote more than 1 MiB or did not finish in time, or the hooks folder is not
+    /// empty. <paramref name="input"/> is written to git's standard input before it is closed.
+    /// </summary>
+    public static async Task<GitResult?> Run(IReadOnlyList<string> arguments, string directory, double timeout = 10, string? input = null)
     {
         if (Executable is not { } executable || !HooksEmpty()) return null;
         try
@@ -193,7 +203,9 @@ public static class DelegationGit
             var info = ChildProcess.StartInfo(executable, [.. settings, .. arguments], directory);
             foreach (var key in info.Environment.Keys.Where(key => key.StartsWith("GIT_", StringComparison.OrdinalIgnoreCase)).ToArray()) info.Environment.Remove(key);
             info.Environment["GIT_OPTIONAL_LOCKS"] = "0"; info.Environment["GIT_TERMINAL_PROMPT"] = "0"; info.Environment["LC_ALL"] = "C";
-            await using var process = ChildProcess.Start(info); process.Input.Close();
+            await using var process = ChildProcess.Start(info);
+            if (input is not null) { await process.Input.WriteAsync(input).ConfigureAwait(false); await process.Input.FlushAsync().ConfigureAwait(false); }
+            process.Input.Close();
             using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(Math.Max(0.01, timeout)));
             // A process git started can keep its output open after git exits: the deadline ends the whole job, so the reads end too.
             using var kill = deadline.Token.Register(process.Kill);

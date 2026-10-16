@@ -18,6 +18,7 @@ internal sealed class DelegationTestHost(DelegationFileStore? store = null, stri
     private readonly List<DelegationChildPane> created = [];
     private readonly List<(string SessionId, string Input)> firstRuns = [];
     private readonly List<string> stops = [], calls = [];
+    private readonly List<(string SessionId, string Text)> notes = [];
     private readonly Queue<DelegationPaneActivity?> refusals = new();
     private int started;
     /// <summary>Names a child's first run; null hands a started run over as a pane takes any input.</summary>
@@ -36,6 +37,8 @@ internal sealed class DelegationTestHost(DelegationFileStore? store = null, stri
     internal List<(string SessionId, string Input)> StartedRuns { get { lock (gate) return [.. firstRuns]; } }
     internal List<string> Stops { get { lock (gate) return [.. stops]; } }
     internal List<string> Calls { get { lock (gate) return [.. calls]; } }
+    /// <summary>The app's notes in panes' transcripts, in order.</summary>
+    internal List<(string SessionId, string Text)> Notes { get { lock (gate) return [.. notes]; } }
 
     internal void Set(DelegationPaneState pane) { lock (gate) panes[pane.SessionId] = pane; }
     internal void Set(string sessionId, DelegationPaneActivity activity, string? runId = null, string provider = "claude", string? folder = null) =>
@@ -52,7 +55,7 @@ internal sealed class DelegationTestHost(DelegationFileStore? store = null, stri
         lock (gate)
         {
             if (!MakesPanes || PaneFails) return false;
-            panes[pane.SessionId] = new(pane.SessionId, pane.Mode, pane.Folder, ParentSessionId: pane.ParentSessionId);
+            panes[pane.SessionId] = new(pane.SessionId, pane.Mode, pane.Folder, Provider: pane.Provider, ParentSessionId: pane.ParentSessionId);
             return true;
         }
     }
@@ -78,6 +81,12 @@ internal sealed class DelegationTestHost(DelegationFileStore? store = null, stri
         lock (gate) calls.Add("paneState " + sessionId);
         if (StateGate is { } wait) await wait(sessionId);
         return Pane(sessionId);
+    }
+
+    public Task Note(string text, string sessionId)
+    {
+        lock (gate) notes.Add((sessionId, text));
+        return Task.CompletedTask;
     }
 
     public Task StopRun(string sessionId)
@@ -174,10 +183,13 @@ internal static class DelegationDeliveryVerification
 
     internal static async Task NoticesAreSteeredQueuedOrHeld()
     {
-        // A pane gets items on its own only while it runs Claude or is idle after a normal finish.
+        // A pane gets items on its own only while it runs Claude or is idle after a normal finish; a running Codex or Antigravity
+        // turn takes no text, so its end offers them again.
         DelegationPaneState Pane(DelegationPaneActivity activity, string kind = "claude", string provider = "claude") => new("p", "auto", Path.GetTempPath(), kind, provider, RunId: "p-run", Activity: activity);
-        Check(DelegationCoordinator.AutomaticRoute(Pane(Running)) == DeliveryRoute.Steer && DelegationCoordinator.AutomaticRoute(Pane(Finished)) == DeliveryRoute.Queue && DelegationCoordinator.AutomaticRoute(Pane(Idle)) is null
-            && DelegationCoordinator.AutomaticRoute(Pane(Running, provider: "codex")) is null && DelegationCoordinator.AutomaticRoute(Pane(Running, kind: "terminal")) is null && DelegationCoordinator.AutomaticRoute(null) is null, "the automatic route");
+        Check(DelegationCoordinator.Automatic(Pane(Running)) == new DelegationCoordinator.AutomaticDelivery.Route(DeliveryRoute.Steer) && DelegationCoordinator.Automatic(Pane(Finished)) == new DelegationCoordinator.AutomaticDelivery.Route(DeliveryRoute.Queue)
+            && DelegationCoordinator.Automatic(Pane(Idle)) is DelegationCoordinator.AutomaticDelivery.Hold && DelegationCoordinator.Automatic(Pane(Running, provider: "codex")) is DelegationCoordinator.AutomaticDelivery.Later
+            && DelegationCoordinator.Automatic(Pane(Running, provider: "gemini")) is DelegationCoordinator.AutomaticDelivery.Later && DelegationCoordinator.Automatic(Pane(Running, kind: "terminal")) is DelegationCoordinator.AutomaticDelivery.Hold
+            && DelegationCoordinator.Automatic(null) is DelegationCoordinator.AutomaticDelivery.Hold, "the automatic delivery");
         var sample = new Notice("n-1", "c-1", 2, NoticeKind.Reported, DeliveryLane.Pending);
         Same(DelegationCoordinator.Text(sample), "[Mighty Claude notice n-1] Your child c-1 reported revision 2. Read the report with child_status; merge it with merge when it is right.", "a reported notice's words");
         Same(DelegationCoordinator.Text(sample with { Kind = NoticeKind.EndedWithoutReport }), "[Mighty Claude notice n-1] Your child c-1's run ended without a new report; its report revision is still 2. Call child_status to see where it stands.", "an ended notice's words");

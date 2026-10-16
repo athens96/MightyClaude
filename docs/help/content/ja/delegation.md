@@ -7,14 +7,14 @@ Mightyオーケストレーションは、エージェントのペインが作�
 
 子ペインを開く方法は二つあります。
 
-- **自分で起動する**({{platform:mac}}): 実行中のClaudeペイン、または子がファイルを変更できるモードのCodex・Antigravityペイン([CodexとAntigravity](#agents))に次のリクエストを書き、{{kbd:⌘Enter}}を押します。リクエストが新しいworktreeの子ペインですぐに実行されます([新しいworktreeで実行する](#worktree))。
+- **自分で起動する**: 実行中のClaudeペイン、または子がファイルを変更できるモードのCodex・Antigravityペイン([CodexとAntigravity](#agents))に次のリクエストを書き、{{kbd:⌘Enter}}を押します。リクエストが新しいworktreeの子ペインですぐに実行されます([新しいworktreeで実行する](#worktree))。
 - **Claudeに分けて任せる**: Claude(またはCodex)に、作業を分けて子ペインに任せるよう頼みます。エージェントが子を作り、レポートを読み、マージまで行います([Claudeに分けて任せる](#delegate))。
 
 > [!warning]
-> 実験的な機能です。Macでは初期状態でオンで、設定でオフにできます。Windowsでは初期状態でオフで、自分で起動する方法はなく、Claudeに分けて任せることだけができます。まずは練習用のリポジトリで試してください。
+> 実験的な機能です。初期状態でオンで、設定でオフにできます。まずは練習用のリポジトリで試してください。
 
 ## 全体の流れ {#overview}
-{{platform:mac}} 自分で起動するときの流れです。
+自分で起動するときの流れです。
 
 1. gitリポジトリのフォルダーをワークスペースとして開き、Claudeのペインで作業を頼みます。
 2. Claudeが作業している間に次のリクエストを書き、{{kbd:⌘Enter}}を押します。実行中の作業はそのまま続き、このペインの隣に子ペインが開いてリクエストをすぐに実行します。
@@ -34,11 +34,11 @@ Mightyオーケストレーションは、エージェントのペインが作�
 | 結果を捨てる | カードの{{ui:delegation.card.discard}}ボタン |
 
 ## 新しいworktreeで実行する {#worktree}
-{{platform:mac}} Claude・Codex・Antigravityペインの実行中にリクエストを書いて{{kbd:⌘Enter}}を押すか、停止ボタンの横にある丸い{{ui:queue.worktree}}ボタン(ブランチのアイコン)を押します。実行中の作業はそのまま続き、リクエストは専用のworktreeを持つ新しい子ペインですぐに実行されます。その間に親ペインで入力を始めていなければ、新しいペインがすぐに画面に出ます。
+Claude・Codex・Antigravityペインの実行中にリクエストを書いて{{kbd:⌘Enter}}を押すか、停止ボタンの横にある丸い{{ui:queue.worktree}}ボタン(ブランチのアイコン)を押します。実行中の作業はそのまま続き、リクエストは専用のworktreeを持つ新しい子ペインですぐに実行されます。その間に親ペインで入力を始めていなければ、新しいペインがすぐに画面に出ます。
 
 - 実行中のペインで{{kbd:Enter}}を押すと、リクエストはキューに入り、今の作業が終わったあとに実行されます。入力欄の案内文に、二つのキーの働きが表示されます。
 - 新しいworktreeは、作れる場所でだけ使います。コミットのあるブランチをチェックアウトしたgitリポジトリである必要があります。それ以外の場所(gitリポジトリでない、まだコミットがない、ブランチではなくコミットをチェックアウトしている)では、{{kbd:⌘Enter}}はこれまでどおり実行中のClaudeにすぐ送信し、CodexとAntigravityのペインはキューに入れます。
-- 子は親の最後のコミットから始まります。ブランチ`mighty/<子のid>`ができ、worktreeはプロジェクトフォルダーの外(`~/.mightyclaude/worktrees/<子のid>`)にできるので、親の作業には触れません。親のフォルダーでまだコミットしていない変更は、子には渡りません。
+- 子は親の最後のコミットから始まります。ブランチ`mighty/<子のid>`ができ、worktreeはプロジェクトフォルダーの外(Macは`~/.mightyclaude/worktrees/<子のid>`、Windowsは`%USERPROFILE%\.mightyclaude\worktrees\<子のid>`)にできるので、親の作業には触れません。親のフォルダーでまだコミットしていない変更は、子には渡りません。
 - 親ペインの権限モードで、親ペインのモデルと{{ui:composer.effort.label}}で実行します。すべてのリクエストをプランモードで始めるスタイルでは、プランモードで始まります。親と同じ表示で開き、親がマイティ表示でスタイルを使っていたなら同じスタイルで始まります(スタイルの進み具合は子の最初のリクエストから別に数えます)。添付ファイルも一緒に渡ります。
 - 最初のメッセージは入力したテキストが先に来て、その後にアプリが、子がどこで作業するかを伝え、終わったらコミットしてREPORT.mdを書くよう添えます。そうするとカードからマージできます。スラッシュコマンド(`/`で始まるテキスト)は入力したとおり単独で実行され、アプリの案内は子ペインの次のリクエストとして続くため、コマンドの引数になりません。
 - 子ペインは同じエージェントのふつうのペインと同じように使えます。承認カードに答え、追加のリクエストを送り、権限モードを変えられます。
@@ -48,7 +48,7 @@ Mightyオーケストレーションは、エージェントのペインが作�
 - 子ペインやMightyオーケストレーションをオフにしたペインでは、{{kbd:⌘Enter}}はこれまでどおり実行中のClaudeにすぐ送信し、CodexとAntigravityのペインはキューに入れます。スマートフォンの送信方法は変わらず、スマートフォンからすぐ送信すると今までどおり実行中のClaudeに届きます。
 
 ## Claudeに分けて任せる {#delegate}
-ClaudeかCodexのペイン(親)が作業を分けて、同じエージェントのほかのペイン(子)に任せることもできます。子がレポートすると、親が通知を受け取ってレポートを読み、結果をマージするかどうかを決めます。Claudeの親はMacアプリとWindowsアプリで、Codexの親はMacでだけ使えます。
+ClaudeかCodexのペイン(親)が作業を分けて、同じエージェントのほかのペイン(子)に任せることもできます。子がレポートすると、親が通知を受け取ってレポートを読み、結果をマージするかどうかを決めます。ClaudeとCodexの親は、MacアプリとWindowsアプリの両方で使えます。
 
 1. gitリポジトリのフォルダーをワークスペースとして開き、Claudeのペインを開きます。このペインが親です。
 2. 「delegateツールでMightyの子ペインを二つ開いて、この作業を分けて任せて」のように、ツール名を入れて頼みます。「分けてやって」とだけ言うと、Claudeが自分の中のサブエージェントで済ませることがあります。
@@ -58,13 +58,13 @@ ClaudeかCodexのペイン(親)が作業を分けて、同じエージェント�
 - 子ごとにブランチ`mighty/<子のid>`とworktree(Macは`~/.mightyclaude/worktrees/<子のid>`、Windowsは`%USERPROFILE%\.mightyclaude\worktrees\<子のid>`)ができます。子は親の最後のコミットから始まります。
 - 任せた作業はTASK.mdに、結果はREPORT.mdに書かれます。どちらもworktree内のgitが無視するフォルダーにあり、コミットされません。
 - 子の権限モードは親が選んだモードで、親のペインのモードより広くできません。広げられるのはあなただけで、実行と実行の合間に、子ペインの入力欄の権限メニューかスマートフォンの設定から行います。
-- {{platform:mac}} 子ペインは親ペインと同じ表示({{ui:graph.view.default}} | {{ui:graph.view.mighty}}、マイティ表示なら{{ui:graph.view.diagram}}, {{ui:graph.view.timeline}}, {{ui:graph.view.structure}}のうち同じもの)で開きます。親がマイティ表示の{{ui:graph.view.structure}}を使っていたなら、子も{{ui:graph.view.structure}}で表示されます。
+- 子ペインは親ペインと同じ表示({{ui:graph.view.default}} | {{ui:graph.view.mighty}}、マイティ表示なら{{ui:graph.view.diagram}}, {{ui:graph.view.timeline}}, {{ui:graph.view.structure}}のうち同じもの)で開きます。親がマイティ表示の{{ui:graph.view.structure}}を使っていたなら、子も{{ui:graph.view.structure}}で表示されます。
 - 親は子の承認カードに答えられません。子ペインにカードが出たら、そのペインであなたが答えてください。
-- 一つの親が`delegate`ツールで作って開いておける子は3つまでで、Macで自分で起動した子の3つとは別に数えます。どちらも相手を妨げません。子はさらに委任できません。レポート済みやマージ済みの子も、ペインが開いていれば3つに入るので、終わった子ペインを閉じると空きができます。ディスクの空きが10 GB未満だと委任は断られます。
+- 一つの親が`delegate`ツールで作って開いておける子は3つまでで、自分で起動した子の3つとは別に数えます。どちらも相手を妨げません。子はさらに委任できません。レポート済みやマージ済みの子も、ペインが開いていれば3つに入るので、終わった子ペインを閉じると空きができます。ディスクの空きが10 GB未満だと委任は断られます。
 - 親は通知で子のレポートを知り([通知と保留](#notices))、`follow_up`で追加の指示を送り([追加の指示](#follow-up))、`merge`でマージします([マージ](#merge))。
 
 ## CodexとAntigravity {#agents}
-{{platform:mac}} MightyオーケストレーションはCodexとAntigravityのペインでも使えます。子はいつも親のエージェントで実行されます。Codexペインの子はCodexペイン、Antigravityペインの子はAntigravityペインです。ClaudeのペインがCodexの子に任せたり、その逆をしたりはできません。
+MightyオーケストレーションはCodexとAntigravityのペインでも使えます。子はいつも親のエージェントで実行されます。Codexペインの子はCodexペイン、Antigravityペインの子はAntigravityペインです。ClaudeのペインがCodexの子に任せたり、その逆をしたりはできません。
 
 - **子が作業できるモード**: 子は親の権限モードで始まるため、CodexとAntigravityのペインは、子がファイルを変更できるモードでだけ{{kbd:⌘Enter}}で子を起動します。Codexは{{ui:permission.label.acceptEditsCodex}}・{{ui:permission.label.onRequest}}・{{ui:permission.label.fullAccess}}、Antigravityは{{ui:permission.label.acceptEdits}}・{{ui:permission.label.fullAccess}}です。それ以外のモードでは、{{kbd:⌘Enter}}はこれまでどおりリクエストをキューに入れます。
 - **Codex**のペインに委任ツールが付くのは{{ui:permission.label.acceptEditsCodex}}と{{ui:permission.label.fullAccess}}のときだけです。{{ui:permission.label.defaultCodex}}ではCodexがツールを断り、{{ui:permission.label.onRequest}}ではアプリが表示できない方法で確認を求めるためです。`delegate`は、ファイルを変更できない子のモードを断ります。Codexが`merge`を呼べるのは、実行が{{ui:permission.label.fullAccess}}で始まったときだけで、それ以外は断られる(`merge_human_only`)ので、カードからマージします。実行中のCodexのターンはテキストを受け取れないため、実行中のCodexの親への通知は、その実行が正常に終わったあと次の実行として届き、停止やエラーで終わったときは保留されます。
@@ -152,25 +152,25 @@ defaults write dev.mightyclaude.native delegation.enabled -bool false
 
 {{platform:mac}} 以前のバージョンはこのキーを設定したときだけオンになり、オフにするには`defaults delete …`を使っていました。今はそうするとオンのままになるので、オフのままにするには設定で{{ui:settings.delegation.toggle}}をオフにしてください。
 
-{{platform:windows}} 初期状態ではオフです。アプリを終了した状態でコマンドプロンプトまたはPowerShellで次のコマンドを実行し、アプリをもう一度開きます:
+{{platform:windows}} オフにしない限りオンです。設定の{{ui:settings.nav.general}}タブで{{ui:settings.delegation.toggle}}を切り替えます。アプリを開き直さなくても、次に始まる実行から反映されます。同じスイッチが`HKEY_CURRENT_USER\Software\MightyClaudeNative`の下の`delegation.enabled`の値(REG_DWORD)で、0ならオフ、値がないかほかの値ならオンです。そのため、コマンドプロンプトまたはPowerShellで次のコマンドを実行してもオフにでき、`reg delete "HKCU\Software\MightyClaudeNative" /v delegation.enabled /f`でオンに戻ります:
 
 ```
-reg add "HKCU\Software\MightyClaudeNative" /v delegation.enabled /t REG_DWORD /d 1 /f
+reg add "HKCU\Software\MightyClaudeNative" /v delegation.enabled /t REG_DWORD /d 0 /f
 ```
 
-Windowsでは、`HKEY_CURRENT_USER\Software\MightyClaudeNative`の下の`delegation.enabled`の値(REG_DWORD)が0以外ならオンです。値がないか0ならオフです。オフにするには、`reg delete "HKCU\Software\MightyClaudeNative" /v delegation.enabled /f`を実行し、アプリをもう一度開きます。
+{{platform:windows}} 以前のバージョンは、その値を1にしたときだけオンでした。そのときの1が残っていれば、オンのままです。
 
 - オンにすると、ClaudeかCodexのペインで新しい実行を始めるたびに委任ツールが付きます。すでに動いている実行には付きません。
-- オフにすると外れるのはツールだけで、Macでは{{kbd:⌘Enter}}が再び実行中のClaudeにすぐ送信します。既存の子ペイン、カード、後片付けはそのまま動きます。
+- オフにすると外れるのはツールだけで、{{kbd:⌘Enter}}が再び実行中のClaudeにすぐ送信します。既存の子ペイン、カード、後片付けはそのまま動きます。
 
 ## 上限と対応範囲 {#limits}
 | 項目 | 上限 |
 |---|---|
-| 一つの親が開いておける子 | 自分で起動して3つ(Mac)、`delegate`で3つ |
+| 一つの親が開いておける子 | 自分で起動して3つ、`delegate`で3つ |
 | 委任の深さ | 一段(子はさらに子を作れない) |
 | 一つの子への追加の指示(`follow_up`) | 2回、一つあたり48 KiB |
 | 任せる作業(TASK.md、自分で起動したリクエスト) | 64 KiB |
 | 必要なディスクの空き | 10 GB |
 
-- 子は親と同じエージェントで実行されます。ClaudeとCodexのペインはツールと{{kbd:⌘Enter}}で、Antigravityのペインは{{kbd:⌘Enter}}でだけ子を作ります([CodexとAntigravity](#agents))。CodexとAntigravityの子はMacだけです。
-- Macアプリは初期状態でオンで、設定にスイッチがあります。Windowsアプリは隠しスイッチでオンにし([オンとオフ](#enable))、自分で起動する方法はありません。スマートフォンに新しい画面はなく、保留された行はスマートフォンのキューにも表示されます。
+- 子は親と同じエージェントで実行されます。ClaudeとCodexのペインはツールと{{kbd:⌘Enter}}で、Antigravityのペインは{{kbd:⌘Enter}}でだけ子を作ります([CodexとAntigravity](#agents))。
+- MacアプリもWindowsアプリも初期状態でオンで、設定にスイッチがあります([オンとオフ](#enable))。スマートフォンに新しい画面はなく、保留された行はスマートフォンのキューにも表示されます。

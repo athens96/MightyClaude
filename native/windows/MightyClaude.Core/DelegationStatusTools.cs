@@ -30,7 +30,7 @@ public sealed partial class DelegationCoordinator
 {
     /// <summary>list_children from <paramref name="caller"/>: its children in the order they were made, each with its id, state and current report revision. None is an empty list.</summary>
     private DelegationResponse ListChildren(DelegationCaller caller) =>
-        new(Children: File.Children.Where(child => child.ParentSessionId == caller.PaneId).Select(DelegationChildSummary.Of).ToList());
+        new(Children: File.Children.Where(child => child.ParentSessionId == caller.PaneId && child.NotifiesParent).Select(DelegationChildSummary.Of).ToList());
 
     /// <summary>
     /// child_status(child) from <paramref name="caller"/>: that child's state, the head of its current report and that report's
@@ -39,7 +39,7 @@ public sealed partial class DelegationCoordinator
     private DelegationResponse ChildStatus(string id, DelegationCaller caller)
     {
         id = id.Trim();
-        return File.Children.Find(record => record.Id == id && record.ParentSessionId == caller.PaneId) is { } child
+        return File.Children.Find(record => record.Id == id && record.ParentSessionId == caller.PaneId && record.NotifiesParent) is { } child
             ? new(Status: DelegationChildStatus.Of(child, File.Copy(child.Id, DelegationCopyKind.Report))) : DelegationResponse.Failure(NotYourChildMessage(id));
     }
 

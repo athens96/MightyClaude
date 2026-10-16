@@ -115,7 +115,7 @@ public sealed class CodexApprovalChannel
         {
             ["threadId"] = threadId, ["input"] = input, ["cwd"] = workspace,
             ["approvalPolicy"] = "on-request", ["approvalsReviewer"] = "user",
-            ["sandboxPolicy"] = new { type = "workspaceWrite", writableRoots = new[] { workspace }, networkAccess = request.Settings!.NetworkAccess }
+            ["sandboxPolicy"] = new { type = "workspaceWrite", writableRoots = request.DelegationWorktreeRoot is { } root ? new[] { workspace, root } : new[] { workspace }, networkAccess = request.Settings!.NetworkAccess }
         };
         if (request.Model != "default") parameters["model"] = request.Model;
         if (request.Settings!.Effort != "default") parameters["effort"] = request.Settings.Effort;

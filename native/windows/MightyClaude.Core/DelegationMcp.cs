@@ -112,18 +112,27 @@ public sealed class DelegationMcp(Func<DelegationRequest, CancellationToken, Tas
     public static JsonObject ToolError(string message) => new() { ["content"] = Content(message), ["isError"] = true };
 
     private static JsonArray Content(string text) => [new JsonObject { ["type"] = "text", ["text"] = text }];
+    /// <summary>What a refusal's code means when its name does not say it.</summary>
+    public static string Hint(DelegationReasonCode reason) => reason switch
+    {
+        DelegationReasonCode.ClaudeOnly => " (this pane's agent cannot use the delegation tools)",
+        DelegationReasonCode.MergeHumanOnly => " (in this permission mode only the human merges, from the child's card in the app; tell the user the child is ready)",
+        _ => "",
+    };
+
     private static JsonObject Answer(string text, string key, JsonNode data) => new() { ["content"] = Content(text), ["structuredContent"] = new JsonObject { [key] = data } };
 
     /// <summary>
     /// The <c>tools/call</c> result for the app's answer. A refusal names its one reason code in the text and as structured
-    /// content; a child, a list, a status, a merge and a follow-up are tool data in both too.
+    /// content, with a word on what to do for a code whose name does not say it; a child, a list, a status, a merge and a
+    /// follow-up are tool data in both too.
     /// </summary>
     public static JsonObject Result(DelegationResponse response)
     {
         if (response.Refused is { } reason)
         {
             var code = DelegationNames.Of(reason);
-            return new() { ["content"] = Content($"Refused: {code}. Nothing was changed."), ["structuredContent"] = new JsonObject { ["refused"] = code }, ["isError"] = true };
+            return new() { ["content"] = Content($"Refused: {code}{Hint(reason)}. Nothing was changed."), ["structuredContent"] = new JsonObject { ["refused"] = code }, ["isError"] = true };
         }
         if (response.Child is { } child)
             return Answer($"Child {child.Id} is {DelegationNames.Of(child.State)}, on the branch {child.Branch}, starting in {child.StartingMode} mode.", "child",

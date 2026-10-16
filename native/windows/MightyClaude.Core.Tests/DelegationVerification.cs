@@ -124,7 +124,7 @@ internal static class DelegationVerification
             "claude_only", "child_cannot_delegate", "width_cap", "low_disk", "store_full", "not_git", "unborn_branch", "detached_head",
             "wider_mode", "discard_human_only", "not_reported", "tracked_changes", "head_moved", "diverged", "branch_not_checked_out",
             "child_closed", "parent_closed", "follow_up_limit", "worktree_missing", "merge_conflict", "undo_parent_moved", "parent_busy",
-            "workspace_has_children", "held_not_removable", "merge_human_only"], "the reason codes are the ontology list in order");
+            "workspace_has_children", "held_not_removable", "human_started", "merge_human_only"], "the reason codes are the ontology list in order");
         SameList(Enum.GetValues<NoticeKind>().Select(DelegationNames.Of), ["reported", "ended_without_report", "failed_to_start"], "notice kinds");
         SameList(Enum.GetValues<DeliveryLane>().Select(DelegationNames.Of), ["pending", "held", "delivered"], "lanes");
         SameList(Enum.GetValues<DeliveryRoute>().Select(DelegationNames.Of), ["steer", "queue"], "routes");
@@ -394,16 +394,18 @@ internal static class DelegationVerification
 
     internal static async Task SwitchGatesAndTheSixTools()
     {
-        // The hidden switch: a REG_DWORD that is not zero, read at each call; a missing value is off. The checks never write the registry.
+        // The switch, Mighty Orchestration: on unless a REG_DWORD of zero turns it off, read at each call. The checks never write the registry.
         Check(DelegationSwitch.RegistryKey == @"Software\MightyClaudeNative" && DelegationSwitch.ValueName == "delegation.enabled", "the switch is delegation.enabled under the app's key");
-        Check(!DelegationSwitch.IsOn(null) && !DelegationSwitch.IsOn(0) && DelegationSwitch.IsOn(1) && DelegationSwitch.IsOn(-1) && !DelegationSwitch.IsOn("1") && !DelegationSwitch.IsOn(1L) && !DelegationSwitch.IsOn(true), "only a non-zero DWORD turns it on");
+        Check(DelegationSwitch.IsOn(null) && !DelegationSwitch.IsOn(0) && DelegationSwitch.IsOn(1) && DelegationSwitch.IsOn(-1) && DelegationSwitch.IsOn("0") && DelegationSwitch.IsOn(0L) && DelegationSwitch.IsOn(false), "only a DWORD of zero turns it off; a missing value is on");
         _ = DelegationSwitch.IsOn();
         Check(DelegationSwitch.IsClaudePane("claude", "claude") && !DelegationSwitch.IsClaudePane("claude", "codex") && !DelegationSwitch.IsClaudePane("claude", "gemini") && !DelegationSwitch.IsClaudePane("shell", "claude") && !DelegationSwitch.IsClaudePane("browser", "claude"), "only an agent pane running Claude is a Claude pane");
 
-        // With no coordinator behind it: off reaches nothing, a pane that is not Claude's is refused, a run without the server stays detached.
+        // With no coordinator behind it: off reaches nothing, a pane whose agent has no delegation tools is refused, a run without the server stays detached.
         var delegate_ = Request("delegate", ("task", "Write the release notes"), ("mode", "plan"));
         var on = new DelegationIOHandler(() => true); var off = new DelegationIOHandler(() => false);
-        foreach (var caller in new[] { Caller("codex", provider: "codex"), Caller("gemini", provider: "gemini"), Caller("shell", kind: "shell") })
+        Check((await on.Handle(delegate_, Caller("codex", provider: "codex"))) is { Refused: null, Error: "Unknown delegation tool delegate." } && await on.Handle(delegate_, Caller("codex", provider: "codex", delegation: false)) == DelegationResponse.Failure(DelegationIOHandler.DetachedMessage),
+            "a Codex pane with the server attached reaches the tools; one without it stays detached");
+        foreach (var caller in new[] { Caller("gemini", provider: "gemini"), Caller("shell", kind: "shell") })
             foreach (var tool in new[] { "delegate", "list_children", "child_status", "merge", "follow_up", "discard", "no_such_tool" })
                 Check(await on.Handle(tool == "delegate" ? delegate_ : Request(tool, ("child", "child-1")), caller) == DelegationResponse.Refusal(DelegationReasonCode.ClaudeOnly), $"{caller.PaneId} {tool} is claude_only");
         Check((await on.Handle(delegate_, Caller("claude"))) is { Refused: null, Error: "Unknown delegation tool delegate." }, "a Claude pane with the server attached is not refused as a non-Claude pane");
@@ -419,7 +421,7 @@ internal static class DelegationVerification
         Check(!six.Intersect(AgentIOTools.All.Select(tool => tool.Name)).Any(), "none of them is a mighty-terminal tool");
         var arguments = new Dictionary<string, string[]> { ["delegate"] = ["task", "mode"], ["list_children"] = [], ["child_status"] = ["child"], ["merge"] = ["child", "expected_head"], ["follow_up"] = ["child", "text"], ["discard"] = ["child"] };
         foreach (var tool in DelegationToolManifest.All) SameList(tool.Arguments.Select(argument => argument.Name), arguments[tool.Name], tool.Name + " takes its arguments");
-        Check(DelegationToolManifest.Delegate.Description.StartsWith("Start a child Claude pane that works on a task in its own git worktree, on the flat branch mighty/<child id> made from your current branch head.", StringComparison.Ordinal)
+        Check(DelegationToolManifest.Delegate.Description.StartsWith("Start a child pane running your own agent CLI that works on a task in its own git worktree, on the flat branch mighty/<child id> made from your current branch head.", StringComparison.Ordinal)
             && DelegationToolManifest.Delegate.Description.EndsWith("At most 3 open children per pane, and a child cannot delegate. The same call twice in one of your runs returns the same child.", StringComparison.Ordinal)
             && DelegationToolManifest.Discard.Description == "Discarding a child is for the human only, from the child's card in the app. This tool always refuses with discard_human_only and changes nothing."
             && DelegationToolManifest.Merge.Arguments[1].Description == "The child's reported head commit, as child_status gave it.", "the agent reads the Mac's words");
@@ -534,7 +536,7 @@ internal static class DelegationVerification
         Check(state == new DelegationPaneState("child", "plan", worktree, ParentSessionId: "parent", RunId: "run-1", Activity: DelegationPaneActivity.Finished), "the pane as the coordinator reads it");
         Check(DelegationPanes.PaneState(child, workspace, "run-1", DelegationPaneActivity.Finished, true).Activity == DelegationPaneActivity.Idle && DelegationPanes.PaneState(child, workspace, "run-1", DelegationPaneActivity.Running, true).Activity == DelegationPaneActivity.Running
             && DelegationPanes.PaneState(child, workspace, null, DelegationPaneActivity.Idle, true).Activity == DelegationPaneActivity.Idle, "only a finished pane the app would refuse reads as idle");
-        Check(DelegationCoordinator.AutomaticRoute(DelegationPanes.PaneState(child, workspace, "run-1", DelegationPaneActivity.Finished, true)) is null && DelegationCoordinator.AutomaticRoute(state) == DeliveryRoute.Queue, "delivery holds what comes for a pane that cannot start a run");
+        Check(DelegationCoordinator.Automatic(DelegationPanes.PaneState(child, workspace, "run-1", DelegationPaneActivity.Finished, true)) is DelegationCoordinator.AutomaticDelivery.Hold && DelegationCoordinator.Automatic(state) == new DelegationCoordinator.AutomaticDelivery.Route(DeliveryRoute.Queue), "delivery holds what comes for a pane that cannot start a run");
 
         // Run ids and normal finishes since launch are tracked per pane.
         var ledger = new DelegationRunLedger();

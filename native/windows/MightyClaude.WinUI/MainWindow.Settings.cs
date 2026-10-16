@@ -113,6 +113,13 @@ public sealed partial class MainWindow
         backgroundWorkToggle.Checked += (_, _) => BackgroundWorkToggled(); backgroundWorkToggle.Unchecked += (_, _) => BackgroundWorkToggled();
         SettingsRow(rows, SettingsLabeled(SettingsText(backgroundWorkLabel), backgroundWorkToggle));
 
+        // Mighty Orchestration is on unless turned off here (or by its registry value).
+        var delegationLabel = Locale.Get("settings.delegation.toggle");
+        var delegationToggle = SettingsSwitch(delegationLabel, DelegationOn, "settings-delegation");
+        void DelegationToggled() { SetDelegationOn(delegationToggle.IsChecked == true); if (delegationToggle.IsChecked != DelegationOn) delegationToggle.IsChecked = DelegationOn; }
+        delegationToggle.Checked += (_, _) => DelegationToggled(); delegationToggle.Unchecked += (_, _) => DelegationToggled();
+        SettingsRow(rows, SettingsLabeled(SettingsTitled(delegationLabel, Locale.Get("settings.delegation.descriptionWindows")), delegationToggle, top: true));
+
         // Browser engine toggle — opt-in, off by default; restart required to apply.
         var browserLabel = Locale.Get("settings.display.browserToggle");
         var browserToggle = SettingsSwitch(browserLabel, service.Snapshot.BrowserEngineEnabled, "settings-browser-engine");

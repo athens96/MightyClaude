@@ -156,9 +156,13 @@ internal sealed class ComposerGlyph
 
     // ── the right cluster (M/SessionPaneView.swift:731-765) ──
 
+    private const string BranchOutline = "M5 9.5 L5 6 C5 4.4 3.2 3.6 1.5 1.4 M5 6 C5 4.4 6.8 3.6 8.5 1.4 M1.2 3.7 L1.2 1.1 L3.8 1.1 M6.2 1.1 L8.8 1.1 L8.8 3.7";
+
     /// <summary><c>arrow.triangle.branch</c> at 11 in its 16pt-wide, toolbar-high frame: this pane continues an earlier conversation.</summary>
-    internal static ComposerGlyph Branch() => new ComposerGlyph(10, 10.6, 16, DesignMetrics.Layout.Toolbar)
-        .Stroke("M5 9.5 L5 6 C5 4.4 3.2 3.6 1.5 1.4 M5 6 C5 4.4 6.8 3.6 8.5 1.4 M1.2 3.7 L1.2 1.1 L3.8 1.1 M6.2 1.1 L8.8 1.1 L8.8 3.7", 1.15);
+    internal static ComposerGlyph Branch() => new ComposerGlyph(10, 10.6, 16, DesignMetrics.Layout.Toolbar).Stroke(BranchOutline, 1.15);
+
+    /// <summary><c>arrow.triangle.branch</c> at 12 semibold, centred in the toolbar-high second send: the draft runs now in a new child worktree.</summary>
+    internal static ComposerGlyph WorktreeBranch() => new ComposerGlyph(10 * 12 / 11.0, 10.6 * 12 / 11.0, DesignMetrics.Layout.Toolbar, DesignMetrics.Layout.Toolbar).Stroke(BranchOutline, 1.5, 12 / 11.0);
 
     /// <summary><c>arrow.up</c> at 14 semibold: about 10 × 12 with a 1.8pt stroke, centred in the toolbar-high send button.</summary>
     internal static ComposerGlyph ArrowUp() => new ComposerGlyph(10, 12.2, DesignMetrics.Layout.Toolbar, DesignMetrics.Layout.Toolbar).Stroke("M5 11.2 L5 1 M0.9 5.1 L5 1 L9.1 5.1", 1.8);

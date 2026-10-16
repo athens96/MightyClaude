@@ -69,6 +69,23 @@ public sealed partial class DelegationCoordinator
         return outcome;
     });
 
+    /// <summary>
+    /// The request for the child <paramref name="id"/> to resolve its conflict with the parent branch
+    /// (<see cref="ChildMerge.ConflictPrompt"/>), after its card's merge was refused with <c>merge_conflict</c>: once per report,
+    /// so null when the child is not reported or was already asked at this report. A request that did not start is given back
+    /// with <see cref="ConflictResolutionNotStarted"/>.
+    /// </summary>
+    public Task<string?> ConflictResolution(string id) => Isolated(() =>
+    {
+        if (File.Children.Find(record => record.Id == id) is not { State: ChildState.Reported } child
+            || (conflictAsked.TryGetValue(id, out var asked) && asked == child.ReportRevision)) return Task.FromResult<string?>(null);
+        conflictAsked[id] = child.ReportRevision;
+        return Task.FromResult<string?>(ChildMerge.ConflictPrompt(child));
+    });
+
+    /// <summary>The child's pane did not start the request to resolve its conflict, so the next merge that conflicts at this report asks again.</summary>
+    public Task ConflictResolutionNotStarted(string id) => Isolated(() => { conflictAsked.Remove(id); return Task.CompletedTask; });
+
     private async Task<ChildMergeOutcome> CardMerge(string id)
     {
         if (File.Children.Find(record => record.Id == id) is not { } child) return new ChildMergeOutcome.Failed(Locale.Get("delegation.card.error.noChild"));

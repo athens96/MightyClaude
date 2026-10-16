@@ -47,6 +47,10 @@ public static class DelegationText
             (DelegationCardAction.Merge, DelegationCardResult.DoneUnsaved unsaved) => (Locale.Get("delegation.card.mergedUnsaved", Words(("branch", branch), ("error", unsaved.Reason))), DesignTone.Err),
             (DelegationCardAction.Undo, DelegationCardResult.DoneUnsaved unsaved) => (Locale.Get("delegation.card.undoneUnsaved", Words(("branch", branch), ("error", unsaved.Reason))), DesignTone.Err),
             (DelegationCardAction.Discard, DelegationCardResult.Done or DelegationCardResult.DoneUnsaved) or (_, DelegationCardResult.Reconfirm) => null,
+            // Said while the child works on it; once it reports again (or ends without a report) its state says the rest.
+            (DelegationCardAction.Merge, DelegationCardResult.ConflictSent) => child.State is ChildState.Creating or ChildState.Running or ChildState.Waiting ? (Locale.Get("delegation.card.conflictSent", Words(("branch", branch))), DesignTone.Wait) : null,
+            (DelegationCardAction.Merge, DelegationCardResult.ConflictNotStarted) => (Locale.Get("delegation.card.conflictNotStarted", Words(("branch", branch))), DesignTone.Err),
+            (_, DelegationCardResult.ConflictSent or DelegationCardResult.ConflictNotStarted) => null,
             (DelegationCardAction.Merge, DelegationCardResult.Refused refused) => (Locale.Get("delegation.card.mergeRefused", Words(("reason", Reason(refused.Reason)))), DesignTone.Wait),
             (DelegationCardAction.Undo, DelegationCardResult.Refused refused) => (Locale.Get("delegation.card.undoRefused", Words(("reason", Reason(refused.Reason)))), DesignTone.Wait),
             (DelegationCardAction.Discard, DelegationCardResult.Refused refused) => (Locale.Get("delegation.card.discardFailed", Words(("error", Reason(refused.Reason)))), DesignTone.Err),
@@ -63,15 +67,22 @@ public static class DelegationText
     /// </summary>
     public static string? CloseNote(ChildCleanupOutcome? outcome) => outcome is ChildCleanupOutcome.Kept { Hold: ChildCleanupHold.Link } ? Locale.Get("delegation.card.keptLink") : null;
 
-    /// <summary>Why a card's merge or undo was refused, ending in its reason code.</summary>
+    /// <summary>Why a card's merge or undo, or the human's run in a new child worktree, was refused, ending in its reason code.</summary>
     public static string Reason(DelegationReasonCode reason) => reason switch
     {
+        DelegationReasonCode.NotGit => Locale.Get("delegation.reason.notGit"),
+        DelegationReasonCode.DetachedHead => Locale.Get("delegation.reason.detachedHead"),
+        DelegationReasonCode.UnbornBranch => Locale.Get("delegation.reason.unbornBranch"),
+        DelegationReasonCode.WidthCap => Locale.Get("delegation.reason.widthCap"),
+        DelegationReasonCode.LowDisk => Locale.Get("delegation.reason.lowDisk"),
+        DelegationReasonCode.StoreFull => Locale.Get("delegation.reason.storeFull"),
         DelegationReasonCode.NotReported => Locale.Get("delegation.reason.notReported"),
         DelegationReasonCode.BranchNotCheckedOut => Locale.Get("delegation.reason.branchNotCheckedOut"),
         DelegationReasonCode.TrackedChanges => Locale.Get("delegation.reason.trackedChanges"),
         DelegationReasonCode.MergeConflict => Locale.Get("delegation.reason.mergeConflict"),
         DelegationReasonCode.UndoParentMoved => Locale.Get("delegation.reason.undoParentMoved"),
         DelegationReasonCode.ParentBusy => Locale.Get("delegation.reason.parentBusy"),
+        DelegationReasonCode.MergeHumanOnly => Locale.Get("delegation.reason.mergeHumanOnly"),
         _ => Locale.Get("delegation.reason.other", new Dictionary<string, string> { ["code"] = DelegationNames.Of(reason) }),
     };
 
@@ -85,6 +96,14 @@ public static class DelegationText
         var nested = paths.Count == 0 ? Locale.Get("delegation.discard.noNested")
             : Locale.Get("delegation.discard.nested", new Dictionary<string, string> { ["count"] = paths.Count.ToString(System.Globalization.CultureInfo.InvariantCulture), ["paths"] = string.Join("\n", paths) });
         return Locale.Get("delegation.discard.message", new Dictionary<string, string> { ["title"] = pending.Title, ["branch"] = pending.Branch }) + "\n\n" + nested;
+    }
+
+    /// <summary>The offer after a merge from the card: the merged work stays in the parent's branch; what the discard removes, and the nested worktrees that go with it.</summary>
+    public static string MergedDiscardMessage(PendingChildDiscard pending)
+    {
+        var nested = pending.Nested is { Count: > 0 } paths
+            ? "\n\n" + Locale.Get("delegation.discard.nested", new Dictionary<string, string> { ["count"] = paths.Count.ToString(System.Globalization.CultureInfo.InvariantCulture), ["paths"] = string.Join("\n", paths) }) : "";
+        return Locale.Get("delegation.mergedDiscard.message", new Dictionary<string, string> { ["title"] = pending.Title, ["branch"] = pending.Branch }) + nested;
     }
 
     /// <summary>The parent-close confirmation's text, with the count of its open children.</summary>
