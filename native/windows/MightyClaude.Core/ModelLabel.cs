@@ -19,7 +19,7 @@ public static class ModelLabel
     /// macOS reads (aliases, <c>default</c>, unknown names). Results are cached by id.
     /// <c>claude-opus-5-5</c> → <c>Opus 5.5</c>; Bedrock/Vertex wrappers are unwrapped;
     /// <c>gpt-5.2-codex</c> → <c>GPT-5.2 Codex</c>; <c>gemini-3-pro-preview</c> →
-    /// <c>Gemini 3 Pro</c>; a trailing <c>[1m]</c> adds <c> (1M)</c>.
+    /// <c>Gemini 3 Pro</c>; <c>gemini-3.8-flash-low</c> → <c>Gemini 3.8 Flash (Low)</c>; a trailing <c>[1m]</c> adds <c> (1M)</c>.
     /// </summary>
     public static string? Format(string id)
     {
@@ -186,15 +186,20 @@ public static class ModelLabel
         return string.Join(" ", new[] { "GPT-" + tokens[0] }.Concat(rest.Select(Word)));
     }
 
+    /// A last `low`/`medium`/`high` is the effort an Antigravity slug carries (`gemini-4-argon-medium` →
+    /// `Gemini 4 Argon (Medium)`, as `agy models` names it; M/MightyCore/ModelLabel.swift gemini).
     private static string? Gemini(string[] tokens)
     {
         if (tokens.Length == 0 || !StartsWithDigit(tokens[0])) return null;
         var words = new List<string>();
-        foreach (var token in tokens[1..])
+        var rest = tokens[1..];
+        var effort = rest.Length >= 2 && rest[^1] is "low" or "medium" or "high" ? rest[^1] : null;
+        if (effort is not null) rest = rest[..^1];
+        foreach (var token in rest)
         {
             if (token is "preview" or "exp" or "latest") break;
             if (!Digits(token)) words.Add(Word(token));
         }
-        return string.Join(" ", new[] { "Gemini", tokens[0] }.Concat(words));
+        return string.Join(" ", new[] { "Gemini", tokens[0] }.Concat(words)) + (effort is null ? "" : " (" + Capitalized(effort) + ")");
     }
 }

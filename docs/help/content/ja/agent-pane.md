@@ -3,7 +3,7 @@ title: エージェントペイン
 order: 3
 section: agent-pane
 ---
-エージェントペインは、Claude、Codex、Antigravity(WindowsではGemini)のいずれかと会話するペインです。下部の入力欄にリクエストを書き、上部で進行状況と結果を確認します。
+エージェントペインは、Claude、Codex、Antigravityのいずれかと会話するペインです。下部の入力欄にリクエストを書き、上部で進行状況と結果を確認します。
 
 ![[agent-basic]]
 
@@ -32,7 +32,7 @@ section: agent-pane
 モデルのチップをクリックすると、{{ui:composer.label.runner}}(Claude、Codex、Antigravity)と{{ui:composer.label.model}}を選べます。一覧が正しくない場合は{{ui:composer.model.refresh}}をクリックしてください。エージェントを変更すると、会話は新しく始まります。
 
 ### 思考レベル {#effort}
-{{ui:composer.effort.label}}は、モデルがどれだけ深く考えるかを決めます。Auto、Low、Medium、High、XHigh、Maxから選びます。モデルが対応している段階だけが表示されます。AntigravityとGeminiにはありません。
+{{ui:composer.effort.label}}は、モデルがどれだけ深く考えるかを決めます。Auto、Low、Medium、High、XHigh、Maxから選びます。モデルが対応している段階だけが表示されます。Antigravityにはありません。
 
 ### 作業の権限 {#permission}
 権限は、エージェントが確認なしで行える作業の範囲です。
@@ -41,20 +41,20 @@ section: agent-pane
 |---|---|
 | Claude | Plan mode · Always ask · Accept file edits · Auto mode · Bypass |
 | Codex | {{ui:permission.label.defaultCodex}} · {{ui:permission.label.acceptEditsCodex}} · {{ui:permission.label.onRequest}} · {{ui:permission.label.fullAccess}} |
-| Antigravity(Windows: Gemini) | {{ui:permission.label.default}} · {{ui:permission.label.plan}} · {{ui:permission.label.acceptEdits}} · {{ui:permission.label.fullAccess}} |
+| Antigravity | {{ui:permission.label.default}} · {{ui:permission.label.plan}} · {{ui:permission.label.acceptEdits}} · {{ui:permission.label.fullAccess}} |
 
 - ClaudeのAlways askとCodexの{{ui:permission.label.onRequest}}では、追加の権限が必要になったときにペイン内で許可を求めます。[許可と質問](approvals.md#permission)を参照してください。
 - Auto modeは、インストールされているClaude CLIが対応している場合にのみ表示されます。
 - Bypassと{{ui:permission.label.fullAccess}}は、プロジェクト外のファイルやコマンドにもアクセスします。本当に必要なときだけ使ってください。
 
-### MacのAntigravity {#antigravity}
-Macでは、GoogleのエージェントはAntigravity CLI(`agy`)で動きます。AntigravityはClaudeやGPT-OSSのモデルも実行できます。Windowsアプリは現在もGemini CLIを使います。
+### Antigravity {#antigravity}
+GoogleのエージェントはAntigravity CLI(`agy`)で動きます。AntigravityはClaudeやGPT-OSSのモデルも実行できます。
 
-- インストール: `curl -fsSL https://antigravity.google/cli/install.sh | bash`を実行すると、`~/.local/bin`に`agy`が入ります。アップデートはアプリが`agy update`で行います。
+- インストール: Macでは`curl -fsSL https://antigravity.google/cli/install.sh | bash`を実行すると、`~/.local/bin`に`agy`が入ります。WindowsではPowerShellで`irm https://antigravity.google/cli/install.ps1 | iex`を実行すると、`%LOCALAPPDATA%\agy\bin`に`agy.exe`が入ります。アップデートはアプリが`agy update`で行います。
 - サインイン: ターミナルペインで`agy`を一度実行し、ブラウザでGoogleアカウントにサインインします。{{ui:settings.nav.cli}}タブの{{ui:settings.cliAccounts.buttonLogin}}をクリックすると、アプリが代わりに実行します。Antigravityにはサインアウトのコマンドがないため、アカウントを切り替えるには`agy`の中で`/logout`を使います。
 - 権限: Antigravityはアプリの中で確認できません。{{ui:permission.label.default}}はagyに保存されたAgent Modeに従います(agyの`/config`で変えていなければレビュー)。ワークスペースのファイルは読めますが、確認が必要なファイル編集とシェルコマンドは拒否し、拒否した操作をペインに表示します。{{ui:permission.label.plan}}はagy自身のフォルダに計画を書き、プロジェクトを変更せずに止まります。実行するには、次のリクエストを別のモードで送ってください。`~/.gemini/antigravity-cli/settings.json`の`permissions.allow`に許可ルール(例: `command(git)`)を追加するか、{{ui:permission.label.acceptEdits}}(ファイル編集)または{{ui:permission.label.fullAccess}}(すべて許可)を選んでください。
 - Antigravityのモデルは名前に思考の深さが含まれているため、{{ui:composer.effort.label}}を別に選びません。
-- {{ui:graph.view.mighty}}表示はClaudeやCodexと同じです。Antigravityが起動したサブエージェントはリクエストの下にそれぞれのブロックになり、その内容(受けた指示、メッセージ、ツール呼び出し、送り返した答え)は`~/.gemini/antigravity-cli`に残るサブエージェント自身の記録から読みます。読んだファイルは名前だけが表示され、中身は写しません。会話の以前のリクエストも同じ記録から読み込み、{{ui:resume.choice.resume}}にはこのフォルダのAntigravityの会話が表示されます。
+- {{ui:graph.view.mighty}}表示はClaudeやCodexと同じです。Antigravityが起動したサブエージェントはリクエストの下にそれぞれのブロックになり、その内容(受けた指示、メッセージ、ツール呼び出し、送り返した答え)は`~/.gemini/antigravity-cli`(Windowsでは`%USERPROFILE%\.gemini\antigravity-cli`)に残るサブエージェント自身の記録から読みます。読んだファイルは名前だけが表示され、中身は写しません。会話の以前のリクエストも同じ記録から読み込み、{{ui:resume.choice.resume}}にはこのフォルダのAntigravityの会話が表示されます。
 - 以前Gemini CLIで実行していたペインは、履歴はそのままですが次のリクエストから新しい会話になり、Gemini CLIのモデルを選んでいた場合は既定に戻ります。
 
 ### その他の実行設定 {#run-settings}
@@ -94,7 +94,7 @@ CodexとAntigravityでは名前が少し異なります(例: Codexの`/new`、`/
 ![[session-info]]
 
 ## 標準表示とMighty表示 {#views}
-Claude、Codex、Antigravityのペインのヘッダーには、{{ui:graph.view.default}} | {{ui:graph.view.mighty}}の切り替えがあります。切り替えても、会話と入力中の文章はそのまま残ります。ペインごとに別々に記憶されます。Geminiのペイン(Windows)には標準表示しかありません。
+Claude、Codex、Antigravityのペインのヘッダーには、{{ui:graph.view.default}} | {{ui:graph.view.mighty}}の切り替えがあります。切り替えても、会話と入力中の文章はそのまま残ります。ペインごとに別々に記憶されます。
 - {{ui:graph.view.default}}: 会話を上から下へ読む記録です。
 - {{ui:graph.view.mighty}}: リクエスト、サブエージェント、バックグラウンドタスク、結果をブロックのフローで表示します。
 

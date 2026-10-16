@@ -92,7 +92,7 @@ public sealed record SettingsSectionsSmokeOutcome
 public static class SettingsSectionsSmoke
 {
     /// The four fixture results the CLI update section shows during smoke.
-    /// They are fixtures, not a real run: no claude, codex, gemini, npm or
+    /// They are fixtures, not a real run: no claude, codex, agy, npm or
     /// winget process is started to produce them.
     public static IReadOnlyList<CliUpdateResult> FixtureResults { get; } =
     [

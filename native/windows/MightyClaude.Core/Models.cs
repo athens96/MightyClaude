@@ -152,7 +152,7 @@ public sealed record RunSession : IJsonOnDeserializing
             return value with { Logs = TranscriptRetention.Trimmed(logs) };
         }
         // The run pipeline hands the finished execution graph of one request to
-        // its own session; Gemini and shell panes never produce one.
+        // its own session; shell panes never produce one.
         if (ev.Type == "graph_run" && ev.GraphRun is { } newRun && Kind == "claude" && MightyGraphSupport.Providers.Contains(Provider))
         {
             var runs = (GraphRuns ?? []).Select(r => r.Copy()).ToList();
@@ -299,6 +299,10 @@ public sealed record AppSnapshot
     // That line was left open on its task rows. Null (older state) means folded, matching the Mac's backgroundWorkOpen.
     [JsonConverter(typeof(LenientNullableBoolConverter))]
     public bool? BackgroundWorkOpen { get; init; }
+    // The profile's Antigravity panes were moved off what Gemini CLI saved (AntigravityMigration). Null (older state) means
+    // not yet, matching the Mac's antigravityMigrated.
+    [JsonConverter(typeof(LenientNullableBoolConverter))]
+    public bool? AntigravityMigrated { get; init; }
     // The reference bubble's dragged size, one for every pane (the Mac's mighty.referenceBubble.width and .height).
     // Null (older state, or its corner's double click) is the size it opens at: its default width, as tall as the room.
     [JsonConverter(typeof(LenientNullableDoubleConverter))]

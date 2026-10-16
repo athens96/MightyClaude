@@ -115,8 +115,10 @@ internal static class SessionHistoryVerification
         var none = new SessionHistoryState();
         Check(none.Begin(null, null, null, new SessionHistoryRequest("claude", "", fixture.Workspace)) is null && none.Phase == SessionHistoryState.Phases.Unavailable, "a pane that resumes nothing has no record to read");
         Check(none.BlockText(0) == Locale.Get("graph.history.none"), "and says so");
-        try { SessionHistory.Load(new SessionHistoryRequest("gemini", id, fixture.Workspace) { Home = fixture.Home }); Check(false, "gemini must be unsupported"); }
-        catch (SessionHistoryException ex) { Check(ex.Error == SessionHistoryError.Unsupported, "the app does not read Gemini records"); }
+        try { SessionHistory.Load(new SessionHistoryRequest("shell", id, fixture.Workspace) { Home = fixture.Home }); Check(false, "a shell must be unsupported"); }
+        catch (SessionHistoryException ex) { Check(ex.Error == SessionHistoryError.Unsupported, "a shell keeps no record the graph reads"); }
+        try { SessionHistory.Load(new SessionHistoryRequest("gemini", id, fixture.Workspace) { Home = fixture.Home }); Check(false, "a missing Antigravity transcript must be missing"); }
+        catch (SessionHistoryException ex) { Check(ex.Error == SessionHistoryError.Missing, "an Antigravity conversation without its transcript has nothing to read"); }
         return Task.CompletedTask;
     }
 
@@ -262,7 +264,7 @@ internal static class SessionHistoryVerification
         Check(ResumableSessions.MayBeRunning(claude.Items[0], now) && ResumableSessions.Details(claude.Items[0], now).Contains(Locale.Get("resume.recentlyModified"), StringComparison.Ordinal), "a record written in the last two minutes may still be running");
         var codex = ResumableSessions.Listing(query, "codex");
         Check(codex.Items.Select(i => i.SessionID).SequenceEqual([thread]) && codex.Items[0].Title == "codex work", "Codex lists its own thread, never a sub-agent's");
-        Check(ResumableSessions.Listing(query, "gemini").Items.Count == 0 && !ResumableSessions.OffersResume("claude", "gemini") && ResumableSessions.OffersResume("claude", "codex") && !ResumableSessions.OffersResume("shell", "claude"), "Gemini, terminals and browsers never ask");
+        Check(ResumableSessions.Listing(query, "gemini").Items.Count == 0 && ResumableSessions.OffersResume("claude", "gemini") && ResumableSessions.OffersResume("claude", "codex") && !ResumableSessions.OffersResume("shell", "claude"), "Antigravity asks when agy has a conversation here (none: agy never ran); terminals and browsers never ask");
         Check(ResumableSessions.Listing(query with { HeadOnly = true }, "claude").Items.All(i => i.Requests is null && i.Model is null), "the menu's look-up reads only the head");
         Check(ResumableSessions.Filter(claude.Items, "NEW").Select(i => i.Title).SequenceEqual(["newer"]) && ResumableSessions.Filter(claude.Items, " ").Count == 2, "search keeps titles with every word, ignoring case");
         return Task.CompletedTask;

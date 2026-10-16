@@ -42,8 +42,8 @@ public static class AddPaneMenu
     /// <summary>
     /// Whether adding this agent's pane may first ask 새로 시작 / 이어가기…: only a pick
     /// from the menu, and only for an agent whose sessions can be continued (Claude,
-    /// Codex). The question itself comes only when the folder has such a session.
-    /// Gemini and Ctrl+N start at once.
+    /// Codex, Antigravity). The question itself comes only when the folder has such a
+    /// session. Ctrl+N starts at once.
     /// </summary>
     public static bool MayAskResume(string provider, bool fromMenu) => fromMenu && ResumableSessions.OffersResume("claude", provider);
 

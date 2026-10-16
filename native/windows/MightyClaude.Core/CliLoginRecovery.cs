@@ -26,37 +26,24 @@ public static class CliAuthFailure
             && (value.Contains("401") && value.Contains("unauthorized") || new[] { "not logged in", "please log in", "please login", "log in again", "sign in again", "refresh token" }.Any(value.Contains));
     }
     /// <summary>
-    /// One line of Gemini CLI's own console output (stderr, or a stdout line that is not JSON) that says its sign-in is
-    /// gone (M/CLILoginRecovery.swift geminiConsole(line:)). Only the CLI's own sign-in messages count, since this output
-    /// also carries API error dumps that quote other text: a stale Google sign-in prints the OAuth consent prompt
-    /// ("Opening authentication page in your browser") and then "Error authenticating: FatalCancellationError:
-    /// Authentication cancelled by user."; no method chosen prints "Please set an Auth method" (or "No authentication
-    /// method selected."); a suppressed browser prints "Manual authorization is required".
+    /// Antigravity CLI's own sign-in failures, in its own words, on stderr, a plain stdout line or a failed result
+    /// (M/CLILoginRecovery.swift antigravity(text:)): "Error: authentication required. Run 'agy' to log in, then retry." and
+    /// "Print mode: auth error: …". A sign-in that timed out, or a proxy's "407 Proxy Authentication Required", is not a lost sign-in.
     /// </summary>
-    public static bool GeminiConsole(string line)
-    {
-        var value = Bounded(line);
-        return new[] { "please set an auth method", "no authentication method selected", "opening authentication page in your browser", "manual authorization is required" }.Any(value.Contains)
-            || value.Contains("error authenticating") && (value.Contains("fatalauthenticationerror") || value.Contains("authentication cancelled by user"));
-    }
-    /// <summary>
-    /// The message of a failed Gemini error/result event, never model or tool text (M/CLILoginRecovery.swift gemini(text:)):
-    /// the console messages above, or a token rejected mid-run (OAuth invalid_grant, "Token has been expired or revoked",
-    /// the API's 401 UNAUTHENTICATED "Request had invalid authentication credentials"). An invalid API key is not matched,
-    /// and Vertex or a key is ruled out by SignInCanFix.
-    /// </summary>
-    public static bool Gemini(string text)
+    public static bool Antigravity(string text)
     {
         var value = Bounded(text);
-        return GeminiConsole(text)
-            || new[] { "authentication consent could not be obtained", "invalid_grant", "token has been expired or revoked", "request had invalid authentication credentials" }.Any(value.Contains)
-            || value.Contains("401") && value.Contains("unauthenticated");
+        return value.Contains("authentication required. run ", StringComparison.Ordinal) || value.Contains("print mode: auth error", StringComparison.Ordinal);
     }
-    /// <summary>A Gemini stream-json line that is the run's successful result: it clears an earlier sign-in signal, as on the Mac.</summary>
-    public static bool GeminiSucceeded(string line)
+    /// <summary>An Antigravity stream-json line that is the run's successful result: it clears an earlier sign-in signal, as on the Mac.</summary>
+    public static bool AntigravitySucceeded(string line)
     {
         if (!line.Contains("\"result\"", StringComparison.Ordinal) || !line.TrimStart().StartsWith('{')) return false;
-        try { using var json = JsonDocument.Parse(line); var root = json.RootElement; return root.ValueKind == JsonValueKind.Object && root.Text("type") == "result" && root.Text("status") == "success"; }
+        try
+        {
+            using var json = JsonDocument.Parse(line); var root = json.RootElement;
+            return root.ValueKind == JsonValueKind.Object && root.Text("event") == "result" && MetadataJson.Property(root, "result").Text("status")?.ToUpperInvariant() == "SUCCESS";
+        }
         catch (JsonException) { return false; }
     }
     /// <summary>Whether a run's failure text is its provider's lost sign-in.</summary>
@@ -64,7 +51,7 @@ public static class CliAuthFailure
     {
         "claude" => Claude(text),
         "codex" => Codex(text),
-        "gemini" => Gemini(text),
+        "gemini" => Antigravity(text),
         _ => false,
     };
     public static bool Claude(JsonElement value)
@@ -105,10 +92,14 @@ public static class CliAuthFailure
         if (value.Text("result") is { } result) texts.Add(result);
         return texts;
     }
-    /// <summary>A Gemini method other than the Google sign-in (an API key, Vertex AI, Compute ADC, …) is not renewed by signing in.</summary>
+    /// <summary>
+    /// Whether signing in again can fix a run that failed with a sign-in error (M/CLILoginRecovery.swift signInCanFix): a Codex
+    /// API-key login cannot. Antigravity's status is a live call: only one that reads signed out asks for a sign-in; unknown
+    /// (offline, a timeout) does not open one.
+    /// </summary>
     public static bool SignInCanFix(CliAccountStatus status) => Providers.Contains(status.Provider) && status.Installed && status.AccessVerified != false
         && !(status.Provider == "codex" && status.MethodId == CliAccountMethod.CodexApiKey)
-        && !(status.Provider == "gemini" && status.MethodId is not null && status.MethodId != CliAccountMethod.GeminiGoogle);
+        && (status.Provider != "gemini" || status.LoggedIn == false);
 }
 
 /// Whether a lost sign-in starts its provider's background sign-in by itself (M/CLILoginRecovery.swift
@@ -274,45 +265,29 @@ public static class CliTerminalLogin
 }
 
 /// <summary>
-/// Gemini has no sign-in command: its sign-in is the interactive CLI itself ("Login with Google"), so it runs in a
-/// terminal the user sees (M/CLILoginRecovery.swift CLIGeminiLogin). A dropped sign-in usually leaves oauth_creds.json
-/// on disk, so a new sign-in is the file appearing or being rewritten after the terminal opened. Only the file's
-/// modification time is read, never its contents.
+/// Antigravity has no sign-in command: its sign-in is the interactive CLI itself (the browser opens on its first run), so it
+/// runs in a terminal the user sees (M/CLILoginRecovery.swift CLIAntigravityLogin). Its credentials live in the system's
+/// credential store, so the sign-in is seen by asking its status (<see cref="CliAccountSupport.AntigravityStatus"/>) every interval.
 /// </summary>
-public static class CliGeminiLogin
+public static class CliAntigravityLogin
 {
-    public static string CredentialsPath(string home) => Path.Combine(home, ".gemini", "oauth_creds.json");
-    /// <summary>When the credentials file was last written; null while it does not exist.</summary>
-    public static DateTimeOffset? CredentialsStamp(string home)
-    {
-        try { var file = new FileInfo(CredentialsPath(home)); return file.Exists ? new DateTimeOffset(file.LastWriteTimeUtc, TimeSpan.Zero) : null; }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { return null; }
-    }
-    /// <summary>Signed in since baseline (the stamp when the terminal opened): the file is newer, or appeared, and the status reads as a Google sign-in.</summary>
-    public static bool SignedIn(DateTimeOffset? baseline, DateTimeOffset? stamp, CliAccountStatus status) =>
-        stamp is { } value && (baseline is not { } before || value > before)
-        && status.Provider == "gemini" && status.LoggedIn == true && CliAuthFailure.SignInCanFix(status);
     /// <summary>
-    /// Waits for a sign-in in the terminal. The stamp is checked every tick; the status is read only once the stamp
-    /// moved (then at most every interval until it confirms), and once more when the terminal closed (Exited) or the
-    /// limit passed (TimedOut). Cancellation throws.
+    /// Waits for a sign-in in the terminal: signed in once the status reads so; once more when the terminal closed (Exited)
+    /// or the limit passed (TimedOut). The terminal being open is checked every tick. Cancellation throws.
     /// </summary>
-    public static async Task<CliLoginWaitResult> RunAsync(DateTimeOffset? baseline, Func<DateTimeOffset?> stamp,
-        Func<CancellationToken, Task<CliAccountStatus>> status, Func<bool> open, CancellationToken cancellation = default,
+    public static async Task<CliLoginWaitResult> RunAsync(Func<CancellationToken, Task<CliAccountStatus>> status, Func<bool> open, CancellationToken cancellation = default,
         TimeSpan? interval = null, TimeSpan? limit = null, TimeSpan? tick = null)
     {
-        var watch = Stopwatch.StartNew(); TimeSpan? lastRead = null;
+        var watch = Stopwatch.StartNew(); var lastRead = TimeSpan.Zero;
         var polling = interval ?? TimeSpan.FromSeconds(3); var timeout = limit ?? TimeSpan.FromMinutes(10);
         while (true)
         {
             await Task.Delay(tick ?? TimeSpan.FromSeconds(1), cancellation);
             var active = open(); var expired = watch.Elapsed >= timeout;
-            var moved = stamp() is { } current && (baseline is not { } before || current > before);
-            var final = !active || expired;
-            if (!final && !(moved && (lastRead is not { } read || watch.Elapsed - read >= polling))) continue;
+            if (active && !expired && watch.Elapsed - lastRead < polling) continue;
             lastRead = watch.Elapsed;
             var value = await status(cancellation); cancellation.ThrowIfCancellationRequested();
-            if (SignedIn(baseline, stamp(), value)) return new(CliLoginOutcome.LoggedIn, value);
+            if (value.Provider == "gemini" && value.LoggedIn == true) return new(CliLoginOutcome.LoggedIn, value);
             if (!active) return new(CliLoginOutcome.Exited, value);
             if (expired) return new(CliLoginOutcome.TimedOut, value);
         }

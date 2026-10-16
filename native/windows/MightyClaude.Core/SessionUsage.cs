@@ -90,7 +90,7 @@ internal sealed class SessionUsageTracker
     private long lastModSequence = -1;
     private bool authoritativeContext, resultSeen;
     internal SessionUsageTracker(string provider, Action<SessionUsage>? callback) { value = Initial(provider); this.callback = callback; }
-    private static SessionUsage Initial(string provider) => new() { Provider = provider, Source = provider + ".stream-json", TokenScope = provider == "claude" ? "response" : "session" };
+    private static SessionUsage Initial(string provider) => new() { Provider = provider, Source = provider == "gemini" ? "antigravity.stream-json" : provider + ".stream-json", TokenScope = provider == "claude" ? "response" : "session" };
     internal void Consume(JsonElement root)
     {
         if (callback is null) return;
@@ -105,12 +105,18 @@ internal sealed class SessionUsageTracker
         }
         else
         {
-            if (type == "init") { Identity(root.Text("session_id")); Model(root.Text("model")); Publish(); }
-            var stats = MetadataJson.Property(root, "stats");
-            if (type == "result" && SessionUsageSupport.Count(stats, "input_tokens") is { } input && SessionUsageSupport.Count(stats, "output_tokens") is { } output && SessionUsageSupport.Count(stats, "total_tokens") is { } total)
+            // Antigravity CLI (agy) names each line's kind in `event` and nests its payload under that name (M/MightyCore/SessionUsage.swift:206-224).
+            var kind = root.Text("event");
+            if (kind == "init") { Identity(root.Text("conversation_id")); Model(MetadataJson.Property(root, "init").Text("model")); Publish(); }
+            // The result's usage counts the whole conversation, resumed turns included. agy's input_tokens leaves out
+            // cache_read_tokens (its total is input + output); here input includes cached input.
+            var result = MetadataJson.Property(root, "result"); var usage = MetadataJson.Property(result, "usage");
+            if (kind == "result" && usage.ValueKind == JsonValueKind.Object && SessionUsageSupport.Count(usage, "input_tokens") is { } fresh && SessionUsageSupport.Count(usage, "output_tokens") is { } output
+                && (MetadataJson.Property(usage, "cache_read_tokens").ValueKind == JsonValueKind.Undefined ? 0 : SessionUsageSupport.Count(usage, "cache_read_tokens")) is { } cached
+                && SessionUsageSupport.Sum([fresh, cached]) is { } input)
             {
-                value = value with { InputTokens = input, OutputTokens = output, TotalTokens = total, CacheReadTokens = SessionUsageSupport.Count(stats, "cached") };
-                var models = MetadataJson.Property(stats, "models"); if (models.ValueKind == JsonValueKind.Object && models.EnumerateObject().Count() == 1) Model(models.EnumerateObject().First().Name);
+                Identity(result.Text("conversation_id"));
+                value = value with { Source = "antigravity.stream-json", TokenScope = "session", InputTokens = input, OutputTokens = output, CacheReadTokens = cached, ReasoningTokens = SessionUsageSupport.Count(usage, "thinking_tokens"), TotalTokens = SessionUsageSupport.Sum([input, output]) };
                 Publish();
             }
         }

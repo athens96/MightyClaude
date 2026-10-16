@@ -815,7 +815,7 @@ public sealed partial class MainWindow : Window
             var rename = Item(RenameStrings.MenuEntry, () => owner.RenameSession(id));
             menu.Items.Add(rename);
             // The plugin window, the same one /plugin and /plugins open.
-            // Claude and Codex both have one; Gemini has none on macOS either.
+            // Claude and Codex both have one; Antigravity has none on macOS either.
             MenuFlyoutItem? plugins = null;
             if (pane.Kind == "claude" && pane.Provider is "claude" or "codex")
             {

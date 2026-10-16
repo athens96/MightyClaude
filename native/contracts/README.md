@@ -100,8 +100,9 @@ the engine's per-message `usage` on the execution host. Older clients ignore it.
 
 `kind: "claude"` remains the compatible wire name for an AI pane. `provider`
 selects `claude`, `codex`, or `gemini`; `kind: "shell"` starts a command. The
-`gemini` id is kept on the wire and in saved panes: Windows runs Gemini CLI
-(`gemini`) for it, while macOS runs Google's Antigravity CLI (`agy`) and labels
+`gemini` id is kept on the wire and in saved panes: macOS and Windows run
+Google's Antigravity CLI (`agy`; Windows also looks for `agy.exe` in
+`%LOCALAPPDATA%\agy\bin`, where its PowerShell installer puts it) and label
 the agent "Antigravity".
 Prompts travel over stdin. CLI argument arrays are never assembled by shell
 interpolation. Provider changes reset model, settings, and resume identity.
@@ -129,9 +130,8 @@ can understand every file format. Empty text is valid only for AI requests with
 at least one attachment; shell requests cannot carry attachments.
 
 Claude receives images and PDFs as structured stream-JSON content blocks.
-Codex receives image paths through `--image`. Gemini (Windows) receives platform-escaped `@file`
-references and access to the single temporary attachment directory; Antigravity
-(macOS) gets that directory through `--add-dir` and each copy's plain path in the prompt. Other files
+Codex receives image paths through `--image`. Antigravity gets the single temporary
+attachment directory through `--add-dir` and each copy's plain path in the prompt. Other files
 are referenced by staged paths in the prompt. Files are staged under generated
 names in a private per-run directory and removed after completion, cancellation,
 or startup failure. Originals are untouched. Attachments must be sent again if
@@ -163,7 +163,7 @@ interactive approval requests. Its permission modes map to `read-only`,
 `workspace-write`, and `danger-full-access`. The workspace sandbox's outbound
 network flag is separate from the model's web search setting. `fullAccess` removes
 that sandbox restriction; it is not a default. Claude maps `fullAccess` to
-`bypassPermissions`, Gemini (Windows) maps it to `yolo` and Antigravity (macOS) to
+`bypassPermissions` and Antigravity to
 `--dangerously-skip-permissions`. Their `manual` modes retain CLI permission rules
 and do not promise a read-only filesystem sandbox. Antigravity runs headless
 (`agy --print= --input-format stream-json --output-format stream-json`, the prompt
@@ -177,13 +177,13 @@ agy's own folder and stops without editing the project. agy expands skills sent
 as `/name`; its read-only commands (`/help`, `/skills`, …) answer only in their own
 `agy -p "/help"` run and end with an error result when sent over stdin. Token
 usage is per conversation; agy's `input_tokens` excludes `cache_read_tokens`, so
-macOS adds them to keep input inclusive of cached input. Once per profile
-(`antigravityMigrated` in the Mac snapshot), `gemini` panes drop the resume id and
+both apps add them to keep input inclusive of cached input. Once per profile
+(`antigravityMigrated` in the Mac and Windows snapshots), `gemini` panes drop the resume id and
 any model Gemini CLI saved that agy does not list; a model agy's live list lacks is
 reset to `default` before a run, since agy refuses an unknown `--model`.
 
-On macOS an Antigravity pane has the Mighty views (the `gemini` id joins
-`MightyGraphSupport.providers`; Windows' Gemini CLI panes still have none). The
+An Antigravity pane has the Mighty views on macOS and Windows (the `gemini` id joins
+`MightyGraphSupport.providers`). The
 graph comes from agy's stream: each `agent_response` step's usage is summed on the
 request block (`input_tokens` without `cache_read_tokens`, which is its own field),
 the latest streamed reply, trimmed, is both the transcript's message and the
@@ -192,7 +192,7 @@ is one tool row plus one `agent` node per sub-agent conversation, titled
 `role (type_name)` with `initial_prompt` as its input. The stream says nothing
 of a sub-agent's work, so the host reads the sub-agent's own
 `~/.gemini/antigravity-cli/brain/<conversation>/.system_generated/logs/transcript_full.jsonl`
-about once a second while the run lasts and once more when it ends
+(`%USERPROFILE%\.gemini\antigravity-cli\…` on Windows) about once a second while the run lasts and once more when it ends
 (`AntigravitySubagentWatcher`): instructions from its parent (SYSTEM_MESSAGE
 `sender=<parent> … content=`) are its input and later assignments, PLANNER_RESPONSE
 text and tool calls are its entries and usage, the GENERIC steps that follow
@@ -207,7 +207,8 @@ opens a request; its steps are replayed as the stream events agy printed, and
 its sub-agents' transcripts are read the same way, only up to when the next
 request was sent and within one byte budget per chunk). The resume list reads
 `conversation_summaries.db` read-only (SQLite, `mode=ro`, or `immutable=1` while
-agy is not running; newest rows first): rows whose `workspace_uris` include the workspace and whose
+agy is not running; newest rows first; Windows reads it through the system's own
+`winsqlite3.dll`): rows whose `workspace_uris` include the workspace and whose
 `parent_conversation_id` is empty, with a transcript; the title is the first
 request. Continuing one passes `--conversation <id>`. The composer's slash list
 offers agy's built-in skills (`builtin/skills`), the user's
@@ -247,11 +248,10 @@ marketplace command, and Codex Git marketplaces) while CLI updates are on. Both
 preferences are local to the Mac app profile, and an update applies from the next
 request. Mac and Windows snapshots may also include `autoLoginCLIs`, an optional
 Boolean; anything but explicit `false` keeps the automatic sign-in on: a run that
-lost its Claude or Codex sign-in starts one background sign-in per provider (Gemini,
-which has no sign-in command, opens one sign-in terminal running `gemini` instead and
-counts as signed in once `~/.gemini/oauth_creds.json` appears or is rewritten; on
-macOS that terminal runs `agy`, opens only when `agy models` reports signed out, and
-counts as signed in once `agy models` succeeds), and
+lost its Claude or Codex sign-in starts one background sign-in per provider (Antigravity,
+which has no sign-in command, opens one sign-in terminal running `agy` instead — a
+terminal pane on macOS, a separate console window on Windows — only when `agy models`
+reports signed out, and counts as signed in once `agy models` succeeds), and
 none again for two minutes after one failed, was cancelled or succeeded. A request
 that login recovery itself resent, or that started before the last sign-in, only
 shows the card.
@@ -462,8 +462,8 @@ own name and add the resolved model after ` · `. `[1m]` adds ` (1M)`; a Bedrock
 `model-label.test.ts` (jest) both read the fixture
 `[{model, resolved?, fallback?, expected}]`. The graph vectors below keep the
 catalogue-only names (`ModelUsageFormat` with `versioned: false`); the Mac views
-pass `versioned: true`. Windows does not apply these labels yet. macOS alone reads
-an Antigravity slug's last `low`/`medium`/`high` as its effort
+pass `versioned: true`. macOS and Windows
+(`MightyClaude.Core/ModelLabel.cs`) read an Antigravity slug's last `low`/`medium`/`high` as its effort
 (`gemini-3.8-flash-low` → `Gemini 3.8 Flash (Low)`, as `agy models` names it); the
 phone shows such ids as `Gemini 3.8 Flash Low`, so they are not in the shared fixture.
 

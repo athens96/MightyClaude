@@ -497,7 +497,7 @@ internal static class GraphVectorVerification
         try
         {
             var workspace = new Workspace { Path = directory };
-            foreach (var (provider, expected) in new[] { ("claude", true), ("codex", true), ("gemini", false) })
+            foreach (var (provider, expected) in new[] { ("claude", true), ("codex", true), ("gemini", true) })
             {
                 var record = Path.Combine(directory, provider + "-run");
                 var events = new List<RunEvent>();
@@ -520,7 +520,7 @@ internal static class GraphVectorVerification
                 Check(run.Provider == provider, provider + " graph run must carry its provider");
                 Check(MightyGraphSupport.Terminal(run.Status), provider + " graph run must be settled");
                 Check(run.Input == "Say hello", provider + " graph run must keep the request it observed");
-                if (provider == "codex") Check(run.FinalOutput == "FAKE_CLI_OK", "the codex graph run must keep the answer the CLI reported");
+                if (provider is "codex" or "gemini") Check(run.FinalOutput == "FAKE_CLI_OK", "the " + provider + " graph run must keep the answer the CLI reported");
             }
 
             // A shell pane has no agent graph at all.

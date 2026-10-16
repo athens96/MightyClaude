@@ -41,7 +41,7 @@ Windows has no menu bar. The same commands are in the sidebar and the {{ui:works
 | Feature | On Windows |
 |---|---|
 | CLI sign-in | Runs in a separate Windows terminal window, not a terminal inside the app. Once you are signed in, the failed request is sent again on its own, as on the Mac. |
-| Google's agent | Gemini CLI (`gemini`) for now; the Mac uses Antigravity CLI ([Antigravity on the Mac](agent-pane.md#antigravity)). |
+| Antigravity | Installed with its PowerShell installer into `%LOCALAPPDATA%\agy\bin`; it keeps its records in `%USERPROFILE%\.gemini\antigravity-cli` ([Antigravity](agent-pane.md#antigravity)). |
 | Terminal panes | Use Windows PowerShell. |
 | Browser panes | Use Microsoft Edge WebView2. As on the Mac, turn on {{ui:settings.display.browserToggle}} and reopen the app. |
 | Completion notification | Turn on {{ui:windows.notifications.toggleLabel}}. |

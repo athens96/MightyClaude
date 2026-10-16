@@ -18,7 +18,7 @@ internal static class CliLoginRecoveryVerification
         Check(!CliAuthFailure.SignInCanFix(new() { Provider = "codex", Method = "any label", MethodId = CliAccountMethod.CodexApiKey }), "Codex API-key login is excluded");
         Check(!CliAuthFailure.SignInCanFix(CliAccountSupport.ParseCodexStatus("Logged in using an API key - sk-***", null)), "a parsed Codex API-key login is excluded, whatever its label reads");
         Check(CliAuthFailure.SignInCanFix(new() { Provider = "codex", Method = CliAccountSupport.CodexApiKeyMethod, MethodId = CliAccountMethod.CodexChatGpt }), "the decision reads the method id, not the label");
-        Check(!CliAuthFailure.SignInCanFix(new() { Provider = "gemini", Method = CliAccountSupport.GeminiGoogleMethod, MethodId = CliAccountMethod.GeminiVertex }), "a Gemini method other than Google is excluded by id");
+        Check(!CliAuthFailure.SignInCanFix(new() { Provider = "gemini", Method = CliAccountSupport.GeminiGoogleMethod, MethodId = CliAccountMethod.GeminiGoogle }), "an Antigravity status that cannot tell opens no sign-in");
         Check(CliAuthFailure.SignInCanFix(new() { Provider = "claude", LoggedIn = true }) && CliAuthFailure.SignInCanFix(new() { Provider = "codex" }), "stale persisted credentials or unknown status do not rule out login recovery");
         return Task.CompletedTask;
     }
@@ -30,7 +30,7 @@ internal static class CliLoginRecoveryVerification
         Check(gate.ShouldStart("claude", true, claude, false, now), "a lost sign-in starts one sign-in");
         Check(!gate.ShouldStart("claude", true, claude, true, now), "panes failing while the provider's sign-in runs join it instead of starting another");
         Check(!gate.ShouldStart("claude", false, claude, false, now), "the switch off leaves only the card");
-        Check(gate.ShouldStart("gemini", true, new() { Provider = "gemini" }, false, now) && !gate.ShouldStart("gemini", true, claude, false, now) && !gate.ShouldStart("codex", true, claude, false, now), "Claude, Codex and Gemini, each decided on its own status");
+        Check(gate.ShouldStart("gemini", true, new() { Provider = "gemini", LoggedIn = false }, false, now) && !gate.ShouldStart("gemini", true, claude, false, now) && !gate.ShouldStart("codex", true, claude, false, now), "Claude, Codex and Antigravity, each decided on its own status");
         Check(!gate.ShouldStart("other", true, new() { Provider = "other" }, false, now), "a provider without login recovery never starts one");
         Check(!gate.ShouldStart("claude", true, claude with { Method = "AWS Bedrock", AccessVerified = false }, false, now)
             && !gate.ShouldStart("codex", true, codex with { Method = CliAccountSupport.CodexApiKeyMethod, MethodId = CliAccountMethod.CodexApiKey }, false, now)
@@ -89,125 +89,68 @@ internal static class CliLoginRecoveryVerification
         Check(book.Take("pane")?.Request.Input == "first" && book.Take("pane") is null, "retry consumed once");
         return Task.CompletedTask;
     }
-    /// <summary>What Gemini CLI 0.43 printed for each case in a headless stream-json run (temp HOME, fake credentials).</summary>
+    /// <summary>
+    /// Antigravity CLI's own sign-in failures (M/MightyCore/Tests AntigravityTests.failedCancelledAndSignedOutTurnsEndTheirOwnWay and
+    /// statusComesFromTheModelListAndThereIsNoSignOut): only agy's own words, and only a status that reads signed out asks for a sign-in.
+    /// </summary>
     internal static Task GeminiSignalsAndMethods()
     {
-        foreach (var text in new[]
-        {
-            "Opening authentication page in your browser. Do you want to continue? [Y/n]: fix the bug",
-            "Error authenticating: FatalCancellationError: Authentication cancelled by user.",
-            "Please set an Auth method in your C:\\Users\\me\\.gemini\\settings.json or specify one of the following environment variables before running: GEMINI_API_KEY, GOOGLE_GENAI_USE_VERTEXAI, GOOGLE_GENAI_USE_GCA",
-            "Manual authorization is required but the current session is non-interactive. Please run the Gemini CLI in an interactive terminal to log in.",
-            "No authentication method selected.",
-            "[API Error: invalid_grant]",
-            "Token has been expired or revoked.",
-            "[API Error: Request had invalid authentication credentials. Expected OAuth 2 access token. (Status: UNAUTHENTICATED)]",
-            """{"error":{"code":401,"status":"UNAUTHENTICATED"}}""",
-        })
-            Check(CliAuthFailure.Gemini(text) && CliAuthFailure.Matches("gemini", text), "gemini sign-in failure: " + text);
-        foreach (var text in new[]
-        {
-            """[API Error: {"error":{"code":400,"message":"API key not valid. Please pass a valid API key.","status":"INVALID_ARGUMENT"}}]""",
-            "[API Error: Resource has been exhausted (e.g. check quota). (Status: RESOURCE_EXHAUSTED)]",
-            "[API Error: The caller does not have permission (Status: PERMISSION_DENIED)]",
-            "No input provided via stdin. Input can be provided by piping data into gemini or using the --prompt option.",
-            "401 files changed",
-            "Error authenticating: getaddrinfo ENOTFOUND oauth2.googleapis.com",
-        })
-            Check(!CliAuthFailure.Gemini(text), "not a gemini sign-in failure: " + text);
-        Check(!CliAuthFailure.Matches("claude", "Please set an Auth method") && !CliAuthFailure.Matches("other", "invalid_grant"), "each provider is matched by its own rules");
-        // On stderr and plain stdout lines only the CLI's own sign-in messages count; token rejections are left to the failed result.
-        foreach (var line in new[] { "Error authenticating: FatalCancellationError: Authentication cancelled by user.", "Error authenticating: FatalAuthenticationError: Failed to authenticate with user code.",
-            "Please set an Auth method in your settings.json", "No authentication method selected.", "Manual authorization is required but the current session is non-interactive.",
-            "Opening authentication page in your browser. Do you want to continue? [Y/n]: " })
-            Check(CliAuthFailure.GeminiConsole(line), "gemini console sign-in message: " + line);
-        foreach (var line in new[] { "Error when talking to Gemini API _ApiError: {\"error\":{\"code\":401,\"status\":\"UNAUTHENTICATED\"}}", "GaxiosError: invalid_grant",
-            "Token has been expired or revoked.", "Request had invalid authentication credentials.", "Error authenticating: getaddrinfo ENOTFOUND oauth2.googleapis.com" })
-            Check(!CliAuthFailure.GeminiConsole(line), "not a gemini console sign-in message: " + line);
-        Check(CliAuthFailure.GeminiSucceeded("{\"type\":\"result\",\"status\":\"success\"}") && !CliAuthFailure.GeminiSucceeded("{\"type\":\"result\",\"status\":\"error\"}")
-            && !CliAuthFailure.GeminiSucceeded("{\"type\":\"message\",\"content\":\"\\\"result\\\"\"}") && !CliAuthFailure.GeminiSucceeded("{\"result\""), "only a successful result line clears the signal");
-        var home = Path.Combine(Path.GetTempPath(), "mighty-gemini-method-" + Guid.NewGuid().ToString("N"));
-        var directory = Path.Combine(home, ".gemini"); Directory.CreateDirectory(directory);
-        try
-        {
-            CliAccountStatus Select(string? type)
-            {
-                File.WriteAllText(Path.Combine(directory, "settings.json"), type is null ? "{}" : "{\"security\":{\"auth\":{\"selectedType\":\"" + type + "\"}}}");
-                return CliAccountSupport.GeminiStatus(home, new Dictionary<string, string> { ["GEMINI_API_KEY"] = "fixture", ["GOOGLE_CLOUD_PROJECT"] = "fixture" });
-            }
-            Check(CliAuthFailure.SignInCanFix(Select("oauth-personal")), "a signed-out Google sign-in can be fixed");
-            File.WriteAllText(Path.Combine(directory, "oauth_creds.json"), "{}");
-            Check(CliAuthFailure.SignInCanFix(Select("oauth-personal")) && CliAuthFailure.SignInCanFix(Select(null)), "a stale Google sign-in still on disk can be fixed");
-            foreach (var type in new[] { "gemini-api-key", "vertex-ai", "compute-default-credentials" })
-                Check(!CliAuthFailure.SignInCanFix(Select(type)), "a Google sign-in does not renew " + type);
-            Check(!CliAuthFailure.SignInCanFix(new() { Provider = "gemini", Installed = false }), "no CLI, no sign-in");
-            var gate = new CliAutoLoginGate(); var now = DateTimeOffset.UnixEpoch.AddDays(10000);
-            Check(!gate.ShouldStart("gemini", true, Select("gemini-api-key"), false, now) && !gate.ShouldStart("gemini", true, Select("vertex-ai"), false, now), "an API key or Vertex AI never opens the sign-in terminal");
-            var google = Select("oauth-personal");
-            Check(gate.ShouldStart("gemini", true, google, false, now) && !gate.ShouldStart("gemini", true, google, true, now), "one Gemini sign-in at a time");
-            gate.Stopped("gemini", now);
-            Check(!gate.ShouldStart("gemini", true, google, false, now + CliAutoLoginGate.Cooldown - TimeSpan.FromSeconds(1)) && gate.ShouldStart("gemini", true, google, false, now + CliAutoLoginGate.Cooldown), "a cancelled Gemini sign-in waits for the cooldown");
-            gate.Succeeded("gemini", now + TimeSpan.FromHours(1));
-            Check(!gate.ShouldStart("gemini", true, google, false, now + TimeSpan.FromHours(2), sentAt: now + TimeSpan.FromMinutes(59)), "a Gemini run older than the last sign-in only raises the card");
-            var book = new CliLoginRetryBook();
-            book.Sent(new StartRunRequest("pane", "workspace", "claude", "again", [], Provider: "gemini"));
-            Check(book.Settled("pane") is { Request.Provider: "gemini" }, "a Gemini request is kept for its retry");
-        }
-        finally { Directory.Delete(home, true); }
+        foreach (var text in new[] { "Error: authentication required. Run 'agy' to log in, then retry.", "Print mode: auth error: token expired" })
+            Check(CliAuthFailure.Antigravity(text) && CliAuthFailure.Matches("gemini", text), "antigravity sign-in failure: " + text);
+        // Only agy's own wording: not a timed-out sign-in, a proxy's 407, a missing conversation or the bare phrase.
+        foreach (var text in new[] { "warning: conversation \"x\" not found", "Print mode: auth timed out", "HTTP 407 Proxy Authentication Required", "authentication required", "401 files changed" })
+            Check(!CliAuthFailure.Antigravity(text), "not an antigravity sign-in failure: " + text);
+        Check(!CliAuthFailure.Matches("claude", "Print mode: auth error") && !CliAuthFailure.Matches("other", "authentication required. Run 'agy'"), "each provider is matched by its own rules");
+        Check(CliAuthFailure.AntigravitySucceeded("{\"event\":\"result\",\"result\":{\"status\":\"SUCCESS\"}}") && !CliAuthFailure.AntigravitySucceeded("{\"event\":\"result\",\"result\":{\"status\":\"ERROR\"}}")
+            && !CliAuthFailure.AntigravitySucceeded("{\"event\":\"step_update\",\"step_update\":{\"text_delta\":\"\\\"result\\\"\"}}") && !CliAuthFailure.AntigravitySucceeded("{\"result\""), "only a successful result line clears the signal");
+        var signedIn = CliAccountSupport.AntigravityStatus(0, "gemini-3.8-flash-low\tGemini 3.8 Flash (Low)\n");
+        var signedOut = CliAccountSupport.AntigravityStatus(1, "Error: authentication required. Run 'agy' to log in, then retry.\n");
+        var offline = CliAccountSupport.AntigravityStatus(1, "dial tcp: lookup failed");
+        // A live status: only signed out asks for a sign-in; offline (unknown) never opens one.
+        Check(!CliAuthFailure.SignInCanFix(signedIn) && CliAuthFailure.SignInCanFix(signedOut) && !CliAuthFailure.SignInCanFix(offline), "only a signed-out status can be fixed by signing in");
+        Check(!CliAuthFailure.SignInCanFix(signedOut with { Installed = false }), "no CLI, no sign-in");
+        var gate = new CliAutoLoginGate(); var now = DateTimeOffset.UnixEpoch.AddDays(10000);
+        Check(!gate.ShouldStart("gemini", true, offline, false, now) && !gate.ShouldStart("gemini", true, signedIn, false, now), "an unknown or signed-in status never opens the sign-in terminal");
+        Check(gate.ShouldStart("gemini", true, signedOut, false, now) && !gate.ShouldStart("gemini", true, signedOut, true, now), "one Antigravity sign-in at a time");
+        gate.Stopped("gemini", now);
+        Check(!gate.ShouldStart("gemini", true, signedOut, false, now + CliAutoLoginGate.Cooldown - TimeSpan.FromSeconds(1)) && gate.ShouldStart("gemini", true, signedOut, false, now + CliAutoLoginGate.Cooldown), "a cancelled Antigravity sign-in waits for the cooldown");
+        gate.Succeeded("gemini", now + TimeSpan.FromHours(1));
+        Check(!gate.ShouldStart("gemini", true, signedOut, false, now + TimeSpan.FromHours(2), sentAt: now + TimeSpan.FromMinutes(59)), "an Antigravity run older than the last sign-in only raises the card");
+        var book = new CliLoginRetryBook();
+        book.Sent(new StartRunRequest("pane", "workspace", "claude", "again", [], Provider: "gemini"));
+        Check(book.Settled("pane") is { Request.Provider: "gemini" }, "an Antigravity request is kept for its retry");
         return Task.CompletedTask;
     }
+    /// <summary>The terminal sign-in waits for agy's status to read signed in (M/MightyCore/Tests AntigravityTests.theTerminalSignInWaitsForTheStatus).</summary>
     internal static async Task GeminiSignInIsTheCredentialsFileChanging()
     {
-        var home = Path.Combine(Path.GetTempPath(), "mighty-gemini-login-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(Path.Combine(home, ".gemini"));
-        // Fixture contents only; the code under test reads nothing but the file's dates.
-        void Write(DateTime utc) { var path = CliGeminiLogin.CredentialsPath(home); File.WriteAllText(path, "{\"fixture\":true}"); File.SetLastWriteTimeUtc(path, utc); }
-        var google = new CliAccountStatus { Provider = "gemini", LoggedIn = true, Method = CliAccountSupport.GeminiGoogleMethod, MethodId = CliAccountMethod.GeminiGoogle };
-        try
-        {
-            Check(CliGeminiLogin.CredentialsStamp(home) is null, "no file, no stamp");
-            var opened = new DateTime(2027, 1, 15, 8, 0, 0, DateTimeKind.Utc);
-            Write(opened);
-            var stamp = CliGeminiLogin.CredentialsStamp(home);
-            Check(stamp is { } value && Math.Abs((value - new DateTimeOffset(opened)).TotalSeconds) < 1, "the stamp is the file's modification time");
-            Check(CliGeminiLogin.SignedIn(null, stamp, google), "signed out when the terminal opened: the file appearing counts");
-            Check(!CliGeminiLogin.SignedIn(stamp, CliGeminiLogin.CredentialsStamp(home), google), "the stale file of the dropped sign-in does not count");
-            Write(opened.AddSeconds(30));
-            Check(CliGeminiLogin.SignedIn(stamp, CliGeminiLogin.CredentialsStamp(home), google), "a rewrite after the terminal opened counts");
-            var later = CliGeminiLogin.CredentialsStamp(home);
-            Check(!CliGeminiLogin.SignedIn(stamp, later, google with { Method = "Vertex AI", MethodId = CliAccountMethod.GeminiVertex }) && !CliGeminiLogin.SignedIn(stamp, later, google with { LoggedIn = false }) && !CliGeminiLogin.SignedIn(stamp, null, google),
-                "only a signed-in Google status with the file present counts");
-            Check(CliGeminiLogin.SignedIn(stamp, later, CliAccountSupport.GeminiStatus(home)), "the status read from the same files agrees");
-
-            Write(DateTime.UtcNow.AddHours(-1)); var baseline = CliGeminiLogin.CredentialsStamp(home);
-            var reads = 0;
-            Task<CliAccountStatus> Status(CancellationToken _) { reads++; return Task.FromResult(CliAccountSupport.GeminiStatus(home)); }
-            var idle = await CliGeminiLogin.RunAsync(baseline, () => CliGeminiLogin.CredentialsStamp(home), Status, () => true, limit: TimeSpan.FromMilliseconds(200), tick: TimeSpan.FromMilliseconds(10));
-            Check(idle.Outcome == CliLoginOutcome.TimedOut && reads == 1, "an unchanged file is never read as a sign-in, and the status is read only at the limit; got " + reads);
-            var closed = await CliGeminiLogin.RunAsync(baseline, () => CliGeminiLogin.CredentialsStamp(home), Status, () => false, tick: TimeSpan.FromMilliseconds(10));
-            Check(closed.Outcome == CliLoginOutcome.Exited, "a closed terminal without a sign-in ends the wait");
-            var waiting = CliGeminiLogin.RunAsync(baseline, () => CliGeminiLogin.CredentialsStamp(home), Status, () => true, interval: TimeSpan.FromMilliseconds(20), tick: TimeSpan.FromMilliseconds(10));
-            await Task.Delay(80); Write(DateTime.UtcNow);
-            var signed = await waiting.WaitAsync(TimeSpan.FromSeconds(10));
-            Check(signed.Outcome == CliLoginOutcome.LoggedIn && signed.Status.MethodId == CliAccountMethod.GeminiGoogle, "the CLI rewriting the file while the terminal is open signs in");
-            using var cancel = new CancellationTokenSource(); cancel.Cancel();
-            try { await CliGeminiLogin.RunAsync(null, () => null, Status, () => true, cancel.Token); throw new InvalidOperationException("cancel was ignored"); } catch (OperationCanceledException) { }
-            var plan = CliAccountTerminal.LaunchPlan(CliAccountSupport.LoginArguments("gemini")!, windowsTerminalAvailable: true, directory: @"C:\Projects\app");
-            Check(plan.Arguments.SequenceEqual(["new-tab", "-d", @"C:\Projects\app", "--", "gemini"]), "the Gemini sign-in terminal starts in the pane's workspace");
-            Check(CliAccountTerminal.LaunchPlan(["gemini"], true, @"C:\a;b").Arguments.SequenceEqual(["new-tab", "--", "gemini"]), "a folder Windows Terminal would split is not passed on");
-            Check(CliAccountTerminal.LaunchPlan(["gemini"], false, @"C:\Projects\app").Arguments.SequenceEqual(["gemini"]), "the console host inherits the folder instead");
-            Check(CliAccountTerminal.LaunchPlan(["gemini"], false, null, @"C:\npm\gemini.cmd").Arguments.SequenceEqual(["cmd.exe", "/c", @"C:\npm\gemini.cmd"])
-                && CliAccountTerminal.LaunchPlan(["gemini"], false, null, @"C:\bin\gemini.exe").Arguments.SequenceEqual([@"C:\bin\gemini.exe"])
-                && CliAccountTerminal.LaunchPlan(["gemini"], true, null, @"C:\npm\gemini.cmd").Arguments.SequenceEqual(["new-tab", "--", "gemini"]), "the console host runs the resolved Gemini, an npm shim through cmd /c");
-        }
-        finally { Directory.Delete(home, true); }
+        var signedOut = new CliAccountStatus { Provider = "gemini", LoggedIn = false, MethodId = CliAccountMethod.GeminiGoogle, CanSignOut = false };
+        var signedIn = signedOut with { LoggedIn = true };
+        var reads = 0;
+        var outcome = await CliAntigravityLogin.RunAsync(_ => Task.FromResult(++reads >= 3 ? signedIn : signedOut), () => true, interval: TimeSpan.Zero, limit: TimeSpan.FromSeconds(20), tick: TimeSpan.FromMilliseconds(10));
+        Check(outcome.Outcome == CliLoginOutcome.LoggedIn && outcome.Status == signedIn, "the status reading signed in ends the wait signed in");
+        var closed = await CliAntigravityLogin.RunAsync(_ => Task.FromResult(signedOut), () => false, interval: TimeSpan.FromSeconds(60), tick: TimeSpan.FromMilliseconds(10));
+        Check(closed.Outcome == CliLoginOutcome.Exited && closed.Status == signedOut, "a closed terminal without a sign-in ends the wait");
+        var expired = await CliAntigravityLogin.RunAsync(_ => Task.FromResult(signedOut), () => true, interval: TimeSpan.FromSeconds(60), limit: TimeSpan.FromMilliseconds(50), tick: TimeSpan.FromMilliseconds(10));
+        Check(expired.Outcome == CliLoginOutcome.TimedOut, "the limit ends the wait");
+        var polled = 0;
+        var slow = await CliAntigravityLogin.RunAsync(_ => { polled++; return Task.FromResult(signedOut); }, () => true, interval: TimeSpan.FromSeconds(60), limit: TimeSpan.FromMilliseconds(200), tick: TimeSpan.FromMilliseconds(10));
+        Check(slow.Outcome == CliLoginOutcome.TimedOut && polled == 1, "the status is read only every interval, and once more at the limit; got " + polled);
+        using var cancel = new CancellationTokenSource(); cancel.Cancel();
+        try { await CliAntigravityLogin.RunAsync(_ => Task.FromResult(signedOut), () => true, cancel.Token); throw new InvalidOperationException("cancel was ignored"); } catch (OperationCanceledException) { }
+        var plan = CliAccountTerminal.LaunchPlan(CliAccountSupport.LoginArguments("gemini")!, windowsTerminalAvailable: true, directory: @"C:\Projects\app");
+        Check(plan.Arguments.SequenceEqual(["new-tab", "-d", @"C:\Projects\app", "--", "agy"]), "the Antigravity sign-in terminal starts in the pane's workspace");
+        Check(CliAccountTerminal.LaunchPlan(["agy"], true, @"C:\a;b").Arguments.SequenceEqual(["new-tab", "--", "agy"]), "a folder Windows Terminal would split is not passed on");
+        Check(CliAccountTerminal.LaunchPlan(["agy"], false, @"C:\Projects\app").Arguments.SequenceEqual(["agy"]), "the console host inherits the folder instead");
+        Check(CliAccountTerminal.LaunchPlan([@"C:\Users\me\AppData\Local\agy\bin\agy.exe"], false, null, @"C:\Users\me\AppData\Local\agy\bin\agy.exe").Arguments.SequenceEqual([@"C:\Users\me\AppData\Local\agy\bin\agy.exe"]),
+            "the console host runs agy by its full path");
     }
     internal static async Task GeminiFakeCliRunRaisesTheReasonFromStderrOnly()
     {
         var directory = Verification.Temp(); var workspace = new Workspace { Path = directory };
         try
         {
-            foreach (var (flag, expected) in new[] { ("--gemini-signin-lost", (string?)"authentication"), ("--gemini-quoted", null) })
+            foreach (var (flag, expected) in new[] { ("--agy-signin-lost", (string?)"authentication"), ("--agy-quoted", null) })
             {
                 var events = new ConcurrentQueue<RunEvent>();
                 await using var catalog = new ProviderCatalog((_, _) => Task.FromResult<CliCommand?>(Verification.Self("--fake-cli", "gemini", Path.Combine(directory, flag.TrimStart('-')), flag)));

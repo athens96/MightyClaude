@@ -1325,8 +1325,8 @@ public sealed partial class MainWindow
     /// Smoke key <c>addPaneMenu</c> (macOS WorkspaceView.swift <c>WorkspaceAddMenuItems</c>):
     /// the real Add Pane menu ends with Open Project Folder… after a separator, showing Ctrl+O;
     /// the sidebar open-folder button hides while a workspace is listed and shows for a
-    /// search that lists none; Ctrl+O and Ctrl+N are registered; and Gemini from the menu
-    /// and Ctrl+N add their panes without asking Start New / Continue…. Every pane it adds
+    /// search that lists none; Ctrl+O and Ctrl+N are registered; and Antigravity from the menu
+    /// in a folder with no conversation to continue, and Ctrl+N, add their panes without asking Start New / Continue…. Every pane it adds
     /// is closed again.
     /// </summary>
     private async Task<Dictionary<string, object?>> RunAddPaneMenuSmoke(Workspace workspace, Workspace other)
@@ -1362,7 +1362,7 @@ public sealed partial class MainWindow
             await SelectWorkspace(other.Id);
             var count = service.Snapshot.Sessions.Count;
             await AddAgentPane("gemini", null);
-            Require(!asked && service.Snapshot.Sessions.Count == count + 1 && service.Snapshot.Sessions[^1] is { Kind: "claude", Provider: "gemini" }, "창 추가 → Gemini가 묻지 않고 곧바로 창을 만들지 않았습니다.");
+            Require(!asked && service.Snapshot.Sessions.Count == count + 1 && service.Snapshot.Sessions[^1] is { Kind: "claude", Provider: "gemini" }, "창 추가 → 이어갈 대화가 없는 폴더에서 Antigravity가 묻지 않고 곧바로 창을 만들지 않았습니다.");
             checks["geminiStartsAtOnce"] = true;
             await AddPaneFromShortcut();
             Require(!asked && service.Snapshot.Sessions.Count == count + 2 && service.Snapshot.Sessions[^1] is { Kind: "claude", Provider: AddPaneMenu.NewPaneShortcutProvider, ResumeId: null }, "Ctrl+N이 묻지 않고 곧바로 Claude 창을 만들지 않았습니다.");

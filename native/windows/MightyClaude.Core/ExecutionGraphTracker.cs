@@ -96,7 +96,7 @@ public sealed partial class ExecutionGraphTracker
     public string? CodexRootThread { get { lock (sync) return codexRootThread; } }
     private readonly string runID;
     private readonly string mainID;
-    /// "claude" observes stream-json plus Mods; "codex" observes exec JSONL.
+    /// "claude" observes stream-json plus Mods; "codex" observes exec JSONL; "gemini" observes Antigravity's (agy) stream-json.
     public string Provider { get; }
     private readonly string? configuredModel;
     private readonly Action<ExecutionGraphNode> emit;
@@ -134,7 +134,7 @@ public sealed partial class ExecutionGraphTracker
         var main = new ExecutionGraphNode(mainID, runID, null, "main", "running", ProviderLabel(provider)) { Input = input };
         if (ExecutionGraphSupport.Normalized(main) is { } normalized) { nodes[mainID] = normalized; order.Add(mainID); emit(normalized); }
     }
-    private static string ProviderLabel(string id) => id switch { "codex" => "Codex", "gemini" => "Gemini", _ => "Claude" };
+    private static string ProviderLabel(string id) => id switch { "codex" => "Codex", "gemini" => "Antigravity", _ => "Claude" };
     private static string Prefix(string value, int count) => ExecutionGraphSupport.Prefix(value, count);
 
     /// A message the user sent while the turn ran. Claude reads it from stdin
@@ -207,15 +207,17 @@ public sealed partial class ExecutionGraphTracker
         nodes[id] = value; order.Add(id); emit(value);
         return id;
     }
-    private void Update(string id, Func<ExecutionGraphNode, ExecutionGraphNode> change, bool reopening = false)
+    /// <param name="continuing">An Antigravity sub-agent that answered while helpers it started were still out goes on with the same assignment when one reports.</param>
+    private void Update(string id, Func<ExecutionGraphNode, ExecutionGraphNode> change, bool reopening = false, bool continuing = false)
     {
         if (finished || !nodes.TryGetValue(id, out var previous)) return;
         var value = change(previous);
-        var restart = reopening && Provider == "codex" && previous.Kind == "agent" && (previous.ActivityGeneration ?? 0) < ExecutionGraphSupport.MaximumActivityGeneration;
+        var restart = reopening && Provider is "codex" or "gemini" && previous.Kind == "agent" && (previous.ActivityGeneration ?? 0) < ExecutionGraphSupport.MaximumActivityGeneration;
         if (restart) value = value with { ActivityGeneration = (previous.ActivityGeneration ?? 0) + 1 };
         // Late starts and stdout fallbacks must not resurrect a final snapshot.
         if (!restart && previous.State is "error" or "stopped" && value.State != previous.State) value = value with { State = previous.State, Output = previous.Output ?? value.Output };
-        else if (!restart && ExecutionGraphSupport.Terminal(previous.State) && !ExecutionGraphSupport.Terminal(value.State)) value = value with { State = previous.State };
+        else if (!restart && ExecutionGraphSupport.Terminal(previous.State) && !ExecutionGraphSupport.Terminal(value.State)
+            && !(continuing && Provider == "gemini" && previous.Kind == "agent" && previous.State == "completed" && value.State == "running")) value = value with { State = previous.State };
         if (ExecutionGraphSupport.Normalized(value) is not { } normalized || normalized.Equals(previous)) return;
         normalized = normalized with { UpdatedAt = Wire.Now() }; nodes[id] = normalized; emit(normalized);
     }
@@ -276,6 +278,7 @@ public sealed partial class ExecutionGraphTracker
     {
         if (finished || value.ValueKind != JsonValueKind.Object) return;
         if (Provider == "codex") { ConsumeCodex(value); return; }
+        if (Provider == "gemini") { ConsumeAntigravity(value); return; }
         var parentTool = Key(MetadataJson.Property(value, "parent_tool_use_id"));
         if (parentTool is not null) EnsureAgent(parentTool);
         // Over-cap child events are omitted, never reclassified as main text.
@@ -750,10 +753,11 @@ public sealed partial class ExecutionGraphTracker
             };
             if (node.Output is { Length: > 0 } output)
             {
-                var answerId = Provider == "codex"
+                // Codex and Antigravity children take new assignments: one answer per generation.
+                var answerId = Provider is "codex" or "gemini"
                     ? ExecutionGraphSupport.Identifier(runID, node.Id + ":answer:" + (node.ActivityGeneration ?? 0))
                     : node.Id + "-answer";
-                var hasAnswer = agent.Entries.Any(e => Provider == "codex" ? e.Id == answerId : e.Kind == "assistant" && e.Text == output);
+                var hasAnswer = agent.Entries.Any(e => Provider == "codex" ? e.Id == answerId : e.Id == answerId || e.Kind == "assistant" && e.Text == output);
                 if (!hasAnswer) agent.Entries.Add(new LogEntry(answerId, "assistant", output, Wire.Now(), Provider));
             }
             if (run.Agents.Count < 128) run.Agents.Add(agent);

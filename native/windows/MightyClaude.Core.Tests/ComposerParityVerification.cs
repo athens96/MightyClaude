@@ -179,7 +179,7 @@ internal static class ComposerParityVerification
         Check(Sent("/model " + new string('z', 120))?.Mismatch == Locale.Get("slash.note.noModelMatch", Values(("query", new string('z', 80)), ("command", "model"))), "the notice quotes at most 80 characters of what was typed");
         Check(Sent("/review") is null && Sent("/mod") is null && Sent("hello /clear") is null && Sent("/model a b") is null && Sent("") is null, "anything else is the CLI's");
         Check(Sent("/clear", kind: "shell") is null && Sent("/clear", attachments: true) is null, "a shell has no built-ins, and a draft with files is a request");
-        Check(Sent("/new", "codex")?.Command?.Action == SlashCommandAction.NewConversation && Sent("/clear", "codex") is null && Sent("/approval-mode", "gemini")?.Command?.Argument == SlashArgument.Permission, "each agent's own names are read");
+        Check(Sent("/new", "codex")?.Command?.Action == SlashCommandAction.NewConversation && Sent("/clear", "codex") is null && Sent("/permissions", "gemini")?.Command?.Argument == SlashArgument.Permission && Sent("/approval-mode", "gemini") is null, "each agent's own names are read");
         Check(SlashPalette.TypedBuiltin("claude", "/usage")?.Action == SlashCommandAction.ShowUsage && SlashPalette.TypedBuiltin("claude", "/usag") is null, "only a name typed out in full counts");
         foreach (var language in Locale.Languages)
             foreach (var note in new[] { "slash.note.noModelMatch", "slash.note.noPermissionMatch" })
@@ -480,7 +480,7 @@ internal static class ComposerParityVerification
             "[" + Locale.Get("session.state.error") + "] bad", "[" + system + "] note", "[" + system + "] picture");
         Check(RunLogText.Copy(pane) == expected, "each entry is copied behind its role, a blank line between entries; got:\n" + RunLogText.Copy(pane));
         Check(RunLogText.Copy(pane with { Logs = [] }) == "", "an empty log copies nothing");
-        Check(RunLogText.Role(new("8", "assistant", "x", Stamp, "gemini"), "claude") == "Gemini" && RunLogText.Role(new("9", "assistant", "x", Stamp), "claude") == "Claude", "an answer is its own agent's, or the pane's when the entry names none");
+        Check(RunLogText.Role(new("8", "assistant", "x", Stamp, "gemini"), "claude") == "Antigravity" && RunLogText.Role(new("9", "assistant", "x", Stamp), "claude") == "Claude", "an answer is its own agent's, or the pane's when the entry names none");
         foreach (var language in Locale.Languages) Check(Text(language, "pane.log.roleUser") is { Length: > 0 } && Text(language, "pane.log.roleSystem") is { Length: > 0 }, language + ": the roles are worded");
         return Task.CompletedTask;
     }
@@ -490,7 +490,8 @@ internal static class ComposerParityVerification
     {
         static ResumableSession Session(string provider, string id) => new(provider, id, null, DateTimeOffset.UnixEpoch, null, null, "");
         Check(AddPaneMenu.QuietLookUp == TimeSpan.FromMilliseconds(300), "a slow look-up shows the sheet after 300 ms");
-        Check(!AddPaneMenu.AsksResume("gemini", [Session("gemini", "g1"), Session("claude", "c1")], []), "an agent without resume starts at once even with sessions listed");
+        Check(!AddPaneMenu.AsksResume("shell", [Session("shell", "g1"), Session("claude", "c1")], []), "a pane without resume starts at once even with sessions listed");
+        Check(AddPaneMenu.AsksResume("gemini", [Session("gemini", "g1"), Session("claude", "c1")], []), "an Antigravity conversation of this folder is offered too");
         Check(!AddPaneMenu.AsksResume("claude", [], []) && !AddPaneMenu.AsksResume("claude", [Session("codex", "x1")], []), "nothing of this agent's to continue: no question");
         Check(!AddPaneMenu.AsksResume("codex", [Session("codex", "AbC-1")], ["abc-1"]) && !AddPaneMenu.AsksResume("codex", [Session("codex", "abc-1")], ["ABC-1"]), "a session a pane took while the look-up ran does not count, in any case");
         Check(AddPaneMenu.AsksResume("claude", [Session("claude", "c1")], []) && AddPaneMenu.AsksResume("codex", [Session("codex", "x1"), Session("codex", "x2")], ["x1"]), "one free session of this agent is enough to ask");

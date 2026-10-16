@@ -55,8 +55,12 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
                 // A workspace saved with a "remote" value names a folder on another computer.
                 // It is dropped here; Normalize then drops everything keyed by its id.
                 var remote = workspaces.EnumerateArray().Select((w, i) => (w, i)).Where(p => p.w.ValueKind == JsonValueKind.Object && p.w.TryGetProperty("remote", out var r) && r.ValueKind != JsonValueKind.Null).Select(p => p.i).ToHashSet();
+                // Once per profile, on load: `gemini` panes now run Antigravity (AntigravityMigration).
+                if (restored.AntigravityMigrated != true) restored = restored with { Sessions = (restored.Sessions ?? []).Select(s => s is null ? s! : AntigravityMigration.Migrated(s)).ToList(), AntigravityMigrated = true };
                 Snapshot = Normalize(restored with { Workspaces = (restored.Workspaces ?? []).Where((_, i) => !remote.Contains(i)).ToList() }, true);
             }
+            // A new profile never held Gemini CLI panes.
+            else Snapshot = Snapshot with { AntigravityMigrated = true };
             approved.Clear();
             foreach (var workspace in Snapshot.Workspaces) approved[workspace.Id] = workspace;
             loaded = true;

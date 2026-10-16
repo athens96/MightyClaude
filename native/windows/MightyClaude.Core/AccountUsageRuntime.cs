@@ -68,7 +68,7 @@ public static class AccountUsageRuntime
                 return await CodexAccountProbe.ReadAsync(() => new CodexStdio(command, workingDirectory), CodexAccountProbe.Timeout, cancellation);
             }
             case "gemini":
-                throw new AccountUsageFailure(AccountUsageFailureKind.Unavailable, AccountUsageStrings.DetailGeminiUnavailable);
+                throw new AccountUsageFailure(AccountUsageFailureKind.Unavailable, AccountUsageStrings.DetailAntigravityUnavailable);
             default:
                 throw new AccountUsageFailure(AccountUsageFailureKind.Unavailable, AccountUsageStrings.DetailUnsupportedProvider);
         }

@@ -63,7 +63,8 @@ public sealed class MightyGraphRun
 
 public static class MightyGraphSupport
 {
-    public static readonly string[] Providers = ["claude", "codex"];
+    /// <summary>AI panes whose runs produce a graph: Claude via stream-json + Mods, Codex via exec JSONL, Antigravity (<c>gemini</c>) via agy's stream-json and its sub-agents' transcripts.</summary>
+    public static readonly string[] Providers = ["claude", "codex", "gemini"];
 
     public static bool Terminal(string status) => status is "completed" or "error" or "stopped";
 
