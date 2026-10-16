@@ -558,7 +558,10 @@ struct DelegationHumanChildTests {
         for name in secrets + ["big.bin"] { #expect(note.text.contains(name), "\(name)") }
         #expect(await fixture.coordinator.file.children.first?.state == .reported)
         for name in [".env", ".ENV.production", "a/b/cert.pem", "x.key", "id_rsa.pub", "credentials"] { #expect(ChildAutoCommit.looksSecret(name), "\(name)") }
-        for name in ["environment.txt", "keyboard.swift", "a/.envoy/config", "my-credentials.txt"] { #expect(!ChildAutoCommit.looksSecret(name), "\(name)") }
+        for name in ["certs/site.pfx", "Bundle.P12", "putty.ppk", "id_ed25519", "id_ed25519.pub", "id_ecdsa", "home/.ssh/id_dsa", ".npmrc", "pkg/.pypirc",
+                     "secrets.json", "config/Secrets.yaml"] { #expect(ChildAutoCommit.looksSecret(name), "\(name)") }
+        for name in ["environment.txt", "keyboard.swift", "a/.envoy/config", "my-credentials.txt", "secretsauce.md", "my.npmrc.md", "pfx-notes.txt",
+                     "identity.swift"] { #expect(!ChildAutoCommit.looksSecret(name), "\(name)") }
     }
 
     @Test func anUnresolvedConflictIsNeverCommittedAndThePaneSaysSo() async throws {

@@ -120,10 +120,14 @@ public enum ChildAutoCommit {
     public static func message(childId: String, revision: Int) -> String { "mighty: \(childId) report r\(revision)" }
 
     /// Whether a new file at `path` (relative to the worktree) looks like a
-    /// secret: `.env*`, `*.pem`, `*.key`, `id_rsa*` or `credentials*`.
+    /// secret: `.env*`, `*.pem`, `*.key`, `*.pfx`, `*.p12`, `*.ppk`, an SSH key
+    /// (`id_rsa*`, `id_ed25519*`, `id_ecdsa*`, `id_dsa*`), `credentials*`,
+    /// `secrets.*`, `.npmrc` or `.pypirc`.
     public static func looksSecret(_ path: String) -> Bool {
         let name = (path as NSString).lastPathComponent.lowercased()
-        return name.hasPrefix(".env") || name.hasSuffix(".pem") || name.hasSuffix(".key") || name.hasPrefix("id_rsa") || name.hasPrefix("credentials")
+        return [".env", "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa", "credentials", "secrets."].contains { name.hasPrefix($0) }
+            || [".pem", ".key", ".pfx", ".p12", ".ppk"].contains { name.hasSuffix($0) }
+            || [".npmrc", ".pypirc"].contains(name)
     }
 
     /// What the app found or did in the child's worktree.
