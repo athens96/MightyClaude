@@ -221,9 +221,9 @@ struct TerminalPaneLifetimeTests {
         await processes.terminateAll(graceSeconds: 0.5)
         // Quit promises the 0.5 s grace plus one 50 ms poll. The margin absorbs the
         // polls and the resumed test queuing behind the rest of the suite on a busy
-        // CI runner; a quit that waited for the TERM-ignoring child would never
-        // return at all, so 5 s still catches it.
-        #expect(Date().timeIntervalSince(began) < 5)
+        // CI runner (5.2 s was seen there); a quit that waited for the TERM-ignoring
+        // child would never return at all, so 15 s still catches it.
+        #expect(Date().timeIntervalSince(began) < 15)
         let deadline = Date().addingTimeInterval(30)
         while (polite.isRunning(handle: "p") || stubborn.isRunning(handle: "s")), Date() < deadline { try await Task.sleep(nanoseconds: 20_000_000) }
         #expect(polite.terminationSignal(handle: "p") == SIGTERM)
