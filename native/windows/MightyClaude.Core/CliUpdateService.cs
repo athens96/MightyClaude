@@ -34,7 +34,7 @@ internal sealed record CliUpdateInvocation(string Executable, IReadOnlyList<stri
 /// installer. It never installs anything new, never asks for elevation, never
 /// writes a configuration file and never upgrades an unrelated package.
 /// Every process goes through ICliRunner, so a test injects a fake runner and
-/// no real claude, codex, gemini, npm or winget process is started.
+/// no real claude, codex, agy, npm or winget process is started.
 public sealed partial class CliUpdateService
 {
     private readonly ICliRunner runner;
@@ -82,7 +82,7 @@ public sealed partial class CliUpdateService
     {
         "claude" => "Claude",
         "codex" => "Codex",
-        "gemini" => "Gemini",
+        "gemini" => "Antigravity",
         _ => "Claude",
     };
 
@@ -204,7 +204,7 @@ public sealed partial class CliUpdateService
         var command = await InstalledCommandAsync(provider, token);
         if (command is null)
         {
-            var present = Candidates(provider).Any(File.Exists);
+            var present = Candidates(ProviderCatalog.Executable(provider)).Any(File.Exists);
             return (new CliUpdateInstallation(provider, Method: present ? "unknown" : "missing",
                 Detail: present ? CliUpdateStrings.DetailVersionUnknown : CliUpdateStrings.DetailMissing), null);
         }
@@ -222,6 +222,16 @@ public sealed partial class CliUpdateService
             return (installation with { CanUpdate = true, Detail = CliUpdateStrings.DetailWingetPlan },
                 new CliUpdateInvocation(winget, ["upgrade", "--id", package, "--exact", "--silent",
                     "--accept-source-agreements", "--accept-package-agreements", "--disable-interactivity"]));
+        }
+
+        if (provider == "gemini")
+        {
+            // Antigravity's installer (`irm https://antigravity.google/cli/install.ps1 | iex`) puts one agy.exe in
+            // %LOCALAPPDATA%\agy\bin, which `agy update` replaces; a copy anywhere else is left alone (M/CLIUpdateService.swift:146-157).
+            if (!Same(resolved, System.IO.Path.Combine(ProviderCatalog.AntigravityInstallFolder(environment), "agy.exe")))
+                return (installation with { Detail = Locale.Get("settings.cliUpdate.detailAntigravityElsewhereWindows", new Dictionary<string, string> { ["command"] = ComponentSection.InstallCommand("gemini") ?? "" }) }, null);
+            return (installation with { Method = "native", CanUpdate = true, Detail = Locale.Get("settings.cliUpdate.detailNativeAntigravity") },
+                new CliUpdateInvocation(command.Path, ["update"]));
         }
 
         if (provider == "claude" && NativeClaude(resolved))
@@ -249,7 +259,7 @@ public sealed partial class CliUpdateService
     private async Task<InstalledCommand?> InstalledCommandAsync(string provider, CancellationToken token)
     {
         if (!Wire.Providers.Contains(provider)) return null;
-        foreach (var path in Candidates(provider))
+        foreach (var path in Candidates(ProviderCatalog.Executable(provider)))
         {
             token.ThrowIfCancellationRequested();
             if (!File.Exists(path)) continue;
@@ -278,6 +288,9 @@ public sealed partial class CliUpdateService
             foreach (var extension in new[] { ".cmd", ".exe", ".bat", "" })
                 yield return System.IO.Path.Combine(entry, name + extension);
         }
+        // Antigravity's installer folder reaches PATH for new sessions only.
+        if (name == "agy" && environment.TryGetValue("LOCALAPPDATA", out var local) && System.IO.Path.IsPathRooted(local) && !local.Contains('\0'))
+            yield return System.IO.Path.Combine(ProviderCatalog.AntigravityInstallFolder(environment), "agy.exe");
     }
 
     // winget installs a package under ...\WinGet\Packages\<PackageIdentifier>_<hash>\
@@ -328,8 +341,9 @@ public sealed partial class CliUpdateService
         {
             "claude" => "@anthropic-ai/claude-code",
             "codex" => "@openai/codex",
-            _ => "@google/gemini-cli",
+            _ => null,
         };
+        if (name is null) return null;
         var prefix = System.IO.Path.GetDirectoryName(executable);
         if (prefix is null) return null;
         var roots = new List<string> { System.IO.Path.Combine(prefix, "node_modules") };

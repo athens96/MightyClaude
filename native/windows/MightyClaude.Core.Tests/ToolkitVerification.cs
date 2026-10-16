@@ -614,7 +614,7 @@ internal static class ToolkitVerification
         Check(missingRow.Actions.Any(a => a.Id == "copy-command"), "missing claude has copy-command action");
         Check(ComponentSection.InstallCommand("claude")?.Contains("@anthropic-ai/claude-code") == true, "claude install command is correct");
         Check(ComponentSection.InstallCommand("codex")?.Contains("@openai/codex") == true, "codex install command is correct");
-        Check(ComponentSection.InstallCommand("gemini")?.Contains("@google/gemini-cli") == true, "gemini install command is correct");
+        Check(ComponentSection.InstallCommand("gemini") == "irm https://antigravity.google/cli/install.ps1 | iex", "Antigravity's own installer command is correct");
 
         return Task.CompletedTask;
     }

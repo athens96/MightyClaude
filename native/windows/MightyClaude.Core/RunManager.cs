@@ -82,8 +82,8 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
     {
         if (run.Finished || string.IsNullOrEmpty(text)) return;
         text = run.PaneBinding?.Redact(text) ?? text;
-        // Gemini's failures arrive as error lines (its last one decides, as on the Mac); its stderr and plain stdout lines only raise the signal.
-        if (kind == "error" && run.Request.Provider == "gemini") run.AuthenticationFailure = CliAuthFailure.Gemini(text);
+        // Antigravity's failures arrive as error lines (its last one decides, as on the Mac); its stderr and plain stdout lines only raise the signal.
+        if (kind == "error" && run.Request.Provider == "gemini") run.AuthenticationFailure = CliAuthFailure.Antigravity(text);
         else if (kind == "error" && CliAuthFailure.Matches(run.Request.Provider, text)) run.AuthenticationFailure = true;
         if (kind is "output" or "assistant")
         {
@@ -110,10 +110,14 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         CodexSessionWatcher? watcher = null;
         var watcherDisabled = false;
         string? codexHome = null;
+        // Where this Antigravity run's sub-agents keep their transcripts, and the watcher that reads them once one starts.
+        string? antigravityBrain = null;
+        AntigravitySubagentWatcher? antigravityWatcher = null;
         using var graphCancel = new CancellationTokenSource();
         Task graphTask = Task.CompletedTask;
         var parser = new OutputParser(request.Provider, (kind, text) => Log(run, kind, text), id => emit(new(request.SessionId, "resume", ResumeId: id)), value => { if (tracker?.Activity(value) != true) Activity(run, value); }, value => { if (!run.Finalizing) emit(new(request.SessionId, "usage", Usage: value)); }, run.ActivityId,
-            images: request.Kind == "shell" ? null : images, imageEntry: entry => { if (!run.Finished) emit(new(request.SessionId, "log", entry)); });
+            images: request.Kind == "shell" ? null : images, imageEntry: entry => { if (!run.Finished) emit(new(request.SessionId, "log", entry)); },
+            requestedResume: request.Provider == "gemini" ? request.ResumeId : null, answer: text => tracker?.AntigravityAnswer(text));
         if (request.Kind != "shell" && MightyGraphSupport.Providers.Contains(request.Provider))
             tracker = new ExecutionGraphTracker(Wire.Id(), request.Input, request.Provider, PhaseModelPreferences.EffectiveModel(request), _ => Interlocked.Exchange(ref graphDirty, 1));
         run.Tracker = tracker;
@@ -135,6 +139,20 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         }
         void ReadChildren(bool closing)
         {
+            // agy's stream names each sub-agent's conversation but not its work: once the run starts one, the sub-agents' own
+            // transcripts are read about once a second until the run ends (M/ProcessRunner.swift watchAntigravitySubagents).
+            if (!watcherDisabled && tracker is not null && request.Provider == "gemini" && antigravityBrain is not null)
+            {
+                try
+                {
+                    var known = tracker.AntigravitySubagents;
+                    if (antigravityWatcher is null && known.Count > 0) antigravityWatcher = new(antigravityBrain, run.ActivityId, tracker.AntigravityConversation);
+                    if (antigravityWatcher is not null) foreach (var child in closing ? antigravityWatcher.Finish(known) : antigravityWatcher.Poll(known)) tracker.AntigravitySession(child);
+                }
+                // Transcript observation is optional; a file changing under it must never fail the actual CLI turn.
+                catch (Exception ex) when (ex is not OutOfMemoryException) { watcherDisabled = true; antigravityWatcher = null; }
+                return;
+            }
             if (watcherDisabled || tracker is null || request.Provider != "codex" || codexHome is null) return;
             try
             {
@@ -192,6 +210,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
             await providers.RefreshEnvironmentAsync(true, token);
             var environment = ProviderCatalog.QuietEnvironment();
             codexHome = request.Provider == "codex" ? CliAccountSupport.CodexHome(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), environment) : null;
+            antigravityBrain = request.Provider == "gemini" ? AntigravityRecords.Brain(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)) : null;
             if (tracker is not null) graphTask = PublishGraphs();
             string binary; IEnumerable<string> arguments; var interactive = false;
             if (request.Kind == "shell") { binary = OperatingSystem.IsWindows() ? Environment.GetEnvironmentVariable("ComSpec") ?? "C:\\Windows\\System32\\cmd.exe" : "/bin/sh"; arguments = OperatingSystem.IsWindows() ? ["/d", "/s", "/c", request.Input] : ["-c", request.Input]; }
@@ -310,11 +329,11 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                 if (request.Kind == "shell") { Log(run, "output", line); return; }
                 if (run.CodexPermissions is { } codex) { codex.Receive(line); return; }
                 run.Permissions?.Receive(line);
-                // Gemini prints its sign-in consent prompt as a plain line, never as JSON.
+                // Antigravity prints a lost sign-in as a plain line, never as JSON; a cut-off JSON line may quote anything, so it never counts.
                 if (request.Provider == "gemini")
                 {
-                    if (!line.TrimStart().StartsWith('{')) { if (CliAuthFailure.GeminiConsole(line)) run.AuthenticationFailure = true; }
-                    else if (CliAuthFailure.GeminiSucceeded(line)) run.AuthenticationFailure = false;
+                    if (!line.TrimStart().StartsWith('{')) { if (CliAuthFailure.Antigravity(line)) run.AuthenticationFailure = true; }
+                    else if (CliAuthFailure.AntigravitySucceeded(line)) run.AuthenticationFailure = false;
                 }
                 Consume(line);
                 // One-shot shutdown: EOF only after the CLI's own turn result, so an approval reply is still
@@ -328,8 +347,13 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
             }, token, request.Kind == "shell" ? null : () => { if (!run.Finalizing) Log(run, "system", Locale.Get("run.notice.lineTooLong")); });
             var error = PumpAsync(child.Error, 1024 * 1024, line =>
             {
-                // Only Gemini reports a lost sign-in on stderr ("Please set an Auth method", "Error authenticating: …").
-                if (request.Kind != "shell" && request.Provider == "gemini" && CliAuthFailure.GeminiConsole(line)) run.AuthenticationFailure = true;
+                // Only Antigravity reports a lost sign-in on stderr ("Error: authentication required. Run 'agy' to log in, then retry."),
+                // and that the conversation it was asked to continue is gone.
+                if (request.Kind != "shell" && request.Provider == "gemini")
+                {
+                    if (CliAuthFailure.Antigravity(line)) run.AuthenticationFailure = true;
+                    parser.AntigravityStderr(line);
+                }
                 Log(run, "output", line);
             }, token);
             if (interactive || codexApprovals)
@@ -358,7 +382,8 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
             }
             else
             {
-                if (request.Kind != "shell") await child.Input.WriteAsync(input.AsMemory(), token);
+                // Antigravity reads its prompt as one stream-json line (ProviderInput.AntigravityUserMessage).
+                if (request.Kind != "shell") await child.Input.WriteAsync((request.Provider == "gemini" ? ProviderInput.AntigravityUserMessage(input) : input).AsMemory(), token);
                 child.Input.Close();
             }
             run.Accepted?.TrySetResult();

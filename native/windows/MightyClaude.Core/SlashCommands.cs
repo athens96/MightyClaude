@@ -66,7 +66,9 @@ public static class SlashCommandCatalog
     }
 
     // Built-in app commands using the CLI names each provider's users know.
-    // Gemini has no plugin browser; shell sessions have no commands.
+    // Antigravity has no plugin browser; shell sessions have no commands. Any other `/name` goes to agy as typed: it expands
+    // skills, while its own read-only commands (`/help`, `/skills`, …) answer only in a separate `agy -p` run, so through this
+    // app's stdin they end with agy's error (M/MightyCore/SlashCommands.swift:75-79).
     public static SlashCommand[] Builtins(string provider)
     {
         SlashCommand App(string name, string desc, SlashCommandAction? action = null, SlashArgument? argument = null) =>
@@ -96,10 +98,10 @@ public static class SlashCommandCatalog
             "gemini" =>
             [
                 model,
-                App("approval-mode", Locale.Get("slash.builtin.permission"), argument: SlashArgument.Permission),
+                App("permissions", Locale.Get("slash.builtin.permission"), argument: SlashArgument.Permission),
                 App("clear", Locale.Get("slash.builtin.newConversation"), SlashCommandAction.NewConversation),
-                App("stats", Locale.Get("slash.builtin.usage"), SlashCommandAction.ShowUsage),
-                App("settings", Locale.Get("slash.builtin.settings"), SlashCommandAction.OpenSettings), rename, help
+                App("usage", Locale.Get("slash.builtin.usage"), SlashCommandAction.ShowUsage),
+                App("config", Locale.Get("slash.builtin.settings"), SlashCommandAction.OpenSettings), rename, help
             ],
             _ => []
         };
@@ -157,6 +159,14 @@ public static class SlashCommandCatalog
                 found.AddRange(Skills(Path.Combine(home, ".codex", "skills"), SlashCommandStrings.CodexSkillSource, SlashCommandOrigin.User));
                 if (workspacePath is not null)
                     found.AddRange(Skills(Path.Combine(workspacePath, ".codex", "skills"), SlashCommandStrings.ProjectSkillSource, SlashCommandOrigin.Project));
+                break;
+            case "gemini":
+                // agy's own skills, then the user's, then the workspace's `.agents/skills` (M/MightyCore/SlashCommands.swift:146-151).
+                var agy = AntigravityRecords.Folder(home);
+                found.AddRange(Skills(Path.Combine(agy, "builtin", "skills"), SlashCommandStrings.AntigravitySkillSource, SlashCommandOrigin.User));
+                found.AddRange(Skills(Path.Combine(agy, "skills"), SlashCommandStrings.AntigravitySkillSource, SlashCommandOrigin.User));
+                if (workspacePath is not null)
+                    found.AddRange(Skills(Path.Combine(workspacePath, ".agents", "skills"), SlashCommandStrings.ProjectSkillSource, SlashCommandOrigin.Project));
                 break;
         }
         // Later sources (project) win over earlier ones (user, plugins).
@@ -332,7 +342,7 @@ public static class SlashCommandCatalog
     {
         "claude" => "Claude",
         "codex" => "Codex",
-        "gemini" => "Gemini",
+        "gemini" => "Antigravity",
         _ => provider
     };
 }

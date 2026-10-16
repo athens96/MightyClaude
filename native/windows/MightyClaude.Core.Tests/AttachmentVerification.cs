@@ -36,7 +36,8 @@ internal static class AttachmentVerification
                 var codex = request with { ResumeId = resume }; var args = staged.ArgumentsFor(codex, "/plugin"); Check(args.Contains("--image") && args[^1] == "-" && !args.Contains("--add-dir"), "Codex image/resume mapping widened permissions or omitted stdin.");
             }
             var claude = request with { Provider = "claude" }; using var input = JsonDocument.Parse(staged.InputFor(claude)); var content = input.RootElement.GetProperty("message").GetProperty("content"); Check(content.EnumerateArray().Any(c => c.GetProperty("type").GetString() == "image") && content.EnumerateArray().Any(c => c.GetProperty("type").GetString() == "document"), "Claude multimodal blocks are missing."); Check(staged.ArgumentsFor(claude, "/plugin").Contains("--input-format"), "Claude needs stream JSON input.");
-            var gemini = request with { Provider = "gemini" }; Check(staged.ArgumentsFor(gemini, "/plugin").Contains("--include-directories") && staged.InputFor(gemini).Contains('@'), "Gemini file references are missing.");
+            var gemini = request with { Provider = "gemini" }; var agyArgs = staged.ArgumentsFor(gemini, "/plugin");
+            Check(agyArgs.SkipWhile(a => a != "--add-dir").Skip(1).FirstOrDefault() == staged.DirectoryPath && staged.Files.All(f => staged.InputFor(gemini).Contains("\"" + f.Path + "\"")), "Antigravity's folder and plain file references are missing.");
         }
         Check(!Directory.Exists(directory), "Staging directory was not removed.");
         using var cancel = new CancellationTokenSource(); cancel.Cancel(); try { await StagedAttachments.CreateAsync(request.Attachments!, cancel.Token); throw new InvalidOperationException("Cancelled staging succeeded."); } catch (OperationCanceledException) { }

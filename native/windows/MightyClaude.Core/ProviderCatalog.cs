@@ -16,8 +16,20 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
     private string? cachedDirectory;
     private DateTimeOffset refreshed;
     private Task? shutdown;
-    public static string Name(string provider) => provider == "claude" ? "Claude Code" : provider == "codex" ? "Codex CLI" : "Gemini CLI";
-    // Claude is official; Codex and Gemini are beta. The one Windows answer every beta
+    /// <summary>
+    /// The <c>gemini</c> id is kept for saved panes and the wire; it runs Google's Antigravity CLI (<c>agy</c>), which also runs
+    /// Claude and GPT-OSS models (M/MightyCore/Models.swift ProviderOptions.label/executable).
+    /// </summary>
+    public static string Name(string provider) => provider == "claude" ? "Claude Code" : provider == "codex" ? "Codex CLI" : "Antigravity CLI";
+    /// <summary>The executable the app runs, finds, version-checks, updates and signs in with.</summary>
+    public static string Executable(string provider) => provider == "gemini" ? "agy" : provider;
+    /// <summary>
+    /// Where Antigravity's own installer (<c>irm https://antigravity.google/cli/install.ps1 | iex</c>) puts <c>agy.exe</c>:
+    /// <c>%LOCALAPPDATA%\agy\bin</c>. It is looked for there too, since the installer's PATH change reaches only new sessions.
+    /// </summary>
+    public static string AntigravityInstallFolder(IReadOnlyDictionary<string, string>? environment = null) =>
+        Path.Combine(environment?.GetValueOrDefault("LOCALAPPDATA") is { Length: > 0 } local ? local : Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "agy", "bin");
+    // Claude is official; Codex and Antigravity are beta. The one Windows answer every beta
     // badge asks — the badge sits beside Name and never becomes part of it.
     public static bool IsBeta(string provider) => provider is "codex" or "gemini";
     // Menu items and plain text rows cannot host the badge, so it rides in their text.
@@ -36,8 +48,53 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
     public static ModelCatalog Fallback(string provider)
     {
         var models = new List<ModelOption> { new("default", Locale.Get("provider.fallback.defaultLabel", new Dictionary<string, string> { ["name"] = ProviderMark.Label(provider) }), Locale.Get("provider.fallback.defaultDescription")) };
-        foreach (var value in provider switch { "claude" => new[] { "best", "fable", "opus", "sonnet", "haiku", "opusplan" }, "codex" => new[] { "gpt-5.6-sol", "gpt-6-astra" }, _ => new[] { "auto", "gemini-3-pro-preview", "gemini-3-flash-preview", "gemini-2.5-pro", "gemini-2.5-flash" } }) models.Add(new(value, value, Locale.Get("provider.fallback.exampleDescription"), SupportsEffort: value.Contains("haiku") ? false : null));
+        if (provider == "gemini") foreach (var (slug, name) in AntigravityModels) models.Add(new(slug, name, Locale.Get("provider.fallback.exampleDescription")));
+        else foreach (var value in provider switch { "claude" => new[] { "best", "fable", "opus", "sonnet", "haiku", "opusplan" }, _ => new[] { "gpt-5.6-sol", "gpt-6-astra" } }) models.Add(new(value, value, Locale.Get("provider.fallback.exampleDescription"), SupportsEffort: value.Contains("haiku") ? false : null));
         return new("fallback", models, Locale.Get("provider.fallback.source"));
+    }
+    /// <summary>
+    /// What <c>agy models</c> listed when this was written (M/MightyCore/Models.swift antigravityModels). Each slug carries its
+    /// effort, so Antigravity has no separate effort setting.
+    /// </summary>
+    public static readonly IReadOnlyList<(string Slug, string Name)> AntigravityModels =
+    [
+        ("gemini-4-argon-medium", "Gemini 4 Argon (Medium)"), ("gemini-4-argon-high", "Gemini 4 Argon (High)"), ("gemini-4-argon-low", "Gemini 4 Argon (Low)"),
+        ("gemini-3.8-flash-high", "Gemini 3.8 Flash (High)"), ("gemini-3.8-flash-medium", "Gemini 3.8 Flash (Medium)"), ("gemini-3.8-flash-low", "Gemini 3.8 Flash (Low)"),
+        ("claude-opus-5-5-low", "Claude Opus 5.5 (Low)"), ("claude-opus-5-5-medium", "Claude Opus 5.5 (Medium)"), ("claude-opus-5-5-high", "Claude Opus 5.5 (High)"),
+        ("claude-sonnet-5-5-low", "Claude Sonnet 5.5 (Low)"), ("claude-sonnet-5-5-medium", "Claude Sonnet 5.5 (Medium)"), ("claude-sonnet-5-5-high", "Claude Sonnet 5.5 (High)"),
+        ("gpt-oss-120b-medium", "GPT-OSS 120B (Medium)"),
+    ];
+    /// <summary>
+    /// <c>agy models</c> (M/MightyCore/ProviderService.swift normalizeAntigravityCatalog): a "Fetching available models..." line,
+    /// then one <c>slug&lt;TAB&gt;Display Name</c> line per model. It needs the network and a sign-in; anything else keeps the
+    /// fallback list.
+    /// </summary>
+    public static ModelCatalog AntigravityCatalog(string text)
+    {
+        var fallback = Fallback("gemini");
+        var models = new List<ModelOption> { fallback.Models[0] }; var seen = new HashSet<string> { "default" };
+        foreach (var line in text.Split('\n').Take(256))
+        {
+            var fields = line.Split('\t', 2).Select(field => field.Trim(' ', '\t', '\r')).ToArray();
+            if (fields.Length != 2 || !Wire.Model(fields[0]) || fields[1].Length == 0 || models.Count > 128 || !seen.Add(fields[0])) continue;
+            models.Add(new(fields[0], Wire.Clean(fields[1], 160), ""));
+        }
+        return models.Count > 1 ? new("cli", models, Locale.Get("provider.catalog.antigravitySource")) : fallback;
+    }
+    /// <summary>Asks <c>agy models</c> for its list (15 s), or keeps the fallback list.</summary>
+    public static async Task<ModelCatalog> ReadAntigravityModelsAsync(CliCommand command, CancellationToken cancellation = default, string? workingDirectory = null)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation); timeout.CancelAfter(TimeSpan.FromSeconds(15));
+        try
+        {
+            await using var child = ChildProcess.Start(ChildProcess.StartInfo(command.Binary, command.Prefix.Concat(["models"]), workingDirectory ?? Path.GetTempPath(), QuietEnvironment()));
+            child.Input.Close();
+            var stderr = DrainAsync(child.Error, timeout.Token); _ = stderr.ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
+            var text = await ReadBoundedAsync(child.Output, 262_144, timeout.Token);
+            if (await child.Completion.WaitAsync(timeout.Token) == 0) return AntigravityCatalog(text);
+        }
+        catch (Exception ex) when (ex is IOException or OperationCanceledException or InvalidDataException or System.ComponentModel.Win32Exception or InvalidOperationException) { }
+        return Fallback("gemini");
     }
     public static string[] Efforts(string provider, string model, ModelCatalog catalog) =>
         Efforts(provider, model, catalog, null);
@@ -106,7 +163,7 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
     private async Task<ProviderRuntime> ReadProviderAsync(string id, string directory)
     {
         var command = await FindAsync(id, closing.Token);
-        var catalog = command is not null && id != "gemini" ? await ReadModelsAsync(id, command, closing.Token, directory) : Fallback(id);
+        var catalog = command is null ? Fallback(id) : id == "gemini" ? await ReadAntigravityModelsAsync(command, closing.Token, directory) : await ReadModelsAsync(id, command, closing.Token, directory);
         return new(id, Name(id), command is not null && (id != "claude" || SupportsMods(command.Version)), command?.Version, command is null ? Locale.Get("provider.notInstalled") : id == "claude" && !SupportsMods(command.Version) ? Locale.Get("provider.unsupportedVersion") : Locale.Get("provider.available"), catalog, Capabilities(id, command?.Version));
     }
     private static RuntimeInfo Info(List<ProviderRuntime> providers)
@@ -138,15 +195,16 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
     private static async Task<CliCommand?> DiscoverAsync(string provider, CancellationToken token)
     {
         var directories = (CliEnvironment.Current().GetValueOrDefault("PATH") ?? "").Split(Path.PathSeparator).Concat([Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin", Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "npm")]).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().ToArray();
-        var candidates = directories.Select(path => new CliCommand(Path.Combine(path, provider + (OperatingSystem.IsWindows() ? ".exe" : "")), [])).ToList();
+        // Antigravity's installer adds its folder to PATH for new sessions only, so the folder it installs to is looked in as well.
+        if (provider == "gemini" && OperatingSystem.IsWindows()) directories = [.. directories, AntigravityInstallFolder(CliEnvironment.Current())];
+        var candidates = directories.Select(path => new CliCommand(Path.Combine(path, Executable(provider) + (OperatingSystem.IsWindows() ? ".exe" : "")), [])).ToList();
         // npm's global install leaves only claude.cmd on PATH; the executable it forwards to sits inside the package.
         if (OperatingSystem.IsWindows() && provider == "claude") candidates.AddRange(directories.Select(path => new CliCommand(Path.Combine(path, "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe"), [])));
-        if (OperatingSystem.IsWindows() && provider != "claude")
+        if (OperatingSystem.IsWindows() && provider == "codex")
         {
             var node = directories.Select(path => Path.Combine(path, "node.exe")).Append(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "nodejs", "node.exe")).FirstOrDefault(File.Exists);
             if (node is not null) foreach (var directory in directories)
-                foreach (var entry in provider == "codex" ? new[] { "@openai/codex/bin/codex.js" } : ["@google/gemini-cli/bundle/gemini.js", "@google/gemini-cli/dist/index.js"])
-                { var script = Path.Combine(directory, "node_modules", entry.Replace('/', Path.DirectorySeparatorChar)); if (File.Exists(script)) candidates.Add(new(node, [script])); }
+                { var script = Path.Combine(directory, "node_modules", "@openai", "codex", "bin", "codex.js"); if (File.Exists(script)) candidates.Add(new(node, [script])); }
         }
         foreach (var candidate in candidates.Where(c => File.Exists(c.Binary)))
         {
@@ -310,9 +368,19 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
                 args.AddRange(["--json", "--skip-git-repo-check"]);
             }
         }
-        else args.AddRange(["--output-format", "stream-json", "--approval-mode", settings.PermissionMode == "fullAccess" ? "yolo" : settings.PermissionMode == "acceptEdits" ? "auto_edit" : settings.PermissionMode == "plan" ? "plan" : "default"]);
+        else
+        {
+            // Antigravity CLI (M/MightyCore/ProviderService.swift arguments): `--print=` with no text takes the prompt from the
+            // stream-json line on stdin (ProviderInput.AntigravityUserMessage), one turn per line; closing stdin ends the session.
+            // `--print-timeout 0` waits for the turn. Manual keeps agy's own review mode: headless, what it would ask about (shell
+            // commands, file edits) is declined unless its settings allow it.
+            args.AddRange(["--print=", "--input-format", "stream-json", "--output-format", "stream-json", "--print-timeout", "0"]);
+            if (settings.PermissionMode == "plan") args.AddRange(["--mode", "plan"]);
+            else if (settings.PermissionMode == "acceptEdits") args.AddRange(["--mode", "accept-edits"]);
+            else if (settings.PermissionMode == "fullAccess") args.Add("--dangerously-skip-permissions");
+        }
         if (request.Model != "default" && !(request.Provider == "codex" && settings.PermissionMode == "onRequest")) args.AddRange(["--model", request.Model]);
-        if (request.Provider != "codex" && request.ResumeId is not null) args.AddRange(["--resume", request.ResumeId]);
+        if (request.Provider != "codex" && request.ResumeId is not null) args.AddRange([request.Provider == "gemini" ? "--conversation" : "--resume", request.ResumeId]);
         if (request.Provider == "codex" && settings.PermissionMode != "onRequest") args.Add("-");
         return args;
     }

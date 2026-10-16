@@ -47,7 +47,7 @@ internal static class SettingsVerification
         foreach (var provider in Wire.Providers)
         {
             var args = ProviderCatalog.Arguments(request with { Provider = provider, Settings = new(PermissionMode: "fullAccess") }, "/fixture-plugin");
-            var expected = provider switch { "claude" => "bypassPermissions", "gemini" => "yolo", _ => "sandbox_mode=\"danger-full-access\"" };
+            var expected = provider switch { "claude" => "bypassPermissions", "gemini" => "--dangerously-skip-permissions", _ => "sandbox_mode=\"danger-full-access\"" };
             Check(args.Contains(expected), "Full access mapped to the wrong provider policy.");
         }
         foreach (var provider in new[] { "claude", "gemini" })

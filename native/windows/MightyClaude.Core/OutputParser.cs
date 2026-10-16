@@ -26,6 +26,13 @@ public sealed class OutputParser
     private string? lastResume;
     private AgentActivity? lastTurn;
     private bool assistantSeen, pendingTruncated, closed;
+    /// <summary>Antigravity streamed this turn's text as deltas, so its result's full <c>response</c> repeats it.</summary>
+    private bool antigravityStreamed;
+    /// <summary>The conversation an Antigravity run was asked to continue; agy starts a new one when it cannot find it, and says so once.</summary>
+    private readonly string? requestedResume;
+    private bool newConversationNoted;
+    /// <summary>Hears each Antigravity reply as the transcript shows it: the latest one is the request's answer in the graph.</summary>
+    private readonly Action<string>? answer;
     private readonly AgentImageCache? imageCache;
     private readonly Action<LogEntry>? imageEntry;
     private int storedImages;
@@ -37,16 +44,18 @@ public sealed class OutputParser
     public string? ImageRoot { get; set; }
     /// <param name="images">Where pictures the agent shows are written; without it they are left out as before.</param>
     /// <param name="imageEntry">Receives each <c>image</c> entry (macOS CLIStreamParser.imageEntry): references only, never the bytes.</param>
-    public OutputParser(string provider, Action<string, string> log, Action<string> resume, Action<AgentActivity>? activity = null, Action<SessionUsage>? usage = null, string? activityNamespace = null, Func<double>? activityClock = null, AgentImageCache? images = null, Action<LogEntry>? imageEntry = null)
+    /// <param name="requestedResume">The Antigravity conversation the run was asked to continue (M/MightyCore/CLIStreamParser.swift requestedResume).</param>
+    /// <param name="answer">Hears each Antigravity reply the transcript shows (M/MightyCore/CLIStreamParser.swift flushText → antigravityAnswer).</param>
+    public OutputParser(string provider, Action<string, string> log, Action<string> resume, Action<AgentActivity>? activity = null, Action<SessionUsage>? usage = null, string? activityNamespace = null, Func<double>? activityClock = null, AgentImageCache? images = null, Action<LogEntry>? imageEntry = null, string? requestedResume = null, Action<string>? answer = null)
     {
-        this.provider = provider; this.log = log; this.resume = resume; this.activity = activity;
+        this.provider = provider; this.log = log; this.resume = resume; this.activity = activity; this.requestedResume = requestedResume; this.answer = answer;
         this.usage = new(provider, usage); this.activityNamespace = activityNamespace ?? Wire.Id();
         var origin = Stopwatch.GetTimestamp(); clock = activityClock ?? (() => Stopwatch.GetElapsedTime(origin).TotalMilliseconds);
         imageCache = images; this.imageEntry = imageEntry;
     }
     /// <summary>
     /// The longest standard-output line an agent's run reads (M/MightyCore/CLIStreamParser.swift:36-42): 64 MiB, since a line carries
-    /// whole pictures in base64 (twice, in Claude's tool_use_result echo), and 8 MiB for Gemini, whose stream never carries one.
+    /// whole pictures in base64 (twice, in Claude's tool_use_result echo), and 8 MiB for Antigravity, whose stream never carries one.
     /// Counted in UTF-8 bytes, as the Mac counts them.
     /// </summary>
     public static int MaximumLineBytes(string provider) => (provider == "gemini" ? 8 : 64) * 1_048_576;
@@ -265,19 +274,7 @@ public sealed class OutputParser
                 }
                 if (type is "turn.failed" or "error") { Failed = true; log("error", root.TryGetProperty("error", out var error) ? Error(error, Locale.Get("run.error.providerRun", new Dictionary<string, string> { ["name"] = "Codex" })) : root.Text("message") ?? Locale.Get("run.error.providerRun", new Dictionary<string, string> { ["name"] = "Codex" })); }
             }
-            else
-            {
-                if (type == "init") { Resume(root.Text("session_id")); Turn(Locale.Get("run.turn.generating", new Dictionary<string, string> { ["name"] = "Gemini" })); }
-                if (type == "message" && root.Text("role") == "assistant")
-                {
-                    if (MetadataJson.Flag(root, "delta")) { var text = root.Text("content") ?? ""; var remaining = Math.Max(0, ActivitySupport.MaximumMessageBytes - Encoding.UTF8.GetByteCount(pending.ToString())); if (Encoding.UTF8.GetByteCount(text) > remaining) pendingTruncated = true; pending.Append(ActivitySupport.PrefixUtf8(text, remaining)); }
-                    else { Flush(); if (root.Text("content") is { Length: > 0 } text) log("assistant", ActivitySupport.PrefixUtf8(text, ActivitySupport.MaximumMessageBytes)); }
-                }
-                if (type == "tool_use") { Flush(); Tool(root.Text("tool_id"), "running", root.Text("tool_name"), MetadataJson.Property(root, "parameters")); if (activity is null) log("system", Locale.Get("run.tool.started", new Dictionary<string, string> { ["name"] = root.Text("tool_name") ?? "" })); }
-                if (type == "tool_result") { Flush(); var failed = root.Text("status") == "error"; var output = failed ? Error(MetadataJson.Property(root, "error"), Locale.Get("run.error.providerTool", new Dictionary<string, string> { ["name"] = "Gemini" })) : root.Text("output"); Tool(root.Text("tool_id"), failed ? "error" : "completed", output: output); if (activity is null && output is not null) log("output", output); }
-                if (type == "error" || type == "result" && root.Text("status") == "error") { Flush(); var fatal = root.Text("severity") != "warning"; Failed |= fatal; log(fatal ? "error" : "system", root.TryGetProperty("error", out var error) ? Error(error, Locale.Get("run.error.providerRun", new Dictionary<string, string> { ["name"] = "Gemini" })) : root.Text("message") ?? Locale.Get("run.error.providerRun", new Dictionary<string, string> { ["name"] = "Gemini" })); }
-                if (type == "result") { Flush(); Turn(Locale.Get("run.turn.finishing", new Dictionary<string, string> { ["name"] = "Gemini" })); }
-            }
+            else if (root.Text("event") is { } kind) Antigravity(root, kind);
         }
         catch (JsonException) { log("output", line); }
         catch (InvalidOperationException) { log("system", Locale.Get("run.notice.unsupportedRecord")); }
@@ -287,7 +284,148 @@ public sealed class OutputParser
         try { AgentImageSupport.DecodeBase64(base64); return true; }
         catch (AgentImageException ex) when (ex.Error is AgentImageError.InvalidEncoding or AgentImageError.TooLarge or AgentImageError.Empty) { return false; }
     }
-    public void Flush() { lock (sync) { if (pending.Length > 0) log("assistant", pending.ToString()); if (pendingTruncated) log("system", Locale.Get("run.notice.messageTruncated")); pending.Clear(); pendingTruncated = false; } }
+    /// <summary>Antigravity's streamed reply, without the newline agy ends it with; the latest one is also the graph's answer.</summary>
+    public void Flush()
+    {
+        lock (sync)
+        {
+            var text = TrailingTrimmed(pending.ToString());
+            if (text.Length > 0) { log("assistant", text); answer?.Invoke(text); }
+            if (pendingTruncated) log("system", Locale.Get("run.notice.messageTruncated"));
+            pending.Clear(); pendingTruncated = false;
+        }
+    }
+    /// <summary>
+    /// One complete stderr line of agy (M/MightyCore/CLIStreamParser.swift antigravityStderr): the conversation it was asked to
+    /// continue missing (<c>warning: conversation "…" not found</c>) is said once. A lost sign-in there is the runner's to read.
+    /// </summary>
+    public void AntigravityStderr(string line)
+    {
+        if (provider != "gemini") return;
+        var lowered = (line.Length > 1024 ? line[..1024] : line).ToLowerInvariant();
+        if (lowered.StartsWith("warning: conversation", StringComparison.Ordinal) && lowered.Contains("not found", StringComparison.Ordinal)) lock (sync) NoteNewConversation();
+    }
+    private void NoteNewConversation()
+    {
+        if (newConversationNoted) return;
+        newConversationNoted = true; log("system", Locale.Get("run.notice.antigravityNewConversation"));
+    }
+    /// <summary>agy ends a reply with a newline; a reply's start (an indented code block, say) is kept as written.</summary>
+    public static string TrailingTrimmed(string text) => text.TrimEnd();
+    private static readonly string[] StoppedStates = ["CANCELED", "CANCELLED", "INTERRUPTED"];
+    /// <summary>
+    /// Antigravity CLI (<c>agy --output-format stream-json</c>, M/MightyCore/CLIStreamParser.swift antigravity): each line names its
+    /// <c>event</c> and carries the payload under that same key. <c>init</c> opens the session, <c>step_update</c> streams the turn's
+    /// steps (the request, the agent's text as deltas, tool calls, sub-agents started, checkpoints) and <c>result</c> closes it.
+    /// What a sub-agent does is not in this stream; the graph reads it from the sub-agent's own transcript.
+    /// </summary>
+    private void Antigravity(JsonElement root, string kind)
+    {
+        var payload = MetadataJson.Property(root, kind);
+        var name = new Dictionary<string, string> { ["name"] = ProviderMark.Label(provider) };
+        switch (kind)
+        {
+            case "init":
+                if (requestedResume is not null && root.Text("conversation_id") is { Length: > 0 } conversation && conversation != requestedResume) NoteNewConversation();
+                Resume(root.Text("conversation_id")); Turn(Locale.Get("run.turn.generating", name));
+                break;
+            case "step_update":
+                var state = (payload.Text("state") ?? "").ToUpperInvariant();
+                switch (payload.Text("step_type"))
+                {
+                    case "agent_response":
+                        // A long answer arrives as ACTIVE deltas before its DONE step.
+                        if (payload.Text("text_delta") is { Length: > 0 } text)
+                        {
+                            var remaining = Math.Max(0, ActivitySupport.MaximumMessageBytes - Encoding.UTF8.GetByteCount(pending.ToString()));
+                            if (Encoding.UTF8.GetByteCount(text) > remaining) pendingTruncated = true;
+                            pending.Append(ActivitySupport.PrefixUtf8(text, remaining)); antigravityStreamed = true;
+                        }
+                        if (state != "ACTIVE") Flush();
+                        break;
+                    case "tool":
+                    {
+                        Flush();
+                        if (MetadataJson.Integer(payload, "step_index") is not { } index) return;
+                        var info = MetadataJson.Property(payload, "tool_info");
+                        var tool = info.Text("name") ?? payload.Text("tool_name") ?? "Tool";
+                        var error = MetadataJson.Property(info, "error");
+                        var failure = error.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null ? null : Error(error, Locale.Get("run.tool.antigravityFailed"));
+                        var toolState = StoppedStates.Contains(state) ? "stopped" : state == "ERROR" || state == "DONE" && failure is not null ? "error" : state == "DONE" ? "completed" : "running";
+                        var key = "step:" + index.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                        var started = activities.ContainsKey(ActivitySupport.Id(activityNamespace, key));
+                        var ended = toolState != "running";
+                        Tool(key, toolState, tool, AntigravityParameters(MetadataJson.Property(info, "parameters")), ended ? failure ?? info.Text("output") : null);
+                        if (activity is null)
+                        {
+                            if (!started && !ended) log("system", Locale.Get("run.tool.started", new Dictionary<string, string> { ["name"] = tool.Length > 160 ? tool[..160] : tool }));
+                            if (ended && info.Text("output") is { Length: > 0 } output) log("output", output);
+                            if (failure is not null) log("system", failure);
+                        }
+                        break;
+                    }
+                    case "subagent":
+                    {
+                        // Started sub-agents: one row here, one block each in the graph.
+                        Flush();
+                        if (MetadataJson.Integer(payload, "step_index") is not { } index) return;
+                        var specs = MetadataJson.Property(MetadataJson.Property(payload, "subagent_info"), "subagents");
+                        var names = specs.ValueKind == JsonValueKind.Array ? specs.EnumerateArray().Take(8).Select(spec => AntigravityRecords.Title(spec.Text("role"), spec.Text("type_name"))).OfType<string>().ToList() : [];
+                        var tool = payload.Text("tool_name") ?? "invoke_subagent";
+                        Tool("step:" + index.ToString(System.Globalization.CultureInfo.InvariantCulture), StoppedStates.Contains(state) ? "stopped" : state == "ERROR" ? "error" : state == "DONE" ? "completed" : "running", tool,
+                            summary: names.Count == 0 ? tool : string.Join(", ", names));
+                        break;
+                    }
+                }
+                break;
+            case "result":
+            {
+                Flush();
+                Resume(payload.Text("conversation_id"));
+                // The full text of the turn repeats what the deltas already showed.
+                if (!antigravityStreamed && payload.Text("response") is { } response && TrailingTrimmed(response) is { Length: > 0 } full)
+                { log("assistant", ActivitySupport.PrefixUtf8(full, ActivitySupport.MaximumMessageBytes)); answer?.Invoke(full); }
+                antigravityStreamed = false;
+                // What headless mode could not ask about was declined and the turn went on.
+                var deniedRows = MetadataJson.Property(payload, "denied_actions");
+                var denied = deniedRows.ValueKind == JsonValueKind.Array ? deniedRows.EnumerateArray().Take(16).Select(row => row.Text("display_name") ?? row.Text("action")).OfType<string>().ToList() : [];
+                if (denied.Count > 0) log("system", Locale.Get("run.notice.antigravityDenied", new Dictionary<string, string> { ["actions"] = ActivitySupport.Clean(string.Join(", ", denied), 512, true) }));
+                var status = (payload.Text("status") ?? "").ToUpperInvariant();
+                if (status is "ERROR" or "INVALID" || StoppedStates.Contains(status))
+                {
+                    // A stop the user asked for ends the run as stopped in the runner; agy ending the turn by itself is a failure.
+                    Failed = true;
+                    var fallback = status is "ERROR" or "INVALID" ? Locale.Get("run.error.providerRunFailed", name) : Locale.Get("run.error.antigravityEnded", new Dictionary<string, string> { ["status"] = status });
+                    log("error", Error(MetadataJson.Property(payload, "error"), fallback));
+                }
+                // WAITING, RUNNING or a status this app does not know yet.
+                else if (status != "SUCCESS") log("system", Locale.Get("run.notice.antigravityStatus", new Dictionary<string, string> { ["status"] = ActivitySupport.Clean(status.Length == 0 ? "?" : status, 64, true) }));
+                Turn(Locale.Get("run.turn.finishing", name));
+                break;
+            }
+            // A read-only slash command's own payload; its result carries the same text.
+            case "command_result": break;
+            // An event this app does not read yet is shown, not dropped.
+            default: var raw = root.GetRawText(); log("output", raw.Length > 32768 ? raw[..32768] : raw); break;
+        }
+    }
+    /// <summary>agy names its tool parameters in PascalCase (<c>AbsolutePath</c>, <c>CommandLine</c>); the activity summary reads snake_case.</summary>
+    public static JsonElement AntigravityParameters(JsonElement value)
+    {
+        if (value.ValueKind != JsonValueKind.Object) return default;
+        var result = new JsonObject();
+        foreach (var field in value.EnumerateObject().Take(64))
+        {
+            var snake = new StringBuilder();
+            foreach (var character in field.Name)
+            {
+                if (char.IsUpper(character) && snake.Length > 0 && snake[^1] != '_') snake.Append('_');
+                snake.Append(char.ToLowerInvariant(character));
+            }
+            result[snake.ToString()] = JsonNode.Parse(field.Value.GetRawText());
+        }
+        return JsonSerializer.SerializeToElement(result);
+    }
 }
 
 public static class ClaudeStream

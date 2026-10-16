@@ -103,7 +103,7 @@ internal static class AccountUsageVerification
             Check(!JsonSerializer.Serialize(failed, Wire.Json).Contains(FixtureToken), "the failure snapshot must not contain the sign-in");
 
             // The smoke result carries counts and copy only.
-            var outcome = new AccountUsageSmokeOutcome { Chips = 3, Cards = 3, WindowRows = 2, DirectLookupDefaultOff = true, ClaudeChip = AccountUsageStrings.ChipBeforeFirstRun, GeminiNote = AccountUsageStrings.DetailGeminiUnavailable, Restored = true };
+            var outcome = new AccountUsageSmokeOutcome { Chips = 3, Cards = 3, WindowRows = 2, DirectLookupDefaultOff = true, ClaudeChip = AccountUsageStrings.ChipBeforeFirstRun, GeminiNote = AccountUsageStrings.DetailAntigravityUnavailable, Restored = true };
             Check(!JsonSerializer.Serialize(outcome, Wire.Json).Contains(FixtureToken), "the smoke result must not contain the sign-in");
 
             // The file is never modified or rotated by the read.
@@ -232,7 +232,7 @@ internal static class AccountUsageVerification
         {
             asked.Add(provider);
             return provider == "gemini"
-                ? throw new AccountUsageFailure(AccountUsageFailureKind.Unavailable, AccountUsageStrings.DetailGeminiUnavailable)
+                ? throw new AccountUsageFailure(AccountUsageFailureKind.Unavailable, AccountUsageStrings.DetailAntigravityUnavailable)
                 : Task.FromResult(CodexAccountProbe.Map(
                     JsonDocument.Parse("""{"account":{"type":"chatgpt","email":"fixture@example.test"}}""").RootElement,
                     JsonDocument.Parse("""{"rateLimitsByLimitId":{"codex":{"planType":"plus","primary":{"usedPercent":8,"windowDurationMins":300},"secondary":{"usedPercent":61,"windowDurationMins":10080}}}}""").RootElement));
@@ -250,7 +250,7 @@ internal static class AccountUsageVerification
         Check(chips[0].Text == "세션 13% 주간 44%", "the Claude chip shows the limits the CLI reported: " + chips[0].Text);
         Check(chips[1].Text == "세션 8% 주간 61%", "the Codex chip comes from its own CLI: " + chips[1].Text);
         Check(chips[2].Text == AccountUsageStrings.ChipEmpty, "Gemini has no window to show");
-        Check(status.Cards()[2].Detail == AccountUsageStrings.DetailGeminiUnavailable, "Gemini shows the macOS sentence");
+        Check(status.Cards()[2].Detail == AccountUsageStrings.DetailAntigravityUnavailable, "Gemini shows the macOS sentence");
         Check(status.Cards()[0].CheckedAt is { Length: > 0 }, "the popover shows the time of the last check");
         Check(status.Cards()[1].Windows.Count == 2 && status.Cards()[1].Windows[0].Reset is null == false || true, "the popover lists every window");
         Check(status.Cards()[1].Windows[0].Used == "8% 사용", "the popover shows the used percentage");

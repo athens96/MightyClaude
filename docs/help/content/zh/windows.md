@@ -41,7 +41,7 @@ Windows 没有菜单栏。相同的功能位于侧边栏和{{ui:workspace.addPan
 | 功能 | 在 Windows 上 |
 |---|---|
 | CLI 登录 | 不在应用内的终端中进行，而是在单独的 Windows 终端窗口中进行。登录完成后，与 Mac 一样会自动重新发送失败的请求。 |
-| Google 的智能体 | 目前仍使用 Gemini CLI（`gemini`）；Mac 使用 Antigravity CLI（[Mac 上的 Antigravity](agent-pane.md#antigravity)）。 |
+| Antigravity | 通过 PowerShell 安装程序安装到 `%LOCALAPPDATA%\agy\bin`，记录保存在 `%USERPROFILE%\.gemini\antigravity-cli`（[Antigravity](agent-pane.md#antigravity)）。 |
 | 终端窗格 | 使用 Windows PowerShell。 |
 | 浏览器窗格 | 使用 Microsoft Edge WebView2 打开。与 Mac 一样，需要打开{{ui:settings.display.browserToggle}}并重新打开应用。 |
 | 完成通知 | 通过{{ui:windows.notifications.toggleLabel}}开启。 |

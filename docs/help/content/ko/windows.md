@@ -41,7 +41,7 @@ Windows에는 메뉴 막대가 없습니다. 같은 기능은 사이드바와 {{
 | 기능 | Windows에서는 |
 |---|---|
 | CLI 로그인 | 앱 안의 터미널이 아니라 별도의 Windows 터미널 창에서 진행됩니다. 로그인이 끝나면 Mac처럼 실패한 요청을 저절로 다시 보냅니다. |
-| Google 에이전트 | 아직 Gemini CLI(`gemini`)를 씁니다. Mac은 Antigravity CLI를 씁니다([Mac의 Antigravity](agent-pane.md#antigravity)). |
+| Antigravity | PowerShell 설치 프로그램으로 `%LOCALAPPDATA%\agy\bin`에 설치하고, 기록은 `%USERPROFILE%\.gemini\antigravity-cli`에 남습니다([Antigravity](agent-pane.md#antigravity)). |
 | 터미널 창 | Windows PowerShell을 씁니다. |
 | 브라우저 창 | Microsoft Edge WebView2로 엽니다. Mac처럼 {{ui:settings.display.browserToggle}}를 켜고 앱을 다시 열어야 합니다. |
 | 완료 알림 | {{ui:windows.notifications.toggleLabel}}으로 켭니다. |

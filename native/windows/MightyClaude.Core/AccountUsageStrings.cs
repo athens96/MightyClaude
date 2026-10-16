@@ -35,7 +35,7 @@ public static class AccountUsageStrings
     public static string DetailAuthentication => Locale.Get("windows.accountUsage.detailAuthentication");
     public static string DetailRateLimited => Locale.Get("windows.accountUsage.detailRateLimited");
     public static string DetailLastKnownSuffix => Locale.Get("windows.accountUsage.detailLastKnownSuffix");
-    public static string DetailGeminiUnavailable => Locale.Get("windows.accountUsage.detailGeminiUnavailable");
+    public static string DetailAntigravityUnavailable => Locale.Get("accountUsage.detailAntigravityUnavailable");
     public static string DetailUnsupportedProvider => Locale.Get("windows.accountUsage.detailUnsupportedProvider");
     public static string DetailCodexNotInstalled => Locale.Get("windows.accountUsage.detailCodexNotInstalled");
     public static string DetailCodexNeedsChatGPT => Locale.Get("windows.accountUsage.detailCodexNeedsChatGPT");

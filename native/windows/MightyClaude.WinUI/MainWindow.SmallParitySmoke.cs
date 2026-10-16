@@ -66,41 +66,42 @@ public sealed partial class MainWindow
         }
         finally { smokeLoginStarter = null; smokeStart = previousStart; CancelBackgroundLogin("claude"); autoLogin = new(); DismissLoginRecovery(id); }
     }
-    // Gemini goes through the same gate but signs in in a terminal: the injected starter stands in for the terminal and
-    // the status is a fixture, so no CLI or window is started. The pane is Gemini for this check only (the caller restores the state).
+    // Antigravity goes through the same gate but signs in in a terminal: the injected starter stands in for the terminal and
+    // the status is a fixture, so no CLI or window is started. The pane is Antigravity for this check only (the caller restores the state).
     private async Task<string> SmokeAutomaticGeminiLogin(PaneView pane, string id, Workspace workspace)
     {
         var starts = new List<string>(); smokeLoginStarter = provider => { starts.Add(provider); return Task.CompletedTask; };
-        var google = new CliAccountStatus { Provider = "gemini", LoggedIn = true, Method = CliAccountSupport.GeminiGoogleMethod, MethodId = CliAccountMethod.GeminiGoogle };
+        // agy's status is its model list: a lost sign-in reads signed out, anything else (offline, a timeout) unknown.
+        var signedOut = CliAccountSupport.AntigravityStatus(1, "Error: authentication required. Run 'agy' to log in, then retry.");
         try
         {
             Require(!service.HasActiveProvider("gemini") && !AnyCliUpdateRunning && !loginJobs.ContainsKey("gemini") && !loginBusy.ContainsKey("gemini") && !accountChanges.ContainsKey("gemini"),
-                $"automatic Gemini sign-in: the smoke needs Gemini idle with no update or sign-in under way; got running={service.HasActiveProvider("gemini")}, update={AnyCliUpdateRunning}, sign-in={loginJobs.ContainsKey("gemini") || loginBusy.ContainsKey("gemini")}, account change={accountChanges.ContainsKey("gemini")}");
+                $"automatic Antigravity sign-in: the smoke needs Antigravity idle with no update or sign-in under way; got running={service.HasActiveProvider("gemini")}, update={AnyCliUpdateRunning}, sign-in={loginJobs.ContainsKey("gemini") || loginBusy.ContainsKey("gemini")}, account change={accountChanges.ContainsKey("gemini")}");
             await service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => p.Id == id ? p with { Provider = "gemini" } : p).ToList() });
             autoLogin = new();
             loginRetries.Sent(new StartRunRequest(id, workspace.Id, "claude", "smoke", [], Provider: "gemini"));
-            Require(loginRetries.Settled(id) is { } settled && loginRetries.Remember(settled), "automatic Gemini sign-in: the fixture retry must be kept");
+            Require(loginRetries.Settled(id) is { } settled && loginRetries.Remember(settled), "automatic Antigravity sign-in: the fixture retry must be kept");
             var retry = loginRetries.Requests[id];
-            // A key or Vertex AI is not renewed by signing in: only the card.
-            StartAutomaticLoginIfAllowed(retry, google with { Method = Locale.Get("windows.cli.method.geminiApiKey"), MethodId = CliAccountMethod.GeminiApiKey });
-            StartAutomaticLoginIfAllowed(retry, google with { Method = "Vertex AI", MethodId = CliAccountMethod.GeminiVertex });
-            Require(starts.Count == 0 && !loginJobs.ContainsKey("gemini"), "automatic Gemini sign-in: an API key or Vertex AI must never open the sign-in terminal");
-            StartAutomaticLoginIfAllowed(retry, google); StartAutomaticLoginIfAllowed(retry, google);
+            // A status that cannot tell (offline, a timeout) or still reads signed in opens nothing: only the card.
+            StartAutomaticLoginIfAllowed(retry, CliAccountSupport.AntigravityStatus(1, "dial tcp: network is unreachable"));
+            StartAutomaticLoginIfAllowed(retry, CliAccountSupport.AntigravityStatus(0, ""));
+            Require(starts.Count == 0 && !loginJobs.ContainsKey("gemini"), "automatic Antigravity sign-in: an unknown or signed-in status must never open the sign-in terminal");
+            StartAutomaticLoginIfAllowed(retry, signedOut); StartAutomaticLoginIfAllowed(retry, signedOut);
             Require(starts.SequenceEqual(new[] { "gemini" }) && loginJobs.TryGetValue("gemini", out var job) && job.Automatic && job.Terminal,
-                $"automatic Gemini sign-in: one lost sign-in must open exactly one sign-in terminal; got {string.Join(",", starts)}");
+                $"automatic Antigravity sign-in: one lost sign-in must open exactly one sign-in terminal; got {string.Join(",", starts)}");
             RefreshLoginCards();
-            Require(pane.SmokeLoginCardSays(Locale.Get("loginRecovery.geminiTerminal")) && pane.SmokeLoginCardSays(Locale.Get("loginRecovery.cancel")) && !pane.SmokeLoginCardSays(Locale.Get("loginRecovery.terminalButton")),
-                "automatic Gemini sign-in: the card must say a sign-in terminal opened, keep Cancel and offer no second terminal");
+            Require(pane.SmokeLoginCardSays(Locale.Get("loginRecovery.antigravityTerminal")) && pane.SmokeLoginCardSays(Locale.Get("loginRecovery.cancel")) && !pane.SmokeLoginCardSays(Locale.Get("loginRecovery.terminalButton")),
+                "automatic Antigravity sign-in: the card must say a sign-in terminal opened, keep Cancel and offer no second terminal");
             // Nothing runs in the background, so a send neither waits on the terminal sign-in nor is refused by it.
             var sends = new List<StartRunRequest>(); var previousStart = smokeStart; smokeStart = request => { sends.Add(request); return Task.CompletedTask; };
             try { await StartFromComposer(new StartRunRequest(id, workspace.Id, "claude", "smoke send", [], Provider: "gemini")); }
             finally { smokeStart = previousStart; }
-            Require(sends.Count == 1 && loginJobs.ContainsKey("gemini"), $"automatic Gemini sign-in: a send must go ahead beside the terminal sign-in; got {sends.Count} sends, sign-in {loginJobs.ContainsKey("gemini")}");
+            Require(sends.Count == 1 && loginJobs.ContainsKey("gemini"), $"automatic Antigravity sign-in: a send must go ahead beside the terminal sign-in; got {sends.Count} sends, sign-in {loginJobs.ContainsKey("gemini")}");
             CancelBackgroundLogin("gemini"); RefreshLoginCards();
-            StartAutomaticLoginIfAllowed(retry, google);
+            StartAutomaticLoginIfAllowed(retry, signedOut);
             Require(starts.Count == 1 && pane.SmokeLoginCardSays(Locale.Get("loginRecovery.loginButton")),
-                "automatic Gemini sign-in: a cancelled sign-in must not open the terminal again within the cooldown, and the card must offer its button");
-            return "Gemini: one terminal start, key and Vertex excluded, sends go ahead, cooldown after cancel";
+                "automatic Antigravity sign-in: a cancelled sign-in must not open the terminal again within the cooldown, and the card must offer its button");
+            return "Antigravity: one terminal start, unknown and signed-in statuses excluded, sends go ahead, cooldown after cancel";
         }
         finally { smokeLoginStarter = null; CancelBackgroundLogin("gemini"); autoLogin = new(); DismissLoginRecovery(id); }
     }

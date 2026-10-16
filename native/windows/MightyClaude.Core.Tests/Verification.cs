@@ -23,10 +23,12 @@ internal static class Verification
     private static ProviderCatalog Absent() => new((_, _) => Task.FromResult<CliCommand?>(null));
     private static StartRunRequest Shell(string id, Workspace workspace, string text) => new(id, workspace.Id, "shell", text, []);
     private static string LongCommand(string pidFile) { var self = Self("--long-child", pidFile); return OperatingSystem.IsWindows() ? string.Join(" ", new[] { self.Binary }.Concat(self.Prefix).Select(ChildProcess.QuoteWindows)) : string.Join(" ", new[] { self.Binary }.Concat(self.Prefix).Select(v => "'" + v.Replace("'", "'\"'\"'") + "'")); }
-    private static string AttachmentReferencePath(string prompt, string name)
+    /// <param name="plain">Antigravity's prompt names each copy by its plain path in quotes, never JSON-escaped.</param>
+    private static string AttachmentReferencePath(string prompt, string name, bool plain = false)
     {
         var prefix = JsonSerializer.Serialize(name, Wire.Json) + ": ";
         var line = prompt.Split('\n').Single(value => value.StartsWith(prefix, StringComparison.Ordinal));
+        if (plain) return line[prefix.Length..].Trim('"');
         return JsonSerializer.Deserialize<string>(line[prefix.Length..], Wire.Json) ?? throw new InvalidOperationException("Missing attachment path.");
     }
     private sealed class FakeManager(Action<RunEvent> emit) : IRunManager
@@ -149,23 +151,30 @@ internal static class Verification
             var input = await Console.In.ReadToEndAsync(); await File.WriteAllTextAsync(record + ".prompt", input);
             if (args.Contains("--verify-attachments"))
             {
-                var flag = provider == "claude" ? "--add-dir" : provider == "codex" ? "--image" : "--include-directories";
+                var flag = provider == "codex" ? "--image" : "--add-dir";
                 var index = Array.IndexOf(args, flag); Check(index >= 0 && index + 1 < args.Length, provider + " staged attachment argument missing");
                 var directory = provider == "codex" ? Path.GetDirectoryName(args[index + 1])! : args[index + 1];
                 var captured = new Dictionary<string, string>();
                 foreach (var file in Directory.EnumerateFiles(directory)) captured.Add(file, Convert.ToBase64String(await File.ReadAllBytesAsync(file)));
                 await File.WriteAllTextAsync(record + ".attachments", JsonSerializer.Serialize(captured, Wire.Json));
             }
-            // What Gemini CLI 0.43 prints on stderr when its stored Google sign-in is stale, and the same words as a model answer.
-            const string geminiSignInLost = "Error authenticating: FatalCancellationError: Authentication cancelled by user.";
-            if (args.Contains("--gemini-signin-lost")) { await Console.Error.WriteLineAsync(geminiSignInLost); Environment.ExitCode = 1; return; }
-            if (args.Contains("--gemini-quoted"))
+            // What Antigravity CLI 1.3.5 prints on stderr when its sign-in is gone, and the same words as a model answer.
+            const string antigravitySignInLost = "Error: authentication required. Run 'agy' to log in, then retry.";
+            if (args.Contains("--agy-signin-lost")) { await Console.Error.WriteLineAsync(antigravitySignInLost); Environment.ExitCode = 1; return; }
+            if (args.Contains("--agy-quoted"))
             {
-                Console.WriteLine(JsonSerializer.Serialize(new { type = "message", role = "assistant", content = geminiSignInLost, delta = false }));
-                Console.WriteLine("{\"type\":\"result\",\"status\":\"error\",\"error\":{\"type\":\"unknown\",\"message\":\"[API Error: Internal error encountered. (Status: INTERNAL)]\"}}");
+                Console.WriteLine(JsonSerializer.Serialize(new Dictionary<string, object> { ["event"] = "step_update", ["step_update"] = new Dictionary<string, object> { ["step_index"] = 1, ["state"] = "DONE", ["step_type"] = "agent_response", ["text_delta"] = antigravitySignInLost } }));
+                Console.WriteLine("{\"event\":\"result\",\"result\":{\"status\":\"ERROR\",\"error\":{\"message\":\"Internal error encountered.\"}}}");
                 Environment.ExitCode = 1; return;
             }
-            Console.WriteLine("{\"type\":\"thread.started\",\"thread_id\":\"fixture-thread\"}"); Console.WriteLine("{\"type\":\"item.completed\",\"item\":{\"id\":\"answer\",\"type\":\"agent_message\",\"text\":\"FAKE_CLI_OK\"}}");
+            // agy prints its own stream (Antigravity's `event` lines); the other agents read Codex's exec items here.
+            if (provider == "gemini")
+            {
+                Console.WriteLine("{\"event\":\"init\",\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"init\":{\"model\":\"gemini-3.8-flash-low\"}}");
+                Console.WriteLine("{\"event\":\"step_update\",\"step_update\":{\"step_index\":1,\"state\":\"DONE\",\"step_type\":\"agent_response\",\"text_delta\":\"FAKE_CLI_OK\\n\"}}");
+                Console.WriteLine("{\"event\":\"result\",\"result\":{\"status\":\"SUCCESS\",\"response\":\"FAKE_CLI_OK\\n\"}}");
+            }
+            else { Console.WriteLine("{\"type\":\"thread.started\",\"thread_id\":\"fixture-thread\"}"); Console.WriteLine("{\"type\":\"item.completed\",\"item\":{\"id\":\"answer\",\"type\":\"agent_message\",\"text\":\"FAKE_CLI_OK\"}}"); }
             if (args.Contains("--hold-run")) await Task.Delay(60000);
             if (args.Contains("--fail-run")) Environment.ExitCode = 2;
         }
@@ -361,10 +370,21 @@ internal static class Verification
         await Test("Login recovery latest request generation and one-shot retry", CliLoginRecoveryVerification.RetryGenerationPreservesAttachmentsAndDropsStaleWork);
         await Test("Login recovery requires fresh successful sign-in", CliLoginRecoveryVerification.WaitRequiresFreshSuccessWhenAlreadySignedIn);
         await Test("Login recovery automatic start once per provider with cooldown", CliLoginRecoveryVerification.AutomaticStartOncePerProviderWithCooldown);
-        await Test("Login recovery Gemini sign-in failures and methods a sign-in renews", CliLoginRecoveryVerification.GeminiSignalsAndMethods);
-        await Test("Login recovery Gemini sign-in is the credentials file changing", CliLoginRecoveryVerification.GeminiSignInIsTheCredentialsFileChanging);
-        await Test("Login recovery Gemini fake CLI run: the sign-in message on stderr is the reason, the same words as an answer are not", CliLoginRecoveryVerification.GeminiFakeCliRunRaisesTheReasonFromStderrOnly);
+        await Test("Login recovery Antigravity sign-in failures, and only a signed-out status asks for a sign-in", CliLoginRecoveryVerification.GeminiSignalsAndMethods);
+        await Test("Login recovery Antigravity sign-in is its status reading signed in", CliLoginRecoveryVerification.GeminiSignInIsTheCredentialsFileChanging);
+        await Test("Login recovery Antigravity fake CLI run: the sign-in message on stderr is the reason, the same words as an answer are not", CliLoginRecoveryVerification.GeminiFakeCliRunRaisesTheReasonFromStderrOnly);
         await Test("Login recovery Claude fake CLI run: a result repeating the marked sign-in failure keeps the reason, whatever its words", CliLoginRecoveryVerification.ClaudeFakeCliRunKeepsTheReasonWhenTheResultRepeatsTheMarkedFailure);
+        // The `gemini` provider runs Antigravity CLI (agy), ported from the Mac's AntigravityTests and AntigravityGraphTests.
+        await Test("antigravity: agy's stream is read for replies, tool rows, resume and usage", AntigravityVerification.TheStreamIsReadForRepliesToolsResumeAndUsage);
+        await Test("antigravity: results, declined actions, failures and notices", AntigravityVerification.ResultsDeniedActionsFailuresAndNotices);
+        await Test("antigravity: arguments, the stdin line and attachments", AntigravityVerification.ArgumentsStdinAndAttachments);
+        await Test("antigravity: the model list, labels, install and a fake agy's status, update and models", AntigravityVerification.TheModelListLabelsAndInstall);
+        await Test("antigravity: saved Gemini CLI panes are moved once", AntigravityVerification.ASavedGeminiCliPaneIsMovedOnce);
+        await Test("antigravity: a run draws the request, its sub-agents' work and the latest answer", AntigravityVerification.ARunDrawsTheRequestItsSubagentsWorkAndTheLatestAnswer);
+        await Test("antigravity: a sub-agent waiting for its helper is not done until it answers", AntigravityVerification.ASubagentWaitingForItsHelperIsNotDoneUntilItAnswers);
+        await Test("antigravity: the watcher follows growing transcripts and nested sub-agents", AntigravityVerification.TheWatcherFollowsGrowingTranscriptsAndNestedSubagents);
+        await Test("antigravity: older requests are read from the conversation's transcript", AntigravityVerification.OlderRequestsAreReadFromTheConversationTranscript);
+        await Test("antigravity: the conversations to continue and the skills", AntigravityVerification.TheConversationListAndSkills);
         await Test("Agent IO TerminalCleanerAndEphemeralOwnership", AgentIOVerification.TerminalCleanerAndEphemeralOwnership);
         if (OperatingSystem.IsWindows()) await Test("Agent IO real ConPTY process ownership", AgentIOVerification.RealWindowsInteractiveProcess);
         else { skipped++; Console.WriteLine("SKIP Agent IO real ConPTY process (requires Windows)"); }
@@ -445,7 +465,7 @@ internal static class Verification
         if (OperatingSystem.IsWindows()) await Test("ConPTY persistent shell, resize and deterministic shutdown", PseudoTerminalVerification.PersistentShellAndShutdown);
         else { skipped++; Console.WriteLine("SKIP ConPTY persistent shell (requires Windows)"); }
         await Test("structured tool identity, duration, Mods dedup and cancellation", ActivityUsageVerification.Activities);
-        await Test("Codex/Gemini direct usage snapshots and intact long Markdown", ActivityUsageVerification.ProviderUsage);
+        await Test("Codex/Antigravity direct usage snapshots and intact long Markdown", ActivityUsageVerification.ProviderUsage);
         await Test("Claude current context, cumulative totals and quota observation age", ActivityUsageVerification.ClaudeContext);
         await Test("a leftover background task's report does not end the real request", ActivityUsageVerification.LeftoverTaskResult);
         await Test("optional metadata recovery, elapsed checkpoints and workspace state", ActivityUsageVerification.Persistence);
@@ -462,19 +482,19 @@ internal static class Verification
             Check(ProviderCatalog.Arguments(new("p", "w", "claude", "secret", [], "sonnet", "claude", new("high", "manual", 3, 1.5)), "/plugin").Contains("--effort"));
             Check(ProviderCatalog.Efforts("codex", "default", ProviderCatalog.Fallback("codex")).Length == 0); Check(!ProviderCatalog.SupportsMods("2.1.263")); Check(ProviderCatalog.SupportsMods("2.1.271 (Claude Code)"));
         });
-        await Test("Codex and Gemini are beta, Claude is official, and Name never carries the badge", () =>
+        await Test("Codex and Antigravity are beta, Claude is official, and Name never carries the badge", () =>
         {
             Check(!ProviderCatalog.IsBeta("claude") && ProviderCatalog.IsBeta("codex") && ProviderCatalog.IsBeta("gemini") && !ProviderCatalog.IsBeta("unknown"), "beta providers");
-            Check(Wire.Providers.Select(ProviderCatalog.Name).SequenceEqual(new[] { "Claude Code", "Codex CLI", "Gemini CLI" }), "provider names unchanged");
+            Check(Wire.Providers.Select(ProviderCatalog.Name).SequenceEqual(new[] { "Claude Code", "Codex CLI", "Antigravity CLI" }), "provider names");
             var badge = Locale.Get("badge.beta"); Check(badge is "베타" or "Beta", "badge text " + badge);
             Check(Locale.Get("badge.betaAccessibility") is "베타 기능" or "Beta feature", "badge accessibility text");
             Check(ProviderCatalog.BetaLabel("claude", "Claude Code") == "Claude Code", "official label untouched");
-            Check(ProviderCatalog.BetaLabel("codex", "Codex CLI") == "Codex CLI · " + badge && ProviderCatalog.BetaLabel("gemini", "Gemini CLI") == "Gemini CLI · " + badge, "beta labels");
+            Check(ProviderCatalog.BetaLabel("codex", "Codex CLI") == "Codex CLI · " + badge && ProviderCatalog.BetaLabel("gemini", "Antigravity CLI") == "Antigravity CLI · " + badge, "beta labels");
             var title = Locale.Get("window.title.betaTemplate", new Dictionary<string, string> { ["app"] = "Mighty Claude" }); Check(title is "Mighty Claude (베타)" or "Mighty Claude (Beta)", "window title " + title);
             var version = Locale.Get("settings.appUpdate.betaVersionTemplate", new Dictionary<string, string> { ["version"] = "0.2.8" }); Check(version is "0.2.8 (베타)" or "0.2.8 (Beta)", "version line " + version);
             return Task.CompletedTask;
         });
-        await Test("beta badge: only a Codex or Gemini agent pane's sidebar row and tab carry the capsule", () =>
+        await Test("beta badge: only a Codex or Antigravity agent pane's sidebar row and tab carry the capsule", () =>
         {
             Check(!ProviderCatalog.ShowsBetaBadge(new RunSession { Provider = "claude" }), "claude agent pane");
             Check(ProviderCatalog.ShowsBetaBadge(new RunSession { Provider = "codex" }) && ProviderCatalog.ShowsBetaBadge(new RunSession { Provider = "gemini" }), "codex and gemini agent panes");
@@ -538,7 +558,7 @@ internal static class Verification
         {
             var output = new List<string>(); var parser = new OutputParser("claude", (_, value) => output.Add(value), _ => { });
             parser.Parse("{\"type\":\"assistant\",\"message\":{\"id\":\"a\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"private\"}]}}"); parser.Parse("{\"type\":\"assistant\",\"message\":{\"id\":\"a\",\"content\":[{\"type\":\"text\",\"text\":\"visible\"}]}}"); Check(output.SequenceEqual(["visible"]));
-            var gemini = new OutputParser("gemini", (_, _) => { }, _ => { }); gemini.Parse("{\"type\":\"error\",\"severity\":\"error\",\"message\":\"fatal\"}"); gemini.Parse("{\"type\":\"error\",\"severity\":\"warning\",\"message\":\"warning\"}"); Check(gemini.Failed);
+            var gemini = new OutputParser("gemini", (_, _) => { }, _ => { }); gemini.Parse("{\"event\":\"result\",\"result\":{\"status\":\"ERROR\"}}"); gemini.Parse("{\"event\":\"result\",\"result\":{\"status\":\"WAITING\"}}"); Check(gemini.Failed);
             var codex = new OutputParser("codex", (_, _) => { }, _ => { }); codex.Parse(JsonSerializer.Serialize(new { type = "item.completed", item = new { id = "a", type = "agent_message", text = new string('x', 100000) } })); var seen = (HashSet<string>)typeof(OutputParser).GetField("seen", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(codex)!; Check(seen.Single().Length < 200); return Task.CompletedTask;
         });
         await Test("Claude/Codex metadata protocol sends no user prompt or model turn", async () =>
@@ -578,7 +598,7 @@ internal static class Verification
                     await manager.StartAsync(new(provider, workspace.Id, "claude", "", [], Provider: provider, Attachments: files)); await Until(() => !manager.IsRunning(provider));
                     Check(events.Any(e => e.SessionId == provider && e.Status == "completed"), provider + " attachment run did not complete");
                     var args = JsonSerializer.Deserialize<string[]>(await File.ReadAllTextAsync(record + ".args"), Wire.Json)!;
-                    var flag = provider == "claude" ? "--add-dir" : provider == "codex" ? "--image" : "--include-directories";
+                    var flag = provider == "codex" ? "--image" : "--add-dir";
                     var path = args[Array.IndexOf(args, flag) + 1]; if (provider == "codex") path = Path.GetDirectoryName(path)!;
                     Check(!Directory.Exists(path), provider + " staging cleanup");
                     var prompt = await File.ReadAllTextAsync(record + ".prompt");
@@ -590,10 +610,17 @@ internal static class Verification
                         Check(content.Single(c => c.GetProperty("type").GetString() == "image").GetProperty("source").GetProperty("data").GetString() == files[0].DataBase64, "Claude inline image bytes changed");
                         prompt = content.Single(c => c.GetProperty("type").GetString() == "text").GetProperty("text").GetString()!;
                     }
-                    // References are JSON strings: Windows separators must be decoded before comparing paths.
+                    // Antigravity reads its prompt as one stream-json line.
+                    if (provider == "gemini")
+                    {
+                        Check(prompt.EndsWith('\n') && prompt.Count(c => c == '\n') == 1, "Antigravity's prompt is one stdin line");
+                        using var json = JsonDocument.Parse(prompt); Check(json.RootElement.GetProperty("event").GetString() == "user", "Antigravity's prompt is a user event");
+                        prompt = json.RootElement.GetProperty("message").GetProperty("content").GetString()!;
+                    }
+                    // References are JSON strings (Windows separators must be decoded before comparing paths), Antigravity's plain paths.
                     foreach (var attachment in provider == "claude" ? files.Skip(1) : files)
                     {
-                        var referencedPath = AttachmentReferencePath(prompt, attachment.Name);
+                        var referencedPath = AttachmentReferencePath(prompt, attachment.Name, provider == "gemini");
                         Check(Path.GetDirectoryName(referencedPath) == path, provider + " reference escaped its staged directory");
                         Check(captured.TryGetValue(referencedPath, out var bytes) && bytes == attachment.DataBase64, provider + " referenced bytes changed before CLI consumption");
                         if (provider == "codex" && attachment.MediaType.StartsWith("image/", StringComparison.Ordinal)) Check(args[Array.IndexOf(args, "--image") + 1] == referencedPath, "Codex image argument and reference differ");
@@ -897,7 +924,7 @@ internal static class Verification
         await Test("cli account strings match macOS", StringsVerification.CliAccountStringsMatchMacOS);
         await Test("cli account claude and codex statuses expose account labels only", CliAccountVerification.ClaudeAndCodexStatusesExposeAccountLabelsOnly);
         await Test("cli account token never survives the read", CliAccountVerification.TokenNeverSurvivesTheRead);
-        await Test("cli account gemini status and logout work on its account files", CliAccountVerification.GeminiStatusAndLogoutWorkOnItsAccountFiles);
+        await Test("cli account antigravity status is its model list, with no sign-out", CliAccountVerification.GeminiStatusAndLogoutWorkOnItsAccountFiles);
         await Test("cli account commands are the CLIs own", CliAccountVerification.CommandsAreTheCLIsOwn);
         await Test("cli account coordinator reads statuses and calls logout", CliAccountVerification.CoordinatorReadsStatusesAndCallsLogout);
         await Test("cli account smoke shows fixture statuses and confirmation flow works", CliAccountVerification.SmokeShowsFixtureStatusesAndConfirmationFlowWorks);

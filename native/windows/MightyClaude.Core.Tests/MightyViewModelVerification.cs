@@ -16,9 +16,9 @@ internal static class MightyViewModelVerification
         var codex = new RunSession { Kind = "claude", Provider = "codex" };
         Check(MightyGraphViewModel.ShowsModeSwitch(codex), "codex pane must show the switch");
 
-        // Gemini provider → does not show
+        // Antigravity (the gemini id) → shows, as on the Mac
         var gemini = new RunSession { Kind = "claude", Provider = "gemini" };
-        Check(!MightyGraphViewModel.ShowsModeSwitch(gemini), "gemini pane must not show the switch");
+        Check(MightyGraphViewModel.ShowsModeSwitch(gemini), "an Antigravity pane must show the switch");
 
         // Shell → does not show
         var shell = new RunSession { Kind = "shell", Provider = "claude" };

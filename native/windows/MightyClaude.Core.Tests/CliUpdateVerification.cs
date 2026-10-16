@@ -170,8 +170,8 @@ internal static class CliUpdateVerification
         try
         {
             var prefix = Dir(home, "AppData", "Roaming", "npm");
-            Exe(prefix, "gemini.cmd");
-            Package(Path.Combine(prefix, "node_modules", "@google", "gemini-cli"), "@google/gemini-cli", "0.9.0-nightly.20260919", "gemini");
+            Exe(prefix, "codex.cmd");
+            Package(Path.Combine(prefix, "node_modules", "@openai", "codex"), "@openai/codex", "0.9.0-nightly.20260919", "codex");
             File.WriteAllText(Path.Combine(Dir(prefix, "node_modules", "npm", "bin"), "npm-cli.js"), "");
             var nodeDirectory = Dir(home, "nodejs");
             Exe(nodeDirectory, "node.exe");
@@ -179,7 +179,7 @@ internal static class CliUpdateVerification
             var runner = new FakeRunner((_, _, _) => Version("0.9.0-nightly.20260919"));
             var service = new CliUpdateService(runner, Env(prefix, nodeDirectory), home);
 
-            var result = await service.UpdateAsync("gemini");
+            var result = await service.UpdateAsync("codex");
             Check(result is { Status: "skipped", Method: "npm" }, "a prerelease channel must be skipped: " + result.Status);
             Check(result.Detail == CliUpdateStrings.DetailNpmPrerelease, "the skipped sentence must be the macOS one");
             Check(!runner.Updates.Any(), "a prerelease channel must not be changed");

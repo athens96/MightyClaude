@@ -35,15 +35,9 @@ public static class CliAccountStrings
 
     public static readonly string DetailClaudeParseError = Locale.Get("settings.cliAccounts.detailClaudeParseError");
     public static readonly string DetailCodexParseError = Locale.Get("settings.cliAccounts.detailCodexParseError");
-    public static readonly string DetailGeminiNotInstalled = Locale.Get("settings.cliAccounts.detailGeminiNotInstalled");
     public static readonly string DetailNotInstalledTemplate = Locale.Get("settings.cliAccounts.detailNotInstalledTemplate");
     public static readonly string DetailUnsupportedProvider = Locale.Get("settings.cliAccounts.detailUnsupportedProvider");
-    public static readonly string DetailGeminiApiKeyPresent = Locale.Get("settings.cliAccounts.detailGeminiApiKeyPresent");
-    public static readonly string DetailGeminiApiKeyAbsent = Locale.Get("settings.cliAccounts.detailGeminiApiKeyAbsent");
-    public static readonly string DetailVertexPresent = Locale.Get("settings.cliAccounts.detailVertexPresent");
-    public static readonly string DetailVertexAbsent = Locale.Get("settings.cliAccounts.detailVertexAbsent");
     public static readonly string DetailClaudeTimeout = Locale.Get("settings.cliAccounts.detailClaudeTimeout");
     public static readonly string DetailClaudeUnknown = Locale.Get("settings.cliAccounts.detailClaudeUnknown");
     public static readonly string DetailRunFailed = Locale.Get("settings.cliAccounts.detailRunFailed");
-    public static readonly string DetailGeminiLogoutFailedTemplate = Locale.Get("settings.cliAccounts.detailGeminiLogoutFailedTemplate");
 }

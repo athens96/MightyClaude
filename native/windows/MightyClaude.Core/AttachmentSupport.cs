@@ -113,7 +113,9 @@ public sealed class StagedAttachments : IAsyncDisposable
         var generic = Files.Where(f => request.Provider != "claude" || !f.Attachment.MediaType.StartsWith("image/", StringComparison.Ordinal) && f.Attachment.MediaType != "application/pdf").ToArray();
         if (generic.Length > 0)
         {
-            var references = generic.Select(f => request.Provider == "gemini" ? (OperatingSystem.IsWindows() ? "@\"" + f.Path + "\"" : "@" + EscapeGeminiPath(f.Path)) + "\n" + JsonSerializer.Serialize(f.Attachment.Name, Wire.Json) + ": " + JsonSerializer.Serialize(f.Path, Wire.Json) : JsonSerializer.Serialize(f.Attachment.Name, Wire.Json) + ": " + JsonSerializer.Serialize(f.Path, Wire.Json));
+            // agy reads a file outside the workspace once its folder is added (ArgumentsFor); the prompt names each copy by its
+            // plain path, never JSON-escaped (M/MightyCore/Attachments.swift:160-164). A staged path never holds a quote.
+            var references = generic.Select(f => JsonSerializer.Serialize(f.Attachment.Name, Wire.Json) + ": " + (request.Provider == "gemini" ? "\"" + f.Path + "\"" : JsonSerializer.Serialize(f.Path, Wire.Json)));
             // Model input, not UI: one fixed English line in every app language, as the macOS reference line is.
             prompt += "\n\nAttached files (copies provided for this run only):\n" + string.Join("\n", references);
         }
@@ -134,9 +136,8 @@ public sealed class StagedAttachments : IAsyncDisposable
         {
             foreach (var file in Files.Where(f => f.Attachment.MediaType.StartsWith("image/", StringComparison.Ordinal))) args.InsertRange(args.Count - 1, ["--image", file.Path]);
         }
-        else args.AddRange(["--include-directories", DirectoryPath]);
+        else args.AddRange(["--add-dir", DirectoryPath]);
         return args;
     }
-    private static string EscapeGeminiPath(string path) => string.Concat(path.Select(c => char.IsWhiteSpace(c) || c is '(' or ')' or '[' or ']' or '{' or '}' or '\\' or ',' or ';' or '!' or '?' or '"' or '\'' ? "\\" + c : c.ToString()));
     public ValueTask DisposeAsync() { if (Directory.Exists(DirectoryPath)) Directory.Delete(DirectoryPath, true); return ValueTask.CompletedTask; }
 }

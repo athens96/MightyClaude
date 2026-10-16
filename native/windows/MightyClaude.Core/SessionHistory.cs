@@ -123,6 +123,8 @@ public static class SessionHistory
                 return null;
             case "codex":
                 return RecordFiles.Sessions(CliAccountSupport.CodexHome(home, environment)) is { } sessions ? CodexRollout(sessions, resumeID) : null;
+            case "gemini":
+                return AntigravityRecords.Transcript(AntigravityRecords.Brain(home), resumeID) is { } transcript && RecordFiles.Regular(transcript) ? transcript : null;
             default: return null;
         }
     }
@@ -177,14 +179,24 @@ public static class SessionHistory
         var end = request.End ?? size;
         if (end > size || end < 0) throw new SessionHistoryException(SessionHistoryError.Changed);
         var reader = new JsonlBackwardReader(handle, end, MaximumLineBytes);
-        var format = request.Provider == "codex"
-            ? HistoryFormat.Codex(RecordFiles.Thread(Path.GetFileName(path)) ?? request.ResumeID) : HistoryFormat.Claude;
-        var scan = HistoryScan.Run(reader, format, request.End is null ? request.Anchor : null, Math.Max(1, request.Turns), request.MaximumBytes, token);
+        var format = request.Provider switch
+        {
+            "codex" => HistoryFormat.Codex(RecordFiles.Thread(Path.GetFileName(path)) ?? request.ResumeID),
+            "gemini" => HistoryFormat.Antigravity(request.ResumeID, AntigravityRecords.BrainOf(path)),
+            _ => HistoryFormat.Claude,
+        };
+        // Where the chunk ends a newer request starts: its time ends the oldest one read here (Antigravity's sub-agents may get
+        // work from later requests; M/MightyCore/SessionHistory.swift:242-245).
+        DateTimeOffset? newer = null;
+        if (format.Provider == "gemini" && request.End is { } chunkEnd) newer = HistoryScan.Date(HistoryScan.OpeningAt(handle, chunkEnd, format)?.Timestamp);
+        var scan = HistoryScan.Run(reader, format, request.End is null ? request.Anchor : null, Math.Max(1, request.Turns), request.MaximumBytes, token, newer);
         var runs = new List<MightyGraphRun>();
+        // Sub-agents' transcripts the chunk's requests read, together.
+        var childBytes = Math.Min(HistoryReplay.AntigravityChildBytes, Math.Max(0, request.MaximumBytes));
         foreach (var turn in scan.Turns)
         {
             token.ThrowIfCancellationRequested();
-            if (HistoryReplay.Run(turn, format) is { } run) runs.Add(run);
+            if (HistoryReplay.Run(turn, format, ref childBytes) is { } run) runs.Add(run);
         }
         return new SessionHistoryChunk(runs, file, scan.End, scan.ReachedStart);
     }
@@ -428,13 +440,17 @@ internal sealed class JsonlBackwardReader(SafeFileHandle handle, long end, int m
 
 // ── finding requests ──────────────────────────────────────────────────────
 
-public sealed record HistoryFormat(string Provider, string? Thread)
+/// <param name="Thread">Codex's thread, or Antigravity's conversation.</param>
+/// <param name="Brain">Antigravity's brain folder, which also holds the request's sub-agents' transcripts.</param>
+public sealed record HistoryFormat(string Provider, string? Thread, string? Brain = null)
 {
     public static readonly HistoryFormat Claude = new("claude", null);
     public static HistoryFormat Codex(string thread) => new("codex", thread);
+    public static HistoryFormat Antigravity(string conversation, string brain) => new("gemini", conversation, brain);
 }
 
-public sealed record HistoryTurn(long Start, string Prompt, string? Timestamp, DateTimeOffset? Date, string? Key, List<byte[]> Lines);
+/// <param name="Until">When the next request was sent, when known: work recorded after it belongs to that request.</param>
+public sealed record HistoryTurn(long Start, string Prompt, string? Timestamp, DateTimeOffset? Date, string? Key, List<byte[]> Lines, DateTimeOffset? Until = null);
 
 public static class HistoryScan
 {
@@ -456,8 +472,18 @@ public static class HistoryScan
 
     /// The line that opens a request, cheaply rejected on raw bytes first: a key
     /// in raw JSON (<c>"toolUseResult":</c>) can never appear inside a string.
+    /// <summary>The opening read forward from <paramref name="offset"/> (where a newer request starts), if it is one.</summary>
+    internal static Opening? OpeningAt(Microsoft.Win32.SafeHandles.SafeFileHandle handle, long offset, HistoryFormat format)
+    {
+        var bytes = new byte[1_048_576];
+        var count = RecordFiles.Read(handle, bytes, offset);
+        var newline = System.Array.IndexOf(bytes, (byte)10, 0, count);
+        return count > 0 && newline >= 0 ? OpeningOf(bytes[..newline], format) : null;
+    }
+
     public static Opening? OpeningOf(byte[] line, HistoryFormat format)
     {
+        if (format.Provider == "gemini") return AntigravityRecords.Opening(line) is { } opening ? new(opening.Prompt, opening.Timestamp, opening.Key) : null;
         if (format.Provider == "claude")
         {
             if (!Contains(line, "\"type\":\"user\"") || Contains(line, "\"toolUseResult\":") || Parse(line) is not { } value || ClaudePrompt(value) is not { } prompt) return null;
@@ -593,7 +619,7 @@ public static class HistoryScan
     /// starts right above it. Stops after <paramref name="wanted"/> requests, or
     /// once <paramref name="maximumBytes"/> were read and one request was found.
     /// </summary>
-    internal static Result Run(JsonlBackwardReader reader, HistoryFormat format, SessionHistoryAnchor? anchor, int wanted, long maximumBytes, CancellationToken token)
+    internal static Result Run(JsonlBackwardReader reader, HistoryFormat format, SessionHistoryAnchor? anchor, int wanted, long maximumBytes, CancellationToken token, DateTimeOffset? newer = null)
     {
         var collected = new List<HistoryTurn>();
         var pending = new List<byte[]>(); long pendingBytes = 0;
@@ -637,8 +663,9 @@ public static class HistoryScan
             if (format.Provider == "codex") lines.Insert(0, line);
             var prompt = opening.Prompt ?? CodexPrompt(lines);
             var date = Date(opening.Timestamp);
+            var until = newer; newer = date;
             if (prompt is null) { end = offset; continue; }
-            var turn = new HistoryTurn(offset, prompt, opening.Timestamp, date, opening.Key, lines);
+            var turn = new HistoryTurn(offset, prompt, opening.Timestamp, date, opening.Key, lines, until);
             if (!past && anchor is not null)
             {
                 end = offset;
@@ -693,7 +720,11 @@ public static class HistoryReplay
     public static string RunID(HistoryTurn turn) =>
         turn.Key is { } key && Wire.Identifier(RunPrefix + key) ? RunPrefix + key : RunPrefix + "o" + turn.Start.ToString(CultureInfo.InvariantCulture);
 
-    public static MightyGraphRun? Run(HistoryTurn turn, HistoryFormat format)
+    /// <summary>Sub-agents' transcripts one chunk's requests may read together.</summary>
+    public const long AntigravityChildBytes = 32L * 1_048_576;
+
+    /// <param name="childBytes">What reading Antigravity sub-agents' transcripts may still spend.</param>
+    public static MightyGraphRun? Run(HistoryTurn turn, HistoryFormat format, ref long childBytes)
     {
         var provider = format.Provider;
         var model = provider == "codex" ? CodexModel(turn.Lines) : null;
@@ -701,7 +732,12 @@ public static class HistoryReplay
         var tracker = new ExecutionGraphTracker(runID, turn.Prompt, provider, model, _ => { });
         DateTimeOffset? latest = turn.Date;
         void At(JsonElement value) { if (HistoryScan.Date(value.Text("timestamp")) is { } date) latest = date; }
-        var status = provider == "codex" ? Codex(turn.Lines, format.Thread ?? "", tracker, At) : Claude(turn.Lines, tracker, At);
+        var status = provider switch
+        {
+            "codex" => Codex(turn.Lines, format.Thread ?? "", tracker, At),
+            "gemini" => Antigravity(turn, format, runID, tracker, ref childBytes, date => latest = date),
+            _ => Claude(turn.Lines, tracker, At),
+        };
         tracker.Finish(status);
         if (tracker.BuildRun() is not { } run || run.Id != runID) return null;
         if (run.NodeModelLabel is null && model is not null) run.NodeModelLabel = GraphModelLabel.NodeModelLabel(model, "default");
@@ -835,6 +871,43 @@ public static class HistoryReplay
             case "ContextCompaction": return Element(new Dictionary<string, object> { ["id"] = id, ["type"] = "context_compaction" });
             default: return null;
         }
+    }
+
+    /// <summary>
+    /// An Antigravity transcript step is mapped back to the stream-json event agy printed for it
+    /// (<see cref="AntigravityRecords.StreamEvents"/>) and goes through the live parser, whose tool rows and replies the graph takes
+    /// as a live run's do; the request's sub-agents are read from their own transcripts, as a live run's watcher reads them, up
+    /// to when the next request was sent (M/MightyCore/SessionHistory.swift HistoryReplay.antigravity).
+    /// </summary>
+    private static string Antigravity(HistoryTurn turn, HistoryFormat format, string runID, ExecutionGraphTracker tracker, ref long childBytes, Action<DateTimeOffset> at)
+    {
+        var steps = turn.Lines.Select(HistoryScan.Parse).OfType<JsonElement>().ToList();
+        var conversation = format.Thread ?? "";
+        var replay = AntigravityRecords.StreamEvents(steps, conversation);
+        var parser = new OutputParser("gemini", (_, _) => { }, _ => { }, value => tracker.Activity(value), activityNamespace: runID, answer: tracker.AntigravityAnswer);
+        var stamps = 0;
+        foreach (var value in replay.Events)
+        {
+            // Each step's event carries that step's time; the result the last one's.
+            if (value.Text("event") == "step_update" && MetadataJson.Integer(MetadataJson.Property(value, "step_update"), "step_index") is { } index and >= 0)
+                while (stamps < steps.Count)
+                {
+                    var step = steps[stamps++];
+                    if (AntigravityRecords.Date(step) is { } date) at(date);
+                    if (MetadataJson.Integer(step, "step_index") == index) break;
+                }
+            tracker.Consume(value);
+            parser.Parse(value.GetRawText());
+        }
+        parser.Flush();
+        parser.FinishActivities(true);
+        if (childBytes > 0 && format.Brain is { } brain && tracker.AntigravitySubagents is { Count: > 0 } subagents)
+        {
+            var children = new AntigravitySubagentWatcher(brain, runID, conversation, turn.Until, new(FinalBytes: (int)Math.Min(int.MaxValue, childBytes)));
+            foreach (var child in children.Finish(subagents)) tracker.AntigravitySession(child);
+            childBytes -= children.BytesRead;
+        }
+        return replay.Status;
     }
 
     private static string Codex(List<byte[]> lines, string thread, ExecutionGraphTracker tracker, Action<JsonElement> at)
