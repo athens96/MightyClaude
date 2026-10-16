@@ -10,6 +10,8 @@ import {
   type ReactElement,
 } from 'react';
 import {
+  Animated,
+  Easing,
   FlatList,
   Pressable,
   ScrollView,
@@ -23,24 +25,38 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import type {
-  StructureActivity,
-  StructureCluster,
-  StructureColumn,
-  StructureItem,
-  StructureNode,
-  StructureRow,
-} from '@/api/types';
+import type { MobileStructure, StructureActivity, StructureItem, StructureNode, StructureRow } from '@/api/types';
 import { AssistantMarkdown } from '@/components/assistant-markdown';
+import { Sheet } from '@/components/sheets';
 import { StatusChip } from '@/components/status-chip';
-import { EmptyState } from '@/components/ui';
+import { Button, EmptyState } from '@/components/ui';
 import type { EndScrollable, FollowBottomProps } from '@/hooks/use-follow-bottom';
 import { t } from '@/lib/i18n';
 import { blockKindLabel } from '@/lib/mighty';
+import {
+  NEWEST_BOARD,
+  boardColumnAccessibility,
+  boardCurrentStep,
+  boardIndex,
+  boardPosition,
+  boardStepName,
+  boardStepsSummary,
+  boardTitle,
+  chosenColumnAfterMove,
+  chosenColumnAfterUpdate,
+  hasUnseenBoard,
+  selectBoard,
+  stepBoard,
+  structureBoards,
+  visibleColumn,
+  type Board,
+  type BoardCard,
+  type BoardColumn,
+  type BoardNavigation,
+} from '@/lib/pipeline-board';
 import { toneOf } from '@/lib/status-tone';
 import {
   FOLD_LINES,
-  chosenAfterMove,
   foldText,
   foldedRequestLine,
   foldedResultLine,
@@ -49,14 +65,9 @@ import {
   nodeFolds,
   nodeMeta,
   pageAtOffset,
-  pageLabel,
-  phaseRail,
-  requestRail,
   resultHeading,
+  stepLook,
   structureNotice,
-  visiblePage,
-  currentPageIndex,
-  type RailChip,
   type StepLook,
   type StructureState,
 } from '@/lib/structure';
@@ -74,10 +85,13 @@ import {
 } from '@/theme';
 
 /**
- * The structure view (구조): the Mac's own structure of the pane. A styled pane is a phase
- * bar over one page per phase, swiped sideways, each page listing that phase's requests;
- * a pane without a style is one stacked row per request. Every phase and step comes from
- * the Mac (`MobileMighty.structure`), so the two screens always agree.
+ * The 파이프라인 view: the Mac's structure of the pane as a kanban board, one board at a
+ * time (`structureBoards`): one request of a pane without a style, or one pipeline of a
+ * styled pane. ◀ ▶ and a list move between boards, and a badge says a newer one arrived
+ * while an older one is read. Under the board's status, its steps are a row of chips with
+ * their card counts joined by a line; the columns are pages swiped sideways, one column per
+ * screen width, each listing its cards. Every step and phase comes from the Mac
+ * (`MobileMighty.structure`), so the two screens always agree.
  */
 
 /** The colours one step takes: done green, current the accent, pending grey. */
@@ -96,96 +110,34 @@ function stepColors(palette: Palette, look: StepLook): { fill: string; ink: stri
   }
 }
 
-function Chip({ chip, selected, onPress }: { chip: RailChip; selected?: boolean; onPress?: () => void }) {
+/**
+ * The running mark around a card: a border in the running colour that breathes, as the
+ * status chip's dot does. Driven natively, so a running card costs no re-render per frame.
+ */
+function RunningOutline({ status, corner }: { status: string; corner: number }) {
   const palette = usePalette();
-  const styles = useStyles(makeStyles);
-  const colors = stepColors(palette, chip.look);
-  const body = (
-    <View style={[styles.chip, { backgroundColor: colors.fill }, selected && { borderColor: palette.text }]}>
-      <Text style={[styles.chipMark, { color: colors.ink }]}>{chip.look.mark}</Text>
-      <Text numberOfLines={1} style={[styles.chipTitle, { color: colors.ink }]}>
-        {chip.title}
-      </Text>
-    </View>
-  );
-  if (!onPress) {
-    return (
-      <View accessible accessibilityLabel={chip.label}>
-        {body}
-      </View>
-    );
-  }
-  return (
-    <Pressable
-      accessibilityRole="tab"
-      accessibilityLabel={chip.label}
-      accessibilityHint={t('phone.structure.chipHint')}
-      accessibilityState={{ selected: selected === true }}
-      hitSlop={{ bottom: 6, top: 6 }}
-      onPress={onPress}
-      style={({ pressed }) => pressed && styles.pressed}
-    >
-      {body}
-    </Pressable>
-  );
-}
-
-/** Chips joined by a line that turns green once the step before it is done. */
-function Rail({
-  chips,
-  selected,
-  onSelect,
-  scrolls,
-}: {
-  chips: RailChip[];
-  selected?: number;
-  onSelect?: (index: number) => void;
-  scrolls?: boolean;
-}) {
-  const palette = usePalette();
-  const styles = useStyles(makeStyles);
-  const scroller = useRef<ScrollView>(null);
-  /** Where each chip starts along the rail, so the selected one can be brought into view. */
-  const starts = useRef(new Map<number, number>());
+  const pulse = useRef(new Animated.Value(1)).current;
+  const running = status === 'running';
   useEffect(() => {
-    if (!scrolls || selected === undefined) return;
-    const x = starts.current.get(selected);
-    if (x !== undefined) scroller.current?.scrollTo({ x: Math.max(0, x - spacing.xl), animated: true });
-  }, [scrolls, selected]);
-  const row = chips.map((chip, index) => (
-    <View
-      key={chip.id}
-      onLayout={(event) => {
-        starts.current.set(index, event.nativeEvent.layout.x);
-        if (index === selected) scroller.current?.scrollTo({ x: Math.max(0, event.nativeEvent.layout.x - spacing.xl), animated: false });
-      }}
-      style={styles.railStep}
-    >
-      <Chip chip={chip} selected={selected === index} onPress={onSelect ? () => onSelect(index) : undefined} />
-      {index < chips.length - 1 ? (
-        <View
-          style={[
-            styles.railLine,
-            { backgroundColor: chip.look.tone === 'done' ? toneColors(palette, 'done').fill : palette.track },
-          ]}
-        />
-      ) : null}
-    </View>
-  ));
-  if (!scrolls) {
-    return <View style={styles.railRow}>{row}</View>;
-  }
+    if (!running) return undefined;
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 0.25, duration: 650, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, duration: 650, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      ]),
+    );
+    animation.start();
+    return () => animation.stop();
+  }, [pulse, running]);
+  if (!running) return null;
   return (
-    <ScrollView
-      ref={scroller}
-      horizontal
-      accessibilityLabel={t('guidedPanel.phasesAccessibility')}
-      accessibilityRole="tablist"
-      contentContainerStyle={styles.railRow}
-      showsHorizontalScrollIndicator={false}
-    >
-      {row}
-    </ScrollView>
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        StyleSheet.absoluteFill,
+        { borderColor: toneColors(palette, 'run').fill, borderRadius: corner, borderWidth: 1.5, opacity: pulse },
+      ]}
+    />
   );
 }
 
@@ -247,129 +199,99 @@ function ActivityLine({ line }: { line: StructureActivity }) {
   );
 }
 
-/** A sub-agent or task: its status as a bar, its title, kind and model, what it was asked and said. */
-const NodeRow = memo(function NodeRow({ node }: { node: StructureNode }) {
-  const palette = usePalette();
+function Tally({ item }: { item: StructureItem }) {
   const styles = useStyles(makeStyles);
-  const [open, setOpen] = useState(false);
-  const folds = nodeFolds(node);
-  const prompt = node.prompt ? (open ? node.prompt : foldText(node.prompt, FOLD_LINES.prompt).preview) : undefined;
-  const output = node.output ? (open ? node.output : foldText(node.output, FOLD_LINES.output).preview) : undefined;
   return (
-    <View style={[styles.node, { marginLeft: node.depth * spacing.lg }]}>
-      <View style={[styles.nodeBar, { backgroundColor: toneColors(palette, toneOf(node.status)).fill }]} />
-      <View style={styles.nodeBody}>
-        <Text
-          accessibilityLabel={t('graph.structure.nodeAccessibility', {
-            title: node.title || blockKindLabel(node.kind),
-            status: statusLabel(node.status),
-          })}
-          numberOfLines={1}
-          style={styles.nodeTitle}
-        >
-          {node.title || blockKindLabel(node.kind)}
-        </Text>
-        <Text numberOfLines={1} style={styles.nodeMeta}>
-          {`${nodeMeta(node, blockKindLabel)} · ${statusLabel(node.status)}`}
-        </Text>
-        {prompt ? (
-          <Text accessibilityLabel={`${t('graph.structure.prompt')}: ${prompt}`} selectable style={styles.mutedText}>
-            {prompt}
-          </Text>
-        ) : null}
-        {output ? (
-          <Text accessibilityLabel={`${t('graph.structure.output')}: ${output}`} selectable style={styles.bodyText}>
-            {output}
-          </Text>
-        ) : null}
-        {node.activity ? <ActivityLine line={node.activity} /> : null}
-        {folds ? <FoldToggle open={open} onToggle={() => setOpen((value) => !value)} /> : null}
-      </View>
-    </View>
-  );
-});
-
-/** The sub-agent trees, each a dashed box under a caption naming how many blocks it holds. */
-function Clusters({ clusters, omitted }: { clusters: StructureCluster[]; omitted?: number }) {
-  const styles = useStyles(makeStyles);
-  if (clusters.length === 0 && !omitted) return null;
-  return (
-    <View style={styles.clusters}>
-      {clusters.map((cluster) => (
-        <View key={cluster.nodes[0]?.id ?? ''} style={styles.cluster}>
-          <Text style={styles.caption}>
-            {t('graph.structure.clusterAccessibility', { count: cluster.nodes.length })}
-          </Text>
-          {cluster.nodes.map((node) => (
-            <NodeRow key={node.id} node={node} />
-          ))}
-        </View>
-      ))}
-      {omitted ? <Text style={styles.note}>{t('phone.structure.nodesOmitted', { count: omitted })}</Text> : null}
-    </View>
+    <Text numberOfLines={1} style={styles.tally}>
+      {t('graph.structure.tally', { agents: item.tally.agents, tools: item.tally.tools })}
+    </Text>
   );
 }
 
-/** The request part: what was asked. */
-function RequestPart({ item, titled }: { item: StructureItem; titled: boolean }) {
+/** Sub-agent cards the Mac left out to fit the phone's budget, counted under the request's 실행. */
+function OmittedNodes({ item }: { item: StructureItem }) {
   const styles = useStyles(makeStyles);
-  return (
-    <View style={styles.part}>
-      {titled ? <Text style={styles.partLabel}>{t('graph.structure.column.request')}</Text> : null}
-      {item.request ? (
-        <FoldableText text={item.request} lines={FOLD_LINES.request} label={t('graph.structure.column.request')} />
-      ) : null}
-    </View>
-  );
+  return item.omittedNodes ? (
+    <Text style={styles.note}>{t('phone.structure.nodesOmitted', { count: item.omittedNodes })}</Text>
+  ) : null;
 }
 
-/** The 실행 part: the main agent's status, tally, latest reply and tool calls. */
-function ExecutionPart({ item }: { item: StructureItem }) {
+/** The main agent's latest reply and its last tool calls, or that it has not answered yet. */
+function Progress({ item }: { item: StructureItem }) {
   const styles = useStyles(makeStyles);
   return (
-    <View style={styles.part}>
-      <View style={styles.partHead}>
-        <Text style={styles.partLabel}>{t('graph.structure.column.execution')}</Text>
-        <StatusChip status={item.status} />
-        <Text numberOfLines={1} style={styles.tally}>
-          {t('graph.structure.tally', { agents: item.tally.agents, tools: item.tally.tools })}
-        </Text>
-      </View>
+    <>
       {item.message ? (
         <FoldableText text={item.message} lines={FOLD_LINES.message} label={t('graph.structure.latest')} />
       ) : !item.finished && item.activity.length === 0 ? (
         <Text style={styles.mutedText}>{t('graph.block.waitingResponse')}</Text>
       ) : null}
       {item.activity.length > 0 ? (
-        <View>
-          <Text style={styles.caption}>{t('graph.structure.activity')}</Text>
+        <View accessibilityLabel={t('graph.structure.activity')}>
           {item.activity.map((line, index) => (
             <ActivityLine key={`${index}:${line.text}`} line={line} />
           ))}
         </View>
       ) : null}
-    </View>
+    </>
   );
 }
 
-/** The result part: the answer as Markdown, else how the request ended or that it has not yet. */
-function ResultPart({ item }: { item: StructureItem }) {
-  const palette = usePalette();
+/** The answer as Markdown; without one, how the request ended or that it has not yet. */
+function Outcome({ item }: { item: StructureItem }) {
   const styles = useStyles(makeStyles);
-  const color = item.finished ? toneColors(palette, toneOf(item.status)).ink : palette.textMuted;
+  if (item.answer) {
+    return <FoldableText markdown text={item.answer} lines={FOLD_LINES.answer} label={resultHeading(item)} />;
+  }
   return (
-    <View style={styles.part}>
-      <Text style={[styles.partLabel, { color }]}>{resultHeading(item)}</Text>
-      {item.answer ? (
-        <FoldableText markdown text={item.answer} lines={FOLD_LINES.answer} label={resultHeading(item)} />
+    <Text style={styles.mutedText}>{item.finished ? statusLabel(item.status) : t('graph.structure.resultPending')}</Text>
+  );
+}
+
+/** A free board's 요청: the column and the bar already say which, so the card is what was asked. */
+const RequestCard = memo(function RequestCard({ item }: { item: StructureItem }) {
+  const styles = useStyles(makeStyles);
+  return (
+    <View style={styles.card}>
+      {item.request ? (
+        <FoldableText text={item.request} lines={FOLD_LINES.request} label={t('graph.structure.column.request')} />
       ) : (
-        <Text style={styles.mutedText}>
-          {item.finished ? statusLabel(item.status) : t('graph.structure.resultPending')}
-        </Text>
+        <Text style={styles.heading}>{itemHeading(item)}</Text>
       )}
     </View>
   );
-}
+});
+
+/** A free board's 실행: it starts with its status, then the latest reply and tool calls. */
+const ExecutionCard = memo(function ExecutionCard({ item }: { item: StructureItem }) {
+  const styles = useStyles(makeStyles);
+  return (
+    <View accessibilityLabel={t('graph.block.executionOf', { n: item.ordinal })} style={styles.card}>
+      <View style={styles.partHead}>
+        <StatusChip status={item.status} />
+        <Tally item={item} />
+      </View>
+      <Progress item={item} />
+      <OmittedNodes item={item} />
+      <RunningOutline status={item.status} corner={radius.card} />
+    </View>
+  );
+});
+
+/** A free board's 결과: titled only when the request failed or stopped. */
+const ResultCard = memo(function ResultCard({ item }: { item: StructureItem }) {
+  const palette = usePalette();
+  const styles = useStyles(makeStyles);
+  const ended = item.status === 'error' || item.status === 'stopped';
+  return (
+    <View style={styles.card}>
+      {ended ? (
+        <Text style={[styles.partLabel, { color: toneColors(palette, toneOf(item.status)).ink }]}>{resultHeading(item)}</Text>
+      ) : null}
+      <Outcome item={item} />
+    </View>
+  );
+});
 
 /**
  * Which finished requests the user opened, and how they open or fold one, from the
@@ -382,8 +304,8 @@ interface Folds {
 const FoldContext = createContext<Folds>({ unfolded: new Set(), onToggle: () => undefined });
 
 /**
- * A finished request folded to one compact card: its heading, status and tally, what was
- * asked and how it ended, a line each. Tapping it opens the request.
+ * A finished request of a pipeline folded to one compact card: its heading, status and
+ * tally, what was asked and how it ended, a line each. Tapping it opens the request.
  */
 function FoldedCard({ item, onOpen }: { item: StructureItem; onOpen: () => void }) {
   const palette = usePalette();
@@ -403,9 +325,7 @@ function FoldedCard({ item, onOpen }: { item: StructureItem; onOpen: () => void 
           {itemHeading(item)}
         </Text>
         <StatusChip status={item.status} />
-        <Text numberOfLines={1} style={styles.tally}>
-          {t('graph.structure.tally', { agents: item.tally.agents, tools: item.tally.tools })}
-        </Text>
+        <Tally item={item} />
         <Text style={styles.foldMark}>▾</Text>
       </View>
       <Text numberOfLines={1} style={styles.bodyText}>
@@ -421,36 +341,12 @@ function FoldedCard({ item, onOpen }: { item: StructureItem; onOpen: () => void 
   );
 }
 
-/** A request's heading, and on a finished open request the control that folds it back. */
-function CardHeading({ item, onFold }: { item: StructureItem; onFold?: () => void }) {
-  const styles = useStyles(makeStyles);
-  return (
-    <View style={styles.headingRow}>
-      <Text accessibilityRole="header" numberOfLines={2} style={[styles.heading, styles.headingText]}>
-        {itemHeading(item)}
-      </Text>
-      {onFold ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t('graph.structure.foldCard')}
-          accessibilityState={{ expanded: true }}
-          hitSlop={8}
-          onPress={onFold}
-          style={({ pressed }) => pressed && styles.pressed}
-        >
-          <Text style={styles.foldMark}>▴</Text>
-        </Pressable>
-      ) : null}
-    </View>
-  );
-}
-
 /**
- * One request of a phase page: request, 실행, clusters, and once finished its result.
- * Memoised: `receiveStructure` keeps an unchanged request the same object, so an update
- * redraws only the cards that moved.
+ * A pipeline's request: its heading, what was asked, its 실행 line (status and tally) with
+ * the latest reply and tool calls, and once it finished its result. A finished request
+ * folds to `FoldedCard` until the user opens it.
  */
-const PhaseCard = memo(function PhaseCard({
+const SummaryCard = memo(function SummaryCard({
   item,
   folded,
   onToggle,
@@ -459,43 +355,213 @@ const PhaseCard = memo(function PhaseCard({
   folded: boolean;
   onToggle: (item: StructureItem) => void;
 }) {
+  const palette = usePalette();
   const styles = useStyles(makeStyles);
   if (folded) return <FoldedCard item={item} onOpen={() => onToggle(item)} />;
   return (
     <View style={styles.card}>
-      <CardHeading item={item} onFold={item.finished ? () => onToggle(item) : undefined} />
-      <RequestPart item={item} titled />
-      <ExecutionPart item={item} />
-      <Clusters clusters={item.clusters} omitted={item.omittedNodes} />
-      {item.finished ? <ResultPart item={item} /> : null}
+      <View style={styles.headingRow}>
+        <Text accessibilityRole="header" numberOfLines={2} style={[styles.heading, styles.headingText]}>
+          {itemHeading(item)}
+        </Text>
+        {item.finished ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('graph.structure.foldCard')}
+            accessibilityState={{ expanded: true }}
+            hitSlop={8}
+            onPress={() => onToggle(item)}
+            style={({ pressed }) => pressed && styles.pressed}
+          >
+            <Text style={styles.foldMark}>▴</Text>
+          </Pressable>
+        ) : null}
+      </View>
+      {item.request ? (
+        <FoldableText text={item.request} lines={FOLD_LINES.request} label={t('graph.structure.column.request')} />
+      ) : null}
+      <View style={styles.divider} />
+      <View style={styles.partHead}>
+        <Text numberOfLines={1} style={styles.partLabel}>
+          {t('graph.block.executionOf', { n: item.ordinal })}
+        </Text>
+        <StatusChip status={item.status} />
+        <Tally item={item} />
+      </View>
+      <Progress item={item} />
+      <OmittedNodes item={item} />
+      {item.finished ? (
+        <View style={styles.foldable}>
+          <Text style={[styles.partLabel, { color: toneColors(palette, toneOf(item.status)).ink }]}>
+            {resultHeading(item)}
+          </Text>
+          <Outcome item={item} />
+        </View>
+      ) : null}
+      <RunningOutline status={item.status} corner={radius.card} />
     </View>
   );
 });
 
-/** One request of a free pane: its own small rail, then the sections stacked. Memoised as `PhaseCard`. */
-const FreeRow = memo(function FreeRow({
-  row,
-  folded,
-  onToggle,
-}: {
-  row: StructureRow;
-  folded: boolean;
-  onToggle: (item: StructureItem) => void;
-}) {
+/**
+ * A sub-agent or task: its status as a bar, its title, kind and model, the block it runs
+ * under when nested (indented by its depth too), what it was asked and said.
+ */
+const AgentCard = memo(function AgentCard({ node, parent }: { node: StructureNode; parent?: string }) {
+  const palette = usePalette();
   const styles = useStyles(makeStyles);
-  const chips = useMemo(() => requestRail(row), [row]);
-  if (folded) return <FoldedCard item={row.item} onOpen={() => onToggle(row.item)} />;
+  const [open, setOpen] = useState(false);
+  const folds = nodeFolds(node);
+  const title = node.title || blockKindLabel(node.kind);
+  const prompt = node.prompt ? (open ? node.prompt : foldText(node.prompt, FOLD_LINES.prompt).preview) : undefined;
+  const output = node.output ? (open ? node.output : foldText(node.output, FOLD_LINES.output).preview) : undefined;
   return (
-    <View style={styles.card}>
-      <CardHeading item={row.item} onFold={row.item.finished ? () => onToggle(row.item) : undefined} />
-      <Rail chips={chips} />
-      <RequestPart item={row.item} titled={false} />
-      <ExecutionPart item={row.item} />
-      <Clusters clusters={row.item.clusters} omitted={row.item.omittedNodes} />
-      <ResultPart item={row.item} />
+    <View style={[styles.node, { marginLeft: node.depth * spacing.lg }]}>
+      <View style={[styles.nodeBar, { backgroundColor: toneColors(palette, toneOf(node.status)).fill }]} />
+      <View style={styles.nodeBody}>
+        <Text
+          accessibilityLabel={t('graph.structure.nodeAccessibility', { title, status: statusLabel(node.status) })}
+          numberOfLines={1}
+          style={styles.nodeTitle}
+        >
+          {title}
+        </Text>
+        <Text numberOfLines={1} style={styles.nodeMeta}>
+          {`${nodeMeta(node, blockKindLabel)} · ${statusLabel(node.status)}`}
+        </Text>
+        {parent !== undefined ? (
+          <Text numberOfLines={1} style={styles.nodeMeta}>
+            {`↳ ${t('graph.structure.underParent', { title: parent })}`}
+          </Text>
+        ) : null}
+        {prompt ? (
+          <Text accessibilityLabel={`${t('graph.structure.prompt')}: ${prompt}`} selectable style={styles.mutedText}>
+            {prompt}
+          </Text>
+        ) : null}
+        {output ? (
+          <Text accessibilityLabel={`${t('graph.structure.output')}: ${output}`} selectable style={styles.bodyText}>
+            {output}
+          </Text>
+        ) : null}
+        {node.activity ? <ActivityLine line={node.activity} /> : null}
+        {folds ? <FoldToggle open={open} onToggle={() => setOpen((value) => !value)} /> : null}
+      </View>
+      <RunningOutline status={node.status} corner={radius.sm} />
     </View>
   );
 });
+
+function CardCell({ card }: { card: BoardCard }) {
+  const styles = useStyles(makeStyles);
+  const { unfolded, onToggle } = useContext(FoldContext);
+  let body: ReactElement;
+  switch (card.kind) {
+    case 'request':
+      body = <RequestCard item={card.item} />;
+      break;
+    case 'execution':
+      body = <ExecutionCard item={card.item} />;
+      break;
+    case 'result':
+      body = <ResultCard item={card.item} />;
+      break;
+    case 'summary':
+      body = <SummaryCard item={card.item} folded={isCardFolded(card.item, unfolded)} onToggle={onToggle} />;
+      break;
+    default:
+      body = <AgentCard node={card.node} parent={card.parent} />;
+  }
+  return <View style={styles.listItem}>{body}</View>;
+}
+
+function renderCard({ item }: { item: BoardCard }) {
+  return <CardCell card={item} />;
+}
+
+function cardKey(card: BoardCard): string {
+  return card.id;
+}
+
+/** A column header chip: the step's mark and name in its state's colours, and its card count. */
+function ColumnChip({ column, selected, onPress }: { column: BoardColumn; selected: boolean; onPress: () => void }) {
+  const palette = usePalette();
+  const styles = useStyles(makeStyles);
+  const colors = stepColors(palette, stepLook(column.step.step));
+  return (
+    <Pressable
+      accessibilityRole="tab"
+      accessibilityLabel={boardColumnAccessibility(column)}
+      accessibilityHint={t('phone.structure.chipHint')}
+      accessibilityState={{ selected }}
+      hitSlop={{ bottom: 6, top: 6 }}
+      onPress={onPress}
+      style={({ pressed }) => pressed && styles.pressed}
+    >
+      <View style={[styles.chip, { backgroundColor: colors.fill }, selected && { borderColor: palette.text }]}>
+        <Text style={[styles.chipMark, { color: colors.ink }]}>{stepLook(column.step.step).mark}</Text>
+        <Text numberOfLines={1} style={[styles.chipTitle, { color: colors.ink }]}>
+          {boardStepName(column.step)}
+        </Text>
+        <Text style={[styles.chipCount, { color: colors.ink }]}>{column.count}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
+/** The board's pipeline: its column chips joined by a line that turns green once a step is done. */
+function ColumnRail({
+  columns,
+  selected,
+  onSelect,
+}: {
+  columns: readonly BoardColumn[];
+  selected: number;
+  onSelect: (index: number) => void;
+}) {
+  const palette = usePalette();
+  const styles = useStyles(makeStyles);
+  const scroller = useRef<ScrollView>(null);
+  /** Where each chip starts along the rail, so the selected one can be brought into view. */
+  const starts = useRef(new Map<number, number>());
+  useEffect(() => {
+    const x = starts.current.get(selected);
+    if (x !== undefined) scroller.current?.scrollTo({ x: Math.max(0, x - spacing.xl), animated: true });
+  }, [selected]);
+  return (
+    <ScrollView
+      ref={scroller}
+      horizontal
+      accessibilityLabel={t('guidedPanel.phasesAccessibility')}
+      accessibilityRole="tablist"
+      contentContainerStyle={styles.railRow}
+      showsHorizontalScrollIndicator={false}
+    >
+      {columns.map((column, index) => (
+        <View
+          key={column.step.id}
+          onLayout={(event) => {
+            starts.current.set(index, event.nativeEvent.layout.x);
+            if (index === selected) {
+              scroller.current?.scrollTo({ x: Math.max(0, event.nativeEvent.layout.x - spacing.xl), animated: false });
+            }
+          }}
+          style={styles.railStep}
+        >
+          <ColumnChip column={column} selected={index === selected} onPress={() => onSelect(index)} />
+          {index < columns.length - 1 ? (
+            <View
+              style={[
+                styles.railLine,
+                { backgroundColor: column.step.step === 'done' ? toneColors(palette, 'done').fill : palette.track },
+              ]}
+            />
+          ) : null}
+        </View>
+      ))}
+    </ScrollView>
+  );
+}
 
 interface ListProps {
   header?: ReactElement | null;
@@ -510,7 +576,7 @@ interface ListProps {
 /**
  * The screen's footer (permission cards, the queue), handed down through context so a
  * new footer element — the screen renders one on every keystroke — redraws only this
- * slot and never the pages or the rows.
+ * slot and never the pages or the cards.
  */
 const FooterContext = createContext<{ footer: ReactElement | null | undefined; page: number }>({
   footer: undefined,
@@ -533,86 +599,21 @@ function pageFooter(index: number): ReactElement {
   return element;
 }
 
-function OmittedNote({ count }: { count?: number }) {
-  const styles = useStyles(makeStyles);
-  return count ? <Text style={styles.note}>{t('phone.structure.omitted', { count })}</Text> : null;
-}
-
-function renderFreeRow({ item }: { item: StructureRow }) {
-  return <FreeRowCell row={item} />;
-}
-
-function FreeRowCell({ row }: { row: StructureRow }) {
-  const styles = useStyles(makeStyles);
-  const { unfolded, onToggle } = useContext(FoldContext);
-  return (
-    <View style={styles.listItem}>
-      <FreeRow row={row} folded={isCardFolded(row.item, unfolded)} onToggle={onToggle} />
-    </View>
-  );
-}
-
-function freeRowKey(row: StructureRow): string {
-  return row.item.runId;
-}
-
-function FreeList({ rows, omitted, ...list }: ListProps & { rows: StructureRow[]; omitted?: number }) {
-  return (
-    <FlatList
-      {...list.follow}
-      ref={list.attachAs('free')}
-      data={rows}
-      keyExtractor={freeRowKey}
-      renderItem={renderFreeRow}
-      contentContainerStyle={list.contentContainerStyle}
-      keyboardShouldPersistTaps="handled"
-      ListHeaderComponent={
-        <View>
-          {list.header}
-          <OmittedNote count={omitted} />
-        </View>
-      }
-      ListHeaderComponentStyle={list.headerStyle}
-      ListEmptyComponent={
-        <EmptyState title={t('phone.blocks.empty.title')} description={t('phone.blocks.empty.description')} />
-      }
-      ListFooterComponent={list.footer}
-    />
-  );
-}
-
-function renderPhaseCard({ item }: { item: StructureItem }) {
-  return <PhaseCardCell item={item} />;
-}
-
-function PhaseCardCell({ item }: { item: StructureItem }) {
-  const styles = useStyles(makeStyles);
-  const { unfolded, onToggle } = useContext(FoldContext);
-  return (
-    <View style={styles.listItem}>
-      <PhaseCard item={item} folded={isCardFolded(item, unfolded)} onToggle={onToggle} />
-    </View>
-  );
-}
-
-function itemKey(item: StructureItem): string {
-  return item.runId;
-}
-
-const PhasePage = memo(function PhasePage({
+/** One column as a page of the board: its cards, top to bottom. */
+const ColumnPage = memo(function ColumnPage({
+  board,
   column,
   index,
   width,
-  omitted,
   visible,
   contentContainerStyle,
   attachAs,
   follow,
 }: {
-  column: StructureColumn;
+  board: string;
+  column: BoardColumn;
   index: number;
   width: number;
-  omitted?: number;
   visible: boolean;
   contentContainerStyle?: StyleProp<ViewStyle>;
   attachAs: ListProps['attachAs'];
@@ -623,14 +624,13 @@ const PhasePage = memo(function PhasePage({
     <View style={{ width }}>
       <FlatList
         {...(visible ? follow : undefined)}
-        ref={visible ? attachAs(`phase:${column.id}`) : undefined}
-        data={column.items}
-        keyExtractor={itemKey}
-        renderItem={renderPhaseCard}
+        ref={visible ? attachAs(`column:${board}:${column.step.id}`) : undefined}
+        data={column.cards}
+        keyExtractor={cardKey}
+        renderItem={renderCard}
         contentContainerStyle={contentContainerStyle}
         keyboardShouldPersistTaps="handled"
         nestedScrollEnabled
-        ListHeaderComponent={<OmittedNote count={omitted} />}
         ListEmptyComponent={<Text style={styles.note}>{t('phone.structure.emptyPhase')}</Text>}
         ListFooterComponent={pageFooter(index)}
       />
@@ -638,39 +638,45 @@ const PhasePage = memo(function PhasePage({
   );
 });
 
-/** A phase bar over one page per phase; the view opens on the current phase. */
-function PhasePager({ columns, omitted, ...list }: ListProps & { columns: StructureColumn[]; omitted?: number }) {
+/** "실행 단계 화면, 3개 중 2번째", read out as the page changes. */
+function pageAccessibility(board: Board, index: number): string {
+  const step = board.steps[index];
+  if (!step) return '';
+  return t('phone.structure.pageAccessibility', { name: boardStepName(step), index: index + 1, count: board.steps.length });
+}
+
+/**
+ * One board's columns as pages swiped sideways under its pipeline chips. The view opens on
+ * the board's current step and follows it until the user moves to another column.
+ */
+function ColumnPager({ board, ...list }: ListProps & { board: Board }) {
   const styles = useStyles(makeStyles);
   const screen = useWindowDimensions();
   const [width, setWidth] = useState(screen.width);
-  /**
-   * The phase the user swiped or tapped to, by id; none until then and again once they
-   * come back to the current phase, so the pager follows the phase while it is unset.
-   */
+  /** The column the user swiped or tapped to, by step id; none while the pager follows the current step. */
   const [chosen, setChosen] = useState<string | undefined>(undefined);
-  const pager = useRef<FlatList<StructureColumn>>(null);
-  const page = visiblePage(columns, chosen);
+  const pager = useRef<FlatList<BoardColumn>>(null);
+  const page = visibleColumn(board, chosen);
   const pageRef = useRef(page);
   pageRef.current = page;
-  const current = currentPageIndex(columns);
-  const chips = useMemo(() => phaseRail(columns), [columns]);
-  // The pages redraw when the page on screen (it carries the follow handlers) or the
-  // width moves; the footer reaches its page through context instead.
+  const current = boardCurrentStep(board);
   const pagesState = useMemo(() => ({ page, width }), [page, width]);
   const footer = useMemo(() => ({ footer: list.footer, page }), [list.footer, page]);
 
   const goTo = useCallback(
     (index: number, animated: boolean) => {
-      if (index < 0 || index >= columns.length) return;
+      if (index < 0 || index >= board.columns.length) return;
       pager.current?.scrollToOffset({ offset: index * width, animated });
     },
-    [columns.length, width],
+    [board.columns.length, width],
   );
 
-  // While the user has not moved, a phase that moves on brings its page along.
+  // While the user has not moved, a step that moves on brings its column along; once the
+  // current step reaches the column the user picked, the pick is dropped and following resumes.
   useEffect(() => {
     if (chosen === undefined) goTo(current, true);
-  }, [chosen, current, goTo]);
+    else if (chosenColumnAfterUpdate(board, chosen) === undefined) setChosen(undefined);
+  }, [board, chosen, current, goTo]);
 
   const onLayout = useCallback(
     (event: LayoutChangeEvent) => {
@@ -686,54 +692,49 @@ function PhasePager({ columns, omitted, ...list }: ListProps & { columns: Struct
 
   const onSettled = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const landed = pageAtOffset(event.nativeEvent.contentOffset.x, width, columns.length);
-      if (landed !== pageRef.current) setChosen(chosenAfterMove(columns, landed));
+      const landed = pageAtOffset(event.nativeEvent.contentOffset.x, width, board.columns.length);
+      if (landed !== pageRef.current) setChosen(chosenColumnAfterMove(board, landed));
     },
-    [columns, width],
+    [board, width],
   );
 
   const renderPage = useCallback(
-    ({ item, index }: { item: StructureColumn; index: number }) => (
-      <PhasePage
+    ({ item, index }: { item: BoardColumn; index: number }) => (
+      <ColumnPage
+        board={board.id}
         column={item}
         index={index}
         width={width}
-        omitted={omitted}
         visible={index === page}
         contentContainerStyle={list.contentContainerStyle}
         attachAs={list.attachAs}
         follow={list.follow}
       />
     ),
-    [list.attachAs, list.contentContainerStyle, list.follow, omitted, page, width],
+    [board.id, list.attachAs, list.contentContainerStyle, list.follow, page, width],
   );
 
   return (
     <FooterContext.Provider value={footer}>
       <View onLayout={onLayout} style={styles.pager}>
-        <View style={styles.pagerHead}>
-          <Rail
-            chips={chips}
-            scrolls
+        <View style={styles.railBox}>
+          <ColumnRail
+            columns={board.columns}
             selected={page}
             onSelect={(index) => {
-              setChosen(chosenAfterMove(columns, index));
+              setChosen(chosenColumnAfterMove(board, index));
               goTo(index, true);
             }}
           />
-          <Text
-            accessibilityLabel={pageAccessibility(columns, page)}
-            accessibilityLiveRegion="polite"
-            style={styles.pageLabel}
-          >
-            {pageLabel(columns, page)}
+          <Text accessibilityLiveRegion="polite" style={styles.srOnly}>
+            {pageAccessibility(board, page)}
           </Text>
         </View>
         <FlatList
           ref={pager}
           horizontal
           pagingEnabled
-          data={columns}
+          data={board.columns}
           keyExtractor={columnKey}
           extraData={pagesState}
           initialScrollIndex={page}
@@ -748,21 +749,209 @@ function PhasePager({ columns, omitted, ...list }: ListProps & { columns: Struct
   );
 }
 
-function columnKey(column: StructureColumn): string {
-  return column.id;
+function columnKey(column: BoardColumn): string {
+  return column.step.id;
 }
 
-/** "seed 단계 화면, 6개 중 3번째", read out with the page label. */
-function pageAccessibility(columns: readonly StructureColumn[], index: number): string {
-  const column = columns[index];
-  if (!column) return '';
-  return t('phone.structure.pageAccessibility', { name: column.title, index: index + 1, count: columns.length });
+function NavButton({ mark, label, disabled, onPress }: { mark: string; label: string; disabled: boolean; onPress: () => void }) {
+  const palette = usePalette();
+  const styles = useStyles(makeStyles);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      hitSlop={6}
+      onPress={onPress}
+      style={({ pressed }) => [styles.navButton, pressed && styles.pressed]}
+    >
+      <Text style={[styles.navMark, { color: disabled ? palette.textFaint : palette.text }]}>{mark}</Text>
+    </Pressable>
+  );
+}
+
+/** Every board, newest last: its number, status, title and steps. Tapping one shows it. */
+function BoardListSheet({
+  visible,
+  boards,
+  shown,
+  omitted,
+  onSelect,
+  onClose,
+}: {
+  visible: boolean;
+  boards: readonly Board[];
+  shown: number;
+  omitted?: number;
+  onSelect: (id: string) => void;
+  onClose: () => void;
+}) {
+  const palette = usePalette();
+  const styles = useStyles(makeStyles);
+  const rows = useMemo(
+    () =>
+      boards.map((board, index) => ({
+        board,
+        title: boardTitle(board, boards.length, omitted),
+        steps: boardStepsSummary(board),
+        position: boardPosition(board, index, boards.length, omitted),
+      })),
+    [boards, omitted],
+  );
+  if (!visible) return null;
+  return (
+    <Sheet visible onClose={onClose}>
+      <Text style={styles.sheetTitle}>{t('graph.structure.board.list')}</Text>
+      {omitted ? <Text style={styles.note}>{t('phone.structure.omitted', { count: omitted })}</Text> : null}
+      <ScrollView style={styles.boardList}>
+        {rows.map(({ board, title, steps, position }, index) => {
+          const selected = index === shown;
+          return (
+            <Pressable
+              key={board.id}
+              accessibilityRole="button"
+              accessibilityLabel={`${position}, ${title}`}
+              accessibilityValue={{ text: `${statusLabel(board.status)}, ${steps}` }}
+              accessibilityState={{ selected }}
+              onPress={() => onSelect(board.id)}
+              style={({ pressed }) => [
+                styles.boardRow,
+                selected && { backgroundColor: palette.accentMuted },
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text style={styles.boardNumber}>{board.kind === 'request' ? (omitted ?? 0) + index + 1 : index + 1}</Text>
+              <View style={styles.boardTexts}>
+                <View style={styles.partHead}>
+                  <StatusChip status={board.status} />
+                  <Text numberOfLines={1} style={[styles.boardTitle, selected && { color: palette.accent }]}>
+                    {title}
+                  </Text>
+                </View>
+                <Text numberOfLines={1} style={styles.mutedText}>
+                  {steps}
+                </Text>
+              </View>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+      <Button label={t('common.close')} tone="ghost" onPress={onClose} />
+    </Sheet>
+  );
 }
 
 /**
- * The 구조 body of the session screen. Without a structure it says why — an older Mac,
- * a newer payload than this app reads, still loading, or simply no request yet — inside
- * the same scrolling list, so tall cards below it scroll and pulling still refreshes.
+ * The boards one at a time: ◀, the board's place (which opens the list), ▶ and a badge for
+ * a newer board; under them the board's status, with a pipeline's name (a request's first
+ * line is its 요청 card already); then its columns.
+ */
+function BoardView({
+  structure,
+  ...list
+}: ListProps & { structure: MobileStructure }) {
+  const styles = useStyles(makeStyles);
+  const palette = usePalette();
+  const boards = useMemo(() => structureBoards(structure), [structure]);
+  const [navigation, setNavigation] = useState<BoardNavigation>(NEWEST_BOARD);
+  const [listOpen, setListOpen] = useState(false);
+  const index = boardIndex(navigation, boards);
+  const board = index === undefined ? undefined : boards[index];
+  if (index === undefined || !board) {
+    return (
+      <FlatList
+        {...list.follow}
+        ref={list.attachAs('notice')}
+        data={NO_ROWS}
+        renderItem={null}
+        contentContainerStyle={list.contentContainerStyle}
+        ListEmptyComponent={
+          <EmptyState title={t('phone.blocks.empty.title')} description={t('phone.blocks.empty.description')} />
+        }
+        ListFooterComponent={list.footer}
+      />
+    );
+  }
+  const position = boardPosition(board, index, boards.length, structure.omitted);
+  const unseen = hasUnseenBoard(navigation, boards);
+  const newer = board.kind === 'request' ? t('graph.structure.board.newRequest') : t('graph.structure.board.newPipeline');
+  return (
+    <View style={styles.pager}>
+      <View style={styles.boardHead}>
+        <View style={styles.navRow}>
+          <NavButton
+            mark="◀"
+            label={t('graph.structure.board.previous')}
+            disabled={index === 0}
+            onPress={() => setNavigation((value) => stepBoard(value, -1, boards))}
+          />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('graph.structure.board.list')}
+            accessibilityValue={{ text: position }}
+            hitSlop={6}
+            onPress={() => setListOpen(true)}
+            style={({ pressed }) => [styles.positionButton, pressed && styles.pressed]}
+          >
+            <Text numberOfLines={1} style={styles.position}>
+              {position}
+            </Text>
+            <Text style={styles.foldMark}>▾</Text>
+          </Pressable>
+          <NavButton
+            mark="▶"
+            label={t('graph.structure.board.next')}
+            disabled={index === boards.length - 1}
+            onPress={() => setNavigation((value) => stepBoard(value, 1, boards))}
+          />
+          {unseen ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={newer}
+              accessibilityHint={t('graph.structure.board.showNewest')}
+              hitSlop={6}
+              onPress={() => setNavigation(NEWEST_BOARD)}
+              style={({ pressed }) => [styles.newerBadge, { backgroundColor: palette.accent }, pressed && styles.pressed]}
+            >
+              <Text numberOfLines={1} style={[styles.newerText, { color: palette.onAccent }]}>
+                {newer}
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
+        <View style={styles.statusRow}>
+          <StatusChip status={board.status} />
+          {board.kind === 'pipeline' ? (
+            <Text accessibilityRole="header" numberOfLines={1} style={[styles.heading, styles.headingText]}>
+              {boardTitle(board, boards.length, structure.omitted)}
+            </Text>
+          ) : null}
+        </View>
+        {index === 0 && structure.omitted ? (
+          <Text style={styles.note}>{t('phone.structure.omitted', { count: structure.omitted })}</Text>
+        ) : null}
+      </View>
+      <ColumnPager key={board.id} board={board} {...list} />
+      <BoardListSheet
+        visible={listOpen}
+        boards={boards}
+        shown={index}
+        omitted={structure.omitted}
+        onSelect={(id) => {
+          setNavigation((value) => selectBoard(value, id, boards));
+          setListOpen(false);
+        }}
+        onClose={() => setListOpen(false)}
+      />
+    </View>
+  );
+}
+
+/**
+ * The 파이프라인 body of the session screen. Without a structure it says why — an older
+ * Mac, a newer payload than this app reads, still loading, or simply no request yet —
+ * inside the same scrolling list, so pulling still refreshes.
  */
 export function MightyStructureView({
   state,
@@ -780,19 +969,9 @@ export function MightyStructureView({
   const folds = useMemo(() => ({ unfolded, onToggle: onToggleFold }), [unfolded, onToggleFold]);
   const notice = structureNotice(state, hasRuns);
   if (state.kind === 'ok' && notice === undefined) {
-    const { structure } = state;
-    if (structure.shape === 'phases') {
-      // A different set of phases (another style) starts the pager afresh.
-      const key = structure.columns.map((column) => column.id).join('|');
-      return (
-        <FoldContext.Provider value={folds}>
-          <PhasePager key={key} columns={structure.columns} omitted={structure.omitted} {...list} />
-        </FoldContext.Provider>
-      );
-    }
     return (
       <FoldContext.Provider value={folds}>
-        <FreeList rows={structure.rows} omitted={structure.omitted} {...list} />
+        <BoardView structure={state.structure} {...list} />
       </FoldContext.Provider>
     );
   }
@@ -833,8 +1012,17 @@ const NO_ROWS: readonly StructureRow[] = [];
 const makeStyles = (palette: Palette) =>
   StyleSheet.create({
     pager: { flex: 1 },
-    pagerHead: { gap: spacing.sm, paddingBottom: spacing.md, paddingHorizontal: spacing.lg, paddingTop: spacing.md },
-    pageLabel: { color: palette.textMuted, fontSize: 12, fontWeight: '700' },
+    boardHead: { gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.md },
+    navRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
+    navButton: { alignItems: 'center', height: 32, justifyContent: 'center', width: 32 },
+    navMark: { fontSize: 13, fontWeight: '700' },
+    positionButton: { alignItems: 'center', flexDirection: 'row', flexShrink: 1, gap: spacing.sm, minHeight: 32 },
+    position: { color: palette.text, fontSize: 13, fontVariant: ['tabular-nums'], fontWeight: '700' },
+    newerBadge: { borderRadius: radius.round, paddingHorizontal: spacing.lg, paddingVertical: spacing.xs },
+    newerText: { fontSize: 11, fontWeight: '800' },
+    statusRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.md },
+    railBox: { paddingBottom: spacing.md, paddingHorizontal: spacing.lg, paddingTop: spacing.md },
+    srOnly: { height: 0, opacity: 0, position: 'absolute', width: 0 },
     railRow: { alignItems: 'center', flexDirection: 'row' },
     railStep: { alignItems: 'center', flexDirection: 'row' },
     railLine: { height: 2, marginHorizontal: spacing.sm, width: spacing.xl },
@@ -845,12 +1033,13 @@ const makeStyles = (palette: Palette) =>
       borderWidth: 1.5,
       flexDirection: 'row',
       gap: spacing.sm,
-      maxWidth: 160,
+      maxWidth: 180,
       minHeight: 28,
       paddingHorizontal: spacing.lg,
     },
     chipMark: { fontSize: 10, fontWeight: '800' },
     chipTitle: { flexShrink: 1, fontSize: 12, fontWeight: '700' },
+    chipCount: { fontSize: 11, fontVariant: ['tabular-nums'], fontWeight: '600', opacity: 0.85 },
     listItem: { paddingBottom: spacing.sm },
     card: {
       ...cardShadow,
@@ -867,13 +1056,7 @@ const makeStyles = (palette: Palette) =>
     foldedHead: { alignItems: 'center', flexDirection: 'row', gap: spacing.md },
     foldedHeading: { flexShrink: 1 },
     foldMark: { color: palette.textMuted, fontSize: 14, fontWeight: '700' },
-    part: {
-      backgroundColor: palette.surface,
-      borderRadius: radius.md,
-      gap: spacing.sm,
-      paddingHorizontal: spacing.lg,
-      paddingVertical: spacing.md,
-    },
+    divider: { backgroundColor: palette.border, height: StyleSheet.hairlineWidth },
     partHead: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
     partLabel: { color: palette.textFaint, fontSize: 11, fontWeight: '700' },
     tally: { color: palette.textMuted, flexShrink: 1, fontSize: 11.5, fontWeight: '600' },
@@ -883,16 +1066,6 @@ const makeStyles = (palette: Palette) =>
     activityLine: { ...monoText, fontSize: 11.5, lineHeight: 16 },
     toggle: { color: palette.accent, fontSize: 12, fontWeight: '700' },
     note: { color: palette.textFaint, fontSize: 11.5, fontWeight: '600', paddingVertical: spacing.sm },
-    caption: { color: palette.textFaint, fontSize: 10.5, fontWeight: '600' },
-    clusters: { gap: spacing.sm, paddingLeft: spacing.lg },
-    cluster: {
-      borderColor: palette.border,
-      borderRadius: radius.md,
-      borderStyle: 'dashed',
-      borderWidth: 1,
-      gap: spacing.sm,
-      padding: spacing.md,
-    },
     node: {
       backgroundColor: palette.surface,
       borderColor: palette.border,
@@ -905,5 +1078,20 @@ const makeStyles = (palette: Palette) =>
     nodeBody: { flex: 1, gap: spacing.xs, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
     nodeTitle: { color: palette.text, fontSize: 12.5, fontWeight: '700' },
     nodeMeta: { color: palette.textMuted, fontSize: 11 },
+    sheetTitle: { ...typeScale.title, color: palette.text },
+    boardList: { maxHeight: 420 },
+    boardRow: {
+      alignItems: 'flex-start',
+      backgroundColor: palette.surfaceRaised,
+      borderRadius: radius.md,
+      flexDirection: 'row',
+      gap: spacing.md,
+      marginBottom: spacing.xs,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.md,
+    },
+    boardNumber: { color: palette.textMuted, fontSize: 12, fontVariant: ['tabular-nums'], fontWeight: '700', minWidth: 18 },
+    boardTexts: { flex: 1, gap: spacing.xs },
+    boardTitle: { color: palette.text, flexShrink: 1, fontSize: 14, fontWeight: '600' },
     pressed: { opacity: 0.6 },
   });

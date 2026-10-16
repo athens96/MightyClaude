@@ -182,6 +182,15 @@ public enum MobileRemoteSupport {
 
     /// What the phone is told when a submit was dropped rather than accepted.
     public static var droppedMessage: String { L("remote.error.dropped") }
+
+    /// The parent and state a Mighty Orchestration child pane's summary carries: its
+    /// sidebar row's (`DelegationSidebar.rows`), the state as that row shows it. A pane
+    /// the delegation file does not list as a child carries neither, as the sidebar
+    /// keeps it at the top level.
+    public static func childLink(sessionId: String, children: [DelegationChildRow], asksHuman: Bool) -> (parent: String, state: String)? {
+        guard let row = children.first(where: { $0.id == sessionId }) else { return nil }
+        return (row.parentSessionId, DelegationSidebar.shownState(row.state, asksHuman: asksHuman).rawValue)
+    }
 }
 
 /// The Mighty graph as a phone reads it. Every string that reaches the wire is

@@ -206,6 +206,8 @@ extension AppStore {
         // `$statusLines` is deliberately not observed: see SessionFingerprint.
         $queuedInputs.sink { [weak self] value in self?.mobileObserve(queued: value) }.store(in: &mobileSubscriptions)
         $delegationHeld.sink { [weak self] value in self?.mobileObserve(held: value) }.store(in: &mobileSubscriptions)
+        // A child pane's parent and state ride in its summary.
+        $delegationChildren.sink { [weak self] value in self?.mobileObserve(children: value) }.store(in: &mobileSubscriptions)
         // Asleep, the Mac missed the relay's pings and its control socket may be
         // gone on the relay's side while it still looks open here.
         NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)
@@ -269,7 +271,7 @@ extension AppStore {
     // MARK: Revisions
 
     func mobileObserve(snapshot incoming: AppSnapshot? = nil, permissions: [String: [ToolPermissionRequest]]? = nil, queued: [String: [QueuedInput]]? = nil,
-                       held: [String: [DelegationDeliveryItem]]? = nil) {
+                       held: [String: [DelegationDeliveryItem]]? = nil, children: [DelegationChildRow]? = nil) {
         guard !ending, mobileBridge != nil else { return }
         let snapshot = incoming ?? self.snapshot
         // Nothing to track while the feature is off; the first publish after
@@ -296,7 +298,8 @@ extension AppStore {
             let fingerprint = MobileRemoteTracking.SessionFingerprint(session, editable: editable, options: mobileOptionsDigest(session), mighty: mobileMightyDigest(session))
             let changed = mobileTracking.seen[session.id] != fingerprint || heldMoved.contains(session.id)
             if changed { mobileTracking.sessionRevisions[session.id, default: 0] += 1 }
-            var summary = mobileSummary(session, revision: mobileTracking.sessionRevisions[session.id, default: 1], permissions: permissions, queued: queued, held: held)
+            var summary = mobileSummary(session, revision: mobileTracking.sessionRevisions[session.id, default: 1], permissions: permissions, queued: queued, held: held,
+                                        children: children)
             let previous = mobileTracking.summaries[session.id]
             var compare = summary; compare.revision = 0
             var previousCompare = previous; previousCompare?.revision = 0
@@ -323,8 +326,11 @@ extension AppStore {
     }
 
     private func mobileSummary(_ session: RunSession, revision: Int, permissions: [String: [ToolPermissionRequest]]? = nil, queued: [String: [QueuedInput]]? = nil,
-                               held: [String: [DelegationDeliveryItem]]? = nil) -> MobileSessionSummary {
+                               held: [String: [DelegationDeliveryItem]]? = nil, children: [DelegationChildRow]? = nil) -> MobileSessionSummary {
         let pending = ((permissions ?? toolPermissions)[session.id] ?? []).filter { $0.state == "pending" }
+        // The sidebar's own test for a child waiting on a human (`WorkspaceView.paneRow`).
+        let asksHuman = WorkDashboard.attention((permissions ?? toolPermissions)[session.id]).total > 0
+        let child = MobileRemoteSupport.childLink(sessionId: session.id, children: children ?? delegationChildren, asksHuman: asksHuman)
         let last = session.logs.last(where: { $0.activity == nil && !$0.text.isEmpty })
         return MobileSessionSummary(
             id: session.id, workspaceId: session.workspaceId, title: session.title, kind: session.kind, provider: session.provider, model: session.model,
@@ -339,7 +345,8 @@ extension AppStore {
             mightyStyle: session.kind == "shell" ? nil : mobileStyle(session),
             styleId: session.kind == "shell" ? nil : mobileStyleId(session),
             titleMode: session.titleMode ?? "auto",
-            resolvedModel: session.kind == "shell" ? nil : ModelLabel.resolution(session.model, catalog: providerRuntime(session.provider, workspaceId: session.workspaceId).modelCatalog, hint: ModelLabel.reportedModel(session)))
+            resolvedModel: session.kind == "shell" ? nil : ModelLabel.resolution(session.model, catalog: providerRuntime(session.provider, workspaceId: session.workspaceId).modelCatalog, hint: ModelLabel.reportedModel(session)),
+            parentSessionId: child?.parent, childState: child?.state)
     }
 
     func mobileViewMode(_ session: RunSession) -> String { MobileRemoteSupport.viewMode(session.agentViewMode) }

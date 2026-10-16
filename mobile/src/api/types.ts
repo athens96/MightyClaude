@@ -158,6 +158,13 @@ export interface MobileSessionSummary {
    * (`modelLabel`). Absent on older hosts and whenever the host does not know it.
    */
   resolvedModel?: string;
+  /**
+   * A Mighty Orchestration child pane's parent pane (Mac only). The list draws the child one
+   * step in under its parent when the parent is listed too. Absent on other panes and hosts.
+   */
+  parentSessionId?: string;
+  /** That child's state as the Mac sidebar says it (`ChildState`): an open string. */
+  childState?: string;
 }
 
 export interface MobileState {

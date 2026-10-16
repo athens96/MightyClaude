@@ -303,13 +303,17 @@ const kindLabelKeys: Record<string, string> = {
   'agent-browser': 'dashboard.kind.agentBrowser',
 };
 
+/**
+ * The `gemini` id is kept on the wire; a current host runs Google's Antigravity CLI (`agy`)
+ * for it and calls it Antigravity, an older one Gemini CLI (`hostRunsAntigravity`).
+ */
 const providerLabels: Record<Provider, string> = {
   claude: 'Claude',
   codex: 'Codex',
-  gemini: 'Gemini',
+  gemini: 'Antigravity',
 };
 
-/** Brand marks, as used by the Mac app's provider glyphs. */
+/** Brand marks, as used by the Mac app's provider glyphs (Antigravity keeps Gemini's sweep). */
 export const providerColors: Record<Provider, string[]> = {
   claude: ['#D97757'],
   codex: ['#10A37F'],
@@ -396,12 +400,14 @@ export function kindLabel(kind: string): string {
   return labelFor(kindLabelKeys, kind, t);
 }
 
-export function providerLabel(provider: string): string {
+/** `antigravity`: the host runs Antigravity for `gemini` (`hostRunsAntigravity`); else it is Gemini. */
+export function providerLabel(provider: string, antigravity = true): string {
+  if (provider === 'gemini' && !antigravity) return 'Gemini';
   return labelFor(providerLabels, provider);
 }
 
 /**
- * Claude is official; Codex and Gemini are beta. The phone's one answer for every beta
+ * Claude is official; Codex and Antigravity are beta. The phone's one answer for every beta
  * badge — the badge is drawn beside the name and never becomes part of `providerLabel`.
  */
 export function providerIsBeta(provider: string): boolean {

@@ -42,7 +42,9 @@ Mac 与手机通过中继服务器连接。内容全程端到端加密，中继�
 
 在{{ui:phone.session.view.blocks}}视图中，已完成的请求会直接显示请求和{{ui:phone.blocks.finalResult}}。过程步骤折叠为一行，点击即可展开。仍在运行的请求会显示所有步骤。
 
-{{ui:phone.session.view.structure}}视图显示桌面应用发送的流水线。使用风格的窗格顶部有阶段栏：已完成的阶段为绿色，当前阶段为强调色，尚未开始的阶段为灰色。每个阶段各有一个页面，左右滑动或点击阶段即可切换，打开时显示当前阶段。每个阶段页面按从旧到新的顺序列出该阶段的请求，每个请求依次显示请求内容、执行情况（状态、最新消息、最近操作）、子代理组和结果。没有风格的窗格则为每个请求叠放一行：请求 → 执行 → 结果。已结束的请求会折叠成一行，点按即可展开。此视图需要与手机应用版本相同或更新的桌面应用（Mac 或 Windows）；桌面应用较旧时，视图会提示更新桌面应用。
+{{ui:phone.session.view.structure}}视图以看板的形式逐个显示桌面应用发送的流水线。没有风格的窗格中每个请求是一个看板；使用风格的窗格中每条流水线是一个看板，即阶段不回退的一串连续请求。用顶部的 ◀ ▶ 切换看板，点击中间的位置（如"请求 3 / 7"）可从列表中选择。查看较早的看板时如果出现新看板，会显示{{ui:graph.structure.board.newRequest}}或{{ui:graph.structure.board.newPipeline}}标记，点击即可前往最新的看板。下面是看板的状态和一排阶段标签：已完成的阶段为绿色，当前阶段为强调色，尚未开始的阶段为灰色，每个标签都带有卡片数。每个阶段各有一列，左右滑动或点击标签即可切换，打开时显示当前阶段的列。没有风格的窗格的列为{{ui:graph.structure.column.request}} → {{ui:graph.structure.column.execution}} → {{ui:graph.structure.column.result}}，子代理卡片排在{{ui:graph.structure.column.execution}}卡片之后。使用风格的窗格中，每列列出该阶段的请求及其子代理，已结束的请求折叠为一张卡片，点按即可展开。正在运行的卡片边框会闪烁。此视图需要与手机应用版本相同或更新的桌面应用（Mac 或 Windows）；桌面应用较旧时，视图会提示更新桌面应用。
+
+在 Mac 上通过 [Mighty 编排](delegation.md)创建的子窗格，会在会话列表中缩进一级显示在父窗格下方，右侧显示其状态（{{ui:delegation.child.state.reported}}、{{ui:delegation.child.state.merged}} 等）。合并或丢弃子窗格只能在 Mac 上进行。使用 Antigravity 的桌面应用（Mac 0.4.23 及以上、Windows 0.4.28 及以上）中的 Gemini 窗格显示为 Antigravity（{{ui:badge.beta}}），更旧版本应用中的窗格显示为 Gemini。
 
 ## 批准与提问 {#approvals}
 智能体请求批准或提问时，{{ui:phone.tabs.alerts}}标签页上会显示数量。

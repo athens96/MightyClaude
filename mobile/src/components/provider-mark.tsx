@@ -8,7 +8,7 @@ import { providerColorsFor, providerIsBeta, providerLabel, spacing, usePalette }
 /**
  * The providers' own marks in their brand colours — the same outlines the Mac app draws
  * (`@/lib/provider-marks`), rendered in the 24×24 box they were prepared in. Gemini's
- * mark is a gradient through its three stops, bottom-left to top-right. A provider we do
+ * mark, which the Mac's Antigravity pane keeps, is a gradient through its three stops, bottom-left to top-right. A provider we do
  * not know has no outline, so it keeps a neutral chip.
  */
 export const ProviderMark = memo(function ProviderMark({
@@ -61,12 +61,12 @@ export const ProviderMark = memo(function ProviderMark({
  * Mark plus the provider's name, then the Beta badge for a beta provider. The brand
  * colour stays on the mark; the name is muted ink, as every other meta word on the row.
  */
-export function ProviderTag({ provider }: { provider: string }) {
+export function ProviderTag({ provider, antigravity = true }: { provider: string; antigravity?: boolean }) {
   const palette = usePalette();
   return (
     <View style={styles.tag}>
       <ProviderMark provider={provider} size={11} />
-      <Text style={[styles.tagLabel, { color: palette.textMuted }]}>{providerLabel(provider)}</Text>
+      <Text style={[styles.tagLabel, { color: palette.textMuted }]}>{providerLabel(provider, antigravity)}</Text>
       {providerIsBeta(provider) ? <BetaBadge /> : null}
     </View>
   );

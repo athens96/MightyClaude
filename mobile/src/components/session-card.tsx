@@ -12,11 +12,12 @@ import {
   type AgeUnit,
 } from '@/lib/dashboard';
 import { t } from '@/lib/i18n';
-import { rowMark, rowMeta, rowNote, waitLabel } from '@/lib/session-row';
+import { childStateLabel, rowMark, rowMeta, rowNote, waitLabel } from '@/lib/session-row';
 import { statusWord } from '@/lib/status-glyph';
+import { useRunsAntigravity } from '@/hooks/use-capabilities';
 import { useNow } from '@/hooks/use-now';
 import { useDetailReceivedAt, useSessionDetail } from '@/store/live';
-import { monoText, spacing, useStyles, type Palette } from '@/theme';
+import { monoText, spacing, toneColors, usePalette, useStyles, type Palette } from '@/theme';
 
 const AGE_KEYS: Record<AgeUnit, string> = {
   now: 'resume.time.now',
@@ -48,22 +49,28 @@ const MARK_SIZE = 12;
  * (`rowNote`); a pane waiting on the user ends in an amber `질문 1`. `glance` lets the
  * row show elapsed and context — only when the phone holds a session detail of the same
  * revision (`freshGlance`); the pane list itself carries neither number. Rows after the
- * first draw a hairline rule from the title's edge.
+ * first draw a hairline rule from the title's edge. A Mighty Orchestration child pane
+ * (`nested`) sits one step in under its parent and always ends in its state, as the Mac
+ * sidebar draws it; merging and discarding a child stay on the Mac.
  */
 export function SessionRow({
   hostId,
   session,
   glance = false,
   first = false,
+  nested = false,
   onPress,
 }: {
   hostId: string;
   session: MobileSessionSummary;
   glance?: boolean;
   first?: boolean;
+  /** Drawn one step in under the row before it: its parent pane. */
+  nested?: boolean;
   onPress: () => void;
 }) {
   const styles = useStyles(makeStyles);
+  const palette = usePalette();
   const detail = useSessionDetail(glance ? hostId : undefined, session.id);
   const receivedAt = useDetailReceivedAt(glance ? hostId : undefined, session.id);
   const running = session.status === 'running';
@@ -77,10 +84,11 @@ export function SessionRow({
   const age = running ? undefined : ageText(session.updatedAt, now);
   const attention = attentionOf(session);
   const ask = waitLabel(session);
-  const { lead, beta, rest } = rowMeta(session, numbers, age);
+  const { lead, beta, rest } = rowMeta(session, numbers, age, useRunsAntigravity(hostId));
   const mark = rowMark(session);
   const note = rowNote(session);
-  const word = attention > 0 ? t('phone.card.attention', { count: attention }) : statusWord(status);
+  const child = childStateLabel(session);
+  const word = child?.text ?? (attention > 0 ? t('phone.card.attention', { count: attention }) : statusWord(status));
 
   return (
     <Pressable
@@ -90,7 +98,7 @@ export function SessionRow({
         status: note?.kind === 'reason' ? `${word}, ${note.text}` : word,
       })}
       onPress={onPress}
-      style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+      style={({ pressed }) => [styles.row, nested && styles.nested, pressed && styles.pressed]}
     >
       {first ? null : <View style={styles.rule} />}
       <View style={styles.glyph}>
@@ -124,7 +132,15 @@ export function SessionRow({
           </Text>
         ) : null}
       </View>
-      {ask ? <Text style={styles.ask}>{ask}</Text> : null}
+      {child ? (
+        <Text
+          style={[styles.ask, { color: child.tone === 'idle' ? palette.textMuted : toneColors(palette, child.tone).ink }]}
+        >
+          {child.text}
+        </Text>
+      ) : ask ? (
+        <Text style={styles.ask}>{ask}</Text>
+      ) : null}
     </Pressable>
   );
 }
@@ -138,6 +154,7 @@ const makeStyles = (palette: Palette) =>
       paddingHorizontal: ROW_PADDING,
       paddingVertical: spacing.md,
     },
+    nested: { paddingLeft: ROW_PADDING + ROW_GLYPH },
     pressed: { backgroundColor: palette.surfaceRaised },
     rule: {
       backgroundColor: palette.border,

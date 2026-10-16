@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import type { MobileClient } from '@/api/client';
 import type { Capability } from '@/api/types';
 import { parseCapabilities } from '@/lib/capabilities';
+import { hostRunsAntigravity } from '@/lib/provider-host';
 import { useLiveStore } from '@/store/live';
 
 /** Stable reference for "nothing cached yet", so the hook never churns renders. */
@@ -25,7 +26,9 @@ export function useCapabilities(
     void client
       .info(controller.signal)
       .then((info) => {
-        if (!controller.signal.aborted) setCapabilities(hostId, parseCapabilities(info));
+        if (!controller.signal.aborted) {
+          setCapabilities(hostId, parseCapabilities(info), { platform: info.platform, appVersion: info.appVersion });
+        }
       })
       // A failed probe stays uncached so the next visit to the screen tries again.
       .catch(() => undefined);
@@ -33,4 +36,12 @@ export function useCapabilities(
   }, [cached, client, hostId, setCapabilities]);
 
   return cached ?? NONE;
+}
+
+/**
+ * Whether the host runs Antigravity for its `gemini` panes (`hostRunsAntigravity`), from
+ * the `/m1/info` answer `useCapabilities` caches; true until that answer arrives.
+ */
+export function useRunsAntigravity(hostId: string | undefined): boolean {
+  return useLiveStore((store) => hostRunsAntigravity(hostId ? store.hostIdentity[hostId] : undefined));
 }

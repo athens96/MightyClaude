@@ -8,6 +8,7 @@
 const ONE_MILLION = ' (1M)';
 const FAMILIES = new Set(['opus', 'sonnet', 'haiku', 'fable']);
 const GEMINI_STOP = new Set(['preview', 'exp', 'latest']);
+const EFFORTS = new Set(['low', 'medium', 'high']);
 const CACHE_LIMIT = 512;
 const cache = new Map<string, string | undefined>();
 
@@ -52,15 +53,22 @@ function gpt(tokens: string[]): string | undefined {
   return [`GPT-${version}`, ...words.map(word)].join(' ');
 }
 
+/**
+ * A last `low`/`medium`/`high` is the effort an Antigravity slug carries
+ * (`gemini-4-argon-medium` → `Gemini 4 Argon (Medium)`, as `agy models` names it), as the
+ * Mac and Windows read it. These ids are tested per client, not in the shared fixture.
+ */
 function gemini(tokens: string[]): string | undefined {
   const [version, ...rest] = tokens;
   if (version === undefined || !startsWithDigit(version)) return undefined;
+  const last = rest[rest.length - 1];
+  const effort = rest.length >= 2 && last !== undefined && EFFORTS.has(last) ? rest.pop() : undefined;
   const words: string[] = [];
   for (const token of rest) {
     if (GEMINI_STOP.has(token)) break;
     if (!isDigits(token)) words.push(word(token));
   }
-  return ['Gemini', version, ...words].join(' ');
+  return ['Gemini', version, ...words].join(' ') + (effort ? ` (${capitalized(effort)})` : '');
 }
 
 function read(id: string): string | undefined {
@@ -118,4 +126,26 @@ export function modelLabel(model: string, resolved?: string, fallback?: string):
   }
   const name = fallback ? fallback : value;
   return resolvedLabel === undefined ? name : `${name} · ${resolvedLabel}`;
+}
+
+/**
+ * An Antigravity pane's model (provider `gemini` on a host running `agy`): agy also runs
+ * Claude and GPT-OSS models, each slug ending in its effort, which the Mac names from
+ * `agy models` (`claude-opus-5-5-high` → `Claude Opus 5.5 (High)`, `gpt-oss-120b-medium` →
+ * `GPT-OSS 120B (Medium)`). Any other value reads as `modelLabel` reads it.
+ */
+export function antigravityModelLabel(model: string, resolved?: string, fallback?: string): string {
+  const tokens = model.trim().toLowerCase().split('-');
+  const effort = tokens.length >= 3 ? tokens[tokens.length - 1] : undefined;
+  if (effort !== undefined && EFFORTS.has(effort)) {
+    const [head, ...rest] = tokens.slice(0, -1);
+    const suffix = ` (${capitalized(effort)})`;
+    if (head === 'claude') {
+      const label = claude(rest);
+      if (label !== undefined) return `Claude ${label}${suffix}`;
+    } else if (head === 'gpt' && rest[0] === 'oss' && rest.length === 2 && rest[1] !== undefined) {
+      return `GPT-OSS ${rest[1].toUpperCase()}${suffix}`;
+    }
+  }
+  return modelLabel(model, resolved, fallback);
 }

@@ -12,15 +12,16 @@ import { t } from '@/lib/i18n';
 import { blockText, inlineText } from '@/lib/styles';
 
 /**
- * The structure view (구조): the Mac's own `MightyStructure` of a pane, sent as
- * `MobileMighty.structure`. A styled pane is its phases, each holding the requests that
+ * The structure behind the 파이프라인 view: the Mac's own `MightyStructure` of a pane, sent
+ * as `MobileMighty.structure`. A styled pane is its phases, each holding the requests that
  * belong to it; a pane without a style is one row per request (요청 → 실행 → 결과).
- * The phone never works a phase or a step out for itself: it draws what the Mac sent.
+ * The phone never works a phase or a step out for itself: it draws what the Mac sent,
+ * grouped into boards as the Mac groups them (`lib/pipeline-board.ts`).
  *
  * Everything here is pure. The payload is read defensively — an unknown version or shape
  * is reported rather than guessed at, a field of the wrong type is dropped, and every list
- * and text is clamped — and the screen's choices (which page opens, how a chip looks,
- * where a long text folds) are worked out here so they can be tested.
+ * and text is clamped — and the screen's choices (how a chip looks, where a long text
+ * folds, which finished request folds) are worked out here so they can be tested.
  */
 
 /** The version of the payload this app reads. */
@@ -334,51 +335,12 @@ export function structureNotice(
   }
 }
 
-// ------------------------------------------------------------------ the phase pages
-
-/**
- * The page the phase view opens on: the current phase, else the newest phase that holds
- * a request, else the first.
- */
-export function currentPageIndex(columns: readonly StructureColumn[]): number {
-  const current = columns.findIndex((column) => column.step === 'current');
-  if (current >= 0) return current;
-  for (let index = columns.length - 1; index >= 0; index -= 1) {
-    if ((columns[index]?.items.length ?? 0) > 0) return index;
-  }
-  return 0;
-}
-
-/**
- * The page shown: the phase the user moved to (held by its id, so a phase list that
- * changes under it never shows another page), else the current phase's.
- */
-export function visiblePage(columns: readonly StructureColumn[], chosen: string | undefined): number {
-  if (columns.length === 0) return 0;
-  const index = chosen === undefined ? -1 : columns.findIndex((column) => column.id === chosen);
-  return index >= 0 ? index : currentPageIndex(columns);
-}
-
-/**
- * The choice a swipe or a tap leaves: none when it lands on the current phase, so the
- * pager follows the phase again from there; else the phase landed on.
- */
-export function chosenAfterMove(columns: readonly StructureColumn[], landed: number): string | undefined {
-  if (landed === currentPageIndex(columns)) return undefined;
-  return columns[landed]?.id;
-}
+// ------------------------------------------------------------------ steps
 
 /** The page a horizontal pager rests on, from its offset and its page width. */
 export function pageAtOffset(offsetX: number, pageWidth: number, pages: number): number {
   if (pageWidth <= 0 || pages <= 0) return 0;
   return Math.min(pages - 1, Math.max(0, Math.round(offsetX / pageWidth)));
-}
-
-/** "실행 (3/6)". */
-export function pageLabel(columns: readonly StructureColumn[], index: number): string {
-  const column = columns[index];
-  if (!column) return '';
-  return t('phone.structure.page', { name: column.title, index: index + 1, count: columns.length });
 }
 
 /** How a step looks: the colour family it takes and the mark it carries. */
@@ -403,55 +365,17 @@ export function stepLook(step: StructureStep): StepLook {
   }
 }
 
-/** The word for a step, read out with its name: "실행: 진행 중". */
-export function stepAccessibility(name: string, step: StructureStep): string {
-  const state =
-    step === 'done'
-      ? t('graph.structure.step.done')
-      : step === 'current'
-        ? t('graph.structure.step.current')
-        : step === 'error'
-          ? t('graph.state.error')
-          : step === 'stopped'
-            ? t('graph.state.stopped')
-            : t('graph.structure.step.pending');
-  return t('graph.structure.stepAccessibility', { name, state });
-}
-
-/** One chip of a rail. */
-export interface RailChip {
-  id: string;
-  title: string;
-  step: StructureStep;
-  look: StepLook;
-  label: string;
-}
-
-/** The phase bar over the pages. */
-export function phaseRail(columns: readonly StructureColumn[]): RailChip[] {
-  return columns.map((column) => ({
-    id: column.id,
-    title: column.title,
-    step: column.step,
-    look: stepLook(column.step),
-    label: stepAccessibility(column.title, column.step),
-  }));
-}
-
-/** A free request's own small rail: 요청 ─ 실행 ─ 결과. */
-export function requestRail(row: StructureRow): RailChip[] {
-  const steps: [string, string, StructureStep][] = [
-    ['request', t('graph.structure.column.request'), row.request],
-    ['execution', t('graph.structure.column.execution'), row.execution],
-    ['result', t('graph.structure.column.result'), row.result],
-  ];
-  return steps.map(([id, title, step]) => ({
-    id,
-    title,
-    step,
-    look: stepLook(step),
-    label: stepAccessibility(title, step),
-  }));
+/** Where a step stands, in words: "진행 중". */
+export function stepStateWord(step: StructureStep): string {
+  return step === 'done'
+    ? t('graph.structure.step.done')
+    : step === 'current'
+      ? t('graph.structure.step.current')
+      : step === 'error'
+        ? t('graph.state.error')
+        : step === 'stopped'
+          ? t('graph.state.stopped')
+          : t('graph.structure.step.pending');
 }
 
 /** "Seed · 요청 3", or just "요청 3". */

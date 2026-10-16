@@ -1,7 +1,8 @@
 import { isAgentIOPane, type MobileSessionSummary, type Provider } from '@/api/types';
 import { attentionOf, formatClock, sessionTone, type CardGlance } from '@/lib/dashboard';
+import type { Tone } from '@/lib/status-tone';
 import { t } from '@/lib/i18n';
-import { modelLabel } from '@/lib/model-label';
+import { antigravityModelLabel, modelLabel } from '@/lib/model-label';
 import { providerMarkOutline } from '@/lib/provider-marks';
 import { kindLabel, providerIsBeta, providerLabel } from '@/theme';
 
@@ -49,13 +50,15 @@ export function rowMeta(
   session: MobileSessionSummary,
   numbers: CardGlance | undefined,
   age: string | undefined,
+  /** The host runs Antigravity for `gemini` panes (`hostRunsAntigravity`). */
+  antigravity = true,
 ): RowMeta {
   const lead: string[] = [];
   if (session.kind !== 'claude') lead.push(kindLabel(session.kind));
-  if (showsProvider(session)) lead.push(providerLabel(session.provider));
+  if (showsProvider(session)) lead.push(providerLabel(session.provider, antigravity));
   const beta = showsProvider(session) && providerIsBeta(session.provider);
   const rest: string[] = [];
-  if (session.model) rest.push(rowModel(session));
+  if (session.model) rest.push(rowModel(session, antigravity));
   if (session.terminal && !isAgentIOPane(session.kind)) rest.push(t('phone.card.localTerminal'));
   const live = session.status === 'running' || attentionOf(session) > 0;
   if (live && numbers?.elapsedSeconds !== undefined) rest.push(formatClock(numbers.elapsedSeconds));
@@ -70,14 +73,17 @@ export function rowMeta(
 /**
  * The pane's model with its version (`Opus 5.5`), by the rules the Mac's chip uses. The
  * CLI default keeps the Mac's name for it (`Claude 설정 따름`) and adds the model it
- * stands for when the host knows it.
+ * stands for when the host knows it. An Antigravity pane's Claude and GPT-OSS slugs read
+ * as `agy models` names them (`antigravityModelLabel`); a host still on Gemini CLI has none.
  */
-function rowModel(session: MobileSessionSummary): string {
+function rowModel(session: MobileSessionSummary, antigravity: boolean): string {
   const fallback =
     session.model === 'default'
-      ? t('provider.fallback.defaultLabel', { name: providerLabel(session.provider) })
+      ? t('provider.fallback.defaultLabel', { name: providerLabel(session.provider, antigravity) })
       : undefined;
-  return modelLabel(session.model, session.resolvedModel, fallback);
+  return session.provider === 'gemini' && antigravity
+    ? antigravityModelLabel(session.model, session.resolvedModel, fallback)
+    : modelLabel(session.model, session.resolvedModel, fallback);
 }
 
 /**
@@ -92,4 +98,37 @@ export function rowNote(session: MobileSessionSummary): RowNote | undefined {
   if (session.status === 'running') return { kind: 'step', text };
   if (sessionTone(session) === 'err') return { kind: 'reason', text };
   return undefined;
+}
+
+/**
+ * A Mighty Orchestration child pane's state, as the word at its row's right and the tone it
+ * is drawn in, as the Mac sidebar's child row says it (`DelegationSidebar.tone`). Undefined
+ * for a pane that is not a child, and for a state this app does not know, which then reads
+ * as any other pane does.
+ */
+export function childStateLabel(session: MobileSessionSummary): { text: string; tone: Tone } | undefined {
+  switch (session.childState) {
+    case 'creating':
+      return { text: t('delegation.child.state.creating'), tone: 'run' };
+    case 'running':
+      return { text: t('delegation.child.state.running'), tone: 'run' };
+    case 'waiting':
+      return { text: t('delegation.child.state.waiting'), tone: 'wait' };
+    case 'reported':
+      return { text: t('delegation.child.state.reported'), tone: 'done' };
+    case 'merged':
+      return { text: t('delegation.child.state.merged'), tone: 'done' };
+    case 'failed':
+      return { text: t('delegation.child.state.failed'), tone: 'err' };
+    case 'interrupted':
+      return { text: t('delegation.child.state.interrupted'), tone: 'stop' };
+    case 'ended':
+      return { text: t('delegation.child.state.ended'), tone: 'idle' };
+    case 'closed':
+      return { text: t('delegation.child.state.closed'), tone: 'idle' };
+    case 'discarded':
+      return { text: t('delegation.child.state.discarded'), tone: 'idle' };
+    default:
+      return undefined;
+  }
 }

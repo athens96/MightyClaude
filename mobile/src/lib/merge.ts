@@ -50,7 +50,10 @@ export function mergeSessionDetail(
 
 export interface WorkspaceGroup {
   workspace: MobileWorkspace;
+  /** In list order: a child pane right after its parent (and its parent's earlier children). */
   sessions: MobileSessionSummary[];
+  /** The child panes drawn one step in under their parent, by id. */
+  children: ReadonlySet<string>;
 }
 
 const STATUS_ORDER: Record<MobileSessionSummary['status'], number> = {
@@ -70,19 +73,49 @@ function compareSessions(a: MobileSessionSummary, b: MobileSessionSummary): numb
   return b.updatedAt.localeCompare(a.updatedAt);
 }
 
-/** Groups sessions under their workspace; sessions with no known workspace are dropped. */
+/**
+ * Groups sessions under their workspace; sessions with no known workspace are dropped. A
+ * Mighty Orchestration child pane whose parent pane is in the same list follows its parent,
+ * as the Mac sidebar nests it, the children in the host's order (the order they were made);
+ * one whose parent is not listed, or is a child itself, stays where the sort puts it.
+ */
 export function groupSessionsByWorkspace(state: MobileState): WorkspaceGroup[] {
-  const groups = new Map<string, WorkspaceGroup>();
+  const groups = new Map<string, { workspace: MobileWorkspace; sessions: MobileSessionSummary[] }>();
   for (const workspace of state.workspaces) {
     groups.set(workspace.id, { workspace, sessions: [] });
   }
   for (const session of state.sessions) {
     groups.get(session.workspaceId)?.sessions.push(session);
   }
-  for (const group of groups.values()) {
-    group.sessions.sort(compareSessions);
-  }
-  return [...groups.values()];
+  return [...groups.values()].map(({ workspace, sessions }) => {
+    const byId = new Map(sessions.map((session) => [session.id, session]));
+    // One step only, as on the Mac: a pane nests under a listed parent that is not nested itself.
+    const nests = (session: MobileSessionSummary | undefined): boolean => {
+      const parent = session?.parentSessionId === undefined ? undefined : byId.get(session.parentSessionId);
+      return parent !== undefined && parent !== session && !(parent.parentSessionId !== undefined && byId.has(parent.parentSessionId));
+    };
+    const childrenOf = new Map<string, MobileSessionSummary[]>();
+    const top: MobileSessionSummary[] = [];
+    for (const session of sessions) {
+      const parent = session.parentSessionId;
+      if (parent !== undefined && nests(session)) {
+        childrenOf.set(parent, [...(childrenOf.get(parent) ?? []), session]);
+      } else {
+        top.push(session);
+      }
+    }
+    top.sort(compareSessions);
+    const ordered: MobileSessionSummary[] = [];
+    const children = new Set<string>();
+    for (const session of top) {
+      ordered.push(session);
+      for (const child of childrenOf.get(session.id) ?? []) {
+        ordered.push(child);
+        children.add(child.id);
+      }
+    }
+    return { workspace, sessions: ordered, children };
+  });
 }
 
 /** Total pending permission + question count across all sessions. */

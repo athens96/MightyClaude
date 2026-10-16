@@ -185,7 +185,7 @@ public enum ModelLabel {
 
     /// A last `low`/`medium`/`high` is the effort an Antigravity slug carries
     /// (`gemini-4-argon-medium` → `Gemini 4 Argon (Medium)`, as `agy models`
-    /// names it). Mac only: the phone and Windows do not run Antigravity.
+    /// names it). The phone and Windows read these slugs the same way.
     private static func gemini(_ tokens: [String]) -> String? {
         guard let version = tokens.first, startsWithDigit(version) else { return nil }
         var words: [String] = []

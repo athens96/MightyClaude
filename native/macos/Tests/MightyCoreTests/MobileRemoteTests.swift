@@ -303,6 +303,26 @@ struct MobileRemoteTests {
         return (service, directory)
     }
 
+    @Test func aChildPaneSummaryNamesItsParentAndItsSidebarState() throws {
+        let rows = [DelegationChildRow(id: "child", parentSessionId: "parent", state: .running),
+                    DelegationChildRow(id: "done", parentSessionId: "parent", state: .reported)]
+        #expect(MobileRemoteSupport.childLink(sessionId: "parent", children: rows, asksHuman: false) == nil)
+        #expect(MobileRemoteSupport.childLink(sessionId: "child", children: rows, asksHuman: false).map { [$0.parent, $0.state] } == ["parent", "running"])
+        // A running child waiting on a human reads as waiting, as its sidebar row does.
+        #expect(MobileRemoteSupport.childLink(sessionId: "child", children: rows, asksHuman: true)?.state == "waiting")
+        #expect(MobileRemoteSupport.childLink(sessionId: "done", children: rows, asksHuman: true)?.state == "reported")
+        // On the wire only when set, so an older phone and a plain pane see nothing new.
+        let child = MobileSessionSummary(id: "child", workspaceId: "w", title: "t", kind: "claude", provider: "claude", model: "default", status: "running",
+                                         revision: 1, updatedAt: "2026-10-16T00:00:00Z", parentSessionId: "parent", childState: "running")
+        let data = try JSONEncoder().encode(child)
+        let text = String(decoding: data, as: UTF8.self)
+        #expect(text.contains("\"parentSessionId\":\"parent\"") && text.contains("\"childState\":\"running\""))
+        #expect(try JSONDecoder().decode(MobileSessionSummary.self, from: data) == child)
+        var plain = child; plain.parentSessionId = nil; plain.childState = nil
+        let bare = String(decoding: try JSONEncoder().encode(plain), as: UTF8.self)
+        #expect(!bare.contains("parentSessionId") && !bare.contains("childState"))
+    }
+
     /// The settings sheet keeps whichever status is newest, so every status
     /// handed out, pushed or asked for, must rank above the ones before it.
     @Test func everyStatusRanksAboveTheOnesBeforeIt() async throws {
