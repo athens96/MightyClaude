@@ -3,7 +3,7 @@ title: 智能体窗格
 order: 3
 section: agent-pane
 ---
-智能体窗格是与 Claude、Codex 或 Antigravity（Windows 上为 Gemini）之一对话的窗格。在下方的输入框中写请求，在上方查看进度和结果。
+智能体窗格是与 Claude、Codex 或 Antigravity 之一对话的窗格。在下方的输入框中写请求，在上方查看进度和结果。
 
 ![[agent-basic]]
 
@@ -32,7 +32,7 @@ section: agent-pane
 点击模型按钮，可以选择{{ui:composer.label.runner}}（Claude、Codex、Antigravity）和{{ui:composer.label.model}}。如果列表不对，请点击{{ui:composer.model.refresh}}。切换智能体会开始新的对话。
 
 ### 思考强度 {#effort}
-{{ui:composer.effort.label}}决定模型思考的深度，可以在 Auto、Low、Medium、High、XHigh、Max 中选择。只显示模型支持的级别。Antigravity 和 Gemini 没有此项。
+{{ui:composer.effort.label}}决定模型思考的深度，可以在 Auto、Low、Medium、High、XHigh、Max 中选择。只显示模型支持的级别。Antigravity 没有此项。
 
 ### 权限 {#permission}
 权限决定智能体无需询问即可做哪些事。
@@ -41,20 +41,20 @@ section: agent-pane
 |---|---|
 | Claude | Plan mode · Always ask · Accept file edits · Auto mode · Bypass |
 | Codex | {{ui:permission.label.defaultCodex}} · {{ui:permission.label.acceptEditsCodex}} · {{ui:permission.label.onRequest}} · {{ui:permission.label.fullAccess}} |
-| Antigravity（Windows：Gemini） | {{ui:permission.label.default}} · {{ui:permission.label.plan}} · {{ui:permission.label.acceptEdits}} · {{ui:permission.label.fullAccess}} |
+| Antigravity | {{ui:permission.label.default}} · {{ui:permission.label.plan}} · {{ui:permission.label.acceptEdits}} · {{ui:permission.label.fullAccess}} |
 
 - Claude 的 Always ask 和 Codex 的{{ui:permission.label.onRequest}}权限在需要额外权限时，会在窗格中请求批准。请参阅[批准与提问](approvals.md#permission)。
 - 只有已安装的 Claude CLI 支持时，才会显示 Auto mode。
 - Bypass 和{{ui:permission.label.fullAccess}}权限也能访问项目以外的文件和命令。请仅在确有必要时使用。
 
-### Mac 上的 Antigravity {#antigravity}
-在 Mac 上，Google 的智能体通过 Antigravity CLI（`agy`）运行，它也可以运行 Claude 和 GPT-OSS 模型。Windows 应用目前仍使用 Gemini CLI。
+### Antigravity {#antigravity}
+Google 的智能体通过 Antigravity CLI（`agy`）运行，它也可以运行 Claude 和 GPT-OSS 模型。
 
-- 安装：运行 `curl -fsSL https://antigravity.google/cli/install.sh | bash`，`agy` 会安装到 `~/.local/bin`。应用通过 `agy update` 更新它。
+- 安装：在 Mac 上运行 `curl -fsSL https://antigravity.google/cli/install.sh | bash`，`agy` 会安装到 `~/.local/bin`。在 Windows 上，在 PowerShell 中运行 `irm https://antigravity.google/cli/install.ps1 | iex`，`agy.exe` 会安装到 `%LOCALAPPDATA%\agy\bin`。应用通过 `agy update` 更新它。
 - 登录：在终端窗格中运行一次 `agy`，并在浏览器中用 Google 账户登录。点击{{ui:settings.nav.cli}}标签页中的{{ui:settings.cliAccounts.buttonLogin}}，应用会替你运行。Antigravity 没有退出登录命令；要切换账户，请在 `agy` 中使用 `/logout`。
 - 权限：Antigravity 无法在应用中询问你。{{ui:permission.label.default}}遵循 agy 中保存的 Agent Mode（如果没有在 agy 的 `/config` 中更改，则为审核）：它可以读取工作区的文件，但会拒绝需要询问的文件编辑和 shell 命令，并在窗格中说明拒绝了什么。{{ui:permission.label.plan}}会在 agy 自己的文件夹中写下计划，然后停止，不会修改项目；要执行计划，请用其他模式发送下一个请求。请在 `~/.gemini/antigravity-cli/settings.json` 的 `permissions.allow` 中添加允许规则（例如 `command(git)`），或选择{{ui:permission.label.acceptEdits}}（文件编辑）或{{ui:permission.label.fullAccess}}（全部允许）。
 - Antigravity 的每个模型名称中已包含思考深度，因此没有单独的{{ui:composer.effort.label}}。
-- {{ui:graph.view.mighty}}视图与 Claude、Codex 相同：Antigravity 启动的每个子代理都会在请求下方成为单独的块，其内容（收到的指示、消息、工具调用和发回的答复）从 `~/.gemini/antigravity-cli` 中子代理自己的记录读取；读取过的文件只显示名称，不会复制内容。对话中较早的请求也从同样的记录加载，{{ui:resume.choice.resume}}会列出此文件夹中的 Antigravity 对话。
+- {{ui:graph.view.mighty}}视图与 Claude、Codex 相同：Antigravity 启动的每个子代理都会在请求下方成为单独的块，其内容（收到的指示、消息、工具调用和发回的答复）从 `~/.gemini/antigravity-cli`（Windows 上为 `%USERPROFILE%\.gemini\antigravity-cli`）中子代理自己的记录读取；读取过的文件只显示名称，不会复制内容。对话中较早的请求也从同样的记录加载，{{ui:resume.choice.resume}}会列出此文件夹中的 Antigravity 对话。
 - 以前运行 Gemini CLI 的窗格会保留记录，但下一个请求会开始新的对话；如果选过 Gemini CLI 的模型，会改回默认。
 
 ### 更多运行设置 {#run-settings}
@@ -94,7 +94,7 @@ Codex 和 Antigravity 的命令名称略有不同（例如 Codex 的 `/new`、`/
 ![[session-info]]
 
 ## 默认视图与 Mighty 视图 {#views}
-Claude、Codex 和 Antigravity 窗格的标题栏中有{{ui:graph.view.default}} | {{ui:graph.view.mighty}}切换开关。切换后，对话和正在输入的内容保持不变。每个窗格会各自记住选择。Gemini 窗格（Windows）只有默认视图。
+Claude、Codex 和 Antigravity 窗格的标题栏中有{{ui:graph.view.default}} | {{ui:graph.view.mighty}}切换开关。切换后，对话和正在输入的内容保持不变。每个窗格会各自记住选择。
 - {{ui:graph.view.default}}：从上到下阅读的对话记录。
 - {{ui:graph.view.mighty}}：以块状流程显示请求、子智能体、后台任务和结果。
 

@@ -75,66 +75,23 @@ internal static class CliAccountVerification
         return Task.CompletedTask;
     }
 
-    // Mirrors CLIAccountTests.geminiStatusAndLogoutWorkOnItsAccountFiles
-    internal static Task GeminiStatusAndLogoutWorkOnItsAccountFiles()
+    // Mirrors AntigravityTests.statusComesFromTheModelListAndThereIsNoSignOut
+    internal static Task AntigravityStatusIsItsModelListWithNoSignOut()
     {
         var home = Verification.Temp();
         try
         {
-            var dot = Path.Combine(home, ".gemini");
-            Directory.CreateDirectory(dot);
-
-            // No files at all → signed out (no oauth, no settings).
-            Check(CliAccountSupport.GeminiStatus(home, new Dictionary<string, string>()).LoggedIn == false, "gemini: empty dir → signed out");
-
-            // OAuth flow: settings + credentials + account.
-            File.WriteAllText(Path.Combine(dot, "settings.json"),
-                """{"security":{"auth":{"selectedType":"oauth-personal"}}}""");
-            File.WriteAllText(Path.Combine(dot, "oauth_creds.json"),
-                """{"access_token":"x"}""");
-            File.WriteAllText(Path.Combine(dot, "google_accounts.json"),
-                """{"active":"g@example.com","old":["first@example.com"]}""");
-
-            var status = CliAccountSupport.GeminiStatus(home, new Dictionary<string, string>());
-            Check(status.LoggedIn == true, "gemini: oauth signed in");
-            Check(status.Account == "g@example.com", "gemini: account from google_accounts.json");
-            Check(status.Method == "Google 계정" && status.MethodId == CliAccountMethod.GeminiGoogle, "gemini: oauth method and its id");
-
-            // Logout: removes oauth_creds.json, moves active to old list.
-            CliAccountSupport.GeminiLogout(home);
-            Check(!File.Exists(Path.Combine(dot, "oauth_creds.json")), "gemini: oauth_creds.json removed");
-            var accounts = JsonDocument.Parse(File.ReadAllText(Path.Combine(dot, "google_accounts.json"))).RootElement;
-            Check(accounts.GetProperty("active").ValueKind == JsonValueKind.Null, "gemini: active set to null");
-            var old = accounts.GetProperty("old").EnumerateArray().Select(e => e.GetString()).ToArray();
-            Check(old.SequenceEqual(["first@example.com", "g@example.com"]), "gemini: old list updated");
-
-            // After logout → signed out.
-            Check(CliAccountSupport.GeminiStatus(home, new Dictionary<string, string>()).LoggedIn == false, "gemini: signed out after logout");
-
-            // Logout is idempotent.
-            CliAccountSupport.GeminiLogout(home);
-
-            // API key auth.
-            File.WriteAllText(Path.Combine(dot, "settings.json"),
-                """{"security":{"auth":{"selectedType":"gemini-api-key"}}}""");
-            var keyed = CliAccountSupport.GeminiStatus(home, new Dictionary<string, string> { ["GEMINI_API_KEY"] = "k" });
-            Check(keyed.Method == "Gemini API 키" && keyed.MethodId == CliAccountMethod.GeminiApiKey, "gemini: api-key method and its id");
-            Check(keyed.LoggedIn == true, "gemini: api-key loggedIn when key present");
-            Check(!keyed.CanSignOut, "gemini: api-key cannot sign out");
-            // Key value must not appear in any field.
-            Check(!keyed.Detail.Contains("k\""), "gemini: api-key must not expose key value");
-            Check(CliAccountSupport.GeminiStatus(home, new Dictionary<string, string>()).LoggedIn == null, "gemini: api-key unknown without key");
-
-            // Vertex AI auth.
-            File.WriteAllText(Path.Combine(dot, "settings.json"),
-                """{"security":{"auth":{"selectedType":"vertex-ai"}}}""");
-            Check(CliAccountSupport.GeminiStatus(home, new Dictionary<string, string>()).LoggedIn == null, "gemini: vertex unknown without creds");
-            var vertex = CliAccountSupport.GeminiStatus(home, new Dictionary<string, string> { ["GOOGLE_CLOUD_PROJECT"] = "p" });
-            Check(vertex.LoggedIn == true, "gemini: vertex loggedIn with project");
-            Check(!vertex.CanSignOut, "gemini: vertex cannot sign out");
+            // Antigravity has no status command: its model list stands in for it, and there is no sign-out.
+            var signedIn = CliAccountSupport.AntigravityStatus(0, "Fetching available models...\ngemini-3.8-flash-low\tGemini 3.8 Flash (Low)\n");
+            Check(signedIn.LoggedIn == true && signedIn.MethodId == CliAccountMethod.GeminiGoogle && !signedIn.CanSignOut && signedIn.Detail.Contains("/logout"), "antigravity: a model list is a sign-in, with no sign-out here");
+            var signedOut = CliAccountSupport.AntigravityStatus(1, "Error: authentication required. Run 'agy' to log in, then retry.\n");
+            Check(signedOut.LoggedIn == false && !signedOut.CanSignOut, "antigravity: agy's own words are a lost sign-in");
+            var offline = CliAccountSupport.AntigravityStatus(1, "dial tcp: lookup failed");
+            Check(offline.LoggedIn == null && offline.Detail.Length > 0, "antigravity: anything else is unknown");
+            Check(CliAccountSupport.AntigravityStatus(0, "", timedOut: true).LoggedIn == null, "antigravity: a timeout is unknown");
 
             // BoundedFileText rejects directories and over-sized files.
-            Check(CliAccountSupport.BoundedFileText(dot) == null, "boundedFileText: rejects directories");
+            Check(CliAccountSupport.BoundedFileText(home) == null, "boundedFileText: rejects directories");
 
             // CodexHome uses CODEX_HOME when set, falls back to ~/.codex.
             Check(CliAccountSupport.CodexHome(home, new Dictionary<string, string> { ["CODEX_HOME"] = "/opt/codex" }) == "/opt/codex",
@@ -154,16 +111,16 @@ internal static class CliAccountVerification
         Check(CliAccountSupport.LoginArguments("claude")!.SequenceEqual(["claude", "auth", "login"]), "claude: login argv");
         Check(CliAccountSupport.LoginArguments("claude", CliLoginOption.Console)!.SequenceEqual(["claude", "auth", "login", "--console"]), "claude: console argv");
         Check(CliAccountSupport.LoginArguments("codex")!.SequenceEqual(["codex", "login"]), "codex: login argv");
-        Check(CliAccountSupport.LoginArguments("gemini")!.SequenceEqual(["gemini"]), "gemini: login argv");
+        Check(CliAccountSupport.LoginArguments("gemini")!.SequenceEqual(["agy"]), "antigravity: login argv is agy itself");
         Check(CliAccountSupport.LoginArguments("other") == null, "unknown: no login argv");
 
         // Status argv.
         Check(CliAccountSupport.StatusArguments("claude")!.SequenceEqual(["claude", "auth", "status", "--json"]), "claude: status argv");
-        Check(CliAccountSupport.StatusArguments("gemini") == null, "gemini: no status argv");
+        Check(CliAccountSupport.StatusArguments("gemini")!.SequenceEqual(["agy", "models"]), "antigravity: the model list stands in for a status");
 
         // Logout argv.
         Check(CliAccountSupport.LogoutArguments("codex")!.SequenceEqual(["codex", "logout"]), "codex: logout argv");
-        Check(CliAccountSupport.LogoutArguments("gemini") == null, "gemini: no logout argv");
+        Check(CliAccountSupport.LogoutArguments("gemini") == null, "antigravity: no logout argv");
 
         // The external sign-in terminal carries the CLI's own argv as a separate
         // argument list — never a command line composed from text.
@@ -185,23 +142,19 @@ internal static class CliAccountVerification
         return Task.CompletedTask;
     }
 
-    // Coordinator uses the runner for Claude/Codex and skips it for Gemini.
+    // Coordinator uses the runner for every CLI: Antigravity's status is its model list, and it has no logout.
     internal static async Task CoordinatorReadsStatusesAndCallsLogout()
     {
         var home = Verification.Temp();
         try
         {
-            // Set up a minimal Gemini home so GeminiStatus returns signed-out.
-            var dot = Path.Combine(home, ".gemini");
-            Directory.CreateDirectory(dot);
-
             // Fake PATH pointing to our test dir so all CLI binaries are "found".
             var binDir = Path.Combine(home, "bin");
             Directory.CreateDirectory(binDir);
             string Bin(string name) => Path.Combine(binDir, OperatingSystem.IsWindows() ? name + ".exe" : name);
             File.WriteAllText(Bin("claude"), "");
             File.WriteAllText(Bin("codex"), "");
-            File.WriteAllText(Bin("gemini"), "");
+            File.WriteAllText(Bin("agy"), "");
 
             var calls = new List<(string Executable, IReadOnlyList<string> Arguments)>();
             var responses = new Dictionary<string, CliRunResult>
@@ -221,6 +174,7 @@ internal static class CliAccountVerification
                 if (argv.Contains("login status")) return responses["codex"];
                 if (argv.Contains("auth logout")) return responses["claude-logout"];
                 if (call.Arguments.Count == 1 && call.Arguments[0] == "logout") return responses["codex-logout"];
+                if (call.Arguments.SequenceEqual(["models"])) return new(1, "", "Error: authentication required. Run 'agy' to log in, then retry.\n", false);
                 return new(0, "", "", false);
             });
 
@@ -231,14 +185,14 @@ internal static class CliAccountVerification
             };
             var coordinator = new CliAccountsCoordinator(fakeRunner, env, home);
 
-            // Refresh all providers (gemini is file-based, no runner call expected for it).
+            // Refresh all providers.
             await coordinator.RefreshAsync(["claude", "codex", "gemini"]);
 
             Check(coordinator.Statuses["claude"].LoggedIn == true, "coordinator: claude logged in");
             Check(coordinator.Statuses["claude"].Account == "me@example.com", "coordinator: claude account");
             Check(coordinator.Statuses["codex"].LoggedIn == true, "coordinator: codex logged in");
-            // Gemini has no oauth_creds.json → signed out (file-based, no runner call).
-            Check(coordinator.Statuses["gemini"].LoggedIn == false, "coordinator: gemini signed out");
+            // agy models failed with agy's own sign-in words → signed out.
+            Check(coordinator.Statuses["gemini"].LoggedIn == false && calls.Any(c => c.Arguments.SequenceEqual(["models"]) && Path.GetFileNameWithoutExtension(c.Executable) == "agy"), "coordinator: antigravity signed out, read from agy models");
 
             // Runner was called for claude and codex only.
             var runnerProviders = calls.Select(c => c.Arguments.FirstOrDefault() ?? "").ToHashSet();
@@ -251,13 +205,10 @@ internal static class CliAccountVerification
             Check(calls.Count > callsBefore, "coordinator: logout called runner");
             Check(calls.Skip(callsBefore).Any(c => c.Arguments.Contains("logout")), "coordinator: logout used logout argv");
 
-            // Gemini logout changes files (no runner).
-            File.WriteAllText(Path.Combine(dot, "oauth_creds.json"), """{"access_token":"y"}""");
-            File.WriteAllText(Path.Combine(dot, "google_accounts.json"), """{"active":"u@example.com","old":[]}""");
-            var callsBeforeGemini = calls.Count;
-            await coordinator.LogoutAsync("gemini");
-            Check(calls.Count == callsBeforeGemini, "coordinator: gemini logout does not use runner");
-            Check(!File.Exists(Path.Combine(dot, "oauth_creds.json")), "coordinator: gemini oauth_creds.json removed");
+            // Antigravity has no logout: only its status is read again, unchanged.
+            var callsBeforeAntigravity = calls.Count;
+            var unchanged = await coordinator.LogoutAsync("gemini");
+            Check(calls.Skip(callsBeforeAntigravity).All(c => c.Arguments.SequenceEqual(["models"])) && unchanged.LoggedIn == false && !unchanged.CanSignOut, "coordinator: antigravity logout runs no logout command");
         }
         finally { try { Directory.Delete(home, true); } catch { } }
     }
@@ -276,7 +227,7 @@ internal static class CliAccountVerification
         var summaries = fixtures.Select(s => s.Summary).ToList();
         Check(summaries.Any(s => s.Contains("me@example.com")), "smoke: signed-in summary present");
         Check(summaries.Contains(CliAccountStrings.SummarySignedOut), "smoke: signed-out summary present");
-        Check(summaries.Any(s => s == CliAccountStrings.DetailGeminiNotInstalled), "smoke: not-installed detail present");
+        Check(summaries.Any(s => s == fixtures[2].Detail && s.Contains("Antigravity", StringComparison.Ordinal)), "smoke: not-installed detail present");
 
         // RunAsync verifies the rendered summaries and drives the confirmation flow.
         var logoutTriggered = "";

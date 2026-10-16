@@ -108,17 +108,26 @@ public sealed partial class DelegationCoordinator
     /// The run <paramref name="runId"/> in the child <paramref name="id"/>'s pane ended. The first rule that applies records it:
     /// 1. Quitting the app killed it: the child is interrupted, with no notice.
     /// 2. REPORT.md holds text that differs from the current revision's: the next revision is recorded at the head the child has
-    ///    checked out, with a copy of the report, and the parent gets one reported notice.
+    ///    checked out, with a copy of the report, and the parent gets one reported notice. A child of an agent other than Claude
+    ///    has what it left in its worktree committed by the app first (<see cref="ChildAutoCommit"/>), and only when its run
+    ///    finished normally: after a stop or an error its report counts as not new yet. When the commit finds an unresolved
+    ///    conflict or git fails, nothing is committed, the child's pane says why and its report counts as not new yet, so the
+    ///    next run's end tries again. New files the commit left out are named in the pane.
     /// 3. Otherwise the child has ended, and when the run was the one its parent awaits (delegate's first run, or the run a
     ///    follow-up went to) the parent gets one ended_without_report notice.
+    /// A child the human started (<see cref="ChildRecord.StartedByHuman"/>) is recorded the same way but never sends its parent a notice.
     /// Only the run going now is recorded, or the child's first run, whose start the host may not have reported yet. A second
     /// report of the same end, or the end of any other run, changes nothing. The notice sent, if any, as it was made: delivery
-    /// then offers it to the parent's pane.
+    /// then offers it to the parent's pane. Once it is recorded, the child is no longer marked ending (<see cref="EndingRuns"/>),
+    /// and what waited for it is offered.
     /// </summary>
     public Task<Notice?> ChildRunEnded(string id, string runId, ChildRunEnd end) => Isolated(async () =>
     {
-        var notice = await RecordRunEnd(id, runId, end);
-        if (notice is not null) await DeliverPending();
+        Notice? notice = null; var waited = false;
+        // The end is no longer marked ending however its record went, so the child's queue and delivery are never held for ever.
+        try { notice = await RecordRunEnd(id, runId, end); }
+        finally { waited = EndingRuns.Finish(id); }
+        if (notice is not null || waited) await DeliverPending();
         return notice;
     });
 
@@ -128,13 +137,20 @@ public sealed partial class DelegationCoordinator
         try
         {
             if (File.Children.Find(record => record.Id == id) is not { } found || !MayEnd(found, runId)) return null;
-            ChildReportFile? report = null; string? head = null;
+            ChildReportFile? report = null; string? head = null; var committed = ChildAutoCommit.Result.Of(ChildAutoCommit.Outcome.Nothing);
             if (end != ChildRunEnd.Quit)
             {
                 var path = ChildWorktree.ReportFileIn(found.WorktreePath);
                 report = await Task.Run(() => ChildReportFile.Read(path));
-                // A report whose head git cannot read counts as no new report; its change is still there for the next run's end.
-                if (report is not null && report.Digest != found.ReportDigest) head = await ChildMerge.Head(found.WorktreePath);
+                if (report is not null && report.Digest != found.ReportDigest)
+                {
+                    if (found.Agent != "claude")
+                        committed = end == ChildRunEnd.Finished
+                            ? await ChildAutoCommit.Run(found.WorktreePath, id, found.ReportRevision + 1, found.Agent)
+                            : ChildAutoCommit.Result.Of(ChildAutoCommit.Outcome.AfterNormalFinish);
+                    // A report whose head git cannot read counts as no new report; its change is still there for the next run's end.
+                    if (committed.Outcome is ChildAutoCommit.Outcome.Nothing or ChildAutoCommit.Outcome.Committed) head = await ChildMerge.Head(found.WorktreePath);
+                }
             }
             var context = await PruneContext();
             // Nothing below suspends until the end is saved, so the same end reported twice finds it recorded.
@@ -149,16 +165,28 @@ public sealed partial class DelegationCoordinator
             {
                 child = reported with { ReportDigest = report.Digest };
                 next = next.SettingCopy(DelegationCopy.Of(id, DelegationCopyKind.Report, child.ReportRevision, report.Start, report.TotalBytes));
-                notice = new(Wire.Id(), id, child.ReportRevision, NoticeKind.Reported, DeliveryLane.Pending);
+                if (child.NotifiesParent) notice = new(Wire.Id(), id, child.ReportRevision, NoticeKind.Reported, DeliveryLane.Pending);
             }
             else
             {
                 child = child.Applied(ChildStateEvent.EndWithoutReport);
-                if (child.AwaitedRunId == runId) notice = new(Wire.Id(), id, child.ReportRevision, NoticeKind.EndedWithoutReport, DeliveryLane.Pending);
+                if (child.AwaitedRunId == runId && child.NotifiesParent) notice = new(Wire.Id(), id, child.ReportRevision, NoticeKind.EndedWithoutReport, DeliveryLane.Pending);
             }
             next = next.SettingChild(index, child);
             if (notice is not null) next = next with { Notices = next.Notices.Add(notice) };
             SaveOrKeep(next, context);
+            switch (committed.Outcome)
+            {
+                case ChildAutoCommit.Outcome.Unmerged: await Host(() => host.Note(Locale.Get("delegation.autoCommit.unmerged"), id)); break;
+                case ChildAutoCommit.Outcome.Failed: await Host(() => host.Note(Locale.Get("delegation.autoCommit.failed", new Dictionary<string, string> { ["error"] = committed.Why ?? "" }), id)); break;
+                // A stop or an error: nothing to say, the next normal finish commits.
+                default: break;
+            }
+            if (committed.LeftOut.Count > 0)
+            {
+                var shown = string.Join(", ", committed.LeftOut.Take(10)) + (committed.LeftOut.Count > 10 ? ", …" : "");
+                await Host(() => host.Note(Locale.Get("delegation.autoCommit.leftOut", new Dictionary<string, string> { ["count"] = committed.LeftOut.Count.ToString(System.Globalization.CultureInfo.InvariantCulture), ["paths"] = shown }), id));
+            }
             return notice;
         }
         finally { runTurns.Pass(); }
@@ -191,7 +219,7 @@ public sealed partial class DelegationCoordinator
             var next = File; var index = next.Children.FindIndex(record => record.Id == id);
             if (index < 0 || next.Children[index].AwaitedRunId == runId) return null;
             var child = next.Children[index]; Notice? notice = null;
-            if (child.RunId == runId && child.State == ChildState.Ended)
+            if (child.RunId == runId && child.State == ChildState.Ended && child.NotifiesParent)
             {
                 notice = new(Wire.Id(), id, child.ReportRevision, NoticeKind.EndedWithoutReport, DeliveryLane.Pending);
                 next = next with { Notices = next.Notices.Add(notice) };

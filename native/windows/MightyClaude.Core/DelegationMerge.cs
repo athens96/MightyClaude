@@ -44,6 +44,14 @@ public static class ChildMerge
     public const double CardTimeout = 120;
 
     /// <summary>
+    /// The request that asks a reported <paramref name="child"/> whose card merge was refused with <c>merge_conflict</c> to bring
+    /// its parent branch in, resolve the conflicts on its own branch and report again, so the human's next merge from its card
+    /// goes through (M/DelegationMerge.swift conflictPrompt).
+    /// </summary>
+    public static string ConflictPrompt(ChildRecord child) =>
+        $"[Mighty Claude] Merging your branch {child.Branch} into {child.ParentBranch} from the app was refused: the two conflict. In this worktree, bring {child.ParentBranch} into your branch with `git merge {child.ParentBranch}`, resolve every conflict so that the changes on both sides are kept (ask when a choice is unclear), run the checks that apply, and commit the merge on {child.Branch}, leaving no uncommitted changes to tracked files. Then add a short section to {ChildWorktree.ReportFileIn(child.WorktreePath)} saying what conflicted and how you resolved it. The person who sent this merges your branch from the app again. Do not push, rebase or switch branches.";
+
+    /// <summary>
     /// The parent's merge tool, fast-forward only. <paramref name="parentCheckout"/> is the parent pane's folder. The first rule
     /// that applies answers, and every refusal comes before any git write:
     /// 1. <c>not_reported</c>: the child is not reported (a new run, an end without a report or a merge clears it).

@@ -41,16 +41,17 @@ internal static class ActivityUsageVerification
         Check(activity.Any(a => a.Kind == "command" && a.Output == "clean"), "Codex command content missing");
         var text = new List<string>(); usage.Clear(); activity.Clear();
         var gemini = new OutputParser("gemini", (kind, message) => { if (kind == "assistant") text.Add(message); }, _ => { }, activity.Add, usage.Add);
-        gemini.Parse("""{"type":"init","session_id":"gemini-session","model":"gemini-3-flash-preview"}""");
+        gemini.Parse("""{"event":"init","conversation_id":"11111111-2222-4333-8444-555555555555","init":{"model":"gemini-3.8-flash-low"}}""");
         var markdown = "```swift\n" + new string('x', 20000) + "\n```\n\n|a|b|\n|-|-|\n|1|2|";
-        foreach (var chunk in markdown.Chunk(3000)) gemini.Parse(JsonSerializer.Serialize(new { type = "message", role = "assistant", delta = true, content = new string(chunk) }));
-        gemini.Parse("""{"type":"tool_use","tool_id":"g-tool","tool_name":"read_file","parameters":{"file_path":"file.swift"}}""");
-        gemini.Parse("""{"type":"tool_result","tool_id":"g-tool","status":"success","output":"content"}""");
-        gemini.Parse("""{"type":"result","stats":{"input_tokens":1400,"output_tokens":90,"total_tokens":1600,"cached":200,"models":{"gemini-3-flash-preview":{}}}}""");
+        foreach (var chunk in markdown.Chunk(3000)) gemini.Parse(JsonSerializer.Serialize(new Dictionary<string, object> { ["event"] = "step_update", ["step_update"] = new Dictionary<string, object> { ["step_index"] = 1, ["state"] = "ACTIVE", ["step_type"] = "agent_response", ["text_delta"] = new string(chunk) } }));
+        gemini.Parse("""{"event":"step_update","step_update":{"step_index":1,"state":"DONE","step_type":"agent_response"}}""");
+        gemini.Parse("""{"event":"step_update","step_update":{"step_index":2,"state":"ACTIVE","step_type":"tool","tool_info":{"name":"view_file","parameters":{"AbsolutePath":"file.swift"}}}}""");
+        gemini.Parse("""{"event":"step_update","step_update":{"step_index":2,"state":"DONE","step_type":"tool","tool_info":{"name":"view_file","parameters":{"AbsolutePath":"file.swift"},"output":"content"}}}""");
+        gemini.Parse("""{"event":"result","result":{"status":"SUCCESS","response":"repeated","usage":{"input_tokens":1400,"output_tokens":90,"cache_read_tokens":200,"total_tokens":1490}}}""");
         Check(text.Single() == markdown, "Long Markdown must remain one logical message across delta reads");
-        Check(usage.Last().TotalTokens == 1600 && usage.Last().ContextUsedTokens is null && usage.Last().ContextWindowTokens is null && usage.Last().TokenScope == "session", "Gemini totals are not context usage");
-        Check(activity.Any(a => a.ToolName == "read_file" && a.Output == "content" && a.State == "completed"), "Gemini tool lifecycle missing");
-        gemini.Parse("""{"type":"error","severity":"error","message":"failed"}"""); gemini.Parse("""{"type":"error","severity":"warning","message":"warning"}"""); Check(gemini.Failed, "Warnings must not clear a fatal error");
+        Check(usage.Last().TotalTokens == 1690 && usage.Last().InputTokens == 1600 && usage.Last().ContextUsedTokens is null && usage.Last().ContextWindowTokens is null && usage.Last().TokenScope == "session", "Antigravity totals are not context usage, and input includes cached input");
+        Check(activity.Any(a => a.ToolName == "view_file" && a.Summary == "file.swift" && a.Output == "content" && a.State == "completed"), "Antigravity tool lifecycle missing");
+        gemini.Parse("""{"event":"result","result":{"status":"ERROR","error":{"message":"failed"}}}"""); gemini.Parse("""{"event":"result","result":{"status":"WAITING"}}"""); Check(gemini.Failed, "A later notice must not clear a fatal error");
         return Task.CompletedTask;
     }
     internal static Task ClaudeContext()

@@ -41,13 +41,13 @@ public sealed partial class MainWindow
     }
 
     /// <summary>
-    /// "Add pane" for an agent: Claude and Codex first look for a session this
+    /// "Add pane" for an agent: Claude, Codex and Antigravity first look for a session this
     /// folder recorded (the head of each record only, nested runs hidden, open
     /// panes' sessions left out). With one, the user picks Start new or Resume…;
     /// without one the pane is made at once. A look-up that takes longer than
     /// <see cref="AddPaneMenu.QuietLookUp"/> shows the choice first, in a checking
     /// state where Start new already works (M/AppStore+ResumeSession.swift:36-40).
-    /// Gemini never asks, and Ctrl+N (AddPaneFromShortcut) never comes here. It
+    /// Ctrl+N (AddPaneFromShortcut) never comes here. It
     /// runs under Act: a menu click awaits it from an async void handler, so no
     /// exception may escape.
     /// </summary>

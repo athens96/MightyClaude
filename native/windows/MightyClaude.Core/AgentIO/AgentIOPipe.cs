@@ -127,7 +127,7 @@ public sealed class AgentIOPipe : IAsyncDisposable
                 delegationCalls[token] = delegationCalls.GetValueOrDefault(token) + 1; counted = token;
             }
             deadline.CancelAfter(TimeSpan.FromSeconds(DelegationSeconds));
-            return await handler.Handle(request, new(binding.PaneId, binding.Kind, binding.Provider, binding.Delegation)).WaitAsync(deadline.Token);
+            return await handler.Handle(request, new(binding.PaneId, binding.Kind, binding.Provider, binding.Delegation, binding.PermissionMode)).WaitAsync(deadline.Token);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException && !shutdown.IsCancellationRequested) { return DelegationResponse.Failure(NoAnswerMessage); }
         finally

@@ -32,7 +32,7 @@ Windows 10(버전 2004) 이상 또는 Windows 11에서 동작합니다. 필요�
 | {{kbd:⌘K}} | {{kbd:Ctrl+K}} | {{ui:menu.searchWorkspaces}} |
 | {{kbd:⌃⌘S}} | {{kbd:Ctrl+B}} | {{ui:sidebar.collapse}} / {{ui:sidebar.expand}} |
 | {{kbd:⌘,}} | {{kbd:Ctrl+,}} | {{ui:menu.settings}} |
-| {{kbd:⌘Enter}} | {{kbd:Ctrl+Enter}} | 실행 중인 Claude에 바로 전달 |
+| {{kbd:⌘Enter}} | {{kbd:Ctrl+Enter}} | 새 worktree에서 바로 실행, 또는 실행 중인 Claude에 바로 전달 |
 | {{kbd:⌃⌥⌘K}} | {{kbd:Ctrl+Alt+Esc}} | 휴대폰의 원격 화면 세션을 모두 멈춤([화면 보기](phone.md#screen)) |
 
 Windows에는 메뉴 막대가 없습니다. 같은 기능은 사이드바와 {{ui:workspace.addPane}} 메뉴에 있습니다.
@@ -41,7 +41,7 @@ Windows에는 메뉴 막대가 없습니다. 같은 기능은 사이드바와 {{
 | 기능 | Windows에서는 |
 |---|---|
 | CLI 로그인 | 앱 안의 터미널이 아니라 별도의 Windows 터미널 창에서 진행됩니다. 로그인이 끝나면 Mac처럼 실패한 요청을 저절로 다시 보냅니다. |
-| Google 에이전트 | 아직 Gemini CLI(`gemini`)를 씁니다. Mac은 Antigravity CLI를 씁니다([Mac의 Antigravity](agent-pane.md#antigravity)). |
+| Antigravity | PowerShell 설치 프로그램으로 `%LOCALAPPDATA%\agy\bin`에 설치하고, 기록은 `%USERPROFILE%\.gemini\antigravity-cli`에 남습니다([Antigravity](agent-pane.md#antigravity)). |
 | 터미널 창 | Windows PowerShell을 씁니다. |
 | 브라우저 창 | Microsoft Edge WebView2로 엽니다. Mac처럼 {{ui:settings.display.browserToggle}}를 켜고 앱을 다시 열어야 합니다. |
 | 완료 알림 | {{ui:windows.notifications.toggleLabel}}으로 켭니다. |
@@ -49,7 +49,8 @@ Windows에는 메뉴 막대가 없습니다. 같은 기능은 사이드바와 {{
 | 펫 말풍선 | 승인과 질문 말풍선에 기호 단추가 하나 더 있습니다. 승인에서는 요청 전체를 보는 창을, 질문에서는 답을 직접 써서 보내는 창을 엽니다. |
 | 언어 | 바꾼 언어는 앱을 다시 열면 적용됩니다. |
 | 파일 위치 | {{ui:menu.showInFinder}} 대신 {{ui:menu.showInExplorer}}가 있습니다. |
-| 마이티 오케스트레이션 | 레지스트리 값으로 켜고 끕니다([켜고 끄기](delegation.md#enable)). {{kbd:⌘Enter}}로 자식 창을 직접 띄우는 기능은 없고, Claude에게 나눠 맡기기만 됩니다. worktree는 `%USERPROFILE%\.mightyclaude\worktrees`에 생기고, 안에 정션이나 심볼릭 링크가 있으면 자동으로 정리하지 않습니다([창 닫기와 정리](delegation.md#close)). |
+| 마이티 오케스트레이션 | 기본으로 켜져 있고 설정의 스위치로 끕니다. 이 스위치는 레지스트리 값이기도 합니다([켜고 끄기](delegation.md#enable)). worktree는 `%USERPROFILE%\.mightyclaude\worktrees`에 생기고, 안에 정션이나 심볼릭 링크가 있으면 자동으로 정리하지 않습니다([창 닫기와 정리](delegation.md#close)). |
+| 글자 크기와 글꼴 | 아직 Windows 앱에는 없습니다. 대신 Windows 설정 › 접근성 › 텍스트 크기로 앱의 글자를 키울 수 있습니다. |
 
 > [!note]
 > Windows 앱의 일부 기능은 아직 실제 기기에서 충분히 확인되지 않았습니다. 이상한 점이 있으면 알려 주세요.

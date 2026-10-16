@@ -40,6 +40,7 @@ internal static class StringsVerification
         ("UserCommandSource", "slash.source.userCommand"),
         ("ProjectCommandSource", "slash.source.projectCommand"),
         ("CodexSkillSource", "slash.source.codexSkill"),
+        ("AntigravitySkillSource", "slash.source.antigravitySkill"),
         ("PaletteMove", "slash.palette.move"),
         ("PaletteSelect", "slash.palette.select"),
         ("PaletteDismiss", "slash.palette.dismiss"),
@@ -299,7 +300,7 @@ internal static class StringsVerification
         ["DetailAuthentication"] = "CLI 로그인을 다시 확인하세요. 계정 한도 조회 권한이 없거나 로그인이 만료되었습니다.",
         ["DetailRateLimited"] = "조회가 제한되었습니다. 잠시 후 자동으로 다시 확인합니다.",
         ["DetailLastKnownSuffix"] = " 마지막으로 확인한 값입니다.",
-        ["DetailGeminiUnavailable"] = "Gemini CLI는 이 연결 방식에서 계정 한도를 제공하지 않습니다. CLI의 /stats에서 확인하세요.",
+        ["DetailAntigravityUnavailable"] = "Antigravity CLI는 이 연결 방식에서 계정 한도를 제공하지 않습니다. 터미널의 agy에서 /usage로 확인하세요.",
         ["DetailUnsupportedProvider"] = "지원하지 않는 계정입니다.",
         ["DetailCodexNotInstalled"] = "Codex CLI를 설치하고 로그인하세요.",
         ["DetailCodexNeedsChatGPT"] = "ChatGPT로 Codex CLI에 로그인하면 계정 한도를 확인할 수 있습니다.",
@@ -463,17 +464,11 @@ internal static class StringsVerification
         ("SummarySignedIn", "settings.cliAccounts.summarySignedIn"),
         ("DetailClaudeParseError", "settings.cliAccounts.detailClaudeParseError"),
         ("DetailCodexParseError", "settings.cliAccounts.detailCodexParseError"),
-        ("DetailGeminiNotInstalled", "settings.cliAccounts.detailGeminiNotInstalled"),
         ("DetailNotInstalledTemplate", "settings.cliAccounts.detailNotInstalledTemplate"),
         ("DetailUnsupportedProvider", "settings.cliAccounts.detailUnsupportedProvider"),
-        ("DetailGeminiApiKeyPresent", "settings.cliAccounts.detailGeminiApiKeyPresent"),
-        ("DetailGeminiApiKeyAbsent", "settings.cliAccounts.detailGeminiApiKeyAbsent"),
-        ("DetailVertexPresent", "settings.cliAccounts.detailVertexPresent"),
-        ("DetailVertexAbsent", "settings.cliAccounts.detailVertexAbsent"),
         ("DetailClaudeTimeout", "settings.cliAccounts.detailClaudeTimeout"),
         ("DetailClaudeUnknown", "settings.cliAccounts.detailClaudeUnknown"),
-        ("DetailRunFailed", "settings.cliAccounts.detailRunFailed"),
-        ("DetailGeminiLogoutFailedTemplate", "settings.cliAccounts.detailGeminiLogoutFailedTemplate")
+        ("DetailRunFailed", "settings.cliAccounts.detailRunFailed")
     ));
 
     // The app update section reads locales/ko.json; the keys below are the ones

@@ -9,25 +9,37 @@ namespace MightyClaude.Core;
 public static class DelegationPanes
 {
     /// <summary>
-    /// A new Claude pane for <paramref name="pane"/> in the workspace <paramref name="workspaceId"/>. Its mode is the starting
-    /// mode the parent asked for, written here once and never copied from the last-used pane; it is linked to its parent and
-    /// works in its worktree folder.
+    /// A new agent pane for <paramref name="pane"/> in the workspace <paramref name="workspaceId"/>, running
+    /// <c>pane.Provider</c> (its parent's agent). Its mode is the starting mode the parent asked for, written here once and never
+    /// copied from the last-used pane; it is linked to its parent and works in its worktree folder. Every child of a
+    /// <paramref name="parent"/> running the same agent shows its requests the way the parent does: basic or Mighty, and in
+    /// Mighty the diagram, timeline or pipeline. A child the human started also takes the parent's model and effort, and a Claude
+    /// one its Mighty style; any other runs its agent's default (plain Mighty for Claude).
     /// </summary>
-    public static RunSession ChildSession(DelegationChildPane pane, string workspaceId, string title) =>
-        new() { Id = pane.SessionId, WorkspaceId = workspaceId, Title = title, Kind = "claude", Provider = "claude", Settings = new(PermissionMode: pane.Mode), ParentSessionId = pane.ParentSessionId, WorkingFolder = pane.Folder };
+    public static RunSession ChildSession(DelegationChildPane pane, string workspaceId, string title, RunSession? parent = null)
+    {
+        var session = new RunSession { Id = pane.SessionId, WorkspaceId = workspaceId, Title = title, Kind = "claude", Provider = pane.Provider, Settings = new(PermissionMode: pane.Mode), ParentSessionId = pane.ParentSessionId, WorkingFolder = pane.Folder };
+        if (parent is null || parent.Provider != pane.Provider || !DelegationProviders.IsAgentPane(parent.Kind, parent.Provider)) return session;
+        session = session with { AgentViewMode = parent.AgentViewMode, GraphViewMode = parent.GraphViewMode };
+        if (!pane.StartedByHuman) return session;
+        session = session with { Model = parent.Model, Settings = session.Settings with { Effort = parent.Settings.Effort } };
+        // The same approved bytes; its state starts over at the child's own first request.
+        return pane.Provider == "claude" ? session with { MightyStyle = parent.MightyStyle, MightyStyleHash = parent.MightyStyleHash } : session;
+    }
 
     /// <summary>
-    /// <paramref name="state"/> with the child's pane as a tab beside its parent (M/AppStore+Delegation.swift:320-347): its title is
-    /// its task <paramref name="task"/>, kept as the pane's name, and its parent's tab group keeps showing what it showed. The
-    /// layout is saved as it then is, and the workspace leaves a preset layout mode, as when a human adds a tab; focus stays
-    /// focus. null, changing nothing, when no pane can be made: the app is at its pane cap, the id is taken, or the parent pane
+    /// <paramref name="state"/> with the child's pane as a tab beside its parent (M/AppStore+Delegation.swift createPane): its
+    /// title is its task <paramref name="task"/>, kept as the pane's name, and its parent's tab group keeps showing what it
+    /// showed, except that a child the human started shows at once, selected and active, while the human is still on its parent
+    /// with nothing typed there. The layout is saved as it then is, and the workspace leaves a preset layout mode, as when a
+    /// human adds a tab; focus stays focus. null, changing nothing, when no pane can be made: the app is at its pane cap, the id is taken, or the parent pane
     /// or its workspace is gone.
     /// </summary>
     public static AppSnapshot? AddingChild(AppSnapshot state, DelegationChildPane pane, string? task)
     {
         if (!PaneLayout.HasRoom(state) || state.Sessions.Any(session => session.Id == pane.SessionId) || state.Sessions.FirstOrDefault(session => session.Id == pane.ParentSessionId) is not { } parent
             || !state.Workspaces.Any(workspace => workspace.Id == parent.WorkspaceId)) return null;
-        var child = ChildSession(pane, parent.WorkspaceId, PaneTitle.Shortened(task) ?? ProviderCatalog.Name("claude")) with { TitleMode = PaneTitle.Fixed };
+        var child = ChildSession(pane, parent.WorkspaceId, PaneTitle.Shortened(task) ?? ProviderCatalog.Name(pane.Provider), parent) with { TitleMode = PaneTitle.Fixed };
         var open = state.Sessions.Where(session => session.WorkspaceId == parent.WorkspaceId).Select(session => session.Id).ToList();
         var mode = state.PaneLayoutModes?.GetValueOrDefault(parent.WorkspaceId) ?? state.Layout;
         var active = state.ActiveWorkspaceId == parent.WorkspaceId ? state.ActiveSessionId : state.PaneLayoutActiveSessionIds?.GetValueOrDefault(parent.WorkspaceId);
@@ -35,9 +47,11 @@ public static class DelegationPanes
         if (PaneLayout.Groups(root).FirstOrDefault(tabs => tabs.SessionIds.Contains(parent.Id)) is not { } group) return null;
         // A tab moved into a group is selected there; the group goes back to the tab it showed.
         var next = PaneLayout.Move(PaneLayout.Normalize(root, open.Append(child.Id))!, child.Id, group.Id, index: group.SessionIds.IndexOf(parent.Id) + 1);
-        next = PaneLayout.Select(next, group.SelectedSessionId ?? parent.Id);
+        var shows = pane.StartedByHuman && state.ActiveSessionId == parent.Id && string.IsNullOrEmpty(parent.Draft);
+        next = PaneLayout.Select(next, shows ? child.Id : group.SelectedSessionId ?? parent.Id);
         return state with
         {
+            ActiveSessionId = shows ? child.Id : state.ActiveSessionId,
             Sessions = [.. state.Sessions, child],
             PaneLayouts = new Dictionary<string, PaneLayoutNode>(state.PaneLayouts ?? []) { [parent.WorkspaceId] = next },
             PaneLayoutModes = new Dictionary<string, string>(state.PaneLayoutModes ?? []) { [parent.WorkspaceId] = mode == "focus" ? mode : next.Kind == "split" ? "custom" : "tabs" },

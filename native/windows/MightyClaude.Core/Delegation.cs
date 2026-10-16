@@ -7,28 +7,87 @@ using Microsoft.Win32;
 namespace MightyClaude.Core;
 
 /// <summary>
-/// The hidden switch for parent → child delegation between Claude panes (M/Delegation.swift:3-22). It has no settings UI and is
-/// off by default. Where the Mac reads a defaults key, Windows reads the registry value <c>delegation.enabled</c> (REG_DWORD,
-/// non-zero = on) under <c>HKEY_CURRENT_USER\Software\MightyClaudeNative</c>. While it is on, each new run in a Claude pane also
-/// gets the delegation MCP server beside mighty-terminal; turning it off only detaches the server.
+/// The switch for parent → child delegation between agent panes, Mighty Orchestration (M/Delegation.swift:3-21). It is on unless
+/// the human turned it off, in Settings › General or with its registry value: where the Mac reads a defaults key, Windows reads
+/// <c>delegation.enabled</c> (REG_DWORD, zero = off) under <c>HKEY_CURRENT_USER\Software\MightyClaudeNative</c>. While it is on, each
+/// new run in a Claude pane, or a Codex pane in acceptEdits or fullAccess, also gets the delegation MCP server beside
+/// mighty-terminal, and the composer's second send (Ctrl+Enter) on a busy Claude, Codex or Antigravity pane runs the text in a new
+/// child worktree (<see cref="ComposerSecondSend"/>); which panes take part is <see cref="DelegationProviders"/>'s. While it is off,
+/// no run gets the server and the second send steers or queues as before. Turning it off only detaches the server: existing
+/// children keep working.
 /// </summary>
 public static class DelegationSwitch
 {
     public const string RegistryKey = @"Software\MightyClaudeNative", ValueName = "delegation.enabled";
 
-    /// <summary>Read at each run start and at each delegation call. A missing value is off.</summary>
+    /// <summary>How long a reading of the registry value stands: the composer asks on every refresh, the registry is read at most this often.</summary>
+    private static readonly TimeSpan ReadFor = TimeSpan.FromSeconds(2);
+    private static readonly object gate = new();
+    private static (bool On, long At)? last;
+
+    /// <summary>Read at each run start, at each delegation call and by the composer, from a reading at most 2 s old. A missing value is on.</summary>
     public static bool IsOn()
     {
         if (!OperatingSystem.IsWindows()) return false;
-        try { using var key = Registry.CurrentUser.OpenSubKey(RegistryKey); return IsOn(key?.GetValue(ValueName)); }
-        catch (Exception ex) when (ex is SecurityException or IOException or UnauthorizedAccessException) { return false; }
+        var now = System.Diagnostics.Stopwatch.GetTimestamp();
+        lock (gate) if (last is { } reading && System.Diagnostics.Stopwatch.GetElapsedTime(reading.At, now) < ReadFor) return reading.On;
+        bool on;
+        try { using var key = Registry.CurrentUser.OpenSubKey(RegistryKey); on = IsOn(key?.GetValue(ValueName)); }
+        catch (Exception ex) when (ex is SecurityException or IOException or UnauthorizedAccessException) { on = true; }
+        lock (gate) last = (on, now);
+        return on;
     }
 
-    /// <summary>Only a REG_DWORD that is not zero is on.</summary>
-    public static bool IsOn(object? value) => value is int number && number != 0;
+    /// <summary>A missing value is on. Zero as a REG_DWORD or REG_QWORD, and <c>0</c> or <c>false</c> as a string, are off; anything else is on.</summary>
+    public static bool IsOn(object? value) => value switch
+    {
+        int number => number != 0,
+        long number => number != 0,
+        string text => text.Trim() is var word && word != "0" && !word.Equals("false", StringComparison.OrdinalIgnoreCase),
+        _ => true,
+    };
 
-    /// <summary>A Claude pane: an agent pane (kind claude) running the Claude CLI. Only these get the delegation server or may call it.</summary>
+    /// <summary>Settings › General's switch: writes the value (1 on, 0 off), and reads take it at once. False when the registry refused it.</summary>
+    public static bool Set(bool on)
+    {
+        if (!OperatingSystem.IsWindows()) return false;
+        try { using var key = Registry.CurrentUser.CreateSubKey(RegistryKey); key.SetValue(ValueName, on ? 1 : 0, RegistryValueKind.DWord); }
+        catch (Exception ex) when (ex is SecurityException or IOException or UnauthorizedAccessException) { lock (gate) last = null; return false; }
+        lock (gate) last = (on, System.Diagnostics.Stopwatch.GetTimestamp());
+        return true;
+    }
+
+    /// <summary>A Claude pane: an agent pane (kind claude) running the Claude CLI.</summary>
     public static bool IsClaudePane(string kind, string provider) => kind == "claude" && provider == "claude";
+}
+
+/// <summary>
+/// What the composer's second send (Ctrl+Enter, and its round button) does with the text while the pane is busy
+/// (M/Delegation.swift:23-55). Enter always queues it as the next request; the phone's send modes do not go through this.
+/// </summary>
+public enum ComposerSecondSend
+{
+    /// <summary>A new child pane of the same agent in its own worktree, beside this one, runs the text now (<see cref="DelegationCoordinator.StartHumanChild"/>).</summary>
+    Worktree,
+    /// <summary>The text joins the running Claude turn.</summary>
+    Steer,
+    /// <summary>The text waits for the next request, as Enter does.</summary>
+    Queue,
+}
+
+public static class ComposerSecondSends
+{
+    /// <summary>
+    /// The first rule that applies: a Claude, Codex or Antigravity pane that may have children (delegation on, not a child
+    /// itself, and for Codex or Antigravity a <paramref name="mode"/> in which its child can change files) in a folder that can
+    /// host a child worktree (<see cref="ChildWorktreeCheck.CanHostWorktree"/>) opens a new worktree; any other pane whose
+    /// running turn takes text steers; every other pane queues.
+    /// </summary>
+    public static ComposerSecondSend Choose(string kind, string provider, string mode, bool isChild, bool delegationOn, bool canHostWorktree, bool steerable) =>
+        delegationOn && !isChild && canHostWorktree && DelegationProviders.CanParentByHuman(kind, provider, mode) ? ComposerSecondSend.Worktree : Fallback(steerable);
+
+    /// <summary>What a text does when its new worktree could not be made or its child could not start: it goes to the running turn when that can take it, and is otherwise the pane's next request. It is never dropped.</summary>
+    public static ComposerSecondSend Fallback(bool steerable) => steerable ? ComposerSecondSend.Steer : ComposerSecondSend.Queue;
 }
 
 /// <summary>
@@ -71,18 +130,20 @@ public enum DelegationReasonCode
     ClaudeOnly, ChildCannotDelegate, WidthCap, LowDisk, StoreFull, NotGit, UnbornBranch, DetachedHead, WiderMode, DiscardHumanOnly, NotReported, TrackedChanges,
     HeadMoved, Diverged, BranchNotCheckedOut, ChildClosed, ParentClosed, FollowUpLimit, WorktreeMissing, MergeConflict, UndoParentMoved, ParentBusy,
     WorkspaceHasChildren, HeldNotRemovable,
-    /// <summary>The Mac's: a parent whose agent's merge tool call its CLI does not gate (Codex) merges by tool only in
-    /// fullAccess, and otherwise the human merges from the child's card. Windows delegation is Claude-only, so it never
-    /// refuses with it; the name stays in the shared ontology list.</summary>
+    /// <summary>The child was started by the human from its parent's composer, not by the parent's delegate call: only the human merges it or sends it work.</summary>
+    HumanStarted,
+    /// <summary>A parent whose agent's merge tool call its CLI does not gate (Codex) merges by tool only in fullAccess, and otherwise the human merges from the child's card.</summary>
     MergeHumanOnly,
 }
 
 /// <summary>
-/// The pane a delegation call came from, as its run's pane token resolved it (M/AgentPaneMCPBinding.swift:20-35: agentPaneId,
-/// kind, provider, delegation). <paramref name="Delegation"/> says the run was started with the delegation server attached:
-/// only a Claude pane's run started while the switch was on.
+/// The pane a delegation call came from, as its run's pane token resolved it (M/AgentPaneMCPBinding.swift:20-41: agentPaneId,
+/// kind, provider, delegation, permissionMode). <paramref name="Delegation"/> says the run was started with the delegation
+/// server attached: a Claude pane's run, or a Codex run in acceptEdits or fullAccess, started while the switch was on.
+/// <paramref name="PermissionMode"/> is the mode the run started in: what a delegation call is judged by, whatever the pane's
+/// stored mode becomes meanwhile.
 /// </summary>
-public sealed record DelegationCaller(string PaneId, string Kind = "claude", string Provider = "claude", bool Delegation = false);
+public sealed record DelegationCaller(string PaneId, string Kind = "claude", string Provider = "claude", bool Delegation = false, string PermissionMode = "");
 
 /// <summary>
 /// One delegation tool call forwarded by the delegation MCP server (M/Delegation.swift:54-70). It carries no pane id: the
@@ -127,10 +188,11 @@ public interface IDelegationRequestHandler
 }
 
 /// <summary>
-/// The app's side of the delegation server with no coordinator behind it (M/Delegation.swift:120-150). Each call is answered
+/// The app's side of the delegation server with no coordinator behind it (M/Delegation.swift:160-195). Each call is answered
 /// by the first rule that applies, and none of these answers changes anything: the switch is off (the call reaches nothing);
-/// the caller is not a Claude pane (<c>claude_only</c>); the caller's run started without the delegation server (the call
-/// reaches nothing); otherwise the call goes to the delegation tool it names, and there is no tool by any other name.
+/// the caller's agent has no delegation tools (<c>claude_only</c>); the caller's run started without the delegation server (the
+/// switch was off then, or it is a Codex run in manual or onRequest: the call reaches nothing); otherwise the call goes to the
+/// delegation tool it names, and there is no tool by any other name.
 /// </summary>
 public sealed class DelegationIOHandler(Func<bool>? isSwitchOn = null) : IDelegationRequestHandler
 {
@@ -144,7 +206,7 @@ public sealed class DelegationIOHandler(Func<bool>? isSwitchOn = null) : IDelega
     public static DelegationResponse? Gate(DelegationCaller caller, bool isSwitchOn)
     {
         if (!isSwitchOn) return DelegationResponse.Failure(DetachedMessage);
-        if (!DelegationSwitch.IsClaudePane(caller.Kind, caller.Provider)) return DelegationResponse.Refusal(DelegationReasonCode.ClaudeOnly);
+        if (!DelegationProviders.CanParentByAgent(caller.Kind, caller.Provider)) return DelegationResponse.Refusal(DelegationReasonCode.ClaudeOnly);
         return caller.Delegation ? null : DelegationResponse.Failure(DetachedMessage);
     }
 

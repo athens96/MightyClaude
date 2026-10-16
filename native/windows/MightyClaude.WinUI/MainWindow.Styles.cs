@@ -658,6 +658,13 @@ public sealed partial class MainWindow
         }
         private async Task<StartRunRequest> PrepareStyleRunRequest(StartRunRequest request)
         {
+            // agy refuses a model its live list lacks, so the run starts on its default instead (M/AppStore.swift:981-988).
+            if (request.Kind == "claude" && request.Provider == "gemini" && owner.Runtime("gemini")?.ModelCatalog is { } catalog && AntigravityMigration.ModelUnavailable(request.Model, catalog))
+            {
+                var missing = request.Model;
+                await Change(p => p with { Model = "default", Logs = [.. p.Logs, new LogEntry(Wire.Id(), "system", Locale.Get("run.notice.antigravityModelReset", new Dictionary<string, string> { ["model"] = missing }), Wire.Now())] });
+                request = request with { Model = "default" };
+            }
             var pane=Session;
             if(pane.Kind!="claude"||pane.Provider!="claude"||pane.AgentViewMode!="mighty"||pane.MightyStyle is null)return request;
             var profile=owner.StateDirectory;var workspace=Workspace.Path;

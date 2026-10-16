@@ -55,10 +55,8 @@ public static class CliAccountMethod
     public const string ClaudeOther = "claude-other";
     public const string CodexChatGpt = "codex-chatgpt";
     public const string CodexApiKey = "codex-api-key";
+    /// <summary>Antigravity's one sign-in: a Google account (personal, or Business for Gemini Enterprise).</summary>
     public const string GeminiGoogle = "gemini-google";
-    public const string GeminiApiKey = "gemini-api-key";
-    public const string GeminiVertex = "gemini-vertex";
-    public const string GeminiOther = "gemini-other";
 }
 
 /// Parsing helpers that depend only on data — no I/O, no runner.
@@ -66,7 +64,7 @@ public static class CliAccountMethod
 public static class CliAccountSupport
 {
     public static string CodexApiKeyMethod => Locale.Get("windows.cli.method.apiKey");
-    /// <summary>The method label of Gemini's Google sign-in, the only Gemini method a sign-in renews.</summary>
+    /// <summary>The method label of Antigravity's Google sign-in.</summary>
     public static string GeminiGoogleMethod => Locale.Get("windows.cli.method.googleAccount");
     private const int FileSizeCap = 1_048_576;
     private const int ClaimsDataCap = 65_536;
@@ -156,119 +154,33 @@ public static class CliAccountSupport
         return new CliAccountStatus { Provider = "codex", LoggedIn = true, Method = method, MethodId = methodId, Account = account, Plan = plan };
     }
 
-    /// Gemini has no status command: derives status from its account files.
-    public static CliAccountStatus GeminiStatus(string home, IReadOnlyDictionary<string, string>? environment = null)
+    /// <summary>
+    /// Antigravity has no status command, and its credentials live in the system's credential store, so the app asks it for
+    /// its model list (<c>agy models</c>, M/CLIAccounts.swift antigravityStatus): that works only while signed in, and fails with
+    /// "authentication required" once the sign-in is gone. Anything else (no network, a timeout) stays unknown. It has no
+    /// sign-out command either.
+    /// </summary>
+    public static CliAccountStatus AntigravityStatus(int exitCode, string output, bool timedOut = false)
     {
-        var env = environment ?? new Dictionary<string, string>();
-        var directory = Path.Combine(home, ".gemini");
-
-        JsonElement ReadObject(string name)
-        {
-            var text = BoundedFileText(Path.Combine(directory, name));
-            if (text is null) return default;
-            try { return JsonDocument.Parse(text).RootElement.Clone(); } catch { return default; }
-        }
-
-        var settings = ReadObject("settings.json");
-        string? selected = null;
-        if (settings.ValueKind == JsonValueKind.Object)
-        {
-            selected = settings.TryGetProperty("security", out var sec) &&
-                       sec.TryGetProperty("auth", out var auth) &&
-                       auth.TryGetProperty("selectedType", out var st) &&
-                       st.ValueKind == JsonValueKind.String
-                ? st.GetString()
-                : settings.TryGetProperty("selectedAuthType", out var sat) && sat.ValueKind == JsonValueKind.String
-                    ? sat.GetString()
-                    : null;
-        }
-
-        var hasOAuth = File.Exists(Path.Combine(directory, "oauth_creds.json"));
-        var accounts = ReadObject("google_accounts.json");
-        string? active = null;
-        if (accounts.ValueKind == JsonValueKind.Object &&
-            accounts.TryGetProperty("active", out var activeProp) &&
-            activeProp.ValueKind == JsonValueKind.String)
-            active = Clean(activeProp.GetString()!);
-
-        return selected switch
-        {
-            "oauth-personal" or null => hasOAuth
-                ? new CliAccountStatus { Provider = "gemini", LoggedIn = true, Method = GeminiGoogleMethod, MethodId = CliAccountMethod.GeminiGoogle, Account = active }
-                : new CliAccountStatus { Provider = "gemini", LoggedIn = false },
-            "gemini-api-key" => env.TryGetValue("GEMINI_API_KEY", out var key) && key.Length > 0
-                ? new CliAccountStatus { Provider = "gemini", LoggedIn = true, Method = Locale.Get("windows.cli.method.geminiApiKey"), MethodId = CliAccountMethod.GeminiApiKey, Detail = CliAccountStrings.DetailGeminiApiKeyPresent, CanSignOut = false }
-                : new CliAccountStatus { Provider = "gemini", LoggedIn = null, Method = Locale.Get("windows.cli.method.geminiApiKey"), MethodId = CliAccountMethod.GeminiApiKey, Detail = CliAccountStrings.DetailGeminiApiKeyAbsent, CanSignOut = false },
-            "vertex-ai" => env.TryGetValue("GOOGLE_APPLICATION_CREDENTIALS", out var creds) && creds.Length > 0 ||
-                           env.TryGetValue("GOOGLE_CLOUD_PROJECT", out var proj) && proj.Length > 0 ||
-                           File.Exists(Path.Combine(home, ".config", "gcloud", "application_default_credentials.json"))
-                ? new CliAccountStatus { Provider = "gemini", LoggedIn = true, Method = "Vertex AI", MethodId = CliAccountMethod.GeminiVertex, Detail = CliAccountStrings.DetailVertexPresent, CanSignOut = false }
-                : new CliAccountStatus { Provider = "gemini", LoggedIn = null, Method = "Vertex AI", MethodId = CliAccountMethod.GeminiVertex, Detail = CliAccountStrings.DetailVertexAbsent, CanSignOut = false },
-            _ => new CliAccountStatus { Provider = "gemini", LoggedIn = hasOAuth ? true : null, Method = Clean(selected), MethodId = CliAccountMethod.GeminiOther, Account = active, CanSignOut = hasOAuth },
-        };
+        var noSignOut = Locale.Get("settings.cliAccounts.detailAntigravityNoSignOut");
+        if (exitCode == 0 && !timedOut)
+            return new CliAccountStatus { Provider = "gemini", LoggedIn = true, Method = GeminiGoogleMethod, MethodId = CliAccountMethod.GeminiGoogle, Detail = noSignOut, CanSignOut = false };
+        if (CliAuthFailure.Antigravity(output))
+            return new CliAccountStatus { Provider = "gemini", LoggedIn = false, Method = GeminiGoogleMethod, MethodId = CliAccountMethod.GeminiGoogle, CanSignOut = false };
+        return new CliAccountStatus { Provider = "gemini", Detail = Locale.Get(timedOut ? "settings.cliAccounts.detailAntigravityTimeout" : "settings.cliAccounts.detailAntigravityUnknown"), CanSignOut = false };
     }
 
-    /// Signs Gemini out the way its /auth screen does: remove the OAuth session
-    /// and move the active Google account to the old list.
-    public static void GeminiLogout(string home)
-    {
-        var directory = Path.Combine(home, ".gemini");
-        var credPath = Path.Combine(directory, "oauth_creds.json");
-        if (File.Exists(credPath)) File.Delete(credPath);
-
-        var accountsPath = Path.Combine(directory, "google_accounts.json");
-        var text = BoundedFileText(accountsPath);
-        if (text is null) return;
-
-        try
-        {
-            using var document = JsonDocument.Parse(text);
-            var root = document.RootElement;
-            if (root.ValueKind != JsonValueKind.Object ||
-                !root.TryGetProperty("active", out var activeProp) ||
-                activeProp.ValueKind != JsonValueKind.String) return;
-            var activeAccount = activeProp.GetString()!;
-
-            var oldList = new List<string>();
-            if (root.TryGetProperty("old", out var oldProp) && oldProp.ValueKind == JsonValueKind.Array)
-                foreach (var item in oldProp.EnumerateArray())
-                    if (item.ValueKind == JsonValueKind.String && item.GetString() is { } s) oldList.Add(s);
-            if (!oldList.Contains(activeAccount)) oldList.Add(activeAccount);
-
-            using var ms = new MemoryStream();
-            using (var writer = new Utf8JsonWriter(ms, new JsonWriterOptions { Indented = true }))
-            {
-                writer.WriteStartObject();
-                foreach (var prop in root.EnumerateObject())
-                {
-                    if (prop.Name == "active") { writer.WriteNull("active"); continue; }
-                    if (prop.Name == "old")
-                    {
-                        writer.WriteStartArray("old");
-                        foreach (var s in oldList) writer.WriteStringValue(s);
-                        writer.WriteEndArray();
-                        continue;
-                    }
-                    writer.WritePropertyName(prop.Name);
-                    prop.Value.WriteTo(writer);
-                }
-                writer.WriteEndObject();
-            }
-            File.WriteAllBytes(accountsPath, ms.ToArray());
-        }
-        catch { /* file write failures are non-fatal; logout of OAuth creds already happened */ }
-    }
-
-    /// argv for the CLI's own status command (Gemini has none).
+    /// argv for the CLI's own status command; Antigravity's model list stands in for its status (AntigravityStatus).
     /// The first element is the executable name; the rest are arguments.
     public static IReadOnlyList<string>? StatusArguments(string provider) => provider switch
     {
         "claude" => ["claude", "auth", "status", "--json"],
         "codex" => ["codex", "login", "status"],
+        "gemini" => ["agy", "models"],
         _ => null,
     };
 
-    /// argv for the CLI's own logout command (Gemini signs out via file changes).
+    /// argv for the CLI's own logout command (Antigravity has none).
     public static IReadOnlyList<string>? LogoutArguments(string provider) => provider switch
     {
         "claude" => ["claude", "auth", "logout"],
@@ -281,7 +193,8 @@ public static class CliAccountSupport
     {
         "claude" => option == CliLoginOption.Bedrock ? ["claude", "/setup-bedrock"] : option == CliLoginOption.Console ? ["claude", "auth", "login", "--console"] : ["claude", "auth", "login"],
         "codex" => ["codex", "login"],
-        "gemini" => ["gemini"],
+        // Antigravity signs in the first time it runs interactively.
+        "gemini" => ["agy"],
         _ => null,
     };
 
@@ -350,8 +263,8 @@ public static class CliAccountSupport
         value.Length == 0 ? value : char.ToUpperInvariant(value[0]) + value[1..];
 }
 
-/// Reads the account status for each CLI using the shared runner and Gemini's
-/// account files. The coordinator is the live type the section and CliAccountsCoordinator
+/// Reads the account status for each CLI using the shared runner (Antigravity:
+/// its model list). The coordinator is the live type the section and CliAccountsCoordinator
 /// wire to; tests inject a FakeRunner and a temporary home folder.
 public sealed class CliAccountsCoordinator
 {
@@ -399,13 +312,6 @@ public sealed class CliAccountsCoordinator
     public async Task<CliAccountStatus> StatusAsync(string provider, CancellationToken cancellation = default)
     {
         var environment = fixedEnvironment ?? await CliEnvironment.RefreshAsync(false, cancellation);
-        if (provider == "gemini")
-        {
-            if (FindBinary("gemini") is null)
-                return new CliAccountStatus { Provider = provider, Installed = false, Detail = CliAccountStrings.DetailGeminiNotInstalled, CanSignOut = false };
-            return CliAccountSupport.GeminiStatus(home, environment);
-        }
-
         var argv = CliAccountSupport.StatusArguments(provider);
         if (argv is null)
             return new CliAccountStatus { Provider = provider, Installed = false, Detail = CliAccountStrings.DetailUnsupportedProvider, CanSignOut = false };
@@ -423,6 +329,7 @@ public sealed class CliAccountsCoordinator
         catch (OperationCanceledException) { throw; }
         catch { return new CliAccountStatus { Provider = provider, Detail = CliAccountStrings.DetailRunFailed }; }
 
+        if (provider == "gemini") return CliAccountSupport.AntigravityStatus(result.ExitCode, result.Output + "\n" + result.ErrorOutput, result.TimedOut);
         if (provider == "claude")
         {
             var status = CliAccountSupport.ParseClaudeStatus(result.Output);
@@ -442,14 +349,11 @@ public sealed class CliAccountsCoordinator
         return CliAccountSupport.ParseCodexStatus(text, authJson);
     }
 
-    /// <summary>When Gemini's credentials file was last written (CliGeminiLogin).</summary>
-    public DateTimeOffset? GeminiCredentialsStamp() => CliGeminiLogin.CredentialsStamp(home);
-
     /// Opens the external sign-in terminal on the CLI's own login command and
     /// returns when the user closes that window. The app never types or receives
     /// credentials; it only starts the command. The argv is handed over as a
     /// separate argument list, so no command line is built from text.
-    /// `directory`: the folder the command starts in (Gemini's terminal sign-in
+    /// `directory`: the folder the command starts in (Antigravity's terminal sign-in
     /// opens in the failed pane's workspace). `opened` runs once the window is
     /// up, with true when the returned task ends with that window (the console
     /// host; a Windows Terminal tab hands off and returns at once).
@@ -457,8 +361,9 @@ public sealed class CliAccountsCoordinator
     {
         if (fixedEnvironment is null) await CliEnvironment.RefreshAsync(true, cancellation);
         if (directory is not null && !Directory.Exists(directory)) directory = null;
-        // Gemini is an npm shim (gemini.cmd) that the console host cannot find by name.
-        var resolved = loginArgv is ["gemini", ..] ? FindBinary("gemini") : null;
+        // agy may sit only in its installer's folder, which reaches PATH for new sessions only: it is started by its full path.
+        var resolved = loginArgv is ["agy", ..] ? FindBinary("agy") : null;
+        if (resolved is not null) loginArgv = [resolved, .. loginArgv.Skip(1)];
         var plan = CliAccountTerminal.LaunchPlan(loginArgv, !loginArgv.Contains("/setup-bedrock") && FindBinary("wt") is not null, directory, resolved);
         var info = new System.Diagnostics.ProcessStartInfo(plan.Executable) { UseShellExecute = false };
         if (directory is not null) info.WorkingDirectory = directory;
@@ -474,25 +379,14 @@ public sealed class CliAccountsCoordinator
     public async Task<CliAccountStatus> LogoutAsync(string provider, CancellationToken cancellation = default)
     {
         if (fixedEnvironment is null) await CliEnvironment.RefreshAsync(true, cancellation);
-        if (provider == "gemini")
+        // Antigravity has no logout command, so its status comes back unchanged.
+        var argv = CliAccountSupport.LogoutArguments(provider);
+        if (argv is not null && FindBinary(argv[0]) is { } binary)
         {
-            try { CliAccountSupport.GeminiLogout(home); }
-            catch (Exception ex)
-            {
-                var msg = CliAccountStrings.DetailGeminiLogoutFailedTemplate.Replace("{reason}", ex.Message);
-                return new CliAccountStatus { Provider = provider, Detail = msg };
-            }
-        }
-        else
-        {
-            var argv = CliAccountSupport.LogoutArguments(provider);
-            if (argv is not null && FindBinary(argv[0]) is { } binary)
-            {
-                var env = new Dictionary<string, string>(environment) { ["NO_COLOR"] = "1", ["CI"] = "1" };
-                try { await runner.RunAsync(binary, argv.Skip(1).ToList(), LogoutTimeout, cancellation, env, home); }
-                catch (OperationCanceledException) { throw; }
-                catch { }
-            }
+            var env = new Dictionary<string, string>(environment) { ["NO_COLOR"] = "1", ["CI"] = "1" };
+            try { await runner.RunAsync(binary, argv.Skip(1).ToList(), LogoutTimeout, cancellation, env, home); }
+            catch (OperationCanceledException) { throw; }
+            catch { }
         }
         var newStatus = await StatusAsync(provider, cancellation);
         statuses[provider] = newStatus;
@@ -512,6 +406,8 @@ public sealed class CliAccountsCoordinator
                 if (File.Exists(candidate)) return candidate;
             }
         }
+        // Antigravity's installer folder reaches PATH for new sessions only.
+        if (name == "agy" && OperatingSystem.IsWindows() && Path.Combine(ProviderCatalog.AntigravityInstallFolder(environment), "agy.exe") is var installed && File.Exists(installed)) return installed;
         return null;
     }
 }
@@ -536,8 +432,8 @@ public static class CliAccountSmoke
     [
         new() { Provider = "claude", Installed = true, LoggedIn = true, Account = "me@example.com", Plan = "Max", Method = Locale.Get("windows.cli.method.claudeSubscription"), MethodId = CliAccountMethod.ClaudeSubscription, CanSignOut = true },
         new() { Provider = "codex", Installed = true, LoggedIn = false },
-        new() { Provider = "gemini", Installed = false, LoggedIn = null, Detail = CliAccountStrings.DetailGeminiNotInstalled, CanSignOut = false },
-        new() { Provider = "gemini", Installed = true, LoggedIn = true, Method = Locale.Get("windows.cli.method.geminiApiKey"), MethodId = CliAccountMethod.GeminiApiKey, Detail = CliAccountStrings.DetailGeminiApiKeyPresent, CanSignOut = false },
+        new() { Provider = "gemini", Installed = false, LoggedIn = null, Detail = CliAccountStrings.DetailNotInstalledTemplate.Replace("{provider}", CliUpdateService.ProviderLabel("gemini")), CanSignOut = false },
+        CliAccountSupport.AntigravityStatus(0, "") with { Installed = true },
     ];
 
     /// Drives the CLI accounts smoke through callbacks, so the whole flow —
@@ -558,10 +454,8 @@ public static class CliAccountSmoke
             throw new InvalidOperationException("smoke: fixture must show a signed-in status with an account label");
         if (!renderedSummaries.Contains(CliAccountStrings.SummarySignedOut))
             throw new InvalidOperationException("smoke: fixture must show a signed-out status");
-        if (!renderedSummaries.Any(s => s == CliAccountStrings.DetailGeminiNotInstalled || s == CliAccountStrings.StatusNotInstalled))
+        if (!renderedSummaries.Any(s => s == FixtureStatuses[2].Detail || s == CliAccountStrings.StatusNotInstalled))
             throw new InvalidOperationException("smoke: fixture must show a not-installed status");
-        if (!renderedSummaries.Any(s => s == CliAccountStrings.DetailGeminiApiKeyPresent || (s.Length > 0 && s != CliAccountStrings.SummarySignedIn && s != CliAccountStrings.SummarySignedOut)))
-        { /* cannot-sign-out just needs canSignOut=false in one fixture — summaries alone suffice */ }
 
         // Trigger sign-out confirmation for the first canSignOut provider, then cancel.
         var target = FixtureStatuses.First(s => s.CanSignOut && s.LoggedIn == true);
@@ -598,12 +492,14 @@ public static class CliAccountTerminal
     /// working directory of the process that starts it. conhost only finds an
     /// .exe by name, so `resolvedBinary` (the command's full path, when known)
     /// replaces the name there, and a .cmd/.bat shim runs through `cmd /c`.
+    /// A command (or its resolved path) holding `;` would be split by Windows
+    /// Terminal too, so it runs in conhost instead.
     public static (string Executable, IReadOnlyList<string> Arguments) LaunchPlan(
         IReadOnlyList<string> loginArgv, bool windowsTerminalAvailable, string? directory = null, string? resolvedBinary = null)
     {
         if (loginArgv.Count == 0 || loginArgv[0].Length == 0)
             throw new ArgumentException("a login command is required", nameof(loginArgv));
-        if (windowsTerminalAvailable)
+        if (windowsTerminalAvailable && resolvedBinary?.Contains(';') != true && !loginArgv.Any(argument => argument.Contains(';')))
             return ("wt.exe", directory is null || directory.Contains(';') ? ["new-tab", "--", .. loginArgv] : ["new-tab", "-d", directory, "--", .. loginArgv]);
         if (resolvedBinary is null) return ("conhost.exe", [.. loginArgv]);
         var shim = resolvedBinary.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) || resolvedBinary.EndsWith(".bat", StringComparison.OrdinalIgnoreCase);

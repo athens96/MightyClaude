@@ -65,9 +65,9 @@ internal static class SlashCommandVerification
         Check(codex.Select(c => c.Invocation).SequenceEqual(["plugins", "model", "approvals", "new", "status", "settings", "rename", "help"]),
             "Codex builtins must match macOS order exactly");
         var gemini = SlashCommandCatalog.Builtins("gemini");
-        Check(gemini.Select(c => c.Invocation).SequenceEqual(["model", "approval-mode", "clear", "stats", "settings", "rename", "help"]),
-            "Gemini builtins must match macOS order exactly");
-        Check(!gemini.Any(c => c.Action == SlashCommandAction.OpenPlugins), "Gemini must not have plugin browser");
+        Check(gemini.Select(c => c.Invocation).SequenceEqual(["model", "permissions", "clear", "usage", "config", "rename", "help"]),
+            "Antigravity builtins must match macOS order exactly");
+        Check(!gemini.Any(c => c.Action == SlashCommandAction.OpenPlugins), "Antigravity must not have plugin browser");
         Check(SlashCommandCatalog.Builtins("shell").Length == 0, "shell provider should have no builtins");
         var language = Locale.LanguagePreference;
         try

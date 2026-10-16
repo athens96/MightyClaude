@@ -58,9 +58,8 @@ public sealed partial class MainWindow
         private Flyout? structureListFlyout;
         private StackPanel? structureList;
         private string? structureBarLanguage;
-        /// <summary>The board's header and its rule, the header's chips (cut to a new width in place) and what it was built from.</summary>
+        /// <summary>The board's header and its rule, and what the header was built from.</summary>
         private Border? structureHeader, structureRule;
-        private readonly List<Border> structureChips = [];
         private string? structureHeaderKey;
         /// <summary>The frame (the board's columns), the column width it stands at, its columns and each card as last built.</summary>
         private string? structureFrameKey;
@@ -164,7 +163,6 @@ public sealed partial class MainWindow
             {
                 Padding = new Thickness(DesignMetrics.Inset.GraphBlockBodyH, DesignMetrics.Spacing.Sm, DesignMetrics.Inset.GraphBlockBodyH, DesignMetrics.Spacing.Sm), Visibility = Visibility.Collapsed,
             };
-            structureHeader.SizeChanged += (_, args) => { if (args.NewSize.Width != args.PreviousSize.Width) SizeStructureChips(args.NewSize.Width); };
             Grid.SetRow(structureHeader, 1); structureView.Children.Add(structureHeader);
             structureRule = new Border { Height = DesignMetrics.Stroke.Line, Background = b.Brush(DesignToken.Line), Visibility = Visibility.Collapsed };
             AutomationProperties.SetAccessibilityView(structureRule, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
@@ -283,10 +281,11 @@ public sealed partial class MainWindow
                 foreach (var column in board.Columns)
                 {
                     if (!structureColumns.TryGetValue(column.Id, out var place)) continue;
-                    var headerKey = (StructureStepTitle(column.Step), column.Step.Step, column.Count, language);
+                    var last = column.Id == board.Columns[^1].Id;
+                    var headerKey = (StructureStepTitle(column.Step), column.Step.Step, column.Count, language, last);
                     if (!Equals(place.HeaderKey, headerKey))
                     {
-                        place.Header.Child = StructureColumnHeader(column); place.HeaderKey = headerKey;
+                        place.Header.Child = StructureColumnHeader(column, last); place.HeaderKey = headerKey;
                         AutomationProperties.SetName(place.Scroll, StructureStepTitle(column.Step));
                         AutomationProperties.SetName(place.View, Locale.Get("graph.structure.board.columnAccessibility", new Dictionary<string, string>
                         {
@@ -459,15 +458,15 @@ public sealed partial class MainWindow
         // ── the header ────────────────────────────────────────────────────────
 
         /// <summary>
-        /// The board's header (M/MightyStructureView.swift:280-304): the diagram's activity mark while it runs, its status pill and
-        /// its title (13 bold in the heading font), then its steps as chips joined by 2pt lines, <c>done</c> once the step before them
-        /// is done, <c>track</c> until then.
+        /// The board's header (M/MightyStructureView.swift:280-304): the diagram's activity mark while it runs, its status pill and,
+        /// for a pipeline, its name (13 bold in the heading font). Its steps are the columns' own headers below
+        /// (<see cref="StructureColumnHeader"/>), so the pipeline is not drawn twice.
         /// </summary>
         private void DrawStructureHeader(Board board, int count)
         {
             if (structureHeader is null) return;
             var title = StructureTitle(board, count);
-            var key = string.Join('\n', new[] { board.Id, board.Status, title, Locale.LanguagePreference, structureMotion.ToString() }.Concat(board.Steps.Select(step => step.Id + "\u001F" + step.Title + "\u001F" + MightyStructure.Word(step.Step))));
+            var key = string.Join('\n', board.Id, board.Status, title, Locale.LanguagePreference, structureMotion.ToString());
             if (key == structureHeaderKey) return;
             structureHeaderKey = key;
             var b = owner.brushes;
@@ -482,38 +481,7 @@ public sealed partial class MainWindow
                 AutomationProperties.SetHeadingLevel(heading, Microsoft.UI.Xaml.Automation.Peers.AutomationHeadingLevel.Level2);
                 lead.Add(heading, PaneHeaderLine.Role.Shrink);
             }
-            var steps = new Grid();
-            structureChips.Clear();
-            for (var index = 0; index < board.Steps.Count; index++)
-            {
-                var step = board.Steps[index];
-                steps.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-                var chip = StructureChip(StructureStepTitle(step), step.Step);
-                Grid.SetColumn(chip, steps.ColumnDefinitions.Count - 1); steps.Children.Add(chip); structureChips.Add(chip);
-                if (index == board.Steps.Count - 1) continue;
-                steps.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star), MinWidth = DesignMetrics.Spacing.Md });
-                var line = new Border
-                {
-                    Height = DesignMetrics.Stroke.Active, VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false,
-                    Background = b.Brush(step.Step == MightyStructure.Step.Done ? DesignToken.Done : DesignToken.Track),
-                };
-                AutomationProperties.SetAccessibilityView(line, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
-                Grid.SetColumn(line, steps.ColumnDefinitions.Count - 1); steps.Children.Add(line);
-            }
-            AutomationProperties.SetName(steps, Locale.Get("guidedPanel.phasesAccessibility"));
-            var stack = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
-            stack.Children.Add(lead); stack.Children.Add(steps);
-            structureHeader.Child = stack;
-            SizeStructureChips(structureHeader.ActualWidth);
-        }
-
-        /// <summary>A long step title is cut so every chip and the least line between them fit the header's width; the whole title is in the chip's tooltip.</summary>
-        private void SizeStructureChips(double width)
-        {
-            var available = width - 2 * DesignMetrics.Inset.GraphBlockBodyH;
-            if (structureChips.Count == 0 || available <= 0) return;
-            var most = Math.Max(0, (available - (structureChips.Count - 1) * DesignMetrics.Spacing.Md) / structureChips.Count);
-            foreach (var chip in structureChips) chip.MaxWidth = most;
+            structureHeader.Child = lead;
         }
 
         /// <summary>A step's fill, ink and mark (M/MightyStructureView.swift:333-342): done is green, current the accent, pending grey; an error or a stop in its own fill.</summary>
@@ -623,18 +591,32 @@ public sealed partial class MainWindow
             return kanban;
         }
 
-        /// <summary>A column's header (M/MightyStructureView.swift:500-513): its step's mark (8 bold, in the step's fill, <c>ink2</c> while pending), its name (12 bold) and its count (10 semibold <c>ink2</c> on a <c>track</c> capsule).</summary>
-        private PaneHeaderLine StructureColumnHeader(MightyStructure.BoardColumn column)
+        /// <summary>
+        /// A column's header (M/MightyStructureView.swift:547-563): its step as the pipeline's chip in its state's colours
+        /// (<see cref="StructureChip"/>, cut with an ellipsis when the column is narrow), its count (10 semibold <c>ink2</c> on a
+        /// <c>track</c> capsule) and, but for the last column, a 2pt line on across the gap to the next column's chip, <c>done</c> once
+        /// this step is done and <c>track</c> until then, so the chips read as one pipeline from column to column.
+        /// </summary>
+        private PaneHeaderLine StructureColumnHeader(MightyStructure.BoardColumn column, bool last)
         {
-            var b = owner.brushes; var (fill, _, symbol) = StructureLook(column.Step.Step);
+            var b = owner.brushes;
             var head = new PaneHeaderLine { Spacing = DesignMetrics.Spacing.Sm, Height = StructureChipHeight };
-            head.Add(MightySymbols.Create(symbol, 8, column.Step.Step == MightyStructure.Step.Pending ? b.Brush(DesignToken.Ink2) : fill, MightySymbols.Weight.Bold), PaneHeaderLine.Role.Fixed);
-            head.Add(StructureWords(StructureStepTitle(column.Step), StructureTextSize, b.Brush(DesignToken.Ink), FontWeights.Bold), PaneHeaderLine.Role.Shrink);
+            head.Add(StructureChip(StructureStepTitle(column.Step), column.Step.Step), PaneHeaderLine.Role.Shrink);
             head.Add(new Border
             {
                 Child = StructureWords(column.Count.ToString(CultureInfo.InvariantCulture), DesignMetrics.Type.Small, b.Brush(DesignToken.Ink2), FontWeights.SemiBold), Background = b.Brush(DesignToken.Track),
                 CornerRadius = new CornerRadius(StructureChipHeight / 2), Padding = new Thickness(DesignMetrics.Spacing.Sm, 0, DesignMetrics.Spacing.Sm, 0), VerticalAlignment = VerticalAlignment.Center,
             }, PaneHeaderLine.Role.Fixed);
+            if (!last)
+            {
+                var line = new Border
+                {
+                    Height = DesignMetrics.Stroke.Active, VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false, Margin = new Thickness(0, 0, -DesignMetrics.Spacing.Lg, 0),
+                    Background = b.Brush(column.Step.Step == MightyStructure.Step.Done ? DesignToken.Done : DesignToken.Track),
+                };
+                AutomationProperties.SetAutomationId(line, "mighty-structure-connector-" + column.Id);
+                head.Add(line, PaneHeaderLine.Role.Fill);
+            }
             AutomationProperties.SetAccessibilityView(head, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
             return head;
         }

@@ -11,7 +11,7 @@ section: settings
 - {{ui:settings.display.languageLabel}}: アプリの言語。[言語を変更する](getting-started.md#language)を参照してください。
 - {{ui:settings.display.statusLineToggle}}: Claudeの設定にあるステータスラインのコマンドを実行し、入力欄の下に表示します。
 - {{ui:settings.display.browserToggle}}: ブラウザペインを有効にします。アプリを開き直すと適用されます。
-- {{platform:mac}} {{ui:settings.delegation.toggle}}: 初期状態でオンです。Claudeペインが専用のworktreeで子ペインを開けるようになり、実行中のClaudeペインで{{kbd:⌘Enter}}を押すとリクエストが新しい子ペインで実行されます。[Mightyオーケストレーション](delegation.md#enable)を参照してください。
+- {{ui:settings.delegation.toggle}}: 初期状態でオンです。Claudeペインが専用のworktreeで子ペインを開けるようになり、実行中のClaudeペインで{{kbd:⌘Enter}}を押すとリクエストが新しい子ペインで実行されます。[Mightyオーケストレーション](delegation.md#enable)を参照してください。
 - {{ui:agentTerminal.urlOpen.settingTitle}}: エージェントが開いたリンクをどこで開くかを決めます。
 
 ![[settings-general]]
@@ -39,7 +39,7 @@ section: settings
 
 ## コンポーネント {#components}
 {{ui:settings.nav.tools}}タブでは、アプリに必要なものが準備できているかを確認できます。
-- {{ui:settings.components.sectionTitle}}: Claude、Codex、Antigravity CLI(WindowsではGemini CLI)と、必要なプラグインの状態です。{{ui:settings.components.statusInstalled}}、{{ui:settings.components.statusMissing}}、{{ui:settings.components.statusAttention}}のいずれかで表示されます。インストールが必要な場合は、インストールコマンドをコピーしてターミナルで実行してから、{{ui:settings.components.recheckButton}}をクリックします。
+- {{ui:settings.components.sectionTitle}}: Claude、Codex、Antigravity CLIと、必要なプラグインの状態です。{{ui:settings.components.statusInstalled}}、{{ui:settings.components.statusMissing}}、{{ui:settings.components.statusAttention}}のいずれかで表示されます。インストールが必要な場合は、インストールコマンドをコピーしてターミナルで実行してから、{{ui:settings.components.recheckButton}}をクリックします。
 - {{ui:settings.toolkit.sectionTitle}}: よく使うツールの一覧です。インストールの前に実行するコマンドをすべて表示し、{{ui:settings.toolkit.confirmTitle}}を求めます。一覧を{{ui:settings.toolkit.exportButton}}したり{{ui:settings.toolkit.importButton}}したりできます。
 
 ![[settings-tools]]

@@ -15,6 +15,7 @@ public static class SlashCommandStrings
     public static readonly string UserCommandSource = Locale.Get("slash.source.userCommand");
     public static readonly string ProjectCommandSource = Locale.Get("slash.source.projectCommand");
     public static readonly string CodexSkillSource = Locale.Get("slash.source.codexSkill");
+    public static readonly string AntigravitySkillSource = Locale.Get("slash.source.antigravitySkill");
 
     // Palette keyboard hints (SlashCommandPalette.swift)
     public static readonly string PaletteMove = Locale.Get("slash.palette.move");

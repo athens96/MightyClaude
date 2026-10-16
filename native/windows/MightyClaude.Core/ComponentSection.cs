@@ -19,7 +19,7 @@ public sealed class ComponentAction
     public required string Title { get; init; }
 }
 
-/// Windows ComponentSection — CLI rows for claude, codex and gemini from the runtime.
+/// Windows ComponentSection — CLI rows for claude, codex and gemini (Antigravity) from the runtime.
 public static class ComponentSection
 {
     public static string SectionTitle => Locale.Get("settings.components.sectionTitle");
@@ -95,12 +95,13 @@ public static class ComponentSection
     public static readonly TimeSpan RecheckInterval = TimeSpan.FromSeconds(5);
     public static bool NeedsRecheck(IEnumerable<ComponentStatus> rows) => rows.Any(row => row.State != "installed");
 
-    /// npm install commands, matching ComponentCatalog.installCommand() on macOS.
+    /// Install commands, matching ComponentCatalog.installCommand() on macOS: npm for Claude Code and Codex, and Antigravity's
+    /// own PowerShell installer (https://antigravity.google/docs/install?tab=cli), which puts agy.exe in %LOCALAPPDATA%\agy\bin.
     public static string? InstallCommand(string provider) => provider switch
     {
         "claude" => "npm install -g @anthropic-ai/claude-code",
         "codex" => "npm install -g @openai/codex",
-        "gemini" => "npm install -g @google/gemini-cli",
+        "gemini" => "irm https://antigravity.google/cli/install.ps1 | iex",
         _ => null,
     };
 
@@ -108,7 +109,7 @@ public static class ComponentSection
     {
         "claude" => "Claude Code",
         "codex" => "Codex",
-        "gemini" => "Gemini CLI",
+        "gemini" => "Antigravity CLI",
         _ => id,
     };
 }

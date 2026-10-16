@@ -55,8 +55,12 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
                 // A workspace saved with a "remote" value names a folder on another computer.
                 // It is dropped here; Normalize then drops everything keyed by its id.
                 var remote = workspaces.EnumerateArray().Select((w, i) => (w, i)).Where(p => p.w.ValueKind == JsonValueKind.Object && p.w.TryGetProperty("remote", out var r) && r.ValueKind != JsonValueKind.Null).Select(p => p.i).ToHashSet();
+                // Once per profile, on load: `gemini` panes now run Antigravity (AntigravityMigration).
+                if (restored.AntigravityMigrated != true) restored = restored with { Sessions = (restored.Sessions ?? []).Select(s => s is null ? s! : AntigravityMigration.Migrated(s)).ToList(), AntigravityMigrated = true };
                 Snapshot = Normalize(restored with { Workspaces = (restored.Workspaces ?? []).Where((_, i) => !remote.Contains(i)).ToList() }, true);
             }
+            // A new profile never held Gemini CLI panes.
+            else Snapshot = Snapshot with { AntigravityMigrated = true };
             approved.Clear();
             foreach (var workspace in Snapshot.Workspaces) approved[workspace.Id] = workspace;
             loaded = true;
@@ -190,4 +194,24 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
         }
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
+}
+
+/// <summary>
+/// When a save of the workspace state starts (M/StateRepository.swift SaveSchedule): a short debounce after the change that
+/// asked for it, and at least <c>minimumGap</c> seconds after the last save began, so a streaming run no longer writes the whole
+/// state back to back.
+/// </summary>
+public static class SaveSchedule
+{
+    public static double Delay(double? sinceLastStart, double debounce = 0.22, double minimumGap = 1.5) =>
+        sinceLastStart is not { } since || !double.IsFinite(since) ? debounce : Math.Max(debounce, minimumGap - Math.Max(0, since));
+
+    /// <summary>
+    /// Whether a save that is already waiting stays as it is when another change comes, instead of being scheduled again.
+    /// Without a cap, changes arriving faster than the debounce would push the save back for ever; so once
+    /// <paramref name="minimumGap"/> has passed since the last save began, or since the waiting save was first asked for, it is
+    /// left to fire (it writes the state as it is then, the new change too).
+    /// </summary>
+    public static bool KeepsPending(double? sinceLastStart, double sinceFirstRequest, double minimumGap = 1.5) =>
+        sinceLastStart is { } since && double.IsFinite(since) && since >= minimumGap || double.IsFinite(sinceFirstRequest) && sinceFirstRequest >= minimumGap;
 }

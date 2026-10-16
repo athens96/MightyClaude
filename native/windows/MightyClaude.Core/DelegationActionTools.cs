@@ -26,19 +26,23 @@ public sealed partial class DelegationCoordinator
     public const int MaximumFollowUpBytes = 48 * 1024;
 
     /// <summary>
-    /// merge(child, expected_head) from <paramref name="caller"/>. A child that is not the caller's is answered with an error.
-    /// Otherwise the merge waits for its turn (one tool merge at a time) and runs <see cref="ChildMerge.ToolMerge"/> in the
+    /// merge(child, expected_head) from <paramref name="caller"/>. A child that is not the caller's is answered with an error, and
+    /// one the human started from the caller's composer is refused with <c>human_started</c>. A caller whose agent's tool call is
+    /// not gated by its CLI's permission mode (Codex) and whose run did not start in fullAccess is refused with
+    /// <c>merge_human_only</c>: the human merges from the child's card. Otherwise the merge waits for its turn (one tool merge at a time) and runs <see cref="ChildMerge.ToolMerge"/> in the
     /// parent's checkout recorded when the child was made. Its refusal is answered with its one reason code
     /// (<c>not_reported</c>, <c>worktree_missing</c>, <c>head_moved</c>, <c>tracked_changes</c>, <c>branch_not_checked_out</c> or
     /// <c>diverged</c>) and changes nothing. A fast-forward writes its MergeRecord and moves the child to merged; should the
     /// child have moved on during the merge (its pane closed), the record is written all the same, so the merge can be undone
-    /// from its card. Whether the call needs the human's approval first follows the parent pane's permission mode, in the
-    /// Claude CLI, before the call reaches the app.
+    /// from its card. For a Claude parent, whether the call needs the human's approval first follows its pane's permission mode,
+    /// in the Claude CLI, before the call reaches the app.
     /// </summary>
     private async Task<DelegationResponse> MergeNow(string id, string expectedHead, DelegationCaller caller)
     {
         id = id.Trim();
         if (!IsChild(id, caller)) return DelegationResponse.Failure(NotYourChildMessage(id));
+        if (IsHumanStarted(id)) return DelegationResponse.Refusal(DelegationReasonCode.HumanStarted);
+        if (!DelegationProviders.AgentMayMerge(caller.Provider, caller.PermissionMode)) return DelegationResponse.Refusal(DelegationReasonCode.MergeHumanOnly);
         await mergeTurns.Take();
         try
         {
@@ -70,10 +74,11 @@ public sealed partial class DelegationCoordinator
     /// follow_up(child, text) from <paramref name="caller"/>. The first rule that applies answers:
     /// 1. An empty text, a text over 48 KiB or with a NUL character (no run input may hold one, so a held one would block the
     ///    child's pane), or a child that is not the caller's is answered with an error.
-    /// 2. <c>parent_closed</c>: the caller's pane is closed. A closed parent's children keep their cards, and nothing more is sent to them.
-    /// 3. <c>child_closed</c>: the child is not open (its pane closed, its start failed or a human discarded it).
-    /// 4. <c>follow_up_limit</c>: the child already has its two follow-ups.
-    /// 5. <c>store_full</c>: even after pruning, the delegation file has no room for it.
+    /// 2. <c>human_started</c>: the human started the child from the caller's composer, so only the human sends it work.
+    /// 3. <c>parent_closed</c>: the caller's pane is closed. A closed parent's children keep their cards, and nothing more is sent to them.
+    /// 4. <c>child_closed</c>: the child is not open (its pane closed, its start failed or a human discarded it).
+    /// 5. <c>follow_up_limit</c>: the child already has its two follow-ups.
+    /// 6. <c>store_full</c>: even after pruning, the delegation file has no room for it.
     /// Every refusal changes nothing. Otherwise the follow-up is saved in the delegation file, pending, with its own id, and the
     /// child's count goes up by one; delivery then offers it to the child's pane and hands it over exactly once.
     /// </summary>
@@ -85,6 +90,7 @@ public sealed partial class DelegationCoordinator
         if (text.Contains('\0')) return DelegationResponse.Failure("A follow-up's text may not contain a NUL character.");
         id = id.Trim();
         if (!IsChild(id, caller)) return DelegationResponse.Failure(NotYourChildMessage(id));
+        if (IsHumanStarted(id)) return DelegationResponse.Refusal(DelegationReasonCode.HumanStarted);
         // Asks the host about every parent with children, the caller among them.
         var context = await PruneContext();
         // Nothing below suspends until the follow-up is saved, so two calls at once cannot both pass the limit, and the caller's pane is as last seen.
@@ -105,4 +111,7 @@ public sealed partial class DelegationCoordinator
 
     /// <summary>Whether <paramref name="id"/> names one of <paramref name="caller"/>'s children.</summary>
     private bool IsChild(string id, DelegationCaller caller) => File.Children.Any(child => child.Id == id && child.ParentSessionId == caller.PaneId);
+
+    /// <summary>Whether <paramref name="id"/> names a child the human started from its parent's composer: the human's to merge and to send work, never the parent's tools'.</summary>
+    private bool IsHumanStarted(string id) => File.Children.Any(child => child.Id == id && !child.NotifiesParent);
 }

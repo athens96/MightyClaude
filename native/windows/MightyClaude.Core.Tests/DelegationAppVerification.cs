@@ -38,9 +38,24 @@ internal static class DelegationAppVerification
         Same(servers[DelegationMcp.ServerName]!.ToJsonString(), "{\"type\":\"stdio\",\"command\":" + JsonSerializer.Serialize(Executable, Wire.Json) + ",\"args\":[\"--agent-delegation-mcp\"]}", "the delegation server is the app binary's headless mode, with no env of its own");
         Same(servers[AgentIOBinding.ServerName]!["args"]!.ToJsonString(), "[\"--agent-io-mcp\"]", "mighty-terminal is as it was");
         Check(on.Delegation && on.Kind == "claude" && on.Provider == "claude" && !string.Join(" ", arguments).Contains(on.Environment[AgentIOBinding.TokenKey], StringComparison.Ordinal) && !arguments.Contains("--strict-mcp-config"), "the token stays in the environment");
-        // A Codex run never names it, even when the run path asks.
-        var codex = registry.Bind("pane-c", workspace, "codex", "pipe", Executable); codex.ConnectDelegation(new DelegationIOHandler(() => true), true); arguments.Clear(); codex.AppendArguments(arguments);
-        Check(!codex.Delegation && codex.DelegationHandler is not null && !string.Join(" ", arguments).Contains(DelegationMcp.ServerName, StringComparison.Ordinal) && !string.Join(" ", arguments).Contains(DelegationMcp.HeadlessArgument, StringComparison.Ordinal), "a Codex run gets no delegation server");
+        // A Codex run in manual (or with no mode) never names it, even when the run path asks, and approves no tool ahead.
+        var codex = registry.Bind("pane-c", workspace, "codex", "pipe", Executable); codex.ConnectDelegation(new DelegationIOHandler(() => true), true, "manual"); arguments.Clear(); codex.AppendArguments(arguments);
+        Check(!codex.Delegation && codex.DelegationHandler is not null && !string.Join(" ", arguments).Contains(DelegationMcp.ServerName, StringComparison.Ordinal) && !string.Join(" ", arguments).Contains(DelegationMcp.HeadlessArgument, StringComparison.Ordinal)
+            && !string.Join(" ", arguments).Contains("approval_mode", StringComparison.Ordinal), "a Codex manual run gets no delegation server");
+        // In acceptEdits it gets the server, whose tools are approved ahead, and of mighty-terminal's only reading output and opening a page.
+        var edits = registry.Bind("pane-d", workspace, "codex", "pipe", Executable); edits.ConnectDelegation(new DelegationIOHandler(() => true), true, "acceptEdits"); arguments.Clear(); edits.AppendArguments(arguments);
+        var settings = arguments.Where((_, index) => index % 2 == 1).ToList();
+        Check(edits.Delegation && arguments.Where((_, index) => index % 2 == 0).All(flag => flag == "-c")
+            && settings.Contains("mcp_servers.mighty-delegation.args=[\"--agent-delegation-mcp\"]") && settings.Contains("mcp_servers.mighty-delegation.env_vars=[\"MIGHTY_PANE_TOKEN\",\"MIGHTY_AGENT_IO_PIPE\"]")
+            && settings.Contains("mcp_servers.mighty-delegation.default_tools_approval_mode=\"approve\"") && !settings.Contains("mcp_servers.mighty-terminal.default_tools_approval_mode=\"approve\"")
+            && settings.Contains("mcp_servers.mighty-terminal.tools.read_latest_output.approval_mode=\"approve\"") && settings.Contains("mcp_servers.mighty-terminal.tools.open_url.approval_mode=\"approve\"")
+            && !settings.Any(setting => setting.Contains("run_in_terminal", StringComparison.Ordinal)) && !settings.Any(setting => setting.Contains("developer_instructions", StringComparison.Ordinal)), "a Codex acceptEdits run gets the server, and approvals that let its tools work");
+        // fullAccess approves both servers' tools.
+        var full = registry.Bind("pane-e", workspace, "codex", "pipe", Executable); full.ConnectDelegation(new DelegationIOHandler(() => true), true, "fullAccess"); arguments.Clear(); full.AppendArguments(arguments);
+        Check(full.Delegation && arguments.Contains("mcp_servers.mighty-delegation.default_tools_approval_mode=\"approve\"") && arguments.Contains("mcp_servers.mighty-terminal.default_tools_approval_mode=\"approve\""), "a Codex fullAccess run approves both servers' tools");
+        // The switch off detaches it in every mode.
+        var detached = registry.Bind("pane-f", workspace, "codex", "pipe", Executable); detached.ConnectDelegation(new DelegationIOHandler(() => true), false, "fullAccess");
+        Check(!detached.Delegation, "a run started with the switch off gets no server");
         // Only the saved record's absolute folder, and only for an agent pane, may be a run's working folder.
         foreach (var bad in new[] { new StartRunRequest("p", "ws", "claude", "hi", []) { WorkingFolder = "relative\\child" }, new StartRunRequest("p", "ws", "shell", "dir", []) { WorkingFolder = Path.GetTempPath() } })
             Check(Throws<ArgumentException>(() => bad.Validate()), "a working folder that is not an agent pane's full path is refused");
@@ -91,11 +106,12 @@ internal static class DelegationAppVerification
         }
         Task<DelegationResponse> Send(DelegationRequest request, AgentIOBinding binding) => AgentIOPipe.CallDelegation(pipe.Name, binding.Environment[AgentIOBinding.TokenKey], request, CancellationToken.None);
         var on = new DelegationIOHandler(() => true);
-        // Switched on, a pane that is not a Claude pane is refused with claude_only whatever it names.
-        var codex = Bind("codex", "codex", on, true);
-        foreach (var tool in new[] { "delegate", "list_children", "child_status", "merge", "follow_up", "discard", "no_such_tool" })
-            Same(await Send(tool == "delegate" ? Delegate : Request(tool, ("child", "c1")), codex), DelegationResponse.Refusal(DelegationReasonCode.ClaudeOnly), "codex " + tool);
-        Check((await Send(Delegate, Bind("claude", "claude", on, true))).Refused is null, "a Claude pane with the server attached is not refused as a non-Claude pane");
+        // Switched on, a Codex run reaches the tools only where it gets the server (acceptEdits, fullAccess); in manual it stays detached.
+        var codex = pipe.Bindings.Bind("codex", workspace, "codex", pipe.Name, Executable); codex.ConnectDelegation(on, true, "acceptEdits");
+        Check(codex.Delegation && codex.PermissionMode == "acceptEdits" && (await Send(Delegate, codex)) is { Refused: null, Error: "Unknown delegation tool delegate." }, "a Codex acceptEdits run reaches the tools");
+        var manual = pipe.Bindings.Bind("codex-manual", workspace, "codex", pipe.Name, Executable); manual.ConnectDelegation(on, true, "manual");
+        Same(await Send(Delegate, manual), DelegationResponse.Failure(DelegationIOHandler.DetachedMessage), "a Codex manual run stays detached");
+        Check((await Send(Delegate, Bind("claude", "claude", on, true))).Refused is null, "a Claude pane with the server attached is not refused");
         // Switched off, every call reaches nothing; a Claude run started while it was off stays detached; so does a run no service connected.
         var off = new DelegationIOHandler(() => false);
         foreach (var binding in new[] { Bind("codex-off", "codex", off, true), Bind("claude-off", "claude", off, true), Bind("claude-detached", "claude", on, false), Bind("claude-alone", "claude", null, false) })

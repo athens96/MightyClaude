@@ -32,7 +32,7 @@ Use {{kbd:Ctrl}} instead of {{kbd:⌘}}. Only collapsing the sidebar and stoppin
 | {{kbd:⌘K}} | {{kbd:Ctrl+K}} | {{ui:menu.searchWorkspaces}} |
 | {{kbd:⌃⌘S}} | {{kbd:Ctrl+B}} | {{ui:sidebar.collapse}} / {{ui:sidebar.expand}} |
 | {{kbd:⌘,}} | {{kbd:Ctrl+,}} | {{ui:menu.settings}} |
-| {{kbd:⌘Enter}} | {{kbd:Ctrl+Enter}} | Send to the running Claude now |
+| {{kbd:⌘Enter}} | {{kbd:Ctrl+Enter}} | Run it now in a new worktree, or send to the running Claude now |
 | {{kbd:⌃⌥⌘K}} | {{kbd:Ctrl+Alt+Esc}} | Stop every remote screen session from phones ([Screen view](phone.md#screen)) |
 
 Windows has no menu bar. The same commands are in the sidebar and the {{ui:workspace.addPane}} menu.
@@ -41,7 +41,7 @@ Windows has no menu bar. The same commands are in the sidebar and the {{ui:works
 | Feature | On Windows |
 |---|---|
 | CLI sign-in | Runs in a separate Windows terminal window, not a terminal inside the app. Once you are signed in, the failed request is sent again on its own, as on the Mac. |
-| Google's agent | Gemini CLI (`gemini`) for now; the Mac uses Antigravity CLI ([Antigravity on the Mac](agent-pane.md#antigravity)). |
+| Antigravity | Installed with its PowerShell installer into `%LOCALAPPDATA%\agy\bin`; it keeps its records in `%USERPROFILE%\.gemini\antigravity-cli` ([Antigravity](agent-pane.md#antigravity)). |
 | Terminal panes | Use Windows PowerShell. |
 | Browser panes | Use Microsoft Edge WebView2. As on the Mac, turn on {{ui:settings.display.browserToggle}} and reopen the app. |
 | Completion notification | Turn on {{ui:windows.notifications.toggleLabel}}. |
@@ -49,7 +49,8 @@ Windows has no menu bar. The same commands are in the sidebar and the {{ui:works
 | Pet bubble | Approval and question bubbles have one more symbol button. On an approval it opens a window with the whole request; on a question it opens a window where you type your own answer. |
 | Language | A new language applies after you reopen the app. |
 | File location | {{ui:menu.showInExplorer}} instead of {{ui:menu.showInFinder}}. |
-| Mighty Orchestration | Turned on and off with a registry value ([Turn it on or off](delegation.md#enable)). There is no starting a child pane yourself with {{kbd:⌘Enter}}; only letting Claude split the work. Worktrees go in `%USERPROFILE%\.mightyclaude\worktrees`, and one holding a junction or symbolic link is not cleaned up automatically ([Closing panes and cleanup](delegation.md#close)). |
+| Mighty Orchestration | On by default, with its switch in Settings, which is also a registry value ([Turn it on or off](delegation.md#enable)). Worktrees go in `%USERPROFILE%\.mightyclaude\worktrees`, and one holding a junction or symbolic link is not cleaned up automatically ([Closing panes and cleanup](delegation.md#close)). |
+| Text size and font | Not in the Windows app yet. Windows' own Settings › Accessibility › Text size makes the app's text bigger. |
 
 > [!note]
 > Some Windows features haven't been checked on enough real machines yet. If something looks wrong, please tell us.

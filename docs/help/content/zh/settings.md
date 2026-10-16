@@ -11,7 +11,7 @@ section: settings
 - {{ui:settings.display.languageLabel}}：应用的语言。请参阅[更改语言](getting-started.md#language)。
 - {{ui:settings.display.statusLineToggle}}：运行 Claude 设置中的状态栏命令，并将结果显示在输入框下方。
 - {{ui:settings.display.browserToggle}}：启用浏览器窗格。重新打开应用后生效。
-- {{platform:mac}} {{ui:settings.delegation.toggle}}：默认开启。Claude 窗格可以在各自的 worktree 中打开子窗格，在运行中的 Claude 窗格里按 {{kbd:⌘Enter}} 会在新的子窗格中运行你的请求。请参阅[Mighty 编排](delegation.md#enable)。
+- {{ui:settings.delegation.toggle}}：默认开启。Claude 窗格可以在各自的 worktree 中打开子窗格，在运行中的 Claude 窗格里按 {{kbd:⌘Enter}} 会在新的子窗格中运行你的请求。请参阅[Mighty 编排](delegation.md#enable)。
 - {{ui:agentTerminal.urlOpen.settingTitle}}：设置智能体要打开的链接在哪里打开。
 
 ![[settings-general]]
@@ -39,7 +39,7 @@ section: settings
 
 ## 组件 {#components}
 {{ui:settings.nav.tools}}标签页显示应用所需的内容是否已准备就绪。
-- {{ui:settings.components.sectionTitle}}：Claude、Codex、Antigravity CLI（Windows 上为 Gemini CLI）以及所需插件的状态，显示为{{ui:settings.components.statusInstalled}}、{{ui:settings.components.statusMissing}}或{{ui:settings.components.statusAttention}}。需要安装时，复制安装命令并在终端中运行，然后点击{{ui:settings.components.recheckButton}}。
+- {{ui:settings.components.sectionTitle}}：Claude、Codex、Antigravity CLI 以及所需插件的状态，显示为{{ui:settings.components.statusInstalled}}、{{ui:settings.components.statusMissing}}或{{ui:settings.components.statusAttention}}。需要安装时，复制安装命令并在终端中运行，然后点击{{ui:settings.components.recheckButton}}。
 - {{ui:settings.toolkit.sectionTitle}}：常用工具的列表。安装前会显示所有要运行的命令，并请你{{ui:settings.toolkit.confirmTitle}}。可以{{ui:settings.toolkit.exportButton}}或{{ui:settings.toolkit.importButton}}该列表。
 
 ![[settings-tools]]
