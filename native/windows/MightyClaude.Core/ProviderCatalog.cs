@@ -347,6 +347,7 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
             var sandbox = settings.PermissionMode == "fullAccess" ? "danger-full-access" : settings.PermissionMode is ("acceptEdits" or "onRequest") ? "workspace-write" : "read-only";
             args.AddRange(["-c", $"approval_policy=\"{(approvals ? "on-request" : "never")}\"", "-c", $"sandbox_mode=\"{sandbox}\"", "-c", $"sandbox_workspace_write.network_access={(settings.NetworkAccess ? "true" : "false")}", "-c", $"features.fast_mode={(settings.FastMode ? "true" : "false")}", "-c", $"service_tier=\"{(settings.FastMode ? "fast" : "default")}\""]);
             if (settings.WebSearch != "default") args.AddRange(["-c", $"web_search=\"{settings.WebSearch}\""]);
+            if (sandbox == "workspace-write" && request.DelegationWorktreeRoot is { } root) args.AddRange(["-c", "sandbox_workspace_write.writable_roots=" + JsonSerializer.Serialize(new[] { root }, Wire.Json)]);
             if (settings.Effort != "default") args.AddRange(["-c", $"model_reasoning_effort=\"{settings.Effort}\""]);
             if (phaseModels is not null)
             {
@@ -381,6 +382,7 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
         }
         if (request.Model != "default" && !(request.Provider == "codex" && settings.PermissionMode == "onRequest")) args.AddRange(["--model", request.Model]);
         if (request.Provider != "codex" && request.ResumeId is not null) args.AddRange([request.Provider == "gemini" ? "--conversation" : "--resume", request.ResumeId]);
+        if (request.Provider == "gemini" && request.DelegationWorktreeRoot is { } added) args.AddRange(["--add-dir", added]);
         if (request.Provider == "codex" && settings.PermissionMode != "onRequest") args.Add("-");
         return args;
     }

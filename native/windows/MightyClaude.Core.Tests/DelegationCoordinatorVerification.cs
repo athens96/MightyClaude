@@ -457,7 +457,7 @@ internal static class DelegationCoordinatorVerification
             // The gates answer before any tool.
             foreach (var tool in DelegationToolManifest.All) Check(await off.Call(tool.Name, Arguments(tool)) == DelegationResponse.Failure(DelegationIOHandler.DetachedMessage), tool.Name + " reaches nothing with the switch off");
             var bytes = fixture.Bytes(); var file = fixture.File;
-            foreach (var caller in new[] { Caller("codex", provider: "codex"), Caller("shell", kind: "shell") })
+            foreach (var caller in new[] { Caller("gemini", provider: "gemini"), Caller("shell", kind: "shell") })
                 foreach (var tool in DelegationToolManifest.All) Check(await fixture.Coordinator.Handle(Request(tool.Name, Arguments(tool)), caller) == DelegationResponse.Refusal(DelegationReasonCode.ClaudeOnly), $"{caller.PaneId} {tool.Name} is claude_only");
             Check(await fixture.Coordinator.Handle(Request("discard", ("child", "reported")), Caller("detached", delegation: false)) == DelegationResponse.Failure(DelegationIOHandler.DetachedMessage)
                 && await fixture.Call("no_such_tool") == DelegationResponse.Failure("Unknown delegation tool no_such_tool."), "a detached run and an unknown tool reach nothing");
@@ -549,7 +549,7 @@ internal static class DelegationCoordinatorVerification
         }
         // A call is forwarded with its string arguments; a refusal is tool data with its one reason code.
         var refused = Json(await mcp.Handle(ToolCall("delegate", """{"task":"Write the release notes","mode":"plan"}""")))["result"]!;
-        Check(refused["isError"]!.GetValue<bool>() && refused["structuredContent"]!.ToJsonString() == """{"refused":"claude_only"}""" && refused["content"]![0]!["text"]!.GetValue<string>() == "Refused: claude_only. Nothing was changed."
+        Check(refused["isError"]!.GetValue<bool>() && refused["structuredContent"]!.ToJsonString() == """{"refused":"claude_only"}""" && refused["content"]![0]!["text"]!.GetValue<string>() == "Refused: claude_only (this pane's agent cannot use the delegation tools). Nothing was changed."
             && calls.Single() is { Tool: "delegate" } forwarded && forwarded.Arguments.OrderBy(pair => pair.Key).Select(pair => pair.Key + "=" + pair.Value).SequenceEqual(["mode=plan", "task=Write the release notes"]), "the call is forwarded as it was given");
         reply = DelegationResponse.Failure(DelegationIOHandler.DetachedMessage);
         var failed = Json(await mcp.Handle(ToolCall("list_children", "{}")))["result"]!;

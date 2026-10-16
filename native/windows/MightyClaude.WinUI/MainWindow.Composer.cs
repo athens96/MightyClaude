@@ -262,9 +262,11 @@ public sealed partial class MainWindow
         private void PaintSteer()
         {
             var b = owner.brushes;
-            steerDisc.Background = b.Brush(steer.IsEnabled ? DesignToken.Run : DesignToken.Track);
+            var enabled = offersWorktree ? worktreeButton.IsEnabled : steer.IsEnabled;
+            steerDisc.Background = b.Brush(enabled ? DesignToken.Run : DesignToken.Track);
             steerBolt.Ink(b.Brush(steer.IsEnabled ? DesignToken.OnStatus : DesignToken.Ink2));
-            steerHost.Opacity = steer.IsEnabled ? 1 : DisabledDim;
+            worktreeBranch.Ink(b.Brush(worktreeButton.IsEnabled ? DesignToken.OnStatus : DesignToken.Ink2));
+            steerHost.Opacity = enabled ? 1 : DisabledDim;
         }
 
         /// <summary>

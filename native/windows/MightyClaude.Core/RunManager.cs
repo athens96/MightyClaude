@@ -241,7 +241,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                 if (request.Provider is "claude" or "codex" && AgentIOBindingFactory?.Invoke(request, workspace) is { } binding)
                 {
                     run.PaneBinding = binding;
-                    binding.ConnectDelegation(DelegationHandler, DelegationSwitch.IsClaudePane(request.Kind, request.Provider) && DelegationEnabled());
+                    binding.ConnectDelegation(DelegationHandler, DelegationProviders.AttachesDelegation(request.Kind, request.Provider, request.Settings!.PermissionMode) && DelegationEnabled(), request.PermissionModeOverride ?? request.Settings!.PermissionMode);
                     foreach (var pair in binding.Environment) environment[pair.Key] = pair.Value;
                     binding.AppendArguments(providerArguments);
                 }

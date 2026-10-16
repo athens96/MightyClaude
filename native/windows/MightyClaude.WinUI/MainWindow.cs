@@ -68,10 +68,10 @@ public sealed partial class MainWindow : Window
         // The splash paints before the state loads: give it the saved theme, not a navy flash.
         var savedTheme = StateStore.SavedTheme(profile);
         brushes.Apply(DesignTokens.Palette(savedTheme)); root.RequestedTheme = savedTheme == "light" ? ElementTheme.Light : ElementTheme.Dark; brushes.ApplyTitleBar(AppWindow);
-        // A smoke run's delegation switch is off and its children's worktrees go under its disposable profile: never the
-        // registry, never %USERPROFILE%\.mightyclaude (M/AppStore+Delegation.swift:56-59).
+        // A smoke run's delegation switch is its own, off until a smoke step turns it on, and its children's worktrees go under
+        // its disposable profile: never the registry, never %USERPROFILE%\.mightyclaude (M/AppStore+Delegation.swift:56-59).
         service = options.SmokeTest
-            ? new(profile, null, Path.Combine(AppContext.BaseDirectory, "claude-mods"), delegationEnabled: () => false, worktrees: new ChildWorktreeMaker(Path.Combine(profile, "worktrees")))
+            ? new(profile, null, Path.Combine(AppContext.BaseDirectory, "claude-mods"), delegationEnabled: () => smokeDelegationOn, worktrees: new ChildWorktreeMaker(Path.Combine(profile, "worktrees")))
             : new(profile, options.ProfileDirectory is null ? legacy : null, Path.Combine(AppContext.BaseDirectory, "claude-mods"));
         pictures = new(service.Images, DispatcherQueue);
         cliUpdateService = new(new CliRunner());
@@ -537,7 +537,12 @@ public sealed partial class MainWindow : Window
             var said = reason.Length > 0 ? reason : attachmentsLoading && !busy ? Locale.Get("composer.hint.attachmentsLoading") : "";
             AutomationProperties.SetHelpText(input, said.Length == 0 ? InputShortcuts : said + " " + InputShortcuts);
             // While a run is busy the editor says what Enter will do with the next request (M/SessionPaneView.swift:98-99).
-            input.PlaceholderText = checkingModels ? Locale.Get("composer.placeholder.checkingModels") : busy ? Locale.Get(pane.Kind == "claude" && pane.Provider == "claude" ? "composer.placeholder.busy" : "composer.placeholder.busyQueue") : pane.Kind == "shell" ? Locale.Get("composer.placeholder.shell") : Locale.Get("composer.placeholder.idle");
+            input.PlaceholderText = checkingModels ? Locale.Get("composer.placeholder.checkingModels") : busy ? Locale.Get(pane.Kind != "claude" ? "composer.placeholder.busyQueue" : owner.service.SecondSend(pane) switch
+            {
+                ComposerSecondSend.Worktree => "composer.placeholder.busyWorktree",
+                ComposerSecondSend.Steer => "composer.placeholder.busy",
+                _ => "composer.placeholder.busyQueue",
+            }) : pane.Kind == "shell" ? Locale.Get("composer.placeholder.shell") : Locale.Get("composer.placeholder.idle");
             canSend = mutationBlock is null && !busy && !attachmentsLoading && (pane.Kind == "shell" || runtime?.Available == true) && !unsupportedEffort && unsupportedSettings is null && (!string.IsNullOrWhiteSpace(input.Text) || pendingAttachments.Count > 0);
             send.IsEnabled = busy ? !stopping : canSend; ShowSendSymbol(busy ? "stop" : "send");
             AutomationProperties.SetName(send, busy ? Locale.Get("composer.stop.name") : Locale.Get("composer.send.name")); ToolTipService.SetToolTip(send, busy ? Locale.Get("composer.stop.tooltip") : Locale.Get("composer.send.tooltip"));
@@ -551,7 +556,7 @@ public sealed partial class MainWindow : Window
             attach.IsEnabled = !attachmentsLoading; attach.Visibility = pane.Kind == "shell" ? Visibility.Collapsed : Visibility.Visible;
             RefreshStyles();
             RefreshQueuedComposer(busy);
-            if (mutationBlock is not null && (!busy || HasComposerContent)) send.IsEnabled = steer.IsEnabled = false;
+            if (mutationBlock is not null && (!busy || HasComposerContent)) send.IsEnabled = steer.IsEnabled = worktreeButton.IsEnabled = false;
             RefreshStyleComposer();
             RefreshNextActions(pane, busy);
             PaintSend();

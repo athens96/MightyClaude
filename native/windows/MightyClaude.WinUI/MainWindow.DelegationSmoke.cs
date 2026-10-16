@@ -19,7 +19,8 @@ public sealed partial class MainWindow
     /// workspace with an open child or a kept child worktree is refused; a parent with an open child asks first in the window and
     /// closes from the phone at once, its child kept under a 'parent closed' node; and once the last child is discarded from its
     /// card the workspace goes. No model runs: the parent's run is the scripted Claude's (<see cref="DelegationFakeClaude"/>), the
-    /// app's own binary in its <c>--fake-claude</c> mode, put in the CLI's place for this step only. The switch stays off.
+    /// app's own binary in its <c>--fake-claude</c> mode, put in the CLI's place for this step only. The smoke's own switch is on
+    /// only while the composer's second send runs a text in a new child worktree, whose child the human merges or discards from its card.
     /// </summary>
     private async Task<Dictionary<string, object?>> RunDelegationSmoke()
     {
@@ -99,6 +100,37 @@ public sealed partial class MainWindow
             checks["phoneSendReleasedHeldNotice"] = true;
             checks["heldNoticeReceipt"] = new Dictionary<string, object?> { ["route"] = DelegationNames.Of(delivered.Receipt!.Route), ["runId"] = delivered.Receipt.RunId };
 
+            // 3b. With Mighty Orchestration on, the second send runs a text in a new child worktree beside the parent: the child is
+            // the human's, shows at once, runs the text, and reports to its card with no notice for its parent.
+            var parentPane = service.Snapshot.Sessions.First(s => s.Id == parent);
+            Require(service.SecondSend(parentPane with { Status = "running" }) != ComposerSecondSend.Worktree, "The second send offered a new worktree with Mighty Orchestration off.");
+            SetDelegationOn(true);
+            service.RefreshWorktreeReadiness(parentPane);
+            await DelegationSmokeUntil("the parent's folder to be ready for worktrees", 30, () => service.SecondSend(parentPane with { Status = "running" }) == ComposerSecondSend.Worktree);
+            const string phrase = "Smoke humanChild child";
+            File.WriteAllText(Path.Combine(fake, "child-scripts.json"), new System.Text.Json.Nodes.JsonArray(new System.Text.Json.Nodes.JsonObject
+            {
+                ["phrase"] = phrase,
+                ["steps"] = new System.Text.Json.Nodes.JsonArray(
+                    new System.Text.Json.Nodes.JsonObject { ["write"] = "note-h.txt", ["text"] = "Note h\n" },
+                    new System.Text.Json.Nodes.JsonObject { ["run"] = new System.Text.Json.Nodes.JsonArray(new System.Text.Json.Nodes.JsonArray("git", "add", "note-h.txt"), new System.Text.Json.Nodes.JsonArray("git", "commit", "-q", "-m", "Note h")), ["ask"] = false },
+                    new System.Text.Json.Nodes.JsonObject { ["write"] = ".mighty-delegation/REPORT.md", ["text"] = "# Report\n\nWrote note h.\n" }),
+            }).ToJsonString());
+            MobilePane(parent).DelegationSmokeRunInNewWorktree(phrase + ": write note h.");
+            var humanChild = await DelegationSmokeWait("the human's child to report", 90, () => delegation.File.Children.FirstOrDefault(child => child.StartedByHuman == true && child.State == ChildState.Reported));
+            Require(service.Snapshot.Sessions.FirstOrDefault(s => s.Id == humanChild.Id) is { ParentSessionId: var linked, Provider: "claude" } && linked == parent && service.Snapshot.ActiveSessionId == humanChild.Id
+                && humanChild.StartingMode == mode && delegation.File.Notices.All(n => n.ChildId != humanChild.Id) && service.HeldItems(parent).Count == 0, "The human's child did not open beside its parent, run its text and report with no notice.");
+            Render();
+            Require(DelegationSmokeFind(workspaces, "child-card-merge-" + humanChild.Id) is Button, "The human's child's card offers no merge.");
+            checks["secondSendNewWorktree"] = true;
+            // Its card's discard, through its confirmation, removes it again.
+            smokeDelegationDialog = _ => Task.FromResult(ContentDialogResult.Primary);
+            await DiscardChild(humanChild.Id);
+            smokeDelegationDialog = null;
+            Require(delegation.File.Children.First(child => child.Id == humanChild.Id).State == ChildState.Discarded && !Directory.Exists(humanChild.WorktreePath), "The human's child was not discarded.");
+            SetDelegationOn(false);
+            await service.UpdateAsync(s => s with { ActiveSessionId = parent });
+
             // 4. A workspace with an open child is not removed.
             Require(await DelegationSmokeRemovalRefused(workspace.Id) && service.Snapshot.Sessions.Any(s => s.Id == c), "A workspace with an open child was removed.");
             checks["removeRefusedOpenChild"] = DelegationNames.Of(DelegationReasonCode.WorkspaceHasChildren);
@@ -154,12 +186,17 @@ public sealed partial class MainWindow
         }
     }
 
-    /// <summary>The human's merge of <paramref name="id"/> from its card, which must succeed.</summary>
+    /// <summary>The human's merge of <paramref name="id"/> from its card, which must succeed; the offer to discard the child at once that follows is put off.</summary>
     private async Task DelegationSmokeMerge(string id)
     {
         Render();
         Require(DelegationSmokeFind(workspaces, "child-card-merge-" + id) is Button, "The child's card offers no merge: " + id);
-        await PerformCardAction(DelegationCardAction.Merge, id);
+        ContentDialog? offered = null; var driver = smokeDelegationDialog;
+        smokeDelegationDialog = dialog => { offered = dialog; return Task.FromResult(ContentDialogResult.None); };
+        try { await PerformCardAction(DelegationCardAction.Merge, id); }
+        finally { smokeDelegationDialog = driver; }
+        Require(offered is { Content: TextBlock words } && AutomationProperties.GetAutomationId(offered) == "delegation-merged-discard-" + id && offered.PrimaryButtonText == Locale.Get("delegation.mergedDiscard.confirm")
+            && offered.CloseButtonText == Locale.Get("delegation.mergedDiscard.later") && words.Text.Contains(ChildRecord.BranchName(id), StringComparison.Ordinal), "The merge did not offer to discard the merged child: " + id);
         var note = await DelegationSmokeWait("the card merge of " + id, 30, () => service.CardNote(id));
         Require(note.Result is DelegationCardResult.Done, $"The card merge of {id} was {note.Result}.");
         Render();
@@ -216,6 +253,8 @@ public sealed partial class MainWindow
     private sealed partial class PaneView
     {
         /// <summary>Whether the held item <paramref name="itemId"/> is the first row of this pane's queue, under its header, pinned and with no remove button.</summary>
+        internal void DelegationSmokeRunInNewWorktree(string text) => RunInNewWorktree(text, []);
+
         internal bool DelegationSmokeHeldRow(string itemId)
         {
             RenderQueuedInputs();

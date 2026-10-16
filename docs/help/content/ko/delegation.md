@@ -7,14 +7,14 @@ section: delegation
 
 자식 창을 여는 방법은 둘입니다.
 
-- **직접 띄우기**({{platform:mac}}): 실행 중인 Claude 창이나, 자식이 파일을 바꿀 수 있는 모드의 Codex·Antigravity 창([Codex와 Antigravity](#agents))에 다음 요청을 쓰고 {{kbd:⌘Enter}}를 누릅니다. 요청이 새 worktree의 자식 창에서 바로 실행됩니다([새 worktree에서 실행하기](#worktree)).
+- **직접 띄우기**: 실행 중인 Claude 창이나, 자식이 파일을 바꿀 수 있는 모드의 Codex·Antigravity 창([Codex와 Antigravity](#agents))에 다음 요청을 쓰고 {{kbd:⌘Enter}}를 누릅니다. 요청이 새 worktree의 자식 창에서 바로 실행됩니다([새 worktree에서 실행하기](#worktree)).
 - **Claude에게 나눠 맡기기**: Claude(또는 Codex)에게 일을 나눠 자식 창에 맡기라고 요청합니다. 에이전트가 자식을 만들고, 보고를 읽고, 병합까지 합니다([Claude에게 나눠 맡기기](#delegate)).
 
 > [!warning]
-> 실험 기능입니다. Mac에서는 기본으로 켜져 있고 설정에서 끌 수 있습니다. Windows에서는 기본으로 꺼져 있고, 직접 띄우기 없이 Claude에게 나눠 맡기기만 됩니다. 연습용 저장소에서 먼저 써 보세요.
+> 실험 기능입니다. 기본으로 켜져 있고 설정에서 끌 수 있습니다. 연습용 저장소에서 먼저 써 보세요.
 
 ## 한눈에 보기 {#overview}
-{{platform:mac}} 직접 띄울 때의 흐름입니다.
+직접 띄울 때의 흐름입니다.
 
 1. git 저장소 폴더를 작업 공간으로 열고, Claude 창에서 일을 시킵니다.
 2. Claude가 일하는 동안 다음 요청을 쓰고 {{kbd:⌘Enter}}를 누릅니다. 돌고 있는 작업은 그대로 이어지고, 이 창 옆에 자식 창이 열려 요청을 바로 실행합니다.
@@ -34,11 +34,11 @@ section: delegation
 | 결과를 버리기 | 카드의 {{ui:delegation.card.discard}} 단추 |
 
 ## 새 worktree에서 실행하기 {#worktree}
-{{platform:mac}} Claude·Codex·Antigravity 창이 실행 중일 때 요청을 쓰고 {{kbd:⌘Enter}}를 누르거나, 중지 단추 옆의 둥근 {{ui:queue.worktree}} 단추(브랜치 아이콘)를 누릅니다. 돌고 있는 작업은 그대로 이어지고, 요청은 자기 worktree를 가진 새 자식 창에서 바로 실행됩니다. 그사이 부모 창에 글을 쓰기 시작하지 않았다면 새 창이 곧바로 화면에 보입니다.
+Claude·Codex·Antigravity 창이 실행 중일 때 요청을 쓰고 {{kbd:⌘Enter}}를 누르거나, 중지 단추 옆의 둥근 {{ui:queue.worktree}} 단추(브랜치 아이콘)를 누릅니다. 돌고 있는 작업은 그대로 이어지고, 요청은 자기 worktree를 가진 새 자식 창에서 바로 실행됩니다. 그사이 부모 창에 글을 쓰기 시작하지 않았다면 새 창이 곧바로 화면에 보입니다.
 
 - 실행 중인 창에서 {{kbd:Enter}}는 요청을 대기열에 넣어 지금 작업이 끝난 뒤 실행합니다. 입력창의 안내 문구가 두 키가 하는 일을 보여 줍니다.
 - 새 worktree는 만들 수 있는 곳에서만 씁니다. 커밋이 있는 브랜치가 체크아웃된 git 저장소여야 합니다. 그 밖의 곳(git 저장소가 아님, 커밋이 아직 없음, 브랜치가 아닌 커밋이 체크아웃됨)에서는 {{kbd:⌘Enter}}가 예전처럼 실행 중인 Claude에 바로 전달하고, Codex와 Antigravity 창은 대기열에 넣습니다.
-- 자식은 부모의 마지막 커밋에서 시작합니다. 브랜치 `mighty/<자식 id>`가 생기고, worktree는 프로젝트 폴더 밖(`~/.mightyclaude/worktrees/<자식 id>`)에 생겨 부모의 작업을 건드리지 않습니다. 부모 폴더에서 아직 커밋하지 않은 변경은 자식에게 가지 않습니다.
+- 자식은 부모의 마지막 커밋에서 시작합니다. 브랜치 `mighty/<자식 id>`가 생기고, worktree는 프로젝트 폴더 밖(Mac은 `~/.mightyclaude/worktrees/<자식 id>`, Windows는 `%USERPROFILE%\.mightyclaude\worktrees\<자식 id>`)에 생겨 부모의 작업을 건드리지 않습니다. 부모 폴더에서 아직 커밋하지 않은 변경은 자식에게 가지 않습니다.
 - 부모 창의 권한 모드로, 부모 창의 모델과 {{ui:composer.effort.label}}로 실행합니다. 모든 요청을 계획 모드로 시작하는 스타일에서는 계획 모드로 시작합니다. 부모와 같은 보기로 열리고, 부모가 마이티 보기에서 스타일을 쓰고 있었다면 같은 스타일로 시작합니다(스타일의 진행 상태는 자식의 첫 요청부터 따로 셉니다). 첨부 파일도 함께 갑니다.
 - 첫 메시지에는 입력한 글이 먼저 오고, 그 뒤에 앱이 자식이 일하는 곳을 알려 주며 끝나면 커밋하고 REPORT.md를 쓰라고 덧붙입니다. 그래야 카드에서 병합할 수 있습니다. 슬래시 명령(`/`로 시작하는 글)은 입력한 그대로 혼자 실행되고, 앱의 안내는 자식 창의 다음 요청으로 따라가므로 명령의 인자가 되지 않습니다.
 - 자식 창은 같은 에이전트의 보통 창처럼 씁니다. 승인 카드에 답하고, 후속 요청을 보내고, 권한 모드를 바꿀 수 있습니다.
@@ -48,7 +48,7 @@ section: delegation
 - 자식 창이나 마이티 오케스트레이션을 끈 창에서는 {{kbd:⌘Enter}}가 예전처럼 실행 중인 Claude에 바로 전달하고, Codex와 Antigravity 창은 대기열에 넣습니다. 휴대폰의 보내기 방식은 그대로여서, 휴대폰에서 바로 보내면 여전히 실행 중인 Claude로 갑니다.
 
 ## Claude에게 나눠 맡기기 {#delegate}
-Claude나 Codex 창(부모)이 일을 나눠 같은 에이전트의 다른 창(자식)에게 맡길 수도 있습니다. 자식이 보고하면 부모가 알림을 받아 보고서를 읽고, 결과를 병합할지 정합니다. Claude 부모는 Mac 앱과 Windows 앱에서, Codex 부모는 Mac에서만 됩니다.
+Claude나 Codex 창(부모)이 일을 나눠 같은 에이전트의 다른 창(자식)에게 맡길 수도 있습니다. 자식이 보고하면 부모가 알림을 받아 보고서를 읽고, 결과를 병합할지 정합니다. Claude와 Codex 부모 모두 Mac 앱과 Windows 앱에서 됩니다.
 
 1. git 저장소 폴더를 작업 공간으로 열고 Claude 창을 엽니다. 이 창이 부모입니다.
 2. "delegate 도구로 Mighty 자식 창 두 개를 열어 이 일을 나눠 맡겨"처럼 도구 이름을 넣어 요청합니다. 그냥 "나눠서 해"라고 하면 Claude가 자기 안의 하위 에이전트로 처리할 수 있습니다.
@@ -58,13 +58,13 @@ Claude나 Codex 창(부모)이 일을 나눠 같은 에이전트의 다른 창(�
 - 자식마다 브랜치 `mighty/<자식 id>`와 worktree(Mac은 `~/.mightyclaude/worktrees/<자식 id>`, Windows는 `%USERPROFILE%\.mightyclaude\worktrees\<자식 id>`)가 생깁니다. 자식은 부모의 마지막 커밋에서 시작합니다.
 - 맡긴 일은 TASK.md에, 결과는 REPORT.md에 적힙니다. 두 파일은 worktree 안의 git이 무시하는 폴더에 있어 커밋되지 않습니다.
 - 자식의 권한 모드는 부모가 고른 모드이고, 부모 창의 모드보다 넓을 수 없습니다. 넓히는 것은 사람만, 실행과 실행 사이에 자식 창 입력창의 권한 메뉴나 휴대폰 설정에서 할 수 있습니다.
-- {{platform:mac}} 자식 창은 부모 창과 같은 보기({{ui:graph.view.default}} | {{ui:graph.view.mighty}}, 마이티 보기라면 {{ui:graph.view.diagram}}, {{ui:graph.view.timeline}}, {{ui:graph.view.structure}} 중 같은 것)로 열립니다. 부모가 마이티 보기의 {{ui:graph.view.structure}}을 쓰고 있었다면 자식도 {{ui:graph.view.structure}}으로 보입니다.
+- 자식 창은 부모 창과 같은 보기({{ui:graph.view.default}} | {{ui:graph.view.mighty}}, 마이티 보기라면 {{ui:graph.view.diagram}}, {{ui:graph.view.timeline}}, {{ui:graph.view.structure}} 중 같은 것)로 열립니다. 부모가 마이티 보기의 {{ui:graph.view.structure}}을 쓰고 있었다면 자식도 {{ui:graph.view.structure}}으로 보입니다.
 - 부모는 자식의 승인 카드에 답하지 못합니다. 자식 창에 카드가 뜨면 그 창에서 직접 답하세요.
-- 부모 하나에 `delegate` 도구로 만든 열린 자식은 3개까지이고, Mac에서 직접 띄운 자식 3개와는 따로 셉니다. 어느 쪽도 다른 쪽을 막지 않습니다. 자식은 다시 위임하지 못합니다. 보고했거나 병합된 자식도 창이 열려 있으면 3개에 들어가므로, 끝난 자식 창을 닫으면 자리가 납니다. 디스크 여유가 10 GB보다 적으면 맡기기가 거절됩니다.
+- 부모 하나에 `delegate` 도구로 만든 열린 자식은 3개까지이고, 직접 띄운 자식 3개와는 따로 셉니다. 어느 쪽도 다른 쪽을 막지 않습니다. 자식은 다시 위임하지 못합니다. 보고했거나 병합된 자식도 창이 열려 있으면 3개에 들어가므로, 끝난 자식 창을 닫으면 자리가 납니다. 디스크 여유가 10 GB보다 적으면 맡기기가 거절됩니다.
 - 부모는 알림으로 자식의 보고를 알게 되고([알림과 보류](#notices)), `follow_up`으로 후속 지시를 보내고([후속 지시](#follow-up)), `merge`로 병합합니다([병합하기](#merge)).
 
 ## Codex와 Antigravity {#agents}
-{{platform:mac}} 마이티 오케스트레이션은 Codex와 Antigravity 창에서도 됩니다. 자식은 언제나 부모의 에이전트로 실행됩니다. Codex 창의 자식은 Codex 창이고, Antigravity 창의 자식은 Antigravity 창입니다. Claude 창이 Codex 자식에게 일을 맡기거나 그 반대로 할 수는 없습니다.
+마이티 오케스트레이션은 Codex와 Antigravity 창에서도 됩니다. 자식은 언제나 부모의 에이전트로 실행됩니다. Codex 창의 자식은 Codex 창이고, Antigravity 창의 자식은 Antigravity 창입니다. Claude 창이 Codex 자식에게 일을 맡기거나 그 반대로 할 수는 없습니다.
 
 - **자식이 일할 수 있는 모드**: 자식은 부모의 권한 모드로 시작하므로, Codex와 Antigravity 창은 자식이 파일을 바꿀 수 있는 모드에서만 {{kbd:⌘Enter}}로 자식을 띄웁니다. Codex는 {{ui:permission.label.acceptEditsCodex}}·{{ui:permission.label.onRequest}}·{{ui:permission.label.fullAccess}} 모드, Antigravity는 {{ui:permission.label.acceptEdits}}·{{ui:permission.label.fullAccess}} 모드입니다. 그 밖의 모드에서는 {{kbd:⌘Enter}}가 예전처럼 요청을 대기열에 넣습니다.
 - **Codex** 창에는 {{ui:permission.label.acceptEditsCodex}} 모드와 {{ui:permission.label.fullAccess}} 모드에서만 위임 도구가 붙습니다. {{ui:permission.label.defaultCodex}} 모드에서는 Codex가 도구를 거절하고, {{ui:permission.label.onRequest}} 모드에서는 앱이 보여 줄 수 없는 방식으로 묻기 때문입니다. `delegate`는 파일을 바꿀 수 없는 자식 모드를 거절합니다. Codex는 실행이 {{ui:permission.label.fullAccess}} 모드로 시작했을 때만 `merge`를 부를 수 있고, 그렇지 않으면 거절되므로(`merge_human_only`) 카드에서 병합합니다. 실행 중인 Codex 턴은 글을 받지 못하므로, 실행 중인 Codex 부모에게 가는 알림은 그 실행이 정상으로 끝난 뒤 다음 실행으로 가고, 중지나 오류로 끝나면 보류됩니다.
@@ -152,25 +152,25 @@ defaults write dev.mightyclaude.native delegation.enabled -bool false
 
 {{platform:mac}} 예전 버전은 그 키를 켜야만 켜졌고, 끄는 방법이 `defaults delete …`였습니다. 이제 그렇게 하면 켜진 채로 남으므로, 계속 꺼 두려면 설정에서 {{ui:settings.delegation.toggle}}을 끄세요.
 
-{{platform:windows}} 기본으로 꺼져 있습니다. 앱을 끈 채로 명령 프롬프트나 PowerShell에서 다음 명령을 실행하고 앱을 다시 엽니다.
+{{platform:windows}} 끄지 않는 한 켜져 있습니다. 설정의 {{ui:settings.nav.general}} 탭에서 {{ui:settings.delegation.toggle}}을 켜고 끕니다. 앱을 다시 열지 않아도 다음에 시작하는 실행부터 적용됩니다. 같은 스위치가 `HKEY_CURRENT_USER\Software\MightyClaudeNative` 아래의 `delegation.enabled` 값(REG_DWORD)이라서, 0이면 꺼지고 값이 없거나 다른 값이면 켜집니다. 그래서 명령 프롬프트나 PowerShell에서 다음 명령으로 꺼도 되고, `reg delete "HKCU\Software\MightyClaudeNative" /v delegation.enabled /f`로 다시 켭니다.
 
 ```
-reg add "HKCU\Software\MightyClaudeNative" /v delegation.enabled /t REG_DWORD /d 1 /f
+reg add "HKCU\Software\MightyClaudeNative" /v delegation.enabled /t REG_DWORD /d 0 /f
 ```
 
-Windows에서는 `HKEY_CURRENT_USER\Software\MightyClaudeNative` 아래의 `delegation.enabled` 값(REG_DWORD)이 0이 아니면 켜진 것입니다. 값이 없거나 0이면 꺼져 있습니다. 끄려면 `reg delete "HKCU\Software\MightyClaudeNative" /v delegation.enabled /f`를 실행하고 앱을 다시 엽니다.
+{{platform:windows}} 예전 버전은 그 값을 1로 넣어야만 켜졌습니다. 그때 넣어 둔 1은 켜진 상태를 그대로 둡니다.
 
 - 켜면 Claude나 Codex 창에서 새 실행을 시작할 때마다 위임 도구가 붙습니다. 이미 돌고 있는 실행에는 붙지 않습니다.
-- 끄면 도구만 떨어지고 Mac에서는 {{kbd:⌘Enter}}가 다시 실행 중인 Claude에 바로 전달합니다. 이미 있는 자식 창과 카드, 정리는 그대로 동작합니다.
+- 끄면 도구만 떨어지고 {{kbd:⌘Enter}}가 다시 실행 중인 Claude에 바로 전달합니다. 이미 있는 자식 창과 카드, 정리는 그대로 동작합니다.
 
 ## 한도와 지원 범위 {#limits}
 | 항목 | 한도 |
 |---|---|
-| 부모 하나의 열린 자식 | 직접 띄운 3개(Mac), `delegate`로 만든 3개 |
+| 부모 하나의 열린 자식 | 직접 띄운 3개, `delegate`로 만든 3개 |
 | 위임 깊이 | 한 층(자식은 다시 자식을 만들지 못함) |
 | 자식 하나의 후속 지시(`follow_up`) | 2개, 하나에 48 KiB |
 | 맡기는 일(TASK.md, 직접 띄운 요청) | 64 KiB |
 | 필요한 디스크 여유 | 10 GB |
 
-- 자식은 부모와 같은 에이전트로 실행됩니다. Claude와 Codex 창은 도구와 {{kbd:⌘Enter}}로, Antigravity 창은 {{kbd:⌘Enter}}로만 자식을 만듭니다([Codex와 Antigravity](#agents)). Codex와 Antigravity 자식은 Mac에서만 됩니다.
-- Mac 앱은 기본으로 켜져 있고 설정에 스위치가 있습니다. Windows 앱은 숨은 스위치로 켜고([켜고 끄기](#enable)), 직접 띄우기는 없습니다. 휴대폰에는 새 화면이 없고, 보류된 행은 휴대폰 대기열에도 보입니다.
+- 자식은 부모와 같은 에이전트로 실행됩니다. Claude와 Codex 창은 도구와 {{kbd:⌘Enter}}로, Antigravity 창은 {{kbd:⌘Enter}}로만 자식을 만듭니다([Codex와 Antigravity](#agents)).
+- Mac 앱과 Windows 앱 모두 기본으로 켜져 있고 설정에 스위치가 있습니다([켜고 끄기](#enable)). 휴대폰에는 새 화면이 없고, 보류된 행은 휴대폰 대기열에도 보입니다.

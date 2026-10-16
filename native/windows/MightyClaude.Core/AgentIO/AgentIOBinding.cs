@@ -28,14 +28,26 @@ public sealed class AgentIOBinding(string paneId, string workspaceId, string wor
     /// <summary>The pane's kind. Bindings are only made for agent-pane runs (M/AgentPaneMCPBinding.swift:30-31).</summary>
     public string Kind => "claude";
     /// <summary>
-    /// Whether this run also gets the delegation MCP server (<see cref="DelegationMcp"/>) on the same token: only a Claude pane's run
-    /// started while the hidden <see cref="DelegationSwitch"/> was on (M/AgentPaneMCPBinding.swift:32-35).
+    /// Whether this run also gets the delegation MCP server (<see cref="DelegationMcp"/>) on the same token: only a Claude pane's run,
+    /// or a Codex run in acceptEdits or fullAccess, started while the <see cref="DelegationSwitch"/> was on
+    /// (<see cref="DelegationProviders.AttachesDelegation"/>; M/AgentPaneMCPBinding.swift:32-39).
     /// </summary>
     public bool Delegation { get; private set; }
+    /// <summary>The permission mode the run started in: what a delegation call is judged by, whatever the pane's stored mode becomes meanwhile.</summary>
+    public string PermissionMode { get; private set; } = "";
     /// <summary>The app's side of the delegation server for calls on this token; null answers them as a run without the server.</summary>
     public IDelegationRequestHandler? DelegationHandler { get; private set; }
-    /// <summary>The run path connects a new binding before its CLI starts: who answers its delegation calls, and whether the server is attached to this run.</summary>
-    public void ConnectDelegation(IDelegationRequestHandler? handler, bool attached) { DelegationHandler = handler; Delegation = attached && DelegationSwitch.IsClaudePane(Kind, Provider); }
+    /// <summary>
+    /// The run path connects a new binding before its CLI starts: who answers its delegation calls, the permission mode the run
+    /// starts in, and whether the server is attached to this run.
+    /// </summary>
+    public void ConnectDelegation(IDelegationRequestHandler? handler, bool attached, string permissionMode = "")
+    {
+        DelegationHandler = handler; PermissionMode = permissionMode;
+        Delegation = attached && DelegationProviders.AttachesDelegation(Kind, Provider, permissionMode);
+    }
+    /// <summary>The mighty-terminal tools a Codex acceptEdits run may call without asking: they read what already ran or open a page as the user chose. run_in_terminal and stop are not among them.</summary>
+    public static readonly string[] CodexApprovedInAcceptEdits = ["read_latest_output", "open_url"];
     public IReadOnlyDictionary<string, string> Environment => new Dictionary<string, string> { [TokenKey] = Token, [PipeKey] = PipeName };
     public override string ToString() => $"AgentIOBinding({PaneId}, token=<redacted>)";
     public string Redact(string value) => value.Replace(Token, "<pane-token-redacted>", StringComparison.Ordinal);
@@ -51,8 +63,22 @@ public sealed class AgentIOBinding(string paneId, string workspaceId, string wor
         }
         else if (Provider == "codex")
         {
-            foreach (var pair in new Dictionary<string, object> { ["command"] = Executable, ["args"] = commandArgs, ["env_vars"] = new[] { TokenKey, PipeKey } })
-                arguments.AddRange(["-c", $"mcp_servers.{ServerName}.{pair.Key}=" + JsonSerializer.Serialize(pair.Value, Wire.Json)]);
+            // mighty-terminal, and mighty-delegation when the run gets it (M/AgentPaneMCPBinding.swift codexMCPArgs). By the run's
+            // mode, some tools are approved ahead: codex exec (no asking) otherwise fails every MCP call that needs an approval it
+            // cannot ask for. fullAccess approves both servers' tools; acceptEdits approves the delegation server's and, of
+            // mighty-terminal's, only reading output and opening a page (run_in_terminal would run a command outside the sandbox).
+            // manual (read-only) approves none, and onRequest leaves the asking to the human. Older Codex CLIs ignore the keys.
+            var servers = new List<(string Name, string[] Args)> { (ServerName, commandArgs) };
+            if (Delegation) servers.Add((DelegationMcp.ServerName, [DelegationMcp.HeadlessArgument]));
+            foreach (var (name, serverArgs) in servers)
+            {
+                foreach (var pair in new Dictionary<string, object> { ["command"] = Executable, ["args"] = serverArgs, ["env_vars"] = new[] { TokenKey, PipeKey } })
+                    arguments.AddRange(["-c", $"mcp_servers.{name}.{pair.Key}=" + JsonSerializer.Serialize(pair.Value, Wire.Json)]);
+                if (PermissionMode == "fullAccess" || name == DelegationMcp.ServerName && DelegationProviders.CodexApprovesTools(PermissionMode))
+                    arguments.AddRange(["-c", $"mcp_servers.{name}.default_tools_approval_mode=\"approve\""]);
+                else if (name == ServerName && PermissionMode == "acceptEdits")
+                    foreach (var tool in CodexApprovedInAcceptEdits) arguments.AddRange(["-c", $"mcp_servers.{name}.tools.{tool}.approval_mode=\"approve\""]);
+            }
             // Server/tool descriptions carry routing instructions without overriding
             // developer_instructions from the user's Codex configuration.
         }

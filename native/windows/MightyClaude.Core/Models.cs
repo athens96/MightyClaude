@@ -352,6 +352,9 @@ public sealed record StartRunRequest(string SessionId, string WorkspaceId, strin
     // A delegated child pane's worktree folder, where its run works instead of the workspace folder. Captured from the pane's saved
     // record at acceptance, never supplied by remote JSON.
     [JsonIgnore] public string? WorkingFolder { get; init; }
+    // A delegated child's worktree when its run works in a folder inside it (a workspace that is a subfolder of its repository):
+    // REPORT.md lies outside that folder, so a Codex run may also write here and an Antigravity run adds it. Not persisted.
+    [JsonIgnore] public string? DelegationWorktreeRoot { get; init; }
     private readonly IReadOnlyList<RunAttachment>? attachments = Attachments;
     public IReadOnlyList<RunAttachment>? Attachments { get => attachments is { Count: > 0 } ? attachments : null; init => attachments = value; }
     public IReadOnlyList<RegisteredModelEntry> RegisteredModels { get; init; } = RegisteredModels ?? [];

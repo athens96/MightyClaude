@@ -24,6 +24,19 @@ public sealed partial class MainWindow
     private readonly Dictionary<string, DelegationChildRow> sidebarChildStates = [];
     /// <summary>A smoke driver answers the delegation confirmations in their buttons' place.</summary>
     internal Func<ContentDialog, Task<ContentDialogResult>>? smokeDelegationDialog;
+    /// <summary>A smoke run's Mighty Orchestration switch, in the registry value's place: off until a smoke step turns it on.</summary>
+    private volatile bool smokeDelegationOn;
+
+    /// <summary>Whether Mighty Orchestration is on: the registry value, or a smoke run's own switch.</summary>
+    private bool DelegationOn => options.SmokeTest ? smokeDelegationOn : DelegationSwitch.IsOn();
+
+    /// <summary>Settings › General's switch (M/SettingsViews.swift:240-251): new runs get the delegation tools or not, and every composer's Ctrl+Enter follows at once.</summary>
+    private void SetDelegationOn(bool on)
+    {
+        if (options.SmokeTest) smokeDelegationOn = on; else DelegationSwitch.Set(on);
+        foreach (var view in views.Values) view.RefreshHeldRows();
+    }
+
     /// <summary>How long a run delegation starts waits for the window to say whether it would refuse it; past that it is refused.</summary>
     private static readonly TimeSpan DelegatedRunAnswer = TimeSpan.FromSeconds(5);
 
@@ -33,6 +46,8 @@ public sealed partial class MainWindow
         service.DelegatedRunBlocked = DelegatedRunBlocked;
         service.DelegatedRunRequest = request => OnWindow(() => FinishDelegatedRequest(request));
         service.EndAgentTerminal = id => OnWindow(() => EndAgentTerminal(id));
+        // The app's note in a pane's transcript (its commit of a child's work, among others) shows at once.
+        service.DelegationNoted += id => DispatcherQueue.TryEnqueue(() => { if (!closing && views.TryGetValue(id, out var view)) view.Refresh(); });
         service.DelegationChanged += () => DispatcherQueue.TryEnqueue(() =>
         {
             if (delegationRedrawQueued) return;
@@ -168,6 +183,25 @@ public sealed partial class MainWindow
         return await ShowDelegationDialog(dialog) == ContentDialogResult.Primary && pending.Nested is not null && !closing;
     }
 
+    /// <summary>
+    /// Once a merge from the child's card went through, the human is offered to discard the child right away (M/WorkspaceView.swift:93-97):
+    /// its work is in the parent's branch, so only its worktree, its branch and the undo go. Nothing is asked when the worktrees
+    /// nested in it cannot be listed (the card's own discard says why) or another confirmation is up.
+    /// </summary>
+    private async Task OfferDiscardAfterMerge(string id)
+    {
+        if (dialogOpen || await service.MergedDiscardOffer(id) is not { } pending || dialogOpen || closing) return;
+        var dialog = StyledDialog(new ContentDialog
+        {
+            Title = Locale.Get("delegation.mergedDiscard.title"), Content = new TextBlock { Text = DelegationText.MergedDiscardMessage(pending), TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true },
+            PrimaryButtonText = Locale.Get("delegation.mergedDiscard.confirm"), CloseButtonText = Locale.Get("delegation.mergedDiscard.later"), DefaultButton = ContentDialogButton.Close, XamlRoot = root.XamlRoot,
+        });
+        AutomationProperties.SetAutomationId(dialog, "delegation-merged-discard-" + id);
+        if (await ShowDelegationDialog(dialog) != ContentDialogResult.Primary || closing) return;
+        while ((await service.DiscardChildAsync(pending))?.Result is DelegationCardResult.Reconfirm again && await ConfirmDiscard(pending = pending with { Nested = again.Nested })) { }
+        if (!closing) Render();
+    }
+
     private async Task<ContentDialogResult> ShowDelegationDialog(ContentDialog dialog)
     {
         dialogOpen = true;
@@ -177,7 +211,13 @@ public sealed partial class MainWindow
 
     private Task PerformCardAction(DelegationCardAction action, string id) => action switch
     {
-        DelegationCardAction.Merge => Act(async () => { await service.MergeChildAsync(id); if (!closing) RenderSidebar(); }),
+        DelegationCardAction.Merge => Act(async () =>
+        {
+            var note = await service.MergeChildAsync(id);
+            if (closing) return;
+            RenderSidebar();
+            if (note?.Result is DelegationCardResult.Done) await OfferDiscardAfterMerge(id);
+        }),
         DelegationCardAction.Undo => Act(async () => { await service.UndoChildMergeAsync(id); if (!closing) RenderSidebar(); }),
         _ => DiscardChild(id),
     };
@@ -334,7 +374,62 @@ public sealed partial class MainWindow
             return await PrepareStyleRunRequest(request with { Model = pane.Model, Settings = pane.Settings, RegisteredModels = RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot) });
         }
 
-        /// <summary>The queued list again, for the items delegation holds for the pane.</summary>
-        internal void RefreshHeldRows() { if (QueuePaneAlive && Session.Kind == "claude") RenderQueuedInputs(); }
+        /// <summary>The queued list again, for the items delegation holds for the pane, and the composer, whose second send follows delegation.</summary>
+        internal void RefreshHeldRows() { if (QueuePaneAlive && Session.Kind == "claude") { RenderQueuedInputs(); RefreshComposerState(); } }
+
+        /// <summary>
+        /// The composer's second send on this busy pane (<see cref="ComposerSecondSend.Worktree"/>; M/AppStore+Delegation.swift
+        /// runInNewWorktree): the text and its attachments run now in a new child pane, in its own worktree beside this one, made
+        /// as delegate makes one, in plan mode when the pane's style starts every request so. This pane's run goes on undisturbed,
+        /// and the new child shows at once. When no child can be made, or it cannot start after all, the transcript says why and
+        /// the text goes on by <see cref="RunAfterNoWorktree"/>.
+        /// </summary>
+        private void RunInNewWorktree(string text, IReadOnlyList<RunAttachment> files)
+        {
+            var planFirst = LaunchesInPlanMode; var parentId = id;
+            // A pane that went away meanwhile has no composer to fall back to: the text is the child's failed task on its card.
+            Task FallBack(string reason) => owner.OnWindow(async () =>
+            {
+                if (owner.views.TryGetValue(parentId, out var view)) await view.RunAfterNoWorktree(text, files, reason);
+                return true;
+            });
+            _ = owner.Act(async () =>
+            {
+                var answer = await owner.service.StartHumanChildAsync(parentId, text, files, planFirst, _ => FallBack(Locale.Get("delegation.human.error.startFailed")));
+                if (answer switch { HumanChildStart.Refused refused => DelegationText.Reason(refused.Reason), HumanChildStart.Failed failed => failed.Message, _ => null } is { } reason) await FallBack(reason);
+                if (!owner.closing) owner.Render();
+            });
+        }
+
+        /// <summary>
+        /// The text of a second send that no new child runs (<see cref="ComposerSecondSends.Fallback"/>): steered into the pane's
+        /// running Claude turn when that can take it, otherwise the pane's next request, queued behind the run or started now when
+        /// the run ended meanwhile. With the queue full it goes back to the composer instead, unless something was typed there
+        /// meanwhile. The transcript says which, and why.
+        /// </summary>
+        private async Task RunAfterNoWorktree(string text, IReadOnlyList<RunAttachment> files, string reason)
+        {
+            if (!QueuePaneAlive) return;
+            var pane = Session; var words = new Dictionary<string, string> { ["reason"] = reason };
+            var busy = pane.Status == "running" || starting || owner.service.IsSessionRunning(id) || owner.BackgroundUpdateHolds(pane);
+            var fallback = ComposerSecondSends.Fallback(busy && DelegationProviders.CanSteer(pane.Kind, pane.Provider) && files.Count == 0);
+            if (queuedInputs.Items.Count >= QueuedInputBuffer.MaximumItems)
+            {
+                await SlashNote(Locale.Get("delegation.human.returned", words));
+                owner.error.Text = Locale.Get("queue.full");
+                if (input.Text.Length == 0) { updating = true; input.Text = text; updating = false; await Change(p => p with { Draft = text }); }
+                var kept = pendingAttachments.Select(file => file.Id).ToHashSet(); pendingAttachments.InsertRange(0, files.Where(file => !kept.Contains(file.Id))); RefreshAttachments();
+                RefreshComposerState();
+                return;
+            }
+            await SlashNote(Locale.Get(fallback == ComposerSecondSend.Steer ? "delegation.human.steered" : "delegation.human.queued", words));
+            // A turn that ends before taking the steer runs it next instead.
+            if (fallback == ComposerSecondSend.Steer && await owner.service.TrySteerAsync(id, text)) { RefreshComposerState(); return; }
+            if (!QueuePaneAlive) return;
+            queuedInputs.Add(text, files, BackgroundQueuePolicy.QueuedOverride(LaunchesInPlanMode));
+            RenderQueuedInputs(); RefreshComposerState();
+            // The run ended meanwhile: it is the next request now.
+            if (!busy) queueDrainTimer.Start();
+        }
     }
 }
