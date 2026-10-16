@@ -71,6 +71,10 @@ public enum DelegationReasonCode
     ClaudeOnly, ChildCannotDelegate, WidthCap, LowDisk, StoreFull, NotGit, UnbornBranch, DetachedHead, WiderMode, DiscardHumanOnly, NotReported, TrackedChanges,
     HeadMoved, Diverged, BranchNotCheckedOut, ChildClosed, ParentClosed, FollowUpLimit, WorktreeMissing, MergeConflict, UndoParentMoved, ParentBusy,
     WorkspaceHasChildren, HeldNotRemovable,
+    /// <summary>The Mac's: a parent whose agent's merge tool call its CLI does not gate (Codex) merges by tool only in
+    /// fullAccess, and otherwise the human merges from the child's card. Windows delegation is Claude-only, so it never
+    /// refuses with it; the name stays in the shared ontology list.</summary>
+    MergeHumanOnly,
 }
 
 /// <summary>

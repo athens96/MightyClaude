@@ -3,12 +3,12 @@ title: Mighty Orchestration
 order: 6
 section: delegation
 ---
-With Mighty Orchestration, while one Claude pane works, you hand other work to child Claude panes beside it and both go on at once. Each child pane works in its own git worktree and branch, so they never touch each other's files, and when it is done you merge its result into the parent's branch from its card in the sidebar. It used to be called agent delegation.
+With Mighty Orchestration, while one agent pane works, you hand other work to child panes beside it and both go on at once. A child runs its parent's agent: Claude, Codex or Antigravity ([Codex and Antigravity](#agents)). Each child pane works in its own git worktree and branch, so they never touch each other's files, and when it is done you merge its result into the parent's branch from its card in the sidebar. It used to be called agent delegation.
 
 There are two ways to open a child pane.
 
-- **Start one yourself** ({{platform:mac}}): in a running Claude pane, type your next request and press {{kbd:⌘Enter}}. The request runs right away in a child pane with a new worktree ([Run in a new worktree](#worktree)).
-- **Let Claude hand work over**: ask Claude to split the work and hand it to child panes. Claude makes the children, reads their reports and merges them too ([Let Claude hand work over](#delegate)).
+- **Start one yourself** ({{platform:mac}}): in a running Claude pane, or a Codex or Antigravity pane in a mode where its child can change files ([Codex and Antigravity](#agents)), type your next request and press {{kbd:⌘Enter}}. The request runs right away in a child pane with a new worktree ([Run in a new worktree](#worktree)).
+- **Let Claude hand work over**: ask Claude (or Codex) to split the work and hand it to child panes. It makes the children, reads their reports and merges them too ([Let Claude hand work over](#delegate)).
 
 > [!warning]
 > This is an experimental feature. On the Mac it is on by default and can be turned off in Settings. On Windows it is off by default, and only letting Claude hand work over is available, not starting a child yourself. Try it in a practice repository first.
@@ -34,21 +34,21 @@ There are two ways to open a child pane.
 | Throw the result away | The card's {{ui:delegation.card.discard}} button |
 
 ## Run in a new worktree {#worktree}
-{{platform:mac}} While a Claude pane is running, type a request and press {{kbd:⌘Enter}} or the round {{ui:queue.worktree}} button (the branch icon) beside stop. The running task goes on undisturbed, and your request runs right away in a new child pane with its own worktree. The new pane is shown at once, unless you have started typing in the parent pane meanwhile.
+{{platform:mac}} While a Claude, Codex or Antigravity pane is running, type a request and press {{kbd:⌘Enter}} or the round {{ui:queue.worktree}} button (the branch icon) beside stop. The running task goes on undisturbed, and your request runs right away in a new child pane with its own worktree. The new pane is shown at once, unless you have started typing in the parent pane meanwhile.
 
 - In a running pane, {{kbd:Enter}} puts the request in the queue, to run after the current task ends. The hint in the composer shows what each key does.
-- A new worktree is used only where one can be made: a git repository with a branch checked out that has a commit. Anywhere else (not a git repository, no commit yet, a commit checked out instead of a branch) {{kbd:⌘Enter}} sends to the running Claude as before.
+- A new worktree is used only where one can be made: a git repository with a branch checked out that has a commit. Anywhere else (not a git repository, no commit yet, a commit checked out instead of a branch) {{kbd:⌘Enter}} sends to the running Claude as before, and a Codex or Antigravity pane queues it.
 - The child starts from the parent's last commit. It gets a branch `mighty/<child id>`, and its worktree is made outside your project folder (`~/.mightyclaude/worktrees/<child id>`), so it never touches the parent's work. Changes you have not committed in the parent's folder do not reach the child.
 - It runs in the parent pane's permission mode, with its model and {{ui:composer.effort.label}}. In a style that starts every request in plan mode, it starts in plan mode. It opens in the parent's view, and when the parent was using a style in the Mighty view it starts in the same style (the style's progress is counted on its own from the child's first request). Your attachments go with it.
 - Its first message is your text, followed by a note from the app on where the child works, asking it to commit and write REPORT.md when it is done, so that its card can merge it. A slash command (text starting with `/`) runs alone, as you typed it, and the app's note follows as the child pane's next request, so it never becomes the command's arguments.
-- Use a child pane like any Claude pane: answer its approval cards, send follow-up requests and change its permission mode.
+- Use a child pane like any pane of its agent: answer its approval cards, send follow-up requests and change its permission mode.
 - The parent pane's Claude gets no notices about a child you started, since it never asked for it. The parent's tools neither list it nor merge it or send it follow-ups (`human_started`). Follow its state in the sidebar and use its card's buttons yourself.
 - A parent pane can have up to 3 open children, with 10 GB of free disk. Closing or discarding finished child panes makes room.
 - When the child cannot be made or cannot start after all (the pane already has 3 open children, the disk is low, its worktree or first run fails, and so on), the pane's transcript says why. Your text then goes to the running Claude if it can take it (no attachments), and otherwise becomes that pane's next request, as {{kbd:Enter}} would make it. With the queue full it goes back to the composer. A child that failed to start stays listed until you discard it from its card.
-- In a child pane, or in a pane with Mighty Orchestration turned off, {{kbd:⌘Enter}} sends to the running Claude as before, and Codex and Antigravity panes keep queuing. The phone's send modes are unchanged: sending now from the phone still goes to the running Claude.
+- In a child pane, or in a pane with Mighty Orchestration turned off, {{kbd:⌘Enter}} sends to the running Claude as before, and Codex and Antigravity panes queue. The phone's send modes are unchanged: sending now from the phone still goes to the running Claude.
 
 ## Let Claude hand work over {#delegate}
-A Claude pane (the parent) can also split its work and hand parts of it to other Claude panes (its children). When a child reports, the parent gets a notice, reads the report and decides whether to merge the result. It works in the Mac app and the Windows app.
+A Claude or Codex pane (the parent) can also split its work and hand parts of it to other panes of its agent (its children). When a child reports, the parent gets a notice, reads the report and decides whether to merge the result. Claude parents work in the Mac app and the Windows app, Codex parents only on the Mac.
 
 1. Open a git repository folder as a workspace and open a Claude pane. That pane is the parent.
 2. Name the tool in your request, for example "use the delegate tool to open two Mighty child panes and split this between them". If you only say "split this up", Claude may use its own built-in sub-agents instead.
@@ -62,6 +62,16 @@ A Claude pane (the parent) can also split its work and hand parts of it to other
 - The parent cannot answer a child's approval cards. When a card appears in a child pane, answer it there yourself.
 - A parent can have up to 3 open children made by its `delegate` tool, counted apart from the 3 you can start yourself on the Mac; neither kind blocks the other. A child cannot delegate further. Children that reported or were merged still count while their panes are open, so close finished child panes to make room. Delegation is refused when less than 10 GB of disk is free.
 - The parent learns of a child's report from a notice ([Notices and held items](#notices)), sends follow-ups with `follow_up` ([Follow-ups](#follow-up)) and merges with `merge` ([Merging](#merge)).
+
+## Codex and Antigravity {#agents}
+{{platform:mac}} Mighty Orchestration works in Codex and Antigravity panes too. A child always runs its parent's agent: a Codex pane's children are Codex panes, and an Antigravity pane's are Antigravity panes. A Claude pane cannot hand work to a Codex child, nor the other way round.
+
+- **Where a child can work**: a child starts in its parent's permission mode, so a Codex or Antigravity pane opens one with {{kbd:⌘Enter}} only in a mode where the child can change files: Codex in {{ui:permission.label.acceptEditsCodex}}, {{ui:permission.label.onRequest}} or {{ui:permission.label.fullAccess}}, Antigravity in {{ui:permission.label.acceptEdits}} or {{ui:permission.label.fullAccess}}. In any other mode {{kbd:⌘Enter}} queues the request, as before.
+- **Codex** panes get the delegation tools only in {{ui:permission.label.acceptEditsCodex}} or {{ui:permission.label.fullAccess}}: in {{ui:permission.label.defaultCodex}} Codex refuses them, and in {{ui:permission.label.onRequest}} it would ask in a way the app cannot show. `delegate` refuses a child mode that cannot change files. Codex may call `merge` only when its run started in {{ui:permission.label.fullAccess}}; otherwise it is refused (`merge_human_only`), and you merge from the card. A running Codex turn takes no text, so a notice for a running Codex parent goes as its next run once that run finishes normally, and is held after a stop or an error.
+- **Antigravity** panes have no delegation tools: start a child only with {{kbd:⌘Enter}}.
+- Codex and Antigravity children cannot commit in their worktree except in {{ui:permission.label.fullAccess}}, so they are told to leave their changes. When a child's run finishes normally with REPORT.md changed, the app commits its changes on its branch (`mighty: <child id> report r<n>`) and records the report at that commit; after a stop or an error it waits for the next normal finish. New files that .gitignore leaves out, that look like secrets (`.env*`, `*.pem`, `*.key`, `id_rsa*`, `credentials*`) or that are over 5 MB stay uncommitted, and the child pane names the last two kinds. The commit uses your git name and email (without them it fails and the pane says so) and is never signed. With an unresolved merge conflict in the worktree the app commits nothing and the pane says so.
+- When the card's merge is refused because of a conflict, only a child that can commit (in {{ui:permission.label.fullAccess}}) is asked to resolve it. Otherwise switch the child to {{ui:permission.label.fullAccess}} and ask it in its pane, or resolve the conflict yourself in a terminal in its worktree and commit there.
+- In a workspace that is a subfolder of its repository, a Codex child may also write its worktree's top folder, where REPORT.md is, and an Antigravity child gets that folder added.
 
 ## A child's state {#states}
 The sidebar shows each child's state.
@@ -85,8 +95,8 @@ There are two ways to bring a child's result into the parent's branch.
 
 1. **The card's {{ui:delegation.card.merge}} button** is for you. It is the only way to merge a child you started yourself. It fast-forwards when it can and otherwise makes exactly one merge commit. It checks for conflicts first and shows the reason on the card when it refuses.
    Once the merge goes through, you are asked whether to discard that child pane right away. {{ui:delegation.mergedDiscard.confirm}} closes the child pane and removes its worktree and branch. The merged work stays in the parent's branch, but the merge can no longer be undone. {{ui:delegation.mergedDiscard.later}} keeps the card.
-   When it is refused because of a conflict, the app asks the child pane to bring in the parent branch, resolve the conflict, commit and report again. The card says so, and the child becomes {{ui:delegation.child.state.running}}. Once it has reported again, press {{ui:delegation.card.merge}} again. This request goes once per report. When the child pane cannot start a run now, nothing is sent, the card keeps the refusal, and the next merge tries again. When the pane took the request but could not start it, or the child is in plan mode and only made a plan, ask the child pane yourself to resolve the conflict and report again.
-2. **The parent's `merge` tool** works only for children Claude handed work to. It fast-forwards only. The parent passes the child's head that `child_status` gave it. The merge is refused, changing nothing, when the child has not reported, when the child's or the parent's folder has uncommitted changes, when the child's head moved, when the parent's branch has moved on since (diverged), or when the parent's branch is not checked out. Whether an approval card appears for this tool follows the parent pane's permission mode.
+   When it is refused because of a conflict, the app asks the child pane to bring in the parent branch, resolve the conflict, commit and report again. The card says so, and the child becomes {{ui:delegation.child.state.running}}. Once it has reported again, press {{ui:delegation.card.merge}} again. This request goes once per report. When the child pane cannot start a run now, nothing is sent, the card keeps the refusal, and the next merge tries again. When the pane took the request but could not start it, or the child is in plan mode and only made a plan, ask the child pane yourself to resolve the conflict and report again. A Codex or Antigravity child is asked only in {{ui:permission.label.fullAccess}} ([Codex and Antigravity](#agents)).
+2. **The parent's `merge` tool** works only for children Claude handed work to. It fast-forwards only. The parent passes the child's head that `child_status` gave it. The merge is refused, changing nothing, when the child has not reported, when the child's or the parent's folder has uncommitted changes, when the child's head moved, when the parent's branch has moved on since (diverged), or when the parent's branch is not checked out. Whether an approval card appears for this tool follows the parent pane's permission mode. A Codex parent may use it only when its run started in {{ui:permission.label.fullAccess}}; in any other mode it is refused with `merge_human_only`, and you merge from the card.
 
 > [!tip]
 > Merging one child moves the parent's branch forward, so the `merge` tool usually refuses the other children as diverged. Merge those with the card's {{ui:delegation.card.merge}} button.
@@ -118,7 +128,7 @@ The card's {{ui:delegation.card.discard}} button removes the child's worktree an
 ## Notices and held items {#notices}
 When a child Claude handed work to reports or fails to start, the parent gets one notice. It also gets one when a run the parent started (the first task or a follow-up) ends without a report. A notice is only a short pointer starting with `[Mighty Claude notice …]`; the parent reads the report itself with `child_status`. A child you started yourself sends no notices.
 
-- If the parent is running, the notice goes straight into that run.
+- If the parent is running Claude, the notice goes straight into that run. A running Codex parent gets it as its next run, once that run finishes normally.
 - If the parent finished its last run normally since the app opened and is now idle, the notice starts its next run.
 - Otherwise the notice is held: after a stop, after an error, after the app reopens, or while a CLI update runs. Once something is held, new notices are held behind it, so the order is kept.
 
@@ -150,7 +160,7 @@ reg add "HKCU\Software\MightyClaudeNative" /v delegation.enabled /t REG_DWORD /d
 
 On Windows it is on while the `delegation.enabled` value (REG_DWORD) under `HKEY_CURRENT_USER\Software\MightyClaudeNative` is not zero. A missing value or zero means off. To turn it off, run `reg delete "HKCU\Software\MightyClaudeNative" /v delegation.enabled /f` and open the app again.
 
-- Once it is on, every new run in a Claude pane gets the delegation tools. A run that is already going does not.
+- Once it is on, every new run in a Claude or Codex pane gets the delegation tools. A run that is already going does not.
 - Turned off, only the tools go away, and on the Mac {{kbd:⌘Enter}} sends to the running Claude again. Existing child panes, their cards and their cleanup keep working.
 
 ## Limits and support {#limits}
@@ -162,5 +172,5 @@ On Windows it is on while the `delegation.enabled` value (REG_DWORD) under `HKEY
 | Task (TASK.md, a request you start yourself) | 64 KiB |
 | Free disk needed | 10 GB |
 
-- Both the parent and its children must be Claude panes. Codex and Antigravity (Gemini) panes do not make children.
+- A child runs its parent's agent. Claude and Codex panes make children with their tools and with {{kbd:⌘Enter}}, Antigravity panes only with {{kbd:⌘Enter}} ([Codex and Antigravity](#agents)). Codex and Antigravity children are Mac only.
 - The Mac app has it on by default, with a switch in Settings. The Windows app turns it on with a hidden switch ([Turn it on or off](#enable)), and there you cannot start a child yourself. The phone has no new screen, but held rows show in its queue too.

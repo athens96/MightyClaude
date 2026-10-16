@@ -265,6 +265,51 @@ class TranscriptReadingTests(unittest.TestCase):
         self.assertTrue(within("/w/child/app", "/w/child/"))
 
 
+class AgentRecordTests(unittest.TestCase):
+    """A child runs its parent's agent: Codex parents and children are judged
+    like Claude ones, except that no Claude transcript is looked for."""
+
+    def judge_s1_like(self, agents):
+        """s1-like with each named pane, and each named child's record, running `agents[id]`."""
+        with tempfile.TemporaryDirectory(prefix="mighty-record-") as folder:
+            root = Path(folder).resolve()
+            materialize(FIXTURES / "s1-like", root)
+            for name, key in (("workspace-state.json", "sessions"), ("delegation-state.json", "children")):
+                path = root / "profile" / name
+                file = json.loads(path.read_text())
+                for item in file[key]:
+                    if item.get("id") in agents:
+                        item["provider"] = agents[item["id"]]
+                path.write_text(json.dumps(file))
+            shutil.rmtree(root / "claude" / "projects")
+            return json.loads(judge(root, "--json").stdout)
+
+    def test_a_codex_parent_and_child_pass_without_a_claude_transcript(self):
+        answer = self.judge_s1_like({"s1-parent": "codex", "s1-child-1": "codex"})
+        self.assertNotIn("pane-links", answer["failed"])
+        self.assertNotIn("parent-transcript", answer["failed"])
+        # Its notices are reported as not judged, never silently passed.
+        for rule in ("parent-transcript", "transcript-once", "oldest-first"):
+            skipped = next(r["notJudged"] for r in answer["rules"] if r["rule"] == rule)
+            self.assertEqual(len(skipped), 1, rule)
+            self.assertIn("codex parent s1-parent keeps no Claude-format transcript", skipped[0])
+        # The same record with Claude panes needs the transcript that was taken away.
+        self.assertIn("parent-transcript", self.judge_s1_like({})["failed"])
+
+    def test_a_child_that_runs_another_agent_than_its_parent_or_its_record_fails_pane_links(self):
+        self.assertIn("pane-links", self.judge_s1_like({"s1-parent": "codex"})["failed"])
+        with tempfile.TemporaryDirectory(prefix="mighty-record-") as folder:
+            root = Path(folder).resolve()
+            materialize(FIXTURES / "s1-like", root)
+            path = root / "profile" / "workspace-state.json"
+            state = json.loads(path.read_text())
+            for pane in state["sessions"]:
+                pane["provider"] = "codex"
+            path.write_text(json.dumps(state))
+            # The panes run Codex, but the child's record names no agent, so Claude.
+            self.assertIn("pane-links", json.loads(judge(root, "--json").stdout)["failed"])
+
+
 class MalformedRecordTests(unittest.TestCase):
     """A delegation file the app did not write is not judged: the verdict is
     invalid, naming what is wrong, and the script never crashes."""

@@ -48,12 +48,17 @@ private func errorCode(_ response: [String: Any]?) -> Int? { (response?["error"]
         #expect(DelegationSwitch.isOn(defaults))
     }
 
-    @Test func onlyAnAgentPaneRunningClaudeIsAClaudePane() {
-        #expect(DelegationSwitch.isClaudePane(kind: SessionKind.claude, provider: "claude"))
-        #expect(!DelegationSwitch.isClaudePane(kind: SessionKind.claude, provider: "codex"))
-        #expect(!DelegationSwitch.isClaudePane(kind: SessionKind.claude, provider: "gemini"))
-        #expect(!DelegationSwitch.isClaudePane(kind: SessionKind.shell, provider: "claude"))
-        #expect(!DelegationSwitch.isClaudePane(kind: SessionKind.browser, provider: "claude"))
+    @Test func claudeAndCodexDelegateByToolAndAntigravityOnlyByTheHuman() {
+        for (provider, agent, human, steers) in [("claude", true, true, true), ("codex", true, true, false), ("gemini", false, true, false)] {
+            #expect(DelegationProviders.canParentByAgent(kind: SessionKind.claude, provider: provider) == agent, "\(provider)")
+            #expect(DelegationProviders.canParentByHuman(kind: SessionKind.claude, provider: provider, mode: "acceptEdits") == human, "\(provider)")
+            #expect(DelegationProviders.canSteer(kind: SessionKind.claude, provider: provider) == steers, "\(provider)")
+        }
+        for kind in [SessionKind.shell, SessionKind.browser] {
+            #expect(!DelegationProviders.canParentByAgent(kind: kind, provider: "claude") && !DelegationProviders.canParentByHuman(kind: kind, provider: "claude", mode: "acceptEdits"))
+            #expect(!DelegationProviders.canSteer(kind: kind, provider: "claude"))
+        }
+        #expect(!DelegationProviders.canParentByHuman(kind: SessionKind.claude, provider: "other", mode: "acceptEdits"))
     }
 
     /// The refusal vocabulary is the ontology's ReasonCode list, exactly.
@@ -62,7 +67,7 @@ private func errorCode(_ response: [String: Any]?) -> Int? { (response?["error"]
             "claude_only", "child_cannot_delegate", "width_cap", "low_disk", "store_full", "not_git", "unborn_branch", "detached_head",
             "wider_mode", "discard_human_only", "not_reported", "tracked_changes", "head_moved", "diverged", "branch_not_checked_out",
             "child_closed", "parent_closed", "follow_up_limit", "worktree_missing", "merge_conflict", "undo_parent_moved", "parent_busy",
-            "workspace_has_children", "held_not_removable", "human_started",
+            "workspace_has_children", "held_not_removable", "human_started", "merge_human_only",
         ])
     }
 }
@@ -97,16 +102,77 @@ private func errorCode(_ response: [String: Any]?) -> Int? { (response?["error"]
         #expect(delegation["env"] == nil)
     }
 
-    @Test func aCodexRunNeverNamesTheDelegationServer() throws {
+    @Test func aCodexRunNamesTheDelegationServerOnlyWhenItsBindingCarriesIt() throws {
         let home = try shortTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: home) }
-        let request = StartRunRequest(sessionId: "b", workspaceId: "w", input: "hi", provider: "codex")
-        // Even a binding that claims the attachment adds nothing to a Codex run.
-        for attached in [false, true] {
-            let args = try ProviderService.arguments(request, pluginDirectory: plugin, paneMCPBinding: delegationBinding(pane: "b", provider: "codex", delegation: attached), codexHome: home)
-            #expect(codexServers(args) == [PaneMCPBinding.serverName])
-            #expect(!args.joined(separator: " ").contains(DelegationMCPServer.serverName))
-            #expect(!args.joined(separator: " ").contains(DelegationMCPServer.headlessArgument))
+        var request = StartRunRequest(sessionId: "b", workspaceId: "w", input: "hi", provider: "codex")
+        request.settings.permissionMode = "acceptEdits"
+        let off = try ProviderService.arguments(request, pluginDirectory: plugin, paneMCPBinding: delegationBinding(pane: "b", provider: "codex", delegation: false), codexHome: home)
+        #expect(codexServers(off) == [PaneMCPBinding.serverName])
+        #expect(!off.joined(separator: " ").contains(DelegationMCPServer.serverName))
+        #expect(!off.joined(separator: " ").contains(DelegationMCPServer.headlessArgument))
+
+        let binding = delegationBinding(pane: "b", provider: "codex", delegation: true)
+        let on = try ProviderService.arguments(request, pluginDirectory: plugin, paneMCPBinding: binding, codexHome: home)
+        let name = DelegationMCPServer.serverName
+        #expect(codexServers(on) == [PaneMCPBinding.serverName, name])
+        #expect(on.contains("mcp_servers.\(name).command=\"\(appExecutable.path)\""))
+        #expect(on.contains("mcp_servers.\(name).args=[\"\(DelegationMCPServer.headlessArgument)\"]"))
+        #expect(on.contains("mcp_servers.\(name).env_vars=[\"MIGHTY_PANE_TOKEN\",\"MIGHTY_AGENT_IO_SOCKET\"]"))
+        // codex exec cannot ask: in acceptEdits the delegation tools are approved ahead, and of
+        // mighty-terminal's only reading output and opening a page, never run_in_terminal.
+        #expect(on.contains("mcp_servers.\(name).default_tools_approval_mode=\"approve\""))
+        #expect(!on.contains { $0.hasPrefix("mcp_servers.\(PaneMCPBinding.serverName).default_tools_approval_mode") })
+        #expect(on.filter { $0.contains(".tools.") } == ["mcp_servers.mighty-terminal.tools.read_latest_output.approval_mode=\"approve\"", "mcp_servers.mighty-terminal.tools.open_url.approval_mode=\"approve\""])
+        #expect(!on.contains { $0.hasPrefix("mcp_servers.") && $0.contains("run_in_terminal") })
+        // The token stays out of argv.
+        #expect(!on.joined(separator: " ").contains(binding.token))
+        // Codex drops MCP server instructions, so the delegation tools are named in the developer instructions.
+        let setting = try #require(on.first { $0.hasPrefix("developer_instructions=") })
+        let value = try JSONDecoder().decode(String.self, from: Data(setting.dropFirst("developer_instructions=".count).utf8))
+        #expect(value == PaneMCPToolManifest.codexDeveloperInstructions + " " + PaneMCPToolManifest.codexDelegationInstructions)
+        #expect(value.contains(name) && value.contains("fullAccess"))
+    }
+
+    @Test func aCodexRunApprovesItsToolsAheadOnlyWhereItMayWriteAndNeverAsks() throws {
+        let home = try shortTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: home) }
+        var request = StartRunRequest(sessionId: "b", workspaceId: "w", input: "hi", provider: "codex")
+        request.settings.permissionMode = "onRequest"
+        let args = try ProviderService.arguments(request, pluginDirectory: plugin, allowPermissionPrompts: true, paneMCPBinding: delegationBinding(pane: "b", provider: "codex", delegation: true), codexHome: home)
+        #expect(codexServers(args) == [PaneMCPBinding.serverName, DelegationMCPServer.serverName])
+        #expect(!args.contains { $0.contains("default_tools_approval_mode") })
+        #expect(!args.contains { $0.contains("approval_mode") })
+        // A read-only run (manual) approves nothing, as its CLI refuses them anyway. run_in_terminal,
+        // which runs outside the sandbox, is approved ahead only in fullAccess.
+        for (mode, terminal, perTool) in [("manual", false, false), ("acceptEdits", false, true), ("fullAccess", true, false)] {
+            request.settings.permissionMode = mode
+            let never = try ProviderService.arguments(request, pluginDirectory: plugin, paneMCPBinding: delegationBinding(pane: "b", provider: "codex", delegation: false), codexHome: home)
+            #expect(never.contains("mcp_servers.\(PaneMCPBinding.serverName).default_tools_approval_mode=\"approve\"") == terminal, "\(mode)")
+            #expect(never.contains { $0.contains(".tools.") } == perTool, "\(mode)")
+            #expect(!never.contains { $0.contains("tools.run_in_terminal") || $0.contains("tools.stop") }, "\(mode)")
         }
+    }
+
+    @Test func aChildInASubfolderWorkspaceMayWriteItsWorktreeRoot() throws {
+        let home = try shortTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: home) }
+        let root = "/tmp/worktrees/c1"
+        var codex = StartRunRequest(sessionId: "c1", workspaceId: "w", input: "hi", provider: "codex")
+        codex.delegationWorktreeRoot = root
+        for (mode, writes) in [("manual", false), ("acceptEdits", true), ("onRequest", true), ("fullAccess", false)] {
+            codex.settings.permissionMode = mode
+            let args = try ProviderService.arguments(codex, pluginDirectory: plugin, allowPermissionPrompts: mode == "onRequest", codexHome: home)
+            // Only the workspace-write sandbox has writable roots; read-only stays read-only, full access needs none.
+            #expect(args.contains("sandbox_workspace_write.writable_roots=[\"\(root)\"]") == writes, "\(mode)")
+        }
+        var agy = StartRunRequest(sessionId: "c1", workspaceId: "w", input: "hi", provider: "gemini")
+        #expect(!(try ProviderService.arguments(agy, pluginDirectory: plugin)).contains("--add-dir"))
+        agy.delegationWorktreeRoot = root
+        for mode in ["manual", "plan", "acceptEdits", "fullAccess"] {
+            agy.settings.permissionMode = mode
+            #expect(optionValue("--add-dir", try ProviderService.arguments(agy, pluginDirectory: plugin)) == root, "\(mode)")
+        }
+        // A pane that is no child names no extra folder.
+        codex.delegationWorktreeRoot = nil; codex.settings.permissionMode = "acceptEdits"
+        #expect(!(try ProviderService.arguments(codex, pluginDirectory: plugin, codexHome: home)).contains { $0.contains("writable_roots") })
     }
 }
 
@@ -136,9 +202,9 @@ private final class SwitchFlag: @unchecked Sendable {
         return try String(contentsOf: file, encoding: .utf8).split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
     }
 
-    @Test func theSwitchDecidesAndOnlyAClaudePaneGetsTheDelegationServer() async throws {
+    @Test func theSwitchDecidesAndOnlyClaudeAndCodexPanesGetTheDelegationServer() async throws {
         let root = try shortTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
-        let claude = root.appendingPathComponent("claude"), codex = root.appendingPathComponent("codex")
+        let claude = root.appendingPathComponent("claude"), codex = root.appendingPathComponent("codex"), agy = root.appendingPathComponent("agy")
         try executable(claude, """
         #!/bin/sh
         if [ "$1" = '--version' ]; then printf '2.1.271 (Claude Code)\\n'; exit 0; fi
@@ -156,25 +222,34 @@ private final class SwitchFlag: @unchecked Sendable {
         printf '%s\\n' "$@" > "$PWD/seen-argv.tmp" && mv "$PWD/seen-argv.tmp" "$PWD/seen-argv"
         printf '{"type":"turn.completed","usage":{"input_tokens":1,"cached_input_tokens":0,"output_tokens":1}}\\n'
         """)
+        try executable(agy, """
+        #!/bin/sh
+        if [ "$1" = '--version' ]; then printf '1.3.6\\n'; exit 0; fi
+        if [ "$1" = models ]; then exit 3; fi
+        /bin/cat > /dev/null
+        printf '%s\\n' "$@" > "$PWD/seen-argv.tmp" && mv "$PWD/seen-argv.tmp" "$PWD/seen-argv"
+        """)
         let plugin = root.appendingPathComponent("plugin", isDirectory: true)
         try FileManager.default.createDirectory(at: plugin.appendingPathComponent(".claude-plugin"), withIntermediateDirectories: true)
         try Data("{\"name\":\"mighty\"}".utf8).write(to: plugin.appendingPathComponent(".claude-plugin/plugin.json"))
         // One folder per run, so each fake writes its own seen-argv.
         var workspaces: [String: Workspace] = [:]
-        for name in ["claude-off", "claude-on", "codex-on", "shell-on"] {
+        for name in ["claude-off", "claude-on", "codex-on", "codex-read-only", "gemini-on", "shell-on"] {
             let folder = root.appendingPathComponent(name, isDirectory: true)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             workspaces[name] = Workspace(id: "ws-\(name)", name: name, path: folder.path)
         }
         // A busy CI runner may take longer than the app's 4 s for the fake's --version.
-        let service = ProviderService(binaryOverrides: ["claude": claude, "codex": codex], environment: ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": root.path], versionProbeTimeout: 60)
+        let service = ProviderService(binaryOverrides: ["claude": claude, "codex": codex, "gemini": agy], environment: ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": root.path], versionProbeTimeout: 60)
         let bindings = PaneMCPBindingRegistry()
         let location = PaneMCPServerLocation(socketPath: root.appendingPathComponent("io.sock").path, executable: appExecutable)
         let switchFlag = SwitchFlag()
         let runner = ProcessRunner(providerService: service, pluginDirectory: plugin, paneMCPServer: location, paneMCPBindings: bindings, delegationEnabled: { switchFlag.value }, onEvent: { _ in })
-        func start(_ name: String, kind: String = SessionKind.claude, provider: String = "claude", input: String = "hi") async throws {
+        func start(_ name: String, kind: String = SessionKind.claude, provider: String = "claude", input: String = "hi", mode: String = "manual") async throws {
             let workspace = try #require(workspaces[name])
-            try await runner.start(request: StartRunRequest(sessionId: name, workspaceId: workspace.id, kind: kind, input: input, provider: provider), workspace: workspace)
+            var request = StartRunRequest(sessionId: name, workspaceId: workspace.id, kind: kind, input: input, provider: provider)
+            request.settings.permissionMode = mode
+            try await runner.start(request: request, workspace: workspace)
         }
         do {
             // Off, the default: the Claude pane's run names mighty-terminal alone.
@@ -183,7 +258,7 @@ private final class SwitchFlag: @unchecked Sendable {
             #expect(Array(off.keys) == [PaneMCPBinding.serverName])
             #expect(bindings.binding(forPane: "claude-off")?.delegation == false)
 
-            // On: a Claude pane's run also gets the delegation server; a Codex pane's does not.
+            // On: a Claude or Codex pane's run also gets the delegation server; an Antigravity pane's gets no server.
             switchFlag.value = true
             try await start("claude-on")
             let onArguments = try await recordedArguments(in: URL(fileURLWithPath: workspaces["claude-on"]!.path))
@@ -194,11 +269,25 @@ private final class SwitchFlag: @unchecked Sendable {
             #expect(claudeBinding.delegation && claudeBinding.kind == SessionKind.claude && claudeBinding.provider == "claude")
             #expect(!onArguments.joined(separator: "\n").contains(claudeBinding.token))
 
-            try await start("codex-on", provider: "codex")
+            try await start("codex-on", provider: "codex", mode: "acceptEdits")
             let codexArguments = try await recordedArguments(in: URL(fileURLWithPath: workspaces["codex-on"]!.path))
-            #expect(codexServers(codexArguments) == [PaneMCPBinding.serverName])
-            #expect(!codexArguments.joined(separator: "\n").contains(DelegationMCPServer.serverName))
-            #expect(bindings.binding(forPane: "codex-on")?.delegation == false)
+            #expect(codexServers(codexArguments) == [PaneMCPBinding.serverName, DelegationMCPServer.serverName])
+            #expect(codexArguments.contains("mcp_servers.\(DelegationMCPServer.serverName).default_tools_approval_mode=\"approve\""))
+            let codexBinding = try #require(bindings.binding(forPane: "codex-on"))
+            #expect(codexBinding.delegation && codexBinding.provider == "codex")
+            #expect(!codexArguments.joined(separator: "\n").contains(codexBinding.token))
+
+            // A read-only Codex run gets no delegation tools: its CLI would refuse every call.
+            try await start("codex-read-only", provider: "codex")
+            let readOnly = try await recordedArguments(in: URL(fileURLWithPath: workspaces["codex-read-only"]!.path))
+            #expect(codexServers(readOnly) == [PaneMCPBinding.serverName])
+            #expect(!readOnly.contains { $0.contains("default_tools_approval_mode") })
+            #expect(bindings.binding(forPane: "codex-read-only")?.delegation == false)
+
+            try await start("gemini-on", provider: "gemini")
+            let geminiArguments = try await recordedArguments(in: URL(fileURLWithPath: workspaces["gemini-on"]!.path))
+            #expect(!geminiArguments.joined(separator: "\n").contains("mighty-"))
+            #expect(bindings.binding(forPane: "gemini-on") == nil)
 
             // A shell pane gets no MCP server at all, so no token either.
             try await start("shell-on", kind: SessionKind.shell, input: "true")
@@ -252,23 +341,24 @@ private final class RecordingTerminalHandler: AgentIORequestHandler, @unchecked 
         func tearDown() { server.stop(); try? FileManager.default.removeItem(at: folder) }
     }
 
-    @Test func switchedOnANonClaudePaneIsRefusedWithClaudeOnlyAndNothingChanges() async throws {
+    @Test func switchedOnAPaneWithoutDelegationToolsIsRefusedWithClaudeOnlyAndNothingChanges() async throws {
         let fixture = try Fixture(delegation: DelegationIOHandler(isSwitchOn: { true }))
         defer { fixture.tearDown() }
-        let codex = fixture.bind("codex", provider: "codex")
         let gemini = fixture.bind("gemini", provider: "gemini")
         let shell = fixture.bind("shell", provider: "claude", kind: SessionKind.shell)
         let claude = fixture.bind("claude", provider: "claude", delegation: true)
+        let codex = fixture.bind("codex", provider: "codex", delegation: true)
         let before = try fixture.state()
-        for caller in [codex, gemini, shell] {
+        for caller in [gemini, shell] {
             // Whatever delegation tool it names, the one answer is claude_only.
             for tool in ["delegate", "list_children", "child_status", "merge", "follow_up", "discard", "no_such_tool"] {
                 let request = tool == "delegate" ? Self.delegate : DelegationRequest(tool: tool, arguments: ["child": "child-1"])
                 #expect(fixture.send(request, caller) == .refusal(.claudeOnly), "\(caller.agentPaneId) \(tool)")
             }
         }
-        // A Claude pane with the server attached is not refused as a non-Claude pane.
+        // A Claude or Codex pane with the server attached passes the gate.
         #expect(fixture.send(Self.delegate, claude).refused == nil)
+        #expect(fixture.send(Self.delegate, codex).refused == nil)
         #expect(try fixture.state() == before)
         #expect(fixture.terminal.seen.isEmpty)
     }
@@ -276,14 +366,15 @@ private final class RecordingTerminalHandler: AgentIORequestHandler, @unchecked 
     @Test func throughTheDelegationServerTheRefusalIsToolDataWithOneReasonCode() async throws {
         let fixture = try Fixture(delegation: DelegationIOHandler(isSwitchOn: { true }))
         defer { fixture.tearDown() }
-        let codex = fixture.bind("codex", provider: "codex")
+        let gemini = fixture.bind("gemini", provider: "gemini")
         let before = try fixture.state()
-        let mcp = DelegationMCPServer(environment: [PaneMCPBinding.tokenEnvironmentKey: codex.token, PaneMCPBinding.socketEnvironmentKey: fixture.socketPath])
+        let mcp = DelegationMCPServer(environment: [PaneMCPBinding.tokenEnvironmentKey: gemini.token, PaneMCPBinding.socketEnvironmentKey: fixture.socketPath])
         let result = try #require(json(mcp.handle(line: toolCall("delegate", ["task": "Write the release notes", "mode": "plan"])))?["result"] as? [String: Any])
         #expect(result["isError"] as? Bool == true)
         #expect(result["structuredContent"] as? [String: String] == ["refused": "claude_only"])
         let text = try #require((result["content"] as? [[String: Any]])?.first?["text"] as? String)
-        #expect(text == "Refused: claude_only. Nothing was changed.")
+        #expect(text == "Refused: claude_only (this pane's agent cannot use the delegation tools). Nothing was changed.")
+        #expect(!text.contains("Claude pane"))
         #expect(DelegationReasonCode.allCases.filter { text.contains($0.rawValue) } == [.claudeOnly])
         #expect(try fixture.state() == before)
     }

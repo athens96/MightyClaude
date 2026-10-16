@@ -134,7 +134,12 @@ Both the terminal pane and the browser pane appear in the relay pane-list payloa
 Commands sent through `run_in_terminal` follow the agent's **own permission mode**:
 
 - For Claude: the run's own `--permission-mode` (`default`, `acceptEdits`, `bypassPermissions`, and so on) and its own prompt flow.
-- For Codex: the run's own approval policy and sandbox mode.
+- For Codex: the run's own approval policy and sandbox mode. A `codex exec` run (every mode but onRequest) cannot ask, and Codex refuses an MCP call that needs an approval it cannot ask for, so the app approves some tools ahead by mode (`PaneMCPBinding.codexMCPArgs`):
+  - **fullAccess**: `-c mcp_servers.mighty-terminal.default_tools_approval_mode="approve"`, so all four tools run unprompted, as everything else does in that mode.
+  - **acceptEdits** (workspace-write sandbox): only `read_latest_output` and `open_url`, per tool (`-c mcp_servers.mighty-terminal.tools.<tool>.approval_mode="approve"`, `PaneMCPToolManifest.codexApprovedInAcceptEdits`). `run_in_terminal` would run a command outside the sandbox unprompted, so it is not approved ahead and Codex refuses it there; `stop` has nothing to stop then.
+  - **manual** (read-only): nothing is approved ahead, so Codex refuses the tools.
+  - **onRequest** (app-server): nothing is approved ahead; Codex asks through the app's approval cards.
+  The delegation server (`mighty-delegation`, Mac) is attached to a Codex run only in acceptEdits and fullAccess, and its tools are approved ahead there; its merge tool is refused by the app unless the run started in fullAccess (`merge_human_only`).
 
 The Mac app adds no extra approval window of its own. The terminal tool is subject to the same permission checks as any other tool the agent calls; the user's existing permission settings govern whether the tool call proceeds.
 

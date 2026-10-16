@@ -3,7 +3,7 @@ import Foundation
 /// The delegation MCP server: the app binary run as `--agent-delegation-mcp`.
 ///
 /// A separate server from mighty-terminal, so that one keeps exactly its four
-/// tools. A run gets it only in a Claude pane and only while the
+/// tools. A run gets it only in a Claude or Codex pane and only while the
 /// ``DelegationSwitch`` is on, and it lists exactly the six tools of
 /// ``DelegationToolManifest``. It shares that pane's token and socket: each
 /// `tools/call` is forwarded to the app with `MIGHTY_PANE_TOKEN` over
@@ -32,11 +32,12 @@ public final class DelegationMCPServer: @unchecked Sendable {
     public func handle(line: String) -> String? { core.handle(line: line) }
 
     /// The `tools/call` result for the app's answer. A refusal names its one
-    /// reason code in the text and as structured content; a child is tool
-    /// data in both too.
+    /// reason code in the text and as structured content, with a word on what
+    /// to do for a code whose name does not say it; a child is tool data in
+    /// both too.
     static func result(_ response: DelegationResponse) -> [String: Any] {
         if let reason = response.refused {
-            return ["content": [["type": "text", "text": "Refused: \(reason.rawValue). Nothing was changed."]], "structuredContent": ["refused": reason.rawValue], "isError": true]
+            return ["content": [["type": "text", "text": "Refused: \(reason.rawValue)\(hint(reason)). Nothing was changed."]], "structuredContent": ["refused": reason.rawValue], "isError": true]
         }
         if let child = response.child {
             let text = "Child \(child.id) is \(child.state.rawValue), on the branch \(child.branch), starting in \(child.startingMode) mode."
@@ -48,6 +49,15 @@ public final class DelegationMCPServer: @unchecked Sendable {
         if let merged = response.merged { return result(merged) }
         if let followUp = response.followUp { return result(followUp) }
         return MCPStdioServer.toolError(response.error ?? "Mighty Claude did not answer the request.")
+    }
+
+    /// What a refusal's code means when its name does not say it.
+    static func hint(_ reason: DelegationReasonCode) -> String {
+        switch reason {
+        case .claudeOnly: " (this pane's agent cannot use the delegation tools)"
+        case .mergeHumanOnly: " (in this permission mode only the human merges, from the child's card in the app; tell the user the child is ready)"
+        default: ""
+        }
     }
 }
 

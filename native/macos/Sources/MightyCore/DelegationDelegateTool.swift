@@ -34,27 +34,30 @@ public struct HumanChildStarter: Sendable {
     }
 }
 
-/// The delegate tool (macOS only): a parent Claude pane starts a child Claude
-/// pane on a task, in the child's own worktree, one layer deep.
+/// The delegate tool (macOS only): a parent Claude or Codex pane starts a
+/// child pane of its own agent on a task, in the child's own worktree, one
+/// layer deep.
 extension DelegationCoordinator {
     /// The open children one parent may have at once.
     public static let maximumOpenChildren = 3
     /// How deep delegation goes: a parent's children cannot delegate.
     public static let maximumDepth = 1
-    /// The starting modes a parent may ask for, narrowest first.
-    public static let startingModes = ["plan", "manual", "acceptEdits", "auto", "fullAccess"]
+    /// The starting modes a Claude parent may ask for, narrowest first; a
+    /// parent of any agent asks for one of ``DelegationProviders/startingModes(provider:)``.
+    public static let startingModes = DelegationProviders.startingModes(provider: "claude")
 
-    /// Whether `mode` lets Claude act no more freely than `stored` does, by
-    /// rank (plan < manual < acceptEdits < auto < fullAccess). An unknown mode
-    /// on either side is never no wider.
-    public static func isNoWider(_ mode: String, than stored: String) -> Bool {
-        guard let asked = startingModes.firstIndex(of: mode), let own = startingModes.firstIndex(of: stored) else { return false }
-        return asked <= own
+    /// Whether `mode` lets a `provider` agent act no more freely than
+    /// `stored` does, by rank (Claude: plan < manual < acceptEdits < auto <
+    /// fullAccess; Codex: manual < acceptEdits < onRequest < fullAccess). A
+    /// mode the provider lacks, on either side, is never no wider.
+    public static func isNoWider(_ mode: String, than stored: String, provider: String = "claude") -> Bool {
+        DelegationProviders.isNoWider(mode, than: stored, provider: provider)
     }
 
     /// delegate(task, mode) from `caller`. The first rule that applies answers:
     ///
-    /// 1. A mode that is not a starting mode, or an empty task, one with a NUL
+    /// 1. A mode that is not one of the caller's agent's, a Codex mode in
+    ///    which the child could not change files (manual), or an empty task, one with a NUL
     ///    character or one over 64 KiB, is answered with an error. The child's
     ///    first run input holds the whole task, and no run input may hold a
     ///    NUL; 64 KiB is its TASK.md copy's cap, which keeps that input well
@@ -74,7 +77,12 @@ extension DelegationCoordinator {
     /// request key and a copy of its TASK.md, and the answer names it while
     /// its start goes on in the background (``startChild(_:base:task:)``).
     func delegate(task: String, mode: String, caller: PaneMCPBinding) async -> DelegationResponse {
-        guard Self.startingModes.contains(mode) else { return .failure("mode must be one of \(Self.startingModes.joined(separator: ", ")).") }
+        let modes = DelegationProviders.startingModes(provider: caller.provider)
+        guard modes.contains(mode) else { return .failure("mode must be one of \(modes.joined(separator: ", ")).") }
+        guard DelegationProviders.childCanWrite(provider: caller.provider, mode: mode) else {
+            let writing = modes.filter { DelegationProviders.childCanWrite(provider: caller.provider, mode: $0) }
+            return .failure("A \(ProviderOptions.label(caller.provider)) child in \(mode) mode cannot change files, so it could not do the task or leave its work for a merge. Ask for one of \(writing.joined(separator: ", ")), no wider than your own mode.")
+        }
         guard !task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return .failure("delegate needs a task: what the child should do.") }
         guard !task.contains("\0") else { return .failure("A task may not contain a NUL character.") }
         guard task.utf8.count <= DelegationFileStore.maximumCopyBytes else { return .failure("A task may be at most 64 KiB.") }
@@ -95,7 +103,7 @@ extension DelegationCoordinator {
         if let reason = refusal(of: parentId, parent, mode: mode) { return .refusal(reason) }
         let id = UUID().uuidString.lowercased()
         let child = ChildRecord(id: id, parentSessionId: parentId, worktreePath: worktrees.worktreePath(for: id), parentBranch: base.parentBranch,
-                                baseCommit: base.baseCommit, startingMode: mode, requestKey: key, parentCheckout: base.repository)
+                                baseCommit: base.baseCommit, startingMode: mode, requestKey: key, parentCheckout: base.repository, provider: parent.provider)
         do {
             guard case .admitted(let next) = try file.admitting(child, task: DelegationCopy(childId: id, kind: .task, revision: 0, contents: Data(task.utf8)), context: context) else { return .refusal(.storeFull) }
             try commit(next, context: context)
@@ -110,7 +118,7 @@ extension DelegationCoordinator {
     }
 
     /// The child's start, after delegate (or the human's send) has answered:
-    /// its worktree, then its pane in the starting mode, then its first run,
+    /// its worktree, then its pane of the parent's agent in the starting mode, then its first run,
     /// which `human` starts when the human's send made the child (with the
     /// send's attachments) and the host otherwise. The child moves to running
     /// once that run has started, as the run its parent awaits, and otherwise
@@ -123,10 +131,11 @@ extension DelegationCoordinator {
         guard let child = file.children.first(where: { $0.id == id }), child.state == .creating else { return }
         var runId: String?
         if case .created(let worktree) = await worktrees.make(sessionId: id, base: base, task: task) {
-            let pane = DelegationChildPane(sessionId: id, parentSessionId: child.parentSessionId, mode: child.startingMode, folder: worktree.workingFolder, startedByHuman: !child.notifiesParent)
+            let pane = DelegationChildPane(sessionId: id, parentSessionId: child.parentSessionId, mode: child.startingMode, folder: worktree.workingFolder,
+                                           startedByHuman: !child.notifiesParent, provider: child.agent)
             if await host.createPane(pane) {
-                if let human { runId = await human.start(id, Self.humanFirstRun(text: task, worktree: worktree)) }
-                else { runId = await host.startRun(sessionId: id, input: Self.firstInput(task: task, worktree: worktree)) }
+                if let human { runId = await human.start(id, Self.humanFirstRun(text: task, worktree: worktree, provider: child.agent)) }
+                else { runId = await host.startRun(sessionId: id, input: Self.firstInput(task: task, worktree: worktree, provider: child.agent)) }
             }
         }
         let context = await pruneContext()
@@ -148,16 +157,29 @@ extension DelegationCoordinator {
         if runId == nil, let human { await human.failed(id) }
     }
 
-    /// The first message of a child's first run: its task and how it reports.
-    static func firstInput(task: String, worktree: ChildWorktree) -> String {
-        """
-        Another Claude pane in Mighty Claude delegated this task to you. You work in your own git worktree on the branch \(worktree.branch); the task is also saved in \(worktree.taskFile).
+    /// The first message of a child's first run: its task and how it
+    /// reports. A Claude child commits its work itself; a child of any other
+    /// agent leaves it for the app's commit (``ChildAutoCommit``).
+    static func firstInput(task: String, worktree: ChildWorktree, provider: String = "claude") -> String {
+        let from = provider == "claude" ? "Another Claude pane" : "Another pane"
+        let done = provider == "claude"
+            ? "When you are done, commit your work on this branch, leaving no uncommitted changes to tracked files, and then write your report to \(worktree.reportFile)"
+            : "When you are done, write your report to \(worktree.reportFile)"
+        let leave = provider == "claude" ? "" : " " + appCommitNote(worktree: worktree)
+        return """
+        \(from) in Mighty Claude delegated this task to you. You work in your own git worktree on the branch \(worktree.branch); the task is also saved in \(worktree.taskFile).
 
-        When you are done, commit your work on this branch, leaving no uncommitted changes to tracked files, and then write your report to \(worktree.reportFile): what you did, what is left and what your parent should check. Your parent gets one notice for each of your runs that ends with that file changed, and may merge your branch. Do not merge, push or switch branches.
+        \(done): what you did, what is left and what your parent should check.\(leave) Your parent gets one notice for each of your runs that ends with that file changed, and may merge your branch. Do not merge, push or switch branches.
 
         Task:
         \(task)
         """
+    }
+
+    /// How a child of an agent other than Claude leaves its work: the app
+    /// commits it on the child's branch when the child writes its report.
+    static func appCommitNote(worktree: ChildWorktree) -> String {
+        "Do not commit: leave your changes in this worktree. When your run ends with \(worktree.reportFile) changed, Mighty Claude commits every change .gitignore lets in on \(worktree.branch) for you."
     }
 
     /// The first run of a child the human started: their text as they typed
@@ -166,21 +188,26 @@ extension DelegationCoordinator {
     /// command (it starts with `/`) runs alone, as the human typed it, so the
     /// note never becomes the command's arguments; the note follows as the
     /// child's next request.
-    public static func humanFirstRun(text: String, worktree: ChildWorktree) -> HumanChildFirstRun {
-        let note = humanNote(worktree: worktree)
+    public static func humanFirstRun(text: String, worktree: ChildWorktree, provider: String = "claude") -> HumanChildFirstRun {
+        let note = humanNote(worktree: worktree, provider: provider)
         return text.hasPrefix("/") ? HumanChildFirstRun(input: text, followingNote: note) : HumanChildFirstRun(input: text + "\n\n" + note, followingNote: nil)
     }
 
-    /// The app's note to a child the human started.
-    static func humanNote(worktree: ChildWorktree) -> String {
-        "[Mighty Claude] This request runs in its own git worktree on the branch \(worktree.branch), opened beside another Claude pane so that pane keeps working undisturbed. When you are done, commit your work on this branch, leaving no uncommitted changes to tracked files, and then write a short report to \(worktree.reportFile): what you did and what is left. The person who sent this merges your branch from the app. Do not merge, push or switch branches."
+    /// The app's note to a child the human started. A Claude child commits
+    /// its work itself; a child of any other agent leaves it for the app.
+    static func humanNote(worktree: ChildWorktree, provider: String = "claude") -> String {
+        if provider == "claude" {
+            return "[Mighty Claude] This request runs in its own git worktree on the branch \(worktree.branch), opened beside another Claude pane so that pane keeps working undisturbed. When you are done, commit your work on this branch, leaving no uncommitted changes to tracked files, and then write a short report to \(worktree.reportFile): what you did and what is left. The person who sent this merges your branch from the app. Do not merge, push or switch branches."
+        }
+        return "[Mighty Claude] This request runs in its own git worktree on the branch \(worktree.branch), opened beside another pane so that pane keeps working undisturbed. When you are done, write a short report to \(worktree.reportFile): what you did and what is left. \(appCommitNote(worktree: worktree)) The person who sent this merges your branch from the app. Do not merge, push or switch branches."
     }
 
-    /// The human's run of `text` in a new child of the Claude pane
-    /// `parentId`, from its composer's second send (``ComposerSecondSend``).
-    /// The child is made as delegate makes one, in the parent's permission
-    /// mode now (so never wider), or in plan mode when `planFirst` (the
-    /// parent's style starts every request in plan mode). It is marked started
+    /// The human's run of `text` in a new child of the Claude, Codex or
+    /// Antigravity pane `parentId`, from its composer's second send
+    /// (``ComposerSecondSend``). The child runs the parent's agent and is
+    /// made as delegate makes one, in the parent's permission mode now (so
+    /// never wider), or in plan mode when `planFirst` (the parent's style
+    /// starts every request in plan mode) and the agent has one. It is marked started
     /// by the human, so it sends the parent no notices and the parent's tools
     /// neither list it nor act on it; it has its own cap of 3 open children
     /// started by the human, apart from the 3 the parent's delegate may have.
@@ -188,7 +215,9 @@ extension DelegationCoordinator {
     ///
     /// 1. Delegation is switched off, or `text` is no task (empty, with a NUL
     ///    character or over 64 KiB): a failure in the app's language.
-    /// 2. `parent_closed` (no such pane), `claude_only`, then delegate's own
+    /// 2. `parent_closed` (no such pane), `claude_only` (no agent pane), a
+    ///    Codex or Antigravity mode in which the child could not change files
+    ///    (a failure in the app's language), then delegate's own
     ///    refusals: `child_cannot_delegate`, `width_cap`, `wider_mode`;
     ///    `not_git`, `detached_head`, `unborn_branch`, `low_disk`; `store_full`.
     /// 3. A delegation file the disk refuses: a failure.
@@ -204,8 +233,9 @@ extension DelegationCoordinator {
             return .failed(L("delegation.human.error.invalidTask"))
         }
         guard let parent = await host.paneState(sessionId: parentId) else { return .refused(.parentClosed) }
-        guard DelegationSwitch.isClaudePane(kind: parent.kind, provider: parent.provider) else { return .refused(.claudeOnly) }
-        let mode = planFirst ? "plan" : parent.permissionMode
+        guard DelegationProviders.isAgentPane(kind: parent.kind, provider: parent.provider) else { return .refused(.claudeOnly) }
+        let mode = planFirst && DelegationProviders.startingModes(provider: parent.provider).contains("plan") ? "plan" : parent.permissionMode
+        guard DelegationProviders.childCanWrite(provider: parent.provider, mode: mode) else { return .failed(L("delegation.human.error.readOnlyMode")) }
         if let reason = refusal(of: parentId, parent, mode: mode, byHuman: true) { return .refused(reason) }
         let base: ChildWorktreeBase
         switch await worktrees.check(workspace: parent.folder) {
@@ -220,7 +250,7 @@ extension DelegationCoordinator {
         // No repeat to recognise: each send is its own child.
         let key = DelegationRequestKey.make(parentSessionId: parentId, parentRunId: "human-" + id, task: text, startingMode: mode)
         let child = ChildRecord(id: id, parentSessionId: parentId, worktreePath: worktrees.worktreePath(for: id), parentBranch: base.parentBranch,
-                                baseCommit: base.baseCommit, startingMode: mode, requestKey: key, parentCheckout: base.repository, startedByHuman: true)
+                                baseCommit: base.baseCommit, startingMode: mode, requestKey: key, parentCheckout: base.repository, startedByHuman: true, provider: parent.provider)
         do {
             guard case .admitted(let next) = try file.admitting(child, task: DelegationCopy(childId: id, kind: .task, revision: 0, contents: Data(text.utf8)), context: context) else { return .refused(.storeFull) }
             try commit(next, context: context)
@@ -248,7 +278,7 @@ extension DelegationCoordinator {
         let depth = (parent.parentSessionId != nil || file.children.contains(where: { $0.id == parentId })) ? 1 : 0
         if depth >= Self.maximumDepth { return .childCannotDelegate }
         if file.children.filter({ $0.parentSessionId == parentId && $0.state.isOpen && $0.notifiesParent != byHuman }).count >= Self.maximumOpenChildren { return .widthCap }
-        if !Self.isNoWider(mode, than: parent.permissionMode) { return .widerMode }
+        if !Self.isNoWider(mode, than: parent.permissionMode, provider: parent.provider) { return .widerMode }
         return nil
     }
 

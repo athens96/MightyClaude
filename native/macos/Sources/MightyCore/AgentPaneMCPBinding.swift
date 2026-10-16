@@ -30,19 +30,23 @@ public struct PaneMCPBinding: Sendable, Equatable, CustomStringConvertible, Cust
     /// The pane's kind. Bindings are only made for agent-pane runs.
     public let kind: String
     /// Whether this run also gets the delegation MCP server (``DelegationMCPServer``)
-    /// on the same token: only a Claude pane's run started while the
-    /// ``DelegationSwitch`` was on.
+    /// on the same token: only a Claude pane's run, or a Codex run in
+    /// acceptEdits or fullAccess, started while the ``DelegationSwitch`` was on
+    /// (``DelegationProviders/attachesDelegation(kind:provider:mode:)``).
     public let delegation: Bool
+    /// The permission mode the run started in: what a delegation call is
+    /// judged by, whatever the pane's stored mode becomes meanwhile.
+    public let permissionMode: String
 
-    public init(agentPaneId: String, token: String, server: PaneMCPServerLocation, workspaceId: String, workspacePath: String, provider: String, kind: String = SessionKind.claude, delegation: Bool = false) {
+    public init(agentPaneId: String, token: String, server: PaneMCPServerLocation, workspaceId: String, workspacePath: String, provider: String, kind: String = SessionKind.claude, delegation: Bool = false, permissionMode: String = "") {
         self.agentPaneId = agentPaneId; self.token = token; self.server = server
         self.workspaceId = workspaceId; self.workspacePath = workspacePath; self.provider = provider
-        self.kind = kind; self.delegation = delegation
+        self.kind = kind; self.delegation = delegation; self.permissionMode = permissionMode
     }
 
     /// Create a binding for one agent pane with a fresh 256-bit random token.
-    public static func generate(agentPaneId: String, server: PaneMCPServerLocation, workspaceId: String, workspacePath: String, provider: String, kind: String = SessionKind.claude, delegation: Bool = false) -> PaneMCPBinding {
-        PaneMCPBinding(agentPaneId: agentPaneId, token: randomToken(), server: server, workspaceId: workspaceId, workspacePath: workspacePath, provider: provider, kind: kind, delegation: delegation)
+    public static func generate(agentPaneId: String, server: PaneMCPServerLocation, workspaceId: String, workspacePath: String, provider: String, kind: String = SessionKind.claude, delegation: Bool = false, permissionMode: String = "") -> PaneMCPBinding {
+        PaneMCPBinding(agentPaneId: agentPaneId, token: randomToken(), server: server, workspaceId: workspaceId, workspacePath: workspacePath, provider: provider, kind: kind, delegation: delegation, permissionMode: permissionMode)
     }
 
     static func randomToken() -> String {
@@ -78,20 +82,39 @@ public struct PaneMCPBinding: Sendable, Equatable, CustomStringConvertible, Cust
         return String(decoding: data, as: UTF8.self)
     }
 
-    /// The `-c mcp_servers.<name>.*` args for a Codex run. `env_vars` whitelists
-    /// the two variables from the Codex process environment for the server.
+    /// The `-c mcp_servers.<name>.*` args for a Codex run: mighty-terminal,
+    /// and mighty-delegation when the run gets it. `env_vars` whitelists the
+    /// two variables from the Codex process environment for each server.
+    /// By the run's `mode`, some tools are approved ahead: `codex exec` (no
+    /// asking) otherwise fails every MCP call that needs an approval it cannot
+    /// ask for. fullAccess approves both servers' tools. acceptEdits approves
+    /// the delegation server's and, of mighty-terminal's, only
+    /// ``PaneMCPToolManifest/codexApprovedInAcceptEdits`` (reading output,
+    /// opening a page): run_in_terminal would run a command outside the
+    /// sandbox, so it stays refused there. manual (read-only) approves none,
+    /// and onRequest leaves the asking to the human. Older Codex CLIs ignore
+    /// the keys.
     ///
     /// `-c developer_instructions=` replaces the user's configured value, so
     /// ours is appended after theirs, and when their value cannot be read the
     /// flag is left out rather than clobbering it.
-    func codexMCPArgs(userInstructions: CodexUserInstructions.Setting) -> [String] {
-        let name = PaneMCPBinding.serverName
-        var args = [
-            "-c", "mcp_servers.\(name).command=\(Self.tomlLiteral(server.executable.path))",
-            "-c", "mcp_servers.\(name).args=\(Self.tomlLiteral(server.arguments))",
-            "-c", "mcp_servers.\(name).env_vars=\(Self.tomlLiteral([Self.tokenEnvironmentKey, Self.socketEnvironmentKey]))"
-        ]
-        let ours = PaneMCPToolManifest.codexDeveloperInstructions
+    func codexMCPArgs(userInstructions: CodexUserInstructions.Setting, mode: String = "manual") -> [String] {
+        var servers = [(PaneMCPBinding.serverName, server.arguments)]
+        if delegation { servers.append((DelegationMCPServer.serverName, server.delegationArguments)) }
+        var args: [String] = []
+        for (name, arguments) in servers {
+            args += [
+                "-c", "mcp_servers.\(name).command=\(Self.tomlLiteral(server.executable.path))",
+                "-c", "mcp_servers.\(name).args=\(Self.tomlLiteral(arguments))",
+                "-c", "mcp_servers.\(name).env_vars=\(Self.tomlLiteral([Self.tokenEnvironmentKey, Self.socketEnvironmentKey]))"
+            ]
+            if mode == "fullAccess" || (name == DelegationMCPServer.serverName && DelegationProviders.codexApprovesTools(mode: mode)) {
+                args += ["-c", "mcp_servers.\(name).default_tools_approval_mode=\"approve\""]
+            } else if name == PaneMCPBinding.serverName, mode == "acceptEdits" {
+                for tool in PaneMCPToolManifest.codexApprovedInAcceptEdits { args += ["-c", "mcp_servers.\(name).tools.\(tool).approval_mode=\"approve\""] }
+            }
+        }
+        let ours = PaneMCPToolManifest.codexDeveloperInstructions + (delegation ? " " + PaneMCPToolManifest.codexDelegationInstructions : "")
         switch userInstructions {
         case .absent: args += ["-c", "developer_instructions=\(Self.tomlLiteral(ours))"]
         case .value(let theirs): args += ["-c", "developer_instructions=\(Self.tomlLiteral(theirs + "\n\n" + ours))"]
@@ -124,8 +147,8 @@ public final class PaneMCPBindingRegistry: @unchecked Sendable {
     /// Mint a fresh binding for `agentPaneId`, replacing (and so revoking) any
     /// earlier token for the same pane. A reopened pane gets a new token.
     @discardableResult
-    public func bind(agentPaneId: String, server: PaneMCPServerLocation, workspaceId: String, workspacePath: String, provider: String, kind: String = SessionKind.claude, delegation: Bool = false) -> PaneMCPBinding {
-        let binding = PaneMCPBinding.generate(agentPaneId: agentPaneId, server: server, workspaceId: workspaceId, workspacePath: workspacePath, provider: provider, kind: kind, delegation: delegation)
+    public func bind(agentPaneId: String, server: PaneMCPServerLocation, workspaceId: String, workspacePath: String, provider: String, kind: String = SessionKind.claude, delegation: Bool = false, permissionMode: String = "") -> PaneMCPBinding {
+        let binding = PaneMCPBinding.generate(agentPaneId: agentPaneId, server: server, workspaceId: workspaceId, workspacePath: workspacePath, provider: provider, kind: kind, delegation: delegation, permissionMode: permissionMode)
         lock.lock(); bindingsByPane[agentPaneId] = binding; lock.unlock()
         return binding
     }
@@ -215,6 +238,17 @@ public struct PaneMCPToolManifest {
     /// run carries the same guidance as developer instructions.
     public static var codexDeveloperInstructions: String {
         "This app gives you a \(PaneMCPBinding.serverName) MCP server whose tools reach the user's terminal pane. " + routingGuidance
+    }
+
+    /// The mighty-terminal tools a Codex acceptEdits run may call without
+    /// asking: they read what already ran or open a page as the user chose.
+    /// run_in_terminal and stop are not among them.
+    public static let codexApprovedInAcceptEdits = [readLatestOutput.name, openURL.name]
+
+    /// What a Codex run with the delegation server is told about it, after
+    /// ``codexDeveloperInstructions``.
+    public static var codexDelegationInstructions: String {
+        "It also gives you a \(DelegationMCPServer.serverName) MCP server: delegate starts a child Codex pane on a task in its own git worktree. Use it only when the user asks for parallel or delegated work, or when the task clearly splits into independent parts. Messages starting with [Mighty Claude notice ...] are about your children: read a report with child_status. Unless your permission mode is fullAccess, merge is refused and the user merges a child from its card in the app."
     }
 
     public static let runInTerminal = Tool(

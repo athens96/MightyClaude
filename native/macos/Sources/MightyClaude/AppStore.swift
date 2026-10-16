@@ -798,10 +798,10 @@ final class AppStore: ObservableObject, DelegationHost {
     }
 
     /// What the composer's second send does with the text while the pane is
-    /// busy: a new child worktree for a Claude pane that may have children
-    /// (delegation on and loaded), otherwise steer or queue as before.
+    /// busy: a new child worktree for a Claude, Codex or Antigravity pane that
+    /// may have children (delegation on and loaded), otherwise steer or queue as before.
     func composerSecondSend(_ session: RunSession) -> ComposerSecondSend {
-        ComposerSecondSend.choose(kind: session.kind, provider: session.provider,
+        ComposerSecondSend.choose(kind: session.kind, provider: session.provider, mode: session.settings.permissionMode,
                                   isChild: session.parentSessionId != nil || delegationChildren.contains { $0.id == session.id },
                                   delegationOn: delegation != nil && DelegationSwitch.isOn(),
                                   canHostWorktree: worktreeHostFolder(session).flatMap { worktreeReadiness[$0] } == true, steerable: canSteer(session))
@@ -925,8 +925,10 @@ final class AppStore: ObservableObject, DelegationHost {
         settleQueue(id, status: "completed")
     }
 
-    private func settleQueue(_ id: String, status: String) {
-        guard let queue = queuedInputs[id], !queue.isEmpty, !ending, !closingSessions.contains(id) else { return }
+    /// A child whose run end is still being recorded runs nothing yet; its
+    /// record settles the queue again (``childRunEndRecorded(_:)``).
+    func settleQueue(_ id: String, status: String) {
+        guard let queue = queuedInputs[id], !queue.isEmpty, !ending, !closingSessions.contains(id), delegation?.endingRuns.contains(id) != true else { return }
         switch status {
         case "completed", "idle":
             guard let session = snapshot.sessions.first(where: { $0.id == id }), session.status != "running", !pendingRuns.contains(id),
@@ -1018,6 +1020,7 @@ final class AppStore: ObservableObject, DelegationHost {
                 var request = StartRunRequest(sessionId: id, workspaceId: workspace.id, kind: current.kind, input: input, model: model, provider: current.provider, settings: current.settings, resumeId: current.resumeId, attachments: attachments, registeredModels: registered)
                 // A resumed conversation continues its checklist (task tools keep their ids).
                 if current.resumeId != nil { request.todoProgress = current.todoProgress }
+                request.delegationWorktreeRoot = delegationWorktreeRoot(current)
                 // §1.17: a plan-mode style starts every new request in plan mode,
                 // leaving the pane's stored mode as it is; a queued item keeps
                 // the decision made when it was queued.
@@ -1077,6 +1080,7 @@ final class AppStore: ObservableObject, DelegationHost {
     /// pane a run.
     func startRefusal(_ session: RunSession, in workspace: Workspace, input: String, attachments: [RunAttachment]) -> String? {
         if claudeModelResetInProgress, session.provider == "claude", session.kind != "shell" { return L("composer.model.reloadingClaude") }
+        if delegation?.endingRuns.contains(session.id) == true { return L("delegation.child.recordingEnd") }
         var admissionRequest = StartRunRequest(sessionId: session.id, workspaceId: workspace.id, kind: session.kind, input: input, model: session.model, provider: session.provider, settings: session.settings, resumeId: session.resumeId, attachments: attachments)
         if session.kind != "shell" { admissionRequest.settings.effort = "default" }
         do { try CoreValidation.validate(admissionRequest) } catch { return error.localizedDescription }

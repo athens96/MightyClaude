@@ -122,7 +122,7 @@ final class CodexApprovalChannel {
         input += attachments.files.filter { $0.attachment.mediaType.hasPrefix("image/") }.map { ["type": "localImage", "path": $0.url.path] }
         var params: [String: Any] = ["threadId": id, "input": input, "cwd": workspacePath,
             "approvalPolicy": "on-request", "approvalsReviewer": "user",
-            "sandboxPolicy": ["type": "workspaceWrite", "writableRoots": [workspacePath], "networkAccess": request.settings.networkAccess]]
+            "sandboxPolicy": ["type": "workspaceWrite", "writableRoots": [workspacePath] + (request.delegationWorktreeRoot.map { [$0] } ?? []), "networkAccess": request.settings.networkAccess]]
         if request.model != "default" { params["model"] = request.model }
         if request.settings.effort != "default" { params["effort"] = request.settings.effort }
         if request.settings.fastMode { params["serviceTier"] = "fast" }

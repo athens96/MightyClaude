@@ -50,8 +50,8 @@ struct PendingParentClose: Identifiable, Equatable {
     var openChildren: Int
 }
 
-/// The app side of parent → child delegation between Claude panes (macOS
-/// only): AppStore is the coordinator's ``DelegationHost``. The coordinator
+/// The app side of parent → child delegation between agent panes (macOS
+/// only; ``DelegationProviders`` says which): AppStore is the coordinator's ``DelegationHost``. The coordinator
 /// owns the records, the tools, delivery and the git actions; the store only
 /// makes panes, starts and steers runs and reports what its panes do.
 extension AppStore {
@@ -65,7 +65,16 @@ extension AppStore {
         do {
             let coordinator = try DelegationCoordinator(store: DelegationFileStore(directory: dataDirectory), host: self, worktrees: ChildWorktreeMaker(root: root))
             delegation = coordinator
-            delegationRunEvents = DelegationRunEventPump(coordinator: coordinator)
+            // A child's end is recorded (the app's commit of its work among
+            // it) before its queue or delivery may start its next run.
+            delegationRunEvents = DelegationRunEventPump { [weak self] event in
+                switch event {
+                case .started(let id, let runId): await coordinator.childRunStarted(id, runId: runId)
+                case .ended(let id, let runId, let end):
+                    await coordinator.childRunEnded(id, runId: runId, end: end)
+                    await self?.childRunEndRecorded(id)
+                }
+            }
             // The sidebar's tree follows the file, switch on or off.
             delegationChildWatch = Task { [weak self] in
                 for await rows in coordinator.childRows {
@@ -91,10 +100,19 @@ extension AppStore {
     /// the pane's next run after a normal finish, held otherwise.
     func delegationRunEnded(_ id: String, status: String) {
         guard let ended = delegationRuns.end(id, status: status, quitting: ending) else { return }
-        if snapshot.sessions.first(where: { $0.id == id })?.parentSessionId != nil {
-            delegationRunEvents?.send(.ended(childId: id, runId: ended.runId, end: ended.end))
+        if snapshot.sessions.first(where: { $0.id == id })?.parentSessionId != nil, let delegationRunEvents {
+            // Its queue and delivery wait until the end is recorded (``childRunEndRecorded(_:)``).
+            delegation?.endingRuns.begin(id)
+            delegationRunEvents.send(.ended(childId: id, runId: ended.runId, end: ended.end))
         }
         offerDelegationPending()
+    }
+
+    /// The coordinator recorded an end of the child `id`'s run: what its
+    /// queue held back meanwhile may run now.
+    func childRunEndRecorded(_ id: String) {
+        guard !ending, let session = snapshot.sessions.first(where: { $0.id == id }), delegation?.endingRuns.contains(id) != true else { return }
+        settleQueue(id, status: session.status)
     }
 
     /// Has delegation offer its pending notices and follow-ups to their panes
@@ -207,17 +225,26 @@ extension AppStore {
 
     // MARK: The composer's new worktree
 
-    /// The folder a top-level Claude pane's runs work in, where its children's
+    /// The folder a top-level agent pane's runs work in, where its children's
     /// worktrees branch from; nil for a pane without its workspace.
     func worktreeHostFolder(_ session: RunSession) -> String? {
         snapshot.workspaces.first { $0.id == session.workspaceId }.map { DelegationPanes.runWorkspace(for: session, in: $0).path }
     }
 
+    /// A delegated child's worktree when its runs work in a folder inside it,
+    /// for a Codex or Antigravity run to write REPORT.md there; nil for any
+    /// other pane.
+    func delegationWorktreeRoot(_ session: RunSession) -> String? {
+        guard session.parentSessionId != nil, ["codex", "gemini"].contains(session.provider), let folder = session.workingFolder,
+              let root = delegation?.worktrees.worktreePath(for: session.id), folder != root, folder.hasPrefix(root + "/") else { return nil }
+        return root
+    }
+
     /// Checks again whether `session`'s folder can host a child worktree, for
-    /// ``composerSecondSend(_:)``: a top-level Claude pane, with delegation
-    /// on. One check per folder at a time.
+    /// ``composerSecondSend(_:)``: a top-level Claude, Codex or Antigravity
+    /// pane whose child could change files, with delegation on. One check per folder at a time.
     func refreshWorktreeReadiness(for session: RunSession) {
-        guard let delegation, DelegationSwitch.isOn(), session.parentSessionId == nil, DelegationSwitch.isClaudePane(kind: session.kind, provider: session.provider),
+        guard let delegation, DelegationSwitch.isOn(), session.parentSessionId == nil, DelegationProviders.canParentByHuman(kind: session.kind, provider: session.provider, mode: session.settings.permissionMode),
               let folder = worktreeHostFolder(session), worktreeReadinessChecks.insert(folder).inserted else { return }
         Task { [weak self] in
             let ready = await delegation.worktrees.check(workspace: folder).canHostWorktree
@@ -227,7 +254,7 @@ extension AppStore {
         }
     }
 
-    /// The composer's second send on the busy Claude pane `id`
+    /// The composer's second send on the busy agent pane `id`
     /// (``ComposerSecondSend/worktree``): the text and its attachments run now
     /// in a new child pane, in its own worktree beside the pane, made by
     /// delegation as delegate makes one, in plan mode when the pane's style
@@ -377,9 +404,12 @@ extension AppStore {
     /// reset, its worktree gone…) is not asked: the refusal stays on the card
     /// and the next merge that conflicts asks again. A start that was taken
     /// but did not reach the CLI may already have ended the child's report,
-    /// so the card then says the request did not start.
+    /// so the card then says the request did not start. A child that cannot
+    /// commit in its permission mode now (a Codex or Antigravity child
+    /// outside fullAccess) cannot merge either, so it is not asked.
     private func askChildToResolveConflict(_ id: String) {
         guard let delegation, let session = snapshot.sessions.first(where: { $0.id == id }), !delegationCardBusy.contains(id),
+              DelegationProviders.canCommit(provider: session.provider, mode: session.settings.permissionMode),
               let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }),
               startRefusal(session, in: workspace, input: "conflict", attachments: []) == nil else { return }
         delegationCardBusy.insert(id)
@@ -496,7 +526,7 @@ extension AppStore {
 
     // MARK: DelegationHost
 
-    /// The child's Claude pane, as a tab beside its parent: in the mode the
+    /// The child's pane of its parent's agent, as a tab beside its parent: in the mode the
     /// parent asked for, never the last-used pane's, linked to its parent and
     /// working in its worktree folder. Its title is its task, kept as the
     /// pane's name. The link is saved before its first run. It shows its
@@ -510,7 +540,7 @@ extension AppStore {
               snapshot.workspaces.contains(where: { $0.id == parent.workspaceId }) else { return false }
         let file = await delegation?.file
         let task = file?.copy(childId: pane.sessionId, kind: .task)?.text
-        var session = DelegationPanes.childSession(pane, workspaceId: parent.workspaceId, title: task.flatMap(PaneTitle.shortened) ?? ProviderOptions.label("claude"), parent: parent)
+        var session = DelegationPanes.childSession(pane, workspaceId: parent.workspaceId, title: task.flatMap(PaneTitle.shortened) ?? ProviderOptions.label(pane.provider), parent: parent)
         session.titleMode = "fixed"
         // Checked again: the pane list may have changed while the task was read.
         guard !ending, !snapshot.sessions.contains(where: { $0.id == session.id }), snapshot.sessions.contains(where: { $0.id == parent.id }) else { return false }
@@ -571,4 +601,10 @@ extension AppStore {
     }
 
     func stopRun(sessionId: String) async { await stop(sessionId) }
+
+    /// The app's note in the pane's transcript, as a system line.
+    func note(_ text: String, in sessionId: String) async {
+        guard !closingSessions.contains(sessionId), snapshot.sessions.contains(where: { $0.id == sessionId }) else { return }
+        updateSession(sessionId) { $0.logs.append(LogEntry(kind: "system", text: text)); $0.logs = TranscriptRetention.trimmed($0.logs) }
+    }
 }

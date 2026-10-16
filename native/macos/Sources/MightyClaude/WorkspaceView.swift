@@ -952,6 +952,7 @@ enum DelegationText {
         case .mergeConflict: L("delegation.reason.mergeConflict")
         case .undoParentMoved: L("delegation.reason.undoParentMoved")
         case .parentBusy: L("delegation.reason.parentBusy")
+        case .mergeHumanOnly: L("delegation.reason.mergeHumanOnly")
         default: L("delegation.reason.other", ["code": reason.rawValue])
         }
     }

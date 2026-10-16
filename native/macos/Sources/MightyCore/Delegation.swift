@@ -1,49 +1,48 @@
 import Foundation
 
-/// The switch for parent → child delegation between Claude panes (macOS
+/// The switch for parent → child delegation between agent panes (macOS
 /// only). It is on unless the human turned it off, in Settings › General or
 /// with its defaults key:
 ///
 ///     defaults write dev.mightyclaude.native delegation.enabled -bool false
 ///
-/// While it is on, each new run in a Claude pane also gets the delegation MCP
-/// server (``DelegationMCPServer``) beside mighty-terminal, and the Mac
-/// composer's second send on a busy Claude pane runs the text in a new child
-/// worktree (``ComposerSecondSend``). While it is off, no run gets the server,
-/// delegation calls reach nothing and the second send steers as before.
-/// Turning it off only detaches the server: existing children keep working.
+/// While it is on, each new run in a Claude pane, or a Codex pane in
+/// acceptEdits or fullAccess, also gets the delegation MCP server (``DelegationMCPServer``) beside mighty-terminal, and
+/// the Mac composer's second send on a busy Claude, Codex or Antigravity pane
+/// runs the text in a new child worktree (``ComposerSecondSend``); which panes
+/// take part is ``DelegationProviders``'s. While it is off, no run gets the
+/// server, delegation calls reach nothing and the second send steers or
+/// queues as before. Turning it off only detaches the server: existing
+/// children keep working.
 public enum DelegationSwitch {
     public static let defaultsKey = "delegation.enabled"
 
     /// Read at each run start, at each delegation call and by the composer.
     /// A missing key is on; a stored one reads as defaults reads a Bool.
     public static func isOn(_ defaults: UserDefaults = .standard) -> Bool { defaults.object(forKey: defaultsKey) == nil || defaults.bool(forKey: defaultsKey) }
-
-    /// A Claude pane: an agent pane (kind claude) running the Claude CLI. Only
-    /// these get the delegation server or may call it.
-    public static func isClaudePane(kind: String, provider: String) -> Bool { kind == SessionKind.claude && provider == "claude" }
 }
 
 /// What the Mac composer's second send (⌘Enter, and its round button) does
 /// with the text while the pane is busy. Enter always queues it as the next
 /// request; the phone's send modes do not go through this.
 public enum ComposerSecondSend: String, Sendable, CaseIterable {
-    /// A new child Claude pane in its own worktree, beside this one, runs the
-    /// text now (``DelegationCoordinator/startHumanChild(_:parentId:start:)``).
+    /// A new child pane of the same agent in its own worktree, beside this
+    /// one, runs the text now (``DelegationCoordinator/startHumanChild(_:parentId:start:)``).
     case worktree
     /// The text joins the running Claude turn.
     case steer
     /// The text waits for the next request, as Enter does.
     case queue
 
-    /// The first rule that applies: a Claude pane that may have children
-    /// (delegation on, not a child itself) in a folder that can host a child
-    /// worktree (``ChildWorktreeCheck/canHostWorktree``) opens a new worktree;
-    /// any other pane whose running turn takes text steers (a delegated
-    /// child, a Claude pane with delegation off or outside a usable git
-    /// checkout); every other pane (Codex, Antigravity) queues.
-    public static func choose(kind: String, provider: String, isChild: Bool, delegationOn: Bool, canHostWorktree: Bool, steerable: Bool) -> ComposerSecondSend {
-        if delegationOn, !isChild, canHostWorktree, DelegationSwitch.isClaudePane(kind: kind, provider: provider) { return .worktree }
+    /// The first rule that applies: a Claude, Codex or Antigravity pane that
+    /// may have children (delegation on, not a child itself, and for Codex or
+    /// Antigravity a `mode` in which its child can change files) in a folder
+    /// that can host a child worktree (``ChildWorktreeCheck/canHostWorktree``)
+    /// opens a new worktree; any other pane whose running turn takes text
+    /// steers (a delegated Claude child, a Claude pane with delegation off or
+    /// outside a usable git checkout); every other pane queues.
+    public static func choose(kind: String, provider: String, mode: String, isChild: Bool, delegationOn: Bool, canHostWorktree: Bool, steerable: Bool) -> ComposerSecondSend {
+        if delegationOn, !isChild, canHostWorktree, DelegationProviders.canParentByHuman(kind: kind, provider: provider, mode: mode) { return .worktree }
         return steerable ? .steer : .queue
     }
 
@@ -58,6 +57,9 @@ public enum ComposerSecondSend: String, Sendable, CaseIterable {
 /// these and changes nothing. The raw values are the ontology's ReasonCode
 /// names, which the agent sees.
 public enum DelegationReasonCode: String, Codable, Sendable, CaseIterable {
+    /// The pane cannot use delegation this way (the ontology's original name,
+    /// from when only Claude panes could): its agent has no delegation tools,
+    /// or it cannot have children.
     case claudeOnly = "claude_only"
     case childCannotDelegate = "child_cannot_delegate"
     case widthCap = "width_cap"
@@ -85,6 +87,10 @@ public enum DelegationReasonCode: String, Codable, Sendable, CaseIterable {
     /// The child was started by the human from its parent's composer, not by
     /// the parent's delegate call: only the human merges it or sends it work.
     case humanStarted = "human_started"
+    /// A parent whose agent's merge tool call is not gated by its CLI (any
+    /// but Claude) may merge by tool only in fullAccess: the human merges
+    /// from the child's card.
+    case mergeHumanOnly = "merge_human_only"
 }
 
 /// One delegation tool call forwarded by the delegation MCP server. Like
@@ -157,9 +163,10 @@ public protocol DelegationRequestHandler: Sendable {
 /// first rule that applies, and none of these answers changes anything:
 ///
 /// 1. The switch is off: the server is detached, so the call reaches nothing.
-/// 2. The caller is not a Claude pane: refused with `claude_only`.
+/// 2. The caller's agent has no delegation tools (an agent pane running
+///    neither Claude nor Codex, or no agent pane): refused with `claude_only`.
 /// 3. The caller's run started without the delegation server (the switch was
-///    off then): the call reaches nothing.
+///    off then, or it is a Codex run in manual or onRequest): the call reaches nothing.
 /// 4. Otherwise the call goes to the delegation tool it names; there is no
 ///    tool by any other name.
 public struct DelegationIOHandler: DelegationRequestHandler {
@@ -177,7 +184,7 @@ public struct DelegationIOHandler: DelegationRequestHandler {
     /// ``DelegationCoordinator`` applies the same gates.
     static func gate(_ binding: PaneMCPBinding, isSwitchOn: Bool) -> DelegationResponse? {
         guard isSwitchOn else { return .failure(detachedMessage) }
-        guard DelegationSwitch.isClaudePane(kind: binding.kind, provider: binding.provider) else { return .refusal(.claudeOnly) }
+        guard DelegationProviders.canParentByAgent(kind: binding.kind, provider: binding.provider) else { return .refusal(.claudeOnly) }
         guard binding.delegation else { return .failure(detachedMessage) }
         return nil
     }

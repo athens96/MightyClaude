@@ -75,7 +75,7 @@ private func waitUntil(timeout: TimeInterval = 60, _ condition: () async -> Bool
 
         let child = DelegationPanes.childSession(Self.pane, workspaceId: "ws", title: "Write the notes")
         #expect(child.id == "child-1" && child.workspaceId == "ws" && child.title == "Write the notes")
-        #expect(DelegationSwitch.isClaudePane(kind: child.kind, provider: child.provider))
+        #expect(child.kind == SessionKind.claude && child.provider == "claude")
         // Exactly the mode asked for; nothing comes from the last-used pane.
         #expect(child.settings == RunSettings(permissionMode: "plan"))
         #expect(child.model == "default" && child.agentViewMode == nil && child.resumeId == nil && child.logs.isEmpty)
@@ -185,12 +185,12 @@ private func waitUntil(timeout: TimeInterval = 60, _ condition: () async -> Bool
         }
         // Delivery holds what comes for it instead of handing it a run the app would refuse.
         #expect(read(.finished, refused: true) == DelegationPaneState(sessionId: "parent-1", permissionMode: "acceptEdits", folder: "/tmp/repo", runId: "run-1", activity: .idle))
-        #expect(DelegationCoordinator.automaticRoute(to: read(.finished, refused: true)) == nil)
+        #expect(DelegationCoordinator.automaticDelivery(to: read(.finished, refused: true)) == .hold)
         #expect(read(.finished, refused: false).activity == .finished)
-        #expect(DelegationCoordinator.automaticRoute(to: read(.finished, refused: false)) == .queue)
+        #expect(DelegationCoordinator.automaticDelivery(to: read(.finished, refused: false)) == .route(.queue))
         // Nothing else changes: a running pane is still steered into, an idle one stays idle.
         #expect(read(.running, refused: true).activity == .running)
-        #expect(DelegationCoordinator.automaticRoute(to: read(.running, refused: true)) == .steer)
+        #expect(DelegationCoordinator.automaticDelivery(to: read(.running, refused: true)) == .route(.steer))
         #expect(read(.idle, refused: true).activity == .idle && read(.idle, refused: false).activity == .idle)
     }
 
