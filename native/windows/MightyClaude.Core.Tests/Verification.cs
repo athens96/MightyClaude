@@ -344,6 +344,8 @@ internal static class Verification
         await Test("tailscale addresses: a mapped address counts as its IPv4", TailscaleAddressesVerification.AMappedAddressCountsAsItsIPv4);
         await Test("tailscale addresses: detection offers only Tailscale addresses", TailscaleAddressesVerification.DetectionOffersOnlyTailscaleAddresses);
         await Test("mobile direct: endpoints, upgrade, admission and status", MobileDirectVerification.EndpointsUpgradeAdmissionAndStatus);
+        await Test("mobile direct: the listener holds at most 36 and upgrades a phone", MobileDirectVerification.TheListenerHoldsAtMost36AndUpgradesAPhone);
+        await Test("mobile direct: the upgrade and the peer are read strictly", MobileDirectVerification.TheUpgradeAndThePeerAreReadStrictly);
         await Test("Companion animation and carousel", CompanionVerification.AnimationAndCarousel);
         await Test("Companion bubble resize edges and DPI anchors", CompanionLayoutVerification.EdgesAndAnchors);
         await Test("Workspace disclosure migration, independent selection and disk persistence", WorkspaceDisclosureVerification.MigrationSelectionAndPersistence);
