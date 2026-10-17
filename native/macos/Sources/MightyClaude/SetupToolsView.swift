@@ -64,9 +64,9 @@ struct SetupToolsSettingsContent: View {
 }
 
 private extension View {
-    /// Probes when the list appears, then every few seconds while something is
-    /// still not installed (an install that finishes outside the app, such as a
-    /// system dialog or a download, has nothing else to tell the app).
+    /// Probes when the list appears; then, while an install runs, its items every
+    /// few seconds, and otherwise everything every half minute (an install that
+    /// finishes outside the app, such as a download, has nothing else to tell it).
     func setupPolling() -> some View {
         modifier(SetupPolling())
     }
@@ -77,11 +77,12 @@ private struct SetupPolling: ViewModifier {
     func body(content: Content) -> some View {
         content.task {
             await store.refreshSetup(forceEnvironment: true)
-            store.preselectSetup()
+            store.preselectSetupOnce()
             if store.setupFixedResults == nil { store.refreshCLIAccounts() }
             while !Task.isCancelled {
-                try? await Task.sleep(for: AppStore.setupPollInterval)
-                guard !Task.isCancelled, !store.setupProbing,
+                // The run's own watcher probes its items while it runs.
+                try? await Task.sleep(for: store.setupRunning ? AppStore.setupRunPollInterval : AppStore.setupIdlePollInterval)
+                guard !Task.isCancelled, !store.setupRunning, !store.setupProbing,
                       store.setupItems.contains(where: { store.setupResults[$0.id]?.isInstalled != true }) else { continue }
                 await store.refreshSetup()
             }
@@ -120,7 +121,7 @@ private struct SetupItemRow: View {
     private var added: Bool { store.setupAddedIds.contains(item.id) }
     private var checked: Bool { store.setupSelection.contains(item.id) || added }
     private var selectable: Bool {
-        recipe?.runsInTerminal == true && [.missing, .failed].contains(state) && !added && store.setupRun?.finished != false
+        SetupRowState.isSelectable(state, item: item, platform: .macos) && !added && !store.setupRunning
     }
 
     var body: some View {
@@ -128,7 +129,7 @@ private struct SetupItemRow: View {
             Toggle("", isOn: Binding(get: { checked }, set: { _ in store.toggleSetupSelection(item.id) }))
                 .toggleStyle(.checkbox).labelsHidden()
                 .disabled(!selectable)
-                .opacity(recipe?.runsInTerminal == true && state != .installed ? 1 : 0)
+                .opacity(SetupRowState.isSelectable(state, item: item, platform: .macos) || checked ? 1 : 0)
                 .accessibilityLabel(item.title)
                 .accessibilityIdentifier("setup-check-\(item.id)")
                 .background(AccessibilityStateProbe(identifier: "setup-check-\(item.id)", enabled: checked))
@@ -152,6 +153,14 @@ private struct SetupItemRow: View {
                 if case .outdated(let version, let minimum)? = store.setupResults[item.id] {
                     Text(L("setup.outdatedDetail", ["version": version ?? "?", "minimum": minimum])).font(.ui(size: 11)).foregroundStyle(Palette.waitText)
                         .fixedSize(horizontal: false, vertical: true)
+                }
+                if case .unverified(let minimum)? = store.setupResults[item.id] {
+                    Text(L("setup.unverifiedDetail", ["minimum": minimum])).font(.ui(size: 11)).foregroundStyle(Palette.waitText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if case .needsAttention(let reason)? = store.setupResults[item.id] {
+                    Text(L(reason == .xcodeLicense ? "setup.attention.xcodeLicense" : "setup.attention.gitUnusable")).font(.ui(size: 11)).foregroundStyle(Palette.waitText)
+                        .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                 }
                 if added {
                     Text(L("setup.addedForSelection")).font(.ui(size: 10)).foregroundStyle(Palette.accent)
@@ -215,6 +224,7 @@ private struct SetupItemRow: View {
         case .installed: ("setup.status.installed", Palette.doneText)
         case .missing: ("setup.status.missing", Palette.waitText)
         case .outdated: ("setup.status.outdated", Palette.waitText)
+        case .attention: ("setup.status.attention", Palette.waitText)
         case .installing: ("setup.status.installing", Palette.accent)
         case .failed: ("setup.status.failed", Palette.errText)
         }
@@ -230,7 +240,7 @@ private struct SetupToolsFooter: View {
     @EnvironmentObject private var store: AppStore
     let onRecheck: () -> Void
 
-    private var running: Bool { store.setupRun?.finished == false }
+    private var running: Bool { store.setupRunning }
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
@@ -240,6 +250,16 @@ private struct SetupToolsFooter: View {
                     Text(message).font(.ui(size: 11)).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                 }
                 .accessibilityIdentifier("setup-message")
+            }
+            if store.setupRun?.notStarted == true {
+                HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Palette.waitText).padding(.top, 1)
+                    Text(L("setup.run.checkTerminal")).font(.ui(size: 11)).fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: DesignMetrics.Spacing.sm)
+                    Button(L("setup.run.end")) { store.abandonSetupRun() }.controlSize(.small)
+                        .accessibilityIdentifier("setup-run-end")
+                }
+                .accessibilityIdentifier("setup-run-not-started")
             }
             HStack(spacing: DesignMetrics.Spacing.sm) {
                 if running {
@@ -272,6 +292,12 @@ struct SetupConfirmationView: View {
             Text(L("setup.confirm.body")).font(.ui(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             ScrollView {
                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.md) {
+                    VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
+                        Text(L("setup.confirm.preamble")).font(.ui(size: 12, weight: .medium))
+                        Text(confirmation.preamble.joined(separator: "\n")).font(.ui(size: 11, design: .monospaced)).foregroundStyle(.primary)
+                            .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                    }
+                    .accessibilityIdentifier("setup-confirm-preamble")
                     ForEach(Array(confirmation.steps.enumerated()), id: \.element.id) { index, step in
                         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
                             Text("\(index + 1). \(step.title)").font(.ui(size: 12, weight: .medium))

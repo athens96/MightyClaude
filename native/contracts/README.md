@@ -566,7 +566,9 @@ The tools the first-run setup screen (필요한 도구, also Settings → 도구
 tools, Tailscale, gh and glab. It ships with the app and is read-only; nothing the
 user edits (the toolkit file included) adds an item. Each item has an `id`, a
 `group` (`agent`, `prerequisite`, `style`, `network`, `dev`), label and
-description keys from the locale catalogs, `need` (`required` or `optional`), an
+description keys from the locale catalogs, `need` (`required` or `optional`;
+required is only the command line tools, and the first-run rule also wants any
+one working agent CLI), an
 `afterInstall` action (`none`, `reprobe`, or `signIn` with a provider) and, per
 platform (`macos`, later `windows`), a `probe`, an `install` recipe, its
 `prerequisites` (item IDs, acyclic) and the official `source` page the command
@@ -576,13 +578,19 @@ Both kinds are closed sets. Probes: `executable` (on the login shell's PATH,
 optionally `minimumVersion` read from `--version`), `claudePlugin` (a user-scope
 record in `~/.claude/plugins/installed_plugins.json` whose ID starts with
 `prefix`), `skill` (`~/.claude/skills/<name>/SKILL.md`), `commandLineTools`
-(`xcode-select -p`) and `appBundle`. Installs: `argv` (only `xcode-select` and
-`npx`, plain arguments; `finishesOutside` when a system window completes it),
+(`xcode-select -p`, then `/usr/bin/git --version`) and `appBundle` (`name` in
+/Applications or ~/Applications, or `executable` on the PATH). Installs: `argv`
+(only `xcode-select` with `--install` and `npx` with `--global`/`--agent`; any
+other argument starting with `-` is refused; `finishesOutside` when a system
+window completes it),
 `officialScript` (an https URL on the allow-listed hosts, fetched and run with
 `bash` or `sh`, PowerShell on Windows), `brewFormula`, `brewCask`, `npmGlobal`,
-`claudePlugin` (marketplace + `name@marketplace`), `skill` (git clone into
-`~/.claude/skills/<folder>`, then an optional fixed script inside the clone) and
-`vendorPage` (the app opens the page; nothing runs). The decoder
+`claudePlugin` (marketplace + `name@marketplace`; not pinned, the marketplace
+decides the version), `skill` (a repository pinned to a full `commit`, placed in
+`~/.claude/skills/<folder>`, then an optional fixed script inside it) and
+`vendorPage` (the app opens the page; nothing runs). URLs on github.com and
+raw.githubusercontent.com, and a marketplace's owner/repo short form, must name
+one of `SetupCatalog.allowedRepositories`. The decoder
 (`MightyCore/SetupCatalog.swift`) refuses an unknown key, kind, host, program or
 label key. The Mac copies the file byte-identically into
 `MightyCore/Resources/Setup/` and `--verify-resources` checks it is there;

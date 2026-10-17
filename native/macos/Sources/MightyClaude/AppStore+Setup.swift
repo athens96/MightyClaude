@@ -7,30 +7,41 @@ struct SetupSheetRequest: Identifiable, Equatable {
     var focus: String?
 }
 
-/// The install the setup screen started: one terminal pane running one script.
+/// The install the setup screen started: one script in one terminal window.
 struct SetupRun: Equatable {
     var items: [String]
-    var sessionId: String
-    var markerPath: String
+    var terminalId: String
+    var startedMarker: URL
+    var doneMarker: URL
     var finished: Bool
+    /// The script has not said it started 20 s after the window opened.
+    var notStarted = false
 }
 
-/// The confirmation's content: every step exactly as the script runs it.
+/// The confirmation's content: the lines that run first, then every step
+/// exactly as the script runs it.
 struct SetupConfirmation: Identifiable, Equatable {
     let id = UUID()
+    var preamble: [String]
     var steps: [SetupScriptStep]
 }
 
 /// 필요한 도구: what the app needs on this Mac, read from the bundled catalog
-/// (`SetupCatalog`), probed fresh, and installed in one visible terminal pane.
+/// (`SetupCatalog`), probed fresh, and installed in one visible terminal window.
 /// The app writes the script from the catalog alone, never runs sudo and never
 /// sees a password: whatever a step asks, the user answers in the terminal.
 extension AppStore {
     static let setupNeverShowKey = "setup.neverShow"
-    static let setupPollInterval: Duration = .seconds(5)
-    static let setupRunPollInterval: Duration = .seconds(2)
+    /// While an install runs, the screen waits this long between looks (the run's
+    /// watcher probes its items); otherwise everything is probed this slowly.
+    static let setupRunPollInterval: Duration = .seconds(5)
+    static let setupIdlePollInterval: Duration = .seconds(30)
+    static let setupWatchInterval: Duration = .seconds(2)
+    static let setupStartDeadline: TimeInterval = 20
 
     var setupItems: [SetupItem] { setupCatalog?.items.filter { $0.platforms[.macos] != nil } ?? [] }
+    var setupRunning: Bool { setupRun?.finished == false }
+    var setupFolder: URL { dataDirectory.appendingPathComponent("setup", isDirectory: true) }
 
     /// The catalog, read once. A broken bundle is reported, not hidden.
     @discardableResult
@@ -41,34 +52,42 @@ extension AppStore {
         return setupCatalog
     }
 
-    /// Probes every item again. `forceEnvironment` reads the login shell anew
-    /// (after an install it may have changed); the timer uses the short cache.
-    /// When an agent CLI changed, the app's runtime is read again too, so a pane
-    /// that was blocked for a missing CLI is not blocked any longer.
-    func refreshSetup(forceEnvironment: Bool = false) async {
-        guard !ending, !setupProbing, let catalog = loadSetupCatalog() else { return }
+    /// Probes the items again (only `only`, when given). `forceEnvironment` reads
+    /// the login shell anew; a forced refresh asked for while a probe runs is
+    /// queued and runs right after it. When an agent CLI changed, the app's runtime
+    /// is read again too, so a pane blocked for a missing CLI is not blocked any longer.
+    func refreshSetup(forceEnvironment: Bool = false, only: Set<String>? = nil) async {
+        guard !ending, let catalog = loadSetupCatalog() else { return }
+        if setupProbing {
+            if forceEnvironment { setupForceQueued = true }
+            return
+        }
         setupProbing = true
-        defer { setupProbing = false }
         let results: [String: SetupProbeResult]
         if let fixed = setupFixedResults { results = fixed }
         else {
             let environment = await providers.executionEnvironment(forceRefresh: forceEnvironment).values
-            results = await SetupProber(environment: environment).probeAll(catalog, platform: .macos)
+            results = await SetupProber(environment: environment).probeAll(catalog, platform: .macos, only: only)
         }
+        setupProbing = false
         guard !ending else { return }
-        setupResults = results
-        setupSelection = setupSelection.filter { results[$0]?.isInstalled != true }
-        let agents = catalog.items.filter { $0.provider != nil }.map { results[$0.id]?.version ?? "" }
-        if setupFixedResults == nil, let cached = runtime?.providers, SetupRuntimeSync.isStale(runtime: cached, catalog: catalog, results: results), agents != setupRuntimeSyncedAgents {
+        setupResults.merge(results) { _, new in new }
+        setupSelection = setupSelection.filter { setupResults[$0]?.isInstalled != true }
+        let agents = catalog.items.filter { $0.provider != nil }.map { setupResults[$0.id]?.version ?? "" }
+        if setupFixedResults == nil, let cached = runtime?.providers, SetupRuntimeSync.isStale(runtime: cached, catalog: catalog, results: setupResults), agents != setupRuntimeSyncedAgents {
             setupRuntimeSyncedAgents = agents
             await refreshRuntimeAfterCLIUpdate()
             refreshCLIAccounts()
         }
+        if setupForceQueued {
+            setupForceQueued = false
+            await refreshSetup(forceEnvironment: true)
+        }
     }
 
-    /// At launch: open the screen when no agent CLI can run or a required tool is
-    /// missing, unless the user asked never to see it again. Never in a smoke run
-    /// or the help capture, which have their own screens to show.
+    /// At launch: open the screen when no agent CLI can run or the command line
+    /// tools are not ready, unless the user asked never to see it again. Never in
+    /// a smoke run or the help capture, which have their own screens to show.
     func presentSetupIfNeeded() async {
         guard !smokeTesting, !ending else { return }
         await refreshSetup()
@@ -86,16 +105,18 @@ extension AppStore {
     /// Opens the screen, with `focus` picked and scrolled to when it is missing.
     func openSetup(focus: String? = nil) {
         guard loadSetupCatalog() != nil, !hasModal else { return }
-        preselectSetup(focus: focus)
+        setupResultWaiting = false
+        if let focus, let item = setupCatalog?.item(focus), SetupRowState.isSelectable(setupRowState(item), item: item, platform: .macos) { setupSelection.insert(focus) }
         setupSheet = SetupSheetRequest(focus: focus)
     }
 
-    /// Required items that are missing start checked; optional ones do not.
-    func preselectSetup(focus: String? = nil) {
-        for item in setupItems where item.required && setupResults[item.id] == .missing && item.platforms[.macos]?.install.runsInTerminal == true {
-            setupSelection.insert(item.id)
-        }
-        if let focus, setupResults[focus] == .missing, setupCatalog?.item(focus)?.platforms[.macos]?.install.runsInTerminal == true { setupSelection.insert(focus) }
+    /// The first time the list shows with results: required items that are
+    /// missing, and Claude Code when no agent CLI is there. Never again after the
+    /// user changed the picks.
+    func preselectSetupOnce() {
+        guard !setupDidPreselect, let catalog = setupCatalog, !setupResults.isEmpty else { return }
+        setupDidPreselect = true
+        setupSelection.formUnion(SetupFirstRun.preselection(catalog: catalog, results: setupResults, platform: .macos))
     }
 
     func dismissSetup(neverShowAgain: Bool) {
@@ -122,10 +143,7 @@ extension AppStore {
     // MARK: Rows
 
     func setupRowState(_ item: SetupItem) -> SetupRowState {
-        let finishesOutside: Bool
-        if case .argv(_, let outside)? = item.platforms[.macos]?.install { finishesOutside = outside } else { finishesOutside = false }
-        let inRun = setupRun?.items.contains(item.id) == true
-        return SetupRowState.derive(setupResults[item.id], inRun: inRun, runFinished: setupRun?.finished ?? true, finishesOutside: finishesOutside)
+        SetupRowState.derive(setupResults[item.id], inRun: setupRun?.items.contains(item.id) == true, runFinished: setupRun?.finished ?? true)
     }
 
     func setupIsSatisfied(_ id: String) -> Bool { setupResults[id]?.isInstalled == true }
@@ -140,98 +158,130 @@ extension AppStore {
     var setupAddedIds: Set<String> { Set(setupPlanIds).subtracting(setupSelection) }
 
     func toggleSetupSelection(_ id: String) {
-        guard setupRun?.finished != false else { return }
+        guard !setupRunning else { return }
+        setupDidPreselect = true
         if !setupSelection.insert(id).inserted { setupSelection.remove(id) }
     }
 
     // MARK: Installing
 
-    /// Shows the one confirmation: every command the script will run, in order.
+    /// Shows the one confirmation: the lines that run first, then every command, in order.
     func requestSetupInstall() {
-        guard let catalog = setupCatalog, setupRun?.finished != false else { return }
+        guard let catalog = setupCatalog, !setupRunning else { return }
         let steps = SetupScript.steps(for: setupPlanIds, catalog: catalog, platform: .macos, title: { $0.title })
         guard !steps.isEmpty else { return }
-        setupConfirmation = SetupConfirmation(steps: steps)
+        setupConfirmation = SetupConfirmation(preamble: SetupScript.preamble(home: FileManager.default.homeDirectoryForCurrentUser), steps: steps)
     }
 
-    /// Writes the script, opens a terminal pane in a local workspace and runs it
-    /// there. The probe, not the script's exit code, decides what got installed.
+    /// Writes the script into the app's own setup folder and runs it in a terminal
+    /// window of its own. The probe, not the script's exit code, decides what got
+    /// installed. The screen stays open and follows along.
     func startSetupInstall() async {
-        guard let confirmation = setupConfirmation, setupRun?.finished != false, !ending else { return }
+        guard let confirmation = setupConfirmation, !setupRunning, !ending else { return }
         setupConfirmation = nil
-        let directory = dataDirectory.appendingPathComponent("setup", isDirectory: true)
-        let stamp = String(Int(Date().timeIntervalSince1970))
-        let scriptURL = directory.appendingPathComponent("install-\(stamp).sh"), marker = directory.appendingPathComponent("install-\(stamp).done")
+        let folder = setupFolder
         let labels = SetupScriptLabels(step: { "[\($0)/\($1)] \($2)" }, failed: L("setup.script.failed"), waiting: L("setup.script.waiting"), done: L("setup.script.done"))
+        let scriptURL: URL, markers: (started: URL, done: URL)
         do {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            try FileManager.default.createDirectory(at: dataDirectory, withIntermediateDirectories: true)
+            try SetupScriptFiles.prepareDirectory(folder)
             // Earlier runs' scripts and markers are of no further use.
-            for old in (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? [] { try? FileManager.default.removeItem(at: old) }
-            try Data(SetupScript.render(steps: confirmation.steps, labels: labels, markerPath: marker.path).utf8).write(to: scriptURL, options: .atomic)
-            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: scriptURL.path)
+            SetupScriptFiles.removeLeftovers(in: folder)
+            markers = SetupScriptFiles.markers(in: folder)
+            let script = SetupScript.render(steps: confirmation.steps, labels: labels, home: FileManager.default.homeDirectoryForCurrentUser,
+                                            startedMarker: markers.started.path, doneMarker: markers.done.path)
+            scriptURL = try SetupScriptFiles.writeScript(script, in: folder)
         } catch {
             setupMessage = L("setup.error.script", ["error": error.localizedDescription])
             return
         }
-        // addSession refuses while a sheet is up: the screen closes and comes back when the script ends.
-        setupSheet = nil
-        if showSettings { showSettings = false }
-        guard let workspace = await setupWorkspace(), let id = addSession(kind: "shell", workspaceId: workspace.id) else {
-            setupMessage = L("setup.error.terminal")
-            openSetup()
-            return
-        }
-        updateSession(id) { $0.title = L("setup.terminal.title") }
         // The app wrote this command itself from its own catalog, after the user confirmed it.
-        pendingTerminalInput[id] = TerminalInput(text: SetupScript.launchCommand(scriptPath: scriptURL.path), autoRun: true)
+        let id = "setup-" + UUID().uuidString
+        openSetupTerminal(id: id, title: L("setup.terminal.title"), input: TerminalInput(text: SetupScript.launchCommand(scriptPath: scriptURL.path), autoRun: true))
         setupMessage = nil
-        setupRun = SetupRun(items: confirmation.steps.map(\.itemId), sessionId: id, markerPath: marker.path, finished: false)
-        watchSetupRun(id: id, marker: marker)
+        setupRun = SetupRun(items: confirmation.steps.map(\.itemId), terminalId: id, startedMarker: markers.started, doneMarker: markers.done, finished: false)
+        watchSetupRun(id: id)
     }
 
-    /// The pane's script leaves its marker when it ends for any reason; a closed
-    /// pane ends the run too. Then everything is probed again and the screen comes
-    /// back with the outcome and any sign-in to offer.
-    private func watchSetupRun(id: String, marker: URL) {
+    /// A terminal window that is not a pane (`SetupTerminalWindow`), in the setup folder.
+    func openSetupTerminal(id: String, title: String, input: TerminalInput) {
+        try? SetupScriptFiles.prepareDirectory(setupFolder)
+        let window = SetupTerminalWindow(id: id, title: title, directory: setupFolder, input: input, controller: sharedTerminalController(),
+                                         onClose: { [weak self] id in self?.setupTerminalClosed(id) },
+                                         onInputProblem: { [weak self] message in self?.setupMessage = message })
+        setupTerminals[id] = window
+        window.show()
+    }
+
+    private func setupTerminalClosed(_ id: String) {
+        setupTerminals.removeValue(forKey: id)
+        cliLoginEnded(sessionID: id)
+    }
+
+    /// The script makes its start marker first thing and its end marker when it
+    /// ends for any reason; a closed window ends the run too. Then everything is
+    /// probed again. The screen comes back by itself only while the app is in
+    /// front; otherwise the status bar says the install is over.
+    private func watchSetupRun(id: String) {
         setupWatchTask?.cancel()
+        let opened = Date()
         setupWatchTask = Task { [weak self] in
+            var probed = Date()
             while !Task.isCancelled {
-                try? await Task.sleep(for: Self.setupRunPollInterval)
-                guard let self, !Task.isCancelled, !self.ending else { return }
-                let paneOpen = self.snapshot.sessions.contains { $0.id == id }
-                if FileManager.default.fileExists(atPath: marker.path) || !paneOpen { break }
+                try? await Task.sleep(for: Self.setupWatchInterval)
+                guard let self, !Task.isCancelled, !self.ending, let run = self.setupRun, run.terminalId == id, !run.finished else { return }
+                if SetupScriptFiles.markerExists(run.doneMarker) || self.setupTerminals[id] == nil { break }
+                let started = SetupScriptFiles.markerExists(run.startedMarker)
+                let stalled = !started && Date().timeIntervalSince(opened) > Self.setupStartDeadline
+                if self.setupRun?.notStarted != stalled { self.setupRun?.notStarted = stalled }
+                // Only the run's own items, every few seconds.
+                if Date().timeIntervalSince(probed) >= 5 {
+                    probed = Date()
+                    await self.refreshSetup(only: Set(run.items))
+                }
             }
-            guard let self, !Task.isCancelled, !self.ending, self.setupRun?.sessionId == id else { return }
-            self.setupRun?.finished = true
-            await self.refreshSetup(forceEnvironment: true)
-            if !self.hasModal { self.setupSheet = SetupSheetRequest(focus: nil) }
+            guard let self, !Task.isCancelled else { return }
+            await self.finishSetupRun(id: id)
         }
     }
 
-    /// A local workspace for the install pane. A first run may have none: the
-    /// home folder is added then, the folder the official installers work from.
-    private func setupWorkspace() async -> Workspace? {
-        if let active = activeWorkspace, active.remote == nil { selectWorkspace(active.id); return active }
-        if let local = snapshot.workspaces.first(where: { $0.remote == nil }) { selectWorkspace(local.id); return local }
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        do {
-            let workspace = try await repository.approveWorkspace(Workspace(name: home.lastPathComponent, path: home.path))
-            if !snapshot.workspaces.contains(where: { $0.id == workspace.id }) { snapshot.workspaces.append(workspace) }
-            selectWorkspace(workspace.id)
-            return workspace
-        } catch {
-            self.error = error.localizedDescription
-            return nil
-        }
+    /// Ends the run: by the watcher, or by the user when the script never started.
+    func finishSetupRun(id: String) async {
+        guard !ending, setupRun?.terminalId == id, setupRun?.finished == false else { return }
+        setupRun?.finished = true
+        setupRun?.notStarted = false
+        await refreshSetup(forceEnvironment: true)
+        guard setupSheet == nil else { return }
+        if NSApp.isActive, !hasModal { openSetup() } else { setupResultWaiting = true }
+    }
+
+    /// The hint's button: the script never started, so the run is closed by hand.
+    func abandonSetupRun() {
+        guard let run = setupRun, !run.finished else { return }
+        setupWatchTask?.cancel()
+        setupTerminals[run.terminalId]?.close()
+        Task { await finishSetupRun(id: run.terminalId) }
     }
 
     // MARK: After installing
 
-    /// The existing sign-in flow; the screen closes so its terminal pane can open.
+    /// The existing sign-in flow in a pane when there is a local workspace;
+    /// otherwise in a terminal window of the setup screen's own, which is never
+    /// saved, shown to the phone or selected.
     func signInFromSetup(_ provider: String) {
-        setupSheet = nil
-        if showSettings { showSettings = false }
-        startCLILogin(provider)
+        if snapshot.workspaces.contains(where: { $0.remote == nil }) {
+            setupSheet = nil
+            if showSettings { showSettings = false }
+            startCLILogin(provider)
+            return
+        }
+        cliAccountMessages[provider] = nil
+        if let reason = cliAccountBlockedReason(provider) { setupMessage = reason; return }
+        guard !cliAccountBusy.contains(provider), let command = CLIAccountSupport.loginCommand(provider: provider, option: .account) else { return }
+        endCLILogin(provider)
+        let id = "setup-login-" + UUID().uuidString
+        openSetupTerminal(id: id, title: L("loginRecovery.terminalTitle", ["provider": ProviderOptions.label(provider)]), input: TerminalInput(text: command, autoRun: true))
+        watchCLILogin(provider, terminalId: id)
     }
 
     /// An agent CLI below the app's minimum gets the existing CLI update.
@@ -252,5 +302,9 @@ extension AppStore {
               snapshot.workspaces.first(where: { $0.id == session.workspaceId })?.remote == nil,
               runtime != nil, providerRuntime(session.provider, workspaceId: session.workspaceId).version == nil else { return nil }
         return loadSetupCatalog()?.items.first { $0.provider == session.provider }?.id
+    }
+
+    func closeSetupTerminals() {
+        for window in setupTerminals.values { window.close() }
     }
 }

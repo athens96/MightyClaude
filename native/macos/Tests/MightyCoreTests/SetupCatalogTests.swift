@@ -58,7 +58,8 @@ struct SetupCatalogTests {
             #expect(mac.source.scheme == "https")
             #expect(SetupCatalog.knownKeys.contains(item.labelKey) && SetupCatalog.knownKeys.contains(item.descriptionKey))
         }
-        #expect(catalog.item("claude")?.required == true && catalog.item("git")?.required == true)
+        // Required is the command line tools; an agent CLI is needed too, but any one of them (SetupFirstRun).
+        #expect(catalog.items.filter(\.required).map(\.id) == ["git"])
         #expect(catalog.item("claude")?.provider == "claude" && catalog.item("agy")?.provider == "gemini" && catalog.item("codex")?.provider == "codex")
         // Claude uses the native installer, which needs no Node.
         #expect(catalog.item("claude")?.platforms[.macos]?.prerequisites == [])
@@ -143,6 +144,39 @@ struct SetupCatalogTests {
         #expect(throws: (any Error).self) {
             try Self.decodeEditing { $0["afterInstall"] = ["kind": "signIn", "provider": "someone"] }
         }
+    }
+
+    @Test func programsTakeOnlyTheirOwnOptionsAndGitHubOnlyTheCatalogsRepositories() throws {
+        #expect(throws: (any Error).self) {
+            try Self.decodeEditing { Self.setMac(&$0, "install", ["kind": "argv", "argv": ["npx", "--yes", "skills@1.7.2"]]) }
+        }
+        #expect(throws: (any Error).self) {
+            try Self.decodeEditing { Self.setMac(&$0, "install", ["kind": "argv", "argv": ["xcode-select", "--switch", "/tmp"]]) }
+        }
+        #expect(throws: (any Error).self) {
+            try Self.decodeEditing { Self.setMac(&$0, "install", ["kind": "argv", "argv": ["npx", "--install"]]) }
+        }
+        // The owner/repo short form: no dot segments, and only a repository the catalog uses.
+        for marketplace in ["Q00/..", "./ouroboros", "someone/ouroboros"] {
+            #expect(throws: (any Error).self) {
+                try Self.decodeEditing { Self.setMac(&$0, "install", ["kind": "claudePlugin", "marketplace": marketplace, "plugin": "ouroboros@ouroboros"]) }
+            }
+        }
+        for url in ["https://github.com/someone/gstack.git", "https://raw.githubusercontent.com/someone/install/HEAD/install.sh", "https://github.com/garrytan", "https://github.com/../garrytan/gstack"] {
+            #expect(throws: (any Error).self) {
+                try Self.decodeEditing { Self.setMac(&$0, "install", ["kind": "officialScript", "url": url, "shell": "bash"]) }
+            }
+        }
+        // A skill is pinned to a full commit.
+        #expect(throws: (any Error).self) {
+            try Self.decodeEditing { Self.setMac(&$0, "install", ["kind": "skill", "repository": "https://github.com/garrytan/gstack.git", "folder": "gstack"]) }
+        }
+        #expect(throws: (any Error).self) {
+            try Self.decodeEditing { Self.setMac(&$0, "install", ["kind": "skill", "repository": "https://github.com/garrytan/gstack.git", "folder": "gstack", "commit": "d258bcf"]) }
+        }
+        // What the catalog does use still decodes.
+        let ok = try Self.decodeEditing { Self.setMac(&$0, "install", ["kind": "claudePlugin", "marketplace": "Q00/ouroboros", "plugin": "ouroboros@ouroboros"]) }
+        #expect(ok.items.first?.platforms[.macos]?.install == .claudePlugin(marketplace: "Q00/ouroboros", plugin: "ouroboros@ouroboros"))
     }
 
     @Test func prerequisitesMustExistAndNotFormACycle() throws {

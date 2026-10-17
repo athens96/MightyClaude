@@ -99,6 +99,14 @@ final class AppStore: ObservableObject, DelegationHost {
     /// difference between the two probes does not re-read it every poll.
     var setupRuntimeSyncedAgents: [String] = []
     var setupWatchTask: Task<Void, Never>?
+    /// A forced probe asked for while another ran; it runs right after.
+    var setupForceQueued = false
+    /// The required items were ticked once; later showings keep the user's picks.
+    var setupDidPreselect = false
+    /// An install ended while the app was in the background: the status bar says so.
+    @Published var setupResultWaiting = false
+    /// The setup screen's terminal windows, by id. Never panes, never saved.
+    var setupTerminals: [String: SetupTerminalWindow] = [:]
     /// The login shell's environment as of the last toolkit refresh, for the rows' npm probe.
     var toolkitProbeEnvironment: [String: String] = ProviderService.runtimeEnvironment()
     lazy var toolkitStore: ToolkitStore = ToolkitStore(directory: dataDirectory)
@@ -402,7 +410,11 @@ final class AppStore: ObservableObject, DelegationHost {
         let needle = search.trimmingCharacters(in: .whitespacesAndNewlines)
         return snapshot.workspaces.filter { needle.isEmpty || $0.name.localizedCaseInsensitiveContains(needle) || $0.path.localizedCaseInsensitiveContains(needle) }
     }
-    var hasModal: Bool { showSettings || setupSheet != nil || renameTarget != nil || settingsSession != nil || sessionInfoSessionID != nil || pendingRemoval != nil || pendingChildDiscard != nil || pendingMergedDiscard != nil || pendingParentClose != nil || attachmentPanelSession != nil || terminalHistorySession != nil || pluginBrowser != nil || resumePicker != nil || planDocument != nil }
+    /// A sheet or panel is open over the window, the setup screen included, so the window's own controls wait.
+    var hasModal: Bool { setupSheet != nil || hasBlockingModal }
+    /// What the phone and automatic sign-in recovery wait for: every modal but the
+    /// setup screen, which they can work under.
+    var hasBlockingModal: Bool { showSettings || renameTarget != nil || settingsSession != nil || sessionInfoSessionID != nil || pendingRemoval != nil || pendingChildDiscard != nil || pendingMergedDiscard != nil || pendingParentClose != nil || attachmentPanelSession != nil || terminalHistorySession != nil || pluginBrowser != nil || resumePicker != nil || planDocument != nil }
 
     func canEditAttachments(_ id: String) -> Bool {
         !ending && !closingSessions.contains(id) && snapshot.sessions.contains { $0.id == id }
@@ -434,7 +446,7 @@ final class AppStore: ObservableObject, DelegationHost {
         Task {
             // The help capture shows its demo CLIs and never asks the real ones.
             if !helpCapturing { await refreshRuntime() }
-            await presentSetupIfNeeded()
+            Task { await self.presentSetupIfNeeded() }
             if !smokeTesting { beginAutomaticCLIUpdatesIfNeeded() }
             checkForAppUpdateAutomatically()
         }
@@ -622,7 +634,7 @@ final class AppStore: ObservableObject, DelegationHost {
 
     @discardableResult
     func addSession(kind: String, provider: String = "claude", targetGroupId: String? = nil, placement: String = "tab", workspaceId: String? = nil) -> String? {
-        guard !hasModal, let workspace = workspaceId.flatMap({ id in snapshot.workspaces.first { $0.id == id } }) ?? activeWorkspace else { return nil }
+        guard !hasBlockingModal, let workspace = workspaceId.flatMap({ id in snapshot.workspaces.first { $0.id == id } }) ?? activeWorkspace else { return nil }
         // A pane started any other way (⌘N, the phone) answers "Add Pane"'s pending look-up.
         cancelAddPaneProbe()
         guard snapshot.sessions.count < 128 else { error = L("workspace.paneLimit"); return nil }
@@ -1437,7 +1449,7 @@ final class AppStore: ObservableObject, DelegationHost {
         attachmentTasks.removeAll()
         importingAttachments.removeAll()
         attachmentDrafts.removeAll()
-        pollTask?.cancel(); setupWatchTask?.cancel()
+        pollTask?.cancel(); setupWatchTask?.cancel(); closeSetupTerminals()
         runtimeTask?.cancel()
         localModels.shutdown()
         saveTask?.cancel()

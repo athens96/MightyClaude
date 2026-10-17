@@ -617,6 +617,12 @@ struct WorkspaceView: View {
             Text(L("window.status.paneCount", ["count": "\(store.activeSessions.count)"]))
             Text("·").padding(.horizontal, 3)
             Text(L("window.status.runningCount", ["count": "\(WorkDashboard.stats(sessions: store.snapshot.sessions, permissions: store.toolPermissions).running)"]))
+            if store.setupResultWaiting {
+                Button { store.openSetup() } label: {
+                    Label(L("setup.finishedBadge"), systemImage: "shippingbox.fill").font(.ui(size: 10, weight: .medium)).foregroundStyle(Palette.accent)
+                }
+                .buttonStyle(.plain).accessibilityIdentifier("setup-finished-badge")
+            }
             if let version = store.appUpdate.availability?.manifest.version, [.available, .ready].contains(store.appUpdate.phase) {
                 Button { store.showSettings = true } label: {
                     Label(L("window.status.updateBadge", ["version": version]), systemImage: "arrow.down.circle.fill").font(.ui(size: 10, weight: .medium)).foregroundStyle(Palette.accent)

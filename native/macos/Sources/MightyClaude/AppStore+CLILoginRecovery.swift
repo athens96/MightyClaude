@@ -217,7 +217,7 @@ extension AppStore {
         let provider = "gemini"
         let failed = sessionId.flatMap { id in snapshot.sessions.first { $0.id == id } }
         let reused = antigravityLoginTerminal.flatMap { terminalPaneOpen($0) ? $0 : nil }
-        if reused == nil, automatic, hasModal { return }
+        if reused == nil, automatic, hasBlockingModal { return }
         let job = BackgroundLoginJob(id: id)
         backgroundLoginJobs[provider] = job
         backgroundLogins[provider] = BackgroundLoginState(id: id, phase: .starting, automatic: automatic)
