@@ -42,6 +42,7 @@ section: delegation
 - 与窗格相同代理的子窗格以父窗格的权限模式运行，并使用父窗格的模型和{{ui:composer.effort.label}}。在每个请求都以计划模式开始的样式中，它以计划模式开始。它以与父窗格相同的视图打开；如果父窗格在 Mighty 视图中使用某个样式，它也以同一样式开始（样式的进度从子窗格的第一个请求起单独计算）。附件也会一起带上。
 - 第一条消息先是你输入的文字，随后应用会告诉子窗格在哪里工作，并要求它完成后提交并写入 REPORT.md，这样才能在卡片上合并。斜杠命令（以 `/` 开头的文字）会按你输入的样子单独运行，应用的说明则作为子窗格的下一个请求随后发送，因此不会变成命令的参数。
 - {{platform:mac}} 若要用另一个代理运行请求，请右键点按 {{ui:queue.worktree}} 按钮（或按住 Control 点按），然后选择 Claude、Codex 或 Antigravity。{{kbd:⌘Enter}} 和普通点按仍使用窗格自己的代理。灰色的项目会说明无法运行的原因：其 CLI 未安装或未登录（请查看“设置 › CLI”）、在窗格模式允许的范围内没有能更改文件的模式，或你启动的 3 个子窗格已经打开。另一个代理的子窗格以它自己的模式中能更改文件、且不做窗格模式不允许之事的最宽模式开始（[Codex 和 Antigravity](#agents)），使用该代理的新窗格会得到的模型和{{ui:composer.effort.label}}，并以窗格的视图打开，但不带样式。如果无法创建或启动该子窗格，你的文字和附件会放回输入框，对话中会说明原因；它们绝不会发给窗格本身。如果窗格自己的代理在当前模式下不能有子窗格，而另一个代理可以，按钮仍会显示，点按会打开菜单，{{kbd:⌘Enter}} 的行为与以前相同。
+- {{platform:windows}} 若要用另一个代理运行请求，请右键单击 {{ui:queue.worktree}} 按钮（或在按钮上按 Shift+F10），然后选择 Claude、Codex 或 Antigravity。{{kbd:Ctrl+Enter}} 和普通单击仍使用窗格自己的代理。其余与上面的 Mac 相同：灰色的项目会说明无法运行的原因；另一个代理的子窗格以它自己的模式中不做窗格模式不允许之事的最宽模式启动，并使用该代理最近使用的窗格的模型和{{ui:composer.effort.label}}；无法启动子窗格的文本会回到输入框。只有另一个代理的子窗格可用时，单击会打开菜单，{{kbd:Ctrl+Enter}} 则像以前一样把请求放入队列。
 - 子窗格的用法和同一代理的普通窗格一样：可以回答批准卡片、发送后续请求、更改权限模式。
 - 对于你亲自启动的子窗格，父窗格中的 Claude 不会收到通知，因为这不是父窗格交出的工作。父窗格的工具也不会列出它，也不能合并它或向它发送后续指示（`human_started`）。请在侧边栏中查看它的状态，并亲自使用卡片上的按钮。
 - 一个父窗格最多可以有 3 个打开的子窗格，并且需要 10 GB 可用磁盘空间。关闭或丢弃已完成的子窗格就能腾出名额。
@@ -55,7 +56,7 @@ Claude 或 Codex 窗格（父窗格）也可以把工作拆开，交给其他窗
 2. 在请求中写明工具名称，例如“用 delegate 工具打开两个 Mighty 子窗格，把这件事分给它们”。如果只说“分开做”，Claude 可能会改用它自己内置的子智能体。
 3. 子窗格在父窗格旁边打开，并在侧边栏中缩进一格列在父窗格下方。
 
-- 父窗格使用的工具有 `delegate`（交出任务；{{platform:mac}} 在 Mac 上可以用 `agent` 指定子窗格的代理：`claude`、`codex` 或 `antigravity`）、`list_children`（子窗格列表）、`child_status`（读取状态和报告）、`merge`（合并）和 `follow_up`（后续指示）。父窗格不能调用 `discard`（丢弃），只有你能在卡片上丢弃。
+- 父窗格使用的工具有 `delegate`（交出任务；可以用 `agent` 指定子窗格的代理：`claude`、`codex` 或 `antigravity`）、`list_children`（子窗格列表）、`child_status`（读取状态和报告）、`merge`（合并）和 `follow_up`（后续指示）。父窗格不能调用 `discard`（丢弃），只有你能在卡片上丢弃。
 - 每个子窗格都有一个分支 `mighty/<子窗格 id>` 和一个 worktree（Mac 上为 `~/.mightyclaude/worktrees/<子窗格 id>`，Windows 上为 `%USERPROFILE%\.mightyclaude\worktrees\<子窗格 id>`）。子窗格从父窗格的最后一次提交开始。
 - 交出的任务写在 TASK.md 中，结果写在 REPORT.md 中。这两个文件位于 worktree 内被 git 忽略的文件夹里，不会被提交。
 - 子窗格的权限模式是父窗格选择的模式，不能比父窗格自己的模式更宽。另一个代理的子窗格不能做父窗格模式不做的事：只有父窗格的模式不经询问就更改文件时（接受编辑或 auto 模式的 Claude、{{ui:permission.label.onRequest}} 或 {{ui:permission.label.acceptEditsCodex}} 模式的 Codex、{{ui:permission.label.acceptEdits}} 模式的 Antigravity、{{ui:permission.label.fullAccess}} 模式的任何代理）才不经询问更改文件，只有父窗格的模式能更改文件时才在询问后更改文件，只有父窗格的模式不经询问就运行 shell 命令时（auto 模式的 Claude、{{ui:permission.label.defaultCodex}} 或 {{ui:permission.label.acceptEditsCodex}} 模式的 Codex、{{ui:permission.label.fullAccess}} 模式的任何代理）才不经询问运行，只有在 {{ui:permission.label.fullAccess}} 下才有完全访问权限。因此在运行 shell 命令前会询问的 Claude 接受编辑模式下，Codex 子窗格得到的是 {{ui:permission.label.onRequest}}，而不是 {{ui:permission.label.acceptEditsCodex}}；计划模式或手动模式的 Claude 窗格完全不能有 Codex 或 Antigravity 子窗格。只有你能在两次运行之间，从子窗格输入框的权限菜单或手机设置中放宽它。
@@ -67,9 +68,7 @@ Claude 或 Codex 窗格（父窗格）也可以把工作拆开，交给其他窗
 ## Codex 和 Antigravity {#agents}
 Mighty 编排也适用于 Codex 和 Antigravity 窗格。默认情况下，子窗格运行父窗格的代理：Codex 窗格的子窗格是 Codex 窗格，Antigravity 窗格的子窗格是 Antigravity 窗格。
 
-{{platform:mac}} 在 Mac 上，任何代理都可以有三者中任意一个代理的子窗格。可以从 {{ui:queue.worktree}} 按钮的菜单中选择（[在新 worktree 中运行](#worktree)），也可以让 Claude 或 Codex 父窗格用 `delegate` 的 `agent`（`claude`、`codex` 或 `antigravity`）指定。子窗格按下面所写的它自己代理的规则工作：它的模式，以及由谁提交它的工作（Claude 子窗格自己提交；Codex 或 Antigravity 子窗格的工作由应用提交）。通知和合并跟随父窗格的代理。`delegate` 会拒绝它不认识的代理（`agent_unknown`）、未安装或未登录的代理（`agent_unavailable`），以及不是子代理的模式、在其中无法更改文件的模式，或能比父窗格的模式做更多事的模式（模式的比较方法见[让 Claude 分工](#delegate)）。
-
-{{platform:windows}} 在 Windows 上，子窗格总是运行父窗格的代理。
+任何代理都可以有三者中任意一个代理的子窗格。可以从 {{ui:queue.worktree}} 按钮的菜单中选择（[在新 worktree 中运行](#worktree)），也可以让 Claude 或 Codex 父窗格用 `delegate` 的 `agent`（`claude`、`codex` 或 `antigravity`）指定。子窗格按下面所写的它自己代理的规则工作：它的模式，以及由谁提交它的工作（Claude 子窗格自己提交；Codex 或 Antigravity 子窗格的工作由应用提交）。通知和合并跟随父窗格的代理。`delegate` 会拒绝它不认识的代理（`agent_unknown`）、未安装或未登录的代理（`agent_unavailable`），以及不是子代理的模式、在其中无法更改文件的模式，或能比父窗格的模式做更多事的模式（模式的比较方法见[让 Claude 分工](#delegate)）。
 
 - **子窗格能工作的模式**：子窗格以父窗格的权限模式启动，因此 Codex 和 Antigravity 窗格只有在子窗格能更改文件的模式下才会用 {{kbd:⌘Enter}} 启动子窗格：Codex 为{{ui:permission.label.acceptEditsCodex}}、{{ui:permission.label.onRequest}}或{{ui:permission.label.fullAccess}}，Antigravity 为{{ui:permission.label.acceptEdits}}或{{ui:permission.label.fullAccess}}。在其他模式下，{{kbd:⌘Enter}} 会像以前一样把请求放入队列。
 - **Codex** 窗格只有在{{ui:permission.label.acceptEditsCodex}}或{{ui:permission.label.fullAccess}}模式下才会获得委派工具：在{{ui:permission.label.defaultCodex}}模式下 Codex 会拒绝这些工具，在{{ui:permission.label.onRequest}}模式下它会以应用无法显示的方式请求批准。`delegate` 会拒绝无法更改文件的子窗格模式。只有当运行以{{ui:permission.label.fullAccess}}模式开始时，Codex 才能调用 `merge`，否则会被拒绝（`merge_human_only`），请在卡片上合并。运行中的 Codex 回合无法接收文字，因此发给运行中 Codex 父窗格的通知会在这次运行正常结束后作为下一次运行送达；如果因停止或错误而结束，则会被保留。

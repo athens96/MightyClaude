@@ -40,15 +40,15 @@ unchanged. The phone wire is unchanged: `POST /m1/sessions/{id}/submit` with mod
 In both apps, a child runs its parent's agent by default, and a record may carry
 `provider` (`codex` or `gemini`), the child's own agent; records without it are
 Claude children and load unchanged, and a Claude child's record never stores it.
-On the Mac only, a child may run another agent than its parent's: `delegate`
+In both apps, a child may run another agent than its parent's: `delegate`
 takes an optional `agent` (`claude`, `codex`, `antigravity`, or `gemini` for
 Antigravity) and refuses with reason code `agent_unknown` or `agent_unavailable`
 (the CLI the app last found not installed or signed out), and the composer's
-worktree button has a menu of the three agents. A child of another agent may start only in
+worktree button has a menu of the three agents (a right-click on Windows). A child of another agent may start only in
 a mode that may do nothing the parent's mode may not (edit files after asking,
 edit files without asking, run shell commands without asking, have full access;
 editing without asking covers editing after asking). Everything that runs the child (its mode, its commits) follows the
-child's agent; notices and merges follow the parent's. Windows does not do this yet. Claude panes, and Codex
+child's agent; notices and merges follow the parent's. The capability and widest-mode tables are `fixtures/delegation-modes.json` ([Delegation modes](#delegation-modes-fixturesdelegation-modesjson)). Claude panes, and Codex
 panes in acceptEdits or fullAccess, get the delegation tools (a manual Codex run
 refuses MCP calls it cannot ask about, and the app declines an onRequest run's
 MCP prompts); Antigravity panes have none and make children only with the
