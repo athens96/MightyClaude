@@ -1080,6 +1080,7 @@ internal static class Verification
         await Test("setup: the script folder is ours and markers never follow links", SetupVerification.TheScriptFolderIsOursAndMarkersNeverFollowLinks);
         await Test("setup: probes read the PATH, the installers' folders, plugins and skills", SetupVerification.ProbesReadThePathTheInstallersFoldersPluginsAndSkills);
         await Test("setup: rows and the first run follow the probes", SetupVerification.RowsAndTheFirstRunFollowTheProbes);
+        await Test("setup: the screen is wired into the app", SetupVerification.TheScreenIsWiredIntoTheApp);
         await Test("components screen is live in the running app", ToolkitVerification.ComponentsScreenIsLiveInTheRunningApp);
         await Test("toolkit file round-trip is a fixed point", ToolkitVerification.ToolkitFileRoundTripIsAFixedPoint);
         await Test("step fetch eligibility is derived", ToolkitVerification.StepFetchEligibilityIsDerived);

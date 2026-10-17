@@ -122,6 +122,9 @@ public sealed partial class MainWindow
             result["phaseModelsSection"] = RunPhaseModelsSectionSmoke();
             var componentsLeakStrings = new List<string>();
             result["componentsSection"] = RunComponentsSectionSmoke(result, componentsLeakStrings);
+            Checkpoint("setupTools", "running");
+            result["setupTools"] = await RunSetupSmoke();
+            Checkpoint("setupTools", "passed");
             Checkpoint(AccountUsageSmokeOutcome.ResultKey, "running");
             result[AccountUsageSmokeOutcome.ResultKey] = await RunAccountUsageSmoke();
             Checkpoint(AccountUsageSmokeOutcome.ResultKey, "passed");

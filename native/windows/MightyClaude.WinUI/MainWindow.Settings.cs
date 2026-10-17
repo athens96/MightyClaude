@@ -256,14 +256,13 @@ public sealed partial class MainWindow
     private static string ResultRowAutomationId(CliUpdateResult result) =>
         ResultRowIdPrefix + result.Provider + "-" + result.Status;
 
-    // Components — CLI rows (claude/codex/gemini) then the toolkit sub-section.
+    // Components — the setup screen's list (필요한 도구) then the toolkit sub-section.
     // Layout mirrors ComponentsSettingsSection + ToolkitSettingsSection on macOS.
     // No Korean literal is typed here — all copy comes from the locale catalogue.
 
     private ToolkitStore? toolkitStore;
     private bool toolkitRunning;
     private IReadOnlyList<ToolkitRunItem>? toolkitRunResults;
-    private StackPanel? componentsCliPanel;
     private StackPanel? toolkitListPanel;
     private StackPanel? toolkitResultsPanel;
     private Button? toolkitInstallButton;
@@ -289,81 +288,18 @@ public sealed partial class MainWindow
         LocalAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
     };
 
-    // 구성 요소 (M/ComponentsSettingsView.swift:11-91): one row per CLI, what the last button did, then the
-    // explanation beside the recheck button. The toolkit is the next box (BuildToolkitSection).
+    // 구성 요소 (M/ComponentsSettingsView.swift:11-24): the setup screen's explanation and its list, the same groups, rows, picks,
+    // confirmation and run as the 필요한 도구 window (MainWindow.Setup.cs), in place of the CLI rows that only copied a command.
+    // The toolkit is the next box (BuildToolkitSection).
     private StackPanel BuildComponentsSection()
     {
-        // CLI rows — re-filled by the recheck button; the last row stays under them.
-        var rows = componentsCliPanel = new StackPanel();
-
-        // Recheck button — re-probes the runtime without closing the dialog.
-        var recheckLabel = Locale.Get("settings.components.recheckButton");
-        var checkingLabel = Locale.Get("settings.components.checkingButton");
-        // It waits while it checks and while a row's button works (M/ComponentsSettingsView.swift:25); the rows set it as they are drawn.
-        var recheckBtn = componentsRecheck = SettingsPush(new Button { Content = componentsChecking ? checkingLabel : recheckLabel });
-        AutomationProperties.SetAutomationId(recheckBtn, "components-refresh");
-        async Task Recheck()
-        {
-            if (componentsChecking || componentAction is not null) return;
-            componentsChecking = true; recheckBtn.Content = checkingLabel; recheckBtn.IsEnabled = false;
-            try { await RefreshRuntime(); }
-            finally
-            {
-                componentsChecking = false;
-                // The section that shows now: a tab switch meanwhile built another.
-                if (componentsRecheck is { } live) live.Content = recheckLabel;
-                if (!closing) RefillComponentCliRows();
-            }
-        }
-        recheckBtn.Click += async (_, _) => await Act(Recheck);
-        SettingsRow(rows, SettingsLabeled(SettingsText(Locale.Get("settings.components.sectionDescription"), 11, DesignToken.Ink2), recheckBtn), tag: ComponentsFooterRow);
-        FillComponentCliRows(rows);
-        // Checked again as the section opens, then looked at every 5 s while a row still needs the user
-        // (M/ComponentsSettingsView.swift:28-38). As on the Mac the timed look reads the runtime the app holds, which a
-        // CLI update or another check renews; it draws the rows again only when they differ.
-        var look = new DispatcherTimer { Interval = ComponentSection.RecheckInterval };
-        look.Tick += (_, _) =>
-        {
-            if (closing || settingsWindow is null || !rows.IsLoaded) { look.Stop(); return; }
-            if (componentsChecking || componentAction is not null || !ComponentSection.NeedsRecheck(componentRowsShown)) return;
-            if (ComponentRowsKey(ComponentSection.SectionRows(ComponentRuntime)) != ComponentRowsKey(componentRowsShown)) FillComponentCliRows(rows);
-        };
-        rows.Loaded += async (_, _) => { if (options.SmokeTest) return; look.Start(); await Act(Recheck); };
-        rows.Unloaded += (_, _) => look.Stop();
+        var rows = new StackPanel();
+        SettingsRow(rows, SettingsText(Locale.Get("setup.windows.subtitle"), 11, DesignToken.Ink2));
+        SettingsRow(rows, BuildSetupContent());
         return rows;
     }
 
-    /// <summary>The runtime the CLI rows are read from; before the first check, none of the CLIs is known.</summary>
-    private RuntimeInfo ComponentRuntime => runtime ?? new RuntimeInfo("win32", "0.0.0", false, null, null, [], null);
-    private static string ComponentRowsKey(IEnumerable<ComponentStatus> rows) => string.Join("\n", rows.Select(row => row.Id + "\t" + row.State + "\t" + row.Version + "\t" + row.Detail));
-    /// <summary>The CLI rows as last drawn, the button that is working ("claude:update"), and what the last one did.</summary>
-    private IReadOnlyList<ComponentStatus> componentRowsShown = [];
-    private string? componentAction, componentMessage;
-    /// <summary>The recheck button of the section built last, and whether a check it started is under way.</summary>
-    private Button? componentsRecheck;
-    private bool componentsChecking;
-
-    /// <summary>
-    /// A CLI row's button (M/AppStore+Components.swift:50-73), one at a time: its words say it is working meanwhile;
-    /// copying puts the install command on the clipboard and the section says so; updating starts the update
-    /// Settings › CLI's update-now button starts. The rows are drawn again a second later.
-    /// </summary>
-    private async Task PerformComponentAction(string component, string action, string? command)
-    {
-        if (componentAction is not null || closing) return;
-        componentAction = component + ":" + action; componentMessage = null; RefillComponentCliRows();
-        try
-        {
-            if (action == "update") { if (!AnyCliUpdateRunning && !pluginOperations.IsRunning) coordinator.Start(); }
-            else if (command is not null) { Copy(command); componentMessage = ComponentSection.CopiedMessage(command); }
-            await Task.Delay(TimeSpan.FromSeconds(1));
-        }
-        finally { componentAction = null; if (!closing) RefillComponentCliRows(); }
-    }
-    /// <summary>The CLI rows again in the section that shows now: the tab is built anew each time it is chosen.</summary>
-    private void RefillComponentCliRows() { if (componentsCliPanel is { } panel) FillComponentCliRows(panel); }
-
-    private const string ComponentsFooterRow = "components-footer", ComponentMessageRow = "components-message", ComponentRow = "component", ToolkitEntryRow = "toolkit-entry", ToolkitFooterRow = "toolkit-footer", ToolkitResultsRow = "toolkit-results";
+    private const string ToolkitEntryRow = "toolkit-entry", ToolkitFooterRow = "toolkit-footer", ToolkitResultsRow = "toolkit-results";
 
     // 내 작업 도구 모음 (M/ComponentsSettingsView.swift:105-214): the file error, one row per tool, the
     // results of the last run, then the explanation beside the add, export, import and install buttons.
@@ -416,85 +352,8 @@ public sealed partial class MainWindow
         return rows;
     }
 
-    // Renders one row per CLI provider (claude/codex/gemini), above the box's last row.
-    // M/ComponentsSettingsView.swift:42-74: the mark, the 13pt medium name, the 베타 capsule, the version
-    // in 10pt mono and the state word at the trailing edge; the 11pt detail; then the row's small buttons, which
-    // all wait while one of them works. Under the rows, what the last button did (M/ComponentsSettingsView.swift:14-20).
-    private void FillComponentCliRows(StackPanel panel)
-    {
-        var rt = ComponentRuntime;
-        var contents = new List<FrameworkElement>();
-        foreach (var row in componentRowsShown = ComponentSection.SectionRows(rt))
-        {
-            var rowPanel = new StackPanel { Spacing = DesignMetrics.Spacing.Sm, Margin = new Thickness(0, DesignMetrics.Spacing.Xs, 0, DesignMetrics.Spacing.Xs) };
-            AutomationProperties.SetAutomationId(rowPanel, "component-" + row.Id);
-
-            var header = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
-            header.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-            var name = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
-            name.Children.Add(ProviderMarkView.Create(row.Id, SettingsProviderMark));
-            name.Children.Add(SettingsText(row.Title, 13, medium: true));
-            if (ProviderCatalog.IsBeta(row.Id)) name.Children.Add(BetaBadgeView.Create(brushes));
-            if (row.Version is { } ver) name.Children.Add(SettingsText(ver, 10, DesignToken.Ink2, mono: true));
-            header.Children.Add(name);
-            var state = SettingsText(ComponentStateLabel(row.State), 10, ComponentStateInk(row.State), medium: true);
-            Grid.SetColumn(state, 1); header.Children.Add(state);
-            rowPanel.Children.Add(header);
-            rowPanel.Children.Add(SettingsText(row.Detail, 11, DesignToken.Ink2, selectable: true));
-
-            if (row.Actions.Count > 0)
-            {
-                var actionsPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
-                foreach (var action in row.Actions)
-                {
-                    var actionId = action.Id;
-                    var title = componentAction == row.Id + ":" + actionId ? Locale.Get("settings.components.inProgressLabel") : action.Title;
-                    var btn = SettingsPush(new Button { Content = title, IsEnabled = componentAction is null }, SettingsControlSize.Small);
-                    AutomationProperties.SetAutomationId(btn, "component-" + row.Id + "-" + actionId);
-                    var command = actionId == "copy-command" ? ComponentSection.InstallCommand(row.Id) : null;
-                    btn.Click += async (_, _) => await Act(() => PerformComponentAction(row.Id, actionId, command));
-                    actionsPanel.Children.Add(btn);
-                }
-                rowPanel.Children.Add(actionsPanel);
-            }
-            contents.Add(rowPanel);
-        }
-        var footer = panel.Children.OfType<Border>().FirstOrDefault(row => Equals(row.Tag, ComponentsFooterRow));
-        var said = new List<FrameworkElement>();
-        if (componentMessage is { } message)
-        {
-            // checkmark.circle in doneText a point down, beside the 11pt words (M/ComponentsSettingsView.swift:15-19).
-            var line = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
-            line.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); line.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
-            var mark = SettingsSymbol("", 12, DesignToken.DoneText); mark.VerticalAlignment = VerticalAlignment.Top; mark.Margin = new Thickness(0, 1, 0, 0);
-            line.Children.Add(mark);
-            var words = SettingsText(message, 11, DesignToken.Ink2, selectable: true);
-            Grid.SetColumn(words, 1); line.Children.Add(words);
-            AutomationProperties.SetAutomationId(line, "components-message");
-            said.Add(line);
-        }
-        if (componentsRecheck is { } recheck) recheck.IsEnabled = componentAction is null && !componentsChecking;
-        ReplaceSettingsRows(panel, ComponentMessageRow, said, footer);
-        ReplaceSettingsRows(panel, ComponentRow, contents, panel.Children.OfType<Border>().FirstOrDefault(row => row.Tag is ComponentMessageRow or ComponentsFooterRow));
-    }
-
     /// <summary>A provider's mark beside a 13pt name: the Mac draws it in a 13 × 1.15 box (M/ProviderIcon.swift:18).</summary>
     private const double SettingsProviderMark = 15;
-
-    /// <summary>The state word's ink (M/ComponentsSettingsView.swift:81-90): done for installed, wait for missing or attention, err for unsupported.</summary>
-    private static DesignToken ComponentStateInk(string state) => state switch
-    {
-        "installed" => DesignToken.DoneText, "missing" or "attention" => DesignToken.WaitText, "unsupported" => DesignToken.ErrText, _ => DesignToken.Ink2,
-    };
-
-    private static string ComponentStateLabel(string state) => state switch
-    {
-        "installed" => Locale.Get("settings.components.statusInstalled"),
-        "missing" => Locale.Get("settings.components.statusMissing"),
-        "attention" => Locale.Get("settings.components.statusAttention"),
-        "unsupported" => Locale.Get("settings.components.statusUnsupported"),
-        _ => Locale.Get("settings.components.statusChecking"),
-    };
 
     // Fills the toolkit list with bundled + user entries, above the results and the box's last row.
     // M/ComponentsSettingsView.swift:147-187: the wrench, the 13pt medium name, the bundled or approved
