@@ -3,13 +3,15 @@ import MightyCore
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Settings section listing what the app needs on this Mac and offering the
-/// next step for each item (install, launch, login, update).
+/// Settings section listing what the app needs on this Mac: the setup
+/// screen's tools (필요한 도구) and any plugin the app requires for an
+/// installed agent.
 struct ComponentsSettingsSection: View {
     @EnvironmentObject private var store: AppStore
 
     var body: some View {
         SettingsGroup {
+            SetupToolsSettingsContent()
             ForEach(store.components) { component in row(component) }
             if let message = store.componentMessage {
                 HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
@@ -18,25 +20,8 @@ struct ComponentsSettingsSection: View {
                 }
                 .accessibilityIdentifier("components-message")
             }
-            HStack {
-                Text(L("settings.components.sectionDescription")).font(.ui(size: 11)).foregroundStyle(.secondary)
-                Spacer()
-                Button(store.componentsRefreshing ? L("settings.components.checkingButton") : L("settings.components.recheckButton")) { Task { await store.refreshComponents() } }
-                    .disabled(store.componentsRefreshing || store.componentAction != nil).accessibilityIdentifier("components-refresh")
-            }
         } header: { Text(L("settings.components.sectionTitle")) }
-        .task {
-            // Re-check whenever the sheet opens, then keep polling while
-            // something still needs the user (an App Store install lands
-            // outside the app, so nothing else would notice it).
-            await store.refreshComponents()
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(5))
-                guard !Task.isCancelled, store.componentAction == nil, !store.componentsRefreshing,
-                      store.components.contains(where: { $0.state != "installed" }) else { continue }
-                await store.refreshComponents()
-            }
-        }
+        .task { await store.refreshComponents() }
     }
 
     private func row(_ component: ComponentStatus) -> some View {

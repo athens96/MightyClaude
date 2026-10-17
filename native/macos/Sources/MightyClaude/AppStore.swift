@@ -84,6 +84,21 @@ final class AppStore: ObservableObject, DelegationHost {
     @Published var toolkitShowConfirmation = false
     @Published var toolkitRunResults: [ToolkitRunItem]? = nil
     @Published var toolkitRunning = false
+    /// The setup screen, 필요한 도구 (AppStore+Setup.swift).
+    @Published var setupSheet: SetupSheetRequest?
+    @Published var setupResults: [String: SetupProbeResult] = [:]
+    @Published var setupProbing = false
+    @Published var setupSelection: Set<String> = []
+    @Published var setupConfirmation: SetupConfirmation?
+    @Published var setupRun: SetupRun?
+    @Published var setupMessage: String?
+    var setupCatalog: SetupCatalog?
+    /// Set by the help capture and the setup smoke: the rows show these, and nothing on this Mac is probed.
+    var setupFixedResults: [String: SetupProbeResult]?
+    /// The agent CLIs' versions the runtime was last re-read for, so a lasting
+    /// difference between the two probes does not re-read it every poll.
+    var setupRuntimeSyncedAgents: [String] = []
+    var setupWatchTask: Task<Void, Never>?
     /// The login shell's environment as of the last toolkit refresh, for the rows' npm probe.
     var toolkitProbeEnvironment: [String: String] = ProviderService.runtimeEnvironment()
     lazy var toolkitStore: ToolkitStore = ToolkitStore(directory: dataDirectory)
@@ -387,7 +402,7 @@ final class AppStore: ObservableObject, DelegationHost {
         let needle = search.trimmingCharacters(in: .whitespacesAndNewlines)
         return snapshot.workspaces.filter { needle.isEmpty || $0.name.localizedCaseInsensitiveContains(needle) || $0.path.localizedCaseInsensitiveContains(needle) }
     }
-    var hasModal: Bool { showSettings || renameTarget != nil || settingsSession != nil || sessionInfoSessionID != nil || pendingRemoval != nil || pendingChildDiscard != nil || pendingMergedDiscard != nil || pendingParentClose != nil || attachmentPanelSession != nil || terminalHistorySession != nil || pluginBrowser != nil || resumePicker != nil || planDocument != nil }
+    var hasModal: Bool { showSettings || setupSheet != nil || renameTarget != nil || settingsSession != nil || sessionInfoSessionID != nil || pendingRemoval != nil || pendingChildDiscard != nil || pendingMergedDiscard != nil || pendingParentClose != nil || attachmentPanelSession != nil || terminalHistorySession != nil || pluginBrowser != nil || resumePicker != nil || planDocument != nil }
 
     func canEditAttachments(_ id: String) -> Bool {
         !ending && !closingSessions.contains(id) && snapshot.sessions.contains { $0.id == id }
@@ -419,6 +434,7 @@ final class AppStore: ObservableObject, DelegationHost {
         Task {
             // The help capture shows its demo CLIs and never asks the real ones.
             if !helpCapturing { await refreshRuntime() }
+            await presentSetupIfNeeded()
             if !smokeTesting { beginAutomaticCLIUpdatesIfNeeded() }
             checkForAppUpdateAutomatically()
         }
@@ -444,6 +460,7 @@ final class AppStore: ObservableObject, DelegationHost {
         else if arguments.contains("--agent-smoke-test") { Task { await runAgentSmokeTest() } }
         else if arguments.contains("--layout-smoke-test") { Task { await runLayoutSmokeTest() } }
         else if arguments.contains("--usage-reset-smoke-test") { Task { await runUsageResetSmokeTest() } }
+        else if arguments.contains("--setup-smoke-test") { Task { await runSetupSmokeTest() } }
         else if arguments.contains("--files-smoke-test") { Task { await runFilesSmokeTest() } }
         else if arguments.contains("--delegation-smoke-test") { Task { await runDelegationSmokeTest() } }
         else if terminalSmokeMode { Task { await runTerminalSmokeTest() } }
@@ -1420,7 +1437,7 @@ final class AppStore: ObservableObject, DelegationHost {
         attachmentTasks.removeAll()
         importingAttachments.removeAll()
         attachmentDrafts.removeAll()
-        pollTask?.cancel()
+        pollTask?.cancel(); setupWatchTask?.cancel()
         runtimeTask?.cancel()
         localModels.shutdown()
         saveTask?.cancel()
