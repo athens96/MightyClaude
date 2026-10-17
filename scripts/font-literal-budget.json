@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "note": "Font sizes, line heights and families the WinUI app still sets itself instead of through AppText (TextSize, TextLineHeight, TextHeight, TextFont), per file of scripts/check-design-tokens.js section 3, so they do not follow Settings › General › 글자. Counts only go down; lower them with node scripts/check-design-tokens.js --write. Exempt files are not counted; each says why, and a glob that matches no file fails.",
+  "exemptFiles": {
+    "native/windows/MightyClaude.WinUI/AppText.cs": "Where the text setting becomes FontSize, LineHeight and FontFamily: the one place they are written.",
+    "native/windows/MightyClaude.WinUI/*Smoke*.cs": "The Windows GUI smoke (--smoke-test): fixtures and measured expectations, not app chrome.",
+    "native/windows/MightyClaude.WinUI/ScreenShareReferenceSceneWindow.cs": "A fixed reference scene for the screen-share check, not app chrome."
+  },
+  "files": {
+    "native/windows/MightyClaude.WinUI/CompanionOverlay.cs": 2,
+    "native/windows/MightyClaude.WinUI/DesignBrushes.cs": 1
+  }
+}
