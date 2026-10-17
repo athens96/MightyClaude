@@ -593,6 +593,8 @@ internal static class Verification
         await Test("remote state: the shared reference cases decide what is kept", RemoteWorkspaceStateVerification.SharedReferenceCasesDecideWhatIsKept);
         await Test("remote state: version 2 loads as remote and older references are dropped", RemoteWorkspaceStateVerification.VersionTwoLoadsAsRemoteAndOlderReferencesAreDropped);
         await Test("remote state: a local workspace is never written or read as remote", RemoteWorkspaceStateVerification.ALocalWorkspaceIsNeverWrittenOrReadAsRemote);
+        await Test("remote wire: every body is the Mac's shape", RemoteWireFixtureVerification.EveryBodyIsTheMacsShape);
+        await Test("remote wire: every sample is accepted by the Windows checks", RemoteWireFixtureVerification.EverySampleIsAcceptedByTheWindowsChecks);
         await Test("corrupt/unknown/oversize state cannot be overwritten by shutdown", async () =>
         {
             foreach (var text in new[] { "null", "{", "{\"version\":2,\"workspaces\":[],\"sessions\":[]}", "{\"version\":1,\"workspaces\":null,\"sessions\":[]}" })
