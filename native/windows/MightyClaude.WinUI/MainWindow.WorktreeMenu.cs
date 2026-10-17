@@ -74,12 +74,18 @@ public sealed partial class MainWindow
 
         /// <summary>
         /// The menu's pick (M/AppStore.swift submit(agent:)): the composer's words and files run now in a new child of
-        /// <paramref name="agent"/>, of another agent too, and never in this pane. Offered no more, the draft stays where it is.
+        /// <paramref name="agent"/>, of another agent too, and never in this pane. It passes the send's checks first, as
+        /// <see cref="Send"/>: a held pane, a guided question's answer and a typed command are not children's tasks, and the draft is
+        /// validated before it is taken. Offered no more, the draft stays where it is.
         /// </summary>
         private async Task SendToWorktreeAgent(string agent)
         {
-            var text = input.Text; var files = pendingAttachments.ToArray();
-            if (string.IsNullOrWhiteSpace(text) || composingInput || attachmentsLoading || !owner.service.OffersWorktreeMenu(Session, LaunchesInPlanMode)) return;
+            if (owner.ManualMutationBlockReason(Session) is not null) { RefreshComposerState(); return; }
+            if (await AnswerGuidedQuestion() || await SubmitTypedBuiltin()) return;
+            var text = input.Text; var files = pendingAttachments.ToArray(); var pane = Session;
+            if (string.IsNullOrWhiteSpace(text) || composingInput || attachmentsLoading || !owner.service.OffersWorktreeMenu(pane, LaunchesInPlanMode)) return;
+            // The same request validation as the busy send's applies before the draft is taken.
+            _ = new StartRunRequest(pane.Id, pane.WorkspaceId, pane.Kind, text, RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot), pane.Model, pane.Provider, pane.Settings, pane.ResumeId, files).Validate();
             // Taken from the composer now, so a second pick cannot send it again.
             var sent = files.Select(file => file.Id).ToHashSet(); pendingAttachments.RemoveAll(file => sent.Contains(file.Id)); RefreshAttachments();
             if (input.Text == text) { updating = true; input.Text = ""; updating = false; await Change(s => s with { Draft = "" }); }
@@ -95,6 +101,15 @@ public sealed partial class MainWindow
         {
             if (!QueuePaneAlive) return;
             await SlashNote(Locale.Get("delegation.human.returnedToComposer", new Dictionary<string, string> { ["reason"] = reason }));
+            await GiveBackToComposer(text, files);
+        }
+
+        /// <summary>
+        /// A text no run took goes back to the composer with its files (M/AppStore+Delegation.swift giveBack): ahead of anything
+        /// typed there meanwhile, and without a file the composer already holds.
+        /// </summary>
+        private async Task GiveBackToComposer(string text, IReadOnlyList<RunAttachment> files)
+        {
             var draft = input.Text.Length == 0 ? text : text + "\n\n" + input.Text;
             updating = true; input.Text = draft; updating = false; await Change(p => p with { Draft = draft });
             var kept = pendingAttachments.Select(file => file.Id).ToHashSet(); pendingAttachments.InsertRange(0, files.Where(file => !kept.Contains(file.Id))); RefreshAttachments();

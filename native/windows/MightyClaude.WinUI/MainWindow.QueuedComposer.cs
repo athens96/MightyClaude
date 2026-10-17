@@ -155,7 +155,7 @@ public sealed partial class MainWindow
             steer.Visibility = offersWorktree ? Visibility.Collapsed : Visibility.Visible; worktreeButton.Visibility = offersWorktree ? Visibility.Visible : Visibility.Collapsed;
             if (queueable)
             {
-                ShowSendSymbol("queue"); send.IsEnabled = !starting && !queueStarting && !attachmentsLoading && !stopping && queuedInputs.Items.Count < QueuedInputBuffer.MaximumItems;
+                ShowSendSymbol("queue"); send.IsEnabled = !starting && !queueStarting && !attachmentsLoading && !stopping && queuedInputs.Items.Count < QueuedInputBuffer.MaximumItems && owner.ManualMutationBlockReason(Session) is null;
                 AutomationProperties.SetName(send, Locale.Get("queue.add")); ToolTipService.SetToolTip(send, Locale.Get("queue.addHint"));
             }
             steer.IsEnabled = steers && send.IsEnabled; worktreeButton.IsEnabled = offersWorktree && send.IsEnabled;
