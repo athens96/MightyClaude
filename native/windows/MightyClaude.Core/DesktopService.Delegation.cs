@@ -104,6 +104,12 @@ public sealed partial class DesktopService : IDelegationHost
     /// registered models and a style's launch mode. Without it the request is the pane as saved.
     /// </summary>
     public Func<StartRunRequest, Task<StartRunRequest>>? DelegatedRunRequest { get; set; }
+    /// <summary>
+    /// Whether an agent's CLI can run a child, as the window last learnt it from its CLI search and the sign-in status Settings last
+    /// read (M/AppStore+Delegation.swift agentAvailabilityNow); never by asking a CLI. Called from the coordinator's thread. null
+    /// knows nothing against any agent.
+    /// </summary>
+    public Func<string, DelegationAgentAvailability>? AgentAvailabilityNow { get; set; }
 
     private void StartDelegation()
     {
@@ -299,6 +305,9 @@ public sealed partial class DesktopService : IDelegationHost
     /// <summary>A discard's stop: the child's run and then its agent terminal, each ended before the discard looks at its worktree.</summary>
     async Task IDelegationHost.StopRun(string sessionId) { await StopAndWait(sessionId); await EndTerminal(sessionId); }
 
+    /// <summary>What the window last learnt of <paramref name="provider"/>'s CLI (<see cref="AgentAvailabilityNow"/>).</summary>
+    Task<DelegationAgentAvailability> IDelegationHost.AgentAvailability(string provider) => Task.FromResult(AgentAvailabilityNow?.Invoke(provider) ?? DelegationAgentAvailability.Ready);
+
     /// <summary>
     /// Stops the pane's run, if one is going, and returns once it has ended: its CLI and everything the CLI started have exited.
     /// False when it had not ended after ten seconds.
@@ -336,21 +345,41 @@ public sealed partial class DesktopService : IDelegationHost
     /// Codex or Antigravity pane that may have children (delegation on and loaded, its folder last checked able to host one),
     /// otherwise steer or queue as before (<see cref="ComposerSecondSends.Choose"/>).
     /// </summary>
-    public ComposerSecondSend SecondSend(RunSession session)
+    public ComposerSecondSend SecondSend(RunSession session) =>
+        ComposerSecondSends.Choose(session.Kind, session.Provider, session.Settings.PermissionMode, IsDelegatedChild(session), delegation is not null && delegationEnabled(), CanHostWorktree(session), DelegationProviders.CanSteer(session.Kind, session.Provider));
+
+    /// <summary>
+    /// What the worktree button's menu on the agent pane <paramref name="session"/> offers: Claude, Codex and Antigravity, each with
+    /// why it cannot run the text now, read from what the window already knows (<see cref="AgentAvailabilityNow"/>), never by asking
+    /// a CLI. <paramref name="planFirst"/>: the pane's style starts every request in plan mode.
+    /// </summary>
+    public IReadOnlyList<DelegationChildChoice> WorktreeChildChoices(RunSession session, bool planFirst) =>
+        DelegationProviders.HumanChildChoices(session.Provider, session.Settings.PermissionMode, planFirst, DelegationSidebar.OpenHumanChildCount(session.Id, DelegationChildren),
+            provider => AgentAvailabilityNow?.Invoke(provider) ?? DelegationAgentAvailability.Ready);
+
+    /// <summary>Whether the busy pane shows the worktree button for its menu alone: its own agent's child could not change files in its mode, but another agent's could (<see cref="ComposerSecondSends.MenuOnly"/>).</summary>
+    public bool WorktreeMenuOnly(RunSession session, bool planFirst) =>
+        ComposerSecondSends.MenuOnly(session.Kind, session.Provider, session.Settings.PermissionMode, IsDelegatedChild(session), delegation is not null && delegationEnabled(), CanHostWorktree(session), WorktreeChildChoices(session, planFirst));
+
+    /// <summary>Whether the worktree button, and its menu, shows on the busy pane.</summary>
+    public bool OffersWorktreeMenu(RunSession session, bool planFirst) => SecondSend(session) == ComposerSecondSend.Worktree || WorktreeMenuOnly(session, planFirst);
+
+    private bool IsDelegatedChild(RunSession session) => session.ParentSessionId is not null || delegation?.File.Children.Any(child => child.Id == session.Id) == true;
+
+    private bool CanHostWorktree(RunSession session)
     {
-        var folder = WorktreeHostFolder(session); bool ready; lock (sync) ready = folder is not null && worktreeReadiness.GetValueOrDefault(folder);
-        var isChild = session.ParentSessionId is not null || delegation?.File.Children.Any(child => child.Id == session.Id) == true;
-        return ComposerSecondSends.Choose(session.Kind, session.Provider, session.Settings.PermissionMode, isChild, delegation is not null && delegationEnabled(), ready, DelegationProviders.CanSteer(session.Kind, session.Provider));
+        var folder = WorktreeHostFolder(session);
+        lock (sync) return folder is not null && worktreeReadiness.GetValueOrDefault(folder);
     }
 
     /// <summary>
-    /// Checks again whether <paramref name="session"/>'s folder can host a child worktree, for <see cref="SecondSend"/>: a
-    /// top-level Claude, Codex or Antigravity pane whose child could change files, with delegation on. One check per folder at a
-    /// time; a changed answer raises <see cref="DelegationChanged"/>.
+    /// Checks again whether <paramref name="session"/>'s folder can host a child worktree, for <see cref="SecondSend"/> and the
+    /// worktree button's menu: a top-level Claude, Codex or Antigravity pane whose child, of its own agent or another, could change
+    /// files, with delegation on. One check per folder at a time; a changed answer raises <see cref="DelegationChanged"/>.
     /// </summary>
     public void RefreshWorktreeReadiness(RunSession session)
     {
-        if (delegation is not { } coordinator || session.ParentSessionId is not null || !DelegationProviders.CanParentByHuman(session.Kind, session.Provider, session.Settings.PermissionMode)
+        if (delegation is not { } coordinator || session.ParentSessionId is not null || !DelegationProviders.MayHaveHumanChild(session.Kind, session.Provider, session.Settings.PermissionMode)
             || WorktreeHostFolder(session) is not { } folder || !delegationEnabled()) return;
         lock (sync) if (!worktreeReadinessChecks.Add(folder)) return;
         _ = Task.Run(async () =>
@@ -372,14 +401,14 @@ public sealed partial class DesktopService : IDelegationHost
     }
 
     /// <summary>
-    /// The composer's second send on the busy agent pane <paramref name="parentId"/> (<see cref="ComposerSecondSend.Worktree"/>):
-    /// <paramref name="text"/> and its attachments run now in a new child pane, in its own worktree beside the pane, made by
-    /// delegation as delegate makes one, in plan mode when <paramref name="planFirst"/> (the pane's style starts every request
-    /// so). The pane's run goes on undisturbed, and the new child shows at once. What delegation answered; when the child's
-    /// worktree, pane or first run could not be made after the answer, <paramref name="failed"/> hears it with the child's id
-    /// (the child stays listed as failed to start), and the text needs another way.
+    /// The composer's second send on the busy agent pane <paramref name="parentId"/> (<see cref="ComposerSecondSend.Worktree"/>), or
+    /// the worktree button's menu naming the child's <paramref name="agent"/>: <paramref name="text"/> and its attachments run now
+    /// in a new child pane, in its own worktree beside the pane, made by delegation as delegate makes one, in plan mode when
+    /// <paramref name="planFirst"/> and the child runs the pane's agent. The pane's run goes on undisturbed, and the new child shows
+    /// at once. What delegation answered; when the child's worktree, pane or first run could not be made after the answer,
+    /// <paramref name="failed"/> hears it with the child's id (the child stays listed as failed to start), and the text needs another way.
     /// </summary>
-    public async Task<HumanChildStart> StartHumanChildAsync(string parentId, string text, IReadOnlyList<RunAttachment> attachments, bool planFirst, Func<string, Task> failed)
+    public async Task<HumanChildStart> StartHumanChildAsync(string parentId, string text, IReadOnlyList<RunAttachment> attachments, bool planFirst, Func<string, Task> failed, string? agent = null)
     {
         if (delegation is not { } coordinator) return new HumanChildStart.Failed(Locale.Get("delegation.human.error.switchedOff"));
         var starter = new HumanChildStarter(async (childId, run) =>
@@ -390,7 +419,7 @@ public sealed partial class DesktopService : IDelegationHost
             if (runId is null) lock (sync) followingNotes.Remove(childId);
             return runId;
         }, failed);
-        return await coordinator.StartHumanChild(text, parentId, starter, planFirst);
+        return await coordinator.StartHumanChild(text, parentId, starter, planFirst, agent);
     }
 
     // What the window calls and draws.

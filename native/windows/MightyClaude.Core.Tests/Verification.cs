@@ -449,6 +449,7 @@ internal static class Verification
         await Test("delegation: the human's menu starts a child of the agent it names, in that agent's widest mode", DelegationCrossAgentVerification.TheHumansMenuStartsTheNamedAgentsChild);
         await Test("delegation: the human's menu says why another agent cannot run the text", DelegationCrossAgentVerification.TheHumansMenuSaysWhy);
         await Test("delegation: the human's child of the pane's own agent never asks about its CLI", DelegationCrossAgentVerification.ThePanesOwnAgentIsNeverAskedAbout);
+        await Test("delegation: the service offers the worktree menu and starts another agent's child", DelegationCrossAgentVerification.TheServiceOffersTheMenuAndStartsAnotherAgentsChild);
         await Test("delegation scenario S1: two children, a human's approval, a fast-forward and a discard", DelegationScenarioVerification.S1);
         await Test("delegation scenario S2: held notices released together by a send or run next after a relaunch", DelegationScenarioVerification.S2);
         await Test("delegation scenario S3: a diverged child's held follow-ups reach it once after a relaunch", DelegationScenarioVerification.S3);
