@@ -638,30 +638,70 @@ Mac→Windows, Windows→Mac, Windows→Windows) over one HTTP/1.1 protocol: `/v
 `x-mighty-remote-version: 2` on every request and answer, a bearer key, and run events
 read by cursor (`docs/remote-workspaces.md`). The Mac is the reference.
 
-- `endpoints.json` is `[{name, method, path, request?, status, response, note?}]`; every
-  other file is one body it names. `GET /v2/runs/{id}/events?cursor=N` is also the
-  heartbeat: a run nobody polls for 30 s stops.
-- `start.json` carries `registeredModels` always (an empty array when there are none),
-  and `StartRunRequest` encoded as the Mac encodes it (`settings` with explicit null
-  `maxTurns`/`maxBudgetUsd`, `attachments` only when non-empty). A Windows client
-  never sends the request's `registeredModels`; they ride beside it.
+- Requests. A host refuses any request carrying an `Origin` header (403). It checks
+  the bearer key, the peer and the version header from the head alone, before it
+  reads one byte of the body: a head that fails gets its answer without the body
+  being read. Every `POST` that carries a body needs `Content-Type: application/json`
+  (a `;` parameter is allowed) and is otherwise refused with 415. Clients send it
+  with every body, `stop`'s `{}` included, which is the one `POST` that is not refused
+  without it.
+- Errors. The host's answers 400 (bad path, body or value), 401 (wrong or missing key),
+  403 (not a Tailscale peer, or an `Origin` header), 404 (no such route or run),
+  409 (the run is over or refused the answer), 415 (not JSON), 426 (wrong protocol
+  version), 429 (rate limit) and 503 (sharing stopped) all carry the same body as
+  `error.json`, `{protocol: 2, error: <message>}`, with the version header. So does 500
+  for anything unexpected. The HTTP layer under it answers a malformed head (400),
+  a too-large body (413) or too-large headers (431) with `{error}` alone and no
+  version header. A client shows `error` and never relies on its words.
+- `endpoints.json` is `[{name, method, path, request?, status, response, note?}]`; each
+  file it names is that route's body. `GET /v2/runs/{id}/events?cursor=N` is also the
+  heartbeat: a run nobody polls for 30 s stops. The other files are further bodies of
+  the same routes:
+  - `info-darwin.json` is a Mac host's `/info`;
+  - `start-codex.json` is a Codex `onRequest` run with `fastMode`, `webSearch: "live"` and `networkAccess`;
+  - `poll-gap.json`, `poll-malformed.json` and `poll-requests.json` are more polls;
+  - `plan-approved.json` is the other plan answer;
+  - `answer-declined.json` (`accepted: false`) is a steer the running turn did not take;
+  - `graph-run-event.json` and `state-references.json` are described below.
+- `start.json` carries `registeredModels` always (an empty array when there are none,
+  as in `start-codex.json`), and `StartRunRequest` encoded as the Mac encodes it:
+  `settings` with explicit null `maxTurns`/`maxBudgetUsd`, `fastMode`, `webSearch` and
+  `networkAccess` only when not their defaults, `attachments` only when non-empty,
+  and no `registeredModels` inside `request`. A Windows client never sends the
+  request's `registeredModels` there; they ride beside it.
 - Wire events are the Mac's `RunEvent` JSON with `sessionId` = the host's job id.
-  Timestamps are `yyyy-MM-ddTHH:mm:ss.fffZ`. A lost sign-in is status `error` with
-  `reason: "auth"` (Windows reads it as its own `"authentication"`). A permission's
-  input is `inputJSON`. Images are left out (the cache keys name host files).
-  `graph` carries an `ExecutionGraphNode`; a Windows client ignores it silently.
-  `graph-run-event.json` is Windows-only: a Windows host sends `graph_run` (a
-  `MightyGraphRun`) instead of `graph` only to a client whose `POST /v2/runs` carried
-  `x-mighty-remote-graph: run`. A Mac host ignores that header.
+  - Timestamps come in two forms, and every reader takes both. The Mac writes log
+    `timestamp`, usage `updatedAt` and graph `updatedAt` in whole seconds
+    (`yyyy-MM-ddTHH:mm:ssZ`), and a permission's or plan's `receivedAt`/`decidedAt`
+    with milliseconds (`yyyy-MM-ddTHH:mm:ss.fffZ`). The samples carry both.
+  - A lost sign-in is status `error` with `reason: "auth"`; Windows reads it as its
+    own `"authentication"`.
+  - A permission's input is `inputJSON`. `poll-requests.json` holds the requests the
+    answer routes settle: an AskUserQuestion with `canAnswerQuestions` (`perm-2`,
+    which `questions.json` answers), an ExitPlanMode with `canAnswerPlan` (`perm-3`,
+    which the plan samples answer), and one with `reason` and `blockedPath`.
+    `permission.json` answers `poll.json`'s `perm-1`.
+  - Images are left out, because the cache keys name host files.
+  - A usage or graph event passes the client's validation as it is. Then the
+    client's own normalizing keeps it or drops it, so every sample survives that too.
+  - `graph` carries an `ExecutionGraphNode`; a Windows client ignores it silently.
+- `graph-run-event.json` is Windows-only, and the Mac is not its reference. A Windows
+  host sends `graph_run` (a `MightyGraphRun`) instead of `graph`, and only to a client
+  whose `POST /v2/runs` carried `x-mighty-remote-graph: run`. A Mac host ignores that
+  header; a Mac client refuses the event.
 - `poll-malformed.json` holds one event that decodes but fails validation: the
   client drops it alone, adds one `remote.run.notice.skipped` line, and the run goes on.
 - `state-references.json` is `{cases: [{name, kept, workspace}]}`: a saved workspace
-  is remote only when `remote.version` is the JSON number 2; any other `remote`
-  value drops the workspace with its panes on load.
+  is remote only when `remote.version` is the JSON number 2 (`2.0` counts as 2). Any
+  other `remote` value drops the workspace with its panes on load: no version, `null`,
+  1, 3, a string, a boolean, an array or a string in place of the object. A missing or
+  null `remote` is a local workspace.
 - `/info` `runtime.platform` (`darwin`, `win32`, `linux`) is the host's OS; both apps
   show it on remote panes.
 
 Readers: `RemoteWireFixtureTests` (Swift), `RemoteWireFixtureVerification` and
 `RemoteWorkspaceStateVerification` (Windows Core). Both must agree with every file.
+`RemoteWireFixtureTests` also checks that every file in the folder is either named
+by `endpoints.json` or one of the extra bodies listed above.
 Implementations: `MightyCore/Remote/RemoteWorkspaceModels.swift`, `StateRepository.swift`;
 `MightyClaude.Core/Remote/RemoteWorkspaceModels.cs`, `RemoteWireEvents.cs`, `StateStore.cs`.

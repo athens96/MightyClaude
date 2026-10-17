@@ -1,0 +1,17 @@
+{
+  "request": {
+    "sessionId": "pane-2",
+    "workspaceId": "ws-project",
+    "kind": "claude",
+    "input": "Run the tests",
+    "model": "default",
+    "provider": "codex",
+    "settings": { "effort": "medium", "permissionMode": "onRequest", "maxTurns": null, "maxBudgetUsd": null, "fastMode": true, "webSearch": "live", "networkAccess": true }
+  },
+  "registeredModels": [],
+  "phaseModels": {
+    "claudeMain": "default", "claudeOpusAlias": "default", "claudeSonnetAlias": "default", "claudeHaikuAlias": "default",
+    "claudeSubagentDefault": "default", "codexReviewModel": "default", "codexSubagentDefault": "default",
+    "codexPlanModeReasoningEffort": "high", "codexMainEffort": "medium", "codexSubagentEffort": "low"
+  }
+}
