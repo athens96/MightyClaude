@@ -26,7 +26,7 @@ public sealed class DirectIncoming : IDisposable
     /// One spelling per remote address, so the per-address limits never split across forms of one address: an IPv4-mapped address as
     /// its IPv4, IPv6 lowercase and compressed with no <c>%scope</c>; null when the endpoint is no IP.
     /// </summary>
-    public static string? PeerOf(EndPoint? endpoint) =>
+    internal static string? PeerOf(EndPoint? endpoint) =>
         endpoint is IPEndPoint remote ? TailscaleAddresses.Canonical((remote.Address.IsIPv4MappedToIPv6 ? remote.Address.MapToIPv4() : remote.Address).ToString()) : null;
 
     /// <summary>Drops the connection unread: a reset, nothing said. The slot is given back as it goes.</summary>
