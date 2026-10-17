@@ -179,6 +179,35 @@ struct SetupCatalogTests {
         #expect(ok.items.first?.platforms[.macos]?.install == .claudePlugin(marketplace: "Q00/ouroboros", plugin: "ouroboros@ouroboros"))
     }
 
+    /// The Windows entries share the file: the Mac decodes them, winget included, and refuses a
+    /// winget install anywhere but under `windows`.
+    @Test func windowsEntriesDecodeAndWingetIsWindowsOnly() throws {
+        let catalog = try SetupCatalogDecoder.decode(Data(contentsOf: Self.fixtureURL))
+        #expect(catalog.item("git")?.platforms[.windows]?.install == .winget(id: "Git.Git", scope: "user"))
+        #expect(catalog.item("claude")?.platforms[.windows]?.install == .officialScript(url: URL(string: "https://claude.ai/install.ps1")!, shell: "powershell"))
+        // Homebrew and gstack's bash setup have no Windows entry.
+        #expect(catalog.item("homebrew")?.platforms[.windows] == nil && catalog.item("gstack")?.platforms[.windows] == nil)
+        #expect(throws: (any Error).self) {
+            try Self.decodeEditing { Self.setMac(&$0, "install", ["kind": "winget", "id": "Git.Git", "scope": "user"]) }
+        }
+        func decodeWindows(_ install: [String: Any]) throws -> SetupCatalog {
+            try Self.decodeEditing { item in
+                var platforms = item["platforms"] as! [String: Any]
+                var windows = platforms["windows"] as! [String: Any]
+                windows["install"] = install
+                platforms["windows"] = windows
+                item["platforms"] = platforms
+            }
+        }
+        let ok = try decodeWindows(["kind": "winget", "id": "OpenJS.NodeJS.LTS", "scope": "machine"])
+        #expect(ok.items.first?.platforms[.windows]?.install == .winget(id: "OpenJS.NodeJS.LTS", scope: "machine"))
+        for bad: [String: Any] in [["kind": "winget", "id": "Git.Git", "scope": "all"], ["kind": "winget", "id": "git; calc", "scope": "user"],
+                                   ["kind": "winget", "id": "Git", "scope": "user"], ["kind": "winget", "id": "Git.Git", "scope": "user", "override": "/S"],
+                                   ["kind": "brewFormula", "name": "node"], ["kind": "officialScript", "url": "https://claude.ai/install.ps1", "shell": "bash"]] {
+            #expect(throws: (any Error).self) { try decodeWindows(bad) }
+        }
+    }
+
     @Test func prerequisitesMustExistAndNotFormACycle() throws {
         #expect(throws: (any Error).self) {
             try Self.decodeEditing { Self.setMac(&$0, "prerequisites", ["nothing-like-this"]) }
