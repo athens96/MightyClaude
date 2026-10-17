@@ -490,4 +490,41 @@ internal static class MobileDirectVerification
         }
         finally { await host.DisposeAsync(); await app.StopAsync(CancellationToken.None); Directory.Delete(directory, true); }
     }
+
+    internal static Task TheWindowsWordsAreInEveryLanguage()
+    {
+        foreach (var language in Locale.Languages)
+        {
+            var catalogue = Locale.Catalogue(language);
+            foreach (var key in MobileDirectStrings.Keys) Check(catalogue.TryGetValue(key, out var text) && text.Trim().Length > 0, language + " lacks " + key);
+            Check(catalogue["mobileRemote.direct.windows.firewall.failedTemplate"].Contains("{error}", StringComparison.Ordinal), language + ": the failure names its error");
+            Check(!catalogue["mobileRemote.direct.windows.description"].Contains("Mac", StringComparison.Ordinal), language + ": the Windows description names no Mac");
+        }
+        Check(MobileDirectStrings.Keys.Count == 17 && MobileDirectStrings.Keys.All(key => key.StartsWith("mobileRemote.direct.windows.", StringComparison.Ordinal)), "seventeen Windows-only keys");
+        Check(MobileDirectStrings.FirewallState(FirewallRuleState.Present) == Locale.Get("mobileRemote.direct.windows.firewall.present") && MobileDirectStrings.FirewallState(FirewallRuleState.Absent) == Locale.Get("mobileRemote.direct.windows.firewall.absent")
+            && MobileDirectStrings.FirewallState(FirewallRuleState.Unknown) == Locale.Get("mobileRemote.direct.windows.firewall.unknown"), "the rule's three states");
+        Check(MobileDirectStrings.FirewallButton(FirewallRuleState.Present) == Locale.Get("mobileRemote.direct.windows.firewall.removeButton") && MobileDirectStrings.FirewallButton(FirewallRuleState.Absent) == Locale.Get("mobileRemote.direct.windows.firewall.addButton"), "the button adds when absent and removes when present");
+        Check(MobileDirectStrings.FirewallOutcome(new(FirewallChange.Done)) is null
+            && MobileDirectStrings.FirewallOutcome(new(FirewallChange.Cancelled)) == Locale.Get("mobileRemote.direct.windows.firewall.cancelled")
+            && MobileDirectStrings.FirewallOutcome(new(FirewallChange.Refused, "noPorts")) == Locale.Get("mobileRemote.direct.windows.firewall.noPorts")
+            && MobileDirectStrings.FirewallOutcome(new(FirewallChange.Refused, "badProgram")) == Locale.Get("mobileRemote.direct.windows.firewall.badProgram")
+            && MobileDirectStrings.FirewallOutcome(new(FirewallChange.Failed, "1")) == Locale.Get("mobileRemote.direct.windows.firewall.failedTemplate", new Dictionary<string, string> { ["error"] = "1" }), "every outcome has its words");
+        // Every detail code the rule runner can return has its own words, and no raw code or operating-system text reaches the screen.
+        var refused = new Dictionary<string, string>
+        {
+            ["noPorts"] = "mobileRemote.direct.windows.firewall.noPorts", ["badPorts"] = "mobileRemote.direct.windows.firewall.badPorts",
+            ["badProgram"] = "mobileRemote.direct.windows.firewall.badProgram", ["noSystemDirectory"] = "mobileRemote.direct.windows.firewall.noSystemDirectory",
+        };
+        foreach (var (code, key) in refused) Check(MobileDirectStrings.FirewallOutcome(new(FirewallChange.Refused, code)) == Locale.Get(key), "refused " + code + " has its words");
+        Check(MobileDirectStrings.FirewallOutcome(new(FirewallChange.Failed, "timeout")) == Locale.Get("mobileRemote.direct.windows.firewall.timeout"), "failed timeout has its words");
+        Check(MobileDirectStrings.FirewallOutcome(new(FirewallChange.Failed, "queryFailed")) == Locale.Get("mobileRemote.direct.windows.firewall.queryFailed"), "failed queryFailed has its words");
+        var unknown = Locale.Get("mobileRemote.direct.windows.firewall.failedUnknown");
+        foreach (var odd in new string?[] { "Der Zugriff wurde verweigert", "The system cannot find the file specified.", "timeout ", "-", "", null })
+            foreach (var kind in new[] { FirewallChange.Failed, FirewallChange.Refused })
+                Check(MobileDirectStrings.FirewallOutcome(new(kind, odd)) == unknown, kind + " " + (odd ?? "null") + " says the unknown words and never the text");
+        var words = refused.Keys.Select(code => MobileDirectStrings.FirewallOutcome(new(FirewallChange.Refused, code)))
+            .Concat([MobileDirectStrings.FirewallOutcome(new(FirewallChange.Failed, "timeout")), MobileDirectStrings.FirewallOutcome(new(FirewallChange.Failed, "queryFailed")), unknown]).ToArray();
+        Check(words.Distinct().Count() == words.Length && words.All(text => text is { Length: > 0 }), "each outcome says its own words");
+        return Task.CompletedTask;
+    }
 }
