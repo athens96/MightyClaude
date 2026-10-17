@@ -234,12 +234,12 @@ internal static class MobileDirectVerification
         protected override void Dispose(bool disposing) { if (disposing) { reading.Dispose(); writing.Dispose(); } base.Dispose(disposing); }
     }
 
-    /// <summary>Whether the server ended the connection (a reset or a close) within three seconds.</summary>
-    private static async Task<bool> ReadsEnd(TcpClient client, CancellationToken token)
+    /// <summary>Whether the server ended the connection (a reset or a close) within <paramref name="milliseconds"/>.</summary>
+    private static async Task<bool> ReadsEnd(TcpClient client, CancellationToken token, int milliseconds = 3000)
     {
         try
         {
-            using var wait = CancellationTokenSource.CreateLinkedTokenSource(token); wait.CancelAfter(TimeSpan.FromSeconds(3));
+            using var wait = CancellationTokenSource.CreateLinkedTokenSource(token); wait.CancelAfter(milliseconds);
             return await client.GetStream().ReadAsync(new byte[1], wait.Token) == 0;
         }
         catch (IOException) { return true; }
@@ -330,23 +330,26 @@ internal static class MobileDirectVerification
     internal static async Task OnlyWhoMayGetsInAndRelayRedialsLeaveThemAlone()
     {
         var directory = Temp(); using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-        var addresses = new List<string> { "127.0.0.1" };
+        // Swapped whole by the checks and read whole by the watch's thread; null stands for adapters that cannot be read.
+        string[]? addresses = ["127.0.0.1"];
         var host = new MobileRelayHost(Path.Combine(directory, "identity"), "Fixture", [], (_, path, _, _, _) => Task.FromResult(new MobileReply(200, new { protocol = 1, path })))
-        { WatchesNetwork = false, HandshakeDeadline = TimeSpan.FromMilliseconds(600), DirectRedetectInterval = TimeSpan.FromMilliseconds(200) };
+        { WatchesNetwork = false, HandshakeDeadline = TimeSpan.FromSeconds(2), DirectRedetectInterval = TimeSpan.FromMilliseconds(200) };
         try
         {
-            host.SetDirectAddressSource(() => [.. addresses]);
+            host.SetDirectAddressSource(() => Volatile.Read(ref addresses) ?? throw new IOException("adapters unreadable"));
             await host.ApplyAsync(new MobileRemoteSettings(true, "ws://127.0.0.1:9"));
             var endpoint = host.DirectEndpoints.Single();
             int Port() => int.Parse(endpoint[(endpoint.LastIndexOf(':') + 1)..], CultureInfo.InvariantCulture);
 
-            // Two stalled handshakes from one address hold its two slots; a third is reset unread; the deadline frees them.
+            // Two stalled handshakes from one address hold its two slots; a third is reset unread at once, long before the 2 s deadline
+            // and while the first two are still held; the deadline then frees them.
             using (var first = new TcpClient()) using (var second = new TcpClient())
             {
                 await first.ConnectAsync(IPAddress.Loopback, Port(), timeout.Token); await second.ConnectAsync(IPAddress.Loopback, Port(), timeout.Token);
                 await Verification.Until(() => host.ConnectionIds.Count == 2);
                 using var third = new TcpClient(); await third.ConnectAsync(IPAddress.Loopback, Port(), timeout.Token);
-                Check(await ReadsEnd(third, timeout.Token), "a third handshake from the same address is dropped");
+                Check(await ReadsEnd(third, timeout.Token, 500), "a third handshake from the same address is dropped at once, not at the deadline");
+                Check(!first.Client.Poll(0, SelectMode.SelectRead) && !second.Client.Poll(0, SelectMode.SelectRead) && host.ConnectionIds.Count == 2, "the first two are still held when the third is dropped");
                 Check(await ReadsEnd(first, timeout.Token) && await ReadsEnd(second, timeout.Token), "a stalled handshake is cut at the deadline");
             }
             await Verification.Until(() => host.ConnectionIds.Count == 0);
@@ -362,11 +365,18 @@ internal static class MobileDirectVerification
                 host.RefreshDirect();
                 using var afterRefresh = await phone.ExchangeAsync(new { id = "after-refresh", method = "GET", path = "/m1/info" }, timeout.Token);
                 Check(afterRefresh.RootElement.Text("id") == "after-refresh", "a re-read that finds the same address changes nothing");
-                addresses.Clear();
+                Volatile.Write(ref addresses, []);
                 await Verification.Until(() => host.DirectStatus.State == "notFound");
                 Check(host.DirectEndpoints.Count == 0 && MobileDirectStatusText.Detail(host.DirectStatus) == Locale.Get("mobileRemote.direct.status.notFound"), "the watch re-reads the addresses on its own");
             }
-            addresses.Add("127.0.0.1");
+            // Adapters that cannot be read: the watch says so and keeps going, and listens again once they can be.
+            Volatile.Write(ref addresses, null);
+            await Verification.Until(() => host.DirectStatus.State == "failed");
+            Check(host.DirectStatus.Error == "adapters unreadable" && host.DirectEndpoints.Count == 0, "a read that fails is reported, not thrown into the watch");
+            // Only a pass that changes the status object publishes; several ticks that fail the same way keep the one it has.
+            var failed = host.DirectStatus; await Task.Delay(700);
+            Check(ReferenceEquals(host.DirectStatus, failed), "a pass that ends where it began keeps its status and publishes nothing");
+            Volatile.Write(ref addresses, ["127.0.0.1"]);
             await Verification.Until(() => host.DirectStatus.Listening);
             endpoint = host.DirectEndpoints.Single();
             await Verification.Until(() => host.ConnectionIds.Count == 0);
