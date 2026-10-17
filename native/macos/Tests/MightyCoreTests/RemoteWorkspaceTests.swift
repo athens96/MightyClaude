@@ -661,3 +661,39 @@ private func readsEndOfFile(_ socketFD: Int32, within seconds: Double) -> Bool {
     let count = read(socketFD, &byte, 1)
     return count == 0 || (count < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
 }
+
+/// native/contracts/fixtures/tailscale-addresses.json, which the Windows Core checks read too
+/// (TailscaleAddressesVerification): the same interface lists give each platform the addresses the
+/// file says. The Mac also requires a `utun` name; Windows cannot (adapters are renamable), so the
+/// two answers differ only where the file says so.
+struct RemoteWorkspaceAddressFixtureTests {
+    struct Fixture: Decodable { let contains: Contains; let cases: [Case] }
+    struct Contains: Decodable { let accepted: [String]; let rejected: [String] }
+    struct Case: Decodable { let name: String; let interfaces: [Interface]; let expected: [String: [String]] }
+    struct Interface: Decodable { let name: String; let addresses: [String] }
+
+    static let url: URL = {
+        var url = URL(fileURLWithPath: #filePath)
+        for _ in 0..<5 { url.deleteLastPathComponent() }
+        return url.appendingPathComponent("native/contracts/fixtures/tailscale-addresses.json")
+    }()
+
+    static func fixture() throws -> Fixture { try JSONDecoder().decode(Fixture.self, from: Data(contentsOf: url)) }
+
+    @Test func everyAddressIsInOrOutOfTheRangesAsTheFileSays() throws {
+        let fixture = try Self.fixture()
+        #expect(!fixture.contains.accepted.isEmpty && !fixture.contains.rejected.isEmpty)
+        for address in fixture.contains.accepted { #expect(TailscaleAddresses.contains(address), "\(address)") }
+        for address in fixture.contains.rejected { #expect(!TailscaleAddresses.contains(address), "\(address)") }
+    }
+
+    @Test func everyInterfaceListSelectsTheMacsExpectedAddresses() throws {
+        let cases = try Self.fixture().cases
+        #expect(cases.count >= 12)
+        for item in cases {
+            let read = item.interfaces.flatMap { interface in interface.addresses.map { (name: interface.name, address: $0) } }
+            #expect(item.expected["darwin"] != nil && item.expected["win32"] != nil, "\(item.name) names both platforms")
+            #expect(TailscaleAddresses.select(interfaces: read) == item.expected["darwin"], "\(item.name)")
+        }
+    }
+}

@@ -626,3 +626,7 @@ label key. The Mac copies the file byte-identically into
 `SetupCatalogTests` checks the copy, the validation rules and the four languages.
 The Windows app embeds the contract file itself and `SetupVerification` checks
 the same rules there.
+
+## Tailscale addresses (`fixtures/tailscale-addresses.json`)
+
+The rule that decides which of this computer's addresses are Tailscale's, shared by the phone's direct path and the remote workspaces. An interface counts only if it carries an address in fd7a:115c:a1e0::/48, which only Tailscale hands out; its addresses in 100.64.0.0/10 and that range then count, each once in its canonical spelling without `%scope`, IPv4 first and each family sorted ordinally. A carrier-grade NAT can put 100.64.0.0/10 on Wi-Fi and other VPNs (Cloudflare WARP's 100.96.0.0/12) on their own tunnel, so the CGNAT range alone never counts. `contains` lists addresses in and out of the two ranges (brackets accepted, `%scope` refused, an IPv4-mapped IPv6 address counts as its IPv4). `cases` are interface lists with each platform's answer: the Mac (`darwin`, `MightyCore/Remote/TailscaleAddresses.swift`, `RemoteWorkspaceAddressFixtureTests`) also requires a `utun` name; Windows (`win32`, `MightyClaude.Core/Remote/TailscaleAddresses.cs`, `TailscaleAddressesVerification`) cannot, as adapters are renamable and the Wintun adapter's type is no named `NetworkInterfaceType`. The two answers differ only in the cases that say so. Every address in the file is fake.
