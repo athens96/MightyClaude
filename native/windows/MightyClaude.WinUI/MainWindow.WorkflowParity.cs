@@ -14,9 +14,9 @@ public sealed partial class MainWindow
         try
         {
             var content = new StackPanel { Spacing = DesignMetrics.Spacing.Md, Width = 580 };
-            content.Children.Add(new TextBlock { Text = Locale.Get("terminal.history.help"), TextWrapping = TextWrapping.Wrap, FontSize = 12, Opacity = .7 });
+            content.Children.Add(new TextBlock { Text = Locale.Get("terminal.history.help"), TextWrapping = TextWrapping.Wrap, TextSize = 12, Opacity = .7 });
             var text = session.Logs.Count == 0 ? Locale.Get("terminal.history.empty") : string.Join("\n\n", session.Logs.Select(log => "[" + log.Kind + "] " + log.Text));
-            content.Children.Add(new ScrollViewer { MaxHeight = 360, Content = new TextBlock { Text = text, IsTextSelectionEnabled = true, TextWrapping = TextWrapping.Wrap, FontFamily = new FontFamily(DesignMetrics.Font.Mono), FontSize = 11 } });
+            content.Children.Add(new ScrollViewer { MaxHeight = 360, Content = new TextBlock { Text = text, IsTextSelectionEnabled = true, TextWrapping = TextWrapping.Wrap, TextFont = TextArea.Code, TextSize = 11 } });
             await StyledDialog(new ContentDialog { Title = Locale.Get("terminal.history.title"), Content = content, CloseButtonText = Locale.Get("settings.closeButton"), XamlRoot = root.XamlRoot }).ShowAsync();
         }
         finally { dialogOpen = false; }

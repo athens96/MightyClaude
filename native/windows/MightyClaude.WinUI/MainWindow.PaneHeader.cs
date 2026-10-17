@@ -80,12 +80,6 @@ public sealed partial class MainWindow
     private const double SlimBarSpacer = DesignMetrics.Spacing.Sm;
     /// <summary>The status capsule's height in a slim bar; its ends are half of it round (M/PaneChrome.swift:41-42).</summary>
     private const double SlimPillHeight = 18;
-    /// <summary>
-    /// The body font (SF Pro's stand-in) for words that stand outside a stock control. Those do not take
-    /// the controls' font resource: left alone they follow the system language, which on a Korean system
-    /// is Malgun Gothic for Latin letters too, and draws a path's backslash as a won sign.
-    /// </summary>
-    private static readonly FontFamily BodyFont = new(DesignMetrics.Font.Body);
     /// <summary>Each group's slim bar and its parts, by the session it stands over (read by the paneChromeDesign smoke).</summary>
     private readonly Dictionary<string, (Grid Bar, TextBlock Subtitle)> groupSlimHeaders = [];
 
@@ -104,7 +98,7 @@ public sealed partial class MainWindow
             FilePaneKind.Kind => ("\uE8B7", 1.12, 1.36),
             _ => ("\uE756", 1.2, 1.4),
         };
-        var icon = new FontIcon { Glyph = glyph, FontSize = Math.Round(macSize * scale * 2) / 2, Width = Math.Round(macSize * slot), Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
+        var icon = new FontIcon { Glyph = glyph, TextSize = Math.Round(macSize * scale * 2) / 2, Width = Math.Round(macSize * slot), Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
         AutomationProperties.SetAccessibilityView(icon, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
         return icon;
     }
@@ -131,7 +125,7 @@ public sealed partial class MainWindow
 
     /// <summary>A slim bar's kind words: 11.5, trimmed at the end (M/PaneChrome.swift:111).</summary>
     private static TextBlock SlimBarWords(string text, Brush ink) =>
-        new() { Text = text, FontFamily = BodyFont, FontSize = DesignMetrics.Type.State, Foreground = ink, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, VerticalAlignment = VerticalAlignment.Center };
+        new() { Text = text, TextFont = TextArea.Interface, TextSize = DesignMetrics.Type.State, Foreground = ink, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, VerticalAlignment = VerticalAlignment.Center };
 
     /// <summary>
     /// The slim ink bar a tab group draws over a pane that is not a conversation (M/PaneChrome.swift:99-141,
@@ -178,7 +172,7 @@ public sealed partial class MainWindow
         private readonly StackPanel paneHeaderControls = new() { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, Margin = new Thickness(DesignMetrics.Spacing.Xs, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
         private Button? paneMenuButton, pluginButton, terminalButton;
         /// <summary>The figures after the clock, " · 41% · $0.38 · 도구 12", in the clock's own mono (M/PaneChrome.swift:61-62); <c>elapsed</c> holds the clock.</summary>
-        private readonly TextBlock figuresRest = new() { FontSize = DesignMetrics.Type.Mono, FontFamily = new FontFamily(DesignMetrics.Font.Mono), TextWrapping = TextWrapping.NoWrap, VerticalAlignment = VerticalAlignment.Center };
+        private readonly TextBlock figuresRest = new() { TextSize = DesignMetrics.Type.Mono, TextFont = TextArea.Code, TextWrapping = TextWrapping.NoWrap, VerticalAlignment = VerticalAlignment.Center };
         private Grid? figuresHost;
         private StackPanel? figuresWords;
         private LinearGradientBrush? figuresFadeBrush;
@@ -212,7 +206,7 @@ public sealed partial class MainWindow
                 CornerRadius = new CornerRadius(inner, inner, 0, 0),
             };
             elapsed.Foreground = figuresRest.Foreground = owner.brushes.Brush(DesignToken.Ink2);
-            label.FontFamily = BodyFont;
+            label.TextFont = TextArea.Interface;
             var kind = paneKind = Session.Kind;
             slimHeader = kind == "shell";
             var line = headerLine = new PaneHeaderLine { Spacing = slimHeader ? PaneHeaderLine.SlimSpacing : PaneHeaderLine.AgentSpacing };
@@ -348,7 +342,7 @@ public sealed partial class MainWindow
             var onStatus = owner.brushes.Brush(DesignToken.OnStatus);
             PaintSlimBar(header, owner.brushes);
             header.Margin = new Thickness(SlimBarMargin.Left - inset, SlimBarMargin.Top - inset, SlimBarMargin.Right - inset, 0);
-            label.Foreground = onStatus; label.FontSize = DesignMetrics.Type.Pill; label.FontWeight = Microsoft.UI.Text.FontWeights.Bold;
+            label.Foreground = onStatus; label.TextSize = DesignMetrics.Type.Pill; label.FontWeight = Microsoft.UI.Text.FontWeights.Bold;
             slimSubtitle = SlimBarWords(Locale.Get("dashboard.kind.shell") + " · " + Locale.Get("phone.card.localTerminal"), onStatus);
             // The capsule's edge is drawn inside its h Spacing.Md padding, as the Mac's strokeBorder is (M/PaneChrome.swift:41-42).
             slimStatusPill = new Border
@@ -385,7 +379,7 @@ public sealed partial class MainWindow
                 var button = new Button
                 {
                     Width = 22, Height = 24, MinWidth = 0, MinHeight = 0, Padding = new Thickness(0), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), BorderThickness = new Thickness(0),
-                    Content = new FontIcon { Glyph = glyph, FontSize = size, FontWeight = weight }, VerticalAlignment = VerticalAlignment.Center,
+                    Content = new FontIcon { Glyph = glyph, TextSize = size, FontWeight = weight }, VerticalAlignment = VerticalAlignment.Center,
                 };
                 owner.PaintPlainButton(button, b.Transparent, wash, ink: ink);
                 AutomationProperties.SetAutomationId(button, automationId);

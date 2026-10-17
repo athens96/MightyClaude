@@ -34,7 +34,7 @@ public sealed partial class MainWindow
             // The heading in 11.5 bold ink2; then each option as a card row with a 1pt line at radius 12, padding h14 v9: its
             // words in 13 semibold ink (two lines) and a bold accent arrow (M/NextActionButtons.swift:16-34).
             var b = owner.brushes;
-            nextActionsHost.Children.Add(new TextBlock { Text = Locale.Get("pane.nextActions.label"), FontSize = 11.5, FontWeight = FontWeights.Bold, Foreground = b.Brush(DesignToken.Ink2), Margin = new(DesignMetrics.Spacing.Xxs, 0, DesignMetrics.Spacing.Xxs, 0) });
+            nextActionsHost.Children.Add(new TextBlock { Text = Locale.Get("pane.nextActions.label"), TextSize = 11.5, FontWeight = FontWeights.Bold, Foreground = b.Brush(DesignToken.Ink2), Margin = new(DesignMetrics.Spacing.Xxs, 0, DesignMetrics.Spacing.Xxs, 0) });
             for (var index = 0; index < actions.Count; index++)
             {
                 var action = actions[index]; var entryId = reply.Id;
@@ -43,7 +43,7 @@ public sealed partial class MainWindow
                 button.Padding = new(DesignMetrics.Spacing.Md - DesignMetrics.Stroke.Line, DesignMetrics.Spacing.Sm - DesignMetrics.Stroke.Line, DesignMetrics.Spacing.Md - DesignMetrics.Stroke.Line, DesignMetrics.Spacing.Sm - DesignMetrics.Stroke.Line); button.MinHeight = 0; button.CornerRadius = new(NextActionRadius); button.BorderThickness = new(DesignMetrics.Stroke.Line);
                 owner.PaintPlainButton(button, b.Brush(DesignToken.Card), b.Subtle, b.Brush(DesignToken.Line), b.Brush(DesignToken.Ink));
                 var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Md }; row.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-                row.Children.Add(new TextBlock { Text = action.DisplayLabel, FontSize = 13, FontWeight = FontWeights.SemiBold, Foreground = b.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center });
+                row.Children.Add(new TextBlock { Text = action.DisplayLabel, TextSize = 13, FontWeight = FontWeights.SemiBold, Foreground = b.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center });
                 var arrow = ComposerGlyph.ArrowRight().Ink(b.Brush(DesignToken.Accent)).View;
                 Grid.SetColumn(arrow, 1); row.Children.Add(arrow); button.Content = row;
                 AutomationProperties.SetAutomationId(button, "next-action-" + id + "-" + index);

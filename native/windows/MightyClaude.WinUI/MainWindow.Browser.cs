@@ -295,7 +295,7 @@ public sealed partial class MainWindow
                 // AppKit's placeholder is the tertiary ink (M/BrowserPaneView.swift:72).
                 PlaceholderText = Locale.Get("browser.address.placeholder"), PlaceholderForeground = owner.brushes.Tertiary,
                 VerticalAlignment = VerticalAlignment.Center,
-                FontSize = 12, MinHeight = 0, Padding = new Thickness(DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xxs, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xs), CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow),
+                TextSize = 12, MinHeight = 0, Padding = new Thickness(DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xxs, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xs), CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow),
             };
             AutomationProperties.SetName(addressBox, Locale.Get("browser.address.placeholder"));
 
@@ -325,7 +325,7 @@ public sealed partial class MainWindow
             var b = owner.brushes;
             var button = new Button
             {
-                Content = new FontIcon { Glyph = glyph, FontSize = 12 }, Width = width + 6, Height = 22, MinWidth = 0, MinHeight = 0, Margin = new Thickness(-3, 0, -3, 0),
+                Content = new FontIcon { Glyph = glyph, TextSize = 12 }, Width = width + 6, Height = 22, MinWidth = 0, MinHeight = 0, Margin = new Thickness(-3, 0, -3, 0),
                 Padding = new Thickness(0), BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow), VerticalAlignment = VerticalAlignment.Center,
             };
             owner.PaintPlainButton(button, b.Transparent, b.Subtle, ink: b.Brush(DesignToken.Ink), disabledInk: b.Brush(DesignToken.Ink3));
@@ -451,7 +451,7 @@ public sealed partial class MainWindow
             };
             panel.Children.Add(new TextBlock
             {
-                Text = Locale.Get("browser.runtime.missing"), FontFamily = BodyFont, FontSize = DesignMetrics.Type.Body, Foreground = owner.brushes.Brush(DesignToken.Ink2),
+                Text = Locale.Get("browser.runtime.missing"), TextFont = TextArea.Interface, TextSize = DesignMetrics.Type.Body, Foreground = owner.brushes.Brush(DesignToken.Ink2),
                 TextWrapping = TextWrapping.Wrap, MaxWidth = 380,
                 TextAlignment = TextAlignment.Center,
             });
@@ -500,8 +500,8 @@ public sealed partial class MainWindow
         {
             var ink = owner.brushes.Brush(DesignToken.Ink2);
             var notice = new StackPanel { Spacing = DesignMetrics.Spacing.Md, Padding = new Thickness(DesignMetrics.Spacing.Xl), VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
-            notice.Children.Add(new FontIcon { Glyph = "\uE774", FontSize = 36, Foreground = ink, HorizontalAlignment = HorizontalAlignment.Center });
-            notice.Children.Add(new TextBlock { Text = text, FontFamily = BodyFont, FontSize = DesignMetrics.Type.Body, Foreground = ink, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, MaxWidth = 380 });
+            notice.Children.Add(new FontIcon { Glyph = "\uE774", TextSize = 36, Foreground = ink, HorizontalAlignment = HorizontalAlignment.Center });
+            notice.Children.Add(new TextBlock { Text = text, TextFont = TextArea.Interface, TextSize = DesignMetrics.Type.Body, Foreground = ink, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, MaxWidth = 380 });
             return notice;
         }
 

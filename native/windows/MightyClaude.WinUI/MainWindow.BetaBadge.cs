@@ -18,7 +18,7 @@ internal static class BetaBadgeView
     {
         var text = new TextBlock
         {
-            Text = Locale.Get("badge.beta"), FontSize = DesignMetrics.Type.Badge, FontWeight = Microsoft.UI.Text.FontWeights.Medium,
+            Text = Locale.Get("badge.beta"), TextSize = DesignMetrics.Type.Badge, FontWeight = Microsoft.UI.Text.FontWeights.Medium,
             Foreground = brushes.Brush(DesignToken.StopText)
         };
         var badge = new Border

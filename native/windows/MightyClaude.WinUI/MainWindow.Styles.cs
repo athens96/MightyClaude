@@ -136,7 +136,7 @@ public sealed partial class MainWindow
         }
         rows.Loaded += async (_, _) => await Act(Populate); return rows;
     }
-    private static TextBox StyleContents(RegisteredStyle style) => new() { IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 380, MinWidth = 300, FontFamily = new FontFamily(DesignMetrics.Font.Mono), Text = Encoding.UTF8.GetString(style.Bytes.Span) };
+    private static TextBox StyleContents(RegisteredStyle style) => new() { IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 380, MinWidth = 300, TextFont = TextArea.Code, Text = Encoding.UTF8.GetString(style.Bytes.Span) };
     private Task ApproveStyle(RegisteredStyle style) => Task.Run(() =>
     {
         if (!StyleRegistry.Unchanged(style)) throw new IOException(Locale.Get("guidedPanel.approvalRequired"));
@@ -186,11 +186,11 @@ public sealed partial class MainWindow
         private readonly StackPanel styleHost=new(){Spacing=DesignMetrics.Spacing.Sm,Visibility=Visibility.Collapsed};
         /// <summary>The style menu's chip (M/GuidedPanel.swift:35-43): the style's name in 10 medium, its source badge and a 7pt chevron, padding h7 v3 on the subtle wash at radius 6.</summary>
         private readonly Button stylePicker=new(){HorizontalAlignment=HorizontalAlignment.Left,VerticalAlignment=VerticalAlignment.Center,MinWidth=0,MinHeight=0,Padding=new(DesignMetrics.Spacing.Sm,DesignMetrics.Spacing.Xxs,DesignMetrics.Spacing.Sm,DesignMetrics.Spacing.Xxs),BorderThickness=new(0),CornerRadius=new(DesignMetrics.Radius.Segment)};
-        private readonly TextBlock stylePickerLabel=new(){Text="CLI",FontSize=10,FontWeight=FontWeights.Medium,TextWrapping=TextWrapping.NoWrap,VerticalAlignment=VerticalAlignment.Center};
+        private readonly TextBlock stylePickerLabel=new(){Text="CLI",TextSize=10,FontWeight=FontWeights.Medium,TextWrapping=TextWrapping.NoWrap,VerticalAlignment=VerticalAlignment.Center};
         private readonly Border stylePickerBadge=new(){Visibility=Visibility.Collapsed,VerticalAlignment=VerticalAlignment.Center};
         private readonly StackPanel stylePickerFace=new(){Orientation=Orientation.Horizontal,Spacing=DesignMetrics.Spacing.Xs};
         /// <summary>What the chosen style is for, beside its chip: the manifest's subtitle in 10pt in the tertiary ink (M/SessionPaneView.swift:523).</summary>
-        private readonly TextBlock styleHint=new(){FontSize=10,TextWrapping=TextWrapping.NoWrap,TextTrimming=TextTrimming.CharacterEllipsis,VerticalAlignment=VerticalAlignment.Center};
+        private readonly TextBlock styleHint=new(){TextSize=10,TextWrapping=TextWrapping.NoWrap,TextTrimming=TextTrimming.CharacterEllipsis,VerticalAlignment=VerticalAlignment.Center};
         /// <summary>The one-line strip a style that still needs a yes leaves in the panel (M/GuidedActionChip.swift:62-80).</summary>
         private readonly StackPanel styleNotice=new(){Orientation=Orientation.Horizontal,Spacing=DesignMetrics.Spacing.Sm,Margin=new(DesignMetrics.Inset.ComposerInnerH,0,DesignMetrics.Inset.ComposerInnerH,0),Visibility=Visibility.Collapsed};
         /// <summary>The guide panel (M/GuidedPanel.swift:101-123): its blocks 8 apart, padding h12 t8.</summary>
@@ -206,7 +206,7 @@ public sealed partial class MainWindow
         private Dictionary<string,string> styleCapabilities=[];
         private IReadOnlyList<StyleAttachmentItem> styleCapabilityFiles=[];
         private readonly Dictionary<string,Button> styleActionButtons=[];
-        private readonly TextBlock styleEnterPrefix=new(){FontSize=10,FontFamily=new FontFamily(DesignMetrics.Font.Mono),TextWrapping=TextWrapping.NoWrap,TextTrimming=TextTrimming.CharacterEllipsis,MaxWidth=260};
+        private readonly TextBlock styleEnterPrefix=new(){TextSize=10,TextFont=TextArea.Code,TextWrapping=TextWrapping.NoWrap,TextTrimming=TextTrimming.CharacterEllipsis,MaxWidth=260};
         private string? styleGroup;
         private bool styleStartingNew,styleLoading;
         /// <summary>A watched file changed while a read was out: the styles are read once more when it lands.</summary>
@@ -352,7 +352,7 @@ public sealed partial class MainWindow
         /// <summary>A chip that cannot be pressed yet (M/GuidedActionChip.swift:52).</summary>
         private const double ChipDisabled=0.45;
         /// <summary>The badge after a style that is not built in (M/GuidedActionChip.swift:83-93): 9pt <c>ink2</c> on the subtle capsule, padding h5 v1.</summary>
-        private Border SourceBadge(string text)=>new(){Child=new TextBlock{Text=text,FontSize=9,Foreground=owner.brushes.Brush(DesignToken.Ink2)},Padding=new(DesignMetrics.Spacing.Xs,1,DesignMetrics.Spacing.Xs,1),CornerRadius=new(8),Background=owner.brushes.Subtle,VerticalAlignment=VerticalAlignment.Center};
+        private Border SourceBadge(string text)=>new(){Child=new TextBlock{Text=text,TextSize=9,Foreground=owner.brushes.Brush(DesignToken.Ink2)},Padding=new(DesignMetrics.Spacing.Xs,1,DesignMetrics.Spacing.Xs,1),CornerRadius=new(8),Background=owner.brushes.Subtle,VerticalAlignment=VerticalAlignment.Center};
         /// <summary>Tall enough for the chip rows at the narrowest pane, capped so a long catalogue scrolls (M/GuidedPanel.swift:366-369).</summary>
         private static double ChipGridHeight(int count){var rows=Math.Max(1,(count+2)/3);return Math.Min(92,rows*27+(rows-1)*5);}
         private Task InstallStyle(RegisteredStyle style,string command)=>owner.Act(async()=>
@@ -383,7 +383,7 @@ public sealed partial class MainWindow
             var pane=Session;stylePicker.IsEnabled=pane.Status!="running"&&!starting;
             stylePickerLabel.Text=activeStyle?.Manifest.Name??"CLI";
             var badged=activeStyle is {Source:not "bundled"};stylePickerBadge.Visibility=badged?Visibility.Visible:Visibility.Collapsed;
-            if(badged){stylePickerBadge.Child=new TextBlock{Text=StylePresentation.Source(activeStyle!.Source),FontSize=9,Foreground=ink2};stylePickerBadge.Padding=new(DesignMetrics.Spacing.Xs,1,DesignMetrics.Spacing.Xs,1);stylePickerBadge.CornerRadius=new(8);stylePickerBadge.Background=b.Subtle;}
+            if(badged){stylePickerBadge.Child=new TextBlock{Text=StylePresentation.Source(activeStyle!.Source),TextSize=9,Foreground=ink2};stylePickerBadge.Padding=new(DesignMetrics.Spacing.Xs,1,DesignMetrics.Spacing.Xs,1);stylePickerBadge.CornerRadius=new(8);stylePickerBadge.Background=b.Subtle;}
             styleHint.Text=activeStyle?.Manifest.Subtitle??Locale.Get("composer.style.free");
             // The plan's answers keep their place across renders: taken out and put back, a change request being typed would lose the keyboard.
             var planActions=GuidedQuestion is null&&PanelPlan is {} panelPlan?PlanCard(panelPlan,PendingCount,PlanPlace.Actions):null;
@@ -395,10 +395,10 @@ public sealed partial class MainWindow
                 {
                     // The pane aims at a style that has not been said yes to: one line, and the button that opens its card (M/GuidedActionChip.swift:62-80).
                     var pending=styleRegistry?.Styles.FirstOrDefault(s=>s.Id==pane.MightyStyle);
-                    styleNotice.Children.Add(new FontIcon{Glyph="",FontSize=10,Foreground=ink2,VerticalAlignment=VerticalAlignment.Center});
-                    styleNotice.Children.Add(new TextBlock{Text=pending?.Manifest.Name??pane.MightyStyle,FontSize=11,FontWeight=FontWeights.Medium,Foreground=ink,TextTrimming=TextTrimming.CharacterEllipsis,MaxWidth=220,VerticalAlignment=VerticalAlignment.Center});
+                    styleNotice.Children.Add(new FontIcon{Glyph="",TextSize=10,Foreground=ink2,VerticalAlignment=VerticalAlignment.Center});
+                    styleNotice.Children.Add(new TextBlock{Text=pending?.Manifest.Name??pane.MightyStyle,TextSize=11,FontWeight=FontWeights.Medium,Foreground=ink,TextTrimming=TextTrimming.CharacterEllipsis,MaxWidth=220,VerticalAlignment=VerticalAlignment.Center});
                     if(pending is {Source:not "bundled"})styleNotice.Children.Add(SourceBadge(StylePresentation.Source(pending.Source)));
-                    styleNotice.Children.Add(new TextBlock{Text=Locale.Get("guidedPanel.approvalRequired"),FontSize=11,Foreground=ink2,VerticalAlignment=VerticalAlignment.Center});
+                    styleNotice.Children.Add(new TextBlock{Text=Locale.Get("guidedPanel.approvalRequired"),TextSize=11,Foreground=ink2,VerticalAlignment=VerticalAlignment.Center});
                     if(pending is not null&&pending.Approval!="revoked"&&styleRegistry?.TrustLocked!=true)styleNotice.Children.Add(SmallButton(Locale.Get("guidedPanel.viewContentsButton"),()=>ChooseStyle(pending)));
                     AutomationProperties.SetAutomationId(styleNotice,"mighty-approval-strip-"+id);styleNotice.Visibility=Visibility.Visible;
                 }
@@ -413,7 +413,7 @@ public sealed partial class MainWindow
                 for(var index=0;index<ordered.Length;index++)
                 {
                     var item=ordered[index];var current=item.Id==phase?.Id;var reached=phase is not null&&item.Order<=phase.Order;
-                    phases.Children.Add(new TextBlock{Text=item.Title,FontSize=10,FontWeight=current?FontWeights.SemiBold:FontWeights.Normal,Foreground=current?accent:reached?b.Brush(DesignToken.Ink,StepReached):b.Brush(DesignToken.Ink2,StepAhead),VerticalAlignment=VerticalAlignment.Center});
+                    phases.Children.Add(new TextBlock{Text=item.Title,TextSize=10,FontWeight=current?FontWeights.SemiBold:FontWeights.Normal,Foreground=current?accent:reached?b.Brush(DesignToken.Ink,StepReached):b.Brush(DesignToken.Ink2,StepAhead),VerticalAlignment=VerticalAlignment.Center});
                     if(index<ordered.Length-1)phases.Children.Add(ComposerGlyph.ChevronRight(7,0.9).Ink(tertiary).View);
                 }
                 AutomationProperties.SetAutomationId(phases,"mighty-phases-"+id);AutomationProperties.SetName(phases,Locale.Get("guidedPanel.phasesAccessibility"));
@@ -430,15 +430,15 @@ public sealed partial class MainWindow
                 var setup=new StackPanel{Spacing=DesignMetrics.Spacing.Xs};var first=true;
                 foreach(var line in prerequisites.Missing)
                 {
-                    var words=new TextBlock{Text=line,FontSize=11,FontWeight=FontWeights.Medium,Foreground=ink,TextWrapping=TextWrapping.Wrap,VerticalAlignment=VerticalAlignment.Center};
-                    if(first){var lead=new StackPanel{Orientation=Orientation.Horizontal,Spacing=DesignMetrics.Spacing.Xs};lead.Children.Add(new FontIcon{Glyph="",FontSize=11,Foreground=ink,VerticalAlignment=VerticalAlignment.Center});lead.Children.Add(words);setup.Children.Add(lead);first=false;}
+                    var words=new TextBlock{Text=line,TextSize=11,FontWeight=FontWeights.Medium,Foreground=ink,TextWrapping=TextWrapping.Wrap,VerticalAlignment=VerticalAlignment.Center};
+                    if(first){var lead=new StackPanel{Orientation=Orientation.Horizontal,Spacing=DesignMetrics.Spacing.Xs};lead.Children.Add(new FontIcon{Glyph="",TextSize=11,Foreground=ink,VerticalAlignment=VerticalAlignment.Center});lead.Children.Add(words);setup.Children.Add(lead);first=false;}
                     else setup.Children.Add(words);
                 }
-                if(prerequisites.Hint is {Length:>0} hint)setup.Children.Add(new TextBlock{Text=hint,FontSize=11,Foreground=ink2,TextWrapping=TextWrapping.Wrap,IsTextSelectionEnabled=true});
+                if(prerequisites.Hint is {Length:>0} hint)setup.Children.Add(new TextBlock{Text=hint,TextSize=11,Foreground=ink2,TextWrapping=TextWrapping.Wrap,IsTextSelectionEnabled=true});
                 var buttons=new StackPanel{Orientation=Orientation.Horizontal,Spacing=DesignMetrics.Spacing.Sm};
                 if(prerequisites.InstallCommand is {} command)
                 {
-                    setup.Children.Add(new Border{Child=new TextBlock{Text=command,FontSize=10,FontFamily=new FontFamily(DesignMetrics.Font.Mono),Foreground=ink,TextWrapping=TextWrapping.Wrap,IsTextSelectionEnabled=true},Padding=new(DesignMetrics.Spacing.Sm),CornerRadius=new(DesignMetrics.Radius.Segment),Background=b.Subtle});
+                    setup.Children.Add(new Border{Child=new TextBlock{Text=command,TextSize=10,TextFont=TextArea.Code,Foreground=ink,TextWrapping=TextWrapping.Wrap,IsTextSelectionEnabled=true},Padding=new(DesignMetrics.Spacing.Sm),CornerRadius=new(DesignMetrics.Radius.Segment),Background=b.Subtle});
                     buttons.Children.Add(SmallButton(Locale.Get("guidedPanel.installButton"),()=>InstallStyle(style,command)));
                 }
                 buttons.Children.Add(SmallButton(Locale.Get("guidedPanel.recheckButton"),LoadStyles));setup.Children.Add(buttons);
@@ -463,16 +463,16 @@ public sealed partial class MainWindow
                     var fill=new Border{Height=6,CornerRadius=new(3),HorizontalAlignment=HorizontalAlignment.Left,Background=accent,Width=0};
                     var track=new Grid{Height=6,CornerRadius=new(3),Background=b.Brush(DesignToken.Line),VerticalAlignment=VerticalAlignment.Center};track.Children.Add(fill);
                     var part=Math.Clamp(progress.Fraction,0,1);track.SizeChanged+=(_,args)=>fill.Width=args.NewSize.Width*part;
-                    bar.Children.Add(track);var count=new TextBlock{Text=progress.Text,FontSize=10,FontWeight=FontWeights.SemiBold,Foreground=accent,VerticalAlignment=VerticalAlignment.Center};
+                    bar.Children.Add(track);var count=new TextBlock{Text=progress.Text,TextSize=10,FontWeight=FontWeights.SemiBold,Foreground=accent,VerticalAlignment=VerticalAlignment.Center};
                     Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(count,FontNumeralAlignment.Tabular);Grid.SetColumn(count,1);bar.Children.Add(count);widgets.Children.Add(bar);
                 }
                 else if(widget.Kind=="list")
                 {
                     var list=new StackPanel{Spacing=1};
-                    foreach(var value in (widget.Items??[]).Select(StylePresentation.Inline).Where(v=>v.Length>0).Take(20))list.Children.Add(new TextBlock{Text=value,FontSize=10,Foreground=ink2,TextWrapping=TextWrapping.NoWrap,TextTrimming=TextTrimming.CharacterEllipsis});
+                    foreach(var value in (widget.Items??[]).Select(StylePresentation.Inline).Where(v=>v.Length>0).Take(20))list.Children.Add(new TextBlock{Text=value,TextSize=10,Foreground=ink2,TextWrapping=TextWrapping.NoWrap,TextTrimming=TextTrimming.CharacterEllipsis});
                     if(list.Children.Count>0)widgets.Children.Add(list);
                 }
-                else if(!string.IsNullOrEmpty(widget.Text))widgets.Children.Add(new TextBlock{Text=StylePresentation.Inline(widget.Text),FontSize=11,Foreground=ink2,TextWrapping=TextWrapping.NoWrap,TextTrimming=TextTrimming.CharacterEllipsis});
+                else if(!string.IsNullOrEmpty(widget.Text))widgets.Children.Add(new TextBlock{Text=StylePresentation.Inline(widget.Text),TextSize=11,Foreground=ink2,TextWrapping=TextWrapping.NoWrap,TextTrimming=TextTrimming.CharacterEllipsis});
             }
             if(widgets.Children.Count>0){AutomationProperties.SetAutomationId(widgets,"mighty-state-"+id);AutomationProperties.SetName(widgets,Locale.Get("guidedPanel.stateAccessibility"));guidedBody.Children.Add(widgets);}
             var group=style.Manifest.Groups.FirstOrDefault(g=>g.Id==styleGroup)??evaluator.InitialGroup(styleCapabilities);
@@ -483,33 +483,33 @@ public sealed partial class MainWindow
                 foreach(var item in style.Manifest.Groups)
                 {
                     map.ColumnDefinitions.Add(new(){Width=new(1,GridUnitType.Star)});var chosen=group?.Id==item.Id;
-                    var words=new StackPanel{Spacing=1};words.Children.Add(new TextBlock{Text=item.Title,FontWeight=FontWeights.SemiBold,FontSize=11,FontFamily=new FontFamily(DesignMetrics.Font.Mono),Foreground=ink,TextTrimming=TextTrimming.CharacterEllipsis});words.Children.Add(new TextBlock{Text=item.Axis??"",FontSize=9,Foreground=ink2,TextTrimming=TextTrimming.CharacterEllipsis});
+                    var words=new StackPanel{Spacing=1};words.Children.Add(new TextBlock{Text=item.Title,FontWeight=FontWeights.SemiBold,TextSize=11,TextFont=TextArea.Code,Foreground=ink,TextTrimming=TextTrimming.CharacterEllipsis});words.Children.Add(new TextBlock{Text=item.Axis??"",TextSize=9,Foreground=ink2,TextTrimming=TextTrimming.CharacterEllipsis});
                     var tile=new Border{Child=words,Padding=new(DesignMetrics.Spacing.Sm,DesignMetrics.Spacing.Xs,DesignMetrics.Spacing.Sm,DesignMetrics.Spacing.Xs),CornerRadius=new(7),BorderThickness=new(DesignMetrics.Stroke.Line),Background=chosen?b.Brush(DesignToken.Accent,GroupChosenFill):b.Subtle,BorderBrush=chosen?b.Brush(DesignToken.Accent,GroupChosenEdge):b.Transparent};
                     var button=Button(item.Title,()=>{styleGroup=item.Id;RenderGuidedStyle();return Task.CompletedTask;});button.Content=tile;button.Padding=new(0);button.MinWidth=0;button.MinHeight=0;button.BorderThickness=new(0);button.CornerRadius=new(7);button.HorizontalAlignment=HorizontalAlignment.Stretch;button.HorizontalContentAlignment=HorizontalAlignment.Stretch;
                     owner.PaintPlainButton(button,b.Transparent,b.Transparent);
                     ToolTipService.SetToolTip(button,item.Question??item.Title);AutomationProperties.SetAutomationId(button,"mighty-group-"+item.Id+"-"+id);Grid.SetColumn(button,column++);map.Children.Add(button);
                 }
                 guidedBody.Children.Add(map);
-                if(group?.Question is {Length:>0} question)guidedBody.Children.Add(new TextBlock{Text=question,FontSize=11,Foreground=ink2,TextWrapping=TextWrapping.Wrap});
+                if(group?.Question is {Length:>0} question)guidedBody.Children.Add(new TextBlock{Text=question,TextSize=11,Foreground=ink2,TextWrapping=TextWrapping.Wrap});
             }
             if(StyleManifest.Strings(style.Manifest.Root,"capabilities").Length>0&&(evaluator.RecommendGroupId is null||group?.Id==evaluator.RecommendGroupId))
             {
                 // What the built-in feature found (M/GuidedPanel.swift:257-294): a folder mark, the empty line or up to six file chips behind their detail, and reload.
                 var files=new Grid{ColumnSpacing=DesignMetrics.Spacing.Sm};files.ColumnDefinitions.Add(new(){Width=GridLength.Auto});files.ColumnDefinitions.Add(new(){Width=new(1,GridUnitType.Star)});files.ColumnDefinitions.Add(new(){Width=GridLength.Auto});
-                files.Children.Add(new FontIcon{Glyph="",FontSize=10,Foreground=ink2,VerticalAlignment=VerticalAlignment.Center});
-                if(styleCapabilityFiles.Count==0){var none=new TextBlock{Text=Locale.Get("styles.casebook.empty"),FontSize=11,Foreground=ink2,TextWrapping=TextWrapping.NoWrap,TextTrimming=TextTrimming.CharacterEllipsis,VerticalAlignment=VerticalAlignment.Center};Grid.SetColumn(none,1);files.Children.Add(none);}
+                files.Children.Add(new FontIcon{Glyph="",TextSize=10,Foreground=ink2,VerticalAlignment=VerticalAlignment.Center});
+                if(styleCapabilityFiles.Count==0){var none=new TextBlock{Text=Locale.Get("styles.casebook.empty"),TextSize=11,Foreground=ink2,TextWrapping=TextWrapping.NoWrap,TextTrimming=TextTrimming.CharacterEllipsis,VerticalAlignment=VerticalAlignment.Center};Grid.SetColumn(none,1);files.Children.Add(none);}
                 else
                 {
                     var chips=new StackPanel{Orientation=Orientation.Horizontal,Spacing=DesignMetrics.Spacing.Sm};
-                    if(styleCapabilityFiles[0].Detail is {Length:>0} detail)chips.Children.Add(new Border{Child=new TextBlock{Text=detail,FontSize=10,Foreground=ink2,TextWrapping=TextWrapping.NoWrap},Padding=new(DesignMetrics.Spacing.Xs,1,DesignMetrics.Spacing.Xs,1),CornerRadius=new(8),Background=b.Subtle,VerticalAlignment=VerticalAlignment.Center});
+                    if(styleCapabilityFiles[0].Detail is {Length:>0} detail)chips.Children.Add(new Border{Child=new TextBlock{Text=detail,TextSize=10,Foreground=ink2,TextWrapping=TextWrapping.NoWrap},Padding=new(DesignMetrics.Spacing.Xs,1,DesignMetrics.Spacing.Xs,1),CornerRadius=new(8),Background=b.Subtle,VerticalAlignment=VerticalAlignment.Center});
                     foreach(var file in styleCapabilityFiles.Take(6))
                     {
-                        var open=Button(file.Title,()=>{owner.service.OpenResultFile(file.Path,Workspace.Path);return Task.CompletedTask;});open.FontSize=10;open.FontFamily=new FontFamily(DesignMetrics.Font.Mono);open.Padding=new(0);open.MinWidth=0;open.MinHeight=0;open.BorderThickness=new(0);open.VerticalAlignment=VerticalAlignment.Center;
+                        var open=Button(file.Title,()=>{owner.service.OpenResultFile(file.Path,Workspace.Path);return Task.CompletedTask;});open.TextSize=10;open.TextFont=TextArea.Code;open.Padding=new(0);open.MinWidth=0;open.MinHeight=0;open.BorderThickness=new(0);open.VerticalAlignment=VerticalAlignment.Center;
                         owner.PaintPlainButton(open,b.Transparent,b.Transparent,ink:accent);ToolTipService.SetToolTip(open,Locale.Get("guidedPanel.openPathPrefix")+file.Path);chips.Children.Add(open);
                     }
                     var scroll=new ScrollViewer{Content=chips,HorizontalScrollBarVisibility=ScrollBarVisibility.Hidden,HorizontalScrollMode=ScrollMode.Auto,VerticalScrollBarVisibility=ScrollBarVisibility.Disabled,VerticalScrollMode=ScrollMode.Disabled};Grid.SetColumn(scroll,1);files.Children.Add(scroll);
                 }
-                var reload=Button("↻",LoadStyles);reload.Content=new FontIcon{Glyph="",FontSize=9};reload.Padding=new(DesignMetrics.Spacing.Xxs);reload.MinWidth=0;reload.MinHeight=0;reload.BorderThickness=new(0);reload.CornerRadius=new(DesignMetrics.Radius.FileRow);reload.VerticalAlignment=VerticalAlignment.Center;
+                var reload=Button("↻",LoadStyles);reload.Content=new FontIcon{Glyph="",TextSize=9};reload.Padding=new(DesignMetrics.Spacing.Xxs);reload.MinWidth=0;reload.MinHeight=0;reload.BorderThickness=new(0);reload.CornerRadius=new(DesignMetrics.Radius.FileRow);reload.VerticalAlignment=VerticalAlignment.Center;
                 owner.PaintPlainButton(reload,b.Transparent,b.Subtle,ink:ink2);ToolTipService.SetToolTip(reload,Locale.Get("guidedPanel.reloadHelp"));AutomationProperties.SetName(reload,Locale.Get("guidedPanel.reloadHelp"));Grid.SetColumn(reload,2);files.Children.Add(reload);
                 AutomationProperties.SetAutomationId(files,"mighty-attachments-"+id);guidedBody.Children.Add(files);
             }
@@ -532,11 +532,11 @@ public sealed partial class MainWindow
                     var flags=action.Flags??[];var label=(action.Glyph??StylePresentation.Icon(action.Icon))+" "+action.Title+(flags.Contains("userInvoked")?" ♙":"")+(flags.Contains("readOnly")?" ◉":"");
                     var emphasised=action.Id==prominent||action.Id==recommended;
                     var face=new StackPanel{Orientation=Orientation.Horizontal,Spacing=DesignMetrics.Spacing.Xs};
-                    if(action.Glyph is {Length:>0} glyph)face.Children.Add(new TextBlock{Text=glyph,FontSize=11,VerticalAlignment=VerticalAlignment.Center});
-                    else if(StylePresentation.Icon(action.Icon) is {Length:>0} icon)face.Children.Add(new TextBlock{Text=icon,FontSize=10,VerticalAlignment=VerticalAlignment.Center});
-                    face.Children.Add(new TextBlock{Text=action.Title,FontSize=11,FontWeight=emphasised?FontWeights.SemiBold:FontWeights.Normal,TextWrapping=TextWrapping.NoWrap,TextTrimming=TextTrimming.CharacterEllipsis,VerticalAlignment=VerticalAlignment.Center});
-                    if(flags.Contains("userInvoked"))face.Children.Add(new FontIcon{Glyph="",FontSize=8,Foreground=ink2,VerticalAlignment=VerticalAlignment.Center});
-                    if(flags.Contains("readOnly"))face.Children.Add(new FontIcon{Glyph="",FontSize=8,Foreground=ink2,VerticalAlignment=VerticalAlignment.Center});
+                    if(action.Glyph is {Length:>0} glyph)face.Children.Add(new TextBlock{Text=glyph,TextSize=11,VerticalAlignment=VerticalAlignment.Center});
+                    else if(StylePresentation.Icon(action.Icon) is {Length:>0} icon)face.Children.Add(new TextBlock{Text=icon,TextSize=10,VerticalAlignment=VerticalAlignment.Center});
+                    face.Children.Add(new TextBlock{Text=action.Title,TextSize=11,FontWeight=emphasised?FontWeights.SemiBold:FontWeights.Normal,TextWrapping=TextWrapping.NoWrap,TextTrimming=TextTrimming.CharacterEllipsis,VerticalAlignment=VerticalAlignment.Center});
+                    if(flags.Contains("userInvoked"))face.Children.Add(new FontIcon{Glyph="",TextSize=8,Foreground=ink2,VerticalAlignment=VerticalAlignment.Center});
+                    if(flags.Contains("readOnly"))face.Children.Add(new FontIcon{Glyph="",TextSize=8,Foreground=ink2,VerticalAlignment=VerticalAlignment.Center});
                     var button=Button(label.Trim(),()=>InvokeStyleAction(action.Id));button.Content=face;button.Padding=new(DesignMetrics.Spacing.Sm,DesignMetrics.Spacing.Xs,DesignMetrics.Spacing.Sm,DesignMetrics.Spacing.Xs);button.MinWidth=0;button.MinHeight=0;button.HorizontalAlignment=HorizontalAlignment.Left;button.IsEnabled=!action.RequiresText||!string.IsNullOrWhiteSpace(input.Text);
                     button.CornerRadius=new(DesignMetrics.Radius.Segment);button.BorderThickness=new(0);
                     var chipFill=emphasised?b.Brush(StyleTint(action.Tint),StyleChipTint):b.Subtle;owner.PaintPlainButton(button,chipFill,chipFill,ink:ink,disabledInk:ink);
@@ -550,7 +550,7 @@ public sealed partial class MainWindow
                 else if(!evaluator.AtStart(phase)&&evaluator.ResetTitle is {} title)
                 {
                     reset=SmallButton(title,()=>{styleStartingNew=true;RenderGuidedStyle();RefreshDraftBlock();return Task.CompletedTask;});
-                    var again=new StackPanel{Orientation=Orientation.Horizontal,Spacing=DesignMetrics.Spacing.Xs};again.Children.Add(new FontIcon{Glyph="",FontSize=9,VerticalAlignment=VerticalAlignment.Center});again.Children.Add(new TextBlock{Text=title,FontSize=11,VerticalAlignment=VerticalAlignment.Center});
+                    var again=new StackPanel{Orientation=Orientation.Horizontal,Spacing=DesignMetrics.Spacing.Xs};again.Children.Add(new FontIcon{Glyph="",TextSize=9,VerticalAlignment=VerticalAlignment.Center});again.Children.Add(new TextBlock{Text=title,TextSize=11,VerticalAlignment=VerticalAlignment.Center});
                     reset.Content=again;ToolTipService.SetToolTip(reset,Locale.Get("guidedPanel.resetHelp"));AutomationProperties.SetAutomationId(reset,"mighty-reset-"+id);
                 }
                 if(grid)
@@ -569,7 +569,7 @@ public sealed partial class MainWindow
                 }
             }
             // The guidance line: 10pt in the tertiary ink (M/GuidedPanel.swift:119).
-            if(evaluator.Guidance(phase,busy,job) is {} guidance)guidedBody.Children.Add(new TextBlock{Text=guidance,FontSize=10,Foreground=tertiary,TextWrapping=TextWrapping.Wrap});
+            if(evaluator.Guidance(phase,busy,job) is {} guidance)guidedBody.Children.Add(new TextBlock{Text=guidance,TextSize=10,Foreground=tertiary,TextWrapping=TextWrapping.Wrap});
             guidedBody.Visibility=guidedBody.Children.Count>0?Visibility.Visible:Visibility.Collapsed;
         }
         private Task InvokeStyleAction(string actionId)=>owner.Act(async()=>

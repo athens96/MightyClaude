@@ -32,7 +32,7 @@ public sealed partial class MainWindow
         {
             Width = 26, Height = 24, MinWidth = 0, MinHeight = 0, Padding = new Thickness(0), BorderThickness = new Thickness(0),
             Background = brushes.Transparent, Foreground = brushes.Brush(DesignToken.Ink2), VerticalAlignment = VerticalAlignment.Center,
-            Content = new FontIcon { Glyph = SidebarToggleGlyph, FontSize = 13 },
+            Content = new FontIcon { Glyph = SidebarToggleGlyph, TextSize = 13 },
         };
         AutomationProperties.SetAutomationId(button, automationId);
         button.Click += async (_, _) => { if (!dialogOpen) await ToggleSidebar(); };

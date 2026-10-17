@@ -62,7 +62,7 @@ public sealed partial class MainWindow
             Width = 16, Height = DesignMetrics.Layout.Toolbar, MinWidth = 0, MinHeight = 0, VerticalAlignment = VerticalAlignment.Center,
             Padding = new Thickness(0), BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow),
         };
-        private readonly FontIcon backgroundWorkGlyph = new() { Glyph = "\uE8FD", FontSize = 12, IsHitTestVisible = false };
+        private readonly FontIcon backgroundWorkGlyph = new() { Glyph = "\uE8FD", TextSize = 12, IsHitTestVisible = false };
 
         /// <summary>
         /// Adds the background-work toggle to the composer's right cluster, between the context ring and the status-line
@@ -119,9 +119,9 @@ public sealed partial class MainWindow
             var face = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             foreach (var width in new[] { GridLength.Auto, GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto }) face.ColumnDefinitions.Add(new() { Width = width });
             face.Children.Add(ComposerGlyph.Icon("", 11).Ink(b.Brush(DesignToken.Accent)).View);
-            var title = new TextBlock { Text = Locale.Get("plan.background.listTitle", new Dictionary<string, string> { ["count"] = count }), FontSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
+            var title = new TextBlock { Text = Locale.Get("plan.background.listTitle", new Dictionary<string, string> { ["count"] = count }), TextSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(title, 1); face.Children.Add(title);
-            var summary = new TextBlock { Text = PlanCardSupport.BackgroundSummary(work), FontSize = 11, Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+            var summary = new TextBlock { Text = PlanCardSupport.BackgroundSummary(work), TextSize = 11, Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(summary, 2); face.Children.Add(summary);
             var chevron = (backgroundOpen ? ComposerGlyph.ChevronDown(8, 1.2) : ComposerGlyph.ChevronRight(8, 1.2)).Ink(ink2);
             Grid.SetColumn(chevron.View, 3); face.Children.Add(chevron.View);
@@ -133,7 +133,7 @@ public sealed partial class MainWindow
             var hide = new Button
             {
                 Width = 22, Height = 20, MinWidth = 0, MinHeight = 0, Padding = new Thickness(0), CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow), BorderThickness = new Thickness(0),
-                Content = new FontIcon { Glyph = "\uED1A", FontSize = 11 }, VerticalAlignment = VerticalAlignment.Center,
+                Content = new FontIcon { Glyph = "\uED1A", TextSize = 11 }, VerticalAlignment = VerticalAlignment.Center,
             };
             owner.PaintPlainButton(hide, b.Transparent, b.Subtle, ink: ink2);
             var hideName = Locale.Get("plan.background.hideStrip");
@@ -177,9 +177,9 @@ public sealed partial class MainWindow
                 foreach (var width in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto }) row.ColumnDefinitions.Add(new() { Width = width });
                 var tone = task.Status switch { "running" => DesignToken.Accent, "completed" => DesignToken.Done, "failed" => DesignToken.Err, _ => DesignToken.Ink2 };
                 row.Children.Add(new Ellipse { Width = 6, Height = 6, Fill = b.Brush(tone), VerticalAlignment = VerticalAlignment.Center });
-                var text = new TextBlock { Text = task.Text, FontSize = 11, Foreground = b.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, VerticalAlignment = VerticalAlignment.Center };
+                var text = new TextBlock { Text = task.Text, TextSize = 11, Foreground = b.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, VerticalAlignment = VerticalAlignment.Center };
                 Grid.SetColumn(text, 1); row.Children.Add(text);
-                var detail = new TextBlock { Text = TaskDetail(task, DateTimeOffset.UtcNow), FontSize = 10, Foreground = b.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.NoWrap, VerticalAlignment = VerticalAlignment.Center };
+                var detail = new TextBlock { Text = TaskDetail(task, DateTimeOffset.UtcNow), TextSize = 10, Foreground = b.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.NoWrap, VerticalAlignment = VerticalAlignment.Center };
                 Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(detail, Microsoft.UI.Xaml.FontNumeralAlignment.Tabular);
                 Grid.SetColumn(detail, 2); row.Children.Add(detail);
                 AutomationProperties.SetName(row, task.Text + " · " + detail.Text);

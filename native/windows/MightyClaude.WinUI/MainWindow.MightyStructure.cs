@@ -142,7 +142,7 @@ public sealed partial class MainWindow
             structureListFlyout = new Flyout { Content = new ScrollViewer { Content = structureList, MaxHeight = StructureListHeight }, Placement = FlyoutPlacementMode.Bottom, FlyoutPresenterStyle = owner.CardFlyoutStyle };
             structureListFlyout.Opening += (_, _) => FillStructureList();
             structureListButton.Flyout = structureListFlyout;
-            structureBadgeWords = new TextBlock { FontSize = DesignMetrics.Type.Small, FontWeight = FontWeights.Bold, TextTrimming = TextTrimming.CharacterEllipsis };
+            structureBadgeWords = new TextBlock { TextSize = DesignMetrics.Type.Small, FontWeight = FontWeights.Bold, TextTrimming = TextTrimming.CharacterEllipsis };
             structureBadge = new Button
             {
                 Content = structureBadgeWords, MinWidth = 0, MinHeight = 0, Padding = new Thickness(DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xxs, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xxs),
@@ -477,7 +477,7 @@ public sealed partial class MainWindow
             // A request's first line is its 요청 card right below; a pipeline's name is not on any card (M/MightyStructureView.swift:302-306).
             if (board.Kind == MightyStructure.BoardKind.Pipeline)
             {
-                var heading = StructureWords(title, DesignMetrics.Type.Title, b.Brush(DesignToken.Ink), FontWeights.Bold); heading.FontFamily = new FontFamily(DesignMetrics.Font.Heading);
+                var heading = StructureWords(title, DesignMetrics.Type.Title, b.Brush(DesignToken.Ink), FontWeights.Bold); heading.TextFont = TextArea.Heading;
                 AutomationProperties.SetHeadingLevel(heading, Microsoft.UI.Xaml.Automation.Peers.AutomationHeadingLevel.Level2);
                 lead.Add(heading, PaneHeaderLine.Role.Shrink);
             }
@@ -539,7 +539,7 @@ public sealed partial class MainWindow
         /// <summary>No request yet: the timeline's own words for that (M/MightyStructureView.swift:378-381).</summary>
         private TextBlock StructureEmpty() => new()
         {
-            Text = Locale.Get("graph.timeline.empty"), FontSize = StructureTextSize, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap,
+            Text = Locale.Get("graph.timeline.empty"), TextSize = StructureTextSize, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, DesignMetrics.Spacing.Md, 0, DesignMetrics.Spacing.Md),
         };
 
@@ -1016,7 +1016,7 @@ public sealed partial class MainWindow
         private void StructureProgress(Panel body, MightyStructure.Item item, bool folds)
         {
             if (item.Message is { } message) body.Children.Add(StructureText(message, "message:" + item.RunId, MightyStructure.MessageLines, StructureTextSize, folds, Locale.Get("graph.structure.latest")));
-            else if (!item.Finished && item.Activity.Count == 0) body.Children.Add(new TextBlock { Text = Locale.Get("graph.block.waitingResponse"), FontSize = StructureTextSize, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap });
+            else if (!item.Finished && item.Activity.Count == 0) body.Children.Add(new TextBlock { Text = Locale.Get("graph.block.waitingResponse"), TextSize = StructureTextSize, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap });
             if (item.Activity.Count == 0) return;
             var calls = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
             foreach (var line in item.Activity) calls.Children.Add(StructureActivityRow(line));
@@ -1064,7 +1064,7 @@ public sealed partial class MainWindow
             structureAnswers.Remove(item.RunId);
             var reveal = StructureRevealButton(item.Finished ? MightyGraphBlockSize.NodeId(item.RunId, "result") : item.ExecutionNodeId, item.NodeId);
             FrameworkElement outcome = item.Answer is { } answer ? StructureAnswer(item, answer)
-                : new TextBlock { Text = item.Finished ? MightyGraphBlockModel.StateLabel(item.Status) : Locale.Get("graph.structure.resultPending"), FontSize = StructureTextSize, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap };
+                : new TextBlock { Text = item.Finished ? MightyGraphBlockModel.StateLabel(item.Status) : Locale.Get("graph.structure.resultPending"), TextSize = StructureTextSize, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap };
             FrameworkElement body;
             // The column already says 결과: only an error or a stop gets a title, in its colour (M/MightyStructureView.swift:611-623).
             if (item.Status is "error" or "stopped")
@@ -1137,11 +1137,14 @@ public sealed partial class MainWindow
             return stack;
         }
 
-        /// <summary>The app's own theme toggle: every answer on the page in the new colours, as the plan documents are (<see cref="RethemePlanViews"/>).</summary>
-        internal void RethemeStructureAnswers()
+        /// <summary>
+        /// The app's own theme toggle: every answer on the page in the new colours, as the plan documents are (<see cref="RethemePlanViews"/>);
+        /// a new text setting (<paramref name="always"/>) draws every answer again in its sizes and fonts.
+        /// </summary>
+        internal void RethemeStructureAnswers(bool always = false)
         {
             var light = !owner.DarkTheme;
-            foreach (var (run, answer) in structureAnswers.Where(pair => pair.Value.Light != light).ToArray())
+            foreach (var (run, answer) in structureAnswers.Where(pair => always || pair.Value.Light != light).ToArray())
             {
                 SetMarkdownRtf(answer.View, TranscriptRtf.RenderMarkdown(answer.Source, light));
                 structureAnswers[run] = answer with { Light = light };
@@ -1235,7 +1238,7 @@ public sealed partial class MainWindow
             mark.HorizontalAlignment = HorizontalAlignment.Center; row.Children.Add(mark);
             var words = StructureWords(line.Text, StructureOutputSize, b.Brush(DesignToken.Ink2));
             words.IsTextSelectionEnabled = true; words.HorizontalAlignment = HorizontalAlignment.Left; words.SelectionChanged += OnStructureSelectionChanged;
-            if (line.Kind is "command" or "read" or "edit") words.FontFamily = new FontFamily(DesignMetrics.Font.Mono);
+            if (line.Kind is "command" or "read" or "edit") words.TextFont = TextArea.Code;
             Grid.SetColumn(words, 1); row.Children.Add(words);
             ToolTipService.SetToolTip(row, line.Text);
             return row;
@@ -1319,7 +1322,7 @@ public sealed partial class MainWindow
         /// <summary>One line of words, cut with an ellipsis where its place ends.</summary>
         private static TextBlock StructureWords(string text, double size, Brush ink, FontWeight? weight = null) => new()
         {
-            Text = text, FontSize = size, Foreground = ink, FontWeight = weight ?? FontWeights.Normal, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, VerticalAlignment = VerticalAlignment.Center,
+            Text = text, TextSize = size, Foreground = ink, FontWeight = weight ?? FontWeights.Normal, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, VerticalAlignment = VerticalAlignment.Center,
         };
 
         /// <summary>
@@ -1330,7 +1333,7 @@ public sealed partial class MainWindow
         {
             var words = new TextBlock
             {
-                Text = text, FontSize = size, Foreground = owner.brushes.Brush(ink), TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, HorizontalAlignment = HorizontalAlignment.Left,
+                Text = text, TextSize = size, TextFont = TextArea.Transcript, Foreground = owner.brushes.Brush(ink), TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, HorizontalAlignment = HorizontalAlignment.Left,
                 MaxLines = lines, TextTrimming = lines > 0 ? TextTrimming.CharacterEllipsis : TextTrimming.None,
             };
             words.SelectionChanged += OnStructureSelectionChanged;
@@ -1356,7 +1359,7 @@ public sealed partial class MainWindow
         private Button StructureMoreButton(string key, bool open)
         {
             var label = Locale.Get(open ? "graph.structure.less" : "graph.structure.more");
-            var toggle = HeaderButton(new TextBlock { Text = label, FontSize = StructureOutputSize, FontWeight = FontWeights.Bold }, owner.brushes.Brush(DesignToken.Accent));
+            var toggle = HeaderButton(new TextBlock { Text = label, TextSize = StructureOutputSize, FontWeight = FontWeights.Bold }, owner.brushes.Brush(DesignToken.Accent));
             toggle.HorizontalAlignment = HorizontalAlignment.Left;
             AutomationProperties.SetAutomationId(toggle, "mighty-structure-more-" + key); AutomationProperties.SetName(toggle, label);
             AutomationProperties.SetItemStatus(toggle, Locale.Get(open ? "graph.structure.expanded" : "graph.structure.collapsed"));

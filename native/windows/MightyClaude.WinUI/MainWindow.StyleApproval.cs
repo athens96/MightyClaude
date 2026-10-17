@@ -38,17 +38,17 @@ public sealed partial class MainWindow
         var dialog = new ContentDialog { XamlRoot = SettingsXamlRoot };
         AutomationProperties.SetAutomationId(dialog, "style-approval-sheet");
         Border Rule() => new() { Height = DesignMetrics.Stroke.Line, Background = brushes.Brush(DesignToken.Line) };
-        TextBlock Title(string text) => new() { Text = text, FontSize = 12, FontWeight = FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap };
+        TextBlock Title(string text) => new() { Text = text, TextSize = 12, FontWeight = FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap };
 
         // The heading.
         var heading = new Grid { Padding = new Thickness(StyleApprovalInset, StyleApprovalEdge, StyleApprovalInset, StyleApprovalEdge), ColumnSpacing = DesignMetrics.Spacing.Sm };
         heading.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); heading.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var named = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Center };
-        named.Children.Add(new TextBlock { Text = style.Manifest.Name, FontSize = 15, FontWeight = FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Ink), VerticalAlignment = VerticalAlignment.Center });
+        named.Children.Add(new TextBlock { Text = style.Manifest.Name, TextSize = 15, FontWeight = FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Ink), VerticalAlignment = VerticalAlignment.Center });
         // The badge that follows a name that is not the app's own (M/GuidedActionChip.swift:83-90): 9pt ink2 on the subtle capsule.
         if(style.Source != "bundled") named.Children.Add(new Border
         {
-            Child = new TextBlock { Text = StylePresentation.Source(style.Source), FontSize = 9, Foreground = brushes.Brush(DesignToken.Ink2) },
+            Child = new TextBlock { Text = StylePresentation.Source(style.Source), TextSize = 9, Foreground = brushes.Brush(DesignToken.Ink2) },
             Padding = new Thickness(DesignMetrics.Spacing.Xs, 1, DesignMetrics.Spacing.Xs, 1), CornerRadius = new CornerRadius(8), Background = brushes.Subtle, VerticalAlignment = VerticalAlignment.Center,
         });
         heading.Children.Add(named);
