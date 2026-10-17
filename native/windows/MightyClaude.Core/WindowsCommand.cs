@@ -65,11 +65,15 @@ public static class WindowsCommand
     /// <summary>A batch file, which only cmd.exe can run.</summary>
     public static bool IsBatch(string path) => path.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".bat", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>cmd.exe by the system's own path, never one found along the PATH.</summary>
+    /// <summary>
+    /// cmd.exe by the system's own path, never one found along the PATH: on Windows the system folder Windows reports, which no
+    /// environment variable of the user's can move; elsewhere (the checks) <c>SystemRoot</c> as given.
+    /// </summary>
     public static string CommandInterpreter(IReadOnlyDictionary<string, string>? environment = null)
     {
-        var system = environment?.GetValueOrDefault("SystemRoot") is { Length: > 0 } root ? root : Environment.GetFolderPath(Environment.SpecialFolder.Windows);
-        return Path.Combine(system.Length > 0 ? system : @"C:\Windows", "System32", "cmd.exe");
+        if (OperatingSystem.IsWindows() && Environment.GetFolderPath(Environment.SpecialFolder.System) is { Length: > 0 } system) return Path.Combine(system, "cmd.exe");
+        var root = environment?.GetValueOrDefault("SystemRoot") is { Length: > 0 } given ? given : @"C:\Windows";
+        return Path.Combine(root, "System32", "cmd.exe");
     }
 
     /// <summary>
