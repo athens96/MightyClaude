@@ -638,7 +638,8 @@ Mac→Windows, Windows→Mac, Windows→Windows) over one HTTP/1.1 protocol: `/v
 `x-mighty-remote-version: 2` on every request and answer, a bearer key, and run events
 read by cursor (`docs/remote-workspaces.md`). The Mac is the reference.
 
-- Requests. A host refuses any request carrying an `Origin` header (403). It checks
+- Requests. A host closes a connection from a peer that is not on Tailscale as it
+  accepts it, with no answer. It refuses any request carrying an `Origin` header (403). It checks
   the bearer key, the peer and the version header from the head alone, before it
   reads one byte of the body: a head that fails gets its answer without the body
   being read. Every `POST` that carries a body needs `Content-Type: application/json`
@@ -646,9 +647,11 @@ read by cursor (`docs/remote-workspaces.md`). The Mac is the reference.
   with every body, `stop`'s `{}` included, which is the one `POST` that is not refused
   without it.
 - Errors. The host's answers 400 (bad path, body or value), 401 (wrong or missing key),
-  403 (not a Tailscale peer, or an `Origin` header), 404 (no such route or run),
+  403 (an `Origin` header, a workspace that is not shared, or a run this host does not
+  allow), 404 (no such route or run),
   409 (the run is over or refused the answer), 415 (not JSON), 426 (wrong protocol
-  version), 429 (rate limit) and 503 (sharing stopped) all carry the same body as
+  version), 429 (rate limit) and 503 (sharing stopped, or runs held while a CLI or
+  plugin update runs on the host) all carry the same body as
   `error.json`, `{protocol: 2, error: <message>}`, with the version header. So does 500
   for anything unexpected. The HTTP layer under it answers a malformed head (400),
   a too-large body (413) or too-large headers (431) with `{error}` alone and no
@@ -672,8 +675,9 @@ read by cursor (`docs/remote-workspaces.md`). The Mac is the reference.
 - Wire events are the Mac's `RunEvent` JSON with `sessionId` = the host's job id.
   - Timestamps come in two forms, and every reader takes both. The Mac writes log
     `timestamp`, usage `updatedAt` and graph `updatedAt` in whole seconds
-    (`yyyy-MM-ddTHH:mm:ssZ`), and a permission's or plan's `receivedAt`/`decidedAt`
-    with milliseconds (`yyyy-MM-ddTHH:mm:ss.fffZ`). The samples carry both.
+    (`yyyy-MM-ddTHH:mm:ssZ`). It writes a permission's or plan's `receivedAt`/`decidedAt`
+    and a background task's `startedAt`/`endedAt` with milliseconds
+    (`yyyy-MM-ddTHH:mm:ss.fffZ`). The samples carry both forms.
   - A lost sign-in is status `error` with `reason: "auth"`; Windows reads it as its
     own `"authentication"`.
   - A permission's input is `inputJSON`. `poll-requests.json` holds the requests the
@@ -693,9 +697,9 @@ read by cursor (`docs/remote-workspaces.md`). The Mac is the reference.
   client drops it alone, adds one `remote.run.notice.skipped` line, and the run goes on.
 - `state-references.json` is `{cases: [{name, kept, workspace}]}`: a saved workspace
   is remote only when `remote.version` is the JSON number 2 (`2.0` counts as 2). Any
-  other `remote` value drops the workspace with its panes on load: no version, `null`,
-  1, 3, a string, a boolean, an array or a string in place of the object. A missing or
-  null `remote` is a local workspace.
+  other `remote` value drops the workspace with its panes on load: a missing or `null`
+  version, a version of 1, 3, a string or a boolean, or an array or a string in place
+  of the object. A missing or null `remote` (not its version) is a local workspace.
 - `/info` `runtime.platform` (`darwin`, `win32`, `linux`) is the host's OS; both apps
   show it on remote panes.
 

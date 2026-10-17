@@ -140,7 +140,7 @@ struct RemoteWireFixtureTests {
         #expect(ask.toolName == "AskUserQuestion" && ask.canAnswerQuestions && !ask.canAllow && answers.requestId == ask.id && answers.runId == ask.runId)
         let questionnaire = try #require(ask.questionnaire)
         #expect(try questionnaire.validatedAnswers(answers.answers) == ["Which file?": "README.md, and the docs"])
-        #expect(plan.toolName == ClaudePlanMode.toolName && plan.canAnswerPlan && plan.plan == "# Plan\n1. Read")
+        #expect(plan.toolName == ClaudePlanMode.toolName && plan.canAnswerPlan && !plan.canAllow && plan.plan == "# Plan\n1. Read")
         for name in ["plan-approved.json", "plan-revised.json"] {
             let answer = try JSONDecoder().decode(RemoteWirePlan.self, from: Self.data(name))
             #expect(answer.requestId == plan.id && answer.runId == plan.runId && answer.decision != nil, "\(name)")
