@@ -149,6 +149,10 @@ public enum DelegationReasonCode
     HumanStarted,
     /// <summary>A parent whose agent's merge tool call its CLI does not gate (Codex) merges by tool only in fullAccess, and otherwise the human merges from the child's card.</summary>
     MergeHumanOnly,
+    /// <summary>delegate's <c>agent</c> names no agent a child can run.</summary>
+    AgentUnknown,
+    /// <summary>The agent delegate named is not installed or not signed in on this PC, as the app last learnt it.</summary>
+    AgentUnavailable,
 }
 
 /// <summary>
@@ -176,7 +180,7 @@ public sealed record DelegationRequest(string Tool, IReadOnlyDictionary<string, 
 
 /// <summary>The app's answer to one delegation call (M/Delegation.swift:72-101): exactly one of these is set.</summary>
 /// <param name="Refused">The call was refused with exactly this reason, and nothing changed.</param>
-/// <param name="Error">The call reached no delegation tool, or the tool could not take it as given.</param>
+/// <param name="Error">The call reached no delegation tool, or the tool could not take it as given. With Refused, what the refusal is about (the agent it names), shown after its code.</param>
 /// <param name="Child">The child delegate just made, or the same one again when that call is repeated in the same parent run.</param>
 /// <param name="Children">list_children's answer: the caller's children, possibly none.</param>
 /// <param name="Status">child_status's answer: one of the caller's children.</param>
@@ -186,14 +190,16 @@ public sealed record DelegationResponse(DelegationReasonCode? Refused = null, st
     DelegationChildStatus? Status = null, MergeRecord? Merged = null, DelegationFollowUpInfo? FollowUp = null)
 {
     public static DelegationResponse Refusal(DelegationReasonCode reason) => new(Refused: reason);
+    public static DelegationResponse Refusal(DelegationReasonCode reason, string detail) => new(Refused: reason, Error: detail);
     public static DelegationResponse Failure(string message) => new(Error: message);
     public static DelegationResponse Delegated(ChildRecord child) => new(Child: DelegationChildInfo.Of(child));
 }
 
-/// <summary>One child as its parent's tools show it (M/Delegation.swift:103-113). The branch is always <c>mighty/&lt;id&gt;</c>.</summary>
-public sealed record DelegationChildInfo(string Id, ChildState State, string Branch, string StartingMode)
+/// <summary>One child as its parent's tools show it (M/Delegation.swift DelegationChildInfo). The branch is always <c>mighty/&lt;id&gt;</c>.</summary>
+/// <param name="Agent">The agent the child runs, as delegate's <c>agent</c> names it.</param>
+public sealed record DelegationChildInfo(string Id, ChildState State, string Branch, string StartingMode, string Agent = "claude")
 {
-    public static DelegationChildInfo Of(ChildRecord child) => new(child.Id, child.State, child.Branch, child.StartingMode);
+    public static DelegationChildInfo Of(ChildRecord child) => new(child.Id, child.State, child.Branch, child.StartingMode, DelegationProviders.AgentName(child.Agent));
 }
 
 /// <summary>Serves one delegation call, already resolved to the pane its token belongs to (M/Delegation.swift:115-118).</summary>

@@ -124,7 +124,7 @@ internal static class DelegationVerification
             "claude_only", "child_cannot_delegate", "width_cap", "low_disk", "store_full", "not_git", "unborn_branch", "detached_head",
             "wider_mode", "discard_human_only", "not_reported", "tracked_changes", "head_moved", "diverged", "branch_not_checked_out",
             "child_closed", "parent_closed", "follow_up_limit", "worktree_missing", "merge_conflict", "undo_parent_moved", "parent_busy",
-            "workspace_has_children", "held_not_removable", "human_started", "merge_human_only"], "the reason codes are the ontology list in order");
+            "workspace_has_children", "held_not_removable", "human_started", "merge_human_only", "agent_unknown", "agent_unavailable"], "the reason codes are the ontology list in order");
         SameList(Enum.GetValues<NoticeKind>().Select(DelegationNames.Of), ["reported", "ended_without_report", "failed_to_start"], "notice kinds");
         SameList(Enum.GetValues<DeliveryLane>().Select(DelegationNames.Of), ["pending", "held", "delivered"], "lanes");
         SameList(Enum.GetValues<DeliveryRoute>().Select(DelegationNames.Of), ["steer", "queue"], "routes");
@@ -420,10 +420,10 @@ internal static class DelegationVerification
         string[] six = ["delegate", "list_children", "child_status", "merge", "follow_up", "discard"];
         SameList(DelegationToolManifest.All.Select(tool => tool.Name), six, "exactly the six tools in order");
         Check(!six.Intersect(AgentIOTools.All.Select(tool => tool.Name)).Any(), "none of them is a mighty-terminal tool");
-        var arguments = new Dictionary<string, string[]> { ["delegate"] = ["task", "mode"], ["list_children"] = [], ["child_status"] = ["child"], ["merge"] = ["child", "expected_head"], ["follow_up"] = ["child", "text"], ["discard"] = ["child"] };
+        var arguments = new Dictionary<string, string[]> { ["delegate"] = ["task", "mode", "agent"], ["list_children"] = [], ["child_status"] = ["child"], ["merge"] = ["child", "expected_head"], ["follow_up"] = ["child", "text"], ["discard"] = ["child"] };
         foreach (var tool in DelegationToolManifest.All) SameList(tool.Arguments.Select(argument => argument.Name), arguments[tool.Name], tool.Name + " takes its arguments");
-        Check(DelegationToolManifest.Delegate.Description.StartsWith("Start a child pane running your own agent CLI that works on a task in its own git worktree, on the flat branch mighty/<child id> made from your current branch head.", StringComparison.Ordinal)
-            && DelegationToolManifest.Delegate.Description.EndsWith("At most 3 open children per pane, and a child cannot delegate. The same call twice in one of your runs returns the same child.", StringComparison.Ordinal)
+        Check(DelegationToolManifest.Delegate.Description.StartsWith("Start a child pane that works on a task in its own git worktree, on the flat branch mighty/<child id> made from your current branch head. It runs your own agent CLI unless agent names another: claude, codex or antigravity, each only if installed and signed in on this PC.", StringComparison.Ordinal)
+            && DelegationToolManifest.Delegate.Description.EndsWith("At most 3 open children per pane, of all agents together, and a child cannot delegate. The same call twice in one of your runs returns the same child.", StringComparison.Ordinal)
             && DelegationToolManifest.Discard.Description == "Discarding a child is for the human only, from the child's card in the app. This tool always refuses with discard_human_only and changes nothing."
             && DelegationToolManifest.Merge.Arguments[1].Description == "The child's reported head commit, as child_status gave it.", "the agent reads the Mac's words");
         Check(DelegationCoordinator.MaximumOpenChildren == 3 && DelegationCoordinator.MaximumDepth == 1 && DelegationCoordinator.MaximumFollowUps == 2 && DelegationCoordinator.MaximumFollowUpBytes == 48 * 1024

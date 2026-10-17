@@ -164,4 +164,59 @@ internal static class DelegationCrossAgentVerification
             && !ComposerSecondSends.ReturnsToComposer(null, "claude") && !ComposerSecondSends.ReturnsToComposer("codex", "codex"), "who gets a text whose child did not start");
         return Task.CompletedTask;
     }
+
+    private static string TextOf(JsonObject result) => result["content"]![0]!["text"]!.GetValue<string>();
+
+    internal static Task TheToolTakesAnOptionalAgentAndNamesItEverywhere()
+    {
+        Same(DelegationNames.Of(DelegationReasonCode.AgentUnknown), "agent_unknown", "agent_unknown on the wire");
+        Same(DelegationNames.Of(DelegationReasonCode.AgentUnavailable), "agent_unavailable", "agent_unavailable on the wire");
+        // delegate takes an optional agent and no other new argument.
+        var delegate_ = DelegationToolManifest.Delegate;
+        SameList(delegate_.Arguments.Select(argument => argument.Name), ["task", "mode", "agent"], "delegate's arguments");
+        SameList(delegate_.Arguments.Select(argument => argument.Required), [true, true, false], "only agent is optional");
+        Check(DelegationCoordinator.ArgumentProblem(new Dictionary<string, string> { ["task"] = "t", ["mode"] = "plan" }, delegate_) is null
+            && DelegationCoordinator.ArgumentProblem(new Dictionary<string, string> { ["task"] = "t", ["mode"] = "plan", ["agent"] = "codex" }, delegate_) is null, "with or without agent");
+        const string problem = "delegate takes exactly these string arguments: task, mode, and optionally agent.";
+        Same(DelegationCoordinator.ArgumentProblem(new Dictionary<string, string> { ["task"] = "t", ["agent"] = "codex" }, delegate_), problem, "mode is still required");
+        Same(DelegationCoordinator.ArgumentProblem(new Dictionary<string, string> { ["task"] = "t", ["mode"] = "plan", ["model"] = "opus" }, delegate_), problem, "no other argument");
+        Check(DelegationCoordinator.ArgumentProblem(new Dictionary<string, string> { ["child"] = "c" }, DelegationToolManifest.ChildStatus) is null, "child_status takes its child");
+        Same(DelegationCoordinator.ArgumentProblem(new Dictionary<string, string>(), DelegationToolManifest.ChildStatus), "child_status takes exactly these string arguments: child.", "child_status without its child");
+        SameList(DelegationMcp.Definition(delegate_)["inputSchema"]!["required"]!.AsArray().Select(name => name!.GetValue<string>()), ["task", "mode"], "the schema requires task and mode");
+        foreach (var agent in new[] { "Claude", "Codex", "Antigravity" }) Check(delegate_.Arguments[1].Description.Contains(agent + " child", StringComparison.Ordinal), "mode names a " + agent + " child's modes");
+
+        // A refusal names what it is about after its one code.
+        var detail = DelegationCoordinator.Unavailable("codex", DelegationAgentAvailability.SignedOut) ?? throw new InvalidOperationException("no detail for a signed-out agent");
+        Same(detail, "Codex is not signed in on this PC; the user can check it in Mighty Claude's Settings › CLI", "a signed-out agent's detail");
+        Check(DelegationCoordinator.Unavailable("gemini", DelegationAgentAvailability.NotInstalled)?.EndsWith("Settings › CLI", StringComparison.Ordinal) == true
+            && DelegationCoordinator.Unavailable("codex", DelegationAgentAvailability.Ready) is null, "a missing agent's detail, and none for a ready one");
+        var refused = DelegationMcp.Result(DelegationResponse.Refusal(DelegationReasonCode.AgentUnavailable, detail));
+        Same(refused["structuredContent"]!.ToJsonString(), """{"refused":"agent_unavailable"}""", "the refusal is tool data");
+        Same(TextOf(refused), $"Refused: agent_unavailable ({detail}). Nothing was changed.", "the refusal's text names the agent");
+        Same(TextOf(DelegationMcp.Result(DelegationResponse.Refusal(DelegationReasonCode.AgentUnknown))), "Refused: agent_unknown (agent must be claude, codex or antigravity, or left out for your own). Nothing was changed.", "agent_unknown says what to do");
+
+        // The request key adds the child's agent only when it is not the caller's own.
+        Same(DelegationRequestKey.Make("parent-1", "run-1", "Fix the login bug", "acceptEdits"), "0767d17eeeaaa20c3f5c0e3a11dc260bd005cc116a76ea02adb2c78fb3a48ef7", "the caller's own agent keeps its key");
+        Same(DelegationRequestKey.Make("parent-1", "run-1", "Fix the login bug", "acceptEdits", null), "0767d17eeeaaa20c3f5c0e3a11dc260bd005cc116a76ea02adb2c78fb3a48ef7", "no other agent is no fifth part");
+        Same(DelegationRequestKey.Make("parent-1", "run-1", "Fix the login bug", "acceptEdits", "codex"), "f051d5f56c52b257a1483760fee991d3622cd74bfb03cd1a90da23be50177e8b", "a Codex child's key");
+        Same(DelegationRequestKey.Make("parent-1", "run-1", "Fix the login bug", "acceptEdits", "gemini"), "28e97194accdf6d2519a39c9a1144dda67ee4d149fd3193204edc986fc040e3c", "an Antigravity child's key");
+
+        // delegate's child, list_children and child_status name the child's agent by its word.
+        var gemini = ChildRecord.Make("c1", "p", "/w/c1", "main", Commit, "acceptEdits", "k", state: ChildState.Running, provider: "gemini");
+        Same(DelegationChildInfo.Of(gemini).Agent, "antigravity", "delegate's child");
+        Same(DelegationChildSummary.Of(gemini).Agent, "antigravity", "list_children's row");
+        Same(DelegationChildStatus.Of(gemini, null).Agent, "antigravity", "child_status");
+        Same(DelegationChildInfo.Of(gemini with { Provider = null }).Agent, "claude", "a Claude child");
+        var made = DelegationMcp.Result(DelegationResponse.Delegated(gemini));
+        Same(made["structuredContent"]!["child"]!.ToJsonString(), """{"id":"c1","state":"running","agent":"antigravity","branch":"mighty/c1","mode":"acceptEdits"}""", "the child is tool data with its agent");
+        Same(TextOf(made), "Child c1 is running, runs antigravity, on the branch mighty/c1, starting in acceptEdits mode.", "the child's text names its agent");
+        var listed = DelegationMcp.Result(new(Children: [DelegationChildSummary.Of(gemini)]));
+        Same(TextOf(listed), "Your children:\n- c1: antigravity, running, report revision 0", "the list names each agent");
+        Same(listed["structuredContent"]!["children"]![0]!.ToJsonString(), """{"id":"c1","agent":"antigravity","state":"running","revision":0}""", "the list is tool data with each agent");
+        var status = DelegationMcp.Result(new(Status: DelegationChildStatus.Of(gemini, null)));
+        Same(TextOf(status), "Child c1 runs antigravity and is running. It has not reported yet.", "the status names the agent");
+        Same(status["structuredContent"]!["status"]!["agent"]!.GetValue<string>(), "antigravity", "the status is tool data with its agent");
+        Check(JsonSerializer.Serialize(DelegationChildInfo.Of(gemini), Wire.Json).Contains("\"agent\":\"antigravity\"", StringComparison.Ordinal), "the pane pipe carries the agent");
+        return Task.CompletedTask;
+    }
 }

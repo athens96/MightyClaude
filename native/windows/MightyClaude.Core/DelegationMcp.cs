@@ -104,7 +104,7 @@ public sealed class DelegationMcp(Func<DelegationRequest, CancellationToken, Tas
         return new()
         {
             ["name"] = tool.Name, ["description"] = tool.Description,
-            ["inputSchema"] = new JsonObject { ["type"] = "object", ["properties"] = properties, ["required"] = new JsonArray([.. tool.Arguments.Select(argument => (JsonNode)argument.Name)]), ["additionalProperties"] = false },
+            ["inputSchema"] = new JsonObject { ["type"] = "object", ["properties"] = properties, ["required"] = new JsonArray([.. tool.Arguments.Where(argument => argument.Required).Select(argument => (JsonNode)argument.Name)]), ["additionalProperties"] = false },
         };
     }
 
@@ -117,6 +117,7 @@ public sealed class DelegationMcp(Func<DelegationRequest, CancellationToken, Tas
     {
         DelegationReasonCode.ClaudeOnly => " (this pane's agent cannot use the delegation tools)",
         DelegationReasonCode.MergeHumanOnly => " (in this permission mode only the human merges, from the child's card in the app; tell the user the child is ready)",
+        DelegationReasonCode.AgentUnknown => " (agent must be claude, codex or antigravity, or left out for your own)",
         _ => "",
     };
 
@@ -124,7 +125,7 @@ public sealed class DelegationMcp(Func<DelegationRequest, CancellationToken, Tas
 
     /// <summary>
     /// The <c>tools/call</c> result for the app's answer. A refusal names its one reason code in the text and as structured
-    /// content, with a word on what to do for a code whose name does not say it; a child, a list, a status, a merge and a
+    /// content, with what it is about when the app said, or else a word on what to do for a code whose name does not say it; a child, a list, a status, a merge and a
     /// follow-up are tool data in both too.
     /// </summary>
     public static JsonObject Result(DelegationResponse response)
@@ -132,23 +133,24 @@ public sealed class DelegationMcp(Func<DelegationRequest, CancellationToken, Tas
         if (response.Refused is { } reason)
         {
             var code = DelegationNames.Of(reason);
-            return new() { ["content"] = Content($"Refused: {code}{Hint(reason)}. Nothing was changed."), ["structuredContent"] = new JsonObject { ["refused"] = code }, ["isError"] = true };
+            var about = response.Error is { } detail ? $" ({detail})" : Hint(reason);
+            return new() { ["content"] = Content($"Refused: {code}{about}. Nothing was changed."), ["structuredContent"] = new JsonObject { ["refused"] = code }, ["isError"] = true };
         }
         if (response.Child is { } child)
-            return Answer($"Child {child.Id} is {DelegationNames.Of(child.State)}, on the branch {child.Branch}, starting in {child.StartingMode} mode.", "child",
-                new JsonObject { ["id"] = child.Id, ["state"] = DelegationNames.Of(child.State), ["branch"] = child.Branch, ["mode"] = child.StartingMode });
+            return Answer($"Child {child.Id} is {DelegationNames.Of(child.State)}, runs {child.Agent}, on the branch {child.Branch}, starting in {child.StartingMode} mode.", "child",
+                new JsonObject { ["id"] = child.Id, ["state"] = DelegationNames.Of(child.State), ["agent"] = child.Agent, ["branch"] = child.Branch, ["mode"] = child.StartingMode });
         if (response.Children is { } children)
         {
-            var lines = children.Select(listed => $"- {listed.Id}: {DelegationNames.Of(listed.State)}, report revision {listed.Revision}");
+            var lines = children.Select(listed => $"- {listed.Id}: {listed.Agent}, {DelegationNames.Of(listed.State)}, report revision {listed.Revision}");
             return Answer(children.Count == 0 ? "You have no children." : string.Join("\n", lines.Prepend("Your children:")), "children",
-                new JsonArray([.. children.Select(listed => new JsonObject { ["id"] = listed.Id, ["state"] = DelegationNames.Of(listed.State), ["revision"] = listed.Revision })]));
+                new JsonArray([.. children.Select(listed => new JsonObject { ["id"] = listed.Id, ["agent"] = listed.Agent, ["state"] = DelegationNames.Of(listed.State), ["revision"] = listed.Revision })]));
         }
         if (response.Status is { } status)
         {
-            var text = $"Child {status.Id} is {DelegationNames.Of(status.State)}.";
+            var text = $"Child {status.Id} runs {status.Agent} and is {DelegationNames.Of(status.State)}.";
             if (status.Revision == 0) text += " It has not reported yet.";
             else text += $" Its report revision {status.Revision} was made at head {status.Head ?? "unknown"}." + (status.Report is { } report ? $"\n\nREPORT.md:\n{report}" : " Its REPORT.md copy is no longer kept.");
-            return Answer(text, "status", new JsonObject { ["id"] = status.Id, ["state"] = DelegationNames.Of(status.State), ["revision"] = status.Revision, ["head"] = status.Head, ["report"] = status.Report, ["reportTruncated"] = status.ReportTruncated });
+            return Answer(text, "status", new JsonObject { ["id"] = status.Id, ["agent"] = status.Agent, ["state"] = DelegationNames.Of(status.State), ["revision"] = status.Revision, ["head"] = status.Head, ["report"] = status.Report, ["reportTruncated"] = status.ReportTruncated });
         }
         if (response.Merged is { } merged)
             return Answer($"Merged child {merged.ChildId}: {merged.ParentBranch} fast-forwarded from {merged.PreMergeCommit} to {merged.MergedCommit}. The merge is recorded; only a human can undo it, from the child's card.", "merged",

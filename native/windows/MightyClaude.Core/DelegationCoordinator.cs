@@ -5,23 +5,25 @@ namespace MightyClaude.Core;
 /// <summary>
 /// The tools the delegation MCP server lists (M/DelegationCoordinator.swift:3-81): exactly these six. The server is attached
 /// only to a Claude or Codex pane's run while the <see cref="DelegationSwitch"/> is on, so with the switch on such a pane sees
-/// these and with it off none. Every argument is a required string. The words are the Mac's, byte for byte: the agent reads them.
+/// these and with it off none. Every argument is a string, and every one is required but delegate's agent. The words are the Mac's, byte for byte: the agent reads them.
 /// </summary>
 public static class DelegationToolManifest
 {
-    public sealed record Argument(string Name, string Description);
-    /// <param name="Arguments">All strings, all required, no others.</param>
+    public sealed record Argument(string Name, string Description, bool Required = true);
+    /// <param name="Arguments">All strings, no others.</param>
     public sealed record Tool(string Name, string Description, IReadOnlyList<Argument> Arguments);
 
     private static readonly Argument Child = new("child", "The child's id, as delegate or list_children gave it.");
 
     public static readonly Tool Delegate = new("delegate",
-        "Start a child pane running your own agent CLI that works on a task in its own git worktree, on the flat branch mighty/<child id> made from your current branch head. Use it only when the user asks for parallel or delegated work, or when the task clearly splits into independent parts that can run at the same time; never fan out speculatively, and do the work yourself otherwise. The child starts in the permission mode you ask for, which must be one of your pane's modes and no wider than your own (Claude: plan < manual < acceptEdits < auto < fullAccess; Codex: manual < acceptEdits < onRequest < fullAccess). Answers as soon as the child exists; its run goes on in the background. The child writes its result to REPORT.md, and you get one notice per report. At most 3 open children per pane, and a child cannot delegate. The same call twice in one of your runs returns the same child.",
-        [new("task", "What the child should do. It is saved as the child's TASK.md."), new("mode", "The child's starting permission mode, one of your pane's: plan, manual, acceptEdits, auto or fullAccess for Claude; acceptEdits, onRequest or fullAccess for Codex (a manual Codex child cannot change files). No wider than yours.")]);
+        "Start a child pane that works on a task in its own git worktree, on the flat branch mighty/<child id> made from your current branch head. It runs your own agent CLI unless agent names another: claude, codex or antigravity, each only if installed and signed in on this PC. Use it only when the user asks for parallel or delegated work, or when the task clearly splits into independent parts that can run at the same time; never fan out speculatively, and do the work yourself otherwise. The child starts in the permission mode you ask for, which must be one of the child agent's modes and one in which it can change files. For your own agent it must be no wider than your own mode (Claude: plan < manual < acceptEdits < auto < fullAccess; Codex: manual < acceptEdits < onRequest < fullAccess). For another agent, the child's mode may do nothing yours may not: edit files without asking only if yours does (Claude acceptEdits and auto, Codex onRequest and acceptEdits, Antigravity acceptEdits, any fullAccess), edit after asking only if yours edits at all, run shell commands without asking only if yours does (Claude auto, Codex manual and acceptEdits, any fullAccess), and have full access only from your fullAccess. So from Claude acceptEdits a Codex child gets onRequest, not acceptEdits (which runs commands without asking), and from Claude plan or manual no Codex or Antigravity child can start. Answers as soon as the child exists; its run goes on in the background. The child writes its result to REPORT.md, and you get one notice per report. At most 3 open children per pane, of all agents together, and a child cannot delegate. The same call twice in one of your runs returns the same child.",
+        [new("task", "What the child should do. It is saved as the child's TASK.md."),
+         new("mode", "The child's starting permission mode, one of the child agent's in which it can change files, no wider than yours: plan, manual, acceptEdits, auto or fullAccess for a Claude child; acceptEdits, onRequest or fullAccess for a Codex child; acceptEdits or fullAccess for an Antigravity child."),
+         new("agent", "Optional: the agent CLI the child runs, claude, codex or antigravity. Leave it out for your own agent.", Required: false)]);
 
-    public static readonly Tool ListChildren = new("list_children", "List your children with their id, state and current report revision.", []);
+    public static readonly Tool ListChildren = new("list_children", "List your children with their id, agent, state and current report revision.", []);
 
-    public static readonly Tool ChildStatus = new("child_status", "Read one of your children: its state, its head and the body of its latest REPORT.md.", [Child]);
+    public static readonly Tool ChildStatus = new("child_status", "Read one of your children: its agent, its state, its head and the body of its latest REPORT.md.", [Child]);
 
     public static readonly Tool Merge = new("merge",
         "Fast-forward your recorded branch to a reported child's head. Refused, changing nothing, unless the child has reported at exactly expected_head with no tracked changes, your recorded branch is checked out with no tracked changes and it can fast-forward. Follows your permission mode; a Codex pane may merge only when its run started in fullAccess and is otherwise refused with merge_human_only, so the human merges from the child's card.",
@@ -255,12 +257,15 @@ public sealed partial class DelegationCoordinator : IDelegationRequestHandler
     public static string LateMessage(string tool, double seconds) =>
         $"{tool} did not finish within {(int)seconds} seconds. Its work goes on in Mighty Claude; call list_children to see where your children stand.";
 
-    /// <summary>Why <paramref name="arguments"/> are not exactly <paramref name="tool"/>'s, or null when they are.</summary>
+    /// <summary>Why <paramref name="arguments"/> are not <paramref name="tool"/>'s (every required one, and no other), or null when they are.</summary>
     public static string? ArgumentProblem(IReadOnlyDictionary<string, string> arguments, DelegationToolManifest.Tool tool)
     {
         var names = tool.Arguments.Select(argument => argument.Name).ToList();
-        if (arguments.Keys.ToHashSet().SetEquals(names)) return null;
-        return names.Count == 0 ? $"{tool.Name} takes no arguments." : $"{tool.Name} takes exactly these string arguments: {string.Join(", ", names)}.";
+        var required = tool.Arguments.Where(argument => argument.Required).Select(argument => argument.Name).ToList();
+        if (arguments.Keys.All(names.Contains) && required.All(arguments.ContainsKey)) return null;
+        if (names.Count == 0) return $"{tool.Name} takes no arguments.";
+        var optional = tool.Arguments.Where(argument => !argument.Required).Select(argument => argument.Name).ToList();
+        return $"{tool.Name} takes exactly these string arguments: {string.Join(", ", required)}" + (optional.Count == 0 ? "." : $", and optionally {string.Join(", ", optional)}.");
     }
 
     /// <summary>

@@ -92,8 +92,8 @@ internal static class DelegationCoordinatorVerification
             Check(await fixture.Place.Git("symbolic-ref", "--short", "HEAD") == "main" && (await fixture.Place.Git("status", "--porcelain", "--untracked-files=all")).Length == 0, "the parent's checkout is untouched");
             // Through the delegation MCP server the child is tool data.
             var result = DelegationMcp.Result(answer);
-            Check(result["isError"] is null && Data(result, "child")!.ToJsonString() == $$"""{"id":"{{info.Id}}","state":"creating","branch":"{{info.Branch}}","mode":"acceptEdits"}"""
-                && TextOf(result) == $"Child {info.Id} is creating, on the branch {info.Branch}, starting in acceptEdits mode.", "the child is tool data");
+            Check(result["isError"] is null && Data(result, "child")!.ToJsonString() == $$"""{"id":"{{info.Id}}","state":"creating","agent":"claude","branch":"{{info.Branch}}","mode":"acceptEdits"}"""
+                && TextOf(result) == $"Child {info.Id} is creating, runs claude, on the branch {info.Branch}, starting in acceptEdits mode.", "the child is tool data");
         }
         finally { fixture.Remove(); }
 
@@ -161,7 +161,7 @@ internal static class DelegationCoordinatorVerification
             foreach (var mode in new[] { "bypassPermissions", "default", "", "PLAN" }) Check(await fixture.Delegate("Ship it.", mode) is { Refused: null, Child: null, Error: "mode must be one of plan, manual, acceptEdits, auto, fullAccess." }, "not a starting mode: " + mode);
             Check((await fixture.Delegate(" \n\t", "plan")).Error == "delegate needs a task: what the child should do." && (await fixture.Delegate("Ship it.\0Now.", "plan")).Error == "A task may not contain a NUL character."
                 && (await fixture.Delegate(new string('x', DelegationFileStore.MaximumCopyBytes + 1), "plan")).Error == "A task may be at most 64 KiB.", "an empty task, one with a NUL and one over 64 KiB are errors");
-            Check((await fixture.Call("delegate", ("task", "x"))).Error == "delegate takes exactly these string arguments: task, mode." && (await fixture.Call("delegate", ("task", "x"), ("mode", "plan"), ("branch", "main"))).Error!.Contains("task, mode", StringComparison.Ordinal), "a call needs exactly its arguments");
+            Check((await fixture.Call("delegate", ("task", "x"))).Error == "delegate takes exactly these string arguments: task, mode, and optionally agent." && (await fixture.Call("delegate", ("task", "x"), ("mode", "plan"), ("branch", "main"))).Error!.Contains("task, mode", StringComparison.Ordinal), "a call needs exactly its arguments");
             fixture.Host.Close("parent");
             Check((await fixture.Delegate("Ship it.", "plan")).Error == "The calling pane is closed.", "a closed pane cannot delegate");
             await fixture.NothingMade(bytes, file);
@@ -479,7 +479,7 @@ internal static class DelegationCoordinatorVerification
             Check((await fixture.CallFrom("other", "list_children")).Children!.SequenceEqual([DelegationChildSummary.Of(children[2])]) && (await fixture.CallFrom("lonely", "list_children")).Children!.Count == 0, "each parent sees only its own");
             var listed = DelegationMcp.Result(mine);
             Check(listed["isError"] is null && Data(listed, "children")!.AsArray().Select(item => (item!["id"]!.GetValue<string>(), item["state"]!.GetValue<string>(), item["revision"]!.GetValue<int>())).SequenceEqual(expected.Select(child => (child.Id, DelegationNames.Of(child.State), child.Revision)))
-                && TextOf(listed) == "Your children:\n- running: running, report revision 0\n- reported: reported, report revision 2\n- failed: failed, report revision 0\n- closed: closed, report revision 3\n- discarded: discarded, report revision 0", "the list is tool data");
+                && TextOf(listed) == "Your children:\n- running: claude, running, report revision 0\n- reported: claude, reported, report revision 2\n- failed: claude, failed, report revision 0\n- closed: claude, closed, report revision 3\n- discarded: claude, discarded, report revision 0", "the list is tool data");
             var none = DelegationMcp.Result(await fixture.CallFrom("lonely", "list_children"));
             Check(Data(none, "children")!.AsArray().Count == 0 && TextOf(none) == "You have no children.", "no children is an empty list");
 
@@ -489,14 +489,14 @@ internal static class DelegationCoordinatorVerification
                 && status.Head == reportedHead && status.Report == reportText, "the state, head and report body");
             var result = DelegationMcp.Result(answer); var data = Data(result, "status")!;
             Check(result["isError"] is null && data["id"]!.GetValue<string>() == "reported" && data["state"]!.GetValue<string>() == "reported" && data["revision"]!.GetValue<int>() == 2 && data["head"]!.GetValue<string>() == reportedHead && data["report"]!.GetValue<string>() == reportText
-                && data["reportTruncated"]!.GetValue<bool>() == false && TextOf(result) == $"Child reported is reported. Its report revision 2 was made at head {reportedHead}.\n\nREPORT.md:\n{reportText}", "the status is tool data, the report body in both");
+                && data["reportTruncated"]!.GetValue<bool>() == false && TextOf(result) == $"Child reported runs claude and is reported. Its report revision 2 was made at head {reportedHead}.\n\nREPORT.md:\n{reportText}", "the status is tool data, the report body in both");
             // Before its first report a child has no head and no report body.
             var running = (await fixture.Call("child_status", ("child", "running"))).Status!; var runningResult = DelegationMcp.Result(new(Status: running));
             Check(running is { State: ChildState.Running, Revision: 0, Head: null, Report: null, ReportTruncated: false } && Data(runningResult, "status")!.ToJsonString().Contains("\"head\":null,\"report\":null", StringComparison.Ordinal)
-                && TextOf(runningResult) == "Child running is running. It has not reported yet.", "a child that has not reported");
+                && TextOf(runningResult) == "Child running runs claude and is running. It has not reported yet.", "a child that has not reported");
             // A closed child whose copy was pruned keeps its head only.
             var closed = (await fixture.Call("child_status", ("child", " closed\n"))).Status!;
-            Check(closed is { State: ChildState.Closed, Revision: 3, Report: null } && closed.Head == new string('d', 40) && TextOf(DelegationMcp.Result(new(Status: closed))) == $"Child closed is closed. Its report revision 3 was made at head {new string('d', 40)}. Its REPORT.md copy is no longer kept.", "a closed child whose copy was pruned");
+            Check(closed is { State: ChildState.Closed, Revision: 3, Report: null } && closed.Head == new string('d', 40) && TextOf(DelegationMcp.Result(new(Status: closed))) == $"Child closed runs claude and is closed. Its report revision 3 was made at head {new string('d', 40)}. Its REPORT.md copy is no longer kept.", "a closed child whose copy was pruned");
             Check((await fixture.CallFrom("other", "child_status", ("child", "merged"))).Status is { State: ChildState.Merged, Report: "Merged work." } && (await fixture.Call("child_status", ("child", "discarded"))).Status?.State == ChildState.Discarded
                 && (await fixture.Call("child_status", ("child", "failed"))).Status?.State == ChildState.Failed, "every state is read");
             // A child that is not the caller's is an error, and changes nothing.
@@ -543,9 +543,9 @@ internal static class DelegationCoordinatorVerification
         {
             var schema = tool!["inputSchema"]!; var manifest = DelegationToolManifest.Named(tool["name"]!.GetValue<string>())!;
             Check(tool["description"]!.GetValue<string>() == manifest.Description && schema["type"]!.GetValue<string>() == "object" && schema["additionalProperties"]!.GetValue<bool>() == false
-                && schema["required"]!.AsArray().Select(name => name!.GetValue<string>()).SequenceEqual(manifest.Arguments.Select(argument => argument.Name))
+                && schema["required"]!.AsArray().Select(name => name!.GetValue<string>()).SequenceEqual(manifest.Arguments.Where(argument => argument.Required).Select(argument => argument.Name))
                 && schema["properties"]!.AsObject().Select(property => property.Key).Order().SequenceEqual(manifest.Arguments.Select(argument => argument.Name).Order())
-                && schema["properties"]!.AsObject().All(property => property.Value!["type"]!.GetValue<string>() == "string" && property.Value["description"]!.GetValue<string>().Length > 0), manifest.Name + " lists its string arguments, all required");
+                && schema["properties"]!.AsObject().All(property => property.Value!["type"]!.GetValue<string>() == "string" && property.Value["description"]!.GetValue<string>().Length > 0), manifest.Name + " lists its string arguments, each required but delegate's agent");
         }
         // A call is forwarded with its string arguments; a refusal is tool data with its one reason code.
         var refused = Json(await mcp.Handle(ToolCall("delegate", """{"task":"Write the release notes","mode":"plan"}""")))["result"]!;
