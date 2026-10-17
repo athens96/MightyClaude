@@ -17,6 +17,17 @@ public static class Wire
     public static readonly string[] Efforts = ["low", "medium", "high", "xhigh", "max"];
 }
 
+/// <summary>
+/// A workspace that lives on another computer running Mighty Claude, reached over Tailscale (docs/remote-workspaces.md).
+/// Saved as the workspace's "remote" value with the Mac's JSON: {version: 2, connectionId, workspaceId, hostName}.
+/// <see cref="StateStore.KeepsWorkspace"/> drops any other shape, including the unversioned one written before 2026-09-28.
+/// </summary>
+public sealed record RemoteWorkspaceReference(string ConnectionId, string WorkspaceId, string HostName)
+{
+    public const int CurrentVersion = 2;
+    public int Version { get; init; } = CurrentVersion;
+}
+
 public sealed record Workspace
 {
     public string Id { get; init; } = Wire.Id();
@@ -25,6 +36,9 @@ public sealed record Workspace
     public string CreatedAt { get; init; } = Wire.Now();
     // Workspace-level model defaults override; null means no workspace-level override.
     public ModelDefaultsConfig? ModelDefaults { get; init; }
+    // Set when the folder is on another computer; Path is then the host's path and never a local folder.
+    public RemoteWorkspaceReference? Remote { get; init; }
+    [JsonIgnore] public bool IsRemote => Remote is not null;
 }
 [JsonConverter(typeof(RunSettingsJsonConverter))]
 public sealed record RunSettings(string Effort = "default", string PermissionMode = "manual", int? MaxTurns = null, double? MaxBudgetUsd = null, bool FastMode = false, string WebSearch = "default", bool NetworkAccess = false);
