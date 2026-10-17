@@ -6,6 +6,13 @@ using System.Net.WebSockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using MightyClaude.Core;
 
 // The phone's direct path to a Windows host (docs/relay.md, "Tailscale 직접 연결"; spec
@@ -318,5 +325,130 @@ internal static class MobileDirectVerification
             }
         }
         finally { await host.DisposeAsync(); Directory.Delete(directory, true); }
+    }
+
+    internal static async Task OnlyWhoMayGetsInAndRelayRedialsLeaveThemAlone()
+    {
+        var directory = Temp(); using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        var addresses = new List<string> { "127.0.0.1" };
+        var host = new MobileRelayHost(Path.Combine(directory, "identity"), "Fixture", [], (_, path, _, _, _) => Task.FromResult(new MobileReply(200, new { protocol = 1, path })))
+        { WatchesNetwork = false, HandshakeDeadline = TimeSpan.FromMilliseconds(600), DirectRedetectInterval = TimeSpan.FromMilliseconds(200) };
+        try
+        {
+            host.SetDirectAddressSource(() => [.. addresses]);
+            await host.ApplyAsync(new MobileRemoteSettings(true, "ws://127.0.0.1:9"));
+            var endpoint = host.DirectEndpoints.Single();
+            int Port() => int.Parse(endpoint[(endpoint.LastIndexOf(':') + 1)..], CultureInfo.InvariantCulture);
+
+            // Two stalled handshakes from one address hold its two slots; a third is reset unread; the deadline frees them.
+            using (var first = new TcpClient()) using (var second = new TcpClient())
+            {
+                await first.ConnectAsync(IPAddress.Loopback, Port(), timeout.Token); await second.ConnectAsync(IPAddress.Loopback, Port(), timeout.Token);
+                await Verification.Until(() => host.ConnectionIds.Count == 2);
+                using var third = new TcpClient(); await third.ConnectAsync(IPAddress.Loopback, Port(), timeout.Token);
+                Check(await ReadsEnd(third, timeout.Token), "a third handshake from the same address is dropped");
+                Check(await ReadsEnd(first, timeout.Token) && await ReadsEnd(second, timeout.Token), "a stalled handshake is cut at the deadline");
+            }
+            await Verification.Until(() => host.ConnectionIds.Count == 0);
+
+            // A paired phone stays through a relay redial and a re-read that finds the same address; the watch notices it go away.
+            await using (var phone = await DirectPhone.ConnectAsync(endpoint, host.PairingUrl, timeout.Token))
+            {
+                using var auth = await phone.ExchangeAsync(new { type = "auth", pairingKey = Query(host.PairingUrl, "key"), clientId = "abcdefghijklmnopqrstuv", clientName = "Fixture Phone" }, timeout.Token);
+                Check(auth.RootElement.Text("type") == "auth_ok", "the phone is in");
+                await host.ReconnectAsync();
+                using var afterRedial = await phone.ExchangeAsync(new { id = "after-redial", method = "GET", path = "/m1/info" }, timeout.Token);
+                Check(afterRedial.RootElement.Text("id") == "after-redial", "a relay redial leaves a direct phone connected");
+                host.RefreshDirect();
+                using var afterRefresh = await phone.ExchangeAsync(new { id = "after-refresh", method = "GET", path = "/m1/info" }, timeout.Token);
+                Check(afterRefresh.RootElement.Text("id") == "after-refresh", "a re-read that finds the same address changes nothing");
+                addresses.Clear();
+                await Verification.Until(() => host.DirectStatus.State == "notFound");
+                Check(host.DirectEndpoints.Count == 0 && MobileDirectStatusText.Detail(host.DirectStatus) == Locale.Get("mobileRemote.direct.status.notFound"), "the watch re-reads the addresses on its own");
+            }
+            addresses.Add("127.0.0.1");
+            await Verification.Until(() => host.DirectStatus.Listening);
+            endpoint = host.DirectEndpoints.Single();
+            await Verification.Until(() => host.ConnectionIds.Count == 0);
+
+            // The direct switch off drops the direct phones and says so.
+            await using (var phone = await DirectPhone.ConnectAsync(endpoint, host.PairingUrl, timeout.Token))
+            {
+                using var auth = await phone.ExchangeAsync(new { type = "auth", pairingKey = Query(host.PairingUrl, "key"), clientId = "bcdefghijklmnopqrstuvw", clientName = "Second Phone" }, timeout.Token);
+                Check(auth.RootElement.Text("type") == "auth_ok", "a second phone is in");
+                await host.ApplyAsync(new MobileRemoteSettings(true, "ws://127.0.0.1:9", DirectEnabled: false));
+                Check(host.DirectStatus.State == "disabled" && host.DirectEndpoints.Count == 0 && MobileDirectStatusText.Detail(host.DirectStatus) == Locale.Get("mobileRemote.direct.status.off"), "the switch off says so");
+                await Verification.Until(() => !host.ConnectionIds.Any(MobileDirect.IsDirect));
+            }
+
+            // Five refused keys from one address within a minute: its sixth socket is reset unread.
+            await host.ApplyAsync(new MobileRemoteSettings(true, "ws://127.0.0.1:9"));
+            endpoint = host.DirectEndpoints.Single();
+            for (var i = 0; i < MobileDirect.MaximumAuthFailures; i++)
+            {
+                await using (var stranger = await DirectPhone.ConnectAsync(endpoint, host.PairingUrl, timeout.Token))
+                {
+                    using var refused = await stranger.ExchangeAsync(new { type = "auth", pairingKey = "wrong-key-0000000000", clientId = "zyxwvutsrqponmlkjihgf" + i.ToString(CultureInfo.InvariantCulture), clientName = "Stranger" }, timeout.Token);
+                    Check(refused.RootElement.Text("reason") == MobileDirect.GenericRefusal, "every refusal is the same word");
+                }
+                await Verification.Until(() => host.ConnectionIds.Count == 0);
+            }
+            var locked = false;
+            try { await using var sixth = await DirectPhone.ConnectAsync(endpoint, host.PairingUrl, timeout.Token); }
+            catch (Exception ex) when (ex is WebSocketException or IOException) { locked = true; }
+            Check(locked, "an address that keeps failing is shut out");
+        }
+        finally { await host.DisposeAsync(); Directory.Delete(directory, true); }
+    }
+
+    /// <summary>
+    /// A relay that sends connected and disconnected notices carrying a direct phone's id (or any direct- id): the relay cannot reach a
+    /// phone that came in directly, so the notices are ignored, nothing is dialled for them and the phone keeps answering.
+    /// </summary>
+    internal static async Task RelayNoticesCarryingADirectIdLeaveItAlone()
+    {
+        var directory = Temp(); using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var directId = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var dialled = new ConcurrentQueue<string>(); var controls = 0;
+        var builder = WebApplication.CreateEmptyBuilder(new WebApplicationOptions { Args = [], ContentRootPath = AppContext.BaseDirectory }); builder.Logging.ClearProviders(); builder.WebHost.UseKestrelCore(); builder.WebHost.ConfigureKestrel(o => o.Listen(IPAddress.Loopback, 0));
+        await using var app = builder.Build(); app.UseWebSockets();
+        app.Run(async context =>
+        {
+            try
+            {
+                using var socket = await context.WebSockets.AcceptWebSocketAsync();
+                if (context.Request.Query.TryGetValue("connectionId", out var data)) dialled.Enqueue(data.ToString());
+                else if (Interlocked.Increment(ref controls) == 1)
+                {
+                    var id = await directId.Task.WaitAsync(timeout.Token);
+                    // The phone's own id closed and opened, a direct- id nobody holds opened, then a relay phone as the marker that all were read.
+                    foreach (var (type, connection) in new[] { ("disconnected", id), ("connected", id), ("connected", MobileDirect.ConnectionPrefix + Guid.NewGuid().ToString()), ("connected", "fixture-after-notices") })
+                        await socket.SendAsync(JsonSerializer.SerializeToUtf8Bytes(new { type, connectionId = connection }, Wire.Json), WebSocketMessageType.Text, true, timeout.Token);
+                }
+                var buffer = new byte[1024]; while ((await socket.ReceiveAsync(buffer, timeout.Token)).MessageType != WebSocketMessageType.Close) { }
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException) { }
+        });
+        await app.StartAsync(timeout.Token);
+        var relay = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
+        var host = new MobileRelayHost(Path.Combine(directory, "identity"), "Fixture", [], (_, path, _, _, _) => Task.FromResult(new MobileReply(200, new { protocol = 1, path }))) { WatchesNetwork = false };
+        try
+        {
+            host.SetDirectAddressSource(() => ["127.0.0.1"]);
+            await host.ApplyAsync(new MobileRemoteSettings(true, relay));
+            await Verification.Until(() => host.Status.Connected && Volatile.Read(ref controls) == 1);
+            await using var phone = await DirectPhone.ConnectAsync(host.DirectEndpoints.Single(), host.PairingUrl, timeout.Token);
+            using var auth = await phone.ExchangeAsync(new { type = "auth", pairingKey = Query(host.PairingUrl, "key"), clientId = "abcdefghijklmnopqrstuv", clientName = "Fixture Phone" }, timeout.Token);
+            Check(auth.RootElement.Text("type") == "auth_ok", "the phone is in");
+            var id = host.ConnectionIds.Single();
+            Check(MobileDirect.IsDirect(id), "the phone holds a direct- id");
+            directId.SetResult(id);
+            await Verification.Until(() => !dialled.IsEmpty);
+            Check(dialled.SequenceEqual(["fixture-after-notices"]), "a connected notice for a direct- id dials nothing: " + string.Join(",", dialled));
+            Check(host.ConnectionIds.Contains(id) && host.ConnectionIds.Count(MobileDirect.IsDirect) == 1, "a disconnected notice for the phone's id leaves it in the table, and a connected one adds no other direct- id");
+            using var after = await phone.ExchangeAsync(new { id = "after-notices", method = "GET", path = "/m1/info" }, timeout.Token);
+            Check(after.RootElement.Text("id") == "after-notices" && after.RootElement.GetProperty("status").GetInt32() == 200, "the direct phone still answers after the relay's notices");
+        }
+        finally { await host.DisposeAsync(); await app.StopAsync(CancellationToken.None); Directory.Delete(directory, true); }
     }
 }

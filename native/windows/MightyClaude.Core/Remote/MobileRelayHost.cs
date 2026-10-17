@@ -80,6 +80,10 @@ public sealed class MobileRelayHost : IAsyncDisposable
     public TimeSpan KeepaliveTimeout { get; init; } = RelayLinkPolicy.KeepaliveTimeout;
     /// <summary>How long path reports must stay quiet before the link acts on them.</summary>
     public TimeSpan PathSettle { get; init; } = RelayLinkPolicy.PathSettle;
+    /// <summary>How long a phone may take from its socket to auth_ok, on either path (docs/relay.md: 10 s).</summary>
+    public TimeSpan HandshakeDeadline { get; init; } = MobileDirect.HandshakeDeadline;
+    /// <summary>How often the Tailscale addresses are read again while the direct path is on, on top of every address change Windows reports.</summary>
+    public TimeSpan DirectRedetectInterval { get; init; } = MobileDirect.RedetectInterval;
     public Func<string[]>? ExtraCapabilities { get; set; }
     public bool IsTrustedDevice(string device) => identity.Contains(device, false);
     public Func<string, JsonElement, CancellationToken, Task>? ScreenSignal { get; set; }
@@ -111,6 +115,7 @@ public sealed class MobileRelayHost : IAsyncDisposable
     /// </summary>
     private Func<IReadOnlyList<string>>? directAddressSource;
     private int directSourcePort;
+    private CancellationTokenSource? directWatch;
     public MobileDirectStatus DirectStatus { get; private set; } = MobileDirectStatus.Off;
     /// <summary>The endpoints the direct path listens on now, as auth_ok, /m1/info and the QR carry them; empty while it is off.</summary>
     public IReadOnlyList<string> DirectEndpoints => Volatile.Read(ref directEndpoints);
@@ -146,7 +151,7 @@ public sealed class MobileRelayHost : IAsyncDisposable
             if (disposed || !current.Enabled || !current.DirectEnabled) dropped = StopDirect(current);
             else
             {
-                var source = directAddressSource;
+                StartDirectWatch(); var source = directAddressSource;
                 var addresses = source is null ? TailscaleAddresses.Current() : source();
                 var port = source is null ? current.DirectPort : directSourcePort;
                 if (force || directBoundAddresses is not { } was || !was.SequenceEqual(addresses) || directBoundPort != port) BindDirect(addresses, port, source is not null);
@@ -180,10 +185,24 @@ public sealed class MobileRelayHost : IAsyncDisposable
     /// </summary>
     private Connection[] StopDirect(MobileRemoteSettings current)
     {
+        directWatch?.Cancel(); directWatch = null;
         directListener?.Stop(); directListener = null;
         directBoundAddresses = null; directBoundPort = null; Volatile.Write(ref directEndpoints, []);
         DirectStatus = !disposed && current.Enabled && !current.DirectEnabled ? new("disabled", []) : MobileDirectStatus.Off;
         return [.. clients.Values.Where(client => client.Direct)];
+    }
+
+    /// <summary>Reads the addresses again every <see cref="DirectRedetectInterval"/> while the path is on: Tailscale coming up does not always raise an address change. Under directSync.</summary>
+    private void StartDirectWatch()
+    {
+        if (directWatch is not null) return;
+        var watch = directWatch = new CancellationTokenSource(); var interval = DirectRedetectInterval;
+        _ = Task.Run(async () =>
+        {
+            using var timer = new PeriodicTimer(interval);
+            try { while (await timer.WaitForNextTickAsync(watch.Token)) RefreshDirect(); }
+            catch (OperationCanceledException) { }
+        });
     }
 
     /// <summary>
@@ -291,7 +310,8 @@ public sealed class MobileRelayHost : IAsyncDisposable
         lock (pathSync) { watching = false; was = subscribed; subscribed = false; pathSettle?.Cancel(); pathSettle = null; networkPath = null; pathWindow = new(); pathPacing = new(); }
         if (was) { NetworkChange.NetworkAddressChanged -= AddressChanged; NetworkChange.NetworkAvailabilityChanged -= AvailabilityChanged; }
     }
-    private void AddressChanged(object? sender, EventArgs e) => Read();
+    // An address change may be Tailscale coming up or going down: the relay's path is read and the direct path re-detected.
+    private void AddressChanged(object? sender, EventArgs e) { Read(); _ = Task.Run(() => RefreshDirect()); }
     private void AvailabilityChanged(object? sender, NetworkAvailabilityEventArgs e) => Read();
     /// <summary>A path report from Windows or a check. Acted on once reports stop arriving for <see cref="PathSettle"/>.</summary>
     public void NetworkPathChanged(RelayNetworkPath path)
@@ -471,7 +491,7 @@ public sealed class MobileRelayHost : IAsyncDisposable
             {
                 // One deadline from the socket to auth_ok: the relay path dials its data socket, the direct path reads the phone's
                 // HTTP upgrade, and both then read hello and auth, all on this one token.
-                using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token); deadline.CancelAfter(MobileDirect.HandshakeDeadline);
+                using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token); deadline.CancelAfter(host.HandshakeDeadline);
                 var opened = await open(deadline.Token);
                 if (opened is null) return;
                 Volatile.Write(ref socket, opened);
