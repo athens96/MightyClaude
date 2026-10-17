@@ -21,6 +21,8 @@ public sealed partial class MainWindow
     /// card the workspace goes. No model runs: the parent's run is the scripted Claude's (<see cref="DelegationFakeClaude"/>), the
     /// app's own binary in its <c>--fake-claude</c> mode, put in the CLI's place for this step only. The smoke's own switch is on
     /// only while the composer's second send runs a text in a new child worktree, whose child the human merges or discards from its card.
+    /// Then the worktree menu's pick of Claude on a read-only Codex pane (which never runs) starts a Claude child in plan mode, run
+    /// by the scripted Claude (M/AppStore+DelegationSmoke.swift step 9).
     /// </summary>
     private async Task<Dictionary<string, object?>> RunDelegationSmoke()
     {
@@ -177,6 +179,40 @@ public sealed partial class MainWindow
             await RemoveWorkspaceConfirmed(workspace.Id);
             await DelegationSmokeUntil("the workspace to go", 15, () => !service.Snapshot.Workspaces.Any(w => w.Id == workspace.Id));
             checks["removedAfterDiscard"] = true;
+
+            // 9. A child of another agent: on a Codex pane in manual mode, whose own child could not change files, the worktree
+            //    menu offers only a Claude child in plan mode, and its pick starts one, run by the scripted Claude. The menu is
+            //    filled as the pane fills it on opening; the pick goes the way the menu item's send does. Claude's CLI is the
+            //    smoke's scripted one, so the smoke treats it as ready.
+            SetDelegationOn(true); smokeAgentsReady["claude"] = true;
+            try
+            {
+                var crossRepo = Path.Combine(root, "cross"); Directory.CreateDirectory(crossRepo);
+                await DelegationSmokeGit(crossRepo, "init", "-q", "-b", "main");
+                File.WriteAllText(Path.Combine(crossRepo, "README.md"), "# Cross-agent smoke\n");
+                await DelegationSmokeGit(crossRepo, "add", "-A"); await DelegationSmokeCommit(crossRepo, "Start");
+                var crossWorkspace = await service.AddWorkspaceAsync(crossRepo);
+                var codexPane = Wire.Id();
+                await service.UpdateAsync(s => s with { Sessions = [.. s.Sessions, new RunSession { Id = codexPane, WorkspaceId = crossWorkspace.Id, Kind = "claude", Provider = "codex", Title = "Codex parent", Settings = new(PermissionMode: "manual") }], ActiveWorkspaceId = crossWorkspace.Id, ActiveSessionId = codexPane });
+                Render();
+                var codex = service.Snapshot.Sessions.First(s => s.Id == codexPane);
+                service.RefreshWorktreeReadiness(codex);
+                await DelegationSmokeUntil("the Codex pane's worktree menu", 30, () => service.WorktreeMenuOnly(codex, false));
+                Require(service.WorktreeChildChoices(codex, false).Select(choice => (choice.Agent, choice.Mode, choice.Blocked))
+                    .SequenceEqual([("claude", (string?)"plan", (DelegationChildBlock?)null), ("codex", null, DelegationChildBlock.NoMode), ("gemini", null, DelegationChildBlock.NoMode)]),
+                    "The read-only Codex pane's menu does not offer only a Claude child in plan mode.");
+                Require(MobilePane(codexPane).DelegationSmokeWorktreeMenu().Select(item => (AutomationProperties.GetAutomationId(item), item.IsEnabled))
+                    .SequenceEqual([("composer-worktree-claude-" + codexPane, true), ("composer-worktree-codex-" + codexPane, false), ("composer-worktree-gemini-" + codexPane, false)]),
+                    "The worktree menu's rows are not Claude (enabled), then Codex and Antigravity (greyed out with why).");
+                MobilePane(codexPane).DelegationSmokeRunInNewWorktree("Smoke cross-agent child: write a note.", "claude");
+                var crossChild = await DelegationSmokeWait("the Codex pane's Claude child", 60, () => delegation.File.Children.FirstOrDefault(child => child.ParentSessionId == codexPane && child.StartedByHuman == true && child.State != ChildState.Creating));
+                Require(crossChild.State != ChildState.Failed && crossChild.Provider is null && crossChild.Agent == "claude" && crossChild.StartingMode == "plan"
+                    && service.Snapshot.Sessions.FirstOrDefault(s => s.Id == crossChild.Id) is { Provider: "claude", ParentSessionId: var crossParent } && crossParent == codexPane
+                    && service.Snapshot.Sessions.First(s => s.Id == codexPane).Provider == "codex" && service.DelegationChildren.FirstOrDefault(row => row.Id == crossChild.Id)?.Agent == "claude",
+                    $"The Codex pane's pick of Claude did not start a Claude child ({DelegationNames.Of(crossChild.State)}).");
+                checks["otherAgentChildStarted"] = new Dictionary<string, object?> { ["parent"] = "codex", ["child"] = "claude", ["mode"] = crossChild.StartingMode, ["state"] = DelegationNames.Of(crossChild.State) };
+            }
+            finally { smokeAgentsReady.TryRemove("claude", out _); SetDelegationOn(false); }
             checks["passed"] = true;
             return checks;
         }
@@ -257,9 +293,16 @@ public sealed partial class MainWindow
 
     private sealed partial class PaneView
     {
-        /// <summary>Whether the held item <paramref name="itemId"/> is the first row of this pane's queue, under its header, pinned and with no remove button.</summary>
         internal void DelegationSmokeRunInNewWorktree(string text, string? agent = null) => RunInNewWorktree(text, [], agent);
 
+        /// <summary>The worktree menu's agent rows as this pane fills them on opening: Claude, Codex, Antigravity, by their automation ids.</summary>
+        internal IReadOnlyList<MenuFlyoutItem> DelegationSmokeWorktreeMenu()
+        {
+            FillWorktreeMenu();
+            return worktreeMenu.Items.OfType<MenuFlyoutItem>().Where(item => AutomationProperties.GetAutomationId(item).StartsWith("composer-worktree-", StringComparison.Ordinal)).ToList();
+        }
+
+        /// <summary>Whether the held item <paramref name="itemId"/> is the first row of this pane's queue, under its header, pinned and with no remove button.</summary>
         internal bool DelegationSmokeHeldRow(string itemId)
         {
             RenderQueuedInputs();
