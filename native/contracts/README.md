@@ -630,3 +630,38 @@ the same rules there.
 ## Tailscale addresses (`fixtures/tailscale-addresses.json`)
 
 The rule that decides which of this computer's addresses are Tailscale's, shared by the phone's direct path and the remote workspaces. An interface counts only if it carries an address in fd7a:115c:a1e0::/48, which only Tailscale hands out; its addresses in 100.64.0.0/10 and that range then count, each once in its canonical spelling without `%scope`, IPv4 first and each family sorted ordinally. A carrier-grade NAT can put 100.64.0.0/10 on Wi-Fi and other VPNs (Cloudflare WARP's 100.96.0.0/12) on their own tunnel, so the CGNAT range alone never counts. `contains` lists addresses in and out of the two ranges (brackets accepted, `%scope` refused, an IPv4-mapped IPv6 address counts as its IPv4). `cases` are interface lists with each platform's answer: the Mac (`darwin`, `MightyCore/Remote/TailscaleAddresses.swift`, `RemoteWorkspaceAddressFixtureTests`) also requires a `utun` name; Windows (`win32`, `MightyClaude.Core/Remote/TailscaleAddresses.cs`, `TailscaleAddressesVerification`) cannot, as adapters are renamable and the Wintun adapter's type is no named `NetworkInterfaceType`. The two answers differ only in the cases that say so. Every address in the file is fake.
+
+## Remote workspaces (`fixtures/remote-v2/`)
+
+Tailscale remote workspaces connect Mighty Claude apps in every direction (Mac→Mac,
+Mac→Windows, Windows→Mac, Windows→Windows) over one HTTP/1.1 protocol: `/v2/` paths,
+`x-mighty-remote-version: 2` on every request and answer, a bearer key, and run events
+read by cursor (`docs/remote-workspaces.md`). The Mac is the reference.
+
+- `endpoints.json` is `[{name, method, path, request?, status, response, note?}]`; every
+  other file is one body it names. `GET /v2/runs/{id}/events?cursor=N` is also the
+  heartbeat: a run nobody polls for 30 s stops.
+- `start.json` carries `registeredModels` always (an empty array when there are none),
+  and `StartRunRequest` encoded as the Mac encodes it (`settings` with explicit null
+  `maxTurns`/`maxBudgetUsd`, `attachments` only when non-empty). A Windows client
+  never sends the request's `registeredModels`; they ride beside it.
+- Wire events are the Mac's `RunEvent` JSON with `sessionId` = the host's job id.
+  Timestamps are `yyyy-MM-ddTHH:mm:ss.fffZ`. A lost sign-in is status `error` with
+  `reason: "auth"` (Windows reads it as its own `"authentication"`). A permission's
+  input is `inputJSON`. Images are left out (the cache keys name host files).
+  `graph` carries an `ExecutionGraphNode`; a Windows client ignores it silently.
+  `graph-run-event.json` is Windows-only: a Windows host sends `graph_run` (a
+  `MightyGraphRun`) instead of `graph` only to a client whose `POST /v2/runs` carried
+  `x-mighty-remote-graph: run`. A Mac host ignores that header.
+- `poll-malformed.json` holds one event that decodes but fails validation: the
+  client drops it alone, adds one `remote.run.notice.skipped` line, and the run goes on.
+- `state-references.json` is `{cases: [{name, kept, workspace}]}`: a saved workspace
+  is remote only when `remote.version` is the JSON number 2; any other `remote`
+  value drops the workspace with its panes on load.
+- `/info` `runtime.platform` (`darwin`, `win32`, `linux`) is the host's OS; both apps
+  show it on remote panes.
+
+Readers: `RemoteWireFixtureTests` (Swift), `RemoteWireFixtureVerification` and
+`RemoteWorkspaceStateVerification` (Windows Core). Both must agree with every file.
+Implementations: `MightyCore/Remote/RemoteWorkspaceModels.swift`, `StateRepository.swift`;
+`MightyClaude.Core/Remote/RemoteWorkspaceModels.cs`, `RemoteWireEvents.cs`, `StateStore.cs`.

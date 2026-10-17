@@ -1,0 +1,28 @@
+{
+  "protocol": 2,
+  "hostId": "6f1c2d3e-0000-4000-8000-000000000001",
+  "hostName": "studio-pc",
+  "workspaces": [
+    { "id": "ws-project", "name": "project", "path": "C:\\work\\project" },
+    { "id": "ws-site", "name": "site", "path": "/Users/example/site" }
+  ],
+  "runtime": {
+    "platform": "win32",
+    "appVersion": "0.4.30",
+    "claudeAvailable": true,
+    "claudeVersion": "2.1.300",
+    "modelCatalog": { "source": "cli", "models": [ { "value": "default", "displayName": "Default", "description": "The CLI's own choice" } ], "detail": "" },
+    "providers": [
+      { "id": "claude", "name": "Claude Code", "available": true, "version": "2.1.300", "detail": "Available",
+        "modelCatalog": { "source": "cli", "models": [ { "value": "default", "displayName": "Default", "description": "The CLI's own choice" } ], "detail": "" },
+        "capabilities": { "effort": true, "permissionModes": ["plan", "manual", "acceptEdits", "auto", "fullAccess"], "maxTurns": true, "maxBudgetUsd": true, "resume": true, "fastMode": false, "webSearch": false, "networkAccess": false, "attachments": true } },
+      { "id": "codex", "name": "Codex CLI", "available": false, "detail": "Not installed",
+        "modelCatalog": { "source": "fallback", "models": [], "detail": "" },
+        "capabilities": { "effort": true, "permissionModes": ["manual", "onRequest", "acceptEdits", "fullAccess"], "maxTurns": false, "maxBudgetUsd": false, "resume": true, "fastMode": true, "webSearch": true, "networkAccess": true, "attachments": true } },
+      { "id": "gemini", "name": "Antigravity CLI", "available": false, "detail": "Not installed",
+        "modelCatalog": { "source": "fallback", "models": [], "detail": "" },
+        "capabilities": { "effort": false, "permissionModes": ["manual", "plan", "acceptEdits", "fullAccess"], "maxTurns": false, "maxBudgetUsd": false, "resume": true, "fastMode": false, "webSearch": false, "networkAccess": false, "attachments": true } }
+    ],
+    "mods": { "status": "available", "minimumVersion": "2.1.271", "detail": "Available" }
+  }
+}

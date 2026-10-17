@@ -1,0 +1,1 @@
+{ "cursor": 4, "event": { "sessionId": "job-1", "type": "graph_run", "graphRun": { "id": "gr-1", "input": "Summarize README.md", "status": "running", "rootEntries": [], "agents": [], "resultEntries": [], "sourceRunID": "gr-1", "provider": "claude" } } }

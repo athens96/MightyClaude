@@ -1,0 +1,11 @@
+[
+  { "name": "info", "method": "GET", "path": "/v2/info", "status": 200, "response": "info.json" },
+  { "name": "start", "method": "POST", "path": "/v2/runs", "request": "start.json", "status": 202, "response": "start-accepted.json" },
+  { "name": "events", "method": "GET", "path": "/v2/runs/{jobId}/events?cursor={cursor}", "status": 200, "response": "poll.json", "note": "the poll is the heartbeat: a run nobody polls for 30 s stops" },
+  { "name": "stop", "method": "POST", "path": "/v2/runs/{jobId}/stop", "request": "stop.json", "status": 200, "response": "answer.json" },
+  { "name": "steer", "method": "POST", "path": "/v2/runs/{jobId}/steer", "request": "steer.json", "status": 200, "response": "answer.json" },
+  { "name": "permission", "method": "POST", "path": "/v2/runs/{jobId}/permission", "request": "permission.json", "status": 200, "response": "answer.json" },
+  { "name": "questions", "method": "POST", "path": "/v2/runs/{jobId}/questions", "request": "questions.json", "status": 200, "response": "answer.json" },
+  { "name": "plan", "method": "POST", "path": "/v2/runs/{jobId}/plan", "request": "plan-revised.json", "status": 200, "response": "answer.json" },
+  { "name": "refused", "method": "GET", "path": "/v2/info", "status": 401, "response": "error.json" }
+]
