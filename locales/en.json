@@ -2862,6 +2862,7 @@
   "setup.windows.item.git.title": "Git for Windows",
   "setup.windows.confirm.body": "These commands run in this order in one separate PowerShell window. They run from your home folder, and a failed step moves on to the next. Answer any question in that window yourself. The app never asks for administrator rights and never takes a password; a tool installed for all users may show Windows' own administrator prompt.",
   "setup.windows.error.terminal": "Could not open the install window: {error}",
+  "setup.windows.error.elevated": "Not installing: Mighty Claude is running as administrator, so every step would run elevated and what it installs would not belong to your user. Open the app again without administrator rights and install from there.",
   "setup.windows.item.agy.detail": "Google's agent CLI (agy). Its official PowerShell installer puts it in %LOCALAPPDATA%\\agy\\bin.",
   "setup.windows.item.codex.detail": "OpenAI's agent CLI. Its official PowerShell installer puts it in %LOCALAPPDATA%\\Programs\\OpenAI\\Codex.",
   "setup.windows.item.gh.detail": "Used when an agent works with GitHub issues and pull requests. Installs with winget for all users, so Windows may show its administrator prompt.",

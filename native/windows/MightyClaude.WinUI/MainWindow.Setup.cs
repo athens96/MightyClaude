@@ -70,6 +70,8 @@ public sealed partial class MainWindow
     private async Task RefreshSetup(bool force = false, IReadOnlySet<string>? only = null)
     {
         if (closing || LoadSetupCatalog() is not { } catalog) { RedrawSetup(); return; }
+        // A smoke run probes nothing of the machine it runs on (다시 확인 included): only its own fixed results.
+        if (options.SmokeTest && setupFixedResults is null) { RedrawSetup(); return; }
         if (setupProbing) { if (force) setupForceQueued = true; return; }
         setupProbing = true; RedrawSetup();
         Dictionary<string, SetupProbeResult> results;
@@ -103,7 +105,8 @@ public sealed partial class MainWindow
     /// </summary>
     private async Task PresentSetupIfNeeded()
     {
-        if (options.SmokeTest || closing) return;
+        // 다시 보지 않기 means nothing is probed at launch at all.
+        if (options.SmokeTest || closing || SetupFirstRun.NeverShow()) return;
         await RefreshSetup();
         if (setupCatalog is { } catalog && SetupFirstRun.ShouldPresent(catalog, setupResults, SetupFirstRun.NeverShow())) OpenSetup();
     }
@@ -412,7 +415,7 @@ public sealed partial class MainWindow
 
     private async Task RequestSetupInstall(XamlRoot? xamlRoot)
     {
-        if (SetupRunning || BuildSetupConfirmation(xamlRoot, out var steps) is not { } dialog) return;
+        if (SetupRunning || RefuseSetupWhenElevated() || BuildSetupConfirmation(xamlRoot, out var steps) is not { } dialog) return;
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
         await StartSetupInstall(steps);
     }
@@ -423,7 +426,7 @@ public sealed partial class MainWindow
     /// </summary>
     private async Task StartSetupInstall(IReadOnlyList<SetupScriptStep> steps)
     {
-        if (SetupRunning || closing || options.SmokeTest) return;
+        if (SetupRunning || closing || options.SmokeTest || RefuseSetupWhenElevated()) return;
         var environment = CliEnvironment.Current();
         var folder = SetupScriptFiles.Folder(options.ProfileDirectory, Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData));
         string script; (string Started, string Done) markers;
@@ -444,10 +447,14 @@ public sealed partial class MainWindow
         {
             var argv = SetupScript.LaunchArguments(script, environment);
             var variables = WindowsCommand.Variables(environment);
-            var plan = CliAccountTerminal.LaunchPlan(argv, WindowsCommand.Find("wt", variables.GetValueOrDefault("PATH"), variables.GetValueOrDefault("PATHEXT")) is not null, folder, argv[0]);
+            // Windows Terminal by the full path found along the PATH, else the system folder's console host: never a bare name.
+            var terminal = WindowsCommand.Find("wt", variables.GetValueOrDefault("PATH"), variables.GetValueOrDefault("PATHEXT"));
+            var plan = CliAccountTerminal.LaunchPlan(argv, terminal is not null, folder, argv[0], terminal);
             var info = new System.Diagnostics.ProcessStartInfo(plan.Executable) { UseShellExecute = false, WorkingDirectory = folder };
             foreach (var value in plan.Arguments) info.ArgumentList.Add(value);
             foreach (var (key, value) in environment) info.Environment[key] = value;
+            // npx and claude are .cmd shims: their bare node is never looked for in the folder a step runs in.
+            info.Environment[WindowsCommand.NoCurrentDirectorySearch] = "1";
             using var process = System.Diagnostics.Process.Start(info) ?? throw new InvalidOperationException(Locale.Get("windows.process.startFailed"));
             setupTerminalsOpened++;
         }
@@ -459,6 +466,14 @@ public sealed partial class MainWindow
         setupRun = new SetupRun(steps.Select(step => step.ItemId).ToList(), markers.Started, markers.Done);
         RedrawSetup();
         await WatchSetupRun(setupRun);
+    }
+
+    /// <summary>An app started as administrator installs nothing from this screen: every step would run elevated. Says so and refuses.</summary>
+    private bool RefuseSetupWhenElevated()
+    {
+        if (!SetupScriptFiles.IsElevated()) return false;
+        setupMessage = Locale.Get("setup.windows.error.elevated"); RedrawSetup();
+        return true;
     }
 
     /// <summary>
