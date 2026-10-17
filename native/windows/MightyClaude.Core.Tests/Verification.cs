@@ -1073,6 +1073,13 @@ internal static class Verification
         await Test("batch files run through cmd with every argument quoted", WindowsCommandVerification.BatchFilesRunThroughCmdWithEveryArgumentQuoted);
         await Test("the toolkit executor fails a step that cannot start", WindowsCommandVerification.ToolkitExecutorFailsAStepThatCannotStart);
         await Test("an old Claude is out of date, not missing", WindowsCommandVerification.AnOldClaudeIsOutOfDateNotMissing);
+        await Test("setup: the catalog the app carries is the contract with a Windows entry per tool", SetupVerification.TheCatalogTheAppCarriesIsTheContractWithAWindowsEntryPerTool);
+        await Test("setup: the decoder refuses what the Mac's refuses and keeps winget to Windows", SetupVerification.TheDecoderRefusesWhatTheMacsRefusesAndKeepsWingetToWindows);
+        await Test("setup: prerequisites come first on Windows", SetupVerification.PrerequisitesComeFirstOnWindows);
+        await Test("setup: the script is PowerShell from the catalog alone", SetupVerification.TheScriptIsPowerShellFromTheCatalogAlone);
+        await Test("setup: the script folder is ours and markers never follow links", SetupVerification.TheScriptFolderIsOursAndMarkersNeverFollowLinks);
+        await Test("setup: probes read the PATH, the installers' folders, plugins and skills", SetupVerification.ProbesReadThePathTheInstallersFoldersPluginsAndSkills);
+        await Test("setup: rows and the first run follow the probes", SetupVerification.RowsAndTheFirstRunFollowTheProbes);
         await Test("components screen is live in the running app", ToolkitVerification.ComponentsScreenIsLiveInTheRunningApp);
         await Test("toolkit file round-trip is a fixed point", ToolkitVerification.ToolkitFileRoundTripIsAFixedPoint);
         await Test("step fetch eligibility is derived", ToolkitVerification.StepFetchEligibilityIsDerived);

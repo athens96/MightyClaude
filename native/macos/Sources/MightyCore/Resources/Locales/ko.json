@@ -2861,5 +2861,13 @@
   "setup.subtitle": "Mighty Claude가 쓰는 에이전트 CLI와 도구입니다. Git과 에이전트 CLI 하나가 있으면 시작할 수 있습니다. 빠진 것을 골라 앱의 터미널 창에서 설치합니다. 설치 여부는 실행 결과가 아니라 다시 확인한 상태로 판단합니다.",
   "setup.terminal.title": "도구 설치",
   "setup.title": "필요한 도구",
-  "setup.unverifiedDetail": "버전을 확인하지 못했습니다. {minimum} 이상이어야 합니다."
+  "setup.unverifiedDetail": "버전을 확인하지 못했습니다. {minimum} 이상이어야 합니다.",
+  "setup.windows.item.git.title": "Git for Windows",
+  "setup.windows.item.agy.detail": "Google의 에이전트 CLI(agy)입니다. 공식 PowerShell 설치 스크립트로 %LOCALAPPDATA%\\agy\\bin에 설치합니다.",
+  "setup.windows.item.codex.detail": "OpenAI의 에이전트 CLI입니다. 공식 PowerShell 설치 스크립트로 %LOCALAPPDATA%\\Programs\\OpenAI\\Codex에 설치합니다.",
+  "setup.windows.item.gh.detail": "에이전트가 GitHub 이슈와 PR을 다룰 때 씁니다. winget으로 모든 사용자용으로 설치하므로 Windows가 관리자 확인 창을 띄울 수 있습니다.",
+  "setup.windows.item.git.detail": "작업 트리, 커밋, 스킬 내려받기에 쓰고, Claude Code의 Bash 도구가 Git Bash를 씁니다. winget으로 이 사용자에게만 설치합니다.",
+  "setup.windows.item.glab.detail": "에이전트가 GitLab 이슈와 MR을 다룰 때 씁니다. winget으로 이 사용자에게만 설치합니다.",
+  "setup.windows.item.node.detail": "Paperthin 스킬을 설치하는 npx에 필요합니다. winget으로 모든 사용자용 LTS를 설치하므로 Windows가 관리자 확인 창을 띄울 수 있습니다.",
+  "setup.windows.script.close": "Enter 키를 누르면 이 창을 닫습니다."
 }

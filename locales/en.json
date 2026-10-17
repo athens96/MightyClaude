@@ -2861,5 +2861,13 @@
   "setup.subtitle": "The agent CLIs and tools Mighty Claude uses. Git and one agent CLI are enough to start. Pick what is missing and install it in a terminal window of the app. Whether something got installed is decided by checking again, not by how a command exited.",
   "setup.terminal.title": "Install tools",
   "setup.title": "Required tools",
-  "setup.unverifiedDetail": "Its version could not be read; {minimum} or later is needed."
+  "setup.unverifiedDetail": "Its version could not be read; {minimum} or later is needed.",
+  "setup.windows.item.git.title": "Git for Windows",
+  "setup.windows.item.agy.detail": "Google's agent CLI (agy). Its official PowerShell installer puts it in %LOCALAPPDATA%\\agy\\bin.",
+  "setup.windows.item.codex.detail": "OpenAI's agent CLI. Its official PowerShell installer puts it in %LOCALAPPDATA%\\Programs\\OpenAI\\Codex.",
+  "setup.windows.item.gh.detail": "Used when an agent works with GitHub issues and pull requests. Installs with winget for all users, so Windows may show its administrator prompt.",
+  "setup.windows.item.git.detail": "Used for worktrees, commits and skill downloads, and Claude Code's Bash tool runs in its Git Bash. Installs with winget for this user only.",
+  "setup.windows.item.glab.detail": "Used when an agent works with GitLab issues and merge requests. Installs with winget for this user only.",
+  "setup.windows.item.node.detail": "Needed for the npx that installs the Paperthin skills. Installs the LTS with winget for all users, so Windows may show its administrator prompt.",
+  "setup.windows.script.close": "Press Enter to close this window."
 }
