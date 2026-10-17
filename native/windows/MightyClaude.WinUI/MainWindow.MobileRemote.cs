@@ -184,16 +184,18 @@ public sealed partial class MainWindow
         // Enter in the field applies the port, as the Mac's field does on submit.
         port.KeyDown += async (_, args) => { if (args.Key != Windows.System.VirtualKey.Enter || !applyPort.IsEnabled) return; args.Handled = true; await ApplyPort(); };
         // The only button that elevates: add while there is none, remove while there is one. It is off while a change waits on Windows'
-        // UAC prompt and comes back (FirewallChanged) once that change ends, approved, cancelled, refused, failed or timed out.
-        firewallButton = SettingsPush(SafeButton(MobileDirectStrings.FirewallButton(FirewallRuleState.Absent), () => ChangeFirewallRule(firewallState != FirewallRuleState.Present)), SettingsControlSize.Small);
+        // UAC prompt and comes back (FirewallChanged) once that change ends, approved, cancelled, refused, failed or timed out. While the
+        // rule could not be read it reads it again instead (unelevated), so an unknown state is never a dead end.
+        firewallButton = SettingsPush(SafeButton(MobileDirectStrings.FirewallButton(FirewallRuleState.Absent), () => firewallState == FirewallRuleState.Unknown ? RecheckFirewallRule() : ChangeFirewallRule(firewallState != FirewallRuleState.Present)), SettingsControlSize.Small);
         AutomationProperties.SetAutomationId(firewallButton, "settings-mobile-firewall-button");
         enabled.Checked += async (_, _) => { if (!showing) await Write(saved => saved with { Enabled = true }); };
         // A switch the user turns off (never one the code sets: `showing`) takes the rule away when nothing needs it, from that same click.
-        enabled.Unchecked += async (_, _) => { if (showing) return; await Write(saved => saved with { Enabled = false }); await Act(RemoveFirewallRuleIfUnneeded); if (!closing && rows.IsLoaded) ShowDirect(); };
+        // The rule is looked at before Act, which clears the error line: a failed write's own error stays on screen when nothing elevates.
+        enabled.Unchecked += async (_, _) => { if (showing) return; await Write(saved => saved with { Enabled = false }); if (firewallState == FirewallRuleState.Present && FirewallPorts().Count == 0) await Act(RemoveFirewallRuleIfUnneeded); if (!closing && rows.IsLoaded) ShowDirect(); };
         legacy.Checked += async (_, _) => { if (!showing) await Write(saved => saved with { AllowLegacyPhones = true }); };
         legacy.Unchecked += async (_, _) => { if (!showing) await Write(saved => saved with { AllowLegacyPhones = false }); };
         direct.Checked += async (_, _) => { if (!showing) await Write(saved => saved with { DirectEnabled = true }); };
-        direct.Unchecked += async (_, _) => { if (showing) return; await Write(saved => saved with { DirectEnabled = false }); await Act(RemoveFirewallRuleIfUnneeded); if (!closing && rows.IsLoaded) ShowDirect(); };
+        direct.Unchecked += async (_, _) => { if (showing) return; await Write(saved => saved with { DirectEnabled = false }); if (firewallState == FirewallRuleState.Present && FirewallPorts().Count == 0) await Act(RemoveFirewallRuleIfUnneeded); if (!closing && rows.IsLoaded) ShowDirect(); };
         relay.TextChanged += (_, _) => ShowApply();
         // Enter in the field applies the address, as the Mac's field does on submit (M/MobileRemoteSettingsView.swift:31).
         relay.KeyDown += async (_, args) => { if (args.Key != Windows.System.VirtualKey.Enter || !apply.IsEnabled) return; args.Handled = true; await ApplyRelay(); };
@@ -300,8 +302,11 @@ public sealed partial class MainWindow
             directDot.Fill = brushes.Brush(status.Listening ? DesignToken.Done : DesignToken.Ink3);
             directStatus.Text = words;
             firewallText.Text = MobileDirectStrings.FirewallState(firewallState) + (firewallMessage is { } message ? " · " + message : "");
-            var label = MobileDirectStrings.FirewallButton(firewallState); firewallButton.Content = label; AutomationProperties.SetName(firewallButton, label);
-            firewallButton.IsEnabled = !options.SmokeTest && !firewallBusy && firewallState != FirewallRuleState.Unknown && (firewallState == FirewallRuleState.Present || FirewallPorts().Count > 0);
+            var label = firewallState == FirewallRuleState.Unknown ? MobileDirectStrings.FirewallRecheckButton : MobileDirectStrings.FirewallButton(firewallState);
+            firewallButton.Content = label; AutomationProperties.SetName(firewallButton, label);
+            // With no port to open (the remote off) and no rule to remove there is nothing to press, so the button is not shown at all.
+            firewallButton.Visibility = firewallState != FirewallRuleState.Absent || FirewallPorts().Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            firewallButton.IsEnabled = !options.SmokeTest && !firewallBusy;
         }
         // The "connected" and "new device" marks (M/MobileRemoteSettingsView.swift:150-163): 9pt medium on the soft fill, a capsule.
         Border Mark(string text, DesignToken ink, DesignToken fill, string id)
@@ -349,7 +354,7 @@ public sealed partial class MainWindow
         // Until the host has been read (and for the whole of a smoke run) the section shows its switches and the saved state only.
         HidePairing(); reconnect.Visibility = service.Snapshot.MobileRemote.Enabled ? Visibility.Visible : Visibility.Collapsed; RefreshPairingText(); ShowState(); ShowControls();
         void FirewallUpdated() { if (!closing && rows.IsLoaded) ShowDirect(); }
-        rows.Loaded += async (_, _) => { if (options.SmokeTest) { enabled.IsEnabled = relay.IsEnabled = legacy.IsEnabled = apply.IsEnabled = reconnect.IsEnabled = direct.IsEnabled = port.IsEnabled = applyPort.IsEnabled = firewallButton.IsEnabled = false; HidePairing(); RefreshPairingText(); return; } FirewallChanged -= FirewallUpdated; FirewallChanged += FirewallUpdated; await Act(async () => { await InitializeMobileRemote(); await RefreshFirewallState(); if (closing || !rows.IsLoaded || mobileHost is null) return; mobileHost.StatusChanged += Updated; await Refresh(); }); };
+        rows.Loaded += async (_, _) => { if (options.SmokeTest) { enabled.IsEnabled = relay.IsEnabled = legacy.IsEnabled = apply.IsEnabled = reconnect.IsEnabled = direct.IsEnabled = port.IsEnabled = applyPort.IsEnabled = firewallButton.IsEnabled = false; HidePairing(); RefreshPairingText(); return; } FirewallChanged -= FirewallUpdated; FirewallChanged += FirewallUpdated; await Act(async () => { await InitializeMobileRemote(); if (!firewallBusy) await RefreshFirewallState(); if (closing || !rows.IsLoaded || mobileHost is null) return; mobileHost.StatusChanged += Updated; await Refresh(); }); };
         rows.Unloaded += (_, _) => { if (!rows.IsLoaded) FirewallChanged -= FirewallUpdated; if (mobileHost is not null) mobileHost.StatusChanged -= Updated; qr.Source = null; showsKey = false; pairingKey.Text = ""; hostId.Text = ""; };
         return rows;
     }
