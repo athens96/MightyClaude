@@ -16,6 +16,8 @@ public static class MobileDirectStrings
         "mobileRemote.direct.windows.firewall.failedTemplate", "mobileRemote.direct.windows.firewall.badProgram", "mobileRemote.direct.windows.firewall.noPorts",
         "mobileRemote.direct.windows.firewall.badPorts", "mobileRemote.direct.windows.firewall.timeout", "mobileRemote.direct.windows.firewall.queryFailed",
         "mobileRemote.direct.windows.firewall.noSystemDirectory", "mobileRemote.direct.windows.firewall.failedUnknown",
+        "mobileRemote.direct.windows.error.addressInUse", "mobileRemote.direct.windows.error.accessDenied", "mobileRemote.direct.windows.error.bindFailed",
+        "mobileRemote.direct.windows.error.adaptersUnreadable",
     ];
 
     public static string Description => Locale.Get("mobileRemote.direct.windows.description");
@@ -34,6 +36,18 @@ public static class MobileDirectStrings
 
     public static string FirewallButton(FirewallRuleState state) =>
         Locale.Get(state == FirewallRuleState.Present ? "mobileRemote.direct.windows.firewall.removeButton" : "mobileRemote.direct.windows.firewall.addButton");
+
+    /// <summary>
+    /// Why the direct path could not listen, in words: each <see cref="MobileDirectError"/> code has its own, and anything else (no
+    /// code, or text that is not one) says the general bind failure, so no raw operating-system text reaches the status line.
+    /// </summary>
+    public static string Error(string? code) => Locale.Get(code switch
+    {
+        MobileDirectError.AddressInUse => "mobileRemote.direct.windows.error.addressInUse",
+        MobileDirectError.AccessDenied => "mobileRemote.direct.windows.error.accessDenied",
+        MobileDirectError.AdaptersUnreadable => "mobileRemote.direct.windows.error.adaptersUnreadable",
+        _ => "mobileRemote.direct.windows.error.bindFailed",
+    });
 
     /// <summary>
     /// What a change that did not happen says; null after one that did. Every detail code has its own words. Only a netsh exit code

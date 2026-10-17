@@ -125,6 +125,9 @@ public sealed partial class MainWindow
         // Each switch is saved and takes effect as it is switched, and the button applies the address alone
         // (M/MobileRemoteSettingsView.swift:19, 32, 88).
         Button apply = null!; var writing = false; var showing = false; var savedRelay = service.Snapshot.MobileRemote.RelayURL;
+        // Set only by a switch the user turned off (never one the code sets: `showing`): once the changes then under way have all
+        // landed, the rule is taken away if nothing needs it any more, still as that click's own removal (RemoveRuleAfterOff).
+        var removeRuleWhenSettled = false;
         // An address as it is saved: the same address typed without its scheme is not another address.
         static string Same(string address) => address.Length == 0 ? "" : MobileRelayHost.NormalizeRelay(address) ?? address;
         // On only for another address that can be used; an empty field goes back to the address shown before it.
@@ -165,7 +168,12 @@ public sealed partial class MainWindow
                 // nothing is tried again by itself.
                 bool wantsOn = enabled.IsChecked == true, wantsLegacy = legacy.IsChecked == true, wantsDirect = direct.IsChecked == true;
                 if (meant is not null && !closing && (wantsOn != meant.Enabled || wantsLegacy != meant.AllowLegacyPhones || wantsDirect != meant.DirectEnabled)) _ = Write(next => next with { Enabled = wantsOn, AllowLegacyPhones = wantsLegacy, DirectEnabled = wantsDirect });
-                else ShowControls();
+                else
+                {
+                    ShowControls();
+                    // The last queued change has landed: an off-click pressed meanwhile (whose own Write only queued it) looks at the rule now.
+                    if (removeRuleWhenSettled) { removeRuleWhenSettled = false; _ = RemoveRuleAfterOff(); }
+                }
             }
         });
         async Task ApplyRelay()
@@ -190,12 +198,24 @@ public sealed partial class MainWindow
         AutomationProperties.SetAutomationId(firewallButton, "settings-mobile-firewall-button");
         enabled.Checked += async (_, _) => { if (!showing) await Write(saved => saved with { Enabled = true }); };
         // A switch the user turns off (never one the code sets: `showing`) takes the rule away when nothing needs it, from that same click.
+        // While an earlier change is still being applied, the click's Write only queues it; the rule is then looked at once the queued
+        // change lands (Write's last finally), not now, when the saved settings still need the port.
         // The rule is looked at before Act, which clears the error line: a failed write's own error stays on screen when nothing elevates.
-        enabled.Unchecked += async (_, _) => { if (showing) return; await Write(saved => saved with { Enabled = false }); if (firewallState == FirewallRuleState.Present && FirewallPorts().Count == 0) await Act(RemoveFirewallRuleIfUnneeded); if (!closing && rows.IsLoaded) ShowDirect(); };
+        async Task RemoveRuleAfterOff() { if (firewallState == FirewallRuleState.Present && FirewallPorts().Count == 0) await Act(RemoveFirewallRuleIfUnneeded); if (!closing && rows.IsLoaded) ShowDirect(); }
+        async Task SwitchedOff(Func<MobileRemoteSettings, MobileRemoteSettings> change)
+        {
+            var queued = writing; if (queued) removeRuleWhenSettled = true;
+            await Write(change);
+            if (queued) return;
+            // A press made while this change was applied is being applied now: the rule waits for that one to land too.
+            if (writing) { removeRuleWhenSettled = true; return; }
+            await RemoveRuleAfterOff();
+        }
+        enabled.Unchecked += async (_, _) => { if (showing) return; await SwitchedOff(saved => saved with { Enabled = false }); };
         legacy.Checked += async (_, _) => { if (!showing) await Write(saved => saved with { AllowLegacyPhones = true }); };
         legacy.Unchecked += async (_, _) => { if (!showing) await Write(saved => saved with { AllowLegacyPhones = false }); };
         direct.Checked += async (_, _) => { if (!showing) await Write(saved => saved with { DirectEnabled = true }); };
-        direct.Unchecked += async (_, _) => { if (showing) return; await Write(saved => saved with { DirectEnabled = false }); if (firewallState == FirewallRuleState.Present && FirewallPorts().Count == 0) await Act(RemoveFirewallRuleIfUnneeded); if (!closing && rows.IsLoaded) ShowDirect(); };
+        direct.Unchecked += async (_, _) => { if (showing) return; await SwitchedOff(saved => saved with { DirectEnabled = false }); };
         relay.TextChanged += (_, _) => ShowApply();
         // Enter in the field applies the address, as the Mac's field does on submit (M/MobileRemoteSettingsView.swift:31).
         relay.KeyDown += async (_, args) => { if (args.Key != Windows.System.VirtualKey.Enter || !apply.IsEnabled) return; args.Handled = true; await ApplyRelay(); };

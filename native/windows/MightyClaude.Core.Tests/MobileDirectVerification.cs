@@ -74,7 +74,19 @@ internal static class MobileDirectVerification
         Check(MobileDirectStatusText.Detail(new("notFound", [])) == Locale.Get("mobileRemote.direct.status.notFound"), "no Tailscale");
         Check(MobileDirectStatusText.Detail(new("listening", ["100.101.102.103:43139", "[fd7a:115c:a1e0::1]:43139"]))
             == Locale.Get("mobileRemote.direct.status.listeningTemplate", new Dictionary<string, string> { ["addresses"] = "100.101.102.103:43139, [fd7a:115c:a1e0::1]:43139" }), "the endpoints listened on");
-        Check(MobileDirectStatusText.Detail(new("failed", [], "in use")) == Locale.Get("mobileRemote.direct.status.failedTemplate", new Dictionary<string, string> { ["error"] = "in use" }), "why binding failed");
+        string Failed(string key) => Locale.Get("mobileRemote.direct.status.failedTemplate", new Dictionary<string, string> { ["error"] = Locale.Get(key) });
+        Check(MobileDirectStatusText.Detail(new("failed", [], MobileDirectError.AddressInUse)) == Failed("mobileRemote.direct.windows.error.addressInUse")
+            && MobileDirectStatusText.Detail(new("failed", [], MobileDirectError.AccessDenied)) == Failed("mobileRemote.direct.windows.error.accessDenied")
+            && MobileDirectStatusText.Detail(new("failed", [], MobileDirectError.BindFailed)) == Failed("mobileRemote.direct.windows.error.bindFailed")
+            && MobileDirectStatusText.Detail(new("failed", [], MobileDirectError.AdaptersUnreadable)) == Failed("mobileRemote.direct.windows.error.adaptersUnreadable"), "why binding failed, in words");
+        // Raw operating-system text, or no reason at all, never reaches the line: it says the general bind failure instead.
+        foreach (var raw in new string?[] { "Only one usage of each socket address (protocol/network address/port) is normally permitted.", "Der Zugriff wurde verweigert", "in use", "", null })
+            Check(MobileDirectStatusText.Detail(new("failed", [], raw)) == Failed("mobileRemote.direct.windows.error.bindFailed"), "raw text is never shown: " + (raw ?? "null"));
+        // A listener that could not start is named by its socket error, never by the socket's text.
+        Check(MobileDirectError.Of(new SocketException((int)SocketError.AddressAlreadyInUse)) == MobileDirectError.AddressInUse
+            && MobileDirectError.Of(new SocketException((int)SocketError.AccessDenied)) == MobileDirectError.AccessDenied
+            && MobileDirectError.Of(new SocketException((int)SocketError.AddressNotAvailable)) == MobileDirectError.BindFailed
+            && MobileDirectError.Of(new SocketException((int)SocketError.NetworkDown)) == MobileDirectError.BindFailed, "socket errors map to codes");
         Check(new MobileDirectStatus("listening", ["x"]).Listening && !MobileDirectStatus.Off.Listening, "Listening is computed");
         Check(JsonSerializer.Serialize(MobileDirectStatus.Off, Wire.Json) == "{\"state\":\"off\",\"endpoints\":[]}", "the computed property is never serialized");
         return Task.CompletedTask;
@@ -170,7 +182,10 @@ internal static class MobileDirectVerification
             using var taken = new TcpListener(IPAddress.Loopback, 0); taken.Start(); var busy = ((IPEndPoint)taken.LocalEndpoint).Port;
             var second = new MobileDirectListener(_ => { });
             var failed = second.Update(["127.0.0.1"], busy); second.Stop();
-            Check(failed.Bound.Count == 0 && failed.Error is { Length: > 0 }, "a taken port is a bind error");
+            Check(failed.Bound.Count == 0 && failed.Error is MobileDirectError.AddressInUse or MobileDirectError.AccessDenied, "a taken port is a bind error, as a code and never the socket's text: " + failed.Error);
+            var unparsable = new MobileDirectListener(_ => { });
+            try { Check(unparsable.Update(["not an address"], 0) is { Bound.Count: 0, Error: MobileDirectError.BindFailed }, "an address that is no IP is the general bind failure, never the address itself"); }
+            finally { unparsable.Stop(); }
 
             // Stop closes every listener.
             listener.Stop();
@@ -285,7 +300,7 @@ internal static class MobileDirectVerification
     }
 
     /// <summary>A phone on the direct path: ws://endpoint/ws?v=1, hello, the paired key checked, then encrypted frames.</summary>
-    private sealed class DirectPhone(ClientWebSocket socket, RelayCipher cipher) : IAsyncDisposable
+    private sealed class DirectPhone(WebSocket socket, RelayCipher cipher) : IAsyncDisposable
     {
         internal static async Task<DirectPhone> ConnectAsync(string endpoint, string pairingUrl, CancellationToken token)
         {
@@ -293,6 +308,15 @@ internal static class MobileDirectVerification
             try
             {
                 await socket.ConnectAsync(new Uri("ws://" + endpoint + "/ws?v=1"), token);
+                return await HandshakeAsync(socket, pairingUrl, token);
+            }
+            catch { socket.Dispose(); throw; }
+        }
+
+        /// <summary>The phone's side of the handshake over a socket already open (a direct one, or the relay's data socket in a fixture).</summary>
+        internal static async Task<DirectPhone> HandshakeAsync(WebSocket socket, string pairingUrl, CancellationToken token)
+        {
+            {
                 var secret = RandomNumberGenerator.GetBytes(32); var nonce = RandomNumberGenerator.GetBytes(16);
                 await socket.SendAsync(JsonSerializer.SerializeToUtf8Bytes(new { type = "hello", v = 1, clientKey = Convert.ToBase64String(RelayCipher.PublicKey(secret)), nonce = Convert.ToBase64String(nonce) }, Wire.Json), WebSocketMessageType.Text, true, token);
                 using var ready = JsonDocument.Parse(await Receive(socket, token));
@@ -300,7 +324,19 @@ internal static class MobileDirectVerification
                 Check(Query(pairingUrl, "pk").Replace('-', '+').Replace('_', '/') + "=" == Convert.ToBase64String(server), "the direct path answers with the paired public key");
                 return new(socket, new RelayCipher(secret, server, nonce, Convert.FromBase64String(ready.RootElement.Text("nonce")!), false));
             }
-            catch { socket.Dispose(); throw; }
+        }
+
+        /// <summary>Seals <paramref name="plaintext"/> and sends it without waiting for an answer.</summary>
+        internal Task SendRawAsync(byte[] plaintext, CancellationToken token) => socket.SendAsync(cipher.Seal(plaintext), WebSocketMessageType.Binary, true, token);
+
+        /// <summary>Sends <paramref name="frame"/> as one binary frame, unsealed: the cipher itself refuses to seal past the limit.</summary>
+        internal Task SendFrameAsync(byte[] frame, CancellationToken token) => socket.SendAsync(frame, WebSocketMessageType.Binary, true, token);
+
+        /// <summary>Whether the host ended the connection: the next read is a close or a failure, not a frame.</summary>
+        internal async Task<bool> EndedAsync(CancellationToken token)
+        {
+            try { await Receive(socket, token); return false; }
+            catch (Exception ex) when (ex is IOException or WebSocketException) { return true; }
         }
 
         internal Task<JsonDocument> ExchangeAsync(object message, CancellationToken token) => ExchangeRawAsync(JsonSerializer.SerializeToUtf8Bytes(message, Wire.Json), token);
@@ -401,7 +437,9 @@ internal static class MobileDirectVerification
             // Adapters that cannot be read: the watch says so and keeps going, and listens again once they can be.
             Volatile.Write(ref addresses, null);
             await Verification.Until(() => host.DirectStatus.State == "failed");
-            Check(host.DirectStatus.Error == "adapters unreadable" && host.DirectEndpoints.Count == 0, "a read that fails is reported, not thrown into the watch");
+            Check(host.DirectStatus.Error == MobileDirectError.AdaptersUnreadable && host.DirectEndpoints.Count == 0, "a read that fails is reported, not thrown into the watch");
+            Check(MobileDirectStatusText.Detail(host.DirectStatus) == Locale.Get("mobileRemote.direct.status.failedTemplate", new Dictionary<string, string> { ["error"] = Locale.Get("mobileRemote.direct.windows.error.adaptersUnreadable") })
+                && !MobileDirectStatusText.Detail(host.DirectStatus).Contains("adapters unreadable", StringComparison.Ordinal), "it says so in words, never the fault's own text");
             // Only a pass that changes the status object publishes; several ticks that fail the same way keep the one it has.
             var failed = host.DirectStatus; await Task.Delay(700);
             Check(ReferenceEquals(host.DirectStatus, failed), "a pass that ends where it began keeps its status and publishes nothing");
@@ -500,7 +538,25 @@ internal static class MobileDirectVerification
             Check(catalogue["mobileRemote.direct.windows.firewall.failedTemplate"].Contains("{error}", StringComparison.Ordinal), language + ": the failure names its error");
             Check(!catalogue["mobileRemote.direct.windows.description"].Contains("Mac", StringComparison.Ordinal), language + ": the Windows description names no Mac");
         }
-        Check(MobileDirectStrings.Keys.Count == 17 && MobileDirectStrings.Keys.All(key => key.StartsWith("mobileRemote.direct.windows.", StringComparison.Ordinal)), "seventeen Windows-only keys");
+        Check(MobileDirectStrings.Keys.Count == 21 && MobileDirectStrings.Keys.All(key => key.StartsWith("mobileRemote.direct.windows.", StringComparison.Ordinal)), "twenty-one Windows-only keys");
+        // Why the path could not listen: each code its own words, in every language, and the four are distinct.
+        var errors = new Dictionary<string, string>
+        {
+            [MobileDirectError.AddressInUse] = "mobileRemote.direct.windows.error.addressInUse", [MobileDirectError.AccessDenied] = "mobileRemote.direct.windows.error.accessDenied",
+            [MobileDirectError.BindFailed] = "mobileRemote.direct.windows.error.bindFailed", [MobileDirectError.AdaptersUnreadable] = "mobileRemote.direct.windows.error.adaptersUnreadable",
+        };
+        foreach (var (code, key) in errors) Check(MobileDirectStrings.Keys.Contains(key) && MobileDirectStrings.Error(code) == Locale.Get(key), code + " has its words");
+        Check(errors.Keys.Select(MobileDirectStrings.Error).Distinct().Count() == errors.Count, "each reason says its own words");
+        var languageBefore = Locale.LanguagePreference;
+        try
+        {
+            foreach (var language in Locale.Languages)
+            {
+                Locale.LanguagePreference = language; Locale.ResetCache();
+                foreach (var (code, key) in errors) Check(MobileDirectStrings.Error(code) == Locale.Catalogue(language)[key], language + ": " + code);
+            }
+        }
+        finally { Locale.LanguagePreference = languageBefore; Locale.ResetCache(); }
         Check(MobileDirectStrings.FirewallState(FirewallRuleState.Present) == Locale.Get("mobileRemote.direct.windows.firewall.present") && MobileDirectStrings.FirewallState(FirewallRuleState.Absent) == Locale.Get("mobileRemote.direct.windows.firewall.absent")
             && MobileDirectStrings.FirewallState(FirewallRuleState.Unknown) == Locale.Get("mobileRemote.direct.windows.firewall.unknown"), "the rule's three states");
         Check(MobileDirectStrings.FirewallButton(FirewallRuleState.Present) == Locale.Get("mobileRemote.direct.windows.firewall.removeButton") && MobileDirectStrings.FirewallButton(FirewallRuleState.Absent) == Locale.Get("mobileRemote.direct.windows.firewall.addButton"), "the button adds when absent and removes when present");
@@ -545,6 +601,143 @@ internal static class MobileDirectVerification
         return Task.CompletedTask;
     }
 
+    /// <summary>A frame on the direct path may be 1 MiB, as on the relay: one exactly that size is read, one byte more ends the connection.</summary>
+    internal static async Task ADirectFrameOverOneMiBIsRefused()
+    {
+        var directory = Temp(); using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var host = new MobileRelayHost(Path.Combine(directory, "identity"), "Fixture", [], (_, path, _, _, _) => Task.FromResult(new MobileReply(200, new { protocol = 1, path }))) { WatchesNetwork = false };
+        try
+        {
+            host.SetDirectAddressSource(() => ["127.0.0.1"]);
+            await host.ApplyAsync(new MobileRemoteSettings(true, "ws://127.0.0.1:9"));
+            await using var phone = await DirectPhone.ConnectAsync(host.DirectEndpoints.Single(), host.PairingUrl, timeout.Token);
+            using (var auth = await phone.ExchangeAsync(new { type = "auth", pairingKey = Query(host.PairingUrl, "key"), clientId = "abcdefghijklmnopqrstuv", clientName = "Fixture Phone" }, timeout.Token))
+                Check(auth.RootElement.Text("type") == "auth_ok", "the phone is in");
+            // A JSON object with a type the host skips, padded so its sealed frame is the size asked for.
+            static byte[] Padded(int plaintext)
+            {
+                var head = "{\"type\":\"fixture-padding\",\"pad\":\""u8.ToArray(); var tail = "\"}"u8.ToArray();
+                var bytes = new byte[plaintext]; Array.Fill(bytes, (byte)'a');
+                head.CopyTo(bytes, 0); tail.CopyTo(bytes, plaintext - tail.Length); return bytes;
+            }
+            Check(MobileRelayHost.MaximumPlaintext + 28 == MobileDirect.MaximumFrameBytes, "the seal takes 28 bytes of the 1 MiB frame");
+            await phone.SendRawAsync(Padded(MobileRelayHost.MaximumPlaintext), timeout.Token);
+            using (var info = await phone.ExchangeAsync(new { id = "after-full-frame", method = "GET", path = "/m1/info" }, timeout.Token))
+                Check(info.RootElement.Text("id") == "after-full-frame", "a frame of exactly 1 MiB is read and the connection goes on");
+            // The phone's cipher will not seal past the limit, so the frame one byte over goes unsealed: the host stops reading it at the
+            // limit, before any decryption.
+            await phone.SendFrameAsync(new byte[MobileDirect.MaximumFrameBytes + 1], timeout.Token);
+            Check(await phone.EndedAsync(timeout.Token), "a frame one byte over 1 MiB ends the connection");
+            await Verification.Until(() => host.ConnectionIds.Count == 0);
+            Check(host.DirectStatus.Listening, "the listener stays up for the next phone");
+        }
+        finally { await host.DisposeAsync(); Directory.Delete(directory, true); }
+    }
+
+    /// <summary>On the relay path an auth frame that decrypts but is no JSON is answered as malformed (the relay path says why; only the direct path says one word).</summary>
+    internal static async Task ARelayAuthFrameThatIsNoJsonIsMalformed()
+    {
+        var directory = Temp(); using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var answer = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var pairing = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var builder = WebApplication.CreateEmptyBuilder(new WebApplicationOptions { Args = [], ContentRootPath = AppContext.BaseDirectory }); builder.Logging.ClearProviders(); builder.WebHost.UseKestrelCore(); builder.WebHost.ConfigureKestrel(o => o.Listen(IPAddress.Loopback, 0));
+        await using var app = builder.Build(); app.UseWebSockets();
+        app.Run(async context =>
+        {
+            try
+            {
+                using var socket = await context.WebSockets.AcceptWebSocketAsync();
+                if (context.Request.Query.TryGetValue("connectionId", out _))
+                {
+                    // The relay's data socket, played by the phone itself: hello, ready, then a sealed auth frame that is no JSON.
+                    await using var phone = await DirectPhone.HandshakeAsync(socket, await pairing.Task.WaitAsync(timeout.Token), timeout.Token);
+                    using var refused = await phone.ExchangeRawAsync("not json {"u8.ToArray(), timeout.Token);
+                    answer.TrySetResult(refused.RootElement.Text("type") + " " + refused.RootElement.Text("reason"));
+                    return;
+                }
+                await socket.SendAsync(JsonSerializer.SerializeToUtf8Bytes(new { type = "connected", connectionId = "fixture-relay-phone" }, Wire.Json), WebSocketMessageType.Text, true, timeout.Token);
+                var buffer = new byte[1024]; while ((await socket.ReceiveAsync(buffer, timeout.Token)).MessageType != WebSocketMessageType.Close) { }
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException) { answer.TrySetException(ex); }
+        });
+        await app.StartAsync(timeout.Token);
+        var relay = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
+        var host = new MobileRelayHost(Path.Combine(directory, "identity"), "Fixture", [], (_, path, _, _, _) => Task.FromResult(new MobileReply(200, new { protocol = 1, path }))) { WatchesNetwork = false };
+        try
+        {
+            pairing.SetResult(host.PairingUrl);
+            await host.ApplyAsync(new MobileRemoteSettings(true, relay, DirectEnabled: false));
+            Check(await answer.Task.WaitAsync(timeout.Token) == "auth_error malformed", "a relay phone's auth frame that is no JSON is answered malformed");
+        }
+        finally { await host.DisposeAsync(); await app.StopAsync(CancellationToken.None); Directory.Delete(directory, true); }
+    }
+
+    /// <summary>A stand-in for the window's thread: one thread that runs everything posted to it, so awaits resume on it as they do in the app.</summary>
+    private sealed class WindowThread : SynchronizationContext, IDisposable
+    {
+        private readonly BlockingCollection<(SendOrPostCallback Callback, object? State)> queue = [];
+        private readonly Thread thread;
+        internal int Id => thread.ManagedThreadId;
+        internal WindowThread()
+        {
+            thread = new Thread(() => { SetSynchronizationContext(this); foreach (var (callback, state) in queue.GetConsumingEnumerable()) callback(state); }) { IsBackground = true };
+            thread.Start();
+        }
+        public override void Post(SendOrPostCallback d, object? state) => queue.Add((d, state));
+        public override void Send(SendOrPostCallback d, object? state) => throw new NotSupportedException();
+        public override SynchronizationContext CreateCopy() => this;
+        /// <summary>Starts <paramref name="action"/> on this thread; the task ends when it does.</summary>
+        internal Task Run(Func<Task> action)
+        {
+            var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            Post(async _ => { try { await action(); done.TrySetResult(); } catch (Exception ex) { done.TrySetException(ex); } }, null);
+            return done.Task;
+        }
+        public void Dispose() => queue.CompleteAdding();
+    }
+
+    /// <summary>
+    /// Settings applies from the window's thread: the adapters are read off that thread and outside the lock the listeners' accepts
+    /// take, so the window never waits on a slow read, a phone still gets in meanwhile, and the listener it came in on is kept.
+    /// </summary>
+    internal static async Task SettingsReadTheAdaptersOffTheCallerAndOutsideTheLock()
+    {
+        var directory = Temp(); using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var gate = new ManualResetEventSlim(false); using var window = new WindowThread();
+        var hold = false; var held = 0; var readOn = new ConcurrentBag<int>();
+        var host = new MobileRelayHost(Path.Combine(directory, "identity"), "Fixture", [], (_, path, _, _, _) => Task.FromResult(new MobileReply(200, new { protocol = 1, path }))) { WatchesNetwork = false };
+        try
+        {
+            host.SetDirectAddressSource(() =>
+            {
+                readOn.Add(Environment.CurrentManagedThreadId);
+                if (Volatile.Read(ref hold)) { Interlocked.Increment(ref held); gate.Wait(TimeSpan.FromSeconds(10)); }
+                return ["127.0.0.1"];
+            });
+            await window.Run(() => host.ApplyAsync(new MobileRemoteSettings(true, "ws://127.0.0.1:9")));
+            var endpoint = host.DirectEndpoints.Single();
+            Check(!readOn.IsEmpty && !readOn.Contains(window.Id), "turning the remote on reads the adapters off the window's thread");
+            Volatile.Write(ref hold, true);
+            var applying = window.Run(() => host.ApplyAsync(new MobileRemoteSettings(true, "ws://127.0.0.1:9", DirectPort: MobileDirect.DefaultPort + 1)));
+            await Verification.Until(() => Volatile.Read(ref held) > 0);
+            // The window is free while the read waits: something else posted to it runs now.
+            Check(await window.Run(() => Task.CompletedTask).WaitAsync(TimeSpan.FromSeconds(3)).ContinueWith(task => task.IsCompletedSuccessfully), "the window's thread is not held by the read");
+            await using (var phone = await DirectPhone.ConnectAsync(endpoint, host.PairingUrl, timeout.Token))
+            {
+                using var auth = await phone.ExchangeAsync(new { type = "auth", pairingKey = Query(host.PairingUrl, "key"), clientId = "abcdefghijklmnopqrstuv", clientName = "Fixture Phone" }, timeout.Token);
+                Check(auth.RootElement.Text("type") == "auth_ok", "a phone gets in while the read is under way: the lock is not held by it");
+                Check(!applying.IsCompleted, "the read was still under way");
+                Volatile.Write(ref hold, false); gate.Set();
+                await applying;
+                Check(!readOn.Contains(window.Id), "nor is any later read on the window's thread");
+                Check(host.DirectStatus.Listening && host.DirectEndpoints.SequenceEqual([endpoint]), "the read then binds as before: the same listener is kept");
+                using var after = await phone.ExchangeAsync(new { id = "after-apply", method = "GET", path = "/m1/info" }, timeout.Token);
+                Check(after.RootElement.Text("id") == "after-apply", "and the phone on it stays");
+            }
+        }
+        finally { Volatile.Write(ref hold, false); gate.Set(); await host.DisposeAsync(); Directory.Delete(directory, true); }
+    }
+
     private static string Root()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
@@ -565,8 +758,14 @@ internal static class MobileDirectVerification
         Check(remote.Contains("await Act(RemoveFirewallRuleIfUnneeded);", StringComparison.Ordinal), "turning the path off takes the rule away from that same click");
         // Only a switch the user turns off may elevate, never one the code sets, and a failed write's error is not cleared when nothing elevates.
         foreach (var name in new[] { "enabled", "direct" })
-            Check(remote.Contains(name + ".Unchecked += async (_, _) => { if (showing) return; await Write(", StringComparison.Ordinal), name + "'s switch-off ignores values the code sets");
-        Check(System.Text.RegularExpressions.Regex.Matches(remote, @"if \(firewallState == FirewallRuleState\.Present && FirewallPorts\(\)\.Count == 0\) await Act\(RemoveFirewallRuleIfUnneeded\);").Count == 2, "the rule is looked at before Act clears the error line");
+            Check(remote.Contains(name + ".Unchecked += async (_, _) => { if (showing) return; await SwitchedOff(", StringComparison.Ordinal), name + "'s switch-off ignores values the code sets");
+        Check(System.Text.RegularExpressions.Regex.Matches(remote, @"if \(firewallState == FirewallRuleState\.Present && FirewallPorts\(\)\.Count == 0\) await Act\(RemoveFirewallRuleIfUnneeded\);").Count == 1
+            && remote.Contains("async Task RemoveRuleAfterOff() { if (firewallState == FirewallRuleState.Present && FirewallPorts().Count == 0) await Act(RemoveFirewallRuleIfUnneeded);", StringComparison.Ordinal), "the rule is looked at before Act clears the error line");
+        // An off-click while an earlier change is still applying only queues its change: the rule is looked at once the last queued
+        // change lands, and only an off-click (SwitchedOff, reached past `showing`) ever asks for that.
+        Check(remote.Contains("var queued = writing; if (queued) removeRuleWhenSettled = true;", StringComparison.Ordinal) && remote.Contains("if (writing) { removeRuleWhenSettled = true; return; }", StringComparison.Ordinal)
+            && System.Text.RegularExpressions.Regex.Matches(remote, @"removeRuleWhenSettled = true").Count == 2, "only an off-click asks for the rule to be looked at later");
+        Check(remote.Contains("if (removeRuleWhenSettled) { removeRuleWhenSettled = false; _ = RemoveRuleAfterOff(); }", StringComparison.Ordinal), "the queued off-click's rule is looked at once the last queued change lands");
         // A reopened page never reads the rule over a change still waiting on its prompt; an unreadable rule can be read again.
         Check(remote.Contains("if (!firewallBusy) await RefreshFirewallState();", StringComparison.Ordinal), "a reopened page leaves an in-flight change's state alone");
         Check(remote.Contains("firewallState == FirewallRuleState.Unknown ? RecheckFirewallRule() :", StringComparison.Ordinal) && remote.Contains("MobileDirectStrings.FirewallRecheckButton", StringComparison.Ordinal), "an unknown rule can be checked again");

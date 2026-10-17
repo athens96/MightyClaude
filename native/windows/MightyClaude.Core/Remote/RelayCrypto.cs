@@ -35,7 +35,7 @@ public sealed class RelayCipher : IDisposable
         lock (sync)
         {
             ObjectDisposedException.ThrowIf(disposed, this);
-            if (plaintext.Length > 1024 * 1024 - 28) throw new CryptographicException("Relay payload exceeds limit.");
+            if (plaintext.Length > MobileRelayHost.MaximumPlaintext) throw new CryptographicException("Relay payload exceeds limit.");
             if (sent >= long.MaxValue) throw new CryptographicException("Relay counter exhausted.");
             var nonce = new byte[12]; nonce[0] = sendDirection; BinaryPrimitives.WriteUInt64BigEndian(nonce.AsSpan(4), sent++);
             var cipher = new BcChaCha(); cipher.Init(true, new AeadParameters(new KeyParameter(key), 128, nonce));
@@ -48,7 +48,7 @@ public sealed class RelayCipher : IDisposable
         lock (sync)
         {
             ObjectDisposedException.ThrowIf(disposed, this);
-            if (frame.Length > 1024 * 1024 || frame.Length < 28 || frame[0] != receiveDirection || frame[1] != 0 || frame[2] != 0 || frame[3] != 0) throw new CryptographicException("Invalid relay frame.");
+            if (frame.Length > MobileDirect.MaximumFrameBytes || frame.Length < 28 || frame[0] != receiveDirection || frame[1] != 0 || frame[2] != 0 || frame[3] != 0) throw new CryptographicException("Invalid relay frame.");
             var counter = BinaryPrimitives.ReadUInt64BigEndian(frame.AsSpan(4, 8));
             if (counter > long.MaxValue || (long)counter <= received) throw new CryptographicException("Replayed relay frame.");
             var cipher = new BcChaCha(); cipher.Init(false, new AeadParameters(new KeyParameter(key), 128, frame[..12]));

@@ -15,7 +15,7 @@ public static class MobileDirect
 {
     /// <summary>The listener's port unless Settings changes it.</summary>
     public const int DefaultPort = 43139;
-    /// <summary>The relay's own frame limit, kept for the socket that replaces it.</summary>
+    /// <summary>The frame limit on both paths: the relay's own, kept for the direct socket that replaces it.</summary>
     public const int MaximumFrameBytes = 1024 * 1024;
     /// <summary>Phones inside the handshake on the direct path, counted apart from the relay's.</summary>
     public const int MaximumUnauthenticated = 4;
@@ -153,14 +153,39 @@ public sealed class DirectAuthFailures
     }
 }
 
-/// <summary>What the direct path is doing. <c>off</c>: the remote is off; <c>disabled</c>: its direct switch is; <c>notFound</c>: no Tailscale address; <c>listening</c>: on <see cref="Endpoints"/>; <c>failed</c>: no address could be bound, <see cref="Error"/> says why.</summary>
+/// <summary>
+/// What the direct path is doing. <c>off</c>: the remote is off; <c>disabled</c>: its direct switch is; <c>notFound</c>: no Tailscale
+/// address; <c>listening</c>: on <see cref="Endpoints"/>; <c>failed</c>: no address could be bound, <see cref="Error"/> says why as one
+/// of <see cref="MobileDirectError"/>'s codes, never Windows' own text.
+/// </summary>
 public sealed record MobileDirectStatus(string State, IReadOnlyList<string> Endpoints, string? Error = null)
 {
     public static readonly MobileDirectStatus Off = new("off", []);
     [JsonIgnore] public bool Listening => State == "listening";
 }
 
-/// <summary>The line under the direct switch, in the Mac's words (mobileRemote.direct.status.*).</summary>
+/// <summary>Why the direct path could not listen (<see cref="MobileDirectStatus.Error"/>): codes only, each with its own words (<see cref="MobileDirectStrings.Error"/>).</summary>
+public static class MobileDirectError
+{
+    /// <summary>Another program holds the port on that address.</summary>
+    public const string AddressInUse = "addressInUse";
+    /// <summary>Windows refused the port (a reserved range, or another program's exclusive use).</summary>
+    public const string AccessDenied = "accessDenied";
+    /// <summary>Any other reason binding failed.</summary>
+    public const string BindFailed = "bindFailed";
+    /// <summary>This PC's network adapters could not be read.</summary>
+    public const string AdaptersUnreadable = "adaptersUnreadable";
+
+    /// <summary>The code for a listener that could not start; the socket's own text goes to the trace only.</summary>
+    public static string Of(System.Net.Sockets.SocketException ex) => ex.SocketErrorCode switch
+    {
+        System.Net.Sockets.SocketError.AddressAlreadyInUse => AddressInUse,
+        System.Net.Sockets.SocketError.AccessDenied => AccessDenied,
+        _ => BindFailed,
+    };
+}
+
+/// <summary>The line under the direct switch, in the Mac's words (mobileRemote.direct.status.*), with the Windows words for why it could not listen.</summary>
 public static class MobileDirectStatusText
 {
     public static string Detail(MobileDirectStatus status) => status.State switch
@@ -168,7 +193,7 @@ public static class MobileDirectStatusText
         "disabled" => Locale.Get("mobileRemote.direct.status.off"),
         "notFound" => Locale.Get("mobileRemote.direct.status.notFound"),
         "listening" => Locale.Get("mobileRemote.direct.status.listeningTemplate", new Dictionary<string, string> { ["addresses"] = string.Join(", ", status.Endpoints) }),
-        "failed" => Locale.Get("mobileRemote.direct.status.failedTemplate", new Dictionary<string, string> { ["error"] = status.Error ?? "" }),
+        "failed" => Locale.Get("mobileRemote.direct.status.failedTemplate", new Dictionary<string, string> { ["error"] = MobileDirectStrings.Error(status.Error) }),
         _ => "",
     };
 }

@@ -51,18 +51,43 @@ public static class TailscaleAddresses
                 .. found.Where(entry => entry.Address.Contains(':')).OrderBy(entry => entry.Address, StringComparer.Ordinal)];
     }
 
-    /// <summary>Every up adapter's unicast addresses, as Windows reports them; empty when they cannot be read.</summary>
+    /// <summary>
+    /// Every up adapter's unicast addresses, as Windows reports them. One adapter that cannot be read is skipped and the others kept;
+    /// when the list itself or every adapter on it cannot be read, <see cref="AdaptersUnreadableException"/>.
+    /// </summary>
     public static IReadOnlyList<(string InterfaceName, string Address)> InterfaceAddresses()
     {
-        try
-        {
-            return [.. NetworkInterface.GetAllNetworkInterfaces().Where(adapter => adapter.OperationalStatus == OperationalStatus.Up)
-                .SelectMany(adapter => adapter.GetIPProperties().UnicastAddresses.Select(unicast => (InterfaceName: adapter.Name, Address: unicast.Address.ToString())))];
-        }
-        catch (NetworkInformationException) { return []; }
+        NetworkInterface[] adapters;
+        try { adapters = NetworkInterface.GetAllNetworkInterfaces(); }
+        catch (Exception ex) when (Unreadable(ex)) { throw new AdaptersUnreadableException(ex); }
+        return Gather(adapters.Select(adapter => (Func<IReadOnlyList<(string InterfaceName, string Address)>>)(() => adapter.OperationalStatus != OperationalStatus.Up ? []
+            : [.. adapter.GetIPProperties().UnicastAddresses.Select(unicast => (InterfaceName: adapter.Name, Address: unicast.Address.ToString()))])));
     }
 
-    /// <summary>The addresses this PC has on Tailscale now; empty while Tailscale is off.</summary>
+    /// <summary>
+    /// Reads each adapter in turn (<see cref="InterfaceAddresses"/>; pure, so the checks give it adapters that fail): one that cannot
+    /// be read is skipped, and its error kept for the trace only; when there were adapters and none of them could be read,
+    /// <see cref="AdaptersUnreadableException"/>.
+    /// </summary>
+    internal static IReadOnlyList<(string InterfaceName, string Address)> Gather(IEnumerable<Func<IReadOnlyList<(string InterfaceName, string Address)>>> adapters)
+    {
+        var found = new List<(string InterfaceName, string Address)>(); var read = 0; Exception? first = null;
+        foreach (var adapter in adapters)
+        {
+            try { found.AddRange(adapter()); read++; }
+            catch (Exception ex) when (Unreadable(ex))
+            {
+                first ??= ex;
+                System.Diagnostics.Trace.TraceWarning("tailscale addresses: an adapter could not be read: " + ex.Message);
+            }
+        }
+        if (read == 0 && first is not null) throw new AdaptersUnreadableException(first);
+        return found;
+    }
+
+    private static bool Unreadable(Exception ex) => ex is NetworkInformationException or PlatformNotSupportedException or InvalidOperationException;
+
+    /// <summary>The addresses this PC has on Tailscale now; empty while Tailscale is off; <see cref="AdaptersUnreadableException"/> when no adapter could be read.</summary>
     public static IReadOnlyList<string> Current() => Select(InterfaceAddresses());
 
     /// <summary>One spelling per address: no brackets or <c>%scope</c>, lowercase, IPv6 compressed.</summary>
@@ -92,3 +117,6 @@ public static class TailscaleAddresses
         return bytes;
     }
 }
+
+/// <summary>This PC's network adapters could not be read at all (<see cref="TailscaleAddresses.InterfaceAddresses"/>): the list, or every adapter on it. Its inner exception's text goes to the trace only.</summary>
+public sealed class AdaptersUnreadableException(Exception inner) : Exception("This PC's network adapters could not be read.", inner);

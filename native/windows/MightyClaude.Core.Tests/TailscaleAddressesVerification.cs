@@ -43,6 +43,26 @@ internal static class TailscaleAddressesVerification
         return Task.CompletedTask;
     }
 
+    // One adapter Windows cannot read is skipped and the others kept; only when none can be read is that a fault, which the direct
+    // path shows as its "adapters unreadable" words.
+    internal static Task OneUnreadableAdapterIsSkipped()
+    {
+        static Func<IReadOnlyList<(string InterfaceName, string Address)>> Adapter(string name, params string[] addresses) => () => [.. addresses.Select(address => (name, address))];
+        static Func<IReadOnlyList<(string InterfaceName, string Address)>> Broken() => () => throw new System.Net.NetworkInformation.NetworkInformationException(5);
+        var read = TailscaleAddresses.Gather([Adapter("Wi-Fi", "192.168.0.5"), Broken(), Adapter("Tailscale", "100.101.102.103", "fd7a:115c:a1e0::1")]);
+        Check(read.Count == 3 && TailscaleAddresses.Select(read).SequenceEqual(["100.101.102.103", "fd7a:115c:a1e0::1"]), "an unreadable adapter is skipped and the others are kept");
+        Check(TailscaleAddresses.Gather([]).Count == 0 && TailscaleAddresses.Gather([Adapter("Wi-Fi")]).Count == 0, "no adapter, or one with no address, is no fault");
+        var thrown = false;
+        try { TailscaleAddresses.Gather([Broken(), Broken()]); }
+        catch (AdaptersUnreadableException ex) { thrown = ex.InnerException is System.Net.NetworkInformation.NetworkInformationException; }
+        Check(thrown, "every adapter unreadable is a fault");
+        var other = false;
+        try { TailscaleAddresses.Gather([() => throw new ArgumentNullException("fixture")]); }
+        catch (ArgumentNullException) { other = true; }
+        Check(other, "only reading failures are skipped; a bug is not hidden");
+        return Task.CompletedTask;
+    }
+
     internal static Task DetectionOffersOnlyTailscaleAddresses()
     {
         var read = TailscaleAddresses.InterfaceAddresses();
