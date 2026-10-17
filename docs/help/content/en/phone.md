@@ -5,7 +5,7 @@ section: phone
 ---
 With the phone app you can follow and drive Mighty Claude on your Mac while you're away: check on tasks, send requests, and answer approvals and questions.
 
-The Mac and the phone connect through a relay server. Everything is encrypted end to end, so the relay can't read it. You don't need to open router ports or use a VPN.
+The Mac and the phone connect through a relay server. Everything is encrypted end to end, so the relay can't read it. You don't need to open router ports or use a VPN. If you use Tailscale, the phone can also [connect directly](#direct) without the relay.
 
 ## Get the phone app {#get-app}
 Download the Android app (APK) from the [download page](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/index.html) and install it.
@@ -27,6 +27,15 @@ Paired phones are listed under {{ui:settings.mobileRemote.connectedDevicesTitle}
 
 > [!warning]
 > {{ui:settings.mobileRemote.regenerateKeyButton}} means every paired phone has to pair again. Use it if someone else saw the QR code or the key.
+
+## Connect directly over Tailscale {#direct}
+When the Mac and the phone are on the same [Tailscale](https://tailscale.com) network, the phone connects straight to the Mac without the relay. Pairing and encryption stay the same, and when the Mac can't be reached directly the phone uses the relay on its own.
+
+1. Turn on Tailscale on the Mac and the phone and sign in with the same account.
+2. In the {{ui:settings.nav.mobile}} tab on the Mac, check that {{ui:mobileRemote.direct.toggle}} is on (it is by default). When the line below it shows Tailscale addresses, you're set. If it says {{ui:mobileRemote.direct.status.notFound}}, Tailscale is off on the Mac.
+3. Phones you already paired don't need pairing again. The Mac tells them its addresses the next time they connect.
+
+On the phone, the Mac's card in the {{ui:phone.tabs.hosts}} tab shows {{ui:phone.direct.route.direct}} or {{ui:phone.direct.route.relay}}.
 
 ## What you can do on the phone {#use}
 The phone app has four tabs.

@@ -104,7 +104,9 @@ public struct RelayKeypair: Sendable {
 }
 
 /// What the QR carries: enough for a phone to find the relay, prove it is
-/// talking to this Mac (public key) and be admitted (pairing key).
+/// talking to this Mac (public key) and be admitted (pairing key). `direct`
+/// adds the Mac's Tailscale endpoints; a phone that does not know the
+/// parameter ignores it and uses the relay.
 public struct MobilePairingOffer: Sendable, Equatable {
     public static let version = 2
     public var serverId: String
@@ -112,16 +114,26 @@ public struct MobilePairingOffer: Sendable, Equatable {
     public var relayURL: String
     public var pairingKey: String
     public var name: String
+    /// `host:port` values for the direct path, tried before the relay.
+    public var directEndpoints: [String]
 
-    public init(serverId: String, publicKeyB64: String, relayURL: String, pairingKey: String, name: String) {
+    public init(serverId: String, publicKeyB64: String, relayURL: String, pairingKey: String, name: String, directEndpoints: [String] = []) {
         self.serverId = serverId; self.publicKeyB64 = publicKeyB64; self.relayURL = relayURL; self.pairingKey = pairingKey; self.name = name
+        self.directEndpoints = directEndpoints
     }
+
+    /// Characters a `direct` value keeps as they are; `:`, `,`, `[` and `]` are
+    /// percent-encoded so every URL parser reads the list back the same way.
+    private static let directAllowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
 
     public var url: String {
         var components = URLComponents()
         components.scheme = MobilePairing.scheme; components.host = "pair"
         components.queryItems = [.init(name: "v", value: String(Self.version)), .init(name: "sid", value: serverId), .init(name: "pk", value: Self.base64url(publicKeyB64)),
                                  .init(name: "relay", value: relayURL), .init(name: "key", value: pairingKey), .init(name: "name", value: String(name.prefix(120)))]
+        if !directEndpoints.isEmpty, let encoded = MobileDirect.joined(directEndpoints).addingPercentEncoding(withAllowedCharacters: Self.directAllowed) {
+            components.percentEncodedQueryItems = (components.percentEncodedQueryItems ?? []) + [URLQueryItem(name: "direct", value: encoded)]
+        }
         return components.string ?? ""
     }
 
@@ -131,7 +143,7 @@ public struct MobilePairingOffer: Sendable, Equatable {
         for item in components.queryItems ?? [] { values[item.name] = item.value }
         guard values["v"] == String(version), let sid = values["sid"], CoreValidation.identifier(sid), let pk = values["pk"].flatMap(fromBase64url), Data(base64Encoded: pk)?.count == 32,
               let relay = values["relay"], RelayEndpoint.normalize(relay) != nil, let key = values["key"], RemoteValidation.token(key) else { return nil }
-        return MobilePairingOffer(serverId: sid, publicKeyB64: pk, relayURL: relay, pairingKey: key, name: values["name"] ?? "")
+        return MobilePairingOffer(serverId: sid, publicKeyB64: pk, relayURL: relay, pairingKey: key, name: values["name"] ?? "", directEndpoints: MobileDirect.parse(values["direct"]))
     }
 
     static func base64url(_ base64: String) -> String { base64.replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "") }

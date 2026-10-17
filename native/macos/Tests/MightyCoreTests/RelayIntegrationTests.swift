@@ -181,7 +181,7 @@ struct RelayIntegrationTests {
         do {
             await service.attach(delegate) // the service holds its delegate weakly, as the app store does
             if let keepalive { await service.setKeepaliveInterval(keepalive) }
-            _ = await service.apply(settings: MobileRemoteSettings(enabled: true, relayURL: "ws://127.0.0.1:\(port)"))
+            _ = await service.apply(settings: MobileRemoteSettings(enabled: true, relayURL: "ws://127.0.0.1:\(port)", directEnabled: false))
             var status = await service.status()
             // Waits on the connection itself; 30 s only bounds a relay that never answers.
             for _ in 0..<300 where !status.relayConnected { try await Task.sleep(for: .milliseconds(100)); status = await service.status() }

@@ -828,15 +828,15 @@ struct MobileRemoteTests {
             // Off: no offer. On without a relay: still no offer, but a hint.
             var status = await service.apply(settings: MobileRemoteSettings(enabled: false))
             #expect(!status.enabled && status.pairingURL == nil && status.publicKeyB64?.isEmpty == false)
-            status = await service.apply(settings: MobileRemoteSettings(enabled: true, relayURL: ""))
+            status = await service.apply(settings: MobileRemoteSettings(enabled: true, relayURL: "", directEnabled: false))
             #expect(status.enabled && !status.relayConnected && status.pairingURL == nil && status.detail.contains("릴레이 주소"))
             // On with an unreachable relay: connecting, still no offer until the relay accepts.
-            status = await service.apply(settings: MobileRemoteSettings(enabled: true, relayURL: "ws://127.0.0.1:1"))
+            status = await service.apply(settings: MobileRemoteSettings(enabled: true, relayURL: "ws://127.0.0.1:1", directEnabled: false))
             #expect(status.enabled && status.relayURL == "ws://127.0.0.1:1" && status.pairingURL == nil)
             // A host shipped with a default relay connects through it when the
             // user's field is empty, instead of asking for an address.
             let defaulted = MobileRemoteService(dataDirectory: directory.appendingPathComponent("defaulted"), hostName: "Test Mac", defaultRelayURL: "ws://127.0.0.1:1")
-            let viaDefault = await defaulted.apply(settings: MobileRemoteSettings(enabled: true, relayURL: ""))
+            let viaDefault = await defaulted.apply(settings: MobileRemoteSettings(enabled: true, relayURL: "", directEnabled: false))
             #expect(viaDefault.enabled && !viaDefault.detail.contains("릴레이 주소를 입력하면"))
             await defaulted.shutdown()
             let sameHostId = await MobileRemoteService(dataDirectory: directory, hostName: "Test Mac").status().serverId

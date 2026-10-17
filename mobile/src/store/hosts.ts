@@ -11,6 +11,7 @@ import {
 } from '@/api/client';
 import { RelayError, isFinalFailure, type AuthLease } from '@/api/relay/transport';
 import type { DeviceAuthState } from '@/lib/device-token';
+import { sameEndpoints, sanitizeDirectEndpoints, type ConnectionRoute } from '@/lib/direct';
 import {
   adoptDeviceToken,
   canAuthenticate,
@@ -43,6 +44,11 @@ export interface PairedHost {
   hostId: string;
   appVersion: string;
   pairedAt: string;
+  /**
+   * The Mac's Tailscale endpoints (`host:port`), tried before the relay. Absent on hosts
+   * paired before the direct path, until the Mac lists them in an `auth_ok`.
+   */
+  directEndpoints?: string[];
 }
 
 export type Reachability =
@@ -56,6 +62,8 @@ export type Reachability =
 export interface HostStatus {
   reachability: Reachability;
   detail?: string;
+  /** How the last tunnel that opened reached the host. */
+  route?: ConnectionRoute;
 }
 
 interface HostsState {
@@ -75,12 +83,23 @@ interface HostsState {
   ensureClientId: () => Promise<string>;
   addHost: (
     payload: PairingPayload,
-    info: { hostId: string; appVersion: string; deviceToken?: string },
+    info: {
+      hostId: string;
+      appVersion: string;
+      deviceToken?: string;
+      /** The endpoints the Mac listed while pairing, newer than the QR's. */
+      direct?: string[];
+      route?: ConnectionRoute;
+    },
   ) => Promise<PairedHost>;
   /** Stores the token a live tunnel was handed and drops that host's pairing key. */
   saveDeviceToken: (id: string, deviceToken: string) => Promise<void>;
   /** Makes this host its own `clientId` after it answered `device-conflict`. */
   mintClientIdFor: (id: string) => Promise<string | undefined>;
+  /** Stores the Tailscale endpoints a host listed, when they differ from the stored ones. */
+  saveDirectEndpoints: (id: string, endpoints: string[]) => Promise<void>;
+  /** Records which way a tunnel to this host just opened. */
+  noteRoute: (id: string, route: ConnectionRoute) => void;
   /** Forgets a secret the host has refused for good; the entry stays, to be re-paired. */
   forgetSecrets: (id: string, detail?: string) => Promise<void>;
   removeHost: (id: string) => Promise<void>;
@@ -97,13 +116,17 @@ export function storageIdFor(serverId: string): string {
   return serverId.replace(/[^A-Za-z0-9._-]/g, '_');
 }
 
-/** Keeps only v2 entries; v1 hosts (host/port/key) are silently discarded. */
+/**
+ * Keeps only v2 entries; v1 hosts (host/port/key) are silently discarded. An entry saved
+ * before the direct path has no endpoints and keeps having none until its Mac lists some;
+ * a damaged endpoint list is cut down to the Tailscale endpoints in it.
+ */
 export function parseIndex(raw: string | null): PairedHost[] {
   if (!raw) return [];
   try {
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter((entry): entry is PairedHost => {
+    const hosts = parsed.filter((entry): entry is PairedHost => {
       if (entry === null || typeof entry !== 'object') return false;
       const candidate = entry as Partial<PairedHost>;
       return (
@@ -116,9 +139,21 @@ export function parseIndex(raw: string | null): PairedHost[] {
         candidate.hostPublicKeyB64.length > 0
       );
     });
+    return hosts.map((host) => {
+      if (host.directEndpoints === undefined) return host;
+      return withDirectEndpoints(host, sanitizeDirectEndpoints(host.directEndpoints));
+    });
   } catch {
     return [];
   }
+}
+
+/** The host with these endpoints; an empty list leaves the field out, as an old entry has it. */
+function withDirectEndpoints(host: PairedHost, endpoints: string[]): PairedHost {
+  const next: PairedHost = { ...host };
+  if (endpoints.length > 0) next.directEndpoints = endpoints;
+  else delete next.directEndpoints;
+  return next;
 }
 
 export function credentialsFor(
@@ -134,6 +169,7 @@ export function credentialsFor(
   if (clientId) credentials.clientId = clientId;
   if (secrets.deviceToken) credentials.deviceToken = secrets.deviceToken;
   else if (secrets.pairingKey) credentials.pairingKey = secrets.pairingKey;
+  if (host.directEndpoints?.length) credentials.directEndpoints = host.directEndpoints;
   return credentials;
 }
 
@@ -160,6 +196,8 @@ export function hostLeaseOptions(id: string): HostLeaseOptions {
     onDeviceToken: (token) => useHostsStore.getState().saveDeviceToken(id, token),
     authorize: (state) => authorizeFor(id, state),
     mintClientId: () => useHostsStore.getState().mintClientIdFor(id),
+    onDirectEndpoints: (endpoints) => void useHostsStore.getState().saveDirectEndpoints(id, endpoints),
+    onRoute: (route) => useHostsStore.getState().noteRoute(id, route),
   };
 }
 
@@ -256,6 +294,9 @@ export const useHostsStore = create<HostsState>((set, get) => ({
       appVersion: info.appVersion,
       pairedAt: new Date().toISOString(),
     };
+    // What the Mac said while pairing is newer than what its QR said.
+    const directEndpoints = info.direct ?? payload.directEndpoints ?? [];
+    if (directEndpoints.length > 0) host.directEndpoints = directEndpoints;
     const hosts = [...get().hosts.filter((entry) => entry.id !== id), host];
     // A host that issued a token during pairing never keeps the key it was paired with.
     const secrets: HostSecrets = info.deviceToken
@@ -274,9 +315,25 @@ export const useHostsStore = create<HostsState>((set, get) => ({
         keys[id] = secrets.pairingKey;
         delete tokens[id];
       }
-      return { hosts, keys, tokens, status: { ...prev.status, [id]: { reachability: 'online' } } };
+      const status: HostStatus = { reachability: 'online' };
+      if (info.route) status.route = info.route;
+      return { hosts, keys, tokens, status: { ...prev.status, [id]: status } };
     });
     return host;
+  },
+
+  saveDirectEndpoints: async (id, endpoints) => {
+    const current = get().hosts.find((entry) => entry.id === id);
+    if (!current || sameEndpoints(current.directEndpoints, endpoints)) return;
+    const hosts = get().hosts.map((entry) => (entry.id === id ? withDirectEndpoints(entry, endpoints) : entry));
+    await SecureStore.setItemAsync(INDEX_KEY, JSON.stringify(hosts));
+    set({ hosts });
+  },
+
+  noteRoute: (id, route) => {
+    set((prev) => ({
+      status: { ...prev.status, [id]: { ...prev.status[id], reachability: 'online', route } },
+    }));
   },
 
   // Serialised per host: two tunnels that authenticated at once would otherwise write
@@ -361,7 +418,10 @@ export const useHostsStore = create<HostsState>((set, get) => ({
     const pooled = peekHostConnection(id);
     if (pooled?.state === 'ready' && pooled.info) {
       set((prev) => ({
-        status: { ...prev.status, [id]: { reachability: 'online', detail: pooled.info?.hostName } },
+        status: {
+          ...prev.status,
+          [id]: { reachability: 'online', detail: pooled.info?.hostName, route: pooled.route },
+        },
       }));
       return;
     }
@@ -376,7 +436,7 @@ export const useHostsStore = create<HostsState>((set, get) => ({
       // A probe can be the connection that registers this device.
       if (info.deviceToken) await get().saveDeviceToken(id, info.deviceToken);
       set((prev) => ({
-        status: { ...prev.status, [id]: { reachability: 'online', detail: info.hostName } },
+        status: { ...prev.status, [id]: { reachability: 'online', detail: info.hostName, route: info.route } },
       }));
     } catch (error) {
       // The host has refused this secret for good: drop it so nothing presents it again,

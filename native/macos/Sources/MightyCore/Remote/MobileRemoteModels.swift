@@ -12,18 +12,28 @@ public struct MobileRemoteSettings: Codable, Sendable, Equatable {
     /// key alone. On by default so an upgrade breaks nothing; turning it off
     /// means every phone must carry a token this host can revoke on its own.
     public var allowLegacyPhones: Bool
-    public init(enabled: Bool = false, relayURL: String = "", allowLegacyPhones: Bool = true) {
+    /// Whether a phone on the same tailnet may connect straight to this Mac
+    /// (docs/relay.md, "Tailscale 직접 연결"). On by default; it only ever listens
+    /// on the Mac's Tailscale addresses, and only while the remote is on.
+    public var directEnabled: Bool
+    /// The TCP port of the direct listener (`MobileDirect.defaultPort` unless changed).
+    public var directPort: Int
+    public init(enabled: Bool = false, relayURL: String = "", allowLegacyPhones: Bool = true, directEnabled: Bool = true, directPort: Int = MobileDirect.defaultPort) {
         self.enabled = enabled; self.relayURL = relayURL; self.allowLegacyPhones = allowLegacyPhones
+        self.directEnabled = directEnabled; self.directPort = directPort
     }
-    enum CodingKeys: String, CodingKey { case enabled, relayURL, allowLegacyPhones }
+    enum CodingKeys: String, CodingKey { case enabled, relayURL, allowLegacyPhones, directEnabled, directPort }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
         relayURL = try c.decodeIfPresent(String.self, forKey: .relayURL) ?? ""
         allowLegacyPhones = try c.decodeIfPresent(Bool.self, forKey: .allowLegacyPhones) ?? true
+        directEnabled = try c.decodeIfPresent(Bool.self, forKey: .directEnabled) ?? true
+        directPort = try c.decodeIfPresent(Int.self, forKey: .directPort) ?? MobileDirect.defaultPort
     }
     public var normalized: MobileRemoteSettings {
-        MobileRemoteSettings(enabled: enabled, relayURL: RelayEndpoint.normalize(relayURL) ?? "", allowLegacyPhones: allowLegacyPhones)
+        MobileRemoteSettings(enabled: enabled, relayURL: RelayEndpoint.normalize(relayURL) ?? "", allowLegacyPhones: allowLegacyPhones,
+                             directEnabled: directEnabled, directPort: MobileDirect.validPort(directPort) ? directPort : MobileDirect.defaultPort)
     }
     /// The relay the host actually connects through: the user's own address
     /// wins, the built-in `MobileWire.defaultRelayURL` is the fallback, and
@@ -41,8 +51,11 @@ public struct MobileInfo: Codable, Sendable, Equatable {
     public var appVersion: String
     public var platform: String
     public var capabilities: [String]
-    public init(hostId: String, hostName: String, appVersion: String, platform: String = "darwin", capabilities: [String] = MobileCapability.all) {
-        self.hostId = hostId; self.hostName = hostName; self.appVersion = appVersion; self.platform = platform; self.capabilities = capabilities
+    /// The `host:port` endpoints a phone may dial straight over Tailscale, sent
+    /// with the `direct` capability; empty when the direct path is off or idle.
+    public var direct: [String]?
+    public init(hostId: String, hostName: String, appVersion: String, platform: String = "darwin", capabilities: [String] = MobileCapability.all, direct: [String]? = nil) {
+        self.hostId = hostId; self.hostName = hostName; self.appVersion = appVersion; self.platform = platform; self.capabilities = capabilities; self.direct = direct
     }
 }
 
@@ -50,7 +63,7 @@ public struct MobileInfo: Codable, Sendable, Equatable {
 /// its name is listed, so a name appears here once the route behind it works.
 public enum MobileCapability {
     public static let all = ["submit-mode", "queue", "pane", "history", "settings", "commands", "mighty", "status", "attachments", "style", "files",
-                             "structure"]
+                             "structure", "direct"]
     /// Listed on top of `all` only by a host whose screen-share engine is
     /// running (`MobileRemoteService.capabilities`).
     public static let screenShare = "screenShare"
@@ -680,10 +693,17 @@ public struct MobileHostStatus: Codable, Sendable, Equatable {
     /// Rises with every status the host hands out. Statuses reach the screen
     /// by separate hops that can land out of order; the higher one is newer.
     public var sequence: Int
-    public init(enabled: Bool = false, relayURL: String = "", relayConnected: Bool = false, clients: Int = 0, serverId: String = "", publicKeyB64: String? = nil, key: String? = nil, pairingURL: String? = nil, hostName: String = "", detail: String = "", devices: [MobileDeviceInfo] = [], registryWarning: String? = nil, sequence: Int = 0) {
+    /// The direct path: whether it listens now, on which `host:port` endpoints,
+    /// and the line Settings shows under its switch.
+    public var directListening: Bool
+    public var directEndpoints: [String]
+    public var directDetail: String
+    public init(enabled: Bool = false, relayURL: String = "", relayConnected: Bool = false, clients: Int = 0, serverId: String = "", publicKeyB64: String? = nil, key: String? = nil, pairingURL: String? = nil, hostName: String = "", detail: String = "", devices: [MobileDeviceInfo] = [], registryWarning: String? = nil, sequence: Int = 0,
+                directListening: Bool = false, directEndpoints: [String] = [], directDetail: String = "") {
         self.enabled = enabled; self.relayURL = relayURL; self.relayConnected = relayConnected; self.clients = clients; self.serverId = serverId
         self.publicKeyB64 = publicKeyB64; self.key = key; self.pairingURL = pairingURL; self.hostName = hostName; self.detail = detail
         self.devices = devices; self.registryWarning = registryWarning; self.sequence = sequence
+        self.directListening = directListening; self.directEndpoints = directEndpoints; self.directDetail = directDetail
     }
 }
 

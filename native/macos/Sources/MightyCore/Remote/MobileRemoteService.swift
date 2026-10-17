@@ -160,6 +160,37 @@ public actor MobileRemoteService {
     /// in the settings sheet, so every caller of these paths is covered.
     private var screenShare: ScreenShareSafetyTarget?
 
+    /// The direct path (`MobileDirect`): listeners on the Mac's Tailscale
+    /// addresses while the remote and its direct switch are on. Connections that
+    /// came in this way have ids starting with `directPrefix` and live apart from
+    /// the relay's control socket: a relay redial never drops them.
+    static let directPrefix = "direct-"
+    private var directListener: MobileDirectListener?
+    /// What the listeners were started with, so a re-detection that finds the
+    /// same addresses changes nothing.
+    private var directBoundAddresses: [String]?
+    private var directBoundPort: Int?
+    private var directEndpoints: [String] = []
+    private var directDetail = ""
+    /// Changes when the direct phones are dropped (`stopDirect`), the way
+    /// `generation` does for the relay's; a phone that ends later is then not
+    /// taken out of a table it is no longer in.
+    private var directGeneration = 0
+    /// Changes on every (re)bind, so a bind that finishes after a newer one
+    /// or a stop gives way. Rebinding keeps the phones already connected.
+    private var directBindGeneration = 0
+    private var directWatch: Task<Void, Never>?
+    /// Test seam: the addresses the direct path binds instead of the detected
+    /// Tailscale ones (loopback in tests), with the MagicDNS lookup skipped.
+    /// Internal, set only by tests through `setDirectAddressOverride`; neither
+    /// Settings nor any IPC can reach it, so the app only ever binds Tailscale.
+    private var directAddressOverride: [String]?
+    /// The remote address of each direct connection, for the per-peer handshake
+    /// cap and the failed-auth limit.
+    private var directPeers: [String: String] = [:]
+    /// When each remote address last failed to authenticate on the direct path.
+    private var directAuthFailures: [String: [Date]] = [:]
+
     /// The relay used when the user's own field is empty. The app passes the
     /// built-in `MobileWire.defaultRelayURL`; tests pass their own.
     private let defaultRelayURL: String
@@ -201,6 +232,11 @@ public actor MobileRemoteService {
     func setDisconnectPause(_ value: (@Sendable () async -> Void)?) { disconnectPause = value }
     /// Test seam; see `pathClock`.
     func setPathClock(_ value: RelayLinkPolicy.Clock) { pathClock = value }
+    /// Test seam; see `directAddressOverride`.
+    func setDirectAddressOverride(_ value: [String]?) async {
+        directAddressOverride = value
+        await refreshDirect(force: true)
+    }
     public func observeStatus(_ observer: @escaping @Sendable (MobileHostStatus) -> Void) { statusObserver = observer }
 
     private static func stableHostId(_ directory: URL) -> String {
@@ -326,12 +362,14 @@ public actor MobileRemoteService {
     // MARK: Lifecycle
 
     public func status() -> MobileHostStatus {
-        let offer = (settings.enabled && relayConnected) ? offerIfAvailable() : nil
+        // A phone can pair over either path, so the QR shows while either is up.
+        let offer = (settings.enabled && (relayConnected || directListening)) ? offerIfAvailable() : nil
         statusSequence += 1
         return MobileHostStatus(enabled: settings.enabled, relayURL: settings.relayURL, relayConnected: relayConnected, clients: clients.count,
                                 serverId: (try? relayServerId()) ?? "", publicKeyB64: (try? loadKeypair())?.publicKeyB64, key: offer?.pairingKey, pairingURL: offer?.url,
                                 hostName: hostName, detail: detail, devices: deviceRegistry.infos(connected: Set(connectedDevices.values)),
-                                registryWarning: deviceRegistry.warning(), sequence: statusSequence)
+                                registryWarning: deviceRegistry.warning(), sequence: statusSequence,
+                                directListening: directListening, directEndpoints: directEndpoints, directDetail: directDetail)
     }
 
     /// Revoking a phone rotates the pairing key and clears the entire registry.
@@ -359,7 +397,7 @@ public actor MobileRemoteService {
     }
     private func offerIfAvailable() -> MobilePairingOffer? {
         guard let key = try? loadOrCreateKey(), let keypair = try? loadKeypair(), let serverId = try? relayServerId(), let relay = relayURL else { return nil }
-        return MobilePairingOffer(serverId: serverId, publicKeyB64: keypair.publicKeyB64, relayURL: relay, pairingKey: key, name: hostName)
+        return MobilePairingOffer(serverId: serverId, publicKeyB64: keypair.publicKeyB64, relayURL: relay, pairingKey: key, name: hostName, directEndpoints: directEndpoints)
     }
     private func publish() { statusObserver?(status()) }
 
@@ -368,6 +406,7 @@ public actor MobileRemoteService {
         let changed = normalized != settings
         let relayChanged = normalized.enabled != settings.enabled || normalized.relayURL != settings.relayURL
         let refusesLegacy = settings.allowLegacyPhones && !normalized.allowLegacyPhones
+        let directChanged = normalized.enabled != settings.enabled || normalized.directEnabled != settings.directEnabled || normalized.directPort != settings.directPort
         settings = normalized
         // The switch means "no phone without a token from now on", so the ones
         // already in on the key alone go with it rather than staying until
@@ -381,6 +420,8 @@ public actor MobileRemoteService {
         } else {
             await stop(reason: settings.enabled ? L("mobileRemote.status.enterRelay") : L("mobileRemote.status.off"))
         }
+        // The direct path does not need the relay: it follows its own switch.
+        await refreshDirect(force: directChanged)
         return status()
     }
 
@@ -428,6 +469,7 @@ public actor MobileRemoteService {
     public func stop(reason: String = L("mobileRemote.status.off")) async {
         stopWatchingNetwork()
         await disconnect(reason: reason)
+        if !settings.enabled || disposed { await stopDirect() }
     }
 
     /// Drops the control socket and every phone; the path watch keeps running.
@@ -440,7 +482,8 @@ public actor MobileRemoteService {
         controlTask?.cancel(); controlTask = nil
         controlSocket?.cancel(with: .goingAway, reason: nil); controlSocket = nil
         relayConnected = false
-        let dropped = clients; clients.removeAll(); unauthenticated.removeAll(); connectedDevices.removeAll()
+        let dropped = clients.filter { !Self.isDirect($0.key) }
+        for id in dropped.keys { clients.removeValue(forKey: id); unauthenticated.remove(id); connectedDevices.removeValue(forKey: id) }
         for client in dropped.values { await client.close(reason: "host stopped") }
         if let disconnectPause { await disconnectPause() }
         guard mine == generation else { return mine }
@@ -509,6 +552,8 @@ public actor MobileRemoteService {
         guard watchingNetwork, watch == nil || watch == pathWatchGeneration else { return }
         pathWindow.report(path, settled: networkPath, now: pathClock.now())
         schedulePathSettle()
+        // Tailscale coming up or going down is a path change too.
+        Task { [weak self] in await self?.refreshDirect() }
     }
 
     private func schedulePathSettle(after delay: TimeInterval? = nil) {
@@ -603,7 +648,8 @@ public actor MobileRemoteService {
                 case "connected":
                     if let id = object["connectionId"] as? String, Self.validConnectionId(id) { acceptClient(connectionId: id, generation: current) }
                 case "disconnected":
-                    if let id = object["connectionId"] as? String, let client = clients.removeValue(forKey: id) { await client.close(reason: "relay disconnected"); publish() }
+                    // The relay speaks only for its own connections.
+                    if let id = object["connectionId"] as? String, !Self.isDirect(id), let client = clients.removeValue(forKey: id) { await client.close(reason: "relay disconnected"); publish() }
                 case "turn-credentials", "turn-rate-limited", "turn-unavailable":
                     turnCredentialAnswer(object)
                 // No "ping" case: the relay pings with WebSocket control frames,
@@ -622,7 +668,8 @@ public actor MobileRemoteService {
         if !connected, lastRelayError == nil { lastRelayError = L("mobileRemote.error.relayConnectFailed") }
         Self.log.info("control socket closed (generation \(current)): \(self.lastRelayError ?? "", privacy: .public)")
         if controlSocket === socket { controlSocket = nil }
-        let dropped = clients; clients.removeAll(); unauthenticated.removeAll()
+        let dropped = clients.filter { !Self.isDirect($0.key) }
+        for id in dropped.keys { clients.removeValue(forKey: id); unauthenticated.remove(id) }
         relayConnected = false
         for client in dropped.values { await client.close(reason: "control socket closed") }
         return connected
@@ -667,13 +714,12 @@ public actor MobileRemoteService {
     }
 
     private func acceptClient(connectionId: String, generation current: Int) {
-        guard clients[connectionId] == nil, clients.count < Self.maximumClients, unauthenticated.count < Self.maximumUnauthenticated,
-              let delegate, let keypair = try? loadKeypair(), let pairingKey = try? loadOrCreateKey(),
+        guard !Self.isDirect(connectionId), clients[connectionId] == nil, clients.count < Self.maximumClients,
+              unauthenticated.filter({ !Self.isDirect($0) }).count < Self.maximumUnauthenticated,
+              let delegate, let identity = hostIdentity(),
               let relay = relayURL, let hostToken = try? loadOrCreateControlToken(),
               let url = RelayEndpoint.socketURL(relay: relay, serverId: RelayEndpoint.serverId(hostToken: hostToken), role: "server", connectionId: connectionId, hostToken: hostToken) else { return }
-        let identity = RelayHostIdentity(hostId: hostId, hostName: hostName, appVersion: appVersion, pairingKey: pairingKey, keypair: keypair,
-                                         devices: deviceRegistry, allowLegacy: settings.allowLegacyPhones, capabilities: capabilities)
-        let client = RelayClientConnection(id: connectionId, url: url, session: session, identity: identity, delegate: delegate, router: self)
+        let client = RelayClientConnection(id: connectionId, socket: URLSessionRelaySocket(task: session.webSocketTask(with: url)), identity: identity, delegate: delegate, router: self)
         clients[connectionId] = client
         unauthenticated.insert(connectionId)
         Task { [weak self] in
@@ -690,10 +736,150 @@ public actor MobileRemoteService {
     private func forget(_ connectionId: String, generation current: Int) {
         unauthenticated.remove(connectionId)
         connectedDevices.removeValue(forKey: connectionId)
-        guard current == generation else { return }
+        directPeers.removeValue(forKey: connectionId)
+        guard current == (Self.isDirect(connectionId) ? directGeneration : generation) else { return }
         clients.removeValue(forKey: connectionId)
         publish()
     }
+
+    /// What every phone connection proves itself against, either path.
+    private func hostIdentity() -> RelayHostIdentity? {
+        guard let keypair = try? loadKeypair(), let pairingKey = try? loadOrCreateKey() else { return nil }
+        return RelayHostIdentity(hostId: hostId, hostName: hostName, appVersion: appVersion, pairingKey: pairingKey, keypair: keypair,
+                                 devices: deviceRegistry, allowLegacy: settings.allowLegacyPhones, capabilities: capabilities, directEndpoints: directEndpoints)
+    }
+
+    // MARK: Direct path
+
+    static func isDirect(_ connectionId: String) -> Bool { connectionId.hasPrefix(directPrefix) }
+    private var directListening: Bool { directListener != nil && !directEndpoints.isEmpty }
+    private var directWanted: Bool { settings.enabled && settings.directEnabled && !disposed }
+
+    /// Reads the Tailscale addresses again and makes the listeners match when
+    /// they or the port changed; with the switch off, stops. Listeners whose
+    /// address and port stay are kept, with their phones. `force` looks again
+    /// even when nothing seems changed (Settings changed). Runs on Settings
+    /// changes, network path changes and every `MobileDirect.redetectInterval`
+    /// while the path is on.
+    func refreshDirect(force: Bool = false) async {
+        guard directWanted else { await stopDirect(); return }
+        startDirectWatch()
+        let override = directAddressOverride
+        let detected: [(interface: String, address: String)] = override.map { $0.map { (interface: "", address: $0) } } ?? MobileDirect.detectAddresses()
+        let addresses = detected.map(\.address)
+        let port = settings.directPort
+        guard force || addresses != directBoundAddresses || port != directBoundPort else { return }
+        directBindGeneration += 1
+        let mine = directBindGeneration
+        directBoundAddresses = addresses; directBoundPort = port
+        guard !addresses.isEmpty else {
+            directListener?.stop(); directListener = nil
+            directEndpoints = []
+            directDetail = L("mobileRemote.direct.status.notFound")
+            publish(); return
+        }
+        let listener: MobileDirectListener
+        if let directListener { listener = directListener } else {
+            listener = MobileDirectListener { [weak self] incoming in
+                Task { await self?.acceptDirect(incoming) }
+            }
+            directListener = listener
+        }
+        // Each listener is pinned to its `utun` interface as well as its address.
+        let interfaces = await MobileDirect.tunnelInterfaces(named: Set(detected.map(\.interface).filter { !$0.isEmpty }))
+        guard mine == directBindGeneration, directListener === listener else { return }
+        let started = await listener.update(targets: detected.map { (address: $0.address, interface: interfaces[$0.interface]) }, port: UInt16(port))
+        let name = override == nil && !started.bound.isEmpty ? await MobileDirect.magicDNSName() : nil
+        // A newer refresh, a stop or a switch-off ran meanwhile: it owns the path now.
+        guard mine == directBindGeneration, directListener === listener else { return }
+        directEndpoints = MobileDirect.advertised(bound: started.bound, name: name, port: port, allowAnyHost: override != nil)
+        // Anything not bound is tried again on the next pass rather than taken as settled.
+        if started.bound.count < addresses.count { directBoundAddresses = nil }
+        if started.bound.isEmpty {
+            listener.stop(); directListener = nil
+            directDetail = L("mobileRemote.direct.status.failedTemplate", ["error": started.error ?? ""])
+        } else {
+            directDetail = L("mobileRemote.direct.status.listeningTemplate", ["addresses": directEndpoints.joined(separator: ", ")])
+        }
+        Self.log.info("direct path: \(started.bound.count, privacy: .public) listener(s) up, \(interfaces.count, privacy: .public) pinned")
+        publish()
+    }
+
+    private func startDirectWatch() {
+        guard directWatch == nil else { return }
+        directWatch = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(MobileDirect.redetectInterval))
+                guard !Task.isCancelled else { return }
+                await self?.refreshDirect()
+            }
+        }
+    }
+
+    /// Stops listening and drops every phone that came in directly.
+    private func stopDirect() async {
+        directWatch?.cancel(); directWatch = nil
+        let wasOn = directListener != nil || !directEndpoints.isEmpty
+        directGeneration += 1; directBindGeneration += 1
+        directListener?.stop(); directListener = nil
+        directBoundAddresses = nil; directBoundPort = nil
+        directEndpoints = []
+        directDetail = settings.enabled && !settings.directEnabled ? L("mobileRemote.direct.status.off") : ""
+        let dropped = clients.filter { Self.isDirect($0.key) }
+        for id in dropped.keys { clients.removeValue(forKey: id); unauthenticated.remove(id); connectedDevices.removeValue(forKey: id); directPeers.removeValue(forKey: id) }
+        for client in dropped.values { await client.close(reason: "direct path stopped") }
+        if wasOn || !dropped.isEmpty { publish() }
+    }
+
+    /// Failed authentications from `peer` still inside the window.
+    private func recentAuthFailures(_ peer: String, now: Date) -> Int {
+        let recent = (directAuthFailures[peer] ?? []).filter { now.timeIntervalSince($0) < MobileDirect.authFailureWindow }
+        directAuthFailures[peer] = recent.isEmpty ? nil : recent
+        return recent.count
+    }
+
+    /// A direct connection's auth was refused: counted against its address.
+    func directAuthFailed(_ connectionId: String) {
+        guard let peer = directPeers[connectionId] else { return }
+        let now = Date()
+        if directAuthFailures[peer] == nil, directAuthFailures.count >= 256 {
+            directAuthFailures = directAuthFailures.filter { $0.value.contains { now.timeIntervalSince($0) < MobileDirect.authFailureWindow } }
+        }
+        directAuthFailures[peer, default: []].append(now)
+    }
+
+    /// One phone's socket on a direct listener. It joins the same table as the
+    /// relay's phones and runs the same `RelayClientConnection`, so it is held
+    /// to the same handshake deadline, auth and request limits. Anything else —
+    /// a peer outside Tailscale's ranges, a full table, a peer already holding
+    /// its handshake slots or one that keeps failing auth — is dropped unread.
+    private func acceptDirect(_ incoming: DirectIncoming) {
+        // Loopback reaches here only through the test seam.
+        let allowAnyPeer = directAddressOverride != nil
+        guard directWanted, directListener != nil, let delegate, let identity = hostIdentity(),
+              let peer = incoming.peer, allowAnyPeer || MobileDirect.isTailscalePeer(peer),
+              clients.count < Self.maximumClients,
+              unauthenticated.filter(Self.isDirect).count < MobileDirect.maximumUnauthenticated,
+              unauthenticated.filter({ directPeers[$0] == peer }).count < MobileDirect.maximumUnauthenticatedPerPeer,
+              recentAuthFailures(peer, now: Date()) < MobileDirect.maximumAuthFailures else {
+            incoming.refuse(); return
+        }
+        let connectionId = Self.directPrefix + UUID().uuidString.lowercased()
+        let client = RelayClientConnection(id: connectionId, socket: DirectRelaySocket(incoming: incoming), identity: identity, delegate: delegate, router: self,
+                                           genericRefusals: true)
+        clients[connectionId] = client
+        unauthenticated.insert(connectionId)
+        directPeers[connectionId] = peer
+        let current = directGeneration
+        Task { [weak self] in
+            await client.run()
+            await self?.forget(connectionId, generation: current)
+        }
+        publish()
+    }
+
+    /// Test seam: connections the direct listeners hold right now.
+    func directLiveConnections() -> Int { directListener?.liveConnections ?? 0 }
 
     // MARK: Revisions
 
@@ -865,7 +1051,7 @@ public actor MobileRemoteService {
             }
             if method == "GET", route == ["info"] {
                 return reply(200, MobileInfo(hostId: hostId, hostName: hostName, appVersion: appVersion,
-                                             capabilities: capabilities))
+                                             capabilities: capabilities, direct: directEndpoints))
             }
             if method == "GET", route == ["state"] {
                 let poll = try Self.pollArguments(url)
@@ -1213,19 +1399,26 @@ struct RelayHostIdentity: Sendable {
     let allowLegacy: Bool
     /// The m1 extensions advertised in `auth_ok`, the same list `/m1/info` has.
     let capabilities: [String]
+    /// The direct path's endpoints, sent in `auth_ok` as `direct` so a phone
+    /// paired earlier learns them (empty when the path is off).
+    let directEndpoints: [String]
 }
 
-/// One phone: a relay data socket, the E2EE handshake, pairing-key check,
-/// then tunnelled requests. Frames are sealed and opened on this actor so the
-/// cipher counters stay ordered.
+/// One phone: a relay data socket or a direct one, the E2EE handshake,
+/// pairing-key check, then tunnelled requests. Frames are sealed and opened on
+/// this actor so the cipher counters stay ordered.
 actor RelayClientConnection {
     let id: String
-    private let url: URL
-    private let session: URLSession
     private let identity: RelayHostIdentity
     private weak var delegate: MobileHostDelegate?
     private weak var router: MobileRemoteService?
-    private var socket: URLSessionWebSocketTask?
+    private let pendingSocket: any RelayFrameSocket
+    private var socket: (any RelayFrameSocket)?
+    /// Direct connections answer every refusal with one word, so a peer on the
+    /// tailnet learns nothing about which ids or keys this Mac knows; the
+    /// relay path still says why. The phone takes the relay after a direct
+    /// refusal and hears the real reason there.
+    private let genericRefusals: Bool
     private var cipher: RelayCipher?
     private var authenticated = false
     /// The device this connection proved itself as; every upload it opens
@@ -1244,15 +1437,16 @@ actor RelayClientConnection {
     /// percent-encoded (three bytes each) plus the route, with room to spare.
     static let maximumPathBytes = 16 * 1_024
 
-    init(id: String, url: URL, session: URLSession, identity: RelayHostIdentity, delegate: MobileHostDelegate, router: MobileRemoteService) {
-        self.id = id; self.url = url; self.session = session; self.identity = identity; self.delegate = delegate; self.router = router
+    init(id: String, socket: any RelayFrameSocket, identity: RelayHostIdentity, delegate: MobileHostDelegate, router: MobileRemoteService, genericRefusals: Bool = false) {
+        self.id = id; self.pendingSocket = socket; self.identity = identity; self.delegate = delegate; self.router = router; self.genericRefusals = genericRefusals
     }
+    static let genericRefusal = "unauthorized"
 
     func run() async {
-        let socket = session.webSocketTask(with: url)
-        socket.maximumMessageSize = 1024 * 1024
+        guard !closed else { return }
+        let socket = pendingSocket
         self.socket = socket
-        socket.resume()
+        socket.start()
         // A peer that stalls inside the handshake must not hold a slot.
         let deadline = Task { [weak self] in
             try? await Task.sleep(for: .seconds(Self.handshakeDeadline))
@@ -1325,7 +1519,7 @@ actor RelayClientConnection {
         if let afterReply = reply.afterReply { Task { await afterReply() } }
     }
 
-    private func handshake(_ socket: URLSessionWebSocketTask) async throws {
+    private func handshake(_ socket: any RelayFrameSocket) async throws {
         let message = try await socket.receive()
         guard case .string(let text) = message, let data = text.data(using: .utf8), let hello = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               hello["type"] as? String == "hello", hello["v"] as? Int == 1,
@@ -1341,7 +1535,7 @@ actor RelayClientConnection {
     /// the device id the connection belongs to, or nil when it was refused.
     /// Nothing here reaches a log: the key, the token and their hashes stay in
     /// this function and the registry.
-    private func authenticate(_ socket: URLSessionWebSocketTask) async throws -> String? {
+    private func authenticate(_ socket: any RelayFrameSocket) async throws -> String? {
         let message = try await socket.receive()
         guard case .data(let frame) = message else { return nil }
         let plaintext = try openFrame(frame)
@@ -1355,14 +1549,16 @@ actor RelayClientConnection {
     }
 
     private func refuse(_ reason: String) async -> String? {
-        send(["type": "auth_error", "reason": reason]); await flush(); return nil
+        send(["type": "auth_error", "reason": genericRefusals ? Self.genericRefusal : reason]); await flush()
+        if genericRefusals { await router?.directAuthFailed(id) }
+        return nil
     }
 
     private func accept(device: String, token: String?) -> String {
         authenticated = true
         deviceId = device
         var frame: [String: Any] = ["type": "auth_ok", "hostName": identity.hostName, "hostId": identity.hostId, "appVersion": identity.appVersion,
-                                    "capabilities": identity.capabilities]
+                                    "capabilities": identity.capabilities, "direct": identity.directEndpoints]
         if let token {
             assert(!issuedToken, "one device token per socket")
             issuedToken = true
@@ -1418,7 +1614,8 @@ actor RelayClientConnection {
         for task in requestTasks.values { task.cancel() }
         requestTasks.removeAll()
         outbound.removeAll()
-        socket?.cancel(with: .normalClosure, reason: reason.isEmpty ? nil : Data(reason.utf8))
+        // Closed before `run` ever started it: the socket is still ours to close.
+        (socket ?? pendingSocket).close(reason: reason)
         socket = nil
     }
 }

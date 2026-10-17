@@ -95,7 +95,7 @@ struct RelayLinkTests {
         let service = MobileRemoteService(dataDirectory: directory, hostName: "Link Mac", defaultRelayURL: "", watchesNetwork: false)
         let clock = RelayManualClock()
         await service.setPathClock(clock.clock)
-        _ = await service.apply(settings: MobileRemoteSettings(enabled: true, relayURL: "ws://127.0.0.1:1"))
+        _ = await service.apply(settings: MobileRemoteSettings(enabled: true, relayURL: "ws://127.0.0.1:1", directEnabled: false))
         do { try await body(service, clock) } catch { await service.shutdown(); throw error }
         await service.shutdown()
     }

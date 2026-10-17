@@ -12,6 +12,7 @@ import { appForeground } from '@/api/relay/foreground';
 import { LeasePool, type PoolIdentity } from '@/lib/connection-pool';
 import { clientDeviceName } from '@/lib/device';
 import type { DeviceAuthState } from '@/lib/device-token';
+import type { ConnectionRoute } from '@/lib/direct';
 import { t } from '@/lib/i18n';
 import { KEY_SEPARATOR } from '@/lib/keys';
 import {
@@ -69,6 +70,8 @@ export interface HostCredentials {
   pairingKey?: string;
   clientId?: string;
   deviceToken?: string;
+  /** The Mac's Tailscale endpoints, tried before the relay. */
+  directEndpoints?: string[];
 }
 
 export interface PollOptions {
@@ -669,7 +672,11 @@ export function createClient(channel: RelayChannel): MobileClient {
 
 const pool = new LeasePool<RelayConnection, MobileClient>();
 
-/** Everything but the secret: a change here always means a different tunnel. */
+/**
+ * Everything but the secret: a change here always means a different tunnel. The direct
+ * endpoints are left out on purpose: a live tunnel learns them from the host itself, so
+ * storing what it learnt must not tear that very tunnel down.
+ */
 function fingerprintOf(credentials: HostCredentials): string {
   return [credentials.serverId, credentials.relayUrl, credentials.hostPublicKeyB64].join(
     KEY_SEPARATOR,
@@ -697,6 +704,10 @@ export interface HostLeaseOptions {
   authorize?: (state: DeviceAuthState) => Promise<AuthLease>;
   /** Mints this host's own `clientId` after a `device-conflict`. */
   mintClientId?: () => Promise<string | undefined>;
+  /** Stores the Tailscale endpoints the host listed in `auth_ok`. */
+  onDirectEndpoints?: (endpoints: string[]) => void;
+  /** Hears which way the tunnel reached the host, each time it opens. */
+  onRoute?: (route: ConnectionRoute) => void;
 }
 
 function connectionOptions(options: HostLeaseOptions): RelayConnectionOptions {
@@ -704,6 +715,8 @@ function connectionOptions(options: HostLeaseOptions): RelayConnectionOptions {
   if (options.onDeviceToken) built.onDeviceToken = options.onDeviceToken;
   if (options.authorize) built.authorize = options.authorize;
   if (options.mintClientId) built.mintClientId = options.mintClientId;
+  if (options.onDirectEndpoints) built.onDirectEndpoints = options.onDirectEndpoints;
+  if (options.onRoute) built.onRoute = options.onRoute;
   return built;
 }
 
@@ -750,7 +763,9 @@ export async function probeHost(
     autoReconnect: false,
   });
   try {
-    return await connection.ready();
+    const info = await connection.ready();
+    const route = connection.route;
+    return route ? { ...info, route } : info;
   } finally {
     connection.close();
   }

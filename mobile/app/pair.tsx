@@ -54,10 +54,18 @@ export default function PairScreen() {
           hostPublicKeyB64: payload.hostPublicKeyB64,
           pairingKey: payload.pairingKey,
           clientId,
+          // The Mac's Tailscale endpoints go first; the relay is the fallback.
+          ...(payload.directEndpoints ? { directEndpoints: payload.directEndpoints } : {}),
         });
         const saved = await addHost(
           { ...payload, name: payload.name || info.hostName || payload.serverId },
-          { hostId: info.hostId, appVersion: info.appVersion, deviceToken: info.deviceToken },
+          {
+            hostId: info.hostId,
+            appVersion: info.appVersion,
+            deviceToken: info.deviceToken,
+            direct: info.direct,
+            route: info.route,
+          },
         );
         showToast(t('phone.pair.paired', { name: saved.name }), 'success');
         // Back down to the tabs — or onto them, after a pairing link opened this screen

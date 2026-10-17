@@ -2654,5 +2654,17 @@
   "phone.status.idle": "Idle",
   "phone.status.waiting": "Waiting",
   "phone.unknown": "Unknown",
-  "phone.screenShare.signalTooLarge": "The signalling message is too large ({bytes} bytes)."
+  "phone.screenShare.signalTooLarge": "The signalling message is too large ({bytes} bytes).",
+  "mobileRemote.direct.toggle": "Connect directly over Tailscale",
+  "mobileRemote.direct.description": "When the phone is on the same Tailscale network as this Mac, it connects straight to it without the relay, and falls back to the relay when it cannot. Everything stays end-to-end encrypted exactly as through the relay, and this Mac accepts connections only on its Tailscale addresses.",
+  "mobileRemote.direct.portLabel": "Port",
+  "mobileRemote.direct.status.listeningTemplate": "Listening on Tailscale: {addresses}",
+  "mobileRemote.direct.status.notFound": "Tailscale not found",
+  "mobileRemote.direct.status.off": "Direct connection is off. Phones connect through the relay only.",
+  "mobileRemote.direct.status.failedTemplate": "Could not listen on the Tailscale addresses: {error}",
+  "mobileRemote.direct.error.closed": "The phone connection closed.",
+  "mobileRemote.direct.error.bindTimeout": "Opening the address took too long.",
+  "phone.direct.route.direct": "Tailscale direct",
+  "phone.direct.route.relay": "Relay",
+  "phone.direct.route.accessibility": "Connection route: {route}"
 }

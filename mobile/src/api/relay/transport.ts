@@ -20,6 +20,7 @@ import {
   type AuthRejection,
   type DeviceAuthState,
 } from '@/lib/device-token';
+import { isDialableDirectEndpoint, sanitizeDirectEndpoints, type ConnectionRoute } from '@/lib/direct';
 import { t } from '@/lib/i18n';
 
 /** Wire version of both the relay query string and the handshake envelopes. */
@@ -39,6 +40,16 @@ export const DEFAULT_REQUEST_TIMEOUT_MS = 45_000;
  */
 export const FOREGROUND_PROBE_MS = 10_000;
 const HANDSHAKE_TIMEOUT_MS = 20_000;
+/**
+ * How long the Mac's Tailscale endpoints get to open before the relay is dialled
+ * instead. All of them are tried at once, so this is the whole wait, not one per endpoint.
+ */
+export const DIRECT_TIMEOUT_MS = 1_800;
+/**
+ * How long a direct socket that opened gets to reach `auth_ok`. Over Tailscale that takes
+ * a round trip or two; anything slower is better served by the relay, taken at once.
+ */
+export const DIRECT_AUTH_TIMEOUT_MS = 3_000;
 
 export type RelayState = 'connecting' | 'handshaking' | 'ready' | 'closed';
 
@@ -159,6 +170,11 @@ export interface RelayTarget {
   clientId?: string;
   /** Per-host device token; authenticates on its own. */
   deviceToken?: string;
+  /**
+   * The Mac's Tailscale endpoints (`host:port`). When there are any, each connect opens
+   * them first and uses the relay only if none answers (docs/relay.md, "Tailscale 직접 연결").
+   */
+  directEndpoints?: string[];
 }
 
 export interface RelayHostInfo {
@@ -167,6 +183,10 @@ export interface RelayHostInfo {
   appVersion: string;
   /** Sent once, on the connection that registered this device. */
   deviceToken?: string;
+  /** The endpoints a host with the `direct` capability listed in its `auth_ok`. */
+  direct?: string[];
+  /** How the tunnel reached the host; filled in by `probeHost`, read `route` otherwise. */
+  route?: ConnectionRoute;
 }
 
 export interface RelayNotification {
@@ -232,6 +252,14 @@ export interface RelayConnectionOptions {
    * for exactly one more attempt with the pairing key.
    */
   mintClientId?: () => Promise<string | undefined>;
+  /** Overrides `DIRECT_TIMEOUT_MS`. */
+  directTimeoutMs?: number;
+  /** Overrides `DIRECT_AUTH_TIMEOUT_MS`. */
+  directAuthTimeoutMs?: number;
+  /** Called with the endpoints a host lists in `auth_ok`, so they can be stored. */
+  onDirectEndpoints?: (endpoints: string[]) => void;
+  /** Called each time the tunnel is ready, with the way it reached the host. */
+  onRoute?: (route: ConnectionRoute) => void;
 }
 
 function defaultSocketFactory(url: string): RelaySocket {
@@ -247,6 +275,14 @@ function toBytes(data: unknown): Uint8Array | undefined {
     return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
   }
   return undefined;
+}
+
+/**
+ * A direct data socket: the Mac knows only itself, so the URL names no server and no
+ * connection — a tailnet observer learns nothing it could replay at the relay.
+ */
+export function buildDirectUrl(endpoint: string): string {
+  return `ws://${endpoint}/ws?v=${RELAY_WIRE_VERSION}`;
 }
 
 export function buildRelayUrl(relayUrl: string, serverId: string, connectionId: string): string {
@@ -316,6 +352,13 @@ export class RelayConnection {
   private clientIdRetried = false;
   /** Moves from the pairing key to the device token the moment the host issues one. */
   private auth: DeviceAuthState;
+  /** The Mac's Tailscale endpoints; replaced by what the host says in `auth_ok`. */
+  private directEndpoints: string[];
+  /** Which way the current socket went, and whether it has got as far as `auth_ok`. */
+  private attemptRoute: ConnectionRoute = 'relay';
+  private socketReady = false;
+  /** Abandons the direct race in progress, if there is one. */
+  private cancelRace: (() => void) | undefined;
 
   private readonly clientName: string;
   private readonly autoReconnect: boolean;
@@ -325,6 +368,10 @@ export class RelayConnection {
   private readonly onDeviceToken: ((deviceToken: string) => void | Promise<void>) | undefined;
   private readonly authorize: ((state: DeviceAuthState) => Promise<AuthLease>) | undefined;
   private readonly mintClientId: (() => Promise<string | undefined>) | undefined;
+  private readonly directTimeoutMs: number;
+  private readonly directAuthTimeoutMs: number;
+  private readonly onDirectEndpoints: ((endpoints: string[]) => void) | undefined;
+  private readonly onRoute: ((route: ConnectionRoute) => void) | undefined;
 
   constructor(
     private readonly target: RelayTarget,
@@ -338,6 +385,11 @@ export class RelayConnection {
     this.onDeviceToken = options.onDeviceToken;
     this.authorize = options.authorize;
     this.mintClientId = options.mintClientId;
+    this.directTimeoutMs = options.directTimeoutMs ?? DIRECT_TIMEOUT_MS;
+    this.directAuthTimeoutMs = options.directAuthTimeoutMs ?? DIRECT_AUTH_TIMEOUT_MS;
+    this.onDirectEndpoints = options.onDirectEndpoints;
+    this.onRoute = options.onRoute;
+    this.directEndpoints = [...(target.directEndpoints ?? [])];
     this.auth = {
       clientId: target.clientId,
       pairingKey: target.pairingKey,
@@ -369,6 +421,11 @@ export class RelayConnection {
   /** The id this tunnel introduces itself with, after any `device-conflict` retry. */
   get clientId(): string | undefined {
     return this.auth.clientId;
+  }
+
+  /** How the open tunnel reached the host; undefined while it is not open. */
+  get route(): ConnectionRoute | undefined {
+    return this.currentState === 'ready' ? this.attemptRoute : undefined;
   }
 
   onNotify(listener: (event: RelayNotification) => void): () => void {
@@ -446,7 +503,7 @@ export class RelayConnection {
   /** Cancels the backoff timer and dials again right away. */
   reconnectNow(): void {
     if (this.disposed || !this.autoReconnect) return;
-    if (isFinalFailure(this.currentFailure) || this.socket) return;
+    if (isFinalFailure(this.currentFailure) || this.socket || this.cancelRace) return;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = undefined;
@@ -500,31 +557,122 @@ export class RelayConnection {
     for (const listener of this.stateListeners) listener(state, failure);
   }
 
-  private connect(): void {
+  /**
+   * Opens the next socket: the Mac's Tailscale endpoints first, all at once, and the relay
+   * when none of them opens within `directTimeoutMs` or every one has already failed.
+   * `relayOnly` skips the race — a direct socket that opened but went nowhere comes here.
+   */
+  private connect(relayOnly = false): void {
     if (this.disposed) return;
     this.authFailure = undefined;
     this.authRejection = undefined;
     this.setState('connecting');
 
-    const keyPair = generateKeyPair();
-    const clientNonce = generateHandshakeNonce();
-    const url = buildRelayUrl(this.target.relayUrl, this.target.serverId, randomUuid());
+    const connectionId = randomUuid();
+    // Only address literals are raced: a MagicDNS name would be looked up through
+    // whatever DNS the phone has, which without Tailscale running is the public one.
+    const direct = relayOnly ? [] : this.directEndpoints.filter(isDialableDirectEndpoint);
+    if (direct.length === 0) {
+      this.dial(buildRelayUrl(this.target.relayUrl, this.target.serverId, connectionId));
+      return;
+    }
+    this.raceDirect(direct.map(buildDirectUrl));
+  }
 
+  /** Dials the relay; the handshake starts once the socket opens. */
+  private dial(url: string): void {
     let socket: RelaySocket;
     try {
       socket = this.createSocket(url);
     } catch (error) {
+      this.attemptRoute = 'relay';
       this.handleClose(undefined, error instanceof RelayError ? error.failure : 'relay-unreachable');
       return;
     }
+    this.attach(socket, 'relay', false);
+  }
+
+  /**
+   * Opens every direct endpoint at once and keeps the first that opens. Only the socket
+   * opening is raced: whether it is the right Mac is the handshake's job, and a socket
+   * that fails it falls back to the relay (`handleClose`).
+   */
+  private raceDirect(urls: string[]): void {
+    const sockets: RelaySocket[] = [];
+    let settled = false;
+    let failed = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const detach = (socket: RelaySocket) => {
+      socket.onopen = null;
+      socket.onmessage = null;
+      socket.onclose = null;
+      // Closing a socket that is still opening reports an error; it is ours and expected.
+      socket.onerror = () => undefined;
+    };
+    const finish = (winner: RelaySocket | undefined, abandon = false) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      this.cancelRace = undefined;
+      for (const socket of sockets) {
+        if (socket === winner) continue;
+        detach(socket);
+        try {
+          socket.close(1000, 'client');
+        } catch {
+          // ignore
+        }
+      }
+      if (abandon || this.disposed) return;
+      if (winner) this.attach(winner, 'direct', true);
+      else this.connect(true);
+    };
+    for (const url of urls) {
+      let socket: RelaySocket;
+      try {
+        socket = this.createSocket(url);
+      } catch {
+        failed += 1;
+        continue;
+      }
+      socket.binaryType = 'arraybuffer';
+      socket.onopen = () => finish(socket);
+      socket.onerror = () => undefined;
+      socket.onclose = () => {
+        failed += 1;
+        if (failed >= urls.length) finish(undefined);
+      };
+      sockets.push(socket);
+    }
+    if (failed >= urls.length) {
+      finish(undefined);
+      return;
+    }
+    this.cancelRace = () => finish(undefined, true);
+    timer = setTimeout(() => finish(undefined), this.directTimeoutMs);
+  }
+
+  /**
+   * Takes `socket` as this tunnel's and runs the handshake on it. A direct socket arrives
+   * already open, so its `hello` goes out at once.
+   */
+  private attach(socket: RelaySocket, route: ConnectionRoute, opened: boolean): void {
     this.socket = socket;
+    this.attemptRoute = route;
+    this.socketReady = false;
     socket.binaryType = 'arraybuffer';
+    const keyPair = generateKeyPair();
+    const clientNonce = generateHandshakeNonce();
 
-    this.handshakeTimer = setTimeout(() => {
-      if (this.currentState !== 'ready') this.dropSocket(socket, 'host-not-attached');
-    }, HANDSHAKE_TIMEOUT_MS);
+    // A direct socket has a short deadline of its own, after which the relay is taken.
+    this.handshakeTimer = setTimeout(
+      () => {
+        if (this.currentState !== 'ready') this.dropSocket(socket, 'host-not-attached');
+      },
+      route === 'direct' ? this.directAuthTimeoutMs : HANDSHAKE_TIMEOUT_MS,
+    );
 
-    socket.onopen = () => {
+    const hello = () => {
       if (this.socket !== socket) return;
       this.setState('handshaking');
       socket.send(
@@ -536,6 +684,7 @@ export class RelayConnection {
         }),
       );
     };
+    socket.onopen = hello;
 
     socket.onmessage = (event) => {
       if (this.socket !== socket) return;
@@ -558,6 +707,8 @@ export class RelayConnection {
       if (this.socket !== socket) return;
       this.handleClose(event?.code);
     };
+
+    if (opened) hello();
   }
 
   private handleMessage(
@@ -605,6 +756,10 @@ export class RelayConnection {
 
     const serverKey = fromBase64(parsed.serverKey);
     if (!bytesEqual(serverKey, fromBase64(this.target.hostPublicKeyB64))) {
+      // Over the relay the serverId names this Mac, so another key means the pairing is
+      // stale. A direct endpoint is only an address, and it may now be someone else's:
+      // that is a reason to take the relay, never to drop the pairing.
+      if (this.attemptRoute === 'direct') throw new RelayError('protocol', undefined, t('phone.relay.hostKeyMismatch'));
       throw new RelayError('unpaired', undefined, t('phone.relay.hostKeyMismatch'));
     }
 
@@ -676,6 +831,8 @@ export class RelayConnection {
       appVersion?: string;
       deviceToken?: unknown;
       reason?: unknown;
+      capabilities?: unknown;
+      direct?: unknown;
     };
 
     if (typeof envelope.id === 'string' && envelope.type === undefined) {
@@ -694,6 +851,15 @@ export class RelayConnection {
           appVersion: envelope.appVersion ?? '',
         };
         if (deviceToken) info.deviceToken = deviceToken;
+        // Read only from a host that says it has the direct path: it is how a phone paired
+        // before the Mac learned its Tailscale addresses finds them, and how it forgets
+        // them once the Mac stops listening.
+        if (Array.isArray(envelope.capabilities) && envelope.capabilities.includes('direct')) {
+          const direct = sanitizeDirectEndpoints(envelope.direct);
+          this.directEndpoints = direct;
+          info.direct = direct;
+          this.onDirectEndpoints?.(direct);
+        }
         this.onAuthenticated(info, deviceToken);
         return;
       }
@@ -764,6 +930,7 @@ export class RelayConnection {
       this.releaseAuthLease();
     }
     this.hostInfo = info;
+    this.socketReady = true;
     this.reconnectDelayMs = RECONNECT_MIN_MS;
     this.lastPongAt = Date.now();
     if (this.handshakeTimer) {
@@ -771,6 +938,7 @@ export class RelayConnection {
       this.handshakeTimer = undefined;
     }
     this.setState('ready');
+    this.onRoute?.(this.attemptRoute);
     const waiters = this.readyWaiters.splice(0, this.readyWaiters.length);
     for (const waiter of waiters) waiter.resolve(info);
     this.startHeartbeat();
@@ -874,6 +1042,19 @@ export class RelayConnection {
     this.authRejection = undefined;
     this.releaseAuthLease();
 
+    // A direct socket that never got as far as `auth_ok` — the Mac's address now answers
+    // with another key, the handshake stalled past its deadline, the listener dropped it,
+    // or the Mac refused it — settles nothing. A Mac refuses a direct socket with one
+    // generic word, so the reason that counts (a revoked device, a stale key, a clientId
+    // conflict) is heard over the relay, which is taken at once; nobody waiting hears of
+    // the direct attempt.
+    const wasReady = this.socketReady;
+    this.socketReady = false;
+    if (this.attemptRoute === 'direct' && !wasReady && !this.disposed) {
+      this.connect(true);
+      return;
+    }
+
     // `device-conflict` means this Mac already holds a token for our id: introduce
     // ourselves under a fresh one, once. Nobody waiting is told anything yet.
     if (rejection?.retryWithNewClientId && this.beginClientIdRetry()) return;
@@ -949,6 +1130,7 @@ export class RelayConnection {
   }
 
   private teardown(error: Error): void {
+    this.cancelRace?.();
     const socket = this.socket;
     this.socket = undefined;
     this.cipher = undefined;

@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import { Alert, FlatList, Linking, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LiveDot, reachabilityColor, reachabilityKeys } from '@/components/host-status';
+import { LiveDot, RouteBadge, reachabilityColor, reachabilityKeys } from '@/components/host-status';
 import { Badge, Button, EmptyState, ScreenTitle } from '@/components/ui';
 import { hostAddress, useHostsStore, type PairedHost } from '@/store/hosts';
 import { useLiveStore } from '@/store/live';
@@ -27,6 +27,7 @@ function HostRow({ host }: { host: PairedHost }) {
   const palette = usePalette();
   const styles = useStyles(makeStyles);
   const status = useHostsStore((state) => state.status[host.id]?.reachability ?? 'unknown');
+  const route = useHostsStore((state) => state.status[host.id]?.route);
   const attention = useLiveStore((store) => {
     const state = store.states[host.id];
     return state ? countAttention(state) : 0;
@@ -64,6 +65,7 @@ function HostRow({ host }: { host: PairedHost }) {
       </Text>
       <View style={styles.rowBottom}>
         <Text style={[styles.status, { color }]}>{t(reachabilityKeys[status])}</Text>
+        {status === 'online' && route ? <RouteBadge palette={palette} route={route} /> : null}
         {host.appVersion ? <Text style={styles.meta}>· v{host.appVersion}</Text> : null}
       </View>
     </Pressable>

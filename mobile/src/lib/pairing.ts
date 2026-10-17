@@ -1,4 +1,5 @@
 import { fromBase64, toBase64, KEY_LENGTH } from '@/api/relay/crypto';
+import { parseDirectParam } from '@/lib/direct';
 import { t } from '@/lib/i18n';
 
 export const PAIRING_SCHEME = 'mightyclaude://pair';
@@ -13,6 +14,11 @@ export interface PairingPayload {
   hostPublicKeyB64: string;
   pairingKey: string;
   name: string;
+  /**
+   * The Mac's Tailscale endpoints (`host:port`), from the optional `direct=` parameter.
+   * Tried before the relay; absent when the QR has none.
+   */
+  directEndpoints?: string[];
 }
 
 export type PairingParseResult =
@@ -41,8 +47,9 @@ export function normalizeRelayUrl(raw: string): string | undefined {
 }
 
 /**
- * Parses `mightyclaude://pair?v=2&sid=…&pk=…&relay=…&key=…&name=…`.
- * Pure: safe to unit-test without native modules. v1 strings are rejected.
+ * Parses `mightyclaude://pair?v=2&sid=…&pk=…&relay=…&key=…&name=…[&direct=…]`.
+ * Pure: safe to unit-test without native modules. v1 strings are rejected. A `direct`
+ * value that holds no Tailscale endpoint is dropped, never an error: the relay still works.
  */
 export function parsePairingUrl(raw: string): PairingParseResult {
   const params = readParams(raw);
@@ -87,7 +94,10 @@ export function parsePairingUrl(raw: string): PairingParseResult {
   if (!pairingKey) return { ok: false, error: t('phone.pair.error.noPairingKey') };
 
   const name = (params.get('name') ?? '').trim() || serverId;
-  return { ok: true, value: { serverId, relayUrl, hostPublicKeyB64, pairingKey, name } };
+  const value: PairingPayload = { serverId, relayUrl, hostPublicKeyB64, pairingKey, name };
+  const directEndpoints = parseDirectParam(params.get('direct'));
+  if (directEndpoints.length > 0) value.directEndpoints = directEndpoints;
+  return { ok: true, value };
 }
 
 /** Builds the canonical v2 pairing string for a payload. */
@@ -99,6 +109,7 @@ export function formatPairingUrl(payload: PairingPayload): string {
   params.set('relay', payload.relayUrl);
   params.set('key', payload.pairingKey);
   params.set('name', payload.name);
+  if (payload.directEndpoints?.length) params.set('direct', payload.directEndpoints.join(','));
   return `${PAIRING_SCHEME}?${params.toString()}`;
 }
 
