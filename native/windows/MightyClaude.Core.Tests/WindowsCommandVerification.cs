@@ -52,6 +52,14 @@ internal static class WindowsCommandVerification
             catch (ArgumentException) { refused = true; }
             Check(refused, "an argument cmd would expand or end early must be refused: " + unsafeArgument);
         }
+        // A batch launch runs cmd.exe with the shim's own line, and neither it nor a direct launch looks in the working folder for a bare name.
+        var variables = new Dictionary<string, string> { ["SystemRoot"] = @"D:\Win" };
+        var (batch, shimLine) = WindowsCommand.Launch(@"C:\npm\claude.cmd", ["plugin", "list"], Path.GetTempPath(), null, variables);
+        Check(batch.FileName == WindowsCommand.CommandInterpreter(variables) && batch.ArgumentList.Count == 0 && shimLine == "\"C:\\npm\\claude.cmd\" \"plugin\" \"list\""
+            && batch.Environment[WindowsCommand.NoCurrentDirectorySearch] == "1", "a batch launch must go through cmd.exe with NoDefaultCurrentDirectoryInExePath set");
+        var (direct, none) = WindowsCommand.Launch(@"C:\git\git.exe", ["--version"], Path.GetTempPath(), new Dictionary<string, string> { ["PATH"] = "x" });
+        Check(direct.FileName == @"C:\git\git.exe" && none is null && direct.ArgumentList.SequenceEqual(["--version"]) && direct.Environment[WindowsCommand.NoCurrentDirectorySearch] == "1" && direct.Environment["PATH"] == "x",
+            "a direct launch keeps its arguments and environment and sets NoDefaultCurrentDirectoryInExePath too");
         Check(WindowsCommand.CommandInterpreter(new Dictionary<string, string> { ["SystemRoot"] = @"D:\Win" }) == Path.Combine(@"D:\Win", "System32", "cmd.exe"), "cmd.exe comes from the system folder");
         return Task.CompletedTask;
     }
@@ -63,7 +71,7 @@ internal static class WindowsCommandVerification
         Check(source.Contains("environment: CliEnvironment.Current()") && source.Contains("return ToolkitCommandOutput.Failure(ex.Message, -1);"),
             "the toolkit executor must use the PATH Windows keeps now and turn a launch failure into a failed step");
         var runner = File.ReadAllText(Path.Combine(Path.GetDirectoryName(ClaudePluginVerification.WinUISource())!, "MightyClaude.Core", "CliRunner.cs"));
-        Check(runner.Contains("WindowsCommand.Find(executable") && runner.Contains("WindowsCommand.BatchCommandLine(resolved, arguments)"),
+        Check(runner.Contains("WindowsCommand.Find(executable") && runner.Contains("WindowsCommand.Launch(resolved, arguments, cwd, env, lookup)"),
             "CliRunner must find bare names along the PATH and run a batch file through cmd.exe");
         return Task.CompletedTask;
     }

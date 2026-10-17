@@ -8,6 +8,13 @@ namespace MightyClaude.Core;
 /// </summary>
 public static class WindowsCommand
 {
+    /// <summary>
+    /// Set in a launch's environment, it stops cmd.exe (and CreateProcess for a bare name) looking in the working folder first:
+    /// an npm shim such as <c>claude.cmd</c> runs the bare <c>node</c>, and a repository the command starts in must not be able to
+    /// plant a <c>node.exe</c> there (NeedCurrentDirectoryForExePathW).
+    /// </summary>
+    public const string NoCurrentDirectorySearch = "NoDefaultCurrentDirectoryInExePath";
+
     /// <summary>What PATHEXT says when it says nothing (Windows' own default, the script hosts left out).</summary>
     public const string DefaultPathExt = ".COM;.EXE;.BAT;.CMD";
 
@@ -24,12 +31,12 @@ public static class WindowsCommand
             .Where(extension => extension.StartsWith('.') && extension.Length > 1).ToArray();
         var named = extensions.Any(extension => name.EndsWith(extension, StringComparison.OrdinalIgnoreCase));
         IEnumerable<string> Candidates(string stem) => named ? [stem, .. extensions.Select(extension => stem + extension)] : extensions.Select(extension => stem + extension);
-        if (Path.IsPathRooted(name)) return exists(name) ? name : Candidates(name).FirstOrDefault(exists);
+        if (Path.IsPathFullyQualified(name)) return exists(name) ? name : Candidates(name).FirstOrDefault(exists);
         if (name.IndexOfAny(['/', '\\', ':']) >= 0) return null;
         foreach (var folder in (path ?? "").Split(Path.PathSeparator).Take(64))
         {
             var directory = folder.Trim().Trim('"');
-            if (directory.Length == 0 || directory.Contains('\0') || !Path.IsPathRooted(directory)) continue;
+            if (directory.Length == 0 || directory.Contains('\0') || !Path.IsPathFullyQualified(directory)) continue;
             if (Candidates(Path.Combine(directory, name)).FirstOrDefault(exists) is { } found) return found;
         }
         return null;
@@ -48,7 +55,7 @@ public static class WindowsCommand
         foreach (var folder in folders.Take(80))
         {
             var directory = folder.Trim().Trim('"');
-            if (directory.Length == 0 || directory.Contains('\0') || !Path.IsPathRooted(directory)) continue;
+            if (directory.Length == 0 || directory.Contains('\0') || !Path.IsPathFullyQualified(directory)) continue;
             if (extensions.Select(extension => Path.Combine(directory, name + extension)).FirstOrDefault(exists) is { } found && seen.Add(found)) copies.Add(found);
         }
         return copies;
@@ -60,6 +67,18 @@ public static class WindowsCommand
         var variables = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var (key, value) in environment) variables[key] = value;
         return variables;
+    }
+
+    /// <summary>
+    /// How <see cref="CliRunner"/> starts a resolved program on Windows: a batch file through cmd.exe with its own command line
+    /// (<see cref="BatchCommandLine"/>), anything else directly; either way with <see cref="NoCurrentDirectorySearch"/> set.
+    /// </summary>
+    public static (System.Diagnostics.ProcessStartInfo Info, string? ShellCommand) Launch(string resolved, IReadOnlyList<string> arguments, string workingDirectory, IDictionary<string, string>? environment, IReadOnlyDictionary<string, string>? variables = null)
+    {
+        var batch = IsBatch(resolved);
+        var info = ChildProcess.StartInfo(batch ? CommandInterpreter(variables) : resolved, batch ? [] : arguments, workingDirectory, environment);
+        info.Environment[NoCurrentDirectorySearch] = "1";
+        return (info, batch ? BatchCommandLine(resolved, arguments) : null);
     }
 
     /// <summary>A batch file, which only cmd.exe can run.</summary>
