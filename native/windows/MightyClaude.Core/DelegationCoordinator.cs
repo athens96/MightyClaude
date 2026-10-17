@@ -46,8 +46,8 @@ public static class DelegationToolManifest
 /// <param name="SessionId">Chosen by the coordinator, so the branch <c>mighty/&lt;session id&gt;</c> and the worktree exist before the pane does.</param>
 /// <param name="Mode">The starting permission mode the parent asked for, written once.</param>
 /// <param name="Folder">The folder the child works in, inside its worktree.</param>
-/// <param name="StartedByHuman">The human started it from the parent's composer: it takes the parent's model and effort, and the app shows it at once.</param>
-/// <param name="Provider">The agent CLI the child runs: its parent's.</param>
+/// <param name="StartedByHuman">The human started it from the parent's composer: a child of the parent's agent takes the parent's model and effort, one of another agent that agent's last-used pane's, and the app shows it at once.</param>
+/// <param name="Provider">The agent CLI the child runs: its parent's, or the one the parent's delegate call or the human's menu chose.</param>
 public sealed record DelegationChildPane(string SessionId, string ParentSessionId, string Mode, string Folder, bool StartedByHuman = false, string Provider = "claude");
 
 /// <summary>What a pane is doing, as delivery needs to know it (M/DelegationCoordinator.swift:99-109).</summary>

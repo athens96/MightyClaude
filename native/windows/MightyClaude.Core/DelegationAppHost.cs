@@ -9,19 +9,23 @@ namespace MightyClaude.Core;
 public static class DelegationPanes
 {
     /// <summary>
-    /// A new agent pane for <paramref name="pane"/> in the workspace <paramref name="workspaceId"/>, running
-    /// <c>pane.Provider</c> (its parent's agent). Its mode is the starting mode the parent asked for, written here once and never
-    /// copied from the last-used pane; it is linked to its parent and works in its worktree folder. Every child of a
-    /// <paramref name="parent"/> running the same agent shows its requests the way the parent does: basic or Mighty, and in
-    /// Mighty the diagram, timeline or pipeline. A child the human started also takes the parent's model and effort, and a Claude
-    /// one its Mighty style; any other runs its agent's default (plain Mighty for Claude).
+    /// A new agent pane for <paramref name="pane"/> in the workspace <paramref name="workspaceId"/>, running <c>pane.Provider</c>
+    /// (the child's agent). Its mode is the starting mode the parent asked for, written here once and never copied from the
+    /// last-used pane; it is linked to its parent and works in its worktree folder. Every child of an agent pane
+    /// <paramref name="parent"/> shows its requests the way the parent does: basic or Mighty, and in Mighty the diagram, timeline or
+    /// pipeline. A child of the parent's own agent that the human started also takes the parent's model and effort, and a Claude
+    /// one its Mighty style. A child of another agent that the human started runs the model and effort a new pane of that agent
+    /// would: those of <paramref name="agentDefaults"/>, the agent's last-used pane, or its defaults without one. Any child the
+    /// parent's delegate made runs its agent's defaults (M/DelegationAppHost.swift childSession).
     /// </summary>
-    public static RunSession ChildSession(DelegationChildPane pane, string workspaceId, string title, RunSession? parent = null)
+    public static RunSession ChildSession(DelegationChildPane pane, string workspaceId, string title, RunSession? parent = null, RunSession? agentDefaults = null)
     {
         var session = new RunSession { Id = pane.SessionId, WorkspaceId = workspaceId, Title = title, Kind = "claude", Provider = pane.Provider, Settings = new(PermissionMode: pane.Mode), ParentSessionId = pane.ParentSessionId, WorkingFolder = pane.Folder };
-        if (parent is null || parent.Provider != pane.Provider || !DelegationProviders.IsAgentPane(parent.Kind, parent.Provider)) return session;
+        if (parent is null || !DelegationProviders.IsAgentPane(parent.Kind, parent.Provider)) return session;
         session = session with { AgentViewMode = parent.AgentViewMode, GraphViewMode = parent.GraphViewMode };
         if (!pane.StartedByHuman) return session;
+        if (parent.Provider != pane.Provider)
+            return agentDefaults is { } defaults && defaults.Provider == pane.Provider ? session with { Model = defaults.Model, Settings = session.Settings with { Effort = defaults.Settings.Effort } } : session;
         session = session with { Model = parent.Model, Settings = session.Settings with { Effort = parent.Settings.Effort } };
         // The same approved bytes; its state starts over at the child's own first request.
         return pane.Provider == "claude" ? session with { MightyStyle = parent.MightyStyle, MightyStyleHash = parent.MightyStyleHash } : session;
@@ -39,7 +43,9 @@ public static class DelegationPanes
     {
         if (!PaneLayout.HasRoom(state) || state.Sessions.Any(session => session.Id == pane.SessionId) || state.Sessions.FirstOrDefault(session => session.Id == pane.ParentSessionId) is not { } parent
             || !state.Workspaces.Any(workspace => workspace.Id == parent.WorkspaceId)) return null;
-        var child = ChildSession(pane, parent.WorkspaceId, PaneTitle.Shortened(task) ?? ProviderCatalog.Name(pane.Provider), parent) with { TitleMode = PaneTitle.Fixed };
+        // A child of another agent takes what a new pane of that agent would: its last-used top-level pane's model and effort.
+        var agentDefaults = parent.Provider == pane.Provider ? null : SessionTemplate.Find(new RunSession { Id = pane.SessionId, WorkspaceId = parent.WorkspaceId, Kind = "claude", Provider = pane.Provider }, state.Sessions);
+        var child = ChildSession(pane, parent.WorkspaceId, PaneTitle.Shortened(task) ?? ProviderCatalog.Name(pane.Provider), parent, agentDefaults) with { TitleMode = PaneTitle.Fixed };
         var open = state.Sessions.Where(session => session.WorkspaceId == parent.WorkspaceId).Select(session => session.Id).ToList();
         var mode = state.PaneLayoutModes?.GetValueOrDefault(parent.WorkspaceId) ?? state.Layout;
         var active = state.ActiveWorkspaceId == parent.WorkspaceId ? state.ActiveSessionId : state.PaneLayoutActiveSessionIds?.GetValueOrDefault(parent.WorkspaceId);
