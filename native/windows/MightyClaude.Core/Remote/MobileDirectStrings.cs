@@ -34,7 +34,7 @@ public static class MobileDirectStrings
 
     /// <summary>
     /// What a change that did not happen says; null after one that did. Every detail code has its own words. Only a netsh exit code
-    /// (digits) is quoted, as the template's number; a launch error's text (Windows' own language) and any code not listed here are never
+    /// (ASCII digits that fit an int, never a sign) is quoted, as the template's number; a launch error's text (Windows' own language) and any code not listed here are never
     /// shown, they become the unknown-failure words.
     /// </summary>
     public static string? FirewallOutcome(FirewallChangeResult result) => result.Kind switch
@@ -53,7 +53,7 @@ public static class MobileDirectStrings
         {
             "timeout" => Locale.Get("mobileRemote.direct.windows.firewall.timeout"),
             "queryFailed" => Locale.Get("mobileRemote.direct.windows.firewall.queryFailed"),
-            { Length: > 0 and <= 11 } code when int.TryParse(code, NumberStyles.Integer, CultureInfo.InvariantCulture, out var exit) =>
+            { Length: > 0 and <= 10 } code when code.All(char.IsAsciiDigit) && int.TryParse(code, NumberStyles.None, CultureInfo.InvariantCulture, out var exit) =>
                 Locale.Get("mobileRemote.direct.windows.firewall.failedTemplate", new Dictionary<string, string> { ["error"] = exit.ToString(CultureInfo.InvariantCulture) }),
             _ => Locale.Get("mobileRemote.direct.windows.firewall.failedUnknown"),
         },

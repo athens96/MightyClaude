@@ -519,9 +519,26 @@ internal static class MobileDirectVerification
         Check(MobileDirectStrings.FirewallOutcome(new(FirewallChange.Failed, "timeout")) == Locale.Get("mobileRemote.direct.windows.firewall.timeout"), "failed timeout has its words");
         Check(MobileDirectStrings.FirewallOutcome(new(FirewallChange.Failed, "queryFailed")) == Locale.Get("mobileRemote.direct.windows.firewall.queryFailed"), "failed queryFailed has its words");
         var unknown = Locale.Get("mobileRemote.direct.windows.firewall.failedUnknown");
-        foreach (var odd in new string?[] { "Der Zugriff wurde verweigert", "The system cannot find the file specified.", "timeout ", "-", "", null })
+        foreach (var odd in new string?[] { "Der Zugriff wurde verweigert", "The system cannot find the file specified.", "timeout ", "-", "-1", "+1", "1 ", "2147483648", "", null })
             foreach (var kind in new[] { FirewallChange.Failed, FirewallChange.Refused })
                 Check(MobileDirectStrings.FirewallOutcome(new(kind, odd)) == unknown, kind + " " + (odd ?? "null") + " says the unknown words and never the text");
+        // The same mapping holds in every language: each outcome reads its own language's words and the numbered failure carries its number.
+        var savedLanguage = Locale.LanguagePreference;
+        try
+        {
+            foreach (var language in Locale.Languages)
+            {
+                Locale.LanguagePreference = language; Locale.ResetCache();
+                var catalogue = Locale.Catalogue(language);
+                Check(MobileDirectStrings.FirewallOutcome(new(FirewallChange.Cancelled)) == catalogue["mobileRemote.direct.windows.firewall.cancelled"], language + ": cancelled");
+                Check(MobileDirectStrings.FirewallOutcome(new(FirewallChange.Refused, "badPorts")) == catalogue["mobileRemote.direct.windows.firewall.badPorts"], language + ": badPorts");
+                Check(MobileDirectStrings.FirewallOutcome(new(FirewallChange.Failed, "timeout")) == catalogue["mobileRemote.direct.windows.firewall.timeout"], language + ": timeout");
+                Check(MobileDirectStrings.FirewallOutcome(new(FirewallChange.Failed, "5")) == catalogue["mobileRemote.direct.windows.firewall.failedTemplate"].Replace("{error}", "5"), language + ": an exit code");
+                Check(MobileDirectStrings.FirewallOutcome(new(FirewallChange.Failed, "-1")) == catalogue["mobileRemote.direct.windows.firewall.failedUnknown"], language + ": a negative code");
+                Check(MobileDirectStrings.FirewallOutcome(new(FirewallChange.Failed, "2147483648")) == catalogue["mobileRemote.direct.windows.firewall.failedUnknown"], language + ": a code too large for an int");
+            }
+        }
+        finally { Locale.LanguagePreference = savedLanguage; Locale.ResetCache(); }
         var words = refused.Keys.Select(code => MobileDirectStrings.FirewallOutcome(new(FirewallChange.Refused, code)))
             .Concat([MobileDirectStrings.FirewallOutcome(new(FirewallChange.Failed, "timeout")), MobileDirectStrings.FirewallOutcome(new(FirewallChange.Failed, "queryFailed")), unknown]).ToArray();
         Check(words.Distinct().Count() == words.Length && words.All(text => text is { Length: > 0 }), "each outcome says its own words");
