@@ -120,7 +120,7 @@ public static class SetupScript
         "$env:Path += " + Quote(";" + string.Join(";", WellKnownFolders(environment).Where(folder => !folder.Contains(';')))),
         "$env:npm_config_registry = " + Quote(NpmRegistry),
         "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12",
-        "$mightyPowerShell = Join-Path $env:SystemRoot 'System32\\WindowsPowerShell\\v1.0\\powershell.exe'",
+        "$mightyPowerShell = Join-Path ([Environment]::GetFolderPath('System')) 'WindowsPowerShell\\v1.0\\powershell.exe'",
         "function Get-MightyHttps([string]$Url) { for ($hop = 0; $hop -lt 6; $hop++) { $uri = [Uri]$Url; if ($uri.Scheme -ne 'https') { throw ('not https: ' + $Url) }; "
             + "$request = [Net.HttpWebRequest]::Create($uri); $request.AllowAutoRedirect = $false; $request.UserAgent = 'MightyClaude-Setup'; "
             + "try { $response = $request.GetResponse() } catch { $failure = $_.Exception; while ($null -ne $failure -and $failure -isnot [Net.WebException]) { $failure = $failure.InnerException }; if ($null -eq $failure -or $null -eq $failure.Response) { throw }; $response = $failure.Response }; "
@@ -178,8 +178,8 @@ public static class SetupScript
             lines.Add("try { $global:LASTEXITCODE = 0; " + step.Body + "; if ($LASTEXITCODE) { throw ('exit code ' + $LASTEXITCODE) } } catch { $mightyFailed = 1; Write-Host $_.Exception.Message; Write-Host " + Quote(labels.Failed) + " -ForegroundColor Yellow }");
         }
         lines.Add("Write-Host ''; Write-Host " + Quote(labels.Done));
-        lines.Add("} finally { try { $null = New-Item -ItemType Directory -Path $mightyDone -ErrorAction Stop } catch { } }");
-        lines.Add("$null = Read-Host " + Quote(labels.Close));
+        // Control-C ends the steps but not the window: the end marker is made and the window still waits for Enter.
+        lines.Add("} finally { try { $null = New-Item -ItemType Directory -Path $mightyDone -ErrorAction Stop } catch { }; $null = Read-Host " + Quote(labels.Close) + " }");
         lines.Add("exit $mightyFailed");
         return string.Join("\r\n", lines) + "\r\n";
     }
@@ -214,7 +214,10 @@ public static class SetupScriptFiles
             if (OperatingSystem.IsWindows())
             {
                 var security = new DirectorySecurity(); security.SetAccessRuleProtection(true, false);
-                security.AddAccessRule(new FileSystemAccessRule(WindowsIdentity.GetCurrent().User!, FileSystemRights.FullControl, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+                var user = WindowsIdentity.GetCurrent().User!;
+                security.AddAccessRule(new FileSystemAccessRule(user, FileSystemRights.FullControl, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+                // Owned by the user even when the app was started as administrator, whose token would otherwise make Administrators the owner.
+                security.SetOwner(user);
                 new DirectoryInfo(path).Create(security);
             }
             else Directory.CreateDirectory(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);

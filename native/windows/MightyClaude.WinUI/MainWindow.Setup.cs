@@ -46,7 +46,7 @@ public sealed partial class MainWindow
     /// <summary>How many terminal windows the screen opened: the smoke proves a cancelled confirmation opened none.</summary>
     private int setupTerminalsOpened;
     /// <summary>Every list on screen (the setup window's, Settings'), drawn again when anything changes.</summary>
-    private readonly List<Action> setupRedraws = [];
+    private readonly List<(StackPanel Host, Action Draw)> setupRedraws = [];
     private DispatcherTimer? setupPoll;
     private DateTimeOffset setupProbedAt;
 
@@ -151,6 +151,7 @@ public sealed partial class MainWindow
         {
             // The choice holds however the screen is closed.
             if (neverShow.IsChecked == true) SetupFirstRun.SetNeverShow();
+            ForgetSetupList(list);
             if (ReferenceEquals(setupWindow, window)) { setupWindow = null; setupFocus = null; }
         };
         setupWindow = window;
@@ -174,9 +175,11 @@ public sealed partial class MainWindow
         void Draw() => FillSetupContent(host);
         host.Loaded += async (_, _) =>
         {
-            if (!setupRedraws.Contains(Draw)) setupRedraws.Add(Draw);
-            StartSetupPoll();
+            if (!setupRedraws.Any(entry => ReferenceEquals(entry.Host, host))) setupRedraws.Add((host, Draw));
             Draw();
+            // A smoke run probes nothing of the machine it runs on: only its own fixed results (MainWindow.SetupSmoke.cs).
+            if (options.SmokeTest && setupFixedResults is null) return;
+            StartSetupPoll();
             await Act(async () =>
             {
                 await RefreshSetup(force: setupFixedResults is null);
@@ -185,17 +188,19 @@ public sealed partial class MainWindow
                 RedrawSetup();
             });
         };
-        host.Unloaded += (_, _) =>
-        {
-            if (host.IsLoaded) return;
-            setupRedraws.Remove(Draw);
-            if (setupRedraws.Count == 0) { setupPoll?.Stop(); setupPoll = null; }
-        };
+        host.Unloaded += (_, _) => { if (!host.IsLoaded) ForgetSetupList(host); };
         Draw();
         return host;
     }
 
-    private void RedrawSetup() { foreach (var draw in setupRedraws.ToList()) draw(); }
+    private void RedrawSetup() { foreach (var (_, draw) in setupRedraws.ToList()) draw(); }
+
+    /// <summary>A list that left the screen (its tab changed, or its window closed) is drawn no more; with none left the poll stops.</summary>
+    private void ForgetSetupList(StackPanel host)
+    {
+        setupRedraws.RemoveAll(entry => ReferenceEquals(entry.Host, host));
+        if (setupRedraws.Count == 0) { setupPoll?.Stop(); setupPoll = null; }
+    }
 
     /// <summary>While a list shows: the run's items every 5 s while it runs (its watcher does it), otherwise everything every 30 s while something is still missing.</summary>
     private void StartSetupPoll()
@@ -204,7 +209,7 @@ public sealed partial class MainWindow
         setupPoll = new DispatcherTimer { Interval = SetupRunProbeInterval };
         setupPoll.Tick += async (_, _) =>
         {
-            if (closing || SetupRunning || setupProbing || DateTimeOffset.UtcNow - setupProbedAt < SetupIdleProbeInterval) return;
+            if (closing || SetupRunning || setupProbing || options.SmokeTest || DateTimeOffset.UtcNow - setupProbedAt < SetupIdleProbeInterval) return;
             if (!SetupItems.Any(item => setupResults.GetValueOrDefault(item.Id)?.IsInstalled != true)) return;
             await Act(() => RefreshSetup());
         };
@@ -473,8 +478,13 @@ public sealed partial class MainWindow
                 if (await Task.Run(() => SetupScriptFiles.RunEnded(run.Started, run.Done))) break;
                 var stalled = !SetupScriptFiles.MarkerExists(run.Started) && DateTimeOffset.UtcNow - run.Opened > SetupStartDeadline;
                 if (run.NotStarted != stalled) { run.NotStarted = stalled; RedrawSetup(); }
-                // Only the run's own items, every few seconds.
-                if (DateTimeOffset.UtcNow - probed >= SetupRunProbeInterval) { probed = DateTimeOffset.UtcNow; await RefreshSetup(only: run.Items.ToHashSet(StringComparer.Ordinal)); }
+                // Only the run's own items, every few seconds. A probe that fails is said and the watch goes on, so the run still ends.
+                if (DateTimeOffset.UtcNow - probed >= SetupRunProbeInterval)
+                {
+                    probed = DateTimeOffset.UtcNow;
+                    try { await RefreshSetup(only: run.Items.ToHashSet(StringComparer.Ordinal)); }
+                    catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException) { setupMessage = ex.Message; RedrawSetup(); }
+                }
             }
         }
         catch (OperationCanceledException) { return; }
@@ -489,7 +499,8 @@ public sealed partial class MainWindow
     {
         if (closing || !ReferenceEquals(setupRun, run) || run.Finished) return;
         run.Finished = true; run.NotStarted = false;
-        await RefreshSetup(force: true);
+        try { await RefreshSetup(force: true); }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { setupMessage = ex.Message; RedrawSetup(); }
         if (setupWindow is not null) return;
         if (AppIsInFront()) OpenSetup(); else { setupResultWaiting = true; RefreshStatusBar(); }
     }
