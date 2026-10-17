@@ -85,6 +85,8 @@ enum HelpCapture {
             let profile = try DemoProfile.load(read(HelpCaptureResources.demoProfile), language: language.rawValue)
             manifest["shotCount"] = list.shots.count
             store.runtime = runtime(profile, store: store)
+            store.loadSetupCatalog()
+            store.setupFixedResults = store.helpCaptureSetupResults()
             let main = try await mainWindow(store: store)
             manifest["screen"] = screenInfo(main)
             // The empty profile's first window comes before anything is seeded.

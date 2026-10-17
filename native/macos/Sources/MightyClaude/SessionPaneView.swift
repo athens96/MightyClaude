@@ -720,6 +720,11 @@ struct SessionPaneView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(L("composer.blocked.title")).fontWeight(.medium)
                         Text(reason).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
+                        if let item = store.setupItemForMissingCLI(session) {
+                            Button(L("setup.blocked.install")) { store.openSetup(focus: item) }
+                                .controlSize(.small).buttonStyle(.borderedProminent)
+                                .accessibilityIdentifier("run-blocked-install-\(session.id)")
+                        }
                     }
                 }
                 .font(.ui(size: 11)).lineSpacing(2)

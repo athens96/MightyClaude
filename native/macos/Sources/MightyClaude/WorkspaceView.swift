@@ -34,6 +34,7 @@ struct WorkspaceView: View {
         }
         .task { accountUsage.configure(store: store) }
         .sheet(isPresented: $store.showSettings) { AppSettingsView().environmentObject(store) }
+        .sheet(item: $store.setupSheet) { SetupSheetView(request: $0).environmentObject(store) }
         .sheet(item: $store.renameTarget) { RenameSheet(target: $0).environmentObject(store) }
         .sheet(item: $store.terminalHistorySession) { LegacyTerminalHistory(session: $0) }
         .sheet(item: $store.resumePicker) { request in
@@ -580,6 +581,11 @@ struct WorkspaceView: View {
                 Button { store.openRemoteSettings() } label: {
                     Label(L("remote.menu.connect"), systemImage: "network").padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.xs)
                 }.buttonStyle(.bordered).accessibilityIdentifier("welcome-connect-remote")
+                if store.setupNeedsAttention {
+                    Button { store.openSetup() } label: {
+                        Label(L("setup.title"), systemImage: "shippingbox").padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.xs)
+                    }.buttonStyle(.bordered).accessibilityIdentifier("welcome-setup")
+                }
             }.padding(.top, 8)
             Text(L("layout.welcome.shortcutsMac")).font(.ui(size: 11)).foregroundStyle(.tertiary).padding(.top, 10)
             Spacer()

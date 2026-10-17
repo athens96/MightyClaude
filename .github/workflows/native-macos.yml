@@ -222,6 +222,44 @@ jobs:
           name: MightyClaude-macos-graph-smoke
           path: ${{ runner.temp }}/mighty-graph-smoke/
           if-no-files-found: warn
+      - name: Smoke test the setup screen
+        # The first-run setup sheet over fixed probe results in a disposable profile (nothing
+        # on the runner is probed or installed): its rows and states, the out-of-date Claude's
+        # update, Tailscale's download page, a picked tool pulling in Homebrew, and the
+        # confirmation's commands in order. The confirmation is cancelled; no script is written.
+        if: (success() || failure()) && steps.build-app.outcome == 'success'
+        timeout-minutes: 5
+        run: |
+          set -u
+          profile="$RUNNER_TEMP/mighty-setup-smoke"
+          rm -rf "$profile"
+          status=0
+          if ! perl -e 'alarm shift; exec @ARGV' 180 release/native-macos/MightyClaude.app/Contents/MacOS/MightyClaude \
+              --setup-smoke-test --smoke-exit --profile "$profile"; then
+            echo "::error title=macOS setup smoke::the app exited non-zero or timed out"
+            status=1
+          fi
+          python3 - <<'PY' || status=1
+          import json, os, pathlib, sys
+          path = pathlib.Path(os.environ["RUNNER_TEMP"]) / "mighty-setup-smoke" / "setup-smoke-result.json"
+          if not path.exists():
+              print("::error title=macOS setup smoke::no setup-smoke-result.json was written", flush=True)
+              sys.exit(1)
+          result = json.loads(path.read_text())
+          print(json.dumps(result, ensure_ascii=False, sort_keys=True, indent=2)[:20000])
+          if not result.get("passed") or result.get("installRan"):
+              msg = f'error={result.get("error", "")}'
+              print(f'::error title=macOS setup smoke::{msg.replace("%", "%25").replace(chr(13), "%0D").replace(chr(10), "%0A")[:1500]}', flush=True)
+              sys.exit(1)
+          PY
+          exit $status
+      - name: Upload setup smoke result and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MightyClaude-macos-setup-smoke
+          path: ${{ runner.temp }}/mighty-setup-smoke/
+          if-no-files-found: warn
       - name: Smoke test delegation close paths
         # Through the store's actions and the phone's routes, in a disposable profile and
         # repository: merged children closed on the Mac and from the phone are cleaned up,
