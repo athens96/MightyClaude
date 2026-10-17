@@ -1008,7 +1008,6 @@
   "settings.cliUpdate.updatingButton": "正在更新…",
   "settings.cliUpdate.versionChangeTemplate": "{before} → {after}",
   "settings.closeButton": "关闭",
-  "settings.components.checkingButton": "正在检查…",
   "settings.components.copied": "已复制：{command}",
   "settings.components.copyInstallCommand": "复制安装命令",
   "settings.components.inProgressLabel": "进行中…",
@@ -1019,8 +1018,6 @@
   "settings.components.ready": "已就绪。",
   "settings.components.readyClaude": "已就绪。Mighty bridge Mod 内置于应用中，每次运行时都会连接。",
   "settings.components.readyCodex": "已就绪。插件在市场视图中管理。",
-  "settings.components.recheckButton": "重新检查",
-  "settings.components.sectionDescription": "显示智能体 CLI 和所需插件的状态及安装命令。",
   "settings.components.sectionTitle": "组件",
   "settings.components.statusAttention": "需要处理",
   "settings.components.statusChecking": "正在检查",
@@ -2863,11 +2860,14 @@
   "setup.title": "所需工具",
   "setup.unverifiedDetail": "无法读取其版本；需要 {minimum} 或更高版本。",
   "setup.windows.item.git.title": "Git for Windows",
+  "setup.windows.confirm.body": "以下命令将按此顺序在一个单独的 PowerShell 窗口中运行。从主文件夹运行，某一步失败也会继续下一步。需要确认的步骤请在该窗口中自行回答。应用不会请求管理员权限，也不会接收密码；为所有用户安装的工具可能会由 Windows 自己弹出管理员确认窗口。",
+  "setup.windows.error.terminal": "无法打开安装窗口：{error}",
   "setup.windows.item.agy.detail": "Google 的代理 CLI（agy）。使用官方 PowerShell 安装脚本安装到 %LOCALAPPDATA%\\agy\\bin。",
   "setup.windows.item.codex.detail": "OpenAI 的代理 CLI。使用官方 PowerShell 安装脚本安装到 %LOCALAPPDATA%\\Programs\\OpenAI\\Codex。",
   "setup.windows.item.gh.detail": "代理处理 GitHub 议题和拉取请求时使用。通过 winget 为所有用户安装，因此 Windows 可能会弹出管理员确认窗口。",
   "setup.windows.item.git.detail": "用于工作树、提交和下载技能，Claude Code 的 Bash 工具也使用其中的 Git Bash。通过 winget 仅为当前用户安装。",
   "setup.windows.item.glab.detail": "代理处理 GitLab 议题和合并请求时使用。通过 winget 仅为当前用户安装。",
   "setup.windows.item.node.detail": "安装 Paperthin 技能的 npx 需要它。通过 winget 为所有用户安装 LTS 版本，因此 Windows 可能会弹出管理员确认窗口。",
-  "setup.windows.script.close": "按 Enter 键关闭此窗口。"
+  "setup.windows.script.close": "按 Enter 键关闭此窗口。",
+  "setup.windows.subtitle": "Mighty Claude 使用的代理 CLI 和工具。有 Git 和一个代理 CLI 即可开始。选择缺少的项目，在单独的 PowerShell 窗口中安装。是否已安装以重新检查的状态为准，而不是命令的结果。"
 }

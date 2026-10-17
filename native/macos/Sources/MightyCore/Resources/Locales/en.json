@@ -1008,7 +1008,6 @@
   "settings.cliUpdate.updatingButton": "Updating…",
   "settings.cliUpdate.versionChangeTemplate": "{before} → {after}",
   "settings.closeButton": "Close",
-  "settings.components.checkingButton": "Checking…",
   "settings.components.copied": "Copied: {command}",
   "settings.components.copyInstallCommand": "Copy install command",
   "settings.components.inProgressLabel": "In progress…",
@@ -1019,8 +1018,6 @@
   "settings.components.ready": "Ready.",
   "settings.components.readyClaude": "Ready. The Mighty bridge Mod is built into the app and connects on every run.",
   "settings.components.readyCodex": "Ready. Plugins are managed in the marketplace view.",
-  "settings.components.recheckButton": "Recheck",
-  "settings.components.sectionDescription": "Shows status and install commands for agent CLIs and required plugins.",
   "settings.components.sectionTitle": "Components",
   "settings.components.statusAttention": "Action needed",
   "settings.components.statusChecking": "Checking",
@@ -2863,11 +2860,14 @@
   "setup.title": "Required tools",
   "setup.unverifiedDetail": "Its version could not be read; {minimum} or later is needed.",
   "setup.windows.item.git.title": "Git for Windows",
+  "setup.windows.confirm.body": "These commands run in this order in one separate PowerShell window. They run from your home folder, and a failed step moves on to the next. Answer any question in that window yourself. The app never asks for administrator rights and never takes a password; a tool installed for all users may show Windows' own administrator prompt.",
+  "setup.windows.error.terminal": "Could not open the install window: {error}",
   "setup.windows.item.agy.detail": "Google's agent CLI (agy). Its official PowerShell installer puts it in %LOCALAPPDATA%\\agy\\bin.",
   "setup.windows.item.codex.detail": "OpenAI's agent CLI. Its official PowerShell installer puts it in %LOCALAPPDATA%\\Programs\\OpenAI\\Codex.",
   "setup.windows.item.gh.detail": "Used when an agent works with GitHub issues and pull requests. Installs with winget for all users, so Windows may show its administrator prompt.",
   "setup.windows.item.git.detail": "Used for worktrees, commits and skill downloads, and Claude Code's Bash tool runs in its Git Bash. Installs with winget for this user only.",
   "setup.windows.item.glab.detail": "Used when an agent works with GitLab issues and merge requests. Installs with winget for this user only.",
   "setup.windows.item.node.detail": "Needed for the npx that installs the Paperthin skills. Installs the LTS with winget for all users, so Windows may show its administrator prompt.",
-  "setup.windows.script.close": "Press Enter to close this window."
+  "setup.windows.script.close": "Press Enter to close this window.",
+  "setup.windows.subtitle": "The agent CLIs and tools Mighty Claude uses. Git and one agent CLI are enough to start. Pick what is missing and it installs in a separate PowerShell window. Whether something is installed is decided by checking again, not by how the command ended."
 }

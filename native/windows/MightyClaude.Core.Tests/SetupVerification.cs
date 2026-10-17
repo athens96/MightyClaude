@@ -245,6 +245,27 @@ internal static class SetupVerification
         finally { Directory.Delete(root, true); }
     }
 
+    /// The WinUI app opens the screen from every place the Mac does, and its smoke runs in CI (read from the source, as WinUI does not build here).
+    internal static Task TheScreenIsWiredIntoTheApp()
+    {
+        var winui = ClaudePluginVerification.WinUISource();
+        string Source(string file) => File.ReadAllText(Path.Combine(winui, file));
+        Check(Source("MainWindow.cs").Contains("BeginAutomaticAppUpdateCheck(); await PresentSetupIfNeeded();", StringComparison.Ordinal), "the launch checks the tools after the update checks have begun");
+        Check(Source("MainWindow.cs").Contains("setupWindow?.Close();", StringComparison.Ordinal), "closing the app closes the setup window");
+        Check(Source("MainWindow.EmptyStates.cs").Contains("\"welcome-setup\"", StringComparison.Ordinal), "the welcome offers the screen");
+        Check(Source("MainWindow.Composer.cs").Contains("\"run-blocked-install-\" + id", StringComparison.Ordinal) && Source("MainWindow.Composer.cs").Contains("owner.OpenSetup(item)", StringComparison.Ordinal), "a pane blocked for a missing CLI offers its install");
+        Check(Source("MainWindow.Shell.cs").Contains("\"setup-finished-badge\"", StringComparison.Ordinal), "an install that ended behind another window says so in the status bar");
+        var setup = Source("MainWindow.Setup.cs");
+        Check(!setup.Contains("dialogOpen", StringComparison.Ordinal), "the setup window holds back neither the phone nor the sign-in recovery");
+        Check(setup.Contains("SetupScript.LaunchArguments(script, environment)", StringComparison.Ordinal) && setup.Contains("CliAccountTerminal.LaunchPlan(argv", StringComparison.Ordinal), "the install runs in the sign-in's kind of window");
+        Check(setup.Contains("await CliEnvironment.RefreshAsync(true)", StringComparison.Ordinal), "a forced check reads PATH again from the registry");
+        Check(setup.Contains("if (SetupRunning || closing || options.SmokeTest) return;", StringComparison.Ordinal), "a smoke run never starts an install");
+        Check(Source("MainWindow.Smoke.cs").Contains("result[\"setupTools\"] = await RunSetupSmoke();", StringComparison.Ordinal), "the GUI smoke drives the screen");
+        var script = File.ReadAllText(Path.Combine(Root(), "scripts", "test-native-windows.ps1"));
+        Check(script.Contains("$result.setupTools.$key", StringComparison.Ordinal) && script.Contains("'cancelledWithoutTerminal'", StringComparison.Ordinal), "CI reads the setup smoke's result");
+        return Task.CompletedTask;
+    }
+
     internal static Task RowsAndTheFirstRunFollowTheProbes()
     {
         var catalog = SetupCatalog.Bundled();

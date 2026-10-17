@@ -164,6 +164,13 @@ try {
         $msg = "panelsDesign 스모크가 실행되지 않았거나 통과하지 못했습니다: panelsDesign=$($result.panelsDesign)"
         Write-SmokeAnnotation $msg; throw $msg
     }
+    # 필요한 도구 over fixed probes (MainWindow.SetupSmoke.cs): rows, picks, plan order, the confirmation cancelled with no terminal opened.
+    foreach ($key in @('firstRunDecision', 'welcomeButton', 'rows', 'actions', 'cancelledWithoutTerminal', 'blockedPaneInstall', 'passed')) {
+        if ($result.setupTools.$key -ne $true) {
+            $msg = "Windows setup screen smoke failed: setupTools.$key"
+            Write-SmokeAnnotation $msg; throw $msg
+        }
+    }
     if ($result.componentsSection -ne $true) {
         $msg = "구성 요소 칸 스모크가 실행되지 않았거나 통과하지 못했습니다: componentsSection=$($result.componentsSection)"
         Write-SmokeAnnotation $msg; throw $msg
