@@ -55,5 +55,8 @@ Windowsにはメニューバーがありません。同じ機能は、サイド�
 | 文字サイズとフォント | Macと同じく{{ui:settings.nav.general}} › {{ui:settings.text.sectionTitle}}でサイズ（85〜150%）、{{ui:settings.text.uiFontLabel}}、{{ui:settings.text.transcriptFontLabel}}、{{ui:settings.text.codeFontLabel}}を選ぶと、開いているウィンドウがすべてすぐに変わります。{{kbd:Ctrl+=}} / {{kbd:Ctrl+-}} / {{kbd:Ctrl+0}}も使えますが、ターミナルやブラウザーのペインにフォーカスがあるときは、キーはそのペインで使われます。設定はレジストリの `HKEY_CURRENT_USER\Software\MightyClaudeNative` に保存されます。確認ウィンドウの本文のようにWindows標準のコントロールが決める文字はアプリを開き直すと変わり、ペットの吹き出しはまだこの設定に従いません。 |
 | Tailscale で直接接続 | スマートフォンは Windows PC にも[直接接続](phone.md#direct)します。Windows ファイアウォールの規則は {{ui:settings.nav.mobile}} タブの {{ui:mobileRemote.direct.windows.firewall.addButton}} で追加し、Windows の管理者の確認を 1 回経ます。アプリが管理者権限を求めるのはここだけです。 |
 
+> [!warning]
+> Tailscale で直接接続は初期状態でオンのため、アプリが初めてスマートフォンからの接続を待ち受けるとき、Windows Defender ファイアウォールがこのアプリの機能の一部をブロックしたという独自の通知を表示することがあります。**アクセスを許可する**を選んでください（Windows がこのアプリ用に、より広い独自の規則を追加します）。**キャンセル**を選んだ場合は、Windows が `MightyClaude.exe` をブロックする規則を追加していることがあり、その規則はアプリの規則より優先されます。Windows Defender ファイアウォール → 詳細設定 → 受信の規則で、Mighty Claude をブロックする規則を削除してください。
+
 > [!note]
 > Windowsアプリの一部の機能は、まだ実機で十分に確認されていません。気になる点があればお知らせください。

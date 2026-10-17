@@ -55,5 +55,8 @@ Windows has no menu bar. The same commands are in the sidebar and the {{ui:works
 | Text size and font | As on the Mac, {{ui:settings.nav.general}} › {{ui:settings.text.sectionTitle}} picks the size (85–150%), the {{ui:settings.text.uiFontLabel}}, the {{ui:settings.text.transcriptFontLabel}} and the {{ui:settings.text.codeFontLabel}}, and every open window follows at once. {{kbd:Ctrl+=}} / {{kbd:Ctrl+-}} / {{kbd:Ctrl+0}} work too, except while a terminal or browser pane has the focus: then the keys stay with that pane. The setting is kept in the registry under `HKEY_CURRENT_USER\Software\MightyClaudeNative`. Text that Windows' own controls size, such as the body of a confirmation, changes when you reopen the app, and the pet bubble does not follow the setting yet. |
 | Direct connection over Tailscale | Phones [connect directly](phone.md#direct) to a Windows PC too. The Windows Firewall rule is added with {{ui:mobileRemote.direct.windows.firewall.addButton}} in the {{ui:settings.nav.mobile}} tab, after one administrator prompt from Windows. This is the only place the app asks for administrator rights. |
 
+> [!warning]
+> Direct connection is on by default, so the first time the app listens for phones, Windows Defender Firewall may show its own alert that it has blocked some features of the app. Choose **Allow access** (Windows then adds its own, broader rule for the app). If you chose **Cancel**, Windows may have added rules that block `MightyClaude.exe`, and those win over the app's rule: open Windows Defender Firewall → Advanced settings → Inbound Rules and delete the block rules for Mighty Claude.
+
 > [!note]
 > Some Windows features haven't been checked on enough real machines yet. If something looks wrong, please tell us.

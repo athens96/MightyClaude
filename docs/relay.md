@@ -113,7 +113,7 @@ QR/문자열: `mightyclaude://pair?v=2&sid=<serverId>&pk=<b64url 공개키>&rela
 
 ## Tailscale 직접 연결
 
-릴레이 없이 휴대폰이 호스트(Mac·Windows PC)에 직접 데이터 소켓을 여는 길이다. 휴대폰은 `ws://<끝점>/ws?v=1`로 연다 — 직접 연결에는 상대가 Mac 하나뿐이므로 `serverId`도 `connectionId`도 싣지 않는다(테일넷에서 엿본 값으로 릴레이에 무엇을 해 볼 거리를 남기지 않는다). 열린 소켓 위의 평문 `hello`/`ready`, 암호화 프레임, `auth`·`auth_ok`, m1 터널, `notify`, ping은 위의 절과 똑같다. 그래서 직접 연결도 페어링한 공개키로 Mac을 확인하고, 페어링 키나 기기 토큰으로만 들어온다. 핸드셰이크를 마치지 못한 연결은 끊긴다. Mac과 Windows 호스트가 연다.
+릴레이 없이 휴대폰이 호스트(Mac·Windows PC)에 직접 데이터 소켓을 여는 길이다. 휴대폰은 `ws://<끝점>/ws?v=1`로 연다 — 직접 연결에는 상대가 호스트 하나뿐이므로 `serverId`도 `connectionId`도 싣지 않는다(테일넷에서 엿본 값으로 릴레이에 무엇을 해 볼 거리를 남기지 않는다). 열린 소켓 위의 평문 `hello`/`ready`, 암호화 프레임, `auth`·`auth_ok`, m1 터널, `notify`, ping은 위의 절과 똑같다. 그래서 직접 연결도 페어링한 공개키로 호스트를 확인하고, 페어링 키나 기기 토큰으로만 들어온다. 핸드셰이크를 마치지 못한 연결은 끊긴다. Mac과 Windows 호스트가 연다.
 
 **Mac 리스너** (`MobileDirect.swift`)
 
