@@ -40,6 +40,11 @@ struct SetupCatalogTests {
         #expect(try Data(contentsOf: Self.fixtureURL) == Data(contentsOf: Self.bundledURL))
     }
 
+    @Test func theAppFindsTheCatalogInItsResourceBundle() throws {
+        #expect(ResourceHealthChecker.checkSetupCatalog().found)
+        #expect(try SetupCatalog.bundled() == SetupCatalogDecoder.decode(Data(contentsOf: Self.fixtureURL)))
+    }
+
     @Test func theCatalogParsesWithEveryGroupTheUserAskedFor() throws {
         let catalog = try SetupCatalogDecoder.decode(Data(contentsOf: Self.fixtureURL))
         let ids = catalog.items.map(\.id)
