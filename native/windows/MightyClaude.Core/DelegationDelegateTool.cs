@@ -42,6 +42,14 @@ public sealed partial class DelegationCoordinator
     /// </summary>
     public static bool IsNoWider(string mode, string stored, string provider = "claude") => DelegationProviders.IsNoWider(mode, stored, provider);
 
+    /// <summary>Why the <paramref name="provider"/> agent cannot run a child, naming it, or null when it can.</summary>
+    public static string? Unavailable(string provider, DelegationAgentAvailability availability) => availability switch
+    {
+        DelegationAgentAvailability.NotInstalled => $"{ProviderMark.Label(provider)} is not installed on this PC; the user can check it in Mighty Claude's Settings › CLI",
+        DelegationAgentAvailability.SignedOut => $"{ProviderMark.Label(provider)} is not signed in on this PC; the user can check it in Mighty Claude's Settings › CLI",
+        _ => null,
+    };
+
     /// <summary>
     /// delegate(task, mode) from <paramref name="caller"/>. The first rule that applies answers:
     /// 1. A mode that is not one of the caller's agent's, a Codex mode in which the child could not change files (manual), or an

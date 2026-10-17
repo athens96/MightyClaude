@@ -142,16 +142,18 @@ public enum MergeKind { ToolFastForward, CardFastForward, CardMergeCommit }
 public sealed record MergeRecord(string ChildId, MergeKind Kind, string ParentBranch, string PreMergeCommit, string MergedCommit, string ChildHead);
 
 /// <summary>
-/// The idempotency key of one delegate call (M/DelegationModel.swift:209-224). The server derives it from the calling pane's
-/// session id, that pane's current run id, the task text and the starting mode, with no extra argument, so a repeat within the
-/// same parent run gets the same child. Each part is length-prefixed before hashing, so no two different part lists share a key.
+/// The idempotency key of one delegate call (M/DelegationModel.swift DelegationRequestKey): from the calling pane's session id,
+/// its current run id, the task text and the starting mode, and the child's agent when it is not the caller's own. Each part is
+/// length-prefixed before hashing, so no two different part lists share a key; a child of the caller's own agent keeps the key
+/// it always had.
 /// </summary>
 public static class DelegationRequestKey
 {
-    public static string Make(string parentSessionId, string parentRunId, string task, string startingMode)
+    public static string Make(string parentSessionId, string parentRunId, string task, string startingMode, string? otherAgent = null)
     {
         using var bytes = new MemoryStream(); Span<byte> length = stackalloc byte[8];
-        foreach (var part in new[] { parentSessionId, parentRunId, task, startingMode })
+        string[] parts = otherAgent is null ? [parentSessionId, parentRunId, task, startingMode] : [parentSessionId, parentRunId, task, startingMode, otherAgent];
+        foreach (var part in parts)
         {
             var utf8 = Encoding.UTF8.GetBytes(part);
             BinaryPrimitives.WriteUInt64BigEndian(length, (ulong)utf8.Length); bytes.Write(length); bytes.Write(utf8);
