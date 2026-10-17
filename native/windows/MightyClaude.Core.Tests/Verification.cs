@@ -347,6 +347,8 @@ internal static class Verification
         await Test("mobile direct: the listener holds at most 36 and upgrades a phone", MobileDirectVerification.TheListenerHoldsAtMost36AndUpgradesAPhone);
         await Test("mobile direct: the upgrade and the peer are read strictly", MobileDirectVerification.TheUpgradeAndThePeerAreReadStrictly);
         await Test("mobile direct: a phone connects directly on the relay's handshake", MobileDirectVerification.APhoneConnectsDirectlyOnTheRelaysHandshake);
+        await Test("mobile direct: only who may gets in, and relay redials leave them alone", MobileDirectVerification.OnlyWhoMayGetsInAndRelayRedialsLeaveThemAlone);
+        await Test("mobile direct: relay notices carrying a direct- id leave the direct phone alone", MobileDirectVerification.RelayNoticesCarryingADirectIdLeaveItAlone);
         await Test("Companion animation and carousel", CompanionVerification.AnimationAndCarousel);
         await Test("Companion bubble resize edges and DPI anchors", CompanionLayoutVerification.EdgesAndAnchors);
         await Test("Workspace disclosure migration, independent selection and disk persistence", WorkspaceDisclosureVerification.MigrationSelectionAndPersistence);
