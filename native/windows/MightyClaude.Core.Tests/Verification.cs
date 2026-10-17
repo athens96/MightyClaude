@@ -353,6 +353,7 @@ internal static class Verification
         await Test("windows firewall: the runner elevates only that command", WindowsFirewallVerification.TheRunnerElevatesOnlyThatCommand);
         await Test("windows firewall: only the rule file elevates", WindowsFirewallVerification.OnlyTheRuleFileElevates);
         await Test("mobile direct: the Windows words are in every language", MobileDirectVerification.TheWindowsWordsAreInEveryLanguage);
+        await Test("mobile direct: the settings rows and the smoke are wired", MobileDirectVerification.TheSettingsAndTheSmokeAreWired);
         await Test("mobile direct: relay notices carrying a direct- id leave the direct phone alone", MobileDirectVerification.RelayNoticesCarryingADirectIdLeaveItAlone);
         await Test("Companion animation and carousel", CompanionVerification.AnimationAndCarousel);
         await Test("Companion bubble resize edges and DPI anchors", CompanionLayoutVerification.EdgesAndAnchors);

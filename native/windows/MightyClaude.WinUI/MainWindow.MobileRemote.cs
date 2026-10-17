@@ -24,6 +24,7 @@ public sealed partial class MainWindow
             Digest = pane => pane.Kind == "claude" && views.TryGetValue(pane.Id, out var view) ? view.MobileDigest() : null, ActiveStyle = MobileRunningStyle };
         mobileHost = new(directory, Environment.MachineName, MobileDesktopRouter.Capabilities, MobileRoute) { AppVersion = AppVersionText };
         mobileRouter.HostId = mobileHost.HostId;
+        mobileRouter.DirectEndpoints = () => mobileHost?.DirectEndpoints ?? [];
         await InitializeScreenShare(directory);
         // What a phone shows of each pane is read again four times a second while a phone is connected, and a phone is told
         // only of the panes (and the list) that moved (M/MightyClaude/AppStore+MobileRemote.swift:271-323).
@@ -81,6 +82,18 @@ public sealed partial class MainWindow
         AutomationProperties.SetName(relay, relayLabel); AutomationProperties.SetAutomationId(relay, "settings-mobile-relay");
         var legacyLabel = Locale.Get("settings.mobileRemote.legacyAppsToggle");
         var legacy = SettingsSwitch(legacyLabel, service.Snapshot.MobileRemote.AllowLegacyPhones, "settings-mobile-legacy-toggle");
+        // The direct path (M/MobileRemoteSettingsView.swift `direct`): its switch over the Windows wording, the port with its own apply
+        // button, what it found, and the Windows Firewall rule's row with the one button that asks Windows to elevate.
+        var directLabel = Locale.Get("mobileRemote.direct.toggle");
+        var direct = SettingsSwitch(directLabel, service.Snapshot.MobileRemote.DirectEnabled, "settings-mobile-direct-toggle");
+        var portLabel = Locale.Get("mobileRemote.direct.portLabel");
+        var port = SettingsField(new TextBox { Text = service.Snapshot.MobileRemote.DirectPort.ToString(System.Globalization.CultureInfo.InvariantCulture), MaxLength = 5, Width = MobileDirectPortWidth });
+        AutomationProperties.SetName(port, portLabel); AutomationProperties.SetAutomationId(port, "settings-mobile-direct-port");
+        var directDot = new Microsoft.UI.Xaml.Shapes.Ellipse { Width = 8, Height = 8, VerticalAlignment = VerticalAlignment.Center };
+        var directStatus = SettingsText("", 11, DesignToken.Ink2, selectable: true); AutomationProperties.SetAutomationId(directStatus, "settings-mobile-direct-status");
+        var firewallText = SettingsText("", 11, DesignToken.Ink2); AutomationProperties.SetAutomationId(firewallText, "settings-mobile-firewall-state");
+        Button firewallButton = null!, applyPort = null!;
+        Border portRow = null!, directStatusRow = null!, firewallRow = null!;
         var status = SettingsText("", 11, DesignToken.Ink2); var detail = SettingsText("", 11, DesignToken.Ink2);
         AutomationProperties.SetAutomationId(detail, "settings-mobile-detail");
         var dot = new Microsoft.UI.Xaml.Shapes.Ellipse { Width = 8, Height = 8, VerticalAlignment = VerticalAlignment.Center };
@@ -116,19 +129,23 @@ public sealed partial class MainWindow
         static string Same(string address) => address.Length == 0 ? "" : MobileRelayHost.NormalizeRelay(address) ?? address;
         // On only for another address that can be used; an empty field goes back to the address shown before it.
         void ShowApply() { var typed = relay.Text.Trim(); apply.IsEnabled = !writing && !options.SmokeTest && Same(typed) != Same(savedRelay) && (typed.Length == 0 || MobileRelayHost.NormalizeRelay(typed) is not null); }
+        // The port as typed when it is one the setting takes (1024-65535); the button is on only for another such port.
+        int? TypedPort() => int.TryParse(port.Text.Trim(), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var value) && MobileDirect.ValidPort(value) ? value : null;
+        void ShowApplyPort() => applyPort.IsEnabled = !writing && !options.SmokeTest && TypedPort() is { } typed && typed != service.Snapshot.MobileRemote.DirectPort;
+        Task ApplyPort() => TypedPort() is { } typed && typed != service.Snapshot.MobileRemote.DirectPort ? Write(saved => saved with { DirectPort = typed }) : Task.CompletedTask;
         // The switches and the button as the saved settings have them.
         void ShowControls()
         {
             var saved = service.Snapshot.MobileRemote; savedRelay = saved.RelayURL;
-            showing = true; enabled.IsChecked = saved.Enabled; legacy.IsChecked = saved.AllowLegacyPhones; showing = false;
-            enabled.IsEnabled = legacy.IsEnabled = !options.SmokeTest; ShowApply();
+            showing = true; enabled.IsChecked = saved.Enabled; legacy.IsChecked = saved.AllowLegacyPhones; direct.IsChecked = saved.DirectEnabled; showing = false;
+            enabled.IsEnabled = legacy.IsEnabled = direct.IsEnabled = !options.SmokeTest; ShowApply(); ShowApplyPort(); ShowDirect();
         }
         Task Write(Func<MobileRemoteSettings, MobileRemoteSettings> change) => Act(async () =>
         {
             // A switch pressed while the last change is still being applied waits for it: the switches stay as they were
             // pressed, and keep the keyboard, and what they then say is applied next (below).
             if (options.SmokeTest || writing) return;
-            writing = true; ShowApply();
+            writing = true; ShowApply(); ShowApplyPort();
             MobileRemoteSettings? meant = null;
             try
             {
@@ -146,8 +163,8 @@ public sealed partial class MainWindow
                 // meanwhile (off, while on was still being applied), and is applied now rather than put back, whether or
                 // not the settings window is still open. After a failure the switches go back to what is saved and
                 // nothing is tried again by itself.
-                bool wantsOn = enabled.IsChecked == true, wantsLegacy = legacy.IsChecked == true;
-                if (meant is not null && !closing && (wantsOn != meant.Enabled || wantsLegacy != meant.AllowLegacyPhones)) _ = Write(next => next with { Enabled = wantsOn, AllowLegacyPhones = wantsLegacy });
+                bool wantsOn = enabled.IsChecked == true, wantsLegacy = legacy.IsChecked == true, wantsDirect = direct.IsChecked == true;
+                if (meant is not null && !closing && (wantsOn != meant.Enabled || wantsLegacy != meant.AllowLegacyPhones || wantsDirect != meant.DirectEnabled)) _ = Write(next => next with { Enabled = wantsOn, AllowLegacyPhones = wantsLegacy, DirectEnabled = wantsDirect });
                 else ShowControls();
             }
         });
@@ -161,10 +178,22 @@ public sealed partial class MainWindow
         }
         apply = SettingsPush(Button(Locale.Get("settings.mobileRemote.applyButton"), ApplyRelay));
         AutomationProperties.SetAutomationId(apply, "settings-mobile-apply");
+        applyPort = SettingsPush(Button(Locale.Get("settings.mobileRemote.applyButton"), ApplyPort), SettingsControlSize.Small);
+        AutomationProperties.SetAutomationId(applyPort, "settings-mobile-direct-apply");
+        port.TextChanged += (_, _) => ShowApplyPort();
+        // Enter in the field applies the port, as the Mac's field does on submit.
+        port.KeyDown += async (_, args) => { if (args.Key != Windows.System.VirtualKey.Enter || !applyPort.IsEnabled) return; args.Handled = true; await ApplyPort(); };
+        // The only button that elevates: add while there is none, remove while there is one. It is off while a change waits on Windows'
+        // UAC prompt and comes back (FirewallChanged) once that change ends, approved, cancelled, refused, failed or timed out.
+        firewallButton = SettingsPush(SafeButton(MobileDirectStrings.FirewallButton(FirewallRuleState.Absent), () => ChangeFirewallRule(firewallState != FirewallRuleState.Present)), SettingsControlSize.Small);
+        AutomationProperties.SetAutomationId(firewallButton, "settings-mobile-firewall-button");
         enabled.Checked += async (_, _) => { if (!showing) await Write(saved => saved with { Enabled = true }); };
-        enabled.Unchecked += async (_, _) => { if (!showing) await Write(saved => saved with { Enabled = false }); };
+        // A switch the user turns off (never one the code sets: `showing`) takes the rule away when nothing needs it, from that same click.
+        enabled.Unchecked += async (_, _) => { if (showing) return; await Write(saved => saved with { Enabled = false }); await Act(RemoveFirewallRuleIfUnneeded); if (!closing && rows.IsLoaded) ShowDirect(); };
         legacy.Checked += async (_, _) => { if (!showing) await Write(saved => saved with { AllowLegacyPhones = true }); };
         legacy.Unchecked += async (_, _) => { if (!showing) await Write(saved => saved with { AllowLegacyPhones = false }); };
+        direct.Checked += async (_, _) => { if (!showing) await Write(saved => saved with { DirectEnabled = true }); };
+        direct.Unchecked += async (_, _) => { if (showing) return; await Write(saved => saved with { DirectEnabled = false }); await Act(RemoveFirewallRuleIfUnneeded); if (!closing && rows.IsLoaded) ShowDirect(); };
         relay.TextChanged += (_, _) => ShowApply();
         // Enter in the field applies the address, as the Mac's field does on submit (M/MobileRemoteSettingsView.swift:31).
         relay.KeyDown += async (_, args) => { if (args.Key != Windows.System.VirtualKey.Enter || !apply.IsEnabled) return; args.Handled = true; await ApplyRelay(); };
@@ -197,6 +226,18 @@ public sealed partial class MainWindow
         state.Children.Add(dot); state.Children.Add(status);
         SettingsRow(rows, SettingsLabeled(state, reconnect));
         SettingsRow(rows, detail);
+        SettingsRow(rows, SettingsLabeled(SettingsTitled(directLabel, MobileDirectStrings.Description), direct, top: true));
+        var portLine = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
+        portLine.Children.Add(SettingsText(portLabel)); portLine.Children.Add(port); portLine.Children.Add(applyPort);
+        portRow = SettingsRow(rows, portLine);
+        var directLine = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
+        directLine.Children.Add(directDot); directLine.Children.Add(directStatus);
+        directStatusRow = SettingsRow(rows, directLine);
+        var firewallWords = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
+        firewallWords.Children.Add(firewallText);
+        firewallWords.Children.Add(SettingsText(MobileDirectStrings.FirewallDescription, 11, DesignToken.Ink2));
+        firewallWords.Children.Add(SettingsText(MobileDirectStrings.PortHint, 11, DesignToken.Ink2));
+        firewallRow = SettingsRow(rows, SettingsLabeled(firewallWords, firewallButton, top: true));
 
         var copy = SettingsPush(Button(Locale.Get("settings.mobileRemote.copyLinkButton"), () => { if (mobileHost is not null && service.Snapshot.MobileRemote.Enabled) { var package = new DataPackage(); package.SetText(mobileHost.PairingUrl); Clipboard.SetContent(package); } return Task.CompletedTask; }), SettingsControlSize.Small);
         copy.Content = SettingsGlyphLabel("", Locale.Get("settings.mobileRemote.copyLinkButton"), 11);
@@ -247,6 +288,21 @@ public sealed partial class MainWindow
             // Under it, what the host is doing (M/MobileRemoteSettingsView.swift:48): until the host has been read, off or connecting.
             detail.Text = MobileRelayStatusText.Detail(!on ? new(false, 0, "disabled") : connected ?? new(false, 0, "connecting"));
         }
+        // The direct rows (M/MobileRemoteSettingsView.swift `direct`): the port and the status line under an on switch, the status only
+        // while the remote is on; the firewall row while the path is on or the rule is still there to remove. The row says only Core's
+        // words: the rule's state and what the last change that did not happen said.
+        void ShowDirect()
+        {
+            var saved = service.Snapshot.MobileRemote; var status = MobileDirectStatusNow; var words = MobileDirectStatusText.Detail(status);
+            portRow.Visibility = saved.DirectEnabled ? Visibility.Visible : Visibility.Collapsed;
+            directStatusRow.Visibility = saved.Enabled && saved.DirectEnabled && words.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+            firewallRow.Visibility = saved.DirectEnabled || firewallState == FirewallRuleState.Present ? Visibility.Visible : Visibility.Collapsed;
+            directDot.Fill = brushes.Brush(status.Listening ? DesignToken.Done : DesignToken.Ink3);
+            directStatus.Text = words;
+            firewallText.Text = MobileDirectStrings.FirewallState(firewallState) + (firewallMessage is { } message ? " · " + message : "");
+            var label = MobileDirectStrings.FirewallButton(firewallState); firewallButton.Content = label; AutomationProperties.SetName(firewallButton, label);
+            firewallButton.IsEnabled = !options.SmokeTest && !firewallBusy && firewallState != FirewallRuleState.Unknown && (firewallState == FirewallRuleState.Present || FirewallPorts().Count > 0);
+        }
         // The "connected" and "new device" marks (M/MobileRemoteSettingsView.swift:150-163): 9pt medium on the soft fill, a capsule.
         Border Mark(string text, DesignToken ink, DesignToken fill, string id)
         {
@@ -260,7 +316,7 @@ public sealed partial class MainWindow
             identityRow.Visibility = showsIdentity ? Visibility.Visible : Visibility.Collapsed;
             reconnect.Visibility = service.Snapshot.MobileRemote.Enabled ? Visibility.Visible : Visibility.Collapsed; reconnect.IsEnabled = mobileHost is not null && !options.SmokeTest;
             if (!showsIdentity) showsKey = false;
-            RefreshPairingText(); ShowState();
+            RefreshPairingText(); ShowState(); ShowDirect();
             if (!showsIdentity) { HidePairing(); return; }
             var link = mobileHost!.PairingUrl; var png = PngByteQRCodeHelper.GetQRCode(link, QRCodeGenerator.ECCLevel.M, 6);
             using var stream = new InMemoryRandomAccessStream(); using (var writer = new DataWriter(stream)) { writer.WriteBytes(png); await writer.StoreAsync(); writer.DetachStream(); } stream.Seek(0);
@@ -292,8 +348,9 @@ public sealed partial class MainWindow
         void Updated(MobileRelayStatus _) => DispatcherQueue.TryEnqueue(async () => { if (!closing && rows.IsLoaded) await Act(Refresh); });
         // Until the host has been read (and for the whole of a smoke run) the section shows its switches and the saved state only.
         HidePairing(); reconnect.Visibility = service.Snapshot.MobileRemote.Enabled ? Visibility.Visible : Visibility.Collapsed; RefreshPairingText(); ShowState(); ShowControls();
-        rows.Loaded += async (_, _) => { if (options.SmokeTest) { enabled.IsEnabled = relay.IsEnabled = legacy.IsEnabled = apply.IsEnabled = reconnect.IsEnabled = false; HidePairing(); RefreshPairingText(); return; } await Act(async () => { await InitializeMobileRemote(); if (closing || !rows.IsLoaded || mobileHost is null) return; mobileHost.StatusChanged += Updated; await Refresh(); }); };
-        rows.Unloaded += (_, _) => { if (mobileHost is not null) mobileHost.StatusChanged -= Updated; qr.Source = null; showsKey = false; pairingKey.Text = ""; hostId.Text = ""; };
+        void FirewallUpdated() { if (!closing && rows.IsLoaded) ShowDirect(); }
+        rows.Loaded += async (_, _) => { if (options.SmokeTest) { enabled.IsEnabled = relay.IsEnabled = legacy.IsEnabled = apply.IsEnabled = reconnect.IsEnabled = direct.IsEnabled = port.IsEnabled = applyPort.IsEnabled = firewallButton.IsEnabled = false; HidePairing(); RefreshPairingText(); return; } FirewallChanged -= FirewallUpdated; FirewallChanged += FirewallUpdated; await Act(async () => { await InitializeMobileRemote(); await RefreshFirewallState(); if (closing || !rows.IsLoaded || mobileHost is null) return; mobileHost.StatusChanged += Updated; await Refresh(); }); };
+        rows.Unloaded += (_, _) => { if (!rows.IsLoaded) FirewallChanged -= FirewallUpdated; if (mobileHost is not null) mobileHost.StatusChanged -= Updated; qr.Source = null; showsKey = false; pairingKey.Text = ""; hostId.Text = ""; };
         return rows;
     }
 
@@ -301,6 +358,8 @@ public sealed partial class MainWindow
     internal const double MobileQrSize = 160;
     /// <summary>The relay field's share of its row beside the default address (the Mac draws it 242 wide of 449).</summary>
     private const double MobileRelayFieldShare = 0.54;
+    /// <summary>The direct port field's width (the Mac's is 80).</summary>
+    private const double MobileDirectPortWidth = 80;
     private PaneView MobilePane(string id)
     {
         if (!service.Snapshot.Sessions.Any(p => p.Id == id && p.Kind == "claude")) throw new MobileRequestException(404, "Session not found.");

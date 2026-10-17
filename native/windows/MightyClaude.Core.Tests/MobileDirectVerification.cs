@@ -544,4 +544,41 @@ internal static class MobileDirectVerification
         Check(words.Distinct().Count() == words.Length && words.All(text => text is { Length: > 0 }), "each outcome says its own words");
         return Task.CompletedTask;
     }
+
+    private static string Root()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "native", "contracts", "fixtures", "tailscale-addresses.json"))) directory = directory.Parent;
+        return directory?.FullName ?? throw new InvalidOperationException("the repository root was not found");
+    }
+
+    /// The WinUI rows, the firewall row and the smoke step, read from the source (WinUI does not build here).
+    internal static Task TheSettingsAndTheSmokeAreWired()
+    {
+        var winui = ClaudePluginVerification.WinUISource();
+        string Source(string file) => File.ReadAllText(Path.Combine(winui, file));
+        var remote = Source("MainWindow.MobileRemote.cs");
+        foreach (var id in new[] { "settings-mobile-direct-toggle", "settings-mobile-direct-port", "settings-mobile-direct-apply", "settings-mobile-direct-status", "settings-mobile-firewall-state", "settings-mobile-firewall-button" })
+            Check(remote.Contains("\"" + id + "\"", StringComparison.Ordinal), "the mobile remote section draws " + id);
+        Check(remote.Contains("mobileRouter.DirectEndpoints = () => mobileHost?.DirectEndpoints ?? [];", StringComparison.Ordinal), "/m1/info reads the host's endpoints");
+        Check(remote.Contains("MobileDirectStrings.Description", StringComparison.Ordinal) && remote.Contains("MobileDirectStatusText.Detail(", StringComparison.Ordinal) && remote.Contains("MobileDirectStrings.FirewallState(", StringComparison.Ordinal), "the rows say what Core words");
+        Check(remote.Contains("await Act(RemoveFirewallRuleIfUnneeded);", StringComparison.Ordinal), "turning the path off takes the rule away from that same click");
+        var direct = Source("MainWindow.MobileDirect.cs");
+        Check(direct.Contains("if (options.SmokeTest && firewallRunner is null) return;", StringComparison.Ordinal), "a smoke run never reads or changes this PC's firewall");
+        // Only Core's words reach the row: never a result's detail code or an exception's own (Windows-language) text.
+        Check(direct.Contains("MobileDirectStrings.FirewallOutcome(", StringComparison.Ordinal) && !direct.Contains(".Detail", StringComparison.Ordinal) && !direct.Contains(".Message", StringComparison.Ordinal), "the firewall row shows only Core's outcome words");
+        // The UAC prompt waits as long as the user does: the button stays busy until the change ends, whatever its end.
+        Check(direct.Contains("firewallBusy = true;", StringComparison.Ordinal) && direct.Contains("finally { firewallBusy = false;", StringComparison.Ordinal) && remote.Contains("!firewallBusy", StringComparison.Ordinal), "the firewall button is busy while a change waits");
+        // The one elevated command lives in Core; no other source names the verb.
+        var core = Path.Combine(Path.GetDirectoryName(winui)!, "MightyClaude.Core");
+        var sep = Path.DirectorySeparatorChar.ToString();
+        var elevating = Directory.GetFiles(winui, "*.cs", SearchOption.AllDirectories).Concat(Directory.GetFiles(core, "*.cs", SearchOption.AllDirectories))
+            .Where(file => !file.Contains(sep + "obj" + sep, StringComparison.Ordinal) && !file.Contains(sep + "bin" + sep, StringComparison.Ordinal))
+            .Where(file => File.ReadAllText(file).Contains("\"runas\"", StringComparison.Ordinal)).Select(Path.GetFileName).ToArray();
+        Check(elevating.SequenceEqual(["WindowsFirewallRule.cs"]), "only the firewall rule elevates: " + string.Join(", ", elevating));
+        Check(Source("MainWindow.Smoke.cs").Contains("result[\"mobileDirect\"] = await RunMobileDirectSmoke();", StringComparison.Ordinal), "the GUI smoke drives the rows");
+        var script = File.ReadAllText(Path.Combine(Root(), "scripts", "test-native-windows.ps1"));
+        Check(script.Contains("$result.mobileDirect.$key", StringComparison.Ordinal) && script.Contains("'removeCommand'", StringComparison.Ordinal), "CI reads the smoke's result");
+        return Task.CompletedTask;
+    }
 }
