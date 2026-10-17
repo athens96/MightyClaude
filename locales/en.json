@@ -1863,6 +1863,7 @@
   "windows.mobile.rotationDescription": "Regenerating or revoking a device disconnects every phone and requires pairing again with the new QR code.",
   "windows.process.childrenClosing": "{count} child processes are still shutting down.",
   "windows.process.startFailed": "Could not start the process.",
+  "windows.process.unsafeBatchArgument": "Not run: an argument with a quote, %, ! or a line break cannot be passed safely to a batch file (.cmd, .bat).",
   "windows.screenShare.approveKey": "Approve matching key",
   "windows.screenShare.confirmKeyMessage": "Approve only if this fingerprint matches the one on your phone. This key permits mouse and keyboard control after the phone's identity check.",
   "windows.screenShare.confirmKeyTitle": "Confirm this phone's control key",

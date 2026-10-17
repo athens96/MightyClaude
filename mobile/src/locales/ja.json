@@ -1863,6 +1863,7 @@
   "windows.mobile.rotationDescription": "キーを再生成するかデバイスを取り消すと、すべてのスマートフォンが切断され、新しいQRコードで再ペアリングが必要になります。",
   "windows.process.childrenClosing": "{count}個の子プロセスがまだ終了処理中です。",
   "windows.process.startFailed": "プロセスを開始できませんでした。",
+  "windows.process.unsafeBatchArgument": "実行しませんでした: 引用符、%、!、改行を含む引数はバッチファイル（.cmd、.bat）に安全に渡せません。",
   "windows.screenShare.approveKey": "一致するキーを承認",
   "windows.screenShare.confirmKeyMessage": "このフィンガープリントがスマートフォンに表示されているものと一致する場合にのみ承認してください。このキーにより、スマートフォンでの本人確認後にマウスとキーボードの操作が可能になります。",
   "windows.screenShare.confirmKeyTitle": "このスマートフォンの操作キーを確認",

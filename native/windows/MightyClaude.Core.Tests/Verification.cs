@@ -1069,6 +1069,10 @@ internal static class Verification
         await Test("result table separates not attempted, failed and succeeded", ToolkitVerification.ResultTableSeparatesNotAttemptedFailedAndSucceeded);
         await Test("result truth is authoritative: probe decides verdict, steps are explanation", ToolkitVerification.ResultTruthIsAuthoritative);
         await Test("components rows follow installed CLIs", ToolkitVerification.ComponentsRowsFollowInstalledCLIs);
+        await Test("bare names are found along the PATH with PATHEXT", WindowsCommandVerification.BareNamesAreFoundAlongThePathWithPathExt);
+        await Test("batch files run through cmd with every argument quoted", WindowsCommandVerification.BatchFilesRunThroughCmdWithEveryArgumentQuoted);
+        await Test("the toolkit executor fails a step that cannot start", WindowsCommandVerification.ToolkitExecutorFailsAStepThatCannotStart);
+        await Test("an old Claude is out of date, not missing", WindowsCommandVerification.AnOldClaudeIsOutOfDateNotMissing);
         await Test("components screen is live in the running app", ToolkitVerification.ComponentsScreenIsLiveInTheRunningApp);
         await Test("toolkit file round-trip is a fixed point", ToolkitVerification.ToolkitFileRoundTripIsAFixedPoint);
         await Test("step fetch eligibility is derived", ToolkitVerification.StepFetchEligibilityIsDerived);
