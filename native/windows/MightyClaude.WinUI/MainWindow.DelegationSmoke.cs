@@ -258,7 +258,7 @@ public sealed partial class MainWindow
     private sealed partial class PaneView
     {
         /// <summary>Whether the held item <paramref name="itemId"/> is the first row of this pane's queue, under its header, pinned and with no remove button.</summary>
-        internal void DelegationSmokeRunInNewWorktree(string text) => RunInNewWorktree(text, []);
+        internal void DelegationSmokeRunInNewWorktree(string text, string? agent = null) => RunInNewWorktree(text, [], agent);
 
         internal bool DelegationSmokeHeldRow(string itemId)
         {

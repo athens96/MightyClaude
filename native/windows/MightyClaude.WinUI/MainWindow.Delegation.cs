@@ -46,6 +46,7 @@ public sealed partial class MainWindow
     private void InitializeDelegation()
     {
         service.DelegatedRunBlocked = DelegatedRunBlocked;
+        service.AgentAvailabilityNow = AgentAvailabilityFromCli;
         service.DelegatedRunRequest = request => OnWindow(() => FinishDelegatedRequest(request));
         service.EndAgentTerminal = id => OnWindow(() => EndAgentTerminal(id));
         // The app's note in a pane's transcript (its commit of a child's work, among others) shows at once.
@@ -380,24 +381,30 @@ public sealed partial class MainWindow
         internal void RefreshHeldRows() { if (QueuePaneAlive && Session.Kind == "claude") { RenderQueuedInputs(); RefreshComposerState(); } }
 
         /// <summary>
-        /// The composer's second send on this busy pane (<see cref="ComposerSecondSend.Worktree"/>; M/AppStore+Delegation.swift
-        /// runInNewWorktree): the text and its attachments run now in a new child pane, in its own worktree beside this one, made
-        /// as delegate makes one, in plan mode when the pane's style starts every request so. This pane's run goes on undisturbed,
-        /// and the new child shows at once. When no child can be made, or it cannot start after all, the transcript says why and
-        /// the text goes on by <see cref="RunAfterNoWorktree"/>.
+        /// The composer's second send on this busy pane (<see cref="ComposerSecondSend.Worktree"/>), or the worktree menu's pick of
+        /// the child's <paramref name="agent"/> (M/AppStore+Delegation.swift runInNewWorktree): the text and its attachments run now in
+        /// a new child pane, in its own worktree beside this one, made as delegate makes one, in plan mode when the pane's style
+        /// starts every request so and the child runs this pane's agent. This pane's run goes on undisturbed, and the new child shows
+        /// at once. When no child can be made, or it cannot start after all, the transcript says why and the text goes on by
+        /// <see cref="RunAfterNoWorktree"/>; a text meant for another agent goes back to the composer instead (<see cref="ReturnToComposer"/>).
         /// </summary>
-        private void RunInNewWorktree(string text, IReadOnlyList<RunAttachment> files)
+        private void RunInNewWorktree(string text, IReadOnlyList<RunAttachment> files, string? agent = null)
         {
             var planFirst = LaunchesInPlanMode; var parentId = id;
+            var toComposer = ComposerSecondSends.ReturnsToComposer(agent, Session.Provider);
             // A pane that went away meanwhile has no composer to fall back to: the text is the child's failed task on its card.
             Task FallBack(string reason) => owner.OnWindow(async () =>
             {
-                if (owner.views.TryGetValue(parentId, out var view)) await view.RunAfterNoWorktree(text, files, reason);
+                if (owner.views.TryGetValue(parentId, out var view))
+                {
+                    if (toComposer) await view.ReturnToComposer(text, files, reason);
+                    else await view.RunAfterNoWorktree(text, files, reason);
+                }
                 return true;
             });
             _ = owner.Act(async () =>
             {
-                var answer = await owner.service.StartHumanChildAsync(parentId, text, files, planFirst, _ => FallBack(Locale.Get("delegation.human.error.startFailed")));
+                var answer = await owner.service.StartHumanChildAsync(parentId, text, files, planFirst, _ => FallBack(Locale.Get("delegation.human.error.startFailed")), agent);
                 if (answer switch { HumanChildStart.Refused refused => DelegationText.Reason(refused.Reason), HumanChildStart.Failed failed => failed.Message, _ => null } is { } reason) await FallBack(reason);
                 if (!owner.closing) owner.Render();
             });

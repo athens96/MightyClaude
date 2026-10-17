@@ -24,8 +24,9 @@ public sealed partial class MainWindow
         private readonly Grid steerHost = new() { Width = DesignMetrics.Layout.Toolbar, Height = DesignMetrics.Layout.Toolbar, VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
         private readonly ComposerGlyph steerBolt = ComposerGlyph.SteerBolt();
         /// <summary>
-        /// The second send in steer's place when it opens a new child worktree (<see cref="ComposerSecondSend.Worktree"/>): the same
-        /// disc with the branch, shown while the draft has words for the child's task (M/SessionPaneView.swift:834-842).
+        /// The second send in steer's place when it opens a new child worktree (<see cref="ComposerSecondSend.Worktree"/>), or for its
+        /// agent menu alone: the same disc with the branch, shown while the draft has words for the child's task
+        /// (M/SessionPaneView.swift worktreeButton/worktreeMenuButton). A right-click opens the menu (MainWindow.WorktreeMenu.cs).
         /// </summary>
         private Button worktreeButton = null!;
         private readonly ComposerGlyph worktreeBranch = ComposerGlyph.WorktreeBranch();
@@ -55,7 +56,10 @@ public sealed partial class MainWindow
             owner.PaintPlainButton(steer, owner.brushes.Transparent, owner.brushes.Transparent);
             steer.IsEnabledChanged += (_, _) => PaintSteer();
             worktreeButton = new Button { Width = DesignMetrics.Layout.Toolbar, Height = DesignMetrics.Layout.Toolbar, MinWidth = 0, MinHeight = 0, Padding = new(0), CornerRadius = new(16), BorderThickness = new(0), Content = worktreeBranch.View, Visibility = Visibility.Collapsed };
-            worktreeButton.Click += async (_, _) => await Send(steering: true);
+            // A click (as Ctrl+Enter) runs the draft in a child of this pane's agent; where only another agent's child fits it opens the menu.
+            worktreeButton.Click += async (_, _) => { if (worktreeMenuOnly) worktreeMenu.ShowAt(worktreeButton); else await Send(steering: true); };
+            worktreeMenu.Opening += (_, _) => FillWorktreeMenu();
+            worktreeButton.ContextFlyout = worktreeMenu;
             AutomationProperties.SetName(worktreeButton, Locale.Get("queue.worktree")); AutomationProperties.SetAutomationId(worktreeButton, "composer-worktree-" + id); ToolTipService.SetToolTip(worktreeButton, Locale.Get("queue.worktreeHint"));
             owner.PaintPlainButton(worktreeButton, owner.brushes.Transparent, owner.brushes.Transparent);
             worktreeButton.IsEnabledChanged += (_, _) => PaintSteer();
@@ -142,8 +146,11 @@ public sealed partial class MainWindow
             // The second send: a new worktree for written words in a pane that may have children, otherwise steer for a Claude turn
             // and a draft without files: files always queue (DeferBusyComposer).
             var second = queueable ? owner.service.SecondSend(Session) : ComposerSecondSend.Queue;
+            // Where this pane's own agent cannot have a child in its mode but another agent's can, the same button shows for its menu alone.
+            worktreeMenuOnly = queueable && second == ComposerSecondSend.Queue && owner.service.WorktreeMenuOnly(Session, LaunchesInPlanMode);
             var steers = second == ComposerSecondSend.Steer && pendingAttachments.Count == 0;
-            offersWorktree = second == ComposerSecondSend.Worktree && !string.IsNullOrWhiteSpace(input.Text);
+            offersWorktree = (second == ComposerSecondSend.Worktree || worktreeMenuOnly) && !string.IsNullOrWhiteSpace(input.Text);
+            if (worktreeTipIsMenu != worktreeMenuOnly) { worktreeTipIsMenu = worktreeMenuOnly; ToolTipService.SetToolTip(worktreeButton, Locale.Get(worktreeMenuOnly ? "queue.worktreeMenuHintMac" : "queue.worktreeHint")); }
             steerHost.Visibility = steers || offersWorktree ? Visibility.Visible : Visibility.Collapsed;
             steer.Visibility = offersWorktree ? Visibility.Collapsed : Visibility.Visible; worktreeButton.Visibility = offersWorktree ? Visibility.Visible : Visibility.Collapsed;
             if (queueable)
