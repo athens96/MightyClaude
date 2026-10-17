@@ -37,8 +37,9 @@ struct SetupPlanTests {
         #expect(SetupPlan.order(selected: picked, catalog: catalog, platform: .macos, isSatisfied: { _ in true }) == ["codex", "agy", "tailscale", "glab"])
         // An unknown ID is never planned.
         #expect(SetupPlan.order(selected: ["rm-rf"], catalog: catalog, platform: .macos, isSatisfied: { _ in false }).isEmpty)
-        // No item has a Windows entry yet, so nothing is planned there.
-        #expect(SetupPlan.order(selected: ["claude"], catalog: catalog, platform: .windows, isSatisfied: { _ in false }).isEmpty)
+        // Items with no Windows entry (Homebrew, gstack) are never planned there; Windows has its own prerequisites.
+        #expect(SetupPlan.order(selected: ["homebrew", "gstack"], catalog: catalog, platform: .windows, isSatisfied: { _ in false }).isEmpty)
+        #expect(SetupPlan.order(selected: ["paperthin"], catalog: catalog, platform: .windows, isSatisfied: { _ in false }) == ["node", "paperthin"])
     }
 
     @Test func quotingKeepsEveryValueLiteral() {

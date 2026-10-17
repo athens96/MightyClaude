@@ -55,6 +55,10 @@ public enum SetupRecipe: Sendable, Equatable {
     /// temporary folder and moved into place; an existing clone is moved to the
     /// commit), then `setup` (a path inside the clone) if any.
     case skill(repository: URL, folder: String, commit: String, setup: String?)
+    /// Windows only: `winget install` of an exact package ID from the winget source,
+    /// in `user` or `machine` scope. The Windows app writes the command; the Mac
+    /// only decodes it so the shared catalog stays one closed file.
+    case winget(id: String, scope: String)
     /// Nothing runs: the app opens the page.
     case vendorPage(URL)
 
@@ -311,6 +315,14 @@ public enum SetupCatalogDecoder {
                 setup = value
             }
             return .skill(repository: repository, folder: folder, commit: commit, setup: setup)
+        case "winget":
+            try keys(raw, allowed: ["kind", "id", "scope"], at: path)
+            guard platform == .windows else { throw fail("\(path): winget is a Windows install") }
+            let id = try string(raw["id"], at: path + ".id")
+            guard id.range(of: "^[A-Za-z0-9][A-Za-z0-9-]{0,63}(\\.[A-Za-z0-9][A-Za-z0-9-]{0,63}){1,3}$", options: .regularExpression) != nil else { throw fail("\(path).id is not a winget package ID") }
+            let scope = try string(raw["scope"], at: path + ".scope")
+            guard ["user", "machine"].contains(scope) else { throw fail("\(path).scope must be user or machine") }
+            return .winget(id: id, scope: scope)
         case "vendorPage":
             try keys(raw, allowed: ["kind", "url"], at: path)
             return .vendorPage(try allowedURL(raw["url"], at: path + ".url"))
