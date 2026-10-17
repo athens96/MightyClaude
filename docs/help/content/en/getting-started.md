@@ -43,14 +43,14 @@ The first time you open the app there is no workspace yet, so you see the welcom
 ![[welcome]]
 
 ### Required tools (Mac) {#setup}
-If no agent CLI can run, or a required tool (Claude Code, Git) is missing, the {{ui:setup.title}} screen opens when the app starts. It groups the agent CLIs, the prerequisites (Git, Homebrew, Node, Bun), the style tools (uv, Ouroboros, Superpowers, Paperthin, oh-my-claudecode, gstack), Tailscale, and gh and glab.
+If no agent CLI (Claude Code, Codex or Antigravity) can run, or Git is not ready, the {{ui:setup.title}} screen opens when the app starts. It groups the agent CLIs, the prerequisites (Git, Homebrew, Node, Bun), the style tools (uv, Ouroboros, Superpowers, Paperthin, oh-my-claudecode, gstack), Tailscale, and gh and glab.
 
-1. Check what you want to install. Required items start checked, and anything a picked item needs (such as Homebrew for gh) comes along.
+1. Check what you want to install. The first time, a missing Git starts checked, and so does Claude Code when there is no agent CLI at all; and anything a picked item needs (such as Homebrew for gh) comes along.
 2. Click {{ui:setup.button.install}}. Every command that will run is shown, in order. Nothing runs until you click {{ui:setup.confirm.run}}.
-3. The commands run one after another in one terminal pane in the app. Answer any password or confirmation prompt in the terminal yourself; the app never uses sudo and never sees your password. If a step fails, the next one still runs.
-4. When it ends, the app checks again and opens this screen. What counts is what the check finds, not how a command exited. When a CLI has just appeared, a {{ui:setup.button.signIn}} button shows.
+3. The commands run one after another, from your home folder, in a terminal window the app opens for them. It is not a pane and is not saved with your workspaces. Answer any password or confirmation prompt in the terminal yourself; the app never uses sudo and never sees your password. If a step fails, the next one still runs.
+4. When it ends, the app checks again. If the app is in front, this screen opens again; otherwise the status bar shows a {{ui:setup.finishedBadge}} button. What counts is what the check finds, not how a command exited. When a CLI has just appeared, a {{ui:setup.button.signIn}} button shows.
 
-Git (Xcode Command Line Tools) opens a system install window, where you finish it. Tailscale opens its official download page. A Claude Code that is too old shows {{ui:setup.status.outdated}} with an {{ui:setup.button.update}} button. If there is no workspace yet, your home folder is added as one and the terminal opens there.
+Git (Xcode Command Line Tools) opens a system install window, where you finish it. The script waits up to 30 minutes; Control-C ends only the wait and moves on. If git does not run because the Xcode license has not been accepted, Git shows {{ui:setup.status.attention}}. Tailscale opens its official download page. A Claude Code that is too old shows {{ui:setup.status.outdated}} with an {{ui:setup.button.update}} button.
 
 {{ui:setup.button.later}} closes the screen; check {{ui:setup.button.neverShow}} before closing and it no longer opens at launch. While a required tool is missing, the welcome screen has a {{ui:setup.title}} button, and a pane blocked by a missing CLI has an {{ui:setup.blocked.install}} button. The same list is in Settings → {{ui:settings.nav.tools}}. Windows does not have this screen yet.
 
