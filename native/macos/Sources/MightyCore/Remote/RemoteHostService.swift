@@ -35,6 +35,10 @@ public actor RemoteHostService {
     private var leaseTask: Task<Void, Never>?
     private var generation = UUID()
     private var changing = false
+    /// Set by `shutdown()`: no sharing starts again in this app's life.
+    private var closed = false
+    /// "원격에서 전체 권한·명령 실행 허용": off unless the user turns it on while sharing.
+    private var allowsFullAccess = false
     private var jobs: [String: Job] = [:]
     private var rateWindow = Date.distantPast
     private var rateCount = 0
@@ -62,7 +66,25 @@ public actor RemoteHostService {
     public func current() -> RemoteHostState {
         var value = state
         value.activeRuns = jobs.values.filter { !$0.done }.count
+        value.allowsFullAccess = allowsFullAccess
         return value
+    }
+
+    /// Whether clients may run commands and full-access agents here; takes
+    /// effect from the next run they start.
+    public func setAllowsFullAccess(_ allowed: Bool) -> RemoteHostState {
+        allowsFullAccess = allowed
+        return current()
+    }
+
+    /// What a client may not run here while full access is off: a command pane,
+    /// or an agent in full access (Claude's bypassPermissions, Codex's
+    /// danger-full-access, Antigravity's full access). nil when it may.
+    static func fullAccessRefusal(_ request: StartRunRequest, allowed: Bool) -> String? {
+        guard !allowed else { return nil }
+        if request.kind == SessionKind.shell { return L("remote.host.error.commandsOff") }
+        if request.settings.permissionMode == "fullAccess" { return L("remote.host.error.fullAccessOff") }
+        return nil
     }
 
     /// Starts sharing `workspaceIds` (registered local workspaces) on every
@@ -72,19 +94,27 @@ public actor RemoteHostService {
         guard !workspaceIds.isEmpty, workspaceIds.count <= RemoteProtocol.maximumSharedWorkspaces, Set(workspaceIds).count == workspaceIds.count,
               workspaceIds.allSatisfy(CoreValidation.identifier) else { throw MightyError(L("remote.host.error.pickWorkspace")) }
         guard (1024...65535).contains(port) || (testing && port == 0) else { throw MightyError(L("remote.connect.error.badPort")) }
+        guard !closed else { throw MightyError(L("common.appClosing")) }
         changing = true
         defer { changing = false }
-        let snapshot = try await repository.load()
-        for id in workspaceIds {
-            guard snapshot.workspaces.contains(where: { $0.id == id && $0.remote == nil }) else { throw MightyError(L("remote.host.error.localOnly")) }
-            _ = try await repository.resolveLocalWorkspace(id: id)
+        // Taken before the first wait: a stop meanwhile changes it and ends this start.
+        let revision = UUID(); generation = revision
+        func checked(_ step: () async throws -> Void) async throws {
+            try await step()
+            guard revision == generation, !closed else { throw MightyError(L("remote.host.error.startCancelled")) }
+        }
+        try await checked {
+            let snapshot = try await repository.load()
+            for id in workspaceIds {
+                guard snapshot.workspaces.contains(where: { $0.id == id && $0.remote == nil }) else { throw MightyError(L("remote.host.error.localOnly")) }
+                _ = try await repository.resolveLocalWorkspace(id: id)
+            }
         }
         let addresses = testing ? ["127.0.0.1"] : TailscaleAddresses.current()
         guard !addresses.isEmpty else { throw MightyError(L("remote.host.error.noTailscale")) }
         var random = [UInt8](repeating: 0, count: 32)
         guard SecRandomCopyBytes(kSecRandomDefault, random.count, &random) == errSecSuccess else { throw MightyError(L("remote.host.error.keyFailed")) }
         let key = Data(random).base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
-        let revision = UUID(); generation = revision
         let stream = AsyncStream<RunEvent>.makeStream(bufferingPolicy: .unbounded)
         let sink = stream.continuation
         // No pane MCP server (terminal and web tools), no delegation and no
@@ -97,21 +127,26 @@ public actor RemoteHostService {
         do {
             for address in addresses {
                 // A stop (or quit) while an address was being bound ends this start.
-                guard revision == generation else { throw CancellationError() }
+                guard revision == generation, !closed else { throw CancellationError() }
+                // Refused at accept: anything but a Tailscale peer, and a ninth
+                // connection from one peer; pinned to the tunnel that owns the address.
                 let server = HTTPServer(address: address, port: UInt16(bound), requestBodyLimit: { head in
                     Self.bodyLimit(head, key: key, allowLoopback: allowLoopback)
-                }) { request in await self.serve(request, generation: revision) }
+                }, acceptPeer: { RemotePeerPolicy.allowed($0, allowLoopback: allowLoopback) }, maximumConnectionsPerPeer: RemoteProtocol.maximumConnectionsPerPeer,
+                   requiredInterfaceName: testing ? nil : TailscaleAddresses.interface(owning: address)) { request in await self.serve(request, generation: revision) }
                 servers.append(server)
                 bound = Int(try await server.start())
             }
-            guard revision == generation else { throw CancellationError() }
+            guard revision == generation, !closed else { throw CancellationError() }
         } catch {
             // A stop that came in meanwhile already closed what this start had opened.
             if revision == generation { await stopNow() }
+            if error is CancellationError { throw MightyError(L("remote.host.error.startCancelled")) }
             throw MightyError(L("remote.host.error.listenFailed", ["error": error.localizedDescription]))
         }
         state = RemoteHostState()
         state.enabled = true; state.key = key; state.port = bound; state.workspaceIds = workspaceIds
+        allowsFullAccess = false
         state.addresses = addresses.map { RemoteAddress(host: $0, port: bound).display }
         leaseTask = Task {
             while !Task.isCancelled {
@@ -132,7 +167,7 @@ public actor RemoteHostService {
     private func stopNow() async {
         generation = UUID()
         let oldServers = servers, oldRunner = runner, oldEvents = runnerEvents
-        servers = []; runner = nil; runnerEvents = nil; state = RemoteHostState()
+        servers = []; runner = nil; runnerEvents = nil; state = RemoteHostState(); allowsFullAccess = false
         leaseTask?.cancel(); leaseTask = nil
         for job in jobs.values { job.task?.cancel() }
         jobs.removeAll()
@@ -144,15 +179,15 @@ public actor RemoteHostService {
 
     // MARK: Requests
 
-    /// Only an authenticated run request may send the larger attachment body;
-    /// the key is checked from the headers before that body is read.
+    /// How much body is read, decided from the head before any of it: none
+    /// without the key (the head alone gets its 401), the larger attachment
+    /// body only for an authenticated run request.
     nonisolated static func bodyLimit(_ head: HTTPRequest, key: String, allowLoopback: Bool) -> Int {
         let authorization = head.headers["authorization"] ?? ""
-        guard head.method == "POST", head.target == RemoteProtocol.pathPrefix + "runs", head.headers["origin"] == nil,
-              RemotePeerPolicy.allowed(head.remoteAddress, allowLoopback: allowLoopback),
+        guard head.headers["origin"] == nil, RemotePeerPolicy.allowed(head.remoteAddress, allowLoopback: allowLoopback),
               head.headers[RemoteProtocol.header] == "\(RemoteProtocol.version)", authorization.hasPrefix("Bearer "), authorization.count <= 256,
-              RemoteWorkspaceValidation.keysMatch(String(authorization.dropFirst(7)), key) else { return RemoteProtocol.maximumRequestBytes }
-        return AttachmentSupport.maximumRequestBytes
+              RemoteWorkspaceValidation.keysMatch(String(authorization.dropFirst(7)), key) else { return 0 }
+        return head.method == "POST" && head.target == RemoteProtocol.pathPrefix + "runs" ? AttachmentSupport.maximumRequestBytes : RemoteProtocol.maximumRequestBytes
     }
 
     /// Every request: sharing on, no browser origin, a Tailscale peer, within
@@ -265,6 +300,7 @@ public actor RemoteHostService {
         let folder: Workspace
         do { folder = try await repository.resolveLocalWorkspace(id: workspace.id) } catch { throw Failure(403, error.localizedDescription) }
         guard folder.path == workspace.path else { throw Failure(403, L("remote.host.error.notShared")) }
+        if let refusal = Self.fullAccessRefusal(run, allowed: allowsFullAccess) { throw Failure(403, refusal) }
         // This Mac's own CLI update, plugin change or model reload holds client runs too.
         if let reason = await admission(run) { throw Failure(503, reason) }
         if run.kind == SessionKind.claude {
@@ -364,5 +400,5 @@ public actor RemoteHostService {
         }
     }
 
-    public func shutdown() async { await stopNow() }
+    public func shutdown() async { closed = true; await stopNow() }
 }

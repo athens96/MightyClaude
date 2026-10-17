@@ -23,6 +23,14 @@ struct RemoteWorkspaceAddressTests {
         // Only a tunnel's address counts: carrier-grade NAT can put 100.64/10 on Wi-Fi too.
         let interfaces: [(name: String, address: String)] = [("en0", "100.72.1.9"), ("utun4", "100.101.1.2"), ("utun4", "fd7a:115c:a1e0::5"), ("lo0", "127.0.0.1"), ("en0", "fd7a:115c:a1e0::9")]
         #expect(TailscaleAddresses.select(interfaces: interfaces) == ["100.101.1.2", "fd7a:115c:a1e0::5"])
+        // A tunnel counts only with an address in Tailscale's own IPv6 range: a
+        // WARP-like utun with only 100.96/12 (and link-local IPv6) is another VPN.
+        let warp: [(name: String, address: String)] = [("utun3", "100.96.0.2"), ("utun3", "fe80::1"), ("utun7", "100.80.4.4")]
+        #expect(TailscaleAddresses.select(interfaces: warp).isEmpty)
+        #expect(TailscaleAddresses.select(interfaces: warp + interfaces) == ["100.101.1.2", "fd7a:115c:a1e0::5"])
+        #expect(TailscaleAddresses.owned(interfaces: warp + interfaces).map(\.name) == ["utun4", "utun4"])
+        // Both ranges of the Tailscale tunnel count, IPv4 found beside the IPv6.
+        #expect(TailscaleAddresses.select(interfaces: [("utun9", "fd7a:115c:a1e0::7"), ("utun9", "100.70.0.7")]) == ["100.70.0.7", "fd7a:115c:a1e0::7"])
         // The route to a peer is read without sending anything.
         #expect(TailscaleAddresses.sourceAddress(toward: "127.0.0.1") == "127.0.0.1")
         // Whatever this machine has, only Tailscale addresses come back.
@@ -76,12 +84,12 @@ struct RemoteWorkspaceKeyTests {
             return HTTPRequest(method: method, target: target, headers: values, body: Data(), remoteAddress: peer)
         }
         #expect(RemoteHostService.bodyLimit(head(), key: key, allowLoopback: false) == AttachmentSupport.maximumRequestBytes)
-        #expect(RemoteHostService.bodyLimit(head(headers: ["authorization": "Bearer " + String(repeating: "x", count: 43)]), key: key, allowLoopback: false) == RemoteProtocol.maximumRequestBytes)
-        #expect(RemoteHostService.bodyLimit(head(headers: ["x-mighty-remote-version": "1"]), key: key, allowLoopback: false) == RemoteProtocol.maximumRequestBytes)
-        #expect(RemoteHostService.bodyLimit(head(headers: ["origin": "https://example.com"]), key: key, allowLoopback: false) == RemoteProtocol.maximumRequestBytes)
+        #expect(RemoteHostService.bodyLimit(head(headers: ["authorization": "Bearer " + String(repeating: "x", count: 43)]), key: key, allowLoopback: false) == 0)
+        #expect(RemoteHostService.bodyLimit(head(headers: ["x-mighty-remote-version": "1"]), key: key, allowLoopback: false) == 0)
+        #expect(RemoteHostService.bodyLimit(head(headers: ["origin": "https://example.com"]), key: key, allowLoopback: false) == 0)
         #expect(RemoteHostService.bodyLimit(head("/v2/runs/x/steer"), key: key, allowLoopback: false) == RemoteProtocol.maximumRequestBytes)
-        #expect(RemoteHostService.bodyLimit(head(peer: "192.168.1.5"), key: key, allowLoopback: false) == RemoteProtocol.maximumRequestBytes)
-        #expect(RemoteHostService.bodyLimit(head(peer: "127.0.0.1"), key: key, allowLoopback: false) == RemoteProtocol.maximumRequestBytes)
+        #expect(RemoteHostService.bodyLimit(head(peer: "192.168.1.5"), key: key, allowLoopback: false) == 0)
+        #expect(RemoteHostService.bodyLimit(head(peer: "127.0.0.1"), key: key, allowLoopback: false) == 0)
         #expect(RemoteHostService.bodyLimit(head(peer: "127.0.0.1"), key: key, allowLoopback: true) == AttachmentSupport.maximumRequestBytes)
     }
 
@@ -270,10 +278,12 @@ private func rawExchange(port: Int, _ request: String) throws -> String {
         return Fixture(root: root, repository: repository, workspace: workspace, providers: providers, host: host, clientRepository: clientRepository, client: client, events: events)
     }
 
-    private func share(_ fixture: Fixture) async throws -> (key: String, port: Int) {
+    private func share(_ fixture: Fixture, fullAccess: Bool = true) async throws -> (key: String, port: Int) {
         let state = try await fixture.host.start(workspaceIds: [fixture.workspace.id], port: 0)
         let key = try #require(state.key), port = try #require(state.port)
-        #expect(state.enabled && state.addresses == ["127.0.0.1:\(port)"])
+        #expect(state.enabled && state.addresses == ["127.0.0.1:\(port)"] && !state.allowsFullAccess)
+        // Most tests run command panes, which the host refuses until this is on.
+        if fullAccess { #expect(await fixture.host.setAllowsFullAccess(true).allowsFullAccess) }
         return (key, port)
     }
 
@@ -360,7 +370,8 @@ private func rawExchange(port: Int, _ request: String) throws -> String {
             // Over the plain limit without the key, and over it on any other route even with the key.
             let big = RemoteProtocol.maximumRequestBytes + 1
             let unauthorized = try rawExchange(port: port, "POST /v2/runs HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: \(big)\r\nx-mighty-remote-version: 2\r\n\r\n")
-            #expect(unauthorized.hasPrefix("HTTP/1.1 413"))
+            // Without the key no body is read at all: the head alone is answered.
+            #expect(unauthorized.hasPrefix("HTTP/1.1 401"))
             let otherRoute = try rawExchange(port: port, "POST /v2/runs/job/steer HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer \(key)\r\nContent-Type: application/json\r\nContent-Length: \(big)\r\nx-mighty-remote-version: 2\r\n\r\n")
             #expect(otherRoute.hasPrefix("HTTP/1.1 413"))
             // A workspace the host did not share is never a working folder.
@@ -454,4 +465,156 @@ private func rawExchange(port: Int, _ request: String) throws -> String {
             await fixture.cleanup()
         } catch { await fixture.cleanup(); throw error }
     }
+
+    @Test func commandsAndFullAccessWaitForTheHostsSwitch() async throws {
+        let fixture = try await fixture()
+        do {
+            let (key, port) = try await share(fixture, fullAccess: false)
+            let info = try await fixture.client.connect(name: "", address: "127.0.0.1:\(port)", key: key)
+            let opened = try await fixture.client.openWorkspace(connectionId: info.id, hostWorkspaceId: fixture.workspace.id)
+            // Off: a command pane and a full-access agent are refused before anything runs, and the client says why.
+            let shell = await failureStatus { try await fixture.client.start(request: StartRunRequest(sessionId: "c", workspaceId: opened.id, kind: "shell", input: "touch ran"), workspace: opened, phaseModels: nil) }
+            #expect(shell == 403)
+            let bypass = StartRunRequest(sessionId: "b", workspaceId: opened.id, input: "hi", settings: RunSettings(permissionMode: "fullAccess"))
+            #expect(await failureStatus { try await fixture.client.start(request: bypass, workspace: opened, phaseModels: nil) } == 403)
+            #expect(!FileManager.default.fileExists(atPath: URL(fileURLWithPath: fixture.workspace.path).appendingPathComponent("ran").path))
+            #expect(RemoteHostService.fullAccessRefusal(StartRunRequest(sessionId: "x", workspaceId: "w", input: "hi", provider: "codex", settings: RunSettings(permissionMode: "fullAccess")), allowed: false) != nil)
+            #expect(RemoteHostService.fullAccessRefusal(StartRunRequest(sessionId: "x", workspaceId: "w", input: "hi", provider: "gemini", settings: RunSettings(permissionMode: "fullAccess")), allowed: false) != nil)
+            #expect(RemoteHostService.fullAccessRefusal(StartRunRequest(sessionId: "x", workspaceId: "w", input: "hi", settings: RunSettings(permissionMode: "acceptEdits")), allowed: false) == nil)
+            // On: the command runs. Stopping and sharing again turns it off.
+            _ = await fixture.host.setAllowsFullAccess(true)
+            try await fixture.client.start(request: StartRunRequest(sessionId: "c2", workspaceId: opened.id, kind: "shell", input: "touch ran"), workspace: opened, phaseModels: nil)
+            try await remoteWait { fixture.events.ended("c2") != nil }
+            #expect(fixture.events.ended("c2")?.status == "completed")
+            _ = await fixture.host.stop()
+            #expect(try await fixture.host.start(workspaceIds: [fixture.workspace.id], port: 0).allowsFullAccess == false)
+            await fixture.cleanup()
+        } catch { await fixture.cleanup(); throw error }
+    }
+
+    @Test func aRouteThatLeavesTheTunnelEndsTheConnection() async throws {
+        let fixture = try await fixture()
+        do {
+            let (key, port) = try await share(fixture)
+            let tunnel = RouteSeam()
+            let client = RemoteClientService(repository: fixture.clientRepository, dataDirectory: fixture.root.appendingPathComponent("route-client"), allowLoopbackForTests: true,
+                                             routeCheck: { _ in tunnel.up }) { fixture.events.append($0) }
+            let info = try await client.connect(name: "", address: "127.0.0.1:\(port)", key: key)
+            let opened = try await client.openWorkspace(connectionId: info.id, hostWorkspaceId: fixture.workspace.id)
+            try await client.start(request: StartRunRequest(sessionId: "routed", workspaceId: opened.id, kind: "shell", input: "sleep 30"), workspace: opened, phaseModels: nil)
+            try await remoteWait { await fixture.host.current().activeRuns == 1 }
+            // The route moves off the tunnel mid-run: no further request goes out, the run ends in an error.
+            tunnel.up = false
+            try await remoteWait { fixture.events.ended("routed") != nil }
+            #expect(fixture.events.ended("routed")?.status == "error")
+            #expect(await client.connection(info.id)?.status == .disconnected)
+            // Connected or not, the next use checks the route first, and it is not a passing failure.
+            await #expect(throws: MightyError.self) { _ = try await client.ensureConnected(id: info.id) }
+            #expect(!RemoteClientService.transient(MightyError(L("remote.connect.error.notViaTailscale"))))
+            await client.shutdown()
+            await fixture.cleanup()
+        } catch { await fixture.cleanup(); throw error }
+    }
+}
+
+private final class RouteSeam: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = true
+    var up: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return value }
+        set { lock.lock(); value = newValue; lock.unlock() }
+    }
+}
+
+/// The host's HTTP server refuses at accept, before reading anything.
+struct RemoteWorkspaceServerTests {
+    @Test func aRefusedPeerIsCutOffAtAccept() async throws {
+        let refused = HTTPServer(address: "127.0.0.1", port: 0, acceptPeer: { _ in false }) { _ in HTTPResponse(status: 200, body: Data("{}".utf8)) }
+        let port = Int(try await refused.start())
+        #expect(try rawExchange(port: port, "GET / HTTP/1.1\r\nHost: x\r\n\r\n").isEmpty)
+        await refused.stop()
+        let allowed = HTTPServer(address: "127.0.0.1", port: 0, acceptPeer: { RemotePeerPolicy.allowed($0, allowLoopback: true) }) { _ in HTTPResponse(status: 200, body: Data("{}".utf8)) }
+        let open = Int(try await allowed.start())
+        #expect(try rawExchange(port: open, "GET / HTTP/1.1\r\nHost: x\r\n\r\n").hasPrefix("HTTP/1.1 200"))
+        await allowed.stop()
+    }
+
+    @Test func onePeerHoldsAtMostItsShareOfConnections() async throws {
+        let server = HTTPServer(address: "127.0.0.1", port: 0, maximumConnectionsPerPeer: 2) { _ in HTTPResponse(status: 200, body: Data("{}".utf8)) }
+        let port = Int(try await server.start())
+        let held = try (0..<2).map { _ in try openSocket(port: port) }
+        try await Task.sleep(for: .milliseconds(200))
+        // A third connection from the same peer is closed at once…
+        let third = try openSocket(port: port)
+        #expect(readsEndOfFile(third, within: 2))
+        close(third)
+        // …while the two it holds are still open.
+        #expect(!readsEndOfFile(held[0], within: 0.3))
+        // One closes: its place is free again.
+        close(held[0]); try await Task.sleep(for: .milliseconds(300))
+        #expect(try rawExchange(port: port, "GET / HTTP/1.1\r\nHost: x\r\n\r\n").hasPrefix("HTTP/1.1 200"))
+        close(held[1])
+        await server.stop()
+    }
+
+    @Test func noBodyIsReadWithoutTheKey() async throws {
+        let seen = EventLog()
+        let server = HTTPServer(address: "127.0.0.1", port: 0, requestBodyLimit: { RemoteHostService.bodyLimit($0, key: String(repeating: "k", count: 43), allowLoopback: true) }) { request in
+            seen.append(RunEvent(sessionId: "\(request.body.count)", type: "log"))
+            return HTTPResponse(status: 401, body: Data("{}".utf8))
+        }
+        let port = Int(try await server.start())
+        // The head says a large body follows; none is sent, and the answer comes anyway.
+        let answer = try rawExchange(port: port, "POST /v2/runs HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer \(String(repeating: "z", count: 43))\r\nContent-Type: application/json\r\nContent-Length: 100000\r\nx-mighty-remote-version: 2\r\n\r\n")
+        #expect(answer.hasPrefix("HTTP/1.1 401"))
+        #expect(seen.values.map(\.sessionId) == ["0"])
+        await server.stop()
+    }
+
+    @Test func pendingRequestsAndUnusableEventsAreBounded() async throws {
+        let requests = (0..<40).map { ToolPermissionRequest(id: "r\($0)", runId: "run", toolUseId: "t\($0)", toolName: "Bash", inputJSON: "{}", summary: "s") }
+        let kept = RemotePendingPermissions.capped(requests)
+        #expect(kept.count == RemoteProtocol.maximumPendingPermissions && kept.first?.id == "r8" && kept.last?.id == "r39")
+        // A host that sends one event the client cannot use: that event is left out, the run goes on.
+        let job = "job-1", key = String(repeating: "k", count: 43)
+        let info = try JSONEncoder().encode(RemoteWireInfo(hostId: "host-1", hostName: "Fake", workspaces: [RemoteSharedWorkspace(id: "w1", name: "W", path: "/tmp")], runtime: RuntimeInfo()))
+        let poll = try JSONEncoder().encode(RemoteWirePoll(cursor: 2, lastCursor: 2, gap: false, done: true, events: [
+            RemoteWireEvent(cursor: 1, event: RunEvent(sessionId: job, type: "nonsense")),
+            RemoteWireEvent(cursor: 2, event: RunEvent(sessionId: job, type: "status", status: "completed"))]))
+        let fake = HTTPServer(address: "127.0.0.1", port: 0) { request in
+            let body = request.target.hasSuffix("/info") ? info : request.target.contains("/events") ? poll : try! JSONEncoder().encode(RemoteWireJob(jobId: job))
+            return HTTPResponse(status: request.target == "/v2/runs" ? 202 : 200, body: body, headers: [RemoteProtocol.header: "\(RemoteProtocol.version)"])
+        }
+        let port = Int(try await fake.start())
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("mighty-remote-skip-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let events = EventLog()
+        let client = RemoteClientService(repository: StateRepository(directory: root, legacyStateURL: nil), dataDirectory: root, allowLoopbackForTests: true) { events.append($0) }
+        let connection = try await client.connect(name: "", address: "127.0.0.1:\(port)", key: key)
+        let opened = try await client.openWorkspace(connectionId: connection.id, hostWorkspaceId: "w1")
+        try await client.start(request: StartRunRequest(sessionId: "pane", workspaceId: opened.id, kind: "shell", input: "ls"), workspace: opened, phaseModels: nil)
+        try await remoteWait { events.ended("pane") != nil }
+        #expect(events.ended("pane")?.status == "completed")
+        #expect(events.values.contains { $0.entry?.text == L("remote.run.notice.skipped") })
+        #expect(await client.connection(connection.id)?.status == .connected)
+        await client.shutdown(); await fake.stop()
+    }
+}
+
+private func openSocket(port: Int) throws -> Int32 {
+    let socketFD = socket(AF_INET, SOCK_STREAM, 0)
+    guard socketFD >= 0 else { throw MightyError("socket") }
+    var address = sockaddr_in(); address.sin_family = sa_family_t(AF_INET); address.sin_port = in_port_t(UInt16(port).bigEndian); address.sin_addr.s_addr = inet_addr("127.0.0.1")
+    let connected = withUnsafePointer(to: &address) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(socketFD, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) } }
+    guard connected == 0 else { close(socketFD); throw MightyError("connect") }
+    return socketFD
+}
+
+/// Whether the peer closed the socket within `seconds` (a read gets end of file or a reset).
+private func readsEndOfFile(_ socketFD: Int32, within seconds: Double) -> Bool {
+    var timeout = timeval(tv_sec: Int(seconds), tv_usec: Int32((seconds - Double(Int(seconds))) * 1_000_000))
+    setsockopt(socketFD, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+    var byte: UInt8 = 0
+    let count = read(socketFD, &byte, 1)
+    return count == 0 || (count < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
 }

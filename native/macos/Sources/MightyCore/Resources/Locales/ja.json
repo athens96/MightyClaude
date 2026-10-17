@@ -2759,5 +2759,11 @@
   "settings.remote.noShared": "このコンピュータが共有しているワークスペースはありません。",
   "settings.remote.openButton": "開く",
   "settings.remote.openedButton": "もう一度開く",
-  "remote.connect.error.notViaTailscale": "このアドレスへの経路が Tailscale を通っていません。同じ範囲を使う別のネットワーク（通信事業者の NAT など）につながっている可能性があります。Tailscale がオンか、アドレスが正しいかを確認してください。"
+  "remote.connect.error.notViaTailscale": "このアドレスへの経路が Tailscale を通っていません。同じ範囲を使う別のネットワーク（通信事業者の NAT など）につながっている可能性があります。Tailscale がオンか、アドレスが正しいかを確認してください。",
+  "remote.host.error.commandsOff": "このコンピュータはリモートからのコマンド実行を許可していません。共有しているコンピュータの「設定 → リモート接続」で「リモートからのフルアクセス・コマンド実行を許可」をオンにする必要があります。",
+  "remote.host.error.fullAccessOff": "このコンピュータはリモート実行でのフルアクセスを許可していません。別の権限を選ぶか、共有しているコンピュータの「設定 → リモート接続」で「リモートからのフルアクセス・コマンド実行を許可」をオンにしてください。",
+  "remote.host.error.startCancelled": "共有の開始は取り消されました。",
+  "remote.run.notice.skipped": "接続先のコンピュータから届いた出力のうち、このアプリで使えない項目を省きました。",
+  "settings.remote.allowFullAccess": "リモートからのフルアクセス・コマンド実行を許可",
+  "settings.remote.allowFullAccessDescription": "オンにすると、接続したコンピュータがリモートコマンドのペインを使い、エージェントをフルアクセス（Claude Bypass、Codex フルアクセス、Antigravity フルアクセス）で実行できます。共有を開始するたびにオフになります。"
 }

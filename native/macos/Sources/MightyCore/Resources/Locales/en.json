@@ -2759,5 +2759,11 @@
   "settings.remote.noShared": "This computer shares no workspaces.",
   "settings.remote.openButton": "Open",
   "settings.remote.openedButton": "Open Again",
-  "remote.connect.error.notViaTailscale": "The route to this address does not go through Tailscale; another network using the same range (such as a carrier NAT) may be in the way. Check that Tailscale is on and the address is right."
+  "remote.connect.error.notViaTailscale": "The route to this address does not go through Tailscale; another network using the same range (such as a carrier NAT) may be in the way. Check that Tailscale is on and the address is right.",
+  "remote.host.error.commandsOff": "This computer does not allow remote commands. On the sharing computer, turn on 'Allow full access and commands from remote' in Settings → Remote Connection.",
+  "remote.host.error.fullAccessOff": "This computer does not allow full access for remote runs. Pick another permission mode, or on the sharing computer turn on 'Allow full access and commands from remote' in Settings → Remote Connection.",
+  "remote.host.error.startCancelled": "Starting to share was cancelled.",
+  "remote.run.notice.skipped": "Some output from the connected computer could not be used here and was skipped.",
+  "settings.remote.allowFullAccess": "Allow full access and commands from remote",
+  "settings.remote.allowFullAccessDescription": "When on, connected computers may use remote command panes and run agents with full access (Claude Bypass, Codex full access, Antigravity full access). It is off whenever sharing starts."
 }

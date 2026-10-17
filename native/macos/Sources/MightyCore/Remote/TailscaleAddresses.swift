@@ -38,16 +38,45 @@ public enum TailscaleAddresses {
         return ipv4 + ipv6
     }
 
-    /// The Tailscale addresses among `interfaces` (name and address, as read):
-    /// only a tunnel interface's (`utun…`) count. A carrier-grade NAT network
-    /// can hand Wi-Fi or Ethernet an address in 100.64.0.0/10 too, and that one
-    /// is outside WireGuard. Pure, like `select(_:)`.
+    /// The Tailscale addresses among `interfaces` (name and address, as read).
+    /// Only a tunnel interface (`utun…`) that also carries an address in
+    /// Tailscale's own IPv6 range fd7a:115c:a1e0::/48 is Tailscale's; that
+    /// interface's addresses in both ranges count. A carrier-grade NAT network
+    /// can hand Wi-Fi or Ethernet an address in 100.64.0.0/10, and other VPNs
+    /// (Cloudflare WARP's 100.96.0.0/12, for one) put one on their own tunnel.
+    /// Pure, like `select(_:)`.
     public static func select(interfaces: [(name: String, address: String)]) -> [String] {
-        select(interfaces.filter { $0.name.hasPrefix("utun") }.map(\.address))
+        select(owned(interfaces: interfaces).map(\.address))
+    }
+
+    /// `select(interfaces:)` with each address's interface, in the order read.
+    public static func owned(interfaces: [(name: String, address: String)]) -> [(name: String, address: String)] {
+        let tailnet = Set(interfaces.filter { $0.name.hasPrefix("utun") && inTailscaleIPv6Range($0.address) }.map(\.name))
+        var seen = Set<String>()
+        return interfaces.filter { tailnet.contains($0.name) && contains($0.address) }
+            .map { (name: $0.name, address: canonical($0.address)) }
+            .filter { seen.insert($0.address).inserted }
+    }
+
+    /// fd7a:115c:a1e0::/48, which only Tailscale hands out.
+    static func inTailscaleIPv6Range(_ address: String) -> Bool {
+        var ipv6 = in6_addr()
+        let value = address.trimmingCharacters(in: CharacterSet(charactersIn: "[]")).lowercased()
+        guard !value.contains("%"), inet_pton(AF_INET6, value, &ipv6) == 1 else { return false }
+        return withUnsafeBytes(of: &ipv6) { Array($0) }[0..<6].elementsEqual([0xfd, 0x7a, 0x11, 0x5c, 0xa1, 0xe0])
     }
 
     /// The addresses this computer has on Tailscale now; empty while Tailscale is off.
-    public static func current() -> [String] {
+    public static func current() -> [String] { select(owned(interfaces: interfaceAddresses()).map(\.address)) }
+
+    /// The tunnel interface that carries `address` among this computer's Tailscale addresses.
+    public static func interface(owning address: String) -> String? {
+        let value = canonical(address)
+        return owned(interfaces: interfaceAddresses()).first { $0.address == value }?.name
+    }
+
+    /// Every up interface's IPv4 and IPv6 addresses, as `getifaddrs` reads them.
+    static func interfaceAddresses() -> [(name: String, address: String)] {
         var head: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&head) == 0, let first = head else { return [] }
         defer { freeifaddrs(first) }
@@ -64,7 +93,7 @@ public enum TailscaleAddresses {
                 found.append((String(cString: entry.pointee.ifa_name), String(cString: buffer)))
             }
         }
-        return select(interfaces: found)
+        return found
     }
 
     /// The local address this computer would send from to reach `ip`, as its

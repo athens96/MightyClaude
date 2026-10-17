@@ -16,6 +16,8 @@ section: remote
 2. {{ui:settings.remote.shareTitle}} で共有するローカルワークスペースを選びます。ポートは通常そのまま（43137）にします。
 3. {{ui:settings.remote.startSharing}} を押します。この Mac の Tailscale アドレスと接続キーが表示されます。{{ui:settings.remote.copyButton}} でコピーして、接続する側に伝えます。
 
+共有中は {{ui:settings.remote.allowFullAccess}} スイッチが表示されます。オフのあいだ（既定）は、接続したコンピュータはリモートコマンドのペインを使えず、エージェントをフルアクセスで実行することもできません。そうしたリクエストは実行前に断られ、そのペインに理由が表示されます。共有を開始するたびにオフに戻ります。
+
 共有はこの Mac の Tailscale アドレスでだけ接続を受け付けます。アプリを開き直すと共有は必ずオフで始まります。{{ui:settings.remote.stopSharing}} を押すとリモート実行が止まり、接続キーは破棄されます。もう一度共有するときは新しいキーを伝えてください。
 
 > [!warning]
