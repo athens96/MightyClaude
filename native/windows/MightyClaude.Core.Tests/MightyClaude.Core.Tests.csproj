@@ -13,6 +13,7 @@
     <EmbeddedResource Include="../../contracts/fixtures/design-tokens.json" LogicalName="MightyClaude.Core.Tests.DesignTokens.json" />
     <EmbeddedResource Include="../../contracts/fixtures/help-site.json" LogicalName="MightyClaude.Core.Tests.HelpSite.json" />
     <EmbeddedResource Include="../../contracts/fixtures/mobile-structure.json" LogicalName="MightyClaude.Core.Tests.MobileStructure.json" />
+    <EmbeddedResource Include="../../contracts/fixtures/tailscale-addresses.json" LogicalName="MightyClaude.Core.Tests.TailscaleAddresses.json" />
     <EmbeddedResource Include="../../contracts/fixtures/delegation-modes.json" LogicalName="MightyClaude.Core.Tests.DelegationModes.json" />
   </ItemGroup>
   <ItemGroup>
