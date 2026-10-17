@@ -7,16 +7,14 @@ Mighty Claude는 Claude Code, Codex CLI, Google의 Antigravity CLI를 한 창에
 
 ## 준비물 {#requirements}
 - macOS 14 이상. Windows는 Windows 10(버전 2004) 이상 또는 Windows 11입니다.
-- 사용할 AI CLI. 앱은 CLI를 직접 실행하므로 먼저 설치하고 로그인해야 합니다. 쓰지 않을 CLI는 설치하지 않아도 됩니다.
+- 사용할 AI CLI. 앱은 CLI를 직접 실행하므로 설치하고 로그인해야 합니다. Mac에서는 앱을 처음 열 때 나오는 {{ui:setup.title}} 화면에서 설치할 수 있습니다([첫 실행](#first-launch)). 쓰지 않을 CLI는 설치하지 않아도 됩니다.
 
-| CLI | 설치 명령 |
-|---|---|
-| Claude Code | `npm install -g @anthropic-ai/claude-code` |
-| Codex CLI | `npm install -g @openai/codex` |
-| Antigravity CLI | [Antigravity](agent-pane.md#antigravity) |
+- Claude Code: Mac `curl -fsSL https://claude.ai/install.sh | bash`, Windows `npm install -g @anthropic-ai/claude-code`
+- Codex CLI: Mac `curl -fsSL https://chatgpt.com/codex/install.sh | sh`, Windows `npm install -g @openai/codex`
+- Antigravity CLI: Mac `curl -fsSL https://antigravity.google/cli/install.sh | bash`, Windows [Antigravity](agent-pane.md#antigravity)
 
 > [!tip]
-> 앱을 연 뒤 {{ui:settings.nav.tools}}에서 어떤 CLI가 준비됐는지 보고, 설치 명령을 복사할 수 있습니다. 로그인은 {{ui:settings.nav.cli}} 탭에서 합니다. [설정](settings.md#components)을 보세요.
+> 앱을 연 뒤 {{ui:settings.nav.tools}}에서 어떤 CLI가 준비됐는지 봅니다. Mac은 그 자리에서 설치하고, Windows는 설치 명령을 복사합니다. 로그인은 {{ui:settings.nav.cli}} 탭에서 합니다. [설정](settings.md#components)을 보세요.
 
 ## 설치 {#install}
 1. [다운로드 페이지](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/index.html)에서 내 운영체제용 파일을 받습니다.
@@ -43,6 +41,18 @@ Mighty Claude는 Claude Code, Codex CLI, Google의 Antigravity CLI를 한 창에
 처음 열면 아직 워크스페이스가 없어서 시작 화면이 보입니다.
 
 ![[welcome]]
+
+### 필요한 도구 (Mac) {#setup}
+에이전트 CLI가 하나도 실행되지 않거나 필수 도구(Claude Code, Git)가 빠졌으면 앱을 열 때 {{ui:setup.title}} 화면이 먼저 열립니다. 에이전트 CLI, 기본 도구(Git, Homebrew, Node, Bun), 스타일 도구(uv, Ouroboros, Superpowers, Paperthin, oh-my-claudecode, gstack), Tailscale, gh·glab을 묶어서 보여 줍니다.
+
+1. 설치할 항목에 체크합니다. 필수 항목은 미리 체크되어 있고, 고른 항목에 필요한 도구(예: gh에 필요한 Homebrew)는 함께 들어갑니다.
+2. {{ui:setup.button.install}}를 누르면 실행할 명령을 순서대로 모두 보여 줍니다. {{ui:setup.confirm.run}}을 눌러야 실행됩니다.
+3. 명령은 앱의 터미널 창 하나에서 차례로 실행됩니다. 비밀번호나 확인을 묻는 단계는 터미널에서 직접 답하세요. 앱은 sudo를 쓰지 않고 비밀번호를 받지 않습니다. 한 단계가 실패해도 다음 단계로 넘어갑니다.
+4. 끝나면 앱이 다시 확인하고 이 화면을 엽니다. 결과는 명령의 종료 코드가 아니라 다시 확인한 상태로 정해집니다. CLI가 새로 생겼으면 {{ui:setup.button.signIn}} 단추가 나옵니다.
+
+Git(Xcode Command Line Tools)은 시스템 설치 창이 열리고 그 창에서 마칩니다. Tailscale은 공식 내려받기 페이지를 엽니다. 너무 오래된 Claude Code는 {{ui:setup.status.outdated}}로 보이고 {{ui:setup.button.update}} 단추가 나옵니다. 워크스페이스가 하나도 없으면 홈 폴더를 워크스페이스로 추가해 그 안에서 터미널을 엽니다.
+
+{{ui:setup.button.later}}로 닫을 수 있고, {{ui:setup.button.neverShow}}에 체크하고 닫으면 앱을 열 때 다시 나오지 않습니다. 필수 도구가 빠져 있는 동안 시작 화면에 {{ui:setup.title}} 단추가 있고, CLI가 없어 막힌 실행 창에는 {{ui:setup.blocked.install}} 단추가 있습니다. 같은 목록이 설정 → {{ui:settings.nav.tools}}에도 있습니다. Windows는 아직 이 화면이 없습니다.
 
 ## 워크스페이스 열기 {#open-workspace}
 워크스페이스는 프로젝트 폴더 하나입니다. 실행 창, 탭 배치, 대화 기록이 워크스페이스마다 따로 저장됩니다.

@@ -42,7 +42,7 @@ section: settings
 
 ## 구성 요소 {#components}
 {{ui:settings.nav.tools}} 탭은 앱에 필요한 것이 준비됐는지 보여 줍니다.
-- {{ui:settings.components.sectionTitle}}: Claude, Codex, Antigravity CLI와 필요한 플러그인의 상태입니다. {{ui:settings.components.statusInstalled}}, {{ui:settings.components.statusMissing}}, {{ui:settings.components.statusAttention}} 중 하나로 보입니다. 설치가 필요하면 설치 명령을 복사해 터미널에서 실행한 뒤 {{ui:settings.components.recheckButton}}을 누릅니다.
+- {{ui:settings.components.sectionTitle}}: Mac에서는 [{{ui:setup.title}}](getting-started.md#setup) 목록이 여기 있습니다. 에이전트 CLI, 기본 도구, 스타일 도구, Tailscale, gh·glab마다 {{ui:setup.status.installed}}, {{ui:setup.status.missing}}, {{ui:setup.status.outdated}}, {{ui:setup.status.installing}}, {{ui:setup.status.failed}} 중 하나가 보이고, 빠진 항목을 골라 {{ui:setup.button.install}}를 누르면 명령을 모두 확인한 뒤 앱의 터미널 창에서 설치합니다. {{ui:setup.button.recheck}}과 목록이 열려 있는 동안의 자동 확인은 CLI를 매번 다시 찾고, 너무 오래된 Claude Code에는 {{ui:setup.button.update}} 단추가 나옵니다. Windows에서는 Claude, Codex, Antigravity CLI와 필요한 플러그인의 상태가 {{ui:settings.components.statusInstalled}}, {{ui:settings.components.statusMissing}}, {{ui:settings.components.statusAttention}} 중 하나로 보이고, 설치 명령을 복사해 터미널에서 실행한 뒤 {{ui:settings.components.recheckButton}}을 누릅니다.
 - {{ui:settings.toolkit.sectionTitle}}: 자주 쓰는 도구 목록입니다. 설치 전에 실행할 명령을 모두 보여 주고 {{ui:settings.toolkit.confirmTitle}}을 받습니다. 목록을 {{ui:settings.toolkit.exportButton}}하거나 {{ui:settings.toolkit.importButton}}할 수 있습니다.
 
 ![[settings-tools]]

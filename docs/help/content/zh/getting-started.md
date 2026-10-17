@@ -7,16 +7,14 @@ Mighty Claude 是一款桌面应用，可以在一个窗口中并排使用 Claud
 
 ## 准备工作 {#requirements}
 - macOS 14 或更高版本。Windows 需要 Windows 10（版本 2004）或更高版本，或 Windows 11。
-- 要使用的 AI CLI。应用会直接运行 CLI，因此请先安装并登录。不打算使用的 CLI 无需安装。
+- 要使用的 AI CLI。应用会直接运行 CLI，因此需要安装并登录。在 Mac 上，可以在首次打开应用时出现的{{ui:setup.title}}界面中安装（[首次启动](#first-launch)）。不打算使用的 CLI 无需安装。
 
-| CLI | 安装命令 |
-|---|---|
-| Claude Code | `npm install -g @anthropic-ai/claude-code` |
-| Codex CLI | `npm install -g @openai/codex` |
-| Antigravity CLI | [Antigravity](agent-pane.md#antigravity) |
+- Claude Code: Mac `curl -fsSL https://claude.ai/install.sh | bash`, Windows `npm install -g @anthropic-ai/claude-code`
+- Codex CLI: Mac `curl -fsSL https://chatgpt.com/codex/install.sh | sh`, Windows `npm install -g @openai/codex`
+- Antigravity CLI: Mac `curl -fsSL https://antigravity.google/cli/install.sh | bash`, Windows [Antigravity](agent-pane.md#antigravity)
 
 > [!tip]
-> 打开应用后，可以在{{ui:settings.nav.tools}}标签页中查看哪些 CLI 已就绪，并复制安装命令。登录在{{ui:settings.nav.cli}}标签页中进行。请参阅[设置](settings.md#components)。
+> 打开应用后，可以在{{ui:settings.nav.tools}}标签页中查看哪些 CLI 已就绪。Mac 上可以直接在那里安装，Windows 上可以复制安装命令。登录在{{ui:settings.nav.cli}}标签页中进行。请参阅[设置](settings.md#components)。
 
 ## 安装 {#install}
 1. 从[下载页面](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/index.html)下载适合你操作系统的文件。
@@ -43,6 +41,18 @@ Mighty Claude 是一款桌面应用，可以在一个窗口中并排使用 Claud
 首次打开时还没有工作区，因此会显示欢迎界面。
 
 ![[welcome]]
+
+### 所需工具（Mac） {#setup}
+如果没有任何智能体 CLI 可以运行，或缺少必需工具（Claude Code、Git），应用启动时会先打开{{ui:setup.title}}界面。界面按组列出智能体 CLI、基础工具（Git、Homebrew、Node、Bun）、风格工具（uv、Ouroboros、Superpowers、Paperthin、oh-my-claudecode、gstack）、Tailscale 以及 gh 和 glab。
+
+1. 勾选要安装的项目。必需项目已预先勾选，所选项目需要的工具（例如 gh 需要的 Homebrew）会一并加入。
+2. 点击{{ui:setup.button.install}}后，会按顺序显示将要运行的所有命令。点击{{ui:setup.confirm.run}}之后才会运行。
+3. 命令会在应用内的同一个终端窗格中依次运行。需要输入密码或确认的步骤，请直接在终端中回答；应用不会使用 sudo，也不会接收你的密码。某一步失败时，仍会继续下一步。
+4. 结束后，应用会重新检查并打开此界面。结果以重新检查到的状态为准，而不是命令的退出状态。新装好 CLI 时会出现{{ui:setup.button.signIn}}按钮。
+
+Git（Xcode Command Line Tools）会打开系统安装窗口，请在该窗口中完成。Tailscale 会打开官方下载页面。版本过旧的 Claude Code 会显示为{{ui:setup.status.outdated}}，并出现{{ui:setup.button.update}}按钮。如果还没有工作区，会把主文件夹添加为工作区，并在其中打开终端。
+
+可以用{{ui:setup.button.later}}关闭；勾选{{ui:setup.button.neverShow}}后再关闭，启动时就不会再打开。缺少必需工具期间，欢迎界面上有{{ui:setup.title}}按钮，因缺少 CLI 而受阻的窗格中有{{ui:setup.blocked.install}}按钮。设置 → {{ui:settings.nav.tools}}中也有同一个列表。Windows 暂时还没有此界面。
 
 ## 打开工作区 {#open-workspace}
 一个工作区就是一个项目文件夹。窗格、标签页布局和对话记录按工作区分别保存。
