@@ -35,6 +35,25 @@ public static class WindowsCommand
         return null;
     }
 
+    /// <summary>
+    /// Every copy of <paramref name="name"/> in <paramref name="folders"/>, in order and once each (the first PATHEXT extension
+    /// found in a folder): the setup screen asks each in turn for its version, as the Mac does along its PATH.
+    /// </summary>
+    public static IReadOnlyList<string> Copies(string name, IEnumerable<string> folders, string? pathExt, Func<string, bool>? exists = null)
+    {
+        exists ??= File.Exists;
+        var extensions = (string.IsNullOrWhiteSpace(pathExt) ? DefaultPathExt : pathExt).Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(extension => extension.StartsWith('.') && extension.Length > 1).ToArray();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase); var copies = new List<string>();
+        foreach (var folder in folders.Take(80))
+        {
+            var directory = folder.Trim().Trim('"');
+            if (directory.Length == 0 || directory.Contains('\0') || !Path.IsPathRooted(directory)) continue;
+            if (extensions.Select(extension => Path.Combine(directory, name + extension)).FirstOrDefault(exists) is { } found && seen.Add(found)) copies.Add(found);
+        }
+        return copies;
+    }
+
     /// <summary>An environment read as Windows reads it, names in any case (<c>Path</c> is <c>PATH</c>).</summary>
     public static Dictionary<string, string> Variables(IEnumerable<KeyValuePair<string, string>> environment)
     {

@@ -2861,5 +2861,13 @@
   "setup.subtitle": "Mighty Claude 使用的智能体 CLI 和工具。有 Git 和一个智能体 CLI 即可开始。选择缺少的项目，在应用的终端窗口中安装。是否安装成功由重新检查的结果决定，而不是命令的退出状态。",
   "setup.terminal.title": "安装工具",
   "setup.title": "所需工具",
-  "setup.unverifiedDetail": "无法读取其版本；需要 {minimum} 或更高版本。"
+  "setup.unverifiedDetail": "无法读取其版本；需要 {minimum} 或更高版本。",
+  "setup.windows.item.git.title": "Git for Windows",
+  "setup.windows.item.agy.detail": "Google 的代理 CLI（agy）。使用官方 PowerShell 安装脚本安装到 %LOCALAPPDATA%\\agy\\bin。",
+  "setup.windows.item.codex.detail": "OpenAI 的代理 CLI。使用官方 PowerShell 安装脚本安装到 %LOCALAPPDATA%\\Programs\\OpenAI\\Codex。",
+  "setup.windows.item.gh.detail": "代理处理 GitHub 议题和拉取请求时使用。通过 winget 为所有用户安装，因此 Windows 可能会弹出管理员确认窗口。",
+  "setup.windows.item.git.detail": "用于工作树、提交和下载技能，Claude Code 的 Bash 工具也使用其中的 Git Bash。通过 winget 仅为当前用户安装。",
+  "setup.windows.item.glab.detail": "代理处理 GitLab 议题和合并请求时使用。通过 winget 仅为当前用户安装。",
+  "setup.windows.item.node.detail": "安装 Paperthin 技能的 npx 需要它。通过 winget 为所有用户安装 LTS 版本，因此 Windows 可能会弹出管理员确认窗口。",
+  "setup.windows.script.close": "按 Enter 键关闭此窗口。"
 }
