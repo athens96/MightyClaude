@@ -725,7 +725,7 @@ extension AppStore {
 
     func mobileClose(_ id: String) throws {
         _ = try mobileCommandSession(id)
-        guard !hasModal else { throw MobileHostError.conflict(L("remote.error.closeMacWindow")) }
+        guard !hasBlockingModal else { throw MobileHostError.conflict(L("remote.error.closeMacWindow")) }
         closeSession(id)
     }
 
@@ -745,7 +745,7 @@ extension AppStore {
         let shown = mobileStyleId(session)
         try MobileRemoteSupport.validate(request, options: mobileSettingsOptions(session, model: request.model, agentViewMode: viewMode))
         guard session.status != "running", !pendingRuns.contains(id) else { throw MobileHostError.conflict(L("phone.session.settingsLocked")) }
-        guard !hasModal else { throw MobileHostError.conflict(L("remote.error.closeMacWindow")) }
+        guard !hasBlockingModal else { throw MobileHostError.conflict(L("remote.error.closeMacWindow")) }
         // Everything is checked before the first mutation, so a POST that will
         // fail leaves the pane exactly as the phone last saw it.
         try mobileCheckApplicable(session, request: request)
@@ -831,7 +831,7 @@ extension AppStore {
         case "help": return SlashCommandCatalog.helpText(provider: session.provider)
         case "usage": return MobileUsageText.text(usage: mobileUsage(session), model: modelLabel(for: session), elapsedSeconds: session.runTiming?.elapsed())
         case "clear":
-            guard !hasModal else { throw MobileHostError.conflict(L("remote.error.closeMacWindow")) }
+            guard !hasBlockingModal else { throw MobileHostError.conflict(L("remote.error.closeMacWindow")) }
             guard session.status != "running", !pendingRuns.contains(id) else { throw MobileHostError.conflict(L("slash.note.newConversationRunning")) }
             guard session.resumeId != nil else { throw MobileHostError.conflict(L("remote.error.nothingToResume")) }
             // Not `performSlashAction`: that selects the pane, so a phone would
@@ -873,7 +873,7 @@ extension AppStore {
         // A command pane runs in the app's own terminal, which the phone
         // cannot drive; creating one would hand it a dead window.
         guard kind != "shell" else { throw MobileHostError.conflict(L("remote.error.shellUnavailable")) }
-        guard !hasModal else { throw MightyError(L("remote.error.closeMacWindow")) }
+        guard !hasBlockingModal else { throw MightyError(L("remote.error.closeMacWindow")) }
         let created = mobileCapturingError { addSession(kind: kind, provider: provider, workspaceId: workspaceId) }
         guard let id = created.value else { throw MightyError(created.failure ?? L("remote.error.createFailed")) }
         return id

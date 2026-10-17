@@ -38,7 +38,8 @@ public enum SetupProbe: Sendable, Equatable {
     case skill(name: String)
     /// `xcode-select -p` names a folder that exists.
     case commandLineTools
-    case appBundle(path: String)
+    /// `name` in /Applications or ~/Applications, or `executable` on the PATH.
+    case appBundle(name: String, executable: String?)
 }
 
 public enum SetupRecipe: Sendable, Equatable {
@@ -50,8 +51,10 @@ public enum SetupRecipe: Sendable, Equatable {
     case brewCask(String)
     case npmGlobal(String)
     case claudePlugin(marketplace: String, plugin: String)
-    /// git clone into ~/.claude/skills/<folder>, then `setup` (a path inside the clone) if any.
-    case skill(repository: URL, folder: String, setup: String?)
+    /// ~/.claude/skills/<folder> at the pinned `commit` (a fresh clone is made in a
+    /// temporary folder and moved into place; an existing clone is moved to the
+    /// commit), then `setup` (a path inside the clone) if any.
+    case skill(repository: URL, folder: String, commit: String, setup: String?)
     /// Nothing runs: the app opens the page.
     case vendorPage(URL)
 
@@ -100,8 +103,19 @@ public struct SetupCatalog: Sendable, Equatable {
         "claude.ai", "chatgpt.com", "antigravity.google", "raw.githubusercontent.com",
         "astral.sh", "bun.com", "github.com", "tailscale.com",
     ]
-    /// The only programs an `argv` install may start.
-    public static let allowedExecutables: Set<String> = ["xcode-select", "npx"]
+    /// The only programs an `argv` install may start, each with the only options
+    /// (arguments starting with `-`) it may be given.
+    public static let allowedFlags: [String: Set<String>] = [
+        "xcode-select": ["--install"],
+        "npx": ["--global", "--agent"],
+    ]
+    public static var allowedExecutables: Set<String> { Set(allowedFlags.keys) }
+    /// The GitHub repositories a URL on github.com or raw.githubusercontent.com, or a
+    /// marketplace's owner/repo short form, may name: only those the catalog uses.
+    public static let allowedRepositories: Set<String> = [
+        "Homebrew/install", "Q00/ouroboros", "anthropics/claude-plugins-community",
+        "Yeachan-Heo/oh-my-claudecode", "garrytan/gstack",
+    ]
 
     /// Every label and description key a catalog item may name. Kept here so an
     /// item cannot point at an arbitrary string, and so the locale check sees each
@@ -225,10 +239,11 @@ public enum SetupCatalogDecoder {
             guard platform == .macos else { throw fail("\(path): commandLineTools is a Mac probe") }
             return .commandLineTools
         case "appBundle":
-            try keys(raw, allowed: ["kind", "path"], at: path)
-            let bundle = try string(raw["path"], at: path + ".path")
-            guard platform == .macos, bundle.range(of: "^/Applications/[A-Za-z0-9 ._-]{1,64}\\.app$", options: .regularExpression) != nil else { throw fail("\(path).path must be an app in /Applications") }
-            return .appBundle(path: bundle)
+            try keys(raw, allowed: ["kind", "name", "executable"], at: path)
+            let bundle = try string(raw["name"], at: path + ".name")
+            guard platform == .macos, bundle.range(of: "^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}\\.app$", options: .regularExpression) != nil else { throw fail("\(path).name must be an app bundle's name") }
+            let executable = raw["executable"] == nil ? nil : try plainName(raw["executable"], at: path + ".executable")
+            return .appBundle(name: bundle, executable: executable)
         case let kind: throw fail("\(path).kind \(kind) is unknown")
         }
     }
@@ -240,8 +255,13 @@ public enum SetupCatalogDecoder {
             try keys(raw, allowed: ["kind", "argv", "finishesOutside"], at: path)
             guard let argv = raw["argv"] as? [String], let first = argv.first, argv.count <= 16,
                   SetupCatalog.allowedExecutables.contains(first) else { throw fail("\(path).argv must start with an allowed program") }
-            for argument in argv.dropFirst() where argument.range(of: "^[A-Za-z0-9@._/:=+-]{1,128}$", options: .regularExpression) == nil {
-                throw fail("\(path).argv has an argument with characters the catalog does not allow")
+            for argument in argv.dropFirst() {
+                guard argument.range(of: "^[A-Za-z0-9@._/:=+-]{1,128}$", options: .regularExpression) != nil else {
+                    throw fail("\(path).argv has an argument with characters the catalog does not allow")
+                }
+                if argument.hasPrefix("-"), SetupCatalog.allowedFlags[first]?.contains(argument) != true {
+                    throw fail("\(path).argv gives \(first) an option it may not take: \(argument)")
+                }
             }
             let outside = raw["finishesOutside"] == nil ? false : try bool(raw["finishesOutside"], at: path + ".finishesOutside")
             return .argv(argv, finishesOutside: outside)
@@ -267,14 +287,21 @@ public enum SetupCatalogDecoder {
             try keys(raw, allowed: ["kind", "marketplace", "plugin"], at: path)
             let marketplace = try string(raw["marketplace"], at: path + ".marketplace")
             let isRepository = marketplace.range(of: "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}/[A-Za-z0-9._-]{1,100}$", options: .regularExpression) != nil
-            if !isRepository { _ = try allowedURL(marketplace, at: path + ".marketplace") }
+            if isRepository {
+                let parts = marketplace.split(separator: "/").map(String.init)
+                guard !parts.contains(where: { $0 == "." || $0 == ".." }), SetupCatalog.allowedRepositories.contains(marketplace) else {
+                    throw fail("\(path).marketplace is not a repository the catalog may use")
+                }
+            } else { _ = try allowedURL(marketplace, at: path + ".marketplace") }
             let plugin = try string(raw["plugin"], at: path + ".plugin")
             guard plugin.range(of: "^[a-z0-9][a-z0-9._-]{0,63}@[a-z0-9][a-z0-9._-]{0,63}$", options: .regularExpression) != nil else { throw fail("\(path).plugin must be name@marketplace") }
             return .claudePlugin(marketplace: marketplace, plugin: plugin)
         case "skill":
-            try keys(raw, allowed: ["kind", "repository", "folder", "setup"], at: path)
+            try keys(raw, allowed: ["kind", "repository", "folder", "commit", "setup"], at: path)
             let repository = try allowedURL(raw["repository"], at: path + ".repository")
             let folder = try folderName(raw["folder"], at: path + ".folder")
+            let commit = try string(raw["commit"], at: path + ".commit")
+            guard commit.range(of: "^[0-9a-f]{40}$", options: .regularExpression) != nil else { throw fail("\(path).commit must be a full commit SHA") }
             var setup: String?
             if raw["setup"] != nil {
                 let value = try string(raw["setup"], at: path + ".setup")
@@ -283,7 +310,7 @@ public enum SetupCatalogDecoder {
                       value.range(of: "^[A-Za-z0-9._/-]{1,128}$", options: .regularExpression) != nil else { throw fail("\(path).setup must be a path inside the clone") }
                 setup = value
             }
-            return .skill(repository: repository, folder: folder, setup: setup)
+            return .skill(repository: repository, folder: folder, commit: commit, setup: setup)
         case "vendorPage":
             try keys(raw, allowed: ["kind", "url"], at: path)
             return .vendorPage(try allowedURL(raw["url"], at: path + ".url"))
@@ -334,6 +361,13 @@ public enum SetupCatalogDecoder {
               SetupCatalog.allowedHosts.contains(host), url.user == nil, url.password == nil, url.port == nil,
               text.range(of: "^https://[A-Za-z0-9./_-]+$", options: .regularExpression) != nil else {
             throw fail("\(path) must be an https URL on an allowed host")
+        }
+        // GitHub hosts many owners: only the repositories the catalog uses are let in.
+        if ["github.com", "raw.githubusercontent.com"].contains(host) {
+            let parts = url.path.split(separator: "/").map(String.init)
+            guard parts.count >= 2, !parts.contains(where: { $0 == "." || $0 == ".." }) else { throw fail("\(path) does not name a repository") }
+            let repository = parts[0] + "/" + (parts[1].hasSuffix(".git") ? String(parts[1].dropLast(4)) : parts[1])
+            guard SetupCatalog.allowedRepositories.contains(repository) else { throw fail("\(path) names a repository the catalog may not use") }
         }
         return url
     }

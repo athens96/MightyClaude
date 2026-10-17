@@ -1,13 +1,13 @@
 {
   "schema": 1,
-  "note": "The tools the first-run setup screen (필요한 도구) checks and installs. It ships with the app and is read-only: nothing the user edits adds an item. Every kind is a closed set: probes are executable (on the login shell's PATH, optionally with a minimum version), claudePlugin (a user-scope record in ~/.claude/plugins/installed_plugins.json whose ID starts with the prefix), skill (~/.claude/skills/<name>/SKILL.md), commandLineTools (xcode-select -p) and appBundle; installs are argv (a closed list of executables), officialScript (a fixed https URL on an allow-listed host, fetched and run with bash or sh, or PowerShell on Windows), brewFormula, brewCask, npmGlobal, claudePlugin (marketplace + plugin ID), skill (git clone into ~/.claude/skills/<folder>, then an optional fixed script inside the clone) and vendorPage (the app opens the page; nothing runs). `prerequisites` are item IDs the install needs on that platform and must not form a cycle. `source` is the official page the command was taken from. The label and description keys must be ones the app knows (SetupCatalog.knownKeys). The bundled copy is native/macos/Sources/MightyCore/Resources/Setup/setup-catalog.json and must stay byte-identical.",
+  "note": "The tools the first-run setup screen (필요한 도구) checks and installs. It ships with the app and is read-only: nothing the user edits adds an item. Every kind is a closed set: probes are executable (on the login shell's PATH, optionally with a minimum version), claudePlugin (a user-scope record in ~/.claude/plugins/installed_plugins.json whose ID starts with the prefix), skill (~/.claude/skills/<name>/SKILL.md), commandLineTools (xcode-select -p, then git --version) and appBundle (the app in /Applications or ~/Applications, or its executable on the PATH); installs are argv (a closed list of programs, each with its own allowed options), officialScript (a fixed https URL on an allow-listed host, fetched with curl over https only and run with bash or sh, or PowerShell on Windows), brewFormula, brewCask, npmGlobal (npm's public registry), claudePlugin (marketplace + plugin ID), skill (a repository pinned to a commit, placed in ~/.claude/skills/<folder>, then an optional fixed script inside it) and vendorPage (the app opens the page; nothing runs). URLs on github.com and raw.githubusercontent.com, and a marketplace's owner/repo short form, must name a repository the app allows. Plugins installed through a marketplace are not pinned: the marketplace decides the version. `prerequisites` are item IDs the install needs on that platform and must not form a cycle. `source` is the official page the command was taken from, or the pinned version or commit. The label and description keys must be ones the app knows (SetupCatalog.knownKeys). Required means: the command line tools, plus at least one working agent CLI (the first-run rule). The bundled copy is native/macos/Sources/MightyCore/Resources/Setup/setup-catalog.json and must stay byte-identical.",
   "items": [
     {
       "id": "claude",
       "group": "agent",
       "label": "setup.item.claude.title",
       "description": "setup.item.claude.detail",
-      "need": "required",
+      "need": "optional",
       "afterInstall": { "kind": "signIn", "provider": "claude" },
       "platforms": {
         "macos": {
@@ -172,9 +172,9 @@
       "platforms": {
         "macos": {
           "probe": { "kind": "skill", "name": "re0" },
-          "install": { "kind": "argv", "argv": ["npx", "skills@latest", "add", "LilMGenius/paperthin", "--global", "--agent", "claude-code"] },
+          "install": { "kind": "argv", "argv": ["npx", "skills@1.7.2", "add", "LilMGenius/paperthin", "--global", "--agent", "claude-code"] },
           "prerequisites": ["node"],
-          "source": "https://github.com/LilMGenius/paperthin"
+          "source": "https://www.npmjs.com/package/skills/v/1.7.2"
         }
       }
     },
@@ -204,9 +204,9 @@
       "platforms": {
         "macos": {
           "probe": { "kind": "skill", "name": "gstack" },
-          "install": { "kind": "skill", "repository": "https://github.com/garrytan/gstack.git", "folder": "gstack", "setup": "setup" },
+          "install": { "kind": "skill", "repository": "https://github.com/garrytan/gstack.git", "folder": "gstack", "commit": "d258bcffb0cb7bda5f133f3e957f932d816d282f", "setup": "setup" },
           "prerequisites": ["git", "bun", "claude"],
-          "source": "https://github.com/garrytan/gstack"
+          "source": "https://github.com/garrytan/gstack/commit/d258bcffb0cb7bda5f133f3e957f932d816d282f"
         }
       }
     },
@@ -219,7 +219,7 @@
       "afterInstall": { "kind": "reprobe" },
       "platforms": {
         "macos": {
-          "probe": { "kind": "appBundle", "path": "/Applications/Tailscale.app" },
+          "probe": { "kind": "appBundle", "name": "Tailscale.app", "executable": "tailscale" },
           "install": { "kind": "vendorPage", "url": "https://tailscale.com/download/mac" },
           "prerequisites": [],
           "source": "https://tailscale.com/kb/1016/install-mac"

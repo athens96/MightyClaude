@@ -156,7 +156,7 @@ struct CLIEnvironmentTests {
         #expect(CLIEnvironmentResolver.appending(["/opt/homebrew/bin", "/a"], to: "/a:/usr/bin") == "/a:/usr/bin:/opt/homebrew/bin")
         #expect(CLIEnvironmentResolver.appending(["/x"], to: "") == "/x")
         let home = URL(fileURLWithPath: "/Users/fixture")
-        #expect(CLIEnvironmentResolver.wellKnownFolders(home: home) == ["/Users/fixture/.local/bin", "/Users/fixture/.npm-global/bin", "/opt/homebrew/bin", "/usr/local/bin"])
+        #expect(CLIEnvironmentResolver.wellKnownFolders(home: home) == ["/Users/fixture/.local/bin", "/Users/fixture/.npm-global/bin", "/Users/fixture/.bun/bin", "/opt/homebrew/bin", "/usr/local/bin"])
         let root = try temporary(); defer { try? FileManager.default.removeItem(at: root) }
         let shell = try fakeShell(root); try settings(root)
         let plain = await resolver(root, shell: shell).resolve(workspacePath: root.path)

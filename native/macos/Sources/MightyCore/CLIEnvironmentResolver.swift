@@ -40,11 +40,12 @@ public actor CLIEnvironmentResolver {
     }
 
     /// Where the official installers put the CLIs (Claude, Codex, Antigravity, uv:
-    /// ~/.local/bin; Homebrew and its formulae: /opt/homebrew/bin or /usr/local/bin).
-    /// A shell profile that does not list them yet still finds them: they go at
-    /// the end of the login shell's PATH, after everything the profile chose.
+    /// ~/.local/bin; Bun: ~/.bun/bin; Homebrew and its formulae: /opt/homebrew/bin
+    /// or /usr/local/bin). A shell profile that does not list them yet still finds
+    /// them: they go at the end of the login shell's PATH, after everything the
+    /// profile chose. The setup script appends the same list (`SetupScript.preamble`).
     public static func wellKnownFolders(home: URL) -> [String] {
-        [home.path + "/.local/bin", home.path + "/.npm-global/bin", "/opt/homebrew/bin", "/usr/local/bin"]
+        [home.path + "/.local/bin", home.path + "/.npm-global/bin", home.path + "/.bun/bin", "/opt/homebrew/bin", "/usr/local/bin"]
     }
 
     /// `path` with each of `folders` it does not hold yet added at the end.

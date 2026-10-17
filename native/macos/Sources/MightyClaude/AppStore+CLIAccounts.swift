@@ -93,6 +93,12 @@ extension AppStore {
             // AWS credentials work. It cannot complete an OAuth polling flow.
             return
         }
+        watchCLILogin(provider, terminalId: id)
+    }
+
+    /// Polls the provider's status while the sign-in terminal `terminalId` is
+    /// open (a pane, or the setup screen's own terminal window).
+    func watchCLILogin(_ provider: String, terminalId id: String) {
         cliLoginPending.insert(provider); cliLoginSessions[provider] = id
         // This poll cannot see the terminal's command end, so only a status
         // that turns from signed out to signed in may resend waiting requests.
