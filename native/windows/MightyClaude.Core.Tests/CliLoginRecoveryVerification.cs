@@ -141,8 +141,8 @@ internal static class CliLoginRecoveryVerification
         var plan = CliAccountTerminal.LaunchPlan(CliAccountSupport.LoginArguments("gemini")!, windowsTerminalAvailable: true, directory: @"C:\Projects\app");
         Check(plan.Arguments.SequenceEqual(["new-tab", "-d", @"C:\Projects\app", "--", "agy"]), "the Antigravity sign-in terminal starts in the pane's workspace");
         Check(CliAccountTerminal.LaunchPlan(["agy"], true, @"C:\a;b").Arguments.SequenceEqual(["new-tab", "--", "agy"]), "a folder Windows Terminal would split is not passed on");
-        Check(CliAccountTerminal.LaunchPlan(["agy"], true, @"C:\work", @"C:\Tools;x\agy.exe") is ("conhost.exe", var resolved) && resolved.SequenceEqual([@"C:\Tools;x\agy.exe"])
-            && CliAccountTerminal.LaunchPlan(["agy", "a;b"], true).Executable == "conhost.exe" && CliAccountTerminal.LaunchPlan(["agy"], true, null, @"C:\Tools\agy.exe").Executable == "wt.exe",
+        Check(CliAccountTerminal.LaunchPlan(["agy"], true, @"C:\work", @"C:\Tools;x\agy.exe") is (var host, var resolved) && host == CliAccountTerminal.ConsoleHost && resolved.SequenceEqual([@"C:\Tools;x\agy.exe"])
+            && CliAccountTerminal.LaunchPlan(["agy", "a;b"], true).Executable == CliAccountTerminal.ConsoleHost && CliAccountTerminal.LaunchPlan(["agy"], true, null, @"C:\Tools\agy.exe").Executable == "wt.exe",
             "a command Windows Terminal would split runs in conhost");
         Check(CliAccountTerminal.LaunchPlan(["agy"], false, @"C:\Projects\app").Arguments.SequenceEqual(["agy"]), "the console host inherits the folder instead");
         Check(CliAccountTerminal.LaunchPlan([@"C:\Users\me\AppData\Local\agy\bin\agy.exe"], false, null, @"C:\Users\me\AppData\Local\agy\bin\agy.exe").Arguments.SequenceEqual([@"C:\Users\me\AppData\Local\agy\bin\agy.exe"]),

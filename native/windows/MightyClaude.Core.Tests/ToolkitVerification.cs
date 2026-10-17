@@ -660,21 +660,21 @@ internal static class ToolkitVerification
         // Every control the section promises, by the automation id it carries.
         foreach (var id in new[]
                  {
-                     "components-refresh", "settings-toolkit-add", "settings-toolkit-export",
+                     "settings-toolkit-add", "settings-toolkit-export",
                      "settings-toolkit-import", "settings-toolkit-install",
                  })
             Check(source.Contains("\"" + id + "\""), "the section must draw the control " + id);
-        foreach (var prefix in new[] { "\"component-\" + row.Id", "\"toolkit-entry-\" + entry.Id", "\"toolkit-approve-\" + entryId", "\"toolkit-remove-\" + removeEntryId" })
+        foreach (var prefix in new[] { "\"toolkit-entry-\" + entry.Id", "\"toolkit-approve-\" + entryId", "\"toolkit-remove-\" + removeEntryId" })
             Check(source.Contains(prefix), "each row must carry its own id: " + prefix);
 
-        // The CLI rows come from Core, one per provider, with Core's own labels
-        // and Core's install command — never a decision made in the view.
-        Check(source.Contains("ComponentSection.SectionRows(rt)"),
-            "the CLI rows must come from ComponentSection.SectionRows");
-        Check(source.Contains("ComponentSection.InstallCommand(row.Id)"),
-            "the copy-install-command action must use ComponentSection.InstallCommand");
-        Check(source.Contains("actionId == \"copy-command\""),
-            "the missing state's action must be the copy-install-command action");
+        // The tools the app needs are the setup screen's list (MainWindow.Setup.cs), the same one the 필요한 도구 window shows:
+        // its rows, picks, recheck and install come from Core's catalog, probes and plan — never a decision made in the view.
+        Check(source.Contains("SettingsRow(rows, BuildSetupContent());"), "the Components section must host the setup screen's list");
+        var setup = File.ReadAllText(Path.Combine(winui, "MainWindow.Setup.cs"));
+        foreach (var id in new[] { "\"setup-recheck\"", "\"setup-install\"", "\"setup-row-\" + item.Id", "\"setup-check-\" + item.Id" })
+            Check(setup.Contains(id), "the setup list must draw " + id);
+        foreach (var call in new[] { "SetupScript.Steps(SetupPlanIds, catalog, SetupCatalog.Title)", "SetupPlan.Order(setupSelection, catalog, SetupPlatform.Windows", "new SetupProber(environment).ProbeAllAsync(catalog, only)" })
+            Check(setup.Contains(call), "the setup list must ask Core: " + call);
 
         // The toolkit list, approval, removal and export all go through the store.
         foreach (var call in new[]
@@ -722,7 +722,7 @@ internal static class ToolkitVerification
 
         // Commands are argv arrays through the existing launcher, never a shell
         // string.
-        Check(source.Contains("runner.RunAsync(binary, args, TimeSpan.FromMinutes(5))"),
+        Check(source.Contains("runner.RunAsync(binary, args, TimeSpan.FromMinutes(5), environment: CliEnvironment.Current())"),
             "each toolkit command must start from an argv array through ICliRunner");
         Check(!source.Contains("/bin/sh") && !source.Contains("cmd.exe /c"),
             "no toolkit command may be joined into a shell string");
@@ -743,7 +743,6 @@ internal static class ToolkitVerification
         }
         foreach (var required in new[]
                  {
-                     "settings.components.sectionDescription", "settings.components.recheckButton",
                      "settings.toolkit.sectionTitle", "settings.toolkit.addButton",
                      "settings.toolkit.removeButton", "settings.toolkit.approveButton",
                      "settings.toolkit.exportButton", "settings.toolkit.importButton",

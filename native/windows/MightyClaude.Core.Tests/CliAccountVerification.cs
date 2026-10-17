@@ -130,7 +130,7 @@ internal static class CliAccountVerification
         Check(wt.Arguments.SequenceEqual(["new-tab", "--", "claude", "auth", "login", "--console"]),
             "terminal: wt passes the login argv after --");
         var fallback = CliAccountTerminal.LaunchPlan(login, windowsTerminalAvailable: false);
-        Check(fallback.Executable == "conhost.exe", "terminal: console host is the fallback");
+        Check(fallback.Executable == CliAccountTerminal.ConsoleHost && Path.GetFileName(fallback.Executable) == "conhost.exe", "terminal: console host is the fallback, from the system folder");
         Check(fallback.Arguments.SequenceEqual(login), "terminal: fallback passes the login argv unchanged");
         // Every element stays its own argument, so no argument can be smuggled in.
         Check(wt.Arguments.Concat(fallback.Arguments).All(a => !a.Contains(' ')), "terminal: arguments are not joined");

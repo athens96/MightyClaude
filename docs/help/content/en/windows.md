@@ -41,6 +41,7 @@ Windows has no menu bar. The same commands are in the sidebar and the {{ui:works
 ## Differences {#differences}
 | Feature | On Windows |
 |---|---|
+| Required tools | [{{ui:setup.title}}](getting-started.md#setup) installs in a separate PowerShell window, with winget and each CLI's official PowerShell installer. Homebrew, Bun and gstack are not listed. {{ui:setup.button.neverShow}} is kept as the `setup.neverShow` value (REG_DWORD) under `HKEY_CURRENT_USER\Software\MightyClaudeNative`. |
 | CLI sign-in | Runs in a separate Windows terminal window, not a terminal inside the app. Once you are signed in, the failed request is sent again on its own, as on the Mac. |
 | Antigravity | Installed with its PowerShell installer into `%LOCALAPPDATA%\agy\bin`; it keeps its records in `%USERPROFILE%\.gemini\antigravity-cli` ([Antigravity](agent-pane.md#antigravity)). |
 | Terminal panes | Use Windows PowerShell. |

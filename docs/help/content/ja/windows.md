@@ -41,6 +41,7 @@ Windowsにはメニューバーがありません。同じ機能は、サイド�
 ## 異なる点 {#differences}
 | 機能 | Windowsでは |
 |---|---|
+| 必要なツール | [{{ui:setup.title}}](getting-started.md#setup)のインストールは別のPowerShellウィンドウで行い、wingetと各CLIの公式PowerShellインストールスクリプトを使います。Homebrew、Bun、gstackは一覧にありません。{{ui:setup.button.neverShow}}はレジストリ `HKEY_CURRENT_USER\Software\MightyClaudeNative` の `setup.neverShow` 値(REG_DWORD)として保存されます。 |
 | CLIのサインイン | アプリ内のターミナルではなく、別のWindowsターミナルのウインドウで行います。サインインが終わると、Macと同じく失敗したリクエストを自動で送り直します。 |
 | Antigravity | PowerShellのインストーラーで`%LOCALAPPDATA%\agy\bin`に入り、記録は`%USERPROFILE%\.gemini\antigravity-cli`に残ります([Antigravity](agent-pane.md#antigravity))。 |
 | ターミナルペイン | Windows PowerShellを使います。 |

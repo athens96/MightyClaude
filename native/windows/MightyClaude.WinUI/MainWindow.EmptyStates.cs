@@ -52,6 +52,18 @@ public sealed partial class MainWindow
         open.Click += async (_, _) => await PickFolder();
         AutomationProperties.SetName(open, Locale.Get("layout.welcome.openProject")); AutomationProperties.SetAutomationId(open, "welcome-open-folder");
         stack.Children.Add(open);
+        // 필요한 도구 while no agent CLI can run or Git is missing (M/WorkspaceView.swift:584-588): the plain button beside it.
+        setupNeedsAttentionShown = SetupNeedsAttention;
+        if (setupNeedsAttentionShown)
+        {
+            var setupLabel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
+            setupLabel.Children.Add(new FontIcon { Glyph = "", TextSize = DesignMetrics.Type.Body, VerticalAlignment = VerticalAlignment.Center });
+            setupLabel.Children.Add(new TextBlock { Text = Locale.Get("setup.title"), TextSize = DesignMetrics.Type.Body, VerticalAlignment = VerticalAlignment.Center });
+            var setup = new Button { Content = setupLabel, Height = WelcomeButtonHeight, MinHeight = 0, Padding = new Thickness(DesignMetrics.Spacing.Lg, 0, DesignMetrics.Spacing.Lg, 0), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), HorizontalAlignment = HorizontalAlignment.Center };
+            setup.Click += (_, _) => OpenSetup();
+            AutomationProperties.SetName(setup, Locale.Get("setup.title")); AutomationProperties.SetAutomationId(setup, "welcome-setup");
+            stack.Children.Add(setup);
+        }
         stack.Children.Add(new TextBlock { Text = Locale.Get("layout.welcome.shortcuts"), TextSize = DesignMetrics.Type.Pill, Foreground = brushes.Tertiary, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, DesignMetrics.Spacing.Md - DesignMetrics.Spacing.Xxs, 0, 0) });
         page.Children.Add(stack);
         // The Mac's column keeps its spacing between the lower Spacer and the foot line (18, less the 2 Segoe's line is taller), so the parts stand that much above the middle.

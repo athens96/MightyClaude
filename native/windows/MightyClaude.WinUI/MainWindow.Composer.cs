@@ -47,6 +47,8 @@ public sealed partial class MainWindow
         /// <summary>The rows between the editor and the toolbar: attachments being read, a background update holding sends, and why a draft cannot run yet.</summary>
         private StackPanel loadingRow = null!, holdRow = null!;
         private Grid blockedRow = null!;
+        /// <summary>설치하기 under the reason, while the pane's CLI is missing on this PC: the setup screen, focused on that CLI (M/SessionPaneView.swift:723-727).</summary>
+        private Button blockedInstall = null!;
         private readonly TextBlock holdText = new() { TextSize = 11, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
         /// <summary>Why an attachment could not be added: its own row of the composer until it is dismissed or the next read begins (M/SessionPaneView.swift:591-600).</summary>
         private Grid attachmentErrorRow = null!;
@@ -423,6 +425,9 @@ public sealed partial class MainWindow
             var blockedWords = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
             blockedWords.Children.Add(new TextBlock { Text = Locale.Get("composer.blocked.title"), TextSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = b.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap });
             inputHint.Foreground = b.Brush(DesignToken.Ink2); blockedWords.Children.Add(inputHint);
+            blockedInstall = owner.SettingsPush(Button(Locale.Get("setup.blocked.install"), () => { if (owner.SetupItemForMissingCli(Session) is { } item) owner.OpenSetup(item); return Task.CompletedTask; }), SettingsControlSize.Small, prominent: true);
+            blockedInstall.HorizontalAlignment = HorizontalAlignment.Left; blockedInstall.Margin = new Thickness(0, DesignMetrics.Spacing.Xxs, 0, 0); blockedInstall.Visibility = Visibility.Collapsed;
+            AutomationProperties.SetAutomationId(blockedInstall, "run-blocked-install-" + id); blockedWords.Children.Add(blockedInstall);
             Grid.SetColumn(blockedWords, 1); blockedRow.Children.Add(blockedWords);
             AutomationProperties.SetAutomationId(blockedRow, "run-blocked-" + id);
 

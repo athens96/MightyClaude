@@ -364,15 +364,19 @@ public sealed class CliAccountsCoordinator
         // agy may sit only in its installer's folder, which reaches PATH for new sessions only: it is started by its full path.
         var resolved = loginArgv is ["agy", ..] ? FindBinary("agy") : null;
         if (resolved is not null) loginArgv = [resolved, .. loginArgv.Skip(1)];
-        var plan = CliAccountTerminal.LaunchPlan(loginArgv, !loginArgv.Contains("/setup-bedrock") && FindBinary("wt") is not null, directory, resolved);
+        // Windows Terminal by the full path found along the PATH, the console host by the system folder's: never a bare name.
+        var terminal = loginArgv.Contains("/setup-bedrock") ? null : FindBinary("wt");
+        var plan = CliAccountTerminal.LaunchPlan(loginArgv, terminal is not null, directory, resolved, terminal);
         var info = new System.Diagnostics.ProcessStartInfo(plan.Executable) { UseShellExecute = false };
         if (directory is not null) info.WorkingDirectory = directory;
         foreach (var value in plan.Arguments) info.ArgumentList.Add(value);
         foreach (var pair in environment) info.Environment[pair.Key] = pair.Value;
+        // A login command that is an npm .cmd shim must not find a planted node.exe in the folder it starts in.
+        info.Environment[WindowsCommand.NoCurrentDirectorySearch] = "1";
         if (loginArgv.Contains("/setup-bedrock")) info.Environment["CLAUDE_CODE_USE_BEDROCK"] = "1";
         using var process = System.Diagnostics.Process.Start(info);
         if (process is null) return;
-        opened?.Invoke(plan.Executable == "conhost.exe");
+        opened?.Invoke(plan.Executable == CliAccountTerminal.ConsoleHost);
         await process.WaitForExitAsync(cancellation);
     }
 
@@ -492,17 +496,25 @@ public static class CliAccountTerminal
     /// working directory of the process that starts it. conhost only finds an
     /// .exe by name, so `resolvedBinary` (the command's full path, when known)
     /// replaces the name there, and a .cmd/.bat shim runs through `cmd /c`.
-    /// A command (or its resolved path) holding `;` would be split by Windows
-    /// Terminal too, so it runs in conhost instead.
+    /// A command (or its resolved path) holding `;`, or `%` (which Windows Terminal
+    /// expands as an environment variable), would be changed by Windows Terminal
+    /// too, so it runs in conhost instead.
+    /// `windowsTerminal` is the full path of wt.exe as it was found along the PATH; the
+    /// console host and cmd.exe are started from the system folder. A bare name is
+    /// only left where no path is known (the checks).
     public static (string Executable, IReadOnlyList<string> Arguments) LaunchPlan(
-        IReadOnlyList<string> loginArgv, bool windowsTerminalAvailable, string? directory = null, string? resolvedBinary = null)
+        IReadOnlyList<string> loginArgv, bool windowsTerminalAvailable, string? directory = null, string? resolvedBinary = null, string? windowsTerminal = null)
     {
         if (loginArgv.Count == 0 || loginArgv[0].Length == 0)
             throw new ArgumentException("a login command is required", nameof(loginArgv));
-        if (windowsTerminalAvailable && resolvedBinary?.Contains(';') != true && !loginArgv.Any(argument => argument.Contains(';')))
-            return ("wt.exe", directory is null || directory.Contains(';') ? ["new-tab", "--", .. loginArgv] : ["new-tab", "-d", directory, "--", .. loginArgv]);
-        if (resolvedBinary is null) return ("conhost.exe", [.. loginArgv]);
+        static bool Splits(string? text) => text is not null && (text.Contains(';') || text.Contains('%'));
+        if (windowsTerminalAvailable && !Splits(resolvedBinary) && !Splits(windowsTerminal) && !loginArgv.Any(Splits))
+            return (windowsTerminal ?? "wt.exe", directory is null || Splits(directory) ? ["new-tab", "--", .. loginArgv] : ["new-tab", "-d", directory, "--", .. loginArgv]);
+        if (resolvedBinary is null) return (ConsoleHost, [.. loginArgv]);
         var shim = resolvedBinary.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) || resolvedBinary.EndsWith(".bat", StringComparison.OrdinalIgnoreCase);
-        return ("conhost.exe", shim ? ["cmd.exe", "/c", resolvedBinary, .. loginArgv.Skip(1)] : [resolvedBinary, .. loginArgv.Skip(1)]);
+        return (ConsoleHost, shim ? [WindowsCommand.CommandInterpreter(), "/c", resolvedBinary, .. loginArgv.Skip(1)] : [resolvedBinary, .. loginArgv.Skip(1)]);
     }
+
+    /// <summary>conhost.exe from the system folder (<c>conhost.exe</c> by name only where there is none, in the checks).</summary>
+    public static string ConsoleHost => Environment.SystemDirectory is { Length: > 0 } system ? Path.Combine(system, "conhost.exe") : "conhost.exe";
 }

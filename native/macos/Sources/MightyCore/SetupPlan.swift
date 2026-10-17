@@ -148,7 +148,8 @@ public enum SetupScript {
                 + " && rm -f \(done) && : > \(installing)"
             if let setup { body += " && (cd \(destination) && " + quote("./" + setup) + ")" }
             return body + " && : > \(done)"
-        case .vendorPage: return nil
+        // A Windows install: the Windows app writes its own PowerShell for it, and a Mac entry never has one.
+        case .winget, .vendorPage: return nil
         }
     }
 

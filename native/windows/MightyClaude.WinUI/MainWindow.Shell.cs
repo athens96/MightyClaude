@@ -25,7 +25,7 @@ public sealed partial class MainWindow
     /// <summary>"3 panes" of the active workspace and "1 running" over every workspace (M/WorkspaceView.swift:380-382).</summary>
     private readonly TextBlock statusPanes = new() { TextSize = DesignMetrics.Type.Small, VerticalAlignment = VerticalAlignment.Center }, statusRunning = new() { TextSize = DesignMetrics.Type.Small, VerticalAlignment = VerticalAlignment.Center };
     /// <summary>The accent "new version" badge, shown while an app update is available or ready (M/WorkspaceView.swift:383-388).</summary>
-    private Button? updateBadge;
+    private Button? updateBadge, setupBadge;
     private readonly TextBlock updateBadgeText = new() { TextSize = DesignMetrics.Type.Small, FontWeight = Microsoft.UI.Text.FontWeights.Medium, VerticalAlignment = VerticalAlignment.Center };
     /// <summary>The line after the usage chips, shown with them (M/StatusBarUsage.swift:169).</summary>
     private Border? usageDivider;
@@ -224,6 +224,15 @@ public sealed partial class MainWindow
         PaintPlainButton(updateBadge, brushes.Transparent, brushes.Transparent);
         AutomationProperties.SetAutomationId(updateBadge, "app-update-badge");
         statusTrailing.Children.Add(updateBadge);
+        // shippingbox.fill and the words, in the accent, as the update badge.
+        var setupWords = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs };
+        setupWords.Children.Add(new FontIcon { Glyph = "\uE7B8", TextSize = DesignMetrics.Type.Small, Foreground = brushes.Brush(DesignToken.Accent), VerticalAlignment = VerticalAlignment.Center });
+        setupWords.Children.Add(new TextBlock { Text = Locale.Get("setup.finishedBadge"), TextSize = DesignMetrics.Type.Small, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = brushes.Brush(DesignToken.Accent), VerticalAlignment = VerticalAlignment.Center });
+        setupBadge = Button(Locale.Get("setup.finishedBadge"), () => { OpenSetup(); return Task.CompletedTask; }); setupBadge.Content = setupWords;
+        setupBadge.MinWidth = 0; setupBadge.MinHeight = 0; setupBadge.Padding = new Thickness(0); setupBadge.BorderThickness = new Thickness(0); setupBadge.VerticalAlignment = VerticalAlignment.Center; setupBadge.Visibility = Visibility.Collapsed;
+        PaintPlainButton(setupBadge, brushes.Transparent, brushes.Transparent);
+        AutomationProperties.SetAutomationId(setupBadge, "setup-finished-badge");
+        statusTrailing.Children.Add(setupBadge);
         statusTrailing.Children.Add(StatusDivider());
         statusTrailing.Children.Add(BuildAccountUsage());
         usageDivider = StatusDivider(); usageDivider.Visibility = Visibility.Collapsed; statusTrailing.Children.Add(usageDivider);
@@ -252,6 +261,8 @@ public sealed partial class MainWindow
         if (updateBadge is null) return;
         var state = service.Snapshot;
         status.Text = Locale.Get(runtimeChecks > 0 ? "window.status.checkingRuntimeAndModels" : runtime is null ? "window.status.checkingRuntime" : "window.status.thisMachine");
+        // An install that ended while the app was behind another window says so here, and opens the screen (M/WorkspaceView.swift:620-625).
+        if (setupBadge is not null) setupBadge.Visibility = setupResultWaiting ? Visibility.Visible : Visibility.Collapsed;
         string Count(int value) => value.ToString(CultureInfo.InvariantCulture);
         statusPanes.Text = Locale.Get("window.status.paneCount", new Dictionary<string, string> { ["count"] = Count(state.Sessions.Count(s => s.WorkspaceId == state.ActiveWorkspaceId)) });
         // Only the panes the dashboard counts (M/WorkspaceView.swift:580): an agent's own terminal or browser and the files pane are left out.

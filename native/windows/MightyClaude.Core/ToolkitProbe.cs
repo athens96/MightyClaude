@@ -34,24 +34,35 @@ public static class ToolkitProbe
     private static bool TooLargeToRead(string path) => new FileInfo(path).Length > 16L * 1024 * 1024;
 
     // plugin: exact pluginID key in installed_plugins.json with at least one user-scope record.
-    private static Result ProbePlugin(string pluginId, string home)
+    private static Result ProbePlugin(string pluginId, string home) =>
+        UserScopePluginInstalled(home, id => id == pluginId) ? Result.Installed : Result.Missing;
+
+    /// <summary>
+    /// Whether installed_plugins.json has a plugin whose ID <paramref name="matching"/> accepts with at least one user-scope
+    /// record (M/MightyCore/ToolkitProbe.swift userScopePluginInstalled): the toolkit asks for one exact ID, the setup screen
+    /// for a whole plugin by its <c>name@</c> prefix.
+    /// </summary>
+    public static bool UserScopePluginInstalled(string home, Func<string, bool> matching)
     {
         var path = Path.Combine(home, ".claude", "plugins", "installed_plugins.json");
-        if (!File.Exists(path)) return Result.Missing;
+        if (!File.Exists(path)) return false;
         try
         {
-            if (TooLargeToRead(path)) return Result.Missing;
+            if (TooLargeToRead(path)) return false;
             var text = File.ReadAllText(path);
-            if (text.Length > 4 * 1024 * 1024) return Result.Missing;
+            if (text.Length > 4 * 1024 * 1024) return false;
             using var doc = JsonDocument.Parse(text);
             var root = doc.RootElement;
-            if (!root.TryGetProperty("plugins", out var plugins) || plugins.ValueKind != JsonValueKind.Object) return Result.Missing;
-            if (!plugins.TryGetProperty(pluginId, out var records) || records.ValueKind != JsonValueKind.Array) return Result.Missing;
-            foreach (var record in records.EnumerateArray())
-                if (record.TryGetProperty("scope", out var scope) && scope.GetString() == "user") return Result.Installed;
-            return Result.Missing;
+            if (!root.TryGetProperty("plugins", out var plugins) || plugins.ValueKind != JsonValueKind.Object) return false;
+            foreach (var plugin in plugins.EnumerateObject())
+            {
+                if (!matching(plugin.Name) || plugin.Value.ValueKind != JsonValueKind.Array) continue;
+                foreach (var record in plugin.Value.EnumerateArray())
+                    if (record.ValueKind == JsonValueKind.Object && record.TryGetProperty("scope", out var scope) && scope.ValueKind == JsonValueKind.String && scope.GetString() == "user") return true;
+            }
+            return false;
         }
-        catch { return Result.Missing; }
+        catch { return false; }
     }
 
     // mcp: name present under top-level mcpServers of %USERPROFILE%\.claude.json.
