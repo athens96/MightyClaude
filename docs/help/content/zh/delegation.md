@@ -3,7 +3,7 @@ title: Mighty 编排
 order: 6
 section: delegation
 ---
-借助 Mighty 编排，一个代理窗格在工作的同时，可以把别的工作交给旁边的子窗格一起推进。子窗格运行与父窗格相同的代理（Claude、Codex 或 Antigravity）；在 Mac 上也可以运行三者中的另一个（[Codex 和 Antigravity](#agents)）。每个子窗格都在自己的 git worktree 和分支中工作，因此不会动到彼此的文件；完成后，在侧边栏的卡片上把结果合并到父窗格的分支。此功能以前叫作智能体委派。
+借助 Mighty 编排，一个代理窗格在工作的同时，可以把别的工作交给旁边的子窗格一起推进。子窗格运行与父窗格相同的代理（Claude、Codex 或 Antigravity）；也可以运行三者中的另一个（[Codex 和 Antigravity](#agents)）。每个子窗格都在自己的 git worktree 和分支中工作，因此不会动到彼此的文件；完成后，在侧边栏的卡片上把结果合并到父窗格的分支。此功能以前叫作智能体委派。
 
 打开子窗格有两种方法。
 
@@ -42,7 +42,7 @@ section: delegation
 - 与窗格相同代理的子窗格以父窗格的权限模式运行，并使用父窗格的模型和{{ui:composer.effort.label}}。在每个请求都以计划模式开始的样式中，它以计划模式开始。它以与父窗格相同的视图打开；如果父窗格在 Mighty 视图中使用某个样式，它也以同一样式开始（样式的进度从子窗格的第一个请求起单独计算）。附件也会一起带上。
 - 第一条消息先是你输入的文字，随后应用会告诉子窗格在哪里工作，并要求它完成后提交并写入 REPORT.md，这样才能在卡片上合并。斜杠命令（以 `/` 开头的文字）会按你输入的样子单独运行，应用的说明则作为子窗格的下一个请求随后发送，因此不会变成命令的参数。
 - {{platform:mac}} 若要用另一个代理运行请求，请右键点按 {{ui:queue.worktree}} 按钮（或按住 Control 点按），然后选择 Claude、Codex 或 Antigravity。{{kbd:⌘Enter}} 和普通点按仍使用窗格自己的代理。灰色的项目会说明无法运行的原因：其 CLI 未安装或未登录（请查看“设置 › CLI”）、在窗格模式允许的范围内没有能更改文件的模式，或你启动的 3 个子窗格已经打开。另一个代理的子窗格以它自己的模式中能更改文件、且不做窗格模式不允许之事的最宽模式开始（[Codex 和 Antigravity](#agents)），使用该代理的新窗格会得到的模型和{{ui:composer.effort.label}}，并以窗格的视图打开，但不带样式。如果无法创建或启动该子窗格，你的文字和附件会放回输入框，对话中会说明原因；它们绝不会发给窗格本身。如果窗格自己的代理在当前模式下不能有子窗格，而另一个代理可以，按钮仍会显示，点按会打开菜单，{{kbd:⌘Enter}} 的行为与以前相同。
-- {{platform:windows}} 若要用另一个代理运行请求，请右键单击 {{ui:queue.worktree}} 按钮（或在按钮上按 Shift+F10），然后选择 Claude、Codex 或 Antigravity。{{kbd:Ctrl+Enter}} 和普通单击仍使用窗格自己的代理。其余与上面的 Mac 相同：灰色的项目会说明无法运行的原因；另一个代理的子窗格以它自己的模式中不做窗格模式不允许之事的最宽模式启动，并使用该代理最近使用的窗格的模型和{{ui:composer.effort.label}}；无法启动子窗格的文本会回到输入框。只有另一个代理的子窗格可用时，单击会打开菜单，{{kbd:Ctrl+Enter}} 则像以前一样把请求放入队列。
+- {{platform:windows}} 若要用另一个代理运行请求，请右键单击 {{ui:queue.worktree}} 按钮（或在按钮上按 Shift+F10），然后选择 Claude、Codex 或 Antigravity。{{kbd:Ctrl+Enter}} 和普通单击仍使用窗格自己的代理。其余与上面的 Mac 相同：灰色的项目会说明无法运行的原因；另一个代理的子窗格以它自己的模式中不做窗格模式不允许之事的最宽模式启动，并使用该代理的新窗格会得到的模型和{{ui:composer.effort.label}}；无法启动子窗格的文本会回到输入框。只有另一个代理的子窗格可用时，单击会打开菜单，{{kbd:Ctrl+Enter}} 则像以前一样把请求放入队列。
 - 子窗格的用法和同一代理的普通窗格一样：可以回答批准卡片、发送后续请求、更改权限模式。
 - 对于你亲自启动的子窗格，父窗格中的 Claude 不会收到通知，因为这不是父窗格交出的工作。父窗格的工具也不会列出它，也不能合并它或向它发送后续指示（`human_started`）。请在侧边栏中查看它的状态，并亲自使用卡片上的按钮。
 - 一个父窗格最多可以有 3 个打开的子窗格，并且需要 10 GB 可用磁盘空间。关闭或丢弃已完成的子窗格就能腾出名额。
@@ -176,5 +176,5 @@ reg add "HKCU\Software\MightyClaudeNative" /v delegation.enabled /t REG_DWORD /d
 | 交出的任务（TASK.md、亲自启动的请求） | 64 KiB |
 | 所需磁盘剩余空间 | 10 GB |
 
-- 子窗格运行与父窗格相同的代理，在 Mac 上也可以运行另一个代理（[Codex 和 Antigravity](#agents)）。Claude 和 Codex 窗格可以通过工具和 {{kbd:⌘Enter}} 创建子窗格，Antigravity 窗格只能通过 {{kbd:⌘Enter}}（[Codex 和 Antigravity](#agents)）。
+- 子窗格运行与父窗格相同的代理，也可以运行另一个代理（[Codex 和 Antigravity](#agents)）。Claude 和 Codex 窗格可以通过工具和 {{kbd:⌘Enter}} 创建子窗格，Antigravity 窗格只能通过 {{kbd:⌘Enter}}（[Codex 和 Antigravity](#agents)）。
 - Mac 应用和 Windows 应用都默认开启，并在设置中提供开关（[开启和关闭](#enable)）。手机没有新的界面，保留的行也会显示在手机的队列中。
