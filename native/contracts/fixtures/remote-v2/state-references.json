@@ -8,6 +8,9 @@
     { "name": "version as a string",             "kept": false, "workspace": { "id": "vs", "name": "VS", "path": "/Users/example/vs", "createdAt": "2026-09-01T00:00:00.000Z", "remote": { "version": "2", "connectionId": "conn-1", "workspaceId": "w1", "hostName": "Peer" } } },
     { "name": "version as a boolean",            "kept": false, "workspace": { "id": "vb", "name": "VB", "path": "/Users/example/vb", "createdAt": "2026-09-01T00:00:00.000Z", "remote": { "version": true, "connectionId": "conn-1", "workspaceId": "w1", "hostName": "Peer" } } },
     { "name": "a remote that is not an object",  "kept": false, "workspace": { "id": "vx", "name": "VX", "path": "/Users/example/vx", "createdAt": "2026-09-01T00:00:00.000Z", "remote": "studio-pc" } },
-    { "name": "version 3",                       "kept": false, "workspace": { "id": "v3", "name": "V3", "path": "/Users/example/v3", "createdAt": "2026-09-01T00:00:00.000Z", "remote": { "version": 3, "connectionId": "conn-1", "workspaceId": "w1", "hostName": "Peer" } } }
+    { "name": "version 3",                       "kept": false, "workspace": { "id": "v3", "name": "V3", "path": "/Users/example/v3", "createdAt": "2026-09-01T00:00:00.000Z", "remote": { "version": 3, "connectionId": "conn-1", "workspaceId": "w1", "hostName": "Peer" } } },
+    { "name": "version 2.0 is the number 2",     "kept": true,  "workspace": { "id": "v20", "name": "V20", "path": "C:\\work\\project", "createdAt": "2026-10-17T00:00:00.000Z", "remote": { "version": 2.0, "connectionId": "conn-1", "workspaceId": "ws-project", "hostName": "studio-pc" } } },
+    { "name": "version null",                    "kept": false, "workspace": { "id": "vn", "name": "VN", "path": "/Users/example/vn", "createdAt": "2026-09-01T00:00:00.000Z", "remote": { "version": null, "connectionId": "conn-1", "workspaceId": "w1", "hostName": "Peer" } } },
+    { "name": "a remote that is an array",       "kept": false, "workspace": { "id": "va", "name": "VA", "path": "/Users/example/va", "createdAt": "2026-09-01T00:00:00.000Z", "remote": [] } }
   ]
 }

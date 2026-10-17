@@ -1,0 +1,33 @@
+{
+  "protocol": 2,
+  "hostId": "6F1C2D3E-0000-4000-8000-000000000002",
+  "hostName": "my-mac",
+  "workspaces": [
+    { "id": "ws-site", "name": "site", "path": "/Users/example/site" }
+  ],
+  "runtime": {
+    "platform": "darwin",
+    "appVersion": "0.4.30",
+    "claudeAvailable": true,
+    "claudeVersion": "2.1.300",
+    "modelCatalog": { "source": "cli", "models": [
+      { "value": "default", "displayName": "Default", "description": "The CLI's own choice", "resolvedModel": "claude-opus-4-1", "supportsEffort": true, "supportedEffortLevels": ["low", "medium", "high", "xhigh", "max"] },
+      { "value": "haiku", "displayName": "Haiku", "description": "Fast", "supportsEffort": false }
+    ], "detail": "" },
+    "providers": [
+      { "id": "claude", "name": "Claude Code", "available": true, "version": "2.1.300", "detail": "Runs with the installed CLI's login and provider settings.",
+        "modelCatalog": { "source": "cli", "models": [
+          { "value": "default", "displayName": "Default", "description": "The CLI's own choice", "resolvedModel": "claude-opus-4-1", "supportsEffort": true, "supportedEffortLevels": ["low", "medium", "high", "xhigh", "max"] },
+          { "value": "haiku", "displayName": "Haiku", "description": "Fast", "supportsEffort": false }
+        ], "detail": "" },
+        "capabilities": { "effort": true, "permissionModes": ["plan", "manual", "acceptEdits", "auto", "fullAccess"], "maxTurns": true, "maxBudgetUsd": true, "resume": true, "fastMode": false, "webSearch": false, "networkAccess": false, "attachments": true } },
+      { "id": "codex", "name": "Codex CLI", "available": true, "version": "0.130.0", "detail": "Runs with the installed CLI's login and provider settings.",
+        "modelCatalog": { "source": "cli", "models": [ { "value": "default", "displayName": "Codex default", "description": "Uses the model from the CLI settings or the resumed session." } ], "detail": "" },
+        "capabilities": { "effort": true, "permissionModes": ["manual", "acceptEdits", "onRequest", "fullAccess"], "maxTurns": false, "maxBudgetUsd": false, "resume": true, "fastMode": true, "webSearch": true, "networkAccess": true, "attachments": true } },
+      { "id": "gemini", "name": "Antigravity CLI", "available": false, "detail": "Check the CLI's installation.",
+        "modelCatalog": { "source": "fallback", "models": [ { "value": "default", "displayName": "Antigravity default", "description": "Uses the model from the CLI settings or the resumed session." } ], "detail": "These are official model names. Availability depends on your CLI account and provider settings." },
+        "capabilities": { "effort": false, "permissionModes": ["manual", "plan", "acceptEdits", "fullAccess"], "maxTurns": false, "maxBudgetUsd": false, "resume": true, "fastMode": false, "webSearch": false, "networkAccess": false, "attachments": true } }
+    ],
+    "mods": { "status": "available", "minimumVersion": "2.1.271", "detail": "Runs with the installed CLI's login and provider settings." }
+  }
+}

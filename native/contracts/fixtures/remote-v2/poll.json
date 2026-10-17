@@ -5,12 +5,12 @@
     { "cursor": 2, "event": { "sessionId": "job-1", "type": "resume", "resumeId": "11111111-2222-4333-8444-555555555555" } },
     { "cursor": 3, "event": { "sessionId": "job-1", "type": "log", "entry": { "id": "log-1", "kind": "assistant", "text": "Reading README.md.", "timestamp": "2026-10-17T01:02:03.456Z", "provider": "claude" } } },
     { "cursor": 4, "event": { "sessionId": "job-1", "type": "activity", "activity": { "id": "act-1", "provider": "claude", "kind": "read", "state": "completed", "toolName": "Read", "summary": "README.md", "durationMs": 12 } } },
-    { "cursor": 5, "event": { "sessionId": "job-1", "type": "usage", "usage": { "provider": "claude", "source": "claude.stream-json", "tokenScope": "run", "inputTokens": 1200, "outputTokens": 300, "costUSD": 0.01, "costScope": "run", "updatedAt": "2026-10-17T01:02:04.000Z" } } },
+    { "cursor": 5, "event": { "sessionId": "job-1", "type": "usage", "usage": { "provider": "claude", "source": "claude.stream-json", "tokenScope": "run", "inputTokens": 1200, "outputTokens": 300, "costUSD": 0.01, "costScope": "run", "updatedAt": "2026-10-17T01:02:04Z" } } },
     { "cursor": 6, "event": { "sessionId": "job-1", "type": "permission", "permission": { "id": "perm-1", "runId": "job-1", "toolUseId": "toolu_1", "toolName": "Bash", "inputJSON": "{\"command\":\"ls\"}", "summary": "ls", "state": "pending", "canAllow": true, "canAnswerQuestions": false, "canAnswerPlan": false, "receivedAt": "2026-10-17T01:02:05.000Z" } } },
     { "cursor": 7, "event": { "sessionId": "job-1", "type": "plan", "plan": { "id": "plan-1", "runId": "job-1", "plan": "# Plan\n1. Read", "receivedAt": "2026-10-17T01:02:06.000Z", "decidedAt": "2026-10-17T01:02:07.000Z", "outcome": "approvedAuto" } } },
     { "cursor": 8, "event": { "sessionId": "job-1", "type": "todos", "todos": { "items": [ { "id": "1", "content": "Read the file", "activeForm": "Reading the file", "status": "completed" } ] } } },
     { "cursor": 9, "event": { "sessionId": "job-1", "type": "background", "background": { "tasks": [ { "id": "task-1", "kind": "shell", "description": "npm test", "startedAt": "2026-10-17T01:02:08.000Z", "status": "completed", "endedAt": "2026-10-17T01:02:09.000Z" } ], "turnEnded": true } } },
-    { "cursor": 10, "event": { "sessionId": "job-1", "type": "graph", "graph": { "id": "node-1", "runId": "act-1", "kind": "main", "state": "completed", "title": "Request", "entries": [], "updatedAt": "2026-10-17T01:02:10.000Z" } } },
+    { "cursor": 10, "event": { "sessionId": "job-1", "type": "graph", "graph": { "id": "node-1", "runId": "act-1", "kind": "main", "state": "completed", "title": "Request", "entries": [], "updatedAt": "2026-10-17T01:02:10Z" } } },
     { "cursor": 11, "event": { "sessionId": "job-1", "type": "status", "status": "completed" } }
   ]
 }
