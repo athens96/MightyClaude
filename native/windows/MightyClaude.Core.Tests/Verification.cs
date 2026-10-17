@@ -340,6 +340,9 @@ internal static class Verification
         await Test("Mobile host: the device list marks arrivals and names the legacy row", MobileHostVerification.TheDeviceListMarksArrivalsAndNamesTheLegacyRow);
         await Test("Mobile host: reply limits are the Mac's", MobileHostVerification.ReplyLimitsAreTheMacs);
         await Test("Mobile host: a display that disappears moves its viewers to the main one", MobileHostVerification.ADisplayThatDisappearsMovesItsViewersToTheMainOne);
+        await Test("tailscale addresses: the shared fixture's cases", TailscaleAddressesVerification.SharedFixture);
+        await Test("tailscale addresses: a mapped address counts as its IPv4", TailscaleAddressesVerification.AMappedAddressCountsAsItsIPv4);
+        await Test("tailscale addresses: detection offers only Tailscale addresses", TailscaleAddressesVerification.DetectionOffersOnlyTailscaleAddresses);
         await Test("Companion animation and carousel", CompanionVerification.AnimationAndCarousel);
         await Test("Companion bubble resize edges and DPI anchors", CompanionLayoutVerification.EdgesAndAnchors);
         await Test("Workspace disclosure migration, independent selection and disk persistence", WorkspaceDisclosureVerification.MigrationSelectionAndPersistence);
