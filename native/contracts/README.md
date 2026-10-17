@@ -567,10 +567,10 @@ tools, Tailscale, gh and glab. It ships with the app and is read-only; nothing t
 user edits (the toolkit file included) adds an item. Each item has an `id`, a
 `group` (`agent`, `prerequisite`, `style`, `network`, `dev`), label and
 description keys from the locale catalogs, `need` (`required` or `optional`;
-required is only the command line tools, and the first-run rule also wants any
+required is only Git (the command line tools on a Mac), and the first-run rule also wants any
 one working agent CLI), an
 `afterInstall` action (`none`, `reprobe`, or `signIn` with a provider) and, per
-platform (`macos`, later `windows`), a `probe`, an `install` recipe, its
+platform (`macos`, `windows`), a `probe`, an `install` recipe, its
 `prerequisites` (item IDs, acyclic) and the official `source` page the command
 came from.
 
@@ -587,11 +587,20 @@ window completes it),
 `bash` or `sh`, PowerShell on Windows), `brewFormula`, `brewCask`, `npmGlobal`,
 `claudePlugin` (marketplace + `name@marketplace`; not pinned, the marketplace
 decides the version), `skill` (a repository pinned to a full `commit`, placed in
-`~/.claude/skills/<folder>`, then an optional fixed script inside it) and
-`vendorPage` (the app opens the page; nothing runs). URLs on github.com and
+`~/.claude/skills/<folder>`, then an optional fixed script inside it),
+`winget` (Windows only: an exact package `id` from the winget source and a
+`scope` of `user` or `machine`; machine scope may show Windows' own
+administrator prompt) and `vendorPage` (the app opens the page; nothing runs).
+`commandLineTools`, `appBundle`, `brewFormula`, `brewCask` and `xcode-select`
+are Mac only; the Windows decoder (`MightyClaude.Core/SetupCatalog.cs`) also
+refuses a `skill` recipe under `windows`, as its setup is a POSIX shell script.
+On Windows an `executable` probe also looks in the folders the official
+installers use, with PATHEXT. URLs on github.com and
 raw.githubusercontent.com, and a marketplace's owner/repo short form, must name
 one of `SetupCatalog.allowedRepositories`. The decoder
 (`MightyCore/SetupCatalog.swift`) refuses an unknown key, kind, host, program or
 label key. The Mac copies the file byte-identically into
 `MightyCore/Resources/Setup/` and `--verify-resources` checks it is there;
 `SetupCatalogTests` checks the copy, the validation rules and the four languages.
+The Windows app embeds the contract file itself and `SetupVerification` checks
+the same rules there.

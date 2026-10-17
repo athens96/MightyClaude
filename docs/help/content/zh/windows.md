@@ -41,6 +41,7 @@ Windows 没有菜单栏。相同的功能位于侧边栏和{{ui:workspace.addPan
 ## 不同之处 {#differences}
 | 功能 | 在 Windows 上 |
 |---|---|
+| 所需工具 | [{{ui:setup.title}}](getting-started.md#setup)在单独的 PowerShell 窗口中安装，使用 winget 和各 CLI 的官方 PowerShell 安装脚本。列表中没有 Homebrew、Bun 和 gstack。{{ui:setup.button.neverShow}}保存为注册表 `HKEY_CURRENT_USER\Software\MightyClaudeNative` 下的 `setup.neverShow` 值（REG_DWORD）。 |
 | CLI 登录 | 不在应用内的终端中进行，而是在单独的 Windows 终端窗口中进行。登录完成后，与 Mac 一样会自动重新发送失败的请求。 |
 | Antigravity | 通过 PowerShell 安装程序安装到 `%LOCALAPPDATA%\agy\bin`，记录保存在 `%USERPROFILE%\.gemini\antigravity-cli`（[Antigravity](agent-pane.md#antigravity)）。 |
 | 终端窗格 | 使用 Windows PowerShell。 |

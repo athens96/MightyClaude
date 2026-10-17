@@ -42,7 +42,7 @@ Mighty Claude 是一款桌面应用，可以在一个窗口中并排使用 Claud
 
 ![[welcome]]
 
-### 所需工具（Mac） {#setup}
+### 所需工具 {#setup}
 如果没有任何智能体 CLI（Claude Code、Codex 或 Antigravity）可以运行，或 Git 尚未就绪，应用启动时会先打开{{ui:setup.title}}界面。界面按组列出智能体 CLI、基础工具（Git、Homebrew、Node、Bun）、风格工具（uv、Ouroboros、Superpowers、Paperthin、oh-my-claudecode、gstack）、Tailscale 以及 gh 和 glab。
 
 1. 勾选要安装的项目。首次打开时，缺少的 Git 会预先勾选；如果一个智能体 CLI 都没有，Claude Code 也会预先勾选；所选项目需要的工具（例如 gh 需要的 Homebrew）会一并加入。
@@ -52,7 +52,9 @@ Mighty Claude 是一款桌面应用，可以在一个窗口中并排使用 Claud
 
 Git（Xcode Command Line Tools）会打开系统安装窗口，请在该窗口中完成。脚本最多等待 30 分钟；按 Control-C 只会结束等待并继续下一步。如果因为未同意 Xcode 许可而无法运行 git，Git 会显示为{{ui:setup.status.attention}}。Tailscale 会打开官方下载页面。版本过旧的 Claude Code 会显示为{{ui:setup.status.outdated}}，并出现{{ui:setup.button.update}}按钮。
 
-可以用{{ui:setup.button.later}}关闭；勾选{{ui:setup.button.neverShow}}后再关闭，启动时就不会再打开。缺少必需工具期间，欢迎界面上有{{ui:setup.title}}按钮，因缺少 CLI 而受阻的窗格中有{{ui:setup.blocked.install}}按钮。设置 → {{ui:settings.nav.tools}}中也有同一个列表。Windows 暂时还没有此界面。
+可以用{{ui:setup.button.later}}关闭；勾选{{ui:setup.button.neverShow}}后再关闭，启动时就不会再打开。缺少必需工具期间，欢迎界面上有{{ui:setup.title}}按钮，因缺少 CLI 而受阻的窗格中有{{ui:setup.blocked.install}}按钮。设置 → {{ui:settings.nav.tools}}中也有同一个列表。
+
+{{platform:windows}} Windows 上也有同样的界面。命令以主文件夹为工作文件夹，在应用单独打开的一个 PowerShell 窗口中依次运行（安装了 Windows Terminal 时为其标签页，否则为控制台窗口），最后按 Enter 之前窗口一直保持打开。Claude Code、Codex、Antigravity 和 uv 使用各自的官方 PowerShell 安装脚本安装，Git 和 glab 通过 winget 仅为当前用户安装，Node.js 和 gh 通过 winget 为所有用户安装。为所有用户安装时，Windows 可能会自己弹出管理员确认窗口；应用不会请求管理员权限。安装结束后，应用会从注册表重新读取 PATH 并检查。Homebrew、Bun 和 gstack 只在 Mac 上安装。
 
 ## 打开工作区 {#open-workspace}
 一个工作区就是一个项目文件夹。窗格、标签页布局和对话记录按工作区分别保存。
