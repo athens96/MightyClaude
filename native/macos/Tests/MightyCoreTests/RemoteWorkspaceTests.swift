@@ -31,6 +31,9 @@ struct RemoteWorkspaceAddressTests {
         #expect(RemotePeerPolicy.allowed("::1", allowLoopback: true))
         #expect(!RemotePeerPolicy.allowed("192.168.0.2", allowLoopback: true))
         #expect(RemotePeerPolicy.allowed("100.90.1.1"))
+        // The interface a peer's address arrives with does not change what it is.
+        #expect(RemotePeerPolicy.allowed("fd7a:115c:a1e0::5%utun4"))
+        #expect(!RemotePeerPolicy.allowed("fe80::1%utun4"))
     }
 
     @Test func addressesParseWithTheDefaultPort() throws {
