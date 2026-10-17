@@ -210,31 +210,44 @@ public sealed partial class DelegationCoordinator
     }
 
     /// <summary>
-    /// The human's run of <paramref name="text"/> in a new child of the Claude, Codex or Antigravity pane
-    /// <paramref name="parentId"/>, from its composer's second send (<see cref="ComposerSecondSend"/>; M/DelegationDelegateTool.swift
-    /// startHumanChild). The child runs the parent's agent and is made as delegate makes one, in the parent's permission mode now
-    /// (so never wider), or in plan mode when <paramref name="planFirst"/> (the parent's style starts every request in plan mode)
-    /// and the agent has one. It is marked started by the human, so it sends the parent no notices and the parent's tools neither
-    /// list it nor act on it; it has its own cap of 3 open children started by the human, apart from the 3 the parent's delegate
-    /// may have. The first rule that applies answers, and nothing is made by any but the last:
+    /// The human's run of <paramref name="text"/> in a new child of the Claude, Codex or Antigravity pane <paramref name="parentId"/>,
+    /// from its composer's second send (<see cref="ComposerSecondSend"/>) or from its worktree button's menu, which names the child's
+    /// <paramref name="agent"/> (M/DelegationDelegateTool.swift startHumanChild). The child runs the parent's agent unless
+    /// <paramref name="agent"/> names another, and is made as delegate makes one, in <see cref="DelegationProviders.HumanChildMode"/>:
+    /// for the parent's agent, its permission mode now, or plan mode when <paramref name="planFirst"/> and the agent has one; for
+    /// another agent, its widest mode no wider than the parent's in which it can change files. It is marked started by the human,
+    /// so it sends the parent no notices and the parent's tools neither list it nor act on it; it has its own cap of 3 open children
+    /// started by the human, of any agents, apart from the 3 the parent's delegate may have. The first rule that applies answers,
+    /// and nothing is made by any but the last:
     /// 1. Delegation is switched off, or <paramref name="text"/> is no task (empty, with a NUL character or over 64 KiB): a failure in the app's language.
-    /// 2. <c>parent_closed</c> (no such pane), <c>claude_only</c> (no agent pane), a Codex or Antigravity mode in which the child
-    ///    could not change files (a failure in the app's language), then delegate's own refusals: <c>child_cannot_delegate</c>,
-    ///    <c>width_cap</c>, <c>wider_mode</c>; <c>not_git</c>, <c>detached_head</c>, <c>unborn_branch</c>, <c>low_disk</c>; <c>store_full</c>.
+    /// 2. <c>parent_closed</c> (no such pane), <c>claude_only</c> (no agent pane), <c>agent_unknown</c> (<paramref name="agent"/>
+    ///    is no agent's provider id), another agent whose CLI the app last found not installed or signed out, or no mode in which
+    ///    the child could change files (a failure in the app's language naming why), then delegate's own refusals:
+    ///    <c>child_cannot_delegate</c>, <c>width_cap</c>, <c>wider_mode</c>; <c>not_git</c>, <c>detached_head</c>,
+    ///    <c>unborn_branch</c>, <c>low_disk</c>; <c>store_full</c>.
     /// 3. A delegation file the disk refuses: a failure.
     /// Otherwise the child's record is saved in creating and the answer names it, while its worktree, pane and first run follow in
     /// the background: <paramref name="starter"/> starts that run in the child's pane (<see cref="HumanFirstRun"/>), and hears when
     /// the worktree, the pane or that run could not be made after all.
     /// </summary>
-    public Task<HumanChildStart> StartHumanChild(string text, string parentId, HumanChildStarter starter, bool planFirst = false) => Isolated(async () =>
+    public Task<HumanChildStart> StartHumanChild(string text, string parentId, HumanChildStarter starter, bool planFirst = false, string? agent = null) => Isolated(async () =>
     {
         if (!isSwitchOn()) return (HumanChildStart)new HumanChildStart.Failed(Locale.Get("delegation.human.error.switchedOff"));
         if (string.IsNullOrWhiteSpace(text) || text.Contains('\0') || Encoding.UTF8.GetByteCount(text) > DelegationFileStore.MaximumCopyBytes) return new HumanChildStart.Failed(Locale.Get("delegation.human.error.invalidTask"));
         if (await Host(() => host.PaneState(parentId)) is not { } parent) return new HumanChildStart.Refused(DelegationReasonCode.ParentClosed);
         if (!DelegationProviders.IsAgentPane(parent.Kind, parent.Provider)) return new HumanChildStart.Refused(DelegationReasonCode.ClaudeOnly);
-        var mode = planFirst && DelegationProviders.StartingModes(parent.Provider).Contains("plan") ? "plan" : parent.PermissionMode;
-        if (!DelegationProviders.ChildCanWrite(parent.Provider, mode)) return new HumanChildStart.Failed(Locale.Get("delegation.human.error.readOnlyMode"));
-        if (DelegateRefusal(parentId, parent, mode, parent.Provider, byHuman: true) is { } reason) return new HumanChildStart.Refused(reason);
+        var childAgent = agent ?? parent.Provider;
+        if (!Wire.Providers.Contains(childAgent)) return new HumanChildStart.Refused(DelegationReasonCode.AgentUnknown);
+        var words = new Dictionary<string, string> { ["agent"] = ProviderMark.Label(childAgent) };
+        if (childAgent != parent.Provider)
+            switch (await Host(() => host.AgentAvailability(childAgent)))
+            {
+                case DelegationAgentAvailability.NotInstalled: return new HumanChildStart.Failed(Locale.Get("delegation.human.error.agentNotInstalledWindows", words));
+                case DelegationAgentAvailability.SignedOut: return new HumanChildStart.Failed(Locale.Get("delegation.human.error.agentSignedOut", words));
+            }
+        if (DelegationProviders.HumanChildMode(childAgent, parent.Provider, parent.PermissionMode, planFirst) is not { } mode)
+            return new HumanChildStart.Failed(childAgent == parent.Provider ? Locale.Get("delegation.human.error.readOnlyMode") : Locale.Get("delegation.human.error.agentNoMode", words));
+        if (DelegateRefusal(parentId, parent, mode, childAgent, byHuman: true) is { } reason) return new HumanChildStart.Refused(reason);
         ChildWorktreeBase start;
         switch (await worktrees.Check(parent.Folder))
         {
@@ -244,11 +257,11 @@ public sealed partial class DelegationCoordinator
         }
         var context = await PruneContext();
         // Nothing below suspends until the record is saved, so two sends at once cannot both pass the width cap.
-        if (DelegateRefusal(parentId, parent, mode, parent.Provider, byHuman: true) is { } late) return new HumanChildStart.Refused(late);
+        if (DelegateRefusal(parentId, parent, mode, childAgent, byHuman: true) is { } late) return new HumanChildStart.Refused(late);
         var id = Wire.Id();
         // No repeat to recognise: each send is its own child.
         var key = DelegationRequestKey.Make(parentId, "human-" + id, text, mode);
-        var child = ChildRecord.Make(id, parentId, worktrees.WorktreePath(id), start.ParentBranch, start.BaseCommit, mode, key, parentCheckout: start.Repository, startedByHuman: true, provider: parent.Provider);
+        var child = ChildRecord.Make(id, parentId, worktrees.WorktreePath(id), start.ParentBranch, start.BaseCommit, mode, key, parentCheckout: start.Repository, startedByHuman: true, provider: childAgent);
         try
         {
             if (File.Admitting(child, context, DelegationCopy.Of(id, DelegationCopyKind.Task, 0, Encoding.UTF8.GetBytes(text))) is not DelegationAdmission.Admitted admitted) return new HumanChildStart.Refused(DelegationReasonCode.StoreFull);

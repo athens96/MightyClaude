@@ -269,6 +269,9 @@ internal static class DelegationCrossAgentVerification
         internal byte[] Bytes() => File.ReadAllBytes(Files.Store.FilePath);
         internal Task<DelegationResponse> Call(string tool, params (string Name, string Value)[] arguments) =>
             Coordinator.Handle(Request(tool, arguments), new DelegationCaller("parent", "claude", Provider, Delegation: true, PermissionMode: Mode));
+        /// <summary>The human's send of <paramref name="text"/> from the parent's worktree menu, naming <paramref name="agent"/>; null is Ctrl+Enter.</summary>
+        internal Task<HumanChildStart> Send(string text, string? agent, bool planFirst = false) =>
+            Coordinator.StartHumanChild(text, "parent", new((childId, _) => Task.FromResult<string?>("send-run-of-" + childId), _ => Task.CompletedTask), planFirst, agent);
         internal Task<bool> WaitFor(string id, ChildState state) => Eventually(async () => Coordinator.File.Children.Find(child => child.Id == id)?.State == state && !await Coordinator.IsStarting(id));
         /// <summary>A refused call made nothing: the same file, no worktree, no pane or run.</summary>
         internal void NothingMade(byte[] before) =>
@@ -392,6 +395,79 @@ internal static class DelegationCrossAgentVerification
             Same(await place.Call("delegate", ("task", "A fourth."), ("mode", "acceptEdits"), ("agent", "codex")), DelegationResponse.Refusal(DelegationReasonCode.WidthCap), "three open children of any agents");
             foreach (var info in new[] { own, codex, gemini }) Check(await place.WaitFor(info.Id, ChildState.Running), info.Agent + " runs");
             SameList(place.Host.CreatedPanes.Select(pane => pane.Provider), ["claude", "codex", "gemini"], "each pane runs its agent");
+        }
+        finally { place.Remove(); }
+    }
+
+    private static Dictionary<string, string> AgentWords(string label) => new() { ["agent"] = label };
+
+    internal static async Task TheHumansMenuStartsTheNamedAgentsChild()
+    {
+        var place = await Cross("claude", "auto");
+        try
+        {
+            // The parent's style starts in plan, which stays with Claude's own children.
+            var codex = Made(await place.Send("Try it in Codex.", "codex", planFirst: true));
+            Check(codex is { Provider: "codex", StartingMode: "acceptEdits", StartedByHuman: true }, "a Codex child in its widest mode");
+            var gemini = Made(await place.Send("Try it in Antigravity.", "gemini"));
+            Check(gemini is { Provider: "gemini", StartingMode: "acceptEdits" }, "an Antigravity child");
+            var claude = Made(await place.Send("Plan it in Claude.", null, planFirst: true));
+            Check(claude is { Provider: null, StartingMode: "plan" }, "Ctrl+Enter's Claude child in plan");
+            foreach (var id in new[] { codex.Id, gemini.Id, claude.Id }) Check(await place.WaitFor(id, ChildState.Running), id + " runs");
+            SameList(place.Host.CreatedPanes.Select(pane => pane.Provider), ["codex", "gemini", "claude"], "each pane runs its agent");
+            Check(place.Host.CreatedPanes.All(pane => pane.StartedByHuman), "each is the human's");
+            // Three open children the human started, of any agents: the cap.
+            Same(await place.Send("One more.", "codex"), new HumanChildStart.Refused(DelegationReasonCode.WidthCap), "the cap");
+            // The parent's tools still neither list nor act on them.
+            Same((await place.Call("list_children")).Children!.Count, 0, "the parent lists none of them");
+        }
+        finally { place.Remove(); }
+    }
+
+    internal static async Task TheHumansMenuSaysWhy()
+    {
+        // A Claude pane in manual mode asks before each edit: no Codex child may edit unasked under it.
+        var place = await Cross("claude", "manual");
+        try
+        {
+            var before = place.Bytes();
+            Same(await place.Send("Try it.", "codex"), new HumanChildStart.Failed(Locale.Get("delegation.human.error.agentNoMode", AgentWords("Codex"))), "no Codex mode fits");
+            place.Host.SetAgent("gemini", DelegationAgentAvailability.SignedOut);
+            Same(await place.Send("Try it.", "gemini"), new HumanChildStart.Failed(Locale.Get("delegation.human.error.agentSignedOut", AgentWords("Antigravity"))), "Antigravity is signed out");
+            place.Host.SetAgent("codex", DelegationAgentAvailability.NotInstalled);
+            Same(await place.Send("Try it.", "codex"), new HumanChildStart.Failed(Locale.Get("delegation.human.error.agentNotInstalledWindows", AgentWords("Codex"))), "Codex is not installed");
+            var words = Locale.Get("delegation.human.error.agentNotInstalledWindows", AgentWords("Codex"));
+            Check(words.Contains("› CLI", StringComparison.Ordinal) && !words.Contains("Mac", StringComparison.Ordinal), "the words point to Settings › CLI and name no Mac");
+            Same(await place.Send("Try it.", "other"), new HumanChildStart.Refused(DelegationReasonCode.AgentUnknown), "no such agent");
+            place.NothingMade(before);
+        }
+        finally { place.Remove(); }
+
+        // A read-only Codex pane gets a Claude child only in plan mode.
+        var readOnly = await Cross("codex", "manual");
+        try
+        {
+            var claude = Made(await readOnly.Send("Plan it.", "claude"));
+            Check(claude is { Provider: null, StartingMode: "plan" }, "a Claude plan child of a read-only Codex");
+            Same(await readOnly.Send("Try it.", "gemini"), new HumanChildStart.Failed(Locale.Get("delegation.human.error.agentNoMode", AgentWords("Antigravity"))), "no Antigravity mode fits");
+        }
+        finally { readOnly.Remove(); }
+    }
+
+    internal static async Task ThePanesOwnAgentIsNeverAskedAbout()
+    {
+        var place = await Cross("claude", "auto");
+        try
+        {
+            // Even what the app last learnt against Claude does not hold back a child of the running Claude pane.
+            place.Host.SetAgent("claude", DelegationAgentAvailability.NotInstalled);
+            var first = Made(await place.Send("First.", null));
+            var second = Made(await place.Send("Second.", "claude"));
+            foreach (var id in new[] { first.Id, second.Id }) Check(await place.WaitFor(id, ChildState.Running), id + " runs");
+            Same(place.Host.AvailabilityAsked.Count, 0, "the pane's own agent is never asked about");
+            // Another agent is asked about once per send.
+            _ = await place.Send("Third.", "codex");
+            SameList(place.Host.AvailabilityAsked, ["codex"], "Codex asked once");
         }
         finally { place.Remove(); }
     }
