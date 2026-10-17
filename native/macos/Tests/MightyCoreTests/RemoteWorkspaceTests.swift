@@ -8,18 +8,19 @@ import Darwin
 /// client talking over loopback (injected in code, as only tests may).
 struct RemoteWorkspaceAddressTests {
     @Test func onlyTailscaleRangesCount() {
-        for address in ["100.64.0.1", "100.100.100.100", "100.127.255.255", "fd7a:115c:a1e0::1", "[fd7a:115c:a1e0:ab12:4843:cd96:6258:b240]", "FD7A:115C:A1E0::9", "::ffff:100.100.1.1"] {
+        for address in ["100.64.0.0", "100.64.0.1", "100.100.100.100", "100.101.102.103", "100.127.255.255", "fd7a:115c:a1e0::1", "fd7a:115c:a1e0:ffff:ffff:ffff:ffff:ffff", "[fd7a:115c:a1e0:ab12:4843:cd96:6258:b240]", "FD7A:115C:A1E0::9", "::ffff:100.100.1.1"] {
             #expect(TailscaleAddresses.contains(address), "\(address)")
         }
-        for address in ["100.63.255.255", "100.128.0.1", "10.0.0.1", "192.168.1.2", "127.0.0.1", "::1", "fd7a:115c:a1e1::1", "fe80::1", "fe80::1%utun4", "fd7a:115c:a1e0::1%utun4", "my-mac", "", "100.64.0"] {
+        for address in ["100.63.255.255", "100.128.0.0", "100.128.0.1", "10.0.0.1", "192.168.0.5", "192.168.1.2", "127.0.0.1", "0.0.0.0", "::1", "::", "fd7a:115c:a1e1::1", "fd7a:115c:a1df:ffff::1", "fe80::1", "fe80::1%utun4", "fd7a:115c:a1e0::1%utun4", "my-mac", "", "100.64.0"] {
             #expect(!TailscaleAddresses.contains(address), "\(address)")
         }
     }
 
     @Test func selectKeepsEachTailscaleAddressOnceWithIPv4First() {
-        let read = ["fe80::1", "fd7a:115c:a1e0:0::5", "100.101.1.2", "192.168.1.3", "FD7A:115C:A1E0::5", "100.101.1.2", "127.0.0.1", "100.64.9.9"]
-        #expect(TailscaleAddresses.select(read) == ["100.101.1.2", "100.64.9.9", "fd7a:115c:a1e0::5"])
-        #expect(TailscaleAddresses.select([]).isEmpty)
+        let read: [(name: String, address: String)] = [("utun4", "fe80::1"), ("utun4", "fd7a:115c:a1e0:0::5"), ("utun4", "100.101.1.2"), ("utun4", "192.168.1.3"), ("utun4", "FD7A:115C:A1E0::5"),
+                                                       ("utun4", "100.101.1.2"), ("utun4", "127.0.0.1"), ("utun4", "100.64.9.9")]
+        #expect(TailscaleAddresses.select(interfaces: read) == ["100.101.1.2", "100.64.9.9", "fd7a:115c:a1e0::5"])
+        #expect(TailscaleAddresses.select(interfaces: []).isEmpty)
         // Only a tunnel's address counts: carrier-grade NAT can put 100.64/10 on Wi-Fi too.
         let interfaces: [(name: String, address: String)] = [("en0", "100.72.1.9"), ("utun4", "100.101.1.2"), ("utun4", "fd7a:115c:a1e0::5"), ("lo0", "127.0.0.1"), ("en0", "fd7a:115c:a1e0::9")]
         #expect(TailscaleAddresses.select(interfaces: interfaces) == ["100.101.1.2", "fd7a:115c:a1e0::5"])
@@ -35,6 +36,48 @@ struct RemoteWorkspaceAddressTests {
         #expect(TailscaleAddresses.sourceAddress(toward: "127.0.0.1") == "127.0.0.1")
         // Whatever this machine has, only Tailscale addresses come back.
         #expect(TailscaleAddresses.current().allSatisfy(TailscaleAddresses.contains))
+    }
+
+    @Test func onlyATunnelCarryingTailscalesIPv6PrefixCountsAndOnlyItsAddressesAreKept() {
+        let interfaces: [(name: String, address: String)] = [
+            ("lo0", "127.0.0.1"),
+            ("lo0", "::1"),
+            ("en0", "192.168.0.5"),
+            ("en0", "fe80::1c2b:3d4e:5f60:7182%en0"),
+            // A hotspot handing out CGNAT addresses on Wi-Fi is not Tailscale.
+            ("en0", "100.70.1.2"),
+            // WARP and other VPNs put 100.64/10 on a tunnel too, but not fd7a:115c:a1e0::/48.
+            ("utun2", "100.96.0.2"),
+            ("utun2", "fd00:abcd::2"),
+            ("utun3", "10.8.0.2"),
+            // Tailscale: its tunnel carries both ranges.
+            ("utun4", "fe80::abcd%utun4"),
+            ("utun4", "fd7a:115c:a1e0::1234:5678"),
+            ("utun4", "100.101.102.103"),
+            ("utun4", "100.128.0.1"),
+            ("utun4", "10.0.0.9"),
+        ]
+        #expect(TailscaleAddresses.select(interfaces: interfaces) == ["100.101.102.103", "fd7a:115c:a1e0::1234:5678"])
+        #expect(TailscaleAddresses.owned(interfaces: interfaces).map(\.name) == ["utun4", "utun4"])
+        // A tunnel with the CGNAT address alone is never taken, however it is named.
+        #expect(TailscaleAddresses.select(interfaces: [("utun7", "100.101.102.103")]).isEmpty)
+        // The IPv6 prefix alone is enough to recognise the tunnel.
+        #expect(TailscaleAddresses.select(interfaces: [("utun7", "fd7a:115c:a1e0::9")]) == ["fd7a:115c:a1e0::9"])
+        // The prefix on a non-tunnel interface does not count.
+        #expect(TailscaleAddresses.select(interfaces: [("en0", "fd7a:115c:a1e0::9"), ("en0", "100.101.102.103")]).isEmpty)
+        // An address read with its %scope is taken without it.
+        #expect(TailscaleAddresses.select(interfaces: [("utun7", "fd7a:115c:a1e0::9%utun7"), ("utun7", "100.101.102.103")]) == ["100.101.102.103", "fd7a:115c:a1e0::9"])
+        // Each family is sorted, whatever order the interfaces were read in.
+        #expect(TailscaleAddresses.select(interfaces: [("utun7", "fd7a:115c:a1e0::b"), ("utun7", "100.101.1.2"), ("utun7", "fd7a:115c:a1e0::a"), ("utun7", "100.100.1.2")])
+                == ["100.100.1.2", "100.101.1.2", "fd7a:115c:a1e0::a", "fd7a:115c:a1e0::b"])
+        // Whatever this machine has, detection never offers loopback or a LAN address.
+        for entry in TailscaleAddresses.currentByInterface() {
+            #expect(entry.name.hasPrefix("utun"))
+            #expect(TailscaleAddresses.contains(entry.address))
+        }
+        // A peer is on the tailnet by the same rule.
+        #expect(TailscaleAddresses.contains("100.64.0.1") && TailscaleAddresses.contains("fd7a:115c:a1e0::1"))
+        #expect(!TailscaleAddresses.contains("192.168.0.5") && !TailscaleAddresses.contains("127.0.0.1"))
     }
 
     @Test func loopbackIsAllowedOnlyWhenInjected() {

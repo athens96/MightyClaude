@@ -4,67 +4,10 @@ import Foundation
 import Testing
 @testable import MightyCore
 
-/// The direct path's pure parts: which addresses count as Tailscale, how
-/// endpoints are written, and what the QR and the saved settings carry.
+/// The direct path's pure parts: how endpoints are written, and what the QR
+/// and the saved settings carry. Which addresses count as Tailscale is
+/// `TailscaleAddresses`' rule, tested with the remote workspaces.
 struct MobileDirectTests {
-    @Test func tailscaleRangesHaveExactEdges() {
-        #expect(MobileDirect.isTailscaleIPv4("100.64.0.0"))
-        #expect(MobileDirect.isTailscaleIPv4("100.127.255.255"))
-        #expect(MobileDirect.isTailscaleIPv4("100.101.102.103"))
-        #expect(!MobileDirect.isTailscaleIPv4("100.63.255.255"))
-        #expect(!MobileDirect.isTailscaleIPv4("100.128.0.0"))
-        #expect(!MobileDirect.isTailscaleIPv4("192.168.0.5"))
-        #expect(!MobileDirect.isTailscaleIPv4("127.0.0.1"))
-        #expect(!MobileDirect.isTailscaleIPv4("0.0.0.0"))
-        #expect(!MobileDirect.isTailscaleIPv4("fd7a:115c:a1e0::1"))
-
-        #expect(MobileDirect.isTailscaleIPv6("fd7a:115c:a1e0::1"))
-        #expect(MobileDirect.isTailscaleIPv6("fd7a:115c:a1e0:ffff:ffff:ffff:ffff:ffff"))
-        #expect(!MobileDirect.isTailscaleIPv6("fd7a:115c:a1e1::1"))
-        #expect(!MobileDirect.isTailscaleIPv6("fd7a:115c:a1df:ffff::1"))
-        #expect(!MobileDirect.isTailscaleIPv6("fe80::1"))
-        #expect(!MobileDirect.isTailscaleIPv6("::1"))
-        #expect(!MobileDirect.isTailscaleIPv6("::"))
-        #expect(!MobileDirect.isTailscaleIPv6("100.64.0.1"))
-    }
-
-    @Test func onlyATunnelCarryingTailscalesIPv6PrefixCountsAndOnlyItsAddressesAreKept() {
-        let interfaces: [(name: String, address: String)] = [
-            ("lo0", "127.0.0.1"),
-            ("lo0", "::1"),
-            ("en0", "192.168.0.5"),
-            ("en0", "fe80::1c2b:3d4e:5f60:7182%en0"),
-            // A hotspot handing out CGNAT addresses on Wi-Fi is not Tailscale.
-            ("en0", "100.70.1.2"),
-            // WARP and other VPNs put 100.64/10 on a tunnel too, but not fd7a:115c:a1e0::/48.
-            ("utun2", "100.96.0.2"),
-            ("utun2", "fd00:abcd::2"),
-            ("utun3", "10.8.0.2"),
-            // Tailscale: its tunnel carries both ranges.
-            ("utun4", "fe80::abcd%utun4"),
-            ("utun4", "fd7a:115c:a1e0::1234:5678"),
-            ("utun4", "100.101.102.103"),
-            ("utun4", "100.128.0.1"),
-            ("utun4", "10.0.0.9"),
-        ]
-        #expect(MobileDirect.select(interfaces: interfaces) == ["100.101.102.103", "fd7a:115c:a1e0::1234:5678"])
-        #expect(MobileDirect.selectByInterface(interfaces: interfaces).map(\.interface) == ["utun4", "utun4"])
-        // A tunnel with the CGNAT address alone is never taken, however it is named.
-        #expect(MobileDirect.select(interfaces: [("utun7", "100.101.102.103")]).isEmpty)
-        // The IPv6 prefix alone is enough to recognise the tunnel.
-        #expect(MobileDirect.select(interfaces: [("utun7", "fd7a:115c:a1e0::9")]) == ["fd7a:115c:a1e0::9"])
-        // The prefix on a non-tunnel interface does not count.
-        #expect(MobileDirect.select(interfaces: [("en0", "fd7a:115c:a1e0::9"), ("en0", "100.101.102.103")]).isEmpty)
-        #expect(MobileDirect.select(interfaces: []).isEmpty)
-        // Whatever this machine has, detection never offers loopback or a LAN address.
-        for entry in MobileDirect.detectAddresses() {
-            #expect(entry.interface.hasPrefix("utun"))
-            #expect(MobileDirect.isTailscaleIPv4(entry.address) || MobileDirect.isTailscaleIPv6(entry.address))
-        }
-        #expect(MobileDirect.isTailscalePeer("100.64.0.1") && MobileDirect.isTailscalePeer("fd7a:115c:a1e0::1"))
-        #expect(!MobileDirect.isTailscalePeer("192.168.0.5") && !MobileDirect.isTailscalePeer("127.0.0.1"))
-    }
-
     @Test func endpointsAreWrittenAndCheckedTheSameWayEverywhere() {
         #expect(MobileDirect.endpoint(host: "100.101.102.103", port: 43139) == "100.101.102.103:43139")
         #expect(MobileDirect.endpoint(host: "fd7a:115c:a1e0::1", port: 43139) == "[fd7a:115c:a1e0::1]:43139")

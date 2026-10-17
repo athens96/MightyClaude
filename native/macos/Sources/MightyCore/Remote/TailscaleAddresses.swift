@@ -1,5 +1,6 @@
 import Foundation
 import Darwin
+import Network
 
 /// This computer's Tailscale addresses, read from its network interfaces
 /// (`getifaddrs`) without the Tailscale CLI. Tailscale gives every device an IPv4
@@ -25,37 +26,29 @@ public enum TailscaleAddresses {
         return false
     }
 
-    /// The Tailscale addresses among `candidates` (every interface's addresses,
-    /// in the order read): each once, in its canonical spelling, IPv4 first.
-    /// Pure, so the filter is tested without touching the machine's interfaces.
-    public static func select(_ candidates: [String]) -> [String] {
-        var seen = Set<String>(); var ipv4: [String] = []; var ipv6: [String] = []
-        for candidate in candidates where contains(candidate) {
-            let value = canonical(candidate)
-            guard seen.insert(value).inserted else { continue }
-            if value.contains(":") { ipv6.append(value) } else { ipv4.append(value) }
-        }
-        return ipv4 + ipv6
-    }
-
     /// The Tailscale addresses among `interfaces` (name and address, as read).
     /// Only a tunnel interface (`utun…`) that also carries an address in
     /// Tailscale's own IPv6 range fd7a:115c:a1e0::/48 is Tailscale's; that
     /// interface's addresses in both ranges count. A carrier-grade NAT network
     /// can hand Wi-Fi or Ethernet an address in 100.64.0.0/10, and other VPNs
     /// (Cloudflare WARP's 100.96.0.0/12, for one) put one on their own tunnel.
-    /// Pure, like `select(_:)`.
+    /// Pure, so the rule is tested without touching the machine's interfaces.
     public static func select(interfaces: [(name: String, address: String)]) -> [String] {
-        select(owned(interfaces: interfaces).map(\.address))
+        owned(interfaces: interfaces).map(\.address)
     }
 
-    /// `select(interfaces:)` with each address's interface, in the order read.
+    /// `select(interfaces:)` with each address's interface: each address once, in
+    /// its canonical spelling (a `%scope` dropped), IPv4 first, each family sorted.
     public static func owned(interfaces: [(name: String, address: String)]) -> [(name: String, address: String)] {
-        let tailnet = Set(interfaces.filter { $0.name.hasPrefix("utun") && inTailscaleIPv6Range($0.address) }.map(\.name))
+        let read = interfaces.map { (name: $0.name, address: unscoped($0.address)) }
+        let tailnet = Set(read.filter { $0.name.hasPrefix("utun") && inTailscaleIPv6Range($0.address) }.map(\.name))
         var seen = Set<String>()
-        return interfaces.filter { tailnet.contains($0.name) && contains($0.address) }
+        let found = read.filter { tailnet.contains($0.name) && contains($0.address) }
             .map { (name: $0.name, address: canonical($0.address)) }
             .filter { seen.insert($0.address).inserted }
+        let ipv4 = found.filter { !$0.address.contains(":") }.sorted { $0.address < $1.address }
+        let ipv6 = found.filter { $0.address.contains(":") }.sorted { $0.address < $1.address }
+        return ipv4 + ipv6
     }
 
     /// fd7a:115c:a1e0::/48, which only Tailscale hands out.
@@ -67,7 +60,10 @@ public enum TailscaleAddresses {
     }
 
     /// The addresses this computer has on Tailscale now; empty while Tailscale is off.
-    public static func current() -> [String] { select(owned(interfaces: interfaceAddresses()).map(\.address)) }
+    public static func current() -> [String] { select(interfaces: interfaceAddresses()) }
+
+    /// The same with each address's interface, the name a listener is pinned to.
+    static func currentByInterface() -> [(name: String, address: String)] { owned(interfaces: interfaceAddresses()) }
 
     /// The tunnel interface that carries `address` among this computer's Tailscale addresses.
     public static func interface(owning address: String) -> String? {
@@ -115,7 +111,34 @@ public enum TailscaleAddresses {
         let printed = withUnsafePointer(to: &local) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getnameinfo($0, length, &buffer, socklen_t(buffer.count), nil, 0, NI_NUMERICHOST) } }
         guard printed == 0 else { return nil }
         let text = String(cString: buffer)
-        return canonical(text.split(separator: "%", maxSplits: 1).first.map(String.init) ?? text)
+        return canonical(unscoped(text))
+    }
+
+    /// The address without its `%interface` scope.
+    static func unscoped(_ address: String) -> String {
+        address.split(separator: "%", maxSplits: 1).first.map(String.init) ?? address
+    }
+
+    /// The interfaces Network.framework lists under these names, read from a path
+    /// monitor of the "other" type (where tunnels are). A name it does not list
+    /// within a second is missing from the result.
+    static func tunnelInterfaces(named names: Set<String>) async -> [String: NWInterface] {
+        guard !names.isEmpty else { return [:] }
+        let monitor = NWPathMonitor(requiredInterfaceType: .other)
+        let queue = DispatchQueue(label: "dev.mightyclaude.tailscale.interface")
+        let once = OnceFlag()
+        let found = await withCheckedContinuation { (continuation: CheckedContinuation<[String: NWInterface], Never>) in
+            monitor.pathUpdateHandler = { path in
+                guard once.claim() else { return }
+                var result: [String: NWInterface] = [:]
+                for interface in path.availableInterfaces where names.contains(interface.name) { result[interface.name] = interface }
+                continuation.resume(returning: result)
+            }
+            monitor.start(queue: queue)
+            queue.asyncAfter(deadline: .now() + 1) { if once.claim() { continuation.resume(returning: [:]) } }
+        }
+        monitor.cancel()
+        return found
     }
 
     /// One spelling per address, so the same address read twice is one entry.

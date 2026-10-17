@@ -118,7 +118,7 @@ QR/문자열: `mightyclaude://pair?v=2&sid=<serverId>&pk=<b64url 공개키>&rela
 **Mac 리스너** (`MobileDirect.swift`)
 
 - 모바일 리모트와 설정의 "Tailscale로 직접 연결"(기본 켜짐)이 둘 다 켜져 있을 때만 연다. 릴레이 연결 여부와는 상관없다.
-- **무엇이 Tailscale인가**: `getifaddrs`의 `utun` 인터페이스 가운데 **그 인터페이스 자신이 fd7a:115c:a1e0::/48 주소를 가진 것**만 Tailscale로 본다(Cloudflare WARP 같은 다른 VPN도 `utun`에 100.64.0.0/10을 붙이지만 Tailscale의 IPv6 접두사는 갖지 않는다). 그 인터페이스의 100.64.0.0/10·fd7a:115c:a1e0::/48 주소만 쓴다. 판단은 순수 함수 하나(`MobileDirect.select(interfaces:)`)가 하며, 원격 워크스페이스 쪽과 같은 규칙이다.
+- **무엇이 Tailscale인가**: `getifaddrs`의 `utun` 인터페이스 가운데 **그 인터페이스 자신이 fd7a:115c:a1e0::/48 주소를 가진 것**만 Tailscale로 본다(Cloudflare WARP 같은 다른 VPN도 `utun`에 100.64.0.0/10을 붙이지만 Tailscale의 IPv6 접두사는 갖지 않는다). 그 인터페이스의 100.64.0.0/10·fd7a:115c:a1e0::/48 주소만 쓴다. 판단은 순수 함수 하나(`TailscaleAddresses.select(interfaces:)`)가 하며, 원격 워크스페이스와 같은 규칙을 같은 코드로 쓴다.
 - 주소마다 리스너 하나를 그 주소에 묶고, `requiredInterface`로 그 `utun` 인터페이스에 고정한다(Network 프레임워크가 그 인터페이스를 알려 주지 않으면 주소만으로 묶는다). 주소 재사용(`allowLocalEndpointReuse`)은 끈다. 0.0.0.0·`::`·LAN·공인·루프백에는 열지 않는다. 네트워크 경로가 바뀔 때와 15초마다 다시 읽고, 바뀐 주소의 리스너만 열고 닫는다(그대로인 리스너와 거기 붙은 휴대폰은 건드리지 않는다).
 - 포트는 기본 43139(설정에서 1024–65535로 바꿀 수 있다).
 - WebSocket 서버는 Network 프레임워크(`NWProtocolWebSocket`)다. 프레임 최대 1 MiB(릴레이와 같음, 넘으면 연결 종료), ping은 스택이 답한다. 요청 경로와 질의는 읽지 않는다(이 스택은 서버에 경로를 넘겨주지 않는다): 어떤 Mac인지는 공개키 확인이 정한다. 모든 직접 리스너와 소켓은 큐 하나에서 돈다.

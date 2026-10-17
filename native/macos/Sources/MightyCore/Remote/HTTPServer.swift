@@ -63,28 +63,12 @@ public final class HTTPServer: @unchecked Sendable {
         self.acceptPeer = acceptPeer; self.maximumConnectionsPerPeer = maximumConnectionsPerPeer; self.requiredInterfaceName = requiredInterfaceName
     }
 
-    /// The interface named `name` as Network.framework knows it, if it lists it
-    /// within a second; tunnels are of the `other` type.
-    static func interface(named name: String) async -> NWInterface? {
-        await withCheckedContinuation { continuation in
-            let monitor = NWPathMonitor(requiredInterfaceType: .other)
-            let queue = DispatchQueue(label: "dev.mightyclaude.http.interface")
-            let once = HTTPOnceFlag()
-            monitor.pathUpdateHandler = { path in
-                guard once.claim() else { return }
-                monitor.cancel(); continuation.resume(returning: path.availableInterfaces.first { $0.name == name })
-            }
-            monitor.start(queue: queue)
-            queue.asyncAfter(deadline: .now() + 1) { if once.claim() { monitor.cancel(); continuation.resume(returning: nil) } }
-        }
-    }
-
     /// True while the listener is open; long-poll callers check it first.
     public var isListening: Bool { queue.sync { listener != nil && !closing } }
 
     public func start() async throws -> UInt16 {
         var lookup: NWInterface?
-        if let name = requiredInterfaceName { lookup = await Self.interface(named: name) }
+        if let name = requiredInterfaceName { lookup = await TailscaleAddresses.tunnelInterfaces(named: [name])[name] }
         let pinned = lookup
         return try await withCheckedThrowingContinuation { continuation in
             queue.async { [self] in
@@ -254,11 +238,4 @@ public final class HTTPServer: @unchecked Sendable {
     public func stop() async {
         await withCheckedContinuation { continuation in queue.async { self.closeOnQueue(); continuation.resume() } }
     }
-}
-
-/// A one-shot latch safe across queues.
-private final class HTTPOnceFlag: @unchecked Sendable {
-    private let lock = NSLock()
-    private var claimed = false
-    func claim() -> Bool { lock.lock(); defer { lock.unlock() }; if claimed { return false }; claimed = true; return true }
 }

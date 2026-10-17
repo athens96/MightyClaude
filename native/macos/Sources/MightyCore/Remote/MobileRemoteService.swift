@@ -765,7 +765,7 @@ public actor MobileRemoteService {
         guard directWanted else { await stopDirect(); return }
         startDirectWatch()
         let override = directAddressOverride
-        let detected: [(interface: String, address: String)] = override.map { $0.map { (interface: "", address: $0) } } ?? MobileDirect.detectAddresses()
+        let detected: [(interface: String, address: String)] = override.map { $0.map { (interface: "", address: $0) } } ?? TailscaleAddresses.currentByInterface().map { (interface: $0.name, address: $0.address) }
         let addresses = detected.map(\.address)
         let port = settings.directPort
         guard force || addresses != directBoundAddresses || port != directBoundPort else { return }
@@ -786,7 +786,7 @@ public actor MobileRemoteService {
             directListener = listener
         }
         // Each listener is pinned to its `utun` interface as well as its address.
-        let interfaces = await MobileDirect.tunnelInterfaces(named: Set(detected.map(\.interface).filter { !$0.isEmpty }))
+        let interfaces = await TailscaleAddresses.tunnelInterfaces(named: Set(detected.map(\.interface).filter { !$0.isEmpty }))
         guard mine == directBindGeneration, directListener === listener else { return }
         let started = await listener.update(targets: detected.map { (address: $0.address, interface: interfaces[$0.interface]) }, port: UInt16(port))
         let name = override == nil && !started.bound.isEmpty ? await MobileDirect.magicDNSName() : nil
@@ -857,7 +857,7 @@ public actor MobileRemoteService {
         // Loopback reaches here only through the test seam.
         let allowAnyPeer = directAddressOverride != nil
         guard directWanted, directListener != nil, let delegate, let identity = hostIdentity(),
-              let peer = incoming.peer, allowAnyPeer || MobileDirect.isTailscalePeer(peer),
+              let peer = incoming.peer, allowAnyPeer || TailscaleAddresses.contains(peer),
               clients.count < Self.maximumClients,
               unauthenticated.filter(Self.isDirect).count < MobileDirect.maximumUnauthenticated,
               unauthenticated.filter({ directPeers[$0] == peer }).count < MobileDirect.maximumUnauthenticatedPerPeer,

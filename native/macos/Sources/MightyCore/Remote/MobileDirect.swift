@@ -1,4 +1,3 @@
-import Darwin
 import Foundation
 import Network
 
@@ -36,101 +35,9 @@ public enum MobileDirect {
 
     // MARK: Addresses
 
-    /// 100.64.0.0/10, the CGNAT block Tailscale hands its nodes.
-    public static func isTailscaleIPv4(_ text: String) -> Bool {
-        var address = in_addr()
-        guard inet_pton(AF_INET, text, &address) == 1 else { return false }
-        return UInt32(bigEndian: address.s_addr) & 0xFFC0_0000 == 0x6440_0000
-    }
-
-    /// fd7a:115c:a1e0::/48, Tailscale's IPv6 prefix.
-    public static func isTailscaleIPv6(_ text: String) -> Bool {
-        var address = in6_addr()
-        guard inet_pton(AF_INET6, text, &address) == 1 else { return false }
-        let bytes = withUnsafeBytes(of: &address) { Array($0.prefix(6)) }
-        return bytes == [0xfd, 0x7a, 0x11, 0x5c, 0xa1, 0xe0]
-    }
-
     /// A MagicDNS name: lowercase DNS labels under `ts.net`.
     public static func isTailnetName(_ text: String) -> Bool {
         text.count <= 253 && text.range(of: "^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+ts\\.net$", options: .regularExpression) != nil
-    }
-
-    /// The Tailscale interfaces among the given interface addresses, with the
-    /// addresses to listen on. A `utun` interface counts only when it carries an
-    /// address in fd7a:115c:a1e0::/48 itself: other VPNs (Cloudflare WARP among
-    /// them) also put 100.64.0.0/10 on a `utun`, but never Tailscale's IPv6
-    /// prefix. From such an interface only its addresses in the two ranges are
-    /// taken. Wi-Fi, LAN, loopback and link-local never qualify. IPv4 first, each
-    /// family sorted, no repeats.
-    static func selectByInterface(interfaces: [(name: String, address: String)]) -> [(interface: String, address: String)] {
-        var byInterface: [String: [String]] = [:]
-        for entry in interfaces where entry.name.hasPrefix("utun") {
-            let address = entry.address.split(separator: "%", maxSplits: 1).first.map(String.init) ?? entry.address
-            byInterface[entry.name, default: []].append(address)
-        }
-        var ipv4: [(String, String)] = [], ipv6: [(String, String)] = []
-        for (name, addresses) in byInterface where addresses.contains(where: isTailscaleIPv6) {
-            for address in Set(addresses) {
-                if isTailscaleIPv4(address) { ipv4.append((name, address)) }
-                else if isTailscaleIPv6(address) { ipv6.append((name, address.lowercased())) }
-            }
-        }
-        var seen = Set<String>()
-        return (ipv4.sorted { $0.1 < $1.1 } + ipv6.sorted { $0.1 < $1.1 })
-            .filter { seen.insert($0.1).inserted }
-            .map { (interface: $0.0, address: $0.1) }
-    }
-
-    /// The same, addresses only: the shape the remote-workspace detection shares.
-    static func select(interfaces: [(name: String, address: String)]) -> [String] {
-        selectByInterface(interfaces: interfaces).map(\.address)
-    }
-
-    /// Whether a connecting peer is on the tailnet at all.
-    static func isTailscalePeer(_ address: String) -> Bool { isTailscaleIPv4(address) || isTailscaleIPv6(address) }
-
-    /// Every IPv4 and IPv6 address on an interface that is up.
-    static func interfaceAddresses() -> [(name: String, address: String)] {
-        var head: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&head) == 0, let first = head else { return [] }
-        defer { freeifaddrs(head) }
-        var result: [(name: String, address: String)] = []
-        for pointer in sequence(first: first, next: { $0.pointee.ifa_next }) {
-            let entry = pointer.pointee
-            guard let address = entry.ifa_addr, entry.ifa_flags & UInt32(IFF_UP) != 0 else { continue }
-            let family = Int32(address.pointee.sa_family)
-            guard family == AF_INET || family == AF_INET6 else { continue }
-            let length = socklen_t(family == AF_INET ? MemoryLayout<sockaddr_in>.size : MemoryLayout<sockaddr_in6>.size)
-            var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-            guard getnameinfo(address, length, &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST) == 0 else { continue }
-            result.append((name: String(cString: entry.ifa_name), address: String(cString: host)))
-        }
-        return result
-    }
-
-    /// The Mac's Tailscale addresses right now, each with its interface.
-    static func detectAddresses() -> [(interface: String, address: String)] { selectByInterface(interfaces: interfaceAddresses()) }
-
-    /// The `NWInterface` objects for these names, read from a path monitor of
-    /// the "other" interface type (where tunnels are listed). Empty when none
-    /// shows up within a second.
-    static func tunnelInterfaces(named names: Set<String>) async -> [String: NWInterface] {
-        guard !names.isEmpty else { return [:] }
-        let monitor = NWPathMonitor(requiredInterfaceType: .other)
-        let once = OnceFlag()
-        let found = await withCheckedContinuation { (continuation: CheckedContinuation<[String: NWInterface], Never>) in
-            monitor.pathUpdateHandler = { path in
-                guard once.claim() else { return }
-                var result: [String: NWInterface] = [:]
-                for interface in path.availableInterfaces where names.contains(interface.name) { result[interface.name] = interface }
-                continuation.resume(returning: result)
-            }
-            monitor.start(queue: queue)
-            queue.asyncAfter(deadline: .now() + 1) { if once.claim() { continuation.resume(returning: [:]) } }
-        }
-        monitor.cancel()
-        return found
     }
 
     /// This node's MagicDNS name, read with `tailscale status --json` when the
@@ -180,7 +87,7 @@ public enum MobileDirect {
     /// An endpoint a phone may be sent to: a Tailscale address or a MagicDNS name.
     public static func validEndpoint(_ endpoint: String) -> Bool {
         guard endpoint.count <= 270, let (host, _) = split(endpoint) else { return false }
-        return isTailscaleIPv4(host) || isTailscaleIPv6(host) || isTailnetName(host)
+        return TailscaleAddresses.contains(host) || isTailnetName(host)
     }
 
     /// What the host advertises: the bound addresses with their ports, then the
