@@ -1,17 +1,21 @@
 namespace MightyClaude.Core;
 
 /// <summary>
-/// Which agent panes take part in delegation, and how (M/DelegationProviders.swift). A child always runs its parent's agent CLI.
+/// Which agent panes take part in delegation, and how (M/DelegationProviders.swift). A child runs the agent its parent chose:
+/// its own by default, or any of Claude, Codex and Antigravity.
 /// <list type="bullet">
 /// <item>Claude and Codex panes may be parents by agent: their runs get the delegation server, and their delegate call makes
-/// children. A Codex run gets it only where its tool calls can work: acceptEdits or fullAccess. Manual is read-only and refuses
-/// every MCP call it cannot ask about, and onRequest declines the MCP prompts the app cannot show.</item>
+/// children, of their own agent unless the call names another (<c>agent</c>). A Codex run gets it only where its tool calls can
+/// work: acceptEdits or fullAccess.</item>
 /// <item>Claude, Codex and Antigravity panes may be parents by human: Ctrl+Enter on a busy one runs the text in a new child
-/// worktree, in the parent's mode. A Codex or Antigravity parent offers it only in a mode where its child can change files
-/// (<see cref="ChildCanWrite"/>). Antigravity has no delegation tools, so its children come only from Ctrl+Enter.</item>
+/// worktree of the same agent, in the parent's mode; the worktree button's menu picks any agent, in <see cref="WidestChildMode"/>.
+/// Antigravity has no delegation tools, so its children come only from the human.</item>
+/// <item>A child of the parent's agent may start in a mode no wider than the parent's by rank. A child of another agent may start
+/// in a mode that may do nothing the parent's mode may not (<see cref="Capabilities"/>). A child's mode is always one of its own agent's.</item>
 /// <item>Only a Claude run takes text while it runs (steer).</item>
 /// <item>A Claude child commits its own work. A Codex or Antigravity child cannot commit outside fullAccess, so the app commits
-/// what it leaves when its report changes (<see cref="ChildAutoCommit"/>).</item>
+/// what it leaves when its report changes (<see cref="ChildAutoCommit"/>). Everything that runs or reads the child follows the
+/// child's agent; notices and merges follow the parent's.</item>
 /// <item>A Claude parent's merge tool call follows its CLI's permission mode; any other parent may merge by tool only when its run
 /// started in fullAccess, and is otherwise refused with <c>merge_human_only</c>: the human merges from the child's card.</item>
 /// </list>
@@ -63,18 +67,102 @@ public static class DelegationProviders
     }
 
     /// <summary>Whether <paramref name="mode"/> lets a <paramref name="provider"/> agent act no more freely than <paramref name="stored"/> does. A mode that is not one of the provider's, on either side, is never no wider.</summary>
-    public static bool IsNoWider(string mode, string stored, string provider)
+    public static bool IsNoWider(string mode, string stored, string provider) => IsNoWider(mode, provider, stored, provider);
+
+    /// <summary>
+    /// Whether <paramref name="mode"/>, one of the <paramref name="child"/> agent's modes, lets it act no more freely than the
+    /// <paramref name="parent"/> agent's <paramref name="stored"/> mode. For one agent this is its own modes' order; for another,
+    /// the child's mode may do nothing the parent's may not (<see cref="Capabilities"/>). A mode that is not its own agent's, on
+    /// either side, is never no wider.
+    /// </summary>
+    public static bool IsNoWider(string mode, string child, string stored, string parent)
     {
-        var modes = StartingModes(provider).ToList();
-        var asked = modes.IndexOf(mode); var own = modes.IndexOf(stored);
-        return asked >= 0 && own >= 0 && asked <= own;
+        if (!StartingModes(child).Contains(mode) || !StartingModes(parent).Contains(stored)) return false;
+        if (child == parent) return Array.IndexOf(ModeRank, mode) <= Array.IndexOf(ModeRank, stored);
+        return IsCovered(Capabilities(child, mode), Capabilities(parent, stored));
     }
+
+    /// <summary>
+    /// What a run of <paramref name="provider"/> in <paramref name="mode"/> may do, as the app starts it (M/DelegationProviders.swift
+    /// capabilities). Claude: plan edits nothing until its plan is approved; manual asks before each edit; acceptEdits edits unasked
+    /// and still asks before Bash; auto also runs commands unasked. Codex: manual runs commands unasked but edits nothing; onRequest
+    /// edits in its sandbox unasked and asks to go beyond it; acceptEdits edits and runs commands unasked. Antigravity: plan and
+    /// manual edit nothing; acceptEdits edits unasked. fullAccess is full access for every agent.
+    /// </summary>
+    public static IReadOnlySet<ModeCapability> Capabilities(string provider, string mode) => (provider, mode) switch
+    {
+        ("claude", "manual") => new HashSet<ModeCapability> { ModeCapability.WritesAsking },
+        ("claude", "acceptEdits") or ("codex", "onRequest") or ("gemini", "acceptEdits") => new HashSet<ModeCapability> { ModeCapability.WritesUnasked },
+        ("claude", "auto") or ("codex", "acceptEdits") => new HashSet<ModeCapability> { ModeCapability.WritesUnasked, ModeCapability.RunsUnasked },
+        ("codex", "manual") => new HashSet<ModeCapability> { ModeCapability.RunsUnasked },
+        (_, "fullAccess") => Enum.GetValues<ModeCapability>().ToHashSet(),
+        _ => new HashSet<ModeCapability>(),
+    };
+
+    /// <summary>Whether a mode with <paramref name="child"/> capabilities does nothing a mode with <paramref name="parent"/> capabilities may not: each is the parent's too, except that editing after asking is covered by editing unasked.</summary>
+    public static bool IsCovered(IReadOnlySet<ModeCapability> child, IReadOnlySet<ModeCapability> parent) =>
+        child.All(capability => parent.Contains(capability) || capability == ModeCapability.WritesAsking && parent.Contains(ModeCapability.WritesUnasked));
+
+    /// <summary>
+    /// The widest of the <paramref name="child"/> agent's modes that is no wider than the <paramref name="parent"/> agent's
+    /// <paramref name="parentMode"/> and in which that child can change files, or null when it has none: the one with the most
+    /// capabilities, then the later in its own order. For the parent's own agent it is the last by its own order: the parent's
+    /// mode whenever its child can write in it.
+    /// </summary>
+    public static string? WidestChildMode(string child, string parent, string parentMode)
+    {
+        var fitting = StartingModes(child).Where(mode => IsNoWider(mode, child, parentMode, parent) && ChildCanWrite(child, mode)).ToList();
+        if (child == parent) return fitting.LastOrDefault();
+        return fitting.Select((mode, index) => (Mode: mode, Index: index)).OrderBy(item => Capabilities(child, item.Mode).Count).ThenBy(item => item.Index).Select(item => item.Mode).LastOrDefault();
+    }
+
+    /// <summary>
+    /// The mode a child of the <paramref name="child"/> agent that the human starts from a <paramref name="parent"/> pane in
+    /// <paramref name="parentMode"/> begins in, or null when there is none in which it could change files. A child of the parent's
+    /// own agent starts in the parent's mode, or in plan mode when <paramref name="planFirst"/> and the agent has one, as
+    /// Ctrl+Enter always did; any other agent's in <see cref="WidestChildMode"/>.
+    /// </summary>
+    public static string? HumanChildMode(string child, string parent, string parentMode, bool planFirst)
+    {
+        if (child != parent) return WidestChildMode(child, parent, parentMode);
+        var mode = planFirst && StartingModes(child).Contains("plan") ? "plan" : parentMode;
+        return ChildCanWrite(child, mode) ? mode : null;
+    }
+
+    /// <summary>Whether the pane, in <paramref name="mode"/> now, may have a child the human starts of any agent: its own (<see cref="CanParentByHuman"/>), or another with a mode in which its child can change files.</summary>
+    public static bool MayHaveHumanChild(string kind, string provider, string mode) =>
+        IsAgentPane(kind, provider) && Wire.Providers.Any(agent => HumanChildMode(agent, provider, mode, false) is not null);
+
+    /// <summary>The provider id delegate's <c>agent</c> argument names: claude, codex or antigravity (or Antigravity's provider id, gemini), in any case; null for any other word.</summary>
+    public static string? Agent(string name) => name.Trim().ToLowerInvariant() switch
+    {
+        "claude" => "claude",
+        "codex" => "codex",
+        "antigravity" or "gemini" => "gemini",
+        _ => null,
+    };
+
+    /// <summary>The name the delegation tools give the agent <paramref name="provider"/>: its <c>agent</c> argument's word (antigravity for gemini).</summary>
+    public static string AgentName(string provider) => provider == "gemini" ? "antigravity" : provider;
 
     /// <summary>Whether a <paramref name="provider"/> child in <paramref name="mode"/> can commit on its own branch.</summary>
     public static bool CanCommit(string provider, string mode) => provider == "claude" || mode == "fullAccess";
 
     /// <summary>Whether a <paramref name="provider"/> parent whose run started in <paramref name="mode"/> may merge a child by its merge tool.</summary>
     public static bool AgentMayMerge(string provider, string mode) => provider == "claude" || mode == "fullAccess";
+}
+
+/// <summary>What a run in a permission mode may do on its own, to compare the modes of different agents (<see cref="DelegationProviders.Capabilities"/>).</summary>
+public enum ModeCapability
+{
+    /// <summary>It changes files only after the human approves each change.</summary>
+    WritesAsking,
+    /// <summary>It changes files without asking, sandboxed or not.</summary>
+    WritesUnasked,
+    /// <summary>It runs shell commands without asking the human, sandboxed or not.</summary>
+    RunsUnasked,
+    /// <summary>No sandbox and no asking.</summary>
+    FullAccess,
 }
 
 /// <summary>
