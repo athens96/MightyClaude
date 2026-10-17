@@ -20,7 +20,7 @@ Part 2 builds the Windows Tailscale address rule and the firewall rule helper. P
   - The rule allows only TCP on the app's ports, only from 100.64.0.0/10 and fd7a:115c:a1e0::/48, and only for the app's own executable.
   - Adding it shows one UAC prompt, which the user sees.
   - Turning the feature off removes the rule, again with a UAC prompt.
-  - This is the one place the app asks Windows to elevate a command. The command is fixed: `netsh advfirewall firewall add|delete rule …`, built from constants and the app's own path.
+  - This is the one place the app asks Windows to elevate a command. The command is fixed: `netsh advfirewall firewall add|set|delete rule …` (set rewrites the rule by that name in place, so rules never pile up), built from constants, the validated ports and the app's own path, with `localip=` and `remoteip=` both limited to the two Tailscale ranges.
 - **Remote workspaces connect Mac↔Windows in every direction:** Windows→Windows, Windows→Mac and Mac→Windows.
   - A command pane runs in the host's shell: zsh on a Mac host, PowerShell on a Windows host.
   - The pane shows the host OS.

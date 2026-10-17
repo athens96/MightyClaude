@@ -351,6 +351,7 @@ internal static class Verification
         await Test("mobile direct: the host advertises its endpoints", MobileDirectVerification.TheHostAdvertisesItsEndpoints);
         await Test("windows firewall: the rule is built from constants", WindowsFirewallVerification.TheRuleIsBuiltFromConstants);
         await Test("windows firewall: the runner elevates only that command", WindowsFirewallVerification.TheRunnerElevatesOnlyThatCommand);
+        await Test("windows firewall: only the rule file elevates", WindowsFirewallVerification.OnlyTheRuleFileElevates);
         await Test("mobile direct: relay notices carrying a direct- id leave the direct phone alone", MobileDirectVerification.RelayNoticesCarryingADirectIdLeaveItAlone);
         await Test("Companion animation and carousel", CompanionVerification.AnimationAndCarousel);
         await Test("Companion bubble resize edges and DPI anchors", CompanionLayoutVerification.EdgesAndAnchors);

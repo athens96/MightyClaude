@@ -27,9 +27,10 @@
 - At run time, the app elevates exactly one program, `%SystemRoot%\System32\netsh.exe`, and only after a user click. The click is the firewall row's button, or a switch that turns the path off while the rule exists.
 - The path to netsh comes from `Environment.SystemDirectory`. The verb `runas` appears in exactly one source file, `WindowsFirewallRule.cs`.
 - The rule's argv comes only from constants, the validated exe path and the validated ports:
-  - `name=Mighty Claude (Tailscale)`, `dir=in`, `action=allow`, `protocol=TCP`, `localport=<ports>`, `remoteip=100.64.0.0/10,fd7a:115c:a1e0::/48`, `program=<app exe full path>`, `profile=any`.
-  - The exe path must be a drive-letter absolute path ending in `.exe`, without `"`, `%`, control characters, `/` or a second `:`. No segment may be `.` or `..`.
-  - Ports are 1024–65535.
+  - `name=Mighty Claude (Tailscale)`, `dir=in`, `action=allow`, `protocol=TCP`, `localport=<ports>`, `localip=100.64.0.0/10,fd7a:115c:a1e0::/48`, `remoteip=100.64.0.0/10,fd7a:115c:a1e0::/48`, `program="<app exe full path>"`, `profile=any`. The name and the path are always quoted.
+  - When a rule by that name is already there, the change is one `set rule name=… new <the same body> enable=yes`, so rules never pile up and a dropped port closes; when none is, `add rule`; an empty port set is `delete rule`. "Present" only means a rule by that name exists; a done add or update returns the ports and path it wrote.
+  - The exe path must be a drive-letter absolute path to `MightyClaude.exe` (case-insensitive), without `"`, `%`, control or Unicode format characters, whitespace other than a space, `/` or a second `:`. No segment may be `.` or `..`. The patterns are anchored with `\z`.
+  - Ports are 1024–65535, at most 16. Netsh runs only from `Environment.SystemDirectory`.
 
 **Direct path limits (the Mac's)**
 - Port 43139 by default; the setting `directPort` takes 1024–65535. `directEnabled` defaults to true.
@@ -1906,6 +1907,8 @@ git commit -m "(windows) the PC tells phones where to reach it directly: the dir
 
 ### Task 8: `WindowsFirewallRule`: the fixed netsh rule and its runner
 
+> **Fix round 1 (landed after the steps below).** The code blocks below are the first cut; `native/windows/MightyClaude.Core/WindowsFirewallRule.cs` and its checks are authoritative. The rule now also carries `localip=<the two ranges>`, quotes the name and the path every time, and names only `MightyClaude.exe` (no control, format or non-space whitespace characters, patterns anchored with `\z`). `AddAsync`/`ApplyAsync` read the rule first and send one elevated `set rule … new … enable=yes` when a rule by the name is there (`SetArguments`), `add rule` when none is, and `Failed/queryFailed` when it cannot be read; a done result carries `Applied` (`FirewallRuleSpec(Ports, Program)`). New details: `badPorts` (a bad port or more than 16), `timeout`, `queryFailed`; on Windows a system folder other than `Environment.SystemDirectory` is `Refused/noSystemDirectory`; the caller's cancel is rethrown and a timed-out query is killed. A third check, `windows firewall: only the rule file elevates`, scans Core and WinUI for `runas` and `Verb =`. Task 9's `FirewallOutcome` shows the new details through `failedTemplate` unless it gives them words.
+
 **Files:**
 - Create: `native/windows/MightyClaude.Core/WindowsFirewallRule.cs`
 - Modify: `native/windows/MightyClaude.Core.Tests/Verification.cs` (registration)
@@ -2819,7 +2822,7 @@ Expected output: `MISSING: relay.md Windows listener`, exit 1.
   - 주소마다 `TcpListener` 하나를 그 주소에만 묶는다(와일드카드 없음, `ExclusiveAddressUse`). 특정 IP에 묶는 `HttpListener`는 관리자 권한의 URL ACL이 필요해 쓰지 않는다. Mac의 `requiredInterface` 고정은 없고, 주소에 묶는 것과 Windows의 강한 호스트 모델로 대신한다.
   - WebSocket 업그레이드는 앱이 직접 읽는다: 요청 머리 8 KiB까지, `GET /ws`(질의는 보지 않음)·`HTTP/1.1`·`Upgrade: websocket`·`Connection: Upgrade`·`Sec-WebSocket-Version: 13`·16바이트 `Sec-WebSocket-Key`가 아니면 답 없이 닫는다. 업그레이드도 10초 핸드셰이크 제한 안이다. 그 뒤는 `WebSocket.CreateFromStream`(서버, 프레임 1 MiB)이고, 릴레이 데이터 소켓과 같은 `Connection`이 핸드셰이크·인증·m1 터널을 맡는다.
   - 주소는 Windows의 주소 변경 알림(`NetworkChange.NetworkAddressChanged`)과 15초마다 다시 읽는다. MagicDNS 이름은 싣지 않는다(휴대폰은 이름을 열지 않는다).
-  - **Windows 방화벽**: 설정의 방화벽 규칙 줄에서 사용자가 누를 때만, 앱이 규칙 하나를 더하거나 지운다. 명령은 상수와 앱 자신의 경로로만 만든 `%SystemRoot%\System32\netsh.exe advfirewall firewall add rule name="Mighty Claude (Tailscale)" dir=in action=allow protocol=TCP localport=<포트> remoteip=100.64.0.0/10,fd7a:115c:a1e0::/48 program="<앱 exe>" profile=any`(지울 때는 `delete rule name="Mighty Claude (Tailscale)"`)이고 Windows의 UAC 확인을 거친다. 규칙이 있는지는 관리자 권한 없이 `show rule`의 종료 코드로 읽는다. 원격이나 직접 연결을 끄는 클릭은, 그 규칙을 쓰는 기능이 남지 않으면 규칙도 지운다(다시 UAC). 앱이 Windows에 관리자 권한을 요청하는 곳은 여기 하나다.
+  - **Windows 방화벽**: 설정의 방화벽 규칙 줄에서 사용자가 누를 때만, 앱이 규칙 하나를 더하거나 지운다. 명령은 상수와 앱 자신의 경로로만 만든 `%SystemRoot%\System32\netsh.exe advfirewall firewall add rule name="Mighty Claude (Tailscale)" dir=in action=allow protocol=TCP localport=<포트> localip=100.64.0.0/10,fd7a:115c:a1e0::/48 remoteip=100.64.0.0/10,fd7a:115c:a1e0::/48 program="<앱 exe>" profile=any`(규칙이 이미 있으면 같은 내용으로 `set rule name="Mighty Claude (Tailscale)" new … enable=yes`라 규칙이 쌓이지 않고 뺀 포트는 닫힌다. 지울 때는 `delete rule name="Mighty Claude (Tailscale)"`)이고 Windows의 UAC 확인을 거친다. 같은 이름의 규칙이 있는지는 관리자 권한 없이 `show rule`의 종료 코드로 읽는다(포트까지 맞는지는 아니다). 원격이나 직접 연결을 끄는 클릭은, 그 규칙을 쓰는 기능이 남지 않으면 규칙도 지운다(다시 UAC). 앱이 Windows에 관리자 권한을 요청하는 곳은 여기 하나다.
   ```
 
 3b. `docs/mobile-remote.md`:
@@ -2849,7 +2852,7 @@ When the phone and this PC are on the same Tailscale network, the phone opens it
 - One `TcpListener` per address, never a wildcard; the app reads the WebSocket upgrade itself, so no administrator's URL ACL is needed.
 - Limits as on the Mac: peers outside the two ranges reset at accept, 36 connections, 4 handshakes and 2 per address, a 10 s handshake, 5 failed auths per address per 60 s, the one-word `unauthorized`, `direct-` ids; relay redials leave direct phones alone.
 - Advertising: the `"direct"` capability, `auth_ok.direct`, `/m1/info` `direct` and the QR's `direct=`. No MagicDNS name.
-- Firewall: the one place the app asks Windows to elevate. **Add rule** runs `%SystemRoot%\System32\netsh.exe advfirewall firewall add rule name="Mighty Claude (Tailscale)" dir=in action=allow protocol=TCP localport=<port> remoteip=100.64.0.0/10,fd7a:115c:a1e0::/48 program="<this exe>" profile=any` through UAC; **Remove rule**, or turning the remote or the direct path off while the rule is there, runs `delete rule name="Mighty Claude (Tailscale)"`. Whether the rule exists is read without elevation from `show rule`'s exit code. A changed port needs the rule removed and added again.
+- Firewall: the one place the app asks Windows to elevate. **Add rule** runs `%SystemRoot%\System32\netsh.exe advfirewall firewall add rule name="Mighty Claude (Tailscale)" dir=in action=allow protocol=TCP localport=<port> localip=100.64.0.0/10,fd7a:115c:a1e0::/48 remoteip=100.64.0.0/10,fd7a:115c:a1e0::/48 program="<this exe>" profile=any` through UAC, or, when a rule by that name is already there, `set rule name="Mighty Claude (Tailscale)" new <the same body> enable=yes`, so rules never pile up; **Remove rule**, or turning the remote or the direct path off while the rule is there, runs `delete rule name="Mighty Claude (Tailscale)"`. Whether a rule by that name exists is read without elevation from `show rule`'s exit code (not whether its ports are current). A changed port is one more **Add rule**, which updates the rule in place.
 - Still to check on a real Windows PC: the UAC prompt and the rule, and a phone connecting directly.
 ```
 
@@ -2969,9 +2972,9 @@ Run each command and keep its output as evidence:
 - `MobileRelayHost.SetDirectAddressSource`/`RefreshDirect`/`DirectStatus`/`DirectEndpoints`/`ConnectionIds`/`HandshakeDeadline`/`DirectRedetectInterval`;
 - `MobileDesktopRouter.DirectEndpoints`;
 - `MobileIdentity.PairingUrl(relay, name, direct)`;
-- `WindowsFirewallRule.ElevationVerb`/`AddArguments`/`DeleteArguments`/`CommandLine`;
+- `WindowsFirewallRule.ElevationVerb`/`AddArguments`/`SetArguments`/`DeleteArguments`/`CommandLine`;
 - `WindowsFirewallRuleRunner(run, systemDirectory, program)`;
-- `FirewallChangeResult(Kind, Detail)`;
+- `FirewallChangeResult(Kind, Detail, Applied)`;
 - `MobileDirectStrings.FirewallState`/`FirewallButton`/`FirewallOutcome`/`Keys`.
 
 **Deliberate differences from the Mac, each documented**
