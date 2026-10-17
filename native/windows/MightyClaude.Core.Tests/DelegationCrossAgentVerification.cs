@@ -471,4 +471,42 @@ internal static class DelegationCrossAgentVerification
         }
         finally { place.Remove(); }
     }
+
+    internal static async Task TheServiceOffersTheMenuAndStartsAnotherAgentsChild()
+    {
+        var place = new DelegationPlace();
+        try
+        {
+            await place.Repository();
+            await using var s = await DelegationLaunch.Start(place.Profile, Path.Combine(place.Base, "fake"), place.Repo, place.Root, parentMode: "auto");
+            // The Claude parent's model, the Codex pane used last, and a read-only Codex pane.
+            await s.Service.UpdateAsync(state => state with
+            {
+                Sessions =
+                [
+                    .. state.Sessions.Select(pane => pane.Id == DelegationLaunch.Parent ? pane with { Model = "opus", Settings = pane.Settings with { Effort = "high" } } : pane),
+                    new RunSession { Id = "codex-manual", WorkspaceId = s.Workspace.Id, Kind = "claude", Provider = "codex", Settings = new(PermissionMode: "manual") },
+                    new RunSession { Id = "codex-template", WorkspaceId = s.Workspace.Id, Kind = "claude", Provider = "codex", Model = "gpt-5.6-sol", Settings = new(Effort: "low", PermissionMode: "fullAccess"), Logs = [new("l", "user", "hi", "2099-01-01T00:00:00Z")] },
+                ],
+            });
+            s.Service.AgentAvailabilityNow = provider => provider == "gemini" ? DelegationAgentAvailability.NotInstalled : DelegationAgentAvailability.Ready;
+            SameList<DelegationChildChoice>(s.Service.WorktreeChildChoices(s.Pane(DelegationLaunch.Parent), false),
+                [new("claude", "auto", null), new("codex", "acceptEdits", null), new("gemini", "acceptEdits", DelegationChildBlock.NotInstalled)], "a Claude pane in auto offers its menu from what the window knows");
+            // The read-only Codex pane: its own child cannot write, a Claude plan child can, so the button shows for its menu alone.
+            var manual = s.Pane("codex-manual");
+            s.Service.RefreshWorktreeReadiness(manual);
+            Check(await Eventually(() => s.Service.WorktreeMenuOnly(manual, false)) && s.Service.SecondSend(manual) == ComposerSecondSend.Queue && s.Service.OffersWorktreeMenu(manual, false), "a read-only Codex pane offers the menu alone");
+            Check(!s.Service.WorktreeMenuOnly(s.Pane(DelegationLaunch.Parent), false), "a Claude pane's own child can write: not the menu alone");
+            // Another agent's child the human starts takes that agent's last-used pane's model and effort, in its widest mode.
+            var answer = await s.Service.StartHumanChildAsync(DelegationLaunch.Parent, "Try it in Codex.", [], false, _ => Task.CompletedTask, "codex");
+            var child = Made(answer);
+            Check(child is { Provider: "codex", StartingMode: "acceptEdits", StartedByHuman: true }, "a Codex child in acceptEdits");
+            Check(await Eventually(() => s.Service.Snapshot.Sessions.Any(pane => pane.Id == child.Id)), "its pane opens");
+            Check(s.Pane(child.Id) is { Provider: "codex", Model: "gpt-5.6-sol", ParentSessionId: DelegationLaunch.Parent } made && made.Settings is { Effort: "low", PermissionMode: "acceptEdits" }, "it takes the Codex template's model and effort");
+            Check(s.Service.DelegationChildren.Single(row => row.Id == child.Id) is { Agent: "codex", StartedByHuman: true }, "its row names its agent");
+            Same(await s.Service.StartHumanChildAsync(DelegationLaunch.Parent, "Try it in Antigravity.", [], false, _ => Task.CompletedTask, "gemini"),
+                new HumanChildStart.Failed(Locale.Get("delegation.human.error.agentNotInstalledWindows", AgentWords("Antigravity"))), "an agent the window found not installed is refused in the app's words");
+        }
+        finally { place.Remove(); }
+    }
 }
