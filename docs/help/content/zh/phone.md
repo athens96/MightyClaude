@@ -37,6 +37,8 @@ Mac 和手机在同一个 [Tailscale](https://tailscale.com) 网络中时，手�
 
 在手机的 {{ui:phone.tabs.hosts}} 标签页中，Mac 卡片上会显示 {{ui:phone.direct.route.direct}} 或 {{ui:phone.direct.route.relay}}。
 
+Windows 电脑也一样，只是需要一条 Windows 防火墙规则，以免连接被拦截。在 {{ui:settings.nav.mobile}} 标签页中点击 {{ui:mobileRemote.direct.windows.firewall.addButton}}，并允许 Windows 的管理员确认。该规则只允许来自 Tailscale 地址的连接到达本应用。规则存在后，同一行的按钮会变成 {{ui:mobileRemote.direct.windows.firewall.removeButton}}；无法读取规则时则变成 {{ui:setup.button.recheck}}，它会在不请求管理员确认的情况下重新读取。直接连接开启时若更改了端口，请先删除规则再重新添加。关闭直接连接或手机远程时会一并删除规则，Windows 会再次请求管理员确认。
+
 ## 在手机上可以做的事 {#use}
 手机应用有四个标签页。
 
@@ -53,7 +55,7 @@ Mac 和手机在同一个 [Tailscale](https://tailscale.com) 网络中时，手�
 
 {{ui:phone.session.view.structure}}视图以看板的形式逐个显示桌面应用发送的流水线。没有风格的窗格中每个请求是一个看板；使用风格的窗格中每条流水线是一个看板，即阶段不回退的一串连续请求。用顶部的 ◀ ▶ 切换看板，点击中间的位置（如"请求 3 / 7"）可从列表中选择。查看较早的看板时如果出现新看板，会显示{{ui:graph.structure.board.newRequest}}或{{ui:graph.structure.board.newPipeline}}标记，点击即可前往最新的看板。下面是看板的状态和一排阶段标签：已完成的阶段为绿色，当前阶段为强调色，尚未开始的阶段为灰色，每个标签都带有卡片数。每个阶段各有一列，左右滑动或点击标签即可切换，打开时显示当前阶段的列。没有风格的窗格的列为{{ui:graph.structure.column.request}} → {{ui:graph.structure.column.execution}} → {{ui:graph.structure.column.result}}，子代理卡片排在{{ui:graph.structure.column.execution}}卡片之后。使用风格的窗格中，每列列出该阶段的请求及其子代理，已结束的请求折叠为一张卡片，点按即可展开。正在运行的卡片边框会闪烁。此视图需要与手机应用版本相同或更新的桌面应用（Mac 或 Windows）；桌面应用较旧时，视图会提示更新桌面应用。
 
-在 Mac 上通过 [Mighty 编排](delegation.md)创建的子窗格，会在会话列表中缩进一级显示在父窗格下方，右侧显示其状态（{{ui:delegation.child.state.reported}}、{{ui:delegation.child.state.merged}} 等）。合并或丢弃子窗格只能在 Mac 上进行。使用 Antigravity 的桌面应用（Mac 0.4.23 及以上、Windows 0.4.28 及以上）中的 Gemini 窗格显示为 Antigravity（{{ui:badge.beta}}），更旧版本应用中的窗格显示为 Gemini。
+在 Mac 上通过 [Mighty 编排](delegation.md)创建的子窗格，会在会话列表中缩进一级显示在父窗格下方，右侧显示其状态（{{ui:delegation.child.state.reported}}、{{ui:delegation.child.state.merged}} 等）。Windows 电脑目前还不会把子窗格的父窗格和状态发送给手机，因此 Windows 电脑上的子窗格在列表中与普通窗格一样显示。合并或丢弃子窗格无法在手机上进行，只能在桌面应用（Mac 或 Windows）中进行。使用 Antigravity 的桌面应用（Mac 0.4.23 及以上、Windows 0.4.28 及以上）中的 Gemini 窗格显示为 Antigravity（{{ui:badge.beta}}），更旧版本应用中的窗格显示为 Gemini。
 
 ## 批准与提问 {#approvals}
 智能体请求批准或提问时，{{ui:phone.tabs.alerts}}标签页上会显示数量。

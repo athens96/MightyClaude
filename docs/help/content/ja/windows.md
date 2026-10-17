@@ -53,6 +53,7 @@ Windowsにはメニューバーがありません。同じ機能は、サイド�
 | ファイルの場所 | {{ui:menu.showInFinder}}の代わりに{{ui:menu.showInExplorer}}があります。 |
 | Mightyオーケストレーション | 初期状態でオンで、設定のスイッチでオフにできます。このスイッチはレジストリの値でもあります([オンとオフ](delegation.md#enable))。worktreeは`%USERPROFILE%\.mightyclaude\worktrees`にでき、中にジャンクションやシンボリックリンクがあると自動では片付けません([ペインを閉じる・後片付け](delegation.md#close))。{{ui:queue.worktree}}ボタンを右クリックすると、別のエージェントの子でリクエストを実行できます([新しいworktreeで実行](delegation.md#worktree))。 |
 | 文字サイズとフォント | Macと同じく{{ui:settings.nav.general}} › {{ui:settings.text.sectionTitle}}でサイズ（85〜150%）、{{ui:settings.text.uiFontLabel}}、{{ui:settings.text.transcriptFontLabel}}、{{ui:settings.text.codeFontLabel}}を選ぶと、開いているウィンドウがすべてすぐに変わります。{{kbd:Ctrl+=}} / {{kbd:Ctrl+-}} / {{kbd:Ctrl+0}}も使えますが、ターミナルやブラウザーのペインにフォーカスがあるときは、キーはそのペインで使われます。設定はレジストリの `HKEY_CURRENT_USER\Software\MightyClaudeNative` に保存されます。確認ウィンドウの本文のようにWindows標準のコントロールが決める文字はアプリを開き直すと変わり、ペットの吹き出しはまだこの設定に従いません。 |
+| Tailscale で直接接続 | スマートフォンは Windows PC にも[直接接続](phone.md#direct)します。Windows ファイアウォールの規則は {{ui:settings.nav.mobile}} タブの {{ui:mobileRemote.direct.windows.firewall.addButton}} で追加し、Windows の管理者の確認を 1 回経ます。アプリが管理者権限を求めるのはここだけです。 |
 
 > [!note]
 > Windowsアプリの一部の機能は、まだ実機で十分に確認されていません。気になる点があればお知らせください。

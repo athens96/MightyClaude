@@ -37,6 +37,8 @@ Mac とスマートフォンが同じ [Tailscale](https://tailscale.com) ネッ�
 
 スマートフォンの {{ui:phone.tabs.hosts}} タブで、Mac のカードに {{ui:phone.direct.route.direct}} または {{ui:phone.direct.route.relay}} と表示されます。
 
+Windows PC でも同じです。ただし接続が遮断されないよう、Windows ファイアウォールの規則が 1 つ必要です。{{ui:settings.nav.mobile}} タブで {{ui:mobileRemote.direct.windows.firewall.addButton}} を押し、Windows の管理者の確認を許可してください。この規則は Tailscale のアドレスからこのアプリへの接続だけを許可します。規則があると同じ行のボタンは {{ui:mobileRemote.direct.windows.firewall.removeButton}} に変わり、規則を読み取れないときは管理者の確認なしで読み直す {{ui:setup.button.recheck}} になります。直接接続をオンにしたままポートを変えたら、規則を削除してからもう一度追加してください。直接接続またはモバイルリモートをオフにすると規則も一緒に削除され、このときも管理者の確認を求められます。
+
 ## スマートフォンでできること {#use}
 スマートフォンアプリには4つのタブがあります。
 
@@ -53,7 +55,7 @@ Mac とスマートフォンが同じ [Tailscale](https://tailscale.com) ネッ�
 
 {{ui:phone.session.view.structure}}表示は、デスクトップアプリが送るパイプラインをボードとして1つずつ表示します。スタイルのないペインではリクエスト1つが、スタイルを使うペインでは段階が後戻りせずに続いたリクエストのまとまり（パイプライン）1つがボード1つです。上部の ◀ ▶ でボードを移動し、中央の位置（「リクエスト 3 / 7」など）をタップすると一覧から選べます。古いボードを見ている間に新しいボードが届くと{{ui:graph.structure.board.newRequest}}または{{ui:graph.structure.board.newPipeline}}バッジが表示され、タップすると最新のボードに移ります。その下にボードの状態と段階のチップが1行に並びます。終わった段階は緑、今の段階はアクセントカラー、残りの段階はグレーで、チップごとにカード数が付きます。段階ごとに列があり、横にスワイプするかチップをタップして移動します。最初はボードの今の段階の列が開きます。スタイルのないペインの列は{{ui:graph.structure.column.request}} → {{ui:graph.structure.column.execution}} → {{ui:graph.structure.column.result}}で、{{ui:graph.structure.column.execution}}カードの後にサブエージェントのカードが続きます。スタイルを使うペインでは、各列にその段階のリクエストとサブエージェントのカードが並び、終わったリクエストは1枚に折りたたまれ、タップすると開きます。実行中のカードは枠が点滅します。この表示には、スマートフォンアプリと同じかそれより新しいバージョンのデスクトップアプリ（Mac または Windows）が必要です。古い場合は、デスクトップアプリの更新を求める案内が表示されます。
 
-Macで[Mightyオーケストレーション](delegation.md)により作られた子ペインは、セッション一覧で親ペインのすぐ下に1段字下げして表示され、右側に{{ui:delegation.child.state.reported}}、{{ui:delegation.child.state.merged}}などの状態が付きます。子のマージや破棄はMacでのみ行います。Antigravityを使うデスクトップアプリ（Mac 0.4.23以降、Windows 0.4.28以降）のGeminiペインはAntigravity（{{ui:badge.beta}}）として、それより古いアプリのペインはGeminiとして表示されます。
+Macで[Mightyオーケストレーション](delegation.md)により作られた子ペインは、セッション一覧で親ペインのすぐ下に1段字下げして表示され、右側に{{ui:delegation.child.state.reported}}、{{ui:delegation.child.state.merged}}などの状態が付きます。Windows PCはまだ子ペインの親と状態をスマートフォンに送らないため、Windows PCの子ペインは通常のペインと同じように一覧に表示されます。子のマージや破棄はスマートフォンからは行えず、デスクトップアプリ（MacまたはWindows）で行います。Antigravityを使うデスクトップアプリ（Mac 0.4.23以降、Windows 0.4.28以降）のGeminiペインはAntigravity（{{ui:badge.beta}}）として、それより古いアプリのペインはGeminiとして表示されます。
 
 ## 許可と質問 {#approvals}
 エージェントが許可を求めたり質問したりすると、{{ui:phone.tabs.alerts}}タブに件数が表示されます。

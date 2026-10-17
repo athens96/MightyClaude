@@ -37,6 +37,8 @@ Mac과 휴대폰이 같은 [Tailscale](https://tailscale.com) 네트워크에 �
 
 휴대폰의 {{ui:phone.tabs.hosts}} 탭에서 연결된 Mac 카드에 {{ui:phone.direct.route.direct}} 또는 {{ui:phone.direct.route.relay}}가 표시됩니다.
 
+Windows PC에서도 같습니다. 다만 Windows 방화벽이 연결을 막지 않도록 규칙이 하나 필요합니다. {{ui:settings.nav.mobile}} 탭에서 {{ui:mobileRemote.direct.windows.firewall.addButton}}를 누르고 Windows의 관리자 확인을 허용하세요. 이 규칙은 Tailscale 주소에서 이 앱으로 오는 연결만 허용합니다. 규칙이 있으면 같은 줄의 버튼이 {{ui:mobileRemote.direct.windows.firewall.removeButton}}로 바뀌고, 규칙을 읽지 못했을 때는 관리자 확인 없이 다시 읽는 {{ui:setup.button.recheck}}이 됩니다. 직접 연결을 켠 채 포트를 바꾸면 규칙을 지우고 다시 추가하세요. 직접 연결이나 모바일 리모트를 끄면 규칙도 함께 지우고, 이때도 관리자 확인을 묻습니다.
+
 ## 휴대폰에서 할 수 있는 일 {#use}
 휴대폰 앱에는 탭이 네 개 있습니다.
 
@@ -53,7 +55,7 @@ Mac과 휴대폰이 같은 [Tailscale](https://tailscale.com) 네트워크에 �
 
 {{ui:phone.session.view.structure}} 보기는 데스크톱 앱이 보내는 파이프라인을 보드로 하나씩 보여 줍니다. 스타일이 없는 창은 요청 하나가, 스타일을 쓰는 창은 단계가 뒤로 돌아가지 않고 이어진 요청 묶음(파이프라인) 하나가 보드 하나입니다. 맨 위의 ◀ ▶로 보드를 옮기고, 가운데의 "요청 3 / 7" 같은 위치를 누르면 목록에서 고릅니다. 지난 보드를 보는 동안 새 보드가 생기면 {{ui:graph.structure.board.newRequest}} 또는 {{ui:graph.structure.board.newPipeline}} 배지가 나타나고, 누르면 가장 최근 보드로 갑니다. 그 아래에 보드의 상태와 단계 칩이 한 줄로 이어집니다. 끝난 단계는 초록, 지금 단계는 강조색, 남은 단계는 회색이고, 칩마다 카드 수가 붙습니다. 단계마다 열이 하나씩 있어 옆으로 넘기거나 칩을 눌러 옮겨 가고, 처음에는 지금 단계의 열이 열립니다. 스타일이 없는 창에는 {{ui:graph.structure.column.request}} → {{ui:graph.structure.column.execution}} → {{ui:graph.structure.column.result}} 열이 있고, {{ui:graph.structure.column.execution}} 열에는 하위 에이전트 카드가 이어집니다. 스타일을 쓰는 창의 열에는 그 단계의 요청 카드와 하위 에이전트 카드가 쌓이고, 끝난 요청 카드는 한 장으로 접혀 누르면 펼쳐집니다. 실행 중인 카드는 테두리가 깜박입니다. 파이프라인을 보려면 휴대폰 앱과 같거나 더 새 버전의 데스크톱 앱(Mac 또는 Windows)이 필요합니다. 데스크톱 앱이 그보다 오래되었으면 데스크톱 앱을 업데이트하라는 안내가 보입니다.
 
-Mac에서 [마이티 오케스트레이션](delegation.md)으로 만든 자식 창은 세션 목록에서 부모 창 바로 아래 한 단 들여 보이고, 오른쪽에 {{ui:delegation.child.state.reported}}, {{ui:delegation.child.state.merged}} 같은 상태가 붙습니다. 자식을 병합하거나 버리는 일은 Mac에서만 합니다. Antigravity를 쓰는 데스크톱 앱(Mac 0.4.23 이상, Windows 0.4.28 이상)의 Gemini 창은 Antigravity({{ui:badge.beta}})로, 그보다 오래된 앱의 창은 Gemini로 보입니다.
+Mac에서 [마이티 오케스트레이션](delegation.md)으로 만든 자식 창은 세션 목록에서 부모 창 바로 아래 한 단 들여 보이고, 오른쪽에 {{ui:delegation.child.state.reported}}, {{ui:delegation.child.state.merged}} 같은 상태가 붙습니다. Windows PC는 아직 자식 창의 부모와 상태를 휴대폰에 보내지 않아서, Windows PC의 자식 창은 평범한 창처럼 목록에 보입니다. 자식을 병합하거나 버리는 일은 휴대폰에서는 못 하고, 데스크톱 앱(Mac 또는 Windows)에서만 합니다. Antigravity를 쓰는 데스크톱 앱(Mac 0.4.23 이상, Windows 0.4.28 이상)의 Gemini 창은 Antigravity({{ui:badge.beta}})로, 그보다 오래된 앱의 창은 Gemini로 보입니다.
 
 ## 승인과 질문 {#approvals}
 에이전트가 승인을 요청하거나 질문하면 {{ui:phone.tabs.alerts}} 탭에 개수가 표시됩니다.

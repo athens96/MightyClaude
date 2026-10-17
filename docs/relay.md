@@ -1,13 +1,13 @@
 # 릴레이 연결 (모바일 리모트 v2)
 
-휴대폰과 Mac이 모두 **릴레이 서버에 바깥으로 접속**해 연결된다. 포트 개방이나 VPN이 필요 없고, 릴레이는 암호문만 넘기는 단순 파이프라서 내용을 볼 수 없다. 둘이 같은 Tailscale 네트워크에 있으면 휴대폰은 같은 데이터 소켓을 Mac에 바로 연다(아래 "Tailscale 직접 연결"). Paseo(getpaseo/paseo, Apache License 2.0 — 고지는 저장소의 `NOTICE.md`)의 릴레이 구조를 참고했으며 암호 프리미티브는 CryptoKit과 noble 라이브러리에 모두 있는 것으로 골랐다.
+휴대폰과 Mac이 모두 **릴레이 서버에 바깥으로 접속**해 연결된다. 포트 개방이나 VPN이 필요 없고, 릴레이는 암호문만 넘기는 단순 파이프라서 내용을 볼 수 없다. 둘이 같은 Tailscale 네트워크에 있으면 휴대폰은 같은 데이터 소켓을 호스트(Mac·Windows PC)에 바로 연다(아래 "Tailscale 직접 연결"). Paseo(getpaseo/paseo, Apache License 2.0 — 고지는 저장소의 `NOTICE.md`)의 릴레이 구조를 참고했으며 암호 프리미티브는 CryptoKit과 noble 라이브러리에 모두 있는 것으로 골랐다.
 
 ## 구성
 
 | 역할 | 구현 | 위치 |
 |---|---|---|
 | 릴레이 | Node.js + `ws`, 상태 없음, `serverId`로 소켓을 짝지음 | `relay/` (Docker 이미지 포함) |
-| 호스트(데몬) | Mac 앱의 `MobileRemoteService` (직접 연결 리스너 `MobileDirectListener` 포함) | `native/macos/Sources/MightyCore/Remote/` |
+| 호스트(데몬) | Mac 앱의 `MobileRemoteService`, Windows 앱의 `MobileRelayHost` (둘 다 직접 연결 리스너 `MobileDirectListener` 포함) | `native/macos/Sources/MightyCore/Remote/`, `native/windows/MightyClaude.Core/Remote/` |
 | 클라이언트 | Expo 앱의 `relayTransport` | `mobile/src/api/relay/` |
 
 ## 릴레이 와이어 (평문, 릴레이가 해석)
@@ -72,7 +72,7 @@ WebSocket `GET /ws` + 쿼리. `serverId`는 `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
 - 이미 토큰을 가진 `clientId`는 페어링 키만으로 덮어쓸 수 없다(`device-conflict`). 페어링 키를 아는 다른 휴대폰이 남의 기기 항목을 가로채지 못하게 하기 위해서다. 거절당한 앱은 그 호스트 전용 `clientId`를 새로 만들어 한 번 다시 시도한다(앱을 지웠다 다시 깐 경우).
 - 기기 목록은 최대 32대다. 가득 차면 90일 넘게 접속하지 않은 항목만 밀어내고, 그런 항목이 없으면 등록을 거절한다(`device-limit`). 새 기기 등록은 호스트 전체에서 1시간에 8대까지다. 등록한 지 24시간이 안 된 기기는 Mac 설정에 "새 기기"로 표시된다.
 - 호스트가 목록을 저장하지 못하면 토큰 없이 `auth_ok`를 보낸다. 앱은 이때 페어링 키를 그대로 두고 다음 접속에서 다시 토큰을 받는다.
-- Mac 설정의 **구버전 앱 허용**을 끄면 `clientId` 없는 인증을 거절한다(`legacy-refused`). 형식이 틀린 `clientId`는 구버전으로 내려 받지 않고 거절한다(`malformed`).
+- Mac 설정의 **구버전 앱 허용**을 끄면 `clientId` 없는 인증을 거절한다(`legacy-refused`). 형식이 틀린 `clientId`는 구버전으로 내려 받지 않고 거절한다(`malformed`). JSON이 아닌 인증 프레임도 릴레이 경로에서는 `malformed`로 거절한다(Mac·Windows 호스트 같음; 직접 연결은 어떤 거절이든 `unauthorized`).
 - `auth_error.reason`: `pairing-key`·`device-revoked`(최종: 앱이 비밀값을 지우고 재페어링 필요로 표시), `device-conflict`(앱이 새 id로 한 번 재시도), `device-limit`·`legacy-refused`·`malformed`·그 밖의 값(최종 아님: 비밀값을 지우지 않고 오류만 보여 준다).
 - 기기 토큰은 **관리 기능**이다. 페어링 키(QR)를 가진 사람은 새 기기로 등록할 수 있으므로, QR이 유출됐다면 키를 다시 만들어야 한다.
 - 토큰·키·해시는 로그에 남기지 않는다.
@@ -113,7 +113,7 @@ QR/문자열: `mightyclaude://pair?v=2&sid=<serverId>&pk=<b64url 공개키>&rela
 
 ## Tailscale 직접 연결
 
-릴레이 없이 휴대폰이 Mac에 직접 데이터 소켓을 여는 길이다. 휴대폰은 `ws://<끝점>/ws?v=1`로 연다 — 직접 연결에는 상대가 Mac 하나뿐이므로 `serverId`도 `connectionId`도 싣지 않는다(테일넷에서 엿본 값으로 릴레이에 무엇을 해 볼 거리를 남기지 않는다). 열린 소켓 위의 평문 `hello`/`ready`, 암호화 프레임, `auth`·`auth_ok`, m1 터널, `notify`, ping은 위의 절과 똑같다. 그래서 직접 연결도 페어링한 공개키로 Mac을 확인하고, 페어링 키나 기기 토큰으로만 들어온다. 핸드셰이크를 마치지 못한 연결은 끊긴다. 지금은 Mac 호스트만 연다(Windows는 나중).
+릴레이 없이 휴대폰이 호스트(Mac·Windows PC)에 직접 데이터 소켓을 여는 길이다. 휴대폰은 `ws://<끝점>/ws?v=1`로 연다 — 직접 연결에는 상대가 Mac 하나뿐이므로 `serverId`도 `connectionId`도 싣지 않는다(테일넷에서 엿본 값으로 릴레이에 무엇을 해 볼 거리를 남기지 않는다). 열린 소켓 위의 평문 `hello`/`ready`, 암호화 프레임, `auth`·`auth_ok`, m1 터널, `notify`, ping은 위의 절과 똑같다. 그래서 직접 연결도 페어링한 공개키로 Mac을 확인하고, 페어링 키나 기기 토큰으로만 들어온다. 핸드셰이크를 마치지 못한 연결은 끊긴다. Mac과 Windows 호스트가 연다.
 
 **Mac 리스너** (`MobileDirect.swift`)
 
@@ -131,6 +131,15 @@ QR/문자열: `mightyclaude://pair?v=2&sid=<serverId>&pk=<b64url 공개키>&rela
 - 인증 실패는 직접 연결에서 언제나 같은 한 단어 `{"type":"auth_error","reason":"unauthorized"}`로 답한다. 어떤 `clientId`나 키를 이 Mac이 아는지 테일넷의 다른 기기에 알려 주지 않기 위해서다. 휴대폰은 이 답을 받으면 릴레이로 가서 진짜 이유를 듣는다(아래).
 - 핸드셰이크 제한 시간은 릴레이 연결과 같은 10초.
 - 릴레이 제어 소켓이 끊기거나 다시 열려도 직접 연결은 그대로다(릴레이의 `disconnected` 알림도 직접 연결에는 손대지 않는다). 모바일 리모트나 직접 연결 스위치를 끄면 직접 연결만 닫는다. 기기 해제·키 다시 만들기는 경로와 상관없이 같은 규칙으로 닫는다.
+
+**Windows 리스너** (`MightyClaude.Core/Remote/MobileDirect.cs`·`MobileDirectListener.cs`·`MobileRelayHost.cs`)
+
+- 켜지는 조건(모바일 리모트와 "Tailscale로 직접 연결" 둘 다), 포트(기본 43139, 1024–65535), 받지 않는 연결(두 범위 밖의 상대, 함께 36개, 휴대폰 표 32대, 핸드셰이크 4개·같은 주소 2개, 60초 안에 주소마다 인증 5번 실패), 일반 거절 `unauthorized`, 10초 핸드셰이크 제한, `direct-` id, 릴레이가 끊기거나 다시 열려도 직접 연결이 그대로인 것은 Mac과 같다.
+- **무엇이 Tailscale인가**: `NetworkInterface.GetAllNetworkInterfaces()`의 켜진 어댑터 가운데 **그 어댑터 자신이 fd7a:115c:a1e0::/48 주소를 가진 것**만 Tailscale로 보고, 그 어댑터의 두 범위 주소만 쓴다(`TailscaleAddresses.Select`). Mac과 달리 어댑터 이름은 보지 않는다: Windows에서는 사용자가 어댑터 이름을 바꿀 수 있고 Wintun 어댑터의 종류는 정해진 `NetworkInterfaceType` 값이 아니다. 두 앱이 같은 사례 파일 `native/contracts/fixtures/tailscale-addresses.json`을 읽고, 플랫폼마다 답(`darwin`·`win32`)이 다른 사례는 이 차이에서 오는 두 가지뿐이다.
+- 주소마다 `TcpListener` 하나를 그 주소에만 묶는다(와일드카드 없음, `ExclusiveAddressUse`). 특정 IP에 묶는 `HttpListener`는 관리자 권한의 URL ACL이 필요해 쓰지 않는다. Mac의 `requiredInterface` 고정은 없고, 주소에 묶는 것과 Windows의 강한 호스트 모델로 대신한다.
+- WebSocket 업그레이드는 앱이 직접 읽는다: 요청 머리 8 KiB까지, `GET /ws`(질의는 보지 않음)·`HTTP/1.1`·`Upgrade: websocket`·`Connection: Upgrade`·`Sec-WebSocket-Version: 13`·16바이트 `Sec-WebSocket-Key`가 아니면 답 없이 닫는다. 업그레이드도 10초 핸드셰이크 제한 안이다. 그 뒤는 `WebSocket.CreateFromStream`(서버, 프레임 1 MiB)이고, 릴레이 데이터 소켓과 같은 `Connection`이 핸드셰이크·인증·m1 터널을 맡는다.
+- 주소는 Windows의 주소 변경 알림(`NetworkChange.NetworkAddressChanged`)과 15초마다 다시 읽는다. MagicDNS 이름은 싣지 않는다(휴대폰은 이름을 열지 않는다).
+- **Windows 방화벽**: 규칙 하나를 더하거나 고치거나 지우는 일은 사용자가 설정의 방화벽 규칙 줄에서 버튼을 누를 때, 또는 규칙이 있는 채로 모바일 리모트나 직접 연결 스위치를 끌 때만 한다. 규칙은 이 앱(`MightyClaude.exe`)만, 모든 프로필에서, 이 앱의 포트로 오는 TCP 연결 가운데 상대가 100.64.0.0/10·fd7a:115c:a1e0::/48 안이고 닿는 로컬 주소도 그 두 범위 안인 것만 허용한다. 명령은 상수와 앱 자신의 경로로만 만든 `%SystemRoot%\System32\netsh.exe advfirewall firewall add rule name="Mighty Claude (Tailscale)" dir=in action=allow protocol=TCP localport=<포트> localip=100.64.0.0/10,fd7a:115c:a1e0::/48 remoteip=100.64.0.0/10,fd7a:115c:a1e0::/48 program="<앱 exe>" profile=any`(같은 이름의 규칙이 이미 있으면 같은 내용으로 `set rule name="Mighty Claude (Tailscale)" new … enable=yes`라 규칙이 쌓이지 않고 뺀 포트는 닫힌다. 지울 때는 `delete rule name="Mighty Claude (Tailscale)"`)이고 Windows의 UAC 확인을 거친다. 같은 이름의 규칙이 있는지는 관리자 권한 없이 `show rule`의 종료 코드로 읽는다(포트까지 맞는지는 아니다). 줄의 버튼은 규칙이 있으면 "규칙 지우기", 없으면 "규칙 추가"(열 포트가 없고 규칙도 없으면 버튼 없음)이고, 규칙의 상태를 읽지 못했으면 "다시 확인"이라 관리자 권한을 묻지 않고 다시 읽기만 한다. 규칙이 있는 채 포트를 바꾸면 줄의 안내가 규칙을 지우고 다시 추가하라고 한다. 원격이나 직접 연결을 끄는 클릭은, 그 규칙을 쓰는 기능이 남지 않으면 규칙도 지운다(다시 UAC). 앱이 Windows에 관리자 권한을 요청하는 곳은 여기 하나다.
 
 **끝점 알리기**
 

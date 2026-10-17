@@ -1,6 +1,6 @@
 # 모바일 리모트 (iOS · Android)
 
-PC에서 실행 중인 Mighty Claude에 휴대폰으로 접속해 워크스페이스와 에이전트(실행 창)를 보고, 요청을 보내고, 권한·질문에 답하는 기능이다. 모바일 앱은 `mobile/`의 Expo(React Native) 프로젝트이고, 호스트는 데스크톱 앱 안에 있다. Mac과 휴대폰이 각각 **릴레이 서버**에 바깥으로 접속해 연결되며, 모든 내용은 종단 간 암호화된다(상세: [relay.md](relay.md)). 포트 개방이나 VPN이 필요 없다. 휴대폰과 Mac이 같은 Tailscale 네트워크에 있으면 휴대폰은 릴레이를 거치지 않고 Mac에 **직접** 붙는다(같은 암호화, 아래 "Tailscale 직접 연결"). 지금은 Mac 호스트만 직접 연결을 연다.
+PC에서 실행 중인 Mighty Claude에 휴대폰으로 접속해 워크스페이스와 에이전트(실행 창)를 보고, 요청을 보내고, 권한·질문에 답하는 기능이다. 모바일 앱은 `mobile/`의 Expo(React Native) 프로젝트이고, 호스트는 데스크톱 앱 안에 있다. Mac과 휴대폰이 각각 **릴레이 서버**에 바깥으로 접속해 연결되며, 모든 내용은 종단 간 암호화된다(상세: [relay.md](relay.md)). 포트 개방이나 VPN이 필요 없다. 휴대폰과 Mac이 같은 Tailscale 네트워크에 있으면 휴대폰은 릴레이를 거치지 않고 Mac에 **직접** 붙는다(같은 암호화, 아래 "Tailscale 직접 연결"). Mac과 Windows 호스트가 직접 연결을 연다.
 
 ## 동작 개요
 
@@ -12,9 +12,10 @@ PC에서 실행 중인 Mighty Claude에 휴대폰으로 접속해 워크스페�
 
 ## Tailscale 직접 연결
 
-릴레이 대신 휴대폰이 Mac에 바로 WebSocket을 여는 길이다. 바뀌는 것은 소켓을 어디에 여는가뿐이고, 그 위의 `hello`/`ready` 핸드셰이크·ChaCha20-Poly1305 프레임·인증(페어링 키·기기 토큰)·m1 터널은 릴레이 경로와 한 글자도 다르지 않다. 와이어와 제한은 [relay.md](relay.md)의 "Tailscale 직접 연결" 절.
+릴레이 대신 휴대폰이 호스트(Mac·Windows PC)에 바로 WebSocket을 여는 길이다. 바뀌는 것은 소켓을 어디에 여는가뿐이고, 그 위의 `hello`/`ready` 핸드셰이크·ChaCha20-Poly1305 프레임·인증(페어링 키·기기 토큰)·m1 터널은 릴레이 경로와 한 글자도 다르지 않다. 와이어와 제한은 [relay.md](relay.md)의 "Tailscale 직접 연결" 절.
 
 - **Mac**: **설정 → 모바일 리모트**의 "Tailscale로 직접 연결" 스위치(기본 켜짐)와 포트(기본 `43139`, 1024–65535). 모바일 리모트가 켜져 있고 이 스위치도 켜져 있을 때만, Mac의 Tailscale 주소에서만 연결을 받는다. Tailscale 인터페이스는 fd7a:115c:a1e0::/48 주소를 가진 `utun`이고(그래야 같은 100.64.0.0/10을 쓰는 WARP 같은 VPN이 빠진다), 그 인터페이스의 두 범위 주소에만 그 인터페이스로 고정해 연다. 0.0.0.0·LAN·공인 주소에는 열지 않고, 상대 주소가 두 범위 밖이면 받지 않는다. 주소는 네트워크가 바뀔 때와 15초마다 다시 읽는다. 스위치 아래 줄은 대기 중인 `주소:포트` 목록, "Tailscale을 찾지 못함", 또는 열지 못한 이유를 보여 준다. 릴레이가 끊겨 있어도 직접 연결이 열려 있으면 QR이 나온다. 연결 수·상대 주소별 한도와 인증 실패 제한은 relay.md에 있다.
+- **Windows**: 같은 스위치(기본 켜짐)·포트(기본 `43139`)·상태 줄에 **방화벽 규칙** 줄이 더 있다. Tailscale 어댑터는 fd7a:115c:a1e0::/48 주소를 가진 어댑터이고(이름은 보지 않는다), 그 어댑터의 두 범위 주소에만 주소마다 하나씩 `TcpListener`로 연다. 한도·거절·끝점 알리기는 Mac과 같고, MagicDNS 이름은 싣지 않는다. Windows 방화벽은 줄의 "규칙 추가" 버튼을 누를 때 UAC 확인을 거쳐 규칙 하나(이 앱만, 모든 프로필, TCP, 이 포트, 상대와 닿는 로컬 주소 둘 다 Tailscale 범위)를 더하고(이미 있으면 그 자리에서 고친다), "규칙 지우기" 버튼이나 규칙이 있는 채 원격·직접 연결을 끄는 클릭이 지운다. 규칙의 상태를 읽지 못하면 버튼이 "다시 확인"이 되어 권한을 묻지 않고 다시 읽는다. 자세한 규칙은 [relay.md](relay.md)의 "Windows 리스너"와 [windows-mobile-remote.md](windows-mobile-remote.md).
 - **페어링**: QR에 선택 파라미터 `direct=`(쉼표로 구분한 `host:port`, 퍼센트 인코딩)가 붙는다. Tailscale CLI가 있으면 `tailscale status --json`의 MagicDNS 이름(`….ts.net`)도 함께 싣는다. 이 파라미터를 모르는 구버전 앱은 무시하고 릴레이로 붙는다.
 - **이미 페어링한 휴대폰**: 호스트는 `"direct"` 기능을 광고하고, `auth_ok`와 `GET /m1/info`에 지금의 끝점 목록 `direct: string[]`을 싣는다(직접 연결이 꺼져 있거나 Tailscale이 없으면 빈 배열). 휴대폰은 `"direct"` 기능을 광고한 호스트의 목록만 받아 저장된 목록을 바꾼다. 그래서 QR 없이도 접속할 때마다 최신 주소를 알고, Mac이 직접 연결을 끄면 시도를 멈춘다.
 - **휴대폰**: 접속할 때마다 저장된 끝점 가운데 **주소만** `ws://<끝점>/ws?v=1`(서버 id·연결 id 없음)로 **모두 동시에** 열어 1.8초 안에 먼저 열린 것을 쓰고, 하나도 열리지 않거나 모두 바로 거절되면 그 즉시 릴레이로 간다. MagicDNS 이름은 저장만 하고 열지 않는다(휴대폰에 Tailscale 경로가 없으면 공개 DNS에 묻게 되므로). 열린 직접 소켓이 3초 안에 `auth_ok`까지 가지 못하면 — 다른 기기가 그 주소를 써서 공개키가 다름, 핸드셰이크 지연, Mac이 받지 않음, Mac의 일반 거절(`unauthorized`) — 페어링을 지우지 않고 곧바로 릴레이로 가서, 해제·키 교체 같은 진짜 이유는 릴레이에서 듣는다. 직접 연결이 끊기면 평소의 재접속 간격(1.5초부터 2배씩 최대 30초)을 지키며 같은 순서로 다시 붙는다. 호스트 카드에는 연결된 경로가 "Tailscale 직접" 또는 "릴레이" 배지로 보인다.
@@ -59,12 +60,12 @@ MobileSessionSummary {
   resumeId?: string, terminal: boolean, // terminal: 앱 안 로컬 터미널 창이라 모바일에서 명령 불가
   titleMode?: "auto" | "fixed",        // "auto"=요청 따름, "fixed"=직접 지정; 없으면 "auto"로 처리
   resolvedModel?: string,              // model이 지금 가리키는 전체 id(opus → claude-opus-5-5); 모르면 없음
-  parentSessionId?: string,            // 마이티 오케스트레이션 자식 창의 부모 창 id(Mac만); 자식이 아니면 없음
+  parentSessionId?: string,            // 마이티 오케스트레이션 자식 창의 부모 창 id(Mac 호스트가 싣는다. Windows 호스트는 아직 싣지 않는다); 자식이 아니면 없음
   childState?: string                  // 그 자식의 상태(Mac 사이드바 자식 행과 같은 ChildState 값); parentSessionId와 함께만
 }
 ```
 
-마이티 오케스트레이션 자식 창은 Mac의 위임 파일이 자식으로 적어 둔 창만 `parentSessionId`·`childState`를 싣는다(`MobileRemoteSupport.childLink`). `childState`는 사이드바 자식 행이 보이는 그대로다(`creating`·`running`·`waiting`·`reported`·`merged`·`ended`·`interrupted`·`failed`·`closed`·`discarded`, 사람이 답해야 하는 요청을 기다리는 실행 중 자식은 `waiting`). 휴대폰은 같은 워크스페이스 목록에 부모 창이 있고 그 부모가 자식이 아니면 자식 행을 부모 바로 아래 한 단 들여 그리고 오른쪽에 상태 낱말을 보인다(`groupSessionsByWorkspace`·`childStateLabel`). 부모가 닫혔거나 목록에 없으면 보통 창처럼 둔다. 병합·버리기·되돌리기는 휴대폰에 없고 Mac의 자식 카드에서만 한다. 구버전 휴대폰은 두 필드를 무시하고, 구버전 Mac에서는 필드가 없어 목록이 지금처럼 평평하다.
+마이티 오케스트레이션 자식 창은 Mac 호스트에서는 Mac의 위임 파일이 자식으로 적어 둔 창만 `parentSessionId`·`childState`를 싣는다(`MobileRemoteSupport.childLink`). `childState`는 사이드바 자식 행이 보이는 그대로다(`creating`·`running`·`waiting`·`reported`·`merged`·`ended`·`interrupted`·`failed`·`closed`·`discarded`, 사람이 답해야 하는 요청을 기다리는 실행 중 자식은 `waiting`). 휴대폰은 같은 워크스페이스 목록에 부모 창이 있고 그 부모가 자식이 아니면 자식 행을 부모 바로 아래 한 단 들여 그리고 오른쪽에 상태 낱말을 보인다(`groupSessionsByWorkspace`·`childStateLabel`). 부모가 닫혔거나 목록에 없으면 보통 창처럼 둔다. 병합·버리기·되돌리기는 휴대폰에 없고 데스크톱 앱의 자식 카드에서만 한다. 지금 이 두 필드는 Mac 호스트만 싣는다: Windows 호스트의 `MobileDesktopRouter`는 아직 `parentSessionId`·`childState`를 보내지 않아서, Windows 호스트의 자식 창은 휴대폰 목록에서 평범한 창으로 보인다. 구버전 휴대폰은 두 필드를 무시하고, 구버전 Mac에서는 필드가 없어 목록이 지금처럼 평평하다.
 
 모델 이름은 양쪽이 같은 규칙으로 버전까지 붙여 보여 준다(`claude-opus-5-5` → `Opus 5.5`, `gpt-5.2-codex` → `GPT-5.2 Codex`, `gemini-3-pro-preview` → `Gemini 3 Pro`). 규칙은 `MightyCore/ModelLabel.swift`와 `mobile/src/lib/model-label.ts`가 함께 지키고, 둘 다 `native/contracts/fixtures/model-labels.json`으로 검사한다. `resolvedModel`(선택)은 별칭(`opus`)에 버전을 붙일 근거다: 설치된 CLI 모델 목록의 `resolvedModel`, 목록에 없으면 같은 계열 별칭에 한해, 그 별칭이 지금처럼 선택돼 있던 동안 그 창이 보고한 모델. `default`·`opusplan` 같은 다른 별칭은 제 이름 뒤에 ` · Opus 5.5`처럼 붙인다(휴대폰의 `default` 이름은 `provider.fallback.defaultLabel`, 예: `Claude 설정 따름`). 근거가 없으면 보내지 않고, 휴대폰은 버전 없이 `Opus`로 보여 준다(버전을 지어내지 않는다). 휴대폰은 이 값을 표시에만 쓰고, 설정 변경으로 보내는 값은 언제나 `model`·옵션 `id` 그대로다. 구버전 휴대폰은 이 필드를 무시하고, 구버전 호스트에서는 필드가 없으므로 `model`만으로 라벨을 만든다. 모델 선택지(`options.models[].label`)는 Mac이 같은 규칙으로 만든 라벨이다. `provider: "gemini"`는 전송·저장 id 그대로이고, 이 창에서 Google의 Antigravity CLI(`agy`)를 돌리는 호스트(`/m1/info`의 `platform`·`appVersion`으로 Mac `darwin` 0.4.23 이상, Windows `win32` 0.4.28 이상, 버전을 모르거나 읽을 수 없으면 이쪽으로 본다)면 휴대폰도 이름을 "Antigravity"(베타 배지, Gemini 마크 유지)로, 그보다 오래된 호스트면 "Gemini"로 보인다(`hostRunsAntigravity`). Antigravity를 돌리는 호스트의 창에서 agy 모델 이름은 Mac 모델 목록과 같게 읽는다: `gemini-4-argon-medium` → `Gemini 4 Argon (Medium)`, `claude-opus-5-5-high` → `Claude Opus 5.5 (High)`, `gpt-oss-120b-medium` → `GPT-OSS 120B (Medium)`(`antigravityModelLabel`; 클라이언트마다 따로 검사하고 공유 픽스처에는 없다).
 
@@ -104,7 +105,7 @@ MobilePermission {
 
 `MobileInfo.capabilities: string[]` — 허용 값: `"submit-mode"`, `"queue"`, `"pane"`, `"history"`, `"settings"`, `"commands"`, `"mighty"`, `"status"`, `"attachments"`, `"style"`, `"files"`, `"screenShare"`, `"structure"`, `"direct"`.
 
-`"direct"`는 호스트가 Tailscale 직접 연결을 아는 빌드라는 뜻이다(지금은 Mac만). 이 이름이 있으면 `MobileInfo.direct`와 `auth_ok.direct`가 그 순간의 끝점 목록이다(위 "Tailscale 직접 연결").
+`"direct"`는 호스트가 Tailscale 직접 연결을 아는 빌드라는 뜻이다(Mac·Windows). 이 이름이 있으면 `MobileInfo.direct`와 `auth_ok.direct`가 그 순간의 끝점 목록이다(위 "Tailscale 직접 연결").
 
 `"screenShare"`는 BETA 화면 보기·조작 기능의 문이다. 세션 요청 라우트와 E2EE 시그널링 메시지 규약은 `docs/relay.md`의 "화면 공유 시그널링"에 있다.
 
@@ -394,6 +395,7 @@ MobileFilePreview {
 - `MightyCore/Remote/RelayLink.swift`: 제어 소켓을 새로 여는 규칙(ping 간격, 네트워크 경로 변화 판단). 동작은 [relay.md](relay.md) "재접속".
 - `MightyCore/Remote/MobileRemoteService.swift`: 릴레이 제어 소켓과 재접속(ping·네트워크 변화·깨어남·수동), 휴대폰별 데이터 소켓(핸드셰이크·인증·요청 처리 — 릴레이로 온 것이든 직접 온 것이든 같은 `RelayClientConnection`), 직접 연결의 켜고 끄기와 주소 재확인, m1 라우팅, 리비전 대기·알림. 페어링 키는 `<데이터 폴더>/mobile-remote/mobile-remote.key`, 키쌍은 `relay-keypair.json`(모두 소유자만 읽기).
 - `MightyCore/Remote/MobileDirect.swift`: Tailscale 직접 연결 — Tailscale 인터페이스 고르기(`select(interfaces:)`: fd7a:115c:a1e0::/48 주소를 가진 `utun`만, 그 인터페이스의 두 범위 주소만), MagicDNS 이름, 끝점 쓰기·읽기, 주소마다 하나씩 그 `utun`에 고정해 여는 WebSocket 리스너(`MobileDirectListener`, 프레임 1 MiB, 동시 연결 36개, 한도 밖 연결은 `forceCancel`), 데이터 소켓 추상화(`RelayFrameSocket`: 릴레이의 `URLSessionWebSocketTask`와 직접 연결의 `NWConnection`).
+- Windows: `MightyClaude.Core/Remote/TailscaleAddresses.cs`(같은 규칙, 어댑터 이름 없이), `MobileDirect.cs`(한도·끝점·업그레이드·입장·상태 줄), `MobileDirectListener.cs`(주소마다 `TcpListener`, 함께 36개), `MobileRelayHost.cs`(같은 `Connection`, `direct-` id, 일반 거절, 재확인), `MightyClaude.Core/WindowsFirewallRule.cs`(방화벽 규칙 하나, UAC), WinUI `MainWindow.MobileRemote.cs`·`MainWindow.MobileDirect.cs`.
 - `MightyClaude/AppStore+MobileRemote.swift`: 스냅샷·권한·대기열 변화를 리비전으로 바꾸고 명령을 실제 창에 적용하는 브리지.
 - 설정 화면의 **모바일 리모트** 절: 스위치, 릴레이 주소, 연결 상태, Tailscale 직접 연결 스위치·포트·상태 줄, QR 코드, 키 다시 만들기, 구버전 앱 허용 스위치, 페어링된 기기 목록(이름·처음/마지막 접속·연결 중·새 기기 표시)과 기기별 해제.
 - `MightyCore/Remote/MobileRemoteSupport.swift`: 확장의 순수 규칙(이름·페이지·설정 검증, 상태줄·사용량 변환, 명령 매핑, 마이티 블록 투영과 리비전 요약, 안내형 프롬프트, `/guided`의 관문 판정 `guidedDecision`).
