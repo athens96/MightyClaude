@@ -1,13 +1,13 @@
 # 릴레이 연결 (모바일 리모트 v2)
 
-휴대폰과 Mac이 모두 **릴레이 서버에 바깥으로 접속**해 연결된다. 포트 개방이나 VPN이 필요 없고, 릴레이는 암호문만 넘기는 단순 파이프라서 내용을 볼 수 없다. Paseo(getpaseo/paseo, Apache License 2.0 — 고지는 저장소의 `NOTICE.md`)의 릴레이 구조를 참고했으며 암호 프리미티브는 CryptoKit과 noble 라이브러리에 모두 있는 것으로 골랐다.
+휴대폰과 Mac이 모두 **릴레이 서버에 바깥으로 접속**해 연결된다. 포트 개방이나 VPN이 필요 없고, 릴레이는 암호문만 넘기는 단순 파이프라서 내용을 볼 수 없다. 둘이 같은 Tailscale 네트워크에 있으면 휴대폰은 같은 데이터 소켓을 Mac에 바로 연다(아래 "Tailscale 직접 연결"). Paseo(getpaseo/paseo, Apache License 2.0 — 고지는 저장소의 `NOTICE.md`)의 릴레이 구조를 참고했으며 암호 프리미티브는 CryptoKit과 noble 라이브러리에 모두 있는 것으로 골랐다.
 
 ## 구성
 
 | 역할 | 구현 | 위치 |
 |---|---|---|
 | 릴레이 | Node.js + `ws`, 상태 없음, `serverId`로 소켓을 짝지음 | `relay/` (Docker 이미지 포함) |
-| 호스트(데몬) | Mac 앱의 `MobileRelayService` | `native/macos/Sources/MightyCore/Remote/` |
+| 호스트(데몬) | Mac 앱의 `MobileRemoteService` (직접 연결 리스너 `MobileDirectListener` 포함) | `native/macos/Sources/MightyCore/Remote/` |
 | 클라이언트 | Expo 앱의 `relayTransport` | `mobile/src/api/relay/` |
 
 ## 릴레이 와이어 (평문, 릴레이가 해석)
@@ -59,7 +59,7 @@ WebSocket `GET /ws` + 쿼리. `serverId`는 `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
   2. 호스트 → `{"type":"ready","v":1,"serverKey":"<b64 32B>","nonce":"<b64 16B>"}`. 클라이언트는 `serverKey`가 페어링 때 받은 공개키와 같은지 확인한다.
 - 키 유도: `shared = X25519(내 비밀키, 상대 공개키)`, `key = HKDF-SHA256(ikm=shared, salt=clientNonce‖serverNonce, info="mightyclaude-relay-v1", 32B)`. 공유 비밀이 모두 0이면 거부.
 - 프레임: 바이너리 `[12B nonce][ChaCha20-Poly1305 암호문+16B 태그]`. nonce = `[방향 1B][0,0,0][카운터 8B big-endian]`, 방향은 클라이언트→호스트 0x01, 호스트→클라이언트 0x02. 카운터는 0부터 프레임마다 1씩 증가하고, 받는 쪽은 **직전보다 큰 카운터만** 받아들인다(재전송·순서 뒤바뀜 거부). 평문은 UTF-8 JSON.
-- 인증(암호화된 첫 메시지): 클라이언트 → `{"type":"auth","pairingKey":"…","clientName":"…"}`, 호스트 → `{"type":"auth_ok","hostName":"…","hostId":"…","appVersion":"…","capabilities":["…"]}`(`capabilities`는 `GET /m1/info`와 같은 목록) 또는 `{"type":"auth_error","reason":"pairing-key"}`를 보낸 뒤 소켓을 닫음(클라이언트는 이를 재페어링 필요로 표시). 호스트는 `auth_ok` 전에는 다른 메시지를 처리하지 않는다.
+- 인증(암호화된 첫 메시지): 클라이언트 → `{"type":"auth","pairingKey":"…","clientName":"…"}`, 호스트 → `{"type":"auth_ok","hostName":"…","hostId":"…","appVersion":"…","capabilities":["…"],"direct":["host:port",…]}`(`capabilities`는 `GET /m1/info`와 같은 목록, `direct`는 `"direct"` 기능을 가진 호스트의 지금 직접 연결 끝점 — 아래 "Tailscale 직접 연결") 또는 `{"type":"auth_error","reason":"pairing-key"}`를 보낸 뒤 소켓을 닫음(클라이언트는 이를 재페어링 필요로 표시). 호스트는 `auth_ok` 전에는 다른 메시지를 처리하지 않는다.
 
 ### 기기 토큰과 연결 키 교체
 
@@ -90,7 +90,9 @@ WebSocket `GET /ws` + 쿼리. `serverId`는 `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
 
 ## 페어링
 
-QR/문자열: `mightyclaude://pair?v=2&sid=<serverId>&pk=<b64url 공개키>&relay=<wss://host:port 또는 ws://>&key=<pairingKey>&name=<percent-encoded 이름>`.
+QR/문자열: `mightyclaude://pair?v=2&sid=<serverId>&pk=<b64url 공개키>&relay=<wss://host:port 또는 ws://>&key=<pairingKey>&name=<percent-encoded 이름>[&direct=<host:port,…>]`.
+
+`direct`(선택)는 Mac의 Tailscale 직접 연결 끝점을 쉼표로 이은 값이다. `:`·`,`·`[`·`]`까지 퍼센트 인코딩하고(`100.101.102.103%3A43139%2C%5Bfd7a%3A115c%3Aa1e0%3A%3A1%5D%3A43139`), IPv6는 대괄호로 감싼다. 8개까지, Tailscale 범위(100.64.0.0/10, fd7a:115c:a1e0::/48, `*.ts.net`) 밖의 값은 읽는 쪽이 버린다. 휴대폰은 이름(`*.ts.net`)은 저장만 하고 주소만 연다(아래). 이 파라미터를 모르는 앱은 무시한다.
 
 `sid`는 위의 호스트 토큰에서 만든 `serverId`다. 토큰에서 만들기 전의 `serverId`로 페어링한 휴대폰은 한 번 다시 페어링해야 한다.
 
@@ -108,6 +110,39 @@ QR/문자열: `mightyclaude://pair?v=2&sid=<serverId>&pk=<b64url 공개키>&rela
 - **설정의 "다시 연결"**: 연결됨으로 보여도, 네트워크가 없다고 보고된 때에도 언제나 바로 새로 접속한다.
 
 새 제어 소켓이 붙으면 릴레이는 같은 serverId의 옛 소켓을 4409로 닫으므로 언제 새로 접속해도 안전하다. 휴대폰의 호스트 화면은 `host-offline`(4404·4410)을 받아도 위의 백오프로 스스로 다시 붙고, 호스트 목록은 오프라인으로 보이는 호스트를 호스트마다 따로 1.5초부터 2배씩 최대 30초 간격으로 다시 확인한다. 다시 확인하는 동안에도 목록은 "확인 중"으로 바뀌지 않고 직전 상태를 그대로 보여 주며, 오프라인인 호스트가 없으면 타이머를 돌리지 않는다.
+
+## Tailscale 직접 연결
+
+릴레이 없이 휴대폰이 Mac에 직접 데이터 소켓을 여는 길이다. 휴대폰은 `ws://<끝점>/ws?v=1`로 연다 — 직접 연결에는 상대가 Mac 하나뿐이므로 `serverId`도 `connectionId`도 싣지 않는다(테일넷에서 엿본 값으로 릴레이에 무엇을 해 볼 거리를 남기지 않는다). 열린 소켓 위의 평문 `hello`/`ready`, 암호화 프레임, `auth`·`auth_ok`, m1 터널, `notify`, ping은 위의 절과 똑같다. 그래서 직접 연결도 페어링한 공개키로 Mac을 확인하고, 페어링 키나 기기 토큰으로만 들어온다. 핸드셰이크를 마치지 못한 연결은 끊긴다. 지금은 Mac 호스트만 연다(Windows는 나중).
+
+**Mac 리스너** (`MobileDirect.swift`)
+
+- 모바일 리모트와 설정의 "Tailscale로 직접 연결"(기본 켜짐)이 둘 다 켜져 있을 때만 연다. 릴레이 연결 여부와는 상관없다.
+- **무엇이 Tailscale인가**: `getifaddrs`의 `utun` 인터페이스 가운데 **그 인터페이스 자신이 fd7a:115c:a1e0::/48 주소를 가진 것**만 Tailscale로 본다(Cloudflare WARP 같은 다른 VPN도 `utun`에 100.64.0.0/10을 붙이지만 Tailscale의 IPv6 접두사는 갖지 않는다). 그 인터페이스의 100.64.0.0/10·fd7a:115c:a1e0::/48 주소만 쓴다. 판단은 순수 함수 하나(`MobileDirect.select(interfaces:)`)가 하며, 원격 워크스페이스 쪽과 같은 규칙이다.
+- 주소마다 리스너 하나를 그 주소에 묶고, `requiredInterface`로 그 `utun` 인터페이스에 고정한다(Network 프레임워크가 그 인터페이스를 알려 주지 않으면 주소만으로 묶는다). 주소 재사용(`allowLocalEndpointReuse`)은 끈다. 0.0.0.0·`::`·LAN·공인·루프백에는 열지 않는다. 네트워크 경로가 바뀔 때와 15초마다 다시 읽고, 바뀐 주소의 리스너만 열고 닫는다(그대로인 리스너와 거기 붙은 휴대폰은 건드리지 않는다).
+- 포트는 기본 43139(설정에서 1024–65535로 바꿀 수 있다).
+- WebSocket 서버는 Network 프레임워크(`NWProtocolWebSocket`)다. 프레임 최대 1 MiB(릴레이와 같음, 넘으면 연결 종료), ping은 스택이 답한다. 요청 경로와 질의는 읽지 않는다(이 스택은 서버에 경로를 넘겨주지 않는다): 어떤 Mac인지는 공개키 확인이 정한다. 모든 직접 리스너와 소켓은 큐 하나에서 돈다.
+- **받지 않는 연결**: 아래에 걸리는 연결은 시작하지도 않고(`forceCancel`, 닫기 프레임 없음) 바로 버린다.
+  - 상대 주소가 100.64.0.0/10·fd7a:115c:a1e0::/48 밖.
+  - 리스너들이 함께 쥔 연결이 36개(핸드셰이크 중 4 + 휴대폰 32)에 이름. 리스너마다 `newConnectionLimit`을 같은 값으로 두고 연결이 끝날 때 돌려받는다.
+  - 휴대폰 표(호스트당 32대, 릴레이와 공유)가 참.
+  - 핸드셰이크 중인 직접 연결이 4개(릴레이 쪽 4개와 별개), 또는 같은 상대 주소에서 2개.
+  - 같은 상대 주소가 60초 안에 인증을 5번 실패함.
+- 인증 실패는 직접 연결에서 언제나 같은 한 단어 `{"type":"auth_error","reason":"unauthorized"}`로 답한다. 어떤 `clientId`나 키를 이 Mac이 아는지 테일넷의 다른 기기에 알려 주지 않기 위해서다. 휴대폰은 이 답을 받으면 릴레이로 가서 진짜 이유를 듣는다(아래).
+- 핸드셰이크 제한 시간은 릴레이 연결과 같은 10초.
+- 릴레이 제어 소켓이 끊기거나 다시 열려도 직접 연결은 그대로다(릴레이의 `disconnected` 알림도 직접 연결에는 손대지 않는다). 모바일 리모트나 직접 연결 스위치를 끄면 직접 연결만 닫는다. 기기 해제·키 다시 만들기는 경로와 상관없이 같은 규칙으로 닫는다.
+
+**끝점 알리기**
+
+- QR의 `direct=`(위 "페어링").
+- 호스트는 `capabilities`에 `"direct"`를 넣고, `auth_ok`와 `GET /m1/info`에 `direct: ["host:port", …]`를 싣는다. 리스너가 연 주소(포트 포함) 다음에, Tailscale CLI가 있으면 `tailscale status --json`의 `Self.DNSName`(MagicDNS, `….ts.net`)을 같은 포트로 붙인다. CLI는 `/Applications/Tailscale.app/Contents/MacOS/Tailscale`, `/opt/homebrew/bin/tailscale`, `/usr/local/bin/tailscale`을 먼저 보고, 그다음 PATH의 절대 경로 항목만 본다. 직접 연결이 꺼져 있거나 Tailscale이 없으면 빈 배열이다. 휴대폰은 `"direct"`를 광고한 호스트의 값만 읽어 저장된 목록을 그것으로 바꾼다. 그래서 먼저 페어링한 휴대폰도 다음 접속에서 새 주소를 알고, 목록이 비면 직접 시도를 멈춘다. 이 필드를 모르는 앱은 무시한다.
+
+**휴대폰의 경로 고르기**
+
+1. 저장된 끝점 가운데 **주소**(100.64.0.0/10, fd7a:115c:a1e0::/48)만 `ws://<끝점>/ws?v=1`로 **모두 동시에** 연다. MagicDNS 이름은 저장만 하고 열지 않는다: 휴대폰에 Tailscale 경로가 있는지 앱이 알 수 없고, 없으면 그 이름을 지금 네트워크의 공개 DNS에 묻게 되기 때문이다. 먼저 열린 소켓 하나만 남기고 나머지는 닫는다.
+2. 1.8초 안에 하나도 열리지 않거나, 모두 그 전에 실패하면 곧바로 릴레이로 연다.
+3. 직접 소켓이 열린 뒤 3초 안에 `auth_ok`가 오지 않거나, 그 전에 끝나면 — `ready`의 공개키가 페어링한 것과 다름(그 주소를 이제 다른 기기가 씀), 핸드셰이크 지연, 연결을 받지 않음, `auth_error` — 페어링을 지우지 않고 기다리는 요청에도 알리지 않은 채 곧바로 릴레이로 연다. 기기 해제·키 교체·`device-conflict` 같은 진짜 이유는 릴레이에서 듣고, 거기서 지금과 똑같이 처리한다. 릴레이 경로에서 공개키가 다르면 지금처럼 재페어링 필요다.
+4. 연결된 뒤 끊기면 평소 재접속(1.5초부터 2배씩 최대 30초, 앱이 전면으로 오면 즉시)으로 1번부터 다시 한다.
 
 ## TURN 자격증명 발급 (릴레이 평문, E2EE 아님)
 

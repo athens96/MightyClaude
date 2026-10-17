@@ -228,11 +228,13 @@ extension AppStore {
         await mobileRemote.shutdown()
     }
 
-    func setMobileRemote(enabled: Bool, relayURL: String? = nil, allowLegacyPhones: Bool? = nil) {
+    func setMobileRemote(enabled: Bool, relayURL: String? = nil, allowLegacyPhones: Bool? = nil, directEnabled: Bool? = nil, directPort: Int? = nil) {
         var settings = snapshot.mobileRemote ?? MobileRemoteSettings()
         settings.enabled = enabled
         if let relayURL { settings.relayURL = relayURL }
         if let allowLegacyPhones { settings.allowLegacyPhones = allowLegacyPhones }
+        if let directEnabled { settings.directEnabled = directEnabled }
+        if let directPort { settings.directPort = directPort }
         settings = settings.normalized
         snapshot.mobileRemote = settings
         mobileBusy = true

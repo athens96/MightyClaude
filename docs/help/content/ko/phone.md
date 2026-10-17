@@ -5,7 +5,7 @@ section: phone
 ---
 휴대폰 앱으로 밖에서도 Mac의 Mighty Claude를 보고 다룰 수 있습니다. 작업 상태를 보고, 요청을 보내고, 승인과 질문에 답합니다.
 
-Mac과 휴대폰은 릴레이 서버를 거쳐 연결됩니다. 내용은 처음부터 끝까지 암호화되어 릴레이는 내용을 볼 수 없습니다. 공유기 포트를 열거나 VPN을 쓸 필요가 없습니다.
+Mac과 휴대폰은 릴레이 서버를 거쳐 연결됩니다. 내용은 처음부터 끝까지 암호화되어 릴레이는 내용을 볼 수 없습니다. 공유기 포트를 열거나 VPN을 쓸 필요가 없습니다. Tailscale을 쓰고 있다면 [릴레이 없이 직접](#direct) 연결할 수도 있습니다.
 
 ## 휴대폰 앱 받기 {#get-app}
 [다운로드 페이지](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/index.html)에서 Android 앱(APK)을 받아 설치합니다.
@@ -27,6 +27,15 @@ Mac에서:
 
 > [!warning]
 > {{ui:settings.mobileRemote.regenerateKeyButton}}를 누르면 연결된 휴대폰을 모두 다시 연결해야 합니다. QR 코드나 키가 남에게 보였을 때 쓰세요.
+
+## Tailscale로 직접 연결 {#direct}
+Mac과 휴대폰이 같은 [Tailscale](https://tailscale.com) 네트워크에 있으면 휴대폰은 릴레이를 거치지 않고 Mac에 바로 연결합니다. 연결 방법도 암호화도 그대로이고, Mac에 닿지 않을 때는 알아서 릴레이로 연결합니다.
+
+1. Mac과 휴대폰에서 Tailscale을 켜고 같은 계정으로 로그인합니다.
+2. Mac의 {{ui:settings.nav.mobile}} 탭에서 {{ui:mobileRemote.direct.toggle}}이 켜져 있는지 봅니다(기본으로 켜져 있습니다). 아래 줄에 Tailscale 주소가 보이면 준비된 것입니다. {{ui:mobileRemote.direct.status.notFound}}이 보이면 Mac의 Tailscale이 꺼져 있는 것입니다.
+3. 이미 연결한 휴대폰은 다시 연결할 필요가 없습니다. 다음에 연결할 때 Mac이 주소를 알려 줍니다.
+
+휴대폰의 {{ui:phone.tabs.hosts}} 탭에서 연결된 Mac 카드에 {{ui:phone.direct.route.direct}} 또는 {{ui:phone.direct.route.relay}}가 표시됩니다.
 
 ## 휴대폰에서 할 수 있는 일 {#use}
 휴대폰 앱에는 탭이 네 개 있습니다.

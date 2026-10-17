@@ -5,7 +5,7 @@ section: phone
 ---
 通过手机应用，你在外面也能查看和操作 Mac 上的 Mighty Claude：查看任务状态、发送请求、回答批准和提问。
 
-Mac 与手机通过中继服务器连接。内容全程端到端加密，中继无法查看内容。无需在路由器上开放端口，也无需使用 VPN。
+Mac 与手机通过中继服务器连接。内容全程端到端加密，中继无法查看内容。无需在路由器上开放端口，也无需使用 VPN。如果你在用 Tailscale，手机也可以[不经中继直接连接](#direct)。
 
 ## 获取手机应用 {#get-app}
 从[下载页面](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/index.html)下载 Android 应用（APK）并安装。
@@ -27,6 +27,15 @@ Mac 与手机通过中继服务器连接。内容全程端到端加密，中继�
 
 > [!warning]
 > 点击{{ui:settings.mobileRemote.regenerateKeyButton}}后，所有已连接的手机都需要重新连接。请在二维码或密钥被他人看到时使用。
+
+## 通过 Tailscale 直接连接 {#direct}
+Mac 和手机在同一个 [Tailscale](https://tailscale.com) 网络中时，手机会不经中继直接连接 Mac。配对方式和加密都不变；直接连不上 Mac 时，手机会自动改用中继。
+
+1. 在 Mac 和手机上打开 Tailscale，并用同一个账号登录。
+2. 在 Mac 的 {{ui:settings.nav.mobile}} 标签页中确认 {{ui:mobileRemote.direct.toggle}} 已打开（默认打开）。下面一行显示 Tailscale 地址就说明准备好了。如果显示 {{ui:mobileRemote.direct.status.notFound}}，说明 Mac 上的 Tailscale 没有打开。
+3. 已经配对的手机不需要重新配对。下次连接时 Mac 会告诉它自己的地址。
+
+在手机的 {{ui:phone.tabs.hosts}} 标签页中，Mac 卡片上会显示 {{ui:phone.direct.route.direct}} 或 {{ui:phone.direct.route.relay}}。
 
 ## 在手机上可以做的事 {#use}
 手机应用有四个标签页。

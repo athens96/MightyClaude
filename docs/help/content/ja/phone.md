@@ -5,7 +5,7 @@ section: phone
 ---
 スマートフォンアプリを使うと、外出先からでもMacのMighty Claudeを確認して操作できます。作業の状態を確認し、リクエストを送信し、許可や質問に答えます。
 
-Macとスマートフォンはリレーサーバー経由で接続されます。内容はエンドツーエンドで暗号化されるため、リレーは内容を見ることができません。ルーターのポートを開けたり、VPNを使ったりする必要はありません。
+Macとスマートフォンはリレーサーバー経由で接続されます。内容はエンドツーエンドで暗号化されるため、リレーは内容を見ることができません。ルーターのポートを開けたり、VPNを使ったりする必要はありません。Tailscale を使っていれば、[リレーを通さず直接](#direct)接続することもできます。
 
 ## スマートフォンアプリを入手する {#get-app}
 [ダウンロードページ](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/index.html)からAndroidアプリ(APK)をダウンロードしてインストールします。
@@ -27,6 +27,15 @@ Macで:
 
 > [!warning]
 > {{ui:settings.mobileRemote.regenerateKeyButton}}をクリックすると、接続済みのスマートフォンをすべて接続し直す必要があります。QRコードやキーが他人に見られたときに使ってください。
+
+## Tailscale で直接接続する {#direct}
+Mac とスマートフォンが同じ [Tailscale](https://tailscale.com) ネットワークにあれば、スマートフォンはリレーを通さず Mac に直接接続します。ペアリングも暗号化もそのままで、Mac に直接届かないときは自動でリレーを使います。
+
+1. Mac とスマートフォンで Tailscale をオンにし、同じアカウントでログインします。
+2. Mac の {{ui:settings.nav.mobile}} タブで {{ui:mobileRemote.direct.toggle}} がオンになっていることを確かめます(初期設定でオンです)。その下の行に Tailscale のアドレスが出ていれば準備完了です。{{ui:mobileRemote.direct.status.notFound}} と出ていれば、Mac の Tailscale がオフです。
+3. すでにペアリングしたスマートフォンはペアリングし直す必要はありません。次に接続したときに Mac がアドレスを伝えます。
+
+スマートフォンの {{ui:phone.tabs.hosts}} タブで、Mac のカードに {{ui:phone.direct.route.direct}} または {{ui:phone.direct.route.relay}} と表示されます。
 
 ## スマートフォンでできること {#use}
 スマートフォンアプリには4つのタブがあります。

@@ -2654,5 +2654,17 @@
   "phone.status.idle": "アイドル",
   "phone.status.waiting": "待機中",
   "phone.unknown": "不明",
-  "phone.screenShare.signalTooLarge": "シグナリングメッセージが大きすぎます ({bytes}バイト)。"
+  "phone.screenShare.signalTooLarge": "シグナリングメッセージが大きすぎます ({bytes}バイト)。",
+  "mobileRemote.direct.toggle": "Tailscale で直接接続",
+  "mobileRemote.direct.description": "スマートフォンがこの Mac と同じ Tailscale ネットワークにあれば、リレーを通さず直接接続し、届かないときはリレーを使います。内容はリレー経由と同じくエンドツーエンドで暗号化され、この Mac は Tailscale のアドレスでのみ接続を受け付けます。",
+  "mobileRemote.direct.portLabel": "ポート",
+  "mobileRemote.direct.status.listeningTemplate": "Tailscale のアドレスで待ち受け中: {addresses}",
+  "mobileRemote.direct.status.notFound": "Tailscale が見つかりません",
+  "mobileRemote.direct.status.off": "直接接続はオフです。スマートフォンはリレー経由でのみ接続します。",
+  "mobileRemote.direct.status.failedTemplate": "Tailscale のアドレスで待ち受けできませんでした: {error}",
+  "mobileRemote.direct.error.closed": "スマートフォンとの接続が閉じられました。",
+  "mobileRemote.direct.error.bindTimeout": "アドレスを開くのに時間がかかりすぎています。",
+  "phone.direct.route.direct": "Tailscale 直接",
+  "phone.direct.route.relay": "リレー",
+  "phone.direct.route.accessibility": "接続経路: {route}"
 }

@@ -1,6 +1,8 @@
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
+import type { ConnectionRoute } from '@/lib/direct';
+import { t } from '@/lib/i18n';
 import type { Reachability } from '@/store/hosts';
-import { radius, type Palette } from '@/theme';
+import { radius, spacing, type Palette } from '@/theme';
 
 export const reachabilityKeys: Record<Reachability, string> = {
   unknown: 'phone.hosts.reachability.unknown',
@@ -55,7 +57,32 @@ export function LiveDot({ palette, reachability }: { palette: Palette; reachabil
   );
 }
 
+/** The words for a route: "Tailscale 직접" or "릴레이". */
+export function routeLabel(route: ConnectionRoute): string {
+  return route === 'direct' ? t('phone.direct.route.direct') : t('phone.direct.route.relay');
+}
+
+/**
+ * The small capsule saying which way the open tunnel reached the Mac. Direct is tinted
+ * like a healthy state, the relay stays neutral: both work, one skips a hop.
+ */
+export function RouteBadge({ palette, route }: { palette: Palette; route: ConnectionRoute }) {
+  const direct = route === 'direct';
+  const label = routeLabel(route);
+  return (
+    <View
+      accessible
+      accessibilityLabel={t('phone.direct.route.accessibility', { route: label })}
+      style={[styles.route, { backgroundColor: direct ? palette.doneSoft : palette.stopSoft }]}
+    >
+      <Text style={[styles.routeLabel, { color: direct ? palette.success : palette.textMuted }]}>{label}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   halo: { alignItems: 'center', borderRadius: radius.round, height: 14, justifyContent: 'center', width: 14 },
   dot: { borderRadius: radius.round, height: 8, width: 8 },
+  route: { borderRadius: 4, paddingHorizontal: spacing.sm },
+  routeLabel: { fontSize: 10.5, fontWeight: '800', letterSpacing: 0.2 },
 });

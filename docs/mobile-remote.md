@@ -1,6 +1,6 @@
 # 모바일 리모트 (iOS · Android)
 
-PC에서 실행 중인 Mighty Claude에 휴대폰으로 접속해 워크스페이스와 에이전트(실행 창)를 보고, 요청을 보내고, 권한·질문에 답하는 기능이다. 모바일 앱은 `mobile/`의 Expo(React Native) 프로젝트이고, 호스트는 데스크톱 앱 안에 있다. Mac과 휴대폰이 각각 **릴레이 서버**에 바깥으로 접속해 연결되며, 모든 내용은 종단 간 암호화된다(상세: [relay.md](relay.md)). 포트 개방이나 VPN이 필요 없다.
+PC에서 실행 중인 Mighty Claude에 휴대폰으로 접속해 워크스페이스와 에이전트(실행 창)를 보고, 요청을 보내고, 권한·질문에 답하는 기능이다. 모바일 앱은 `mobile/`의 Expo(React Native) 프로젝트이고, 호스트는 데스크톱 앱 안에 있다. Mac과 휴대폰이 각각 **릴레이 서버**에 바깥으로 접속해 연결되며, 모든 내용은 종단 간 암호화된다(상세: [relay.md](relay.md)). 포트 개방이나 VPN이 필요 없다. 휴대폰과 Mac이 같은 Tailscale 네트워크에 있으면 휴대폰은 릴레이를 거치지 않고 Mac에 **직접** 붙는다(같은 암호화, 아래 "Tailscale 직접 연결"). 지금은 Mac 호스트만 직접 연결을 연다.
 
 ## 동작 개요
 
@@ -9,6 +9,23 @@ PC에서 실행 중인 Mighty Claude에 휴대폰으로 접속해 워크스페�
 3. 휴대폰 앱에서 QR을 스캔하거나 페어링 링크를 붙여 넣는다. 앱은 릴레이를 통해 Mac과 X25519 키 교환을 하고, 페어링 키로 인증한 뒤 키를 보안 저장소에 남긴다.
 4. 이후 앱은 암호화된 채널로 `/m1/*` 요청을 보내고, Mac은 변화가 있을 때 `notify`를 보내 즉시 갱신하게 한다.
 5. 요청 전송은 데스크톱의 입력창과 같은 규칙을 따른다. 실행 중인 로컬 Claude 창이면 진행 중인 턴에 바로 전달되고, 그 밖에는 대기열에 들어간다. 중지, 권한 허용·거부, 질문 답변, 새 실행 창 만들기도 가능하다.
+
+## Tailscale 직접 연결
+
+릴레이 대신 휴대폰이 Mac에 바로 WebSocket을 여는 길이다. 바뀌는 것은 소켓을 어디에 여는가뿐이고, 그 위의 `hello`/`ready` 핸드셰이크·ChaCha20-Poly1305 프레임·인증(페어링 키·기기 토큰)·m1 터널은 릴레이 경로와 한 글자도 다르지 않다. 와이어와 제한은 [relay.md](relay.md)의 "Tailscale 직접 연결" 절.
+
+- **Mac**: **설정 → 모바일 리모트**의 "Tailscale로 직접 연결" 스위치(기본 켜짐)와 포트(기본 `43139`, 1024–65535). 모바일 리모트가 켜져 있고 이 스위치도 켜져 있을 때만, Mac의 Tailscale 주소에서만 연결을 받는다. Tailscale 인터페이스는 fd7a:115c:a1e0::/48 주소를 가진 `utun`이고(그래야 같은 100.64.0.0/10을 쓰는 WARP 같은 VPN이 빠진다), 그 인터페이스의 두 범위 주소에만 그 인터페이스로 고정해 연다. 0.0.0.0·LAN·공인 주소에는 열지 않고, 상대 주소가 두 범위 밖이면 받지 않는다. 주소는 네트워크가 바뀔 때와 15초마다 다시 읽는다. 스위치 아래 줄은 대기 중인 `주소:포트` 목록, "Tailscale을 찾지 못함", 또는 열지 못한 이유를 보여 준다. 릴레이가 끊겨 있어도 직접 연결이 열려 있으면 QR이 나온다. 연결 수·상대 주소별 한도와 인증 실패 제한은 relay.md에 있다.
+- **페어링**: QR에 선택 파라미터 `direct=`(쉼표로 구분한 `host:port`, 퍼센트 인코딩)가 붙는다. Tailscale CLI가 있으면 `tailscale status --json`의 MagicDNS 이름(`….ts.net`)도 함께 싣는다. 이 파라미터를 모르는 구버전 앱은 무시하고 릴레이로 붙는다.
+- **이미 페어링한 휴대폰**: 호스트는 `"direct"` 기능을 광고하고, `auth_ok`와 `GET /m1/info`에 지금의 끝점 목록 `direct: string[]`을 싣는다(직접 연결이 꺼져 있거나 Tailscale이 없으면 빈 배열). 휴대폰은 `"direct"` 기능을 광고한 호스트의 목록만 받아 저장된 목록을 바꾼다. 그래서 QR 없이도 접속할 때마다 최신 주소를 알고, Mac이 직접 연결을 끄면 시도를 멈춘다.
+- **휴대폰**: 접속할 때마다 저장된 끝점 가운데 **주소만** `ws://<끝점>/ws?v=1`(서버 id·연결 id 없음)로 **모두 동시에** 열어 1.8초 안에 먼저 열린 것을 쓰고, 하나도 열리지 않거나 모두 바로 거절되면 그 즉시 릴레이로 간다. MagicDNS 이름은 저장만 하고 열지 않는다(휴대폰에 Tailscale 경로가 없으면 공개 DNS에 묻게 되므로). 열린 직접 소켓이 3초 안에 `auth_ok`까지 가지 못하면 — 다른 기기가 그 주소를 써서 공개키가 다름, 핸드셰이크 지연, Mac이 받지 않음, Mac의 일반 거절(`unauthorized`) — 페어링을 지우지 않고 곧바로 릴레이로 가서, 해제·키 교체 같은 진짜 이유는 릴레이에서 듣는다. 직접 연결이 끊기면 평소의 재접속 간격(1.5초부터 2배씩 최대 30초)을 지키며 같은 순서로 다시 붙는다. 호스트 카드에는 연결된 경로가 "Tailscale 직접" 또는 "릴레이" 배지로 보인다.
+- 휴대폰은 Tailscale 범위(100.64.0.0/10, fd7a:115c:a1e0::/48, `*.ts.net`) 밖의 끝점은 QR에서든 호스트에서든 받지 않는다.
+
+### 휴대폰의 평문 `ws://`
+
+직접 연결은 `ws://100.x.y.z:43139/ws?v=1`처럼 TLS 없는 WebSocket이다. 내용은 종단 간 암호화되어 있고 공개키 확인으로 상대가 페어링한 Mac임을 확인하므로 TLS가 더하는 것은 없다. 플랫폼이 이 평문 소켓을 막는지는 이렇게 확인했다. `app.json`은 바꾸지 않았다.
+
+- **Android(릴리스 빌드)**: React Native의 WebSocket은 OkHttp이고, OkHttp는 `ws://`를 평문 HTTP로 보고 `NetworkSecurityPolicy.isCleartextTrafficPermitted(host)`를 따른다. Expo 템플릿의 `main/AndroidManifest.xml`에는 `usesCleartextTraffic`이 없어(디버그 매니페스트에만 `true`) 릴리스에서는 기본값(대상 SDK 28 이상이면 거부)이 되지만, 이 앱은 `expo-build-properties`의 `android.usesCleartextTraffic: true`로 **메인** 매니페스트의 `<application>`에 `android:usesCleartextTraffic="true"`를 쓴다(플러그인 `withAndroidCleartextTraffic`, 로컬 prebuild의 `android/app/src/main/AndroidManifest.xml`에서도 확인). 어떤 플러그인도 `android:networkSecurityConfig`를 넣지 않으므로 이 값이 모든 호스트에 그대로 적용되고, 릴리스 빌드도 100.x 주소로의 `ws://`를 허용한다. 더 좁힐 수는 없다: 네트워크 보안 설정의 `domain-config`는 이름과 단일 IP만 받고 100.64.0.0/10 같은 범위는 받지 않으며, 같은 Wi‑Fi의 `ws://` 릴레이도 이 허용에 기대고 있다. 기기에서 직접 확인한 것은 아니다.
+- **iOS**: `NSAllowsLocalNetworking`만 그대로 둔다. React Native의 iOS WebSocket은 SocketRocket(`SRWebSocket`, React-Core의 의존성)이고, SocketRocket은 URLSession이 아니라 CFStream/NSStream 소켓으로 연결한다. ATS는 URLSession과 그 위에 놓인 API에만 걸리므로 이 소켓은 ATS의 대상이 아닐 가능성이 높다. 하지만 기기에서 확인하지 못했으므로 확실하다고 할 수 없다. 앞서 넣었던 `NSExceptionDomains`(100.64.0.0/10, fd7a:115c:a1e0::/48, `ts.net`)는 뺐다: CIDR 키는 URLSession에만 의미가 있어 여기서는 효과가 없고, `ts.net`은 앱 전체의 평문을 넓힌다. 지금 배포하는 휴대폰 앱은 Android뿐이다. iOS 빌드를 내기 전에 기기에서 100.x 주소로 직접 연결되는지 확인해야 한다.
 
 ## 프로토콜 m1
 
@@ -77,7 +94,7 @@ MobilePermission {
 }
 ```
 
-페어링 문자열(QR 내용)은 relay.md의 v2 형식이다.
+페어링 문자열(QR 내용)은 relay.md의 v2 형식이다(선택 파라미터 `direct=` 포함).
 
 제한: 요청 본문 64 KiB, `text` 32 KiB, 요청 경로(질의 포함) 16 KiB, 세션당 대기열 16개, 롱폴 `wait` 최대 10초, 연결당 동시 요청 8개, 호스트당 휴대폰 32대. 경로가 16 KiB를 넘는 요청은 버리지 않고 414 `{ protocol: 1, error, code: "badPath" }`로 답한다(휴대폰이 제한 시간까지 기다리지 않도록). 16 KiB는 파일 라우트의 4,096바이트 경로를 퍼센트 인코딩한 최대 길이(3배)에 라우트를 더하고도 남는다.
 
@@ -85,7 +102,9 @@ MobilePermission {
 
 기존 라우트와 필드는 그대로다. 아래는 모두 **추가**이며, 새 필드는 전부 선택(optional)이다. 업데이트하지 않은 휴대폰 앱은 모르는 필드를 무시하고 지금처럼 동작한다. 휴대폰은 `/m1/info`의 `capabilities`에 이름이 있을 때만 해당 기능을 보여 준다(없으면 구버전 호스트).
 
-`MobileInfo.capabilities: string[]` — 허용 값: `"submit-mode"`, `"queue"`, `"pane"`, `"history"`, `"settings"`, `"commands"`, `"mighty"`, `"status"`, `"attachments"`, `"style"`, `"files"`, `"screenShare"`, `"structure"`.
+`MobileInfo.capabilities: string[]` — 허용 값: `"submit-mode"`, `"queue"`, `"pane"`, `"history"`, `"settings"`, `"commands"`, `"mighty"`, `"status"`, `"attachments"`, `"style"`, `"files"`, `"screenShare"`, `"structure"`, `"direct"`.
+
+`"direct"`는 호스트가 Tailscale 직접 연결을 아는 빌드라는 뜻이다(지금은 Mac만). 이 이름이 있으면 `MobileInfo.direct`와 `auth_ok.direct`가 그 순간의 끝점 목록이다(위 "Tailscale 직접 연결").
 
 `"screenShare"`는 BETA 화면 보기·조작 기능의 문이다. 세션 요청 라우트와 E2EE 시그널링 메시지 규약은 `docs/relay.md`의 "화면 공유 시그널링"에 있다.
 
@@ -136,7 +155,7 @@ MobilePermission {
 ### 추가 필드
 
 ```
-MobileInfo            { …, capabilities?: string[] }
+MobileInfo            { …, capabilities?: string[], direct?: string[] }   // direct: "direct" 기능과 함께, `host:port` 목록
 MobileSessionSummary  { …, agentViewMode?: "plain" | "mighty", mightyStyle?: "cli" | "ouroboros" | "paperthin",
                         styleId?: string }
 MobileSessionDetail   { …, hasOlder?: boolean,
@@ -373,9 +392,10 @@ MobileFilePreview {
 
 - `MightyCore/Remote/RelayChannel.swift`: X25519·HKDF·ChaCha20-Poly1305 채널, 호스트 키쌍 파일, 페어링 오퍼.
 - `MightyCore/Remote/RelayLink.swift`: 제어 소켓을 새로 여는 규칙(ping 간격, 네트워크 경로 변화 판단). 동작은 [relay.md](relay.md) "재접속".
-- `MightyCore/Remote/MobileRemoteService.swift`: 릴레이 제어 소켓과 재접속(ping·네트워크 변화·깨어남·수동), 휴대폰별 데이터 소켓(핸드셰이크·인증·요청 처리), m1 라우팅, 리비전 대기·알림. 페어링 키는 `<데이터 폴더>/mobile-remote/mobile-remote.key`, 키쌍은 `relay-keypair.json`(모두 소유자만 읽기).
+- `MightyCore/Remote/MobileRemoteService.swift`: 릴레이 제어 소켓과 재접속(ping·네트워크 변화·깨어남·수동), 휴대폰별 데이터 소켓(핸드셰이크·인증·요청 처리 — 릴레이로 온 것이든 직접 온 것이든 같은 `RelayClientConnection`), 직접 연결의 켜고 끄기와 주소 재확인, m1 라우팅, 리비전 대기·알림. 페어링 키는 `<데이터 폴더>/mobile-remote/mobile-remote.key`, 키쌍은 `relay-keypair.json`(모두 소유자만 읽기).
+- `MightyCore/Remote/MobileDirect.swift`: Tailscale 직접 연결 — Tailscale 인터페이스 고르기(`select(interfaces:)`: fd7a:115c:a1e0::/48 주소를 가진 `utun`만, 그 인터페이스의 두 범위 주소만), MagicDNS 이름, 끝점 쓰기·읽기, 주소마다 하나씩 그 `utun`에 고정해 여는 WebSocket 리스너(`MobileDirectListener`, 프레임 1 MiB, 동시 연결 36개, 한도 밖 연결은 `forceCancel`), 데이터 소켓 추상화(`RelayFrameSocket`: 릴레이의 `URLSessionWebSocketTask`와 직접 연결의 `NWConnection`).
 - `MightyClaude/AppStore+MobileRemote.swift`: 스냅샷·권한·대기열 변화를 리비전으로 바꾸고 명령을 실제 창에 적용하는 브리지.
-- 설정 화면의 **모바일 리모트** 절: 스위치, 릴레이 주소, 연결 상태, QR 코드, 키 다시 만들기, 구버전 앱 허용 스위치, 페어링된 기기 목록(이름·처음/마지막 접속·연결 중·새 기기 표시)과 기기별 해제.
+- 설정 화면의 **모바일 리모트** 절: 스위치, 릴레이 주소, 연결 상태, Tailscale 직접 연결 스위치·포트·상태 줄, QR 코드, 키 다시 만들기, 구버전 앱 허용 스위치, 페어링된 기기 목록(이름·처음/마지막 접속·연결 중·새 기기 표시)과 기기별 해제.
 - `MightyCore/Remote/MobileRemoteSupport.swift`: 확장의 순수 규칙(이름·페이지·설정 검증, 상태줄·사용량 변환, 명령 매핑, 마이티 블록 투영과 리비전 요약, 안내형 프롬프트, `/guided`의 관문 판정 `guidedDecision`).
 - `MightyCore/Remote/MobileUploadStore.swift`: 첨부 업로드 저장소(0700 폴더·0600 파일, 순서·크기 검증, 기기·실행 창 범위, 단일 사용, 10분 만료).
 - `MightyCore/Remote/MobileDeviceRegistry.swift`: 기기 토큰 등록부와 인증 판정(`devices.json`).
@@ -387,3 +407,5 @@ MobileFilePreview {
 ## 모바일 앱
 
 `mobile/README.md`를 참고한다. 화면은 페어링(QR/링크 붙여넣기) → 호스트 → 워크스페이스·세션 목록 → 세션 상세(대화, 권한·질문 카드, 입력창, 중지)이고, 워크스페이스마다 읽기 전용 파일 목록 → 파일 미리보기가 있다. 마이티 보기의 범용 스타일 패널은 `mobile/src/lib/styles.ts`(정규화·뷰 모델)와 `mobile/src/components/guided-panel.tsx`·`guided-action-chip.tsx`가 그린다. 세션 화면의 보기 전환은 대화·블록·구조 셋이고, 파이프라인(구조) 보기는 `mobile/src/lib/structure.ts`(방어적 정규화와 단계 모양·접기 규칙), `mobile/src/lib/pipeline-board.ts`(보드 묶기와 보드·열 이동, Mac `MightyStructure.boards`·`Navigation`과 같은 규칙)와 `mobile/src/components/structure-view.tsx`가 그린다: 보드 하나씩(스타일 없는 창은 요청 하나, 스타일 창은 파이프라인 하나), 맨 위에 ◀ ▶와 목록을 여는 "요청 3 / 7"·"파이프라인 2 / 3", 오래된 보드를 보는 동안 새 보드가 오면 "새 요청"·"새 파이프라인" 배지(누르면 가장 최근 보드로). 그 아래 보드 상태(파이프라인은 이름도), 단계 칩 줄(상태 색, 카드 수, 이어지는 선; 누르면 그 열로), 그리고 열마다 화면 너비 한 쪽씩 옆으로 넘기는 카드 목록. 처음에는 보드의 지금 단계 열이 열리고, 사용자가 다른 열로 옮기기 전까지 지금 단계를 따라간다. 카드는 Mac처럼 겹치지 않게 말한다: 요청 카드는 요청 내용만, 실행 카드는 상태부터, 결과 카드는 실패·중지일 때만 제목, 하위 에이전트 카드는 중첩이면 "… 아래". 실행 중인 카드·하위 에이전트는 실행 색 테두리가 숨 쉬듯 깜박인다(네이티브 애니메이션). 스타일 창의 끝난 요청 카드는 한 장으로 접힌다. 맨 아래에 있을 때만 새 내용을 따라가고, 사용자가 위로 올리면 그대로 둔다. 따라가기는 보드·열마다 따로 기억한다(`FollowMemory`). 고른 보드는 id와 그 보드의 요청들로 들고(새 요청이 와도 그대로), 가장 최근 보드로 돌아오면 놓아서 다시 새 보드를 따라간다.
+
+Tailscale 직접 연결은 `mobile/src/lib/direct.ts`(끝점 거르기·QR 값 읽기)와 `mobile/src/api/relay/transport.ts`(직접 끝점 경주, 릴레이로 넘어가기, `route`)가 맡고, 호스트별 끝점은 `mobile/src/store/hosts.ts`의 `PairedHost.directEndpoints`(이 필드가 없는 예전 항목은 그대로 읽히고, `auth_ok`가 목록을 주면 채워진다)에 저장된다.

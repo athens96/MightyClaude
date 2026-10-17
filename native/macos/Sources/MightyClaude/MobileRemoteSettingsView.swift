@@ -9,10 +9,12 @@ struct MobileRemoteSettingsSection: View {
     @ViewState private var relayText = ""
     @ViewState private var showsKey = false
     @ViewState private var revoking: MobileDeviceInfo?
+    @ViewState private var portText = ""
 
     private var settings: MobileRemoteSettings { store.snapshot.mobileRemote ?? MobileRemoteSettings() }
     private var status: MobileHostStatus { store.mobileStatus }
     private var relayDirty: Bool { RelayEndpoint.normalize(relayText) != RelayEndpoint.normalize(settings.relayURL) }
+    private var typedPort: Int? { Int(portText.trimmingCharacters(in: .whitespaces)).flatMap { MobileDirect.validPort($0) ? $0 : nil } }
 
     var body: some View {
         SettingsGroup(L("settings.mobileRemote.sectionTitle")) {
@@ -57,7 +59,8 @@ struct MobileRemoteSettingsSection: View {
             if settings.enabled, settings.effectiveRelayURL == nil {
                 Text(L("settings.mobileRemote.relayHint")).font(.ui(size: 11)).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true)
             }
-            if status.relayConnected, let pairing = status.pairingURL {
+            direct
+            if let pairing = status.pairingURL {
                 HStack(alignment: .top, spacing: DesignMetrics.Spacing.lg) {
                     if let image = MobilePairingQR.image(for: pairing) {
                         Image(nsImage: image).interpolation(.none).resizable().frame(width: 160, height: 160)
@@ -100,13 +103,49 @@ struct MobileRemoteSettingsSection: View {
             }
             if !status.devices.isEmpty { devices }
         }
-        .onAppear { relayText = settings.relayURL; store.refreshMobileStatus() }
+        .onAppear { relayText = settings.relayURL; portText = String(settings.directPort); store.refreshMobileStatus() }
         .confirmationDialog(L("settings.mobileRemote.revokeDialogTitle"), isPresented: Binding(get: { revoking != nil }, set: { if !$0 { revoking = nil } }), presenting: revoking) { device in
             Button(L("settings.mobileRemote.revokeConfirmButton"), role: .destructive) { store.revokeMobileDevice(device.id); revoking = nil }
             Button(L("settings.mobileRemote.cancelButton"), role: .cancel) { revoking = nil }
         } message: { device in
             Text(Self.revokeMessage(device, hasLegacy: status.devices.contains(where: \.legacy)))
         }
+    }
+
+    /// The direct path: its switch, its port and what it found — the Tailscale
+    /// endpoints it listens on, or that there is no Tailscale on this Mac.
+    @ViewBuilder private var direct: some View {
+        Toggle(isOn: Binding(get: { settings.directEnabled }, set: { store.setMobileRemote(enabled: settings.enabled, directEnabled: $0) })) {
+            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
+                Text(L("mobileRemote.direct.toggle"))
+                Text(L("mobileRemote.direct.description"))
+                    .font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .disabled(store.mobileBusy)
+        .accessibilityIdentifier("settings-mobile-direct-toggle")
+        if settings.directEnabled {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
+                Text(L("mobileRemote.direct.portLabel"))
+                TextField(String(MobileDirect.defaultPort), text: $portText).textFieldStyle(.roundedBorder).font(.ui(size: 11, design: .monospaced)).frame(width: 80)
+                    .onSubmit(applyPort).accessibilityIdentifier("settings-mobile-direct-port")
+                Button(L("settings.mobileRemote.applyButton"), action: applyPort).disabled(store.mobileBusy || typedPort == nil || typedPort == settings.directPort)
+                Spacer()
+            }
+            if settings.enabled, !status.directDetail.isEmpty {
+                HStack(spacing: DesignMetrics.Spacing.sm) {
+                    Circle().fill(Palette.mark(status.directListening ? "completed" : "idle")).frame(width: 8, height: 8)
+                    Text(status.directDetail).font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
+                .accessibilityIdentifier("settings-mobile-direct-status")
+            }
+        }
+    }
+
+    private func applyPort() {
+        guard let port = typedPort, port != settings.directPort else { return }
+        store.setMobileRemote(enabled: settings.enabled, directPort: port)
     }
 
     /// Built outside the view builder: the legacy row stands for several phones

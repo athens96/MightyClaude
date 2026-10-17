@@ -2654,5 +2654,17 @@
   "phone.status.idle": "空闲",
   "phone.status.waiting": "等待中",
   "phone.unknown": "未知",
-  "phone.screenShare.signalTooLarge": "信令消息过大（{bytes} 字节）。"
+  "phone.screenShare.signalTooLarge": "信令消息过大（{bytes} 字节）。",
+  "mobileRemote.direct.toggle": "通过 Tailscale 直接连接",
+  "mobileRemote.direct.description": "手机与这台 Mac 在同一个 Tailscale 网络中时，会不经中继直接连接；连不上时改用中继。内容与经由中继时一样端到端加密，这台 Mac 只在其 Tailscale 地址上接受连接。",
+  "mobileRemote.direct.portLabel": "端口",
+  "mobileRemote.direct.status.listeningTemplate": "正在 Tailscale 地址上等待连接：{addresses}",
+  "mobileRemote.direct.status.notFound": "未找到 Tailscale",
+  "mobileRemote.direct.status.off": "直接连接已关闭。手机只通过中继连接。",
+  "mobileRemote.direct.status.failedTemplate": "无法在 Tailscale 地址上接受连接：{error}",
+  "mobileRemote.direct.error.closed": "手机连接已关闭。",
+  "mobileRemote.direct.error.bindTimeout": "打开该地址耗时过长。",
+  "phone.direct.route.direct": "Tailscale 直连",
+  "phone.direct.route.relay": "中继",
+  "phone.direct.route.accessibility": "连接路径：{route}"
 }
