@@ -2909,7 +2909,6 @@
   "remote.windows.settings.keyCopied": "已复制连接密钥。它不会进入剪贴板历史，也不会同步到其他设备；60 秒后若仍在剪贴板中将被清除。",
   "remote.windows.firewall.add": "添加防火墙规则",
   "remote.windows.firewall.remove": "删除防火墙规则",
-  "remote.windows.firewall.failed": "无法更改防火墙规则：{error}",
   "remote.windows.pane.commandNote": "命令在 {host}（{os}）的共享文件夹中运行。每条命令都会在那台电脑上新开一个 shell（Windows 上是 PowerShell，Mac 上是登录 shell），不支持交互式程序和密码输入。",
   "remote.hostOS.darwin": "macOS",
   "remote.hostOS.win32": "Windows",

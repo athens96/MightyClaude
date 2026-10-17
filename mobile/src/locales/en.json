@@ -2909,7 +2909,6 @@
   "remote.windows.settings.keyCopied": "Connection key copied. It stays out of clipboard history and other devices, and is cleared after 60 seconds if it is still there.",
   "remote.windows.firewall.add": "Add firewall rule",
   "remote.windows.firewall.remove": "Remove firewall rule",
-  "remote.windows.firewall.failed": "Could not change the firewall rule: {error}",
   "remote.windows.pane.commandNote": "Commands run in the shared folder on {host} ({os}). Each command starts a new shell there (PowerShell on Windows, the login shell on a Mac); interactive programs and password prompts are not supported.",
   "remote.hostOS.darwin": "macOS",
   "remote.hostOS.win32": "Windows",

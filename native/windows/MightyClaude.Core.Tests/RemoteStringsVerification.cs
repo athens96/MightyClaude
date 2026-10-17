@@ -21,8 +21,15 @@ internal static class RemoteStringsVerification
             Check(value.Length > 0 && !value.StartsWith("remote.", StringComparison.Ordinal), name + " has no text: " + value);
         // Korean is pinned by the runner, so these are the ko.json values.
         Check(RemoteWindowsStrings.HostLocalOnly.Contains("이 PC", StringComparison.Ordinal), "the Windows host says 이 PC, never 이 Mac");
-        Check(RemoteWindowsStrings.CommandNote("studio-pc", "win32").Contains("studio-pc", StringComparison.Ordinal) && RemoteWindowsStrings.CommandNote("studio-pc", "win32").Contains("Windows", StringComparison.Ordinal), "the command note names the host and its OS");
-        Check(RemoteWindowsStrings.FirewallFailed("denied").Contains("denied", StringComparison.Ordinal), "the firewall failure carries its error");
+        {
+            // "Windows" and "Mac" already appear in the note's own shell explanation, so the OS is pinned with Linux, which does not.
+            var note = RemoteWindowsStrings.CommandNote("studio-pc", "linux");
+            Check(note.Contains("studio-pc", StringComparison.Ordinal) && note.Contains("Linux", StringComparison.Ordinal) && !note.Contains('{'), "the command note names the host and its OS and leaves no placeholder");
+        }
+        Check(RemoteWindowsStrings.FirewallFailed(new(FirewallChange.Done)) is null, "a change that happened has no failure words");
+        Check(RemoteWindowsStrings.FirewallFailed(new(FirewallChange.Cancelled)) == Locale.Get("mobileRemote.direct.windows.firewall.cancelled"), "a declined prompt says it was declined");
+        var timeout = RemoteWindowsStrings.FirewallFailed(new(FirewallChange.Failed, "timeout"));
+        Check(!string.IsNullOrEmpty(timeout) && !timeout.Contains("timeout", StringComparison.Ordinal), "a raw code never reaches the words: " + timeout);
         return Task.CompletedTask;
     }
 
