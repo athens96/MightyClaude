@@ -588,6 +588,8 @@ internal static class Verification
             }
             finally { Directory.Delete(directory, true); Directory.Delete(native, true); }
         });
+        await Test("remote strings: every Windows-only string resolves", RemoteStringsVerification.EveryWindowsOnlyStringResolves);
+        await Test("remote strings: host OS labels cover every platform", RemoteStringsVerification.HostOSLabelsCoverEveryPlatform);
         await Test("corrupt/unknown/oversize state cannot be overwritten by shutdown", async () =>
         {
             foreach (var text in new[] { "null", "{", "{\"version\":2,\"workspaces\":[],\"sessions\":[]}", "{\"version\":1,\"workspaces\":null,\"sessions\":[]}" })
