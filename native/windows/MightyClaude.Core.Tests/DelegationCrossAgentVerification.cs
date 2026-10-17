@@ -106,4 +106,62 @@ internal static class DelegationCrossAgentVerification
         Check(Providers.MayHaveHumanChild("claude", "claude", "plan") && !Providers.MayHaveHumanChild("shell", "claude", "fullAccess"), "only an agent pane");
         return Task.CompletedTask;
     }
+
+    internal static Task AvailabilityTheMenuAndItsCap()
+    {
+        const DelegationAgentAvailability Ready = DelegationAgentAvailability.Ready, NotInstalled = DelegationAgentAvailability.NotInstalled, SignedOut = DelegationAgentAvailability.SignedOut;
+        // Only what the app last learnt holds an agent back; what it could not read holds nothing back.
+        Same(Providers.Availability(null, null), Ready, "nothing known");
+        Same(Providers.Availability(true, new CliAccountStatus { Provider = "codex", LoggedIn = true }), Ready, "found and signed in");
+        Same(Providers.Availability(true, new CliAccountStatus { Provider = "codex", LoggedIn = null }), Ready, "sign-in unreadable");
+        Same(Providers.Availability(false, null), NotInstalled, "not found");
+        Same(Providers.Availability(true, new CliAccountStatus { Provider = "codex", Installed = false }), NotInstalled, "says it is not installed");
+        Same(Providers.Availability(null, new CliAccountStatus { Provider = "gemini", LoggedIn = false }), SignedOut, "signed out");
+
+        // A Claude parent in auto: Claude is its own agent, so its CLI is not asked about.
+        var states = new Dictionary<string, DelegationAgentAvailability> { ["claude"] = NotInstalled, ["codex"] = SignedOut, ["gemini"] = NotInstalled };
+        SameList<DelegationChildChoice>(Providers.HumanChildChoices("claude", "auto", false, 0, agent => states[agent]),
+            [new("claude", "auto", null), new("codex", "acceptEdits", DelegationChildBlock.SignedOut), new("gemini", "acceptEdits", DelegationChildBlock.NotInstalled)], "Claude auto's menu");
+        var ready = Providers.HumanChildChoices("claude", "auto", true, 2, _ => Ready);
+        SameList<string?>(ready.Select(choice => choice.Mode), ["plan", "acceptEdits", "acceptEdits"], "plan first stays with Claude's own child");
+        Check(ready.All(choice => choice.Blocked is null), "two open children leave room");
+        SameList<DelegationChildBlock?>(Providers.HumanChildChoices("claude", "manual", false, 0, _ => Ready).Select(choice => choice.Blocked), [null, DelegationChildBlock.NoMode, DelegationChildBlock.NoMode], "Claude manual gets no Codex or Antigravity child");
+        SameList<DelegationChildChoice>(Providers.HumanChildChoices("codex", "manual", false, 0, _ => Ready),
+            [new("claude", "plan", null), new("codex", null, DelegationChildBlock.NoMode), new("gemini", null, DelegationChildBlock.NoMode)], "a read-only Codex offers only a Claude plan child");
+        var codex = Providers.HumanChildChoices("codex", "onRequest", false, 0, _ => Ready);
+        SameList<string?>(codex.Select(choice => choice.Mode), ["acceptEdits", "onRequest", "acceptEdits"], "Codex onRequest's menu");
+        Check(codex.All(choice => choice.Blocked is null), "Codex onRequest offers all three");
+        SameList<DelegationChildBlock?>(Providers.HumanChildChoices("codex", "fullAccess", false, 3, _ => Ready).Select(choice => choice.Blocked), [DelegationChildBlock.Cap, DelegationChildBlock.Cap, DelegationChildBlock.Cap], "three open children, of any agents: none more");
+
+        // The menu's cap counts the open children the human started from that parent, of every agent.
+        DelegationChildRow[] rows =
+        [
+            new("a", "p", ChildState.Running, StartedByHuman: true, Agent: "codex"), new("b", "p", ChildState.Reported, StartedByHuman: true), new("c", "p", ChildState.Running),
+            new("d", "p", ChildState.Closed, StartedByHuman: true, Agent: "gemini"), new("e", "q", ChildState.Running, StartedByHuman: true),
+        ];
+        Same(DelegationSidebar.OpenHumanChildCount("p", rows), 2, "open human children of p");
+        var file = DelegationFile.Of([ChildRecord.Make("x", "p", "/w/x", "main", Commit, "acceptEdits", "k", startedByHuman: true, provider: "codex")]);
+        Check(DelegationSidebar.Rows(file).Single() is { Agent: "codex", StartedByHuman: true }, "a row carries the human's mark and the child's agent");
+
+        // The worktree button shows for its menu alone only where the pane's own child cannot write but another's can.
+        DelegationChildChoice[] other = [new("codex", null, DelegationChildBlock.NoMode), new("claude", "plan", null)];
+        bool MenuOnly(string provider, string mode, IReadOnlyList<DelegationChildChoice> choices, bool isChild = false, bool on = true, bool host = true) =>
+            ComposerSecondSends.MenuOnly("claude", provider, mode, isChild, on, host, choices);
+        Check(MenuOnly("codex", "manual", other), "a read-only Codex shows the menu alone");
+        Check(!MenuOnly("codex", "manual", other, isChild: true) && !MenuOnly("codex", "manual", other, on: false) && !MenuOnly("codex", "manual", other, host: false), "not in a child, with the switch off, or without a checkout");
+        Check(!MenuOnly("codex", "acceptEdits", other) && !MenuOnly("claude", "plan", other), "where the pane's own child can write, Ctrl+Enter and the click make one");
+        foreach (var (provider, mode) in new[] { ("codex", "manual"), ("gemini", "plan"), ("gemini", "manual") })
+        {
+            var choices = Providers.HumanChildChoices(provider, mode, false, 0, _ => Ready);
+            SameList(choices.Where(choice => choice.Blocked is null).Select(choice => choice.Agent), ["claude"], $"{provider} {mode}: only Claude");
+            Same(choices[0].Mode, "plan", $"{provider} {mode}: in plan mode");
+            Check(MenuOnly(provider, mode, choices), $"{provider} {mode}: the menu alone");
+            var without = Providers.HumanChildChoices(provider, mode, false, 0, agent => agent == "claude" ? NotInstalled : Ready);
+            Check(!MenuOnly(provider, mode, without), $"{provider} {mode}: nothing to run, no button");
+        }
+        // A text for another agent goes back to the composer, never to the pane.
+        Check(ComposerSecondSends.ReturnsToComposer("codex", "claude") && ComposerSecondSends.ReturnsToComposer("claude", "gemini")
+            && !ComposerSecondSends.ReturnsToComposer(null, "claude") && !ComposerSecondSends.ReturnsToComposer("codex", "codex"), "who gets a text whose child did not start");
+        return Task.CompletedTask;
+    }
 }

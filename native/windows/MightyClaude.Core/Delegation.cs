@@ -88,6 +88,21 @@ public static class ComposerSecondSends
 
     /// <summary>What a text does when its new worktree could not be made or its child could not start: it goes to the running turn when that can take it, and is otherwise the pane's next request. It is never dropped.</summary>
     public static ComposerSecondSend Fallback(bool steerable) => steerable ? ComposerSecondSend.Steer : ComposerSecondSend.Queue;
+
+    /// <summary>
+    /// Whether a text whose child could not be made or started goes back to the composer instead of to the pane: the human picked
+    /// another agent than the pane's from the worktree button's menu (M/Delegation.swift returnsToComposer).
+    /// </summary>
+    public static bool ReturnsToComposer(string? childAgent, string parentAgent) => childAgent is not null && childAgent != parentAgent;
+
+    /// <summary>
+    /// Whether the worktree button shows for its menu alone: where <see cref="Choose"/> does not open a new worktree because the
+    /// pane's own agent's child could not change files in <paramref name="mode"/>, yet the pane may have a child of another agent,
+    /// and one of <paramref name="choices"/> can run now. Its click then opens the menu, and Ctrl+Enter does what it did before.
+    /// </summary>
+    public static bool MenuOnly(string kind, string provider, string mode, bool isChild, bool delegationOn, bool canHostWorktree, IReadOnlyList<DelegationChildChoice> choices) =>
+        delegationOn && !isChild && canHostWorktree && DelegationProviders.IsAgentPane(kind, provider)
+        && !DelegationProviders.CanParentByHuman(kind, provider, mode) && choices.Any(choice => choice.Blocked is null);
 }
 
 /// <summary>
