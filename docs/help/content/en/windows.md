@@ -1,6 +1,6 @@
 ---
 title: How Windows differs
-order: 10
+order: 11
 section: windows
 ---
 This help is written from the Mac app. The Windows app has the same features under the same names; this page collects only what differs.

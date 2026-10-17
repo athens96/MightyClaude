@@ -68,6 +68,9 @@ section: settings
 ## 手机远程 {#mobile}
 在{{ui:settings.nav.mobile}}标签页中连接手机，并允许查看屏幕。请参阅[手机远程](phone.md)。
 
+## 远程连接 {#remote}
+在{{ui:settings.remote.navTitle}}标签页中，通过 Tailscale 共享这台 Mac 的工作区，或连接另一台 Mac 共享的工作区。请参阅[远程连接（Tailscale）](remote.md)。
+
 ## 宠物与提醒 {#companion}
 在{{ui:settings.nav.companion}}标签页中设置桌面宠物和完成通知。
 - {{ui:companion.settings.enabled}}：显示一只在屏幕上走动的浣熊宠物。可以拖动宠物移动位置，点击它可以打开或关闭气泡。

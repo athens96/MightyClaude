@@ -59,7 +59,7 @@ struct HelpCaptureTests {
     @Test func theShotListDecodesAndEveryScreenIsOneTheCaptureKnows() throws {
         let list = try HelpShotList.decode(Data(contentsOf: Self.shotsURL))
         // The help site's table of contents (the four-language help plan, stage 4), with agent delegation after approvals.
-        #expect(list.sections == ["getting-started", "layout", "agent-pane", "styles", "approvals", "delegation", "terminal-files-browser", "settings", "phone", "windows", "faq"])
+        #expect(list.sections == ["getting-started", "layout", "agent-pane", "styles", "approvals", "delegation", "terminal-files-browser", "settings", "phone", "remote", "windows", "faq"])
         // Every screen the capture can open is listed, so none is dead code.
         #expect(Set(list.shots.map(\.screen)) == Set(HelpScreen.allCases))
         let profile = try Self.profile("en")
