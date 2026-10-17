@@ -84,6 +84,8 @@ final class AppStore: ObservableObject, DelegationHost {
     @Published var toolkitShowConfirmation = false
     @Published var toolkitRunResults: [ToolkitRunItem]? = nil
     @Published var toolkitRunning = false
+    /// The login shell's environment as of the last toolkit refresh, for the rows' npm probe.
+    var toolkitProbeEnvironment: [String: String] = ProviderService.runtimeEnvironment()
     lazy var toolkitStore: ToolkitStore = ToolkitStore(directory: dataDirectory)
     /// Slash-command completion (AppStore+SlashCommands.swift).
     @Published var slashCatalogs: [String: SlashCatalogEntry] = [:]

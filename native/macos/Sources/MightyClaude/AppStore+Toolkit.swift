@@ -6,6 +6,7 @@ extension AppStore {
     // MARK: - Load
 
     func refreshToolkit() async {
+        toolkitProbeEnvironment = await toolkitEnvironment()
         let (entries, error) = await toolkitStore.list()
         var approvals: [String: ToolkitApproval] = [:]
         for entry in entries {
@@ -25,7 +26,8 @@ extension AppStore {
         guard !toolkitRunning else { return }
         Task {
             do {
-                try await toolkitStore.approve(entryId: id, executor: LiveToolkitCommandExecutor())
+                let environment = await toolkitEnvironment()
+                try await toolkitStore.approve(entryId: id, executor: LiveToolkitCommandExecutor(environment: environment))
                 await refreshToolkit()
             } catch {
                 toolkitFileError = error.localizedDescription
@@ -97,7 +99,7 @@ extension AppStore {
     func planToolkitInstall() {
         guard !toolkitRunning else { return }
         Task {
-            let context = makeProbeContext()
+            let context = makeProbeContext(environment: await toolkitEnvironment())
             let runner = ToolkitRunner(store: toolkitStore, probeContext: context)
             let plan = await runner.plan()
             toolkitPlan = plan
@@ -114,9 +116,10 @@ extension AppStore {
         let plan = toolkitPlan
         Task {
             defer { toolkitRunning = false }
-            let context = makeProbeContext()
+            let environment = await toolkitEnvironment()
+            let context = makeProbeContext(environment: environment)
             let runner = ToolkitRunner(store: toolkitStore, probeContext: context)
-            let results = await runner.run(plan: plan, executor: LiveToolkitRunnerExecutor())
+            let results = await runner.run(plan: plan, executor: LiveToolkitRunnerExecutor(environment: environment))
             toolkitRunResults = results
             await refreshToolkit()
         }
@@ -124,10 +127,15 @@ extension AppStore {
 
     // MARK: - Helpers
 
-    private func makeProbeContext() -> ToolkitProbeContext {
+    /// The login shell's environment, the one the agent CLIs run with.
+    func toolkitEnvironment() async -> [String: String] {
+        await providers.executionEnvironment().values
+    }
+
+    func makeProbeContext(environment: [String: String]) -> ToolkitProbeContext {
         ToolkitProbeContext(
             home: FileManager.default.homeDirectoryForCurrentUser,
-            environment: ProcessInfo.processInfo.environment,
+            environment: environment,
             appDataDir: dataDirectory
         )
     }
@@ -135,66 +143,20 @@ extension AppStore {
 
 // MARK: - Live executors (app target only, never used in tests)
 
+/// Both run with the login shell's environment, so a tool installed where the
+/// shell finds it (Homebrew, npm's global folder, ~/.local/bin) is found here too.
 private struct LiveToolkitCommandExecutor: ToolkitCommandExecutor {
+    let environment: [String: String]
     func run(_ argv: [String]) throws -> String {
         guard let name = argv.first else { return "" }
-        guard let exeURL = resolveExecutable(name) else {
+        guard ToolkitProcess.resolveExecutable(name, environment: environment) != nil else {
             throw MightyError(L("settings.toolkit.errorExecutableTemplate", ["name": name]))
         }
-        let process = Process()
-        process.executableURL = exeURL
-        process.arguments = Array(argv.dropFirst())
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
-        try process.run()
-        process.waitUntilExit()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8) ?? ""
-    }
-
-    private func resolveExecutable(_ name: String) -> URL? {
-        if name.hasPrefix("/") { return URL(fileURLWithPath: name) }
-        let paths = (ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/usr/local/bin")
-            .split(separator: ":").map(String.init)
-        for dir in paths {
-            let url = URL(fileURLWithPath: dir).appendingPathComponent(name)
-            if FileManager.default.isExecutableFile(atPath: url.path) { return url }
-        }
-        return nil
+        return ToolkitProcess.run(argv, environment: environment).output
     }
 }
 
 private struct LiveToolkitRunnerExecutor: ToolkitRunnerExecutor {
-    func run(_ argv: [String]) -> ToolkitCommandOutput {
-        guard let name = argv.first, let exeURL = resolveExecutable(name) else {
-            return .failure(output: "executable not found")
-        }
-        let process = Process()
-        process.executableURL = exeURL
-        process.arguments = Array(argv.dropFirst())
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
-        do {
-            try process.run()
-            process.waitUntilExit()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let output = String(data: data, encoding: .utf8) ?? ""
-            return ToolkitCommandOutput(exitCode: process.terminationStatus, output: output)
-        } catch {
-            return .failure(output: error.localizedDescription)
-        }
-    }
-
-    private func resolveExecutable(_ name: String) -> URL? {
-        if name.hasPrefix("/") { return URL(fileURLWithPath: name) }
-        let paths = (ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/usr/local/bin")
-            .split(separator: ":").map(String.init)
-        for dir in paths {
-            let url = URL(fileURLWithPath: dir).appendingPathComponent(name)
-            if FileManager.default.isExecutableFile(atPath: url.path) { return url }
-        }
-        return nil
-    }
+    let environment: [String: String]
+    func run(_ argv: [String]) -> ToolkitCommandOutput { ToolkitProcess.run(argv, environment: environment) }
 }
