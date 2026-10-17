@@ -133,6 +133,14 @@ internal static class DelegationCrossAgentVerification
         Check(codex.All(choice => choice.Blocked is null), "Codex onRequest offers all three");
         SameList<DelegationChildBlock?>(Providers.HumanChildChoices("codex", "fullAccess", false, 3, _ => Ready).Select(choice => choice.Blocked), [DelegationChildBlock.Cap, DelegationChildBlock.Cap, DelegationChildBlock.Cap], "three open children, of any agents: none more");
 
+        // A row's reason takes precedence: NotInstalled or SignedOut, then NoMode, then the cap.
+        var capped = Providers.HumanChildChoices("codex", "manual", false, 3, _ => Ready);
+        SameList<DelegationChildChoice>(capped, [new("claude", "plan", DelegationChildBlock.Cap), new("codex", null, DelegationChildBlock.NoMode), new("gemini", null, DelegationChildBlock.NoMode)], "NoMode wins over the cap on a read-only Codex pane");
+        var absent = Providers.HumanChildChoices("claude", "manual", false, 3, agent => agent == "gemini" ? SignedOut : NotInstalled);
+        SameList<DelegationChildBlock?>(absent.Select(choice => choice.Blocked), [DelegationChildBlock.Cap, DelegationChildBlock.NotInstalled, DelegationChildBlock.SignedOut], "another agent not installed or signed out shows that, not NoMode or the cap (the parent's own agent is never asked)");
+        Same(Providers.Availability(false, new CliAccountStatus { Provider = "codex", LoggedIn = false }), NotInstalled, "not installed and signed out: not installed");
+        Same(Providers.Availability(true, new CliAccountStatus { Provider = "codex", Installed = false, LoggedIn = false }), NotInstalled, "says not installed and signed out: not installed");
+
         // The menu's cap counts the open children the human started from that parent, of every agent.
         DelegationChildRow[] rows =
         [
