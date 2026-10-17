@@ -8,7 +8,8 @@ extension AppStore {
     private var isolatedTerminalSmoke: Bool { terminalSmokeMode || ProcessInfo.processInfo.arguments.contains("--layout-smoke-test") || helpCapturing }
 
     func usesLocalTerminal(_ session: RunSession) -> Bool {
-        guard session.kind == "shell", let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return false }
+        // A remote workspace's command pane sends each command to its host instead.
+        guard session.kind == "shell", let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }), workspace.remote == nil else { return false }
         return !ProcessInfo.processInfo.arguments.contains("--smoke-test") || terminalSmokeMode
     }
 

@@ -68,7 +68,8 @@ extension AppStore {
         if let reason = cliAccountBlockedReason(provider) { cliAccountMessages[provider] = reason; return }
         guard !cliAccountBusy.contains(provider) else { cliAccountMessages[provider] = L("settings.cliAccounts.busy"); return }
         guard let command = CLIAccountSupport.loginCommand(provider: provider, option: option) else { return }
-        let workspace = activeWorkspace ?? snapshot.workspaces.first
+        // The sign-in terminal runs on this Mac, so it opens in a local workspace.
+        let workspace = (activeWorkspace?.remote == nil ? activeWorkspace : nil) ?? snapshot.workspaces.first { $0.remote == nil }
         guard let workspace else { cliAccountMessages[provider] = L("settings.cliAccounts.noWorkspace"); return }
         guard snapshot.sessions.count < 128 else { cliAccountMessages[provider] = L("settings.cliAccounts.tooManyPanes"); return }
         // addSession refuses while a sheet is up, so Settings closes first and

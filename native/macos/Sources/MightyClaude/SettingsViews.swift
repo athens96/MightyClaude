@@ -51,6 +51,9 @@ struct RunSettingsView: View {
                     VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
                         Text(permissionLabel(currentSession.settings.permissionMode, provider: session.provider)).font(.ui(size: 12, weight: .medium))
                         Text(permissionDescription(currentSession.settings.permissionMode, provider: session.provider)).font(.ui(size: 11)).foregroundStyle(.secondary)
+                        if let reference = store.snapshot.workspaces.first(where: { $0.id == session.workspaceId })?.remote {
+                            Text(L("settings.remote.runOnHost", ["host": reference.hostName])).font(.ui(size: 11)).foregroundStyle(.secondary)
+                        }
                         if currentSession.settings.permissionMode != "fullAccess" {
                             if session.provider == "claude" || (session.provider == "codex" && currentSession.settings.permissionMode == "onRequest") {
                                 Text(L("settings.run.approvalInApp")).font(.ui(size: 11)).foregroundStyle(.secondary)
@@ -150,7 +153,7 @@ struct RunSettingsView: View {
 
 /// One entry of the settings sidebar; the right side shows its sections.
 enum SettingsPane: String, CaseIterable, Identifiable {
-    case general, models, styles, tools, cli, mobile, companion, about
+    case general, models, styles, tools, cli, mobile, remote, companion, about
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -160,6 +163,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .tools: L("settings.nav.tools")
         case .cli: L("settings.nav.cli")
         case .mobile: L("settings.nav.mobile")
+        case .remote: L("settings.remote.navTitle")
         case .companion: L("settings.nav.companion")
         case .about: L("settings.nav.about")
         }
@@ -172,6 +176,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .tools: "shippingbox"
         case .cli: "terminal"
         case .mobile: "iphone"
+        case .remote: "network"
         case .companion: "pawprint"
         case .about: "info.circle"
         }
@@ -360,6 +365,8 @@ struct AppSettingsView: View {
         case .mobile:
             MobileRemoteSettingsSection().environmentObject(store)
             ScreenShareSettingsSection().environmentObject(store)
+        case .remote:
+            RemoteSettingsSection().environmentObject(store)
         case .companion:
             CompanionSettingsSection(companion: store.companion)
         case .about:

@@ -15,7 +15,7 @@ extension AppStore {
     func slashCommands(for session: RunSession) -> [SlashCommand] {
         guard session.kind != "shell" else { return [] }
         let workspace = snapshot.workspaces.first { $0.id == session.workspaceId }
-        let path = workspace?.path
+        let path = workspace?.remote == nil ? workspace?.path : nil
         return slashCatalogs[Self.slashCatalogKey(provider: session.provider, workspacePath: path)]?.commands ?? []
     }
 
@@ -124,7 +124,7 @@ extension AppStore {
     func awaitSlashCommands(for session: RunSession, timeout: TimeInterval) async {
         refreshSlashCommands(for: session)
         let workspace = snapshot.workspaces.first { $0.id == session.workspaceId }
-        let path = workspace?.path
+        let path = workspace?.remote == nil ? workspace?.path : nil
         let key = Self.slashCatalogKey(provider: session.provider, workspacePath: path)
         let deadline = Date().addingTimeInterval(timeout)
         // The scan publishes through @Published, so polling is the cheapest way
@@ -138,7 +138,7 @@ extension AppStore {
     func refreshSlashCommands(for session: RunSession) {
         guard session.kind != "shell", !ending else { return }
         let workspace = snapshot.workspaces.first { $0.id == session.workspaceId }
-        let path = workspace?.path
+        let path = workspace?.remote == nil ? workspace?.path : nil
         let key = Self.slashCatalogKey(provider: session.provider, workspacePath: path)
         if let entry = slashCatalogs[key], Date().timeIntervalSince(entry.scannedAt) < 30 { return }
         guard !slashScansInFlight.contains(key) else { return }

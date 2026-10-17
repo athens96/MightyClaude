@@ -67,9 +67,12 @@ struct SessionPaneView: View {
     private var guided: Bool { style != nil }
     private var styleHint: String { style?.manifest.subtitle ?? L("composer.style.free") }
     private var offersMightyStyle: Bool {
+        // Styles read and probe this Mac's files: a remote workspace runs free requests only.
         session.kind == "claude" && session.provider == "claude" && session.agentViewMode == "mighty"
-            && store.snapshot.workspaces.contains { $0.id == session.workspaceId }
+            && store.snapshot.workspaces.contains { $0.id == session.workspaceId && $0.remote == nil }
     }
+    /// The host a remote workspace's pane runs on; nil for this Mac's own.
+    private var remoteHost: String? { store.snapshot.workspaces.first { $0.id == session.workspaceId }?.remote?.hostName }
     private var guidedPhase: StylePhase? {
         guard let style else { return nil }
         if guidedSelection.startingNew, case .actions(let start, _, _) = style.manifest.rules.start { return style.manifest.phase(start) }
@@ -148,7 +151,7 @@ struct SessionPaneView: View {
     /// the same preference as Settings › Display for every pane at once.
     private var showsStatusLineToggle: Bool {
         session.kind == "claude" && session.provider == "claude"
-            && store.snapshot.workspaces.contains { $0.id == session.workspaceId }
+            && store.snapshot.workspaces.contains { $0.id == session.workspaceId && $0.remote == nil }
     }
     private var statusLineToggle: some View {
         let on = store.statusLineEnabled
@@ -531,7 +534,7 @@ struct SessionPaneView: View {
                 MightyGraphView(sessionID: session.id, provider: session.provider, runs: history.runs + retained, draft: draft.wrappedValue, running: running,
                     blockSizes: session.graphBlockSizes ?? [:],
                     onSaveBlockSize: { id, size in store.setGraphBlockSize(session.id, nodeID: id, size: size) },
-                    workspaceRoot: store.snapshot.workspaces.first { $0.id == session.workspaceId }.map { URL(fileURLWithPath: $0.path, isDirectory: true) },
+                    workspaceRoot: store.snapshot.workspaces.first { $0.id == session.workspaceId && $0.remote == nil }.map { URL(fileURLWithPath: $0.path, isDirectory: true) },
                     styleTitles: styleTitles,
                     styleName: style?.manifest.name, styleSource: style?.source, stylePhase: phase?.title,
                     styleEvaluator: style?.evaluator, guidedPhase: phase, guidedStartingNew: guidedSelection.startingNew,
@@ -565,7 +568,7 @@ struct SessionPaneView: View {
             } else {
                 AgentTranscriptView(sessionId: session.id, provider: session.provider, running: running, entries: session.logs,
                                     onFocus: { store.selectSession(session.id) },
-                                    imageRoot: store.snapshot.workspaces.first { $0.id == session.workspaceId }.map { URL(fileURLWithPath: $0.path, isDirectory: true) },
+                                    imageRoot: store.snapshot.workspaces.first { $0.id == session.workspaceId && $0.remote == nil }.map { URL(fileURLWithPath: $0.path, isDirectory: true) },
                                     cards: true)
             }
         }
@@ -588,6 +591,11 @@ struct SessionPaneView: View {
             }
             Text(session.kind == "shell" ? L("pane.empty.shellBody") : L("pane.empty.agentBody"))
                 .font(.ui(size: 12)).foregroundStyle(Palette.ink2).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
+            if let remoteHost {
+                Label(L(session.kind == "shell" ? "remote.pane.commandNote" : "remote.pane.agentNote", ["host": remoteHost]), systemImage: "network")
+                    .font(.ui(size: 11)).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("pane-remote-note-\(session.id)")
+            }
         }.frame(maxWidth: .infinity, alignment: .leading).padding(DesignMetrics.Spacing.xl)
     }
 

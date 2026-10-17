@@ -27,7 +27,8 @@ extension AppStore {
     /// sheet in its checking state, which the answer then fills or closes.
     func addAgentPane(provider: String, workspaceId: String) {
         guard !hasModal, let workspace = snapshot.workspaces.first(where: { $0.id == workspaceId }) else { return }
-        guard AddAgentPane.offersResume(provider) else { startAgentPane(provider: provider, workspaceId: workspaceId); return }
+        // Earlier sessions are the CLI's records on this Mac; a remote workspace's are on its host.
+        guard AddAgentPane.offersResume(provider), workspace.remote == nil else { startAgentPane(provider: provider, workspaceId: workspaceId); return }
         // One look-up at a time; a second click while it runs is the same request.
         guard addPaneProbe == nil else { return }
         let token = UUID()

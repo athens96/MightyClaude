@@ -338,6 +338,21 @@ final class AppStore: ObservableObject, DelegationHost {
         if runEvents.push(event) { Task { @MainActor in self?.applyRunEvents() } }
     }
 
+    /// Tailscale remote workspaces (docs/remote-workspaces.md): what this Mac
+    /// shares ("이 컴퓨터 공유"), always off at launch, and the computers it
+    /// connects to ("다른 컴퓨터 연결"), whose runs reach the panes like local ones.
+    @Published var remoteHostState = RemoteHostState()
+    @Published var remoteConnections: [RemoteConnectionInfo] = []
+    @Published var remoteBusy = false
+    @Published var remoteError: String?
+    lazy var remoteHost = RemoteHostService(repository: repository, providers: providers, pluginDirectory: pluginDirectory, appVersion: appVersion,
+                                            hostName: Host.current().localizedName ?? "Mac") { [weak self] count in
+        Task { @MainActor in self?.remoteHostState.activeRuns = count }
+    }
+    lazy var remoteClient = RemoteClientService(repository: repository, dataDirectory: dataDirectory) { [weak self, runEvents] event in
+        if runEvents.push(event) { Task { @MainActor in self?.applyRunEvents() } }
+    }
+
     /// Applies queued batches for about 8 ms, then yields the main actor and
     /// continues in a new job; the batcher keeps them in order.
     private func applyRunEvents() {
@@ -382,6 +397,8 @@ final class AppStore: ObservableObject, DelegationHost {
         startAgentIO()
         do { snapshot = try await repository.load(); preparePaneLayouts(); canSave = true }
         catch { self.error = L("store.error.loadFailed", ["error": error.localizedDescription]) }
+        // Saved remote connections, without their keys: those are read on first use.
+        remoteConnections = await remoteClient.list()
         // Children whose runs quitting killed come back interrupted, before any pane runs again.
         await delegation?.interruptRunsKilledByQuit()
         guard !ending, !Task.isCancelled else { loading = false; return }
@@ -445,9 +462,10 @@ final class AppStore: ObservableObject, DelegationHost {
     var canManageCLIUpdates: Bool { isLoaded && !ending }
 
     func localCLIIsRunning(_ provider: String) -> Bool {
-        snapshot.sessions.contains { session in
+        // Another computer's runs on this Mac use its CLIs too.
+        remoteHostState.activeRuns > 0 || snapshot.sessions.contains { session in
             session.kind != "shell" && session.provider == provider &&
-            (session.status == "running" || pendingRuns.contains(session.id))
+            (session.status == "running" || pendingRuns.contains(session.id)) && !isRemoteSession(session)
         }
     }
 
@@ -482,6 +500,8 @@ final class AppStore: ObservableObject, DelegationHost {
 
     func providerRuntime(_ provider: String, workspaceId: String) -> ProviderRuntime {
         let workspace = snapshot.workspaces.first { $0.id == workspaceId }
+        // A remote workspace runs the host's CLIs: what they are is the host's answer.
+        if let reference = workspace?.remote { return remoteProviderRuntime(provider, reference: reference) }
         if let workspace, let value = localModels.value(for: LocalModelContext(workspaceID: workspace.id, path: workspace.path, provider: provider)) { return value }
         if var rt = runtime?.providers?.first(where: { $0.id == provider }) {
             if localModels.hasDiscarded(provider) { rt.modelCatalog = ProviderOptions.fallbackCatalog(provider) }
@@ -498,7 +518,9 @@ final class AppStore: ObservableObject, DelegationHost {
     var smokePlanAnswerer: ((String, String, String, PlanDecision) async throws -> Void)?
 
     func runBlockedReason(_ session: RunSession, checkRuntime: Bool = true) -> String? {
-        guard snapshot.workspaces.contains(where: { $0.id == session.workspaceId }) else { return L("run.blocked.selectWorkspace") }
+        guard let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return L("run.blocked.selectWorkspace") }
+        // A remote pane runs on its host: this Mac's CLI updates and plugin changes never hold it.
+        if workspace.remote != nil { return remoteRunBlockedReason(session, workspace: workspace, checkRuntime: checkRuntime) }
         // A delegated child runs only in its own worktree, never in its parent's checkout.
         if DelegationPanes.runRefusal(session) == .worktreeMissing { return L("run.blocked.worktreeMissing") }
         // A background update queues sends instead (`backgroundUpdateHolds`).
@@ -583,7 +605,9 @@ final class AppStore: ObservableObject, DelegationHost {
         // A pane started any other way (⌘N, the phone) answers "Add Pane"'s pending look-up.
         cancelAddPaneProbe()
         guard snapshot.sessions.count < 128 else { error = L("workspace.paneLimit"); return nil }
-        let name = kind == "shell" ? L("agentTerminal.terminalPane.title") : kind == "browser" ? L("browser.tab.title") : ProviderOptions.label(provider)
+        // Files and browser panes read this Mac's disk and network, not the host's.
+        if workspace.remote != nil, kind != SessionKind.claude, kind != SessionKind.shell { error = L("remote.workspace.paneUnavailable"); return nil }
+        let name = kind == "shell" ? (workspace.remote != nil ? L("remote.pane.commandTitle") : L("agentTerminal.terminalPane.title")) : kind == "browser" ? L("browser.tab.title") : ProviderOptions.label(provider)
         var session = RunSession(workspaceId: workspace.id, title: name, kind: kind, provider: provider)
         if kind == "browser" { session.workspaceProfileKey = workspace.id }
         // Start from the most recently used pane of the same provider.
@@ -810,8 +834,9 @@ final class AppStore: ObservableObject, DelegationHost {
     /// busy: a new child worktree for a Claude, Codex or Antigravity pane that
     /// may have children (delegation on and loaded), otherwise steer or queue as before.
     func composerSecondSend(_ session: RunSession) -> ComposerSecondSend {
+        // Mighty Orchestration works in this Mac's worktrees: never from a remote pane.
         ComposerSecondSend.choose(kind: session.kind, provider: session.provider, mode: session.settings.permissionMode,
-                                  isChild: isDelegatedChild(session), delegationOn: delegation != nil && DelegationSwitch.isOn(),
+                                  isChild: isDelegatedChild(session), delegationOn: delegation != nil && DelegationSwitch.isOn() && !isRemoteSession(session),
                                   canHostWorktree: canHostWorktree(session), steerable: canSteer(session))
     }
 
@@ -820,7 +845,7 @@ final class AppStore: ObservableObject, DelegationHost {
     /// agent's could (``ComposerSecondSend/menuOnly(kind:provider:mode:isChild:delegationOn:canHostWorktree:choices:)``).
     func worktreeMenuOnly(_ session: RunSession) -> Bool {
         ComposerSecondSend.menuOnly(kind: session.kind, provider: session.provider, mode: session.settings.permissionMode, isChild: isDelegatedChild(session),
-                                    delegationOn: delegation != nil && DelegationSwitch.isOn(), canHostWorktree: canHostWorktree(session),
+                                    delegationOn: delegation != nil && DelegationSwitch.isOn() && !isRemoteSession(session), canHostWorktree: canHostWorktree(session),
                                     choices: worktreeChildChoices(session))
     }
 
@@ -882,13 +907,16 @@ final class AppStore: ObservableObject, DelegationHost {
     }
 
     /// Hands `text` to the pane's running Claude turn; false when it did not take it.
-    func steerRunningTurn(_ id: String, text: String) async -> Bool { await runner.steer(sessionId: id, text: text) }
+    func steerRunningTurn(_ id: String, text: String) async -> Bool {
+        if let session = snapshot.sessions.first(where: { $0.id == id }), isRemoteSession(session) { return await remoteClient.steer(id: id, text: text) }
+        return await runner.steer(sessionId: id, text: text)
+    }
 
     /// What the text finally did. The runner refusing it is not the end: the
     /// item goes to the queue, and settling may start it right there, which a
     /// caller reporting to a phone must be able to tell apart from waiting.
     private func steer(_ id: String, item: QueuedInput) async -> SubmitOutcome {
-        let accepted = await runner.steer(sessionId: id, text: item.text)
+        let accepted = await steerRunningTurn(id, text: item.text)
         // Closing meanwhile: the item is deliberately not queued, so say so.
         guard !ending, !closingSessions.contains(id) else { return .dropped }
         guard accepted else {
@@ -1030,7 +1058,9 @@ final class AppStore: ObservableObject, DelegationHost {
                       let current = snapshot.sessions.first(where: { $0.id == id }),
                       current.provider == session.provider, current.workspaceId == workspace.id,
                       let currentWorkspace = snapshot.workspaces.first(where: { $0.id == workspace.id }),
-                      currentWorkspace.path == workspace.path else { throw CancellationError() }
+                      currentWorkspace.path == workspace.path, currentWorkspace.remote == workspace.remote else { throw CancellationError() }
+                // A remote pane connects on demand: the first send after launch reads the key.
+                if currentWorkspace.remote != nil { try await connectForRemoteRun(currentWorkspace) }
                 if let reason = runBlockedReason(current) { throw MightyError(reason) }
                 let registered = providerRegisteredModels(current.provider)
                 var model = current.model
@@ -1066,9 +1096,14 @@ final class AppStore: ObservableObject, DelegationHost {
                 updateSession(id) { $0.beginRunTiming(); $0.status = "running" }
                 try await flush()
                 try Task.checkCancellation()
-                // A child's run, its terminal tool and its MCP binding work in its worktree folder.
-                try await runner.start(request: request, workspace: DelegationPanes.runWorkspace(for: current, in: currentWorkspace),
-                                       allowPermissionPrompts: current.kind == "claude" && (current.provider == "claude" || (current.provider == "codex" && current.settings.permissionMode == "onRequest")))
+                if currentWorkspace.remote != nil {
+                    // The host runs it with its own CLIs; Settings → Models travel with the request.
+                    try await remoteClient.start(request: request, workspace: currentWorkspace, phaseModels: snapshot.phaseModels)
+                } else {
+                    // A child's run, its terminal tool and its MCP binding work in its worktree folder.
+                    try await runner.start(request: request, workspace: DelegationPanes.runWorkspace(for: current, in: currentWorkspace),
+                                           allowPermissionPrompts: current.kind == "claude" && (current.provider == "claude" || (current.provider == "codex" && current.settings.permissionMode == "onRequest")))
+                }
                 reachedRunner = true
             } catch {
                 if let restoringDraft, draftRevisions[id, default: 0] == submittedRevision, (drafts[id] ?? "").isEmpty, canEditAttachments(id) {
@@ -1131,7 +1166,7 @@ final class AppStore: ObservableObject, DelegationHost {
         liveRuns.signalStop(id: id)
         let starting = startTasks[id]
         starting?.cancel()
-        await runner.stop(id: id)
+        if isRemoteSession(session) { await remoteClient.stop(id: id) } else { await runner.stop(id: id) }
         _ = await starting?.value
     }
 
@@ -1162,6 +1197,8 @@ final class AppStore: ObservableObject, DelegationHost {
         if event.type == "status", let status = event.status, status != "running" { settleQueue(event.sessionId, status: status) }
         // Files a finished run wrote may now be readable pictures.
         if event.type == "status", ["completed", "error", "stopped"].contains(event.status ?? "") { AgentImageLibrary.shared.forgetMissingFiles() }
+        // A remote run that failed may have lost its connection: show what the connection says now.
+        if event.type == "status", event.status == "error", isRemoteSession(event.sessionId) { Task { await reloadRemoteState() } }
     }
 
     func toggleTheme() { snapshot.theme = snapshot.theme == "light" ? "dark" : "light" }
@@ -1256,7 +1293,8 @@ final class AppStore: ObservableObject, DelegationHost {
         permissionErrors.removeValue(forKey: sessionId)
         defer { permissionResponses.remove(key) }
         do {
-            try await runner.respondToPermission(sessionId: sessionId, runId: request.runId, requestId: request.id, allow: allow)
+            if isRemoteSession(sessionId) { try await remoteClient.respondToPermission(sessionId: sessionId, runId: request.runId, requestId: request.id, allow: allow) }
+            else { try await runner.respondToPermission(sessionId: sessionId, runId: request.runId, requestId: request.id, allow: allow) }
             toolPermissions[sessionId]?.removeAll { $0.id == request.id && $0.runId == request.runId }
         } catch {
             if !ending, toolPermissions[sessionId]?.first.map({ $0.id == request.id && $0.runId == request.runId && $0.state == "pending" }) == true {
@@ -1275,7 +1313,8 @@ final class AppStore: ObservableObject, DelegationHost {
         permissionErrors.removeValue(forKey: sessionId)
         defer { permissionResponses.remove(key) }
         do {
-            try await runner.answerUserQuestions(sessionId: sessionId, runId: request.runId, requestId: request.id, answers: answers)
+            if isRemoteSession(sessionId) { try await remoteClient.answerUserQuestions(sessionId: sessionId, runId: request.runId, requestId: request.id, answers: answers) }
+            else { try await runner.answerUserQuestions(sessionId: sessionId, runId: request.runId, requestId: request.id, answers: answers) }
             toolPermissions[sessionId]?.removeAll { $0.id == request.id && $0.runId == request.runId }
         } catch {
             if !ending, toolPermissions[sessionId]?.first.map({ $0.id == request.id && $0.runId == request.runId && $0.state == "pending" }) == true {
@@ -1300,6 +1339,7 @@ final class AppStore: ObservableObject, DelegationHost {
         defer { permissionResponses.remove(key) }
         do {
             if let smokePlanAnswerer { try await smokePlanAnswerer(sessionId, request.runId, request.id, decision) }
+            else if isRemoteSession(sessionId) { try await remoteClient.answerPlan(sessionId: sessionId, runId: request.runId, requestId: request.id, decision: decision) }
             else { try await runner.answerPlan(sessionId: sessionId, runId: request.runId, requestId: request.id, decision: decision) }
             toolPermissions[sessionId]?.removeAll { $0.id == request.id && $0.runId == request.runId }
         } catch {
@@ -1379,6 +1419,9 @@ final class AppStore: ObservableObject, DelegationHost {
         for task in starting { task.cancel() }
         await providers.shutdown()
         await runner.shutdown()
+        // Remote runs stop on their hosts; sharing ends and its key with it.
+        await remoteClient.shutdown()
+        await remoteHost.shutdown()
         // Screen sharing ends before the relay goes: a held remote drag is let
         // go and the phones hear why.
         if screenShareEngine != nil { await screenShare.shutdown() }
