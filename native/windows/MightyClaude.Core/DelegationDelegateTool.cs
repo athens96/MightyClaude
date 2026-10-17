@@ -158,10 +158,11 @@ public sealed partial class DelegationCoordinator
     /// <summary>
     /// The first message of a child's first run: its task and how it reports (M/DelegationDelegateTool.swift firstInput). A
     /// Claude child commits its work itself; a child of any other agent leaves it for the app's commit (<see cref="ChildAutoCommit"/>).
+    /// It names a Claude parent as one.
     /// </summary>
-    public static string FirstInput(string task, ChildWorktree worktree, string provider = "claude")
+    public static string FirstInput(string task, ChildWorktree worktree, string provider = "claude", string? parentAgent = null)
     {
-        var from = provider == "claude" ? "Another Claude pane" : "Another pane";
+        var from = (parentAgent ?? provider) == "claude" ? "Another Claude pane" : "Another pane";
         var done = provider == "claude"
             ? $"When you are done, commit your work on this branch, leaving no uncommitted changes to tracked files, and then write your report to {worktree.ReportFile}"
             : $"When you are done, write your report to {worktree.ReportFile}";
@@ -180,16 +181,20 @@ public sealed partial class DelegationCoordinator
     /// how it leaves its work for the human's merge from its card. A text that is a slash command (it starts with <c>/</c>) runs
     /// alone, as the human typed it, so the note never becomes the command's arguments; the note follows as the child's next request.
     /// </summary>
-    public static HumanChildFirstRun HumanFirstRun(string text, ChildWorktree worktree, string provider = "claude")
+    public static HumanChildFirstRun HumanFirstRun(string text, ChildWorktree worktree, string provider = "claude", string? parentAgent = null)
     {
-        var note = HumanNote(worktree, provider);
+        var note = HumanNote(worktree, provider, parentAgent);
         return text.StartsWith('/') ? new(text, note) : new(text + "\n\n" + note, null);
     }
 
-    /// <summary>The app's note to a child the human started. A Claude child commits its work itself; a child of any other agent leaves it for the app.</summary>
-    public static string HumanNote(ChildWorktree worktree, string provider = "claude") => provider == "claude"
-        ? $"[Mighty Claude] This request runs in its own git worktree on the branch {worktree.Branch}, opened beside another Claude pane so that pane keeps working undisturbed. When you are done, commit your work on this branch, leaving no uncommitted changes to tracked files, and then write a short report to {worktree.ReportFile}: what you did and what is left. The person who sent this merges your branch from the app. Do not merge, push or switch branches."
-        : $"[Mighty Claude] This request runs in its own git worktree on the branch {worktree.Branch}, opened beside another pane so that pane keeps working undisturbed. When you are done, write a short report to {worktree.ReportFile}: what you did and what is left. {AppCommitNote(worktree)} The person who sent this merges your branch from the app. Do not merge, push or switch branches.";
+    /// <summary>The app's note to a child the human started. A Claude child commits its work itself; a child of any other agent leaves it for the app. It names a Claude parent as one.</summary>
+    public static string HumanNote(ChildWorktree worktree, string provider = "claude", string? parentAgent = null)
+    {
+        var beside = (parentAgent ?? provider) == "claude" ? "another Claude pane" : "another pane";
+        return provider == "claude"
+            ? $"[Mighty Claude] This request runs in its own git worktree on the branch {worktree.Branch}, opened beside {beside} so that pane keeps working undisturbed. When you are done, commit your work on this branch, leaving no uncommitted changes to tracked files, and then write a short report to {worktree.ReportFile}: what you did and what is left. The person who sent this merges your branch from the app. Do not merge, push or switch branches."
+            : $"[Mighty Claude] This request runs in its own git worktree on the branch {worktree.Branch}, opened beside {beside} so that pane keeps working undisturbed. When you are done, write a short report to {worktree.ReportFile}: what you did and what is left. {AppCommitNote(worktree)} The person who sent this merges your branch from the app. Do not merge, push or switch branches.";
+    }
 
     /// <summary>
     /// The human's run of <paramref name="text"/> in a new child of the Claude, Codex or Antigravity pane

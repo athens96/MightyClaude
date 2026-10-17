@@ -219,4 +219,47 @@ internal static class DelegationCrossAgentVerification
         Check(JsonSerializer.Serialize(DelegationChildInfo.Of(gemini), Wire.Json).Contains("\"agent\":\"antigravity\"", StringComparison.Ordinal), "the pane pipe carries the agent");
         return Task.CompletedTask;
     }
+
+    internal static Task AChildsWordsFollowItsAgent()
+    {
+        var worktree = new ChildWorktree("c1", @"C:\w\c1", @"C:\w\c1", "mighty/c1", "main", Commit);
+        var codexOfClaude = DelegationCoordinator.FirstInput("Do it.", worktree, "codex", "claude");
+        Check(codexOfClaude.StartsWith("Another Claude pane", StringComparison.Ordinal) && codexOfClaude.Contains("Do not commit", StringComparison.Ordinal), "a Codex child of a Claude pane");
+        var claudeOfCodex = DelegationCoordinator.FirstInput("Do it.", worktree, "claude", "codex");
+        Check(claudeOfCodex.StartsWith("Another pane", StringComparison.Ordinal) && claudeOfCodex.Contains("commit your work", StringComparison.Ordinal) && !claudeOfCodex.Contains("Do not commit", StringComparison.Ordinal), "a Claude child of a Codex pane");
+        // The parent's own agent says what it always said.
+        Same(DelegationCoordinator.FirstInput("Do it.", worktree, "codex", "codex"), DelegationCoordinator.FirstInput("Do it.", worktree, "codex"), "a Codex child of a Codex pane");
+        Same(DelegationCoordinator.FirstInput("Do it.", worktree, "claude", "claude"), DelegationCoordinator.FirstInput("Do it.", worktree), "a Claude child of a Claude pane");
+        var note = DelegationCoordinator.HumanNote(worktree, "gemini", "claude");
+        Check(note.Contains("beside another Claude pane", StringComparison.Ordinal) && note.Contains("Do not commit", StringComparison.Ordinal), "the note to an Antigravity child of a Claude pane");
+        Check(DelegationCoordinator.HumanNote(worktree, "claude", "codex").Contains("beside another pane so", StringComparison.Ordinal), "the note to a Claude child of a Codex pane");
+        Same(DelegationCoordinator.HumanFirstRun("Fix it.", worktree, "gemini", "claude").Input, "Fix it.\n\n" + note, "the human's first run carries that note");
+        return Task.CompletedTask;
+    }
+
+    internal static Task AChildOfAnotherAgentTakesThatAgentsDefaults()
+    {
+        var parent = new RunSession { Id = "parent", WorkspaceId = "ws", Kind = "claude", Provider = "claude", Model = "opus", Settings = new(Effort: "high", PermissionMode: "auto"), AgentViewMode = "mighty", GraphViewMode = "timeline", MightyStyle = "superpowers", MightyStyleHash = "h1" };
+        var codexPane = new RunSession { Id = "codex-pane", WorkspaceId = "ws", Kind = "claude", Provider = "codex", Model = "gpt-5.6-sol", Settings = new(Effort: "low", PermissionMode: "fullAccess") };
+        foreach (var human in new[] { true, false })
+        {
+            var pane = new DelegationChildPane("c1", "parent", "onRequest", "/w/c1", StartedByHuman: human, Provider: "codex");
+            var child = DelegationPanes.ChildSession(pane, "ws", "Fix it", parent, codexPane);
+            Check(child.Provider == "codex" && child.Settings.PermissionMode == "onRequest", $"human {human}: a Codex child in its starting mode");
+            // The human's child takes what a new Codex pane would; one the parent's delegate made, plain defaults.
+            Check(human ? child.Model == "gpt-5.6-sol" && child.Settings.Effort == "low" : child.Model == "default" && child.Settings.Effort == "default", $"human {human}: model and effort");
+            Check(child is { AgentViewMode: "mighty", GraphViewMode: "timeline", MightyStyle: null, MightyStyleHash: null }, $"human {human}: the parent's view, no style");
+            // With no pane of the agent yet, a new pane's defaults.
+            var fresh = DelegationPanes.ChildSession(pane, "ws", "Fix it", parent);
+            Check(fresh.Model == "default" && fresh.Settings.Effort == "default", $"human {human}: no pane of the agent yet");
+        }
+        // A Claude child of a Codex parent the human started: Claude's last-used model and effort, not the Codex model.
+        var claude = DelegationPanes.ChildSession(new("c2", "codex-pane", "fullAccess", "/w/c2", StartedByHuman: true), "ws", "t", codexPane, parent);
+        Check(claude is { Provider: "claude", Model: "opus", MightyStyle: null } && claude.Settings.Effort == "high", "a Claude child of a Codex pane");
+        // The app finds that agent's last-used top-level pane itself.
+        var state = new AppSnapshot { Workspaces = [new Workspace { Id = "ws", Path = Path.GetTempPath() }], Sessions = [parent, codexPane], ActiveWorkspaceId = "ws", ActiveSessionId = "parent" };
+        var next = DelegationPanes.AddingChild(state, new("c3", "parent", "acceptEdits", Path.GetTempPath(), StartedByHuman: true, Provider: "codex"), "Try it") ?? throw new InvalidOperationException("no child pane");
+        Check(next.Sessions.Single(session => session.Id == "c3") is { Provider: "codex", Model: "gpt-5.6-sol" } made && made.Settings is { Effort: "low", PermissionMode: "acceptEdits" }, "the Codex template's model and effort, its own mode");
+        return Task.CompletedTask;
+    }
 }

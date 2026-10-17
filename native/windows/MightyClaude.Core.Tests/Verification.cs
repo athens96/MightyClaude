@@ -440,6 +440,8 @@ internal static class Verification
         await Test("delegation: agents are named by their words, and modes compare within and across agents", DelegationCrossAgentVerification.AgentsAndModesAcrossAgents);
         await Test("delegation: what the app knows of each CLI, the worktree menu and its cap", DelegationCrossAgentVerification.AvailabilityTheMenuAndItsCap);
         await Test("delegation: delegate takes an optional agent, and every answer names the child's agent", DelegationCrossAgentVerification.TheToolTakesAnOptionalAgentAndNamesItEverywhere);
+        await Test("delegation: a child's words follow its agent and name a Claude parent as one", DelegationCrossAgentVerification.AChildsWordsFollowItsAgent);
+        await Test("delegation: the human's child of another agent takes that agent's last-used model and effort", DelegationCrossAgentVerification.AChildOfAnotherAgentTakesThatAgentsDefaults);
         await Test("delegation scenario S1: two children, a human's approval, a fast-forward and a discard", DelegationScenarioVerification.S1);
         await Test("delegation scenario S2: held notices released together by a send or run next after a relaunch", DelegationScenarioVerification.S2);
         await Test("delegation scenario S3: a diverged child's held follow-ups reach it once after a relaunch", DelegationScenarioVerification.S3);
