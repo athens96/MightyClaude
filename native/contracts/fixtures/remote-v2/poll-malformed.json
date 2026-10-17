@@ -1,0 +1,8 @@
+{
+  "protocol": 2, "cursor": 3, "lastCursor": 3, "gap": false, "done": true,
+  "events": [
+    { "cursor": 1, "event": { "sessionId": "job-1", "type": "log", "entry": { "id": "log-1", "kind": "output", "text": "ok", "timestamp": "2026-10-17T01:04:00.000Z" } } },
+    { "cursor": 2, "event": { "sessionId": "job-1", "type": "log", "entry": { "id": "log-2", "kind": "nonsense", "text": "?", "timestamp": "2026-10-17T01:04:01.000Z" } } },
+    { "cursor": 3, "event": { "sessionId": "job-1", "type": "status", "status": "completed" } }
+  ]
+}

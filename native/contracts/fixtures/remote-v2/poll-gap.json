@@ -1,0 +1,7 @@
+{
+  "protocol": 2, "cursor": 9, "lastCursor": 9, "gap": true, "done": true,
+  "events": [
+    { "cursor": 8, "event": { "sessionId": "job-1", "type": "log", "entry": { "id": "log-8", "kind": "error", "text": "Failed to authenticate", "timestamp": "2026-10-17T01:03:00.000Z" } } },
+    { "cursor": 9, "event": { "sessionId": "job-1", "type": "status", "status": "error", "reason": "auth" } }
+  ]
+}

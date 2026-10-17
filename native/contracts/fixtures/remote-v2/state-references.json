@@ -1,0 +1,13 @@
+{
+  "cases": [
+    { "name": "version 2 is a remote workspace", "kept": true,  "workspace": { "id": "far", "name": "Far", "path": "C:\\work\\project", "createdAt": "2026-10-17T00:00:00.000Z", "remote": { "version": 2, "connectionId": "conn-1", "workspaceId": "ws-project", "hostName": "studio-pc" } } },
+    { "name": "no remote key is local",          "kept": true,  "workspace": { "id": "near", "name": "Near", "path": "/Users/example/near", "createdAt": "2026-10-17T00:00:00.000Z" } },
+    { "name": "an explicit null is local",       "kept": true,  "workspace": { "id": "near2", "name": "Near", "path": "/Users/example/near", "createdAt": "2026-10-17T00:00:00.000Z", "remote": null } },
+    { "name": "unversioned (before 2026-09-28)", "kept": false, "workspace": { "id": "old", "name": "Old", "path": "/Users/example/old", "createdAt": "2026-09-01T00:00:00.000Z", "remote": { "connectionId": "conn-1", "workspaceId": "w1", "hostName": "Peer" } } },
+    { "name": "version 1",                       "kept": false, "workspace": { "id": "v1", "name": "V1", "path": "/Users/example/v1", "createdAt": "2026-09-01T00:00:00.000Z", "remote": { "version": 1, "connectionId": "conn-1", "workspaceId": "w1", "hostName": "Peer" } } },
+    { "name": "version as a string",             "kept": false, "workspace": { "id": "vs", "name": "VS", "path": "/Users/example/vs", "createdAt": "2026-09-01T00:00:00.000Z", "remote": { "version": "2", "connectionId": "conn-1", "workspaceId": "w1", "hostName": "Peer" } } },
+    { "name": "version as a boolean",            "kept": false, "workspace": { "id": "vb", "name": "VB", "path": "/Users/example/vb", "createdAt": "2026-09-01T00:00:00.000Z", "remote": { "version": true, "connectionId": "conn-1", "workspaceId": "w1", "hostName": "Peer" } } },
+    { "name": "a remote that is not an object",  "kept": false, "workspace": { "id": "vx", "name": "VX", "path": "/Users/example/vx", "createdAt": "2026-09-01T00:00:00.000Z", "remote": "studio-pc" } },
+    { "name": "version 3",                       "kept": false, "workspace": { "id": "v3", "name": "V3", "path": "/Users/example/v3", "createdAt": "2026-09-01T00:00:00.000Z", "remote": { "version": 3, "connectionId": "conn-1", "workspaceId": "w1", "hostName": "Peer" } } }
+  ]
+}

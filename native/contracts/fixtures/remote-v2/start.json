@@ -1,0 +1,21 @@
+{
+  "request": {
+    "sessionId": "pane-1",
+    "workspaceId": "ws-project",
+    "kind": "claude",
+    "input": "Summarize README.md",
+    "model": "default",
+    "provider": "claude",
+    "settings": { "effort": "high", "permissionMode": "acceptEdits", "maxTurns": null, "maxBudgetUsd": null },
+    "resumeId": "11111111-2222-4333-8444-555555555555",
+    "attachments": [ { "id": "att-1", "name": "notes.txt", "mediaType": "text/plain", "dataBase64": "aGVsbG8=" } ]
+  },
+  "permissionModeOverride": "plan",
+  "registeredModels": [ { "name": "claude-opus-4-1", "supportsEffort": true, "supportedEffortLevels": ["low", "high"] } ],
+  "todoProgress": { "items": [ { "id": "1", "content": "Read the file", "activeForm": "Reading the file", "status": "in_progress" } ] },
+  "phaseModels": {
+    "claudeMain": "default", "claudeOpusAlias": "default", "claudeSonnetAlias": "default", "claudeHaikuAlias": "default",
+    "claudeSubagentDefault": "claude-sonnet-4-5", "codexReviewModel": "default", "codexSubagentDefault": "default",
+    "codexPlanModeReasoningEffort": "default", "claudeMainEffort": "high"
+  }
+}
