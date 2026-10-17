@@ -10,12 +10,15 @@ namespace MightyClaude.Core;
 /// <param name="ParentCheckout">The top folder of the parent's checkout when the child was made.</param>
 /// <param name="CanUndo">Whether the child's card can undo a merge (<see cref="DelegationFile.UndoableMerge"/>).</param>
 /// <param name="HeldNotices">How many of the child's notices are held. With its parent pane closed nothing releases them, and the child's card shows the count.</param>
-public sealed record DelegationChildRow(string Id, string ParentSessionId, ChildState State, string? Task = null, string ParentBranch = "", string? ParentCheckout = null, bool CanUndo = false, int HeldNotices = 0)
+/// <param name="StartedByHuman">The human started it from its parent's composer.</param>
+/// <param name="Agent">The agent CLI it runs (<see cref="ChildRecord.Agent"/>).</param>
+public sealed record DelegationChildRow(string Id, string ParentSessionId, ChildState State, string? Task = null, string ParentBranch = "", string? ParentCheckout = null, bool CanUndo = false, int HeldNotices = 0,
+    bool StartedByHuman = false, string Agent = "claude")
 {
     /// <summary>The row of <paramref name="record"/>, its task read from <paramref name="file"/>'s stored copy.</summary>
     public static DelegationChildRow Of(ChildRecord record, DelegationFile file) => new(record.Id, record.ParentSessionId, record.State,
         file.Copy(record.Id, DelegationCopyKind.Task) is { } task ? PaneTitle.Shortened(task.Text) : null, record.ParentBranch, record.ParentCheckout,
-        file.UndoableMerge(record.Id) is not null, file.HeldNotices(record.Id).Count);
+        file.UndoableMerge(record.Id) is not null, file.HeldNotices(record.Id).Count, !record.NotifiesParent, record.Agent);
 
     /// <summary>
     /// The actions the child's card offers now, in this order (M/DelegationCards.swift:13-24): merge while it is reported, undo
@@ -62,6 +65,10 @@ public static class DelegationSidebar
         var known = listed.Select(child => child.Id).ToHashSet();
         return listed.Count(child => child.State.IsOpen()) + sessions.Count(session => session.ParentSessionId == parentId && !known.Contains(session.Id));
     }
+
+    /// <summary>How many open children the human started from the parent pane <paramref name="parentId"/>, as the worktree button's menu counts them toward its cap.</summary>
+    public static int OpenHumanChildCount(string parentId, IEnumerable<DelegationChildRow> children) =>
+        children.Count(child => child.ParentSessionId == parentId && child.StartedByHuman && child.State.IsOpen());
 
     /// <summary>The state a child's row shows: waiting while a running child's pane has a request only a human can answer, otherwise its record's state.</summary>
     public static ChildState ShownState(ChildState state, bool asksHuman) => state == ChildState.Running && asksHuman ? ChildState.Waiting : state;

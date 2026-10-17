@@ -145,6 +145,37 @@ public static class DelegationProviders
     /// <summary>The name the delegation tools give the agent <paramref name="provider"/>: its <c>agent</c> argument's word (antigravity for gemini).</summary>
     public static string AgentName(string provider) => provider == "gemini" ? "antigravity" : provider;
 
+    /// <summary>
+    /// Whether an agent's CLI can run a child, as the app last learnt it: <paramref name="installed"/> from its CLI search,
+    /// <paramref name="account"/> from its sign-in status. Either one unknown (null) does not hold a child back; the app never asks
+    /// a CLI for this.
+    /// </summary>
+    public static DelegationAgentAvailability Availability(bool? installed, CliAccountStatus? account)
+    {
+        if (installed == false || account is { Installed: false }) return DelegationAgentAvailability.NotInstalled;
+        if (account is { LoggedIn: false }) return DelegationAgentAvailability.SignedOut;
+        return DelegationAgentAvailability.Ready;
+    }
+
+    /// <summary>
+    /// What the worktree button's menu offers on a <paramref name="parent"/> pane in <paramref name="parentMode"/> with
+    /// <paramref name="openHumanChildren"/> open children the human started: one row per agent, Claude, Codex, Antigravity. A row
+    /// says why it cannot run: the agent's CLI (not for the parent's own agent, whose run is going), no mode in which its child
+    /// could change files, or the cap.
+    /// </summary>
+    public static IReadOnlyList<DelegationChildChoice> HumanChildChoices(string parent, string parentMode, bool planFirst, int openHumanChildren, Func<string, DelegationAgentAvailability> availability) =>
+        Wire.Providers.Select(agent =>
+        {
+            var mode = HumanChildMode(agent, parent, parentMode, planFirst);
+            DelegationChildBlock? blocked = (agent == parent ? DelegationAgentAvailability.Ready : availability(agent)) switch
+            {
+                DelegationAgentAvailability.NotInstalled => DelegationChildBlock.NotInstalled,
+                DelegationAgentAvailability.SignedOut => DelegationChildBlock.SignedOut,
+                _ => mode is null ? DelegationChildBlock.NoMode : openHumanChildren >= DelegationCoordinator.MaximumOpenChildren ? DelegationChildBlock.Cap : (DelegationChildBlock?)null,
+            };
+            return new DelegationChildChoice(agent, mode, blocked);
+        }).ToList();
+
     /// <summary>Whether a <paramref name="provider"/> child in <paramref name="mode"/> can commit on its own branch.</summary>
     public static bool CanCommit(string provider, string mode) => provider == "claude" || mode == "fullAccess";
 
@@ -164,6 +195,33 @@ public enum ModeCapability
     /// <summary>No sandbox and no asking.</summary>
     FullAccess,
 }
+
+/// <summary>Whether an agent's CLI can run a child now, as the app last learnt it. Ready is the default, so a host that knows nothing holds no child back.</summary>
+public enum DelegationAgentAvailability
+{
+    Ready,
+    /// <summary>The CLI was not found, or says it is not installed.</summary>
+    NotInstalled,
+    /// <summary>The CLI says it is signed out.</summary>
+    SignedOut,
+}
+
+/// <summary>Why the worktree button's menu cannot run a child of one agent now.</summary>
+public enum DelegationChildBlock
+{
+    NotInstalled,
+    SignedOut,
+    /// <summary>No mode of the agent, no wider than the parent's, lets its child change files.</summary>
+    NoMode,
+    /// <summary>The parent has its 3 open children the human started.</summary>
+    Cap,
+}
+
+/// <summary>One agent the composer's worktree button offers in its menu (M/DelegationProviders.swift DelegationChildChoice).</summary>
+/// <param name="Agent">The provider id.</param>
+/// <param name="Mode">The mode the child would start in; null when none would do.</param>
+/// <param name="Blocked">null when the child can start.</param>
+public sealed record DelegationChildChoice(string Agent, string? Mode, DelegationChildBlock? Blocked);
 
 /// <summary>
 /// The app's commit of a Codex or Antigravity child's work (M/DelegationProviders.swift ChildAutoCommit): when a run of the child
