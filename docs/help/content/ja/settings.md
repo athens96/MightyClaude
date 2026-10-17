@@ -21,7 +21,7 @@ section: settings
 - {{ui:settings.text.sizeLabel}}：85% から 150% の間で選びます。会話、入力欄、サイドバー、設定、ターミナルが一緒に大きく・小さくなります。
 - {{ui:settings.text.uiFontLabel}}：サイドバー、メニュー、ボタン、設定など、アプリ画面のフォントです。この Mac にインストールされているフォントから選び、{{ui:settings.text.fontSystem}} は macOS の標準フォントです。
 - {{ui:settings.text.transcriptFontLabel}}：エージェントの返答、自分が送ったメッセージ、入力欄、Mighty のカードとボードの本文のフォントです。{{ui:settings.text.sameAsInterface}} にすると画面のフォントに合わせます。
-- {{ui:settings.text.codeFontLabel}}：コードブロック、インラインコード、ツールの出力、ターミナルペインのフォントです。等幅フォントだけが表示され、{{ui:settings.text.monospaceSystem}} はこれまで使っていた等幅フォントです。開いているターミナルにもすぐに反映されます。
+- {{ui:settings.text.codeFontLabel}}：コードブロック、インラインコード、ツールの出力とコマンド行、ターミナルペインのフォントです。等幅フォントだけが表示され、いちばん上の標準ではこれまでどおりコードに SF Mono、ターミナルに Menlo を使います。選んだフォントが削除されると、ターミナルは Menlo に戻ります。開いているターミナルにもすぐに反映されます。パス、バージョン、件数などアプリ画面の等幅の文字は、システムの等幅フォントのままです。
 - それぞれのフォントの下に、そのフォントで書いた 1 行のプレビューが表示されます。
 - {{ui:settings.text.reset}} ボタンで、サイズと 3 つのフォントを最初の状態に戻します。
 

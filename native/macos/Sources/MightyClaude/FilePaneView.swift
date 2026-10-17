@@ -430,7 +430,7 @@ struct FileSourceTextView: NSViewRepresentable {
     /// Safe off the main thread: the model builds it while loading.
     nonisolated static func attributed(_ text: String, tokens: [SourceToken]) -> NSAttributedString {
         let result = NSMutableAttributedString(string: text, attributes: [
-            .font: NSFont.uiMonospaced(ofSize: 12, weight: .regular),
+            .font: NSFont.uiCode(ofSize: 12, weight: .regular),
             .foregroundColor: NSColor.labelColor,
         ])
         let length = result.length

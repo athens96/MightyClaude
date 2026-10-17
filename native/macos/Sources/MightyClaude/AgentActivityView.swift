@@ -34,7 +34,7 @@ struct AgentLogEntryView: View {
             .accessibilityLabel(L("transcript.sentMessage"))
         } else if entry.kind == "output" {
             ScrollView(.horizontal) {
-                Text(entry.text).font(.ui(size: 11, design: .monospaced)).lineSpacing(3).textSelection(.enabled)
+                Text(entry.text).font(.code(size: 11)).lineSpacing(3).textSelection(.enabled)
                     .fixedSize(horizontal: true, vertical: false).padding(DesignMetrics.Spacing.md)
             }
             .background(Palette.subtle, in: RoundedRectangle(cornerRadius: 7))
@@ -84,7 +84,7 @@ struct AgentActivityRow: View {
                     .font(.ui(size: 11, weight: .medium)).frame(width: 15, height: 17)
                     .foregroundStyle(activity.state == "error" ? Palette.errText : animating ? Palette.accent : Color.secondary)
                 Text(activity.summary.isEmpty ? activity.toolName ?? L("transcript.tool.fallback") : activity.summary)
-                    .font(.ui(size: 12, design: monospace ? .monospaced : .default))
+                    .font(monospace ? .code(size: 12) : .ui(size: 12))
                     .lineSpacing(3).lineLimit(expanded ? nil : 2).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if animating { AgentRunningIndicator().padding(.top, DesignMetrics.Spacing.xxs) }
@@ -99,7 +99,7 @@ struct AgentActivityRow: View {
             }
             if expanded, let output = activity.output, !output.isEmpty {
                 ScrollView([.horizontal, .vertical]) {
-                    Text(output).font(.ui(size: 11, design: .monospaced)).lineSpacing(3)
+                    Text(output).font(.code(size: 11)).lineSpacing(3)
                         .fixedSize(horizontal: true, vertical: false).textSelection(.enabled).padding(DesignMetrics.Spacing.md)
                 }
                 .frame(maxHeight: 220)

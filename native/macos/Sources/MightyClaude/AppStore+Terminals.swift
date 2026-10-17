@@ -70,7 +70,7 @@ extension AppStore {
         let controller = TerminalController(theme: theme) { settings in
             settings.withCustom("command", shellCommand)
             settings.withCustom("wait-after-command", "false")
-            settings.withFontFamily("Menlo")
+            settings.withFontFamily(TextAppearance.terminalStandardFamily)
             settings.withFontSize(Float(TextSettings.shared.current.terminalSize))
             settings.withWindowPaddingX(10)
             settings.withWindowPaddingY(10)
@@ -102,12 +102,13 @@ extension AppStore {
         return controller
     }
 
-    /// The terminals' font over the shared config: Menlo, the base's, until a code family is
-    /// chosen; then `font-family = ""` clears Ghostty's list and the family takes its place.
-    /// Ghostty applies it to the open surfaces and to every new one.
+    /// The terminals' font over the shared config (`TextAppearance.terminalFontFamilies`):
+    /// nothing while no code family is chosen, so the base's Menlo stays. Ghostty applies it
+    /// to the open surfaces and to every new one.
     static func terminalFont(_ text: TextAppearance) -> TerminalConfiguration {
-        guard let family = text.codeFamily else { return TerminalConfiguration() }
-        return TerminalConfiguration { $0.withFontFamily("\"\""); $0.withFontFamily(family) }
+        TerminalConfiguration { settings in
+            for family in text.terminalFontFamilies { settings.withFontFamily(family) }
+        }
     }
 
     /// A shell pane is `running` only while a command runs in it; each terminal

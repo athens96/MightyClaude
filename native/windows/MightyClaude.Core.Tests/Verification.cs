@@ -837,6 +837,7 @@ internal static class Verification
         await Test("text appearance: sizes round to the half point and scales snap to the 85-150% steps", TextAppearanceVerification.SizesRoundToTheHalfPointAndScalesSnapToSteps);
         await Test("text appearance: stepping stops at both ends and keeps the families", TextAppearanceVerification.SteppingStopsAtBothEndsAndKeepsTheFamilies);
         await Test("text appearance: the conversation follows the interface font and code offers monospaced families", TextAppearanceVerification.TheConversationFollowsTheInterfaceUntilItHasItsOwn);
+        await Test("text appearance: a name with a control character or line separator is no family", TextAppearanceVerification.ANameThatCouldBreakTheTerminalIsNoFamily);
         await Test("text appearance: registry values round-trip and the standard setting stores nothing", TextAppearanceVerification.TheRegistryValuesRoundTripAndTheStandardStoresNothing);
         await Test("design tokens: the launch splash reads the saved theme before the state loads", DesignTokenVerification.TheSplashReadsTheSavedThemeBeforeTheStateLoads);
         await Test("agent marks: only an agent's sidebar row names its provider, so only it carries the mark", ProviderMarkVerification.OnlyAnAgentRowNamesItsProviderSoOnlyItCarriesTheMark);

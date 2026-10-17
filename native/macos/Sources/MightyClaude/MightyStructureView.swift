@@ -810,7 +810,7 @@ struct MightyStructureView: View {
                 .font(.ui(size: 10, weight: .medium)).frame(width: Self.glyphWidth)
                 .foregroundStyle(line.state == "error" ? Palette.errText : line.state == "running" ? Palette.accent : Palette.ink2)
             Text(verbatim: line.text)
-                .font(.ui(size: Self.outputSize, design: AgentActivityRow.monospacedKinds.contains(line.kind) ? .monospaced : .default))
+                .font(AgentActivityRow.monospacedKinds.contains(line.kind) ? .code(size: Self.outputSize) : .ui(size: Self.outputSize))
                 .foregroundStyle(Palette.ink2).lineLimit(1).truncationMode(.tail)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)

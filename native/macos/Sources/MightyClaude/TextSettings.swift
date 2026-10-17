@@ -45,58 +45,66 @@ final class TextSettings: Observable, @unchecked Sendable {
         NotificationCenter.default.post(name: Self.didChange, object: nil)
     }
 
-    /// The installed font families for the Settings picker, in the system's order: only
+    /// The installed font families for the Settings pickers, in the system's order: only
     /// those whose regular face draws Latin letters, so a symbol font (Webdings…) that
     /// would turn every label, the reset button included, into pictures is not offered.
-    static var families: [String] {
-        listLock.lock(); defer { listLock.unlock() }
-        if let cachedFamilies { return cachedFamilies }
-        let letters = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
-        let list = NSFontManager.shared.availableFontFamilies.filter { family in
-            guard !family.hasPrefix("."), let font = NSFontManager.shared.font(withFamily: family, traits: [], weight: 5, size: 13) else { return false }
-            return font.coveredCharacterSet.isSuperset(of: letters)
-        }
-        cachedFamilies = list
-        return list
-    }
-    nonisolated(unsafe) private static var cachedFamilies: [String]?
+    @MainActor static var families: [String] { fontLists.families }
 
     /// The families the code and terminal picker offers (`TextAppearance.codeFamilies`):
     /// of `families`, those whose regular face is fixed-pitch, and the well-known
     /// monospaced ones.
-    static var codeFamilies: [String] {
-        let all = families
-        listLock.lock(); defer { listLock.unlock() }
-        if let cachedCodeFamilies { return cachedCodeFamilies }
-        let manager = NSFontManager.shared
-        let list = TextAppearance.codeFamilies(all.map { family in
-            let font = manager.font(withFamily: family, traits: [], weight: 5, size: 13)
-            return (family, font.map { $0.isFixedPitch || manager.traits(of: $0).contains(.fixedPitchFontMask) } ?? false)
-        })
-        cachedCodeFamilies = list
-        return list
+    @MainActor static var codeFamilies: [String] { fontLists.codeFamilies }
+
+    private struct FontLists {
+        let families: [String]
+        let codeFamilies: [String]
     }
-    nonisolated(unsafe) private static var cachedCodeFamilies: [String]?
-    private static let listLock = NSLock()
-    /// Fonts installed or removed while the app runs: the lists and lookups are made again.
+
+    /// Both picker lists, from one pass over the installed families; made again after
+    /// fonts are installed or removed.
+    @MainActor private static var fontLists: FontLists {
+        if let cachedFontLists { return cachedFontLists }
+        let letters = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+        let manager = NSFontManager.shared
+        var fonts: [(family: String, fixedPitch: Bool)] = []
+        for family in manager.availableFontFamilies where !family.hasPrefix(".") {
+            guard let font = manager.font(withFamily: family, traits: [], weight: 5, size: 13),
+                  font.coveredCharacterSet.isSuperset(of: letters) else { continue }
+            fonts.append((family, font.isFixedPitch || manager.traits(of: font).contains(.fixedPitchFontMask)))
+        }
+        let lists = FontLists(families: fonts.map(\.family), codeFamilies: TextAppearance.codeFamilies(fonts))
+        cachedFontLists = lists
+        return lists
+    }
+    @MainActor private static var cachedFontLists: FontLists?
+
+    /// Fonts installed or removed while the app runs (AppKit's notice, and Core Text's for
+    /// fonts registered by an app): the lists and lookups are made again.
     private static let fontSetObserver: Void = {
-        NotificationCenter.default.addObserver(forName: NSFont.fontSetChangedNotification, object: nil, queue: nil) { _ in
-            listLock.lock(); cachedFamilies = nil; cachedCodeFamilies = nil; listLock.unlock()
-            NSFont.clearFamilyFonts()
+        let names = [NSFont.fontSetChangedNotification, Notification.Name(kCTFontManagerRegisteredFontsChangedNotification as String)]
+        for name in names {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated { cachedFontLists = nil }
+                NSFont.clearFamilyFonts()
+            }
         }
     }()
 }
 
 extension Font {
-    /// `Font.system(size:weight:design:)` at the user's text size: the default design in
-    /// the interface's family, the monospaced one in the code family.
+    /// `Font.system(size:weight:design:)` at the user's text size, in the interface's family
+    /// for the default design. Other designs, the monospaced one for paths, versions and
+    /// counts included, keep the system face; code takes `code(size:weight:)`.
     static func ui(size: CGFloat, weight: Font.Weight = .regular, design: Font.Design = .default) -> Font {
         let appearance = TextSettings.current
-        switch design {
-        case .default: return styled(appearance.family, size: size, weight: weight, design: design, appearance: appearance)
-        case .monospaced: return styled(appearance.codeFamily, size: size, weight: weight, design: design, appearance: appearance)
-        default: return styled(nil, size: size, weight: weight, design: design, appearance: appearance)
-        }
+        return styled(design == .default ? appearance.family : nil, size: size, weight: weight, design: design, appearance: appearance)
+    }
+
+    /// Code, tool output and terminal-like text at the user's text size, in the code
+    /// family, else the system monospaced font.
+    static func code(size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        let appearance = TextSettings.current
+        return styled(appearance.codeFamily, size: size, weight: weight, design: .monospaced, appearance: appearance)
     }
 
     /// The conversation's words (replies, the user's turns, Mighty's prose) at the user's
@@ -133,8 +141,14 @@ extension NSFont {
         return .systemFont(ofSize: scaled, weight: weight)
     }
 
-    /// `monospacedSystemFont(ofSize:weight:)` at the user's text size, in the code family.
+    /// `monospacedSystemFont(ofSize:weight:)` at the user's text size.
     static func uiMonospaced(ofSize size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
+        .monospacedSystemFont(ofSize: CGFloat(TextSettings.shared.current.size(Double(size))), weight: weight)
+    }
+
+    /// Code, tool output and terminal-like text at the user's text size, in the code
+    /// family, else the system monospaced font.
+    static func uiCode(ofSize size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
         let appearance = TextSettings.shared.current
         let scaled = CGFloat(appearance.size(Double(size)))
         if let family = appearance.codeFamily, let font = familyFont(family, size: scaled, weight: weight) { return font }
@@ -147,7 +161,12 @@ extension NSFont {
     }
 
     private static let familyLock = NSLock()
-    nonisolated(unsafe) private static var familyFonts: [String: NSFont] = [:]
+    private struct FamilyFontKey: Hashable {
+        let family: String
+        let size: CGFloat
+        let weight: CGFloat
+    }
+    nonisolated(unsafe) private static var familyFonts: [FamilyFontKey: NSFont] = [:]
     nonisolated(unsafe) private static var missingFamilies = Set<String>()
 
     fileprivate static func clearFamilyFonts() {
@@ -157,7 +176,7 @@ extension NSFont {
 
     /// `family` at `size` and the nearest weight it has; nil when it is not installed.
     fileprivate static func familyFont(_ family: String, size: CGFloat, weight: NSFont.Weight) -> NSFont? {
-        let key = "\(family)|\(size)|\(weight.rawValue)"
+        let key = FamilyFontKey(family: family, size: size, weight: weight.rawValue)
         familyLock.lock(); defer { familyLock.unlock() }
         if let font = familyFonts[key] { return font }
         if missingFamilies.contains(family) { return nil }

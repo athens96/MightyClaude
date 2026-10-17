@@ -67,7 +67,7 @@ struct NativeComposerEditor: NSViewRepresentable {
         coordinator.receiveModelText(text)
     }
 
-    private var font: NSFont { monospaced ? .uiMonospaced(ofSize: 13, weight: .regular) : .uiTranscript(ofSize: 13) }
+    private var font: NSFont { monospaced ? .uiCode(ofSize: 13, weight: .regular) : .uiTranscript(ofSize: 13) }
 
     static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
         coordinator.detach()

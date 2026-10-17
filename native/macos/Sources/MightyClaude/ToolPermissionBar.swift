@@ -78,7 +78,7 @@ private struct ToolPermissionCard: View {
                         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                             Text(field.label).font(.ui(size: 10, weight: .semibold)).foregroundStyle(Palette.ink2)
                             if field.code {
-                                Text(field.value).font(.ui(size: 11, design: .monospaced)).textSelection(.enabled)
+                                Text(field.value).font(.code(size: 11)).textSelection(.enabled)
                                     .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.sm)
                                     .background(Palette.raised, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -89,12 +89,12 @@ private struct ToolPermissionCard: View {
                         }
                     }
                     if presentation.fields.isEmpty, presentation.headline == nil {
-                        Text(request.summary).font(.ui(size: 12, design: .monospaced)).textSelection(.enabled)
+                        Text(request.summary).font(.code(size: 12)).textSelection(.enabled)
                     }
                     if let path = request.blockedPath, !path.isEmpty { Text(L("permission.bar.blockedPath", ["path": path])).font(.ui(size: 10)) }
                     if let reason = request.reason, !reason.isEmpty { Text(reason).font(.ui(size: 10)).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true) }
                     DisclosureGroup(L("styles.approval.raw"), isExpanded: $showsJSON) {
-                        Text(request.inputJSON).font(.ui(size: 10, design: .monospaced)).textSelection(.enabled)
+                        Text(request.inputJSON).font(.code(size: 10)).textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading).padding(.top, DesignMetrics.Spacing.xs)
                     }.font(.ui(size: 10)).accessibilityIdentifier("permission-json")
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(.trailing, DesignMetrics.Spacing.xs)

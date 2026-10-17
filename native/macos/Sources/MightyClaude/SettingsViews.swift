@@ -240,8 +240,8 @@ struct AppSettingsView: View {
                            preview: .ui(size: 13), identifier: "settings-text-font") { store.textAppearance.with(family: $0) }
                 fontPicker(L("settings.text.transcriptFontLabel"), standard: L("settings.text.sameAsInterface"), families: families, selected: text.transcriptFamily,
                            preview: .transcript(size: 13), identifier: "settings-text-transcript-font") { store.textAppearance.with(transcriptFamily: $0) }
-                fontPicker(L("settings.text.codeFontLabel"), standard: L("settings.text.monospaceSystem"), families: TextSettings.codeFamilies, selected: text.codeFamily,
-                           preview: .ui(size: 12, design: .monospaced), identifier: "settings-text-code-font") { store.textAppearance.with(codeFamily: $0) }
+                fontPicker(L("settings.text.codeFontLabel"), standard: L("settings.text.codeDefault", ["font": "SF Mono · \(TextAppearance.terminalStandardFamily)"]), families: TextSettings.codeFamilies, selected: text.codeFamily,
+                           preview: .code(size: 12), identifier: "settings-text-code-font") { store.textAppearance.with(codeFamily: $0) }
             }
             .accessibilityElement(children: .contain)
             .accessibilityLabel(L("settings.text.fontLabel"))

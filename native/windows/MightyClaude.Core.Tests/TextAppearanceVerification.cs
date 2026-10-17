@@ -55,6 +55,21 @@ internal static class TextAppearanceVerification
         return Task.CompletedTask;
     }
 
+    internal static Task ANameThatCouldBreakTheTerminalIsNoFamily()
+    {
+        foreach (var name in new[] { "A\nb = c", "A\rB", "A\u2028B", "A\u2029B", "A\u0085B", "A\0B", "A\tB", "A\u007FB" })
+        {
+            Check(TextAppearance.NormalizedFamily(name) is null, "a control character or separator is no family: " + JsonSerializer.Serialize(name));
+            Check(new TextAppearance(1, name, name, name).IsStandard && TextAppearance.FromValues(null, name, name, name).IsStandard, "such a name reads as the standard font: " + JsonSerializer.Serialize(name));
+        }
+        Check(TextAppearance.NormalizedFamily(" Nanum Gothic\n") == "Nanum Gothic", "surrounding blanks and line ends are trimmed");
+        Check(new TextAppearance(1, codeFamily: "A\"B").CodeFamily == "A\"B", "a quote in a name is kept; the terminal page drops it when it builds its CSS list");
+        // The terminal gets the family in a JSON web message (MainWindow.Terminal.cs PostTerminal): the quote is escaped there.
+        var message = JsonSerializer.Serialize(new { type = "font", size = 12.0, family = new TextAppearance(1, codeFamily: "A\"B").CodeFamily }, Wire.Json);
+        Check(message.Contains("\"family\":\"A\\u0022B\"") || message.Contains("\"family\":\"A\\\"B\""), "the family is escaped in the terminal's message: " + message);
+        return Task.CompletedTask;
+    }
+
     internal static Task TheRegistryValuesRoundTripAndTheStandardStoresNothing()
     {
         Check(TextAppearance.Standard.ToValues().All(value => value.Value is null), "the standard setting writes nothing");

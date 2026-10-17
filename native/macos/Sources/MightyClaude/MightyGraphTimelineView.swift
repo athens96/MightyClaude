@@ -173,7 +173,7 @@ struct MightyTimelineRowCard<Detail: View>: View {
                         if let latest = row.latest {
                             HStack(spacing: 6) {
                                 if tone == .run { PulseDot() }
-                                Text(latest).font(.ui(size: 10.8, design: .monospaced)).lineLimit(1).truncationMode(.tail)
+                                Text(latest).font(.code(size: 10.8)).lineLimit(1).truncationMode(.tail)
                             }
                             .foregroundStyle(Palette.ink2).padding(.top, 2)
                         }

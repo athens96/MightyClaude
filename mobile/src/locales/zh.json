@@ -1243,6 +1243,7 @@
   "settings.styles.sectionTitle": "Mighty 风格",
   "settings.styles.unblockButton": "解除阻止",
   "settings.styles.viewButton": "查看内容",
+  "settings.text.codeDefault": "默认（{font}）",
   "settings.text.codeFontLabel": "代码和终端字体",
   "settings.text.fontLabel": "字体",
   "settings.text.fontSystem": "系统默认",

@@ -186,7 +186,7 @@ struct LegacyTerminalHistory: View {
             Text(L("terminal.history.helpMac")).font(.ui(size: 12)).foregroundStyle(.secondary)
             ScrollView {
                 Text(session.logs.isEmpty ? L("terminal.history.empty") : session.logs.map { "[\($0.kind)] \($0.text)" }.joined(separator: "\n\n"))
-                    .font(.ui(size: 11, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(DesignMetrics.Spacing.md)
+                    .font(.code(size: 11)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(DesignMetrics.Spacing.md)
             }.background(Palette.subtle, in: RoundedRectangle(cornerRadius: 8))
         }.padding(DesignMetrics.Inset.sheet).frame(width: 630, height: 450)
     }

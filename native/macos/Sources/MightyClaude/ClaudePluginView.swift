@@ -276,7 +276,7 @@ struct ClaudePluginView: View {
             }
             if !diagnosticOutput.isEmpty {
                 DisclosureGroup(L("plugins.diagnosticsDisclosure"), isExpanded: $showsOutput) {
-                    ScrollView { Text(String(diagnosticOutput.suffix(16_384))).font(.ui(size: 10, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
+                    ScrollView { Text(String(diagnosticOutput.suffix(16_384))).font(.code(size: 10)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
                         .frame(height: 80)
                 }.font(.ui(size: 10))
             }

@@ -125,7 +125,7 @@ struct MightyGraphReferenceBubble: View {
             ScrollView { AgentMarkdownView(source: source).padding(DesignMetrics.Spacing.lg).padding(.bottom, Self.handleClearance) }
         case .text(let text):
             ScrollView([.vertical, .horizontal]) {
-                Text(text).font(.ui(size: 11, design: .monospaced)).textSelection(.enabled)
+                Text(text).font(.code(size: 11)).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .topLeading).padding(DesignMetrics.Spacing.lg).padding(.bottom, Self.handleClearance)
             }
         case .image(let image):
