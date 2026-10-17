@@ -113,6 +113,9 @@ try {
         if ($result.delegation.$key -ne $true) { throw "Windows delegation smoke failed: delegation.$key" }
     }
     if ($result.delegation.removeRefusedOpenChild -ne 'workspace_has_children') { throw "Windows delegation smoke failed: delegation.removeRefusedOpenChild=$($result.delegation.removeRefusedOpenChild)" }
+    # A child of another agent (MainWindow.DelegationSmoke.cs step 9): the worktree menu's pick of Claude on a read-only Codex pane starts a Claude child in plan mode.
+    $cross = $result.delegation.otherAgentChildStarted
+    if ($null -eq $cross -or $cross.parent -ne 'codex' -or $cross.child -ne 'claude' -or $cross.mode -ne 'plan' -or $cross.state -eq 'failed' -or $cross.state -eq 'creating') { throw "Windows delegation smoke failed: delegation.otherAgentChildStarted=$($cross | ConvertTo-Json -Compress)" }
     if ($result.mightyGraph.retainedNativeDocuments -ne $true) { throw 'Graph redraw replaced a retained native document or its parent.' }
     $screenshot = Join-Path $ProfileDirectory 'smoke-window.png'
     if (-not (Test-Path $screenshot -PathType Leaf) -or (Get-Item $screenshot).Length -eq 0) { throw 'GUI 스크린샷이 없습니다.' }
