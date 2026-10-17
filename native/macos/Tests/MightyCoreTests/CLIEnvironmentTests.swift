@@ -148,4 +148,22 @@ struct CLIEnvironmentTests {
         #expect(await fixed.command(provider: "codex", workspacePath: root.path) == nil)
         await service.shutdown(); await fixed.shutdown()
     }
+
+    /// Folders the official installers use are found even when the profile does
+    /// not list them yet, after everything the profile chose; a given environment
+    /// (these tests) gets none, so a fixture never sees this Mac's tools.
+    @Test func theLoginPathEndsWithTheInstallersFoldersOnlyForTheRealEnvironment() async throws {
+        #expect(CLIEnvironmentResolver.appending(["/opt/homebrew/bin", "/a"], to: "/a:/usr/bin") == "/a:/usr/bin:/opt/homebrew/bin")
+        #expect(CLIEnvironmentResolver.appending(["/x"], to: "") == "/x")
+        let home = URL(fileURLWithPath: "/Users/fixture")
+        #expect(CLIEnvironmentResolver.wellKnownFolders(home: home) == ["/Users/fixture/.local/bin", "/Users/fixture/.npm-global/bin", "/opt/homebrew/bin", "/usr/local/bin"])
+        let root = try temporary(); defer { try? FileManager.default.removeItem(at: root) }
+        let shell = try fakeShell(root); try settings(root)
+        let plain = await resolver(root, shell: shell).resolve(workspacePath: root.path)
+        #expect(plain.values["PATH"] == "/usr/bin:/bin")
+        let appended = CLIEnvironmentResolver(baseEnvironment: ["HOME": root.path, "PATH": "/usr/bin:/bin"], shell: shell, home: root, timeout: 30, cacheTTL: 600, appendedPath: [root.path + "/.local/bin", "/usr/bin"])
+        let snapshot = await appended.resolve(workspacePath: root.path)
+        #expect(snapshot.source == .loginShell)
+        #expect(snapshot.values["PATH"] == "/usr/bin:/bin:" + root.path + "/.local/bin")
+    }
 }

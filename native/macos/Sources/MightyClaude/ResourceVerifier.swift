@@ -3,8 +3,8 @@ import MightyCore
 
 /// Handles `--verify-resources`. Called before CEF, NSApplication, or any other
 /// initialisation so the binary can be invoked headlessly by build and install
-/// scripts. Exits 0 with VERIFY_RESOURCES_OK when every catalog and the pet resolve,
-/// exits non-zero otherwise.
+/// scripts. Exits 0 with VERIFY_RESOURCES_OK when every locale catalog, the help
+/// files, the setup catalog and the pet resolve, exits non-zero otherwise.
 enum ResourceVerifier {
     static func run() -> Never {
         var err = StderrStream()
@@ -14,6 +14,7 @@ enum ResourceVerifier {
             .map { ResourceHealthChecker.checkCatalog($0.rawValue, allowEmpty: !$0.isComplete) }
         let checks: [ResourceCheckResult] = catalogs + [ResourceHealthChecker.checkDefaultPet()]
             + HelpCaptureResources.files.map(ResourceHealthChecker.checkHelpFile)
+            + [ResourceHealthChecker.checkSetupCatalog()]
         var allFound = true
         for result in checks {
             if result.found {

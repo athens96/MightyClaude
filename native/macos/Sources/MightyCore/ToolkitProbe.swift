@@ -51,12 +51,19 @@ public enum ToolkitProbe {
     /// record whose scope is "user".  A project- or local-scope record alone
     /// does not count.
     private static func probePlugin(pluginID: String, home: URL) -> Result {
+        userScopePluginInstalled(home: home, matching: { $0 == pluginID }) ? .installed : .missing
+    }
+
+    /// Whether installed_plugins.json has a plugin whose ID `matching` accepts
+    /// with at least one user-scope record. The setup screen asks this too.
+    public static func userScopePluginInstalled(home: URL, matching: (String) -> Bool) -> Bool {
         let registry = home.appendingPathComponent(".claude/plugins/installed_plugins.json")
         guard let data = CLIAccountSupport.boundedData(registry, maximumBytes: 4 * 1024 * 1024),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let plugins = object["plugins"] as? [String: Any],
-              let records = plugins[pluginID] as? [[String: Any]] else { return .missing }
-        return records.contains { $0["scope"] as? String == "user" } ? .installed : .missing
+              let plugins = object["plugins"] as? [String: Any] else { return false }
+        return plugins.contains { id, value in
+            matching(id) && ((value as? [[String: Any]])?.contains { $0["scope"] as? String == "user" } ?? false)
+        }
     }
 
     /// mcp: name present under top-level mcpServers of ~/.claude.json.
