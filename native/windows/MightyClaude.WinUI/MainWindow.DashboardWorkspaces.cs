@@ -43,11 +43,11 @@ public sealed partial class MainWindow
             if (ProviderCatalog.ShowsBetaBadge(card.Session)) Add(BetaBadgeView.Create(brushes));
         }
         var local = card.Session.Kind == "shell";
-        var meta = new TextBlock { Text = DashboardMeta(card), FontSize = 12, Foreground = ink, TextTrimming = TextTrimming.CharacterEllipsis };
+        var meta = new TextBlock { Text = DashboardMeta(card), TextSize = 12, Foreground = ink, TextTrimming = TextTrimming.CharacterEllipsis };
         Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(meta, FontNumeralAlignment.Tabular);
         dashboardClocks[card.Session.Id] = meta;
         Add(meta, rest: !local);
-        if (local) Add(new TextBlock { Text = Locale.Get("phone.card.localTerminal"), FontSize = 12, FontWeight = FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.WaitText), TextTrimming = TextTrimming.CharacterEllipsis }, rest: true);
+        if (local) Add(new TextBlock { Text = Locale.Get("phone.card.localTerminal"), TextSize = 12, FontWeight = FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.WaitText), TextTrimming = TextTrimming.CharacterEllipsis }, rest: true);
         return line;
     }
 
@@ -89,11 +89,11 @@ public sealed partial class MainWindow
         var details = new Grid { ColumnSpacing = spacing, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
         details.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); details.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); details.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var heading = SafeButton(workspace.Name, () => SelectWorkspace(workspace.Id));
-        heading.Content = new TextBlock { Text = workspace.Name, FontSize = DesignMetrics.Type.Header, FontFamily = new Microsoft.UI.Xaml.Media.FontFamily(DesignMetrics.Font.Heading), FontWeight = FontWeights.Bold, TextTrimming = TextTrimming.CharacterEllipsis };
+        heading.Content = new TextBlock { Text = workspace.Name, TextSize = DesignMetrics.Type.Header, TextFont = TextArea.Heading, FontWeight = FontWeights.Bold, TextTrimming = TextTrimming.CharacterEllipsis };
         heading.Padding = new(0); heading.MinHeight = 0; heading.BorderThickness = new(0); heading.VerticalAlignment = VerticalAlignment.Center;
         PaintPlainButton(heading, brushes.Transparent, brushes.Transparent, ink: brushes.Brush(DesignToken.Ink));
         details.Children.Add(heading);
-        var path = new TextBlock { Text = workspace.Path, FontFamily = new Microsoft.UI.Xaml.Media.FontFamily(DesignMetrics.Font.Mono), FontSize = 11.5, Foreground = brushes.Brush(DesignToken.Ink2), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+        var path = new TextBlock { Text = workspace.Path, TextFont = TextArea.Code, TextSize = 11.5, Foreground = brushes.Brush(DesignToken.Ink2), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
         ToolTipService.SetToolTip(path, workspace.Path); Grid.SetColumn(path, 1); details.Children.Add(path);
         var git = DashboardGitCapsule(workspace.Id);
         Grid.SetColumn(git.Capsule, 2); details.Children.Add(git.Capsule); ApplyDashboardGit(workspace.Id, workspace.Path);
@@ -138,7 +138,7 @@ public sealed partial class MainWindow
     {
         var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DashboardCapsuleLabelSpacing };
         label.Children.Add(symbol);
-        label.Children.Add(new TextBlock { Text = words, FontSize = 11.5, FontWeight = FontWeights.Bold, VerticalAlignment = VerticalAlignment.Center });
+        label.Children.Add(new TextBlock { Text = words, TextSize = 11.5, FontWeight = FontWeights.Bold, VerticalAlignment = VerticalAlignment.Center });
         button.Content = label; button.Height = DashboardCapsuleHeight; button.MinHeight = 0; button.MinWidth = 0; button.Padding = new(DesignMetrics.Spacing.Md, 0, DesignMetrics.Spacing.Md, 0);
         button.CornerRadius = new(DashboardCapsuleHeight / 2); button.BorderThickness = new(0); button.VerticalAlignment = VerticalAlignment.Center;
         PaintPlainButton(button, fill, hover, ink: ink);
@@ -155,7 +155,7 @@ public sealed partial class MainWindow
     private DashboardGitBadge DashboardGitCapsule(string workspaceId)
     {
         var ink = brushes.Brush(DesignToken.Ink2);
-        TextBlock Words() => new() { FontSize = DesignMetrics.Type.Small, FontWeight = FontWeights.Medium, Foreground = ink, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+        TextBlock Words() => new() { TextSize = DesignMetrics.Type.Small, FontWeight = FontWeights.Medium, Foreground = ink, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
         var label = Words(); var ahead = Words(); var behind = Words();
         Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(ahead, FontNumeralAlignment.Tabular); Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(behind, FontNumeralAlignment.Tabular);
         var dirty = new Microsoft.UI.Xaml.Shapes.Ellipse { Width = 5, Height = 5, Fill = brushes.Brush(DesignToken.Accent), VerticalAlignment = VerticalAlignment.Center };

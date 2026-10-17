@@ -305,7 +305,7 @@ public sealed partial class MainWindow
     /// <summary>A button of those windows, as on the pane's question and permission cards (M/PaneChrome.swift:145-169): 12 bold, <see cref="CardButtonHeight"/> high at radius 9; the answer in ink behind the card's colour, the others on the raised card with a line.</summary>
     private Button CompanionCardButton(Button button, bool prominent)
     {
-        button.CornerRadius = new CornerRadius(DesignMetrics.Radius.CardButton); button.FontSize = 12; button.FontWeight = Microsoft.UI.Text.FontWeights.Bold;
+        button.CornerRadius = new CornerRadius(DesignMetrics.Radius.CardButton); button.TextSize = 12; button.FontWeight = Microsoft.UI.Text.FontWeights.Bold;
         button.Padding = CardButtonPadding; button.MinHeight = CardButtonHeight; button.Height = CardButtonHeight; button.BorderThickness = new Thickness(prominent ? 0 : DesignMetrics.Stroke.Line);
         var fill = brushes.Brush(prominent ? DesignToken.Ink : DesignToken.CardRaised);
         PaintPlainButton(button, fill, fill, prominent ? null : brushes.Brush(DesignToken.Line), brushes.Brush(prominent ? DesignToken.Card : DesignToken.Ink), brushes.Brush(DesignToken.Ink3));
@@ -318,7 +318,7 @@ public sealed partial class MainWindow
         if (companionQuestionWindowKey == key && companionQuestionWindow is { } existing) { existing.Activate(); return; }
         companionQuestionWindow?.Close();
         if (UserQuestionnaire.Parse(request.InputJson) is not { } questionnaire) return;
-        var draft = CompanionDraft(request); var window = new Window { Title = Locale.Get("phone.questionnaire.title") }; var host = new StackPanel { Spacing = DesignMetrics.Spacing.Md };
+        var draft = CompanionDraft(request); var window = new Window { Title = Locale.Get("phone.questionnaire.title") }; AppText.Track(window); var host = new StackPanel { Spacing = DesignMetrics.Spacing.Md };
         // Each window starts where the bubble stands, with the picks made there; words written in an earlier window stay.
         draft.Picks.Clear();
         for (var index = 0; index < questionnaire.Questions.Count; index++)
@@ -334,22 +334,22 @@ public sealed partial class MainWindow
             // The pane's question card in a window of its own (MainWindow.Questionnaire.cs): where it comes from and how far along in the
             // secondary ink at 11, the question at 14 semibold, each choice's label over its description, the error in the error ink.
             var ink = brushes.Brush(DesignToken.Ink); var ink2 = brushes.Brush(DesignToken.Ink2);
-            if (request.RunId == companionShown && service.Snapshot.Sessions.FirstOrDefault(s => s.Id == request.RunId)?.Title is { Length: > 0 } asking) host.Children.Add(new TextBlock { Text = asking, FontSize = 11, Foreground = ink2 });
-            host.Children.Add(new TextBlock { Text = (step + 1) + " / " + questionnaire.Questions.Count + " · " + question.Header, FontSize = 11, Foreground = ink2 });
-            host.Children.Add(new TextBlock { Text = question.Question, FontSize = 14, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
+            if (request.RunId == companionShown && service.Snapshot.Sessions.FirstOrDefault(s => s.Id == request.RunId)?.Title is { Length: > 0 } asking) host.Children.Add(new TextBlock { Text = asking, TextSize = 11, Foreground = ink2 });
+            host.Children.Add(new TextBlock { Text = (step + 1) + " / " + questionnaire.Questions.Count + " · " + question.Header, TextSize = 11, Foreground = ink2 });
+            host.Children.Add(new TextBlock { Text = question.Question, TextSize = 14, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
             if (!draft.Picks.TryGetValue(step, out var picks)) draft.Picks[step] = picks = [];
             var radios = new List<CheckBox>();
             TextBox? customInput = null;
             foreach (var option in question.Options)
             {
-                var content = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs }; content.Children.Add(new TextBlock { Text = option.Label, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink, TextWrapping = TextWrapping.Wrap }); content.Children.Add(new TextBlock { Text = option.Description, FontSize = 11, Foreground = ink2, TextWrapping = TextWrapping.Wrap });
+                var content = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs }; content.Children.Add(new TextBlock { Text = option.Label, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink, TextWrapping = TextWrapping.Wrap }); content.Children.Add(new TextBlock { Text = option.Description, TextSize = 11, Foreground = ink2, TextWrapping = TextWrapping.Wrap });
                 var choice = new CheckBox { Content = content, IsChecked = picks.Contains(option.Label), HorizontalContentAlignment = HorizontalAlignment.Stretch };
                 radios.Add(choice); choice.Checked += (_, _) => { if (!question.MultiSelect) { picks.Clear(); foreach (var other in radios.Where(r => r != choice)) other.IsChecked = false; draft.Custom.Remove(step); if (customInput is not null) customInput.Text = ""; } picks.Add(option.Label); };
                 choice.Unchecked += (_, _) => picks.Remove(option.Label); host.Children.Add(choice);
             }
             var custom = new TextBox { Header = Locale.Get("companion.question.custom"), AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 70, MaxLength = 8192, Text = draft.Custom.GetValueOrDefault(step) ?? "" }; customInput = custom;
             custom.TextChanged += (_, _) => { draft.Custom[step] = custom.Text; if (!question.MultiSelect && !string.IsNullOrWhiteSpace(custom.Text)) { picks.Clear(); foreach (var choice in radios) choice.IsChecked = false; } }; host.Children.Add(custom);
-            var error = new TextBlock { FontSize = 11, Foreground = brushes.Brush(DesignToken.ErrText), TextWrapping = TextWrapping.Wrap }; host.Children.Add(error);
+            var error = new TextBlock { TextSize = 11, Foreground = brushes.Brush(DesignToken.ErrText), TextWrapping = TextWrapping.Wrap }; host.Children.Add(error);
             var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, HorizontalAlignment = HorizontalAlignment.Right };
             if (step > 0) buttons.Children.Add(CompanionCardButton(Button(Locale.Get("companion.question.back"), () => { draft.Step--; RenderQuestion(); return Task.CompletedTask; }), prominent: false));
             buttons.Children.Add(CompanionCardButton(Button(Locale.Get(step + 1 == questionnaire.Questions.Count ? "companion.question.submit" : "companion.question.next"), () =>
@@ -373,14 +373,14 @@ public sealed partial class MainWindow
     private void ShowCompanionApproval(ToolPermissionRequest request, bool aside = false)
     {
         var key = PermissionKey(request); companionQuestionWindow?.Close();
-        var window = new Window { Title = ToolPermissionPresentation.Make(request.ToolName, request.InputJson).Title };
+        var window = new Window { Title = ToolPermissionPresentation.Make(request.ToolName, request.InputJson).Title }; AppText.Track(window);
         var content = new Grid { RowSpacing = DesignMetrics.Spacing.Md };
         content.RowDefinitions.Add(new() { Height = GridLength.Auto }); content.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) }); content.RowDefinitions.Add(new() { Height = GridLength.Auto });
         // The pane's permission card in a window of its own (MainWindow.ToolPermission.cs): its title 12 semibold, the whole request in the mono face.
-        content.Children.Add(new TextBlock { Text = ToolPermissionStrings.BarTitleTemplate.Replace("{title}", window.Title), FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap });
-        var text = new TextBox { IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, FontFamily = new Microsoft.UI.Xaml.Media.FontFamily(DesignMetrics.Font.Mono), FontSize = DesignMetrics.Type.Mono, Text = request.InputJson };
+        content.Children.Add(new TextBlock { Text = ToolPermissionStrings.BarTitleTemplate.Replace("{title}", window.Title), TextSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap });
+        var text = new TextBox { IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, TextFont = TextArea.Code, TextSize = DesignMetrics.Type.Mono, Text = request.InputJson };
         var scroll = new ScrollViewer { Content = text, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }; Grid.SetRow(scroll, 1); content.Children.Add(scroll);
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, HorizontalAlignment = HorizontalAlignment.Right }; var error = new TextBlock { FontSize = 11, Foreground = brushes.Brush(DesignToken.ErrText), TextWrapping = TextWrapping.Wrap };
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, HorizontalAlignment = HorizontalAlignment.Right }; var error = new TextBlock { TextSize = 11, Foreground = brushes.Brush(DesignToken.ErrText), TextWrapping = TextWrapping.Wrap };
         Task Respond(bool allow)
         {
             if (!companionPermissions.TryGetValue(key, out var live) || live != request || live.State != "pending" || allow && !live.CanAllow) { window.Close(); return Task.CompletedTask; }
@@ -433,15 +433,15 @@ public sealed partial class MainWindow
         companionQuestionWindow?.Close();
         if (request.Plan is not { } plan) return;
         var ink2 = brushes.Brush(DesignToken.Ink2);
-        var window = new Window { Title = Locale.Get("plan.card.title") };
+        var window = new Window { Title = Locale.Get("plan.card.title") }; AppText.Track(window);
         var content = new Grid { RowSpacing = DesignMetrics.Spacing.Md };
         foreach (var height in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto, GridLength.Auto }) content.RowDefinitions.Add(new() { Height = height });
         // The pane's plan card in a window of its own (MainWindow.PlanCard.cs): 계획 at 13 bold, when it came and where from in the secondary ink.
         var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
-        header.Children.Add(new TextBlock { Text = window.Title, FontSize = 13, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = brushes.Brush(DesignToken.Ink), VerticalAlignment = VerticalAlignment.Center });
+        header.Children.Add(new TextBlock { Text = window.Title, TextSize = 13, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = brushes.Brush(DesignToken.Ink), VerticalAlignment = VerticalAlignment.Center });
         var session = service.Snapshot.Sessions.FirstOrDefault(s => s.Id == request.RunId);
         var place = string.Join(" · ", new[] { request.ReceivedAt is { } at ? PlanCardSupport.ReceivedText(at) : "", session?.Title ?? "" }.Where(part => part.Length > 0));
-        header.Children.Add(new TextBlock { Text = place, FontSize = 11, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis });
+        header.Children.Add(new TextBlock { Text = place, TextSize = 11, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis });
         content.Children.Add(header);
         // The plan's Markdown. Its RTF bakes the theme's colours in and the box paints its own over them, so it is drawn
         // again in the window's theme once shown and whenever the theme changes (MainWindow.PlanCard.cs PlanMarkdown).
@@ -452,16 +452,16 @@ public sealed partial class MainWindow
         {
             if (document.IsLoaded) PaneView.SetMarkdownRtf(document, TranscriptRtf.RenderMarkdown(plan, !DarkTheme));
         });
-        document.ActualThemeChanged += (_, _) => Rerender(); document.Loaded += (_, _) => Rerender();
+        document.ActualThemeChanged += (_, _) => Rerender(); document.Loaded += (_, _) => Rerender(); AppText.Follow(document, Rerender);
         var page = new Border { Child = document, CornerRadius = new CornerRadius(DesignMetrics.Radius.Entry), Background = brushes.Brush(DesignToken.CardRaised) };
         Grid.SetRow(page, 1); content.Children.Add(page);
         var revise = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
-        var field = new TextBox { AcceptsReturn = true, PlaceholderText = Locale.Get("plan.card.revisePlaceholder"), PlaceholderForeground = brushes.Tertiary, FontSize = 12, TextWrapping = TextWrapping.Wrap, MinHeight = 56, MaxHeight = 120 };
+        var field = new TextBox { AcceptsReturn = true, PlaceholderText = Locale.Get("plan.card.revisePlaceholder"), PlaceholderForeground = brushes.Tertiary, TextSize = 12, TextWrapping = TextWrapping.Wrap, MinHeight = 56, MaxHeight = 120 };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(field, field.PlaceholderText); Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(field, "pet-plan-revise-text");
-        var tooLong = new TextBlock { Text = Locale.Get("plan.error.feedbackTooLong"), FontSize = 11, Foreground = brushes.Brush(DesignToken.ErrText), TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed };
+        var tooLong = new TextBlock { Text = Locale.Get("plan.error.feedbackTooLong"), TextSize = 11, Foreground = brushes.Brush(DesignToken.ErrText), TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed };
         revise.Children.Add(field); revise.Children.Add(tooLong);
         Grid.SetRow(revise, 2); content.Children.Add(revise);
-        var error = new TextBlock { FontSize = 11, Foreground = brushes.Brush(DesignToken.ErrText), TextWrapping = TextWrapping.Wrap };
+        var error = new TextBlock { TextSize = 11, Foreground = brushes.Brush(DesignToken.ErrText), TextWrapping = TextWrapping.Wrap };
         async Task Respond(PlanDecision decision)
         {
             if (companionPlanSending is not null || decision.Kind == "revise" && !PlanCardSupport.CanSendRevise(decision.Feedback)) return;

@@ -832,6 +832,12 @@ internal static class Verification
         await Test("design tokens: metrics and opacities match the fixture", DesignTokenVerification.MetricsAndOpacitiesMatchTheFixture);
         await Test("design tokens: only the light theme setting picks the light palette", DesignTokenVerification.ThemeSettingPicksThePalette);
         await Test("design tokens: inks, fills and marks clear the macOS contrast rules", DesignTokenVerification.InksFillsAndMarksClearTheirContrast);
+        // The text setting (M/MightyCore/TextAppearance.swift): at the standard values every size is today's.
+        await Test("text appearance: the standard setting draws every base size exactly", TextAppearanceVerification.StandardDrawsEveryBaseSizeExactly);
+        await Test("text appearance: sizes round to the half point and scales snap to the 85-150% steps", TextAppearanceVerification.SizesRoundToTheHalfPointAndScalesSnapToSteps);
+        await Test("text appearance: stepping stops at both ends and keeps the families", TextAppearanceVerification.SteppingStopsAtBothEndsAndKeepsTheFamilies);
+        await Test("text appearance: the conversation follows the interface font and code offers monospaced families", TextAppearanceVerification.TheConversationFollowsTheInterfaceUntilItHasItsOwn);
+        await Test("text appearance: registry values round-trip and the standard setting stores nothing", TextAppearanceVerification.TheRegistryValuesRoundTripAndTheStandardStoresNothing);
         await Test("design tokens: the launch splash reads the saved theme before the state loads", DesignTokenVerification.TheSplashReadsTheSavedThemeBeforeTheStateLoads);
         await Test("agent marks: only an agent's sidebar row names its provider, so only it carries the mark", ProviderMarkVerification.OnlyAnAgentRowNamesItsProviderSoOnlyItCarriesTheMark);
         await Test("agent marks: marks are the macOS outlines in their brand colours", ProviderMarkVerification.MarksAreTheMacOutlinesInTheirBrandColours);

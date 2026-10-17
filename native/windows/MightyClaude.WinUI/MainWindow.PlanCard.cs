@@ -196,20 +196,20 @@ public sealed partial class MainWindow
             var header = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             foreach (var width in new[] { GridLength.Auto, GridLength.Auto, GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto, GridLength.Auto, GridLength.Auto }) header.ColumnDefinitions.Add(new() { Width = width });
             header.Children.Add(WaitBadge(ComposerGlyph.Icon("", 11, 22, 22).Ink(b.Brush(DesignToken.OnWait)).View));
-            var title = new TextBlock { Text = Locale.Get("plan.card.title"), FontSize = 13, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
+            var title = new TextBlock { Text = Locale.Get("plan.card.title"), TextSize = 13, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(title, 1); header.Children.Add(title);
             var received = request.ReceivedAt is { } at ? PlanCardSupport.ReceivedText(at) : "";
-            var receivedBlock = new TextBlock { Text = received, FontSize = 11, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
+            var receivedBlock = new TextBlock { Text = received, TextSize = 11, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
             AutomationProperties.SetAutomationId(receivedBlock, "plan-received-" + id);
             Grid.SetColumn(receivedBlock, 2); header.Children.Add(receivedBlock);
-            var waiting = new TextBlock { FontSize = 11, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
+            var waiting = new TextBlock { TextSize = 11, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
             Grid.SetColumn(waiting, 4); header.Children.Add(waiting);
             Button? fit = null;
             if (inDiagram)
             {
                 // The plan block's way back to the window fit, as the newest result's (MainWindow.MightyGraph.cs).
                 var label = Locale.Get(MightyGraphViewModel.LocaleKeyResultFitToWindow);
-                fit = HeaderButton(new TextBlock { Text = label, FontSize = DesignMetrics.Type.Small }, b.Brush(DesignToken.Accent));
+                fit = HeaderButton(new TextBlock { Text = label, TextSize = DesignMetrics.Type.Small }, b.Brush(DesignToken.Accent));
                 AutomationProperties.SetAutomationId(fit, "plan-fit-to-window-" + id);
                 AutomationProperties.SetName(fit, label); ToolTipService.SetToolTip(fit, label);
                 fit.Click += async (_, _) => await FitPlanToWindow();
@@ -262,10 +262,10 @@ public sealed partial class MainWindow
             {
                 Button? send = null;
                 var revise = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
-                var field = new TextBox { AcceptsReturn = true, Text = draft.Feedback, PlaceholderText = Locale.Get("plan.card.revisePlaceholder"), PlaceholderForeground = b.Tertiary, FontSize = 12, TextWrapping = TextWrapping.Wrap, MinHeight = 56, MaxHeight = 120, IsEnabled = !draft.Sending };
+                var field = new TextBox { AcceptsReturn = true, Text = draft.Feedback, PlaceholderText = Locale.Get("plan.card.revisePlaceholder"), PlaceholderForeground = b.Tertiary, TextSize = 12, TextWrapping = TextWrapping.Wrap, MinHeight = 56, MaxHeight = 120, IsEnabled = !draft.Sending };
                 AutomationProperties.SetName(field, Locale.Get("plan.card.revisePlaceholder"));
                 AutomationProperties.SetAutomationId(field, "plan-revise-text-" + id);
-                var tooLong = new TextBlock { Text = Locale.Get("plan.error.feedbackTooLong"), Foreground = b.Brush(DesignToken.ErrText), FontSize = 11, TextWrapping = TextWrapping.Wrap };
+                var tooLong = new TextBlock { Text = Locale.Get("plan.error.feedbackTooLong"), Foreground = b.Brush(DesignToken.ErrText), TextSize = 11, TextWrapping = TextWrapping.Wrap };
                 AutomationProperties.SetAutomationId(tooLong, "plan-revise-too-long-" + id);
                 void Check()
                 {
@@ -288,7 +288,7 @@ public sealed partial class MainWindow
             }
             if (draft.Error is { } error)
             {
-                var message = new TextBlock { Text = error, Foreground = b.Brush(DesignToken.ErrText), FontSize = 11, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true };
+                var message = new TextBlock { Text = error, Foreground = b.Brush(DesignToken.ErrText), TextSize = 11, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true };
                 AutomationProperties.SetAutomationId(message, "plan-error-" + id);
                 controls.Children.Add(message);
             }
@@ -299,7 +299,7 @@ public sealed partial class MainWindow
                 var sending = new ProgressRing { IsActive = true, Width = 12, Height = 12, MinWidth = 0, MinHeight = 0, VerticalAlignment = VerticalAlignment.Center, Foreground = ink2 };
                 AutomationProperties.SetAutomationId(sending, "plan-sending-" + id); hint.Children.Add(sending);
             }
-            hint.Children.Add(new TextBlock { Text = Locale.Get("plan.card.hint"), FontSize = 11, Foreground = ink2, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center });
+            hint.Children.Add(new TextBlock { Text = Locale.Get("plan.card.hint"), TextSize = 11, Foreground = ink2, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center });
             controls.Children.Add(hint);
             // Four answers as tiles: one row where the card is wide, two where it is not.
             var actions = new AdaptiveGridPanel { Minimum = 150, Gap = 8, IsHitTestVisible = !draft.Sending };
@@ -326,7 +326,7 @@ public sealed partial class MainWindow
         /// <summary>The one primary choice of a card on the accent, its words in <c>onAccent</c> (M/PaneChrome.swift accent).</summary>
         private void PaintAccentButton(Button button)
         {
-            button.CornerRadius = new CornerRadius(DesignMetrics.Radius.CardButton); button.FontSize = 12; button.FontWeight = Microsoft.UI.Text.FontWeights.Bold;
+            button.CornerRadius = new CornerRadius(DesignMetrics.Radius.CardButton); button.TextSize = 12; button.FontWeight = Microsoft.UI.Text.FontWeights.Bold;
             button.Padding = CardButtonPadding; button.MinWidth = 0; button.MinHeight = CardButtonHeight; button.Height = CardButtonHeight; button.BorderThickness = new Thickness(0);
             var fill = owner.brushes.Brush(DesignToken.Accent); var ink = owner.brushes.Brush(DesignToken.OnAccent);
             owner.PaintPlainButton(button, fill, fill, null, ink, ink);
@@ -395,7 +395,7 @@ public sealed partial class MainWindow
             if (owner.dialogOpen || owner.options.SmokeTest) return;
             var content = new Grid { RowSpacing = DesignMetrics.Spacing.Sm };
             content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); content.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-            content.Children.Add(new TextBlock { Text = subtitle, FontSize = 11, Foreground = owner.brushes.Brush(DesignToken.Ink2) });
+            content.Children.Add(new TextBlock { Text = subtitle, TextSize = 11, Foreground = owner.brushes.Brush(DesignToken.Ink2) });
             var document = PlanMarkdown(plan, "plan-document");
             var page = new Border { Child = document, MinHeight = 420, Background = owner.brushes.Brush(DesignToken.Card) };
             Grid.SetRow(page, 1); content.Children.Add(page);
@@ -428,9 +428,9 @@ public sealed partial class MainWindow
             var face = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             foreach (var width in new[] { GridLength.Auto, GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto }) face.ColumnDefinitions.Add(new() { Width = width });
             face.Children.Add(ComposerGlyph.Icon("", 11).Ink(b.Brush(DesignToken.Accent)).View);
-            var count = new TextBlock { Text = Locale.Get("plan.history.title", new Dictionary<string, string> { ["count"] = records.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) }), FontSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
+            var count = new TextBlock { Text = Locale.Get("plan.history.title", new Dictionary<string, string> { ["count"] = records.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) }), TextSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(count, 1); face.Children.Add(count);
-            var latest = new TextBlock { Text = PlanCardSupport.OutcomeTitle(last.Outcome) + " · " + PlanCardSupport.Headline(last.Plan), FontSize = 11, Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+            var latest = new TextBlock { Text = PlanCardSupport.OutcomeTitle(last.Outcome) + " · " + PlanCardSupport.Headline(last.Plan), TextSize = 11, Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(latest, 2); face.Children.Add(latest);
             var chevron = (planHistoryOpen ? ComposerGlyph.ChevronDown(8, 1.2) : ComposerGlyph.ChevronRight(8, 1.2)).Ink(ink2);
             Grid.SetColumn(chevron.View, 3); face.Children.Add(chevron.View);
@@ -467,11 +467,11 @@ public sealed partial class MainWindow
             var tone = record.Outcome switch { PlanOutcome.ApprovedAuto or PlanOutcome.ApprovedConfirm => DesignTone.Done, PlanOutcome.Revised => DesignTone.Wait, _ => DesignTone.Stop };
             var head = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             foreach (var width in new[] { GridLength.Auto, GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto }) head.ColumnDefinitions.Add(new() { Width = width });
-            var pill = new Border { Child = new TextBlock { Text = PlanCardSupport.OutcomeTitle(record.Outcome), FontSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = b.Text(tone) }, Background = b.Soft(tone), CornerRadius = new CornerRadius(9), Padding = new Thickness(DesignMetrics.Spacing.Sm, 1, DesignMetrics.Spacing.Sm, 1), VerticalAlignment = VerticalAlignment.Center };
+            var pill = new Border { Child = new TextBlock { Text = PlanCardSupport.OutcomeTitle(record.Outcome), TextSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = b.Text(tone) }, Background = b.Soft(tone), CornerRadius = new CornerRadius(9), Padding = new Thickness(DesignMetrics.Spacing.Sm, 1, DesignMetrics.Spacing.Sm, 1), VerticalAlignment = VerticalAlignment.Center };
             head.Children.Add(pill);
-            var time = new TextBlock { Text = PlanCardSupport.TimeText(record.DecidedAt), FontSize = 10, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
+            var time = new TextBlock { Text = PlanCardSupport.TimeText(record.DecidedAt), TextSize = 10, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(time, 1); head.Children.Add(time);
-            var line = new TextBlock { Text = PlanCardSupport.Headline(record.Plan), FontSize = 11, Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+            var line = new TextBlock { Text = PlanCardSupport.Headline(record.Plan), TextSize = 11, Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(line, 2); head.Children.Add(line);
             var chevron = (expanded ? ComposerGlyph.ChevronDown(8, 1.2) : ComposerGlyph.ChevronRight(8, 1.2)).Ink(ink2);
             Grid.SetColumn(chevron.View, 3); head.Children.Add(chevron.View);
@@ -484,12 +484,12 @@ public sealed partial class MainWindow
             if (expanded)
             {
                 row.Children.Add(new Border { Child = PlanMarkdown(record.Plan, "plan-record-text-" + record.Id), MaxHeight = inDiagram ? 320 : 300, CornerRadius = new CornerRadius(DesignMetrics.Radius.Row), Background = b.Brush(DesignToken.CardRaised) });
-                if (record.PlanTruncated == true) row.Children.Add(new TextBlock { Text = Locale.Get("plan.history.truncated"), FontSize = 10, Foreground = ink2 });
+                if (record.PlanTruncated == true) row.Children.Add(new TextBlock { Text = Locale.Get("plan.history.truncated"), TextSize = 10, Foreground = ink2 });
             }
             else if (inDiagram)
-                row.Children.Add(new TextBlock { Text = PlanCardSupport.Headline(record.Plan), FontSize = 11, Foreground = ink2, TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis });
+                row.Children.Add(new TextBlock { Text = PlanCardSupport.Headline(record.Plan), TextSize = 11, Foreground = ink2, TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis });
             if (record.Feedback is { Length: > 0 } feedback)
-                row.Children.Add(new TextBlock { Text = Locale.Get("plan.history.feedback") + " · " + feedback, FontSize = 10.5, Foreground = b.Brush(DesignToken.WaitText), TextWrapping = expanded ? TextWrapping.Wrap : TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, IsTextSelectionEnabled = expanded });
+                row.Children.Add(new TextBlock { Text = Locale.Get("plan.history.feedback") + " · " + feedback, TextSize = 10.5, Foreground = b.Brush(DesignToken.WaitText), TextWrapping = expanded ? TextWrapping.Wrap : TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, IsTextSelectionEnabled = expanded });
             return new Border
             {
                 Child = row, Padding = new Thickness(inDiagram ? DesignMetrics.Spacing.Md : DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Sm, inDiagram ? DesignMetrics.Spacing.Md : DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Sm), CornerRadius = new CornerRadius(DesignMetrics.Radius.Row),

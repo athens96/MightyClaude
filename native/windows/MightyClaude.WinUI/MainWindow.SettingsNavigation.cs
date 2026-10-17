@@ -51,7 +51,7 @@ public sealed partial class MainWindow
                 var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs, VerticalAlignment = VerticalAlignment.Center };
                 var symbol = SettingsCategorySymbol(category.Id);
                 label.Children.Add(new Grid { Width = 18, Children = { symbol }, VerticalAlignment = VerticalAlignment.Center });
-                label.Children.Add(new TextBlock { Text = category.Title, FontSize = DesignMetrics.Type.Title, VerticalAlignment = VerticalAlignment.Center });
+                label.Children.Add(new TextBlock { Text = category.Title, TextSize = DesignMetrics.Type.Title, VerticalAlignment = VerticalAlignment.Center });
                 var item = new ListViewItem
                 {
                     Content = label, Tag = category, Padding = new(DesignMetrics.Spacing.Sm + ListSelectionInsetX, 0, DesignMetrics.Spacing.Sm + ListSelectionInsetX, 0), CornerRadius = new(DesignMetrics.Radius.FileRow),
@@ -87,7 +87,7 @@ public sealed partial class MainWindow
             frame.RowDefinitions.Add(new() { Height = GridLength.Auto });
             frame.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) });
             frame.RowDefinitions.Add(new() { Height = GridLength.Auto });
-            var window = new Window { Title = Locale.Get("settings.title"), Content = frame };
+            var window = new Window { Title = Locale.Get("settings.title"), Content = frame }; AppText.Track(window);
             settingsWindow = window;
             Task CloseWindow() { window.Close(); return Task.CompletedTask; }
             var heading = SettingsHeading(CloseWindow);
@@ -120,6 +120,8 @@ public sealed partial class MainWindow
                 args.Handled = true; window.Close();
             };
             frame.KeyboardAccelerators.Add(escape);
+            // The text size steps from the settings window as from the main one.
+            AddTextSizeShortcuts(frame);
             var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             // Dropped at once, not after the awaiting continuation runs: a Render in between must not
             // touch the closed window's AppWindow.
@@ -175,7 +177,7 @@ public sealed partial class MainWindow
     {
         FrameworkElement symbol = id == "companion"
             ? new ShapePath { Data = CompanionPaw(false), Width = 14, Height = 14, Stretch = Stretch.Uniform }
-            : new FontIcon { Glyph = SettingsCategoryGlyph(id), FontSize = 14 };
+            : new FontIcon { Glyph = SettingsCategoryGlyph(id), TextSize = 14 };
         symbol.HorizontalAlignment = HorizontalAlignment.Center; symbol.VerticalAlignment = VerticalAlignment.Center;
         AutomationProperties.SetAccessibilityView(symbol, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
         return symbol;
@@ -197,12 +199,12 @@ public sealed partial class MainWindow
         heading.ColumnDefinitions.Add(new() { Width = new(31) });
         heading.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
         heading.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        var icon = new FontIcon { Glyph = "", FontSize = 21, FontWeight = Microsoft.UI.Text.FontWeights.Light, Foreground = brushes.Brush(DesignToken.Accent), VerticalAlignment = VerticalAlignment.Center };
+        var icon = new FontIcon { Glyph = "", TextSize = 21, FontWeight = Microsoft.UI.Text.FontWeights.Light, Foreground = brushes.Brush(DesignToken.Accent), VerticalAlignment = VerticalAlignment.Center };
         AutomationProperties.SetAccessibilityView(icon, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
         heading.Children.Add(icon);
         var words = new StackPanel { Spacing = DesignMetrics.Spacing.Xs, VerticalAlignment = VerticalAlignment.Center };
-        words.Children.Add(new TextBlock { Text = Locale.Get("settings.title"), FontSize = DesignMetrics.Type.Header, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Ink), LineHeight = 20, LineStackingStrategy = LineStackingStrategy.BlockLineHeight });
-        words.Children.Add(new TextBlock { Text = "Windows · WinUI", FontSize = DesignMetrics.Type.Pill, Foreground = brushes.Brush(DesignToken.Ink2), LineHeight = 13, LineStackingStrategy = LineStackingStrategy.BlockLineHeight });
+        words.Children.Add(new TextBlock { Text = Locale.Get("settings.title"), TextSize = DesignMetrics.Type.Header, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Ink), TextLineHeight = 20, LineStackingStrategy = LineStackingStrategy.BlockLineHeight });
+        words.Children.Add(new TextBlock { Text = "Windows · WinUI", TextSize = DesignMetrics.Type.Pill, Foreground = brushes.Brush(DesignToken.Ink2), TextLineHeight = 13, LineStackingStrategy = LineStackingStrategy.BlockLineHeight });
         Grid.SetColumn(words, 1); heading.Children.Add(words);
         // xmark.circle.fill at 17 in the tertiary ink (M/SettingsViews.swift:336): a disc with the cross cut out of it in the sheet's own surface.
         var mark = new Grid { Width = 17, Height = 17 };
@@ -289,11 +291,11 @@ public sealed partial class MainWindow
     {
         var words = new TextBlock
         {
-            Text = text, FontSize = size, Foreground = brushes.Brush(ink), TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center,
-            LineHeight = size + 3, LineStackingStrategy = LineStackingStrategy.BlockLineHeight, IsTextSelectionEnabled = selectable,
+            Text = text, TextSize = size, Foreground = brushes.Brush(ink), TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center,
+            TextLineHeight = size + 3, LineStackingStrategy = LineStackingStrategy.BlockLineHeight, IsTextSelectionEnabled = selectable,
         };
         if (medium) words.FontWeight = Microsoft.UI.Text.FontWeights.Medium;
-        if (mono) words.FontFamily = new FontFamily(DesignMetrics.Font.Mono);
+        if (mono) words.TextFont = TextArea.Code;
         return words;
     }
 
@@ -446,7 +448,7 @@ public sealed partial class MainWindow
         var b = brushes; var radius = SettingsControlRadius; var font = small ? 11.0 : 13.0;
         var host = new Grid
         {
-            Height = small ? SettingsSmallHeight : SettingsControlHeight, TabFocusNavigation = KeyboardNavigationMode.Once,
+            TextHeight = small ? SettingsSmallHeight : SettingsControlHeight, TabFocusNavigation = KeyboardNavigationMode.Once,
             XYFocusKeyboardNavigation = XYFocusKeyboardNavigationMode.Enabled, Opacity = enabled ? 1 : SettingsDisabledOpacity,
         };
         AutomationProperties.SetName(host, name); AutomationProperties.SetAutomationId(host, automationId);
@@ -477,7 +479,7 @@ public sealed partial class MainWindow
         {
             host.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
             var (value, label) = options[i]; var last = options.Count - 1;
-            var words = new TextBlock { Text = label, FontSize = font, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap };
+            var words = new TextBlock { Text = label, TextSize = font, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap };
             var corners = new CornerRadius(i == 0 ? radius : 0, i == last ? radius : 0, i == last ? radius : 0, i == 0 ? radius : 0);
             var chip = new Border { Child = words, CornerRadius = corners };
             var segment = new ToggleButton
@@ -519,7 +521,7 @@ public sealed partial class MainWindow
     internal ComboBox SettingsPopup(ComboBox picker, bool bordered = false)
     {
         var b = brushes; var fill = bordered ? b.SegmentOn : b.Transparent; var line = bordered ? b.Brush(DesignToken.Line) : b.Transparent;
-        picker.Height = SettingsControlHeight; picker.MinHeight = 0; picker.MinWidth = 0; picker.FontSize = 13; picker.Padding = new Thickness(DesignMetrics.Spacing.Sm, 0, 0, 0);
+        picker.TextHeight = SettingsControlHeight; picker.MinHeight = 0; picker.MinWidth = 0; picker.TextSize = 13; picker.Padding = new Thickness(DesignMetrics.Spacing.Sm, 0, 0, 0);
         picker.BorderThickness = new Thickness(bordered ? DesignMetrics.Stroke.Line : 0); picker.CornerRadius = new CornerRadius(SettingsControlRadius);
         picker.HorizontalAlignment = HorizontalAlignment.Center; picker.VerticalAlignment = VerticalAlignment.Center;
         var values = new List<(string Key, object Value)> { ("ComboBoxMinHeight", SettingsControlHeight), ("ComboBoxThemeMinWidth", 0d) };
@@ -576,8 +578,8 @@ public sealed partial class MainWindow
     internal TextBox SettingsField(TextBox field, double size = 11)
     {
         var b = brushes; var card = b.Brush(DesignToken.Card); var line = b.Brush(DesignToken.Line);
-        field.Height = SettingsFieldHeight; field.MinHeight = 0; field.MinWidth = 0; field.Padding = new Thickness(DesignMetrics.Spacing.Sm, 1, DesignMetrics.Spacing.Sm, 1); field.FontSize = size;
-        field.FontFamily = new FontFamily(DesignMetrics.Font.Mono); field.CornerRadius = new CornerRadius(SettingsControlRadius); field.VerticalAlignment = VerticalAlignment.Center;
+        field.Height = SettingsFieldHeight; field.MinHeight = 0; field.MinWidth = 0; field.Padding = new Thickness(DesignMetrics.Spacing.Sm, 1, DesignMetrics.Spacing.Sm, 1); field.TextSize = size;
+        field.TextFont = TextArea.Code; field.CornerRadius = new CornerRadius(SettingsControlRadius); field.VerticalAlignment = VerticalAlignment.Center;
         // The template takes the placeholder's ink from the property in every state (BuildSidebarSearch).
         field.PlaceholderForeground = b.Tertiary;
         var values = new List<(string Key, object Value)>();
@@ -602,7 +604,7 @@ public sealed partial class MainWindow
             SettingsControlSize.Mini => (SettingsMiniHeight, 9.0, 4.0, 3.5),
             _ => (SettingsControlHeight, 13.0, 6.0, SettingsControlRadius),
         };
-        button.Height = height; button.MinHeight = 0; button.MinWidth = 0; button.Padding = new Thickness(inset, 0, inset, 0); button.FontSize = font;
+        button.TextHeight = height; button.MinHeight = 0; button.MinWidth = 0; button.Padding = new Thickness(inset, 0, inset, 0); button.TextSize = font;
         button.CornerRadius = new CornerRadius(radius); button.BorderThickness = new Thickness(prominent ? 0 : DesignMetrics.Stroke.Line); button.VerticalAlignment = VerticalAlignment.Center;
         if (prominent)
         {
@@ -618,8 +620,8 @@ public sealed partial class MainWindow
     internal static StackPanel SettingsGlyphLabel(string glyph, string label, double font)
     {
         var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs, VerticalAlignment = VerticalAlignment.Center };
-        line.Children.Add(new FontIcon { Glyph = glyph, FontSize = font, VerticalAlignment = VerticalAlignment.Center });
-        line.Children.Add(new TextBlock { Text = label, FontSize = font, VerticalAlignment = VerticalAlignment.Center });
+        line.Children.Add(new FontIcon { Glyph = glyph, TextSize = font, VerticalAlignment = VerticalAlignment.Center });
+        line.Children.Add(new TextBlock { Text = label, TextSize = font, VerticalAlignment = VerticalAlignment.Center });
         return line;
     }
 
@@ -627,7 +629,7 @@ public sealed partial class MainWindow
     internal Button SettingsIconButton(string glyph, string name, Func<Task> action, double size = 13)
     {
         var button = Button(name, action);
-        button.Content = new FontIcon { Glyph = glyph, FontSize = size };
+        button.Content = new FontIcon { Glyph = glyph, TextSize = size };
         button.Width = SettingsControlHeight; button.Height = SettingsControlHeight; button.MinWidth = 0; button.MinHeight = 0; button.Padding = new Thickness(0);
         button.BorderThickness = new Thickness(0); button.CornerRadius = new CornerRadius(SettingsControlRadius); button.VerticalAlignment = VerticalAlignment.Center;
         PaintPlainButton(button, brushes.Transparent, brushes.Subtle, ink: brushes.Brush(DesignToken.Ink), disabledInk: brushes.Brush(DesignToken.Ink3));
@@ -639,7 +641,7 @@ public sealed partial class MainWindow
     /// The chip the Mac sets after a pull-down's or a pop-up's words (screens/10-settings-cli-dark.webp,
     /// 10-settings-models-*.webp): 16pt, radius 4, a faint tint of the ink, its chevron 8pt.
     /// </summary>
-    internal Border SettingsChip(string glyph) => SettingsChip(new FontIcon { Glyph = glyph, FontSize = 8, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center });
+    internal Border SettingsChip(string glyph) => SettingsChip(new FontIcon { Glyph = glyph, TextSize = 8, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center });
 
     /// <summary>The chip around a mark of its own (the pop-up's up and down chevrons).</summary>
     internal Border SettingsChip(FrameworkElement mark) => new()
@@ -653,7 +655,7 @@ public sealed partial class MainWindow
     /// <summary>A small capsule of words on a tint (a state or a badge): padding h5 v1, as the Mac's.</summary>
     internal Border SettingsCapsule(string text, Brush ink, Brush fill, double size = 10, double radius = 8)
     {
-        var words = new TextBlock { Text = text, FontSize = size, Foreground = ink, LineHeight = size + 3, LineStackingStrategy = LineStackingStrategy.BlockLineHeight };
+        var words = new TextBlock { Text = text, TextSize = size, Foreground = ink, TextLineHeight = size + 3, LineStackingStrategy = LineStackingStrategy.BlockLineHeight };
         if (size < 10) words.FontWeight = Microsoft.UI.Text.FontWeights.Medium;
         return new Border { Child = words, Padding = new Thickness(DesignMetrics.Spacing.Xs, 1, DesignMetrics.Spacing.Xs, 1), CornerRadius = new CornerRadius(radius), Background = fill, VerticalAlignment = VerticalAlignment.Center };
     }
@@ -661,7 +663,7 @@ public sealed partial class MainWindow
     /// <summary>A symbol of the form in an ink, hidden from automation: the words beside it say what it marks.</summary>
     internal FontIcon SettingsSymbol(string glyph, double size, DesignToken ink)
     {
-        var icon = new FontIcon { Glyph = glyph, FontSize = size, Foreground = brushes.Brush(ink), VerticalAlignment = VerticalAlignment.Center };
+        var icon = new FontIcon { Glyph = glyph, TextSize = size, Foreground = brushes.Brush(ink), VerticalAlignment = VerticalAlignment.Center };
         AutomationProperties.SetAccessibilityView(icon, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
         return icon;
     }

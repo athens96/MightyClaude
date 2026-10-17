@@ -10,7 +10,8 @@ const themes = {
     black:'#000000',red:'#aa3731',green:'#448c27',yellow:'#cb9000',blue:'#325cc0',magenta:'#7a3e9d',cyan:'#0083b2',white:'#f7f7f7',
     brightBlack:'#777777',brightRed:'#f05050',brightGreen:'#60cb00',brightYellow:'#ffbc5d',brightBlue:'#007acc',brightMagenta:'#e64ce6',brightCyan:'#00aacb',brightWhite:'#f7f7f7'}
 };
-const terminal = new Terminal({fontFamily:'Cascadia Mono, Consolas, monospace',fontSize:12,scrollback:10000,convertEol:false,allowProposedApi:false,theme:themes.dark,windowsPty:{backend:'conpty',buildNumber:19041}});
+const defaultFamily = 'Cascadia Mono, Consolas, monospace';
+const terminal = new Terminal({fontFamily:defaultFamily,fontSize:12,scrollback:10000,convertEol:false,allowProposedApi:false,theme:themes.dark,windowsPty:{backend:'conpty',buildNumber:19041}});
 const fit = new FitAddon.FitAddon();
 terminal.loadAddon(fit);
 terminal.open(document.getElementById('terminal'));
@@ -37,6 +38,13 @@ window.chrome.webview.addEventListener('message',event => {
   if(msg.type==='paste') terminal.paste(msg.text);
   if(msg.type==='focus') terminal.focus();
   if(msg.type==='reset') { terminal.reset(); fit.fit(); }
+  // The app's text setting: its size for the terminal (12 at 100%) and the code font, else the stand-ins above.
+  if(msg.type==='font') {
+    const family = typeof msg.family==='string' && msg.family.length>0 && msg.family.length<=200 ? '"'+msg.family.replace(/["\\]/g,'')+'", '+defaultFamily : defaultFamily;
+    if (typeof msg.size==='number' && msg.size>=6 && msg.size<=48 && terminal.options.fontSize!==msg.size) terminal.options.fontSize=msg.size;
+    if (terminal.options.fontFamily!==family) terminal.options.fontFamily=family;
+    fit.fit();
+  }
   if(msg.type==='theme') {
     terminal.options.theme = msg.light ? themes.light : themes.dark;
     // The padding round the terminal is the page's own, so every layer under it takes the surface colour.

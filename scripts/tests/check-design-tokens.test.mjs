@@ -1,5 +1,5 @@
 // node --test scripts/tests/check-design-tokens.test.mjs
-// Checks the spacing-literal ratchet of check-design-tokens.js against fixture trees.
+// Checks the spacing-literal and font-literal ratchets of check-design-tokens.js against fixture trees.
 // It never touches the real sources or budgets.
 
 import { test } from 'node:test';
@@ -12,13 +12,14 @@ import path from 'node:path';
 const CHECKER = new URL('../check-design-tokens.js', import.meta.url).pathname;
 const NODE = process.execPath;
 const SPACING_BUDGET = 'scripts/spacing-literal-budget.json';
+const FONT_BUDGET = 'scripts/font-literal-budget.json';
 
 function run(dir, ...args) {
   return spawnSync(NODE, [CHECKER, '--root', dir, ...args], { encoding: 'utf8' });
 }
 
-/** A fixture root with an empty colour budget, the given spacing budget and source files. */
-function fixture({ areas = { macOS: 0, Windows: 0, phone: 0 }, exemptFiles, files = {} } = {}) {
+/** A fixture root with an empty colour budget, the given spacing and font budgets and source files. */
+function fixture({ areas = { macOS: 0, Windows: 0, phone: 0 }, exemptFiles, fonts = { files: {} }, files = {} } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'spacing-ck-'));
   const write = (relative, content) => {
     fs.mkdirSync(path.join(dir, path.dirname(relative)), { recursive: true });
@@ -26,6 +27,7 @@ function fixture({ areas = { macOS: 0, Windows: 0, phone: 0 }, exemptFiles, file
   };
   write('scripts/design-token-budget.json', JSON.stringify({ exempt: {}, files: {} }));
   write(SPACING_BUDGET, JSON.stringify({ areas, ...(exemptFiles ? { exemptFiles } : {}) }));
+  write(FONT_BUDGET, JSON.stringify(fonts));
   for (const [relative, content] of Object.entries(files)) write(relative, content);
   return dir;
 }
@@ -159,5 +161,55 @@ test('an exempt-file glob that matches nothing fails', () => {
     assert.match(r.stderr, /exemptFiles mobile\/src\/lib\/gone\.ts matches no file/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a WinUI font size, line height or family set directly fails; TextSize, TextLineHeight and TextFont do not', () => {
+  const dir = fixture({
+    files: {
+      [WIN]: [
+        'var a = new TextBlock { TextSize = 12, TextLineHeight = 15, TextFont = TextArea.Code };',
+        'var b = new TextBlock { FontSize = 12, LineHeight = 15, FontFamily = new FontFamily("Consolas") };',
+        'b.FontSize += 2; b.SetValue(TextBlock.LineHeightProperty, 20);',
+        '// FontSize = 13 in a comment is not counted, and neither is a comparison:',
+        'if (b.FontSize == 12) { }',
+      ].join('\n') + '\n',
+    },
+  });
+  try {
+    const r = run(dir);
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /MainWindow\.View\.cs: 6 font literals, budget 0\. Give the size at scale 1 as TextSize/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a font budget only goes down, and its exempt globs must match', () => {
+  const dir = fixture({
+    fonts: { exemptFiles: { 'native/windows/MightyClaude.WinUI/*Smoke*.cs': 'fixtures' }, files: { [WIN]: 3 } },
+    files: {
+      [WIN]: 'var b = new TextBlock { FontSize = 12 };\n',
+      'native/windows/MightyClaude.WinUI/MainWindow.ViewSmoke.cs': 'var c = new TextBlock { FontSize = 9 };\n',
+    },
+  });
+  try {
+    const stale = run(dir);
+    assert.notEqual(stale.status, 0);
+    assert.match(stale.stderr, /MainWindow\.View\.cs: 1 font literals, budget 3\. Lower the budget/);
+    const write = run(dir, '--write');
+    assert.equal(write.status, 0, write.stderr);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, FONT_BUDGET), 'utf8')).files, { [WIN]: 1 });
+    assert.equal(run(dir).status, 0);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  const empty = fixture({ fonts: { exemptFiles: { 'native/windows/MightyClaude.WinUI/Gone.cs': 'removed' }, files: {} } });
+  try {
+    const r = run(empty);
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /exemptFiles native\/windows\/MightyClaude\.WinUI\/Gone\.cs matches no file/);
+  } finally {
+    fs.rmSync(empty, { recursive: true, force: true });
   }
 });

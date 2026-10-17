@@ -57,12 +57,12 @@ public sealed partial class MainWindow
             var header = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             header.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             var lead = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
-            lead.Children.Add(WaitBadge(new TextBlock { Text = "?", FontSize = 13, FontWeight = Microsoft.UI.Text.FontWeights.ExtraBold, Foreground = b.Brush(DesignToken.OnWait), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, -1, 0, 0) }));
-            lead.Children.Add(new TextBlock { Text = Locale.Get("phone.questionnaire.title"), FontSize = 13, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = ink, VerticalAlignment = VerticalAlignment.Center });
+            lead.Children.Add(WaitBadge(new TextBlock { Text = "?", TextSize = 13, FontWeight = Microsoft.UI.Text.FontWeights.ExtraBold, Foreground = b.Brush(DesignToken.OnWait), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, -1, 0, 0) }));
+            lead.Children.Add(new TextBlock { Text = Locale.Get("phone.questionnaire.title"), TextSize = 13, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = ink, VerticalAlignment = VerticalAlignment.Center });
             var progress = new TextBlock
             {
                 Text = total > 1 ? Locale.Get("phone.questionnaire.progress", new Dictionary<string, string> { ["current"] = (step + 1).ToString(), ["total"] = total.ToString() }) : Locale.Get("questionnaire.oneQuestion"),
-                FontSize = 12, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center,
+                TextSize = 12, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center,
             };
             Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(progress, FontNumeralAlignment.Tabular);
             AutomationProperties.SetAutomationId(progress, "questionnaire-progress"); lead.Children.Add(progress);
@@ -72,7 +72,7 @@ public sealed partial class MainWindow
             {
                 var target = index; var now = index == step; var done = draft.Answered(index);
                 var dot = Button((index + 1).ToString(), () => { draft.Step = target; RenderToolPermissions(); return Task.CompletedTask; });
-                var figure = new TextBlock { Text = (index + 1).ToString(), FontSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = b.Brush(now ? DesignToken.OnWait : done ? DesignToken.WaitText : DesignToken.Ink2), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+                var figure = new TextBlock { Text = (index + 1).ToString(), TextSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = b.Brush(now ? DesignToken.OnWait : done ? DesignToken.WaitText : DesignToken.Ink2), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
                 Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(figure, FontNumeralAlignment.Tabular);
                 dot.Content = figure; dot.Width = 18; dot.Height = 18; dot.MinWidth = 0; dot.MinHeight = 0; dot.Padding = new Thickness(0); dot.BorderThickness = new Thickness(0); dot.CornerRadius = new CornerRadius(9);
                 var fill = b.Brush(now ? DesignToken.Wait : done ? DesignToken.WaitSoft : DesignToken.Track);
@@ -85,17 +85,17 @@ public sealed partial class MainWindow
             }
             if (total > 1) lead.Children.Add(dots);
             header.Children.Add(lead);
-            questionnaireWaiting = new TextBlock { FontSize = 12, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center }; UpdateQuestionnaireWaiting(count);
+            questionnaireWaiting = new TextBlock { TextSize = 12, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center }; UpdateQuestionnaireWaiting(count);
             Grid.SetColumn(questionnaireWaiting, 1); header.Children.Add(questionnaireWaiting);
             body.Children.Add(header);
 
             var section = new StackPanel { Spacing = DesignMetrics.Spacing.Sm, IsHitTestVisible = !draft.Sending, Margin = new Thickness(0, DesignMetrics.Spacing.Xxs, DesignMetrics.Spacing.Xs, DesignMetrics.Spacing.Xxs) };
             var kind = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             kind.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); kind.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-            kind.Children.Add(new TextBlock { Text = question.Header, FontSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = b.Brush(DesignToken.WaitText), TextWrapping = TextWrapping.Wrap });
-            var mode = new TextBlock { Text = Locale.Get(question.MultiSelect ? "phone.questionnaire.multiple" : "phone.questionnaire.single"), FontSize = 10.5, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
+            kind.Children.Add(new TextBlock { Text = question.Header, TextSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = b.Brush(DesignToken.WaitText), TextWrapping = TextWrapping.Wrap });
+            var mode = new TextBlock { Text = Locale.Get(question.MultiSelect ? "phone.questionnaire.multiple" : "phone.questionnaire.single"), TextSize = 10.5, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(mode, 1); kind.Children.Add(mode); section.Children.Add(kind);
-            section.Children.Add(new TextBlock { Text = question.Question, FontSize = 14.5, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = ink, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
+            section.Children.Add(new TextBlock { Text = question.Question, TextSize = 14.5, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = ink, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
             var picks = draft.Picks.GetValueOrDefault(step) ?? []; draft.Picks[step] = picks;
             // Two tiles a row where the pane is wide enough, one where it is not (M/UserQuestionnaireCard.swift:167).
             var choices = new AdaptiveGridPanel { Minimum = 210, Gap = 8 };
@@ -124,20 +124,20 @@ public sealed partial class MainWindow
             if (draft.Custom.Contains(step))
             {
                 // AppKit's placeholder is the tertiary ink (M/UserQuestionnaireCard.swift:191).
-                var text = new TextBox { AcceptsReturn = true, Text = draft.Text.GetValueOrDefault(step) ?? "", PlaceholderText = Locale.Get("phone.questionnaire.customPlaceholder"), PlaceholderForeground = owner.brushes.Tertiary, FontSize = 12, TextWrapping = TextWrapping.Wrap, MaxHeight = 100, MaxLength = 8192, IsEnabled = !draft.Sending };
+                var text = new TextBox { AcceptsReturn = true, Text = draft.Text.GetValueOrDefault(step) ?? "", PlaceholderText = Locale.Get("phone.questionnaire.customPlaceholder"), PlaceholderForeground = owner.brushes.Tertiary, TextSize = 12, TextWrapping = TextWrapping.Wrap, MaxHeight = 100, MaxLength = 8192, IsEnabled = !draft.Sending };
                 AutomationProperties.SetName(text, Locale.Get("phone.questionnaire.customLabel", new Dictionary<string, string> { ["header"] = question.Header }));
                 AutomationProperties.SetAutomationId(text, "questionnaire-custom-text-" + step);
                 text.TextChanged += (_, _) => { draft.Text[step] = text.Text; if (next is not null) next.IsEnabled = !draft.Sending && (step + 1 < total ? draft.Answered(step) : ValidAnswers()); };
                 section.Children.Add(text);
             }
             body.Children.Add(new ScrollViewer { Content = section, MaxHeight = 300, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled });
-            if (draft.Error is { } error) body.Children.Add(new TextBlock { Text = error, Foreground = b.Brush(DesignToken.ErrText), FontSize = 11, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
+            if (draft.Error is { } error) body.Children.Add(new TextBlock { Text = error, Foreground = b.Brush(DesignToken.ErrText), TextSize = 11, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
 
             var last = step + 1 == total;
             // What happens next, then Cancel, Back and the ink button that goes forward (M/UserQuestionnaireCard.swift:99-126).
             var footer = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             footer.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-            footer.Children.Add(new TextBlock { Text = Locale.Get(last ? "phone.questionnaire.hintSubmit" : "phone.questionnaire.hintNext"), FontSize = 11, Foreground = ink2, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center });
+            footer.Children.Add(new TextBlock { Text = Locale.Get(last ? "phone.questionnaire.hintSubmit" : "phone.questionnaire.hintNext"), TextSize = 11, Foreground = ink2, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center });
             var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, IsHitTestVisible = !draft.Sending };
             if (draft.Sending)
             {
@@ -186,8 +186,8 @@ public sealed partial class MainWindow
             var mark = ComposerGlyph.Icon(multiple ? (selected ? "" : "") : (selected ? "" : ""), 14, 17, 17).Ink(b.Brush(selected ? DesignToken.WaitText : DesignToken.Ink2));
             mark.View.VerticalAlignment = VerticalAlignment.Top; mark.View.Margin = new Thickness(0, 1, 0, 0);
             var label = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
-            label.Children.Add(new TextBlock { Text = title, FontSize = 13, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = b.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap });
-            if (detail.Length > 0) label.Children.Add(new TextBlock { Text = detail, FontSize = 11.5, Foreground = b.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap });
+            label.Children.Add(new TextBlock { Text = title, TextSize = 13, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = b.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap });
+            if (detail.Length > 0) label.Children.Add(new TextBlock { Text = detail, TextSize = 11.5, Foreground = b.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap });
             var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
             row.Children.Add(mark.View); Grid.SetColumn(label, 1); row.Children.Add(label);

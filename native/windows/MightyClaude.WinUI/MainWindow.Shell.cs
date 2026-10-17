@@ -23,10 +23,10 @@ public sealed partial class MainWindow
     /// </summary>
     private readonly Border statusBar = new() { BorderThickness = new Thickness(0, DesignMetrics.Stroke.Line, 0, 0), Padding = new Thickness(DesignMetrics.Inset.StatusBarH, DesignMetrics.Inset.StatusBarV - DesignMetrics.Stroke.Line, DesignMetrics.Inset.StatusBarH, DesignMetrics.Inset.StatusBarV), BackgroundSizing = BackgroundSizing.OuterBorderEdge };
     /// <summary>"3 panes" of the active workspace and "1 running" over every workspace (M/WorkspaceView.swift:380-382).</summary>
-    private readonly TextBlock statusPanes = new() { FontSize = DesignMetrics.Type.Small, VerticalAlignment = VerticalAlignment.Center }, statusRunning = new() { FontSize = DesignMetrics.Type.Small, VerticalAlignment = VerticalAlignment.Center };
+    private readonly TextBlock statusPanes = new() { TextSize = DesignMetrics.Type.Small, VerticalAlignment = VerticalAlignment.Center }, statusRunning = new() { TextSize = DesignMetrics.Type.Small, VerticalAlignment = VerticalAlignment.Center };
     /// <summary>The accent "new version" badge, shown while an app update is available or ready (M/WorkspaceView.swift:383-388).</summary>
     private Button? updateBadge;
-    private readonly TextBlock updateBadgeText = new() { FontSize = DesignMetrics.Type.Small, FontWeight = Microsoft.UI.Text.FontWeights.Medium, VerticalAlignment = VerticalAlignment.Center };
+    private readonly TextBlock updateBadgeText = new() { TextSize = DesignMetrics.Type.Small, FontWeight = Microsoft.UI.Text.FontWeights.Medium, VerticalAlignment = VerticalAlignment.Center };
     /// <summary>The line after the usage chips, shown with them (M/StatusBarUsage.swift:169).</summary>
     private Border? usageDivider;
     /// <summary>The status bar's trailing parts, in the Mac's order (M/WorkspaceView.swift:380-391).</summary>
@@ -53,12 +53,12 @@ public sealed partial class MainWindow
     /// with the Divider under it as a 1pt bottom <c>line</c> (M/WorkspaceView.swift:21-22, 289-319).
     /// </summary>
     private readonly Grid workspaceHeader = new() { ColumnSpacing = DesignMetrics.Spacing.Lg, Padding = new Thickness(DesignMetrics.Inset.WorkspaceHeaderH, DesignMetrics.Inset.WorkspaceHeaderT, DesignMetrics.Inset.WorkspaceHeaderH, DesignMetrics.Inset.WorkspaceHeaderB), BorderThickness = new Thickness(0, 0, 0, DesignMetrics.Stroke.Line), Visibility = Visibility.Collapsed };
-    private readonly TextBlock workspaceHeaderName = new() { FontSize = DesignMetrics.Type.Header, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, MaxLines = 1, TextTrimming = TextTrimming.CharacterEllipsis };
-    private readonly TextBlock workspaceHeaderPath = new() { FontFamily = new FontFamily(DesignMetrics.Font.Mono), FontSize = DesignMetrics.Type.Mono, IsTextSelectionEnabled = true, TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+    private readonly TextBlock workspaceHeaderName = new() { TextSize = DesignMetrics.Type.Header, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, MaxLines = 1, TextTrimming = TextTrimming.CharacterEllipsis };
+    private readonly TextBlock workspaceHeaderPath = new() { TextFont = TextArea.Code, TextSize = DesignMetrics.Type.Mono, IsTextSelectionEnabled = true, TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
     private readonly Border workspaceHeaderGit = new() { VerticalAlignment = VerticalAlignment.Center };
     /// <summary>The header's counts, the long form: each state's glyph, count and name, as in "1 running  1 done" (M/WorkspaceView.swift:305-307).</summary>
     private StatusCountsView? workspaceHeaderCounts;
-    private readonly Button workspaceHeaderFiles = new() { Width = 26, Height = 24, MinWidth = 0, MinHeight = 0, Padding = new Thickness(0), BorderThickness = new Thickness(0), Background = new SolidColorBrush(Colors.Transparent), VerticalAlignment = VerticalAlignment.Center, Content = new FontIcon { Glyph = "\uE8B7", FontSize = 13 } };
+    private readonly Button workspaceHeaderFiles = new() { Width = 26, Height = 24, MinWidth = 0, MinHeight = 0, Padding = new Thickness(0), BorderThickness = new Thickness(0), Background = new SolidColorBrush(Colors.Transparent), VerticalAlignment = VerticalAlignment.Center, Content = new FontIcon { Glyph = "\uE8B7", TextSize = 13 } };
     /// <summary>The workspace the header shows, or null while it is hidden (no workspace, or the dashboard).</summary>
     private string? workspaceHeaderId;
     private string workspaceHeaderFullPath = "";
@@ -136,13 +136,13 @@ public sealed partial class MainWindow
         AutomationProperties.SetAutomationId(resourceBanner, "resource-warning-banner");
         var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
         row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        var warning = new FontIcon { Glyph = "\uE7BA", FontSize = 13, Foreground = brushes.Brush(DesignToken.WaitText), VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 1, 0, 0) };
+        var warning = new FontIcon { Glyph = "\uE7BA", TextSize = 13, Foreground = brushes.Brush(DesignToken.WaitText), VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 1, 0, 0) };
         AutomationProperties.SetAccessibilityView(warning, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
         row.Children.Add(warning);
-        resourceWarning.Foreground = brushes.Brush(DesignToken.Ink); resourceWarning.FontSize = DesignMetrics.Type.Row; resourceWarning.IsTextSelectionEnabled = true;
+        resourceWarning.Foreground = brushes.Brush(DesignToken.Ink); resourceWarning.TextSize = DesignMetrics.Type.Row; resourceWarning.IsTextSelectionEnabled = true;
         Grid.SetColumn(resourceWarning, 1); row.Children.Add(resourceWarning);
         var dismiss = Button(Locale.Get("window.warning.dismiss"), () => { resourceBanner.Visibility = Visibility.Collapsed; return Task.CompletedTask; });
-        dismiss.Content = new FontIcon { Glyph = "\uE711", FontSize = 11 };
+        dismiss.Content = new FontIcon { Glyph = "\uE711", TextSize = 11 };
         dismiss.MinWidth = 0; dismiss.MinHeight = 0; dismiss.Padding = new Thickness(DesignMetrics.Spacing.Xs); dismiss.Margin = new Thickness(0, -DesignMetrics.Spacing.Xs, -DesignMetrics.Spacing.Xs, -DesignMetrics.Spacing.Xs); dismiss.BorderThickness = new Thickness(0);
         dismiss.CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow); dismiss.VerticalAlignment = VerticalAlignment.Top;
         PaintPlainButton(dismiss, brushes.Transparent, brushes.Subtle, ink: brushes.Brush(DesignToken.Ink));
@@ -170,13 +170,13 @@ public sealed partial class MainWindow
         AutomationProperties.SetAutomationId(errorBanner, "error-banner");
         var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
         row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        var warning = new FontIcon { Glyph = "\uE7BA", FontSize = 13, Foreground = brushes.Brush(DesignToken.ErrText), VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 1, 0, 0) };
+        var warning = new FontIcon { Glyph = "\uE7BA", TextSize = 13, Foreground = brushes.Brush(DesignToken.ErrText), VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 1, 0, 0) };
         AutomationProperties.SetAccessibilityView(warning, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
         row.Children.Add(warning);
-        error.Foreground = brushes.Brush(DesignToken.Ink); error.FontSize = DesignMetrics.Type.Row; error.IsTextSelectionEnabled = true; error.Visibility = Visibility.Collapsed;
+        error.Foreground = brushes.Brush(DesignToken.Ink); error.TextSize = DesignMetrics.Type.Row; error.IsTextSelectionEnabled = true; error.Visibility = Visibility.Collapsed;
         Grid.SetColumn(error, 1); row.Children.Add(error);
         var dismiss = Button("", () => { error.Text = ""; return Task.CompletedTask; });
-        dismiss.Content = new FontIcon { Glyph = "\uE711", FontSize = 11 };
+        dismiss.Content = new FontIcon { Glyph = "\uE711", TextSize = 11 };
         dismiss.MinWidth = 0; dismiss.MinHeight = 0; dismiss.Padding = new Thickness(DesignMetrics.Spacing.Xs); dismiss.Margin = new Thickness(0, -DesignMetrics.Spacing.Xs, -DesignMetrics.Spacing.Xs, -DesignMetrics.Spacing.Xs); dismiss.BorderThickness = new Thickness(0);
         dismiss.CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow); dismiss.VerticalAlignment = VerticalAlignment.Top;
         PaintPlainButton(dismiss, brushes.Transparent, brushes.Subtle, ink: brushes.Brush(DesignToken.Ink));
@@ -209,7 +209,7 @@ public sealed partial class MainWindow
         leading.Children.Add(machine); Grid.SetColumn(status, 1); leading.Children.Add(status);
 
         statusTrailing.Children.Add(statusPanes);
-        statusTrailing.Children.Add(new TextBlock { Text = "\u00B7", FontSize = DesignMetrics.Type.Small, Foreground = ink, Margin = new Thickness(DesignMetrics.Spacing.Xxs, 0, DesignMetrics.Spacing.Xxs, 0), VerticalAlignment = VerticalAlignment.Center });
+        statusTrailing.Children.Add(new TextBlock { Text = "\u00B7", TextSize = DesignMetrics.Type.Small, Foreground = ink, Margin = new Thickness(DesignMetrics.Spacing.Xxs, 0, DesignMetrics.Spacing.Xxs, 0), VerticalAlignment = VerticalAlignment.Center });
         statusTrailing.Children.Add(statusRunning);
         // arrow.down.circle.fill: an accent disc with the arrow cut out of it; SF's circle symbols draw 1.2 of their point size, 12 at 10pt.
         var arrow = new Grid { Width = 12, Height = 12, VerticalAlignment = VerticalAlignment.Center };

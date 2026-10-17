@@ -36,18 +36,18 @@ public sealed partial class MainWindow
         var mark = new StatusMark(); mark.Update(session.Status, session.Kind, pending, DarkTheme);
         mark.View.VerticalAlignment = VerticalAlignment.Top; mark.View.Margin = new Thickness(0, 1.5, 0, 0);
         row.Children.Add(mark.View);
-        var title = new TextBlock { Text = session.Title, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center, FontSize = DesignMetrics.Type.SideRow, FontWeight = SidebarTitleWeight(shown), Foreground = brushes.Brush(DesignToken.Ink), MinHeight = 17 };
+        var title = new TextBlock { Text = session.Title, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center, TextSize = DesignMetrics.Type.SideRow, FontWeight = SidebarTitleWeight(shown), Foreground = brushes.Brush(DesignToken.Ink), MinHeight = 17 };
         sidebarTitles[session.Id] = title;
         // A Codex or Gemini agent pane carries the beta capsule right after its title (macOS paneRow).
         var titleLine = SessionTitle(session, title, false); Grid.SetColumn(titleLine, 1); row.Children.Add(titleLine);
         // An automatic agent title is the request cut to 40 characters; hovering shows it whole (macOS titleHelp).
         ToolTipService.SetToolTip(title, PaneTitle.Help(session));
         // The Mac's Spacer stands between the words and the title, 8 from each (M/WorkspaceView.swift:222-245).
-        var state = new TextBlock { FontSize = 10.5, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = brushes.Brush(DesignToken.WaitText), MinHeight = 17, Margin = new Thickness(DesignMetrics.Spacing.Sm, 0, 0, 0) };
+        var state = new TextBlock { TextSize = 10.5, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = brushes.Brush(DesignToken.WaitText), MinHeight = 17, Margin = new Thickness(DesignMetrics.Spacing.Sm, 0, 0, 0) };
         if (child is not null) { sidebarChildStates[session.Id] = child; ShowChildState(state, child, DashboardAttention(session.Id)); }
         else ShowSidebarWait(state, DashboardAttention(session.Id));
         // Sidebar metadata already contains the elapsed time below the title.
-        var elapsed = new TextBlock { Text = session.Kind == "shell" ? "" : session.RunTiming?.Label() ?? "", FontSize = 10, Opacity = .7, Visibility = Visibility.Collapsed };
+        var elapsed = new TextBlock { Text = session.Kind == "shell" ? "" : session.RunTiming?.Label() ?? "", TextSize = 10, Opacity = .7, Visibility = Visibility.Collapsed };
         var trailing = new StackPanel { Spacing = 1, VerticalAlignment = VerticalAlignment.Top }; trailing.Children.Add(state); trailing.Children.Add(elapsed); Grid.SetColumn(trailing, 2); row.Children.Add(trailing);
         // An agent's row names its provider on a muted second line, its mark first (macOS paneMeta:
         // "[mark] Claude"); any other pane names its kind there (macOS DashboardText.kindLine). The
@@ -92,7 +92,7 @@ public sealed partial class MainWindow
         var title = new TextBlock
         {
             Text = session.Title, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center, MaxWidth = selected ? SelectedTabTitleWidth : TabTitleWidth,
-            FontSize = DesignMetrics.Type.Pill, FontWeight = selected ? Microsoft.UI.Text.FontWeights.SemiBold : Microsoft.UI.Text.FontWeights.Normal,
+            TextSize = DesignMetrics.Type.Pill, FontWeight = selected ? Microsoft.UI.Text.FontWeights.SemiBold : Microsoft.UI.Text.FontWeights.Normal,
             Foreground = brushes.Brush(selected ? DesignToken.Ink : DesignToken.Ink2),
         };
         ToolTipService.SetToolTip(title, PaneTitle.Help(session));
@@ -133,7 +133,7 @@ public sealed partial class MainWindow
             "claude" => Locale.Get("dashboard.kind.agent"),
             _ => session.Kind,
         };
-        var line = new TextBlock { Text = words, FontSize = DesignMetrics.Type.Pill, Foreground = brushes.Brush(active ? DesignToken.Ink2 : DesignToken.SidebarInk2), TextTrimming = TextTrimming.CharacterEllipsis, MinHeight = 15, VerticalAlignment = VerticalAlignment.Center };
+        var line = new TextBlock { Text = words, TextSize = DesignMetrics.Type.Pill, Foreground = brushes.Brush(active ? DesignToken.Ink2 : DesignToken.SidebarInk2), TextTrimming = TextTrimming.CharacterEllipsis, MinHeight = 15, VerticalAlignment = VerticalAlignment.Center };
         sidebarKindLines[session.Id] = line;
         return line;
     }
@@ -255,9 +255,9 @@ public sealed partial class MainWindow
             if (item.Icon is not null) continue;
             item.Icon = entries[i] switch
             {
-                AddPaneMenu.Shell => new FontIcon { Glyph = "\uE756", FontSize = 12 },
-                AddPaneMenu.Browser => new FontIcon { Glyph = "\uE774", FontSize = 12 },
-                AddPaneMenu.Files => new FontIcon { Glyph = "\uE8B7", FontSize = 12 },
+                AddPaneMenu.Shell => new FontIcon { Glyph = "\uE756", TextSize = 12 },
+                AddPaneMenu.Browser => new FontIcon { Glyph = "\uE774", TextSize = 12 },
+                AddPaneMenu.Files => new FontIcon { Glyph = "\uE8B7", TextSize = 12 },
                 var entry when AddPaneMenu.AgentProvider(entry) is { } provider => ProviderMarkView.MenuIcon(provider, brushes),
                 _ => null,
             };
@@ -372,18 +372,18 @@ public sealed partial class MainWindow
     {
         // One sheet at a time: a rename asked for while Settings or another sheet is open (a tab's double-click, /rename) is not started.
         if (dialogOpen) return (false, null);
-        var title = new TextBlock { Text = heading, FontSize = DesignMetrics.Type.Title, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = brushes.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap };
+        var title = new TextBlock { Text = heading, TextSize = DesignMetrics.Type.Title, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = brushes.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap };
         AutomationProperties.SetHeadingLevel(title, Microsoft.UI.Xaml.Automation.Peers.AutomationHeadingLevel.Level1);
         // The field's label is its placeholder, in AppKit's tertiary ink (M/RenameViews.swift:32).
-        var field = new TextBox { PlaceholderText = RenameStrings.FieldLabel, Text = current, FontSize = DesignMetrics.Type.Body, PlaceholderForeground = brushes.Tertiary };
+        var field = new TextBox { PlaceholderText = RenameStrings.FieldLabel, Text = current, TextSize = DesignMetrics.Type.Body, PlaceholderForeground = brushes.Tertiary };
         AutomationProperties.SetName(field, RenameStrings.FieldLabel); AutomationProperties.SetAutomationId(field, "rename-name-field");
-        var hintText = new TextBlock { Text = hint, TextWrapping = TextWrapping.Wrap, FontSize = RenameCaption, Foreground = brushes.Brush(DesignToken.Ink2) };
+        var hintText = new TextBlock { Text = hint, TextWrapping = TextWrapping.Wrap, TextSize = RenameCaption, Foreground = brushes.Brush(DesignToken.Ink2) };
         var errors = new StackPanel { Spacing = RenameSpacing, Visibility = Visibility.Collapsed };
         // What the sheet's own buttons answer; the dialog itself has none, so it closes with None.
         var picked = ContentDialogResult.None; ContentDialog? sheet = null;
         Button Choice(string words, string id, ContentDialogResult answer, int column)
         {
-            var button = new Button { Content = words, FontSize = DesignMetrics.Type.Body };
+            var button = new Button { Content = words, TextSize = DesignMetrics.Type.Body };
             button.Click += (_, _) => { picked = answer; sheet?.Hide(); };
             AutomationProperties.SetAutomationId(button, id); Grid.SetColumn(button, column);
             return button;
@@ -406,7 +406,7 @@ public sealed partial class MainWindow
         {
             errors.Children.Clear();
             foreach (var message in RenameSupport.Messages(field.Text))
-                errors.Children.Add(new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap, FontSize = RenameCaption, Foreground = brushes.Brush(DesignToken.ErrText) });
+                errors.Children.Add(new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap, TextSize = RenameCaption, Foreground = brushes.Brush(DesignToken.ErrText) });
             // An empty list takes no room, so the 14pt spacing stands only between lines that show.
             errors.Visibility = errors.Children.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
             dialog.IsPrimaryButtonEnabled = save.IsEnabled = RenameSupport.IsValid(field.Text);

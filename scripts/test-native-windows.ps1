@@ -104,6 +104,10 @@ try {
     foreach ($key in @('shortcutBound', 'toggleCollapses', 'contentTakesSpace', 'toggleRestoresWidth', 'statePersists', 'automationNameFollows', 'focusLeavesFoldedSidebar')) {
         if ($result.sidebarToggle.$key -ne $true) { throw "Windows sidebar fold smoke failed: sidebarToggle.$key" }
     }
+    # The text setting (MainWindow.TextAppearanceSmoke.cs): exact at 100%, live at 120%, each font in its place, reset exact.
+    foreach ($key in @('shortcutsBound', 'standardExact', 'sizeFollows', 'followsAfterCollection', 'catchesUpWhenShown', 'interfaceFontFollows', 'conversationFontFollows', 'codeFontFollows', 'resetRestoresExact')) {
+        if ($result.textAppearance.$key -ne $true) { throw "Windows text setting smoke failed: textAppearance.$key" }
+    }
     # Parent -> child delegation's close paths, driven through the window with the app's scripted Claude (MainWindow.DelegationSmoke.cs).
     foreach ($key in @('childrenListed', 'sidebarTree', 'heldRowPinned', 'windowCloseMergedChild', 'phoneCloseMergedChild', 'phoneSendReleasedHeldNotice', 'windowParentCloseAsks', 'phoneParentCloseKeepsChild', 'removeRefusedKeptWorktree', 'removedAfterDiscard')) {
         if ($result.delegation.$key -ne $true) { throw "Windows delegation smoke failed: delegation.$key" }

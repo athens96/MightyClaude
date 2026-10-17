@@ -88,8 +88,8 @@ public sealed partial class MainWindow
     /// <summary>A sheet's title in its content: the Mac's <c>.headline</c>, 13pt bold <c>ink</c> on a 16-high line.</summary>
     internal TextBlock SheetTitle(string text) => new()
     {
-        Text = text, FontSize = DesignMetrics.Type.Title, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = brushes.Brush(DesignToken.Ink),
-        LineHeight = 16, LineStackingStrategy = LineStackingStrategy.BlockLineHeight, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center,
+        Text = text, TextSize = DesignMetrics.Type.Title, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = brushes.Brush(DesignToken.Ink),
+        TextLineHeight = 16, LineStackingStrategy = LineStackingStrategy.BlockLineHeight, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center,
     };
 
     /// <summary>
@@ -99,7 +99,7 @@ public sealed partial class MainWindow
     /// </summary>
     internal Button PushButton(string title, bool prominent = false)
     {
-        var button = new Button { Content = title, FontSize = DesignMetrics.Type.Body, Height = PushButtonHeight, MinHeight = 0, MinWidth = 0, Padding = new Thickness(DesignMetrics.Spacing.Md, 0, DesignMetrics.Spacing.Md, 0), VerticalAlignment = VerticalAlignment.Center };
+        var button = new Button { Content = title, TextSize = DesignMetrics.Type.Body, TextHeight = PushButtonHeight, MinHeight = 0, MinWidth = 0, Padding = new Thickness(DesignMetrics.Spacing.Md, 0, DesignMetrics.Spacing.Md, 0), VerticalAlignment = VerticalAlignment.Center };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, title);
         if (!prominent) return Toned(button);
         button.BorderThickness = new Thickness(0); button.CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment);
@@ -234,8 +234,8 @@ public sealed partial class MainWindow
         var wrapper = new StackPanel { Spacing = SettingsHeadingGap };
         var heading = new TextBlock
         {
-            Text = title, FontSize = DesignMetrics.Type.Title, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Ink),
-            LineHeight = 16, LineStackingStrategy = LineStackingStrategy.BlockLineHeight, Margin = new Thickness(SettingsRowInset, 0, SettingsRowInset, 0),
+            Text = title, TextSize = DesignMetrics.Type.Title, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Ink),
+            TextLineHeight = 16, LineStackingStrategy = LineStackingStrategy.BlockLineHeight, Margin = new Thickness(SettingsRowInset, 0, SettingsRowInset, 0),
         };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(heading, "settings-section-" + title);
         if (beta)

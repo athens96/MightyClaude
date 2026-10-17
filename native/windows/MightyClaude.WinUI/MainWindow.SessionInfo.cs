@@ -70,7 +70,6 @@ public sealed partial class MainWindow
             sessionInfoRows.Clear(); sessionInfoMarked = null; sessionInfoIdentifiersShown = false;
             sessionInfoLocale = Locale.LanguagePreference + ":" + System.Globalization.CultureInfo.CurrentUICulture.Name;
             var b = owner.brushes; var ink = b.Brush(DesignToken.Ink); var ink2 = b.Brush(DesignToken.Ink2); var tertiary = b.Tertiary;
-            var mono = new FontFamily(DesignMetrics.Font.Mono);
             // The presenter pads its popovers 16 (CardFlyoutStyle); this one is padded 14, so its body takes the difference back.
             var body = new StackPanel { Spacing = DesignMetrics.Spacing.Md, Width = SessionInfoWidth - 2 * SessionInfoPadding, Margin = new Thickness(SessionInfoPadding - PopoverPadding), RequestedTheme = owner.root.RequestedTheme };
 
@@ -78,10 +77,10 @@ public sealed partial class MainWindow
             header.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); header.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             sessionInfoMark = new Grid { VerticalAlignment = VerticalAlignment.Center }; header.Children.Add(sessionInfoMark);
             var names = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs, VerticalAlignment = VerticalAlignment.Center };
-            sessionInfoHeading = new TextBlock { FontSize = 14, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap };
+            sessionInfoHeading = new TextBlock { TextSize = 14, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap };
             names.Children.Add(sessionInfoHeading);
             var providerLine = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
-            sessionInfoProvider = new TextBlock { FontSize = 11, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
+            sessionInfoProvider = new TextBlock { TextSize = 11, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
             AutomationProperties.SetAutomationId(sessionInfoProvider, "session-info-provider-" + id);
             sessionInfoBeta = BetaBadgeView.Create(b);
             providerLine.Children.Add(sessionInfoProvider); providerLine.Children.Add(sessionInfoBeta); names.Children.Add(providerLine);
@@ -89,7 +88,7 @@ public sealed partial class MainWindow
             // The state: the 5pt dot in its mark colour and the word in 10pt ink2 (M/SessionInfoViews.swift:227-228, M/Palette.swift:151-156).
             var state = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs, VerticalAlignment = VerticalAlignment.Center };
             sessionInfoDot = new Microsoft.UI.Xaml.Shapes.Ellipse { Width = 5, Height = 5, VerticalAlignment = VerticalAlignment.Center };
-            sessionInfoStatus = new TextBlock { FontSize = 10, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
+            sessionInfoStatus = new TextBlock { TextSize = 10, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
             state.Children.Add(sessionInfoDot); state.Children.Add(sessionInfoStatus);
             Grid.SetColumn(state, 2); header.Children.Add(state);
             body.Children.Add(header);
@@ -99,8 +98,8 @@ public sealed partial class MainWindow
             contextLine.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); contextLine.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
             contextDetailRing = new(owner.brushes, 42); contextLine.Children.Add(contextDetailRing.View);
             var contextText = new StackPanel { Spacing = DesignMetrics.Spacing.Xs, VerticalAlignment = VerticalAlignment.Center };
-            contextText.Children.Add(new TextBlock { Text = Locale.Get("composer.sessionInfo.contextUsage"), FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink });
-            var contextValue = new TextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap, Foreground = ink2 };
+            contextText.Children.Add(new TextBlock { Text = Locale.Get("composer.sessionInfo.contextUsage"), TextSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink });
+            var contextValue = new TextBlock { TextSize = 11, TextWrapping = TextWrapping.Wrap, Foreground = ink2 };
             contextText.Children.Add(contextValue); Grid.SetColumn(contextText, 1); contextLine.Children.Add(contextText);
             sessionInfoContextBlock = new Border { Child = contextLine, Padding = new Thickness(DesignMetrics.Spacing.Md), CornerRadius = new CornerRadius(DesignMetrics.Radius.Entry), Background = b.Brush(DesignToken.Accent, SessionInfoContextTint) };
             AutomationProperties.SetAutomationId(sessionInfoContextBlock, "session-info-context-" + id);
@@ -111,9 +110,9 @@ public sealed partial class MainWindow
             {
                 var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Md };
                 row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
-                var name = new TextBlock { Text = label, FontSize = 11, Foreground = ink2, TextWrapping = TextWrapping.Wrap }; row.Children.Add(name);
-                var value = new TextBlock { FontSize = 11, Foreground = ink, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Right, HorizontalAlignment = HorizontalAlignment.Right, IsTextSelectionEnabled = true };
-                if (monospaced) value.FontFamily = mono;
+                var name = new TextBlock { Text = label, TextSize = 11, Foreground = ink2, TextWrapping = TextWrapping.Wrap }; row.Children.Add(name);
+                var value = new TextBlock { TextSize = 11, Foreground = ink, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Right, HorizontalAlignment = HorizontalAlignment.Right, IsTextSelectionEnabled = true };
+                if (monospaced) value.TextFont = TextArea.Code;
                 Grid.SetColumn(value, 1); row.Children.Add(value); target.Children.Add(row); sessionInfoRows[key] = (row, value);
                 AutomationProperties.SetAutomationId(value, "session-info-" + key + "-" + id);
                 return name;
@@ -122,26 +121,26 @@ public sealed partial class MainWindow
             // The latest request's clock, as the pane header draws it: the clock mark and the figures in 10pt mono ink2 (M/AgentElapsedView.swift:17-21).
             var elapsedRow = new Grid { ColumnSpacing = DesignMetrics.Spacing.Md };
             elapsedRow.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); elapsedRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-            elapsedRow.Children.Add(new TextBlock { Text = Locale.Get("composer.sessionInfo.latestRequestTime"), FontSize = 11, Foreground = ink2 });
+            elapsedRow.Children.Add(new TextBlock { Text = Locale.Get("composer.sessionInfo.latestRequestTime"), TextSize = 11, Foreground = ink2 });
             var clock = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs, VerticalAlignment = VerticalAlignment.Center };
             clock.Children.Add(ComposerGlyph.Icon("", 10, 10, 12).Ink(ink2).View);
-            var elapsedValue = new TextBlock { FontSize = 10, FontFamily = mono, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
+            var elapsedValue = new TextBlock { TextSize = 10, TextFont = TextArea.Code, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
             Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(elapsedValue, FontNumeralAlignment.Tabular);
             AutomationProperties.SetAutomationId(elapsedValue, "session-info-elapsed-" + id);
             clock.Children.Add(elapsedValue); Grid.SetColumn(clock, 1); elapsedRow.Children.Add(clock);
             details.Children.Add(elapsedRow); sessionInfoRows["elapsed"] = (elapsedRow, elapsedValue);
             Add("workspace", Locale.Get("composer.sessionInfo.workspace"), details);
-            var path = new TextBlock { FontSize = 10, FontFamily = mono, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, Foreground = ink2 };
+            var path = new TextBlock { TextSize = 10, TextFont = TextArea.Code, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, Foreground = ink2 };
             details.Children.Add(path); sessionInfoRows["path"] = (path, path); AutomationProperties.SetAutomationId(path, "session-info-path-" + id);
             details.Children.Add(new Border { Height = DesignMetrics.Stroke.Line, Background = b.Brush(DesignToken.Line) });
-            sessionInfoTokens = new TextBlock { FontSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink }; details.Children.Add(sessionInfoTokens);
+            sessionInfoTokens = new TextBlock { TextSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink }; details.Children.Add(sessionInfoTokens);
             Add("input", Locale.Get("composer.sessionInfo.input"), details, true); Add("output", Locale.Get("composer.sessionInfo.output"), details, true);
             Add("cache-read", Locale.Get("composer.sessionInfo.cacheRead"), details, true); Add("cache-write", Locale.Get("composer.sessionInfo.cacheWrite"), details, true);
             Add("reasoning", Locale.Get("composer.sessionInfo.reasoning"), details, true); Add("total", Locale.Get("composer.sessionInfo.total"), details, true);
             // What the counts include: 10pt in the tertiary ink (M/SessionInfoViews.swift:272-273).
-            sessionInfoNote = new TextBlock { Text = Locale.Get("composer.sessionInfo.note"), FontSize = 10, Foreground = tertiary, TextWrapping = TextWrapping.Wrap }; details.Children.Add(sessionInfoNote);
+            sessionInfoNote = new TextBlock { Text = Locale.Get("composer.sessionInfo.note"), TextSize = 10, Foreground = tertiary, TextWrapping = TextWrapping.Wrap }; details.Children.Add(sessionInfoNote);
             sessionInfoCostLabel = Add("cost", "", details);
-            sessionInfoNoUsage = new TextBlock { Text = Locale.Get("composer.sessionInfo.noUsage"), FontSize = 11, Foreground = ink2, TextWrapping = TextWrapping.Wrap }; details.Children.Add(sessionInfoNoUsage);
+            sessionInfoNoUsage = new TextBlock { Text = Locale.Get("composer.sessionInfo.noUsage"), TextSize = 11, Foreground = ink2, TextWrapping = TextWrapping.Wrap }; details.Children.Add(sessionInfoNoUsage);
 
             // The session identifiers fold away behind a plain row: the 8pt chevron and "Session ID" in 11pt ink2 (M/SessionInfoViews.swift:282-295).
             sessionInfoFolded = ComposerGlyph.ChevronRight(8, 1.3).Ink(ink2); sessionInfoUnfolded = ComposerGlyph.ChevronDown(8, 1.3).Ink(ink2);
@@ -149,7 +148,7 @@ public sealed partial class MainWindow
             sessionInfoFolded.View.HorizontalAlignment = sessionInfoUnfolded.View.HorizontalAlignment = HorizontalAlignment.Center;
             chevron.Children.Add(sessionInfoFolded.View); chevron.Children.Add(sessionInfoUnfolded.View);
             var foldWords = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs };
-            foldWords.Children.Add(chevron); foldWords.Children.Add(new TextBlock { Text = Locale.Get("composer.sessionInfo.sessionId"), FontSize = 11, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center });
+            foldWords.Children.Add(chevron); foldWords.Children.Add(new TextBlock { Text = Locale.Get("composer.sessionInfo.sessionId"), TextSize = 11, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center });
             var fold = FoldButton(foldWords, Locale.Get("composer.sessionInfo.sessionId"));
             AutomationProperties.SetAutomationId(fold, "session-info-identifiers-" + id);
             details.Children.Add(fold);
@@ -163,8 +162,8 @@ public sealed partial class MainWindow
 
             // Where the figures came from, in 10pt in the tertiary ink (M/SessionInfoViews.swift:296-301).
             var source = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
-            sessionInfoReported = new TextBlock { FontSize = 10, Foreground = tertiary, TextWrapping = TextWrapping.Wrap };
-            sessionInfoReceived = new TextBlock { FontSize = 10, Foreground = tertiary };
+            sessionInfoReported = new TextBlock { TextSize = 10, Foreground = tertiary, TextWrapping = TextWrapping.Wrap };
+            sessionInfoReceived = new TextBlock { TextSize = 10, Foreground = tertiary };
             source.Children.Add(sessionInfoReported); source.Children.Add(sessionInfoReceived); details.Children.Add(source); sessionInfoSource = source;
 
             // The body keeps a line 326 wide and leaves 16 for the scroll bar (M/SessionInfoViews.swift:305-310).
@@ -278,7 +277,7 @@ public sealed partial class MainWindow
             View.Children.Add(new Ellipse { Stroke = brushes.Brush(DesignToken.Ink, TrackOpacity), StrokeThickness = Line });
             arc = new() { StrokeThickness = Line, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round }; View.Children.Add(arc);
             full = new() { StrokeThickness = Line, Visibility = Visibility.Collapsed }; View.Children.Add(full);
-            label = new() { FontSize = size > 32 ? 13 : 8.5, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center }; View.Children.Add(label);
+            label = new() { TextSize = size > 32 ? 13 : 8.5, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center }; View.Children.Add(label);
             Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(label, FontNumeralAlignment.Tabular);
         }
         private const double Line = 2;

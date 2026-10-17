@@ -90,7 +90,6 @@ public sealed partial class MainWindow
     {
         /// <summary>A source line: 12pt mono set 15 apart, as the Mac's text view lays SF Mono out (measured on docs/design-system/crops/files-pane-light.webp).</summary>
         private const double FilesLineHeight = 15;
-        private static readonly FontFamily MonoFont = new(DesignMetrics.Font.Mono);
         private bool filesAttached, renderingTree, showMarkdownSource;
         private Grid? filesHost;
         private TextBox? filesFilter;
@@ -250,7 +249,7 @@ public sealed partial class MainWindow
             bar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             bar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             bar.Children.Add(PanelSymbol.FilterLines(b.Tertiary));
-            filesFilter = new TextBox { PlaceholderText = Locale.Get("files.tree.filter"), Text = Tree.Filter, FontSize = DesignMetrics.Type.Pill, VerticalAlignment = VerticalAlignment.Center };
+            filesFilter = new TextBox { PlaceholderText = Locale.Get("files.tree.filter"), Text = Tree.Filter, TextSize = DesignMetrics.Type.Pill, VerticalAlignment = VerticalAlignment.Center };
             owner.PaintPlainTextBox(filesFilter);
             AutomationProperties.SetName(filesFilter, Locale.Get("files.tree.filter")); AutomationProperties.SetAutomationId(filesFilter, "files-filter");
             // Typing redraws the list once it pauses for about 100 ms, not on every key.
@@ -264,7 +263,7 @@ public sealed partial class MainWindow
             };
             Grid.SetColumn(filesFilter, 1); bar.Children.Add(filesFilter);
             // The symbol alone takes the row's room, as the Mac's plain button; its wash reaches 4 and 2 past it.
-            var refresh = new Button { Content = new FontIcon { Glyph = "\uE72C", FontSize = DesignMetrics.Type.Pill }, MinWidth = 0, MinHeight = 0, Padding = new Thickness(DesignMetrics.Spacing.Xs, DesignMetrics.Spacing.Xxs, DesignMetrics.Spacing.Xs, DesignMetrics.Spacing.Xxs), Margin = new Thickness(-DesignMetrics.Spacing.Xs, -DesignMetrics.Spacing.Xxs, -DesignMetrics.Spacing.Xs, -DesignMetrics.Spacing.Xxs), BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow), VerticalAlignment = VerticalAlignment.Center };
+            var refresh = new Button { Content = new FontIcon { Glyph = "\uE72C", TextSize = DesignMetrics.Type.Pill }, MinWidth = 0, MinHeight = 0, Padding = new Thickness(DesignMetrics.Spacing.Xs, DesignMetrics.Spacing.Xxs, DesignMetrics.Spacing.Xs, DesignMetrics.Spacing.Xxs), Margin = new Thickness(-DesignMetrics.Spacing.Xs, -DesignMetrics.Spacing.Xxs, -DesignMetrics.Spacing.Xs, -DesignMetrics.Spacing.Xxs), BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow), VerticalAlignment = VerticalAlignment.Center };
             owner.PaintPlainButton(refresh, b.Transparent, b.Subtle, ink: b.Brush(DesignToken.Ink2));
             AutomationProperties.SetName(refresh, Locale.Get("files.tree.refresh")); ToolTipService.SetToolTip(refresh, Locale.Get("files.tree.refresh"));
             AutomationProperties.SetAutomationId(refresh, "files-refresh");
@@ -339,19 +338,19 @@ public sealed partial class MainWindow
             AutomationProperties.SetAccessibilityView(previewIcon, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
             header.Children.Add(previewIcon);
             var names = previewNames = new StackPanel { Spacing = 1, VerticalAlignment = VerticalAlignment.Center };
-            previewTitle = new TextBlock { FontSize = DesignMetrics.Type.Block, FontWeight = FontWeights.SemiBold, Foreground = b.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, LineHeight = 15, LineStackingStrategy = LineStackingStrategy.BlockLineHeight };
-            previewPath = new TextBlock { FontSize = DesignMetrics.Type.Small, FontFamily = MonoFont, Foreground = b.Brush(DesignToken.Ink2), TextTrimming = TextTrimming.CharacterEllipsis, HorizontalAlignment = HorizontalAlignment.Left, LineHeight = 12, LineStackingStrategy = LineStackingStrategy.BlockLineHeight };
+            previewTitle = new TextBlock { TextSize = DesignMetrics.Type.Block, FontWeight = FontWeights.SemiBold, Foreground = b.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, TextLineHeight = 15, LineStackingStrategy = LineStackingStrategy.BlockLineHeight };
+            previewPath = new TextBlock { TextSize = DesignMetrics.Type.Small, TextFont = TextArea.Code, Foreground = b.Brush(DesignToken.Ink2), TextTrimming = TextTrimming.CharacterEllipsis, HorizontalAlignment = HorizontalAlignment.Left, TextLineHeight = 12, LineStackingStrategy = LineStackingStrategy.BlockLineHeight };
             names.Children.Add(previewTitle); names.Children.Add(previewPath);
             // The names take what the symbol and the tools leave, and the path gives way from its middle.
             names.SizeChanged += (_, args) => { if (previewHeaderPath is { } shown && args.NewSize.Width != args.PreviousSize.Width) MiddleTrim.Fit(previewPath, shown, args.NewSize.Width); };
             Grid.SetColumn(names, 1); header.Children.Add(names);
             // A spacer of at least 6 between the names and the tools, each 8 from it (22 in all); the tools 8 apart.
             previewTools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, Margin = new Thickness(DesignMetrics.Spacing.Md, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-            previewEncoding = new TextBlock { FontSize = DesignMetrics.Type.Small, Foreground = b.Brush(DesignToken.Ink2), VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
+            previewEncoding = new TextBlock { TextSize = DesignMetrics.Type.Small, Foreground = b.Brush(DesignToken.Ink2), VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
             ToolTipService.SetToolTip(previewEncoding, Locale.Get("files.preview.encoding"));
             AutomationProperties.SetAutomationId(previewEncoding, "files-encoding");
             previewTools.Children.Add(previewEncoding);
-            var reveal = PreviewToolButton(new FontIcon { Glyph = "\uE8B7", FontSize = 15 }, "menu.showInExplorer", b.Brush(DesignToken.Ink));
+            var reveal = PreviewToolButton(new FontIcon { Glyph = "\uE8B7", TextSize = 15 }, "menu.showInExplorer", b.Brush(DesignToken.Ink));
             AutomationProperties.SetAutomationId(reveal, "files-reveal");
             reveal.Click += (_, _) => { if (previewHeaderPath is { } shown) RevealInExplorer(shown); };
             previewTools.Children.Add(reveal);
@@ -498,7 +497,7 @@ public sealed partial class MainWindow
         /// <summary>A note after the rows (M/FilePaneView.swift:82-84): 10pt <c>ink2</c>, padding h12 v6; no row to choose.</summary>
         private void Note(string text) => filesList?.Items.Add(new ListViewItem
         {
-            Content = new TextBlock { Text = text, FontSize = DesignMetrics.Type.Small, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap },
+            Content = new TextBlock { Text = text, TextSize = DesignMetrics.Type.Small, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap },
             IsHitTestVisible = false, IsTabStop = false, MinHeight = 0, Padding = new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm), HorizontalContentAlignment = HorizontalAlignment.Stretch,
         });
 
@@ -557,16 +556,16 @@ public sealed partial class MainWindow
                 part.Margin = new Thickness(column == 0 ? 0 : gap, 0, 0, 0); part.VerticalAlignment = VerticalAlignment.Center;
                 Grid.SetColumn(part, column); line.Children.Add(part);
             }
-            if (entry.IsDirectory && !filtering) Put(new FontIcon { Glyph = row.IsExpanded ? "\uE70D" : "\uE76C", FontSize = 9, FontWeight = FontWeights.SemiBold, Foreground = b.Brush(DesignToken.Ink2), HorizontalAlignment = HorizontalAlignment.Center }, 0);
-            var symbol = entry.IsDirectory ? new FontIcon { Glyph = "\uE8B7", FontSize = 13, Foreground = b.Brush(DesignToken.Accent) } : FileSymbol(entry.Name, 11, b.Brush(DesignToken.Ink2));
+            if (entry.IsDirectory && !filtering) Put(new FontIcon { Glyph = row.IsExpanded ? "\uE70D" : "\uE76C", TextSize = 9, FontWeight = FontWeights.SemiBold, Foreground = b.Brush(DesignToken.Ink2), HorizontalAlignment = HorizontalAlignment.Center }, 0);
+            var symbol = entry.IsDirectory ? new FontIcon { Glyph = "\uE8B7", TextSize = 13, Foreground = b.Brush(DesignToken.Accent) } : FileSymbol(entry.Name, 11, b.Brush(DesignToken.Ink2));
             symbol.HorizontalAlignment = HorizontalAlignment.Center; Put(symbol, 1);
-            var name = new TextBlock { Text = entry.Name, FontSize = DesignMetrics.Type.Pill, LineHeight = FilesRowLine, LineStackingStrategy = LineStackingStrategy.BlockLineHeight, Foreground = b.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis };
+            var name = new TextBlock { Text = entry.Name, TextSize = DesignMetrics.Type.Pill, TextLineHeight = FilesRowLine, LineStackingStrategy = LineStackingStrategy.BlockLineHeight, Foreground = b.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis };
             Put(name, 2);
             var taken = rowMargin + indent + chevronWidth + gap + symbolWidth + gap + trailing + rowMargin;
             if (entry.IsSymlink) { var link = PanelSymbol.TurnUpRight(b.Tertiary); Put(link, 3); taken += gap + link.Width; }
             if (filtering && entry.RelativePath != entry.Name)
             {
-                var path = new TextBlock { Text = entry.RelativePath, FontSize = 9, FontFamily = MonoFont, Foreground = b.Tertiary, TextTrimming = TextTrimming.CharacterEllipsis };
+                var path = new TextBlock { Text = entry.RelativePath, TextSize = 9, TextFont = TextArea.Code, Foreground = b.Tertiary, TextTrimming = TextTrimming.CharacterEllipsis };
                 Put(path, 4); taken += gap + FilesFilterPathRoom;
                 path.IsTextTrimmedChanged += (block, _) => { if (block.IsTextTrimmed && block.ActualWidth > 0) MiddleTrim.Fit(block, entry.RelativePath, block.ActualWidth, head: true); };
                 filesNames.Add((path, entry.RelativePath, double.NaN));
@@ -594,7 +593,7 @@ public sealed partial class MainWindow
         /// </summary>
         private ListViewItem CaptionItem(string text, int depth, bool reports = false) => new()
         {
-            Content = new TextBlock { Text = text, FontSize = DesignMetrics.Type.Small, Foreground = reports ? owner.brushes.Brush(DesignToken.Ink2) : owner.brushes.Tertiary, Margin = new Thickness(FilesRowIndent + depth * FilesDepthIndent + 29, 0, 0, 0), TextWrapping = TextWrapping.Wrap },
+            Content = new TextBlock { Text = text, TextSize = DesignMetrics.Type.Small, Foreground = reports ? owner.brushes.Brush(DesignToken.Ink2) : owner.brushes.Tertiary, Margin = new Thickness(FilesRowIndent + depth * FilesDepthIndent + 29, 0, 0, 0), TextWrapping = TextWrapping.Wrap },
             IsHitTestVisible = false, IsTabStop = false, MinHeight = 18, Padding = new Thickness(0, DesignMetrics.Spacing.Xxs, 0, DesignMetrics.Spacing.Xxs),
         };
 
@@ -613,10 +612,10 @@ public sealed partial class MainWindow
         private static FrameworkElement FileSymbol(string name, double size, Brush ink) => FilePreviewClassifier.KindForName(name) switch
         {
             { Tag: FilePreviewKindTag.Markdown } => PanelSymbol.RichText(ink, size),
-            { Tag: FilePreviewKindTag.Image } => new FontIcon { Glyph = "\uEB9F", FontSize = size + 2, Foreground = ink },
-            { Tag: FilePreviewKindTag.Source, Language: SourceLanguage.Plain } => new FontIcon { Glyph = "\uF000", FontSize = size + 2, Foreground = ink },
+            { Tag: FilePreviewKindTag.Image } => new FontIcon { Glyph = "\uEB9F", TextSize = size + 2, Foreground = ink },
+            { Tag: FilePreviewKindTag.Source, Language: SourceLanguage.Plain } => new FontIcon { Glyph = "\uF000", TextSize = size + 2, Foreground = ink },
             { Tag: FilePreviewKindTag.Source } => PanelSymbol.Code(ink, size),
-            _ => new FontIcon { Glyph = "\uE7C3", FontSize = size + 2, Foreground = ink },
+            _ => new FontIcon { Glyph = "\uE7C3", TextSize = size + 2, Foreground = ink },
         };
 
         /// <summary>
@@ -652,12 +651,13 @@ public sealed partial class MainWindow
 
         /// <summary>
         /// Redraws the Markdown preview on screen in the current theme. Its RTF bakes the theme's
-        /// token colours in (TranscriptRtf), so a toggle renders it again, in place, keeping the view.
+        /// token colours in (TranscriptRtf), so a toggle renders it again, in place, keeping the view; so does a
+        /// new text setting (<paramref name="always"/>), whose sizes and fonts it bakes in as well.
         /// </summary>
-        internal void RethemeFilesMarkdown()
+        internal void RethemeFilesMarkdown(bool always = false)
         {
             var light = owner.service.Snapshot.Theme == "light";
-            if (markdownShown is not { } markdown || markdown.Light == light || !ReferenceEquals(previewContent?.Child, markdown.View)) return;
+            if (markdownShown is not { } markdown || markdown.Light == light && !always || !ReferenceEquals(previewContent?.Child, markdown.View)) return;
             var rtf = TranscriptRtf.RenderMarkdown(markdown.Source, light);
             SetMarkdownRtf(markdown.View, rtf);
             markdownShown = (markdown.View, markdown.Source, light);
@@ -737,21 +737,21 @@ public sealed partial class MainWindow
         private FrameworkElement Notice(string glyph, double size, string text)
         {
             var notice = new StackPanel { Spacing = DesignMetrics.Spacing.Sm, Padding = new Thickness(DesignMetrics.Spacing.Lg), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-            notice.Children.Add(new FontIcon { Glyph = glyph, FontSize = size, FontWeight = FontWeights.Light, Foreground = owner.brushes.Brush(DesignToken.Ink2) });
-            notice.Children.Add(new TextBlock { Text = text, FontSize = DesignMetrics.Type.Block, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center });
+            notice.Children.Add(new FontIcon { Glyph = glyph, TextSize = size, FontWeight = FontWeights.Light, Foreground = owner.brushes.Brush(DesignToken.Ink2) });
+            notice.Children.Add(new TextBlock { Text = text, TextSize = DesignMetrics.Type.Block, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center });
             AutomationProperties.SetAutomationId(notice, "files-notice");
             return notice;
         }
 
         /// <summary>A centred 12pt <c>ink2</c> sentence, for the reference preview's states.</summary>
-        private TextBlock Centered(string text) => new() { Text = text, FontSize = DesignMetrics.Type.Block, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(DesignMetrics.Spacing.Xl) };
+        private TextBlock Centered(string text) => new() { Text = text, TextSize = DesignMetrics.Type.Block, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(DesignMetrics.Spacing.Xl) };
 
         /// <summary>A note over the preview (M/FilePaneView.swift:295-304): an info symbol and 10pt <c>ink2</c> words on <c>waitSoft</c>, padding h12 v6.</summary>
         private void Banner(string text)
         {
             var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
-            row.Children.Add(new FontIcon { Glyph = "\uE946", FontSize = DesignMetrics.Type.Small, Foreground = owner.brushes.Brush(DesignToken.Ink2), VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, DesignMetrics.Spacing.Xxs, 0, 0) });
-            row.Children.Add(new TextBlock { Text = text, FontSize = DesignMetrics.Type.Small, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap });
+            row.Children.Add(new FontIcon { Glyph = "\uE946", TextSize = DesignMetrics.Type.Small, Foreground = owner.brushes.Brush(DesignToken.Ink2), VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, DesignMetrics.Spacing.Xxs, 0, 0) });
+            row.Children.Add(new TextBlock { Text = text, TextSize = DesignMetrics.Type.Small, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap });
             previewBanners?.Children.Add(new Border { Background = owner.brushes.Brush(DesignToken.WaitSoft), Padding = new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm), Child = row });
         }
 
@@ -815,7 +815,7 @@ public sealed partial class MainWindow
             Button Choice(string key, bool source)
             {
                 var chosen = showMarkdownSource == source;
-                var chip = new Border { Padding = new Thickness(DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xxs, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xxs), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), Background = chosen ? b.Brush(DesignToken.Accent) : b.Transparent, Child = new TextBlock { Text = Locale.Get(key), FontSize = DesignMetrics.Type.Block, FontWeight = chosen ? FontWeights.Medium : FontWeights.Normal, Foreground = b.Brush(chosen ? DesignToken.OnAccent : DesignToken.Ink) } };
+                var chip = new Border { Padding = new Thickness(DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xxs, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xxs), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), Background = chosen ? b.Brush(DesignToken.Accent) : b.Transparent, Child = new TextBlock { Text = Locale.Get(key), TextSize = DesignMetrics.Type.Block, FontWeight = chosen ? FontWeights.Medium : FontWeights.Normal, Foreground = b.Brush(chosen ? DesignToken.OnAccent : DesignToken.Ink) } };
                 var button = new Button { Content = chip, Padding = new Thickness(0), MinWidth = 0, MinHeight = 0, BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment) };
                 owner.PaintPlainButton(button, b.Transparent, b.Transparent);
                 AutomationProperties.SetName(button, Locale.Get(key));
@@ -839,7 +839,7 @@ public sealed partial class MainWindow
             var b = owner.brushes; var text = prepared.Data.Text ?? "";
             var body = new RichTextBlock
             {
-                FontFamily = MonoFont, FontSize = 12, LineHeight = FilesLineHeight, LineStackingStrategy = LineStackingStrategy.BlockLineHeight, Foreground = b.Brush(DesignToken.Ink),
+                TextFont = TextArea.Code, TextSize = 12, TextLineHeight = FilesLineHeight, LineStackingStrategy = LineStackingStrategy.BlockLineHeight, Foreground = b.Brush(DesignToken.Ink),
                 IsTextSelectionEnabled = true, TextWrapping = prepared.Wraps ? TextWrapping.Wrap : TextWrapping.NoWrap, Margin = new Thickness(insetX, insetY, insetX, insetY),
             };
             var paragraph = new Paragraph();
@@ -873,7 +873,7 @@ public sealed partial class MainWindow
                 // Each number sits in the middle of its line; the 10pt digits ride 1 higher in a block line than the 12pt mono does.
                 var numbers = new TextBlock
                 {
-                    FontSize = DesignMetrics.Type.Small, LineHeight = FilesLineHeight, LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
+                    TextSize = DesignMetrics.Type.Small, TextLineHeight = FilesLineHeight, LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
                     Foreground = b.Tertiary, TextAlignment = TextAlignment.Right, Text = prepared.LineNumbers, Margin = new Thickness(0, insetY - 1, numberEnd - DesignMetrics.Stroke.Line, insetY),
                 };
                 Typography.SetNumeralAlignment(numbers, FontNumeralAlignment.Tabular);
@@ -910,7 +910,7 @@ public sealed partial class MainWindow
             var bar = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, Padding = new Thickness(DesignMetrics.Spacing.Sm), Background = b.Subtle, BorderBrush = b.Brush(DesignToken.Line), BorderThickness = new Thickness(0, 0, 0, DesignMetrics.Stroke.Line), Visibility = Visibility.Collapsed };
             foreach (var width in new[] { new GridLength(1, GridUnitType.Star), GridLength.Auto, GridLength.Auto, GridLength.Auto }) bar.ColumnDefinitions.Add(new ColumnDefinition { Width = width });
             AutomationProperties.SetAutomationId(bar, "files-find-bar");
-            var field = new TextBox { PlaceholderText = Locale.Get("files.find.placeholder"), FontSize = DesignMetrics.Type.Block, VerticalAlignment = VerticalAlignment.Center };
+            var field = new TextBox { PlaceholderText = Locale.Get("files.find.placeholder"), TextSize = DesignMetrics.Type.Block, VerticalAlignment = VerticalAlignment.Center };
             AutomationProperties.SetName(field, Locale.Get("files.find.placeholder")); AutomationProperties.SetAutomationId(field, "files-find-field");
             bar.Children.Add(field);
             var marks = new TextHighlighter { Background = b.Brush(DesignToken.Accent, DesignMetrics.Opacity.FileSelection) };
@@ -946,7 +946,7 @@ public sealed partial class MainWindow
             void Close() { bar.Visibility = Visibility.Collapsed; body.TextHighlighters.Remove(marks); body.Focus(FocusState.Keyboard); }
             Button Tool(string glyph, string key, Action action)
             {
-                var button = PreviewToolButton(new FontIcon { Glyph = glyph, FontSize = 12 }, key, ink);
+                var button = PreviewToolButton(new FontIcon { Glyph = glyph, TextSize = 12 }, key, ink);
                 button.Click += (_, _) => action();
                 return button;
             }
@@ -1126,7 +1126,7 @@ public sealed partial class MainWindow
         /// <summary>The image's size in the head (M/FilePaneView.swift:204-205): 10pt tabular <c>ink2</c>, before the zoom tools. Returns its words.</summary>
         private string PixelsLabel(long width, long height)
         {
-            var label = new TextBlock { Text = Locale.Get("files.image.pixels", new Dictionary<string, string> { ["width"] = width.ToString(CultureInfo.InvariantCulture), ["height"] = height.ToString(CultureInfo.InvariantCulture) }), FontSize = DesignMetrics.Type.Small, Foreground = owner.brushes.Brush(DesignToken.Ink2), VerticalAlignment = VerticalAlignment.Center };
+            var label = new TextBlock { Text = Locale.Get("files.image.pixels", new Dictionary<string, string> { ["width"] = width.ToString(CultureInfo.InvariantCulture), ["height"] = height.ToString(CultureInfo.InvariantCulture) }), TextSize = DesignMetrics.Type.Small, Foreground = owner.brushes.Brush(DesignToken.Ink2), VerticalAlignment = VerticalAlignment.Center };
             Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(label, FontNumeralAlignment.Tabular);
             AddPreviewTool(label, first: true);
             return label.Text;
@@ -1179,10 +1179,10 @@ public sealed partial class MainWindow
                 button.Click += async (_, _) => await owner.Act(action);
                 AddPreviewTool(button);
             }
-            Tool(new FontIcon { Glyph = "\uE71F", FontSize = 15 }, "files.image.zoomOut", () => Apply(Current() / 1.25));
+            Tool(new FontIcon { Glyph = "\uE71F", TextSize = 15 }, "files.image.zoomOut", () => Apply(Current() / 1.25));
             Tool(PanelSymbol.Fit(zoomable ? ink : owner.brushes.Brush(DesignToken.Ink3)), "files.image.fit", () => Apply(null));
-            Tool(new TextBlock { Text = "1:1", FontSize = DesignMetrics.Type.Small, FontWeight = FontWeights.Medium }, "files.image.actualSize", () => Apply(1));
-            Tool(new FontIcon { Glyph = "\uE8A3", FontSize = 15 }, "files.image.zoomIn", () => Apply(Current() * 1.25));
+            Tool(new TextBlock { Text = "1:1", TextSize = DesignMetrics.Type.Small, FontWeight = FontWeights.Medium }, "files.image.actualSize", () => Apply(1));
+            Tool(new FontIcon { Glyph = "\uE8A3", TextSize = 15 }, "files.image.zoomIn", () => Apply(Current() * 1.25));
             AutomationProperties.SetName(image, name);
             return viewer;
         }
@@ -1198,12 +1198,12 @@ public sealed partial class MainWindow
             var b = owner.brushes;
             // doc.questionmark at 30 light: a blank page with the question mark on it.
             var symbol = new Grid { HorizontalAlignment = HorizontalAlignment.Center };
-            symbol.Children.Add(new FontIcon { Glyph = "\uE7C3", FontSize = 34, FontWeight = FontWeights.Light, Foreground = b.Brush(DesignToken.Ink2) });
-            symbol.Children.Add(new TextBlock { Text = "?", FontSize = 14, FontWeight = FontWeights.SemiBold, Foreground = b.Brush(DesignToken.Ink2), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, DesignMetrics.Spacing.Xs, 0, 0) });
+            symbol.Children.Add(new FontIcon { Glyph = "\uE7C3", TextSize = 34, FontWeight = FontWeights.Light, Foreground = b.Brush(DesignToken.Ink2) });
+            symbol.Children.Add(new TextBlock { Text = "?", TextSize = 14, FontWeight = FontWeights.SemiBold, Foreground = b.Brush(DesignToken.Ink2), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, DesignMetrics.Spacing.Xs, 0, 0) });
             AutomationProperties.SetAccessibilityView(symbol, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
             card.Children.Add(symbol);
-            card.Children.Add(new TextBlock { Text = Locale.Get("files.preview.unsupported"), FontSize = DesignMetrics.Type.Title, FontWeight = FontWeights.SemiBold, Foreground = b.Brush(DesignToken.Ink), HorizontalAlignment = HorizontalAlignment.Center });
-            card.Children.Add(new TextBlock { Text = data.Name, FontSize = DesignMetrics.Type.Block, Foreground = b.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, MaxLines = 2 });
+            card.Children.Add(new TextBlock { Text = Locale.Get("files.preview.unsupported"), TextSize = DesignMetrics.Type.Title, FontWeight = FontWeights.SemiBold, Foreground = b.Brush(DesignToken.Ink), HorizontalAlignment = HorizontalAlignment.Center });
+            card.Children.Add(new TextBlock { Text = data.Name, TextSize = DesignMetrics.Type.Block, Foreground = b.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, MaxLines = 2 });
             // Size and modified time as a two-column grid of an ink2 label and its ink value (M/FilePaneView.swift:262-273).
             var facts = new Grid { ColumnSpacing = DesignMetrics.Spacing.Md, RowSpacing = DesignMetrics.Spacing.Xxs, HorizontalAlignment = HorizontalAlignment.Center };
             facts.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); facts.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -1211,13 +1211,13 @@ public sealed partial class MainWindow
             {
                 facts.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
                 var row = facts.RowDefinitions.Count - 1;
-                var name = new TextBlock { Text = label, FontSize = DesignMetrics.Type.Pill, Foreground = b.Brush(DesignToken.Ink2) }; Grid.SetRow(name, row); facts.Children.Add(name);
-                var text = new TextBlock { Text = value, FontSize = DesignMetrics.Type.Pill, Foreground = b.Brush(DesignToken.Ink) }; Grid.SetRow(text, row); Grid.SetColumn(text, 1); facts.Children.Add(text);
+                var name = new TextBlock { Text = label, TextSize = DesignMetrics.Type.Pill, Foreground = b.Brush(DesignToken.Ink2) }; Grid.SetRow(name, row); facts.Children.Add(name);
+                var text = new TextBlock { Text = value, TextSize = DesignMetrics.Type.Pill, Foreground = b.Brush(DesignToken.Ink) }; Grid.SetRow(text, row); Grid.SetColumn(text, 1); facts.Children.Add(text);
             }
             Fact(Locale.Get("files.preview.size"), FormatBytes(data.Size));
             if (data.Modified is { } modified) Fact(Locale.Get("files.preview.modified"), modified.ToLocalTime().ToString("g", CultureInfo.CurrentCulture));
             card.Children.Add(facts);
-            if (reason is not null) card.Children.Add(new TextBlock { Text = reason, FontSize = DesignMetrics.Type.Pill, Foreground = b.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center });
+            if (reason is not null) card.Children.Add(new TextBlock { Text = reason, TextSize = DesignMetrics.Type.Pill, Foreground = b.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center });
             // The Mac's push button, 4 further under the rest.
             var reveal = owner.PushButton(Locale.Get("menu.showInExplorer"));
             reveal.HorizontalAlignment = HorizontalAlignment.Center; reveal.Margin = new Thickness(0, DesignMetrics.Spacing.Xs, 0, 0);

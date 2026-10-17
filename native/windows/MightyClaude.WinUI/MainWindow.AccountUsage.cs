@@ -67,7 +67,7 @@ public sealed partial class MainWindow
             words.Children.Add(ProviderMarkView.Create(chip.Provider, UsageChipMark));
             foreach (var (text, warning) in UsageChipWords(chip))
             {
-                var word = new TextBlock { Text = text, FontSize = DesignMetrics.Type.Small, Foreground = brushes.Brush(warning ? DesignToken.WaitText : DesignToken.Ink2), VerticalAlignment = VerticalAlignment.Center };
+                var word = new TextBlock { Text = text, TextSize = DesignMetrics.Type.Small, Foreground = brushes.Brush(warning ? DesignToken.WaitText : DesignToken.Ink2), VerticalAlignment = VerticalAlignment.Center };
                 Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(word, Microsoft.UI.Xaml.FontNumeralAlignment.Tabular);
                 words.Children.Add(word);
             }
@@ -112,10 +112,10 @@ public sealed partial class MainWindow
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var pie = new FontIcon { Glyph = "", FontSize = DesignMetrics.Type.Title, Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
+        var pie = new FontIcon { Glyph = "", TextSize = DesignMetrics.Type.Title, Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
         AutomationProperties.SetAccessibilityView(pie, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
         header.Children.Add(pie);
-        var heading = new TextBlock { Text = AccountUsageStrings.Title, FontSize = DesignMetrics.Type.Title, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
+        var heading = new TextBlock { Text = AccountUsageStrings.Title, TextSize = DesignMetrics.Type.Title, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
         Grid.SetColumn(heading, 1); header.Children.Add(heading);
         var refresh = Button("↻", () => { QueueAccountUsageRefresh(true); return Task.CompletedTask; });
         // The Mac swaps the arrow for a small spinner while a read runs. The button's hit area reaches into the popover's padding, so the arrow ends at the edge.
@@ -123,7 +123,7 @@ public sealed partial class MainWindow
         {
             // From the press that asks for the read, not only once it has begun.
             var reading = usage?.Refreshing == true || usageRefreshQueued;
-            refresh.Content = reading ? new ProgressRing { IsActive = true, Width = 12, Height = 12, MinWidth = 12, MinHeight = 12 } : new FontIcon { Glyph = "\uE72C", FontSize = 12 };
+            refresh.Content = reading ? new ProgressRing { IsActive = true, Width = 12, Height = 12, MinWidth = 12, MinHeight = 12 } : new FontIcon { Glyph = "\uE72C", TextSize = 12 };
             refresh.IsEnabled = !reading;
         }
         refresh.Click += (_, _) => ShowReading();
@@ -145,13 +145,13 @@ public sealed partial class MainWindow
             var title = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             foreach (var width in new[] { GridLength.Auto, GridLength.Auto, GridLength.Auto, new GridLength(1, GridUnitType.Star) }) title.ColumnDefinitions.Add(new ColumnDefinition { Width = width });
             title.Children.Add(ProviderMarkView.Create(card.Provider, UsageCardMark));
-            var name = new TextBlock { Text = ProviderMark.Label(card.Provider), FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
+            var name = new TextBlock { Text = ProviderMark.Label(card.Provider), TextSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
             AutomationProperties.SetName(name, card.Title);
             Grid.SetColumn(name, 1); title.Children.Add(name);
             if (ProviderCatalog.IsBeta(card.Provider)) { var beta = BetaBadgeView.Create(brushes); Grid.SetColumn(beta, 2); title.Children.Add(beta); }
             if (card.Account is { Length: > 0 })
             {
-                var account = new TextBlock { Text = card.Account, FontSize = DesignMetrics.Type.Small, Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
+                var account = new TextBlock { Text = card.Account, TextSize = DesignMetrics.Type.Small, Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
                 Grid.SetColumn(account, 3); title.Children.Add(account);
             }
             panel.Children.Add(title);
@@ -163,23 +163,23 @@ public sealed partial class MainWindow
                 var line = new Grid();
                 line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                 line.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                line.Children.Add(new TextBlock { Text = row.Label, FontSize = DesignMetrics.Type.Pill, Foreground = ink });
-                var used = new TextBlock { Text = row.Used, FontSize = DesignMetrics.Type.Pill, Foreground = ink };
+                line.Children.Add(new TextBlock { Text = row.Label, TextSize = DesignMetrics.Type.Pill, Foreground = ink });
+                var used = new TextBlock { Text = row.Used, TextSize = DesignMetrics.Type.Pill, Foreground = ink };
                 Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(used, Microsoft.UI.Xaml.FontNumeralAlignment.Tabular);
                 Grid.SetColumn(used, 1); line.Children.Add(used);
                 window.Children.Add(line);
                 var bar = UsageBar(row.Fraction, row.Warning, progress: true);
                 AutomationProperties.SetAutomationId(bar, "statusbar-usage-bar-" + card.Provider + "-" + index);
                 window.Children.Add(bar);
-                if (row.Reset is { Length: > 0 }) window.Children.Add(new TextBlock { Text = row.Reset, FontSize = DesignMetrics.Type.Small, Foreground = ink2 });
+                if (row.Reset is { Length: > 0 }) window.Children.Add(new TextBlock { Text = row.Reset, TextSize = DesignMetrics.Type.Small, Foreground = ink2 });
                 panel.Children.Add(window);
             }
-            if (card.Detail is { Length: > 0 }) panel.Children.Add(new TextBlock { Text = card.Detail, FontSize = DesignMetrics.Type.Small, Foreground = ink2, TextWrapping = TextWrapping.Wrap });
-            if (card.Note is { Length: > 0 }) panel.Children.Add(new TextBlock { Text = card.Note, FontSize = DesignMetrics.Type.Pill, Foreground = ink2, TextWrapping = TextWrapping.Wrap });
+            if (card.Detail is { Length: > 0 }) panel.Children.Add(new TextBlock { Text = card.Detail, TextSize = DesignMetrics.Type.Small, Foreground = ink2, TextWrapping = TextWrapping.Wrap });
+            if (card.Note is { Length: > 0 }) panel.Children.Add(new TextBlock { Text = card.Note, TextSize = DesignMetrics.Type.Pill, Foreground = ink2, TextWrapping = TextWrapping.Wrap });
             // The reset rows come before the time of the reading, as on the Mac.
             if (card.Provider == "claude") RenderAccountUsageReset(panel);
             // When it was read: 9pt in the tertiary ink (M/StatusBarUsage.swift:275-276).
-            if (card.CheckedAt is { Length: > 0 }) panel.Children.Add(new TextBlock { Text = card.CheckedAt, FontSize = DesignMetrics.Type.Badge, Foreground = brushes.Tertiary });
+            if (card.CheckedAt is { Length: > 0 }) panel.Children.Add(new TextBlock { Text = card.CheckedAt, TextSize = DesignMetrics.Type.Badge, Foreground = brushes.Tertiary });
             usageDetails.Children.Add(panel);
         }
 
@@ -191,8 +191,8 @@ public sealed partial class MainWindow
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             var words = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs, VerticalAlignment = VerticalAlignment.Center };
-            words.Children.Add(new TextBlock { Text = AccountUsageStrings.ToggleLabel, FontSize = DesignMetrics.Type.Pill, Foreground = ink, TextWrapping = TextWrapping.Wrap });
-            words.Children.Add(new TextBlock { Text = AccountUsageStrings.ToggleDescription, FontSize = DesignMetrics.Type.Small, Foreground = ink2, TextWrapping = TextWrapping.Wrap });
+            words.Children.Add(new TextBlock { Text = AccountUsageStrings.ToggleLabel, TextSize = DesignMetrics.Type.Pill, Foreground = ink, TextWrapping = TextWrapping.Wrap });
+            words.Children.Add(new TextBlock { Text = AccountUsageStrings.ToggleDescription, TextSize = DesignMetrics.Type.Small, Foreground = ink2, TextWrapping = TextWrapping.Wrap });
             row.Children.Add(words);
             // The Mac's mini switch (M/StatusBarUsage.swift:229), which is the form's: 26×15 with its 13pt knob, filled when off too.
             var toggle = usageDirectToggle = SettingsSwitch(AccountUsageStrings.ToggleLabel, usage.DirectClaudeLookupEnabled, "statusbar-usage-direct-toggle");
@@ -210,7 +210,7 @@ public sealed partial class MainWindow
             Grid.SetColumn(toggle, 1); row.Children.Add(toggle);
             usageDetails.Children.Add(row);
         }
-        usageDetails.Children.Add(new TextBlock { Text = AccountUsageStrings.SharedLimitsNote, FontSize = DesignMetrics.Type.Small, Foreground = ink2, TextWrapping = TextWrapping.Wrap });
+        usageDetails.Children.Add(new TextBlock { Text = AccountUsageStrings.SharedLimitsNote, TextSize = DesignMetrics.Type.Small, Foreground = ink2, TextWrapping = TextWrapping.Wrap });
     }
 
     /// The read-only reset-entitlement rows. Core decides what they say and whether they
@@ -234,20 +234,20 @@ public sealed partial class MainWindow
         if (rows.Count == 0) return;
         // The line stands 8 from the title under it, as a card's parts do (the rows' own 4, and 4 more).
         panel.Children.Add(new Border { Height = DesignMetrics.Stroke.Line, Background = Separator, Margin = new Thickness(0, 0, 0, DesignMetrics.Spacing.Xs) });
-        panel.Children.Add(new TextBlock { Text = ClaudeResetEntitlements.Title, FontSize = DesignMetrics.Type.Pill, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = brushes.Brush(DesignToken.Ink) });
+        panel.Children.Add(new TextBlock { Text = ClaudeResetEntitlements.Title, TextSize = DesignMetrics.Type.Pill, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = brushes.Brush(DesignToken.Ink) });
         foreach (var row in rows)
         {
             var line = new StackPanel { Spacing = 1 };
             AutomationProperties.SetAutomationId(line, "statusbar-usage-reset-" + row.Program);
-            line.Children.Add(new TextBlock { Text = row.Label, FontSize = DesignMetrics.Type.Small, Foreground = brushes.Brush(DesignToken.Ink2) });
-            line.Children.Add(new TextBlock { Text = row.Text, FontSize = DesignMetrics.Type.Pill, Foreground = brushes.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap });
+            line.Children.Add(new TextBlock { Text = row.Label, TextSize = DesignMetrics.Type.Small, Foreground = brushes.Brush(DesignToken.Ink2) });
+            line.Children.Add(new TextBlock { Text = row.Text, TextSize = DesignMetrics.Type.Pill, Foreground = brushes.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap });
             panel.Children.Add(line);
         }
         var link = new HyperlinkButton
         {
             Content = ClaudeResetEntitlements.LinkLabel,
             NavigateUri = new Uri(ClaudeResetEntitlements.LinkTarget),
-            FontSize = 11, Padding = new Thickness(0), IsEnabled = true,
+            TextSize = 11, Padding = new Thickness(0), IsEnabled = true,
         };
         AutomationProperties.SetAutomationId(link, "statusbar-usage-reset-link");
         panel.Children.Add(link);

@@ -17,19 +17,19 @@ public sealed partial class MainWindow
     private Button? sidebarThemeButton;
     /// <summary>The search field's rounded subtle wash around the magnifier and the text box (M/WorkspaceView.swift:71-77).</summary>
     private readonly Border sidebarSearchBox = new() { CornerRadius = new CornerRadius(DesignMetrics.Radius.Search), Padding = new Thickness(DesignMetrics.Inset.SidebarSearch), Margin = new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Md, 0) };
-    private readonly FontIcon sidebarSearchIcon = new() { Glyph = "\uE721", FontSize = 13, VerticalAlignment = VerticalAlignment.Center };
+    private readonly FontIcon sidebarSearchIcon = new() { Glyph = "\uE721", TextSize = 13, VerticalAlignment = VerticalAlignment.Center };
     /// <summary>The height of the search field's row: the line of AppKit's 12pt text field (M/WorkspaceView.swift:73).</summary>
     internal const double SearchRowHeight = 15;
     /// <summary>The count beside the section header's words, 10pt mono.</summary>
-    private readonly TextBlock sessionsCount = new() { FontSize = DesignMetrics.Type.Small, FontFamily = new FontFamily(DesignMetrics.Font.Mono), VerticalAlignment = VerticalAlignment.Center };
+    private readonly TextBlock sessionsCount = new() { TextSize = DesignMetrics.Type.Small, TextFont = TextArea.Code, VerticalAlignment = VerticalAlignment.Center };
     /// <summary>The section header's folder-plus button, and its frame: 18 wide, 14 high (M/WorkspaceView.swift:117-119).</summary>
     private Button? sidebarAddWorkspaceButton;
     internal const double SidebarAddWorkspaceWidth = 18, SidebarAddWorkspaceHeight = 14;
     private readonly Grid sessionsHeaderRow = new() { ColumnSpacing = DesignMetrics.Spacing.Sm, Margin = new Thickness(DesignMetrics.Inset.SidebarSectionH, DesignMetrics.Inset.SidebarSectionT, DesignMetrics.Inset.SidebarSectionH, DesignMetrics.Inset.SidebarSectionB) };
     /// <summary>What the list says when it lists no workspace: none match the search, or none yet (M/WorkspaceView.swift:89-93).</summary>
-    private readonly TextBlock sidebarEmpty = new() { FontSize = 12, TextWrapping = TextWrapping.Wrap, Padding = new Thickness(DesignMetrics.Spacing.Lg), Margin = new Thickness(DesignMetrics.Spacing.Sm, 0, DesignMetrics.Spacing.Sm, 0), Visibility = Visibility.Collapsed };
+    private readonly TextBlock sidebarEmpty = new() { TextSize = 12, TextWrapping = TextWrapping.Wrap, Padding = new Thickness(DesignMetrics.Spacing.Lg), Margin = new Thickness(DesignMetrics.Spacing.Sm, 0, DesignMetrics.Spacing.Sm, 0), Visibility = Visibility.Collapsed };
     /// <summary>The open-folder button's words, set again when the language changes.</summary>
-    private readonly TextBlock addFolderLabel = new() { FontSize = 12, Margin = MacLine(), VerticalAlignment = VerticalAlignment.Center };
+    private readonly TextBlock addFolderLabel = new() { TextSize = 12, Margin = MacLine(), VerticalAlignment = VerticalAlignment.Center };
     private Border? sidebarFooterBeta;
     private Grid? sidebarFooter;
 
@@ -96,11 +96,11 @@ public sealed partial class MainWindow
     private void StyleSidebarOpenFolder()
     {
         var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
-        label.Children.Add(new FontIcon { Glyph = "\uE8F4", FontSize = 12, VerticalAlignment = VerticalAlignment.Center });
+        label.Children.Add(new FontIcon { Glyph = "\uE8F4", TextSize = 12, VerticalAlignment = VerticalAlignment.Center });
         label.Children.Add(addFolderLabel); addFolderButton.Content = label;
         addFolderButton.Foreground = brushes.Brush(DesignToken.Ink);
         addFolderButton.HorizontalAlignment = HorizontalAlignment.Stretch; addFolderButton.HorizontalContentAlignment = HorizontalAlignment.Left;
-        addFolderButton.FontSize = 12; addFolderButton.Padding = new Thickness(DesignMetrics.Spacing.Sm); addFolderButton.Margin = new Thickness(DesignMetrics.Spacing.Md, 0, DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Md);
+        addFolderButton.TextSize = 12; addFolderButton.Padding = new Thickness(DesignMetrics.Spacing.Sm); addFolderButton.Margin = new Thickness(DesignMetrics.Spacing.Md, 0, DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Md);
         PlainSidebarButton(addFolderButton, brushes.Subtle, brushes.Subtle, radius: DesignMetrics.Radius.Search);
     }
 
@@ -112,7 +112,7 @@ public sealed partial class MainWindow
     private FrameworkElement BuildSidebarTools()
     {
         layout.Background = brushes.Subtle; layout.BorderThickness = new Thickness(0); layout.CornerRadius = new CornerRadius(DesignMetrics.Radius.Search);
-        layout.FontSize = 12; layout.Foreground = brushes.Brush(DesignToken.Ink);
+        layout.TextSize = 12; layout.Foreground = brushes.Brush(DesignToken.Ink);
         foreach (var key in new[] { "ComboBoxBackgroundPointerOver", "ComboBoxBackgroundPressed", "ComboBoxBackgroundFocused" }) layout.Resources[key] = brushes.Subtle;
         foreach (var key in new[] { "ComboBoxBorderBrush", "ComboBoxBorderBrushPointerOver", "ComboBoxBorderBrushPressed" }) layout.Resources[key] = brushes.Transparent;
         // Keyboard focus keeps a visible accent ring around the wash.
@@ -145,9 +145,9 @@ public sealed partial class MainWindow
         brand.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); brand.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); brand.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var image = new Image { Source = new BitmapImage(new Uri("ms-appx:///Assets/mightyclaude.png")), Width = 20, Height = 20, Margin = new Thickness(0, 0, DesignMetrics.Spacing.Md, 0) };
         AutomationProperties.SetAccessibilityView(image, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw); Grid.SetRowSpan(image, 2); brand.Children.Add(image);
-        var title = new TextBlock { Text = "Mighty Claude", FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+        var title = new TextBlock { Text = "Mighty Claude", TextSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
         Grid.SetColumn(title, 1); brand.Children.Add(title);
-        var version = new TextBlock { Text = "v" + AppVersionText, FontSize = DesignMetrics.Type.Small, FontFamily = new FontFamily(DesignMetrics.Font.Mono), Foreground = brushes.Brush(DesignToken.SidebarInk2), TextTrimming = TextTrimming.CharacterEllipsis };
+        var version = new TextBlock { Text = "v" + AppVersionText, TextSize = DesignMetrics.Type.Small, TextFont = TextArea.Code, Foreground = brushes.Brush(DesignToken.SidebarInk2), TextTrimming = TextTrimming.CharacterEllipsis };
         AutomationProperties.SetAutomationId(version, "sidebar-app-version");
         Grid.SetColumn(version, 1); Grid.SetColumnSpan(version, 2); Grid.SetRow(version, 1); brand.Children.Add(version);
         // The whole Windows app is a beta: the same capsule as a beta agent's, 6 after the name (M/BetaBadge.swift, M/WorkspaceView.swift:225).
@@ -156,7 +156,7 @@ public sealed partial class MainWindow
         Grid.SetColumn(beta, 2); brand.Children.Add(beta); footer.Children.Add(brand);
         var help = BuildSidebarHelpButton(); Grid.SetColumn(help, 1); footer.Children.Add(help);
         var theme = BuildSidebarThemeButton(); Grid.SetColumn(theme, 2); footer.Children.Add(theme);
-        settingsButton.Content = new FontIcon { Glyph = "", FontSize = SidebarFooterGlyph };
+        settingsButton.Content = new FontIcon { Glyph = "", TextSize = SidebarFooterGlyph };
         AutomationProperties.SetAutomationId(settingsButton, "sidebar-settings");
         // The Mac's two symbols are plain 13pt images. Each button keeps a hit area around its symbol,
         // reaching into the padding and a little over its neighbour, so the symbols land where the
@@ -213,7 +213,7 @@ public sealed partial class MainWindow
         if (sidebarThemeButton is null) return;
         var title = Locale.Get("sidebar.toggleTheme");
         // The Mac's sun.max in the dark theme, moon in the light one (Segoe Fluent Brightness / QuietHours).
-        sidebarThemeButton.Content = new FontIcon { Glyph = service.Snapshot.Theme == "light" ? SidebarMoonGlyph : SidebarSunGlyph, FontSize = SidebarFooterGlyph };
+        sidebarThemeButton.Content = new FontIcon { Glyph = service.Snapshot.Theme == "light" ? SidebarMoonGlyph : SidebarSunGlyph, TextSize = SidebarFooterGlyph };
         AutomationProperties.SetName(sidebarThemeButton, title); ToolTipService.SetToolTip(sidebarThemeButton, title);
     }
 
@@ -267,8 +267,8 @@ public sealed partial class MainWindow
                 header.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
                 var label = new Grid { ColumnSpacing = DesignMetrics.Spacing.Md };
                 label.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); label.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); label.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-                label.Children.Add(new FontIcon { Glyph = "\uE8B7", FontSize = 14, VerticalAlignment = VerticalAlignment.Center, Foreground = brushes.Brush(selected ? DesignToken.SidebarAccent : DesignToken.SidebarInk2) });
-                var title = new TextBlock { Text = workspace.Name, FontSize = DesignMetrics.Type.Row, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = brushes.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, Margin = MacLine(), VerticalAlignment = VerticalAlignment.Center };
+                label.Children.Add(new FontIcon { Glyph = "\uE8B7", TextSize = 14, VerticalAlignment = VerticalAlignment.Center, Foreground = brushes.Brush(selected ? DesignToken.SidebarAccent : DesignToken.SidebarInk2) });
+                var title = new TextBlock { Text = workspace.Name, TextSize = DesignMetrics.Type.Row, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = brushes.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, Margin = MacLine(), VerticalAlignment = VerticalAlignment.Center };
                 Grid.SetColumn(title, 1); label.Children.Add(title);
                 var counts = new StatusCountsView(brushes, "workspace-running-" + workspace.Id); workspaceStatusCounts[workspace.Id] = counts;
                 counts.Update(WorkDashboard.WorkspaceBadges(state.Sessions.Where(s => s.WorkspaceId == workspace.Id), DashboardAttention), DarkTheme);
@@ -282,7 +282,7 @@ public sealed partial class MainWindow
                 Button disclosure = null!;
                 disclosure = SidebarButton(isExpanded ? "⌄" : "›", () => ToggleWorkspaceDisclosure(workspace.Id, disclosure.FocusState == FocusState.Keyboard));
                 // The chevron, 8pt semibold sidebarInk2 in an 18×18 box, 6 from the trailing edge.
-                disclosure.Content = new FontIcon { Glyph = isExpanded ? "\uE70D" : "\uE76C", FontSize = 8, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.SidebarInk2) };
+                disclosure.Content = new FontIcon { Glyph = isExpanded ? "\uE70D" : "\uE76C", TextSize = 8, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.SidebarInk2) };
                 disclosure.Width = 18; disclosure.Height = 18; disclosure.MinWidth = 0; disclosure.MinHeight = 0; disclosure.Padding = new Thickness(0);
                 disclosure.Margin = new Thickness(0, 0, DesignMetrics.Spacing.Sm, 0); disclosure.VerticalAlignment = VerticalAlignment.Center; disclosure.HorizontalAlignment = HorizontalAlignment.Center;
                 disclosure.HorizontalContentAlignment = HorizontalAlignment.Center; PlainSidebarButton(disclosure, brushes.Transparent, brushes.Transparent, radius: DesignMetrics.Radius.FileRow);
@@ -308,9 +308,9 @@ public sealed partial class MainWindow
                     // The add row, the list's last (M/WorkspaceView.swift:322-343): plus 10 semibold and 11pt words in sidebarAccent, padding l28 r12 and the row inset over and under.
                     var add = SidebarButton(Locale.Get("workspace.addPane"), () => Task.CompletedTask);
                     var addLabel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
-                    addLabel.Children.Add(new FontIcon { Glyph = "\uE710", FontSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Width = 12, Foreground = brushes.Brush(DesignToken.SidebarAccent), VerticalAlignment = VerticalAlignment.Center });
-                    addLabel.Children.Add(new TextBlock { Text = Locale.Get("workspace.addPane"), FontSize = DesignMetrics.Type.Pill, Foreground = brushes.Brush(DesignToken.SidebarAccent), Margin = MacLine(), VerticalAlignment = VerticalAlignment.Center });
-                    add.Content = addLabel; add.Flyout = DashboardAddMenu(workspace.Id); add.FontSize = DesignMetrics.Type.Pill; add.Padding = new Thickness(28, DesignMetrics.Inset.SidebarRowV, DesignMetrics.Spacing.Lg, DesignMetrics.Inset.SidebarRowV); add.MinHeight = SidebarAddRowMin;
+                    addLabel.Children.Add(new FontIcon { Glyph = "\uE710", TextSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextWidth = 12, Foreground = brushes.Brush(DesignToken.SidebarAccent), VerticalAlignment = VerticalAlignment.Center });
+                    addLabel.Children.Add(new TextBlock { Text = Locale.Get("workspace.addPane"), TextSize = DesignMetrics.Type.Pill, Foreground = brushes.Brush(DesignToken.SidebarAccent), Margin = MacLine(), VerticalAlignment = VerticalAlignment.Center });
+                    add.Content = addLabel; add.Flyout = DashboardAddMenu(workspace.Id); add.TextSize = DesignMetrics.Type.Pill; add.Padding = new Thickness(28, DesignMetrics.Inset.SidebarRowV, DesignMetrics.Spacing.Lg, DesignMetrics.Inset.SidebarRowV); add.MinHeight = SidebarAddRowMin;
                     PlainSidebarButton(add, brushes.Transparent, brushes.Transparent);
                     AutomationProperties.SetAutomationId(add, "workspace-add-session-" + workspace.Id);
                     AutomationProperties.SetName(add, Locale.Get("workspace.addPaneAccessibility", new Dictionary<string, string> { ["workspace"] = workspace.Name }));
@@ -422,14 +422,14 @@ internal sealed class StatusCountsView
         {
             var mark = new StatusMark(12);
             // The words stand on the Mac's 13pt line (MainWindow.Sidebar.cs, MacLine), so the counts never make a row taller than the Mac's.
-            var count = new TextBlock { FontSize = DesignMetrics.Type.Pill, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = brushes.Brush(DesignToken.Ink), Margin = MainWindow.MacLine(), VerticalAlignment = VerticalAlignment.Center };
+            var count = new TextBlock { TextSize = DesignMetrics.Type.Pill, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = brushes.Brush(DesignToken.Ink), Margin = MainWindow.MacLine(), VerticalAlignment = VerticalAlignment.Center };
             Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(count, FontNumeralAlignment.Tabular);
             var entry = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xxs, Visibility = Visibility.Collapsed };
             entry.Children.Add(mark.View); entry.Children.Add(count);
             TextBlock? word = null;
             if (longForm)
             {
-                word = new TextBlock { FontSize = DesignMetrics.Type.Pill, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = brushes.Brush(DesignToken.Ink2), Margin = MainWindow.MacLine(left: 1), VerticalAlignment = VerticalAlignment.Center };
+                word = new TextBlock { TextSize = DesignMetrics.Type.Pill, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = brushes.Brush(DesignToken.Ink2), Margin = MainWindow.MacLine(left: 1), VerticalAlignment = VerticalAlignment.Center };
                 entry.Children.Add(word);
             }
             AutomationProperties.SetAutomationId(entry, tone == DesignTone.Run ? runningId : "status-count-" + tone.ToString().ToLowerInvariant());

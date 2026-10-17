@@ -54,8 +54,8 @@ public sealed partial class MainWindow
         badge.Children.Add(icon); stack.Children.Add(badge);
         // Tracking −0.6pt at 30pt is −20 thousandths of an em. SF's 30pt line is 36 high where Segoe's is 40, and its
         // 13pt line 15.5 where Segoe's is 17: the margins give the difference back, so the column measures as the Mac's.
-        stack.Children.Add(new TextBlock { Text = "Mighty Claude", FontSize = 30, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, CharacterSpacing = -20, Foreground = brushes.Brush(DesignToken.Ink), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, -DesignMetrics.Spacing.Xs, 0, DesignMetrics.Spacing.Md) });
-        stack.Children.Add(new TextBlock { Text = Locale.Get("launch.preparing"), FontSize = DesignMetrics.Type.Body, Foreground = brushes.Brush(DesignToken.Ink2), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, -DesignMetrics.Spacing.Xxs, 0, 0) });
+        stack.Children.Add(new TextBlock { Text = "Mighty Claude", TextSize = 30, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, CharacterSpacing = -20, Foreground = brushes.Brush(DesignToken.Ink), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, -DesignMetrics.Spacing.Xs, 0, DesignMetrics.Spacing.Md) });
+        stack.Children.Add(new TextBlock { Text = Locale.Get("launch.preparing"), TextSize = DesignMetrics.Type.Body, Foreground = brushes.Brush(DesignToken.Ink2), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, -DesignMetrics.Spacing.Xxs, 0, 0) });
         var progress = new ProgressRing { IsActive = true, Width = 16, Height = 16, MinWidth = 16, MinHeight = 16, Margin = new Thickness(0, DesignMetrics.Spacing.Xl, 0, 0) };
         AutomationProperties.SetName(progress, Locale.Get("launch.loading")); stack.Children.Add(progress);
         launchSplash.Children.Add(stack); Grid.SetRowSpan(launchSplash, 3); Grid.SetColumnSpan(launchSplash, 2);
@@ -117,7 +117,7 @@ public sealed partial class MainWindow
         badge.Child = null; badge.Visibility = gitInfo is null ? Visibility.Collapsed : Visibility.Visible;
         if (gitInfo is not { } value) return;
         var ink = brushes.Brush(DesignToken.Ink2);
-        TextBlock Words(string text) => new() { Text = text, FontSize = DesignMetrics.Type.Small, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
+        TextBlock Words(string text) => new() { Text = text, TextSize = DesignMetrics.Type.Small, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
         // arrow.triangle.branch on a 10-unit box: the trunk between two rings, a third ring on the branch that leaves it.
         var branch = new Canvas { Width = 10, Height = 10, VerticalAlignment = VerticalAlignment.Center };
         foreach (var (x, y) in new[] { (2.6, 1.9), (2.6, 8.1), (7.4, 2.9) })

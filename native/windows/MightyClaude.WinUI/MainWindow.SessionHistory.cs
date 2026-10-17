@@ -145,7 +145,7 @@ public sealed partial class MainWindow
             // The line names its state first and, after " · ", the requests already loaded.
             var tail = loaded > 0 ? " · " + Locale.Get("graph.history.loaded", new Dictionary<string, string> { ["count"] = loaded.ToString(System.Globalization.CultureInfo.InvariantCulture) }) : "";
             var lead = tail.Length > 0 && text.EndsWith(tail, StringComparison.Ordinal) ? text[..^tail.Length] : text;
-            TextBlock Words(string value, Brush ink) => new() { Text = value, FontSize = DesignMetrics.Type.Pill, Foreground = ink, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+            TextBlock Words(string value, Brush ink) => new() { Text = value, TextSize = DesignMetrics.Type.Pill, Foreground = ink, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
             var card = new Grid { Width = frame.W, Height = frame.H };
             var dashes = new DoubleCollection();
             foreach (var length in DesignMetrics.Dash.InStrokeUnits([4, 3], DesignMetrics.Stroke.Line)) dashes.Add(length);

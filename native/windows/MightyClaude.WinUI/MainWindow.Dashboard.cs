@@ -53,7 +53,7 @@ public sealed partial class MainWindow
         };
         AutomationProperties.SetAccessibilityView(dashboardEntryIcon, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
         row.Children.Add(dashboardEntryIcon);
-        dashboardEntryTitle = new TextBlock { FontSize = DesignMetrics.Type.Title, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+        dashboardEntryTitle = new TextBlock { TextSize = DesignMetrics.Type.Title, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
         Grid.SetColumn(dashboardEntryTitle, 1); row.Children.Add(dashboardEntryTitle);
         // The Mac's Spacer stands between the title and the counts (M/WorkspaceView.swift:139-146).
         dashboardCounts = new StatusCountsView(brushes, "sidebar-dashboard-running"); dashboardCounts.View.Margin = new Thickness(DesignMetrics.Spacing.Sm, 0, 0, 0); Grid.SetColumn(dashboardCounts.View, 2); row.Children.Add(dashboardCounts.View);
@@ -174,10 +174,10 @@ public sealed partial class MainWindow
         // M/DashboardView.swift:94-118: padding h28 t20 b24; the title, the tiles 16 below, each group 22 below.
         var content = new StackPanel { Padding = new(DesignMetrics.Inset.DashboardPageH, DesignMetrics.Inset.DashboardPageT, DesignMetrics.Inset.DashboardPageH, DesignMetrics.Inset.DashboardPageB) };
         var heading = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
-        var title = new TextBlock { Text = Locale.Get("phone.dashboard.title"), FontSize = DesignMetrics.Type.DashTitle, FontFamily = new FontFamily(DesignMetrics.Font.Heading), FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = brushes.Brush(DesignToken.Ink) };
+        var title = new TextBlock { Text = Locale.Get("phone.dashboard.title"), TextSize = DesignMetrics.Type.DashTitle, TextFont = TextArea.Heading, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = brushes.Brush(DesignToken.Ink) };
         AutomationProperties.SetHeadingLevel(title, Microsoft.UI.Xaml.Automation.Peers.AutomationHeadingLevel.Level1);
         heading.Children.Add(title);
-        heading.Children.Add(new TextBlock { Text = Locale.Get("dashboard.subtitle", new Dictionary<string, string> { ["workspaces"] = state.Workspaces.Count.ToString(), ["panes"] = state.Sessions.Count.ToString() }), FontSize = 12, Foreground = brushes.Brush(DesignToken.Ink2) });
+        heading.Children.Add(new TextBlock { Text = Locale.Get("dashboard.subtitle", new Dictionary<string, string> { ["workspaces"] = state.Workspaces.Count.ToString(), ["panes"] = state.Sessions.Count.ToString() }), TextSize = 12, Foreground = brushes.Brush(DesignToken.Ink2) });
         // The sidebar button stands before the title, 10 apart, as in the workspace header.
         var headingRow = new Grid { ColumnSpacing = DesignMetrics.Spacing.Md };
         headingRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); headingRow.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
@@ -218,7 +218,7 @@ public sealed partial class MainWindow
             };
         }
         content.Children.Add(tiles);
-        if (state.Workspaces.Count == 0) content.Children.Add(new TextBlock { Text = Locale.Get("dashboard.empty"), FontSize = DesignMetrics.Type.Body, Foreground = brushes.Brush(DesignToken.Ink2), Margin = new(0, DesignMetrics.Spacing.Lg, 0, 0) });
+        if (state.Workspaces.Count == 0) content.Children.Add(new TextBlock { Text = Locale.Get("dashboard.empty"), TextSize = DesignMetrics.Type.Body, Foreground = brushes.Brush(DesignToken.Ink2), Margin = new(0, DesignMetrics.Spacing.Lg, 0, 0) });
         Border? firstRows = null; Button? firstRow = null, firstFiles = null, firstAdd = null;
         foreach (var workspace in state.Workspaces)
         {
@@ -229,7 +229,7 @@ public sealed partial class MainWindow
             firstFiles ??= files; firstAdd ??= add;
             // Every pane of the workspace, the files pane and an agent's own terminal or browser too (M/DashboardView.swift:112, 206); only the tiles count the agents'.
             var cards = WorkDashboard.Ordered(state.Sessions.Where(s => s.WorkspaceId == workspace.Id).Select(s => WorkDashboard.MakeCard(s, DashboardAttention(s.Id))));
-            if (cards.Count == 0) { group.Children.Add(new TextBlock { Text = Locale.Get("phone.workspaces.noSessions"), FontSize = 12, Foreground = brushes.Brush(DesignToken.Ink2), Margin = new(DesignMetrics.Spacing.Xxs, 0, DesignMetrics.Spacing.Xxs, 0) }); content.Children.Add(group); continue; }
+            if (cards.Count == 0) { group.Children.Add(new TextBlock { Text = Locale.Get("phone.workspaces.noSessions"), TextSize = 12, Foreground = brushes.Brush(DesignToken.Ink2), Margin = new(DesignMetrics.Spacing.Xxs, 0, DesignMetrics.Spacing.Xxs, 0) }); content.Children.Add(group); continue; }
             // One card per workspace, its panes as glyph rows with a line between them inset 43; the card has
             // its fill and its shadow and no edge (M/DashboardView.swift:243-250).
             var list = new StackPanel();
@@ -275,10 +275,10 @@ public sealed partial class MainWindow
         body.RowDefinitions.Add(new() { Height = GridLength.Auto }); body.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) }); body.RowDefinitions.Add(new() { Height = GridLength.Auto });
         // Avenir Next's line sets the figure's foot 46 under the tile's top (measured on docs/design-system/crops/dashboard-top-light.webp);
         // the heading font's 34-high block line sets it at 40, so the figure sits 6 lower.
-        var figure = new TextBlock { Text = count.ToString(System.Globalization.CultureInfo.CurrentCulture), FontSize = DesignMetrics.Type.Tile, FontFamily = new FontFamily(DesignMetrics.Font.Heading), FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = brushes.Brush(number), LineHeight = DesignMetrics.Type.Tile, LineStackingStrategy = LineStackingStrategy.BlockLineHeight, Margin = new(0, DesignMetrics.Spacing.Sm, 0, 0) };
+        var figure = new TextBlock { Text = count.ToString(System.Globalization.CultureInfo.CurrentCulture), TextSize = DesignMetrics.Type.Tile, TextFont = TextArea.Heading, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = brushes.Brush(number), TextLineHeight = DesignMetrics.Type.Tile, LineStackingStrategy = LineStackingStrategy.BlockLineHeight, Margin = new(0, DesignMetrics.Spacing.Sm, 0, 0) };
         Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(figure, Microsoft.UI.Xaml.FontNumeralAlignment.Tabular);
         body.Children.Add(figure);
-        var words = new TextBlock { Text = label, FontSize = DesignMetrics.Type.SideRow, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = brushes.Brush(ink), TextTrimming = TextTrimming.CharacterEllipsis };
+        var words = new TextBlock { Text = label, TextSize = DesignMetrics.Type.SideRow, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = brushes.Brush(ink), TextTrimming = TextTrimming.CharacterEllipsis };
         Grid.SetRow(words, 2); body.Children.Add(words);
         var (host, tile) = ShadowedCard(body, brushes.Brush(fill), CardShadow.DashboardCard);
         tile.Height = DashboardTileHeight; tile.Padding = DashboardTilePadding;
@@ -299,10 +299,10 @@ public sealed partial class MainWindow
         var top = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
         top.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); top.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); top.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
         top.Children.Add(PanelSymbol.Pulse(brushes.Brush(DesignToken.Ink2)));
-        var heading = new TextBlock { Text = Locale.Get("dashboard.usage.title"), FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = brushes.Brush(DesignToken.Ink) };
+        var heading = new TextBlock { Text = Locale.Get("dashboard.usage.title"), TextSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = brushes.Brush(DesignToken.Ink) };
         Grid.SetColumn(heading, 1); top.Children.Add(heading);
         // The title, a spacer of at least 6 and the words, each 7 apart: 20 at the least between the two.
-        var shared = new TextBlock { Text = Locale.Get("dashboard.usage.shared"), FontSize = DesignMetrics.Type.Pill, Foreground = brushes.Brush(DesignToken.Ink2), HorizontalAlignment = HorizontalAlignment.Right, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new(DesignMetrics.Spacing.Md, 0, 0, 0) };
+        var shared = new TextBlock { Text = Locale.Get("dashboard.usage.shared"), TextSize = DesignMetrics.Type.Pill, Foreground = brushes.Brush(DesignToken.Ink2), HorizontalAlignment = HorizontalAlignment.Right, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new(DesignMetrics.Spacing.Md, 0, 0, 0) };
         Grid.SetColumn(shared, 2); top.Children.Add(shared);
         body.Children.Add(top);
         foreach (var card in cards)
@@ -314,17 +314,17 @@ public sealed partial class MainWindow
             var name = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
             // ProviderIcon(size: 11) draws in a frame of size × 1.15 (M/ProviderIcon.swift:18).
             name.Children.Add(ProviderMarkView.Create(card.Provider, 11 * ProviderIconScale));
-            name.Children.Add(new TextBlock { Text = ProviderMark.Label(card.Provider), FontSize = 11.5, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = brushes.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center });
+            name.Children.Add(new TextBlock { Text = ProviderMark.Label(card.Provider), TextSize = 11.5, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = brushes.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center });
             row.Children.Add(name);
             for (var i = 0; i < windows.Count; i++)
             {
                 var window = windows[i];
                 var line = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
                 line.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); line.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); line.ColumnDefinitions.Add(new() { Width = GridLength.Auto, MinWidth = 30 });
-                line.Children.Add(new TextBlock { Text = window.Label, FontSize = 11.5, Foreground = brushes.Brush(DesignToken.Ink2), VerticalAlignment = VerticalAlignment.Center });
+                line.Children.Add(new TextBlock { Text = window.Label, TextSize = 11.5, Foreground = brushes.Brush(DesignToken.Ink2), VerticalAlignment = VerticalAlignment.Center });
                 var bar = UsageBar(window.Fraction, window.Warning); Grid.SetColumn(bar, 1); line.Children.Add(bar); bars.Add(bar);
                 // Worded as the status bar chips word it (AccountUsageSupport.Percent), so both agree.
-                var percent = new TextBlock { Text = window.Percent, FontSize = 11.5, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = brushes.Brush(DesignToken.Ink), TextAlignment = TextAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
+                var percent = new TextBlock { Text = window.Percent, TextSize = 11.5, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = brushes.Brush(DesignToken.Ink), TextAlignment = TextAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
                 Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(percent, Microsoft.UI.Xaml.FontNumeralAlignment.Tabular);
                 Grid.SetColumn(percent, 2); line.Children.Add(percent);
                 Grid.SetColumn(line, i + 1); row.Children.Add(line);
@@ -354,15 +354,15 @@ public sealed partial class MainWindow
         mark.View.VerticalAlignment = VerticalAlignment.Top; mark.View.Margin = new(0, 1, 0, 0);
         dashboardMarks.Add((mark, card.Session.Id)); row.Children.Add(mark.View);
         var description = new StackPanel { Spacing = 1 };
-        description.Children.Add(new TextBlock { Text = card.Session.Title, FontSize = DesignMetrics.Type.DashRow, FontWeight = settled ? Microsoft.UI.Text.FontWeights.Medium : Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, MinHeight = 20 });
+        description.Children.Add(new TextBlock { Text = card.Session.Title, TextSize = DesignMetrics.Type.DashRow, FontWeight = settled ? Microsoft.UI.Text.FontWeights.Medium : Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, MinHeight = 20 });
         description.Children.Add(DashboardProviderLine(card));
         if (card.Session.Status == "running" && card.LastActivity is { } last)
-            description.Children.Add(new TextBlock { Text = last, FontSize = 11.3, FontFamily = new FontFamily(DesignMetrics.Font.Mono), Foreground = brushes.Brush(card.ActivityIsError ? DesignToken.ErrText : DesignToken.Ink2), TextTrimming = TextTrimming.CharacterEllipsis, Margin = new(0, DesignMetrics.Spacing.Xxs, 0, 0) });
+            description.Children.Add(new TextBlock { Text = last, TextSize = 11.3, TextFont = TextArea.Code, Foreground = brushes.Brush(card.ActivityIsError ? DesignToken.ErrText : DesignToken.Ink2), TextTrimming = TextTrimming.CharacterEllipsis, Margin = new(0, DesignMetrics.Spacing.Xxs, 0, 0) });
         Grid.SetColumn(description, 1); row.Children.Add(description);
         if (card.Attention.Total > 0)
         {
             // After the words comes a spacer of at least 4, each 11 from its neighbours: 26 before the waiting word.
-            var waiting = new TextBlock { Text = DashboardAttentionWord(card.Attention), FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = brushes.Brush(DesignToken.WaitText), MinHeight = 20, Margin = new(DesignMetrics.Spacing.Md, 0, 0, 0) };
+            var waiting = new TextBlock { Text = DashboardAttentionWord(card.Attention), TextSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = brushes.Brush(DesignToken.WaitText), MinHeight = 20, Margin = new(DesignMetrics.Spacing.Md, 0, 0, 0) };
             Grid.SetColumn(waiting, 2); row.Children.Add(waiting);
         }
         var open = Button(card.Session.Title, async () => { HideDashboard(); await SelectLayoutSession(card.Session.Id); });

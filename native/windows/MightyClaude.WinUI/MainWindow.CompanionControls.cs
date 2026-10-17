@@ -22,7 +22,7 @@ public sealed partial class MainWindow
     /// <summary>The status capsule (M/AgentCompanionViews.swift:14-18) and its parts: the waveform while agents work, else the 2×2 dots, and the count.</summary>
     private Border? companionStatusCapsule;
     private FrameworkElement? companionStatusBusy, companionStatusIdle;
-    private readonly TextBlock companionStatusNumber = new() { FontSize = DesignMetrics.Type.Small, VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
+    private readonly TextBlock companionStatusNumber = new() { TextSize = DesignMetrics.Type.Small, VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
     /// <summary>The popover's "show the pet" switch and its words (M/AgentCompanionViews.swift:65).</summary>
     private ToggleButton? companionStatusPet;
     private TextBlock? companionStatusPetLabel, companionStatusEmpty;
@@ -82,19 +82,19 @@ public sealed partial class MainWindow
         var body = companionStatusBody = new StackPanel { Spacing = CompanionPopoverSpacing, Width = CompanionPopoverWidth - 2 * CompanionPopoverPadding, Margin = new Thickness(CompanionPopoverPadding - PopoverPadding), RequestedTheme = root.RequestedTheme };
         var head = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
         head.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); head.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        companionStatusHeading = new TextBlock { FontSize = 14, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis };
+        companionStatusHeading = new TextBlock { TextSize = 14, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis };
         head.Children.Add(companionStatusHeading);
-        companionStatusCount = new TextBlock { FontSize = DesignMetrics.Type.Pill, Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
+        companionStatusCount = new TextBlock { TextSize = DesignMetrics.Type.Pill, Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
         Grid.SetColumn(companionStatusCount, 1); head.Children.Add(companionStatusCount);
         body.Children.Add(head);
-        companionStatusEmpty = new TextBlock { TextWrapping = TextWrapping.Wrap, FontSize = 12, Foreground = ink, Margin = new Thickness(0, DesignMetrics.Spacing.Lg, 0, DesignMetrics.Spacing.Lg), Visibility = Visibility.Collapsed };
+        companionStatusEmpty = new TextBlock { TextWrapping = TextWrapping.Wrap, TextSize = 12, Foreground = ink, Margin = new Thickness(0, DesignMetrics.Spacing.Lg, 0, DesignMetrics.Spacing.Lg), Visibility = Visibility.Collapsed };
         body.Children.Add(companionStatusEmpty);
         companionStatusRows = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
         body.Children.Add(new ScrollViewer { Content = companionStatusRows, MaxHeight = CompanionPopoverListHeight, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
         body.Children.Add(new Border { Height = DesignMetrics.Stroke.Line, Background = Separator });
         // A SwiftUI switch stands right after its words (M/AgentCompanionViews.swift:65), not across from them.
         var pet = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
-        companionStatusPetLabel = new TextBlock { FontSize = DesignMetrics.Type.Body, Foreground = brushes.Brush(DesignToken.Ink), VerticalAlignment = VerticalAlignment.Center };
+        companionStatusPetLabel = new TextBlock { TextSize = DesignMetrics.Type.Body, Foreground = brushes.Brush(DesignToken.Ink), VerticalAlignment = VerticalAlignment.Center };
         pet.Children.Add(companionStatusPetLabel);
         // The Mac's mini switch (M/AgentCompanionViews.swift:65), which is the form's: 26×15 with its 13pt knob, filled when off too.
         var toggle = companionStatusPet = SettingsSwitch(Locale.Get("companion.status.petSwitch"), companionPreferences.Enabled, "companion-status-pet");
@@ -190,12 +190,12 @@ public sealed partial class MainWindow
     {
         var ink = brushes.Brush(DesignToken.Ink); var ink2 = brushes.Brush(DesignToken.Ink2);
         var mark = new StatusMark(); mark.View.VerticalAlignment = VerticalAlignment.Top; mark.View.Margin = new Thickness(0, DesignMetrics.Spacing.Xxs, 0, 0);
-        var heading = new TextBlock { FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = ink, TextTrimming = TextTrimming.CharacterEllipsis };
-        var state = new TextBlock { FontSize = DesignMetrics.Type.Small, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
-        var detail = new TextBlock { FontSize = DesignMetrics.Type.Small, Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis };
-        var elapsed = new TextBlock { FontSize = DesignMetrics.Type.Small, FontFamily = new FontFamily(DesignMetrics.Font.Mono), Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
-        var prompt = new TextBlock { FontSize = DesignMetrics.Type.Pill, Foreground = ink, TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis };
-        var activity = new TextBlock { FontSize = DesignMetrics.Type.Pill, Foreground = ink2, TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis };
+        var heading = new TextBlock { TextSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = ink, TextTrimming = TextTrimming.CharacterEllipsis };
+        var state = new TextBlock { TextSize = DesignMetrics.Type.Small, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
+        var detail = new TextBlock { TextSize = DesignMetrics.Type.Small, Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis };
+        var elapsed = new TextBlock { TextSize = DesignMetrics.Type.Small, TextFont = TextArea.Code, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
+        var prompt = new TextBlock { TextSize = DesignMetrics.Type.Pill, Foreground = ink, TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis };
+        var activity = new TextBlock { TextSize = DesignMetrics.Type.Pill, Foreground = ink2, TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis };
         Grid Across(FrameworkElement leading, FrameworkElement trailing)
         {
             var line = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };

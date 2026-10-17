@@ -44,18 +44,18 @@ public sealed partial class MainWindow
                 // address in 11 mono on a wash at radius 6, the remember box, then the fallback note and the two small buttons.
                 var content = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
                 var heading = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
-                heading.Children.Add(new FontIcon { Glyph = "", FontSize = 11, Foreground = b.Brush(DesignToken.Accent), VerticalAlignment = VerticalAlignment.Center });
-                heading.Children.Add(new TextBlock { Text = Locale.Get("agentTerminal.urlOpen.dialogTitle"), FontSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = b.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center });
+                heading.Children.Add(new FontIcon { Glyph = "", TextSize = 11, Foreground = b.Brush(DesignToken.Accent), VerticalAlignment = VerticalAlignment.Center });
+                heading.Children.Add(new TextBlock { Text = Locale.Get("agentTerminal.urlOpen.dialogTitle"), TextSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = b.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center });
                 content.Children.Add(heading);
-                content.Children.Add(new TextBlock { Text = Locale.Get("agentTerminal.urlOpen.dialogMessage"), FontSize = 12, Foreground = b.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap });
-                var url = new TextBlock { Text = request.Url.AbsoluteUri, FontFamily = new FontFamily(DesignMetrics.Font.Mono), FontSize = 11, Foreground = b.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap, MaxLines = 3, TextTrimming = TextTrimming.CharacterEllipsis, IsTextSelectionEnabled = true };
+                content.Children.Add(new TextBlock { Text = Locale.Get("agentTerminal.urlOpen.dialogMessage"), TextSize = 12, Foreground = b.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap });
+                var url = new TextBlock { Text = request.Url.AbsoluteUri, TextFont = TextArea.Code, TextSize = 11, Foreground = b.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap, MaxLines = 3, TextTrimming = TextTrimming.CharacterEllipsis, IsTextSelectionEnabled = true };
                 AutomationProperties.SetAutomationId(url, "web-open-url"); ToolTipService.SetToolTip(url, request.Url.AbsoluteUri);
                 content.Children.Add(new Border { Child = url, Padding = new Thickness(DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Sm), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), Background = b.Brush(DesignToken.Ink, WebOpenAddressWash) });
-                var remember = new CheckBox { Content = Locale.Get("agentTerminal.urlOpen.rememberToggle"), FontSize = 11, MinHeight = 0, MinWidth = 0, Foreground = b.Brush(DesignToken.Ink) };
+                var remember = new CheckBox { Content = Locale.Get("agentTerminal.urlOpen.rememberToggle"), TextSize = 11, MinHeight = 0, MinWidth = 0, Foreground = b.Brush(DesignToken.Ink) };
                 AutomationProperties.SetAutomationId(remember, "web-open-remember"); content.Children.Add(remember);
                 var actions = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
                 actions.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); actions.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); actions.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-                actions.Children.Add(new TextBlock { Text = Locale.Get("agentTerminal.urlOpen.fallbackHint", new Dictionary<string, string> { ["seconds"] = "30" }), FontSize = 10, Foreground = b.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center });
+                actions.Children.Add(new TextBlock { Text = Locale.Get("agentTerminal.urlOpen.fallbackHint", new Dictionary<string, string> { ["seconds"] = "30" }), TextSize = 10, Foreground = b.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center });
                 Button Answer(string destination, string label, string automationId, bool prominent, int column)
                 {
                     var button = SmallButton(label, () => { owner.agentUrlPrompts.Choose(request.Id, destination, remember.IsChecked == true); return Task.CompletedTask; }, prominent);

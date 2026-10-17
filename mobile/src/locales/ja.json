@@ -1247,6 +1247,7 @@
   "settings.text.fontLabel": "フォント",
   "settings.text.fontSystem": "システム標準",
   "settings.text.monospaceSystem": "システムの等幅フォント",
+  "settings.text.noteWindows": "Ctrl+=・Ctrl+−・Ctrl+0 でもサイズを変更できます。ターミナルやブラウザーのペインにフォーカスがあるときは、これらのキーはそのペインで使われます。",
   "settings.text.note": "表示メニューの ⌘=・⌘−・⌘0 でサイズを変更できます。コードのフォントはターミナルにも使われます。",
   "settings.text.preview": "いろはにほへと ちりぬるを。The quick brown fox 0123456789",
   "settings.text.reset": "標準に戻す",
