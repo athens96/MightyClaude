@@ -43,14 +43,14 @@ Mighty Claudeは、Claude Code、Codex CLI、GoogleのAntigravity CLIを1つの�
 ![[welcome]]
 
 ### 必要なツール(Mac) {#setup}
-動かせるエージェントCLIが1つもないか、必須ツール(Claude Code、Git)が足りない場合は、アプリの起動時に{{ui:setup.title}}画面が先に開きます。エージェントCLI、前提ツール(Git、Homebrew、Node、Bun)、スタイル用ツール(uv、Ouroboros、Superpowers、Paperthin、oh-my-claudecode、gstack)、Tailscale、gh・glabをグループごとに表示します。
+動かせるエージェントCLI(Claude Code、Codex、Antigravityのいずれか)が1つもないか、Gitの準備ができていない場合は、アプリの起動時に{{ui:setup.title}}画面が先に開きます。エージェントCLI、前提ツール(Git、Homebrew、Node、Bun)、スタイル用ツール(uv、Ouroboros、Superpowers、Paperthin、oh-my-claudecode、gstack)、Tailscale、gh・glabをグループごとに表示します。
 
-1. インストールする項目にチェックを入れます。必須項目は最初からチェックされていて、選んだ項目に必要なツール(例: ghに必要なHomebrew)も一緒に入ります。
+1. インストールする項目にチェックを入れます。最初に開いたときは、足りないGitと、エージェントCLIが1つもなければClaude Codeが最初からチェックされていて、選んだ項目に必要なツール(例: ghに必要なHomebrew)も一緒に入ります。
 2. {{ui:setup.button.install}}をクリックすると、実行するコマンドがすべて順番に表示されます。{{ui:setup.confirm.run}}をクリックするまで何も実行されません。
-3. コマンドはアプリ内の1つのターミナルペインで順に実行されます。パスワードや確認を求められたら、ターミナルで直接答えてください。アプリはsudoを使わず、パスワードも受け取りません。ある手順が失敗しても次の手順に進みます。
-4. 終わるとアプリが再確認し、この画面を開きます。結果はコマンドの終了コードではなく、再確認した状態で決まります。CLIが新しく入ったときは{{ui:setup.button.signIn}}ボタンが表示されます。
+3. コマンドは、アプリが別に開く1つのターミナルウィンドウで、ホームフォルダーから順に実行されます。このウィンドウはペインではなく、ワークスペースには保存されません。パスワードや確認を求められたら、ターミナルで直接答えてください。アプリはsudoを使わず、パスワードも受け取りません。ある手順が失敗しても次の手順に進みます。
+4. 終わるとアプリが再確認します。アプリが前面にあればこの画面をもう一度開き、そうでなければステータスバーに{{ui:setup.finishedBadge}}ボタンを表示します。結果はコマンドの終了コードではなく、再確認した状態で決まります。CLIが新しく入ったときは{{ui:setup.button.signIn}}ボタンが表示されます。
 
-Git(Xcode Command Line Tools)はシステムのインストール画面が開くので、そちらで完了します。Tailscaleは公式のダウンロードページを開きます。古すぎるClaude Codeは{{ui:setup.status.outdated}}と表示され、{{ui:setup.button.update}}ボタンが出ます。ワークスペースがまだない場合は、ホームフォルダーをワークスペースとして追加し、そこでターミナルを開きます。
+Git(Xcode Command Line Tools)はシステムのインストール画面が開くので、そちらで完了します。スクリプトは最大30分待ち、Control-Cを押すと待つのだけをやめて次の手順に進みます。Xcodeのライセンスに同意していないためにgitが動かない場合は、{{ui:setup.status.attention}}と表示されます。Tailscaleは公式のダウンロードページを開きます。古すぎるClaude Codeは{{ui:setup.status.outdated}}と表示され、{{ui:setup.button.update}}ボタンが出ます。
 
 {{ui:setup.button.later}}で閉じられます。{{ui:setup.button.neverShow}}にチェックしてから閉じると、起動時に開かなくなります。必須ツールが足りない間はスタート画面に{{ui:setup.title}}ボタンがあり、CLIがなくて止まっているペインには{{ui:setup.blocked.install}}ボタンがあります。同じ一覧は設定 → {{ui:settings.nav.tools}}にもあります。Windowsにはまだこの画面がありません。
 

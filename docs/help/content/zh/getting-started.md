@@ -43,14 +43,14 @@ Mighty Claude 是一款桌面应用，可以在一个窗口中并排使用 Claud
 ![[welcome]]
 
 ### 所需工具（Mac） {#setup}
-如果没有任何智能体 CLI 可以运行，或缺少必需工具（Claude Code、Git），应用启动时会先打开{{ui:setup.title}}界面。界面按组列出智能体 CLI、基础工具（Git、Homebrew、Node、Bun）、风格工具（uv、Ouroboros、Superpowers、Paperthin、oh-my-claudecode、gstack）、Tailscale 以及 gh 和 glab。
+如果没有任何智能体 CLI（Claude Code、Codex 或 Antigravity）可以运行，或 Git 尚未就绪，应用启动时会先打开{{ui:setup.title}}界面。界面按组列出智能体 CLI、基础工具（Git、Homebrew、Node、Bun）、风格工具（uv、Ouroboros、Superpowers、Paperthin、oh-my-claudecode、gstack）、Tailscale 以及 gh 和 glab。
 
-1. 勾选要安装的项目。必需项目已预先勾选，所选项目需要的工具（例如 gh 需要的 Homebrew）会一并加入。
+1. 勾选要安装的项目。首次打开时，缺少的 Git 会预先勾选；如果一个智能体 CLI 都没有，Claude Code 也会预先勾选；所选项目需要的工具（例如 gh 需要的 Homebrew）会一并加入。
 2. 点击{{ui:setup.button.install}}后，会按顺序显示将要运行的所有命令。点击{{ui:setup.confirm.run}}之后才会运行。
-3. 命令会在应用内的同一个终端窗格中依次运行。需要输入密码或确认的步骤，请直接在终端中回答；应用不会使用 sudo，也不会接收你的密码。某一步失败时，仍会继续下一步。
-4. 结束后，应用会重新检查并打开此界面。结果以重新检查到的状态为准，而不是命令的退出状态。新装好 CLI 时会出现{{ui:setup.button.signIn}}按钮。
+3. 命令会在应用单独打开的一个终端窗口中，从主文件夹开始依次运行。这个窗口不是窗格，不会保存到工作区。需要输入密码或确认的步骤，请直接在终端中回答；应用不会使用 sudo，也不会接收你的密码。某一步失败时，仍会继续下一步。
+4. 结束后，应用会重新检查。应用在前台时会重新打开此界面，否则会在状态栏显示{{ui:setup.finishedBadge}}按钮。结果以重新检查到的状态为准，而不是命令的退出状态。新装好 CLI 时会出现{{ui:setup.button.signIn}}按钮。
 
-Git（Xcode Command Line Tools）会打开系统安装窗口，请在该窗口中完成。Tailscale 会打开官方下载页面。版本过旧的 Claude Code 会显示为{{ui:setup.status.outdated}}，并出现{{ui:setup.button.update}}按钮。如果还没有工作区，会把主文件夹添加为工作区，并在其中打开终端。
+Git（Xcode Command Line Tools）会打开系统安装窗口，请在该窗口中完成。脚本最多等待 30 分钟；按 Control-C 只会结束等待并继续下一步。如果因为未同意 Xcode 许可而无法运行 git，Git 会显示为{{ui:setup.status.attention}}。Tailscale 会打开官方下载页面。版本过旧的 Claude Code 会显示为{{ui:setup.status.outdated}}，并出现{{ui:setup.button.update}}按钮。
 
 可以用{{ui:setup.button.later}}关闭；勾选{{ui:setup.button.neverShow}}后再关闭，启动时就不会再打开。缺少必需工具期间，欢迎界面上有{{ui:setup.title}}按钮，因缺少 CLI 而受阻的窗格中有{{ui:setup.blocked.install}}按钮。设置 → {{ui:settings.nav.tools}}中也有同一个列表。Windows 暂时还没有此界面。
 
