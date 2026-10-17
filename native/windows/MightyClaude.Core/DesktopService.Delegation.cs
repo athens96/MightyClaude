@@ -359,7 +359,8 @@ public sealed partial class DesktopService : IDelegationHost
 
     /// <summary>Whether the busy pane shows the worktree button for its menu alone: its own agent's child could not change files in its mode, but another agent's could (<see cref="ComposerSecondSends.MenuOnly"/>).</summary>
     public bool WorktreeMenuOnly(RunSession session, bool planFirst) =>
-        ComposerSecondSends.MenuOnly(session.Kind, session.Provider, session.Settings.PermissionMode, IsDelegatedChild(session), delegation is not null && delegationEnabled(), CanHostWorktree(session), WorktreeChildChoices(session, planFirst));
+        delegation is not null && delegationEnabled() && !IsDelegatedChild(session) && !DelegationProviders.CanParentByHuman(session.Kind, session.Provider, session.Settings.PermissionMode)
+        && ComposerSecondSends.MenuOnly(session.Kind, session.Provider, session.Settings.PermissionMode, false, true, CanHostWorktree(session), WorktreeChildChoices(session, planFirst));
 
     /// <summary>Whether the worktree button, and its menu, shows on the busy pane.</summary>
     public bool OffersWorktreeMenu(RunSession session, bool planFirst) => SecondSend(session) == ComposerSecondSend.Worktree || WorktreeMenuOnly(session, planFirst);

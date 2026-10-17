@@ -178,7 +178,7 @@ public sealed record DelegationRequest(string Tool, IReadOnlyDictionary<string, 
         name.Length is > 0 and <= 64 && name[0] is >= 'a' and <= 'z' && name.All(c => c is >= 'a' and <= 'z' or >= '0' and <= '9' or '_');
 }
 
-/// <summary>The app's answer to one delegation call (M/Delegation.swift:72-101): exactly one of these is set.</summary>
+/// <summary>The app's answer to one delegation call (M/Delegation.swift:72-101): one of these is set, except that a refusal with a detail sets both Refused and Error (<see cref="Refusal(DelegationReasonCode, string)"/>).</summary>
 /// <param name="Refused">The call was refused with exactly this reason, and nothing changed.</param>
 /// <param name="Error">The call reached no delegation tool, or the tool could not take it as given. With Refused, what the refusal is about (the agent it names), shown after its code.</param>
 /// <param name="Child">The child delegate just made, or the same one again when that call is repeated in the same parent run.</param>
