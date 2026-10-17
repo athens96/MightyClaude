@@ -449,7 +449,7 @@ internal static class MobileHostVerification
                 await using var host = new MobileRelayHost(Path.Combine(directory, "identity"), "Fixture", [], (_, _, _, _, _) => Task.FromResult(new MobileReply(200, new { protocol = 1 }))) { WatchesNetwork = false, PathSettle = TimeSpan.FromMilliseconds(60) };
                 host.StatusChanged += status => { lock (seen) seen.Add(status); };
                 host.ReconnectSoon(); host.NetworkPathChanged(new(false, [], []));
-                await host.ApplyAsync(new(true, address, false)); await Verification.Until(() => host.Status.Connected && controls() == 1);
+                await host.ApplyAsync(new(true, address, false, DirectEnabled: false)); await Verification.Until(() => host.Status.Connected && controls() == 1);
                 Check(host.Status.Detail == "connected" && seen.Any(s => s.Detail == "connecting"), "the host says it is connecting, then connected; nothing reported while it was off is acted on");
                 // A wake dials again on the same network, once the path has settled.
                 host.ReconnectSoon(); host.ReconnectSoon(); await Verification.Until(() => controls() == 2 && host.Status.Connected);
@@ -479,7 +479,7 @@ internal static class MobileHostVerification
                 var seen = new List<MobileRelayStatus>();
                 await using var host = new MobileRelayHost(Path.Combine(directory, "identity"), "Fixture", [], (_, _, _, _, _) => Task.FromResult(new MobileReply(200, new { protocol = 1 }))) { WatchesNetwork = false, KeepaliveInterval = TimeSpan.FromMilliseconds(300), KeepaliveTimeout = TimeSpan.FromMilliseconds(300) };
                 host.StatusChanged += status => { lock (seen) seen.Add(status); };
-                await host.ApplyAsync(new(true, address, false));
+                await host.ApplyAsync(new(true, address, false, DirectEnabled: false));
                 await Verification.Until(() => controls() == 2 && host.Status.Connected, 15_000);
                 MobileRelayStatus? lost; lock (seen) lost = seen.FirstOrDefault(s => s.Detail == "reconnecting");
                 Check(lost is { Connected: false, Error: "unresponsive", RetrySeconds: 1 }, "an unanswered ping closes the socket, and the host says the relay did not answer and when it dials again: " + lost);
@@ -489,7 +489,7 @@ internal static class MobileHostVerification
             var refused = new List<MobileRelayStatus>();
             await using var alone = new MobileRelayHost(Path.Combine(directory, "alone"), "Fixture", [], (_, _, _, _, _) => Task.FromResult(new MobileReply(200, new { protocol = 1 }))) { WatchesNetwork = false };
             alone.StatusChanged += status => { lock (refused) refused.Add(status); };
-            await alone.ApplyAsync(new(true, "ws://127.0.0.1:1", false));
+            await alone.ApplyAsync(new(true, "ws://127.0.0.1:1", false, DirectEnabled: false));
             await Verification.Until(() => { lock (refused) return refused.Count(s => s.Detail == "reconnecting") >= 2; }, 20_000);
             lock (refused) Check(refused.Where(s => s.Detail == "reconnecting").Take(2).Select(s => (s.Error, s.RetrySeconds)).SequenceEqual([("connect-failed", 1), ("connect-failed", 2)]), "a relay that cannot be reached is retried after 1 s, then 2 s");
         }

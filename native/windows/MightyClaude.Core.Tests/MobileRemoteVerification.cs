@@ -151,7 +151,7 @@ internal static class MobileRemoteVerification
         {
             await app.StartAsync(timeout.Token); var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
             host = new MobileRelayHost(Path.Combine(directory, "identity"), "Fixture", [], (method, path, body, device, ct) => Task.FromResult(new MobileReply(200, new { protocol = 1, ok = true }))) { WatchesNetwork = false };
-            await host.ApplyAsync(new(true, address, false)); await completed.Task.WaitAsync(timeout.Token); Check(host.Devices.Count == 1, "device registered through live WebSocket handshake");
+            await host.ApplyAsync(new(true, address, false, DirectEnabled: false)); await completed.Task.WaitAsync(timeout.Token); Check(host.Devices.Count == 1, "device registered through live WebSocket handshake");
             var link = host.PairingUrl; var serverId = host.PairingServerId;
             Check(host.PairingKeyForDisplay == Query(link, "key"), "manual pairing key matches QR key");
             await host.ReconnectAsync(); await reconnected.Task.WaitAsync(timeout.Token);

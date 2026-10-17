@@ -138,11 +138,12 @@ public sealed class MobileRelayHost : IAsyncDisposable
     private bool UpdateDirect(bool force)
     {
         MobileDirectStatus before, after;
+        Connection[] dropped = [];
         lock (directSync)
         {
             before = DirectStatus;
             var current = settings;
-            if (disposed || !current.Enabled || !current.DirectEnabled) StopDirect(current);
+            if (disposed || !current.Enabled || !current.DirectEnabled) dropped = StopDirect(current);
             else
             {
                 var source = directAddressSource;
@@ -152,6 +153,7 @@ public sealed class MobileRelayHost : IAsyncDisposable
             }
             after = DirectStatus;
         }
+        foreach (var client in dropped) client.Cancel();
         return !ReferenceEquals(before, after);
     }
 
@@ -172,13 +174,16 @@ public sealed class MobileRelayHost : IAsyncDisposable
         else DirectStatus = new("listening", Volatile.Read(ref directEndpoints));
     }
 
-    /// <summary>Stops listening and drops every phone that came in directly.</summary>
-    private void StopDirect(MobileRemoteSettings current)
+    /// <summary>
+    /// Stops listening (under directSync) and answers every phone that came in directly, for the caller to cancel once it has let go of
+    /// the lock: cancelling runs continuations that may publish. With the listener gone nothing new is admitted in between.
+    /// </summary>
+    private Connection[] StopDirect(MobileRemoteSettings current)
     {
         directListener?.Stop(); directListener = null;
         directBoundAddresses = null; directBoundPort = null; Volatile.Write(ref directEndpoints, []);
         DirectStatus = !disposed && current.Enabled && !current.DirectEnabled ? new("disabled", []) : MobileDirectStatus.Off;
-        foreach (var client in clients.Values.Where(client => client.Direct)) client.Cancel();
+        return [.. clients.Values.Where(client => client.Direct)];
     }
 
     /// <summary>
@@ -481,7 +486,7 @@ public sealed class MobileRelayHost : IAsyncDisposable
                 await opened.SendAsync(ready, WebSocketMessageType.Text, true, deadline.Token);
                 var authentication = await Receive(opened, deadline.Token);
                 if (authentication.Type != WebSocketMessageType.Binary) return;
-                using var ad = JsonDocument.Parse(cipher.Open(authentication.Bytes));
+                using var ad = AuthFrame(cipher.Open(authentication.Bytes));
                 var auth = host.identity.Authenticate(ad.RootElement, host.settings.AllowLegacyPhones);
                 if (auth.DeviceId is null)
                 {
@@ -522,6 +527,15 @@ public sealed class MobileRelayHost : IAsyncDisposable
                 try { Cancel(); if (heartbeat is not null) await heartbeat; await Task.WhenAll(inflight.Values); cipher?.Dispose(); Volatile.Read(ref socket)?.Dispose(); cancel.Dispose(); }
                 finally { Ended?.Invoke(); }
             }
+        }
+        /// <summary>
+        /// The decrypted auth frame; one that is not JSON reads as an empty object, so it is refused as malformed (generically and
+        /// counted on the direct path) rather than ending the connection unanswered, as on the Mac (decide(frame: [:])).
+        /// </summary>
+        private static JsonDocument AuthFrame(byte[] plaintext)
+        {
+            try { return JsonDocument.Parse(plaintext); }
+            catch (JsonException) { return JsonDocument.Parse("{}"); }
         }
         private async Task Heartbeat(CancellationToken token)
         {
@@ -567,7 +581,9 @@ public sealed class MobileRelayHost : IAsyncDisposable
         await lifecycle.WaitAsync();
         try { if (disposed) return; disposed = true; StopWatching(); await StopInternal(); }
         finally { lifecycle.Release(); }
-        lock (directSync) StopDirect(settings);
+        Connection[] dropped;
+        lock (directSync) dropped = StopDirect(settings);
+        foreach (var client in dropped) client.Cancel();
         await Task.WhenAll(clients.Values.Select(client => client.Completion.Task));
     }
 }

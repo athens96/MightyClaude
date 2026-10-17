@@ -267,9 +267,12 @@ internal static class MobileDirectVerification
             catch { socket.Dispose(); throw; }
         }
 
-        internal async Task<JsonDocument> ExchangeAsync(object message, CancellationToken token)
+        internal Task<JsonDocument> ExchangeAsync(object message, CancellationToken token) => ExchangeRawAsync(JsonSerializer.SerializeToUtf8Bytes(message, Wire.Json), token);
+
+        /// <summary>Seals <paramref name="plaintext"/> as it is, JSON or not, and reads the answer.</summary>
+        internal async Task<JsonDocument> ExchangeRawAsync(byte[] plaintext, CancellationToken token)
         {
-            await socket.SendAsync(cipher.Seal(JsonSerializer.SerializeToUtf8Bytes(message, Wire.Json)), WebSocketMessageType.Binary, true, token);
+            await socket.SendAsync(cipher.Seal(plaintext), WebSocketMessageType.Binary, true, token);
             return JsonDocument.Parse(cipher.Open(await Receive(socket, token)));
         }
 
@@ -306,6 +309,12 @@ internal static class MobileDirectVerification
             {
                 using var refused = await stranger.ExchangeAsync(new { type = "auth", pairingKey = "wrong-key-0000000000", clientId = "zyxwvutsrqponmlkjihgfe", clientName = "Stranger" }, timeout.Token);
                 Check(refused.RootElement.Text("type") == "auth_error" && refused.RootElement.Text("reason") == MobileDirect.GenericRefusal, "a direct refusal is the generic unauthorized");
+            }
+            // An auth frame that decrypts but is no JSON is an empty one, as on the Mac: the same one word, not a silent close.
+            await using (var garbled = await DirectPhone.ConnectAsync(endpoint, host.PairingUrl, timeout.Token))
+            {
+                using var refused = await garbled.ExchangeRawAsync("not json {"u8.ToArray(), timeout.Token);
+                Check(refused.RootElement.Text("type") == "auth_error" && refused.RootElement.Text("reason") == MobileDirect.GenericRefusal, "an auth frame that is no JSON hears the generic unauthorized");
             }
         }
         finally { await host.DisposeAsync(); Directory.Delete(directory, true); }
