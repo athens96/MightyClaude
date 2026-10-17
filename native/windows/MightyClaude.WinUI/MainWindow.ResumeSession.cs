@@ -99,10 +99,10 @@ public sealed partial class MainWindow
         top.Children.Add(mark);
         var words = new StackPanel { Spacing = DesignMetrics.Spacing.Xs };
         words.Children.Add(SheetTitle(title));
-        var message = new TextBlock { Text = Locale.Get("resume.choice.message", new Dictionary<string, string> { ["provider"] = agent }), FontSize = 12, LineHeight = 15, LineStackingStrategy = LineStackingStrategy.BlockLineHeight, Foreground = brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap };
+        var message = new TextBlock { Text = Locale.Get("resume.choice.message", new Dictionary<string, string> { ["provider"] = agent }), TextSize = 12, TextLineHeight = 15, LineStackingStrategy = LineStackingStrategy.BlockLineHeight, Foreground = brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap };
         var reading = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
         reading.Children.Add(new ProgressRing { IsActive = checking is not null, Width = 16, Height = 16, MinWidth = 0, MinHeight = 0, VerticalAlignment = VerticalAlignment.Center, Foreground = brushes.Brush(DesignToken.Ink2) });
-        reading.Children.Add(new TextBlock { Text = Locale.Get("resume.loading"), FontSize = 12, Foreground = brushes.Brush(DesignToken.Ink2), VerticalAlignment = VerticalAlignment.Center });
+        reading.Children.Add(new TextBlock { Text = Locale.Get("resume.loading"), TextSize = 12, Foreground = brushes.Brush(DesignToken.Ink2), VerticalAlignment = VerticalAlignment.Center });
         AutomationProperties.SetAutomationId(reading, "add-pane-choice-checking");
         message.Visibility = checking is null ? Visibility.Visible : Visibility.Collapsed; reading.Visibility = checking is null ? Visibility.Collapsed : Visibility.Visible;
         words.Children.Add(message); words.Children.Add(reading);
@@ -164,18 +164,18 @@ public sealed partial class MainWindow
 
         var titleRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
         titleRow.Children.Add(ProviderMarkView.Create(provider, ResumeRowMarkSize * ProviderIconScale)); titleRow.Children.Add(SheetTitle(Locale.Get("resume.title")));
-        var path = new TextBlock { FontSize = DesignMetrics.Type.Mono, FontFamily = new Microsoft.UI.Xaml.Media.FontFamily(DesignMetrics.Font.Mono), Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis, HorizontalAlignment = HorizontalAlignment.Left, LineHeight = 14, LineStackingStrategy = LineStackingStrategy.BlockLineHeight };
+        var path = new TextBlock { TextSize = DesignMetrics.Type.Mono, TextFont = TextArea.Code, Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis, HorizontalAlignment = HorizontalAlignment.Left, TextLineHeight = 14, LineStackingStrategy = LineStackingStrategy.BlockLineHeight };
         MiddleTrim.Fit(path, workspace.Path, ResumeSheetWidth - 2 * SheetPadding - 2 * DesignMetrics.Stroke.Line); ToolTipService.SetToolTip(path, workspace.Path);
         var heading = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs }; heading.Children.Add(titleRow); heading.Children.Add(path);
         Place(heading, 0);
 
         // The search: a magnifier in the tertiary ink (:85) and the plain 12pt field 7 apart, padding 7 on the subtle wash at radius 7 (29 high on the Mac's crop).
-        var search = new TextBox { PlaceholderText = Locale.Get("resume.search"), FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
+        var search = new TextBox { PlaceholderText = Locale.Get("resume.search"), TextSize = 12, VerticalAlignment = VerticalAlignment.Center };
         PaintPlainTextBox(search);
         AutomationProperties.SetName(search, Locale.Get("resume.search")); AutomationProperties.SetAutomationId(search, "resume-search");
         var searchRow = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
         searchRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); searchRow.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
-        searchRow.Children.Add(new FontIcon { Glyph = "\uE721", FontSize = 15, Foreground = tertiary, VerticalAlignment = VerticalAlignment.Center });
+        searchRow.Children.Add(new FontIcon { Glyph = "\uE721", TextSize = 15, Foreground = tertiary, VerticalAlignment = VerticalAlignment.Center });
         Grid.SetColumn(search, 1); searchRow.Children.Add(search);
         Place(new Border { Child = searchRow, Height = 29, Padding = new Thickness(DesignMetrics.Spacing.Sm, 0, DesignMetrics.Spacing.Sm, 0), CornerRadius = new CornerRadius(DesignMetrics.Radius.Search), Background = brushes.Subtle }, 1);
 
@@ -194,18 +194,18 @@ public sealed partial class MainWindow
         const double checkScale = 0.7;
         var showAll = new CheckBox { MinWidth = 0, MinHeight = 0, Padding = new Thickness(0) };
         AutomationProperties.SetAutomationId(showAll, "resume-show-all"); AutomationProperties.SetName(showAll, Locale.Get("resume.showAll"));
-        var showAllWords = new TextBlock { Text = Locale.Get("resume.showAll"), FontSize = DesignMetrics.Type.Small, Foreground = brushes.Brush(DesignToken.Ink), Margin = new Thickness(8 * checkScale, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+        var showAllWords = new TextBlock { Text = Locale.Get("resume.showAll"), TextSize = DesignMetrics.Type.Small, Foreground = brushes.Brush(DesignToken.Ink), Margin = new Thickness(8 * checkScale, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
         AutomationProperties.SetAccessibilityView(showAllWords, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
         showAllWords.Tapped += (_, _) => showAll.IsChecked = showAll.IsChecked != true;
         var showAllRow = new StackPanel { Orientation = Orientation.Horizontal };
         showAllRow.Children.Add(new Viewbox { Height = 20 * checkScale, Child = showAll, VerticalAlignment = VerticalAlignment.Center }); showAllRow.Children.Add(showAllWords);
-        var hidden = new TextBlock { FontSize = DesignMetrics.Type.Small, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
+        var hidden = new TextBlock { TextSize = DesignMetrics.Type.Small, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
         AutomationProperties.SetAutomationId(hidden, "resume-hidden-count");
         var footer = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Md };
         footer.Children.Add(showAllRow); footer.Children.Add(hidden);
         Place(footer, 3);
 
-        var note = new TextBlock { Text = Locale.Get("resume.note"), FontSize = DesignMetrics.Type.Small, Foreground = ink2, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
+        var note = new TextBlock { Text = Locale.Get("resume.note"), TextSize = DesignMetrics.Type.Small, Foreground = ink2, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
         var cancel = PushButton(Locale.Get("resume.cancel"));
         var bottom = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
         bottom.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); bottom.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
@@ -223,9 +223,9 @@ public sealed partial class MainWindow
         FrameworkElement Nothing(string line, string? reason)
         {
             var words = new StackPanel { Spacing = DesignMetrics.Spacing.Sm, Padding = new Thickness(DesignMetrics.Spacing.Lg), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-            words.Children.Add(new FontIcon { Glyph = "\uE81C", FontSize = 28, FontWeight = FontWeights.Light, Foreground = tertiary });
-            words.Children.Add(new TextBlock { Text = line, FontSize = DesignMetrics.Type.Title, FontWeight = FontWeights.Medium, Foreground = brushes.Brush(DesignToken.Ink), TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, TextWrapping = TextWrapping.Wrap });
-            if (reason is not null) words.Children.Add(new TextBlock { Text = reason, FontSize = DesignMetrics.Type.Pill, Foreground = ink2, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, TextWrapping = TextWrapping.Wrap });
+            words.Children.Add(new FontIcon { Glyph = "\uE81C", TextSize = 28, FontWeight = FontWeights.Light, Foreground = tertiary });
+            words.Children.Add(new TextBlock { Text = line, TextSize = DesignMetrics.Type.Title, FontWeight = FontWeights.Medium, Foreground = brushes.Brush(DesignToken.Ink), TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, TextWrapping = TextWrapping.Wrap });
+            if (reason is not null) words.Children.Add(new TextBlock { Text = reason, TextSize = DesignMetrics.Type.Pill, Foreground = ink2, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, TextWrapping = TextWrapping.Wrap });
             AutomationProperties.SetAutomationId(words, "resume-empty");
             return words;
         }
@@ -249,7 +249,7 @@ public sealed partial class MainWindow
             // The Mac's progress view over its words, in the list's place.
             var progress = new StackPanel { Spacing = DesignMetrics.Spacing.Sm, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             progress.Children.Add(new ProgressRing { IsActive = true, Width = 20, Height = 20, MinWidth = 0, MinHeight = 0, HorizontalAlignment = HorizontalAlignment.Center });
-            progress.Children.Add(new TextBlock { Text = Locale.Get("resume.loading"), FontSize = DesignMetrics.Type.Pill, Foreground = ink2, HorizontalAlignment = HorizontalAlignment.Center });
+            progress.Children.Add(new TextBlock { Text = Locale.Get("resume.loading"), TextSize = DesignMetrics.Type.Pill, Foreground = ink2, HorizontalAlignment = HorizontalAlignment.Center });
             list.Items.Clear(); list.Visibility = Visibility.Collapsed; state.Child = progress;
             var query = ResumeQuery(workspace.Path) with { IncludeAutomated = showAll.IsChecked == true };
             ResumableSessionListing result;
@@ -294,7 +294,7 @@ public sealed partial class MainWindow
         var busy = ResumableSessions.MayBeRunning(item, now); var warning = Locale.Get("resume.recentlyModified");
         var details = busy && spoken.EndsWith(" · " + warning, StringComparison.Ordinal) ? spoken[..^(warning.Length + 3)] : spoken;
         var words = new StackPanel { Spacing = DesignMetrics.Spacing.Xs };
-        var name = new TextBlock { Text = title, FontSize = 12, FontWeight = FontWeights.Medium, Foreground = brushes.Brush(item.Title is null ? DesignToken.Ink2 : DesignToken.Ink), TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis, LineHeight = 15, LineStackingStrategy = LineStackingStrategy.BlockLineHeight };
+        var name = new TextBlock { Text = title, TextSize = 12, FontWeight = FontWeights.Medium, Foreground = brushes.Brush(item.Title is null ? DesignToken.Ink2 : DesignToken.Ink), TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis, TextLineHeight = 15, LineStackingStrategy = LineStackingStrategy.BlockLineHeight };
         if (ProviderCatalog.IsBeta(item.Provider))
         {
             var line = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, HorizontalAlignment = HorizontalAlignment.Left };
@@ -304,13 +304,13 @@ public sealed partial class MainWindow
             words.Children.Add(line);
         }
         else words.Children.Add(name);
-        words.Children.Add(new TextBlock { Text = details, FontSize = DesignMetrics.Type.Small, Foreground = brushes.Brush(DesignToken.Ink2), TextTrimming = TextTrimming.CharacterEllipsis });
+        words.Children.Add(new TextBlock { Text = details, TextSize = DesignMetrics.Type.Small, Foreground = brushes.Brush(DesignToken.Ink2), TextTrimming = TextTrimming.CharacterEllipsis });
         if (busy)
         {
             var wait = brushes.Brush(DesignToken.WaitText);
             var caution = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs };
-            caution.Children.Add(new FontIcon { Glyph = "\uE783", FontSize = 11, Foreground = wait, VerticalAlignment = VerticalAlignment.Center });
-            caution.Children.Add(new TextBlock { Text = warning, FontSize = DesignMetrics.Type.Small, Foreground = wait, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center });
+            caution.Children.Add(new FontIcon { Glyph = "\uE783", TextSize = 11, Foreground = wait, VerticalAlignment = VerticalAlignment.Center });
+            caution.Children.Add(new TextBlock { Text = warning, TextSize = DesignMetrics.Type.Small, Foreground = wait, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center });
             AutomationProperties.SetAutomationId(caution, "resume-busy-" + item.SessionID);
             words.Children.Add(caution);
         }

@@ -26,7 +26,7 @@ public sealed partial class MainWindow
         private const double SlashSaid = 0.9, SlashQuietOn = 0.75, SlashQuiet = 0.7;
         private readonly StackPanel slashRows = new();
         private ScrollViewer slashScroll = null!;
-        private readonly TextBlock slashCount = new() { FontSize = 10, VerticalAlignment = VerticalAlignment.Center };
+        private readonly TextBlock slashCount = new() { TextSize = 10, VerticalAlignment = VerticalAlignment.Center };
         private Border slashPaletteHost = null!;
         private SlashPaletteState paletteState = SlashPaletteState.Closed;
         private string? slashDismissedFor;
@@ -41,7 +41,7 @@ public sealed partial class MainWindow
             };
             // The palette is a card with a line border, r10; the hints ink2, the count in the tertiary ink (M/SlashCommandPalette.swift:34-43).
             var ink2 = owner.brushes.Brush(DesignToken.Ink2); slashCount.Foreground = owner.brushes.Tertiary;
-            TextBlock Hint(string text) => new() { Text = text, FontSize = 10, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
+            TextBlock Hint(string text) => new() { Text = text, TextSize = 10, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
             var footer = new Grid { ColumnSpacing = DesignMetrics.Spacing.Md, Padding = new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Xs, DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Xs) };
             footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             footer.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
@@ -141,7 +141,7 @@ public sealed partial class MainWindow
             grid.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             var invocation = new TextBlock
             {
-                Text = "/" + command.Invocation, FontSize = 12, FontFamily = new FontFamily(DesignMetrics.Font.Mono),
+                Text = "/" + command.Invocation, TextSize = 12, TextFont = TextArea.Code,
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis,
                 VerticalAlignment = VerticalAlignment.Top,
             };
@@ -153,8 +153,8 @@ public sealed partial class MainWindow
             var said = highlighted ? b.Brush(DesignToken.OnAccent, SlashSaid) : b.Brush(DesignToken.Ink2);
             var quiet = highlighted ? b.Brush(DesignToken.OnAccent, SlashQuietOn) : b.Brush(DesignToken.Ink2, SlashQuiet);
             var text = new StackPanel { Spacing = 1 };
-            text.Children.Add(new TextBlock { Text = SlashPalette.Description(command), FontSize = 11, Foreground = said, TextTrimming = TextTrimming.CharacterEllipsis });
-            text.Children.Add(new TextBlock { Text = command.Source, FontSize = 9, Foreground = quiet, FontWeight = Microsoft.UI.Text.FontWeights.Medium });
+            text.Children.Add(new TextBlock { Text = SlashPalette.Description(command), TextSize = 11, Foreground = said, TextTrimming = TextTrimming.CharacterEllipsis });
+            text.Children.Add(new TextBlock { Text = command.Source, TextSize = 9, Foreground = quiet, FontWeight = Microsoft.UI.Text.FontWeights.Medium });
             Grid.SetColumn(text, 1); grid.Children.Add(text);
             // The return mark runs in the app, the chevron continues with the argument choices: 9pt semibold symbols at the row's end.
             if (command.Action is not null || command.Argument is not null)

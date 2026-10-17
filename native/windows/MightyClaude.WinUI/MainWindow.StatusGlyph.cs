@@ -51,7 +51,7 @@ internal sealed class StatusMark
         var ink = Paint(StatusGlyph.GlyphHex(tone, dark));
         if (glyph == StatusGlyphKind.Pane)
         {
-            canvas.Children.Add(new FontIcon { Glyph = PaneSymbol(kind), FontSize = size * 0.78, Foreground = ink, Width = size, Height = size });
+            canvas.Children.Add(new FontIcon { Glyph = PaneSymbol(kind), TextSize = size * 0.78, Foreground = ink, Width = size, Height = size });
             return;
         }
         if (glyph.IsDisc())

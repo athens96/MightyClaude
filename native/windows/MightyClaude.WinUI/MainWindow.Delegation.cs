@@ -266,13 +266,13 @@ public sealed partial class MainWindow
         if (busy)
         {
             actions.Children.Add(new ProgressRing { IsActive = true, Width = 10, Height = 10, MinWidth = 0, MinHeight = 0, VerticalAlignment = VerticalAlignment.Center });
-            actions.Children.Add(new TextBlock { Text = Locale.Get("delegation.card.working"), FontSize = 10.5, Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis });
+            actions.Children.Add(new TextBlock { Text = Locale.Get("delegation.card.working"), TextSize = 10.5, Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis });
         }
         else foreach (var action in child.CardActions) actions.Children.Add(SidebarCardButton(action, child));
         if (actions.Children.Count > 0) card.Children.Add(actions);
         if (heldNotices > 0)
         {
-            var held = new TextBlock { Text = Locale.Get("delegation.card.heldNotices", new Dictionary<string, string> { ["count"] = heldNotices.ToString(System.Globalization.CultureInfo.InvariantCulture) }), FontSize = 10.5, Foreground = ink2, TextWrapping = TextWrapping.Wrap };
+            var held = new TextBlock { Text = Locale.Get("delegation.card.heldNotices", new Dictionary<string, string> { ["count"] = heldNotices.ToString(System.Globalization.CultureInfo.InvariantCulture) }), TextSize = 10.5, Foreground = ink2, TextWrapping = TextWrapping.Wrap };
             ToolTipService.SetToolTip(held, Locale.Get("delegation.card.heldNoticesHelp")); AutomationProperties.SetAutomationId(held, "child-card-held-" + child.Id);
             card.Children.Add(held);
         }
@@ -285,7 +285,7 @@ public sealed partial class MainWindow
     /// <summary>A card's answer: 10.5pt in its tone's ink, wrapped and selectable, so git's words can be copied.</summary>
     private TextBlock SidebarCardNote(string text, DesignTone tone, string automationId)
     {
-        var note = new TextBlock { Text = text, FontSize = 10.5, Foreground = brushes.Text(tone), TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true };
+        var note = new TextBlock { Text = text, TextSize = 10.5, Foreground = brushes.Text(tone), TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true };
         AutomationProperties.SetAutomationId(note, automationId);
         return note;
     }
@@ -295,7 +295,7 @@ public sealed partial class MainWindow
     {
         var words = DelegationText.Action(action);
         var button = SidebarButton(words, () => PerformCardAction(action, child.Id));
-        button.Content = new TextBlock { Text = words, FontSize = 10.5, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(action == DelegationCardAction.Discard ? DesignToken.SidebarInk2 : DesignToken.SidebarAccent) };
+        button.Content = new TextBlock { Text = words, TextSize = 10.5, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(action == DelegationCardAction.Discard ? DesignToken.SidebarInk2 : DesignToken.SidebarAccent) };
         button.HorizontalAlignment = HorizontalAlignment.Left; button.Padding = new Thickness(0); button.MinWidth = 0; button.MinHeight = 0;
         PlainSidebarButton(button, brushes.Transparent, brushes.Transparent);
         var help = DelegationText.ActionHelp(action, child);
@@ -315,7 +315,7 @@ public sealed partial class MainWindow
         row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var mark = new StatusMark(); mark.Update(StatusCountsView.Status(tone), "claude", 0, DarkTheme);
         mark.View.VerticalAlignment = VerticalAlignment.Top; mark.View.Margin = new Thickness(0, 1.5, 0, 0); row.Children.Add(mark.View);
-        var words = new TextBlock { Text = title, FontSize = DesignMetrics.Type.SideRow, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = brushes.Brush(DesignToken.SidebarInk2), TextTrimming = TextTrimming.CharacterEllipsis, MinHeight = 17, VerticalAlignment = VerticalAlignment.Center };
+        var words = new TextBlock { Text = title, TextSize = DesignMetrics.Type.SideRow, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = brushes.Brush(DesignToken.SidebarInk2), TextTrimming = TextTrimming.CharacterEllipsis, MinHeight = 17, VerticalAlignment = VerticalAlignment.Center };
         ToolTipService.SetToolTip(words, title); Grid.SetColumn(words, 1); row.Children.Add(words);
         var state = new TextBlock { Margin = new Thickness(DesignMetrics.Spacing.Sm, 0, 0, 0) }; ShowChildState(state, child, new());
         Grid.SetColumn(state, 2); row.Children.Add(state);
@@ -333,7 +333,7 @@ public sealed partial class MainWindow
     private void ShowChildState(TextBlock word, DelegationChildRow child, WorkDashboard.Attention attention)
     {
         var shown = DelegationSidebar.ShownState(child.State, attention.Total > 0); var tone = DelegationSidebar.Tone(shown);
-        word.Text = DelegationText.State(shown); word.FontSize = 10.5; word.FontWeight = Microsoft.UI.Text.FontWeights.Bold; word.MinHeight = 17;
+        word.Text = DelegationText.State(shown); word.TextSize = 10.5; word.FontWeight = Microsoft.UI.Text.FontWeights.Bold; word.MinHeight = 17;
         word.Foreground = tone == DesignTone.Idle ? brushes.Brush(DesignToken.SidebarInk2) : brushes.Text(tone); word.Visibility = Visibility.Visible;
     }
 
@@ -347,16 +347,16 @@ public sealed partial class MainWindow
         var group = new StackPanel { Spacing = DesignMetrics.Inset.ListGap };
         var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, Padding = SidebarPaneRowPadding };
         foreach (var width in new[] { GridLength.Auto, GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto }) row.ColumnDefinitions.Add(new() { Width = width });
-        var symbol = new FontIcon { Glyph = "", FontSize = 11, Width = 14, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
+        var symbol = new FontIcon { Glyph = "", TextSize = 11, Width = 14, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
         AutomationProperties.SetAccessibilityView(symbol, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw); row.Children.Add(symbol);
-        var label = new TextBlock { Text = Locale.Get("delegation.tree.parentClosed"), FontSize = DesignMetrics.Type.State, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+        var label = new TextBlock { Text = Locale.Get("delegation.tree.parentClosed"), TextSize = DesignMetrics.Type.State, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
         Grid.SetColumn(label, 1); row.Children.Add(label);
         if (node.ParentBranch.Length > 0)
         {
-            var branch = new TextBlock { Text = node.ParentBranch, FontSize = 10.5, FontFamily = new FontFamily(DesignMetrics.Font.Mono), Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+            var branch = new TextBlock { Text = node.ParentBranch, TextSize = 10.5, TextFont = TextArea.Code, Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(branch, 2); row.Children.Add(branch);
         }
-        var count = new TextBlock { Text = node.Children.Count.ToString(System.Globalization.CultureInfo.InvariantCulture), FontSize = DesignMetrics.Type.Small, FontFamily = new FontFamily(DesignMetrics.Font.Mono), Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
+        var count = new TextBlock { Text = node.Children.Count.ToString(System.Globalization.CultureInfo.InvariantCulture), TextSize = DesignMetrics.Type.Small, TextFont = TextArea.Code, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
         Grid.SetColumn(count, 3); row.Children.Add(count);
         var header = new Border { Child = row, Background = brushes.Transparent };
         ToolTipService.SetToolTip(header, Locale.Get("delegation.tree.parentClosedHelp"));

@@ -210,7 +210,7 @@ public sealed partial class MainWindow
     /// </summary>
     private ToggleButton PhaseLevelChip(string level, bool chosen)
     {
-        var words = new TextBlock { Text = level, FontSize = 9, Foreground = brushes.Brush(DesignToken.OnAccent), VerticalAlignment = VerticalAlignment.Center };
+        var words = new TextBlock { Text = level, TextSize = 9, Foreground = brushes.Brush(DesignToken.OnAccent), VerticalAlignment = VerticalAlignment.Center };
         var face = new Border { Child = words, Height = SettingsMiniHeight, Padding = new Thickness(DesignMetrics.Spacing.Xs, 0, DesignMetrics.Spacing.Xs, 0), CornerRadius = new CornerRadius(3.5), Background = brushes.Brush(DesignToken.Accent) };
         var chip = new ToggleButton { Content = face, Tag = level, IsChecked = chosen, MinWidth = 0, MinHeight = 0, Padding = new Thickness(0), BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(3.5) };
         ClearToggleChrome(chip);

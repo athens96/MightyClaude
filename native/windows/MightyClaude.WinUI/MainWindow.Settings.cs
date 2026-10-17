@@ -62,7 +62,7 @@ public sealed partial class MainWindow
         SettingsGroup Slot(string id) => new(SettingsSections.Windows.First(slot => slot.Id == id).WindowsTitle!, BuilderFor(id));
         return category switch
         {
-            "general" => [Slot(SettingsSections.Display), new(Locale.Get("agentTerminal.urlOpen.settingTitle"), BuildAgentLinksSection)],
+            "general" => [Slot(SettingsSections.Display), new(Locale.Get("settings.text.sectionTitle"), BuildTextSection), new(Locale.Get("agentTerminal.urlOpen.settingTitle"), BuildAgentLinksSection)],
             "models" => [Slot(SettingsSections.PhaseModels)],
             "styles" => [Slot(SettingsSections.Styles)],
             "tools" => [Slot(SettingsSections.Components), new(Locale.Get("settings.toolkit.sectionTitle"), BuildToolkitSection)],
@@ -928,7 +928,7 @@ public sealed partial class MainWindow
             {
                 var resetTitle = Locale.Get("settings.cliAccounts.resetModelsButton");
                 var resetModels = Held(SettingsPush(SafeButton(resetTitle, Then(provider, ResetClaudeModels))));
-                var resetWords = new TextBlock { Text = resetTitle, FontSize = resetModels.FontSize, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap };
+                var resetWords = new TextBlock { Text = resetTitle, TextSize = resetModels.TextSize, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap };
                 resetModels.Content = resetWords; resetModels.HorizontalAlignment = HorizontalAlignment.Stretch;
                 ToolTipService.SetToolTip(resetModels, Locale.Get("settings.cliAccounts.resetModelsHelp")); AutomationProperties.SetAutomationId(resetModels, "cli-account-reset-models-claude");
                 Place(resetModels, new(AccountGive, GridUnitType.Star), Natural(resetWords) + resetModels.Padding.Left + resetModels.Padding.Right + 2 * DesignMetrics.Stroke.Line);
@@ -970,9 +970,9 @@ public sealed partial class MainWindow
     private Button SettingsMenuButton(string title, MenuFlyout menu)
     {
         var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Center };
-        line.Children.Add(new TextBlock { Text = title, FontSize = 13, VerticalAlignment = VerticalAlignment.Center });
+        line.Children.Add(new TextBlock { Text = title, TextSize = 13, VerticalAlignment = VerticalAlignment.Center });
         line.Children.Add(SettingsChip(""));
-        var button = new Button { Content = line, Flyout = menu, Height = SettingsControlHeight, MinHeight = 0, MinWidth = 0, Padding = new Thickness(0), BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(SettingsControlRadius) };
+        var button = new Button { Content = line, Flyout = menu, TextHeight = SettingsControlHeight, MinHeight = 0, MinWidth = 0, Padding = new Thickness(0), BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(SettingsControlRadius) };
         PaintPlainButton(button, brushes.Transparent, brushes.Transparent, ink: brushes.Brush(DesignToken.Ink), disabledInk: brushes.Brush(DesignToken.Ink3));
         AutomationProperties.SetName(button, title);
         return button;

@@ -340,11 +340,11 @@ public sealed partial class MainWindow
             // ink over what is happening (the explanation in ink2, a note or failure in the amber waitText, a spinner while
             // the CLI signs in); then the small buttons and the dismiss cross.
             var b = owner.brushes; var ink = b.Brush(DesignToken.Ink); var ink2 = b.Brush(DesignToken.Ink2); var wait = b.Brush(DesignToken.WaitText);
-            TextBlock Line(string text, Brush brush) => new() { Text = text, FontSize = 11, Foreground = brush, TextWrapping = TextWrapping.Wrap };
+            TextBlock Line(string text, Brush brush) => new() { Text = text, TextSize = 11, Foreground = brush, TextWrapping = TextWrapping.Wrap };
             Button Small(string title, Func<Task> action) => SmallButton(title, () => owner.Act(action));
             var card = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             card.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); card.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); card.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-            card.Children.Add(new FontIcon { Glyph = "", FontSize = 12, Foreground = wait, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 1, 0, 0) });
+            card.Children.Add(new FontIcon { Glyph = "", TextSize = 12, Foreground = wait, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 1, 0, 0) });
             var words = new StackPanel { Spacing = DesignMetrics.Spacing.Xs };
             var title = Line(Locale.Get("loginRecovery.title", new Dictionary<string, string> { ["provider"] = ProviderCatalog.Name(provider) }), ink); title.FontWeight = Microsoft.UI.Text.FontWeights.Medium;
             words.Children.Add(title);
@@ -368,7 +368,7 @@ public sealed partial class MainWindow
             }
             if (progress?.AsksForCode == true)
             {
-                var field = new PasswordBox { PlaceholderText = Locale.Get("loginRecovery.codePlaceholder"), MaxLength = 4096, Width = 240, FontSize = 11, HorizontalAlignment = HorizontalAlignment.Left };
+                var field = new PasswordBox { PlaceholderText = Locale.Get("loginRecovery.codePlaceholder"), MaxLength = 4096, Width = 240, TextSize = 11, HorizontalAlignment = HorizontalAlignment.Left };
                 // AppKit's placeholder is the tertiary ink (M/CLILoginRecoveryCard.swift:41). A password box has no placeholder property: its template reads these resources.
                 owner.SetResourcesOnce(field, new[] { "", "PointerOver", "Focused" }.Select(state => ("TextControlPlaceholderForeground" + state, (object)b.Tertiary)).ToList());
                 AutomationProperties.SetName(field, Locale.Get("loginRecovery.codePlaceholder"));
@@ -394,7 +394,7 @@ public sealed partial class MainWindow
                 var resend = Small(Locale.Get("loginRecovery.resendButton"), () => owner.ResendLoginRequest(id)); ToolTipService.SetToolTip(resend, Locale.Get("loginRecovery.resendHelp")); buttons.Children.Add(resend);
             }
             var dismiss = owner.SafeButton("×", () => { owner.DismissLoginRecovery(id); return Task.CompletedTask; });
-            dismiss.Content = new FontIcon { Glyph = "", FontSize = 9 }; dismiss.Width = 18; dismiss.Height = 16; dismiss.MinWidth = 0; dismiss.MinHeight = 0; dismiss.Padding = new Thickness(0); dismiss.BorderThickness = new Thickness(0); dismiss.CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow); dismiss.VerticalAlignment = VerticalAlignment.Center;
+            dismiss.Content = new FontIcon { Glyph = "", TextSize = 9 }; dismiss.Width = 18; dismiss.Height = 16; dismiss.MinWidth = 0; dismiss.MinHeight = 0; dismiss.Padding = new Thickness(0); dismiss.BorderThickness = new Thickness(0); dismiss.CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow); dismiss.VerticalAlignment = VerticalAlignment.Center;
             owner.PaintPlainButton(dismiss, b.Transparent, b.Subtle, ink: ink2);
             AutomationProperties.SetName(dismiss, Locale.Get("loginRecovery.dismiss")); buttons.Children.Add(dismiss);
             Grid.SetColumn(buttons, 2); card.Children.Add(buttons);

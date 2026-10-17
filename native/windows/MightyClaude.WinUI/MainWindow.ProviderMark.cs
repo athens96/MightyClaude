@@ -70,7 +70,7 @@ internal static class ProviderMarkView
     /// </summary>
     internal static FrameworkElement Labelled(string text, string? provider, double fontSize, Windows.UI.Text.FontWeight weight)
     {
-        TextBlock Words(string value) => new() { Text = value, FontSize = fontSize, FontWeight = weight, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+        TextBlock Words(string value) => new() { Text = value, TextSize = fontSize, FontWeight = weight, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
         if (ProviderMark.SplitTrailingLabel(text, provider) is not { } parts || ProviderMark.MarkedProvider(provider) is not { } marked) return Words(text);
         // head · mark · name; the name takes what is left so a narrow card trims it.
         var line = new Grid { VerticalAlignment = VerticalAlignment.Center, Tag = marked };
@@ -114,8 +114,8 @@ public sealed partial class MainWindow
         var ink = brushes.Brush(active ? DesignToken.Ink2 : DesignToken.SidebarInk2);
         var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs, VerticalAlignment = VerticalAlignment.Center, MinHeight = 15 };
         line.Children.Add(ProviderMarkView.Create(provider));
-        line.Children.Add(new TextBlock { Text = ProviderMark.Label(provider), FontSize = DesignMetrics.Type.Pill, Foreground = ink, VerticalAlignment = VerticalAlignment.Center });
-        var details = new TextBlock { Text = SidebarMeta(session), FontSize = DesignMetrics.Type.Pill, Foreground = ink, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+        line.Children.Add(new TextBlock { Text = ProviderMark.Label(provider), TextSize = DesignMetrics.Type.Pill, Foreground = ink, VerticalAlignment = VerticalAlignment.Center });
+        var details = new TextBlock { Text = SidebarMeta(session), TextSize = DesignMetrics.Type.Pill, Foreground = ink, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
         Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(details, FontNumeralAlignment.Tabular);
         sidebarDetails[session.Id] = details; line.Children.Add(details);
         sidebarMarks[session.Id] = provider;

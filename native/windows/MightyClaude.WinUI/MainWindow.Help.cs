@@ -23,7 +23,7 @@ public sealed partial class MainWindow
     private Button BuildSidebarHelpButton()
     {
         sidebarHelpButton = SafeButton("", OpenHelp);
-        sidebarHelpButton.Content = new FontIcon { Glyph = SidebarHelpGlyph, FontSize = SidebarFooterGlyph };
+        sidebarHelpButton.Content = new FontIcon { Glyph = SidebarHelpGlyph, TextSize = SidebarFooterGlyph };
         AutomationProperties.SetAutomationId(sidebarHelpButton, "sidebar-help");
         RefreshSidebarHelpButton();
         return sidebarHelpButton;

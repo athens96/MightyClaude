@@ -34,28 +34,28 @@ public sealed partial class MainWindow
         // give the difference back, so the 18 between the parts measures as the Mac's (M/WorkspaceView.swift:352-361).
         var title = new TextBlock
         {
-            Text = Locale.Get("layout.welcome.title"), FontSize = DesignMetrics.Type.Welcome, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Text = Locale.Get("layout.welcome.title"), TextSize = DesignMetrics.Type.Welcome, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
             Foreground = brushes.Brush(DesignToken.Ink), TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, -DesignMetrics.Spacing.Xxs, 0, -1),
         };
         AutomationProperties.SetAutomationId(title, "welcome-title");
         stack.Children.Add(title);
         stack.Children.Add(new TextBlock
         {
-            Text = Locale.Get("layout.welcome.body"), FontSize = 14, LineHeight = WelcomeBodyLine, Foreground = brushes.Brush(DesignToken.Ink2), Margin = new Thickness(0, -DesignMetrics.Spacing.Xxs, 0, -DesignMetrics.Spacing.Xxs),
+            Text = Locale.Get("layout.welcome.body"), TextSize = 14, TextLineHeight = WelcomeBodyLine, Foreground = brushes.Brush(DesignToken.Ink2), Margin = new Thickness(0, -DesignMetrics.Spacing.Xxs, 0, -DesignMetrics.Spacing.Xxs),
             TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap, MaxWidth = 520, HorizontalAlignment = HorizontalAlignment.Center,
         });
         // The Mac's prominent button around a 13pt label padded h10 v5 (M/WorkspaceView.swift:359): 32 high, radius 6.
         var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
-        label.Children.Add(new FontIcon { Glyph = "", FontSize = DesignMetrics.Type.Body, VerticalAlignment = VerticalAlignment.Center });
-        label.Children.Add(new TextBlock { Text = Locale.Get("layout.welcome.openProject"), FontSize = DesignMetrics.Type.Body, VerticalAlignment = VerticalAlignment.Center });
+        label.Children.Add(new FontIcon { Glyph = "", TextSize = DesignMetrics.Type.Body, VerticalAlignment = VerticalAlignment.Center });
+        label.Children.Add(new TextBlock { Text = Locale.Get("layout.welcome.openProject"), TextSize = DesignMetrics.Type.Body, VerticalAlignment = VerticalAlignment.Center });
         var open = new Button { Content = label, Style = (Style)Application.Current.Resources["AccentButtonStyle"], Height = WelcomeButtonHeight, MinHeight = 0, Padding = new Thickness(DesignMetrics.Spacing.Lg, 0, DesignMetrics.Spacing.Lg, 0), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, DesignMetrics.Spacing.Sm, 0, 0) };
         open.Click += async (_, _) => await PickFolder();
         AutomationProperties.SetName(open, Locale.Get("layout.welcome.openProject")); AutomationProperties.SetAutomationId(open, "welcome-open-folder");
         stack.Children.Add(open);
-        stack.Children.Add(new TextBlock { Text = Locale.Get("layout.welcome.shortcuts"), FontSize = DesignMetrics.Type.Pill, Foreground = brushes.Tertiary, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, DesignMetrics.Spacing.Md - DesignMetrics.Spacing.Xxs, 0, 0) });
+        stack.Children.Add(new TextBlock { Text = Locale.Get("layout.welcome.shortcuts"), TextSize = DesignMetrics.Type.Pill, Foreground = brushes.Tertiary, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, DesignMetrics.Spacing.Md - DesignMetrics.Spacing.Xxs, 0, 0) });
         page.Children.Add(stack);
         // The Mac's column keeps its spacing between the lower Spacer and the foot line (18, less the 2 Segoe's line is taller), so the parts stand that much above the middle.
-        var footer = new TextBlock { Text = Locale.Get("layout.welcome.footer"), FontSize = DesignMetrics.Type.Pill, Foreground = brushes.Tertiary, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, DesignMetrics.Spacing.Lg, 0, DesignMetrics.Spacing.Xl) };
+        var footer = new TextBlock { Text = Locale.Get("layout.welcome.footer"), TextSize = DesignMetrics.Type.Pill, Foreground = brushes.Tertiary, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, DesignMetrics.Spacing.Lg, 0, DesignMetrics.Spacing.Xl) };
         Grid.SetRow(footer, 1); page.Children.Add(footer);
         // The sidebar button at the top-leading corner, where the workspace header has it (padding l24 t14).
         var toggle = NewSidebarToggle("welcome-sidebar-toggle");
@@ -79,13 +79,13 @@ public sealed partial class MainWindow
     {
         var stack = new StackPanel { Spacing = DesignMetrics.Spacing.Md, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(DesignMetrics.Spacing.Xl) };
         // square.stack.3d.up: layers stacked in depth (Segoe Fluent Icons MapLayers).
-        stack.Children.Add(new FontIcon { Glyph = "", FontSize = 36, Foreground = brushes.Brush(DesignToken.Ink2), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, DesignMetrics.Spacing.Sm) });
-        stack.Children.Add(new TextBlock { Text = Locale.Get("layout.empty.addPane"), FontSize = 20, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Ink), TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap });
-        stack.Children.Add(new TextBlock { Text = Locale.Get("layout.empty.addPaneDetail"), FontSize = DesignMetrics.Type.Body, Foreground = brushes.Brush(DesignToken.Ink2), TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap, MaxWidth = 420 });
+        stack.Children.Add(new FontIcon { Glyph = "", TextSize = 36, Foreground = brushes.Brush(DesignToken.Ink2), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, DesignMetrics.Spacing.Sm) });
+        stack.Children.Add(new TextBlock { Text = Locale.Get("layout.empty.addPane"), TextSize = 20, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Ink), TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap });
+        stack.Children.Add(new TextBlock { Text = Locale.Get("layout.empty.addPaneDetail"), TextSize = DesignMetrics.Type.Body, Foreground = brushes.Brush(DesignToken.Ink2), TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap, MaxWidth = 420 });
         if (canAdd)
         {
             var title = Locale.Get("workspace.newAgentPane", new Dictionary<string, string> { ["provider"] = ProviderMark.Label(AddPaneMenu.NewPaneShortcutProvider) });
-            var add = new Button { Content = title, Style = (Style)Application.Current.Resources["AccentButtonStyle"], FontSize = DesignMetrics.Type.Body, CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, DesignMetrics.Spacing.Sm, 0, 0) };
+            var add = new Button { Content = title, Style = (Style)Application.Current.Resources["AccentButtonStyle"], TextSize = DesignMetrics.Type.Body, CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, DesignMetrics.Spacing.Sm, 0, 0) };
             add.Click += async (_, _) => await AddPaneFromShortcut();
             AutomationProperties.SetName(add, title); AutomationProperties.SetAutomationId(add, "empty-panes-add");
             stack.Children.Add(add);
@@ -183,7 +183,7 @@ public sealed partial class MainWindow
             var title = new TextBlock
             {
                 Text = Locale.Get("pane.empty.agentTitle", new Dictionary<string, string> { ["provider"] = ProviderMark.Label(pane.Provider) }),
-                FontSize = 16, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = owner.brushes.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center,
+                TextSize = 16, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = owner.brushes.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center,
             };
             heading.Children.Add(title);
             var badge = ProviderCatalog.ShowsBetaBadge(pane) ? BetaBadgeView.Create(owner.brushes) : null;
@@ -193,7 +193,7 @@ public sealed partial class MainWindow
             fitEmptyTitle = () => title.MaxWidth = Math.Max(0, state.ActualWidth - (badge is null ? 0 : badge.ActualWidth + heading.Spacing));
             heading.Loaded += (_, _) => fitEmptyTitle?.Invoke();
             emptyOutput.Children.Add(heading);
-            emptyOutput.Children.Add(new TextBlock { Text = Locale.Get("pane.empty.agentBody"), FontSize = DesignMetrics.Type.Block, LineHeight = 20, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap });
+            emptyOutput.Children.Add(new TextBlock { Text = Locale.Get("pane.empty.agentBody"), TextSize = DesignMetrics.Type.Block, TextLineHeight = 20, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap });
         }
     }
 }

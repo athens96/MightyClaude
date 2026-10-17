@@ -97,7 +97,7 @@ public sealed partial class MainWindow
                 var capText = prepared.RenderCapped ? Locale.Get("files.preview.renderCapped", new Dictionary<string, string> { ["count"] = (FilePaneDrawing.MaximumSourceUnits / 1024).ToString() })
                     : prepared.HighlightCapped ? Locale.Get("files.preview.highlightCapped", new Dictionary<string, string> { ["count"] = prepared.HighlightUnits.ToString() })
                     : Locale.Get("files.preview.truncated");
-                capped.Children.Add(new TextBlock { Text = capText, FontSize = DesignMetrics.Type.Pill, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Md, 0) });
+                capped.Children.Add(new TextBlock { Text = capText, TextSize = DesignMetrics.Type.Pill, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Md, 0) });
                 Grid.SetRow(content, 1); capped.Children.Add(content); content = capped;
             }
             referenceBody.Child = content;
@@ -119,7 +119,7 @@ public sealed partial class MainWindow
             var mark = MightySymbols.Create("doc.questionmark", 24, b.Brush(DesignToken.Ink2)); mark.HorizontalAlignment = HorizontalAlignment.Center;
             var notice = new StackPanel { Spacing = DesignMetrics.Spacing.Sm, Margin = new Thickness(DesignMetrics.Spacing.Lg), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             notice.Children.Add(mark);
-            notice.Children.Add(new TextBlock { Text = text, FontSize = DesignMetrics.Type.Block, FontWeight = FontWeights.Medium, Foreground = b.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center });
+            notice.Children.Add(new TextBlock { Text = text, TextSize = DesignMetrics.Type.Block, FontWeight = FontWeights.Medium, Foreground = b.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center });
             return notice;
         }
 
@@ -157,8 +157,8 @@ public sealed partial class MainWindow
             header.Children.Add(referenceSymbol);
             var words = new StackPanel { Spacing = 1, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, DesignMetrics.Spacing.Xs, 0) };
             // The two lines keep the files preview's line heights, so they fit the head's height (MainWindow.Files.cs).
-            words.Children.Add(referenceTitle = new TextBlock { FontSize = DesignMetrics.Type.Block, FontWeight = FontWeights.SemiBold, Foreground = ink, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, LineHeight = 15, LineStackingStrategy = LineStackingStrategy.BlockLineHeight });
-            words.Children.Add(referencePath = new TextBlock { FontSize = DesignMetrics.Type.Small, FontFamily = new FontFamily(DesignMetrics.Font.Mono), Foreground = b.Brush(DesignToken.Ink2), TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, LineHeight = 12, LineStackingStrategy = LineStackingStrategy.BlockLineHeight });
+            words.Children.Add(referenceTitle = new TextBlock { TextSize = DesignMetrics.Type.Block, FontWeight = FontWeights.SemiBold, Foreground = ink, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, TextLineHeight = 15, LineStackingStrategy = LineStackingStrategy.BlockLineHeight });
+            words.Children.Add(referencePath = new TextBlock { TextSize = DesignMetrics.Type.Small, TextFont = TextArea.Code, Foreground = b.Brush(DesignToken.Ink2), TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, TextLineHeight = 12, LineStackingStrategy = LineStackingStrategy.BlockLineHeight });
             Grid.SetColumn(words, 1); header.Children.Add(words);
             var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Center };
             referenceFlip = ReferenceButton("rectangle.lefthalf.inset.filled.arrow.left", Locale.Get("reference.flipLeft"), "mighty-reference-flip-" + id, () => { referenceOnLeft = !referenceOnLeft; FitReferencePreview(); return Task.CompletedTask; });

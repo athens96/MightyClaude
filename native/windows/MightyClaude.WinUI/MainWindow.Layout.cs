@@ -305,7 +305,7 @@ public sealed partial class MainWindow
         // The drop preview (M/PaneDockDrag.swift:131-146, M/PaneDockView.swift:28-38): the zone set in 5, radius 9,
         // accent x 0.16 under a 2pt accent dash [6, 4], its words 12 semibold accent on a page x 0.95 capsule.
         var accent = brushes.Brush(DesignToken.Accent);
-        var hintWords = new TextBlock { Text = Locale.Get("layout.drop.merge"), FontFamily = BodyFont, FontSize = DesignMetrics.Type.Block, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = accent };
+        var hintWords = new TextBlock { Text = Locale.Get("layout.drop.merge"), TextFont = TextArea.Interface, TextSize = DesignMetrics.Type.Block, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = accent };
         var hintEdge = new Microsoft.UI.Xaml.Shapes.Rectangle { RadiusX = 9, RadiusY = 9, Fill = brushes.Brush(DesignToken.Accent, DropHintOpacity), Stroke = accent, StrokeThickness = DesignMetrics.Stroke.Active, StrokeDashArray = [.. DesignMetrics.Dash.InStrokeUnits([6, 4], DesignMetrics.Stroke.Active)] };
         var hint = new Grid { Margin = new Thickness(DropHintInset), IsHitTestVisible = false, Visibility = Visibility.Collapsed };
         var hintLabel = new Border { Child = hintWords, Padding = new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm), CornerRadius = new CornerRadius(15), Background = brushes.Brush(DesignToken.Page, DropHintLabelOpacity), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
@@ -352,7 +352,7 @@ public sealed partial class MainWindow
                 await DockSession(moved, workspace, node.Id, "center", index);
             };
             // The Mac's xmark at 8 medium draws 6.3 wide; Segoe's Cancel needs 9.5 to draw as wide.
-            var close = Button("×", () => CloseSession(id)); close.Content = new FontIcon { Glyph = "\uE711", FontSize = 9.5, FontWeight = Microsoft.UI.Text.FontWeights.Medium }; close.MinWidth = 0; close.MinHeight = 0; close.Width = 20; close.Height = DesignMetrics.Layout.Tab; close.Padding = new(0); close.CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment); close.BorderThickness = new(0);
+            var close = Button("×", () => CloseSession(id)); close.Content = new FontIcon { Glyph = "\uE711", TextSize = 9.5, FontWeight = Microsoft.UI.Text.FontWeights.Medium }; close.MinWidth = 0; close.MinHeight = 0; close.Width = 20; close.Height = DesignMetrics.Layout.Tab; close.Padding = new(0); close.CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment); close.BorderThickness = new(0);
             PaintPlainButton(close, brushes.Transparent, brushes.Transparent, ink: brushes.Brush(DesignToken.Ink2));
             AutomationProperties.SetName(close, Locale.Get("layout.tab.closeAccessibility", new Dictionary<string, string> { ["title"] = session.Title }));
             var handle = new Grid(); handle.Children.Add(tab); handle.Children.Add(landing);

@@ -56,9 +56,9 @@ public sealed partial class MainWindow
             };
             foreach (var width in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto, GridLength.Auto }) head.ColumnDefinitions.Add(new ColumnDefinition { Width = width });
             head.Children.Add(MightySymbols.Create("photo.on.rectangle.angled", 13, b.Brush(DesignToken.SteerText)));
-            var title = new TextBlock { Text = block.Title, FontSize = DesignMetrics.Type.Block, FontWeight = FontWeights.SemiBold, Foreground = b.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+            var title = new TextBlock { Text = block.Title, TextSize = DesignMetrics.Type.Block, FontWeight = FontWeights.SemiBold, Foreground = b.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(title, 1); head.Children.Add(title); graphTitles[block.Id] = title;
-            var count = new TextBlock { Text = Locale.Get("graph.images.count", new Dictionary<string, string> { ["count"] = items.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) }), FontSize = DesignMetrics.Type.Small, Foreground = b.Brush(DesignToken.Ink2), VerticalAlignment = VerticalAlignment.Center };
+            var count = new TextBlock { Text = Locale.Get("graph.images.count", new Dictionary<string, string> { ["count"] = items.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) }), TextSize = DesignMetrics.Type.Small, Foreground = b.Brush(DesignToken.Ink2), VerticalAlignment = VerticalAlignment.Center };
             Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(count, FontNumeralAlignment.Tabular);
             Grid.SetColumn(count, 2); head.Children.Add(count);
             if (foldable)
@@ -111,7 +111,7 @@ public sealed partial class MainWindow
                 face.Children.Add(new TextBlock
                 {
                     Text = Locale.Get("graph.images.more", new Dictionary<string, string> { ["count"] = more.ToString(System.Globalization.CultureInfo.InvariantCulture) }),
-                    FontSize = ImagesMoreSize, FontWeight = FontWeights.SemiBold, Foreground = b.Brush(DesignToken.Ink), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+                    TextSize = ImagesMoreSize, FontWeight = FontWeights.SemiBold, Foreground = b.Brush(DesignToken.Ink), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
                 });
             }
             var tile = new Button

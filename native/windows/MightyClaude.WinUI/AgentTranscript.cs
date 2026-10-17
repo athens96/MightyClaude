@@ -21,7 +21,7 @@ internal sealed partial class AgentTranscript
     /// side. The 15pt above the first line and under the last belong to the document (TranscriptRtf writes
     /// them), so they scroll away with it as the Mac's text container inset does.
     /// </summary>
-    internal RichEditBox View { get; } = new() { IsReadOnly = true, IsSpellCheckEnabled = false, IsTextPredictionEnabled = false, TextWrapping = TextWrapping.Wrap, FontSize = DesignMetrics.Type.Body, MinHeight = 80, BorderThickness = new(0), Background = new SolidColorBrush(Colors.Transparent), Padding = new(TranscriptRtf.Inset, 0, TranscriptRtf.Inset, 0) };
+    internal RichEditBox View { get; } = new() { IsReadOnly = true, IsSpellCheckEnabled = false, IsTextPredictionEnabled = false, TextWrapping = TextWrapping.Wrap, TextSize = DesignMetrics.Type.Body, TextFont = TextArea.Transcript, MinHeight = 80, BorderThickness = new(0), Background = new SolidColorBrush(Colors.Transparent), Padding = new(TranscriptRtf.Inset, 0, TranscriptRtf.Inset, 0) };
     private string rendered = "", plain = "";
     private bool selecting;
     internal bool IsSelecting => selecting;
@@ -63,6 +63,8 @@ internal sealed partial class AgentTranscript
         // is shown again, wiping the RTF's colours; the last session is drawn again once it has done so.
         void Repaint() { if (last is not null) View.DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => { rendered = ""; Redraw(); }); }
         View.ActualThemeChanged += (_, _) => Repaint();
+        // A new text setting resizes the box, which paints its own size and font over the RTF as a theme change does.
+        AppText.Follow(View, Repaint);
         View.Loaded += (_, _) => { AttachBackdrop(); Repaint(); };
         // The bubble's margin and a table's columns follow the width, and every painted block follows the wrapped lines.
         // A box drawn while it was hidden comes back at the size it had, with no size event: its viewport tells.
@@ -549,6 +551,9 @@ internal static class TranscriptRtf
         // SF Pro → the app's body family (RichEdit falls back by itself); SF Mono and SF Symbols → the first installed stand-in.
         return (First(DesignMetrics.Font.Body), Installed(DesignMetrics.Font.Mono), Installed("Segoe Fluent Icons, Segoe MDL2 Assets"));
     });
+    /// <summary>The font table's words and code under the text setting: its conversation and code fonts when chosen, else the stand-ins.</summary>
+    private static (string Body, string Mono) Faces() =>
+        (AppText.Current.ResolvedTranscriptFamily ?? Fonts.Value.Body, AppText.Current.CodeFamily ?? Fonts.Value.Mono);
 
     private static readonly Regex Fence = new(@"^(\s{0,3})(`{3,}|~{3,})\s*([^`]*)$", RegexOptions.Compiled, TimeSpan.FromMilliseconds(100));
     private static readonly Regex Heading = new(@"^\s{0,3}(#{1,6})\s+(.*?)(?:\s+#+)?\s*$", RegexOptions.Compiled, TimeSpan.FromMilliseconds(100));
@@ -587,10 +592,14 @@ internal static class TranscriptRtf
     /// The height of a Mac text line of a font size, before its line spacing: the system font's own
     /// (ascender + descender, 1.193 em, rounded up: 16 for 13pt), or the taller fallback line Hangul gets
     /// (about 1.42 em: 18.5 for 13pt, as the Mac screenshots measure). The Windows fonts' own lines differ
-    /// (Segoe UI 1.33 em, Malgun Gothic 1.72 em), so each paragraph is given this pitch exactly.
+    /// (Segoe UI 1.33 em, Malgun Gothic 1.72 em), so each paragraph is given this pitch exactly. The size is
+    /// the Mac's at scale 1; the line is that of the size the text setting draws it at (<see cref="AppText"/>).
     /// </summary>
-    private static double Line(double size, string? text) =>
-        text is not null && text.Any(Wide) ? Math.Round(size * 1.42 * 2, MidpointRounding.AwayFromZero) / 2 : Math.Ceiling(size * 1.193 - 0.001);
+    private static double Line(double size, string? text)
+    {
+        size = AppText.Size(size);
+        return text is not null && text.Any(Wide) ? Math.Round(size * 1.42 * 2, MidpointRounding.AwayFromZero) / 2 : Math.Ceiling(size * 1.193 - 0.001);
+    }
 
     internal static string Render(RunSession session, bool light) => Render(session, light, null, null);
     internal static string Render(RunSession session, bool light, AgentPictures? pictures, string? root, IReadOnlySet<string>? expanded = null, Dictionary<string, TranscriptAction>? actions = null, TranscriptLook? look = null)
@@ -668,8 +677,9 @@ internal static class TranscriptRtf
 
     private static void Open(StringBuilder body, DesignPalette palette)
     {
-        var fonts = Fonts.Value;
-        body.Append(@"{\rtf1\ansi\deff0\uc1{\fonttbl{\f0 ").Append(fonts.Body).Append(@";}{\f1 ").Append(fonts.Mono).Append(@";}{\f2 Segoe UI Symbol;}{\f3 ").Append(fonts.Icons).Append(";}}");
+        // A chosen family is a name the person picked: escaped, and without the semicolon that would end its entry.
+        var fonts = Fonts.Value; var faces = Faces();
+        body.Append(@"{\rtf1\ansi\deff0\uc1{\fonttbl{\f0 ").Append(Escape(faces.Body.Replace(";", ""))).Append(@";}{\f1 ").Append(Escape(faces.Mono.Replace(";", ""))).Append(@";}{\f2 Segoe UI Symbol;}{\f3 ").Append(fonts.Icons).Append(";}}");
         ColorTable(body, palette);
         // No size here: text without one takes the box's own, exactly 13 epx, where \fs could only say 13.33.
         body.Append(@"\viewkind4\f0\cf1 ");
@@ -804,13 +814,13 @@ internal static class TranscriptRtf
         /// <summary>A run of the app's own words, or of code: drawn as written.</summary>
         internal void Run(string format, string text) { Body.Append('{').Append(format).Append(' '); Escape(Body, text); Body.Append('}'); }
         /// <summary>
-        /// A run's font, size in Mac points, ink and weight. The body size is left out in a transcript: its box
+        /// A run's font, size in Mac points at scale 1 (drawn at the text setting's scale), ink and weight. The body size is left out in a transcript: its box
         /// is 13 epx, which <c>\fs</c> cannot say; the files preview's box is not, so there every size is written.
         /// </summary>
         internal string Face(double size, int ink, int weight = 400, int font = BodyFont)
         {
             var format = new StringBuilder(@"\f").Append(font);
-            if (Preview || size != DesignMetrics.Type.Body) format.Append(@"\fs").Append(HalfPoints(size));
+            if (Preview || size != DesignMetrics.Type.Body) format.Append(@"\fs").Append(HalfPoints(AppText.Size(size)));
             format.Append(@"\cf").Append(ink);
             if (weight >= 700) format.Append(@"\b"); else if (weight != 400) format.Append(@"\fweight").Append(weight);
             return format.ToString();
@@ -1441,7 +1451,7 @@ internal static class TranscriptRtf
             else if (match.Groups[3].Success)
             {
                 var code = value.StartsWith("``", StringComparison.Ordinal) ? value[2..^2].Trim() : value[1..^1];
-                var face = @"\f" + MonoFont + @"\fs" + HalfPoints(Math.Min(style.Size, 12));
+                var face = @"\f" + MonoFont + @"\fs" + HalfPoints(AppText.Size(Math.Min(style.Size, 12)));
                 w.Words(w.Preview ? face + @"\highlight" + Subtle : w.Cards ? face + @"\cf" + Accent + @"\highlight" + AccentSoft : face + @"\highlight" + CodeWash, code);
             }
             else if (match.Groups[4].Success) Nested(@"\b\i", value[3..^3]);
@@ -1473,7 +1483,7 @@ internal static class TranscriptRtf
         var picture = AgentMarkdownImages.Extract(value).FirstOrDefault();
         if (picture is null) { w.Text(value); return; }
         // The note beside a picture that is not drawn is two points smaller than the words, never under 10 (M/AgentTranscriptFormat.swift:264).
-        var alt = picture.Alt.Trim(); var quiet = @"\cf" + Ink2; var note = @"\fs" + HalfPoints(Math.Max(10, w.Look.BodySize - 2)) + quiet;
+        var alt = picture.Alt.Trim(); var quiet = @"\cf" + Ink2; var note = @"\fs" + HalfPoints(AppText.Size(Math.Max(10, w.Look.BodySize - 2))) + quiet;
         // With pictures, the location comes from AgentPictures' cache: a render never asks the disk.
         AgentImageLocation location; AgentPictures.Picture? shown = null;
         if (context.Pictures is null) location = AgentImagePaths.Locate(picture.Source, context.Root);
