@@ -1,11 +1,11 @@
-# 필요한 도구 · 구성 요소 (Mac)
+# 필요한 도구 · 구성 요소 (Mac · Windows)
 
 앱이 이 Mac에서 쓰는 도구를 한 목록으로 확인하고, 빠진 것을 앱 안의 터미널 창에서 설치한다. 같은 목록이 두 곳에 있다.
 
 - **필요한 도구** 시트: 앱을 열 때 에이전트 CLI(Claude Code·Codex·Antigravity)가 하나도 실행되지 않거나 필수 항목인 Git(Command Line Tools)이 준비되지 않았으면 자동으로 열린다. Claude Code는 필수가 아니다: 에이전트 CLI는 셋 중 하나면 된다. 처음 보일 때 빠진 Git과, 에이전트 CLI가 하나도 없으면 Claude Code가 미리 체크된다(그 뒤에는 사용자가 고른 대로 둔다). "다음에 하기"로 닫고, "다시 보지 않기"에 체크하고 닫으면 다시 자동으로 열리지 않는다(`setup.neverShow` 기본값). 필수 항목이 빠져 있는 동안 시작 화면에 **필요한 도구** 단추가 있고, CLI가 없어 막힌 에이전트 창에는 **설치하기** 단추가 있다(그 CLI에 체크하고 그 줄로 스크롤한다). 스모크 실행과 도움말 캡처에서는 자동으로 열리지 않는다.
 - **설정 → 도구 → 구성 요소**: 같은 목록과, 앱이 설치된 에이전트에 요구하는 플러그인(`ComponentCatalog.requiredPlugins`, 현재 비어 있음). 그 아래 **내 작업 도구 모음**은 그대로다.
 
-Windows는 아직 이 화면이 없고 종전처럼 설치 명령 복사만 한다(docs/windows-parity.md).
+Windows에도 같은 화면이 있다. 다른 점은 아래 [Windows](#windows)에 있다.
 
 ## 목록 (`native/contracts/fixtures/setup-catalog.json`)
 
@@ -53,6 +53,33 @@ Ouroboros·Superpowers의 명령은 각 스타일 매니페스트(`ouroboros.jso
 6. 시작·끝 표시는 `mkdir`로 만드는 폴더라 이미 있는 링크를 따라가지 않는다. 앱은 2초마다 끝 표시나 창이 닫혔는지를 본다. 20초가 지나도 시작 표시가 없으면 "터미널 창을 확인하세요" 안내와 **설치 끝내기** 단추를 보여 준다. 끝나면 모든 항목을 다시 확인하고, 앱이 앞에 있으면 시트를 다시 열고 뒤에 있으면 상태 줄에 "도구 설치가 끝났습니다" 단추를 띄운다.
 
 스크립트는 카탈로그에서만 만든다. 모든 값은 작은따옴표로 감싼다. `argv`는 `/usr/bin/xcode-select`(옵션 `--install`만)와 `npx`(옵션 `--global`, `--agent`만)뿐이다. 공식 스크립트·내려받기 페이지·저장소 주소는 허용된 호스트(claude.ai, chatgpt.com, antigravity.google, raw.githubusercontent.com, astral.sh, bun.com, github.com, tailscale.com)만 받고, github.com·raw.githubusercontent.com은 카탈로그가 쓰는 저장소(Homebrew/install, Q00/ouroboros, anthropics/claude-plugins-community, Yeachan-Heo/oh-my-claudecode, garrytan/gstack)만, 마켓플레이스의 owner/repo 줄임 형식도 같은 목록만 받는다(`.`·`..` 거부).
+
+## Windows
+
+같은 카탈로그의 `windows` 항목을 쓴다(`MightyClaude.Core/SetupCatalog.cs`, `SetupPlan.cs`, `SetupProbe.cs`; 화면은 `MightyClaude.WinUI/MainWindow.Setup.cs`). 디코더는 Mac과 같은 규칙으로 닫혀 있고, `winget`은 Windows 항목에만, Homebrew·Command Line Tools·앱 번들·`xcode-select`·고정 커밋 스킬은 Mac 항목에만 쓸 수 있다.
+
+| 무리 | 항목 | 확인 | 설치 | 공식 출처 |
+|---|---|---|---|---|
+| 에이전트 CLI | Claude Code | `claude` 2.1.271 이상 | `https://claude.ai/install.ps1` (공식 `irm https://claude.ai/install.ps1 \| iex`), `%USERPROFILE%\.local\bin` | https://code.claude.com/docs/en/setup |
+| | Codex CLI | `codex` | `https://chatgpt.com/codex/install.ps1` (공식 `irm https://chatgpt.com/codex/install.ps1 \| iex`), `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin`. Windows에서 직접 돈다(WSL 필요 없음) | https://github.com/openai/codex (`scripts/install/install.ps1`) |
+| | Antigravity CLI | `agy` | `https://antigravity.google/cli/install.ps1`, `%LOCALAPPDATA%\agy\bin` | https://antigravity.google/cli/install.ps1 |
+| 기본 도구 | Git for Windows (필수) | `git` | `winget install --exact --id Git.Git --source winget --scope user --accept-package-agreements --accept-source-agreements` | https://git-scm.com/downloads/win, 매니페스트 `manifests/g/Git/Git` (user·machine 설치기) |
+| | Node.js LTS | `node` | `winget install --exact --id OpenJS.NodeJS.LTS --source winget --scope machine …` — MSI가 모든 사용자용뿐이라 Windows가 관리자 확인 창을 띄울 수 있다 | https://nodejs.org/en/download, 매니페스트 `manifests/o/OpenJS/NodeJS/LTS` |
+| 스타일 도구 | uv | `uvx` | `https://astral.sh/uv/install.ps1` (공식 `irm https://astral.sh/uv/install.ps1 \| iex`), `%USERPROFILE%\.local\bin` | https://docs.astral.sh/uv/getting-started/installation/ |
+| | Ouroboros · Superpowers · oh-my-claudecode | Mac과 같음 | Mac과 같은 `claude plugin marketplace add …; claude plugin install … --scope user` | Mac과 같음 |
+| | Paperthin (Node 필요) | `%USERPROFILE%\.claude\skills\re0\SKILL.md` | `npx skills@1.7.2 add LilMGenius/paperthin --global --agent claude-code` | https://www.npmjs.com/package/skills/v/1.7.2 |
+| 원격 연결 | Tailscale | `tailscale` (PATH 또는 `C:\Program Files\Tailscale`) | 공식 내려받기 페이지를 연다(https://tailscale.com/download/windows) | https://tailscale.com/kb/1022/install-windows |
+| Git 호스팅 CLI | GitHub CLI | `gh` | `winget install --exact --id GitHub.cli --source winget --scope machine …` — MSI가 모든 사용자용뿐 | https://cli.github.com, 매니페스트 `manifests/g/GitHub/cli` |
+| | GitLab CLI | `glab` | `winget install --exact --id GLab.GLab --source winget --scope user …` | https://gitlab.com/gitlab-org/cli, 매니페스트 `manifests/g/GLab/GLab` |
+
+Homebrew, Bun, gstack은 Windows 항목이 없다. gstack의 `./setup`은 bash 스크립트라 Windows에서는 Git Bash가 필요한데, 앱의 PowerShell에서 어느 bash를 부를지(`C:\Windows\System32\bash.exe`는 WSL이다) 앱이 보증할 수 없고, 고정한 커밋의 Windows 동작도 확인하지 못했다. Bun은 gstack 때문에만 있다. Tailscale은 winget 패키지가 서비스를 설치하는 모든 사용자용이라, Mac처럼 공식 페이지를 연다. winget 패키지는 사용자 범위 설치기가 있으면 `--scope user`(Git, glab), 모든 사용자용만 있으면 `--scope machine`(Node.js, gh)으로 고정한다. 이때의 관리자 확인 창은 Windows가 띄우는 것이고 사용자가 보고 답한다. 앱은 스스로 권한을 올리지 않는다.
+
+- **확인**: 실행 파일은 PATH(레지스트리의 HKLM·HKCU 값을 다시 읽은 것)와 공식 설치기 폴더(`%USERPROFILE%\.local\bin`, `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin`, `%LOCALAPPDATA%\agy\bin`, `%APPDATA%\npm`, `%LOCALAPPDATA%\Microsoft\WinGet\Links`, Git for Windows의 사용자·전체 폴더, `C:\Program Files\nodejs`, `C:\Program Files\GitHub CLI`, `C:\Program Files\Tailscale`)에서 PATHEXT의 확장자로 찾는다. `--version`은 4초 안에 답해야 한다. 설치가 끝나면 레지스트리에서 PATH를 다시 읽는다: 돌고 있는 앱은 새 PATH를 저절로 보지 못한다.
+- **스크립트**: `%LOCALAPPDATA%\MightyClaudeNative\setup`(`--profile`이면 그 안의 `setup`)에 둔다. 폴더는 정션·링크가 아닌 진짜 폴더이고 이 사용자 소유여야 하며, 실행할 때마다 쓰기 전에 이 사용자만 접근하는 보호된 ACL을 다시 씌운다. 앱이 관리자 권한으로 실행 중이면 설치하지 않고 그렇다고 말한다(`setup.windows.error.elevated`). 스크립트는 무작위 이름의 새 `.ps1`(UTF-8, BOM 포함 — Windows PowerShell은 BOM이 없으면 한국어를 깨뜨린다)이다. 먼저 실행하는 줄은 `Set-Location -LiteralPath $HOME`, PATH 끝에 설치기 폴더 덧붙이기, `npm_config_registry`, TLS 1.2, 그리고 두 함수다. `Get-MightyHttps`는 리디렉션을 직접 따라가며 https가 아닌 주소를 거부하고 16 MB보다 큰 응답은 읽다 말고 거부하며, `Invoke-MightyScript`는 받은 공식 스크립트를 setup 폴더에 새 파일로 쓰고 그 파일을 PowerShell 하나로 따로 실행한다. 그래서 공식 스크립트 안의 `exit`는 그 단계만 끝낸다. 단계마다 `try`/`catch`로 감싸 실패해도 다음 단계로 넘어간다. 모든 값은 작은따옴표로 감싸고, PowerShell이 따옴표로 읽는 ‘ ’ ‚ ‛도 두 번 쓴다.
+- **창**: 로그인과 같은 방식이다. Windows Terminal(`wt.exe`)이 있으면 setup 폴더에서 새 탭, 없으면 콘솔 창(conhost)에서 `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File <스크립트>`를 실행한다. `-NoProfile`은 사용자 프로필 스크립트가 PATH·별칭·프록시를 먼저 바꾸지 못하게, `-ExecutionPolicy Bypass`는 이 프로세스 하나에만 적용되어 기본 정책이 `.ps1`을 막는 PC에서도 앱이 쓴 스크립트가 돌게(정책 자체는 바꾸지 않는다. 그룹 정책이 막으면 시작하지 않고 20초 뒤 안내가 나온다), `-File`은 경로를 코드로 읽지 않고 파일로 실행하게 한다. `wt.exe`는 PATH에서 찾은 전체 경로로, 콘솔 창은 시스템 폴더의 `conhost.exe`로 띄우고, `%`나 `;`가 든 명령은 Windows Terminal이 바꾸지 않게 콘솔 창으로 보낸다. 창의 환경에는 `NoDefaultCurrentDirectoryInExePath=1`을 넣어, `npx`·`claude` 같은 npm `.cmd` shim이 단계의 작업 폴더에 심어 둔 `node.exe`를 실행하지 않게 한다(앱이 직접 실행하는 명령과 로그인 창도 같다; 실제 Windows에서 아직 확인하지 않음). 창은 마지막에 Enter를 누를 때까지 열려 있다.
+- **끝**: 시작 표시(`started-…` 폴더, 안에 그 PowerShell의 프로세스 ID)와 끝 표시(`done-…` 폴더)는 `Test-Path -LiteralPath`로 아무것도 없을 때만 만들어, 이미 무엇이 있으면 따라가지 않고 실패한다(Windows PowerShell 5.1의 `New-Item`에는 `-LiteralPath`가 없다). 앱은 2초마다 끝 표시를 보고, 끝 표시 없이 그 PowerShell이 사라졌으면(창을 닫음) 그것도 끝으로 본다. Windows Terminal 탭은 앱이 기다릴 프로세스를 남기지 않기 때문이다.
+- **버전 확인**은 시스템 폴더(`Environment.SystemDirectory`)를 작업 폴더로 실행한다. **다시 보지 않기**가 켜져 있으면 앱을 열 때 아무것도 확인하지 않는다.
+- **들어가는 곳**: 앱을 열 때, 시작 화면의 **필요한 도구** 단추, 설정 → 도구 → 구성 요소(종전의 설치 명령 복사 줄 대신 같은 목록), CLI가 없어 막힌 에이전트 창의 **설치하기**. 이 창은 휴대폰 동작과 자동 로그인 복구를 막지 않는다. **다시 보지 않기**는 레지스트리 `HKCU\Software\MightyClaudeNative`의 `setup.neverShow`(REG_DWORD)다.
 
 ## 플러그인
 

@@ -42,7 +42,7 @@ Mighty Claudeは、Claude Code、Codex CLI、GoogleのAntigravity CLIを1つの�
 
 ![[welcome]]
 
-### 必要なツール(Mac) {#setup}
+### 必要なツール {#setup}
 動かせるエージェントCLI(Claude Code、Codex、Antigravityのいずれか)が1つもないか、Gitの準備ができていない場合は、アプリの起動時に{{ui:setup.title}}画面が先に開きます。エージェントCLI、前提ツール(Git、Homebrew、Node、Bun)、スタイル用ツール(uv、Ouroboros、Superpowers、Paperthin、oh-my-claudecode、gstack)、Tailscale、gh・glabをグループごとに表示します。
 
 1. インストールする項目にチェックを入れます。最初に開いたときは、足りないGitと、エージェントCLIが1つもなければClaude Codeが最初からチェックされていて、選んだ項目に必要なツール(例: ghに必要なHomebrew)も一緒に入ります。
@@ -52,7 +52,9 @@ Mighty Claudeは、Claude Code、Codex CLI、GoogleのAntigravity CLIを1つの�
 
 Git(Xcode Command Line Tools)はシステムのインストール画面が開くので、そちらで完了します。スクリプトは最大30分待ち、Control-Cを押すと待つのだけをやめて次の手順に進みます。Xcodeのライセンスに同意していないためにgitが動かない場合は、{{ui:setup.status.attention}}と表示されます。Tailscaleは公式のダウンロードページを開きます。古すぎるClaude Codeは{{ui:setup.status.outdated}}と表示され、{{ui:setup.button.update}}ボタンが出ます。
 
-{{ui:setup.button.later}}で閉じられます。{{ui:setup.button.neverShow}}にチェックしてから閉じると、起動時に開かなくなります。必須ツールが足りない間はスタート画面に{{ui:setup.title}}ボタンがあり、CLIがなくて止まっているペインには{{ui:setup.blocked.install}}ボタンがあります。同じ一覧は設定 → {{ui:settings.nav.tools}}にもあります。Windowsにはまだこの画面がありません。
+{{ui:setup.button.later}}で閉じられます。{{ui:setup.button.neverShow}}にチェックしてから閉じると、起動時に開かなくなります。必須ツールが足りない間はスタート画面に{{ui:setup.title}}ボタンがあり、CLIがなくて止まっているペインには{{ui:setup.blocked.install}}ボタンがあります。同じ一覧は設定 → {{ui:settings.nav.tools}}にもあります。
+
+{{platform:windows}} Windowsにも同じ画面があります。コマンドはホームフォルダーを作業フォルダーとして、アプリが別に開くPowerShellウィンドウ1つ(Windows Terminalがあればそのタブ、なければコンソールウィンドウ)で順に実行され、最後にEnterを押すまでウィンドウは開いたままです。Claude Code、Codex、Antigravity、uvはそれぞれの公式PowerShellインストールスクリプトで、Gitとglabはwingetでこのユーザーだけに、Node.jsとghはwingetですべてのユーザーにインストールします。すべてのユーザー向けのインストールではWindows自身が管理者の確認画面を表示することがあり、アプリは管理者権限を求めません。インストールが終わると、アプリはPATHをレジストリから読み直して確認します。Homebrew、Bun、gstackはMacでのみインストールします。
 
 ## ワークスペースを開く {#open-workspace}
 ワークスペースは1つのプロジェクトフォルダです。ペイン、タブの配置、会話の履歴はワークスペースごとに保存されます。

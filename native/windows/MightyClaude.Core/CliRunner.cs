@@ -56,8 +56,16 @@ public sealed class CliRunner : ICliRunner
         try
         {
             Log("run " + executable + " " + string.Join(" ", arguments));
-            var info = ChildProcess.StartInfo(executable, arguments, cwd, env);
-            process = ChildProcess.Start(info);
+            if (OperatingSystem.IsWindows())
+            {
+                // CreateProcessW looks along no PATH and runs no batch file: the full path is found here, and a .cmd shim runs through cmd.exe.
+                var lookup = WindowsCommand.Variables(env ?? CliEnvironment.Current());
+                var resolved = WindowsCommand.Find(executable, lookup.GetValueOrDefault("PATH"), lookup.GetValueOrDefault("PATHEXT")) ?? executable;
+                // Neither cmd.exe running a shim nor the program itself looks in the working folder (a workspace) for a bare name.
+                var (info, shellCommand) = WindowsCommand.Launch(resolved, arguments, cwd, env, lookup);
+                process = ChildProcess.Start(info, shellCommand);
+            }
+            else process = ChildProcess.Start(ChildProcess.StartInfo(executable, arguments, cwd, env));
             process.Input.Close();
 
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellation);

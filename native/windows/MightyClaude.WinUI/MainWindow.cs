@@ -110,7 +110,7 @@ public sealed partial class MainWindow : Window
         Grid.SetColumn(detailTop, 1); root.Children.Add(detailTop); Grid.SetRow(panes, 1); Grid.SetColumn(panes, 1); root.Children.Add(panes);
         // The bottom status bar, in the Mac's order (MainWindow.Shell.cs).
         statusBar.Child = BuildStatusBar(); ApplyChromeText(); Grid.SetRow(statusBar, 2); Grid.SetColumn(statusBar, 1); root.Children.Add(statusBar); Content = root;
-        AppWindow.Closing += async (_, args) => { if (canClose) return; args.Cancel = true; if (closing) return; closing = true; ShutdownCompanion(); settingsWindow?.Close(); foreach (var pane in views.Values) { pane.CloseReferencePreview(); pane.CloseBrowserView(); } clock.Stop(); modelRefreshes?.Shutdown(); StopWorkspaceGit(); root.IsHitTestVisible = false; try { await ShutdownAutomaticUpdates(); await coordinator.ShutdownAsync(); await ShutdownAppUpdateAsync(); await ShutdownAccountUsageAsync(); await ShutdownLoginRecovery(); await ShutdownStatusLines(); await CloseTerminalsAsync(); await ShutdownAgentIO(); await ShutdownMobileRemote(); await service.DisposeAsync(); canClose = true; Close(); } catch (Exception ex) { error.Text = Locale.Get("window.error.shutdownFailed", new Dictionary<string, string> { ["reason"] = ex.Message }); root.IsHitTestVisible = true; closing = false; modelRefreshes = null; } };
+        AppWindow.Closing += async (_, args) => { if (canClose) return; args.Cancel = true; if (closing) return; closing = true; ShutdownCompanion(); settingsWindow?.Close(); setupWatch?.Cancel(); setupWindow?.Close(); foreach (var pane in views.Values) { pane.CloseReferencePreview(); pane.CloseBrowserView(); } clock.Stop(); modelRefreshes?.Shutdown(); StopWorkspaceGit(); root.IsHitTestVisible = false; try { await ShutdownAutomaticUpdates(); await coordinator.ShutdownAsync(); await ShutdownAppUpdateAsync(); await ShutdownAccountUsageAsync(); await ShutdownLoginRecovery(); await ShutdownStatusLines(); await CloseTerminalsAsync(); await ShutdownAgentIO(); await ShutdownMobileRemote(); await service.DisposeAsync(); canClose = true; Close(); } catch (Exception ex) { error.Text = Locale.Get("window.error.shutdownFailed", new Dictionary<string, string> { ["reason"] = ex.Message }); root.IsHitTestVisible = true; closing = false; modelRefreshes = null; } };
         clock.Tick += (_, _) => RefreshRunningIndicators(); clock.Start();
         InitFilePane(); InitAddPaneShortcuts(); InitHelpShortcut(); InitTextAppearance();
         ShowLaunchSplash(); InitParityShortcuts(); InitWorkspaceGit(); InitDashboard();
@@ -120,7 +120,7 @@ public sealed partial class MainWindow : Window
     {
         try
         {
-        if (!options.SmokeTest) { await Act(async () => { await service.InitializeAsync(); Locale.LanguagePreference = service.Snapshot.LanguagePreference; root.Language = WindowLanguage(); ApplyChromeText(); Render(); delegationRedrawReady = true; HideLaunchSplash(); await CheckResources(); InitializeAgentIO(); await InitializeCompanionAsync(); await InitializeMobileRemote(); await InitNotifierAsync(); await RefreshRuntime(); BeginAutomaticUpdates(); BeginAutomaticAppUpdateCheck(); }); return; }
+        if (!options.SmokeTest) { await Act(async () => { await service.InitializeAsync(); Locale.LanguagePreference = service.Snapshot.LanguagePreference; root.Language = WindowLanguage(); ApplyChromeText(); Render(); delegationRedrawReady = true; HideLaunchSplash(); await CheckResources(); InitializeAgentIO(); await InitializeCompanionAsync(); await InitializeMobileRemote(); await InitNotifierAsync(); await RefreshRuntime(); BeginAutomaticUpdates(); BeginAutomaticAppUpdateCheck(); await PresentSetupIfNeeded(); }); return; }
         try { await service.InitializeAsync(); Locale.LanguagePreference = service.Snapshot.LanguagePreference; root.Language = WindowLanguage(); ApplyChromeText(); Render(); delegationRedrawReady = true; HideLaunchSplash(); await RunUISmoke(); }
         catch (Exception ex) { options.WriteStartupFailure(ex); await FinishSmoke(false); }
         }
@@ -532,6 +532,7 @@ public sealed partial class MainWindow : Window
                 : unsupportedEffort ? Locale.Get("composer.hint.effortUnverified", new Dictionary<string, string> { ["effort"] = pane.Settings.Effort })
                 : unsupportedSettings ?? "");
             inputHint.Text = reason; blockedRow.Visibility = reason.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+            blockedInstall.Visibility = reason.Length > 0 && mutationBlock is null && owner.SetupItemForMissingCli(pane) is not null ? Visibility.Visible : Visibility.Collapsed;
             loadingRow.Visibility = attachmentsLoading ? Visibility.Visible : Visibility.Collapsed;
             var holds = owner.BackgroundUpdateHolds(pane); holdRow.Visibility = holds ? Visibility.Visible : Visibility.Collapsed;
             if (holds) holdText.Text = Locale.Get("settings.cliUpdate.backgroundUpdateQueued", new Dictionary<string, string> { ["provider"] = ProviderMark.Label(pane.Provider) });

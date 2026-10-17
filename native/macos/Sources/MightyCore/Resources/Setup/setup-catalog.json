@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "note": "The tools the first-run setup screen (필요한 도구) checks and installs. It ships with the app and is read-only: nothing the user edits adds an item. Every kind is a closed set: probes are executable (on the login shell's PATH, optionally with a minimum version), claudePlugin (a user-scope record in ~/.claude/plugins/installed_plugins.json whose ID starts with the prefix), skill (~/.claude/skills/<name>/SKILL.md), commandLineTools (xcode-select -p, then git --version) and appBundle (the app in /Applications or ~/Applications, or its executable on the PATH); installs are argv (a closed list of programs, each with its own allowed options), officialScript (a fixed https URL on an allow-listed host, fetched with curl over https only and run with bash or sh, or PowerShell on Windows), brewFormula, brewCask, npmGlobal (npm's public registry), claudePlugin (marketplace + plugin ID), skill (a repository pinned to a commit, placed in ~/.claude/skills/<folder>, then an optional fixed script inside it) and vendorPage (the app opens the page; nothing runs). URLs on github.com and raw.githubusercontent.com, and a marketplace's owner/repo short form, must name a repository the app allows. Plugins installed through a marketplace are not pinned: the marketplace decides the version. `prerequisites` are item IDs the install needs on that platform and must not form a cycle. `source` is the official page the command was taken from, or the pinned version or commit. The label and description keys must be ones the app knows (SetupCatalog.knownKeys). Required means: the command line tools, plus at least one working agent CLI (the first-run rule). The bundled copy is native/macos/Sources/MightyCore/Resources/Setup/setup-catalog.json and must stay byte-identical.",
+  "note": "The tools the first-run setup screen (필요한 도구) checks and installs. It ships with the app and is read-only: nothing the user edits adds an item. Every kind is a closed set: probes are executable (on the login shell's PATH, optionally with a minimum version), claudePlugin (a user-scope record in ~/.claude/plugins/installed_plugins.json whose ID starts with the prefix), skill (~/.claude/skills/<name>/SKILL.md), commandLineTools (xcode-select -p, then git --version) and appBundle (the app in /Applications or ~/Applications, or its executable on the PATH; Mac only, as are commandLineTools, brewFormula and brewCask; on Windows an executable is also looked for in the folders its official installer uses); installs are argv (a closed list of programs, each with its own allowed options), officialScript (a fixed https URL on an allow-listed host, fetched with curl over https only and run with bash or sh, or PowerShell on Windows), brewFormula, brewCask, npmGlobal (npm's public registry), claudePlugin (marketplace + plugin ID), skill (a repository pinned to a commit, placed in ~/.claude/skills/<folder>, then an optional fixed script inside it), winget (Windows only: an exact package ID from the winget source in user or machine scope; a machine-scope package may show Windows' own administrator prompt, never one the app raises) and vendorPage (the app opens the page; nothing runs). URLs on github.com and raw.githubusercontent.com, and a marketplace's owner/repo short form, must name a repository the app allows. Plugins installed through a marketplace are not pinned: the marketplace decides the version. `prerequisites` are item IDs the install needs on that platform and must not form a cycle. `source` is the official page the command was taken from, or the pinned version or commit. The label and description keys must be ones the app knows (SetupCatalog.knownKeys). Required means: Git (the command line tools on a Mac), plus at least one working agent CLI (the first-run rule). The bundled copy is native/macos/Sources/MightyCore/Resources/Setup/setup-catalog.json and must stay byte-identical.",
   "items": [
     {
       "id": "claude",
@@ -13,6 +13,12 @@
         "macos": {
           "probe": { "kind": "executable", "name": "claude", "minimumVersion": "2.1.271" },
           "install": { "kind": "officialScript", "url": "https://claude.ai/install.sh", "shell": "bash" },
+          "prerequisites": [],
+          "source": "https://code.claude.com/docs/en/setup"
+        },
+        "windows": {
+          "probe": { "kind": "executable", "name": "claude", "minimumVersion": "2.1.271" },
+          "install": { "kind": "officialScript", "url": "https://claude.ai/install.ps1", "shell": "powershell" },
           "prerequisites": [],
           "source": "https://code.claude.com/docs/en/setup"
         }
@@ -31,6 +37,12 @@
           "install": { "kind": "officialScript", "url": "https://chatgpt.com/codex/install.sh", "shell": "sh" },
           "prerequisites": [],
           "source": "https://github.com/openai/codex"
+        },
+        "windows": {
+          "probe": { "kind": "executable", "name": "codex" },
+          "install": { "kind": "officialScript", "url": "https://chatgpt.com/codex/install.ps1", "shell": "powershell" },
+          "prerequisites": [],
+          "source": "https://github.com/openai/codex"
         }
       }
     },
@@ -47,6 +59,12 @@
           "install": { "kind": "officialScript", "url": "https://antigravity.google/cli/install.sh", "shell": "bash" },
           "prerequisites": [],
           "source": "https://antigravity.google/cli/install.sh"
+        },
+        "windows": {
+          "probe": { "kind": "executable", "name": "agy" },
+          "install": { "kind": "officialScript", "url": "https://antigravity.google/cli/install.ps1", "shell": "powershell" },
+          "prerequisites": [],
+          "source": "https://antigravity.google/cli/install.ps1"
         }
       }
     },
@@ -63,6 +81,12 @@
           "install": { "kind": "argv", "argv": ["xcode-select", "--install"], "finishesOutside": true },
           "prerequisites": [],
           "source": "https://developer.apple.com/documentation/xcode/installing-the-command-line-tools/"
+        },
+        "windows": {
+          "probe": { "kind": "executable", "name": "git" },
+          "install": { "kind": "winget", "id": "Git.Git", "scope": "user" },
+          "prerequisites": [],
+          "source": "https://git-scm.com/downloads/win"
         }
       }
     },
@@ -95,6 +119,12 @@
           "install": { "kind": "brewFormula", "name": "node" },
           "prerequisites": ["homebrew"],
           "source": "https://formulae.brew.sh/formula/node"
+        },
+        "windows": {
+          "probe": { "kind": "executable", "name": "node" },
+          "install": { "kind": "winget", "id": "OpenJS.NodeJS.LTS", "scope": "machine" },
+          "prerequisites": [],
+          "source": "https://nodejs.org/en/download"
         }
       }
     },
@@ -127,6 +157,12 @@
           "install": { "kind": "officialScript", "url": "https://astral.sh/uv/install.sh", "shell": "sh" },
           "prerequisites": [],
           "source": "https://docs.astral.sh/uv/getting-started/installation/"
+        },
+        "windows": {
+          "probe": { "kind": "executable", "name": "uvx" },
+          "install": { "kind": "officialScript", "url": "https://astral.sh/uv/install.ps1", "shell": "powershell" },
+          "prerequisites": [],
+          "source": "https://docs.astral.sh/uv/getting-started/installation/"
         }
       }
     },
@@ -139,6 +175,12 @@
       "afterInstall": { "kind": "none" },
       "platforms": {
         "macos": {
+          "probe": { "kind": "claudePlugin", "prefix": "ouroboros@" },
+          "install": { "kind": "claudePlugin", "marketplace": "Q00/ouroboros", "plugin": "ouroboros@ouroboros" },
+          "prerequisites": ["claude", "uv"],
+          "source": "https://github.com/Q00/ouroboros"
+        },
+        "windows": {
           "probe": { "kind": "claudePlugin", "prefix": "ouroboros@" },
           "install": { "kind": "claudePlugin", "marketplace": "Q00/ouroboros", "plugin": "ouroboros@ouroboros" },
           "prerequisites": ["claude", "uv"],
@@ -159,6 +201,12 @@
           "install": { "kind": "claudePlugin", "marketplace": "anthropics/claude-plugins-community", "plugin": "superpowers@claude-community" },
           "prerequisites": ["claude"],
           "source": "https://github.com/anthropics/claude-plugins-community"
+        },
+        "windows": {
+          "probe": { "kind": "claudePlugin", "prefix": "superpowers@" },
+          "install": { "kind": "claudePlugin", "marketplace": "anthropics/claude-plugins-community", "plugin": "superpowers@claude-community" },
+          "prerequisites": ["claude"],
+          "source": "https://github.com/anthropics/claude-plugins-community"
         }
       }
     },
@@ -175,6 +223,12 @@
           "install": { "kind": "argv", "argv": ["npx", "skills@1.7.2", "add", "LilMGenius/paperthin", "--global", "--agent", "claude-code"] },
           "prerequisites": ["node"],
           "source": "https://www.npmjs.com/package/skills/v/1.7.2"
+        },
+        "windows": {
+          "probe": { "kind": "skill", "name": "re0" },
+          "install": { "kind": "argv", "argv": ["npx", "skills@1.7.2", "add", "LilMGenius/paperthin", "--global", "--agent", "claude-code"] },
+          "prerequisites": ["node"],
+          "source": "https://www.npmjs.com/package/skills/v/1.7.2"
         }
       }
     },
@@ -187,6 +241,12 @@
       "afterInstall": { "kind": "none" },
       "platforms": {
         "macos": {
+          "probe": { "kind": "claudePlugin", "prefix": "oh-my-claudecode@" },
+          "install": { "kind": "claudePlugin", "marketplace": "https://github.com/Yeachan-Heo/oh-my-claudecode", "plugin": "oh-my-claudecode@omc" },
+          "prerequisites": ["claude"],
+          "source": "https://github.com/Yeachan-Heo/oh-my-claudecode"
+        },
+        "windows": {
           "probe": { "kind": "claudePlugin", "prefix": "oh-my-claudecode@" },
           "install": { "kind": "claudePlugin", "marketplace": "https://github.com/Yeachan-Heo/oh-my-claudecode", "plugin": "oh-my-claudecode@omc" },
           "prerequisites": ["claude"],
@@ -223,6 +283,12 @@
           "install": { "kind": "vendorPage", "url": "https://tailscale.com/download/mac" },
           "prerequisites": [],
           "source": "https://tailscale.com/kb/1016/install-mac"
+        },
+        "windows": {
+          "probe": { "kind": "executable", "name": "tailscale" },
+          "install": { "kind": "vendorPage", "url": "https://tailscale.com/download/windows" },
+          "prerequisites": [],
+          "source": "https://tailscale.com/kb/1022/install-windows"
         }
       }
     },
@@ -239,6 +305,12 @@
           "install": { "kind": "brewFormula", "name": "gh" },
           "prerequisites": ["homebrew"],
           "source": "https://cli.github.com"
+        },
+        "windows": {
+          "probe": { "kind": "executable", "name": "gh" },
+          "install": { "kind": "winget", "id": "GitHub.cli", "scope": "machine" },
+          "prerequisites": [],
+          "source": "https://cli.github.com"
         }
       }
     },
@@ -254,6 +326,12 @@
           "probe": { "kind": "executable", "name": "glab" },
           "install": { "kind": "brewFormula", "name": "glab" },
           "prerequisites": ["homebrew"],
+          "source": "https://gitlab.com/gitlab-org/cli"
+        },
+        "windows": {
+          "probe": { "kind": "executable", "name": "glab" },
+          "install": { "kind": "winget", "id": "GLab.GLab", "scope": "user" },
+          "prerequisites": [],
           "source": "https://gitlab.com/gitlab-org/cli"
         }
       }

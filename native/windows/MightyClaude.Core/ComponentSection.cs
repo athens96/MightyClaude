@@ -47,6 +47,21 @@ public static class ComponentSection
     {
         var title = ProviderTitle(id);
 
+        // A Claude that answered with a version below the Mods minimum is there but out of date (the runtime counts it unavailable):
+        // attention and the update, never the install (M/MightyCore/SetupProbe.swift outdated).
+        if (id == "claude" && provider?.Version is not null && !ProviderCatalog.SupportsMods(provider.Version))
+        {
+            return new ComponentStatus
+            {
+                Id = id,
+                Title = title,
+                State = "attention",
+                Version = provider.Version,
+                Detail = Locale.Get("settings.components.modsNeedsVersion", new Dictionary<string, string> { ["version"] = modsVersion }),
+                Actions = [new ComponentAction { Id = "update", Title = Locale.Get("settings.components.updateCLI") }],
+            };
+        }
+
         if (provider is null || !provider.Available)
         {
             var command = InstallCommand(id);
@@ -59,20 +74,6 @@ public static class ComponentSection
                 Version = provider?.Version,
                 Detail = detail,
                 Actions = command is null ? [] : [new ComponentAction { Id = "copy-command", Title = Locale.Get("settings.components.copyInstallCommand") }],
-            };
-        }
-
-        // Claude below the Mods minimum → attention + update action.
-        if (id == "claude" && !ProviderCatalog.SupportsMods(provider.Version))
-        {
-            return new ComponentStatus
-            {
-                Id = id,
-                Title = title,
-                State = "attention",
-                Version = provider.Version,
-                Detail = Locale.Get("settings.components.modsNeedsVersion", new Dictionary<string, string> { ["version"] = modsVersion }),
-                Actions = [new ComponentAction { Id = "update", Title = Locale.Get("settings.components.updateCLI") }],
             };
         }
 

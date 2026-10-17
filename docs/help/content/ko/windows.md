@@ -41,6 +41,7 @@ Windows에는 메뉴 막대가 없습니다. 같은 기능은 사이드바와 {{
 ## 다른 점 {#differences}
 | 기능 | Windows에서는 |
 |---|---|
+| 필요한 도구 | [{{ui:setup.title}}](getting-started.md#setup) 설치는 별도의 PowerShell 창에서 진행되고, winget과 각 CLI의 공식 PowerShell 설치 스크립트를 씁니다. Homebrew, Bun, gstack은 목록에 없습니다. {{ui:setup.button.neverShow}}는 레지스트리 `HKEY_CURRENT_USER\Software\MightyClaudeNative`의 `setup.neverShow` 값(REG_DWORD)으로 저장됩니다. |
 | CLI 로그인 | 앱 안의 터미널이 아니라 별도의 Windows 터미널 창에서 진행됩니다. 로그인이 끝나면 Mac처럼 실패한 요청을 저절로 다시 보냅니다. |
 | Antigravity | PowerShell 설치 프로그램으로 `%LOCALAPPDATA%\agy\bin`에 설치하고, 기록은 `%USERPROFILE%\.gemini\antigravity-cli`에 남습니다([Antigravity](agent-pane.md#antigravity)). |
 | 터미널 창 | Windows PowerShell을 씁니다. |
