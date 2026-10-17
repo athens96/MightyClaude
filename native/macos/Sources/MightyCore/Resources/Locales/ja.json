@@ -2758,5 +2758,6 @@
   "settings.remote.removeHelp": "接続と保存されたキーを削除",
   "settings.remote.noShared": "このコンピュータが共有しているワークスペースはありません。",
   "settings.remote.openButton": "開く",
-  "settings.remote.openedButton": "もう一度開く"
+  "settings.remote.openedButton": "もう一度開く",
+  "remote.connect.error.notViaTailscale": "このアドレスへの経路が Tailscale を通っていません。同じ範囲を使う別のネットワーク（通信事業者の NAT など）につながっている可能性があります。Tailscale がオンか、アドレスが正しいかを確認してください。"
 }

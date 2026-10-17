@@ -38,12 +38,20 @@ public enum TailscaleAddresses {
         return ipv4 + ipv6
     }
 
+    /// The Tailscale addresses among `interfaces` (name and address, as read):
+    /// only a tunnel interface's (`utun…`) count. A carrier-grade NAT network
+    /// can hand Wi-Fi or Ethernet an address in 100.64.0.0/10 too, and that one
+    /// is outside WireGuard. Pure, like `select(_:)`.
+    public static func select(interfaces: [(name: String, address: String)]) -> [String] {
+        select(interfaces.filter { $0.name.hasPrefix("utun") }.map(\.address))
+    }
+
     /// The addresses this computer has on Tailscale now; empty while Tailscale is off.
     public static func current() -> [String] {
         var head: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&head) == 0, let first = head else { return [] }
         defer { freeifaddrs(first) }
-        var found: [String] = []
+        var found: [(name: String, address: String)] = []
         var cursor: UnsafeMutablePointer<ifaddrs>? = first
         while let entry = cursor {
             defer { cursor = entry.pointee.ifa_next }
@@ -53,10 +61,32 @@ public enum TailscaleAddresses {
             var buffer = [CChar](repeating: 0, count: Int(NI_MAXHOST))
             let length = socklen_t(family == AF_INET ? MemoryLayout<sockaddr_in>.size : MemoryLayout<sockaddr_in6>.size)
             if getnameinfo(address, length, &buffer, socklen_t(buffer.count), nil, 0, NI_NUMERICHOST) == 0 {
-                found.append(String(cString: buffer))
+                found.append((String(cString: entry.pointee.ifa_name), String(cString: buffer)))
             }
         }
-        return select(found)
+        return select(interfaces: found)
+    }
+
+    /// The local address this computer would send from to reach `ip`, as its
+    /// routing table decides (a UDP socket is connected, nothing is sent).
+    /// A peer is reached over Tailscale only when that is a Tailscale address.
+    public static func sourceAddress(toward ip: String) -> String? {
+        var hints = addrinfo(); hints.ai_flags = AI_NUMERICHOST; hints.ai_socktype = SOCK_DGRAM; hints.ai_family = AF_UNSPEC
+        var result: UnsafeMutablePointer<addrinfo>?
+        guard getaddrinfo(ip, "9", &hints, &result) == 0, let target = result else { return nil }
+        defer { freeaddrinfo(target) }
+        let socketFD = socket(target.pointee.ai_family, SOCK_DGRAM, 0)
+        guard socketFD >= 0 else { return nil }
+        defer { close(socketFD) }
+        guard connect(socketFD, target.pointee.ai_addr, target.pointee.ai_addrlen) == 0 else { return nil }
+        var local = sockaddr_storage(); var length = socklen_t(MemoryLayout<sockaddr_storage>.size)
+        let named = withUnsafeMutablePointer(to: &local) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(socketFD, $0, &length) } }
+        guard named == 0 else { return nil }
+        var buffer = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+        let printed = withUnsafePointer(to: &local) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getnameinfo($0, length, &buffer, socklen_t(buffer.count), nil, 0, NI_NUMERICHOST) } }
+        guard printed == 0 else { return nil }
+        let text = String(cString: buffer)
+        return canonical(text.split(separator: "%", maxSplits: 1).first.map(String.init) ?? text)
     }
 
     /// One spelling per address, so the same address read twice is one entry.

@@ -50,6 +50,17 @@ extension AppStore {
         if let index = remoteConnections.firstIndex(where: { $0.id == info.id }) { remoteConnections[index] = info } else { remoteConnections.append(info) }
     }
 
+    /// Why this Mac cannot take another computer's run now: its CLIs or plugins
+    /// are changing, or Claude's models are being reloaded; nil when it can.
+    func remoteHostAdmission(_ request: StartRunRequest) -> String? {
+        guard !ending else { return L("common.appClosing") }
+        guard request.kind != "shell" else { return nil }
+        if isUpdatingCLIs || updatingCLI != nil { return L("run.blocked.updatingCLI", ["provider": ProviderOptions.label(request.provider)]) }
+        if isManagingPlugins, ["claude", "codex"].contains(request.provider) { return L("run.blocked.changingPlugins") }
+        if claudeModelResetInProgress, request.provider == "claude" { return L("composer.model.reloadingClaude") }
+        return nil
+    }
+
     /// Reads both sides again; Settings → 원격 연결 calls it while it is open.
     func reloadRemoteState() async {
         remoteHostState = await remoteHost.current()

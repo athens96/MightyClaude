@@ -142,8 +142,17 @@ enum RemoteTransport {
         }
         guard (200...299).contains(response.statusCode) else {
             let message = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String
-            throw MightyError(String((message ?? L("remote.connect.error.unexpectedStatus", ["status": "\(response.statusCode)"])).prefix(300)))
+            throw RemoteHTTPFailure(status: response.statusCode, message: String((message ?? L("remote.connect.error.unexpectedStatus", ["status": "\(response.statusCode)"])).prefix(300)))
         }
         return data
     }
+}
+
+/// The host answered with an error status; its message is what the user reads.
+struct RemoteHTTPFailure: LocalizedError, Sendable {
+    let status: Int
+    let message: String
+    var errorDescription: String? { message }
+    /// Busy for a moment (rate limit, a local update holding runs): worth asking again.
+    var transient: Bool { status == 429 || status == 503 }
 }

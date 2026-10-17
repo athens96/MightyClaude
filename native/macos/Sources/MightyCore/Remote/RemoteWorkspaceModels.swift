@@ -16,6 +16,9 @@ public enum RemoteProtocol {
     public static let defaultPort = 43137
     /// A run the client has not polled for this long is stopped on the host.
     public static let heartbeatTimeout: TimeInterval = 30
+    /// A client asks again this long after a poll failed for a passing reason
+    /// (busy host, network hiccup) before it calls the connection lost.
+    public static let pollRetryWindow: TimeInterval = 10
     /// Up to this many workspaces are shared at once.
     public static let maximumSharedWorkspaces = 64
     /// Up to this many remote runs go at once, per host and per client.

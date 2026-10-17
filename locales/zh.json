@@ -2758,5 +2758,6 @@
   "settings.remote.removeHelp": "删除连接及其保存的密钥",
   "settings.remote.noShared": "这台电脑没有共享任何工作区。",
   "settings.remote.openButton": "打开",
-  "settings.remote.openedButton": "再次打开"
+  "settings.remote.openedButton": "再次打开",
+  "remote.connect.error.notViaTailscale": "到这个地址的路由没有经过 Tailscale，可能连接着使用相同网段的其他网络（如运营商 NAT）。请确认 Tailscale 已开启且地址正确。"
 }

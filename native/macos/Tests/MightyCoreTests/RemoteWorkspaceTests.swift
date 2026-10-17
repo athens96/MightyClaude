@@ -20,6 +20,11 @@ struct RemoteWorkspaceAddressTests {
         let read = ["fe80::1", "fd7a:115c:a1e0:0::5", "100.101.1.2", "192.168.1.3", "FD7A:115C:A1E0::5", "100.101.1.2", "127.0.0.1", "100.64.9.9"]
         #expect(TailscaleAddresses.select(read) == ["100.101.1.2", "100.64.9.9", "fd7a:115c:a1e0::5"])
         #expect(TailscaleAddresses.select([]).isEmpty)
+        // Only a tunnel's address counts: carrier-grade NAT can put 100.64/10 on Wi-Fi too.
+        let interfaces: [(name: String, address: String)] = [("en0", "100.72.1.9"), ("utun4", "100.101.1.2"), ("utun4", "fd7a:115c:a1e0::5"), ("lo0", "127.0.0.1"), ("en0", "fd7a:115c:a1e0::9")]
+        #expect(TailscaleAddresses.select(interfaces: interfaces) == ["100.101.1.2", "fd7a:115c:a1e0::5"])
+        // The route to a peer is read without sending anything.
+        #expect(TailscaleAddresses.sourceAddress(toward: "127.0.0.1") == "127.0.0.1")
         // Whatever this machine has, only Tailscale addresses come back.
         #expect(TailscaleAddresses.current().allSatisfy(TailscaleAddresses.contains))
     }
@@ -174,6 +179,11 @@ private final class EventLog: @unchecked Sendable {
     func ended(_ pane: String) -> RunEvent? { values.last { $0.sessionId == pane && $0.type == "status" && ["completed", "error", "stopped"].contains($0.status ?? "") } }
 }
 
+/// The HTTP status a remote call failed with; nil when it succeeded or failed otherwise.
+private func failureStatus(_ operation: () async throws -> Void) async -> Int? {
+    do { try await operation(); return nil } catch { return (error as? RemoteHTTPFailure)?.status }
+}
+
 private func remoteWait(_ seconds: Double = 30, _ condition: () async -> Bool) async throws {
     let deadline = Date().addingTimeInterval(seconds)
     while !(await condition()) {
@@ -237,7 +247,7 @@ private func rawExchange(port: Int, _ request: String) throws -> String {
     while IFS= read -r extra; do :; done
     """#
 
-    private func fixture(heartbeat: TimeInterval = RemoteProtocol.heartbeatTimeout) async throws -> Fixture {
+    private func fixture(heartbeat: TimeInterval = RemoteProtocol.heartbeatTimeout, admission: @escaping @Sendable (StartRunRequest) async -> String? = { _ in nil }) async throws -> Fixture {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("mighty-remote-\(UUID().uuidString)")
         let folder = root.appendingPathComponent("project")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -253,7 +263,7 @@ private func rawExchange(port: Int, _ request: String) throws -> String {
         try await repository.save(AppSnapshot(workspaces: [workspace, hidden]))
         let providers = ProviderService(binaryOverrides: ["claude": binary])
         let host = RemoteHostService(repository: repository, providers: providers, pluginDirectory: plugin, appVersion: "9.9.9", hostName: "Test host",
-                                     allowLoopbackForTests: true, heartbeat: heartbeat)
+                                     allowLoopbackForTests: true, heartbeat: heartbeat, admission: admission)
         let events = EventLog()
         let clientRepository = StateRepository(directory: root.appendingPathComponent("client"), legacyStateURL: nil)
         let client = RemoteClientService(repository: clientRepository, dataDirectory: root.appendingPathComponent("client"), allowLoopbackForTests: true) { events.append($0) }
@@ -339,8 +349,8 @@ private func rawExchange(port: Int, _ request: String) throws -> String {
         do {
             let (key, port) = try await share(fixture)
             let target = RemoteTarget(address: RemoteAddress(host: "127.0.0.1", port: port), ip: "127.0.0.1", port: port)
-            await #expect(throws: MightyError.self) { _ = try await RemoteTransport.request(target, key: String(repeating: "Z", count: 43), method: "GET", path: "/v2/info") }
-            await #expect(throws: MightyError.self) { _ = try await fixture.client.connect(name: "", address: "127.0.0.1:\(port)", key: String(repeating: "Z", count: 43)) }
+            #expect(await failureStatus { _ = try await RemoteTransport.request(target, key: String(repeating: "Z", count: 43), method: "GET", path: "/v2/info") } == 401)
+            #expect(await failureStatus { _ = try await fixture.client.connect(name: "", address: "127.0.0.1:\(port)", key: String(repeating: "Z", count: 43)) } == 401)
             // An old app's protocol is not answered.
             let old = try rawExchange(port: port, "GET /v1/info HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer \(key)\r\nx-mighty-remote-version: 1\r\n\r\n")
             #expect(old.hasPrefix("HTTP/1.1 426") || old.hasPrefix("HTTP/1.1 400"))
@@ -357,18 +367,18 @@ private func rawExchange(port: Int, _ request: String) throws -> String {
             let snapshot = try await fixture.repository.load()
             let hidden = try #require(snapshot.workspaces.first { $0.id != fixture.workspace.id })
             let body = try JSONEncoder().encode(RemoteWireStart(request: StartRunRequest(sessionId: "x", workspaceId: hidden.id, kind: "shell", input: "touch escaped")))
-            await #expect(throws: MightyError.self) { _ = try await RemoteTransport.request(target, key: key, method: "POST", path: "/v2/runs", body: body) }
+            #expect(await failureStatus { _ = try await RemoteTransport.request(target, key: key, method: "POST", path: "/v2/runs", body: body) } == 403)
             #expect(!FileManager.default.fileExists(atPath: URL(fileURLWithPath: hidden.path).appendingPathComponent("escaped").path))
             // Settings the host's CLI does not have are refused before anything runs.
             let fast = try JSONEncoder().encode(RemoteWireStart(request: StartRunRequest(sessionId: "y", workspaceId: fixture.workspace.id, input: "hi", settings: RunSettings(webSearch: "live"))))
-            await #expect(throws: MightyError.self) { _ = try await RemoteTransport.request(target, key: key, method: "POST", path: "/v2/runs", body: fast) }
+            #expect(await failureStatus { _ = try await RemoteTransport.request(target, key: key, method: "POST", path: "/v2/runs", body: fast) } == 400)
             // Stopping revokes the key: the same key is refused from then on.
             _ = await fixture.host.stop()
             await #expect(throws: (any Error).self) { _ = try await RemoteTransport.request(target, key: key, method: "GET", path: "/v2/info") }
             let again = try await fixture.host.start(workspaceIds: [fixture.workspace.id], port: 0)
             #expect(again.key != key)
             let newTarget = RemoteTarget(address: RemoteAddress(host: "127.0.0.1", port: again.port!), ip: "127.0.0.1", port: again.port!)
-            await #expect(throws: MightyError.self) { _ = try await RemoteTransport.request(newTarget, key: key, method: "GET", path: "/v2/info") }
+            #expect(await failureStatus { _ = try await RemoteTransport.request(newTarget, key: key, method: "GET", path: "/v2/info") } == 401)
             await fixture.cleanup()
         } catch { await fixture.cleanup(); throw error }
     }
@@ -396,6 +406,20 @@ private func rawExchange(port: Int, _ request: String) throws -> String {
             #expect(fixture.events.ended("pane")?.status == "error")
             #expect(fixture.events.values.contains { $0.sessionId == "pane" && $0.entry?.kind == "error" })
             #expect(await fixture.client.connection(info.id)?.status == .disconnected)
+            await fixture.cleanup()
+        } catch { await fixture.cleanup(); throw error }
+    }
+
+    @Test func aHostBusyWithItsOwnUpdateHoldsClientRuns() async throws {
+        let fixture = try await fixture(admission: { request in request.kind == "shell" ? nil : "updating" })
+        do {
+            let (key, port) = try await share(fixture)
+            let target = RemoteTarget(address: RemoteAddress(host: "127.0.0.1", port: port), ip: "127.0.0.1", port: port)
+            let agent = try JSONEncoder().encode(RemoteWireStart(request: StartRunRequest(sessionId: "a", workspaceId: fixture.workspace.id, input: "hi")))
+            #expect(await failureStatus { _ = try await RemoteTransport.request(target, key: key, method: "POST", path: "/v2/runs", body: agent) } == 503)
+            #expect(RemoteClientService.transient(RemoteHTTPFailure(status: 503, message: "")) && RemoteClientService.transient(URLError(.timedOut)))
+            #expect(!RemoteClientService.transient(RemoteHTTPFailure(status: 401, message: "")) && !RemoteClientService.transient(MightyError("bad")))
+            #expect(await fixture.host.current().activeRuns == 0)
             await fixture.cleanup()
         } catch { await fixture.cleanup(); throw error }
     }
