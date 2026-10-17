@@ -42,7 +42,7 @@ The first time you open the app there is no workspace yet, so you see the welcom
 
 ![[welcome]]
 
-### Required tools (Mac) {#setup}
+### Required tools {#setup}
 If no agent CLI (Claude Code, Codex or Antigravity) can run, or Git is not ready, the {{ui:setup.title}} screen opens when the app starts. It groups the agent CLIs, the prerequisites (Git, Homebrew, Node, Bun), the style tools (uv, Ouroboros, Superpowers, Paperthin, oh-my-claudecode, gstack), Tailscale, and gh and glab.
 
 1. Check what you want to install. The first time, a missing Git starts checked, and so does Claude Code when there is no agent CLI at all; and anything a picked item needs (such as Homebrew for gh) comes along.
@@ -52,7 +52,9 @@ If no agent CLI (Claude Code, Codex or Antigravity) can run, or Git is not ready
 
 Git (Xcode Command Line Tools) opens a system install window, where you finish it. The script waits up to 30 minutes; Control-C ends only the wait and moves on. If git does not run because the Xcode license has not been accepted, Git shows {{ui:setup.status.attention}}. Tailscale opens its official download page. A Claude Code that is too old shows {{ui:setup.status.outdated}} with an {{ui:setup.button.update}} button.
 
-{{ui:setup.button.later}} closes the screen; check {{ui:setup.button.neverShow}} before closing and it no longer opens at launch. While a required tool is missing, the welcome screen has a {{ui:setup.title}} button, and a pane blocked by a missing CLI has an {{ui:setup.blocked.install}} button. The same list is in Settings → {{ui:settings.nav.tools}}. Windows does not have this screen yet.
+{{ui:setup.button.later}} closes the screen; check {{ui:setup.button.neverShow}} before closing and it no longer opens at launch. While a required tool is missing, the welcome screen has a {{ui:setup.title}} button, and a pane blocked by a missing CLI has an {{ui:setup.blocked.install}} button. The same list is in Settings → {{ui:settings.nav.tools}}.
+
+{{platform:windows}} Windows has the same screen. The commands run in order, from your home folder, in one PowerShell window the app opens (a Windows Terminal tab when it is installed, otherwise a console window), which stays open until you press Enter at the end. Claude Code, Codex, Antigravity and uv install with their own official PowerShell installers, Git and glab with winget for your user only, and Node.js and gh with winget for all users. An install for all users may show Windows' own administrator prompt; the app never asks for administrator rights. When the install ends, the app reads PATH again from the registry and checks. Homebrew, Bun and gstack install on a Mac only.
 
 ## Open a workspace {#open-workspace}
 A workspace is one project folder. Panes, the tab layout and conversation history are saved per workspace.
