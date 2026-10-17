@@ -139,9 +139,12 @@ internal static class SetupVerification
         var run = preamble.Single(line => line.StartsWith("function Invoke-MightyScript", StringComparison.Ordinal));
         Check(run.Contains("[IO.FileMode]::CreateNew", StringComparison.Ordinal) && run.Contains("-NoProfile -ExecutionPolicy Bypass -File $file", StringComparison.Ordinal), "a fetched script runs as a new file in a PowerShell of its own");
         var labels = new SetupScriptLabels((index, count, title) => $"[{index}/{count}] {title}", "failed's step", "done", "close");
-        var script = SetupScript.Render(steps, labels, environment, @"C:\s\started-1", @"C:\s\done-1");        Check(script.Contains("$mightyStarted = 'C:\\s\\started-1'", StringComparison.Ordinal) && script.Contains("New-Item -ItemType Directory -Path $mightyStarted -ErrorAction Stop", StringComparison.Ordinal), "the start marker is made first, never over something already there");
+        var script = SetupScript.Render(steps, labels, environment, @"C:\s\started-1", @"C:\s\done-1");
+        Check(script.Contains("$mightyStarted = 'C:\\s\\started-1'", StringComparison.Ordinal) && script.Contains("try { New-MightyMarker $mightyStarted;", StringComparison.Ordinal), "the start marker is made first, never over something already there");
+        Check(script.Contains("function New-MightyMarker([string]$Path) { if (Test-Path -LiteralPath $Path) { throw", StringComparison.Ordinal), "a marker is made only where nothing is, and [ ] in its path are plain characters");
+        Check(fetch.Contains("$memory.Length -gt 16777216", StringComparison.Ordinal) && !fetch.Contains("ReadToEnd", StringComparison.Ordinal), "a fetched script larger than 16 MB is refused rather than read on");
         Check(script.IndexOf("$mightyStarted", StringComparison.Ordinal) < script.IndexOf("Set-Location", StringComparison.Ordinal), "the start marker comes before anything else runs");
-        Check(script.Contains("} finally { try { $null = New-Item -ItemType Directory -Path $mightyDone -ErrorAction Stop } catch { }; $null = Read-Host 'close' }", StringComparison.Ordinal), "the end marker is made however the steps end, and the window waits for Enter even after Control-C");
+        Check(script.Contains("} finally { try { New-MightyMarker $mightyDone } catch { }; $null = Read-Host 'close' }", StringComparison.Ordinal), "the end marker is made however the steps end, and the window waits for Enter even after Control-C");
         Check(preamble.Contains("$mightyPowerShell = Join-Path ([Environment]::GetFolderPath('System')) 'WindowsPowerShell\\v1.0\\powershell.exe'"), "a fetched script runs in the system's PowerShell, wherever SystemRoot points");
         Check(steps.All(step => script.Contains("try { $global:LASTEXITCODE = 0; " + step.Body + "; if ($LASTEXITCODE)", StringComparison.Ordinal)), "each step runs in a try of its own");
         Check(script.Contains("Write-Host 'failed''s step'", StringComparison.Ordinal), "the labels are quoted like every other value");
@@ -151,6 +154,11 @@ internal static class SetupVerification
             "the system's PowerShell runs the file with no profile and this process's policy only");
         var plan = CliAccountTerminal.LaunchPlan(SetupScript.LaunchArguments(@"C:\s\install-1.ps1", environment), true, @"C:\s", SetupScript.PowerShell(environment));
         Check(plan.Executable == "wt.exe" && plan.Arguments.SequenceEqual(["new-tab", "-d", @"C:\s", "--", .. SetupScript.LaunchArguments(@"C:\s\install-1.ps1", environment)]), "Windows Terminal opens a tab in the setup folder");
+        var found = CliAccountTerminal.LaunchPlan(SetupScript.LaunchArguments(@"C:\s\install-1.ps1", environment), true, @"C:\s", SetupScript.PowerShell(environment), @"C:\Users\me\AppData\Local\Microsoft\WindowsApps\wt.exe");
+        Check(found.Executable == @"C:\Users\me\AppData\Local\Microsoft\WindowsApps\wt.exe", "Windows Terminal is started by the full path found for it");
+        Check(CliAccountTerminal.LaunchPlan(SetupScript.LaunchArguments(@"C:\100%\install-1.ps1", environment), true, @"C:\s", null, @"C:\wt.exe").Executable == CliAccountTerminal.ConsoleHost
+            && CliAccountTerminal.LaunchPlan(["agy"], true, @"C:\%TEMP%", null, @"C:\wt.exe").Arguments.SequenceEqual(["new-tab", "--", "agy"]),
+            "a % that Windows Terminal would expand sends the command to the console host and keeps the folder off its command line");
         return Task.CompletedTask;
     }
 
@@ -260,7 +268,12 @@ internal static class SetupVerification
         Check(!setup.Contains("dialogOpen", StringComparison.Ordinal), "the setup window holds back neither the phone nor the sign-in recovery");
         Check(setup.Contains("SetupScript.LaunchArguments(script, environment)", StringComparison.Ordinal) && setup.Contains("CliAccountTerminal.LaunchPlan(argv", StringComparison.Ordinal), "the install runs in the sign-in's kind of window");
         Check(setup.Contains("await CliEnvironment.RefreshAsync(true)", StringComparison.Ordinal), "a forced check reads PATH again from the registry");
-        Check(setup.Contains("if (SetupRunning || closing || options.SmokeTest) return;", StringComparison.Ordinal), "a smoke run never starts an install");
+        Check(setup.Contains("if (SetupRunning || closing || options.SmokeTest || RefuseSetupWhenElevated()) return;", StringComparison.Ordinal)
+            && setup.Contains("if (SetupRunning || RefuseSetupWhenElevated() ||", StringComparison.Ordinal), "a smoke run never starts an install, and an elevated app refuses before the confirmation");
+        Check(setup.Contains("info.Environment[WindowsCommand.NoCurrentDirectorySearch] = \"1\";", StringComparison.Ordinal), "the install window's shims never run a node planted in the step's folder");
+        Check(setup.Contains("if (options.SmokeTest || closing || SetupFirstRun.NeverShow()) return;", StringComparison.Ordinal), "never-show skips the launch probes");
+        Check(setup.Contains("if (options.SmokeTest && setupFixedResults is null) { RedrawSetup(); return; }", StringComparison.Ordinal), "a smoke run's 다시 확인 probes nothing of the machine");
+        Check(Locale.Get("setup.windows.error.elevated") is { Length: > 0 } elevated && !elevated.StartsWith("setup.", StringComparison.Ordinal), "the elevated refusal is said in words");
         Check(Source("MainWindow.Smoke.cs").Contains("result[\"setupTools\"] = await RunSetupSmoke();", StringComparison.Ordinal), "the GUI smoke drives the screen");
         var script = File.ReadAllText(Path.Combine(Root(), "scripts", "test-native-windows.ps1"));
         Check(script.Contains("$result.setupTools.$key", StringComparison.Ordinal) && script.Contains("'cancelledWithoutTerminal'", StringComparison.Ordinal), "CI reads the setup smoke's result");

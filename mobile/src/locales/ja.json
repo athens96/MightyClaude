@@ -2862,6 +2862,7 @@
   "setup.windows.item.git.title": "Git for Windows",
   "setup.windows.confirm.body": "以下のコマンドをこの順に、別の PowerShell ウィンドウ 1 つで実行します。ホームフォルダーから実行し、途中の手順が失敗しても次へ進みます。確認を求める手順にはそのウィンドウで直接答えてください。アプリは管理者権限を求めず、パスワードも受け取りません。すべてのユーザー向けにインストールするツールでは、Windows 自身が管理者の確認画面を表示することがあります。",
   "setup.windows.error.terminal": "インストール用のウィンドウを開けませんでした: {error}",
+  "setup.windows.error.elevated": "インストールしませんでした: Mighty Claude が管理者として実行されているため、すべての手順が管理者権限で動き、インストールしたものがこのユーザーのものになりません。管理者権限なしでアプリを開き直してからインストールしてください。",
   "setup.windows.item.agy.detail": "Google のエージェント CLI（agy）です。公式の PowerShell インストールスクリプトで %LOCALAPPDATA%\\agy\\bin にインストールします。",
   "setup.windows.item.codex.detail": "OpenAI のエージェント CLI です。公式の PowerShell インストールスクリプトで %LOCALAPPDATA%\\Programs\\OpenAI\\Codex にインストールします。",
   "setup.windows.item.gh.detail": "エージェントが GitHub の Issue や PR を扱うときに使います。winget ですべてのユーザー向けにインストールするため、Windows が管理者の確認画面を表示することがあります。",

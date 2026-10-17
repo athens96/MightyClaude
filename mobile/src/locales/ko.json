@@ -2862,6 +2862,7 @@
   "setup.windows.item.git.title": "Git for Windows",
   "setup.windows.confirm.body": "아래 명령을 이 순서대로 별도의 PowerShell 창 하나에서 실행합니다. 홈 폴더에서 실행하며, 한 단계가 실패해도 다음 단계로 넘어갑니다. 확인을 묻는 단계는 그 창에서 직접 답하세요. 앱은 관리자 권한을 요청하지 않고 비밀번호를 받지 않습니다. 모든 사용자용으로 설치되는 도구는 Windows가 직접 관리자 확인 창을 띄울 수 있습니다.",
   "setup.windows.error.terminal": "설치 창을 열지 못했습니다: {error}",
+  "setup.windows.error.elevated": "Mighty Claude가 관리자 권한으로 실행되어 있어 설치하지 않습니다. 모든 단계가 관리자 권한으로 실행되고 설치한 파일이 이 사용자 것이 되지 않기 때문입니다. 앱을 관리자 권한 없이 다시 열고 설치하세요.",
   "setup.windows.item.agy.detail": "Google의 에이전트 CLI(agy)입니다. 공식 PowerShell 설치 스크립트로 %LOCALAPPDATA%\\agy\\bin에 설치합니다.",
   "setup.windows.item.codex.detail": "OpenAI의 에이전트 CLI입니다. 공식 PowerShell 설치 스크립트로 %LOCALAPPDATA%\\Programs\\OpenAI\\Codex에 설치합니다.",
   "setup.windows.item.gh.detail": "에이전트가 GitHub 이슈와 PR을 다룰 때 씁니다. winget으로 모든 사용자용으로 설치하므로 Windows가 관리자 확인 창을 띄울 수 있습니다.",

@@ -65,6 +65,9 @@ public sealed record SetupScriptLabels(Func<int, int, string, string> Step, stri
 /// </summary>
 public static class SetupScript
 {
+    /// <summary>The most an official script may be: a larger answer is no installer, and is not read on.</summary>
+    public const int MaxScriptBytes = 16 * 1024 * 1024;
+
     /// <summary>npm's public registry: a project's .npmrc cannot point an install elsewhere.</summary>
     public const string NpmRegistry = "https://registry.npmjs.org/";
 
@@ -125,8 +128,9 @@ public static class SetupScript
             + "$request = [Net.HttpWebRequest]::Create($uri); $request.AllowAutoRedirect = $false; $request.UserAgent = 'MightyClaude-Setup'; "
             + "try { $response = $request.GetResponse() } catch { $failure = $_.Exception; while ($null -ne $failure -and $failure -isnot [Net.WebException]) { $failure = $failure.InnerException }; if ($null -eq $failure -or $null -eq $failure.Response) { throw }; $response = $failure.Response }; "
             + "try { $code = [int]$response.StatusCode; if ($code -ge 300 -and $code -lt 400) { $Url = ([Uri]::new($uri, [string]$response.Headers['Location'])).AbsoluteUri; continue }; "
-            + "if ($code -ne 200) { throw ('HTTP ' + $code + ': ' + $Url) }; $reader = [IO.StreamReader]::new($response.GetResponseStream(), [Text.Encoding]::UTF8); "
-            + "try { return $reader.ReadToEnd() } finally { $reader.Dispose() } } finally { $response.Dispose() } }; throw ('too many redirects: ' + $Url) }",
+            + "if ($code -ne 200) { throw ('HTTP ' + $code + ': ' + $Url) }; $body = $response.GetResponseStream(); $memory = [IO.MemoryStream]::new(); $buffer = New-Object byte[] 65536; "
+            + "try { while (($read = $body.Read($buffer, 0, $buffer.Length)) -gt 0) { $memory.Write($buffer, 0, $read); if ($memory.Length -gt " + MaxScriptBytes + ") { throw ('larger than 16 MB: ' + $Url) } }; "
+            + "return [Text.Encoding]::UTF8.GetString($memory.ToArray()).TrimStart([char]0xFEFF) } finally { $memory.Dispose(); $body.Dispose() } } finally { $response.Dispose() } }; throw ('too many redirects: ' + $Url) }",
         "function Invoke-MightyScript([string]$Url) { $text = Get-MightyHttps $Url; $file = Join-Path $PSScriptRoot ('step-' + [Guid]::NewGuid().ToString('N') + '.ps1'); "
             + "$stream = [IO.File]::Open($file, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None); "
             + "try { $bytes = [byte[]]([Text.UTF8Encoding]::new($true).GetPreamble() + [Text.Encoding]::UTF8.GetBytes($text)); $stream.Write($bytes, 0, $bytes.Length) } finally { $stream.Dispose() }; "
@@ -156,7 +160,8 @@ public static class SetupScript
     /// <summary>
     /// The whole script. <paramref name="startedMarker"/> is made first thing, with the PowerShell's process ID in it, and
     /// <paramref name="doneMarker"/> when the steps end for any reason (finished, a failed step, Control-C); both are folders
-    /// made with New-Item, which fails rather than follow anything already there. They tell the app the script started and
+    /// made only where nothing is there yet (Test-Path -LiteralPath, so [ and ] in a path are plain characters; Windows PowerShell 5.1's
+    /// New-Item has no -LiteralPath), never through anything already there. They tell the app the script started and
     /// ended. The window then waits for Enter, so what each step said can be read.
     /// </summary>
     public static string Render(IReadOnlyList<SetupScriptStep> steps, SetupScriptLabels labels, IReadOnlyDictionary<string, string> environment, string startedMarker, string doneMarker)
@@ -166,7 +171,8 @@ public static class SetupScript
             "# Written by Mighty Claude from its bundled tool catalog (setup-catalog.json).",
             "$mightyStarted = " + Quote(startedMarker),
             "$mightyDone = " + Quote(doneMarker),
-            "try { $null = New-Item -ItemType Directory -Path $mightyStarted -ErrorAction Stop; [IO.File]::WriteAllText((Join-Path $mightyStarted 'pid'), [string]$PID) } catch { }",
+            "function New-MightyMarker([string]$Path) { if (Test-Path -LiteralPath $Path) { throw ('already there: ' + $Path) }; $null = [IO.Directory]::CreateDirectory($Path) }",
+            "try { New-MightyMarker $mightyStarted; [IO.File]::WriteAllText([IO.Path]::Combine($mightyStarted, 'pid'), [string]$PID) } catch { }",
             "$mightyFailed = 0",
             "try {",
         };
@@ -179,7 +185,7 @@ public static class SetupScript
         }
         lines.Add("Write-Host ''; Write-Host " + Quote(labels.Done));
         // Control-C ends the steps but not the window: the end marker is made and the window still waits for Enter.
-        lines.Add("} finally { try { $null = New-Item -ItemType Directory -Path $mightyDone -ErrorAction Stop } catch { }; $null = Read-Host " + Quote(labels.Close) + " }");
+        lines.Add("} finally { try { New-MightyMarker $mightyDone } catch { }; $null = Read-Host " + Quote(labels.Close) + " }");
         lines.Add("exit $mightyFailed");
         return string.Join("\r\n", lines) + "\r\n";
     }
@@ -213,12 +219,7 @@ public static class SetupScriptFiles
         {
             if (OperatingSystem.IsWindows())
             {
-                var security = new DirectorySecurity(); security.SetAccessRuleProtection(true, false);
-                var user = WindowsIdentity.GetCurrent().User!;
-                security.AddAccessRule(new FileSystemAccessRule(user, FileSystemRights.FullControl, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
-                // Owned by the user even when the app was started as administrator, whose token would otherwise make Administrators the owner.
-                security.SetOwner(user);
-                new DirectoryInfo(path).Create(security);
+                new DirectoryInfo(path).Create(UserOnly(WindowsIdentity.GetCurrent().User!));
             }
             else Directory.CreateDirectory(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         }
@@ -227,10 +228,34 @@ public static class SetupScriptFiles
         if (info.LinkTarget is not null || info.Attributes.HasFlag(FileAttributes.ReparsePoint)) throw new IOException("setup folder is not a plain folder: " + path);
         if (OperatingSystem.IsWindows())
         {
-            if (info.GetAccessControl().GetOwner(typeof(SecurityIdentifier)) is not SecurityIdentifier owner || owner != WindowsIdentity.GetCurrent().User) throw new IOException("setup folder belongs to another user: " + path);
+            var user = WindowsIdentity.GetCurrent().User!;
+            if (info.GetAccessControl().GetOwner(typeof(SecurityIdentifier)) is not SecurityIdentifier owner || owner != user) throw new IOException("setup folder belongs to another user: " + path);
+            // Every run puts the protected user-only list back before anything is written, whatever was changed in between.
+            info.SetAccessControl(UserOnly(user));
         }
         else if ((File.GetUnixFileMode(path) & (UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute | UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute)) != 0)
             throw new IOException("setup folder is open to other users: " + path);
+    }
+
+    /// <summary>Full control for this user alone, nothing inherited from the folder above, and this user as owner (not Administrators, as an elevated token would make it).</summary>
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    private static DirectorySecurity UserOnly(SecurityIdentifier user)
+    {
+        var security = new DirectorySecurity(); security.SetAccessRuleProtection(true, false);
+        security.AddAccessRule(new FileSystemAccessRule(user, FileSystemRights.FullControl, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+        security.SetOwner(user);
+        return security;
+    }
+
+    /// <summary>
+    /// The app runs with an administrator's token. The setup screen refuses to install then: every step would run elevated, and what
+    /// it installs for the user would belong to Administrators.
+    /// </summary>
+    public static bool IsElevated()
+    {
+        if (!OperatingSystem.IsWindows()) return false;
+        using var identity = WindowsIdentity.GetCurrent();
+        return new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
     }
 
     /// <summary>Writes <paramref name="text"/> to a new file with a random name in <paramref name="folder"/>, as UTF-8 with its mark, which Windows PowerShell needs to read anything but ASCII.</summary>

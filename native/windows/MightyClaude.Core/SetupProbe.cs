@@ -95,7 +95,9 @@ public sealed class SetupProber(IReadOnlyDictionary<string, string> environment,
         var quiet = new Dictionary<string, string>(variables, StringComparer.OrdinalIgnoreCase) { ["NO_COLOR"] = "1", ["DISABLE_AUTOUPDATER"] = "1", ["NO_UPDATE_NOTIFIER"] = "1" };
         try
         {
-            var result = await new CliRunner(outputCapBytes: 16_384).RunAsync(executable, ["--version"], VersionTimeout, cancellation, quiet, Path.GetTempPath());
+            // The system folder: no repository and no user-writable folder a shim's bare node could be planted in.
+            var neutral = OperatingSystem.IsWindows() && Environment.SystemDirectory is { Length: > 0 } system ? system : Path.GetTempPath();
+            var result = await new CliRunner(outputCapBytes: 16_384).RunAsync(executable, ["--version"], VersionTimeout, cancellation, quiet, neutral);
             var text = result.Output.Trim();
             return result.ExitCode == 0 && !result.TimedOut && text.Length > 0 ? text[..Math.Min(text.Length, 160)] : null;
         }
