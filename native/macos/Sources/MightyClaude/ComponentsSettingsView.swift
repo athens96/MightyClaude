@@ -188,12 +188,7 @@ struct ToolkitSettingsSection: View {
 
     private func isEntryInstalled(_ entry: ToolkitEntry) -> Bool {
         let approval = store.toolkitApprovals[entry.entryId]
-        let context = ToolkitProbeContext(
-            home: FileManager.default.homeDirectoryForCurrentUser,
-            environment: ProcessInfo.processInfo.environment,
-            appDataDir: store.dataDirectory
-        )
-        return ToolkitProbe.probe(entry: entry, approval: approval, context: context) == .installed
+        return ToolkitProbe.probe(entry: entry, approval: approval, context: store.makeProbeContext(environment: store.toolkitProbeEnvironment)) == .installed
     }
 
     private func toolkitResultTable(_ results: [ToolkitRunItem]) -> some View {
