@@ -100,9 +100,11 @@ public sealed class MobileIdentity
         lock (sync) { Save(state with { PairingKey = RandomToken(32), Devices = [] }); registrations.Clear(); }
     }
     public bool Contains(string id, bool legacyAllowed) { lock (sync) return state.Devices.Any(d => d.Id == id && (d.TokenHash is not null || id == "legacy" && legacyAllowed)); }
-    public string PairingUrl(string relay, string name)
+    /// <summary>The v2 pairing link; <paramref name="direct"/> adds the direct path's endpoints as <c>direct=</c>, joined with commas and percent-encoded (':' ',' '[' ']' included) as the Mac writes it. A phone that does not know it uses the relay.</summary>
+    public string PairingUrl(string relay, string name, IReadOnlyList<string>? direct = null)
     {
-        lock (sync) return "mightyclaude://pair?v=2&sid=" + ServerId + "&pk=" + Uri.EscapeDataString(PublicKey.TrimEnd('=').Replace('+', '-').Replace('/', '_')) + "&relay=" + Uri.EscapeDataString(relay) + "&key=" + Uri.EscapeDataString(state.PairingKey) + "&name=" + Uri.EscapeDataString(Wire.Clean(name, 120));
+        lock (sync) return "mightyclaude://pair?v=2&sid=" + ServerId + "&pk=" + Uri.EscapeDataString(PublicKey.TrimEnd('=').Replace('+', '-').Replace('/', '_')) + "&relay=" + Uri.EscapeDataString(relay) + "&key=" + Uri.EscapeDataString(state.PairingKey) + "&name=" + Uri.EscapeDataString(Wire.Clean(name, 120))
+            + (direct is { Count: > 0 } ? "&direct=" + Uri.EscapeDataString(string.Join(",", direct)) : "");
     }
     private void Save(Saved next)
     {
