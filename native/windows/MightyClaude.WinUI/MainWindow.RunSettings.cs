@@ -70,7 +70,7 @@ public sealed partial class MainWindow
             var selected = catalog.Models.FirstOrDefault(m => m.Value == pane.Model);
             var fastMode = pane.Settings.FastMode; var networkAccess = pane.Settings.NetworkAccess; var webSearch = pane.Settings.WebSearch;
 
-            TextBlock Words(string text, double size, Brush brush, bool medium = false) => new() { Text = text, FontSize = size, Foreground = brush, TextWrapping = TextWrapping.Wrap, FontWeight = medium ? Microsoft.UI.Text.FontWeights.Medium : Microsoft.UI.Text.FontWeights.Normal };
+            TextBlock Words(string text, double size, Brush brush, bool medium = false) => new() { Text = text, TextSize = size, Foreground = brush, TextWrapping = TextWrapping.Wrap, FontWeight = medium ? Microsoft.UI.Text.FontWeights.Medium : Microsoft.UI.Text.FontWeights.Normal };
             Border Rule() => new() { Height = DesignMetrics.Stroke.Line, Background = line };
 
             // The title, with the provider and its beta capsule at the right, padding 16.
@@ -86,7 +86,7 @@ public sealed partial class MainWindow
             modelBlock.Children.Add(Words(ModelLabel.Selection(pane, catalog), 13, ink, medium: true));
             if (selected?.Description is { Length: > 0 } description) { var said = Words(description, 11, ink2); said.IsTextSelectionEnabled = true; modelBlock.Children.Add(said); }
             var source = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs };
-            source.Children.Add(new FontIcon { Glyph = "", FontSize = 10, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center });
+            source.Children.Add(new FontIcon { Glyph = "", TextSize = 10, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center });
             source.Children.Add(Words(Locale.Get(catalog.Source == "cli" ? "settings.run.modelSourceCli" : "settings.run.modelSourceDefault"), 10, ink2));
             modelBlock.Children.Add(source); blocks.Children.Add(modelBlock);
             blocks.Children.Add(Rule());
@@ -105,9 +105,9 @@ public sealed partial class MainWindow
                 var block = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
                 var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Md }; row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
                 var label = Words(Locale.Get("settings.run.webSearchLabel"), 12, ink); label.VerticalAlignment = VerticalAlignment.Center; row.Children.Add(label);
-                search = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch, FontSize = 12, MinHeight = 28 };
+                search = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch, TextSize = 12, MinHeight = 28 };
                 foreach (var (value, key) in new[] { ("default", "settings.run.webSearchDefault"), ("disabled", "settings.run.webSearchOff"), ("cached", "settings.run.webSearchCached"), ("live", "settings.run.webSearchLive") })
-                    search.Items.Add(new ComboBoxItem { Content = Locale.Get(key), Tag = value, FontSize = 12 });
+                    search.Items.Add(new ComboBoxItem { Content = Locale.Get(key), Tag = value, TextSize = 12 });
                 search.SelectedItem = search.Items.OfType<ComboBoxItem>().FirstOrDefault(item => (string)item.Tag == webSearch) ?? search.Items[0];
                 AutomationProperties.SetName(search, Locale.Get("settings.run.webSearchLabel")); AutomationProperties.SetAutomationId(search, "run-settings-web-search-" + id);
                 Grid.SetColumn(search, 1); row.Children.Add(search); block.Children.Add(row);
@@ -138,7 +138,7 @@ public sealed partial class MainWindow
                 {
                     var field = new StackPanel { Spacing = DesignMetrics.Spacing.Xs }; field.Children.Add(Words(Locale.Get(key), 11, ink));
                     var box = owner.SettingsField(new TextBox { Text = value ?? "", PlaceholderText = Locale.Get("settings.run.unlimitedPlaceholder") }, 12);
-                    box.FontFamily = BodyFont; box.Height = RunSettingsField; box.Padding = new Thickness(DesignMetrics.Spacing.Sm, 1, DesignMetrics.Spacing.Sm, 1);
+                    box.TextFont = TextArea.Interface; box.TextHeight = RunSettingsField; box.Padding = new Thickness(DesignMetrics.Spacing.Sm, 1, DesignMetrics.Spacing.Sm, 1);
                     AutomationProperties.SetName(box, Locale.Get(key)); AutomationProperties.SetAutomationId(box, automation);
                     field.Children.Add(box); block.Children.Add(field); return box;
                 }
@@ -161,7 +161,7 @@ public sealed partial class MainWindow
                 clear.HorizontalAlignment = HorizontalAlignment.Left; blocks.Children.Add(clear);
             }
 
-            var problem = new TextBlock { FontSize = 11, Foreground = b.Brush(DesignToken.ErrText), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(DesignMetrics.Spacing.Lg, 0, DesignMetrics.Spacing.Lg, DesignMetrics.Spacing.Md), Visibility = Visibility.Collapsed };
+            var problem = new TextBlock { TextSize = 11, Foreground = b.Brush(DesignToken.ErrText), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(DesignMetrics.Spacing.Lg, 0, DesignMetrics.Spacing.Lg, DesignMetrics.Spacing.Md), Visibility = Visibility.Collapsed };
             // "Applies to the next request", then Cancel and the prominent Apply, the Mac's small buttons (16 high, M/SettingsViews.swift:121-123), padding 14.
             var footer = new Grid { Padding = new Thickness(DesignMetrics.Spacing.Md), ColumnSpacing = DesignMetrics.Spacing.Sm };
             footer.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto });

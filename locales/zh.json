@@ -1247,6 +1247,7 @@
   "settings.text.fontLabel": "字体",
   "settings.text.fontSystem": "系统默认",
   "settings.text.monospaceSystem": "系统等宽字体",
+  "settings.text.noteWindows": "也可以用 Ctrl+=、Ctrl+− 和 Ctrl+0 更改大小。终端或浏览器窗格获得焦点时，这些键留给该窗格使用。",
   "settings.text.note": "可以用“显示”菜单中的 ⌘=、⌘− 和 ⌘0 更改大小。代码字体也用于终端。",
   "settings.text.preview": "敏捷的棕色狐狸跳过了懒狗。The quick brown fox 0123456789",
   "settings.text.reset": "恢复默认",

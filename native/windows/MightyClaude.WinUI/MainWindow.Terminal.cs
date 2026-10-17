@@ -125,7 +125,12 @@ public sealed partial class MainWindow
         private string terminalDirectoryPath = "";
         private bool terminalRestarting;
         private int terminalColumns = 100, terminalRows = 30;
-        private void RefreshTerminalTheme() => PostTerminal(new { type = "theme", light = owner.service.Snapshot.Theme == "light" });
+        /// <summary>The terminal's colours, and its size and face from the text setting: 12pt at scale 1, the code font when one is chosen.</summary>
+        private void RefreshTerminalTheme()
+        {
+            PostTerminal(new { type = "theme", light = owner.service.Snapshot.Theme == "light" });
+            PostTerminal(new { type = "font", size = AppText.Current.TerminalSize, family = AppText.Current.CodeFamily });
+        }
 
         /// <summary>
         /// A terminal pane (M/LocalTerminalView.swift:67-89, M/AgentTerminalPaneView.swift:57-73): the terminal
@@ -152,8 +157,8 @@ public sealed partial class MainWindow
             host.RowDefinitions.Add(new() { Height = GridLength.Auto });
             host.RowDefinitions.Add(new() { Height = GridLength.Auto });
             InstallTerminalRenderer();
-            terminalNotice = new TextBlock { Text = Locale.Get("terminal.starting"), FontFamily = BodyFont, TextWrapping = TextWrapping.Wrap, FontSize = 11, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
-            terminalRestart = Button(Locale.Get("terminal.restart"), RestartTerminalAsync); terminalRestart.FontSize = 11; terminalRestart.MinHeight = 22; terminalRestart.Padding = new Thickness(DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xxs, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xxs); terminalRestart.VerticalAlignment = VerticalAlignment.Center;
+            terminalNotice = new TextBlock { Text = Locale.Get("terminal.starting"), TextFont = TextArea.Interface, TextWrapping = TextWrapping.Wrap, TextSize = 11, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
+            terminalRestart = Button(Locale.Get("terminal.restart"), RestartTerminalAsync); terminalRestart.TextSize = 11; terminalRestart.MinHeight = 22; terminalRestart.Padding = new Thickness(DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xxs, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xxs); terminalRestart.VerticalAlignment = VerticalAlignment.Center;
             terminalRestart.IsEnabled = false; terminalRestart.Visibility = shell ? Visibility.Visible : Visibility.Collapsed;
             var notices = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, Padding = new Thickness(DesignMetrics.Spacing.Md), Background = b.Subtle }; notices.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); notices.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             notices.Children.Add(terminalNotice); Grid.SetColumn(terminalRestart, 1); notices.Children.Add(terminalRestart); Grid.SetRow(notices, 1); host.Children.Add(notices);
@@ -161,7 +166,7 @@ public sealed partial class MainWindow
             terminalNotice.RegisterPropertyChangedCallback(UIElement.VisibilityProperty, (_, _) => notices.Visibility = terminalNotice.Visibility);
             var footer = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, Padding = new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm), Background = b.Subtle };
             footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); footer.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-            TextBlock Words(string text, bool medium = false) => new() { Text = text, FontFamily = BodyFont, FontSize = 9, Foreground = ink2, TextWrapping = TextWrapping.NoWrap, FontWeight = medium ? Microsoft.UI.Text.FontWeights.Medium : Microsoft.UI.Text.FontWeights.Normal };
+            TextBlock Words(string text, bool medium = false) => new() { Text = text, TextFont = TextArea.Interface, TextSize = 9, Foreground = ink2, TextWrapping = TextWrapping.NoWrap, FontWeight = medium ? Microsoft.UI.Text.FontWeights.Medium : Microsoft.UI.Text.FontWeights.Normal };
             // A shell names its engine and its title, "ConPTY · powershell" (the Mac's "Ghostty · zsh"); an agent's terminal says what it is.
             var name = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
             name.Children.Add(Words(shell ? "ConPTY" : Locale.Get("agentTerminal.terminalPane.title"), medium: true));
@@ -196,6 +201,8 @@ public sealed partial class MainWindow
                 var core = terminalView.CoreWebView2;
                 core.Settings.AreDevToolsEnabled = false; core.Settings.AreDefaultContextMenusEnabled = false;
                 core.Settings.AreDefaultScriptDialogsEnabled = false; core.Settings.IsStatusBarEnabled = false;
+                // The terminal's size is the app's text setting; Ctrl+= and Ctrl+0 must not zoom the page behind its back.
+                core.Settings.IsZoomControlEnabled = false;
                 core.SetVirtualHostNameToFolderMapping(TerminalHost, Path.Combine(AppContext.BaseDirectory, "Assets", "Terminal"), CoreWebView2HostResourceAccessKind.Deny);
                 core.NavigationStarting += (_, args) => args.Cancel = !IsTerminalAddress(args.Uri);
                 core.NewWindowRequested += (_, args) => args.Handled = true;

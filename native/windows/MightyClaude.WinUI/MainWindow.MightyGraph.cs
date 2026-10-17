@@ -37,7 +37,7 @@ public sealed partial class MainWindow
         private readonly Canvas graphCanvas = new() { HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
         private readonly TranslateTransform graphPan = new();
         private readonly ScaleTransform graphScale = new() { ScaleX = 1, ScaleY = 1 };
-        private readonly TextBlock graphTotal = new() { FontSize = DesignMetrics.Type.Small, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+        private readonly TextBlock graphTotal = new() { TextSize = DesignMetrics.Type.Small, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
         private Button? zoomOutButton, zoomResetButton, zoomInButton;
         private Border? graphViewport;
         /// <summary>The viewport's surface, which shows the resize cursor over a block's border (M/MightyGraphInteraction.swift:483-497).</summary>
@@ -310,7 +310,7 @@ public sealed partial class MainWindow
             var zoom = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs, Margin = new Thickness(0, 0, -DesignMetrics.Spacing.Xs, 0), VerticalAlignment = VerticalAlignment.Center };
             zoomOutButton = ZoomButton(MightySymbols.Create("minus.magnifyingglass", 13, null), Locale.Get(MightyGraphViewModel.LocaleKeyZoomOut), "mighty-zoom-out-" + id, () => SetGraphZoom(MightyGraphViewModel.ZoomOut(graphZoom)));
             // The Mac's Text takes the body font: 13, its digits of one width.
-            var percent = new TextBlock { Text = MightyGraphViewModel.ZoomLabel(graphZoom), FontSize = DesignMetrics.Type.Body, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+            var percent = new TextBlock { Text = MightyGraphViewModel.ZoomLabel(graphZoom), TextSize = DesignMetrics.Type.Body, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(percent, FontNumeralAlignment.Tabular);
             zoomResetButton = ZoomButton(percent, Locale.Get(MightyGraphViewModel.LocaleKeyZoomReset), "mighty-zoom-reset-" + id, () => SetGraphZoom(MightyGraphViewModel.ZoomDefault));
             zoomResetButton.Width = 38;
@@ -345,7 +345,7 @@ public sealed partial class MainWindow
             var text = Locale.Get(localeKey);
             var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Md, VerticalAlignment = VerticalAlignment.Center };
             content.Children.Add(ModeSymbol(mode == "mighty"));
-            content.Children.Add(new TextBlock { Text = text, FontSize = DesignMetrics.Type.Pill, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
+            content.Children.Add(new TextBlock { Text = text, TextSize = DesignMetrics.Type.Pill, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
             var button = new Button { Content = content, MinWidth = 0, MinHeight = 0, Height = 20, Padding = new Thickness(DesignMetrics.Spacing.Md, 0, DesignMetrics.Spacing.Md, 0), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), BorderThickness = new Thickness(0) };
             owner.PaintPlainButton(button, owner.brushes.Transparent, owner.brushes.Transparent);
             AutomationProperties.SetAutomationId(button, "mighty-mode-" + mode + "-" + id); AutomationProperties.SetName(button, text); ToolTipService.SetToolTip(button, text);
@@ -976,7 +976,7 @@ public sealed partial class MainWindow
             var b = owner.brushes;
             view.Body = new Grid();
             foreach (var height in new[] { GridLength.Auto, GridLength.Auto, new GridLength(1, GridUnitType.Star) }) view.Body.RowDefinitions.Add(new RowDefinition { Height = height });
-            view.Request = new TextBlock { FontSize = DesignMetrics.Type.Pill, TextWrapping = TextWrapping.Wrap, Foreground = b.Brush(DesignToken.Ink), MinHeight = 14 };
+            view.Request = new TextBlock { TextSize = DesignMetrics.Type.Pill, TextFont = TextArea.Transcript, TextWrapping = TextWrapping.Wrap, Foreground = b.Brush(DesignToken.Ink), MinHeight = 14 };
             view.RequestBand = new Border
             {
                 Visibility = Visibility.Collapsed, Padding = new Thickness(DesignMetrics.Inset.GraphBlockBodyH - BlockEdge, DesignMetrics.Inset.GraphBlockBodyV, DesignMetrics.Inset.GraphBlockBodyH - BlockEdge, DesignMetrics.Inset.GraphBlockBodyV),
@@ -985,7 +985,7 @@ public sealed partial class MainWindow
             };
             Grid.SetRow(view.RequestBand, 1); view.Body.Children.Add(view.RequestBand);
             view.Content = new StackPanel { VerticalAlignment = VerticalAlignment.Top };
-            view.Placeholder = new TextBlock { FontSize = DesignMetrics.Type.Block, Foreground = b.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(DesignMetrics.Inset.GraphBlockBodyH - BlockEdge, DesignMetrics.Inset.GraphBlockBodyH, DesignMetrics.Inset.GraphBlockBodyH - BlockEdge, DesignMetrics.Inset.GraphBlockBodyH), Visibility = Visibility.Collapsed };
+            view.Placeholder = new TextBlock { TextSize = DesignMetrics.Type.Block, Foreground = b.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(DesignMetrics.Inset.GraphBlockBodyH - BlockEdge, DesignMetrics.Inset.GraphBlockBodyH, DesignMetrics.Inset.GraphBlockBodyH - BlockEdge, DesignMetrics.Inset.GraphBlockBodyH), Visibility = Visibility.Collapsed };
             view.Content.Children.Add(view.Placeholder);
             view.Content.SizeChanged += (_, _) => QueueGraphCardMeasure(blockId, view);
             view.Card.Loaded += (_, _) => QueueGraphCardMeasure(blockId, view);
@@ -1005,7 +1005,7 @@ public sealed partial class MainWindow
             var b = owner.brushes;
             view.Body = new Grid();
             foreach (var height in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star) }) view.Body.RowDefinitions.Add(new RowDefinition { Height = height });
-            view.Request = new TextBlock { FontSize = DesignMetrics.Type.Pill, TextWrapping = TextWrapping.Wrap, Foreground = b.Brush(DesignToken.Ink), MinHeight = 14 };
+            view.Request = new TextBlock { TextSize = DesignMetrics.Type.Pill, TextFont = TextArea.Transcript, TextWrapping = TextWrapping.Wrap, Foreground = b.Brush(DesignToken.Ink), MinHeight = 14 };
             var scroll = new ScrollViewer { Content = view.Request, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled };
             view.RequestBand = new Border
             {
@@ -1027,12 +1027,12 @@ public sealed partial class MainWindow
             var b = owner.brushes; var ink = b.Brush(DesignToken.Ink);
             var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Center };
             label.Children.Add(view.DraftSymbol = MightySymbols.Create("square.and.pencil", 12, ink));
-            label.Children.Add(view.DraftTitle = new TextBlock { FontSize = DesignMetrics.Type.Block, FontWeight = FontWeights.SemiBold, Foreground = ink, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center });
-            view.DraftState = new TextBlock { FontSize = DesignMetrics.Type.Pill, Foreground = b.Brush(DesignToken.Ink2), VerticalAlignment = VerticalAlignment.Center };
+            label.Children.Add(view.DraftTitle = new TextBlock { TextSize = DesignMetrics.Type.Block, FontWeight = FontWeights.SemiBold, Foreground = ink, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center });
+            view.DraftState = new TextBlock { TextSize = DesignMetrics.Type.Pill, Foreground = b.Brush(DesignToken.Ink2), VerticalAlignment = VerticalAlignment.Center };
             var head = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             head.Children.Add(label); Grid.SetColumn(view.DraftState, 1); head.Children.Add(view.DraftState);
-            view.Request = new TextBlock { FontSize = DesignMetrics.Type.Block, TextWrapping = TextWrapping.Wrap, MaxLines = 4, TextTrimming = TextTrimming.CharacterEllipsis };
+            view.Request = new TextBlock { TextSize = DesignMetrics.Type.Block, TextFont = TextArea.Transcript, TextWrapping = TextWrapping.Wrap, MaxLines = 4, TextTrimming = TextTrimming.CharacterEllipsis };
             var parts = new StackPanel { Spacing = DesignMetrics.Spacing.Md, Margin = new Thickness(DesignMetrics.Spacing.Lg) };
             parts.Children.Add(head); parts.Children.Add(view.Request);
             view.Body = new Grid(); view.Body.Children.Add(parts);
@@ -1162,7 +1162,7 @@ public sealed partial class MainWindow
             var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Center };
             right.Children.Add(view.ScrollHint = new TextBlock
             {
-                Text = Locale.Get(MightyGraphViewModel.LocaleKeyBlockScrolling), FontSize = DesignMetrics.Type.Badge, FontWeight = FontWeights.Medium, Foreground = strip ? ink : b.Brush(DesignToken.Accent),
+                Text = Locale.Get(MightyGraphViewModel.LocaleKeyBlockScrolling), TextSize = DesignMetrics.Type.Badge, FontWeight = FontWeights.Medium, Foreground = strip ? ink : b.Brush(DesignToken.Accent),
                 VerticalAlignment = VerticalAlignment.Center, Visibility = graphSelection == block.Id ? Visibility.Visible : Visibility.Collapsed,
             });
             AutomationProperties.SetAutomationId(view.ScrollHint, "mighty-block-scroll-" + block.Id);
@@ -1175,7 +1175,7 @@ public sealed partial class MainWindow
                 {
                     CornerRadius = new CornerRadius(9), Padding = new Thickness(DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xxs, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xxs), VerticalAlignment = VerticalAlignment.Center,
                     Background = b.Brush(DesignToken.CardRaised),
-                    Child = new TextBlock { Text = capsule, FontSize = DesignMetrics.Type.Small, FontFamily = new FontFamily(DesignMetrics.Font.Mono), Foreground = quiet },
+                    Child = new TextBlock { Text = capsule, TextSize = DesignMetrics.Type.Small, TextFont = TextArea.Code, Foreground = quiet },
                 };
                 AutomationProperties.SetAutomationId(pill, "mighty-tokens-" + block.Id);
                 AutomationProperties.SetName(pill, block.CapsuleHelp);
@@ -1190,7 +1190,7 @@ public sealed partial class MainWindow
                 var filesInk = strip ? ink : b.Brush(open ? DesignToken.Accent : DesignToken.Ink2);
                 var face = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xxs, VerticalAlignment = VerticalAlignment.Center };
                 face.Children.Add(MightySymbols.Create(open ? "doc.on.doc.fill" : "doc.on.doc", 13, filesInk));
-                var count = new TextBlock { Text = files.Count.ToString(System.Globalization.CultureInfo.InvariantCulture), FontSize = DesignMetrics.Type.Small, Foreground = filesInk, VerticalAlignment = VerticalAlignment.Center };
+                var count = new TextBlock { Text = files.Count.ToString(System.Globalization.CultureInfo.InvariantCulture), TextSize = DesignMetrics.Type.Small, Foreground = filesInk, VerticalAlignment = VerticalAlignment.Center };
                 Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(count, FontNumeralAlignment.Tabular);
                 face.Children.Add(count);
                 var toggle = HeaderButton(face, filesInk);
@@ -1204,7 +1204,7 @@ public sealed partial class MainWindow
             if (block.Kind == "result" && block.Id == graphLatestResultId && Session.GraphResultSize is not null)
             {
                 var label = Locale.Get(MightyGraphViewModel.LocaleKeyResultFitToWindow);
-                var fit = HeaderButton(new TextBlock { Text = label, FontSize = DesignMetrics.Type.Small, FontWeight = strip ? FontWeights.Bold : FontWeights.Normal }, strip ? ink : b.Brush(DesignToken.Accent));
+                var fit = HeaderButton(new TextBlock { Text = label, TextSize = DesignMetrics.Type.Small, FontWeight = strip ? FontWeights.Bold : FontWeights.Normal }, strip ? ink : b.Brush(DesignToken.Accent));
                 AutomationProperties.SetAutomationId(fit, "mighty-fit-result-" + block.Id);
                 AutomationProperties.SetName(fit, label);
                 ToolTipService.SetToolTip(fit, label);
@@ -1217,13 +1217,13 @@ public sealed partial class MainWindow
         }
 
         /// <summary>Every word of a title line (one text, or the head and name around an agent mark) in one ink.</summary>
-        private static void PaintWords(FrameworkElement line, Brush ink, FontFamily? family = null)
+        private static void PaintWords(FrameworkElement line, Brush ink, TextArea? font = null)
         {
             IEnumerable<TextBlock> all = line switch { TextBlock single => [single], Panel panel => panel.Children.OfType<TextBlock>(), _ => [] };
             foreach (var words in all)
             {
                 words.Foreground = ink;
-                if (family is not null) words.FontFamily = family;
+                if (font is { } area) words.TextFont = area;
             }
         }
 
@@ -1283,7 +1283,7 @@ public sealed partial class MainWindow
         {
             Height = height, CornerRadius = new CornerRadius(height / 2), Padding = new Thickness(DesignMetrics.Spacing.Sm, 0, DesignMetrics.Spacing.Sm, 0), VerticalAlignment = VerticalAlignment.Center,
             Background = owner.brushes.Soft(tone),
-            Child = new TextBlock { Text = text, FontSize = DesignMetrics.Type.Small, FontWeight = FontWeights.Bold, Foreground = owner.brushes.Text(tone), VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis },
+            Child = new TextBlock { Text = text, TextSize = DesignMetrics.Type.Small, FontWeight = FontWeights.Bold, Foreground = owner.brushes.Text(tone), VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis },
         };
 
         /// <summary>
@@ -1491,9 +1491,9 @@ public sealed partial class MainWindow
             };
             foreach (var width in new[] { GridLength.Auto, GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto }) head.ColumnDefinitions.Add(new ColumnDefinition { Width = width });
             head.Children.Add(MightySymbols.Create("doc.on.doc", 13, accent));
-            var title = new TextBlock { Text = Locale.Get(MightyGraphViewModel.LocaleKeyResultFilesTitle), FontSize = DesignMetrics.Type.Block, FontWeight = FontWeights.SemiBold, Foreground = b.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+            var title = new TextBlock { Text = Locale.Get(MightyGraphViewModel.LocaleKeyResultFilesTitle), TextSize = DesignMetrics.Type.Block, FontWeight = FontWeights.SemiBold, Foreground = b.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(title, 1); head.Children.Add(title);
-            var count = new TextBlock { Text = files.Count.ToString(System.Globalization.CultureInfo.InvariantCulture), FontSize = DesignMetrics.Type.Small, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
+            var count = new TextBlock { Text = files.Count.ToString(System.Globalization.CultureInfo.InvariantCulture), TextSize = DesignMetrics.Type.Small, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(count, 2); head.Children.Add(count);
             var closeName = Locale.Get(MightyGraphViewModel.LocaleKeyResultFilesClose);
             var close = HeaderButton(MightySymbols.Create("xmark", 13, ink2), ink2);
@@ -1510,8 +1510,8 @@ public sealed partial class MainWindow
                 var document = MightySymbols.Create("doc.text", 12, accent); document.VerticalAlignment = VerticalAlignment.Top; document.Margin = new Thickness(0, DesignMetrics.Spacing.Xxs, 0, 0);
                 face.Children.Add(document);
                 var words = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
-                words.Children.Add(new TextBlock { Text = Path.GetFileName(file.Path), FontSize = DesignMetrics.Type.Block, FontWeight = FontWeights.Medium, Foreground = b.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis });
-                words.Children.Add(new TextBlock { Text = file.Path + (file.Line is { } line ? ":" + line : ""), FontSize = DesignMetrics.Type.Small, FontFamily = new FontFamily(DesignMetrics.Font.Mono), Foreground = ink2, TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis });
+                words.Children.Add(new TextBlock { Text = Path.GetFileName(file.Path), TextSize = DesignMetrics.Type.Block, FontWeight = FontWeights.Medium, Foreground = b.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis });
+                words.Children.Add(new TextBlock { Text = file.Path + (file.Line is { } line ? ":" + line : ""), TextSize = DesignMetrics.Type.Small, TextFont = TextArea.Code, Foreground = ink2, TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis });
                 Grid.SetColumn(words, 1); face.Children.Add(words);
                 var row = new Button { Content = face, MinWidth = 0, MinHeight = 0, Padding = new Thickness(DesignMetrics.Spacing.Sm), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), BorderThickness = new Thickness(0), HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch };
                 owner.PaintPlainButton(row, b.Brush(DesignToken.CardRaised), b.Brush(DesignToken.Track));

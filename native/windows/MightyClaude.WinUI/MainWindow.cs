@@ -31,12 +31,12 @@ public sealed partial class MainWindow : Window
     private readonly StackPanel sidebar = new();
     private readonly Grid panes = new() { ColumnSpacing = DesignMetrics.Spacing.Md, RowSpacing = DesignMetrics.Spacing.Md };
     private readonly StackPanel workspaces = new() { Spacing = DesignMetrics.Spacing.Xs, Margin = new Thickness(DesignMetrics.Spacing.Sm, 0, DesignMetrics.Spacing.Sm, 0) };
-    private readonly TextBox search = new() { FontSize = 12, BorderThickness = new Thickness(0), Padding = new Thickness(0), MinHeight = 0, VerticalAlignment = VerticalAlignment.Center };
-    private readonly TextBlock sessionsHeader = new() { FontSize = DesignMetrics.Type.Small, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center };
+    private readonly TextBox search = new() { TextSize = 12, BorderThickness = new Thickness(0), Padding = new Thickness(0), MinHeight = 0, VerticalAlignment = VerticalAlignment.Center };
+    private readonly TextBlock sessionsHeader = new() { TextSize = DesignMetrics.Type.Small, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center };
     // The whole Windows app is a beta: the badge beside the sidebar brand.
-    private readonly TextBlock brandBeta = new() { FontSize = DesignMetrics.Type.Badge, FontWeight = Microsoft.UI.Text.FontWeights.Medium };
+    private readonly TextBlock brandBeta = new() { TextSize = DesignMetrics.Type.Badge, FontWeight = Microsoft.UI.Text.FontWeights.Medium };
     private readonly Button addFolderButton, settingsButton;
-    private readonly TextBlock status = new() { TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = DesignMetrics.Type.Small, VerticalAlignment = VerticalAlignment.Center };
+    private readonly TextBlock status = new() { TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, TextSize = DesignMetrics.Type.Small, VerticalAlignment = VerticalAlignment.Center };
     private readonly TextBlock error = new() { TextWrapping = TextWrapping.Wrap };
     // The Windows-only layout picker (decision Q3: kept, styled as a sidebar control).
     private readonly ComboBox layout = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
@@ -58,7 +58,8 @@ public sealed partial class MainWindow : Window
     public MainWindow(StartupOptions options)
     {
         this.options = options;
-        DesignBrushes.ApplyControlResources(Application.Current.Resources); root.Background = WindowBackground();
+        // The text setting comes first: the stock controls' font resources take it once, before any control is built.
+        AppText.Track(this); AppText.Load(options.SmokeTest); DesignBrushes.ApplyControlResources(Application.Current.Resources); root.Background = WindowBackground();
         AppWindow.Resize(new SizeInt32(1440, 920));
         root.Loaded += (_, _) => { ApplyWindowMinimum(); root.XamlRoot.Changed += (_, _) => ApplyWindowMinimum(); AppWindow.Changed += (_, args) => { if (args.DidPositionChange) ApplyWindowMinimum(); }; };
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "MightyClaude.ico"));
@@ -111,7 +112,7 @@ public sealed partial class MainWindow : Window
         statusBar.Child = BuildStatusBar(); ApplyChromeText(); Grid.SetRow(statusBar, 2); Grid.SetColumn(statusBar, 1); root.Children.Add(statusBar); Content = root;
         AppWindow.Closing += async (_, args) => { if (canClose) return; args.Cancel = true; if (closing) return; closing = true; ShutdownCompanion(); settingsWindow?.Close(); foreach (var pane in views.Values) { pane.CloseReferencePreview(); pane.CloseBrowserView(); } clock.Stop(); modelRefreshes?.Shutdown(); StopWorkspaceGit(); root.IsHitTestVisible = false; try { await ShutdownAutomaticUpdates(); await coordinator.ShutdownAsync(); await ShutdownAppUpdateAsync(); await ShutdownAccountUsageAsync(); await ShutdownLoginRecovery(); await ShutdownStatusLines(); await CloseTerminalsAsync(); await ShutdownAgentIO(); await ShutdownMobileRemote(); await service.DisposeAsync(); canClose = true; Close(); } catch (Exception ex) { error.Text = Locale.Get("window.error.shutdownFailed", new Dictionary<string, string> { ["reason"] = ex.Message }); root.IsHitTestVisible = true; closing = false; modelRefreshes = null; } };
         clock.Tick += (_, _) => RefreshRunningIndicators(); clock.Start();
-        InitFilePane(); InitAddPaneShortcuts(); InitHelpShortcut();
+        InitFilePane(); InitAddPaneShortcuts(); InitHelpShortcut(); InitTextAppearance();
         ShowLaunchSplash(); InitParityShortcuts(); InitWorkspaceGit(); InitDashboard();
         _ = Initialize();
     }
@@ -321,21 +322,21 @@ public sealed partial class MainWindow : Window
         private readonly MainWindow owner;
         private readonly string id;
         /// <summary>The pane header's state word: 11.5 semibold in its tone's ink (M/SessionPaneView.swift:220).</summary>
-        private readonly TextBlock label = new() { FontSize = DesignMetrics.Type.State, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center };
-        private readonly TextBlock detail = new() { FontSize = 10, Opacity = .6, TextWrapping = TextWrapping.Wrap };
+        private readonly TextBlock label = new() { TextSize = DesignMetrics.Type.State, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center };
+        private readonly TextBlock detail = new() { TextSize = 10, Opacity = .6, TextWrapping = TextWrapping.Wrap };
         /// <summary>Why a draft cannot run yet: the reason line of the row over the toolbar (M/SessionPaneView.swift:636).</summary>
-        private readonly TextBlock inputHint = new() { FontSize = 11, TextWrapping = TextWrapping.Wrap };
+        private readonly TextBlock inputHint = new() { TextSize = 11, TextWrapping = TextWrapping.Wrap };
         private readonly AgentTranscript output = new();
         /// <summary>The pane header's figures: 11 mono in <c>ink2</c>, the first part of the line to give way (M/PaneChrome.swift:61-70).</summary>
-        private readonly TextBlock elapsed = new() { FontSize = DesignMetrics.Type.Mono, FontFamily = new FontFamily(DesignMetrics.Font.Mono), TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, VerticalAlignment = VerticalAlignment.Center };
+        private readonly TextBlock elapsed = new() { TextSize = DesignMetrics.Type.Mono, TextFont = TextArea.Code, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, VerticalAlignment = VerticalAlignment.Center };
         // Auto height uses the native text layout, including soft wraps and IME
         // composition. One 13pt line is 20 high and the editor scrolls inside itself after six
         // (M/NativeComposerEditor.swift:32-33, M/TextEditorHeightReader.swift:143-149); the 5pt side padding
         // is the Mac text view's line-fragment padding. A 13pt line of the body font is laid out 18 high here
         // (16 on the Mac), so the padding above and below it is 1.
-        private readonly TextBox input = new() { AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = ComposerLine, MaxHeight = ComposerLine + 5 * ComposerLineStep, MaxLength = 100000, PlaceholderText = Locale.Get("composer.placeholder.idle"), BorderThickness = new Thickness(0), Padding = new Thickness(5, 1, 5, 1), FontSize = DesignMetrics.Type.Body };
+        private readonly TextBox input = new() { AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = ComposerLine, MaxHeight = ComposerLine + 5 * ComposerLineStep, MaxLength = 100000, PlaceholderText = Locale.Get("composer.placeholder.idle"), BorderThickness = new Thickness(0), Padding = new Thickness(5, 1, 5, 1), TextSize = DesignMetrics.Type.Body, TextFont = TextArea.Transcript };
         /// <summary>The editor with one line, and what each further line adds (13pt in the body font).</summary>
-        private const double ComposerLine = 20, ComposerLineStep = 17.3;
+        internal const double ComposerLine = 20, ComposerLineStep = 17.3;
         // The pills, in the Mac's order (M/SessionPaneView.swift:713-723): attach, model, effort, permission, Fast, … and,
         // in a narrow pane, the options menu that stands in for the last four.
         private readonly Button attach = NewPill<Button>(), model = NewPill<Button>(chevron: true), effort = NewPill<Button>(chevron: true), permission = NewPill<Button>(chevron: true), more = NewPill<Button>(), options = NewPill<Button>();
@@ -372,7 +373,7 @@ public sealed partial class MainWindow : Window
         }
         internal PaneView(MainWindow owner, string id)
         {
-            this.owner = owner; this.id = id;
+            this.owner = owner; this.id = id; FitComposerToText(); AppText.Follow(input, FitComposerToText);
             output.OpenReference = OpenReferencePreview; output.OpenImage = OpenTranscriptImage;
             InitSlashPalette(); InitPermissionBar(); InitializeStyles();
             var grid = new Grid { Padding = new Thickness(PaneInset), RowSpacing = DesignMetrics.Spacing.Sm };
@@ -604,16 +605,16 @@ public sealed partial class MainWindow : Window
                 var image = file.MediaType.StartsWith("image/", StringComparison.Ordinal); var size = ByteLabel(AttachmentSupport.DecodedLength(file));
                 var picture = new Grid { Width = 34, Height = 34, CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow), Background = b.Brush(DesignToken.Ink, AttachmentPictureWash) };
                 if (image) { var thumbnail = new Microsoft.UI.Xaml.Shapes.Rectangle { RadiusX = DesignMetrics.Radius.FileRow, RadiusY = DesignMetrics.Radius.FileRow }; picture.Children.Add(thumbnail); _ = LoadThumbnail(file, thumbnail); }
-                else picture.Children.Add(new FontIcon { Glyph = file.MediaType == "application/pdf" ? "" : "", FontSize = 17, Foreground = b.Brush(DesignToken.Accent) });
+                else picture.Children.Add(new FontIcon { Glyph = file.MediaType == "application/pdf" ? "" : "", TextSize = 17, Foreground = b.Brush(DesignToken.Accent) });
                 var words = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs, Width = 106, VerticalAlignment = VerticalAlignment.Center };
-                words.Children.Add(new TextBlock { Text = file.Name, FontSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = b.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap });
-                words.Children.Add(new TextBlock { Text = size, FontSize = 10, Foreground = b.Brush(DesignToken.Ink2) });
+                words.Children.Add(new TextBlock { Text = file.Name, TextSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = b.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap });
+                words.Children.Add(new TextBlock { Text = size, TextSize = 10, Foreground = b.Brush(DesignToken.Ink2) });
                 var face = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm }; face.Children.Add(picture); face.Children.Add(words);
                 var preview = Button(file.Name, () => PreviewAttachment(file)); preview.Content = face; preview.MinWidth = 0; preview.MinHeight = 0; preview.Padding = new Thickness(0); preview.BorderThickness = new Thickness(0); preview.CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow);
                 owner.PaintPlainButton(preview, b.Transparent, b.Transparent);
                 AutomationProperties.SetName(preview, Locale.Get("composer.attachment.preview", new Dictionary<string, string> { ["name"] = file.Name })); ToolTipService.SetToolTip(preview, $"{file.Name} · {size}");
                 var remove = Button("×", () => { pendingAttachments.RemoveAll(a => a.Id == file.Id); ShowAttachmentError(null); RefreshAttachments(); RefreshComposerState(); input.Focus(FocusState.Programmatic); return Task.CompletedTask; });
-                remove.Content = new FontIcon { Glyph = "", FontSize = 9, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold }; remove.MinWidth = 0; remove.MinHeight = 0; remove.Width = 20; remove.Height = 26; remove.Padding = new Thickness(0); remove.BorderThickness = new Thickness(0); remove.CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow); remove.VerticalAlignment = VerticalAlignment.Center;
+                remove.Content = new FontIcon { Glyph = "", TextSize = 9, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold }; remove.MinWidth = 0; remove.MinHeight = 0; remove.Width = 20; remove.Height = 26; remove.Padding = new Thickness(0); remove.BorderThickness = new Thickness(0); remove.CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow); remove.VerticalAlignment = VerticalAlignment.Center;
                 owner.PaintPlainButton(remove, b.Transparent, b.Subtle, ink: b.Brush(DesignToken.Ink2));
                 AutomationProperties.SetName(remove, Locale.Get("composer.attachment.remove", new Dictionary<string, string> { ["name"] = file.Name })); AutomationProperties.SetAutomationId(remove, "remove-attachment-" + file.Id);
                 var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm }; row.Children.Add(preview); row.Children.Add(remove);
@@ -628,7 +629,7 @@ public sealed partial class MainWindow : Window
         private static async Task LoadThumbnail(RunAttachment file, Microsoft.UI.Xaml.Shapes.Rectangle thumbnail) { try { thumbnail.Fill = new ImageBrush { ImageSource = await AttachmentInput.PreviewAsync(file, 96), Stretch = Stretch.UniformToFill }; } catch (Exception) { thumbnail.Visibility = Visibility.Collapsed; } }
         private Task PreviewAttachment(RunAttachment file) => owner.Act(async () =>
         {
-            var content = new StackPanel { Spacing = DesignMetrics.Spacing.Md, MaxWidth = 640 }; content.Children.Add(new TextBlock { Text = $"{file.MediaType} · {AttachmentSupport.DecodedLength(file):N0} bytes", FontSize = 11 });
+            var content = new StackPanel { Spacing = DesignMetrics.Spacing.Md, MaxWidth = 640 }; content.Children.Add(new TextBlock { Text = $"{file.MediaType} · {AttachmentSupport.DecodedLength(file):N0} bytes", TextSize = 11 });
             if (file.MediaType.StartsWith("image/", StringComparison.Ordinal)) content.Children.Add(new Image { Source = await AttachmentInput.PreviewAsync(file), MaxHeight = 420, Stretch = Stretch.Uniform });
             else if (file.MediaType == "text/plain") { var text = System.Text.Encoding.UTF8.GetString(AttachmentSupport.Decode(file)); content.Children.Add(new TextBox { AcceptsReturn = true, Text = text[..Math.Min(text.Length, 20000)], IsReadOnly = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 350 }); }
             else content.Children.Add(new TextBlock { Text = Locale.Get("composer.attachment.sentAsFile"), TextWrapping = TextWrapping.Wrap });
@@ -656,7 +657,7 @@ public sealed partial class MainWindow : Window
         /// <summary>A section header in a menu (the Mac's provider <c>Section</c>): a small quiet line over its rows that cannot be chosen.</summary>
         private MenuFlyoutItem MenuHeader(string text)
         {
-            var item = new MenuFlyoutItem { Text = text, IsEnabled = false, FontSize = DesignMetrics.Type.Pill, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, MinHeight = 0, Padding = new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Xxs) };
+            var item = new MenuFlyoutItem { Text = text, IsEnabled = false, TextSize = DesignMetrics.Type.Pill, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, MinHeight = 0, Padding = new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Xxs) };
             owner.SetResourcesOnce(item, [("MenuFlyoutItemForegroundDisabled", owner.brushes.Brush(DesignToken.Ink3))]);
             return item;
         }

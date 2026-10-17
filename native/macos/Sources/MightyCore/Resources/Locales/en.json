@@ -1247,6 +1247,7 @@
   "settings.text.fontLabel": "Font",
   "settings.text.fontSystem": "System Default",
   "settings.text.monospaceSystem": "System monospaced",
+  "settings.text.noteWindows": "You can also change the size with Ctrl+=, Ctrl+− and Ctrl+0. While a terminal or browser pane has the focus, these keys stay with that pane.",
   "settings.text.note": "Change the size with ⌘=, ⌘− and ⌘0 in the View menu. The code font is also used in terminals.",
   "settings.text.preview": "The quick brown fox jumps over the lazy dog. 0123456789",
   "settings.text.reset": "Reset to Default",

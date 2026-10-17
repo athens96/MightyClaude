@@ -80,7 +80,7 @@ public sealed partial class MainWindow
         // The command's own output, 80 high behind its disclosure (M/ClaudePluginView.swift:277-282).
         var diagnostics = SettingsText("", 10, mono: true, selectable: true);
         var diagnosticsBox = new ScrollViewer { Content = diagnostics, Height = 80, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Visibility = Visibility.Collapsed };
-        var diagnosticsMark = new FontIcon { Glyph = PluginFoldedGlyph, FontSize = 8, VerticalAlignment = VerticalAlignment.Center };
+        var diagnosticsMark = new FontIcon { Glyph = PluginFoldedGlyph, TextSize = 8, VerticalAlignment = VerticalAlignment.Center };
         var diagnosticsToggle = Button(PluginStrings.DiagnosticsDisclosure, () =>
         {
             var open = diagnosticsBox.Visibility != Visibility.Visible;
@@ -88,7 +88,7 @@ public sealed partial class MainWindow
             return Task.CompletedTask;
         });
         var diagnosticsLabel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs };
-        diagnosticsLabel.Children.Add(diagnosticsMark); diagnosticsLabel.Children.Add(new TextBlock { Text = PluginStrings.DiagnosticsDisclosure, FontSize = 10, VerticalAlignment = VerticalAlignment.Center });
+        diagnosticsLabel.Children.Add(diagnosticsMark); diagnosticsLabel.Children.Add(new TextBlock { Text = PluginStrings.DiagnosticsDisclosure, TextSize = 10, VerticalAlignment = VerticalAlignment.Center });
         diagnosticsToggle.Content = diagnosticsLabel; diagnosticsToggle.Padding = new Thickness(0); diagnosticsToggle.MinWidth = 0; diagnosticsToggle.MinHeight = 0;
         diagnosticsToggle.BorderThickness = new Thickness(0); diagnosticsToggle.HorizontalAlignment = HorizontalAlignment.Left;
         PaintPlainButton(diagnosticsToggle, brushes.Transparent, brushes.Transparent, ink: brushes.Brush(DesignToken.Ink));
@@ -108,7 +108,7 @@ public sealed partial class MainWindow
         AutomationProperties.SetName(marketplaceTab, PluginStrings.TabMarketplace);
 
         // The search box (M/ClaudePluginView.swift:227-231): a plain field after the magnifier, on the subtle wash.
-        var search = new TextBox { PlaceholderText = PluginStrings.SearchPlaceholder, FontSize = DesignMetrics.Type.Title, BorderThickness = new Thickness(0), Padding = new Thickness(0), MinHeight = 0, MinWidth = 0, VerticalAlignment = VerticalAlignment.Center };
+        var search = new TextBox { PlaceholderText = PluginStrings.SearchPlaceholder, TextSize = DesignMetrics.Type.Title, BorderThickness = new Thickness(0), Padding = new Thickness(0), MinHeight = 0, MinWidth = 0, VerticalAlignment = VerticalAlignment.Center };
         var plain = new List<(string Key, object Value)>();
         foreach (var key in new[] { "TextControlBackground", "TextControlBackgroundPointerOver", "TextControlBackgroundFocused", "TextControlBackgroundDisabled", "TextControlBorderBrush", "TextControlBorderBrushPointerOver", "TextControlBorderBrushFocused", "TextControlBorderBrushDisabled" }) plain.Add((key, brushes.Transparent));
         foreach (var key in new[] { "TextControlForeground", "TextControlForegroundPointerOver", "TextControlForegroundFocused" }) plain.Add((key, brushes.Brush(DesignToken.Ink)));
@@ -176,7 +176,7 @@ public sealed partial class MainWindow
         // The small ring that turns while the list is read or an operation runs (M/ClaudePluginView.swift:198-202).
         var working = new ProgressRing { Width = 16, Height = 16, MinWidth = 0, MinHeight = 0, IsActive = false, Visibility = Visibility.Collapsed, Foreground = brushes.Brush(DesignToken.Ink2), VerticalAlignment = VerticalAlignment.Center };
         // What the last operation said (M/ClaudePluginView.swift:270-276): its mark and sentence, doneText when it succeeded and waitText otherwise.
-        var operationMark = new FontIcon { FontSize = 11, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, DesignMetrics.Spacing.Xxs, 0, 0) };
+        var operationMark = new FontIcon { TextSize = 11, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, DesignMetrics.Spacing.Xxs, 0, 0) };
         var operationResult = SettingsText("", 11, selectable: true);
         AutomationProperties.SetAutomationId(operationResult, PluginAutomationId(provider, "operation-result"));
         var resultRow = new Grid { ColumnSpacing = DesignMetrics.Spacing.Xs, Visibility = Visibility.Collapsed };
@@ -285,7 +285,7 @@ public sealed partial class MainWindow
                 var message = SettingsText(browser.EmptyMessage, 12, DesignToken.Ink2); message.HorizontalAlignment = HorizontalAlignment.Center; message.TextAlignment = TextAlignment.Center;
                 empty.Children.Add(message);
                 if (browser.ShowsMarketplaceHelpLink)
-                    empty.Children.Add(new HyperlinkButton { Content = PluginStrings.MarketplaceHelpLink, NavigateUri = new Uri("https://code.claude.com/docs/en/discover-plugins#add-marketplaces"), HorizontalAlignment = HorizontalAlignment.Center, FontSize = 11, Padding = new Thickness(0), MinHeight = 0 });
+                    empty.Children.Add(new HyperlinkButton { Content = PluginStrings.MarketplaceHelpLink, NavigateUri = new Uri("https://code.claude.com/docs/en/discover-plugins#add-marketplaces"), HorizontalAlignment = HorizontalAlignment.Center, TextSize = 11, Padding = new Thickness(0), MinHeight = 0 });
                 if (browser.MarketplaceHelpText is { Length: > 0 } help)
                 {
                     var sentence = SettingsText(help, 11, DesignToken.Ink2); sentence.HorizontalAlignment = HorizontalAlignment.Center; sentence.TextAlignment = TextAlignment.Center;
@@ -342,7 +342,7 @@ public sealed partial class MainWindow
 
         // The heading (M/ClaudePluginView.swift:186-195): the puzzle piece in accent, the title (18 semibold) over the
         // workspace's name and its path (10pt mono in the tertiary ink, :191), and the CLI's version at the trailing edge.
-        var title = new TextBlock { Text = browser.Title, FontSize = 18, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Ink), LineHeight = 22, LineStackingStrategy = LineStackingStrategy.BlockLineHeight };
+        var title = new TextBlock { Text = browser.Title, TextSize = 18, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Ink), TextLineHeight = 22, LineStackingStrategy = LineStackingStrategy.BlockLineHeight };
         AutomationProperties.SetAutomationId(title, PluginAutomationId(provider, "title"));
         var workspaceName = SettingsText(workspace.Name, 12, DesignToken.Ink2); var workspacePath = SettingsTertiary(workspace.Path, mono: true);
         foreach (var line in new[] { workspaceName, workspacePath }) { line.TextWrapping = TextWrapping.NoWrap; line.TextTrimming = TextTrimming.CharacterEllipsis; }
@@ -351,7 +351,7 @@ public sealed partial class MainWindow
         named.Children.Add(title); named.Children.Add(workspaceName); named.Children.Add(workspacePath);
         var header = new Grid { ColumnSpacing = DesignMetrics.Spacing.Md };
         header.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); header.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        var piece = new FontIcon { Glyph = PluginGlyph, FontSize = 25, Foreground = brushes.Brush(DesignToken.Accent), VerticalAlignment = VerticalAlignment.Top };
+        var piece = new FontIcon { Glyph = PluginGlyph, TextSize = 25, Foreground = brushes.Brush(DesignToken.Accent), VerticalAlignment = VerticalAlignment.Top };
         AutomationProperties.SetAccessibilityView(piece, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
         header.Children.Add(piece); Grid.SetColumn(named, 1); header.Children.Add(named); Grid.SetColumn(version, 2); header.Children.Add(version);
 
@@ -451,7 +451,7 @@ public sealed partial class MainWindow
     /// </summary>
     private Button PluginTab()
     {
-        var chip = new Border { Child = new TextBlock { FontSize = 12, Foreground = brushes.Brush(DesignToken.Ink) }, Padding = new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm), CornerRadius = new CornerRadius(7) };
+        var chip = new Border { Child = new TextBlock { TextSize = 12, Foreground = brushes.Brush(DesignToken.Ink) }, Padding = new Thickness(DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Md, DesignMetrics.Spacing.Sm), CornerRadius = new CornerRadius(7) };
         var tab = new Button { Content = chip, Padding = new Thickness(0), MinWidth = 0, MinHeight = 0, BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(7) };
         PaintPlainButton(tab, brushes.Transparent, brushes.Transparent);
         return tab;

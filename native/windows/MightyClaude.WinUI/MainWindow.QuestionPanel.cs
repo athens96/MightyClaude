@@ -47,15 +47,15 @@ public sealed partial class MainWindow
 
             var header = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             foreach (var width in new[] { GridLength.Auto, GridLength.Auto, GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto, GridLength.Auto }) header.ColumnDefinitions.Add(new() { Width = width });
-            header.Children.Add(WaitBadge(new TextBlock { Text = "?", FontSize = 13, FontWeight = FontWeights.ExtraBold, Foreground = b.Brush(DesignToken.OnWait), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, -1, 0, 0) }));
-            var title = new TextBlock { Text = current.Header, FontSize = 12, FontWeight = FontWeights.Bold, Foreground = ink, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+            header.Children.Add(WaitBadge(new TextBlock { Text = "?", TextSize = 13, FontWeight = FontWeights.ExtraBold, Foreground = b.Brush(DesignToken.OnWait), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, -1, 0, 0) }));
+            var title = new TextBlock { Text = current.Header, TextSize = 12, FontWeight = FontWeights.Bold, Foreground = ink, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(title, 1); header.Children.Add(title);
             if (questionnaire.Questions.Count > 1)
             {
                 var step = new TextBlock
                 {
                     Text = Locale.Get("phone.questionnaire.progress", new Dictionary<string, string> { ["current"] = (progress.Index + 1).ToString(System.Globalization.CultureInfo.InvariantCulture), ["total"] = questionnaire.Questions.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) }),
-                    FontSize = 11, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center,
+                    TextSize = 11, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center,
                 };
                 Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(step, FontNumeralAlignment.Tabular);
                 AutomationProperties.SetAutomationId(step, "agent-question-progress-" + id);
@@ -72,7 +72,7 @@ public sealed partial class MainWindow
             Grid.SetColumn(skip, 5); header.Children.Add(skip);
             body.Children.Add(header);
 
-            var question = new TextBlock { Text = current.Question, FontSize = 13.5, FontWeight = FontWeights.Bold, Foreground = ink, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true };
+            var question = new TextBlock { Text = current.Question, TextSize = 13.5, FontWeight = FontWeights.Bold, Foreground = ink, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true };
             AutomationProperties.SetAutomationId(question, "agent-question-" + id);
             body.Children.Add(question);
 
@@ -84,8 +84,8 @@ public sealed partial class MainWindow
                 var mark = ComposerGlyph.Icon(current.MultiSelect ? (picked ? "" : "") : (picked ? "" : ""), 12, 14, 14).Ink(b.Brush(picked ? DesignToken.WaitText : DesignToken.Ink2));
                 mark.View.VerticalAlignment = VerticalAlignment.Top; mark.View.Margin = new Thickness(0, 1, 0, 0);
                 var words = new StackPanel { Spacing = 1 };
-                words.Children.Add(new TextBlock { Text = option.Label, FontSize = 12, FontWeight = FontWeights.Bold, Foreground = ink, TextWrapping = TextWrapping.Wrap });
-                if (option.Description.Length > 0) words.Children.Add(new TextBlock { Text = option.Description, FontSize = 10.5, Foreground = ink2, TextWrapping = TextWrapping.Wrap });
+                words.Children.Add(new TextBlock { Text = option.Label, TextSize = 12, FontWeight = FontWeights.Bold, Foreground = ink, TextWrapping = TextWrapping.Wrap });
+                if (option.Description.Length > 0) words.Children.Add(new TextBlock { Text = option.Description, TextSize = 10.5, Foreground = ink2, TextWrapping = TextWrapping.Wrap });
                 var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
                 row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
                 row.Children.Add(mark.View); Grid.SetColumn(words, 1); row.Children.Add(words);
@@ -107,7 +107,7 @@ public sealed partial class MainWindow
 
             var footer = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
             footer.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-            footer.Children.Add(new TextBlock { Text = Locale.Get(current.MultiSelect ? "question.panel.hintMultiple" : "question.panel.hintSingle"), FontSize = 10.5, Foreground = ink2, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center });
+            footer.Children.Add(new TextBlock { Text = Locale.Get(current.MultiSelect ? "question.panel.hintMultiple" : "question.panel.hintSingle"), TextSize = 10.5, Foreground = ink2, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center });
             if (current.MultiSelect && progress.Selected.Count > 0)
             {
                 var done = Button(Locale.Get("question.panel.doneSelecting"), () => { if (progress.Commit("", questionnaire) is { } step) FinishGuidedStep(step, request, questionnaire); return Task.CompletedTask; }); PaintCardButton(done, prominent: true);
@@ -117,7 +117,7 @@ public sealed partial class MainWindow
             body.Children.Add(footer);
             if (guidedQuestionError is { } error)
             {
-                var failed = new TextBlock { Text = error, FontSize = 10, Foreground = b.Brush(DesignToken.WaitText), TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true };
+                var failed = new TextBlock { Text = error, TextSize = 10, Foreground = b.Brush(DesignToken.WaitText), TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true };
                 AutomationProperties.SetAutomationId(failed, "agent-question-error-" + id);
                 body.Children.Add(failed);
             }

@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// Usage: node scripts/check-design-tokens.js                  # check both ratchets against their budgets
+// Usage: node scripts/check-design-tokens.js                  # check the three ratchets against their budgets
 //        node scripts/check-design-tokens.js --check          # the same
-//        node scripts/check-design-tokens.js --write          # lower both budgets to today's counts
+//        node scripts/check-design-tokens.js --write          # lower every budget to today's counts
 //        node scripts/check-design-tokens.js --write-budget   # the same (the check-locales.js spelling)
 //        node scripts/check-design-tokens.js --root <dir>     # check another root (fixture tests)
 //
-// Two ratchets that may only go down. Plain node only, no dependencies.
+// Three ratchets that may only go down. Plain node only, no dependencies.
 //
 // 1. Colour literals (scripts/design-token-budget.json), from the Windows design conversion
 //    (.omc/plans/windows-design-conversion.md, stage 1). Every surface, border, ink and
@@ -49,7 +49,19 @@
 //    fewer means the budget is stale and --write-budget must lower it. --write / --write-budget
 //    never raise a count.
 //
-// Comments are not counted by either ratchet.
+// 3. Font literals (scripts/font-literal-budget.json), from the text setting (Settings › General › 글자):
+//    every word the WinUI app draws states its size at scale 1 as TextSize (and TextLineHeight,
+//    TextHeight) and its font as TextFont, which AppText.cs draws at the user's size and font and
+//    changes live. This counts, per file of native/windows/MightyClaude.WinUI, what still sets them
+//    itself and so would not follow the setting:
+//
+//      FontSize = … (or +=, *=)   LineHeight = …   FontFamily = …   new FontFamily(…)   FontSizeProperty and the like
+//
+//    The budget's exemptFiles (globs as above, each with its reason; one that matches nothing fails)
+//    are not counted. As with the colours, a file over its budget or outside it fails, and a file
+//    under its budget is stale: lower it with --write.
+//
+// Comments are not counted by any ratchet.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -327,6 +339,56 @@ if (!spacingBudget || typeof spacingBudget.areas !== 'object' || spacingBudget.a
   console.log('spacing literals per area:');
   for (const row of report) {
     console.log(`  ${row.label.padEnd(8)} ${row.count} / budget ${row.budget ?? '-'} in ${Object.keys(row.files).length} files (exempt: ${row.exemptLiterals} literals, ${row.regions} regions)`);
+  }
+}
+
+// ── 3. Font literals (Windows WinUI) ─────────────────────────────────────────
+const FONT_BUDGET = 'scripts/font-literal-budget.json';
+const FONT_ROOT = 'native/windows/MightyClaude.WinUI';
+const FONT_PATTERNS = [
+  // An assignment, compound ones too (+=, *=), but not a comparison.
+  /\b(?:FontSize|LineHeight|FontFamily)\s*[-+*/]?=(?!=)/g,
+  // SetValue, ClearValue or a Setter on the property itself.
+  /\b(?:FontSize|LineHeight|FontFamily)Property\b/g,
+  /\bnew\s+(?:[\w.]+\.)?FontFamily\s*\(/g,
+];
+
+const fontBudget = readBudget(FONT_BUDGET);
+if (!fontBudget) {
+  fail(`${FONT_BUDGET} is missing.`);
+} else {
+  const exemptGlobs = Object.entries(fontBudget.exemptFiles ?? {}).map(([glob, reason]) => ({ glob, reason, pattern: globPattern(glob), matched: 0 }));
+  const allowed = fontBudget.files ?? {};
+  const counts = {};
+  for (const relative of walk(FONT_ROOT, ['.cs'], []).sort()) {
+    const exemptBy = exemptGlobs.filter((entry) => entry.pattern.test(relative));
+    for (const entry of exemptBy) entry.matched += 1;
+    if (exemptBy.length > 0) continue;
+    const source = stripComments(readText(relative));
+    const value = FONT_PATTERNS.reduce((total, pattern) => total + (source.match(pattern)?.length ?? 0), 0);
+    if (value > 0) counts[relative] = value;
+  }
+  for (const entry of exemptGlobs) {
+    if (entry.matched === 0) fail(`${FONT_BUDGET}: exemptFiles ${entry.glob} matches no file.`);
+    if (!entry.reason) fail(`${FONT_BUDGET}: exemptFiles ${entry.glob} gives no reason.`);
+  }
+  const over = [];
+  for (const [file, value] of Object.entries(counts)) {
+    const limit = allowed[file] ?? 0;
+    if (value > limit) over.push(`${file}: ${value} font literals, budget ${limit}. Give the size at scale 1 as TextSize (TextLineHeight, TextHeight) and the font as TextFont, so the text setting reaches it (AppText.cs).`);
+  }
+  failures.push(...over);
+  const total = sum(Object.values(counts));
+  const budgetTotal = sum(Object.values(allowed));
+  if (WRITE && over.length === 0) {
+    const files = Object.fromEntries(Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)));
+    fs.writeFileSync(path.join(ROOT, FONT_BUDGET), JSON.stringify({ ...fontBudget, files }, null, 2) + '\n');
+    console.log(`font-literal budget written: ${total} font literals in ${Object.keys(files).length} files (was ${budgetTotal}).`);
+  } else {
+    for (const [file, limit] of Object.entries(allowed)) {
+      if ((counts[file] ?? 0) < limit) fail(`${file}: ${counts[file] ?? 0} font literals, budget ${limit}. Lower the budget: node scripts/check-design-tokens.js --write`);
+    }
+    console.log(`font literals (WinUI): ${total} in ${Object.keys(counts).length} files (budget ${budgetTotal}, exempt ${exemptGlobs.length} globs).`);
   }
 }
 

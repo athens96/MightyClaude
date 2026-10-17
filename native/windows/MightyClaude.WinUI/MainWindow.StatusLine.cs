@@ -171,7 +171,7 @@ public sealed partial class MainWindow
         /// </summary>
         internal void RenderStatusLine(StatusLineConfig? config, StatusLineConfig? untrusted, StatusLineResult? result, int padding = 0)
         {
-            var b = owner.brushes; var ink2 = b.Brush(DesignToken.Ink2); var mono = new FontFamily(DesignMetrics.Font.Mono);
+            var b = owner.brushes; var ink2 = b.Brush(DesignToken.Ink2);
             statusLineUntrusted = untrusted;
             statusLineHost.Children.Clear();
             // The composer rows' sides (plus the command's own, 6 a step), 2 over and the composer's bottom inset under (M/StatusLineView.swift:42-43).
@@ -182,12 +182,12 @@ public sealed partial class MainWindow
                 // the 11pt ink2 question, the command on the subtle wash at radius 6, two small buttons and a quiet note.
                 var prompt = new StackPanel { Spacing = DesignMetrics.Spacing.Xs, Margin = new Thickness(0, 0, 0, DesignMetrics.Spacing.Xs) };
                 var question = new Grid { ColumnSpacing = DesignMetrics.Spacing.Xs }; question.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); question.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
-                question.Children.Add(new FontIcon { Glyph = "", FontSize = 11, Foreground = ink2, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, DesignMetrics.Spacing.Xxs, 0, 0) });
-                var asked = new TextBlock { Text = StatusLineStrings.TrustPromptTemplate.Replace("{source}", untrusted.SourceLabel), FontSize = 11, Foreground = ink2, TextWrapping = TextWrapping.Wrap };
+                question.Children.Add(new FontIcon { Glyph = "", TextSize = 11, Foreground = ink2, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, DesignMetrics.Spacing.Xxs, 0, 0) });
+                var asked = new TextBlock { Text = StatusLineStrings.TrustPromptTemplate.Replace("{source}", untrusted.SourceLabel), TextSize = 11, Foreground = ink2, TextWrapping = TextWrapping.Wrap };
                 Grid.SetColumn(asked, 1); question.Children.Add(asked); prompt.Children.Add(question);
                 prompt.Children.Add(new Border
                 {
-                    Child = new TextBlock { Text = untrusted.Command, FontSize = 11, FontFamily = mono, Foreground = b.Brush(DesignToken.Ink), MaxLines = 3, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true },
+                    Child = new TextBlock { Text = untrusted.Command, TextSize = 11, TextFont = TextArea.Code, Foreground = b.Brush(DesignToken.Ink), MaxLines = 3, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true },
                     CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), Padding = new Thickness(DesignMetrics.Spacing.Sm),
                     Background = b.Subtle,
                 });
@@ -197,7 +197,7 @@ public sealed partial class MainWindow
                 var deny = SmallButton(StatusLineStrings.TrustDeny, () => { DismissStatusLine(); RenderStatusLine(config, null, result, padding); return Task.CompletedTask; });
                 answers.Children.Add(allow); answers.Children.Add(deny);
                 // The note beside the answers: 10pt in the tertiary ink (M/StatusLineView.swift:24).
-                answers.Children.Add(new TextBlock { Text = StatusLineStrings.TrustNote, FontSize = 10, Foreground = b.Tertiary, VerticalAlignment = VerticalAlignment.Center });
+                answers.Children.Add(new TextBlock { Text = StatusLineStrings.TrustNote, TextSize = 10, Foreground = b.Tertiary, VerticalAlignment = VerticalAlignment.Center });
                 prompt.Children.Add(answers);
                 AutomationProperties.SetAutomationId(prompt, "status-line-untrusted-" + id);
                 statusLineHost.Children.Add(prompt);
@@ -209,8 +209,8 @@ public sealed partial class MainWindow
                 {
                     // A failed command says so in one quiet line behind the warning mark (M/StatusLineView.swift:35-37).
                     var failed = new Grid { ColumnSpacing = DesignMetrics.Spacing.Xs }; failed.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); failed.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
-                    failed.Children.Add(new FontIcon { Glyph = "", FontSize = 11, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center });
-                    var said = new TextBlock { Text = error, FontSize = 11, FontFamily = mono, Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap };
+                    failed.Children.Add(new FontIcon { Glyph = "", TextSize = 11, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center });
+                    var said = new TextBlock { Text = error, TextSize = 11, TextFont = TextArea.Code, Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap };
                     Grid.SetColumn(said, 1); failed.Children.Add(said); statusLineHost.Children.Add(failed);
                 }
             }
@@ -229,7 +229,7 @@ public sealed partial class MainWindow
         private Button SmallButton(string title, Func<Task> action, bool prominent = false)
         {
             var b = owner.brushes; var button = Button(title, action);
-            button.FontSize = 11; button.MinWidth = 0; button.MinHeight = 0; button.Padding = new Thickness(DesignMetrics.Spacing.Sm, 1, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xxs); button.CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow); button.VerticalAlignment = VerticalAlignment.Center;
+            button.TextSize = 11; button.MinWidth = 0; button.MinHeight = 0; button.Padding = new Thickness(DesignMetrics.Spacing.Sm, 1, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xxs); button.CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow); button.VerticalAlignment = VerticalAlignment.Center;
             if (prominent)
             {
                 button.BorderThickness = new Thickness(0); button.FontWeight = Microsoft.UI.Text.FontWeights.Medium;
@@ -312,7 +312,7 @@ public sealed partial class MainWindow
         /// </summary>
         private TextBlock Row(IReadOnlyList<AnsiSegment> segments)
         {
-            var row = new TextBlock { FontSize = 11, FontFamily = new FontFamily(DesignMetrics.Font.Mono), TextTrimming = TextTrimming.CharacterEllipsis, IsTextSelectionEnabled = true };
+            var row = new TextBlock { TextSize = 11, TextFont = TextArea.Code, TextTrimming = TextTrimming.CharacterEllipsis, IsTextSelectionEnabled = true };
             foreach (var segment in segments)
             {
                 var piece = new Microsoft.UI.Xaml.Documents.Run { Text = segment.Text };

@@ -44,7 +44,7 @@ public sealed partial class MainWindow
         /// </summary>
         private void PaintCardButton(Button button, bool prominent)
         {
-            button.CornerRadius = new CornerRadius(DesignMetrics.Radius.CardButton); button.FontSize = 12; button.FontWeight = Microsoft.UI.Text.FontWeights.Bold;
+            button.CornerRadius = new CornerRadius(DesignMetrics.Radius.CardButton); button.TextSize = 12; button.FontWeight = Microsoft.UI.Text.FontWeights.Bold;
             button.Padding = CardButtonPadding; button.MinWidth = 0; button.MinHeight = CardButtonHeight; button.Height = CardButtonHeight;
             button.BorderThickness = new Thickness(prominent ? 0 : DesignMetrics.Stroke.Line);
             var fill = owner.brushes.Brush(prominent ? DesignToken.Ink : DesignToken.CardRaised); var ink = owner.brushes.Brush(prominent ? DesignToken.Card : DesignToken.Ink);
@@ -100,11 +100,11 @@ public sealed partial class MainWindow
         /// </summary>
         private void InitPermissionBar()
         {
-            var b = owner.brushes; var ink = b.Brush(DesignToken.Ink); var ink2 = b.Brush(DesignToken.Ink2); var mono = new FontFamily(DesignMetrics.Font.Mono);
-            permTitleBlock = new TextBlock { FontSize = 13, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = ink, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, VerticalAlignment = VerticalAlignment.Center };
+            var b = owner.brushes; var ink = b.Brush(DesignToken.Ink); var ink2 = b.Brush(DesignToken.Ink2);
+            permTitleBlock = new TextBlock { TextSize = 13, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = ink, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, VerticalAlignment = VerticalAlignment.Center };
             AutomationProperties.SetAutomationId(permTitleBlock, "permission-title-" + id);
-            permToolBlock = new TextBlock { FontSize = 11.5, FontFamily = mono, Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, VerticalAlignment = VerticalAlignment.Center };
-            permCountBlock = new TextBlock { FontSize = 12, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
+            permToolBlock = new TextBlock { TextSize = 11.5, TextFont = TextArea.Code, Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, VerticalAlignment = VerticalAlignment.Center };
+            permCountBlock = new TextBlock { TextSize = 12, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
             AutomationProperties.SetAutomationId(permCountBlock, "permission-count-" + id);
 
             var titleRow = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
@@ -115,23 +115,23 @@ public sealed partial class MainWindow
             Grid.SetColumn(permToolBlock, 2); titleRow.Children.Add(permToolBlock);
             Grid.SetColumn(permCountBlock, 3); titleRow.Children.Add(permCountBlock);
 
-            permHeadlineBlock = new TextBlock { FontSize = 14, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = ink, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, Visibility = Visibility.Collapsed };
+            permHeadlineBlock = new TextBlock { TextSize = 14, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = ink, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, Visibility = Visibility.Collapsed };
             AutomationProperties.SetAutomationId(permHeadlineBlock, "permission-headline-" + id);
             permFields = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
-            permSummaryBlock = new TextBlock { FontSize = 12, FontFamily = mono, Foreground = ink, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, Visibility = Visibility.Collapsed };
-            permPathBlock = new TextBlock { FontSize = 10, Foreground = ink, TextWrapping = TextWrapping.Wrap };
+            permSummaryBlock = new TextBlock { TextSize = 12, TextFont = TextArea.Code, Foreground = ink, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, Visibility = Visibility.Collapsed };
+            permPathBlock = new TextBlock { TextSize = 10, Foreground = ink, TextWrapping = TextWrapping.Wrap };
             AutomationProperties.SetAutomationId(permPathBlock, "permission-path-" + id);
-            permReasonBlock = new TextBlock { FontSize = 10, Foreground = ink2, TextWrapping = TextWrapping.Wrap };
+            permReasonBlock = new TextBlock { TextSize = 10, Foreground = ink2, TextWrapping = TextWrapping.Wrap };
             // The request as the CLI sent it, folded away (M/ToolPermissionBar.swift:80-83).
             permJsonFolded.Ink(ink2); permJsonUnfolded.Ink(ink2);
             var chevron = new Grid { Width = 8, Height = 12, VerticalAlignment = VerticalAlignment.Center };
             permJsonFolded.View.HorizontalAlignment = permJsonUnfolded.View.HorizontalAlignment = HorizontalAlignment.Center;
             chevron.Children.Add(permJsonFolded.View); chevron.Children.Add(permJsonUnfolded.View);
             var foldWords = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs };
-            foldWords.Children.Add(chevron); foldWords.Children.Add(new TextBlock { Text = ToolPermissionStrings.BarRawJson, FontSize = 10, Foreground = ink, VerticalAlignment = VerticalAlignment.Center });
+            foldWords.Children.Add(chevron); foldWords.Children.Add(new TextBlock { Text = ToolPermissionStrings.BarRawJson, TextSize = 10, Foreground = ink, VerticalAlignment = VerticalAlignment.Center });
             permJsonFold = FoldButton(foldWords, ToolPermissionStrings.BarRawJson);
             AutomationProperties.SetAutomationId(permJsonFold, "permission-json-" + id);
-            permInputBlock = new TextBlock { FontFamily = mono, FontSize = 10, Foreground = ink, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, Margin = new Thickness(0, DesignMetrics.Spacing.Xs, 0, 0) };
+            permInputBlock = new TextBlock { TextFont = TextArea.Code, TextSize = 10, Foreground = ink, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, Margin = new Thickness(0, DesignMetrics.Spacing.Xs, 0, 0) };
             AutomationProperties.SetAutomationId(permInputBlock, "permission-input-" + id);
             void Fold()
             {
@@ -144,8 +144,8 @@ public sealed partial class MainWindow
             var details = new StackPanel { Spacing = DesignMetrics.Spacing.Sm, Margin = new Thickness(0, 0, DesignMetrics.Spacing.Xs, 0) };
             foreach (var part in new FrameworkElement[] { permFields, permSummaryBlock, permPathBlock, permReasonBlock, json }) details.Children.Add(part);
 
-            permCannotAllowBlock = new TextBlock { FontSize = 10, Foreground = ink2, TextWrapping = TextWrapping.Wrap };
-            var noteBlock = new TextBlock { Text = ToolPermissionStrings.BarOnceOnlyNote, FontSize = 11, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+            permCannotAllowBlock = new TextBlock { TextSize = 10, Foreground = ink2, TextWrapping = TextWrapping.Wrap };
+            var noteBlock = new TextBlock { Text = ToolPermissionStrings.BarOnceOnlyNote, TextSize = 11, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
 
             permDenyButton = new Button { Content = ToolPermissionStrings.ButtonDeny }; PaintCardButton(permDenyButton, prominent: false);
             AutomationProperties.SetName(permDenyButton, ToolPermissionStrings.ButtonDeny);
@@ -214,11 +214,11 @@ public sealed partial class MainWindow
             foreach (var field in pres.Fields)
             {
                 var block = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
-                block.Children.Add(new TextBlock { Text = field.Label, FontSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = b.Brush(DesignToken.Ink2) });
-                var value = new TextBlock { Text = field.Value, FontSize = 11, Foreground = ink, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true };
+                block.Children.Add(new TextBlock { Text = field.Label, TextSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = b.Brush(DesignToken.Ink2) });
+                var value = new TextBlock { Text = field.Value, TextSize = 11, Foreground = ink, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true };
                 if (field.Code)
                 {
-                    value.FontFamily = new FontFamily(DesignMetrics.Font.Mono);
+                    value.TextFont = TextArea.Code;
                     block.Children.Add(new Border { Child = value, Padding = new Thickness(DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Sm), CornerRadius = new CornerRadius(DesignMetrics.Radius.Row), Background = b.Brush(DesignToken.CardRaised) });
                 }
                 else block.Children.Add(value);

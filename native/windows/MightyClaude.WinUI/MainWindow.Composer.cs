@@ -38,7 +38,7 @@ public sealed partial class MainWindow
         private Grid toolbar = null!, inputRow = null!;
         private readonly StackPanel toolbarActions = new() { Orientation = Orientation.Horizontal, Spacing = ToolbarSpacing, VerticalAlignment = VerticalAlignment.Center };
         /// <summary>The shell pane's words where an agent pane has its pills (M/SessionPaneView.swift:728).</summary>
-        private readonly TextBlock shellLabel = new() { FontSize = DesignMetrics.Type.Pill, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
+        private readonly TextBlock shellLabel = new() { TextSize = DesignMetrics.Type.Pill, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
         /// <summary>The mark of a pane that continues an earlier conversation (M/SessionPaneView.swift:732-734).</summary>
         private readonly ComposerGlyph resumeMark = ComposerGlyph.Branch();
         private readonly ComposerGlyph sendArrow = ComposerGlyph.ArrowUp(), sendQueue = ComposerGlyph.QueueAdd(), sendStop = ComposerGlyph.Stop(false);
@@ -47,11 +47,11 @@ public sealed partial class MainWindow
         /// <summary>The rows between the editor and the toolbar: attachments being read, a background update holding sends, and why a draft cannot run yet.</summary>
         private StackPanel loadingRow = null!, holdRow = null!;
         private Grid blockedRow = null!;
-        private readonly TextBlock holdText = new() { FontSize = 11, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
+        private readonly TextBlock holdText = new() { TextSize = 11, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
         /// <summary>Why an attachment could not be added: its own row of the composer until it is dismissed or the next read begins (M/SessionPaneView.swift:591-600).</summary>
         private Grid attachmentErrorRow = null!;
-        private readonly TextBlock attachmentErrorText = new() { FontSize = 11, TextWrapping = TextWrapping.Wrap };
-        private readonly TextBlock pillMeasure = new() { FontSize = DesignMetrics.Type.Pill, FontWeight = Microsoft.UI.Text.FontWeights.Medium, FontFamily = new FontFamily(DesignMetrics.Font.Body) };
+        private readonly TextBlock attachmentErrorText = new() { TextSize = 11, TextWrapping = TextWrapping.Wrap };
+        private readonly TextBlock pillMeasure = new() { TextSize = DesignMetrics.Type.Pill, FontWeight = Microsoft.UI.Text.FontWeights.Medium, TextFont = TextArea.Interface };
         /// <summary>The provider whose mark the model pill carries now.</summary>
         private string? pillProvider;
 
@@ -74,7 +74,7 @@ public sealed partial class MainWindow
         /// </summary>
         private static T NewPill<T>(bool chevron = false) where T : ContentControl, new()
         {
-            var words = new TextBlock { TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, FontSize = DesignMetrics.Type.Pill, FontWeight = Microsoft.UI.Text.FontWeights.Medium, VerticalAlignment = VerticalAlignment.Center };
+            var words = new TextBlock { TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, TextSize = DesignMetrics.Type.Pill, FontWeight = Microsoft.UI.Text.FontWeights.Medium, VerticalAlignment = VerticalAlignment.Center };
             var iconHost = new Grid { Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
             var mark = ComposerGlyph.ChevronDown(); mark.View.Visibility = chevron ? Visibility.Visible : Visibility.Collapsed;
             // The Mac's pill keeps its own 5 between its parts (M/ComposerControls.swift:14), which PillWidth counts.
@@ -83,7 +83,7 @@ public sealed partial class MainWindow
             var face = new Border { Child = row, Padding = PillPadding, CornerRadius = new CornerRadius(16), BorderThickness = new Thickness(DesignMetrics.Stroke.Line) };
             return new T
             {
-                MinWidth = 0, MinHeight = DesignMetrics.Layout.Toolbar, Height = DesignMetrics.Layout.Toolbar, Padding = new Thickness(0), CornerRadius = new CornerRadius(16), FontSize = DesignMetrics.Type.Pill,
+                MinWidth = 0, MinHeight = DesignMetrics.Layout.Toolbar, Height = DesignMetrics.Layout.Toolbar, Padding = new Thickness(0), CornerRadius = new CornerRadius(16), TextSize = DesignMetrics.Type.Pill,
                 BorderThickness = new Thickness(0), HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Center,
                 Content = face, Tag = new PillParts(face, iconHost, words, mark, chevron),
             };
@@ -401,17 +401,17 @@ public sealed partial class MainWindow
             styleEnterChip.Margin = new Thickness(0, 0, ComposerChipGap, 0);
             inputRow.Children.Add(styleEnterChip); Grid.SetColumn(input, 1); inputRow.Children.Add(input);
 
-            loadingRow = ProgressRow(new TextBlock { Text = Locale.Get("composer.hint.attachmentsLoading"), FontSize = 11, VerticalAlignment = VerticalAlignment.Center });
+            loadingRow = ProgressRow(new TextBlock { Text = Locale.Get("composer.hint.attachmentsLoading"), TextSize = 11, VerticalAlignment = VerticalAlignment.Center });
             holdRow = ProgressRow(holdText);
             AutomationProperties.SetAutomationId(holdRow, "background-update-" + id);
             // An attachment that could not be added (M/SessionPaneView.swift:591-600): the accent mark, the reason in 11pt ink2 and a cross that takes it down.
             attachmentErrorRow = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, Margin = new Thickness(DesignMetrics.Inset.ComposerInnerH, 0, DesignMetrics.Inset.ComposerInnerH, 0), Visibility = Visibility.Collapsed };
             foreach (var width in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto }) attachmentErrorRow.ColumnDefinitions.Add(new() { Width = width });
-            attachmentErrorRow.Children.Add(new FontIcon { Glyph = "", FontSize = 11, Foreground = b.Brush(DesignToken.Accent), VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, DesignMetrics.Spacing.Xxs, 0, 0) });
+            attachmentErrorRow.Children.Add(new FontIcon { Glyph = "", TextSize = 11, Foreground = b.Brush(DesignToken.Accent), VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, DesignMetrics.Spacing.Xxs, 0, 0) });
             attachmentErrorText.Foreground = b.Brush(DesignToken.Ink2); Grid.SetColumn(attachmentErrorText, 1); attachmentErrorRow.Children.Add(attachmentErrorText);
             AutomationProperties.SetLiveSetting(attachmentErrorText, Microsoft.UI.Xaml.Automation.Peers.AutomationLiveSetting.Polite);
             var dismissError = owner.SafeButton("×", () => { ShowAttachmentError(null); return Task.CompletedTask; });
-            dismissError.Content = new FontIcon { Glyph = "", FontSize = 9 }; dismissError.Width = 18; dismissError.Height = 16; dismissError.MinWidth = 0; dismissError.MinHeight = 0; dismissError.Padding = new Thickness(0); dismissError.BorderThickness = new Thickness(0);
+            dismissError.Content = new FontIcon { Glyph = "", TextSize = 9 }; dismissError.Width = 18; dismissError.Height = 16; dismissError.MinWidth = 0; dismissError.MinHeight = 0; dismissError.Padding = new Thickness(0); dismissError.BorderThickness = new Thickness(0);
             dismissError.CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow); dismissError.VerticalAlignment = VerticalAlignment.Top;
             owner.PaintPlainButton(dismissError, b.Transparent, b.Subtle, ink: b.Brush(DesignToken.Ink2));
             AutomationProperties.SetName(dismissError, Locale.Get("composer.attachment.dismissError")); Grid.SetColumn(dismissError, 2); attachmentErrorRow.Children.Add(dismissError);
@@ -419,9 +419,9 @@ public sealed partial class MainWindow
             // Why a draft cannot run yet (M/SessionPaneView.swift:631-643): the accent mark, the 11pt medium line, the reason in ink2.
             blockedRow = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, Margin = new Thickness(DesignMetrics.Inset.ComposerInnerH, 0, DesignMetrics.Inset.ComposerInnerH, 0), Visibility = Visibility.Collapsed };
             blockedRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); blockedRow.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
-            blockedRow.Children.Add(new FontIcon { Glyph = "", FontSize = 11, Foreground = b.Brush(DesignToken.Accent), VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, DesignMetrics.Spacing.Xxs, 0, 0) });
+            blockedRow.Children.Add(new FontIcon { Glyph = "", TextSize = 11, Foreground = b.Brush(DesignToken.Accent), VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, DesignMetrics.Spacing.Xxs, 0, 0) });
             var blockedWords = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
-            blockedWords.Children.Add(new TextBlock { Text = Locale.Get("composer.blocked.title"), FontSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = b.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap });
+            blockedWords.Children.Add(new TextBlock { Text = Locale.Get("composer.blocked.title"), TextSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = b.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap });
             inputHint.Foreground = b.Brush(DesignToken.Ink2); blockedWords.Children.Add(inputHint);
             Grid.SetColumn(blockedWords, 1); blockedRow.Children.Add(blockedWords);
             AutomationProperties.SetAutomationId(blockedRow, "run-blocked-" + id);

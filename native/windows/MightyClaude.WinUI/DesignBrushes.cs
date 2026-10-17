@@ -197,8 +197,15 @@ internal sealed class DesignBrushes
         ("SolidBackgroundFillColorBaseBrush", DesignToken.Page, 1, false),
     ];
 
-    /// <summary>The stock controls' font resource, set to <see cref="DesignMetrics.Font.Body"/> in both themes.</summary>
+    /// <summary>
+    /// The stock controls' font resource, set in both themes to <see cref="DesignMetrics.Font.Body"/>, or the interface font the
+    /// text setting names when the window starts. Resource keys are written once (a rewrite can crash WinUI), so a later choice
+    /// reaches these only at the next start; the app's own words follow at once (<see cref="AppText"/>).
+    /// </summary>
     internal const string ControlFontResource = "ContentControlThemeFontFamily";
+    /// <summary>The stock controls' size resource and WinUI's own value of it, written only when the text setting is not 100%.</summary>
+    internal const string ControlSizeResource = "ControlContentThemeFontSize";
+    private const double StockControlSize = 14;
 
     /// <summary>
     /// Writes <see cref="ControlResources"/> into the application's own <c>ThemeDictionaries</c>
@@ -214,7 +221,10 @@ internal sealed class DesignBrushes
                 resources.ThemeDictionaries[key] = theme = new ResourceDictionary();
             foreach (var (name, token, opacity, isColor) in ControlResources)
                 theme[name] = isColor ? ToColor(palette[token], opacity) : new SolidColorBrush(ToColor(palette[token], opacity));
-            theme[ControlFontResource] = new FontFamily(DesignMetrics.Font.Body);
+            theme[ControlFontResource] = new FontFamily(AppText.FamilyName(TextArea.Interface)!);
+            // A stock control that names no size of its own (a dialog's words, a menu item) takes the text setting's
+            // size from its start; at 100% the key is not written and WinUI keeps its own 14.
+            if (AppText.Current.Scale != 1) theme[ControlSizeResource] = AppText.Size(StockControlSize);
         }
     }
 }

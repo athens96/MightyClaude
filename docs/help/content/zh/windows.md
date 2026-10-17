@@ -32,6 +32,7 @@ section: windows
 | {{kbd:⌘K}} | {{kbd:Ctrl+K}} | {{ui:menu.searchWorkspaces}} |
 | {{kbd:⌃⌘S}} | {{kbd:Ctrl+B}} | {{ui:sidebar.collapse}} / {{ui:sidebar.expand}} |
 | {{kbd:⌘,}} | {{kbd:Ctrl+,}} | {{ui:menu.settings}} |
+| {{kbd:⌘=}} / {{kbd:⌘-}} / {{kbd:⌘0}} | {{kbd:Ctrl+=}} / {{kbd:Ctrl+-}} / {{kbd:Ctrl+0}} | {{ui:menu.textBigger}} / {{ui:menu.textSmaller}} / {{ui:menu.textActualSize}} |
 | {{kbd:⌘Enter}} | {{kbd:Ctrl+Enter}} | 立即在新的 worktree 中运行，或立即发送给正在运行的 Claude |
 | {{kbd:⌃⌥⌘K}} | {{kbd:Ctrl+Alt+Esc}} | 停止来自手机的所有远程屏幕会话（[远程屏幕](phone.md#screen)） |
 
@@ -50,7 +51,7 @@ Windows 没有菜单栏。相同的功能位于侧边栏和{{ui:workspace.addPan
 | 语言 | 更改的语言在重新打开应用后生效。 |
 | 文件位置 | 提供{{ui:menu.showInExplorer}}，而不是{{ui:menu.showInFinder}}。 |
 | Mighty 编排 | 默认开启，可用设置中的开关关闭，这个开关也是一个注册表值（[开启和关闭](delegation.md#enable)）。worktree 位于 `%USERPROFILE%\.mightyclaude\worktrees`，其中含有目录联接或符号链接时不会自动清理（[关闭窗格和清理](delegation.md#close)）。 |
-| 文字大小和字体 | Windows 应用中还没有。可以在 Windows 设置 › 辅助功能 › 文本大小中放大应用的文字。 |
+| 文字大小和字体 | 与 Mac 相同，在{{ui:settings.nav.general}} › {{ui:settings.text.sectionTitle}}中选择大小（85–150%）、{{ui:settings.text.uiFontLabel}}、{{ui:settings.text.transcriptFontLabel}}和{{ui:settings.text.codeFontLabel}}，所有打开的窗口会立即跟着变化。也可以用 {{kbd:Ctrl+=}} / {{kbd:Ctrl+-}} / {{kbd:Ctrl+0}}，但终端或浏览器窗格获得焦点时，这些键留给该窗格。设置保存在注册表 `HKEY_CURRENT_USER\Software\MightyClaudeNative` 中。由 Windows 自带控件决定的文字（例如确认窗口的正文）在重新打开应用后才会变化，宠物气泡暂时不跟随此设置。 |
 
 > [!note]
 > Windows 应用的部分功能尚未在真实设备上充分验证。如发现异常，请告诉我们。

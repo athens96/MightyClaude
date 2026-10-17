@@ -22,7 +22,7 @@ public sealed partial class MainWindow
         private Button? diagramButton, timelineButton, structureButton;
         /// <summary>The badge after the bar's title for a style that is not built in (M/GuidedActionChip.swift:83-93).</summary>
         private Border? graphStyleBadge;
-        private readonly TextBlock graphStyleHeader = new() { FontSize = DesignMetrics.Type.Block, FontWeight = FontWeights.Bold, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, VerticalAlignment = VerticalAlignment.Center };
+        private readonly TextBlock graphStyleHeader = new() { TextSize = DesignMetrics.Type.Block, FontWeight = FontWeights.Bold, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, VerticalAlignment = VerticalAlignment.Center };
         private ScrollViewer? timelineScroll;
         private readonly StackPanel timelineStack = new() { Spacing = DesignMetrics.Spacing.Md, Padding = new Thickness(DesignMetrics.Inset.GraphBlockBodyH, DesignMetrics.Spacing.Md, DesignMetrics.Inset.GraphBlockBodyH, DesignMetrics.Spacing.Md) };
         private readonly HashSet<string> timelineFlipped = [], timelineOpen = [], timelineFull = [];
@@ -74,7 +74,7 @@ public sealed partial class MainWindow
             var mark = new Grid { Width = ViewSymbolBox, VerticalAlignment = VerticalAlignment.Center };
             mark.Children.Add(MightySymbols.Create(symbol, DesignMetrics.Type.Pill, owner.brushes.Brush(DesignToken.Ink2), MightySymbols.Weight.Semibold));
             var face = new StackPanel { Orientation = Orientation.Horizontal, Spacing = ViewSymbolGap, VerticalAlignment = VerticalAlignment.Center };
-            face.Children.Add(mark); face.Children.Add(new TextBlock { Text = text, FontSize = DesignMetrics.Type.Pill, VerticalAlignment = VerticalAlignment.Center });
+            face.Children.Add(mark); face.Children.Add(new TextBlock { Text = text, TextSize = DesignMetrics.Type.Pill, VerticalAlignment = VerticalAlignment.Center });
             var chip = new Border { Child = face, Padding = new Thickness(DesignMetrics.Spacing.Md, 0, DesignMetrics.Spacing.Md, 0), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment) };
             var button = new Button { Content = chip, MinWidth = 0, MinHeight = 0, Height = DesignMetrics.Layout.HitTarget, Padding = new Thickness(0), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), BorderThickness = new Thickness(0), HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Stretch };
             owner.PaintPlainButton(button, owner.brushes.Transparent, owner.brushes.Subtle);
@@ -107,7 +107,7 @@ public sealed partial class MainWindow
         private Border BuildStyleSourceBadge() => new()
         {
             Visibility = Visibility.Collapsed, Padding = new Thickness(DesignMetrics.Spacing.Xs, 1, DesignMetrics.Spacing.Xs, 1), CornerRadius = new CornerRadius(8), Background = owner.brushes.Subtle, VerticalAlignment = VerticalAlignment.Center,
-            Child = new TextBlock { FontSize = DesignMetrics.Type.Badge, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.NoWrap },
+            Child = new TextBlock { TextSize = DesignMetrics.Type.Badge, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.NoWrap },
         };
 
         /// <summary>
@@ -250,7 +250,7 @@ public sealed partial class MainWindow
                     }
                     desired.Add(known.View);
                 }
-                if (groups.Count == 0) desired.Add(new TextBlock { Text = Locale.Get("graph.timeline.empty"), FontSize = DesignMetrics.Type.Block, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, DesignMetrics.Spacing.Sm, 0, DesignMetrics.Spacing.Sm) });
+                if (groups.Count == 0) desired.Add(new TextBlock { Text = Locale.Get("graph.timeline.empty"), TextSize = DesignMetrics.Type.Block, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, DesignMetrics.Spacing.Sm, 0, DesignMetrics.Spacing.Sm) });
                 // Reconcile individual cards; unchanged transcripts stay attached and keep
                 // native selection, tool expansion and keyboard focus during streaming.
                 var changed = timelineStack.Children.Count != desired.Count || !timelineStack.Children.SequenceEqual(desired);
@@ -336,10 +336,10 @@ public sealed partial class MainWindow
             var head = TimelineHeading();
             var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Md, VerticalAlignment = VerticalAlignment.Center };
             var chevron = (FontIcon)MightySymbols.Create(open ? "chevron.down" : "chevron.right", 10, ink2);
-            chevron.FontWeight = FontWeights.Bold; chevron.Width = TimelineChevronWidth;
+            chevron.FontWeight = FontWeights.Bold; chevron.TextWidth = TimelineChevronWidth;
             line.Children.Add(chevron);
             var title = ProviderMarkView.Labelled(GraphRequestTitle(run, group.Ordinal), ProviderMark.MarkedProvider(pane.Provider), DesignMetrics.Type.Timeline, FontWeights.Bold);
-            PaintWords(title, b.Brush(DesignToken.Ink), new FontFamily(DesignMetrics.Font.Heading));
+            PaintWords(title, b.Brush(DesignToken.Ink), TextArea.Heading);
             line.Children.Add(title);
             if (older)
             {
@@ -355,8 +355,8 @@ public sealed partial class MainWindow
             Grid.SetColumn(status, 1); head.Children.Add(status); header.Children.Add(head);
             var promptText = string.Join(" ", group.Input.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)).Trim();
             TextBlock? prompt = null;
-            if (promptText.Length > 0) header.Children.Add(prompt = new TextBlock { Text = promptText, FontSize = DesignMetrics.Type.Block, Foreground = ink2, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(TimelineRequestIndent, 0, 0, 0) });
-            var tally = new TextBlock { Text = Locale.Get("phone.blocks.tally", new Dictionary<string, string> { ["total"] = group.Tally.Total.ToString(), ["settled"] = group.Tally.Settled.ToString() }), FontSize = DesignMetrics.Type.Pill, FontWeight = FontWeights.SemiBold, Foreground = ink2, Margin = new Thickness(TimelineRequestIndent, 0, 0, 0) };
+            if (promptText.Length > 0) header.Children.Add(prompt = new TextBlock { Text = promptText, TextSize = DesignMetrics.Type.Block, TextFont = TextArea.Transcript, Foreground = ink2, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(TimelineRequestIndent, 0, 0, 0) });
+            var tally = new TextBlock { Text = Locale.Get("phone.blocks.tally", new Dictionary<string, string> { ["total"] = group.Tally.Total.ToString(), ["settled"] = group.Tally.Settled.ToString() }), TextSize = DesignMetrics.Type.Pill, FontWeight = FontWeights.SemiBold, Foreground = ink2, Margin = new Thickness(TimelineRequestIndent, 0, 0, 0) };
             header.Children.Add(tally);
             timelineHeads[group.RunId] = (title, chevron, prompt, tally, status);
             var button = TimelineButton(header, "mighty-timeline-request-" + group.RunId, new Thickness(DesignMetrics.Spacing.Xxs, 0, DesignMetrics.Spacing.Xxs, 0), () => { ToggleTimelineSet(timelineFlipped, group.RunId); RefreshMightyView(Session); });
@@ -401,18 +401,18 @@ public sealed partial class MainWindow
             // The title and the line under it stand on the Mac's line pitch (13 on 16, 11 on 14; Segoe's own are 18 and 15), so a row
             // of the two is as high as the Mac's (Inset.GraphBlockBodyV, 16, Spacing.Xxs, 14, Inset.GraphBlockBodyV).
             var body = new StackPanel(); var text = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
-            text.Children.Add(new TextBlock { Text = row.Title, FontSize = DesignMetrics.Type.Title, FontWeight = FontWeights.Bold, Foreground = b.Brush(DesignToken.Ink), MaxLines = 2, TextWrapping = TextWrapping.Wrap, TextTrimming = TextTrimming.CharacterEllipsis, LineHeight = TimelineTitleLine, LineStackingStrategy = LineStackingStrategy.BlockLineHeight });
+            text.Children.Add(new TextBlock { Text = row.Title, TextSize = DesignMetrics.Type.Title, FontWeight = FontWeights.Bold, Foreground = b.Brush(DesignToken.Ink), MaxLines = 2, TextWrapping = TextWrapping.Wrap, TextTrimming = TextTrimming.CharacterEllipsis, TextLineHeight = TimelineTitleLine, LineStackingStrategy = LineStackingStrategy.BlockLineHeight });
             var agent = row.AgentIndex is { } n ? run.Agents[n] : null;
             // The request has no status and no usage of its own: its 실행 row runs and settles.
             var request = agent is null && !row.IsExecution;
             var capsule = request ? null : ModelUsageFormat.BlockCapsule(agent?.Usage ?? (agent is null ? run.Usage : null), agent?.ResponseRecords ?? (agent is null ? run.ResponseRecords : null) ?? [], agent is null ? run.NodeModelLabel : null, owner.Runtime(pane.Provider)?.ModelCatalog?.Models, versioned: true);
             var meta = new Grid { ColumnSpacing = DesignMetrics.Spacing.Xs, Height = TimelineMetaLine }; meta.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); meta.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
             meta.Children.Add(MightySymbols.Create(symbol, 9, b.Brush(tint), MightySymbols.Weight.Bold, b.Brush(DesignToken.Card)));
-            var description = new TextBlock { Text = string.Join(" · ", new[] { MightyTimeline.KindLabel(row.Kind), capsule, MightyTimeline.DurationLabel(row.DurationMs) }.Where(s => s is { Length: > 0 })), FontSize = DesignMetrics.Type.Pill, Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center, LineHeight = TimelineMetaLine, LineStackingStrategy = LineStackingStrategy.BlockLineHeight };
+            var description = new TextBlock { Text = string.Join(" · ", new[] { MightyTimeline.KindLabel(row.Kind), capsule, MightyTimeline.DurationLabel(row.DurationMs) }.Where(s => s is { Length: > 0 })), TextSize = DesignMetrics.Type.Pill, Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center, TextLineHeight = TimelineMetaLine, LineStackingStrategy = LineStackingStrategy.BlockLineHeight };
             Grid.SetColumn(description, 1); meta.Children.Add(description); text.Children.Add(meta);
             if (row.Latest is { } latest)
             {
-                var step = new TextBlock { Text = latest, FontSize = 10.8, FontFamily = new FontFamily(DesignMetrics.Font.Mono), Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+                var step = new TextBlock { Text = latest, TextSize = 10.8, TextFont = TextArea.Code, Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
                 FrameworkElement doing = step;
                 if (tone == DesignTone.Run)
                 {
@@ -442,10 +442,10 @@ public sealed partial class MainWindow
                         Background = b.Brush(tint, DesignMetrics.Opacity.InputPreview), Padding = new Thickness(DesignMetrics.Inset.GraphBlockBodyH - line, DesignMetrics.Inset.GraphBlockBodyV, DesignMetrics.Inset.GraphBlockBodyH - line, DesignMetrics.Inset.GraphBlockBodyV),
                         // Nothing follows the request's band: no rule under it, and it ends on the card's inner curve.
                         BorderThickness = new Thickness(0, 0, 0, request ? 0 : DesignMetrics.Stroke.Line), BorderBrush = b.Brush(DesignToken.Line), CornerRadius = request ? new CornerRadius(0, 0, inner, inner) : new CornerRadius(0),
-                        Child = new TextBlock { Text = input, FontSize = DesignMetrics.Type.Pill, Foreground = b.Brush(DesignToken.Ink), MaxLines = 6, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true },
+                        Child = new TextBlock { Text = input, TextSize = DesignMetrics.Type.Pill, TextFont = TextArea.Transcript, Foreground = b.Brush(DesignToken.Ink), MaxLines = 6, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true },
                     });
                 var entries = (agent?.Entries ?? run.RootEntries).Where(e => e.Kind != "user").ToList();
-                if (!request && entries.Count == 0) detail.Children.Add(new TextBlock { Text = Locale.Get("phone.blocks.nothing"), FontSize = DesignMetrics.Type.Block, Foreground = ink2, Margin = new Thickness(DesignMetrics.Inset.GraphBlockBodyH - line, DesignMetrics.Inset.GraphBlockBodyH, DesignMetrics.Inset.GraphBlockBodyH - line, DesignMetrics.Inset.GraphBlockBodyH - line) });
+                if (!request && entries.Count == 0) detail.Children.Add(new TextBlock { Text = Locale.Get("phone.blocks.nothing"), TextSize = DesignMetrics.Type.Block, Foreground = ink2, Margin = new Thickness(DesignMetrics.Inset.GraphBlockBodyH - line, DesignMetrics.Inset.GraphBlockBodyH, DesignMetrics.Inset.GraphBlockBodyH - line, DesignMetrics.Inset.GraphBlockBodyH - line) });
                 else if (!request) detail.Children.Add(TimelineTranscript(row.NodeId, entries, pane, 260, new Thickness(DesignMetrics.Inset.Transcript - line, DesignMetrics.Inset.Transcript, DesignMetrics.Inset.Transcript - line, DesignMetrics.Inset.Transcript + 22)));
                 body.Children.Add(new Border { Height = DesignMetrics.Stroke.Line, Background = b.Brush(DesignToken.Line) }); body.Children.Add(detail);
             }
@@ -502,7 +502,7 @@ public sealed partial class MainWindow
             var header = TimelineHeading(); header.Padding = new Thickness(DesignMetrics.Inset.GraphBlockBodyH, DesignMetrics.Inset.GraphBlockBodyV, DesignMetrics.Inset.GraphBlockBodyH, DesignMetrics.Inset.GraphBlockBodyV); header.Background = fill; header.CornerRadius = new CornerRadius(radius);
             var named = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Center };
             named.Children.Add(MightySymbols.Create(TimelineResultSymbol(result.Tone), 11, ink, MightySymbols.Weight.Bold, fill));
-            var title = new TextBlock { Text = MightyGraphBlockModel.ResultTitle(run.Status), FontSize = DesignMetrics.Type.Block, FontWeight = FontWeights.ExtraBold, Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
+            var title = new TextBlock { Text = MightyGraphBlockModel.ResultTitle(run.Status), TextSize = DesignMetrics.Type.Block, FontWeight = FontWeights.ExtraBold, Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
             named.Children.Add(title); header.Children.Add(named);
             var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Center };
             var files = run.Status == "completed" ? MightyGraphBlockModel.FilesFor(run, Workspace.Path) : [];
@@ -517,7 +517,7 @@ public sealed partial class MainWindow
                 // The two documents and how many the answer names (M/MightyGraphView.swift:851-857).
                 var face = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xxs, VerticalAlignment = VerticalAlignment.Center };
                 face.Children.Add(MightySymbols.Create("doc.on.doc", 13, ink));
-                var count = new TextBlock { Text = files.Count.ToString(System.Globalization.CultureInfo.InvariantCulture), FontSize = DesignMetrics.Type.Small, Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
+                var count = new TextBlock { Text = files.Count.ToString(System.Globalization.CultureInfo.InvariantCulture), TextSize = DesignMetrics.Type.Small, Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
                 Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(count, FontNumeralAlignment.Tabular);
                 face.Children.Add(count);
                 // 18 tall: with Inset.GraphBlockBodyV over and under it, the strip is 18 + 2 × Inset.GraphBlockBodyV high, as the Mac's.
@@ -530,7 +530,7 @@ public sealed partial class MainWindow
             var caption = new TextBlock
             {
                 Text = Locale.Get("graph.timeline.requestOrdinal", new Dictionary<string, string> { ["n"] = group.Ordinal.ToString() }) + (run.TotalUsage is { } usage ? " · " + GraphTokenUsage.Compact(usage.Total) : ""),
-                FontSize = 10.5, FontWeight = FontWeights.SemiBold, FontFamily = new FontFamily(DesignMetrics.Font.Mono), VerticalAlignment = VerticalAlignment.Center, Foreground = ink,
+                TextSize = 10.5, FontWeight = FontWeights.SemiBold, TextFont = TextArea.Code, VerticalAlignment = VerticalAlignment.Center, Foreground = ink,
             };
             actions.Children.Add(caption);
             Grid.SetColumn(actions, 1); header.Children.Add(actions); body.Children.Add(header);
@@ -541,13 +541,13 @@ public sealed partial class MainWindow
                 var content = new StackPanel { Spacing = DesignMetrics.Spacing.Xs, Margin = new Thickness(DesignMetrics.Inset.GraphBlockBodyH, DesignMetrics.Spacing.Sm, DesignMetrics.Inset.GraphBlockBodyH, DesignMetrics.Spacing.Md) };
                 content.Children.Add(words = new TextBlock
                 {
-                    Text = answer, FontSize = TimelineResultBody, Foreground = b.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true,
+                    Text = answer, TextSize = TimelineResultBody, TextFont = TextArea.Transcript, Foreground = b.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true,
                     MaxLines = full ? 0 : TimelineResultLines, TextTrimming = full ? TextTrimming.None : TextTrimming.CharacterEllipsis,
                 });
                 if (MightyTimeline.Folds(answer))
                 {
                     var label = full ? Locale.Get("phone.blocks.resultLess") : Locale.Get("phone.blocks.resultMore");
-                    var toggle = HeaderButton(new TextBlock { Text = label, FontSize = DesignMetrics.Type.Block, FontWeight = FontWeights.Bold }, b.Brush(DesignToken.Accent));
+                    var toggle = HeaderButton(new TextBlock { Text = label, TextSize = DesignMetrics.Type.Block, FontWeight = FontWeights.Bold }, b.Brush(DesignToken.Accent));
                     toggle.HorizontalAlignment = HorizontalAlignment.Left;
                     AutomationProperties.SetAutomationId(toggle, "mighty-timeline-result-more-" + result.NodeId); AutomationProperties.SetName(toggle, label); ToolTipService.SetToolTip(toggle, label);
                     toggle.Click += (_, _) => { ToggleTimelineSet(timelineFull, result.NodeId); RefreshMightyView(Session); };

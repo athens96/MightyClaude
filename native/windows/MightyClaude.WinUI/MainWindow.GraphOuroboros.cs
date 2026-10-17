@@ -130,7 +130,7 @@ public sealed partial class MainWindow
             };
             foreach (var width in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto }) head.ColumnDefinitions.Add(new ColumnDefinition { Width = width });
             head.Children.Add(MightySymbols.Create("infinity", 13, tint));
-            var title = new TextBlock { Text = block.Title, FontSize = DesignMetrics.Type.Block, FontWeight = FontWeights.SemiBold, Foreground = b.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+            var title = new TextBlock { Text = block.Title, TextSize = DesignMetrics.Type.Block, FontWeight = FontWeights.SemiBold, Foreground = b.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(title, 1); head.Children.Add(title); graphTitles[block.Id] = title;
             var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Center };
             view.Activity = null; graphActivitySets.Remove(block.Id);
@@ -154,7 +154,7 @@ public sealed partial class MainWindow
                 body.RowDefinitions.Add(new RowDefinition { Height = fills ? new GridLength(1, GridUnitType.Star) : GridLength.Auto });
                 Grid.SetRow(element, body.RowDefinitions.Count - 1); body.Children.Add(element);
             }
-            TextBlock Words(string text, double size, Brush ink, int lines) => new() { Text = text, FontSize = size, Foreground = ink, TextWrapping = lines > 1 ? TextWrapping.Wrap : TextWrapping.NoWrap, MaxLines = lines, TextTrimming = TextTrimming.CharacterEllipsis };
+            TextBlock Words(string text, double size, Brush ink, int lines) => new() { Text = text, TextSize = size, Foreground = ink, TextWrapping = lines > 1 ? TextWrapping.Wrap : TextWrapping.NoWrap, MaxLines = lines, TextTrimming = TextTrimming.CharacterEllipsis };
             if (snapshot?.Goal is { } goal)
             {
                 var words = Words(goal, DesignMetrics.Type.Block, b.Brush(DesignToken.Ink), expanded ? 2 : 1);
@@ -209,13 +209,13 @@ public sealed partial class MainWindow
                 : Words(link?.ExecutionID is { } execution ? Locale.Get("graph.ouroboros.executionID", new Dictionary<string, string> { ["id"] = execution })
                     : Locale.Get("graph.ouroboros.jobID", new Dictionary<string, string> { ["id"] = link?.JobID ?? "" }), DesignMetrics.Type.Badge, ink2, 1);
             if (failed) AutomationProperties.SetAutomationId(id, "mighty-ouroboros-open-failed-" + block.Id);
-            else { id.FontFamily = new FontFamily(DesignMetrics.Font.Mono); id.IsTextSelectionEnabled = true; }
+            else { id.TextFont = TextArea.Code; id.IsTextSelectionEnabled = true; }
             id.VerticalAlignment = VerticalAlignment.Center;
             foot.Children.Add(id);
             var accent = b.Brush(DesignToken.Accent);
             var face = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs, VerticalAlignment = VerticalAlignment.Center };
             face.Children.Add(MightySymbols.Create("globe", 11, accent));
-            face.Children.Add(new TextBlock { Text = Locale.Get("graph.ouroboros.openDashboard"), FontSize = DesignMetrics.Type.Pill, Foreground = accent, VerticalAlignment = VerticalAlignment.Center });
+            face.Children.Add(new TextBlock { Text = Locale.Get("graph.ouroboros.openDashboard"), TextSize = DesignMetrics.Type.Pill, Foreground = accent, VerticalAlignment = VerticalAlignment.Center });
             var open = HeaderButton(face, accent);
             open.IsEnabled = link is not null && graphOuroboros?.Opening(link.Key) != true;
             AutomationProperties.SetAutomationId(open, "mighty-ouroboros-dashboard-" + block.Id);
@@ -236,7 +236,7 @@ public sealed partial class MainWindow
         {
             var b = owner.brushes; var ink2 = b.Brush(DesignToken.Ink2);
             if (snapshot?.Items is not { Count: > 0 } items)
-                return new TextBlock { Text = Locale.Get(snapshot?.Items is null ? "graph.ouroboros.loadingACs" : "graph.ouroboros.noACs"), FontSize = DesignMetrics.Type.Pill, Foreground = ink2, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Top };
+                return new TextBlock { Text = Locale.Get(snapshot?.Items is null ? "graph.ouroboros.loadingACs" : "graph.ouroboros.noACs"), TextSize = DesignMetrics.Type.Pill, Foreground = ink2, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Top };
             var rows = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs, Padding = new Thickness(0, 0, 0, DesignMetrics.Spacing.Sm) };
             foreach (var item in items.Take(300))
             {
@@ -249,7 +249,7 @@ public sealed partial class MainWindow
                 face.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); face.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                 var mark = MightySymbols.Create(symbol, 11, ink); mark.VerticalAlignment = VerticalAlignment.Top; mark.Margin = new Thickness(0, DesignMetrics.Stroke.Line, 0, 0);
                 face.Children.Add(mark);
-                var words = new TextBlock { Text = item.Title, FontSize = DesignMetrics.Type.Pill, Foreground = b.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis };
+                var words = new TextBlock { Text = item.Title, TextSize = DesignMetrics.Type.Pill, Foreground = b.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis };
                 ToolTipService.SetToolTip(words, item.Title);
                 Grid.SetColumn(words, 1); face.Children.Add(words);
                 var row = new Border

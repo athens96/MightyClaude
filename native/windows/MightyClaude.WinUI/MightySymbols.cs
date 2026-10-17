@@ -83,21 +83,29 @@ internal static class MightySymbols
         FrameworkElement view;
         if (Glyph(symbol) is { } glyph)
         {
-            var icon = new FontIcon { Glyph = glyph, FontSize = size, Width = size, Height = size };
+            var icon = new FontIcon { Glyph = glyph, TextSize = size };
             if (ink is not null) icon.Foreground = ink;
             if (symbol == "arrow.down.right.and.arrow.up.left") { icon.RenderTransformOrigin = new Point(.5, .5); icon.RenderTransform = new ScaleTransform { ScaleX = -1 }; }
-            view = icon;
+            view = Boxed(icon, size);
         }
         else if (symbol == "infinity")
         {
-            var words = new TextBlock { Text = "\u221E", FontSize = size * 1.15, LineHeight = size, LineStackingStrategy = LineStackingStrategy.BlockLineHeight, TextAlignment = TextAlignment.Center, Width = size, Height = size };
+            var words = new TextBlock { Text = "\u221E", TextSize = size * 1.15, TextLineHeight = size, LineStackingStrategy = LineStackingStrategy.BlockLineHeight, TextAlignment = TextAlignment.Center };
             if (ink is not null) words.Foreground = ink;
-            view = words;
+            view = Boxed(words, size);
         }
-        else view = Drawn(symbol, Math.Round(size * DrawnScale * 2) / 2, ink, Line(weight, size), cut);
+        // A drawn symbol is a shape, not a glyph: it takes the text setting's size when it is made.
+        else view = Drawn(symbol, Math.Round(AppText.Size(size) * DrawnScale * 2) / 2, ink, Line(weight, AppText.Size(size)), cut);
         view.VerticalAlignment = VerticalAlignment.Center; view.IsHitTestVisible = false;
         AutomationProperties.SetAccessibilityView(view, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
         return view;
+    }
+
+    /// <summary>A glyph in a square as wide as its size at the text setting's scale, which follows each new setting.</summary>
+    private static FrameworkElement Boxed(FrameworkElement glyph, double size)
+    {
+        glyph.TextWidth = size; glyph.TextHeight = size;
+        return glyph;
     }
 
     /// <summary>Recolours a symbol <see cref="Create"/> made, by handing it another shared brush.</summary>

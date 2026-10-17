@@ -1247,6 +1247,7 @@
   "settings.text.fontLabel": "글꼴",
   "settings.text.fontSystem": "시스템 기본",
   "settings.text.monospaceSystem": "시스템 고정폭",
+  "settings.text.noteWindows": "Ctrl+= · Ctrl+− · Ctrl+0으로도 크기를 바꿀 수 있습니다. 터미널이나 브라우저 창에 커서가 있으면 이 키는 그 창이 씁니다.",
   "settings.text.note": "보기 메뉴의 ⌘= · ⌘− · ⌘0으로 크기를 바꿀 수 있습니다. 코드 글꼴은 터미널에도 쓰입니다.",
   "settings.text.preview": "다람쥐 헌 쳇바퀴에 타고파. The quick brown fox 0123456789",
   "settings.text.reset": "기본값으로",
