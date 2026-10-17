@@ -51,6 +51,16 @@ public sealed partial class MainWindow
         finally { firewallBusy = false; FirewallChanged?.Invoke(); }
     }
 
+    /// <summary>The firewall row's button while the rule could not be read: the unelevated query again, busy like a change.</summary>
+    private async Task RecheckFirewallRule()
+    {
+        if (options.SmokeTest && firewallRunner is null) return;
+        if (firewallBusy) return;
+        firewallBusy = true; FirewallChanged?.Invoke();
+        try { firewallMessage = null; await RefreshFirewallState(); }
+        finally { firewallBusy = false; FirewallChanged?.Invoke(); }
+    }
+
     /// <summary>Turning the remote or its direct path off takes the rule away when nothing needs it any more: one UAC prompt from that same click.</summary>
     private async Task RemoveFirewallRuleIfUnneeded()
     {

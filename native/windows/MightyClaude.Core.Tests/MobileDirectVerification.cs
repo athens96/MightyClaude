@@ -563,6 +563,14 @@ internal static class MobileDirectVerification
         Check(remote.Contains("mobileRouter.DirectEndpoints = () => mobileHost?.DirectEndpoints ?? [];", StringComparison.Ordinal), "/m1/info reads the host's endpoints");
         Check(remote.Contains("MobileDirectStrings.Description", StringComparison.Ordinal) && remote.Contains("MobileDirectStatusText.Detail(", StringComparison.Ordinal) && remote.Contains("MobileDirectStrings.FirewallState(", StringComparison.Ordinal), "the rows say what Core words");
         Check(remote.Contains("await Act(RemoveFirewallRuleIfUnneeded);", StringComparison.Ordinal), "turning the path off takes the rule away from that same click");
+        // Only a switch the user turns off may elevate, never one the code sets, and a failed write's error is not cleared when nothing elevates.
+        foreach (var name in new[] { "enabled", "direct" })
+            Check(remote.Contains(name + ".Unchecked += async (_, _) => { if (showing) return; await Write(", StringComparison.Ordinal), name + "'s switch-off ignores values the code sets");
+        Check(System.Text.RegularExpressions.Regex.Matches(remote, @"if \(firewallState == FirewallRuleState\.Present && FirewallPorts\(\)\.Count == 0\) await Act\(RemoveFirewallRuleIfUnneeded\);").Count == 2, "the rule is looked at before Act clears the error line");
+        // A reopened page never reads the rule over a change still waiting on its prompt; an unreadable rule can be read again.
+        Check(remote.Contains("if (!firewallBusy) await RefreshFirewallState();", StringComparison.Ordinal), "a reopened page leaves an in-flight change's state alone");
+        Check(remote.Contains("firewallState == FirewallRuleState.Unknown ? RecheckFirewallRule() :", StringComparison.Ordinal) && remote.Contains("MobileDirectStrings.FirewallRecheckButton", StringComparison.Ordinal), "an unknown rule can be checked again");
+        foreach (var language in Locale.Languages) Check(Locale.Catalogue(language).TryGetValue("setup.button.recheck", out var recheck) && recheck.Trim().Length > 0, language + " has the check-again words");
         var direct = Source("MainWindow.MobileDirect.cs");
         Check(direct.Contains("if (options.SmokeTest && firewallRunner is null) return;", StringComparison.Ordinal), "a smoke run never reads or changes this PC's firewall");
         // Only Core's words reach the row: never a result's detail code or an exception's own (Windows-language) text.

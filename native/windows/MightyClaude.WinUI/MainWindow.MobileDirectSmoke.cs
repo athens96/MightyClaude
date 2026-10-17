@@ -23,7 +23,7 @@ public sealed partial class MainWindow
         // The runner starts netsh only from the folder Windows reports, so the recorder is given that folder's name (read, never run).
         var system = WindowsFirewallRule.SystemDirectory ?? @"C:\Windows\System32";
         var netsh = system.TrimEnd('\\') + @"\netsh.exe";
-        var launched = new List<ProcessStartInfo>(); var present = false; Exception? elevationFails = null;
+        var launched = new List<ProcessStartInfo>(); var present = false; Exception? elevationFails = null; int? queryAnswers = null;
         var heldRunner = firewallRunner; var heldRemote = service.Snapshot.MobileRemote;
         firewallRunner = new((info, _) =>
         {
@@ -31,7 +31,7 @@ public sealed partial class MainWindow
             var elevated = info.Verb == WindowsFirewallRule.ElevationVerb;
             if (elevated && elevationFails is { } failure) return Task.FromException<int>(failure);
             if (elevated) present = !info.Arguments.StartsWith("advfirewall firewall delete rule ", StringComparison.Ordinal);
-            return Task.FromResult(elevated || present ? 0 : 1);
+            return Task.FromResult(elevated ? 0 : queryAnswers ?? (present ? 0 : 1));
         }, system, program);
         var fixedStatus = new MobileDirectStatus("listening", ["100.101.102.103:43139", "[fd7a:115c:a1e0::1234:5678]:43139"]);
         mobileDirectStatusOverride = fixedStatus;
@@ -71,6 +71,14 @@ public sealed partial class MainWindow
             elevationFails = new TimeoutException();
             await ChangeFirewallRule(add: true);
             Require(firewallMessage == MobileDirectStrings.FirewallOutcome(new(FirewallChange.Failed, "timeout")) && firewallState == FirewallRuleState.Absent && !firewallBusy, "a timed-out prompt: " + firewallMessage);
+            // A rule that cannot be read: the button offers to read it again (unelevated), and that read clears the unknown state.
+            elevationFails = null; queryAnswers = 5;
+            await RefreshFirewallState();
+            var unknownButton = SettingsElements(BuildMobileRemoteSection()).OfType<Button>().First(element => AutomationProperties.GetAutomationId(element) == "settings-mobile-firewall-button");
+            Require(firewallState == FirewallRuleState.Unknown && Equals(unknownButton.Content, MobileDirectStrings.FirewallRecheckButton) && unknownButton.Visibility == Visibility.Visible, "an unreadable rule offers to check again");
+            queryAnswers = null; var elevatedBefore = launched.Count(info => info.Verb == WindowsFirewallRule.ElevationVerb);
+            await RecheckFirewallRule();
+            Require(firewallState == FirewallRuleState.Absent && !firewallBusy && launched.Count(info => info.Verb == WindowsFirewallRule.ElevationVerb) == elevatedBefore, "checking again reads the rule without elevating");
             checks["outcomes"] = true;
             checks["passed"] = true;
         }

@@ -29,6 +29,9 @@ public static class MobileDirectStrings
         _ => "mobileRemote.direct.windows.firewall.unknown",
     });
 
+    /// <summary>The firewall row's button while the rule could not be read: the setup screen's own "check again" words.</summary>
+    public static string FirewallRecheckButton => Locale.Get("setup.button.recheck");
+
     public static string FirewallButton(FirewallRuleState state) =>
         Locale.Get(state == FirewallRuleState.Present ? "mobileRemote.direct.windows.firewall.removeButton" : "mobileRemote.direct.windows.firewall.addButton");
 
