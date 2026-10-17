@@ -82,10 +82,18 @@ struct RemoteSettingsSection: View {
                     HStack(spacing: DesignMetrics.Spacing.sm) {
                         Text(showsKey ? value : String(repeating: "•", count: 16)).font(.ui(size: 11, design: .monospaced)).textSelection(.enabled).lineLimit(1).truncationMode(.middle)
                         Button(showsKey ? L("settings.remote.hideKeyButton") : L("settings.remote.showKeyButton")) { showsKey.toggle() }.controlSize(.small)
-                        copyButton(value, identifier: "settings-remote-copy-key")
+                        copyButton(value, identifier: "settings-remote-copy-key", secret: true)
                     }
                 }
             }
+            Toggle(isOn: Binding(get: { host.allowsFullAccess }, set: { store.setRemoteFullAccess($0) })) {
+                VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
+                    Text(L("settings.remote.allowFullAccess"))
+                    Text(L("settings.remote.allowFullAccessDescription"))
+                        .font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .accessibilityIdentifier("settings-remote-full-access")
             Text(L("settings.remote.sharedListTitle")).font(.ui(size: 11, weight: .medium)).foregroundStyle(.secondary)
             ForEach(localWorkspaces.filter { host.workspaceIds.contains($0.id) }) { workspace in
                 Label(workspace.name, systemImage: "folder").font(.ui(size: 12)).help(workspace.path)
@@ -193,9 +201,24 @@ struct RemoteSettingsSection: View {
         .accessibilityIdentifier("settings-remote-connection-\(connection.id)")
     }
 
-    private func copyButton(_ value: String, identifier: String) -> some View {
+    /// A `secret` (the key) is marked concealed and transient, so clipboard
+    /// managers neither show nor keep it, and is cleared after a minute if it
+    /// is still what the clipboard holds.
+    private func copyButton(_ value: String, identifier: String, secret: Bool = false) -> some View {
         Button {
-            NSPasteboard.general.clearContents(); NSPasteboard.general.setString(value, forType: .string)
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            guard secret else { pasteboard.setString(value, forType: .string); return }
+            let item = NSPasteboardItem()
+            item.setString(value, forType: .string)
+            item.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"))
+            item.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
+            pasteboard.writeObjects([item])
+            let written = pasteboard.changeCount
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(60))
+                if pasteboard.changeCount == written, pasteboard.string(forType: .string) == value { pasteboard.clearContents() }
+            }
         } label: { Label(L("settings.remote.copyButton"), systemImage: "doc.on.doc") }
             .controlSize(.small).accessibilityIdentifier(identifier)
     }

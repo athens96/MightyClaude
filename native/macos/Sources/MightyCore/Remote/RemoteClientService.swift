@@ -40,8 +40,30 @@ public actor RemoteClientService {
     private var closing = false
     private var connecting = Set<String>()
 
-    public init(repository: StateRepository, dataDirectory: URL, allowLoopbackForTests: Bool = false, onEvent: @escaping @Sendable (RunEvent) -> Void) {
+    /// Whether the route to a host's IP still leaves from this Mac's Tailscale
+    /// tunnel. Asked before every request; tests replace it.
+    private let routeCheck: @Sendable (String) -> Bool
+
+    public init(repository: StateRepository, dataDirectory: URL, allowLoopbackForTests: Bool = false, routeCheck: (@Sendable (String) -> Bool)? = nil,
+                onEvent: @escaping @Sendable (RunEvent) -> Void) {
         self.repository = repository; self.dataDirectory = dataDirectory; self.testing = allowLoopbackForTests; self.onEvent = onEvent
+        self.routeCheck = routeCheck ?? (allowLoopbackForTests ? { _ in true } : Self.routedThroughTailscale)
+    }
+
+    /// The route to `ip` leaves from one of this Mac's Tailscale addresses. A
+    /// carrier-grade NAT network (or another VPN) can route 100.64/10 elsewhere,
+    /// outside WireGuard, and routes change while the app runs.
+    static func routedThroughTailscale(_ ip: String) -> Bool {
+        guard let source = TailscaleAddresses.sourceAddress(toward: ip) else { return false }
+        return TailscaleAddresses.current().contains(source)
+    }
+
+    /// Before each request to the host: the route still goes through the
+    /// tunnel, or the connection is lost (never retried as a passing failure).
+    private func ensureRoute(_ connectionId: String, _ target: RemoteTarget) async throws {
+        guard !routeCheck(target.ip) else { return }
+        await fail(connectionId, message: L("remote.connect.error.notViaTailscale"))
+        throw MightyError(L("remote.connect.error.notViaTailscale"))
     }
 
     public func list() -> [RemoteConnectionInfo] {
@@ -119,7 +141,10 @@ public actor RemoteClientService {
         while let address = connections[id]?.info.address, connecting.contains(address), Date() < deadline {
             try await Task.sleep(for: .milliseconds(50))
         }
-        if let info = connections[id]?.info, info.status == .connected, connections[id]?.target != nil { return info }
+        if let info = connections[id]?.info, info.status == .connected, let target = connections[id]?.target {
+            try await ensureRoute(id, target)
+            return info
+        }
         return try await refresh(id: id)
     }
 
@@ -154,7 +179,7 @@ public actor RemoteClientService {
         let target = try await RemoteTransport.resolve(address, allowLoopback: testing)
         // The peer must be reached through this Mac's own tunnel: a carrier-grade
         // NAT network can route a 100.64/10 address over Wi-Fi, outside WireGuard.
-        if !testing, !(TailscaleAddresses.sourceAddress(toward: target.ip).map { local.contains($0) } ?? false) {
+        if !routeCheck(target.ip) {
             throw MightyError(L("remote.connect.error.notViaTailscale"))
         }
         let data = try await RemoteTransport.request(target, key: key, method: "GET", path: RemoteProtocol.pathPrefix + "info")
@@ -195,6 +220,7 @@ public actor RemoteClientService {
             guard body.count <= AttachmentSupport.maximumRequestBytes, request.attachments.isEmpty ? body.count <= RemoteProtocol.maximumRequestBytes : true else {
                 throw MightyError(L("remote.run.error.tooLarge"))
             }
+            try await ensureRoute(reference.connectionId, target)
             let data = try await RemoteTransport.request(target, key: key, method: "POST", path: RemoteProtocol.pathPrefix + "runs", body: body,
                                                          timeout: request.attachments.isEmpty ? 30 : RemoteProtocol.uploadTimeout)
             let accepted = try JSONDecoder().decode(RemoteWireJob.self, from: data)
@@ -231,6 +257,9 @@ public actor RemoteClientService {
             do {
                 let data: Data
                 do {
+                    guard routeCheck(run.target.ip) else {
+                        await fail(run.connectionId, message: L("remote.connect.error.notViaTailscale")); return
+                    }
                     data = try await RemoteTransport.request(run.target, key: run.key, method: "GET", path: RemoteProtocol.pathPrefix + "runs/\(jobId)/events?cursor=\(run.cursor)")
                     failingSince = nil
                 } catch where !Task.isCancelled && Self.transient(error) && Date().timeIntervalSince(failingSince ?? Date()) < RemoteProtocol.pollRetryWindow {
@@ -245,15 +274,18 @@ public actor RemoteClientService {
                     throw MightyError(L("remote.run.error.badOutput"))
                 }
                 if poll.gap { onEvent(RunEvent(sessionId: id, type: "log", entry: LogEntry(kind: "system", text: L("remote.run.notice.gap")))) }
-                var cursor = run.cursor, terminal = false
+                var cursor = run.cursor, terminal = false, skipped = false
                 for item in poll.events {
-                    guard item.cursor > cursor, item.cursor <= poll.cursor, RemoteWorkspaceValidation.event(item.event, sessionId: jobId) else { throw MightyError(L("remote.run.error.badOutput")) }
+                    guard item.cursor > cursor, item.cursor <= poll.cursor else { throw MightyError(L("remote.run.error.badOutput")) }
                     cursor = item.cursor
+                    // One event the client cannot use is left out, and said so; the run goes on.
+                    guard RemoteWorkspaceValidation.event(item.event, sessionId: jobId) else { skipped = true; continue }
                     if let event = Self.local(item.event, pane: id) {
                         onEvent(event)
                         if event.type == "status", ["completed", "error", "stopped"].contains(event.status ?? "") { terminal = true }
                     }
                 }
+                if skipped { onEvent(RunEvent(sessionId: id, type: "log", entry: LogEntry(kind: "system", text: L("remote.run.notice.skipped")))) }
                 cursor = poll.cursor
                 runs[id]?.cursor = cursor
                 if poll.done {
@@ -295,12 +327,13 @@ public actor RemoteClientService {
     }
 
     private func stopOnHost(_ run: Run) async {
-        guard let job = run.jobId else { return }
+        guard let job = run.jobId, routeCheck(run.target.ip) else { return }
         _ = try? await RemoteTransport.request(run.target, key: run.key, method: "POST", path: RemoteProtocol.pathPrefix + "runs/\(job)/stop", body: Data("{}".utf8), timeout: 5)
     }
 
     private func send<T: Encodable>(_ id: String, _ action: String, _ body: T) async throws -> Bool {
         guard let run = runs[id], !run.stopping, let job = run.jobId else { throw MightyError(L("run.error.permissionRunGone")) }
+        try await ensureRoute(run.connectionId, run.target)
         let data = try await RemoteTransport.request(run.target, key: run.key, method: "POST", path: RemoteProtocol.pathPrefix + "runs/\(job)/\(action)", body: try JSONEncoder().encode(body))
         return (try? JSONDecoder().decode(RemoteWireAnswer.self, from: data))?.accepted == true
     }

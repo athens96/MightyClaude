@@ -2759,5 +2759,11 @@
   "settings.remote.noShared": "这台电脑没有共享任何工作区。",
   "settings.remote.openButton": "打开",
   "settings.remote.openedButton": "再次打开",
-  "remote.connect.error.notViaTailscale": "到这个地址的路由没有经过 Tailscale，可能连接着使用相同网段的其他网络（如运营商 NAT）。请确认 Tailscale 已开启且地址正确。"
+  "remote.connect.error.notViaTailscale": "到这个地址的路由没有经过 Tailscale，可能连接着使用相同网段的其他网络（如运营商 NAT）。请确认 Tailscale 已开启且地址正确。",
+  "remote.host.error.commandsOff": "这台电脑不允许远程执行命令。需要在共享电脑的“设置 → 远程连接”中打开“允许远程使用完全权限和执行命令”。",
+  "remote.host.error.fullAccessOff": "这台电脑不允许远程运行使用完全权限。请选择其他权限，或在共享电脑的“设置 → 远程连接”中打开“允许远程使用完全权限和执行命令”。",
+  "remote.host.error.startCancelled": "已取消开始共享。",
+  "remote.run.notice.skipped": "已跳过已连接电脑发来的、本应用无法使用的输出。",
+  "settings.remote.allowFullAccess": "允许远程使用完全权限和执行命令",
+  "settings.remote.allowFullAccessDescription": "打开后，已连接的电脑可以使用远程命令窗格，并以完全权限（Claude Bypass、Codex 完全访问、Antigravity 完全权限）运行代理。每次开始共享时都会关闭。"
 }

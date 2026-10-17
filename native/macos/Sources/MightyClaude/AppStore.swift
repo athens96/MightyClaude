@@ -1274,6 +1274,8 @@ final class AppStore: ObservableObject, DelegationHost {
         let previousFirst = requests.first.map { permissionResponseKey(sessionId: event.sessionId, request: $0) }
         requests.removeAll { $0.id == permission.id && $0.runId == permission.runId }
         if permission.state == "pending", session.status == "running" { requests.append(permission) }
+        // A host can send any number; a remote pane keeps the newest.
+        if isRemoteSession(session) { requests = RemotePendingPermissions.capped(requests) }
         toolPermissions[event.sessionId] = requests
         if session.provider == "claude" { autoAllowGuidedTool(permission, session: session) }
         if previousFirst != requests.first.map({ permissionResponseKey(sessionId: event.sessionId, request: $0) }) {

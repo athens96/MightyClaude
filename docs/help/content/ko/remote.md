@@ -16,6 +16,8 @@ Mac 두 대의 Mighty Claude를 [Tailscale](https://tailscale.com/kb/1017/instal
 2. {{ui:settings.remote.shareTitle}} 항목에서 공유할 로컬 워크스페이스를 고릅니다. 포트는 보통 그대로 둡니다(43137).
 3. {{ui:settings.remote.startSharing}} 단추를 누릅니다. 이 Mac의 Tailscale 주소와 연결 키가 나타납니다. {{ui:settings.remote.copyButton}} 단추로 복사해 연결할 쪽에 알려 줍니다.
 
+공유 중에는 {{ui:settings.remote.allowFullAccess}} 스위치가 보입니다. 꺼져 있으면(기본) 연결한 컴퓨터는 원격 명령 창을 쓸 수 없고, 에이전트를 전체 권한으로 실행할 수 없습니다. 그런 요청은 실행 전에 거절되고 그 창에 이유가 보입니다. 공유를 시작할 때마다 다시 꺼집니다.
+
 공유는 이 Mac의 Tailscale 주소에서만 연결을 받습니다. 앱을 다시 열면 공유는 항상 꺼진 상태로 시작합니다. {{ui:settings.remote.stopSharing}} 단추를 누르면 원격 실행이 멈추고 연결 키는 폐기됩니다. 다시 공유하면 새 키를 알려 줘야 합니다.
 
 > [!warning]

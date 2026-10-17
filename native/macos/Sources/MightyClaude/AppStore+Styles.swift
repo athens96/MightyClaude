@@ -122,13 +122,16 @@ extension AppStore {
     /// walked by every later scan, and its readings and manifest bytes would
     /// sit in memory for the life of the process.
     func forgetWorkspaceStyles(_ workspace: Workspace) {
-        scannedStyleWorkspaces.remove(workspace.path)
         styleCapabilityStates = styleCapabilityStates.filter { $0.key.workspaceId != workspace.id }
         styleAttachments = styleAttachments.filter { $0.key.workspaceId != workspace.id }
         styleCapabilitiesLoaded = styleCapabilitiesLoaded.filter { $0.workspaceId != workspace.id }
         styleCapabilityLoading = styleCapabilityLoading.filter { $0.workspaceId != workspace.id }
         styleCapabilityAgain = styleCapabilityAgain.filter { $0.workspaceId != workspace.id }
         styleCasebooks.removeValue(forKey: workspace.id)
+        // A remote workspace's path is its host's: a local workspace may have the
+        // same one, and its path-keyed readings and scans are not this one's.
+        guard workspace.remote == nil else { return }
+        scannedStyleWorkspaces.remove(workspace.path)
         // The panes are already gone from the snapshot, so the readings are
         // found by the workspace they were read in.
         for (id, entry) in styleFileReadings where entry.key.workspacePath == workspace.path { forgetStyleState(id) }

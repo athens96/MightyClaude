@@ -16,6 +16,8 @@ section: remote
 2. 在 {{ui:settings.remote.shareTitle}} 中选择要共享的本地工作区。端口一般保持不变（43137）。
 3. 点按 {{ui:settings.remote.startSharing}}。会显示这台 Mac 的 Tailscale 地址和连接密钥。用 {{ui:settings.remote.copyButton}} 复制后告诉要连接的一方。
 
+共享期间会显示 {{ui:settings.remote.allowFullAccess}} 开关。关闭时（默认），已连接的电脑不能使用远程命令窗格，也不能以完全权限运行代理；这类请求会在运行前被拒绝，窗格中会显示原因。每次开始共享时它都会重新关闭。
+
 共享只在这台 Mac 的 Tailscale 地址上接受连接。每次打开应用时共享都是关闭的。点按 {{ui:settings.remote.stopSharing}} 会停止远程运行并作废连接密钥；再次共享时需要告知新的密钥。
 
 > [!warning]

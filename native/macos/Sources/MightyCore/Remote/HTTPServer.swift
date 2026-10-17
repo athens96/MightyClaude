@@ -31,6 +31,8 @@ public final class HTTPServer: @unchecked Sendable {
         var processing = false
         var bodyLimit = 512 * 1024
         var extendedTimeout = false
+        /// The peer's address, counted against `maximumConnectionsPerPeer`.
+        var peer = ""
         init(_ connection: NWConnection) { self.connection = connection }
     }
     private let queue = DispatchQueue(label: "dev.mightyclaude.http")
@@ -38,6 +40,13 @@ public final class HTTPServer: @unchecked Sendable {
     private let port: UInt16
     private let handler: @Sendable (HTTPRequest) async -> HTTPResponse
     private let requestBodyLimit: (@Sendable (HTTPRequest) -> Int)?
+    /// Asked at accept, before anything is read: a refused peer's connection is cancelled at once.
+    private let acceptPeer: (@Sendable (String) -> Bool)?
+    /// Open connections one peer may hold at once; nil leaves only the overall cap.
+    private let maximumConnectionsPerPeer: Int?
+    /// The interface the listener is pinned to (a tunnel's, `utun…`); nil binds by address only.
+    private let requiredInterfaceName: String?
+    private var peerConnections: [String: Int] = [:]
     private var listener: NWListener?
     private var clients: [ObjectIdentifier: Client] = [:]
     private var continuation: CheckedContinuation<UInt16, Error>?
@@ -45,15 +54,39 @@ public final class HTTPServer: @unchecked Sendable {
     private let headerLimit = 8_192
     private let bodyLimit = 512 * 1024
 
-    public init(address: String, port: UInt16, requestBodyLimit: (@Sendable (HTTPRequest) -> Int)? = nil, handler: @escaping @Sendable (HTTPRequest) async -> HTTPResponse) {
+    /// `requestBodyLimit` sees the head before any body is read; 0 means none is
+    /// read at all: the handler answers the head with an empty body.
+    public init(address: String, port: UInt16, requestBodyLimit: (@Sendable (HTTPRequest) -> Int)? = nil,
+                acceptPeer: (@Sendable (String) -> Bool)? = nil, maximumConnectionsPerPeer: Int? = nil, requiredInterfaceName: String? = nil,
+                handler: @escaping @Sendable (HTTPRequest) async -> HTTPResponse) {
         self.address = address; self.port = port; self.handler = handler; self.requestBodyLimit = requestBodyLimit
+        self.acceptPeer = acceptPeer; self.maximumConnectionsPerPeer = maximumConnectionsPerPeer; self.requiredInterfaceName = requiredInterfaceName
+    }
+
+    /// The interface named `name` as Network.framework knows it, if it lists it
+    /// within a second; tunnels are of the `other` type.
+    static func interface(named name: String) async -> NWInterface? {
+        await withCheckedContinuation { continuation in
+            let monitor = NWPathMonitor(requiredInterfaceType: .other)
+            let queue = DispatchQueue(label: "dev.mightyclaude.http.interface")
+            let once = HTTPOnceFlag()
+            monitor.pathUpdateHandler = { path in
+                guard once.claim() else { return }
+                monitor.cancel(); continuation.resume(returning: path.availableInterfaces.first { $0.name == name })
+            }
+            monitor.start(queue: queue)
+            queue.asyncAfter(deadline: .now() + 1) { if once.claim() { monitor.cancel(); continuation.resume(returning: nil) } }
+        }
     }
 
     /// True while the listener is open; long-poll callers check it first.
     public var isListening: Bool { queue.sync { listener != nil && !closing } }
 
     public func start() async throws -> UInt16 {
-        try await withCheckedThrowingContinuation { continuation in
+        var lookup: NWInterface?
+        if let name = requiredInterfaceName { lookup = await Self.interface(named: name) }
+        let pinned = lookup
+        return try await withCheckedThrowingContinuation { continuation in
             queue.async { [self] in
                 guard !self.closing, self.listener == nil else {
                     continuation.resume(throwing: RemoteFailure(L("http.error.alreadyStarted"))); return
@@ -63,6 +96,10 @@ public final class HTTPServer: @unchecked Sendable {
                     let parameters = NWParameters.tcp
                     parameters.allowLocalEndpointReuse = true
                     parameters.requiredLocalEndpoint = .hostPort(host: NWEndpoint.Host(self.address), port: NWEndpoint.Port(rawValue: self.port)!)
+                    // Only the tunnel: the interface itself when the system lists it,
+                    // otherwise no Wi-Fi, Ethernet, cellular or loopback interface.
+                    if let pinned { parameters.requiredInterface = pinned }
+                    else if self.requiredInterfaceName != nil { parameters.prohibitedInterfaceTypes = [.wifi, .wiredEthernet, .cellular, .loopback] }
                     let listener = try NWListener(using: parameters)
                     self.listener = listener
                     listener.stateUpdateHandler = { [weak self] state in
@@ -92,7 +129,13 @@ public final class HTTPServer: @unchecked Sendable {
 
     private func accept(_ connection: NWConnection) {
         guard !closing, clients.count < 64 else { connection.cancel(); return }
+        let peer: String
+        if case .hostPort(let host, _) = connection.endpoint { peer = String(describing: host) } else { peer = "" }
+        if let acceptPeer, !acceptPeer(peer) { connection.cancel(); return }
+        if let limit = maximumConnectionsPerPeer, peerConnections[peer, default: 0] >= limit { connection.cancel(); return }
         let client = Client(connection)
+        client.peer = peer
+        peerConnections[peer, default: 0] += 1
         clients[ObjectIdentifier(connection)] = client
         let timeout = DispatchWorkItem { [weak self, weak client] in if let client { self?.remove(client) } }
         client.timer = timeout
@@ -145,8 +188,20 @@ public final class HTTPServer: @unchecked Sendable {
         let head = HTTPRequest(method: String(requestLine[0]), target: String(requestLine[1]), headers: headers, body: Data(), remoteAddress: peer)
         client.bodyLimit = min(AttachmentSupport.maximumRequestBytes, max(0, requestBodyLimit?(head) ?? bodyLimit))
         let lengthText = headers["content-length"] ?? "0"
-        guard lengthText.range(of: "^[0-9]{1,9}$", options: .regularExpression) != nil, let length = Int(lengthText), length <= client.bodyLimit else {
+        guard lengthText.range(of: "^[0-9]{1,9}$", options: .regularExpression) != nil, let length = Int(lengthText), length <= client.bodyLimit || client.bodyLimit == 0 else {
             reply(client, .json(413, ["error": L("http.error.badLength")])); return true
+        }
+        // Nothing of the body is read for a head the server refuses it to: the
+        // handler answers the head alone (an unauthorized request's 401).
+        if client.bodyLimit == 0, length > 0 {
+            client.processing = true; client.timer?.cancel()
+            let request = HTTPRequest(method: String(requestLine[0]), target: String(requestLine[1]), headers: headers, body: Data(), remoteAddress: peer)
+            client.data.removeAll(keepingCapacity: false)
+            Task { [self, client] in
+                let response = await handler(request)
+                queue.async { [weak self, weak client] in if let client { self?.reply(client, response) } }
+            }
+            return true
         }
         if length > bodyLimit && !client.extendedTimeout {
             client.extendedTimeout = true; client.timer?.cancel()
@@ -182,7 +237,10 @@ public final class HTTPServer: @unchecked Sendable {
 
     private func remove(_ client: Client) {
         client.timer?.cancel(); client.connection.stateUpdateHandler = nil
-        clients.removeValue(forKey: ObjectIdentifier(client.connection))
+        if clients.removeValue(forKey: ObjectIdentifier(client.connection)) != nil {
+            let left = peerConnections[client.peer, default: 1] - 1
+            if left > 0 { peerConnections[client.peer] = left } else { peerConnections.removeValue(forKey: client.peer) }
+        }
         client.connection.cancel()
     }
     private func closeOnQueue() {
@@ -196,4 +254,11 @@ public final class HTTPServer: @unchecked Sendable {
     public func stop() async {
         await withCheckedContinuation { continuation in queue.async { self.closeOnQueue(); continuation.resume() } }
     }
+}
+
+/// A one-shot latch safe across queues.
+private final class HTTPOnceFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var claimed = false
+    func claim() -> Bool { lock.lock(); defer { lock.unlock() }; if claimed { return false }; claimed = true; return true }
 }

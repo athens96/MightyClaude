@@ -23,6 +23,10 @@ public enum RemoteProtocol {
     public static let maximumSharedWorkspaces = 64
     /// Up to this many remote runs go at once, per host and per client.
     public static let maximumRuns = 16
+    /// Open connections one peer may hold on a host at once.
+    public static let maximumConnectionsPerPeer = 8
+    /// Pending tool requests a client keeps per pane; the newest stay.
+    public static let maximumPendingPermissions = 32
     /// Saved connections on a client.
     public static let maximumConnections = 16
     /// A request without attachments; a run request with them may reach `AttachmentSupport.maximumRequestBytes`.
@@ -59,6 +63,9 @@ public struct RemoteHostState: Sendable, Equatable {
     public var key: String?
     public var workspaceIds: [String] = []
     public var activeRuns = 0
+    /// "원격에서 전체 권한·명령 실행 허용": clients may start command panes and
+    /// full-access agents here. Off every time sharing starts.
+    public var allowsFullAccess = false
     public init() {}
 }
 
@@ -93,6 +100,14 @@ public enum RemoteWorkspacePhone {
     public static func sessions(_ sessions: [RunSession], workspaces: [Workspace]) -> [RunSession] {
         let local = Set(workspaces.filter { $0.remote == nil }.map(\.id))
         return sessions.filter { local.contains($0.workspaceId) }
+    }
+}
+
+/// A host can send any number of tool requests; a remote pane keeps only the
+/// newest `RemoteProtocol.maximumPendingPermissions` waiting for an answer.
+public enum RemotePendingPermissions {
+    public static func capped(_ requests: [ToolPermissionRequest]) -> [ToolPermissionRequest] {
+        Array(requests.suffix(RemoteProtocol.maximumPendingPermissions))
     }
 }
 

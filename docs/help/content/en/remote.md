@@ -16,6 +16,8 @@ On the host Mac:
 2. Under {{ui:settings.remote.shareTitle}}, pick the local workspaces to share. Leave the port as it is (43137) unless you need another.
 3. Press {{ui:settings.remote.startSharing}}. This Mac's Tailscale addresses and the connection key appear. Copy them with {{ui:settings.remote.copyButton}} and give them to the other Mac.
 
+While sharing, the {{ui:settings.remote.allowFullAccess}} switch appears. While it is off (the default), connected computers cannot use remote command panes or run agents with full access; such requests are refused before they run, and the pane says why. It turns off again whenever sharing starts.
+
 Sharing accepts connections on this Mac's Tailscale addresses only. It is always off when the app starts. {{ui:settings.remote.stopSharing}} stops the remote runs and revokes the key; sharing again gives a new key to pass on.
 
 > [!warning]
