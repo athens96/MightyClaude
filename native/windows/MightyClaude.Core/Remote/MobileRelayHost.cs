@@ -116,6 +116,8 @@ public sealed class MobileRelayHost : IAsyncDisposable
     private Func<IReadOnlyList<string>>? directAddressSource;
     private int directSourcePort;
     private CancellationTokenSource? directWatch;
+    /// <summary>Every watch loop started, awaited by <see cref="DisposeAsync"/> so no pass publishes after it.</summary>
+    private Task directWatchLoops = Task.CompletedTask;
     public MobileDirectStatus DirectStatus { get; private set; } = MobileDirectStatus.Off;
     /// <summary>The endpoints the direct path listens on now, as auth_ok, /m1/info and the QR carry them; empty while it is off.</summary>
     public IReadOnlyList<string> DirectEndpoints => Volatile.Read(ref directEndpoints);
@@ -152,14 +154,32 @@ public sealed class MobileRelayHost : IAsyncDisposable
             else
             {
                 StartDirectWatch(); var source = directAddressSource;
-                var addresses = source is null ? TailscaleAddresses.Current() : source();
+                IReadOnlyList<string>? addresses = null;
+                try { addresses = source is null ? TailscaleAddresses.Current() : source(); }
+                catch (Exception ex) when (ex is not OutOfMemoryException) { ReadFailed(ex); }
                 var port = source is null ? current.DirectPort : directSourcePort;
-                if (force || directBoundAddresses is not { } was || !was.SequenceEqual(addresses) || directBoundPort != port) BindDirect(addresses, port, source is not null);
+                if (addresses is not null && (force || directBoundAddresses is not { } was || !was.SequenceEqual(addresses) || directBoundPort != port)) BindDirect(addresses, port, source is not null);
             }
+            // A pass that ends where it began keeps the same status object, so nothing is published for it: a failed or partly bound
+            // path is bound again on every pass, and the switch-off state is made anew on every one.
+            if (SameStatus(before, DirectStatus)) DirectStatus = before;
             after = DirectStatus;
         }
         foreach (var client in dropped) client.Cancel();
         return !ReferenceEquals(before, after);
+    }
+
+    private static bool SameStatus(MobileDirectStatus a, MobileDirectStatus b) => a.State == b.State && a.Error == b.Error && a.Endpoints.SequenceEqual(b.Endpoints);
+
+    /// <summary>
+    /// The addresses could not be read (under directSync): the path stops listening and says why, as when binding fails, and the next
+    /// pass (the watch, an address change, Settings) reads them again. The phones already in stay, as when no address is found.
+    /// </summary>
+    private void ReadFailed(Exception ex)
+    {
+        System.Diagnostics.Trace.TraceError("mobile direct: the addresses could not be read: " + ex.Message);
+        directListener?.Stop(); directListener = null; directBoundAddresses = null; directBoundPort = null;
+        Volatile.Write(ref directEndpoints, []); DirectStatus = new("failed", [], ex.Message);
     }
 
     private void BindDirect(IReadOnlyList<string> addresses, int port, bool seam)
@@ -185,7 +205,7 @@ public sealed class MobileRelayHost : IAsyncDisposable
     /// </summary>
     private Connection[] StopDirect(MobileRemoteSettings current)
     {
-        directWatch?.Cancel(); directWatch = null;
+        var watch = directWatch; directWatch = null; watch?.Cancel();
         directListener?.Stop(); directListener = null;
         directBoundAddresses = null; directBoundPort = null; Volatile.Write(ref directEndpoints, []);
         DirectStatus = !disposed && current.Enabled && !current.DirectEnabled ? new("disabled", []) : MobileDirectStatus.Off;
@@ -196,13 +216,33 @@ public sealed class MobileRelayHost : IAsyncDisposable
     private void StartDirectWatch()
     {
         if (directWatch is not null) return;
-        var watch = directWatch = new CancellationTokenSource(); var interval = DirectRedetectInterval;
-        _ = Task.Run(async () =>
+        var watch = directWatch = new CancellationTokenSource();
+        var interval = DirectRedetectInterval > TimeSpan.Zero ? DirectRedetectInterval : MobileDirect.RedetectInterval;
+        var loop = Task.Run(async () =>
         {
-            using var timer = new PeriodicTimer(interval);
-            try { while (await timer.WaitForNextTickAsync(watch.Token)) RefreshDirect(); }
+            try
+            {
+                using var timer = new PeriodicTimer(interval);
+                // One pass that fails never ends the watch: it is reported and the next tick tries again.
+                while (await timer.WaitForNextTickAsync(watch.Token)) RedetectDirect();
+            }
             catch (OperationCanceledException) { }
+            catch (Exception ex) when (ex is not OutOfMemoryException) { System.Diagnostics.Trace.TraceError("mobile direct: the watch stopped: " + ex.Message); }
+            finally
+            {
+                // A watch that ended on its own is cleared, so the next pass starts another.
+                lock (directSync) { if (directWatch == watch) directWatch = null; }
+                watch.Dispose();
+            }
         });
+        directWatchLoops = directWatchLoops.IsCompleted ? loop : Task.WhenAll(directWatchLoops, loop);
+    }
+
+    /// <summary>A re-detection off the caller's path (the watch, an address change): a fault is reported, never thrown into a timer or an event.</summary>
+    private void RedetectDirect()
+    {
+        try { RefreshDirect(); }
+        catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException) { System.Diagnostics.Trace.TraceError("mobile direct: re-detection failed: " + ex.Message); }
     }
 
     /// <summary>
@@ -311,7 +351,7 @@ public sealed class MobileRelayHost : IAsyncDisposable
         if (was) { NetworkChange.NetworkAddressChanged -= AddressChanged; NetworkChange.NetworkAvailabilityChanged -= AvailabilityChanged; }
     }
     // An address change may be Tailscale coming up or going down: the relay's path is read and the direct path re-detected.
-    private void AddressChanged(object? sender, EventArgs e) { Read(); _ = Task.Run(() => RefreshDirect()); }
+    private void AddressChanged(object? sender, EventArgs e) { Read(); _ = Task.Run(RedetectDirect); }
     private void AvailabilityChanged(object? sender, NetworkAvailabilityEventArgs e) => Read();
     /// <summary>A path report from Windows or a check. Acted on once reports stop arriving for <see cref="PathSettle"/>.</summary>
     public void NetworkPathChanged(RelayNetworkPath path)
@@ -601,9 +641,11 @@ public sealed class MobileRelayHost : IAsyncDisposable
         await lifecycle.WaitAsync();
         try { if (disposed) return; disposed = true; StopWatching(); await StopInternal(); }
         finally { lifecycle.Release(); }
-        Connection[] dropped;
-        lock (directSync) dropped = StopDirect(settings);
+        Connection[] dropped; Task watches;
+        lock (directSync) { dropped = StopDirect(settings); watches = directWatchLoops; }
         foreach (var client in dropped) client.Cancel();
+        // The watch was cancelled with the path; a pass already running ends before this returns, so none publishes after dispose.
+        await watches;
         await Task.WhenAll(clients.Values.Select(client => client.Completion.Task));
     }
 }
