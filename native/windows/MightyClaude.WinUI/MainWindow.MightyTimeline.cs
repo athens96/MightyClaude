@@ -336,7 +336,7 @@ public sealed partial class MainWindow
             var head = TimelineHeading();
             var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Md, VerticalAlignment = VerticalAlignment.Center };
             var chevron = (FontIcon)MightySymbols.Create(open ? "chevron.down" : "chevron.right", 10, ink2);
-            chevron.FontWeight = FontWeights.Bold; chevron.Width = TimelineChevronWidth;
+            chevron.FontWeight = FontWeights.Bold; chevron.TextWidth = TimelineChevronWidth;
             line.Children.Add(chevron);
             var title = ProviderMarkView.Labelled(GraphRequestTitle(run, group.Ordinal), ProviderMark.MarkedProvider(pane.Provider), DesignMetrics.Type.Timeline, FontWeights.Bold);
             PaintWords(title, b.Brush(DesignToken.Ink), TextArea.Heading);

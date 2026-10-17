@@ -8,6 +8,7 @@
   },
   "files": {
     "native/windows/MightyClaude.WinUI/CompanionOverlay.cs": 2,
-    "native/windows/MightyClaude.WinUI/DesignBrushes.cs": 1
+    "native/windows/MightyClaude.WinUI/DesignBrushes.cs": 1,
+    "native/windows/MightyClaude.WinUI/MainWindow.StatusGlyph.cs": 1
   }
 }

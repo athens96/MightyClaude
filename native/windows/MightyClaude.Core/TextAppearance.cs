@@ -91,14 +91,14 @@ public sealed record TextAppearance
 
     /// <summary>
     /// The saved setting from its four values as the registry returns them (null when missing); a missing or broken
-    /// value reads as the standard one. The scale is a string in the invariant culture ("1.1"); a whole number is
-    /// taken as a percent (110), as a person editing the value by hand would write it.
+    /// value reads as the standard one. The scale is a string in the invariant culture ("1.1"); a number above 10, as a
+    /// string or a DWORD, is taken as a percent (110), as a person editing the value by hand would write it.
     /// </summary>
     public static TextAppearance FromValues(object? scale, object? family, object? transcriptFamily, object? codeFamily)
     {
         var value = scale switch
         {
-            string text when double.TryParse(text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var number) => number,
+            string text when double.TryParse(text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var number) => number > 10 ? number / 100 : number,
             int percent => percent / 100.0,
             long percent => percent / 100.0,
             _ => 1,

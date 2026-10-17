@@ -84,7 +84,7 @@ public sealed partial class MainWindow
             {
                 content = SourceView(prepared);
                 if (target.Line is { } requested && content is ScrollViewer source && !prepared.Wraps)
-                    source.Loaded += (_, _) => source.ChangeView(null, Math.Max(0, requested - 1) * FilesLineHeight, null, true);
+                    source.Loaded += (_, _) => source.ChangeView(null, Math.Max(0, requested - 1) * AppText.Size(FilesLineHeight), null, true);
             }
             else if (prepared.Data.Kind.Tag == FilePreviewKindTag.Image) content = await ImageView(prepared.Data, ++previewRequest);
             else content = ReferenceNotice(prepared.Data.Reason ?? Locale.Get("files.preview.unsupported"));

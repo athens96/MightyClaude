@@ -104,8 +104,7 @@ internal static class MightySymbols
     /// <summary>A glyph in a square as wide as its size at the text setting's scale, which follows each new setting.</summary>
     private static FrameworkElement Boxed(FrameworkElement glyph, double size)
     {
-        void Fit() => glyph.Width = glyph.Height = AppText.Size(size);
-        Fit(); AppText.Follow(glyph, Fit);
+        glyph.TextWidth = size; glyph.TextHeight = size;
         return glyph;
     }
 

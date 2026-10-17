@@ -308,7 +308,7 @@ public sealed partial class MainWindow
                     // The add row, the list's last (M/WorkspaceView.swift:322-343): plus 10 semibold and 11pt words in sidebarAccent, padding l28 r12 and the row inset over and under.
                     var add = SidebarButton(Locale.Get("workspace.addPane"), () => Task.CompletedTask);
                     var addLabel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
-                    addLabel.Children.Add(new FontIcon { Glyph = "\uE710", TextSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Width = 12, Foreground = brushes.Brush(DesignToken.SidebarAccent), VerticalAlignment = VerticalAlignment.Center });
+                    addLabel.Children.Add(new FontIcon { Glyph = "\uE710", TextSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextWidth = 12, Foreground = brushes.Brush(DesignToken.SidebarAccent), VerticalAlignment = VerticalAlignment.Center });
                     addLabel.Children.Add(new TextBlock { Text = Locale.Get("workspace.addPane"), TextSize = DesignMetrics.Type.Pill, Foreground = brushes.Brush(DesignToken.SidebarAccent), Margin = MacLine(), VerticalAlignment = VerticalAlignment.Center });
                     add.Content = addLabel; add.Flyout = DashboardAddMenu(workspace.Id); add.TextSize = DesignMetrics.Type.Pill; add.Padding = new Thickness(28, DesignMetrics.Inset.SidebarRowV, DesignMetrics.Spacing.Lg, DesignMetrics.Inset.SidebarRowV); add.MinHeight = SidebarAddRowMin;
                     PlainSidebarButton(add, brushes.Transparent, brushes.Transparent);

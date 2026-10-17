@@ -41,13 +41,23 @@ public sealed partial class MainWindow
                 $"{when}: the composer and the conversation must be {DesignMetrics.Type.Body}pt in their own font, the editor {PaneView.ComposerLine} to {PaneView.ComposerLine + 5 * PaneView.ComposerLineStep} high; got {input.FontSize}pt min {input.MinHeight} max {input.MaxHeight}, {transcript.FontSize}pt");
             Require(status.FontSize == DesignMetrics.Type.Small, $"{when}: the status bar's words must be {DesignMetrics.Type.Small}pt; got {status.FontSize}");
         }
-        root.Children.Add(section); Grid.SetColumn(section, 1); Grid.SetRow(section, 1);
+        // The samples and the section stand in the window, as the app's words do: a new setting walks the open windows.
+        var host = new StackPanel(); Grid.SetColumn(host, 1); Grid.SetRow(host, 1);
+        foreach (var sample in new FrameworkElement[] { body, code, lined, icon, heading }) host.Children.Add(sample);
+        // Words nothing in C# holds, so their managed wrapper can be collected while they stand in the window.
+        void AddOrphan() => host.Children.Add(new TextBlock { Text = "Sample", TextSize = DesignMetrics.Type.Body, Name = "TextSmokeOrphan" });
+        AddOrphan(); host.Children.Add(section);
+        TextBlock Orphan() => VisualChildren(host).OfType<TextBlock>().Single(words => words.Name == "TextSmokeOrphan");
+        // Words made at 100% and kept out of the window while the setting changes.
+        var away = new TextBlock { Text = "Sample", TextSize = DesignMetrics.Type.Body };
+        root.Children.Add(host);
         try
         {
             Require(HasTextSizeShortcuts, "Ctrl+=, Ctrl+- and Ctrl+0 must be bound on the window root; no such accelerators were found");
             Require(AppText.Current.IsStandard, "a smoke run must start at the standard text setting, never the registry's: got " + AppText.Current);
             Standard("at 100%");
-            section.UpdateLayout();
+            host.UpdateLayout();
+            GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
 
             // 120%: 13 → 15.5, 11 → 13, 12 on 15 → 14.5 on 18, 9 → 11, 17 → 20.5, 10 → 12.
             var size = Part<ComboBox>("settings-text-size");
@@ -55,8 +65,14 @@ public sealed partial class MainWindow
             await WaitUI(() => AppText.Current.Scale == 1.2, () => "choosing 120% must set the scale; got " + AppText.Current.Scale);
             Require(body.FontSize == 15.5 && code.FontSize == 13 && lined.FontSize == 14.5 && lined.LineHeight == 18 && icon.FontSize == 11 && heading.FontSize == 20.5 && status.FontSize == 12,
                 $"at 120% each size must be its 100% size scaled to the half point; got body {body.FontSize}, code {code.FontSize}, line {lined.FontSize}/{lined.LineHeight}, icon {icon.FontSize}, heading {heading.FontSize}, status {status.FontSize}");
-            Require(input.FontSize == 15.5 && Math.Abs(input.MinHeight - PaneView.ComposerLine * 1.2) < 0.01 && transcript.FontSize == 15.5,
+            Require(Orphan().FontSize == 15.5, "words held only by the window must follow after a garbage collection; got " + Orphan().FontSize);
+            // The pane's editor and conversation follow at once while they are shown, and else as they are shown again.
+            Require((!input.IsLoaded || input.FontSize == 15.5 && Math.Abs(input.MinHeight - PaneView.ComposerLine * 1.2) < 0.01) && (!transcript.IsLoaded || transcript.FontSize == 15.5),
                 $"at 120% the composer and the conversation must be 15.5pt and the editor {PaneView.ComposerLine * 1.2} high; got {input.FontSize}, {input.MinHeight}, {transcript.FontSize}");
+            Require(away.FontSize == DesignMetrics.Type.Body, "words out of every window keep their size until they come back; got " + away.FontSize);
+            host.Children.Add(away);
+            await WaitUI(() => away.IsLoaded && away.FontSize == 15.5, () => "words that come back into the window must catch up with 120%; got " + away.FontSize);
+            host.Children.Remove(away);
             var preview = Part<TextBlock>("settings-text-preview");
             Require(preview.FontSize == 15.5, "the section's preview must follow the size; got " + preview.FontSize);
 
@@ -64,7 +80,7 @@ public sealed partial class MainWindow
             var ui = Part<ComboBox>("settings-text-font");
             Pick(ui, family => family == "Arial");
             var chosen = AppText.Current.Family;
-            Require(chosen is not null && Family(body, TextBlock.FontFamilyProperty) == chosen && Family(heading, TextBlock.FontFamilyProperty) == chosen && Family(input, Control.FontFamilyProperty) == chosen && Family(code, TextBlock.FontFamilyProperty) == DesignMetrics.Font.Mono,
+            Require(chosen is not null && Family(body, TextBlock.FontFamilyProperty) == chosen && Family(heading, TextBlock.FontFamilyProperty) == chosen && (!input.IsLoaded || Family(input, Control.FontFamilyProperty) == chosen) && Family(code, TextBlock.FontFamilyProperty) == DesignMetrics.Font.Mono,
                 $"an interface font '{chosen}' must reach plain words, headings and the composer and leave code alone; got '{Family(body, TextBlock.FontFamilyProperty)}', '{Family(heading, TextBlock.FontFamilyProperty)}', '{Family(input, Control.FontFamilyProperty)}', '{Family(code, TextBlock.FontFamilyProperty)}'");
             Require(Family(icon, FontIcon.FontFamilyProperty) is null, "an icon must keep its symbol font; got " + Family(icon, FontIcon.FontFamilyProperty));
 
@@ -72,7 +88,7 @@ public sealed partial class MainWindow
             var conversation = Part<ComboBox>("settings-text-transcript-font");
             Pick(conversation, family => family == "Georgia");
             var spoken = AppText.Current.TranscriptFamily;
-            Require(spoken is not null && Family(input, Control.FontFamilyProperty) == spoken && Family(transcript, Control.FontFamilyProperty) == spoken && Family(body, TextBlock.FontFamilyProperty) == chosen,
+            Require(spoken is not null && (!input.IsLoaded || Family(input, Control.FontFamilyProperty) == spoken) && (!transcript.IsLoaded || Family(transcript, Control.FontFamilyProperty) == spoken) && Family(body, TextBlock.FontFamilyProperty) == chosen,
                 $"a conversation font '{spoken}' must reach the composer and the conversation and not the chrome; got '{Family(input, Control.FontFamilyProperty)}', '{Family(transcript, Control.FontFamilyProperty)}', '{Family(body, TextBlock.FontFamilyProperty)}'");
 
             // The code font: code only.
@@ -99,12 +115,12 @@ public sealed partial class MainWindow
             Standard("after the reset");
             Require(!reset.IsEnabled && size.SelectedIndex == TextAppearance.Scales.ToList().IndexOf(1) && ui.SelectedIndex == 0 && conversation.SelectedIndex == 0 && codes.SelectedIndex == 0,
                 "after the reset the pop-ups must show 100% and the stand-in fonts, and the button must be off");
-            return new() { ["shortcutsBound"] = true, ["standardExact"] = true, ["sizeFollows"] = true, ["interfaceFontFollows"] = true, ["conversationFontFollows"] = true, ["codeFontFollows"] = true, ["resetRestoresExact"] = true };
+            return new() { ["shortcutsBound"] = true, ["standardExact"] = true, ["sizeFollows"] = true, ["followsAfterCollection"] = true, ["catchesUpWhenShown"] = true, ["interfaceFontFollows"] = true, ["conversationFontFollows"] = true, ["codeFontFollows"] = true, ["resetRestoresExact"] = true };
         }
         finally
         {
             SetTextAppearance(TextAppearance.Standard);
-            root.Children.Remove(section);
+            root.Children.Remove(host);
         }
     }
 }

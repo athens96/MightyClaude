@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using MightyClaude.Core;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -26,16 +25,16 @@ internal enum TextArea
 /// The one place the WinUI app sizes and faces its words (Settings › General › 글자, Ctrl+= / Ctrl+- / Ctrl+0). Every
 /// element states its size at scale 1 as <c>TextSize</c>, its line pitch as <c>TextLineHeight</c> and its font as
 /// <c>TextFont</c>, instead of setting FontSize, LineHeight and FontFamily itself (scripts/check-design-tokens.js holds
-/// that). Each such element is remembered weakly with those values, so a new setting reaches every open window, sheet,
-/// menu and dialog at once without rebuilding it, and whatever must redraw itself (a RichEditBox's RTF, the terminal)
-/// asks to be told through <see cref="Follow"/>. At the standard setting every size and family is exactly what the
+/// that). Each such element keeps those values on itself, so a new setting reaches every open window (<see cref="Track"/>),
+/// sheet, menu and dialog at once without rebuilding it, an element out of the windows catches up when it is loaded again,
+/// and whatever must redraw itself (a RichEditBox's RTF) asks to be told through <see cref="Follow"/>. At the standard setting every size and family is exactly what the
 /// element was given, so the app draws as it did before the setting existed.
 /// </summary>
 internal static class AppText
 {
     /// <summary>The setting the app draws with now.</summary>
     internal static TextAppearance Current { get; private set; } = TextAppearance.Standard;
-    /// <summary>Raised after a new setting has reached every remembered element.</summary>
+    /// <summary>Raised after a new setting has reached every element of the open windows.</summary>
     internal static event Action? Changed;
 
     /// <summary><paramref name="size"/> points at the current scale (<see cref="TextAppearance.Size"/>).</summary>
@@ -61,27 +60,58 @@ internal static class AppText
         return face;
     }
 
-    /// <summary>What one element asked for, in scale-1 terms.</summary>
+    /// <summary>What one element asked for, in scale-1 terms, and which setting it was last drawn with.</summary>
     private sealed class Entry
     {
-        internal double? Size, LineHeight, Height;
+        internal double? Size, LineHeight, Height, Width;
         internal TextArea? Area;
         /// <summary>The family name this class last wrote, so a family the code set itself is never overwritten.</summary>
         internal string? Written;
         internal Action? Follow;
+        internal int Drawn;
     }
 
-    private static readonly ConditionalWeakTable<DependencyObject, Entry> entries = [];
-    private static readonly List<WeakReference<DependencyObject>> remembered = [];
-    private static int pruneAt = 1024;
+    /// <summary>
+    /// Each element's <see cref="Entry"/>, held by the element itself: a managed wrapper of a XAML element may be collected
+    /// and made again while the element lives, so nothing is keyed by the wrapper.
+    /// </summary>
+    private static readonly DependencyProperty EntryProperty = DependencyProperty.RegisterAttached("MightyTextEntry", typeof(object), typeof(AppText), new PropertyMetadata(null));
+    /// <summary>Counts the settings drawn; an element drawn with an older one catches up when it is next loaded.</summary>
+    private static int drawing;
+    /// <summary>The app's open windows, whose element trees and open pop-ups a new setting walks.</summary>
+    private static readonly List<Window> windows = [];
 
     private static Entry Remember(DependencyObject element)
     {
-        if (entries.TryGetValue(element, out var entry)) return entry;
-        entry = new Entry(); entries.Add(element, entry);
-        if (remembered.Count >= pruneAt) { remembered.RemoveAll(reference => !reference.TryGetTarget(out _)); pruneAt = Math.Max(1024, remembered.Count * 2); }
-        remembered.Add(new(element));
+        if (element.GetValue(EntryProperty) is Entry known) return known;
+        var entry = new Entry { Drawn = drawing };
+        element.SetValue(EntryProperty, entry);
+        // An element out of every window when the setting changed (a pane of another workspace, a cached row, a closed
+        // menu's items) draws the new one as it comes back.
+        if (element is FrameworkElement framed) framed.Loaded += (sender, _) => { if (entry.Drawn != drawing) Draw((DependencyObject)sender, entry); };
         return entry;
+    }
+
+    /// <summary>Draws an element with the current setting and tells its followers; one that fails is reported and skipped.</summary>
+    private static void Draw(DependencyObject element, Entry entry)
+    {
+        entry.Drawn = drawing;
+        try { Apply(element, entry); entry.Follow?.Invoke(); }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { System.Diagnostics.Trace.TraceError("text setting: " + ex.Message); }
+    }
+
+    /// <summary>A window whose words follow each new setting while it is open.</summary>
+    internal static void Track(Window window)
+    {
+        if (windows.Contains(window)) return;
+        windows.Add(window);
+        window.Closed += (_, _) => windows.Remove(window);
+    }
+
+    /// <summary>Draws an element kept out of every window (one that only measures words) with the current setting.</summary>
+    internal static void Refresh(DependencyObject element)
+    {
+        if (element.GetValue(EntryProperty) is Entry entry && entry.Drawn != drawing) Draw(element, entry);
     }
 
     /// <summary>The element's font size, font family and line height properties; null for one that has none.</summary>
@@ -100,13 +130,14 @@ internal static class AppText
 
     private static void Apply(DependencyObject element, Entry entry)
     {
-        if (entry.Height is { } height && element is FrameworkElement framed) framed.Height = Size(height);
+        if (element is FrameworkElement framed) { if (entry.Height is { } height) framed.Height = Size(height); if (entry.Width is { } width) framed.Width = Size(width); }
         if (Properties(element) is not { } properties) return;
         if (entry.Size is { } size) element.SetValue(properties.Size, Size(size));
         if (entry.LineHeight is { } line && properties.Line is { } lineProperty) element.SetValue(lineProperty, Size(line));
         if (properties.Family is not { } familyProperty) return;
-        // Text that names no family takes the interface font only while one is chosen, and only while its family is
-        // still its own or the one written here: a symbol face or an inherited one set by the code is left alone.
+        // Text that names no family takes the interface font only while one is chosen, and only while its own family is
+        // unset or the one written here: a face the code set on it (a symbol font) is left alone. A family it would only
+        // inherit is not seen here, so words inside a code-font control name TextArea.Code themselves.
         // An element only followed, or only sized round its words (TextHeight), keeps its font as it is.
         var area = entry.Area ?? TextArea.Default;
         if (entry.Area is null && (entry.Size is null || element is not (TextBlock or RichTextBlock or Control or TextElement))) return;
@@ -126,8 +157,9 @@ internal static class AppText
     }
 
     /// <summary>
-    /// Calls <paramref name="refresh"/> after each new setting while <paramref name="anchor"/> lives: for what draws its
-    /// words itself (a RichEditBox's RTF, which the box repaints over when its size changes; the terminal; a measured layout).
+    /// Calls <paramref name="refresh"/> after each new setting while <paramref name="anchor"/> lives, at once when it is in
+    /// an open window and else when it is next loaded: for what draws its words itself (a RichEditBox's RTF, which the box
+    /// repaints over when its size changes; a measured layout).
     /// </summary>
     internal static void Follow(DependencyObject anchor, Action refresh)
     {
@@ -135,26 +167,27 @@ internal static class AppText
         entry.Follow += refresh;
     }
 
-    /// <summary>Draws every remembered element with <paramref name="next"/>, then tells the followers and <see cref="Changed"/>.</summary>
+    /// <summary>
+    /// Draws every element of the open windows and their open pop-ups with <paramref name="next"/>, then raises
+    /// <see cref="Changed"/>; the rest follow as they are loaded again.
+    /// </summary>
     internal static void Set(TextAppearance next)
     {
         if (next == Current) return;
-        Current = next;
-        var alive = new List<(DependencyObject Element, Entry Entry)>();
-        remembered.RemoveAll(reference =>
+        Current = next; drawing++;
+        var pending = new Stack<DependencyObject>();
+        foreach (var window in windows.ToArray())
         {
-            if (!reference.TryGetTarget(out var element) || !entries.TryGetValue(element, out var entry)) return true;
-            alive.Add((element, entry));
-            return false;
-        });
-        pruneAt = Math.Max(1024, remembered.Count * 2);
-        foreach (var (element, entry) in alive)
-        {
-            // Every window of this app runs on its UI thread; an element of another thread is drawn on its own.
-            if (element.DispatcherQueue is { HasThreadAccess: false } queue) { queue.TryEnqueue(() => { Apply(element, entry); entry.Follow?.Invoke(); }); continue; }
-            Apply(element, entry);
+            if (window.Content is not UIElement content) continue;
+            pending.Push(content);
+            if (content.XamlRoot is { } xamlRoot)
+                foreach (var popup in VisualTreeHelper.GetOpenPopupsForXamlRoot(xamlRoot)) if (popup.Child is { } child) pending.Push(child);
         }
-        foreach (var (element, entry) in alive) if (element.DispatcherQueue is null or { HasThreadAccess: true }) entry.Follow?.Invoke();
+        while (pending.TryPop(out var element))
+        {
+            if (element.GetValue(EntryProperty) is Entry entry && entry.Drawn != drawing) Draw(element, entry);
+            for (var index = VisualTreeHelper.GetChildrenCount(element) - 1; index >= 0; index--) pending.Push(VisualTreeHelper.GetChild(element, index));
+        }
         Changed?.Invoke();
     }
 
@@ -165,7 +198,7 @@ internal static class AppText
     internal static void Load(bool smokeTest) => Set(smokeTest ? TextAppearance.Standard : TextAppearanceStore.Load());
 
     /// <summary>The size an element was given at scale 1, NaN when it was given none here.</summary>
-    private static double BaseSize(DependencyObject element) => entries.TryGetValue(element, out var entry) && entry.Size is { } size ? size : double.NaN;
+    private static double BaseSize(DependencyObject element) => element.GetValue(EntryProperty) is Entry { Size: { } size } ? size : double.NaN;
 
     extension(DependencyObject element)
     {
@@ -179,24 +212,31 @@ internal static class AppText
         /// <summary>The line pitch at scale 1 (TextBlock, RichTextBlock, Paragraph); drawn and followed as <c>TextSize</c>.</summary>
         public double TextLineHeight
         {
-            get => entries.TryGetValue(element, out var entry) && entry.LineHeight is { } line ? line : double.NaN;
+            get => element.GetValue(EntryProperty) is Entry { LineHeight: { } line } ? line : double.NaN;
             set { var entry = Remember(element); entry.LineHeight = value; Apply(element, entry); }
         }
 
         /// <summary>
-        /// The height at scale 1 of a control drawn round one line of words (a settings pop-up or button): it grows with
-        /// the words so they are never cut, and is exactly this at 100%.
+        /// The height at scale 1 of a control drawn round one line of words (a settings pop-up or button) or of an icon's
+        /// box: it grows with the words so they are never cut, and is exactly this at 100%.
         /// </summary>
         public double TextHeight
         {
-            get => entries.TryGetValue(element, out var entry) && entry.Height is { } height ? height : double.NaN;
+            get => element.GetValue(EntryProperty) is Entry { Height: { } height } ? height : double.NaN;
             set { var entry = Remember(element); entry.Height = value; Apply(element, entry); }
+        }
+
+        /// <summary>The width at scale 1 of an icon's box, which grows with its glyph as <c>TextHeight</c> does.</summary>
+        public double TextWidth
+        {
+            get => element.GetValue(EntryProperty) is Entry { Width: { } width } ? width : double.NaN;
+            set { var entry = Remember(element); entry.Width = value; Apply(element, entry); }
         }
 
         /// <summary>Which of the setting's fonts the element draws in.</summary>
         public TextArea TextFont
         {
-            get => entries.TryGetValue(element, out var entry) ? entry.Area ?? TextArea.Default : TextArea.Default;
+            get => element.GetValue(EntryProperty) is Entry { Area: { } area } ? area : TextArea.Default;
             set { var entry = Remember(element); entry.Area = value; Apply(element, entry); }
         }
     }

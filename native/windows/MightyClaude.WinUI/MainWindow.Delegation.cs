@@ -347,7 +347,7 @@ public sealed partial class MainWindow
         var group = new StackPanel { Spacing = DesignMetrics.Inset.ListGap };
         var row = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, Padding = SidebarPaneRowPadding };
         foreach (var width in new[] { GridLength.Auto, GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto }) row.ColumnDefinitions.Add(new() { Width = width });
-        var symbol = new FontIcon { Glyph = "", TextSize = 11, Width = 14, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
+        var symbol = new FontIcon { Glyph = "", TextSize = 11, TextWidth = 14, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
         AutomationProperties.SetAccessibilityView(symbol, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw); row.Children.Add(symbol);
         var label = new TextBlock { Text = Locale.Get("delegation.tree.parentClosed"), TextSize = DesignMetrics.Type.State, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
         Grid.SetColumn(label, 1); row.Children.Add(label);
