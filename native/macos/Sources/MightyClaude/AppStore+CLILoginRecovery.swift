@@ -66,6 +66,8 @@ extension AppStore {
         let request = inFlightRequests.removeValue(forKey: event.sessionId)
         if status == "completed" { dismissLoginRequired(event.sessionId) }
         guard status == "error", event.reason == "auth", let request else { return }
+        // A remote run signs in on its host; this Mac's sign-in did not fail.
+        guard !isRemoteSession(event.sessionId) else { return }
         confirmLoginLost(request.request, generation: request.generation)
     }
 
@@ -222,7 +224,8 @@ extension AppStore {
         var pane = reused
         if let reused { if !automatic { selectSession(reused) } }
         else if automatic { pane = failed.flatMap { insertLoginTerminal(beside: $0) } }
-        else if let workspaceId = failed?.workspaceId ?? activeWorkspace?.id ?? snapshot.workspaces.first?.id {
+        // The sign-in terminal runs on this Mac: never in a remote workspace.
+        else if let workspaceId = failed?.workspaceId ?? (activeWorkspace?.remote == nil ? activeWorkspace?.id : nil) ?? snapshot.workspaces.first(where: { $0.remote == nil })?.id {
             let group = failed.flatMap { session in layoutForWorkspace(session.workspaceId)?.group(containing: session.id)?.id }
             // A refused split falls back to a tab; neither may leave a window-wide alert behind.
             let previous = error

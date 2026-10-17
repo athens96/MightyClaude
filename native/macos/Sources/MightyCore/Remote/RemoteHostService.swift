@@ -42,12 +42,18 @@ public actor RemoteHostService {
 
     /// Seconds a run may go unpolled before it is stopped; tests shorten it.
     private let heartbeat: TimeInterval
+    /// Told how many client runs go on this Mac whenever that changes: while
+    /// any does, this Mac's CLIs are in use (updates and plugin changes wait).
+    private let runsChanged: @Sendable (Int) -> Void
 
     public init(repository: StateRepository, providers: ProviderService, pluginDirectory: URL, appVersion: String, hostName: String, allowLoopbackForTests: Bool = false,
-                heartbeat: TimeInterval = RemoteProtocol.heartbeatTimeout) {
+                heartbeat: TimeInterval = RemoteProtocol.heartbeatTimeout, runsChanged: @escaping @Sendable (Int) -> Void = { _ in }) {
         self.repository = repository; self.providers = providers; self.pluginDirectory = pluginDirectory
         self.appVersion = appVersion; self.hostName = String(hostName.prefix(120)); self.testing = allowLoopbackForTests; self.heartbeat = heartbeat
+        self.runsChanged = runsChanged
     }
+
+    private func announceRuns() { runsChanged(jobs.values.filter { !$0.done }.count) }
 
     public func current() -> RemoteHostState {
         var value = state
@@ -122,6 +128,7 @@ public actor RemoteHostService {
         leaseTask?.cancel(); leaseTask = nil
         for job in jobs.values { job.task?.cancel() }
         jobs.removeAll()
+        announceRuns()
         for server in oldServers { await server.stop() }
         await oldRunner?.shutdown()
         oldEvents?.cancel()
@@ -260,6 +267,7 @@ public actor RemoteHostService {
         prune()
         let id = UUID().uuidString
         jobs[id] = Job()
+        announceRuns()
         run.sessionId = id
         let permissions = run.kind == SessionKind.claude && (run.provider == "claude" || (run.provider == "codex" && run.settings.permissionMode == "onRequest"))
         let launched = run
@@ -310,8 +318,10 @@ public actor RemoteHostService {
                 job.bytes -= (try? JSONEncoder().encode(job.events.removeFirst()).count) ?? 0
             }
         }
-        if event.type == "status", ["completed", "error", "stopped"].contains(event.status ?? "") { job.done = true; job.finishedAt = Date() }
+        let ended = event.type == "status" && ["completed", "error", "stopped"].contains(event.status ?? "")
+        if ended { job.done = true; job.finishedAt = Date() }
         jobs[event.sessionId] = job
+        if ended { announceRuns() }
     }
 
     private func stopJob(_ id: String) async {
