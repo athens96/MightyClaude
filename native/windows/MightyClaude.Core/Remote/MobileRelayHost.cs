@@ -8,12 +8,21 @@ using System.Text.RegularExpressions;
 
 namespace MightyClaude.Core;
 
-public sealed record MobileRemoteSettings(bool Enabled = false, string RelayURL = "", bool AllowLegacyPhones = true)
+/// <param name="DirectEnabled">The direct path's switch (docs/relay.md, "Tailscale 직접 연결"); on unless turned off.</param>
+/// <param name="DirectPort">The direct listener's port, 1024-65535.</param>
+public sealed record MobileRemoteSettings(bool Enabled = false, string RelayURL = "", bool AllowLegacyPhones = true, bool DirectEnabled = true, int DirectPort = MobileDirect.DefaultPort)
 {
     [System.Text.Json.Serialization.JsonIgnore]
     public MobileRemoteSettings Normalized
     {
-        get { var relay = (RelayURL ?? "").Trim(); return relay.Length == 0 ? this with { RelayURL = "" } : MobileRelayHost.NormalizeRelay(relay) is { } valid ? this with { RelayURL = valid } : new(false, "", AllowLegacyPhones); }
+        get
+        {
+            var port = MobileDirect.ValidPort(DirectPort) ? DirectPort : MobileDirect.DefaultPort;
+            var relay = (RelayURL ?? "").Trim();
+            return relay.Length == 0 ? this with { RelayURL = "", DirectPort = port }
+                : MobileRelayHost.NormalizeRelay(relay) is { } valid ? this with { RelayURL = valid, DirectPort = port }
+                : this with { Enabled = false, RelayURL = "", DirectPort = port };
+        }
     }
 }
 public sealed record MobileReply(int Status, object Body, Func<Task>? AfterSend = null);
@@ -84,6 +93,126 @@ public sealed class MobileRelayHost : IAsyncDisposable
     public string PairingKeyForDisplay => identity.PairingKey;
     public string AppVersion { get; init; } = "0.0.0";
     public string PairingUrl => identity.PairingUrl(NormalizeRelay(settings.RelayURL) ?? DefaultRelay, hostName);
+
+    // The direct path (M/MightyCore/Remote/MobileRemoteService.swift "Direct path"): listeners on this PC's Tailscale addresses while
+    // the remote and its direct switch are on. Its phones have ids starting with "direct-" and live apart from the relay's: a relay
+    // redial, a relay `disconnected` notice and a relay outage never touch them. Guarded by directSync, which also makes every
+    // admission to the phone table (relay or direct) one atomic count-check-insert.
+    private readonly object directSync = new();
+    private MobileDirectListener? directListener;
+    private IReadOnlyList<string>? directBoundAddresses;
+    private int? directBoundPort;
+    private string[] directEndpoints = [];
+    private readonly DirectAuthFailures directFailures = new();
+    /// <summary>
+    /// Test seam: where the direct path reads its addresses instead of this PC's Tailscale adapters (loopback in the checks), and the
+    /// port it binds then (0: any free one). Internal and reached only by MightyClaude.Core.Tests (InternalsVisibleTo): neither
+    /// Settings nor a phone can set it, so the app only ever binds Tailscale addresses.
+    /// </summary>
+    private Func<IReadOnlyList<string>>? directAddressSource;
+    private int directSourcePort;
+    public MobileDirectStatus DirectStatus { get; private set; } = MobileDirectStatus.Off;
+    /// <summary>The endpoints the direct path listens on now, as auth_ok, /m1/info and the QR carry them; empty while it is off.</summary>
+    public IReadOnlyList<string> DirectEndpoints => Volatile.Read(ref directEndpoints);
+    internal IReadOnlyList<string> ConnectionIds => [.. clients.Keys];
+
+    internal void SetDirectAddressSource(Func<IReadOnlyList<string>>? source, int port = 0)
+    {
+        lock (directSync) { directAddressSource = source; directSourcePort = port; }
+        RefreshDirect(force: true);
+    }
+
+    /// <summary>
+    /// Reads the addresses again and makes the listeners match when they or the port changed; with the remote or the switch off,
+    /// stops and drops the direct phones. Listeners whose address and port stay are kept, with their phones. <paramref name="force"/>
+    /// rebinds even when nothing seems changed (Settings changed).
+    /// </summary>
+    public void RefreshDirect(bool force = false)
+    {
+        // Only a pass that changed something is published (a re-read that found the same addresses keeps the same status object),
+        // so the 15 s watch does not redraw Settings or the QR for nothing.
+        if (UpdateDirect(force)) Republish();
+    }
+
+    /// <summary><see cref="RefreshDirect"/> without the publish; answers whether <see cref="DirectStatus"/> changed.</summary>
+    private bool UpdateDirect(bool force)
+    {
+        MobileDirectStatus before, after;
+        lock (directSync)
+        {
+            before = DirectStatus;
+            var current = settings;
+            if (disposed || !current.Enabled || !current.DirectEnabled) StopDirect(current);
+            else
+            {
+                var source = directAddressSource;
+                var addresses = source is null ? TailscaleAddresses.Current() : source();
+                var port = source is null ? current.DirectPort : directSourcePort;
+                if (force || directBoundAddresses is not { } was || !was.SequenceEqual(addresses) || directBoundPort != port) BindDirect(addresses, port, source is not null);
+            }
+            after = DirectStatus;
+        }
+        return !ReferenceEquals(before, after);
+    }
+
+    private void BindDirect(IReadOnlyList<string> addresses, int port, bool seam)
+    {
+        directBoundAddresses = addresses; directBoundPort = port;
+        if (addresses.Count == 0)
+        {
+            directListener?.Stop(); directListener = null; Volatile.Write(ref directEndpoints, []); DirectStatus = new("notFound", []);
+            return;
+        }
+        directListener ??= new MobileDirectListener(AcceptDirect);
+        var (bound, error) = directListener.Update(addresses, port);
+        Volatile.Write(ref directEndpoints, [.. MobileDirect.Advertised(bound, allowAnyHost: seam)]);
+        // Anything not bound is tried again on the next pass rather than taken as settled.
+        if (bound.Count < addresses.Count) directBoundAddresses = null;
+        if (bound.Count == 0) { directListener.Stop(); directListener = null; DirectStatus = new("failed", [], error); }
+        else DirectStatus = new("listening", Volatile.Read(ref directEndpoints));
+    }
+
+    /// <summary>Stops listening and drops every phone that came in directly.</summary>
+    private void StopDirect(MobileRemoteSettings current)
+    {
+        directListener?.Stop(); directListener = null;
+        directBoundAddresses = null; directBoundPort = null; Volatile.Write(ref directEndpoints, []);
+        DirectStatus = !disposed && current.Enabled && !current.DirectEnabled ? new("disabled", []) : MobileDirectStatus.Off;
+        foreach (var client in clients.Values.Where(client => client.Direct)) client.Cancel();
+    }
+
+    /// <summary>
+    /// One socket a direct listener accepted, on the listener's accept loop and before a byte of it is read. Admitted ones join the
+    /// relay's phone table and run the same <see cref="Connection"/>, held to the same deadline (the upgrade included), auth and request
+    /// limits; anything else (a peer outside Tailscale's ranges, one locked out by failed auths, one over the limits) is reset unread
+    /// (<see cref="MobileDirect.Admit"/>). The count, the check and the insert happen under directSync together, so two sockets racing
+    /// in from one peer cannot both take the last slot.
+    /// </summary>
+    private void AcceptDirect(DirectIncoming incoming)
+    {
+        Connection connection;
+        lock (directSync)
+        {
+            var current = settings;
+            var pending = clients.Values.Where(client => client.Direct && !client.Authenticated).Select(client => client.Peer ?? "").ToArray();
+            var failures = incoming.Peer is { } peer ? directFailures.Recent(peer, DateTimeOffset.UtcNow) : 0;
+            if (disposed || directListener is null || !current.Enabled || !current.DirectEnabled
+                || !MobileDirect.Admit(incoming.Peer, directAddressSource is not null, clients.Count, pending, failures)) { incoming.Refuse(); return; }
+            var id = MobileDirect.ConnectionPrefix + Guid.NewGuid().ToString();
+            // The listener slot goes back once the connection has ended, whichever way it ends.
+            connection = new Connection(this, id, token => MobileDirect.AcceptWebSocketAsync(incoming.Stream, token), CancellationToken.None, direct: true, peer: incoming.Peer) { Ended = incoming.Dispose };
+            clients[id] = connection;
+        }
+        _ = Serve(connection);
+    }
+
+    /// <summary>The relay path's data socket for one connection id, dialled inside the handshake deadline.</summary>
+    private Func<CancellationToken, Task<WebSocket?>> Open(Uri uri) => async token =>
+    {
+        var socket = Socket();
+        try { await socket.ConnectAsync(uri, token); return socket; }
+        catch { socket.Dispose(); throw; }
+    };
     public MobileRelayHost(string directory, string hostName, string[] capabilities, Func<string, string, JsonElement?, string, CancellationToken, Task<MobileReply>> route)
     { identity = new(directory); this.hostName = hostName; this.capabilities = capabilities; this.route = route; }
     public static string? NormalizeRelay(string value)
@@ -112,7 +241,12 @@ public sealed class MobileRelayHost : IAsyncDisposable
     public async Task ApplyAsync(MobileRemoteSettings value)
     {
         await lifecycle.WaitAsync();
-        try { ObjectDisposedException.ThrowIf(disposed, this); await RestartInternal(value.Normalized); }
+        try
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            var before = settings; var now = value.Normalized;
+            await RestartInternal(now, forceDirect: now.Enabled != before.Enabled || now.DirectEnabled != before.DirectEnabled || now.DirectPort != before.DirectPort);
+        }
         finally { lifecycle.Release(); }
     }
     public async Task ReconnectAsync()
@@ -121,9 +255,13 @@ public sealed class MobileRelayHost : IAsyncDisposable
         try { ObjectDisposedException.ThrowIf(disposed, this); await RestartInternal(settings); }
         finally { lifecycle.Release(); }
     }
-    private async Task RestartInternal(MobileRemoteSettings value)
+    private async Task RestartInternal(MobileRemoteSettings value, bool forceDirect = false)
     {
         await StopInternal(); settings = value;
+        // The direct path follows its own switch, not the relay's state (M/MobileRemoteService.swift:409-424): the relay was just
+        // stopped and the direct phones kept. Its new status rides on the publish just below, before the relay dials, so no relay
+        // report is ever sent twice for it.
+        UpdateDirect(forceDirect);
         if (!settings.Enabled) { StopWatching(); Publish(false, "disabled"); return; }
         var relay = NormalizeRelay(settings.RelayURL.Length == 0 ? DefaultRelay : settings.RelayURL) ?? throw new ArgumentException("Invalid relay address.");
         lifetime = new(); var current = ++generation; Publish(false, "connecting"); loop = RunAsync(relay, current, lifetime.Token);
@@ -201,11 +339,13 @@ public sealed class MobileRelayHost : IAsyncDisposable
         finally { lifecycle.Release(); }
         Republish();
     }
+    /// <summary>Stops the relay link and the relay's phones; the direct phones stay (<see cref="StopDirect"/> is theirs).</summary>
     private async Task StopInternal()
     {
-        ++generation; lifetime?.Cancel(); foreach (var client in clients.Values) client.Cancel();
+        ++generation; lifetime?.Cancel();
+        foreach (var client in clients.Values.Where(client => !client.Direct)) client.Cancel();
         if (loop is { } running) try { await running; } catch (OperationCanceledException) { }
-        await Task.WhenAll(clients.Values.Select(c => c.Completion.Task));
+        await Task.WhenAll(clients.Values.Where(client => !client.Direct).Select(client => client.Completion.Task));
         lifetime?.Dispose(); lifetime = null; loop = null;
     }
     private void Publish(bool connected, string detail, string? error = null, int? retry = null) { Status = new(connected, clients.Values.Count(c => c.Authenticated), detail, error, retry); StatusChanged?.Invoke(Status); }
@@ -231,14 +371,22 @@ public sealed class MobileRelayHost : IAsyncDisposable
                     if (value.Text("type") == "turn-credentials") { await ReadTurnCredentials(value); continue; }
                     var id = value.Text("connectionId");
                     if (id is null || !Regex.IsMatch(id, "^[A-Za-z0-9-]{8,64}$")) continue;
-                    if (value.Text("type") == "disconnected") { if (clients.TryGetValue(id, out var prior)) prior.Cancel(); continue; }
-                    if (value.Text("type") != "connected" || clients.Count >= 32 || clients.Values.Count(c => !c.Authenticated) >= 4) continue;
-                    var connection = new Connection(this, id, SocketUri(relay, id), token);
-                    if (clients.TryAdd(id, connection)) _ = Serve(connection);
+                    // A direct- id is never the relay's to open or close: the relay cannot reach a phone that came in directly.
+                    if (value.Text("type") == "disconnected") { if (!MobileDirect.IsDirect(id) && clients.TryGetValue(id, out var prior)) prior.Cancel(); continue; }
+                    if (value.Text("type") != "connected" || MobileDirect.IsDirect(id)) continue;
+                    Connection connection; bool added;
+                    // The same lock as the direct path's admission: the shared table's count, check and insert happen together.
+                    lock (directSync)
+                    {
+                        if (clients.Count >= MobileDirect.MaximumClients || clients.Values.Count(c => !c.Authenticated && !c.Direct) >= 4) continue;
+                        connection = new Connection(this, id, Open(SocketUri(relay, id)), token);
+                        added = clients.TryAdd(id, connection);
+                    }
+                    if (added) _ = Serve(connection);
                 }
             }
             catch (Exception ex) when (ex is WebSocketException or IOException or OperationCanceledException or JsonException or InvalidOperationException) { }
-            finally { renew.Cancel(); if (renewal is not null) await renewal; var ended = clients.Values.ToArray(); foreach (var client in ended) client.Cancel(); await Task.WhenAll(ended.Select(c => c.Completion.Task)); }
+            finally { renew.Cancel(); if (renewal is not null) await renewal; var ended = clients.Values.Where(c => !c.Direct).ToArray(); foreach (var client in ended) client.Cancel(); await Task.WhenAll(ended.Select(c => c.Completion.Task)); }
             if (token.IsCancellationRequested || current != generation) break;
             // The relay says why it closed (docs/relay.md); a socket that ended without a word had stopped answering.
             Publish(false, "reconnecting", socket.CloseStatus is { } closed ? (int)closed switch { 4400 => "rejected", 4409 => "host-id-taken", _ => "closed" } : connected ? "unresponsive" : "connect-failed", delay);
@@ -274,7 +422,7 @@ public sealed class MobileRelayHost : IAsyncDisposable
     }
     /// <summary>The largest plaintext one frame to a phone may hold: the relay closes a connection on a frame over 1 MiB, and the seal takes 28 bytes of it.</summary>
     public const int MaximumPlaintext = MaximumFrame - 28;
-    private static async Task<(WebSocketMessageType Type, byte[] Bytes)> Receive(ClientWebSocket socket, CancellationToken token)
+    private static async Task<(WebSocketMessageType Type, byte[] Bytes)> Receive(WebSocket socket, CancellationToken token)
     {
         using var data = new MemoryStream(); var buffer = new byte[8192]; WebSocketReceiveResult result;
         do
@@ -290,48 +438,67 @@ public sealed class MobileRelayHost : IAsyncDisposable
     {
         public string Id { get; }
         public bool Authenticated { get; private set; }
+        /// <summary>Came in on the direct path: kept through relay redials, refused with one word, its failed auths counted against <see cref="Peer"/>.</summary>
+        public bool Direct { get; }
+        /// <summary>The direct peer's address; null on the relay path.</summary>
+        public string? Peer { get; }
+        /// <summary>Runs once the connection has ended and its socket is gone (a direct one gives its listener slot back), whatever ended it.</summary>
+        public Action? Ended { get; init; }
         public TaskCompletionSource Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private int cancelled;
         private Task? heartbeat;
         private readonly MobileRelayHost host;
-        private readonly Uri uri;
+        private readonly Func<CancellationToken, Task<WebSocket?>> open;
         private readonly CancellationTokenSource cancel;
-        private readonly ClientWebSocket socket;
+        private WebSocket? socket;
         private readonly SemaphoreSlim writer = new(1), requests = new(8);
         private readonly ConcurrentDictionary<string, Task> inflight = [];
         private RelayCipher? cipher;
         private string device = "";
         public string DeviceId => device;
-        public Connection(MobileRelayHost host, string id, Uri uri, CancellationToken token) { this.host = host; Id = id; this.uri = uri; socket = host.Socket(); cancel = CancellationTokenSource.CreateLinkedTokenSource(token); }
-        public void Cancel() { if (Interlocked.Exchange(ref cancelled, 1) == 0) { cancel.Cancel(); socket.Abort(); } }
+        public Connection(MobileRelayHost host, string id, Func<CancellationToken, Task<WebSocket?>> open, CancellationToken token, bool direct = false, string? peer = null)
+        { this.host = host; Id = id; this.open = open; Direct = direct; Peer = peer; cancel = CancellationTokenSource.CreateLinkedTokenSource(token); }
+        public void Cancel() { if (Interlocked.Exchange(ref cancelled, 1) == 0) { cancel.Cancel(); Volatile.Read(ref socket)?.Abort(); } }
         public async Task Run()
         {
             var token = cancel.Token;
             try
             {
-                using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token); deadline.CancelAfter(TimeSpan.FromSeconds(10));
-                await socket.ConnectAsync(uri, deadline.Token);
-                var hello = await Receive(socket, deadline.Token);
+                // One deadline from the socket to auth_ok: the relay path dials its data socket, the direct path reads the phone's
+                // HTTP upgrade, and both then read hello and auth, all on this one token.
+                using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token); deadline.CancelAfter(MobileDirect.HandshakeDeadline);
+                var opened = await open(deadline.Token);
+                if (opened is null) return;
+                Volatile.Write(ref socket, opened);
+                if (Volatile.Read(ref cancelled) == 1) return;
+                var hello = await Receive(opened, deadline.Token);
                 if (hello.Type != WebSocketMessageType.Text || hello.Bytes.Length > 4096) return;
                 using var hd = JsonDocument.Parse(hello.Bytes); var h = hd.RootElement;
                 if (h.Text("type") != "hello" || !h.TryGetProperty("v", out var v) || !v.TryGetInt32(out var version) || version != 1) return;
                 var nonce = RandomNumberGenerator.GetBytes(16);
                 cipher = new(host.identity.Secret, Convert.FromBase64String(h.Text("clientKey") ?? ""), Convert.FromBase64String(h.Text("nonce") ?? ""), nonce, true);
                 var ready = JsonSerializer.SerializeToUtf8Bytes(new { type = "ready", v = 1, serverKey = host.identity.PublicKey, nonce = Convert.ToBase64String(nonce) }, Wire.Json);
-                await socket.SendAsync(ready, WebSocketMessageType.Text, true, deadline.Token);
-                var authentication = await Receive(socket, deadline.Token);
+                await opened.SendAsync(ready, WebSocketMessageType.Text, true, deadline.Token);
+                var authentication = await Receive(opened, deadline.Token);
                 if (authentication.Type != WebSocketMessageType.Binary) return;
                 using var ad = JsonDocument.Parse(cipher.Open(authentication.Bytes));
                 var auth = host.identity.Authenticate(ad.RootElement, host.settings.AllowLegacyPhones);
-                if (auth.DeviceId is null) { await Send(new { type = "auth_error", reason = auth.Error }); return; }
+                if (auth.DeviceId is null)
+                {
+                    // A direct refusal is one word, so a tailnet peer learns nothing of which ids or keys this PC knows; the phone then
+                    // takes the relay and hears the real reason there (docs/relay.md). Each one counts against the peer's address.
+                    if (Direct && Peer is not null) host.directFailures.Record(Peer, DateTimeOffset.UtcNow);
+                    await Send(new { type = "auth_error", reason = Direct ? MobileDirect.GenericRefusal : auth.Error });
+                    return;
+                }
                 device = auth.DeviceId; Authenticated = true;
-                await Send(new { type = "auth_ok", hostName = host.hostName, hostId = host.identity.HostId, appVersion = host.AppVersion, capabilities = host.capabilities.Concat(host.ExtraCapabilities?.Invoke() ?? []).Distinct().ToArray(), deviceToken = auth.DeviceToken });
+                await Send(new { type = "auth_ok", hostName = host.hostName, hostId = host.identity.HostId, appVersion = host.AppVersion, capabilities = host.capabilities.Concat(host.ExtraCapabilities?.Invoke() ?? []).Distinct().ToArray(), direct = host.DirectEndpoints, deviceToken = auth.DeviceToken });
                 host.Republish();
                 heartbeat = Heartbeat(token);
                 while (!token.IsCancellationRequested)
                 {
                     using var idle = CancellationTokenSource.CreateLinkedTokenSource(token); idle.CancelAfter(TimeSpan.FromSeconds(60));
-                    var frame = await Receive(socket, idle.Token);
+                    var frame = await Receive(opened, idle.Token);
                     if (frame.Type != WebSocketMessageType.Binary) continue;
                     using var doc = JsonDocument.Parse(cipher.Open(frame.Bytes)); var root = doc.RootElement;
                     if (root.Text("type") == "ping") { await Send(new { type = "pong" }); continue; }
@@ -348,10 +515,12 @@ public sealed class MobileRelayHost : IAsyncDisposable
                     _ = Handle(id, method, path, body, completion);
                 }
             }
-            catch (Exception ex) when (ex is WebSocketException or IOException or OperationCanceledException or JsonException or FormatException or CryptographicException or Org.BouncyCastle.Crypto.CryptoException or InvalidOperationException or ArgumentException) { }
+            catch (Exception ex) when (ex is WebSocketException or IOException or OperationCanceledException or JsonException or FormatException or CryptographicException or Org.BouncyCastle.Crypto.CryptoException or InvalidOperationException or ArgumentException or ObjectDisposedException) { }
             finally
             {
-                Cancel(); if (heartbeat is not null) await heartbeat; await Task.WhenAll(inflight.Values); cipher?.Dispose(); socket.Dispose(); cancel.Dispose();
+                // Ended runs on every way out, so a direct connection's listener slot is never kept by one that has gone.
+                try { Cancel(); if (heartbeat is not null) await heartbeat; await Task.WhenAll(inflight.Values); cipher?.Dispose(); Volatile.Read(ref socket)?.Dispose(); cancel.Dispose(); }
+                finally { Ended?.Invoke(); }
             }
         }
         private async Task Heartbeat(CancellationToken token)
@@ -384,14 +553,21 @@ public sealed class MobileRelayHost : IAsyncDisposable
                 await writer.WaitAsync(cancel.Token);
                 try
                 {
-                    if (cipher is null) return;
+                    if (cipher is null || Volatile.Read(ref socket) is not { } current) return;
                     if (bytes.Length > MaximumPlaintext) throw new IOException("Relay response exceeds limit.");
-                    await socket.SendAsync(cipher.Seal(bytes), WebSocketMessageType.Binary, true, cancel.Token);
+                    await current.SendAsync(cipher.Seal(bytes), WebSocketMessageType.Binary, true, cancel.Token);
                 }
                 finally { writer.Release(); }
             }
             catch (Exception ex) when (ex is WebSocketException or IOException or OperationCanceledException or ObjectDisposedException) { Cancel(); }
         }
     }
-    public async ValueTask DisposeAsync() { await lifecycle.WaitAsync(); try { if (disposed) return; disposed = true; StopWatching(); await StopInternal(); } finally { lifecycle.Release(); } }
+    public async ValueTask DisposeAsync()
+    {
+        await lifecycle.WaitAsync();
+        try { if (disposed) return; disposed = true; StopWatching(); await StopInternal(); }
+        finally { lifecycle.Release(); }
+        lock (directSync) StopDirect(settings);
+        await Task.WhenAll(clients.Values.Select(client => client.Completion.Task));
+    }
 }

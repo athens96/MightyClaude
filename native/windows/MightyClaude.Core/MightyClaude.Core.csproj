@@ -19,4 +19,8 @@
   <ItemGroup>
     <EmbeddedResource Include="../../contracts/fixtures/setup-catalog.json" LogicalName="MightyClaude.Core.Setup.setup-catalog.json" />
   </ItemGroup>
+  <!-- The direct path's loopback seam (MobileRelayHost.SetDirectAddressSource) is internal: only the Core checks reach it, never WinUI or the phone. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="MightyClaude.Core.Tests" />
+  </ItemGroup>
 </Project>

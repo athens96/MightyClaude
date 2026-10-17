@@ -238,4 +238,76 @@ internal static class MobileDirectVerification
         catch (IOException) { return true; }
         catch (OperationCanceledException) { return false; }
     }
+
+    private static string Temp() => Directory.CreateTempSubdirectory("mighty-direct-").FullName;
+    private static string Query(string link, string name) => Uri.UnescapeDataString(new Uri(link).Query.TrimStart('?').Split('&').Single(part => part.StartsWith(name + "=", StringComparison.Ordinal))[(name.Length + 1)..]);
+    private static async Task<byte[]> Receive(WebSocket socket, CancellationToken token)
+    {
+        using var result = new MemoryStream(); var buffer = new byte[8192]; WebSocketReceiveResult frame;
+        do { frame = await socket.ReceiveAsync(buffer, token); if (frame.MessageType == WebSocketMessageType.Close) throw new IOException("closed"); result.Write(buffer, 0, frame.Count); } while (!frame.EndOfMessage);
+        return result.ToArray();
+    }
+
+    /// <summary>A phone on the direct path: ws://endpoint/ws?v=1, hello, the paired key checked, then encrypted frames.</summary>
+    private sealed class DirectPhone(ClientWebSocket socket, RelayCipher cipher) : IAsyncDisposable
+    {
+        internal static async Task<DirectPhone> ConnectAsync(string endpoint, string pairingUrl, CancellationToken token)
+        {
+            var socket = new ClientWebSocket();
+            try
+            {
+                await socket.ConnectAsync(new Uri("ws://" + endpoint + "/ws?v=1"), token);
+                var secret = RandomNumberGenerator.GetBytes(32); var nonce = RandomNumberGenerator.GetBytes(16);
+                await socket.SendAsync(JsonSerializer.SerializeToUtf8Bytes(new { type = "hello", v = 1, clientKey = Convert.ToBase64String(RelayCipher.PublicKey(secret)), nonce = Convert.ToBase64String(nonce) }, Wire.Json), WebSocketMessageType.Text, true, token);
+                using var ready = JsonDocument.Parse(await Receive(socket, token));
+                var server = Convert.FromBase64String(ready.RootElement.Text("serverKey")!);
+                Check(Query(pairingUrl, "pk").Replace('-', '+').Replace('_', '/') + "=" == Convert.ToBase64String(server), "the direct path answers with the paired public key");
+                return new(socket, new RelayCipher(secret, server, nonce, Convert.FromBase64String(ready.RootElement.Text("nonce")!), false));
+            }
+            catch { socket.Dispose(); throw; }
+        }
+
+        internal async Task<JsonDocument> ExchangeAsync(object message, CancellationToken token)
+        {
+            await socket.SendAsync(cipher.Seal(JsonSerializer.SerializeToUtf8Bytes(message, Wire.Json)), WebSocketMessageType.Binary, true, token);
+            return JsonDocument.Parse(cipher.Open(await Receive(socket, token)));
+        }
+
+        public ValueTask DisposeAsync() { socket.Abort(); socket.Dispose(); cipher.Dispose(); return ValueTask.CompletedTask; }
+    }
+
+    internal static async Task APhoneConnectsDirectlyOnTheRelaysHandshake()
+    {
+        var directory = Temp(); using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var host = new MobileRelayHost(Path.Combine(directory, "identity"), "Fixture", [], (_, path, _, _, _) => Task.FromResult(new MobileReply(200, new { protocol = 1, path }))) { WatchesNetwork = false };
+        try
+        {
+            // The seam is set first, so this machine's own Tailscale address is never bound.
+            host.SetDirectAddressSource(() => ["127.0.0.1"]);
+            Check(host.DirectStatus.State == "off" && host.DirectEndpoints.Count == 0, "nothing listens while the remote is off");
+            Check(JsonSerializer.Deserialize<MobileRemoteSettings>("{\"enabled\":true,\"relayURL\":\"\",\"allowLegacyPhones\":true}", Wire.Json) is { DirectEnabled: true, DirectPort: MobileDirect.DefaultPort }, "settings saved before the direct path read as on, port 43139");
+            Check(new MobileRemoteSettings(DirectPort: 80).Normalized.DirectPort == MobileDirect.DefaultPort && new MobileRemoteSettings(true, "not a relay", DirectEnabled: false).Normalized is { Enabled: false, DirectEnabled: false }, "a bad port normalizes to 43139 and a bad relay keeps the direct switch");
+            // The relay address is a closed local port: the relay fails and redials the whole time, and the direct phone never notices.
+            await host.ApplyAsync(new MobileRemoteSettings(true, "ws://127.0.0.1:9"));
+            Check(host.DirectStatus.Listening && host.DirectEndpoints.Count == 1 && host.DirectEndpoints[0].StartsWith("127.0.0.1:", StringComparison.Ordinal), "the seam's address is listened on and advertised: " + string.Join(",", host.DirectEndpoints));
+            var endpoint = host.DirectEndpoints[0];
+            await using (var phone = await DirectPhone.ConnectAsync(endpoint, host.PairingUrl, timeout.Token))
+            {
+                using var auth = await phone.ExchangeAsync(new { type = "auth", pairingKey = Query(host.PairingUrl, "key"), clientId = "abcdefghijklmnopqrstuv", clientName = "Fixture Phone" }, timeout.Token);
+                Check(auth.RootElement.Text("type") == "auth_ok" && auth.RootElement.Text("deviceToken") is not null, "a phone pairs over the direct path");
+                Check(auth.RootElement.GetProperty("direct").EnumerateArray().Select(value => value.GetString()).SequenceEqual(host.DirectEndpoints), "auth_ok carries the direct endpoints");
+                using var info = await phone.ExchangeAsync(new { id = "request-1", method = "GET", path = "/m1/info" }, timeout.Token);
+                Check(info.RootElement.Text("id") == "request-1" && info.RootElement.GetProperty("status").GetInt32() == 200, "requests are tunnelled as on the relay");
+                Check(host.ConnectionIds.Single().StartsWith(MobileDirect.ConnectionPrefix, StringComparison.Ordinal) && host.Devices.Single().Connected && host.Status.Connections == 1, "the phone joins the same table with a direct- id");
+            }
+            await Verification.Until(() => host.ConnectionIds.Count == 0);
+            // A wrong key hears one word, never why.
+            await using (var stranger = await DirectPhone.ConnectAsync(endpoint, host.PairingUrl, timeout.Token))
+            {
+                using var refused = await stranger.ExchangeAsync(new { type = "auth", pairingKey = "wrong-key-0000000000", clientId = "zyxwvutsrqponmlkjihgfe", clientName = "Stranger" }, timeout.Token);
+                Check(refused.RootElement.Text("type") == "auth_error" && refused.RootElement.Text("reason") == MobileDirect.GenericRefusal, "a direct refusal is the generic unauthorized");
+            }
+        }
+        finally { await host.DisposeAsync(); Directory.Delete(directory, true); }
+    }
 }
