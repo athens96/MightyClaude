@@ -1,6 +1,6 @@
 ---
 title: Windowsでの違い
-order: 10
+order: 11
 section: windows
 ---
 このヘルプはMacの画面を基準に書かれています。Windowsアプリも同じ機能を同じ名前で提供しており、ここでは異なる部分だけをまとめています。

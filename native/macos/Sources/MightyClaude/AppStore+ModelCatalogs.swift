@@ -3,7 +3,8 @@ import MightyCore
 
 extension AppStore {
     func localModelContext(for session: RunSession) -> LocalModelContext? {
-        guard session.kind != "shell", !FilePaneKind.isFilePane(session.kind), let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return nil }
+        // A remote workspace's models are the host's (`remoteProviderRuntime`), never probed here.
+        guard session.kind != "shell", !FilePaneKind.isFilePane(session.kind), let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }), workspace.remote == nil else { return nil }
         return LocalModelContext(workspaceID: workspace.id, path: workspace.path, provider: session.provider)
     }
 
@@ -30,7 +31,7 @@ extension AppStore {
     }
 
     func acceptLocalModels(_ key: LocalModelContext, previous: ProviderRuntime?, refreshed: ProviderRuntime) {
-        guard !ending, let workspace = snapshot.workspaces.first(where: { $0.id == key.workspaceID }), workspace.path == key.path else { return }
+        guard !ending, let workspace = snapshot.workspaces.first(where: { $0.id == key.workspaceID }), workspace.remote == nil, workspace.path == key.path else { return }
         modelRefreshRevision &+= 1
         // A late response never changes a running request. Reconcile the current
         // selection, so a user choice made during the probe is not overwritten.

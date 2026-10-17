@@ -58,7 +58,8 @@ extension AppStore {
 
     /// A background step works on this pane's provider: its sends queue.
     func backgroundUpdateHolds(_ session: RunSession) -> Bool {
-        session.kind != "shell" && automaticUpdateRunning && (updatingCLI == session.provider || updatingPluginsFor == session.provider)
+        // A remote pane runs its host's CLI, which this Mac's update does not touch.
+        session.kind != "shell" && automaticUpdateRunning && (updatingCLI == session.provider || updatingPluginsFor == session.provider) && !isRemoteSession(session)
     }
 
     /// Runs the queues a background step held back, once it ended.

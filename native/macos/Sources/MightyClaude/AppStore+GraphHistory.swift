@@ -28,7 +28,8 @@ extension AppStore {
     func loadOlderGraphHistory(_ id: String) {
         guard let session = snapshot.sessions.first(where: { $0.id == id }), session.kind == "claude",
               SessionHistory.providers.contains(session.provider),
-              let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return }
+              // Older requests are read from the CLI's records, which a remote run keeps on its host.
+              let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }), workspace.remote == nil else { return }
         let retained = session.mightyGraphRuns
         let first = retained.first
         let sent = first.flatMap { run in session.logs.first(where: { $0.id == run.id })?.timestamp ?? run.rootEntries.first?.timestamp }

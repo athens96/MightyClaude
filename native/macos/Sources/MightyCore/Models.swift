@@ -114,6 +114,25 @@ public struct PhaseModelHardcodedConfig: Codable, Sendable, Equatable {
     }
 }
 
+/// A workspace that lives on another computer running Mighty Claude, reached over
+/// Tailscale (docs/remote-workspaces.md). Saved as the workspace's `remote` value.
+/// Its `version` tells it apart from the references the app wrote before remote
+/// workspaces were removed on 2026-09-28, which had none: those are still dropped
+/// on load (`StateRepository.decodeSnapshot`), and an app from between the two
+/// drops these too instead of taking the host's path for a local folder.
+public struct RemoteWorkspaceReference: Codable, Sendable, Equatable {
+    public static let currentVersion = 2
+    public var version: Int
+    /// The saved connection (`RemoteClientService`) the workspace opens through.
+    public var connectionId: String
+    /// The workspace's id on the host.
+    public var workspaceId: String
+    public var hostName: String
+    public init(connectionId: String, workspaceId: String, hostName: String) {
+        self.version = Self.currentVersion; self.connectionId = connectionId; self.workspaceId = workspaceId; self.hostName = hostName
+    }
+}
+
 public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     public var id: String
     public var name: String
@@ -121,9 +140,12 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     public var createdAt: String
     /// Workspace-level model defaults override; nil means no workspace-level override.
     public var modelDefaults: ModelDefaultsConfig?
-    public init(id: String = UUID().uuidString, name: String, path: String, createdAt: String = mightyTimestamp(), modelDefaults: ModelDefaultsConfig? = nil) {
-        self.id = id; self.name = name; self.path = path; self.createdAt = createdAt; self.modelDefaults = modelDefaults
+    /// Set when the folder is on another computer; `path` is then the host's path.
+    public var remote: RemoteWorkspaceReference?
+    public init(id: String = UUID().uuidString, name: String, path: String, createdAt: String = mightyTimestamp(), modelDefaults: ModelDefaultsConfig? = nil, remote: RemoteWorkspaceReference? = nil) {
+        self.id = id; self.name = name; self.path = path; self.createdAt = createdAt; self.modelDefaults = modelDefaults; self.remote = remote
     }
+    public var isRemote: Bool { remote != nil }
 }
 
 public struct RunSettings: Codable, Sendable, Equatable {

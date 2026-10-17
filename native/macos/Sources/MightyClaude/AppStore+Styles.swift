@@ -54,7 +54,7 @@ extension AppStore {
 
     /// The pane's workspace, for matching workspace styles (§3.1).
     func styleWorkspaceRef(_ session: RunSession) -> StyleWorkspaceRef? {
-        guard let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return nil }
+        guard let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }), workspace.remote == nil else { return nil }
         return StyleWorkspaceRef(path: workspace.path)
     }
 
@@ -122,13 +122,16 @@ extension AppStore {
     /// walked by every later scan, and its readings and manifest bytes would
     /// sit in memory for the life of the process.
     func forgetWorkspaceStyles(_ workspace: Workspace) {
-        scannedStyleWorkspaces.remove(workspace.path)
         styleCapabilityStates = styleCapabilityStates.filter { $0.key.workspaceId != workspace.id }
         styleAttachments = styleAttachments.filter { $0.key.workspaceId != workspace.id }
         styleCapabilitiesLoaded = styleCapabilitiesLoaded.filter { $0.workspaceId != workspace.id }
         styleCapabilityLoading = styleCapabilityLoading.filter { $0.workspaceId != workspace.id }
         styleCapabilityAgain = styleCapabilityAgain.filter { $0.workspaceId != workspace.id }
         styleCasebooks.removeValue(forKey: workspace.id)
+        // A remote workspace's path is its host's: a local workspace may have the
+        // same one, and its path-keyed readings and scans are not this one's.
+        guard workspace.remote == nil else { return }
+        scannedStyleWorkspaces.remove(workspace.path)
         // The panes are already gone from the snapshot, so the readings are
         // found by the workspace they were read in.
         for (id, entry) in styleFileReadings where entry.key.workspacePath == workspace.path { forgetStyleState(id) }
@@ -144,7 +147,7 @@ extension AppStore {
 
     /// Called when a workspace draws its first pane, so a repo's manifests are
     func scanWorkspaceStyles(for session: RunSession) {
-        guard let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }),
+        guard let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }), workspace.remote == nil,
               !scannedStyleWorkspaces.contains(workspace.path) else { return }
         rescanStyles(workspacePath: workspace.path)
     }
@@ -153,10 +156,11 @@ extension AppStore {
 
     /// The guided style in effect for a pane: only local Claude panes in
     /// Mighty mode have one, and only a manifest whose bytes still match the
-    /// ones this pane chose (§3.4).
+    /// ones this pane chose (§3.4). A remote workspace has none: styles read
+    /// and probe files on this Mac, and its files are on the host.
     func guidedStyle(_ session: RunSession) -> RegisteredStyle? {
         guard session.kind == "claude", session.provider == "claude", session.agentViewMode == "mighty",
-              snapshot.workspaces.contains(where: { $0.id == session.workspaceId }),
+              snapshot.workspaces.contains(where: { $0.id == session.workspaceId && $0.remote == nil }),
               let id = session.mightyStyle else { return nil }
         return styleRegistry.runnable(id, workspace: styleWorkspaceRef(session), hash: session.mightyStyleHash)
     }
@@ -210,7 +214,7 @@ extension AppStore {
     /// state is read in its worktree, where its runs write it.
     func styleStateKey(_ style: RegisteredStyle, for session: RunSession) -> StyleStateKey? {
         guard let sources = style.manifest.stateSources, !sources.files.isEmpty,
-              let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return nil }
+              let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId && $0.remote == nil }) else { return nil }
         let path = DelegationPanes.runWorkspace(for: session, in: workspace).path
         return StyleStateKey(styleHash: style.hash, workspacePath: path, since: session.mightyStyleSince)
     }
@@ -342,7 +346,7 @@ extension AppStore {
     /// the answer: the same style is ready in one clone and not in another.
     func stylePrerequisiteKey(_ style: RegisteredStyle, for session: RunSession) -> StylePrerequisiteKey {
         StylePrerequisiteKey(styleId: style.id,
-                             workspacePath: snapshot.workspaces.first { $0.id == session.workspaceId }?.path)
+                             workspacePath: snapshot.workspaces.first { $0.id == session.workspaceId && $0.remote == nil }?.path)
     }
 
     func stylePrerequisite(_ style: RegisteredStyle, for session: RunSession) -> StylePrerequisiteResult? {
@@ -388,7 +392,7 @@ extension AppStore {
     /// each other's readings.
     func refreshStyleCapabilities(_ style: RegisteredStyle, for session: RunSession) {
         guard !style.manifest.capabilities.isEmpty,
-              let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return }
+              let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId && $0.remote == nil }) else { return }
         loadStyleCapabilities(style.manifest.capabilities, workspaceId: workspace.id, path: workspace.path)
     }
 
@@ -463,7 +467,7 @@ extension AppStore {
     /// command is never run: a manifest string does not press Enter (§1.5).
     func startStyleInstall(_ style: RegisteredStyle, from session: RunSession) {
         guard let install = style.manifest.install else { return }
-        guard let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }),
+        guard let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId && $0.remote == nil }),
               let id = addSession(kind: "shell", workspaceId: workspace.id) else { error = L("styles.install.terminalFailed"); return }
         updateSession(id) { $0.title = StyleChrome.installPaneTitle(install.paneTitle, styleName: style.manifest.name, source: style.source) }
         pendingTerminalInput[id] = TerminalInput(text: install.command, autoRun: false)

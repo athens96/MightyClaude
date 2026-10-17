@@ -13,12 +13,13 @@ final class WorkspaceGitState: ObservableObject {
     /// The live reading, for the observed workspace only. Another workspace's last
     /// reading may be old, so the dashboard shows no badge for it rather than stale counts.
     func info(for workspace: Workspace) -> WorkspaceGitInfo? {
-        workspaceKey == workspace.id + "|" + workspace.path ? info : nil
+        workspace.remote == nil && workspaceKey == workspace.id + "|" + workspace.path ? info : nil
     }
 
     func observe(_ workspace: Workspace?) async {
         let generation = UUID(); self.generation = generation
-        guard let workspace else { workspaceKey = nil; info = nil; return }
+        // A remote workspace's repository is on its host; nothing here to read.
+        guard let workspace, workspace.remote == nil else { workspaceKey = nil; info = nil; return }
         let key = workspace.id + "|" + workspace.path
         workspaceKey = key
         info = cache[key]
