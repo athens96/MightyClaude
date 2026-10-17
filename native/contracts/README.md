@@ -558,3 +558,32 @@ them); the open children open beside their parent as delegate opens them, and
 loads into the app's coordinator. `HelpCaptureDelegationTests` checks the
 records, the cap on open children, the sidebar tree, the cards and the held
 notices they give.
+
+## Setup catalog (`fixtures/setup-catalog.json`)
+
+The tools the first-run setup screen (필요한 도구, also Settings → 도구 →
+구성 요소) checks and installs: the agent CLIs, their prerequisites, the style
+tools, Tailscale, gh and glab. It ships with the app and is read-only; nothing the
+user edits (the toolkit file included) adds an item. Each item has an `id`, a
+`group` (`agent`, `prerequisite`, `style`, `network`, `dev`), label and
+description keys from the locale catalogs, `need` (`required` or `optional`), an
+`afterInstall` action (`none`, `reprobe`, or `signIn` with a provider) and, per
+platform (`macos`, later `windows`), a `probe`, an `install` recipe, its
+`prerequisites` (item IDs, acyclic) and the official `source` page the command
+came from.
+
+Both kinds are closed sets. Probes: `executable` (on the login shell's PATH,
+optionally `minimumVersion` read from `--version`), `claudePlugin` (a user-scope
+record in `~/.claude/plugins/installed_plugins.json` whose ID starts with
+`prefix`), `skill` (`~/.claude/skills/<name>/SKILL.md`), `commandLineTools`
+(`xcode-select -p`) and `appBundle`. Installs: `argv` (only `xcode-select` and
+`npx`, plain arguments; `finishesOutside` when a system window completes it),
+`officialScript` (an https URL on the allow-listed hosts, fetched and run with
+`bash` or `sh`, PowerShell on Windows), `brewFormula`, `brewCask`, `npmGlobal`,
+`claudePlugin` (marketplace + `name@marketplace`), `skill` (git clone into
+`~/.claude/skills/<folder>`, then an optional fixed script inside the clone) and
+`vendorPage` (the app opens the page; nothing runs). The decoder
+(`MightyCore/SetupCatalog.swift`) refuses an unknown key, kind, host, program or
+label key. The Mac copies the file byte-identically into
+`MightyCore/Resources/Setup/` and `--verify-resources` checks it is there;
+`SetupCatalogTests` checks the copy, the validation rules and the four languages.

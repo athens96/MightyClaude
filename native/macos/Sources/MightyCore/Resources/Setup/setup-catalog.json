@@ -1,0 +1,262 @@
+{
+  "schema": 1,
+  "note": "The tools the first-run setup screen (필요한 도구) checks and installs. It ships with the app and is read-only: nothing the user edits adds an item. Every kind is a closed set: probes are executable (on the login shell's PATH, optionally with a minimum version), claudePlugin (a user-scope record in ~/.claude/plugins/installed_plugins.json whose ID starts with the prefix), skill (~/.claude/skills/<name>/SKILL.md), commandLineTools (xcode-select -p) and appBundle; installs are argv (a closed list of executables), officialScript (a fixed https URL on an allow-listed host, fetched and run with bash or sh, or PowerShell on Windows), brewFormula, brewCask, npmGlobal, claudePlugin (marketplace + plugin ID), skill (git clone into ~/.claude/skills/<folder>, then an optional fixed script inside the clone) and vendorPage (the app opens the page; nothing runs). `prerequisites` are item IDs the install needs on that platform and must not form a cycle. `source` is the official page the command was taken from. The label and description keys must be ones the app knows (SetupCatalog.knownKeys). The bundled copy is native/macos/Sources/MightyCore/Resources/Setup/setup-catalog.json and must stay byte-identical.",
+  "items": [
+    {
+      "id": "claude",
+      "group": "agent",
+      "label": "setup.item.claude.title",
+      "description": "setup.item.claude.detail",
+      "need": "required",
+      "afterInstall": { "kind": "signIn", "provider": "claude" },
+      "platforms": {
+        "macos": {
+          "probe": { "kind": "executable", "name": "claude", "minimumVersion": "2.1.271" },
+          "install": { "kind": "officialScript", "url": "https://claude.ai/install.sh", "shell": "bash" },
+          "prerequisites": [],
+          "source": "https://code.claude.com/docs/en/setup"
+        }
+      }
+    },
+    {
+      "id": "codex",
+      "group": "agent",
+      "label": "setup.item.codex.title",
+      "description": "setup.item.codex.detail",
+      "need": "optional",
+      "afterInstall": { "kind": "signIn", "provider": "codex" },
+      "platforms": {
+        "macos": {
+          "probe": { "kind": "executable", "name": "codex" },
+          "install": { "kind": "officialScript", "url": "https://chatgpt.com/codex/install.sh", "shell": "sh" },
+          "prerequisites": [],
+          "source": "https://github.com/openai/codex"
+        }
+      }
+    },
+    {
+      "id": "agy",
+      "group": "agent",
+      "label": "setup.item.agy.title",
+      "description": "setup.item.agy.detail",
+      "need": "optional",
+      "afterInstall": { "kind": "signIn", "provider": "gemini" },
+      "platforms": {
+        "macos": {
+          "probe": { "kind": "executable", "name": "agy" },
+          "install": { "kind": "officialScript", "url": "https://antigravity.google/cli/install.sh", "shell": "bash" },
+          "prerequisites": [],
+          "source": "https://antigravity.google/cli/install.sh"
+        }
+      }
+    },
+    {
+      "id": "git",
+      "group": "prerequisite",
+      "label": "setup.item.git.title",
+      "description": "setup.item.git.detail",
+      "need": "required",
+      "afterInstall": { "kind": "reprobe" },
+      "platforms": {
+        "macos": {
+          "probe": { "kind": "commandLineTools" },
+          "install": { "kind": "argv", "argv": ["xcode-select", "--install"], "finishesOutside": true },
+          "prerequisites": [],
+          "source": "https://developer.apple.com/documentation/xcode/installing-the-command-line-tools/"
+        }
+      }
+    },
+    {
+      "id": "homebrew",
+      "group": "prerequisite",
+      "label": "setup.item.homebrew.title",
+      "description": "setup.item.homebrew.detail",
+      "need": "optional",
+      "afterInstall": { "kind": "none" },
+      "platforms": {
+        "macos": {
+          "probe": { "kind": "executable", "name": "brew" },
+          "install": { "kind": "officialScript", "url": "https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh", "shell": "bash" },
+          "prerequisites": ["git"],
+          "source": "https://brew.sh"
+        }
+      }
+    },
+    {
+      "id": "node",
+      "group": "prerequisite",
+      "label": "setup.item.node.title",
+      "description": "setup.item.node.detail",
+      "need": "optional",
+      "afterInstall": { "kind": "none" },
+      "platforms": {
+        "macos": {
+          "probe": { "kind": "executable", "name": "node" },
+          "install": { "kind": "brewFormula", "name": "node" },
+          "prerequisites": ["homebrew"],
+          "source": "https://formulae.brew.sh/formula/node"
+        }
+      }
+    },
+    {
+      "id": "bun",
+      "group": "prerequisite",
+      "label": "setup.item.bun.title",
+      "description": "setup.item.bun.detail",
+      "need": "optional",
+      "afterInstall": { "kind": "none" },
+      "platforms": {
+        "macos": {
+          "probe": { "kind": "executable", "name": "bun", "minimumVersion": "1.3.3" },
+          "install": { "kind": "officialScript", "url": "https://bun.com/install", "shell": "bash" },
+          "prerequisites": [],
+          "source": "https://bun.com/docs/installation"
+        }
+      }
+    },
+    {
+      "id": "uv",
+      "group": "style",
+      "label": "setup.item.uv.title",
+      "description": "setup.item.uv.detail",
+      "need": "optional",
+      "afterInstall": { "kind": "none" },
+      "platforms": {
+        "macos": {
+          "probe": { "kind": "executable", "name": "uvx" },
+          "install": { "kind": "officialScript", "url": "https://astral.sh/uv/install.sh", "shell": "sh" },
+          "prerequisites": [],
+          "source": "https://docs.astral.sh/uv/getting-started/installation/"
+        }
+      }
+    },
+    {
+      "id": "ouroboros",
+      "group": "style",
+      "label": "setup.item.ouroboros.title",
+      "description": "setup.item.ouroboros.detail",
+      "need": "optional",
+      "afterInstall": { "kind": "none" },
+      "platforms": {
+        "macos": {
+          "probe": { "kind": "claudePlugin", "prefix": "ouroboros@" },
+          "install": { "kind": "claudePlugin", "marketplace": "Q00/ouroboros", "plugin": "ouroboros@ouroboros" },
+          "prerequisites": ["claude", "uv"],
+          "source": "https://github.com/Q00/ouroboros"
+        }
+      }
+    },
+    {
+      "id": "superpowers",
+      "group": "style",
+      "label": "setup.item.superpowers.title",
+      "description": "setup.item.superpowers.detail",
+      "need": "optional",
+      "afterInstall": { "kind": "none" },
+      "platforms": {
+        "macos": {
+          "probe": { "kind": "claudePlugin", "prefix": "superpowers@" },
+          "install": { "kind": "claudePlugin", "marketplace": "anthropics/claude-plugins-community", "plugin": "superpowers@claude-community" },
+          "prerequisites": ["claude"],
+          "source": "https://github.com/anthropics/claude-plugins-community"
+        }
+      }
+    },
+    {
+      "id": "paperthin",
+      "group": "style",
+      "label": "setup.item.paperthin.title",
+      "description": "setup.item.paperthin.detail",
+      "need": "optional",
+      "afterInstall": { "kind": "none" },
+      "platforms": {
+        "macos": {
+          "probe": { "kind": "skill", "name": "re0" },
+          "install": { "kind": "argv", "argv": ["npx", "skills@latest", "add", "LilMGenius/paperthin", "--global", "--agent", "claude-code"] },
+          "prerequisites": ["node"],
+          "source": "https://github.com/LilMGenius/paperthin"
+        }
+      }
+    },
+    {
+      "id": "omc",
+      "group": "style",
+      "label": "setup.item.omc.title",
+      "description": "setup.item.omc.detail",
+      "need": "optional",
+      "afterInstall": { "kind": "none" },
+      "platforms": {
+        "macos": {
+          "probe": { "kind": "claudePlugin", "prefix": "oh-my-claudecode@" },
+          "install": { "kind": "claudePlugin", "marketplace": "https://github.com/Yeachan-Heo/oh-my-claudecode", "plugin": "oh-my-claudecode@omc" },
+          "prerequisites": ["claude"],
+          "source": "https://github.com/Yeachan-Heo/oh-my-claudecode"
+        }
+      }
+    },
+    {
+      "id": "gstack",
+      "group": "style",
+      "label": "setup.item.gstack.title",
+      "description": "setup.item.gstack.detail",
+      "need": "optional",
+      "afterInstall": { "kind": "none" },
+      "platforms": {
+        "macos": {
+          "probe": { "kind": "skill", "name": "gstack" },
+          "install": { "kind": "skill", "repository": "https://github.com/garrytan/gstack.git", "folder": "gstack", "setup": "setup" },
+          "prerequisites": ["git", "bun", "claude"],
+          "source": "https://github.com/garrytan/gstack"
+        }
+      }
+    },
+    {
+      "id": "tailscale",
+      "group": "network",
+      "label": "setup.item.tailscale.title",
+      "description": "setup.item.tailscale.detail",
+      "need": "optional",
+      "afterInstall": { "kind": "reprobe" },
+      "platforms": {
+        "macos": {
+          "probe": { "kind": "appBundle", "path": "/Applications/Tailscale.app" },
+          "install": { "kind": "vendorPage", "url": "https://tailscale.com/download/mac" },
+          "prerequisites": [],
+          "source": "https://tailscale.com/kb/1016/install-mac"
+        }
+      }
+    },
+    {
+      "id": "gh",
+      "group": "dev",
+      "label": "setup.item.gh.title",
+      "description": "setup.item.gh.detail",
+      "need": "optional",
+      "afterInstall": { "kind": "none" },
+      "platforms": {
+        "macos": {
+          "probe": { "kind": "executable", "name": "gh" },
+          "install": { "kind": "brewFormula", "name": "gh" },
+          "prerequisites": ["homebrew"],
+          "source": "https://cli.github.com"
+        }
+      }
+    },
+    {
+      "id": "glab",
+      "group": "dev",
+      "label": "setup.item.glab.title",
+      "description": "setup.item.glab.detail",
+      "need": "optional",
+      "afterInstall": { "kind": "none" },
+      "platforms": {
+        "macos": {
+          "probe": { "kind": "executable", "name": "glab" },
+          "install": { "kind": "brewFormula", "name": "glab" },
+          "prerequisites": ["homebrew"],
+          "source": "https://gitlab.com/gitlab-org/cli"
+        }
+      }
+    }
+  ]
+}

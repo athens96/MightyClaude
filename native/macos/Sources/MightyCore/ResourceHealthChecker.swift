@@ -77,6 +77,27 @@ public enum ResourceHealthChecker {
         return ResourceCheckResult(resource: "Help/\(name)", resolvedPath: nil, triedPaths: candidates.map(\.path))
     }
 
+    // MARK: - Setup catalog
+
+    /// The setup screen's catalog in the bundle's Setup/ folder, searched like the
+    /// help files. It must parse as a JSON object.
+    public static func checkSetupCatalog() -> ResourceCheckResult {
+        var candidates: [URL] = []
+        let name = SetupCatalog.fileName
+        for root in BundledStyleSource.searchRoots() {
+            let bundle = root.appendingPathComponent(BundledStyleSource.bundleName, isDirectory: true)
+            candidates.append(bundle.appendingPathComponent("Contents/Resources/Setup/\(name)"))
+            candidates.append(bundle.appendingPathComponent("Setup/\(name)"))
+        }
+        if let resources = Bundle.main.resourceURL { candidates.append(resources.appendingPathComponent("Setup/\(name)")) }
+        for url in candidates {
+            if let data = try? Data(contentsOf: url), (try? JSONSerialization.jsonObject(with: data)) is [String: Any] {
+                return ResourceCheckResult(resource: "Setup/\(name)", resolvedPath: url.path, triedPaths: candidates.map(\.path))
+            }
+        }
+        return ResourceCheckResult(resource: "Setup/\(name)", resolvedPath: nil, triedPaths: candidates.map(\.path))
+    }
+
     // MARK: - Default companion pet
 
     public static func checkDefaultPet() -> ResourceCheckResult {
