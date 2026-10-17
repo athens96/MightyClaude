@@ -47,14 +47,29 @@ public actor StateRepository {
 
     public func approveWorkspace(_ workspace: Workspace) throws -> Workspace {
         try ensureLoaded()
-        guard CoreValidation.identifier(workspace.id), workspace.path.hasPrefix("/"), !workspace.path.contains("\0"), workspace.path.count <= 4096 else { throw MightyError(L("state.error.badWorkspace")) }
+        guard workspace.remote == nil, CoreValidation.identifier(workspace.id), workspace.path.hasPrefix("/"), !workspace.path.contains("\0"), workspace.path.count <= 4096 else { throw MightyError(L("state.error.badWorkspace")) }
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: workspace.path, isDirectory: &isDirectory), isDirectory.boolValue else { throw MightyError(L("workspace.error.folderMissing")) }
         var resolved = workspace
         resolved.path = URL(fileURLWithPath: workspace.path).resolvingSymlinksInPath().path
-        if let existing = approved.values.first(where: { $0.path == resolved.path }) { return existing }
+        if let existing = approved.values.first(where: { $0.remote == nil && $0.path == resolved.path }) { return existing }
         approved[resolved.id] = resolved
         return resolved
+    }
+
+    /// A workspace another computer shares (`RemoteClientService`): its path is
+    /// the host's and is never checked here, nor ever used as a local folder.
+    /// Opening the same host workspace through the same connection again
+    /// returns the one already listed.
+    public func approveRemoteWorkspace(connectionId: String, hostWorkspaceId: String, name: String, path: String, hostName: String) throws -> Workspace {
+        try ensureLoaded()
+        let host = String(hostName.prefix(120))
+        guard CoreValidation.identifier(connectionId), CoreValidation.identifier(hostWorkspaceId), Self.absolutePath(path, remote: true), !host.isEmpty else { throw MightyError(L("remote.workspace.error.badWorkspace")) }
+        let existing = approved.values.first { $0.remote?.connectionId == connectionId && $0.remote?.workspaceId == hostWorkspaceId }
+        let item = Workspace(id: existing?.id ?? UUID().uuidString, name: String(name.prefix(120)), path: path, createdAt: existing?.createdAt ?? mightyTimestamp(),
+                             remote: RemoteWorkspaceReference(connectionId: connectionId, workspaceId: hostWorkspaceId, hostName: host))
+        approved[item.id] = item
+        return item
     }
 
     public func workspace(id: String) throws -> Workspace {
@@ -64,6 +79,7 @@ public actor StateRepository {
     }
     public func resolveLocalWorkspace(id: String) throws -> Workspace {
         let item = try workspace(id: id)
+        guard item.remote == nil else { throw MightyError(L("remote.workspace.error.notLocal")) }
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: item.path, isDirectory: &isDirectory), isDirectory.boolValue else { throw MightyError(L("workspace.error.folderMissing")) }
         return item
@@ -73,7 +89,7 @@ public actor StateRepository {
         try ensureLoaded()
         guard value.version == 1, value.workspaces.count <= 64, value.sessions.count <= 128 else { throw MightyError(L("state.error.badSnapshot")) }
         for workspace in value.workspaces {
-            guard let known = approved[workspace.id], workspace.path == known.path else { throw MightyError(L("state.error.notApproved")) }
+            guard let known = approved[workspace.id], workspace.path == known.path, workspace.remote == known.remote else { throw MightyError(L("state.error.notApproved")) }
         }
         // A streaming run saves every second or two while the other panes stand
         // still: a session equal to last time's input with the same shares gets
@@ -155,9 +171,10 @@ public actor StateRepository {
         return found.map { data.index(data.startIndex, offsetBy: $0) }
     }
 
-    public nonisolated static func absolutePath(_ path: String) -> Bool {
+    /// A host's folder may be a Windows one once Windows shares too (docs/windows-parity.md).
+    public nonisolated static func absolutePath(_ path: String, remote: Bool = false) -> Bool {
         guard path.count <= 4096, !path.contains("\0") else { return false }
-        return path.hasPrefix("/")
+        return path.hasPrefix("/") || (remote && (path.hasPrefix("\\\\") || path.range(of: "^[A-Za-z]:[\\\\/]", options: .regularExpression) != nil))
     }
 
     public nonisolated static func decodeSnapshot(_ data: Data, restoring: Bool = true) -> AppSnapshot {
@@ -165,9 +182,11 @@ public actor StateRepository {
         let decoder = JSONDecoder()
         func decode<T: Decodable>(_ value: Any, _ type: T.Type) -> T? { guard JSONSerialization.isValidJSONObject(value), let data = try? JSONSerialization.data(withJSONObject: value) else { return nil }; return try? decoder.decode(type, from: data) }
         // A workspace saved with a "remote" value names a folder on another
-        // computer. It is dropped here, and normalize then drops everything
-        // keyed by its id, so its path never passes as a local folder.
-        let workspaces = ((object["workspaces"] as? [Any]) ?? []).prefix(64).filter { (($0 as? [String: Any])?["remote"]).map { $0 is NSNull } ?? true }.compactMap { decode($0, Workspace.self) }
+        // computer. One written before remote workspaces were removed on
+        // 2026-09-28 has no version and is dropped here, and normalize then drops
+        // everything keyed by its id, so its path never passes as a local folder.
+        // Only a reference of the current version is kept, as a remote workspace.
+        let workspaces = ((object["workspaces"] as? [Any]) ?? []).prefix(64).filter { keepsWorkspace($0) }.compactMap { decode($0, Workspace.self) }
         // Once per profile, on load: `gemini` panes now run Antigravity (`AntigravityMigration`).
         let migrating = restoring && object["antigravityMigrated"] as? Bool != true
         let sessions = ((object["sessions"] as? [Any]) ?? []).prefix(128).compactMap { decode($0, RunSession.self) }.map { migrating ? AntigravityMigration.migrated($0) : $0 }
@@ -200,6 +219,17 @@ public actor StateRepository {
         var snapshot = AppSnapshot(workspaces: workspaces, sessions: sessions, activeWorkspaceId: object["activeWorkspaceId"] as? String, activeSessionId: object["activeSessionId"] as? String, layout: object["layout"] as? String ?? "grid", theme: object["theme"] as? String ?? "dark", sidebarWidth: object["sidebarWidth"] as? Double ?? SidebarFold.defaultWidth, paneLayouts: paneLayouts, paneLayoutModes: workspaceStrings("paneLayoutModes"), paneLayoutActiveSessionIds: workspaceStrings("paneLayoutActiveSessionIds"), autoUpdateCLIs: autoUpdateCLIs, expandedWorkspaceIds: object["expandedWorkspaceIds"] as? [String], mobileRemote: mobileRemote, autoUpdatePlugins: jsonBool("autoUpdatePlugins"), sidebarCollapsed: jsonBool("sidebarCollapsed"), autoLoginCLIs: jsonBool("autoLoginCLIs"), showsBackgroundWork: jsonBool("showsBackgroundWork"), backgroundWorkOpen: jsonBool("backgroundWorkOpen"))
         snapshot.antigravityMigrated = migrating ? true : jsonBool("antigravityMigrated")
         return normalize(snapshot, restoring: restoring)
+    }
+
+    /// Whether a saved workspace object is kept on load: a local one (no `remote`,
+    /// or an explicit null), or a remote one whose reference carries the current
+    /// version as a JSON number. A reference without one is from before 2026-09-28.
+    nonisolated static func keepsWorkspace(_ value: Any) -> Bool {
+        guard let object = value as? [String: Any] else { return false }
+        guard let remote = object["remote"], !(remote is NSNull) else { return true }
+        guard let reference = remote as? [String: Any], let version = reference["version"] as? NSNumber,
+              CFGetTypeID(version) != CFBooleanGetTypeID(), version.doubleValue == Double(RemoteWorkspaceReference.currentVersion) else { return false }
+        return true
     }
 
     public static let totalLogBudget = 4 * 1024 * 1024
@@ -263,7 +293,12 @@ public actor StateRepository {
     nonisolated static func normalize(_ value: AppSnapshot, session normalizeOne: (RunSession, Int, Int) -> RunSession) -> AppSnapshot {
         var output = AppSnapshot(); var workspaceIds = Set<String>(); var sessionIds = Set<String>()
         for var workspace in value.workspaces.prefix(64) {
-            guard CoreValidation.identifier(workspace.id), !workspaceIds.contains(workspace.id), absolutePath(workspace.path) else { continue }
+            guard CoreValidation.identifier(workspace.id), !workspaceIds.contains(workspace.id), absolutePath(workspace.path, remote: workspace.remote != nil) else { continue }
+            if let remote = workspace.remote {
+                guard remote.version == RemoteWorkspaceReference.currentVersion, CoreValidation.identifier(remote.connectionId),
+                      CoreValidation.identifier(remote.workspaceId), !remote.hostName.isEmpty else { continue }
+                workspace.remote?.hostName = String(remote.hostName.prefix(120))
+            }
             workspace.name = String(workspace.name.prefix(120)); workspaceIds.insert(workspace.id); output.workspaces.append(workspace)
         }
         // Shares are computed over the sessions that will survive, so a
