@@ -125,6 +125,9 @@ public sealed partial class MainWindow
             Checkpoint("setupTools", "running");
             result["setupTools"] = await RunSetupSmoke();
             Checkpoint("setupTools", "passed");
+            Checkpoint("mobileDirect", "running");
+            result["mobileDirect"] = await RunMobileDirectSmoke();
+            Checkpoint("mobileDirect", "passed");
             Checkpoint(AccountUsageSmokeOutcome.ResultKey, "running");
             result[AccountUsageSmokeOutcome.ResultKey] = await RunAccountUsageSmoke();
             Checkpoint(AccountUsageSmokeOutcome.ResultKey, "passed");

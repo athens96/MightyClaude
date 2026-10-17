@@ -174,6 +174,13 @@ try {
             Write-SmokeAnnotation $msg; throw $msg
         }
     }
+    # The direct path's rows in Mobile remote over fixed endpoints and a recording firewall runner (MainWindow.MobileDirectSmoke.cs): no netsh runs.
+    foreach ($key in @('rows', 'status', 'firewallRow', 'addCommand', 'removeCommand', 'outcomes', 'passed')) {
+        if ($result.mobileDirect.$key -ne $true) {
+            $msg = "Windows mobile direct smoke failed: mobileDirect.$key"
+            Write-SmokeAnnotation $msg; throw $msg
+        }
+    }
     if ($result.componentsSection -ne $true) {
         $msg = "구성 요소 칸 스모크가 실행되지 않았거나 통과하지 못했습니다: componentsSection=$($result.componentsSection)"
         Write-SmokeAnnotation $msg; throw $msg
