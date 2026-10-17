@@ -1,4 +1,6 @@
+using System.Buffers;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace MightyClaude.Core;
 
@@ -51,13 +53,12 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
                 if (new FileInfo(StatePath).Length > 8 * 1024 * 1024) throw new InvalidDataException(Locale.Get("store.error.fileTooLarge"));
                 using var json = JsonDocument.Parse(await File.ReadAllTextAsync(StatePath));
                 if (json.RootElement.ValueKind != JsonValueKind.Object || !json.RootElement.TryGetProperty("version", out var version) || !version.TryGetInt32(out var number) || number != 1 || !json.RootElement.TryGetProperty("workspaces", out var workspaces) || workspaces.ValueKind != JsonValueKind.Array || !json.RootElement.TryGetProperty("sessions", out var sessions) || sessions.ValueKind != JsonValueKind.Array) throw new InvalidDataException(Locale.Get("store.error.invalidFormat"));
-                var restored = json.RootElement.Deserialize<AppSnapshot>(Wire.Json) ?? throw new InvalidDataException(Locale.Get("store.error.noSnapshot"));
-                // A workspace saved with a "remote" value names a folder on another computer.
-                // It is dropped here; Normalize then drops everything keyed by its id.
-                var remote = workspaces.EnumerateArray().Select((w, i) => (w, i)).Where(p => p.w.ValueKind == JsonValueKind.Object && p.w.TryGetProperty("remote", out var r) && r.ValueKind != JsonValueKind.Null).Select(p => p.i).ToHashSet();
+                // A workspace whose "remote" value is not today's (version 2) names a folder on another computer in a shape
+                // this app does not read; it is left out before decoding, and Normalize then drops everything keyed by its id.
+                var restored = JsonSerializer.Deserialize<AppSnapshot>(KeptWorkspaces(json.RootElement), Wire.Json) ?? throw new InvalidDataException(Locale.Get("store.error.noSnapshot"));
                 // Once per profile, on load: `gemini` panes now run Antigravity (AntigravityMigration).
                 if (restored.AntigravityMigrated != true) restored = restored with { Sessions = (restored.Sessions ?? []).Select(s => s is null ? s! : AntigravityMigration.Migrated(s)).ToList(), AntigravityMigrated = true };
-                Snapshot = Normalize(restored with { Workspaces = (restored.Workspaces ?? []).Where((_, i) => !remote.Contains(i)).ToList() }, true);
+                Snapshot = Normalize(restored, true);
             }
             // A new profile never held Gemini CLI panes.
             else Snapshot = Snapshot with { AntigravityMigrated = true };
@@ -74,11 +75,27 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
         if (!Directory.Exists(path)) throw new DirectoryNotFoundException(Locale.Get("store.error.projectFolderNotFound"));
         lock (approved)
         {
-            var existing = approved.Values.FirstOrDefault(w => w.Path == path);
+            var existing = approved.Values.FirstOrDefault(w => w.Remote is null && w.Path == path);
             if (existing is not null) return existing;
             var workspace = new Workspace { Name = Path.GetFileName(Path.TrimEndingDirectorySeparator(path)), Path = path };
             approved[workspace.Id] = workspace;
             return workspace;
+        }
+    }
+    /// <summary>
+    /// A workspace another computer shares (RemoteClientService): its path is the host's and is never checked or used
+    /// here. Opening the same host workspace through the same connection again returns the one already listed.
+    /// </summary>
+    public Workspace ApproveRemote(string connectionId, string hostWorkspaceId, string name, string path, string hostName)
+    {
+        var host = Wire.Clean(hostName, 120).Trim();
+        if (!Wire.Identifier(connectionId) || !Wire.Identifier(hostWorkspaceId) || !RemotePath(path) || host.Length == 0) throw new ArgumentException(Locale.Get("remote.workspace.error.badWorkspace"));
+        lock (approved)
+        {
+            var existing = approved.Values.FirstOrDefault(w => w.Remote?.ConnectionId == connectionId && w.Remote.WorkspaceId == hostWorkspaceId);
+            var item = new Workspace { Id = existing?.Id ?? Wire.Id(), Name = Wire.Clean(name, 120), Path = path, CreatedAt = existing?.CreatedAt ?? Wire.Now(), Remote = new(connectionId, hostWorkspaceId, host) };
+            approved[item.Id] = item;
+            return item;
         }
     }
     public Workspace GetWorkspace(string id)
@@ -88,6 +105,7 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
     public Task<Workspace> ResolveLocalAsync(string id)
     {
         var workspace = GetWorkspace(id);
+        if (workspace.Remote is not null) throw new InvalidOperationException(RemoteWindowsStrings.NotLocal);
         if (!Directory.Exists(workspace.Path)) throw new DirectoryNotFoundException(Locale.Get("store.error.workspaceFolderNotFound"));
         return Task.FromResult(workspace);
     }
@@ -100,7 +118,7 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
             snapshot = Normalize(snapshot, false);
             lock (approved)
                 foreach (var workspace in snapshot.Workspaces)
-                    if (!approved.TryGetValue(workspace.Id, out var original) || workspace.Path != original.Path) throw new InvalidOperationException(Locale.Get("store.error.pathNotApproved"));
+                    if (!approved.TryGetValue(workspace.Id, out var original) || workspace.Path != original.Path || workspace.Remote != original.Remote) throw new InvalidOperationException(Locale.Get("store.error.pathNotApproved"));
             // Files panes are never written: they do not come back after a restart.
             var encoded = JsonSerializer.SerializeToUtf8Bytes(FilePaneKind.Stored(snapshot), Wire.Json);
             if (encoded.Length > 8 * 1024 * 1024) throw new InvalidDataException(Locale.Get("store.error.stateTooLarge"));
@@ -109,12 +127,87 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
         }
         finally { gate.Release(); }
     }
-    public static bool ValidWorkspace(Workspace w) => w is not null && Wire.Identifier(w.Id) && w.Path is { Length: > 0 and <= 4096 } && !w.Path.Contains('\0') && Path.IsPathFullyQualified(w.Path);
+    public static bool ValidWorkspace(Workspace w) => w is not null && Wire.Identifier(w.Id) && w.Path is { Length: > 0 and <= 4096 } && !w.Path.Contains('\0')
+        && (w.Remote is not { } remote ? Path.IsPathFullyQualified(w.Path)
+            : remote.Version == RemoteWorkspaceReference.CurrentVersion && Wire.Identifier(remote.ConnectionId) && Wire.Identifier(remote.WorkspaceId) && !string.IsNullOrWhiteSpace(Wire.Clean(remote.HostName, 120)) && RemotePath(w.Path));
+
+    /// <summary>A host's folder: absolute on the host's own OS (a Mac's "/…", a Windows drive or UNC path), whatever this OS calls absolute.</summary>
+    public static bool RemotePath(string? path) => path is { Length: > 0 and <= 4096 } && !path.Contains('\0')
+        && (path.StartsWith('/') || path.StartsWith(@"\\", StringComparison.Ordinal) || Regex.IsMatch(path, @"^[A-Za-z]:[\\/]"));
+
+    /// <summary>
+    /// Whether a saved workspace object is kept on load (M/StateRepository.keepsWorkspace): a local one (no "remote", or an
+    /// explicit null), or a remote one whose reference carries version 2 as a JSON number (2.0 included, as the Mac reads it).
+    /// </summary>
+    public static bool KeepsWorkspace(JsonElement value)
+    {
+        if (value.ValueKind != JsonValueKind.Object) return false;
+        if (!value.TryGetProperty("remote", out var remote) || remote.ValueKind == JsonValueKind.Null) return true;
+        return remote.ValueKind == JsonValueKind.Object && remote.TryGetProperty("version", out var version) && version.ValueKind == JsonValueKind.Number
+            && version.TryGetDouble(out var number) && number == RemoteWorkspaceReference.CurrentVersion;
+    }
+
+    /// <summary>
+    /// The saved state with only the workspaces <see cref="KeepsWorkspace"/> keeps. The reader matches names without regard to
+    /// case, so only the exact "workspaces" and "remote" keys are read, as on the Mac; any other spelling of them is left out.
+    /// A kept remote workspace is written with the integer version (a saved 2.0 reads into the int), and one whose reference
+    /// does not decode is left out on its own, as the Mac decodes each workspace apart.
+    /// </summary>
+    private static byte[] KeptWorkspaces(JsonElement root)
+    {
+        var buffer = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            writer.WriteStartObject();
+            foreach (var property in root.EnumerateObject())
+            {
+                if (!property.Name.Equals("workspaces", StringComparison.OrdinalIgnoreCase)) { property.WriteTo(writer); continue; }
+                if (!property.NameEquals("workspaces") || property.Value.ValueKind != JsonValueKind.Array) continue;
+                writer.WritePropertyName(property.Name); writer.WriteStartArray();
+                foreach (var workspace in property.Value.EnumerateArray().Where(KeepsWorkspace))
+                {
+                    // Every "remote" object the workspace holds must itself carry the number 2 (a repeated key is checked too),
+                    // so no reference without it is ever read with the record's default version.
+                    var remote = false; var current = true;
+                    var item = new ArrayBufferWriter<byte>();
+                    using (var one = new Utf8JsonWriter(item))
+                    {
+                        one.WriteStartObject();
+                        foreach (var field in workspace.EnumerateObject())
+                        {
+                            if (!field.Name.Equals("remote", StringComparison.OrdinalIgnoreCase)) field.WriteTo(one);
+                            else if (!field.NameEquals("remote")) continue;
+                            else if (field.Value.ValueKind != JsonValueKind.Object) { remote |= field.Value.ValueKind != JsonValueKind.Null; field.WriteTo(one); }
+                            else
+                            {
+                                remote = true; var versioned = false;
+                                one.WritePropertyName(field.Name); one.WriteStartObject();
+                                foreach (var part in field.Value.EnumerateObject())
+                                    if (!part.Name.Equals("version", StringComparison.OrdinalIgnoreCase)) part.WriteTo(one);
+                                    else if (part.NameEquals("version") && part.Value.ValueKind == JsonValueKind.Number && part.Value.TryGetDouble(out var number) && number == RemoteWorkspaceReference.CurrentVersion) { one.WriteNumber(part.Name, RemoteWorkspaceReference.CurrentVersion); versioned = true; }
+                                    else current = false;
+                                one.WriteEndObject();
+                                current &= versioned;
+                            }
+                        }
+                        one.WriteEndObject();
+                    }
+                    if (remote)
+                        try { if (!current || JsonSerializer.Deserialize<Workspace>(item.WrittenSpan, Wire.Json) is null) continue; }
+                        catch (JsonException) { continue; }
+                    writer.WriteRawValue(item.WrittenSpan, true);
+                }
+                writer.WriteEndArray();
+            }
+            writer.WriteEndObject();
+        }
+        return buffer.WrittenSpan.ToArray();
+    }
     public static AppSnapshot Normalize(AppSnapshot value, bool restoring)
     {
         if (value.Version != 1) return new();
         value = value with { PhaseModels = PhaseModelPreferences.Normalize(value.PhaseModels) };
-        var workspaces = (value.Workspaces ?? []).Where(ValidWorkspace).DistinctBy(w => w.Id).Take(64).Select(w => w with { Name = Wire.Clean(w.Name, 120) }).ToList();
+        var workspaces = (value.Workspaces ?? []).Where(ValidWorkspace).DistinctBy(w => w.Id).Take(64).Select(w => w with { Name = Wire.Clean(w.Name, 120), Remote = w.Remote is { } r ? r with { HostName = Wire.Clean(r.HostName, 120) } : null }).ToList();
         var ids = workspaces.Select(w => w.Id).ToHashSet();
         var textBudget = 2 * 1024 * 1024;
         string Bounded(string? text, int limit) { var result = Wire.Clean(text, Math.Min(limit, Math.Max(0, textBudget / 6))); textBudget -= JsonSerializer.SerializeToUtf8Bytes(result, Wire.Json).Length; return result; }

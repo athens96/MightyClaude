@@ -15,6 +15,7 @@
     <EmbeddedResource Include="../../contracts/fixtures/mobile-structure.json" LogicalName="MightyClaude.Core.Tests.MobileStructure.json" />
     <EmbeddedResource Include="../../contracts/fixtures/tailscale-addresses.json" LogicalName="MightyClaude.Core.Tests.TailscaleAddresses.json" />
     <EmbeddedResource Include="../../contracts/fixtures/delegation-modes.json" LogicalName="MightyClaude.Core.Tests.DelegationModes.json" />
+    <EmbeddedResource Include="../../contracts/fixtures/remote-v2/*.json" LogicalName="MightyClaude.Core.Tests.RemoteV2.%(Filename)%(Extension)" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="../../../styles/conformance/**/*.json" LogicalName="MightyClaude.Core.Tests.Styles.%(RecursiveDir)%(Filename)%(Extension)" />

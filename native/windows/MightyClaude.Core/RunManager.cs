@@ -204,6 +204,8 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         try
         {
             var workspace = await resolveWorkspace(request.WorkspaceId); token.ThrowIfCancellationRequested();
+            // A remote workspace's path is the host's: it never becomes a local working folder (M/ProcessRunner.start).
+            if (workspace.Remote is not null) throw new InvalidOperationException(Locale.Get("run.error.approvedWorkspaceOnly"));
             // A delegated child's run, its terminal tool and its MCP binding work in its worktree folder, never in its parent's checkout (M/AppStore.swift:1001-1002).
             if (request.WorkingFolder is { } folder) workspace = Directory.Exists(folder) ? workspace with { Path = folder } : throw new DirectoryNotFoundException(Locale.Get("run.blocked.worktreeMissing"));
             parser.ImageRoot = workspace.Path;

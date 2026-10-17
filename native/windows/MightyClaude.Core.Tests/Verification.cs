@@ -590,6 +590,9 @@ internal static class Verification
         });
         await Test("remote strings: every Windows-only string resolves", RemoteStringsVerification.EveryWindowsOnlyStringResolves);
         await Test("remote strings: host OS labels cover every platform", RemoteStringsVerification.HostOSLabelsCoverEveryPlatform);
+        await Test("remote state: the shared reference cases decide what is kept", RemoteWorkspaceStateVerification.SharedReferenceCasesDecideWhatIsKept);
+        await Test("remote state: version 2 loads as remote and older references are dropped", RemoteWorkspaceStateVerification.VersionTwoLoadsAsRemoteAndOlderReferencesAreDropped);
+        await Test("remote state: a local workspace is never written or read as remote", RemoteWorkspaceStateVerification.ALocalWorkspaceIsNeverWrittenOrReadAsRemote);
         await Test("corrupt/unknown/oversize state cannot be overwritten by shutdown", async () =>
         {
             foreach (var text in new[] { "null", "{", "{\"version\":2,\"workspaces\":[],\"sessions\":[]}", "{\"version\":1,\"workspaces\":null,\"sessions\":[]}" })
