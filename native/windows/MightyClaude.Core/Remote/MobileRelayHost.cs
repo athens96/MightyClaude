@@ -96,7 +96,7 @@ public sealed class MobileRelayHost : IAsyncDisposable
     public string PairingServerId => identity.ServerId;
     public string PairingKeyForDisplay => identity.PairingKey;
     public string AppVersion { get; init; } = "0.0.0";
-    public string PairingUrl => identity.PairingUrl(NormalizeRelay(settings.RelayURL) ?? DefaultRelay, hostName);
+    public string PairingUrl => identity.PairingUrl(NormalizeRelay(settings.RelayURL) ?? DefaultRelay, hostName, DirectEndpoints);
 
     // The direct path (M/MightyCore/Remote/MobileRemoteService.swift "Direct path"): listeners on this PC's Tailscale addresses while
     // the remote and its direct switch are on. Its phones have ids starting with "direct-" and live apart from the relay's: a relay

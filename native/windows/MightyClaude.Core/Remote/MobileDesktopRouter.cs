@@ -17,7 +17,9 @@ public sealed record MobileDesktopAction(string SessionId, string Action, JsonEl
 public sealed class MobileDesktopRouter : IDisposable
 {
     public Func<string[]>? ExtraCapabilities { get; set; }
-    public static readonly string[] Capabilities = ["submit-mode", "queue", "pane", "history", "settings", "commands", "mighty", "status", "attachments", "style", "files", "structure"];
+    public static readonly string[] Capabilities = ["submit-mode", "queue", "pane", "history", "settings", "commands", "mighty", "status", "attachments", "style", "files", "structure", "direct"];
+    /// <summary>The direct path's endpoints for /m1/info (docs/mobile-remote.md, "direct"); empty when there is no host or it does not listen.</summary>
+    public Func<IReadOnlyList<string>>? DirectEndpoints { get; set; }
     /// <summary>The largest reply body the host sends; a session detail over it sheds its structure first (<see cref="SessionReply"/>).</summary>
     public const int MaximumReplyBytes = MobileWire.MaximumReplyBytes;
     /// <summary>The pane's structure view for a phone that asked for it with <c>?structure=&lt;tag&gt;</c>; null for a pane with no Mighty payload.</summary>
@@ -113,7 +115,7 @@ public sealed class MobileDesktopRouter : IDisposable
             foreach (var item in url.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
             { var pair = item.Split('=', 2); if (!query.TryAdd(Uri.UnescapeDataString(pair[0]), Uri.UnescapeDataString(pair.Length == 2 ? pair[1] : ""))) throw new MobileRequestException(400, "Repeated query argument."); }
             if (method == "POST" && query.Count != 0) throw new MobileRequestException(400, "Unexpected query argument.");
-            if (method == "GET" && route.SequenceEqual(new[] { "m1", "info" })) return Reply(new { protocol = 1, hostId = HostId, hostName = HostName, appVersion = AppVersion, platform = "win32", capabilities = Capabilities.Concat(ExtraCapabilities?.Invoke() ?? []).Distinct().ToArray() });
+            if (method == "GET" && route.SequenceEqual(new[] { "m1", "info" })) return Reply(new { protocol = 1, hostId = HostId, hostName = HostName, appVersion = AppVersion, platform = "win32", capabilities = Capabilities.Concat(ExtraCapabilities?.Invoke() ?? []).Distinct().ToArray(), direct = DirectEndpoints?.Invoke() ?? [] });
             if (method == "GET" && (route.SequenceEqual(new[] { "m1", "state" }) || route.Length == 3 && route[1] == "sessions"))
             {
                 // `structure` (the tag of the structure the phone holds, 0 for none) is taken only by the session detail.

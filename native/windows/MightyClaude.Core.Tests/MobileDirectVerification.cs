@@ -246,6 +246,35 @@ internal static class MobileDirectVerification
         catch (OperationCanceledException) { return false; }
     }
 
+    internal static async Task TheHostAdvertisesItsEndpoints()
+    {
+        var directory = Temp(); using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var host = new MobileRelayHost(Path.Combine(directory, "identity"), "Fixture", MobileDesktopRouter.Capabilities, (_, _, _, _, _) => Task.FromResult(new MobileReply(200, new { protocol = 1 }))) { WatchesNetwork = false };
+        try
+        {
+            Check(MobileDesktopRouter.Capabilities.Contains("direct"), "the host advertises the direct capability");
+            host.SetDirectAddressSource(() => ["127.0.0.1"]);
+            Check(!host.PairingUrl.Contains("direct=", StringComparison.Ordinal), "no direct= while nothing listens");
+            await host.ApplyAsync(new MobileRemoteSettings(true, "ws://127.0.0.1:9"));
+            var endpoint = host.DirectEndpoints.Single();
+            Check(host.PairingUrl.EndsWith("&direct=" + Uri.EscapeDataString(endpoint), StringComparison.Ordinal) && Query(host.PairingUrl, "direct") == endpoint, "the QR carries the endpoints");
+            Check(new MobileIdentity(Path.Combine(directory, "other")).PairingUrl("wss://relay.example", "Fixture", ["100.101.102.103:43139", "[fd7a:115c:a1e0::1]:43139"])
+                .EndsWith("&direct=100.101.102.103%3A43139%2C%5Bfd7a%3A115c%3Aa1e0%3A%3A1%5D%3A43139", StringComparison.Ordinal), "':', ',', '[' and ']' are percent-encoded as the Mac writes them");
+            await using (var phone = await DirectPhone.ConnectAsync(endpoint, host.PairingUrl, timeout.Token))
+            {
+                using var auth = await phone.ExchangeAsync(new { type = "auth", pairingKey = Query(host.PairingUrl, "key"), clientId = "abcdefghijklmnopqrstuv", clientName = "Fixture Phone" }, timeout.Token);
+                Check(auth.RootElement.GetProperty("capabilities").EnumerateArray().Any(value => value.GetString() == "direct"), "auth_ok lists the direct capability");
+            }
+            await using var service = new DesktopService(Path.Combine(directory, "state"), null, directory); await service.InitializeAsync();
+            using var router = new MobileDesktopRouter(service, Path.Combine(directory, "mobile"), "Fixture", (_, _) => Task.FromResult<object?>(null), _ => new([])) { DirectEndpoints = () => host.DirectEndpoints };
+            var info = JsonSerializer.SerializeToElement((await router.RouteAsync("GET", "/m1/info", null, "phone", CancellationToken.None)).Body, Wire.Json);
+            Check(info.GetProperty("capabilities").EnumerateArray().Any(value => value.GetString() == "direct") && info.GetProperty("direct").EnumerateArray().Select(value => value.GetString()).SequenceEqual([endpoint]), "/m1/info carries the capability and the endpoints");
+            router.DirectEndpoints = null;
+            Check(JsonSerializer.SerializeToElement((await router.RouteAsync("GET", "/m1/info", null, "phone", CancellationToken.None)).Body, Wire.Json).GetProperty("direct").GetArrayLength() == 0, "without a host the list is empty, never missing");
+        }
+        finally { await host.DisposeAsync(); Directory.Delete(directory, true); }
+    }
+
     private static string Temp() => Directory.CreateTempSubdirectory("mighty-direct-").FullName;
     private static string Query(string link, string name) => Uri.UnescapeDataString(new Uri(link).Query.TrimStart('?').Split('&').Single(part => part.StartsWith(name + "=", StringComparison.Ordinal))[(name.Length + 1)..]);
     private static async Task<byte[]> Receive(WebSocket socket, CancellationToken token)
