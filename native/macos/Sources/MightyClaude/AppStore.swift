@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import Foundation
+import SystemConfiguration
 import UniformTypeIdentifiers
 import GhosttyTerminal
 import MightyCore
@@ -346,7 +347,8 @@ final class AppStore: ObservableObject, DelegationHost {
     @Published var remoteBusy = false
     @Published var remoteError: String?
     lazy var remoteHost = RemoteHostService(repository: repository, providers: providers, pluginDirectory: pluginDirectory, appVersion: appVersion,
-                                            hostName: Host.current().localizedName ?? "Mac") { [weak self] count in
+                                            hostName: SCDynamicStoreCopyComputerName(nil, nil).map { $0 as String } ?? "Mac",
+                                            admission: { [weak self] request in await self?.remoteHostAdmission(request) }) { [weak self] count in
         Task { @MainActor in self?.remoteHostState.activeRuns = count }
     }
     lazy var remoteClient = RemoteClientService(repository: repository, dataDirectory: dataDirectory) { [weak self, runEvents] event in
@@ -1421,7 +1423,8 @@ final class AppStore: ObservableObject, DelegationHost {
         await runner.shutdown()
         // Remote runs stop on their hosts; sharing ends and its key with it.
         await remoteClient.shutdown()
-        await remoteHost.shutdown()
+        // Only a host that shares, or is starting to, has anything to close.
+        if remoteHostState.enabled || remoteBusy { await remoteHost.shutdown() }
         // Screen sharing ends before the relay goes: a held remote drag is let
         // go and the phones hear why.
         if screenShareEngine != nil { await screenShare.shutdown() }

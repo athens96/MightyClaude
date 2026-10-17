@@ -114,6 +114,11 @@ public actor RemoteClientService {
     /// Connected now, reconnecting first when it is not: a remote pane's send does this.
     public func ensureConnected(id: String) async throws -> RemoteConnectionInfo {
         loadSaved()
+        // Two panes sending at once after launch share one connect.
+        let deadline = Date().addingTimeInterval(RemoteProtocol.requestTimeout + 5)
+        while let address = connections[id]?.info.address, connecting.contains(address), Date() < deadline {
+            try await Task.sleep(for: .milliseconds(50))
+        }
         if let info = connections[id]?.info, info.status == .connected, connections[id]?.target != nil { return info }
         return try await refresh(id: id)
     }
@@ -144,8 +149,14 @@ public actor RemoteClientService {
     }
 
     private func reach(_ address: RemoteAddress, key: String) async throws -> (RemoteTarget, RemoteWireInfo) {
-        if !testing, TailscaleAddresses.current().isEmpty { throw MightyError(L("remote.connect.error.localTailscaleOff")) }
+        let local = testing ? [] : TailscaleAddresses.current()
+        if !testing, local.isEmpty { throw MightyError(L("remote.connect.error.localTailscaleOff")) }
         let target = try await RemoteTransport.resolve(address, allowLoopback: testing)
+        // The peer must be reached through this Mac's own tunnel: a carrier-grade
+        // NAT network can route a 100.64/10 address over Wi-Fi, outside WireGuard.
+        if !testing, !(TailscaleAddresses.sourceAddress(toward: target.ip).map { local.contains($0) } ?? false) {
+            throw MightyError(L("remote.connect.error.notViaTailscale"))
+        }
         let data = try await RemoteTransport.request(target, key: key, method: "GET", path: RemoteProtocol.pathPrefix + "info")
         let info: RemoteWireInfo
         do { info = try JSONDecoder().decode(RemoteWireInfo.self, from: data) } catch { throw MightyError(L("remote.connect.error.notMighty")) }
@@ -198,15 +209,36 @@ public actor RemoteClientService {
             runs[request.sessionId]?.task = Task { await self.follow(request.sessionId, revision: run.revision) }
         } catch {
             if runs[request.sessionId]?.revision == run.revision { runs.removeValue(forKey: request.sessionId) }
+            // The host no longer takes this key (it restarted sharing): the
+            // connection is not connected any more, whatever it said before.
+            if let failure = error as? RemoteHTTPFailure, failure.status == 401 { await fail(reference.connectionId, message: failure.message) }
             throw error
         }
     }
 
+    /// A failed poll worth asking again for a while: the host was busy (429,
+    /// 503) or the network stumbled. Anything else ends the run at once.
+    static func transient(_ error: Error) -> Bool {
+        if let failure = error as? RemoteHTTPFailure { return failure.transient }
+        guard let url = error as? URLError else { return false }
+        return [.timedOut, .networkConnectionLost, .notConnectedToInternet, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed].contains(url.code)
+    }
+
     private func follow(_ id: String, revision: UUID) async {
         var quiet = 0
+        var failingSince: Date?
         while !Task.isCancelled, let run = runs[id], !run.stopping, run.revision == revision, let jobId = run.jobId {
             do {
-                let data = try await RemoteTransport.request(run.target, key: run.key, method: "GET", path: RemoteProtocol.pathPrefix + "runs/\(jobId)/events?cursor=\(run.cursor)")
+                let data: Data
+                do {
+                    data = try await RemoteTransport.request(run.target, key: run.key, method: "GET", path: RemoteProtocol.pathPrefix + "runs/\(jobId)/events?cursor=\(run.cursor)")
+                    failingSince = nil
+                } catch where !Task.isCancelled && Self.transient(error) && Date().timeIntervalSince(failingSince ?? Date()) < RemoteProtocol.pollRetryWindow {
+                    // Asked again for up to ten seconds, well inside the host's heartbeat.
+                    failingSince = failingSince ?? Date()
+                    try await Task.sleep(for: .seconds(1))
+                    continue
+                }
                 guard !Task.isCancelled, runs[id]?.revision == revision else { return }
                 let poll = try JSONDecoder().decode(RemoteWirePoll.self, from: data)
                 guard poll.protocol == RemoteProtocol.version, poll.cursor >= run.cursor, poll.lastCursor >= poll.cursor, poll.events.count <= RemoteProtocol.maximumPollEvents else {

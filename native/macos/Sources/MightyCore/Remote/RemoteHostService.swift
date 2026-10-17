@@ -45,12 +45,16 @@ public actor RemoteHostService {
     /// Told how many client runs go on this Mac whenever that changes: while
     /// any does, this Mac's CLIs are in use (updates and plugin changes wait).
     private let runsChanged: @Sendable (Int) -> Void
+    /// Why this Mac cannot start a client's run now (its CLI or plugins are
+    /// being updated, its Claude models reloaded); nil when it can.
+    private let admission: @Sendable (StartRunRequest) async -> String?
 
     public init(repository: StateRepository, providers: ProviderService, pluginDirectory: URL, appVersion: String, hostName: String, allowLoopbackForTests: Bool = false,
-                heartbeat: TimeInterval = RemoteProtocol.heartbeatTimeout, runsChanged: @escaping @Sendable (Int) -> Void = { _ in }) {
+                heartbeat: TimeInterval = RemoteProtocol.heartbeatTimeout, admission: @escaping @Sendable (StartRunRequest) async -> String? = { _ in nil },
+                runsChanged: @escaping @Sendable (Int) -> Void = { _ in }) {
         self.repository = repository; self.providers = providers; self.pluginDirectory = pluginDirectory
         self.appVersion = appVersion; self.hostName = String(hostName.prefix(120)); self.testing = allowLoopbackForTests; self.heartbeat = heartbeat
-        self.runsChanged = runsChanged
+        self.admission = admission; self.runsChanged = runsChanged
     }
 
     private func announceRuns() { runsChanged(jobs.values.filter { !$0.done }.count) }
@@ -92,14 +96,18 @@ public actor RemoteHostService {
         var bound = port
         do {
             for address in addresses {
+                // A stop (or quit) while an address was being bound ends this start.
+                guard revision == generation else { throw CancellationError() }
                 let server = HTTPServer(address: address, port: UInt16(bound), requestBodyLimit: { head in
                     Self.bodyLimit(head, key: key, allowLoopback: allowLoopback)
                 }) { request in await self.serve(request, generation: revision) }
                 servers.append(server)
                 bound = Int(try await server.start())
             }
+            guard revision == generation else { throw CancellationError() }
         } catch {
-            await stopNow()
+            // A stop that came in meanwhile already closed what this start had opened.
+            if revision == generation { await stopNow() }
             throw MightyError(L("remote.host.error.listenFailed", ["error": error.localizedDescription]))
         }
         state = RemoteHostState()
@@ -152,20 +160,23 @@ public actor RemoteHostService {
     private func authorize(_ request: HTTPRequest, generation revision: UUID) throws {
         guard state.enabled, revision == generation, let key = state.key else { throw Failure(503, L("remote.host.error.stopped")) }
         guard request.headers["origin"] == nil, RemotePeerPolicy.allowed(request.remoteAddress, allowLoopback: testing) else { throw Failure(403, L("remote.host.error.tailscaleOnly")) }
+        // A client polls each of its runs at most ten times a second. Each peer
+        // has its own budget; only requests with the key count toward the
+        // shared one, so a device without it cannot crowd the real client out.
         let now = Date()
-        if now.timeIntervalSince(rateWindow) >= 1 { rateWindow = now; rateCount = 0 }
-        rateCount += 1
         var peer = peerRates[request.remoteAddress] ?? (now, 0)
         if now.timeIntervalSince(peer.start) >= 1 { peer = (now, 0) }
         peer.count += 1
         if peerRates[request.remoteAddress] == nil, peerRates.count >= 64 { peerRates.removeAll() }
         peerRates[request.remoteAddress] = peer
-        // A client polls each of its runs at most ten times a second.
-        guard rateCount <= 600, peer.count <= 300 else { throw Failure(429, L("remote.host.error.tooMany")) }
+        guard peer.count <= 300 else { throw Failure(429, L("remote.host.error.tooMany")) }
         let authorization = request.headers["authorization"] ?? ""
         guard authorization.hasPrefix("Bearer "), authorization.count <= 256, RemoteWorkspaceValidation.keysMatch(String(authorization.dropFirst(7)), key) else {
             throw Failure(401, L("remote.host.error.badKey"))
         }
+        if now.timeIntervalSince(rateWindow) >= 1 { rateWindow = now; rateCount = 0 }
+        rateCount += 1
+        guard rateCount <= 600 else { throw Failure(429, L("remote.host.error.tooMany")) }
         guard request.headers[RemoteProtocol.header] == "\(RemoteProtocol.version)" else { throw Failure(426, L("remote.host.error.version")) }
     }
 
@@ -254,6 +265,8 @@ public actor RemoteHostService {
         let folder: Workspace
         do { folder = try await repository.resolveLocalWorkspace(id: workspace.id) } catch { throw Failure(403, error.localizedDescription) }
         guard folder.path == workspace.path else { throw Failure(403, L("remote.host.error.notShared")) }
+        // This Mac's own CLI update, plugin change or model reload holds client runs too.
+        if let reason = await admission(run) { throw Failure(503, reason) }
         if run.kind == SessionKind.claude {
             // What this computer cannot run is refused here, before anything starts.
             let runtime = await providers.providerRuntime(provider: run.provider, workspacePath: folder.path)

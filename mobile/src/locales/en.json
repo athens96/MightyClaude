@@ -2758,5 +2758,6 @@
   "settings.remote.removeHelp": "Remove the connection and its saved key",
   "settings.remote.noShared": "This computer shares no workspaces.",
   "settings.remote.openButton": "Open",
-  "settings.remote.openedButton": "Open Again"
+  "settings.remote.openedButton": "Open Again",
+  "remote.connect.error.notViaTailscale": "The route to this address does not go through Tailscale; another network using the same range (such as a carrier NAT) may be in the way. Check that Tailscale is on and the address is right."
 }
