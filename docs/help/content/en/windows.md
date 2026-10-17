@@ -32,6 +32,7 @@ Use {{kbd:Ctrl}} instead of {{kbd:⌘}}. Only collapsing the sidebar and stoppin
 | {{kbd:⌘K}} | {{kbd:Ctrl+K}} | {{ui:menu.searchWorkspaces}} |
 | {{kbd:⌃⌘S}} | {{kbd:Ctrl+B}} | {{ui:sidebar.collapse}} / {{ui:sidebar.expand}} |
 | {{kbd:⌘,}} | {{kbd:Ctrl+,}} | {{ui:menu.settings}} |
+| {{kbd:⌘=}} / {{kbd:⌘-}} / {{kbd:⌘0}} | {{kbd:Ctrl+=}} / {{kbd:Ctrl+-}} / {{kbd:Ctrl+0}} | {{ui:menu.textBigger}} / {{ui:menu.textSmaller}} / {{ui:menu.textActualSize}} |
 | {{kbd:⌘Enter}} | {{kbd:Ctrl+Enter}} | Run it now in a new worktree, or send to the running Claude now |
 | {{kbd:⌃⌥⌘K}} | {{kbd:Ctrl+Alt+Esc}} | Stop every remote screen session from phones ([Screen view](phone.md#screen)) |
 
@@ -50,7 +51,7 @@ Windows has no menu bar. The same commands are in the sidebar and the {{ui:works
 | Language | A new language applies after you reopen the app. |
 | File location | {{ui:menu.showInExplorer}} instead of {{ui:menu.showInFinder}}. |
 | Mighty Orchestration | On by default, with its switch in Settings, which is also a registry value ([Turn it on or off](delegation.md#enable)). Worktrees go in `%USERPROFILE%\.mightyclaude\worktrees`, and one holding a junction or symbolic link is not cleaned up automatically ([Closing panes and cleanup](delegation.md#close)). |
-| Text size and font | Not in the Windows app yet. Windows' own Settings › Accessibility › Text size makes the app's text bigger. |
+| Text size and font | As on the Mac, {{ui:settings.nav.general}} › {{ui:settings.text.sectionTitle}} picks the size (85–150%), the {{ui:settings.text.uiFontLabel}}, the {{ui:settings.text.transcriptFontLabel}} and the {{ui:settings.text.codeFontLabel}}, and every open window follows at once. {{kbd:Ctrl+=}} / {{kbd:Ctrl+-}} / {{kbd:Ctrl+0}} work too, except while a terminal or browser pane has the focus: then the keys stay with that pane. The setting is kept in the registry under `HKEY_CURRENT_USER\Software\MightyClaudeNative`. Text that Windows' own controls size, such as the body of a confirmation, changes when you reopen the app, and the pet bubble does not follow the setting yet. |
 
 > [!note]
 > Some Windows features haven't been checked on enough real machines yet. If something looks wrong, please tell us.
