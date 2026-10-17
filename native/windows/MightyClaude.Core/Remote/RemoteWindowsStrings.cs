@@ -23,7 +23,9 @@ public static class RemoteWindowsStrings
     public static string FirewallAdd => Locale.Get("remote.windows.firewall.add");
     public static string FirewallRemove => Locale.Get("remote.windows.firewall.remove");
     public static string SessionInfoHostOS => Locale.Get("remote.sessionInfo.hostOS");
-    public static string FirewallFailed(string error) => Locale.Get("remote.windows.firewall.failed", new Dictionary<string, string> { ["error"] = error });
+    /// <summary>What a firewall change that did not happen says, in the same words as the phone-direct Settings; null after one that did.
+    /// Takes the whole result so no raw code ("timeout", an exit code, a launch error) can reach the screen.</summary>
+    public static string? FirewallFailed(FirewallChangeResult result) => MobileDirectStrings.FirewallOutcome(result);
     public static string CommandNote(string host, string? platform) => Locale.Get("remote.windows.pane.commandNote", new Dictionary<string, string> { ["host"] = host, ["os"] = HostOS(platform) });
 
     /// <summary>The host's OS from <c>/info</c> <c>runtime.platform</c>.</summary>
