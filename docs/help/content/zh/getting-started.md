@@ -54,7 +54,7 @@ Git（Xcode Command Line Tools）会打开系统安装窗口，请在该窗口�
 
 可以用{{ui:setup.button.later}}关闭；勾选{{ui:setup.button.neverShow}}后再关闭，启动时就不会再打开。缺少必需工具期间，欢迎界面上有{{ui:setup.title}}按钮，因缺少 CLI 而受阻的窗格中有{{ui:setup.blocked.install}}按钮。设置 → {{ui:settings.nav.tools}}中也有同一个列表。
 
-{{platform:windows}} Windows 上也有同样的界面。命令以主文件夹为工作文件夹，在应用单独打开的一个 PowerShell 窗口中依次运行（安装了 Windows Terminal 时为其标签页，否则为控制台窗口），最后按 Enter 之前窗口一直保持打开。Claude Code、Codex、Antigravity 和 uv 使用各自的官方 PowerShell 安装脚本安装，Git 和 glab 通过 winget 仅为当前用户安装，Node.js 和 gh 通过 winget 为所有用户安装。为所有用户安装时，Windows 可能会自己弹出管理员确认窗口；应用不会请求管理员权限。安装结束后，应用会从注册表重新读取 PATH 并检查。Homebrew、Bun 和 gstack 只在 Mac 上安装。
+{{platform:windows}} Windows 上也有同样的界面。命令以主文件夹为工作文件夹，在应用单独打开的一个 PowerShell 窗口中依次运行（安装了 Windows Terminal 时为其标签页，否则为控制台窗口），最后按 Enter 之前窗口一直保持打开。Claude Code、Codex、Antigravity 和 uv 使用各自的官方 PowerShell 安装脚本安装，Git 和 glab 通过 winget 仅为当前用户安装，Node.js 和 gh 通过 winget 为所有用户安装。为所有用户安装时，Windows 可能会自己弹出管理员确认窗口；此界面本身不会请求管理员权限。安装结束后，应用会从注册表重新读取 PATH 并检查。Homebrew、Bun 和 gstack 只在 Mac 上安装。
 
 ## 打开工作区 {#open-workspace}
 一个工作区就是一个项目文件夹。窗格、标签页布局和对话记录按工作区分别保存。

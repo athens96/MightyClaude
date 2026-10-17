@@ -55,5 +55,8 @@ Windows에는 메뉴 막대가 없습니다. 같은 기능은 사이드바와 {{
 | 글자 크기와 글꼴 | {{ui:settings.nav.general}} › {{ui:settings.text.sectionTitle}}에서 Mac처럼 크기(85~150%)와 {{ui:settings.text.uiFontLabel}}, {{ui:settings.text.transcriptFontLabel}}, {{ui:settings.text.codeFontLabel}}을 고르고, 열린 창이 모두 바로 따라갑니다. {{kbd:Ctrl+=}} / {{kbd:Ctrl+-}} / {{kbd:Ctrl+0}}도 되지만, 터미널이나 브라우저 창에 커서가 있으면 이 키는 그 창이 씁니다. 값은 레지스트리 `HKEY_CURRENT_USER\Software\MightyClaudeNative`에 저장됩니다. 확인 창 본문처럼 Windows 기본 컨트롤이 정하는 글자는 앱을 다시 열면 바뀌고, 펫 말풍선은 아직 따라가지 않습니다. |
 | Tailscale로 직접 연결 | 휴대폰이 Windows PC에도 [직접 연결](phone.md#direct)합니다. Windows 방화벽 규칙은 {{ui:settings.nav.mobile}} 탭의 {{ui:mobileRemote.direct.windows.firewall.addButton}}로 더하고, Windows의 관리자 확인을 한 번 거칩니다. 앱이 관리자 권한을 묻는 곳은 여기뿐입니다. |
 
+> [!warning]
+> Tailscale로 직접 연결은 기본으로 켜져 있어서, 앱이 처음 휴대폰 연결을 기다릴 때 Windows Defender 방화벽이 이 앱의 일부 기능을 차단했다는 자체 알림을 띄울 수 있습니다. **액세스 허용**을 고르세요(Windows가 이 앱에 더 넓은 자체 규칙을 더합니다). **취소**를 골랐다면 Windows가 `MightyClaude.exe`를 막는 규칙을 더했을 수 있고, 그 규칙이 앱의 규칙보다 우선합니다. Windows Defender 방화벽 → 고급 설정 → 인바운드 규칙에서 Mighty Claude를 막는 규칙을 지우세요.
+
 > [!note]
 > Windows 앱의 일부 기능은 아직 실제 기기에서 충분히 확인되지 않았습니다. 이상한 점이 있으면 알려 주세요.

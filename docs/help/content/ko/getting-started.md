@@ -54,7 +54,7 @@ Git(Xcode Command Line Tools)은 시스템 설치 창이 열리고 그 창에서
 
 {{ui:setup.button.later}}로 닫을 수 있고, {{ui:setup.button.neverShow}}에 체크하고 닫으면 앱을 열 때 다시 나오지 않습니다. 필수 도구가 빠져 있는 동안 시작 화면에 {{ui:setup.title}} 단추가 있고, CLI가 없어 막힌 실행 창에는 {{ui:setup.blocked.install}} 단추가 있습니다. 같은 목록이 설정 → {{ui:settings.nav.tools}}에도 있습니다.
 
-{{platform:windows}} Windows에도 같은 화면이 있습니다. 명령은 앱이 따로 여는 PowerShell 창 하나(Windows Terminal이 있으면 그 탭, 없으면 콘솔 창)에서 홈 폴더를 작업 폴더로 차례로 실행되고, 마지막에 Enter를 누를 때까지 창이 열려 있습니다. Claude Code, Codex, Antigravity, uv는 각자의 공식 PowerShell 설치 스크립트로, Git과 glab은 winget으로 이 사용자에게만, Node.js와 gh는 winget으로 모든 사용자에게 설치합니다. 모든 사용자용 설치는 Windows가 직접 관리자 확인 창을 띄울 수 있고, 앱은 관리자 권한을 요청하지 않습니다. 설치가 끝나면 앱이 PATH를 레지스트리에서 다시 읽어 확인합니다. Homebrew, Bun, gstack은 Mac에서만 설치합니다.
+{{platform:windows}} Windows에도 같은 화면이 있습니다. 명령은 앱이 따로 여는 PowerShell 창 하나(Windows Terminal이 있으면 그 탭, 없으면 콘솔 창)에서 홈 폴더를 작업 폴더로 차례로 실행되고, 마지막에 Enter를 누를 때까지 창이 열려 있습니다. Claude Code, Codex, Antigravity, uv는 각자의 공식 PowerShell 설치 스크립트로, Git과 glab은 winget으로 이 사용자에게만, Node.js와 gh는 winget으로 모든 사용자에게 설치합니다. 모든 사용자용 설치는 Windows가 직접 관리자 확인 창을 띄울 수 있지만, 이 화면 자체는 관리자 권한을 요청하지 않습니다. 설치가 끝나면 앱이 PATH를 레지스트리에서 다시 읽어 확인합니다. Homebrew, Bun, gstack은 Mac에서만 설치합니다.
 
 ## 워크스페이스 열기 {#open-workspace}
 워크스페이스는 프로젝트 폴더 하나입니다. 실행 창, 탭 배치, 대화 기록이 워크스페이스마다 따로 저장됩니다.
