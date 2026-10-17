@@ -17,6 +17,8 @@ public struct TextAppearance: Equatable, Hashable, Sendable {
     public static let codeFamilyKey = "textCodeFontFamily"
     /// The terminal's size at scale 1.
     public static let terminalBaseSize: Double = 12
+    /// The terminals' family when no code family is chosen, and the fallback behind one.
+    public static let terminalStandardFamily = "Menlo"
     /// Monospaced families offered for code even when their fonts do not set the
     /// fixed-pitch flag (D2Coding's wide Hangul clears it, for one).
     public static let knownCodeFamilies: Set<String> = [
@@ -41,10 +43,14 @@ public struct TextAppearance: Equatable, Hashable, Sendable {
         self.codeFamily = Self.normalizedFamily(codeFamily)
     }
 
-    /// A family name without its surrounding blanks; empty is nil.
+    /// A family name without its surrounding blanks; empty is nil, and so is a name with a
+    /// control character or a line or paragraph separator in it: no font is called that,
+    /// and the terminals' config is written one value per line.
     public static func normalizedFamily(_ family: String?) -> String? {
-        let trimmed = family?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed?.isEmpty == false ? trimmed : nil
+        guard let trimmed = family?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty,
+              !trimmed.unicodeScalars.contains(where: { [.control, .lineSeparator, .paragraphSeparator].contains($0.properties.generalCategory) })
+        else { return nil }
+        return trimmed
     }
 
     /// The nearest step in `scales`; anything unreadable is 1.
@@ -59,6 +65,16 @@ public struct TextAppearance: Equatable, Hashable, Sendable {
     }
 
     public var terminalSize: Double { size(Self.terminalBaseSize) }
+    /// The terminals' `font-family` values over their config, in order; empty keeps the
+    /// standard family. With a code family: `""` clears the list, then the family, then
+    /// Menlo, so a family that is not installed falls back to Menlo rather than to
+    /// Ghostty's own font. Each value is quoted: Ghostty takes one pair of outer quotes off
+    /// and the rest as written (no escapes, no comment after a value), and the name
+    /// holds no line break (`normalizedFamily`), so it stays one value on one line.
+    public var terminalFontFamilies: [String] {
+        guard let family = Self.normalizedFamily(codeFamily) else { return [] }
+        return ["\"\"", "\"" + family + "\"", "\"" + Self.terminalStandardFamily + "\""]
+    }
     /// The family the conversation draws in: its own, else the interface's; nil is the system font.
     public var resolvedTranscriptFamily: String? { transcriptFamily ?? family }
     public var percent: Int { Int((scale * 100).rounded()) }

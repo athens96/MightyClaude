@@ -21,7 +21,7 @@ Under {{ui:settings.display.sectionTitle}} on the {{ui:settings.nav.general}} ta
 - {{ui:settings.text.sizeLabel}}: pick from 85% to 150%. Conversations, the composer, the sidebar, Settings and terminals grow and shrink together.
 - {{ui:settings.text.uiFontLabel}}: the font of the app itself, such as the sidebar, menus, buttons and Settings. Pick any font installed on this Mac; {{ui:settings.text.fontSystem}} is the macOS font.
 - {{ui:settings.text.transcriptFontLabel}}: the font of agent replies, your own messages, the composer, and the body text of Mighty cards and boards. {{ui:settings.text.sameAsInterface}} follows the interface font.
-- {{ui:settings.text.codeFontLabel}}: the font of code blocks, inline code, tool output and terminal panes. Only monospaced fonts are listed; {{ui:settings.text.monospaceSystem}} is the monospaced font used so far. Open terminals change at once.
+- {{ui:settings.text.codeFontLabel}}: the font of code blocks, inline code, tool output and command rows, and terminal panes. Only monospaced fonts are listed; the default at the top keeps SF Mono for code and Menlo for terminals, as before. If the chosen font is removed, terminals fall back to Menlo. Open terminals change at once. Paths, versions, counts and other monospaced text in the app itself keep the system monospaced font.
 - Under each font, a one-line preview is drawn in that font.
 - {{ui:settings.text.reset}} puts the size and all three fonts back as they were.
 

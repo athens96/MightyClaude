@@ -21,7 +21,7 @@ section: settings
 - {{ui:settings.text.sizeLabel}}: 85%에서 150% 사이에서 고릅니다. 대화, 입력창, 사이드바, 설정, 터미널이 함께 커지고 작아집니다.
 - {{ui:settings.text.uiFontLabel}}: 사이드바, 메뉴, 단추, 설정 같은 앱 화면의 글꼴입니다. 이 Mac에 설치된 글꼴 가운데 고르고, {{ui:settings.text.fontSystem}}은 macOS의 기본 글꼴입니다.
 - {{ui:settings.text.transcriptFontLabel}}: 에이전트의 답, 내가 보낸 말, 입력창, 마이티 카드와 보드의 본문 글꼴입니다. {{ui:settings.text.sameAsInterface}}로 두면 화면 글꼴을 따라갑니다.
-- {{ui:settings.text.codeFontLabel}}: 코드 블록, 인라인 코드, 도구 출력과 터미널 창의 글꼴입니다. 고정폭 글꼴만 고를 수 있고, {{ui:settings.text.monospaceSystem}}은 지금까지 쓰던 고정폭 글꼴입니다. 열려 있는 터미널에도 바로 적용됩니다.
+- {{ui:settings.text.codeFontLabel}}: 코드 블록, 인라인 코드, 도구 출력과 명령 줄, 터미널 창의 글꼴입니다. 고정폭 글꼴만 고를 수 있고, 맨 위의 기본값은 지금까지와 같이 코드에 SF Mono, 터미널에 Menlo를 씁니다. 고른 글꼴이 없어지면 터미널은 Menlo로 돌아갑니다. 열려 있는 터미널에도 바로 적용됩니다. 경로, 버전, 개수 같은 앱 화면의 고정폭 글자는 시스템 고정폭 글꼴을 그대로 씁니다.
 - 글꼴마다 아래에 그 글꼴로 쓴 한 줄 미리 보기가 나옵니다.
 - {{ui:settings.text.reset}} 단추는 크기와 세 글꼴을 처음 상태로 되돌립니다.
 

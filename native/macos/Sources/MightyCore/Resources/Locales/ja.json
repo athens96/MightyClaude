@@ -1243,6 +1243,7 @@
   "settings.styles.sectionTitle": "Mightyスタイル",
   "settings.styles.unblockButton": "ブロックを解除",
   "settings.styles.viewButton": "内容を表示",
+  "settings.text.codeDefault": "標準（{font}）",
   "settings.text.codeFontLabel": "コードとターミナルのフォント",
   "settings.text.fontLabel": "フォント",
   "settings.text.fontSystem": "システム標準",

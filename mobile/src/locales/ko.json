@@ -1243,6 +1243,7 @@
   "settings.styles.sectionTitle": "마이티 스타일",
   "settings.styles.unblockButton": "차단 해제",
   "settings.styles.viewButton": "내용 보기",
+  "settings.text.codeDefault": "기본 ({font})",
   "settings.text.codeFontLabel": "코드·터미널 글꼴",
   "settings.text.fontLabel": "글꼴",
   "settings.text.fontSystem": "시스템 기본",

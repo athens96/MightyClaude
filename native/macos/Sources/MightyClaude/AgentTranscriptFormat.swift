@@ -34,7 +34,7 @@ enum AgentTranscriptFormat {
             let color = activity.state == "error" ? Palette.nsErrText : live ? accent : .secondaryLabelColor
             let line = NSMutableAttributedString(attributedString: symbol(AgentActivityRow.symbol(activity.kind), color: color))
             let summary = activity.summary.isEmpty ? activity.toolName ?? L("transcript.tool.fallback") : activity.summary
-            let font = ["command", "read", "edit"].contains(activity.kind) ? NSFont.uiMonospaced(ofSize: 12, weight: .regular) : .ui(ofSize: 12)
+            let font = ["command", "read", "edit"].contains(activity.kind) ? NSFont.uiCode(ofSize: 12, weight: .regular) : .ui(ofSize: 12)
             builder.appendText("  " + summary, attributes: [.font: font, .foregroundColor: NSColor.secondaryLabelColor], to: line)
             if let duration = ActivitySupport.durationLabel(activity) {
                 line.append(NSAttributedString(string: "  · " + duration, attributes: [.font: NSFont.uiMonospacedDigit(ofSize: 10, weight: .regular), .foregroundColor: NSColor.secondaryLabelColor]))
@@ -230,7 +230,7 @@ enum AgentTranscriptFormat {
             chip.setWidth(DesignMetrics.Inset.toolChipH, type: .absoluteValueType, for: .padding, edge: .maxX)
             chip.setWidth(DesignMetrics.Inset.toolChipV, type: .absoluteValueType, for: .padding, edge: .minY)
             chip.setWidth(DesignMetrics.Inset.toolChipV, type: .absoluteValueType, for: .padding, edge: .maxY)
-            let mono = NSFont.uiMonospaced(ofSize: 11.5, weight: .regular)
+            let mono = NSFont.uiCode(ofSize: 11.5, weight: .regular)
             let line = NSMutableAttributedString(attributedString: AgentTranscriptFormat.statusSquare(activity.state, live: live))
             let name = activity.toolName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             if !name.isEmpty {
@@ -332,7 +332,7 @@ enum AgentTranscriptFormat {
             let result = NSMutableAttributedString(string: "")
             for run in source.runs {
                 let intent = run.inlinePresentationIntent
-                var selectedFont = intent?.contains(.code) == true ? NSFont.uiMonospaced(ofSize: min(font.pointSize / TextSettings.shared.current.scale, 12), weight: .regular) : font
+                var selectedFont = intent?.contains(.code) == true ? NSFont.uiCode(ofSize: min(font.pointSize / TextSettings.shared.current.scale, 12), weight: .regular) : font
                 if intent?.contains(.stronglyEmphasized) == true { selectedFont = NSFontManager.shared.convert(selectedFont, toHaveTrait: .boldFontMask) }
                 if intent?.contains(.emphasized) == true { selectedFont = NSFontManager.shared.convert(selectedFont, toHaveTrait: .italicFontMask) }
                 var attributes: [NSAttributedString.Key: Any] = [.font: selectedFont, .foregroundColor: color]
@@ -455,11 +455,11 @@ enum AgentTranscriptFormat {
             let ink: NSColor = cards ? Palette.nsToken(\.codeText) : .labelColor
             let start = result.length
             if let language, !language.isEmpty {
-                paragraph(NSAttributedString(string: language.split(separator: " ").first.map(String.init) ?? language), font: .uiMonospaced(ofSize: 10, weight: .medium), color: cards ? ink : secondary, indent: indent, spacing: 5, box: background)
+                paragraph(NSAttributedString(string: language.split(separator: " ").first.map(String.init) ?? language), font: .uiCode(ofSize: 10, weight: .medium), color: cards ? ink : secondary, indent: indent, spacing: 5, box: background)
             }
             let paragraphStyle = style(indent: indent, spacing: cards ? 2 : 8)
             paragraphStyle.lineBreakMode = .byCharWrapping
-            paragraph(NSAttributedString(string: code), font: .uiMonospaced(ofSize: 12, weight: .regular), color: ink, indent: indent, box: background, paragraphStyle: paragraphStyle)
+            paragraph(NSAttributedString(string: code), font: .uiCode(ofSize: 12, weight: .regular), color: ink, indent: indent, box: background, paragraphStyle: paragraphStyle)
             result.addAttribute(AgentTranscriptFormat.codeAttribute, value: code, range: NSRange(location: start, length: result.length - start))
         }
 

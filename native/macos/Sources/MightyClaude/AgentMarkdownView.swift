@@ -193,7 +193,7 @@ private struct AgentMarkdownBlockView: View {
     private func inline(_ text: AttributedString) -> Text {
         var styled = text
         for run in Array(styled.runs) where run.inlinePresentationIntent?.contains(.code) == true {
-            styled[run.range].font = .ui(size: compact ? 10 : 12, design: .monospaced)
+            styled[run.range].font = .code(size: compact ? 10 : 12)
             styled[run.range].backgroundColor = Palette.subtle
         }
         return Text(styled)
@@ -240,7 +240,7 @@ private struct AgentCodeBlock: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text(language?.split(separator: " ").first.map(String.init) ?? L("markdown.code.fallbackLanguage")).font(.ui(size: 10, weight: .medium, design: .monospaced)).foregroundStyle(.secondary)
+                Text(language?.split(separator: " ").first.map(String.init) ?? L("markdown.code.fallbackLanguage")).font(.code(size: 10, weight: .medium)).foregroundStyle(.secondary)
                 Spacer(minLength: 10)
                 Button {
                     NSPasteboard.general.clearContents()
@@ -253,7 +253,7 @@ private struct AgentCodeBlock: View {
             Divider()
             ScrollView(.horizontal) {
                 Text(code.hasSuffix("\n") ? String(code.dropLast()) : code)
-                    .font(.ui(size: 12, design: .monospaced)).lineSpacing(3)
+                    .font(.code(size: 12)).lineSpacing(3)
                     .fixedSize(horizontal: true, vertical: false)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(DesignMetrics.Spacing.md)
             }

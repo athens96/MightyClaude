@@ -328,11 +328,11 @@ struct CompanionApprovalBubble: View {
                     Text(headline).font(.ui(size: 11, weight: .medium)).lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 }
                 if let code = presentation.primaryCode {
-                    Text(code.value).font(.ui(size: 10, design: .monospaced)).lineLimit(3)
+                    Text(code.value).font(.code(size: 10)).lineLimit(3)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xs)
                         .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
                 } else if presentation.headline == nil {
-                    Text(approval.request.summary).font(.ui(size: 10, design: .monospaced)).lineLimit(3)
+                    Text(approval.request.summary).font(.code(size: 10)).lineLimit(3)
                 }
             }
             if let error = companion.approvalError { Text(error).font(.ui(size: 9)).foregroundStyle(Palette.errText).lineLimit(2) }

@@ -296,7 +296,7 @@ struct DashboardRow: View {
                         TimelineView(.everyMinute) { context in meta(at: context.date) }
                     }
                     if let last = card.lastActivity, card.isRunning {
-                        Text(last.text).font(.ui(size: 11.3, design: .monospaced))
+                        Text(last.text).font(.code(size: 11.3))
                             .foregroundStyle(last.isError ? Palette.errText : Palette.ink2)
                             .lineLimit(1).truncationMode(.tail).padding(.top, DesignMetrics.Spacing.xxs)
                     }

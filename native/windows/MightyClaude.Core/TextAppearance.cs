@@ -50,8 +50,17 @@ public sealed record TextAppearance
     /// <summary>Code's and the terminals' family; null is the app's monospaced one (Cascadia Mono, Consolas).</summary>
     public string? CodeFamily { get; }
 
-    /// <summary>A family name without its surrounding blanks; empty is null.</summary>
-    public static string? NormalizedFamily(string? family) => string.IsNullOrWhiteSpace(family) ? null : family.Trim();
+    /// <summary>
+    /// A family name without its surrounding blanks; empty is null, and so is a name with a control character or a line
+    /// or paragraph separator in it (the Mac's rule): no font is called that, and the name travels to the terminal as one
+    /// value.
+    /// </summary>
+    public static string? NormalizedFamily(string? family)
+    {
+        if (string.IsNullOrWhiteSpace(family)) return null;
+        var trimmed = family.Trim();
+        return trimmed.Any(c => char.IsControl(c) || c is '\u2028' or '\u2029') ? null : trimmed;
+    }
 
     /// <summary>The nearest step in <see cref="Scales"/>; anything unreadable is 1.</summary>
     public static double Normalized(double value) =>

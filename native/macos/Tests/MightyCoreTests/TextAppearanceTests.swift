@@ -69,6 +69,24 @@ struct TextAppearanceTests {
         #expect(TextAppearance.codeFamilies([]).isEmpty)
     }
 
+    @Test func aNameThatCouldBreakTheTerminalConfigIsNoFamily() {
+        for name in ["A\nb = c", "A\rB", "A\u{2028}B", "A\u{2029}B", "A\u{85}B", "A\u{0}B", "A\tB", "A\u{7F}B"] {
+            #expect(TextAppearance.normalizedFamily(name) == nil, "\(name.debugDescription)")
+            #expect(TextAppearance(family: name, transcriptFamily: name, codeFamily: name).isStandard)
+        }
+        #expect(TextAppearance(codeFamily: "A\nb = c").terminalFontFamilies.isEmpty)
+        #expect(TextAppearance.normalizedFamily(" Nanum Gothic\n") == "Nanum Gothic")
+    }
+
+    @Test func theTerminalsGetTheCodeFamilyQuotedWithMenloBehindIt() {
+        #expect(TextAppearance.standard.terminalFontFamilies.isEmpty)
+        #expect(TextAppearance(family: "Avenir Next", transcriptFamily: "Georgia").terminalFontFamilies.isEmpty)
+        #expect(TextAppearance(codeFamily: "JetBrains Mono").terminalFontFamilies == [#""""#, #""JetBrains Mono""#, #""Menlo""#])
+        // Ghostty takes the outer quotes off and keeps the rest as written, so a quote in
+        // a name stays part of the one value.
+        #expect(TextAppearance(codeFamily: "A\"B").terminalFontFamilies == [#""""#, #""A"B""#, #""Menlo""#])
+    }
+
     @Test func aBlankFamilyIsTheSystemFont() {
         #expect(TextAppearance(family: "  ").family == nil)
         #expect(TextAppearance(family: " Avenir Next ").family == "Avenir Next")
