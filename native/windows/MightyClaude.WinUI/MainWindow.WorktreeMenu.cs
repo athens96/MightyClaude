@@ -80,7 +80,7 @@ public sealed partial class MainWindow
         /// </summary>
         private async Task SendToWorktreeAgent(string agent)
         {
-            if (owner.ManualMutationBlockReason(Session) is not null) { RefreshComposerState(); return; }
+            if (stopping || owner.ManualMutationBlockReason(Session) is not null) { RefreshComposerState(); return; }
             if (await AnswerGuidedQuestion() || await SubmitTypedBuiltin()) return;
             var text = input.Text; var files = pendingAttachments.ToArray(); var pane = Session;
             if (string.IsNullOrWhiteSpace(text) || composingInput || attachmentsLoading || !owner.service.OffersWorktreeMenu(pane, LaunchesInPlanMode)) return;
