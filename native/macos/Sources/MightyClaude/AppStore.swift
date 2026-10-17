@@ -1224,13 +1224,17 @@ final class AppStore: ObservableObject, DelegationHost {
         snapshot.showsBackgroundWork = shown
     }
 
-    /// The text size and font every pane, sheet and terminal draws with (Settings → General →
-    /// Display and View → ⌘= / ⌘− / ⌘0); saved in the app's defaults by `TextSettings`.
+    /// The text size and fonts every pane, sheet and terminal draws with (Settings → General →
+    /// 글자 and View → ⌘= / ⌘− / ⌘0); saved in the app's defaults by `TextSettings`.
     var textAppearance: TextAppearance { TextSettings.shared.appearance }
 
     func setTextAppearance(_ value: TextAppearance) {
-        guard value != TextSettings.shared.current else { return }
+        let previous = TextSettings.shared.current
+        guard value != previous else { return }
         objectWillChange.send()
+        // The terminals' family goes to the shared config first, so the size every open
+        // surface sets on `TextSettings.didChange` lands on top of the new font.
+        if value.codeFamily != previous.codeFamily { terminalController?.setTerminalConfiguration(Self.terminalFont(value)) }
         TextSettings.shared.set(value)
     }
 

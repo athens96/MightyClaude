@@ -83,7 +83,8 @@ final class LocalTerminalSession: NSObject, ObservableObject, TerminalSurfaceTit
 
     /// The user changed the text size: the open surface takes it through Ghostty's own
     /// action. `view.configuration` is left alone, since changing it rebuilds the
-    /// surface and ends the shell.
+    /// surface and ends the shell. The code family reaches every surface through the
+    /// shared controller's config (`AppStore.terminalFont`).
     @objc private func textAppearanceDidChange() {
         guard !disposed else { return }
         _ = surface?.performBindingAction("set_font_size:\(String(format: "%g", TextSettings.shared.current.terminalSize))")

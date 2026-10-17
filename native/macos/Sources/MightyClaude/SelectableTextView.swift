@@ -170,7 +170,7 @@ final class MightyGraphPreviewTextView: SelectableTextView {
             paragraph.lineBreakMode = input.maximumLines > 0 ? .byTruncatingTail : .byWordWrapping
             let color = input.secondary ? NSColor.secondaryLabelColor : NSColor.labelColor
             storage.setAttributedString(NSAttributedString(string: input.text, attributes: [
-                .font: NSFont.ui(ofSize: input.fontSize), .foregroundColor: color, .paragraphStyle: paragraph,
+                .font: NSFont.uiTranscript(ofSize: input.fontSize), .foregroundColor: color, .paragraphStyle: paragraph,
             ]))
         }
         manager.ensureLayout(for: container)

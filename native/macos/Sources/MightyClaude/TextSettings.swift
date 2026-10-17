@@ -3,13 +3,15 @@ import Observation
 import SwiftUI
 import MightyCore
 
-/// The live `TextAppearance` (Settings → General → Display, View → ⌘+ / ⌘− / ⌘0).
+/// The live `TextAppearance` (Settings → General → 글자, View → ⌘= / ⌘− / ⌘0).
 ///
-/// Every font the app draws goes through `Font.ui` or `NSFont.ui`, which read
-/// `current`. A SwiftUI body that does so is observed (Observation, written out by
-/// hand since Command Line Tools may lack the macro plugin), and `AppStore` sends a
-/// change as well, so open views redraw at once; AppKit text (the transcript, the
-/// composer, the terminals) is rebuilt by its owner on `didChange`.
+/// Every font the app draws goes through `Font.ui` or `NSFont.ui` (the interface),
+/// `Font.transcript` or `NSFont.uiTranscript` (the conversation) or the monospaced
+/// forms (code), which read `current`. A SwiftUI body that does so is observed
+/// (Observation, written out by hand since Command Line Tools may lack the macro
+/// plugin), and `AppStore` sends a change as well, so open views redraw at once;
+/// AppKit text (the transcript, the composer, the terminals) is rebuilt by its owner
+/// on `didChange`.
 final class TextSettings: Observable, @unchecked Sendable {
     static let shared = TextSettings()
     static let didChange = Notification.Name("MightyTextAppearanceDidChange")
@@ -58,24 +60,55 @@ final class TextSettings: Observable, @unchecked Sendable {
         return list
     }
     nonisolated(unsafe) private static var cachedFamilies: [String]?
+
+    /// The families the code and terminal picker offers (`TextAppearance.codeFamilies`):
+    /// of `families`, those whose regular face is fixed-pitch, and the well-known
+    /// monospaced ones.
+    static var codeFamilies: [String] {
+        let all = families
+        listLock.lock(); defer { listLock.unlock() }
+        if let cachedCodeFamilies { return cachedCodeFamilies }
+        let manager = NSFontManager.shared
+        let list = TextAppearance.codeFamilies(all.map { family in
+            let font = manager.font(withFamily: family, traits: [], weight: 5, size: 13)
+            return (family, font.map { $0.isFixedPitch || manager.traits(of: $0).contains(.fixedPitchFontMask) } ?? false)
+        })
+        cachedCodeFamilies = list
+        return list
+    }
+    nonisolated(unsafe) private static var cachedCodeFamilies: [String]?
     private static let listLock = NSLock()
     /// Fonts installed or removed while the app runs: the lists and lookups are made again.
     private static let fontSetObserver: Void = {
         NotificationCenter.default.addObserver(forName: NSFont.fontSetChangedNotification, object: nil, queue: nil) { _ in
-            listLock.lock(); cachedFamilies = nil; listLock.unlock()
+            listLock.lock(); cachedFamilies = nil; cachedCodeFamilies = nil; listLock.unlock()
             NSFont.clearFamilyFonts()
         }
     }()
 }
 
 extension Font {
-    /// `Font.system(size:weight:design:)` at the user's text size, in the chosen family
-    /// for the default design.
+    /// `Font.system(size:weight:design:)` at the user's text size: the default design in
+    /// the interface's family, the monospaced one in the code family.
     static func ui(size: CGFloat, weight: Font.Weight = .regular, design: Font.Design = .default) -> Font {
         let appearance = TextSettings.current
+        switch design {
+        case .default: return styled(appearance.family, size: size, weight: weight, design: design, appearance: appearance)
+        case .monospaced: return styled(appearance.codeFamily, size: size, weight: weight, design: design, appearance: appearance)
+        default: return styled(nil, size: size, weight: weight, design: design, appearance: appearance)
+        }
+    }
+
+    /// The conversation's words (replies, the user's turns, Mighty's prose) at the user's
+    /// text size, in the conversation's family, else the interface's.
+    static func transcript(size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        let appearance = TextSettings.current
+        return styled(appearance.resolvedTranscriptFamily, size: size, weight: weight, design: .default, appearance: appearance)
+    }
+
+    private static func styled(_ family: String?, size: CGFloat, weight: Font.Weight, design: Font.Design, appearance: TextAppearance) -> Font {
         let scaled = CGFloat(appearance.size(Double(size)))
-        guard design == .default, let family = appearance.family,
-              let font = NSFont.familyFont(family, size: scaled, weight: weight.nsWeight) else {
+        guard let family, let font = NSFont.familyFont(family, size: scaled, weight: weight.nsWeight) else {
             return .system(size: scaled, weight: weight, design: design)
         }
         return Font(font as CTFont)
@@ -91,9 +124,21 @@ extension NSFont {
         return .systemFont(ofSize: scaled, weight: weight)
     }
 
-    /// `monospacedSystemFont(ofSize:weight:)` at the user's text size.
+    /// The conversation's words at the user's text size, in the conversation's family,
+    /// else the interface's.
+    static func uiTranscript(ofSize size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
+        let appearance = TextSettings.shared.current
+        let scaled = CGFloat(appearance.size(Double(size)))
+        if let family = appearance.resolvedTranscriptFamily, let font = familyFont(family, size: scaled, weight: weight) { return font }
+        return .systemFont(ofSize: scaled, weight: weight)
+    }
+
+    /// `monospacedSystemFont(ofSize:weight:)` at the user's text size, in the code family.
     static func uiMonospaced(ofSize size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
-        .monospacedSystemFont(ofSize: CGFloat(TextSettings.shared.current.size(Double(size))), weight: weight)
+        let appearance = TextSettings.shared.current
+        let scaled = CGFloat(appearance.size(Double(size)))
+        if let family = appearance.codeFamily, let font = familyFont(family, size: scaled, weight: weight) { return font }
+        return .monospacedSystemFont(ofSize: scaled, weight: weight)
     }
 
     /// `monospacedDigitSystemFont(ofSize:weight:)` at the user's text size.

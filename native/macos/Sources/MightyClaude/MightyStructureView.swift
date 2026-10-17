@@ -772,14 +772,14 @@ struct MightyStructureView: View {
             if let prompt = node.prompt {
                 let shown = open ? prompt.text : prompt.preview
                 Text(verbatim: shown)
-                    .font(.ui(size: Self.promptSize)).foregroundStyle(Palette.ink2)
+                    .font(.transcript(size: Self.promptSize)).foregroundStyle(Palette.ink2)
                     .lineLimit(open ? nil : MightyStructure.promptLines)
                     .contentText(name: L("graph.structure.prompt"), value: shown)
             }
             if let output = node.output {
                 let shown = open ? output.text : output.preview
                 Text(verbatim: shown)
-                    .font(.ui(size: Self.outputSize)).foregroundStyle(Palette.ink)
+                    .font(.transcript(size: Self.outputSize)).foregroundStyle(Palette.ink)
                     .lineLimit(open ? nil : MightyStructure.outputLines)
                     .contentText(name: L("graph.structure.output"), value: shown)
             }
@@ -832,7 +832,7 @@ struct MightyStructureView: View {
         let folds = excerpt.folds(lines: lines, charactersPerLine: MightyStructure.charactersPerLine(width: width, fontSize: CGFloat(TextSettings.current.size(Double(size)))))
         return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
             Text(verbatim: shown)
-                .font(.ui(size: size)).foregroundStyle(Palette.ink)
+                .font(.transcript(size: size)).foregroundStyle(Palette.ink)
                 .lineLimit(open ? nil : lines)
                 .contentText(name: name, value: shown)
             if folds { foldToggle(key, open: open) }

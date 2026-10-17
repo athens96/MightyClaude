@@ -861,7 +861,7 @@ struct MightyGraphView: View {
                 }
                 Group {
                     if !prompt.isEmpty {
-                        Text(prompt).font(.ui(size: 12)).foregroundStyle(Palette.ink2).lineLimit(2)
+                        Text(prompt).font(.transcript(size: 12)).foregroundStyle(Palette.ink2).lineLimit(2)
                             .multilineTextAlignment(.leading)
                     }
                     Text(L("phone.blocks.tally", ["total": "\(group.tally.total)", "settled": "\(group.tally.settled)"]))
@@ -942,7 +942,7 @@ struct MightyGraphView: View {
         let childBlocks = GraphChildBlocks.map(responseRecords: agent?.responseRecords ?? run.responseRecords, agents: run.agents, runId: runID)
         VStack(alignment: .leading, spacing: 0) {
             if !input.isEmpty {
-                Text(input).font(.ui(size: 11)).foregroundStyle(Palette.ink).lineLimit(6)
+                Text(input).font(.transcript(size: 11)).foregroundStyle(Palette.ink).lineLimit(6)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH).padding(.vertical, DesignMetrics.Inset.graphBlockBodyV)

@@ -140,7 +140,7 @@ struct AgentMarkdownView: View {
             ForEach(AgentMarkdownDocument.parse(source).blocks) { block in AgentMarkdownBlockView(block: block, compact: compact) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .font(.ui(size: compact ? 11 : 13)).lineSpacing(compact ? 2 : 4)
+        .font(.transcript(size: compact ? 11 : 13)).lineSpacing(compact ? 2 : 4)
         .textSelection(.enabled)
         .tint(Palette.accent)
         .environment(\.openURL, OpenURLAction { url in AgentMarkdownDocument.safeLink(url) ? .systemAction : .discarded })
@@ -157,7 +157,7 @@ private struct AgentMarkdownBlockView: View {
             inline(block.text).fixedSize(horizontal: false, vertical: true)
         case .header(let level):
             inline(block.text)
-                .font(.ui(size: compact ? (level == 1 ? 13 : level == 2 ? 12 : 11) : level == 1 ? 22 : level == 2 ? 18 : level == 3 ? 15 : 13, weight: .semibold))
+                .font(.transcript(size: compact ? (level == 1 ? 13 : level == 2 ? 12 : 11) : level == 1 ? 22 : level == 2 ? 18 : level == 3 ? 15 : 13, weight: .semibold))
                 .padding(.top, compact ? DesignMetrics.Spacing.xxs : level <= 2 ? 6 : 2)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
@@ -278,7 +278,7 @@ private struct AgentMarkdownTable: View {
                         ForEach(columns.indices, id: \.self) { column in
                             let cell = row.children.first { if case .tableCell(let index) = $0.kind { return index == column }; return false }
                             Text(cell?.text ?? AttributedString(""))
-                                .font(.ui(size: 12, weight: row.kind == .tableHeaderRow ? .semibold : .regular))
+                                .font(.transcript(size: 12, weight: row.kind == .tableHeaderRow ? .semibold : .regular))
                                 .fixedSize(horizontal: false, vertical: true)
                                 .frame(width: widths[column] - DesignMetrics.Spacing.md * 2, alignment: alignment(columns[column].alignment))
                                 .padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.sm)
@@ -301,7 +301,7 @@ private struct AgentMarkdownTable: View {
     private func columnWidths() -> [CGFloat] {
         columns.indices.map { column in
             let widest = block.children.flatMap(\.children).filter { if case .tableCell(let index) = $0.kind { return index == column }; return false }
-                .map { ($0.plainText as NSString).size(withAttributes: [.font: NSFont.ui(ofSize: 12, weight: .medium)]).width }.max() ?? 0
+                .map { ($0.plainText as NSString).size(withAttributes: [.font: NSFont.uiTranscript(ofSize: 12, weight: .medium)]).width }.max() ?? 0
             return min(260, max(85, ceil(widest) + DesignMetrics.Spacing.md * 2))
         }
     }

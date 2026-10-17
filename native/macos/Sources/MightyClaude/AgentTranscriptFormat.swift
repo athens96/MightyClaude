@@ -313,7 +313,7 @@ enum AgentTranscriptFormat {
             return style
         }
 
-        func paragraph(_ value: NSAttributedString, font: NSFont = .ui(ofSize: 13), color: NSColor = .labelColor, indent: CGFloat = 0, spacing: CGFloat = 8, box: NSTextBlock? = nil, paragraphStyle: NSMutableParagraphStyle? = nil) {
+        func paragraph(_ value: NSAttributedString, font: NSFont = .uiTranscript(ofSize: 13), color: NSColor = .labelColor, indent: CGFloat = 0, spacing: CGFloat = 8, box: NSTextBlock? = nil, paragraphStyle: NSMutableParagraphStyle? = nil) {
             let paragraph = paragraphStyle ?? style(indent: indent, spacing: spacing)
             let blocks = [container, box].compactMap { $0 }
             if !blocks.isEmpty { paragraph.textBlocks = blocks }
@@ -328,7 +328,7 @@ enum AgentTranscriptFormat {
             result.append(text)
         }
 
-        func inline(_ source: AttributedString, font: NSFont = .ui(ofSize: 13), color: NSColor = .labelColor) -> NSAttributedString {
+        func inline(_ source: AttributedString, font: NSFont = .uiTranscript(ofSize: 13), color: NSColor = .labelColor) -> NSAttributedString {
             let result = NSMutableAttributedString(string: "")
             for run in source.runs {
                 let intent = run.inlinePresentationIntent
@@ -362,7 +362,7 @@ enum AgentTranscriptFormat {
             case .paragraph:
                 paragraph(inline(block.text, color: quote == nil ? .labelColor : secondary), indent: indent, box: quote)
             case .header(let level):
-                let font = NSFont.ui(ofSize: level == 1 ? 22 : level == 2 ? 18 : level == 3 ? 15 : 13, weight: .semibold)
+                let font = NSFont.uiTranscript(ofSize: level == 1 ? 22 : level == 2 ? 18 : level == 3 ? 15 : 13, weight: .semibold)
                 let paragraphStyle = style(indent: indent, spacing: 10)
                 paragraphStyle.paragraphSpacingBefore = level <= 2 ? 5 : 2
                 paragraph(inline(block.text, font: font), font: font, indent: indent, box: quote, paragraphStyle: paragraphStyle)
@@ -395,13 +395,13 @@ enum AgentTranscriptFormat {
         func questionnaire(_ form: UserQuestionnaire) {
             for (index, question) in form.questions.enumerated() {
                 let title = "\(index + 1). \(question.header)  ·  \(question.multiSelect ? L("transcript.question.multiple") : L("transcript.question.single"))"
-                paragraph(NSAttributedString(string: title), font: .ui(ofSize: 11, weight: .semibold), color: AgentTranscriptFormat.accent, spacing: 6,
+                paragraph(NSAttributedString(string: title), font: .uiTranscript(ofSize: 11, weight: .semibold), color: AgentTranscriptFormat.accent, spacing: 6,
                           box: box(background: AgentTranscriptFormat.accentWash, border: .clear))
-                paragraph(NSAttributedString(string: question.question), font: .ui(ofSize: 14, weight: .semibold), spacing: 10)
+                paragraph(NSAttributedString(string: question.question), font: .uiTranscript(ofSize: 14, weight: .semibold), spacing: 10)
                 for option in question.options {
-                    paragraph(NSAttributedString(string: "\(question.multiSelect ? "☐" : "○")  \(option.label)"), font: .ui(ofSize: 13, weight: .medium), spacing: 3)
+                    paragraph(NSAttributedString(string: "\(question.multiSelect ? "☐" : "○")  \(option.label)"), font: .uiTranscript(ofSize: 13, weight: .medium), spacing: 3)
                     if !option.description.isEmpty {
-                        paragraph(NSAttributedString(string: option.description), font: .ui(ofSize: 12), color: secondary, indent: 20, spacing: 10)
+                        paragraph(NSAttributedString(string: option.description), font: .uiTranscript(ofSize: 12), color: secondary, indent: 20, spacing: 10)
                     }
                 }
                 separation()
@@ -481,7 +481,7 @@ enum AgentTranscriptFormat {
                     if row.kind == .tableHeaderRow { box.backgroundColor = NSColor.labelColor.withAlphaComponent(0.04) }
                     let paragraphStyle = style(spacing: 0)
                     switch columns[column].alignment { case .left: paragraphStyle.alignment = .left; case .center: paragraphStyle.alignment = .center; case .right: paragraphStyle.alignment = .right; @unknown default: break }
-                    let font = NSFont.ui(ofSize: 12, weight: row.kind == .tableHeaderRow ? .semibold : .regular)
+                    let font = NSFont.uiTranscript(ofSize: 12, weight: row.kind == .tableHeaderRow ? .semibold : .regular)
                     paragraph(inline(cell?.text ?? AttributedString(""), font: font), font: font, box: box, paragraphStyle: paragraphStyle)
                 }
             }

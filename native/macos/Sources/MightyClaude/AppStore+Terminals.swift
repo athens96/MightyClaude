@@ -86,6 +86,7 @@ extension AppStore {
                 settings.withCustom("keybind", "super+\(key)=unbind")
             }
         }
+        controller.setTerminalConfiguration(Self.terminalFont(TextSettings.shared.current))
         terminalController = controller
         // The package suspends wakeup delivery for detached views. Drain the
         // shared mailbox so background PTYs can still report cwd, exit, and
@@ -99,6 +100,14 @@ extension AppStore {
             }
         }
         return controller
+    }
+
+    /// The terminals' font over the shared config: Menlo, the base's, until a code family is
+    /// chosen; then `font-family = ""` clears Ghostty's list and the family takes its place.
+    /// Ghostty applies it to the open surfaces and to every new one.
+    static func terminalFont(_ text: TextAppearance) -> TerminalConfiguration {
+        guard let family = text.codeFamily else { return TerminalConfiguration() }
+        return TerminalConfiguration { $0.withFontFamily("\"\""); $0.withFontFamily(family) }
     }
 
     /// A shell pane is `running` only while a command runs in it; each terminal

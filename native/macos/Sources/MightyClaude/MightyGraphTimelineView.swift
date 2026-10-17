@@ -235,7 +235,7 @@ struct MightyTimelineResultCard<Files: View>: View {
             .background(Palette.heroFill(result.tone))
             if let text = result.text {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(text).font(.ui(size: 12.5)).foregroundStyle(Palette.ink)
+                    Text(text).font(.transcript(size: 12.5)).foregroundStyle(Palette.ink)
                         .lineLimit(full ? nil : Self.previewLines)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)

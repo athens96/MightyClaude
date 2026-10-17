@@ -78,7 +78,7 @@ struct TextEditorHeightReader: NSViewRepresentable {
         func synchronizePlaceholder() {
             guard let editor, let label = placeholderLabel else { return }
             label.stringValue = placeholder
-            label.font = editor.font ?? .ui(ofSize: 13)
+            label.font = editor.font ?? .uiTranscript(ofSize: 13)
             label.isHidden = placeholder.isEmpty || !editor.string.isEmpty || editor.hasMarkedText()
             let origin = editor.textContainerOrigin
             let padding = editor.textContainer?.lineFragmentPadding ?? 0
@@ -136,7 +136,7 @@ struct TextEditorHeightReader: NSViewRepresentable {
             synchronizePlaceholder()
             let width = sourceContainer.size.width
             guard width.isFinite, width > 1 else { return }
-            let font = editor.font ?? NSFont.ui(ofSize: 13)
+            let font = editor.font ?? NSFont.uiTranscript(ofSize: 13)
             let storage = NSTextStorage(attributedString: editor.attributedString())
             let layout = NSLayoutManager()
             let container = NSTextContainer(size: NSSize(width: width, height: .greatestFiniteMagnitude))
