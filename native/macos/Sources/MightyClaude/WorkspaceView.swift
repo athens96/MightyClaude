@@ -128,6 +128,15 @@ struct WorkspaceView: View {
                 .help(L("menu.openProject"))
                 .accessibilityLabel(L("menu.openProject"))
                 .accessibilityIdentifier("sidebar-add-workspace")
+                // Another computer's shared workspaces open from Settings → 원격 연결.
+                Button { store.openRemoteSettings() } label: {
+                    Image(systemName: "network").font(.ui(size: 11)).foregroundStyle(Palette.sidebarInk2)
+                        .frame(width: 18, height: 14).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(L("remote.menu.connect"))
+                .accessibilityLabel(L("remote.menu.connect"))
+                .accessibilityIdentifier("sidebar-connect-remote")
             }
             .padding(.horizontal, DesignMetrics.Inset.sidebarSectionH).padding(.top, DesignMetrics.Inset.sidebarSectionT).padding(.bottom, DesignMetrics.Inset.sidebarSectionB)
 
@@ -211,9 +220,13 @@ struct WorkspaceView: View {
             HStack(spacing: 0) {
             Button { store.selectWorkspace(workspace.id) } label: {
                 HStack(spacing: DesignMetrics.Spacing.md) {
-                    Image(systemName: "folder").font(.ui(size: 14)).foregroundStyle(selected ? Palette.sidebarAccent : Palette.sidebarInk2)
+                    Image(systemName: workspace.remote == nil ? "folder" : "desktopcomputer").font(.ui(size: 14)).foregroundStyle(selected ? Palette.sidebarAccent : Palette.sidebarInk2)
                     VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                         Text(workspace.name).font(.ui(size: 12, weight: .medium)).lineLimit(1)
+                        if let remote = workspace.remote {
+                            Text(remote.hostName).font(.ui(size: 10)).foregroundStyle(Palette.sidebarInk2).lineLimit(1)
+                                .accessibilityLabel(L("remote.workspace.badgeAccessibility", ["host": remote.hostName]))
+                        }
                     }
                     Spacer(minLength: 0)
                     workspaceBadges(badges, workspace: workspace)
@@ -238,7 +251,9 @@ struct WorkspaceView: View {
             .contextMenu {
                 Button(L("menu.rename")) { store.beginRenameWorkspace(workspace.id) }
                 Button(L("workspace.menu.remove"), role: .destructive) { store.pendingRemoval = workspace }
-                Button(L("menu.showInFinder")) { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: workspace.path) }
+                if workspace.remote == nil {
+                    Button(L("menu.showInFinder")) { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: workspace.path) }
+                }
             }
             if expanded {
                 // Delegated children under their parent pane; a closed parent's under its node.
@@ -492,6 +507,7 @@ struct WorkspaceView: View {
                 VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                     HStack(spacing: DesignMetrics.Spacing.md) {
                         Text(workspace.name).font(.ui(size: 17, weight: .semibold)).lineLimit(1)
+                        if let remote = workspace.remote { RemoteHostBadge(hostName: remote.hostName, connected: store.remoteConnection(for: workspace)?.status == .connected) }
                         Spacer(minLength: 0)
                     }
                     .overlay { WorkspaceTitlebarRegion(enabled: !store.hasModal, rename: { store.beginRenameWorkspace(workspace.id) }) }
@@ -511,8 +527,9 @@ struct WorkspaceView: View {
                 Image(systemName: "folder").font(.ui(size: 13)).frame(width: 26, height: 24).contentShape(Rectangle())
             }
             .buttonStyle(.plain).foregroundStyle(.secondary)
-            .disabled(store.hasModal)
-            .help(L("menu.showFiles") + " (⇧⌘E)")
+            // The files pane reads this Mac's disk; a remote workspace's files are on its host.
+            .disabled(store.hasModal || workspace.remote != nil)
+            .help(workspace.remote == nil ? L("menu.showFiles") + " (⇧⌘E)" : L("remote.workspace.paneUnavailable"))
             .accessibilityLabel(L("menu.showFiles"))
             .accessibilityIdentifier("workspace-open-files-\(workspace.id)")
         }.leadingPastTrafficLights(DesignMetrics.Inset.workspaceHeaderH).padding(.trailing, DesignMetrics.Inset.workspaceHeaderH)
@@ -560,6 +577,9 @@ struct WorkspaceView: View {
                 .font(.ui(size: 14)).foregroundStyle(.secondary).multilineTextAlignment(.center).lineSpacing(5)
             HStack(spacing: 10) {
                 Button { store.openWorkspace() } label: { Label(L("layout.welcome.openProject"), systemImage: "folder.badge.plus").padding(.horizontal, 10).padding(.vertical, 5) }.buttonStyle(.borderedProminent)
+                Button { store.openRemoteSettings() } label: {
+                    Label(L("remote.menu.connect"), systemImage: "network").padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.xs)
+                }.buttonStyle(.bordered).accessibilityIdentifier("welcome-connect-remote")
             }.padding(.top, 8)
             Text(L("layout.welcome.shortcutsMac")).font(.ui(size: 11)).foregroundStyle(.tertiary).padding(.top, 10)
             Spacer()
@@ -578,8 +598,15 @@ struct WorkspaceView: View {
 
     private var statusBar: some View {
         HStack(spacing: DesignMetrics.Spacing.sm) {
-            Image(systemName: "desktopcomputer").font(.ui(size: 10))
-            Text(L("window.status.thisMac"))
+            if let workspace = store.activeWorkspace, let remote = workspace.remote {
+                let connected = store.remoteConnection(for: workspace)?.status == .connected
+                Circle().fill(Palette.mark(connected ? "completed" : "idle")).frame(width: 5, height: 5)
+                Text(L(connected ? "remote.status.connected" : "remote.status.notConnected", ["host": remote.hostName]))
+                    .accessibilityIdentifier("status-remote-host")
+            } else {
+                Image(systemName: "desktopcomputer").font(.ui(size: 10))
+                Text(L("window.status.thisMac"))
+            }
             Spacer()
             Text(L("window.status.paneCount", ["count": "\(store.activeSessions.count)"]))
             Text("·").padding(.horizontal, 3)
@@ -780,18 +807,26 @@ struct WorkspaceAddMenuItems: View {
         }
         Divider()
         Button { addSession(kind: "shell") } label: {
-            Label(L("workspace.newTerminal"), systemImage: "terminal")
+            // A remote workspace's command pane sends each command to its host.
+            Label(workspace.remote == nil ? L("workspace.newTerminal") : L("remote.menu.newCommand"), systemImage: "terminal")
         }
-        Divider()
-        Button { addSession(kind: "browser") } label: {
-            Label(L("browser.newTab"), systemImage: "globe")
+        // The browser reads this Mac's network, not the host's: local workspaces only.
+        if workspace.remote == nil {
+            Divider()
+            Button { addSession(kind: "browser") } label: {
+                Label(L("browser.newTab"), systemImage: "globe")
+            }
+            .accessibilityIdentifier("new-browser-tab")
         }
-        .accessibilityIdentifier("new-browser-tab")
         Divider()
         Button { store.openWorkspace() } label: {
             Label(L("menu.openProject"), systemImage: "folder.badge.plus")
         }
         .accessibilityIdentifier("workspace-open-folder-\(workspace.id)")
+        Button { store.openRemoteSettings() } label: {
+            Label(L("remote.menu.connect"), systemImage: "network")
+        }
+        .accessibilityIdentifier("workspace-connect-remote-\(workspace.id)")
     }
 
     private func addSession(kind: String) {
@@ -975,5 +1010,20 @@ enum DelegationText {
         guard let paths = pending.nested else { return L("delegation.discard.unavailable", ["title": pending.title]) }
         let nested = paths.isEmpty ? L("delegation.discard.noNested") : L("delegation.discard.nested", ["count": "\(paths.count)", "paths": paths.joined(separator: "\n")])
         return L("delegation.discard.message", ["title": pending.title, "branch": pending.branch]) + "\n\n" + nested
+    }
+}
+
+/// A remote workspace's host, beside its name in the workspace header.
+struct RemoteHostBadge: View {
+    let hostName: String
+    let connected: Bool
+
+    var body: some View {
+        Label(hostName, systemImage: "network")
+            .font(.ui(size: 10, weight: .medium)).foregroundStyle(connected ? Palette.accent : Palette.ink2).lineLimit(1)
+            .padding(.horizontal, DesignMetrics.Spacing.sm).padding(.vertical, DesignMetrics.Spacing.xxs)
+            .background((connected ? Palette.accent : Palette.ink2).opacity(0.09), in: Capsule())
+            .help(L(connected ? "remote.status.connected" : "remote.status.notConnected", ["host": hostName]))
+            .accessibilityIdentifier("workspace-remote-host")
     }
 }

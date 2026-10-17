@@ -22,6 +22,8 @@ extension AppStore {
     /// saved, so it does not come back after a restart.
     func openFilePane(workspaceId: String? = nil) {
         guard !hasModal, let workspace = workspaceId.flatMap({ id in snapshot.workspaces.first { $0.id == id } }) ?? activeWorkspace else { return }
+        // The files pane reads this Mac's disk; a remote workspace's files are on its host.
+        guard workspace.remote == nil else { error = L("remote.workspace.paneUnavailable"); return }
         let id = FilePaneKind.paneId(workspaceId: workspace.id)
         guard CoreValidation.identifier(id), filePaneModel(for: workspace.id) != nil else { return }
         if snapshot.sessions.contains(where: { $0.id == id }) { selectSession(id); return }

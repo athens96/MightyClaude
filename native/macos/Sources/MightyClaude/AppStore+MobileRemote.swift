@@ -290,7 +290,7 @@ extension AppStore {
         // The order carries the agent-owned terminal and browser panes too, so
         // opening or closing one of them is a state change the phone hears about.
         // Files panes are Mac-only and never listed for the phone.
-        let phoneSessions = FilePaneKind.phoneVisible(snapshot.sessions)
+        let phoneSessions = FilePaneKind.phoneVisible(RemoteWorkspacePhone.sessions(snapshot.sessions, workspaces: snapshot.workspaces))
         let paneOrder = phoneSessions.map(\.id) + AgentIOPaneRegistry.shared.extraPaneIds(agentSessions: snapshot.sessions)
         var stateChanged = mobileTracking.workspaces != snapshot.workspaces || mobileTracking.order != paneOrder
         var nextSeen: [String: MobileRemoteTracking.SessionFingerprint] = [:]
@@ -373,20 +373,20 @@ extension AppStore {
 
     func mobileState() -> MobileState {
         let revision = mobileTracking.stateRevision
-        var sessions = FilePaneKind.phoneVisible(snapshot.sessions).map { mobileTracking.summaries[$0.id] ?? mobileSummary($0, revision: mobileTracking.sessionRevisions[$0.id, default: 1]) }
+        var sessions = FilePaneKind.phoneVisible(RemoteWorkspacePhone.sessions(snapshot.sessions, workspaces: snapshot.workspaces)).map { mobileTracking.summaries[$0.id] ?? mobileSummary($0, revision: mobileTracking.sessionRevisions[$0.id, default: 1]) }
         sessions.append(contentsOf: AgentIOPaneRegistry.shared.extraPaneSummaries(
             agentSessions: snapshot.sessions,
             revision: revision,
             updatedAt: mightyTimestamp()
         ))
         return MobileState(revision: revision, hostName: Host.current().localizedName ?? "Mighty Claude Mac",
-                           workspaces: snapshot.workspaces.map { MobileWorkspace(id: $0.id, name: $0.name, path: $0.path) },
+                           workspaces: RemoteWorkspacePhone.workspaces(snapshot.workspaces).map { MobileWorkspace(id: $0.id, name: $0.name, path: $0.path) },
                            sessions: sessions)
     }
 
     /// A pane the phone may see and act on by id; files panes are Mac-only.
     func mobilePane(_ id: String) -> RunSession? {
-        snapshot.sessions.first { $0.id == id && !FilePaneKind.isFilePane($0.kind) }
+        snapshot.sessions.first { $0.id == id && !FilePaneKind.isFilePane($0.kind) && !isRemoteWorkspace($0.workspaceId) }
     }
 
     /// `structure`: the phone asked for the structure view (`?structure=`); only then is it built.
@@ -869,7 +869,7 @@ extension AppStore {
     }
 
     func mobileCreateSession(workspaceId: String, kind: String, provider: String) throws -> String {
-        guard snapshot.workspaces.contains(where: { $0.id == workspaceId }) else { throw MobileHostError.notFound(L("remote.error.workspaceNotFound")) }
+        guard snapshot.workspaces.contains(where: { $0.id == workspaceId && $0.remote == nil }) else { throw MobileHostError.notFound(L("remote.error.workspaceNotFound")) }
         // A command pane runs in the app's own terminal, which the phone
         // cannot drive; creating one would hand it a dead window.
         guard kind != "shell" else { throw MobileHostError.conflict(L("remote.error.shellUnavailable")) }

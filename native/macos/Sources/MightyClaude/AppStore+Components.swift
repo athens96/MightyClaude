@@ -38,7 +38,7 @@ extension AppStore {
     }
 
     private func requiredPluginRow(_ plugin: RequiredPlugin) async -> ComponentStatus {
-        guard let workspace = snapshot.workspaces.first else {
+        guard let workspace = snapshot.workspaces.first(where: { $0.remote == nil }) else {
             return ComponentStatus(id: "plugin:" + plugin.id, title: plugin.title, state: "attention", detail: L("settings.components.pluginNeedsWorkspace"))
         }
         let snapshotValue = plugin.provider == "codex" ? await codexPlugins.snapshot(workspace: workspace) : await claudePlugins.snapshot(workspace: workspace)
@@ -62,7 +62,7 @@ extension AppStore {
                 }
             case (let id, "install-plugin"):
                 guard let plugin = ComponentCatalog.requiredPlugins.first(where: { "plugin:" + $0.id == id }),
-                      let workspace = snapshot.workspaces.first else { break }
+                      let workspace = snapshot.workspaces.first(where: { $0.remote == nil }) else { break }
                 let result = plugin.provider == "codex" ? await codexPlugins.install(pluginID: plugin.pluginID, workspace: workspace) : await claudePlugins.install(pluginID: plugin.pluginID, scope: "user", workspace: workspace)
                 componentMessage = result.detail
             default: break

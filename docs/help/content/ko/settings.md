@@ -68,6 +68,9 @@ CLI를 처음 설치한 방법(npm, Homebrew 등)을 그대로 씁니다.
 ## 모바일 리모트 {#mobile}
 {{ui:settings.nav.mobile}} 탭에서 휴대폰을 연결하고 화면 보기를 허용합니다. [휴대폰 원격](phone.md)을 보세요.
 
+## 원격 연결 {#remote}
+{{ui:settings.remote.navTitle}} 탭에서 이 Mac의 워크스페이스를 Tailscale로 공유하거나, 다른 Mac이 공유한 워크스페이스에 연결합니다. [원격 연결 (Tailscale)](remote.md)을 보세요.
+
 ## 펫과 알림 {#companion}
 {{ui:settings.nav.companion}} 탭에서 데스크톱 펫과 완료 알림을 정합니다.
 - {{ui:companion.settings.enabled}}: 화면 위를 다니는 너구리 펫을 켭니다. 펫을 끌어 옮기고, 누르면 말풍선이 열리고 닫힙니다.

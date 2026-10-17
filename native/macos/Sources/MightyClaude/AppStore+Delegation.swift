@@ -230,7 +230,8 @@ extension AppStore {
     /// The folder a top-level agent pane's runs work in, where its children's
     /// worktrees branch from; nil for a pane without its workspace.
     func worktreeHostFolder(_ session: RunSession) -> String? {
-        snapshot.workspaces.first { $0.id == session.workspaceId }.map { DelegationPanes.runWorkspace(for: session, in: $0).path }
+        // A remote workspace's folder is on its host: no worktree branches here.
+        snapshot.workspaces.first { $0.id == session.workspaceId && $0.remote == nil }.map { DelegationPanes.runWorkspace(for: session, in: $0).path }
     }
 
     /// A delegated child's worktree when its runs work in a folder inside it,
@@ -403,7 +404,7 @@ extension AppStore {
     /// `workspace_has_children` while delegation has open children or child
     /// worktrees not cleaned up in the workspace; nil when it may be removed.
     func workspaceRemovalRefusal(_ workspace: Workspace) async -> DelegationReasonCode? {
-        guard let delegation else { return nil }
+        guard let delegation, workspace.remote == nil else { return nil }
         let panes = Set(snapshot.sessions.filter { $0.workspaceId == workspace.id }.map(\.id))
         return await delegation.workspaceRemovalRefusal(paneIds: panes, folder: workspace.path)
     }

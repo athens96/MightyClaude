@@ -526,7 +526,8 @@ public actor ProcessRunner {
         guard !shuttingDown else { throw MightyError(L("common.appClosing")) }
         guard runs[request.sessionId] == nil else { throw MightyError(L("run.error.paneAlreadyRunning")) }
         guard runs.count < 16 else { throw MightyError(L("run.error.concurrentLimit")) }
-        guard workspace.id == request.workspaceId, StateRepository.absolutePath(workspace.path) else { throw MightyError(L("run.error.approvedWorkspaceOnly")) }
+        // A remote workspace's path is the host's: it never becomes a local working folder.
+        guard workspace.id == request.workspaceId, workspace.remote == nil, StateRepository.absolutePath(workspace.path) else { throw MightyError(L("run.error.approvedWorkspaceOnly")) }
         var directory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: workspace.path, isDirectory: &directory), directory.boolValue else { throw MightyError(L("workspace.error.folderMissing")) }
         let run = ManagedProcess(request); runs[request.sessionId] = run

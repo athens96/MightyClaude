@@ -38,9 +38,11 @@ extension AppStore {
     func pluginWorkspaceBlockedReason(_ workspace: Workspace) -> String? {
         guard canManageCLIUpdates else { return L("plugins.appNotReady") }
         guard let current = snapshot.workspaces.first(where: { $0.id == workspace.id }),
-              current.path == workspace.path else {
+              current.path == workspace.path, current.remote == workspace.remote else {
             return L("windows.updates.workspaceChanged")
         }
+        // A remote path must never become the working folder of a local CLI command.
+        guard current.remote == nil else { return L("remote.workspace.pluginsOnHost") }
         return nil
     }
 

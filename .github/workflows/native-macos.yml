@@ -34,6 +34,14 @@ jobs:
           # Scenarios S1 and S2 leave their records here for the record script.
           MIGHTY_DELEGATION_RECORD_EXPORT: ${{ runner.temp }}/delegation-records
         run: bash scripts/test-native-macos.sh
+      - name: Remote workspaces — host and client talk over loopback
+        # One app shares a workspace on loopback (injected in code, as only tests
+        # may) and another connects to it, runs a command and a scripted Claude
+        # turn there, answers its tool request, and is refused a wrong key, an
+        # oversize body, an unshared folder and a redirect. The step above runs
+        # these too; this one names them, and runs even when an unrelated test failed.
+        if: success() || failure()
+        run: bash scripts/test-native-macos.sh --filter '\.RemoteWorkspace[A-Za-z]*Tests/'
       - name: Delegation record script judges its fixtures and the S1 and S2 records
         # Read-only: passed on the S1-like and S2-like fixtures and on both
         # exported scenario records, failed or invalid on the broken fixtures.
