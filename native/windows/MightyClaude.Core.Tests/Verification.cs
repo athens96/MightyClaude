@@ -436,6 +436,8 @@ internal static class Verification
         await Test("delegation: the app commits a Codex or Antigravity child's work", DelegationHumanChildVerification.TheAppCommitsACodexOrAntigravityChildsWork);
         await Test("delegation: a card merge that conflicts asks the child once per report", DelegationHumanChildVerification.ACardMergeThatConflictsAsksTheChildOncePerReport);
         await Test("delegation: git says why it gave no result, and only its own lock goes", DelegationHumanChildVerification.GitSaysWhyItGaveNoResultAndOnlyItsOwnLockGoes);
+        await Test("delegation: every agent's modes and widest child modes are native/contracts/fixtures/delegation-modes.json", DelegationCrossAgentVerification.TheSharedModeTablesHold);
+        await Test("delegation: agents are named by their words, and modes compare within and across agents", DelegationCrossAgentVerification.AgentsAndModesAcrossAgents);
         await Test("delegation scenario S1: two children, a human's approval, a fast-forward and a discard", DelegationScenarioVerification.S1);
         await Test("delegation scenario S2: held notices released together by a send or run next after a relaunch", DelegationScenarioVerification.S2);
         await Test("delegation scenario S3: a diverged child's held follow-ups reach it once after a relaunch", DelegationScenarioVerification.S3);
