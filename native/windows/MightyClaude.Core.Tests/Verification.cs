@@ -442,6 +442,10 @@ internal static class Verification
         await Test("delegation: delegate takes an optional agent, and every answer names the child's agent", DelegationCrossAgentVerification.TheToolTakesAnOptionalAgentAndNamesItEverywhere);
         await Test("delegation: a child's words follow its agent and name a Claude parent as one", DelegationCrossAgentVerification.AChildsWordsFollowItsAgent);
         await Test("delegation: the human's child of another agent takes that agent's last-used model and effort", DelegationCrossAgentVerification.AChildOfAnotherAgentTakesThatAgentsDefaults);
+        await Test("delegation: a Claude parent's Codex child gets the worktree and the app's commit", DelegationCrossAgentVerification.AClaudeParentsCodexChildGetsTheAppsCommit);
+        await Test("delegation: a Codex parent's Claude child commits its own work", DelegationCrossAgentVerification.ACodexParentsClaudeChildCommitsItsOwnWork);
+        await Test("delegation: an unknown or unavailable agent, or a mode it cannot take, is refused and nothing is made", DelegationCrossAgentVerification.TheWrongAgentOrModeIsRefusedAndNothingIsMade);
+        await Test("delegation: the cap counts every agent, and the same call for another agent is another child", DelegationCrossAgentVerification.TheCapCountsEveryAgent);
         await Test("delegation scenario S1: two children, a human's approval, a fast-forward and a discard", DelegationScenarioVerification.S1);
         await Test("delegation scenario S2: held notices released together by a send or run next after a relaunch", DelegationScenarioVerification.S2);
         await Test("delegation scenario S3: a diverged child's held follow-ups reach it once after a relaunch", DelegationScenarioVerification.S3);

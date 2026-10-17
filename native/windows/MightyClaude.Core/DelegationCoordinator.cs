@@ -90,6 +90,11 @@ public interface IDelegationHost
     Task StopRun(string sessionId);
     /// <summary>Shows <paramref name="text"/> in the pane's transcript as the app's note. Does nothing for a closed pane; a host that shows no notes keeps this.</summary>
     Task Note(string text, string sessionId) => Task.CompletedTask;
+    /// <summary>
+    /// Whether the <paramref name="provider"/> agent's CLI can run a child, as the app last learnt it, for a child of an agent
+    /// other than its parent's. The app never asks a CLI for this. A host that knows nothing against any agent keeps this.
+    /// </summary>
+    Task<DelegationAgentAvailability> AgentAvailability(string provider) => Task.FromResult(DelegationAgentAvailability.Ready);
 }
 
 /// <summary>
@@ -245,7 +250,7 @@ public sealed partial class DelegationCoordinator : IDelegationRequestHandler
     private Task<DelegationResponse> Perform(DelegationToolManifest.Tool tool, IReadOnlyDictionary<string, string> arguments, DelegationCaller caller)
     {
         string Value(string name) => arguments.GetValueOrDefault(name) ?? "";
-        if (tool == DelegationToolManifest.Delegate) return DelegateNow(Value("task"), Value("mode"), caller);
+        if (tool == DelegationToolManifest.Delegate) return DelegateNow(Value("task"), Value("mode"), arguments.GetValueOrDefault("agent"), caller);
         if (tool == DelegationToolManifest.ListChildren) return Task.FromResult(ListChildren(caller));
         if (tool == DelegationToolManifest.ChildStatus) return Task.FromResult(ChildStatus(Value("child"), caller));
         if (tool == DelegationToolManifest.Merge) return MergeNow(Value("child"), Value("expected_head"), caller);

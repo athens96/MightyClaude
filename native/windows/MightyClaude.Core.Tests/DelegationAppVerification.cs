@@ -401,8 +401,8 @@ internal static class DelegationAppVerification
             // A run's end whose notice the host's delivery throws on: the notice stays pending, never saved delivered.
             File.WriteAllText(ChildWorktree.ReportFileIn(child.WorktreePath), "# Report\n");
             Check(await coordinator.ChildRunEnded("c1", "r1", ChildRunEnd.Finished) is { Lane: DeliveryLane.Pending } && host.Delivers > 0 && store.Load().Notices.Single().Lane == DeliveryLane.Pending, "an item the host threw on is not delivered");
-            // Every tool call is answered; a delegate whose pane the host throws on fails to start instead of staying creating.
-            foreach (var tool in DelegationToolManifest.All) Check(await coordinator.Handle(Request(tool.Name, [.. tool.Arguments.Select(argument => (argument.Name, argument.Name == "mode" ? "plan" : argument.Name == "child" ? "c1" : "x"))]), Parent) is not null, tool.Name + " is answered");
+            // Every tool call is answered; a delegate (naming the caller's own agent) whose pane the host throws on fails to start instead of staying creating.
+            foreach (var tool in DelegationToolManifest.All) Check(await coordinator.Handle(Request(tool.Name, [.. tool.Arguments.Select(argument => (argument.Name, argument.Name == "mode" ? "plan" : argument.Name == "child" ? "c1" : argument.Name == "agent" ? "claude" : "x"))]), Parent) is not null, tool.Name + " is answered");
             Check(await Eventually(() => coordinator.File.Children.Any(record => record.Id != "c1" && record.State == ChildState.Failed)) && !coordinator.File.Children.Any(record => record.State == ChildState.Creating), "a start the host threw on fails, with no child left creating");
         }
         finally { place.Remove(); }

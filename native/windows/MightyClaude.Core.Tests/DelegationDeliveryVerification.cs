@@ -29,6 +29,12 @@ internal sealed class DelegationTestHost(DelegationFileStore? store = null, stri
     internal Func<string, Task>? StateGate;
     /// <summary>Called with the child's id and its first run's id while the run is being started.</summary>
     internal Func<string, string, Task>? OnFirstRun;
+    private readonly Dictionary<string, DelegationAgentAvailability> agents = [];
+    private readonly List<string> asked = [];
+    /// <summary>Each agent the coordinator asked about, in order.</summary>
+    internal List<string> AvailabilityAsked { get { lock (gate) return [.. asked]; } }
+    /// <summary>What the host last learnt of <paramref name="provider"/>'s CLI; anything not set is ready.</summary>
+    internal void SetAgent(string provider, DelegationAgentAvailability availability) { lock (gate) agents[provider] = availability; }
 
     internal List<Handed> AllHanded { get { lock (gate) return [.. log]; } }
     /// <summary>The inputs that reached a pane.</summary>
@@ -87,6 +93,11 @@ internal sealed class DelegationTestHost(DelegationFileStore? store = null, stri
     {
         lock (gate) notes.Add((sessionId, text));
         return Task.CompletedTask;
+    }
+
+    public Task<DelegationAgentAvailability> AgentAvailability(string provider)
+    {
+        lock (gate) { asked.Add(provider); return Task.FromResult(agents.GetValueOrDefault(provider, DelegationAgentAvailability.Ready)); }
     }
 
     public Task StopRun(string sessionId)

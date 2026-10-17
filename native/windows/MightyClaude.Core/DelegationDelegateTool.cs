@@ -51,32 +51,45 @@ public sealed partial class DelegationCoordinator
     };
 
     /// <summary>
-    /// delegate(task, mode) from <paramref name="caller"/>. The first rule that applies answers:
-    /// 1. A mode that is not one of the caller's agent's, a Codex mode in which the child could not change files (manual), or an
-    ///    empty task, one with a NUL character or one over 64 KiB, is answered with an error. The child's first run input holds the whole task, and no run input may hold a NUL; 64 KiB is its TASK.md copy's
-    ///    cap, which keeps that input well under a run input's 100,000 characters.
-    /// 2. The same call earlier in the caller's current run (the same request key) gets that same child, in whatever state it is now.
-    /// 3. <c>child_cannot_delegate</c> (the caller has a parent link), <c>width_cap</c> (it has three open children),
-    ///    <c>wider_mode</c> (the mode is wider than the caller's stored mode now).
-    /// 4. <c>not_git</c>, <c>detached_head</c>, <c>unborn_branch</c>, <c>low_disk</c>: the caller's folder cannot host a child worktree.
-    /// 5. <c>store_full</c>: even after pruning, the delegation file has no room for the child's record and its report copy.
+    /// delegate(task, mode, agent) from <paramref name="caller"/> (M/DelegationDelegateTool.swift delegate). The first rule that applies answers:
+    /// 1. <c>agent_unknown</c>: <paramref name="agent"/> names no agent (claude, codex, antigravity or gemini, any case). Left out or
+    ///    blank, the child runs the caller's own agent.
+    /// 2. A mode that is not one of the child agent's, one in which that child could not change files (a manual Codex child, a plan
+    ///    or manual Antigravity child), or an empty task, one with a NUL character or one over 64 KiB, is answered with an error.
+    /// 3. The same call earlier in the caller's current run (the same request key) gets that same child, in whatever state it is now.
+    /// 4. <c>child_cannot_delegate</c> (the caller has a parent link), <c>width_cap</c> (it has three open children, of any agents),
+    ///    <c>wider_mode</c> (the mode is wider than the caller's stored mode now: by its agent's order, or for another agent by
+    ///    <see cref="DelegationProviders.Capabilities"/>), <c>agent_unavailable</c> (another agent than the caller's whose CLI the
+    ///    app last found not installed or signed out).
+    /// 5. <c>not_git</c>, <c>detached_head</c>, <c>unborn_branch</c>, <c>low_disk</c>: the caller's folder cannot host a child worktree.
+    /// 6. <c>store_full</c>: even after pruning, the delegation file has no room for the child's record and its report copy.
     /// Every refusal comes before anything is made and stores no key. Otherwise the child's record is saved in creating, with
     /// the call's request key and a copy of its TASK.md, and the answer names it while its start goes on in the background.
     /// </summary>
-    private async Task<DelegationResponse> DelegateNow(string task, string mode, DelegationCaller caller)
+    private async Task<DelegationResponse> DelegateNow(string task, string mode, string? agent, DelegationCaller caller)
     {
-        var modes = DelegationProviders.StartingModes(caller.Provider);
-        if (!modes.Contains(mode)) return DelegationResponse.Failure($"mode must be one of {string.Join(", ", modes)}.");
-        if (!DelegationProviders.ChildCanWrite(caller.Provider, mode))
-            return DelegationResponse.Failure($"A {ProviderMark.Label(caller.Provider)} child in {mode} mode cannot change files, so it could not do the task or leave its work for a merge. Ask for one of {string.Join(", ", modes.Where(writing => DelegationProviders.ChildCanWrite(caller.Provider, writing)))}, no wider than your own mode.");
+        string childAgent;
+        if (agent is { } named && !string.IsNullOrWhiteSpace(named))
+        {
+            if (DelegationProviders.Agent(named) is not { } found)
+                return DelegationResponse.Refusal(DelegationReasonCode.AgentUnknown, $"\"{DelegationNames.Prefix(named, 40)}\" is not an agent; agent must be claude, codex or antigravity, or left out for your own");
+            childAgent = found;
+        }
+        else childAgent = caller.Provider;
+        var modes = DelegationProviders.StartingModes(childAgent); var label = ProviderMark.Label(childAgent);
+        if (!modes.Contains(mode)) return DelegationResponse.Failure(childAgent == caller.Provider ? $"mode must be one of {string.Join(", ", modes)}." : $"mode must be one of a {label} child's: {string.Join(", ", modes)}.");
+        if (!DelegationProviders.ChildCanWrite(childAgent, mode))
+            return DelegationResponse.Failure($"{(label.StartsWith('A') ? "An" : "A")} {label} child in {mode} mode cannot change files, so it could not do the task or leave its work for a merge. Ask for one of {string.Join(", ", modes.Where(writing => DelegationProviders.ChildCanWrite(childAgent, writing)))}, no wider than your own mode.");
         if (string.IsNullOrWhiteSpace(task)) return DelegationResponse.Failure("delegate needs a task: what the child should do.");
         if (task.Contains('\0')) return DelegationResponse.Failure("A task may not contain a NUL character.");
         if (Encoding.UTF8.GetByteCount(task) > DelegationFileStore.MaximumCopyBytes) return DelegationResponse.Failure("A task may be at most 64 KiB.");
         var parentId = caller.PaneId;
         if (await Host(() => host.PaneState(parentId)) is not { } parent) return DelegationResponse.Failure("The calling pane is closed.");
-        var key = DelegationRequestKey.Make(parentId, parent.RunId ?? "", task, mode);
+        var otherAgent = childAgent == caller.Provider ? null : childAgent;
+        var key = DelegationRequestKey.Make(parentId, parent.RunId ?? "", task, mode, otherAgent);
         if (SameCall(key, parentId) is { } same) return DelegationResponse.Delegated(same);
-        if (DelegateRefusal(parentId, parent, mode) is { } reason) return DelegationResponse.Refusal(reason);
+        if (DelegateRefusal(parentId, parent, mode, childAgent) is { } reason) return DelegationResponse.Refusal(reason);
+        if (otherAgent is not null && Unavailable(childAgent, await Host(() => host.AgentAvailability(childAgent))) is { } why) return DelegationResponse.Refusal(DelegationReasonCode.AgentUnavailable, why);
         ChildWorktreeBase start;
         switch (await worktrees.Check(parent.Folder))
         {
@@ -87,9 +100,9 @@ public sealed partial class DelegationCoordinator
         var context = await PruneContext();
         // Nothing below suspends until the record is saved, so two calls at once cannot both pass these checks.
         if (SameCall(key, parentId) is { } repeated) return DelegationResponse.Delegated(repeated);
-        if (DelegateRefusal(parentId, parent, mode) is { } late) return DelegationResponse.Refusal(late);
+        if (DelegateRefusal(parentId, parent, mode, childAgent) is { } late) return DelegationResponse.Refusal(late);
         var id = Wire.Id();
-        var child = ChildRecord.Make(id, parentId, worktrees.WorktreePath(id), start.ParentBranch, start.BaseCommit, mode, key, parentCheckout: start.Repository, provider: parent.Provider);
+        var child = ChildRecord.Make(id, parentId, worktrees.WorktreePath(id), start.ParentBranch, start.BaseCommit, mode, key, parentCheckout: start.Repository, provider: childAgent);
         try
         {
             if (File.Admitting(child, context, DelegationCopy.Of(id, DelegationCopyKind.Task, 0, Encoding.UTF8.GetBytes(task))) is not DelegationAdmission.Admitted admitted) return DelegationResponse.Refusal(DelegationReasonCode.StoreFull);
@@ -98,19 +111,19 @@ public sealed partial class DelegationCoordinator
         catch (DelegationFileException ex) when (ex.Error == DelegationFileError.Full) { return DelegationResponse.Refusal(DelegationReasonCode.StoreFull); }
         catch (Exception ex) when (DelegationFileStore.IsSaveFailure(ex)) { return DelegationResponse.Failure("The delegation file could not be saved, so no child was made."); }
         starting.Add(id);
-        _ = turn.StartNew(() => StartChild(id, start, task));
+        _ = turn.StartNew(() => StartChild(id, start, task, parent.Provider));
         return DelegationResponse.Delegated(child);
     }
 
     /// <summary>
-    /// The child's start, after delegate (or the human's send) has answered: its worktree, then its pane of the parent's agent in
+    /// The child's start, after delegate (or the human's send) has answered: its worktree, then its pane of its own agent in
     /// the starting mode, then its first run, which <paramref name="human"/> starts when the human's send made the child (with the
     /// send's attachments) and the host otherwise. The child moves to running once that run has started, as the run its parent
     /// awaits, and otherwise to failed, with one failed_to_start notice when the parent's delegate made it, or
     /// <paramref name="human"/>'s failure call when the human's send did. Whatever a failed start made stays until a human
     /// discards the child; the app never removes it on its own.
     /// </summary>
-    private async Task StartChild(string id, ChildWorktreeBase start, string task, HumanChildStarter? human = null)
+    private async Task StartChild(string id, ChildWorktreeBase start, string task, string parentAgent, HumanChildStarter? human = null)
     {
         string? runId = null;
         try
@@ -123,7 +136,7 @@ public sealed partial class DelegationCoordinator
                 try
                 {
                     if (await Host(() => host.CreatePane(pane)))
-                        runId = human is not null ? await Host(() => human.Start(id, HumanFirstRun(task, worktree, child.Agent))) : await Host(() => host.StartRun(id, FirstInput(task, worktree, child.Agent)));
+                        runId = human is not null ? await Host(() => human.Start(id, HumanFirstRun(task, worktree, child.Agent, parentAgent))) : await Host(() => host.StartRun(id, FirstInput(task, worktree, child.Agent, parentAgent)));
                 }
                 catch (Exception ex) when (ex is not OutOfMemoryException) { runId = null; }
             }
@@ -221,7 +234,7 @@ public sealed partial class DelegationCoordinator
         if (!DelegationProviders.IsAgentPane(parent.Kind, parent.Provider)) return new HumanChildStart.Refused(DelegationReasonCode.ClaudeOnly);
         var mode = planFirst && DelegationProviders.StartingModes(parent.Provider).Contains("plan") ? "plan" : parent.PermissionMode;
         if (!DelegationProviders.ChildCanWrite(parent.Provider, mode)) return new HumanChildStart.Failed(Locale.Get("delegation.human.error.readOnlyMode"));
-        if (DelegateRefusal(parentId, parent, mode, byHuman: true) is { } reason) return new HumanChildStart.Refused(reason);
+        if (DelegateRefusal(parentId, parent, mode, parent.Provider, byHuman: true) is { } reason) return new HumanChildStart.Refused(reason);
         ChildWorktreeBase start;
         switch (await worktrees.Check(parent.Folder))
         {
@@ -231,7 +244,7 @@ public sealed partial class DelegationCoordinator
         }
         var context = await PruneContext();
         // Nothing below suspends until the record is saved, so two sends at once cannot both pass the width cap.
-        if (DelegateRefusal(parentId, parent, mode, byHuman: true) is { } late) return new HumanChildStart.Refused(late);
+        if (DelegateRefusal(parentId, parent, mode, parent.Provider, byHuman: true) is { } late) return new HumanChildStart.Refused(late);
         var id = Wire.Id();
         // No repeat to recognise: each send is its own child.
         var key = DelegationRequestKey.Make(parentId, "human-" + id, text, mode);
@@ -244,7 +257,7 @@ public sealed partial class DelegationCoordinator
         catch (DelegationFileException ex) when (ex.Error == DelegationFileError.Full) { return new HumanChildStart.Refused(DelegationReasonCode.StoreFull); }
         catch (Exception ex) when (DelegationFileStore.IsSaveFailure(ex)) { return new HumanChildStart.Failed(Locale.Get("delegation.human.error.notSaved")); }
         starting.Add(id);
-        _ = turn.StartNew(() => StartChild(id, start, text, starter));
+        _ = turn.StartNew(() => StartChild(id, start, text, parent.Provider, starter));
         return new HumanChildStart.Started(child);
     });
 
@@ -252,17 +265,18 @@ public sealed partial class DelegationCoordinator
     private ChildRecord? SameCall(string key, string parentId) => File.Children.Find(child => child.ParentSessionId == parentId && child.RequestKey == key);
 
     /// <summary>
-    /// Why the pane <paramref name="parentId"/>, now <paramref name="parent"/>, may not have a new child in <paramref name="mode"/>,
-    /// or null when it may. The cap counts the open children of the same kind: those its delegate made, or (<paramref name="byHuman"/>)
-    /// those the human started from its composer, so neither kind blocks the other.
+    /// Why the pane <paramref name="parentId"/>, now <paramref name="parent"/>, may not have a new child of the
+    /// <paramref name="child"/> agent in <paramref name="mode"/>, or null when it may. The cap counts the open children of the same
+    /// kind, of every agent: those its delegate made, or (<paramref name="byHuman"/>) those the human started from its composer, so
+    /// neither kind blocks the other.
     /// </summary>
-    private DelegationReasonCode? DelegateRefusal(string parentId, DelegationPaneState parent, string mode, bool byHuman = false)
+    private DelegationReasonCode? DelegateRefusal(string parentId, DelegationPaneState parent, string mode, string child, bool byHuman = false)
     {
         // A pane with a parent link is already one layer down.
-        var depth = parent.ParentSessionId is not null || File.Children.Any(child => child.Id == parentId) ? 1 : 0;
+        var depth = parent.ParentSessionId is not null || File.Children.Any(record => record.Id == parentId) ? 1 : 0;
         if (depth >= MaximumDepth) return DelegationReasonCode.ChildCannotDelegate;
-        if (File.Children.Count(child => child.ParentSessionId == parentId && child.State.IsOpen() && child.NotifiesParent != byHuman) >= MaximumOpenChildren) return DelegationReasonCode.WidthCap;
-        return IsNoWider(mode, parent.PermissionMode, parent.Provider) ? null : DelegationReasonCode.WiderMode;
+        if (File.Children.Count(record => record.ParentSessionId == parentId && record.State.IsOpen() && record.NotifiesParent != byHuman) >= MaximumOpenChildren) return DelegationReasonCode.WidthCap;
+        return DelegationProviders.IsNoWider(mode, child, parent.PermissionMode, parent.Provider) ? null : DelegationReasonCode.WiderMode;
     }
 
     /// <summary>

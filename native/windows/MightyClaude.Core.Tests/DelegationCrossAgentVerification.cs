@@ -262,4 +262,137 @@ internal static class DelegationCrossAgentVerification
         Check(next.Sessions.Single(session => session.Id == "c3") is { Provider: "codex", Model: "gpt-5.6-sol" } made && made.Settings is { Effort: "low", PermissionMode: "acceptEdits" }, "the Codex template's model and effort, its own mode");
         return Task.CompletedTask;
     }
+
+    /// <summary>A temp repository whose pane "parent", running <paramref name="Provider"/> in <paramref name="Mode"/>, calls the tools from a run started in that mode.</summary>
+    private sealed record CrossPlace(DelegationPlace Files, DelegationTestHost Host, DelegationCoordinator Coordinator, string Provider, string Mode)
+    {
+        internal byte[] Bytes() => File.ReadAllBytes(Files.Store.FilePath);
+        internal Task<DelegationResponse> Call(string tool, params (string Name, string Value)[] arguments) =>
+            Coordinator.Handle(Request(tool, arguments), new DelegationCaller("parent", "claude", Provider, Delegation: true, PermissionMode: Mode));
+        internal Task<bool> WaitFor(string id, ChildState state) => Eventually(async () => Coordinator.File.Children.Find(child => child.Id == id)?.State == state && !await Coordinator.IsStarting(id));
+        /// <summary>A refused call made nothing: the same file, no worktree, no pane or run.</summary>
+        internal void NothingMade(byte[] before) =>
+            Check(Bytes().SequenceEqual(before) && !Directory.Exists(Files.Root) && Host.CreatedPanes.Count == 0 && Host.StartedRuns.Count == 0, "the refused call made nothing");
+        /// <summary>The child's run finished with its report written.</summary>
+        internal async Task Report(ChildRecord child, string runId)
+        {
+            File.WriteAllText(ChildWorktree.ReportFileIn(child.WorktreePath), "# Report\n\nDone.\n");
+            await Coordinator.ChildRunEnded(child.Id, runId, ChildRunEnd.Finished);
+        }
+        internal void Remove() => Files.Remove();
+    }
+
+    private static async Task<CrossPlace> Cross(string provider, string mode)
+    {
+        var files = new DelegationPlace();
+        var store = new DelegationFileStore(files.Profile); store.Save(DelegationFile.Empty);
+        var host = new DelegationTestHost(store) { FirstRun = id => "run-of-" + id, MakesPanes = true };
+        Directory.CreateDirectory(files.Repo); await files.Repository(1);
+        host.Set(new DelegationPaneState("parent", mode, files.Repo, Provider: provider, RunId: "run-1", Activity: DelegationPaneActivity.Running));
+        return new(files, host, new(store, host, new ChildWorktreeMaker(files.Root, _ => 50_000_000_000), () => true), provider, mode);
+    }
+
+    private static ChildRecord Made(HumanChildStart answer) => answer is HumanChildStart.Started { Child: var child } ? child : throw new InvalidOperationException("No child was made: " + answer);
+
+    internal static async Task AClaudeParentsCodexChildGetsTheAppsCommit()
+    {
+        var place = await Cross("claude", "auto");
+        try
+        {
+            var start = await place.Files.Git("rev-parse", "HEAD");
+            var info = (await place.Call("delegate", ("task", "Add a note."), ("mode", "onRequest"), ("agent", "codex"))).Child ?? throw new InvalidOperationException("delegate made no Codex child");
+            Check(info is { Agent: "codex", StartingMode: "onRequest" } && await place.WaitFor(info.Id, ChildState.Running), "a Codex child in onRequest runs");
+            var child = place.Coordinator.File.Children.Single();
+            Check(child is { Provider: "codex", Agent: "codex", NotifiesParent: true }, "its record runs Codex and notifies its parent");
+            SameList(place.Host.CreatedPanes.Select(pane => pane.Provider), ["codex"], "its pane runs Codex");
+            SameList(place.Host.CreatedPanes.Select(pane => pane.Mode), ["onRequest"], "in onRequest");
+            SameList(place.Host.AvailabilityAsked, ["codex"], "the host was asked about Codex once");
+            var first = place.Host.StartedRuns.Single().Input;
+            Check(first.StartsWith("Another Claude pane", StringComparison.Ordinal) && first.Contains("Do not commit", StringComparison.Ordinal), "a Codex child's first words, from a Claude pane");
+            // The app commits what it left when its report changed.
+            File.WriteAllText(Path.Combine(child.WorktreePath, "note.txt"), "Note\n");
+            await place.Report(child, "run-of-" + child.Id);
+            var head = await place.Files.GitIn(child.WorktreePath, "rev-parse", "HEAD");
+            Check(head != start && await place.Files.GitIn(child.WorktreePath, "log", "-1", "--format=%s") == ChildAutoCommit.Message(child.Id, 1) && place.Coordinator.File.Children.Single().ReportHead == head, "the app committed the Codex child's work");
+            // The parent's tools name its agent, and its notice goes to the parent like any other.
+            SameList((await place.Call("list_children")).Children!.Select(listed => listed.Agent), ["codex"], "list_children");
+            Same((await place.Call("child_status", ("child", child.Id))).Status?.Agent, "codex", "child_status");
+            SameList(place.Coordinator.File.Notices.Select(notice => notice.ChildId), [child.Id], "one notice for the parent");
+        }
+        finally { place.Remove(); }
+    }
+
+    internal static async Task ACodexParentsClaudeChildCommitsItsOwnWork()
+    {
+        var place = await Cross("codex", "acceptEdits");
+        try
+        {
+            var start = await place.Files.Git("rev-parse", "HEAD");
+            var info = (await place.Call("delegate", ("task", "Add a note."), ("mode", "acceptEdits"), ("agent", "claude"))).Child ?? throw new InvalidOperationException("delegate made no Claude child");
+            Check(info.Agent == "claude" && await place.WaitFor(info.Id, ChildState.Running), "a Claude child runs");
+            var child = place.Coordinator.File.Children.Single();
+            // A Claude child's record keeps no provider, as every Claude child's.
+            Check(child is { Provider: null, Agent: "claude" }, "its record is a Claude child's");
+            SameList(place.Host.CreatedPanes.Select(pane => pane.Provider), ["claude"], "its pane runs Claude");
+            var first = place.Host.StartedRuns.Single().Input;
+            Check(first.StartsWith("Another pane", StringComparison.Ordinal) && first.Contains("commit your work", StringComparison.Ordinal) && !first.Contains("Do not commit", StringComparison.Ordinal), "a Claude child's first words, from a Codex pane");
+            // What it leaves uncommitted stays so: the app never commits for a Claude child.
+            File.WriteAllText(Path.Combine(child.WorktreePath, "note.txt"), "Note\n");
+            await place.Report(child, "run-of-" + child.Id);
+            Same(await place.Files.GitIn(child.WorktreePath, "rev-parse", "HEAD"), start, "no app commit");
+            Same(place.Coordinator.File.Children.Single().ReportHead, start, "the report is at the start");
+            // The Codex parent still may not merge by tool outside fullAccess.
+            Same(await place.Call("merge", ("child", child.Id), ("expected_head", start)), DelegationResponse.Refusal(DelegationReasonCode.MergeHumanOnly), "merges follow the parent's agent");
+        }
+        finally { place.Remove(); }
+    }
+
+    internal static async Task TheWrongAgentOrModeIsRefusedAndNothingIsMade()
+    {
+        var place = await Cross("claude", "acceptEdits");
+        try
+        {
+            place.Host.SetAgent("gemini", DelegationAgentAvailability.NotInstalled);
+            place.Host.SetAgent("codex", DelegationAgentAvailability.SignedOut);
+            var before = place.Bytes();
+            var unknown = await place.Call("delegate", ("task", "Do it."), ("mode", "acceptEdits"), ("agent", "gpt"));
+            Check(unknown.Refused == DelegationReasonCode.AgentUnknown && unknown.Error?.Contains("\"gpt\"", StringComparison.Ordinal) == true, "an unknown agent");
+            Same(await place.Call("delegate", ("task", "Do it."), ("mode", "acceptEdits"), ("agent", "antigravity")),
+                DelegationResponse.Refusal(DelegationReasonCode.AgentUnavailable, "Antigravity is not installed on this PC; the user can check it in Mighty Claude's Settings › CLI"), "an agent not installed");
+            Same(await place.Call("delegate", ("task", "Do it."), ("mode", "onRequest"), ("agent", "codex")),
+                DelegationResponse.Refusal(DelegationReasonCode.AgentUnavailable, "Codex is not signed in on this PC; the user can check it in Mighty Claude's Settings › CLI"), "an agent signed out");
+            // A mode that is not the agent's, or one in which its child cannot write: an error.
+            Same((await place.Call("delegate", ("task", "Do it."), ("mode", "auto"), ("agent", "codex"))).Error, "mode must be one of a Codex child's: manual, acceptEdits, onRequest, fullAccess.", "not a Codex mode");
+            Check((await place.Call("delegate", ("task", "Do it."), ("mode", "manual"), ("agent", "codex"))).Error?.StartsWith("A Codex child in manual mode cannot change files", StringComparison.Ordinal) == true, "a read-only Codex child");
+            Check((await place.Call("delegate", ("task", "Do it."), ("mode", "plan"), ("agent", "gemini"))).Error?.StartsWith("An Antigravity child in plan mode cannot change files", StringComparison.Ordinal) == true, "an Antigravity plan child");
+            // Claude acceptEdits asks before Bash: a Codex child that runs commands unasked, or has full access, is wider.
+            place.Host.SetAgent("codex", DelegationAgentAvailability.Ready);
+            Same(await place.Call("delegate", ("task", "Do it."), ("mode", "acceptEdits"), ("agent", "codex")), DelegationResponse.Refusal(DelegationReasonCode.WiderMode), "Codex acceptEdits is wider");
+            Same(await place.Call("delegate", ("task", "Do it."), ("mode", "fullAccess"), ("agent", "codex")), DelegationResponse.Refusal(DelegationReasonCode.WiderMode), "Codex fullAccess is wider");
+            place.NothingMade(before);
+            Check(!place.Host.AvailabilityAsked.Contains("claude"), "an agent the parent runs itself is never asked about");
+        }
+        finally { place.Remove(); }
+    }
+
+    internal static async Task TheCapCountsEveryAgent()
+    {
+        var place = await Cross("claude", "fullAccess");
+        try
+        {
+            var own = (await place.Call("delegate", ("task", "Same task."), ("mode", "acceptEdits"))).Child ?? throw new InvalidOperationException("no own child");
+            var codex = (await place.Call("delegate", ("task", "Same task."), ("mode", "acceptEdits"), ("agent", "codex"))).Child ?? throw new InvalidOperationException("no Codex child");
+            Check(own.Id != codex.Id && own.Agent == "claude" && codex.Agent == "codex", "the same call for another agent is another child");
+            // Naming the caller's own agent is leaving it out; repeats get the same children.
+            Same((await place.Call("delegate", ("task", "Same task."), ("mode", "acceptEdits"), ("agent", "claude"))).Child?.Id, own.Id, "agent claude is the caller's own");
+            Same((await place.Call("delegate", ("task", "Same task."), ("mode", "acceptEdits"), ("agent", " "))).Child?.Id, own.Id, "a blank agent is the caller's own");
+            Same((await place.Call("delegate", ("task", "Same task."), ("mode", "acceptEdits"), ("agent", "CODEX"))).Child?.Id, codex.Id, "the repeat for Codex");
+            var gemini = (await place.Call("delegate", ("task", "Same task."), ("mode", "fullAccess"), ("agent", "antigravity"))).Child ?? throw new InvalidOperationException("no Antigravity child");
+            Check(gemini is { Agent: "antigravity", StartingMode: "fullAccess" }, "an Antigravity child in fullAccess");
+            Same(await place.Call("delegate", ("task", "A fourth."), ("mode", "acceptEdits"), ("agent", "codex")), DelegationResponse.Refusal(DelegationReasonCode.WidthCap), "three open children of any agents");
+            foreach (var info in new[] { own, codex, gemini }) Check(await place.WaitFor(info.Id, ChildState.Running), info.Agent + " runs");
+            SameList(place.Host.CreatedPanes.Select(pane => pane.Provider), ["claude", "codex", "gemini"], "each pane runs its agent");
+        }
+        finally { place.Remove(); }
+    }
 }
