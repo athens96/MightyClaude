@@ -453,6 +453,28 @@ The fixture holds request recognition, exact response bodies, checklist frames
 and background-event sequences; `ClaudePlanModeTests` (Swift) and
 `ClaudePlanModeVerification` (Windows Core) both read it.
 
+## Delegation modes (`fixtures/delegation-modes.json`)
+
+A child of another agent than its parent's may start only in a mode that may do
+nothing the parent's mode may not. A mode is described by four capabilities:
+`writesAsking` (changes files after the human approves each change),
+`writesUnasked` (changes files without asking, sandboxed or not), `runsUnasked`
+(runs shell commands without asking, sandboxed or not) and `fullAccess` (no
+sandbox and no asking). A child's mode fits under a parent's when each of its
+capabilities is the parent's too, except that the parent's `writesUnasked` covers
+the child's `writesAsking`. Within one agent, modes still compare by their own
+order (`plan < manual < acceptEdits < onRequest < auto < fullAccess`, each agent
+using the ones it has). The fixture is `{agents, capabilities: {agent: {mode:
+[capability]}}, widestChildMode: {parentAgent: {parentMode: {childAgent: mode |
+null}}}}` over the provider ids `claude`, `codex` and `gemini` (Antigravity).
+`widestChildMode` is the mode the worktree button's menu starts a child of that
+agent in: the widest that fits and in which the child can change files (the most
+capabilities, then the later in its own order; for the parent's own agent, the
+parent's mode whenever its child can write in it), or null when none fits.
+`DelegationModesFixtureTests` (Swift) and `DelegationCrossAgentVerification`
+(Windows Core) read it. Rules: `MightyCore/DelegationProviders.swift`,
+`MightyClaude.Core/DelegationProviders.cs`.
+
 ## Model labels (`fixtures/model-labels.json`)
 
 Every place a model is chosen or shown labels it with its family and version:

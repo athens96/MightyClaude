@@ -1,0 +1,45 @@
+{
+  "agents": ["claude", "codex", "gemini"],
+  "capabilities": {
+    "claude": {
+      "plan": [],
+      "manual": ["writesAsking"],
+      "acceptEdits": ["writesUnasked"],
+      "auto": ["writesUnasked", "runsUnasked"],
+      "fullAccess": ["writesAsking", "writesUnasked", "runsUnasked", "fullAccess"]
+    },
+    "codex": {
+      "manual": ["runsUnasked"],
+      "acceptEdits": ["writesUnasked", "runsUnasked"],
+      "onRequest": ["writesUnasked"],
+      "fullAccess": ["writesAsking", "writesUnasked", "runsUnasked", "fullAccess"]
+    },
+    "gemini": {
+      "plan": [],
+      "manual": [],
+      "acceptEdits": ["writesUnasked"],
+      "fullAccess": ["writesAsking", "writesUnasked", "runsUnasked", "fullAccess"]
+    }
+  },
+  "widestChildMode": {
+    "claude": {
+      "plan": { "claude": "plan", "codex": null, "gemini": null },
+      "manual": { "claude": "manual", "codex": null, "gemini": null },
+      "acceptEdits": { "claude": "acceptEdits", "codex": "onRequest", "gemini": "acceptEdits" },
+      "auto": { "claude": "auto", "codex": "acceptEdits", "gemini": "acceptEdits" },
+      "fullAccess": { "claude": "fullAccess", "codex": "fullAccess", "gemini": "fullAccess" }
+    },
+    "codex": {
+      "manual": { "claude": "plan", "codex": null, "gemini": null },
+      "acceptEdits": { "claude": "auto", "codex": "acceptEdits", "gemini": "acceptEdits" },
+      "onRequest": { "claude": "acceptEdits", "codex": "onRequest", "gemini": "acceptEdits" },
+      "fullAccess": { "claude": "fullAccess", "codex": "fullAccess", "gemini": "fullAccess" }
+    },
+    "gemini": {
+      "plan": { "claude": "plan", "codex": null, "gemini": null },
+      "manual": { "claude": "plan", "codex": null, "gemini": null },
+      "acceptEdits": { "claude": "acceptEdits", "codex": "onRequest", "gemini": "acceptEdits" },
+      "fullAccess": { "claude": "fullAccess", "codex": "fullAccess", "gemini": "fullAccess" }
+    }
+  }
+}
