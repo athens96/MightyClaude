@@ -42,7 +42,7 @@ section: settings
 
 ## コンポーネント {#components}
 {{ui:settings.nav.tools}}タブでは、アプリに必要なものが準備できているかを確認できます。
-- {{ui:settings.components.sectionTitle}}: Claude、Codex、Antigravity CLIと、必要なプラグインの状態です。{{ui:settings.components.statusInstalled}}、{{ui:settings.components.statusMissing}}、{{ui:settings.components.statusAttention}}のいずれかで表示されます。インストールが必要な場合は、インストールコマンドをコピーしてターミナルで実行してから、{{ui:settings.components.recheckButton}}をクリックします。
+- {{ui:settings.components.sectionTitle}}: Macでは[{{ui:setup.title}}](getting-started.md#setup)の一覧がここにあります。エージェントCLI、前提ツール、スタイル用ツール、Tailscale、gh・glabごとに{{ui:setup.status.installed}}、{{ui:setup.status.missing}}、{{ui:setup.status.outdated}}、{{ui:setup.status.installing}}、{{ui:setup.status.failed}}のいずれかが表示され、足りない項目を選んで{{ui:setup.button.install}}をクリックすると、すべてのコマンドを確認したうえでアプリ内のターミナルペインでインストールします。{{ui:setup.button.recheck}}と、一覧を開いている間の自動確認は毎回CLIを探し直し、古すぎるClaude Codeには{{ui:setup.button.update}}ボタンが出ます。Windowsでは、Claude、Codex、Antigravity CLIと必要なプラグインの状態が{{ui:settings.components.statusInstalled}}、{{ui:settings.components.statusMissing}}、{{ui:settings.components.statusAttention}}のいずれかで表示されます。インストールコマンドをコピーしてターミナルで実行してから、{{ui:settings.components.recheckButton}}をクリックします。
 - {{ui:settings.toolkit.sectionTitle}}: よく使うツールの一覧です。インストールの前に実行するコマンドをすべて表示し、{{ui:settings.toolkit.confirmTitle}}を求めます。一覧を{{ui:settings.toolkit.exportButton}}したり{{ui:settings.toolkit.importButton}}したりできます。
 
 ![[settings-tools]]

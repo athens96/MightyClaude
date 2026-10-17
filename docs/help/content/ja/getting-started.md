@@ -7,16 +7,14 @@ Mighty Claudeは、Claude Code、Codex CLI、GoogleのAntigravity CLIを1つの�
 
 ## 必要なもの {#requirements}
 - macOS 14以降。WindowsではWindows 10(バージョン2004)以降またはWindows 11です。
-- 使用するAI CLI。アプリはCLIを直接実行するため、先にインストールしてサインインしておく必要があります。使わないCLIはインストールしなくてもかまいません。
+- 使用するAI CLI。アプリはCLIを直接実行するため、インストールとサインインが必要です。Macでは、アプリを初めて開いたときに表示される{{ui:setup.title}}画面からインストールできます([初回起動](#first-launch))。使わないCLIはインストールしなくてもかまいません。
 
-| CLI | インストールコマンド |
-|---|---|
-| Claude Code | `npm install -g @anthropic-ai/claude-code` |
-| Codex CLI | `npm install -g @openai/codex` |
-| Antigravity CLI | [Antigravity](agent-pane.md#antigravity) |
+- Claude Code: Mac `curl -fsSL https://claude.ai/install.sh | bash`, Windows `npm install -g @anthropic-ai/claude-code`
+- Codex CLI: Mac `curl -fsSL https://chatgpt.com/codex/install.sh | sh`, Windows `npm install -g @openai/codex`
+- Antigravity CLI: Mac `curl -fsSL https://antigravity.google/cli/install.sh | bash`, Windows [Antigravity](agent-pane.md#antigravity)
 
 > [!tip]
-> アプリを開いたあと、{{ui:settings.nav.tools}}でどのCLIが準備できているかを確認し、インストールコマンドをコピーできます。サインインは{{ui:settings.nav.cli}}タブで行います。[設定](settings.md#components)を参照してください。
+> アプリを開いたあと、{{ui:settings.nav.tools}}でどのCLIが準備できているかを確認できます。Macではその場でインストールでき、Windowsではインストールコマンドをコピーします。サインインは{{ui:settings.nav.cli}}タブで行います。[設定](settings.md#components)を参照してください。
 
 ## インストール {#install}
 1. [ダウンロードページ](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/index.html)から、お使いのOS用のファイルをダウンロードします。
@@ -43,6 +41,18 @@ Mighty Claudeは、Claude Code、Codex CLI、GoogleのAntigravity CLIを1つの�
 初めて開いたときはまだワークスペースがないため、スタート画面が表示されます。
 
 ![[welcome]]
+
+### 必要なツール(Mac) {#setup}
+動かせるエージェントCLIが1つもないか、必須ツール(Claude Code、Git)が足りない場合は、アプリの起動時に{{ui:setup.title}}画面が先に開きます。エージェントCLI、前提ツール(Git、Homebrew、Node、Bun)、スタイル用ツール(uv、Ouroboros、Superpowers、Paperthin、oh-my-claudecode、gstack)、Tailscale、gh・glabをグループごとに表示します。
+
+1. インストールする項目にチェックを入れます。必須項目は最初からチェックされていて、選んだ項目に必要なツール(例: ghに必要なHomebrew)も一緒に入ります。
+2. {{ui:setup.button.install}}をクリックすると、実行するコマンドがすべて順番に表示されます。{{ui:setup.confirm.run}}をクリックするまで何も実行されません。
+3. コマンドはアプリ内の1つのターミナルペインで順に実行されます。パスワードや確認を求められたら、ターミナルで直接答えてください。アプリはsudoを使わず、パスワードも受け取りません。ある手順が失敗しても次の手順に進みます。
+4. 終わるとアプリが再確認し、この画面を開きます。結果はコマンドの終了コードではなく、再確認した状態で決まります。CLIが新しく入ったときは{{ui:setup.button.signIn}}ボタンが表示されます。
+
+Git(Xcode Command Line Tools)はシステムのインストール画面が開くので、そちらで完了します。Tailscaleは公式のダウンロードページを開きます。古すぎるClaude Codeは{{ui:setup.status.outdated}}と表示され、{{ui:setup.button.update}}ボタンが出ます。ワークスペースがまだない場合は、ホームフォルダーをワークスペースとして追加し、そこでターミナルを開きます。
+
+{{ui:setup.button.later}}で閉じられます。{{ui:setup.button.neverShow}}にチェックしてから閉じると、起動時に開かなくなります。必須ツールが足りない間はスタート画面に{{ui:setup.title}}ボタンがあり、CLIがなくて止まっているペインには{{ui:setup.blocked.install}}ボタンがあります。同じ一覧は設定 → {{ui:settings.nav.tools}}にもあります。Windowsにはまだこの画面がありません。
 
 ## ワークスペースを開く {#open-workspace}
 ワークスペースは1つのプロジェクトフォルダです。ペイン、タブの配置、会話の履歴はワークスペースごとに保存されます。

@@ -7,16 +7,14 @@ Mighty Claude is a desktop app for using Claude Code, Codex CLI and Google's Ant
 
 ## What you need {#requirements}
 - macOS 14 or later. On Windows: Windows 10 (version 2004) or later, or Windows 11.
-- The AI CLIs you want to use. The app runs the CLIs directly, so install them and sign in first. You can skip the ones you won't use.
+- The AI CLIs you want to use. The app runs the CLIs directly, so they need to be installed and signed in. On a Mac you can install them from the {{ui:setup.title}} screen the app shows the first time it opens ([First launch](#first-launch)). You can skip the ones you won't use.
 
-| CLI | Install command |
-|---|---|
-| Claude Code | `npm install -g @anthropic-ai/claude-code` |
-| Codex CLI | `npm install -g @openai/codex` |
-| Antigravity CLI | [Antigravity](agent-pane.md#antigravity) |
+- Claude Code: Mac `curl -fsSL https://claude.ai/install.sh | bash`, Windows `npm install -g @anthropic-ai/claude-code`
+- Codex CLI: Mac `curl -fsSL https://chatgpt.com/codex/install.sh | sh`, Windows `npm install -g @openai/codex`
+- Antigravity CLI: Mac `curl -fsSL https://antigravity.google/cli/install.sh | bash`, Windows [Antigravity](agent-pane.md#antigravity)
 
 > [!tip]
-> Once the app is open, {{ui:settings.nav.tools}} shows which CLIs are ready and lets you copy the install commands. You sign in on the {{ui:settings.nav.cli}} tab. See [Settings](settings.md#components).
+> Once the app is open, {{ui:settings.nav.tools}} shows which CLIs are ready. On a Mac you install them right there; on Windows you copy the install commands. You sign in on the {{ui:settings.nav.cli}} tab. See [Settings](settings.md#components).
 
 ## Install {#install}
 1. Get the file for your system from the [download page](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/index.html).
@@ -43,6 +41,18 @@ To stop the automatic check, turn off {{ui:settings.appUpdate.autoCheckToggle}}.
 The first time you open the app there is no workspace yet, so you see the welcome screen.
 
 ![[welcome]]
+
+### Required tools (Mac) {#setup}
+If no agent CLI can run, or a required tool (Claude Code, Git) is missing, the {{ui:setup.title}} screen opens when the app starts. It groups the agent CLIs, the prerequisites (Git, Homebrew, Node, Bun), the style tools (uv, Ouroboros, Superpowers, Paperthin, oh-my-claudecode, gstack), Tailscale, and gh and glab.
+
+1. Check what you want to install. Required items start checked, and anything a picked item needs (such as Homebrew for gh) comes along.
+2. Click {{ui:setup.button.install}}. Every command that will run is shown, in order. Nothing runs until you click {{ui:setup.confirm.run}}.
+3. The commands run one after another in one terminal pane in the app. Answer any password or confirmation prompt in the terminal yourself; the app never uses sudo and never sees your password. If a step fails, the next one still runs.
+4. When it ends, the app checks again and opens this screen. What counts is what the check finds, not how a command exited. When a CLI has just appeared, a {{ui:setup.button.signIn}} button shows.
+
+Git (Xcode Command Line Tools) opens a system install window, where you finish it. Tailscale opens its official download page. A Claude Code that is too old shows {{ui:setup.status.outdated}} with an {{ui:setup.button.update}} button. If there is no workspace yet, your home folder is added as one and the terminal opens there.
+
+{{ui:setup.button.later}} closes the screen; check {{ui:setup.button.neverShow}} before closing and it no longer opens at launch. While a required tool is missing, the welcome screen has a {{ui:setup.title}} button, and a pane blocked by a missing CLI has an {{ui:setup.blocked.install}} button. The same list is in Settings → {{ui:settings.nav.tools}}. Windows does not have this screen yet.
 
 ## Open a workspace {#open-workspace}
 A workspace is one project folder. Panes, the tab layout and conversation history are saved per workspace.
