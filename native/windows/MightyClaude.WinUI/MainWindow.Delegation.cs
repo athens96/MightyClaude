@@ -404,7 +404,15 @@ public sealed partial class MainWindow
             });
             _ = owner.Act(async () =>
             {
-                var answer = await owner.service.StartHumanChildAsync(parentId, text, files, planFirst, _ => FallBack(Locale.Get("delegation.human.error.startFailed")), agent);
+                HumanChildStart answer;
+                try { answer = await owner.service.StartHumanChildAsync(parentId, text, files, planFirst, _ => FallBack(Locale.Get("delegation.human.error.startFailed")), agent); }
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    // A start that threw took nothing: the text goes on as a refused one does, and the error shows.
+                    owner.error.Text = ex.Message; await FallBack(ex.Message);
+                    if (!owner.closing) owner.Render();
+                    return;
+                }
                 if (answer switch { HumanChildStart.Refused refused => DelegationText.Reason(refused.Reason), HumanChildStart.Failed failed => failed.Message, _ => null } is { } reason) await FallBack(reason);
                 if (!owner.closing) owner.Render();
             });
@@ -426,10 +434,7 @@ public sealed partial class MainWindow
             {
                 await SlashNote(Locale.Get("delegation.human.returned", words));
                 owner.error.Text = Locale.Get("queue.full");
-                var draft = input.Text.Length == 0 ? text : text + "\n\n" + input.Text;
-                updating = true; input.Text = draft; updating = false; await Change(p => p with { Draft = draft });
-                var kept = pendingAttachments.Select(file => file.Id).ToHashSet(); pendingAttachments.InsertRange(0, files.Where(file => !kept.Contains(file.Id))); RefreshAttachments();
-                RefreshComposerState();
+                await GiveBackToComposer(text, files);
                 return;
             }
             await SlashNote(Locale.Get(fallback == ComposerSecondSend.Steer ? "delegation.human.steered" : "delegation.human.queued", words));
