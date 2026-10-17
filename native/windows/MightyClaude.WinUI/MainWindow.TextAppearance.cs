@@ -122,6 +122,12 @@ public sealed partial class MainWindow
             AutomationProperties.SetAutomationId(picker, id); AutomationProperties.SetName(picker, label);
             return picker;
         }
+        // The pop-up with the Mac's chevron chip, which ends at the row's edge as the pet picker's does.
+        Grid Framed(ComboBox picker)
+        {
+            var frame = SettingsPopupFrame(picker); frame.Margin = new Thickness(0, 0, -SettingsPopupChipInset, 0);
+            return frame;
+        }
         static void Fill(ComboBox picker, string none, IReadOnlyList<string> families, string? saved)
         {
             picker.Items.Add(new ComboBoxItem { Content = none, Tag = "" });
@@ -156,25 +162,25 @@ public sealed partial class MainWindow
             if (syncing || size.SelectedItem is not ComboBoxItem { Tag: string value }) return;
             SetTextAppearance(AppText.Current.WithScale(double.Parse(value, System.Globalization.CultureInfo.InvariantCulture)));
         };
-        SettingsRow(rows, SettingsLabeled(SettingsText(sizeLabel), size));
+        SettingsRow(rows, SettingsLabeled(SettingsText(sizeLabel), Framed(size)));
 
         var current = AppText.Current;
         var uiLabel = Locale.Get("settings.text.uiFontLabel");
         var ui = Picker(uiLabel, "settings-text-font"); Fill(ui, Locale.Get("settings.text.fontSystem"), all, current.Family); Choose(ui, (text, family) => text.WithFamily(family));
         var uiBlock = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
-        uiBlock.Children.Add(SettingsLabeled(SettingsText(uiLabel), ui)); uiBlock.Children.Add(Preview(TextArea.Interface, DesignMetrics.Type.Body, "settings-text-preview"));
+        uiBlock.Children.Add(SettingsLabeled(SettingsText(uiLabel), Framed(ui))); uiBlock.Children.Add(Preview(TextArea.Interface, DesignMetrics.Type.Body, "settings-text-preview"));
         SettingsRow(rows, uiBlock);
 
         var transcriptLabel = Locale.Get("settings.text.transcriptFontLabel");
         var transcript = Picker(transcriptLabel, "settings-text-transcript-font"); Fill(transcript, Locale.Get("settings.text.sameAsInterface"), all, current.TranscriptFamily); Choose(transcript, (text, family) => text.WithTranscriptFamily(family));
         var transcriptBlock = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
-        transcriptBlock.Children.Add(SettingsLabeled(SettingsText(transcriptLabel), transcript)); transcriptBlock.Children.Add(Preview(TextArea.Transcript, DesignMetrics.Type.Body, "settings-text-transcript-preview"));
+        transcriptBlock.Children.Add(SettingsLabeled(SettingsText(transcriptLabel), Framed(transcript))); transcriptBlock.Children.Add(Preview(TextArea.Transcript, DesignMetrics.Type.Body, "settings-text-transcript-preview"));
         SettingsRow(rows, transcriptBlock);
 
         var codeLabel = Locale.Get("settings.text.codeFontLabel");
         var codePicker = Picker(codeLabel, "settings-text-code-font"); Fill(codePicker, Locale.Get("settings.text.monospaceSystem"), code, current.CodeFamily); Choose(codePicker, (text, family) => text.WithCodeFamily(family));
         var codeBlock = new StackPanel { Spacing = DesignMetrics.Spacing.Sm };
-        codeBlock.Children.Add(SettingsLabeled(SettingsText(codeLabel), codePicker)); codeBlock.Children.Add(Preview(TextArea.Code, TextAppearance.TerminalBaseSize, "settings-text-code-preview"));
+        codeBlock.Children.Add(SettingsLabeled(SettingsText(codeLabel), Framed(codePicker))); codeBlock.Children.Add(Preview(TextArea.Code, TextAppearance.TerminalBaseSize, "settings-text-code-preview"));
         SettingsRow(rows, codeBlock);
 
         var reset = SettingsPush(Button(Locale.Get("settings.text.reset"), () => { SetTextAppearance(TextAppearance.Standard); return Task.CompletedTask; }));
@@ -202,6 +208,8 @@ public sealed partial class MainWindow
         {
             RefreshTerminalTheme();
             RethemeFilesMarkdown(always: true); RethemePlanViews(); RethemeStructureAnswers(always: true);
+            // The pill words are measured on a block kept out of the window.
+            AppText.Refresh(pillMeasure);
             ArrangeComposer();
         }
 

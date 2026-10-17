@@ -30,7 +30,7 @@ internal sealed class ComposerGlyph
 
     private ComposerGlyph(string glyph, double size, double width, double height, Windows.UI.Text.FontWeight? weight)
     {
-        font = new FontIcon { Glyph = glyph, TextSize = size, Width = width, Height = height, IsHitTestVisible = false, VerticalAlignment = VerticalAlignment.Center };
+        font = new FontIcon { Glyph = glyph, TextSize = size, TextWidth = width, TextHeight = height, IsHitTestVisible = false, VerticalAlignment = VerticalAlignment.Center };
         if (weight is { } w) font.FontWeight = w;
         View = font; Decorative();
     }

@@ -67,7 +67,7 @@ internal static class TextAppearanceVerification
         }
         Check(TextAppearance.FromValues(null, null, null, null).IsStandard, "nothing saved is the standard setting");
         Check(TextAppearance.FromValues("big", 12, new object(), "") .IsStandard, "broken values read as the standard setting");
-        Check(TextAppearance.FromValues(" 1.2 ", null, null, null).Scale == 1.2 && TextAppearance.FromValues(130, null, null, null).Scale == 1.3 && TextAppearance.FromValues(90L, null, null, null).Scale == 0.9, "a string scale or a whole percent");
+        Check(TextAppearance.FromValues(" 1.2 ", null, null, null).Scale == 1.2 && TextAppearance.FromValues(130, null, null, null).Scale == 1.3 && TextAppearance.FromValues(90L, null, null, null).Scale == 0.9 && TextAppearance.FromValues("110", null, null, null).Scale == 1.1, "a string scale or a whole percent, as a number or a string");
         // The settings window's smoke reads the model through JSON: only the four stored parts, no computed ones.
         var json = JsonSerializer.Serialize(new TextAppearance(1.2, "A"), Wire.Json);
         Check(!json.Contains("percent", StringComparison.OrdinalIgnoreCase) && !json.Contains("isStandard", StringComparison.OrdinalIgnoreCase) && !json.Contains("canGrow", StringComparison.OrdinalIgnoreCase), "computed properties stay out of JSON: " + json);

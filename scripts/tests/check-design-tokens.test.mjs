@@ -170,6 +170,7 @@ test('a WinUI font size, line height or family set directly fails; TextSize, Tex
       [WIN]: [
         'var a = new TextBlock { TextSize = 12, TextLineHeight = 15, TextFont = TextArea.Code };',
         'var b = new TextBlock { FontSize = 12, LineHeight = 15, FontFamily = new FontFamily("Consolas") };',
+        'b.FontSize += 2; b.SetValue(TextBlock.LineHeightProperty, 20);',
         '// FontSize = 13 in a comment is not counted, and neither is a comparison:',
         'if (b.FontSize == 12) { }',
       ].join('\n') + '\n',
@@ -178,7 +179,7 @@ test('a WinUI font size, line height or family set directly fails; TextSize, Tex
   try {
     const r = run(dir);
     assert.notEqual(r.status, 0);
-    assert.match(r.stderr, /MainWindow\.View\.cs: 4 font literals, budget 0\. Give the size at scale 1 as TextSize/);
+    assert.match(r.stderr, /MainWindow\.View\.cs: 6 font literals, budget 0\. Give the size at scale 1 as TextSize/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

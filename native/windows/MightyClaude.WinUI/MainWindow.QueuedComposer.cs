@@ -215,7 +215,7 @@ public sealed partial class MainWindow
                 var words = new TextBlock { Text = item.Text, TextSize = 11, Foreground = b.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis };
                 Grid.SetColumn(words, 1); row.Children.Add(words);
                 // Held for the pane, not the human's request: a pin where the remove button would be (M/QueuedInputsView.swift:39-41).
-                var pin = new FontIcon { Glyph = "", TextSize = 9, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink2, Width = 18, Height = 16, VerticalAlignment = VerticalAlignment.Top };
+                var pin = new FontIcon { Glyph = "", TextSize = 9, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink2, TextWidth = 18, TextHeight = 16, VerticalAlignment = VerticalAlignment.Top };
                 ToolTipService.SetToolTip(pin, Locale.Get("queue.heldHelp")); AutomationProperties.SetName(pin, Locale.Get("queue.held")); Grid.SetColumn(pin, 2); row.Children.Add(pin);
                 AutomationProperties.SetAutomationId(row, "queue-held-" + item.Id);
                 queuedInputHost.Children.Add(new Border { Child = row, CornerRadius = new(DesignMetrics.Radius.Row), Background = b.Subtle });

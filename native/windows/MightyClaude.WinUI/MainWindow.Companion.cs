@@ -318,7 +318,7 @@ public sealed partial class MainWindow
         if (companionQuestionWindowKey == key && companionQuestionWindow is { } existing) { existing.Activate(); return; }
         companionQuestionWindow?.Close();
         if (UserQuestionnaire.Parse(request.InputJson) is not { } questionnaire) return;
-        var draft = CompanionDraft(request); var window = new Window { Title = Locale.Get("phone.questionnaire.title") }; var host = new StackPanel { Spacing = DesignMetrics.Spacing.Md };
+        var draft = CompanionDraft(request); var window = new Window { Title = Locale.Get("phone.questionnaire.title") }; AppText.Track(window); var host = new StackPanel { Spacing = DesignMetrics.Spacing.Md };
         // Each window starts where the bubble stands, with the picks made there; words written in an earlier window stay.
         draft.Picks.Clear();
         for (var index = 0; index < questionnaire.Questions.Count; index++)
@@ -373,7 +373,7 @@ public sealed partial class MainWindow
     private void ShowCompanionApproval(ToolPermissionRequest request, bool aside = false)
     {
         var key = PermissionKey(request); companionQuestionWindow?.Close();
-        var window = new Window { Title = ToolPermissionPresentation.Make(request.ToolName, request.InputJson).Title };
+        var window = new Window { Title = ToolPermissionPresentation.Make(request.ToolName, request.InputJson).Title }; AppText.Track(window);
         var content = new Grid { RowSpacing = DesignMetrics.Spacing.Md };
         content.RowDefinitions.Add(new() { Height = GridLength.Auto }); content.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) }); content.RowDefinitions.Add(new() { Height = GridLength.Auto });
         // The pane's permission card in a window of its own (MainWindow.ToolPermission.cs): its title 12 semibold, the whole request in the mono face.
@@ -433,7 +433,7 @@ public sealed partial class MainWindow
         companionQuestionWindow?.Close();
         if (request.Plan is not { } plan) return;
         var ink2 = brushes.Brush(DesignToken.Ink2);
-        var window = new Window { Title = Locale.Get("plan.card.title") };
+        var window = new Window { Title = Locale.Get("plan.card.title") }; AppText.Track(window);
         var content = new Grid { RowSpacing = DesignMetrics.Spacing.Md };
         foreach (var height in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto, GridLength.Auto }) content.RowDefinitions.Add(new() { Height = height });
         // The pane's plan card in a window of its own (MainWindow.PlanCard.cs): 계획 at 13 bold, when it came and where from in the secondary ink.

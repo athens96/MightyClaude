@@ -55,7 +55,7 @@
 //    changes live. This counts, per file of native/windows/MightyClaude.WinUI, what still sets them
 //    itself and so would not follow the setting:
 //
-//      FontSize = …   LineHeight = …   FontFamily = …   new FontFamily(…)
+//      FontSize = … (or +=, *=)   LineHeight = …   FontFamily = …   new FontFamily(…)   FontSizeProperty and the like
 //
 //    The budget's exemptFiles (globs as above, each with its reason; one that matches nothing fails)
 //    are not counted. As with the colours, a file over its budget or outside it fails, and a file
@@ -346,9 +346,10 @@ if (!spacingBudget || typeof spacingBudget.areas !== 'object' || spacingBudget.a
 const FONT_BUDGET = 'scripts/font-literal-budget.json';
 const FONT_ROOT = 'native/windows/MightyClaude.WinUI';
 const FONT_PATTERNS = [
-  /\bFontSize\s*=(?!=)/g,
-  /\bLineHeight\s*=(?!=)/g,
-  /\bFontFamily\s*=(?!=)/g,
+  // An assignment, compound ones too (+=, *=), but not a comparison.
+  /\b(?:FontSize|LineHeight|FontFamily)\s*[-+*/]?=(?!=)/g,
+  // SetValue, ClearValue or a Setter on the property itself.
+  /\b(?:FontSize|LineHeight|FontFamily)Property\b/g,
   /\bnew\s+(?:[\w.]+\.)?FontFamily\s*\(/g,
 ];
 

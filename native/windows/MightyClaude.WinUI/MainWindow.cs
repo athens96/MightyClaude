@@ -59,7 +59,7 @@ public sealed partial class MainWindow : Window
     {
         this.options = options;
         // The text setting comes first: the stock controls' font resources take it once, before any control is built.
-        AppText.Load(options.SmokeTest); DesignBrushes.ApplyControlResources(Application.Current.Resources); root.Background = WindowBackground();
+        AppText.Track(this); AppText.Load(options.SmokeTest); DesignBrushes.ApplyControlResources(Application.Current.Resources); root.Background = WindowBackground();
         AppWindow.Resize(new SizeInt32(1440, 920));
         root.Loaded += (_, _) => { ApplyWindowMinimum(); root.XamlRoot.Changed += (_, _) => ApplyWindowMinimum(); AppWindow.Changed += (_, args) => { if (args.DidPositionChange) ApplyWindowMinimum(); }; };
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "MightyClaude.ico"));

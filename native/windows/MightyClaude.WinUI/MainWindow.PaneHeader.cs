@@ -98,7 +98,7 @@ public sealed partial class MainWindow
             FilePaneKind.Kind => ("\uE8B7", 1.12, 1.36),
             _ => ("\uE756", 1.2, 1.4),
         };
-        var icon = new FontIcon { Glyph = glyph, TextSize = Math.Round(macSize * scale * 2) / 2, Width = Math.Round(macSize * slot), Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
+        var icon = new FontIcon { Glyph = glyph, TextSize = Math.Round(macSize * scale * 2) / 2, TextWidth = Math.Round(macSize * slot), Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
         AutomationProperties.SetAccessibilityView(icon, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
         return icon;
     }

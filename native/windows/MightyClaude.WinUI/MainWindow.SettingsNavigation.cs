@@ -87,7 +87,7 @@ public sealed partial class MainWindow
             frame.RowDefinitions.Add(new() { Height = GridLength.Auto });
             frame.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) });
             frame.RowDefinitions.Add(new() { Height = GridLength.Auto });
-            var window = new Window { Title = Locale.Get("settings.title"), Content = frame };
+            var window = new Window { Title = Locale.Get("settings.title"), Content = frame }; AppText.Track(window);
             settingsWindow = window;
             Task CloseWindow() { window.Close(); return Task.CompletedTask; }
             var heading = SettingsHeading(CloseWindow);
