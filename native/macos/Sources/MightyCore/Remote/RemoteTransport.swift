@@ -6,9 +6,12 @@ import Darwin
 /// `allowLoopback` in code; no setting, connection field or IPC reaches it.
 public enum RemotePeerPolicy {
     public static func allowed(_ address: String, allowLoopback: Bool = false) -> Bool {
-        if TailscaleAddresses.contains(address) { return true }
+        // A peer's address as the network stack reports it may carry its
+        // interface (`fd7a:…%utun4`); the address alone decides.
+        let unscoped = address.split(separator: "%", maxSplits: 1).first.map(String.init) ?? address
+        if TailscaleAddresses.contains(unscoped) { return true }
         guard allowLoopback else { return false }
-        let value = address.trimmingCharacters(in: CharacterSet(charactersIn: "[]")).lowercased()
+        let value = unscoped.trimmingCharacters(in: CharacterSet(charactersIn: "[]")).lowercased()
         var ipv4 = in_addr()
         if inet_pton(AF_INET, value, &ipv4) == 1 { return withUnsafeBytes(of: &ipv4) { $0[0] } == 127 }
         return value == "::1"

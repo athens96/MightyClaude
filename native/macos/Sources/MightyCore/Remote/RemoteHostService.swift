@@ -160,7 +160,8 @@ public actor RemoteHostService {
         peer.count += 1
         if peerRates[request.remoteAddress] == nil, peerRates.count >= 64 { peerRates.removeAll() }
         peerRates[request.remoteAddress] = peer
-        guard rateCount <= 200, peer.count <= 100 else { throw Failure(429, L("remote.host.error.tooMany")) }
+        // A client polls each of its runs at most ten times a second.
+        guard rateCount <= 600, peer.count <= 300 else { throw Failure(429, L("remote.host.error.tooMany")) }
         let authorization = request.headers["authorization"] ?? ""
         guard authorization.hasPrefix("Bearer "), authorization.count <= 256, RemoteWorkspaceValidation.keysMatch(String(authorization.dropFirst(7)), key) else {
             throw Failure(401, L("remote.host.error.badKey"))
@@ -289,7 +290,9 @@ public actor RemoteHostService {
         // dropped it (over its limits, or one event too large to send).
         var expected = cursor + 1, gap = false
         for item in selected { if item.cursor != expected { gap = true }; expected = item.cursor + 1 }
-        if selected.isEmpty, job.cursor > cursor, job.events.first.map({ $0.cursor > cursor + 1 }) ?? true { gap = true }
+        // Nothing buffered after the cursor although the run went on: all of it
+        // was dropped (the first buffered event after a cursor always fits a poll).
+        if selected.isEmpty, job.cursor > cursor { gap = true }
         let last = selected.last?.cursor ?? (gap ? job.cursor : cursor)
         return reply(200, RemoteWirePoll(cursor: last, lastCursor: job.cursor, gap: gap, done: job.done && last >= job.cursor, events: selected))
     }

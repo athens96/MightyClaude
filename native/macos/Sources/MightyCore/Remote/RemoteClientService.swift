@@ -229,8 +229,9 @@ public actor RemoteClientService {
                     if !terminal { onEvent(RunEvent(sessionId: id, type: "status", status: "error")) }
                     return
                 }
-                // More waits on the host: read it now. Otherwise wait a little, longer while nothing comes.
-                if poll.lastCursor > cursor { quiet = 0; continue }
+                // More waits on the host: read it soon (at most ten polls a second
+                // per run). Otherwise wait a little, longer while nothing comes.
+                if poll.lastCursor > cursor { quiet = 0; try await Task.sleep(for: .milliseconds(100)); continue }
                 quiet = poll.events.isEmpty ? min(quiet + 1, 4) : 0
                 try await Task.sleep(for: .milliseconds(250 + 150 * quiet))
             } catch {
