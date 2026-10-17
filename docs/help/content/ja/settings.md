@@ -68,6 +68,9 @@ CLIを最初にインストールした方法(npm、Homebrewなど)をそのま�
 ## モバイルリモート {#mobile}
 {{ui:settings.nav.mobile}}タブで、スマートフォンを接続し、リモート画面を許可します。[モバイルリモート](phone.md)を参照してください。
 
+## リモート接続 {#remote}
+{{ui:settings.remote.navTitle}}タブで、この Mac のワークスペースを Tailscale で共有したり、別の Mac が共有しているワークスペースに接続したりします。[リモート接続（Tailscale）](remote.md)を参照してください。
+
 ## ペットと通知 {#companion}
 {{ui:settings.nav.companion}}タブで、デスクトップペットと完了通知を設定します。
 - {{ui:companion.settings.enabled}}: 画面上を動き回るアライグマのペットを表示します。ペットはドラッグして移動でき、クリックすると吹き出しが開閉します。

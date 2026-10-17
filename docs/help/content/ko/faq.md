@@ -1,6 +1,6 @@
 ---
 title: 자주 묻는 질문과 문제 해결
-order: 11
+order: 12
 section: faq
 ---
 ## 요청을 보낼 수 없어요 {#cannot-send}

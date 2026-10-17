@@ -1,6 +1,6 @@
 ---
 title: よくある質問とトラブルシューティング
-order: 11
+order: 12
 section: faq
 ---
 ## リクエストを送信できない {#cannot-send}

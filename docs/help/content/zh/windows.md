@@ -1,6 +1,6 @@
 ---
 title: Windows 上的不同之处
-order: 10
+order: 11
 section: windows
 ---
 本帮助以 Mac 界面为准编写。Windows 应用以相同的名称提供相同的功能，本页只汇总不同的部分。

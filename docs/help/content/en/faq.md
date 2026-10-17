@@ -1,6 +1,6 @@
 ---
 title: FAQ and troubleshooting
-order: 11
+order: 12
 section: faq
 ---
 ## I can't send a request {#cannot-send}
