@@ -343,6 +343,7 @@ internal static class Verification
         await Test("tailscale addresses: the shared fixture's cases", TailscaleAddressesVerification.SharedFixture);
         await Test("tailscale addresses: a mapped address counts as its IPv4", TailscaleAddressesVerification.AMappedAddressCountsAsItsIPv4);
         await Test("tailscale addresses: detection offers only Tailscale addresses", TailscaleAddressesVerification.DetectionOffersOnlyTailscaleAddresses);
+        await Test("tailscale addresses: one unreadable adapter is skipped, none readable is a fault", TailscaleAddressesVerification.OneUnreadableAdapterIsSkipped);
         await Test("mobile direct: endpoints, upgrade, admission and status", MobileDirectVerification.EndpointsUpgradeAdmissionAndStatus);
         await Test("mobile direct: the listener holds at most 36 and upgrades a phone", MobileDirectVerification.TheListenerHoldsAtMost36AndUpgradesAPhone);
         await Test("mobile direct: the upgrade and the peer are read strictly", MobileDirectVerification.TheUpgradeAndThePeerAreReadStrictly);
@@ -355,6 +356,9 @@ internal static class Verification
         await Test("mobile direct: the Windows words are in every language", MobileDirectVerification.TheWindowsWordsAreInEveryLanguage);
         await Test("mobile direct: the settings rows and the smoke are wired", MobileDirectVerification.TheSettingsAndTheSmokeAreWired);
         await Test("mobile direct: relay notices carrying a direct- id leave the direct phone alone", MobileDirectVerification.RelayNoticesCarryingADirectIdLeaveItAlone);
+        await Test("mobile direct: a direct frame over 1 MiB is refused", MobileDirectVerification.ADirectFrameOverOneMiBIsRefused);
+        await Test("mobile direct: a relay auth frame that is no JSON is answered malformed", MobileDirectVerification.ARelayAuthFrameThatIsNoJsonIsMalformed);
+        await Test("mobile direct: Settings read the adapters off the caller and outside the lock", MobileDirectVerification.SettingsReadTheAdaptersOffTheCallerAndOutsideTheLock);
         await Test("Companion animation and carousel", CompanionVerification.AnimationAndCarousel);
         await Test("Companion bubble resize edges and DPI anchors", CompanionLayoutVerification.EdgesAndAnchors);
         await Test("Workspace disclosure migration, independent selection and disk persistence", WorkspaceDisclosureVerification.MigrationSelectionAndPersistence);

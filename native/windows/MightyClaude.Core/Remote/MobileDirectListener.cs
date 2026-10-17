@@ -71,7 +71,8 @@ public sealed class MobileDirectListener
     /// <summary>
     /// Makes the listeners match <paramref name="addresses"/> on <paramref name="port"/>: stops the ones no longer wanted, keeps the
     /// ones already up (and the phones on them), binds the rest. Port 0 picks a free port, kept on later updates with 0. Answers every
-    /// listener up afterwards with its port, and the first error.
+    /// listener up afterwards with its port, and the first error as a <see cref="MobileDirectError"/> code (the socket's own text goes
+    /// to the trace only).
     /// </summary>
     public (IReadOnlyList<(string Host, int Port)> Bound, string? Error) Update(IReadOnlyList<string> addresses, int port)
     {
@@ -85,14 +86,19 @@ public sealed class MobileDirectListener
             {
                 var key = Key(address, port);
                 if (listeners.ContainsKey(key)) continue;
-                if (!IPAddress.TryParse(address, out var ip)) { error ??= address; continue; }
+                if (!IPAddress.TryParse(address, out var ip)) { error ??= MobileDirectError.BindFailed; continue; }
                 var listener = new TcpListener(ip, port);
                 try
                 {
                     if (OperatingSystem.IsWindows()) listener.ExclusiveAddressUse = true;
                     listener.Start(MobileDirect.ConnectionLimit);
                 }
-                catch (SocketException ex) { listener.Stop(); error ??= ex.Message; continue; }
+                catch (SocketException ex)
+                {
+                    listener.Stop(); error ??= MobileDirectError.Of(ex);
+                    System.Diagnostics.Trace.TraceError("mobile direct: an address could not be listened on: " + ex.SocketErrorCode + ": " + ex.Message);
+                    continue;
+                }
                 var entry = new Entry(listener, address, ((IPEndPoint)listener.LocalEndpoint).Port, new CancellationTokenSource());
                 listeners[key] = entry;
                 _ = AcceptLoop(entry);

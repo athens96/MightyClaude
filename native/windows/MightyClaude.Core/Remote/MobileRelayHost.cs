@@ -54,7 +54,11 @@ public static class MobileRelayStatusText
 public sealed class MobileRelayHost : IAsyncDisposable
 {
     public const string DefaultRelay = "wss://mightyclaude.duckdns.org";
-    private const int MaximumFrame = 1024 * 1024;
+    /// <summary>
+    /// Phones inside the handshake on the relay path (M/MobileRemoteService.swift maximumUnauthenticated). The same number as the
+    /// direct path's <see cref="MobileDirect.MaximumUnauthenticated"/> but a separate budget: each path counts only its own.
+    /// </summary>
+    public const int MaximumRelayUnauthenticated = 4;
     private readonly MobileIdentity identity;
     private readonly string hostName;
     private readonly string[] capabilities;
@@ -141,8 +145,30 @@ public sealed class MobileRelayHost : IAsyncDisposable
         if (UpdateDirect(force)) Republish();
     }
 
-    /// <summary><see cref="RefreshDirect"/> without the publish; answers whether <see cref="DirectStatus"/> changed.</summary>
-    private bool UpdateDirect(bool force)
+    /// <summary><see cref="RefreshDirect"/> without the publish, the addresses read on the caller's thread; answers whether <see cref="DirectStatus"/> changed.</summary>
+    private bool UpdateDirect(bool force) => ApplyDirect(force, ReadDirect());
+
+    /// <summary>
+    /// What one pass read, outside directSync: the source it read from and the addresses, or why they could not be read. Not
+    /// <see cref="Wanted"/> when the path was off, and then nothing was read.
+    /// </summary>
+    private sealed record DirectRead(bool Wanted, Func<IReadOnlyList<string>>? Source, IReadOnlyList<string>? Addresses, Exception? Fault);
+
+    /// <summary>
+    /// Reads the addresses outside directSync: reading the adapters takes a while, so it never holds the lock the listeners' accepts
+    /// and the relay's admissions wait on, and Settings runs it off the window's thread (<see cref="RestartInternal"/>).
+    /// </summary>
+    private DirectRead ReadDirect()
+    {
+        Func<IReadOnlyList<string>>? source; bool wanted;
+        lock (directSync) { var current = settings; wanted = !disposed && current.Enabled && current.DirectEnabled; source = directAddressSource; }
+        if (!wanted) return new(false, source, null, null);
+        try { return new(true, source, source is null ? TailscaleAddresses.Current() : source(), null); }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { return new(true, source, null, ex); }
+    }
+
+    /// <summary>Makes the listeners match what <paramref name="read"/> found, under directSync; answers whether <see cref="DirectStatus"/> changed.</summary>
+    private bool ApplyDirect(bool force, DirectRead read)
     {
         MobileDirectStatus before, after;
         Connection[] dropped = [];
@@ -153,12 +179,18 @@ public sealed class MobileRelayHost : IAsyncDisposable
             if (disposed || !current.Enabled || !current.DirectEnabled) dropped = StopDirect(current);
             else
             {
-                StartDirectWatch(); var source = directAddressSource;
-                IReadOnlyList<string>? addresses = null;
-                try { addresses = source is null ? TailscaleAddresses.Current() : source(); }
-                catch (Exception ex) when (ex is not OutOfMemoryException) { ReadFailed(ex); }
-                var port = source is null ? current.DirectPort : directSourcePort;
-                if (addresses is not null && (force || directBoundAddresses is not { } was || !was.SequenceEqual(addresses) || directBoundPort != port)) BindDirect(addresses, port, source is not null);
+                StartDirectWatch();
+                // A read made while the path was still off, or from a source since replaced, says nothing of now: it is left alone,
+                // and the pass that turned the path on or replaced the source (or the next watch tick) reads again.
+                if (read.Wanted && ReferenceEquals(read.Source, directAddressSource))
+                {
+                    if (read.Fault is { } fault) ReadFailed(fault);
+                    else if (read.Addresses is { } addresses)
+                    {
+                        var port = read.Source is null ? current.DirectPort : directSourcePort;
+                        if (force || directBoundAddresses is not { } was || !was.SequenceEqual(addresses) || directBoundPort != port) BindDirect(addresses, port, read.Source is not null);
+                    }
+                }
             }
             // A pass that ends where it began keeps the same status object, so nothing is published for it: a failed or partly bound
             // path is bound again on every pass, and the switch-off state is made anew on every one.
@@ -172,14 +204,15 @@ public sealed class MobileRelayHost : IAsyncDisposable
     private static bool SameStatus(MobileDirectStatus a, MobileDirectStatus b) => a.State == b.State && a.Error == b.Error && a.Endpoints.SequenceEqual(b.Endpoints);
 
     /// <summary>
-    /// The addresses could not be read (under directSync): the path stops listening and says why, as when binding fails, and the next
-    /// pass (the watch, an address change, Settings) reads them again. The phones already in stay, as when no address is found.
+    /// The addresses could not be read (under directSync): the path stops listening and says why in words, as when binding fails, and
+    /// the next pass (the watch, an address change, Settings) reads them again. The phones already in stay, as when no address is
+    /// found. The fault's own text goes to the trace only.
     /// </summary>
     private void ReadFailed(Exception ex)
     {
-        System.Diagnostics.Trace.TraceError("mobile direct: the addresses could not be read: " + ex.Message);
+        System.Diagnostics.Trace.TraceError("mobile direct: the addresses could not be read: " + (ex.InnerException ?? ex).Message);
         directListener?.Stop(); directListener = null; directBoundAddresses = null; directBoundPort = null;
-        Volatile.Write(ref directEndpoints, []); DirectStatus = new("failed", [], ex.Message);
+        Volatile.Write(ref directEndpoints, []); DirectStatus = new("failed", [], MobileDirectError.AdaptersUnreadable);
     }
 
     private void BindDirect(IReadOnlyList<string> addresses, int port, bool seam)
@@ -324,8 +357,10 @@ public sealed class MobileRelayHost : IAsyncDisposable
         await StopInternal(); settings = value;
         // The direct path follows its own switch, not the relay's state (M/MobileRemoteService.swift:409-424): the relay was just
         // stopped and the direct phones kept. Its new status rides on the publish just below, before the relay dials, so no relay
-        // report is ever sent twice for it.
-        UpdateDirect(forceDirect);
+        // report is ever sent twice for it. Reading the adapters takes a while and Settings applies from the window's thread, so the
+        // read runs on the pool, as the relay path's own read does (StartWatching); binding then happens under directSync.
+        var read = await Task.Run(ReadDirect);
+        ApplyDirect(forceDirect, read);
         if (!settings.Enabled) { StopWatching(); Publish(false, "disabled"); return; }
         var relay = NormalizeRelay(settings.RelayURL.Length == 0 ? DefaultRelay : settings.RelayURL) ?? throw new ArgumentException("Invalid relay address.");
         lifetime = new(); var current = ++generation; Publish(false, "connecting"); loop = RunAsync(relay, current, lifetime.Token);
@@ -443,7 +478,7 @@ public sealed class MobileRelayHost : IAsyncDisposable
                     // The same lock as the direct path's admission: the shared table's count, check and insert happen together.
                     lock (directSync)
                     {
-                        if (clients.Count >= MobileDirect.MaximumClients || clients.Values.Count(c => !c.Authenticated && !c.Direct) >= 4) continue;
+                        if (clients.Count >= MobileDirect.MaximumClients || clients.Values.Count(c => !c.Authenticated && !c.Direct) >= MaximumRelayUnauthenticated) continue;
                         connection = new Connection(this, id, Open(SocketUri(relay, id)), token);
                         added = clients.TryAdd(id, connection);
                     }
@@ -486,7 +521,7 @@ public sealed class MobileRelayHost : IAsyncDisposable
         await Task.WhenAll(clients.Values.Where(c => c.Authenticated).Select(c => c.Send(new { type = "notify", scope, revision })));
     }
     /// <summary>The largest plaintext one frame to a phone may hold: the relay closes a connection on a frame over 1 MiB, and the seal takes 28 bytes of it.</summary>
-    public const int MaximumPlaintext = MaximumFrame - 28;
+    public const int MaximumPlaintext = MobileDirect.MaximumFrameBytes - 28;
     private static async Task<(WebSocketMessageType Type, byte[] Bytes)> Receive(WebSocket socket, CancellationToken token)
     {
         using var data = new MemoryStream(); var buffer = new byte[8192]; WebSocketReceiveResult result;
@@ -494,7 +529,7 @@ public sealed class MobileRelayHost : IAsyncDisposable
         {
             result = await socket.ReceiveAsync(buffer, token);
             if (result.MessageType == WebSocketMessageType.Close) throw new IOException("Relay socket closed.");
-            if (data.Length + result.Count > MaximumFrame) throw new IOException("Relay frame exceeded limit.");
+            if (data.Length + result.Count > MobileDirect.MaximumFrameBytes) throw new IOException("Relay frame exceeded limit.");
             data.Write(buffer, 0, result.Count);
         } while (!result.EndOfMessage);
         return (result.MessageType, data.ToArray());
