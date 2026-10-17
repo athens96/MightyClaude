@@ -53,6 +53,7 @@ Windows에는 메뉴 막대가 없습니다. 같은 기능은 사이드바와 {{
 | 파일 위치 | {{ui:menu.showInFinder}} 대신 {{ui:menu.showInExplorer}}가 있습니다. |
 | 마이티 오케스트레이션 | 기본으로 켜져 있고 설정의 스위치로 끕니다. 이 스위치는 레지스트리 값이기도 합니다([켜고 끄기](delegation.md#enable)). worktree는 `%USERPROFILE%\.mightyclaude\worktrees`에 생기고, 안에 정션이나 심볼릭 링크가 있으면 자동으로 정리하지 않습니다([창 닫기와 정리](delegation.md#close)). {{ui:queue.worktree}} 버튼을 오른쪽 클릭하면 다른 에이전트의 자식에서 요청을 실행합니다([새 worktree에서 실행하기](delegation.md#worktree)). |
 | 글자 크기와 글꼴 | {{ui:settings.nav.general}} › {{ui:settings.text.sectionTitle}}에서 Mac처럼 크기(85~150%)와 {{ui:settings.text.uiFontLabel}}, {{ui:settings.text.transcriptFontLabel}}, {{ui:settings.text.codeFontLabel}}을 고르고, 열린 창이 모두 바로 따라갑니다. {{kbd:Ctrl+=}} / {{kbd:Ctrl+-}} / {{kbd:Ctrl+0}}도 되지만, 터미널이나 브라우저 창에 커서가 있으면 이 키는 그 창이 씁니다. 값은 레지스트리 `HKEY_CURRENT_USER\Software\MightyClaudeNative`에 저장됩니다. 확인 창 본문처럼 Windows 기본 컨트롤이 정하는 글자는 앱을 다시 열면 바뀌고, 펫 말풍선은 아직 따라가지 않습니다. |
+| Tailscale로 직접 연결 | 휴대폰이 Windows PC에도 [직접 연결](phone.md#direct)합니다. Windows 방화벽 규칙은 {{ui:settings.nav.mobile}} 탭의 {{ui:mobileRemote.direct.windows.firewall.addButton}}로 더하고, Windows의 관리자 확인을 한 번 거칩니다. 앱이 관리자 권한을 묻는 곳은 여기뿐입니다. |
 
 > [!note]
 > Windows 앱의 일부 기능은 아직 실제 기기에서 충분히 확인되지 않았습니다. 이상한 점이 있으면 알려 주세요.
