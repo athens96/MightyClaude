@@ -697,7 +697,9 @@ public sealed partial class MainWindow
         store.Import(json);
     }
 
-    // Runs one toolkit argv synchronously; called from a background thread by ToolkitRunner.Run.
+    // Runs one toolkit argv synchronously; called from a background thread by ToolkitRunner.Run. The program is found
+    // along the PATH Windows keeps now (a .cmd shim such as npm's runs through cmd.exe, CliRunner), and one that cannot
+    // start is that step failing with why, never the whole install.
     private sealed class CliToolkitExecutor : IToolkitRunnerExecutor
     {
         private readonly ICliRunner runner = new CliRunner();
@@ -706,7 +708,9 @@ public sealed partial class MainWindow
         {
             if (argv.Count == 0) return ToolkitCommandOutput.Success;
             var (binary, args) = (argv[0], argv.Skip(1).ToArray());
-            var result = runner.RunAsync(binary, args, TimeSpan.FromMinutes(5)).GetAwaiter().GetResult();
+            CliRunResult result;
+            try { result = runner.RunAsync(binary, args, TimeSpan.FromMinutes(5), environment: CliEnvironment.Current()).GetAwaiter().GetResult(); }
+            catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or IOException or ArgumentException or InvalidOperationException) { return ToolkitCommandOutput.Failure(ex.Message, -1); }
             return result.ExitCode == 0
                 ? ToolkitCommandOutput.Success
                 : ToolkitCommandOutput.Failure(result.Output + result.ErrorOutput, result.ExitCode);

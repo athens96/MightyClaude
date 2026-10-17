@@ -722,7 +722,7 @@ internal static class ToolkitVerification
 
         // Commands are argv arrays through the existing launcher, never a shell
         // string.
-        Check(source.Contains("runner.RunAsync(binary, args, TimeSpan.FromMinutes(5))"),
+        Check(source.Contains("runner.RunAsync(binary, args, TimeSpan.FromMinutes(5), environment: CliEnvironment.Current())"),
             "each toolkit command must start from an argv array through ICliRunner");
         Check(!source.Contains("/bin/sh") && !source.Contains("cmd.exe /c"),
             "no toolkit command may be joined into a shell string");

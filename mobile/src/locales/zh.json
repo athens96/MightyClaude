@@ -1863,6 +1863,7 @@
   "windows.mobile.rotationDescription": "重新生成密钥或撤销设备会断开所有手机，并需要使用新的二维码重新配对。",
   "windows.process.childrenClosing": "仍有 {count} 个子进程正在关闭。",
   "windows.process.startFailed": "无法启动进程。",
+  "windows.process.unsafeBatchArgument": "未运行：含引号、%、! 或换行的参数无法安全地传给批处理文件（.cmd、.bat）。",
   "windows.screenShare.approveKey": "批准匹配的密钥",
   "windows.screenShare.confirmKeyMessage": "仅当此指纹与手机上显示的一致时才批准。此密钥允许手机在完成身份验证后控制鼠标和键盘。",
   "windows.screenShare.confirmKeyTitle": "确认此手机的控制密钥",

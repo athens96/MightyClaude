@@ -1863,6 +1863,7 @@
   "windows.mobile.rotationDescription": "키 재생성 또는 기기 취소 시 모든 휴대폰의 연결과 인증이 해제됩니다. 새 QR 코드로 다시 연결하세요.",
   "windows.process.childrenClosing": "Windows 실행의 자식 프로세스 {count}개가 아직 종료 중입니다.",
   "windows.process.startFailed": "프로세스를 시작하지 못했습니다.",
+  "windows.process.unsafeBatchArgument": "배치 파일(.cmd, .bat)에는 따옴표, %, !, 줄바꿈이 든 인수를 안전하게 넘길 수 없어 실행하지 않았습니다.",
   "windows.screenShare.approveKey": "일치하는 키 승인",
   "windows.screenShare.confirmKeyMessage": "휴대폰에 표시된 지문과 동일한 경우에만 승인하세요. 이 키로 휴대폰 본인 인증 후 마우스와 키보드를 제어할 수 있습니다.",
   "windows.screenShare.confirmKeyTitle": "휴대폰 제어 키 확인",
