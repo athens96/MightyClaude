@@ -72,4 +72,170 @@ internal static class MobileDirectVerification
         Check(JsonSerializer.Serialize(MobileDirectStatus.Off, Wire.Json) == "{\"state\":\"off\",\"endpoints\":[]}", "the computed property is never serialized");
         return Task.CompletedTask;
     }
+
+    internal static async Task TheListenerHoldsAtMost36AndUpgradesAPhone()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var delivered = new ConcurrentQueue<DirectIncoming>();
+        var listener = new MobileDirectListener(delivered.Enqueue);
+        try
+        {
+            var (bound, error) = listener.Update(["127.0.0.1"], 0);
+            Check(error is null && bound.Count == 1 && bound[0].Host == "127.0.0.1" && bound[0].Port > 0, "one listener on the address asked for");
+            var port = bound[0].Port;
+            Check(listener.Update(["127.0.0.1"], 0).Bound.Single().Port == port, "an address already listened on keeps its listener");
+
+            // A phone's upgrade, then frames both ways.
+            using (var phone = new ClientWebSocket())
+            {
+                var connecting = phone.ConnectAsync(new Uri("ws://127.0.0.1:" + port.ToString(CultureInfo.InvariantCulture) + "/ws?v=1"), timeout.Token);
+                await Verification.Until(() => !delivered.IsEmpty);
+                delivered.TryDequeue(out var incoming);
+                Check(incoming!.Peer == "127.0.0.1", "the peer is read from the socket");
+                using var server = await MobileDirect.AcceptWebSocketAsync(incoming.Stream, timeout.Token) ?? throw new InvalidOperationException("the phone's upgrade was refused");
+                await connecting;
+                await phone.SendAsync("hello"u8.ToArray(), WebSocketMessageType.Text, true, timeout.Token);
+                var buffer = new byte[16]; var got = await server.ReceiveAsync(buffer, timeout.Token);
+                Check(got.MessageType == WebSocketMessageType.Text && Encoding.UTF8.GetString(buffer, 0, got.Count) == "hello", "frames pass after the upgrade");
+                await server.SendAsync("ready"u8.ToArray(), WebSocketMessageType.Text, true, timeout.Token);
+                got = await phone.ReceiveAsync(buffer, timeout.Token);
+                Check(got.MessageType == WebSocketMessageType.Text && Encoding.UTF8.GetString(buffer, 0, got.Count) == "ready", "frames pass back to the phone");
+                incoming.Dispose();
+                incoming.Dispose(); incoming.Refuse();
+            }
+            await Verification.Until(() => listener.LiveConnections == 0);
+            Check(listener.LiveConnections == 0, "a connection disposed twice and then refused gives its slot back once");
+
+            // A request that is no phone's upgrade gets no 101: the caller refuses it unanswered and its slot comes back.
+            using (var stranger = new TcpClient())
+            {
+                await stranger.ConnectAsync(IPAddress.Loopback, port, timeout.Token);
+                await stranger.GetStream().WriteAsync("GET /other HTTP/1.1\r\nHost: x\r\n\r\n"u8.ToArray(), timeout.Token);
+                await Verification.Until(() => !delivered.IsEmpty);
+                delivered.TryDequeue(out var incoming);
+                Check(await MobileDirect.AcceptWebSocketAsync(incoming!.Stream, timeout.Token) is null, "a refused upgrade gives no socket");
+                incoming.Refuse(); incoming.Refuse(); incoming.Dispose();
+                Check(await ReadsEnd(stranger, timeout.Token), "a refused upgrade is answered with nothing");
+                await Verification.Until(() => listener.LiveConnections == 0);
+            }
+
+            // A phone that hangs up before anything starts on its connection still gives its slot back once.
+            using (var early = new TcpClient())
+            {
+                await early.ConnectAsync(IPAddress.Loopback, port, timeout.Token);
+                await Verification.Until(() => !delivered.IsEmpty);
+                early.Dispose();
+                delivered.TryDequeue(out var incoming);
+                WebSocket? none = null;
+                try { none = await MobileDirect.AcceptWebSocketAsync(incoming!.Stream, timeout.Token); }
+                catch (IOException) { }
+                Check(none is null, "a closed connection gives no socket");
+                incoming!.Dispose(); incoming.Dispose();
+                await Verification.Until(() => listener.LiveConnections == 0);
+            }
+
+            // 36 held at once; the 37th is reset unread and gives its slot straight back.
+            var held = new List<TcpClient>();
+            try
+            {
+                for (var i = 0; i < MobileDirect.ConnectionLimit; i++) { var client = new TcpClient(); await client.ConnectAsync(IPAddress.Loopback, port, timeout.Token); held.Add(client); }
+                await Verification.Until(() => listener.LiveConnections == MobileDirect.ConnectionLimit);
+                using var extra = new TcpClient(); await extra.ConnectAsync(IPAddress.Loopback, port, timeout.Token);
+                Check(await ReadsEnd(extra, timeout.Token), "the 37th connection is dropped");
+                Check(listener.LiveConnections == MobileDirect.ConnectionLimit, "a dropped connection gives its slot back");
+                Check(delivered.Count == MobileDirect.ConnectionLimit, "the 37th connection is never delivered");
+            }
+            finally { foreach (var client in held) client.Dispose(); while (delivered.TryDequeue(out var item)) item.Dispose(); }
+            await Verification.Until(() => listener.LiveConnections == 0);
+
+            // A handler that throws has its connection refused, and its slot comes back.
+            var throwing = new MobileDirectListener(_ => throw new InvalidOperationException("handler"));
+            try
+            {
+                var throwingPort = throwing.Update(["127.0.0.1"], 0).Bound.Single().Port;
+                using var dropped = new TcpClient(); await dropped.ConnectAsync(IPAddress.Loopback, throwingPort, timeout.Token);
+                Check(await ReadsEnd(dropped, timeout.Token), "a handler's failure drops the connection");
+                await Verification.Until(() => throwing.LiveConnections == 0);
+            }
+            finally { throwing.Stop(); }
+
+            // A port already taken is reported, not thrown.
+            using var taken = new TcpListener(IPAddress.Loopback, 0); taken.Start(); var busy = ((IPEndPoint)taken.LocalEndpoint).Port;
+            var second = new MobileDirectListener(_ => { });
+            var failed = second.Update(["127.0.0.1"], busy); second.Stop();
+            Check(failed.Bound.Count == 0 && failed.Error is { Length: > 0 }, "a taken port is a bind error");
+
+            // Stop closes every listener.
+            listener.Stop();
+            Check(listener.Update(["127.0.0.1"], 0).Bound.Count == 0, "a stopped listener binds nothing again");
+            var refused = false;
+            using var after = new TcpClient();
+            try { await after.ConnectAsync(IPAddress.Loopback, port, timeout.Token); refused = await ReadsEnd(after, timeout.Token); }
+            catch (SocketException) { refused = true; }
+            Check(refused, "a stopped listener takes no phone");
+        }
+        finally { listener.Stop(); }
+    }
+
+    internal static async Task TheUpgradeAndThePeerAreReadStrictly()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        const string request = "GET /ws?v=1 HTTP/1.1\r\nHost: 100.101.102.103:43139\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n";
+        // Nothing is written back to a refused request.
+        foreach (var (bytes, reason) in new[]
+                 {
+                     (Encoding.ASCII.GetBytes(request.Replace("GET /ws?v=1", "GET /other")), "another path"),
+                     (Encoding.ASCII.GetBytes(request + "x"), "bytes after the blank line"),
+                     (Encoding.ASCII.GetBytes(request[..^2]), "a head that never ends"),
+                     (Encoding.ASCII.GetBytes("GET /ws?v=1 HTTP/1.1\r\nX: " + new string('a', MobileDirect.MaximumRequestHeadBytes) + "\r\n\r\n"), "a head over 8 KiB"),
+                     (Array.Empty<byte>(), "nothing at all"),
+                 })
+        {
+            using var stream = new ReadOnlyThenRecording(bytes);
+            Check(await MobileDirect.AcceptWebSocketAsync(stream, timeout.Token) is null && stream.Written == 0, "a refused upgrade: " + reason);
+        }
+        using (var good = new ReadOnlyThenRecording(Encoding.ASCII.GetBytes(request)))
+        {
+            using var socket = await MobileDirect.AcceptWebSocketAsync(good, timeout.Token);
+            Check(socket is { State: WebSocketState.Open } && Encoding.ASCII.GetString(good.WrittenBytes).Contains("Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n"), "a good upgrade is answered with a 101");
+        }
+
+        // One spelling per peer, so the per-address limits never split across forms of one address.
+        Check(DirectIncoming.PeerOf(new IPEndPoint(IPAddress.Parse("::ffff:100.101.102.103"), 1)) == "100.101.102.103", "an IPv4-mapped peer is its IPv4");
+        Check(DirectIncoming.PeerOf(new IPEndPoint(IPAddress.Parse("FD7A:115C:A1E0::1"), 1)) == "fd7a:115c:a1e0::1", "an IPv6 peer is lowercase");
+        Check(DirectIncoming.PeerOf(new IPEndPoint(IPAddress.Parse("fd7a:115c:a1e0:0:0:0:0:1%7"), 1)) == "fd7a:115c:a1e0::1", "an IPv6 peer has no zone and is compressed");
+        Check(DirectIncoming.PeerOf(new IPEndPoint(IPAddress.Parse("100.101.102.103"), 1)) == "100.101.102.103", "an IPv4 peer stays");
+        Check(DirectIncoming.PeerOf(new DnsEndPoint("example.invalid", 1)) is null && DirectIncoming.PeerOf(null) is null, "no IP, no peer");
+    }
+
+    /// <summary>Reads the given bytes, then the end; records what is written.</summary>
+    private sealed class ReadOnlyThenRecording(byte[] input) : Stream
+    {
+        private readonly MemoryStream reading = new(input), writing = new();
+        public int Written => (int)writing.Length;
+        public byte[] WrittenBytes => writing.ToArray();
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) => reading.Read(buffer, offset, count);
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => writing.Write(buffer, offset, count);
+        protected override void Dispose(bool disposing) { if (disposing) { reading.Dispose(); writing.Dispose(); } base.Dispose(disposing); }
+    }
+
+    /// <summary>Whether the server ended the connection (a reset or a close) within three seconds.</summary>
+    private static async Task<bool> ReadsEnd(TcpClient client, CancellationToken token)
+    {
+        try
+        {
+            using var wait = CancellationTokenSource.CreateLinkedTokenSource(token); wait.CancelAfter(TimeSpan.FromSeconds(3));
+            return await client.GetStream().ReadAsync(new byte[1], wait.Token) == 0;
+        }
+        catch (IOException) { return true; }
+        catch (OperationCanceledException) { return false; }
+    }
 }
