@@ -19,8 +19,11 @@ Under {{ui:settings.display.sectionTitle}} on the {{ui:settings.nav.general}} ta
 ### Text size and font {#text}
 {{platform:mac}} The {{ui:settings.text.sectionTitle}} group on the same tab changes the text of the whole app.
 - {{ui:settings.text.sizeLabel}}: pick from 85% to 150%. Conversations, the composer, the sidebar, Settings and terminals grow and shrink together.
-- {{ui:settings.text.fontLabel}}: pick any font installed on this Mac. {{ui:settings.text.fontSystem}} is the macOS font. Code and terminals keep their monospaced font and follow only the size.
-- {{ui:settings.text.reset}} puts the size and font back as they were.
+- {{ui:settings.text.uiFontLabel}}: the font of the app itself, such as the sidebar, menus, buttons and Settings. Pick any font installed on this Mac; {{ui:settings.text.fontSystem}} is the macOS font.
+- {{ui:settings.text.transcriptFontLabel}}: the font of agent replies, your own messages, the composer, and the body text of Mighty cards and boards. {{ui:settings.text.sameAsInterface}} follows the interface font.
+- {{ui:settings.text.codeFontLabel}}: the font of code blocks, inline code, tool output and terminal panes. Only monospaced fonts are listed; {{ui:settings.text.monospaceSystem}} is the monospaced font used so far. Open terminals change at once.
+- Under each font, a one-line preview is drawn in that font.
+- {{ui:settings.text.reset}} puts the size and all three fonts back as they were.
 
 The View menu's {{ui:menu.textBigger}} ({{kbd:⌘=}}), {{ui:menu.textSmaller}} ({{kbd:⌘-}}) and {{ui:menu.textActualSize}} ({{kbd:⌘0}}) change the size too. A change applies at once and stays after the app is reopened.
 

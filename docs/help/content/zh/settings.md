@@ -19,8 +19,11 @@ section: settings
 ### 文字大小与字体 {#text}
 {{platform:mac}} 在同一标签页的 {{ui:settings.text.sectionTitle}} 中更改整个应用的文字。
 - {{ui:settings.text.sizeLabel}}：在 85% 到 150% 之间选择。对话、输入框、侧边栏、设置和终端会一起放大或缩小。
-- {{ui:settings.text.fontLabel}}：从这台 Mac 上安装的字体中选择。{{ui:settings.text.fontSystem}} 是 macOS 的默认字体。代码和终端保留等宽字体，只跟随大小变化。
-- {{ui:settings.text.reset}} 按钮把大小和字体恢复到最初的状态。
+- {{ui:settings.text.uiFontLabel}}：应用界面的字体，例如侧边栏、菜单、按钮和设置。从这台 Mac 上安装的字体中选择；{{ui:settings.text.fontSystem}} 是 macOS 的默认字体。
+- {{ui:settings.text.transcriptFontLabel}}：代理的回复、你发送的消息、输入框以及 Mighty 卡片和看板正文的字体。选择 {{ui:settings.text.sameAsInterface}} 时跟随界面字体。
+- {{ui:settings.text.codeFontLabel}}：代码块、行内代码、工具输出和终端窗格的字体。只列出等宽字体；{{ui:settings.text.monospaceSystem}} 是一直以来使用的等宽字体。已打开的终端也会立即更改。
+- 每种字体下方都会用该字体显示一行预览。
+- {{ui:settings.text.reset}} 按钮把大小和三种字体恢复到最初的状态。
 
 也可以用“显示”菜单中的 {{ui:menu.textBigger}}（{{kbd:⌘=}}）、{{ui:menu.textSmaller}}（{{kbd:⌘-}}）和 {{ui:menu.textActualSize}}（{{kbd:⌘0}}）更改大小。更改会立即生效，重新打开应用后仍然保留。
 

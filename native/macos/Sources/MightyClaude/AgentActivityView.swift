@@ -25,7 +25,7 @@ struct AgentLogEntryView: View {
         } else if entry.kind == "user" {
             HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
                 Image(systemName: "arrow.up.right").font(.ui(size: 11, weight: .semibold)).foregroundStyle(Palette.accent).padding(.top, DesignMetrics.Spacing.xxs)
-                Text(entry.text).font(.ui(size: 13)).lineSpacing(4).textSelection(.enabled)
+                Text(entry.text).font(.transcript(size: 13)).lineSpacing(4).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.horizontal, DesignMetrics.Spacing.md).padding(.vertical, DesignMetrics.Spacing.md)

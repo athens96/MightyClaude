@@ -219,14 +219,14 @@ struct AppSettingsView: View {
         .frame(width: 200)
     }
 
-    /// The text size and font of the whole app (`TextSettings`); View → ⌘= / ⌘− / ⌘0 step the same size.
+    /// The text size and fonts of the whole app (`TextSettings`); View → ⌘= / ⌘− / ⌘0 step the same size.
     private var textGroup: some View {
         let text = store.textAppearance
         let families = TextSettings.families
         return SettingsGroup(L("settings.text.sectionTitle")) {
             Picker(L("settings.text.sizeLabel"), selection: Binding(
                 get: { text.scale },
-                set: { store.setTextAppearance(TextAppearance(scale: $0, family: store.textAppearance.family)) }
+                set: { store.setTextAppearance(store.textAppearance.with(scale: $0)) }
             )) {
                 ForEach(TextAppearance.scales, id: \.self) { scale in
                     let percent = "\(Int((scale * 100).rounded()))"
@@ -234,22 +234,17 @@ struct AppSettingsView: View {
                 }
             }
             .accessibilityIdentifier("settings-text-size")
-            Picker(L("settings.text.fontLabel"), selection: Binding(
-                get: { text.family ?? "" },
-                set: { store.setTextAppearance(store.textAppearance.with(family: $0.isEmpty ? nil : $0)) }
-            )) {
-                Text(L("settings.text.fontSystem")).tag("")
-                Divider()
-                // A saved family that is no longer installed stays listed; it draws as the system font.
-                ForEach(families + (text.family.map { families.contains($0) ? [] : [$0] } ?? []), id: \.self) { Text(verbatim: $0).tag($0) }
+            // The three fonts, read out as one "Font" group.
+            VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
+                fontPicker(L("settings.text.uiFontLabel"), standard: L("settings.text.fontSystem"), families: families, selected: text.family,
+                           preview: .ui(size: 13), identifier: "settings-text-font") { store.textAppearance.with(family: $0) }
+                fontPicker(L("settings.text.transcriptFontLabel"), standard: L("settings.text.sameAsInterface"), families: families, selected: text.transcriptFamily,
+                           preview: .transcript(size: 13), identifier: "settings-text-transcript-font") { store.textAppearance.with(transcriptFamily: $0) }
+                fontPicker(L("settings.text.codeFontLabel"), standard: L("settings.text.monospaceSystem"), families: TextSettings.codeFamilies, selected: text.codeFamily,
+                           preview: .ui(size: 12, design: .monospaced), identifier: "settings-text-code-font") { store.textAppearance.with(codeFamily: $0) }
             }
-            .accessibilityIdentifier("settings-text-font")
-            Text(L("settings.text.preview"))
-                .font(.ui(size: 13))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(DesignMetrics.Spacing.sm)
-                .background(Palette.subtle, in: RoundedRectangle(cornerRadius: 6))
-                .accessibilityIdentifier("settings-text-preview")
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(L("settings.text.fontLabel"))
             HStack(alignment: .firstTextBaseline) {
                 Text(L("settings.text.note")).font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Spacer()
@@ -257,6 +252,30 @@ struct AppSettingsView: View {
                     .disabled(text.isStandard)
                     .accessibilityIdentifier("settings-text-reset")
             }
+        }
+    }
+
+    /// One of the text group's font pickers, `standard` (nil) first, then `families`,
+    /// and a one-line preview in the font it picks.
+    private func fontPicker(_ label: String, standard: String, families: [String], selected: String?, preview: Font, identifier: String,
+                            change: @escaping (String?) -> TextAppearance) -> some View {
+        VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xs) {
+            Picker(label, selection: Binding(
+                get: { selected ?? "" },
+                set: { store.setTextAppearance(change($0.isEmpty ? nil : $0)) }
+            )) {
+                Text(standard).tag("")
+                Divider()
+                // A saved family that is no longer installed stays listed; it draws as the standard font.
+                ForEach(families + (selected.map { families.contains($0) ? [] : [$0] } ?? []), id: \.self) { Text(verbatim: $0).tag($0) }
+            }
+            .accessibilityIdentifier(identifier)
+            Text(L("settings.text.preview"))
+                .font(preview).lineLimit(1).truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(DesignMetrics.Spacing.sm)
+                .background(Palette.subtle, in: RoundedRectangle(cornerRadius: 6))
+                .accessibilityIdentifier(identifier + "-preview")
         }
     }
 
