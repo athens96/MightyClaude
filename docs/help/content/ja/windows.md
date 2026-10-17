@@ -32,6 +32,7 @@ Windows 10(バージョン2004)以降またはWindows 11で動作します。必
 | {{kbd:⌘K}} | {{kbd:Ctrl+K}} | {{ui:menu.searchWorkspaces}} |
 | {{kbd:⌃⌘S}} | {{kbd:Ctrl+B}} | {{ui:sidebar.collapse}} / {{ui:sidebar.expand}} |
 | {{kbd:⌘,}} | {{kbd:Ctrl+,}} | {{ui:menu.settings}} |
+| {{kbd:⌘=}} / {{kbd:⌘-}} / {{kbd:⌘0}} | {{kbd:Ctrl+=}} / {{kbd:Ctrl+-}} / {{kbd:Ctrl+0}} | {{ui:menu.textBigger}} / {{ui:menu.textSmaller}} / {{ui:menu.textActualSize}} |
 | {{kbd:⌘Enter}} | {{kbd:Ctrl+Enter}} | 新しいworktreeですぐに実行、または実行中のClaudeにすぐに伝える |
 | {{kbd:⌃⌥⌘K}} | {{kbd:Ctrl+Alt+Esc}} | スマートフォンからのリモート画面セッションをすべて止める([リモート画面](phone.md#screen)) |
 
@@ -50,7 +51,7 @@ Windowsにはメニューバーがありません。同じ機能は、サイド�
 | 言語 | 変更した言語は、アプリを開き直すと適用されます。 |
 | ファイルの場所 | {{ui:menu.showInFinder}}の代わりに{{ui:menu.showInExplorer}}があります。 |
 | Mightyオーケストレーション | 初期状態でオンで、設定のスイッチでオフにできます。このスイッチはレジストリの値でもあります([オンとオフ](delegation.md#enable))。worktreeは`%USERPROFILE%\.mightyclaude\worktrees`にでき、中にジャンクションやシンボリックリンクがあると自動では片付けません([ペインを閉じる・後片付け](delegation.md#close))。 |
-| 文字サイズとフォント | Windowsアプリにはまだありません。Windowsの設定 › アクセシビリティ › テキストのサイズで、アプリの文字を大きくできます。 |
+| 文字サイズとフォント | Macと同じく{{ui:settings.nav.general}} › {{ui:settings.text.sectionTitle}}でサイズ（85〜150%）、{{ui:settings.text.uiFontLabel}}、{{ui:settings.text.transcriptFontLabel}}、{{ui:settings.text.codeFontLabel}}を選ぶと、開いているウィンドウがすべてすぐに変わります。{{kbd:Ctrl+=}} / {{kbd:Ctrl+-}} / {{kbd:Ctrl+0}}も使えますが、ターミナルやブラウザーのペインにフォーカスがあるときは、キーはそのペインで使われます。設定はレジストリの `HKEY_CURRENT_USER\Software\MightyClaudeNative` に保存されます。確認ウィンドウの本文のようにWindows標準のコントロールが決める文字はアプリを開き直すと変わり、ペットの吹き出しはまだこの設定に従いません。 |
 
 > [!note]
 > Windowsアプリの一部の機能は、まだ実機で十分に確認されていません。気になる点があればお知らせください。
