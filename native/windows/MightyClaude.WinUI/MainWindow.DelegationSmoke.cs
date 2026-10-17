@@ -184,35 +184,54 @@ public sealed partial class MainWindow
             //    menu offers only a Claude child in plan mode, and its pick starts one, run by the scripted Claude. The menu is
             //    filled as the pane fills it on opening; the pick goes the way the menu item's send does. Claude's CLI is the
             //    smoke's scripted one, so the smoke treats it as ready.
-            SetDelegationOn(true); smokeAgentsReady["claude"] = true;
+            SetDelegationOn(true); smokeAgentsReady["claude"] = true; smokeDelegationDialog = null;
+            string? crossWorkspaceId = null, crossChildId = null;
             try
             {
                 var crossRepo = Path.Combine(root, "cross"); Directory.CreateDirectory(crossRepo);
                 await DelegationSmokeGit(crossRepo, "init", "-q", "-b", "main");
                 File.WriteAllText(Path.Combine(crossRepo, "README.md"), "# Cross-agent smoke\n");
                 await DelegationSmokeGit(crossRepo, "add", "-A"); await DelegationSmokeCommit(crossRepo, "Start");
-                var crossWorkspace = await service.AddWorkspaceAsync(crossRepo);
+                var crossWorkspace = await service.AddWorkspaceAsync(crossRepo); crossWorkspaceId = crossWorkspace.Id;
                 var codexPane = Wire.Id();
                 await service.UpdateAsync(s => s with { Sessions = [.. s.Sessions, new RunSession { Id = codexPane, WorkspaceId = crossWorkspace.Id, Kind = "claude", Provider = "codex", Title = "Codex parent", Settings = new(PermissionMode: "manual") }], ActiveWorkspaceId = crossWorkspace.Id, ActiveSessionId = codexPane });
                 Render();
                 var codex = service.Snapshot.Sessions.First(s => s.Id == codexPane);
                 service.RefreshWorktreeReadiness(codex);
                 await DelegationSmokeUntil("the Codex pane's worktree menu", 30, () => service.WorktreeMenuOnly(codex, false));
-                Require(service.WorktreeChildChoices(codex, false).Select(choice => (choice.Agent, choice.Mode, choice.Blocked))
-                    .SequenceEqual([("claude", (string?)"plan", (DelegationChildBlock?)null), ("codex", null, DelegationChildBlock.NoMode), ("gemini", null, DelegationChildBlock.NoMode)]),
+                // The window's CLI search is real, so a row for an agent this machine lacks reads NotInstalled, not NoMode: those rows only have no mode and are blocked.
+                var menu = service.WorktreeChildChoices(codex, false);
+                Require(menu.Count == 3 && (menu[0].Agent, menu[0].Mode, menu[0].Blocked) == ("claude", "plan", null)
+                    && menu.Skip(1).Select(choice => choice.Agent).SequenceEqual(["codex", "gemini"]) && menu.Skip(1).All(choice => choice.Mode is null && choice.Blocked is not null),
                     "The read-only Codex pane's menu does not offer only a Claude child in plan mode.");
                 Require(MobilePane(codexPane).DelegationSmokeWorktreeMenu().Select(item => (AutomationProperties.GetAutomationId(item), item.IsEnabled))
                     .SequenceEqual([("composer-worktree-claude-" + codexPane, true), ("composer-worktree-codex-" + codexPane, false), ("composer-worktree-gemini-" + codexPane, false)]),
                     "The worktree menu's rows are not Claude (enabled), then Codex and Antigravity (greyed out with why).");
                 MobilePane(codexPane).DelegationSmokeRunInNewWorktree("Smoke cross-agent child: write a note.", "claude");
-                var crossChild = await DelegationSmokeWait("the Codex pane's Claude child", 60, () => delegation.File.Children.FirstOrDefault(child => child.ParentSessionId == codexPane && child.StartedByHuman == true && child.State != ChildState.Creating));
+                ChildRecord crossChild;
+                try { crossChild = await DelegationSmokeWait("the Codex pane's Claude child", 60, () => delegation.File.Children.FirstOrDefault(child => child.ParentSessionId == codexPane && child.StartedByHuman == true && child.State != ChildState.Creating)); }
+                catch (TimeoutException timeout) { throw new TimeoutException(timeout.Message + " The window said: " + error.Text, timeout); }
+                crossChildId = crossChild.Id;
                 Require(crossChild.State != ChildState.Failed && crossChild.Provider is null && crossChild.Agent == "claude" && crossChild.StartingMode == "plan"
                     && service.Snapshot.Sessions.FirstOrDefault(s => s.Id == crossChild.Id) is { Provider: "claude", ParentSessionId: var crossParent } && crossParent == codexPane
                     && service.Snapshot.Sessions.First(s => s.Id == codexPane).Provider == "codex" && service.DelegationChildren.FirstOrDefault(row => row.Id == crossChild.Id)?.Agent == "claude",
                     $"The Codex pane's pick of Claude did not start a Claude child ({DelegationNames.Of(crossChild.State)}).");
                 checks["otherAgentChildStarted"] = new Dictionary<string, object?> { ["parent"] = "codex", ["child"] = "claude", ["mode"] = crossChild.StartingMode, ["state"] = DelegationNames.Of(crossChild.State) };
             }
-            finally { smokeAgentsReady.TryRemove("claude", out _); SetDelegationOn(false); }
+            finally
+            {
+                smokeAgentsReady.TryRemove("claude", out _);
+                // Cleaned up the way steps 1-8 are: the child discarded from its card through its confirmation, then the workspace removed.
+                // A failure here must not hide the step's own, so it is not rethrown.
+                try
+                {
+                    smokeDelegationDialog = _ => Task.FromResult(ContentDialogResult.Primary);
+                    if (crossChildId is not null && delegation.File.Children.Any(child => child.Id == crossChildId && child.State != ChildState.Discarded)) await DiscardChild(crossChildId);
+                    if (crossWorkspaceId is not null) await RemoveWorkspaceConfirmed(crossWorkspaceId);
+                }
+                catch (Exception) { }
+                smokeDelegationDialog = null; SetDelegationOn(false);
+            }
             checks["passed"] = true;
             return checks;
         }
