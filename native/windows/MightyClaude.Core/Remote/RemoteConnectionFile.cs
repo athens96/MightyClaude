@@ -63,10 +63,10 @@ public static class RemoteConnectionFile
         catch (ArgumentException) { return null; }
     }
 
-    /// <summary>Control characters out and at most 120 UTF-16 units, never ending inside a surrogate pair (a lone one would make the whole file unreadable).</summary>
-    private static string Name(string? value)
-    {
-        var clean = Wire.Clean(value, MaximumName);
-        return clean.Length > 0 && char.IsHighSurrogate(clean[^1]) ? clean[..^1] : clean;
-    }
+    /// <summary>
+    /// A connection's name as it is kept: control characters out, then at most 120 characters as the Mac counts them (its loadSaved
+    /// <c>prefix(120)</c>), with no lone surrogate (one would make the whole file unreadable). Connect names a connection by this too,
+    /// so it reads the same after a restart.
+    /// </summary>
+    public static string Name(string? value) => RemoteText.Cut(Wire.Clean(value), MaximumName);
 }
