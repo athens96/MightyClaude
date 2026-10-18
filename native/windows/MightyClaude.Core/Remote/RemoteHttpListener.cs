@@ -24,12 +24,16 @@ public sealed record RemoteHttpResponse(int Status, byte[] Body, IReadOnlyDictio
 public sealed class RemoteHttpListener(IPAddress address, int port, Func<RemoteHttpRequest, Task<RemoteHttpResponse>> handler,
     Func<RemoteHttpRequest, int>? bodyLimit = null, Func<IPAddress, bool>? acceptPeer = null, int? maximumConnectionsPerPeer = null) : IAsyncDisposable
 {
-    public const int HeaderLimit = 8_192, DefaultBodyLimit = 512 * 1024, MaximumConnections = 64;
+    public const int HeaderLimit = 8_192, DefaultBodyLimit = 512 * 1024;
+    /// <summary>Connections open at once across every peer, as on the Mac (not RemoteProtocol.MaximumConnections, the saved connections).</summary>
+    public const int MaximumOpenConnections = 64;
     /// <summary>The request line and at most 33 header lines, as on the Mac.</summary>
-    private const int MaximumHeadLines = 34, DrainBytes = 64 * 1024;
+    private const int MaximumHeadLines = 34, DrainBytes = 64 * 1024, FirstBodyBuffer = 64 * 1024, MaximumAcceptFailures = 50;
     private static readonly TimeSpan DrainTime = TimeSpan.FromSeconds(1);
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
     private static readonly Regex HeaderName = new(@"^[A-Za-z0-9-]+\z", RegexOptions.CultureInvariant);
+    /// <summary>Headers the listener writes itself; a handler's copy is dropped so it can never change how the answer is framed.</summary>
+    private static readonly HashSet<string> FramingHeaders = new(["content-length", "connection", "transfer-encoding", "content-type"], StringComparer.OrdinalIgnoreCase);
     private static readonly Regex LengthText = new(@"^[0-9]{1,9}\z", RegexOptions.CultureInvariant);
     private static readonly Dictionary<int, string> Reasons = new()
     {
@@ -44,14 +48,23 @@ public sealed class RemoteHttpListener(IPAddress address, int port, Func<RemoteH
     private TcpListener? listener;
     private Task loop = Task.CompletedTask;
     private bool closing;
+    private volatile bool acceptEnded;
     private int boundPort;
+    /// <summary>Connections holding a slot: admitted and not yet released (a draining one still holds its slot).</summary>
+    private int active;
 
     /// <summary>How long the head and body may take to arrive (the Mac's 15 s accept timer); a body over 512 KiB gets the upload timeout.</summary>
     internal TimeSpan RequestDeadline { get; init; } = RemoteProtocol.RequestTimeout;
     /// <summary>How long the handler and the answer may take once the request is in (the Mac's 60 s processing timer).</summary>
     internal TimeSpan HandlerDeadline { get; init; } = TimeSpan.FromSeconds(60);
+    /// <summary>Called after a connection gives back its slot; tests wait on it instead of sleeping.</summary>
+    internal Action? SlotReleased { get; init; }
 
     public int Port => Volatile.Read(ref boundPort);
+
+    /// <summary>True while connections are being accepted: false before Start, after dispose, and once accepting has failed for good
+    /// (the host shows sharing as stopped then).</summary>
+    public bool IsListening { get { lock (sync) return listener is not null && !closing && !acceptEnded; } }
 
     /// <summary>Binds the one address (no dual-stack, no shared port) and starts accepting; the port bound. A listener starts once.</summary>
     public int Start()
@@ -64,7 +77,7 @@ public sealed class RemoteHttpListener(IPAddress address, int port, Func<RemoteH
             {
                 if (address.AddressFamily == AddressFamily.InterNetworkV6) created.Server.DualMode = false;
                 if (OperatingSystem.IsWindows()) created.ExclusiveAddressUse = true;
-                created.Start(MaximumConnections);
+                created.Start(MaximumOpenConnections);
             }
             catch { created.Stop(); throw; }
             listener = created;
@@ -76,37 +89,61 @@ public sealed class RemoteHttpListener(IPAddress address, int port, Func<RemoteH
 
     private async Task AcceptLoopAsync(TcpListener accepting)
     {
-        while (!stop.IsCancellationRequested)
+        var failures = 0;
+        try
         {
-            Socket socket;
-            try { socket = await accepting.AcceptSocketAsync(stop.Token); }
-            catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException or InvalidOperationException) { return; }
-            catch (SocketException) when (!stop.IsCancellationRequested)
+            while (!stop.IsCancellationRequested)
             {
-                // A connection reset before it was accepted, or a passing shortage: the listener goes on.
-                try { await Task.Delay(100, stop.Token); } catch (OperationCanceledException) { return; }
-                continue;
+                Socket socket;
+                try { socket = await accepting.AcceptSocketAsync(stop.Token); }
+                catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException or InvalidOperationException) { return; }
+                catch (SocketException ex) when (!stop.IsCancellationRequested)
+                {
+                    // A connection reset before it was accepted, or a passing shortage: the listener goes on, unless it keeps failing.
+                    if (++failures >= MaximumAcceptFailures) { Fail(accepting, ex); return; }
+                    try { await Task.Delay(100, stop.Token); } catch (OperationCanceledException) { return; }
+                    continue;
+                }
+                catch (SocketException) { return; }
+                failures = 0;
+                try { Admit(socket); }
+                catch (Exception ex) when (ex is not OutOfMemoryException) { Abort(socket); }
             }
-            catch (SocketException) { return; }
-            try { Admit(socket); }
-            catch (Exception ex) when (ex is not OutOfMemoryException) { Abort(socket); }
         }
+        catch (Exception ex) when (!stop.IsCancellationRequested && ex is not OutOfMemoryException) { Fail(accepting, ex); }
+        finally { acceptEnded = true; }
+    }
+
+    /// <summary>Accepting has failed for good: the port is closed instead of left taking connections nobody accepts.</summary>
+    private static void Fail(TcpListener accepting, Exception ex)
+    {
+        System.Diagnostics.Trace.TraceError("remote host: accepting failed: " + ex.GetType().Name);
+        try { accepting.Stop(); } catch (Exception stopping) when (stopping is SocketException or ObjectDisposedException) { }
+    }
+
+    /// <summary>The peer's address as the filter sees it: an IPv4-mapped address as its IPv4, and no IPv6 scope (the Mac strips it).</summary>
+    internal static IPAddress? PeerAddress(IPEndPoint? endpoint)
+    {
+        if (endpoint is null) return null;
+        var address = endpoint.Address.IsIPv4MappedToIPv6 ? endpoint.Address.MapToIPv4() : endpoint.Address;
+        return new IPAddress(address.GetAddressBytes());
     }
 
     /// <summary>Takes the connection or drops it unread: the filter first, then the overall and per-peer caps.</summary>
     private void Admit(Socket socket)
     {
         var endpoint = socket.RemoteEndPoint as IPEndPoint;
-        var remote = endpoint is null ? null : endpoint.Address.IsIPv4MappedToIPv6 ? endpoint.Address.MapToIPv4() : endpoint.Address;
+        var remote = PeerAddress(endpoint);
         var peer = DirectIncoming.PeerOf(endpoint);
         bool allowed;
         try { allowed = remote is not null && peer is not null && acceptPeer?.Invoke(remote) != false; }
         catch (Exception ex) when (ex is not OutOfMemoryException) { allowed = false; }
         lock (sync)
         {
-            allowed = allowed && !closing && open.Count < MaximumConnections && (maximumConnectionsPerPeer is not { } cap || peerConnections.GetValueOrDefault(peer!) < cap);
+            allowed = allowed && !closing && active < MaximumOpenConnections && (maximumConnectionsPerPeer is not { } cap || peerConnections.GetValueOrDefault(peer!) < cap);
             if (allowed)
             {
+                active++;
                 peerConnections[peer!] = peerConnections.GetValueOrDefault(peer!) + 1;
                 // The task cannot finish before it is recorded: its last step takes this lock.
                 open[socket] = Task.Run(() => ServeAsync(socket, peer!));
@@ -125,10 +162,12 @@ public sealed class RemoteHttpListener(IPAddress address, int port, Func<RemoteH
     private async Task ServeAsync(Socket socket, string peer)
     {
         var drain = false;
+        var released = false;
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(stop.Token);
-        var stream = new NetworkStream(socket, ownsSocket: false);
+        NetworkStream? stream = null;
         try
         {
+            stream = new NetworkStream(socket, ownsSocket: false);
             deadline.CancelAfter(RequestDeadline);
             var (response, unread) = await ReadAndAnswerAsync(stream, peer, deadline);
             if (response is not null) { await WriteAsync(stream, response, deadline.Token); drain = unread; }
@@ -141,8 +180,10 @@ public sealed class RemoteHttpListener(IPAddress address, int port, Func<RemoteH
         }
         finally
         {
-            // The peer's slot is given back before the peer can see the end of the answer, so its next connection is never refused for this one (as on the Mac).
-            lock (sync) { var left = peerConnections.GetValueOrDefault(peer) - 1; if (left > 0) peerConnections[peer] = left; else peerConnections.Remove(peer); }
+            // A connection that is done gives its slot back before the peer can see the end of the answer, so the peer's next
+            // connection is never refused for this one (as on the Mac). A draining one holds its slot until the drain ends: otherwise
+            // one peer could keep any number of draining connections open.
+            if (!drain) Release();
             try
             {
                 socket.Shutdown(SocketShutdown.Send);
@@ -151,9 +192,18 @@ public sealed class RemoteHttpListener(IPAddress address, int port, Func<RemoteH
                 if (drain) await DrainAsync(socket);
             }
             catch (Exception ex) when (ex is SocketException or ObjectDisposedException) { }
-            await stream.DisposeAsync();
+            Release();
+            if (stream is not null) await stream.DisposeAsync();
             socket.Close();
             lock (sync) open.Remove(socket);
+        }
+
+        void Release()
+        {
+            if (released) return;
+            released = true;
+            lock (sync) { active--; var left = peerConnections.GetValueOrDefault(peer) - 1; if (left > 0) peerConnections[peer] = left; else peerConnections.Remove(peer); }
+            SlotReleased?.Invoke();
         }
     }
 
@@ -216,10 +266,12 @@ public sealed class RemoteHttpListener(IPAddress address, int port, Func<RemoteH
         if (length > DefaultBodyLimit) deadline.CancelAfter(RemoteProtocol.UploadTimeout);
         var already = filled - (end + 4);
         if (already > length) return Refuse(400, "http.error.oneRequest");
-        var body = new byte[length];
+        // The body buffer grows as bytes arrive, up to the length: a head alone never makes the listener hold its whole length.
+        var body = new byte[Math.Min(length, FirstBodyBuffer)];
         Array.Copy(buffer, end + 4, body, 0, already);
         for (var got = already; got < length;)
         {
+            if (got == body.Length) Array.Resize(ref body, (int)Math.Min(length, body.Length * 2L));
             var read = await stream.ReadAsync(body.AsMemory(got), deadline.Token);
             if (read == 0) return (null, false);
             got += read;
@@ -249,7 +301,7 @@ public sealed class RemoteHttpListener(IPAddress address, int port, Func<RemoteH
     {
         var head = new StringBuilder($"HTTP/1.1 {response.Status.ToString(CultureInfo.InvariantCulture)} {Reasons.GetValueOrDefault(response.Status, "Response")}\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {response.Body.Length.ToString(CultureInfo.InvariantCulture)}\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n");
         foreach (var (name, value) in response.Headers ?? new Dictionary<string, string>())
-            if (HeaderName.IsMatch(name) && !HasControl(value)) head.Append(name).Append(": ").Append(value).Append("\r\n");
+            if (HeaderName.IsMatch(name) && !HasControl(value) && !FramingHeaders.Contains(name)) head.Append(name).Append(": ").Append(value).Append("\r\n");
         head.Append("\r\n");
         await stream.WriteAsync(Encoding.UTF8.GetBytes(head.ToString()), token);
         await stream.WriteAsync(response.Body, token);
