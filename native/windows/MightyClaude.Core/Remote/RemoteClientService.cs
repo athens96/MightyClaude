@@ -38,8 +38,12 @@ public sealed partial class RemoteClientService : IAsyncDisposable
     private readonly RemoteClientOptions options;
     private readonly Func<string, bool> routeCheck;
     private readonly object gate = new();
-    /// <summary>One write of remote-connections.json at a time, each with the list as it is when its turn comes.</summary>
-    private readonly SemaphoreSlim writes = new(1, 1);
+    /// <summary>
+    /// Every change to which connections are listed, its vault call and the connections-file write that follows go through here one at a
+    /// time, in the order the list changes: a remove's delete of a key never lands after a later connect's save of it, and the last write
+    /// always holds the latest list.
+    /// </summary>
+    private readonly SemaphoreSlim listing = new(1, 1);
     private readonly Dictionary<string, Entry> connections = new(StringComparer.Ordinal);
     private readonly List<string> order = [];
     private readonly HashSet<string> connecting = new(StringComparer.Ordinal);
@@ -62,7 +66,7 @@ public sealed partial class RemoteClientService : IAsyncDisposable
     {
         LoadSaved();
         var label = (name ?? "").Trim(); var trimmed = (key ?? "").Trim();
-        if (label.Length > 120 || !RemoteWorkspaceValidation.Key(trimmed)) throw new ArgumentException(Locale.Get("remote.connect.error.badKey"));
+        if (RemoteText.Count(label) > RemoteConnectionFile.MaximumName || !RemoteWorkspaceValidation.Key(trimmed)) throw new ArgumentException(Locale.Get("remote.connect.error.badKey"));
         var parsed = RemoteAddress.Parse(address);
         Entry? existing;
         lock (gate)
@@ -78,23 +82,33 @@ public sealed partial class RemoteClientService : IAsyncDisposable
             lock (gate) if (closing) throw new InvalidOperationException(Locale.Get("common.appClosing"));
             var id = existing?.Info.Id ?? Wire.Id();
             if (existing is not null) await DropRunsAsync(id, null);
-            // A vault that cannot keep the key leaves it in memory for this launch; an older key saved under this id is never read back instead.
-            var saved = keys.Save(id, trimmed);
-            if (!saved) keys.Delete(id);
-            var view = new RemoteConnectionInfo(id, label.Length > 0 ? label : existing?.Info.Name ?? info.HostName, parsed.Display, RemoteConnectionStatus.Connected, info.HostName, info.Workspaces, info.Runtime,
-                saved ? RemoteWindowsStrings.ConnectedSaved : RemoteWindowsStrings.ConnectedMemory);
-            lock (gate)
+            RemoteConnectionInfo view;
+            await listing.WaitAsync();
+            try
             {
-                // Another connect may have filled the list while this one waited on the host.
-                if (closing || !connections.ContainsKey(id) && connections.Count >= RemoteProtocol.MaximumConnections)
+                bool full;
+                // Another connect may have filled the list while this one waited on the host. A connection removed meanwhile is
+                // listed again, as on the Mac.
+                lock (gate) full = !connections.ContainsKey(id) && connections.Count >= RemoteProtocol.MaximumConnections;
+                if (full)
                 {
-                    if (existing is null) keys.Delete(id);
-                    throw closing ? new InvalidOperationException(Locale.Get("common.appClosing")) : TooMany();
+                    // No key stays in the vault for an id the list does not hold.
+                    await Vault(() => keys.Delete(id));
+                    throw TooMany();
                 }
-                connections[id] = new Entry(view) { Key = trimmed, Target = target };
-                if (!order.Contains(id)) order.Add(id);
+                // A vault that cannot keep the key leaves it in memory for this launch, and any key it kept before stays, as on the Mac.
+                var saved = await Vault(() => keys.Save(id, trimmed));
+                view = new RemoteConnectionInfo(id, RemoteConnectionFile.Name(label.Length > 0 ? label : existing?.Info.Name ?? info.HostName), parsed.Display, RemoteConnectionStatus.Connected,
+                    info.HostName, info.Workspaces, info.Runtime, saved ? RemoteWindowsStrings.ConnectedSaved : RemoteWindowsStrings.ConnectedMemory);
+                lock (gate)
+                {
+                    connections[id] = new Entry(view) { Key = trimmed, Target = target };
+                    if (!order.Contains(id)) order.Add(id);
+                }
+                await WriteSavedAsync();
             }
-            await WriteSavedAsync(); Changed?.Invoke();
+            finally { listing.Release(); }
+            Changed?.Invoke();
             return view;
         }
         finally { lock (gate) connecting.Remove(parsed.Display); }
@@ -104,12 +118,24 @@ public sealed partial class RemoteClientService : IAsyncDisposable
     public async Task<RemoteConnectionInfo> RefreshAsync(string id)
     {
         LoadSaved();
-        Entry current; Guid revision; string? key;
+        Entry current; bool pending;
         lock (gate)
         {
             if (closing) throw new InvalidOperationException(Locale.Get("common.appClosing"));
             if (!connections.TryGetValue(id, out current!)) throw new InvalidOperationException(Locale.Get("remote.connect.error.unknown"));
-            if (current.Key is null && current.KeyPending) { current.Key = keys.Load(id); current.KeyPending = false; }
+            pending = current.Key is null && current.KeyPending;
+        }
+        if (pending)
+        {
+            // Read off the caller's thread and outside the lock; whatever changed meanwhile is looked at again below.
+            var read = await Vault(() => keys.Load(id));
+            lock (gate) if (connections.TryGetValue(id, out var now) && ReferenceEquals(now, current) && current.Key is null && current.KeyPending) { current.Key = read; current.KeyPending = false; }
+        }
+        Guid revision; string? key;
+        lock (gate)
+        {
+            if (closing) throw new InvalidOperationException(Locale.Get("common.appClosing"));
+            if (!connections.TryGetValue(id, out current!)) throw new InvalidOperationException(Locale.Get("remote.connect.error.unknown"));
             key = current.Key;
             if (key is not null && !connecting.Add(current.Info.Address)) throw new InvalidOperationException(Locale.Get("remote.connect.error.busy"));
             if (key is null) current.Info = current.Info with { Status = RemoteConnectionStatus.Disconnected, Detail = Locale.Get("remote.connect.error.keyMissing") };
@@ -122,7 +148,8 @@ public sealed partial class RemoteClientService : IAsyncDisposable
             RemoteConnectionInfo result;
             lock (gate)
             {
-                if (closing || current.Revision != revision) throw new InvalidOperationException(Locale.Get("remote.connect.error.changed"));
+                // Disconnected, removed, replaced or lost while this one waited on the host: that newer state stands.
+                if (closing || !Unchanged(id, current, revision)) throw new InvalidOperationException(Locale.Get("remote.connect.error.changed"));
                 current.Target = target;
                 result = current.Info = current.Info with { Status = RemoteConnectionStatus.Connected, HostName = info.HostName, Workspaces = info.Workspaces, Runtime = info.Runtime, Detail = Locale.Get("remote.connect.detail.connected") };
             }
@@ -131,8 +158,7 @@ public sealed partial class RemoteClientService : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            bool same; lock (gate) same = current.Revision == revision;
-            if (same) await FailAsync(id, ex.Message);
+            await FailAsync(id, ex.Message, current, revision);
             throw;
         }
         finally { lock (gate) connecting.Remove(current.Info.Address); }
@@ -150,9 +176,9 @@ public sealed partial class RemoteClientService : IAsyncDisposable
             if (!waiting) break;
             await Task.Delay(50);
         }
-        RemoteConnectionInfo? info = null; RemoteTarget? target = null;
-        lock (gate) if (connections.TryGetValue(id, out var c)) { info = c.Info; target = c.Target; }
-        if (info is { Status: RemoteConnectionStatus.Connected } && target is not null) { await EnsureRouteAsync(id, target); return info; }
+        Entry? entry = null; RemoteConnectionInfo? info = null; RemoteTarget? target = null; var revision = Guid.Empty;
+        lock (gate) if (connections.TryGetValue(id, out var c)) { entry = c; info = c.Info; target = c.Target; revision = c.Revision; }
+        if (entry is not null && info is { Status: RemoteConnectionStatus.Connected } && target is not null) { await EnsureRouteAsync(id, entry, revision, target); return info; }
         return await RefreshAsync(id);
     }
 
@@ -169,9 +195,15 @@ public sealed partial class RemoteClientService : IAsyncDisposable
     public async Task RemoveAsync(string id)
     {
         await DisconnectAsync(id);
-        lock (gate) { connections.Remove(id); order.Remove(id); }
-        keys.Delete(id);
-        await WriteSavedAsync(); Changed?.Invoke();
+        await listing.WaitAsync();
+        try
+        {
+            lock (gate) { connections.Remove(id); order.Remove(id); }
+            await Vault(() => keys.Delete(id));
+            await WriteSavedAsync();
+        }
+        finally { listing.Release(); }
+        Changed?.Invoke();
     }
 
     /// <summary>Lists the host's shared workspace <paramref name="hostWorkspaceId"/> in this app as a remote workspace.</summary>
@@ -190,6 +222,13 @@ public sealed partial class RemoteClientService : IAsyncDisposable
 
     private static InvalidOperationException TooMany() =>
         new(Locale.Get("remote.connect.error.tooMany", new Dictionary<string, string> { ["count"] = RemoteProtocol.MaximumConnections.ToString(System.Globalization.CultureInfo.InvariantCulture) }));
+
+    /// <summary>The vault reads and writes files (DPAPI on Windows): on the thread pool, never on the caller's (the UI's) thread.</summary>
+    private static Task<T> Vault<T>(Func<T> work) => Task.Run(work);
+    private static Task Vault(Action work) => Task.Run(work);
+
+    /// <summary>The entry listed under <paramref name="id"/> is still <paramref name="entry"/> at <paramref name="revision"/>. Call under the lock.</summary>
+    private bool Unchanged(string id, Entry entry, Guid revision) => connections.TryGetValue(id, out var now) && ReferenceEquals(now, entry) && entry.Revision == revision;
 
     /// <summary>The route check, where one that throws is no tunnel: never a passing failure, never a request.</summary>
     private bool Routed(string ip)
@@ -223,29 +262,32 @@ public sealed partial class RemoteClientService : IAsyncDisposable
         return (target, info!);
     }
 
-    /// <summary>Before each request to the host: the route still goes through the tunnel, or the connection is lost (never retried).</summary>
-    private async Task EnsureRouteAsync(string connectionId, RemoteTarget target)
+    /// <summary>
+    /// Before each request to the host: the route still goes through the tunnel, or the connection is lost (never retried). When the
+    /// connection changed since <paramref name="revision"/> (disconnected, removed, reconnected), that newer state stands and only this
+    /// request is refused.
+    /// </summary>
+    private async Task EnsureRouteAsync(string connectionId, Entry entry, Guid revision, RemoteTarget target)
     {
         if (Routed(target.Ip)) return;
-        await FailAsync(connectionId, Locale.Get("remote.connect.error.notViaTailscale"));
-        throw new InvalidOperationException(Locale.Get("remote.connect.error.notViaTailscale"));
+        if (await FailAsync(connectionId, Locale.Get("remote.connect.error.notViaTailscale"), entry, revision)) throw new InvalidOperationException(Locale.Get("remote.connect.error.notViaTailscale"));
+        throw new InvalidOperationException(Locale.Get("remote.connect.error.changed"));
     }
 
-    /// <summary>The network or the host failed: the connection shows the error and its runs end in error.</summary>
-    private async Task FailAsync(string id, string message)
+    /// <summary>
+    /// The network or the host failed: the connection shows the error and its runs end in error. With <paramref name="expected"/>, only
+    /// when the connection is still that entry at <paramref name="revision"/>; false when it was not.
+    /// </summary>
+    private async Task<bool> FailAsync(string id, string message, Entry? expected = null, Guid revision = default)
     {
         lock (gate)
-            if (connections.TryGetValue(id, out var c)) { c.Revision = Guid.NewGuid(); c.Target = null; c.Info = c.Info with { Status = RemoteConnectionStatus.Disconnected, Detail = Prefix(message) }; }
+        {
+            if (!connections.TryGetValue(id, out var c) || expected is not null && !Unchanged(id, expected, revision)) return false;
+            c.Revision = Guid.NewGuid(); c.Target = null; c.Info = c.Info with { Status = RemoteConnectionStatus.Disconnected, Detail = RemoteText.Cut(message) };
+        }
         await DropRunsAsync(id, message);
         Changed?.Invoke();
-    }
-
-    /// <summary>At most 300 UTF-16 units, never ending inside a surrogate pair.</summary>
-    private static string Prefix(string message)
-    {
-        if (message.Length <= 300) return message;
-        var cut = message[..300];
-        return char.IsHighSurrogate(cut[^1]) ? cut[..^1] : cut;
+        return true;
     }
 
     /// <summary>
@@ -270,16 +312,11 @@ public sealed partial class RemoteClientService : IAsyncDisposable
         }
     }
 
-    /// <summary>Writes id, name and address of every connection, never a key. Writes go one at a time, each taking the list when its turn comes, so the last one always holds the latest list.</summary>
+    /// <summary>Writes id, name and address of every listed connection, never a key. The caller holds <see cref="listing"/>.</summary>
     private async Task WriteSavedAsync()
     {
-        await writes.WaitAsync();
-        try
-        {
-            List<RemoteSavedConnection> saved; lock (gate) saved = order.Select(id => new RemoteSavedConnection(id, connections[id].Info.Name, connections[id].Info.Address)).ToList();
-            // The connection still works for this launch when the file cannot be written; only its listing is not kept.
-            try { await RemoteConnectionFile.WriteAsync(dataDirectory, saved); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
-        }
-        finally { writes.Release(); }
+        List<RemoteSavedConnection> saved; lock (gate) saved = order.Select(id => new RemoteSavedConnection(id, connections[id].Info.Name, connections[id].Info.Address)).ToList();
+        // The connection still works for this launch when the file cannot be written; only its listing is not kept.
+        try { await RemoteConnectionFile.WriteAsync(dataDirectory, saved); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }
 }

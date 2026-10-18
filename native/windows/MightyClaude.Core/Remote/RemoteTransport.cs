@@ -102,7 +102,7 @@ public static class RemoteTransport
                 string? message = null;
                 try { using var json = JsonDocument.Parse(data.ToArray()); message = json.RootElement.Text("error"); } catch (JsonException) { }
                 message ??= Locale.Get("remote.connect.error.unexpectedStatus", new Dictionary<string, string> { ["status"] = status.ToString(CultureInfo.InvariantCulture) });
-                throw new RemoteHttpFailure(status, message.Length > 300 ? message[..300] : message);
+                throw new RemoteHttpFailure(status, RemoteText.Cut(message));
             }
             return data.ToArray();
         }
