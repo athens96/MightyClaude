@@ -100,7 +100,8 @@ public static class RemoteTransport
                 // A route's {protocol, error}, read as the Mac reads it: the error string only. The HTTP layer's {error}-alone 400/413/431
                 // carry no version header, so they were already refused above as notMighty, as on the Mac.
                 string? message = null;
-                try { using var json = JsonDocument.Parse(data.ToArray()); message = json.RootElement.Text("error"); } catch (JsonException) { }
+                // Anything unreadable (bad JSON, or a string GetString refuses, such as a lone surrogate escape) is the status text, as the Mac's try? reads it.
+                try { using var json = JsonDocument.Parse(data.ToArray()); message = json.RootElement.Text("error"); } catch (Exception ex) when (ex is JsonException or InvalidOperationException) { }
                 message ??= Locale.Get("remote.connect.error.unexpectedStatus", new Dictionary<string, string> { ["status"] = status.ToString(CultureInfo.InvariantCulture) });
                 throw new RemoteHttpFailure(status, RemoteText.Cut(message));
             }

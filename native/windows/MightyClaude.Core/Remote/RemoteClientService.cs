@@ -66,7 +66,7 @@ public sealed partial class RemoteClientService : IAsyncDisposable
     {
         LoadSaved();
         var label = (name ?? "").Trim(); var trimmed = (key ?? "").Trim();
-        if (RemoteText.Count(label) > RemoteConnectionFile.MaximumName || !RemoteWorkspaceValidation.Key(trimmed)) throw new ArgumentException(Locale.Get("remote.connect.error.badKey"));
+        if (RemoteText.Count(label, RemoteConnectionFile.MaximumName + 1) > RemoteConnectionFile.MaximumName || !RemoteWorkspaceValidation.Key(trimmed)) throw new ArgumentException(Locale.Get("remote.connect.error.badKey"));
         var parsed = RemoteAddress.Parse(address);
         Entry? existing;
         lock (gate)
@@ -86,15 +86,13 @@ public sealed partial class RemoteClientService : IAsyncDisposable
             await listing.WaitAsync();
             try
             {
-                bool full;
-                // Another connect may have filled the list while this one waited on the host. A connection removed meanwhile is
-                // listed again, as on the Mac.
-                lock (gate) full = !connections.ContainsKey(id) && connections.Count >= RemoteProtocol.MaximumConnections;
-                if (full)
+                lock (gate)
                 {
-                    // No key stays in the vault for an id the list does not hold.
-                    await Vault(() => keys.Delete(id));
-                    throw TooMany();
+                    // The app may have closed while this one waited for the list; nothing reaches the vault or the list after that.
+                    if (closing) throw new InvalidOperationException(Locale.Get("common.appClosing"));
+                    // Another connect may have filled the list while this one waited on the host: refused before its key is saved,
+                    // so no key reaches the vault for an id the list does not hold. A connection removed meanwhile is listed again, as on the Mac.
+                    if (!connections.ContainsKey(id) && connections.Count >= RemoteProtocol.MaximumConnections) throw TooMany();
                 }
                 // A vault that cannot keep the key leaves it in memory for this launch, and any key it kept before stays, as on the Mac.
                 var saved = await Vault(() => keys.Save(id, trimmed));
