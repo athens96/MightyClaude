@@ -7,8 +7,20 @@ using System.Text.RegularExpressions;
 
 namespace MightyClaude.Core;
 
-/// <summary>Where a connection's requests go: the address checked once, at connect or refresh, and the one IP every request uses.</summary>
-public sealed record RemoteTarget(RemoteAddress Address, string Ip, int Port);
+/// <summary>
+/// Where a connection's requests go: the address checked once, at connect or refresh, and the one IP every request uses. Only
+/// <see cref="RemoteTransport.ResolveAsync"/> (and the checks, through InternalsVisibleTo) builds one, and it keeps the loopback
+/// flag it was resolved with, so every request re-checks its IP by the same rule.
+/// </summary>
+public sealed record RemoteTarget
+{
+    internal RemoteTarget(RemoteAddress address, string ip, int port, bool allowLoopback = false) { Address = address; Ip = ip; Port = port; AllowLoopback = allowLoopback; }
+    public RemoteAddress Address { get; }
+    public string Ip { get; }
+    public int Port { get; }
+    /// <summary>Injected in code by the checks and the smoke run only; never from a setting, a connection field or IPC.</summary>
+    internal bool AllowLoopback { get; }
+}
 
 /// <summary>
 /// The remote-workspace client's HTTP (M/MightyCore/Remote/RemoteTransport.swift RemoteTransport): one request per connection,
@@ -25,13 +37,18 @@ public static class RemoteTransport
         {
             using var limit = CancellationTokenSource.CreateLinkedTokenSource(token); limit.CancelAfter(TimeSpan.FromSeconds(5));
             try { found = await Dns.GetHostAddressesAsync(address.Host, limit.Token); }
-            catch (Exception ex) when (ex is SocketException or OperationCanceledException && !token.IsCancellationRequested) { throw new InvalidOperationException(Locale.Get("remote.connect.error.unresolved")); }
+            // Any failure of the lookup (no such name, a name the resolver refuses, the 5 s limit) reads as the Mac's getaddrinfo failure;
+            // only the caller's own cancellation passes through.
+            catch (Exception ex) when (ex is not OperationCanceledException || !token.IsCancellationRequested) { throw new InvalidOperationException(Locale.Get("remote.connect.error.unresolved")); }
         }
         var ips = found.Take(32).Select(ip => TailscaleAddresses.Canonical((ip.IsIPv4MappedToIPv6 ? ip.MapToIPv4() : ip).ToString())).Distinct(StringComparer.Ordinal).ToList();
         if (ips.Count == 0 || !ips.All(ip => RemotePeerPolicy.Allowed(ip, allowLoopback))) throw new InvalidOperationException(Locale.Get("remote.connect.error.notTailscale"));
         var chosen = ips.OrderBy(ip => ip.Contains(':')).ThenBy(ip => ip, StringComparer.Ordinal).First();
-        return new(address, chosen, address.Port);
+        return new(address, chosen, address.Port, allowLoopback);
     }
+
+    /// <summary>The extra request headers a caller may set: the Windows graph_run opt-in only. Every other header is the transport's own.</summary>
+    public static readonly IReadOnlySet<string> AllowedExtraHeaders = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { RemoteProtocol.GraphHeader };
 
     /// <summary>
     /// One authenticated request. The key rides in the Authorization header and a prompt in the body, never in the URL; a redirect
@@ -42,6 +59,10 @@ public static class RemoteTransport
     {
         if (!RemoteWorkspaceValidation.Key(key) || !path.StartsWith(RemoteProtocol.PathPrefix, StringComparison.Ordinal) || !Regex.IsMatch(path, @"^[A-Za-z0-9/._:?=-]+\z"))
             throw new InvalidOperationException(Locale.Get("remote.connect.error.badRequest"));
+        foreach (var name in (headers ?? new Dictionary<string, string>()).Keys)
+            if (!AllowedExtraHeaders.Contains(name)) throw new ArgumentException("remote request header not allowed: " + name, nameof(headers));
+        // The key goes only to a Tailscale peer, even for a target built by hand.
+        if (!RemotePeerPolicy.Allowed(target.Ip, target.AllowLoopback)) throw new InvalidOperationException(Locale.Get("remote.connect.error.notTailscale"));
         var limitTime = timeout ?? RemoteProtocol.RequestTimeout;
         var host = target.Ip.Contains(':') ? "[" + target.Ip + "]" : target.Ip;
         // Uri collapses dot segments (/v2/../v1/info is /v1/info); only a path that goes out exactly as written is sent.
@@ -60,7 +81,8 @@ public static class RemoteTransport
         try
         {
             using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, limit.Token);
-            if (!response.Headers.TryGetValues(RemoteProtocol.Header, out var versions) || versions.SingleOrDefault() != RemoteProtocol.Version.ToString(CultureInfo.InvariantCulture))
+            // Exactly one header, exactly "2": a repeated one is no Mighty answer either.
+            if (!response.Headers.TryGetValues(RemoteProtocol.Header, out var versions) || versions.ToList() is not [var version] || version != RemoteProtocol.Version.ToString(CultureInfo.InvariantCulture))
                 throw new InvalidDataException(Locale.Get("remote.connect.error.notMighty"));
             var status = (int)response.StatusCode;
             if (status is not (>= 200 and <= 299 or >= 400 and <= 599))
@@ -75,7 +97,8 @@ public static class RemoteTransport
             }
             if (status >= 400)
             {
-                // {protocol, error} from a route, {error} alone from the HTTP layer (400/413/431): read as the Mac reads it, the error string only.
+                // A route's {protocol, error}, read as the Mac reads it: the error string only. The HTTP layer's {error}-alone 400/413/431
+                // carry no version header, so they were already refused above as notMighty, as on the Mac.
                 string? message = null;
                 try { using var json = JsonDocument.Parse(data.ToArray()); message = json.RootElement.Text("error"); } catch (JsonException) { }
                 message ??= Locale.Get("remote.connect.error.unexpectedStatus", new Dictionary<string, string> { ["status"] = status.ToString(CultureInfo.InvariantCulture) });

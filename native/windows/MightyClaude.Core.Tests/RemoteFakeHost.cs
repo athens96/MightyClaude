@@ -7,7 +7,10 @@ using System.Text;
 internal sealed class RemoteFakeHost : IAsyncDisposable
 {
     internal sealed record Request(string Method, string Target, IReadOnlyDictionary<string, string> Headers, byte[] Body);
-    internal sealed record Reply(int Status, string Body, IReadOnlyDictionary<string, string>? Headers = null, bool VersionHeader = true, TimeSpan? Delay = null);
+    /// <param name="Delay">A stall before the answer's head.</param>
+    /// <param name="OmitLength">No Content-Length: the body ends when the connection closes.</param>
+    /// <param name="BodyDelay">A stall after the head, before the body.</param>
+    internal sealed record Reply(int Status, string Body, IReadOnlyDictionary<string, string>? Headers = null, bool VersionHeader = true, TimeSpan? Delay = null, bool OmitLength = false, TimeSpan? BodyDelay = null);
     private readonly TcpListener listener = new(IPAddress.Loopback, 0);
     private readonly Func<Request, Task<Reply>> answer;
     private readonly CancellationTokenSource stop = new();
@@ -45,11 +48,18 @@ internal sealed class RemoteFakeHost : IAsyncDisposable
             var reply = await answer(request);
             if (reply.Delay is { } delay) await Task.Delay(delay);
             var payload = Encoding.UTF8.GetBytes(reply.Body);
-            var response = new StringBuilder($"HTTP/1.1 {reply.Status} X\r\nContent-Type: application/json\r\nContent-Length: {payload.Length}\r\nConnection: close\r\n");
+            var response = new StringBuilder($"HTTP/1.1 {reply.Status} X\r\nContent-Type: application/json\r\nConnection: close\r\n");
+            if (!reply.OmitLength) response.Append("Content-Length: ").Append(payload.Length).Append("\r\n");
             if (reply.VersionHeader) response.Append("x-mighty-remote-version: 2\r\n");
             foreach (var (name, value) in reply.Headers ?? new Dictionary<string, string>()) response.Append(name).Append(": ").Append(value).Append("\r\n");
             response.Append("\r\n");
-            try { await stream.WriteAsync(Encoding.UTF8.GetBytes(response.ToString())); await stream.WriteAsync(payload); } catch (IOException) { }
+            try
+            {
+                await stream.WriteAsync(Encoding.UTF8.GetBytes(response.ToString())); await stream.FlushAsync();
+                if (reply.BodyDelay is { } stall) await Task.Delay(stall);
+                await stream.WriteAsync(payload);
+            }
+            catch (IOException) { }
         }
     }
     private static int IndexOf(List<byte> data, byte[] pattern) { for (var i = 0; i + pattern.Length <= data.Count; i++) { var hit = true; for (var j = 0; j < pattern.Length && hit; j++) hit = data[i + j] == pattern[j]; if (hit) return i; } return -1; }
