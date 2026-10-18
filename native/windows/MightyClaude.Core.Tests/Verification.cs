@@ -608,6 +608,9 @@ internal static class Verification
         await Test("remote client: only Tailscale peers, loopback only when injected", RemoteClientVerification.OnlyTailscalePeersAndLoopbackWhenInjected);
         await Test("remote client: one authenticated request follows no redirect and reads at most 2 MiB", RemoteClientVerification.OneAuthenticatedRequestFollowsNoRedirectAndReadsAtMostTwoMebibytes);
         await Test("remote client: hosts resolve only to Tailscale", RemoteClientVerification.HostsResolveOnlyToTailscale);
+        await Test("remote client: connections are saved without their key and read it on first use", RemoteClientVerification.ConnectionsAreSavedWithoutTheirKeyAndReadItOnFirstUse);
+        await Test("remote client: no connection leaves this PC's tunnel", RemoteClientVerification.NoConnectionLeavesThisPCsTunnel);
+        await Test("remote client: the host is read strictly and a key the vault refuses stays in memory", RemoteClientVerification.TheHostIsReadStrictlyAndAKeyTheVaultRefusesStaysInMemory);
         await Test("corrupt/unknown/oversize state cannot be overwritten by shutdown", async () =>
         {
             foreach (var text in new[] { "null", "{", "{\"version\":2,\"workspaces\":[],\"sessions\":[]}", "{\"version\":1,\"workspaces\":null,\"sessions\":[]}" })
