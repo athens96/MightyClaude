@@ -29,7 +29,6 @@ public sealed class RemoteHttpListener(IPAddress address, int port, Func<RemoteH
     public const int MaximumOpenConnections = 64;
     /// <summary>The request line and at most 33 header lines, as on the Mac.</summary>
     private const int MaximumHeadLines = 34, DrainBytes = 64 * 1024, FirstBodyBuffer = 64 * 1024, MaximumAcceptFailures = 50;
-    private static readonly TimeSpan DrainTime = TimeSpan.FromSeconds(1);
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
     private static readonly Regex HeaderName = new(@"^[A-Za-z0-9-]+\z", RegexOptions.CultureInvariant);
     /// <summary>Headers the listener writes itself; a handler's copy is dropped so it can never change how the answer is framed.</summary>
@@ -57,6 +56,8 @@ public sealed class RemoteHttpListener(IPAddress address, int port, Func<RemoteH
     internal TimeSpan RequestDeadline { get; init; } = RemoteProtocol.RequestTimeout;
     /// <summary>How long the handler and the answer may take once the request is in (the Mac's 60 s processing timer).</summary>
     internal TimeSpan HandlerDeadline { get; init; } = TimeSpan.FromSeconds(60);
+    /// <summary>How long what still arrives after an early answer is discarded before the connection is closed (at most 64 KiB of it).</summary>
+    internal TimeSpan DrainDeadline { get; init; } = TimeSpan.FromSeconds(1);
     /// <summary>Called after a connection gives back its slot; tests wait on it instead of sleeping.</summary>
     internal Action? SlotReleased { get; init; }
 
@@ -99,7 +100,10 @@ public sealed class RemoteHttpListener(IPAddress address, int port, Func<RemoteH
                 catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException or InvalidOperationException) { return; }
                 catch (SocketException ex) when (!stop.IsCancellationRequested)
                 {
-                    // A connection reset before it was accepted, or a passing shortage: the listener goes on, unless it keeps failing.
+                    // A connection reset or aborted while it waited to be accepted says nothing about the listener: the next one is
+                    // accepted at once and nothing is counted, so a peer cannot end sharing by resetting connections. Any other error may
+                    // be a passing shortage: the listener goes on after a pause, unless it keeps failing.
+                    if (!CountsAsAcceptFailure(ex.SocketErrorCode)) continue;
                     if (++failures >= MaximumAcceptFailures) { Fail(accepting, ex); return; }
                     try { await Task.Delay(100, stop.Token); } catch (OperationCanceledException) { return; }
                     continue;
@@ -113,6 +117,9 @@ public sealed class RemoteHttpListener(IPAddress address, int port, Func<RemoteH
         catch (Exception ex) when (!stop.IsCancellationRequested && ex is not OutOfMemoryException) { Fail(accepting, ex); }
         finally { acceptEnded = true; }
     }
+
+    /// <summary>Whether an accept error counts toward ending the listener: not when it is one waiting connection's own reset or abort.</summary>
+    internal static bool CountsAsAcceptFailure(SocketError code) => code is not (SocketError.ConnectionReset or SocketError.ConnectionAborted);
 
     /// <summary>Accepting has failed for good: the port is closed instead of left taking connections nobody accepts.</summary>
     private static void Fail(TcpListener accepting, Exception ex)
@@ -183,19 +190,28 @@ public sealed class RemoteHttpListener(IPAddress address, int port, Func<RemoteH
             // A connection that is done gives its slot back before the peer can see the end of the answer, so the peer's next
             // connection is never refused for this one (as on the Mac). A draining one holds its slot until the drain ends: otherwise
             // one peer could keep any number of draining connections open.
-            if (!drain) Release();
             try
             {
-                socket.Shutdown(SocketShutdown.Send);
-                // An answer given without reading the whole request (a refusal, or a head answered alone) is followed by briefly
-                // discarding what is still arriving, so the peer reads the answer instead of a reset. Nothing read here is parsed.
-                if (drain) await DrainAsync(socket);
+                if (!drain) Release();
+                try
+                {
+                    socket.Shutdown(SocketShutdown.Send);
+                    // An answer given without reading the whole request (a refusal, or a head answered alone) is followed by briefly
+                    // discarding what is still arriving, so the peer reads the answer instead of a reset. Nothing read here is parsed.
+                    if (drain) await DrainAsync(socket);
+                }
+                catch (Exception ex) when (ex is SocketException or ObjectDisposedException) { }
             }
-            catch (Exception ex) when (ex is SocketException or ObjectDisposedException) { }
-            Release();
-            if (stream is not null) await stream.DisposeAsync();
-            socket.Close();
-            lock (sync) open.Remove(socket);
+            finally
+            {
+                // Whatever went wrong above, the slot, the socket and the open entry are always given back.
+                try { Release(); }
+                finally
+                {
+                    try { if (stream is not null) await stream.DisposeAsync(); }
+                    finally { socket.Close(); lock (sync) open.Remove(socket); }
+                }
+            }
         }
 
         void Release()
@@ -210,7 +226,7 @@ public sealed class RemoteHttpListener(IPAddress address, int port, Func<RemoteH
     private async Task DrainAsync(Socket socket)
     {
         using var time = CancellationTokenSource.CreateLinkedTokenSource(stop.Token);
-        time.CancelAfter(DrainTime);
+        time.CancelAfter(DrainDeadline);
         var sink = new byte[8192];
         try { for (var total = 0; total < DrainBytes;) { var read = await socket.ReceiveAsync(sink, SocketFlags.None, time.Token); if (read == 0) break; total += read; } }
         catch (OperationCanceledException) { }

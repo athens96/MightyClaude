@@ -123,6 +123,14 @@ internal static partial class RemoteHostVerification
         Check((await Raw(port, "GET http://studio-pc/v2/x HTTP/1.1\r\n\r\n")).StartsWith("HTTP/1.1 400", StringComparison.Ordinal), "only an origin-form target");
         Check((await Raw(port, "POST /v2/x HTTP/1.1\r\nAuthorization: Bearer k\r\nContent-Length: 2\r\n\r\n{}GET / HTTP/1.1\r\n\r\n")).StartsWith("HTTP/1.1 400", StringComparison.Ordinal), "one request per connection");
         Check((await Raw(port, "GET /v2/x HTTP/1.1\r\nAuthorization: Bearer k\r\n\r\nGET / HTTP/1.1\r\n\r\n")).StartsWith("HTTP/1.1 400", StringComparison.Ordinal), "one request per connection, without a body too");
+        // A body larger than the first buffer, of no power-of-two length, arrives whole and exact.
+        byte[]? grown = null;
+        await using (var large = new RemoteHttpListener(IPAddress.Loopback, 0, request => { grown = request.Body; return Task.FromResult(RemoteHttpResponse.Json(200, new { })); }))
+        {
+            var sent = new byte[200_003]; for (var i = 0; i < sent.Length; i++) sent[i] = (byte)(i * 31 + i / 251);
+            Check((await Raw(large.Start(), $"POST /v2/x HTTP/1.1\r\nContent-Length: {sent.Length}\r\n\r\n", sent)).StartsWith("HTTP/1.1 200", StringComparison.Ordinal), "a 200 KiB body is taken within the default limit");
+            Check(grown is not null && grown.AsSpan().SequenceEqual(sent), "the handler sees the exact length and bytes");
+        }
         // Bytes that come in a write of their own after the whole body are still a second request.
         var headSeen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously); var pipelinedHandled = false;
         await using (var pipelined = new RemoteHttpListener(IPAddress.Loopback, 0, _ => { pipelinedHandled = true; return Task.FromResult(RemoteHttpResponse.Json(200, new { })); }, bodyLimit: _ => { headSeen.TrySetResult(); return 1024; }))
@@ -144,6 +152,7 @@ internal static partial class RemoteHostVerification
         {
             if (request.Target == "/stuck") { entered.TrySetResult(); return release.Task; }
             if (request.Target == "/hang") return new TaskCompletionSource<RemoteHttpResponse>().Task;
+            if (request.Target == "/framing") return Task.FromResult(RemoteHttpResponse.Json(200, new { }, new Dictionary<string, string> { ["Content-Length"] = "0", ["connection"] = "keep-alive", ["Content-Type"] = "text/html", ["Transfer-Encoding"] = "chunked" }));
             return Task.FromResult(RemoteHttpResponse.Json(200, new Dictionary<string, bool> { ["ok"] = true }, new Dictionary<string, string> { ["X-Ok"] = "1", ["X-Evil"] = "a\r\nSet-Cookie: b" }));
         }, maximumConnectionsPerPeer: 1) { RequestDeadline = TimeSpan.FromMilliseconds(500), HandlerDeadline = TimeSpan.FromMilliseconds(500) };
         try
@@ -163,6 +172,10 @@ internal static partial class RemoteHostVerification
             }
             var ok = await Raw(port, "GET /v2/x HTTP/1.1\r\n\r\n");
             Check(ok.StartsWith("HTTP/1.1 200", StringComparison.Ordinal) && ok.Contains("X-Ok: 1\r\n", StringComparison.Ordinal) && !ok.Contains("Set-Cookie", StringComparison.Ordinal), "the slot is freed, and a header with a line break is never written");
+            var framed = await Raw(port, "GET /framing HTTP/1.1\r\n\r\n");
+            Check(framed.StartsWith("HTTP/1.1 200", StringComparison.Ordinal) && framed.EndsWith("\r\n\r\n{}", StringComparison.Ordinal), "the answer is framed by its own length");
+            Check(framed.Split("\r\n").Count(line => line.StartsWith("content-length:", StringComparison.OrdinalIgnoreCase)) == 1 && framed.Contains("\r\nContent-Length: 2\r\n", StringComparison.Ordinal), "exactly one, correct Content-Length");
+            Check(framed.Contains("\r\nConnection: close\r\n", StringComparison.Ordinal) && !framed.Contains("keep-alive", StringComparison.OrdinalIgnoreCase) && !framed.Contains("chunked", StringComparison.OrdinalIgnoreCase) && !framed.Contains("text/html", StringComparison.Ordinal), "a handler cannot change the framing headers");
             // A handler that never answers holds its connection only until the handler deadline.
             using (var hang = await Open(port, "GET /hang HTTP/1.1\r\n\r\n"))
                 Check(await ClosedWithin(hang, TimeSpan.FromSeconds(4)), "a handler that never answers is cut off");
@@ -187,6 +200,10 @@ internal static partial class RemoteHostVerification
 
     internal static async Task AThrowingFilterOrHandlerNeverStopsTheListener()
     {
+        // A waiting connection's own reset or abort never counts toward ending the listener; an error of the listener itself does.
+        Check(!RemoteHttpListener.CountsAsAcceptFailure(SocketError.ConnectionReset) && !RemoteHttpListener.CountsAsAcceptFailure(SocketError.ConnectionAborted), "a reset or aborted connection never counts");
+        foreach (var code in new[] { SocketError.NetworkDown, SocketError.AddressNotAvailable, SocketError.TooManyOpenSockets, SocketError.NoBufferSpaceAvailable, SocketError.NetworkUnreachable })
+            Check(RemoteHttpListener.CountsAsAcceptFailure(code), "an error of the listener counts: " + code);
         var filterCalls = 0;
         await using var server = new RemoteHttpListener(IPAddress.Loopback, 0, request => request.Target switch
         {
@@ -209,7 +226,7 @@ internal static partial class RemoteHostVerification
         var handled = 0;
         var released = new SemaphoreSlim(0);
         await using var server = new RemoteHttpListener(IPAddress.Loopback, 0, request => { Interlocked.Increment(ref handled); return Task.FromResult(RemoteHttpResponse.Json(401, new { })); },
-            bodyLimit: _ => 0, maximumConnectionsPerPeer: 1) { SlotReleased = () => released.Release() };
+            bodyLimit: _ => 0, maximumConnectionsPerPeer: 1) { SlotReleased = () => released.Release(), DrainDeadline = TimeSpan.FromSeconds(5) };
         var port = server.Start();
         // A keyless POST is answered from its head and then drained; while it drains it still holds the peer's one slot.
         using (var first = await Open(port, "POST /x HTTP/1.1\r\nContent-Length: 5\r\n\r\n"))
@@ -220,7 +237,18 @@ internal static partial class RemoteHostVerification
         Check(await released.WaitAsync(TimeSpan.FromSeconds(10)), "the closed one gives its slot back");
         Check((await Raw(port, "GET /x HTTP/1.1\r\n\r\n")).StartsWith("HTTP/1.1 401", StringComparison.Ordinal) && handled == 2, "and the next one is answered");
         Check(await released.WaitAsync(TimeSpan.FromSeconds(10)), "the answered one gives its slot back");
-        // One that keeps sending after its answer is drained for a bounded time only, then closed, and its slot is freed.
+        // One that sends more than 64 KiB at once after its answer is closed once that much is discarded, long before the drain deadline.
+        using (var flooder = await Open(port, "POST /x HTTP/1.1\r\nContent-Length: 999999\r\n\r\n"))
+        {
+            Check((await ReadAll(flooder)).StartsWith("HTTP/1.1 401", StringComparison.Ordinal), "the flooder is answered");
+            try { await flooder.GetStream().WriteAsync(new byte[80 * 1024]); } catch (Exception ex) when (ex is IOException or SocketException) { }
+            Check(await released.WaitAsync(TimeSpan.FromSeconds(3)), "past 64 KiB the drain ends and the slot is given back before its deadline");
+        }
+        Check((await Raw(port, "GET /x HTTP/1.1\r\n\r\n")).StartsWith("HTTP/1.1 401", StringComparison.Ordinal), "and the peer is answered again");
+        Check(await released.WaitAsync(TimeSpan.FromSeconds(10)), "that one gives its slot back too");
+        // One that keeps sending after its answer is drained for the default deadline only, then closed, and its slot is freed.
+        await using var bounded = new RemoteHttpListener(IPAddress.Loopback, 0, _ => Task.FromResult(RemoteHttpResponse.Json(401, new { })), bodyLimit: _ => 0, maximumConnectionsPerPeer: 1) { SlotReleased = () => released.Release() };
+        port = bounded.Start();
         var watch = Stopwatch.StartNew();
         using (var trickler = await Open(port, "POST /x HTTP/1.1\r\nContent-Length: 999\r\n\r\n"))
         {
