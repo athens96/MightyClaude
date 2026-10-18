@@ -628,6 +628,10 @@ internal static class Verification
         await Test("remote client: no run starts or outlives its connection while its stops are on their way", RemoteClientVerification.NoRunStartsOrOutlivesItsConnectionWhileItsStopsAreOnTheirWay);
         await Test("remote client: a callback that throws ends the run", RemoteClientVerification.ACallbackThatThrowsEndsTheRun);
         await Test("remote client: a disconnect from inside an event ends the poll there", RemoteClientVerification.ADisconnectFromInsideAnEventEndsThePollThere);
+        await Test("remote host: a refused peer is cut off at accept and one peer holds at most its share", RemoteHostVerification.ARefusedPeerIsCutOffAtAcceptAndOnePeerHoldsAtMostItsShare);
+        await Test("remote host: no body is read without leave and the head is bounded", RemoteHostVerification.NoBodyIsReadWithoutLeaveAndTheHeadIsBounded);
+        await Test("remote host: a slow or stuck request is cut off and stopping closes everything", RemoteHostVerification.ASlowOrStuckRequestIsCutOffAndStoppingClosesEverything);
+        await Test("remote host: a throwing filter or handler never stops the listener", RemoteHostVerification.AThrowingFilterOrHandlerNeverStopsTheListener);
         await Test("corrupt/unknown/oversize state cannot be overwritten by shutdown", async () =>
         {
             foreach (var text in new[] { "null", "{", "{\"version\":2,\"workspaces\":[],\"sessions\":[]}", "{\"version\":1,\"workspaces\":null,\"sessions\":[]}" })
