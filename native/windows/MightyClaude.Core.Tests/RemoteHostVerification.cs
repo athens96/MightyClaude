@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.Json;
 using MightyClaude.Core;
 
 /// <summary>"이 컴퓨터 공유" on Windows (docs/remote-workspaces.md): the listener, the host, and host and client over loopback.</summary>
@@ -11,11 +12,11 @@ internal static partial class RemoteHostVerification
     private static void Check(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
 
     /// <summary>One raw exchange, for requests HttpClient will not send (no version header, an Origin, a bad head).</summary>
-    internal static async Task<string> Raw(int port, string head, byte[]? body = null) => await Raw(port, Encoding.ASCII.GetBytes(head), body);
+    internal static async Task<string> Raw(int port, string head, byte[]? body = null, IPAddress? address = null) => await Raw(port, Encoding.ASCII.GetBytes(head), body, address);
 
-    internal static async Task<string> Raw(int port, byte[] head, byte[]? body = null)
+    internal static async Task<string> Raw(int port, byte[] head, byte[]? body = null, IPAddress? address = null)
     {
-        using var client = new TcpClient(); await client.ConnectAsync(IPAddress.Loopback, port);
+        using var client = new TcpClient((address ?? IPAddress.Loopback).AddressFamily); await client.ConnectAsync(address ?? IPAddress.Loopback, port);
         var stream = client.GetStream();
         try { await stream.WriteAsync(head); if (body is not null) await stream.WriteAsync(body); } catch (IOException) { }
         using var answer = new MemoryStream(); var buffer = new byte[8192];
@@ -376,5 +377,186 @@ internal static partial class RemoteHostVerification
             Check(thrown > 0 && events.Any(e => e.SessionId == "job-e" && e.Status == events.Where(x => x.SessionId == "job-a" && x.Status is "completed" or "error").Last().Status), "the run ends as it would have: " + string.Join(",", events.Where(e => e.SessionId == "job-e" && e.Status is not null).Select(e => e.Status)));
         }
         finally { Directory.Delete(directory, true); }
+    }
+
+    internal static string Key => RemoteClientVerification.Key;
+
+    /// <summary>A scripted runner for the host checks: "hold" waits for a stop, "ask" asks one tool request, "graph" sends a node and a graph run.</summary>
+    internal sealed class FakeRemoteRunner(RemoteRunnerSinks sinks) : IRemoteRunner
+    {
+        internal readonly ConcurrentQueue<StartRunRequest> Started = new();
+        internal readonly ConcurrentQueue<string> Stopped = new();
+        internal readonly ConcurrentQueue<(string Session, string Request, bool Allow)> Answers = new();
+        private readonly ConcurrentDictionary<string, bool> waiting = new();
+        public Task StartAsync(StartRunRequest request)
+        {
+            Started.Enqueue(request); var id = request.SessionId;
+            sinks.Event(RunEvent.State(id, "running"));
+            sinks.Event(RunEvent.Log(id, "output", "echo:" + request.Input));
+            switch (request.Input)
+            {
+                case "hold": waiting[id] = true; break;
+                case "ask": waiting[id] = true; sinks.Permission(new ToolPermissionRequest("perm-1", id, "toolu_1", "Bash", "{\"command\":\"ls\"}", "ls", ReceivedAt: "2026-10-17T01:02:05.000Z")); break;
+                case "graph":
+                    sinks.GraphNode(id, new ExecutionGraphNode("node-1", "run-1", null, "main", "completed", "Request"));
+                    var run = RemoteWireFixtureVerification.Node("graph-run-event.json")["event"]!["graphRun"].Deserialize<MightyGraphRun>(Wire.Json)!;
+                    sinks.Event(new RunEvent(id, "graph_run", GraphRun: run));
+                    sinks.Event(RunEvent.State(id, "completed")); break;
+                default: sinks.Event(RunEvent.State(id, "completed")); break;
+            }
+            return Task.CompletedTask;
+        }
+        public Task StopAsync(string id) { Stopped.Enqueue(id); if (waiting.TryRemove(id, out _)) sinks.Event(RunEvent.State(id, "stopped")); return Task.CompletedTask; }
+        public Task<bool> TrySteerAsync(string id, string text) => Task.FromResult(waiting.ContainsKey(id));
+        public void RespondToToolPermission(string id, string requestId, bool allow)
+        {
+            Answers.Enqueue((id, requestId, allow));
+            sinks.Permission(new ToolPermissionRequest(requestId, id, "toolu_1", "Bash", "{}", "ls", State: allow ? "allowed" : "denied"));
+            if (waiting.TryRemove(id, out _)) sinks.Event(RunEvent.State(id, "completed"));
+        }
+        public void AnswerQuestionnaire(string id, string requestId, IReadOnlyDictionary<string, UserQuestionAnswer> answers) => Answers.Enqueue((id, requestId, true));
+        public PlanRecord AnswerPlan(string id, string requestId, PlanDecision decision) { Answers.Enqueue((id, requestId, decision.Kind != "cancel")); return new(requestId, id, "plan", Wire.Now(), Wire.Now(), decision.Outcome); }
+        public ValueTask DisposeAsync() { foreach (var id in waiting.Keys) _ = StopAsync(id); return ValueTask.CompletedTask; }
+    }
+
+    internal sealed class HostFixture : IAsyncDisposable
+    {
+        internal required string Directory; internal required StateStore Store; internal required Workspace Shared, Private, Remote;
+        internal required RemoteHostService Host; internal FakeRemoteRunner? Runner;
+        public async ValueTask DisposeAsync() { await Host.DisposeAsync(); System.IO.Directory.Delete(Directory, true); }
+    }
+
+    internal static async Task<HostFixture> MakeHost(TimeSpan? heartbeat = null, Func<StartRunRequest, string?>? admission = null, Func<HostFixture, RemoteRunnerSinks, IRemoteRunner>? runner = null,
+        Func<IReadOnlyList<string>>? addresses = null, Func<DateTimeOffset>? clock = null)
+    {
+        var directory = Verification.Temp(); var store = new StateStore(Path.Combine(directory, "host")); await store.LoadAsync();
+        System.IO.Directory.CreateDirectory(Path.Combine(directory, "project")); System.IO.Directory.CreateDirectory(Path.Combine(directory, "private"));
+        var shared = store.ApproveLocal(Path.Combine(directory, "project")); var hidden = store.ApproveLocal(Path.Combine(directory, "private"));
+        var remote = store.ApproveRemote("conn-x", "ws-x", "far", "C:\\far", "other");
+        await store.SaveAsync(new AppSnapshot { Workspaces = [shared, hidden, remote] });
+        HostFixture fixture = null!;
+        var host = new RemoteHostService(new RemoteHostOptions
+        {
+            Workspaces = () => store.Snapshot.Workspaces, ResolveLocal = store.ResolveLocalAsync,
+            Runtime = () => Task.FromResult(RemoteWireFixtureVerification.Node("info.json")["runtime"].Deserialize<RuntimeInfo>(Wire.Json)!),
+            CreateRunner = sinks => runner?.Invoke(fixture, sinks) ?? (fixture.Runner = new FakeRemoteRunner(sinks)),
+            HostName = "studio-pc", AllowLoopbackForTests = true, Heartbeat = heartbeat ?? RemoteProtocol.HeartbeatTimeout, Admission = admission ?? (_ => null),
+            Addresses = addresses, Clock = clock ?? (() => DateTimeOffset.UtcNow),
+        });
+        return fixture = new HostFixture { Directory = directory, Store = store, Shared = shared, Private = hidden, Remote = remote, Host = host };
+    }
+
+    internal static Task OnlyAKeyedRunRequestGetsTheAttachmentBody()
+    {
+        var key = new string('k', 43);
+        RemoteHttpRequest Head(string target = "/v2/runs", Dictionary<string, string>? extra = null, string peer = "100.90.1.1")
+        {
+            var headers = new Dictionary<string, string> { ["authorization"] = "Bearer " + key, ["x-mighty-remote-version"] = "2" };
+            foreach (var (name, value) in extra ?? []) headers[name] = value;
+            return new("POST", target, headers, [], peer);
+        }
+        Check(RemoteHostService.BodyLimit(Head(), key, false) == AttachmentSupport.MaximumRequestBytes, "a keyed run request may carry attachments");
+        Check(RemoteHostService.BodyLimit(Head(extra: new() { ["authorization"] = "Bearer " + new string('x', 43) }), key, false) == 0, "a wrong key reads nothing");
+        Check(RemoteHostService.BodyLimit(new("POST", "/v2/runs", new Dictionary<string, string> { ["x-mighty-remote-version"] = "2" }, [], "100.90.1.1"), key, false) == 0, "no key reads nothing");
+        Check(RemoteHostService.BodyLimit(Head(extra: new() { ["authorization"] = "Basic " + key }), key, false) == 0, "only a bearer key counts");
+        Check(RemoteHostService.BodyLimit(Head(extra: new() { ["x-mighty-remote-version"] = "1" }), key, false) == 0, "an old protocol reads nothing");
+        Check(RemoteHostService.BodyLimit(Head(extra: new() { ["origin"] = "https://example.com" }), key, false) == 0, "a browser page reads nothing");
+        Check(RemoteHostService.BodyLimit(Head("/v2/runs/x/steer"), key, false) == RemoteProtocol.MaximumRequestBytes, "other routes get 512 KiB");
+        Check(RemoteHostService.BodyLimit(Head("/v2/runs?x=1"), key, false) == RemoteProtocol.MaximumRequestBytes, "only the bare run route gets the attachment body");
+        Check(RemoteHostService.BodyLimit(Head(peer: "192.168.1.5"), key, false) == 0 && RemoteHostService.BodyLimit(Head(peer: "127.0.0.1"), key, false) == 0, "non-Tailscale peers read nothing");
+        Check(RemoteHostService.BodyLimit(Head(peer: "127.0.0.1"), key, true) == AttachmentSupport.MaximumRequestBytes, "loopback only when injected");
+        var shell = new StartRunRequest("j", "w", "shell", "dir", []);
+        var full = new StartRunRequest("j", "w", "claude", "hi", [], Settings: new(PermissionMode: "fullAccess"));
+        var edits = new StartRunRequest("j", "w", "claude", "hi", [], Settings: new(PermissionMode: "acceptEdits"));
+        Check(RemoteHostService.FullAccessRefusal(shell, false) == Locale.Get("remote.host.error.commandsOff") && RemoteHostService.FullAccessRefusal(full, false) == Locale.Get("remote.host.error.fullAccessOff"), "commands and full access wait for the switch");
+        Check(RemoteHostService.FullAccessRefusal(full with { Provider = "codex" }, false) == Locale.Get("remote.host.error.fullAccessOff"), "full access waits for the switch whatever the agent");
+        Check(RemoteHostService.FullAccessRefusal(edits, false) is null && RemoteHostService.FullAccessRefusal(shell, true) is null && RemoteHostService.FullAccessRefusal(full with { Provider = "codex" }, true) is null, "the switch allows them; other modes never needed it");
+        var now = DateTimeOffset.UnixEpoch; var limiter = new RemoteRateLimiter(() => now);
+        Check(Enumerable.Range(0, 300).All(_ => limiter.AllowPeer("100.90.1.1")) && !limiter.AllowPeer("100.90.1.1") && limiter.AllowPeer("100.90.1.2"), "300 a second per peer, each peer its own budget");
+        Check(Enumerable.Range(0, 600).All(_ => limiter.AllowKeyed()) && !limiter.AllowKeyed(), "600 keyed requests a second in all");
+        now += TimeSpan.FromSeconds(1);
+        Check(limiter.AllowPeer("100.90.1.1") && limiter.AllowKeyed(), "the next second starts afresh");
+        return Task.CompletedTask;
+    }
+
+    internal static async Task SharingStartsWithANewKeyAndStopRevokesIt()
+    {
+        await using var fixture = await MakeHost();
+        var host = fixture.Host;
+        await RemoteClientVerification.RejectAsync(() => host.StartAsync([]), "nothing picked", ex => ex.Message == Locale.Get("remote.host.error.pickWorkspace"));
+        await RemoteClientVerification.RejectAsync(() => host.StartAsync([fixture.Remote.Id]), "a remote workspace is never shared", ex => ex.Message == RemoteWindowsStrings.HostLocalOnly);
+        await RemoteClientVerification.RejectAsync(() => host.StartAsync([fixture.Shared.Id], 80), "ports below 1024 are refused", ex => ex.Message == Locale.Get("remote.connect.error.badPort"));
+        var state = await host.StartAsync([fixture.Shared.Id], 0);
+        Check(state is { Enabled: true, AllowsFullAccess: false, Port: > 0 } && RemoteWorkspaceValidation.Key(state.Key) && state.Addresses.SequenceEqual(["127.0.0.1:" + state.Port]), "sharing on loopback (injected), a fresh key, full access off");
+        await RemoteClientVerification.RejectAsync(() => host.StartAsync([fixture.Shared.Id], 0), "one sharing at a time", ex => ex.Message == Locale.Get("remote.host.error.busy"));
+        var target = RemoteClientVerification.Loopback(state.Port!.Value);
+        var info = JsonSerializer.Deserialize<RemoteWireInfo>(await RemoteTransport.RequestAsync(target, state.Key!, HttpMethod.Get, "/v2/info"), Wire.Json)!;
+        RemoteWorkspaceValidation.Info(info);
+        Check(info is { Protocol: 2, HostName: "studio-pc" } && info.Workspaces.Single().Id == fixture.Shared.Id && info.Runtime.Platform == "win32", "only the shared workspace, and the host's OS");
+        var port = state.Port.Value; var key = state.Key!;
+        string Get(string target, string? authorization = "Bearer ", string extra = "") =>
+            $"GET {target} HTTP/1.1\r\n" + (authorization is null ? "" : "Authorization: " + authorization + (authorization == "Bearer " ? key : "") + "\r\n") + "x-mighty-remote-version: 2\r\n" + extra + "\r\n";
+        var plain = await Raw(port, Get("/v2/info"));
+        Check(plain.StartsWith("HTTP/1.1 200", StringComparison.Ordinal) && plain.Contains("x-mighty-remote-version: 2", StringComparison.Ordinal) && !plain.Contains(key, StringComparison.Ordinal), "/info never carries the key");
+        await RemoteClientVerification.RejectAsync(() => RemoteTransport.RequestAsync(target, new string('x', 43), HttpMethod.Get, "/v2/info"), "a wrong key is 401", ex => ex is RemoteHttpFailure { Status: 401 });
+        var keyless = await Raw(port, Get("/v2/info", authorization: null));
+        Check(keyless.StartsWith("HTTP/1.1 401", StringComparison.Ordinal) && keyless.Contains("x-mighty-remote-version: 2", StringComparison.Ordinal), "no key is 401, with the version: " + keyless);
+        Check((await Raw(port, Get("/v2/nothing", authorization: null))).StartsWith("HTTP/1.1 401", StringComparison.Ordinal), "no route is found without the key");
+        // Were the body read, the answer would wait for its 400 000 bytes until the request deadline.
+        var unread = await Raw(port, Get("/v2/runs", authorization: "Bearer " + new string('x', 43), extra: "Content-Type: application/json\r\nContent-Length: 400000\r\n").Replace("GET ", "POST ", StringComparison.Ordinal));
+        Check(unread.StartsWith("HTTP/1.1 401", StringComparison.Ordinal), "a wrong key is answered from the head alone: " + unread);
+        Check((await Raw(port, $"GET /v2/info HTTP/1.1\r\nAuthorization: Bearer {key}\r\nx-mighty-remote-version: 1\r\n\r\n")).StartsWith("HTTP/1.1 426", StringComparison.Ordinal), "an old protocol is 426");
+        var browser = await Raw(port, Get("/v2/info", extra: "Origin: https://example.com\r\n"));
+        Check(browser.StartsWith("HTTP/1.1 403", StringComparison.Ordinal) && browser.Contains("x-mighty-remote-version: 2", StringComparison.Ordinal), "a browser page is 403, even with the key");
+        var answer = await Raw(port, Get("/v2/nothing"));
+        Check(answer.StartsWith("HTTP/1.1 404", StringComparison.Ordinal) && answer.Contains("x-mighty-remote-version: 2", StringComparison.Ordinal), "every answer carries the version");
+        Check((await Raw(port, Get("/v2/info?x=1"))).StartsWith("HTTP/1.1 404", StringComparison.Ordinal) && (await Raw(port, Get("/v2/runs/../info"))).StartsWith("HTTP/1.1 404", StringComparison.Ordinal), "/info takes no query, and a dot segment is never resolved");
+        Check(host.SetAllowsFullAccess(true).AllowsFullAccess, "the switch turns on while sharing");
+        // A request still arriving when sharing stops is cut off with it.
+        using var pending = await Open(port, "GET /v2/info HTTP/1.1\r\n");
+        var stopped = await host.StopAsync();
+        Check(!stopped.Enabled && stopped.Key is null && !stopped.AllowsFullAccess, "stopping forgets the key and the switch");
+        Check(await ClosedWithin(pending, TimeSpan.FromSeconds(5)), "a connection open when sharing stops is closed");
+        await RemoteClientVerification.RejectAsync(() => RemoteTransport.RequestAsync(target, state.Key!, HttpMethod.Get, "/v2/info"), "nothing answers after a stop");
+        var again = await host.StartAsync([fixture.Shared.Id], 0);
+        Check(again.Key != state.Key && !again.AllowsFullAccess, "a new sharing has a new key and the switch off");
+        var old = await Raw(again.Port!.Value, $"GET /v2/info HTTP/1.1\r\nAuthorization: Bearer {key}\r\nx-mighty-remote-version: 2\r\n\r\n");
+        Check(old.StartsWith("HTTP/1.1 401", StringComparison.Ordinal), "the old key is refused by the new sharing");
+        await host.DisposeAsync();
+        await RemoteClientVerification.RejectAsync(() => host.StartAsync([fixture.Shared.Id], 0), "no sharing after shutdown", ex => ex.Message == Locale.Get("common.appClosing"));
+    }
+
+    internal static async Task AFloodIsRefusedAndTheRefusalCarriesTheVersion()
+    {
+        var now = DateTimeOffset.UnixEpoch;
+        await using var fixture = await MakeHost(clock: () => now);
+        var state = await fixture.Host.StartAsync([fixture.Shared.Id], 0);
+        var port = state.Port!.Value;
+        var keyed = $"GET /v2/info HTTP/1.1\r\nAuthorization: Bearer {state.Key}\r\nx-mighty-remote-version: 2\r\n\r\n";
+        // Requests without the key count toward the peer's own budget too.
+        for (var i = 0; i < 300; i++) Check((await Raw(port, "GET /v2/info HTTP/1.1\r\nx-mighty-remote-version: 2\r\n\r\n")).StartsWith("HTTP/1.1 401", StringComparison.Ordinal), "request " + i + " is answered");
+        var refused = await Raw(port, keyed);
+        Check(refused.StartsWith("HTTP/1.1 429", StringComparison.Ordinal) && refused.Contains("x-mighty-remote-version: 2", StringComparison.Ordinal), "the 301st request in a second is 429, with the version: " + refused);
+        now += TimeSpan.FromSeconds(1);
+        Check((await Raw(port, keyed)).StartsWith("HTTP/1.1 200", StringComparison.Ordinal), "the next second is answered");
+    }
+
+    internal static async Task AListenerThatStopsAcceptingTurnsSharingOff()
+    {
+        await using var fixture = await MakeHost(addresses: () => ["127.0.0.1", "::1"]);
+        var state = await fixture.Host.StartAsync([fixture.Shared.Id], 0);
+        var port = state.Port!.Value;
+        var keyed = $"GET /v2/info HTTP/1.1\r\nAuthorization: Bearer {state.Key}\r\nx-mighty-remote-version: 2\r\n\r\n";
+        Check(state.Addresses.SequenceEqual(["127.0.0.1:" + port, "[::1]:" + port]) && fixture.Host.Listeners.Count == 2 && fixture.Host.Listeners.All(l => l.IsListening), "one listener per address, on one port");
+        Check((await Raw(port, keyed, address: IPAddress.IPv6Loopback)).StartsWith("HTTP/1.1 200", StringComparison.Ordinal), "both addresses answer");
+        // Stands in for accepting that failed for good on one address.
+        await fixture.Host.Listeners[0].DisposeAsync();
+        var other = await Raw(port, keyed, address: IPAddress.IPv6Loopback);
+        Check(other.StartsWith("HTTP/1.1 503", StringComparison.Ordinal) && other.Contains("x-mighty-remote-version: 2", StringComparison.Ordinal), "the other address stops answering too: " + other);
+        var now = fixture.Host.Current();
+        Check(now is { Enabled: false, Key: null } && fixture.Host.Listeners.Count == 0, "sharing shows as off, its key gone and every listener closed");
+        Check((await fixture.Host.StartAsync([fixture.Shared.Id], 0)).Key != state.Key, "sharing starts again with a new key");
+        await fixture.Host.Listeners[1].DisposeAsync();
+        Check(fixture.Host.Current() is { Enabled: false, Key: null }, "Current alone notices a listener that stopped");
     }
 }
