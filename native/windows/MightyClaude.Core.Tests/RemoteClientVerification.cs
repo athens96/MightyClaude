@@ -89,15 +89,22 @@ internal static partial class RemoteClientVerification
         Check(RemoteAddress.Parse("studio-pc:43200").Display == "studio-pc:43200", "a name with a port");
         Check(RemoteAddress.Parse("[fd7a:115c:a1e0::1]:43200").Display == "[fd7a:115c:a1e0::1]:43200", "bracketed IPv6 with a port");
         Check(RemoteAddress.Parse("fd7a:115c:a1e0:0::1").Display == "[fd7a:115c:a1e0::1]:43137", "IPv6 is canonical");
-        Check(RemoteAddress.Parse("\u0007\t HTTP://studio-pc\r\n\u001b").Display == "studio-pc:43137", "control characters and whitespace around the address are stripped");
+        Check(RemoteAddress.Parse("\t \u00a0HTTP://studio-pc\r\n\u0085\u2028").Display == "studio-pc:43137", "whitespace and newlines around the address are trimmed");
+        Check(RemoteAddress.Parse("studio-pc:+5000").Port == 5000 && RemoteAddress.Parse("[fd7a::1]:+43200").Port == 43200, "a port reads as Swift's Int reads it: a leading + is taken");
         Check(JsonSerializer.Serialize(RemoteAddress.Parse("studio-pc"), Wire.Json) is var json && !json.Contains("display", StringComparison.OrdinalIgnoreCase), "Display is never serialized: " + json);
         foreach (var bad in new[] { "", "https://100.1.2.3", "ftp://x", "user@100.1.2.3", "100.1.2.3/path", "100.1.2.3?k=v", "100.1.2.3#x", "100.1.2.3:80", "100.1.2.3:99999", "100.1.2.3:abc", "[fd7a::1", "-host", "a..b", "host name", "fe80::1%en0", new string('a', 400),
-                                    "studio\u0007pc", "studio-pc\u0000", "studio-pc:+5000", "100.1.2.3:", "[fd7a::1]x", "[studio:pc]", "studio_pc", "\u0007\u0008" })
+                                    "studio\u0007pc", "studio-pc\u0000", "100.1.2.3:", "100.1.2.3:+", "100.1.2.3: 5000", "[fd7a::1]x", "[studio:pc]", "studio_pc", "\u0007\u0008",
+                                    "\u0007studio-pc", "studio-pc\u001b", "\u009bstudio-pc", "studio-pc:-1", "studio-pc:99999999999" })
         {
             try { RemoteAddress.Parse(bad); throw new InvalidOperationException("accepted " + bad); } catch (ArgumentException) { }
         }
-        try { RemoteAddress.Parse("100.1.2.3:80"); } catch (ArgumentException ex) { Check(ex.Message == Locale.Get("remote.connect.error.badPort"), "a port out of range says so"); }
-        try { RemoteAddress.Parse("user@x"); } catch (ArgumentException ex) { Check(ex.Message == Locale.Get("remote.connect.error.badAddress"), "a bad address says so"); }
+        foreach (var (input, words) in new[] { ("100.1.2.3:80", "badPort"), ("studio-pc:-1", "badPort"), ("[fd7a::1]:-0", "badPort"), ("studio-pc:99999999999", "badAddress"), ("user@x", "badAddress"), ("\u0007studio-pc", "badAddress") })
+        {
+            var refused = false;
+            try { RemoteAddress.Parse(input); }
+            catch (ArgumentException ex) { refused = true; Check(ex.Message == Locale.Get("remote.connect.error." + words), input + " is refused with the " + words + " words: " + ex.Message); }
+            if (!refused) Check(false, input + " was accepted");
+        }
         return Task.CompletedTask;
     }
 
@@ -117,6 +124,13 @@ internal static partial class RemoteClientVerification
             var read = RemoteConnectionFile.Read(directory);
             Check(read.Select(c => c.Id + "=" + c.Address).SequenceEqual(["a=studio-pc:43137", "d=[fd7a:115c:a1e0::5]:43137", "g=100.101.102.103:43137"]),
                 "saved addresses are parsed, kept in their shown form, and one that does not parse or repeats an earlier one is dropped: " + string.Join(", ", read.Select(c => c.Id + "=" + c.Address)));
+            await File.WriteAllTextAsync(Path.Combine(directory, RemoteConnectionFile.FileName), "{\"version\":2,\"connections\":["
+                + string.Join(",", Enumerable.Range(0, 16).Select(i => "{\"id\":\"" + (i < 2 ? "bad id" : "p" + i) + "\",\"name\":\"n\",\"address\":\"h" + i + "\"}"))
+                + ",{\"id\":\"late\",\"name\":\"n\",\"address\":\"late\"}]}");
+            var first = RemoteConnectionFile.Read(directory);
+            Check(first.Count == 14 && first[0].Id == "p2" && first.All(c => c.Id != "late"), "only the file's first 16 entries are read, as on the Mac, so a 17th never fills a dropped one's place: " + first.Count);
+            await RemoteConnectionFile.WriteAsync(directory, [new("bad id", "x", "h0"), new("bad id", "x", "h1"), .. Enumerable.Range(2, 16).Select(i => new RemoteSavedConnection("p" + i, "n", "h" + i))]);
+            Check(RemoteConnectionFile.Read(directory).Count == RemoteProtocol.MaximumConnections, "a write keeps 16 good entries, whatever it skipped first");
             await RemoteConnectionFile.WriteAsync(directory, [new("x", "x", "100.101.102.103"), new("y", "y", "100.101.102.103:43137"), new("z", "z", "not an address/")]);
             Check(RemoteConnectionFile.Read(directory).Select(c => c.Id + "=" + c.Address).SequenceEqual(["x=100.101.102.103:43137"]), "a repeated or unparsable address is never written");
         }
@@ -130,9 +144,16 @@ internal static partial class RemoteClientVerification
         Check(RemotePeerPolicy.Allowed("100.90.1.1") && RemotePeerPolicy.Allowed("fd7a:115c:a1e0::5%17") && !RemotePeerPolicy.Allowed("fe80::1%17"), "the address decides, not its scope");
         Check(RemotePeerPolicy.Allowed(System.Net.IPAddress.Parse("::ffff:100.90.1.1")) && !RemotePeerPolicy.Allowed(System.Net.IPAddress.Parse("10.0.0.1")), "IPv4-mapped peers read as IPv4");
         Check(!RemotePeerPolicy.Allowed("100.63.255.255") && !RemotePeerPolicy.Allowed("100.128.0.1") && !RemotePeerPolicy.Allowed("fd7a:115c:a1e1::1") && !RemotePeerPolicy.Allowed("192.168.0.2") && !RemotePeerPolicy.Allowed("studio-pc") && !RemotePeerPolicy.Allowed(""), "everything outside Tailscale is refused");
+        foreach (var loose in new[] { "127.1", "2130706433", "0x7f.1", "0177.0.0.1", "::ffff:127.0.0.1", "0:0:0:0:0:0:0:1", "127.0.0.256", "127.0.0.1.1" })
+            Check(!RemotePeerPolicy.Allowed(loose, allowLoopback: true), "only the Mac's loopback spellings count when injected: " + loose);
+        Check(RemotePeerPolicy.Allowed("127.9.8.7", allowLoopback: true) && RemotePeerPolicy.Allowed("[::1]", allowLoopback: true) && RemotePeerPolicy.Allowed("::1%1", allowLoopback: true), "any 127/8 address, and ::1 in brackets or with a scope");
         Check(!RemotePeerPolicy.Allowed(System.Net.IPAddress.Loopback) && RemotePeerPolicy.Allowed(System.Net.IPAddress.IPv6Loopback, allowLoopback: true) && RemotePeerPolicy.Allowed(System.Net.IPAddress.Parse("::ffff:127.0.0.1"), allowLoopback: true), "loopback as an IPAddress, also only when injected");
         Check(RemoteRoute.SourceAddressToward("127.0.0.1") == "127.0.0.1", "the route to loopback leaves from loopback, with nothing sent");
         Check(!RemoteRoute.ThroughTailscale("127.0.0.1") && RemoteRoute.SourceAddressToward("not an ip") is null, "loopback is not the tunnel; garbage has no route");
+        Check(!RemoteRoute.ThroughTailscale("127.0.0.1", () => throw new AdaptersUnreadableException(new System.Net.NetworkInformation.NetworkInformationException())), "adapters that cannot be read are no tunnel");
+        Check(!RemoteRoute.ThroughTailscale("127.0.0.1", () => ["100.101.102.103", "fd7a:115c:a1e0::5"]), "a source address that is not one of this PC's Tailscale addresses is no tunnel");
+        Check(RemoteRoute.ThroughTailscale("127.0.0.1", () => ["100.101.102.103", "127.0.0.1"]), "a source address among this PC's Tailscale addresses is the tunnel");
+        Check(!RemoteRoute.ThroughTailscale("not an ip", () => ["127.0.0.1"]), "no route, no tunnel");
         Check(RemoteRoute.SourceAddressToward("studio-pc") is null && RemoteRoute.SourceAddressToward("") is null && !RemoteRoute.ThroughTailscale("not an ip"), "a name is never resolved here: only an IP has a route");
         return Task.CompletedTask;
     }
