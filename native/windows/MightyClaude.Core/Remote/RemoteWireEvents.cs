@@ -32,52 +32,69 @@ public static class RemoteWireEvents
     };
 
     /// <summary>A host's event as the wire carries it; null when it does not travel: graph_run to a client that did not ask, a tool request
-    /// or a tracker node (they travel as <see cref="FromPermission"/> and <see cref="FromGraphNode"/>), and any type the Mac does not read.</summary>
+    /// or a tracker node (they travel as <see cref="FromPermission"/> and <see cref="FromGraphNode"/>), any type the Mac does not read, and
+    /// a value RemoteWire.Json cannot write (a null in a member that is not nullable). The caller leaves a null out of the run's events.</summary>
     public static JsonObject? FromRunEvent(RunEvent value, string jobId, bool graphRuns)
     {
         var travels = value.Type == "graph_run" ? graphRuns : value.Type is not ("permission" or "graph") && RemoteWorkspaceValidation.EventTypes.Contains(value.Type);
-        if (!travels) return null;
-        var node = JsonSerializer.SerializeToNode(value with { SessionId = jobId, Permission = null, Reason = null }, RemoteWire.Json)!.AsObject();
+        if (!travels || Written(value with { SessionId = jobId, Permission = null, Reason = null }) is not { } node) return null;
         // A lost sign-in is the Mac's "auth"; no other reason is one the Mac reads.
         if (value.Type == "status" && value.Reason == "authentication") node["reason"] = "auth";
         if (node["entry"] is JsonObject entry) Pictures(entry, reading: false);
         if (node["graphRun"] is JsonObject run) GraphRunPictures(run, reading: false);
         Normalize(node);
-        return node;
+        return Readable(node, jobId, graphRuns);
     }
 
-    /// <summary>A tool request from the host's run (RunManager's permissionRequested), as the Mac's "permission" event.</summary>
-    public static JsonObject FromPermission(ToolPermissionRequest value, string jobId)
+    /// <summary>A tool request from the host's run (RunManager's permissionRequested), as the Mac's "permission" event; null when
+    /// RemoteWire.Json cannot write it, which the caller leaves out.</summary>
+    public static JsonObject? FromPermission(ToolPermissionRequest value, string jobId)
     {
-        var permission = JsonSerializer.SerializeToNode(value with { RunId = jobId }, RemoteWire.Json)!.AsObject();
+        if (Written(value with { RunId = jobId }) is not { } permission) return null;
         Rename(permission, "inputJson", "inputJSON");
         var node = new JsonObject { ["sessionId"] = jobId, ["type"] = "permission", ["permission"] = permission };
         Normalize(node);
-        return node;
+        return Readable(node, jobId, graphRuns: false);
     }
 
-    /// <summary>One execution-graph node of the host's run, as the Mac's "graph" event (for a client that did not ask for graph_run).</summary>
-    public static JsonObject FromGraphNode(ExecutionGraphNode value, string jobId)
+    /// <summary>One execution-graph node of the host's run, as the Mac's "graph" event (for a client that did not ask for graph_run); null
+    /// when RemoteWire.Json cannot write it, which the caller leaves out.</summary>
+    public static JsonObject? FromGraphNode(ExecutionGraphNode value, string jobId)
     {
-        var graph = JsonSerializer.SerializeToNode(value, RemoteWire.Json)!.AsObject();
+        // The Mac's client normalizes every node it reads (ExecutionGraphSupport.normalized) and leaves out one that does not normalize.
+        if (ExecutionGraphSupport.Normalized(value) is not { } clean || Written(clean) is not { } graph) return null;
         if (graph["entries"] is JsonArray entries) foreach (var entry in entries.OfType<JsonObject>()) Pictures(entry, reading: false);
         var node = new JsonObject { ["sessionId"] = jobId, ["type"] = "graph", ["graph"] = graph };
         Normalize(node);
         return node;
     }
 
-    /// <summary>One event of the host's run, as this client's pane would have it, or unusable. Never throws.</summary>
+    /// <summary>One event of the host's run, as this client's pane would have it, or unusable. Never throws, whatever a converter does,
+    /// except for cancellation and running out of memory: one event never takes the poll down.</summary>
     public static RemoteIncoming Read(JsonObject wire, string jobId, string paneId, bool graphRuns)
     {
         try { return Incoming(wire.DeepClone().AsObject(), jobId, paneId, graphRuns); }
-        catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException or NotSupportedException or ArgumentException or OverflowException) { return new(); }
+        catch (Exception ex) when (ex is not (OperationCanceledException or OutOfMemoryException)) { return new(); }
     }
+
+    /// <summary>The value as RemoteWire.Json writes it; null for one it refuses to write.</summary>
+    private static JsonObject? Written<T>(T value)
+    {
+        try { return JsonSerializer.SerializeToNode(value, RemoteWire.Json)?.AsObject(); }
+        catch (JsonException) { return null; }
+    }
+
+    /// <summary>
+    /// The written event when a client reads it (<see cref="Read"/>, the Mac's decoder and checks), else null. RemoteWire.Json leaves a null
+    /// member out instead of refusing it, so an event missing what the Mac requires (a log entry's text, a request's input) is caught here.
+    /// </summary>
+    private static JsonObject? Readable(JsonObject node, string jobId, bool graphRuns) => Read(node, jobId, jobId, graphRuns).Usable ? node : null;
 
     private static RemoteIncoming Incoming(JsonObject copy, string jobId, string paneId, bool graphRuns)
     {
         // The Mac's RunEvent decoder: sessionId, type, entry, status, resumeId, activity and permission must decode, or the event is refused;
         // usage, graph, reason, plan, todos and background that do not decode are read as absent (try?), which refuses an event of that type.
-        Lenient<SessionUsage>(copy, "usage");
+        Lenient<SessionUsage>(copy, "usage", Usage);
         Lenient<string>(copy, "reason");
         Lenient<PlanRecord>(copy, "plan");
         Lenient<TodoProgress>(copy, "todos");
@@ -86,12 +103,13 @@ public static class RemoteWireEvents
         Lenient<MightyGraphRun>(copy, "graphRun");
         if (copy["entry"] is JsonObject entry)
         {
-            // The Mac reads a damaged activity or picture list of an entry as none (try?), but refuses an entry whose activity is not valid.
+            // The Mac reads a damaged activity or picture list of an entry as none (try?). A log whose entry activity is not valid is
+            // refused (RemoteWorkspaceValidation.event checks it on log events alone); on any other event that activity is only left out.
             Pictures(entry, reading: true);
-            if (entry["activity"] is { } inner)
+            if (entry["activity"] is { } inner && (Activity(inner) is not { } activity || !Valid(activity)))
             {
-                if (Activity(inner) is not { } activity) entry.Remove("activity");
-                else if (!Valid(activity)) return new();
+                if (Activity(inner) is not null && copy["type"] is JsonValue kind && kind.TryGetValue<string>(out var named) && named == "log") return new();
+                entry.Remove("activity");
             }
         }
         if (copy["activity"] is { } outer && (Activity(outer) is not { } eventActivity || !Valid(eventActivity))) return new();
@@ -107,6 +125,8 @@ public static class RemoteWireEvents
         var value = copy.Deserialize<RunEvent>(RemoteWire.Json) ?? throw new JsonException();
         if (value.SessionId != jobId) return new();
         var type = value.Type;
+        // A usage the Mac's decoder cannot read, or its client cannot normalize, is left out by RemoteClientService.local without a word.
+        if (type == "usage" && value.Usage is null) return new(Ignored: true);
         // A Mac host's tracker node: a Windows pane draws graph_run instead, so it is left out without a word.
         if (type == "graph") return new(Ignored: true);
         if (!(RemoteWorkspaceValidation.EventTypes.Contains(type) || type == "graph_run" && graphRuns)) return new();
@@ -124,8 +144,6 @@ public static class RemoteWireEvents
         }
         value = value with { SessionId = paneId, Permission = null, Reason = type == "status" && value.Reason == "auth" ? "authentication" : null };
         if (value.Entry is { } text) value = value with { Entry = text with { Text = ActivitySupport.Clean(text.Text, text.Kind == "assistant" ? ActivitySupport.MaximumMessageBytes : 32768) } };
-        // SessionUsageConverter has already normalized the usage; one it could not is null, and the Mac's client leaves that event out too.
-        if (type == "usage" && value.Usage is null) return new();
         return value.Valid() ? new(value) : new();
     }
 
@@ -167,12 +185,12 @@ public static class RemoteWireEvents
         if (value[key] is not { } member) return;
         bool decodes;
         try { decodes = member.Deserialize<T>(RemoteWire.Json) is not null && (shape is null || member is JsonObject o && shape(o)); }
-        catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException or NotSupportedException or ArgumentException or OverflowException) { decodes = false; }
+        catch (Exception ex) when (ex is not (OperationCanceledException or OutOfMemoryException)) { decodes = false; }
         if (!decodes) value.Remove(key);
     }
 
     /// <summary>An activity as the Mac's AgentActivity decoder reads it (id, provider, kind, state and summary strings; toolName and output
-    /// strings when present; durationMs try?), before any cleaning; null when that decoder would throw.</summary>
+    /// strings when present; durationMs try?, and none when it is out of range), before any cleaning; null when that decoder would throw.</summary>
     private static AgentActivity? Activity(JsonNode node)
     {
         if (node is not JsonObject o) return null;
@@ -190,8 +208,31 @@ public static class RemoteWireEvents
         }
         if (!Text(o["id"], out var id) || !Text(o["provider"], out var provider) || !Text(o["kind"], out var kind) || !Text(o["state"], out var state) || !Text(o["summary"], out var summary)
             || !Optional(o["toolName"], out var tool) || !Optional(o["output"], out var output)) return null;
-        double? duration = o["durationMs"] is JsonValue d && d.GetValueKind() == JsonValueKind.Number ? d.GetValue<double>() : null;
+        double? duration = o["durationMs"] is JsonValue d && d.GetValueKind() == JsonValueKind.Number && d.GetValue<double>() is var ms && ActivitySupport.ValidDuration(ms) ? ms : null;
         return new(id, provider, kind, state, summary, tool, output, duration);
+    }
+
+    /// <summary>
+    /// A usage as the Mac's synthesized SessionUsage decoder reads it: provider, source, tokenScope and updatedAt strings; model,
+    /// selectedModel, providerSessionId, costScope and rateLimitsUpdatedAt strings when present; token counts whole numbers, costUSD a
+    /// number; every rate-limit window an object with a kind string, a percentUsed number and a resetsAt string when present.
+    /// SessionUsageConverter reads more loosely (a mistyped member as absent), so the Mac's rules are checked here first.
+    /// </summary>
+    private static bool Usage(JsonObject o)
+    {
+        static bool Text(JsonNode? value) => value is JsonValue v && v.GetValueKind() == JsonValueKind.String;
+        static bool Number(JsonNode? value) => value is JsonValue v && v.GetValueKind() == JsonValueKind.Number;
+        static bool Whole(JsonNode? value) => Number(value) && value!.GetValue<double>() is var n && Math.Floor(n) == n && Math.Abs(n) <= 9.2e18;
+        if (!new[] { "provider", "source", "tokenScope", "updatedAt" }.All(k => Text(o[k]))) return false;
+        if (!new[] { "model", "selectedModel", "providerSessionId", "costScope", "rateLimitsUpdatedAt" }.All(k => o[k] is null || Text(o[k]))) return false;
+        if (!new[] { "inputTokens", "outputTokens", "cacheReadTokens", "cacheWriteTokens", "reasoningTokens", "totalTokens", "contextUsedTokens", "contextWindowTokens" }.All(k => o[k] is null || Whole(o[k]))) return false;
+        if (o["costUSD"] is { } cost && !Number(cost)) return false;
+        return o["rateLimits"] switch
+        {
+            null => true,
+            JsonArray windows => windows.All(w => w is JsonObject window && Text(window["kind"]) && (window["percentUsed"] is null || Number(window["percentUsed"])) && (window["resetsAt"] is null || Text(window["resetsAt"]))),
+            _ => false,
+        };
     }
 
     /// <summary>The Mac's ActivitySupport.valid: an activity is valid when normalizing leaves it as it is.</summary>

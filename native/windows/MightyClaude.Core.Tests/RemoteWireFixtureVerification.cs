@@ -261,7 +261,7 @@ internal static class RemoteWireFixtureVerification
                 if (incoming.Permission is { } permission)
                 {
                     Check(permission.RunId == "pane-1" && incoming.HostRunId == "job-1" && permission.InputJson == (string?)item.Event["permission"]!["inputJSON"], "a tool request is the pane's, its host run kept");
-                    Check(Same(item.Event, RemoteWireEvents.FromPermission(permission with { RunId = incoming.HostRunId! }, "job-1")), "the permission writes back as the Mac's: " + RemoteWireEvents.FromPermission(permission, "job-1").ToJsonString());
+                    Check(Same(item.Event, RemoteWireEvents.FromPermission(permission with { RunId = incoming.HostRunId! }, "job-1")), "the permission writes back as the Mac's: " + RemoteWireEvents.FromPermission(permission, "job-1")?.ToJsonString());
                     continue;
                 }
                 var value = incoming.Event!;
@@ -286,7 +286,13 @@ internal static class RemoteWireFixtureVerification
         Check(RemoteWireEvents.FromRunEvent(run!, "job-1", graphRuns: false) is null && Same(graphRun, RemoteWireEvents.FromRunEvent(run!, "job-1", graphRuns: true)), "graph_run travels only on request, as the sample");
         // A tracker node of a Windows host writes the Mac's graph event; a status reason other than a lost sign-in stays home.
         var graph = WireEvent("poll.json", 10);
-        Check(JsonNode.DeepEquals(Plain(graph), Plain(RemoteWireEvents.FromGraphNode(Inner(graph, "graph").Deserialize<ExecutionGraphNode>(RemoteWire.Json)!, "job-1"))), "a tracker node writes the sample's graph event: " + RemoteWireEvents.FromGraphNode(Inner(graph, "graph").Deserialize<ExecutionGraphNode>(RemoteWire.Json)!, "job-1").ToJsonString());
+        Check(JsonNode.DeepEquals(Plain(graph), Plain(RemoteWireEvents.FromGraphNode(Inner(graph, "graph").Deserialize<ExecutionGraphNode>(RemoteWire.Json)!, "job-1"))), "a tracker node writes the sample's graph event: " + RemoteWireEvents.FromGraphNode(Inner(graph, "graph").Deserialize<ExecutionGraphNode>(RemoteWire.Json)!, "job-1")?.ToJsonString());
+        // A value RemoteWire.Json cannot write (a null where the type is not nullable) does not travel; the host leaves it out.
+        Check(RemoteWireEvents.FromRunEvent(new RunEvent("pane-9", "log", new LogEntry("log-9", "output", null!, "2026-10-17T01:02:03Z")), "job-9", false) is null, "a log the wire cannot carry is null, never a throw");
+        Check(RemoteWireEvents.FromPermission(new ToolPermissionRequest("r1", "pane-9", "t1", "Bash", null!, "ls"), "job-9") is null, "a request the wire cannot carry is null, never a throw");
+        Check(RemoteWireEvents.FromGraphNode(new ExecutionGraphNode("node-9", "bad run!", null, "main", "running", "Request"), "job-9") is null, "a graph node the Mac's client would not normalize does not travel");
+        Check(RemoteWireEvents.FromRunEvent(new RunEvent("pane-9", "plan", Plan: new PlanRecord("plan-9", "job-9", "# Plan", null!, "2026-10-17T01:02:03.000Z", PlanOutcome.ApprovedAuto)), "job-9", false) is null
+            && RemoteWireEvents.FromRunEvent(new RunEvent("pane-9", "status", Status: "paused"), "job-9", false) is null, "an event a client would refuse does not travel");
         Check(RemoteWireEvents.FromRunEvent(RunEvent.State("pane-9", "error", "quota"), "job-9", false) is { } quota && !quota.ContainsKey("reason") && (string?)quota["sessionId"] == "job-9", "only auth travels as a reason");
         Check(RemoteWireEvents.FromRunEvent(new RunEvent("pane-9", "permission", Permission: requests[2]), "job-9", false) is null && RemoteWireEvents.FromRunEvent(new RunEvent("pane-9", "steer"), "job-9", false) is null, "tool requests travel as FromPermission, and a type the Mac does not read never travels");
         return Task.CompletedTask;
@@ -334,8 +340,6 @@ internal static class RemoteWireFixtureVerification
             ("a permission with a bad run id", Edited(permission, e => Inner(e, "permission")["runId"] = "bad id")),
             ("a permission with too much input", Edited(permission, e => Inner(e, "permission")["inputJSON"] = new string('a', 65_537))),
             ("a permission event without one", Edited(permission, e => e.Remove("permission"))),
-            ("a usage event with a mistyped usage", Edited(usage, e => e["usage"] = "lots")),
-            ("a usage event the client cannot normalize", Edited(usage, e => Inner(e, "usage")["provider"] = "llama")),
             ("a plan without decidedAt", Edited(plan, e => Inner(e, "plan").Remove("decidedAt"))),
             ("a plan with an unknown outcome", Edited(plan, e => Inner(e, "plan")["outcome"] = "maybe")),
             ("a todo list with a null item", Edited(todos, e => Inner(e, "todos")["items"] = new JsonArray((JsonNode?)null))),
@@ -346,6 +350,25 @@ internal static class RemoteWireFixtureVerification
             ("an event of another job", Edited(log, e => e["sessionId"] = "job-2")),
         };
         foreach (var (what, wire) in refused) Check(!ReadAsPane(wire).Usable, what + " is refused");
+        // A usage the Mac's decoder cannot read, or its client cannot normalize, is left out without a word (RemoteClientService.local).
+        var silent = new (string What, JsonObject Wire)[]
+        {
+            ("a usage event with a mistyped usage", Edited(usage, e => e["usage"] = "lots")),
+            ("a usage event the client cannot normalize", Edited(usage, e => Inner(e, "usage")["provider"] = "llama")),
+            ("a usage event whose count is a string", Edited(usage, e => Inner(e, "usage")["inputTokens"] = "12")),
+            ("a usage event whose count is not whole", Edited(usage, e => Inner(e, "usage")["inputTokens"] = 12.5)),
+            ("a usage event whose cost is a string", Edited(usage, e => Inner(e, "usage")["costUSD"] = "0.01")),
+            ("a usage event whose model is a number", Edited(usage, e => Inner(e, "usage")["model"] = 4)),
+            ("a usage event without updatedAt", Edited(usage, e => Inner(e, "usage").Remove("updatedAt"))),
+            ("a usage event without its source", Edited(usage, e => Inner(e, "usage").Remove("source"))),
+            ("a usage event with a null provider", Edited(usage, e => Inner(e, "usage")["provider"] = null)),
+            ("a usage event whose rate-limit window has no kind", Edited(usage, e => Inner(e, "usage")["rateLimits"] = new JsonArray(new JsonObject { ["percentUsed"] = 5 }))),
+            ("a usage event whose rate limits are not a list", Edited(usage, e => Inner(e, "usage")["rateLimits"] = "full")),
+            ("a usage event without one", Edited(usage, e => e.Remove("usage"))),
+        };
+        foreach (var (what, wire) in silent) Check(ReadAsPane(wire) is { Usable: true, Event: null, Permission: null, Ignored: true }, what + " is left out silently");
+        Check(!RemoteWireEvents.Read(silent[0].Wire, "job-2", "pane-1", false).Usable, "another job's usage is still unusable");
+        Check(ReadAsPane(Edited(usage, e => { Inner(e, "usage")["model"] = null; Inner(e, "usage")["rateLimits"] = new JsonArray(new JsonObject { ["kind"] = "five_hour", ["percentUsed"] = 5 }); })).Event?.Usage is { InputTokens: 1200, RateLimits: [{ Kind: "five_hour", PercentUsed: 5 }] }, "a usage with a null model and a rate-limit window still reads");
         // What the Mac's decoder lets go (try?) only leaves that value out; the event still reads.
         var lenient = new (string What, JsonObject Wire)[]
         {
@@ -359,6 +382,10 @@ internal static class RemoteWireFixtureVerification
             ("a permission without the answer flags", Edited(permission, e => { Inner(e, "permission").Remove("canAnswerQuestions"); Inner(e, "permission").Remove("canAnswerPlan"); })),
         };
         foreach (var (what, wire) in lenient) Check(ReadAsPane(wire).Usable, what + " still reads");
+        var foreignActivity = Edited(status, e => e["entry"] = Edited(Inner(log, "entry"), entry => entry["activity"] = Edited(Inner(activity, "activity"), a => a["kind"] = "dance")));
+        Check(ReadAsPane(foreignActivity).Event is { Type: "status", Entry.Activity: null }, "an entry activity that is not valid is only left out on an event other than a log");
+        var longActivity = Edited(activity, e => Inner(e, "activity")["durationMs"] = 1e20);
+        Check(ReadAsPane(longActivity).Event?.Activity is { Id: "act-1", DurationMs: null }, "an out-of-range duration reads as none, as the Mac's decoder reads it");
         Check(ReadAsPane(lenient[2].Wire).Event is { Type: "status", Status: "completed", Reason: null } && ReadAsPane(lenient[3].Wire).Event?.Entry is { Activity: null, Text: "Reading README.md." }
             && ReadAsPane(lenient[6].Wire).Event is { Type: "status", Status: "running" } && ReadAsPane(lenient[7].Wire).Permission is { CanAnswerQuestions: false, CanAnswerPlan: false, CanAllow: true }, "the lenient values read as the Mac reads them");
         // A picture names a file on the host: the entry reads as its text alone.
@@ -377,7 +404,7 @@ internal static class RemoteWireFixtureVerification
         var stamp = log["entry"]!["timestamp"]!.GetValue<string>();
         Check(WholeSeconds.IsMatch(stamp), "a Windows log time travels in whole seconds: " + stamp);
         var now = DateTimeOffset.UtcNow.ToString("O");
-        var request = RemoteWireEvents.FromPermission(new ToolPermissionRequest("r1", "pane-9", "t1", "Bash", "{}", "ls", ReceivedAt: now), "job-9");
+        var request = RemoteWireEvents.FromPermission(new ToolPermissionRequest("r1", "pane-9", "t1", "Bash", "{}", "ls", ReceivedAt: now), "job-9")!;
         Check(Milliseconds.IsMatch((string)request["permission"]!["receivedAt"]!) && (string?)request["permission"]!["runId"] == "job-9" && request["permission"]!["inputJSON"] is JsonValue && request["permission"]!["inputJson"] is null && (string?)request["sessionId"] == "job-9", "a request travels as the Mac's, its time in milliseconds: " + request.ToJsonString());
         var planned = RemoteWireEvents.FromRunEvent(new RunEvent("pane-9", "plan", Plan: new PlanRecord("plan-9", "job-9", "# Plan", now, now, PlanOutcome.ApprovedAuto)), "job-9", false)!;
         Check(Milliseconds.IsMatch((string)planned["plan"]!["receivedAt"]!) && Milliseconds.IsMatch((string)planned["plan"]!["decidedAt"]!), "plan times travel in milliseconds: " + planned.ToJsonString());
@@ -385,7 +412,7 @@ internal static class RemoteWireFixtureVerification
         Check(Milliseconds.IsMatch((string)work["background"]!["tasks"]![0]!["startedAt"]!) && Milliseconds.IsMatch((string)work["background"]!["tasks"]![0]!["endedAt"]!), "background times travel in milliseconds: " + work.ToJsonString());
         var used = RemoteWireEvents.FromRunEvent(new RunEvent("pane-9", "usage", Usage: new SessionUsage { InputTokens = 1, UpdatedAt = now }), "job-9", false)!;
         Check(WholeSeconds.IsMatch((string)used["usage"]!["updatedAt"]!), "a usage time travels in whole seconds: " + used.ToJsonString());
-        var node = RemoteWireEvents.FromGraphNode(new ExecutionGraphNode("node-9", "act-9", "node-1", "agent", "running", "Agent") { UpdatedAt = now, Entries = [RunEvent.Log("job-9", "assistant", "hi").Entry!] }, "job-9");
+        var node = RemoteWireEvents.FromGraphNode(new ExecutionGraphNode("node-9", "act-9", "node-1", "agent", "running", "Agent") { UpdatedAt = now, Entries = [RunEvent.Log("job-9", "assistant", "hi").Entry!] }, "job-9")!;
         Check((string?)node["type"] == "graph" && (string?)node["sessionId"] == "job-9" && WholeSeconds.IsMatch((string)node["graph"]!["updatedAt"]!) && WholeSeconds.IsMatch((string)node["graph"]!["entries"]![0]!["timestamp"]!), "graph times travel in whole seconds: " + node.ToJsonString());
         // A time already in one of the Mac's forms travels as it is, so a received sample writes back unchanged.
         var kept = RemoteWireEvents.FromRunEvent(new RunEvent("pane-9", "background", Background: new BackgroundWork([new BackgroundTask("task-9", "shell", "npm test", "2026-10-17T01:02:08Z")])), "job-9", false)!;
@@ -398,7 +425,7 @@ internal static class RemoteWireFixtureVerification
         var picture = RunEvent.Log("job-9", "image", "a picture") with { };
         picture = picture with { Entry = picture.Entry! with { Images = [new AgentImageRef("h", "image/png", 1, 1, 10, "tool")] } };
         Check(RemoteWireEvents.FromRunEvent(picture, "job-9", false)!["entry"]!["images"] is null, "pictures name host files and stay home");
-        Check(RemoteWireEvents.FromGraphNode(new ExecutionGraphNode("node-9", "act-9", "node-1", "agent", "running", "Agent") { Entries = [picture.Entry!] }, "job-9")["graph"]!["entries"]![0]!["images"] is null, "a graph node's pictures stay home too");
+        Check(RemoteWireEvents.FromGraphNode(new ExecutionGraphNode("node-9", "act-9", "node-1", "agent", "running", "Agent") { Entries = [picture.Entry! with { Kind = "assistant" }] }, "job-9")!["graph"]!["entries"]![0]!["images"] is null, "a graph node's pictures stay home too");
         var pending = new RemotePendingPermissions(); var evicted = new List<ToolPermissionRequest>();
         for (var i = 0; i < 40; i++) evicted.AddRange(pending.Admit(new ToolPermissionRequest("r" + i, "pane-1", "t" + i, "Bash", "{}", "ls")));
         Check(evicted.Select(r => r.Id).SequenceEqual(Enumerable.Range(0, 8).Select(i => "r" + i)) && evicted.All(r => r.State == "cancelled"), "the oldest are withdrawn: " + string.Join(",", evicted.Select(r => r.Id)));
