@@ -9,7 +9,8 @@ public sealed record RemoteSavedConnection(string Id, string Name, string Addres
 /// The data folder's remote-connections.json in the Mac's shape (M/Remote/RemoteClientService.swift SavedFile, version 2):
 /// <c>{"version":2,"connections":[{"id","name","address"}]}</c>. It is local state, written atomically and user-only on every OS
 /// StateStore writes to. A file of another version (the remote workspaces removed on 2026-09-28 wrote version 1, with keys), a
-/// damaged or oversize one reads as no connections; an entry with a bad or repeated id or no address is skipped alone.
+/// damaged or oversize one reads as no connections; an entry with a bad or repeated id, or an address that does not parse or repeats an
+/// earlier entry's, is skipped alone.
 /// </summary>
 public static class RemoteConnectionFile
 {
@@ -36,13 +37,29 @@ public static class RemoteConnectionFile
     public static Task WriteAsync(string directory, IEnumerable<RemoteSavedConnection> connections) =>
         StateStore.AtomicWriteAsync(Path.Combine(directory, FileName), JsonSerializer.SerializeToUtf8Bytes(new SavedFile(RemoteProtocol.Version, Usable(connections)), Wire.Json));
 
+    /// <summary>
+    /// As the Mac's loadSaved: an entry is kept when its id is good and new and its address parses (<see cref="RemoteAddress.Parse"/>)
+    /// to one no earlier entry has; the address is kept in its shown form. At most 16, in order.
+    /// </summary>
     private static List<RemoteSavedConnection> Usable(IEnumerable<RemoteSavedConnection?> connections)
     {
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        return connections.OfType<RemoteSavedConnection>()
-            .Where(c => Wire.Identifier(c.Id) && c.Address is { Length: > 0 and <= MaximumAddress } && seen.Add(c.Id))
-            .Take(RemoteProtocol.MaximumConnections)
-            .Select(c => new RemoteSavedConnection(c.Id, Name(c.Name), c.Address)).ToList();
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        var addresses = new HashSet<string>(StringComparer.Ordinal);
+        var kept = new List<RemoteSavedConnection>();
+        foreach (var c in connections.OfType<RemoteSavedConnection>())
+        {
+            if (kept.Count == RemoteProtocol.MaximumConnections) break;
+            if (!Wire.Identifier(c.Id) || ids.Contains(c.Id) || c.Address is not { Length: > 0 and <= MaximumAddress } || Address(c.Address) is not { } address || !addresses.Add(address)) continue;
+            ids.Add(c.Id);
+            kept.Add(new RemoteSavedConnection(c.Id, Name(c.Name), address));
+        }
+        return kept;
+    }
+
+    private static string? Address(string value)
+    {
+        try { return RemoteAddress.Parse(value).Display; }
+        catch (ArgumentException) { return null; }
     }
 
     /// <summary>Control characters out and at most 120 UTF-16 units, never ending inside a surrogate pair (a lone one would make the whole file unreadable).</summary>
