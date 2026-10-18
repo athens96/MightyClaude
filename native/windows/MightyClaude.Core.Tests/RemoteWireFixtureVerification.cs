@@ -241,4 +241,170 @@ internal static class RemoteWireFixtureVerification
         Check(state == state with { } && state != state with { Key = "other" }, "the key still takes part in equality");
         return Task.CompletedTask;
     }
+
+    // Task 5: run events, tool requests and graph nodes as the wire carries them (RemoteWireEvents).
+
+    private static readonly System.Text.RegularExpressions.Regex WholeSeconds = new(@"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\z"), Milliseconds = new(@"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\z");
+    private static JsonObject WireEvent(string name, int cursor) => Decode<RemoteWirePoll>(name).Events.Single(e => e.Cursor == cursor).Event;
+    private static JsonObject Edited(JsonObject wire, Action<JsonObject> change) { var copy = wire.DeepClone().AsObject(); change(copy); return copy; }
+    private static JsonObject Inner(JsonObject wire, string key) => wire[key]!.AsObject();
+    private static RemoteIncoming ReadAsPane(JsonObject wire, bool graphRuns = false) => RemoteWireEvents.Read(wire, "job-1", "pane-1", graphRuns);
+
+    internal static Task EveryWireEventReadsAndWritesBack()
+    {
+        foreach (var name in new[] { "poll.json", "poll-gap.json", "poll-requests.json" })
+            foreach (var item in Decode<RemoteWirePoll>(name).Events)
+            {
+                var incoming = RemoteWireEvents.Read(item.Event, "job-1", "pane-1", graphRuns: false);
+                Check(incoming.Usable, name + " cursor " + item.Cursor + " is usable");
+                if (item.Event["type"]!.GetValue<string>() == "graph") { Check(incoming.Ignored && incoming.Event is null && incoming.Permission is null, "a Mac graph node is ignored silently"); continue; }
+                if (incoming.Permission is { } permission)
+                {
+                    Check(permission.RunId == "pane-1" && incoming.HostRunId == "job-1" && permission.InputJson == (string?)item.Event["permission"]!["inputJSON"], "a tool request is the pane's, its host run kept");
+                    Check(Same(item.Event, RemoteWireEvents.FromPermission(permission with { RunId = incoming.HostRunId! }, "job-1")), "the permission writes back as the Mac's: " + RemoteWireEvents.FromPermission(permission, "job-1").ToJsonString());
+                    continue;
+                }
+                var value = incoming.Event!;
+                Check(value.SessionId == "pane-1", "an event becomes the pane's");
+                if (value.Type == "status" && value.Status == "error") Check(value.Reason == "authentication", "auth on the wire is the Windows sign-in reason");
+                Check(JsonNode.DeepEquals(Plain(item.Event), Plain(RemoteWireEvents.FromRunEvent(value, "job-1", graphRuns: false))), name + " cursor " + item.Cursor + " writes back as the Mac's, every timestamp as it came: " + RemoteWireEvents.FromRunEvent(value, "job-1", false)?.ToJsonString());
+            }
+        // The question, plan and blocked-path requests (poll-requests.json) as Windows tool requests.
+        var requests = Decode<RemoteWirePoll>("poll-requests.json").Events.Select(e => ReadAsPane(e.Event).Permission!).ToList();
+        Check(requests[0] is { Id: "perm-2", ToolName: "AskUserQuestion", ToolUseId: "toolu_2", CanAnswerQuestions: true, CanAnswerPlan: false, CanAllow: false, State: "pending", Summary: "Which file?", ReceivedAt: "2026-10-17T01:05:00.000Z", Reason: null, BlockedPath: null }
+            && UserQuestionnaire.Parse(requests[0].InputJson) is not null, "perm-2 is a question the pane answers");
+        Check(requests[1] is { Id: "perm-3", ToolName: ClaudePlanMode.ToolName, CanAnswerPlan: true, CanAllow: false, CanAnswerQuestions: false } && requests[1].Plan == "# Plan\n1. Read"
+            && PlanApprovalRequest.From("pane-1", requests[1]) is { Plan: "# Plan\n1. Read", RequestId: "perm-3" }, "perm-3 is a plan the pane answers and can never allow");
+        Check(requests[2] is { Id: "perm-4", ToolName: "Write", CanAllow: true, CanAnswerQuestions: false, CanAnswerPlan: false, Reason: "The path is outside the workspace.", BlockedPath: "/Users/example/elsewhere" }, "perm-4 keeps its reason and blocked path");
+        var malformed = Decode<RemoteWirePoll>("poll-malformed.json").Events.Select(e => ReadAsPane(e.Event).Usable).ToList();
+        Check(malformed.SequenceEqual([true, false, true]), "only the malformed event is unusable");
+        Check(!RemoteWireEvents.Read(Decode<RemoteWirePoll>("poll.json").Events[0].Event, "job-2", "pane-1", false).Usable, "another job's event is unusable");
+        var graphRun = Node("graph-run-event.json")["event"]!.AsObject();
+        Check(!RemoteWireEvents.Read(graphRun, "job-1", "pane-1", graphRuns: false).Usable, "graph_run is unusable to a client that did not ask");
+        var run = RemoteWireEvents.Read(graphRun, "job-1", "pane-1", graphRuns: true).Event;
+        Check(run is { Type: "graph_run", GraphRun.Id: "gr-1", SessionId: "pane-1" }, "graph_run reaches a client that asked");
+        Check(RemoteWireEvents.FromRunEvent(run!, "job-1", graphRuns: false) is null && Same(graphRun, RemoteWireEvents.FromRunEvent(run!, "job-1", graphRuns: true)), "graph_run travels only on request, as the sample");
+        // A tracker node of a Windows host writes the Mac's graph event; a status reason other than a lost sign-in stays home.
+        var graph = WireEvent("poll.json", 10);
+        Check(JsonNode.DeepEquals(Plain(graph), Plain(RemoteWireEvents.FromGraphNode(Inner(graph, "graph").Deserialize<ExecutionGraphNode>(RemoteWire.Json)!, "job-1"))), "a tracker node writes the sample's graph event: " + RemoteWireEvents.FromGraphNode(Inner(graph, "graph").Deserialize<ExecutionGraphNode>(RemoteWire.Json)!, "job-1").ToJsonString());
+        Check(RemoteWireEvents.FromRunEvent(RunEvent.State("pane-9", "error", "quota"), "job-9", false) is { } quota && !quota.ContainsKey("reason") && (string?)quota["sessionId"] == "job-9", "only auth travels as a reason");
+        Check(RemoteWireEvents.FromRunEvent(new RunEvent("pane-9", "permission", Permission: requests[2]), "job-9", false) is null && RemoteWireEvents.FromRunEvent(new RunEvent("pane-9", "steer"), "job-9", false) is null, "tool requests travel as FromPermission, and a type the Mac does not read never travels");
+        return Task.CompletedTask;
+    }
+
+    internal static Task EachWireEventIsRefusedAloneAsTheMacRefusesIt()
+    {
+        JsonObject Of(int cursor) => WireEvent("poll.json", cursor);
+        var status = Of(1); var resume = Of(2); var log = Of(3); var activity = Of(4); var usage = Of(5); var permission = Of(6); var plan = Of(7); var todos = Of(8); var background = Of(9);
+        var refused = new (string What, JsonObject Wire)[]
+        {
+            ("no sessionId", Edited(status, e => e.Remove("sessionId"))),
+            ("no type", Edited(status, e => e.Remove("type"))),
+            ("a number for a sessionId", Edited(status, e => e["sessionId"] = 1)),
+            ("a null type", Edited(status, e => e["type"] = null)),
+            ("an unknown type", Edited(status, e => e["type"] = "steer")),
+            ("a mistyped status", Edited(status, e => e["status"] = 1)),
+            ("an unknown status", Edited(status, e => e["status"] = "paused")),
+            ("a reason other than auth", Edited(status, e => e["reason"] = "quota")),
+            ("a mistyped resumeId", Edited(resume, e => e["resumeId"] = 5)),
+            ("a resume without its id", Edited(resume, e => e.Remove("resumeId"))),
+            ("an entry that is not an object", Edited(log, e => e["entry"] = "text")),
+            ("a log without its entry", Edited(log, e => e.Remove("entry"))),
+            ("an entry without a kind", Edited(log, e => Inner(e, "entry").Remove("kind"))),
+            ("an entry without text", Edited(log, e => Inner(e, "entry").Remove("text"))),
+            ("an entry without a timestamp", Edited(log, e => Inner(e, "entry").Remove("timestamp"))),
+            ("an entry whose text is null", Edited(log, e => Inner(e, "entry")["text"] = null)),
+            ("an entry whose id is a number", Edited(log, e => Inner(e, "entry")["id"] = 3)),
+            ("an entry with a mistyped provider", Edited(log, e => Inner(e, "entry")["provider"] = 1)),
+            ("an entry with an unknown provider", Edited(log, e => Inner(e, "entry")["provider"] = "llama")),
+            ("an entry longer than the Mac takes", Edited(log, e => Inner(e, "entry")["text"] = new string('a', 131_073))),
+            ("an entry whose activity is not valid", Edited(log, e => Inner(e, "entry")["activity"] = Edited(Inner(activity, "activity"), a => a["kind"] = "dance"))),
+            ("a mistyped activity on any event", Edited(log, e => e["activity"] = 5)),
+            ("an activity without its summary", Edited(activity, e => Inner(e, "activity").Remove("summary"))),
+            ("an activity with a mistyped tool name", Edited(activity, e => Inner(e, "activity")["toolName"] = 7)),
+            ("an activity that is not valid", Edited(activity, e => Inner(e, "activity")["state"] = "dancing")),
+            ("an activity event without one", Edited(activity, e => e.Remove("activity"))),
+            ("a mistyped permission on any event", Edited(log, e => e["permission"] = "allow")),
+            ("a permission without its state", Edited(permission, e => Inner(e, "permission").Remove("state"))),
+            ("a permission without canAllow", Edited(permission, e => Inner(e, "permission").Remove("canAllow"))),
+            ("a permission with a mistyped canAllow", Edited(permission, e => Inner(e, "permission")["canAllow"] = "yes")),
+            ("a permission with a mistyped canAnswerPlan", Edited(permission, e => Inner(e, "permission")["canAnswerPlan"] = 1)),
+            ("a permission without inputJSON", Edited(permission, e => Inner(e, "permission").Remove("inputJSON"))),
+            ("a permission spelling inputJSON the Windows way", Edited(permission, e => { var p = Inner(e, "permission"); var input = p["inputJSON"]!; p.Remove("inputJSON"); p["inputJson"] = input; })),
+            ("a permission with a bad run id", Edited(permission, e => Inner(e, "permission")["runId"] = "bad id")),
+            ("a permission with too much input", Edited(permission, e => Inner(e, "permission")["inputJSON"] = new string('a', 65_537))),
+            ("a permission event without one", Edited(permission, e => e.Remove("permission"))),
+            ("a usage event with a mistyped usage", Edited(usage, e => e["usage"] = "lots")),
+            ("a usage event the client cannot normalize", Edited(usage, e => Inner(e, "usage")["provider"] = "llama")),
+            ("a plan without decidedAt", Edited(plan, e => Inner(e, "plan").Remove("decidedAt"))),
+            ("a plan with an unknown outcome", Edited(plan, e => Inner(e, "plan")["outcome"] = "maybe")),
+            ("a todo list with a null item", Edited(todos, e => Inner(e, "todos")["items"] = new JsonArray((JsonNode?)null))),
+            ("a todo item without its status", Edited(todos, e => Inner(e, "todos")["items"]![0]!.AsObject().Remove("status"))),
+            ("background work without turnEnded", Edited(background, e => Inner(e, "background").Remove("turnEnded"))),
+            ("a background task without its status", Edited(background, e => Inner(e, "background")["tasks"]![0]!.AsObject().Remove("status"))),
+            ("a mistyped background", Edited(background, e => e["background"] = 1)),
+            ("an event of another job", Edited(log, e => e["sessionId"] = "job-2")),
+        };
+        foreach (var (what, wire) in refused) Check(!ReadAsPane(wire).Usable, what + " is refused");
+        // What the Mac's decoder lets go (try?) only leaves that value out; the event still reads.
+        var lenient = new (string What, JsonObject Wire)[]
+        {
+            ("a mistyped usage on a log", Edited(log, e => e["usage"] = "lots")),
+            ("a mistyped plan on a log", Edited(log, e => e["plan"] = 1)),
+            ("a mistyped reason", Edited(Of(11), e => e["reason"] = 5)),
+            ("a mistyped entry activity", Edited(log, e => Inner(e, "entry")["activity"] = "busy")),
+            ("mistyped pictures", Edited(log, e => Inner(e, "entry")["images"] = "lots")),
+            ("an unknown key", Edited(log, e => e["future"] = 1)),
+            ("a key in another case", Edited(status, e => e["Type"] = "log")),
+            ("a permission without the answer flags", Edited(permission, e => { Inner(e, "permission").Remove("canAnswerQuestions"); Inner(e, "permission").Remove("canAnswerPlan"); })),
+        };
+        foreach (var (what, wire) in lenient) Check(ReadAsPane(wire).Usable, what + " still reads");
+        Check(ReadAsPane(lenient[2].Wire).Event is { Type: "status", Status: "completed", Reason: null } && ReadAsPane(lenient[3].Wire).Event?.Entry is { Activity: null, Text: "Reading README.md." }
+            && ReadAsPane(lenient[6].Wire).Event is { Type: "status", Status: "running" } && ReadAsPane(lenient[7].Wire).Permission is { CanAnswerQuestions: false, CanAnswerPlan: false, CanAllow: true }, "the lenient values read as the Mac reads them");
+        // A picture names a file on the host: the entry reads as its text alone.
+        var picture = Edited(log, e => { Inner(e, "entry")["kind"] = "image"; Inner(e, "entry")["images"] = new JsonArray(JsonSerializer.SerializeToNode(new AgentImageRef(new string('a', 64), "image/png", 1, 1, 10, "tool"), RemoteWire.Json)); });
+        Check(ReadAsPane(picture).Event?.Entry is { Kind: "system", Images: null, Text: "Reading README.md." }, "a host's picture reads as its text");
+        // Read never throws, whatever the object holds.
+        foreach (var odd in new[] { "{}", "{\"sessionId\":{},\"type\":[]}", "{\"sessionId\":\"job-1\",\"type\":\"log\",\"entry\":[1,2]}", "{\"sessionId\":\"job-1\",\"type\":\"permission\",\"permission\":{\"inputJSON\":{}}}", "{\"sessionId\":\"job-1\",\"type\":\"background\",\"background\":{\"tasks\":[1],\"turnEnded\":true}}" })
+            Check(!ReadAsPane(JsonNode.Parse(odd)!.AsObject()).Usable, odd + " is unusable");
+        return Task.CompletedTask;
+    }
+
+    internal static Task TimestampsImagesAndPendingRequestsAreBounded()
+    {
+        // A Windows host writes each time in the form the Mac writes it: whole seconds for log, usage and graph times, milliseconds for request, plan and background times.
+        var log = RemoteWireEvents.FromRunEvent(RunEvent.Log("job-9", "output", "hi"), "job-9", false)!;
+        var stamp = log["entry"]!["timestamp"]!.GetValue<string>();
+        Check(WholeSeconds.IsMatch(stamp), "a Windows log time travels in whole seconds: " + stamp);
+        var now = DateTimeOffset.UtcNow.ToString("O");
+        var request = RemoteWireEvents.FromPermission(new ToolPermissionRequest("r1", "pane-9", "t1", "Bash", "{}", "ls", ReceivedAt: now), "job-9");
+        Check(Milliseconds.IsMatch((string)request["permission"]!["receivedAt"]!) && (string?)request["permission"]!["runId"] == "job-9" && request["permission"]!["inputJSON"] is JsonValue && request["permission"]!["inputJson"] is null && (string?)request["sessionId"] == "job-9", "a request travels as the Mac's, its time in milliseconds: " + request.ToJsonString());
+        var planned = RemoteWireEvents.FromRunEvent(new RunEvent("pane-9", "plan", Plan: new PlanRecord("plan-9", "job-9", "# Plan", now, now, PlanOutcome.ApprovedAuto)), "job-9", false)!;
+        Check(Milliseconds.IsMatch((string)planned["plan"]!["receivedAt"]!) && Milliseconds.IsMatch((string)planned["plan"]!["decidedAt"]!), "plan times travel in milliseconds: " + planned.ToJsonString());
+        var work = RemoteWireEvents.FromRunEvent(new RunEvent("pane-9", "background", Background: new BackgroundWork([new BackgroundTask("task-9", "shell", "npm test", now, "completed", EndedAt: now)])), "job-9", false)!;
+        Check(Milliseconds.IsMatch((string)work["background"]!["tasks"]![0]!["startedAt"]!) && Milliseconds.IsMatch((string)work["background"]!["tasks"]![0]!["endedAt"]!), "background times travel in milliseconds: " + work.ToJsonString());
+        var used = RemoteWireEvents.FromRunEvent(new RunEvent("pane-9", "usage", Usage: new SessionUsage { InputTokens = 1, UpdatedAt = now }), "job-9", false)!;
+        Check(WholeSeconds.IsMatch((string)used["usage"]!["updatedAt"]!), "a usage time travels in whole seconds: " + used.ToJsonString());
+        var node = RemoteWireEvents.FromGraphNode(new ExecutionGraphNode("node-9", "act-9", "node-1", "agent", "running", "Agent") { UpdatedAt = now, Entries = [RunEvent.Log("job-9", "assistant", "hi").Entry!] }, "job-9");
+        Check((string?)node["type"] == "graph" && (string?)node["sessionId"] == "job-9" && WholeSeconds.IsMatch((string)node["graph"]!["updatedAt"]!) && WholeSeconds.IsMatch((string)node["graph"]!["entries"]![0]!["timestamp"]!), "graph times travel in whole seconds: " + node.ToJsonString());
+        // A time already in one of the Mac's forms travels as it is, so a received sample writes back unchanged.
+        var kept = RemoteWireEvents.FromRunEvent(new RunEvent("pane-9", "background", Background: new BackgroundWork([new BackgroundTask("task-9", "shell", "npm test", "2026-10-17T01:02:08Z")])), "job-9", false)!;
+        var keptLog = RemoteWireEvents.FromRunEvent(new RunEvent("pane-9", "log", new LogEntry("log-9", "output", "hi", "2026-10-17T01:02:03.456Z")), "job-9", false)!;
+        Check((string?)kept["background"]!["tasks"]![0]!["startedAt"] == "2026-10-17T01:02:08Z" && (string?)keptLog["entry"]!["timestamp"] == "2026-10-17T01:02:03.456Z", "a Mac-form time is never rewritten");
+        Check(RemoteWireEvents.MacTimestamp("2026-10-17T10:02:03.1234567+09:00") == "2026-10-17T01:02:03.123Z" && RemoteWireEvents.MacTimestamp("2026-10-17T10:02:03.9999999+09:00", milliseconds: false) == "2026-10-17T01:02:03Z"
+            && RemoteWireEvents.MacTimestamp("not a time") is null && RemoteWireEvents.MacTimestamp("2026-10-17") is null, "offsets become UTC, cut to the form asked for");
+        var said = RemoteWireEvents.FromRunEvent(RunEvent.Log("job-9", "output", "2026-10-17T10:02:03.1234567+09:00"), "job-9", false)!;
+        Check((string?)said["entry"]!["text"] == "2026-10-17T10:02:03.1234567+09:00", "a time inside text is never rewritten");
+        var picture = RunEvent.Log("job-9", "image", "a picture") with { };
+        picture = picture with { Entry = picture.Entry! with { Images = [new AgentImageRef("h", "image/png", 1, 1, 10, "tool")] } };
+        Check(RemoteWireEvents.FromRunEvent(picture, "job-9", false)!["entry"]!["images"] is null, "pictures name host files and stay home");
+        Check(RemoteWireEvents.FromGraphNode(new ExecutionGraphNode("node-9", "act-9", "node-1", "agent", "running", "Agent") { Entries = [picture.Entry!] }, "job-9")["graph"]!["entries"]![0]!["images"] is null, "a graph node's pictures stay home too");
+        var pending = new RemotePendingPermissions(); var evicted = new List<ToolPermissionRequest>();
+        for (var i = 0; i < 40; i++) evicted.AddRange(pending.Admit(new ToolPermissionRequest("r" + i, "pane-1", "t" + i, "Bash", "{}", "ls")));
+        Check(evicted.Select(r => r.Id).SequenceEqual(Enumerable.Range(0, 8).Select(i => "r" + i)) && evicted.All(r => r.State == "cancelled"), "the oldest are withdrawn: " + string.Join(",", evicted.Select(r => r.Id)));
+        Check(pending.Count("pane-1") == RemoteProtocol.MaximumPendingPermissions && pending.Admit(new ToolPermissionRequest("r1", "pane-2", "t1", "Bash", "{}", "ls")).Count == 0 && pending.Count("pane-2") == 1, "the newest 32 wait, per pane");
+        Check(pending.Admit(new ToolPermissionRequest("r39", "pane-1", "t39", "Bash", "{}", "ls", State: "allowed")).Count == 0 && pending.Count("pane-1") == 31, "a settled request leaves the count");
+        pending.Forget("pane-1"); Check(pending.Count("pane-1") == 0 && pending.Count("pane-2") == 1, "a finished run forgets its requests");
+        return Task.CompletedTask;
+    }
 }

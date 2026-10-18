@@ -598,6 +598,9 @@ internal static class Verification
         await Test("remote wire: bodies are read as strictly as the Mac reads them", RemoteWireFixtureVerification.BodiesAreReadAsStrictlyAsTheMacReadsThem);
         await Test("remote wire: /info refuses what the Mac refuses", RemoteWireFixtureVerification.InfoRefusesWhatTheMacRefuses);
         await Test("remote wire: the host key never leaves the state", RemoteWireFixtureVerification.TheHostKeyNeverLeavesTheState);
+        await Test("remote wire: every wire event reads and writes back", RemoteWireFixtureVerification.EveryWireEventReadsAndWritesBack);
+        await Test("remote wire: each wire event is refused alone, as the Mac refuses it", RemoteWireFixtureVerification.EachWireEventIsRefusedAloneAsTheMacRefusesIt);
+        await Test("remote wire: timestamps, images and pending requests are bounded", RemoteWireFixtureVerification.TimestampsImagesAndPendingRequestsAreBounded);
         await Test("corrupt/unknown/oversize state cannot be overwritten by shutdown", async () =>
         {
             foreach (var text in new[] { "null", "{", "{\"version\":2,\"workspaces\":[],\"sessions\":[]}", "{\"version\":1,\"workspaces\":null,\"sessions\":[]}" })
