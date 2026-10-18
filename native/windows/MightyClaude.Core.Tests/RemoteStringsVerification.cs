@@ -16,6 +16,7 @@ internal static class RemoteStringsVerification
             ["settingsScopeKey"] = RemoteWindowsStrings.SettingsScopeKey, ["allowFullAccess"] = RemoteWindowsStrings.SettingsAllowFullAccessDescription,
             ["keyCopied"] = RemoteWindowsStrings.KeyCopied, ["firewallAdd"] = RemoteWindowsStrings.FirewallAdd, ["firewallRemove"] = RemoteWindowsStrings.FirewallRemove,
             ["sessionInfoHostOS"] = RemoteWindowsStrings.SessionInfoHostOS,
+            ["timeout"] = RemoteWindowsStrings.Timeout,
         };
         foreach (var (name, value) in values)
             Check(value.Length > 0 && !value.StartsWith("remote.", StringComparison.Ordinal), name + " has no text: " + value);

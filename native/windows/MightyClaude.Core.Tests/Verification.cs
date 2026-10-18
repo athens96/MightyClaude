@@ -606,6 +606,8 @@ internal static class Verification
         await Test("remote client: addresses parse with the default port", RemoteClientVerification.AddressesParseWithTheDefaultPort);
         await Test("remote client: saved addresses read as the Mac reads them", RemoteClientVerification.SavedAddressesReadAsTheMacReadsThem);
         await Test("remote client: only Tailscale peers, loopback only when injected", RemoteClientVerification.OnlyTailscalePeersAndLoopbackWhenInjected);
+        await Test("remote client: one authenticated request follows no redirect and reads at most 2 MiB", RemoteClientVerification.OneAuthenticatedRequestFollowsNoRedirectAndReadsAtMostTwoMebibytes);
+        await Test("remote client: hosts resolve only to Tailscale", RemoteClientVerification.HostsResolveOnlyToTailscale);
         await Test("corrupt/unknown/oversize state cannot be overwritten by shutdown", async () =>
         {
             foreach (var text in new[] { "null", "{", "{\"version\":2,\"workspaces\":[],\"sessions\":[]}", "{\"version\":1,\"workspaces\":null,\"sessions\":[]}" })

@@ -8,6 +8,7 @@ namespace MightyClaude.Core;
 public static class RemoteWindowsStrings
 {
     public static string LocalTailscaleOff => Locale.Get("remote.windows.connect.error.localTailscaleOff");
+    public static string Timeout => Locale.Get("remote.windows.connect.error.timeout");
     public static string ConnectedSaved => Locale.Get("remote.windows.connect.detail.connectedSaved");
     public static string ConnectedMemory => Locale.Get("remote.windows.connect.detail.connectedMemory");
     public static string HostLocalOnly => Locale.Get("remote.windows.host.error.localOnly");

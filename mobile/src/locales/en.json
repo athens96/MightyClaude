@@ -2915,5 +2915,6 @@
   "remote.hostOS.linux": "Linux",
   "remote.hostOS.unknown": "unknown OS",
   "remote.hostWithOS": "{host} · {os}",
-  "remote.sessionInfo.hostOS": "Host OS"
+  "remote.sessionInfo.hostOS": "Host OS",
+  "remote.windows.connect.error.timeout": "The other computer did not answer in time. Check that it is on and connected to Tailscale."
 }
