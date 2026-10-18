@@ -219,4 +219,130 @@ internal static partial class RemoteClientVerification
         await Reject(() => RemoteTransport.ResolveAsync(new("127.0.0.1", 43137), allowLoopback: false), "loopback is not Tailscale", ex => ex.Message == Locale.Get("remote.connect.error.notTailscale"));
         await Reject(() => RemoteTransport.ResolveAsync(new("192.168.1.5", 43137), allowLoopback: true), "a LAN address is refused", ex => ex.Message == Locale.Get("remote.connect.error.notTailscale"));
     }
+
+    internal sealed class Collected
+    {
+        private readonly List<RunEvent> events = []; private readonly List<ToolPermissionRequest> permissions = [];
+        internal void Event(RunEvent value) { lock (events) events.Add(value); }
+        internal void Permission(ToolPermissionRequest value) { lock (events) permissions.Add(value); }
+        internal RunEvent[] Events { get { lock (events) return [.. events]; } }
+        internal ToolPermissionRequest[] Permissions { get { lock (events) return [.. permissions]; } }
+    }
+
+    internal static async Task<(StateStore Store, string Directory)> ClientStore()
+    {
+        var directory = Verification.Temp(); var store = new StateStore(directory); await store.LoadAsync(); return (store, directory);
+    }
+
+    internal static async Task ConnectionsAreSavedWithoutTheirKeyAndReadItOnFirstUse()
+    {
+        await using var host = new RemoteFakeHost(request => request.Target == "/v2/info" ? request.Headers["authorization"] == "Bearer " + Key ? RemoteFakeHost.Fixture("info.json") : RemoteFakeHost.Fixture("error.json", 401) : new(404, "{}"));
+        var (store, directory) = await ClientStore(); var vault = new MemoryRemoteKeyVault(); var seen = new Collected();
+        try
+        {
+            var options = new RemoteClientOptions { AllowLoopbackForTests = true };
+            await using var client = new RemoteClientService(store, directory, vault, seen.Event, seen.Permission, options);
+            var info = await client.ConnectAsync("", "127.0.0.1:" + host.Port, Key);
+            Check(info is { Status: RemoteConnectionStatus.Connected, Name: "studio-pc", HostName: "studio-pc", Runtime.Platform: "win32" } && info.Shared.Count == 2, "connected with the host's name, OS and shared workspaces");
+            Check(info.Detail == RemoteWindowsStrings.ConnectedSaved && vault.Load(info.Id) == Key, "the key went to the vault");
+            var file = await File.ReadAllTextAsync(Path.Combine(directory, RemoteConnectionFile.FileName));
+            Check(!file.Contains(Key, StringComparison.Ordinal) && file.Contains("127.0.0.1:" + host.Port, StringComparison.Ordinal), "the file names the address, never the key");
+            // A new key for the same address replaces the saved one and keeps the connection.
+            Check((await client.ConnectAsync("Studio", "127.0.0.1:" + host.Port, Key)).Id == info.Id && client.List().Count == 1, "same address, same connection");
+            await Reject(() => client.ConnectAsync("", "127.0.0.1:" + host.Port, "short"), "a malformed key is refused", ex => ex.Message == Locale.Get("remote.connect.error.badKey"));
+            await Reject(() => client.ConnectAsync("", "127.0.0.1:" + host.Port, new string('x', 43)), "a wrong key is the host's 401", ex => ex is RemoteHttpFailure { Status: 401 });
+            Check(client.List().Count == 1, "a refused connect saves nothing");
+
+            var workspace = client.OpenWorkspace(info.Id, "ws-project");
+            Check(workspace.Remote is { ConnectionId: var c, WorkspaceId: "ws-project", HostName: "studio-pc" } && c == info.Id && workspace.Path == "C:\\work\\project", "the host's workspace is listed as remote");
+            Check(client.OpenWorkspace(info.Id, "ws-project").Id == workspace.Id, "opening it again lists the same one");
+            try { client.OpenWorkspace(info.Id, "not-shared"); throw new InvalidOperationException("an unshared workspace opened"); } catch (InvalidOperationException ex) when (ex.Message == Locale.Get("remote.workspace.error.notShared")) { }
+
+            await client.DisconnectAsync(info.Id);
+            Check(client.Connection(info.Id)?.Status == RemoteConnectionStatus.Disconnected, "disconnect keeps the connection, not connected");
+            Check((await client.EnsureConnectedAsync(info.Id)).Status == RemoteConnectionStatus.Connected, "a send reconnects");
+
+            // After a restart the connection is saved, its key unread until first use.
+            await using var later = new RemoteClientService(store, directory, vault, seen.Event, seen.Permission, options);
+            Check(later.List().Single() is { Status: RemoteConnectionStatus.Saved } saved && saved.Detail == Locale.Get("remote.connect.detail.saved"), "listed as saved after a restart");
+            Check((await later.RefreshAsync(info.Id)).Status == RemoteConnectionStatus.Connected, "refresh reads the key from the vault and connects");
+            await later.RemoveAsync(info.Id);
+            Check(later.List().Count == 0 && vault.Load(info.Id) is null && RemoteConnectionFile.Read(directory).Count == 0, "remove forgets the connection and its key");
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    internal static async Task NoConnectionLeavesThisPCsTunnel()
+    {
+        await using var host = new RemoteFakeHost(_ => RemoteFakeHost.Fixture("info.json"));
+        var (store, directory) = await ClientStore(); var seen = new Collected();
+        try
+        {
+            var tunnel = true;
+            await using var client = new RemoteClientService(store, directory, new MemoryRemoteKeyVault(), seen.Event, seen.Permission, new() { AllowLoopbackForTests = true, RouteCheck = _ => tunnel });
+            var info = await client.ConnectAsync("", "127.0.0.1:" + host.Port, Key);
+            tunnel = false; var before = host.Seen.Count;
+            await Reject(() => client.EnsureConnectedAsync(info.Id), "a route outside the tunnel ends the connection", ex => ex.Message == Locale.Get("remote.connect.error.notViaTailscale"));
+            Check(client.Connection(info.Id)?.Status == RemoteConnectionStatus.Disconnected && host.Seen.Count == before, "disconnected, and nothing was sent");
+            await Reject(() => client.RefreshAsync(info.Id), "refresh refuses the same route", ex => ex.Message == Locale.Get("remote.connect.error.notViaTailscale"));
+            Check(host.Seen.Count == before, "still nothing sent");
+            await using var offline = new RemoteClientService(store, directory, new MemoryRemoteKeyVault(), seen.Event, seen.Permission, new() { LocalAddresses = () => [] });
+            await Reject(() => offline.ConnectAsync("", "100.101.102.103", Key), "no Tailscale on this PC, no connect", ex => ex.Message == RemoteWindowsStrings.LocalTailscaleOff);
+
+            // A route check that throws is no tunnel either, never a passing failure, and nothing is sent.
+            await using var broken = new RemoteClientService(store, directory, new MemoryRemoteKeyVault(), seen.Event, seen.Permission, new() { AllowLoopbackForTests = true, RouteCheck = _ => throw new AdaptersUnreadableException(new IOException("x")) });
+            await Reject(() => broken.ConnectAsync("", "127.0.0.1:" + host.Port, Key), "a route check that throws refuses the connect", ex => ex.Message == Locale.Get("remote.connect.error.notViaTailscale") && !RemoteTransport.Transient(ex));
+            Check(host.Seen.Count == before, "and nothing was sent");
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    /// <summary>A vault that cannot keep anything beyond this launch (DPAPI refused): Save is false and Delete is counted.</summary>
+    private sealed class RefusingVault : IRemoteKeyVault
+    {
+        internal readonly List<string> Deleted = [];
+        public string? Load(string id) => null;
+        public bool Save(string id, string key) => false;
+        public void Delete(string id) { lock (Deleted) Deleted.Add(id); }
+    }
+
+    internal static async Task TheHostIsReadStrictlyAndAKeyTheVaultRefusesStaysInMemory()
+    {
+        var renamed = RemoteWireFixtureVerification.Node("info.json").ToJsonString().Replace("\"hostName\"", "\"HostName\"", StringComparison.Ordinal);
+        await using var loose = new RemoteFakeHost(_ => new(200, renamed));
+        await using var host = new RemoteFakeHost(_ => RemoteFakeHost.Fixture("info.json"));
+        await using var other = new RemoteFakeHost(_ => RemoteFakeHost.Fixture("info.json"));
+        await using var third = new RemoteFakeHost(_ => RemoteFakeHost.Fixture("info.json"));
+        var (store, directory) = await ClientStore(); var seen = new Collected();
+        try
+        {
+            var options = new RemoteClientOptions { AllowLoopbackForTests = true };
+            var refusing = new RefusingVault();
+            await using var client = new RemoteClientService(store, directory, refusing, seen.Event, seen.Permission, options);
+            await Reject(() => client.ConnectAsync("", "127.0.0.1:" + loose.Port, Key), "an /info whose member names differ only in case is not Mighty's", ex => ex.Message == Locale.Get("remote.connect.error.notMighty"));
+            Check(client.List().Count == 0, "and nothing is saved");
+
+            var info = await client.ConnectAsync("", "127.0.0.1:" + host.Port, Key);
+            Check(info.Detail == RemoteWindowsStrings.ConnectedMemory && refusing.Deleted.Contains(info.Id), "a key the vault refuses is kept for this launch only, and no older saved key is left behind");
+            var file = await File.ReadAllTextAsync(Path.Combine(directory, RemoteConnectionFile.FileName));
+            Check(!file.Contains(Key, StringComparison.Ordinal), "the file never holds the key, even when the vault refused it");
+            await client.DisconnectAsync(info.Id);
+            Check((await client.EnsureConnectedAsync(info.Id)).Status == RemoteConnectionStatus.Connected, "the key in memory reconnects in this launch");
+            await using var later = new RemoteClientService(store, directory, refusing, seen.Event, seen.Permission, options);
+            await Reject(() => later.RefreshAsync(info.Id), "after a restart the key is gone", ex => ex.Message == Locale.Get("remote.connect.error.keyMissing"));
+            Check(later.Connection(info.Id)?.Status == RemoteConnectionStatus.Disconnected, "and the connection says so");
+
+            // Two connects at once both reach the file: its writes never overtake each other.
+            await using var both = new RemoteClientService(store, directory, new MemoryRemoteKeyVault(), seen.Event, seen.Permission, options);
+            await Task.WhenAll(new[] { host, other, third }.Select(h => both.ConnectAsync("", "127.0.0.1:" + h.Port, Key)));
+            var kept = RemoteConnectionFile.Read(directory).Select(c => c.Address).ToHashSet(StringComparer.Ordinal);
+            Check(kept.SetEquals(new[] { host, other, third }.Select(h => "127.0.0.1:" + h.Port)) && both.List().Count == 3, "the file lists every connection: " + string.Join(", ", kept));
+
+            // A hand edit that repeats an address, or names none that parses, lists one connection per address.
+            await File.WriteAllTextAsync(Path.Combine(directory, RemoteConnectionFile.FileName), "{\"version\":2,\"connections\":[{\"id\":\"a\",\"name\":\"a\",\"address\":\"Studio-PC\"},{\"id\":\"b\",\"name\":\"b\",\"address\":\"studio-pc:43137\"},{\"id\":\"c\",\"name\":\"c\",\"address\":\"user@x\"}]}");
+            await using var edited = new RemoteClientService(store, directory, new MemoryRemoteKeyVault(), seen.Event, seen.Permission, options);
+            Check(edited.List().Select(c => c.Id + "=" + c.Address).SequenceEqual(["a=studio-pc:43137"]), "saved connections load parsed and without repeats");
+        }
+        finally { Directory.Delete(directory, true); }
+    }
 }
