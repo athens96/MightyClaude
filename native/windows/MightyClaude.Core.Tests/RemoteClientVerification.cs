@@ -226,7 +226,15 @@ internal static partial class RemoteClientVerification
     internal sealed class Collected
     {
         private readonly List<RunEvent> events = []; private readonly List<ToolPermissionRequest> permissions = [];
-        internal void Event(RunEvent value) { lock (events) events.Add(value); }
+        /// <summary>When it matches an event, the caller's thread waits there (after the event is recorded) until <see cref="Release"/>.</summary>
+        internal Func<RunEvent, bool>? Hold;
+        internal readonly TaskCompletionSource Held = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal readonly ManualResetEventSlim Release = new();
+        internal void Event(RunEvent value)
+        {
+            lock (events) events.Add(value);
+            if (Hold?.Invoke(value) == true) { Held.TrySetResult(); Release.Wait(TimeSpan.FromSeconds(10)); }
+        }
         internal void Permission(ToolPermissionRequest value) { lock (events) permissions.Add(value); }
         internal RunEvent[] Events { get { lock (events) return [.. events]; } }
         internal ToolPermissionRequest[] Permissions { get { lock (events) return [.. permissions]; } }
@@ -535,5 +543,363 @@ internal static partial class RemoteClientVerification
             }
             finally { Directory.Delete(directory, true); }
         }
+    }
+
+    // Runs (M/Remote/RemoteClientService.swift start, follow, stop, send, dropRuns, shutdown).
+
+    /// <summary>Serves /v2/info and then whatever the check queues for job-1's polls; <see cref="Hook"/> answers first when it gives a reply.</summary>
+    internal sealed class ScriptedHost : IAsyncDisposable
+    {
+        internal readonly System.Collections.Concurrent.ConcurrentQueue<RemoteFakeHost.Reply> Polls = new();
+        internal RemoteFakeHost.Reply? Start;
+        internal Func<RemoteFakeHost.Request, Task<RemoteFakeHost.Reply>?>? Hook;
+        internal readonly RemoteFakeHost Host;
+        internal ScriptedHost() => Host = new RemoteFakeHost(request => Hook?.Invoke(request) ?? Task.FromResult(Script(request)));
+        private RemoteFakeHost.Reply Script(RemoteFakeHost.Request request) => request.Target switch
+        {
+            "/v2/info" => RemoteFakeHost.Fixture("info.json"),
+            "/v2/runs" => Start ?? RemoteFakeHost.Fixture("start-accepted.json", 202),
+            // Nothing queued: an empty poll at the client's own cursor, so the run just keeps waiting.
+            var t when t.StartsWith("/v2/runs/job-1/events", StringComparison.Ordinal) => Polls.TryDequeue(out var reply) ? reply : Empty(t[(t.IndexOf("cursor=", StringComparison.Ordinal) + 7)..]),
+            _ => RemoteFakeHost.Fixture("answer.json"),
+        };
+        internal static RemoteFakeHost.Reply Empty(string cursor) => new(200, "{\"protocol\":2,\"cursor\":" + cursor + ",\"lastCursor\":" + cursor + ",\"gap\":false,\"done\":false,\"events\":[]}");
+        internal RemoteFakeHost.Request[] Seen(string prefix) => Host.Seen.Where(r => r.Target.StartsWith(prefix, StringComparison.Ordinal)).ToArray();
+        internal int PollCount => Seen("/v2/runs/job-1/events").Length;
+        public ValueTask DisposeAsync() => Host.DisposeAsync();
+    }
+
+    internal static async Task<(RemoteClientService Client, Workspace Workspace, Collected Seen, string Directory)> Connected(ScriptedHost scripted, RemoteClientOptions? options = null)
+    {
+        var (store, directory) = await ClientStore(); var seen = new Collected();
+        var client = new RemoteClientService(store, directory, new MemoryRemoteKeyVault(), seen.Event, seen.Permission, options ?? new() { AllowLoopbackForTests = true });
+        var info = await client.ConnectAsync("", "127.0.0.1:" + scripted.Host.Port, Key);
+        return (client, client.OpenWorkspace(info.Id, "ws-project"), seen, directory);
+    }
+
+    private static string Poll(int cursor, bool done, params string[] events) =>
+        "{\"protocol\":2,\"cursor\":" + cursor + ",\"lastCursor\":" + cursor + ",\"gap\":false,\"done\":" + (done ? "true" : "false") + ",\"events\":[" + string.Join(",", events) + "]}";
+    private static string LogEvent(int cursor, string text) =>
+        "{\"cursor\":" + cursor + ",\"event\":{\"sessionId\":\"job-1\",\"type\":\"log\",\"entry\":{\"id\":\"log-" + cursor + "\",\"kind\":\"output\",\"text\":\"" + text + "\",\"timestamp\":\"2026-10-17T01:04:00.000Z\"}}}";
+    private static string Lost(string detail) => Locale.Get("remote.run.error.connectionLost", new Dictionary<string, string> { ["detail"] = detail });
+
+    internal static async Task ARunPostsTheMacsRequestAndAppliesTheHostsEventsAsThePanes()
+    {
+        await using var scripted = new ScriptedHost(); scripted.Polls.Enqueue(RemoteFakeHost.Fixture("poll.json"));
+        var (client, workspace, seen, directory) = await Connected(scripted);
+        try
+        {
+            var fixture = RemoteWireFixtureVerification.Node("start.json").Deserialize<RemoteWireStart>(RemoteWire.Json)!;
+            var pane = fixture.ToRequest("pane-1", workspace.Id);
+            await client.StartAsync(pane, workspace);
+            await Verification.Until(() => seen.Events.Any(e => e.Type == "status" && e.Status == "completed"));
+            var posted = scripted.Seen("/v2/runs").First(r => r.Method == "POST");
+            Check(RemoteWireFixtureVerification.Same(System.Text.Json.Nodes.JsonNode.Parse(posted.Body), RemoteWireFixtureVerification.Node("start.json")), "the body is the Mac's start sample: " + System.Text.Encoding.UTF8.GetString(posted.Body));
+            Check(posted.Headers.GetValueOrDefault("x-mighty-remote-graph") == "run", "a Windows client asks for graph runs");
+            Check(seen.Events.All(e => e.SessionId == "pane-1") && seen.Events.Select(e => e.Type).SequenceEqual(["status", "resume", "log", "activity", "usage", "plan", "todos", "background", "status"]), "every usable event became the pane's, the Mac graph node left out: " + string.Join(",", seen.Events.Select(e => e.Type)));
+            Check(seen.Permissions.Single() is { RunId: "pane-1", Id: "perm-1", InputJson: "{\"command\":\"ls\"}" }, "the tool request reached the pane");
+            // The pane's last status comes first and the run ends right after it, as a local run ends.
+            await Verification.Until(() => !client.IsRunning("pane-1"));
+        }
+        finally { await client.DisposeAsync(); Directory.Delete(directory, true); }
+    }
+
+    internal static async Task AnswersGoToTheHostRunAndAStopReachesTheHost()
+    {
+        await using var scripted = new ScriptedHost();
+        var permission = RemoteWireFixtureVerification.Node("poll.json")["events"]![5]!.DeepClone();
+        scripted.Polls.Enqueue(new(200, "{\"protocol\":2,\"cursor\":6,\"lastCursor\":6,\"gap\":false,\"done\":false,\"events\":[" + permission.ToJsonString() + "]}"));
+        var (client, workspace, seen, directory) = await Connected(scripted);
+        try
+        {
+            await client.StartAsync(new StartRunRequest("pane-1", workspace.Id, "claude", "hi", []), workspace);
+            await Verification.Until(() => seen.Permissions.Length == 1);
+            await client.RespondToPermissionAsync("pane-1", "perm-1", true);
+            var answer = scripted.Seen("/v2/runs/job-1/permission").Single();
+            Check(RemoteWireFixtureVerification.Same(System.Text.Json.Nodes.JsonNode.Parse(answer.Body), RemoteWireFixtureVerification.Node("permission.json")), "the answer is the Mac's sample, with the host's run id");
+            await client.AnswerPlanAsync("pane-1", "perm-3", PlanDecision.Revise("Keep the tests"));
+            Check(RemoteWireFixtureVerification.Same(System.Text.Json.Nodes.JsonNode.Parse(scripted.Seen("/v2/runs/job-1/plan").Single().Body), RemoteWireFixtureVerification.Node("plan-revised.json")), "a plan answer is the Mac's sample");
+            Check(await client.SteerAsync("pane-1", "Also check CHANGELOG.md") && RemoteWireFixtureVerification.Same(System.Text.Json.Nodes.JsonNode.Parse(scripted.Seen("/v2/runs/job-1/steer").Single().Body), RemoteWireFixtureVerification.Node("steer.json")), "a steer is the Mac's sample");
+            await client.StopAsync("pane-1");
+            Check(scripted.Seen("/v2/runs/job-1/stop").Single().Body is var stop && System.Text.Encoding.UTF8.GetString(stop) == "{}", "a stop reaches the host, with a body");
+            Check(seen.Events.Last() is { Type: "status", Status: "stopped" } && !client.IsRunning("pane-1"), "a stop ends the pane");
+        }
+        finally { await client.DisposeAsync(); Directory.Delete(directory, true); }
+    }
+
+    internal static async Task OneUnusableEventIsSkippedAndAGapIsSaid()
+    {
+        await using var scripted = new ScriptedHost(); scripted.Polls.Enqueue(RemoteFakeHost.Fixture("poll-malformed.json"));
+        var (client, workspace, seen, directory) = await Connected(scripted);
+        try
+        {
+            await client.StartAsync(new StartRunRequest("pane-1", workspace.Id, "shell", "dir", []), workspace);
+            await Verification.Until(() => !client.IsRunning("pane-1"));
+            Check(seen.Events.Count(e => e.Entry?.Text == Locale.Get("remote.run.notice.skipped")) == 1 && seen.Events.Any(e => e.Entry?.Text == "ok") && seen.Events.Any(e => e.Status == "completed"), "the bad one is skipped and said once; the good ones arrive");
+            Check(client.Connection(workspace.Remote!.ConnectionId)?.Status == RemoteConnectionStatus.Connected, "a skipped event keeps the connection");
+            scripted.Polls.Enqueue(RemoteFakeHost.Fixture("poll-gap.json"));
+            await client.StartAsync(new StartRunRequest("pane-2", workspace.Id, "claude", "hi", []), workspace);
+            await Verification.Until(() => !client.IsRunning("pane-2"));
+            Check(seen.Events.Any(e => e.SessionId == "pane-2" && e.Entry?.Text == Locale.Get("remote.run.notice.gap")) && seen.Events.Last(e => e.SessionId == "pane-2") is { Status: "error", Reason: "authentication" }, "a gap is said, and a lost sign-in reads as Windows' own");
+        }
+        finally { await client.DisposeAsync(); Directory.Delete(directory, true); }
+    }
+
+    internal static async Task ABusyHostIsAskedAgainForTenSecondsAndThenTheConnectionIsLost()
+    {
+        await using var scripted = new ScriptedHost();
+        for (var i = 0; i < 2; i++) scripted.Polls.Enqueue(new(503, "{\"protocol\":2,\"error\":\"busy\"}"));
+        scripted.Polls.Enqueue(RemoteFakeHost.Fixture("poll-malformed.json"));
+        var (client, workspace, seen, directory) = await Connected(scripted, new() { AllowLoopbackForTests = true, PollRetryWindow = TimeSpan.FromSeconds(5) });
+        try
+        {
+            await client.StartAsync(new StartRunRequest("pane-1", workspace.Id, "shell", "dir", []), workspace);
+            await Verification.Until(() => seen.Events.Any(e => e.Status == "completed"), 10000);
+            Check(!seen.Events.Any(e => e.Status == "error"), "two busy answers are ridden out");
+        }
+        finally { await client.DisposeAsync(); Directory.Delete(directory, true); }
+
+        await using var down = new ScriptedHost();
+        for (var i = 0; i < 50; i++) down.Polls.Enqueue(new(503, "{\"protocol\":2,\"error\":\"busy\"}"));
+        var (lost, place, events, folder) = await Connected(down, new() { AllowLoopbackForTests = true, PollRetryWindow = TimeSpan.FromMilliseconds(1500) });
+        try
+        {
+            await lost.StartAsync(new StartRunRequest("pane-1", place.Id, "shell", "dir", []), place);
+            await Verification.Until(() => events.Events.Any(e => e.Status == "error"), 10000);
+            Check(events.Events.Any(e => e.Entry?.Kind == "error" && e.Entry.Text == Lost("busy")), "the pane says the connection was lost, with the host's reason");
+            Check(lost.Connection(place.Remote!.ConnectionId)?.Status == RemoteConnectionStatus.Disconnected, "past the window the connection is lost");
+        }
+        finally { await lost.DisposeAsync(); Directory.Delete(folder, true); }
+    }
+
+    internal static async Task UnsupportedRunsAndARefusedKeyNeverRun()
+    {
+        await using var scripted = new ScriptedHost();
+        var (client, workspace, seen, directory) = await Connected(scripted);
+        try
+        {
+            await Reject(() => client.StartAsync(new StartRunRequest("pane-1", workspace.Id, "claude", "hi", [], Settings: new(PermissionMode: "acceptEdits", FastMode: false, NetworkAccess: false)) with { Provider = "codex" }, workspace), "the host's missing Codex is refused locally", ex => ex.Message == Locale.Get("remote.host.error.cliMissing", new Dictionary<string, string> { ["name"] = ProviderCatalog.Name("codex") }));
+            Check(scripted.Seen("/v2/runs").Length == 0, "nothing was posted");
+            scripted.Start = RemoteFakeHost.Fixture("error.json", 401);
+            await Reject(() => client.StartAsync(new StartRunRequest("pane-1", workspace.Id, "shell", "dir", []), workspace), "a host that no longer takes the key refuses", ex => ex is RemoteHttpFailure { Status: 401 });
+            Check(client.Connection(workspace.Remote!.ConnectionId)?.Status == RemoteConnectionStatus.Disconnected && !client.IsRunning("pane-1"), "a 401 marks the connection lost");
+            await Reject(() => client.StartAsync(new StartRunRequest("pane-1", workspace.Id, "shell", "dir", []), workspace), "a lost connection runs nothing", ex => ex.Message == Locale.Get("remote.run.error.notConnected"));
+        }
+        finally { await client.DisposeAsync(); Directory.Delete(directory, true); }
+    }
+
+    /// <summary>The Mac fails the whole poll on one event it cannot decode; Windows leaves out that one event alone, whatever is wrong with it.</summary>
+    internal static async Task AMalformedEventIsDroppedOnItsOwn()
+    {
+        await using var scripted = new ScriptedHost();
+        scripted.Polls.Enqueue(new(200, Poll(5, true,
+            LogEvent(1, "ok"),
+            "{\"cursor\":2,\"event\":\"not an event\"}",
+            "{\"cursor\":3,\"event\":{\"sessionId\":\"job-1\",\"type\":\"log\",\"type\":\"status\",\"status\":\"error\"}}",
+            "\"not an item\"", "null", "{\"event\":{\"sessionId\":\"job-1\",\"type\":\"status\",\"status\":\"error\"}}",
+            "{\"cursor\":5,\"event\":{\"sessionId\":\"job-1\",\"type\":\"status\",\"status\":\"completed\"}}")));
+        var (client, workspace, seen, directory) = await Connected(scripted);
+        try
+        {
+            await client.StartAsync(new StartRunRequest("pane-1", workspace.Id, "shell", "dir", []), workspace);
+            await Verification.Until(() => !client.IsRunning("pane-1"));
+            Check(seen.Events.Select(e => e.Entry?.Text ?? e.Status).SequenceEqual(["ok", "completed", Locale.Get("remote.run.notice.skipped")]), "the good events arrive and the bad ones are said once: " + string.Join(" | ", seen.Events.Select(e => e.Entry?.Text ?? e.Status)));
+            Check(client.Connection(workspace.Remote!.ConnectionId)?.Status == RemoteConnectionStatus.Connected, "and the connection stays");
+        }
+        finally { await client.DisposeAsync(); Directory.Delete(directory, true); }
+    }
+
+    /// <summary>Holds job-1's next poll at the host until released, and says when it arrived.</summary>
+    private sealed class HeldPoll
+    {
+        internal readonly TaskCompletionSource Arrived = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal readonly TaskCompletionSource<RemoteFakeHost.Reply> Released = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal Task<RemoteFakeHost.Reply>? Answer(RemoteFakeHost.Request request)
+        {
+            if (!request.Target.StartsWith("/v2/runs/job-1/events", StringComparison.Ordinal) || Arrived.Task.IsCompleted) return null;
+            Arrived.TrySetResult(); return Released.Task;
+        }
+    }
+
+    internal static async Task ARouteOutsideTheTunnelEndsTheConnectionAndAStaleRunNeverFailsANewerOne()
+    {
+        var notVia = Locale.Get("remote.connect.error.notViaTailscale");
+        await using var scripted = new ScriptedHost();
+        var tunnel = true; var block = 0; var arrived = new ManualResetEventSlim(); var released = new ManualResetEventSlim();
+        var options = new RemoteClientOptions
+        {
+            AllowLoopbackForTests = true,
+            RouteCheck = _ => { if (Interlocked.Exchange(ref block, 0) == 1) { arrived.Set(); released.Wait(TimeSpan.FromSeconds(10)); return false; } return Volatile.Read(ref tunnel); },
+        };
+        var (client, workspace, seen, directory) = await Connected(scripted, options);
+        var id = workspace.Remote!.ConnectionId;
+        try
+        {
+            // A poll: the route is asked before each one, and outside the tunnel the connection is lost at once, never asked again.
+            await client.StartAsync(new StartRunRequest("pane-1", workspace.Id, "shell", "dir", []), workspace);
+            await Verification.Until(() => scripted.PollCount > 0);
+            Volatile.Write(ref tunnel, false);
+            await Verification.Until(() => !client.IsRunning("pane-1"));
+            Check(client.Connection(id) is { Status: RemoteConnectionStatus.Disconnected, Detail: var detail } && detail == notVia, "the poll's route check lost the connection: " + client.Connection(id)?.Detail);
+            Check(seen.Events.Where(e => e.SessionId == "pane-1").TakeLast(2).Select(e => e.Entry?.Text ?? e.Status).SequenceEqual([Lost(notVia), "error"]), "and the pane says why");
+
+            // A start: nothing is posted.
+            Volatile.Write(ref tunnel, true); await client.RefreshAsync(id); Volatile.Write(ref tunnel, false);
+            var posts = scripted.Seen("/v2/runs").Count(r => r.Target == "/v2/runs");
+            await Reject(() => client.StartAsync(new StartRunRequest("pane-2", workspace.Id, "shell", "dir", []), workspace), "a start outside the tunnel", ex => ex.Message == notVia);
+            Check(scripted.Seen("/v2/runs").Count(r => r.Target == "/v2/runs") == posts && client.Connection(id)?.Status == RemoteConnectionStatus.Disconnected && !client.IsRunning("pane-2"), "posted nothing and lost the connection");
+
+            // An answer and a stop, while the run's poll waits on the host: neither is sent.
+            foreach (var action in new[] { "permission", "stop" })
+            {
+                Volatile.Write(ref tunnel, true); await client.RefreshAsync(id);
+                var held = new HeldPoll(); scripted.Hook = held.Answer;
+                await client.StartAsync(new StartRunRequest("pane-3", workspace.Id, "shell", "dir", []), workspace);
+                await held.Arrived.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                Volatile.Write(ref tunnel, false);
+                if (action == "permission") await Reject(() => client.RespondToPermissionAsync("pane-3", "perm-1", true), "an answer outside the tunnel", ex => ex.Message == notVia);
+                else await client.StopAsync("pane-3");
+                held.Released.TrySetResult(ScriptedHost.Empty("0")); scripted.Hook = null;
+                Check(scripted.Seen("/v2/runs/job-1/" + action).Length == 0 && client.Connection(id)?.Detail == notVia && !client.IsRunning("pane-3"), "the " + action + " was not sent and the connection is lost");
+            }
+
+            // A stale run: its route check fails after its connection was disconnected and connected again. The newer connection stands.
+            Volatile.Write(ref tunnel, true); await client.RefreshAsync(id);
+            await client.StartAsync(new StartRunRequest("pane-4", workspace.Id, "shell", "dir", []), workspace);
+            await Verification.Until(() => scripted.PollCount > 0 && client.IsRunning("pane-4"));
+            Interlocked.Exchange(ref block, 1);
+            Check(arrived.Wait(TimeSpan.FromSeconds(10)), "the run's route check was asked");
+            await client.DisconnectAsync(id);
+            await client.RefreshAsync(id);
+            released.Set();
+            // Nothing signals a failure that must not happen: give the old run's check time to land.
+            await Task.Delay(300);
+            Check(client.Connection(id)?.Status == RemoteConnectionStatus.Connected, "the stale run's route failure left the newer connection alone: " + client.Connection(id)?.Detail);
+        }
+        finally { released.Set(); await client.DisposeAsync(); Directory.Delete(directory, true); }
+    }
+
+    internal static async Task OnlyAPassingFailureIsAskedAgain()
+    {
+        await using var scripted = new ScriptedHost();
+        scripted.Polls.Enqueue(new(500, "{\"protocol\":2,\"error\":\"broken\"}"));
+        scripted.Polls.Enqueue(RemoteFakeHost.Fixture("poll-malformed.json"));
+        var (client, workspace, seen, directory) = await Connected(scripted);
+        try
+        {
+            await client.StartAsync(new StartRunRequest("pane-1", workspace.Id, "shell", "dir", []), workspace);
+            await Verification.Until(() => seen.Events.Any(e => e.Status is "error" or "completed"));
+            Check(seen.Events.Any(e => e.Entry?.Text == Lost("broken")) && seen.Events.Last().Status == "error" && scripted.PollCount == 1, "a host error is not asked again: the connection is lost at once");
+            Check(client.Connection(workspace.Remote!.ConnectionId)?.Status == RemoteConnectionStatus.Disconnected, "and is shown lost");
+        }
+        finally { await client.DisposeAsync(); Directory.Delete(directory, true); }
+    }
+
+    internal static async Task ALostConnectionEndsItsRunsWithItsReasonCut()
+    {
+        const string emoji = "\U0001F600";
+        var error = new string('a', 299) + emoji + new string('b', 20); var expected = new string('a', 299) + emoji;
+        await using var scripted = new ScriptedHost();
+        var adaptersFail = false;
+        var (client, workspace, seen, directory) = await Connected(scripted, new() { AllowLoopbackForTests = true, LocalAddresses = () => Volatile.Read(ref adaptersFail) ? throw new InvalidOperationException(error) : ["100.101.102.103"] });
+        try
+        {
+            await client.StartAsync(new StartRunRequest("pane-1", workspace.Id, "shell", "dir", []), workspace);
+            await client.StartAsync(new StartRunRequest("pane-2", workspace.Id, "shell", "dir", []), workspace);
+            Volatile.Write(ref adaptersFail, true);
+            await Reject(() => client.RefreshAsync(workspace.Remote!.ConnectionId), "a refresh that fails with a long message", ex => ex.Message == error);
+            foreach (var pane in new[] { "pane-1", "pane-2" })
+                Check(seen.Events.Where(e => e.SessionId == pane).TakeLast(2).Select(e => e.Entry?.Text ?? e.Status).SequenceEqual([Lost(expected), "error"]) && !client.IsRunning(pane), pane + " ended with the reason cut at whole characters");
+            await Verification.Until(() => scripted.Seen("/v2/runs/job-1/stop").Length == 2);
+        }
+        finally { await client.DisposeAsync(); Directory.Delete(directory, true); }
+    }
+
+    internal static async Task ClosingTheAppStopsItsRunsOnTheHost()
+    {
+        await using var scripted = new ScriptedHost();
+        var (client, workspace, seen, directory) = await Connected(scripted);
+        try
+        {
+            await client.StartAsync(new StartRunRequest("pane-1", workspace.Id, "shell", "dir", []), workspace);
+            await client.DisposeAsync();
+            Check(scripted.Seen("/v2/runs/job-1/stop").Length == 1 && seen.Events.Last() is { SessionId: "pane-1", Status: "stopped" } && !client.IsRunning("pane-1"), "closing stopped the run on the host and in the pane");
+            await Reject(() => client.StartAsync(new StartRunRequest("pane-2", workspace.Id, "shell", "dir", []), workspace), "nothing starts after closing", ex => ex.Message == Locale.Get("common.appClosing"));
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    internal static async Task ARemotePaneKeepsTheNewestRequestsAndAnswersWithTheHostsRunId()
+    {
+        await using var scripted = new ScriptedHost();
+        var requests = Enumerable.Range(0, 40).Select(i => "{\"cursor\":" + (i + 1) + ",\"event\":{\"sessionId\":\"job-1\",\"type\":\"permission\",\"permission\":{\"id\":\"p" + i + "\",\"runId\":\"host-" + i
+            + "\",\"toolUseId\":\"t" + i + "\",\"toolName\":\"Bash\",\"inputJSON\":\"{}\",\"summary\":\"ls\",\"state\":\"pending\",\"canAllow\":true,\"canAnswerQuestions\":false,\"canAnswerPlan\":false}}}").ToArray();
+        scripted.Polls.Enqueue(new(200, Poll(40, false, requests)));
+        var (client, workspace, seen, directory) = await Connected(scripted);
+        try
+        {
+            await client.StartAsync(new StartRunRequest("pane-1", workspace.Id, "claude", "hi", []), workspace);
+            await Verification.Until(() => seen.Permissions.Count(p => p.State == "pending") == 40);
+            var withdrawn = seen.Permissions.Where(p => p.State == "cancelled").Select(p => p.Id).ToArray();
+            Check(withdrawn.SequenceEqual(Enumerable.Range(0, 8).Select(i => "p" + i)) && seen.Permissions.All(p => p.RunId == "pane-1"), "the newest 32 wait and the 8 older ones are withdrawn: " + string.Join(",", withdrawn));
+            await client.RespondToPermissionAsync("pane-1", "p39", false);
+            Check(System.Text.Json.Nodes.JsonNode.Parse(scripted.Seen("/v2/runs/job-1/permission").Single().Body)?["runId"]?.GetValue<string>() == "host-39", "an answer carries the host's run id of that request");
+        }
+        finally { await client.DisposeAsync(); Directory.Delete(directory, true); }
+    }
+
+    internal static async Task AStopWaitsForThePollBeingAppliedAndIsThePanesLastWord()
+    {
+        await using var scripted = new ScriptedHost();
+        scripted.Polls.Enqueue(new(200, Poll(3, false, LogEvent(1, "first"), LogEvent(2, "second"), LogEvent(3, "third"))));
+        var (client, workspace, seen, directory) = await Connected(scripted);
+        seen.Hold = e => e.Entry?.Text == "first";
+        try
+        {
+            await client.StartAsync(new StartRunRequest("pane-1", workspace.Id, "shell", "dir", []), workspace);
+            await seen.Held.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            var stop = client.StopAsync("pane-1");
+            await Task.WhenAny(stop, Task.Delay(500));
+            Check(!stop.IsCompleted, "the stop waits while the poll is being applied");
+            seen.Release.Set();
+            await stop.WaitAsync(TimeSpan.FromSeconds(10));
+            Check(seen.Events.Select(e => e.Entry?.Text ?? e.Status).SequenceEqual(["first", "second", "third", "stopped"]), "the poll's events, then the stop: " + string.Join(",", seen.Events.Select(e => e.Entry?.Text ?? e.Status)));
+        }
+        finally { seen.Release.Set(); await client.DisposeAsync(); Directory.Delete(directory, true); }
+    }
+
+    /// <summary>
+    /// A run that started on a connection while a new key replaced it, and whose old key the host then refuses: that run ends alone as lost,
+    /// and the newer connection stays connected.
+    /// </summary>
+    internal static async Task AStaleRunEndsAloneAndLeavesTheNewerConnection()
+    {
+        var newer = new string('n', 43); var switched = false;
+        var stopArrived = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var stopReleased = new TaskCompletionSource<RemoteFakeHost.Reply>(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var scripted = new ScriptedHost();
+        scripted.Hook = request =>
+        {
+            if (Volatile.Read(ref switched) && request.Headers.GetValueOrDefault("authorization") == "Bearer " + Key) return Task.FromResult(RemoteFakeHost.Fixture("error.json", 401));
+            if (request.Target == "/v2/runs/job-1/stop" && !stopArrived.Task.IsCompleted) { stopArrived.TrySetResult(); return stopReleased.Task; }
+            return null;
+        };
+        var (client, workspace, seen, directory) = await Connected(scripted);
+        var id = workspace.Remote!.ConnectionId;
+        try
+        {
+            await client.StartAsync(new StartRunRequest("pane-1", workspace.Id, "shell", "dir", []), workspace);
+            var replace = client.ConnectAsync("", "127.0.0.1:" + scripted.Host.Port, newer);
+            await stopArrived.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            // The old connection still reads as connected while its runs are being stopped: a send starts on it.
+            await client.StartAsync(new StartRunRequest("pane-2", workspace.Id, "shell", "dir", []), workspace);
+            stopReleased.TrySetResult(RemoteFakeHost.Fixture("answer.json"));
+            Check((await replace).Id == id, "the new key replaced the connection");
+            Volatile.Write(ref switched, true);
+            await Verification.Until(() => !client.IsRunning("pane-2"));
+            Check(seen.Events.Where(e => e.SessionId == "pane-2").TakeLast(2).Select(e => e.Entry?.Text ?? e.Status).SequenceEqual([Lost("The key does not match."), "error"]), "the stale run ended alone, saying why");
+            Check(client.Connection(id)?.Status == RemoteConnectionStatus.Connected, "and the newer connection stands: " + client.Connection(id)?.Detail);
+        }
+        finally { stopReleased.TrySetResult(RemoteFakeHost.Fixture("answer.json")); await client.DisposeAsync(); Directory.Delete(directory, true); }
     }
 }

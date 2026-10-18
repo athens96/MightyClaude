@@ -613,6 +613,19 @@ internal static class Verification
         await Test("remote client: the host is read strictly and a key the vault refuses stays in memory", RemoteClientVerification.TheHostIsReadStrictlyAndAKeyTheVaultRefusesStaysInMemory);
         await Test("remote client: text is cut at whole characters", RemoteClientVerification.TextIsCutAtWholeCharacters);
         await Test("remote client: overlapping changes keep the newer state", RemoteClientVerification.OverlappingChangesKeepTheNewerState);
+        await Test("remote client: a run posts the Mac's request and applies the host's events as the pane's", RemoteClientVerification.ARunPostsTheMacsRequestAndAppliesTheHostsEventsAsThePanes);
+        await Test("remote client: answers go to the host run and a stop reaches the host", RemoteClientVerification.AnswersGoToTheHostRunAndAStopReachesTheHost);
+        await Test("remote client: one unusable event is skipped and a gap is said", RemoteClientVerification.OneUnusableEventIsSkippedAndAGapIsSaid);
+        await Test("remote client: a busy host is asked again for a while, then the connection is lost", RemoteClientVerification.ABusyHostIsAskedAgainForTenSecondsAndThenTheConnectionIsLost);
+        await Test("remote client: unsupported runs and a refused key never run", RemoteClientVerification.UnsupportedRunsAndARefusedKeyNeverRun);
+        await Test("remote client: a malformed event is dropped on its own", RemoteClientVerification.AMalformedEventIsDroppedOnItsOwn);
+        await Test("remote client: a route outside the tunnel ends the connection, and a stale run never fails a newer one", RemoteClientVerification.ARouteOutsideTheTunnelEndsTheConnectionAndAStaleRunNeverFailsANewerOne);
+        await Test("remote client: only a passing failure is asked again", RemoteClientVerification.OnlyAPassingFailureIsAskedAgain);
+        await Test("remote client: a lost connection ends its runs with its reason cut", RemoteClientVerification.ALostConnectionEndsItsRunsWithItsReasonCut);
+        await Test("remote client: closing the app stops its runs on the host", RemoteClientVerification.ClosingTheAppStopsItsRunsOnTheHost);
+        await Test("remote client: a remote pane keeps the newest requests and answers with the host's run id", RemoteClientVerification.ARemotePaneKeepsTheNewestRequestsAndAnswersWithTheHostsRunId);
+        await Test("remote client: a stop waits for the poll being applied and is the pane's last word", RemoteClientVerification.AStopWaitsForThePollBeingAppliedAndIsThePanesLastWord);
+        await Test("remote client: a stale run ends alone and leaves the newer connection", RemoteClientVerification.AStaleRunEndsAloneAndLeavesTheNewerConnection);
         await Test("corrupt/unknown/oversize state cannot be overwritten by shutdown", async () =>
         {
             foreach (var text in new[] { "null", "{", "{\"version\":2,\"workspaces\":[],\"sessions\":[]}", "{\"version\":1,\"workspaces\":null,\"sessions\":[]}" })
