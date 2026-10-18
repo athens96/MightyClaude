@@ -158,7 +158,7 @@ internal static partial class RemoteClientVerification
         return Task.CompletedTask;
     }
 
-    internal static RemoteTarget Loopback(int port) => new(new RemoteAddress("127.0.0.1", port), "127.0.0.1", port);
+    internal static RemoteTarget Loopback(int port) => new(new RemoteAddress("127.0.0.1", port), "127.0.0.1", port, allowLoopback: true);
 
     internal static async Task OneAuthenticatedRequestFollowsNoRedirectAndReadsAtMostTwoMebibytes()
     {
@@ -172,6 +172,9 @@ internal static partial class RemoteClientVerification
             "/v2/refused" => RemoteFakeHost.Fixture("error.json", 401),
             "/v2/busy" => new(503, "{\"protocol\":2,\"error\":\"busy\"}"),
             "/v2/slow" => new(200, "{}", Delay: TimeSpan.FromSeconds(3)),
+            "/v2/huge-unsized" => new(200, "\"" + new string('x', RemoteProtocol.MaximumResponseBytes) + "\"", OmitLength: true),
+            "/v2/stalled" => new(200, "{}", BodyDelay: TimeSpan.FromSeconds(3)),
+            "/v2/twice" => new(200, "{}", new Dictionary<string, string> { ["X-Mighty-Remote-Version"] = "2" }),
             _ => new(404, "{\"protocol\":2,\"error\":\"no\"}"),
         });
         var target = Loopback(host.Port);
@@ -184,10 +187,19 @@ internal static partial class RemoteClientVerification
         Check(elsewhere.Seen.IsEmpty, "a redirect is never followed");
         await Reject(() => RemoteTransport.RequestAsync(target, Key, HttpMethod.Get, "/v2/plain"), "an answer without the version header is not Mighty's", ex => ex is InvalidDataException && ex.Message == Locale.Get("remote.connect.error.notMighty"));
         await Reject(() => RemoteTransport.RequestAsync(target, Key, HttpMethod.Get, "/v2/huge"), "over 2 MiB is refused", ex => ex.Message == Locale.Get("remote.connect.error.responseTooLarge"));
+        await Reject(() => RemoteTransport.RequestAsync(target, Key, HttpMethod.Get, "/v2/huge-unsized"), "over 2 MiB with no length is refused while reading", ex => ex is InvalidDataException && ex.Message == Locale.Get("remote.connect.error.responseTooLarge"));
+        await Reject(() => RemoteTransport.RequestAsync(target, Key, HttpMethod.Get, "/v2/twice"), "a repeated version header is not Mighty's", ex => ex is InvalidDataException && ex.Message == Locale.Get("remote.connect.error.notMighty"));
         await Reject(() => RemoteTransport.RequestAsync(target, Key, HttpMethod.Get, "/v2/refused"), "an error status carries the host's message", ex => ex is RemoteHttpFailure { Status: 401, Transient: false } f && f.Message == "The key does not match.");
         await Reject(() => RemoteTransport.RequestAsync(target, Key, HttpMethod.Get, "/v2/busy"), "503 is a passing failure", ex => RemoteTransport.Transient(ex));
         await Reject(() => RemoteTransport.RequestAsync(target, Key, HttpMethod.Get, "/v2/slow", timeout: TimeSpan.FromMilliseconds(400)), "a slow host times out", ex => ex is TimeoutException && RemoteTransport.Transient(ex) && ex.Message == RemoteWindowsStrings.Timeout);
+        await Reject(() => RemoteTransport.RequestAsync(target, Key, HttpMethod.Get, "/v2/stalled", timeout: TimeSpan.FromMilliseconds(400)), "a body that stalls after the head times out", ex => ex is TimeoutException && ex.Message == RemoteWindowsStrings.Timeout);
+        _ = await RemoteTransport.RequestAsync(target, Key, HttpMethod.Get, "/v2/info", headers: new Dictionary<string, string> { [RemoteProtocol.GraphHeader] = RemoteProtocol.GraphRuns });
+        Check(host.Seen.Last().Headers[RemoteProtocol.GraphHeader] == RemoteProtocol.GraphRuns, "the graph opt-in header goes out");
         var before = host.Seen.Count;
+        await Reject(() => RemoteTransport.RequestAsync(target, Key, HttpMethod.Get, "/v2/info", headers: new Dictionary<string, string> { ["Origin"] = "http://example.invalid" }), "only allow-listed extra headers", ex => ex is ArgumentException);
+        await Reject(() => RemoteTransport.RequestAsync(target, Key, HttpMethod.Get, "/v2/info", headers: new Dictionary<string, string> { ["Authorization"] = "Bearer " + Key }), "the transport's own headers are never overridden", ex => ex is ArgumentException);
+        await Reject(() => RemoteTransport.RequestAsync(new RemoteTarget(new("127.0.0.1", host.Port), "127.0.0.1", host.Port), Key, HttpMethod.Get, "/v2/info"), "a loopback target without the injected flag is refused", ex => ex.Message == Locale.Get("remote.connect.error.notTailscale"));
+        await Reject(() => RemoteTransport.RequestAsync(new RemoteTarget(new("192.168.1.5", 43137), "192.168.1.5", 43137, allowLoopback: true), Key, HttpMethod.Get, "/v2/info"), "a hand-built LAN target never gets the key", ex => ex.Message == Locale.Get("remote.connect.error.notTailscale"));
         await Reject(() => RemoteTransport.RequestAsync(target, "short", HttpMethod.Get, "/v2/info"), "a malformed key is refused before sending");
         await Reject(() => RemoteTransport.RequestAsync(target, Key, HttpMethod.Get, "/v1/info"), "only /v2/ paths");
         await Reject(() => RemoteTransport.RequestAsync(target, Key, HttpMethod.Get, "/v2/info?x=<script>"), "only plain path characters");
@@ -198,7 +210,10 @@ internal static partial class RemoteClientVerification
 
     internal static async Task HostsResolveOnlyToTailscale()
     {
-        Check((await RemoteTransport.ResolveAsync(new("127.0.0.1", 43137), allowLoopback: true)).Ip == "127.0.0.1", "loopback when injected");
+        var injected = await RemoteTransport.ResolveAsync(new("127.0.0.1", 43137), allowLoopback: true);
+        Check(injected.Ip == "127.0.0.1" && injected.AllowLoopback, "loopback when injected, and the target keeps the flag");
+        Check(!(await RemoteTransport.ResolveAsync(new("100.101.102.103", 43137), allowLoopback: false)).AllowLoopback, "a target resolved without the flag never gains it");
+        await Reject(() => RemoteTransport.ResolveAsync(new(new string('a', 300), 43137), allowLoopback: false), "a name the resolver refuses reads as unresolved, never as a .NET message", ex => ex is InvalidOperationException && ex.Message == Locale.Get("remote.connect.error.unresolved"));
         Check((await RemoteTransport.ResolveAsync(new("localhost", 43137), allowLoopback: true)).Ip == "127.0.0.1", "a name resolves once, IPv4 first");
         Check((await RemoteTransport.ResolveAsync(new("100.101.102.103", 43137), allowLoopback: false)).Ip == "100.101.102.103", "a Tailscale literal needs no lookup");
         await Reject(() => RemoteTransport.ResolveAsync(new("127.0.0.1", 43137), allowLoopback: false), "loopback is not Tailscale", ex => ex.Message == Locale.Get("remote.connect.error.notTailscale"));
