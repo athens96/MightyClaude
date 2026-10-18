@@ -632,6 +632,8 @@ internal static class Verification
         await Test("remote host: no body is read without leave and the head is bounded", RemoteHostVerification.NoBodyIsReadWithoutLeaveAndTheHeadIsBounded);
         await Test("remote host: a slow or stuck request is cut off and stopping closes everything", RemoteHostVerification.ASlowOrStuckRequestIsCutOffAndStoppingClosesEverything);
         await Test("remote host: a throwing filter or handler never stops the listener", RemoteHostVerification.AThrowingFilterOrHandlerNeverStopsTheListener);
+        await Test("remote host: a draining connection holds its peer's slot until the drain ends", RemoteHostVerification.ADrainingConnectionHoldsItsPeersSlotUntilTheDrainEnds);
+        await Test("remote host: all peers together hold at most the open-connection cap", RemoteHostVerification.AllPeersTogetherHoldAtMostTheOpenConnectionCap);
         await Test("corrupt/unknown/oversize state cannot be overwritten by shutdown", async () =>
         {
             foreach (var text in new[] { "null", "{", "{\"version\":2,\"workspaces\":[],\"sessions\":[]}", "{\"version\":1,\"workspaces\":null,\"sessions\":[]}" })

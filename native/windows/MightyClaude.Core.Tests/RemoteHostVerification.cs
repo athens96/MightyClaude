@@ -31,6 +31,15 @@ internal static partial class RemoteHostVerification
         return client;
     }
 
+    /// <summary>Reads until the server ends the connection (or 10 s pass).</summary>
+    private static async Task<string> ReadAll(TcpClient client)
+    {
+        using var answer = new MemoryStream(); var buffer = new byte[8192];
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        try { int read; while ((read = await client.GetStream().ReadAsync(buffer, timeout.Token)) > 0) answer.Write(buffer, 0, read); } catch (Exception ex) when (ex is IOException or OperationCanceledException) { }
+        return Encoding.UTF8.GetString(answer.ToArray());
+    }
+
     /// <summary>True when the server ends the connection (end of stream, a reset, or a write refused) within <paramref name="within"/>.</summary>
     private static async Task<bool> ClosedWithin(TcpClient client, TimeSpan within)
     {
@@ -55,6 +64,11 @@ internal static partial class RemoteHostVerification
             var port = filtered.Start();
             Check((await Raw(port, "GET /v2/info HTTP/1.1\r\n\r\n")).StartsWith("HTTP/1.1 200", StringComparison.Ordinal), "an accepted peer is answered");
             lock (asked) Check(asked.Count == 1 && asked[0].Equals(IPAddress.Loopback), "the filter is asked once with the peer's address");
+        }
+        {
+            var scoped = RemoteHttpListener.PeerAddress(new IPEndPoint(IPAddress.Parse("fe80::5%7"), 1));
+            Check(scoped is { ScopeId: 0 } && scoped.ToString() == "fe80::5", "the filter sees an IPv6 peer without its scope");
+            Check(RemoteHttpListener.PeerAddress(new IPEndPoint(IPAddress.Parse("::ffff:100.101.102.103"), 1))?.ToString() == "100.101.102.103", "and an IPv4-mapped peer as its IPv4");
         }
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var entered = 0; var bothIn = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -109,6 +123,15 @@ internal static partial class RemoteHostVerification
         Check((await Raw(port, "GET http://studio-pc/v2/x HTTP/1.1\r\n\r\n")).StartsWith("HTTP/1.1 400", StringComparison.Ordinal), "only an origin-form target");
         Check((await Raw(port, "POST /v2/x HTTP/1.1\r\nAuthorization: Bearer k\r\nContent-Length: 2\r\n\r\n{}GET / HTTP/1.1\r\n\r\n")).StartsWith("HTTP/1.1 400", StringComparison.Ordinal), "one request per connection");
         Check((await Raw(port, "GET /v2/x HTTP/1.1\r\nAuthorization: Bearer k\r\n\r\nGET / HTTP/1.1\r\n\r\n")).StartsWith("HTTP/1.1 400", StringComparison.Ordinal), "one request per connection, without a body too");
+        // Bytes that come in a write of their own after the whole body are still a second request.
+        var headSeen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously); var pipelinedHandled = false;
+        await using (var pipelined = new RemoteHttpListener(IPAddress.Loopback, 0, _ => { pipelinedHandled = true; return Task.FromResult(RemoteHttpResponse.Json(200, new { })); }, bodyLimit: _ => { headSeen.TrySetResult(); return 1024; }))
+        {
+            using var client = await Open(pipelined.Start(), "POST /v2/x HTTP/1.1\r\nContent-Length: 2\r\n\r\n");
+            Check(await Task.WhenAny(headSeen.Task, Task.Delay(TimeSpan.FromSeconds(10))) == headSeen.Task, "the head is read before the body is sent");
+            await client.GetStream().WriteAsync("{}GET / HTTP/1.1\r\n\r\n"u8.ToArray());
+            Check((await ReadAll(client)).StartsWith("HTTP/1.1 400", StringComparison.Ordinal) && !pipelinedHandled, "a request after the body is refused, unhandled");
+        }
         var answer = await Raw(port, "GET /v2/x HTTP/1.1\r\nAuthorization: Bearer k\r\n\r\n");
         Check(answer.Contains("Connection: close", StringComparison.Ordinal) && answer.Contains("Cache-Control: no-store", StringComparison.Ordinal) && answer.Contains("X-Content-Type-Options: nosniff", StringComparison.Ordinal), "every answer closes and is never cached");
     }
@@ -125,7 +148,9 @@ internal static partial class RemoteHostVerification
         }, maximumConnectionsPerPeer: 1) { RequestDeadline = TimeSpan.FromMilliseconds(500), HandlerDeadline = TimeSpan.FromMilliseconds(500) };
         try
         {
+            Check(!server.IsListening, "not listening before Start");
             var port = server.Start();
+            Check(server.IsListening, "listening once started");
             Check(throws(() => server.Start()), "a listener starts once");
             // A head trickled one byte at a time is still cut off at the deadline, and its slot is freed.
             var watch = Stopwatch.StartNew();
@@ -153,6 +178,7 @@ internal static partial class RemoteHostVerification
             try { refusedAfter = await Raw(port, "GET /v2/x HTTP/1.1\r\n\r\n") == ""; } catch (SocketException) { refusedAfter = true; }
             Check(refusedAfter, "a stopped listener takes no connection");
             Check(throws(() => server.Start()), "a stopped listener never starts again");
+            Check(!server.IsListening, "a stopped listener is not listening");
         }
         finally { await server.DisposeAsync(); }
 
@@ -173,8 +199,57 @@ internal static partial class RemoteHostVerification
         Check(await Raw(port, "GET /v2/x HTTP/1.1\r\n\r\n") == "", "a filter that throws refuses the peer");
         foreach (var target in new[] { "/throw", "/fault", "/limit" })
         {
-            Check(!(await Raw(port, $"GET {target} HTTP/1.1\r\n\r\n")).StartsWith("HTTP/1.1 200", StringComparison.Ordinal), "a failing request is not answered as a success: " + target);
+            Check(await Raw(port, $"GET {target} HTTP/1.1\r\n\r\n") == "", "a failing request ends its connection unanswered: " + target);
             Check((await Raw(port, "GET /v2/x HTTP/1.1\r\n\r\n")).StartsWith("HTTP/1.1 200", StringComparison.Ordinal), "the listener and the peer's slot outlive " + target);
         }
+    }
+
+    internal static async Task ADrainingConnectionHoldsItsPeersSlotUntilTheDrainEnds()
+    {
+        var handled = 0;
+        var released = new SemaphoreSlim(0);
+        await using var server = new RemoteHttpListener(IPAddress.Loopback, 0, request => { Interlocked.Increment(ref handled); return Task.FromResult(RemoteHttpResponse.Json(401, new { })); },
+            bodyLimit: _ => 0, maximumConnectionsPerPeer: 1) { SlotReleased = () => released.Release() };
+        var port = server.Start();
+        // A keyless POST is answered from its head and then drained; while it drains it still holds the peer's one slot.
+        using (var first = await Open(port, "POST /x HTTP/1.1\r\nContent-Length: 5\r\n\r\n"))
+        {
+            Check((await ReadAll(first)).StartsWith("HTTP/1.1 401", StringComparison.Ordinal), "the head alone is answered");
+            Check(await Raw(port, "POST /x HTTP/1.1\r\nContent-Length: 5\r\n\r\n") == "" && handled == 1, "a second connection while the first drains is refused at accept, unhandled");
+        }
+        Check(await released.WaitAsync(TimeSpan.FromSeconds(10)), "the closed one gives its slot back");
+        Check((await Raw(port, "GET /x HTTP/1.1\r\n\r\n")).StartsWith("HTTP/1.1 401", StringComparison.Ordinal) && handled == 2, "and the next one is answered");
+        Check(await released.WaitAsync(TimeSpan.FromSeconds(10)), "the answered one gives its slot back");
+        // One that keeps sending after its answer is drained for a bounded time only, then closed, and its slot is freed.
+        var watch = Stopwatch.StartNew();
+        using (var trickler = await Open(port, "POST /x HTTP/1.1\r\nContent-Length: 999\r\n\r\n"))
+        {
+            Check((await ReadAll(trickler)).StartsWith("HTTP/1.1 401", StringComparison.Ordinal), "the trickler is answered");
+            var cutOff = false;
+            try { while (watch.Elapsed < TimeSpan.FromSeconds(5)) { await trickler.GetStream().WriteAsync("X"u8.ToArray()); await Task.Delay(50); } }
+            catch (Exception ex) when (ex is IOException or SocketException or ObjectDisposedException) { cutOff = true; }
+            Check(cutOff && watch.Elapsed < TimeSpan.FromSeconds(3), "a peer that keeps sending after its answer is closed within about 2 s");
+        }
+        Check(await released.WaitAsync(TimeSpan.FromSeconds(10)), "the trickler's slot is given back");
+        Check((await Raw(port, "GET /x HTTP/1.1\r\n\r\n")).StartsWith("HTTP/1.1 401", StringComparison.Ordinal), "and the peer is answered again");
+    }
+
+    internal static async Task AllPeersTogetherHoldAtMostTheOpenConnectionCap()
+    {
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allIn = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var entered = 0;
+        await using var server = new RemoteHttpListener(IPAddress.Loopback, 0, async _ =>
+        {
+            if (Interlocked.Increment(ref entered) == RemoteHttpListener.MaximumOpenConnections) allIn.TrySetResult();
+            await release.Task; return RemoteHttpResponse.Json(200, new { });
+        });
+        var port = server.Start();
+        var held = Enumerable.Range(0, RemoteHttpListener.MaximumOpenConnections).Select(i => Raw(port, $"GET /{i} HTTP/1.1\r\n\r\n")).ToArray();
+        Check(await Task.WhenAny(allIn.Task, Task.Delay(TimeSpan.FromSeconds(20))) == allIn.Task, "64 connections reach the handler");
+        Check(await Raw(port, "GET /over HTTP/1.1\r\n\r\n") == "" && entered == RemoteHttpListener.MaximumOpenConnections, "the 65th is closed at accept, unhandled");
+        release.SetResult();
+        Check((await Task.WhenAll(held)).All(r => r.StartsWith("HTTP/1.1 200", StringComparison.Ordinal)), "the held ones are answered");
+        Check((await Raw(port, "GET /next HTTP/1.1\r\n\r\n")).StartsWith("HTTP/1.1 200", StringComparison.Ordinal), "a freed slot takes a new connection");
     }
 }
