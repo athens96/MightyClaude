@@ -85,7 +85,7 @@ grep -c '^FAIL' /private/tmp/core-run.log; grep -E '^(FAIL|PASS) [Rr]emote' /pri
 | `RemoteClientService.cs` | Saved connections, connect/refresh/disconnect/remove/open, runs, polling, answers |
 | `RemoteHttpListener.cs` | One-request-per-connection HTTP/1.1 server on `TcpListener` |
 | `RemoteHostService.cs` | "이 컴퓨터 공유": sharing lifecycle, authorization, `/info`, runs, event buffers, heartbeat |
-| `RemoteCommandShell.cs` | `powershell.exe -NoProfile -Command <text>` from the system folder |
+| `RemoteCommandShell.cs` | `powershell.exe -NoProfile -NonInteractive -Command <text>` from the system folder |
 | `RemoteWorkspaceFeatures.cs` | What a remote workspace's panes may not do; host OS label; firewall port set; host runtime stand-in |
 
 **Windows Core (modified):**
@@ -3399,9 +3399,9 @@ Append to `RemoteHostVerification`:
     internal static async Task CommandsRunInPowerShellFromTheSystemFolderAndGraphNodesReachTheHost()
     {
         var (binary, arguments) = RemoteCommandShell.Launch("Get-Location; echo \"a b\"", @"C:\Windows\System32\");
-        Check(binary == @"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" && arguments.SequenceEqual(["-NoProfile", "-Command", "Get-Location; echo \"a b\""]), "powershell.exe -NoProfile -Command <text>, from the system folder");
+        Check(binary == @"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" && arguments.SequenceEqual(["-NoProfile", "-NonInteractive", "-Command", "Get-Location; echo \"a b\""]), "powershell.exe -NoProfile -NonInteractive -Command <text>, from the system folder");
         var line = RemoteCommandShell.CommandLine("echo \"a b\"", @"C:\Windows\System32");
-        Check(line.Contains(" -NoProfile -Command ", StringComparison.Ordinal) && line.EndsWith(ChildProcess.QuoteWindows("echo \"a b\""), StringComparison.Ordinal), "the text is one quoted argument: " + line);
+        Check(line.Contains(" -NoProfile -NonInteractive -Command ", StringComparison.Ordinal) && line.EndsWith(ChildProcess.QuoteWindows("echo \"a b\""), StringComparison.Ordinal), "the text is one quoted argument: " + line);
 
         var directory = Verification.Temp();
         try
@@ -3448,7 +3448,7 @@ namespace MightyClaude.Core;
 public static class RemoteCommandShell
 {
     public static (string Binary, IReadOnlyList<string> Arguments) Launch(string command, string systemFolder) =>
-        (systemFolder.TrimEnd('\\', '/') + @"\WindowsPowerShell\v1.0\powershell.exe", ["-NoProfile", "-Command", command]);
+        (systemFolder.TrimEnd('\\', '/') + @"\WindowsPowerShell\v1.0\powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", command]);
 
     /// <summary>The command line CreateProcess receives (ChildProcess quotes each argument the same way).</summary>
     public static string CommandLine(string command, string systemFolder)
@@ -5450,7 +5450,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 Windows 앱도 같은 `/v2/` 프로토콜로 공유하고 연결한다. 그래서 Mac→Mac, Mac→Windows, Windows→Mac, Windows→Windows가 모두 된다. 두 앱이 같은 요청·응답·이벤트를 쓰는지는 공유 픽스처 `native/contracts/fixtures/remote-v2/`가 묶는다. Mac이 기준이고, Mac(`RemoteWireFixtureTests`)과 Windows Core(`RemoteWireFixtureVerification`)가 같은 파일을 읽는다.
 
 - **호스트(Windows)**: `MightyClaude.Core/Remote/RemoteHostService.cs`가 Tailscale 주소마다 `RemoteHttpListener`(TcpListener, HTTP/1.1, 연결마다 요청 하나)를 그 주소에만 바인딩한다. 받는 순간 상대를 거르고 상대마다 연결 8개, 키 없는 요청의 본문은 읽지 않음, SHA-256 뒤 상수 시간 비교, 상대마다 초당 300번·키가 맞는 요청 전체 600번은 Mac과 같다. 실행은 호스트의 `RunManager`(그 PC의 CLI·로그인, 창별 MCP·위임·그림 캐시 없음)로 한다.
-- **명령 창**: Windows 호스트에서는 명령마다 시스템 폴더의 `powershell.exe -NoProfile -Command <글>`을 공유 폴더에서 새로 띄운다(`RemoteCommandShell`, `NoDefaultCurrentDirectoryInExePath=1`). Mac 호스트는 `$SHELL -l -c`. 창과 상태 막대·세션 정보는 호스트의 OS(`/info`의 `runtime.platform`: `darwin`·`win32`)를 보여 준다.
+- **명령 창**: Windows 호스트에서는 명령마다 시스템 폴더의 `powershell.exe -NoProfile -NonInteractive -Command <글>`을 공유 폴더에서 새로 띄운다(`RemoteCommandShell`, `NoDefaultCurrentDirectoryInExePath=1`). Mac 호스트는 `$SHELL -l -c`. 창과 상태 막대·세션 정보는 호스트의 OS(`/info`의 `runtime.platform`: `darwin`·`win32`)를 보여 준다.
 - **이벤트 맞추기**: Windows 실행 이벤트는 Mac 모양으로 바꿔 보낸다. 로그인 만료 사유는 `auth`이고, 권한 요청 입력은 `inputJSON`이며, 시각은 `yyyy-MM-ddTHH:mm:ss.fffZ`로 쓰고, 그림은 뺀다. 그래프는 Mac의 `graph`(ExecutionGraphNode)로 보낸다. Windows 클라이언트가 실행 요청에 `x-mighty-remote-graph: run`을 붙이면 Windows 호스트는 그 실행에 `graph` 대신 Windows의 `graph_run`(MightyGraphRun)을 보내고, Mac 호스트는 이 머리를 무시한다. Windows 클라이언트는 Mac 호스트의 `graph`를 조용히 버리므로, Mac에서 도는 실행의 Windows 마이티 보기는 대화 기록으로 묶은 블록만 보인다.
 - **클라이언트(Windows)**: `RemoteClientService`는 요청마다 그 IP로 가는 출발 주소가 이 PC의 Tailscale 주소인지(UDP 소켓 연결, 보내는 것 없음) 다시 본다. 리디렉션을 따르지 않고 프록시·쿠키를 쓰지 않으며, 응답은 2 MiB까지, 15초(첨부 실행 60초) 안에 읽는다. 폴링이 429·503·시간 초과로 실패하면 10초 동안 다시 묻는다. 쓸 수 없는 이벤트 하나는 빼고 안내 줄을 남기며, 기다리는 권한 요청은 창마다 최신 32개만 둔다.
 - **저장(Windows)**: 연결 목록은 `remote-connections.json`(버전 2, 키 없음, 이 사용자만 읽음), 키는 `<프로필>\remote-keys\<id의 SHA-256>.bin`에 현재 Windows 사용자 DPAPI(`CryptProtectData`, `ProtectedData`의 CurrentUser와 같음)로 암호화해 둔다. DPAPI가 거절하면 키는 앱을 끌 때까지만 메모리에 있다. `Workspace.remote`는 Mac과 같은 `{"version": 2, …}`이며 버전이 없거나 다른 값이면 불러올 때 버린다.
@@ -5580,7 +5580,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 | Peers filtered at accept, connections per peer capped | Task 11 (`acceptPeer`, `maximumConnectionsPerPeer`), Task 13 (8, `RemotePeerPolicy`) |
 | No request body read without the key | Task 11 (body limit 0 means the head alone), Task 13 (`BodyLimit`) |
 | "원격에서 전체 권한·명령 실행 허용" off each time sharing starts | Task 13 (`StartAsync`/`StopNowAsync` reset; tests), Task 17 (switch) |
-| Command pane runs `powershell.exe -NoProfile -Command` in the shared folder | Task 12 (`RemoteCommandShell`, `RunManager.PowerShellCommands`), Task 14 (real command in the shared folder) |
+| Command pane runs `powershell.exe -NoProfile -NonInteractive -Command` in the shared folder | Task 12 (`RemoteCommandShell`, `RunManager.PowerShellCommands`), Task 14 (real command in the shared folder) |
 | Heartbeat timeout 30 s | Task 4 (constant), Task 14 (`LeaseLoopAsync`, test with 1 s) |
 | Firewall rule from part 2 | Task 15 (`FirewallPorts`), Task 17 (buttons calling `WindowsFirewallRuleRunner.ApplyAsync`/`RemoveAsync`) |
 | Client keeps `remote-connections.json` without the key; key DPAPI CurrentUser | Task 6 |

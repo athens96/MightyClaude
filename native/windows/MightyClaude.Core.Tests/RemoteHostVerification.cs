@@ -312,15 +312,19 @@ internal static partial class RemoteHostVerification
     internal static async Task CommandsRunInPowerShellFromTheSystemFolderAndGraphNodesReachTheHost()
     {
         var (binary, arguments) = RemoteCommandShell.Launch("Get-Location; echo \"a b\"", @"C:\Windows\System32\");
-        Check(binary == @"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" && arguments.SequenceEqual(new[] { "-NoProfile", "-Command", "Get-Location; echo \"a b\"" }), "powershell.exe -NoProfile -Command <text>, from the system folder");
+        Check(binary == @"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" && arguments.SequenceEqual(new[] { "-NoProfile", "-NonInteractive", "-Command", "Get-Location; echo \"a b\"" }), "powershell.exe -NoProfile -NonInteractive -Command <text>, from the system folder");
         var line = RemoteCommandShell.CommandLine("echo \"a b\"", @"C:\Windows\System32");
-        Check(line.Contains(" -NoProfile -Command ", StringComparison.Ordinal) && line.EndsWith(ChildProcess.QuoteWindows("echo \"a b\""), StringComparison.Ordinal), "the text is one quoted argument: " + line);
+        Check(line.Contains(" -NoProfile -NonInteractive -Command ", StringComparison.Ordinal) && line.EndsWith(ChildProcess.QuoteWindows("echo \"a b\""), StringComparison.Ordinal), "the text is one quoted argument: " + line);
         // A peer's text never becomes more than the one argument after -Command, whatever quotes and backslashes it holds.
         foreach (var text in new[] { "a\" -EncodedCommand ZQBjAGgAbwA=", "ends in a slash\\", "\\\" -File x.ps1", "x\\\\\" & calc \"", "\"\"", " lead and trail ", "tab\there", "%PATH% & ^ | < > ;", "-", "'single' `tick` $(sub)" })
         {
             var argv = Argv(RemoteCommandShell.CommandLine(text, @"C:\Windows\System32"));
-            Check(argv.SequenceEqual(new[] { @"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe", "-NoProfile", "-Command", text }), "one argument for " + text + ": " + string.Join(" | ", argv));
+            Check(argv.SequenceEqual(new[] { @"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe", "-NoProfile", "-NonInteractive", "-Command", text }), "one argument for " + text + ": " + string.Join(" | ", argv));
         }
+        // CreateProcess takes at most 32,767 characters with its NUL: a host can tell which commands fit before it starts one.
+        var room = 32766 - RemoteCommandShell.CommandLine("", @"C:\Windows\System32").Length + 2;
+        Check(RemoteCommandShell.Fits("echo x", @"C:\Windows\System32") && RemoteCommandShell.CommandLine(new string('a', room), @"C:\Windows\System32").Length == 32766
+            && RemoteCommandShell.Fits(new string('a', room), @"C:\Windows\System32") && !RemoteCommandShell.Fits(new string('a', room + 1), @"C:\Windows\System32"), "a command line of 32,766 characters fits and one more does not");
         // Only the system folder Windows reports: never a relative or drive-relative one, which would resolve against the current folder.
         foreach (var folder in new[] { "", "System32", @"\Windows\System32", "C:Windows", @"..\System32", "C:\\Win\"dows" })
         {
@@ -342,9 +346,11 @@ internal static partial class RemoteHostVerification
             await Verification.Until(() => events.Any(e => e.SessionId == "job-a" && e.Status is "completed" or "error"), 20000);
             Check(nodes.Any(n => n.Session == "job-a" && n.Node.Id.Length > 0), "the run's graph nodes reach the host as they change");
             Check(nodes.All(n => n.Session == "job-a"), "every node names its run");
-            await remote.StartAsync(new StartRunRequest("job-b", workspace.Id, "shell", "echo remote-ok", []));
+            // On Windows the command also shows that a program it names is never looked for in the shared folder first.
+            await remote.StartAsync(new StartRunRequest("job-b", workspace.Id, "shell", OperatingSystem.IsWindows() ? "echo remote-ok; echo \"nocd=$env:NoDefaultCurrentDirectoryInExePath\"" : "echo remote-ok", []));
             await Verification.Until(() => events.Any(e => e.SessionId == "job-b" && e.Status is "completed" or "error"), 20000);
             Check(events.Any(e => e.SessionId == "job-b" && e.Entry?.Text.Contains("remote-ok", StringComparison.Ordinal) == true), "a command runs (PowerShell on Windows, /bin/sh elsewhere)");
+            if (OperatingSystem.IsWindows()) Check(events.Any(e => e.SessionId == "job-b" && e.Entry?.Text.Contains("nocd=1", StringComparison.Ordinal) == true), "the command runs with NoDefaultCurrentDirectoryInExePath=1");
             Check(!nodes.Any(n => n.Session == "job-b"), "a command pane has no graph");
 
             // A remote run works in the shared folder alone: a worktree folder is never taken from the host's caller.
@@ -352,6 +358,16 @@ internal static partial class RemoteHostVerification
             var refused = false;
             try { await remote.StartAsync(new StartRunRequest("job-c", workspace.Id, "claude", "hello", [], Provider: "codex") { WorkingFolder = elsewhere }); } catch (ArgumentException) { refused = true; }
             Check(refused && !runner.IsRunning("job-c") && !events.Any(e => e.SessionId == "job-c"), "a remote run with a working folder of its own is refused before it starts");
+            refused = false;
+            try { await remote.StartAsync(new StartRunRequest("job-d", workspace.Id, "claude", "hello", []) { StyleAutoAllow = ["Read"] }); } catch (ArgumentException) { refused = true; }
+            Check(refused && !runner.IsRunning("job-d") && !events.Any(e => e.SessionId == "job-d"), "a remote run never brings a local style's tool permissions");
+
+            // A host callback that throws loses its node, never the run's last status.
+            var thrown = 0;
+            await using var throwing = new RunManager(_ => Task.FromResult(workspace), catalog, plugin, events.Enqueue, _ => { }) { GraphNodes = (_, _) => { Interlocked.Increment(ref thrown); throw new InvalidOperationException("host failed"); } };
+            await ((IRemoteRunner)throwing).StartAsync(new StartRunRequest("job-e", workspace.Id, "claude", "hello", [], Provider: "codex"));
+            await Verification.Until(() => events.Any(e => e.SessionId == "job-e" && e.Status is "completed" or "error"), 20000);
+            Check(thrown > 0 && events.Any(e => e.SessionId == "job-e" && e.Status == events.Where(x => x.SessionId == "job-a" && x.Status is "completed" or "error").Last().Status), "the run ends as it would have: " + string.Join(",", events.Where(e => e.SessionId == "job-e" && e.Status is not null).Select(e => e.Status)));
         }
         finally { Directory.Delete(directory, true); }
     }

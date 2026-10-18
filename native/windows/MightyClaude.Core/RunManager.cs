@@ -59,6 +59,8 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         internal long LastOutputTicks = Environment.TickCount64;
         internal readonly object InputGate = new();
         internal OutputParser? Parser;
+        /// <summary>A leaf lock: a graph node is handed to the host and the last status is emitted under it, never both at once.</summary>
+        internal readonly object NodeGate = new();
     }
     /// <summary>After the last background task ends, how long a silent CLI may keep stdin before the runner closes it.</summary>
     public TimeSpan BackgroundIdleClose { get; set; } = TimeSpan.FromSeconds(120);
@@ -68,7 +70,9 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
     /// <summary>The app's side of the delegation server, which each run's binding is connected to; null leaves every delegation call unanswered.</summary>
     public IDelegationRequestHandler? DelegationHandler { get; set; }
     /// <summary>Every execution-graph node of a run as it changes, by session id: a sharing host sends them as the Mac's "graph" events
-    /// (M/ProcessRunner.swift's graph callback). None reaches it once the run's last status is out.</summary>
+    /// (M/ProcessRunner.swift's graph callback). A node is handed over only before the run's last status is emitted, never after it.
+    /// The callback is called under a per-run lock: it must not throw, block, or call back into this runner. One that throws loses
+    /// that node (traced by type) and the run goes on.</summary>
     public Action<string, ExecutionGraphNode>? GraphNodes { get; set; }
     /// <summary>A sharing host's runner: a shell request runs in Windows PowerShell (RemoteCommandShell) instead of cmd.exe. Read once per run.</summary>
     public bool PowerShellCommands { get; set; }
@@ -78,9 +82,10 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
     private bool disposed;
     public bool IsRunning(string id) => runs.ContainsKey(id);
     public Task StartAsync(StartRunRequest value) => Begin(value, false);
-    /// <summary>A client's run works in the shared folder alone: it never brings a worktree folder of its own.</summary>
+    /// <summary>A client's run works in the shared folder alone, and with no local grants: it never brings a worktree folder of its own
+    /// or a local style's tool permissions.</summary>
     Task IRemoteRunner.StartAsync(StartRunRequest value) =>
-        value.WorkingFolder is null && value.DelegationWorktreeRoot is null ? StartAsync(value) : throw new ArgumentException(Locale.Get("wire.startRun.invalidFormat"));
+        value.WorkingFolder is null && value.DelegationWorktreeRoot is null && value.StyleAutoAllow is null ? StartAsync(value) : throw new ArgumentException(Locale.Get("wire.startRun.invalidFormat"));
     /// <summary>
     /// Starts the run and returns once its process is up with its input open, or throws why it never got that far
     /// (M/AppStore.swift:1049 startReachedRunner). A one-shot run has its prompt written by then. A stream-json run has only begun
@@ -142,7 +147,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
             images: request.Kind == "shell" ? null : images, imageEntry: entry => { if (!run.Finished) emit(new(request.SessionId, "log", entry)); },
             requestedResume: request.Provider == "gemini" ? request.ResumeId : null, answer: text => tracker?.AntigravityAnswer(text));
         if (request.Kind != "shell" && MightyGraphSupport.Providers.Contains(request.Provider))
-            tracker = new ExecutionGraphTracker(Wire.Id(), request.Input, request.Provider, PhaseModelPreferences.EffectiveModel(request), node => { Interlocked.Exchange(ref graphDirty, 1); if (!run.Finished) GraphNodes?.Invoke(request.SessionId, node); });
+            tracker = new ExecutionGraphTracker(Wire.Id(), request.Input, request.Provider, PhaseModelPreferences.EffectiveModel(request), node => { Interlocked.Exchange(ref graphDirty, 1); HandOver(run, node); });
         run.Tracker = tracker;
         // Claude's execution checklist and background tasks (ClaudePlanMode.cs).
         var planGate = new object();
@@ -204,7 +209,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                 ReadChildren(true);
                 tracker?.Finish(state);
                 if (tracker?.BuildRun() is { } graphRun) emit(new(request.SessionId, "graph_run", GraphRun: graphRun));
-                run.Finished = true; emit(RunEvent.State(request.SessionId, state, state == "error" && run.AuthenticationFailure ? "authentication" : null));
+                lock (run.NodeGate) { run.Finished = true; emit(RunEvent.State(request.SessionId, state, state == "error" && run.AuthenticationFailure ? "authentication" : null)); }
             }
         }
         async Task PublishGraphs()
@@ -444,6 +449,16 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
             catch (IOException) { Log(run, "error", Locale.Get("run.error.attachmentCleanupFailed")); }
             catch (UnauthorizedAccessException) { Log(run, "error", Locale.Get("run.error.attachmentCleanupForbidden")); }
             finally { runs.TryRemove(new KeyValuePair<string, Run>(request.SessionId, run)); if (startFailure is not null) run.Accepted?.TrySetException(startFailure); }
+        }
+    }
+    /// <summary>One graph node to the host, unless the run's last status is already out; a throwing callback loses the node, never the run.</summary>
+    private void HandOver(Run run, ExecutionGraphNode node)
+    {
+        lock (run.NodeGate)
+        {
+            if (run.Finished || GraphNodes is not { } nodes) return;
+            try { nodes(run.Request.SessionId, node); }
+            catch (Exception ex) when (ex is not OutOfMemoryException) { System.Diagnostics.Trace.TraceWarning("run graph node: " + ex.GetType().Name); }
         }
     }
     /// <summary>Settles every waiting request and sends the CLI end-of-input.</summary>
