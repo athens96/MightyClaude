@@ -601,6 +601,8 @@ internal static class Verification
         await Test("remote wire: every wire event reads and writes back", RemoteWireFixtureVerification.EveryWireEventReadsAndWritesBack);
         await Test("remote wire: each wire event is refused alone, as the Mac refuses it", RemoteWireFixtureVerification.EachWireEventIsRefusedAloneAsTheMacRefusesIt);
         await Test("remote wire: timestamps, images and pending requests are bounded", RemoteWireFixtureVerification.TimestampsImagesAndPendingRequestsAreBounded);
+        await Test("remote client: saved connections keep no key", RemoteClientVerification.SavedConnectionsKeepNoKey);
+        await Test("remote client: keys stay in the vault", RemoteClientVerification.KeysStayInTheVault);
         await Test("corrupt/unknown/oversize state cannot be overwritten by shutdown", async () =>
         {
             foreach (var text in new[] { "null", "{", "{\"version\":2,\"workspaces\":[],\"sessions\":[]}", "{\"version\":1,\"workspaces\":null,\"sessions\":[]}" })
