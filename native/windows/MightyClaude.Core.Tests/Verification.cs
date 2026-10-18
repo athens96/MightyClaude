@@ -635,6 +635,10 @@ internal static class Verification
         await Test("remote host: a draining connection holds its peer's slot until the drain ends", RemoteHostVerification.ADrainingConnectionHoldsItsPeersSlotUntilTheDrainEnds);
         await Test("remote host: all peers together hold at most the open-connection cap", RemoteHostVerification.AllPeersTogetherHoldAtMostTheOpenConnectionCap);
         await Test("remote host: commands run in PowerShell from the system folder and graph nodes reach the host", RemoteHostVerification.CommandsRunInPowerShellFromTheSystemFolderAndGraphNodesReachTheHost);
+        await Test("remote host: only a keyed run request gets the attachment body", RemoteHostVerification.OnlyAKeyedRunRequestGetsTheAttachmentBody);
+        await Test("remote host: sharing starts with a new key and a stop revokes it", RemoteHostVerification.SharingStartsWithANewKeyAndStopRevokesIt);
+        await Test("remote host: a flood is refused and the refusal carries the version", RemoteHostVerification.AFloodIsRefusedAndTheRefusalCarriesTheVersion);
+        await Test("remote host: a listener that stops accepting turns sharing off", RemoteHostVerification.AListenerThatStopsAcceptingTurnsSharingOff);
         await Test("corrupt/unknown/oversize state cannot be overwritten by shutdown", async () =>
         {
             foreach (var text in new[] { "null", "{", "{\"version\":2,\"workspaces\":[],\"sessions\":[]}", "{\"version\":1,\"workspaces\":null,\"sessions\":[]}" })

@@ -5,7 +5,8 @@ using MightyClaude.Core;
 internal static partial class RemoteClientVerification
 {
     private static void Check(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
-    private static async Task Reject(Func<Task> action, string message, Func<Exception, bool>? expected = null)
+    private static Task Reject(Func<Task> action, string message, Func<Exception, bool>? expected = null) => RejectAsync(action, message, expected);
+    internal static async Task RejectAsync(Func<Task> action, string message, Func<Exception, bool>? expected = null)
     {
         try { await action(); }
         catch (Exception ex) { if (expected is null || expected(ex)) return; throw new InvalidOperationException(message + " (threw " + ex.GetType().Name + ": " + ex.Message + ")"); }
