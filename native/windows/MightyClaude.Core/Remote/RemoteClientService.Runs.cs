@@ -28,6 +28,8 @@ public sealed partial class RemoteClientService
         public string? JobId;
         public int Cursor;
         public bool Stopping;
+        /// <summary>The follow loop, set under <c>gate</c> when it starts; it disposes <see cref="Cancel"/> when it ends.</summary>
+        public Task? Follow;
     }
 
     /// <summary>A poll whose events are read one at a time: one the client cannot read is left out alone, never the whole poll.</summary>
@@ -59,6 +61,8 @@ public sealed partial class RemoteClientService
     private static readonly TimeSpan StartTimeout = TimeSpan.FromSeconds(30), StopTimeout = TimeSpan.FromSeconds(5);
     private readonly Dictionary<string, Run> runs = new(StringComparer.Ordinal);
     private readonly RemotePendingPermissions pending = new();
+    /// <summary>Runs whose follow loop has not ended yet, ended or not. Under <c>gate</c>.</summary>
+    private readonly HashSet<Run> followers = [];
 
     public bool IsRunning(string paneId) { lock (gate) return runs.ContainsKey(paneId); }
 
@@ -96,20 +100,28 @@ public sealed partial class RemoteClientService
             try { accepted = JsonSerializer.Deserialize<RemoteWireJob>(data, RemoteWire.Json); }
             catch (Exception ex) when (ex is JsonException or NotSupportedException or ArgumentException or InvalidOperationException) { accepted = null; }
             if (accepted is null || accepted.Protocol != RemoteProtocol.Version || !Wire.Identifier(accepted.JobId)) throw new InvalidDataException(Locale.Get("remote.connect.error.notMighty"));
-            bool cancelled;
-            lock (gate) { run.JobId = accepted.JobId; cancelled = closing || !Listed(request.SessionId, run) || run.Stopping; }
-            if (cancelled)
+            bool cancelled, changed;
+            lock (gate)
             {
-                // Stopped, dropped or closing while the host was accepting it: it stops there too.
+                run.JobId = accepted.JobId;
+                cancelled = closing || !Listed(request.SessionId, run) || run.Stopping;
+                changed = !Unchanged(run.ConnectionId, run.Entry, run.Revision);
+                // Followed from the same moment it was found still current: a disconnect cannot slip in between.
+                if (!cancelled && !changed) { run.Follow = Task.Run(() => FollowAsync(request.SessionId, run)); followers.Add(run); }
+            }
+            if (cancelled || changed)
+            {
+                // Stopped, dropped, closing, or its connection changed while the host was accepting it: it stops there too.
                 await StopOnHostAsync(run);
                 lock (gate) if (Listed(request.SessionId, run)) runs.Remove(request.SessionId);
-                throw new OperationCanceledException();
+                if (cancelled) throw new OperationCanceledException();
+                throw new InvalidOperationException(Locale.Get("remote.connect.error.changed"));
             }
-            _ = Task.Run(() => FollowAsync(request.SessionId, run));
         }
         catch (Exception ex)
         {
             lock (gate) if (Listed(request.SessionId, run)) runs.Remove(request.SessionId);
+            if (run.Follow is null) run.Cancel.Dispose();
             // The host no longer takes this key (it restarted sharing): the connection is not connected any more.
             if (ex is RemoteHttpFailure { Status: 401 } failure) await FailAsync(run.ConnectionId, failure.Message, run.Entry, run.Revision);
             throw;
@@ -118,9 +130,35 @@ public sealed partial class RemoteClientService
 
     /// <summary>The pane's run is still <paramref name="run"/>. Call under the lock.</summary>
     private bool Listed(string paneId, Run run) => runs.TryGetValue(paneId, out var current) && ReferenceEquals(current, run);
-    private bool Current(string paneId, Run run) { lock (gate) return Listed(paneId, run) && !run.Stopping; }
+    /// <summary>The pane's run is still <paramref name="run"/>, not stopping, on the connection it started on.</summary>
+    private bool Current(string paneId, Run run) { lock (gate) return Listed(paneId, run) && !run.Stopping && Unchanged(run.ConnectionId, run.Entry, run.Revision); }
+
+    /// <summary>Every follow loop alive now has ended; the checks wait on this instead of sleeping.</summary>
+    internal Task FollowsEnded() { Task[] loops; lock (gate) loops = followers.Select(r => r.Follow).OfType<Task>().ToArray(); return Task.WhenAll(loops); }
+
+    private static void Cancel(Run run)
+    {
+        try { run.Cancel.Cancel(); } catch (ObjectDisposedException) { }
+    }
 
     private async Task FollowAsync(string paneId, Run run)
+    {
+        try
+        {
+            await PollAsync(paneId, run);
+            // Polling ends once the run ended, stopped, or its connection changed under it: only the last is still listed, and ends alone here.
+            await EndAsync(paneId, run, Locale.Get("remote.connect.error.changed"));
+        }
+        // A callback (onEvent, onPermission) that throws: the run ends, never leaving the pane running with nobody polling.
+        catch (Exception ex) when (ex is not OutOfMemoryException) { await EndAsync(paneId, run, ex.Message); }
+        finally
+        {
+            lock (gate) followers.Remove(run);
+            run.Cancel.Dispose();
+        }
+    }
+
+    private async Task PollAsync(string paneId, Run run)
     {
         var quiet = 0; DateTimeOffset? failingSince = null;
         while (Current(paneId, run))
@@ -222,17 +260,23 @@ public sealed partial class RemoteClientService
     /// <summary>A poll failed for good: the connection is lost while it is still this run's (its runs end then), else this run alone ends.</summary>
     private async Task LoseAsync(string paneId, Run run, string message)
     {
+        // Stopped or dropped meanwhile (the Mac's !Task.isCancelled): a failure that races a stop is not the connection's.
+        if (run.Cancel.IsCancellationRequested) return;
         bool listed; lock (gate) listed = Listed(paneId, run);
         if (listed && !await FailAsync(run.ConnectionId, message, run.Entry, run.Revision)) await EndAsync(paneId, run, message);
     }
 
-    /// <summary>This run alone ends as lost: its connection changed under it, so the failure is not the newer connection's.</summary>
+    /// <summary>
+    /// This run alone ends as lost (its connection changed under it, or a callback failed), unless it already ended or is stopping. A
+    /// callback that throws here too is only traced: the run is no longer listed either way.
+    /// </summary>
     private async Task EndAsync(string paneId, Run run, string message)
     {
         lock (run.Applying)
         {
-            lock (gate) { if (!Listed(paneId, run)) return; runs.Remove(paneId); }
-            SayLost(paneId, message);
+            lock (gate) { if (!Listed(paneId, run) || run.Stopping) return; runs.Remove(paneId); }
+            try { SayLost(paneId, message); }
+            catch (Exception ex) when (ex is not OutOfMemoryException) { System.Diagnostics.Trace.TraceWarning("remote run end: " + ex.GetType().Name); }
         }
         await StopOnHostAsync(run);
     }
@@ -249,7 +293,7 @@ public sealed partial class RemoteClientService
     {
         Run? run;
         lock (gate) { if (!runs.TryGetValue(paneId, out run) || run.Stopping) return; run.Stopping = true; }
-        run.Cancel.Cancel();
+        Cancel(run);
         await StopOnHostAsync(run);
         lock (run.Applying)
         {
@@ -310,7 +354,7 @@ public sealed partial class RemoteClientService
         }
         foreach (var (pane, run) in active)
         {
-            run.Cancel.Cancel();
+            Cancel(run);
             lock (run.Applying)
             {
                 if (message is not null) SayLost(pane, message);
@@ -318,13 +362,15 @@ public sealed partial class RemoteClientService
             }
         }
         // The host stops a run it no longer hears from anyway; this is only sooner.
-        foreach (var (_, run) in active) await StopOnHostAsync(run);
+        await Task.WhenAll(active.Select(a => StopOnHostAsync(a.Run)));
     }
 
     /// <summary>The app is closing: nothing starts any more, and every run stops, on the host too (the Mac's shutdown).</summary>
     public async ValueTask DisposeAsync()
     {
         string[] panes; lock (gate) { closing = true; panes = [.. runs.Keys]; }
-        foreach (var pane in panes) await StopAsync(pane);
+        await Task.WhenAll(panes.Select(StopAsync));
+        // The loops end once cancelled; a callback still busy is not waited on for long.
+        try { await FollowsEnded().WaitAsync(TimeSpan.FromSeconds(2)); } catch (TimeoutException) { }
     }
 }

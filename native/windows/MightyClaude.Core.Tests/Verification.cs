@@ -625,7 +625,8 @@ internal static class Verification
         await Test("remote client: closing the app stops its runs on the host", RemoteClientVerification.ClosingTheAppStopsItsRunsOnTheHost);
         await Test("remote client: a remote pane keeps the newest requests and answers with the host's run id", RemoteClientVerification.ARemotePaneKeepsTheNewestRequestsAndAnswersWithTheHostsRunId);
         await Test("remote client: a stop waits for the poll being applied and is the pane's last word", RemoteClientVerification.AStopWaitsForThePollBeingAppliedAndIsThePanesLastWord);
-        await Test("remote client: a stale run ends alone and leaves the newer connection", RemoteClientVerification.AStaleRunEndsAloneAndLeavesTheNewerConnection);
+        await Test("remote client: no run starts or outlives its connection while its stops are on their way", RemoteClientVerification.NoRunStartsOrOutlivesItsConnectionWhileItsStopsAreOnTheirWay);
+        await Test("remote client: a callback that throws ends the run", RemoteClientVerification.ACallbackThatThrowsEndsTheRun);
         await Test("remote client: a disconnect from inside an event ends the poll there", RemoteClientVerification.ADisconnectFromInsideAnEventEndsThePollThere);
         await Test("corrupt/unknown/oversize state cannot be overwritten by shutdown", async () =>
         {
