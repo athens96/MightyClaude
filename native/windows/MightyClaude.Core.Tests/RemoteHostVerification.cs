@@ -358,9 +358,15 @@ internal static partial class RemoteHostVerification
             var refused = false;
             try { await remote.StartAsync(new StartRunRequest("job-c", workspace.Id, "claude", "hello", [], Provider: "codex") { WorkingFolder = elsewhere }); } catch (ArgumentException) { refused = true; }
             Check(refused && !runner.IsRunning("job-c") && !events.Any(e => e.SessionId == "job-c"), "a remote run with a working folder of its own is refused before it starts");
+            // A grant Validate accepts on a Claude run (ToolSearch), so only the remote guard can refuse it; the same request without it starts.
+            var granted = new StartRunRequest("job-d", workspace.Id, "claude", "hello", []) { StyleAutoAllow = ["ToolSearch"] };
+            Check(granted.Validate().StyleAutoAllow is { Count: 1 }, "the grant itself is one a local style may give");
             refused = false;
-            try { await remote.StartAsync(new StartRunRequest("job-d", workspace.Id, "claude", "hello", []) { StyleAutoAllow = ["Read"] }); } catch (ArgumentException) { refused = true; }
+            try { await remote.StartAsync(granted); } catch (ArgumentException) { refused = true; }
             Check(refused && !runner.IsRunning("job-d") && !events.Any(e => e.SessionId == "job-d"), "a remote run never brings a local style's tool permissions");
+            await remote.StartAsync(granted with { SessionId = "job-f", StyleAutoAllow = null });
+            await Verification.Until(() => events.Any(e => e.SessionId == "job-f"), 20000);
+            await remote.StopAsync("job-f");
 
             // A host callback that throws loses its node, never the run's last status.
             var thrown = 0;
