@@ -2915,5 +2915,6 @@
   "remote.hostOS.linux": "Linux",
   "remote.hostOS.unknown": "未知系统",
   "remote.hostWithOS": "{host} · {os}",
-  "remote.sessionInfo.hostOS": "运行电脑的系统"
+  "remote.sessionInfo.hostOS": "运行电脑的系统",
+  "remote.windows.connect.error.timeout": "对方电脑没有及时响应。请确认它已开机并连接到 Tailscale。"
 }

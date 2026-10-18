@@ -2915,5 +2915,6 @@
   "remote.hostOS.linux": "Linux",
   "remote.hostOS.unknown": "OS 모름",
   "remote.hostWithOS": "{host} · {os}",
-  "remote.sessionInfo.hostOS": "실행 컴퓨터 OS"
+  "remote.sessionInfo.hostOS": "실행 컴퓨터 OS",
+  "remote.windows.connect.error.timeout": "연결한 컴퓨터가 제때 답하지 않았습니다. 그 컴퓨터가 켜져 있고 Tailscale에 연결되어 있는지 확인하세요."
 }

@@ -2915,5 +2915,6 @@
   "remote.hostOS.linux": "Linux",
   "remote.hostOS.unknown": "OS不明",
   "remote.hostWithOS": "{host} · {os}",
-  "remote.sessionInfo.hostOS": "実行コンピューターのOS"
+  "remote.sessionInfo.hostOS": "実行コンピューターのOS",
+  "remote.windows.connect.error.timeout": "接続先のコンピューターが時間内に応答しませんでした。電源が入っていてTailscaleに接続されているか確認してください。"
 }
