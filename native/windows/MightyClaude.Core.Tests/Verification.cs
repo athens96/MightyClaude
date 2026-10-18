@@ -595,6 +595,9 @@ internal static class Verification
         await Test("remote state: a local workspace is never written or read as remote", RemoteWorkspaceStateVerification.ALocalWorkspaceIsNeverWrittenOrReadAsRemote);
         await Test("remote wire: every body is the Mac's shape", RemoteWireFixtureVerification.EveryBodyIsTheMacsShape);
         await Test("remote wire: every sample is accepted by the Windows checks", RemoteWireFixtureVerification.EverySampleIsAcceptedByTheWindowsChecks);
+        await Test("remote wire: bodies are read as strictly as the Mac reads them", RemoteWireFixtureVerification.BodiesAreReadAsStrictlyAsTheMacReadsThem);
+        await Test("remote wire: /info refuses what the Mac refuses", RemoteWireFixtureVerification.InfoRefusesWhatTheMacRefuses);
+        await Test("remote wire: the host key never leaves the state", RemoteWireFixtureVerification.TheHostKeyNeverLeavesTheState);
         await Test("corrupt/unknown/oversize state cannot be overwritten by shutdown", async () =>
         {
             foreach (var text in new[] { "null", "{", "{\"version\":2,\"workspaces\":[],\"sessions\":[]}", "{\"version\":1,\"workspaces\":null,\"sessions\":[]}" })

@@ -356,10 +356,12 @@ public sealed record StartRunRequest(string SessionId, string WorkspaceId, strin
     // Local style selection is the only source of these grants. Never accepted
     // from remote JSON, persisted to history, or inferred from a style id alone.
     [JsonIgnore] public IReadOnlyList<string>? StyleAutoAllow { get; init; }
-    // Captured from local application settings at acceptance, never supplied by remote JSON.
+    // Captured from local application settings at acceptance. A remote-workspace host takes the client's beside the request
+    // (RemoteWireStart.ToRequest) only after RemoteWorkspaceValidation.PhaseModels accepts it; never read from the phone's JSON.
     [JsonIgnore] public PhaseModelsSnapshot? PhaseModels { get; init; }
     // This request alone starts in this permission mode instead of the pane's stored one: a guided plan style
-    // starts each new request in plan. Only plan, only Claude; never persisted or taken from remote JSON.
+    // starts each new request in plan. Only plan, only Claude (Validate). Never persisted or read from the phone's JSON; a remote-workspace
+    // host takes the client's beside the request (RemoteWireStart.ToRequest) and Validate refuses anything but plan on Claude.
     [JsonIgnore] public string? PermissionModeOverride { get; init; }
     // The pane's saved checklist, which a resumed Claude run continues.
     [JsonIgnore] public TodoProgress? TodoProgress { get; init; }
