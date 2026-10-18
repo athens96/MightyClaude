@@ -230,10 +230,13 @@ internal static partial class RemoteClientVerification
         internal Func<RunEvent, bool>? Hold;
         internal readonly TaskCompletionSource Held = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal readonly ManualResetEventSlim Release = new();
+        /// <summary>Called on the caller's thread after each event is recorded.</summary>
+        internal Action<RunEvent>? After;
         internal void Event(RunEvent value)
         {
             lock (events) events.Add(value);
             if (Hold?.Invoke(value) == true) { Held.TrySetResult(); Release.Wait(TimeSpan.FromSeconds(10)); }
+            After?.Invoke(value);
         }
         internal void Permission(ToolPermissionRequest value) { lock (events) permissions.Add(value); }
         internal RunEvent[] Events { get { lock (events) return [.. events]; } }
@@ -705,6 +708,11 @@ internal static partial class RemoteClientVerification
             await Verification.Until(() => !client.IsRunning("pane-1"));
             Check(seen.Events.Select(e => e.Entry?.Text ?? e.Status).SequenceEqual(["ok", "completed", Locale.Get("remote.run.notice.skipped")]), "the good events arrive and the bad ones are said once: " + string.Join(" | ", seen.Events.Select(e => e.Entry?.Text ?? e.Status)));
             Check(client.Connection(workspace.Remote!.ConnectionId)?.Status == RemoteConnectionStatus.Connected, "and the connection stays");
+            // A finished run whose last status never came ends in error, as on the Mac.
+            scripted.Polls.Enqueue(new(200, Poll(1, true, LogEvent(1, "partial"))));
+            await client.StartAsync(new StartRunRequest("pane-2", workspace.Id, "shell", "dir", []), workspace);
+            await Verification.Until(() => !client.IsRunning("pane-2"));
+            Check(seen.Events.Where(e => e.SessionId == "pane-2").Select(e => e.Entry?.Text ?? e.Status).SequenceEqual(["partial", "error"]), "a done poll without a last status ends the pane in error");
         }
         finally { await client.DisposeAsync(); Directory.Delete(directory, true); }
     }
@@ -901,5 +909,25 @@ internal static partial class RemoteClientVerification
             Check(client.Connection(id)?.Status == RemoteConnectionStatus.Connected, "and the newer connection stands: " + client.Connection(id)?.Detail);
         }
         finally { stopReleased.TrySetResult(RemoteFakeHost.Fixture("answer.json")); await client.DisposeAsync(); Directory.Delete(directory, true); }
+    }
+
+    /// <summary>A callback that disconnects while a poll is being applied (the lock lets its own thread in): nothing of that run follows its end.</summary>
+    internal static async Task ADisconnectFromInsideAnEventEndsThePollThere()
+    {
+        await using var scripted = new ScriptedHost();
+        scripted.Polls.Enqueue(new(200, Poll(3, false, LogEvent(1, "first"), LogEvent(2, "second"), LogEvent(3, "third"))));
+        var (client, workspace, seen, directory) = await Connected(scripted);
+        Task? disconnect = null;
+        seen.After = e => { if (e.Entry?.Text == "first") disconnect = client.DisconnectAsync(workspace.Remote!.ConnectionId); };
+        try
+        {
+            await client.StartAsync(new StartRunRequest("pane-1", workspace.Id, "shell", "dir", []), workspace);
+            await Verification.Until(() => disconnect is not null && !client.IsRunning("pane-1"));
+            await disconnect!;
+            // Nothing signals an event that must not come: give the rest of the poll time to land.
+            await Task.Delay(200);
+            Check(seen.Events.Select(e => e.Entry?.Text ?? e.Status).SequenceEqual(["first", "stopped"]), "the run ended at the disconnect: " + string.Join(",", seen.Events.Select(e => e.Entry?.Text ?? e.Status)));
+        }
+        finally { await client.DisposeAsync(); Directory.Delete(directory, true); }
     }
 }
