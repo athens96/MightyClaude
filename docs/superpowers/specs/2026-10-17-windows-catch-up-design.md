@@ -74,7 +74,7 @@ This mirrors merge 76ca1cc and commit 9d41d6b (`RemoteHostService.swift`, `Remot
   - Filters peers at accept and caps connections per peer.
   - Reads no request body without the key.
   - The switch "원격에서 전체 권한·명령 실행 허용" is off each time sharing starts.
-  - A command pane runs `powershell.exe -NoProfile -Command` in the shared folder.
+  - A command pane runs `powershell.exe -NoProfile -NonInteractive -Command` in the shared folder.
   - Heartbeat timeout: 30 s.
   - The firewall rule comes from part 2.
 - **Client on Windows.**
