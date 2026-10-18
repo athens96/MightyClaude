@@ -7,6 +7,21 @@ public interface IRunManager : IAsyncDisposable
     Task StartAsync(StartRunRequest request);
     Task StopAsync(string sessionId);
 }
+/// <summary>
+/// What a sharing host drives its clients' runs through (M/Remote/RemoteHostService.swift's ProcessRunner): start, stop, steer and the
+/// answers to a run's tool requests, questionnaires and plans, each by the host's own session id.
+/// </summary>
+public interface IRemoteRunner : IAsyncDisposable
+{
+    Task StartAsync(StartRunRequest request);
+    Task StopAsync(string sessionId);
+    Task<bool> TrySteerAsync(string sessionId, string text);
+    void RespondToToolPermission(string sessionId, string requestId, bool allow);
+    void AnswerQuestionnaire(string sessionId, string requestId, IReadOnlyDictionary<string, UserQuestionAnswer> answers);
+    PlanRecord AnswerPlan(string sessionId, string requestId, PlanDecision decision);
+}
+/// <summary>Where a host's runner hands a run's events, tool requests and graph nodes (by session id).</summary>
+public sealed record RemoteRunnerSinks(Action<RunEvent> Event, Action<ToolPermissionRequest> Permission, Action<string, ExecutionGraphNode> GraphNode);
 /// <param name="permissionRequested">
 /// Set only by a host that can show the approval bar for this run. When it is
 /// null — every headless path — Claude keeps launching with
@@ -14,7 +29,7 @@ public interface IRunManager : IAsyncDisposable
 /// callback alone: it is never an event, so it never reaches a snapshot.
 /// </param>
 /// <param name="images">The picture cache agent runs write what they show into (macOS ProcessRunner.imageCache); null leaves pictures out.</param>
-public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, ProviderCatalog providers, string pluginDirectory, Action<RunEvent> emit, Action<ToolPermissionRequest>? permissionRequested = null, AgentImageCache? images = null) : IRunManager
+public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, ProviderCatalog providers, string pluginDirectory, Action<RunEvent> emit, Action<ToolPermissionRequest>? permissionRequested = null, AgentImageCache? images = null) : IRunManager, IRemoteRunner
 {
     private sealed class Run(StartRunRequest request, bool awaited)
     {
@@ -52,12 +67,20 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
     public Func<bool> DelegationEnabled { get; set; } = DelegationSwitch.IsOn;
     /// <summary>The app's side of the delegation server, which each run's binding is connected to; null leaves every delegation call unanswered.</summary>
     public IDelegationRequestHandler? DelegationHandler { get; set; }
+    /// <summary>Every execution-graph node of a run as it changes, by session id: a sharing host sends them as the Mac's "graph" events
+    /// (M/ProcessRunner.swift's graph callback). None reaches it once the run's last status is out.</summary>
+    public Action<string, ExecutionGraphNode>? GraphNodes { get; set; }
+    /// <summary>A sharing host's runner: a shell request runs in Windows PowerShell (RemoteCommandShell) instead of cmd.exe. Read once per run.</summary>
+    public bool PowerShellCommands { get; set; }
     private readonly ConcurrentDictionary<string, Run> runs = [];
     private readonly object lifecycle = new();
     private readonly ModBridge bridge = new();
     private bool disposed;
     public bool IsRunning(string id) => runs.ContainsKey(id);
     public Task StartAsync(StartRunRequest value) => Begin(value, false);
+    /// <summary>A client's run works in the shared folder alone: it never brings a worktree folder of its own.</summary>
+    Task IRemoteRunner.StartAsync(StartRunRequest value) =>
+        value.WorkingFolder is null && value.DelegationWorktreeRoot is null ? StartAsync(value) : throw new ArgumentException(Locale.Get("wire.startRun.invalidFormat"));
     /// <summary>
     /// Starts the run and returns once its process is up with its input open, or throws why it never got that far
     /// (M/AppStore.swift:1049 startReachedRunner). A one-shot run has its prompt written by then. A stream-json run has only begun
@@ -119,7 +142,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
             images: request.Kind == "shell" ? null : images, imageEntry: entry => { if (!run.Finished) emit(new(request.SessionId, "log", entry)); },
             requestedResume: request.Provider == "gemini" ? request.ResumeId : null, answer: text => tracker?.AntigravityAnswer(text));
         if (request.Kind != "shell" && MightyGraphSupport.Providers.Contains(request.Provider))
-            tracker = new ExecutionGraphTracker(Wire.Id(), request.Input, request.Provider, PhaseModelPreferences.EffectiveModel(request), _ => Interlocked.Exchange(ref graphDirty, 1));
+            tracker = new ExecutionGraphTracker(Wire.Id(), request.Input, request.Provider, PhaseModelPreferences.EffectiveModel(request), node => { Interlocked.Exchange(ref graphDirty, 1); if (!run.Finished) GraphNodes?.Invoke(request.SessionId, node); });
         run.Tracker = tracker;
         // Claude's execution checklist and background tasks (ClaudePlanMode.cs).
         var planGate = new object();
@@ -215,7 +238,16 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
             antigravityBrain = request.Provider == "gemini" ? AntigravityRecords.Brain(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)) : null;
             if (tracker is not null) graphTask = PublishGraphs();
             string binary; IEnumerable<string> arguments; var interactive = false;
-            if (request.Kind == "shell") { binary = OperatingSystem.IsWindows() ? Environment.GetEnvironmentVariable("ComSpec") ?? "C:\\Windows\\System32\\cmd.exe" : "/bin/sh"; arguments = OperatingSystem.IsWindows() ? ["/d", "/s", "/c", request.Input] : ["-c", request.Input]; }
+            // Read once: the launch below must quote the arguments PowerShell was given, never hand its text to cmd /s /c.
+            var powerShell = request.Kind == "shell" && PowerShellCommands && OperatingSystem.IsWindows();
+            if (powerShell)
+            {
+                (binary, var shellArguments) = RemoteCommandShell.Launch(request.Input, Environment.GetFolderPath(Environment.SpecialFolder.System));
+                arguments = shellArguments;
+                // The command runs in the shared folder: nothing there may stand in for a program it names.
+                environment[WindowsCommand.NoCurrentDirectorySearch] = "1";
+            }
+            else if (request.Kind == "shell") { binary = OperatingSystem.IsWindows() ? Environment.GetEnvironmentVariable("ComSpec") ?? "C:\\Windows\\System32\\cmd.exe" : "/bin/sh"; arguments = OperatingSystem.IsWindows() ? ["/d", "/s", "/c", request.Input] : ["-c", request.Input]; }
             else
             {
                 var command = await providers.FindAsync(request.Provider, token) ?? throw new InvalidOperationException(Locale.Get("run.error.cliNotInstalled", new Dictionary<string, string> { ["name"] = ProviderCatalog.Name(request.Provider) }));
@@ -255,7 +287,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                 arguments = command.Prefix.Concat(providerArguments);
             }
             token.ThrowIfCancellationRequested();
-            await using var child = ChildProcess.Start(ChildProcess.StartInfo(binary, arguments, workspace.Path, environment), OperatingSystem.IsWindows() && request.Kind == "shell" ? request.Input : null);
+            await using var child = ChildProcess.Start(ChildProcess.StartInfo(binary, arguments, workspace.Path, environment), OperatingSystem.IsWindows() && request.Kind == "shell" && !powerShell ? request.Input : null);
             run.Child = child; token.ThrowIfCancellationRequested();
             using var stop = token.Register(child.Kill);
             if (interactive)

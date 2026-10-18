@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
@@ -279,5 +280,79 @@ internal static partial class RemoteHostVerification
         release.SetResult();
         Check((await Task.WhenAll(held)).All(r => r.StartsWith("HTTP/1.1 200", StringComparison.Ordinal)), "the held ones are answered");
         Check((await Raw(port, "GET /next HTTP/1.1\r\n\r\n")).StartsWith("HTTP/1.1 200", StringComparison.Ordinal), "a freed slot takes a new connection");
+    }
+
+    /// <summary>A command line split the way the C runtime powershell.exe starts with splits it (CommandLineToArgvW after the program name).</summary>
+    private static List<string> Argv(string line)
+    {
+        var result = new List<string>(); var at = 0;
+        while (true)
+        {
+            while (at < line.Length && line[at] is ' ' or '\t') at++;
+            if (at >= line.Length) return result;
+            var value = new StringBuilder(); var quoted = false;
+            while (at < line.Length && (quoted || line[at] is not (' ' or '\t')))
+            {
+                var slashes = 0;
+                while (at < line.Length && line[at] == '\\') { slashes++; at++; }
+                if (at < line.Length && line[at] == '"')
+                {
+                    value.Append('\\', slashes / 2);
+                    if (slashes % 2 == 1) value.Append('"');
+                    else if (quoted && at + 1 < line.Length && line[at + 1] == '"') { value.Append('"'); at++; }
+                    else quoted = !quoted;
+                    at++;
+                }
+                else { value.Append('\\', slashes); if (at < line.Length && (quoted || line[at] is not (' ' or '\t'))) value.Append(line[at++]); }
+            }
+            result.Add(value.ToString());
+        }
+    }
+
+    internal static async Task CommandsRunInPowerShellFromTheSystemFolderAndGraphNodesReachTheHost()
+    {
+        var (binary, arguments) = RemoteCommandShell.Launch("Get-Location; echo \"a b\"", @"C:\Windows\System32\");
+        Check(binary == @"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" && arguments.SequenceEqual(new[] { "-NoProfile", "-Command", "Get-Location; echo \"a b\"" }), "powershell.exe -NoProfile -Command <text>, from the system folder");
+        var line = RemoteCommandShell.CommandLine("echo \"a b\"", @"C:\Windows\System32");
+        Check(line.Contains(" -NoProfile -Command ", StringComparison.Ordinal) && line.EndsWith(ChildProcess.QuoteWindows("echo \"a b\""), StringComparison.Ordinal), "the text is one quoted argument: " + line);
+        // A peer's text never becomes more than the one argument after -Command, whatever quotes and backslashes it holds.
+        foreach (var text in new[] { "a\" -EncodedCommand ZQBjAGgAbwA=", "ends in a slash\\", "\\\" -File x.ps1", "x\\\\\" & calc \"", "\"\"", " lead and trail ", "tab\there", "%PATH% & ^ | < > ;", "-", "'single' `tick` $(sub)" })
+        {
+            var argv = Argv(RemoteCommandShell.CommandLine(text, @"C:\Windows\System32"));
+            Check(argv.SequenceEqual(new[] { @"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe", "-NoProfile", "-Command", text }), "one argument for " + text + ": " + string.Join(" | ", argv));
+        }
+        // Only the system folder Windows reports: never a relative or drive-relative one, which would resolve against the current folder.
+        foreach (var folder in new[] { "", "System32", @"\Windows\System32", "C:Windows", @"..\System32", "C:\\Win\"dows" })
+        {
+            var refused = false;
+            try { RemoteCommandShell.Launch("echo x", folder); } catch (ArgumentException) { refused = true; }
+            Check(refused, "a system folder that is not a full path is refused: " + folder);
+        }
+
+        var directory = Verification.Temp();
+        try
+        {
+            var workspace = new Workspace { Path = directory };
+            var plugin = Path.Combine(directory, "plugin"); Directory.CreateDirectory(Path.Combine(plugin, ".claude-plugin")); await File.WriteAllTextAsync(Path.Combine(plugin, ".claude-plugin", "plugin.json"), "{}");
+            var events = new ConcurrentQueue<RunEvent>(); var nodes = new ConcurrentQueue<(string Session, ExecutionGraphNode Node)>();
+            await using var catalog = new ProviderCatalog((_, _) => Task.FromResult<CliCommand?>(Verification.Self("--fake-cli", "codex", Path.Combine(directory, "codex"))));
+            await using var runner = new RunManager(_ => Task.FromResult(workspace), catalog, plugin, events.Enqueue, _ => { }) { PowerShellCommands = true, GraphNodes = (id, node) => nodes.Enqueue((id, node)) };
+            IRemoteRunner remote = runner;
+            await remote.StartAsync(new StartRunRequest("job-a", workspace.Id, "claude", "hello", [], Provider: "codex"));
+            await Verification.Until(() => events.Any(e => e.SessionId == "job-a" && e.Status is "completed" or "error"), 20000);
+            Check(nodes.Any(n => n.Session == "job-a" && n.Node.Id.Length > 0), "the run's graph nodes reach the host as they change");
+            Check(nodes.All(n => n.Session == "job-a"), "every node names its run");
+            await remote.StartAsync(new StartRunRequest("job-b", workspace.Id, "shell", "echo remote-ok", []));
+            await Verification.Until(() => events.Any(e => e.SessionId == "job-b" && e.Status is "completed" or "error"), 20000);
+            Check(events.Any(e => e.SessionId == "job-b" && e.Entry?.Text.Contains("remote-ok", StringComparison.Ordinal) == true), "a command runs (PowerShell on Windows, /bin/sh elsewhere)");
+            Check(!nodes.Any(n => n.Session == "job-b"), "a command pane has no graph");
+
+            // A remote run works in the shared folder alone: a worktree folder is never taken from the host's caller.
+            var elsewhere = Directory.CreateDirectory(Path.Combine(directory, "elsewhere")).FullName;
+            var refused = false;
+            try { await remote.StartAsync(new StartRunRequest("job-c", workspace.Id, "claude", "hello", [], Provider: "codex") { WorkingFolder = elsewhere }); } catch (ArgumentException) { refused = true; }
+            Check(refused && !runner.IsRunning("job-c") && !events.Any(e => e.SessionId == "job-c"), "a remote run with a working folder of its own is refused before it starts");
+        }
+        finally { Directory.Delete(directory, true); }
     }
 }
