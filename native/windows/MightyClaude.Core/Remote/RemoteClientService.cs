@@ -81,7 +81,12 @@ public sealed partial class RemoteClientService : IAsyncDisposable
             var (target, info) = await ReachAsync(parsed, trimmed);
             lock (gate) if (closing) throw new InvalidOperationException(Locale.Get("common.appClosing"));
             var id = existing?.Info.Id ?? Wire.Id();
-            if (existing is not null) await DropRunsAsync(id, null);
+            if (existing is not null)
+            {
+                // The old key's connection ends before its runs are stopped: nothing starts on it while their stops are on their way.
+                lock (gate) if (connections.TryGetValue(id, out var old) && ReferenceEquals(old, existing)) Disconnected(existing);
+                await DropRunsAsync(id, null);
+            }
             RemoteConnectionInfo view;
             await listing.WaitAsync();
             try
@@ -183,10 +188,17 @@ public sealed partial class RemoteClientService : IAsyncDisposable
     /// <summary>Stops this connection's runs and keeps it saved; a refresh connects again.</summary>
     public async Task DisconnectAsync(string id)
     {
+        // Disconnected before its runs are stopped: nothing starts on it while their stops are on their way, and no run outlives it.
+        lock (gate) if (connections.TryGetValue(id, out var c)) Disconnected(c);
         await DropRunsAsync(id, null);
-        lock (gate)
-            if (connections.TryGetValue(id, out var c)) { c.Revision = Guid.NewGuid(); c.Target = null; c.Info = c.Info with { Status = RemoteConnectionStatus.Disconnected, Detail = Locale.Get("remote.connect.detail.disconnected") }; }
         Changed?.Invoke();
+    }
+
+    /// <summary>The entry is disconnected from now on: a new revision, no target. Call under the lock.</summary>
+    private static void Disconnected(Entry entry)
+    {
+        entry.Revision = Guid.NewGuid(); entry.Target = null;
+        entry.Info = entry.Info with { Status = RemoteConnectionStatus.Disconnected, Detail = Locale.Get("remote.connect.detail.disconnected") };
     }
 
     /// <summary>Forgets the connection and its key. Its workspaces stay listed until removed.</summary>
