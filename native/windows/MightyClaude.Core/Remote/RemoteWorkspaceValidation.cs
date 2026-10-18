@@ -22,16 +22,17 @@ public static class RemoteWorkspaceValidation
 
     public static readonly IReadOnlySet<string> EventTypes = new HashSet<string>(StringComparer.Ordinal) { "log", "status", "resume", "activity", "usage", "graph", "permission", "plan", "todos", "background" };
 
+    /// <summary>A host's /info as the Mac checks it, after RemoteWire.Json read it: nulls the Mac's decoder refuses are refused here too.</summary>
     public static void Info(RemoteWireInfo? value)
     {
         if (value is null || value.Protocol != RemoteProtocol.Version || !Wire.Identifier(value.HostId) || value.HostName is not { Length: > 0 and <= 120 } || value.Workspaces is null
             || value.Workspaces.Count > RemoteProtocol.MaximumSharedWorkspaces || !value.Workspaces.All(SharedWorkspace) || value.Workspaces.Select(w => w.Id).Distinct(StringComparer.Ordinal).Count() != value.Workspaces.Count
-            || value.Runtime is null || value.Runtime.Platform is not ("darwin" or "win32" or "linux") || (value.Runtime.AppVersion?.Length ?? 0) > 80 || (value.Runtime.Providers?.Count ?? 0) > Wire.Providers.Length)
+            || value.Runtime is null || value.Runtime.Platform is not ("darwin" or "win32" or "linux") || value.Runtime.AppVersion is not { Length: <= 80 } || (value.Runtime.Providers?.Count ?? 0) > Wire.Providers.Length)
             throw new InvalidDataException(Locale.Get("remote.connect.error.notMighty"));
         foreach (var provider in value.Runtime.Providers ?? [])
-            if (provider is null || !Wire.Providers.Contains(provider.Id) || provider.Name is null || provider.Name.Length > 120 || (provider.Detail?.Length ?? 0) > 2_000 || (provider.Version?.Length ?? 0) > 80
-                || provider.ModelCatalog?.Models is null || provider.ModelCatalog.Models.Count > 128 || (provider.ModelCatalog.Detail?.Length ?? 0) > 2_000
-                || !provider.ModelCatalog.Models.All(m => m is not null && Wire.Model(m.Value) && (m.DisplayName?.Length ?? 0) <= 160 && (m.Description?.Length ?? 0) <= 2_400)
+            if (provider is null || !Wire.Providers.Contains(provider.Id) || provider.Name is not { Length: <= 120 } || provider.Detail is not { Length: <= 2_000 } || (provider.Version?.Length ?? 0) > 80
+                || provider.ModelCatalog?.Models is null || provider.ModelCatalog.Models.Count > 128 || provider.ModelCatalog.Detail is not { Length: <= 2_000 }
+                || !provider.ModelCatalog.Models.All(m => m is not null && Wire.Model(m.Value) && m.DisplayName is { Length: <= 160 } && m.Description is { Length: <= 2_400 })
                 || provider.Capabilities?.PermissionModes is null || !provider.Capabilities.PermissionModes.All(mode => mode is not null && PermissionMode(mode, provider.Id)))
                 throw new InvalidDataException(Locale.Get("remote.connect.error.badRuntime"));
     }
