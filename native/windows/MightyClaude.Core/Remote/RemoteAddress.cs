@@ -24,11 +24,9 @@ public sealed partial record RemoteAddress(string Host, int Port)
         static ArgumentException Bad() => new(Locale.Get("remote.connect.error.badAddress"));
         var raw = input ?? "";
         if (raw.Contains('\0')) throw Bad();
-        // Whitespace and control characters around the address (a paste's newline, a terminal's escape) are stripped; inside it they are refused below.
-        int start = 0, end = raw.Length;
-        while (start < end && Strippable(raw[start])) start++;
-        while (end > start && Strippable(raw[end - 1])) end--;
-        var text = raw[start..end];
+        // Whitespace and newlines around the address are trimmed (char.IsWhiteSpace is the Mac's .whitespacesAndNewlines); a control
+        // character anywhere is refused below, never stripped.
+        var text = raw.Trim();
         if (text.Length is 0 or > MaximumInput) throw Bad();
         if (text.StartsWith("http://", StringComparison.OrdinalIgnoreCase)) text = text[7..];
         if (text.EndsWith('/')) text = text[..^1];
@@ -39,12 +37,12 @@ public sealed partial record RemoteAddress(string Host, int Port)
             var close = text.IndexOf(']');
             if (close < 0) throw Bad();
             host = text[1..close]; var rest = text[(close + 1)..];
-            if (rest.Length > 0 && (!rest.StartsWith(':') || !int.TryParse(rest[1..], NumberStyles.None, CultureInfo.InvariantCulture, out port))) throw Bad();
+            if (rest.Length > 0 && (!rest.StartsWith(':') || !ReadPort(rest[1..], out port))) throw Bad();
         }
         else if (text.Count(c => c == ':') == 1)
         {
             var colon = text.IndexOf(':'); host = text[..colon];
-            if (!int.TryParse(text[(colon + 1)..], NumberStyles.None, CultureInfo.InvariantCulture, out port)) throw Bad();
+            if (!ReadPort(text[(colon + 1)..], out port)) throw Bad();
         }
         host = host.ToLowerInvariant();
         if (port is < 1024 or > 65535) throw new ArgumentException(Locale.Get("remote.connect.error.badPort"));
@@ -58,7 +56,8 @@ public sealed partial record RemoteAddress(string Host, int Port)
         return new(host, port);
     }
 
-    private static bool Strippable(char c) => char.IsWhiteSpace(c) || char.IsControl(c);
+    /// <summary>As Swift's Int(_:) reads a port: ASCII digits after an optional + or -, so "+5000" is 5000 and "-1" is a port out of range (badPort), not a bad address.</summary>
+    private static bool ReadPort(string value, out int port) => int.TryParse(value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out port);
 
     [GeneratedRegex(@"^[a-z0-9.:-]+\z", RegexOptions.CultureInvariant)]
     private static partial Regex HostCharacters();
@@ -76,12 +75,14 @@ public static class RemotePeerPolicy
         // A peer's address as the network stack reports it may carry its interface (fd7a:…%17); the address alone decides.
         var unscoped = (address ?? "").Split('%', 2)[0];
         if (TailscaleAddresses.Contains(unscoped)) return true;
-        if (!allowLoopback || !IPAddress.TryParse(unscoped.Trim('[', ']'), out var ip)) return false;
-        if (ip.IsIPv4MappedToIPv6) ip = ip.MapToIPv4();
-        return ip.AddressFamily == AddressFamily.InterNetwork ? ip.GetAddressBytes()[0] == 127 : ip.Equals(IPAddress.IPv6Loopback);
+        if (!allowLoopback) return false;
+        // The spellings the Mac's inet_pton check takes: four dotted decimal parts (127.1, 2130706433, 0x7f.1 and 0177.0.0.1 are not)
+        // or ::1 exactly (::ffff:127.0.0.1 is not).
+        var value = unscoped.Trim('[', ']').ToLowerInvariant();
+        return TailscaleAddresses.IPv4(value) is { } v4 ? v4[0] == 127 : value == "::1";
     }
 
-    /// <summary>A peer as the socket reports it: an IPv4-mapped IPv6 address is its IPv4.</summary>
+    /// <summary>A peer as the socket reports it: an IPv4-mapped IPv6 address is its IPv4 (so a dual-mode socket's ::ffff:127.0.0.1 is 127.0.0.1).</summary>
     public static bool Allowed(IPAddress address, bool allowLoopback = false) =>
         Allowed((address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address).ToString(), allowLoopback);
 }
@@ -114,10 +115,13 @@ public static class RemoteRoute
     }
 
     /// <summary>The route toward <paramref name="ip"/> leaves from one of this PC's Tailscale addresses. No route, or adapters that cannot be read, is a no.</summary>
-    public static bool ThroughTailscale(string ip)
+    public static bool ThroughTailscale(string ip) => ThroughTailscale(ip, TailscaleAddresses.Current);
+
+    /// <summary><see cref="ThroughTailscale(string)"/> with this PC's Tailscale addresses read by <paramref name="current"/>, so the checks give it lists and failures.</summary>
+    internal static bool ThroughTailscale(string ip, Func<IReadOnlyList<string>> current)
     {
         if (SourceAddressToward(ip) is not { } source) return false;
-        try { return TailscaleAddresses.Current().Contains(source, StringComparer.Ordinal); }
+        try { return current().Contains(source, StringComparer.Ordinal); }
         catch (AdaptersUnreadableException ex)
         {
             System.Diagnostics.Trace.TraceWarning("remote route: " + ex.GetBaseException().Message);

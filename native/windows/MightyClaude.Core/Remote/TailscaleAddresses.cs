@@ -101,7 +101,7 @@ public static class TailscaleAddresses
     private static bool InCgnat(byte first, byte second) => first == 100 && second is >= 64 and <= 127;
 
     /// <summary>Four dotted decimal parts, 0-255, no leading zeros: the strict form (IPAddress.TryParse also takes "100.64.0").</summary>
-    private static byte[]? IPv4(string value)
+    internal static byte[]? IPv4(string value)
     {
         var parts = value.Split('.');
         if (parts.Length != 4) return null;

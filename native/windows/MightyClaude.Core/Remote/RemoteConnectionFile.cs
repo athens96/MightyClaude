@@ -28,7 +28,8 @@ public static class RemoteConnectionFile
             if (bytes.Length > MaximumFileBytes) return [];
             var file = JsonSerializer.Deserialize<SavedFile>(bytes, Wire.Json);
             if (file is not { Version: RemoteProtocol.Version, Connections: { } connections }) return [];
-            return Usable(connections);
+            // As the Mac reads the file: its first 16 entries, then each is checked; the write caps what it keeps instead.
+            return Usable(connections.Take(RemoteProtocol.MaximumConnections));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or NotSupportedException or ArgumentException) { return []; }
     }
@@ -39,7 +40,7 @@ public static class RemoteConnectionFile
 
     /// <summary>
     /// As the Mac's loadSaved: an entry is kept when its id is good and new and its address parses (<see cref="RemoteAddress.Parse"/>)
-    /// to one no earlier entry has; the address is kept in its shown form. At most 16, in order.
+    /// to one no earlier entry has; the address is kept in its shown form. At most 16 kept, in order.
     /// </summary>
     private static List<RemoteSavedConnection> Usable(IEnumerable<RemoteSavedConnection?> connections)
     {
