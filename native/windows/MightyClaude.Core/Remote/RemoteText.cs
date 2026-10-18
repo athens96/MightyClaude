@@ -6,32 +6,49 @@ namespace MightyClaude.Core;
 /// <summary>
 /// Remote-workspace text counted as the Mac counts it: in Characters (Swift's String.count and prefix), which are extended
 /// grapheme clusters, the same text elements StringInfo reads. A Swift String can hold no lone surrogate, so none is kept here
-/// either, at any length.
+/// either, at any length. Both walk the text only as far as the limit, so a 2 MiB host answer costs no more than its first characters.
 /// </summary>
 public static class RemoteText
 {
-    /// <summary>The first <paramref name="max"/> characters (the Mac's <c>String(value.prefix(max))</c>), never a part of one.</summary>
+    /// <summary>The first <paramref name="max"/> characters (the Mac's <c>String(value.prefix(max))</c>), never a part of one; "" for max 0 or less.</summary>
     public static string Cut(string? value, int max = 300)
     {
-        var text = WholeCharacters(value);
-        var info = new StringInfo(text);
-        return info.LengthInTextElements <= max ? text : info.SubstringByTextElements(0, max);
+        if (max <= 0 || string.IsNullOrEmpty(value)) return "";
+        var (end, kept, _) = Walk(value, max);
+        return kept?.ToString() ?? (end == value.Length ? value : value[..end]);
     }
 
-    /// <summary>How many characters the Mac counts (<c>value.count</c>).</summary>
-    public static int Count(string? value) => new StringInfo(WholeCharacters(value)).LengthInTextElements;
+    /// <summary>How many characters the Mac counts (<c>value.count</c>), counting no further than <paramref name="limit"/>.</summary>
+    public static int Count(string? value, int limit = int.MaxValue) => limit <= 0 || string.IsNullOrEmpty(value) ? 0 : Walk(value, limit).Count;
 
-    /// <summary>The text without its lone surrogates.</summary>
-    private static string WholeCharacters(string? value)
+    /// <summary>
+    /// Steps through at most <paramref name="max"/> text elements, skipping lone surrogates. <c>Kept</c> is null while nothing was
+    /// skipped (the characters are then <c>value[..End]</c>), else the characters read so far.
+    /// </summary>
+    private static (int End, StringBuilder? Kept, int Count) Walk(string value, int max)
     {
-        var text = value ?? "";
-        if (!text.Any(char.IsSurrogate)) return text;
-        var builder = new StringBuilder(text.Length);
-        for (var i = 0; i < text.Length; i++)
+        var text = value.AsSpan();
+        var plain = text.IndexOfAnyInRange('\uD800', '\uDFFF') < 0;
+        StringBuilder? kept = null; int i = 0, count = 0;
+        while (i < text.Length && count < max)
         {
-            if (char.IsHighSurrogate(text[i]) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1])) { builder.Append(text, i, 2); i++; }
-            else if (!char.IsSurrogate(text[i])) builder.Append(text[i]);
+            var rest = text[i..];
+            if (!plain && Lone(rest, 0)) { kept ??= new StringBuilder().Append(text[..i]); i++; continue; }
+            var length = StringInfo.GetNextTextElementLength(rest);
+            if (!plain) for (var k = 1; k < length; k++) if (Lone(rest, k)) { length = k; break; }
+            kept?.Append(rest[..length]);
+            i += length; count++;
         }
-        return builder.ToString();
+        return (i, kept, count);
+    }
+
+    /// <summary>The surrogate at <paramref name="k"/> has no partner. A low surrogate first in <paramref name="span"/> never has one:
+    /// a pair is always read as one element, so the walk never stops between its halves.</summary>
+    private static bool Lone(ReadOnlySpan<char> span, int k)
+    {
+        var c = span[k];
+        if (char.IsHighSurrogate(c)) return k + 1 >= span.Length || !char.IsLowSurrogate(span[k + 1]);
+        if (char.IsLowSurrogate(c)) return k == 0 || !char.IsHighSurrogate(span[k - 1]);
+        return false;
     }
 }

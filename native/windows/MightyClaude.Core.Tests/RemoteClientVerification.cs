@@ -175,6 +175,7 @@ internal static partial class RemoteClientVerification
             "/v2/huge-unsized" => new(200, "\"" + new string('x', RemoteProtocol.MaximumResponseBytes) + "\"", OmitLength: true),
             "/v2/stalled" => new(200, "{}", BodyDelay: TimeSpan.FromSeconds(3)),
             "/v2/twice" => new(200, "{}", new Dictionary<string, string> { ["X-Mighty-Remote-Version"] = "2" }),
+            "/v2/lone" => new(401, "{\"protocol\":2,\"error\":\"\\uD83D\"}"),
             _ => new(404, "{\"protocol\":2,\"error\":\"no\"}"),
         });
         var target = Loopback(host.Port);
@@ -191,6 +192,8 @@ internal static partial class RemoteClientVerification
         await Reject(() => RemoteTransport.RequestAsync(target, Key, HttpMethod.Get, "/v2/twice"), "a repeated version header is not Mighty's", ex => ex is InvalidDataException && ex.Message == Locale.Get("remote.connect.error.notMighty"));
         await Reject(() => RemoteTransport.RequestAsync(target, Key, HttpMethod.Get, "/v2/refused"), "an error status carries the host's message", ex => ex is RemoteHttpFailure { Status: 401, Transient: false } f && f.Message == "The key does not match.");
         await Reject(() => RemoteTransport.RequestAsync(target, Key, HttpMethod.Get, "/v2/busy"), "503 is a passing failure", ex => RemoteTransport.Transient(ex));
+        await Reject(() => RemoteTransport.RequestAsync(target, Key, HttpMethod.Get, "/v2/lone"), "an error text that is a lone surrogate escape reads as the status, as the Mac's try? does",
+            ex => ex is RemoteHttpFailure { Status: 401 } f && f.Message == Locale.Get("remote.connect.error.unexpectedStatus", new Dictionary<string, string> { ["status"] = "401" }));
         await Reject(() => RemoteTransport.RequestAsync(target, Key, HttpMethod.Get, "/v2/slow", timeout: TimeSpan.FromMilliseconds(400)), "a slow host times out", ex => ex is TimeoutException && RemoteTransport.Transient(ex) && ex.Message == RemoteWindowsStrings.Timeout);
         await Reject(() => RemoteTransport.RequestAsync(target, Key, HttpMethod.Get, "/v2/stalled", timeout: TimeSpan.FromMilliseconds(400)), "a body that stalls after the head times out", ex => ex is TimeoutException && ex.Message == RemoteWindowsStrings.Timeout);
         _ = await RemoteTransport.RequestAsync(target, Key, HttpMethod.Get, "/v2/info", headers: new Dictionary<string, string> { [RemoteProtocol.GraphHeader] = RemoteProtocol.GraphRuns });
@@ -344,6 +347,8 @@ internal static partial class RemoteClientVerification
         Check(RemoteText.Cut(new string('a', 299) + emoji + "bbb") == new string('a', 299) + emoji, "an emoji across units 299 and 300 is the 300th character, kept whole");
         Check(RemoteText.Cut(new string('a', 299) + family + "b") == new string('a', 299) + family && RemoteText.Count(new string('a', 119) + family) == 120, "a joined emoji is one character, as the Mac counts it");
         Check(RemoteText.Cut("abc\uD83D") == "abc" && RemoteText.Cut("\uDE00x\uD83D") == "x" && RemoteText.Cut("ok") == "ok" && RemoteText.Cut(null) == "", "a lone surrogate is dropped at any length");
+        Check(RemoteText.Cut("abc", 0) == "" && RemoteText.Cut("abc", -1) == "" && RemoteText.Cut("e\u0301x", 1) == "e\u0301" && RemoteText.Cut("a\uDE00\uD83D\uDE00b", 2) == "a\U0001F600", "no characters for max 0 or less; a combining mark stays with its letter; a pair after a lone low surrogate is one character");
+        Check(RemoteText.Count(new string('a', 500), 121) == 121 && RemoteText.Count("a\uD83Db") == 2, "a count stops at its limit and skips lone surrogates");
 
         var error = new string('a', 299) + emoji + new string('b', 20); var expected = new string('a', 299) + emoji;
         var refuse = false;
@@ -365,6 +370,14 @@ internal static partial class RemoteClientVerification
             refuse = true;
             await Reject(() => client.RefreshAsync(info.Id), "a refused refresh", ex => ex is RemoteHttpFailure);
             Check(client.Connection(info.Id) is { Status: RemoteConnectionStatus.Disconnected, Detail: var detail } && detail == expected, "the connection's error is cut at whole characters too");
+            // A failure whose own message was never cut (here a check's LocalAddresses that throws it whole) is cut by the connection itself.
+            refuse = false; var adaptersFail = false;
+            var watched = new RemoteClientOptions { AllowLoopbackForTests = true, LocalAddresses = () => adaptersFail ? throw new InvalidOperationException(error) : ["100.101.102.103"] };
+            await using var uncut = new RemoteClientService(store, directory, new MemoryRemoteKeyVault(), seen.Event, seen.Permission, watched);
+            var second = await uncut.ConnectAsync("", "127.0.0.1:" + host.Port, Key);
+            adaptersFail = true;
+            await Reject(() => uncut.RefreshAsync(second.Id), "a refresh that fails with a long message", ex => ex.Message == error);
+            Check(uncut.Connection(second.Id)?.Detail == expected, "the connection cuts a long message at whole characters: " + uncut.Connection(second.Id)?.Detail?.Length);
         }
         finally { Directory.Delete(directory, true); }
     }
@@ -392,6 +405,19 @@ internal static partial class RemoteClientVerification
         public string? Load(string id) => keys.TryGetValue(id, out var key) ? key : null;
         public bool Save(string id, string key) { if (!RemoteWorkspaceValidation.Key(key)) return false; keys[id] = key; return true; }
         public void Delete(string id) => keys.TryRemove(id, out _);
+    }
+
+    /// <summary>A listing vault whose Delete, once held, waits until released and says when it started.</summary>
+    private sealed class HeldDeleteVault : IRemoteKeyVault
+    {
+        private readonly ListingVault inner = new();
+        private volatile bool hold;
+        internal readonly ManualResetEventSlim Entered = new(), Released = new();
+        internal HashSet<string> Ids => inner.Ids;
+        internal void Hold() => hold = true;
+        public string? Load(string id) => inner.Load(id);
+        public bool Save(string id, string key) => inner.Save(id, key);
+        public void Delete(string id) { if (hold) { Entered.Set(); Released.Wait(TimeSpan.FromSeconds(10)); } inner.Delete(id); }
     }
 
     private static async Task<object> Outcome<T>(Task<T> task) { try { return (await task)!; } catch (Exception ex) { return ex; } }
@@ -460,6 +486,32 @@ internal static partial class RemoteClientVerification
                 var back = await again;
                 Check(back.Id == info.Id && client.List().Single().Id == info.Id && RemoteConnectionFile.Read(directory).Single().Id == info.Id, "the connect that landed after the remove lists the connection again");
                 Check(vault.Load(info.Id) == newer && vault.Ids.SetEquals([info.Id]), "with its new key in the vault, and no key for anything unlisted");
+            }
+            finally { Directory.Delete(directory, true); }
+        }
+        // (e) A remove holding its key delete while a connect for the same address comes back: the connect's save waits for the
+        // delete, so the connection is listed again with its new key, never with the key deleted after it was saved.
+        {
+            var (store, directory) = await ClientStore();
+            try
+            {
+                var gate = new Gate(); var vault = new HeldDeleteVault(); var newer = new string('n', 43);
+                await using var host = new RemoteFakeHost(gate.Answer);
+                await using var client = new RemoteClientService(store, directory, vault, seen.Event, seen.Permission, options);
+                var info = await client.ConnectAsync("", "127.0.0.1:" + host.Port, Key);
+                gate.Close();
+                var again = client.ConnectAsync("", "127.0.0.1:" + host.Port, newer);
+                await gate.WaitArrived();
+                vault.Hold();
+                var remove = client.RemoveAsync(info.Id);
+                Check(vault.Entered.Wait(TimeSpan.FromSeconds(10)), "the remove is deleting the key");
+                gate.Released.SetResult();
+                Check(await Task.WhenAny(again, Task.Delay(500)) != again, "the connect does not finish while the remove's delete is held");
+                vault.Released.Set();
+                await remove;
+                var back = await again;
+                Check(back.Id == info.Id && client.List().Single().Id == info.Id && RemoteConnectionFile.Read(directory).Single().Id == info.Id, "the connect after the remove lists the connection again");
+                Check(vault.Load(info.Id) == newer && vault.Ids.SetEquals([info.Id]), "and its new key is in the vault: " + (vault.Load(info.Id) is null ? "none" : "another"));
             }
             finally { Directory.Delete(directory, true); }
         }
