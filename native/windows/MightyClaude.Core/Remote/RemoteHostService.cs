@@ -90,7 +90,7 @@ public sealed partial class RemoteHostService(RemoteHostOptions options) : IAsyn
     private CancellationTokenSource? lease;
     private bool changing, closed, allowsFullAccess;
 
-    /// <summary>Awaited just before each address is bound (checks only): a stop let in here must still close what the start opens.</summary>
+    /// <summary>Awaited between making each address's listener and recording it (checks only): a stop let in here must still close what the start opens.</summary>
     internal Func<string, Task>? BeforeBind { get; init; }
 
     /// <summary>The listeners of the sharing now on, one per address (checks only).</summary>
@@ -147,13 +147,17 @@ public sealed partial class RemoteHostService(RemoteHostOptions options) : IAsyn
             binding = true;
             foreach (var address in addresses)
             {
-                if (BeforeBind is { } hook) await hook(address);
                 // Refused at accept: anything but a Tailscale peer, and a ninth connection from one peer. Windows cannot pin a listener
                 // to the tunnel's interface as the Mac does, so only Tailscale addresses are bound and every peer is filtered.
+                // Made before the check (its constructor opens no socket).
                 var server = new RemoteHttpListener(IPAddress.Parse(address), bound, request => ServeAsync(request, revision), head => BodyLimit(head, key, options.AllowLoopbackForTests),
                     peer => RemotePeerPolicy.Allowed(peer, options.AllowLoopbackForTests), RemoteProtocol.MaximumConnectionsPerPeer);
-                // Recorded under the same lock as the check, so a stop meanwhile always closes it.
-                lock (gate) { if (revision != generation || closed) throw new OperationCanceledException(); servers.Add(server); }
+                // The window a check-then-add in two steps would leave open; the checks hold a stop here.
+                if (BeforeBind is { } hook) await hook(address);
+                // Recorded under the same lock as the check, so a stop meanwhile always closes it; one refused here was never started.
+                bool refused;
+                lock (gate) { refused = revision != generation || closed; if (!refused) servers.Add(server); }
+                if (refused) { await server.DisposeAsync(); throw new OperationCanceledException(); }
                 bound = server.Start();
             }
             binding = false;
