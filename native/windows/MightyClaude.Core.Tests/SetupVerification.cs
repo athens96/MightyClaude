@@ -150,7 +150,9 @@ internal static class SetupVerification
         Check(script.Contains("Write-Host 'failed''s step'", StringComparison.Ordinal), "the labels are quoted like every other value");
         Check(SetupScriptLabels.Localized().Close == Locale.Get("setup.windows.script.close") && SetupScriptLabels.Localized().Step(2, 5, "uv") == "[2/5] uv", "the script speaks the app's language");
         foreach (var word in new[] { "RunAs", "sudo", "Start-Process", "-Verb", "Get-Credential", "Set-ExecutionPolicy" }) Check(!script.Contains(word, StringComparison.OrdinalIgnoreCase), "the script never elevates or asks for a password: " + word);
-        Check(SetupScript.LaunchArguments(@"C:\s\install-1.ps1", environment).SequenceEqual([@"C:\Windows" + Path.DirectorySeparatorChar + "System32" + Path.DirectorySeparatorChar + "WindowsPowerShell" + Path.DirectorySeparatorChar + "v1.0" + Path.DirectorySeparatorChar + "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", @"C:\s\install-1.ps1"]),
+        // On Windows the system folder Windows reports (its own spelling, often C:\WINDOWS\system32); elsewhere SystemRoot's System32.
+        var systemPowerShell = Path.Combine(OperatingSystem.IsWindows() ? Environment.GetFolderPath(Environment.SpecialFolder.System) : @"C:\Windows" + Path.DirectorySeparatorChar + "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+        Check(SetupScript.LaunchArguments(@"C:\s\install-1.ps1", environment).SequenceEqual([systemPowerShell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", @"C:\s\install-1.ps1"]),
             "the system's PowerShell runs the file with no profile and this process's policy only");
         var plan = CliAccountTerminal.LaunchPlan(SetupScript.LaunchArguments(@"C:\s\install-1.ps1", environment), true, @"C:\s", SetupScript.PowerShell(environment));
         Check(plan.Executable == "wt.exe" && plan.Arguments.SequenceEqual(["new-tab", "-d", @"C:\s", "--", .. SetupScript.LaunchArguments(@"C:\s\install-1.ps1", environment)]), "Windows Terminal opens a tab in the setup folder");
@@ -187,7 +189,8 @@ internal static class SetupVerification
             Check(!SetupScriptFiles.MarkerExists(started) && !SetupScriptFiles.RunEnded(started, done, _ => true), "a run that has not started has not ended");
             Directory.CreateSymbolicLink(done, elsewhere);
             Check(!SetupScriptFiles.MarkerExists(done) && !SetupScriptFiles.RunEnded(started, done, _ => true), "a link is no marker");
-            File.Delete(done);
+            // A directory link: Windows removes it with RemoveDirectory (File.Delete is refused), elsewhere it is unlinked, as RemoveLeftovers does.
+            if (OperatingSystem.IsWindows()) Directory.Delete(done, false); else File.Delete(done);
             Directory.CreateDirectory(started);
             Check(SetupScriptFiles.RunnerProcessId(started) is null && !SetupScriptFiles.RunEnded(started, done, _ => false), "until the script wrote its process ID the run goes on");
             File.WriteAllText(Path.Combine(started, "pid"), "4242\r\n");
