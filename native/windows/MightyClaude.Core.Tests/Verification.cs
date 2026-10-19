@@ -643,6 +643,14 @@ internal static class Verification
         await Test("remote host: a stop while a start makes its runner disposes that runner", RemoteHostVerification.AStopWhileAStartMakesItsRunnerDisposesThatRunner);
         await Test("remote host: the run count is told outside the host's lock and a failing listener of it changes nothing", RemoteHostVerification.TheRunCountIsToldOutsideTheHostsLockAndAFailingListenerOfItChangesNothing);
         await Test("remote host: sharing refuses what it cannot serve", RemoteHostVerification.SharingRefusesWhatItCannotServe);
+        await Test("remote loopback: commands and full access wait for the switch, then run on the host", RemoteLoopbackVerification.CommandsAndFullAccessWaitForTheSwitchThenRunOnTheHost);
+        await Test("remote loopback: tool requests are answered from the client and graph runs go only where asked", RemoteLoopbackVerification.ToolRequestsAreAnsweredFromTheClientAndGraphRunsGoOnlyWhereAsked);
+        await Test("remote loopback: unshared folders, busy hosts and oversize requests are refused", RemoteLoopbackVerification.UnsharedFoldersBusyHostsAndOversizeRequestsAreRefused);
+        await Test("remote loopback: a run nobody polls is stopped and a stopped host ends the client's runs", RemoteLoopbackVerification.ARunNobodyPollsIsStoppedAndAStoppedHostEndsTheClientsRuns);
+        await Test("remote loopback: a real command runs in the shared folder and stops", RemoteLoopbackVerification.ARealCommandRunsInTheSharedFolderAndStops);
+        await Test("remote loopback: an old stop's run count never lands after a newer one", RemoteLoopbackVerification.AnOldStopsRunCountNeverLandsAfterANewerOne);
+        await Test("remote loopback: answers reach only their own job's requests", RemoteLoopbackVerification.AnswersReachOnlyTheirOwnJobsRequests);
+        await Test("remote loopback: the buffer keeps the newest events within its bounds and says the gap", RemoteLoopbackVerification.TheBufferKeepsTheNewestEventsWithinItsBoundsAndSaysTheGap);
         await Test("corrupt/unknown/oversize state cannot be overwritten by shutdown", async () =>
         {
             foreach (var text in new[] { "null", "{", "{\"version\":2,\"workspaces\":[],\"sessions\":[]}", "{\"version\":1,\"workspaces\":null,\"sessions\":[]}" })
