@@ -607,7 +607,7 @@ struct WorkspaceView: View {
             if let workspace = store.activeWorkspace, let remote = workspace.remote {
                 let connected = store.remoteConnection(for: workspace)?.status == .connected
                 Circle().fill(Palette.mark(connected ? "completed" : "idle")).frame(width: 5, height: 5)
-                Text(L(connected ? "remote.status.connected" : "remote.status.notConnected", ["host": remote.hostName]))
+                Text(L(connected ? "remote.status.connected" : "remote.status.notConnected", ["host": RemoteHostOS.hostWithOS(remote.hostName, platform: store.remoteConnection(for: workspace)?.runtime?.platform)]))
                     .accessibilityIdentifier("status-remote-host")
             } else {
                 Image(systemName: "desktopcomputer").font(.ui(size: 10))

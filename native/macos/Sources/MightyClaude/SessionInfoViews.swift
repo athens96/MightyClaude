@@ -255,7 +255,10 @@ struct SessionInfoView: View {
                     }
                     if let workspace {
                         row(L("composer.sessionInfo.workspace"), workspace.name, key: "workspace")
-                        if let remote = workspace.remote { row(L("remote.sessionInfo.host"), remote.hostName, key: "host") }
+                        if let remote = workspace.remote {
+                            row(L("remote.sessionInfo.host"), remote.hostName, key: "host")
+                            row(L("remote.sessionInfo.hostOS"), RemoteHostOS.label(store.remoteConnection(for: workspace)?.runtime?.platform), key: "hostOS")
+                        }
                         Text(workspace.path).font(.ui(size: 10, design: .monospaced)).foregroundStyle(.secondary)
                             .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
