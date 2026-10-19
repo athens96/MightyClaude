@@ -2909,6 +2909,7 @@
   "remote.windows.settings.keyCopied": "接続キーをコピーしました。クリップボードの履歴やほかのデバイスには残らず、60秒後もそのままなら消去します。",
   "remote.windows.firewall.add": "ファイアウォールルールを追加",
   "remote.windows.firewall.remove": "ファイアウォールルールを削除",
+  "remote.windows.firewall.update": "ファイアウォールルールを更新",
   "remote.windows.pane.commandNote": "コマンドは{host}（{os}）の共有フォルダーで実行されます。コマンドごとにそのコンピューターのシェル（WindowsではPowerShell、Macではログインシェル）を新しく起動し、対話型プログラムやパスワード入力には対応しません。",
   "remote.hostOS.darwin": "macOS",
   "remote.hostOS.win32": "Windows",

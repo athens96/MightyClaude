@@ -28,6 +28,7 @@ public static class SettingsSections
     public const string Styles = "styles";
     public const string Components = "components";
     public const string MobileRemote = "mobileRemote";
+    public const string RemoteWorkspaces = "remoteWorkspaces";
     public const string CliUpdate = "cliUpdate";
     public const string Companion = "companion";
     public const string Providers = "providers";
@@ -53,6 +54,7 @@ public static class SettingsSections
         new(Styles, Locale.Get("settings.styles.sectionTitle")),
         new(Components, ComponentSection.SectionTitle),
         new(MobileRemote, Locale.Get("settings.mobileRemote.sectionTitle")),
+        new(RemoteWorkspaces, Locale.Get("settings.remote.navTitle")),
         new(CliUpdate, CliUpdateStrings.SectionTitle),
         new(Companion, Locale.Get("companion.settings.sectionTitle")),
         new(Providers, ProvidersTitle),

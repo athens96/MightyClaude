@@ -15,6 +15,7 @@ internal static class RemoteStringsVerification
             ["settingsShareNote"] = RemoteWindowsStrings.SettingsShareNote, ["settingsFirewallNote"] = RemoteWindowsStrings.SettingsFirewallNote,
             ["settingsScopeKey"] = RemoteWindowsStrings.SettingsScopeKey, ["allowFullAccess"] = RemoteWindowsStrings.SettingsAllowFullAccessDescription,
             ["keyCopied"] = RemoteWindowsStrings.KeyCopied, ["firewallAdd"] = RemoteWindowsStrings.FirewallAdd, ["firewallRemove"] = RemoteWindowsStrings.FirewallRemove,
+            ["firewallUpdate"] = RemoteWindowsStrings.FirewallUpdate,
             ["sessionInfoHostOS"] = RemoteWindowsStrings.SessionInfoHostOS,
             ["timeout"] = RemoteWindowsStrings.Timeout,
             ["hostCommandTooLong"] = RemoteWindowsStrings.HostCommandTooLong,

@@ -34,7 +34,8 @@ public sealed partial class MainWindow
     {
         var panes = views.Values.Where(p => p.UpdateProvider == provider).ToArray();
         // A sign-in waited on in a terminal is an account change too (M accountChangeInProgress counts cliLoginPending).
-        var busy = service.HasActiveProvider(provider) || loginBusy.ContainsKey(provider) || accountChanges.ContainsKey(provider) || accountLoginWaits.ContainsKey(provider) || panes.Any(p => p.UpdateStarting);
+        // Another computer's runs on this PC use its CLIs too (M localCLIIsRunning): the update waits for them as for a local run.
+        var busy = service.HasActiveProvider(provider) || remoteHostRuns > 0 || loginBusy.ContainsKey(provider) || accountChanges.ContainsKey(provider) || accountLoginWaits.ContainsKey(provider) || panes.Any(p => p.UpdateStarting);
         return CliAutoUpdateSchedule.IdleLongEnough(busy, panes.Any(p => p.UpdateHasQueue), providerLastActive.TryGetValue(provider, out var last) ? last : null, DateTimeOffset.UtcNow);
     }
     private bool BackgroundUpdateHolds(RunSession pane) => pane.Kind == "claude" && automaticUpdateRunning && automaticallyUpdatingProvider == pane.Provider;
