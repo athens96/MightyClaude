@@ -474,7 +474,7 @@ public sealed partial class MainWindow
             // The sides are the box's own padding; the space over the first line and under the last is written into the document.
             transcript.View.MinHeight = 0; transcript.View.Height = height; transcript.View.Padding = new Thickness(inset.Left, 0, inset.Right, 0);
             transcript.TopInset = inset.Top; transcript.BottomInset = inset.Bottom;
-            transcript.Update(pane with { Logs = entries, Kind = "claude" }, !owner.DarkTheme, owner.pictures, Workspace.Path);
+            transcript.Update(pane with { Logs = entries, Kind = "claude" }, !owner.DarkTheme, owner.pictures, LocalPath(Workspace));
             return transcript.View;
         }
 
@@ -505,7 +505,7 @@ public sealed partial class MainWindow
             var title = new TextBlock { Text = MightyGraphBlockModel.ResultTitle(run.Status), TextSize = DesignMetrics.Type.Block, FontWeight = FontWeights.ExtraBold, Foreground = ink, VerticalAlignment = VerticalAlignment.Center };
             named.Children.Add(title); header.Children.Add(named);
             var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Center };
-            var files = run.Status == "completed" ? MightyGraphBlockModel.FilesFor(run, Workspace.Path) : [];
+            var files = run.Status == "completed" ? MightyGraphBlockModel.FilesFor(run, LocalPath(Workspace)) : [];
             if (files.Count > 0)
             {
                 var menu = new MenuFlyout();

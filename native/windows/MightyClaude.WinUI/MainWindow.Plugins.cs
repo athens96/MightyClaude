@@ -52,6 +52,8 @@ public sealed partial class MainWindow
         // One sheet at a time: while Settings or another sheet is open this one waits to be asked again.
         if (dialogOpen) return;
         if (service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == service.Snapshot.ActiveWorkspaceId) is not { } workspace) return;
+        // A remote path never becomes the working folder of a local CLI command (M/AppStore+Plugins.swift).
+        if (LocalPath(workspace) is null) throw new InvalidOperationException(Locale.Get("remote.workspace.pluginsOnHost"));
         await ShowPluginBrowser(provider, workspace);
     });
 

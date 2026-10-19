@@ -83,7 +83,9 @@ public sealed partial class MainWindow
             if (pane.Kind != "claude" || !SessionHistory.Providers.Contains(pane.Provider)) return;
             var retained = pane.GraphRuns ?? [];
             // A delegated child's conversations are its worktree's, where its runs work (DelegationPanes.RunWorkspace).
-            var template = new SessionHistoryRequest(pane.Provider, pane.ResumeId ?? "", DelegationPanes.RunWorkspace(pane, Workspace).Path)
+            // A remote pane's records are its host's: none is read here (M/AppStore+GraphHistory.swift).
+            if (LocalPath(DelegationPanes.RunWorkspace(pane, Workspace)) is not { } folder) return;
+            var template = new SessionHistoryRequest(pane.Provider, pane.ResumeId ?? "", folder)
             {
                 Environment = HistoryEnvironment(),
                 Home = HistoryHomeOverride ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),

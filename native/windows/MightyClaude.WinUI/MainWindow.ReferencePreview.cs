@@ -58,7 +58,9 @@ public sealed partial class MainWindow
             referenceCancellation?.Cancel(); referenceCancellation?.Dispose();
             referenceHtml?.Dispose(); referenceHtml = null;
             var cancellation = referenceCancellation = new CancellationTokenSource();
-            var root = Workspace.Path; filesRoot = root;
+            // A remote pane's files are on its host: nothing is read here.
+            if (LocalPath(Workspace) is not { } root) return;
+            filesRoot = root;
             var light = owner.service.Snapshot.Theme == "light";
             referenceTarget = null;
             // The file's own name (and the line asked for) over the path as it was written (M/MightyGraphReferenceBubble.swift:89-90).
@@ -167,7 +169,7 @@ public sealed partial class MainWindow
             {
                 // Resolve again at the click: the workspace or file may have changed
                 // while the preview was open. Nothing launches while content loads.
-                if (referenceTarget is not { } target || !FilesAlive || WorkspaceFiles.Resolve(target.RelativePath, Workspace.Path) is not { } resolved) return;
+                if (referenceTarget is not { } target || !FilesAlive || LocalPath(Workspace) is not { } folder || WorkspaceFiles.Resolve(target.RelativePath, folder) is not { } resolved) return;
                 var file = await Windows.Storage.StorageFile.GetFileFromPathAsync(resolved);
                 await Windows.System.Launcher.LaunchFileAsync(file);
             });

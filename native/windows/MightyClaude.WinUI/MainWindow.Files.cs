@@ -147,10 +147,10 @@ public sealed partial class MainWindow
             if (filesAttached || Container.Child is not Grid grid) return;
             var session = Session;
             // Never a remote workspace's path: that folder is on its host.
-            if (owner.service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == session.WorkspaceId) is not { Remote: null } workspace) return;
+            if (LocalPath(owner.service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == session.WorkspaceId)) is not { } root) return;
             filesAttached = true;
             filesTree = owner.FilePaneTreeFor(session.WorkspaceId);
-            filesRoot = workspace.Path;
+            filesRoot = root;
             foreach (var child in grid.Children.OfType<FrameworkElement>().ToArray()) child.Visibility = Visibility.Collapsed;
 
             // The Mac's split view (M/FilePaneView.swift:22-25): the tree, a 1pt divider to drag, the preview.

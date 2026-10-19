@@ -29,7 +29,7 @@ public sealed partial class MainWindow
         /// <summary>The pictures a preview block shows: its step's, of the request it hangs beside.</summary>
         private IReadOnlyList<AgentImageItem> GraphImageItems(MightyGraphBlock block) =>
             block.RecordId is { } step && graphDrawnRuns?.FirstOrDefault(run => block.Id.StartsWith(MightyGraphBlockSize.NodeId(run.Id, ""), StringComparison.Ordinal)) is { } run
-                ? MightyGraphImages.Items(run, step, Workspace.Path) : [];
+                ? MightyGraphImages.Items(run, step, LocalPath(Workspace)) : [];
 
         /// <summary>
         /// The picture preview beside a step (M/MightyGraphImagesView.swift:8-55): the pictures it produced, in order, as

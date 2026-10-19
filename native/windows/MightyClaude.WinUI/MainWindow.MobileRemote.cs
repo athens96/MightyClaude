@@ -406,7 +406,7 @@ public sealed partial class MainWindow
         if (pane.Kind != "claude") return null;
         if (views.TryGetValue(pane.Id, out var view)) return view.MobileStyleId;
         if (!MobileRemoteSupport.GuidedStylesAvailable(pane.Kind, pane.Provider, MobileRemoteSupport.ViewMode(pane.AgentViewMode)) || pane.MightyStyle is null) return null;
-        if (service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == pane.WorkspaceId && w.Remote is null)?.Path is not { } workspace) return null;
+        if (LocalPath(service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == pane.WorkspaceId)) is not { } workspace) return null;
         var known = mobileStyleRegistries.GetValueOrDefault(workspace);
         if (!known.Reading && DateTime.UtcNow - known.Read >= MobileStyleRefresh) { mobileStyleRegistries[workspace] = known with { Reading = true }; _ = ReadMobileStyles(workspace, known.Registry); }
         return known.Registry?.Runnable(pane.MightyStyle, pane.MightyStyleHash)?.Id;
@@ -552,7 +552,7 @@ public sealed partial class MainWindow
         private MobileSettingsOptions MobileOptions(RunSession pane, string? model = null, string? viewMode = null)
         {
             var catalog = owner.Runtime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
-            IReadOnlyList<RegisteredStyle> styles = MobileRemoteSupport.GuidedStylesAvailable(pane.Kind, pane.Provider, viewMode ?? MobileRemoteSupport.ViewMode(pane.AgentViewMode)) ? (styleRegistry ??= StyleRegistry.Load(owner.StateDirectory, Workspace.Path)).Styles : [];
+            IReadOnlyList<RegisteredStyle> styles = MobileRemoteSupport.GuidedStylesAvailable(pane.Kind, pane.Provider, viewMode ?? MobileRemoteSupport.ViewMode(pane.AgentViewMode)) && LocalPath(Workspace) is { } folder ? (styleRegistry ??= StyleRegistry.Load(owner.StateDirectory, folder)).Styles : [];
             return new(ModelLabel.PickerOptions(pane, catalog).Select(m => new MobileOption(m.Value, m.DisplayName)).ToArray(), (Capabilities.PermissionModes ?? []).Select(m => new MobileOption(m, PermissionLabel(pane.Provider, m))).ToArray(),
                 MobileRemoteSupport.EffortOptions(Capabilities.Effort, ProviderCatalog.Efforts(pane.Provider, model ?? pane.Model, catalog, RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot))), MobileRemoteSupport.LegacyStyleOptions(styles), MobileRemoteSupport.StyleOptions(styles));
         }
@@ -613,7 +613,7 @@ public sealed partial class MainWindow
             var style = MobileRemoteSupport.StyleAfter(requested, shown, pane.MightyStyle); var changes = requested is not null && requested != shown; RegisteredStyle? selected = null;
             if (changes && style is not null)
             {
-                var registry = await Task.Run(() => StyleRegistry.Load(owner.StateDirectory, Workspace.Path), token); selected = registry.Styles.FirstOrDefault(s => s.Id == style && s.Runnable) ?? throw new MobileRequestException(400, Locale.Get("remote.error.unknownStyle"));
+                var folder = LocalFolder(Workspace); var registry = await Task.Run(() => StyleRegistry.Load(owner.StateDirectory, folder), token); selected = registry.Styles.FirstOrDefault(s => s.Id == style && s.Runnable) ?? throw new MobileRequestException(400, Locale.Get("remote.error.unknownStyle"));
                 if (!StyleRegistry.Unchanged(selected)) throw new MobileRequestException(409, "Style changed.");
             }
             token.ThrowIfCancellationRequested(); if (MobileBusy || Session.Provider != pane.Provider || Session.Model != pane.Model || Session.MightyStyle != pane.MightyStyle || Session.Settings != pane.Settings) throw new MobileRequestException(409, "The pane changed.");
@@ -627,7 +627,7 @@ public sealed partial class MainWindow
         internal async Task<string> MobileGuided(JsonElement body, CancellationToken token)
         {
             var pane = Session; var request = MobileRemoteSupport.GuidedRequest(body);
-            var registry = await Task.Run(() => StyleRegistry.Load(owner.StateDirectory, Workspace.Path), token);
+            var folder = LocalFolder(Workspace); var registry = await Task.Run(() => StyleRegistry.Load(owner.StateDirectory, folder), token);
             if (pane.Provider != "claude" || registry.Styles.FirstOrDefault(s => s.Id == request.Style) is not { Runnable: true }) throw new MobileRequestException(400, Locale.Get("remote.error.unknownStyle"));
             if (pane.AgentViewMode != "mighty" || request.Style != pane.MightyStyle || registry.Runnable(pane.MightyStyle, pane.MightyStyleHash) is not { } style) throw new MobileRequestException(409, Locale.Get("remote.error.otherStyle", new Dictionary<string, string> { ["style"] = request.Style }));
             var action = style.Manifest.Actions.FirstOrDefault(a => a.Id == request.Action) ?? throw new MobileRequestException(400, Locale.Get("remote.error.unknownSkill"));

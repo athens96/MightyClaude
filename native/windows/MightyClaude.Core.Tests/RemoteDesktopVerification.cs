@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using MightyClaude.Core;
 
 internal static class RemoteDesktopVerification
@@ -62,6 +63,12 @@ internal static class RemoteDesktopVerification
             {
                 ("GET", "/m1/sessions/agent", null), ("GET", "/m1/sessions/agent/entries", null), ("GET", "/m1/sessions/cmd/entries", null), ("POST", "/m1/sessions/agent/stop", "{}"),
                 ("GET", $"/m1/workspaces/{far.Id}/files", null), ("GET", $"/m1/workspaces/{far.Id}/file?path=a.txt", null), ("POST", $"/m1/workspaces/{far.Id}/sessions", "{\"kind\":\"claude\"}"),
+                ("POST", "/m1/sessions/agent/permission", "{\"requestId\":\"perm-1\",\"runId\":\"agent\",\"allow\":true}"),
+                ("POST", "/m1/sessions/agent/answers", "{\"requestId\":\"perm-1\",\"runId\":\"agent\",\"answers\":{}}"),
+                ("POST", "/m1/sessions/agent/plan", "{\"requestId\":\"perm-1\",\"runId\":\"agent\",\"decision\":\"cancel\"}"),
+                ("POST", "/m1/sessions/agent/submit", "{\"text\":\"hello\"}"), ("POST", "/m1/sessions/agent/uploads", "{\"size\":1,\"name\":\"a.txt\"}"),
+                ("GET", "/m1/sessions/agent/commands", null), ("POST", "/m1/sessions/agent/queue/run-next", "{}"), ("POST", "/m1/sessions/agent/queue/item-1/remove", "{}"),
+                ("POST", "/m1/sessions/agent/settings", "{\"agentViewMode\":\"mighty\"}"), ("POST", "/m1/sessions/agent/rename", "{\"title\":\"x\"}"), ("POST", "/m1/sessions/agent/close", "{}"),
             })
             {
                 var answer = await router.RouteAsync(method, path, body is null ? null : JsonDocument.Parse(body).RootElement, "device-1", CancellationToken.None);
@@ -122,11 +129,216 @@ internal static class RemoteDesktopVerification
 
             await host.StopAsync();
             refused = false;
-            try { await found.Workspace(shared.Id); } catch (InvalidOperationException) { refused = true; }
-            Check(refused, "once sharing stops, its runner finds nothing");
+            try { await found.Workspace(shared.Id); } catch (Exception ex) when (ex is not OutOfMemoryException) { refused = ex.Message == Locale.Get("remote.host.error.stopped"); }
+            Check(refused, "once sharing stops, its runner finds nothing: sharing has stopped");
             Check(counts.LastOrDefault() == 0, "the host tells the app how many client runs go on");
         }
         finally { Directory.Delete(directory, true); }
+    }
+
+    /// <summary>A remote pane's start never enters the client while holding the service's lock: a route check that blocks leaves every other pane free.</summary>
+    internal static async Task NoClientCodeRunsUnderTheServicesLock()
+    {
+        await using var fixture = await RemoteHostVerification.MakeHost();
+        var state = await fixture.Host.StartAsync([fixture.Shared.Id], 0);
+        var directory = Verification.Temp(); var local = Verification.Temp();
+        using var entered = new ManualResetEventSlim(false); using var hold = new ManualResetEventSlim(false); var armed = 0;
+        try
+        {
+            await using var catalog = new ProviderCatalog((_, _) => Task.FromResult<CliCommand?>(null));
+            await using var service = new DesktopService(Path.Combine(directory, "state"), null, directory, catalog); await service.InitializeAsync();
+            var client = service.AttachRemote(Path.Combine(directory, "state"), new MemoryRemoteKeyVault(), new()
+            {
+                AllowLoopbackForTests = true,
+                RouteCheck = _ => { if (Volatile.Read(ref armed) == 1) { entered.Set(); hold.Wait(TimeSpan.FromSeconds(20)); } return true; },
+            });
+            var near = await service.AddWorkspaceAsync(local);
+            var info = await client.ConnectAsync("", "127.0.0.1:" + state.Port, state.Key!);
+            var far = await service.OpenRemoteWorkspaceAsync(info.Id, fixture.Shared.Id);
+            await service.UpdateAsync(s => s with { Sessions = [new RunSession { Id = "far-agent", WorkspaceId = far.Id }, new RunSession { Id = "near-cmd", WorkspaceId = near.Id, Kind = "shell" }] });
+            var events = new ConcurrentQueue<RunEvent>(); service.RunEventReceived += events.Enqueue;
+
+            Volatile.Write(ref armed, 1);
+            var starting = Task.Run(() => service.StartAsync(new StartRunRequest("far-agent", far.Id, "claude", "hold", [])));
+            Check(entered.Wait(TimeSpan.FromSeconds(10)), "the remote start reached the client's route check");
+            Check(Task.Run(() => service.Snapshot).Wait(TimeSpan.FromSeconds(2)), "the service's lock is free while the client checks the route");
+            // Another pane's run reaches Receive while the remote start waits on the client.
+            await service.StartAsync(new StartRunRequest("near-cmd", near.Id, "shell", "echo near-ok", [])).WaitAsync(TimeSpan.FromSeconds(10));
+            await Verification.Until(() => service.Snapshot.Sessions.Single(s => s.Id == "near-cmd").Status is "completed" or "error", 20000);
+            Check(service.Snapshot.Sessions.Single(s => s.Id == "near-cmd").Logs.Any(l => l.Text.Contains("near-ok", StringComparison.Ordinal)), "this PC's other pane ran and was told while the remote start waited");
+
+            // A stop while connecting: the host never gets the run, and the pane hears one stop.
+            await service.StopAsync("far-agent").WaitAsync(TimeSpan.FromSeconds(10));
+            Volatile.Write(ref armed, 0); hold.Set();
+            await starting.WaitAsync(TimeSpan.FromSeconds(20));
+            Check(service.Snapshot.Sessions.Single(s => s.Id == "far-agent").Status == "stopped" && !service.IsSessionRunning("far-agent"), "a stop while connecting ends the run stopped");
+            Check(events.Count(e => e.SessionId == "far-agent" && e.Status == "stopped") == 1, "the pane hears one stop: " + events.Count(e => e.SessionId == "far-agent" && e.Status == "stopped"));
+            Check(fixture.Runner!.Started.IsEmpty, "a run stopped while connecting never reaches the host");
+        }
+        finally { Volatile.Write(ref armed, 0); hold.Set(); Directory.Delete(directory, true); Directory.Delete(local, true); }
+    }
+
+    /// <summary>A stop while the host accepts ends that run alone: the pane's next send runs on, and hears no second stop.</summary>
+    internal static async Task AStopDuringTheHostsAcceptNeverEndsTheNextSend()
+    {
+        using var accepting = new ManualResetEventSlim(false); using var release = new ManualResetEventSlim(false); var holding = 0;
+        await using var fixture = await RemoteHostVerification.MakeHost(admission: _ =>
+        {
+            if (Interlocked.Exchange(ref holding, 0) == 1) { accepting.Set(); release.Wait(TimeSpan.FromSeconds(20)); }
+            return null;
+        });
+        var state = await fixture.Host.StartAsync([fixture.Shared.Id], 0);
+        var directory = Verification.Temp();
+        try
+        {
+            await using var service = new DesktopService(Path.Combine(directory, "state"), null, directory); await service.InitializeAsync();
+            var client = service.AttachRemote(Path.Combine(directory, "state"), new MemoryRemoteKeyVault(), new() { AllowLoopbackForTests = true });
+            var info = await client.ConnectAsync("", "127.0.0.1:" + state.Port, state.Key!);
+            var far = await service.OpenRemoteWorkspaceAsync(info.Id, fixture.Shared.Id);
+            await service.UpdateAsync(s => s with { Sessions = [new RunSession { Id = "agent", WorkspaceId = far.Id }] });
+            var events = new ConcurrentQueue<RunEvent>(); service.RunEventReceived += events.Enqueue;
+            int Stops() => events.Count(e => e.SessionId == "agent" && e.Status == "stopped");
+            string Status() => service.Snapshot.Sessions.Single(s => s.Id == "agent").Status;
+
+            // Without attachments: the stop lands while the host accepts; the start ends quietly.
+            Volatile.Write(ref holding, 1);
+            var first = Task.Run(() => service.StartAsync(new StartRunRequest("agent", far.Id, "claude", "hold", [])));
+            Check(accepting.Wait(TimeSpan.FromSeconds(10)), "the host is accepting the run");
+            await service.StopAsync("agent");
+            await Verification.Until(() => Status() == "stopped");
+            release.Set();
+            await first.WaitAsync(TimeSpan.FromSeconds(20));
+            Check(Status() == "stopped" && !service.IsSessionRunning("agent") && Stops() == 1, "a stop during the accept ends the run once: " + Stops());
+            await Verification.Until(() => fixture.Host.Current().ActiveRuns == 0, 10000);
+
+            // With attachments the start is refused as cancelled; meanwhile the pane was sent again, and that run goes on.
+            accepting.Reset(); release.Reset(); Volatile.Write(ref holding, 1);
+            var attachment = new RunAttachment("attachment", "fixture.txt", "text/plain", Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("fixture")));
+            var held = Task.Run(() => service.StartAsync(new StartRunRequest("agent", far.Id, "claude", "hold", [], Attachments: [attachment])));
+            Check(accepting.Wait(TimeSpan.FromSeconds(10)), "the host is accepting the run with attachments");
+            await service.StopAsync("agent");
+            await Verification.Until(() => Stops() == 2);
+            var errorsBefore = service.Snapshot.Sessions.Single(s => s.Id == "agent").Logs.Count(l => l.Kind == "error");
+            await service.StartAsync(new StartRunRequest("agent", far.Id, "claude", "hold", []));
+            await Verification.Until(() => service.IsSessionRunning("agent") && Status() == "running");
+            release.Set();
+            var cancelled = false;
+            try { await held.WaitAsync(TimeSpan.FromSeconds(20)); } catch (OperationCanceledException) { cancelled = true; }
+            Check(cancelled, "the start with attachments says it was cancelled, so its attachments stay");
+            Check(Status() == "running" && service.IsSessionRunning("agent"), "the newer send runs on: " + Status());
+            Check(Stops() == 2, "the pane heard each stop once, never one for the newer send: " + Stops());
+            Check(service.Snapshot.Sessions.Single(s => s.Id == "agent").Logs.Count(l => l.Kind == "error") == errorsBefore, "the older start writes nothing into the newer run");
+            await service.StopAsync("agent");
+            await Verification.Until(() => Status() == "stopped" && Stops() == 3);
+        }
+        finally { release.Set(); Directory.Delete(directory, true); }
+    }
+
+    /// <summary>A send connects on a connection that still shares the workspace, as the Mac's connectForRemoteRun checks.</summary>
+    internal static async Task ASendToAWorkspaceTheHostNoLongerSharesIsRefused()
+    {
+        await using var fixture = await RemoteHostVerification.MakeHost();
+        var state = await fixture.Host.StartAsync([fixture.Shared.Id, fixture.Private.Id], 0); fixture.Host.SetAllowsFullAccess(true);
+        var directory = Verification.Temp();
+        try
+        {
+            await using var service = new DesktopService(Path.Combine(directory, "state"), null, directory); await service.InitializeAsync();
+            var client = service.AttachRemote(Path.Combine(directory, "state"), new MemoryRemoteKeyVault(), new() { AllowLoopbackForTests = true });
+            var info = await client.ConnectAsync("", "127.0.0.1:" + state.Port, state.Key!);
+            var gone = await service.OpenRemoteWorkspaceAsync(info.Id, fixture.Private.Id);
+            await service.UpdateAsync(s => s with { Sessions = [new RunSession { Id = "cmd", WorkspaceId = gone.Id, Kind = "shell" }] });
+            // The host forgets the workspace; the client's next reading no longer lists it.
+            await fixture.Store.SaveAsync(new AppSnapshot { Workspaces = [fixture.Shared, fixture.Remote] });
+            await client.RefreshAsync(info.Id);
+            var refused = "";
+            try { await service.StartAsync(new StartRunRequest("cmd", gone.Id, "shell", "dir", [])); } catch (InvalidOperationException ex) { refused = ex.Message; }
+            Check(refused == Locale.Get("remote.workspace.error.notShared"), "the send is refused as not shared: " + refused);
+            var pane = service.Snapshot.Sessions.Single(s => s.Id == "cmd");
+            Check(pane.Status == "error" && pane.Logs.Any(l => l.Kind == "error" && l.Text == refused), "the pane says why");
+            Check(fixture.Runner!.Started.IsEmpty, "nothing reached the host");
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    /// <summary>The sharing host's reading of this PC's CLIs: shared while it goes, kept a while after it finished, read again once stale, failed or forgotten.</summary>
+    internal static async Task TheHostReadsThisPCsCLIsOnceAndAgainWhenStaleFailedOrForgotten()
+    {
+        var directory = Verification.Temp();
+        try
+        {
+            await using var service = new DesktopService(Path.Combine(directory, "state"), null, directory); await service.InitializeAsync();
+            var reads = 0; var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var reading = RemoteWireFixtureVerification.Node("info.json")["runtime"].Deserialize<RuntimeInfo>(RemoteWire.Json)!;
+            service.HostRuntimeReader = async () =>
+            {
+                var count = Interlocked.Increment(ref reads);
+                if (count == 1) throw new IOException("the CLI could not be read");
+                if (count == 2) await gate.Task;
+                return reading;
+            };
+            service.HostRuntimeFresh = TimeSpan.FromMinutes(5);
+            var failed = false;
+            try { await service.HostRuntimeAsync("1.2.3"); } catch (IOException) { failed = true; }
+            Check(failed && reads == 1, "the first reading failed");
+            var slow = service.HostRuntimeAsync("1.2.3"); var waiting = service.HostRuntimeAsync("1.2.3");
+            await Verification.Until(() => Volatile.Read(ref reads) == 2); // a failed reading is read again
+            Check(ReferenceEquals(slow, waiting) && !slow.IsCompleted, "callers share the reading that goes on");
+            gate.SetResult();
+            Check((await slow).AppVersion == "1.2.3" && ReferenceEquals(service.HostRuntimeAsync("1.2.3"), slow) && reads == 2, "a finished reading is kept");
+            service.ForgetHostRuntime();
+            var fresh = service.HostRuntimeAsync("1.2.3"); await fresh;
+            Check(!ReferenceEquals(fresh, slow) && reads == 3, "a forgotten reading is read again");
+            service.HostRuntimeFresh = TimeSpan.FromSeconds(2);
+            Check(ReferenceEquals(service.HostRuntimeAsync("1.2.3"), fresh), "a reading inside its time is kept");
+            await Task.Delay(2500);
+            var later = service.HostRuntimeAsync("1.2.3"); await later;
+            Check(!ReferenceEquals(later, fresh) && reads == 4, "a reading past its time is read again");
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    /// <summary>
+    /// The window reads a workspace's folder only through MainWindow.LocalPath (RemoteWorkspaceFeatures.LocalPath), so a host's path (a UNC
+    /// path among them) never reaches this PC's disk, network or processes. A read anywhere else fails here unless it only shows or compares
+    /// the path; smoke code works in its own local workspace.
+    /// </summary>
+    internal static Task TheWindowReadsAWorkspacesFolderOnlyThroughLocalPath()
+    {
+        var folder = ClaudePluginVerification.WinUISource();
+        var read = new Regex(@"\b[Ww]orkspace\??\.Path\b|Workspaces\.(?:First|FirstOrDefault|Single|SingleOrDefault|Last|LastOrDefault)\([^;]*\)\??\.Path\b|RunWorkspace\([^)]*\)\.Path\b", RegexOptions.CultureInvariant);
+        (string File, string Fragment)[] shownOrCompared =
+        [
+            ("MainWindow.DashboardWorkspaces.cs", "Text = workspace.Path"), ("MainWindow.DashboardWorkspaces.cs", "SetToolTip(path, workspace.Path)"),
+            ("MainWindow.DashboardWorkspaces.cs", "MiddleTrim.Fit(path, workspace.Path"), ("MainWindow.Plugins.cs", "SettingsTertiary(workspace.Path"),
+            ("MainWindow.Plugins.cs", "SetToolTip(workspacePath, workspace.Path)"), ("MainWindow.ResumeSession.cs", "MiddleTrim.Fit(path, workspace.Path"),
+            ("MainWindow.SessionInfo.cs", "Row(\"path\", workspace?.Path)"), ("MainWindow.Shell.cs", "workspaceHeaderFullPath = workspace.Path"),
+            ("MainWindow.Sidebar.cs", "SetToolTip(select, workspace.Path)"), ("MainWindow.UpdateAdmission.cs", "w.Path == workspace.Path"),
+            // The pictures smoke writes its fixture into the smoke's own local workspace.
+            ("MainWindow.AgentImages.cs", "workspace.Path, \"shots\""),
+        ];
+        var unexpected = new List<string>(); var used = new HashSet<(string, string)>(); var scanned = 0;
+        foreach (var file in Directory.EnumerateFiles(folder, "*.cs", SearchOption.AllDirectories))
+        {
+            var relative = Path.GetRelativePath(folder, file);
+            if (relative.StartsWith("obj", StringComparison.Ordinal) || relative.StartsWith("bin", StringComparison.Ordinal)) continue;
+            var name = Path.GetFileName(file);
+            if (name.Contains("Smoke", StringComparison.Ordinal) || name == "MainWindow.LocalPaths.cs") continue;
+            scanned++;
+            var lines = File.ReadAllLines(file);
+            for (var i = 0; i < lines.Length; i++)
+            {
+                if (!read.IsMatch(lines[i])) continue;
+                var allowed = shownOrCompared.FirstOrDefault(a => a.File == name && lines[i].Contains(a.Fragment, StringComparison.Ordinal));
+                if (allowed.File is null) unexpected.Add(name + ":" + (i + 1) + ": " + lines[i].Trim()); else used.Add(allowed);
+            }
+        }
+        Check(scanned > 50, "the window's sources were scanned: " + scanned);
+        Check(unexpected.Count == 0, "a workspace's folder is read only through LocalPath:\n" + string.Join("\n", unexpected));
+        Check(used.Count == shownOrCompared.Length, "every allowed use is still there: " + string.Join(", ", shownOrCompared.Where(a => !used.Contains(a)).Select(a => a.File + " " + a.Fragment)));
+        Check(File.ReadAllText(Path.Combine(folder, "MainWindow.LocalPaths.cs")).Contains("RemoteWorkspaceFeatures.LocalPath(workspace)", StringComparison.Ordinal), "the window's LocalPath is the shared rule");
+        Check(RemoteWorkspaceFeatures.LocalPath(new Workspace { Path = "C:\\work" }) == "C:\\work" && RemoteWorkspaceFeatures.LocalPath(new Workspace { Path = "\\\\server\\share", Remote = new("conn-1", "ws-1", "studio-pc") }) is null
+            && RemoteWorkspaceFeatures.LocalPath(null) is null, "a remote workspace has no folder here");
+        return Task.CompletedTask;
     }
 
     internal static Task RemotePanesKeepToTheHostsFeatures()

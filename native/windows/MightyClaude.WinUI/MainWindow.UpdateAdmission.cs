@@ -59,7 +59,8 @@ public sealed partial class MainWindow
 
     private string? PluginMutationBlockReason(string provider, Workspace workspace)
     {
-        if (closing || !service.Snapshot.Workspaces.Any(w => w.Id == workspace.Id && w.Path == workspace.Path)) return Locale.Get("windows.updates.workspaceChanged");
+        if (closing || !service.Snapshot.Workspaces.Any(w => w.Id == workspace.Id && w.Path == workspace.Path && w.Remote == workspace.Remote)) return Locale.Get("windows.updates.workspaceChanged");
+        if (LocalPath(workspace) is null) return Locale.Get("remote.workspace.pluginsOnHost");
         if (AnyCliUpdateRunning) return Locale.Get("loginRecovery.updating");
         if (pluginOperations.IsRunning) return Locale.Get("plugins.operation.busy");
         return service.HasActiveProvider(provider) || views.Values.Any(p => p.UpdateProvider == provider && p.UpdateStarting)

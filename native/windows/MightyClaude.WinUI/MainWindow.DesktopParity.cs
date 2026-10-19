@@ -108,7 +108,7 @@ public sealed partial class MainWindow
         // 18 high: the Mac's 10pt line (12) in v3; the words are centred in it.
         var badge = new Border { Height = GitBadgeHeight, Padding = new Thickness(DesignMetrics.Spacing.Sm, 0, DesignMetrics.Spacing.Sm, 0), CornerRadius = new CornerRadius(GitBadgeHeight / 2), Background = brushes.Subtle, MaxWidth = GitBadgeMaxWidth, VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
         gitBadges[workspace.Id] = badge; AutomationProperties.SetAutomationId(badge, "workspace-git-info");
-        if (gitWorkspaceKey == workspace.Id + "|" + workspace.Path) UpdateGitBadge(badge);
+        if (gitWorkspaceKey == workspace.Id + "|" + LocalPath(workspace)) UpdateGitBadge(badge);
         return badge;
     }
 
@@ -156,7 +156,9 @@ public sealed partial class MainWindow
     {
         if (closing || options.SmokeTest) return;
         var workspace = service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == service.Snapshot.ActiveWorkspaceId);
-        var key = workspace is null ? null : workspace.Id + "|" + workspace.Path;
+        // A remote workspace's git is its host's: nothing is read here (M/WorkspaceGitView.swift).
+        var folder = LocalPath(workspace);
+        var key = workspace is null ? null : workspace.Id + "|" + folder;
         if (key != gitWorkspaceKey)
         {
             gitCancellation?.Cancel(); gitCancellation?.Dispose(); gitCancellation = null;
@@ -164,11 +166,11 @@ public sealed partial class MainWindow
             foreach (var stale in gitBadges.Keys.Where(id => id != workspace?.Id).ToArray()) gitBadges.Remove(stale);
         }
         else if (!force) return;
-        if (workspace is null || gitReading) return;
+        if (workspace is null || folder is null || gitReading) return;
         gitReading = true; var cancellation = new CancellationTokenSource(); gitCancellation = cancellation;
         try
         {
-            var value = await WorkspaceGitInfo.ReadAsync(workspace.Path, cancellation.Token);
+            var value = await WorkspaceGitInfo.ReadAsync(folder, cancellation.Token);
             if (closing || cancellation.IsCancellationRequested || gitWorkspaceKey != key) return;
             gitInfo = value;
             if (gitBadges.TryGetValue(workspace.Id, out var label)) UpdateGitBadge(label);
