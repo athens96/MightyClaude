@@ -63,7 +63,7 @@ public sealed partial class MainWindow
                 Require(root.Language == ExpectedWindowLanguage() && frame.Language == ExpectedWindowLanguage(),
                     $"the main window and settings roots must carry the language tag {ExpectedWindowLanguage()} for {Locale.ChosenLanguage()}; got {root.Language} and {frame.Language}");
                 var navigation = VisualChildren(frame).OfType<ListView>().Single(view => AutomationProperties.GetAutomationId(view) == "settings-navigation");
-                Require(navigation.Items.Count == SettingsNavigation.Available.Count && navigation.Items.Count == 8, "all macOS settings categories must be visible");
+                Require(navigation.Items.Count == SettingsNavigation.Available.Count && navigation.Items.Count == 9, "all macOS settings categories must be visible");
                 foreach (var item in navigation.Items.OfType<ListViewItem>())
                 {
                     navigation.SelectedItem = item;
@@ -101,7 +101,7 @@ public sealed partial class MainWindow
                 settingsWindow.Close(); await opening;
             }
             await CheckDashboardActions(first, original.Workspaces.Last());
-            return new() { ["nativeSidebarChrome"] = true, ["phaseModelsControlsPersist"] = true, ["dashboardRetainsPane"] = true, ["clockPreservesDashboardControls"] = true, ["dashboardWorkspaceActions"] = true, ["dashboardProviderMarks"] = true, ["settingsLoadedBeforeCapture"] = true, ["windowLanguage"] = ExpectedWindowLanguage(), ["allSettingsCategories"] = categoryCount == 16, ["bothThemes"] = true, ["screenshots"] = captures };
+            return new() { ["nativeSidebarChrome"] = true, ["phaseModelsControlsPersist"] = true, ["dashboardRetainsPane"] = true, ["clockPreservesDashboardControls"] = true, ["dashboardWorkspaceActions"] = true, ["dashboardProviderMarks"] = true, ["settingsLoadedBeforeCapture"] = true, ["windowLanguage"] = ExpectedWindowLanguage(), ["allSettingsCategories"] = categoryCount == 18, ["bothThemes"] = true, ["screenshots"] = captures };
         }
         finally
         {

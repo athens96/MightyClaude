@@ -165,6 +165,7 @@ public sealed partial class MainWindow
     /// <summary>The side list's symbol per category, the Mac's SF Symbols in Segoe Fluent Icons (M/SettingsViews.swift:167-178).</summary>
     private static string SettingsCategoryGlyph(string id) => id switch
     {
+        "remote" => "\uE968",
         "general" => "", "models" => "", "styles" => "", "tools" => "",
         "cli" => "", "mobile" => "", "about" => "", _ => "",
     };

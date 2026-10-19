@@ -15,9 +15,9 @@ public sealed partial class MainWindow
     /// The smoke answers the choice and the list instead of a person.
     private Func<ContentDialog, Task<ContentDialogResult>>? smokeResumeDialog;
 
-    private ResumableSessionQuery ResumeQuery(string workspacePath)
+    private ResumableSessionQuery ResumeQuery(Workspace workspace)
     {
-        return new ResumableSessionQuery(workspacePath)
+        return new ResumableSessionQuery(LocalFolder(workspace))
         {
             Environment = PaneView.HistoryEnvironment(),
             Home = PaneView.HistoryHomeOverride ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
@@ -54,7 +54,9 @@ public sealed partial class MainWindow
     private Task AddAgentPane(string provider, string? groupId) => Act(async () =>
     {
         if (!AddPaneMenu.MayAskResume(provider, fromMenu: true) || service.Snapshot.ActiveWorkspaceId is not { } workspaceId
-            || service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == workspaceId) is not { } workspace)
+            || service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == workspaceId) is not { } workspace
+            // A remote workspace's sessions are its host's: its agent pane starts new (M/AppStore+ResumeSession.swift).
+            || LocalPath(workspace) is null)
         {
             await AddPane("claude", provider, groupId);
             return;
@@ -64,7 +66,7 @@ public sealed partial class MainWindow
         ContentDialogResult picked;
         try
         {
-            var query = ResumeQuery(workspace.Path) with { HeadOnly = true, MaximumSessions = 1 };
+            var query = ResumeQuery(workspace) with { HeadOnly = true, MaximumSessions = 1 };
             // Any failure reading the records (a malformed file, a race with the CLI) means nothing to offer.
             var reading = Task.Run(() => { try { return ResumableSessions.Listing(query, provider); } catch (Exception) { return ResumableSessionListing.Empty; } });
             // The smoke answers every sheet itself, so it always waits for the look-up.
@@ -251,7 +253,7 @@ public sealed partial class MainWindow
             progress.Children.Add(new ProgressRing { IsActive = true, Width = 20, Height = 20, MinWidth = 0, MinHeight = 0, HorizontalAlignment = HorizontalAlignment.Center });
             progress.Children.Add(new TextBlock { Text = Locale.Get("resume.loading"), TextSize = DesignMetrics.Type.Pill, Foreground = ink2, HorizontalAlignment = HorizontalAlignment.Center });
             list.Items.Clear(); list.Visibility = Visibility.Collapsed; state.Child = progress;
-            var query = ResumeQuery(workspace.Path) with { IncludeAutomated = showAll.IsChecked == true };
+            var query = ResumeQuery(workspace) with { IncludeAutomated = showAll.IsChecked == true };
             ResumableSessionListing result;
             try { result = await Task.Run(() => ResumableSessions.Listing(query, provider)); }
             catch (Exception) { result = ResumableSessionListing.Empty; }

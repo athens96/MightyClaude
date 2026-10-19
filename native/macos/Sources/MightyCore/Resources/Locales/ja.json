@@ -2907,8 +2907,10 @@
   "remote.windows.settings.scopeKey": "• 接続キーを持つデバイスは、共有したワークスペースで作業やコマンドを実行できます。キーは信頼できるデバイスにだけ伝えてください。キーはこのWindowsユーザーだけが読めるよう暗号化して保存します。",
   "remote.windows.settings.allowFullAccessDescription": "オンにすると、接続したコンピューターがリモートコマンドペイン（このPCではPowerShell）を使い、エージェントをフルアクセス（Claude Bypass、Codexフルアクセス、Antigravityフルアクセス）で実行できます。共有を開始するたびにオフになります。",
   "remote.windows.settings.keyCopied": "接続キーをコピーしました。クリップボードの履歴やほかのデバイスには残らず、60秒後もそのままなら消去します。",
+  "remote.windows.settings.keyCopyFailed": "接続キーをコピーできませんでした。しばらくしてからもう一度押してください。",
   "remote.windows.firewall.add": "ファイアウォールルールを追加",
   "remote.windows.firewall.remove": "ファイアウォールルールを削除",
+  "remote.windows.firewall.update": "ファイアウォールルールを更新",
   "remote.windows.pane.commandNote": "コマンドは{host}（{os}）の共有フォルダーで実行されます。コマンドごとにそのコンピューターのシェル（WindowsではPowerShell、Macではログインシェル）を新しく起動し、対話型プログラムやパスワード入力には対応しません。",
   "remote.hostOS.darwin": "macOS",
   "remote.hostOS.win32": "Windows",
@@ -2916,5 +2918,6 @@
   "remote.hostOS.unknown": "OS不明",
   "remote.hostWithOS": "{host} · {os}",
   "remote.sessionInfo.hostOS": "実行コンピューターのOS",
-  "remote.windows.connect.error.timeout": "接続先のコンピューターが時間内に応答しませんでした。電源が入っていてTailscaleに接続されているか確認してください。"
+  "remote.windows.connect.error.timeout": "接続先のコンピューターが時間内に応答しませんでした。電源が入っていてTailscaleに接続されているか確認してください。",
+  "remote.windows.host.error.commandTooLong": "このコマンドは長すぎて、このPCでは実行できません。コマンドを短くするか、共有フォルダーにスクリプトファイルとして保存して実行してください。"
 }

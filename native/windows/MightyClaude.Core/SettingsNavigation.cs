@@ -12,6 +12,7 @@ public static class SettingsNavigation
         new("tools", Locale.Get("settings.nav.tools"), [SettingsSections.Components]),
         new("cli", Locale.Get("settings.nav.cli"), [SettingsSections.CliUpdate, SettingsSections.CliAccounts, SettingsSections.Providers, SettingsSections.ClaudeMods]),
         new("mobile", Locale.Get("settings.nav.mobile"), [SettingsSections.MobileRemote]),
+        new("remote", Locale.Get("settings.remote.navTitle"), [SettingsSections.RemoteWorkspaces]),
         new("companion", Locale.Get("settings.nav.companion"), [SettingsSections.Companion]),
         new("about", Locale.Get("settings.nav.about"), [SettingsSections.AppUpdate, SettingsSections.AppInfo]),
     ];

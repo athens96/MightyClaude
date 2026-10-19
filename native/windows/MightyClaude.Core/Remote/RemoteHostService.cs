@@ -139,7 +139,7 @@ public sealed partial class RemoteHostService(RemoteHostOptions options) : IAsyn
             string key;
             try { key = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).TrimEnd('=').Replace('+', '-').Replace('/', '_'); }
             catch (CryptographicException) { throw new InvalidOperationException(Locale.Get("remote.host.error.keyFailed")); }
-            var created = options.CreateRunner(new(value => Receive(value, revision), value => ReceivePermission(value, revision), (id, node) => ReceiveGraph(id, node, revision)));
+            var created = options.CreateRunner(new(value => Receive(value, revision), value => ReceivePermission(value, revision), (id, node) => ReceiveGraph(id, node, revision), id => ResolveShared(id, revision)));
             bool current;
             lock (gate) { current = revision == generation && !closed; if (current) runner = created; }
             if (!current) { await created.DisposeAsync(); throw new OperationCanceledException(); }
@@ -204,14 +204,17 @@ public sealed partial class RemoteHostService(RemoteHostOptions options) : IAsyn
     /// <summary>Ends the sharing (only <paramref name="only"/>'s, when given): the state, key and switch are gone before the first wait.</summary>
     private async Task StopNowAsync(Guid? only = null)
     {
-        List<RemoteHttpListener> old; IRemoteRunner? oldRunner; CancellationTokenSource? oldLease;
+        List<RemoteHttpListener> old; IRemoteRunner? oldRunner; CancellationTokenSource? oldLease; List<CancellationTokenSource> launches;
         lock (gate)
         {
             if (only is { } expected && expected != generation) return;
             generation = Guid.NewGuid(); old = [.. servers]; servers.Clear(); oldRunner = runner; runner = null;
-            state = new(); allowsFullAccess = false; oldLease = lease; lease = null; jobs.Clear();
+            state = new(); allowsFullAccess = false; oldLease = lease; lease = null;
+            launches = jobs.Values.Select(j => j.Cancel).ToList(); jobs.Clear();
         }
         oldLease?.Cancel();
+        // A run not handed to the runner yet never is; the runner's own runs end with its disposal below.
+        foreach (var launch in launches) launch.Cancel();
         try
         {
             // Every live connection is reset, and a request still being handled answers 503: its generation is gone.

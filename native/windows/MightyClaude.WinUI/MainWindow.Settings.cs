@@ -37,6 +37,7 @@ public sealed partial class MainWindow
         SettingsSections.Display => BuildDisplaySection,
         SettingsSections.Styles => BuildStylesSection,
         SettingsSections.MobileRemote => BuildMobileRemoteSection,
+        SettingsSections.RemoteWorkspaces => BuildRemoteWorkspacesSection,
         SettingsSections.Companion => BuildCompanionSection,
         SettingsSections.PhaseModels => BuildPhaseModelsSection,
         SettingsSections.Components => BuildComponentsSection,
@@ -68,6 +69,7 @@ public sealed partial class MainWindow
             "tools" => [Slot(SettingsSections.Components), new(Locale.Get("settings.toolkit.sectionTitle"), BuildToolkitSection)],
             "cli" => [Slot(SettingsSections.Providers), Slot(SettingsSections.CliAccounts), Slot(SettingsSections.ClaudeMods), Slot(SettingsSections.CliUpdate)],
             "mobile" => [Slot(SettingsSections.MobileRemote), new(Locale.Get("settings.screenShare.sectionTitle"), BuildScreenShareSection, Beta: true)],
+            "remote" => [Slot(SettingsSections.RemoteWorkspaces)],
             "companion" => [Slot(SettingsSections.Companion)],
             "about" => [Slot(SettingsSections.AppUpdate), Slot(SettingsSections.AppInfo)],
             _ => [],
@@ -959,11 +961,14 @@ public sealed partial class MainWindow
     {
         var state = service.Snapshot;
         var workspaceId = state.ActiveWorkspaceId;
-        var path = state.Workspaces.FirstOrDefault(w => w.Id == workspaceId)?.Path;
+        // A remote workspace's models are its host's: this PC's CLIs are read for this PC alone.
+        var path = LocalPath(state.Workspaces.FirstOrDefault(w => w.Id == workspaceId));
         var revision = ++modelRefreshRevision;
         var contexts = workspaceId is null || path is null ? [] : Wire.Providers.Select(provider => new ModelContext(workspaceId, path, provider)).ToArray();
         foreach (var key in contexts) RememberModelSelections(key, state);
         var next = await service.Providers.GetRuntimeAsync(true, path);
+        // The CLIs were looked for again (after an update, a sign-in or a reset): a sharing host reads them again too.
+        service.ForgetHostRuntime();
         if (closing || revision != modelRefreshRevision || service.Snapshot.ActiveWorkspaceId != workspaceId) return false;
         runtime = next; runtimePath = path;
         // The lists just read are each provider's newest for this folder: its panes are reconciled with them (AcceptModels).
@@ -1000,8 +1005,9 @@ public sealed partial class MainWindow
             await service.UpdateAsync(ClaudeModelReset.Apply);
             await RefreshCliAccounts(); Render();
             var command = await service.Providers.FindAsync("claude");
-            var said = await ClaudeModelReset.ReloadAsync(service.Snapshot.Workspaces, (workspace, token) => command is null ? Task.FromResult(ProviderCatalog.Fallback("claude"))
-                : ProviderCatalog.ReadModelsAsync("claude", command, token, workspace.Path, Timeout.InfiniteTimeSpan), modelResetClosing.Token);
+            // Only this PC's workspaces: a remote one's models are its host's (M/AppStore+ClaudeModelReset.swift).
+            var said = await ClaudeModelReset.ReloadAsync(service.Snapshot.Workspaces.Where(w => LocalPath(w) is not null).ToList(), (workspace, token) => command is null ? Task.FromResult(ProviderCatalog.Fallback("claude"))
+                : ProviderCatalog.ReadModelsAsync("claude", command, token, LocalFolder(workspace), Timeout.InfiniteTimeSpan), modelResetClosing.Token);
             if (closing) return;
             Say(said);
             await ResendWaitingLoginRequests("claude");

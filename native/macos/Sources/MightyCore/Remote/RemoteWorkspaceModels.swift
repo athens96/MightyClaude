@@ -111,6 +111,20 @@ public enum RemotePendingPermissions {
     }
 }
 
+/// The host's OS from its `/info` `runtime.platform`, as both apps show it on
+/// remote panes: a command pane runs zsh on a Mac host and PowerShell on a Windows one.
+public enum RemoteHostOS {
+    public static func label(_ platform: String?) -> String {
+        switch platform {
+        case "darwin": return L("remote.hostOS.darwin")
+        case "win32": return L("remote.hostOS.win32")
+        case "linux": return L("remote.hostOS.linux")
+        default: return L("remote.hostOS.unknown")
+        }
+    }
+    public static func hostWithOS(_ host: String, platform: String?) -> String { L("remote.hostWithOS", ["host": host, "os": label(platform)]) }
+}
+
 // MARK: - Wire
 
 struct RemoteWireInfo: Codable, Sendable {

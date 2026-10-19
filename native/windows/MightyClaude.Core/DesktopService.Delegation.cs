@@ -274,7 +274,8 @@ public sealed partial class DesktopService : IDelegationHost
         RunSession? pane; Workspace? workspace; DelegationPaneActivity activity; string? runId; bool quitting;
         lock (sync)
         {
-            pane = snapshot.Sessions.FirstOrDefault(s => s.Id == sessionId); workspace = pane is null ? null : snapshot.Workspaces.FirstOrDefault(w => w.Id == pane.WorkspaceId);
+            // A remote workspace's pane runs on its host: delegation never knows it, nor takes its host's path for a folder here.
+            pane = snapshot.Sessions.FirstOrDefault(s => s.Id == sessionId); workspace = pane is null ? null : snapshot.Workspaces.FirstOrDefault(w => w.Id == pane.WorkspaceId && w.Remote is null);
             activity = delegationRuns.Activity(sessionId, pane?.Status == "running" || routes.ContainsKey(sessionId)); runId = delegationRuns.RunId(sessionId); quitting = closing;
         }
         if (pane is null || workspace is null) return Task.FromResult<DelegationPaneState?>(null);
@@ -329,10 +330,13 @@ public sealed partial class DesktopService : IDelegationHost
 
     // The composer's new worktree (M/AppStore+Delegation.swift:225-340).
 
-    /// <summary>The folder a top-level agent pane's runs work in, where its children's worktrees branch from; null for a pane without its workspace.</summary>
+    /// <summary>
+    /// The folder a top-level agent pane's runs work in, where its children's worktrees branch from; null for a pane without its workspace,
+    /// and for a remote workspace's pane, whose folder is on its host (M/AppStore+Delegation.swift worktreeHostFolder).
+    /// </summary>
     private string? WorktreeHostFolder(RunSession session)
     {
-        lock (sync) return snapshot.Workspaces.FirstOrDefault(w => w.Id == session.WorkspaceId) is { } workspace ? DelegationPanes.RunWorkspace(session, workspace).Path : null;
+        lock (sync) return snapshot.Workspaces.FirstOrDefault(w => w.Id == session.WorkspaceId) is { Remote: null } workspace ? DelegationPanes.RunWorkspace(session, workspace).Path : null;
     }
 
     /// <summary>A delegated child's worktree when its runs work in a folder inside it, for a Codex or Antigravity run to write REPORT.md there; null for any other pane.</summary>
@@ -346,7 +350,7 @@ public sealed partial class DesktopService : IDelegationHost
     /// otherwise steer or queue as before (<see cref="ComposerSecondSends.Choose"/>).
     /// </summary>
     public ComposerSecondSend SecondSend(RunSession session) =>
-        ComposerSecondSends.Choose(session.Kind, session.Provider, session.Settings.PermissionMode, IsDelegatedChild(session), delegation is not null && delegationEnabled(), CanHostWorktree(session), DelegationProviders.CanSteer(session.Kind, session.Provider));
+        ComposerSecondSends.Choose(session.Kind, session.Provider, session.Settings.PermissionMode, IsDelegatedChild(session), delegation is not null && delegationEnabled() && !IsRemoteWorkspace(session.WorkspaceId), CanHostWorktree(session), DelegationProviders.CanSteer(session.Kind, session.Provider));
 
     /// <summary>
     /// What the worktree button's menu on the agent pane <paramref name="session"/> offers: Claude, Codex and Antigravity, each with
@@ -412,6 +416,9 @@ public sealed partial class DesktopService : IDelegationHost
     public async Task<HumanChildStart> StartHumanChildAsync(string parentId, string text, IReadOnlyList<RunAttachment> attachments, bool planFirst, Func<string, Task> failed, string? agent = null)
     {
         if (delegation is not { } coordinator) return new HumanChildStart.Failed(Locale.Get("delegation.human.error.switchedOff"));
+        // A remote workspace's pane has no children: its folder is on its host (M/SessionPaneView's remote note).
+        Workspace? remote; lock (sync) remote = snapshot.Sessions.FirstOrDefault(s => s.Id == parentId) is { } parent ? snapshot.Workspaces.FirstOrDefault(w => w.Id == parent.WorkspaceId && w.Remote is not null) : null;
+        if (remote?.Remote is { } reference) return new HumanChildStart.Failed(Locale.Get("remote.pane.agentNote", new Dictionary<string, string> { ["host"] = reference.HostName }));
         var starter = new HumanChildStarter(async (childId, run) =>
         {
             // Kept before the run starts, so a command that ends at once still finds its note.
@@ -530,7 +537,8 @@ public sealed partial class DesktopService : IDelegationHost
     {
         if (delegation is not { } coordinator) return null;
         AppSnapshot state; lock (sync) state = snapshot;
-        return state.Workspaces.FirstOrDefault(w => w.Id == workspaceId) is { } workspace
+        // A remote workspace has no children here, and its path is its host's (M/AppStore+Delegation.swift workspaceRemovalRefusal).
+        return state.Workspaces.FirstOrDefault(w => w.Id == workspaceId) is { Remote: null } workspace
             ? coordinator.WorkspaceRemovalRefusal(state.Sessions.Where(s => s.WorkspaceId == workspaceId).Select(s => s.Id).ToHashSet(), workspace.Path) : null;
     }
 

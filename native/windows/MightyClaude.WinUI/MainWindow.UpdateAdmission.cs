@@ -28,7 +28,7 @@ public sealed partial class MainWindow
                 if (closing) throw new OperationCanceledException();
                 if (options.SmokeTest && smokeCliUpdater is null)
                 { completion.TrySetResult(new(provider, "skipped", Detail: CliUpdateStrings.DetailInspectFailed)); return; }
-                if (loginBusy.ContainsKey(provider) || accountChanges.ContainsKey(provider) || accountLoginWaits.ContainsKey(provider) || pluginOperations.IsRunning || service.HasActiveProvider(provider)
+                if (loginBusy.ContainsKey(provider) || accountChanges.ContainsKey(provider) || accountLoginWaits.ContainsKey(provider) || pluginOperations.IsRunning || service.HasActiveProvider(provider) || remoteHostRuns > 0
                     || views.Values.Any(p => p.UpdateProvider == provider && p.UpdateStarting))
                 { completion.TrySetResult(new(provider, "busy", Detail: CliUpdateStrings.DetailBusy)); return; }
                 manuallyUpdatingProvider = provider;
@@ -59,10 +59,12 @@ public sealed partial class MainWindow
 
     private string? PluginMutationBlockReason(string provider, Workspace workspace)
     {
-        if (closing || !service.Snapshot.Workspaces.Any(w => w.Id == workspace.Id && w.Path == workspace.Path)) return Locale.Get("windows.updates.workspaceChanged");
+        if (closing || !service.Snapshot.Workspaces.Any(w => w.Id == workspace.Id && w.Path == workspace.Path && w.Remote == workspace.Remote)) return Locale.Get("windows.updates.workspaceChanged");
+        if (LocalPath(workspace) is null) return Locale.Get("remote.workspace.pluginsOnHost");
         if (AnyCliUpdateRunning) return Locale.Get("loginRecovery.updating");
         if (pluginOperations.IsRunning) return Locale.Get("plugins.operation.busy");
-        return service.HasActiveProvider(provider) || views.Values.Any(p => p.UpdateProvider == provider && p.UpdateStarting)
+        // Another computer's runs on this PC use its CLIs too (M localCLIIsRunning).
+        return service.HasActiveProvider(provider) || remoteHostRuns > 0 || views.Values.Any(p => p.UpdateProvider == provider && p.UpdateStarting)
             ? Locale.Get("windows.updates.providerRunning", new Dictionary<string, string> { ["provider"] = ProviderCatalog.Name(provider) }) : null;
     }
 }

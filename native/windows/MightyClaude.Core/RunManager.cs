@@ -20,8 +20,12 @@ public interface IRemoteRunner : IAsyncDisposable
     void AnswerQuestionnaire(string sessionId, string requestId, IReadOnlyDictionary<string, UserQuestionAnswer> answers);
     PlanRecord AnswerPlan(string sessionId, string requestId, PlanDecision decision);
 }
-/// <summary>Where a host's runner hands a run's events, tool requests and graph nodes (by session id).</summary>
-public sealed record RemoteRunnerSinks(Action<RunEvent> Event, Action<ToolPermissionRequest> Permission, Action<string, ExecutionGraphNode> GraphNode);
+/// <summary>
+/// Where a host's runner hands a run's events, tool requests and graph nodes (by session id), and where it looks its workspace up:
+/// <paramref name="Workspace"/> finds only a workspace the sharing serves now, at its shared path, so the runner's own look-up at launch
+/// never reaches another folder.
+/// </summary>
+public sealed record RemoteRunnerSinks(Action<RunEvent> Event, Action<ToolPermissionRequest> Permission, Action<string, ExecutionGraphNode> GraphNode, Func<string, Task<Workspace>> Workspace);
 /// <param name="permissionRequested">
 /// Set only by a host that can show the approval bar for this run. When it is
 /// null — every headless path — Claude keeps launching with

@@ -16,8 +16,11 @@ internal static partial class RemoteHostVerification
 
     internal static async Task<string> Raw(int port, byte[] head, byte[]? body = null, IPAddress? address = null)
     {
-        using var client = new TcpClient((address ?? IPAddress.Loopback).AddressFamily); await client.ConnectAsync(address ?? IPAddress.Loopback, port);
-        var stream = client.GetStream();
+        using var client = new TcpClient((address ?? IPAddress.Loopback).AddressFamily);
+        NetworkStream stream;
+        // A peer cut off at accept may be reset while it connects or before it takes its stream: it received nothing.
+        try { await client.ConnectAsync(address ?? IPAddress.Loopback, port); stream = client.GetStream(); }
+        catch (Exception ex) when (CutOff(ex)) { return ""; }
         try { await stream.WriteAsync(head); if (body is not null) await stream.WriteAsync(body); } catch (IOException) { }
         using var answer = new MemoryStream(); var buffer = new byte[8192];
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
@@ -28,10 +31,15 @@ internal static partial class RemoteHostVerification
     /// <summary>Opens a connection and sends <paramref name="head"/>, leaving it open; the caller reads or closes it.</summary>
     private static async Task<TcpClient> Open(int port, string head)
     {
+        // Every connection opened here must be accepted: a reset while connecting fails the check instead of reading as "closed",
+        // which would let the deadline and close-on-stop checks pass without testing anything (only Raw expects a cut-off at accept).
         var client = new TcpClient(); await client.ConnectAsync(IPAddress.Loopback, port);
         await client.GetStream().WriteAsync(Encoding.ASCII.GetBytes(head));
         return client;
     }
+
+    /// <summary>The server reset or aborted the connection, or it was no longer connected when its stream was asked for.</summary>
+    private static bool CutOff(Exception ex) => ex is SocketException { SocketErrorCode: SocketError.ConnectionReset or SocketError.ConnectionAborted } or InvalidOperationException;
 
     /// <summary>Reads until the server ends the connection (or 10 s pass).</summary>
     private static async Task<string> ReadAll(TcpClient client)
@@ -385,12 +393,14 @@ internal static partial class RemoteHostVerification
 
     internal static string Key => RemoteClientVerification.Key;
 
-    /// <summary>A scripted runner for the host checks: "hold" waits for a stop, "ask" asks one tool request, "graph" sends a node and a graph run.</summary>
+    /// <summary>A scripted runner for the host checks: "hold" waits for a stop, "ask" asks one tool request, "graph" sends a node and a graph run,
+    /// "flood" and "bulk" send more than the host keeps (in events and in bytes).</summary>
     internal sealed class FakeRemoteRunner(RemoteRunnerSinks sinks) : IRemoteRunner
     {
         internal readonly ConcurrentQueue<StartRunRequest> Started = new();
         internal readonly ConcurrentQueue<string> Stopped = new();
         internal readonly ConcurrentQueue<(string Session, string Request, bool Allow)> Answers = new();
+        internal readonly ConcurrentQueue<(string Session, string Text)> Steered = new();
         private readonly ConcurrentDictionary<string, bool> waiting = new();
         public Task StartAsync(StartRunRequest request)
         {
@@ -406,12 +416,18 @@ internal static partial class RemoteHostVerification
                     var run = RemoteWireFixtureVerification.Node("graph-run-event.json")["event"]!["graphRun"].Deserialize<MightyGraphRun>(Wire.Json)!;
                     sinks.Event(new RunEvent(id, "graph_run", GraphRun: run));
                     sinks.Event(RunEvent.State(id, "completed")); break;
+                case "flood":
+                    for (var i = 0; i < 5000; i++) sinks.Event(RunEvent.Log(id, "output", "line " + i));
+                    sinks.Event(RunEvent.State(id, "completed")); break;
+                case "bulk":
+                    for (var i = 0; i < 200; i++) sinks.Event(RunEvent.Log(id, "output", new string((char)('a' + i % 26), 30_000)));
+                    sinks.Event(RunEvent.State(id, "completed")); break;
                 default: sinks.Event(RunEvent.State(id, "completed")); break;
             }
             return Task.CompletedTask;
         }
         public Task StopAsync(string id) { Stopped.Enqueue(id); if (waiting.TryRemove(id, out _)) sinks.Event(RunEvent.State(id, "stopped")); return Task.CompletedTask; }
-        public Task<bool> TrySteerAsync(string id, string text) => Task.FromResult(waiting.ContainsKey(id));
+        public Task<bool> TrySteerAsync(string id, string text) { Steered.Enqueue((id, text)); return Task.FromResult(waiting.ContainsKey(id)); }
         public void RespondToToolPermission(string id, string requestId, bool allow)
         {
             Answers.Enqueue((id, requestId, allow));
@@ -432,7 +448,8 @@ internal static partial class RemoteHostVerification
     }
 
     internal static async Task<HostFixture> MakeHost(TimeSpan? heartbeat = null, Func<StartRunRequest, string?>? admission = null, Func<HostFixture, RemoteRunnerSinks, IRemoteRunner>? runner = null,
-        Func<IReadOnlyList<string>>? addresses = null, Func<DateTimeOffset>? clock = null, Func<string, Task>? beforeBind = null, Action<int>? runsChanged = null)
+        Func<IReadOnlyList<string>>? addresses = null, Func<DateTimeOffset>? clock = null, Func<string, Task>? beforeBind = null, Action<int>? runsChanged = null,
+        Func<CancellationToken, Task>? beforeLaunch = null)
     {
         var directory = Verification.Temp(); var store = new StateStore(Path.Combine(directory, "host")); await store.LoadAsync();
         System.IO.Directory.CreateDirectory(Path.Combine(directory, "project")); System.IO.Directory.CreateDirectory(Path.Combine(directory, "private"));
@@ -447,7 +464,7 @@ internal static partial class RemoteHostVerification
             CreateRunner = sinks => runner?.Invoke(fixture, sinks) ?? (fixture.Runner = new FakeRemoteRunner(sinks)),
             HostName = "studio-pc", AllowLoopbackForTests = true, Heartbeat = heartbeat ?? RemoteProtocol.HeartbeatTimeout, Admission = admission ?? (_ => null),
             Addresses = addresses, Clock = clock ?? (() => DateTimeOffset.UtcNow), RunsChanged = runsChanged ?? (_ => { }),
-        }) { BeforeBind = beforeBind };
+        }) { BeforeBind = beforeBind, BeforeLaunch = beforeLaunch };
         return fixture = new HostFixture { Directory = directory, Store = store, Shared = shared, Private = hidden, Remote = remote, Host = host };
     }
 

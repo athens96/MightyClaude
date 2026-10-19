@@ -57,6 +57,8 @@ public sealed partial class MainWindow
 
     private async Task<ClaudePluginBrowser> ShowPluginBrowser(string provider, Workspace workspace)
     {
+        // A remote path never becomes the working folder of a local CLI command (M/AppStore+Plugins.swift); every way in comes through here.
+        if (LocalPath(workspace) is null) throw new InvalidOperationException(Locale.Get("remote.workspace.pluginsOnHost"));
         var browser = new ClaudePluginBrowser(provider, workspace);
         // The app's own operations object carries the shared runner: 8 MiB of
         // listing output, the macOS cap. Anything past it is refused by the

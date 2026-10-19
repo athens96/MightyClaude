@@ -304,7 +304,8 @@ public sealed partial class MainWindow
         menu.Items.Add(MenuItem(Locale.Get("menu.showInExplorer"), () => Act(() =>
         {
             var workspace = service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == id);
-            if (workspace is not null && WorkspaceFiles.RealPath(workspace.Path) is { } path && Directory.Exists(path))
+            // A remote workspace's folder is on its host: Explorer never opens its path here.
+            if (LocalPath(workspace) is { } folder && WorkspaceFiles.RealPath(folder) is { } path && Directory.Exists(path))
             {
                 var start = new System.Diagnostics.ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe")) { UseShellExecute = false };
                 start.ArgumentList.Add(path); using var process = System.Diagnostics.Process.Start(start);
