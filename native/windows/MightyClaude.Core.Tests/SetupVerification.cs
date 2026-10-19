@@ -189,7 +189,8 @@ internal static class SetupVerification
             Check(!SetupScriptFiles.MarkerExists(started) && !SetupScriptFiles.RunEnded(started, done, _ => true), "a run that has not started has not ended");
             Directory.CreateSymbolicLink(done, elsewhere);
             Check(!SetupScriptFiles.MarkerExists(done) && !SetupScriptFiles.RunEnded(started, done, _ => true), "a link is no marker");
-            File.Delete(done);
+            // A directory link: Windows removes it with RemoveDirectory (File.Delete is refused), elsewhere it is unlinked, as RemoveLeftovers does.
+            if (OperatingSystem.IsWindows()) Directory.Delete(done, false); else File.Delete(done);
             Directory.CreateDirectory(started);
             Check(SetupScriptFiles.RunnerProcessId(started) is null && !SetupScriptFiles.RunEnded(started, done, _ => false), "until the script wrote its process ID the run goes on");
             File.WriteAllText(Path.Combine(started, "pid"), "4242\r\n");
