@@ -112,6 +112,11 @@ public sealed partial class MainWindow
             Require(reset.IsEnabled, "the reset button must be enabled while the setting is not the standard one");
             ((IInvokeProvider)new ButtonAutomationPeer(reset).GetPattern(PatternInterface.Invoke)).Invoke();
             await WaitUI(() => AppText.Current.IsStandard, () => "the reset button must bring back the standard setting; got " + AppText.Current);
+            // Each new setting lays the window out again (TextAppearanceChanged → Render), which puts the panes in a new dock
+            // that holds them only after the next layout pass: the composer and the conversation draw the setting as they are
+            // shown again, and the steps above came one after another without one.
+            await WaitUI(() => input.FontSize == DesignMetrics.Type.Body && transcript.FontSize == DesignMetrics.Type.Body,
+                () => $"after the reset the composer and the conversation must catch up as they are shown again; got {input.FontSize}pt (loaded {input.IsLoaded}), {transcript.FontSize}pt (loaded {transcript.IsLoaded})");
             Standard("after the reset");
             Require(!reset.IsEnabled && size.SelectedIndex == TextAppearance.Scales.ToList().IndexOf(1) && ui.SelectedIndex == 0 && conversation.SelectedIndex == 0 && codes.SelectedIndex == 0,
                 "after the reset the pop-ups must show 100% and the stand-in fonts, and the button must be off");

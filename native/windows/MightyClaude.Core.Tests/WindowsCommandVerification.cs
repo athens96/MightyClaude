@@ -60,7 +60,9 @@ internal static class WindowsCommandVerification
         var (direct, none) = WindowsCommand.Launch(@"C:\git\git.exe", ["--version"], Path.GetTempPath(), new Dictionary<string, string> { ["PATH"] = "x" });
         Check(direct.FileName == @"C:\git\git.exe" && none is null && direct.ArgumentList.SequenceEqual(["--version"]) && direct.Environment[WindowsCommand.NoCurrentDirectorySearch] == "1" && direct.Environment["PATH"] == "x",
             "a direct launch keeps its arguments and environment and sets NoDefaultCurrentDirectoryInExePath too");
-        Check(WindowsCommand.CommandInterpreter(new Dictionary<string, string> { ["SystemRoot"] = @"D:\Win" }) == Path.Combine(@"D:\Win", "System32", "cmd.exe"), "cmd.exe comes from the system folder");
+        // On Windows the system folder Windows reports wins over any SystemRoot the environment claims; elsewhere (these checks on a Mac) SystemRoot as given.
+        var expectedInterpreter = OperatingSystem.IsWindows() ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe") : Path.Combine(@"D:\Win", "System32", "cmd.exe");
+        Check(WindowsCommand.CommandInterpreter(new Dictionary<string, string> { ["SystemRoot"] = @"D:\Win" }) == expectedInterpreter, "cmd.exe comes from the system folder");
         return Task.CompletedTask;
     }
 
