@@ -133,7 +133,8 @@ internal static class RemoteLoopbackVerification
             fixture.Host.SetAllowsFullAccess(true);
             await client.StartAsync(new StartRunRequest("pane-5", workspace.Id, "shell", "hold", []), workspace);
             await Verification.Until(() => seen.Events.Any(e => e.SessionId == "pane-5" && e.Type == "log"));
-            await Task.Delay(4000);
+            // Two heartbeats: a run whose polls did not count would be stopped by 4 s and its stop polled well before 6 s.
+            await Task.Delay(6000);
             Check(!seen.Events.Any(e => e.SessionId == "pane-5" && e.Status == "stopped"), "a polled run outlives the heartbeat");
             await fixture.Host.StopAsync();
             await Verification.Until(() => seen.Events.Any(e => e.SessionId == "pane-5" && e.Status == "error"), 20000);
