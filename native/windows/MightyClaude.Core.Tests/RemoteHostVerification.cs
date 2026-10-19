@@ -16,8 +16,11 @@ internal static partial class RemoteHostVerification
 
     internal static async Task<string> Raw(int port, byte[] head, byte[]? body = null, IPAddress? address = null)
     {
-        using var client = new TcpClient((address ?? IPAddress.Loopback).AddressFamily); await client.ConnectAsync(address ?? IPAddress.Loopback, port);
-        var stream = client.GetStream();
+        using var client = new TcpClient((address ?? IPAddress.Loopback).AddressFamily);
+        NetworkStream stream;
+        // A peer cut off at accept may be reset while it connects or before it takes its stream: it received nothing.
+        try { await client.ConnectAsync(address ?? IPAddress.Loopback, port); stream = client.GetStream(); }
+        catch (Exception ex) when (CutOff(ex)) { return ""; }
         try { await stream.WriteAsync(head); if (body is not null) await stream.WriteAsync(body); } catch (IOException) { }
         using var answer = new MemoryStream(); var buffer = new byte[8192];
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
@@ -28,10 +31,15 @@ internal static partial class RemoteHostVerification
     /// <summary>Opens a connection and sends <paramref name="head"/>, leaving it open; the caller reads or closes it.</summary>
     private static async Task<TcpClient> Open(int port, string head)
     {
-        var client = new TcpClient(); await client.ConnectAsync(IPAddress.Loopback, port);
-        await client.GetStream().WriteAsync(Encoding.ASCII.GetBytes(head));
+        var client = new TcpClient();
+        // Cut off at accept: the caller reads nothing from it, as from any connection the server ended.
+        try { await client.ConnectAsync(IPAddress.Loopback, port); await client.GetStream().WriteAsync(Encoding.ASCII.GetBytes(head)); }
+        catch (Exception ex) when (CutOff(ex) || ex is IOException) { }
         return client;
     }
+
+    /// <summary>The server reset or aborted the connection, or it was no longer connected when its stream was asked for.</summary>
+    private static bool CutOff(Exception ex) => ex is SocketException { SocketErrorCode: SocketError.ConnectionReset or SocketError.ConnectionAborted } or InvalidOperationException;
 
     /// <summary>Reads until the server ends the connection (or 10 s pass).</summary>
     private static async Task<string> ReadAll(TcpClient client)

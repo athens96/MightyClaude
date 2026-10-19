@@ -667,8 +667,9 @@ public sealed partial class MainWindow
                 request = request with { Model = "default" };
             }
             var pane=Session;
-            if(pane.Kind!="claude"||pane.Provider!="claude"||pane.AgentViewMode!="mighty"||pane.MightyStyle is null)return request;
-            var profile=owner.StateDirectory;var workspace=LocalFolder(Workspace);
+            // A remote pane runs on its host without this PC's styles, as on the Mac: its request goes as it is.
+            if(pane.Kind!="claude"||pane.Provider!="claude"||pane.AgentViewMode!="mighty"||pane.MightyStyle is null||LocalPath(Workspace) is not {} workspace)return request;
+            var profile=owner.StateDirectory;
             var prepared=await Task.Run(()=>StyleRunPermissions.Bind(request,pane,profile,workspace));
             if(owner.closing||!owner.service.Snapshot.Sessions.Any(p=>p.Id==id)||Session.MightyStyle!=pane.MightyStyle||Session.MightyStyleHash!=pane.MightyStyleHash)
                 throw new IOException(Locale.Get("guidedPanel.approvalRequired"));
@@ -678,8 +679,8 @@ public sealed partial class MainWindow
         // again on the worker; a stale menu or file edit cannot execute a style.
         private async Task<string> PrepareStyleSubmission(string draft,bool attachments)
         {
-            var pane=Session;if(pane.Kind!="claude"||pane.Provider!="claude"||pane.AgentViewMode!="mighty"||pane.MightyStyle is null)return draft;
-            var folder=LocalFolder(Workspace);var registry=await Task.Run(()=>StyleRegistry.Load(owner.StateDirectory,folder));var style=registry.Runnable(pane.MightyStyle,pane.MightyStyleHash)??throw new IOException(Locale.Get("guidedPanel.approvalRequired"));
+            var pane=Session;if(pane.Kind!="claude"||pane.Provider!="claude"||pane.AgentViewMode!="mighty"||pane.MightyStyle is null||LocalPath(Workspace) is not {} folder)return draft;
+            var registry=await Task.Run(()=>StyleRegistry.Load(owner.StateDirectory,folder));var style=registry.Runnable(pane.MightyStyle,pane.MightyStyleHash)??throw new IOException(Locale.Get("guidedPanel.approvalRequired"));
             if(!StyleRegistry.Unchanged(style))throw new IOException(Locale.Get("guidedPanel.approvalRequired"));
             var phase=style.Evaluator.EffectivePhase(GuidedPhase(style),styleStartingNew);var action=style.Evaluator.RewriteAction(draft,phase,attachments,pane.Status=="running",pane.Logs.Any(l=>l.Kind=="user")||pane.GraphRuns is {Count:>0},styleStartingNew);
             var result=action is null?draft:style.Manifest.Actions.First(a=>a.Id==action).Prompt(draft);

@@ -23,6 +23,7 @@ public sealed partial class DesktopService : IAsyncDisposable
     public ProviderCatalog Providers { get; }
     /// <summary>Pictures agents showed, under the app data folder (macOS <c>image-cache</c>); transcripts hold only references.</summary>
     public AgentImageCache Images { get; }
+    /// <summary>A run event, as applied. Subscribers may be called under <c>sync</c> (SayIfOwned): they must hand work on (TryEnqueue) and never call into RemoteClientService synchronously.</summary>
     public event Action<RunEvent>? RunEventReceived;
     public event Action<StartRunRequest>? RequestStarting;
     /// <summary>
@@ -149,6 +150,7 @@ public sealed partial class DesktopService : IAsyncDisposable
     public Task RenameWorkspaceAsync(string id, string name) => UpdateAsync(s => RenameSupport.RenameWorkspace(s, id, name));
     public Task RenameSessionAsync(string id, string name) => UpdateAsync(s => RenameSupport.RenameSession(s, id, name));
     public Task SetSessionAutoTitleAsync(string id) => UpdateAsync(s => PaneTitle.SetAutomatic(s, id));
+    /// <summary>Applies <paramref name="update"/> under <c>sync</c>: it must never call into RemoteClientService synchronously.</summary>
     public Task UpdateAsync(Func<AppSnapshot, AppSnapshot> update)
     {
         List<RunSession> closed; Task save;
@@ -174,19 +176,17 @@ public sealed partial class DesktopService : IAsyncDisposable
     private void Receive(RunEvent value)
     {
         if (!value.Valid()) return;
-        var ended = false; var remembers = false;
+        var ended = false;
         lock (sync)
         {
             snapshot = snapshot.Apply(value);
-            // A remote pane's conversation id is its host's record: this PC's known sessions never list it, and the client's poll thread
-            // never writes that file.
-            if (value.Type == "resume") remembers = !(snapshot.Sessions.FirstOrDefault(s => s.Id == value.SessionId) is { } pane && snapshot.Workspaces.Any(w => w.Id == pane.WorkspaceId && w.Remote is not null));
             if (value.Type == "status" && value.Status is "stopped" or "completed" or "error") { if (routes.Remove(value.SessionId, out var route)) route.Ended.TrySetResult(); ended = DelegationRunEnded(value.SessionId, value.Status!); }
             // A streaming run sends many events a second: each asks for a save, which starts at most every 1.5 s (M/AppStore.swift
             // scheduleSave). A run's end is saved at once.
             if (value.Type == "status" && value.Status is "stopped" or "completed" or "error") _ = QueueSave(); else ScheduleSave();
         }
-        if (remembers && value.ResumeId is { } resumed) RememberSession(resumed);
+        // A remote pane's id is remembered too, as the Mac's apply() does.
+        if (value.Type == "resume" && value.ResumeId is { } resumed) RememberSession(resumed);
         RunEventReceived?.Invoke(value);
         // A run that is up takes what its start could not, and a pane's end offers again what it could not take while ending (M/AppStore.swift:1023, M/AppStore+Delegation.swift:82-92).
         if (ended || value.Type == "status" && value.Status == "running") OfferDelegationPending();
@@ -272,7 +272,11 @@ public sealed partial class DesktopService : IAsyncDisposable
             throw;
         }
     }
-    /// <summary>Applies <paramref name="events"/> only while <paramref name="route"/> is still the pane's, checked and applied under one lock.</summary>
+    /// <summary>
+    /// Applies <paramref name="events"/> only while <paramref name="route"/> is still the pane's, checked and applied under one lock. The
+    /// events' RunEventReceived subscribers then run under <c>sync</c>: like UpdateAsync's mutators, they must never call into
+    /// RemoteClientService synchronously (its callbacks wait on <c>sync</c> while holding a run's lock).
+    /// </summary>
     private void SayIfOwned(string sessionId, Route route, params RunEvent[] events)
     {
         lock (sync)

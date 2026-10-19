@@ -305,7 +305,16 @@ internal static class RemoteDesktopVerification
     internal static Task TheWindowReadsAWorkspacesFolderOnlyThroughLocalPath()
     {
         var folder = ClaudePluginVerification.WinUISource();
-        var read = new Regex(@"\b[Ww]orkspace\??\.Path\b|Workspaces\.(?:First|FirstOrDefault|Single|SingleOrDefault|Last|LastOrDefault)\([^;]*\)\??\.Path\b|RunWorkspace\([^)]*\)\.Path\b", RegexOptions.CultureInvariant);
+        // A Path read on anything named for a workspace (activeWorkspace, ws, w), a property pattern on Path, or the folder of a looked-up workspace.
+        var read = new Regex(@"\b\w*[Ww]orkspace\w*\??\.Path\b|\b(?:w|ws)\??\.Path\b|\{\s*Path\s*:|Workspaces\.(?:First|FirstOrDefault|Single|SingleOrDefault|Last|LastOrDefault)\([^;]*\)\??\.Path\b|RunWorkspace\([^)]*\)\.Path\b", RegexOptions.CultureInvariant);
+        // Core calls that take a whole Workspace and read its Path inside: each must come after a LocalPath guard in its file.
+        var wholeWorkspace = new Regex(@"new ClaudePluginBrowser\(|\.SnapshotAsync\(|Bindings\.Bind\(|\.UpdateInstalledAsync\(|\.UpgradeMarketplacesAsync\(", RegexOptions.CultureInvariant);
+        (string File, string Guard)[] guarded =
+        [
+            ("MainWindow.Plugins.cs", "if (LocalPath(workspace) is null) throw"), ("MainWindow.AgentIO.cs", "LocalPath(workspace) is null ? null :"),
+            // Automatic plugin updates run in the user's home folder, never a workspace's.
+            ("MainWindow.AutomaticUpdates.cs", "var home = new Workspace { Name = \"Home\", Path = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) };"),
+        ];
         (string File, string Fragment)[] shownOrCompared =
         [
             ("MainWindow.DashboardWorkspaces.cs", "Text = workspace.Path"), ("MainWindow.DashboardWorkspaces.cs", "SetToolTip(path, workspace.Path)"),
@@ -313,10 +322,13 @@ internal static class RemoteDesktopVerification
             ("MainWindow.Plugins.cs", "SetToolTip(workspacePath, workspace.Path)"), ("MainWindow.ResumeSession.cs", "MiddleTrim.Fit(path, workspace.Path"),
             ("MainWindow.SessionInfo.cs", "Row(\"path\", workspace?.Path)"), ("MainWindow.Shell.cs", "workspaceHeaderFullPath = workspace.Path"),
             ("MainWindow.Sidebar.cs", "SetToolTip(select, workspace.Path)"), ("MainWindow.UpdateAdmission.cs", "w.Path == workspace.Path"),
+            ("MainWindow.DashboardWorkspaces.cs", "c.Path != w.Path"), ("MainWindow.ModelRefresh.cs", "w.Path == key.Path"),
+            // A reference preview target's own Path, in the transcript's self-check.
+            ("AgentTranscript.Actions.cs", "TextTargetAt(plain, pathAt + 24) is { Path: path"),
             // The pictures smoke writes its fixture into the smoke's own local workspace.
             ("MainWindow.AgentImages.cs", "workspace.Path, \"shots\""),
         ];
-        var unexpected = new List<string>(); var used = new HashSet<(string, string)>(); var scanned = 0;
+        var unexpected = new List<string>(); var used = new HashSet<(string, string)>(); var usedGuards = new HashSet<(string, string)>(); var scanned = 0;
         foreach (var file in Directory.EnumerateFiles(folder, "*.cs", SearchOption.AllDirectories))
         {
             var relative = Path.GetRelativePath(folder, file);
@@ -324,7 +336,17 @@ internal static class RemoteDesktopVerification
             var name = Path.GetFileName(file);
             if (name.Contains("Smoke", StringComparison.Ordinal) || name == "MainWindow.LocalPaths.cs") continue;
             scanned++;
-            var lines = File.ReadAllLines(file);
+            var text = File.ReadAllText(file);
+            foreach (Match call in wholeWorkspace.Matches(text))
+            {
+                if (text.LastIndexOf('\n', call.Index) is var start && text.IndexOf('\n', call.Index) is var end && text[(start + 1)..(end < 0 ? text.Length : end)].TrimStart() is var line
+                    && (line.StartsWith("public ", StringComparison.Ordinal) || line.StartsWith("///", StringComparison.Ordinal))) continue;
+                var guard = guarded.FirstOrDefault(g => g.File == name);
+                if (guard.File is null || text.IndexOf(guard.Guard, StringComparison.Ordinal) is var at && (at < 0 || at > call.Index))
+                    unexpected.Add(name + ": " + call.Value + " without a LocalPath guard before it");
+                else usedGuards.Add(guard);
+            }
+            var lines = text.Split('\n');
             for (var i = 0; i < lines.Length; i++)
             {
                 if (!read.IsMatch(lines[i])) continue;
@@ -334,6 +356,7 @@ internal static class RemoteDesktopVerification
         }
         Check(scanned > 50, "the window's sources were scanned: " + scanned);
         Check(unexpected.Count == 0, "a workspace's folder is read only through LocalPath:\n" + string.Join("\n", unexpected));
+        Check(usedGuards.Count == guarded.Length, "every guarded call is still there: " + string.Join(", ", guarded.Where(g => !usedGuards.Contains(g)).Select(g => g.File)));
         Check(used.Count == shownOrCompared.Length, "every allowed use is still there: " + string.Join(", ", shownOrCompared.Where(a => !used.Contains(a)).Select(a => a.File + " " + a.Fragment)));
         Check(File.ReadAllText(Path.Combine(folder, "MainWindow.LocalPaths.cs")).Contains("RemoteWorkspaceFeatures.LocalPath(workspace)", StringComparison.Ordinal), "the window's LocalPath is the shared rule");
         Check(RemoteWorkspaceFeatures.LocalPath(new Workspace { Path = "C:\\work" }) == "C:\\work" && RemoteWorkspaceFeatures.LocalPath(new Workspace { Path = "\\\\server\\share", Remote = new("conn-1", "ws-1", "studio-pc") }) is null
