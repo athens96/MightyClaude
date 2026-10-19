@@ -18,7 +18,8 @@ public sealed partial class MainWindow
         if (options.SmokeTest || agentIO is not null || Environment.ProcessPath is not { } executable) return;
         agentUrlPrompts.Changed += RefreshAgentWebPrompts;
         var server = new AgentIOPipe(HandleAgentIO); agentIO = server;
-        service.ConfigureAgentIO((request, workspace) => server.Bindings.Bind(request.SessionId, workspace, request.Provider, server.Name, executable));
+        // No pane tools for a remote workspace: they would work in this PC's processes and files, at the host's path.
+        service.ConfigureAgentIO((request, workspace) => LocalPath(workspace) is null ? null : server.Bindings.Bind(request.SessionId, workspace, request.Provider, server.Name, executable));
     }
     private async Task<object> HandleAgentIO(AgentIOBinding binding, string tool, string value, CancellationToken cancellation)
     {

@@ -135,18 +135,17 @@ public sealed partial class DesktopService
     }
 
     /// <summary>
-    /// An answer to a remote pane's request goes out without holding the caller (often the UI thread). One that failed, or that the host did
-    /// not take, is said in the pane, as the Mac shows its permission error.
+    /// An answer to a remote pane's request goes out without holding the caller (often the UI thread). As on the Mac, only an answer that
+    /// failed is said, in the pane, and only while the run it was sent for is still the pane's; one the host did not take is left alone.
     /// </summary>
-    private void AnswerRemote(string sessionId, Func<RemoteClientService, Task<bool>> answer)
+    private void AnswerRemote(string sessionId, Func<RemoteClientService, Task> answer)
     {
         if (Remote is not { } client) return;
+        Route? route; lock (sync) route = routes.GetValueOrDefault(sessionId);
         _ = Task.Run(async () =>
         {
-            string? failure;
-            try { failure = await answer(client) ? null : Locale.Get("remote.error.permissionDelivery"); }
-            catch (Exception ex) when (ex is not OutOfMemoryException) { failure = ex.Message; }
-            if (failure is not null) Receive(RunEvent.Log(sessionId, "error", failure));
+            try { await answer(client); }
+            catch (Exception ex) when (ex is not OutOfMemoryException) { if (route is not null) SayIfOwned(sessionId, route, RunEvent.Log(sessionId, "error", ex.Message)); }
         });
     }
 }
