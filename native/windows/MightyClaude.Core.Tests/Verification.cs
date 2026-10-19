@@ -11,11 +11,17 @@ using MightyClaude.Core;
 internal static class Verification
 {
     private static int passed, skipped;
+    /// <summary>Checks that failed: each is printed as FAIL and the run goes on, so one run shows every failure; the run fails at the end.</summary>
+    private static readonly List<string> failedChecks = [];
     internal static string Temp() { var path = Path.Combine(Path.GetTempPath(), "mighty-core-test-" + Wire.Id()); Directory.CreateDirectory(path); return path; }
     private static void Check(bool value, string message = "Assertion failed") { if (!value) throw new InvalidOperationException(message); }
     private static async Task Reject(Func<Task> action) { try { await action(); } catch (Exception) { return; } throw new InvalidOperationException("Expected rejection"); }
     internal static async Task Until(Func<bool> condition, int milliseconds = 7000) { var end = DateTimeOffset.UtcNow.AddMilliseconds(milliseconds); while (!condition()) { if (DateTimeOffset.UtcNow >= end) throw new TimeoutException("Expected condition was not reached"); await Task.Delay(20); } }
-    private static async Task Test(string name, Func<Task> action) { await action(); passed++; Console.WriteLine("PASS " + name); }
+    private static async Task Test(string name, Func<Task> action)
+    {
+        try { await action(); passed++; Console.WriteLine("PASS " + name); }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { failedChecks.Add(name); Console.WriteLine("FAIL " + name + ": " + ex.Message); }
+    }
     internal static CliCommand Self(params string[] args)
     {
         var binary = Environment.ProcessPath ?? throw new InvalidOperationException("Executable unavailable"); return new(binary, Path.GetFileNameWithoutExtension(binary).Equals("dotnet", StringComparison.OrdinalIgnoreCase) ? new[] { Assembly.GetExecutingAssembly().Location }.Concat(args).ToArray() : args, "2.1.271");
@@ -1251,7 +1257,8 @@ internal static class Verification
             });
         }
         else { skipped++; Console.WriteLine("SKIP Windows Job Object / UTF-8 console (requires Windows)"); }
-        Console.WriteLine($"Native Core: {passed} passed, {skipped} platform-specific skipped.");
+        Console.WriteLine($"Native Core: {passed} passed, {failedChecks.Count} failed, {skipped} platform-specific skipped.");
+        if (failedChecks.Count > 0) throw new InvalidOperationException($"{failedChecks.Count} Core check(s) failed: " + string.Join("; ", failedChecks));
     }
     private static bool Alive(int id) { try { using var process = Process.GetProcessById(id); return !process.HasExited; } catch (ArgumentException) { return false; } }
 }

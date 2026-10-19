@@ -402,7 +402,7 @@ internal static class DelegationCrossAgentVerification
             Check(gemini is { Agent: "antigravity", StartingMode: "fullAccess" }, "an Antigravity child in fullAccess");
             Same(await place.Call("delegate", ("task", "A fourth."), ("mode", "acceptEdits"), ("agent", "codex")), DelegationResponse.Refusal(DelegationReasonCode.WidthCap), "three open children of any agents");
             foreach (var info in new[] { own, codex, gemini }) Check(await place.WaitFor(info.Id, ChildState.Running), info.Agent + " runs");
-            SameList(place.Host.CreatedPanes.Select(pane => pane.Provider), ["claude", "codex", "gemini"], "each pane runs its agent");
+            SameList(place.Host.CreatedPanes.Select(pane => pane.Provider).Order(StringComparer.Ordinal), ["claude", "codex", "gemini"], "each pane runs its agent (panes are made as their children start, in any order)");
         }
         finally { place.Remove(); }
     }
@@ -422,7 +422,7 @@ internal static class DelegationCrossAgentVerification
             var claude = Made(await place.Send("Plan it in Claude.", null, planFirst: true));
             Check(claude is { Provider: null, StartingMode: "plan" }, "Ctrl+Enter's Claude child in plan");
             foreach (var id in new[] { codex.Id, gemini.Id, claude.Id }) Check(await place.WaitFor(id, ChildState.Running), id + " runs");
-            SameList(place.Host.CreatedPanes.Select(pane => pane.Provider), ["codex", "gemini", "claude"], "each pane runs its agent");
+            SameList(place.Host.CreatedPanes.Select(pane => pane.Provider).Order(StringComparer.Ordinal), ["claude", "codex", "gemini"], "each pane runs its agent (panes are made as their children start, in any order)");
             Check(place.Host.CreatedPanes.All(pane => pane.StartedByHuman), "each is the human's");
             // Three open children the human started, of any agents: the cap.
             Same(await place.Send("One more.", "codex"), new HumanChildStart.Refused(DelegationReasonCode.WidthCap), "the cap");
