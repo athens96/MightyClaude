@@ -26,14 +26,19 @@ public sealed partial class RemoteHostService
         public readonly HashSet<string> Pending = new(StringComparer.Ordinal);
         /// <summary>A Windows client asked for graph_run events instead of graph nodes.</summary>
         public readonly bool GraphRuns = graphRuns;
-        /// <summary>Cancelled when the run stops or sharing ends, so a launch not begun yet never begins.</summary>
+        /// <summary>Cancelled when the run stops or sharing ends, so a launch not begun yet never begins. Cancelled outside <c>gate</c>, and
+        /// its token goes only to Task.Run: never to the runner or a continuation.</summary>
         public readonly CancellationTokenSource Cancel = new();
+        /// <summary>The event types left out because the Mac could not read them, each traced once.</summary>
+        public readonly HashSet<string> Dropped = new(StringComparer.Ordinal);
     }
 
     private readonly Dictionary<string, Job> jobs = new(StringComparer.Ordinal);
     private static readonly Regex CursorQuery = new(@"^\?cursor=([0-9]{1,12})\z", RegexOptions.CultureInvariant);
     /// <summary>What <c>{"cursor":N,"event":…}</c> adds around an event in a poll, at most.</summary>
     private const int EventFrameBytes = 32;
+    /// <summary>Awaited at the start of each launch, with the run's cancellation (checks only): a stop let in here must keep the run from the runner.</summary>
+    internal Func<CancellationToken, Task>? BeforeLaunch { get; init; }
     /// <summary>More waiting requests than any runner keeps (its channels hold 16); one past this is never answerable from a client.</summary>
     private const int MaximumPendingPerRun = 64;
 
@@ -107,6 +112,7 @@ public sealed partial class RemoteHostService
         var wire = Decode<RemoteWireStart>(request.Body);
         // The listener read up to 12 MiB for this route; past 512 KiB only a run that brings attachments.
         if (request.Body.Length > RemoteProtocol.MaximumRequestBytes && wire.Request.Attachments is null) throw new HostFailure(413, Locale.Get("remote.run.error.tooLarge"));
+        if (wire.RegisteredModels.Count > 256) throw new HostFailure(400, Locale.Get("wire.startRun.invalidFormat"));
         if (wire.RegisteredModels.Take(64).Any(m => !Wire.Model(m.Name)) || wire.PhaseModels is { } phase && !RemoteWorkspaceValidation.PhaseModels(phase))
             throw new HostFailure(400, Locale.Get("remote.host.error.badRequest"));
         var id = Wire.Id();
@@ -124,6 +130,8 @@ public sealed partial class RemoteHostService
         if (FullAccessRefusal(run, allowed) is { } refusal) throw new HostFailure(403, refusal);
         // A Windows command line holds 32 767 characters: a longer command is refused here, never cut.
         if (run.Kind == "shell" && !CommandFits(run.Input)) throw new HostFailure(400, RemoteWindowsStrings.HostCommandTooLong);
+        // The cheap refusal before the costly checks below; checked again when the run is recorded.
+        lock (gate) if (jobs.Values.Count(j => !j.Done) >= RemoteProtocol.MaximumRuns) throw RunLimit();
         // This PC's own CLI update, plugin change or model reload holds client runs too.
         if (options.Admission(run) is { } reason) throw new HostFailure(503, reason);
         if (run.Kind == "claude")
@@ -140,7 +148,7 @@ public sealed partial class RemoteHostService
         lock (gate)
         {
             if (revision != generation || runner is null) throw new HostFailure(503, Locale.Get("remote.host.error.stopped"));
-            if (jobs.Values.Count(j => !j.Done) >= RemoteProtocol.MaximumRuns) throw new HostFailure(429, Locale.Get("remote.host.error.runLimit", new Dictionary<string, string> { ["count"] = RemoteProtocol.MaximumRuns.ToString() }));
+            if (jobs.Values.Count(j => !j.Done) >= RemoteProtocol.MaximumRuns) throw RunLimit();
             Prune();
             jobs[id] = job = new Job(request.Headers.GetValueOrDefault(RemoteProtocol.GraphHeader) == RemoteProtocol.GraphRuns, options.Clock());
             active = runner;
@@ -149,6 +157,8 @@ public sealed partial class RemoteHostService
         _ = Task.Run(() => LaunchAsync(run, job, active, revision), job.Cancel.Token);
         return Reply(202, new RemoteWireJob(RemoteProtocol.Version, id));
     }
+
+    private static HostFailure RunLimit() => new(429, Locale.Get("remote.host.error.runLimit", new Dictionary<string, string> { ["count"] = RemoteProtocol.MaximumRuns.ToString() }));
 
     /// <summary>Whether the command fits the command line its PowerShell gets (RemoteCommandShell.Fits). Off Windows (the checks run on a
     /// Mac) Windows' usual system folder stands in; a system folder the runner cannot use is left for the runner to report.</summary>
@@ -166,6 +176,7 @@ public sealed partial class RemoteHostService
     private async Task LaunchAsync(StartRunRequest run, Job job, IRemoteRunner active, Guid revision)
     {
         var id = run.SessionId;
+        if (BeforeLaunch is { } hook) await hook(job.Cancel.Token);
         lock (gate) if (!Open(id, job, revision) || job.Stopping) return;
         try { await active.StartAsync(run); }
         catch (Exception ex) when (ex is not OutOfMemoryException)
@@ -190,7 +201,7 @@ public sealed partial class RemoteHostService
         try
         {
             if (Following(value.SessionId, revision) is not { } graphRuns) return;
-            Append(value.SessionId, RemoteWireEvents.FromRunEvent(value, value.SessionId, graphRuns), revision, value.Type == "status" && value.Status is "completed" or "error" or "stopped");
+            Append(value.SessionId, value.Type, RemoteWireEvents.FromRunEvent(value, value.SessionId, graphRuns), revision, value.Type == "status" && value.Status is "completed" or "error" or "stopped");
         }
         catch (Exception ex) when (ex is not OutOfMemoryException) { Trace.TraceWarning("remote host: a run event was left out: " + ex.GetType().Name); }
     }
@@ -206,7 +217,7 @@ public sealed partial class RemoteHostService
                 if (value.State != "pending") job.Pending.Remove(value.Id);
                 else if (job.Pending.Count < MaximumPendingPerRun) job.Pending.Add(value.Id);
             }
-            Append(value.RunId, RemoteWireEvents.FromPermission(value, value.RunId), revision, false);
+            Append(value.RunId, "permission", RemoteWireEvents.FromPermission(value, value.RunId), revision, false);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException) { Trace.TraceWarning("remote host: a tool request was left out: " + ex.GetType().Name); }
     }
@@ -216,7 +227,7 @@ public sealed partial class RemoteHostService
         try
         {
             // A Windows client that asked for graph runs gets those instead of nodes.
-            if (Following(sessionId, revision) is false) Append(sessionId, RemoteWireEvents.FromGraphNode(node, sessionId), revision, false);
+            if (Following(sessionId, revision) is false) Append(sessionId, "graph", RemoteWireEvents.FromGraphNode(node, sessionId), revision, false);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException) { Trace.TraceWarning("remote host: a graph node was left out: " + ex.GetType().Name); }
     }
@@ -226,15 +237,17 @@ public sealed partial class RemoteHostService
 
     /// <summary>
     /// One event into the job's buffer: the newest 4096 within 4 MiB are kept, one too large for any poll is never kept (its cursor shows
-    /// as a gap), and nothing after the run's last status. Null is an event the Mac could not read, left out.
+    /// as a gap), and nothing after the run's last status. Null is an event the Mac could not read, left out (its type traced once a run).
     /// </summary>
-    private void Append(string jobId, JsonObject? wire, Guid revision, bool ended)
+    private void Append(string jobId, string type, JsonObject? wire, Guid revision, bool ended)
     {
         var data = wire is null ? null : JsonSerializer.SerializeToUtf8Bytes(wire, RemoteWire.Json);
+        var dropped = false;
         lock (gate)
         {
             if (revision != generation || !jobs.TryGetValue(jobId, out var job) || job.Done) return;
-            if (data is not null)
+            if (data is null) dropped = job.Dropped.Add(type);
+            else
             {
                 job.Cursor++;
                 var size = data.Length + EventFrameBytes;
@@ -244,9 +257,11 @@ public sealed partial class RemoteHostService
                     while (job.Events.Count > RemoteProtocol.MaximumBufferedEvents || job.Bytes > RemoteProtocol.MaximumBufferedBytes) job.Bytes -= job.Events.Dequeue().Size;
                 }
             }
-            if (!ended) return;
-            job.Done = true; job.FinishedAt = options.Clock(); job.Pending.Clear();
+            if (ended) { job.Done = true; job.FinishedAt = options.Clock(); job.Pending.Clear(); }
         }
+        // The type alone, never the event: its content may be anything the run printed.
+        if (dropped) Trace.TraceInformation("remote host: a \"" + type + "\" event the Mac cannot read was left out");
+        if (!ended) return;
         // Told from the pool: this may run on the runner's thread under its per-run lock, where nothing may wait.
         ThreadPool.QueueUserWorkItem(_ => AnnounceRuns());
     }
@@ -254,12 +269,13 @@ public sealed partial class RemoteHostService
     private RemoteHttpResponse Events(string id, string query)
     {
         var match = CursorQuery.Match(query);
+        List<(int Cursor, byte[] Event, int Size)> selected; int last, newest; bool gap, done;
         lock (gate)
         {
             if (!jobs.TryGetValue(id, out var job) || !match.Success || !long.TryParse(match.Groups[1].ValueSpan, out var requested) || requested > job.Cursor) throw new HostFailure(400, Locale.Get("remote.host.error.badCursor"));
             var cursor = (int)requested;
             job.LastPoll = options.Clock();
-            var selected = new List<(int Cursor, byte[] Event, int Size)>(); var bytes = 0;
+            selected = []; var bytes = 0;
             foreach (var item in job.Events)
             {
                 if (item.Cursor <= cursor) continue;
@@ -267,13 +283,15 @@ public sealed partial class RemoteHostService
                 selected.Add(item); bytes += item.Size;
             }
             // A cursor skipped between the request's and what follows: the buffer dropped it (over its bounds, or one event too large).
-            var expected = cursor + 1; var gap = false;
+            var expected = cursor + 1; gap = false;
             foreach (var item in selected) { if (item.Cursor != expected) gap = true; expected = item.Cursor + 1; }
             // Nothing kept after the cursor although the run went on: all of it was dropped.
             if (selected.Count == 0 && job.Cursor > cursor) gap = true;
-            var last = selected.Count > 0 ? selected[^1].Cursor : gap ? job.Cursor : cursor;
-            return new RemoteHttpResponse(200, PollBody(last, job.Cursor, gap, job.Done && last >= job.Cursor, selected), VersionHeaders);
+            last = selected.Count > 0 ? selected[^1].Cursor : gap ? job.Cursor : cursor;
+            newest = job.Cursor; done = job.Done && last >= job.Cursor;
         }
+        // Written outside the lock: an event's bytes never change once kept.
+        return new RemoteHttpResponse(200, PollBody(last, newest, gap, done, selected), VersionHeaders);
     }
 
     /// <summary>A RemoteWirePoll with each event's bytes as they were written when it came in.</summary>
@@ -304,8 +322,9 @@ public sealed partial class RemoteHostService
         lock (gate)
         {
             if (!jobs.TryGetValue(id, out job) || job.Done || job.Stopping) return;
-            job.Stopping = true; job.Cancel.Cancel(); active = runner; revision = generation;
+            job.Stopping = true; active = runner; revision = generation;
         }
+        job.Cancel.Cancel();
         try { if (active is not null) await active.StopAsync(id); }
         catch (Exception ex) when (ex is not OutOfMemoryException) { Trace.TraceWarning("remote host: stopping a run: " + ex.GetType().Name); }
         bool open; lock (gate) open = Open(id, job, revision);
@@ -330,7 +349,7 @@ public sealed partial class RemoteHostService
                         var now = options.Clock();
                         orphaned = jobs.Where(p => !p.Value.Done && !p.Value.Stopping && now - p.Value.LastPoll >= options.Heartbeat).Select(p => p.Key).ToArray();
                     }
-                    foreach (var id in orphaned) await StopJobAsync(id);
+                    await Task.WhenAll(orphaned.Select(StopJobAsync));
                     lock (gate) if (revision == generation) Prune();
                 }
                 // One bad turn never ends the heartbeat: a run nobody polls must still stop.

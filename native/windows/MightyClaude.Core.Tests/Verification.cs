@@ -650,6 +650,8 @@ internal static class Verification
         await Test("remote loopback: a real command runs in the shared folder and stops", RemoteLoopbackVerification.ARealCommandRunsInTheSharedFolderAndStops);
         await Test("remote loopback: an old stop's run count never lands after a newer one", RemoteLoopbackVerification.AnOldStopsRunCountNeverLandsAfterANewerOne);
         await Test("remote loopback: answers reach only their own job's requests", RemoteLoopbackVerification.AnswersReachOnlyTheirOwnJobsRequests);
+        await Test("remote loopback: a stop before the runner takes the run still ends it", RemoteLoopbackVerification.AStopBeforeTheRunnerTakesTheRunStillEndsIt);
+        await Test("remote loopback: stopping sharing cancels a launch not begun", RemoteLoopbackVerification.StoppingSharingCancelsALaunchNotBegun);
         await Test("remote loopback: the buffer keeps the newest events within its bounds and says the gap", RemoteLoopbackVerification.TheBufferKeepsTheNewestEventsWithinItsBoundsAndSaysTheGap);
         await Test("corrupt/unknown/oversize state cannot be overwritten by shutdown", async () =>
         {
