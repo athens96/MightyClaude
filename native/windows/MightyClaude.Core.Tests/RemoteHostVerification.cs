@@ -385,7 +385,8 @@ internal static partial class RemoteHostVerification
 
     internal static string Key => RemoteClientVerification.Key;
 
-    /// <summary>A scripted runner for the host checks: "hold" waits for a stop, "ask" asks one tool request, "graph" sends a node and a graph run.</summary>
+    /// <summary>A scripted runner for the host checks: "hold" waits for a stop, "ask" asks one tool request, "graph" sends a node and a graph run,
+    /// "flood" and "bulk" send more than the host keeps (in events and in bytes).</summary>
     internal sealed class FakeRemoteRunner(RemoteRunnerSinks sinks) : IRemoteRunner
     {
         internal readonly ConcurrentQueue<StartRunRequest> Started = new();
@@ -405,6 +406,12 @@ internal static partial class RemoteHostVerification
                     sinks.GraphNode(id, new ExecutionGraphNode("node-1", "run-1", null, "main", "completed", "Request"));
                     var run = RemoteWireFixtureVerification.Node("graph-run-event.json")["event"]!["graphRun"].Deserialize<MightyGraphRun>(Wire.Json)!;
                     sinks.Event(new RunEvent(id, "graph_run", GraphRun: run));
+                    sinks.Event(RunEvent.State(id, "completed")); break;
+                case "flood":
+                    for (var i = 0; i < 5000; i++) sinks.Event(RunEvent.Log(id, "output", "line " + i));
+                    sinks.Event(RunEvent.State(id, "completed")); break;
+                case "bulk":
+                    for (var i = 0; i < 200; i++) sinks.Event(RunEvent.Log(id, "output", new string((char)('a' + i % 26), 30_000)));
                     sinks.Event(RunEvent.State(id, "completed")); break;
                 default: sinks.Event(RunEvent.State(id, "completed")); break;
             }

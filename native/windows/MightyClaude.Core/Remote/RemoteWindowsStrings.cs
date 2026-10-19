@@ -13,6 +13,7 @@ public static class RemoteWindowsStrings
     public static string ConnectedMemory => Locale.Get("remote.windows.connect.detail.connectedMemory");
     public static string HostLocalOnly => Locale.Get("remote.windows.host.error.localOnly");
     public static string HostNoTailscale => Locale.Get("remote.windows.host.error.noTailscale");
+    public static string HostCommandTooLong => Locale.Get("remote.windows.host.error.commandTooLong");
     public static string NotLocal => Locale.Get("remote.windows.workspace.error.notLocal");
     public static string PaneUnavailable => Locale.Get("remote.windows.workspace.paneUnavailable");
     public static string SettingsTailscaleOff => Locale.Get("remote.windows.settings.tailscaleOff");

@@ -209,7 +209,10 @@ public sealed partial class RemoteHostService(RemoteHostOptions options) : IAsyn
         {
             if (only is { } expected && expected != generation) return;
             generation = Guid.NewGuid(); old = [.. servers]; servers.Clear(); oldRunner = runner; runner = null;
-            state = new(); allowsFullAccess = false; oldLease = lease; lease = null; jobs.Clear();
+            state = new(); allowsFullAccess = false; oldLease = lease; lease = null;
+            // A run not handed to the runner yet never is; the runner's own runs end with its disposal below.
+            foreach (var job in jobs.Values) job.Cancel.Cancel();
+            jobs.Clear();
         }
         oldLease?.Cancel();
         try
