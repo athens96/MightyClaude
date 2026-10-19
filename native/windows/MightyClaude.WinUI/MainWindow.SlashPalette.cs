@@ -78,7 +78,7 @@ public sealed partial class MainWindow
         }
 
         /// <summary>The catalogue key this pane scans under, mirroring slashCatalogKey.</summary>
-        private string? SlashWorkspacePath => Workspace.Path;
+        private string? SlashWorkspacePath => LocalPath(Workspace);
 
         /// <summary>
         /// Recomputes the palette for the current draft and draws it. Called on

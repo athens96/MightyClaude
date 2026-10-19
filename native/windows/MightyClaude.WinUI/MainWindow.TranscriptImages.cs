@@ -22,7 +22,7 @@ public sealed partial class MainWindow
             owner.dialogOpen = true;
             try
             {
-                var root = Workspace.Path;
+                var root = LocalPath(Workspace);
                 var bytes = await Task.Run(() => action.Image is { } image ? owner.service.Images.Data(image) : AgentImagePaths.Locate(action.Value, root) switch
                 {
                     AgentImageLocation.File file => AgentImagePaths.Read(file.Path, file.Root),
@@ -77,7 +77,7 @@ public sealed partial class MainWindow
             }
             finally { owner.dialogOpen = false; }
         });
-        private string ImageExternalPath(TranscriptAction action, string workspace, byte[] snapshot, string mediaType, bool revealOriginal)
+        private string ImageExternalPath(TranscriptAction action, string? workspace, byte[] snapshot, string mediaType, bool revealOriginal)
         {
             if (revealOriginal && AgentImagePaths.Locate(action.Image?.Path ?? action.Value, workspace) is AgentImageLocation.File original)
             {

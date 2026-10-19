@@ -11,6 +11,12 @@ public static class RemoteWorkspaceFeatures
     public static IReadOnlyList<string> AddPaneEntries(Workspace? workspace) => workspace?.Remote is null ? AddPaneMenu.Entries()
         : [.. Wire.Providers.Select(p => AddPaneMenu.AgentPrefix + p), AddPaneMenu.Separator, AddPaneMenu.Shell, AddPaneMenu.Separator, AddPaneMenu.OpenProject];
 
+    /// <summary>
+    /// The workspace's folder on this PC, or null for a remote workspace, whose path is its host's (a UNC path among them): the one way
+    /// the window reads a workspace's folder, so nothing local ever opens, reads, runs in or authenticates to a host's path.
+    /// </summary>
+    public static string? LocalPath(Workspace? workspace) => workspace?.Remote is null ? workspace?.Path : null;
+
     /// <summary>Delegation, files, browser, file-reading styles, agent I/O, the status line and the git badge.</summary>
     public static bool AllowsLocalOnly(Workspace? workspace) => workspace?.Remote is null;
 

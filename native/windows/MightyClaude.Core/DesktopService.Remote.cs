@@ -6,11 +6,16 @@ namespace MightyClaude.Core;
 /// </summary>
 public sealed partial class DesktopService
 {
-    /// <summary>How long one reading of this PC's CLIs answers every /info and client start before it is read again.</summary>
-    private static readonly TimeSpan HostRuntimeFresh = TimeSpan.FromSeconds(30);
+    /// <summary>How long one reading of this PC's CLIs, from the moment it finished, answers every /info and client start (checks shorten it).</summary>
+    internal TimeSpan HostRuntimeFresh { get; set; } = TimeSpan.FromSeconds(30);
+    /// <summary>How the sharing host reads this PC's CLIs (checks replace it).</summary>
+    internal Func<Task<RuntimeInfo>>? HostRuntimeReader { get; set; }
     private readonly object hostRuntimeGate = new();
     private Task<RuntimeInfo>? hostRuntime;
-    private long hostRuntimeAt;
+    /// <summary>When <see cref="hostRuntime"/> finished well, on the Stopwatch clock; null while it reads or after it failed.</summary>
+    private long? hostRuntimeRead;
+    /// <summary>Moves on each new reading and each forget, so a reading that finishes after either never stamps itself fresh.</summary>
+    private int hostRuntimeGeneration;
 
     /// <summary>The client of "다른 컴퓨터 연결"; null until <see cref="AttachRemote"/>.</summary>
     public RemoteClientService? Remote { get; private set; }
@@ -28,6 +33,9 @@ public sealed partial class DesktopService
             return Remote ??= new RemoteClientService(store, dataDirectory, keys, Receive, value => ToolPermissionChanged?.Invoke(value), options);
         }
     }
+
+    /// <summary>The pane's run goes through the client: it runs there now, or its workspace is a remote one.</summary>
+    private bool RemotePane(string sessionId) => Remote?.IsRunning(sessionId) == true || IsRemoteSession(sessionId);
 
     public bool IsRemoteWorkspace(string? workspaceId) { lock (sync) return snapshot.Workspaces.Any(w => w.Id == workspaceId && w.Remote is not null); }
     public bool IsRemoteSession(string sessionId)
@@ -77,19 +85,27 @@ public sealed partial class DesktopService
 
     /// <summary>
     /// This PC's CLIs as a sharing host reports them. Every /info and every client agent start asks; one reading is shared by all who ask
-    /// while it goes, and kept for <see cref="HostRuntimeFresh"/>, so callers that give up on a slow reading never leave more behind them.
-    /// A reading that failed is tried again by the next caller.
+    /// while it goes, and kept for <see cref="HostRuntimeFresh"/> after it finished, so callers that give up on a slow reading never leave
+    /// more behind them. A reading that failed is tried again by the next caller.
     /// </summary>
     internal Task<RuntimeInfo> HostRuntimeAsync(string appVersion)
     {
         lock (hostRuntimeGate)
         {
-            var now = System.Diagnostics.Stopwatch.GetTimestamp();
-            if (hostRuntime is { } known && (!known.IsCompleted || known.IsCompletedSuccessfully && System.Diagnostics.Stopwatch.GetElapsedTime(hostRuntimeAt, now) < HostRuntimeFresh)) return known;
-            hostRuntimeAt = now;
-            return hostRuntime = Task.Run(async () => (await Providers.GetRuntimeAsync()) with { AppVersion = appVersion });
+            if (hostRuntime is { } known && (!known.IsCompleted || hostRuntimeRead is { } read && System.Diagnostics.Stopwatch.GetElapsedTime(read) < HostRuntimeFresh)) return known;
+            var generation = ++hostRuntimeGeneration; hostRuntimeRead = null;
+            var reader = HostRuntimeReader ?? (() => Providers.GetRuntimeAsync());
+            return hostRuntime = Task.Run(async () =>
+            {
+                var value = (await reader()) with { AppVersion = appVersion };
+                lock (hostRuntimeGate) if (generation == hostRuntimeGeneration) hostRuntimeRead = System.Diagnostics.Stopwatch.GetTimestamp();
+                return value;
+            });
         }
     }
+
+    /// <summary>Drops the sharing host's reading of this PC's CLIs (a CLI was updated, installed or signed in): the next caller reads them again.</summary>
+    public void ForgetHostRuntime() { lock (hostRuntimeGate) { hostRuntimeGeneration++; hostRuntime = null; hostRuntimeRead = null; } }
 
     /// <summary>
     /// A remote pane's run: connected first (the first send after launch reads the key from the vault), on a connection that still
@@ -118,14 +134,19 @@ public sealed partial class DesktopService
         return true;
     }
 
-    /// <summary>An answer to a remote pane's request goes out without holding the caller (often the UI thread); a failure is said in the pane.</summary>
-    private void AnswerRemote(string sessionId, Func<RemoteClientService, Task> answer)
+    /// <summary>
+    /// An answer to a remote pane's request goes out without holding the caller (often the UI thread). One that failed, or that the host did
+    /// not take, is said in the pane, as the Mac shows its permission error.
+    /// </summary>
+    private void AnswerRemote(string sessionId, Func<RemoteClientService, Task<bool>> answer)
     {
         if (Remote is not { } client) return;
         _ = Task.Run(async () =>
         {
-            try { await answer(client); }
-            catch (Exception ex) when (ex is not OutOfMemoryException) { Receive(RunEvent.Log(sessionId, "error", ex.Message)); }
+            string? failure;
+            try { failure = await answer(client) ? null : Locale.Get("remote.error.permissionDelivery"); }
+            catch (Exception ex) when (ex is not OutOfMemoryException) { failure = ex.Message; }
+            if (failure is not null) Receive(RunEvent.Log(sessionId, "error", failure));
         });
     }
 }

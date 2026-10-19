@@ -662,6 +662,11 @@ internal static class Verification
         await Test("remote desktop: a remote pane runs through the client and the phone never sees it", RemoteDesktopVerification.ARemotePaneRunsThroughTheClientAndThePhoneNeverSeesIt);
         await Test("remote desktop: the sharing host runs only in shared folders with no pane tools", RemoteDesktopVerification.TheSharingHostRunsOnlyInSharedFoldersWithNoPaneTools);
         await Test("remote desktop: remote panes keep to the host's features", RemoteDesktopVerification.RemotePanesKeepToTheHostsFeatures);
+        await Test("remote desktop: no client code runs under the service's lock, and a stop while connecting ends the run once", RemoteDesktopVerification.NoClientCodeRunsUnderTheServicesLock);
+        await Test("remote desktop: a stop during the host's accept never ends the next send", RemoteDesktopVerification.AStopDuringTheHostsAcceptNeverEndsTheNextSend);
+        await Test("remote desktop: a send to a workspace the host no longer shares is refused", RemoteDesktopVerification.ASendToAWorkspaceTheHostNoLongerSharesIsRefused);
+        await Test("remote desktop: the host reads this PC's CLIs once, and again when stale, failed or forgotten", RemoteDesktopVerification.TheHostReadsThisPCsCLIsOnceAndAgainWhenStaleFailedOrForgotten);
+        await Test("remote desktop: the window reads a workspace's folder only through LocalPath", RemoteDesktopVerification.TheWindowReadsAWorkspacesFolderOnlyThroughLocalPath);
         await Test("corrupt/unknown/oversize state cannot be overwritten by shutdown", async () =>
         {
             foreach (var text in new[] { "null", "{", "{\"version\":2,\"workspaces\":[],\"sessions\":[]}", "{\"version\":1,\"workspaces\":null,\"sessions\":[]}" })

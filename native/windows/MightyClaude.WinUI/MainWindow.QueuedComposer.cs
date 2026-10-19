@@ -274,7 +274,8 @@ public sealed partial class MainWindow
             {
                 queueStarting = true; RefreshComposerState();
                 ProviderRuntime fresh;
-                try { fresh = await owner.ReadProviderAfresh(Session.Provider, Workspace.Path); }
+                // A remote pane's CLI is its host's: its last answer, never a reading of this PC's CLI in the host's path.
+                try { fresh = LocalPath(Workspace) is { } folder ? await owner.ReadProviderAfresh(Session.Provider, folder) : RemoteWorkspaceFeatures.ProviderRuntime(Session.Provider, Workspace.Remote!, owner.service.Remote?.Connection(Workspace.Remote!.ConnectionId)); }
                 finally { queueStarting = false; if (QueuePaneAlive) RefreshComposerState(); }
                 if (!QueuePaneAlive || !queuedInputs.Items.Contains(item)) return;
                 if (RunBlock.Reason(Session, fresh) is { } blocked)

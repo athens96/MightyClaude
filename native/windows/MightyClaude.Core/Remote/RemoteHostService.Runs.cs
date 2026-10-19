@@ -120,7 +120,7 @@ public sealed partial class RemoteHostService
         try { run = wire.ToRequest(id, wire.Request.WorkspaceId).Validate(); } catch (ArgumentException ex) { throw new HostFailure(400, ex.Message); }
         // Only a shared workspace's own folder is ever the working folder; the client sends an id, never a path.
         try { await ResolveShared(run.WorkspaceId, revision); }
-        catch (Exception ex) when (ex is not OutOfMemoryException) { throw new HostFailure(403, ex.Message); }
+        catch (Exception ex) when (ex is not (OutOfMemoryException or HostFailure)) { throw new HostFailure(403, ex.Message); }
         bool allowed; lock (gate) allowed = allowsFullAccess;
         if (FullAccessRefusal(run, allowed) is { } refusal) throw new HostFailure(403, refusal);
         // A Windows command line holds 32 767 characters: a longer command is refused here, never cut.
@@ -160,7 +160,8 @@ public sealed partial class RemoteHostService
     /// </summary>
     private async Task<Workspace> ResolveShared(string id, Guid revision)
     {
-        lock (gate) if (revision != generation) throw new InvalidOperationException(Locale.Get("remote.host.error.stopped"));
+        // Sharing stopped meanwhile: unavailable now (503), as the Mac's start answers, not a refusal of the workspace.
+        lock (gate) if (revision != generation) throw new HostFailure(503, Locale.Get("remote.host.error.stopped"));
         var shared = SharedWorkspaces().FirstOrDefault(w => w.Id == id) ?? throw new InvalidOperationException(Locale.Get("remote.host.error.notShared"));
         var folder = await options.ResolveLocal(id);
         if (folder.Id != id || folder.Remote is not null || !Path.IsPathFullyQualified(folder.Path) || !Directory.Exists(folder.Path) || folder.Path != shared.Path)

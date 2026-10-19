@@ -240,7 +240,7 @@ public sealed partial class MainWindow
             var state = service.Snapshot;
             var workspace = state.Sessions.FirstOrDefault(p => p.Id == session)?.WorkspaceId ?? state.ActiveWorkspaceId;
             // The sign-in runs on this PC: never in a remote workspace's path, which is its host's.
-            var directory = state.Workspaces.FirstOrDefault(w => w.Id == workspace && w.Remote is null)?.Path;
+            var directory = LocalPath(state.Workspaces.FirstOrDefault(w => w.Id == workspace));
             cancellation.ThrowIfCancellationRequested();
             if (antigravityLoginWindow is { Open: true } open) window = open;
             else

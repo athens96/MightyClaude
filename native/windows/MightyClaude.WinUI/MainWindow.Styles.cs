@@ -37,7 +37,7 @@ public sealed partial class MainWindow
                     if (profileRoot is null || stylesRoot is null || !WorkspaceFiles.Contains(stylesRoot, profileRoot) || (File.GetAttributes(folder) & FileAttributes.ReparsePoint) != 0)
                         throw new IOException(Locale.Get("guidedPanel.approvalRequired"));
                     // A remote workspace's styles are its host's: only this PC's folders are read.
-                    var workspace = service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == service.Snapshot.ActiveWorkspaceId && w.Remote is null)?.Path ?? StateDirectory;
+                    var workspace = LocalPath(service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == service.Snapshot.ActiveWorkspaceId)) ?? StateDirectory;
                     var registry = StyleRegistry.Load(StateDirectory, workspace);
                     if (registry.TrustLocked) throw new IOException(Locale.Get("settings.styles.lockBanner"));
                     if (registry.Styles.Any(s => s.Id == manifest.Id)) throw new IOException(Locale.Get("styles.registration.duplicate"));
@@ -68,7 +68,7 @@ public sealed partial class MainWindow
         }
         async Task Populate()
         {
-            var workspace = service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == service.Snapshot.ActiveWorkspaceId && w.Remote is null)?.Path ?? StateDirectory;
+            var workspace = LocalPath(service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == service.Snapshot.ActiveWorkspaceId)) ?? StateDirectory;
             var registry = await Task.Run(() => StyleRegistry.Load(StateDirectory, workspace)); register.IsEnabled = !registry.TrustLocked;
             var banners = new List<FrameworkElement>();
             if (registry.TrustLocked)
@@ -245,7 +245,7 @@ public sealed partial class MainWindow
                 if(styled)RenderToolPermissions(preserveQuestionnaire:true);
                 return;
             }
-            if(styleWatched is null)owner.WatchStyles(styleWatched=Workspace.Path);
+            if(styleWatched is null)owner.WatchStyles(styleWatched=LocalFolder(Workspace));
             var key=pane.MightyStyle+"|"+pane.MightyStyleHash+"|"+pane.MightyStyleSince+"|"+pane.Logs.Count+"|"+pane.Status;
             if(loadedStyleKey!=key&&!styleLoading)_=LoadStyles();
             RenderGuidedStyle();
@@ -256,7 +256,7 @@ public sealed partial class MainWindow
         {
             if(styleLoading||owner.closing||!owner.service.Snapshot.Sessions.Any(p=>p.Id==id))return;
             var pane=Session;if(pane.Kind!="claude"||pane.Provider!="claude"||pane.AgentViewMode!="mighty"||!RemoteWorkspaceFeatures.AllowsLocalOnly(Workspace))return;
-            styleLoading=true;var workspace=Workspace.Path;var key=pane.MightyStyle+"|"+pane.MightyStyleHash+"|"+pane.MightyStyleSince+"|"+pane.Logs.Count+"|"+pane.Status;
+            styleLoading=true;var workspace=LocalFolder(Workspace);var key=pane.MightyStyle+"|"+pane.MightyStyleHash+"|"+pane.MightyStyleSince+"|"+pane.Logs.Count+"|"+pane.Status;
             try
             {
                 var data=await Task.Run(()=>
@@ -306,7 +306,7 @@ public sealed partial class MainWindow
             if(selected!=null)
             {
                 if(!StyleRegistry.Unchanged(selected))throw new IOException(Locale.Get("guidedPanel.approvalRequired"));
-                var registry=await Task.Run(()=>StyleRegistry.Load(owner.StateDirectory,Workspace.Path));if(registry.Runnable(selected.Id,selected.Hash)==null)throw new IOException(Locale.Get("guidedPanel.approvalRequired"));
+                var folder=LocalFolder(Workspace);var registry=await Task.Run(()=>StyleRegistry.Load(owner.StateDirectory,folder));if(registry.Runnable(selected.Id,selected.Hash)==null)throw new IOException(Locale.Get("guidedPanel.approvalRequired"));
             }
             await Change(p=>p with{MightyStyle=selected?.Id,MightyStyleHash=selected?.Hash,MightyStyleSince=p.MightyStyle==selected?.Id?p.MightyStyleSince:null});styleStartingNew=false;styleGroup=null;loadedStyleKey=null;await LoadStyles();Refresh();
         });
@@ -359,14 +359,14 @@ public sealed partial class MainWindow
         private Task InstallStyle(RegisteredStyle style,string command)=>owner.Act(async()=>
         {
             if(!StyleRegistry.Unchanged(style))throw new IOException(Locale.Get("guidedPanel.approvalRequired"));
-            var current=await Task.Run(()=>StyleRegistry.Load(owner.StateDirectory,Workspace.Path));
+            var folder=LocalFolder(Workspace);var current=await Task.Run(()=>StyleRegistry.Load(owner.StateDirectory,folder));
             if(current.Runnable(style.Id,style.Hash)==null)throw new IOException(Locale.Get("guidedPanel.approvalRequired"));
             var actual=StyleRunPermissions.InstallCommand(command,PseudoTerminal.DefaultShell);
             var confirm=owner.StyledDialog(new ContentDialog{Title=Locale.Get("guidedPanel.installButton"),Content=new TextBox{Text=actual,IsReadOnly=true,TextWrapping=TextWrapping.Wrap,AcceptsReturn=true},XamlRoot=owner.root.XamlRoot,PrimaryButtonText=Locale.Get("guidedPanel.installButton"),CloseButtonText=Locale.Get("guidedPanel.cancelButton"),DefaultButton=ContentDialogButton.Close});
             if(await confirm.ShowAsync()!=ContentDialogResult.Primary)return;
             if(!StyleRegistry.Unchanged(style)||Session.MightyStyle!=style.Id||Session.MightyStyleHash!=style.Hash||owner.service.Snapshot.ActiveWorkspaceId!=Session.WorkspaceId)
                 throw new IOException(Locale.Get("guidedPanel.approvalRequired"));
-            var approved=await Task.Run(()=>StyleRegistry.Load(owner.StateDirectory,Workspace.Path));
+            var approved=await Task.Run(()=>StyleRegistry.Load(owner.StateDirectory,folder));
             if(approved.Runnable(style.Id,style.Hash)==null)throw new IOException(Locale.Get("guidedPanel.approvalRequired"));
             await owner.RunTerminalCommandAsync(actual,(StyleManifest.Text(style.Manifest.Root.GetProperty("install"),"paneTitle")??style.Manifest.Name)+" · "+StylePresentation.Name(style),autoRun:false);
         });
@@ -505,7 +505,7 @@ public sealed partial class MainWindow
                     if(styleCapabilityFiles[0].Detail is {Length:>0} detail)chips.Children.Add(new Border{Child=new TextBlock{Text=detail,TextSize=10,Foreground=ink2,TextWrapping=TextWrapping.NoWrap},Padding=new(DesignMetrics.Spacing.Xs,1,DesignMetrics.Spacing.Xs,1),CornerRadius=new(8),Background=b.Subtle,VerticalAlignment=VerticalAlignment.Center});
                     foreach(var file in styleCapabilityFiles.Take(6))
                     {
-                        var open=Button(file.Title,()=>{owner.service.OpenResultFile(file.Path,Workspace.Path);return Task.CompletedTask;});open.TextSize=10;open.TextFont=TextArea.Code;open.Padding=new(0);open.MinWidth=0;open.MinHeight=0;open.BorderThickness=new(0);open.VerticalAlignment=VerticalAlignment.Center;
+                        var open=Button(file.Title,()=>{owner.service.OpenResultFile(file.Path,LocalPath(Workspace));return Task.CompletedTask;});open.TextSize=10;open.TextFont=TextArea.Code;open.Padding=new(0);open.MinWidth=0;open.MinHeight=0;open.BorderThickness=new(0);open.VerticalAlignment=VerticalAlignment.Center;
                         owner.PaintPlainButton(open,b.Transparent,b.Transparent,ink:accent);ToolTipService.SetToolTip(open,Locale.Get("guidedPanel.openPathPrefix")+file.Path);chips.Children.Add(open);
                     }
                     var scroll=new ScrollViewer{Content=chips,HorizontalScrollBarVisibility=ScrollBarVisibility.Hidden,HorizontalScrollMode=ScrollMode.Auto,VerticalScrollBarVisibility=ScrollBarVisibility.Disabled,VerticalScrollMode=ScrollMode.Disabled};Grid.SetColumn(scroll,1);files.Children.Add(scroll);
@@ -641,7 +641,7 @@ public sealed partial class MainWindow
                 owner.smokeStyleWatch=true;
                 try
                 {
-                    owner.WatchStyles(styleWatched??Workspace.Path);
+                    owner.WatchStyles(styleWatched??LocalFolder(Workspace));
                     Directory.CreateDirectory(watched);await File.WriteAllTextAsync(probe,"changed");
                     await WaitUI(()=>!styleLoading&&!ReferenceEquals(styleRegistry,read),seconds:20);
                     Require(activeStyle is {Id:"ouroboros"},"the style must still resolve after its files were read again");
@@ -668,7 +668,7 @@ public sealed partial class MainWindow
             }
             var pane=Session;
             if(pane.Kind!="claude"||pane.Provider!="claude"||pane.AgentViewMode!="mighty"||pane.MightyStyle is null)return request;
-            var profile=owner.StateDirectory;var workspace=Workspace.Path;
+            var profile=owner.StateDirectory;var workspace=LocalFolder(Workspace);
             var prepared=await Task.Run(()=>StyleRunPermissions.Bind(request,pane,profile,workspace));
             if(owner.closing||!owner.service.Snapshot.Sessions.Any(p=>p.Id==id)||Session.MightyStyle!=pane.MightyStyle||Session.MightyStyleHash!=pane.MightyStyleHash)
                 throw new IOException(Locale.Get("guidedPanel.approvalRequired"));
@@ -679,7 +679,7 @@ public sealed partial class MainWindow
         private async Task<string> PrepareStyleSubmission(string draft,bool attachments)
         {
             var pane=Session;if(pane.Kind!="claude"||pane.Provider!="claude"||pane.AgentViewMode!="mighty"||pane.MightyStyle is null)return draft;
-            var registry=await Task.Run(()=>StyleRegistry.Load(owner.StateDirectory,Workspace.Path));var style=registry.Runnable(pane.MightyStyle,pane.MightyStyleHash)??throw new IOException(Locale.Get("guidedPanel.approvalRequired"));
+            var folder=LocalFolder(Workspace);var registry=await Task.Run(()=>StyleRegistry.Load(owner.StateDirectory,folder));var style=registry.Runnable(pane.MightyStyle,pane.MightyStyleHash)??throw new IOException(Locale.Get("guidedPanel.approvalRequired"));
             if(!StyleRegistry.Unchanged(style))throw new IOException(Locale.Get("guidedPanel.approvalRequired"));
             var phase=style.Evaluator.EffectivePhase(GuidedPhase(style),styleStartingNew);var action=style.Evaluator.RewriteAction(draft,phase,attachments,pane.Status=="running",pane.Logs.Any(l=>l.Kind=="user")||pane.GraphRuns is {Count:>0},styleStartingNew);
             var result=action is null?draft:style.Manifest.Actions.First(a=>a.Id==action).Prompt(draft);
