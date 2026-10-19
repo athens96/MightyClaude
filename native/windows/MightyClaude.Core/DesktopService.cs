@@ -8,6 +8,7 @@ public sealed partial class DesktopService : IAsyncDisposable
     private readonly Dictionary<string, Route> routes = [];
     private readonly StateStore store;
     private readonly RunManager local;
+    private readonly string pluginDirectory;
     private Task saved = Task.CompletedTask;
     private AppSnapshot snapshot = new();
     private bool closing;
@@ -42,7 +43,7 @@ public sealed partial class DesktopService : IAsyncDisposable
     /// <param name="worktrees">Makes delegated children's worktrees; null makes them under <see cref="ChildWorktreeMaker.DefaultRoot"/>.</param>
     public DesktopService(string directory, string? legacyDirectory, string pluginDirectory, ProviderCatalog? providers = null, Func<bool>? delegationEnabled = null, ChildWorktreeMaker? worktrees = null)
     {
-        store = new(directory, legacyDirectory); Providers = providers ?? new(); Images = new(Path.Combine(directory, "image-cache"));
+        store = new(directory, legacyDirectory); Providers = providers ?? new(); Images = new(Path.Combine(directory, "image-cache")); this.pluginDirectory = pluginDirectory;
         local = new(ResolveLocal, Providers, pluginDirectory, Receive, ReceiveToolPermission, Images);
         this.delegationEnabled = delegationEnabled ?? DelegationSwitch.IsOn; this.worktrees = worktrees; local.DelegationEnabled = this.delegationEnabled;
         // A save already asked for is still written while the app closes: closing only stops new work.
@@ -71,24 +72,38 @@ public sealed partial class DesktopService : IAsyncDisposable
         }
         ToolPermissionChanged?.Invoke(value);
     }
-    /// <summary>이번만 허용 / 거부 — the only way a request is ever answered, one request at a time.</summary>
+    /// <summary>Whether a pane of this PC runs <paramref name="provider"/>'s CLI now: another computer's runs, in a remote workspace, never hold this PC's CLI.</summary>
     public bool HasActiveProvider(string provider)
     {
-        lock (sync) return snapshot.Sessions.Any(s => s.Kind == "claude" && s.Provider == provider && (s.Status == "running" || routes.ContainsKey(s.Id)));
+        lock (sync) return snapshot.Sessions.Any(s => s.Kind == "claude" && s.Provider == provider && !snapshot.Workspaces.Any(w => w.Id == s.WorkspaceId && w.Remote is not null) && (s.Status == "running" || routes.ContainsKey(s.Id)));
     }
+    /// <summary>이번만 허용 / 거부 — the only way a request is ever answered, one request at a time.</summary>
     public void RespondToToolPermission(string sessionId, string requestId, bool allow)
-        => local.RespondToToolPermission(sessionId, requestId, allow);
+    {
+        if (IsRemoteSession(sessionId)) { AnswerRemote(sessionId, client => client.RespondToPermissionAsync(sessionId, requestId, allow)); return; }
+        local.RespondToToolPermission(sessionId, requestId, allow);
+    }
     public void ConfigureAgentIO(Func<StartRunRequest, Workspace, AgentIOBinding?>? factory) => local.AgentIOBindingFactory = factory;
-    public bool IsSessionRunning(string id) => local.IsRunning(id);
+    public bool IsSessionRunning(string id) => local.IsRunning(id) || Remote?.IsRunning(id) == true;
     public async Task<bool> TrySteerAsync(string sessionId, string text)
     {
-        if (!await local.TrySteerAsync(sessionId, text)) return false;
+        if (!(IsRemoteSession(sessionId) ? Remote is { } client && await client.SteerAsync(sessionId, text) : await local.TrySteerAsync(sessionId, text))) return false;
         Receive(RunEvent.Log(sessionId, "user", text, "claude")); return true;
     }
     public void AnswerQuestionnaire(string sessionId, string requestId, IReadOnlyDictionary<string, UserQuestionAnswer> answers)
-        => local.AnswerQuestionnaire(sessionId, requestId, answers);
-    /// <summary>Answers one pending ExitPlanMode request (approve auto-edit / confirm-each, revise, cancel).</summary>
-    public PlanRecord AnswerPlan(string sessionId, string requestId, PlanDecision decision) => local.AnswerPlan(sessionId, requestId, decision);
+    {
+        if (IsRemoteSession(sessionId)) { AnswerRemote(sessionId, client => client.AnswerQuestionsAsync(sessionId, requestId, answers)); return; }
+        local.AnswerQuestionnaire(sessionId, requestId, answers);
+    }
+    /// <summary>
+    /// Answers one pending ExitPlanMode request (approve auto-edit / confirm-each, revise, cancel). Null for a remote pane: its answer goes
+    /// to the host, and the record comes back as the host's event.
+    /// </summary>
+    public PlanRecord? AnswerPlan(string sessionId, string requestId, PlanDecision decision)
+    {
+        if (IsRemoteSession(sessionId)) { AnswerRemote(sessionId, client => client.AnswerPlanAsync(sessionId, requestId, decision)); return null; }
+        return local.AnswerPlan(sessionId, requestId, decision);
+    }
     public async Task InitializeAsync()
     {
         StartDelegation();
@@ -201,11 +216,12 @@ public sealed partial class DesktopService : IAsyncDisposable
     /// </summary>
     private async Task<string?> Launch(StartRunRequest value, string? titleFrom, bool reach)
     {
-        var request = value.Validate(); Route route; string runId;
+        var request = value.Validate(); Route route; string runId; Workspace workspace;
         lock (sync)
         {
             ObjectDisposedException.ThrowIf(closing, this);
             if (!snapshot.Workspaces.Any(w => w.Id == request.WorkspaceId)) throw new ArgumentException(Locale.Get("run.error.workspaceNotRegistered"));
+            workspace = snapshot.Workspaces.First(w => w.Id == request.WorkspaceId);
             if (snapshot.Sessions.FirstOrDefault(s => s.Id == request.SessionId && s.WorkspaceId == request.WorkspaceId && s.Kind == request.Kind) is not { } pane) throw new ArgumentException(Locale.Get("run.error.sessionNotInWorkspace"));
             // A delegated child runs only in its own worktree, never in its parent's checkout (M/AppStore.swift:490-491).
             if (DelegationPanes.RunRefusal(pane) is not null) throw new InvalidOperationException(Locale.Get("run.blocked.worktreeMissing"));
@@ -222,13 +238,21 @@ public sealed partial class DesktopService : IAsyncDisposable
         {
             RequestStarting?.Invoke(request);
             RunEventReceived?.Invoke(RunEvent.State(request.SessionId, "running"));
-            Task started;
+            Task started; Task<bool>? remote = null;
             lock (sync)
             {
                 if (closing || route.Cancelled) { Receive(RunEvent.State(request.SessionId, "stopped")); if (request.Attachments is { Count: > 0 }) throw new OperationCanceledException(Locale.Get("run.error.attachmentSendCancelled")); return null; }
-                route.Started = true; started = reach ? local.StartReachedAsync(request) : local.StartAsync(request);
+                // A remote workspace's run goes to its host through the client, never to this PC's runner.
+                route.Started = true; started = workspace.Remote is not null ? remote = StartRemoteAsync(request, workspace, route) : reach ? local.StartReachedAsync(request) : local.StartAsync(request);
             }
             await started;
+            if (remote is not null && !remote.Result)
+            {
+                // Stopped before the host took it; the client's stop may already have ended it.
+                bool open; lock (sync) open = routes.TryGetValue(request.SessionId, out var current) && ReferenceEquals(current, route);
+                if (open) Receive(RunEvent.State(request.SessionId, "stopped"));
+                return null;
+            }
             return runId;
         }
         catch (OperationCanceledException) { Receive(RunEvent.State(request.SessionId, "stopped")); throw; }
@@ -237,7 +261,7 @@ public sealed partial class DesktopService : IAsyncDisposable
     public Task StopAsync(string id)
     {
         Route route; lock (sync) { if (!routes.TryGetValue(id, out route!)) return Task.CompletedTask; route.Cancelled = true; if (!route.Started) return Task.CompletedTask; }
-        return local.StopAsync(id);
+        return IsRemoteSession(id) && Remote is { } client ? client.StopAsync(id) : local.StopAsync(id);
     }
     /// <summary>
     /// Under <see cref="sync"/>: asks for a save of the state, which starts after <see cref="SaveSchedule.Delay"/>. A save already
@@ -258,7 +282,7 @@ public sealed partial class DesktopService : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         lock (sync) { if (closing) return; closing = true; }
-        try { await Providers.DisposeAsync(); await local.DisposeAsync(); await StopDelegation(); }
+        try { if (Remote is { } client) await client.DisposeAsync(); await Providers.DisposeAsync(); await local.DisposeAsync(); await StopDelegation(); }
         finally
         {
             // The final save runs whatever the shutdown above threw.

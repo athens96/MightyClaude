@@ -36,7 +36,8 @@ public sealed partial class MainWindow
                     var profileRoot = WorkspaceFiles.RealPath(StateDirectory); var stylesRoot = WorkspaceFiles.RealPath(folder);
                     if (profileRoot is null || stylesRoot is null || !WorkspaceFiles.Contains(stylesRoot, profileRoot) || (File.GetAttributes(folder) & FileAttributes.ReparsePoint) != 0)
                         throw new IOException(Locale.Get("guidedPanel.approvalRequired"));
-                    var workspace = service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == service.Snapshot.ActiveWorkspaceId)?.Path ?? StateDirectory;
+                    // A remote workspace's styles are its host's: only this PC's folders are read.
+                    var workspace = service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == service.Snapshot.ActiveWorkspaceId && w.Remote is null)?.Path ?? StateDirectory;
                     var registry = StyleRegistry.Load(StateDirectory, workspace);
                     if (registry.TrustLocked) throw new IOException(Locale.Get("settings.styles.lockBanner"));
                     if (registry.Styles.Any(s => s.Id == manifest.Id)) throw new IOException(Locale.Get("styles.registration.duplicate"));
@@ -67,7 +68,7 @@ public sealed partial class MainWindow
         }
         async Task Populate()
         {
-            var workspace = service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == service.Snapshot.ActiveWorkspaceId)?.Path ?? StateDirectory;
+            var workspace = service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == service.Snapshot.ActiveWorkspaceId && w.Remote is null)?.Path ?? StateDirectory;
             var registry = await Task.Run(() => StyleRegistry.Load(StateDirectory, workspace)); register.IsEnabled = !registry.TrustLocked;
             var banners = new List<FrameworkElement>();
             if (registry.TrustLocked)
@@ -234,7 +235,7 @@ public sealed partial class MainWindow
         private void RefreshStyles()
         {
             if(owner.closing||!owner.service.Snapshot.Sessions.Any(p=>p.Id==id))return;
-            var pane=Session;var visible=pane.Kind=="claude"&&pane.Provider=="claude"&&pane.AgentViewMode=="mighty";
+            var pane=Session;var visible=pane.Kind=="claude"&&pane.Provider=="claude"&&pane.AgentViewMode=="mighty"&&RemoteWorkspaceFeatures.AllowsLocalOnly(Workspace);
             styleHost.Visibility=visible?Visibility.Visible:Visibility.Collapsed;
             if(!visible)
             {
@@ -254,7 +255,7 @@ public sealed partial class MainWindow
         private async Task LoadStyles(bool quiet)
         {
             if(styleLoading||owner.closing||!owner.service.Snapshot.Sessions.Any(p=>p.Id==id))return;
-            var pane=Session;if(pane.Kind!="claude"||pane.Provider!="claude"||pane.AgentViewMode!="mighty")return;
+            var pane=Session;if(pane.Kind!="claude"||pane.Provider!="claude"||pane.AgentViewMode!="mighty"||!RemoteWorkspaceFeatures.AllowsLocalOnly(Workspace))return;
             styleLoading=true;var workspace=Workspace.Path;var key=pane.MightyStyle+"|"+pane.MightyStyleHash+"|"+pane.MightyStyleSince+"|"+pane.Logs.Count+"|"+pane.Status;
             try
             {
