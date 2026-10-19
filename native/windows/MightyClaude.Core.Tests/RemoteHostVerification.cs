@@ -392,6 +392,7 @@ internal static partial class RemoteHostVerification
         internal readonly ConcurrentQueue<StartRunRequest> Started = new();
         internal readonly ConcurrentQueue<string> Stopped = new();
         internal readonly ConcurrentQueue<(string Session, string Request, bool Allow)> Answers = new();
+        internal readonly ConcurrentQueue<(string Session, string Text)> Steered = new();
         private readonly ConcurrentDictionary<string, bool> waiting = new();
         public Task StartAsync(StartRunRequest request)
         {
@@ -418,7 +419,7 @@ internal static partial class RemoteHostVerification
             return Task.CompletedTask;
         }
         public Task StopAsync(string id) { Stopped.Enqueue(id); if (waiting.TryRemove(id, out _)) sinks.Event(RunEvent.State(id, "stopped")); return Task.CompletedTask; }
-        public Task<bool> TrySteerAsync(string id, string text) => Task.FromResult(waiting.ContainsKey(id));
+        public Task<bool> TrySteerAsync(string id, string text) { Steered.Enqueue((id, text)); return Task.FromResult(waiting.ContainsKey(id)); }
         public void RespondToToolPermission(string id, string requestId, bool allow)
         {
             Answers.Enqueue((id, requestId, allow));
@@ -439,7 +440,8 @@ internal static partial class RemoteHostVerification
     }
 
     internal static async Task<HostFixture> MakeHost(TimeSpan? heartbeat = null, Func<StartRunRequest, string?>? admission = null, Func<HostFixture, RemoteRunnerSinks, IRemoteRunner>? runner = null,
-        Func<IReadOnlyList<string>>? addresses = null, Func<DateTimeOffset>? clock = null, Func<string, Task>? beforeBind = null, Action<int>? runsChanged = null)
+        Func<IReadOnlyList<string>>? addresses = null, Func<DateTimeOffset>? clock = null, Func<string, Task>? beforeBind = null, Action<int>? runsChanged = null,
+        Func<CancellationToken, Task>? beforeLaunch = null)
     {
         var directory = Verification.Temp(); var store = new StateStore(Path.Combine(directory, "host")); await store.LoadAsync();
         System.IO.Directory.CreateDirectory(Path.Combine(directory, "project")); System.IO.Directory.CreateDirectory(Path.Combine(directory, "private"));
@@ -454,7 +456,7 @@ internal static partial class RemoteHostVerification
             CreateRunner = sinks => runner?.Invoke(fixture, sinks) ?? (fixture.Runner = new FakeRemoteRunner(sinks)),
             HostName = "studio-pc", AllowLoopbackForTests = true, Heartbeat = heartbeat ?? RemoteProtocol.HeartbeatTimeout, Admission = admission ?? (_ => null),
             Addresses = addresses, Clock = clock ?? (() => DateTimeOffset.UtcNow), RunsChanged = runsChanged ?? (_ => { }),
-        }) { BeforeBind = beforeBind };
+        }) { BeforeBind = beforeBind, BeforeLaunch = beforeLaunch };
         return fixture = new HostFixture { Directory = directory, Store = store, Shared = shared, Private = hidden, Remote = remote, Host = host };
     }
 

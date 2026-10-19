@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using MightyClaude.Core;
 
 /// <summary>Host and client of remote workspaces in one process over loopback (injected in code, as only checks may).</summary>
@@ -104,6 +105,8 @@ internal static class RemoteLoopbackVerification
             // Over 512 KiB is only for a run that brings attachments.
             var padded = Encoding.UTF8.GetBytes("{\"request\":{\"sessionId\":\"x\",\"workspaceId\":\"" + fixture.Shared.Id + "\",\"kind\":\"claude\",\"input\":\"hi\",\"model\":\"default\"},\"registeredModels\":[]" + new string(' ', RemoteProtocol.MaximumRequestBytes) + "}");
             await RemoteClientVerification.RejectAsync(() => RemoteTransport.RequestAsync(target, state.Key!, HttpMethod.Post, "/v2/runs", padded), "a start over 512 KiB without attachments is refused", ex => ex is RemoteHttpFailure { Status: 413 });
+            var crowded = unshared with { Request = unshared.Request with { WorkspaceId = fixture.Shared.Id }, RegisteredModels = Enumerable.Range(0, 257).Select(i => new RemoteWireModel("model-" + i)).ToList() };
+            await RemoteClientVerification.RejectAsync(() => RemoteTransport.RequestAsync(target, state.Key!, HttpMethod.Post, "/v2/runs", JsonSerializer.SerializeToUtf8Bytes(crowded, RemoteWire.Json)), "more than 256 registered models are refused", ex => ex is RemoteHttpFailure { Status: 400 } && ex.Message == Locale.Get("wire.startRun.invalidFormat"));
             fixture.Host.SetAllowsFullAccess(true);
             var longCommand = "Write-Output '" + new string('x', 40_000) + "'";
             await RemoteClientVerification.RejectAsync(() => client.StartAsync(new StartRunRequest("pane-8", workspace.Id, "shell", longCommand, []), workspace), "a command longer than a Windows command line is refused", ex => ex is RemoteHttpFailure { Status: 400 } && ex.Message == RemoteWindowsStrings.HostCommandTooLong);
@@ -114,19 +117,23 @@ internal static class RemoteLoopbackVerification
 
     internal static async Task ARunNobodyPollsIsStoppedAndAStoppedHostEndsTheClientsRuns()
     {
-        var (fixture, client, workspace, seen, folder, state) = await Pair(heartbeat: TimeSpan.FromSeconds(1));
+        await using (var unpolled = await RemoteHostVerification.MakeHost(heartbeat: TimeSpan.FromSeconds(1)))
+        {
+            var sharing = await unpolled.Host.StartAsync([unpolled.Shared.Id], 0);
+            var target = RemoteClientVerification.Loopback(sharing.Port!.Value);
+            var job = await StartRaw(target, sharing.Key!, unpolled.Shared.Id, "claude", "hold");
+            await Verification.Until(() => unpolled.Runner!.Stopped.Contains(job), 6000);
+            var poll = await PollRaw(target, sharing.Key!, job, 0);
+            Check(poll.Done && poll.Events[^1].Event["status"]?.GetValue<string>() == "stopped", "an unpolled run was stopped after the heartbeat");
+        }
+        // The client polls at most every 850 ms while nothing comes: a 3 s heartbeat leaves it room on a slow machine.
+        var (fixture, client, workspace, seen, folder, _) = await Pair(heartbeat: TimeSpan.FromSeconds(3));
         try
         {
             fixture.Host.SetAllowsFullAccess(true);
-            var target = RemoteClientVerification.Loopback(state.Port!.Value);
-            var job = await StartRaw(target, state.Key!, fixture.Shared.Id, "shell", "hold");
-            await Verification.Until(() => fixture.Runner!.Stopped.Contains(job), 6000);
-            var poll = await PollRaw(target, state.Key!, job, 0);
-            Check(poll.Done && poll.Events[^1].Event["status"]?.GetValue<string>() == "stopped", "an unpolled run was stopped after the heartbeat");
-
             await client.StartAsync(new StartRunRequest("pane-5", workspace.Id, "shell", "hold", []), workspace);
             await Verification.Until(() => seen.Events.Any(e => e.SessionId == "pane-5" && e.Type == "log"));
-            await Task.Delay(1500);
+            await Task.Delay(4000);
             Check(!seen.Events.Any(e => e.SessionId == "pane-5" && e.Status == "stopped"), "a polled run outlives the heartbeat");
             await fixture.Host.StopAsync();
             await Verification.Until(() => seen.Events.Any(e => e.SessionId == "pane-5" && e.Status == "error"), 20000);
@@ -211,10 +218,62 @@ internal static class RemoteLoopbackVerification
         Check(fixture.Runner!.Answers.IsEmpty, "no refused answer reached the runner");
         await Post(asking, "permission", new RemoteWirePermission(asking, "perm-1", false));
         Check(fixture.Runner.Answers.Single() == (asking, "perm-1", false), "the job's own request is answered");
+        var steered = JsonSerializer.Deserialize<RemoteWireAnswer>(await Post(holding, "steer", new RemoteWireSteer("more")), RemoteWire.Json)!;
+        Check(steered.Accepted && fixture.Runner.Steered.Single() == (holding, "more"), "steering reaches that job alone");
         // A stop reads no body, as the Mac's does.
         Check((await RemoteHostVerification.Raw(port, Head(holding, "stop", ""))).StartsWith("HTTP/1.1 200", StringComparison.Ordinal) && fixture.Runner.Stopped.Contains(holding), "a stop without a body stops the run");
+        Check(!fixture.Runner.Stopped.Contains(asking) && fixture.Runner.Steered.Count == 1, "a stop and a steer reach their own job alone");
         var stopped = await PollRaw(target, key, holding, 0);
         Check(stopped.Done && stopped.Events[^1].Event["status"]?.GetValue<string>() == "stopped", "and the run ends stopped");
+    }
+
+    /// <summary>A runner that takes each run only when the check lets it (StartAsync waits), and keeps it until it is stopped.</summary>
+    private sealed class GatedRunner : IRemoteRunner
+    {
+        internal readonly TaskCompletionSource Entered = new(TaskCreationOptions.RunContinuationsAsynchronously), Release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal readonly ConcurrentDictionary<string, bool> Live = new();
+        internal volatile bool Taken;
+        public async Task StartAsync(StartRunRequest request) { Entered.TrySetResult(); await Release.Task; Live[request.SessionId] = true; Taken = true; }
+        public Task StopAsync(string sessionId) { Live.TryRemove(sessionId, out _); return Task.CompletedTask; }
+        public Task<bool> TrySteerAsync(string sessionId, string text) => Task.FromResult(false);
+        public void RespondToToolPermission(string sessionId, string requestId, bool allow) { }
+        public void AnswerQuestionnaire(string sessionId, string requestId, IReadOnlyDictionary<string, UserQuestionAnswer> answers) { }
+        public PlanRecord AnswerPlan(string sessionId, string requestId, PlanDecision decision) => throw new InvalidOperationException();
+        public ValueTask DisposeAsync() { Live.Clear(); return ValueTask.CompletedTask; }
+    }
+
+    internal static async Task AStopBeforeTheRunnerTakesTheRunStillEndsIt()
+    {
+        var gated = new GatedRunner();
+        await using var fixture = await RemoteHostVerification.MakeHost(runner: (_, _) => gated);
+        var state = await fixture.Host.StartAsync([fixture.Shared.Id], 0);
+        var target = RemoteClientVerification.Loopback(state.Port!.Value);
+        var job = await StartRaw(target, state.Key!, fixture.Shared.Id, "claude", "hold");
+        await gated.Entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        // The stop lands while the runner is still taking the run: it has nothing to stop yet.
+        await RemoteTransport.RequestAsync(target, state.Key!, HttpMethod.Post, $"/v2/runs/{job}/stop", "{}"u8.ToArray());
+        var poll = await PollRaw(target, state.Key!, job, 0);
+        Check(poll.Done && poll.Events[^1].Event["status"]?.GetValue<string>() == "stopped" && fixture.Host.Current().ActiveRuns == 0, "the run ends stopped at once");
+        gated.Release.TrySetResult();
+        await Verification.Until(() => gated.Taken);
+        await Verification.Until(() => gated.Live.IsEmpty, 3000);
+    }
+
+    internal static async Task StoppingSharingCancelsALaunchNotBegun()
+    {
+        var entered = new TaskCompletionSource<CancellationToken>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var fixture = await RemoteHostVerification.MakeHost(beforeLaunch: async token => { entered.TrySetResult(token); await release.Task; });
+        var state = await fixture.Host.StartAsync([fixture.Shared.Id], 0);
+        await StartRaw(RemoteClientVerification.Loopback(state.Port!.Value), state.Key!, fixture.Shared.Id, "claude", "hold");
+        var launch = await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        var runner = fixture.Runner!;
+        Check(!launch.IsCancellationRequested, "a launch on its way is not cancelled while sharing goes on");
+        await fixture.Host.StopAsync();
+        Check(launch.IsCancellationRequested, "stopping sharing cancels the launch");
+        release.TrySetResult();
+        await Task.Delay(200);
+        Check(runner.Started.IsEmpty && runner.Disposed, "the run never reaches the runner");
     }
 
     internal static async Task TheBufferKeepsTheNewestEventsWithinItsBoundsAndSaysTheGap()
@@ -228,6 +287,12 @@ internal static class RemoteLoopbackVerification
         {
             var job = await StartRaw(target, key, fixture.Shared.Id, "claude", input);
             await Verification.Until(() => fixture.Host.Current().ActiveRuns == 0);
+            // The body has the Mac's keys, at the top and in each event (native/contracts/fixtures/remote-v2/poll.json).
+            var raw = JsonNode.Parse(await RemoteTransport.RequestAsync(target, key, HttpMethod.Get, $"/v2/runs/{job}/events?cursor=0"))!.AsObject();
+            var sample = RemoteWireFixtureVerification.Node("poll.json").AsObject();
+            static string Keys(JsonObject o) => string.Join(",", o.Select(p => p.Key).Order(StringComparer.Ordinal));
+            Check(Keys(raw) == Keys(sample), "the poll's keys are the Mac's: " + Keys(raw));
+            Check(raw["events"]!.AsArray().All(e => Keys(e!.AsObject()) == Keys(sample["events"]![0]!.AsObject())), "each polled event's keys are the Mac's");
             var poll = await PollRaw(target, key, job, 0);
             Check(poll.LastCursor == last, input + ": every event took a cursor: " + poll.LastCursor);
             Check(poll.Gap && poll.Events.Count is > 0 and <= RemoteProtocol.MaximumPollEvents && poll.Events[0].Cursor > 2 && poll.Cursor == poll.Events[^1].Cursor, input + ": the oldest events were dropped and the poll says so: " + poll.Events[0].Cursor);
