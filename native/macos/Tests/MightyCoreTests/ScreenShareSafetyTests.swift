@@ -322,9 +322,7 @@ struct ScreenShareSafetyTests {
         let host = await hostWithControlSession(surface: peer.surface())
         #expect(await host.canInject())
 
-        let wall = Date()
-        let timing = await asUser { await host.killAll(reason: .killSwitch) }
-        let waited = Date().timeIntervalSince(wall)
+        let (timing, waited) = await timedAsUser { await host.killAll(reason: .killSwitch) }
 
         #expect(timing.deadlineExceeded)
         // Cut off at the deadline rather than waiting on the 60 s hang.
@@ -782,6 +780,15 @@ struct ScreenShareSafetyTests {
     /// own wait for a thread on a busy runner, not the kill's.
     private func asUser<T: Sendable>(_ trigger: @escaping @Sendable () async -> T) async -> T {
         await Task(priority: .userInitiated) { await trigger() }.value
+    }
+
+    /// `asUser`, timed from the call to the trigger's own return, stamped in
+    /// the user-initiated task. Stamped after the test task resumes instead,
+    /// it would count that default-priority task's wait for a thread, which a
+    /// 3-core runner busy with every other suite stretched to 6-20 s.
+    private func timedAsUser<T: Sendable>(_ trigger: @escaping @Sendable () async -> T) async -> (value: T, seconds: TimeInterval) {
+        let start = Date()
+        return await Task(priority: .userInitiated) { let value = await trigger(); return (value, Date().timeIntervalSince(start)) }.value
     }
 
     /// Waits for an actor-held condition without pinning a wall-clock duration
