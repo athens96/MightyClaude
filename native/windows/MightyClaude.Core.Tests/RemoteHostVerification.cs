@@ -31,10 +31,10 @@ internal static partial class RemoteHostVerification
     /// <summary>Opens a connection and sends <paramref name="head"/>, leaving it open; the caller reads or closes it.</summary>
     private static async Task<TcpClient> Open(int port, string head)
     {
-        var client = new TcpClient();
-        // Cut off at accept: the caller reads nothing from it, as from any connection the server ended.
-        try { await client.ConnectAsync(IPAddress.Loopback, port); await client.GetStream().WriteAsync(Encoding.ASCII.GetBytes(head)); }
-        catch (Exception ex) when (CutOff(ex) || ex is IOException) { }
+        // Every connection opened here must be accepted: a reset while connecting fails the check instead of reading as "closed",
+        // which would let the deadline and close-on-stop checks pass without testing anything (only Raw expects a cut-off at accept).
+        var client = new TcpClient(); await client.ConnectAsync(IPAddress.Loopback, port);
+        await client.GetStream().WriteAsync(Encoding.ASCII.GetBytes(head));
         return client;
     }
 
