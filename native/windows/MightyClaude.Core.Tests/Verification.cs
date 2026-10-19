@@ -659,6 +659,9 @@ internal static class Verification
         await Test("remote loopback: a stop before the runner takes the run still ends it", RemoteLoopbackVerification.AStopBeforeTheRunnerTakesTheRunStillEndsIt);
         await Test("remote loopback: stopping sharing cancels a launch not begun", RemoteLoopbackVerification.StoppingSharingCancelsALaunchNotBegun);
         await Test("remote loopback: the buffer keeps the newest events within its bounds and says the gap", RemoteLoopbackVerification.TheBufferKeepsTheNewestEventsWithinItsBoundsAndSaysTheGap);
+        await Test("remote desktop: a remote pane runs through the client and the phone never sees it", RemoteDesktopVerification.ARemotePaneRunsThroughTheClientAndThePhoneNeverSeesIt);
+        await Test("remote desktop: the sharing host runs only in shared folders with no pane tools", RemoteDesktopVerification.TheSharingHostRunsOnlyInSharedFoldersWithNoPaneTools);
+        await Test("remote desktop: remote panes keep to the host's features", RemoteDesktopVerification.RemotePanesKeepToTheHostsFeatures);
         await Test("corrupt/unknown/oversize state cannot be overwritten by shutdown", async () =>
         {
             foreach (var text in new[] { "null", "{", "{\"version\":2,\"workspaces\":[],\"sessions\":[]}", "{\"version\":1,\"workspaces\":null,\"sessions\":[]}" })

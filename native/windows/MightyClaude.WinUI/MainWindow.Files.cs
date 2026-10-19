@@ -67,6 +67,8 @@ public sealed partial class MainWindow
         var state = service.Snapshot;
         var workspace = state.Workspaces.FirstOrDefault(w => w.Id == (workspaceId ?? state.ActiveWorkspaceId))
             ?? throw new InvalidOperationException(Locale.Get("window.error.addWorkspaceFirst"));
+        // A remote workspace's folder is on its host: no files pane reads it here (M/AppStore+FilePane.swift).
+        if (!RemoteWorkspaceFeatures.AllowsLocalOnly(workspace)) throw new InvalidOperationException(RemoteWindowsStrings.PaneUnavailable);
         var id = FilePaneKind.PaneId(workspace.Id);
         if (state.Sessions.Any(s => s.Id == id)) { await SelectLayoutSession(id); return; }
         if (!PaneLayout.HasRoom(state)) throw new InvalidOperationException(Locale.Get("files.error.noRoom"));
@@ -143,10 +145,12 @@ public sealed partial class MainWindow
         internal void EnsureFilesView()
         {
             if (filesAttached || Container.Child is not Grid grid) return;
-            filesAttached = true;
             var session = Session;
+            // Never a remote workspace's path: that folder is on its host.
+            if (owner.service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == session.WorkspaceId) is not { Remote: null } workspace) return;
+            filesAttached = true;
             filesTree = owner.FilePaneTreeFor(session.WorkspaceId);
-            filesRoot = owner.service.Snapshot.Workspaces.First(w => w.Id == session.WorkspaceId).Path;
+            filesRoot = workspace.Path;
             foreach (var child in grid.Children.OfType<FrameworkElement>().ToArray()) child.Visibility = Visibility.Collapsed;
 
             // The Mac's split view (M/FilePaneView.swift:22-25): the tree, a 1pt divider to drag, the preview.

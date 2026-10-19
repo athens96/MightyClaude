@@ -58,7 +58,8 @@ public sealed partial class MainWindow
     {
         if (value.Type != "status" || value.Status is not ("completed" or "stopped" or "error")) return;
         var request = loginRetries.Settled(value.SessionId);
-        if (value.Status == "error" && value.Reason == "authentication" && request is not null)
+        // A remote run signs in on its host; this PC's sign-in did not fail (M/AppStore+CLILoginRecovery.swift).
+        if (value.Status == "error" && value.Reason == "authentication" && request is not null && !service.IsRemoteSession(value.SessionId))
             TrackLoginTask(ConfirmLoginFailure(request));
         if (service.Snapshot.Sessions.FirstOrDefault(p => p.Id == value.SessionId)?.Provider is { } provider && deferredAutoLogins.ContainsKey(provider))
             TrackLoginTask(ResumeDeferredAutoLogin(provider));
@@ -238,7 +239,8 @@ public sealed partial class MainWindow
             var argv = CliAccountSupport.LoginArguments(provider) ?? throw new InvalidOperationException();
             var state = service.Snapshot;
             var workspace = state.Sessions.FirstOrDefault(p => p.Id == session)?.WorkspaceId ?? state.ActiveWorkspaceId;
-            var directory = state.Workspaces.FirstOrDefault(w => w.Id == workspace)?.Path;
+            // The sign-in runs on this PC: never in a remote workspace's path, which is its host's.
+            var directory = state.Workspaces.FirstOrDefault(w => w.Id == workspace && w.Remote is null)?.Path;
             cancellation.ThrowIfCancellationRequested();
             if (antigravityLoginWindow is { Open: true } open) window = open;
             else

@@ -139,7 +139,7 @@ public sealed partial class RemoteHostService(RemoteHostOptions options) : IAsyn
             string key;
             try { key = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).TrimEnd('=').Replace('+', '-').Replace('/', '_'); }
             catch (CryptographicException) { throw new InvalidOperationException(Locale.Get("remote.host.error.keyFailed")); }
-            var created = options.CreateRunner(new(value => Receive(value, revision), value => ReceivePermission(value, revision), (id, node) => ReceiveGraph(id, node, revision)));
+            var created = options.CreateRunner(new(value => Receive(value, revision), value => ReceivePermission(value, revision), (id, node) => ReceiveGraph(id, node, revision), id => ResolveShared(id, revision)));
             bool current;
             lock (gate) { current = revision == generation && !closed; if (current) runner = created; }
             if (!current) { await created.DisposeAsync(); throw new OperationCanceledException(); }

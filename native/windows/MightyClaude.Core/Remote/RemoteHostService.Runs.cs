@@ -119,13 +119,8 @@ public sealed partial class RemoteHostService
         StartRunRequest run;
         try { run = wire.ToRequest(id, wire.Request.WorkspaceId).Validate(); } catch (ArgumentException ex) { throw new HostFailure(400, ex.Message); }
         // Only a shared workspace's own folder is ever the working folder; the client sends an id, never a path.
-        var workspace = SharedWorkspaces().FirstOrDefault(w => w.Id == run.WorkspaceId) ?? throw new HostFailure(403, Locale.Get("remote.host.error.notShared"));
-        Workspace folder;
-        try { folder = await options.ResolveLocal(workspace.Id); }
+        try { await ResolveShared(run.WorkspaceId, revision); }
         catch (Exception ex) when (ex is not OutOfMemoryException) { throw new HostFailure(403, ex.Message); }
-        // As M/ProcessRunner.start checks before every run: this workspace, local, an absolute path to a folder that exists, the one shared.
-        if (folder.Id != run.WorkspaceId || folder.Remote is not null || !Path.IsPathFullyQualified(folder.Path) || !Directory.Exists(folder.Path) || folder.Path != workspace.Path)
-            throw new HostFailure(403, Locale.Get("remote.host.error.notShared"));
         bool allowed; lock (gate) allowed = allowsFullAccess;
         if (FullAccessRefusal(run, allowed) is { } refusal) throw new HostFailure(403, refusal);
         // A Windows command line holds 32 767 characters: a longer command is refused here, never cut.
@@ -156,6 +151,21 @@ public sealed partial class RemoteHostService
         AnnounceRuns();
         _ = Task.Run(() => LaunchAsync(run, job, active, revision), job.Cancel.Token);
         return Reply(202, new RemoteWireJob(RemoteProtocol.Version, id));
+    }
+
+    /// <summary>
+    /// A workspace this sharing serves now, checked as M/ProcessRunner.start checks before every run: shared, local, an absolute path to a
+    /// folder that exists, the very path shared. The request is checked here, and the runner looks its workspace up here again at launch
+    /// (RemoteRunnerSinks.Workspace), so a workspace unshared or moved in between is refused there too.
+    /// </summary>
+    private async Task<Workspace> ResolveShared(string id, Guid revision)
+    {
+        lock (gate) if (revision != generation) throw new InvalidOperationException(Locale.Get("remote.host.error.stopped"));
+        var shared = SharedWorkspaces().FirstOrDefault(w => w.Id == id) ?? throw new InvalidOperationException(Locale.Get("remote.host.error.notShared"));
+        var folder = await options.ResolveLocal(id);
+        if (folder.Id != id || folder.Remote is not null || !Path.IsPathFullyQualified(folder.Path) || !Directory.Exists(folder.Path) || folder.Path != shared.Path)
+            throw new InvalidOperationException(Locale.Get("remote.host.error.notShared"));
+        return folder;
     }
 
     private static HostFailure RunLimit() => new(429, Locale.Get("remote.host.error.runLimit", new Dictionary<string, string> { ["count"] = RemoteProtocol.MaximumRuns.ToString() }));

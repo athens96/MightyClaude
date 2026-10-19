@@ -387,7 +387,8 @@ public sealed partial class MainWindow
     private const double MobileDirectPortWidth = 80;
     private PaneView MobilePane(string id)
     {
-        if (!service.Snapshot.Sessions.Any(p => p.Id == id && p.Kind == "claude")) throw new MobileRequestException(404, "Session not found.");
+        // A remote workspace's pane is another computer's: the phone never reaches it (M/AppStore+MobileRemote.swift mobilePane).
+        if (!service.Snapshot.Sessions.Any(p => p.Id == id && p.Kind == "claude") || service.IsRemoteSession(id)) throw new MobileRequestException(404, "Session not found.");
         if (!views.TryGetValue(id, out var pane)) { pane = new(this, id); views[id] = pane; pane.InitRefresher(); }
         return pane;
     }
@@ -405,7 +406,7 @@ public sealed partial class MainWindow
         if (pane.Kind != "claude") return null;
         if (views.TryGetValue(pane.Id, out var view)) return view.MobileStyleId;
         if (!MobileRemoteSupport.GuidedStylesAvailable(pane.Kind, pane.Provider, MobileRemoteSupport.ViewMode(pane.AgentViewMode)) || pane.MightyStyle is null) return null;
-        if (service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == pane.WorkspaceId)?.Path is not { } workspace) return null;
+        if (service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == pane.WorkspaceId && w.Remote is null)?.Path is not { } workspace) return null;
         var known = mobileStyleRegistries.GetValueOrDefault(workspace);
         if (!known.Reading && DateTime.UtcNow - known.Read >= MobileStyleRefresh) { mobileStyleRegistries[workspace] = known with { Reading = true }; _ = ReadMobileStyles(workspace, known.Registry); }
         return known.Registry?.Runnable(pane.MightyStyle, pane.MightyStyleHash)?.Id;
@@ -436,7 +437,7 @@ public sealed partial class MainWindow
         if (request.Action == "create")
         {
             var created = SessionTemplate.Inherit(new RunSession { WorkspaceId = request.SessionId, Provider = request.Body.Text("provider") ?? "claude", Kind = "claude", Title = ProviderCatalog.Name(request.Body.Text("provider") ?? "claude") }, service.Snapshot.Sessions);
-            await service.UpdateAsync(s => !s.Workspaces.Any(w => w.Id == request.SessionId) ? throw new MobileRequestException(404, "Workspace not found.") : PaneLayout.HasRoom(s) ? s with { Sessions = s.Sessions.Append(created).ToList() } : throw new MobileRequestException(409, Locale.Get("workspace.paneLimit"))); Render(); return created.Id;
+            await service.UpdateAsync(s => !s.Workspaces.Any(w => w.Id == request.SessionId && w.Remote is null) ? throw new MobileRequestException(404, "Workspace not found.") : PaneLayout.HasRoom(s) ? s with { Sessions = s.Sessions.Append(created).ToList() } : throw new MobileRequestException(409, Locale.Get("workspace.paneLimit"))); Render(); return created.Id;
         }
         var pane = MobilePane(request.SessionId); var body = request.Body;
         switch (request.Action)
