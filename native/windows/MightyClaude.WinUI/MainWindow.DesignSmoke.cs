@@ -240,10 +240,10 @@ public sealed partial class MainWindow
         var machine = (Grid)((Grid)((Grid)statusBar.Child).Children[0]).Children[0];
         RequireBrush(machine.Children.OfType<Border>().Single(), e => ((Border)e).BorderBrush, DesignToken.Ink2, "the machine symbol", key: key);
         var parts = statusTrailing.Children.ToList();
-        Require(statusTrailing.Spacing == StatusBarSpacing && parts.Count == 8 && ReferenceEquals(parts[0], statusPanes) && parts[1] is TextBlock && ReferenceEquals(parts[2], statusRunning)
-            && ReferenceEquals(parts[3], updateBadge) && parts[4] is Border && ReferenceEquals(parts[5], usageButton) && ReferenceEquals(parts[6], usageDivider)
-            && parts[7] is StackPanel { Spacing: DesignMetrics.Spacing.Md, Children: [Microsoft.UI.Xaml.Controls.Button paw, Microsoft.UI.Xaml.Controls.Button capsule] } && ReferenceEquals(paw, companionToggleControl) && ReferenceEquals(capsule, companionStatusControl),
-            $"{key} ({theme}): the status bar's trailing parts must be the pane count, a dot, the running count, the update badge, a line, the usage chips, their line and the pet controls (paw, then capsule, 10 apart), {StatusBarSpacing} apart; got {parts.Count} parts: {string.Join(", ", parts.Select(p => p.GetType().Name + "'" + AutomationProperties.GetAutomationId(p) + "'"))}");
+        Require(statusTrailing.Spacing == StatusBarSpacing && parts.Count == 9 && ReferenceEquals(parts[0], statusPanes) && parts[1] is TextBlock && ReferenceEquals(parts[2], statusRunning)
+            && ReferenceEquals(parts[3], updateBadge) && ReferenceEquals(parts[4], setupBadge) && parts[5] is Border && ReferenceEquals(parts[6], usageButton) && ReferenceEquals(parts[7], usageDivider)
+            && parts[8] is StackPanel { Spacing: DesignMetrics.Spacing.Md, Children: [Microsoft.UI.Xaml.Controls.Button paw, Microsoft.UI.Xaml.Controls.Button capsule] } && ReferenceEquals(paw, companionToggleControl) && ReferenceEquals(capsule, companionStatusControl),
+            $"{key} ({theme}): the status bar's trailing parts must be the pane count, a dot, the running count, the update badge, the setup-finished badge, a line, the usage chips, their line and the pet controls (paw, then capsule, 10 apart), {StatusBarSpacing} apart; got {parts.Count} parts: {string.Join(", ", parts.Select(p => p.GetType().Name + "'" + AutomationProperties.GetAutomationId(p) + "'"))}");
         string Count(int value) => value.ToString(System.Globalization.CultureInfo.InvariantCulture);
         var panesWant = Locale.Get("window.status.paneCount", new Dictionary<string, string> { ["count"] = Count(state.Sessions.Count(s => s.WorkspaceId == state.ActiveWorkspaceId)) });
         var runningWant = Locale.Get("window.status.runningCount", new Dictionary<string, string> { ["count"] = Count(state.Sessions.Count(s => s.Status == "running" && WorkDashboard.IsCounted(s.Kind))) });
