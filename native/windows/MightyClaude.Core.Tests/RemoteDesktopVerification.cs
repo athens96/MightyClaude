@@ -364,6 +364,40 @@ internal static class RemoteDesktopVerification
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Settings → Remote Connection's wiring, read from the WinUI source (WinUI does not build here): the key leaves only through the secret
+    /// copy (out of clipboard history and the cloud clipboard, cleared after a minute), and another computer's runs on this PC hold automatic
+    /// and manual CLI updates and plugin changes, as the Mac's localCLIIsRunning does.
+    /// </summary>
+    internal static Task TheRemotePageCopiesTheKeySecretlyAndHostRunsHoldUpdates()
+    {
+        var folder = ClaudePluginVerification.WinUISource();
+        string Source(string file) => File.ReadAllText(Path.Combine(folder, file));
+        // The member whose declaration contains the signature, up to its closing brace at member indent.
+        static string Member(string text, string signature)
+        {
+            var at = text.IndexOf(signature, StringComparison.Ordinal);
+            Check(at >= 0, "the member is there: " + signature);
+            var end = text.IndexOf("\n    }\n", at, StringComparison.Ordinal);
+            return text[at..(end < 0 ? text.Length : end)];
+        }
+        var page = Source("MainWindow.RemoteWorkspaces.cs");
+        var button = page.Split('\n').Where(line => line.Contains("var copyKey = ", StringComparison.Ordinal)).ToArray();
+        Check(button.Length == 1 && button[0].Contains("CopyRemoteKeyAsync(", StringComparison.Ordinal) && !button[0].Contains(" Copy(", StringComparison.Ordinal)
+            && !button[0].Contains("SetContent(", StringComparison.Ordinal), "the key's copy button goes through CopyRemoteKeyAsync only");
+        var copy = Member(page, "private async Task CopyRemoteKeyAsync(");
+        Check(copy.Contains("Clipboard.SetContentWithOptions(", StringComparison.Ordinal) && !copy.Contains("Clipboard.SetContent(", StringComparison.Ordinal)
+            && copy.Contains("IsAllowedInHistory = RemoteSecretCopy.Key.AllowedInHistory", StringComparison.Ordinal) && copy.Contains("IsRoamable = RemoteSecretCopy.Key.Roamable", StringComparison.Ordinal)
+            && copy.Contains("Task.Delay(RemoteSecretCopy.Key.ClearAfter)", StringComparison.Ordinal) && copy.Contains("RemoteSecretCopy.ShouldClear(", StringComparison.Ordinal), "the key copy stays out of history and is cleared");
+        Check(page.Split('\n').Count(line => line.Contains("CopyRemoteKeyAsync(", StringComparison.Ordinal)) == 2, "only the key button calls the key copy");
+        var automatic = Member(Source("MainWindow.AutomaticUpdates.cs"), "private bool ReadyForAutomaticUpdate(");
+        Check(automatic.Contains("remoteHostRuns > 0", StringComparison.Ordinal), "automatic updates wait for another computer's runs here");
+        var admission = Source("MainWindow.UpdateAdmission.cs");
+        Check(Member(admission, "private Task<CliUpdateResult> UpdateManualProvider(").Contains("remoteHostRuns > 0", StringComparison.Ordinal), "a manual update waits for another computer's runs here");
+        Check(Member(admission, "private string? PluginMutationBlockReason(").Contains("remoteHostRuns > 0", StringComparison.Ordinal), "plugin changes wait for another computer's runs here");
+        return Task.CompletedTask;
+    }
+
     internal static Task RemotePanesKeepToTheHostsFeatures()
     {
         var local = new Workspace { Path = "C:\\work" };

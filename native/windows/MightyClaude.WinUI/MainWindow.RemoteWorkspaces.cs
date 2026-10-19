@@ -43,8 +43,16 @@ public sealed partial class MainWindow
             count => DispatcherQueue.TryEnqueue(() => { remoteHostRuns = count; if (!closing) { RefreshRemoteViews(); NotifyAutomaticUpdates(); } }), loopback));
     }
 
-    /// <summary>Sharing ends with the app: every remote run here stops and the key is gone (the client's runs end with the service).</summary>
-    private async Task ShutdownRemoteWorkspacesAsync() { if (remoteHost is { } host) await host.DisposeAsync(); }
+    /// <summary>
+    /// Sharing ends with the app: every remote run here stops and the key is gone (the client's runs end with the service). Whatever that
+    /// throws never keeps the service from shutting down after it (as DesktopService.DisposeAsync treats the client).
+    /// </summary>
+    private async Task ShutdownRemoteWorkspacesAsync()
+    {
+        if (remoteHost is not { } host) return;
+        try { await host.DisposeAsync(); }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { System.Diagnostics.Trace.TraceWarning("remote host shutdown: " + ex.GetType().Name); }
+    }
 
     /// <summary>
     /// Why this PC cannot take another computer's run now (M/AppStore+RemoteWorkspaces.remoteHostAdmission): its CLIs or plugins are
@@ -72,21 +80,40 @@ public sealed partial class MainWindow
         finally { remoteBusy = false; if (!closing) RefreshRemoteViews(); }
     }
 
+    /// <summary>The clipboard format third-party clipboard managers and monitors skip (the Mac's org.nspasteboard.ConcealedType).</summary>
+    private const string ClipboardMonitorExclusionFormat = "ExcludeClipboardContentFromMonitorProcessing";
+
     /// <summary>
-    /// The key copy: never in clipboard history or the cloud clipboard, and cleared after a minute if the clipboard still holds it
-    /// (M copyButton secret:). The smoke run never calls it: it must not touch the real clipboard.
+    /// The key copy: never in clipboard history or the cloud clipboard, marked for clipboard managers to skip, and cleared after a minute
+    /// if the clipboard still holds it (M copyButton secret:). <paramref name="copied"/> is told whether the key reached the clipboard.
+    /// The smoke run never calls it: it must not touch the real clipboard.
     /// </summary>
-    private async Task CopyRemoteKeyAsync(string key)
+    private async Task CopyRemoteKeyAsync(string key, Action<bool> copied)
     {
         try
         {
+            var copyOptions = new ClipboardContentOptions { IsAllowedInHistory = RemoteSecretCopy.Key.AllowedInHistory, IsRoamable = RemoteSecretCopy.Key.Roamable };
             var package = new DataPackage(); package.SetText(key);
-            if (!Clipboard.SetContentWithOptions(package, new ClipboardContentOptions { IsAllowedInHistory = RemoteSecretCopy.Key.AllowedInHistory, IsRoamable = RemoteSecretCopy.Key.Roamable })) return;
+            bool set;
+            try
+            {
+                // The marker's presence is what counts; its content is an empty stream.
+                package.SetData(ClipboardMonitorExclusionFormat, new Windows.Storage.Streams.InMemoryRandomAccessStream());
+                set = Clipboard.SetContentWithOptions(package, copyOptions);
+            }
+            catch (Exception ex) when (ex is System.Runtime.InteropServices.COMException or ArgumentException or InvalidCastException)
+            {
+                // Without the marker rather than not at all: history and the cloud clipboard stay off either way.
+                var plain = new DataPackage(); plain.SetText(key);
+                set = Clipboard.SetContentWithOptions(plain, copyOptions);
+            }
+            copied(set);
+            if (!set) return;
             await Task.Delay(RemoteSecretCopy.Key.ClearAfter);
             var content = Clipboard.GetContent();
             if (content.Contains(StandardDataFormats.Text) && RemoteSecretCopy.ShouldClear(await content.GetTextAsync(), key)) Clipboard.Clear();
         }
-        catch (Exception ex) when (ex is System.Runtime.InteropServices.COMException or UnauthorizedAccessException) { }
+        catch (Exception ex) when (ex is System.Runtime.InteropServices.COMException or UnauthorizedAccessException) { copied(false); }
     }
 
     /// <summary>
@@ -126,12 +153,21 @@ public sealed partial class MainWindow
         AutomationProperties.SetName(keyText, Locale.Get("settings.remote.keyLabel")); AutomationProperties.SetAutomationId(keyText, "settings-remote-key-text");
         var showKey = SettingsPush(Button(Locale.Get("settings.remote.showKeyButton"), () => { showsKey = !showsKey; redraw(); return Task.CompletedTask; }), SettingsControlSize.Small);
         AutomationProperties.SetAutomationId(showKey, "settings-remote-show-key");
-        var copyKey = SettingsPush(Button(Locale.Get("settings.remote.copyButton"), () => { if (!options.SmokeTest && currentKey is { } value) _ = CopyRemoteKeyAsync(value); return Task.CompletedTask; }), SettingsControlSize.Small);
-        AutomationProperties.SetAutomationId(copyKey, "settings-remote-copy-key"); ToolTipService.SetToolTip(copyKey, RemoteWindowsStrings.KeyCopied);
+        // What the last copy did: copied (out of history, cleared in a minute) or not; gone when the key or the page goes.
+        var copyNote = SettingsText("", 11, DesignToken.Ink2); copyNote.Visibility = Visibility.Collapsed; AutomationProperties.SetAutomationId(copyNote, "settings-remote-copy-key-note");
+        void SayCopied(bool done)
+        {
+            if (closing) return;
+            copyNote.Text = done ? RemoteWindowsStrings.KeyCopied : RemoteWindowsStrings.KeyCopyFailed;
+            copyNote.Foreground = brushes.Brush(done ? DesignToken.Ink2 : DesignToken.ErrText); copyNote.Visibility = Visibility.Visible;
+        }
+        var copyKey = SettingsPush(Button(Locale.Get("settings.remote.copyButton"), () => { if (!options.SmokeTest && currentKey is { } value) _ = CopyRemoteKeyAsync(value, SayCopied); return Task.CompletedTask; }), SettingsControlSize.Small);
+        AutomationProperties.SetAutomationId(copyKey, "settings-remote-copy-key"); ToolTipService.SetToolTip(copyKey, Locale.Get("settings.remote.copyButton"));
         var keyLine = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
         keyLine.Children.Add(keyText); keyLine.Children.Add(showKey); keyLine.Children.Add(copyKey);
         var keyRow = SettingsLabeled(SettingsText(Locale.Get("settings.remote.keyLabel"), 12), keyLine);
         sharing.Children.Add(keyRow);
+        sharing.Children.Add(copyNote);
         // "Allow full access and commands from remote": for the sharing now going, off whenever sharing starts (RemoteHostService.StartAsync).
         var fullAccess = SettingsSwitch(Locale.Get("settings.remote.allowFullAccess"), false, "settings-remote-full-access");
         fullAccess.Click += (_, _) =>
@@ -252,7 +288,7 @@ public sealed partial class MainWindow
 
         void Refresh()
         {
-            if (closing) return;
+            if (closing || !rows.IsLoaded) return;
             // Current() ends a sharing whose listener died before it answers, so the page never shows that sharing as on.
             var host = remoteHost?.Current() ?? new RemoteHostState();
             if (remoteSharingShown && !host.Enabled && !remoteBusy) remoteError = Locale.Get("remote.host.error.stopped");
@@ -291,6 +327,7 @@ public sealed partial class MainWindow
             }
             currentKey = host.Key;
             keyRow.Visibility = host.Key is null ? Visibility.Collapsed : Visibility.Visible;
+            if (host.Key is null) copyNote.Visibility = Visibility.Collapsed;
             keyText.Text = showsKey && host.Key is { } shown ? shown : new string('•', 16); keyText.IsTextSelectionEnabled = showsKey;
             var keyLabel = Locale.Get(showsKey ? "settings.remote.hideKeyButton" : "settings.remote.showKeyButton");
             showKey.Content = keyLabel; AutomationProperties.SetName(showKey, keyLabel);
@@ -377,8 +414,7 @@ public sealed partial class MainWindow
             });
             var words = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
             var title = SettingsText(connection.Name, 12, medium: true); title.TextWrapping = TextWrapping.NoWrap; title.TextTrimming = TextTrimming.CharacterEllipsis;
-            // The address, and once the host has answered, its OS (Task 16's labels).
-            var where = SettingsText(connection.Runtime is null ? connection.Address : RemoteWindowsStrings.HostWithOS(connection.Address, connection.Runtime.Platform), 10, DesignToken.Ink2, mono: true);
+            var where = SettingsText(connection.Address, 10, DesignToken.Ink2, mono: true);
             where.TextWrapping = TextWrapping.NoWrap; where.TextTrimming = TextTrimming.CharacterEllipsis;
             words.Children.Add(title); words.Children.Add(where); Grid.SetColumn(words, 1); head.Children.Add(words);
             var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm, VerticalAlignment = VerticalAlignment.Center };
@@ -430,23 +466,29 @@ public sealed partial class MainWindow
             try { tailscale = await Task.Run(TailscaleAddresses.Current); }
             catch (AdaptersUnreadableException) { tailscale = []; }
         }
+        // The timer's and Loaded's handlers are async void: nothing they reach may throw out of them.
         async Task Poll()
         {
             if (reading || closing || !rows.IsLoaded) return;
             reading = true;
-            try { await ReadTailscale(); } finally { reading = false; }
-            if (!closing && rows.IsLoaded) Refresh();
+            try
+            {
+                try { await ReadTailscale(); } finally { reading = false; }
+                Refresh();
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException) { remoteError = ex.Message; }
         }
         void FirewallUpdated() { if (!closing && rows.IsLoaded) ShowFirewall(); }
         address.TextChanged += (_, _) => Buttons();
         key.PasswordChanged += (_, _) => Buttons();
         var poll = DispatcherQueue.CreateTimer(); poll.Interval = TimeSpan.FromSeconds(3); poll.IsRepeating = true;
-        poll.Tick += async (_, _) => await Poll();
+        // A page no longer shown (its Settings window closed) keeps no timer and refreshes no detached tree.
+        poll.Tick += async (_, _) => { if (closing || !rows.IsLoaded) { poll.Stop(); return; } await Poll(); };
         rows.Loaded += async (_, _) =>
         {
             if (!remoteViews.Contains(Refresh)) remoteViews.Add(Refresh);
             FirewallChanged -= FirewallUpdated; FirewallChanged += FirewallUpdated;
-            Refresh(); poll.Start();
+            poll.Start();
             await Poll();
             if (!options.SmokeTest && !firewallBusy) { await RefreshFirewallState(); FirewallUpdated(); }
         };
@@ -456,6 +498,7 @@ public sealed partial class MainWindow
             poll.Stop(); remoteViews.Remove(Refresh); FirewallChanged -= FirewallUpdated;
             // Shown again, the page picks what is shared or the workspace in front anew, as the Mac's does each time it appears.
             showsKey = false; currentKey = null; key.Password = ""; picked = false; selected.Clear();
+            keyText.Text = new string('•', 16); copyNote.Text = ""; copyNote.Visibility = Visibility.Collapsed;
         };
         return rows;
     }

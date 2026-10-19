@@ -2907,6 +2907,7 @@
   "remote.windows.settings.scopeKey": "• 持有连接密钥的设备可以在共享的工作区中执行任务和命令。只把密钥告诉你信任的设备。密钥加密保存，只有当前 Windows 用户可以读取。",
   "remote.windows.settings.allowFullAccessDescription": "打开后，已连接的电脑可以使用远程命令窗格（在此电脑上是 PowerShell），并以完全权限（Claude Bypass、Codex 完全访问、Antigravity 完全权限）运行代理。每次开始共享时都会关闭。",
   "remote.windows.settings.keyCopied": "已复制连接密钥。它不会进入剪贴板历史，也不会同步到其他设备；60 秒后若仍在剪贴板中将被清除。",
+  "remote.windows.settings.keyCopyFailed": "无法复制连接密钥。请稍后再试。",
   "remote.windows.firewall.add": "添加防火墙规则",
   "remote.windows.firewall.remove": "删除防火墙规则",
   "remote.windows.firewall.update": "更新防火墙规则",

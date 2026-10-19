@@ -2907,6 +2907,7 @@
   "remote.windows.settings.scopeKey": "• A device with the connection key can run work and commands in the shared workspaces. Give the key only to devices you trust. The key is saved encrypted so only this Windows user can read it.",
   "remote.windows.settings.allowFullAccessDescription": "When on, connected computers may use remote command panes (PowerShell on this PC) and run agents with full access (Claude Bypass, Codex full access, Antigravity full access). It is off whenever sharing starts.",
   "remote.windows.settings.keyCopied": "Connection key copied. It stays out of clipboard history and other devices, and is cleared after 60 seconds if it is still there.",
+  "remote.windows.settings.keyCopyFailed": "Could not copy the connection key. Try again in a moment.",
   "remote.windows.firewall.add": "Add firewall rule",
   "remote.windows.firewall.remove": "Remove firewall rule",
   "remote.windows.firewall.update": "Update firewall rule",
