@@ -259,7 +259,7 @@ public sealed partial class MainWindow
         Require(updateBadge is { Visibility: Visibility.Collapsed } && AutomationProperties.GetAutomationId(updateBadge) == "app-update-badge" && updateBadgeText.FontSize == DesignMetrics.Type.Small && updateBadgeText.FontWeight.Weight == Microsoft.UI.Text.FontWeights.Medium.Weight,
             $"{key} ({theme}): the update badge must be hidden with no newer version, 10pt medium; got {updateBadge?.Visibility}, {updateBadgeText.FontSize}pt weight {updateBadgeText.FontWeight.Weight}");
         RequireBrush(updateBadgeText, e => ((TextBlock)e).Foreground, DesignToken.Accent, "the update badge", key: key);
-        foreach (var (line, what) in new[] { ((Border)parts[4], "the line before the usage chips"), (usageDivider!, "the line after the usage chips") })
+        foreach (var (line, what) in new[] { ((Border)parts[5], "the line before the usage chips"), (usageDivider!, "the line after the usage chips") })
         {
             Require(line.Width == DesignMetrics.Stroke.Line && line.Height == StatusDividerHeight && line.Margin == new Thickness(StatusDividerInset, 0, StatusDividerInset, 0),
                 $"{key} ({theme}): {what} must be {StatusDividerHeight} high with {StatusDividerInset} on either side; got {line.Width}×{line.Height}, {line.Margin}");
