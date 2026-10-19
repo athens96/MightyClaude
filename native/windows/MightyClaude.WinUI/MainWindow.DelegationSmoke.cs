@@ -220,6 +220,15 @@ public sealed partial class MainWindow
             }
             finally
             {
+                // The child reads running once its run reports its start, while its start is still settling; until it settles its
+                // discard is refused (delegation.card.error.stillStarting) and the workspace with it, and resetting the scripted
+                // Claude under it fails the start. So the start settles first, with everything still in place.
+                try
+                {
+                    var settle = DateTime.UtcNow.AddSeconds(30);
+                    while (crossChildId is not null && DateTime.UtcNow < settle && await delegation.IsStarting(crossChildId)) await Task.Delay(50);
+                }
+                catch (Exception) { }
                 smokeAgentsReady.TryRemove("claude", out _);
                 // Cleaned up the way steps 1-8 are: the child discarded from its card through its confirmation, then the workspace removed.
                 // A failure here must not hide the step's own, so it is not rethrown.
@@ -232,6 +241,9 @@ public sealed partial class MainWindow
                 catch (Exception) { }
                 smokeDelegationDialog = null; SetDelegationOn(false);
             }
+            // The step passed, so its clean-up must have too: a workspace left with an open child shows its row's card actions to every later check.
+            Require(crossWorkspaceId is null || !service.Snapshot.Workspaces.Any(w => w.Id == crossWorkspaceId),
+                $"The cross-agent step's workspace was not removed after its child was discarded; the child is {(delegation.File.Children.FirstOrDefault(child => child.Id == crossChildId) is { } left ? DelegationNames.Of(left.State) : "not listed")}. The window said: {error.Text}");
             checks["passed"] = true;
             return checks;
         }
