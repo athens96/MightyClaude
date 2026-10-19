@@ -243,8 +243,23 @@ private func remoteWait(_ seconds: Double = 30, _ condition: () async -> Bool) a
     }
 }
 
+/// Runs blocking socket I/O on a GCD thread, not on the Swift concurrency pool.
+/// The server under test answers from a `Task`, which needs a pool thread; a
+/// test that blocks pool threads in `read` while it waits for that answer
+/// starves it whenever the pool is small (a 3-core CI runner: 3 threads), and
+/// the read times out with nothing.
+private func offPool<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
+    try await withCheckedThrowingContinuation { continuation in
+        DispatchQueue.global().async { continuation.resume(with: Result { try work() }) }
+    }
+}
+
 /// One raw HTTP/1.1 exchange, for what URLSession will not send.
-private func rawExchange(port: Int, _ request: String) throws -> String {
+private func rawExchange(port: Int, _ request: String) async throws -> String {
+    try await offPool { try blockingRawExchange(port: port, request) }
+}
+
+private func blockingRawExchange(port: Int, _ request: String) throws -> String {
     let socketFD = socket(AF_INET, SOCK_STREAM, 0)
     guard socketFD >= 0 else { throw MightyError("socket") }
     defer { close(socketFD) }
@@ -405,17 +420,17 @@ private func rawExchange(port: Int, _ request: String) throws -> String {
             #expect(await failureStatus { _ = try await RemoteTransport.request(target, key: String(repeating: "Z", count: 43), method: "GET", path: "/v2/info") } == 401)
             #expect(await failureStatus { _ = try await fixture.client.connect(name: "", address: "127.0.0.1:\(port)", key: String(repeating: "Z", count: 43)) } == 401)
             // An old app's protocol is not answered.
-            let old = try rawExchange(port: port, "GET /v1/info HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer \(key)\r\nx-mighty-remote-version: 1\r\n\r\n")
+            let old = try await rawExchange(port: port, "GET /v1/info HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer \(key)\r\nx-mighty-remote-version: 1\r\n\r\n")
             #expect(old.hasPrefix("HTTP/1.1 426") || old.hasPrefix("HTTP/1.1 400"))
             // A browser page is never answered, even with the key.
-            let browser = try rawExchange(port: port, "GET /v2/info HTTP/1.1\r\nHost: x\r\nOrigin: https://example.com\r\nAuthorization: Bearer \(key)\r\nx-mighty-remote-version: 2\r\n\r\n")
+            let browser = try await rawExchange(port: port, "GET /v2/info HTTP/1.1\r\nHost: x\r\nOrigin: https://example.com\r\nAuthorization: Bearer \(key)\r\nx-mighty-remote-version: 2\r\n\r\n")
             #expect(browser.hasPrefix("HTTP/1.1 403"))
             // Over the plain limit without the key, and over it on any other route even with the key.
             let big = RemoteProtocol.maximumRequestBytes + 1
-            let unauthorized = try rawExchange(port: port, "POST /v2/runs HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: \(big)\r\nx-mighty-remote-version: 2\r\n\r\n")
+            let unauthorized = try await rawExchange(port: port, "POST /v2/runs HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: \(big)\r\nx-mighty-remote-version: 2\r\n\r\n")
             // Without the key no body is read at all: the head alone is answered.
             #expect(unauthorized.hasPrefix("HTTP/1.1 401"))
-            let otherRoute = try rawExchange(port: port, "POST /v2/runs/job/steer HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer \(key)\r\nContent-Type: application/json\r\nContent-Length: \(big)\r\nx-mighty-remote-version: 2\r\n\r\n")
+            let otherRoute = try await rawExchange(port: port, "POST /v2/runs/job/steer HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer \(key)\r\nContent-Type: application/json\r\nContent-Length: \(big)\r\nx-mighty-remote-version: 2\r\n\r\n")
             #expect(otherRoute.hasPrefix("HTTP/1.1 413"))
             // A workspace the host did not share is never a working folder.
             let snapshot = try await fixture.repository.load()
@@ -574,11 +589,11 @@ struct RemoteWorkspaceServerTests {
     @Test func aRefusedPeerIsCutOffAtAccept() async throws {
         let refused = HTTPServer(address: "127.0.0.1", port: 0, acceptPeer: { _ in false }) { _ in HTTPResponse(status: 200, body: Data("{}".utf8)) }
         let port = Int(try await refused.start())
-        #expect(try rawExchange(port: port, "GET / HTTP/1.1\r\nHost: x\r\n\r\n").isEmpty)
+        #expect(try await rawExchange(port: port, "GET / HTTP/1.1\r\nHost: x\r\n\r\n").isEmpty)
         await refused.stop()
         let allowed = HTTPServer(address: "127.0.0.1", port: 0, acceptPeer: { RemotePeerPolicy.allowed($0, allowLoopback: true) }) { _ in HTTPResponse(status: 200, body: Data("{}".utf8)) }
         let open = Int(try await allowed.start())
-        #expect(try rawExchange(port: open, "GET / HTTP/1.1\r\nHost: x\r\n\r\n").hasPrefix("HTTP/1.1 200"))
+        #expect(try await rawExchange(port: open, "GET / HTTP/1.1\r\nHost: x\r\n\r\n").hasPrefix("HTTP/1.1 200"))
         await allowed.stop()
     }
 
@@ -589,13 +604,13 @@ struct RemoteWorkspaceServerTests {
         try await Task.sleep(for: .milliseconds(200))
         // A third connection from the same peer is closed at once…
         let third = try openSocket(port: port)
-        #expect(readsEndOfFile(third, within: 2))
+        #expect(await readsEndOfFile(third, within: 2))
         close(third)
         // …while the two it holds are still open.
-        #expect(!readsEndOfFile(held[0], within: 0.3))
+        #expect(!(await readsEndOfFile(held[0], within: 0.3)))
         // One closes: its place is free again.
         close(held[0]); try await Task.sleep(for: .milliseconds(300))
-        #expect(try rawExchange(port: port, "GET / HTTP/1.1\r\nHost: x\r\n\r\n").hasPrefix("HTTP/1.1 200"))
+        #expect(try await rawExchange(port: port, "GET / HTTP/1.1\r\nHost: x\r\n\r\n").hasPrefix("HTTP/1.1 200"))
         close(held[1])
         await server.stop()
     }
@@ -608,7 +623,7 @@ struct RemoteWorkspaceServerTests {
         }
         let port = Int(try await server.start())
         // The head says a large body follows; none is sent, and the answer comes anyway.
-        let answer = try rawExchange(port: port, "POST /v2/runs HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer \(String(repeating: "z", count: 43))\r\nContent-Type: application/json\r\nContent-Length: 100000\r\nx-mighty-remote-version: 2\r\n\r\n")
+        let answer = try await rawExchange(port: port, "POST /v2/runs HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer \(String(repeating: "z", count: 43))\r\nContent-Type: application/json\r\nContent-Length: 100000\r\nx-mighty-remote-version: 2\r\n\r\n")
         #expect(answer.hasPrefix("HTTP/1.1 401"))
         #expect(seen.values.map(\.sessionId) == ["0"])
         await server.stop()
@@ -654,7 +669,11 @@ private func openSocket(port: Int) throws -> Int32 {
 }
 
 /// Whether the peer closed the socket within `seconds` (a read gets end of file or a reset).
-private func readsEndOfFile(_ socketFD: Int32, within seconds: Double) -> Bool {
+private func readsEndOfFile(_ socketFD: Int32, within seconds: Double) async -> Bool {
+    (try? await offPool { blockingReadsEndOfFile(socketFD, within: seconds) }) ?? false
+}
+
+private func blockingReadsEndOfFile(_ socketFD: Int32, within seconds: Double) -> Bool {
     var timeout = timeval(tv_sec: Int(seconds), tv_usec: Int32((seconds - Double(Int(seconds))) * 1_000_000))
     setsockopt(socketFD, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
     var byte: UInt8 = 0
