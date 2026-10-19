@@ -92,7 +92,7 @@ public sealed partial class MainWindow
         var directDot = new Microsoft.UI.Xaml.Shapes.Ellipse { Width = 8, Height = 8, VerticalAlignment = VerticalAlignment.Center };
         var directStatus = SettingsText("", 11, DesignToken.Ink2, selectable: true); AutomationProperties.SetAutomationId(directStatus, "settings-mobile-direct-status");
         var firewallText = SettingsText("", 11, DesignToken.Ink2); AutomationProperties.SetAutomationId(firewallText, "settings-mobile-firewall-state");
-        Button firewallButton = null!, applyPort = null!;
+        Button firewallButton = null!, firewallUpdate = null!, applyPort = null!;
         Border portRow = null!, directStatusRow = null!, firewallRow = null!;
         var status = SettingsText("", 11, DesignToken.Ink2); var detail = SettingsText("", 11, DesignToken.Ink2);
         AutomationProperties.SetAutomationId(detail, "settings-mobile-detail");
@@ -196,6 +196,10 @@ public sealed partial class MainWindow
         // rule could not be read it reads it again instead (unelevated), so an unknown state is never a dead end.
         firewallButton = SettingsPush(SafeButton(MobileDirectStrings.FirewallButton(FirewallRuleState.Absent), () => firewallState == FirewallRuleState.Unknown ? RecheckFirewallRule() : ChangeFirewallRule(firewallState != FirewallRuleState.Present)), SettingsControlSize.Small);
         AutomationProperties.SetAutomationId(firewallButton, "settings-mobile-firewall-button");
+        // The one rule also opens this PC's sharing port (Settings → Remote Connection): while it is there and a port is in use, it can be
+        // set to exactly the ports in use now (an elevated set rule), so turning the direct path on after sharing never leaves its port shut.
+        firewallUpdate = SettingsPush(SafeButton(RemoteWindowsStrings.FirewallUpdate, () => ChangeFirewallRule(add: true)), SettingsControlSize.Small);
+        AutomationProperties.SetAutomationId(firewallUpdate, "settings-mobile-firewall-update");
         enabled.Checked += async (_, _) => { if (!showing) await Write(saved => saved with { Enabled = true }); };
         // A switch the user turns off (never one the code sets: `showing`) takes the rule away when nothing needs it, from that same click.
         // While an earlier change is still being applied, the click's Write only queues it; the rule is then looked at once the queued
@@ -259,7 +263,9 @@ public sealed partial class MainWindow
         firewallWords.Children.Add(firewallText);
         firewallWords.Children.Add(SettingsText(MobileDirectStrings.FirewallDescription, 11, DesignToken.Ink2));
         firewallWords.Children.Add(SettingsText(MobileDirectStrings.PortHint, 11, DesignToken.Ink2));
-        firewallRow = SettingsRow(rows, SettingsLabeled(firewallWords, firewallButton, top: true));
+        var firewallButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
+        firewallButtons.Children.Add(firewallUpdate); firewallButtons.Children.Add(firewallButton);
+        firewallRow = SettingsRow(rows, SettingsLabeled(firewallWords, firewallButtons, top: true));
 
         var copy = SettingsPush(Button(Locale.Get("settings.mobileRemote.copyLinkButton"), () => { if (mobileHost is not null && service.Snapshot.MobileRemote.Enabled) { var package = new DataPackage(); package.SetText(mobileHost.PairingUrl); Clipboard.SetContent(package); } return Task.CompletedTask; }), SettingsControlSize.Small);
         copy.Content = SettingsGlyphLabel("", Locale.Get("settings.mobileRemote.copyLinkButton"), 11);
@@ -327,6 +333,8 @@ public sealed partial class MainWindow
             // With no port to open (the remote off) and no rule to remove there is nothing to press, so the button is not shown at all.
             firewallButton.Visibility = firewallState != FirewallRuleState.Absent || FirewallPorts().Count > 0 ? Visibility.Visible : Visibility.Collapsed;
             firewallButton.IsEnabled = !options.SmokeTest && !firewallBusy;
+            firewallUpdate.Visibility = firewallState == FirewallRuleState.Present && FirewallPorts().Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            firewallUpdate.IsEnabled = !options.SmokeTest && !firewallBusy;
         }
         // The "connected" and "new device" marks (M/MobileRemoteSettingsView.swift:150-163): 9pt medium on the soft fill, a capsule.
         Border Mark(string text, DesignToken ink, DesignToken fill, string id)
@@ -374,7 +382,7 @@ public sealed partial class MainWindow
         // Until the host has been read (and for the whole of a smoke run) the section shows its switches and the saved state only.
         HidePairing(); reconnect.Visibility = service.Snapshot.MobileRemote.Enabled ? Visibility.Visible : Visibility.Collapsed; RefreshPairingText(); ShowState(); ShowControls();
         void FirewallUpdated() { if (!closing && rows.IsLoaded) ShowDirect(); }
-        rows.Loaded += async (_, _) => { if (options.SmokeTest) { enabled.IsEnabled = relay.IsEnabled = legacy.IsEnabled = apply.IsEnabled = reconnect.IsEnabled = direct.IsEnabled = port.IsEnabled = applyPort.IsEnabled = firewallButton.IsEnabled = false; HidePairing(); RefreshPairingText(); return; } FirewallChanged -= FirewallUpdated; FirewallChanged += FirewallUpdated; await Act(async () => { await InitializeMobileRemote(); if (!firewallBusy) await RefreshFirewallState(); if (closing || !rows.IsLoaded || mobileHost is null) return; mobileHost.StatusChanged += Updated; await Refresh(); }); };
+        rows.Loaded += async (_, _) => { if (options.SmokeTest) { enabled.IsEnabled = relay.IsEnabled = legacy.IsEnabled = apply.IsEnabled = reconnect.IsEnabled = direct.IsEnabled = port.IsEnabled = applyPort.IsEnabled = firewallButton.IsEnabled = firewallUpdate.IsEnabled = false; HidePairing(); RefreshPairingText(); return; } FirewallChanged -= FirewallUpdated; FirewallChanged += FirewallUpdated; await Act(async () => { await InitializeMobileRemote(); if (!firewallBusy) await RefreshFirewallState(); if (closing || !rows.IsLoaded || mobileHost is null) return; mobileHost.StatusChanged += Updated; await Refresh(); }); };
         rows.Unloaded += (_, _) => { if (!rows.IsLoaded) FirewallChanged -= FirewallUpdated; if (mobileHost is not null) mobileHost.StatusChanged -= Updated; qr.Source = null; showsKey = false; pairingKey.Text = ""; hostId.Text = ""; };
         return rows;
     }

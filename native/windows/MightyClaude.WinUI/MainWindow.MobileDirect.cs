@@ -18,8 +18,12 @@ public sealed partial class MainWindow
     private MobileDirectStatus? mobileDirectStatusOverride;
     private MobileDirectStatus MobileDirectStatusNow => mobileDirectStatusOverride ?? mobileHost?.DirectStatus ?? MobileDirectStatus.Off;
 
-    /// <summary>The ports the rule must open: the phone's direct port while the remote and its direct switch are on (part 3 adds the remote workspaces' port).</summary>
-    internal IReadOnlyList<int> FirewallPorts() => service.Snapshot.MobileRemote is { Enabled: true, DirectEnabled: true } remote ? [remote.DirectPort] : [];
+    /// <summary>
+    /// The ports the one rule must open (RemoteWorkspaceFeatures.FirewallPorts): the phone's direct port while the remote and its direct
+    /// switch are on, and the sharing port while this PC shares its workspaces (Settings → Remote Connection).
+    /// </summary>
+    internal IReadOnlyList<int> FirewallPorts() => RemoteWorkspaceFeatures.FirewallPorts(
+        service.Snapshot.MobileRemote is { Enabled: true, DirectEnabled: true } remote ? remote.DirectPort : null, remoteHost?.Current() is { Enabled: true } sharing ? sharing.Port : null);
 
     /// <summary>Reads whether the rule exists, without elevation. Anything unexpected reads as Unknown, never as an error's own text.</summary>
     private async Task RefreshFirewallState()

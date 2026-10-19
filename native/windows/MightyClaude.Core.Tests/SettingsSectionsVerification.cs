@@ -17,6 +17,7 @@ internal static class SettingsSectionsVerification
             Locale.Get("settings.styles.sectionTitle"),
             ComponentSection.SectionTitle,
             Locale.Get("settings.mobileRemote.sectionTitle"),
+            Locale.Get("settings.remote.navTitle"),
             CliUpdateStrings.SectionTitle,
             Locale.Get("companion.settings.sectionTitle"),
             "이 PC의 CLI",
@@ -158,5 +159,14 @@ internal static class SettingsSectionsVerification
         catch (InvalidOperationException) { restoreChecked = true; }
         Check(restoreChecked, "a switch that does not persist must fail the smoke run");
         Check(snapshot.AutoUpdateCLIs == original, "a failed smoke run must still leave the switch as it was");
+    }
+    // Settings → 원격 연결 (Tailscale) is the Mac's own pane (M/SettingsViews.swift SettingsPane.remote), between 모바일 and 펫.
+    internal static Task TheRemotePageSitsBetweenMobileAndCompanion()
+    {
+        var ids = SettingsNavigation.Available.Select(c => c.Id).ToList();
+        Check(ids.IndexOf("remote") == ids.IndexOf("mobile") + 1 && ids.IndexOf("companion") == ids.IndexOf("remote") + 1, "the Mac's pane order: mobile, remote, companion: " + string.Join(",", ids));
+        Check(SettingsNavigation.Available.Single(c => c.Id == "remote").Sections.SequenceEqual([SettingsSections.RemoteWorkspaces]), "the remote page holds the remote section");
+        Check(StateStore.Normalize(new AppSnapshot { SettingsPane = "remote" }, false).SettingsPane == "remote", "the remote page is remembered");
+        return Task.CompletedTask;
     }
 }

@@ -2909,6 +2909,7 @@
   "remote.windows.settings.keyCopied": "연결 키를 복사했습니다. 클립보드 기록과 다른 기기에 남지 않고, 60초 뒤에도 그대로면 지웁니다.",
   "remote.windows.firewall.add": "방화벽 규칙 추가",
   "remote.windows.firewall.remove": "방화벽 규칙 지우기",
+  "remote.windows.firewall.update": "방화벽 규칙 갱신",
   "remote.windows.pane.commandNote": "명령은 {host}({os})의 공유 폴더에서 실행됩니다. 명령마다 그 컴퓨터의 셸(Windows는 PowerShell, Mac은 로그인 셸)을 새로 시작하며, 대화형 프로그램과 비밀번호 입력은 지원하지 않습니다.",
   "remote.hostOS.darwin": "macOS",
   "remote.hostOS.win32": "Windows",
