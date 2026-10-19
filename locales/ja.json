@@ -2907,6 +2907,7 @@
   "remote.windows.settings.scopeKey": "• 接続キーを持つデバイスは、共有したワークスペースで作業やコマンドを実行できます。キーは信頼できるデバイスにだけ伝えてください。キーはこのWindowsユーザーだけが読めるよう暗号化して保存します。",
   "remote.windows.settings.allowFullAccessDescription": "オンにすると、接続したコンピューターがリモートコマンドペイン（このPCではPowerShell）を使い、エージェントをフルアクセス（Claude Bypass、Codexフルアクセス、Antigravityフルアクセス）で実行できます。共有を開始するたびにオフになります。",
   "remote.windows.settings.keyCopied": "接続キーをコピーしました。クリップボードの履歴やほかのデバイスには残らず、60秒後もそのままなら消去します。",
+  "remote.windows.settings.keyCopyFailed": "接続キーをコピーできませんでした。しばらくしてからもう一度押してください。",
   "remote.windows.firewall.add": "ファイアウォールルールを追加",
   "remote.windows.firewall.remove": "ファイアウォールルールを削除",
   "remote.windows.firewall.update": "ファイアウォールルールを更新",

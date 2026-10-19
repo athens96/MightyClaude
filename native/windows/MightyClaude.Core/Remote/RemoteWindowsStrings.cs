@@ -22,6 +22,7 @@ public static class RemoteWindowsStrings
     public static string SettingsScopeKey => Locale.Get("remote.windows.settings.scopeKey");
     public static string SettingsAllowFullAccessDescription => Locale.Get("remote.windows.settings.allowFullAccessDescription");
     public static string KeyCopied => Locale.Get("remote.windows.settings.keyCopied");
+    public static string KeyCopyFailed => Locale.Get("remote.windows.settings.keyCopyFailed");
     public static string FirewallAdd => Locale.Get("remote.windows.firewall.add");
     public static string FirewallRemove => Locale.Get("remote.windows.firewall.remove");
     /// <summary>The rule is there: one elevated <c>set rule</c> makes it hold exactly the ports in use now (the phone's direct port and the sharing port).</summary>
