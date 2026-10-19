@@ -639,6 +639,10 @@ internal static class Verification
         await Test("remote host: sharing starts with a new key and a stop revokes it", RemoteHostVerification.SharingStartsWithANewKeyAndStopRevokesIt);
         await Test("remote host: a flood is refused and the refusal carries the version", RemoteHostVerification.AFloodIsRefusedAndTheRefusalCarriesTheVersion);
         await Test("remote host: a listener that stops accepting turns sharing off", RemoteHostVerification.AListenerThatStopsAcceptingTurnsSharingOff);
+        await Test("remote host: a stop while a start binds closes what it opened", RemoteHostVerification.AStopWhileAStartBindsClosesWhatItOpened);
+        await Test("remote host: a stop while a start makes its runner disposes that runner", RemoteHostVerification.AStopWhileAStartMakesItsRunnerDisposesThatRunner);
+        await Test("remote host: the run count is told outside the host's lock and a failing listener of it changes nothing", RemoteHostVerification.TheRunCountIsToldOutsideTheHostsLockAndAFailingListenerOfItChangesNothing);
+        await Test("remote host: sharing refuses what it cannot serve", RemoteHostVerification.SharingRefusesWhatItCannotServe);
         await Test("corrupt/unknown/oversize state cannot be overwritten by shutdown", async () =>
         {
             foreach (var text in new[] { "null", "{", "{\"version\":2,\"workspaces\":[],\"sessions\":[]}", "{\"version\":1,\"workspaces\":null,\"sessions\":[]}" })

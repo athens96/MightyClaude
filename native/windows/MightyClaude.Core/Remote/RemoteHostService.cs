@@ -79,6 +79,8 @@ public sealed partial class RemoteHostService(RemoteHostOptions options) : IAsyn
     private static readonly TimeSpan RuntimeDeadline = TimeSpan.FromSeconds(30);
 
     private readonly object gate = new();
+    /// <summary>Serializes AnnounceRuns, so a count read earlier is never told after one read later.</summary>
+    private readonly object announcing = new();
     private readonly string hostId = Wire.Id();
     private readonly RemoteRateLimiter rates = new(options.Clock);
     private readonly List<RemoteHttpListener> servers = [];
@@ -87,6 +89,9 @@ public sealed partial class RemoteHostService(RemoteHostOptions options) : IAsyn
     private Guid generation = Guid.NewGuid();
     private CancellationTokenSource? lease;
     private bool changing, closed, allowsFullAccess;
+
+    /// <summary>Awaited just before each address is bound (checks only): a stop let in here must still close what the start opens.</summary>
+    internal Func<string, Task>? BeforeBind { get; init; }
 
     /// <summary>The listeners of the sharing now on, one per address (checks only).</summary>
     internal IReadOnlyList<RemoteHttpListener> Listeners { get { lock (gate) return [.. servers]; } }
@@ -142,6 +147,7 @@ public sealed partial class RemoteHostService(RemoteHostOptions options) : IAsyn
             binding = true;
             foreach (var address in addresses)
             {
+                if (BeforeBind is { } hook) await hook(address);
                 // Refused at accept: anything but a Tailscale peer, and a ninth connection from one peer. Windows cannot pin a listener
                 // to the tunnel's interface as the Mac does, so only Tailscale addresses are bound and every peer is filtered.
                 var server = new RemoteHttpListener(IPAddress.Parse(address), bound, request => ServeAsync(request, revision), head => BodyLimit(head, key, options.AllowLoopbackForTests),
@@ -208,7 +214,21 @@ public sealed partial class RemoteHostService(RemoteHostOptions options) : IAsyn
             foreach (var server in old) await server.DisposeAsync();
             if (oldRunner is not null) await oldRunner.DisposeAsync();
         }
-        finally { options.RunsChanged(0); }
+        finally { AnnounceRuns(); }
+    }
+
+    /// <summary>
+    /// Tells the app how many client runs go on now. Serialized and read at the moment it is told, so a stop's count can never land after a
+    /// newer one. Never called while holding <c>gate</c>; Task 14's runs announce through this same helper.
+    /// </summary>
+    private void AnnounceRuns()
+    {
+        lock (announcing)
+        {
+            int count; lock (gate) count = jobs.Values.Count(j => !j.Done);
+            try { options.RunsChanged(count); }
+            catch (Exception ex) when (ex is not OutOfMemoryException) { Trace.TraceError("remote host: telling the app about runs failed: " + ex.GetType().Name); }
+        }
     }
 
     /// <summary>
@@ -232,10 +252,16 @@ public sealed partial class RemoteHostService(RemoteHostOptions options) : IAsyn
     /// </summary>
     public static int BodyLimit(RemoteHttpRequest head, string key, bool allowLoopback)
     {
-        var authorization = head.Headers.GetValueOrDefault("authorization") ?? "";
         if (head.Headers.ContainsKey("origin") || !RemotePeerPolicy.Allowed(head.RemoteAddress, allowLoopback) || head.Headers.GetValueOrDefault(RemoteProtocol.Header) != RemoteProtocol.Version.ToString()
-            || !authorization.StartsWith("Bearer ", StringComparison.Ordinal) || authorization.Length > 256 || !RemoteWorkspaceValidation.KeysMatch(authorization[7..], key)) return 0;
+            || !KeyPresented(head.Headers, key)) return 0;
         return head.Method == "POST" && head.Target == RemoteProtocol.PathPrefix + "runs" ? AttachmentSupport.MaximumRequestBytes : RemoteProtocol.MaximumRequestBytes;
+    }
+
+    /// <summary>The request's bearer key is the sharing's (at most 256 characters in all, compared in constant time).</summary>
+    private static bool KeyPresented(IReadOnlyDictionary<string, string> headers, string key)
+    {
+        var authorization = headers.GetValueOrDefault("authorization") ?? "";
+        return authorization.StartsWith("Bearer ", StringComparison.Ordinal) && authorization.Length <= 256 && RemoteWorkspaceValidation.KeysMatch(authorization[7..], key);
     }
 
     /// <summary>Every request: sharing on, no browser origin, a Tailscale peer, within the rate limits, the right key (compared in constant
@@ -250,8 +276,7 @@ public sealed partial class RemoteHostService(RemoteHostOptions options) : IAsyn
         }
         if (request.Headers.ContainsKey("origin") || !RemotePeerPolicy.Allowed(request.RemoteAddress, options.AllowLoopbackForTests)) throw new HostFailure(403, Locale.Get("remote.host.error.tailscaleOnly"));
         if (!rates.AllowPeer(request.RemoteAddress)) throw new HostFailure(429, Locale.Get("remote.host.error.tooMany"));
-        var authorization = request.Headers.GetValueOrDefault("authorization") ?? "";
-        if (!authorization.StartsWith("Bearer ", StringComparison.Ordinal) || authorization.Length > 256 || !RemoteWorkspaceValidation.KeysMatch(authorization[7..], key)) throw new HostFailure(401, Locale.Get("remote.host.error.badKey"));
+        if (!KeyPresented(request.Headers, key)) throw new HostFailure(401, Locale.Get("remote.host.error.badKey"));
         if (!rates.AllowKeyed()) throw new HostFailure(429, Locale.Get("remote.host.error.tooMany"));
         if (request.Headers.GetValueOrDefault(RemoteProtocol.Header) != RemoteProtocol.Version.ToString()) throw new HostFailure(426, Locale.Get("remote.host.error.version"));
     }
