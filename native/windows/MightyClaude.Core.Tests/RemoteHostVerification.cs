@@ -38,7 +38,9 @@ internal static partial class RemoteHostVerification
     {
         using var answer = new MemoryStream(); var buffer = new byte[8192];
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        try { int read; while ((read = await client.GetStream().ReadAsync(buffer, timeout.Token)) > 0) answer.Write(buffer, 0, read); } catch (Exception ex) when (ex is IOException or OperationCanceledException) { }
+        // The stream is taken once: after the peer's reset a second GetStream throws InvalidOperationException (not connected).
+        try { var stream = client.GetStream(); int read; while ((read = await stream.ReadAsync(buffer, timeout.Token)) > 0) answer.Write(buffer, 0, read); }
+        catch (Exception ex) when (ex is IOException or OperationCanceledException or InvalidOperationException) { }
         return Encoding.UTF8.GetString(answer.ToArray());
     }
 
@@ -47,9 +49,10 @@ internal static partial class RemoteHostVerification
     {
         using var timeout = new CancellationTokenSource(within);
         var buffer = new byte[1024];
-        try { while (await client.GetStream().ReadAsync(buffer, timeout.Token) > 0) { } return true; }
+        try { var stream = client.GetStream(); while (await stream.ReadAsync(buffer, timeout.Token) > 0) { } return true; }
         catch (OperationCanceledException) { return false; }
-        catch (IOException) { return true; }
+        // A socket already reset reads as closed: GetStream on it throws InvalidOperationException.
+        catch (Exception ex) when (ex is IOException or InvalidOperationException) { return true; }
     }
 
     internal static async Task ARefusedPeerIsCutOffAtAcceptAndOnePeerHoldsAtMostItsShare()
@@ -167,7 +170,8 @@ internal static partial class RemoteHostVerification
             var watch = Stopwatch.StartNew();
             using (var slow = await Open(port, "GET /v2/x HTTP/1.1\r\n"))
             {
-                var trickle = Task.Run(async () => { try { for (var i = 0; i < 50; i++) { await slow.GetStream().WriteAsync("X"u8.ToArray()); await Task.Delay(100); } } catch (Exception ex) when (ex is IOException or ObjectDisposedException) { } });
+                var slowStream = slow.GetStream();
+                var trickle = Task.Run(async () => { try { for (var i = 0; i < 50; i++) { await slowStream.WriteAsync("X"u8.ToArray()); await Task.Delay(100); } } catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException) { } });
                 Check(await ClosedWithin(slow, TimeSpan.FromSeconds(4)), "a head still arriving at the deadline is cut off");
                 Check(watch.Elapsed < TimeSpan.FromSeconds(4), "trickling does not extend the deadline");
                 await trickle;
@@ -243,7 +247,7 @@ internal static partial class RemoteHostVerification
         using (var flooder = await Open(port, "POST /x HTTP/1.1\r\nContent-Length: 999999\r\n\r\n"))
         {
             Check((await ReadAll(flooder)).StartsWith("HTTP/1.1 401", StringComparison.Ordinal), "the flooder is answered");
-            try { await flooder.GetStream().WriteAsync(new byte[80 * 1024]); } catch (Exception ex) when (ex is IOException or SocketException) { }
+            try { var flood = flooder.GetStream(); await flood.WriteAsync(new byte[80 * 1024]); } catch (Exception ex) when (ex is IOException or SocketException or InvalidOperationException) { }
             Check(await released.WaitAsync(TimeSpan.FromSeconds(3)), "past 64 KiB the drain ends and the slot is given back before its deadline");
         }
         Check((await Raw(port, "GET /x HTTP/1.1\r\n\r\n")).StartsWith("HTTP/1.1 401", StringComparison.Ordinal), "and the peer is answered again");
@@ -256,8 +260,8 @@ internal static partial class RemoteHostVerification
         {
             Check((await ReadAll(trickler)).StartsWith("HTTP/1.1 401", StringComparison.Ordinal), "the trickler is answered");
             var cutOff = false;
-            try { while (watch.Elapsed < TimeSpan.FromSeconds(5)) { await trickler.GetStream().WriteAsync("X"u8.ToArray()); await Task.Delay(50); } }
-            catch (Exception ex) when (ex is IOException or SocketException or ObjectDisposedException) { cutOff = true; }
+            try { var trickled = trickler.GetStream(); while (watch.Elapsed < TimeSpan.FromSeconds(5)) { await trickled.WriteAsync("X"u8.ToArray()); await Task.Delay(50); } }
+            catch (Exception ex) when (ex is IOException or SocketException or ObjectDisposedException or InvalidOperationException) { cutOff = true; }
             Check(cutOff && watch.Elapsed < TimeSpan.FromSeconds(3), "a peer that keeps sending after its answer is closed within about 2 s");
         }
         Check(await released.WaitAsync(TimeSpan.FromSeconds(10)), "the trickler's slot is given back");
@@ -416,7 +420,8 @@ internal static partial class RemoteHostVerification
         }
         public void AnswerQuestionnaire(string id, string requestId, IReadOnlyDictionary<string, UserQuestionAnswer> answers) => Answers.Enqueue((id, requestId, true));
         public PlanRecord AnswerPlan(string id, string requestId, PlanDecision decision) { Answers.Enqueue((id, requestId, decision.Kind != "cancel")); return new(requestId, id, "plan", Wire.Now(), Wire.Now(), decision.Outcome); }
-        public ValueTask DisposeAsync() { foreach (var id in waiting.Keys) _ = StopAsync(id); return ValueTask.CompletedTask; }
+        internal volatile bool Disposed;
+        public ValueTask DisposeAsync() { Disposed = true; foreach (var id in waiting.Keys) _ = StopAsync(id); return ValueTask.CompletedTask; }
     }
 
     internal sealed class HostFixture : IAsyncDisposable
@@ -427,7 +432,7 @@ internal static partial class RemoteHostVerification
     }
 
     internal static async Task<HostFixture> MakeHost(TimeSpan? heartbeat = null, Func<StartRunRequest, string?>? admission = null, Func<HostFixture, RemoteRunnerSinks, IRemoteRunner>? runner = null,
-        Func<IReadOnlyList<string>>? addresses = null, Func<DateTimeOffset>? clock = null)
+        Func<IReadOnlyList<string>>? addresses = null, Func<DateTimeOffset>? clock = null, Func<string, Task>? beforeBind = null, Action<int>? runsChanged = null)
     {
         var directory = Verification.Temp(); var store = new StateStore(Path.Combine(directory, "host")); await store.LoadAsync();
         System.IO.Directory.CreateDirectory(Path.Combine(directory, "project")); System.IO.Directory.CreateDirectory(Path.Combine(directory, "private"));
@@ -441,8 +446,8 @@ internal static partial class RemoteHostVerification
             Runtime = () => Task.FromResult(RemoteWireFixtureVerification.Node("info.json")["runtime"].Deserialize<RuntimeInfo>(Wire.Json)!),
             CreateRunner = sinks => runner?.Invoke(fixture, sinks) ?? (fixture.Runner = new FakeRemoteRunner(sinks)),
             HostName = "studio-pc", AllowLoopbackForTests = true, Heartbeat = heartbeat ?? RemoteProtocol.HeartbeatTimeout, Admission = admission ?? (_ => null),
-            Addresses = addresses, Clock = clock ?? (() => DateTimeOffset.UtcNow),
-        });
+            Addresses = addresses, Clock = clock ?? (() => DateTimeOffset.UtcNow), RunsChanged = runsChanged ?? (_ => { }),
+        }) { BeforeBind = beforeBind };
         return fixture = new HostFixture { Directory = directory, Store = store, Shared = shared, Private = hidden, Remote = remote, Host = host };
     }
 
@@ -558,5 +563,86 @@ internal static partial class RemoteHostVerification
         Check((await fixture.Host.StartAsync([fixture.Shared.Id], 0)).Key != state.Key, "sharing starts again with a new key");
         await fixture.Host.Listeners[1].DisposeAsync();
         Check(fixture.Host.Current() is { Enabled: false, Key: null }, "Current alone notices a listener that stopped");
+    }
+
+    internal static async Task AStopWhileAStartBindsClosesWhatItOpened()
+    {
+        var cancelled = Locale.Get("remote.host.error.startCancelled");
+        // A stop while the start is about to bind an address: the listener it then makes is never left open.
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using (var fixture = await MakeHost(beforeBind: async _ => { entered.TrySetResult(); await release.Task; }))
+        {
+            var starting = fixture.Host.StartAsync([fixture.Shared.Id], 0);
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            await fixture.Host.StopAsync();
+            release.TrySetResult();
+            await RemoteClientVerification.RejectAsync(() => starting, "a start a stop overtook is cancelled", ex => ex.Message == cancelled);
+            Check(fixture.Host.Listeners.Count == 0 && fixture.Host.Current() is { Enabled: false, Key: null } && fixture.Runner is { Disposed: true }, "nothing it opened stays open: " + fixture.Host.Listeners.Count);
+        }
+    }
+
+    internal static async Task AStopWhileAStartMakesItsRunnerDisposesThatRunner()
+    {
+        var cancelled = Locale.Get("remote.host.error.startCancelled");
+        // A stop while the start makes its runner: that runner is put away, never kept.
+        FakeRemoteRunner? made = null;
+        await using (var fixture = await MakeHost(runner: (f, sinks) => { _ = f.Host.StopAsync(); return made = new FakeRemoteRunner(sinks); }))
+        {
+            await RemoteClientVerification.RejectAsync(() => fixture.Host.StartAsync([fixture.Shared.Id], 0), "a start a stop overtook is cancelled", ex => ex.Message == cancelled);
+            Check(made is { Disposed: true } && fixture.Host.Listeners.Count == 0 && fixture.Host.Current() is { Enabled: false, Key: null }, "the runner made after the stop is disposed");
+        }
+    }
+
+    internal static async Task TheRunCountIsToldOutsideTheHostsLockAndAFailingListenerOfItChangesNothing()
+    {
+        var told = new ConcurrentQueue<int>(); var gateHeld = false; HostFixture? holder = null;
+        await using var fixture = await MakeHost(runsChanged: count =>
+        {
+            told.Enqueue(count);
+            // Another thread asks the host: it would wait for ever if this were told under the host's lock.
+            if (holder is { } f && !Task.Run(() => f.Host.Current()).Wait(TimeSpan.FromSeconds(5))) gateHeld = true;
+            throw new InvalidOperationException("the app failed to take the count");
+        });
+        holder = fixture;
+        var state = await fixture.Host.StartAsync([fixture.Shared.Id], 0);
+        var stopped = await fixture.Host.StopAsync();
+        Check(!stopped.Enabled && fixture.Host.Listeners.Count == 0 && fixture.Runner is { Disposed: true }, "a failing callback never keeps sharing on");
+        Check(!told.IsEmpty && told.All(c => c == 0) && !gateHeld, "the count is told, outside the lock: " + string.Join(",", told));
+        await RemoteClientVerification.RejectAsync(() => RemoteTransport.RequestAsync(RemoteClientVerification.Loopback(state.Port!.Value), state.Key!, HttpMethod.Get, "/v2/info"), "nothing answers after the stop");
+        Check((await fixture.Host.StartAsync([fixture.Shared.Id], 0)).Enabled, "and sharing starts again");
+    }
+
+    internal static async Task SharingRefusesWhatItCannotServe()
+    {
+        var noTailscale = RemoteWindowsStrings.HostNoTailscale;
+        await using (var lan = await MakeHost(addresses: () => ["192.168.1.5", "0.0.0.0"]))
+            await RemoteClientVerification.RejectAsync(() => lan.Host.StartAsync([lan.Shared.Id], 0), "no address but Tailscale's is ever bound", ex => ex.Message == noTailscale);
+        await using (var unreadable = await MakeHost(addresses: () => throw new AdaptersUnreadableException(new InvalidOperationException("adapters"))))
+            await RemoteClientVerification.RejectAsync(() => unreadable.Host.StartAsync([unreadable.Shared.Id], 0), "adapters that cannot be read are no Tailscale", ex => ex.Message == noTailscale);
+        await using var fixture = await MakeHost();
+        var taken = new TcpListener(IPAddress.Loopback, 0); taken.Start();
+        try
+        {
+            var busyPort = ((IPEndPoint)taken.LocalEndpoint).Port;
+            var prefix = Locale.Get("remote.host.error.listenFailed", new Dictionary<string, string> { ["error"] = "\u0001" }).Split('\u0001')[0];
+            await RemoteClientVerification.RejectAsync(() => fixture.Host.StartAsync([fixture.Shared.Id], busyPort), "a port in use is a listen failure", ex => ex.Message.StartsWith(prefix, StringComparison.Ordinal) && ex.Message.Length > prefix.Length);
+            Check(fixture.Host.Listeners.Count == 0 && fixture.Host.Current() is { Enabled: false, Key: null } && fixture.Runner is { Disposed: true }, "a failed start leaves nothing open");
+        }
+        finally { taken.Stop(); }
+        Check(fixture.Host.SetAllowsFullAccess(true).AllowsFullAccess, "the switch can be set while sharing is off");
+        var state = await fixture.Host.StartAsync([fixture.Shared.Id], 0);
+        Check(state is { Enabled: true, AllowsFullAccess: false }, "sharing always starts with the switch off");
+        var port = state.Port!.Value;
+        string Keyed(string target) => $"GET {target} HTTP/1.1\r\nAuthorization: Bearer {state.Key}\r\nx-mighty-remote-version: 2\r\n\r\n";
+        foreach (var target in new[] { "/v2\\info", "/v2/info#x" })
+        {
+            var answer = await Raw(port, Keyed(target));
+            Check(answer.StartsWith("HTTP/1.1 400", StringComparison.Ordinal) && answer.Contains("x-mighty-remote-version: 2", StringComparison.Ordinal), "a target the Mac cannot read is 400: " + target);
+        }
+        var accented = await Raw(port, Encoding.UTF8.GetBytes(Keyed("/v2/infö")));
+        Check(accented.StartsWith("HTTP/1.1 400", StringComparison.Ordinal) && accented.Contains("x-mighty-remote-version: 2", StringComparison.Ordinal), "a non-ASCII target is 400");
+        Check((await Raw(port, Keyed("http://x/v2/info"))).StartsWith("HTTP/1.1 400", StringComparison.Ordinal), "an absolute-form target is refused (by the listener, before the protocol)");
+        Check((await Raw(port, Keyed("/v2/info"))).StartsWith("HTTP/1.1 200", StringComparison.Ordinal), "and the plain target is answered");
     }
 }
