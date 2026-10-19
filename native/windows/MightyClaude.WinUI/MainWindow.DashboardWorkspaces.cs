@@ -96,7 +96,7 @@ public sealed partial class MainWindow
         var path = new TextBlock { Text = workspace.Path, TextFont = TextArea.Code, TextSize = 11.5, Foreground = brushes.Brush(DesignToken.Ink2), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
         ToolTipService.SetToolTip(path, workspace.Path); Grid.SetColumn(path, 1); details.Children.Add(path);
         var git = DashboardGitCapsule(workspace.Id);
-        Grid.SetColumn(git.Capsule, 2); details.Children.Add(git.Capsule); ApplyDashboardGit(workspace.Id, workspace.Path);
+        Grid.SetColumn(git.Capsule, 2); details.Children.Add(git.Capsule); ApplyDashboardGit(workspace.Id, LocalPath(workspace) ?? "");
         header.Children.Add(details);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = spacing, VerticalAlignment = VerticalAlignment.Center };
         var files = SafeButton(Locale.Get("files.pane.title"), async () =>
@@ -229,10 +229,12 @@ public sealed partial class MainWindow
             foreach (var workspace in pending)
             {
                 if (cancellation.IsCancellationRequested || closing || !showsDashboard) break;
-                var info = await WorkspaceGitInfo.ReadAsync(workspace.Path, cancellation.Token);
+                // A remote workspace's git is its host's: nothing is read here.
+                if (LocalPath(workspace) is not { } folder) continue;
+                var info = await WorkspaceGitInfo.ReadAsync(folder, cancellation.Token);
                 if (cancellation.IsCancellationRequested || closing || !showsDashboard) break;
-                if (!service.Snapshot.Workspaces.Any(w => w.Id == workspace.Id && w.Path == workspace.Path)) continue;
-                dashboardGit[workspace.Id] = (workspace.Path, info, DateTimeOffset.UtcNow); ApplyDashboardGit(workspace.Id, workspace.Path);
+                if (!service.Snapshot.Workspaces.Any(w => w.Id == workspace.Id && LocalPath(w) == folder)) continue;
+                dashboardGit[workspace.Id] = (folder, info, DateTimeOffset.UtcNow); ApplyDashboardGit(workspace.Id, folder);
             }
         }
         catch (Exception) { /* Local Git availability must never block the dashboard. */ }

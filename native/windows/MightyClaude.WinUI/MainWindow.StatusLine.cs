@@ -62,7 +62,7 @@ public sealed partial class MainWindow
             var homeDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
             var refresher = new StatusLineRefresher(
                 () => owner.smokeStatusLineDiscovery?.Invoke()
-                    ?? StatusLineSupport.Discover(Workspace.Path, homeDir),
+                    ?? StatusLineSupport.Discover(LocalPath(Workspace), homeDir),
                 () => owner.service.Snapshot,
                 workspaceId,
                 (cfg, ctx, ct) => owner.smokeStatusLineRunner?.Invoke(cfg, ctx, ct)
@@ -111,7 +111,8 @@ public sealed partial class MainWindow
             });
         }
 
-        private bool StatusLineEligible => owner.service.Snapshot.StatusLineEnabled && Session.Kind == "claude" && Session.Provider == "claude";
+        // A remote pane has no status line: its command and settings would be this PC's, run in its host's path (M/AppStore+StatusLine.swift).
+        private bool StatusLineEligible => owner.service.Snapshot.StatusLineEnabled && Session.Kind == "claude" && Session.Provider == "claude" && LocalPath(Workspace) is not null;
 
         /// <summary>Adds the status-line toggle to the composer's right cluster, between the background-work toggle and stop / send.</summary>
         private void InitializeStatusLineToggle(StackPanel cluster)
@@ -126,7 +127,7 @@ public sealed partial class MainWindow
         private StatusLineContext BuildStatusLineContext()
         {
             var pane = Session;
-            var workspace = Workspace;
+            var folder = LocalPath(Workspace);
             var runtime = owner.Runtime(pane.Provider);
             var catalog = runtime?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
             var usage = pane.SessionUsage;
@@ -137,8 +138,8 @@ public sealed partial class MainWindow
             var sessionId = pane.ResumeId ?? pane.Id;
             return new StatusLineContext(
                 SessionId: sessionId,
-                Cwd: workspace.Path,
-                ProjectDir: workspace.Path,
+                Cwd: folder,
+                ProjectDir: folder,
                 ModelId: modelId,
                 ModelName: modelName,
                 Version: runtime?.Version ?? "",
@@ -156,7 +157,7 @@ public sealed partial class MainWindow
                 RateLimits: usage?.RateLimits,
                 OutputStyle: null,
                 ThinkingEnabled: null,
-                TranscriptPath: StatusLineSupport.TranscriptPath(configDir, workspace.Path, sessionId));
+                TranscriptPath: StatusLineSupport.TranscriptPath(configDir, folder, sessionId));
         }
 
         /// <summary>The slot the composer reserves under the input for the status line.</summary>

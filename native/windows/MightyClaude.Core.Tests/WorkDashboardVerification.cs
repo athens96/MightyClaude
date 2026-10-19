@@ -64,7 +64,7 @@ internal static class WorkDashboardVerification
         Check(saved.SettingsPane == "styles" && saved.SidebarWidth == DesignMetrics.Layout.SidebarMax, "valid category survives and sidebar bounded by the sidebar column's max");
         saved = StateStore.Normalize(saved with { SettingsPane = "unknown", SidebarWidth = double.NaN }, false);
         Check(saved.SettingsPane == "general" && saved.SidebarWidth == DesignMetrics.Layout.SidebarDefault, "old/corrupt selection safely defaults");
-        Check(SettingsNavigation.Categories.Select(c => c.Id).SequenceEqual(new[] { "general", "models", "styles", "tools", "cli", "mobile", "companion", "about" }), "Mac settings categories preserve navigation order");
+        Check(SettingsNavigation.Categories.Select(c => c.Id).SequenceEqual(new[] { "general", "models", "styles", "tools", "cli", "mobile", "remote", "companion", "about" }), "Mac settings categories preserve navigation order");
         Check(SettingsNavigation.Categories.SelectMany(c => c.Sections).Distinct().Count() == SettingsSections.MacOrder.Count, "every Mac settings section belongs to one category");
         return Task.CompletedTask;
     }

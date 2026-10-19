@@ -14,9 +14,11 @@ internal static class RemoteStringsVerification
             ["paneUnavailable"] = RemoteWindowsStrings.PaneUnavailable, ["settingsTailscaleOff"] = RemoteWindowsStrings.SettingsTailscaleOff,
             ["settingsShareNote"] = RemoteWindowsStrings.SettingsShareNote, ["settingsFirewallNote"] = RemoteWindowsStrings.SettingsFirewallNote,
             ["settingsScopeKey"] = RemoteWindowsStrings.SettingsScopeKey, ["allowFullAccess"] = RemoteWindowsStrings.SettingsAllowFullAccessDescription,
-            ["keyCopied"] = RemoteWindowsStrings.KeyCopied, ["firewallAdd"] = RemoteWindowsStrings.FirewallAdd, ["firewallRemove"] = RemoteWindowsStrings.FirewallRemove,
+            ["keyCopied"] = RemoteWindowsStrings.KeyCopied, ["keyCopyFailed"] = RemoteWindowsStrings.KeyCopyFailed, ["firewallAdd"] = RemoteWindowsStrings.FirewallAdd, ["firewallRemove"] = RemoteWindowsStrings.FirewallRemove,
+            ["firewallUpdate"] = RemoteWindowsStrings.FirewallUpdate,
             ["sessionInfoHostOS"] = RemoteWindowsStrings.SessionInfoHostOS,
             ["timeout"] = RemoteWindowsStrings.Timeout,
+            ["hostCommandTooLong"] = RemoteWindowsStrings.HostCommandTooLong,
         };
         foreach (var (name, value) in values)
             Check(value.Length > 0 && !value.StartsWith("remote.", StringComparison.Ordinal), name + " has no text: " + value);

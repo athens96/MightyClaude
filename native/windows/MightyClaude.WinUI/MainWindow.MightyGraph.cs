@@ -612,7 +612,7 @@ public sealed partial class MainWindow
                 graphZoom, graphLiveResultSize ?? pane.GraphResultSize, pinnedStart, ShowsHistoryBlock(pane, retained), resultContentHeight, GraphBlockSizes(pane),
                 PlanCardSupport.DiagramPlanRunID(PendingPlan, true, runs), PlanCardSupport.DiagramRecords(pane.PlanHistory, runs), graphLivePlanSize ?? pane.GraphPlanSize, splitsExecution: true,
                 // The pictures a step produced hang beside it (M/MightyGraphView.swift:141); requests read back from the record never change.
-                galleries: MightyGraphImages.Galleries(runs, Workspace.Path, older.Count), executions: executions.Select(link => (link.RunID, link.Key)).ToList());
+                galleries: MightyGraphImages.Galleries(runs, LocalPath(Workspace), older.Count), executions: executions.Select(link => (link.RunID, link.Key)).ToList());
         }
 
         /// <summary>A stroke that carries edges: round caps and joins, under every card, taking no input.</summary>
@@ -951,7 +951,7 @@ public sealed partial class MainWindow
             if (view.Transcript is { } existing)
             {
                 existing.View.Visibility = block.Entries.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-                existing.Update(pane with { Logs = [.. block.Entries], Kind = "claude" }, !owner.DarkTheme, owner.pictures, Workspace.Path);
+                existing.Update(pane with { Logs = [.. block.Entries], Kind = "claude" }, !owner.DarkTheme, owner.pictures, LocalPath(Workspace));
             }
             // A block with no answer says so: it has none, or it is still waiting for one (M/MightyGraphView.swift:557-560).
             view.Placeholder!.Visibility = block.Entries.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
@@ -1538,15 +1538,17 @@ public sealed partial class MainWindow
             var resolved = new Dictionary<string, List<ResultFiles.ResultFile>>();
             var finished = new HashSet<string>(StringComparer.Ordinal);
             var missing = new List<(MightyGraphRun Run, int Key)>();
-            foreach (var run in own.Where(run => run.Status == "completed" && MightyGraphLayout.Finished(run)))
+            // A remote pane's files are on its host: none is looked for here.
+            var folder = LocalPath(Workspace);
+            foreach (var run in own.Where(run => folder is not null && run.Status == "completed" && MightyGraphLayout.Finished(run)))
             {
                 finished.Add(run.Id);
-                var key = HashCode.Combine(Workspace.Path, run.ResultEntries.Count, run.ResultEntries.Sum(entry => (long)entry.Text.Length), run.ResultEntries.LastOrDefault()?.Id, run.FinalOutput?.Length);
+                var key = HashCode.Combine(folder, run.ResultEntries.Count, run.ResultEntries.Sum(entry => (long)entry.Text.Length), run.ResultEntries.LastOrDefault()?.Id, run.FinalOutput?.Length);
                 if (graphResultFilesByRun.TryGetValue(run.Id, out var kept) && kept.Key == key) resolved[run.Id] = kept.Files;
                 else if (graphResultFilesLooking.Add((run.Id, key))) missing.Add((run.Copy(), key));
             }
             foreach (var stale in graphResultFilesByRun.Keys.Where(runId => !finished.Contains(runId)).ToArray()) graphResultFilesByRun.Remove(stale);
-            if (missing.Count > 0) _ = LookThroughResultFiles(missing, Workspace.Path);
+            if (missing.Count > 0 && folder is not null) _ = LookThroughResultFiles(missing, folder);
             return resolved;
         }
 
@@ -1989,7 +1991,7 @@ public sealed partial class MainWindow
             var edges = graphEdgeRoutes.Count;
             var kinds = graphBlockKinds.Values.Distinct().OrderBy(k => k, StringComparer.Ordinal).ToList();
             var latest = MightyGraphBlockModel.LatestCompletedRun(Session.GraphRuns ?? []);
-            var files = latest is null ? 0 : MightyGraphBlockModel.FilesFor(latest, Workspace.Path).Count;
+            var files = latest is null ? 0 : MightyGraphBlockModel.FilesFor(latest, LocalPath(Workspace)).Count;
             return (graphCards.Count, edges, kinds, files);
         }
 

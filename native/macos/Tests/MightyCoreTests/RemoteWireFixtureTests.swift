@@ -160,4 +160,12 @@ struct RemoteWireFixtureTests {
             #expect(StateRepository.keepsWorkspace(item["workspace"]!) == (item["kept"] as? Bool), "\(item["name"] ?? "")")
         }
     }
+
+    @Test func theHostOSHasOneNamePerPlatform() throws {
+        #expect(RemoteHostOS.label("darwin") == "macOS" && RemoteHostOS.label("win32") == "Windows" && RemoteHostOS.label("linux") == "Linux")
+        #expect(RemoteHostOS.label(nil) == RemoteHostOS.label("plan9") && !RemoteHostOS.label(nil).isEmpty && RemoteHostOS.label(nil) != "remote.hostOS.unknown")
+        #expect(RemoteHostOS.hostWithOS("studio-pc", platform: "win32") == "studio-pc · Windows")
+        let info = try JSONDecoder().decode(RemoteWireInfo.self, from: Self.data("info.json"))
+        #expect(RemoteHostOS.label(info.runtime.platform) == "Windows")
+    }
 }

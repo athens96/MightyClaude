@@ -142,6 +142,8 @@ public sealed partial class MainWindow
         private void InitializeTerminal(Grid grid, FrameworkElement composer)
         {
             if (Session.Kind is not ("shell" or AgentIOPaneKind.Terminal) || owner.options.SmokeTest && !owner.smokeTerminalEnabled) return;
+            // A remote command pane sends each command to the host through the composer: no local ConPTY, never in the host's path.
+            if (LocalPath(Workspace) is null) return;
             output.View.Visibility = composer.Visibility = Visibility.Collapsed;
             const double inset = PaneInset;
             var b = owner.brushes; var ink2 = b.Brush(DesignToken.Ink2); var shell = Session.Kind == "shell";
@@ -176,7 +178,7 @@ public sealed partial class MainWindow
             terminalDirectory = Words(""); terminalDirectory.HorizontalAlignment = HorizontalAlignment.Right; terminalDirectory.TextTrimming = TextTrimming.CharacterEllipsis;
             terminalDirectoryRoom = new Border { Child = terminalDirectory }; terminalDirectoryRoom.SizeChanged += (_, _) => FitTerminalDirectory();
             Grid.SetColumn(terminalDirectoryRoom, 1); footer.Children.Add(terminalDirectoryRoom);
-            ShowTerminalDirectory(Workspace.Path);
+            ShowTerminalDirectory(LocalFolder(Workspace));
             // The grid size is the tertiary ink (M/LocalTerminalView.swift:85, M/AgentTerminalPaneView.swift:69).
             terminalGrid = Words(""); terminalGrid.Foreground = b.Tertiary;
             Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(terminalGrid, FontNumeralAlignment.Tabular);
@@ -299,7 +301,7 @@ public sealed partial class MainWindow
         { terminalColumns = Math.Clamp(columns, 2, 1000); terminalRows = Math.Clamp(rows, 1, 1000); if (terminalGrid is not null) terminalGrid.Text = terminalColumns + "×" + terminalRows; }
         private async Task StartTerminalShellAsync()
         {
-            var workspacePath = Workspace.Path;
+            var workspacePath = LocalFolder(Workspace);
             terminalProcessStart = Task.Run(() => PseudoTerminal.Start(workspacePath, ReceiveTerminalOutput, terminalColumns, terminalRows,
                 arguments: PseudoTerminal.ShellArguments(PseudoTerminal.DefaultShell, noProfile: owner.options.SmokeTest)));
             terminal = await terminalProcessStart;

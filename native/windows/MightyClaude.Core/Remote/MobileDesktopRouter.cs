@@ -66,15 +66,16 @@ public sealed class MobileDesktopRouter : IDisposable
         if (Interlocked.Exchange(ref moved, 0) == 0) return;
         try
         {
+            // A remote workspace and its panes are another computer's: the phone is never told of them (M/AppStore+MobileRemote.swift mobilePane).
             var snapshot = service.Snapshot;
-            var readings = snapshot.Sessions.Where(s => s.Kind != "files").Select(pane =>
+            var readings = RemoteWorkspacePhone.Sessions(snapshot.Sessions, snapshot.Workspaces).Where(s => s.Kind != "files").Select(pane =>
             {
                 MobilePaneDigest digest;
                 try { digest = Digest?.Invoke(pane) ?? Unread(pane); } catch (Exception ex) when (ex is not OutOfMemoryException) { digest = Unread(pane); }
                 // The held rows by id, so one swapped for another moves the pane even when their count stays.
                 return new MobileRevisions.Reading(pane, digest.Editable, digest.Options, digest.Mighty, JsonSerializer.Serialize(Summary(pane, 0), Wire.Json), string.Join('\n', service.HeldItems(pane.Id).Select(item => item.Id)));
             }).ToArray();
-            lock (sync) foreach (var note in revisions.Observe(snapshot.Workspaces, readings)) { notifications.RemoveAll(n => n.Scope == note.Scope); notifications.Add(note); }
+            lock (sync) foreach (var note in revisions.Observe(RemoteWorkspacePhone.Workspaces(snapshot.Workspaces), readings)) { notifications.RemoveAll(n => n.Scope == note.Scope); notifications.Add(note); }
         }
         catch { Changed(); throw; }
     }
@@ -84,9 +85,18 @@ public sealed class MobileDesktopRouter : IDisposable
     public IReadOnlyList<(string Scope, long Revision)> TakeNotifications() { lock (sync) { var taken = notifications.ToArray(); notifications.Clear(); return taken; } }
     private void Receive(RunEvent value) => Changed();
     private void Permission(ToolPermissionRequest value)
-    { lock (sync) { if (value.State == "pending") permissions[value.Id] = value; else permissions.Remove(value.Id); } Changed(); }
+    {
+        // A remote pane's requests are its host's: never kept here, never answerable from the phone.
+        if (service.IsRemoteSession(value.RunId)) return;
+        lock (sync) { if (value.State == "pending") permissions[value.Id] = value; else permissions.Remove(value.Id); }
+        Changed();
+    }
     private ToolPermissionRequest[] Pending(string id) { lock (sync) return permissions.Values.Where(p => p.RunId == id).ToArray(); }
-    private RunSession Session(string id) => service.Snapshot.Sessions.FirstOrDefault(p => p.Id == id && p.Kind != "files") ?? throw new MobileRequestException(404, "Session not found.");
+    private RunSession Session(string id)
+    {
+        var snapshot = service.Snapshot;
+        return RemoteWorkspacePhone.Sessions(snapshot.Sessions, snapshot.Workspaces).FirstOrDefault(p => p.Id == id && p.Kind != "files") ?? throw new MobileRequestException(404, "Session not found.");
+    }
     private static void Agent(RunSession pane) { if (pane.Kind != "claude") throw new MobileRequestException(409, "Use the desktop for this pane."); }
     private static object Error(int status, string text, string? code = null) => new { protocol = 1, error = text, code };
     private static MobileReply Reply(object body, int status = 200)
@@ -132,7 +142,8 @@ public sealed class MobileDesktopRouter : IDisposable
             if (route.Length == 4 && route[1] == "workspaces")
             {
                 var files = method == "GET" && route[3] is "files" or "file";
-                var workspace = service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == route[2]) ?? throw (files ? MobileWorkspaceFiles.WorkspaceNotFound : new MobileRequestException(404, "Workspace not found."));
+                // Only this PC's workspaces: a remote one's path is its host's, never a folder here (M/AppStore+MobileRemote.swift createPane).
+                var workspace = RemoteWorkspacePhone.Workspaces(service.Snapshot.Workspaces).FirstOrDefault(w => w.Id == route[2]) ?? throw (files ? MobileWorkspaceFiles.WorkspaceNotFound : new MobileRequestException(404, "Workspace not found."));
                 if (method == "POST" && route[3] == "sessions")
                 {
                     var value = Object(body); if (Required(value, "kind") != "claude") throw new MobileRequestException(409, "Create terminal panes on the desktop.");
@@ -268,7 +279,8 @@ public sealed class MobileDesktopRouter : IDisposable
     private object State()
     {
         var snapshot = service.Snapshot;
-        return new { protocol = 1, revision = StateRevision, hostName = HostName, workspaces = snapshot.Workspaces.Select(w => new { w.Id, w.Name, w.Path }), sessions = snapshot.Sessions.Where(s => s.Kind != "files").Select(s => Summary(s, SessionRevision(s.Id))).ToArray() };
+        return new { protocol = 1, revision = StateRevision, hostName = HostName, workspaces = RemoteWorkspacePhone.Workspaces(snapshot.Workspaces).Select(w => new { w.Id, w.Name, w.Path }),
+            sessions = RemoteWorkspacePhone.Sessions(snapshot.Sessions, snapshot.Workspaces).Where(s => s.Kind != "files").Select(s => Summary(s, SessionRevision(s.Id))).ToArray() };
     }
     private object Summary(RunSession pane, long revision)
     {

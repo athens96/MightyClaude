@@ -13,6 +13,7 @@ public static class RemoteWindowsStrings
     public static string ConnectedMemory => Locale.Get("remote.windows.connect.detail.connectedMemory");
     public static string HostLocalOnly => Locale.Get("remote.windows.host.error.localOnly");
     public static string HostNoTailscale => Locale.Get("remote.windows.host.error.noTailscale");
+    public static string HostCommandTooLong => Locale.Get("remote.windows.host.error.commandTooLong");
     public static string NotLocal => Locale.Get("remote.windows.workspace.error.notLocal");
     public static string PaneUnavailable => Locale.Get("remote.windows.workspace.paneUnavailable");
     public static string SettingsTailscaleOff => Locale.Get("remote.windows.settings.tailscaleOff");
@@ -21,8 +22,11 @@ public static class RemoteWindowsStrings
     public static string SettingsScopeKey => Locale.Get("remote.windows.settings.scopeKey");
     public static string SettingsAllowFullAccessDescription => Locale.Get("remote.windows.settings.allowFullAccessDescription");
     public static string KeyCopied => Locale.Get("remote.windows.settings.keyCopied");
+    public static string KeyCopyFailed => Locale.Get("remote.windows.settings.keyCopyFailed");
     public static string FirewallAdd => Locale.Get("remote.windows.firewall.add");
     public static string FirewallRemove => Locale.Get("remote.windows.firewall.remove");
+    /// <summary>The rule is there: one elevated <c>set rule</c> makes it hold exactly the ports in use now (the phone's direct port and the sharing port).</summary>
+    public static string FirewallUpdate => Locale.Get("remote.windows.firewall.update");
     public static string SessionInfoHostOS => Locale.Get("remote.sessionInfo.hostOS");
     /// <summary>What a firewall change that did not happen says, in the same words as the phone-direct Settings; null after one that did.
     /// Takes the whole result so no raw code ("timeout", an exit code, a launch error) can reach the screen.</summary>

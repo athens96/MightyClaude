@@ -339,9 +339,9 @@ public sealed partial class RemoteClientService
         try { return await SendAsync(paneId, "steer", _ => new RemoteWireSteer(text)); }
         catch (Exception ex) when (ex is not OutOfMemoryException) { return false; }
     }
-    public Task RespondToPermissionAsync(string paneId, string requestId, bool allow) => SendAsync(paneId, "permission", run => new RemoteWirePermission(HostRunId(run, requestId), requestId, allow));
-    public Task AnswerQuestionsAsync(string paneId, string requestId, IReadOnlyDictionary<string, UserQuestionAnswer> answers) => SendAsync(paneId, "questions", run => new RemoteWireQuestions(HostRunId(run, requestId), requestId, answers));
-    public Task AnswerPlanAsync(string paneId, string requestId, PlanDecision decision) => SendAsync(paneId, "plan", run => RemoteWirePlan.From(HostRunId(run, requestId), requestId, decision));
+    public Task<bool> RespondToPermissionAsync(string paneId, string requestId, bool allow) => SendAsync(paneId, "permission", run => new RemoteWirePermission(HostRunId(run, requestId), requestId, allow));
+    public Task<bool> AnswerQuestionsAsync(string paneId, string requestId, IReadOnlyDictionary<string, UserQuestionAnswer> answers) => SendAsync(paneId, "questions", run => new RemoteWireQuestions(HostRunId(run, requestId), requestId, answers));
+    public Task<bool> AnswerPlanAsync(string paneId, string requestId, PlanDecision decision) => SendAsync(paneId, "plan", run => RemoteWirePlan.From(HostRunId(run, requestId), requestId, decision));
 
     /// <summary>A connection's runs end: replaced or disconnected (<paramref name="message"/> null) as stopped, lost with its reason as an error.</summary>
     private async Task DropRunsAsync(string connectionId, string? message)

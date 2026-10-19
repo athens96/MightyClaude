@@ -21,7 +21,8 @@ public sealed partial class MainWindow
     private string? modelsSelectedSession;
 
     private static ModelContext? ModelContextOf(RunSession session, AppSnapshot state) =>
-        session.Kind == "claude" && state.Workspaces.FirstOrDefault(w => w.Id == session.WorkspaceId) is { } workspace ? new(workspace.Id, workspace.Path, session.Provider) : null;
+        // A remote workspace's models are its host's: none is read here (M/AppStore+ModelCatalogs.swift).
+        session.Kind == "claude" && state.Workspaces.FirstOrDefault(w => w.Id == session.WorkspaceId) is { } workspace && LocalPath(workspace) is { } folder ? new(workspace.Id, folder, session.Provider) : null;
     private void RememberModelSelections(ModelContext key, AppSnapshot state) =>
         modelRefreshSelections[key] = state.Sessions.Where(s => s.WorkspaceId == key.WorkspaceId && s.Provider == key.Provider).ToDictionary(s => s.Id, s => (s.Model, s.Settings.Effort));
     private Task<ProviderRuntime> LoadModels(ModelContext key)

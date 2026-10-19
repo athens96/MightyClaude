@@ -2907,8 +2907,10 @@
   "remote.windows.settings.scopeKey": "• A device with the connection key can run work and commands in the shared workspaces. Give the key only to devices you trust. The key is saved encrypted so only this Windows user can read it.",
   "remote.windows.settings.allowFullAccessDescription": "When on, connected computers may use remote command panes (PowerShell on this PC) and run agents with full access (Claude Bypass, Codex full access, Antigravity full access). It is off whenever sharing starts.",
   "remote.windows.settings.keyCopied": "Connection key copied. It stays out of clipboard history and other devices, and is cleared after 60 seconds if it is still there.",
+  "remote.windows.settings.keyCopyFailed": "Could not copy the connection key. Try again in a moment.",
   "remote.windows.firewall.add": "Add firewall rule",
   "remote.windows.firewall.remove": "Remove firewall rule",
+  "remote.windows.firewall.update": "Update firewall rule",
   "remote.windows.pane.commandNote": "Commands run in the shared folder on {host} ({os}). Each command starts a new shell there (PowerShell on Windows, the login shell on a Mac); interactive programs and password prompts are not supported.",
   "remote.hostOS.darwin": "macOS",
   "remote.hostOS.win32": "Windows",
@@ -2916,5 +2918,6 @@
   "remote.hostOS.unknown": "unknown OS",
   "remote.hostWithOS": "{host} · {os}",
   "remote.sessionInfo.hostOS": "Host OS",
-  "remote.windows.connect.error.timeout": "The other computer did not answer in time. Check that it is on and connected to Tailscale."
+  "remote.windows.connect.error.timeout": "The other computer did not answer in time. Check that it is on and connected to Tailscale.",
+  "remote.windows.host.error.commandTooLong": "This command is too long to run on this PC. Shorten it, or save it as a script file in the shared folder and run that."
 }
