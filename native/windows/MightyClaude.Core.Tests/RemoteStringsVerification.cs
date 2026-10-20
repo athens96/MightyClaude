@@ -18,6 +18,7 @@ internal static class RemoteStringsVerification
             ["firewallUpdate"] = RemoteWindowsStrings.FirewallUpdate,
             ["sessionInfoHostOS"] = RemoteWindowsStrings.SessionInfoHostOS,
             ["timeout"] = RemoteWindowsStrings.Timeout,
+            ["savedUnreadable"] = RemoteWindowsStrings.SavedUnreadable,
             ["hostCommandTooLong"] = RemoteWindowsStrings.HostCommandTooLong,
         };
         foreach (var (name, value) in values)

@@ -317,6 +317,67 @@ internal static partial class RemoteClientVerification
         finally { Directory.Delete(directory, true); }
     }
 
+    /// <summary>
+    /// A connect while the saved-connections file is held open waits for it to be read, as the Mac's actor reads it before any connect:
+    /// an address the file holds keeps the file's id (so its workspaces still find it), a new address is saved beside the file's entries,
+    /// and a file held past the wait refuses the connect and is left as it was.
+    /// </summary>
+    internal static async Task AConnectWaitsForAHeldConnectionsFile()
+    {
+        await using var host = new RemoteFakeHost(request => request.Target == "/v2/info" ? request.Headers["authorization"] == "Bearer " + Key ? RemoteFakeHost.Fixture("info.json") : RemoteFakeHost.Fixture("error.json", 401) : new(404, "{}"));
+        var address = "127.0.0.1:" + host.Port; var seen = new Collected(); var directories = new List<string>();
+        async Task<(RemoteClientService Client, string Path)> Client(IEnumerable<RemoteSavedConnection> saved, TimeSpan? wait = null)
+        {
+            var (store, directory) = await ClientStore(); directories.Add(directory);
+            await RemoteConnectionFile.WriteAsync(directory, saved);
+            var options = new RemoteClientOptions { AllowLoopbackForTests = true, SavedReadWait = wait ?? TimeSpan.FromSeconds(5) };
+            return (new RemoteClientService(store, directory, new MemoryRemoteKeyVault(), seen.Event, seen.Permission, options), Path.Combine(directory, RemoteConnectionFile.FileName));
+        }
+        try
+        {
+            // (b) The address the file holds keeps the file's id.
+            var (known, knownPath) = await Client([new("conn-old", "studio", address), new("conn-2", "mac", "[fd7a:115c:a1e0::5]:43137")]);
+            await using (known)
+            {
+                Task<RemoteConnectionInfo> again;
+                using (new FileStream(knownPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                {
+                    again = known.ConnectAsync("", address, Key);
+                    await Task.Delay(400);
+                    Check(!again.IsCompleted, "a connect waits while the saved file is held");
+                }
+                var info = await again;
+                Check(info.Id == "conn-old" && known.List().Select(c => c.Id).SequenceEqual(["conn-old", "conn-2"]), "the file's id stands for its address: " + info.Id);
+                Check(RemoteConnectionFile.Read(Path.GetDirectoryName(knownPath)!).Select(c => c.Id).SequenceEqual(["conn-old", "conn-2"]), "the file keeps the old id, nothing added for it");
+            }
+            // (a) A new address is saved with the file's entries, in the same launch.
+            var (fresh, freshPath) = await Client([new("conn-2", "mac", "[fd7a:115c:a1e0::5]:43137")]);
+            await using (fresh)
+            {
+                Task<RemoteConnectionInfo> added;
+                using (new FileStream(freshPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                {
+                    added = fresh.ConnectAsync("", address, Key);
+                    await Task.Delay(400);
+                    Check(!added.IsCompleted, "a new connect waits while the saved file is held");
+                }
+                var info = await added;
+                Check(RemoteConnectionFile.Read(Path.GetDirectoryName(freshPath)!).Select(c => c.Id).SequenceEqual(["conn-2", info.Id]), "the new connection is saved beside the file's");
+            }
+            // A file held past the wait refuses the connect and stays as it was.
+            var (held, heldPath) = await Client([new("conn-2", "mac", "[fd7a:115c:a1e0::5]:43137")], TimeSpan.FromMilliseconds(300));
+            await using (held)
+            {
+                var before = await File.ReadAllBytesAsync(heldPath);
+                using (new FileStream(heldPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                    await Reject(() => held.ConnectAsync("", address, Key), "a connect is refused while the file stays held", ex => ex.Message == RemoteWindowsStrings.SavedUnreadable);
+                Check((await File.ReadAllBytesAsync(heldPath)).SequenceEqual(before), "the refused connect left the file as it was");
+                await Verification.Until(() => held.List().Select(c => c.Id).SequenceEqual(["conn-2"]));
+            }
+        }
+        finally { foreach (var directory in directories) Directory.Delete(directory, true); }
+    }
+
     internal static async Task NoConnectionLeavesThisPCsTunnel()
     {
         await using var host = new RemoteFakeHost(_ => RemoteFakeHost.Fixture("info.json"));

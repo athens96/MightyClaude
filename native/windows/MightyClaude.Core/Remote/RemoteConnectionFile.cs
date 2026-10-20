@@ -25,9 +25,12 @@ public static class RemoteConnectionFile
     /// refused), so the caller reads again later and never writes over connections it has not read. No file, or a damaged, oversize or
     /// other-version one, reads as none (true).
     /// </summary>
-    public static bool TryRead(string directory, out IReadOnlyList<RemoteSavedConnection> connections)
+    public static bool TryRead(string directory, out IReadOnlyList<RemoteSavedConnection> connections) => TryRead(directory, out connections, out _);
+
+    /// <summary><see cref="TryRead(string, out IReadOnlyList{RemoteSavedConnection})"/>, with what kept the file from being read.</summary>
+    public static bool TryRead(string directory, out IReadOnlyList<RemoteSavedConnection> connections, out Exception? failure)
     {
-        connections = [];
+        connections = []; failure = null;
         try
         {
             var path = Path.Combine(directory, FileName);
@@ -41,7 +44,7 @@ public static class RemoteConnectionFile
             return true;
         }
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException) { return true; }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return false; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { failure = ex; return false; }
         catch (Exception ex) when (ex is JsonException or NotSupportedException or ArgumentException) { return true; }
     }
 
