@@ -72,7 +72,7 @@ section: settings
 在{{ui:settings.nav.mobile}}标签页中连接手机，并允许查看屏幕。请参阅[手机远程](phone.md)。
 
 ## 远程连接 {#remote}
-在{{ui:settings.remote.navTitle}}标签页中，通过 Tailscale 共享这台 Mac 的工作区，或连接另一台 Mac 共享的工作区。请参阅[远程连接（Tailscale）](remote.md)。
+在{{ui:settings.remote.navTitle}}标签页中，通过 Tailscale 共享这台电脑的工作区，或连接另一台电脑共享的工作区。请参阅[远程连接（Tailscale）](remote.md)。
 
 ## 宠物与提醒 {#companion}
 在{{ui:settings.nav.companion}}标签页中设置桌面宠物和完成通知。
