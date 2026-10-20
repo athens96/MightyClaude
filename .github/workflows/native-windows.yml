@@ -43,7 +43,7 @@ jobs:
         run: ./scripts/build-windows.ps1 -Architecture ${{ matrix.architecture }} -Configuration Release
       - name: Launch native WinUI with an isolated profile and capture GUI evidence
         shell: pwsh
-        timeout-minutes: 4
+        timeout-minutes: 6
         run: ./scripts/test-native-windows.ps1 -Executable ./release/native-windows-${{ matrix.architecture }}/MightyClaude.exe -ProfileDirectory "$env:RUNNER_TEMP/mighty-windows-smoke-${{ matrix.architecture }}"
       - name: Upload distributable
         uses: actions/upload-artifact@v4

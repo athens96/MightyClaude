@@ -2,7 +2,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$Executable,
     [string]$ProfileDirectory = (Join-Path ([IO.Path]::GetTempPath()) "mighty-windows-smoke-$([Guid]::NewGuid().ToString('N'))"),
-    [ValidateRange(15, 600)][int]$TimeoutSeconds = 180
+    [ValidateRange(15, 600)][int]$TimeoutSeconds = 300
 )
 $ErrorActionPreference = 'Stop'
 # CI logs need a signed-in reader, check-run annotations do not. A failed run
@@ -171,6 +171,14 @@ try {
     foreach ($key in @('firstRunDecision', 'welcomeButton', 'rows', 'actions', 'cancelledWithoutTerminal', 'blockedPaneInstall', 'passed')) {
         if ($result.setupTools.$key -ne $true) {
             $msg = "Windows setup screen smoke failed: setupTools.$key"
+            Write-SmokeAnnotation $msg; throw $msg
+        }
+    }
+    # Remote workspaces (MainWindow.RemoteWorkspacesSmoke.cs): a host and a client in this one process over loopback (injected, never a
+    # setting), the settings page, a remote command pane run through the composer, local-only features off, the phone not told.
+    foreach ($key in @('settingsPage', 'sharing', 'connected', 'workspaceOpened', 'sidebarBadge', 'commandPaneComposer', 'commandRan', 'localOnlyOff', 'phoneHidden', 'keyCopyOptions', 'stopEndsRuns', 'passed')) {
+        if ($result.remoteWorkspaces.$key -ne $true) {
+            $msg = "Windows remote workspaces smoke failed: remoteWorkspaces.$key"
             Write-SmokeAnnotation $msg; throw $msg
         }
     }
