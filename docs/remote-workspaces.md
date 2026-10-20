@@ -1,8 +1,8 @@
 # Tailscale 원격 워크스페이스
 
-Mac 두 대의 Mighty Claude를 Tailscale로 이으면, 한쪽(클라이언트)에서 다른 쪽(호스트)의 워크스페이스를 열고 호스트에서 Claude Code·Codex·Antigravity와 명령을 실행한다. 파일과 CLI 로그인은 호스트에 그대로 있고, 프로젝트 파일을 복사하거나 동기화하지 않는다. 사용 안내는 도움말 [원격 연결 (Tailscale)](help/content/ko/remote.md)에 있다.
+Mac이나 Windows 컴퓨터 두 대의 Mighty Claude를 Tailscale로 이으면, 한쪽(클라이언트)에서 다른 쪽(호스트)의 워크스페이스를 열고 호스트에서 Claude Code·Codex·Antigravity와 명령을 실행한다. 파일과 CLI 로그인은 호스트에 그대로 있고, 프로젝트 파일을 복사하거나 동기화하지 않는다. 사용 안내는 도움말 [원격 연결 (Tailscale)](help/content/ko/remote.md)에 있다.
 
-2026-09-28 `e4f973b`에서 지웠다가 2026-10-17에 Mac에 다시 만들었다. Windows 앱에는 아직 없다([windows-parity.md](windows-parity.md)). 휴대폰은 릴레이로 Mac에 붙는 별도 기능이고([mobile-remote.md](mobile-remote.md)), 원격 워크스페이스를 휴대폰에 비추지 않는다.
+2026-09-28 `e4f973b`에서 지웠다가 2026-10-17에 Mac에 다시 만들었고, 그 뒤 Windows에도 같은 프로토콜로 만들었다. Windows 앱에도 같은 기능이 있다(아래 [Windows와 Mac↔Windows](#windows와-macwindows), [windows-parity.md](windows-parity.md)). 휴대폰은 릴레이로 Mac에 붙는 별도 기능이고([mobile-remote.md](mobile-remote.md)), 원격 워크스페이스를 휴대폰에 비추지 않는다.
 
 ## 화면
 
@@ -81,6 +81,22 @@ Mac 두 대의 Mighty Claude를 Tailscale로 이으면, 한쪽(클라이언트)�
 - 2026-09-28 이전에 저장된 `remote`에는 `version`이 없다. 그런 워크스페이스는 지금처럼 불러올 때 창·배치와 함께 버린다(`StateRepository.keepsWorkspace`). 그 뒤 앱이 저장한 로컬 워크스페이스에는 `remote` 키가 없으므로 원격으로 읽힐 일이 없다. 반대로 2026-09-28부터 이 기능 전까지의 앱(0.4.29까지)은 `remote` 값이 있는 워크스페이스를 버리므로, 버전 2 원격 워크스페이스를 로컬 폴더로 착각하지 않는다.
 - 연결 목록(id·이름·주소, 키 없음)은 데이터 폴더의 `remote-connections.json`(권한 600, `version: 2`)에 있다. 키는 macOS Keychain(서비스 `dev.mightyclaude.native.remote`, 계정 = 연결 id, 이 기기에서 잠금 해제 후만)에만 있고, 앱 시작 때는 읽지 않는다. Keychain이 거절하면 키는 앱을 끌 때까지만 메모리에 둔다. 앱이 고정된 서명으로 빌드되므로 "항상 허용"은 업데이트 뒤에도 유지된다.
 
+## Windows와 Mac↔Windows
+
+Windows 앱도 같은 `/v2/` 프로토콜로 공유하고 연결한다. 그래서 Mac→Mac, Mac→Windows, Windows→Mac, Windows→Windows가 모두 된다. 두 앱이 같은 요청·응답·이벤트를 쓰는지는 공유 픽스처 `native/contracts/fixtures/remote-v2/`가 묶는다. Mac이 기준이고, Mac(`RemoteWireFixtureTests`)과 Windows Core(`RemoteWireFixtureVerification`)가 같은 파일을 읽는다.
+
+- **화면**: **설정 → 원격 연결 (Tailscale)** 탭(`MainWindow.RemoteWorkspaces.cs`)이 모바일과 펫 사이에 있다. 공유(주소·연결 키·고르기·포트·전체 권한 스위치), 방화벽 규칙, 다른 컴퓨터 연결, 연결한 컴퓨터와 공유 워크스페이스가 한 상자 안에 구역별 제목으로 나뉜다. 3초마다 상태를 다시 읽고, 공유가 스스로 멈췄으면 탭에 그 사실을 적는다. 사이드바 워크스페이스 머리글의 네트워크 단추와 **창 추가** 메뉴의 **다른 컴퓨터 연결…**도 이 탭을 연다.
+- **연결 줄**: 연결한 컴퓨터의 줄은 Mac처럼 이름과 주소만 보인다. 호스트의 OS는 줄이 아니라 원격 워크스페이스(사이드바의 호스트 이름, 머리글의 호스트 배지, 상태 막대 "{호스트} · {OS}에서 실행 · 연결됨/연결 안 됨", 세션 정보의 **실행 컴퓨터**·**실행 컴퓨터 OS**)에 나온다.
+- **호스트(Windows)**: `MightyClaude.Core/Remote/RemoteHostService.cs`가 Tailscale 주소마다 `RemoteHttpListener`(TcpListener, HTTP/1.1, 연결마다 요청 하나)를 그 주소에만 바인딩한다. 받는 순간 상대를 거르고 상대마다 연결 8개, 키 없는 요청의 본문은 읽지 않음, SHA-256 뒤 상수 시간 비교, 상대마다 초당 300번·키가 맞는 요청 전체 600번은 Mac과 같다. 실행은 호스트의 `RunManager`(그 PC의 CLI·로그인, 창별 MCP·위임·그림 캐시 없음)로 한다. 이 PC에서 다른 컴퓨터의 실행이 도는 동안에는 CLI 업데이트(수동·자동)와 플러그인 변경을 미룬다.
+- **요청 경로**: Windows 호스트는 요청 경로를 쓰인 그대로 읽는다. 퍼센트 인코딩을 풀지 않고 `#` 조각을 떼지 않으므로, Mac이라면 열어 줬을 경로에 Windows 호스트는 404나 400을 답한다. 달라지는 것은 상태 코드뿐이며, 키·`Origin`·상대 주소 검사를 건너뛰는 길이 아니다.
+- **명령 창**: Windows 호스트에서는 명령마다 시스템 폴더의 `powershell.exe -NoProfile -NonInteractive -Command <글>`을 공유 폴더에서 새로 띄운다(`RemoteCommandShell`, 환경 변수 `NoDefaultCurrentDirectoryInExePath=1`). Mac 호스트는 `$SHELL -l -c`. 창의 빈 화면 안내(`remote.windows.pane.commandNote`)와 상태 막대·세션 정보는 호스트의 OS(`/info`의 `runtime.platform`: `darwin`·`win32`)를 보여 준다.
+- **이벤트 맞추기**: Windows 실행 이벤트는 Mac 모양으로 바꿔 보낸다. 로그인 만료 사유는 `auth`이고, 권한 요청 입력은 `inputJSON`이며, 시각은 `yyyy-MM-ddTHH:mm:ss.fffZ`로 쓰고, 그림은 뺀다. 그래프는 Mac의 `graph`(ExecutionGraphNode)로 보낸다. Windows 클라이언트가 실행 요청에 `x-mighty-remote-graph: run`을 붙이면 Windows 호스트는 그 실행에 `graph` 대신 Windows의 `graph_run`(MightyGraphRun)을 보내고, Mac 호스트는 이 머리를 무시한다. Windows 클라이언트는 Mac 호스트의 `graph`를 조용히 버리므로, Mac에서 도는 실행의 Windows 마이티 보기는 대화 기록으로 묶은 블록만 보인다.
+- **클라이언트(Windows)**: `RemoteClientService`는 요청마다 그 IP로 가는 출발 주소가 이 PC의 Tailscale 주소인지(UDP 소켓 연결, 보내는 것 없음) 다시 본다. 리디렉션을 따르지 않고 프록시·쿠키를 쓰지 않으며, 응답은 2 MiB까지, 15초(첨부 실행 60초) 안에 읽는다. 폴링이 429·503·시간 초과로 실패하면 10초 동안 다시 묻는다. 쓸 수 없는 이벤트 하나는 빼고 안내 줄을 남기며, 기다리는 권한 요청은 창마다 최신 32개만 둔다. 이 PC의 파일·브라우저·터미널·Explorer 열기·스타일·위임은 원격 워크스페이스에서 꺼 두고(워크스페이스의 폴더를 읽는 곳은 모두 `LocalPath`를 거친다), 이 PC의 CLI 업데이트·로그인 대기는 원격 창을 붙잡지 않는다.
+- **저장(Windows)**: 연결 목록은 `remote-connections.json`(버전 2, 키 없음, 임시 파일에 쓴 뒤 바꾸는 원자적 쓰기), 키는 `<프로필>\remote-keys\<id의 SHA-256>.bin`에 현재 Windows 사용자 DPAPI(`CryptProtectData`, `ProtectedData`의 CurrentUser와 같음)로 암호화해 둔다. DPAPI가 거절하면 키는 앱을 끌 때까지만 메모리에 있다. 연결 목록 파일을 다른 프로그램이 붙잡고 있어 읽지 못하면 덮어쓰지 않고 잠시 뒤 다시 읽는다. `Workspace.remote`는 Mac과 같은 `{"version": 2, …}`이며 버전이 없거나 다른 값이면 불러올 때 버린다.
+- **방화벽**: 휴대폰 직접 연결과 같은 규칙 하나(TCP, 이 앱 실행 파일, 100.64.0.0/10·fd7a:115c:a1e0::/48에서만)가 켜진 포트를 함께 연다. 휴대폰 직접 연결이 켜져 있으면 그 포트, 이 PC가 공유 중이면 공유 포트로, 둘 다 켜져 있으면 두 포트를 한 규칙에 넣는다(`RemoteWorkspaceFeatures.FirewallPorts`). 두 설정 탭(모바일, 원격 연결) 어느 쪽에서든 **방화벽 규칙 추가**·**방화벽 규칙 갱신**(규칙이 있을 때)·**방화벽 규칙 제거**를 누를 수 있고 같은 규칙을 고친다. 한 번에 하나만 실행한다. 추가·갱신·제거할 때 Windows가 관리자 확인 창(UAC)을 한 번 띄운다. 앱은 이 밖에 권한 상승을 요청하지 않는다. 앱이 규칙을 저절로 바꾸지는 않는다: 휴대폰 직접 연결을 끈 채 공유를 이어 가거나 공유를 멈춘 뒤에도 규칙은 이전 포트를 연 채 남을 수 있고, 그때는 **방화벽 규칙 갱신**으로 맞춘다.
+- **키 복사**: 클립보드 기록(Win+V)과 클라우드 클립보드에 남지 않게 복사하고(`ClipboardContentOptions` IsAllowedInHistory·IsRoamable 끔), 60초 뒤에도 그 키가 클립보드에 있으면 지운다. 설정 탭은 복사했는지 실패했는지 말하고, 탭을 닫으면 키와 타이머를 쥐지 않는다.
+- **기기 확인 남음**: UAC 창과 방화벽 규칙, Mac→Windows와 Windows→Mac 실제 연결은 Windows PC에서 확인해야 한다(`docs/windows-screen-checklist.md`의 "원격 워크스페이스").
+
 ## 검사
 
 `native/macos/Tests/MightyCoreTests/RemoteWorkspaceTests.swift`. CI의 "Remote workspaces — host and client talk over loopback" 단계가 이 묶음을 따로 돌린다.
@@ -90,3 +106,4 @@ Mac 두 대의 Mighty Claude를 Tailscale로 이으면, 한쪽(클라이언트)�
 - 저장: 버전 2만 원격으로 남고 이전 모양·다른 버전·잘못된 값은 버리며, 로컬 워크스페이스는 원격으로 쓰이거나 읽히지 않는다
 - 루프백 왕복: 공유·목록·열기, 명령 창 실행과 중지, 가짜 Claude CLI의 스트림이 호스트 파서를 거쳐 클라이언트의 기록·마이티 그래프가 되고 도구 권한 요청에 클라이언트가 답하는 흐름, 틀린 키·옛 프로토콜·브라우저 Origin·한도 초과 본문·공유하지 않은 폴더·지원하지 않는 설정의 거절, 공유 중지 뒤 키 폐기, 하트비트 만료, 호스트가 사라졌을 때의 오류, 리디렉션 거부, 키 없는 연결 파일
 - Tailscale 인터페이스 규칙(fd7a 주소가 없는 WARP 같은 utun은 버림), 받는 순간의 상대 거절과 상대마다 연결 수, 키 없는 요청의 본문을 읽지 않음, 실행 중 경로가 터널을 벗어날 때(검사 함수 주입), 전체 권한·명령 스위치, 대기 권한 요청 상한, 쓸 수 없는 이벤트 하나만 건너뛰기
+- Windows: 같은 파일을 읽는 Mac `RemoteWireFixtureTests`(공유 픽스처 `native/contracts/fixtures/remote-v2/`)와 Windows Core 검사 `RemoteWorkspaceStateVerification`·`RemoteWireFixtureVerification`·`RemoteClientVerification`·`RemoteHostVerification`·`RemoteLoopbackVerification`·`RemoteDesktopVerification`(Mac에서 `dotnet run`으로 돌린다. Windows에서만 되는 검사 9개는 Mac에서 실패한다). 실제 WinUI는 GUI 스모크 키 `remoteWorkspaces`가 한 프로세스에서 루프백으로 공유하고 연결해 설정 탭·사이드바·머리글·상태 막대·세션 정보와 원격 명령 창을 확인한다.

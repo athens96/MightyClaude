@@ -72,7 +72,7 @@ Each CLI is updated the way it was installed (npm, Homebrew and so on).
 The {{ui:settings.nav.mobile}} tab pairs your phone and allows screen viewing. See [Phone remote](phone.md).
 
 ## Remote connection {#remote}
-The {{ui:settings.remote.navTitle}} tab shares this Mac's workspaces over Tailscale, or connects to workspaces another Mac shares. See [Remote connection (Tailscale)](remote.md).
+The {{ui:settings.remote.navTitle}} tab shares this computer's workspaces over Tailscale, or connects to workspaces another computer shares. See [Remote connection (Tailscale)](remote.md).
 
 ## Pet & alerts {#companion}
 The {{ui:settings.nav.companion}} tab sets up the desktop pet and the completion notification.

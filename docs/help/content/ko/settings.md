@@ -72,7 +72,7 @@ CLI를 처음 설치한 방법(npm, Homebrew 등)을 그대로 씁니다.
 {{ui:settings.nav.mobile}} 탭에서 휴대폰을 연결하고 화면 보기를 허용합니다. [휴대폰 원격](phone.md)을 보세요.
 
 ## 원격 연결 {#remote}
-{{ui:settings.remote.navTitle}} 탭에서 이 Mac의 워크스페이스를 Tailscale로 공유하거나, 다른 Mac이 공유한 워크스페이스에 연결합니다. [원격 연결 (Tailscale)](remote.md)을 보세요.
+{{ui:settings.remote.navTitle}} 탭에서 이 컴퓨터의 워크스페이스를 Tailscale로 공유하거나, 다른 컴퓨터가 공유한 워크스페이스에 연결합니다. [원격 연결 (Tailscale)](remote.md)을 보세요.
 
 ## 펫과 알림 {#companion}
 {{ui:settings.nav.companion}} 탭에서 데스크톱 펫과 완료 알림을 정합니다.
