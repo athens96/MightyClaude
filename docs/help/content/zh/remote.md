@@ -29,13 +29,15 @@ section: remote
 2. 在 {{ui:settings.remote.connectTitle}} 中输入主机的地址（Tailscale IP 或 MagicDNS 名称）和连接密钥，然后点按 {{ui:settings.remote.connectButton}}。如果主机没有更改端口，只输入地址即可。
 3. 已连接电脑下方会列出共享的工作区。点按 {{ui:settings.remote.openButton}} 即可把它作为远程工作区加入侧边栏。
 
-远程工作区在侧边栏中以电脑图标和主机名称区分，工作区标题和底部状态栏会显示连接状态。连接密钥只保存在 macOS 钥匙串中，不会写入工作区记录。重新打开应用后，连接仍保持已保存状态，在远程窗格中第一次发送或点按 {{ui:settings.remote.refreshButton}} 时会重新连接。此时如果 macOS 询问钥匙串访问权限，请选择“始终允许”；应用以相同的签名发布，因此这个选择在更新后仍然有效。
+远程工作区在侧边栏中以电脑图标和主机名称区分，工作区标题和底部状态栏会显示连接状态。重新打开应用后，连接仍保持已保存状态，在远程窗格中第一次发送或点按 {{ui:settings.remote.refreshButton}} 时会重新连接。
 
-{{platform:windows}} 在 Windows 上，连接密钥加密保存在应用的数据文件夹中，只有当前 Windows 用户可以读取。共享时，{{ui:remote.windows.firewall.add}} 按钮会添加一条防火墙规则，只向 Tailscale 地址段打开应用的端口；Windows 会弹出一次管理员确认。如果规则已存在，该按钮会显示为 {{ui:remote.windows.firewall.update}}，并且这条规则与手机直连共用，所以在 {{ui:settings.nav.mobile}} 标签页中改的是同一条规则。
+{{platform:mac}} 连接密钥只保存在 macOS 钥匙串中，不会写入工作区记录。重新连接时如果 macOS 询问钥匙串访问权限，请选择“始终允许”；应用以相同的签名发布，因此这个选择在更新后仍然有效。
+
+{{platform:windows}} 在 Windows 上，连接密钥同样不会写入工作区记录，而是加密保存在应用的数据文件夹中，只有当前 Windows 用户可以读取。共享时，{{ui:remote.windows.firewall.add}} 按钮会添加一条防火墙规则，只向 Tailscale 地址段打开应用的端口；Windows 会弹出一次管理员确认。如果规则已存在，该按钮会显示为 {{ui:remote.windows.firewall.update}}，并且这条规则与手机直连共用，所以在 {{ui:settings.nav.mobile}} 标签页中改的是同一条规则。
 
 ## 使用远程窗格 {#use}
 - 代理窗格的用法与本地窗格相同。模型、权限模式、思考强度和 Fast 模式会原样传给主机；主机 CLI 不支持的设置会在运行前提示。
-- 权限、提问和计划卡片会出现在本应用中，你的回答会传给主机上的运行。也可以用 {{kbd:⌘Enter}} 向正在运行的 Claude 请求追加内容。
+- 权限、提问和计划卡片会出现在本应用中，你的回答会传给主机上的运行。也可以向正在运行的 Claude 请求追加内容（{{platform:mac}} {{kbd:⌘Enter}}，{{platform:windows}} {{kbd:Ctrl+Enter}}）。
 - {{ui:graph.view.default}} 视图和 {{ui:graph.view.mighty}} 视图（{{ui:graph.view.diagram}}、{{ui:graph.view.timeline}}、{{ui:graph.view.structure}}）的显示与本地运行完全相同。
 - {{ui:remote.menu.newCommand}} 窗格的每条命令都会在主机的共享文件夹中打开新的 shell。不支持交互式程序和密码输入。
 - 远程窗格会在状态栏和会话信息中显示运行电脑的系统（macOS 或 Windows）。{{ui:remote.menu.newCommand}} 窗格在 Mac 主机上用登录 shell、在 Windows 主机上用 PowerShell 运行命令。
