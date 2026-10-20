@@ -18,6 +18,8 @@ Mac이나 Windows 컴퓨터 두 대의 Mighty Claude를 [Tailscale](https://tail
 
 공유 중에는 {{ui:settings.remote.allowFullAccess}} 스위치가 보입니다. 꺼져 있으면(기본) 연결한 컴퓨터는 원격 명령 창을 쓸 수 없고, 에이전트를 전체 권한으로 실행할 수 없습니다. 그런 요청은 실행 전에 거절되고 그 창에 이유가 보입니다. 공유를 시작할 때마다 다시 꺼집니다.
 
+{{platform:windows}} Windows에서 공유할 때는 이 스위치가 꺼져 있으면 연결한 컴퓨터가 Codex와 Antigravity 창도 쓸 수 없습니다(권한 모드와 상관없이). Windows는 macOS처럼 Codex와 Antigravity를 공유 폴더 안에 가두지 못하기 때문입니다. Claude 창은 꺼져 있어도 평소처럼 권한을 물어 가며 실행됩니다.
+
 공유는 이 컴퓨터의 Tailscale 주소에서만 연결을 받습니다. 앱을 다시 열면 공유는 항상 꺼진 상태로 시작합니다. {{ui:settings.remote.stopSharing}} 단추를 누르면 원격 실행이 멈추고 연결 키는 폐기됩니다. 다시 공유하면 새 키를 알려 줘야 합니다.
 
 > [!warning]
@@ -33,7 +35,7 @@ Mac이나 Windows 컴퓨터 두 대의 Mighty Claude를 [Tailscale](https://tail
 
 {{platform:mac}} 연결 키는 macOS Keychain에만 저장하고 워크스페이스 기록에는 넣지 않습니다. 다시 연결할 때 macOS가 Keychain 접근을 물으면 "항상 허용"을 고르세요. 앱이 같은 서명으로 배포되므로 이 선택은 업데이트 뒤에도 유지됩니다.
 
-{{platform:windows}} Windows에서는 연결 키를 워크스페이스 기록에 넣지 않고, 이 Windows 사용자만 풀 수 있게 암호화해 앱의 데이터 폴더에 저장합니다. 공유할 때는 {{ui:remote.windows.firewall.add}} 단추로 Tailscale 대역에서 오는 연결에만 앱의 포트를 여는 방화벽 규칙 하나를 추가합니다. 이때 Windows가 관리자 확인 창을 한 번 띄웁니다. 규칙이 이미 있으면 같은 자리에 {{ui:remote.windows.firewall.update}} 단추가 나오고, 휴대폰 직접 연결의 규칙과 하나로 함께 쓰므로 {{ui:settings.nav.mobile}} 탭에서도 같은 규칙을 고칠 수 있습니다.
+{{platform:windows}} Windows에서는 연결 키를 워크스페이스 기록에 넣지 않고, 이 Windows 사용자만 풀 수 있게 암호화해 앱의 데이터 폴더에 저장합니다. 공유할 때는 {{ui:remote.windows.firewall.add}} 단추로 Tailscale 대역에서 오는 연결에만 앱의 포트를 여는 방화벽 규칙 하나를 추가합니다. 이때 Windows가 관리자 확인 창을 한 번 띄웁니다. 규칙이 이미 있으면 같은 자리에 {{ui:remote.windows.firewall.update}} 단추가 나오고, 휴대폰 직접 연결의 규칙과 하나로 함께 쓰므로 {{ui:settings.nav.mobile}} 탭에서도 같은 규칙을 고칠 수 있습니다. 규칙의 포트가 지금 쓰는 포트를 모두 담지 않으면 갱신이 필요하다고 표시합니다. 규칙을 지우면 휴대폰 직접 연결 포트와 공유 포트가 함께 닫힙니다.
 
 ## 원격 창 쓰기 {#use}
 - 에이전트 창은 로컬 창처럼 쓰면 됩니다. 모델·권한·사고 강도·Fast 모드는 그대로 호스트로 전해지고, 호스트 CLI가 지원하지 않는 설정은 실행 전에 알려 줍니다.

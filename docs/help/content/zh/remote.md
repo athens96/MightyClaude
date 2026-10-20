@@ -18,6 +18,8 @@ section: remote
 
 共享期间会显示 {{ui:settings.remote.allowFullAccess}} 开关。关闭时（默认），已连接的电脑不能使用远程命令窗格，也不能以完全权限运行代理；这类请求会在运行前被拒绝，窗格中会显示原因。每次开始共享时它都会重新关闭。
 
+{{platform:windows}} 由 Windows 电脑共享时，只要这个开关关闭，已连接的电脑也不能使用 Codex 和 Antigravity 窗格（无论权限模式如何），因为 Windows 无法像 macOS 那样把 Codex 和 Antigravity 限制在共享文件夹内。Claude 窗格仍会运行，并照常请求权限。
+
 共享只在这台电脑的 Tailscale 地址上接受连接。每次打开应用时共享都是关闭的。点按 {{ui:settings.remote.stopSharing}} 会停止远程运行并作废连接密钥；再次共享时需要告知新的密钥。
 
 > [!warning]
@@ -33,7 +35,7 @@ section: remote
 
 {{platform:mac}} 连接密钥只保存在 macOS 钥匙串中，不会写入工作区记录。重新连接时如果 macOS 询问钥匙串访问权限，请选择“始终允许”；应用以相同的签名发布，因此这个选择在更新后仍然有效。
 
-{{platform:windows}} 在 Windows 上，连接密钥同样不会写入工作区记录，而是加密保存在应用的数据文件夹中，只有当前 Windows 用户可以读取。共享时，{{ui:remote.windows.firewall.add}} 按钮会添加一条防火墙规则，只向 Tailscale 地址段打开应用的端口；Windows 会弹出一次管理员确认。如果规则已存在，该按钮会显示为 {{ui:remote.windows.firewall.update}}，并且这条规则与手机直连共用，所以在 {{ui:settings.nav.mobile}} 标签页中改的是同一条规则。
+{{platform:windows}} 在 Windows 上，连接密钥同样不会写入工作区记录，而是加密保存在应用的数据文件夹中，只有当前 Windows 用户可以读取。共享时，{{ui:remote.windows.firewall.add}} 按钮会添加一条防火墙规则，只向 Tailscale 地址段打开应用的端口；Windows 会弹出一次管理员确认。如果规则已存在，该按钮会显示为 {{ui:remote.windows.firewall.update}}，并且这条规则与手机直连共用，所以在 {{ui:settings.nav.mobile}} 标签页中改的是同一条规则。 如果规则没有打开当前使用的全部端口，标签页会提示需要更新。删除规则会同时关闭手机直连端口和共享端口。
 
 ## 使用远程窗格 {#use}
 - 代理窗格的用法与本地窗格相同。模型、权限模式、思考强度和 Fast 模式会原样传给主机；主机 CLI 不支持的设置会在运行前提示。
