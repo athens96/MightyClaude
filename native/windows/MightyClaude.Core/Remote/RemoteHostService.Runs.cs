@@ -122,7 +122,7 @@ public sealed partial class RemoteHostService
         try { await ResolveShared(run.WorkspaceId, revision); }
         catch (Exception ex) when (ex is not (OutOfMemoryException or HostFailure)) { throw new HostFailure(403, ex.Message); }
         bool allowed; lock (gate) allowed = allowsFullAccess;
-        if (FullAccessRefusal(run, allowed) is { } refusal) throw new HostFailure(403, refusal);
+        if (FullAccessRefusal(run, allowed, options.WindowsHost) is { } refusal) throw new HostFailure(403, refusal);
         // A Windows command line holds 32 767 characters: a longer command is refused here, never cut.
         if (run.Kind == "shell" && !CommandFits(run.Input)) throw new HostFailure(400, RemoteWindowsStrings.HostCommandTooLong);
         // The cheap refusal before the costly checks below; checked again when the run is recorded.
@@ -212,6 +212,8 @@ public sealed partial class RemoteHostService
         try
         {
             if (Following(value.SessionId, revision) is not { } graphRuns) return;
+            // A client that did not ask for graph runs (the Mac's) gets graph nodes instead: left out on purpose, never traced as dropped.
+            if (value.Type == "graph_run" && !graphRuns) return;
             Append(value.SessionId, value.Type, RemoteWireEvents.FromRunEvent(value, value.SessionId, graphRuns), revision, value.Type == "status" && value.Status is "completed" or "error" or "stopped");
         }
         catch (Exception ex) when (ex is not OutOfMemoryException) { Trace.TraceWarning("remote host: a run event was left out: " + ex.GetType().Name); }
@@ -309,7 +311,7 @@ public sealed partial class RemoteHostService
     private static byte[] PollBody(int cursor, int lastCursor, bool gap, bool done, List<(int Cursor, byte[] Event, int Size)> events)
     {
         var buffer = new ArrayBufferWriter<byte>();
-        using (var writer = new Utf8JsonWriter(buffer))
+        using (var writer = new Utf8JsonWriter(buffer, new JsonWriterOptions { Encoder = RemoteWire.Json.Encoder }))
         {
             writer.WriteStartObject();
             writer.WriteNumber("protocol", RemoteProtocol.Version); writer.WriteNumber("cursor", cursor); writer.WriteNumber("lastCursor", lastCursor);

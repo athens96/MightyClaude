@@ -2905,7 +2905,7 @@
   "remote.windows.settings.shareNote": "このPCのTailscaleアドレスでだけ接続を受け付けます。接続する側にアドレスと接続キーを伝えてください。Tailscale Serve・Funnelやルーターのポート転送は不要です。",
   "remote.windows.settings.firewallNote": "Windowsファイアウォールは、Tailscaleの範囲（100.64.0.0/10、fd7a:115c:a1e0::/48）からの接続にだけこのアプリのポートを開く1つのルールで開きます。ルールの追加・削除のときにWindowsの管理者確認が1回表示されます。",
   "remote.windows.settings.scopeKey": "• 接続キーを持つデバイスは、共有したワークスペースで作業やコマンドを実行できます。キーは信頼できるデバイスにだけ伝えてください。キーはこのWindowsユーザーだけが読めるよう暗号化して保存します。",
-  "remote.windows.settings.allowFullAccessDescription": "オンにすると、接続したコンピューターがリモートコマンドペイン（このPCではPowerShell）を使い、エージェントをフルアクセス（Claude Bypass、Codexフルアクセス、Antigravityフルアクセス）で実行できます。共有を開始するたびにオフになります。",
+  "remote.windows.settings.allowFullAccessDescription": "オンにすると、接続したコンピューターがリモートコマンドペイン（このPCではPowerShell）を使い、エージェントをフルアクセス（Claude Bypass、Codexフルアクセス、Antigravityフルアクセス）で実行し、CodexとAntigravityのペインをどの権限でも実行できます。WindowsはmacOSのようにCodexとAntigravityを共有フォルダ内に閉じ込められないためです。オフでもClaudeのペインはいつもどおり許可を求めながら実行されます。共有を開始するたびにオフになります。",
   "remote.windows.settings.keyCopied": "接続キーをコピーしました。クリップボードの履歴やほかのデバイスには残らず、60秒後もそのままなら消去します。",
   "remote.windows.settings.keyCopyFailed": "接続キーをコピーできませんでした。しばらくしてからもう一度押してください。",
   "remote.windows.firewall.add": "ファイアウォールルールを追加",
