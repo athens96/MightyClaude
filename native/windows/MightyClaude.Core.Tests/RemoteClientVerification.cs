@@ -76,6 +76,21 @@ internal static partial class RemoteClientVerification
             }
             else Check(!dpapi.Save("conn-1", Key) && dpapi.Load("conn-1") is null && !Directory.Exists(Path.Combine(directory, "remote-keys")), "without DPAPI nothing is written and the key stays in memory");
             Check(!dpapi.ToString().Contains(directory, StringComparison.Ordinal), "the vault prints only its type");
+            {
+                // A key file that cannot be removed (here a folder in its place; on Windows also a file another program holds open) is
+                // tried again for about a second, then left with one trace line that names only the exception's type.
+                var stuck = Path.Combine(directory, DpapiRemoteKeyVault.FolderName, DpapiRemoteKeyVault.FileName("conn:stuck"));
+                Directory.CreateDirectory(Path.Combine(stuck, "inside"));
+                var traced = new TraceLines(); System.Diagnostics.Trace.Listeners.Add(traced);
+                var took = System.Diagnostics.Stopwatch.StartNew();
+                try { dpapi.Delete("conn:stuck"); }
+                finally { System.Diagnostics.Trace.Listeners.Remove(traced); }
+                var lines = traced.Lines.Where(l => l.Contains("remote key delete", StringComparison.Ordinal)).ToList();
+                Check(took.Elapsed >= TimeSpan.FromMilliseconds(800), "a delete that fails is tried again for about a second: " + took.ElapsedMilliseconds + " ms");
+                Check(lines.Count == 1 && System.Text.RegularExpressions.Regex.IsMatch(lines[0], @"remote key delete: \w+Exception\s*$") && !lines[0].Contains(directory, StringComparison.Ordinal) && !lines[0].Contains("conn", StringComparison.Ordinal),
+                    "and is traced once by its exception type alone: " + string.Join(" | ", lines));
+                Directory.Delete(stuck, true);
+            }
             Check(!memory.Save("conn-1", "short"), "a key of the wrong shape is never saved");
         }
         finally { Directory.Delete(directory, true); }
@@ -498,6 +513,15 @@ internal static partial class RemoteClientVerification
             if (closed && request.Target == "/v2/info") { Arrived.TrySetResult(); await Released.Task; }
             return RemoteFakeHost.Fixture("info.json");
         }
+    }
+
+    /// <summary>Collects trace lines (a check adds it to Trace.Listeners and removes it again).</summary>
+    private sealed class TraceLines : System.Diagnostics.TraceListener
+    {
+        private readonly List<string> lines = []; private string partial = "";
+        internal string[] Lines { get { lock (lines) return [.. lines]; } }
+        public override void Write(string? message) { lock (lines) partial += message; }
+        public override void WriteLine(string? message) { lock (lines) { lines.Add(partial + message); partial = ""; } }
     }
 
     /// <summary>A memory vault that lists the ids it holds a key for.</summary>
@@ -1042,6 +1066,58 @@ internal static partial class RemoteClientVerification
             await disconnect!;
             await client.FollowsEnded().WaitAsync(TimeSpan.FromSeconds(10));
             Check(seen.Events.Select(e => e.Entry?.Text ?? e.Status).SequenceEqual(["first", "stopped"]), "the run ended at the disconnect: " + string.Join(",", seen.Events.Select(e => e.Entry?.Text ?? e.Status)));
+        }
+        finally { await client.DisposeAsync(); Directory.Delete(directory, true); }
+    }
+
+    /// <summary>
+    /// A disconnect while a run's poll waits on the host: the connection and its runs end in one step, so the pane's last word is the
+    /// disconnect's "stopped", never a "connection changed" error from the poll, and the poll's late answer reaches nobody.
+    /// </summary>
+    internal static async Task ADisconnectWhileAPollIsInFlightEndsThePaneStopped()
+    {
+        await using var scripted = new ScriptedHost();
+        var (client, workspace, seen, directory) = await Connected(scripted);
+        var held = new HeldPoll(); scripted.Hook = held.Answer;
+        try
+        {
+            await client.StartAsync(new StartRunRequest("pane-1", workspace.Id, "shell", "dir", []), workspace);
+            await held.Arrived.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            await client.DisconnectAsync(workspace.Remote!.ConnectionId).WaitAsync(TimeSpan.FromSeconds(10));
+            held.Released.TrySetResult(new(200, Poll(1, false, LogEvent(1, "late"))));
+            await client.FollowsEnded().WaitAsync(TimeSpan.FromSeconds(10));
+            var words = seen.Events.Where(e => e.SessionId == "pane-1").Select(e => e.Entry?.Text ?? e.Status).ToList();
+            Check(words.SequenceEqual(["stopped"]), "the pane's only last word is stopped: " + string.Join(",", words));
+            Check(!client.IsRunning("pane-1") && client.Connection(workspace.Remote!.ConnectionId)?.Status == RemoteConnectionStatus.Disconnected, "the run and the connection ended");
+        }
+        finally { held.Released.TrySetResult(ScriptedHost.Empty("0")); scripted.Hook = null; await client.DisposeAsync(); Directory.Delete(directory, true); }
+    }
+
+    /// <summary>
+    /// A pane callback that throws while a remove ends the connection's runs: every other pane still gets its last word, and the
+    /// connection and its key are still forgotten.
+    /// </summary>
+    internal static async Task APaneThatThrowsDuringARemoveLeavesTheOthersTheirLastWordAndTheKeyGoes()
+    {
+        await using var scripted = new ScriptedHost();
+        var (store, directory) = await ClientStore(); var seen = new Collected(); var vault = new MemoryRemoteKeyVault();
+        var client = new RemoteClientService(store, directory, vault, seen.Event, seen.Permission, new() { AllowLoopbackForTests = true });
+        try
+        {
+            var info = await client.ConnectAsync("", "127.0.0.1:" + scripted.Host.Port, Key);
+            var workspace = client.OpenWorkspace(info.Id, "ws-project");
+            await client.StartAsync(new StartRunRequest("pane-1", workspace.Id, "shell", "dir", []), workspace);
+            await client.StartAsync(new StartRunRequest("pane-2", workspace.Id, "shell", "dir", []), workspace);
+            Check(vault.Load(info.Id) == Key, "the key is in the vault before the remove");
+            // The first pane told it stopped throws, whichever it is.
+            var thrown = 0;
+            seen.After = e => { if (e.Status == "stopped" && Interlocked.Exchange(ref thrown, 1) == 0) throw new InvalidOperationException("the pane broke"); };
+            await client.RemoveAsync(info.Id);
+            await client.FollowsEnded().WaitAsync(TimeSpan.FromSeconds(10));
+            Check(thrown == 1, "a pane's callback threw");
+            foreach (var pane in new[] { "pane-1", "pane-2" })
+                Check(seen.Events.LastOrDefault(e => e.SessionId == pane)?.Status == "stopped" && !client.IsRunning(pane), pane + " got its last word: " + string.Join(",", seen.Events.Where(e => e.SessionId == pane).Select(e => e.Entry?.Text ?? e.Status)));
+            Check(client.Connection(info.Id) is null && client.List().Count == 0 && vault.Load(info.Id) is null, "the connection and its key are gone");
         }
         finally { await client.DisposeAsync(); Directory.Delete(directory, true); }
     }

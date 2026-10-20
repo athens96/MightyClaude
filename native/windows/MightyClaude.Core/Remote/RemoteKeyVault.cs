@@ -86,7 +86,27 @@ public sealed class DpapiRemoteKeyVault(string directory) : IRemoteKeyVault
         catch (Exception ex) when (Refused(ex)) { return false; }
     }
 
-    public void Delete(string id) { try { File.Delete(FileFor(id)); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { } }
+    /// <summary>
+    /// Removes the key's file. A file held open by another program (an antivirus scan, a backup) is tried again for about a second; one
+    /// that still cannot go is left with a trace line naming only the exception's type, never the path or the id.
+    /// </summary>
+    public void Delete(string id)
+    {
+        var path = FileFor(id);
+        for (var attempt = 1; ; attempt++)
+        {
+            try { File.Delete(path); return; }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                if (attempt < DeleteAttempts) { Thread.Sleep(DeleteRetryDelay); continue; }
+                System.Diagnostics.Trace.TraceWarning("remote key delete: " + ex.GetType().Name);
+                return;
+            }
+        }
+    }
+
+    private const int DeleteAttempts = 10;
+    private static readonly TimeSpan DeleteRetryDelay = TimeSpan.FromMilliseconds(100);
 
     /// <summary>The type name only: the vault holds no key, and its folder is not worth a log line.</summary>
     public override string ToString() => nameof(DpapiRemoteKeyVault);
@@ -98,7 +118,7 @@ public sealed class DpapiRemoteKeyVault(string directory) : IRemoteKeyVault
     private static byte[]? ReadBounded(string path)
     {
         if (!File.Exists(path)) return null;
-        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
         var buffer = new byte[MaximumBlobBytes + 1]; var length = 0;
         while (length < buffer.Length && stream.Read(buffer, length, buffer.Length - length) is var read and > 0) length += read;
         return length is 0 or > MaximumBlobBytes ? null : buffer[..length];
