@@ -27,6 +27,8 @@ public sealed record RemoteHostOptions
     /// (or loopback, when injected) is still left out.</summary>
     public Func<IReadOnlyList<string>>? Addresses { get; init; }
     public Func<DateTimeOffset> Clock { get; init; } = () => DateTimeOffset.UtcNow;
+    /// <summary>This PC runs Windows, where Codex and Antigravity are not confined as on a Mac (FullAccessRefusal); checks set it.</summary>
+    public bool WindowsHost { get; init; } = OperatingSystem.IsWindows();
 }
 
 /// <summary>
@@ -106,9 +108,17 @@ public sealed partial class RemoteHostService(RemoteHostOptions options) : IAsyn
     /// <summary>Whether clients may run commands and full-access agents here; takes effect from the next run they start.</summary>
     public RemoteHostState SetAllowsFullAccess(bool allowed) { lock (gate) allowsFullAccess = allowed; return Current(); }
 
-    /// <summary>What a client may not run here while full access is off: a command pane, or an agent in full access; null when it may.</summary>
-    public static string? FullAccessRefusal(StartRunRequest request, bool allowed) =>
-        allowed ? null : request.Kind == "shell" ? Locale.Get("remote.host.error.commandsOff") : request.Settings?.PermissionMode == "fullAccess" ? Locale.Get("remote.host.error.fullAccessOff") : null;
+    /// <summary>
+    /// What a client may not run here while full access is off: a command pane, an agent in full access, and on a Windows host a Codex or
+    /// Antigravity agent in any mode; null when it may. A Mac host's Seatbelt confines Codex and Antigravity in their read-only and
+    /// workspace-write modes; on Windows that confinement is not confirmed, so their runs fail closed until the switch is on. Claude asks
+    /// through permission requests and keeps its modes. <paramref name="windowsHost"/> is this PC's own OS unless a check sets it.
+    /// </summary>
+    public static string? FullAccessRefusal(StartRunRequest request, bool allowed, bool? windowsHost = null) =>
+        allowed ? null
+        : request.Kind == "shell" ? Locale.Get("remote.host.error.commandsOff")
+        : request.Settings?.PermissionMode == "fullAccess" || request.Provider != "claude" && (windowsHost ?? OperatingSystem.IsWindows()) ? Locale.Get("remote.host.error.fullAccessOff")
+        : null;
 
     /// <summary>Starts sharing <paramref name="workspaceIds"/> (registered local workspaces) on every Tailscale address this PC has, with a new key.</summary>
     public async Task<RemoteHostState> StartAsync(IReadOnlyList<string> workspaceIds, int port = RemoteProtocol.DefaultPort)

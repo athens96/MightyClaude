@@ -449,7 +449,7 @@ internal static partial class RemoteHostVerification
 
     internal static async Task<HostFixture> MakeHost(TimeSpan? heartbeat = null, Func<StartRunRequest, string?>? admission = null, Func<HostFixture, RemoteRunnerSinks, IRemoteRunner>? runner = null,
         Func<IReadOnlyList<string>>? addresses = null, Func<DateTimeOffset>? clock = null, Func<string, Task>? beforeBind = null, Action<int>? runsChanged = null,
-        Func<CancellationToken, Task>? beforeLaunch = null)
+        Func<CancellationToken, Task>? beforeLaunch = null, bool? windowsHost = null, string runtime = "info.json")
     {
         var directory = Verification.Temp(); var store = new StateStore(Path.Combine(directory, "host")); await store.LoadAsync();
         System.IO.Directory.CreateDirectory(Path.Combine(directory, "project")); System.IO.Directory.CreateDirectory(Path.Combine(directory, "private"));
@@ -460,10 +460,10 @@ internal static partial class RemoteHostVerification
         var host = new RemoteHostService(new RemoteHostOptions
         {
             Workspaces = () => store.Snapshot.Workspaces, ResolveLocal = store.ResolveLocalAsync,
-            Runtime = () => Task.FromResult(RemoteWireFixtureVerification.Node("info.json")["runtime"].Deserialize<RuntimeInfo>(Wire.Json)!),
+            Runtime = () => Task.FromResult(RemoteWireFixtureVerification.Node(runtime)["runtime"].Deserialize<RuntimeInfo>(Wire.Json)!),
             CreateRunner = sinks => runner?.Invoke(fixture, sinks) ?? (fixture.Runner = new FakeRemoteRunner(sinks)),
             HostName = "studio-pc", AllowLoopbackForTests = true, Heartbeat = heartbeat ?? RemoteProtocol.HeartbeatTimeout, Admission = admission ?? (_ => null),
-            Addresses = addresses, Clock = clock ?? (() => DateTimeOffset.UtcNow), RunsChanged = runsChanged ?? (_ => { }),
+            Addresses = addresses, Clock = clock ?? (() => DateTimeOffset.UtcNow), RunsChanged = runsChanged ?? (_ => { }), WindowsHost = windowsHost ?? OperatingSystem.IsWindows(),
         }) { BeforeBind = beforeBind, BeforeLaunch = beforeLaunch };
         return fixture = new HostFixture { Directory = directory, Store = store, Shared = shared, Private = hidden, Remote = remote, Host = host };
     }
@@ -493,6 +493,19 @@ internal static partial class RemoteHostVerification
         Check(RemoteHostService.FullAccessRefusal(shell, false) == Locale.Get("remote.host.error.commandsOff") && RemoteHostService.FullAccessRefusal(full, false) == Locale.Get("remote.host.error.fullAccessOff"), "commands and full access wait for the switch");
         Check(RemoteHostService.FullAccessRefusal(full with { Provider = "codex" }, false) == Locale.Get("remote.host.error.fullAccessOff"), "full access waits for the switch whatever the agent");
         Check(RemoteHostService.FullAccessRefusal(edits, false) is null && RemoteHostService.FullAccessRefusal(shell, true) is null && RemoteHostService.FullAccessRefusal(full with { Provider = "codex" }, true) is null, "the switch allows them; other modes never needed it");
+        // A Windows host cannot confirm it confines Codex or Antigravity as Seatbelt does on a Mac: without the switch they are refused in every mode.
+        var fullAccessOff = Locale.Get("remote.host.error.fullAccessOff");
+        foreach (var (provider, mode) in new[] { ("codex", "manual"), ("codex", "acceptEdits"), ("codex", "onRequest"), ("gemini", "manual"), ("gemini", "acceptEdits") })
+        {
+            var agent = edits with { Provider = provider, Settings = new(PermissionMode: mode) };
+            Check(RemoteHostService.FullAccessRefusal(agent, false, windowsHost: true) == fullAccessOff, $"a Windows host refuses a {provider} {mode} run while the switch is off");
+            Check(RemoteHostService.FullAccessRefusal(agent, true, windowsHost: true) is null, $"the switch lets a {provider} {mode} run start on a Windows host");
+            Check(RemoteHostService.FullAccessRefusal(agent, false, windowsHost: false) is null, $"a Mac host confines a {provider} {mode} run, so it needs no switch");
+        }
+        Check(RemoteHostService.FullAccessRefusal(edits, false, windowsHost: true) is null && RemoteHostService.FullAccessRefusal(edits with { Settings = new() }, false, windowsHost: true) is null, "Claude keeps its modes on a Windows host: it asks through permission requests");
+        Check(RemoteHostService.FullAccessRefusal(full, false, windowsHost: true) == fullAccessOff && RemoteHostService.FullAccessRefusal(shell, false, windowsHost: true) == Locale.Get("remote.host.error.commandsOff")
+            && RemoteHostService.FullAccessRefusal(full, true, windowsHost: true) is null && RemoteHostService.FullAccessRefusal(shell, true, windowsHost: true) is null, "full access and commands wait for the switch on a Windows host too");
+        Check(RemoteHostService.FullAccessRefusal(edits with { Provider = "codex" }, false) == (OperatingSystem.IsWindows() ? fullAccessOff : null), "without a setting the host's own OS decides");
         var now = DateTimeOffset.UnixEpoch; var limiter = new RemoteRateLimiter(() => now);
         Check(Enumerable.Range(0, 300).All(_ => limiter.AllowPeer("100.90.1.1")) && !limiter.AllowPeer("100.90.1.1") && limiter.AllowPeer("100.90.1.2"), "300 a second per peer, each peer its own budget");
         Check(Enumerable.Range(0, 600).All(_ => limiter.AllowKeyed()) && !limiter.AllowKeyed(), "600 keyed requests a second in all");

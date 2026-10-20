@@ -97,6 +97,9 @@ public static class RemoteWire
             NumberHandling = JsonNumberHandling.Strict,
             RespectNullableAnnotations = true,
             AllowDuplicateProperties = false,
+            // Text as the Mac's JSONEncoder writes it (non-ASCII and HTML characters as they are, not \uXXXX): these bodies are HTTP
+            // JSON between the two apps only, never put into a page. Wire.Json keeps its default.
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
             TypeInfoResolver = new DefaultJsonTypeInfoResolver { Modifiers = { AsTheMacReads } },
         };
         options.MakeReadOnly();
@@ -201,7 +204,7 @@ public sealed record RemoteWireModel(string Name, bool SupportsEffort = false, s
 public sealed record RemoteWireStart(RemoteWireRequest Request, IReadOnlyList<RemoteWireModel> RegisteredModels, string? PermissionModeOverride = null, TodoProgress? TodoProgress = null, PhaseModelsSnapshot? PhaseModels = null)
 {
     public static RemoteWireStart From(StartRunRequest request, string hostWorkspaceId) =>
-        new(RemoteWireRequest.From(request, hostWorkspaceId), request.RegisteredModels.Select(RemoteWireModel.From).ToList(), request.PermissionModeOverride, request.TodoProgress, request.Kind == "claude" ? request.PhaseModels : null);
+        new(RemoteWireRequest.From(request, hostWorkspaceId), request.RegisteredModels.Take(64).Select(RemoteWireModel.From).ToList(), request.PermissionModeOverride, request.TodoProgress, request.Kind == "claude" ? request.PhaseModels : null);
 
     /// <summary>The host's run: its own job id and workspace id, the extras validated by the caller.</summary>
     public StartRunRequest ToRequest(string sessionId, string workspaceId) =>

@@ -50,6 +50,35 @@ internal static class RemoteLoopbackVerification
         finally { await client.DisposeAsync(); await fixture.DisposeAsync(); Directory.Delete(folder, true); }
     }
 
+    /// <summary>
+    /// A Windows host cannot confirm it confines Codex or Antigravity as a Mac's Seatbelt does, so while the switch is off another
+    /// computer's Codex or Antigravity run is refused there in every mode (403, the full-access words); Claude keeps its modes.
+    /// </summary>
+    internal static async Task AWindowsHostRefusesCodexAndAntigravityUntilTheSwitchIsOn()
+    {
+        await using var fixture = await RemoteHostVerification.MakeHost(windowsHost: true, runtime: "info-darwin.json");
+        var state = await fixture.Host.StartAsync([fixture.Shared.Id], 0);
+        var target = RemoteClientVerification.Loopback(state.Port!.Value);
+        async Task<string> Start(string provider, string mode)
+        {
+            var start = new RemoteWireStart(new RemoteWireRequest("mac-pane", fixture.Shared.Id, "claude", "hi", "default", provider, new(PermissionMode: mode)), []);
+            return JsonSerializer.Deserialize<RemoteWireJob>(await RemoteTransport.RequestAsync(target, state.Key!, HttpMethod.Post, "/v2/runs", JsonSerializer.SerializeToUtf8Bytes(start, RemoteWire.Json)), RemoteWire.Json)!.JobId;
+        }
+        var fullAccessOff = Locale.Get("remote.host.error.fullAccessOff");
+        foreach (var (provider, mode) in new[] { ("codex", "acceptEdits"), ("codex", "manual"), ("gemini", "acceptEdits") })
+            await RemoteClientVerification.RejectAsync(() => Start(provider, mode), $"a {provider} {mode} run waits for the switch on a Windows host", ex => ex is RemoteHttpFailure { Status: 403 } && ex.Message == fullAccessOff);
+        Check(fixture.Runner is null || fixture.Runner.Started.IsEmpty, "nothing ran");
+        await Start("claude", "acceptEdits");
+        await Verification.Until(() => fixture.Runner is { } runner && runner.Started.Count == 1);
+        Check(fixture.Runner!.Started.Single().Provider == "claude", "a Claude run in its own mode starts without the switch");
+        fixture.Host.SetAllowsFullAccess(true);
+        await Start("codex", "acceptEdits");
+        await Verification.Until(() => fixture.Runner!.Started.Count == 2);
+        Check(fixture.Runner!.Started.Last().Provider == "codex", "with the switch on a Codex run starts");
+        // This host's Antigravity is not installed: past the switch it is refused for that, never for full access.
+        await RemoteClientVerification.RejectAsync(() => Start("gemini", "acceptEdits"), "an Antigravity run past the switch", ex => ex is RemoteHttpFailure { Status: 400 } && ex.Message == Locale.Get("remote.host.error.cliMissing", new Dictionary<string, string> { ["name"] = ProviderCatalog.Name("gemini") }));
+    }
+
     internal static async Task ToolRequestsAreAnsweredFromTheClientAndGraphRunsGoOnlyWhereAsked()
     {
         var (fixture, client, workspace, seen, folder, state) = await Pair();

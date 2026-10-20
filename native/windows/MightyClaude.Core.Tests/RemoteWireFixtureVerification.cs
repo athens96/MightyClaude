@@ -8,7 +8,7 @@ internal static class RemoteWireFixtureVerification
     private static void Check(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
     internal static JsonNode Node(string name)
     {
-        using var stream = typeof(RemoteWireFixtureVerification).Assembly.GetManifestResourceStream("MightyClaude.Core.Tests.RemoteV2." + name) ?? throw new InvalidOperationException(name + " is not embedded");
+        using var stream = typeof(RemoteWireFixtureVerification).Assembly.GetManifestResourceStream(ResourcePrefix + name) ?? throw new InvalidOperationException(name + " is not embedded");
         return JsonNode.Parse(stream)!;
     }
     /// <summary>Nulls removed, so an explicit null and a missing key compare the same (the Mac's rule in RemoteWireFixtureTests).</summary>
@@ -78,6 +78,49 @@ internal static class RemoteWireFixtureVerification
         Check(JsonSerializer.SerializeToNode(bareStart, RemoteWire.Json)!["registeredModels"] is JsonArray { Count: 0 }, "registeredModels is always sent, even empty");
         Check(JsonSerializer.SerializeToNode(bareStart, RemoteWire.Json)!["request"]!["registeredModels"] is null, "the request itself never carries registeredModels");
         Check(!JsonSerializer.SerializeToNode(RemoteWireStart.From(new StartRunRequest("pane-3", "local-ws", "claude", "hi", [], Attachments: []), "ws-project"), RemoteWire.Json)!["request"]!.AsObject().ContainsKey("attachments"), "no attachments is no key");
+        // Text goes out as the Mac's JSONEncoder writes it: non-ASCII and HTML characters as they are, never \uXXXX. RemoteWire.Json only.
+        const string text = "<b>Tom & Jerry's</b> + caf\u00E9 \uD55C\uAE00";
+        Check(JsonSerializer.Serialize(text, RemoteWire.Json) == "\"" + text + "\"" && JsonSerializer.Serialize(text, Wire.Json) != "\"" + text + "\"", "only the remote wire writes text unescaped: " + JsonSerializer.Serialize(text, RemoteWire.Json));
+        foreach (var name in new[] { "info.json", "info-darwin.json" })
+            Check(!System.Text.Encoding.UTF8.GetString(JsonSerializer.SerializeToUtf8Bytes(Decode<RemoteWireInfo>(name), RemoteWire.Json)).Contains("\\u", StringComparison.Ordinal), name + " is written back without \\u escapes, as its sample holds none");
+        var many = new StartRunRequest("pane-4", "local-ws", "claude", "hi", Enumerable.Range(0, 80).Select(i => new RegisteredModelEntry("model-" + i)).ToList());
+        Check(RemoteWireStart.From(many, "ws-project").RegisteredModels.Count == 64, "a client sends at most 64 registered models, the host's own cap");
+        return Task.CompletedTask;
+    }
+
+    private const string ResourcePrefix = "MightyClaude.Core.Tests.RemoteV2.";
+    /// <summary>Files the index does not name as a route's body: other bodies of the same routes (the Mac's RemoteWireFixtureTests.auxiliary).</summary>
+    private static readonly string[] Auxiliary = ["endpoints.json", "info-darwin.json", "start-codex.json", "poll-gap.json", "poll-malformed.json", "poll-requests.json",
+        "plan-approved.json", "answer-declined.json", "graph-run-event.json", "state-references.json"];
+
+    /// <summary>native/contracts/fixtures/remote-v2/ in this checkout.</summary>
+    private static string Folder()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "native", "contracts", "fixtures", "remote-v2", "endpoints.json"))) directory = directory.Parent;
+        return Path.Combine(directory?.FullName ?? throw new InvalidOperationException("the repository root was not found"), "native", "contracts", "fixtures", "remote-v2");
+    }
+
+    /// <summary>The Mac's theIndexNamesEveryRouteAndEveryFileIsAccountedFor, on the same folder: every route is named, every file is a route's body or listed as another body, and every file is the one these checks read.</summary>
+    internal static Task TheIndexNamesEveryRouteAndEveryFileIsAccountedFor()
+    {
+        var folder = Folder();
+        var index = JsonNode.Parse(File.ReadAllText(Path.Combine(folder, "endpoints.json")))!.AsArray();
+        var routes = index.Select(entry => entry?["name"] is JsonValue value && value.TryGetValue<string>(out var name) ? name : null).OfType<string>().ToHashSet(StringComparer.Ordinal);
+        Check(routes.SetEquals(["info", "start", "events", "stop", "steer", "permission", "questions", "plan", "refused"]), "the index names every route: " + string.Join(", ", routes.Order(StringComparer.Ordinal)));
+        var named = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var entry in index)
+        {
+            Check(entry?["path"] is JsonValue path && path.TryGetValue<string>(out var route) && route.StartsWith(RemoteProtocol.PathPrefix, StringComparison.Ordinal), "every route is under " + RemoteProtocol.PathPrefix + ": " + entry?.ToJsonString());
+            foreach (var key in new[] { "request", "response" })
+                if (entry![key] is JsonValue value && value.TryGetValue<string>(out var name)) { named.Add(name); Check(File.Exists(Path.Combine(folder, name)), name + " is in the folder"); }
+        }
+        var files = Directory.EnumerateFiles(folder).Select(file => Path.GetFileName(file)).ToHashSet(StringComparer.Ordinal);
+        var accounted = named.Union(Auxiliary).ToHashSet(StringComparer.Ordinal);
+        Check(!named.Overlaps(Auxiliary), "no route's body is also listed as another body");
+        Check(files.SetEquals(accounted), "unaccounted: " + string.Join(", ", files.Except(accounted).Concat(accounted.Except(files)).Order(StringComparer.Ordinal)));
+        var embedded = typeof(RemoteWireFixtureVerification).Assembly.GetManifestResourceNames().Where(n => n.StartsWith(ResourcePrefix, StringComparison.Ordinal)).Select(n => n[ResourcePrefix.Length..]).ToHashSet(StringComparer.Ordinal);
+        Check(embedded.SetEquals(files), "the checks read every file of the folder and nothing else: " + string.Join(", ", embedded.Except(files).Concat(files.Except(embedded)).Order(StringComparer.Ordinal)));
         return Task.CompletedTask;
     }
 

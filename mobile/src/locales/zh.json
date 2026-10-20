@@ -2905,7 +2905,7 @@
   "remote.windows.settings.shareNote": "只在此电脑的 Tailscale 地址上接受连接。请把地址和连接密钥告诉要连接的一方。不需要 Tailscale Serve、Funnel 或路由器端口转发。",
   "remote.windows.settings.firewallNote": "Windows 防火墙只通过一条规则打开：仅允许来自 Tailscale 地址段（100.64.0.0/10、fd7a:115c:a1e0::/48）的连接访问本应用的端口。添加或删除该规则时，Windows 会弹出一次管理员确认。",
   "remote.windows.settings.scopeKey": "• 持有连接密钥的设备可以在共享的工作区中执行任务和命令。只把密钥告诉你信任的设备。密钥加密保存，只有当前 Windows 用户可以读取。",
-  "remote.windows.settings.allowFullAccessDescription": "打开后，已连接的电脑可以使用远程命令窗格（在此电脑上是 PowerShell），并以完全权限（Claude Bypass、Codex 完全访问、Antigravity 完全权限）运行代理。每次开始共享时都会关闭。",
+  "remote.windows.settings.allowFullAccessDescription": "打开后，已连接的电脑可以使用远程命令窗格（在此电脑上是 PowerShell），以完全权限（Claude Bypass、Codex 完全访问、Antigravity 完全权限）运行代理，并以任何权限运行 Codex 和 Antigravity 窗格，因为 Windows 无法像 macOS 那样把 Codex 和 Antigravity 限制在共享文件夹内。关闭时 Claude 窗格照常运行，并照常请求权限。每次开始共享时都会关闭。",
   "remote.windows.settings.keyCopied": "已复制连接密钥。它不会进入剪贴板历史，也不会同步到其他设备；60 秒后若仍在剪贴板中将被清除。",
   "remote.windows.settings.keyCopyFailed": "无法复制连接密钥。请稍后再试。",
   "remote.windows.firewall.add": "添加防火墙规则",

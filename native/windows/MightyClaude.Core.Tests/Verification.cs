@@ -600,6 +600,7 @@ internal static class Verification
         await Test("remote state: version 2 loads as remote and older references are dropped", RemoteWorkspaceStateVerification.VersionTwoLoadsAsRemoteAndOlderReferencesAreDropped);
         await Test("remote state: a local workspace is never written or read as remote", RemoteWorkspaceStateVerification.ALocalWorkspaceIsNeverWrittenOrReadAsRemote);
         await Test("remote wire: every body is the Mac's shape", RemoteWireFixtureVerification.EveryBodyIsTheMacsShape);
+        await Test("remote wire: the index names every route and every file is accounted for", RemoteWireFixtureVerification.TheIndexNamesEveryRouteAndEveryFileIsAccountedFor);
         await Test("remote wire: every sample is accepted by the Windows checks", RemoteWireFixtureVerification.EverySampleIsAcceptedByTheWindowsChecks);
         await Test("remote wire: bodies are read as strictly as the Mac reads them", RemoteWireFixtureVerification.BodiesAreReadAsStrictlyAsTheMacReadsThem);
         await Test("remote wire: /info refuses what the Mac refuses", RemoteWireFixtureVerification.InfoRefusesWhatTheMacRefuses);
@@ -652,6 +653,7 @@ internal static class Verification
         await Test("remote host: the run count is told outside the host's lock and a failing listener of it changes nothing", RemoteHostVerification.TheRunCountIsToldOutsideTheHostsLockAndAFailingListenerOfItChangesNothing);
         await Test("remote host: sharing refuses what it cannot serve", RemoteHostVerification.SharingRefusesWhatItCannotServe);
         await Test("remote loopback: commands and full access wait for the switch, then run on the host", RemoteLoopbackVerification.CommandsAndFullAccessWaitForTheSwitchThenRunOnTheHost);
+        await Test("remote loopback: a Windows host refuses Codex and Antigravity runs until the switch is on", RemoteLoopbackVerification.AWindowsHostRefusesCodexAndAntigravityUntilTheSwitchIsOn);
         await Test("remote loopback: tool requests are answered from the client and graph runs go only where asked", RemoteLoopbackVerification.ToolRequestsAreAnsweredFromTheClientAndGraphRunsGoOnlyWhereAsked);
         await Test("remote loopback: unshared folders, busy hosts and oversize requests are refused", RemoteLoopbackVerification.UnsharedFoldersBusyHostsAndOversizeRequestsAreRefused);
         await Test("remote loopback: a run nobody polls is stopped and a stopped host ends the client's runs", RemoteLoopbackVerification.ARunNobodyPollsIsStoppedAndAStoppedHostEndsTheClientsRuns);
