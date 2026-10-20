@@ -238,7 +238,7 @@ public sealed partial class MainWindow
                     }
                     desired.Add(timelineHistoryCard);
                 }
-                var catalog = owner.Runtime(pane.Provider)?.ModelCatalog?.Models;
+                var catalog = PaneRuntime(pane.Provider)?.ModelCatalog?.Models;
                 foreach (var group in groups)
                 {
                     var run = runs[group.RunIndex];
@@ -405,7 +405,7 @@ public sealed partial class MainWindow
             var agent = row.AgentIndex is { } n ? run.Agents[n] : null;
             // The request has no status and no usage of its own: its 실행 row runs and settles.
             var request = agent is null && !row.IsExecution;
-            var capsule = request ? null : ModelUsageFormat.BlockCapsule(agent?.Usage ?? (agent is null ? run.Usage : null), agent?.ResponseRecords ?? (agent is null ? run.ResponseRecords : null) ?? [], agent is null ? run.NodeModelLabel : null, owner.Runtime(pane.Provider)?.ModelCatalog?.Models, versioned: true);
+            var capsule = request ? null : ModelUsageFormat.BlockCapsule(agent?.Usage ?? (agent is null ? run.Usage : null), agent?.ResponseRecords ?? (agent is null ? run.ResponseRecords : null) ?? [], agent is null ? run.NodeModelLabel : null, PaneRuntime(pane.Provider)?.ModelCatalog?.Models, versioned: true);
             var meta = new Grid { ColumnSpacing = DesignMetrics.Spacing.Xs, Height = TimelineMetaLine }; meta.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); meta.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
             meta.Children.Add(MightySymbols.Create(symbol, 9, b.Brush(tint), MightySymbols.Weight.Bold, b.Brush(DesignToken.Card)));
             var description = new TextBlock { Text = string.Join(" · ", new[] { MightyTimeline.KindLabel(row.Kind), capsule, MightyTimeline.DurationLabel(row.DurationMs) }.Where(s => s is { Length: > 0 })), TextSize = DesignMetrics.Type.Pill, Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center, TextLineHeight = TimelineMetaLine, LineStackingStrategy = LineStackingStrategy.BlockLineHeight };

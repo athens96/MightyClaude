@@ -277,7 +277,7 @@ public sealed partial class MainWindow
             var drawn = new HashSet<string>();
             if (board is not null)
             {
-                var catalog = owner.Runtime(pane.Provider)?.ModelCatalog?.Models;
+                var catalog = PaneRuntime(pane.Provider)?.ModelCatalog?.Models;
                 foreach (var column in board.Columns)
                 {
                     if (!structureColumns.TryGetValue(column.Id, out var place)) continue;
@@ -1438,7 +1438,7 @@ public sealed partial class MainWindow
             var pane = Session; var runs = (IReadOnlyList<MightyGraphRun>)(pane.GraphRuns ?? []);
             var (style, phase, pending) = StructureInputs(runs, false);
             var styles = activeStyle is null || styleRegistry is null ? null : styleRegistry.Styles;
-            var catalog = owner.Runtime(pane.Provider)?.ModelCatalog?.Models;
+            var catalog = PaneRuntime(pane.Provider)?.ModelCatalog?.Models;
             var key = string.Join('\n', new[] { Locale.LanguagePreference, activeStyle?.Id, activeStyle?.Hash }.Concat((styles ?? []).Where(s => s.Runnable).SelectMany(s => new[] { s.Id, s.Hash }))
                 .Concat((catalog ?? []).SelectMany(model => new[] { model.Value, model.DisplayName, model.ResolvedModel })));
             return owner.mobileStructures.Structure(pane.Id, runs, style, phase, pane.PlanHistory, pending, key,

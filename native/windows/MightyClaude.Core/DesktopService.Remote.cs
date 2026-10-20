@@ -38,6 +38,11 @@ public sealed partial class DesktopService
     private bool RemotePane(string sessionId) => Remote?.IsRunning(sessionId) == true || IsRemoteSession(sessionId);
 
     public bool IsRemoteWorkspace(string? workspaceId) { lock (sync) return snapshot.Workspaces.Any(w => w.Id == workspaceId && w.Remote is not null); }
+    /// <summary>The pane's workspace's host, null for a local pane: read without copying the state, as the window asks on every redraw.</summary>
+    public RemoteWorkspaceReference? RemoteReference(string sessionId)
+    {
+        lock (sync) return snapshot.Sessions.FirstOrDefault(s => s.Id == sessionId) is { } pane ? snapshot.Workspaces.FirstOrDefault(w => w.Id == pane.WorkspaceId)?.Remote : null;
+    }
     public bool IsRemoteSession(string sessionId)
     {
         lock (sync) return snapshot.Sessions.FirstOrDefault(s => s.Id == sessionId) is { } pane && snapshot.Workspaces.Any(w => w.Id == pane.WorkspaceId && w.Remote is not null);

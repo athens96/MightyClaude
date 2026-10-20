@@ -493,7 +493,7 @@ public sealed partial class MainWindow
             graphPlanNodeId = planRunId is null ? null : MightyGraphBlockSize.NodeId(planRunId, MightyGraphLayout.PlanSuffix);
             graphLayout = layout; graphLatestResultId = MightyGraphLayout.LatestResultID(runs);
             TraceGraphSmoke($"layout:nodes={layout.Nodes.Count}:size={layout.Size.W:F2}x{layout.Size.H:F2}");
-            var catalog = owner.Runtime(pane.Provider)?.ModelCatalog?.Models;
+            var catalog = PaneRuntime(pane.Provider)?.ModelCatalog?.Models;
             // "Request N · Claude": the short name, as macOS ProviderOptions.label, so its mark can go before it.
             var blocks = MightyGraphBlockModel.Blocks(layout, runs, pane.Draft, ProviderMark.Label(pane.Provider), AnimationsEnabled, catalog);
             for (var i = 0; i < runs.Count; i++)

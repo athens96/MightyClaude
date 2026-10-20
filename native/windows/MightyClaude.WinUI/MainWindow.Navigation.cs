@@ -207,13 +207,17 @@ public sealed partial class MainWindow
     private MenuFlyout NewSessionMenu(string? groupId = null)
     {
         // The macOS add-pane order (AddPaneMenu.Entries): agents, terminal, browser and files,
-        // then the open-project-folder item at the bottom.
+        // then the open-project-folder item and Connect to Another Computer… at the bottom. A remote workspace's
+        // offers agents and a remote command only (RemoteWorkspaceFeatures.AddPaneEntries).
+        var state = service.Snapshot;
+        var workspace = state.Workspaces.FirstOrDefault(w => w.Id == state.ActiveWorkspaceId);
+        var entries = RemoteWorkspaceFeatures.AddPaneEntries(workspace); var remote = workspace?.Remote is not null;
         var menu = new MenuFlyout();
-        foreach (var entry in AddPaneMenu.Entries())
+        foreach (var entry in entries)
             menu.Items.Add(entry switch
             {
                 AddPaneMenu.Separator => (MenuFlyoutItemBase)new MenuFlyoutSeparator(),
-                AddPaneMenu.Shell => MenuItem(AddPaneTitle(entry)!, () => AddPane("shell", groupId: groupId)),
+                AddPaneMenu.Shell => MenuItem(AddPaneTitle(entry, remote)!, () => AddPane("shell", groupId: groupId)),
                 AddPaneMenu.Browser => MenuItem(AddPaneTitle(entry)!, () => AddBrowserPane(groupId)),
                 AddPaneMenu.Files => OpenFilesMenuItem(),
                 AddPaneMenu.OpenProject => OpenProjectMenuItem(),
@@ -221,18 +225,19 @@ public sealed partial class MainWindow
                     ? MenuItem(AddPaneTitle(entry)!, () => AddAgentPane(provider, groupId))
                     : throw new InvalidOperationException("unknown add-pane menu entry " + entry),
             });
-        MarkAddPaneMenu(menu, AddPaneMenu.Entries());
+        MarkAddPaneMenu(menu, entries, remote);
+        menu.Items.Add(ConnectRemoteMenuItem(workspace?.Id));
         return menu;
     }
 
     /// <summary>
-    /// An add-pane entry's words as the Mac's menu says them (M/WorkspaceView.swift:423-445): "New Claude
-    /// pane", "New Codex pane" with its beta suffix, "New terminal", "New browser tab"; null for an entry
-    /// that keeps its own words (the files pane, the project folder).
+    /// An add-pane entry's words as the Mac's menu says them (M/WorkspaceView.swift:806-842): "New Claude
+    /// pane", "New Codex pane" with its beta suffix, "New terminal" ("New remote command" in a <paramref name="remote"/>
+    /// workspace), "New browser tab"; null for an entry that keeps its own words (the files pane, the project folder).
     /// </summary>
-    private static string? AddPaneTitle(string entry) => entry switch
+    private static string? AddPaneTitle(string entry, bool remote = false) => entry switch
     {
-        AddPaneMenu.Shell => Locale.Get("workspace.newTerminal"),
+        AddPaneMenu.Shell => Locale.Get(remote ? "remote.menu.newCommand" : "workspace.newTerminal"),
         AddPaneMenu.Browser => Locale.Get("browser.newTab"),
         _ => AddPaneMenu.AgentProvider(entry) is { } provider
             ? ProviderCatalog.BetaLabel(provider, Locale.Get("workspace.newAgentPane", new Dictionary<string, string> { ["provider"] = ProviderMark.Label(provider) }))
@@ -246,12 +251,12 @@ public sealed partial class MainWindow
     /// terminal, a globe and the files pane's folder; an item that brings its own symbol keeps it.
     /// <paramref name="entries"/> lines up with the menu's items.
     /// </summary>
-    private void MarkAddPaneMenu(MenuFlyout menu, IReadOnlyList<string> entries)
+    private void MarkAddPaneMenu(MenuFlyout menu, IReadOnlyList<string> entries, bool remote = false)
     {
         for (var i = 0; i < menu.Items.Count && i < entries.Count; i++)
         {
             if (menu.Items[i] is not MenuFlyoutItem item) continue;
-            if (AddPaneTitle(entries[i]) is { } title) item.Text = title;
+            if (AddPaneTitle(entries[i], remote) is { } title) item.Text = title;
             if (item.Icon is not null) continue;
             item.Icon = entries[i] switch
             {
@@ -269,6 +274,14 @@ public sealed partial class MainWindow
         item.KeyboardAcceleratorTextOverride = AddPaneMenu.OpenFolderShortcut;
         item.Icon = new FontIcon { Glyph = "" };
         AutomationProperties.SetAutomationId(item, "add-pane-open-folder");
+        return item;
+    }
+    /// <summary>The add-pane menus' last item, under the project folder: Connect to Another Computer… opens Settings → Remote Connection (M/WorkspaceView.swift:838-841).</summary>
+    private MenuFlyoutItem ConnectRemoteMenuItem(string? workspaceId)
+    {
+        var item = MenuItem(Locale.Get("remote.menu.connect"), OpenRemoteSettings);
+        item.Icon = new FontIcon { Glyph = RemoteNetworkGlyph };
+        AutomationProperties.SetAutomationId(item, "workspace-connect-remote" + (workspaceId is null ? "" : "-" + workspaceId));
         return item;
     }
     /// <summary>
@@ -290,10 +303,11 @@ public sealed partial class MainWindow
     }
     internal bool HasAddPaneShortcuts => new[] { VirtualKey.O, VirtualKey.N }.All(key => root.KeyboardAccelerators.Any(a => a.Key == key && a.Modifiers == VirtualKeyModifiers.Control));
     /// <summary>
-    /// A workspace row's menu in the Mac's order (M/WorkspaceView.swift:193-197): Rename…, Remove from
+    /// A workspace row's menu in the Mac's order (M/WorkspaceView.swift:252-258): Rename…, Remove from
     /// list, Show in File Explorer; then, behind a separator, the Windows-only way into its files pane.
+    /// A <paramref name="remote"/> workspace's folder and files are on its host: its menu stops after Remove.
     /// </summary>
-    private MenuFlyout WorkspaceMenu(string id)
+    private MenuFlyout WorkspaceMenu(string id, bool remote = false)
     {
         var rename = new MenuFlyoutItem { Text = RenameStrings.MenuEntry };
         rename.Click += async (_, _) => await RenameWorkspace(id);
@@ -301,6 +315,7 @@ public sealed partial class MainWindow
         menu.Opening += (_, _) => rename.IsEnabled = !dialogOpen;
         menu.Items.Add(rename);
         menu.Items.Add(MenuItem(Locale.Get("workspace.menu.remove"), () => ConfirmRemoveWorkspace(id)));
+        if (remote) return menu;
         menu.Items.Add(MenuItem(Locale.Get("menu.showInExplorer"), () => Act(() =>
         {
             var workspace = service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == id);

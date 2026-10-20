@@ -48,7 +48,8 @@ public sealed partial class MainWindow
 
     private string? ManualMutationBlockReason(RunSession pane)
     {
-        if (pane.Kind != "claude") return null;
+        // A remote pane runs on its host: this PC's CLI updates and plugin changes never hold it (M/AppStore.swift runBlockedReason).
+        if (pane.Kind != "claude" || service.IsRemoteWorkspace(pane.WorkspaceId)) return null;
         // A child whose last run's end is still being recorded (the app's commit of its work among it) starts nothing yet.
         if (service.Delegation?.EndingRuns.Contains(pane.Id) == true) return Locale.Get("delegation.child.recordingEnd");
         if (manuallyUpdatingProvider == pane.Provider)

@@ -660,7 +660,7 @@ public sealed partial class MainWindow
         private async Task<StartRunRequest> PrepareStyleRunRequest(StartRunRequest request)
         {
             // agy refuses a model its live list lacks, so the run starts on its default instead (M/AppStore.swift:981-988).
-            if (request.Kind == "claude" && request.Provider == "gemini" && owner.Runtime("gemini")?.ModelCatalog is { } catalog && AntigravityMigration.ModelUnavailable(request.Model, catalog))
+            if (request.Kind == "claude" && request.Provider == "gemini" && PaneRuntime("gemini")?.ModelCatalog is { } catalog && AntigravityMigration.ModelUnavailable(request.Model, catalog))
             {
                 var missing = request.Model;
                 await Change(p => p with { Model = "default", Logs = [.. p.Logs, new LogEntry(Wire.Id(), "system", Locale.Get("run.notice.antigravityModelReset", new Dictionary<string, string> { ["model"] = missing }), Wire.Now())] });

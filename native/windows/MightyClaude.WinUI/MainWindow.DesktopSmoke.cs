@@ -48,7 +48,7 @@ public sealed partial class MainWindow
                     Require(drawn.OfType<TextBlock>().Any(v => v.Text.Length > 0 && ToolTipService.GetToolTip(v) as string == project.Path && (v.Text == project.Path || v.Text.Contains('…'))), "Dashboard workspace path is missing.");
                     Require(drawn.OfType<Button>().Any(v => AutomationProperties.GetAutomationId(v) == "dashboard-open-files-" + project.Id), "Dashboard workspace Files action is missing.");
                     var add = drawn.OfType<Button>().Single(v => AutomationProperties.GetAutomationId(v) == "dashboard-add-session-" + project.Id);
-                    Require(add.Flyout is MenuFlyout menu && menu.Items.Count == AddPaneMenu.Entries().Count, "Dashboard Add Pane must offer the full shared menu.");
+                    Require(add.Flyout is MenuFlyout menu && menu.Items.Count == AddPaneMenu.Entries().Count + 1 && menu.Items[^1] is MenuFlyoutItem { Text: var connect } && connect == Locale.Get("remote.menu.connect"), "Dashboard Add Pane must offer the full shared menu, then Connect to Another Computer….");
                 }
                 Require(dashboardGitLabels[workspace.Id] is { Capsule.Visibility: Visibility.Visible, Dirty.Visibility: Visibility.Visible, Ahead.Text: "↑2", Behind.Text: "↓1" } git && git.Label.Text.Contains("feature/parity", StringComparison.Ordinal), "Dashboard must display its workspace Git status.");
                 await SettleDesktopCapture(root);

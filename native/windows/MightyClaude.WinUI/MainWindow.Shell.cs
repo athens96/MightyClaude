@@ -31,6 +31,12 @@ public sealed partial class MainWindow
     private Border? usageDivider;
     /// <summary>The status bar's trailing parts, in the Mac's order (M/WorkspaceView.swift:380-391).</summary>
     private readonly StackPanel statusTrailing = new() { Orientation = Orientation.Horizontal, Spacing = StatusBarSpacing, VerticalAlignment = VerticalAlignment.Center };
+    /// <summary>
+    /// A remote workspace's mark in the machine symbol's place: a 5pt dot in the done mark while its computer is connected and the idle
+    /// mark otherwise (M/WorkspaceView.swift statusBar); the symbol's own parts hide meanwhile.
+    /// </summary>
+    private readonly Microsoft.UI.Xaml.Shapes.Ellipse statusRemoteDot = new() { Width = 5, Height = 5, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
+    private FrameworkElement[] statusMachineParts = [];
     /// <summary>Runtime checks in flight; while one runs the status words say so instead of naming the machine.</summary>
     private int runtimeChecks;
     /// <summary>The status bar's HStack spacing, its dividers' height and their side padding (M/WorkspaceView.swift:376, 389).</summary>
@@ -56,6 +62,8 @@ public sealed partial class MainWindow
     private readonly TextBlock workspaceHeaderName = new() { TextSize = DesignMetrics.Type.Header, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, MaxLines = 1, TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly TextBlock workspaceHeaderPath = new() { TextFont = TextArea.Code, TextSize = DesignMetrics.Type.Mono, IsTextSelectionEnabled = true, TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
     private readonly Border workspaceHeaderGit = new() { VerticalAlignment = VerticalAlignment.Center };
+    /// <summary>A remote workspace's host capsule beside the name, <c>Spacing.Md</c> from it (M/WorkspaceView.swift:510-512); empty for a local one.</summary>
+    private readonly Border workspaceHeaderRemote = new() { Margin = new Thickness(DesignMetrics.Spacing.Md, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
     /// <summary>The header's counts, the long form: each state's glyph, count and name, as in "1 running  1 done" (M/WorkspaceView.swift:305-307).</summary>
     private StatusCountsView? workspaceHeaderCounts;
     private readonly Button workspaceHeaderFiles = new() { Width = 26, Height = 24, MinWidth = 0, MinHeight = 0, Padding = new Thickness(0), BorderThickness = new Thickness(0), Background = new SolidColorBrush(Colors.Transparent), VerticalAlignment = VerticalAlignment.Center, Content = new FontIcon { Glyph = "\uE8B7", TextSize = 13 } };
@@ -102,7 +110,12 @@ public sealed partial class MainWindow
         workspaceHeaderPath.Foreground = workspaceHeaderFiles.Foreground = brushes.Brush(DesignToken.Ink2);
         workspaceHeader.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
         workspaceHeader.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); workspaceHeader.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        var text = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs }; text.Children.Add(workspaceHeaderName);
+        var text = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
+        // The name and, for a remote workspace, its host's capsule after it; the name gives way first (M/WorkspaceView.swift:509-513).
+        var nameRow = new Grid { HorizontalAlignment = HorizontalAlignment.Left };
+        nameRow.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); nameRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        nameRow.Children.Add(workspaceHeaderName); Grid.SetColumn(workspaceHeaderRemote, 1); nameRow.Children.Add(workspaceHeaderRemote);
+        text.Children.Add(nameRow);
         var pathRow = workspaceHeaderPathRow;
         pathRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); pathRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         pathRow.Children.Add(workspaceHeaderPath); Grid.SetColumn(workspaceHeaderGit, 1); pathRow.Children.Add(workspaceHeaderGit);
@@ -202,6 +215,8 @@ public sealed partial class MainWindow
         var machine = new Grid { Width = 12, Height = 10, VerticalAlignment = VerticalAlignment.Center };
         machine.Children.Add(new Border { Height = 8.2, VerticalAlignment = VerticalAlignment.Top, CornerRadius = new CornerRadius(1.3), BorderBrush = ink, BorderThickness = new Thickness(0.9, 0.9, 0.9, 2.1) });
         machine.Children.Add(new Microsoft.UI.Xaml.Shapes.Polygon { Points = [new(4.6, 8.2), new(7.4, 8.2), new(8, 10), new(4, 10)], Fill = ink });
+        statusMachineParts = [.. machine.Children.OfType<FrameworkElement>()];
+        machine.Children.Add(statusRemoteDot); AutomationProperties.SetAutomationId(statusRemoteDot, "status-remote-dot");
         AutomationProperties.SetAccessibilityView(machine, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
         AutomationProperties.SetAutomationId(machine, "status-bar-machine"); AutomationProperties.SetAutomationId(status, "status-bar-text");
         var leading = new Grid { ColumnSpacing = StatusBarSpacing };
@@ -261,6 +276,18 @@ public sealed partial class MainWindow
         if (updateBadge is null) return;
         var state = service.Snapshot;
         status.Text = Locale.Get(runtimeChecks > 0 ? "window.status.checkingRuntimeAndModels" : runtime is null ? "window.status.checkingRuntime" : "window.status.thisMachine");
+        // A remote workspace's bar says where its panes run, "host · OS", and whether that computer is connected (M/WorkspaceView.swift
+        // statusBar); the words are one line and give way at the end, so a long host name never pushes the counts out.
+        var active = state.Workspaces.FirstOrDefault(w => w.Id == state.ActiveWorkspaceId);
+        if (active?.Remote is { } remote)
+        {
+            var connection = RemoteConnection(active);
+            status.Text = RemoteWorkspaceFeatures.StatusLine(remote, connection);
+            statusRemoteDot.Fill = brushes.Brush(connection?.Status == RemoteConnectionStatus.Connected ? DesignToken.Done : DesignToken.Ink3);
+        }
+        foreach (var part in statusMachineParts) part.Visibility = active?.Remote is null ? Visibility.Visible : Visibility.Collapsed;
+        statusRemoteDot.Visibility = active?.Remote is null ? Visibility.Collapsed : Visibility.Visible;
+        ToolTipService.SetToolTip(status, active?.Remote is null ? null : status.Text);
         // An install that ended while the app was behind another window says so here, and opens the screen (M/WorkspaceView.swift:620-625).
         if (setupBadge is not null) setupBadge.Visibility = setupResultWaiting ? Visibility.Visible : Visibility.Collapsed;
         string Count(int value) => value.ToString(CultureInfo.InvariantCulture);
@@ -296,9 +323,13 @@ public sealed partial class MainWindow
         workspaceHeaderFullPath = workspace.Path; ToolTipService.SetToolTip(workspaceHeaderPath, workspace.Path);
         workspaceHeaderCopyPath.Text = Locale.Get("pane.copyButton"); workspaceHeaderRename.Text = Locale.Get("menu.renameWorkspace");
         workspaceHeaderGit.Child = WorkspaceGitBadge(workspace);
+        workspaceHeaderRemote.Child = workspace.Remote is null ? null : RemoteHostBadge(workspace);
+        workspaceHeaderRemote.Visibility = workspace.Remote is null ? Visibility.Collapsed : Visibility.Visible;
         RefreshWorkspaceHeaderCounts(state, state.Theme != "light");
         var files = Locale.Get("menu.showFiles");
-        AutomationProperties.SetName(workspaceHeaderFiles, files); ToolTipService.SetToolTip(workspaceHeaderFiles, files + " (" + FilePaneKind.Shortcut + ")");
+        // The files pane reads this PC's disk; a remote workspace's files are on its host (M/WorkspaceView.swift:520-523).
+        workspaceHeaderFiles.IsEnabled = RemoteWorkspaceFeatures.AllowsLocalOnly(workspace);
+        AutomationProperties.SetName(workspaceHeaderFiles, files); ToolTipService.SetToolTip(workspaceHeaderFiles, workspace.Remote is null ? files + " (" + FilePaneKind.Shortcut + ")" : RemoteWindowsStrings.PaneUnavailable);
         AutomationProperties.SetAutomationId(workspaceHeaderFiles, "workspace-open-files-" + workspace.Id);
         FitWorkspaceHeaderPath();
     }

@@ -156,12 +156,13 @@ public sealed partial class MainWindow
         /// The empty agent pane (M/SessionPaneView.swift:502-516): the agent's 24pt mark, "start working
         /// with" its name in 16pt medium <c>ink</c> (with the beta capsule for a beta agent) and the 12pt
         /// <c>ink2</c> explanation, padded by <see cref="EmptyOutputPadding"/> inside the output area's own <see cref="PaneInset"/>,
-        /// over the conversation in the Default view while it is empty.
+        /// over the conversation in the Default view while it is empty. A remote command pane, which has no terminal here, has one too
+        /// (the terminal symbol and the command pane's words), and a remote pane says under it where it runs.
         /// Not hit-testable, so it never takes a click from the transcript under it.
         /// </summary>
         private void InitializeEmptyOutput(Grid grid)
         {
-            if (Session.Kind != "claude") return;
+            if (Session.Kind != "claude" && !(Session.Kind == "shell" && owner.service.RemoteReference(id) is not null)) return;
             // The pane grid already insets its rows by PaneInset and parts them from the header by its row spacing.
             emptyOutput = new StackPanel { Spacing = DesignMetrics.Spacing.Md, Margin = new Thickness(EmptyOutputPadding, EmptyOutputPadding - grid.RowSpacing, EmptyOutputPadding, 0), VerticalAlignment = VerticalAlignment.Top, IsHitTestVisible = false, Visibility = Visibility.Collapsed };
             AutomationProperties.SetAutomationId(emptyOutput, "pane-empty-" + id);
@@ -179,12 +180,21 @@ public sealed partial class MainWindow
             if (emptyOutput is null) return;
             var shown = output.View.Visibility == Visibility.Visible && pane.Logs.Count == 0;
             emptyOutput.Visibility = shown ? Visibility.Visible : Visibility.Collapsed;
-            // Drawn again for another agent or another language (the language switches live).
-            var drawnFor = pane.Provider + "|" + Locale.LanguagePreference;
+            // A remote pane's line under it (M/SessionPaneView.swift:594-598): where it runs, with the host's OS once it answered.
+            var remote = owner.service.RemoteReference(id);
+            var note = remote is null ? null : RemoteWorkspaceFeatures.PaneNote(pane, remote, owner.service.Remote?.Connection(remote.ConnectionId));
+            // Drawn again for another agent, another language (the language switches live) or another note.
+            var drawnFor = pane.Provider + "|" + Locale.LanguagePreference + "|" + note;
             if (!shown || emptyOutputProvider == drawnFor) return;
             emptyOutputProvider = drawnFor;
             emptyOutput.Children.Clear();
-            if (ProviderMark.MarkedProvider(pane.Provider) is { } marked)
+            var shell = pane.Kind == "shell";
+            if (shell)
+            {
+                // The Mac's terminal symbol, 24pt light in the accent at 0.75.
+                emptyOutput.Children.Add(new FontIcon { Glyph = "\uE756", TextSize = 24, Foreground = owner.brushes.Brush(DesignToken.Accent, EmptyShellSymbolOpacity), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 0, 0, DesignMetrics.Spacing.Xs) });
+            }
+            else if (ProviderMark.MarkedProvider(pane.Provider) is { } marked)
             {
                 var mark = ProviderMarkView.Create(marked, 24);
                 mark.HorizontalAlignment = HorizontalAlignment.Left; mark.Margin = new Thickness(0, 0, 0, DesignMetrics.Spacing.Xs);
@@ -194,18 +204,30 @@ public sealed partial class MainWindow
             // "Claude와 작업을 시작하세요": the agent's short name, as the Mac says it (M/SessionPaneView.swift:509 ProviderOptions.label).
             var title = new TextBlock
             {
-                Text = Locale.Get("pane.empty.agentTitle", new Dictionary<string, string> { ["provider"] = ProviderMark.Label(pane.Provider) }),
+                Text = shell ? Locale.Get("pane.empty.shellTitle") : Locale.Get("pane.empty.agentTitle", new Dictionary<string, string> { ["provider"] = ProviderMark.Label(pane.Provider) }),
                 TextSize = 16, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = owner.brushes.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center,
             };
             heading.Children.Add(title);
-            var badge = ProviderCatalog.ShowsBetaBadge(pane) ? BetaBadgeView.Create(owner.brushes) : null;
+            var badge = !shell && ProviderCatalog.ShowsBetaBadge(pane) ? BetaBadgeView.Create(owner.brushes) : null;
             if (badge is not null) heading.Children.Add(badge);
             // A row of a stack never wraps its words; the title takes what the pane leaves beside the badge, as the Mac's HStack does.
             var state = emptyOutput;
             fitEmptyTitle = () => title.MaxWidth = Math.Max(0, state.ActualWidth - (badge is null ? 0 : badge.ActualWidth + heading.Spacing));
             heading.Loaded += (_, _) => fitEmptyTitle?.Invoke();
             emptyOutput.Children.Add(heading);
-            emptyOutput.Children.Add(new TextBlock { Text = Locale.Get("pane.empty.agentBody"), TextSize = DesignMetrics.Type.Block, TextLineHeight = 20, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap });
+            emptyOutput.Children.Add(new TextBlock { Text = Locale.Get(shell ? "pane.empty.shellBody" : "pane.empty.agentBody"), TextSize = DesignMetrics.Type.Block, TextLineHeight = 20, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap });
+            if (note is null) return;
+            // The network symbol and the note in 11pt ink2, wrapping under itself.
+            var line = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm };
+            line.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); line.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
+            line.Children.Add(new FontIcon { Glyph = RemoteNetworkGlyph, TextSize = DesignMetrics.Type.Pill, Foreground = owner.brushes.Brush(DesignToken.Ink2), VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, DesignMetrics.Spacing.Xxs, 0, 0) });
+            var words = new TextBlock { Text = note, TextSize = DesignMetrics.Type.Pill, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap };
+            Grid.SetColumn(words, 1); line.Children.Add(words);
+            AutomationProperties.SetAutomationId(line, "pane-remote-note-" + id); AutomationProperties.SetName(line, note);
+            emptyOutput.Children.Add(line);
         }
+
+        /// <summary>The empty command pane's terminal symbol: the accent at 0.75 (M/SessionPaneView.swift:584).</summary>
+        private const double EmptyShellSymbolOpacity = 0.75;
     }
 }

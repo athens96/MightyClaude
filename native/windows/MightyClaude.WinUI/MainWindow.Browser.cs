@@ -49,6 +49,8 @@ public sealed partial class MainWindow
     /// </summary>
     internal async Task AddBrowserPane(string? groupId = null)
     {
+        // The browser reads this PC's network, not the host's: never in a remote workspace, and never stamped onto another pane.
+        if (service.IsRemoteWorkspace(service.Snapshot.ActiveWorkspaceId)) { error.Text = RemoteWindowsStrings.PaneUnavailable; return; }
         await AddPane("browser", groupId: groupId);
         if (service.Snapshot.ActiveSessionId is not { } added) return;
         if (service.Snapshot.Sessions.FirstOrDefault(p => p.Id == added)?.Kind != "browser") return;

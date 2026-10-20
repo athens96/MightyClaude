@@ -35,7 +35,9 @@ public sealed partial class MainWindow
         var directory = StateDirectory;
         IRemoteKeyVault keys = loopback ? new MemoryRemoteKeyVault() : new DpapiRemoteKeyVault(directory);
         var client = service.AttachRemote(directory, keys, new RemoteClientOptions { AllowLoopbackForTests = loopback });
-        client.Changed += () => DispatcherQueue.TryEnqueue(() => { if (!closing) { RenderSidebar(); RefreshRemoteViews(); } });
+        // A connection that comes up or goes down redraws everything that names it: the sidebar, the header's badge, the status bar and
+        // the remote panes (their CLIs and notes are the host's last answer).
+        client.Changed += () => DispatcherQueue.TryEnqueue(() => { if (!closing) { RenderSidebar(); RefreshWorkspaceHeader(); RefreshStatusBar(); RefreshRemotePanes(); RefreshRemoteViews(); } });
         string machine;
         try { machine = Environment.MachineName; } catch (InvalidOperationException) { machine = ""; }
         var hostName = string.IsNullOrWhiteSpace(machine) ? RemoteWindowsStrings.HostOS("win32") : machine;
@@ -69,6 +71,57 @@ public sealed partial class MainWindow
     }
 
     private void RefreshRemoteViews() { foreach (var refresh in remoteViews.ToList()) refresh(); }
+
+    /// <summary>The connection a remote workspace runs through, as the client knows it now; null for a local workspace or a removed connection.</summary>
+    internal RemoteConnectionInfo? RemoteConnection(Workspace? workspace) => workspace?.Remote is { } remote ? service.Remote?.Connection(remote.ConnectionId) : null;
+
+    /// <summary>"host · OS" for a remote workspace (the OS from its connection's last answer), null for a local one.</summary>
+    internal string? RemoteHostLabel(Workspace? workspace) => workspace?.Remote is { } remote ? RemoteWindowsStrings.HostWithOS(remote.HostName, RemoteConnection(workspace)?.Runtime?.Platform) : null;
+
+    internal bool RemoteConnected(Workspace workspace) => RemoteConnection(workspace)?.Status == RemoteConnectionStatus.Connected;
+
+    /// <summary>
+    /// Opens Settings on its Remote Connection page (M openRemoteSettings): the sidebar header's button and the add-pane menus' Connect to Another Computer…. A
+    /// Settings window already open comes forward on the page it shows.
+    /// </summary>
+    internal Task OpenRemoteSettings() => Act(async () =>
+    {
+        if (dialogOpen) return;
+        await service.UpdateAsync(s => s with { SettingsPane = "remote" });
+        await ShowCategorizedSettingsAsync();
+    });
+
+    /// <summary>The remote panes drawn again, after their connection changed.</summary>
+    private void RefreshRemotePanes()
+    {
+        foreach (var (paneId, view) in views.ToList()) if (service.IsRemoteSession(paneId)) view.Refresh();
+    }
+
+    /// <summary>The Mac's capsule fill: its ink at 0.09 (M/WorkspaceView.swift RemoteHostBadge).</summary>
+    private const double RemoteHostBadgeTint = 0.09;
+
+    /// <summary>
+    /// A remote workspace's host beside its name in the workspace header (M/WorkspaceView.swift RemoteHostBadge): the network symbol and
+    /// the host's name in 10pt medium, accent while connected and ink2 otherwise, on a capsule of that ink at 0.09; its tooltip says
+    /// whether it is connected.
+    /// </summary>
+    private Border RemoteHostBadge(Workspace workspace)
+    {
+        var connected = RemoteConnected(workspace); var host = workspace.Remote?.HostName ?? "";
+        var ink = connected ? DesignToken.Accent : DesignToken.Ink2;
+        var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Xs, VerticalAlignment = VerticalAlignment.Center };
+        line.Children.Add(new FontIcon { Glyph = RemoteNetworkGlyph, TextSize = DesignMetrics.Type.Small, Foreground = brushes.Brush(ink), VerticalAlignment = VerticalAlignment.Center });
+        line.Children.Add(new TextBlock { Text = host, TextSize = DesignMetrics.Type.Small, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = brushes.Brush(ink), MaxLines = 1, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center });
+        var badge = new Border
+        {
+            Child = line, Background = brushes.Brush(ink, RemoteHostBadgeTint), CornerRadius = new CornerRadius(DesignMetrics.Radius.Composer),
+            Padding = new Thickness(DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xxs, DesignMetrics.Spacing.Sm, DesignMetrics.Spacing.Xxs), VerticalAlignment = VerticalAlignment.Center,
+        };
+        var status = Locale.Get(connected ? "remote.status.connected" : "remote.status.notConnected", new Dictionary<string, string> { ["host"] = host });
+        AutomationProperties.SetAutomationId(badge, "workspace-remote-host"); AutomationProperties.SetName(badge, status);
+        ToolTipService.SetToolTip(badge, status);
+        return badge;
+    }
 
     /// <summary>One remote action at a time (M remoteAction): its error shows on the page, and the page reads both sides again after it.</summary>
     private async Task RemoteAction(Func<Task> operation)
