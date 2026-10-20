@@ -669,6 +669,7 @@ internal static class Verification
         await Test("remote desktop: the sharing host runs only in shared folders with no pane tools", RemoteDesktopVerification.TheSharingHostRunsOnlyInSharedFoldersWithNoPaneTools);
         await Test("remote desktop: remote panes keep to the host's features", RemoteDesktopVerification.RemotePanesKeepToTheHostsFeatures);
         await Test("remote desktop: a closed parent's child is never placed in a remote workspace", RemoteDesktopVerification.AClosedParentsChildIsNeverPlacedInARemoteWorkspace);
+        await Test("remote desktop: the firewall rows say when the rule lacks a port in use", RemoteDesktopVerification.TheFirewallRowsSayWhenTheRuleLacksAPortInUse);
         await Test("remote desktop: no client code runs under the service's lock, and a stop while connecting ends the run once", RemoteDesktopVerification.NoClientCodeRunsUnderTheServicesLock);
         await Test("remote desktop: a stop during the host's accept never ends the next send", RemoteDesktopVerification.AStopDuringTheHostsAcceptNeverEndsTheNextSend);
         await Test("remote desktop: a send to a workspace the host no longer shares is refused", RemoteDesktopVerification.ASendToAWorkspaceTheHostNoLongerSharesIsRefused);

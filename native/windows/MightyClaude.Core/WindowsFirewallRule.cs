@@ -16,6 +16,9 @@ public sealed record FirewallRuleSpec(string Ports, string Program);
 /// exit code, <c>timeout</c>, <c>queryFailed</c> (the rule could not be read before an add) or the launch error.</param>
 /// <param name="Applied">After a done add or update, the ports and program now in the rule; null otherwise.</param>
 public sealed record FirewallChangeResult(FirewallChange Kind, string? Detail = null, FirewallRuleSpec? Applied = null);
+/// <summary>The rule as <c>show rule</c> read it: whether one by the name exists and, when it does and they read as a plain list, the
+/// ports it opens (<see cref="WindowsFirewallRule.ShownPorts"/>); null ports when they could not be read.</summary>
+public sealed record FirewallRuleReading(FirewallRuleState State, IReadOnlyList<int>? Ports = null);
 
 /// <summary>
 /// The one Windows Firewall rule the app keeps (spec 2026-10-17-windows-catch-up-design.md, "Windows Firewall"): inbound TCP on the
@@ -106,6 +109,31 @@ public static partial class WindowsFirewallRule
         UseShellExecute = true, Verb = ElevationVerb, WindowStyle = ProcessWindowStyle.Hidden, WorkingDirectory = systemDirectory,
     };
 
+    /// <summary>
+    /// The ports a shown rule opens, from <c>show rule</c>'s output: every "label: value" line whose value is a plain list of ports
+    /// (digits and commas, each 1-65535). For this rule that is only its local port line, in any Windows display language, since the
+    /// labels are translated but the values are not; the union when more than one rule has the name. Null when no line reads so (a
+    /// port range, Any, or output that is not netsh's): the ports are then unknown, never taken as the ones in use.
+    /// </summary>
+    public static IReadOnlyList<int>? ShownPorts(string? output)
+    {
+        if (string.IsNullOrEmpty(output)) return null;
+        var ports = new SortedSet<int>();
+        foreach (var line in output.Split('\n'))
+        {
+            var colon = line.IndexOf(':');
+            if (colon < 0 || line[(colon + 1)..].Trim() is not { Length: > 0 } value || !PortListPattern().IsMatch(value)) continue;
+            foreach (var part in value.Split(','))
+            {
+                if (!int.TryParse(part, NumberStyles.None, CultureInfo.InvariantCulture, out var port) || port is < 1 or > 65535) return null;
+                ports.Add(port);
+            }
+        }
+        return ports.Count == 0 ? null : [.. ports];
+    }
+
+    [GeneratedRegex(@"\A[0-9]{1,5}(?:,[0-9]{1,5})*\z", RegexOptions.CultureInvariant)]
+    private static partial Regex PortListPattern();
     [GeneratedRegex(@"\A[A-Za-z]:\\(?:[^\\/:*?""<>|%\x00-\x1f\x7f]+\\)*[^\\/:*?""<>|%\x00-\x1f\x7f]+\.exe\z", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ProgramPattern();
     [GeneratedRegex(@"\A[A-Za-z]:\\[^""%\x00-\x1f\x7f]*\z", RegexOptions.CultureInvariant)]
@@ -116,24 +144,32 @@ public static partial class WindowsFirewallRule
 /// Runs the rule's commands. The app builds it with <see cref="ForThisApp"/>; the checks and the GUI smoke give it a recorder that
 /// starts nothing, so no development run ever touches this PC's firewall. A cancelled caller token is rethrown, never turned into a result.
 /// </summary>
-public sealed class WindowsFirewallRuleRunner(Func<ProcessStartInfo, CancellationToken, Task<int>> run, string? systemDirectory, string? program)
+/// <param name="read">Runs the unelevated query and gives its output too, so the rule's ports can be read; without it (checks and the
+/// smoke's recorders) the query's exit code alone is read and the ports are unknown.</param>
+public sealed class WindowsFirewallRuleRunner(Func<ProcessStartInfo, CancellationToken, Task<int>> run, string? systemDirectory, string? program,
+    Func<ProcessStartInfo, CancellationToken, Task<(int Code, string Output)>>? read = null)
 {
     /// <summary>How long a started netsh may take before the runner stops waiting (the unelevated query is killed).</summary>
     public static readonly TimeSpan Limit = TimeSpan.FromSeconds(30);
 
-    public static WindowsFirewallRuleRunner ForThisApp() => new(RunAsync, WindowsFirewallRule.SystemDirectory, Environment.ProcessPath);
+    public static WindowsFirewallRuleRunner ForThisApp() => new(RunAsync, WindowsFirewallRule.SystemDirectory, Environment.ProcessPath, RunReadingAsync);
 
     /// <summary>Whether a rule by <see cref="WindowsFirewallRule.RuleName"/> exists (not whether its ports are current).</summary>
-    public async Task<FirewallRuleState> QueryAsync(CancellationToken token)
+    public async Task<FirewallRuleState> QueryAsync(CancellationToken token) => (await ReadRuleAsync(token)).State;
+
+    /// <summary>Whether a rule by the name exists and, when it does, the ports it opens as far as they can be read.</summary>
+    public async Task<FirewallRuleReading> ReadRuleAsync(CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
-        if (systemDirectory is null) return FirewallRuleState.Unknown;
+        if (systemDirectory is null) return new(FirewallRuleState.Unknown);
         try
         {
-            return await run(WindowsFirewallRule.QueryStartInfo(systemDirectory), token) switch { 0 => FirewallRuleState.Present, 1 => FirewallRuleState.Absent, _ => FirewallRuleState.Unknown };
+            var info = WindowsFirewallRule.QueryStartInfo(systemDirectory);
+            var (code, output) = read is null ? (await run(info, token), "") : await read(info, token);
+            return code switch { 0 => new(FirewallRuleState.Present, WindowsFirewallRule.ShownPorts(output)), 1 => new(FirewallRuleState.Absent), _ => new(FirewallRuleState.Unknown) };
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
-        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException or IOException or OperationCanceledException or TimeoutException) { return FirewallRuleState.Unknown; }
+        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException or IOException or OperationCanceledException or TimeoutException) { return new(FirewallRuleState.Unknown); }
     }
 
     /// <summary>The rule for exactly <paramref name="ports"/>, as one elevated netsh: <c>set rule</c> when a rule by the name is there
@@ -183,11 +219,15 @@ public sealed class WindowsFirewallRuleRunner(Func<ProcessStartInfo, Cancellatio
     /// <summary>Starts the process off the caller's thread (an elevated start waits on the UAC prompt) and waits up to
     /// <see cref="Limit"/> for its exit code. Past that it throws <see cref="TimeoutException"/>; the caller's own cancel throws as it
     /// is. Either way an unelevated query is killed; an elevated netsh cannot be killed from here and is left to finish.</summary>
-    private static async Task<int> RunAsync(ProcessStartInfo info, CancellationToken token)
+    private static async Task<int> RunAsync(ProcessStartInfo info, CancellationToken token) => (await RunReadingAsync(info, token)).Code;
+
+    /// <summary><see cref="RunAsync"/>, with what a redirected (unelevated) netsh printed, at most 64 KiB of it; empty when it printed nothing readable.</summary>
+    private static async Task<(int Code, string Output)> RunReadingAsync(ProcessStartInfo info, CancellationToken token)
     {
         using var process = await Task.Run(() => Process.Start(info), token) ?? throw new InvalidOperationException("netsh did not start");
         using var limit = CancellationTokenSource.CreateLinkedTokenSource(token); limit.CancelAfter(Limit);
-        if (info.RedirectStandardOutput) { _ = process.StandardOutput.ReadToEndAsync(limit.Token); _ = process.StandardError.ReadToEndAsync(limit.Token); }
+        Task<string>? printed = null;
+        if (info.RedirectStandardOutput) { printed = process.StandardOutput.ReadToEndAsync(limit.Token); _ = process.StandardError.ReadToEndAsync(limit.Token); }
         try { await process.WaitForExitAsync(limit.Token); }
         catch (OperationCanceledException)
         {
@@ -195,6 +235,12 @@ public sealed class WindowsFirewallRuleRunner(Func<ProcessStartInfo, Cancellatio
             if (token.IsCancellationRequested) throw;
             throw new TimeoutException("netsh did not finish in " + Limit.TotalSeconds.ToString(CultureInfo.InvariantCulture) + " s");
         }
-        return process.ExitCode;
+        var output = "";
+        if (printed is not null)
+        {
+            try { output = await printed.WaitAsync(limit.Token); }
+            catch (Exception ex) when (ex is OperationCanceledException or IOException or InvalidOperationException) { }
+        }
+        return (process.ExitCode, output.Length > 65_536 ? output[..65_536] : output);
     }
 }

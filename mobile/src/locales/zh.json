@@ -2911,6 +2911,8 @@
   "remote.windows.firewall.add": "添加防火墙规则",
   "remote.windows.firewall.remove": "删除防火墙规则",
   "remote.windows.firewall.update": "更新防火墙规则",
+  "remote.windows.firewall.needsUpdate": "需要更新：规则没有打开当前使用的全部端口",
+  "remote.windows.firewall.removeClosesBoth": "手机直连和工作区共享共用这一条规则。删除它会同时关闭两个端口。",
   "remote.windows.pane.commandNote": "命令在 {host}（{os}）的共享文件夹中运行。每条命令都会在那台电脑上新开一个 shell（Windows 上是 PowerShell，Mac 上是登录 shell），不支持交互式程序和密码输入。",
   "remote.hostOS.darwin": "macOS",
   "remote.hostOS.win32": "Windows",

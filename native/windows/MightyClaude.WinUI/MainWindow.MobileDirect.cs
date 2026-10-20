@@ -6,6 +6,8 @@ public sealed partial class MainWindow
 {
     /// <summary>The firewall rule as last read; Unknown until read, and for a whole smoke run that set no runner.</summary>
     private FirewallRuleState firewallState = FirewallRuleState.Unknown;
+    /// <summary>The ports the rule opens as last read; null when they could not be read (or there is no rule).</summary>
+    private IReadOnlyList<int>? firewallRulePorts;
     /// <summary>What the last add or remove that did not happen said, in Core's words only; null after one that did.</summary>
     private string? firewallMessage;
     /// <summary>Runs netsh; the GUI smoke puts a recorder here that starts nothing.</summary>
@@ -25,14 +27,17 @@ public sealed partial class MainWindow
     internal IReadOnlyList<int> FirewallPorts() => RemoteWorkspaceFeatures.FirewallPorts(
         service.Snapshot.MobileRemote is { Enabled: true, DirectEnabled: true } remote ? remote.DirectPort : null, remoteHost?.Current() is { Enabled: true } sharing ? sharing.Port : null);
 
-    /// <summary>Reads whether the rule exists, without elevation. Anything unexpected reads as Unknown, never as an error's own text.</summary>
+    /// <summary>Reads whether the rule exists and the ports it opens, without elevation. Anything unexpected reads as Unknown, never as an error's own text.</summary>
     private async Task RefreshFirewallState()
     {
         if (options.SmokeTest && firewallRunner is null) return;
         var runner = firewallRunner ??= WindowsFirewallRuleRunner.ForThisApp();
-        try { firewallState = await runner.QueryAsync(CancellationToken.None); }
-        catch (Exception ex) when (!options.SmokeTest && ex is not OutOfMemoryException) { firewallState = FirewallRuleState.Unknown; }
+        try { (firewallState, firewallRulePorts) = await runner.ReadRuleAsync(CancellationToken.None); }
+        catch (Exception ex) when (!options.SmokeTest && ex is not OutOfMemoryException) { (firewallState, firewallRulePorts) = (FirewallRuleState.Unknown, null); }
     }
+
+    /// <summary>What both firewall rows add after the rule's state when the rule there does not open every port in use now (or its ports could not be read).</summary>
+    private string FirewallNeedsUpdateWords() => RemoteWorkspaceFeatures.FirewallNeedsUpdate(firewallState, firewallRulePorts, [.. FirewallPorts()]) ? " · " + RemoteWindowsStrings.FirewallNeedsUpdate : "";
 
     /// <summary>
     /// The firewall row's button (and a switch turned off by the user): one netsh command, elevated by Windows' own UAC prompt, then

@@ -263,6 +263,7 @@ public sealed partial class MainWindow
         firewallWords.Children.Add(firewallText);
         firewallWords.Children.Add(SettingsText(MobileDirectStrings.FirewallDescription, 11, DesignToken.Ink2));
         firewallWords.Children.Add(SettingsText(MobileDirectStrings.PortHint, 11, DesignToken.Ink2));
+        firewallWords.Children.Add(SettingsText(RemoteWindowsStrings.FirewallRemoveClosesBoth, 11, DesignToken.Ink2));
         var firewallButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
         firewallButtons.Children.Add(firewallUpdate); firewallButtons.Children.Add(firewallButton);
         firewallRow = SettingsRow(rows, SettingsLabeled(firewallWords, firewallButtons, top: true));
@@ -327,7 +328,7 @@ public sealed partial class MainWindow
             firewallRow.Visibility = saved.DirectEnabled || firewallState == FirewallRuleState.Present ? Visibility.Visible : Visibility.Collapsed;
             directDot.Fill = brushes.Brush(status.Listening ? DesignToken.Done : DesignToken.Ink3);
             directStatus.Text = words;
-            firewallText.Text = MobileDirectStrings.FirewallState(firewallState) + (firewallMessage is { } message ? " · " + message : "");
+            firewallText.Text = MobileDirectStrings.FirewallState(firewallState) + FirewallNeedsUpdateWords() + (firewallMessage is { } message ? " · " + message : "");
             var label = firewallState == FirewallRuleState.Unknown ? MobileDirectStrings.FirewallRecheckButton : MobileDirectStrings.FirewallButton(firewallState);
             firewallButton.Content = label; AutomationProperties.SetName(firewallButton, label);
             // With no port to open (the remote off) and no rule to remove there is nothing to press, so the button is not shown at all.
