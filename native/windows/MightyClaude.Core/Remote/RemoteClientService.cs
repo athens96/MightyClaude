@@ -48,6 +48,8 @@ public sealed partial class RemoteClientService : IAsyncDisposable
     private readonly List<string> order = [];
     private readonly HashSet<string> connecting = new(StringComparer.Ordinal);
     private bool loaded, closing;
+    /// <summary>The saved file could not be read yet (held open or refused): read again from this tick on, and written by nobody until read.</summary>
+    private long loadRetryAt; private bool loadFailed;
 
     public event Action? Changed;
 
@@ -303,29 +305,41 @@ public sealed partial class RemoteClientService : IAsyncDisposable
     /// <summary>
     /// The saved connections, read once on first use: RemoteConnectionFile.Read keeps the file's first 16 entries whose id is good and
     /// whose address parses to one no earlier entry has (the Mac's loadSaved); the address is parsed again here so a list built any
-    /// other way still holds one connection per shown address. Keys stay in the vault until a connection is used.
+    /// other way still holds one connection per shown address. Keys stay in the vault until a connection is used. A file that is
+    /// there but cannot be read now (held open by another program) is read again a second later rather than taken as empty, and once
+    /// it is read late the window is told, so the connections it holds come back in this launch.
     /// </summary>
     private void LoadSaved()
     {
+        var late = false;
         lock (gate)
         {
-            if (loaded) return;
-            loaded = true;
-            foreach (var item in RemoteConnectionFile.Read(dataDirectory))
+            if (loaded || Environment.TickCount64 < loadRetryAt) return;
+            if (!RemoteConnectionFile.TryRead(dataDirectory, out var items)) { loadFailed = true; loadRetryAt = Environment.TickCount64 + 1000; return; }
+            loaded = true; late = loadFailed;
+            foreach (var item in items)
             {
                 RemoteAddress address;
                 try { address = RemoteAddress.Parse(item.Address); } catch (ArgumentException) { continue; }
-                if (connections.ContainsKey(item.Id) || connections.Values.Any(c => c.Info.Address == address.Display)) continue;
+                if (connections.ContainsKey(item.Id) || connections.Values.Any(c => c.Info.Address == address.Display) || connections.Count >= RemoteProtocol.MaximumConnections) continue;
                 connections[item.Id] = new Entry(new(item.Id, item.Name, address.Display, Detail: Locale.Get("remote.connect.detail.saved"))) { KeyPending = true };
                 order.Add(item.Id);
             }
         }
+        if (late) Changed?.Invoke();
     }
 
     /// <summary>Writes id, name and address of every listed connection, never a key. The caller holds <see cref="listing"/>.</summary>
     private async Task WriteSavedAsync()
     {
-        List<RemoteSavedConnection> saved; lock (gate) saved = order.Select(id => new RemoteSavedConnection(id, connections[id].Info.Name, connections[id].Info.Address)).ToList();
+        // Never over a file not read yet: what it holds would be lost.
+        LoadSaved();
+        List<RemoteSavedConnection> saved;
+        lock (gate)
+        {
+            if (!loaded) return;
+            saved = order.Select(id => new RemoteSavedConnection(id, connections[id].Info.Name, connections[id].Info.Address)).ToList();
+        }
         // The connection still works for this launch when the file cannot be written; only its listing is not kept.
         try { await RemoteConnectionFile.WriteAsync(dataDirectory, saved); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }

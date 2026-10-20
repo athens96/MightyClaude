@@ -15,6 +15,8 @@ public sealed partial class MainWindow
 {
     private string settingsCategory = "general";
     private Window? settingsWindow;
+    /// <summary>The open settings window's category list; null while it is closed.</summary>
+    private ListView? settingsNavigation;
     private XamlRoot SettingsXamlRoot => (settingsWindow?.Content as FrameworkElement)?.XamlRoot ?? root.XamlRoot;
     private async Task ShowCategorizedSettingsAsync()
     {
@@ -27,7 +29,7 @@ public sealed partial class MainWindow
             settingsCategory = service.Snapshot.SettingsPane;
             // The Mac's sidebar list (M/SettingsViews.swift:206-215): its rows' fill 10 in from the column's edges, 30 high.
             var navigation = new ListView { SelectionMode = ListViewSelectionMode.Single, Padding = new(SettingsRowInset - ListSelectionInsetX, SettingsRowInset, SettingsRowInset - ListSelectionInsetX, SettingsRowInset) };
-            AutomationProperties.SetAutomationId(navigation, "settings-navigation");
+            AutomationProperties.SetAutomationId(navigation, "settings-navigation"); settingsNavigation = navigation;
             PaintSettingsNavigation(navigation);
             // The grouped form (M/SettingsViews.swift:192-193): 20 in from the column's edges, 30 between a box and the next heading.
             var content = new StackPanel { Spacing = SettingsGroupGap, Padding = new(SettingsFormInset) };
@@ -130,7 +132,19 @@ public sealed partial class MainWindow
             window.Activate();
             await closed.Task;
         }
-        finally { settingsWindow = null; dialogOpen = false; }
+        finally { settingsWindow = null; settingsNavigation = null; dialogOpen = false; }
+    }
+
+    /// <summary>
+    /// Brings the open settings window forward on the category <paramref name="id"/>, as a click on its row does (the page is drawn and
+    /// remembered); false when no settings window is open.
+    /// </summary>
+    private bool SelectSettingsCategory(string id)
+    {
+        if (settingsWindow is not { } open || settingsNavigation is not { } navigation) return false;
+        if (navigation.Items.OfType<ListViewItem>().FirstOrDefault(item => item.Tag is SettingsCategory { Id: var category } && category == id) is { } row) navigation.SelectedItem = row;
+        open.Activate();
+        return true;
     }
     /// <summary>The settings sheet's content size in points and its side list's width (M/SettingsViews.swift:201, 214).</summary>
     internal const double SettingsWindowWidth = 800, SettingsWindowHeight = 700, SettingsNavigationWidth = 200;

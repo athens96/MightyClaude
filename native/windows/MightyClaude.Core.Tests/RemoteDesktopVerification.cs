@@ -430,18 +430,22 @@ internal static class RemoteDesktopVerification
 
         var folder = ClaudePluginVerification.WinUISource();
         string Source(string file) => File.ReadAllText(Path.Combine(folder, file));
+        // Code only: a comment that repeats a guard's words must not stand in for the guard.
+        static string Code(string text) => string.Join('\n', text.Split('\n').Select(line => line.TrimStart().StartsWith("//", StringComparison.Ordinal) ? "" : line));
         static void Before(string text, string first, string then, string what)
         {
-            var a = text.IndexOf(first, StringComparison.Ordinal); var b = text.IndexOf(then, StringComparison.Ordinal);
+            var code = Code(text);
+            var a = code.IndexOf(first, StringComparison.Ordinal); var b = code.IndexOf(then, StringComparison.Ordinal);
             Check(a >= 0 && b >= 0 && a < b, what);
         }
+        static void Has(string text, string fragment, string what) => Check(Code(text).Contains(fragment, StringComparison.Ordinal), what);
         var terminal = Source("MainWindow.Terminal.cs");
         Before(SourceMember(terminal, "private void InitializeTerminal("), "if (LocalPath(Workspace) is null) return;", "new WebView2()", "a remote command pane returns before any terminal is made");
         Before(SourceMember(terminal, "private async Task StartTerminalShellAsync("), "LocalFolder(Workspace)", "PseudoTerminal.Start(", "the ConPTY shell starts only in a folder on this PC");
         var navigation = Source("MainWindow.Navigation.cs"); var dashboard = Source("MainWindow.DashboardWorkspaces.cs");
         foreach (var (menu, what) in new[] { (SourceMember(navigation, "private MenuFlyout NewSessionMenu("), "a tab group's"), (SourceMember(dashboard, "private MenuFlyout DashboardAddMenu("), "the sidebar's and the dashboard's") })
             Check(menu.Contains("RemoteWorkspaceFeatures.AddPaneEntries(", StringComparison.Ordinal) && !menu.Contains("AddPaneMenu.Entries()", StringComparison.Ordinal)
-                && menu.Contains("MarkAddPaneMenu(menu, entries, ", StringComparison.Ordinal) && menu.Contains("menu.Items.Add(ConnectRemoteMenuItem(", StringComparison.Ordinal), what + " add-pane menu follows the workspace and ends with Connect to Another Computer…");
+                && menu.Contains("MarkAddPaneMenu(menu, entries, ", StringComparison.Ordinal) && Code(menu).Contains("ConnectRemoteMenuItem(", StringComparison.Ordinal) && Code(menu).IndexOf("ConnectRemoteMenuItem(", StringComparison.Ordinal) > Code(menu).IndexOf("MarkAddPaneMenu(", StringComparison.Ordinal), what + " add-pane menu follows the workspace and ends with Connect to Another Computer…");
         Check(SourceMember(navigation, "private static string? AddPaneTitle(").Contains("remote ? \"remote.menu.newCommand\" : \"workspace.newTerminal\"", StringComparison.Ordinal), "a remote workspace's terminal entry is a remote command");
         Check(SourceMember(navigation, "private MenuFlyoutItem ConnectRemoteMenuItem(").Contains("MenuItem(Locale.Get(\"remote.menu.connect\"), OpenRemoteSettings)", StringComparison.Ordinal), "Connect to Another Computer… opens Settings → Remote Connection");
         Before(SourceMember(navigation, "private MenuFlyout WorkspaceMenu("), "if (remote) return menu;", "menu.showInExplorer", "a remote workspace's menu has no Explorer or files item");
@@ -462,7 +466,32 @@ internal static class RemoteDesktopVerification
         var direct = Directory.EnumerateFiles(folder, "*.cs").Where(file => !Path.GetFileName(file).Contains("Smoke", StringComparison.Ordinal))
             .SelectMany(file => File.ReadAllLines(file).Where(line => line.Contains("owner.Runtime(", StringComparison.Ordinal)).Select(_ => Path.GetFileName(file))).Order(StringComparer.Ordinal).ToList();
         Check(direct.SequenceEqual(["MainWindow.LoginRecovery.cs", "MainWindow.MobileRemote.cs", "MainWindow.MobileRemote.cs", "MainWindow.StatusLine.cs", "MainWindow.cs"]), "a pane reads its CLI through PaneRuntime: " + string.Join(", ", direct));
+        // Nor any other way in a pane's own members: the window's Runtime(…) or its runtime field.
+        var bare = new Regex(@"(?<![.\w])Runtime\(|\bowner\.runtime\b", RegexOptions.CultureInvariant); var paneParts = 0; var stray = new List<string>();
+        foreach (var file in Directory.EnumerateFiles(folder, "*.cs").Where(file => !Path.GetFileName(file).Contains("Smoke", StringComparison.Ordinal)))
+        {
+            var text = Code(File.ReadAllText(file));
+            for (var at = text.IndexOf("partial class PaneView", StringComparison.Ordinal); at >= 0; at = text.IndexOf("partial class PaneView", at + 1, StringComparison.Ordinal))
+            {
+                var end = text.IndexOf("\n    }\n", at, StringComparison.Ordinal); var part = text[at..(end < 0 ? text.Length : end)]; paneParts++;
+                stray.AddRange(bare.Matches(part).Select(m => Path.GetFileName(file) + ": " + m.Value));
+            }
+        }
+        Check(paneParts > 20 && stray.Count == 0, $"a pane's members read no CLI but through PaneRuntime ({paneParts} parts): " + string.Join(", ", stray));
         Check(Source("MainWindow.cs").Contains("internal ProviderRuntime? PaneRuntime(string provider) => owner.service.RemoteReference(id) is { } remote", StringComparison.Ordinal), "a remote pane's CLI is its host's");
+        var window = Source("MainWindow.cs");
+        Has(window, "var remoteBlock = workspace.Remote is null ? null : RunBlockReason(runtime);", "the composer reads a remote pane's block from its host");
+        Has(window, "canSend = mutationBlock is null && remoteBlock is null && ", "Send waits while the host says the pane cannot run");
+        Has(SourceMember(window, "private async Task<bool> AddPane("), "Title = kind == \"shell\" ? Locale.Get(target?.Remote is null ? \"session.title.shell\" : \"remote.pane.commandTitle\")", "a remote workspace's command pane is a remote command");
+        Has(Source("MainWindow.Sidebar.cs"), "AutomationProperties.SetAutomationId(host, \"sidebar-remote-host-\" + workspace.Id);", "the sidebar names a remote workspace's host under it");
+        var empty = Source("MainWindow.EmptyStates.cs");
+        Has(SourceMember(empty, "private void InitializeEmptyOutput("), "if (Session.Kind != \"claude\" && !(Session.Kind == \"shell\" && owner.service.RemoteReference(id) is not null)) return;", "a remote command pane has an empty state");
+        Has(empty, "var note = remote is null ? null : RemoteWorkspaceFeatures.PaneNote(pane, remote, owner.service.Remote?.Connection(remote.ConnectionId));", "a remote pane's empty state says where it runs");
+        Has(empty, "AutomationProperties.SetAutomationId(line, \"pane-remote-note-\" + id);", "the note carries the Mac's id");
+        Has(SourceMember(shell, "private void RefreshStatusBar("), "AutomationProperties.SetAutomationId(status, active?.Remote is null ? StatusBarTextId : StatusRemoteHostId);", "the remote words carry the Mac's status-remote-host id");
+        Has(SourceMember(Source("MainWindow.RemoteWorkspaces.cs"), "internal Task OpenRemoteSettings("), "if (SelectSettingsCategory(\"remote\") || dialogOpen) return;", "an open settings window turns to Remote Connection");
+        Has(SourceMember(Source("MainWindow.Composer.cs"), "private Task<DelegationRelease> StartFromComposer("), "!service.IsRemoteWorkspace(request.WorkspaceId) && AutomaticLoginOf(request.Provider)", "a remote send never waits for this PC's sign-in");
+        Has(SourceMember(Source("MainWindow.Setup.cs"), "private string? SetupItemForMissingCli("), "service.IsRemoteWorkspace(session.WorkspaceId)", "a remote pane is never offered an install here");
         Check(Source("MainWindow.QueuedComposer.cs").Contains("if (RunBlockReason(fresh) is { } blocked)", StringComparison.Ordinal) && !Source("MainWindow.QueuedComposer.cs").Contains("RunBlock.Reason(", StringComparison.Ordinal), "the queue drops what waited by the host's reason");
         Check(SourceMember(Source("MainWindow.UpdateAdmission.cs"), "private string? ManualMutationBlockReason(").Contains("service.IsRemoteWorkspace(pane.WorkspaceId)", StringComparison.Ordinal)
             && Source("MainWindow.AutomaticUpdates.cs").Contains("automaticallyUpdatingProvider == pane.Provider && !service.IsRemoteWorkspace(pane.WorkspaceId);", StringComparison.Ordinal)

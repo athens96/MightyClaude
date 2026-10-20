@@ -538,11 +538,12 @@ public sealed partial class MainWindow : Window
             if (pane.Kind == "claude" && pane.Settings.PermissionMode == "auto" && runtime?.Capabilities.PermissionModes?.Contains("auto") != true) unsupportedSettings = Locale.Get("composer.hint.autoModeUnverified");
             if (pendingAttachments.Count > 0 && !Capabilities.Attachments) unsupportedSettings = Locale.Get("composer.hint.attachmentsUnsupported");
             var mutationBlock = owner.ManualMutationBlockReason(pane);
+            // A remote pane's host says first why it cannot run (its connection gone, its CLI missing or without the mode), and Send waits for it (M/SessionPaneView.swift:29-44).
+            var remoteBlock = workspace.Remote is null ? null : RunBlockReason(runtime);
             // Why a draft cannot run yet: its own row over the toolbar (M/SessionPaneView.swift:631-643). Attachments being
             // read and a background update holding sends each have their own row with a spinner (:585-590, 622-630).
             var reason = mutationBlock ?? (busy || attachmentsLoading ? ""
-                // A remote pane's host says first why it cannot run (its connection gone, its CLI missing or without the mode).
-                : workspace.Remote is not null && RunBlockReason(runtime) is { } remoteBlock ? remoteBlock
+                : remoteBlock is not null ? remoteBlock
                 : pane.Kind == "claude" && runtime?.Available != true ? Locale.Get("composer.hint.draftStillAllowed", new Dictionary<string, string> { ["reason"] = runtime?.Detail ?? Locale.Get("composer.hint.refreshRuntime") })
                 : unsupportedEffort ? Locale.Get("composer.hint.effortUnverified", new Dictionary<string, string> { ["effort"] = pane.Settings.Effort })
                 : unsupportedSettings ?? "");
@@ -560,7 +561,7 @@ public sealed partial class MainWindow : Window
                 ComposerSecondSend.Steer => "composer.placeholder.busy",
                 _ => "composer.placeholder.busyQueue",
             }) : pane.Kind == "shell" ? Locale.Get("composer.placeholder.shell") : Locale.Get("composer.placeholder.idle");
-            canSend = mutationBlock is null && !busy && !attachmentsLoading && (pane.Kind == "shell" || runtime?.Available == true) && !unsupportedEffort && unsupportedSettings is null && (!string.IsNullOrWhiteSpace(input.Text) || pendingAttachments.Count > 0);
+            canSend = mutationBlock is null && remoteBlock is null && !busy && !attachmentsLoading && (pane.Kind == "shell" || runtime?.Available == true) && !unsupportedEffort && unsupportedSettings is null && (!string.IsNullOrWhiteSpace(input.Text) || pendingAttachments.Count > 0);
             send.IsEnabled = busy ? !stopping : canSend; ShowSendSymbol(busy ? "stop" : "send");
             AutomationProperties.SetName(send, busy ? Locale.Get("composer.stop.name") : Locale.Get("composer.send.name")); ToolTipService.SetToolTip(send, busy ? Locale.Get("composer.stop.tooltip") : Locale.Get("composer.send.tooltip"));
             context.Visibility = pane.Kind == "shell" ? Visibility.Collapsed : Visibility.Visible; RefreshContextIndicator();

@@ -37,6 +37,8 @@ public sealed partial class MainWindow
     /// </summary>
     private readonly Microsoft.UI.Xaml.Shapes.Ellipse statusRemoteDot = new() { Width = 5, Height = 5, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
     private FrameworkElement[] statusMachineParts = [];
+    /// <summary>The status words' automation id: this PC's state, or a remote workspace's host (the Mac's id).</summary>
+    internal const string StatusBarTextId = "status-bar-text", StatusRemoteHostId = "status-remote-host";
     /// <summary>Runtime checks in flight; while one runs the status words say so instead of naming the machine.</summary>
     private int runtimeChecks;
     /// <summary>The status bar's HStack spacing, its dividers' height and their side padding (M/WorkspaceView.swift:376, 389).</summary>
@@ -218,7 +220,7 @@ public sealed partial class MainWindow
         statusMachineParts = [.. machine.Children.OfType<FrameworkElement>()];
         machine.Children.Add(statusRemoteDot); AutomationProperties.SetAutomationId(statusRemoteDot, "status-remote-dot");
         AutomationProperties.SetAccessibilityView(machine, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
-        AutomationProperties.SetAutomationId(machine, "status-bar-machine"); AutomationProperties.SetAutomationId(status, "status-bar-text");
+        AutomationProperties.SetAutomationId(machine, "status-bar-machine"); AutomationProperties.SetAutomationId(status, StatusBarTextId);
         var leading = new Grid { ColumnSpacing = StatusBarSpacing };
         leading.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); leading.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
         leading.Children.Add(machine); Grid.SetColumn(status, 1); leading.Children.Add(status);
@@ -288,6 +290,8 @@ public sealed partial class MainWindow
         foreach (var part in statusMachineParts) part.Visibility = active?.Remote is null ? Visibility.Visible : Visibility.Collapsed;
         statusRemoteDot.Visibility = active?.Remote is null ? Visibility.Collapsed : Visibility.Visible;
         ToolTipService.SetToolTip(status, active?.Remote is null ? null : status.Text);
+        // The remote words carry the Mac's id (M/WorkspaceView.swift:611 status-remote-host); this PC's keep the Windows one.
+        AutomationProperties.SetAutomationId(status, active?.Remote is null ? StatusBarTextId : StatusRemoteHostId);
         // An install that ended while the app was behind another window says so here, and opens the screen (M/WorkspaceView.swift:620-625).
         if (setupBadge is not null) setupBadge.Visibility = setupResultWaiting ? Visibility.Visible : Visibility.Collapsed;
         string Count(int value) => value.ToString(CultureInfo.InvariantCulture);

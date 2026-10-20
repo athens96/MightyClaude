@@ -287,6 +287,36 @@ internal static partial class RemoteClientVerification
         finally { Directory.Delete(directory, true); }
     }
 
+    /// <summary>
+    /// A saved-connections file held open by another program at start (an antivirus scan) is read again later, never taken as empty: nothing
+    /// is listed while it is held, no write of the list replaces it meanwhile, and once it is free its connections come back, the window is
+    /// told, and a later write keeps them.
+    /// </summary>
+    internal static async Task AConnectionsFileHeldOpenIsReadLaterAndNeverWrittenOver()
+    {
+        var (store, directory) = await ClientStore(); var seen = new Collected();
+        try
+        {
+            await RemoteConnectionFile.WriteAsync(directory, [new("conn-1", "studio", "100.101.102.103:43137"), new("conn-2", "mac", "[fd7a:115c:a1e0::5]:43137")]);
+            var path = Path.Combine(directory, RemoteConnectionFile.FileName); var before = await File.ReadAllBytesAsync(path);
+            await using var client = new RemoteClientService(store, directory, new MemoryRemoteKeyVault(), seen.Event, seen.Permission);
+            var changed = 0; client.Changed += () => Interlocked.Increment(ref changed);
+            using (new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                Check(!RemoteConnectionFile.TryRead(directory, out _), "a file held open cannot be read now");
+                Check(client.List().Count == 0 && client.Connection("conn-1") is null, "while it is held, nothing is listed");
+                await client.RemoveAsync("conn-9"); // writes the list
+            }
+            Check((await File.ReadAllBytesAsync(path)).SequenceEqual(before), "no write replaced the file while it was unread");
+            var heldChanges = Volatile.Read(ref changed);
+            await Verification.Until(() => client.List().Select(c => c.Id).SequenceEqual(["conn-1", "conn-2"]));
+            Check(Volatile.Read(ref changed) == heldChanges + 1, "the window is told once when the connections come back: " + (changed - heldChanges));
+            await client.RemoveAsync("conn-9");
+            Check(RemoteConnectionFile.Read(directory).Select(c => c.Id).SequenceEqual(["conn-1", "conn-2"]), "a write after the late read keeps them on disk");
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
     internal static async Task NoConnectionLeavesThisPCsTunnel()
     {
         await using var host = new RemoteFakeHost(_ => RemoteFakeHost.Fixture("info.json"));
