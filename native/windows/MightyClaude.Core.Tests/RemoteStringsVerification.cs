@@ -21,6 +21,7 @@ internal static class RemoteStringsVerification
             ["timeout"] = RemoteWindowsStrings.Timeout,
             ["savedUnreadable"] = RemoteWindowsStrings.SavedUnreadable,
             ["hostCommandTooLong"] = RemoteWindowsStrings.HostCommandTooLong,
+            ["hostAgentNeedsFullAccess"] = RemoteWindowsStrings.HostAgentNeedsFullAccess("codex"),
         };
         foreach (var (name, value) in values)
             Check(value.Length > 0 && !value.StartsWith("remote.", StringComparison.Ordinal), name + " has no text: " + value);
@@ -31,6 +32,8 @@ internal static class RemoteStringsVerification
             var note = RemoteWindowsStrings.CommandNote("studio-pc", "linux");
             Check(note.Contains("studio-pc", StringComparison.Ordinal) && note.Contains("Linux", StringComparison.Ordinal) && !note.Contains('{'), "the command note names the host and its OS and leaves no placeholder");
         }
+        foreach (var (provider, name) in new[] { ("codex", "Codex"), ("gemini", "Antigravity") })
+            Check(RemoteWindowsStrings.HostAgentNeedsFullAccess(provider) is var words && words.Contains(name, StringComparison.Ordinal) && !words.Contains('{') && words != Locale.Get("remote.host.error.fullAccessOff"), "a Windows host names the agent that needs the switch: " + name);
         Check(RemoteWindowsStrings.FirewallFailed(new(FirewallChange.Done)) is null, "a change that happened has no failure words");
         Check(RemoteWindowsStrings.FirewallFailed(new(FirewallChange.Cancelled)) == Locale.Get("mobileRemote.direct.windows.firewall.cancelled"), "a declined prompt says it was declined");
         var timeout = RemoteWindowsStrings.FirewallFailed(new(FirewallChange.Failed, "timeout"));

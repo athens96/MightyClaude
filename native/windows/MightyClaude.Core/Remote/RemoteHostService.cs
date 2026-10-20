@@ -117,7 +117,9 @@ public sealed partial class RemoteHostService(RemoteHostOptions options) : IAsyn
     public static string? FullAccessRefusal(StartRunRequest request, bool allowed, bool? windowsHost = null) =>
         allowed ? null
         : request.Kind == "shell" ? Locale.Get("remote.host.error.commandsOff")
-        : request.Settings?.PermissionMode == "fullAccess" || request.Provider != "claude" && (windowsHost ?? OperatingSystem.IsWindows()) ? Locale.Get("remote.host.error.fullAccessOff")
+        // No other mode helps here, so the words say the switch is the only way rather than "pick another permission mode".
+        : request.Provider != "claude" && (windowsHost ?? OperatingSystem.IsWindows()) ? RemoteWindowsStrings.HostAgentNeedsFullAccess(request.Provider)
+        : request.Settings?.PermissionMode == "fullAccess" ? Locale.Get("remote.host.error.fullAccessOff")
         : null;
 
     /// <summary>Starts sharing <paramref name="workspaceIds"/> (registered local workspaces) on every Tailscale address this PC has, with a new key.</summary>

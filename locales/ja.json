@@ -2922,5 +2922,6 @@
   "remote.sessionInfo.hostOS": "実行コンピューターのOS",
   "remote.windows.connect.error.timeout": "接続先のコンピューターが時間内に応答しませんでした。電源が入っていてTailscaleに接続されているか確認してください。",
   "remote.windows.connect.error.savedUnreadable": "保存済みの接続をまだ読み込めません。別のプログラムがファイルを開いています。しばらくしてからもう一度お試しください。",
+  "remote.windows.host.error.agentNeedsFullAccess": "このWindows PCは、「リモートからのフルアクセス・コマンド実行を許可」がオンのときだけ、ほかのコンピュータの{agent}を実行します。WindowsはmacOSのように{agent}を共有フォルダ内に閉じ込められないためです。ほかの権限モードでも実行できません。共有しているPCの「設定 → リモート接続」でこのスイッチをオンにしてください。",
   "remote.windows.host.error.commandTooLong": "このコマンドは長すぎて、このPCでは実行できません。コマンドを短くするか、共有フォルダーにスクリプトファイルとして保存して実行してください。"
 }

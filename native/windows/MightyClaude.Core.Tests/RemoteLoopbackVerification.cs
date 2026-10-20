@@ -64,9 +64,8 @@ internal static class RemoteLoopbackVerification
             var start = new RemoteWireStart(new RemoteWireRequest("mac-pane", fixture.Shared.Id, "claude", "hi", "default", provider, new(PermissionMode: mode)), []);
             return JsonSerializer.Deserialize<RemoteWireJob>(await RemoteTransport.RequestAsync(target, state.Key!, HttpMethod.Post, "/v2/runs", JsonSerializer.SerializeToUtf8Bytes(start, RemoteWire.Json)), RemoteWire.Json)!.JobId;
         }
-        var fullAccessOff = Locale.Get("remote.host.error.fullAccessOff");
         foreach (var (provider, mode) in new[] { ("codex", "acceptEdits"), ("codex", "manual"), ("gemini", "acceptEdits") })
-            await RemoteClientVerification.RejectAsync(() => Start(provider, mode), $"a {provider} {mode} run waits for the switch on a Windows host", ex => ex is RemoteHttpFailure { Status: 403 } && ex.Message == fullAccessOff);
+            await RemoteClientVerification.RejectAsync(() => Start(provider, mode), $"a {provider} {mode} run waits for the switch on a Windows host", ex => ex is RemoteHttpFailure { Status: 403 } && ex.Message == RemoteWindowsStrings.HostAgentNeedsFullAccess(provider));
         Check(fixture.Runner is null || fixture.Runner.Started.IsEmpty, "nothing ran");
         await Start("claude", "acceptEdits");
         await Verification.Until(() => fixture.Runner is { } runner && runner.Started.Count == 1);
