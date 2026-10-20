@@ -38,6 +38,8 @@ public sealed partial class MainWindow
         // A connection that comes up or goes down redraws everything that names it: the sidebar, the header's badge, the status bar and
         // the remote panes (their CLIs and notes are the host's last answer).
         client.Changed += () => DispatcherQueue.TryEnqueue(() => { if (!closing) { RenderSidebar(); RefreshWorkspaceHeader(); RefreshStatusBar(); RefreshRemotePanes(); RefreshRemoteViews(); } });
+        // The saved connections are read off the window's thread, so the first redraw that names a host never waits on the disk.
+        _ = Task.Run(() => client.List());
         string machine;
         try { machine = Environment.MachineName; } catch (InvalidOperationException) { machine = ""; }
         var hostName = string.IsNullOrWhiteSpace(machine) ? RemoteWindowsStrings.HostOS("win32") : machine;
@@ -81,12 +83,13 @@ public sealed partial class MainWindow
     internal bool RemoteConnected(Workspace workspace) => RemoteConnection(workspace)?.Status == RemoteConnectionStatus.Connected;
 
     /// <summary>
-    /// Opens Settings on its Remote Connection page (M openRemoteSettings): the sidebar header's button and the add-pane menus' Connect to Another Computer…. A
-    /// Settings window already open comes forward on the page it shows.
+    /// Opens Settings on its Remote Connection page (M/AppStore+RemoteWorkspaces.swift:71-74 openRemoteSettings): the sidebar header's
+    /// button and the add-pane menus' Connect to Another Computer…. A settings window already open comes forward and turns to that page;
+    /// while another dialog is open nothing happens.
     /// </summary>
     internal Task OpenRemoteSettings() => Act(async () =>
     {
-        if (dialogOpen) return;
+        if (SelectSettingsCategory("remote") || dialogOpen) return;
         await service.UpdateAsync(s => s with { SettingsPane = "remote" });
         await ShowCategorizedSettingsAsync();
     });

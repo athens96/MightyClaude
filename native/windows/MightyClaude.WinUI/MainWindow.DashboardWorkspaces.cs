@@ -187,8 +187,9 @@ public sealed partial class MainWindow
             AutomationProperties.SetAutomationId(item, "dashboard-add-" + entry + "-" + workspaceId); menu.Items.Add(item);
         }
         MarkAddPaneMenu(menu, entries, workspace.Remote is not null);
-        menu.Items.Add(ConnectRemoteMenuItem(workspaceId));
-        menu.Opening += (_, _) => { foreach (var item in menu.Items) item.IsEnabled = !dialogOpen && service.Snapshot.Workspaces.Any(w => w.Id == workspaceId); };
+        var connect = ConnectRemoteMenuItem(workspaceId); menu.Items.Add(connect);
+        // Connect to Another Computer… also turns an open settings window to its Remote Connection page.
+        menu.Opening += (_, _) => { foreach (var item in menu.Items) item.IsEnabled = ReferenceEquals(item, connect) ? !dialogOpen || settingsWindow is not null : !dialogOpen && service.Snapshot.Workspaces.Any(w => w.Id == workspaceId); };
         return menu;
     }
 

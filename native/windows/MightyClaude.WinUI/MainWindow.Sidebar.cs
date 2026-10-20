@@ -87,7 +87,7 @@ public sealed partial class MainWindow
         PlainSidebarButton(add, brushes.Transparent, brushes.Transparent);
         AutomationProperties.SetAutomationId(add, "sidebar-add-workspace");
         // Another computer's shared workspaces open from Settings → Remote Connection: the network symbol beside the folder (M/WorkspaceView.swift:132-140).
-        var connect = sidebarConnectRemoteButton = Button("", () => dialogOpen ? Task.CompletedTask : OpenRemoteSettings());
+        var connect = sidebarConnectRemoteButton = Button("", OpenRemoteSettings);
         connect.Content = new FontIcon { Glyph = RemoteNetworkGlyph, TextSize = 11 };
         connect.Width = SidebarAddWorkspaceWidth; connect.Height = SidebarAddWorkspaceHeight; connect.MinWidth = connect.MinHeight = 0; connect.Padding = new Thickness(0);
         connect.Foreground = brushes.Brush(DesignToken.SidebarInk2); connect.VerticalAlignment = VerticalAlignment.Center;

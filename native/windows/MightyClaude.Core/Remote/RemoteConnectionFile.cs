@@ -18,20 +18,31 @@ public static class RemoteConnectionFile
     public const int MaximumFileBytes = 256 * 1024, MaximumName = 120, MaximumAddress = 300;
     private sealed record SavedFile(int Version, IReadOnlyList<RemoteSavedConnection?>? Connections);
 
-    public static IReadOnlyList<RemoteSavedConnection> Read(string directory)
+    public static IReadOnlyList<RemoteSavedConnection> Read(string directory) => TryRead(directory, out var connections) ? connections : [];
+
+    /// <summary>
+    /// Reads the file; false when it is there but cannot be read now (held open by another program, as an antivirus scan does, or
+    /// refused), so the caller reads again later and never writes over connections it has not read. No file, or a damaged, oversize or
+    /// other-version one, reads as none (true).
+    /// </summary>
+    public static bool TryRead(string directory, out IReadOnlyList<RemoteSavedConnection> connections)
     {
+        connections = [];
         try
         {
             var path = Path.Combine(directory, FileName);
-            if (!File.Exists(path) || new FileInfo(path).Length > MaximumFileBytes) return [];
+            if (!File.Exists(path) || new FileInfo(path).Length > MaximumFileBytes) return true;
             var bytes = File.ReadAllBytes(path);
-            if (bytes.Length > MaximumFileBytes) return [];
+            if (bytes.Length > MaximumFileBytes) return true;
             var file = JsonSerializer.Deserialize<SavedFile>(bytes, Wire.Json);
-            if (file is not { Version: RemoteProtocol.Version, Connections: { } connections }) return [];
+            if (file is not { Version: RemoteProtocol.Version, Connections: { } saved }) return true;
             // As the Mac reads the file: its first 16 entries, then each is checked; the write caps what it keeps instead.
-            return Usable(connections.Take(RemoteProtocol.MaximumConnections));
+            connections = Usable(saved.Take(RemoteProtocol.MaximumConnections));
+            return true;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or NotSupportedException or ArgumentException) { return []; }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException) { return true; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return false; }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException or ArgumentException) { return true; }
     }
 
     /// <summary>Writes what Read would keep, in order, so the file never holds an entry the next launch drops.</summary>
