@@ -125,6 +125,9 @@ public sealed partial class MainWindow
             Checkpoint("setupTools", "running");
             result["setupTools"] = await RunSetupSmoke();
             Checkpoint("setupTools", "passed");
+            Checkpoint("remoteWorkspaces", "running");
+            result["remoteWorkspaces"] = await RunRemoteWorkspacesSmoke(workspace);
+            Checkpoint("remoteWorkspaces", "passed");
             Checkpoint("mobileDirect", "running");
             result["mobileDirect"] = await RunMobileDirectSmoke();
             Checkpoint("mobileDirect", "passed");
