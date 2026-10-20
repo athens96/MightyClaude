@@ -18,6 +18,8 @@ On the host computer:
 
 While sharing, the {{ui:settings.remote.allowFullAccess}} switch appears. While it is off (the default), connected computers cannot use remote command panes or run agents with full access; such requests are refused before they run, and the pane says why. It turns off again whenever sharing starts.
 
+{{platform:windows}} When a Windows PC shares, connected computers also cannot use Codex or Antigravity panes while this switch is off, whatever their permission mode, because Windows cannot confine Codex and Antigravity to the shared folder the way macOS does. Claude panes still run and ask for permission as usual.
+
 Sharing accepts connections on this computer's Tailscale addresses only. It is always off when the app starts. {{ui:settings.remote.stopSharing}} stops the remote runs and revokes the key; sharing again gives a new key to pass on.
 
 > [!warning]
@@ -33,7 +35,7 @@ A remote workspace shows a computer icon and its host's name in the sidebar, and
 
 {{platform:mac}} The key is kept in the macOS Keychain only, never in the workspace state. If macOS asks for Keychain access when it connects again, choose "Always Allow"; the app ships with the same signature, so the choice survives updates.
 
-{{platform:windows}} On Windows the key is never kept in the workspace state either: it is saved encrypted so only this Windows user can read it, in the app's data folder. When sharing, the {{ui:remote.windows.firewall.add}} button adds one firewall rule that opens the app's ports only to Tailscale's ranges; Windows shows its administrator prompt once. If the rule already exists, the button reads {{ui:remote.windows.firewall.update}} instead, and the rule is shared with the phone's direct connection, so the {{ui:settings.nav.mobile}} tab changes the same rule.
+{{platform:windows}} On Windows the key is never kept in the workspace state either: it is saved encrypted so only this Windows user can read it, in the app's data folder. When sharing, the {{ui:remote.windows.firewall.add}} button adds one firewall rule that opens the app's ports only to Tailscale's ranges; Windows shows its administrator prompt once. If the rule already exists, the button reads {{ui:remote.windows.firewall.update}} instead, and the rule is shared with the phone's direct connection, so the {{ui:settings.nav.mobile}} tab changes the same rule. If the rule does not open every port in use now, the tab says it needs updating. Removing the rule closes both the phone's direct-connection port and the sharing port.
 
 ## Using remote panes {#use}
 - Use agent panes as you would local ones. Model, permission mode, effort and Fast mode travel to the host; a setting the host's CLI does not support is reported before the run.
