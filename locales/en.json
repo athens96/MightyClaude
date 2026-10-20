@@ -2922,5 +2922,6 @@
   "remote.sessionInfo.hostOS": "Host OS",
   "remote.windows.connect.error.timeout": "The other computer did not answer in time. Check that it is on and connected to Tailscale.",
   "remote.windows.connect.error.savedUnreadable": "The saved connections could not be read yet: another program has the file open. Try again in a moment.",
+  "remote.windows.host.error.agentNeedsFullAccess": "This Windows PC runs {agent} for another computer only while 'Allow full access and commands from remote' is on, because Windows cannot keep {agent} inside the shared folder the way macOS does. No other permission mode works here; on the sharing PC, turn the switch on in Settings → Remote Connection.",
   "remote.windows.host.error.commandTooLong": "This command is too long to run on this PC. Shorten it, or save it as a script file in the shared folder and run that."
 }

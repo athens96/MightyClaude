@@ -16,6 +16,8 @@ public static class RemoteWindowsStrings
     public static string HostLocalOnly => Locale.Get("remote.windows.host.error.localOnly");
     public static string HostNoTailscale => Locale.Get("remote.windows.host.error.noTailscale");
     public static string HostCommandTooLong => Locale.Get("remote.windows.host.error.commandTooLong");
+    /// <summary>A Windows host refuses another computer's Codex or Antigravity run while the full-access switch is off, in any mode: Windows cannot confine it as macOS does.</summary>
+    public static string HostAgentNeedsFullAccess(string provider) => Locale.Get("remote.windows.host.error.agentNeedsFullAccess", new Dictionary<string, string> { ["agent"] = ProviderMark.Label(provider) });
     public static string NotLocal => Locale.Get("remote.windows.workspace.error.notLocal");
     public static string PaneUnavailable => Locale.Get("remote.windows.workspace.paneUnavailable");
     public static string SettingsTailscaleOff => Locale.Get("remote.windows.settings.tailscaleOff");
