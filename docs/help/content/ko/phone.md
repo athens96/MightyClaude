@@ -37,7 +37,7 @@ Mac과 휴대폰이 같은 [Tailscale](https://tailscale.com) 네트워크에 �
 
 휴대폰의 {{ui:phone.tabs.hosts}} 탭에서 연결된 Mac 카드에 {{ui:phone.direct.route.direct}} 또는 {{ui:phone.direct.route.relay}}가 표시됩니다.
 
-Windows PC에서도 같습니다. 다만 Windows 방화벽이 연결을 막지 않도록 규칙이 하나 필요합니다. {{ui:settings.nav.mobile}} 탭에서 {{ui:mobileRemote.direct.windows.firewall.addButton}}를 누르고 Windows의 관리자 확인을 허용하세요. 이 규칙은 Tailscale 주소에서 이 앱으로 오는 연결만 허용합니다. 규칙이 있으면 같은 줄의 버튼이 {{ui:mobileRemote.direct.windows.firewall.removeButton}}로 바뀌고, 규칙을 읽지 못했을 때는 관리자 확인 없이 다시 읽는 {{ui:setup.button.recheck}}이 됩니다. 직접 연결을 켠 채 포트를 바꾸면 규칙을 지우고 다시 추가하세요. 직접 연결이나 모바일 리모트를 끄면 규칙도 함께 지우고, 이때도 관리자 확인을 묻습니다.
+Windows PC에서도 같습니다. 다만 Windows 방화벽이 연결을 막지 않도록 규칙이 하나 필요합니다. {{ui:settings.nav.mobile}} 탭에서 {{ui:mobileRemote.direct.windows.firewall.addButton}}를 누르고 Windows의 관리자 확인을 허용하세요. 이 규칙은 Tailscale 주소에서 이 앱으로 오는 연결만 허용합니다. 규칙이 있으면 같은 줄의 버튼이 {{ui:mobileRemote.direct.windows.firewall.removeButton}}로 바뀌고, 규칙을 읽지 못했을 때는 관리자 확인 없이 다시 읽는 {{ui:setup.button.recheck}}이 됩니다. 직접 연결을 켠 채 포트를 바꾸면 규칙을 지우고 다시 추가하세요. 직접 연결이나 모바일 리모트를 끄면 규칙도 함께 지우고(이 컴퓨터가 워크스페이스를 [공유](remote.md#share) 중이면 그 포트에 필요하므로 남깁니다), 이때도 관리자 확인을 묻습니다. 이 규칙은 휴대폰 직접 연결의 포트와 워크스페이스 공유의 포트를 함께 여는 하나의 규칙입니다. 규칙이 있는 동안에는 같은 줄에 {{ui:remote.windows.firewall.update}} 단추도 나와 지금 쓰는 포트에 맞춰 고치며, {{ui:settings.remote.navTitle}} 탭에서도 같은 규칙을 추가·갱신·지울 수 있습니다.
 
 ## 휴대폰에서 할 수 있는 일 {#use}
 휴대폰 앱에는 탭이 네 개 있습니다.

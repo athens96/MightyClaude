@@ -37,7 +37,7 @@ Mac 和手机在同一个 [Tailscale](https://tailscale.com) 网络中时，手�
 
 在手机的 {{ui:phone.tabs.hosts}} 标签页中，Mac 卡片上会显示 {{ui:phone.direct.route.direct}} 或 {{ui:phone.direct.route.relay}}。
 
-Windows 电脑也一样，只是需要一条 Windows 防火墙规则，以免连接被拦截。在 {{ui:settings.nav.mobile}} 标签页中点击 {{ui:mobileRemote.direct.windows.firewall.addButton}}，并允许 Windows 的管理员确认。该规则只允许来自 Tailscale 地址的连接到达本应用。规则存在后，同一行的按钮会变成 {{ui:mobileRemote.direct.windows.firewall.removeButton}}；无法读取规则时则变成 {{ui:setup.button.recheck}}，它会在不请求管理员确认的情况下重新读取。直接连接开启时若更改了端口，请先删除规则再重新添加。关闭直接连接或手机远程时会一并删除规则，Windows 会再次请求管理员确认。
+Windows 电脑也一样，只是需要一条 Windows 防火墙规则，以免连接被拦截。在 {{ui:settings.nav.mobile}} 标签页中点击 {{ui:mobileRemote.direct.windows.firewall.addButton}}，并允许 Windows 的管理员确认。该规则只允许来自 Tailscale 地址的连接到达本应用。规则存在后，同一行的按钮会变成 {{ui:mobileRemote.direct.windows.firewall.removeButton}}；无法读取规则时则变成 {{ui:setup.button.recheck}}，它会在不请求管理员确认的情况下重新读取。直接连接开启时若更改了端口，请先删除规则再重新添加。关闭直接连接或手机远程时会一并删除规则（如果这台电脑正在[共享工作区](remote.md#share)，还需要它的端口，规则就会保留），Windows 会再次请求管理员确认。这是同一条规则，同时打开手机直连的端口和工作区共享的端口。规则存在期间，同一行还会出现 {{ui:remote.windows.firewall.update}} 按钮，按当前使用的端口调整规则；{{ui:settings.remote.navTitle}}标签页也能添加、更新或删除同一条规则。
 
 ## 在手机上可以做的事 {#use}
 手机应用有四个标签页。

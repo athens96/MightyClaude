@@ -29,13 +29,15 @@ Mac이나 Windows 컴퓨터 두 대의 Mighty Claude를 [Tailscale](https://tail
 2. {{ui:settings.remote.connectTitle}} 항목에 호스트의 주소(Tailscale IP 또는 MagicDNS 이름)와 연결 키를 넣고 {{ui:settings.remote.connectButton}} 단추를 누릅니다. 포트를 바꾸지 않았다면 주소만 넣으면 됩니다.
 3. 연결한 컴퓨터 아래에 공유된 워크스페이스가 보입니다. {{ui:settings.remote.openButton}} 단추를 누르면 사이드바에 원격 워크스페이스로 추가됩니다.
 
-원격 워크스페이스는 사이드바에서 컴퓨터 아이콘과 호스트 이름으로 구분되고, 워크스페이스 머리글과 아래 상태 막대에 연결 상태가 보입니다. 연결 키는 macOS Keychain에만 저장하고 워크스페이스 기록에는 넣지 않습니다. 앱을 다시 열면 연결은 저장된 상태로 남아 있다가, 원격 창에서 처음 보내거나 {{ui:settings.remote.refreshButton}} 단추를 누를 때 다시 연결합니다. 이때 macOS가 Keychain 접근을 물으면 "항상 허용"을 고르세요. 앱이 같은 서명으로 배포되므로 이 선택은 업데이트 뒤에도 유지됩니다.
+원격 워크스페이스는 사이드바에서 컴퓨터 아이콘과 호스트 이름으로 구분되고, 워크스페이스 머리글과 아래 상태 막대에 연결 상태가 보입니다. 앱을 다시 열면 연결은 저장된 상태로 남아 있다가, 원격 창에서 처음 보내거나 {{ui:settings.remote.refreshButton}} 단추를 누를 때 다시 연결합니다.
 
-{{platform:windows}} Windows에서는 연결 키를 이 Windows 사용자만 풀 수 있게 암호화해 앱의 데이터 폴더에 저장합니다. 공유할 때는 {{ui:remote.windows.firewall.add}} 단추로 Tailscale 대역에서 오는 연결에만 앱의 포트를 여는 방화벽 규칙 하나를 추가합니다. 이때 Windows가 관리자 확인 창을 한 번 띄웁니다. 규칙이 이미 있으면 같은 자리에 {{ui:remote.windows.firewall.update}} 단추가 나오고, 휴대폰 직접 연결의 규칙과 하나로 함께 쓰므로 {{ui:settings.nav.mobile}} 탭에서도 같은 규칙을 고칠 수 있습니다.
+{{platform:mac}} 연결 키는 macOS Keychain에만 저장하고 워크스페이스 기록에는 넣지 않습니다. 다시 연결할 때 macOS가 Keychain 접근을 물으면 "항상 허용"을 고르세요. 앱이 같은 서명으로 배포되므로 이 선택은 업데이트 뒤에도 유지됩니다.
+
+{{platform:windows}} Windows에서는 연결 키를 워크스페이스 기록에 넣지 않고, 이 Windows 사용자만 풀 수 있게 암호화해 앱의 데이터 폴더에 저장합니다. 공유할 때는 {{ui:remote.windows.firewall.add}} 단추로 Tailscale 대역에서 오는 연결에만 앱의 포트를 여는 방화벽 규칙 하나를 추가합니다. 이때 Windows가 관리자 확인 창을 한 번 띄웁니다. 규칙이 이미 있으면 같은 자리에 {{ui:remote.windows.firewall.update}} 단추가 나오고, 휴대폰 직접 연결의 규칙과 하나로 함께 쓰므로 {{ui:settings.nav.mobile}} 탭에서도 같은 규칙을 고칠 수 있습니다.
 
 ## 원격 창 쓰기 {#use}
 - 에이전트 창은 로컬 창처럼 쓰면 됩니다. 모델·권한·사고 강도·Fast 모드는 그대로 호스트로 전해지고, 호스트 CLI가 지원하지 않는 설정은 실행 전에 알려 줍니다.
-- 승인·질문·계획 카드는 이 앱에 나타나고, 답하면 호스트의 실행으로 전해집니다. 실행 중인 Claude 요청에 {{kbd:⌘Enter}}로 끼워 넣을 수도 있습니다.
+- 승인·질문·계획 카드는 이 앱에 나타나고, 답하면 호스트의 실행으로 전해집니다. 실행 중인 Claude 요청에 끼워 넣을 수도 있습니다({{platform:mac}} {{kbd:⌘Enter}}, {{platform:windows}} {{kbd:Ctrl+Enter}}).
 - {{ui:graph.view.default}} 보기와 {{ui:graph.view.mighty}} 보기({{ui:graph.view.diagram}}·{{ui:graph.view.timeline}}·{{ui:graph.view.structure}})가 로컬 실행과 똑같이 그려집니다.
 - {{ui:remote.menu.newCommand}} 창은 명령마다 호스트의 공유 폴더에서 새 셸을 엽니다. 대화형 프로그램과 비밀번호 입력은 지원하지 않습니다.
 - 원격 창은 상태 막대와 세션 정보에 실행 컴퓨터의 OS(macOS·Windows)를 보여 줍니다. {{ui:remote.menu.newCommand}} 창은 Mac 호스트에서는 로그인 셸, Windows 호스트에서는 PowerShell로 명령을 실행합니다.

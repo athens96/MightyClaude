@@ -29,13 +29,15 @@ On the computer that gives the work:
 2. Under {{ui:settings.remote.connectTitle}}, enter the host's address (its Tailscale IP or MagicDNS name) and the key, then press {{ui:settings.remote.connectButton}}. Unless the host changed the port, the address alone is enough.
 3. The shared workspaces appear under the connected computer. Press {{ui:settings.remote.openButton}} to add one to the sidebar as a remote workspace.
 
-A remote workspace shows a computer icon and its host's name in the sidebar, and its connection state in the workspace header and the status bar. The key is kept in the macOS Keychain only, never in the workspace state. After the app restarts, the connection stays saved and connects again on the first send from a remote pane or when you press {{ui:settings.remote.refreshButton}}. If macOS then asks for Keychain access, choose "Always Allow"; the app ships with the same signature, so the choice survives updates.
+A remote workspace shows a computer icon and its host's name in the sidebar, and its connection state in the workspace header and the status bar. After the app restarts, the connection stays saved and connects again on the first send from a remote pane or when you press {{ui:settings.remote.refreshButton}}.
 
-{{platform:windows}} On Windows the connection key is saved encrypted so only this Windows user can read it, in the app's data folder. When sharing, the {{ui:remote.windows.firewall.add}} button adds one firewall rule that opens the app's ports only to Tailscale's ranges; Windows shows its administrator prompt once. If the rule already exists, the button reads {{ui:remote.windows.firewall.update}} instead, and the rule is shared with the phone's direct connection, so the {{ui:settings.nav.mobile}} tab changes the same rule.
+{{platform:mac}} The key is kept in the macOS Keychain only, never in the workspace state. If macOS asks for Keychain access when it connects again, choose "Always Allow"; the app ships with the same signature, so the choice survives updates.
+
+{{platform:windows}} On Windows the key is never kept in the workspace state either: it is saved encrypted so only this Windows user can read it, in the app's data folder. When sharing, the {{ui:remote.windows.firewall.add}} button adds one firewall rule that opens the app's ports only to Tailscale's ranges; Windows shows its administrator prompt once. If the rule already exists, the button reads {{ui:remote.windows.firewall.update}} instead, and the rule is shared with the phone's direct connection, so the {{ui:settings.nav.mobile}} tab changes the same rule.
 
 ## Using remote panes {#use}
 - Use agent panes as you would local ones. Model, permission mode, effort and Fast mode travel to the host; a setting the host's CLI does not support is reported before the run.
-- Permission, question and plan cards appear in this app, and your answers reach the run on the host. You can also add to a running Claude request with {{kbd:⌘Enter}}.
+- Permission, question and plan cards appear in this app, and your answers reach the run on the host. You can also add to a running Claude request ({{platform:mac}} {{kbd:⌘Enter}}, {{platform:windows}} {{kbd:Ctrl+Enter}}).
 - The {{ui:graph.view.default}} view and the {{ui:graph.view.mighty}} views ({{ui:graph.view.diagram}}, {{ui:graph.view.timeline}}, {{ui:graph.view.structure}}) draw exactly as for a local run.
 - A {{ui:remote.menu.newCommand}} pane runs each command in a new shell in the host's shared folder. Interactive programs and password prompts are not supported.
 - A remote pane shows its host's OS (macOS or Windows) in the status bar and the session info. A {{ui:remote.menu.newCommand}} pane runs commands in the login shell on a Mac host and in PowerShell on a Windows host.

@@ -37,7 +37,7 @@ Mac とスマートフォンが同じ [Tailscale](https://tailscale.com) ネッ�
 
 スマートフォンの {{ui:phone.tabs.hosts}} タブで、Mac のカードに {{ui:phone.direct.route.direct}} または {{ui:phone.direct.route.relay}} と表示されます。
 
-Windows PC でも同じです。ただし接続が遮断されないよう、Windows ファイアウォールの規則が 1 つ必要です。{{ui:settings.nav.mobile}} タブで {{ui:mobileRemote.direct.windows.firewall.addButton}} を押し、Windows の管理者の確認を許可してください。この規則は Tailscale のアドレスからこのアプリへの接続だけを許可します。規則があると同じ行のボタンは {{ui:mobileRemote.direct.windows.firewall.removeButton}} に変わり、規則を読み取れないときは管理者の確認なしで読み直す {{ui:setup.button.recheck}} になります。直接接続をオンにしたままポートを変えたら、規則を削除してからもう一度追加してください。直接接続またはモバイルリモートをオフにすると規則も一緒に削除され、このときも管理者の確認を求められます。
+Windows PC でも同じです。ただし接続が遮断されないよう、Windows ファイアウォールの規則が 1 つ必要です。{{ui:settings.nav.mobile}} タブで {{ui:mobileRemote.direct.windows.firewall.addButton}} を押し、Windows の管理者の確認を許可してください。この規則は Tailscale のアドレスからこのアプリへの接続だけを許可します。規則があると同じ行のボタンは {{ui:mobileRemote.direct.windows.firewall.removeButton}} に変わり、規則を読み取れないときは管理者の確認なしで読み直す {{ui:setup.button.recheck}} になります。直接接続をオンにしたままポートを変えたら、規則を削除してからもう一度追加してください。直接接続またはモバイルリモートをオフにすると規則も一緒に削除され（このコンピュータがワークスペースを[共有](remote.md#share)している間は、そのポートに必要なので残ります）、このときも管理者の確認を求められます。これはスマートフォンの直接接続のポートとワークスペース共有のポートを一緒に開く 1 つの規則です。規則がある間は同じ行に {{ui:remote.windows.firewall.update}} ボタンも表示され、いま使っているポートに合わせて直します。{{ui:settings.remote.navTitle}} タブでも同じ規則を追加・更新・削除できます。
 
 ## スマートフォンでできること {#use}
 スマートフォンアプリには4つのタブがあります。
