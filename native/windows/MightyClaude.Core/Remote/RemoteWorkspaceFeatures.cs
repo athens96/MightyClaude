@@ -41,6 +41,22 @@ public static class RemoteWorkspaceFeatures
         return null;
     }
 
+    /// <summary>
+    /// The status bar's words for a remote workspace (M/WorkspaceView.swift statusBar): where it runs, "host · OS" with the OS from the
+    /// connection's last answer (unknown before one), and whether that connection is up.
+    /// </summary>
+    public static string StatusLine(RemoteWorkspaceReference reference, RemoteConnectionInfo? connection) =>
+        Locale.Get(connection?.Status == RemoteConnectionStatus.Connected ? "remote.status.connected" : "remote.status.notConnected",
+            new Dictionary<string, string> { ["host"] = RemoteWindowsStrings.HostWithOS(reference.HostName, connection?.Runtime?.Platform) });
+
+    /// <summary>
+    /// The line under a remote pane's empty state (M/SessionPaneView.swift emptyOutput): a command pane says each command runs in a new
+    /// shell on the host (named with its OS, whose shell it is), an agent pane that it runs on the host's CLI and what it cannot do.
+    /// </summary>
+    public static string PaneNote(RunSession pane, RemoteWorkspaceReference reference, RemoteConnectionInfo? connection) => pane.Kind == "shell"
+        ? RemoteWindowsStrings.CommandNote(reference.HostName, connection?.Runtime?.Platform)
+        : Locale.Get("remote.pane.agentNote", new Dictionary<string, string> { ["host"] = reference.HostName });
+
     /// <summary>The Windows Firewall rule's ports (WindowsFirewallRule): the phone's direct port and the sharing port, whichever are on.</summary>
     public static IReadOnlyList<int> FirewallPorts(int? phoneDirectPort, int? sharingPort) =>
         new[] { phoneDirectPort, sharingPort }.OfType<int>().Where(p => p is >= 1024 and <= 65535).Distinct().Order().ToList();

@@ -543,7 +543,8 @@ public sealed partial class MainWindow
     /// </summary>
     private string? SetupItemForMissingCli(RunSession session)
     {
-        if (session.Kind != "claude" || runtime is null || Runtime(session.Provider) is { Version: not null }) return null;
+        // A remote pane's CLI is on its host: nothing is installed here for it.
+        if (session.Kind != "claude" || service.IsRemoteWorkspace(session.WorkspaceId) || runtime is null || Runtime(session.Provider) is { Version: not null }) return null;
         return LoadSetupCatalog()?.Items.FirstOrDefault(item => item.Provider == session.Provider)?.Id;
     }
 }

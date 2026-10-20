@@ -130,6 +130,8 @@ public sealed partial class MainWindow
             clock.Children.Add(elapsedValue); Grid.SetColumn(clock, 1); elapsedRow.Children.Add(clock);
             details.Children.Add(elapsedRow); sessionInfoRows["elapsed"] = (elapsedRow, elapsedValue);
             Add("workspace", Locale.Get("composer.sessionInfo.workspace"), details);
+            // A remote workspace's computer and its OS under it (M/SessionInfoViews.swift:258-261); both hide for a local one.
+            Add("host", Locale.Get("remote.sessionInfo.host"), details); Add("hostOS", RemoteWindowsStrings.SessionInfoHostOS, details);
             var path = new TextBlock { TextSize = 10, TextFont = TextArea.Code, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, Foreground = ink2 };
             details.Children.Add(path); sessionInfoRows["path"] = (path, path); AutomationProperties.SetAutomationId(path, "session-info-path-" + id);
             details.Children.Add(new Border { Height = DesignMetrics.Stroke.Line, Background = b.Brush(DesignToken.Line) });
@@ -222,8 +224,10 @@ public sealed partial class MainWindow
             Row("context", contextText);
             AutomationProperties.SetName(sessionInfoContextBlock!, Locale.Get("composer.sessionInfo.contextUsage") + " " + contextDetailRing.Text + " · " + contextText);
             Say(sessionInfoModelLabel!, Locale.Get(usage?.Model is null ? "composer.sessionInfo.selectedModel" : "composer.sessionInfo.usedModel"));
-            Row("model", usage?.Model is { } model ? ModelLabel.Text(model) : ModelLabel.Selection(pane, owner.Runtime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider)));
-            Row("elapsed", pane.RunTiming is { IsValid: true } timing ? timing.Label() : null); Row("workspace", workspace?.Name); Row("path", workspace?.Path);
+            Row("model", usage?.Model is { } model ? ModelLabel.Text(model) : ModelLabel.Selection(pane, PaneRuntime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider)));
+            Row("elapsed", pane.RunTiming is { IsValid: true } timing ? timing.Label() : null); Row("workspace", workspace?.Name);
+            Row("host", workspace?.Remote?.HostName); Row("hostOS", workspace?.Remote is null ? null : RemoteWindowsStrings.HostOS(owner.RemoteConnection(workspace)?.Runtime?.Platform));
+            Row("path", workspace?.Path);
             var tokens = usage is not null && (usage.InputTokens ?? usage.OutputTokens ?? usage.CacheReadTokens ?? usage.CacheWriteTokens ?? usage.ReasoningTokens ?? usage.TotalTokens) is not null;
             sessionInfoTokens!.Visibility = tokens ? Visibility.Visible : Visibility.Collapsed;
             if (tokens) Say(sessionInfoTokens, Locale.Get("composer.sessionInfo.tokenScope", new Dictionary<string, string> { ["scope"] = UsageScope(usage!.TokenScope) }));

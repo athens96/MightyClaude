@@ -158,7 +158,7 @@ public sealed partial class MainWindow
             var shell = pane.Kind == "shell";
             shellLabel.Visibility = shell ? Visibility.Visible : Visibility.Collapsed;
             if (shell) { attach.Visibility = model.Visibility = effort.Visibility = permission.Visibility = fast.Visibility = more.Visibility = options.Visibility = Visibility.Collapsed; return; }
-            var capabilities = owner.Runtime(pane.Provider)?.Capabilities ?? ProviderCatalog.Capabilities(pane.Provider);
+            var capabilities = PaneRuntime(pane.Provider)?.Capabilities ?? ProviderCatalog.Capabilities(pane.Provider);
             var showsEffort = capabilities.Effort || pane.Settings.Effort != "default";
             var showsFast = pane.Provider == "codex" && (capabilities.FastMode || pane.Settings.FastMode);
             var style = ToolbarStyle.Full; var width = double.PositiveInfinity;
@@ -473,8 +473,9 @@ public sealed partial class MainWindow
     // composer, the queue or the phone, goes through the service's SendAsync, so the items delegation holds for the pane go with it.
     // Under --smoke-test the start goes to the smoke's own stand-in (smokeStart, or smokeSend for the delegation smoke), never to a CLI.
     // What it did: NotStarted when no run took the send, and the caller gives it back where it came from.
+    // A remote pane's send runs on its host's CLI and account: this PC's sign-ins, CLI updates and plugin changes never wait for it or hold it.
     private Task<DelegationRelease> StartFromComposer(StartRunRequest request) =>
-        AutomaticLoginOf(request.Provider) is { } login ? StartAfterAutomaticLogin(request, login.Task) : StartAdmitted(request);
+        !service.IsRemoteWorkspace(request.WorkspaceId) && AutomaticLoginOf(request.Provider) is { } login ? StartAfterAutomaticLogin(request, login.Task) : StartAdmitted(request);
     /// <summary>
     /// A send while the provider's automatic sign-in runs cancels it (holding the next automatic start for the
     /// cooldown) and goes ahead once its process is gone. The checks and the start below stay one synchronous step.
@@ -487,7 +488,7 @@ public sealed partial class MainWindow
     }
     private async Task<DelegationRelease> StartAdmitted(StartRunRequest request)
     {
-        if (AdmissionRefusal(request.Kind, request.Provider) is { } refusal) throw new InvalidOperationException(refusal);
+        if (!service.IsRemoteWorkspace(request.WorkspaceId) && AdmissionRefusal(request.Kind, request.Provider) is { } refusal) throw new InvalidOperationException(refusal);
         if (!options.SmokeTest) return await service.SendAsync(request);
         if (smokeSend is { } send) return await send(request);
         await (smokeStart?.Invoke(request) ?? throw new InvalidOperationException(SmokeNeverStartsCli));

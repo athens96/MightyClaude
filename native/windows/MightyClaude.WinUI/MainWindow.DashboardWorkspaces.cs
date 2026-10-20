@@ -106,7 +106,7 @@ public sealed partial class MainWindow
         });
         DashboardCapsule(files, PanelSymbol.FolderBold(brushes.Brush(DesignToken.Ink)), Locale.Get("files.pane.title"), brushes.Brush(DesignToken.Card), brushes.Brush(DesignToken.CardRaised), brushes.Brush(DesignToken.Ink));
         AutomationProperties.SetAutomationId(files, "dashboard-open-files-" + workspace.Id); ToolTipService.SetToolTip(files, Locale.Get("menu.showFiles"));
-        var add = new Button { Flyout = DashboardAddMenu(workspace.Id) };
+        var add = new Button { Flyout = DashboardAddMenu(workspace) };
         DashboardCapsule(add, PanelSymbol.PlusBold(brushes.Brush(DesignToken.Card)), Locale.Get("workspace.addPane"), brushes.Brush(DesignToken.Ink), brushes.Brush(DesignToken.Ink2), brushes.Brush(DesignToken.Card));
         AutomationProperties.SetAutomationId(add, "dashboard-add-session-" + workspace.Id);
         AutomationProperties.SetName(add, Locale.Get("workspace.addPaneAccessibility", new Dictionary<string, string> { ["workspace"] = workspace.Name }));
@@ -172,10 +172,13 @@ public sealed partial class MainWindow
     /// <summary>The Git capsule's corner: half its height (a 10pt line and v3).</summary>
     private const double DashboardGitRadius = 10;
 
-    private MenuFlyout DashboardAddMenu(string workspaceId)
+    private MenuFlyout DashboardAddMenu(Workspace workspace)
     {
+        // A remote workspace's menu offers agents and a remote command only (RemoteWorkspaceFeatures.AddPaneEntries); every menu ends with Connect to Another Computer….
+        var workspaceId = workspace.Id;
+        var entries = RemoteWorkspaceFeatures.AddPaneEntries(workspace);
         var menu = new MenuFlyout();
-        foreach (var entry in AddPaneMenu.Entries())
+        foreach (var entry in entries)
         {
             if (entry == AddPaneMenu.Separator) { menu.Items.Add(new MenuFlyoutSeparator()); continue; }
             if (entry == AddPaneMenu.OpenProject) { menu.Items.Add(OpenProjectMenuItem()); continue; }
@@ -183,7 +186,8 @@ public sealed partial class MainWindow
             var item = MenuItem(title, () => DashboardAddPane(workspaceId, entry));
             AutomationProperties.SetAutomationId(item, "dashboard-add-" + entry + "-" + workspaceId); menu.Items.Add(item);
         }
-        MarkAddPaneMenu(menu, AddPaneMenu.Entries());
+        MarkAddPaneMenu(menu, entries, workspace.Remote is not null);
+        menu.Items.Add(ConnectRemoteMenuItem(workspaceId));
         menu.Opening += (_, _) => { foreach (var item in menu.Items) item.IsEnabled = !dialogOpen && service.Snapshot.Workspaces.Any(w => w.Id == workspaceId); };
         return menu;
     }

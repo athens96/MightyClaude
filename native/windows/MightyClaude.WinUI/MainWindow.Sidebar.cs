@@ -25,6 +25,10 @@ public sealed partial class MainWindow
     /// <summary>The section header's folder-plus button, and its frame: 18 wide, 14 high (M/WorkspaceView.swift:117-119).</summary>
     private Button? sidebarAddWorkspaceButton;
     internal const double SidebarAddWorkspaceWidth = 18, SidebarAddWorkspaceHeight = 14;
+    /// <summary>The section header's network button beside it, in the same frame: Connect to Another Computer… (M/WorkspaceView.swift:132-140).</summary>
+    private Button? sidebarConnectRemoteButton;
+    /// <summary>The Mac's network symbol (Segoe Fluent Network) and desktopcomputer (Segoe Fluent PC1), for remote workspaces.</summary>
+    internal const string RemoteNetworkGlyph = "\uE968", SidebarRemoteGlyph = "\uE977";
     private readonly Grid sessionsHeaderRow = new() { ColumnSpacing = DesignMetrics.Spacing.Sm, Margin = new Thickness(DesignMetrics.Inset.SidebarSectionH, DesignMetrics.Inset.SidebarSectionT, DesignMetrics.Inset.SidebarSectionH, DesignMetrics.Inset.SidebarSectionB) };
     /// <summary>What the list says when it lists no workspace: none match the search, or none yet (M/WorkspaceView.swift:89-93).</summary>
     private readonly TextBlock sidebarEmpty = new() { TextSize = 12, TextWrapping = TextWrapping.Wrap, Padding = new Thickness(DesignMetrics.Spacing.Lg), Margin = new Thickness(DesignMetrics.Spacing.Sm, 0, DesignMetrics.Spacing.Sm, 0), Visibility = Visibility.Collapsed };
@@ -74,7 +78,7 @@ public sealed partial class MainWindow
         sessionsHeader.Foreground = sessionsCount.Foreground = sidebarEmpty.Foreground = brushes.Brush(DesignToken.SidebarInk2);
         // The Mac's 10pt line is 12 high where Segoe's is 14.
         sessionsHeader.Margin = sessionsCount.Margin = MacLine();
-        foreach (var width in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto }) sessionsHeaderRow.ColumnDefinitions.Add(new() { Width = width });
+        foreach (var width in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto, GridLength.Auto }) sessionsHeaderRow.ColumnDefinitions.Add(new() { Width = width });
         sessionsCount.HorizontalAlignment = HorizontalAlignment.Left;
         var add = sidebarAddWorkspaceButton = Button("", () => dialogOpen ? Task.CompletedTask : PickFolder());
         add.Content = MightySymbols.Create("folder.badge.plus", 11, null);
@@ -82,9 +86,17 @@ public sealed partial class MainWindow
         add.Foreground = brushes.Brush(DesignToken.SidebarInk2); add.VerticalAlignment = VerticalAlignment.Center;
         PlainSidebarButton(add, brushes.Transparent, brushes.Transparent);
         AutomationProperties.SetAutomationId(add, "sidebar-add-workspace");
+        // Another computer's shared workspaces open from Settings → Remote Connection: the network symbol beside the folder (M/WorkspaceView.swift:132-140).
+        var connect = sidebarConnectRemoteButton = Button("", () => dialogOpen ? Task.CompletedTask : OpenRemoteSettings());
+        connect.Content = new FontIcon { Glyph = RemoteNetworkGlyph, TextSize = 11 };
+        connect.Width = SidebarAddWorkspaceWidth; connect.Height = SidebarAddWorkspaceHeight; connect.MinWidth = connect.MinHeight = 0; connect.Padding = new Thickness(0);
+        connect.Foreground = brushes.Brush(DesignToken.SidebarInk2); connect.VerticalAlignment = VerticalAlignment.Center;
+        PlainSidebarButton(connect, brushes.Transparent, brushes.Transparent);
+        AutomationProperties.SetAutomationId(connect, "sidebar-connect-remote");
         sessionsHeaderRow.Children.Add(sessionsHeader);
         Grid.SetColumn(sessionsCount, 1); sessionsHeaderRow.Children.Add(sessionsCount);
         Grid.SetColumn(add, 2); sessionsHeaderRow.Children.Add(add);
+        Grid.SetColumn(connect, 3); sessionsHeaderRow.Children.Add(connect);
         return sessionsHeaderRow;
     }
 
@@ -263,13 +275,24 @@ public sealed partial class MainWindow
                 var group = new StackPanel { Spacing = DesignMetrics.Inset.ListGap, Margin = new Thickness(0, 0, 0, selected ? DesignMetrics.Spacing.Sm : 0) };
                 AutomationProperties.SetAutomationId(group, "sidebar-workspace-" + workspace.Id);
                 // The workspace row (M/WorkspaceView.swift:160-203): sidebarAccent × 0.10 at radius 7 while selected.
-                var header = new Grid { CornerRadius = new CornerRadius(DesignMetrics.Radius.Search), Background = selected ? brushes.Brush(DesignToken.SidebarAccent, DesignMetrics.Opacity.SidebarWorkspaceSelected) : brushes.Transparent, ContextFlyout = WorkspaceMenu(workspace.Id) };
+                var header = new Grid { CornerRadius = new CornerRadius(DesignMetrics.Radius.Search), Background = selected ? brushes.Brush(DesignToken.SidebarAccent, DesignMetrics.Opacity.SidebarWorkspaceSelected) : brushes.Transparent, ContextFlyout = WorkspaceMenu(workspace.Id, workspace.Remote is not null) };
                 header.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
                 var label = new Grid { ColumnSpacing = DesignMetrics.Spacing.Md };
                 label.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); label.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); label.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-                label.Children.Add(new FontIcon { Glyph = "\uE8B7", TextSize = 14, VerticalAlignment = VerticalAlignment.Center, Foreground = brushes.Brush(selected ? DesignToken.SidebarAccent : DesignToken.SidebarInk2) });
+                // A folder for a local workspace, a computer for another computer's (M/WorkspaceView.swift workspaceRow).
+                label.Children.Add(new FontIcon { Glyph = workspace.Remote is null ? "\uE8B7" : SidebarRemoteGlyph, TextSize = 14, VerticalAlignment = VerticalAlignment.Center, Foreground = brushes.Brush(selected ? DesignToken.SidebarAccent : DesignToken.SidebarInk2) });
                 var title = new TextBlock { Text = workspace.Name, TextSize = DesignMetrics.Type.Row, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = brushes.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, Margin = MacLine(), VerticalAlignment = VerticalAlignment.Center };
-                Grid.SetColumn(title, 1); label.Children.Add(title);
+                FrameworkElement name = title;
+                if (workspace.Remote is { } remote)
+                {
+                    // The host's name under the workspace's, 10pt sidebarInk2 on one line (M/WorkspaceView.swift workspaceRow); its OS is the status bar's.
+                    var names = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs, VerticalAlignment = VerticalAlignment.Center }; names.Children.Add(title);
+                    var host = new TextBlock { Text = remote.HostName, TextSize = DesignMetrics.Type.Small, Foreground = brushes.Brush(DesignToken.SidebarInk2), MaxLines = 1, TextTrimming = TextTrimming.CharacterEllipsis, Margin = MacLine() };
+                    AutomationProperties.SetAutomationId(host, "sidebar-remote-host-" + workspace.Id);
+                    AutomationProperties.SetName(host, Locale.Get("remote.workspace.badgeAccessibility", new Dictionary<string, string> { ["host"] = remote.HostName }));
+                    names.Children.Add(host); name = names;
+                }
+                Grid.SetColumn(name, 1); label.Children.Add(name);
                 var counts = new StatusCountsView(brushes, "workspace-running-" + workspace.Id); workspaceStatusCounts[workspace.Id] = counts;
                 counts.Update(WorkDashboard.WorkspaceBadges(state.Sessions.Where(s => s.WorkspaceId == workspace.Id), DashboardAttention), DarkTheme);
                 // The Mac's Spacer stands between the name and the counts (M/WorkspaceView.swift:168-174).
@@ -310,7 +333,7 @@ public sealed partial class MainWindow
                     var addLabel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = DesignMetrics.Spacing.Sm };
                     addLabel.Children.Add(new FontIcon { Glyph = "\uE710", TextSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextWidth = 12, Foreground = brushes.Brush(DesignToken.SidebarAccent), VerticalAlignment = VerticalAlignment.Center });
                     addLabel.Children.Add(new TextBlock { Text = Locale.Get("workspace.addPane"), TextSize = DesignMetrics.Type.Pill, Foreground = brushes.Brush(DesignToken.SidebarAccent), Margin = MacLine(), VerticalAlignment = VerticalAlignment.Center });
-                    add.Content = addLabel; add.Flyout = DashboardAddMenu(workspace.Id); add.TextSize = DesignMetrics.Type.Pill; add.Padding = new Thickness(28, DesignMetrics.Inset.SidebarRowV, DesignMetrics.Spacing.Lg, DesignMetrics.Inset.SidebarRowV); add.MinHeight = SidebarAddRowMin;
+                    add.Content = addLabel; add.Flyout = DashboardAddMenu(workspace); add.TextSize = DesignMetrics.Type.Pill; add.Padding = new Thickness(28, DesignMetrics.Inset.SidebarRowV, DesignMetrics.Spacing.Lg, DesignMetrics.Inset.SidebarRowV); add.MinHeight = SidebarAddRowMin;
                     PlainSidebarButton(add, brushes.Transparent, brushes.Transparent);
                     AutomationProperties.SetAutomationId(add, "workspace-add-session-" + workspace.Id);
                     AutomationProperties.SetName(add, Locale.Get("workspace.addPaneAccessibility", new Dictionary<string, string> { ["workspace"] = workspace.Name }));

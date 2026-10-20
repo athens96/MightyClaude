@@ -1342,10 +1342,12 @@ public sealed partial class MainWindow
     {
         var checks = new Dictionary<string, object?>();
         var items = NewSessionMenu().Items.ToList();
-        Require(items.Count == AddPaneMenu.Entries().Count, $"창 추가 메뉴 항목 수가 다릅니다: {items.Count}");
-        var last = items[^1] as MenuFlyoutItem;
-        Require(last is not null && last.Text == Locale.Get(AddPaneMenu.OpenProjectKey) && last.KeyboardAcceleratorTextOverride == AddPaneMenu.OpenFolderShortcut && items[^2] is MenuFlyoutSeparator,
-            "창 추가 메뉴 맨 아래에 구분선과 프로젝트 폴더 열기…가 없습니다: " + last?.Text);
+        // The shared entries end with a separator and Open Project Folder…, then Connect to Another Computer… (M/WorkspaceView.swift:832-841).
+        Require(items.Count == AddPaneMenu.Entries().Count + 1, $"the add-pane menu has {items.Count} items, not {AddPaneMenu.Entries().Count + 1}");
+        var last = items[^2] as MenuFlyoutItem;
+        Require(last is not null && last.Text == Locale.Get(AddPaneMenu.OpenProjectKey) && last.KeyboardAcceleratorTextOverride == AddPaneMenu.OpenFolderShortcut && items[^3] is MenuFlyoutSeparator
+            && items[^1] is MenuFlyoutItem { Text: var connect } && connect == Locale.Get("remote.menu.connect"),
+            "the add-pane menu must end with a separator, Open Project Folder… and Connect to Another Computer…: " + last?.Text);
         checks["openProjectLast"] = true;
         checks["openProjectText"] = last!.Text;
 

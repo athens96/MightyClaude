@@ -38,7 +38,8 @@ public sealed partial class MainWindow
         var busy = service.HasActiveProvider(provider) || remoteHostRuns > 0 || loginBusy.ContainsKey(provider) || accountChanges.ContainsKey(provider) || accountLoginWaits.ContainsKey(provider) || panes.Any(p => p.UpdateStarting);
         return CliAutoUpdateSchedule.IdleLongEnough(busy, panes.Any(p => p.UpdateHasQueue), providerLastActive.TryGetValue(provider, out var last) ? last : null, DateTimeOffset.UtcNow);
     }
-    private bool BackgroundUpdateHolds(RunSession pane) => pane.Kind == "claude" && automaticUpdateRunning && automaticallyUpdatingProvider == pane.Provider;
+    /// <summary>An automatic update of the pane's CLI holds its sends; never a remote pane's, whose CLI is its host's (M backgroundUpdateHolds).</summary>
+    private bool BackgroundUpdateHolds(RunSession pane) => pane.Kind == "claude" && automaticUpdateRunning && automaticallyUpdatingProvider == pane.Provider && !service.IsRemoteWorkspace(pane.WorkspaceId);
     private void CheckAutomaticUpdates()
     {
         if (options.SmokeTest || closing || AnyCliUpdateRunning || pluginOperations.IsRunning) return;

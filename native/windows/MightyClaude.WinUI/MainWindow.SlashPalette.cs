@@ -107,7 +107,7 @@ public sealed partial class MainWindow
             var pane = Session;
             if (argument == SlashArgument.Model)
             {
-                var catalog = owner.Runtime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
+                var catalog = PaneRuntime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
                 return SlashPalette.ModelChoices(command, ModelLabel.PickerOptions(pane, catalog).Select(m => (m.Value, m.DisplayName)), pane.Model);
             }
             var modes = (Capabilities.PermissionModes ?? []).Where(ProviderCatalog.PermissionModes(pane.Provider).Contains);
@@ -263,7 +263,7 @@ public sealed partial class MainWindow
                 {
                     if (argument is not { } model) return false;
                     if (running) { await SlashNote(SlashCommandStrings.NoteModelRunning); break; }
-                    var catalog = owner.Runtime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
+                    var catalog = PaneRuntime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
                     var name = ModelLabel.Selection(pane with { Model = model }, catalog);
                     if (pane.Model == model) { await SlashNote(SlashCommandStrings.NoteModelAlreadyTemplate.Replace("{name}", name)); break; }
                     await ChangeModel(model);

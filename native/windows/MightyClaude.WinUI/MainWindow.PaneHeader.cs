@@ -314,7 +314,7 @@ public sealed partial class MainWindow
             rest = rest.Length == 0 || !timed ? rest : " · " + rest;
             if (figuresRest.Text != rest) figuresRest.Text = rest;
             named.Add(ProviderCatalog.Name(pane.Provider));
-            var catalog = owner.Runtime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
+            var catalog = PaneRuntime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
             // The pane's own choice when it names one, else what the CLI reported.
             var model = !string.IsNullOrWhiteSpace(pane.Model) && pane.Model.Trim() != "default" ? ModelLabel.Selection(pane, catalog) : ModelLabel.ReportedModel(pane) is { } reported ? ModelLabel.Text(reported) : null;
             if (model is not null) named.Add(model);

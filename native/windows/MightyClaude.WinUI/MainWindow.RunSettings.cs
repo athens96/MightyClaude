@@ -65,7 +65,7 @@ public sealed partial class MainWindow
             if (owner.dialogOpen || !QueuePaneAlive) return Task.CompletedTask;
             runSettingsFlyout?.Hide();
             var b = owner.brushes; var ink = b.Brush(DesignToken.Ink); var ink2 = b.Brush(DesignToken.Ink2); var line = b.Brush(DesignToken.Line);
-            var pane = Session; var caps = Capabilities; var runtime = owner.Runtime(pane.Provider);
+            var pane = Session; var caps = Capabilities; var runtime = PaneRuntime(pane.Provider);
             var catalog = runtime?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
             var selected = catalog.Models.FirstOrDefault(m => m.Value == pane.Model);
             var fastMode = pane.Settings.FastMode; var networkAccess = pane.Settings.NetworkAccess; var webSearch = pane.Settings.WebSearch;

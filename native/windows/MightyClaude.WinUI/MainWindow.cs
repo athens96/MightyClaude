@@ -167,6 +167,7 @@ public sealed partial class MainWindow : Window
         addFolderLabel.Text = Locale.Get("sidebar.openFolder"); AutomationProperties.SetName(addFolderButton, addFolderLabel.Text);
         sessionsHeader.Text = Locale.Get("sidebar.workspacesHeader");
         if (sidebarAddWorkspaceButton is { } addWorkspace) { AutomationProperties.SetName(addWorkspace, Locale.Get(AddPaneMenu.OpenProjectKey)); ToolTipService.SetToolTip(addWorkspace, Locale.Get(AddPaneMenu.OpenProjectKey)); }
+        if (sidebarConnectRemoteButton is { } connectRemote) { AutomationProperties.SetName(connectRemote, Locale.Get("remote.menu.connect")); ToolTipService.SetToolTip(connectRemote, Locale.Get("remote.menu.connect")); }
         RefreshSidebarThemeButton(); RefreshSidebarHelpButton(); RefreshSidebarToggles();
         AutomationProperties.SetName(settingsButton, Locale.Get("settings.settingsWindowTitle"));
         ToolTipService.SetToolTip(settingsButton, Locale.Get("settings.settingsWindowTitle"));
@@ -206,7 +207,7 @@ public sealed partial class MainWindow : Window
     private async Task<bool> AddPane(string kind, string provider = "claude", string? groupId = null, Func<RunSession, RunSession>? shape = null)
     {
         var added = false;
-        await Act(async () => { var state = service.Snapshot; var workspace = state.ActiveWorkspaceId ?? throw new InvalidOperationException(Locale.Get("window.error.addWorkspaceFirst")); if (kind is not ("claude" or "shell") && !RemoteWorkspaceFeatures.AllowsLocalOnly(state.Workspaces.FirstOrDefault(w => w.Id == workspace))) throw new InvalidOperationException(RemoteWindowsStrings.PaneUnavailable); var pane = new RunSession { WorkspaceId = workspace, Kind = kind, Provider = provider, Title = kind == "shell" ? Locale.Get("session.title.shell") : ProviderCatalog.Name(provider) }; pane = SessionTemplate.Inherit(pane, state.Sessions); if (shape is not null) pane = shape(pane); await service.UpdateAsync(s => PaneLayout.HasRoom(s) ? AddToLayout(s, workspace, pane, groupId) : throw new InvalidOperationException(Locale.Get("workspace.paneLimit"))); added = true; HideDashboard(); Render(); });
+        await Act(async () => { var state = service.Snapshot; var workspace = state.ActiveWorkspaceId ?? throw new InvalidOperationException(Locale.Get("window.error.addWorkspaceFirst")); var target = state.Workspaces.FirstOrDefault(w => w.Id == workspace); if (kind is not ("claude" or "shell") && !RemoteWorkspaceFeatures.AllowsLocalOnly(target)) throw new InvalidOperationException(RemoteWindowsStrings.PaneUnavailable); var pane = new RunSession { WorkspaceId = workspace, Kind = kind, Provider = provider, Title = kind == "shell" ? Locale.Get(target?.Remote is null ? "session.title.shell" : "remote.pane.commandTitle") : ProviderCatalog.Name(provider) }; pane = SessionTemplate.Inherit(pane, state.Sessions); if (shape is not null) pane = shape(pane); await service.UpdateAsync(s => PaneLayout.HasRoom(s) ? AddToLayout(s, workspace, pane, groupId) : throw new InvalidOperationException(Locale.Get("workspace.paneLimit"))); added = true; HideDashboard(); Render(); });
         return added;
     }
     // While a check runs the status bar says so; at rest it names the machine, as the Mac's does (RefreshStatusBar).
@@ -368,9 +369,21 @@ public sealed partial class MainWindow : Window
             get
             {
                 var pane = Session;
-                return owner.Runtime(pane.Provider)?.Capabilities ?? ProviderCatalog.Capabilities(pane.Provider);
+                return PaneRuntime(pane.Provider)?.Capabilities ?? ProviderCatalog.Capabilities(pane.Provider);
             }
         }
+        /// <summary>
+        /// The pane's CLI: this PC's, or for a remote workspace the host's as its last answer said (a stand-in that blocks nothing before
+        /// it answered), as the Mac's providerRuntime(_:workspaceId:) decides; its models, modes and abilities are what the pane offers.
+        /// </summary>
+        internal ProviderRuntime? PaneRuntime(string provider) => owner.service.RemoteReference(id) is { } remote
+            ? RemoteWorkspaceFeatures.ProviderRuntime(provider, remote, owner.service.Remote?.Connection(remote.ConnectionId)) : owner.Runtime(provider);
+        /// <summary>
+        /// Why this pane cannot run with <paramref name="runtime"/> (M/AppStore.swift runBlockedReason): a remote pane's reason is its host's
+        /// (its connection gone, its CLI missing or without the mode), never this PC's CLI.
+        /// </summary>
+        private string? RunBlockReason(ProviderRuntime? runtime) => owner.service.RemoteReference(id) is { } remote
+            ? RemoteWorkspaceFeatures.BlockedReason(Session, remote, owner.service.Remote?.Connection(remote.ConnectionId)) : RunBlock.Reason(Session, runtime);
         internal PaneView(MainWindow owner, string id)
         {
             this.owner = owner; this.id = id; FitComposerToText(); AppText.Follow(input, FitComposerToText);
@@ -516,7 +529,7 @@ public sealed partial class MainWindow : Window
         private Task PrimaryAction() => ComposerPrimaryAction();
         private void RefreshComposerState()
         {
-            var pane = Session; var busy = pane.Status == "running" || starting || queueStarting || owner.BackgroundUpdateHolds(pane); var runtime = owner.Runtime(pane.Provider); var workspace = Workspace;
+            var pane = Session; var busy = pane.Status == "running" || starting || queueStarting || owner.BackgroundUpdateHolds(pane); var runtime = PaneRuntime(pane.Provider); var workspace = Workspace;
             var catalog = runtime?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
             var registeredModels = RegisteredModelsFor(pane.Provider, workspace, owner.service.Snapshot);
             var levels = ProviderCatalog.Efforts(pane.Provider, pane.Model, catalog, registeredModels);
@@ -528,6 +541,8 @@ public sealed partial class MainWindow : Window
             // Why a draft cannot run yet: its own row over the toolbar (M/SessionPaneView.swift:631-643). Attachments being
             // read and a background update holding sends each have their own row with a spinner (:585-590, 622-630).
             var reason = mutationBlock ?? (busy || attachmentsLoading ? ""
+                // A remote pane's host says first why it cannot run (its connection gone, its CLI missing or without the mode).
+                : workspace.Remote is not null && RunBlockReason(runtime) is { } remoteBlock ? remoteBlock
                 : pane.Kind == "claude" && runtime?.Available != true ? Locale.Get("composer.hint.draftStillAllowed", new Dictionary<string, string> { ["reason"] = runtime?.Detail ?? Locale.Get("composer.hint.refreshRuntime") })
                 : unsupportedEffort ? Locale.Get("composer.hint.effortUnverified", new Dictionary<string, string> { ["effort"] = pane.Settings.Effort })
                 : unsupportedSettings ?? "");
@@ -638,7 +653,7 @@ public sealed partial class MainWindow : Window
         });
         private Task Change(Func<RunSession, RunSession> update) => owner.service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => p.Id == id ? update(p) : p).ToList() });
         private Task ChangeSettings(Func<RunSettings, RunSettings> update) => owner.Act(async () => { if (Session.Status == "running") return; await Change(p => p with { Settings = update(p.Settings) }); Refresh(); input.Focus(FocusState.Programmatic); });
-        private Task ChangeModel(string value) => owner.Act(async () => { if (Session.Status == "running") return; if (!Wire.Model(value)) throw new ArgumentException(Locale.Get("composer.model.invalidName")); var pane = Session; var catalog = owner.Runtime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider); var registeredModels = RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot); await Change(p => p with { Model = value, Settings = p.Settings with { Effort = ProviderCatalog.Efforts(p.Provider, value, catalog, registeredModels).Contains(p.Settings.Effort) ? p.Settings.Effort : "default" } }); Refresh(); input.Focus(FocusState.Programmatic); });
+        private Task ChangeModel(string value) => owner.Act(async () => { if (Session.Status == "running") return; if (!Wire.Model(value)) throw new ArgumentException(Locale.Get("composer.model.invalidName")); var pane = Session; var catalog = PaneRuntime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider); var registeredModels = RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot); await Change(p => p with { Model = value, Settings = p.Settings with { Effort = ProviderCatalog.Efforts(p.Provider, value, catalog, registeredModels).Contains(p.Settings.Effort) ? p.Settings.Effort : "default" } }); Refresh(); input.Focus(FocusState.Programmatic); });
         private static MenuFlyoutItem Item(string text, Func<Task> action, string? help = null)
         {
             var item = new MenuFlyoutItem { Text = text }; item.Click += async (_, _) => await action(); if (help is not null) ToolTipService.SetToolTip(item, help); return item;
@@ -845,12 +860,12 @@ public sealed partial class MainWindow : Window
             // A files pane runs nothing: it draws its tree and preview instead (MainWindow.Files.cs).
             if (FilePaneKind.IsFilePane(pane.Kind)) { EnsureFilesView(); RethemeFilesMarkdown(); return true; }
             RefreshTerminalTheme(); RethemeMightyTranscripts(owner.service.Snapshot.Theme == "light"); RethemePlanViews(); RethemeStructureAnswers(); FitReferencePreview();
-            updating = true; var runtime = owner.Runtime(pane.Provider); var catalog = runtime?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
+            updating = true; var runtime = PaneRuntime(pane.Provider); var catalog = runtime?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
             var state = owner.service.Snapshot; RefreshHeaderStatus(pane); output.Update(pane, state.Theme == "light", owner.pictures, LocalPath(state.Workspaces.FirstOrDefault(w => w.Id == pane.WorkspaceId))); RefreshEmptyOutput(pane); RefreshElapsed(pane); RefreshPlanHistory(pane); RefreshBackgroundWork(pane); RedecidePlanPlace();
             // Do not rewrite or recreate the editor during output/metadata refreshes.
             if (!draftLoaded) { input.Text = pane.Draft; draftLoaded = true; RefreshPalette(input.Text); }
             RefreshMenus(pane, catalog);
-            detail.Text = Locale.Get("workspace.location.thisComputer") + (pane.Kind == "shell" ? " · " + Locale.Get("composer.detail.shell") : " · " + (catalog.Source == "cli" ? Locale.Get("composer.detail.modelsFromCli") : Locale.Get("composer.detail.defaultModels")) + (pane.ResumeId is null ? "" : " · " + Locale.Get("composer.detail.resuming")));
+            detail.Text = (owner.RemoteHostLabel(state.Workspaces.FirstOrDefault(w => w.Id == pane.WorkspaceId)) ?? Locale.Get("workspace.location.thisComputer")) + (pane.Kind == "shell" ? " · " + Locale.Get("composer.detail.shell") : " · " + (catalog.Source == "cli" ? Locale.Get("composer.detail.modelsFromCli") : Locale.Get("composer.detail.defaultModels")) + (pane.ResumeId is null ? "" : " · " + Locale.Get("composer.detail.resuming")));
             RefreshComposerState(); ArrangeComposer();
             RequestStatusLineRefresh();
             RenderLoginRecovery();

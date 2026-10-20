@@ -40,7 +40,8 @@ public sealed partial class MainWindow
             Require(WorkspaceDisclosure.Expanded(service.Snapshot).SetEquals([first.Id, second.Id]) && ReferenceEquals(views[firstSession.Id], retainedPane), "Selecting a workspace reopens it without collapsing another or replacing the composer.");
             var add = VisualChildren(sidebar).OfType<Button>().Single(b => AutomationProperties.GetAutomationId(b) == "workspace-add-session-" + second.Id);
             await WaitUI(() => add.IsLoaded && add.ActualWidth > 0);
-            Require(add.Flyout is MenuFlyout { Items.Count: > 0 } menu && menu.Items.Count == AddPaneMenu.Entries().Count, "Every workspace has the complete shared Add Pane menu.");
+            // The shared entries, then Connect to Another Computer… (M/WorkspaceView.swift:838-841).
+            Require(add.Flyout is MenuFlyout { Items.Count: > 0 } menu && menu.Items.Count == AddPaneMenu.Entries().Count + 1, "Every workspace has the complete shared Add Pane menu.");
             add.Flyout!.ShowAt(add);
             var files = ((MenuFlyout)add.Flyout).Items.OfType<MenuFlyoutItem>().Single(item => AutomationProperties.GetAutomationId(item) == "dashboard-add-" + AddPaneMenu.Files + "-" + second.Id);
             // The smoke shares its desktop: a press in another program puts an open menu away, so it is shown again until its item is there.
@@ -218,7 +219,7 @@ public sealed partial class MainWindow
         {
             AddPaneMenu.Separator => "-", AddPaneMenu.Shell => Locale.Get("workspace.newTerminal"), AddPaneMenu.Browser => Locale.Get("browser.newTab"),
             AddPaneMenu.Files => Locale.Get("menu.showFiles"), AddPaneMenu.OpenProject => Locale.Get(AddPaneMenu.OpenProjectKey), _ => Agent(AddPaneMenu.AgentProvider(entry)!),
-        }).ToList();
+        }).Append(Locale.Get("remote.menu.connect")).ToList();
         foreach (var (menu, what) in new[] { (add.Flyout, "the sidebar's add-pane menu"), (NewSessionMenu(), "a tab group's add-pane menu") })
         {
             Require(MenuWords(menu).SequenceEqual(addWant), $"{SidebarDesignKey} ({theme}): {what} must read as the Mac's, [{string.Join(" | ", addWant)}]; got [{string.Join(" | ", MenuWords(menu))}]");

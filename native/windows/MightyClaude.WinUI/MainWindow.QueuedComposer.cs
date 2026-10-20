@@ -270,7 +270,7 @@ public sealed partial class MainWindow
             if (!QueuePaneAlive || starting || queueStarting || Session.Status == "running" || owner.service.IsSessionRunning(id) || owner.BackgroundUpdateHolds(Session) || owner.ManualMutationBlockReason(Session) is not null || queuedInputs.Items.FirstOrDefault() is not { } item) return;
             // A pane that cannot run at all drops what waited and says why (M/AppStore.swift:904-908), but only once a fresh reading,
             // the CLI looked for again rather than the one held, says so too: a reading taken mid-update may be wrong.
-            if (RunBlock.Reason(Session, owner.Runtime(Session.Provider)) is not null)
+            if (RunBlockReason(PaneRuntime(Session.Provider)) is not null)
             {
                 queueStarting = true; RefreshComposerState();
                 ProviderRuntime fresh;
@@ -278,7 +278,7 @@ public sealed partial class MainWindow
                 try { fresh = LocalPath(Workspace) is { } folder ? await owner.ReadProviderAfresh(Session.Provider, folder) : RemoteWorkspaceFeatures.ProviderRuntime(Session.Provider, Workspace.Remote!, owner.service.Remote?.Connection(Workspace.Remote!.ConnectionId)); }
                 finally { queueStarting = false; if (QueuePaneAlive) RefreshComposerState(); }
                 if (!QueuePaneAlive || !queuedInputs.Items.Contains(item)) return;
-                if (RunBlock.Reason(Session, fresh) is { } blocked)
+                if (RunBlockReason(fresh) is { } blocked)
                 {
                     var notice = QueuedInputBuffer.UnrunnableNotice(queuedInputs.Items.Count, blocked);
                     queuedInputs.Clear(); RenderQueuedInputs(); await SlashNote(notice);

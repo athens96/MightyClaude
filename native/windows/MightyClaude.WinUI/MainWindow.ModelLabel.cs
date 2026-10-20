@@ -16,7 +16,7 @@ public sealed partial class MainWindow
         internal Dictionary<string, object?> RunModelLabelSmoke()
         {
             var pane = Session;
-            var catalog = owner.Runtime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
+            var catalog = PaneRuntime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
             RefreshMenus(pane, catalog);
             var shown = PillText(model).Text;
             var selection = ModelLabel.Selection(pane, catalog);

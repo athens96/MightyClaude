@@ -668,6 +668,7 @@ internal static class Verification
         await Test("remote desktop: the host reads this PC's CLIs once, and again when stale, failed or forgotten", RemoteDesktopVerification.TheHostReadsThisPCsCLIsOnceAndAgainWhenStaleFailedOrForgotten);
         await Test("remote desktop: the window reads a workspace's folder only through LocalPath", RemoteDesktopVerification.TheWindowReadsAWorkspacesFolderOnlyThroughLocalPath);
         await Test("remote desktop: the remote page copies the key secretly and host runs hold updates", RemoteDesktopVerification.TheRemotePageCopiesTheKeySecretlyAndHostRunsHoldUpdates);
+        await Test("remote desktop: the window names a remote host and keeps its panes to it", RemoteDesktopVerification.TheWindowNamesARemoteHostAndKeepsItsPanesToIt);
         await Test("corrupt/unknown/oversize state cannot be overwritten by shutdown", async () =>
         {
             foreach (var text in new[] { "null", "{", "{\"version\":2,\"workspaces\":[],\"sessions\":[]}", "{\"version\":1,\"workspaces\":null,\"sessions\":[]}" })
