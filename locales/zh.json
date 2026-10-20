@@ -2919,5 +2919,6 @@
   "remote.hostWithOS": "{host} · {os}",
   "remote.sessionInfo.hostOS": "运行电脑的系统",
   "remote.windows.connect.error.timeout": "对方电脑没有及时响应。请确认它已开机并连接到 Tailscale。",
+  "remote.windows.connect.error.savedUnreadable": "暂时无法读取已保存的连接：另一个程序正在打开该文件。请稍后再试。",
   "remote.windows.host.error.commandTooLong": "这条命令太长，无法在这台电脑上运行。请缩短命令，或把它保存为共享文件夹中的脚本文件后再运行。"
 }

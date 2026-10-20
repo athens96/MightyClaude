@@ -11,6 +11,8 @@ public sealed record RemoteClientOptions
     /// <summary>This PC's Tailscale addresses (empty while Tailscale is off); tests replace it.</summary>
     public Func<IReadOnlyList<string>>? LocalAddresses { get; init; }
     public TimeSpan PollRetryWindow { get; init; } = RemoteProtocol.PollRetryWindow;
+    /// <summary>How long a connect waits for a saved-connections file held open by another program before it is refused.</summary>
+    public TimeSpan SavedReadWait { get; init; } = TimeSpan.FromSeconds(5);
 }
 
 /// <summary>
@@ -66,7 +68,9 @@ public sealed partial class RemoteClientService : IAsyncDisposable
     /// <summary>Connects with a new address and key, or replaces the key of the saved connection at the same address (a host that restarted sharing has a new one).</summary>
     public async Task<RemoteConnectionInfo> ConnectAsync(string name, string address, string key)
     {
-        LoadSaved();
+        // As the Mac's actor, which reads its saved file before any connect: a connect never adds an entry while the file is unread, so
+        // an address it holds keeps its id (and its workspaces' references), and nothing new waits unsaved for a write that never comes.
+        await SavedReadAsync();
         var label = (name ?? "").Trim(); var trimmed = (key ?? "").Trim();
         if (RemoteText.Count(label, RemoteConnectionFile.MaximumName + 1) > RemoteConnectionFile.MaximumName || !RemoteWorkspaceValidation.Key(trimmed)) throw new ArgumentException(Locale.Get("remote.connect.error.badKey"));
         var parsed = RemoteAddress.Parse(address);
@@ -315,7 +319,12 @@ public sealed partial class RemoteClientService : IAsyncDisposable
         lock (gate)
         {
             if (loaded || Environment.TickCount64 < loadRetryAt) return;
-            if (!RemoteConnectionFile.TryRead(dataDirectory, out var items)) { loadFailed = true; loadRetryAt = Environment.TickCount64 + 1000; return; }
+            if (!RemoteConnectionFile.TryRead(dataDirectory, out var items, out var failure))
+            {
+                // A refusal is likely to stay (the file's rights); say so once, never the path or anything in the file.
+                if (!loadFailed && failure is UnauthorizedAccessException) System.Diagnostics.Trace.TraceWarning("remote connections file: access refused; connections are read again later");
+                loadFailed = true; loadRetryAt = Environment.TickCount64 + 1000; return;
+            }
             loaded = true; late = loadFailed;
             foreach (var item in items)
             {
@@ -327,6 +336,24 @@ public sealed partial class RemoteClientService : IAsyncDisposable
             }
         }
         if (late) Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// Waits, at most <see cref="RemoteClientOptions.SavedReadWait"/>, until the saved-connections file is read; then refuses with
+    /// <see cref="RemoteWindowsStrings.SavedUnreadable"/>.
+    /// </summary>
+    private async Task SavedReadAsync()
+    {
+        var end = Environment.TickCount64 + (long)options.SavedReadWait.TotalMilliseconds;
+        while (true)
+        {
+            LoadSaved();
+            lock (gate) if (loaded) return;
+            if (Environment.TickCount64 >= end) throw new InvalidOperationException(RemoteWindowsStrings.SavedUnreadable);
+            await Task.Delay(100);
+            // The next try is not held back a second when a connect is waiting on it.
+            lock (gate) loadRetryAt = 0;
+        }
     }
 
     /// <summary>Writes id, name and address of every listed connection, never a key. The caller holds <see cref="listing"/>.</summary>

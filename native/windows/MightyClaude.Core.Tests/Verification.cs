@@ -617,6 +617,7 @@ internal static class Verification
         await Test("remote client: connections are saved without their key and read it on first use", RemoteClientVerification.ConnectionsAreSavedWithoutTheirKeyAndReadItOnFirstUse);
         await Test("remote client: no connection leaves this PC's tunnel", RemoteClientVerification.NoConnectionLeavesThisPCsTunnel);
         await Test("remote client: a connections file held open is read later and never written over", RemoteClientVerification.AConnectionsFileHeldOpenIsReadLaterAndNeverWrittenOver);
+        await Test("remote client: a connect waits for a held connections file and keeps the file's ids", RemoteClientVerification.AConnectWaitsForAHeldConnectionsFile);
         await Test("remote client: the host is read strictly and a key the vault refuses stays in memory", RemoteClientVerification.TheHostIsReadStrictlyAndAKeyTheVaultRefusesStaysInMemory);
         await Test("remote client: text is cut at whole characters", RemoteClientVerification.TextIsCutAtWholeCharacters);
         await Test("remote client: overlapping changes keep the newer state", RemoteClientVerification.OverlappingChangesKeepTheNewerState);

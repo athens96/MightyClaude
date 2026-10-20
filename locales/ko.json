@@ -2919,5 +2919,6 @@
   "remote.hostWithOS": "{host} · {os}",
   "remote.sessionInfo.hostOS": "실행 컴퓨터 OS",
   "remote.windows.connect.error.timeout": "연결한 컴퓨터가 제때 답하지 않았습니다. 그 컴퓨터가 켜져 있고 Tailscale에 연결되어 있는지 확인하세요.",
+  "remote.windows.connect.error.savedUnreadable": "저장된 연결을 아직 읽지 못했습니다. 다른 프로그램이 파일을 열고 있습니다. 잠시 후 다시 시도하세요.",
   "remote.windows.host.error.commandTooLong": "이 명령은 이 PC에서 실행하기에 너무 깁니다. 명령을 줄이거나, 공유 폴더에 스크립트 파일로 저장해 실행하세요."
 }
