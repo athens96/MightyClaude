@@ -500,6 +500,45 @@ internal static class RemoteDesktopVerification
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Both firewall rows say when the rule there does not open every port in use now: the rule's ports are read from show rule's output
+    /// (labels in any language, the values are numbers), and a rule whose ports cannot be read is never said to be current.
+    /// </summary>
+    internal static async Task TheFirewallRowsSayWhenTheRuleLacksAPortInUse()
+    {
+        const string english = "\r\nRule Name:                            Mighty Claude (Tailscale)\r\n----------------------------------------------------------------------\r\nEnabled:                              Yes\r\nDirection:                            In\r\nProfiles:                             Domain,Private,Public\r\nGrouping:                             \r\nLocalIP:                              100.64.0.0/10,fd7a:115c:a1e0::/48\r\nRemoteIP:                             100.64.0.0/10,fd7a:115c:a1e0::/48\r\nProtocol:                             TCP\r\nLocalPort:                            43137,43139\r\nRemotePort:                           Any\r\nEdge traversal:                       No\r\nAction:                               Allow\r\nOk.\r\n";
+        const string translated = "Regelname:                            Mighty Claude (Tailscale)\nAktiviert:                            Ja\nLokale IP:                            100.64.0.0/10,fd7a:115c:a1e0::/48\nProtokoll:                            TCP\nLokaler Port:                         43137\nRemoteport:                           Beliebig\nOK.\n";
+        Check(WindowsFirewallRule.ShownPorts(english) is [43137, 43139], "the English output's local ports");
+        Check(WindowsFirewallRule.ShownPorts(translated) is [43137], "a translated output's local port: the labels change, the numbers do not");
+        Check(WindowsFirewallRule.ShownPorts(english + english.Replace("43137,43139", "43140", StringComparison.Ordinal)) is [43137, 43139, 43140], "two rules by the name open their ports together");
+        foreach (var unreadable in new[] { null, "", "Ok.\r\n", english.Replace("43137,43139", "Any", StringComparison.Ordinal), english.Replace("43137,43139", "43137-43139", StringComparison.Ordinal), english.Replace("43137,43139", "43137,99999", StringComparison.Ordinal) })
+            Check(WindowsFirewallRule.ShownPorts(unreadable) is null, "no plain port list reads as unknown ports: " + unreadable?.Length);
+        Check(RemoteWorkspaceFeatures.FirewallNeedsUpdate(FirewallRuleState.Present, [43139], [43137, 43139]), "a rule without the sharing port needs an update");
+        Check(!RemoteWorkspaceFeatures.FirewallNeedsUpdate(FirewallRuleState.Present, [43137, 43139], [43137, 43139]) && !RemoteWorkspaceFeatures.FirewallNeedsUpdate(FirewallRuleState.Present, [43137, 43139, 43140], [43137]), "a rule holding every port in use is current, whatever else it opens");
+        Check(RemoteWorkspaceFeatures.FirewallNeedsUpdate(FirewallRuleState.Present, null, [43137]), "a rule whose ports cannot be read is never said to be current");
+        Check(!RemoteWorkspaceFeatures.FirewallNeedsUpdate(FirewallRuleState.Present, null, []) && !RemoteWorkspaceFeatures.FirewallNeedsUpdate(FirewallRuleState.Absent, null, [43137]) && !RemoteWorkspaceFeatures.FirewallNeedsUpdate(FirewallRuleState.Unknown, null, [43137]),
+            "nothing to open, no rule or an unread rule: nothing to update");
+        // The runner reads the ports from the query's output, never elevating to read.
+        var seen = new List<System.Diagnostics.ProcessStartInfo>();
+        var system32 = @"C:\Windows\System32"; var program = @"C:\Program Files\Mighty Claude\MightyClaude.exe";
+        var reading = new WindowsFirewallRuleRunner((info, _) => { seen.Add(info); return Task.FromResult(0); }, system32, program, (info, _) => { seen.Add(info); return Task.FromResult((0, english)); });
+        Check(await reading.ReadRuleAsync(CancellationToken.None) is { State: FirewallRuleState.Present, Ports: [43137, 43139] } && seen.Single() is { UseShellExecute: false, RedirectStandardOutput: true }, "a rule there reads with its ports, unelevated");
+        var absent = new WindowsFirewallRuleRunner((_, _) => Task.FromResult(0), system32, program, (_, _) => Task.FromResult((1, english)));
+        Check(await absent.ReadRuleAsync(CancellationToken.None) == new FirewallRuleReading(FirewallRuleState.Absent), "no rule has no ports");
+        Check(await new WindowsFirewallRuleRunner((_, _) => Task.FromResult(0), system32, program).ReadRuleAsync(CancellationToken.None) == new FirewallRuleReading(FirewallRuleState.Present), "a runner that cannot read output knows the rule, not its ports");
+        // Both rows say it, and say that removing the rule closes both ports.
+        var folder = ClaudePluginVerification.WinUISource();
+        foreach (var file in new[] { "MainWindow.RemoteWorkspaces.cs", "MainWindow.MobileRemote.cs" })
+        {
+            var text = File.ReadAllText(Path.Combine(folder, file));
+            Check(text.Contains("firewallText.Text = MobileDirectStrings.FirewallState(firewallState) + FirewallNeedsUpdateWords() + ", StringComparison.Ordinal), file + ": the row says when the rule needs an update");
+            Check(text.Contains("firewallWords.Children.Add(SettingsText(RemoteWindowsStrings.FirewallRemoveClosesBoth, 11, DesignToken.Ink2));", StringComparison.Ordinal), file + ": the row says removing the rule closes both ports");
+        }
+        var direct = File.ReadAllText(Path.Combine(folder, "MainWindow.MobileDirect.cs"));
+        Check(direct.Contains("(firewallState, firewallRulePorts) = await runner.ReadRuleAsync(CancellationToken.None);", StringComparison.Ordinal)
+            && direct.Contains("RemoteWorkspaceFeatures.FirewallNeedsUpdate(firewallState, firewallRulePorts, [.. FirewallPorts()])", StringComparison.Ordinal), "the window reads the rule's ports and decides in Core");
+    }
+
     /// <summary>A closed parent's child is placed only in a local workspace: a remote one's folder is its host's path, never this PC's.</summary>
     internal static Task AClosedParentsChildIsNeverPlacedInARemoteWorkspace()
     {

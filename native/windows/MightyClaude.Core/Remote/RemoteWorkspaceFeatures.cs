@@ -60,6 +60,13 @@ public static class RemoteWorkspaceFeatures
     /// <summary>The Windows Firewall rule's ports (WindowsFirewallRule): the phone's direct port and the sharing port, whichever are on.</summary>
     public static IReadOnlyList<int> FirewallPorts(int? phoneDirectPort, int? sharingPort) =>
         new[] { phoneDirectPort, sharingPort }.OfType<int>().Where(p => p is >= 1024 and <= 65535).Distinct().Order().ToList();
+
+    /// <summary>
+    /// Whether the rule that is there must be updated: it does not open every port in use now (<paramref name="needed"/>), or its ports
+    /// could not be read (null), so it is never said to be current without proof. False when there is no rule or nothing to open.
+    /// </summary>
+    public static bool FirewallNeedsUpdate(FirewallRuleState state, IReadOnlyCollection<int>? rulePorts, IReadOnlyCollection<int> needed) =>
+        state == FirewallRuleState.Present && needed.Count > 0 && (rulePorts is null || !needed.All(rulePorts.Contains));
 }
 
 /// <summary>How the connection key is copied (M/RemoteSettingsView copyButton secret:): never in clipboard history or the cloud clipboard, cleared after a minute if still there.</summary>

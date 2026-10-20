@@ -29,6 +29,10 @@ public static class RemoteWindowsStrings
     public static string FirewallRemove => Locale.Get("remote.windows.firewall.remove");
     /// <summary>The rule is there: one elevated <c>set rule</c> makes it hold exactly the ports in use now (the phone's direct port and the sharing port).</summary>
     public static string FirewallUpdate => Locale.Get("remote.windows.firewall.update");
+    /// <summary>The rule is there but does not open every port in use now, or its ports could not be read (RemoteWorkspaceFeatures.FirewallNeedsUpdate).</summary>
+    public static string FirewallNeedsUpdate => Locale.Get("remote.windows.firewall.needsUpdate");
+    /// <summary>Both firewall rows say it: the phone's direct port and the sharing port live in the one rule, so removing it closes both.</summary>
+    public static string FirewallRemoveClosesBoth => Locale.Get("remote.windows.firewall.removeClosesBoth");
     public static string SessionInfoHostOS => Locale.Get("remote.sessionInfo.hostOS");
     /// <summary>What a firewall change that did not happen says, in the same words as the phone-direct Settings; null after one that did.
     /// Takes the whole result so no raw code ("timeout", an exit code, a launch error) can reach the screen.</summary>

@@ -24,7 +24,7 @@ public sealed partial class MainWindow
     {
         var checks = new Dictionary<string, object?>();
         var saved = service.Snapshot; var heldSend = smokeSend; var cleanup = new List<string>();
-        StackPanel? page = null; RemoteHostService? host = null; RemoteConnectionInfo? info = null;
+        StackPanel? page = null; RemoteHostService? host = null; RemoteConnectionInfo? info = null; Exception? failure = null;
         var paneId = Wire.Id();
         static async Task Until(Func<bool> condition, double seconds, Func<string> seen)
         {
@@ -104,6 +104,7 @@ public sealed partial class MainWindow
             var connectedWords = Locale.Get("remote.status.connected", new Dictionary<string, string> { ["host"] = hostName });
             await Until(() => workspaceHeader.Visibility == Visibility.Visible && workspaceHeaderRemote is { Visibility: Visibility.Visible, Child: Border badge } && AutomationProperties.GetAutomationId(badge) == "workspace-remote-host" && AutomationProperties.GetName(badge) == connectedWords,
                 10, () => $"the header must show the host capsule 'workspace-remote-host' named '{connectedWords}'; header {workspaceHeader.Visibility}, capsule {workspaceHeaderRemote.Visibility} '{(workspaceHeaderRemote.Child is { } child ? AutomationProperties.GetName(child) : "none")}'");
+            Must(workspaceHeaderRemote.Child is Border capsule && SettingsElements(capsule).OfType<FontIcon>().Any(i => i.Glyph == RemoteNetworkGlyph), "the header capsule must draw the network symbol U+E968");
             Must(AutomationProperties.GetAutomationId(workspaceHeaderFiles) == "workspace-open-files-" + remote.Id && !workspaceHeaderFiles.IsEnabled,
                 $"the header's files button must be off for a remote workspace; id '{AutomationProperties.GetAutomationId(workspaceHeaderFiles)}', on {workspaceHeaderFiles.IsEnabled}");
             var statusWords = RemoteWorkspaceFeatures.StatusLine(reference, client.Connection(connection.Id));
@@ -144,18 +145,22 @@ public sealed partial class MainWindow
             // One command through the composer, run by the host's PowerShell in the shared folder: -NoProfile -NonInteractive, with
             // NoDefaultCurrentDirectoryInExePath set. Only a remote workspace's send reaches the service; nothing starts a CLI here.
             smokeSend = request => service.IsRemoteWorkspace(request.WorkspaceId) ? service.SendAsync(request) : throw new InvalidOperationException(SmokeNeverStartsCli);
-            const string probe = "Write-Output ('remote-smoke-' + 'ok'); Write-Output ('nocd=' + $env:NoDefaultCurrentDirectoryInExePath); Write-Output ('cwd=' + (Get-Location).Path); Write-Output ('argv=' + [Environment]::CommandLine)";
+            // The phone watches from before the first send, so a notice of the remote pane's run would be caught below.
+            using var phone = new MobileDesktopRouter(service, Path.Combine(options.ProfileDirectory!, "remote-smoke-phone"), "Fixture", (_, _) => Task.FromResult<object?>(null), _ => new([]));
+            phone.Observe();
+            // Each value ends with '|', so a longer value that only starts the same never passes.
+            const string probe = "Write-Output ('remote-smoke-' + 'ok'); Write-Output ('nocd=' + $env:NoDefaultCurrentDirectoryInExePath + '|'); Write-Output ('cwd=' + (Get-Location).Path + '|'); Write-Output ('argv=' + [Environment]::CommandLine)";
             var sendProblem = await view.SmokeRemoteSendAsync(probe);
             Must(sendProblem is null, "the composer did not send the command: " + sendProblem);
             await Until(() => Status(paneId) is "completed" or "error" or "stopped" && !service.IsSessionRunning(paneId), 30, () => $"the remote command never finished: status {Status(paneId)}, printed '{Printed(paneId)}'");
             var printed = Printed(paneId);
             Must(Status(paneId) == "completed" && printed.Contains("remote-smoke-ok", StringComparison.Ordinal), $"the host must run the command and the pane show its output; status {Status(paneId)}, printed '{printed}'");
-            Must(printed.Contains("nocd=1", StringComparison.Ordinal), "the command must run with NoDefaultCurrentDirectoryInExePath=1: " + printed);
+            Must(printed.Contains("nocd=1|", StringComparison.Ordinal), "the command must run with NoDefaultCurrentDirectoryInExePath=1: " + printed);
             Must(printed.Contains("-NoProfile", StringComparison.Ordinal) && printed.Contains("-NonInteractive", StringComparison.Ordinal) && printed.Contains("powershell.exe", StringComparison.OrdinalIgnoreCase),
                 "the command must run in powershell.exe -NoProfile -NonInteractive: " + printed);
             // Compared with Windows separators: the CI hands the profile folder over with a forward slash in it.
             var folder = Path.GetFullPath(local.Path).Replace('/', '\\').TrimEnd('\\');
-            Must(printed.Replace('/', '\\').Contains("cwd=" + folder, StringComparison.OrdinalIgnoreCase), $"the command must run in the shared folder '{folder}': {printed}");
+            Must(printed.Replace('/', '\\').Contains("cwd=" + folder + "|", StringComparison.OrdinalIgnoreCase), $"the command must run in the shared folder '{folder}': {printed}");
             // A command that prompts fails at once (-NonInteractive) instead of waiting on the host's desktop for an answer nobody gives.
             var asked = Stopwatch.StartNew();
             sendProblem = await view.SmokeRemoteSendAsync("Read-Host 'remote smoke prompt'");
@@ -192,15 +197,13 @@ public sealed partial class MainWindow
             checks["localOnlyOff"] = true;
 
             // The phone is never told of a remote workspace or its panes: its list leaves them out and the pane itself is not found.
-            using (var router = new MobileDesktopRouter(service, Path.Combine(options.ProfileDirectory!, "remote-smoke-phone"), "Fixture", (_, _) => Task.FromResult<object?>(null), _ => new([])))
             {
-                router.Observe();
-                var told = router.TakeNotifications().Select(n => n.Scope).ToList();
-                var list = await router.RouteAsync("GET", "/m1/state?since=0&wait=0", null, "smoke-phone", CancellationToken.None);
+                var told = phone.TakeNotifications().Select(n => n.Scope).ToList();
+                var list = await phone.RouteAsync("GET", "/m1/state?since=0&wait=0", null, "smoke-phone", CancellationToken.None);
                 var listed = JsonSerializer.Serialize(list.Body, Wire.Json);
                 Must(list.Status == 200 && listed.Contains(local.Id, StringComparison.Ordinal) && !listed.Contains(remote.Id, StringComparison.Ordinal) && !listed.Contains(paneId, StringComparison.Ordinal) && !told.Contains("session:" + paneId),
                     $"the phone's list must hold this PC's workspace only; status {list.Status}, local {listed.Contains(local.Id, StringComparison.Ordinal)}, remote {listed.Contains(remote.Id, StringComparison.Ordinal)}, pane {listed.Contains(paneId, StringComparison.Ordinal)}, told [{string.Join(", ", told)}]");
-                var asked404 = await router.RouteAsync("GET", "/m1/sessions/" + paneId, null, "smoke-phone", CancellationToken.None);
+                var asked404 = await phone.RouteAsync("GET", "/m1/sessions/" + paneId, null, "smoke-phone", CancellationToken.None);
                 Must(asked404.Status == 404, "the phone must not reach a remote pane: " + asked404.Status);
             }
             checks["phoneHidden"] = true;
@@ -227,6 +230,7 @@ public sealed partial class MainWindow
                 () => $"after the stop the status bar must read '{lostWords}' with the idle dot and no run held; got '{status.Text}', held runs {remoteHostRuns}");
             checks["stopEndsRuns"] = true;
         }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { failure = ex; }
         finally
         {
             // Taken away in order, each step on its own, so a later phase finds the window as this one found it.
@@ -243,6 +247,12 @@ public sealed partial class MainWindow
             await Step("restore the window's state", async () => { await service.UpdateAsync(_ => saved); Render(); });
             remoteError = null; remoteSharingShown = false;
             if (error.Text == RemoteWindowsStrings.PaneUnavailable) error.Text = "";
+        }
+        // A check that failed is reported with whatever its cleanup could not undo, so neither hides the other.
+        if (failure is not null)
+        {
+            if (cleanup.Count > 0) throw new InvalidOperationException(failure.Message + " | cleaning up failed: " + string.Join(" | ", cleanup), failure);
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
         }
         // Nothing of it is left for the phases after it: no sharing, no connection, no remote workspace or pane, no held run.
         Must(cleanup.Count == 0, "cleaning up failed: " + string.Join(" | ", cleanup));

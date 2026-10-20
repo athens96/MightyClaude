@@ -275,6 +275,7 @@ public sealed partial class MainWindow
         var firewallText = SettingsText("", 11, DesignToken.Ink2); AutomationProperties.SetAutomationId(firewallText, "settings-remote-firewall-state");
         var firewallWords = new StackPanel { Spacing = DesignMetrics.Spacing.Xxs };
         firewallWords.Children.Add(firewallText); firewallWords.Children.Add(SettingsText(RemoteWindowsStrings.SettingsFirewallNote, 11, DesignToken.Ink2));
+        firewallWords.Children.Add(SettingsText(RemoteWindowsStrings.FirewallRemoveClosesBoth, 11, DesignToken.Ink2));
         var firewallAdd = SettingsPush(SafeButton(RemoteWindowsStrings.FirewallAdd, () => firewallState == FirewallRuleState.Unknown ? RecheckFirewallRule() : ChangeFirewallRule(add: true)), SettingsControlSize.Small);
         var firewallRemove = SettingsPush(SafeButton(RemoteWindowsStrings.FirewallRemove, () => ChangeFirewallRule(add: false)), SettingsControlSize.Small, destructive: true);
         AutomationProperties.SetAutomationId(firewallAdd, "settings-remote-firewall-add"); AutomationProperties.SetAutomationId(firewallRemove, "settings-remote-firewall-remove");
@@ -443,7 +444,7 @@ public sealed partial class MainWindow
         // The rule's state and what the last change that did not happen said (Core's words only), and the buttons that change it.
         void ShowFirewall()
         {
-            firewallText.Text = MobileDirectStrings.FirewallState(firewallState) + (firewallMessage is { } message ? " · " + message : "");
+            firewallText.Text = MobileDirectStrings.FirewallState(firewallState) + FirewallNeedsUpdateWords() + (firewallMessage is { } message ? " · " + message : "");
             var label = firewallState switch
             {
                 FirewallRuleState.Unknown => MobileDirectStrings.FirewallRecheckButton,

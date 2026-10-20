@@ -2911,6 +2911,8 @@
   "remote.windows.firewall.add": "ファイアウォールルールを追加",
   "remote.windows.firewall.remove": "ファイアウォールルールを削除",
   "remote.windows.firewall.update": "ファイアウォールルールを更新",
+  "remote.windows.firewall.needsUpdate": "更新が必要: ルールが今使っているポートをすべては開いていません",
+  "remote.windows.firewall.removeClosesBoth": "スマートフォンの直接接続とワークスペースの共有はこの1つのルールを共用します。削除すると両方のポートが閉じます。",
   "remote.windows.pane.commandNote": "コマンドは{host}（{os}）の共有フォルダーで実行されます。コマンドごとにそのコンピューターのシェル（WindowsではPowerShell、Macではログインシェル）を新しく起動し、対話型プログラムやパスワード入力には対応しません。",
   "remote.hostOS.darwin": "macOS",
   "remote.hostOS.win32": "Windows",
