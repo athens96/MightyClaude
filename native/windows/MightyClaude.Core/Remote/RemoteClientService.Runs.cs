@@ -343,26 +343,35 @@ public sealed partial class RemoteClientService
     public Task<bool> AnswerQuestionsAsync(string paneId, string requestId, IReadOnlyDictionary<string, UserQuestionAnswer> answers) => SendAsync(paneId, "questions", run => new RemoteWireQuestions(HostRunId(run, requestId), requestId, answers));
     public Task<bool> AnswerPlanAsync(string paneId, string requestId, PlanDecision decision) => SendAsync(paneId, "plan", run => RemoteWirePlan.From(HostRunId(run, requestId), requestId, decision));
 
-    /// <summary>A connection's runs end: replaced or disconnected (<paramref name="message"/> null) as stopped, lost with its reason as an error.</summary>
-    private async Task DropRunsAsync(string connectionId, string? message)
+    /// <summary>The connection's runs, taken off the list. Call under the lock, in the same section that changes the connection's revision.</summary>
+    private List<(string Pane, Run Run)> TakeRuns(string connectionId)
     {
-        List<(string Pane, Run Run)> active;
-        lock (gate)
-        {
-            active = runs.Where(p => p.Value.ConnectionId == connectionId).Select(p => (p.Key, p.Value)).ToList();
-            foreach (var (pane, _) in active) runs.Remove(pane);
-        }
-        foreach (var (pane, run) in active)
+        var taken = runs.Where(p => p.Value.ConnectionId == connectionId).Select(p => (p.Key, p.Value)).ToList();
+        foreach (var (pane, _) in taken) runs.Remove(pane);
+        return taken;
+    }
+
+    /// <summary>
+    /// Taken runs end: replaced or disconnected (<paramref name="message"/> null) as stopped, lost with its reason as an error. A callback
+    /// that throws for one pane is traced (its type only) and every other pane still gets its last word.
+    /// </summary>
+    private async Task EndRunsAsync(List<(string Pane, Run Run)> taken, string? message)
+    {
+        foreach (var (pane, run) in taken)
         {
             Cancel(run);
-            lock (run.Applying)
+            try
             {
-                if (message is not null) SayLost(pane, message);
-                else { pending.Forget(pane); onEvent(RunEvent.State(pane, "stopped")); }
+                lock (run.Applying)
+                {
+                    if (message is not null) SayLost(pane, message);
+                    else { pending.Forget(pane); onEvent(RunEvent.State(pane, "stopped")); }
+                }
             }
+            catch (Exception ex) when (ex is not OutOfMemoryException) { System.Diagnostics.Trace.TraceWarning("remote drop: " + ex.GetType().Name); }
         }
         // The host stops a run it no longer hears from anyway; this is only sooner.
-        await Task.WhenAll(active.Select(a => StopOnHostAsync(a.Run)));
+        await Task.WhenAll(taken.Select(a => StopOnHostAsync(a.Run)));
     }
 
     /// <summary>The app is closing: nothing starts any more, and every run stops, on the host too (the Mac's shutdown).</summary>

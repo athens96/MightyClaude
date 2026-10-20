@@ -500,6 +500,24 @@ internal static class RemoteDesktopVerification
         return Task.CompletedTask;
     }
 
+    /// <summary>A closed parent's child is placed only in a local workspace: a remote one's folder is its host's path, never this PC's.</summary>
+    internal static Task AClosedParentsChildIsNeverPlacedInARemoteWorkspace()
+    {
+        // Folders of this OS, so the inside rule is met on a Mac too; a remote workspace's path is only ever compared, never opened.
+        var root = Path.Combine(Path.GetTempPath(), "mc-placement"); var repo = Path.Combine(root, "repo"); var other = Path.Combine(root, "other");
+        Workspace remote = new() { Id = "far", Name = "far", Path = repo, Remote = new("conn-1", "ws-1", "studio-pc") };
+        Workspace remoteInside = new() { Id = "far-sub", Name = "far-sub", Path = Path.Combine(other, "app"), Remote = new("conn-1", "ws-2", "studio-pc") };
+        Workspace local = new() { Id = "near", Name = "near", Path = repo };
+        var panes = new Dictionary<string, RunSession>();
+        DelegationChildRow Row(string checkout) => new("c1", "gone", ChildState.Closed, ParentBranch: "main", ParentCheckout: checkout);
+        Check(DelegationSidebar.ListedWorkspaceId(Row(repo), [remote, local], panes) == "near", "the local workspace at the checkout, not the remote one listed first at the same path");
+        Check(DelegationSidebar.ListedWorkspaceId(Row(repo), [remote], panes) is null, "a remote workspace alone at the checkout places nothing");
+        Check(DelegationSidebar.ListedWorkspaceId(Row(other), [remoteInside], panes) is null, "nor one inside it");
+        var tree = DelegationSidebar.Tree("far", [remote, local], [], [Row(repo)]);
+        Check(tree.ParentClosed.Count == 0 && DelegationSidebar.Tree("near", [remote, local], [], [Row(repo)]).ParentClosed.Single().Children.Single().Id == "c1", "the sidebar lists it under the local workspace only");
+        return Task.CompletedTask;
+    }
+
     internal static Task RemotePanesKeepToTheHostsFeatures()
     {
         var local = new Workspace { Path = "C:\\work" };

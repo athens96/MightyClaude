@@ -70,10 +70,11 @@ public sealed partial class RemoteClientService : IAsyncDisposable
     {
         // As the Mac's actor, which reads its saved file before any connect: a connect never adds an entry while the file is unread, so
         // an address it holds keeps its id (and its workspaces' references), and nothing new waits unsaved for a write that never comes.
-        await SavedReadAsync();
+        // A typo is said at once, before any wait.
         var label = (name ?? "").Trim(); var trimmed = (key ?? "").Trim();
         if (RemoteText.Count(label, RemoteConnectionFile.MaximumName + 1) > RemoteConnectionFile.MaximumName || !RemoteWorkspaceValidation.Key(trimmed)) throw new ArgumentException(Locale.Get("remote.connect.error.badKey"));
         var parsed = RemoteAddress.Parse(address);
+        await SavedReadAsync();
         Entry? existing;
         lock (gate)
         {
@@ -89,9 +90,11 @@ public sealed partial class RemoteClientService : IAsyncDisposable
             var id = existing?.Info.Id ?? Wire.Id();
             if (existing is not null)
             {
-                // The old key's connection ends before its runs are stopped: nothing starts on it while their stops are on their way.
-                lock (gate) if (connections.TryGetValue(id, out var old) && ReferenceEquals(old, existing)) Disconnected(existing);
-                await DropRunsAsync(id, null);
+                // The old key's connection ends, and its runs are taken, in one step before their stops: nothing starts on it while
+                // their stops are on their way, and no poll in between ends its run as changed.
+                List<(string Pane, Run Run)> taken;
+                lock (gate) { if (connections.TryGetValue(id, out var old) && ReferenceEquals(old, existing)) Disconnected(existing); taken = TakeRuns(id); }
+                await EndRunsAsync(taken, null);
             }
             RemoteConnectionInfo view;
             await listing.WaitAsync();
@@ -194,10 +197,19 @@ public sealed partial class RemoteClientService : IAsyncDisposable
     /// <summary>Stops this connection's runs and keeps it saved; a refresh connects again.</summary>
     public async Task DisconnectAsync(string id)
     {
-        // Disconnected before its runs are stopped: nothing starts on it while their stops are on their way, and no run outlives it.
-        lock (gate) if (connections.TryGetValue(id, out var c)) Disconnected(c);
-        await DropRunsAsync(id, null);
+        await LeaveAsync(id);
         Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// Disconnected, and its runs taken, in one step before their stops: nothing starts on it while their stops are on their way, no run
+    /// outlives it, and a poll that lands meanwhile finds its run gone (never ending it as changed). Each pane then says it stopped.
+    /// </summary>
+    private Task LeaveAsync(string id)
+    {
+        List<(string Pane, Run Run)> taken;
+        lock (gate) { if (connections.TryGetValue(id, out var c)) Disconnected(c); taken = TakeRuns(id); }
+        return EndRunsAsync(taken, null);
     }
 
     /// <summary>The entry is disconnected from now on: a new revision, no target. Call under the lock.</summary>
@@ -210,7 +222,8 @@ public sealed partial class RemoteClientService : IAsyncDisposable
     /// <summary>Forgets the connection and its key. Its workspaces stay listed until removed.</summary>
     public async Task RemoveAsync(string id)
     {
-        await DisconnectAsync(id);
+        // Nothing a pane's callback does stops the connection and its key from going: each pane's last word is traced when it throws.
+        await LeaveAsync(id);
         await listing.WaitAsync();
         try
         {
@@ -296,12 +309,15 @@ public sealed partial class RemoteClientService : IAsyncDisposable
     /// </summary>
     private async Task<bool> FailAsync(string id, string message, Entry? expected = null, Guid revision = default)
     {
+        List<(string Pane, Run Run)> taken;
         lock (gate)
         {
             if (!connections.TryGetValue(id, out var c) || expected is not null && !Unchanged(id, expected, revision)) return false;
             c.Revision = Guid.NewGuid(); c.Target = null; c.Info = c.Info with { Status = RemoteConnectionStatus.Disconnected, Detail = RemoteText.Cut(message) };
+            // Taken with the revision: a poll that lands in between finds its run gone and leaves the pane's last word to this.
+            taken = TakeRuns(id);
         }
-        await DropRunsAsync(id, message);
+        await EndRunsAsync(taken, message);
         Changed?.Invoke();
         return true;
     }
@@ -348,7 +364,7 @@ public sealed partial class RemoteClientService : IAsyncDisposable
         while (true)
         {
             LoadSaved();
-            lock (gate) if (loaded) return;
+            lock (gate) { if (closing) throw new InvalidOperationException(Locale.Get("common.appClosing")); if (loaded) return; }
             if (Environment.TickCount64 >= end) throw new InvalidOperationException(RemoteWindowsStrings.SavedUnreadable);
             await Task.Delay(100);
             // The next try is not held back a second when a connect is waiting on it.

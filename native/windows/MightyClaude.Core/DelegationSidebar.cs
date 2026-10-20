@@ -116,16 +116,16 @@ public static class DelegationSidebar
     }
 
     /// <summary>
-    /// The workspace a child of a closed parent is listed in: its own pane's; with that closed, the workspace at its parent's
-    /// checkout, or else the first one inside it; null when there is none. Folders compare the Windows way: without regard to
-    /// case or to which separator is written.
+    /// The workspace a child of a closed parent is listed in: its own pane's; with that closed, the local workspace at its parent's
+    /// checkout, or else the first local one inside it; null when there is none. A remote workspace's folder is its host's path, never
+    /// one on this PC, so it never matches. Folders compare the Windows way: without regard to case or to which separator is written.
     /// </summary>
     public static string? ListedWorkspaceId(DelegationChildRow child, IReadOnlyList<Workspace> workspaces, IReadOnlyDictionary<string, RunSession> panes)
     {
         if (panes.TryGetValue(child.Id, out var pane)) return pane.WorkspaceId;
         if (child.ParentCheckout is not { } recorded) return null;
         var checkout = DelegationPaths.Standardized(recorded);
-        var paths = workspaces.Select(workspace => (workspace.Id, Path: DelegationPaths.Standardized(workspace.Path))).ToList();
+        var paths = workspaces.Where(workspace => workspace.Remote is null).Select(workspace => (workspace.Id, Path: DelegationPaths.Standardized(workspace.Path))).ToList();
         var index = paths.FindIndex(workspace => DelegationPaths.Same(workspace.Path, checkout));
         if (index < 0) index = paths.FindIndex(workspace => DelegationPaths.IsInside(workspace.Path, checkout));
         return index < 0 ? null : paths[index].Id;

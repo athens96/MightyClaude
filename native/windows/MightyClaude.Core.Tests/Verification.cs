@@ -637,6 +637,8 @@ internal static class Verification
         await Test("remote client: no run starts or outlives its connection while its stops are on their way", RemoteClientVerification.NoRunStartsOrOutlivesItsConnectionWhileItsStopsAreOnTheirWay);
         await Test("remote client: a callback that throws ends the run", RemoteClientVerification.ACallbackThatThrowsEndsTheRun);
         await Test("remote client: a disconnect from inside an event ends the poll there", RemoteClientVerification.ADisconnectFromInsideAnEventEndsThePollThere);
+        await Test("remote client: a disconnect while a poll is in flight ends the pane stopped", RemoteClientVerification.ADisconnectWhileAPollIsInFlightEndsThePaneStopped);
+        await Test("remote client: a pane that throws during a remove leaves the others their last word and the key goes", RemoteClientVerification.APaneThatThrowsDuringARemoveLeavesTheOthersTheirLastWordAndTheKeyGoes);
         await Test("remote host: a refused peer is cut off at accept and one peer holds at most its share", RemoteHostVerification.ARefusedPeerIsCutOffAtAcceptAndOnePeerHoldsAtMostItsShare);
         await Test("remote host: no body is read without leave and the head is bounded", RemoteHostVerification.NoBodyIsReadWithoutLeaveAndTheHeadIsBounded);
         await Test("remote host: a slow or stuck request is cut off and stopping closes everything", RemoteHostVerification.ASlowOrStuckRequestIsCutOffAndStoppingClosesEverything);
@@ -666,6 +668,7 @@ internal static class Verification
         await Test("remote desktop: a remote pane runs through the client and the phone never sees it", RemoteDesktopVerification.ARemotePaneRunsThroughTheClientAndThePhoneNeverSeesIt);
         await Test("remote desktop: the sharing host runs only in shared folders with no pane tools", RemoteDesktopVerification.TheSharingHostRunsOnlyInSharedFoldersWithNoPaneTools);
         await Test("remote desktop: remote panes keep to the host's features", RemoteDesktopVerification.RemotePanesKeepToTheHostsFeatures);
+        await Test("remote desktop: a closed parent's child is never placed in a remote workspace", RemoteDesktopVerification.AClosedParentsChildIsNeverPlacedInARemoteWorkspace);
         await Test("remote desktop: no client code runs under the service's lock, and a stop while connecting ends the run once", RemoteDesktopVerification.NoClientCodeRunsUnderTheServicesLock);
         await Test("remote desktop: a stop during the host's accept never ends the next send", RemoteDesktopVerification.AStopDuringTheHostsAcceptNeverEndsTheNextSend);
         await Test("remote desktop: a send to a workspace the host no longer shares is refused", RemoteDesktopVerification.ASendToAWorkspaceTheHostNoLongerSharesIsRefused);
