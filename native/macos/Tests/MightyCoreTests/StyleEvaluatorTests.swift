@@ -94,9 +94,9 @@ struct StyleEvaluatorTests {
         #expect(style.enterArmedPrefix(draft: "xx 이거 해줘", phase: one, running: false, hasRequests: false) == nil)
         #expect(style.enterArmedPrefix(draft: "결제", phase: one, hasAttachments: true, running: false, hasRequests: false) == nil)
         // A verbatim style never rewrites, whatever the draft is.
-        let paperthin = StyleFixtures.bundled("paperthin").evaluator
-        #expect(paperthin.enterBehaviour(draft: "무엇이든", phase: nil, hasAttachments: false, running: false, hasRequests: false) == .verbatim)
-        #expect(paperthin.enterArmedPrefix(draft: "무엇이든", phase: nil, running: false, hasRequests: false) == nil)
+        let catalogue = StyleFixtures.catalogueStyle.evaluator
+        #expect(catalogue.enterBehaviour(draft: "무엇이든", phase: nil, hasAttachments: false, running: false, hasRequests: false) == .verbatim)
+        #expect(catalogue.enterArmedPrefix(draft: "무엇이든", phase: nil, running: false, hasRequests: false) == nil)
     }
 
     /// The composer's own order, moved into the engine so it can be asserted:
@@ -115,10 +115,10 @@ struct StyleEvaluatorTests {
         #expect(enter(answering: false, requests: true, startingNew: true) == .rewrite(actionId: "plan"))
         #expect(enter(answering: false, draft: "/x:note") == .verbatim)
         // A style with no rewrite rule sends what was typed, question aside.
-        let paperthin = StyleFixtures.bundled("paperthin").evaluator
-        #expect(StyleComposer.enter(paperthin, draft: "무엇이든", phase: nil, answering: false, hasAttachments: false,
+        let catalogue = StyleFixtures.catalogueStyle.evaluator
+        #expect(StyleComposer.enter(catalogue, draft: "무엇이든", phase: nil, answering: false, hasAttachments: false,
                                     running: false, hasRequests: false, startingNew: true) == .verbatim)
-        #expect(StyleComposer.enter(paperthin, draft: "무엇이든", phase: nil, answering: true, hasAttachments: false,
+        #expect(StyleComposer.enter(catalogue, draft: "무엇이든", phase: nil, answering: true, hasAttachments: false,
                                     running: false, hasRequests: false, startingNew: false) == .answerQuestion)
     }
 
@@ -131,11 +131,11 @@ struct StyleEvaluatorTests {
         let idle = StyleChips.make(ouroboros.evaluator, phase: seed, group: nil, startingNew: false, running: false)
         #expect(idle.actions.map(\.id) == ["run", "evaluate", "status"] && !idle.progress)
 
-        let paperthin = StyleFixtures.bundled("paperthin")
-        let coil = paperthin.manifest.group("coil")
-        let running = StyleChips.make(paperthin.evaluator, phase: nil, group: coil, startingNew: false,
-                                      capabilityStates: [StyleCapabilityID.casebook: "open"], running: true)
-        #expect(running.actions.map(\.id) == ["re0-plan", "re0-loop", "re0-memo", "re0-work", "catchup", "nba"])
+        let catalogue = StyleFixtures.catalogueStyle
+        let coil = catalogue.manifest.group("coil")
+        let running = StyleChips.make(catalogue.evaluator, phase: nil, group: coil, startingNew: false,
+                                      capabilityStates: ["acme.thing": "open"], running: true)
+        #expect(running.actions.map(\.id) == ["plan", "loop", "memo", "work", "nba"])
         #expect(!running.progress && running.grid)
     }
 
@@ -153,31 +153,32 @@ struct StyleEvaluatorTests {
         // With no phase the token and the space after it both go (§1.7).
         #expect(StyleGuidanceTemplate.render("{phase} 단계가 끝났습니다.", phaseTitle: nil) == "단계가 끝났습니다.")
         #expect(StyleGuidanceTemplate.render("{phase} 단계", phaseTitle: "시드") == "시드 단계")
-        #expect(StyleFixtures.bundled("paperthin").evaluator.guidanceLine(phase: nil, running: false) == "대상(파일 경로나 지시)을 아래에 적고 스킬을 누르세요. 비워 두면 스킬만 보냅니다.")
+        #expect(StyleFixtures.catalogueStyle.evaluator.guidanceLine(phase: nil, running: false) == "대상(파일 경로나 지시)을 아래에 적고 스킬을 누르세요. 비워 두면 스킬만 보냅니다.")
     }
 
     @Test func groupRulesReadTheCapabilityStateOnce() throws {
-        let paperthin = StyleFixtures.bundled("paperthin").evaluator
-        #expect(paperthin.initialGroup(capabilityStates: ["paperthin.casebook": "absent"])?.id == "depth")
-        #expect(paperthin.initialGroup(capabilityStates: ["paperthin.casebook": "open"])?.id == "coil")
-        #expect(paperthin.initialGroup(capabilityStates: ["paperthin.casebook": "complete"])?.id == "coil")
-        let coil = paperthin.manifest.group("coil")
+        // The feature exists only in the test vocabulary since v7 (§1.8).
+        let catalogue = StyleFixtures.catalogueStyle.evaluator
+        #expect(catalogue.initialGroup(capabilityStates: ["acme.thing": "absent"])?.id == "depth")
+        #expect(catalogue.initialGroup(capabilityStates: ["acme.thing": "open"])?.id == "coil")
+        #expect(catalogue.initialGroup(capabilityStates: ["acme.thing": "complete"])?.id == "coil")
+        let coil = catalogue.manifest.group("coil")
         // The recommendation is the feature's answer, not the chosen group's:
         // the rule's own group only says which row the attachments belong to.
-        #expect(paperthin.recommendedAction(capabilityStates: ["paperthin.casebook": "open"]) == "re0-loop")
-        #expect(paperthin.recommendedAction(capabilityStates: ["paperthin.casebook": "absent"]) == "re0-plan")
-        #expect(paperthin.recommendedAction(capabilityStates: [:]) == nil)
-        #expect(paperthin.recommendGroupId == "coil" && StyleFixtures.bundled("ouroboros").evaluator.recommendGroupId == nil)
-        #expect(paperthin.nextActions(phase: nil, group: coil).map(\.id) == ["re0-plan", "re0-loop", "re0-memo", "re0-work", "catchup", "nba"])
-        #expect(paperthin.nextActions(phase: nil, group: nil).isEmpty)
+        #expect(catalogue.recommendedAction(capabilityStates: ["acme.thing": "open"]) == "loop")
+        #expect(catalogue.recommendedAction(capabilityStates: ["acme.thing": "absent"]) == "plan")
+        #expect(catalogue.recommendedAction(capabilityStates: [:]) == nil)
+        #expect(catalogue.recommendGroupId == "coil" && StyleFixtures.bundled("ouroboros").evaluator.recommendGroupId == nil)
+        #expect(catalogue.nextActions(phase: nil, group: coil).map(\.id) == ["plan", "loop", "memo", "work", "nba"])
+        #expect(catalogue.nextActions(phase: nil, group: nil).isEmpty)
     }
 
     @Test func jobOpenStateDerivesFromToolResults() throws {
         let ouro = StyleFixtures.bundled("ouroboros").evaluator
-        let paperthin = StyleFixtures.bundled("paperthin").evaluator
+        let catalogue = StyleFixtures.catalogueStyle.evaluator
 
         // A manifest without a job declaration is never open.
-        #expect(!paperthin.isJobOpen(session: RunSession(workspaceId: "ws", title: "T")))
+        #expect(!catalogue.isJobOpen(session: RunSession(workspaceId: "ws", title: "T")))
 
         func session(_ pairs: [(tool: String, output: String?)]) -> RunSession {
             var s = RunSession(workspaceId: "ws", title: "T")

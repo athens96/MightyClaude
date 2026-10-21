@@ -29,6 +29,9 @@ public struct StylePanel: Codable, Sendable, Equatable {
         public var flags: [String]
         public var prominent: Bool
     }
+    /// Read-only chips a built-in feature offered. Always empty since v7 (the
+    /// vocabulary is empty, §1.8), but still sent: a phone that predates v7
+    /// reads the field.
     public struct Attachment: Codable, Sendable, Equatable {
         public var id, title: String
         public var detail: String?
@@ -123,7 +126,6 @@ public enum StylePanelProjection {
                             prompts: [String],
                             selectedGroupId: String?,
                             capabilityStates: [String: String],
-                            attachments: [StyleAttachmentItem],
                             prerequisites: StylePrerequisiteResult,
                             running: Bool = false,
                             session: RunSession? = nil,
@@ -161,7 +163,7 @@ public enum StylePanelProjection {
                           actions: actions,
                           next: nextIds,
                           recommended: evaluator.recommendedAction(capabilityStates: capabilityStates),
-                          attachments: attachments.map { StylePanel.Attachment(id: $0.id, title: $0.title, detail: $0.detail, readOnly: $0.readOnly) },
+                          attachments: [],
                           setup: StylePanel.Setup(ready: prerequisites.ready, missing: prerequisites.missing,
                                                   hint: prerequisites.hint, installCommand: manifest.install?.command),
                           guidance: evaluator.guidanceLine(phase: phase, running: running, jobOpen: jobOpen),

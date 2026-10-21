@@ -255,12 +255,12 @@ private func openChild(_ id: String, byHuman: Bool = false) -> ChildRecord {
         var parent = RunSession(id: "parent", workspaceId: "ws", title: "Parent", kind: SessionKind.claude, provider: "claude", settings: RunSettings(permissionMode: "auto"))
         parent.agentViewMode = "mighty"
         parent.graphViewMode = .structure
-        parent.mightyStyle = "superpowers"
+        parent.mightyStyle = "claude-plan"
         parent.mightyStyleHash = "h1"
         parent.mightyStyleSince = "2026-10-15T00:00:00Z"
         let human = DelegationPanes.childSession(DelegationChildPane(sessionId: "c1", parentSessionId: "parent", mode: "auto", folder: "/w/c1", startedByHuman: true), workspaceId: "ws", title: "Fix it", parent: parent)
         #expect(human.agentViewMode == "mighty" && human.mightyViewMode == .structure)
-        #expect(human.mightyStyle == "superpowers" && human.mightyStyleHash == "h1" && human.mightyStyleSince == nil)
+        #expect(human.mightyStyle == "claude-plan" && human.mightyStyleHash == "h1" && human.mightyStyleSince == nil)
         // A delegate call's child shows the same view, without the style.
         let agent = DelegationPanes.childSession(DelegationChildPane(sessionId: "c2", parentSessionId: "parent", mode: "plan", folder: "/w/c2"), workspaceId: "ws", title: "Fix it", parent: parent)
         #expect(agent.agentViewMode == "mighty" && agent.mightyViewMode == .structure)

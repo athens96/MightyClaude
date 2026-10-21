@@ -21,18 +21,17 @@ enum StyleGolden {
     static var stylesDirectory: URL { repositoryRoot.appendingPathComponent("styles", isDirectory: true) }
     static var goldenDirectory: URL { stylesDirectory.appendingPathComponent("golden", isDirectory: true) }
 
-    /// The six fixed inputs of §8.4, in one file so the golden stays readable.
-    /// `lastGroup` and `capabilityOpen` exist because the first four collapse
-    /// onto the default group and never carry a recommendation or an
-    /// attachment: without them the `byGroup` rule for a non-default group,
-    /// the whole recommend rule and attachment projection go unrecorded.
+    /// The five fixed inputs of §8.4, in one file so the golden stays readable.
+    /// `lastGroup` exists because the first four collapse onto the default
+    /// group: without it the `byGroup` rule for a non-default group goes
+    /// unrecorded. (v7 dropped `capabilityOpen`: with no built-in feature left
+    /// it was `lastGroup` again, byte for byte.)
     struct Projection: Codable, Equatable {
         var empty: StylePanel
         var afterFirstAction: StylePanel
         var notReady: StylePanel
         var firstGroup: StylePanel
         var lastGroup: StylePanel
-        var capabilityOpen: StylePanel
         /// §1.16: only for a style that declares state sources, so every other
         /// golden keeps its bytes. The panel carries the reading's widgets as
         /// they are; see `stateReading(for:)` for what is recorded.
@@ -109,26 +108,18 @@ enum StyleGolden {
         try LocaleOverride.$language.withValue(.ko) { try body() }
     }
 
-    /// Two items every style's golden carries, so the attachment shape is
-    /// recorded even for a style that declares no built-in feature.
-    static let attachments = [
-        StyleAttachmentItem(id: "DESIGN.local.md", title: "DESIGN", detail: "0.1.0-golden \u{00B7} full", readOnly: true, openPath: "/repo/.re0"),
-        StyleAttachmentItem(id: "RETRO.local.md", title: "RETRO", detail: "0.1.0-golden \u{00B7} full", readOnly: true, openPath: nil),
-    ]
-
-    static func projection(for style: RegisteredStyle, casebookStates: [String: String] = [:]) -> Projection {
+    static func projection(for style: RegisteredStyle) -> Projection {
         let manifest = style.manifest
         let firstPrompt = manifest.actions.first.map { $0.prompt(text: "") } ?? ""
         let ready = StylePrerequisiteResult(ready: true)
         let missing = StylePrerequisiteResult(ready: false, missing: manifest.prerequisites.probes.first.map { [$0.missing] } ?? [],
                                               hint: manifest.prerequisites.probes.first?.hint,
                                               canInstall: manifest.install != nil)
-        let open = Dictionary(uniqueKeysWithValues: manifest.capabilities.map { ($0, "open") })
-        func make(prompts: [String] = [], group: String? = nil, states: [String: String] = casebookStates,
-                  items: [StyleAttachmentItem] = [], prerequisites: StylePrerequisiteResult = ready,
+        // No built-in feature exists to read (§1.8), so no input carries a state.
+        func make(prompts: [String] = [], group: String? = nil, prerequisites: StylePrerequisiteResult = ready,
                   state: StyleStateReading = .empty, running: Bool = false) -> StylePanel {
             StylePanelProjection.make(style: style, prompts: prompts, selectedGroupId: group,
-                                      capabilityStates: states, attachments: items, prerequisites: prerequisites,
+                                      capabilityStates: [:], prerequisites: prerequisites,
                                       running: running, state: state)
         }
         let stages = planStageReadings(for: manifest)
@@ -140,7 +131,6 @@ enum StyleGolden {
                           notReady: make(prerequisites: missing),
                           firstGroup: make(group: manifest.groups.first?.id),
                           lastGroup: make(group: manifest.groups.last?.id),
-                          capabilityOpen: make(group: manifest.groups.last?.id, states: open, items: attachments),
                           withState: stateReading(for: manifest).map { make(state: $0) },
                           planStagePlanning: stage(.planning), planStageAwaitingApproval: stage(.awaitingApproval),
                           planStageExecuting: stage(.executing))

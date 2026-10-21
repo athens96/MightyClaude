@@ -35,25 +35,32 @@ struct StyleGoldenContractTests {
         }
     }
 
-    /// The two bundled styles are the phone lane's real fixtures, recorded the
-    /// same way a third-party style will be.
+    /// The bundled styles are the phone lane's real fixtures, recorded the
+    /// same way a third-party style will be. (`claude-plan` has its own test
+    /// below.)
     @Test func theBundledStylesHaveGoldens() throws {
-        for id in ["ouroboros", "paperthin"] {
-            let style = StyleFixtures.bundled(id)
-            try StyleGolden.check(StyleGolden.projection(for: style, casebookStates: [StyleCapabilityID.casebook: "absent"]), id: id)
-        }
-        let superpowers = StyleFixtures.bundled("superpowers")
-        let projection = StyleGolden.projection(for: superpowers)
-        // §1.16: the one bundled style with state sources records what the
-        // engine makes of its own declarations — the plan file as a bar and
-        // the `subagent.start` count as a label — and the file state moves it
-        // to the phase a current plan means.
+        let style = StyleFixtures.bundled("ouroboros")
+        let projection = StyleGolden.projection(for: style)
+        // No state source, no plan stage: those cases are not recorded at all.
+        #expect(projection.withState == nil && projection.planStages == nil)
+        try StyleGolden.check(projection, id: "ouroboros")
+    }
+
+    /// §1.16: a style with file and run-event sources records what the engine
+    /// makes of its own declarations — the plan file as a bar and the
+    /// `subagent.start` count as a label — and the file state moves it to the
+    /// phase a current plan means. No bundled or repository style declares
+    /// either kind since v7, so the fixture stands in and no golden is kept.
+    @Test func aStyleWithFileAndRunEventSourcesRecordsItsReading() throws {
+        let projection = StyleGolden.projection(for: StyleFixtures.statefulStyle)
         let withState = try #require(projection.withState)
         #expect(withState.widgets == [.progressBar(value: 3, total: 7), .label(text: "서브에이전트 2회 시작")])
         #expect(withState.phase?.id == "execute")
-        #expect(StyleGolden.projection(for: StyleFixtures.bundled("paperthin")).withState == nil)
+        #expect(projection.empty.phase?.id == "brainstorm" && projection.empty.widgets == nil)
         #expect(projection.planStages == nil)
-        try StyleGolden.check(projection, id: "superpowers")
+        // The case survives its own serialisation, widgets and all.
+        let decoded = try JSONDecoder().decode(StyleGolden.Projection.self, from: StyleGolden.serialise(projection))
+        #expect(decoded == projection)
     }
 
     /// §1.17 (v6): the plan-mode style records its panel at every plan stage
@@ -78,14 +85,13 @@ struct StyleGoldenContractTests {
     }
 
     @Test func theGoldenSerialisationRulesAreFixed() throws {
-        let style = StyleFixtures.bundled("paperthin")
+        let style = StyleFixtures.bundled("ouroboros")
         let panel = StylePanelProjection.make(style: style, prompts: [], selectedGroupId: nil,
-                                              capabilityStates: [StyleCapabilityID.casebook: "absent"],
-                                              attachments: [], prerequisites: StylePrerequisiteResult(ready: true))
+                                              capabilityStates: [:], prerequisites: StylePrerequisiteResult(ready: true))
         let data = try StylePanelProjection.serialise(panel)
         let text = try #require(String(data: data, encoding: .utf8))
         #expect(text.hasSuffix("}\n") && !text.hasSuffix("}\n\n"))
-        #expect(!text.contains("\\/") && text.contains("npx skills@latest"))
+        #expect(!text.contains("\\/") && text.contains("add Q00/ouroboros"))
         // Keys sorted, two-space indent.
         #expect(text.hasPrefix("{\n  \"actions\" : ["))
         #expect(try StylePanelProjection.serialise(panel) == data)

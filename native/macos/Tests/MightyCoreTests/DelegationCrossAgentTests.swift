@@ -180,7 +180,7 @@ import Testing
         parent.model = "opus"
         parent.agentViewMode = "mighty"
         parent.graphViewMode = .timeline
-        parent.mightyStyle = "superpowers"
+        parent.mightyStyle = "claude-plan"
         var codexPane = RunSession(id: "codex-pane", workspaceId: "ws", title: "Codex", kind: SessionKind.claude, provider: "codex", settings: RunSettings(effort: "low", permissionMode: "fullAccess"))
         codexPane.model = "gpt-5.6-sol"
         for human in [true, false] {

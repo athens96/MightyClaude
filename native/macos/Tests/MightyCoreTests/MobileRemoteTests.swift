@@ -381,12 +381,12 @@ struct MobileRemoteTests {
         #expect(try await call(service, "POST", "/m1/sessions/session-1/guided", body: ["skill": "interview"]).0 == 400)
         #expect(try await call(service, "POST", "/m1/sessions/session-1/guided", body: ["style": "ouroboros", "skill": "interview", "text": String(repeating: "가", count: 11_000)]).0 == 400)
         // The pane is in the other style: nothing is sent.
-        #expect(try await call(service, "POST", "/m1/sessions/session-1/guided", body: ["style": "paperthin", "skill": "re0"]).0 == 409)
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/guided", body: ["style": "claude-plan", "skill": "new-plan"]).0 == 409)
         #expect(try await call(service, "POST", "/m1/sessions/missing/guided", body: ["style": "ouroboros", "skill": "seed"]).0 == 404)
-        host.paneStyle = MightyStyleIDs.paperthin
-        #expect(try await call(service, "POST", "/m1/sessions/session-1/guided", body: ["style": "paperthin", "skill": "re0", "text": "docs/spec.md"]).0 == 202)
-        #expect(try await call(service, "POST", "/m1/sessions/session-1/guided", body: ["style": "paperthin", "skill": "interview"]).0 == 400)
-        #expect(host.recorded() == ["guided:/ouroboros:interview 결제 흐름 정리", "guided:/ouroboros:seed", "guided:/re0 docs/spec.md"])
+        host.paneStyle = "claude-plan"
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/guided", body: ["style": "claude-plan", "skill": "new-plan", "text": "결제 모듈 정리"]).0 == 202)
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/guided", body: ["style": "claude-plan", "skill": "interview"]).0 == 400)
+        #expect(host.recorded() == ["guided:/ouroboros:interview 결제 흐름 정리", "guided:/ouroboros:seed", "guided:[계획] 결제 모듈 정리"])
     }
 
     @Test func theGuidedRouteTakesTheNewShapeAndHidesUnknownStylesAlike() async throws {
@@ -396,7 +396,7 @@ struct MobileRemoteTests {
         // The new shape reaches the same place as the old one (§7.5).
         #expect(try await call(service, "POST", "/m1/sessions/session-1/guided", body: ["styleId": "ouroboros", "actionId": "interview", "text": "목표"]).0 == 202)
         // Both shapes together: the new one wins, so the old skill is ignored.
-        #expect(try await call(service, "POST", "/m1/sessions/session-1/guided", body: ["styleId": "ouroboros", "actionId": "seed", "style": "paperthin", "skill": "re0"]).0 == 202)
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/guided", body: ["styleId": "ouroboros", "actionId": "seed", "style": "claude-plan", "skill": "verify"]).0 == 202)
         #expect(host.recorded() == ["guided:/ouroboros:interview 목표", "guided:/ouroboros:seed"])
         // The wire word for "no style" and a malformed id answer alike, so a
         // style the host does not run is not told apart from one that is not
@@ -408,7 +408,7 @@ struct MobileRemoteTests {
             #expect(reply.0 == 400 && reply.1["error"] as? String == MobileRemoteSupport.unknownStyleMessage)
         }
         // An id the host does run but a pane that is not in it stays a 409.
-        #expect(try await call(service, "POST", "/m1/sessions/session-1/guided", body: ["styleId": "paperthin", "actionId": "re0"]).0 == 409)
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/guided", body: ["styleId": "claude-plan", "actionId": "verify"]).0 == 409)
     }
 
     @Test func uploadsTravelInOrderAndOnlyACompleteOneCanBeSubmitted() async throws {
@@ -615,7 +615,11 @@ struct MobileRemoteTests {
         // One POST may turn Mighty on and pick a style: the style is judged
         // against the view the same request asks for, not the one it replaces.
         #expect(try await call(service, "POST", "/m1/sessions/session-1/settings", body: ["agentViewMode": "mighty", "mightyStyle": "ouroboros"]).0 == 200)
-        #expect(try await call(service, "POST", "/m1/sessions/session-1/settings", body: ["mightyStyle": "paperthin"]).0 == 200)
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/settings", body: ["mightyStyle": "cli"]).0 == 200)
+        // The old field's vocabulary lost the removed style's word in v7, so
+        // an older phone that still offers it is refused, not obeyed.
+        #expect(MobileWire.mightyStyles == ["cli", "ouroboros"])
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/settings", body: ["mightyStyle": MightyStyleIDs.paperthin]).0 == 400)
         // Going back to plain takes the guided styles with it.
         #expect(try await call(service, "POST", "/m1/sessions/session-1/settings", body: ["agentViewMode": "plain", "mightyStyle": "ouroboros"]).0 == 400)
         #expect(try await call(service, "POST", "/m1/sessions/session-1/settings", body: ["model": "gpt-5"]).0 == 400)
@@ -627,7 +631,7 @@ struct MobileRemoteTests {
         #expect(try await call(service, "POST", "/m1/sessions/session-1/settings", body: [:]).0 == 400)
         #expect(try await call(service, "POST", "/m1/sessions/session-1/settings", body: ["model": "opus"]).0 == 409)
         // Only the two accepted bodies changed anything.
-        #expect(host.recorded() == ["settings:-:mighty:ouroboros", "settings:-:-:paperthin"])
+        #expect(host.recorded() == ["settings:-:mighty:ouroboros", "settings:-:-:cli"])
     }
 
     @Test func commandsListTheAppActionsAndOnlyThreeCanBePerformed() async throws {

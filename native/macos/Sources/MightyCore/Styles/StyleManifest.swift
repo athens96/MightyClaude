@@ -15,9 +15,6 @@ public enum StyleLimits {
     public static let maximumFilesPerSource = 32
     public static let maximumDirectoryEntries = 1024
     public static let maximumApprovalRecords = 256
-    public static let maximumCasebookChips = 6
-    public static let maximumCasebookFolders = 24
-    public static let maximumCasebookFiles = 24
     /// No manifest string is longer than this, whatever the field.
     public static let maximumString = 400
     /// A JSON key name. Schema 1's own keys are short words and the only
@@ -25,8 +22,6 @@ public enum StyleLimits {
     public static let maximumKey = 64
     /// A value quoted back inside an error message (§2).
     public static let maximumMessageValue = 64
-    /// A capability string projected to a screen (§1.8).
-    public static let maximumCapabilityString = 80
     /// §1.16: closed state-source arrays.
     public static let maximumStateFileSources = 8
     public static let maximumStateRunEventSources = 8

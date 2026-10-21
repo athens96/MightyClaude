@@ -90,12 +90,26 @@ struct StyleSecurityTests {
     }
 
     @Test func reservedNameIsRefused() {
-        for name in ["Ouroboros", "ouroboros", "OURO BOROS", "ＯＵＲＯＢＯＲＯＳ", "Paperthin", "paper thin"] {
+        // The name of a style no longer bundled is free again (v7).
+        #expect(MightyStyleIDs.reservedNames == ["Ouroboros"])
+        for name in ["Ouroboros", "ouroboros", "OURO BOROS", "ＯＵＲＯＢＯＲＯＳ"] {
             let data = StyleFixtures.data(StyleFixtures.flat, ["name": "\"\(name)\""])
             #expect(StyleFixtures.code(data) == "E_RESERVED_NAME", "\(name)이 예약 이름 검사를 통과했습니다")
             #expect(StyleFixtures.code(data, source: .bundled) == nil)
         }
         #expect(StyleFixtures.code(StyleFixtures.data(StyleFixtures.flat, ["name": "\"Ouroboros Team\""])) == nil)
+    }
+
+    /// Every reserved id is refused outside the bundle, including the one no
+    /// bundled style uses any more: claiming it would take over the panes
+    /// saved in it (§1.2).
+    @Test func reservedIdIsRefused() {
+        for id in MightyStyleIDs.reserved.sorted() {
+            let data = StyleFixtures.data(StyleFixtures.flat, ["id": "\"\(id)\""])
+            #expect(StyleFixtures.code(data) == "E_RESERVED_ID", "\(id)이 예약 id 검사를 통과했습니다")
+            #expect(StyleFixtures.code(data, source: .workspace) == "E_RESERVED_ID")
+        }
+        #expect(MightyStyleIDs.reserved.count == 3)
     }
 
     @Test func changedHashGoesPendingAndDowngradeIsRefused() async throws {

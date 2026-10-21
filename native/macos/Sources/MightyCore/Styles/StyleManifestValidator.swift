@@ -3,9 +3,12 @@ import Foundation
 /// Step ④ of §2: everything that needs the whole file, and the two judgements
 /// that differ for a bundled manifest (reserved ids and names, `ToolSearch`).
 public enum StyleManifestValidator {
-    public static func validate(_ manifest: StyleManifest, source: StyleSource, knownCapabilities: Set<String>) throws {
+    /// `capabilities` is the vocabulary of built-in features, each with its
+    /// closed states; the app's own is `StyleCapabilityID.vocabulary` (§1.8).
+    public static func validate(_ manifest: StyleManifest, source: StyleSource,
+                                capabilities vocabulary: [String: [String]] = StyleCapabilityID.vocabulary) throws {
         try names(manifest, source: source)
-        try capabilities(manifest, known: knownCapabilities)
+        try capabilities(manifest, vocabulary: vocabulary)
         try references(manifest)
         try rules(manifest)
         try autoAllow(manifest, source: source)
@@ -19,12 +22,17 @@ public enum StyleManifestValidator {
         guard !MightyStyleIDs.reservedNames.contains(where: { StyleText.folded($0) == folded }) else { throw StyleErrors.reservedName(manifest.name) }
     }
 
-    private static func capabilities(_ manifest: StyleManifest, known: Set<String>) throws {
-        for name in manifest.capabilities where !known.contains(name) { throw StyleErrors.unknownCapability(name) }
+    /// A declared name the vocabulary lacks is refused first, so a rule can
+    /// only reach the map check through a declared, known feature. With the
+    /// app's empty vocabulary that never happens: `E_CAPABILITY_MAP` is
+    /// unreachable there and only a test vocabulary produces it.
+    private static func capabilities(_ manifest: StyleManifest, vocabulary: [String: [String]]) throws {
+        for name in manifest.capabilities where vocabulary[name] == nil { throw StyleErrors.unknownCapability(name) }
         for (name, map, path) in usedCapabilities(manifest) {
             guard manifest.capabilities.contains(name) else { throw StyleErrors.capabilityUndeclared(name) }
-            for state in StyleCapabilityID.states(of: name) where map[state] == nil { throw StyleErrors.capabilityMap(state) }
-            for state in map.keys.sorted() where !StyleCapabilityID.states(of: name).contains(state) {
+            let states = vocabulary[name] ?? []
+            for state in states where map[state] == nil { throw StyleErrors.capabilityMap(state) }
+            for state in map.keys.sorted() where !states.contains(state) {
                 throw StyleErrors.unknownReference(path, state)
             }
         }
@@ -201,11 +209,15 @@ public enum StyleManifestValidator {
 /// that is left once the registry owns resolution (§5.8).
 public enum MightyStyleIDs {
     public static let ouroboros = "ouroboros"
+    /// No longer bundled (removed in v7) but still reserved: panes saved in
+    /// that style keep the id, and no other manifest may ever answer to it.
+    /// The hash binding (§3.4) already refuses a stranger there; the
+    /// reservation keeps the id from being claimed at all (§1.2).
     public static let paperthin = "paperthin"
     public static let cli = "cli"
     /// `cli` is the wire word for "no style", so no manifest may claim it.
     public static let reserved: Set<String> = [cli, ouroboros, paperthin]
-    public static let reservedNames = ["Ouroboros", "Paperthin"]
+    public static let reservedNames = ["Ouroboros"]
     public static func isValidShape(_ value: String) -> Bool {
         value.range(of: "^[a-z0-9][a-z0-9-]{0,39}$", options: .regularExpression) != nil
     }

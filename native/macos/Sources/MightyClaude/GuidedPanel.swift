@@ -84,12 +84,12 @@ struct GuidedPanel: View {
 
     private var manifest: StyleManifest { style.manifest }
     private var evaluator: StyleEvaluator { style.evaluator }
-    private var states: [String: String] { store.styleStates(style, for: session) }
+    /// No built-in feature exists to read (§1.8), so the initial-group rule
+    /// sees no state.
     private var group: StyleGroup? {
-        selection.groupId.flatMap { manifest.group($0) } ?? evaluator.initialGroup(capabilityStates: states)
+        selection.groupId.flatMap { manifest.group($0) } ?? evaluator.initialGroup(capabilityStates: [:])
     }
     private var draft: String { (store.drafts[session.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var capabilitiesLoaded: Bool { store.styleCapabilitiesAreLoaded(style, for: session) }
     /// The pending plan whose answers this panel shows (`PlanCardSupport.composerPlace`), nil otherwise.
     private var diagramPlan: ToolPermissionRequest? {
         let requests = store.guidedVisibleRequests(session.id)
@@ -103,7 +103,7 @@ struct GuidedPanel: View {
     var body: some View {
         let jobOpen = evaluator.isJobOpen(session: session)
         let chips = StyleChips.make(evaluator, phase: phase, group: group, startingNew: selection.startingNew,
-                                    capabilityStates: states, running: running, jobOpen: jobOpen)
+                                    running: running, jobOpen: jobOpen)
         let setup = store.stylePrerequisite(style, for: session)
         // The cached reading only: file sources were read off the main actor.
         let widgets = StyleWidgetPresentation.make(store.styleState(style, for: session).widgets).filter { !$0.isEmpty }
@@ -127,7 +127,6 @@ struct GuidedPanel: View {
                         Text(verbatim: question).font(.ui(size: 11)).foregroundStyle(.secondary)
                     }
                 }
-                if showsAttachments { attachmentRow }
                 if chips.progress { progressRow } else { actionRow(chips) }
                 if let guidance = evaluator.guidanceLine(phase: chips.phaseId.flatMap { manifest.phase($0) }, running: running, jobOpen: jobOpen) {
                     Text(verbatim: guidance).font(.ui(size: 10)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
@@ -137,15 +136,12 @@ struct GuidedPanel: View {
         .padding(.horizontal, DesignMetrics.Spacing.md).padding(.top, DesignMetrics.Spacing.sm)
         .accessibilityElement(children: .contain).accessibilityIdentifier("mighty-panel-\(session.id)")
         .onAppear { seedGroup() }
-        .onChange(of: capabilitiesLoaded) { _, _ in seedGroup() }
     }
 
-    /// Chosen once, when the built-in features are first known. A state that
-    /// changes later does not move the group the user is working in (§1.6).
+    /// Chosen once, when the panel first appears (§1.6).
     private func seedGroup() {
         guard selection.groupId == nil else { return }
-        if case .capabilityState = manifest.rules.initialGroup, !capabilitiesLoaded { return }
-        selection.groupId = evaluator.initialGroup(capabilityStates: states)?.id
+        selection.groupId = evaluator.initialGroup(capabilityStates: [:])?.id
     }
 
     // MARK: 1 · phase bar
@@ -255,64 +251,6 @@ struct GuidedPanel: View {
                 .accessibilityIdentifier("mighty-group-\(item.id)-\(session.id)")
             }
         }
-    }
-
-    // MARK: 6 · attachments
-
-    /// The group whose recommendation the built-in feature feeds, when there
-    /// is one; otherwise the row belongs to the whole style (§6.1).
-    private var showsAttachments: Bool {
-        guard !manifest.capabilities.isEmpty else { return false }
-        guard let named = evaluator.recommendGroupId else { return true }
-        return group?.id == named
-    }
-    /// The empty line the feature itself supplies (§1.8).
-    private var attachmentEmptyDetail: String {
-        manifest.capabilities.compactMap(StyleCapabilityID.emptyDetail).first ?? ""
-    }
-
-    private var attachmentRow: some View {
-        let items = store.styleChips(style, for: session)
-        return HStack(spacing: DesignMetrics.Spacing.sm) {
-            Image(systemName: "folder").font(.ui(size: 10)).foregroundStyle(.secondary)
-            if items.isEmpty {
-                Text(verbatim: attachmentEmptyDetail).font(.ui(size: 11)).foregroundStyle(.secondary).lineLimit(1)
-                Spacer(minLength: 0)
-            } else {
-                attachmentChips(items)
-            }
-            Button { store.refreshStyleCapabilities(style, for: session) } label: {
-                Image(systemName: "arrow.clockwise").font(.ui(size: 9))
-            }
-            .buttonStyle(.plain).help(L("guidedPanel.reloadHelp"))
-        }
-        .accessibilityElement(children: .contain).accessibilityIdentifier("mighty-attachments-\(session.id)")
-    }
-
-    private func attachmentChips(_ items: [StyleAttachmentItem]) -> some View {
-        let detail = items.first?.detail ?? ""
-        return ScrollView(.horizontal) {
-            HStack(spacing: DesignMetrics.Spacing.sm) {
-                if !detail.isEmpty {
-                    Text(verbatim: detail).font(.ui(size: 10)).foregroundStyle(.secondary)
-                        .padding(.horizontal, DesignMetrics.Spacing.xs).padding(.vertical, 1).background(Palette.subtle, in: Capsule()).lineLimit(1)
-                }
-                // Six chips on screen however many the payload carries (§1.8).
-                ForEach(items.prefix(StyleLimits.maximumCasebookChips)) { item in
-                    Button(action: { open(item) }) { Text(verbatim: item.title) }
-                        .buttonStyle(.plain).font(.ui(size: 10, design: .monospaced))
-                        .foregroundStyle(item.openPath == nil ? Color.secondary : Palette.accent)
-                        .disabled(item.openPath == nil)
-                        .help(item.openPath.map { L("guidedPanel.openPathPrefix") + $0 } ?? item.title)
-                }
-            }
-        }
-        .scrollIndicators(.hidden)
-    }
-
-    private func open(_ item: StyleAttachmentItem) {
-        guard let path = item.openPath else { return }
-        NSWorkspace.shared.open(URL(fileURLWithPath: path))
     }
 
     // MARK: 7 · actions

@@ -2,121 +2,70 @@ import Foundation
 import Testing
 @testable import MightyCore
 
+/// Built-in features (§1.8). The app's vocabulary is empty since v7, so every
+/// declared name is unknown; the field and the two rules that name a feature
+/// stay in the schema and are checked against a test vocabulary here.
 struct StyleCapabilityTests {
-    private func write(_ text: String, _ url: URL, modified: Date? = nil) throws {
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try Data(text.utf8).write(to: url)
-        if let modified { try FileManager.default.setAttributes([.modificationDate: modified], ofItemAtPath: url.path) }
+    private let f = StyleFixtures.self
+
+    private func rules(recommend: String = "{\"kind\":\"none\"}", initialGroup: String = "{\"kind\":\"fixed\",\"group\":\"g\"}") -> String {
+        "{\"start\":{\"kind\":\"none\"},\"phase\":{\"kind\":\"none\"},\"next\":{\"kind\":\"byGroup\"},\"enter\":{\"kind\":\"verbatim\"},\"recommend\":\(recommend),\"initialGroup\":\(initialGroup)}"
     }
 
-    @Test func theCasebookHasThreeStatesAndAFixedFileOrder() throws {
-        let root = StyleFixtures.temporaryDirectory("casebook")
-        defer { try? FileManager.default.removeItem(at: root) }
-        let workspace = root.appendingPathComponent("repo", isDirectory: true)
-        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
-        let names = [StyleCapabilityID.casebook]
-        #expect(StyleCapabilities.evaluate(names, workspacePath: workspace.path).states == [StyleCapabilityID.casebook: "absent"])
-        #expect(StyleCapabilityID.states(of: StyleCapabilityID.casebook) == ["absent", "open", "complete"])
-        #expect(StyleCapabilityID.emptyDetail(of: StyleCapabilityID.casebook) == "열린 사이클이 없습니다. re0-plan으로 케이스북을 여세요.")
-        #expect(StyleCapabilityID.states(of: "acme.thing").isEmpty && StyleCapabilityID.emptyDetail(of: "acme.thing") == nil)
-
-        let folder = workspace.appendingPathComponent(".re0/iteration/0.3.0-now")
-        for name in ["REF-api.local.md", "EVIDENCE.local.md", "WORKFLOW.local.md"] { try write(name, folder.appendingPathComponent(name)) }
-        let open = StyleCapabilities.evaluate(names, workspacePath: workspace.path)
-        #expect(open.states == [StyleCapabilityID.casebook: "open"])
-        #expect(open.attachments.map(\.id) == ["WORKFLOW.local.md", "EVIDENCE.local.md", "REF-api.local.md"])
-        #expect(open.attachments.map(\.title) == ["WORKFLOW", "EVIDENCE", "REF-api"])
-        #expect(open.attachments.allSatisfy { $0.readOnly && $0.detail == "0.3.0-now \u{00B7} lightweight" })
-        #expect(open.attachments[0].openPath == folder.appendingPathComponent("WORKFLOW.local.md").path)
-
-        try write("d", folder.appendingPathComponent("DESIGN.local.md"))
-        try write("r", folder.appendingPathComponent("RETRO.local.md"))
-        let complete = StyleCapabilities.evaluate(names, workspacePath: workspace.path)
-        #expect(complete.states == [StyleCapabilityID.casebook: "complete"])
-        #expect(complete.attachments.map(\.id).prefix(4) == ["DESIGN.local.md", "WORKFLOW.local.md", "EVIDENCE.local.md", "RETRO.local.md"])
-        #expect(complete.attachments.allSatisfy { $0.detail == "0.3.0-now \u{00B7} full" })
-        // The payload carries 24 and the panel draws 6 (§1.8).
-        for index in 0..<40 { try write("x", folder.appendingPathComponent("REF-\(index).local.md")) }
-        let many = StyleCapabilities.evaluate(names, workspacePath: workspace.path)
-        #expect(many.attachments.count == StyleLimits.maximumCasebookFiles && StyleLimits.maximumCasebookChips == 6)
-        // An unnamed capability reads nothing at all.
-        #expect(StyleCapabilities.evaluate([], workspacePath: workspace.path).states.isEmpty)
-    }
-
-    @Test func linksAreNeverFollowedAndHardLinksAreRefused() throws {
-        let root = StyleFixtures.temporaryDirectory("casebook-links")
-        defer { try? FileManager.default.removeItem(at: root) }
-        let workspace = root.appendingPathComponent("repo", isDirectory: true)
-        let folder = workspace.appendingPathComponent(".re0/iteration/0.1.0-real")
-        try write("w", folder.appendingPathComponent("WORKFLOW.local.md"))
-        let outside = root.appendingPathComponent("outside")
-        try write("secret", outside.appendingPathComponent("DESIGN.local.md"))
-        // An item that is a link, and a hard link that looks like a plain file.
-        try FileManager.default.createSymbolicLink(at: folder.appendingPathComponent("AAA.local.md"), withDestinationURL: outside.appendingPathComponent("DESIGN.local.md"))
-        try FileManager.default.linkItem(at: outside.appendingPathComponent("DESIGN.local.md"), to: folder.appendingPathComponent("BBB.local.md"))
-        let casebook = try #require(StyleCasebook.latest(workspacePath: workspace.path))
-        #expect(casebook.files == ["WORKFLOW.local.md"])
-        // A linked iteration folder is outside the workspace and is not walked.
-        let linked = root.appendingPathComponent("repo2", isDirectory: true)
-        try FileManager.default.createDirectory(at: linked.appendingPathComponent(".re0"), withIntermediateDirectories: true)
-        try FileManager.default.createSymbolicLink(at: linked.appendingPathComponent(".re0/iteration"), withDestinationURL: outside)
-        #expect(StyleCasebook.latest(workspacePath: linked.path) == nil)
-    }
-
-    @Test func capabilityOutputIsNormalised() throws {
-        let root = StyleFixtures.temporaryDirectory("casebook-bidi")
-        defer { try? FileManager.default.removeItem(at: root) }
-        let workspace = root.appendingPathComponent("repo", isDirectory: true)
-        // A repository can name a folder with a direction control; neither the
-        // Mac panel nor the phone payload may carry it through (§1.8).
-        let folder = workspace.appendingPathComponent(".re0/iteration/0.1.0-\u{202E}evil")
-        try write("w", folder.appendingPathComponent("WORKFLOW.local.md"))
-        let result = StyleCapabilities.evaluate([StyleCapabilityID.casebook], workspacePath: workspace.path)
-        let detail = try #require(result.attachments.first?.detail)
-        #expect(detail.contains("\u{FFFD}") && !StyleText.containsBanned(detail))
-        let raw = try #require(StyleCasebook.latest(workspacePath: workspace.path))
-        #expect(StyleText.containsBanned(raw.name) && !StyleText.containsBanned(StyleCapabilities.normalised(raw).name))
-        // The projection and the legacy payload are both built from the clean one.
-        let style = StyleFixtures.bundled("paperthin")
-        let panel = StylePanelProjection.make(style: style, prompts: [], selectedGroupId: "coil", capabilityStates: result.states,
-                                              attachments: result.attachments, prerequisites: StylePrerequisiteResult(ready: true))
-        #expect(panel.attachments.allSatisfy { !StyleText.containsBanned($0.detail ?? "") })
-        let legacy = MobileLegacyStyleAdapter.payloads(style: style, panel: panel, casebook: raw)
-        let casebookName = legacy.paperthin?.casebook?.name ?? ""
-        #expect(!StyleText.containsBanned(casebookName))
-        #expect(casebookName.contains("\u{FFFD}"))
-    }
-
-    @Test func longNamesAreCutBeforeTheyReachAScreen() throws {
-        let root = StyleFixtures.temporaryDirectory("casebook-long")
-        defer { try? FileManager.default.removeItem(at: root) }
-        let workspace = root.appendingPathComponent("repo", isDirectory: true)
-        let folder = workspace.appendingPathComponent(".re0/iteration/" + String(repeating: "a", count: 110))
-        try write("w", folder.appendingPathComponent(String(repeating: "b", count: 100) + ".local.md"))
-        let result = StyleCapabilities.evaluate([StyleCapabilityID.casebook], workspacePath: workspace.path)
-        let item = try #require(result.attachments.first)
-        // The ellipsis is inside the budget: "cut to 80" means 80 on screen.
-        #expect(item.title.count == StyleLimits.maximumCapabilityString && item.title.hasSuffix("\u{2026}"))
-        #expect((item.detail ?? "").count == StyleLimits.maximumCapabilityString)
-    }
-
-    /// The 24 newest folders are taken after the sort, never before it: the
-    /// order `contentsOfDirectory` returns is arbitrary, so capping first
-    /// drops the newest cycles at random in a long history (§1.8).
-    @Test func theNewestCycleIsFoundInALongHistory() throws {
-        let root = StyleFixtures.temporaryDirectory("casebook-history")
-        defer { try? FileManager.default.removeItem(at: root) }
-        let workspace = root.appendingPathComponent("repo", isDirectory: true)
-        let iterations = workspace.appendingPathComponent(".re0/iteration", isDirectory: true)
-        for index in 0..<1_100 {
-            let folder = iterations.appendingPathComponent(String(format: "0.0.%04d-old", index))
-            try write("retro", folder.appendingPathComponent("RETRO.local.md"), modified: Date(timeIntervalSinceNow: -86_400))
-            try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -86_400)], ofItemAtPath: folder.path)
+    @Test func theAppKnowsNoFeatureAndRefusesEveryDeclaredName() {
+        #expect(StyleCapabilityID.vocabulary.isEmpty && StyleCapabilityID.all.isEmpty)
+        for name in ["acme.thing", "a"] {
+            #expect(f.code(f.data(f.flat, ["capabilities": "[\"\(name)\"]"])) == "E_UNKNOWN_CAPABILITY")
+            // A bundled manifest is held to the same vocabulary.
+            #expect(f.code(f.data(f.flat, ["capabilities": "[\"\(name)\"]"]), source: .bundled) == "E_UNKNOWN_CAPABILITY")
         }
-        // The newest folder sorts last by name, so only the mtime finds it.
-        let newest = iterations.appendingPathComponent("zz-newest")
-        try write("design", newest.appendingPathComponent("DESIGN.local.md"))
-        try FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: newest.path)
-        #expect(StyleCasebook.latest(workspacePath: workspace.path)?.name == "zz-newest")
+        // Declaring nothing is still the valid, ordinary case.
+        #expect(f.code(f.data(f.flat, ["capabilities": "[]"])) == nil)
+        // Every bundled style declares none.
+        for style in BundledStyles.shared.styles() { #expect(style.manifest.capabilities.isEmpty, "\(style.id)") }
+    }
+
+    @Test func aRuleThatNamesAFeatureIsRefusedInAFixedOrder() {
+        let recommend = "{\"kind\":\"capability\",\"capability\":\"acme.thing\",\"map\":{\"absent\":\"go\",\"open\":\"go\",\"complete\":\"go\"}}"
+        let initial = "{\"kind\":\"capabilityState\",\"capability\":\"acme.thing\",\"map\":{\"absent\":\"g\",\"open\":\"g\",\"complete\":\"g\"}}"
+        for undeclared in [["rules": rules(recommend: recommend)], ["rules": rules(initialGroup: initial)]] {
+            // Not declared: refused for that, whatever the vocabulary.
+            #expect(f.code(f.data(f.flat, undeclared)) == "E_CAPABILITY_UNDECLARED")
+            #expect(f.code(f.data(f.flat, undeclared), capabilities: f.testCapabilities) == "E_CAPABILITY_UNDECLARED")
+            // Declared: the vocabulary is read first, so the app refuses the
+            // name and a vocabulary that knows it accepts the whole map.
+            var declared = undeclared
+            declared["capabilities"] = "[\"acme.thing\"]"
+            #expect(f.code(f.data(f.flat, declared)) == "E_UNKNOWN_CAPABILITY")
+            #expect(f.code(f.data(f.flat, declared), capabilities: f.testCapabilities) == nil)
+        }
+        // A map must cover every state and name nothing else.
+        let partial = "{\"kind\":\"capability\",\"capability\":\"acme.thing\",\"map\":{\"absent\":\"go\",\"open\":\"go\"}}"
+        let extra = "{\"kind\":\"capability\",\"capability\":\"acme.thing\",\"map\":{\"absent\":\"go\",\"open\":\"go\",\"complete\":\"go\",\"gone\":\"go\"}}"
+        let declared = "[\"acme.thing\"]"
+        #expect(f.code(f.data(f.flat, ["capabilities": declared, "rules": rules(recommend: partial)]), capabilities: f.testCapabilities) == "E_CAPABILITY_MAP")
+        #expect(f.code(f.data(f.flat, ["capabilities": declared, "rules": rules(recommend: extra)]), capabilities: f.testCapabilities) == "E_UNKNOWN_REFERENCE")
+    }
+
+    /// The evaluator reads a feature's state as it always did, so a feature
+    /// added later recommends and seeds a group without engine work.
+    @Test func aKnownFeatureStillDrivesTheRecommendationAndTheFirstGroup() throws {
+        let style = StyleFixtures.catalogueStyle
+        let evaluator = style.evaluator
+        #expect(evaluator.recommendedAction(capabilityStates: ["acme.thing": "complete"]) == "work")
+        #expect(evaluator.recommendedAction(capabilityStates: [:]) == nil)
+        #expect(evaluator.initialGroup(capabilityStates: ["acme.thing": "open"])?.id == "coil")
+        // Not read yet: the first group, not a guess.
+        #expect(evaluator.initialGroup(capabilityStates: [:])?.id == "depth")
+        // The phone has no group of its own and production passes none, so
+        // the recommendation has to survive that (§7.4).
+        let panel = StylePanelProjection.make(style: style, prompts: [], selectedGroupId: nil,
+                                              capabilityStates: ["acme.thing": "complete"], prerequisites: StylePrerequisiteResult(ready: true))
+        #expect(panel.recommended == "work" && panel.groups.first { $0.selected }?.id == "coil")
+        // Nothing offers a chip any more, but the field is still sent, empty,
+        // for a phone that predates v7.
+        #expect(panel.attachments.isEmpty)
+        let wire = try #require(try JSONSerialization.jsonObject(with: StylePanelProjection.serialise(panel)) as? [String: Any])
+        #expect((wire["attachments"] as? [Any])?.isEmpty == true)
     }
 }

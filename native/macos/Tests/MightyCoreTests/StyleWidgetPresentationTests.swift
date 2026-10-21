@@ -127,16 +127,23 @@ struct StyleWidgetPresentationTests {
         ])
     }
 
-    /// The recorded golden the phone test reads too (styles.test.ts, "golden
-    /// state widgets"): the same bytes present the same way on both sides.
-    @Test func theSuperpowersGoldenWidgetsPresentAsThePhoneDrawsThem() throws {
-        let url = StyleGolden.goldenDirectory.appendingPathComponent("superpowers.panel.json")
+    /// The recorded golden the phone tests read too: the same bytes present
+    /// the same way on both sides. The bundled style with state sources since
+    /// v7 is the plan-mode one.
+    @Test func theClaudePlanGoldenWidgetsPresentAsThePhoneDrawsThem() throws {
+        let url = StyleGolden.goldenDirectory.appendingPathComponent("claude-plan.panel.json")
         let golden = try JSONDecoder().decode(StyleGolden.Projection.self, from: Data(contentsOf: url))
         let widgets = try #require(golden.withState?.widgets)
-        #expect(StyleWidgetPresentation.make(widgets) == [
+        let presented = StyleWidgetPresentation.make(widgets)
+        #expect(presented.count == 4)
+        #expect(Array(presented.prefix(3)) == [
             .progressBar(fraction: 3.0 / 7.0, text: "3/7"),
-            .label(text: "서브에이전트 2회 시작"),
+            .label(text: "진행 중: doing step 4"),
+            .label(text: "턴 완료 · 백그라운드 1개 실행 중"),
         ])
+        guard case .taskList(let tasks) = presented.last else { Issue.record("작업 목록이 없습니다"); return }
+        #expect(tasks.map(\.text) == ["review the diff", "npm test"])
+        #expect(tasks.map(\.kind) == ["agent", "shell"] && tasks.map(\.running) == [true, false])
     }
 
     /// The engine's own unread state for each kind lands on the empty state

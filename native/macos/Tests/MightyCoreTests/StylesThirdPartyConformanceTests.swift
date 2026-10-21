@@ -10,6 +10,9 @@ import Testing
 /// - `E_TOO_LARGE`(256 KB 초과 파일)는 정적 파일로 보관하기 어려워 테스트 내에서
 ///   동적으로 생성한다. `E_ID_COLLISION`은 디코더가 아닌 레지스트리가 판정하므로
 ///   코퍼스에 없고 `StyleManifestTests`가 별도로 검증한다.
+/// - `E_CAPABILITY_MAP`은 v7부터 앱의 내장 기능 어휘가 비어 있어 어떤 매니페스트로도
+///   나오지 않는다(선언한 이름이 먼저 `E_UNKNOWN_CAPABILITY`로 거절된다). 그래서
+///   코퍼스에 없고, 시험용 어휘로 `StyleManifestTests`·`StyleCapabilityTests`가 확인한다.
 struct StylesThirdPartyConformanceTests {
     private static var conformanceDirectory: URL {
         StyleGolden.stylesDirectory.appendingPathComponent("conformance", isDirectory: true)
@@ -95,7 +98,7 @@ struct StylesThirdPartyConformanceTests {
     }
 
     /// 코퍼스 무효 벡터 수가 예상 범위 안에 있고, 디코더 접근 코드 전체를
-    /// 아우른다(E_TOO_LARGE와 E_ID_COLLISION 두 개 제외).
+    /// 아우른다(E_TOO_LARGE, E_ID_COLLISION, E_CAPABILITY_MAP 세 개 제외).
     @Test func invalidCorpusCoversExpectedErrorCodes() throws {
         let fm = FileManager.default
         guard fm.fileExists(atPath: Self.invalidDirectory.path) else {
@@ -106,14 +109,15 @@ struct StylesThirdPartyConformanceTests {
             .filter { $0.hasSuffix(".json") }
         let codesInCorpus = Set(files.map { String($0.dropLast(5)) })  // ".json" 제거
 
-        // 레지스트리 판정 코드와 크기 초과 코드는 정적 파일로 다룰 수 없다.
-        let excluded: Set<String> = ["E_ID_COLLISION", "E_TOO_LARGE"]
+        // 레지스트리 판정 코드와 크기 초과 코드는 정적 파일로 다룰 수 없고,
+        // 내장 기능 어휘가 빈 v7부터 E_CAPABILITY_MAP은 어떤 파일로도 나오지 않는다.
+        let excluded: Set<String> = ["E_ID_COLLISION", "E_TOO_LARGE", "E_CAPABILITY_MAP"]
         let decoderCodes = StyleErrorCodes.all.subtracting(excluded)
 
         let missing = decoderCodes.subtracting(codesInCorpus)
         #expect(missing.isEmpty, "코퍼스에 없는 오류 코드: \(missing.sorted().joined(separator: ", "))")
 
-        let extra = codesInCorpus.subtracting(StyleErrorCodes.all)
-        #expect(extra.isEmpty, "알 수 없는 오류 코드가 코퍼스에 있습니다: \(extra.sorted().joined(separator: ", "))")
+        let extra = codesInCorpus.subtracting(decoderCodes)
+        #expect(extra.isEmpty, "알 수 없거나 정적 파일로 나올 수 없는 오류 코드가 코퍼스에 있습니다: \(extra.sorted().joined(separator: ", "))")
     }
 }

@@ -21,16 +21,17 @@
 
 ## 코퍼스가 다루지 않는 오류 코드
 
-오류 코드는 모두 54개이고, 그중 52개가 `invalid/` 에 파일로 들어 있습니다.
-남은 둘은 정적 파일로 다룰 수 없어 빠졌으며 사유는 다음과 같습니다.
+오류 코드는 모두 54개이고, 그중 51개가 `invalid/` 에 파일로 들어 있습니다.
+남은 셋은 정적 파일로 다룰 수 없어 빠졌으며 사유는 다음과 같습니다.
 
 | 코드 | 빠진 사유 | 대신 확인하는 곳 |
 | --- | --- | --- |
 | `E_TOO_LARGE` | 256 KB 를 넘는 파일이라야 나오는 판정입니다. 그만한 파일을 저장소에 두면 clone 과 diff 가 무거워집니다 | `StylesThirdPartyConformanceTests.tooLargeIsRejectedDynamically` 가 테스트 안에서 데이터를 만들어 확인합니다 |
 | `E_ID_COLLISION` | 매니페스트 한 장을 읽어서는 나올 수 없는 판정입니다. 이미 등록된 다른 스타일과 id 가 겹칠 때 앱 등록 단계에서 레지스트리가 내리는 판정이라 디코더로는 닿지 않습니다 | `StyleManifestTests` 가 레지스트리 경로에서 따로 확인합니다 |
+| `E_CAPABILITY_MAP` | `mighty-style-engine-v7` 부터 앱의 내장 기능 어휘가 비어 있어 어떤 매니페스트로도 나오지 않습니다. 선언한 기능 이름은 상태 맵을 보기 전에 `E_UNKNOWN_CAPABILITY` 로 먼저 거절됩니다. v6 까지 있던 `E_CAPABILITY_MAP.json` 은 v7 에서 지웠습니다 | `StyleManifestTests` 와 `StyleCapabilityTests` 가 시험용 어휘(`StyleFixtures.testCapabilities`)를 넣어 확인합니다 |
 
-`invalidCorpusCoversExpectedErrorCodes` 가 위 둘을 제외한 52개 코드 전부가
-코퍼스에 있는지, 그리고 코퍼스에 알 수 없는 코드가 섞이지 않았는지를 검사합니다.
+`invalidCorpusCoversExpectedErrorCodes` 가 위 셋을 제외한 51개 코드 전부가
+코퍼스에 있는지, 그리고 코퍼스에 알 수 없는 코드나 위 셋이 섞이지 않았는지를 검사합니다.
 엔진에 코드가 늘면 이 검사가 먼저 실패하므로 코퍼스가 조용히 뒤처지지 않습니다.
 
 ## 실행 방법

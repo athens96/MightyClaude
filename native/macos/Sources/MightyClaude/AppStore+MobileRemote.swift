@@ -33,7 +33,7 @@ struct MobileRemoteTracking {
         /// whose every value the host is about to refuse.
         var editable: Bool; var options: Int
         /// The Mighty payload's own identity: block ids and statuses, the
-        /// guided panel's state, the workspace's casebook. Not the streamed
+        /// guided panel's state. Not the streamed
         /// text — see `AppStore.mobileMightyDigest`.
         var mighty: Int
         init(_ session: RunSession, editable: Bool, options: Int, mighty: Int) {
@@ -437,13 +437,11 @@ extension AppStore {
         // The Mac reads these when the style is chosen; a pane only ever
         // watched from a phone has never triggered that read.
         if stylePrerequisite(registered, for: session) == nil { refreshStylePrerequisites(registered, for: session) }
-        if !styleCapabilitiesAreLoaded(registered, for: session) { refreshStyleCapabilities(registered, for: session) }
         if !styleStateIsLoaded(registered, for: session) { refreshStyleState(registered, for: session) }
         let panel = mobileStylePanel(registered, for: session, runs: saved)
-        let legacy = MobileLegacyStyleAdapter.payloads(style: registered, panel: panel, casebook: styleCasebooks[session.workspaceId])
         let built = structure ? mobileStructure(session, runs: saved, style: registered, titles: titles, runnable: runnable) : nil
         return MobileMighty(style: style, styleId: registered.id, runs: runs, panel: panel,
-                            ouroboros: legacy.ouroboros, paperthin: legacy.paperthin,
+                            ouroboros: MobileLegacyStyleAdapter.payload(style: registered, panel: panel),
                             structure: built?.value, structureTag: built?.tag)
     }
 
@@ -476,9 +474,9 @@ extension AppStore {
         // been answered yet, and "ready" is the answer that hides the setup
         // notice and offers buttons that would fail (§1.5).
         let unknown = StylePrerequisiteResult(ready: style.manifest.prerequisites.probes.isEmpty)
+        // No built-in feature exists to read (§1.8), so there is no state to pass.
         return StylePanelProjection.make(style: style, prompts: prompts, selectedGroupId: nil,
-                                         capabilityStates: styleStates(style, for: session),
-                                         attachments: styleChips(style, for: session),
+                                         capabilityStates: [:],
                                          prerequisites: stylePrerequisite(style, for: session) ?? unknown,
                                          running: session.status == "running",
                                          session: session,
@@ -525,15 +523,6 @@ extension AppStore {
         hasher.combine(session.status == "running")
         let setup = stylePrerequisite(style, for: session)
         hasher.combine(setup?.ready); hasher.combine(setup?.missing)
-        for name in style.manifest.capabilities.sorted() {
-            let key = StyleCapabilityKey(workspaceId: session.workspaceId, name: name)
-            hasher.combine(name)
-            hasher.combine(styleCapabilityStates[key])
-            hasher.combine(styleAttachments[key]?.map(\.id))
-        }
-        // A new cycle folder can carry the same file names as the old one, so
-        // the state and the ids alone would not move (§1.8).
-        hasher.combine(styleCasebooks[session.workspaceId]?.name)
         return hasher.finalize()
     }
 

@@ -34,7 +34,7 @@ done
 # second gate of docs/mighty-styles.md §3.2 is here, at assembly.
 # `-s` rather than `-f`: a zero-byte ouroboros.json is exactly the failure this
 # gate exists to catch, and it passes an existence check.
-for style_name in ouroboros paperthin; do
+for style_name in ouroboros claude-plan; do
   if [ ! -s "$STYLE_BUNDLE/Contents/Resources/Styles/$style_name.json" ] && [ ! -s "$STYLE_BUNDLE/Styles/$style_name.json" ]; then
     echo "번들 스타일 매니페스트가 없습니다: $style_name.json ($STYLE_BUNDLE)" >&2
     exit 1

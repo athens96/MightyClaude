@@ -65,12 +65,12 @@ struct StylesClaudePlanTests {
         ])
         #expect(manifest.rules.enter == .verbatim)
         #expect(PlanCardSupport.styleDrawsTasks(manifest))
-        #expect(!PlanCardSupport.styleDrawsTasks(StyleFixtures.bundled("superpowers").manifest))
+        #expect(!PlanCardSupport.styleDrawsTasks(StyleFixtures.bundled("ouroboros").manifest))
+        #expect(!PlanCardSupport.styleDrawsTasks(StyleFixtures.statefulStyle.manifest))
     }
 
-    @Test func theOtherBundledStylesDoNotReadThePlanStage() {
-        for id in ["ouroboros", "paperthin", "superpowers"] {
-            let manifest = StyleFixtures.bundled(id).manifest
+    @Test func theOtherStylesDoNotReadThePlanStage() {
+        for manifest in [StyleFixtures.bundled("ouroboros").manifest, StyleFixtures.statefulStyle.manifest] {
             #expect(!manifest.readsPlanState && manifest.launch == nil)
         }
     }
@@ -158,7 +158,7 @@ struct StylesClaudePlanTests {
         #expect(evaluator.currentPhase(session: session, fileSourceStates: [:], planStage: .executing)?.id == "execute")
         #expect(evaluator.currentPhase(session: session)?.id == "plan")
         // Another style is not touched by a stage.
-        #expect(StyleFixtures.bundled("superpowers").evaluator.currentPhase(prompts: [], fileSourceStates: [:], planStage: .executing)?.id == "brainstorm")
+        #expect(StyleFixtures.statefulStyle.evaluator.currentPhase(prompts: [], fileSourceStates: [:], planStage: .executing)?.id == "brainstorm")
     }
 
     // MARK: Chips, lines
@@ -190,7 +190,7 @@ struct StylesClaudePlanTests {
         #expect(state.contains("실행 상태 background · 위젯 taskList"))
         #expect(state.contains("단계 approve ← 계획 상태 awaitingApproval"))
         #expect(sections.first { $0.id == "launch" } != nil)
-        #expect(StyleApprovalCard.sections(StyleFixtures.bundled("superpowers")).first { $0.id == "launch" } == nil)
+        #expect(StyleApprovalCard.sections(StyleFixtures.statefulStyle).first { $0.id == "launch" } == nil)
     }
 
     // MARK: Widgets

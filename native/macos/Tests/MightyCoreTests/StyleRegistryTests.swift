@@ -51,11 +51,12 @@ struct StyleRegistryTests {
     @Test func requestTitlesComeFromEveryRunnableStyle() throws {
         let bundles = StyleRegistry(styles: BundledStyles.shared.styles())
         #expect(bundles.requestTitle(forInput: "/ouroboros:seed", workspace: nil) == "시드")
-        #expect(bundles.requestTitle(forInput: "/nba", workspace: nil) == "🎯 nba")
+        #expect(bundles.requestTitle(forInput: "[계획] 결제 모듈", workspace: nil) == "계획")
         #expect(bundles.requestTitle(forInput: "/ouroboros:evaluate", workspace: nil) == "평가")
         #expect(bundles.requestTitle(forInput: "ooo 이거 해줘", workspace: nil) == nil)
         #expect(bundles.requestIcon(forInput: "/ouroboros:seed", workspace: nil)?.rawValue == "leaf")
-        #expect(bundles.requestTint(forInput: "/nba", workspace: nil) == .accent)
+        // An action with no tint of its own wears its style's.
+        #expect(bundles.requestTint(forInput: "[계획] 결제 모듈", workspace: nil) == .indigo)
         // Nothing recognised means no icon and no tint of its own, or every
         // plain request block would wear the style's presentation (§1.10).
         #expect(bundles.requestIcon(forInput: "/help 좀", workspace: nil) == nil)
@@ -73,7 +74,7 @@ struct StyleRegistryTests {
         #expect(quiet.styles[0].approval == .pending && quiet.requestTitle(forInput: "/go", workspace: nil) == nil)
         #expect(quiet.runnableInPrecedence(workspace: nil).isEmpty)
         // Precedence is `bundled` > `user` > `workspace`, id order within one.
-        #expect(bundles.runnableInPrecedence(workspace: nil).map(\.id) == ["claude-plan", "ouroboros", "paperthin", "superpowers"])
+        #expect(bundles.runnableInPrecedence(workspace: nil).map(\.id) == ["claude-plan", "ouroboros"])
     }
 
     @Test func savedStyleIsNormalisedByShapeAndOptionallyByKnownIds() throws {
@@ -82,7 +83,7 @@ struct StyleRegistryTests {
         var codex = RunSession(workspaceId: "ws", title: "Codex", provider: "codex"); codex.mightyStyle = "ouroboros"
         var odd = RunSession(workspaceId: "ws", title: "Claude"); odd.mightyStyle = "something"
         let snapshot = AppSnapshot(workspaces: [Workspace(id: "ws", name: "R", path: "/tmp/r")], sessions: [session, codex, odd])
-        let known = StateRepository.normalize(snapshot, restoring: true, knownStyleIds: ["ouroboros", "paperthin"])
+        let known = StateRepository.normalize(snapshot, restoring: true, knownStyleIds: ["ouroboros", "claude-plan"])
         #expect(known.sessions.map(\.mightyStyle) == ["ouroboros", nil, nil])
         // The app passes no list, so a workspace style survives a restart that
         // happens before its repository is scanned (§3.4).

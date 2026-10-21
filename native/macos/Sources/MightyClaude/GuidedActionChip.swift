@@ -21,7 +21,7 @@ extension Palette {
 }
 
 /// One action of a guided style. Its own view keeps the row's builder cheap
-/// to type-check, as the Paperthin grid's chip did before it.
+/// to type-check.
 struct GuidedActionChip: View {
     let action: StyleAction
     let prominent: Bool

@@ -90,14 +90,16 @@ enum StyleManifestPreScan {
 /// A hand-written pass over the `Any` tree: a synthesised `Codable` would drop
 /// unknown keys silently and could not carry the `<경로>` every refusal names.
 public enum StyleManifestDecoder {
-    public static func decode(_ data: Data, source: StyleSource) throws -> StyleManifest {
+    /// `capabilities` stays the app's own vocabulary outside the tests (§1.8).
+    public static func decode(_ data: Data, source: StyleSource,
+                              capabilities: [String: [String]] = StyleCapabilityID.vocabulary) throws -> StyleManifest {
         guard data.count <= StyleLimits.maximumBytes else { throw StyleErrors.tooLarge }
         try StyleManifestPreScan.scan(data)
         let parsed: Any
         do { parsed = try JSONSerialization.jsonObject(with: data, options: []) } catch { throw StyleErrors.notJSON }
         guard let root = parsed as? [String: Any] else { throw StyleErrors.notJSON }
         let manifest = try structure(root)
-        try StyleManifestValidator.validate(manifest, source: source, knownCapabilities: StyleCapabilityID.all)
+        try StyleManifestValidator.validate(manifest, source: source, capabilities: capabilities)
         return manifest
     }
 

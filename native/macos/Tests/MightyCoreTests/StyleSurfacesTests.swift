@@ -11,7 +11,7 @@ struct StyleSurfacesTests {
         #expect(StyleChrome.requestTitle(prefix: nil, ordinal: 1, providerLabel: "Claude") == "요청 1 \u{00B7} Claude")
         #expect(StyleChrome.requestTitle(prefix: "", ordinal: 1, providerLabel: "Claude") == "요청 1 \u{00B7} Claude")
         #expect(StyleChrome.graphHeader(styleName: nil, phaseTitle: nil) == "마이티")
-        #expect(StyleChrome.graphHeader(styleName: "Paperthin", phaseTitle: nil) == "마이티 \u{00B7} Paperthin")
+        #expect(StyleChrome.graphHeader(styleName: "Deck", phaseTitle: nil) == "마이티 \u{00B7} Deck")
         #expect(StyleChrome.graphHeader(styleName: "Ouroboros", phaseTitle: "시드") == "마이티 \u{00B7} Ouroboros \u{00B7} 시드")
         #expect(StyleChrome.installPaneTitle("Ouroboros 설치", styleName: "Ouroboros", source: .bundled) == "Ouroboros 설치 \u{00B7} Ouroboros")
         // The one surface that ends in a prefilled shell command carries the
@@ -49,26 +49,26 @@ struct StyleSurfacesTests {
         #expect(restarted.actions.map(\.id) == ["interview", "auto"] && restarted.reset == .cancel && restarted.phaseId == "goal")
 
         // `byGroup` has no prominent chip; the recommendation is the emphasis.
-        let paperthin = StyleFixtures.bundled("paperthin")
-        let coil = paperthin.manifest.group("coil")
-        let group = StyleChips.make(paperthin.evaluator, phase: nil, group: coil, startingNew: false,
-                                    capabilityStates: [StyleCapabilityID.casebook: "open"])
-        #expect(group.actions.map(\.id) == ["re0-plan", "re0-loop", "re0-memo", "re0-work", "catchup", "nba"])
-        #expect(group.prominentId == nil && group.recommendedId == "re0-loop" && group.reset == .none)
+        let catalogue = StyleFixtures.catalogueStyle
+        let coil = catalogue.manifest.group("coil")
+        let group = StyleChips.make(catalogue.evaluator, phase: nil, group: coil, startingNew: false,
+                                    capabilityStates: ["acme.thing": "open"])
+        #expect(group.actions.map(\.id) == ["plan", "loop", "memo", "work", "nba"])
+        #expect(group.prominentId == nil && group.recommendedId == "loop" && group.reset == .none)
         // The recommendation follows the feature, not the group being looked
         // at; the chip is simply absent from a row that does not contain it.
-        let depth = StyleChips.make(paperthin.evaluator, phase: nil, group: paperthin.manifest.group("depth"), startingNew: false,
-                                    capabilityStates: [StyleCapabilityID.casebook: "open"])
-        #expect(depth.recommendedId == "re0-loop" && !depth.actions.contains { $0.id == "re0-loop" })
+        let depth = StyleChips.make(catalogue.evaluator, phase: nil, group: catalogue.manifest.group("depth"), startingNew: false,
+                                    capabilityStates: ["acme.thing": "open"])
+        #expect(depth.recommendedId == "loop" && !depth.actions.contains { $0.id == "loop" })
         // A catalogue under a group map is a grid; a phase row is one line.
         #expect(group.grid && depth.grid && !start.grid && !next.grid)
     }
 
     @Test func aChipsTooltipNamesItsScopeAndItsFlags() throws {
-        let paperthin = StyleFixtures.bundled("paperthin")
-        let hate = try #require(paperthin.manifest.action("hate"))
+        let catalogue = StyleFixtures.catalogueStyle
+        let hate = try #require(catalogue.manifest.action("hate"))
         #expect(StyleChips.help(hate) == "친절하기를 거부합니다. 계획을 죽일 수 있는 반론 하나와 가장 싼 테스트를 냅니다 \u{00B7} 범위: 계획 하나 \u{00B7} 사람만 부를 수 있는 스킬")
-        let nba = try #require(paperthin.manifest.action("nba"))
+        let nba = try #require(catalogue.manifest.action("nba"))
         #expect(StyleChips.help(nba).hasSuffix("범위: 현재 사이클 \u{00B7} 읽기 전용"))
         // No scope and no flags: the help line stands by itself, as today.
         let seed = try #require(StyleFixtures.bundled("ouroboros").manifest.action("seed"))
@@ -93,13 +93,13 @@ struct StyleSurfacesTests {
     }
 
     @Test func settingsRowsOfferOnlyTheDecisionsTheStoreCanWrite() throws {
-        let bundled = StyleFixtures.bundled("paperthin")
+        let bundled = StyleFixtures.bundled("ouroboros")
         let approved = try StyleFixtures.registered(StyleFixtures.data(), source: .user, path: "/data/styles/flow.json")
         let pending = try StyleFixtures.registered(StyleFixtures.data(StyleFixtures.flat, ["id": "\"repo\"", "name": "\"Repo\""]),
                                                    source: .workspace, path: "/repo/.claude/mighty-styles/repo.json",
                                                    workspacePath: "/repo", approval: .pending)
         let rows = StyleSettingsList.rows([pending, approved, bundled], locked: false)
-        #expect(rows.map(\.styleId) == ["paperthin", "flow", "repo"])
+        #expect(rows.map(\.styleId) == ["ouroboros", "flow", "repo"])
         #expect(rows[0].stateLabel == "내장" && !rows[0].canApprove && !rows[0].canRevoke && !rows[0].canRemove)
         #expect(rows[1].stateLabel == "허용됨" && rows[1].canRevoke && rows[1].canRemove && !rows[1].canApprove)
         #expect(rows[2].stateLabel == "확인 필요" && rows[2].canApprove && !rows[2].canRemove && rows[2].badge == "저장소에서 발견됨")
@@ -130,10 +130,10 @@ struct StyleSurfacesTests {
         #expect(sections[7].title == "행동 10개" && sections[7].lines.contains("/ouroboros:unstuck {text}"))
         #expect(sections[8].lines.first == "아이콘 point.3.connected.trianglepath.dotted")
 
-        let paperthin = StyleApprovalCard.sections(StyleFixtures.bundled("paperthin"))
-        #expect(paperthin[1].lines == ["자동 허용 없음"] && !StyleApprovalCard.requiresSecondConfirmation(StyleFixtures.bundled("paperthin")))
-        #expect(paperthin[3].lines == ["입력창의 글을 그대로 요청으로 보냅니다."])
-        #expect(paperthin.first { $0.id == "rules" }?.lines.contains("다음 \u{00B7} 고른 그룹의 행동") == true)
+        let catalogue = StyleApprovalCard.sections(StyleFixtures.catalogueStyle)
+        #expect(catalogue[1].lines == ["자동 허용 없음"] && !StyleApprovalCard.requiresSecondConfirmation(StyleFixtures.catalogueStyle))
+        #expect(catalogue.first { $0.id == "enter" }?.lines == ["입력창의 글을 그대로 요청으로 보냅니다."])
+        #expect(catalogue.first { $0.id == "rules" }?.lines.contains("다음 \u{00B7} 고른 그룹의 행동") == true)
 
         // A workspace style names its clone as well as its file.
         let repo = try StyleFixtures.registered(StyleFixtures.data(), source: .workspace,
@@ -147,15 +147,16 @@ struct StyleSurfacesTests {
     @Test func theApprovalCardShowsEveryStateSourceTheEngineWillRead() throws {
         // §1.16.6: the card names each file glob with its parser, each run-event
         // source with its aggregate, and each phase override — nothing folded.
-        let sections = LocaleOverride.$language.withValue(.ko) { StyleApprovalCard.sections(StyleFixtures.bundled("superpowers")) }
-        #expect(sections.map(\.id) == ["origin", "autoAllow", "install", "enter", "state", "identity", "structure", "rules", "actions", "presentation"])
+        let sections = LocaleOverride.$language.withValue(.ko) { StyleApprovalCard.sections(StyleFixtures.statefulStyle) }
+        // The fixture declares no install command, so it has no install block.
+        #expect(sections.map(\.id) == ["origin", "autoAllow", "enter", "state", "identity", "structure", "rules", "actions", "presentation"])
         let state = try #require(sections.first { $0.id == "state" })
         #expect(state.title == "상태 읽기" && state.monospaced && !state.foldable)
         #expect(state.lines == [
-            "파일 docs/superpowers/plans/*.md · 파서 markdownChecklist · 위젯 progressBar",
+            "파일 docs/plans/*.md · 파서 markdownChecklist · 위젯 progressBar",
             "실행 이벤트 subagent.start · 집계 count · 위젯 label",
-            "단계 execute ← docs/superpowers/plans/*.md fileExists",
-            "단계 finish ← docs/superpowers/plans/*.md allChecked",
+            "단계 execute ← docs/plans/*.md fileExists",
+            "단계 finish ← docs/plans/*.md allChecked",
         ])
 
         // An untrusted repository manifest gets the same block, in the app's language.
