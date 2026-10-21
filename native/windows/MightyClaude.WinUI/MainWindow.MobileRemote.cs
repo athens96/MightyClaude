@@ -20,8 +20,9 @@ public sealed partial class MainWindow
     {
         if (options.SmokeTest || mobileHost is not null) return;
         var directory = Path.Combine(StateDirectory, "mobile-remote");
+        // Catalog: this PC's CLI lists — a phone's summaries cover local panes only (RemoteWorkspacePhone), never a remote workspace's.
         mobileRouter = new(service, directory, Environment.MachineName, MobileAction, MobileExtras) { AppVersion = AppVersionText, ImagePreview = MakeMobileImagePreview, QueueCount = id => views.TryGetValue(id, out var pane) ? pane.MobileQueuedCount : 0, Structure = MobileStructureFor,
-            Catalog = pane => (views.TryGetValue(pane.Id, out var view) ? view.PaneRuntime(pane.Provider) : Runtime(pane.Provider))?.ModelCatalog, Digest = pane => pane.Kind == "claude" && views.TryGetValue(pane.Id, out var view) ? view.MobileDigest() : null, ActiveStyle = MobileRunningStyle };
+            Catalog = pane => Runtime(pane.Provider)?.ModelCatalog, Digest = pane => pane.Kind == "claude" && views.TryGetValue(pane.Id, out var view) ? view.MobileDigest() : null, ActiveStyle = MobileRunningStyle };
         mobileHost = new(directory, Environment.MachineName, MobileDesktopRouter.Capabilities, MobileRoute) { AppVersion = AppVersionText };
         mobileRouter.HostId = mobileHost.HostId;
         mobileRouter.DirectEndpoints = () => mobileHost?.DirectEndpoints ?? [];

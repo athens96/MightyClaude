@@ -45,7 +45,7 @@ public sealed class MobileDesktopRouter : IDisposable
     public Func<string, byte[], CancellationToken, Task<MobileImageResult>>? ImagePreview { get; set; }
     public Func<string, string, JsonElement?, string, CancellationToken, Task<MobileReply>>? ScreenRoute { get; set; }
     public Func<string, int>? QueueCount { get; set; }
-    /// <summary>The model list the pane's CLI gave (M/AppStore providerRuntime(_:workspaceId:)), for the summary's <c>resolvedModel</c>; null (or none) reads the provider's fallback list.</summary>
+    /// <summary>The model list this PC's CLI gave for the pane's provider, for the summary's <c>resolvedModel</c> (phone summaries cover local panes only, <see cref="RemoteWorkspacePhone"/>); null (or none) reads the provider's fallback list.</summary>
     public Func<RunSession, ModelCatalog?>? Catalog { get; set; }
     public string HostId { get; set; } = "";
     public string HostName { get; }
