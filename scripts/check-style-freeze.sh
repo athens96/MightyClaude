@@ -1,5 +1,5 @@
 #!/bin/bash
-# 용법: scripts/check-style-freeze.sh [<tag>] [--pending <file>]   # 기본 tag = mighty-style-engine-v6
+# 용법: scripts/check-style-freeze.sh [<tag>] [--pending <file>]   # 기본 tag = mighty-style-engine-v7
 #
 # 태그 이후의 diff가 고정된 엔진 경로(3번)를 건드리지 않았는지 본다
 # (docs/mighty-styles.md §8.3). git만 쓰므로 DEVELOPER_DIR이 필요 없다.
@@ -12,7 +12,7 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DEFAULT_TAG="mighty-style-engine-v6"
+DEFAULT_TAG="mighty-style-engine-v7"
 PENDING_FILE="styles/STYLE_FREEZE_PENDING"
 TAG=""
 PENDING=""
@@ -115,7 +115,6 @@ frozen() {
   segment_match "$1" "native/macos/Tests/MightyCoreTests/StylesThirdParty" "Tests.swift" && return 1
   segment_match "$1" "mobile/src/__tests__/styles-thirdparty-" ".test.ts" && return 1
   segment_match "$1" "native/macos/Tests/MightyCoreTests/Style" ".swift" && return 0
-  segment_match "$1" "native/macos/Tests/MightyCoreTests/SuperpowersStyle" ".swift" && return 0
   segment_match "$1" "mobile/src/__tests__/styles" ".test.ts" && return 0
   return 1
 }

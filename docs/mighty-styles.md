@@ -1,6 +1,6 @@
 # 마이티 스타일 엔진 (계약 문서)
 
-상태: **계약 확정, 미구현**. 이 문서는 구현 이전에 고정되는 계약이다. 마이티 모드의 "스타일"(지금의 [Ouroboros](ouroboros-mode.md) · [Paperthin](paperthin-mode.md))을 Swift 분기가 아니라 **선언적 JSON 매니페스트**로 구동하는 범용 엔진을 정의한다. 내장 두 스타일은 번들 매니페스트 2개로 이관되고, 폰(`mobile/`)은 매니페스트 결과를 받아 그리는 범용 렌더러가 되며, 엔진은 `mighty-style-engine-v1` 태그로 고정된 뒤 **JSON과 테스트만 추가하는 diff**로 oh-my-claudecode와 gstack이 붙는다.
+상태: **계약 확정, 미구현**. 이 문서는 구현 이전에 고정되는 계약이다. 마이티 모드의 "스타일"(처음 이관한 [Ouroboros](ouroboros-mode.md) · Paperthin — Paperthin은 v7에서 지웠다)을 Swift 분기가 아니라 **선언적 JSON 매니페스트**로 구동하는 범용 엔진을 정의한다. 내장 두 스타일은 번들 매니페스트 2개로 이관되고, 폰(`mobile/`)은 매니페스트 결과를 받아 그리는 범용 렌더러가 되며, 엔진은 `mighty-style-engine-v1` 태그로 고정된 뒤 **JSON과 테스트만 추가하는 diff**로 oh-my-claudecode와 gstack이 붙는다.
 
 읽는 순서: 스키마(1) → 검증(2) → 출처·신뢰(3·4) → 엔진 API(5) → 앱(6) → 폰(7) → 고정(8) → 테스트(9) → 후속(10) → 부록 A → 구현 순서(11). 부록 A는 네 스타일이 이 스키마로 표현되는지 확인하는 스케치이고, 11장은 이 계약을 서로 부딪히지 않는 세 갈래 작업으로 나눈다.
 
@@ -35,7 +35,7 @@
 | `aliases` | array | ✓ | ≤64, 비어 있어도 됨 | 1.4 |
 | `recognition` | object | ✓ | 1.4 | 과거 요청에서 행동을 되읽는 규칙 |
 | `rules` | object | ✓ | 1.6 | 시작·단계·다음 행동·Enter·추천·초기 그룹 **여섯** |
-| `capabilities` | array&lt;string&gt; | ✓ | ≤4, 비어 있어도 됨 | 이 매니페스트가 이름으로 참조하는 앱 내장 기능(1.8) |
+| `capabilities` | array&lt;string&gt; | ✓ | ≤4, 비어 있어도 됨 | 이 매니페스트가 이름으로 참조하는 앱 내장 기능(1.8). v7부터 어휘가 비어 있어 빈 배열만 통과한다 |
 | `autoAllow` | array | ✓ | ≤32, 비어 있어도 됨 | 1.9 |
 | `presentation` | object | ✓ | 1.10 | 스타일 단위 아이콘·색 |
 | `job` | object | — | 1.13 | 백그라운드 잡 선언 (선택). 없으면 오늘과 동일하게 동작 |
@@ -48,9 +48,9 @@
 
 ### 1.2 예약 id와 예약 이름
 
-**id.** `cli`(스타일 없음을 뜻하는 와이어 단어), `ouroboros`, `paperthin`. 번들이 아닌 매니페스트가 이 셋 중 하나를 쓰면 `E_RESERVED_ID`로 등록이 거부된다. 번들 id는 오늘 문자열 그대로이므로 저장된 실행 창이 마이그레이션 없이 열린다.
+**id.** `cli`(스타일 없음을 뜻하는 와이어 단어), `ouroboros`, `paperthin`. 번들이 아닌 매니페스트가 이 셋 중 하나를 쓰면 `E_RESERVED_ID`로 등록이 거부된다. 번들 id는 오늘 문자열 그대로이므로 저장된 실행 창이 마이그레이션 없이 열린다. `paperthin`은 v7에서 번들에서 지웠지만 **예약은 남는다** — 그 id로 저장된 실행 창이 남아 있고, 다른 매니페스트가 그 id에 답하는 일은 없어야 한다. 3.4의 해시 결속이 이미 낯선 매니페스트를 거절하지만, 예약은 그 id를 주장하는 것 자체를 막는다. 그런 실행 창은 데이터 이전 없이 일반 CLI로 보인다(3.4).
 
-**이름.** 번들이 아닌 매니페스트의 `name`은, **NFKC 정규화 → 대소문자 접기 → 모든 공백 제거** 후 번들 스타일의 `name`(`Ouroboros`, `Paperthin`)에 같은 처리를 한 값과 같아서는 안 된다(`E_RESERVED_NAME`). 예약이 id에만 걸리면 사용자가 보는 화면에서는 아무것도 예약되지 않는다 — 사용자는 id가 아니라 이름을 읽는다. `id: "ouroboros-team"` + `name: "Ouroboros"`는 이 규칙이 없으면 선택기·그래프 머리말·폰에서 번들 스타일과 구별되지 않는다.
+**이름.** 번들이 아닌 매니페스트의 `name`은, **NFKC 정규화 → 대소문자 접기 → 모든 공백 제거** 후 번들 스타일의 `name`(`Ouroboros`)에 같은 처리를 한 값과 같아서는 안 된다(`E_RESERVED_NAME`). v7에서 Paperthin을 지우면서 이름 `Paperthin`의 예약은 풀었다 — 흉내 낼 번들 스타일이 없다. 예약이 id에만 걸리면 사용자가 보는 화면에서는 아무것도 예약되지 않는다 — 사용자는 id가 아니라 이름을 읽는다. `id: "ouroboros-team"` + `name: "Ouroboros"`는 이 규칙이 없으면 선택기·그래프 머리말·폰에서 번들 스타일과 구별되지 않는다.
 
 이름의 유사성(동형 문자·너비 0 문자)은 1.11의 금지 문자 목록이, 출처의 가시성은 1.10의 출처 배지 규칙이 맡는다. 셋이 함께 있어야 위조가 막힌다.
 
@@ -126,7 +126,7 @@
 ```
 phases:  [{ "id": string, "title": string, "order": int }]
 ```
-`id`는 `^[a-z0-9][a-z0-9-]{0,39}$`, `title` 1–24자, `order`는 0 이상 99 이하의 정수이며 매니페스트 안에서 유일해야 한다. 단계 표시줄은 `order` 오름차순으로 그린다. 빈 배열이면 단계 개념이 없는 스타일이다(Paperthin).
+`id`는 `^[a-z0-9][a-z0-9-]{0,39}$`, `title` 1–24자, `order`는 0 이상 99 이하의 정수이며 매니페스트 안에서 유일해야 한다. 단계 표시줄은 `order` 오름차순으로 그린다. 빈 배열이면 단계 개념이 없는 스타일이다.
 
 ```
 groups:  [{ "id": string, "title": string, "axis": string?, "question": string?, "actions": [actionId] }]
@@ -224,7 +224,7 @@ rules: {
 여섯 키 모두 필수다. 규칙 종류(`kind`)는 아래가 **전부**이며, 그 밖의 값은 `E_UNKNOWN_RULE`이다.
 
 **StartRule**
-- `{ "kind": "none" }` — 시작 단계에 특별한 버튼이 없다(Paperthin).
+- `{ "kind": "none" }` — 시작 단계에 특별한 버튼이 없다(단계가 없는 카탈로그형 스타일).
 - `{ "kind": "actions", "phase": phaseId, "actions": [actionId], "resetTitle": string? }` — 현재 단계가 `start.phase`와 같으면 패널은 `next.map[phase]` 대신 **`start.actions`를 그 순서대로** 그린다(첫 번째가 prominent). `resetTitle`(1–24자)이 있으면 **다른 모든 단계에서** 행동 칩 줄 끝에 그 이름의 칩을 그리고, 누르면 단계를 `start.phase`로 되돌린 화면을 보여 준다(되돌린 상태에서는 `취소` 칩으로 원래 단계로 돌아간다). `start.phase`가 `phases`에 없으면 `E_START_PHASE`, `start.actions`가 비어 있으면 `E_MISSING_FIELD`.
 
 이 규칙이 없으면 진입 단계에 버튼이 하나도 없다. Ouroboros의 `next.map.goal`은 빈 배열이고, 오늘 화면은 `phase == .goal`일 때 `인터뷰 시작`·`자동 진행`을 그린다(`OuroborosPanel.swift:43`·`65-74`). `새 목표` 칩도 같은 자리에서 온다(`:84`). oh-my-claudecode·gstack의 여러 진입 행동도 이 규칙으로만 표현된다.
@@ -238,7 +238,7 @@ rules: {
 - `{ "kind": "byGroup" }` — 지금 고른 그룹의 `actions`를 그 순서대로 낸다. prominent는 없다(추천이 그 역할을 한다).
 
 **EnterRule**
-- `{ "kind": "verbatim" }` — 입력창의 글을 그대로 요청으로 보낸다(Paperthin).
+- `{ "kind": "verbatim" }` — 입력창의 글을 그대로 요청으로 보낸다(클러드 플랜, gstack).
 - `{ "kind": "rewriteBareDraftTo", "action": actionId, "phase": phaseId }` — 아래 조건이 **전부** 참일 때만 입력창의 글을 그 행동의 프롬프트로 바꿔 보낸다. 하나라도 거짓이면 `verbatim`과 같다.
   1. 실행 중이 아니다.
   2. 첨부가 없다.
@@ -258,12 +258,14 @@ rules: {
 
 **RecommendRule**
 - `{ "kind": "none" }`
-- `{ "kind": "capability", "capability": name, "map": { state: actionId }, "group": groupId? }` — 내장 기능이 돌려주는 닫힌 상태 값을 행동 id로 옮긴다. `map`은 그 기능의 상태 값을 **빠짐없이** 담아야 한다(`E_CAPABILITY_MAP`). 추천 값 자체는 **보고 있는 그룹과 무관하다**: 기능의 상태가 답이고, 그 행동이 지금 그려지는 줄에 없으면 강조될 칩이 없을 뿐이다. `group`은 **어느 그룹의 첨부 줄에 이 기능이 붙는지만** 말한다(6.1의 6번).
-  > 근거: 폰에는 고른 그룹이 없고 투영은 언제나 `selectedGroupId: nil`로 부른다. 추천을 그룹으로 막으면 `initialGroup`이 고른 기본 그룹이 `rules.recommend.group`과 다른 순간 — Paperthin에서 케이스북이 `absent`일 때가 정확히 그렇다 — 폰의 `mighty.paperthin.recommended`가 `re0-plan`에서 `null`로 떨어진다. 8.1의 완료 기준 1이 금지하는 값 변화다.
+- `{ "kind": "capability", "capability": name, "map": { state: actionId }, "group": groupId? }` — 내장 기능이 돌려주는 닫힌 상태 값을 행동 id로 옮긴다. `map`은 그 기능의 상태 값을 **빠짐없이** 담아야 한다(`E_CAPABILITY_MAP`). 추천 값 자체는 **보고 있는 그룹과 무관하다**: 기능의 상태가 답이고, 그 행동이 지금 그려지는 줄에 없으면 강조될 칩이 없을 뿐이다. `group`은 **어느 그룹의 첨부 줄에 이 기능이 붙는지만** 말했다(v6까지 6.1의 6번). v7부터 첨부 줄이 없으므로 있는 그룹을 가리키는지만 검증된다.
+  > 근거: 폰에는 고른 그룹이 없고 투영은 언제나 `selectedGroupId: nil`로 부른다. 추천을 그룹으로 막으면 `initialGroup`이 고른 기본 그룹이 `rules.recommend.group`과 다른 순간 — v6까지의 Paperthin에서 케이스북이 `absent`일 때가 정확히 그랬다 — 폰이 받는 추천이 `null`로 떨어진다. 8.1의 완료 기준 1이 금지하는 값 변화다.
 
 **InitialGroupRule**
 - `{ "kind": "fixed", "group": groupId }`
 - `{ "kind": "capabilityState", "capability": name, "map": { state: groupId } }` — 내장 기능을 **처음 읽었을 때 한 번** 그룹을 정한다. 이후 상태가 바뀌어도 보고 있던 그룹은 움직이지 않는다(`PaperthinPanel.swift:43-46`). `map`은 `RecommendRule`과 같은 규칙으로 그 기능의 상태 값을 빠짐없이 담아야 하며, 같은 코드 `E_CAPABILITY_MAP`을 쓴다.
+
+> **v7.** 앱의 내장 기능 어휘가 비었으므로(1.8) 기능을 읽는 두 규칙 종류(`capability`, `capabilityState`)를 쓴 매니페스트는 지금 앱에서 통과하지 못한다. 규칙 종류와 판정 순서는 스키마에 남아 있다.
 
 **백그라운드 잡이 열린 동안의 행동 목록.** 매니페스트가 `job` 선언을 갖고 있고 잡이 열린 상태이면, `rules.start`와 `rules.next`를 완전히 무시하고 `job.whileOpen` 목록만 순서대로 보여 준다(첫 항목이 prominent). 잡이 닫히면 정상 규칙으로 돌아온다. 선언이 없거나 잡이 닫혀 있으면 이 분기는 없다(§1.13).
 
@@ -287,21 +289,19 @@ guidance: { "start": string?, "next": string?, "running": string? }
 
 ### 1.8 이름으로 참조하는 앱 내장 기능 (`capabilities`)
 
-매니페스트는 **이름만** 적고 앱이 구현을 가진다. v1에서 고정되는 목록은 **하나**다.
+매니페스트는 **이름만** 적고 앱이 구현을 가진다. **v7부터 이 목록은 비어 있다.** v1–v6에는 `paperthin.casebook` 하나가 있었고(실행 창 워크스페이스의 `.re0/iteration/`을 읽어 상태 `absent`·`open`·`complete`, 읽기 전용 첨부 항목, 빈 상태 문구를 돌려주었다), 그 기능을 쓰던 번들 Paperthin과 함께 `mighty-style-engine-v7`에서 지웠다. 읽기 경로·링크 규칙·출력 정규화·칩 상한은 v6 태그의 이 문서에 있다.
 
-| 이름 | 무엇을 읽는가 | 무엇을 돌려주는가 |
-|---|---|---|
-| `paperthin.casebook` | 실행 창 워크스페이스의 `.re0/iteration/` 아래, 최근 수정된 폴더 24개만. 각 폴더의 `*.local.md` 파일 목록을 `DESIGN` → `WORKFLOW` → `EVIDENCE` → `RETRO` 순, 나머지는 이름순으로 정렬해 24개까지. (`PaperthinCatalog.swift:116-152` 그대로) | ① **상태** `absent` \| `open` \| `complete` — 케이스북이 없으면 `absent`, `DESIGN.local.md`와 `RETRO.local.md`가 **둘 다** 있으면 `complete`, 그 밖에는 `open`. ② **첨부 항목** `{ id: 파일명, title: ".local.md"를 뗀 이름, detail: 폴더명 + " · " + weight, readOnly: true }` 목록. `weight`는 `DESIGN.local.md`가 있으면 `full`, 없으면 `lightweight`. ③ **빈 상태 문구** `"열린 사이클이 없습니다. re0-plan으로 케이스북을 여세요."` |
+스키마는 그대로다. `capabilities` 필드(1.1)와 기능을 읽는 두 규칙 종류(`rules.recommend`의 `capability`, `rules.initialGroup`의 `capabilityState`, 1.6)가 남고, 판정은 이 순서로 정해져 있다.
 
-**링크와 경계.** 폴더 목록을 열기 전에 `.re0/iteration`을 `resolvingSymlinksInPath`로 풀고, 그 결과가 같은 방식으로 푼 워크스페이스 경로 **아래에 있을 때만** 진행한다. 각 항목은 `URLResourceValues`로 `isSymbolicLink == false`, `isRegularFile == true`(폴더는 `isDirectory == true`), **`linkCount == 1`**을 확인한다. `openPath`는 푼 경로가 워크스페이스 아래일 때만 채운다. 하드 링크는 일반 파일과 구별되지 않으므로 `linkCount`로만 걸린다.
+1. `capabilities`에 **앱이 모르는 이름**이 하나라도 있으면 `E_UNKNOWN_CAPABILITY`. 어휘가 비었으므로 이름을 하나라도 선언한 매니페스트는 모두 여기서 거절된다. 번들도 같다.
+2. `rules`가 `capabilities`에 없는 이름을 참조하면 `E_CAPABILITY_UNDECLARED`.
+3. 선언되고 앱이 아는 기능에 대해, `map`이 그 기능의 상태 값을 빠짐없이 담지 않으면 `E_CAPABILITY_MAP`, 그 기능에 없는 상태를 담으면 `E_UNKNOWN_REFERENCE`.
 
-**출력 문자열의 정규화.** `StyleAttachmentItem`의 `id`·`title`·`detail`, `StyleCasebook.name`·`files`는 **파일 시스템에서 온 값**이므로 매니페스트 문자열과 **같은 정규화를 거친다**: 1.11의 금지 문자를 U+FFFD로 바꾸고, `title`·`detail`은 80자로 자른다. 맥 화면과 폰 페이로드 양쪽에서, 투영 직전에 **한 번** 한다. 근거: 이 경로에는 승인 관문이 없다(Paperthin은 번들이다). 저장소가 `<U+202E>…`라는 폴더 이름 하나로 Mac 패널과 폰 페이로드에 방향 제어 문자를 넣을 수 있어서는 안 된다. 폰의 방어적 파싱(7.6)은 두 번째 겹이지 첫 번째가 아니다.
+1이 3보다 먼저이므로 v7의 앱에서 **`E_CAPABILITY_MAP`은 나올 수 없다**. 코드는 2장의 목록에 남고, 엔진 테스트가 시험용 어휘를 넣어 3을 확인한다. 적합성 코퍼스에서는 그 벡터를 지웠다(`styles/conformance/README.md`). 매니페스트 전체가 무효가 되며 조용히 무시하지 않는다 — 기능이 빠진 채로 동작하는 스타일이 승인 화면에서 설명한 것과 달라지기 때문이다.
 
-**첨부 줄은 언제나 그린다.** 내장 기능이 첨부를 선언한 스타일이 해당 그룹을 보고 있으면, 항목이 0개여도 그 줄을 그리고 기능이 준 빈 상태 문구와 새로고침 버튼을 보여 준다(오늘 `PaperthinPanel.swift:116-119`). 파일 칩은 **6개까지** 그린다(`:107`의 `prefix(6)`). 페이로드는 24개까지 나르되 화면은 6개다.
+**첨부.** 첨부 항목은 내장 기능만 냈으므로 v7부터 패널 투영의 `attachments`는 **언제나 빈 배열**이고 Mac 패널은 첨부 줄을 그리지 않는다. 필드는 폰 페이로드에 그대로 남는다(7.3) — v7 이전의 폰이 그 필드를 읽기 때문이다.
 
-`capabilities`에 없는 이름을 `rules`가 참조하면 `E_CAPABILITY_UNDECLARED`, 목록에 **앱이 모르는 이름**이 있으면 `E_UNKNOWN_CAPABILITY`로 매니페스트 전체가 무효다. 조용히 무시하지 않는다 — 기능이 빠진 채로 동작하는 스타일이 승인 화면에서 설명한 것과 달라지기 때문이다.
-
-이 목록은 `mighty-style-engine-v1` 태그에서 규칙 어휘·팔레트·아이콘 목록과 함께 고정된다.
+이 목록(빈 목록)은 태그에서 규칙 어휘·팔레트·아이콘 목록과 함께 고정된다. 기능을 다시 더하는 것은 새 고정이다.
 
 ### 1.9 `autoAllow`
 
@@ -580,106 +580,9 @@ JobMatcher: {
 
 `E_PROMPT_RECOGNITION` 확인: 행동 9개 모두 `{text}`를 지운 프롬프트가 `/ouroboros:<id>`이고, `recognition`이 `/ouroboros:` 접두사를 떼면 이름이 곧 `id`다. `match`가 필요 없다.
 
-### 1.15 Paperthin 번들 매니페스트 (전문)
+### 1.15 Paperthin 번들 매니페스트 (v7에서 지움)
 
-```json
-{
-  "schema": 1,
-  "id": "paperthin",
-  "name": "Paperthin",
-  "summary": "덜어내는 작은 스킬들을 지도에서 골라 실행",
-  "subtitle": "더하지 말고 덜어내기 · depth · breadth · coil · mesh",
-  "placeholders": {
-    "idle": "대상(파일 경로·지시)을 적고 위에서 스킬을 고르세요 · Enter는 그대로 요청합니다…",
-    "answering": "직접 답하려면 여기에 적고 Enter…"
-  },
-  "guidance": {
-    "next": "대상(파일 경로나 지시)을 아래에 적고 스킬을 누르세요. 비워 두면 스킬만 보냅니다.",
-    "running": "실행 중 · 고른 스킬은 다음 요청으로 대기합니다"
-  },
-  "prerequisites": {
-    "mode": "any",
-    "report": "first",
-    "probes": [
-      { "kind": "skill",  "name": "re0",       "scopes": ["user", "workspace"], "missing": "Paperthin 스킬이 설치되어 있지 않습니다",
-        "hint": "터미널 실행 창을 열어 다음 명령을 넣습니다(Claude Code의 전역 스킬 폴더에 연결): npx skills@latest add LilMGenius/paperthin --global --agent claude-code" },
-      { "kind": "skill",  "name": "nba",       "scopes": ["user", "workspace"], "missing": "Paperthin 스킬이 설치되어 있지 않습니다" },
-      { "kind": "skill",  "name": "re0-loop",  "scopes": ["user", "workspace"], "missing": "Paperthin 스킬이 설치되어 있지 않습니다" },
-      { "kind": "plugin", "prefix": "paperthin@",                               "missing": "Paperthin 스킬이 설치되어 있지 않습니다" }
-    ]
-  },
-  "install": {
-    "command": "npx skills@latest add LilMGenius/paperthin --global --agent claude-code",
-    "paneTitle": "Paperthin 설치"
-  },
-  "phases": [],
-  "groups": [
-    { "id": "depth",   "title": "depth",   "axis": "하나 · 지금",  "question": "이 하나가 깨끗하고 참인가?",
-      "actions": ["re0","readchk","aim","modelchk","hate","macrothink","feynman","autobahn","reorder","detool","dedash","debloat","shower","factchk","mandela","sip","re0-git","re0-release","re0-merge"] },
-    { "id": "breadth", "title": "breadth", "axis": "여럿 · 지금",  "question": "하나의 진실이 모든 곳에서 일관적인가?",
-      "actions": ["ssotize","re0-upgrade"] },
-    { "id": "coil",    "title": "coil",    "axis": "하나 · 반복",  "question": "각 패스가 다음 패스를 가르쳤는가?",
-      "actions": ["re0-plan","re0-loop","re0-memo","re0-work","catchup","nba"] },
-    { "id": "mesh",    "title": "mesh",    "axis": "여러 시선",    "question": "집단이 진실로 수렴하는가?",
-      "actions": ["prism"] }
-  ],
-  "actions": [
-    { "id": "re0",          "title": "re0",          "glyph": "♻️", "scope": "아티팩트 하나",        "help": "drift된 아티팩트를 또 다른 패치가 아니라 깨끗한 v0로 다시 씁니다", "prompt": "/re0 {text}",          "takesText": true, "foldText": "oneLine" },
-    { "id": "readchk",      "title": "readchk",      "glyph": "🧭", "scope": "지시 하나",            "help": "요청을 어떻게 읽었는지 확인하고, 실제로 남은 갈림길만 드러냅니다", "prompt": "/readchk {text}",      "takesText": true, "foldText": "oneLine", "flags": ["readOnly"] },
-    { "id": "aim",          "title": "aim",          "glyph": "🏹", "scope": "넘겨받은 데이터 하나",  "help": "넘겨받은 데이터를 읽고, 물어보는 대신 확인할 의도를 먼저 제안합니다", "prompt": "/aim {text}",          "takesText": true, "foldText": "oneLine", "flags": ["readOnly"] },
-    { "id": "modelchk",     "title": "modelchk",     "glyph": "📏", "scope": "작업 하나",            "help": "충분한 가장 싼 tier와 reasoning effort를 고릅니다", "prompt": "/modelchk {text}",     "takesText": true, "foldText": "oneLine", "flags": ["readOnly"] },
-    { "id": "hate",         "title": "hate",         "glyph": "😈", "scope": "계획 하나",            "help": "친절하기를 거부합니다. 계획을 죽일 수 있는 반론 하나와 가장 싼 테스트를 냅니다", "prompt": "/hate {text}",         "takesText": true, "foldText": "oneLine", "flags": ["userInvoked"] },
-    { "id": "macrothink",   "title": "macrothink",   "glyph": "🧠", "scope": "방향 하나",            "help": "bait를 걷어내고 새 읽기를 펼친 뒤 divergence를 먼저 보고합니다", "prompt": "/macrothink {text}",   "takesText": true, "foldText": "oneLine", "flags": ["userInvoked", "readOnly"] },
-    { "id": "feynman",      "title": "feynman",      "glyph": "🧐", "scope": "결정 하나",            "help": "방금 내린 결정을 설명할 수 있을 때까지 밀어붙이고, 안 되면 그 빈틈을 드러냅니다", "prompt": "/feynman {text}",      "takesText": true, "foldText": "oneLine", "flags": ["userInvoked", "readOnly"] },
-    { "id": "autobahn",     "title": "autobahn",     "glyph": "🛣️", "scope": "작업 하나",            "help": "안전하지 않은 스코프를 앞에서 도려내고, 안전한 나머지는 전력으로 실행한 뒤 descope를 기록합니다", "prompt": "/autobahn {text}",     "takesText": true, "foldText": "oneLine" },
-    { "id": "reorder",      "title": "reorder",      "glyph": "🔃", "scope": "목록 하나",            "help": "drift된 목록을 하나의 명시된 원칙 아래 논리적 순서로 다시 맞춥니다. 항목만 옮기고, 표현은 바꾸지 않습니다", "prompt": "/reorder {text}",      "takesText": true, "foldText": "oneLine", "flags": ["userInvoked"] },
-    { "id": "detool",       "title": "detool",       "glyph": "🧰", "scope": "durable 아티팩트 하나", "help": "우연히 섞인 도구 이름을 그것이 뜻한 메커니즘으로 바꿉니다", "prompt": "/detool {text}",       "takesText": true, "foldText": "oneLine" },
-    { "id": "dedash",       "title": "dedash",       "glyph": "✂️", "scope": "내 문장",              "help": "em dash와 비슷한 tell을 지우고, 각 위치에 맞는 문장부호를 고릅니다", "prompt": "/dedash {text}",       "takesText": true, "foldText": "oneLine", "flags": ["userInvoked"] },
-    { "id": "debloat",      "title": "debloat",      "glyph": "🗜️", "scope": "아티팩트 하나",        "help": "bloat된 아티팩트를 load-bearing한 밀도까지 압축합니다. 단어는 잘라내되, 규칙은 절대 잘라내지 않습니다", "prompt": "/debloat {text}",      "takesText": true, "foldText": "oneLine", "flags": ["userInvoked"] },
-    { "id": "shower",       "title": "shower",       "glyph": "🚿", "scope": "아티팩트 하나",        "help": "맥락 없는 새 눈으로 차갑게 읽습니다. 이것이 혼자서도 서는가?", "prompt": "/shower {text}",       "takesText": true, "foldText": "oneLine", "flags": ["readOnly"] },
-    { "id": "factchk",      "title": "factchk",      "glyph": "🔬", "scope": "클레임 하나",          "help": "주장된 것을 양방향으로 소스에 대조합니다. 말도 안 되는 것이 팩트일 수 있고, 당연한 것이 거짓일 수 있는가?", "prompt": "/factchk {text}",      "takesText": true, "foldText": "oneLine" },
-    { "id": "mandela",      "title": "mandela",      "glyph": "🧪", "scope": "eval 하나",            "help": "leakage가 있는지 audit합니다. 외부 ground truth가 실제로 들어오는가?", "prompt": "/mandela {text}",      "takesText": true, "foldText": "oneLine", "flags": ["readOnly"] },
-    { "id": "sip",          "title": "sip",          "glyph": "🥄", "scope": "내 아웃풋",            "help": "변경 뒤마다 레포 자체의 clean-and-true 체크로 아웃풋을 맛봅니다", "prompt": "/sip {text}",          "takesText": true, "foldText": "oneLine" },
-    { "id": "re0-git",      "title": "re0-git",      "glyph": "🧾", "scope": "커밋 하나",            "help": "완료된 커밋 메시지를 다시 써서 `git log`만으로 handoff가 되게 합니다", "prompt": "/re0-git {text}",      "takesText": true, "foldText": "oneLine", "flags": ["userInvoked"] },
-    { "id": "re0-release",  "title": "re0-release",  "glyph": "🚀", "scope": "릴리스 하나",          "help": "shipping·releasing 체크리스트를 실행하고, 확인 후 태그·퍼블리시합니다", "prompt": "/re0-release {text}",  "takesText": true, "foldText": "oneLine", "flags": ["userInvoked"] },
-    { "id": "re0-merge",    "title": "re0-merge",    "glyph": "🤝", "scope": "기여 하나",            "help": "기여를 리뷰하고 반영합니다: gate를 통과시키고, 작성자 크레딧을 유지하고, 닫기 전에 승인하고, 변경 사항을 설명합니다", "prompt": "/re0-merge {text}",    "takesText": true, "foldText": "oneLine", "flags": ["userInvoked"] },
-    { "id": "ssotize",      "title": "ssotize",      "glyph": "🧲", "scope": "팩트 하나, 여러 위치",  "help": "흩어진 곳을 감사한 뒤 한 집으로 모아 나머지가 그곳을 가리키게 합니다", "prompt": "/ssotize {text}",      "takesText": true, "foldText": "oneLine" },
-    { "id": "re0-upgrade",  "title": "re0-upgrade",  "glyph": "🧰", "scope": "내 스킬 설치",         "help": "한 번에 현재 전체 카탈로그로 올립니다: 이름 바뀐 건 정리, 새 건 추가, 전부 먼저 확인", "prompt": "/re0-upgrade {text}",  "takesText": true, "foldText": "oneLine", "flags": ["userInvoked"] },
-    { "id": "re0-plan",     "title": "re0-plan",     "glyph": "🗂️", "scope": "새 사이클 하나",       "help": "re0-loop의 첫 turn 전에 새 iteration 폴더를 열고 DESIGN/WORKFLOW/EVIDENCE를 씁니다", "prompt": "/re0-plan {text}",     "takesText": true, "foldText": "oneLine", "flags": ["userInvoked"] },
-    { "id": "re0-loop",     "title": "re0-loop",     "glyph": "🌀", "scope": "전체 루프",            "help": "build → QA → re0-memo → re0-work 루프를 돌려 배움이 코드가 아니라 축적되게 합니다", "prompt": "/re0-loop {text}",     "takesText": true, "foldText": "oneLine" },
-    { "id": "re0-memo",     "title": "re0-memo",     "glyph": "🧭", "scope": "완료된 사이클 하나",    "help": "끝났거나 실패한 사이클에서 교훈과 anti-pattern을 뽑아냅니다", "prompt": "/re0-memo {text}",     "takesText": true, "foldText": "oneLine" },
-    { "id": "re0-work",     "title": "re0-work",     "glyph": "🧱", "scope": "재시작 하나",          "help": "재사용할 자격을 얻은 교훈만 남기고 v0에서 다시 시작합니다", "prompt": "/re0-work {text}",     "takesText": true, "foldText": "oneLine" },
-    { "id": "catchup",      "title": "catchup",      "glyph": "🗺️", "scope": "재진입 하나",          "help": "실시간 state에서 잃어버린 context를 재구성합니다: 누구에게 필요한지, 무엇이 바뀌었는지, 새 단어가 무엇을 뜻하는지", "prompt": "/catchup {text}",      "takesText": true, "foldText": "oneLine", "flags": ["readOnly"] },
-    { "id": "nba",          "title": "nba",          "glyph": "🎯", "scope": "현재 사이클",          "help": "살아 있는 사이클 state를 읽고 메뉴가 아니라 단 하나의 다음 최선 행동을 돌려줍니다", "prompt": "/nba {text}",          "takesText": true, "foldText": "oneLine", "flags": ["readOnly"] },
-    { "id": "prism",        "title": "prism",        "glyph": "🔺", "scope": "아티팩트 하나",        "help": "아티팩트 하나를 독립적인 렌즈들로 쪼갠 뒤, 충돌하는 지점과 그것을 푸는 질문을 돌려줍니다", "prompt": "/prism {text}",        "takesText": true, "foldText": "oneLine", "flags": ["userInvoked", "readOnly"] }
-  ],
-  "aliases": [],
-  "recognition": { "prefixes": ["/"], "lowercase": false },
-  "rules": {
-    "start": { "kind": "none" },
-    "phase": { "kind": "none" },
-    "next": { "kind": "byGroup" },
-    "enter": { "kind": "verbatim" },
-    "recommend": {
-      "kind": "capability", "capability": "paperthin.casebook", "group": "coil",
-      "map": { "absent": "re0-plan", "open": "re0-loop", "complete": "re0-work" }
-    },
-    "initialGroup": {
-      "kind": "capabilityState", "capability": "paperthin.casebook",
-      "map": { "absent": "depth", "open": "coil", "complete": "coil" }
-    }
-  },
-  "capabilities": ["paperthin.casebook"],
-  "autoAllow": [],
-  "presentation": { "icon": "square.grid.2x2", "tint": "accent" }
-}
-```
-
-행동 28개, 그룹별 19/2/6/1, `userInvoked` 12개(`hate`, `macrothink`, `feynman`, `reorder`, `dedash`, `debloat`, `re0-git`, `re0-release`, `re0-merge`, `re0-upgrade`, `re0-plan`, `prism`) — `PaperthinCatalogTests.swift:7-14`가 단언하는 값과 같다. 자동 허용이 비어 있으므로 파일 수정·명령 실행은 실행 창의 권한 모드를 따른다.
-
-`placeholders`에서 `running`이 빠졌다. 오늘 그 문구는 입력창 placeholder가 아니라 패널의 맨 아랫줄이므로 `guidance.running`으로 옮겼고, 실행 중 Paperthin 실행 창의 placeholder는 오늘처럼 앱 공통 문구가 된다(`SessionPaneView.swift:75`). 첫 probe의 `hint`는 오늘 설치 안내 줄(`PaperthinPanel.swift:128`)을 그대로 옮긴 것이며, "명령을 실행합니다" 한 마디만 1.5의 결정에 맞춰 "명령을 넣습니다 …"로 바뀐다.
-
-`E_PROMPT_RECOGNITION` 확인: 28개 모두 `{text}`를 지운 프롬프트가 `/<id>`이고, `recognition` 접두사 `/`를 떼면 이름이 곧 `id`다. `match`가 필요 없다. 모든 `glyph`는 이모지 표현을 갖는 grapheme cluster 하나다(`♻️`·`🛣️`·`✂️`·`🗜️`·`🗂️`처럼 VS16이 붙은 것들도 클러스터 하나로 센다).
+v1–v6의 번들 Paperthin(`paperthin.json`: 행동 28개, 그룹 4개, 내장 기능 `paperthin.casebook`)은 `mighty-style-engine-v7`에서 지웠다. 전문은 v6 태그의 이 문서에 있다. id `paperthin`은 예약으로 남는다(1.2). 다른 절의 참조가 어긋나지 않게 번호는 비워 둔다.
 
 ### 1.16 상태 소스 (`stateSources`, v5)
 
@@ -738,7 +641,7 @@ RunEventStateSource: {
 
 위젯 값은 7장 폰 페이로드 `panel.widgets` 배열로 전달된다. Mac 패널과 폰은 **같은 캐시된 읽기**에서 같은 순서(파일 소스 먼저, 그다음 실행 이벤트, 각각 선언 순서)로, 아래 같은 모양으로 그린다. Mac은 `GuidedPanel`(`native/macos/Sources/MightyClaude/GuidedPanel.swift`의 `stateWidgets`)이 준비물 블록 아래·그룹 지도 위에 그리고, 폰은 `mobile/src/components/guided-panel.tsx`의 `StateWidget`이 같은 자리에 그린다. 그리는 쪽은 파일을 읽지 않는다 — 파일 소스는 메인 스레드 밖에서 읽어 캐시해 두고(§1.16.1), 패널은 `AppStore.styleState(_:for:)`가 돌려주는 캐시만 쓴다.
 
-위젯 값을 화면 값으로 바꾸는 규칙은 한 곳씩에 있다 — Mac은 `MightyCore`의 `StyleWidgetPresentation`(`native/macos/Sources/MightyCore/Styles/StyleWidgetPresentation.swift`), 폰은 `mobile/src/lib/styles.ts`의 `parseWidgets`·`progressBarDisplay`. 두 쪽 테스트(`StyleWidgetPresentationTests`, `mobile/src/__tests__/styles.test.ts`의 "state widgets")가 같은 사례를 같은 기대값으로 확인하고, `styles/golden/superpowers.panel.json`의 `withState` 사례를 두 쪽이 함께 읽는다. 이 사례는 손으로 만든 값이 아니라 실제 엔진(`StyleStateEngine.reading`)이 매니페스트 자신의 `stateSources`를 고정 입력(체크리스트 3/7, 실행 이벤트 고정 목록)으로 읽은 결과이고, 라벨 문구가 앱 언어를 따르므로 기록·검증은 한국어로 고정해서 한다(`StyleGolden.withKoreanLocale`).
+위젯 값을 화면 값으로 바꾸는 규칙은 한 곳씩에 있다 — Mac은 `MightyCore`의 `StyleWidgetPresentation`(`native/macos/Sources/MightyCore/Styles/StyleWidgetPresentation.swift`), 폰은 `mobile/src/lib/styles.ts`의 `parseWidgets`·`progressBarDisplay`. 두 쪽 테스트(`StyleWidgetPresentationTests`, `mobile/src/__tests__/styles.test.ts`의 "state widgets")가 같은 사례를 같은 기대값으로 확인하고, `styles/golden/claude-plan.panel.json`의 `withState` 사례를 두 쪽이 함께 읽는다(v6까지는 Superpowers의 골든이었다). 이 사례는 손으로 만든 값이 아니라 실제 엔진(`StyleStateEngine.reading`)이 매니페스트 자신의 `stateSources`를 고정 입력(체크리스트 3/7, 실행 이벤트 고정 목록, 1.17의 계획 모드 상태)으로 읽은 결과이고, 라벨 문구가 앱 언어를 따르므로 기록·검증은 한국어로 고정해서 한다(`StyleGolden.withKoreanLocale`).
 
 | 이름 | 렌더링 (Mac · 폰 동일) | 비어 있을 때 |
 |---|---|---|
@@ -977,7 +880,7 @@ v5의 상태 소스가 워크스페이스 파일과 실행 이벤트를 읽었�
 
 ### 3.2 번들 매니페스트의 포장과 안전한 적재
 
-파일은 `native/macos/Sources/MightyCore/Resources/Styles/{ouroboros,paperthin}.json`에 두고 `Package.swift`의 `MightyCore` 타깃에 `resources: [.copy("Resources/Styles")]`를 선언한다. SwiftPM이 `MightyClaude_MightyCore.bundle`을 빌드 산출물 옆에 만들고, `scripts/build-macos.sh:23-27`의 기존 루프가 `$BIN_PATH/*.bundle`을 `Contents/Resources/`로 그대로 복사한다 — Ghostty의 터미널 리소스가 이미 그렇게 앱 안으로 들어간다.
+파일은 `native/macos/Sources/MightyCore/Resources/Styles/{ouroboros,claude-plan}.json`에 두고(v5에 Superpowers, v6에 클러드 플랜이 더해졌고 v7에서 Paperthin·Superpowers를 지웠다) `Package.swift`의 `MightyCore` 타깃에 `resources: [.copy("Resources/Styles")]`를 선언한다. SwiftPM이 `MightyClaude_MightyCore.bundle`을 빌드 산출물 옆에 만들고, `scripts/build-macos.sh:23-27`의 기존 루프가 `$BIN_PATH/*.bundle`을 `Contents/Resources/`로 그대로 복사한다 — Ghostty의 터미널 리소스가 이미 그렇게 앱 안으로 들어간다.
 
 **`Bundle.module`은 쓰지 않는다.** SwiftPM이 만들어 주는 접근자는 번들을 못 찾으면 `fatalError`로 트랩하므로, 포장 실수가 사용자의 앱을 즉사시킨다. 대신 트랩 없는 탐색을 직접 쓴다.
 
@@ -992,8 +895,8 @@ BundledStyleSource.directories() -> [URL]
 `BundledStyleMarker`는 이 목적만을 위한 **빈 `final class`**다 — `Bundle(for:)`가 `AnyClass`를 받으므로, MightyCore가 그 밖에는 값 타입만 쓰더라도 클래스 하나는 있어야 한다. `Bundle.main.resourceURL`이 `swift test`에서는 테스트 러너의 리소스 폴더를, 조립된 `.app`에서는 `Contents/Resources`를 가리키므로 양쪽 모두 첫 후보에서 잡힌다. 빈 배열이 돌아오면 번들 스타일이 0개가 되고 모든 실행 창이 일반 CLI로 떨어진다 — 크래시는 없다.
 
 그 무해한 실패가 **출시되지 않도록** 두 겹의 관문을 둔다.
-1. `StylesBundledTests`가 매니페스트 2개를 찾아 디코딩·검증하고 `id`가 `ouroboros`·`paperthin`임을 단언한다. `swift test`에서 잡힌다.
-2. `scripts/build-macos.sh`가 `.app` 조립 직후 `Contents/Resources/MightyClaude_MightyCore.bundle/Styles/ouroboros.json`과 `paperthin.json`의 존재를 확인하고 없으면 0이 아닌 코드로 죽는다.
+1. `StylesBundledTests`가 매니페스트 2개를 찾아 디코딩·검증하고 `id`가 `claude-plan`·`ouroboros`임을 단언한다. `swift test`에서 잡힌다.
+2. `scripts/build-macos.sh`가 `.app` 조립 직후 `Contents/Resources/MightyClaude_MightyCore.bundle/Styles/ouroboros.json`과 `claude-plan.json`의 존재를 확인하고 없으면 0이 아닌 코드로 죽는다.
 
 ### 3.3 우선순위와 충돌
 
@@ -1005,7 +908,7 @@ BundledStyleSource.directories() -> [URL]
 
 `RunSession.mightyStyle`은 **형식만** 정규화된다: Claude 실행 창이 아니면 `nil`, 맞으면 `^[a-z0-9][a-z0-9-]{0,39}$`를 통과할 때만 값을 유지한다(`StateRepository.swift:196`의 자리를 대신한다). **등록된 id 집합으로 지우지 않는다** — 워크스페이스 매니페스트는 실행 창이 복원된 뒤에야 스캔되므로, id로 지우면 앱을 켤 때마다 저장소 스타일이 날아간다.
 
-`StateRepository.normalize`는 선택 인자 `knownStyleIds: Set<String>? = nil`을 받는다. `nil`이면 형식만 본다. 테스트는 `["ouroboros", "paperthin"]`을 넘겨 오늘의 단언값(`["ouroboros", nil, nil]`)을 그대로 유지한다. **앱은 이 인자를 넘기지 않는다.**
+`StateRepository.normalize`는 선택 인자 `knownStyleIds: Set<String>? = nil`을 받는다. `nil`이면 형식만 본다. 테스트는 `["ouroboros", "claude-plan"]`을 넘겨 오늘의 단언값(`["ouroboros", nil, nil]`)을 그대로 유지한다. **앱은 이 인자를 넘기지 않는다.**
 
 **`RunSession`은 `mightyStyle`과 함께 `mightyStyleHash: String?`를 저장한다** — 그 실행 창이 마지막으로 그 스타일을 고르거나 승인한 시점의 매니페스트 해시다. `AppStore.guidedStyle(_:)`은 id로 찾은 뒤 **해시가 같을 때만** 그 스타일을 돌려준다. 다르면 `nil`(일반 CLI)이고, 선택기에 `"이 실행 창의 스타일이 바뀌었습니다 — 다시 고르세요"`가 뜬다. 사용자가 다시 고르면 새 해시가 저장된다.
 
@@ -1245,8 +1148,7 @@ public enum StyleLimits {                 // 1.11의 숫자가 사는 유일한 
     public static let maximumFilesPerSource = 32
     public static let maximumDirectoryEntries = 1024
     public static let maximumApprovalRecords = 256
-    public static let maximumCasebookChips = 6
-    …
+    …                                     // 내장 기능의 상한 셋(칩 6·폴더 24·파일 24)과 80자 한도는 v7에서 지웠다
 }
 
 public struct StyleManifestError: Error, Sendable, Equatable {
@@ -1256,11 +1158,13 @@ public struct StyleManifestError: Error, Sendable, Equatable {
 
 public enum StyleManifestDecoder {
     /// ⓪ 사전 스캔 → ① 크기 → ② JSON → ③ 구조 → ④ 참조 무결성. 모르는 키는 거부한다.
-    public static func decode(_ data: Data, source: StyleSource) throws -> StyleManifest
+    /// `capabilities`는 내장 기능 어휘(이름 → 닫힌 상태 값)다. 앱은 기본값만 쓰고, 다른 값은 테스트만 넘긴다(1.8).
+    public static func decode(_ data: Data, source: StyleSource,
+                              capabilities: [String: [String]] = StyleCapabilityID.vocabulary) throws -> StyleManifest
 }
 public enum StyleManifestValidator {
     public static func validate(_ manifest: StyleManifest, source: StyleSource,
-                                knownCapabilities: Set<String>) throws
+                                capabilities: [String: [String]] = StyleCapabilityID.vocabulary) throws
 }
 ```
 
@@ -1360,7 +1264,7 @@ public struct StyleEvaluator: Sendable {
     /// jobOpen이 true이면 job.whileOpen 목록만 반환한다 (§1.13).
     public func visibleActions(phase: StylePhase?, group: StyleGroup?, running: Bool, jobOpen: Bool = false) -> [StyleAction]
     public func recommendedAction(capabilityStates: [String: String]) -> String?
-    public var recommendGroupId: String? { get }                       // 첨부 줄이 붙는 그룹 (1.6)
+    public var recommendGroupId: String? { get }                       // 추천 규칙이 이름 붙인 그룹 (1.6)
     public func initialGroup(capabilityStates: [String: String]) -> StyleGroup?
     public func drawsGroupMap() -> Bool                                // 그룹 ≥2 && axis 있음 && next == byGroup
     public var drawsPhaseProgress: Bool { get }                        // next == byPhase
@@ -1397,27 +1301,12 @@ public enum StylePrerequisiteProbe {
 
 ```swift
 public enum StyleCapabilityID {
-    public static let casebook = "paperthin.casebook"
-    public static let all: Set<String> = [casebook]        // 태그에서 고정되는 목록
-    public static func states(of name: String) -> [String]  // 상태 값 전체 (E_CAPABILITY_MAP이 쓴다)
-    public static func emptyDetail(of name: String) -> String?   // 1.8의 빈 상태 문구
-}
-public struct StyleAttachmentItem: Codable, Sendable, Equatable, Identifiable {
-    public var id, title: String; public var detail: String?; public var readOnly: Bool
-    public var openPath: String?                            // Mac만 사용, 워크스페이스 아래일 때만
-}
-public struct StyleCasebook: Sendable, Equatable { /* 오늘의 PaperthinCasebook 그대로 */
-    public var name, path: String; public var files: [String]; public var modifiedAt: Date
-    public var weight: String
-    public static func latest(workspacePath: String) -> StyleCasebook?
-}
-public enum StyleCapabilities {
-    /// 모든 내장 기능을 한 번에 읽어 상태와 첨부 항목을 돌려준다(워커에서 호출).
-    /// 돌려주는 문자열은 이미 1.8의 정규화를 거쳤다.
-    public static func evaluate(_ names: [String], workspacePath: String)
-        -> (states: [String: String], attachments: [StyleAttachmentItem])
+    public static let vocabulary: [String: [String]] = [:]   // 이름 → 상태 값. v7부터 비어 있다(1.8)
+    public static var all: Set<String> { get }
 }
 ```
+
+v6까지 있던 `StyleAttachmentItem`·`StyleCasebook`·`StyleCapabilities.evaluate(_:workspacePath:)`는 읽을 기능이 없어 v7에서 지웠다.
 
 ### 5.6 범용 패널 투영 — `StylePanelProjection.swift`
 
@@ -1430,8 +1319,7 @@ public enum StylePanelProjection {
                             prompts: [String],
                             selectedGroupId: String?,
                             capabilityStates: [String: String],
-                            attachments: [StyleAttachmentItem],
-                            prerequisites: StylePrerequisiteResult,
+                            prerequisites: StylePrerequisiteResult,      // attachments는 v7부터 언제나 [] (1.8)
                             running: Bool = false) -> StylePanel   // 6.1의 7번을 폰에도 (7.3)
     /// 골든 직렬화: UTF-8, 키 사전순, 들여쓰기 2칸, `\/` 이스케이프 없음, 마지막 줄바꿈 1개.
     public static func serialise(_ panel: StylePanel) throws -> Data
@@ -1470,11 +1358,11 @@ public enum TerminalInputPolicy {
 |---|---|
 | `OuroborosPhase`, `OuroborosAction`, `OuroborosFlow` (`OuroborosFlow.swift:7-158`) | **삭제**. `Prerequisites`는 `StylePrerequisiteResult`가 대신한다 |
 | `PaperthinDomain`, `PaperthinSkill`, `PaperthinCatalog` (`PaperthinCatalog.swift:9-114`) | **삭제** |
-| `PaperthinCasebook` (`PaperthinCatalog.swift:116-152`) | **유지, `StyleCasebook`으로 이름 변경**. 내장 기능의 구현이다 |
+| `PaperthinCasebook` (`PaperthinCatalog.swift:116-152`) | **유지, `StyleCasebook`으로 이름 변경**. 내장 기능의 구현이다. v7에서 기능과 함께 지웠다 |
 | `MightyStyles` (`OuroborosFlow.swift:23-34`) | **축소**: `MightyStyleIDs` — 예약 id 상수와 `isValidShape(_:)`만. `requestTitle(forInput:style:)`은 **레지스트리로** 이동(1.10) |
 | `QuestionnaireProgress` (`OuroborosFlow.swift:162-210`) | **유지, `QuestionnaireProgress.swift`로 파일만 분리**. 질문 흐름은 스타일 규칙이 아니다 |
-| `MobileOuroboros`, `MobilePaperthin*`, `MobileGuidedSkill` (`MobileRemoteModels.swift:312-373`) | **유지**. 구버전 폰용 레거시 어댑터의 출력 타입이 된다 |
-| `MobileWire.mightyStyles` (`MobileRemoteModels.swift:53`) | **유지**. 와이어 어휘는 `["cli","ouroboros","paperthin"]`으로 고정된다(7.2) |
+| `MobileOuroboros`, `MobilePaperthin*`, `MobileGuidedSkill` (`MobileRemoteModels.swift:312-373`) | **유지**. 구버전 폰용 레거시 어댑터의 출력 타입이 된다. v7에서 `MobilePaperthin*`을 지웠다 |
+| `MobileWire.mightyStyles` (`MobileRemoteModels.swift:53`) | **유지**. 와이어 어휘는 `["cli","ouroboros","paperthin"]`으로 고정됐다가 v7에서 `["cli","ouroboros"]`가 됐다(7.2) |
 
 ### 5.9 기존 테스트의 재조준
 
@@ -1489,6 +1377,8 @@ public enum TerminalInputPolicy {
 | `…promptsAndRequestTitlesNameTheSkill` | `StylesPaperthinTests.promptsAndTitles` | `/re0 docs/spec.md`, `/nba`, `"🔺 prism"`, 한 줄 접기, 설치 명령 접미사, **교차 스타일 제목**(`"/ouroboros:seed"` → `"시드"`, `"/nba"` → `"🎯 nba"`) — 1.10의 레지스트리 제목이 이 값을 지킨다 |
 | `…installationAndCasebookAreReadFromDisk` | `StylesPaperthinTests.prerequisitesAndCasebook` | `re0-plan`/`re0-loop`/`re0-work` 추천, 케이스북 파일 순서, 링크 미추적, 24개 스캔 |
 | `MobileRemoteExtensionTests`의 마이티 관련 6개 | `MobileRemoteExtensionTests`에 그대로 + `StyleProjectionTests` 추가 | 레거시 페이로드 값 전부. `guidedPrompt(…, text:"\n \n") == "/ouroboros:interview"`도 그대로(1.3.3) |
+
+> **v7.** `StylesPaperthinTests`·`SuperpowersStyleTests`는 그 스타일과 함께 지웠다. 그 테스트들이 기대던 엔진 동작(그룹 카탈로그와 추천, 파일·실행 이벤트 상태 소스)은 테스트 안의 픽스처 매니페스트(`StyleFixtures.catalogue`·`StyleFixtures.stateful`)로 옮겨 같은 강도로 남는다.
 
 **값이 바뀌는 단언은 하나뿐이다**: 설치 버튼이 터미널에 명령을 넣기만 하고 Enter를 누르지 않는다(1.5·9.3의 `installIsNeverRun`). 그 밖에 그래프 머리말 문구(`마이티` → `마이티 · <name>[ · <단계>]`)와 Paperthin의 실행 중 placeholder(매니페스트 문구 → 앱 공통 문구)는 오늘 어떤 테스트도 단언하지 않는 뷰 문자열이다.
 
@@ -1505,12 +1395,12 @@ public enum TerminalInputPolicy {
 3. **준비물 블록** — `prerequisites`가 미충족일 때. `report` 규칙이 고른 `missing` 줄들 + `hint` + `[설치]`(`canInstall`일 때만) + `[다시 확인]`.
 4. **승인 띠** — 이 실행 창이 고르려 한 스타일이 `pending`일 때 `"확인이 필요합니다 · [내용 보기]"` **한 줄**. `[내용 보기]`가 4.4의 승인 **시트**를 연다. 시트에 `[허용]` `[지금은 안 함]`. 3.4의 `"이 실행 창의 스타일이 바뀌었습니다 — 다시 고르세요"`와 **동시에 나오지 않는다**: 승인된 매니페스트가 디스크에서 바뀌면 두 조건이 함께 참이 되는데, 한 상태에 두 문장은 사용자에게 두 문제처럼 읽힌다. 띠가 있으면 띠만 그린다 — 무엇을 하면 되는지 말하는 쪽이 그쪽이다.
 5. **그룹 지도** — `evaluator.drawsGroupMap()`일 때(그룹 ≥2, `axis` 하나 이상, `next`가 `byGroup`). 오늘의 2×2 버튼 줄과 같은 모양, 선택된 그룹의 `question`이 아래에 한 줄.
-6. **첨부 줄** — 내장 기능이 첨부를 선언했고 `rules.recommend.group`(또는 첨부를 낸 그룹)을 보고 있을 때. **항목이 0개여도 그린다**: 폴더 이름 · `detail` 배지 · 파일 칩 **6개까지**(누르면 기본 앱으로 연다) · 새로고침, 비었으면 기능이 준 빈 상태 문구(1.8).
+6. **첨부 줄** — v7에서 지웠다. 첨부를 내던 내장 기능이 없다(1.8).
 7. **행동 칩** — 현재 단계가 `rules.start.phase`면 `startActions`, 아니면 `NextRule`의 결과. `byPhase`·`start`는 첫 번째가 prominent, `byGroup`은 추천 행동이 강조된다. `glyph`·`title`·`userInvoked`(사람 아이콘)·`readOnly`(눈 아이콘), 툴팁은 `help · 범위: scope · 호출자 · 읽기 전용`. `requiresText`인 행동은 입력창이 비면 비활성. `resetTitle`이 있으면 줄 끝에 그 칩(되돌린 상태에서는 `취소` 칩).
 
-   **그리는 모양은 그룹 지도가 정한다.** 5번을 그리는 스타일의 7번은 **격자**(`LazyVGrid`, 세 칸 기준 높이 상한)이고, 그렇지 않으면 가로 한 줄이다. 그룹 지도가 있다는 것은 이 줄이 고른 그룹의 **카탈로그**라는 뜻이고, 카탈로그는 오늘 Paperthin이 그리던 격자다. 개수로 가르면(`> 6`) 같은 스타일의 네 그룹 중 셋이 줄로, 하나가 격자로 그려진다.
+   **그리는 모양은 그룹 지도가 정한다.** 5번을 그리는 스타일의 7번은 **격자**(`LazyVGrid`, 세 칸 기준 높이 상한)이고, 그렇지 않으면 가로 한 줄이다. 그룹 지도가 있다는 것은 이 줄이 고른 그룹의 **카탈로그**라는 뜻이고, 카탈로그는 v6까지 Paperthin이 그리던 격자다. 개수로 가르면(`> 6`) 같은 스타일의 네 그룹 중 셋이 줄로, 하나가 격자로 그려진다.
 
-   **실행 중에는 `next`의 종류가 가른다.** `byPhase` 스타일은 순서이므로 진행 중인 단계가 끝나기 전에는 **고를 다음 단계가 없다**: 칩 줄 전체(되돌리기 칩 포함) 대신 진행 표시(spinner)를 그리고, 8번은 `guidance.running`을 쓴다(오늘 Ouroboros). `byGroup` 스타일은 카탈로그이므로 칩을 그대로 두고, 누른 것이 다음 요청으로 줄을 선다(오늘 Paperthin). 같은 규칙이 폰 투영에도 그대로 간다(7.3).
+   **실행 중에는 `next`의 종류가 가른다.** `byPhase` 스타일은 순서이므로 진행 중인 단계가 끝나기 전에는 **고를 다음 단계가 없다**: 칩 줄 전체(되돌리기 칩 포함) 대신 진행 표시(spinner)를 그리고, 8번은 `guidance.running`을 쓴다(오늘 Ouroboros). `byGroup` 스타일은 카탈로그이므로 칩을 그대로 두고, 누른 것이 다음 요청으로 줄을 선다(v6까지의 Paperthin). 같은 규칙이 폰 투영에도 그대로 간다(7.3).
 8. **안내 한 줄** — `evaluator.guidanceLine(phase:running:)`(1.7). 값이 없으면 줄을 그리지 않는다.
 
 **입력창의 무장 표시.** Enter 규칙이 지금 발동 가능하면(`enterArmedPrefix`가 값을 주면) 입력창 왼쪽에 그 접두사를 **비편집 칩**으로 그린다(1.6).
@@ -1537,7 +1427,7 @@ public enum TerminalInputPolicy {
 | 2 | `OuroborosFlow.swift:36-158` `OuroborosFlow` | `Resources/Styles/ouroboros.json` |
 | 3 | `OuroborosFlow.swift:162-210` `QuestionnaireProgress` | `QuestionnaireProgress.swift`로 이동 (동작 불변) |
 | 4 | `PaperthinCatalog.swift:9-114` | `Resources/Styles/paperthin.json` |
-| 5 | `PaperthinCatalog.swift:116-152` `PaperthinCasebook` | `StyleCasebook` (`StyleCapabilities.swift`) |
+| 5 | `PaperthinCatalog.swift:116-152` `PaperthinCasebook` | `StyleCasebook` (`StyleCapabilities.swift`) — v7에서 지웠다 |
 | 6 | `StateRepository.swift:196` | 형식만 정규화 + 선택 `knownStyleIds` (3.4) |
 | 7 | `Models.swift:146-147` 주석 + `RunSession` | "nil은 일반 CLI, 그 밖은 등록된 스타일 id" + `mightyStyleHash` 추가 (3.4) |
 | 8 | `Remote/MobileRemoteService.swift:579-587` `/guided` | `styleId`/`actionId` 수용 + 레지스트리 조회 (7.5) |
@@ -1552,7 +1442,7 @@ public enum TerminalInputPolicy {
 | 17 | `:51-55` `sendOuroboros` | `sendStyleAction(_:actionId:text:)` |
 | 18 | `:60-65` `sendGuidedPrompt` | 유지 |
 | 19 | `:70-73` `sendPaperthin` | 17번에 흡수 |
-| 20 | `:76-98` `refreshPaperthin` | `refreshStyleCapabilities(for:)` — 워크스페이스별 캐시 |
+| 20 | `:76-98` `refreshPaperthin` | `refreshStyleCapabilities(for:)` — 워크스페이스별 캐시. v7에서 지웠다(읽을 기능이 없다) |
 | 21 | `:100-105` `startPaperthinInstall` | `startStyleInstall(from:)` 하나 — `pendingTerminalInput[id] = TerminalInput(text:, autoRun: false)` |
 | 22 | `:198-203` `startOuroborosInstall` | 21번에 흡수 |
 | 23 | `:109-120` `ouroborosQuestion` | `guidedQuestion` |
@@ -1601,7 +1491,7 @@ docs/mobile-remote.md의 진화 규칙을 따른다: 기존 라우트·필드는
 
 capability는 **호스트가** 광고하고 폰은 그것을 읽을 뿐이다. 그래서 "폰이 새 스타일을 아는가"는 호스트가 알 수 없다. 해결은 **두 필드를 항상 함께 보내는 것**이다.
 
-- `mightyStyle` — 허용 값은 그대로 `cli` `ouroboros` `paperthin`(`MobileWire.mightyStyles`, `MobileRemoteModels.swift:60`). **이 둘이 아닌 스타일에는 언제나 `cli`를 싣는다** — v5에 번들로 더해진 Superpowers도 어휘에 새 단어를 얻지 않고 `styleId: "superpowers"`로만 나간다.
+- `mightyStyle` — 허용 값은 `cli` `ouroboros`(`MobileWire.mightyStyles`). v6까지는 `paperthin`도 있었고 v7에서 그 스타일과 함께 뺐다 — 그 id로 저장된 실행 창도 `cli`로 나가고, 옛 폰이 `mightyStyle: "paperthin"`을 보내면 선택지 밖이라 400이다. **이 어휘에 없는 스타일에는 언제나 `cli`를 싣는다** — 번들 클러드 플랜도 어휘에 새 단어를 얻지 않고 `styleId: "claude-plan"`으로만 나간다.
 - `styleId` (신규, 선택) — 열린 문자열.
 
 **`styleId`는 `registry.runnable(...)`의 결과에서 나온다.** 실행 창이 실제로 그 스타일로 돌고 있지 않으면 — 미승인 · 취소 · 미등록 · 해시 불일치(3.4) — **언제나 `"cli"`다**. 저장된 `mightyStyle` 값은 폰에 나가지 않는다.
@@ -1617,7 +1507,7 @@ capability는 **호스트가** 광고하고 폰은 그것을 읽을 뿐이다. �
 | `MobileSettings` | `styleId: string`, `options.styles: [{ id, label, source }]` |
 | `MobileMighty` | `styleId: string`, `panel?: MobileStylePanel` |
 
-`options.styles`는 `cli` + 이 실행 창이 실제로 고를 수 있는 **승인·번들** 스타일만 담고, `source`는 `bundled`\|`user`\|`workspace`다. 기존 `options.mightyStyles`는 `cli`와 내장 둘 중 적격한 것만 담은 채로 계속 전송된다.
+`options.styles`는 `cli` + 이 실행 창이 실제로 고를 수 있는 **승인·번들** 스타일만 담고, `source`는 `bundled`\|`user`\|`workspace`다. 기존 `options.mightyStyles`는 `cli`와 Ouroboros 중 적격한 것만 담은 채로 계속 전송된다.
 
 ### 7.3 `MobileMighty.panel`
 
@@ -1644,7 +1534,7 @@ MobileStylePanel {
 - `next`는 시작 규칙이 걸린 상태면 `start.actions`, 아니면 `NextRule`의 결과다. 폰은 어느 쪽인지 알 필요가 없다. 실행 중인 실행 창에서는 6.1의 7번 규칙이 그대로 적용된다: `byPhase` 스타일이면 `next`가 **빈 배열**이고 `guidance`는 `guidance.running`이며, `byGroup` 스타일이면 둘 다 평소와 같다. 맥이 칩을 감추는 동안 폰이 같은 칩을 내밀면 두 화면이 서로 다른 말을 한다.
 - `prominent`는 `next`의 첫 항목에만 true다. 폰은 둘 중 무엇을 봐도 된다.
 - `requiresText`는 **UI 힌트**다. 폰은 입력이 비었을 때 그 칩을 비활성으로 그리되, 라우트는 이 값을 강제하지 않는다(1.3.3).
-- `attachments`는 **읽기 전용 정보**다. 폰에는 파일을 여는 길이 없으므로 경로를 싣지 않는다. 문자열은 이미 1.8의 정규화를 거쳤다.
+- `attachments`는 v7부터 **언제나 빈 배열**이다(1.8). 필드는 남는다 — v7 이전의 폰이 그 필드를 읽기 때문이다. 경로는 v6까지도 싣지 않았다.
 - `setup.installCommand`는 **보여 주기 위한 것**이다. 폰에서 실행할 수 있는 라우트는 없다.
 - `headerTitle`은 `"<name>"` 또는 `"<name> · <단계 title>"`. **`source`가 언제나 함께 실린다** — 폰은 `bundled`가 아니면 이름 옆에 출처 배지를 그린다(1.10). 이름 위조를 막는 것은 폰에서도 배지다.
 - 팔레트 이름은 1.10의 9개, 아이콘 이름은 1.10의 33개. 폰이 모르는 이름을 받으면 자기 기본값으로 그리고 크래시하지 않는다.
@@ -1653,7 +1543,7 @@ MobileStylePanel {
 
 ### 7.4 레거시 페이로드
 
-내장 두 스타일에 한해 `mighty.ouroboros` / `mighty.paperthin`을 **계속 보낸다**. 엔진 → 레거시 어댑터(`MobileLegacyStyleAdapter`)가 만든다.
+번들 Ouroboros에 한해 `mighty.ouroboros`를 **계속 보낸다**(v6까지는 `mighty.paperthin`도 보냈고 v7에서 지웠다). 엔진 → 레거시 어댑터(`MobileLegacyStyleAdapter`)가 만든다.
 
 | 레거시 필드 | 엔진에서 |
 |---|---|
@@ -1661,12 +1551,8 @@ MobileStylePanel {
 | `ouroboros.ready` | `prerequisites.ready` |
 | `ouroboros.takesText` | `actions.filter(takesText).map(id)` (매니페스트 순서) |
 | `ouroboros.next` / `.all` | **`NextRule`의 결과만** / 전체 목록을 `{skill: id, title, help}`로 |
-| `paperthin.installed` | `prerequisites.ready` |
-| `paperthin.recommended` | `recommended` |
-| `paperthin.domains[]` | `groups[]` → `{id, title, axis, question, skills}`; `skills[]`는 `{name: actionId, emoji: glyph, summary: help, scope, userInvoked, readOnly}` |
-| `paperthin.casebook` | `attachments`를 낸 내장 기능의 원본 — `{name: 폴더명, weight, files}` |
 
-어댑터는 `id == "ouroboros"` / `"paperthin"`일 때만 동작한다.
+어댑터는 `id == "ouroboros"`일 때만 동작한다.
 
 **`ouroboros.next`가 `panel.next`가 아닌 이유.** 옛 `OuroborosFlow.nextActions(after:)`는 단계 지도 하나만 보았고 `goal`에서 빈 배열을 돌려주었다 — 옛 폰은 그때 `all`로 떨어지도록 만들어져 있다. `panel.next`는 진입 단계에서 `start.actions`(`인터뷰 시작`·`자동 진행`)까지 실으므로, 그대로 쓰면 옛 폰의 `goal` 화면이 오늘과 달라진다. 레거시 필드만 단계 지도를 보고, 새 `panel.next`는 위의 규칙 그대로다.
 
@@ -1717,7 +1603,7 @@ MobileStylePanel {
 5. `docs/mobile-remote.md`가 7장으로 갱신되고, `docs/ouroboros-mode.md`·`docs/paperthin-mode.md`의 "구현 위치" 표가 엔진을 가리킨다.
 6. **골든 기록 모드가 이미 존재한다**(8.4). 태그 이후에는 엔진 코드를 못 고치므로, 태그 이전에 들어 있어야 한다.
 7. **`StyleGoldenContractTests`가 이미 존재한다**(8.4). 태그 이후에 추가되는 매니페스트를 검사하는 것이 **태그 이전에 얼어붙은 코드**가 되게 하는 장치다.
-8. `scripts/check-style-freeze.sh`가 저장소에 있고 **고정 워크플로(`.github/workflows/style-freeze.yml`)가 그것을 부른다**(태그가 있을 때만 돌고, 없으면 건너뛴 줄을 찍는다). `styles/FREEZE`는 태그 커밋이 더하는 **유일한 파일**이고 내용은 그 커밋의 부모 SHA다(8.3).
+8. `scripts/check-style-freeze.sh`가 저장소에 있고 **고정 워크플로(`.github/workflows/style-freeze.yml`)가 그것을 부른다**(태그가 없어도 건너뛰지 않는다, 8.3). `styles/FREEZE`는 태그 커밋이 더하는 **유일한 파일**이고 내용은 그 커밋의 부모 SHA다(8.3).
 
 검증: `cd native/macos && swift test` 전부 통과, `cd mobile && npm run typecheck && npx jest` 전부 통과.
 
@@ -1727,18 +1613,18 @@ MobileStylePanel {
 
 태그 `mighty-style-engine-v1`이 다음을 얼린다.
 
-> **고정 이력.** `mighty-style-engine-v1`(2026-09-19)은 스타일 엔진을 처음 얼린 태그다. `mighty-style-engine-v2`(2026-09-20)는 같은 방식으로 다시 건 고정이다. v1 과 v2 사이에 스타일 엔진 파일(`native/macos/Sources/MightyCore/Styles/**`)·스키마·규칙 어휘는 **바뀌지 않았다.** 달라진 것은 입력창의 한글 직접 조합(`docs/hangul-fallback-composer.md`)과 적합성 코퍼스(`styles/conformance/`)뿐이고, 검사가 저장소 전체를 보기 때문에 앱 소스 변경을 담으려면 고정을 다시 걸어야 했다. 외부 도구가 v1 시점의 엔진 파일을 고정 사본으로 쓰는 것은 그대로 유효하다. `mighty-style-engine-v3`(2026-09-20)는 v2 이후 처음으로 엔진 쪽 파일(`StyleSurfaces.swift`의 연결 규칙, 폰의 `styles.ts`)을 바꾼 고정이다. `mighty-style-engine-v4`(2026-09-22)는 매니페스트의 선택적 `job` 선언(§1.13)과 오류 코드 `E_JOB_MATCHER_LITERAL`을 더한 고정이다. `mighty-style-engine-v5`는 상태 소스(`stateSources`, §1.16)와 `rules.phase.stateOverrides`, 오류 코드 `E_STATE_*` 다섯 개, 골든의 `withState` 사례, 폰 페이로드의 `panel.widgets`를 더한 고정이다. `mighty-style-engine-v6`(2026-10-06)은 Claude 계획 모드 읽기(§1.17: `planState` 단계 규칙, `stateSources.runState`, `taskList` 위젯, `launch`, 단계별 입력창 문구·안내), 오류 코드 `E_STATE_RUN_STATE`, 번들 "클러드 플랜", 골든의 `planStage*` 사례를 더한 고정이며 검사 스크립트와 CI의 기본 태그다. 각 고정의 두 커밋 SHA는 `docs/styles-followups.md` 머리에 있다.
+> **고정 이력.** `mighty-style-engine-v1`(2026-09-19)은 스타일 엔진을 처음 얼린 태그다. `mighty-style-engine-v2`(2026-09-20)는 같은 방식으로 다시 건 고정이다. v1 과 v2 사이에 스타일 엔진 파일(`native/macos/Sources/MightyCore/Styles/**`)·스키마·규칙 어휘는 **바뀌지 않았다.** 달라진 것은 입력창의 한글 직접 조합(`docs/hangul-fallback-composer.md`)과 적합성 코퍼스(`styles/conformance/`)뿐이고, 검사가 저장소 전체를 보기 때문에 앱 소스 변경을 담으려면 고정을 다시 걸어야 했다. 외부 도구가 v1 시점의 엔진 파일을 고정 사본으로 쓰는 것은 그대로 유효하다. `mighty-style-engine-v3`(2026-09-20)는 v2 이후 처음으로 엔진 쪽 파일(`StyleSurfaces.swift`의 연결 규칙, 폰의 `styles.ts`)을 바꾼 고정이다. `mighty-style-engine-v4`(2026-09-22)는 매니페스트의 선택적 `job` 선언(§1.13)과 오류 코드 `E_JOB_MATCHER_LITERAL`을 더한 고정이다. `mighty-style-engine-v5`는 상태 소스(`stateSources`, §1.16)와 `rules.phase.stateOverrides`, 오류 코드 `E_STATE_*` 다섯 개, 골든의 `withState` 사례, 폰 페이로드의 `panel.widgets`를 더한 고정이다. `mighty-style-engine-v6`(2026-10-06)은 Claude 계획 모드 읽기(§1.17: `planState` 단계 규칙, `stateSources.runState`, `taskList` 위젯, `launch`, 단계별 입력창 문구·안내), 오류 코드 `E_STATE_RUN_STATE`, 번들 "클러드 플랜", 골든의 `planStage*` 사례를 더한 고정이다. `mighty-style-engine-v7`(2026-10-21)은 번들 Paperthin·Superpowers와 내장 기능 `paperthin.casebook`, 옛 폰의 `paperthin` 페이로드를 지운 고정이다. 내장 기능 어휘가 비어 `E_CAPABILITY_MAP`이 나올 수 없게 됐고(코드는 남는다, 1.8), 패널의 `attachments`는 언제나 빈 배열이 됐으며(필드는 남는다), 와이어 어휘가 `["cli","ouroboros"]`가 됐고, 골든의 `capabilityOpen` 사례가 빠졌다. id `paperthin`은 예약으로 남는다(1.2). 검사 스크립트와 CI의 기본 태그다. 각 고정의 두 커밋 SHA는 `docs/styles-followups.md` 머리에 있다.
 
 - **스키마 v1** — 1장의 모든 필드·타입·한도. `guidance`(1.7)와 `rules.start`(1.6)를 포함한다.
 - **규칙 어휘** — `StartRule` 2종, `PhaseRule` 2종, `NextRule` 2종, `EnterRule` 2종(제약 3개 포함), `RecommendRule` 2종, `InitialGroupRule` 2종.
 - **Probe 종류** — `plugin`, `executable`, `skill`. `mode`·`report` 어휘와 per-probe `install`.
-- **내장 기능 목록** — `paperthin.casebook` 하나. 그 상태 값 3개와 빈 상태 문구.
+- **내장 기능 목록** — v7부터 **비어 있다**(1.8). v6까지는 `paperthin.casebook` 하나였다.
 - **팔레트** — 1.10의 9개 이름.
 - **아이콘 목록** — 1.10의 33개 이름.
-- **오류 코드 목록** — 2장의 **54개**(v5에서 `E_STATE_*` 다섯 개, v6에서 `E_STATE_RUN_STATE`가 더해졌다).
+- **오류 코드 목록** — 2장의 **54개**(v5에서 `E_STATE_*` 다섯 개, v6에서 `E_STATE_RUN_STATE`가 더해졌다). v7부터 그중 `E_CAPABILITY_MAP`은 앱에서 나올 수 없다(1.8).
 - **검증 순서** — 2장의 ⓪①②③④와 사전 스캔이 보는 다섯 가지.
-- **투영의 모양과 직렬화 규칙** — `StylePanel`의 필드 구성(7.3), 실행 중 `next`·`guidance` 규칙(6.1의 7번), 8.4의 골든 직렬화 규칙(UTF-8, 키 사전순, 들여쓰기 2칸, `\/` 이스케이프 없음, 마지막 줄바꿈 1개), 그리고 골든의 **고정 입력 6가지**(8.4)와, `stateSources`를 선언한 스타일에만 붙는 `withState` 사례(§1.16.4).
-- **폰 페이로드** — `MobileStylePanel`의 모양(v5부터 `widgets` 포함, v6부터 `taskList` 위젯), `style` capability, `styleId` 규칙, `/guided`의 새 필드, 와이어 어휘 `["cli","ouroboros","paperthin"]`.
+- **투영의 모양과 직렬화 규칙** — `StylePanel`의 필드 구성(7.3), 실행 중 `next`·`guidance` 규칙(6.1의 7번), 8.4의 골든 직렬화 규칙(UTF-8, 키 사전순, 들여쓰기 2칸, `\/` 이스케이프 없음, 마지막 줄바꿈 1개), 그리고 골든의 **고정 입력 5가지**(8.4, v7에서 `capabilityOpen`을 뺐다)와, `stateSources`를 선언한 스타일에만 붙는 `withState` 사례(§1.16.4).
+- **폰 페이로드** — `MobileStylePanel`의 모양(v5부터 `widgets` 포함, v6부터 `taskList` 위젯), `style` capability, `styleId` 규칙, `/guided`의 새 필드, 와이어 어휘 `["cli","ouroboros"]`(v7), 언제나 빈 `attachments`.
 - **상태 소스 어휘**(v5) — 파서 2종, 집계 2종, 위젯 3종, 실행 이벤트 3종, `stateOverrides` 조건 2종과 각 한도(§1.16).
 - **계획 모드 어휘**(v6) — 계획 단계 3종, 실행 상태 소스 2종과 소스별 위젯, `taskList` 위젯과 그 페이로드, `launch.permissionMode` 1종, 단계별 줄의 모양(§1.17).
 - **터미널 입력 정책** — `TerminalInput`의 모양과 `autoRun`의 출처 규칙(1.5·5.7).
@@ -1746,7 +1632,7 @@ MobileStylePanel {
 ### 8.3 `scripts/check-style-freeze.sh`
 
 ```
-용법: scripts/check-style-freeze.sh [<tag>] [--pending <file>]   # 기본 tag = mighty-style-engine-v6
+용법: scripts/check-style-freeze.sh [<tag>] [--pending <file>]   # 기본 tag = mighty-style-engine-v7
 ```
 **태그 커밋의 모양.** 태그 `T`는 **`styles/FREEZE` 하나만 더하는 커밋**이고, 그 내용은 **`T`의 부모 `P`의 SHA 40자 한 줄**이다. `P`가 마지막 엔진 커밋이다. 자기 자신의 SHA를 담을 수는 없으므로(자기 참조) 부모를 담는다.
 
@@ -1759,7 +1645,7 @@ MobileStylePanel {
    하나라도 어긋나면 `종료 코드 2`와 `태그 <tag>가 FREEZE와 맞지 않습니다.`
 2. `git -c core.quotePath=false diff --no-renames --name-only <tag>..HEAD`를 읽는다.
 3. 각 경로가 **고정된 엔진**에 속하는지 본다(v5부터는 금지 목록 방식이다).
-   - 고정: `styles/FREEZE` · `native/macos/Sources/MightyCore/Styles/**` · `native/macos/Sources/MightyCore/Resources/Styles/**`(번들 매니페스트) · 동등성 오라클 테스트 `native/macos/Tests/MightyCoreTests/Style*.swift`·`Styles*.swift`·`SuperpowersStyle*.swift` · 폰 렌더러 `mobile/src/lib/styles.ts`와 `mobile/src/__tests__/styles*.test.ts` · 이 계약 `docs/mighty-styles.md` · 이 검사 `scripts/check-style-freeze.sh`와 그것을 부르는 `.github/workflows/style-freeze.yml`
+   - 고정: `styles/FREEZE` · `native/macos/Sources/MightyCore/Styles/**` · `native/macos/Sources/MightyCore/Resources/Styles/**`(번들 매니페스트) · 동등성 오라클 테스트 `native/macos/Tests/MightyCoreTests/Style*.swift`·`Styles*.swift` · 폰 렌더러 `mobile/src/lib/styles.ts`와 `mobile/src/__tests__/styles*.test.ts` · 이 계약 `docs/mighty-styles.md` · 이 검사 `scripts/check-style-freeze.sh`와 그것을 부르는 `.github/workflows/style-freeze.yml`
    - 예외(고정 안쪽 이름이지만 허용): 제삼자 스타일의 테스트 `native/macos/Tests/MightyCoreTests/StylesThirdParty*Tests.swift` · `mobile/src/__tests__/styles-thirdparty-*.test.ts`
    - 테스트 글롭의 `*`는 **경로 조각 하나**이므로 `/`를 넘지 않는다. `StylesThirdPartyEvil/DeepTests.swift`는 예외가 아니다.
 4. 고정된 경로가 하나라도 바뀌었으면 그 목록을 한 줄씩 찍고 `종료 코드 1`.
@@ -1773,7 +1659,9 @@ MobileStylePanel {
 
 **v5에서 허용 목록을 금지 목록으로 바꾼 이유.** v4까지는 태그 이후의 diff가 매니페스트와 그 테스트(와 Windows 전용 경로)만 담아야 했다. 그러면 엔진과 상관없는 앱 개발도 전부 고정 위반이 되어, 태그 이후 macOS CI의 고정 단계가 언제나 실패했다. 지키려던 것은 엔진이므로 v5부터는 엔진·오라클·계약·검사 자신만 고정하고 나머지는 자유롭게 둔다. 좁힌 이유는 그대로 유지된다: 계약 문서(`docs/mighty-styles.md`)와 오라클 테스트(`StylesOuroborosTests` 등)는 고정 안쪽이라 태그 이후에 고쳐 이미 한 일을 합법화할 수 없고, 제삼자 스타일 테스트만 이름 글롭으로 예외다. 검사 단계는 `native-macos.yml`에서 떼어 고정 안쪽의 `style-freeze.yml`로 옮겼으므로 검사 단계를 고쳐 우회할 수도 없다.
 
-**다음 고정을 준비하는 동안.** 기본 태그(지금 `mighty-style-engine-v6`)가 아직 없으면 검사는 건너뛰지 않는다. `styles/STYLE_FREEZE_PENDING`이 직전 태그(`previous-tag: mighty-style-engine-v5`)와 준비 중인 고정이 바꾸는 고정 경로를 정확히 적고, 검사는 직전 태그로 돌되 그 경로만 예외로 둔다(`scripts/check-style-freeze.sh mighty-style-engine-v5 --pending styles/STYLE_FREEZE_PENDING`, 인자 없이 부르면 스스로 이렇게 내려간다). 그리고 직전 태그의 번들 매니페스트 · 골든 · 코퍼스는 바이트 그대로여야 한다 — `git diff --exit-code --diff-filter=MDR <직전 태그> HEAD -- native/macos/Sources/MightyCore/Resources/Styles styles/golden styles/conformance`(새 파일을 더하는 것만 된다). `style-freeze.yml`이 둘을 모두 돌린다. 사용자가 정할 때 새 태그를 걸면 `styles/STYLE_FREEZE_PENDING`을 지운다.
+**다음 고정을 준비하는 동안.** 기본 태그(지금 `mighty-style-engine-v7`)가 아직 없으면 검사는 건너뛰지 않는다. `styles/STYLE_FREEZE_PENDING`이 직전 태그(예: `previous-tag: mighty-style-engine-v6`)와 준비 중인 고정이 바꾸는 고정 경로를 정확히 적고, 검사는 직전 태그로 돌되 그 경로만 예외로 둔다(`scripts/check-style-freeze.sh mighty-style-engine-v6 --pending styles/STYLE_FREEZE_PENDING`, 인자 없이 부르면 스스로 이렇게 내려간다). 그리고 직전 태그의 번들 매니페스트 · 골든 · 코퍼스는 바이트 그대로여야 한다 — `git diff --exit-code --diff-filter=MDR <직전 태그> HEAD -- native/macos/Sources/MightyCore/Resources/Styles styles/golden styles/conformance`(새 파일을 더하는 것만 된다). 검사 스크립트가 둘을 모두 하고, `style-freeze.yml`은 그것을 인자 없이 부른다. 사용자가 정할 때 새 태그를 걸면 `styles/STYLE_FREEZE_PENDING`을 지운다.
+
+**v7은 이 방식으로 준비하지 않았다.** 직전 태그의 번들 매니페스트·골든·코퍼스를 **지우는** 고정이라 위의 바이트 잠금을 통과할 수 없다. 그래서 마지막 엔진 커밋 `P`, `styles/FREEZE`만 더한 `T`, 태그를 `git push --atomic` 한 번에 올렸고, `style-freeze.yml`은 v7 태그가 없으면 그 사실을 한 줄 찍고 스크립트를 그대로 불러 실패한다(fail closed). 대신 검사할 직전 태그가 없기 때문이다.
 
 삭제·이름 변경도 `--name-only`에 잡히므로 엔진 파일을 지우는 것도 실패한다. 스크립트는 `DEVELOPER_DIR` 설정을 요구하지 않는다(`git`만 쓴다).
 
@@ -1795,9 +1683,9 @@ styles/golden/gstack.panel.json
 
 > `styles/*.json`을 글롭해서, 찾은 **모든** 매니페스트에 대해 ① 디코딩·검증이 통과하고 ② `styles/golden/<id>.panel.json`이 존재하며 ③ 그 내용이 아래 고정 입력들에 대한 `StylePanelProjection.make(...)` 결과를 `serialise`한 바이트와 **정확히 같은지** 단언한다.
 
-고정 입력 **6가지**: 빈 요청 기록(`empty`) · 그 스타일의 첫 행동을 부른 기록 하나(`afterFirstAction`) · 준비물 미충족(`notReady`) · 첫 그룹 선택(`firstGroup`) · **마지막 그룹 선택(`lastGroup`)** · **선언된 내장 기능이 모두 `open`이고 첨부 2개(`capabilityOpen`)**.
+고정 입력 **5가지**: 빈 요청 기록(`empty`) · 그 스타일의 첫 행동을 부른 기록 하나(`afterFirstAction`) · 준비물 미충족(`notReady`) · 첫 그룹 선택(`firstGroup`) · **마지막 그룹 선택(`lastGroup`)**. 그리고 상태 소스나 계획 모드를 읽는 스타일에만 `withState`·`planStage*`가 붙는다(1.16·1.17).
 
-> 뒤의 두 가지가 없으면 여섯이 아니라 넷이고, 넷은 서로 겹친다. 앞의 네 입력은 모두 `initialGroup` 규칙이 고르는 **기본 그룹**에 떨어지므로, 기본이 아닌 그룹의 `byGroup` 결과도, 추천 규칙 전체(`recommended`가 언제나 `null`)도, 첨부 투영(`attachments`가 언제나 `[]`)도 어느 골든에도 기록되지 않는다. 기능을 선언하지 않은 스타일도 `capabilityOpen`에서 첨부 2개를 받는다 — 첨부의 모양은 스타일과 무관한 고정 계약이기 때문이다.
+> 마지막 하나가 없으면 다섯이 아니라 넷이고, 넷은 서로 겹친다. 앞의 네 입력은 모두 `initialGroup` 규칙이 고르는 **기본 그룹**에 떨어지므로, 기본이 아닌 그룹의 `byGroup` 결과가 어느 골든에도 기록되지 않는다. v6까지는 여섯째 입력 `capabilityOpen`(선언된 내장 기능이 모두 `open`이고 첨부 2개)이 추천 규칙과 첨부 투영을 기록했다. v7에서 어휘가 비고 `attachments`가 언제나 빈 배열이 되자 그 입력은 `lastGroup`과 바이트가 같아져서 뺐다. 추천 규칙은 시험용 어휘로 엔진 테스트가 확인한다(`StyleCapabilityTests`).
 
 이 파일이 없으면 고정 장치에 구멍이 남는다. 태그 이후에 쓰이는 `StylesThirdPartyGstackTests.swift`는 허용 목록 **안**에 있고 골든을 기록한 바로 그 손이 쓰므로, 무엇이든 단언할 수 있다 — "기록 모드가 태그 이전에 존재한다"는 사실만으로는 그것이 **실제로 쓰였는지** 아무 얼어붙은 코드도 확인하지 않는다. 글롭이 그 고리를 닫는다: 매니페스트를 추가하는 것만으로 얼어붙은 코드가 골든을 요구하고 검사한다. 태그 이후의 테스트 파일은 장식이지 계약이 아니다.
 
@@ -1838,15 +1726,14 @@ scripts/check-style-freeze.sh                       # 0
 
 | 파일 | 단언 |
 |---|---|
-| `StylesBundledTests` | 번들 매니페스트 2개가 3.2의 탐색으로 발견되고 디코딩·검증을 통과한다. id가 `ouroboros`·`paperthin`. `swift test`와 `.app` 양쪽 후보 경로에서 실패 없이 돈다 |
+| `StylesBundledTests` | 번들 매니페스트 2개가 3.2의 탐색으로 발견되고 디코딩·검증을 통과한다. id가 `claude-plan`·`ouroboros`. `swift test`와 `.app` 양쪽 후보 경로에서 실패 없이 돈다 |
 | `StylesOuroborosTests` | 5.9의 값 전부 |
-| `StylesPaperthinTests` | 5.9의 값 전부 |
 | `StyleManifestTests` | 2장 오류 코드 **하나마다 최소 한 개**의 거부 픽스처(48개). 목록은 **프로덕션의 `StyleErrorCodes.all`과 집합으로 같아야** 한다 — 테스트 안의 숫자 리터럴은 새 코드를 알아차리지 못한다. 유효 최소 매니페스트가 통과한다. 키의 이스케이프(`E_KEY_ESCAPE`, 확인된 `autoAllow` 공격 입력 포함) · 키의 제어 문자·길이 · 최상위 뒤 잔여물 · `map` 없는 규칙 · `glyph`의 ZWJ 이모지 · `lowercase` 인식 아래의 대문자 id/match/별칭 |
 | `StyleRegistryTests` | 우선순위 3종, 같은 출처 안 충돌의 결정적 순서(§3.3의 이름순), `applicable`이 남의 워크스페이스 매니페스트를 내지 않음, `mightyStyle` 정규화(3.4), **레지스트리 제목**이 교차 스타일 값을 낸다(1.10), 인식되지 않은 입력은 아이콘·색도 얻지 않는다, 스타일 없는 실행 창은 훑을 것이 없다, 해시 불일치 창이 제목을 잃는다, 링크·하드 링크 픽스처는 32개 상한 **안쪽**에 정렬되는 이름을 쓴다 |
 | `StyleTrustTests` | 승인 → `approved`, 1바이트 수정 → 스캔 후 `pending`, 취소 → `revoked`, 내용이 바뀌어도 자리가 `revoked`, 레코드 파일 권한 0600, 256개 상한, 잠금 상태, 원자적 병합, **병합이 자리당 승인 하나를 지키고 거부는 전부 남긴다**(4.3), 로드 뒤 깨진 파일은 잠기고 덮어쓰이지 않는다, 두 번째 프로세스의 승인이 다음 `load()`에 보인다 |
 | `StyleEvaluatorTests` | 프롬프트 치환 4경우(텍스트 있음/없음 × 두 접기), `recognised` vs `namesSomething`의 차이(`"ooo 이거 해줘"`), 별칭, 단계 계산, `start`/`byPhase`/`byGroup`, Enter 6조건 각각의 거짓 경우와 **되돌리기 칩 예외**, 무장 칩이 입력창의 글까지 본다, 질문이 Enter 규칙보다 먼저다(`StyleComposer`), 실행 중 `byPhase`는 칩이 없고 `byGroup`은 그대로다, `initialGroup` 3상태, 추천이 그룹과 무관하다, `guidance`의 `{phase}` 치환과 단계 없을 때의 삭제 |
-| `StyleCapabilityTests` | 케이스북 3상태, 파일 순서, 링크 미추적(폴더 링크·항목 링크·하드 링크), **정렬 뒤** 24개 상한(긴 이력에서 최신 폴더를 놓치지 않는다), 6개 칩 상한, 빈 상태 문구, **출력 문자열 정규화**(U+202E가 든 폴더명 → U+FFFD), 80자 한도가 `…`를 포함해 정확히 80 |
-| `StyleProjectionTests` | 투영이 매니페스트와 상태를 빠짐없이 옮긴다. `source`가 실린다. 레거시 어댑터가 내장 둘의 옛 페이로드를 **오늘과 같은 값**으로 만든다 |
+| `StyleCapabilityTests` | 앱 어휘가 비어 있고 선언한 이름은 번들까지 `E_UNKNOWN_CAPABILITY`, 1.8의 판정 순서(미선언 → `E_CAPABILITY_UNDECLARED`, 선언 + 앱이 모름 → `E_UNKNOWN_CAPABILITY`, 시험용 어휘에서 빠진 상태 → `E_CAPABILITY_MAP`, 없는 상태 → `E_UNKNOWN_REFERENCE`), 시험용 어휘 아래에서 추천·초기 그룹이 그대로 동작한다, `attachments`가 빈 배열로 실린다 |
+| `StyleProjectionTests` | 투영이 매니페스트와 상태를 빠짐없이 옮긴다. `source`가 실린다. 레거시 어댑터가 Ouroboros의 옛 페이로드를 **오늘과 같은 값**으로 만들고 다른 스타일에는 아무것도 만들지 않는다 |
 | `StyleGoldenContractTests` | 8.4 — `styles/*.json` 글롭, 골든 존재·일치. `styles/` 폴더가 아예 없으면 **소리 내어 실패한다**(빈 글롭과 잘못된 경로가 구별되지 않으면 관문 전체가 조용한 no-op이 된다). 태그 이전에 쓰이고 허용 목록 밖에 산다 |
 | `TerminalInputPolicyTests` | 9.3의 `installIsNeverRun` |
 | `MobileRemoteExtensionTests` (기존) | `styleId`/`panel` 인코딩, `options.styles`, `/guided` 새·옛 형식, 미승인 400, 빈 글로도 `interview`가 나간다(1.3.3). 레거시 페이로드의 단언은 **매니페스트에서 다시 읽은 값이 아니라 리터럴**이다(삭제된 `OuroborosFlowTests`·`PaperthinCatalogTests`가 박아 두었던 id 목록 그대로). `/guided`의 관문 판정(`guidedDecision`), 폰이 그룹을 고르지 않아도 추천이 살아 있다, 128개 요청 창에서 밀려난 단계는 진입 단계로 읽힌다 |
@@ -1894,7 +1781,6 @@ scripts/check-style-freeze.sh                       # 0
 | `mergeKeepsOneApprovalPerPlace` | 두 프로세스 창에서 같은 자리의 `approved`가 하나만 남고, 되돌린 옛 바이트는 `pending`이다. `revoked`는 전부 남는다 |
 | `controlCharsRefused` | `title`에 U+202E → `E_CONTROL_CHAR`; `name`에 U+200B → `E_CONTROL_CHAR`; `help`에 U+2028 → `E_CONTROL_CHAR` |
 | `errorMessagesAreBounded` | 20만 자 키 이름 → 메시지의 `<경로>`가 64자 + `…`이고 제어 문자가 U+FFFD로 바뀌어 있다 |
-| `capabilityOutputIsNormalised` | U+202E가 든 케이스북 폴더 이름이 Mac 패널과 폰 페이로드 양쪽에서 U+FFFD로 바뀌어 나온다 |
 | `enterRewriteIsFirstRequestOnly` | 요청이 하나라도 있으면 `enterBehaviour`가 `.verbatim`이다 — **되돌리기 칩을 누른 상태만 예외**이며, 그 상태에서도 나머지 다섯 조건은 그대로 걸린다. `takesText:false` 행동을 가리키면 매니페스트가 `E_ENTER_ACTION_TEXT`로 거부된다 |
 | `installIsNeverRun` | `TerminalInputPolicy.apply`가 `autoRun: false` 입력에 대해 스파이 싱크의 `sendEnter()`를 **부르지 않는다**(`paste(text:)`만 부른다). `autoRun: true`면 둘 다 부른다. 줄바꿈이 든 입력은 붙여넣기 자체가 거부되고 `.refused` 를 돌려준다. 그리고 `AppStore`가 매니페스트 설치를 시작하면 `pendingTerminalInput`의 `autoRun`이 false다 |
 
@@ -1904,17 +1790,17 @@ scripts/check-style-freeze.sh                       # 0
 
 고정된 어휘로 **지금도 표현되지 않는다고 이미 아는 것들**이다. 이번 범위 밖이며, 확장은 `schema: 2`로 간다. 이 목록의 사본이 `docs/styles-followups.md`로 살고, 태그 이후에 고칠 수 있는 유일한 문서다(8.3).
 
-1. **진짜 2축 그리드.** `groups[].axis`는 문자열 한 줄이라 정렬만 돕는다. Paperthin의 2×2는 오늘처럼 버튼 4개 줄로 그린다. `axisX`/`axisY`가 필요하다.
+1. **진짜 2축 그리드.** `groups[].axis`는 문자열 한 줄이라 정렬만 돕는다. 그룹 지도는 버튼 줄로 그린다(v6까지 Paperthin의 2×2가 그랬다). `axisX`/`axisY`가 필요하다.
 2. **중첩 그룹.** 그룹 안의 그룹이 없다. gstack처럼 행동이 30개를 넘는 카탈로그는 1단 그룹으로 평평해진다.
 3. **치환자 하나뿐.** `{text}` 외에 `{path}`·`{flag}` 같은 두 번째 입력 칸이 없다. `/oh-my-claudecode:execute <plan> --model opus`처럼 인자가 둘인 호출은 한 줄 자유 텍스트로 내려간다.
-4. **조건부 다음 행동.** `NextRule`은 단계 또는 그룹만 본다. "준비물이 미충족이면 설치 행동만", "케이스북이 `complete`면 다른 목록"은 못 쓴다.
+4. **조건부 다음 행동.** `NextRule`은 단계 또는 그룹만 본다. "준비물이 미충족이면 설치 행동만", "내장 기능이 어떤 상태면 다른 목록"은 못 쓴다.
 5. **상태를 읽는 단계 계산.** ~~`PhaseRule`은 과거 요청 텍스트만 본다.~~ **v5에서 부분 해결, v6에서 하나 더.** v6의 `planState`는 실행 창의 Claude 계획 상태로 단계를 정한다(1.17). `stateSources.files`의 `stateOverrides`를 통해 파일 존재 여부(`fileExists`)와 체크리스트 완료 여부(`allChecked`)로 단계를 덮어쓸 수 있다(1.16.5). MCP 도구 응답이나 자유 상태 표현식은 여전히 소스로 쓸 수 없다 — 어휘 폐쇄성(1.16.6)을 지키기 위해 의도한 제약이다.
 6. **루프 진행·중지.** 오래 도는 행동(`ralph`, `autopilot`, `re0-loop`)의 진행률이나 전용 중지 버튼을 선언할 수 없다. 취소도 그냥 또 하나의 행동이다.
 7. **토글형 행동.** `/freeze`↔`/unfreeze`, `/guard`↔`/careful`처럼 켜고 끄는 짝을 하나의 on/off로 표현할 수 없고 상태를 되읽을 수도 없다.
 8. **추천 규칙의 조합.** 내장 기능 하나의 상태만 본다. 둘을 조합하거나, 최근 사용 순으로 정렬하거나, 여러 개를 추천할 수 없다.
 9. **단계별 자동 허용.** `autoAllow`는 스타일 전체에 걸린다. "인터뷰 단계에서만 이 도구"는 못 쓴다. 읽기 전용/쓰기 분류도 없어서, 소속 규칙(1.9) 안에서는 작성자가 무엇이든 고를 수 있다.
 10. **설치 명령 하나.** 준비물이 여럿이어도 설치 버튼은 하나다. probe별 설치 명령이 없다(per-probe `install` 플래그는 "이 실패를 그 하나의 명령이 고치는가"만 말한다).
-11. **내장 기능 하나.** `paperthin.casebook`뿐이다. "최근 커밋 읽기", "열린 PR 읽기", "플러그인 상태 읽기" 같은 것은 표현할 수 없다.
+11. **내장 기능 없음.** v7부터 어휘가 비어 있다(v6까지 `paperthin.casebook` 하나). "최근 커밋 읽기", "열린 PR 읽기", "플러그인 상태 읽기" 같은 것은 표현할 수 없고, 기능을 더하는 것은 앱 업데이트와 새 고정이다.
 12. **적격성 고정.** 로컬 Claude 실행 창 + 마이티 보기가 아닌 곳(Codex·Gemini·터미널 창)에 스타일을 열어 줄 수 없다.
 13. **질문 패널 손대기.** `AskUserQuestion` 패널의 문구·배치는 매니페스트가 못 건드린다.
 14. **그래프 구조.** 요청 블록의 제목 **접두사**·아이콘·색만 바꿀 수 있고, `요청 N · <provider>` 꼬리나 단계 레인이나 새 블록 종류는 못 만든다.
@@ -1936,10 +1822,9 @@ scripts/check-style-freeze.sh                       # 0
 행동 9 · 단계 6 · 그룹 1 · 별칭 6 · 자동 허용 **17**(`ToolSearch` + 상태 16) · 준비물 `all`+`first`(plugin + executable, executable은 `install:false`) · `start: actions` · `byPhase` · `rewriteBareDraftTo`.
 **낮춘 것: 없다.** 오늘 동작이 그대로 표현된다. `autoAllow`는 한도 32 안이고 소속 규칙을 만족한다(1.14).
 
-### A.2 Paperthin (번들, 1.15에 전문)
+### A.2 Paperthin (v7에서 지움)
 
-행동 28 · 단계 0 · 그룹 4(axis+question) · 자동 허용 0 · 준비물 `any`+`first`(skill×3 + plugin) · `start: none` · `byGroup` · `verbatim` · `paperthin.casebook`로 추천·첨부·초기 그룹.
-**낮춘 것**: 2×2 지도가 4버튼 줄이다(항목 1). 오늘 Mac 화면도 같은 모양이므로 회귀는 아니다.
+v1–v6의 번들 스타일. 행동 28 · 단계 0 · 그룹 4(axis+question) · `byGroup` · `verbatim` · `paperthin.casebook`으로 추천·첨부·초기 그룹. 스케치는 v6 태그의 이 문서에 있다.
 
 ### A.3 oh-my-claudecode (태그 이후, `styles/oh-my-claudecode.json`)
 
@@ -1970,14 +1855,14 @@ scripts/check-style-freeze.sh                       # 0
 ### A.4 gstack (태그 이후, `styles/gstack.json`)
 
 - `id: "gstack"`, `name: "gstack"`.
-- `recognition: { "prefixes": ["/"], "lowercase": false }` — Paperthin과 같은 bare `/name`. 인식은 **그 스타일의 실행 창에만** 적용되므로 두 카탈로그가 같은 이름(`re0`, `nba`, `hate`…)을 가져도 충돌하지 않는다. 다만 요청 블록 **제목**은 레지스트리가 우선순위로 훑으므로(1.10), gstack 실행 창의 `/re0`는 번들 Paperthin이 먼저 인식해 `♻️ re0`가 붙는다 — 오늘 내장 둘이 서로의 제목을 보여 주는 것과 같은 동작이며, 그것이 의도다.
+- `recognition: { "prefixes": ["/"], "lowercase": false }` — bare `/name`. 인식은 **그 스타일의 실행 창에만** 적용되므로 다른 카탈로그와 같은 이름을 가져도 충돌하지 않는다. 다만 요청 블록 **제목**은 레지스트리가 우선순위로 훑으므로(1.10), 번들 스타일이 먼저 인식하는 이름이면 그 제목이 붙는다 — 그것이 의도다. v7의 번들 둘은 `/ouroboros:`와 `[` 접두사를 쓰므로 bare `/name`과 겹치지 않는다(v6까지는 Paperthin의 `/re0`가 그렇게 `♻️ re0`를 얻었다).
 - `phases`: `plan`(계획) → `build`(구현) → `qa`(검증) → `ship`(출시) → `retro`(회고), `rules.phase.default: "plan"`. `qa`·`ship`·`retro`는 **단계 id이면서 동시에 행동 id**다 — 1.4가 이름 공간을 분리했으므로 합법이다.
 - `actions`(24): `office-hours`, `spec`, `plan-ceo-review`, `plan-eng-review`, `plan-design-review`, `plan-devex-review`, `autoplan`, `investigate`, `qa`, `qa-only`, `review`, `design-review`, `devex-review`, `health`, `benchmark`, `canary`, `ship`, `land-and-deploy`, `document-release`, `retro`, `context-save`, `context-restore`, `freeze`, `unfreeze`. 프롬프트 `"/<id> {text}"`, `foldText: "oneLine"` — `E_PROMPT_RECOGNITION` 성립, `match` 불필요.
 - `groups`: **하나** — `{ "id": "flow", "title": "흐름", "actions": [행동 24개] }`. A.3과 같은 이유다(`byPhase`를 쓴다).
 - `aliases`: `plan-tune`→`plan`, `landing-report`→`ship`.
 - `prerequisites`: `{ "mode": "any", "report": "first", "probes": [ {"kind":"skill","name":"_gstack-command","scopes":["user","workspace"],"missing":"gstack 스킬이 설치되어 있지 않습니다","hint":"…"}, {"kind":"skill","name":"gstack","scopes":["user","workspace"],"missing":"gstack 스킬이 설치되어 있지 않습니다"}, {"kind":"skill","name":"office-hours","scopes":["user","workspace"],"missing":"gstack 스킬이 설치되어 있지 않습니다"} ] }` — `_gstack-command`가 gstack 고유의 표식이라 가장 믿을 만하고, 나머지 둘은 백업이다. **맨 앞 밑줄은 1.5의 `name` 정규식이 허용한다**(디스크 확인: `~/.claude/skills/_gstack-command/SKILL.md`와 `~/.claude/skills/gstack/SKILL.md`가 둘 다 있다).
 - `install.command`: `git clone --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack && ~/.claude/skills/gstack/setup` (출처: gstack 자신의 `gstack-upgrade` 스킬이 기술하는 clone + `./setup` 절차). 1.5에 따라 터미널에 **채워지기만** 하므로 사용자가 읽고 Enter를 누른다.
-- `autoAllow`: **빈 배열.** gstack에는 MCP 서버가 없다. 모든 도구 호출이 실행 창의 권한 모드를 그대로 따른다 — Paperthin과 같다.
+- `autoAllow`: **빈 배열.** gstack에는 MCP 서버가 없다. 모든 도구 호출이 실행 창의 권한 모드를 그대로 따른다.
 - `rules.start`: `{"kind":"actions","phase":"plan","actions":["office-hours","spec","plan-ceo-review","plan-eng-review","plan-design-review"]}` — gstack의 네 갈래 진입 역할이 여기서 나온다. `resetTitle`은 없다(Enter가 `verbatim`이라 되돌릴 상태가 없다).
 - `rules.next.map`: `plan`→`[spec, plan-eng-review, autoplan, investigate]`, `build`→`[qa, review, health]`, `qa`→`[review, ship, investigate]`, `ship`→`[canary, document-release, retro]`, `retro`→`[office-hours, spec]`.
 - `rules.enter`: `{"kind":"verbatim"}` — gstack은 자유 요청이 정상 경로다.
