@@ -68,7 +68,7 @@ function panelPayload(overrides: Record<string, unknown> = {}): Record<string, u
     next: ['spec', 'ship'],
     recommended: 'qa',
     attachments: [
-      { id: 'DESIGN.local.md', title: 'DESIGN', detail: '2026-09-cycle · full', readOnly: true },
+      { id: 'notes.md', title: 'notes', detail: '2026-09 · full', readOnly: true },
     ],
     setup: {
       ready: false,
@@ -108,7 +108,7 @@ describe('normalizeStylePanel', () => {
     });
     expect(panel?.next).toEqual(['spec', 'ship']);
     expect(panel?.recommended).toBe('qa');
-    expect(panel?.attachments[0]?.detail).toBe('2026-09-cycle · full');
+    expect(panel?.attachments[0]?.detail).toBe('2026-09 · full');
     expect(panel?.setup).toEqual({
       ready: false,
       missing: ['gstack 스킬이 없습니다.'],
