@@ -53,3 +53,23 @@ export async function sendWithAttachments(request: SendRequest): Promise<SendRes
     return { ok: false, error: describeError(error), cancelled: false };
   }
 }
+
+/** A round button the composer offers for a draft while the pane is running. */
+export type BusySend = 'steer' | 'queue' | 'send';
+
+/**
+ * The round buttons for a draft on a running pane, at the far right in this order. A host
+ * without "submit-mode" decides itself, so one send button. Otherwise queue always, and
+ * steer only when the text can join the running turn: the host says per pane whether it
+ * can (`canSteer`; only a Claude pane can, a Codex or Antigravity pane queues), an older
+ * host leaves it out and steering stays offered as before, and a draft carrying files
+ * never steers because the host cannot fold files into an open turn.
+ */
+export function busySendChoices(options: {
+  submitModes: boolean;
+  canSteer?: boolean;
+  attachments: number;
+}): BusySend[] {
+  if (!options.submitModes) return ['send'];
+  return options.canSteer !== false && options.attachments === 0 ? ['steer', 'queue'] : ['queue'];
+}
