@@ -66,7 +66,10 @@ try {
         if ($transcriptActions.$key -ne $true) { throw "Windows transcript action smoke failed: transcriptActions.$key" }
     }
     $styles = $result.styles
-    if ($null -eq $styles -or [int]$styles.bundledCount -ne 4 -or [int]$styles.guidedActions -lt 1) {
+    # The app bundles every manifest in this folder, so the count follows it.
+    $bundledManifests = @(Get-ChildItem -Path (Join-Path $PSScriptRoot '../native/macos/Sources/MightyCore/Resources/Styles') -Filter '*.json' -File).Count
+    if ($bundledManifests -lt 1) { throw 'Windows style smoke found no bundled style manifests in the repository.' }
+    if ($null -eq $styles -or [int]$styles.bundledCount -ne $bundledManifests -or [int]$styles.guidedActions -lt 1) {
         throw 'Windows style smoke did not load the bundled registry and guided actions.'
     }
     foreach ($key in @('picker', 'fullApprovalContents', 'localRunPermissionSnapshot')) {
