@@ -171,7 +171,7 @@ mightyclaude://pair?v=2&sid=<serverId>&pk=<base64url 공개키 32B>&relay=<wss:/
 | `settings` | 헤더의 모델 / 권한 모드 / 사고 강도(+보기 방식·Mighty 스타일) 선택 |
 | `commands` | 입력창에서 `/`를 치면 뜨는 슬래시 명령 목록 |
 | `status` | 상태 줄(최대 6줄)과 사용량 막대 |
-| `mighty` | 헤더의 `대화`/`블록` 전환, 요청별 블록 목록, Ouroboros·Paperthin 패널 |
+| `mighty` | 헤더의 `대화`/`블록` 전환, 요청별 블록 목록, 스타일 패널(Ouroboros 등) |
 | `attachments` | 입력창의 `＋` 버튼(사진·파일), 첨부 칩, 청크 업로드 |
 | `files` | 호스트 화면의 워크스페이스마다 `파일` 버튼 → 읽기 전용 폴더 목록과 미리보기 |
 
@@ -202,18 +202,14 @@ mightyclaude://pair?v=2&sid=<serverId>&pk=<base64url 공개키 32B>&relay=<wss:/
 않으므로 `3 / 5` 같은 진행률로 그리지 않습니다.
 **계약에 없는 종류·상태는 중립 색으로, 호스트가 보낸 단어 그대로** 그립니다.
 
-보기 방식(`plain`/`mighty`)과 스타일(`cli`/`ouroboros`/`paperthin`)은 헤더의 설정 칩에서
+보기 방식(`plain`/`mighty`)과 스타일(`cli`/`ouroboros`; 그 밖의 스타일은 `styleId`)은 헤더의 설정 칩에서
 고릅니다. 스타일이 두 가지 이상일 때는 보기 방식을 먼저 고른 뒤 스타일을 고르고, 둘은
 **한 번의 `POST …/settings`** 로 함께 나갑니다.
 
 - **Ouroboros 패널**: 현재 단계, 호스트가 알려 준 `next` 스킬 버튼, 나머지 `all`은 `더 보기`.
   `takesText`에 있는 스킬은 입력창의 내용을 함께 보냅니다(그 외에는 스킬만).
   `ready: false`면 무엇이 빠졌는지 적고 버튼을 잠급니다.
-- **Paperthin 패널**: 네 도메인을 2×2로, 고른 도메인의 질문과 스킬(이모지, 이름,
-  `userInvoked` 👤, `readOnly` 👁)을 보여 줍니다. 추천 스킬은 테두리로 강조하고, 길게 누르면
-  설명이 뜹니다. 케이스북 줄(이름·비중·파일)은 **보여 주기만** 합니다(파일 열기는 Mac의 일).
-  `installed: false`면 스킬 설치는 Mac에서 한다고 적습니다.
-- 두 패널의 버튼은 `POST …/guided {style, skill, text?}`를 부르고, 토스트는 호스트가 돌려준
+- 패널의 버튼은 `POST …/guided {styleId, actionId, text?}`를 부르고, 토스트는 호스트가 돌려준
   `accepted`를 그대로 옮깁니다. **질문(AskUserQuestion) 카드가 떠 있는 동안에는 패널이 비켜
   나고** 질문 카드만 남습니다.
 
