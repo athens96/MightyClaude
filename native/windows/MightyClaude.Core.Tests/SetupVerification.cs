@@ -95,6 +95,17 @@ internal static class SetupVerification
         Refused(() => SetupCatalogDecoder.Decode(root.ToJsonString()), "a Windows cycle");
         var ok = DecodeEditing(item => SetWindows(item, "install", new JsonObject { ["kind"] = "winget", ["id"] = "Anthropic.ClaudeCode", ["scope"] = "user" }));
         Check(ok.Items[0].Entry(SetupPlatform.Windows)!.Install == new SetupRecipe.Winget("Anthropic.ClaudeCode", "user"), "a winget recipe under windows decodes");
+        // No bundled item installs through argv or probes a skill since Paperthin left the catalog, but both stay in the
+        // closed decoder: an npx argv with the options npx may take, and a skill folder, decode, and the step runs the program
+        // bare with every argument quoted.
+        var skills = DecodeEditing(item =>
+        {
+            SetWindows(item, "install", new JsonObject { ["kind"] = "argv", ["argv"] = new JsonArray("npx", "skills@1.7.2", "add", "acme/kit", "--global", "--agent", "claude-code") });
+            SetWindows(item, "probe", new JsonObject { ["kind"] = "skill", ["name"] = "kit" });
+        }).Items[0].Entry(SetupPlatform.Windows)!;
+        Check(skills.Install is SetupRecipe.Argv { FinishesOutside: false } argv && argv.Arguments.SequenceEqual(["npx", "skills@1.7.2", "add", "acme/kit", "--global", "--agent", "claude-code"]), "an npx argv recipe under windows decodes");
+        Check(skills.Probe == new SetupProbe.Skill("kit"), "a skill probe under windows decodes: " + skills.Probe);
+        Check(SetupScript.Body(skills) == "npx 'skills@1.7.2' 'add' 'acme/kit' '--global' '--agent' 'claude-code'", "argv: " + SetupScript.Body(skills));
         return Task.CompletedTask;
     }
 
