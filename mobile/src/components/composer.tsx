@@ -9,6 +9,7 @@ import { byteLength } from '@/api/client';
 import { MAX_TEXT_BYTES, type MobileCommand, type SubmitMode } from '@/api/types';
 import { commandInsertion, commandQuery, filterCommands } from '@/lib/commands';
 import { t } from '@/lib/i18n';
+import { busySendChoices } from '@/lib/send';
 import { formatBytes, type PickedFile, type UploadProgress } from '@/lib/uploads';
 import { cardShadow, radius, spacing, typeScale, useStyles, usePalette, type Palette } from '@/theme';
 
@@ -30,6 +31,7 @@ export function Composer({
   running,
   sending,
   submitModes,
+  canSteer,
   commands,
   attachments,
   onSend,
@@ -46,6 +48,11 @@ export function Composer({
   sending: boolean;
   /** "submit-mode": the host tells steering and queueing apart, so both are offered. */
   submitModes: boolean;
+  /**
+   * The host's word on whether this pane's running turn takes a follow-up (Claude only);
+   * false hides steer so a draft can only queue. Absent from older hosts: steer stays.
+   */
+  canSteer?: boolean;
   /** "commands": what `/` offers; empty on a host without the capability. */
   commands: MobileCommand[];
   /** "attachments": absent when the host or the pane cannot take files. */
@@ -100,7 +107,7 @@ export function Composer({
   const blocked = disabled || tooLong || empty;
   // The host cannot fold files into a turn that is already open, so a request carrying
   // attachments is never offered as "send now": it queues, or it starts the pane.
-  const canSteer = picked.length === 0;
+  const busyChoices = busySendChoices({ submitModes, canSteer, attachments: picked.length });
   // While a run is busy the round buttons show only for a draft with something in it,
   // and stop shrinks beside them, as on the Mac and Windows.
   const offersDraft = running && !empty;
@@ -240,12 +247,13 @@ export function Composer({
             ? roundButton('send', t('phone.composer.send'))
             : !offersDraft
               ? null
-              : submitModes
-                ? [
-                    canSteer ? roundButton('steer', t('phone.composer.steer'), 'steer') : null,
-                    roundButton('queue', t('queue.add'), 'queue'),
-                  ]
-                : roundButton('send', t('phone.composer.send'))}
+              : busyChoices.map((choice) =>
+                  choice === 'steer'
+                    ? roundButton('steer', t('phone.composer.steer'), 'steer')
+                    : choice === 'queue'
+                      ? roundButton('queue', t('queue.add'), 'queue')
+                      : roundButton('send', t('phone.composer.send')),
+                )}
         </View>
       </View>
 

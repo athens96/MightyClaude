@@ -159,6 +159,11 @@ export interface MobileSessionSummary {
    */
   resolvedModel?: string;
   /**
+   * Whether text sent while the pane runs can join the running turn (steer): only a Claude
+   * pane can; a Codex or Antigravity pane queues it. Absent on older hosts: offer steer.
+   */
+  canSteer?: boolean;
+  /**
    * A Mighty Orchestration child pane's parent pane (Mac only). The list draws the child one
    * step in under its parent when the parent is listed too. Absent on other panes and hosts.
    */
