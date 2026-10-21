@@ -290,8 +290,9 @@ public static class MobileRemoteSupport
 
     /// <summary>
     /// A style button's request (M/MightyCore/Remote/MobileRemoteService.swift:929-945). <c>styleId</c>+<c>actionId</c> is the
-    /// shape of today, <c>style</c>+<c>skill</c> the older one for the two bundled styles; a half-migrated phone may send the new
-    /// style field with the old action field. An unregistered id and a malformed one answer alike.
+    /// shape of today, <c>style</c>+<c>skill</c> the older one an older phone sends for the bundled Ouroboros (it also named
+    /// Paperthin until v7); a half-migrated phone may send the new style field with the old action field. An unregistered id
+    /// and a malformed one answer alike.
     /// </summary>
     public static MobileGuidedRequest GuidedRequest(JsonElement body)
     {

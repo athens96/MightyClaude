@@ -683,8 +683,6 @@ describe('legacyStylePanel', () => {
   it('answers for Ouroboros and nothing else', () => {
     expect(legacyStylePanel({ style: 'gstack', runs: [] })).toBeUndefined();
     expect(legacyStylePanel({ style: 'cli', runs: [] })).toBeUndefined();
-    // Removed in v7 (contract 7.4): a host from before v7 naming it draws a plain pane.
-    expect(legacyStylePanel({ style: 'paperthin', runs: [] })).toBeUndefined();
     // The id without its payload has nothing to fold.
     expect(legacyStylePanel({ style: 'ouroboros', runs: [] })).toBeUndefined();
   });

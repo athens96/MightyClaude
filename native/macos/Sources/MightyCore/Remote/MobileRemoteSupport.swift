@@ -126,9 +126,10 @@ public enum MobileRemoteSupport {
     /// The Mac stores nil or "default" for the plain transcript; the wire says "plain".
     public static func viewMode(_ raw: String?) -> String { raw == "mighty" ? "mighty" : MobileWire.plainViewMode }
 
-    /// The wire word for the style a pane actually runs. Only the two bundled
-    /// ids have one of their own; every other registered style travels as
-    /// "cli" here and carries its truth in `styleId` (§7.2).
+    /// The wire word for the style a pane actually runs. Only the bundled
+    /// Ouroboros has one of its own; every other registered style, the bundled
+    /// 클러드 플랜 included, travels as "cli" here and carries its truth in
+    /// `styleId` (§7.2).
     public static func style(_ raw: String?) -> String {
         guard let raw, MobileWire.mightyStyles.contains(raw) else { return MobileWire.cliStyle }
         return raw

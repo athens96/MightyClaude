@@ -35,9 +35,12 @@ struct TerminalInputPolicyTests {
         #expect(TerminalInputPolicy.apply(TerminalInput(text: "ls", autoRun: true), to: failing) == .failed && failing.enters == 0)
     }
 
-    @Test func theBundledInstallCommandIsSafeToPaste() {
-        // Ouroboros is the one bundled style with an install command.
-        let command = StyleFixtures.bundled("ouroboros").manifest.install?.command ?? ""
-        #expect(!command.isEmpty && !TerminalInputPolicy.hasLineBreak(command) && !StyleText.containsBanned(command))
+    @Test func theBundledInstallCommandsAreSafeToPaste() {
+        // Every bundled style that offers an install command, and at least one does.
+        let commands = BundledStyles.shared.styles().compactMap { $0.manifest.install?.command }
+        #expect(!commands.isEmpty)
+        for command in commands {
+            #expect(!command.isEmpty && !TerminalInputPolicy.hasLineBreak(command) && !StyleText.containsBanned(command))
+        }
     }
 }
