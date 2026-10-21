@@ -41,7 +41,7 @@ A missing pet was silently ignored and the list was returned without it.
 
 ### Packaging gate before this fix
 `build-macos.sh` already had a gate for bundled style manifests
-(`ouroboros.json`, `paperthin.json`) but no gate for locale catalogs or the
+(`ouroboros.json`, `paperthin.json` at the time; Paperthin was removed in v7) but no gate for locale catalogs or the
 default pet.
 
 ### LaunchServices candidate for build 298

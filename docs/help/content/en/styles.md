@@ -20,8 +20,6 @@ Each pane remembers its style. It can't be changed while a task runs. If the sty
 | Style | What it does |
 |---|---|
 | Ouroboros | Interviews you to pin down the goal, then goes seed → run → evaluate → evolve. Your first request becomes the interview. Needs the Ouroboros plugin and `uvx`. |
-| Paperthin | Buttons for small skills that remove rather than add. Your text is sent as you typed it. |
-| Superpowers | Goes brainstorm → plan → execute → finish. The phase and progress bar move on their own from the checkboxes in the plan file. |
 | Claude plan (클러드 플랜) | Every new request starts in Claude's plan mode, and runs once you approve the plan card. Widgets show checklist progress and background tasks. |
 
 ## The plan card {#plan-card}

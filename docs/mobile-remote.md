@@ -120,7 +120,7 @@ MobilePermission {
 | `activity.state` | `running` `waiting` `completed` `error` `stopped` |
 | `permissionMode` | 호스트가 `settings.options.permissionModes`로 알려 주는 id (프로바이더마다 다름) |
 | `agentViewMode` | `plain` `mighty` |
-| `mightyStyle` | `cli` `ouroboros` `paperthin` — 셋 고정. `ouroboros`·`paperthin`이 아닌 스타일(번들 Superpowers 포함)에는 언제나 `cli`가 실린다(진짜 값은 `styleId`, 아래 "스타일" 절) |
+| `mightyStyle` | `cli` `ouroboros` — 둘 고정(v6까지는 `paperthin`도 있었고 v7에서 그 스타일과 함께 뺐다). `ouroboros`가 아닌 스타일(번들 클러드 플랜 포함)에는 언제나 `cli`가 실린다(진짜 값은 `styleId`, 아래 "스타일" 절) |
 | 블록 `kind` | `main` `agent` `task` `steer` `compact` `question` |
 | 블록 `status` | `running` `waiting` `completed` `error` `stopped` |
 | `accepted` | `started` `steered` `queued` |
@@ -141,7 +141,7 @@ MobilePermission {
 | POST | `/m1/sessions/{id}/settings` | `{ model?, permissionMode?, effort?, agentViewMode?, mightyStyle?, styleId? }` (하나 이상) | `{ protocol, ok }` · 실행 중이면 409 · 옵션에 없는 값 400 · `styleId`가 있으면 `mightyStyle`은 무시한다(아래 "스타일" 절) |
 | GET | `/m1/sessions/{id}/commands` | | `{ protocol, commands: [MobileCommand] }` |
 | POST | `/m1/sessions/{id}/command` | `{ action }` (`clear` `usage` `help`만) | `{ protocol, ok, message? }` — `usage`·`help`는 `message`에 본문 |
-| POST | `/m1/sessions/{id}/guided` | 새 형식 `{ styleId, actionId, text? }` · 레거시 `{ style: "ouroboros" \| "paperthin", skill, text? }` | 202 `{ protocol, accepted }` — 호스트가 Mac과 같은 함수로 프롬프트를 만든다(`/ouroboros:seed`, `/re0 docs/spec.md`). 스타일을 모르거나 승인되지 않음 400, 이 창이 그 스타일이 아님 409, 행동(스킬)을 모름 400. 자세한 값은 아래 "스타일" 절 |
+| POST | `/m1/sessions/{id}/guided` | 새 형식 `{ styleId, actionId, text? }` · 레거시 `{ style: "ouroboros", skill, text? }` | 202 `{ protocol, accepted }` — 호스트가 Mac과 같은 함수로 프롬프트를 만든다(`/ouroboros:seed`, `/re0 docs/spec.md`). 스타일을 모르거나 승인되지 않음 400, 이 창이 그 스타일이 아님 409, 행동(스킬)을 모름 400. 자세한 값은 아래 "스타일" 절 |
 | POST | `/m1/sessions/{id}/uploads` | `{ name, size, mimeType? }` | 201 `{ protocol, uploadId, chunkSize }` · 크기·개수 한도 초과 413 · 열어 둔 업로드가 너무 많으면 429(실행 창당 16개, 호스트 전체 64개) |
 | POST | `/m1/uploads/{uploadId}/chunks/{index}` | `{ dataBase64 }` | `{ protocol, ok, received }` — 순서대로 0부터. 이 라우트만 본문 한도 300 KiB |
 | POST | `/m1/uploads/{uploadId}/complete` | | `{ protocol, attachment: { id, name, size } }` · 크기가 선언과 다르면 400 |
@@ -157,7 +157,7 @@ MobilePermission {
 
 ```
 MobileInfo            { …, capabilities?: string[], direct?: string[] }   // direct: "direct" 기능과 함께, `host:port` 목록
-MobileSessionSummary  { …, agentViewMode?: "plain" | "mighty", mightyStyle?: "cli" | "ouroboros" | "paperthin",
+MobileSessionSummary  { …, agentViewMode?: "plain" | "mighty", mightyStyle?: "cli" | "ouroboros",
                         styleId?: string }
 MobileSessionDetail   { …, hasOlder?: boolean,
                         settings?: MobileSettings, mighty?: MobileMighty,
@@ -167,14 +167,14 @@ MobileSettings {
   editable: boolean,                         // 실행 중이면 false
   model, permissionMode, effort?, agentViewMode, mightyStyle, styleId,
   options: { models: [Option], permissionModes: [Option], efforts: [Option], mightyStyles: [Option], styles: [StyleOption] }
-}                                            // Option { id, label }. mightyStyles는 예전처럼 cli·내장 둘 중 적격한 것만.
+}                                            // Option { id, label }. mightyStyles는 예전처럼 cli·ouroboros 중 적격한 것만.
                                              // styles는 이 창이 실제로 고를 수 있는 것(cli + 승인·번들 스타일) — 아래 "스타일" 절
 MobileCommand { name, description, source, argumentHint?, action? }
                                              // action이 있으면 휴대폰이 직접 처리: model·permission → 설정 선택, rename → 이름 변경,
                                              // clear·usage·help → /command. action이 없으면 입력창에 "/name "을 넣는다.
                                              // Mac 화면을 여는 명령(/plugin, /config)은 목록에 넣지 않는다.
 MobileMighty {
-  style: "cli" | "ouroboros" | "paperthin",
+  style: "cli" | "ouroboros",
   styleId: string,                                                       // 아래 "스타일" 절
   runs: [{ id, input, title?, status, blocks: [MobileBlock], result? }], // 최근 20개 요청, 시간순
                                              // result(선택, 추가 필드)는 그 요청의 최종 결과(run.finalOutput)를 블록 output과 같은 규칙으로
@@ -185,9 +185,6 @@ MobileMighty {
                                              //   구버전 휴대폰은 무시하고, 신버전 휴대폰은 없으면 main 블록 output으로 "최종 결과" 카드를 그린다.
   panel?: MobileStylePanel,                                              // 아래 "스타일" 절
   ouroboros?: { phase, ready: boolean, takesText: [skill], next: [{ skill, title, help }], all: [{ skill, title, help }] },
-  paperthin?: { installed: boolean, recommended?: skill,
-                domains: [{ id, title, axis, question, skills: [{ name, emoji, summary, scope, userInvoked, readOnly }] }],
-                casebook?: { name, weight: "full" | "lightweight", files: [string] } },
   structure?: MobileStructure,                                           // 아래 "구조 보기" 절 — ?structure=로 물었을 때만, 바뀌었을 때만
   structureTag?: number                                                  // ?structure=로 물었을 때만. 0은 그릴 것이 없음
 }
@@ -246,11 +243,11 @@ Node { id, depth, title, status, kind: "agent" | "task", model?, prompt?, output
 
 ### 스타일 (style)
 
-하드코딩되어 있던 Ouroboros·Paperthin이 선언적 JSON 매니페스트로 구동되는 범용 엔진으로 바뀌면서(계약: [mighty-styles.md](mighty-styles.md)) 휴대폰도 스타일 id를 닫힌 두 값으로 알던 것을 멈추고 범용 패널 하나를 그리는 렌더러가 된다. 이 절은 `mighty-style-engine-v1` 태그에서 스키마·규칙 어휘와 함께 고정된다.
+하드코딩되어 있던 Ouroboros·Paperthin(Paperthin은 v7에서 지웠다)이 선언적 JSON 매니페스트로 구동되는 범용 엔진으로 바뀌면서(계약: [mighty-styles.md](mighty-styles.md)) 휴대폰도 스타일 id를 닫힌 두 값으로 알던 것을 멈추고 범용 패널 하나를 그리는 렌더러가 된다. 이 절은 `mighty-style-engine-v1` 태그에서 스키마·규칙 어휘와 함께 고정된다.
 
 **`styleId`와 `mightyStyle`이 함께 실리는 이유.** `capabilities`는 호스트가 광고하고 휴대폰은 읽기만 하므로, "휴대폰이 새 스타일 이름을 아는가"를 호스트는 알 수 없다. 그래서 두 필드를 **언제나 함께** 보낸다.
 
-- `mightyStyle`은 세 고정값(`cli`·`ouroboros`·`paperthin`) 안에서만 움직인다. `ouroboros`·`paperthin`이 아닌 스타일(번들 Superpowers 포함)이 실제로 돌고 있어도 이 필드에는 언제나 `cli`가 실린다.
+- `mightyStyle`은 고정값 `cli`·`ouroboros` 안에서만 움직인다(v6까지는 `paperthin`도 있었고 v7에서 뺐다). `ouroboros`가 아닌 스타일(번들 클러드 플랜 포함)이 실제로 돌고 있어도 이 필드에는 언제나 `cli`가 실린다. v7에서 지운 `paperthin`으로 저장된 실행 창도 `cli`로 나가고, 옛 휴대폰이 `mightyStyle: "paperthin"`을 보내면 선택지 밖이라 400이다.
 - `styleId`(신규, 선택)는 열린 문자열이다. 진짜 값은 언제나 여기 있다. **이 실행 창이 실제로 그 스타일로 돌고 있을 때만** 실제 id를 싣는다 — 미승인·취소·미등록·해시 불일치(마이티 스타일 계약 §3.4)는 모두 `"cli"`다. 저장된 값을 그대로 보내지 않는다: 미승인 스타일은 세션 요약 필드 하나로도 새어 나가지 않는다.
 - 구버전 휴대폰은 `styleId`를 모르고 무시하므로 그 실행 창을 그냥 일반 CLI로 본다.
 - 어긋날 때의 규칙은 하나뿐이다: **`styleId`가 있으면 `mightyStyle`은 무시한다.** `styleId`가 없고 `mightyStyle`만 있으면 그 값을 쓴다. 이 값이 붙는 자리는 `MobileSessionSummary.styleId?`, `MobileSettings.styleId`, `MobileMighty.styleId`다.
@@ -287,21 +284,21 @@ MobileStylePanel {
 - `style.source`·`presentation.source`가 `"bundled"`가 아니면, `name`이 나오는 자리(선택기 이름, 패널 머리글)에 이름 옆으로 출처 배지가 붙는다. 이름 위조를 막는 것은 휴대폰에서도 이 배지다.
 - `actions`는 **카탈로그 전체**(≤100)다. 화면에 무엇이 뜨는지는 `groups`와 `next`가 정한다.
 - `requiresText`는 **UI 힌트**다. 입력이 비어 있으면 그 칩을 비활성으로 그리되, `/guided` 라우트는 이 값을 강제하지 않는다.
-- `attachments`는 읽기 전용 정보다. 휴대폰에는 파일을 여는 길이 없으므로 경로를 싣지 않는다.
+- `attachments`는 v7부터 언제나 빈 배열이다(첨부를 내던 내장 기능 `paperthin.casebook`을 v7에서 지웠다). 필드는 남는다 — v7 이전의 휴대폰이 읽기 때문이다. 휴대폰에는 파일을 여는 길이 없으므로 경로는 그전에도 싣지 않았다.
 - `setup.installCommand`는 보여 주기 위한 것뿐이다. 휴대폰에서 그 명령을 실행하는 라우트는 없다.
 
 **실행 중의 규칙.** 단계로 진행하는(`NextRule.byPhase`) 스타일은 실행 중일 때 `next`가 **빈 배열**이고 `guidance`는 실행 중 안내 문구다 — 다음 단계로 넘어갈 버튼이 없기 때문이다. 그룹으로 고르는(`byGroup`) 스타일은 실행 중에도 `next`와 칩이 평소와 같다 — 누른 것이 다음 요청으로 대기열에 줄을 선다. 같은 실행 창을 Mac에서 볼 때와 같은 규칙이다.
 
 #### 레거시 페이로드
 
-내장 두 스타일(`ouroboros`·`paperthin`)에 한해 `mighty.ouroboros` / `mighty.paperthin`은 **계속 나간다**. 필드 모양은 이전과 같고, 값은 이제 매니페스트 엔진에서 만들어진다(레거시 어댑터가 맡는다). 구버전 휴대폰은 이 필드만 읽으므로 아무것도 바뀐 것을 모른다. 내장 둘이 아닌 스타일에는 이 두 필드가 붙지 않는다 — 새 `panel` 하나만 붙는다.
+번들 Ouroboros에 한해 `mighty.ouroboros`는 **계속 나간다**. 필드 모양은 이전과 같고, 값은 이제 매니페스트 엔진에서 만들어진다(레거시 어댑터가 맡는다). 구버전 휴대폰은 이 필드만 읽으므로 아무것도 바뀐 것을 모른다. Ouroboros가 아닌 스타일에는 이 필드가 붙지 않는다 — 새 `panel` 하나만 붙는다. v6까지는 번들 Paperthin의 `mighty.paperthin`도 나갔고 v7에서 그 스타일과 함께 지웠다.
 
 #### `/guided`의 새·옛 형식
 
 ```
 POST /m1/sessions/{id}/guided
 새 형식: { styleId, actionId, text? }
-레거시:  { style: "ouroboros" | "paperthin", skill, text? }
+레거시:  { style: "ouroboros", skill, text? }
 ```
 
 둘 다 올 수 있으면 **새 형식이 이긴다**. `style` capability를 모르는 구버전 호스트에는 새 형식이 400으로 거절되므로, 그 capability가 없는 호스트를 상대할 때는 휴대폰이 처음부터 레거시 형식을 보낸다(패널을 고른 것과 같은 capability 판정이 본문도 고른다). 오류는 오늘 문자열 그대로다.
@@ -310,13 +307,13 @@ POST /m1/sessions/{id}/guided
 - 이 실행 창이 그 스타일이 아니다 → **409** `"이 실행 창은 <스타일 id> 스타일이 아닙니다."`(id를 끼워 넣는다. 이름이 아니다.)
 - 행동(스킬)을 모른다 → **400** `"이 스타일에 없는 스킬입니다."`
 - `actionId`(레거시의 `skill`)는 `^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$`, 64바이트 이하.
-- `text`는 지금처럼 32 KiB까지이고, 두 스타일 모두 줄바꿈을 공백으로 접어 한 줄로 보낸다.
+- `text`는 지금처럼 32 KiB까지이고, 줄바꿈은 매니페스트의 `foldText` 규칙대로 접는다(`oneLine`은 공백으로 접어 한 줄).
 - `requiresText`는 **검사하지 않는다** — UI 힌트일 뿐이다.
 
 #### 구버전 휴대폰 ↔ 신버전 호스트, 신버전 휴대폰 ↔ 구버전 호스트
 
-- **구버전 휴대폰이 신버전 호스트를 볼 때**: `capabilities`에서 `"style"`을 모르므로 `styleId`·`panel`·`options.styles`를 전부 무시한다. `mightyStyle`은 여전히 셋 중 하나이므로 내장 둘은 그대로 보이고, 그 밖의 스타일이 도는 실행 창은 `cli`로 보인다(일반 CLI 화면). 내장 두 스타일의 레거시 페이로드는 그대로 나가므로 오늘과 똑같이 동작한다.
-- **신버전 휴대폰이 구버전 호스트를 볼 때**: `capabilities`에 `"style"`이 없으므로 `mighty.panel`도 `options.styles`도 오지 않고, 새 렌더러는 `mighty.ouroboros`/`mighty.paperthin`(있는 경우)만으로 패널을 그린다. `/guided`는 레거시 본문 `{style, skill}`을 보내고, `/settings`는 `mightyStyle`만 보낸다.
+- **구버전 휴대폰이 신버전 호스트를 볼 때**: `capabilities`에서 `"style"`을 모르므로 `styleId`·`panel`·`options.styles`를 전부 무시한다. `mightyStyle`은 여전히 `cli`·`ouroboros` 중 하나이므로 Ouroboros는 그대로 보이고, 그 밖의 스타일이 도는 실행 창은 `cli`로 보인다(일반 CLI 화면). Ouroboros의 레거시 페이로드는 그대로 나가므로 오늘과 똑같이 동작한다.
+- **신버전 휴대폰이 구버전 호스트를 볼 때**: `capabilities`에 `"style"`이 없으므로 `mighty.panel`도 `options.styles`도 오지 않고, 새 렌더러는 `mighty.ouroboros`(있는 경우)만으로 패널을 그린다. `/guided`는 레거시 본문 `{style, skill}`을 보내고, `/settings`는 `mightyStyle`만 보낸다.
 
 **휴대폰은 스타일을 등록·승인·취소·재스캔할 수 없다.** 그 넷은 데스크톱 앱(Mac·Windows)에서만 한다(마이티 스타일 계약 §4.5). 휴대폰의 승인 여부는 오직 `styleId`·`options.styles`의 결과로만 드러난다.
 
@@ -403,7 +400,7 @@ MobileFilePreview {
 - `MightyCore/Remote/MobileDeviceRegistry.swift`: 기기 토큰 등록부와 인증 판정(`devices.json`).
 - `MightyCore/Remote/MobileWorkspaceFiles.swift`: 파일 라우트의 경로 거르기, 목록·미리보기 모양, 응답 크기 맞추기, 썸네일(svg는 `MobileHostDelegate.mobileSVGRasterizer`로 앱이 그림).
 - `MightyCore/Styles/StylePanelProjection.swift`: `MobileMighty.panel`이 되는 `StylePanel`의 모양과 골든 직렬화. Mac 패널과 같은 함수가 만든다(스타일 엔진 계약: [mighty-styles.md](mighty-styles.md) §5.6·§7.3).
-- `MightyCore/Remote/MobileLegacyStyleAdapter.swift`: 내장 두 스타일의 `mighty.ouroboros`/`mighty.paperthin`을 같은 투영에서 만드는 레거시 어댑터.
+- `MightyCore/Remote/MobileLegacyStyleAdapter.swift`: 번들 Ouroboros의 `mighty.ouroboros`를 같은 투영에서 만드는 레거시 어댑터.
 - `MightyCore/Remote/MobileStructure.swift`: `mighty.structure`의 모양·한도와 창별 캐시(`MobileStructureCache`). `MightyStructure.make`의 결과를 그대로 줄인다.
 
 ## 모바일 앱
