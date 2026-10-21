@@ -51,7 +51,7 @@ struct StylesClaudePlanTests {
 
     // MARK: Manifest
 
-    @Test func theBundledManifestDeclaresThePlanFlow() {
+    @Test func theBundledManifestDeclaresThePlanFlow() throws {
         let manifest = style.manifest
         #expect(style.source == .bundled && manifest.name == "클러드 플랜")
         #expect(manifest.orderedPhases.map(\.title) == ["계획", "승인", "실행"])
@@ -67,11 +67,11 @@ struct StylesClaudePlanTests {
         #expect(manifest.rules.enter == .verbatim)
         #expect(PlanCardSupport.styleDrawsTasks(manifest))
         #expect(!PlanCardSupport.styleDrawsTasks(StyleFixtures.bundled("ouroboros").manifest))
-        #expect(!PlanCardSupport.styleDrawsTasks(StyleFixtures.statefulStyle.manifest))
+        #expect(!PlanCardSupport.styleDrawsTasks(try StyleFixtures.statefulStyle.manifest))
     }
 
-    @Test func theOtherStylesDoNotReadThePlanStage() {
-        for manifest in [StyleFixtures.bundled("ouroboros").manifest, StyleFixtures.statefulStyle.manifest] {
+    @Test func theOtherStylesDoNotReadThePlanStage() throws {
+        for manifest in [StyleFixtures.bundled("ouroboros").manifest, try StyleFixtures.statefulStyle.manifest] {
             #expect(!manifest.readsPlanState && manifest.launch == nil)
         }
     }
@@ -151,7 +151,7 @@ struct StylesClaudePlanTests {
         #expect(StyleStateEngine.planStage(session: empty, pendingPlan: false) == .executing)
     }
 
-    @Test func thePhaseFollowsTheStageNotTheRequestHistory() {
+    @Test func thePhaseFollowsTheStageNotTheRequestHistory() throws {
         #expect(evaluator.currentPhase(prompts: ["[검증] x"])?.id == "plan")
         #expect(evaluator.currentPhase(planStage: .awaitingApproval)?.id == "approve")
         #expect(evaluator.currentPhase(prompts: ["[계획] x"], fileSourceStates: [:], planStage: .executing)?.id == "execute")
@@ -159,7 +159,7 @@ struct StylesClaudePlanTests {
         #expect(evaluator.currentPhase(session: session, fileSourceStates: [:], planStage: .executing)?.id == "execute")
         #expect(evaluator.currentPhase(session: session)?.id == "plan")
         // Another style is not touched by a stage.
-        #expect(StyleFixtures.statefulStyle.evaluator.currentPhase(prompts: [], fileSourceStates: [:], planStage: .executing)?.id == "brainstorm")
+        #expect(try StyleFixtures.statefulStyle.evaluator.currentPhase(prompts: [], fileSourceStates: [:], planStage: .executing)?.id == "sketch")
     }
 
     // MARK: Chips, lines
@@ -181,7 +181,7 @@ struct StylesClaudePlanTests {
         #expect(evaluator.enterBehaviour(draft: "결제", phase: plan, hasAttachments: false, running: false, hasRequests: false) == .verbatim)
     }
 
-    @Test func theApprovalCardShowsTheLaunchAndThePlanState() {
+    @Test func theApprovalCardShowsTheLaunchAndThePlanState() throws {
         let sections = LocaleOverride.$language.withValue(.ko) { StyleApprovalCard.sections(style) }
         let launch = sections.first { $0.id == "launch" }
         #expect(launch?.foldable == false)
@@ -191,7 +191,7 @@ struct StylesClaudePlanTests {
         #expect(state.contains("실행 상태 background · 위젯 taskList"))
         #expect(state.contains("단계 approve ← 계획 상태 awaitingApproval"))
         #expect(sections.first { $0.id == "launch" } != nil)
-        #expect(StyleApprovalCard.sections(StyleFixtures.statefulStyle).first { $0.id == "launch" } == nil)
+        #expect(StyleApprovalCard.sections(try StyleFixtures.statefulStyle).first { $0.id == "launch" } == nil)
     }
 
     // MARK: Widgets

@@ -101,9 +101,9 @@ internal static class MightyStructureVerification
         // The flow went back to the interview after a seed.
         var back = MightyStructure.Make([Run("r1", "ooo seed"), Run("r2", "ooo interview 다시")], flow, Phase(flow, "interview"));
         Check(Cards(back) == "|r2|r1|||" && Steps(back) == "done,current,done,pending,pending,pending", "a column holding cards is never pending: " + Cards(back) + " " + Steps(back));
-        // Four phases: brainstorm, plan, execute, finish.
+        // Four phases: sketch, outline, build, wrap.
         var loop = StyleFixtures.StatefulStyle.Evaluator;
-        Check(Steps(MightyStructure.Make([Run("r1", "/loop:brainstorming 아이디어"), Run("r2", "/loop:writing-plans")], loop, null)) == "done,current,pending,pending", "with no current phase the newest request's phase is current");
+        Check(Steps(MightyStructure.Make([Run("r1", "/loop:sketch-idea 아이디어"), Run("r2", "/loop:write-outline")], loop, null)) == "done,current,pending,pending", "with no current phase the newest request's phase is current");
 
         var runs = new[]
         {

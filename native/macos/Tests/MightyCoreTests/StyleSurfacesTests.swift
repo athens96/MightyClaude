@@ -49,28 +49,28 @@ struct StyleSurfacesTests {
         #expect(restarted.actions.map(\.id) == ["interview", "auto"] && restarted.reset == .cancel && restarted.phaseId == "goal")
 
         // `byGroup` has no prominent chip; the recommendation is the emphasis.
-        let catalogue = StyleFixtures.catalogueStyle
-        let coil = catalogue.manifest.group("coil")
-        let group = StyleChips.make(catalogue.evaluator, phase: nil, group: coil, startingNew: false,
+        let catalogue = try StyleFixtures.catalogueStyle
+        let far = catalogue.manifest.group("far")
+        let group = StyleChips.make(catalogue.evaluator, phase: nil, group: far, startingNew: false,
                                     capabilityStates: ["acme.thing": "open"])
-        #expect(group.actions.map(\.id) == ["plan", "loop", "memo", "work", "nba"])
-        #expect(group.prominentId == nil && group.recommendedId == "loop" && group.reset == .none)
+        #expect(group.actions.map(\.id) == ["draft", "cycle", "note", "reset", "peek"])
+        #expect(group.prominentId == nil && group.recommendedId == "cycle" && group.reset == .none)
         // The recommendation follows the feature, not the group being looked
         // at; the chip is simply absent from a row that does not contain it.
-        let depth = StyleChips.make(catalogue.evaluator, phase: nil, group: catalogue.manifest.group("depth"), startingNew: false,
+        let near = StyleChips.make(catalogue.evaluator, phase: nil, group: catalogue.manifest.group("near"), startingNew: false,
                                     capabilityStates: ["acme.thing": "open"])
-        #expect(depth.recommendedId == "loop" && !depth.actions.contains { $0.id == "loop" })
+        #expect(near.recommendedId == "cycle" && !near.actions.contains { $0.id == "cycle" })
         // A catalogue under a group map is a grid; a phase row is one line.
-        #expect(group.grid && depth.grid && !start.grid && !next.grid)
+        #expect(group.grid && near.grid && !start.grid && !next.grid)
     }
 
     @Test func aChipsTooltipNamesItsScopeAndItsFlags() throws {
-        let catalogue = StyleFixtures.catalogueStyle
-        let hate = try #require(catalogue.manifest.action("hate"))
-        #expect(StyleChips.help(hate) == "계획의 가장 약한 곳을 찾아 반론 하나와 그것을 확인할 테스트를 냅니다 \u{00B7} 범위: 계획 하나 \u{00B7} 사람만 부를 수 있는 스킬")
-        let nba = try #require(catalogue.manifest.action("nba"))
+        let catalogue = try StyleFixtures.catalogueStyle
+        let probe = try #require(catalogue.manifest.action("probe"))
+        #expect(StyleChips.help(probe) == "약한 곳 하나를 짚어 묻습니다 \u{00B7} 범위: 질문 하나 \u{00B7} 사람만 부를 수 있는 스킬")
+        let peek = try #require(catalogue.manifest.action("peek"))
         // Both flags, in the order the tooltip names them.
-        #expect(StyleChips.help(nba) == "다음 한 수를 고릅니다 \u{00B7} 범위: 현재 사이클 \u{00B7} 사람만 부를 수 있는 스킬 \u{00B7} 읽기 전용")
+        #expect(StyleChips.help(peek) == "지금 상태를 들여다봅니다 \u{00B7} 범위: 지금 상태 \u{00B7} 사람만 부를 수 있는 스킬 \u{00B7} 읽기 전용")
         // No scope and no flags: the help line stands by itself, as today.
         let seed = try #require(StyleFixtures.bundled("ouroboros").manifest.action("seed"))
         #expect(StyleChips.help(seed) == "인터뷰 결과를 불변 명세(시드)로 굳힙니다")
@@ -131,8 +131,9 @@ struct StyleSurfacesTests {
         #expect(sections[7].title == "행동 10개" && sections[7].lines.contains("/ouroboros:unstuck {text}"))
         #expect(sections[8].lines.first == "아이콘 point.3.connected.trianglepath.dotted")
 
-        let catalogue = StyleApprovalCard.sections(StyleFixtures.catalogueStyle)
-        #expect(catalogue[1].lines == ["자동 허용 없음"] && !StyleApprovalCard.requiresSecondConfirmation(StyleFixtures.catalogueStyle))
+        let deck = try StyleFixtures.catalogueStyle
+        let catalogue = StyleApprovalCard.sections(deck)
+        #expect(catalogue[1].lines == ["자동 허용 없음"] && !StyleApprovalCard.requiresSecondConfirmation(deck))
         #expect(catalogue.first { $0.id == "enter" }?.lines == ["입력창의 글을 그대로 요청으로 보냅니다."])
         #expect(catalogue.first { $0.id == "rules" }?.lines.contains("다음 \u{00B7} 고른 그룹의 행동") == true)
 
@@ -148,7 +149,8 @@ struct StyleSurfacesTests {
     @Test func theApprovalCardShowsEveryStateSourceTheEngineWillRead() throws {
         // §1.16.6: the card names each file glob with its parser, each run-event
         // source with its aggregate, and each phase override — nothing folded.
-        let sections = LocaleOverride.$language.withValue(.ko) { StyleApprovalCard.sections(StyleFixtures.statefulStyle) }
+        let stateful = try StyleFixtures.statefulStyle
+        let sections = LocaleOverride.$language.withValue(.ko) { StyleApprovalCard.sections(stateful) }
         // The fixture declares no install command, so it has no install block.
         #expect(sections.map(\.id) == ["origin", "autoAllow", "enter", "state", "identity", "structure", "rules", "actions", "presentation"])
         let state = try #require(sections.first { $0.id == "state" })
@@ -156,8 +158,8 @@ struct StyleSurfacesTests {
         #expect(state.lines == [
             "파일 docs/plans/*.md · 파서 markdownChecklist · 위젯 progressBar",
             "실행 이벤트 subagent.start · 집계 count · 위젯 label",
-            "단계 execute ← docs/plans/*.md fileExists",
-            "단계 finish ← docs/plans/*.md allChecked",
+            "단계 build ← docs/plans/*.md fileExists",
+            "단계 wrap ← docs/plans/*.md allChecked",
         ])
 
         // An untrusted repository manifest gets the same block, in the app's language.

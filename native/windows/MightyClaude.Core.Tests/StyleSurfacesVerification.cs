@@ -42,10 +42,10 @@ internal static class StyleSurfacesVerification
     {
         // A catalogue whose feature exists only in the test vocabulary (§1.8): no bundled style is one since v7.
         var catalogue = StyleFixtures.CatalogueStyle;
-        var nba = catalogue.Manifest.Actions.Single(a => a.Id == "nba"); var hate = catalogue.Manifest.Actions.Single(a => a.Id == "hate");
-        Check(nba.Scope == "현재 사이클" && hate.Scope == "계획 하나" && hate.Flags!.SequenceEqual(["userInvoked"]) && hate.Glyph == "😈", "Scope, glyph and each action flag survive manifest decoding.");
-        Check(nba.Flags!.SequenceEqual(["userInvoked", "readOnly"]), "Both action flags survive manifest decoding, in order.");
-        Check(catalogue.Evaluator.RecommendedAction(new Dictionary<string, string> { ["acme.thing"] = "complete" }) == "work" && catalogue.Evaluator.DrawsGroupMap, "A feature's state drives catalogue recommendations and map presentation.");
+        var peek = catalogue.Manifest.Actions.Single(a => a.Id == "peek"); var probe = catalogue.Manifest.Actions.Single(a => a.Id == "probe");
+        Check(peek.Scope == "지금 상태" && probe.Scope == "질문 하나" && probe.Flags!.SequenceEqual(["userInvoked"]) && probe.Glyph == "🔍", "Scope, glyph and each action flag survive manifest decoding.");
+        Check(peek.Flags!.SequenceEqual(["userInvoked", "readOnly"]), "Both action flags survive manifest decoding, in order.");
+        Check(catalogue.Evaluator.RecommendedAction(new Dictionary<string, string> { ["acme.thing"] = "complete" }) == "reset" && catalogue.Evaluator.DrawsGroupMap, "A feature's state drives catalogue recommendations and map presentation.");
         var numeric = StylePresentation.Progress(new("progressBar", Value: 7));
         Check(numeric is { Fraction: 0, Text: "7" }, "A bare counter displays its count without inventing a total.");
         Check(StylePresentation.Progress(new("progressBar", Value: 7, Total: 4)) is { Fraction: 1, Text: "4/4" }, "Progress clamps to a declared total.");

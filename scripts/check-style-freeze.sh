@@ -7,8 +7,8 @@
 # 준비 중인 고정(§8.3 "다음 고정을 준비하는 동안"): 태그를 주지 않았는데 기본 태그가
 # 아직 없고 styles/STYLE_FREEZE_PENDING이 있으면, 검사는 건너뛰지 않고 직전 고정
 # (그 파일 첫 줄의 태그)으로 돈다. 그때 고정 경로 중 그 파일이 적은 경로만 바뀌어도
-# 되고, 직전 태그의 번들 매니페스트·골든·코퍼스는 바이트 그대로여야 한다(새 파일만
-# 더할 수 있다). `--pending <file>`은 같은 일을 태그를 직접 주고 한다.
+# 되고, 직전 태그의 번들 매니페스트·골든·코퍼스·테스트 전용 픽스처는 바이트 그대로여야
+# 한다(새 파일만 더할 수 있다). `--pending <file>`은 같은 일을 태그를 직접 주고 한다.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -45,14 +45,14 @@ ALLOWED=""
 if [ -n "$PENDING" ]; then
   [ -f "$ROOT/$PENDING" ] || fail_closed "준비 중인 고정 목록이 없습니다: ${PENDING}"
   ALLOWED="$(grep -v '^[[:space:]]*#' "$ROOT/$PENDING" | grep -v '^previous-tag:' | sed '/^[[:space:]]*$/d')"
-  # 직전 고정의 번들 매니페스트·골든·코퍼스는 바이트 그대로다. 더하는 것만 된다.
+  # 직전 고정의 번들 매니페스트·골든·코퍼스·픽스처는 바이트 그대로다. 더하는 것만 된다.
   git -C "$ROOT" diff --quiet --exit-code --no-renames --diff-filter=MDR "$TAG" HEAD -- \
-    native/macos/Sources/MightyCore/Resources/Styles styles/golden styles/conformance
+    native/macos/Sources/MightyCore/Resources/Styles styles/golden styles/conformance styles/fixtures
   LOCK=$?
   if [ "$LOCK" -eq 1 ]; then
-    echo "직전 고정의 번들 매니페스트·골든·코퍼스가 바뀌었습니다:" >&2
+    echo "직전 고정의 번들 매니페스트·골든·코퍼스·픽스처가 바뀌었습니다:" >&2
     git -C "$ROOT" -c core.quotePath=false diff --name-only --no-renames --diff-filter=MDR "$TAG" HEAD -- \
-      native/macos/Sources/MightyCore/Resources/Styles styles/golden styles/conformance >&2
+      native/macos/Sources/MightyCore/Resources/Styles styles/golden styles/conformance styles/fixtures >&2
     exit 1
   fi
   [ "$LOCK" -eq 0 ] || fail_closed "직전 고정과의 비교를 읽지 못했습니다: ${TAG}..HEAD"
@@ -99,14 +99,16 @@ segment_match() {
   return 0
 }
 
-# 3. 고정된 것은 엔진이다: 엔진 코드, 번들 매니페스트, 동등성 오라클 테스트, 폰 렌더러,
-#    이 계약 문서, 이 검사와 그것을 부르는 워크플로. 나머지 앱 개발은 태그와 상관없다.
+# 3. 고정된 것은 엔진이다: 엔진 코드, 번들 매니페스트, 동등성 오라클 테스트와 그 테스트 전용
+#    픽스처(styles/fixtures), 폰 렌더러, 이 계약 문서, 이 검사와 그것을 부르는 워크플로.
+#    나머지 앱 개발은 태그와 상관없다.
 #    제삼자 스타일의 테스트 두 글롭만 오라클 이름 안에서 예외다.
 frozen() {
   case "$1" in
     styles/FREEZE) return 0 ;;
     native/macos/Sources/MightyCore/Styles/*) return 0 ;;
     native/macos/Sources/MightyCore/Resources/Styles/*) return 0 ;;
+    styles/fixtures/*) return 0 ;;
     mobile/src/lib/styles.ts) return 0 ;;
     docs/mighty-styles.md) return 0 ;;
     scripts/check-style-freeze.sh) return 0 ;;

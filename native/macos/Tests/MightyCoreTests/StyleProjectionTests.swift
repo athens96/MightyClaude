@@ -47,22 +47,22 @@ struct StyleProjectionTests {
 
     @Test func groupsAndTheRecommendationTravel() throws {
         // The feature exists only in the test vocabulary since v7 (§1.8).
-        let style = StyleFixtures.catalogueStyle
-        let coil = panel(style, group: "coil", states: ["acme.thing": "open"])
-        #expect(coil.phase == nil && coil.groups.count == 2)
-        #expect(coil.groups.first { $0.selected }?.id == "coil" && coil.groups.first { $0.id == "depth" }?.axis == "하나 \u{00B7} 지금")
-        #expect(coil.next == ["plan", "loop", "memo", "work", "nba"])
-        #expect(coil.recommended == "loop")
-        #expect(coil.actions.count == 7 && coil.actions.first { $0.id == "nba" }?.flags == ["userInvoked", "readOnly"])
-        #expect(coil.actions.first { $0.id == "hate" }?.flags == ["userInvoked"] && coil.actions.first { $0.id == "hate" }?.glyph == "😈")
-        #expect(coil.presentation.headerTitle == "Deck")
+        let style = try StyleFixtures.catalogueStyle
+        let far = panel(style, group: "far", states: ["acme.thing": "open"])
+        #expect(far.phase == nil && far.groups.count == 2)
+        #expect(far.groups.first { $0.selected }?.id == "far" && far.groups.first { $0.id == "near" }?.axis == "가까이 \u{00B7} 지금")
+        #expect(far.next == ["draft", "cycle", "note", "reset", "peek"])
+        #expect(far.recommended == "cycle")
+        #expect(far.actions.count == 7 && far.actions.first { $0.id == "peek" }?.flags == ["userInvoked", "readOnly"])
+        #expect(far.actions.first { $0.id == "probe" }?.flags == ["userInvoked"] && far.actions.first { $0.id == "probe" }?.glyph == "🔍")
+        #expect(far.presentation.headerTitle == "Deck")
         // Nothing offers an attachment any more, but the field still travels
         // for a phone that predates v7.
-        #expect(coil.attachments.isEmpty)
-        let encoded = String(data: try StylePanelProjection.serialise(coil), encoding: .utf8) ?? ""
+        #expect(far.attachments.isEmpty)
+        let encoded = String(data: try StylePanelProjection.serialise(far), encoding: .utf8) ?? ""
         #expect(encoded.contains("\"attachments\" : ["))
         // The initial group comes from the capability when none was chosen yet.
-        #expect(panel(style, states: ["acme.thing": "absent"]).groups.first { $0.selected }?.id == "depth")
+        #expect(panel(style, states: ["acme.thing": "absent"]).groups.first { $0.selected }?.id == "near")
     }
 
     @Test func aNonBundledStyleNamesItsSourceEverywhere() throws {

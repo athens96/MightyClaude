@@ -35,6 +35,23 @@ struct StyleGoldenContractTests {
         }
     }
 
+    /// Every golden belongs to something that is compared: a repository
+    /// manifest of `styles/*.json`, a bundled style or a fixture of
+    /// `styles/fixtures/` — no golden is left that nothing produces.
+    @Test func noGoldenIsLeftUnused() throws {
+        let goldens = try FileManager.default.contentsOfDirectory(at: StyleGolden.goldenDirectory,
+                                                                  includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+            .map(\.lastPathComponent).filter { $0.hasSuffix(".panel.json") }
+        let fixtures = try FileManager.default.contentsOfDirectory(at: StyleGolden.fixturesDirectory,
+                                                                   includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+            .filter { $0.pathExtension == "json" }
+        let repository = try manifests().map { try StyleManifestDecoder.decode(Data(contentsOf: $0), source: .user).id }
+        let bundled = BundledStyles.shared.styles().map(\.manifest.id)
+        let fixtureIds = try fixtures.map { try StyleFixtures.fixtureStyle($0.deletingPathExtension().lastPathComponent).manifest.id }
+        #expect(!bundled.isEmpty && !fixtureIds.isEmpty && !repository.isEmpty)
+        #expect(Set(goldens) == Set((repository + bundled + fixtureIds).map { $0 + ".panel.json" }))
+    }
+
     /// The bundled styles are the phone lane's real fixtures, recorded the
     /// same way a third-party style will be. (`claude-plan` has its own test
     /// below.)
@@ -47,12 +64,18 @@ struct StyleGoldenContractTests {
     }
 
     /// The test-only manifests of `styles/fixtures/` (§8.4) are recorded and
-    /// compared whole like the bundled styles, so the cases no bundled style
-    /// exercises since v7 — state sources, a group map, a feature-fed
-    /// recommendation, both action flags — stay in the cross-platform goldens
-    /// Windows Core and the phone read too. Each is decoded as an approved
-    /// user style under `StyleFixtures.testCapabilities`, the only vocabulary
-    /// `deck` decodes under; Windows Core loads them the same way.
+    /// compared whole like the bundled styles, so what no bundled style
+    /// exercises since v7 — state sources, a group map, an action with both
+    /// flags — stays in the cross-platform goldens Windows Core and the phone
+    /// read too. Each is decoded as an approved user style under
+    /// `StyleFixtures.testCapabilities`, the only vocabulary `deck` decodes
+    /// under; Windows Core loads them the same way. The fixed inputs read no
+    /// feature state, so `deck`'s golden records its first group as the
+    /// fallback and no recommendation: the feature-chosen first group and the
+    /// recommendation are the engine tests' (`StyleEvaluatorTests`
+    /// `groupRulesReadTheCapabilityStateOnce`, `StyleCapabilityTests`
+    /// `aKnownFeatureStillDrivesTheRecommendationAndTheFirstGroup`,
+    /// `StyleProjectionTests.groupsAndTheRecommendationTravel`).
     @Test func theFixtureManifestsHaveGoldens() throws {
         let found = try FileManager.default.contentsOfDirectory(at: StyleGolden.fixturesDirectory,
                                                                 includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
@@ -61,7 +84,7 @@ struct StyleGoldenContractTests {
         var projections: [StyleGolden.Projection] = []
         for name in names {
             let id = String(name.dropLast(".json".count))
-            let style = StyleFixtures.fixtureStyle(id)
+            let style = try StyleFixtures.fixtureStyle(id)
             #expect(style.manifest.id == id)
             let projection = StyleGolden.projection(for: style)
             projections.append(projection)
@@ -70,9 +93,9 @@ struct StyleGoldenContractTests {
         // `lastGroup` is not `firstGroup` again for at least one golden, so
         // the `byGroup` input is not vacuous.
         #expect(projections.contains { $0.lastGroup != $0.firstGroup })
-        let deck = StyleGolden.projection(for: StyleFixtures.catalogueStyle)
-        #expect(deck.firstGroup.next == ["tidy", "hate"] && deck.lastGroup.next == ["plan", "loop", "memo", "work", "nba"])
-        #expect(deck.empty.actions.first { $0.id == "nba" }?.flags == ["userInvoked", "readOnly"])
+        let deck = StyleGolden.projection(for: try StyleFixtures.catalogueStyle)
+        #expect(deck.firstGroup.next == ["sweep", "probe"] && deck.lastGroup.next == ["draft", "cycle", "note", "reset", "peek"])
+        #expect(deck.empty.actions.first { $0.id == "peek" }?.flags == ["userInvoked", "readOnly"])
     }
 
     /// §1.16: a style with file and run-event sources records what the engine
@@ -82,11 +105,11 @@ struct StyleGoldenContractTests {
     /// either kind since v7, so the `loop` fixture stands in; its golden is
     /// compared in `theFixtureManifestsHaveGoldens`.
     @Test func aStyleWithFileAndRunEventSourcesRecordsItsReading() throws {
-        let projection = StyleGolden.projection(for: StyleFixtures.statefulStyle)
+        let projection = StyleGolden.projection(for: try StyleFixtures.statefulStyle)
         let withState = try #require(projection.withState)
         #expect(withState.widgets == [.progressBar(value: 3, total: 7), .label(text: "서브에이전트 2회 시작")])
-        #expect(withState.phase?.id == "execute")
-        #expect(projection.empty.phase?.id == "brainstorm" && projection.empty.widgets == nil)
+        #expect(withState.phase?.id == "build")
+        #expect(projection.empty.phase?.id == "sketch" && projection.empty.widgets == nil)
         #expect(projection.planStages == nil)
         // The case survives its own serialisation, widgets and all.
         let decoded = try JSONDecoder().decode(StyleGolden.Projection.self, from: StyleGolden.serialise(projection))

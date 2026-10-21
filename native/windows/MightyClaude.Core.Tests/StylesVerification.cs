@@ -108,11 +108,11 @@ internal static class StylesVerification
         Check(Code(extra,vocabulary:test)=="E_UNKNOWN_REFERENCE"&&Code(noMap,vocabulary:test)=="E_MISSING_FIELD","a state the feature lacks is an unknown reference, and a rule without its map is missing a field");
         // The evaluator reads a feature's state as it always did, so a feature added later recommends and seeds a group without engine work.
         var catalogue=StyleFixtures.CatalogueStyle;var evaluator=catalogue.Evaluator;
-        Check(evaluator.RecommendedAction(new Dictionary<string,string>{["acme.thing"]="complete"})=="work"&&evaluator.RecommendedAction(new Dictionary<string,string>()) is null,"the recommendation follows the feature's state, and none before it is read");
-        Check(evaluator.InitialGroup(new Dictionary<string,string>{["acme.thing"]="open"})?.Id=="coil"&&evaluator.InitialGroup(new Dictionary<string,string>())?.Id=="depth","the first group follows the feature's state; not read yet, the first group");
+        Check(evaluator.RecommendedAction(new Dictionary<string,string>{["acme.thing"]="complete"})=="reset"&&evaluator.RecommendedAction(new Dictionary<string,string>()) is null,"the recommendation follows the feature's state, and none before it is read");
+        Check(evaluator.InitialGroup(new Dictionary<string,string>{["acme.thing"]="open"})?.Id=="far"&&evaluator.InitialGroup(new Dictionary<string,string>())?.Id=="near","the first group follows the feature's state; not read yet, the first group");
         // The phone has no group of its own and production passes none, so the recommendation has to survive that (§7.4).
         var panel=StylePanelProjection.Make(catalogue,[],null,new Dictionary<string,string>{["acme.thing"]="complete"},new(true,[],null,null));
-        Check(panel.Recommended=="work"&&panel.Groups.Single(g=>g.Selected).Id=="coil","the panel carries the recommendation and the group it seeds");
+        Check(panel.Recommended=="reset"&&panel.Groups.Single(g=>g.Selected).Id=="far","the panel carries the recommendation and the group it seeds");
         // Nothing offers a chip any more, but the field is still sent, empty, for a phone that predates v7.
         using var wire=JsonDocument.Parse(StylePanelProjection.Serialise(panel));
         Check(panel.Attachments.Count==0&&wire.RootElement.GetProperty("attachments").GetArrayLength()==0,"attachments travel, always empty");
@@ -257,7 +257,7 @@ internal static class StylesVerification
         Check(!StyleChangeWatcher.Concerns([At("src","a.cs"),At(".claude","settings.json")],workspace,manifest)&&!StyleChangeWatcher.Concerns([At("docs","plans","plan.md")],workspace,null),"other files concern no one");
         Check(StyleChangeWatcher.Concerns([At("src","a.cs"),At("docs","plans","plan.md")],workspace,manifest),"one file of a source among others");
         // No built-in feature reads a folder since v7: a style that names one is moved by nothing beyond its own sources.
-        Check(!StyleChangeWatcher.Concerns([At(".re0","iteration","0.1.0","DESIGN.local.md")],workspace,StyleFixtures.CatalogueStyle.Manifest)&&!StyleChangeWatcher.Concerns([At(".re0","iteration","0.1.0","DESIGN.local.md")],workspace,manifest),"a folder no source names concerns no style");
+        Check(!StyleChangeWatcher.Concerns([At("notes","x.md")],workspace,StyleFixtures.CatalogueStyle.Manifest)&&!StyleChangeWatcher.Concerns([At("notes","x.md")],workspace,manifest),"a folder no source names concerns no style");
         return Task.CompletedTask;
     }
     /// The watcher itself: a folder that is not there yet, a file written in it, the folder taken away and put back, and silence once disposed.

@@ -50,18 +50,18 @@ struct StyleCapabilityTests {
     /// The evaluator reads a feature's state as it always did, so a feature
     /// added later recommends and seeds a group without engine work.
     @Test func aKnownFeatureStillDrivesTheRecommendationAndTheFirstGroup() throws {
-        let style = StyleFixtures.catalogueStyle
+        let style = try StyleFixtures.catalogueStyle
         let evaluator = style.evaluator
-        #expect(evaluator.recommendedAction(capabilityStates: ["acme.thing": "complete"]) == "work")
+        #expect(evaluator.recommendedAction(capabilityStates: ["acme.thing": "complete"]) == "reset")
         #expect(evaluator.recommendedAction(capabilityStates: [:]) == nil)
-        #expect(evaluator.initialGroup(capabilityStates: ["acme.thing": "open"])?.id == "coil")
+        #expect(evaluator.initialGroup(capabilityStates: ["acme.thing": "open"])?.id == "far")
         // Not read yet: the first group, not a guess.
-        #expect(evaluator.initialGroup(capabilityStates: [:])?.id == "depth")
+        #expect(evaluator.initialGroup(capabilityStates: [:])?.id == "near")
         // The phone has no group of its own and production passes none, so
         // the recommendation has to survive that (§7.4).
         let panel = StylePanelProjection.make(style: style, prompts: [], selectedGroupId: nil,
                                               capabilityStates: ["acme.thing": "complete"], prerequisites: StylePrerequisiteResult(ready: true))
-        #expect(panel.recommended == "work" && panel.groups.first { $0.selected }?.id == "coil")
+        #expect(panel.recommended == "reset" && panel.groups.first { $0.selected }?.id == "far")
         // Nothing offers a chip any more, but the field is still sent, empty,
         // for a phone that predates v7.
         #expect(panel.attachments.isEmpty)

@@ -547,9 +547,9 @@ struct MobileRemoteExtensionTests {
         #expect(flow.evaluator.prompt(actionId: "interview", text: "첫 줄\n둘째 줄") == "/ouroboros:interview 첫 줄\n둘째 줄")
         #expect(plan.evaluator.prompt(actionId: "new-plan", text: "첫 줄\n둘째 줄") == "[계획] 첫 줄\n둘째 줄")
         // A catalogue that folds to one line itself gives the same either way.
-        let catalogue = StyleFixtures.catalogueStyle
-        #expect(catalogue.evaluator.prompt(actionId: "tidy", text: "첫 줄\n둘째 줄") == "/tidy 첫 줄 둘째 줄")
-        #expect(MobileMightySupport.guidedPrompt(catalogue, actionId: "tidy", text: pasted) == "/tidy 결제 흐름 정리 두 번째 줄 세 번째 줄")
+        let catalogue = try StyleFixtures.catalogueStyle
+        #expect(catalogue.evaluator.prompt(actionId: "sweep", text: "첫 줄\n둘째 줄") == "/sweep 첫 줄 둘째 줄")
+        #expect(MobileMightySupport.guidedPrompt(catalogue, actionId: "sweep", text: pasted) == "/sweep 결제 흐름 정리 두 번째 줄 세 번째 줄")
         #expect(flow.evaluator.prompt(actionId: "interview", text: " 결제 흐름 ") == "/ouroboros:interview 결제 흐름")
     }
 
