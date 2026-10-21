@@ -158,7 +158,8 @@ internal static class ClaudePlanStyleVerification
         Check(planning[0].Value == 0 && planning[0].Total == 0 && planning[1].Text == "", "a new plan does not show the last one's progress");
         var reading = StyleStateEngine.Live(null, style.Manifest, Pane([Run("g1", "proc-1")], [Record(PlanOutcome.ApprovedAuto)], todos, work), false);
         Check(reading.PlanStage == "executing" && reading.Widgets.Count == 4 && reading.Widgets[3].Tasks?.Count == 2, "the live reading adds the stage and the four widgets");
-        var other = StyleRegistry.Load(Verification.Temp(), Verification.Temp()).Styles.Single(s => s.Id == "superpowers");
+        // A style that reads files and run events, but not the plan stage.
+        var other = StyleFixtures.StatefulStyle;
         Check(StyleStateEngine.Live(null, other.Manifest, Pane(), false).PlanStage is null, "another style never reads the stage");
         return Task.CompletedTask;
     }

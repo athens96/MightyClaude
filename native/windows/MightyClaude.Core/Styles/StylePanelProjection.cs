@@ -19,6 +19,7 @@ public sealed record StylePanel(StylePanel.StyleInfo Style, StylePanel.PhaseInfo
     public sealed record PhaseInfo(string Id, string Title, int Index, int Count);
     public sealed record GroupInfo(string Id, string Title, string? Axis, string? Question, bool Selected, IReadOnlyList<string> Actions);
     public sealed record ActionInfo(string Id, string Title, string? Icon, string? Glyph, string Help, string? Scope, bool TakesText, bool RequiresText, IReadOnlyList<string> Flags, bool Prominent);
+    /// <summary>Read-only chips a built-in feature offered. Always empty since v7 (the vocabulary is empty, §1.8), but still sent: a phone that predates v7 reads the field.</summary>
     public sealed record AttachmentInfo(string Id, string Title, string? Detail, bool ReadOnly);
     public sealed record SetupInfo(bool Ready, IReadOnlyList<string> Missing, string? Hint, string? InstallCommand);
     public sealed record PresentationInfo(string HeaderTitle, string Source, string? Icon, string? Tint);
@@ -42,12 +43,12 @@ public static class StylePanelProjection
     /// <paramref name="state"/> its sources read, the chips it may draw now, and what its features and requirements found.
     /// </summary>
     public static StylePanel Make(RegisteredStyle style, RunSession session, string? selectedGroupId, IReadOnlyDictionary<string, string> capabilityStates,
-        IReadOnlyList<StyleAttachmentItem> attachments, StylePrerequisiteResult prerequisites, bool running = false, StyleStateReading? state = null) =>
+        StylePrerequisiteResult prerequisites, bool running = false, StyleStateReading? state = null) =>
         Make(style, session.GraphRuns is { Count: > 0 } runs ? runs.Select(run => run.Input) : session.Logs.Where(log => log.Kind == "user").Select(log => log.Text),
-            selectedGroupId, capabilityStates, attachments, prerequisites, running, session, state);
+            selectedGroupId, capabilityStates, prerequisites, running, session, state);
 
     public static StylePanel Make(RegisteredStyle style, IEnumerable<string> prompts, string? selectedGroupId, IReadOnlyDictionary<string, string> capabilityStates,
-        IReadOnlyList<StyleAttachmentItem> attachments, StylePrerequisiteResult prerequisites, bool running = false, RunSession? session = null, StyleStateReading? state = null)
+        StylePrerequisiteResult prerequisites, bool running = false, RunSession? session = null, StyleStateReading? state = null)
     {
         var manifest = style.Manifest; var evaluator = style.Evaluator;
         // §1.16: the same state the pane's phase bar reads.
@@ -67,7 +68,7 @@ public static class StylePanelProjection
             manifest.Actions.Select(a => new StylePanel.ActionInfo(a.Id, a.Title, a.Icon, a.Glyph, a.Help, a.Scope, a.TakesText, a.RequiresText,
                 Flags.Where(flag => a.Flags?.Contains(flag) == true).ToArray(), a.Id == next.FirstOrDefault())).ToArray(),
             next, evaluator.RecommendedAction(capabilityStates),
-            attachments.Select(file => new StylePanel.AttachmentInfo(StyleText.Safe(Path.GetFileName(file.Path), 120), file.Title, file.Detail, file.ReadOnly)).ToArray(),
+            [],
             new(prerequisites.Ready, prerequisites.Missing, prerequisites.Hint, manifest.Root.TryGetProperty("install", out var install) ? StyleManifest.Text(install, "command") : null),
             evaluator.Guidance(phase, running, jobOpen),
             new(phase is null ? manifest.Name : manifest.Name + " · " + phase.Title, style.Source, icon, tint),

@@ -568,7 +568,7 @@ public sealed partial class MainWindow
         /// <summary>
         /// What the pane's revision is read from beside its record (M/MightyClaude/AppStore+MobileRemote.swift:353-363, 488-529): whether
         /// the phone may use its pickers, what they would offer, and the Mighty payload's identity — its runs and blocks, the
-        /// answered plans, and the running style with its phase, widgets, prerequisites and casebook. Never the streamed text.
+        /// answered plans, and the running style with its phase, widgets and prerequisites. Never the streamed text.
         /// </summary>
         internal MobilePaneDigest MobileDigest()
         {
@@ -583,8 +583,6 @@ public sealed partial class MainWindow
             {
                 mighty.Add(style.Id); mighty.Add(style.Hash); mighty.Add(GuidedPhase(style)?.Id); mighty.Add(pane.Status == "running"); mighty.Add(stylePrerequisites?.Ready);
                 foreach (var missing in stylePrerequisites?.Missing ?? []) mighty.Add(missing);
-                foreach (var state in styleCapabilities.OrderBy(p => p.Key, StringComparer.Ordinal)) { mighty.Add(state.Key); mighty.Add(state.Value); }
-                foreach (var file in styleCapabilityFiles) mighty.Add(file.Path);
                 mighty.Add(JsonSerializer.Serialize(LiveStyleReading(style).Widgets.Select(StylePresentation.Payload), Wire.Json));
             }
             return new(!MobileBusy, options.ToHashCode(), mighty.ToHashCode());
@@ -593,18 +591,18 @@ public sealed partial class MainWindow
         {
             var pane = Session; var style = MobileActiveStyle; var styleId = style?.Id ?? MobileWire.CliStyle; var options = MobileOptions(pane);
             var settings = new MobileSettings(!MobileBusy, pane.Model, pane.Settings.PermissionMode, options.Efforts is null ? null : pane.Settings.Effort, MobileRemoteSupport.ViewMode(pane.AgentViewMode), MobileRemoteSupport.Style(styleId), styleId, options);
-            // Only a pane that really runs an approved style carries a panel, the two payloads an older phone reads, and the
+            // Only a pane that really runs an approved style carries a panel, the payload an older phone reads, and the
             // style's own names on its requests (M/MightyClaude/AppStore+MobileRemote.swift:410-439).
             var styles = style is null ? null : styleRegistry?.Styles;
-            var legacy = style is null ? default : MobileLegacyStyleAdapter.Make(style, GuidedPhase(style), stylePrerequisites?.Ready ?? false, style.Evaluator.RecommendedAction(styleCapabilities), styleCapabilityFiles);
-            var mighty = new { style = MobileRemoteSupport.Style(styleId), styleId, runs = MobileMightySupport.Runs(MobileMightySupport.SavedRuns(pane), styles is null ? null : input => StylePresentation.RequestPrefix(styles, input)), panel = MobileStylePanel(style), legacy.Ouroboros, legacy.Paperthin };
+            var legacy = style is null ? null : MobileLegacyStyleAdapter.Payload(style, GuidedPhase(style), stylePrerequisites?.Ready ?? false);
+            var mighty = new { style = MobileRemoteSupport.Style(styleId), styleId, runs = MobileMightySupport.Runs(MobileMightySupport.SavedRuns(pane), styles is null ? null : input => StylePresentation.RequestPrefix(styles, input)), panel = MobileStylePanel(style), ouroboros = legacy };
             var statusLine = Refresher?.Result is { } statusResult ? new { lines = statusResult.Lines.Select(line => line.Select(s => new { s.Text, fg = Terminal(s.Foreground) is { } color ? $"#{color.R:X2}{color.G:X2}{color.B:X2}" : null, bold = s.Bold })) } : null;
             // The rows delegation holds for the pane come first, as on the desktop (M/AppStore+MobileRemote.swift:398).
             return new(DelegationQueueRows.MobileItems(owner.service.HeldItems(id), queuedInputs.Items), settings, mighty, statusLine);
         }
         /// <summary>The style panel the phone draws, in the shared golden shape (M/MightyCore/Styles/StylePanelProjection.swift).</summary>
         private object? MobileStylePanel(RegisteredStyle? chosen) => chosen is { } style
-            ? StylePanelProjection.Make(style, Session, styleGroup, styleCapabilities, styleCapabilityFiles, stylePrerequisites ?? new StylePrerequisiteResult(false, [], null, null), MobileBusy, LiveStyleReading(style))
+            ? StylePanelProjection.Make(style, Session, styleGroup, NoCapabilityStates, stylePrerequisites ?? new StylePrerequisiteResult(false, [], null, null), MobileBusy, LiveStyleReading(style))
             : null;
         internal async Task MobileSettings(JsonElement value, CancellationToken token)
         {

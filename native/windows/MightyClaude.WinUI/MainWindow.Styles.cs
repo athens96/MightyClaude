@@ -204,8 +204,8 @@ public sealed partial class MainWindow
         private RegisteredStyle? activeStyle;
         private StyleStateReading? styleReading;
         private StylePrerequisiteResult? stylePrerequisites;
-        private Dictionary<string,string> styleCapabilities=[];
-        private IReadOnlyList<StyleAttachmentItem> styleCapabilityFiles=[];
+        /// <summary>No built-in feature exists to read (§1.8, M/GuidedPanel.swift), so the rules that read one see no state.</summary>
+        private static readonly IReadOnlyDictionary<string,string> NoCapabilityStates=new Dictionary<string,string>();
         private readonly Dictionary<string,Button> styleActionButtons=[];
         private readonly TextBlock styleEnterPrefix=new(){TextSize=10,TextFont=TextArea.Code,TextWrapping=TextWrapping.NoWrap,TextTrimming=TextTrimming.CharacterEllipsis,MaxWidth=260};
         private string? styleGroup;
@@ -263,11 +263,11 @@ public sealed partial class MainWindow
                 {
                     var registry=StyleRegistry.Load(owner.StateDirectory,workspace);var chosen=registry.Runnable(pane.MightyStyle,pane.MightyStyleHash);
                     var since=DateTimeOffset.TryParse(pane.MightyStyleSince,out var date)?date:(DateTimeOffset?)null;
-                    return (Registry:registry,Chosen:chosen,Reading:chosen is null?null:StyleStateEngine.Read(chosen.Manifest,workspace,since,pane),Prerequisites:chosen is null?null:StylePrerequisites.Read(chosen.Manifest,workspace,owner.options.SmokeTest?owner.StateDirectory:null),Capabilities:chosen is null?(new Dictionary<string,string>(),new List<StyleAttachmentItem>()):StylePrerequisites.Capabilities(chosen.Manifest,workspace));
+                    return (Registry:registry,Chosen:chosen,Reading:chosen is null?null:StyleStateEngine.Read(chosen.Manifest,workspace,since,pane),Prerequisites:chosen is null?null:StylePrerequisites.Read(chosen.Manifest,workspace,owner.options.SmokeTest?owner.StateDirectory:null));
                 });
                 if(owner.closing||!owner.service.Snapshot.Sessions.Any(p=>p.Id==id)||Session.MightyStyle!=pane.MightyStyle||Session.MightyStyleHash!=pane.MightyStyleHash||Session.MightyStyleSince!=pane.MightyStyleSince)return;
-                var before=activeStyle;styleRegistry=data.Registry;activeStyle=data.Chosen;styleReading=data.Reading;stylePrerequisites=data.Prerequisites;styleCapabilities=data.Capabilities.Item1;styleCapabilityFiles=data.Capabilities.Item2;loadedStyleKey=key;
-                if(styleGroup is null&&activeStyle is {} chosen)styleGroup=chosen.Evaluator.InitialGroup(styleCapabilities)?.Id;
+                var before=activeStyle;styleRegistry=data.Registry;activeStyle=data.Chosen;styleReading=data.Reading;stylePrerequisites=data.Prerequisites;loadedStyleKey=key;
+                if(styleGroup is null&&activeStyle is {} chosen)styleGroup=chosen.Evaluator.InitialGroup(NoCapabilityStates)?.Id;
                 // The style menu (M/GuidedPanel.swift:26-33, MightyCore/Styles/StyleSurfaces.swift:195-222): CLI, then every style this
                 // pane may see — its name, its source unless built in and, while it waits for a yes or is blocked, why — the current one checked.
                 var menu=new MenuFlyout{Placement=Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.BottomEdgeAlignedLeft};menu.Items.Add(Choice("CLI",()=>ChooseStyle(null),pane.MightyStyle is null));
@@ -476,7 +476,7 @@ public sealed partial class MainWindow
                 else if(!string.IsNullOrEmpty(widget.Text))widgets.Children.Add(new TextBlock{Text=StylePresentation.Inline(widget.Text),TextSize=11,Foreground=ink2,TextWrapping=TextWrapping.NoWrap,TextTrimming=TextTrimming.CharacterEllipsis});
             }
             if(widgets.Children.Count>0){AutomationProperties.SetAutomationId(widgets,"mighty-state-"+id);AutomationProperties.SetName(widgets,Locale.Get("guidedPanel.stateAccessibility"));guidedBody.Children.Add(widgets);}
-            var group=style.Manifest.Groups.FirstOrDefault(g=>g.Id==styleGroup)??evaluator.InitialGroup(styleCapabilities);
+            var group=style.Manifest.Groups.FirstOrDefault(g=>g.Id==styleGroup)??evaluator.InitialGroup(NoCapabilityStates);
             if(evaluator.DrawsGroupMap)
             {
                 // The group map (M/GuidedPanel.swift:222-241): equal tiles 5 apart, the title in 11 semibold mono over its axis in 9pt ink2, padding h9 v5 at radius 7.
@@ -493,27 +493,6 @@ public sealed partial class MainWindow
                 guidedBody.Children.Add(map);
                 if(group?.Question is {Length:>0} question)guidedBody.Children.Add(new TextBlock{Text=question,TextSize=11,Foreground=ink2,TextWrapping=TextWrapping.Wrap});
             }
-            if(StyleManifest.Strings(style.Manifest.Root,"capabilities").Length>0&&(evaluator.RecommendGroupId is null||group?.Id==evaluator.RecommendGroupId))
-            {
-                // What the built-in feature found (M/GuidedPanel.swift:257-294): a folder mark, the empty line or up to six file chips behind their detail, and reload.
-                var files=new Grid{ColumnSpacing=DesignMetrics.Spacing.Sm};files.ColumnDefinitions.Add(new(){Width=GridLength.Auto});files.ColumnDefinitions.Add(new(){Width=new(1,GridUnitType.Star)});files.ColumnDefinitions.Add(new(){Width=GridLength.Auto});
-                files.Children.Add(new FontIcon{Glyph="",TextSize=10,Foreground=ink2,VerticalAlignment=VerticalAlignment.Center});
-                if(styleCapabilityFiles.Count==0){var none=new TextBlock{Text=Locale.Get("styles.casebook.empty"),TextSize=11,Foreground=ink2,TextWrapping=TextWrapping.NoWrap,TextTrimming=TextTrimming.CharacterEllipsis,VerticalAlignment=VerticalAlignment.Center};Grid.SetColumn(none,1);files.Children.Add(none);}
-                else
-                {
-                    var chips=new StackPanel{Orientation=Orientation.Horizontal,Spacing=DesignMetrics.Spacing.Sm};
-                    if(styleCapabilityFiles[0].Detail is {Length:>0} detail)chips.Children.Add(new Border{Child=new TextBlock{Text=detail,TextSize=10,Foreground=ink2,TextWrapping=TextWrapping.NoWrap},Padding=new(DesignMetrics.Spacing.Xs,1,DesignMetrics.Spacing.Xs,1),CornerRadius=new(8),Background=b.Subtle,VerticalAlignment=VerticalAlignment.Center});
-                    foreach(var file in styleCapabilityFiles.Take(6))
-                    {
-                        var open=Button(file.Title,()=>{owner.service.OpenResultFile(file.Path,LocalPath(Workspace));return Task.CompletedTask;});open.TextSize=10;open.TextFont=TextArea.Code;open.Padding=new(0);open.MinWidth=0;open.MinHeight=0;open.BorderThickness=new(0);open.VerticalAlignment=VerticalAlignment.Center;
-                        owner.PaintPlainButton(open,b.Transparent,b.Transparent,ink:accent);ToolTipService.SetToolTip(open,Locale.Get("guidedPanel.openPathPrefix")+file.Path);chips.Children.Add(open);
-                    }
-                    var scroll=new ScrollViewer{Content=chips,HorizontalScrollBarVisibility=ScrollBarVisibility.Hidden,HorizontalScrollMode=ScrollMode.Auto,VerticalScrollBarVisibility=ScrollBarVisibility.Disabled,VerticalScrollMode=ScrollMode.Disabled};Grid.SetColumn(scroll,1);files.Children.Add(scroll);
-                }
-                var reload=Button("↻",LoadStyles);reload.Content=new FontIcon{Glyph="",TextSize=9};reload.Padding=new(DesignMetrics.Spacing.Xxs);reload.MinWidth=0;reload.MinHeight=0;reload.BorderThickness=new(0);reload.CornerRadius=new(DesignMetrics.Radius.FileRow);reload.VerticalAlignment=VerticalAlignment.Center;
-                owner.PaintPlainButton(reload,b.Transparent,b.Subtle,ink:ink2);ToolTipService.SetToolTip(reload,Locale.Get("guidedPanel.reloadHelp"));AutomationProperties.SetName(reload,Locale.Get("guidedPanel.reloadHelp"));Grid.SetColumn(reload,2);files.Children.Add(reload);
-                AutomationProperties.SetAutomationId(files,"mighty-attachments-"+id);guidedBody.Children.Add(files);
-            }
             if(busy&&evaluator.DrawsPhaseProgress&&!job)
             {
                 // A sequence in flight offers nothing to press: a small spinner, and the guidance line under it says what runs (M/GuidedPanel.swift:305-312).
@@ -522,7 +501,7 @@ public sealed partial class MainWindow
             }
             else
             {
-                var actions=evaluator.VisibleActions(phase,group,busy,job,styleStartingNew);var recommended=evaluator.RecommendedAction(styleCapabilities);
+                var actions=evaluator.VisibleActions(phase,group,busy,job,styleStartingNew);var recommended=evaluator.RecommendedAction(NoCapabilityStates);
                 var prominent=job||evaluator.AtStart(phase)||evaluator.DrawsPhaseProgress?actions.FirstOrDefault()?.Id:null;
                 var grid=evaluator.DrawsGroupMap;var chips=new List<Button>();
                 foreach(var action in actions)

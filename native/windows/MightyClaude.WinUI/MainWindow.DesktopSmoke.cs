@@ -71,7 +71,7 @@ public sealed partial class MainWindow
                     await WaitUI(() => service.Snapshot.SettingsPane == category.Id);
                     if (category.Id == "models") await CheckPhaseModelsSettingsActions(frame);
                     if (category.Id == "styles")
-                        await WaitUI(() => new[] { "ouroboros", "paperthin", "superpowers" }.All(id => VisualChildren(frame).OfType<StackPanel>().Any(row => row.IsLoaded && AutomationProperties.GetAutomationId(row) == "settings-style-" + id)));
+                        await WaitUI(() => new[] { "ouroboros", "claude-plan" }.All(id => VisualChildren(frame).OfType<StackPanel>().Any(row => row.IsLoaded && AutomationProperties.GetAutomationId(row) == "settings-style-" + id)));
                     if (category.Id == "companion")
                         await WaitUI(() => VisualChildren(frame).OfType<ComboBox>().Any(picker => AutomationProperties.GetAutomationId(picker) == "settings-companion-pet" && picker.Items.Count > 0 && picker.SelectedItem is not null)
                             && VisualChildren(frame).OfType<Image>().Any(preview => AutomationProperties.GetAutomationId(preview) == "settings-companion-preview" && preview.Source is BitmapImage { PixelWidth: > 0 }));

@@ -243,7 +243,14 @@ internal static class MobileHostVerification
         Check(offered[0] == new MobileStyleOption("cli", "cli") && offered.Skip(1).Select(s => s.Id).SequenceEqual(styles.Where(s => s.Runnable).Select(s => s.Id)) && offered.Skip(1).All(s => s.Source == "bundled" && s.Label.Length > 0), "styles are the CLI, then every style that can run, each with its source");
         Check(!Json(offered)[0].TryGetProperty("source", out _), "cli belongs to no source");
         Check(MobileRemoteSupport.StyleOptions([]).Single().Id == "cli" && MobileRemoteSupport.LegacyStyleOptions([]).Single() == new MobileOption("cli", "CLI"), "a pane outside the Mighty view is offered the CLI alone, so a phone can always go back to free requests");
-        Check(MobileRemoteSupport.LegacyStyleOptions(styles).Select(s => s.Id).SequenceEqual(["cli", "ouroboros", "paperthin"]), "the old field offers its fixed three, when they can run");
+        Check(MobileWire.MightyStyles.SequenceEqual(["cli", "ouroboros"]) && MobileRemoteSupport.LegacyStyleOptions(styles).Select(s => s.Id).SequenceEqual(["cli", "ouroboros"]), "the old field offers its fixed two, when they can run");
+        // v7 dropped the removed style's word: an older phone that still offers it is refused, even were a style there to answer
+        // to the id, and a pane still saved in it reads cli, its truth travelling in styleId (macOS theStyleFieldsRideBesideTheFixedVocabulary).
+        var node = System.Text.Json.Nodes.JsonNode.Parse(styles.Single(s => s.Id == "ouroboros").Bytes.Span)!; node["id"] = "paperthin"; var reserved = Encoding.UTF8.GetBytes(node.ToJsonString());
+        var stranger = new RegisteredStyle(StyleManifestDecoder.Decode(reserved, "bundled"), "bundled", "paperthin.json", null, "h", "preApproved", reserved);
+        Check(stranger.Id == "paperthin" && !MobileRemoteSupport.LegacyStyleOptions([.. styles, stranger]).Any(s => s.Id == "paperthin") && MobileRemoteSupport.Style("paperthin") == "cli" && MobileRemoteSupport.Style("claude-plan") == "cli", "the old field has no paperthin word any more");
+        try { StyleManifestDecoder.Decode(reserved, "user"); throw new InvalidOperationException("a user style claimed the reserved id paperthin"); }
+        catch (StyleManifestException e) { Check(e.Code == "E_RESERVED_ID", "paperthin stays a reserved id: " + e.Code); }
         Check(MobileRemoteSupport.GuidedStylesAvailable("claude", "claude", "mighty") && !MobileRemoteSupport.GuidedStylesAvailable("claude", "claude", "plain") && !MobileRemoteSupport.GuidedStylesAvailable("claude", "codex", "mighty") && !MobileRemoteSupport.GuidedStylesAvailable("shell", "claude", "mighty"), "guided styles need a Claude pane in the Mighty view");
         Check(MobileRemoteSupport.ViewMode("mighty") == "mighty" && MobileRemoteSupport.ViewMode(null) == "plain" && MobileRemoteSupport.ViewMode("default") == "plain" && MobileRemoteSupport.Style("ouroboros") == "ouroboros" && MobileRemoteSupport.Style("gstack") == "cli" && MobileRemoteSupport.Style(null) == "cli", "the wire words for the view and the old style field");
 
@@ -255,7 +262,7 @@ internal static class MobileHostVerification
 
         // The style a settings request leaves the pane with.
         Check(MobileRemoteSupport.StyleAfter(null, "cli", "ouroboros") == "ouroboros" && MobileRemoteSupport.StyleAfter("cli", "cli", "ouroboros") == "ouroboros", "a phone handing back what it was told leaves the stored style alone");
-        Check(MobileRemoteSupport.StyleAfter("cli", "ouroboros", "ouroboros") is null && MobileRemoteSupport.StyleAfter("paperthin", "ouroboros", "ouroboros") == "paperthin" && MobileRemoteSupport.StyleAfter("ouroboros", "cli", null) == "ouroboros", "a style other than the one shown is a change");
+        Check(MobileRemoteSupport.StyleAfter("cli", "ouroboros", "ouroboros") is null && MobileRemoteSupport.StyleAfter("claude-plan", "ouroboros", "ouroboros") == "claude-plan" && MobileRemoteSupport.StyleAfter("ouroboros", "cli", null) == "ouroboros", "a style other than the one shown is a change");
 
         var both = MobileRemoteSupport.GuidedRequest(Json(new { styleId = "gstack", actionId = "ship", style = "ouroboros", skill = "seed", text = "  go\n" }));
         Check(both == new MobileGuidedRequest("gstack", "ship", "go"), "the new shape wins when both arrive, and the text is trimmed");
@@ -270,30 +277,21 @@ internal static class MobileHostVerification
         return Task.CompletedTask;
     }
 
-    internal static Task OlderPhonesStillGetTheirTwoPayloads()
+    internal static Task OlderPhonesStillGetTheOuroborosPayload()
     {
-        var styles = Bundled(); var flow = styles.Single(s => s.Id == "ouroboros"); var thin = styles.Single(s => s.Id == "paperthin");
+        var styles = Bundled(); var flow = styles.Single(s => s.Id == "ouroboros");
         StylePhase Phase(string id) => flow.Manifest.Phases.Single(p => p.Id == id);
-        var seeded = MobileLegacyStyleAdapter.Make(flow, Phase("seed"), false, null, []);
-        Check(seeded.Paperthin is null && seeded.Ouroboros is { Phase: "seed", Ready: false } ouroboros && ouroboros.Next.Select(s => s.Skill).SequenceEqual(["run", "evaluate", "status"]), "ouroboros carries its phase and that phase's next skills");
-        Check(seeded.Ouroboros!.All.Select(s => s.Skill).SequenceEqual(["interview", "auto", "seed", "run", "evaluate", "evolve", "ralph", "status", "unstuck", "cancel"]) && seeded.Ouroboros.TakesText.SequenceEqual(["interview", "auto", "unstuck"]), "the whole catalogue, and which skills take text");
-        Check(seeded.Ouroboros.All.Single(s => s.Skill == "seed") is { Title.Length: > 0, Help.Length: > 0 }, "a skill carries its title and help");
+        var seeded = MobileLegacyStyleAdapter.Payload(flow, Phase("seed"), false);
+        Check(seeded is { Phase: "seed", Ready: false } ouroboros && ouroboros.Next.Select(s => s.Skill).SequenceEqual(["run", "evaluate", "status"]), "ouroboros carries its phase and that phase's next skills");
+        Check(seeded!.All.Select(s => s.Skill).SequenceEqual(["interview", "auto", "seed", "run", "evaluate", "evolve", "ralph", "status", "unstuck", "cancel"]) && seeded.TakesText.SequenceEqual(["interview", "auto", "unstuck"]), "the whole catalogue, and which skills take text");
+        Check(seeded.All.Single(s => s.Skill == "seed") is { Title.Length: > 0, Help.Length: > 0 }, "a skill carries its title and help");
         var phases = flow.Manifest.Phases.OrderBy(p => p.Order).Select(p => p.Id).ToArray();
-        Check(phases.SequenceEqual(["goal", "interview", "seed", "run", "evaluate", "evolve"]) && phases.Select(id => MobileLegacyStyleAdapter.Make(flow, Phase(id), true, null, []).Ouroboros!.Phase).SequenceEqual(phases), "every phase reports itself");
-        var start = MobileLegacyStyleAdapter.Make(flow, null, true, null, []).Ouroboros!;
-        Check(start.Phase == "goal" && start.Next.Count == 0 && MobileLegacyStyleAdapter.Make(flow, Phase("goal"), true, null, []).Ouroboros!.Next.Count == 0, "the old field is the phase map alone: empty at the first phase, where the older phone falls back to all");
-
-        var folder = Path.Combine(Path.GetTempPath(), ".re0", "iteration", "v3-relay");
-        StyleAttachmentItem[] files = [new("DESIGN", Path.Combine(folder, "DESIGN.local.md"), "v3-relay · full"), new("RETRO", Path.Combine(folder, "RETRO.local.md"), "v3-relay · full")];
-        var mapped = MobileLegacyStyleAdapter.Make(thin, null, true, thin.Evaluator.RecommendedAction(new Dictionary<string, string> { ["paperthin.casebook"] = "complete" }), files);
-        Check(mapped.Ouroboros is null && mapped.Paperthin is { Installed: true, Recommended: "re0-work" } paperthin && paperthin.Domains.Select(d => d.Id).SequenceEqual(["depth", "breadth", "coil", "mesh"]), "paperthin carries its four domains and the recommendation");
-        Check(mapped.Paperthin!.Casebook is { Name: "v3-relay", Weight: "full" } casebook && casebook.Files.SequenceEqual(["DESIGN.local.md", "RETRO.local.md"]), "the newest cycle's casebook travels by name, weight and files");
-        var depth = mapped.Paperthin.Domains.Single(d => d.Id == "depth");
-        Check(depth.Axis.Length > 0 && depth.Question.Length > 0 && depth.Skills.Take(4).Select(s => s.Name).SequenceEqual(["re0", "readchk", "aim", "modelchk"]) && mapped.Paperthin.Domains.Select(d => d.Skills.Count).SequenceEqual([19, 2, 6, 1]) && depth.Skills.Single(s => s.Name == "hate").UserInvoked, "a domain carries its skills in the manifest's order, with their marks");
-        var absent = MobileLegacyStyleAdapter.Make(thin, null, false, thin.Evaluator.RecommendedAction(new Dictionary<string, string> { ["paperthin.casebook"] = "absent" }), []).Paperthin!;
-        Check(absent is { Installed: false, Recommended: "re0-plan", Casebook: null } && MobileLegacyStyleAdapter.Make(thin, null, true, thin.Evaluator.RecommendedAction(new Dictionary<string, string>()), []).Paperthin!.Recommended is null, "nothing on disk recommends the first step; a workspace not read yet has no answer");
-        Check(styles.Where(s => s.Id is not ("ouroboros" or "paperthin")).All(s => MobileLegacyStyleAdapter.Make(s, null, true, null, []) is (null, null)), "any other style sends neither");
-        Check(!Json(new { seeded.Ouroboros, seeded.Paperthin }).TryGetProperty("paperthin", out _), "the payload a style does not have is absent from the wire");
+        Check(phases.SequenceEqual(["goal", "interview", "seed", "run", "evaluate", "evolve"]) && phases.Select(id => MobileLegacyStyleAdapter.Payload(flow, Phase(id), true)!.Phase).SequenceEqual(phases), "every phase reports itself");
+        var start = MobileLegacyStyleAdapter.Payload(flow, null, true)!;
+        Check(start.Phase == "goal" && start.Next.Count == 0 && MobileLegacyStyleAdapter.Payload(flow, Phase("goal"), true)!.Next.Count == 0, "the old field is the phase map alone: empty at the first phase, where the older phone falls back to all");
+        // The adapter belongs to the bundled Ouroboros and nothing else: Claude plan, a user style and a catalogue send none.
+        Check(styles.Any(s => s.Id == "claude-plan") && styles.Where(s => s.Id != "ouroboros").Append(StyleFixtures.CatalogueStyle).All(s => MobileLegacyStyleAdapter.Payload(s, null, true) is null), "any other style sends none");
+        Check(!Json(new { ouroboros = MobileLegacyStyleAdapter.Payload(styles.Single(s => s.Id == "claude-plan"), null, true) }).TryGetProperty("ouroboros", out _) && Json(new { ouroboros = seeded }).TryGetProperty("ouroboros", out _), "the payload a style does not have is absent from the wire");
         return Task.CompletedTask;
     }
 

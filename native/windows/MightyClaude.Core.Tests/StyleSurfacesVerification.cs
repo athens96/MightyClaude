@@ -38,31 +38,19 @@ internal static class StyleSurfacesVerification
         return Task.CompletedTask;
     }
 
-    internal static Task MetadataAndCasebook()
+    internal static Task MetadataAndFeatureState()
     {
-        var root = Verification.Temp();
-        try
-        {
-            var registry = StyleRegistry.Load(root, root);
-            var paper = registry.Styles.Single(s => s.Id == "paperthin");
-            var action = paper.Manifest.Actions.Single(a => a.Id == "macrothink");
-            Check(action.Scope is { Length: > 0 } && action.Flags!.SequenceEqual(["userInvoked", "readOnly"]), "Scope and both action flags survive manifest decoding.");
-            var absent = StylePrerequisites.Capabilities(paper.Manifest, root);
-            Check(absent.States["paperthin.casebook"] == "absent" && absent.Files.Count == 0, "An absent casebook has no fabricated files.");
-            var folder = Path.Combine(root, ".re0", "iteration", "1-check"); Directory.CreateDirectory(folder);
-            for (var index = 0; index < 28; index++) File.WriteAllText(Path.Combine(folder, $"REF-{index:00}.local.md"), "reference");
-            File.WriteAllText(Path.Combine(folder, "RETRO.local.md"), "retrospective"); File.WriteAllText(Path.Combine(folder, "DESIGN.local.md"), "design");
-            var result = StylePrerequisites.Capabilities(paper.Manifest, root);
-            Check(result.States["paperthin.casebook"] == "complete", "Known files must survive an arbitrary directory enumeration with more than 24 references.");
-            Check(result.Files.Count == 24 && result.Files[0].Title == "DESIGN" && result.Files[1].Title == "RETRO", "The 24-file limit is applied after prioritizing known casebook files.");
-            Check(result.Files.All(f => f.Detail == "1-check · full" && f.ReadOnly && File.Exists(f.Path)), "File chips retain cycle/weight details and real read-only paths.");
-            Check(paper.Evaluator.RecommendedAction(result.States) == "re0-work" && paper.Evaluator.DrawsGroupMap, "Casebook completion drives catalog recommendations and map presentation.");
-            var numeric = StylePresentation.Progress(new("progressBar", Value: 7));
-            Check(numeric is { Fraction: 0, Text: "7" }, "A bare counter displays its count without inventing a total.");
-            Check(StylePresentation.Progress(new("progressBar", Value: 7, Total: 4)) is { Fraction: 1, Text: "4/4" }, "Progress clamps to a declared total.");
-            Check(!StylePresentation.Inline("a\u202eb\u0000c").Contains('\u202e'), "Inline widget text removes display-direction controls.");
-        }
-        finally { Directory.Delete(root, true); }
+        // A catalogue whose feature exists only in the test vocabulary (§1.8): no bundled style is one since v7.
+        var catalogue = StyleFixtures.CatalogueStyle;
+        var nba = catalogue.Manifest.Actions.Single(a => a.Id == "nba"); var hate = catalogue.Manifest.Actions.Single(a => a.Id == "hate");
+        Check(nba.Scope == "현재 사이클" && nba.Flags!.SequenceEqual(["readOnly"]) && hate.Scope == "계획 하나" && hate.Flags!.SequenceEqual(["userInvoked"]) && hate.Glyph == "😈", "Scope, glyph and each action flag survive manifest decoding.");
+        var both = StyleManifestDecoder.Decode(Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(StyleFixtures.Catalogue).Replace("\"flags\":[\"readOnly\"]", "\"flags\":[\"userInvoked\",\"readOnly\"]", StringComparison.Ordinal)), "user", StyleFixtures.TestCapabilities);
+        Check(both.Actions.Single(a => a.Id == "nba").Flags!.SequenceEqual(["userInvoked", "readOnly"]), "Both action flags survive manifest decoding, in order.");
+        Check(catalogue.Evaluator.RecommendedAction(new Dictionary<string, string> { ["acme.thing"] = "complete" }) == "work" && catalogue.Evaluator.DrawsGroupMap, "A feature's state drives catalogue recommendations and map presentation.");
+        var numeric = StylePresentation.Progress(new("progressBar", Value: 7));
+        Check(numeric is { Fraction: 0, Text: "7" }, "A bare counter displays its count without inventing a total.");
+        Check(StylePresentation.Progress(new("progressBar", Value: 7, Total: 4)) is { Fraction: 1, Text: "4/4" }, "Progress clamps to a declared total.");
+        Check(!StylePresentation.Inline("a\u202eb\u0000c").Contains('\u202e'), "Inline widget text removes display-direction controls.");
         return Task.CompletedTask;
     }
 

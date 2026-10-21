@@ -9,7 +9,8 @@ namespace MightyClaude.Core;
 public static class MobileWire
 {
     public const string CliStyle = "cli";
-    public static readonly string[] MightyStyles = [CliStyle, "ouroboros", "paperthin"];
+    /// <summary>The old <c>mightyStyle</c> field's words; v7 dropped the removed style's, so an older phone that still offers it is refused.</summary>
+    public static readonly string[] MightyStyles = [CliStyle, "ouroboros"];
     /// <summary>The newest entries a session detail carries; older ones are paged with <c>entries?before=</c>.</summary>
     public const int MaximumEntries = 80;
     public const int DefaultPageLimit = 50, MaximumPageLimit = 100;
@@ -248,7 +249,7 @@ public static class MobileRemoteSupport
 
     /// <summary>The desktop stores nothing or "default" for the plain transcript; the wire says "plain".</summary>
     public static string ViewMode(string? raw) => raw == "mighty" ? "mighty" : "plain";
-    /// <summary>The old three-word field: only the two bundled ids have a word of their own, every other style travels as "cli" and carries its truth in <c>styleId</c>.</summary>
+    /// <summary>The old two-word field: only the bundled Ouroboros has a word of its own, every other style travels as "cli" and carries its truth in <c>styleId</c>.</summary>
     public static string Style(string? raw) => raw is not null && MobileWire.MightyStyles.Contains(raw) ? raw : MobileWire.CliStyle;
     /// <summary>Guided styles exist only for a Claude pane in the Mighty view. <paramref name="viewMode"/> is the view the pane will be in, so one request can turn the view on and pick a style.</summary>
     public static bool GuidedStylesAvailable(string kind, string provider, string viewMode) => kind == "claude" && provider == "claude" && viewMode == "mighty";
@@ -307,26 +308,16 @@ public sealed record MobileGuidedRequest(string Style, string Action, string Tex
 
 public sealed record MobileGuidedSkill(string Skill, string Title, string Help);
 public sealed record MobileOuroboros(string Phase, bool Ready, IReadOnlyList<string> TakesText, IReadOnlyList<MobileGuidedSkill> Next, IReadOnlyList<MobileGuidedSkill> All);
-public sealed record MobilePaperthinSkill(string Name, string Emoji, string Summary, string Scope, bool UserInvoked, bool ReadOnly);
-public sealed record MobilePaperthinDomain(string Id, string Title, string Axis, string Question, IReadOnlyList<MobilePaperthinSkill> Skills);
-public sealed record MobilePaperthinCasebook(string Name, string Weight, IReadOnlyList<string> Files);
-public sealed record MobilePaperthin(bool Installed, string? Recommended, IReadOnlyList<MobilePaperthinDomain> Domains, MobilePaperthinCasebook? Casebook = null);
 
 /// <summary>
-/// An older phone knows <c>mighty.ouroboros</c> and <c>mighty.paperthin</c> and nothing else, so the two bundled styles keep
-/// sending them, from the same readings the new panel comes from (M/MightyCore/Remote/MobileLegacyStyleAdapter.swift:7-47).
+/// An older phone knows <c>mighty.ouroboros</c> and nothing else, so the bundled Ouroboros keeps sending it, from the same
+/// readings the new panel comes from (M/MightyCore/Remote/MobileLegacyStyleAdapter.swift).
 /// </summary>
 public static class MobileLegacyStyleAdapter
 {
     /// <param name="phase">The pane's phase as its panel reads it.</param>
     /// <param name="ready">Whether the style's prerequisites are in place (<c>panel.setup.ready</c>).</param>
-    /// <param name="files">The casebook files the panel lists, all from the newest cycle's folder.</param>
-    public static (MobileOuroboros? Ouroboros, MobilePaperthin? Paperthin) Make(RegisteredStyle style, StylePhase? phase, bool ready, string? recommended, IReadOnlyList<StyleAttachmentItem> files) => style.Id switch
-    {
-        "ouroboros" => (Ouroboros(style, phase, ready), null),
-        "paperthin" => (null, Paperthin(style, ready, recommended, files)),
-        _ => (null, null),
-    };
+    public static MobileOuroboros? Payload(RegisteredStyle style, StylePhase? phase, bool ready) => style.Id == "ouroboros" ? Ouroboros(style, phase, ready) : null;
 
     private static MobileGuidedSkill Skill(StyleAction action) => new(action.Id, action.Title, action.Help);
 
@@ -337,19 +328,5 @@ public static class MobileLegacyStyleAdapter
         var ids = phase is not null && StyleManifest.Text(next, "kind") == "byPhase" ? StyleManifest.Strings(next.GetProperty("map"), phase.Id) : [];
         return new(phase?.Id ?? style.Manifest.Phases.OrderBy(p => p.Order).FirstOrDefault()?.Id ?? "", ready, actions.Where(a => a.TakesText).Select(a => a.Id).ToArray(),
             ids.Select(id => actions.FirstOrDefault(a => a.Id == id)).Where(a => a is not null).Select(a => Skill(a!)).ToArray(), actions.Select(Skill).ToArray());
-    }
-
-    public static MobilePaperthin Paperthin(RegisteredStyle style, bool ready, string? recommended, IReadOnlyList<StyleAttachmentItem> files)
-    {
-        var domains = style.Manifest.Groups.Select(group => new MobilePaperthinDomain(group.Id, group.Title, group.Axis ?? "", group.Question ?? "",
-            group.Actions.Select(id => style.Manifest.Actions.FirstOrDefault(a => a.Id == id)).Where(a => a is not null)
-                .Select(a => new MobilePaperthinSkill(a!.Id, a.Glyph ?? "", a.Help, a.Scope ?? "", a.Flags?.Contains("userInvoked") == true, a.Flags?.Contains("readOnly") == true)).ToArray())).ToArray();
-        MobilePaperthinCasebook? casebook = null;
-        if (files.Count > 0)
-        {
-            var names = files.Select(f => StyleText.Safe(Path.GetFileName(f.Path), 120)).ToArray();
-            casebook = new(StyleText.Safe(Path.GetFileName(Path.GetDirectoryName(files[0].Path) ?? ""), 120), names.Contains("DESIGN.local.md") ? "full" : "lightweight", names);
-        }
-        return new(ready, recommended, domains, casebook);
     }
 }

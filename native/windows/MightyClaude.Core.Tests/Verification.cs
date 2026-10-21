@@ -338,7 +338,7 @@ internal static class Verification
         await Test("Mobile host: a phone is told only of what changed", MobileHostVerification.APhoneIsToldOnlyOfWhatChanged);
         await Test("Mobile host: a session reply reads as the desktop does", MobileHostVerification.ASessionReplyReadsAsTheDesktopDoes);
         await Test("Mobile host: settings offer what the pane can pick", MobileHostVerification.SettingsOfferWhatThePaneCanPick);
-        await Test("Mobile host: older phones still get their two payloads", MobileHostVerification.OlderPhonesStillGetTheirTwoPayloads);
+        await Test("Mobile host: older phones still get the Ouroboros payload", MobileHostVerification.OlderPhonesStillGetTheOuroborosPayload);
         await Test("Mobile host: file replies carry a code and the Mac's caps", MobileHostVerification.FileRepliesCarryACodeAndTheMacsCaps);
         await Test("Mobile host: the link policy decides when to redial", MobileHostVerification.LinkPolicyDecidesWhenToRedial);
         await Test("Mobile host: the link redials after a wake and waits out no network", MobileHostVerification.TheLinkRedialsAfterAWakeAndWaitsOutNoNetwork);
@@ -388,7 +388,7 @@ internal static class Verification
         await Test("Agent URL independent choices and thirty-second fallback", AgentWebOpenVerification.IndependentChoicesAndFallback);
         await Test("Agent URL revocation, cancellation and shutdown", AgentWebOpenVerification.RevocationCancellationAndShutdown);
         await Test("StyleSurfacesVerification ApprovalAndReset", StyleSurfacesVerification.ApprovalAndReset);
-        await Test("StyleSurfacesVerification MetadataAndCasebook", StyleSurfacesVerification.MetadataAndCasebook);
+        await Test("StyleSurfacesVerification MetadataAndFeatureState", StyleSurfacesVerification.MetadataAndFeatureState);
         await Test("StyleSurfacesVerification TrustedRequestProjectionAndLockedRegistry", StyleSurfacesVerification.TrustedRequestProjectionAndLockedRegistry);
         await Test("Login recovery authentication errors exclude ordinary content and external credentials", CliLoginRecoveryVerification.ErrorSignalsExcludeContentAndExternalProviders);
         await Test("Login recovery bounded partial URLs and pasted-code prompts", CliLoginRecoveryVerification.OutputHandlesPartialUrlsAndCodePrompts);
@@ -479,6 +479,7 @@ internal static class Verification
         await Test("delegation scenario S2: held notices released together by a send or run next after a relaunch", DelegationScenarioVerification.S2);
         await Test("delegation scenario S3: a diverged child's held follow-ups reach it once after a relaunch", DelegationScenarioVerification.S3);
         await Test("styles Conformance", StylesVerification.Conformance);
+        await Test("styles: the app knows no built-in feature, and the rules that name one are refused in a fixed order", StylesVerification.BuiltInFeatures);
         await Test("styles EvaluationAndTrust", StylesVerification.EvaluationAndTrust);
         await Test("styles: every manifest and bundled style projects its golden panel in full", StyleGoldenVerification.EveryStyleMatchesItsGolden);
         await Test("styles: the golden's serialisation rules are fixed", StyleGoldenVerification.TheSerialisationRulesAreFixed);

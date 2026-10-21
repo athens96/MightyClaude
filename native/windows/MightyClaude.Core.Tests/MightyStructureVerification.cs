@@ -101,8 +101,9 @@ internal static class MightyStructureVerification
         // The flow went back to the interview after a seed.
         var back = MightyStructure.Make([Run("r1", "ooo seed"), Run("r2", "ooo interview 다시")], flow, Phase(flow, "interview"));
         Check(Cards(back) == "|r2|r1|||" && Steps(back) == "done,current,done,pending,pending,pending", "a column holding cards is never pending: " + Cards(back) + " " + Steps(back));
-        var powers = Style("superpowers");
-        Check(Steps(MightyStructure.Make([Run("r1", "/superpowers:brainstorming 아이디어"), Run("r2", "/superpowers:writing-plans")], powers, null)) == "done,current,pending,pending", "with no current phase the newest request's phase is current");
+        // Four phases: brainstorm, plan, execute, finish.
+        var loop = StyleFixtures.StatefulStyle.Evaluator;
+        Check(Steps(MightyStructure.Make([Run("r1", "/loop:brainstorming 아이디어"), Run("r2", "/loop:writing-plans")], loop, null)) == "done,current,pending,pending", "with no current phase the newest request's phase is current");
 
         var runs = new[]
         {
@@ -111,7 +112,7 @@ internal static class MightyStructureVerification
             Run("tail", agents: [Agent("bg", status: "running", kind: "task")]),
         };
         // A style without phases is drawn as a free pane, as no style at all is.
-        Check(MightyStructure.Make(runs, Style("paperthin"), null) == MightyStructure.Make(runs, null, null), "a style without phases draws a free pane");
+        Check(MightyStructure.Make(runs, StyleFixtures.CatalogueStyle.Evaluator, null) == MightyStructure.Make(runs, null, null), "a style without phases draws a free pane");
         var rows = MightyStructure.Make(runs, null, null).Rows!;
         Check(rows.Select(r => r.Item.RunId).SequenceEqual(["running", "done", "failed", "halted", "tail"]) && rows.All(r => r.Request == Step.Done), "one row per request, oldest first, each with its request done");
         Check(rows.Select(r => r.Execution).SequenceEqual([Step.Current, Step.Done, Step.Error, Step.Stopped, Step.Current]), "the run goes on until every block settled, unless the request failed or was stopped");

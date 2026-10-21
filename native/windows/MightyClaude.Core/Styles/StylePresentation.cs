@@ -3,7 +3,6 @@ using System.Text.Json;
 namespace MightyClaude.Core;
 
 public sealed record StyleApprovalSection(string Id, string Title, IReadOnlyList<string> Lines, bool Foldable = false, bool Monospaced = false);
-public sealed record StyleAttachmentItem(string Title, string Path, string Detail, bool ReadOnly = true);
 public sealed record StyleRequestPresentation(string? Prefix, string? Icon, string Tint);
 
 public static class StylePresentation

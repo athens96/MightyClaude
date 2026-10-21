@@ -59,6 +59,17 @@ public sealed class StyleManifest
     public static string[] Strings(JsonElement e,string name) => Items(e,name).Select(v=>v.GetString()!).ToArray();
 }
 
+/// <summary>
+/// The app-side features a manifest may name, each with its closed states (M/Styles/StyleCapabilities.swift StyleCapabilityID).
+/// Frozen with the tag (§1.8). Empty since v7: the one feature there was left with the bundled style that used it. The
+/// <c>capabilities</c> field and the two rule kinds that read a feature stay in the schema, so any name a manifest declares is
+/// now refused as unknown.
+/// </summary>
+public static class StyleCapabilityID
+{
+    public static readonly IReadOnlyDictionary<string,string[]> Vocabulary=new Dictionary<string,string[]>(StringComparer.Ordinal);
+}
+
 /// Schema 1 is deliberately closed. Raw-key scanning runs before JSON parsing so
 /// duplicate/escaped keys cannot present different permissions to the reader.
 public static class StyleManifestDecoder
@@ -114,13 +125,14 @@ public static class StyleManifestDecoder
     private static void Guidance(string? s,string p){if(s is not null&&s.Replace("{phase}","",StringComparison.Ordinal).IndexOfAny(['{','}'])>=0)Fail("E_PROMPT_PLACEHOLDER",p);}
     private static void Unique(HashSet<string> seen,string id,string p){if(!seen.Add(id))Fail("E_DUPLICATE_ID",p);}
     public static bool SafeRelativePath(string path)=>!string.IsNullOrWhiteSpace(path)&&!path.StartsWith('/')&&!path.StartsWith('~')&&!path.StartsWith('\\')&&!path.Contains(':')&&!path.Split(['/','\\']).Contains("..");
-    public static StyleManifest Decode(ReadOnlyMemory<byte> bytes,string source="user")
+    /// <param name="capabilities">The vocabulary of built-in features; the app's own (<see cref="StyleCapabilityID.Vocabulary"/>) outside the tests.</param>
+    public static StyleManifest Decode(ReadOnlyMemory<byte> bytes,string source="user",IReadOnlyDictionary<string,string[]>? capabilities=null)
     {
         if(bytes.Length>MaximumBytes)Fail("E_TOO_LARGE");
         Scan(bytes.Span);
         JsonDocument doc;
         try{doc=JsonDocument.Parse(bytes,new JsonDocumentOptions { MaxDepth=8 });}catch(JsonException){throw new StyleManifestException("E_NOT_JSON");}
-        using(doc){if(doc.RootElement.ValueKind!=JsonValueKind.Object)Fail("E_NOT_JSON");Structure(doc.RootElement);var m=new StyleManifest(doc.RootElement);Validate(m,source);return m;}
+        using(doc){if(doc.RootElement.ValueKind!=JsonValueKind.Object)Fail("E_NOT_JSON");Structure(doc.RootElement);var m=new StyleManifest(doc.RootElement);Validate(m,source,capabilities??StyleCapabilityID.Vocabulary);return m;}
     }
     private static void Scan(ReadOnlySpan<byte> bytes)
     {
@@ -217,12 +229,22 @@ public static class StyleManifestDecoder
         r.End();
     }
     private static void Map(JsonElement? value,string path,bool arrays){if(value is null)Fail("E_MISSING_FIELD",path);if(value!.Value.ValueKind!=JsonValueKind.Object)Fail("E_TYPE",path);foreach(var e in value.Value.EnumerateObject()){if(arrays)foreach(var s in Array(e.Value,path+"."+e.Name,100))Str(s,path+"."+e.Name,1,64);else Str(e.Value,path+"."+e.Name,1,64);}}
-    private static void Validate(StyleManifest m,string source)
+    /// <summary>
+    /// <c>cli</c> is the wire word for "no style", so no manifest may claim it. <c>paperthin</c> is no longer bundled (removed
+    /// in v7) but stays reserved: panes saved in that style keep the id, and no other manifest may ever answer to it. The hash
+    /// binding (§3.4) already refuses a stranger there; the reservation keeps the id from being claimed at all (§1.2).
+    /// </summary>
+    public static readonly IReadOnlyList<string> ReservedIds=["cli","ouroboros","paperthin"];
+    public static readonly IReadOnlyList<string> ReservedNames=["Ouroboros"];
+    private static void Validate(StyleManifest m,string source,IReadOnlyDictionary<string,string[]> vocabulary)
     {
         static string? S(JsonElement e,string k)=>StyleManifest.Text(e,k);
-        if(source!="bundled"){if(new[]{"cli","ouroboros","paperthin"}.Contains(m.Id))Fail("E_RESERVED_ID",m.Id);if(new[]{"Ouroboros","Paperthin"}.Any(n=>StyleText.Folded(n)==StyleText.Folded(m.Name)))Fail("E_RESERVED_NAME",m.Name);}
-        var capabilities=StyleManifest.Strings(m.Root,"capabilities");foreach(var c in capabilities)Known(c,["paperthin.casebook"],"E_UNKNOWN_CAPABILITY");
-        foreach(var key in new[]{"recommend","initialGroup"}){var rule=m.Rules.GetProperty(key);if(S(rule,"capability") is {} c){if(!capabilities.Contains(c))Fail("E_CAPABILITY_UNDECLARED",c);var map=rule.GetProperty("map");foreach(var state in new[]{"absent","open","complete"})if(!map.TryGetProperty(state,out _))Fail("E_CAPABILITY_MAP",state);foreach(var pair in map.EnumerateObject())Known(pair.Name,["absent","open","complete"],"E_UNKNOWN_REFERENCE");}}
+        if(source!="bundled"){if(ReservedIds.Contains(m.Id))Fail("E_RESERVED_ID",m.Id);if(ReservedNames.Any(n=>StyleText.Folded(n)==StyleText.Folded(m.Name)))Fail("E_RESERVED_NAME",m.Name);}
+        // A declared name the vocabulary lacks is refused first, so a rule can only reach the map check through a declared, known
+        // feature. With the app's empty vocabulary that never happens: E_CAPABILITY_MAP is unreachable there and only a test
+        // vocabulary produces it (M/Styles/StyleManifestValidator.swift capabilities).
+        var capabilities=StyleManifest.Strings(m.Root,"capabilities");foreach(var c in capabilities)if(!vocabulary.ContainsKey(c))Fail("E_UNKNOWN_CAPABILITY",c);
+        foreach(var key in new[]{"recommend","initialGroup"}){var rule=m.Rules.GetProperty(key);if(S(rule,"capability") is {} c){if(!capabilities.Contains(c))Fail("E_CAPABILITY_UNDECLARED",c);var states=vocabulary.TryGetValue(c,out var known)?known:[];var map=rule.GetProperty("map");foreach(var state in states)if(!map.TryGetProperty(state,out _))Fail("E_CAPABILITY_MAP",state);foreach(var pair in map.EnumerateObject().OrderBy(p=>p.Name,StringComparer.Ordinal))Known(pair.Name,states,"E_UNKNOWN_REFERENCE");}}
         var actions=m.Actions.Select(a=>a.Id).ToHashSet();var phases=m.Phases.Select(p=>p.Id).ToHashSet();var groups=m.Groups.Select(g=>g.Id).ToHashSet();
         void Ref(string? s,HashSet<string> ids,string path){if(s!=null&&!ids.Contains(s))Fail("E_UNKNOWN_REFERENCE",path+": "+s);}
         if(m.Root.TryGetProperty("job",out var job))foreach(var a in StyleManifest.Strings(job,"whileOpen"))Ref(a,actions,"job.whileOpen");
