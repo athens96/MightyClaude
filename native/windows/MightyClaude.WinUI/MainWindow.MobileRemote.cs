@@ -21,7 +21,7 @@ public sealed partial class MainWindow
         if (options.SmokeTest || mobileHost is not null) return;
         var directory = Path.Combine(StateDirectory, "mobile-remote");
         mobileRouter = new(service, directory, Environment.MachineName, MobileAction, MobileExtras) { AppVersion = AppVersionText, ImagePreview = MakeMobileImagePreview, QueueCount = id => views.TryGetValue(id, out var pane) ? pane.MobileQueuedCount : 0, Structure = MobileStructureFor,
-            Digest = pane => pane.Kind == "claude" && views.TryGetValue(pane.Id, out var view) ? view.MobileDigest() : null, ActiveStyle = MobileRunningStyle };
+            Catalog = pane => (views.TryGetValue(pane.Id, out var view) ? view.PaneRuntime(pane.Provider) : Runtime(pane.Provider))?.ModelCatalog, Digest = pane => pane.Kind == "claude" && views.TryGetValue(pane.Id, out var view) ? view.MobileDigest() : null, ActiveStyle = MobileRunningStyle };
         mobileHost = new(directory, Environment.MachineName, MobileDesktopRouter.Capabilities, MobileRoute) { AppVersion = AppVersionText };
         mobileRouter.HostId = mobileHost.HostId;
         mobileRouter.DirectEndpoints = () => mobileHost?.DirectEndpoints ?? [];
@@ -500,7 +500,7 @@ public sealed partial class MainWindow
             {
                 // The composer's rule (§1.17.4): a plan-mode style never steers into a turn that only waits on background work.
                 var plans = LaunchesInPlanMode;
-                if (BackgroundQueuePolicy.PhoneSteers(mode, pane.BackgroundWork, plans) && files.Count == 0 && pane.Provider == "claude" && await owner.service.TrySteerAsync(id, text)) return "steered";
+                if (BackgroundQueuePolicy.PhoneSteers(mode, pane.BackgroundWork, plans) && files.Count == 0 && DelegationProviders.CanSteer(pane.Kind, pane.Provider) && await owner.service.TrySteerAsync(id, text)) return "steered";
                 token.ThrowIfCancellationRequested(); queuedInputs.Add(text, files, BackgroundQueuePolicy.QueuedOverride(plans), prepared); RenderQueuedInputs(); RefreshComposerState(); if (!MobileBusy) queueDrainTimer.Start(); return "queued";
             }
             var submission = ++composerSubmissionVersion; starting = true; RefreshComposerState();
