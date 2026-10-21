@@ -4,7 +4,7 @@ docs/mighty-styles.md 10장의 사본이다. 고정된 어휘로 **지금도 표
 
 > **v7(2026-10-21): 번들 스타일 Paperthin과 Superpowers를 지웠다.** 남은 번들은 Ouroboros와 클러드 플랜이고, 앱의 내장 기능 어휘(`paperthin.casebook`)와 폰의 레거시 `paperthin` 페이로드·와이어 단어도 함께 지웠다(`paperthin`은 예약 id로 남는다). 아래 이전 항목과 "고정 이후" 기록이 두 스타일을 이름으로 말하는 곳은 그때의 이력이다.
 
-고정 기준(v7 — 2026-10-21): 태그·FREEZE SHA는 고정할 때 적는다.
+고정 기준(v7 — 2026-10-21): 태그 `mighty-style-engine-v7` = `5cbf20d`, FREEZE = `9408b8a`. 번들 Paperthin·Superpowers, 내장 기능 `paperthin.casebook`, 옛 폰의 `paperthin` 페이로드를 지우고(와이어 어휘 `cli`·`ouroboros`), 공유 테스트 픽스처 `styles/fixtures/`와 그 골든을 더한 고정이다. 번들 파일을 지우므로 준비 파일(`STYLE_FREEZE_PENDING`) 없이 엔진 커밋·FREEZE 커밋·태그를 한 번에 올렸다. 검사는 `.github/workflows/style-freeze.yml`이 돌린다.
 
 고정 기준(v6 — 2026-10-06): 태그 `mighty-style-engine-v6` = `34be81e`, FREEZE = `43cd598`. Claude 계획 모드 읽기(docs/mighty-styles.md §1.17: `planState` 단계 규칙, `stateSources.runState`, `taskList` 위젯, `launch`, 단계별 입력창 문구·안내), 오류 코드 `E_STATE_RUN_STATE`, 번들 "클러드 플랜"을 더한 고정이다. 처음에는 `a773d36`(FREEZE = `c01cb7a`)에 걸었으나, 고정된 계약 문서 §8.2의 v6 줄이 "(준비 중)"으로 남아 있어 그 한 줄을 고친 `43cd598` 위로 태그를 옮겼다(엔진 코드는 같다). 준비하는 동안 쓰던 `styles/STYLE_FREEZE_PENDING`은 `c01cb7a`에서 지웠고, 적합성 코퍼스 README의 오류 코드 수(54개, 코퍼스 52개)는 `c715aac`에서 고쳤다. 검사는 `.github/workflows/style-freeze.yml`이 돌린다.
 
