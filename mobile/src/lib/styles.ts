@@ -2,10 +2,7 @@ import type {
   GuidedRequest,
   MobileMighty,
   MobileOuroboros,
-  MobilePaperthin,
   OuroborosAction,
-  PaperthinDomain,
-  PaperthinSkill,
   SettingOption,
   StyleAction,
   StyleAttachment,
@@ -23,10 +20,10 @@ import { t } from '@/lib/i18n';
  * defensively (a field the host adds later, or one it leaves out, must never crash a
  * screen) and turns it into what the guided panel draws.
  *
- * The phone holds no closed set of style ids: a panel arrives, it is drawn. The two
- * built-in styles also keep sending their old `ouroboros`/`paperthin` payloads, and a
- * host that never learned the "style" capability sends only those — `legacyStylePanel`
- * folds them into the same shape so one component covers both.
+ * The phone holds no closed set of style ids: a panel arrives, it is drawn. The bundled
+ * Ouroboros also keeps sending its old `ouroboros` payload, and a host that never learned
+ * the "style" capability sends only that — `legacyStylePanel` folds it into the same
+ * shape so one component covers both.
  */
 
 /** Counts the host promises to stay under; a longer list is cut rather than refused. */
@@ -330,6 +327,7 @@ export function normalizeStylePanel(raw: unknown): StylePanel | undefined {
     ).slice(0, MAX_STYLE_GROUPS),
     actions: dedupeById(actions),
     next: actionIdList(raw.next, known),
+    // Always empty from a v7 host (contract 7.3); a host from before v7 may still fill it.
     attachments: arrayOf(raw.attachments)
       .map(parseAttachment)
       .filter((entry): entry is StyleAttachment => entry !== undefined)
@@ -489,21 +487,6 @@ function dedupeById<T extends { id: string }>(entries: T[]): T[] {
 
 const OUROBOROS_MISSING = 'Mac에서 Ouroboros 준비가 끝나지 않았습니다 (플러그인·uvx).';
 const OUROBOROS_HINT = 'Mac의 실행 창에서 설치한 뒤 다시 시도하세요.';
-const PAPERTHIN_MISSING = 'Paperthin 스킬이 설치되어 있지 않습니다.';
-const PAPERTHIN_HINT = '스킬 설치는 Mac에서 합니다.';
-/**
- * Word for word the bundled manifest's own `guidance.next`, so the same style says the
- * same thing whichever host the phone is talking to. The long-press hint it used to
- * carry is app chrome, not manifest text, and the panel now draws it for every style.
- */
-const PAPERTHIN_GUIDANCE = '대상(파일 경로나 지시)을 아래에 적고 스킬을 누르세요. 비워 두면 스킬만 보냅니다.';
-
-/** The host titles a casebook file without its `.local.md` suffix; so does this. */
-const CASEBOOK_SUFFIX = '.local.md';
-
-function attachmentTitle(file: string): string {
-  return file.endsWith(CASEBOOK_SUFFIX) ? file.slice(0, -CASEBOOK_SUFFIX.length) : file;
-}
 
 function parseOuroborosAction(raw: unknown): OuroborosAction | undefined {
   if (!isRecord(raw)) return undefined;
@@ -530,56 +513,6 @@ export function normalizeLegacyOuroboros(raw: unknown): MobileOuroboros | undefi
     next: actions(raw.next),
     all: actions(raw.all),
   };
-}
-
-function parsePaperthinSkill(raw: unknown): PaperthinSkill | undefined {
-  if (!isRecord(raw)) return undefined;
-  if (typeof raw.name !== 'string' || raw.name.length === 0) return undefined;
-  return {
-    name: raw.name,
-    emoji: inlineText(raw.emoji, 8),
-    summary: inlineText(raw.summary, 400),
-    scope: inlineText(raw.scope, 120),
-    userInvoked: raw.userInvoked === true,
-    readOnly: raw.readOnly === true,
-  };
-}
-
-function parsePaperthinDomain(raw: unknown): PaperthinDomain | undefined {
-  if (!isRecord(raw)) return undefined;
-  if (typeof raw.id !== 'string' || raw.id.length === 0) return undefined;
-  const title = inlineText(raw.title, 40);
-  return {
-    id: raw.id,
-    title: title.length > 0 ? title : raw.id,
-    axis: inlineText(raw.axis, 60),
-    question: inlineText(raw.question, 200),
-    skills: arrayOf(raw.skills)
-      .map(parsePaperthinSkill)
-      .filter((skill): skill is PaperthinSkill => skill !== undefined),
-  };
-}
-
-/** Reads `MobileMighty.paperthin`, the payload the built-in style keeps sending. */
-export function normalizeLegacyPaperthin(raw: unknown): MobilePaperthin | undefined {
-  if (!isRecord(raw)) return undefined;
-  const paperthin: MobilePaperthin = {
-    installed: raw.installed !== false,
-    domains: arrayOf(raw.domains)
-      .map(parsePaperthinDomain)
-      .filter((domain): domain is PaperthinDomain => domain !== undefined),
-  };
-  if (typeof raw.recommended === 'string' && raw.recommended.length > 0) {
-    paperthin.recommended = raw.recommended;
-  }
-  if (isRecord(raw.casebook) && typeof raw.casebook.name === 'string') {
-    paperthin.casebook = {
-      name: inlineText(raw.casebook.name, 120),
-      weight: inlineText(raw.casebook.weight, 40),
-      files: stringList(raw.casebook.files).map((file) => inlineText(file, 120)),
-    };
-  }
-  return paperthin;
 }
 
 function ouroborosPanel(ouroboros: MobileOuroboros): StylePanel {
@@ -624,80 +557,12 @@ function ouroborosPanel(ouroboros: MobileOuroboros): StylePanel {
   return panel;
 }
 
-function paperthinAction(skill: PaperthinSkill): StyleAction {
-  const flags: string[] = [];
-  if (skill.userInvoked) flags.push('userInvoked');
-  if (skill.readOnly) flags.push('readOnly');
-  const action: StyleAction = {
-    id: skill.name,
-    title: skill.name,
-    help: skill.summary,
-    // Every Paperthin skill takes the composer text: it is the skill's target.
-    takesText: true,
-    requiresText: false,
-    flags,
-    prominent: false,
-  };
-  if (skill.emoji.length > 0) action.glyph = skill.emoji;
-  if (skill.scope.length > 0) action.scope = skill.scope;
-  return action;
-}
-
-function paperthinGroup(domain: PaperthinDomain, index: number): StyleGroup {
-  const group: StyleGroup = {
-    id: domain.id,
-    title: domain.title,
-    selected: index === 0,
-    actions: domain.skills.map((skill) => skill.name),
-  };
-  if (domain.axis.length > 0) group.axis = domain.axis;
-  if (domain.question.length > 0) group.question = domain.question;
-  return group;
-}
-
-function paperthinPanel(paperthin: MobilePaperthin): StylePanel {
-  const actions = dedupeById(
-    paperthin.domains.flatMap((domain) =>
-      domain.skills.filter((skill) => isPostableActionId(skill.name)).map(paperthinAction),
-    ),
-  );
-  const known = new Set(actions.map((action) => action.id));
-  const groups = dedupeById(paperthin.domains.map(paperthinGroup))
-    .map((group) => ({ ...group, actions: actionIdList(group.actions, known) }))
-    .filter((group) => group.actions.length > 0);
-  const casebook = paperthin.casebook;
-  const detail = casebook
-    ? [casebook.name, casebook.weight].filter((part) => part.length > 0).join(' · ')
-    : '';
-  const panel: StylePanel = {
-    style: { id: 'paperthin', name: 'Paperthin', source: 'bundled' },
-    groups,
-    actions,
-    next: groups[0]?.actions ?? [],
-    attachments: (casebook?.files ?? []).map((file) => {
-      const attachment: StyleAttachment = { id: file, title: attachmentTitle(file), readOnly: true };
-      if (detail.length > 0) attachment.detail = detail;
-      return attachment;
-    }),
-    setup: paperthin.installed
-      ? { ready: true, missing: [] }
-      : { ready: false, missing: [PAPERTHIN_MISSING], hint: PAPERTHIN_HINT },
-    guidance: PAPERTHIN_GUIDANCE,
-    presentation: { headerTitle: 'Paperthin', source: 'bundled' },
-  };
-  if (paperthin.recommended && known.has(paperthin.recommended)) {
-    panel.recommended = paperthin.recommended;
-  }
-  return panel;
-}
-
 /**
- * The built-in styles as a panel, for a host that has not learned the "style"
- * capability. It answers for those two ids and nothing else (contract 7.4).
+ * The bundled Ouroboros as a panel, for a host that has not learned the "style"
+ * capability. It answers for that id and nothing else (contract 7.4).
  */
 export function legacyStylePanel(mighty: MobileMighty): StylePanel | undefined {
   if (mighty.style === 'ouroboros' && mighty.ouroboros) return ouroborosPanel(mighty.ouroboros);
-  if (mighty.style === 'paperthin' && mighty.paperthin) return paperthinPanel(mighty.paperthin);
   return undefined;
 }
 
@@ -862,8 +727,8 @@ export function styleViewModel(panel: StylePanel, selectedGroupId?: string): Sty
  * 1.3.3), so an empty composer still sends the bare action.
  *
  * `styleAware` is the same capability check that chose the panel. A host without "style"
- * only ever decodes the old `{style, skill}` body, and only the two built-in ids can
- * reach it, because `legacyStylePanel` answers for nothing else (contract 7.4, 7.5).
+ * only ever decodes the old `{style, skill}` body, and only `ouroboros` can reach it,
+ * because `legacyStylePanel` answers for nothing else (contract 7.4, 7.5).
  */
 export function guidedRequestFor(
   panel: StylePanel,

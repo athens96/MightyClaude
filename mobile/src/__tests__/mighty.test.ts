@@ -121,41 +121,20 @@ describe('normalizeMighty', () => {
     });
     expect(mighty?.ouroboros?.ready).toBe(false);
     expect(mighty?.ouroboros?.takesText).toEqual(['interview', 'auto']);
-    expect(mighty?.paperthin).toBeUndefined();
   });
 
-  it('reads the Paperthin map, skills and casebook', () => {
+  it('ignores the Paperthin payload a host from before v7 still sends', () => {
+    // The style and its legacy payload were removed in v7 (contract 7.4). An older host
+    // can still send both; the id is kept as it arrived and the payload is dropped whole.
     const mighty = normalizeMighty({
       style: 'paperthin',
       runs: [],
       paperthin: {
-        installed: false,
-        recommended: 're0-memo',
-        domains: [
-          {
-            id: 'coil',
-            title: 'coil',
-            axis: '하나 · 반복',
-            question: '각 패스가 다음 패스를 가르쳤는가?',
-            skills: [
-              {
-                name: 're0-memo',
-                emoji: '🧭',
-                summary: '교훈을 뽑아냅니다',
-                scope: '완료된 사이클 하나',
-                userInvoked: false,
-                readOnly: true,
-              },
-            ],
-          },
-        ],
-        casebook: { name: '2026-09-cycle', weight: 'full', files: ['DESIGN.md', 'EVIDENCE.md'] },
+        installed: true,
+        domains: [{ id: 'coil', title: 'coil', skills: [{ name: 're0-memo' }] }],
       },
     });
-    expect(mighty?.paperthin?.installed).toBe(false);
-    expect(mighty?.paperthin?.recommended).toBe('re0-memo');
-    expect(mighty?.paperthin?.domains[0]?.skills[0]?.readOnly).toBe(true);
-    expect(mighty?.paperthin?.casebook?.files).toEqual(['DESIGN.md', 'EVIDENCE.md']);
+    expect(mighty).toEqual({ style: 'paperthin', runs: [] });
   });
 
   it('drops entries it cannot draw instead of throwing', () => {
@@ -167,13 +146,11 @@ describe('normalizeMighty', () => {
         { id: 'r1', blocks: [{ kind: 'main' }, 7, { id: 'b2', kind: 'wormhole' }] },
       ],
       ouroboros: 'not an object',
-      paperthin: { domains: [{ title: 'no id' }] },
     });
     expect(mighty?.runs).toHaveLength(1);
     expect(mighty?.runs[0]?.blocks).toEqual([{ id: 'b2', kind: 'wormhole', title: '', status: '' }]);
     expect(mighty?.runs[0]?.input).toBe('');
     expect(mighty?.ouroboros).toBeUndefined();
-    expect(mighty?.paperthin?.domains).toEqual([]);
     expect(normalizeMighty(undefined)).toBeUndefined();
     expect(normalizeMighty([])).toBeUndefined();
   });

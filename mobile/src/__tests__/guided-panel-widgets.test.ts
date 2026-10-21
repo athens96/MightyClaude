@@ -9,10 +9,11 @@ import { normalizeStylePanel } from '@/lib/styles';
 
 /**
  * §1.16.4 at render level: the same golden `withState` panel the Mac's
- * StyleWidgetPresentationTests reads, drawn by the real component.
+ * StyleWidgetPresentationTests reads, drawn by the real component. The bundled style
+ * with state sources since v7 is the plan-mode one.
  */
 function goldenWithState(): StylePanel {
-  const golden = join(__dirname, '..', '..', '..', 'styles', 'golden', 'superpowers.panel.json');
+  const golden = join(__dirname, '..', '..', '..', 'styles', 'golden', 'claude-plan.panel.json');
   const recorded = JSON.parse(readFileSync(golden, 'utf8')) as Record<string, unknown>;
   return normalizeStylePanel(recorded.withState)!;
 }
@@ -37,11 +38,15 @@ function render(panel: StylePanel): ReactTestRenderer {
 describe('guided panel state widgets (§1.16.4)', () => {
   it('draws the label on one line with an ellipsis, as the Mac does', () => {
     const renderer = render(goldenWithState());
-    const label = renderer.root.findAll(
-      (node) => node.type === Text && node.props.children === '서브에이전트 2회 시작',
-    );
-    expect(label.map((node) => [node.props.numberOfLines, node.props.ellipsizeMode])).toEqual([[1, 'tail']]);
-    expect(renderer.root.findAllByType(StateWidget)).toHaveLength(2);
+    for (const text of ['진행 중: doing step 4', '턴 완료 · 백그라운드 1개 실행 중']) {
+      const label = renderer.root.findAll((node) => node.type === Text && node.props.children === text);
+      expect({ text, lines: label.map((node) => [node.props.numberOfLines, node.props.ellipsizeMode]) }).toEqual({
+        text,
+        lines: [[1, 'tail']],
+      });
+    }
+    // The bar, the two labels and the task list: one widget per declared source.
+    expect(renderer.root.findAllByType(StateWidget)).toHaveLength(4);
     act(() => renderer.unmount());
   });
 

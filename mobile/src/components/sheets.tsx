@@ -278,7 +278,7 @@ export function ActionListSheet({
   );
 }
 
-/** Title plus a few plain paragraphs; used for a Paperthin skill's description. */
+/** Title plus a few plain paragraphs; used for a style action's description. */
 export function InfoSheet({
   visible,
   title,
@@ -295,7 +295,7 @@ export function InfoSheet({
     <Sheet visible={visible} onClose={onClose}>
       <Text style={styles.title}>{title}</Text>
       <ScrollView style={styles.messageBody}>
-        {/* Two lines of a skill's description can read the same; position is the key. */}
+        {/* Two lines of an action's description can read the same; position is the key. */}
         {lines.map((line, index) => (
           <Text key={index} style={styles.note}>
             {line}

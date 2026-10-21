@@ -218,7 +218,7 @@ describe('the m1 capability extension routes', () => {
     const client = createClient(fake.channel);
     await client.guided('s1', { styleId: 'ouroboros', actionId: 'interview', text: '  로그인  ' });
     await client.guided('s1', { styleId: 'ouroboros', actionId: 'seed' });
-    await client.guided('s1', { styleId: 'paperthin', actionId: ' re0 ', text: '' });
+    await client.guided('s1', { styleId: 'claude-plan', actionId: ' verify ', text: '' });
     // The phone holds no closed set of styles: an id it has never seen goes out as sent.
     await client.guided('s1', { styleId: 'gstack', actionId: 'ship' });
     expect(fake.calls.map((call) => `${call.method} ${call.path}`)).toEqual([
@@ -230,15 +230,15 @@ describe('the m1 capability extension routes', () => {
     expect(fake.calls.map((call) => call.body)).toEqual([
       { styleId: 'ouroboros', actionId: 'interview', text: '로그인' },
       { styleId: 'ouroboros', actionId: 'seed' },
-      { styleId: 'paperthin', actionId: 're0' },
+      { styleId: 'claude-plan', actionId: 'verify' },
       { styleId: 'gstack', actionId: 'ship' },
     ]);
   });
 
   it('posts the old body to a host that never learned the "style" capability', async () => {
     // That host decodes `{style, skill}` and nothing else, so the new pair would come
-    // back 400 for every chip on screen (contract 7.5). Only the two built-in ids reach
-    // this path, because an older host sends no other style's panel to draw from.
+    // back 400 for every chip on screen (contract 7.5). Only Ouroboros reaches this
+    // path, because an older host sends no other style's panel this app draws from.
     const fake = fakeChannel({ status: 202, body: { protocol: 1, accepted: 'started' } });
     const client = createClient(fake.channel);
     await client.guided('s1', {
@@ -247,10 +247,10 @@ describe('the m1 capability extension routes', () => {
       text: '  로그인  ',
       legacy: true,
     });
-    await client.guided('s1', { styleId: 'paperthin', actionId: 're0', legacy: true });
+    await client.guided('s1', { styleId: 'ouroboros', actionId: 'seed', legacy: true });
     expect(fake.calls.map((call) => call.body)).toEqual([
       { style: 'ouroboros', skill: 'interview', text: '로그인' },
-      { style: 'paperthin', skill: 're0' },
+      { style: 'ouroboros', skill: 'seed' },
     ]);
   });
 
@@ -258,15 +258,15 @@ describe('the m1 capability extension routes', () => {
     const fake = fakeChannel(ok);
     const client = createClient(fake.channel);
     await expect(
-      client.guided('s1', { styleId: 'paperthin', actionId: '  ' }),
+      client.guided('s1', { styleId: 'claude-plan', actionId: '  ' }),
     ).rejects.toMatchObject({ status: 400 });
-    await expect(client.guided('s1', { styleId: ' ', actionId: 're0' })).rejects.toMatchObject({
+    await expect(client.guided('s1', { styleId: ' ', actionId: 'verify' })).rejects.toMatchObject({
       status: 400,
     });
     await expect(
       client.guided('s1', {
-        styleId: 'paperthin',
-        actionId: 're0',
+        styleId: 'claude-plan',
+        actionId: 'new-plan',
         text: 'x'.repeat(32 * 1024 + 1),
       }),
     ).rejects.toMatchObject({ status: 413 });
@@ -312,7 +312,7 @@ describe('the m1 capability extension routes', () => {
       [
         409,
         '이 스타일의 창이 아닙니다',
-        (client) => client.guided('s1', { styleId: 'paperthin', actionId: 're0' }),
+        (client) => client.guided('s1', { styleId: 'claude-plan', actionId: 'verify' }),
       ],
       [413, '한도를 넘었습니다', (client) => client.createUpload('s1', { name: 'a', size: 9 })],
       [400, '크기가 다릅니다', (client) => client.completeUpload('u1')],

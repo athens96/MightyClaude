@@ -12,7 +12,6 @@ import {
   blockText,
   inlineText,
   normalizeLegacyOuroboros,
-  normalizeLegacyPaperthin,
   normalizeStylePanel,
 } from '@/lib/styles';
 
@@ -259,8 +258,6 @@ export function normalizeMighty(raw: unknown): MobileMighty | undefined {
   else if (raw.panel !== undefined && raw.panel !== null) mighty.panelUnreadable = true;
   const ouroboros = normalizeLegacyOuroboros(raw.ouroboros);
   if (ouroboros) mighty.ouroboros = ouroboros;
-  const paperthin = normalizeLegacyPaperthin(raw.paperthin);
-  if (paperthin) mighty.paperthin = paperthin;
   return mighty;
 }
 
