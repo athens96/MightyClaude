@@ -23,7 +23,6 @@ struct SetupPlanTests {
         let styles = SetupPlan.order(selected: ["ouroboros", "node"], catalog: catalog, platform: .macos, isSatisfied: { _ in false })
         #expect(styles.firstIndex(of: "git")! < styles.firstIndex(of: "homebrew")!)
         #expect(styles.firstIndex(of: "homebrew")! < styles.firstIndex(of: "node")!)
-        #expect(styles.firstIndex(of: "homebrew")! < styles.firstIndex(of: "node")!)
         #expect(styles.firstIndex(of: "claude")! < styles.firstIndex(of: "ouroboros")!)
         #expect(styles.firstIndex(of: "uv")! < styles.firstIndex(of: "ouroboros")!)
         #expect(Set(styles) == ["git", "homebrew", "node", "claude", "uv", "ouroboros"])

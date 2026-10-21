@@ -63,13 +63,6 @@ public enum StyleText {
     /// cleaned and cut before the app repeats it (§2).
     public static func safe(_ value: String) -> String { truncated(replacingBanned(value), to: StyleLimits.maximumMessageValue) }
 
-    /// A string that came off the file system rather than through the approval
-    /// card, normalised once just before projection (§1.8).
-    public static func normalised(_ value: String, limit: Int? = nil) -> String {
-        let cleaned = replacingBanned(value)
-        return limit.map { truncated(cleaned, to: $0) } ?? cleaned
-    }
-
     /// The ellipsis is part of the budget: a value "cut to 64" is 64 characters
     /// on screen, not 65 (§2, §1.8).
     static func truncated(_ value: String, to limit: Int) -> String {

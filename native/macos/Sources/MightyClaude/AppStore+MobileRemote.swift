@@ -356,7 +356,8 @@ extension AppStore {
     /// revoked, unregistered, hash-mismatched or remote all answer "cli", so
     /// nothing §4.5 hid leaks through a session summary (§7.2).
     func mobileStyleId(_ session: RunSession) -> String { guidedStyle(session)?.id ?? MobileWire.cliStyle }
-    /// The old three-word field, which only the two bundled ids can fill.
+    /// The old two-word field (`cli`, `ouroboros`), which only the bundled
+    /// Ouroboros fills with its own word; every other style sends `cli`.
     func mobileStyle(_ session: RunSession) -> String { MobileRemoteSupport.style(mobileStyleId(session)) }
 
     /// A cheap hash of the ids the phone's settings pickers would offer, built
@@ -556,7 +557,7 @@ extension AppStore {
         let runnable = guided ? applicableStyles(session, viewMode: agentViewMode).filter(\.isRunnable) : []
         // The old field keeps its fixed vocabulary, but it may only offer what
         // this pane could actually pick: with the resource bundle missing the
-        // two built-ins do not exist, and offering them would let `validate`
+        // bundled Ouroboros does not exist, and offering it would let `validate`
         // accept an id `mobileApplyStyleId` then refuses (§7.2).
         let legacyIds = [MobileWire.cliStyle] + MobileWire.mightyStyles.filter { id in
             id != MobileWire.cliStyle && runnable.contains { $0.id == id }

@@ -135,7 +135,7 @@ struct StyleManifestTests {
         // The ellipsis is inside the budget: "cut to 64" means 64 on screen.
         #expect(StyleText.safe(String(repeating: "a", count: 200)).count == StyleLimits.maximumMessageValue)
         #expect(StyleText.safe(String(repeating: "a", count: 200)).hasSuffix("\u{2026}"))
-        #expect(StyleText.normalised(String(repeating: "b", count: 200), limit: 80).count == 80)
+        #expect(StyleText.truncated(String(repeating: "b", count: 200), to: 80).count == 80)
     }
 
     /// C3: a `\uXXXX` in a key name is one key to `JSONSerialization` and a

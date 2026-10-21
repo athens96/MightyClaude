@@ -528,8 +528,8 @@ export function createClient(channel: RelayChannel): MobileClient {
       // A host without the "style" capability only decodes `{style, skill}` and answers
       // 400 to anything else, so the body follows the host rather than the app: the new
       // pair against a host that advertised "style", the old one against every other
-      // (contract 7.5). Only the two built-in ids reach the old shape, because that host
-      // sends no other style's panel for the phone to draw a chip from.
+      // (contract 7.5). Only the built-in Ouroboros reaches the old shape, because that
+      // host sends no other style's panel this app still draws a chip from.
       // An empty `text` is the same as none: the host then sends the bare action.
       const body: Record<string, unknown> = input.legacy
         ? { style: styleId, skill: actionId }

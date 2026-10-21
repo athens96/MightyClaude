@@ -75,8 +75,8 @@ private final class FakeMobileHost: MobileHostDelegate, @unchecked Sendable {
     func mobileGuided(sessionId: String, style: String, skill: String, text: String) async throws -> String {
         lock.lock(); defer { lock.unlock() }
         try known(sessionId)
-        // The registry the host would consult; the two bundled styles are the
-        // only ones this scripted app knows.
+        // The registry the host would consult; the bundled styles (Ouroboros
+        // and 클러드 플랜) are the only ones this scripted app knows.
         guard let registered = BundledStyles.shared.style(style) else { throw MobileHostError.badRequest(MobileRemoteSupport.unknownStyleMessage) }
         guard style == paneStyle else { throw MobileHostError.conflict("이 실행 창은 \(style) 스타일이 아닙니다.") }
         guard let prompt = MobileMightySupport.guidedPrompt(registered, actionId: skill, text: text) else {

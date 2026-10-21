@@ -499,8 +499,9 @@ public struct MobileSubmitRequest: Codable, Sendable {
     public var attachments: [String]?
     public init(text: String, mode: String? = nil, attachments: [String]? = nil) { self.text = text; self.mode = mode; self.attachments = attachments }
 }
-/// `styleId`+`actionId` is the new shape, `style`+`skill` the legacy one for
-/// the two bundled styles. The new shape wins when both arrive (§7.5).
+/// `styleId`+`actionId` is the new shape, `style`+`skill` the legacy one an
+/// older phone sends for the bundled Ouroboros (it also named Paperthin until
+/// v7). The new shape wins when both arrive (§7.5).
 public struct MobileGuidedRequest: Codable, Sendable {
     public var styleId: String?
     public var actionId: String?
