@@ -53,7 +53,7 @@ struct StyleProjectionTests {
         #expect(coil.groups.first { $0.selected }?.id == "coil" && coil.groups.first { $0.id == "depth" }?.axis == "하나 \u{00B7} 지금")
         #expect(coil.next == ["plan", "loop", "memo", "work", "nba"])
         #expect(coil.recommended == "loop")
-        #expect(coil.actions.count == 7 && coil.actions.first { $0.id == "nba" }?.flags == ["readOnly"])
+        #expect(coil.actions.count == 7 && coil.actions.first { $0.id == "nba" }?.flags == ["userInvoked", "readOnly"])
         #expect(coil.actions.first { $0.id == "hate" }?.flags == ["userInvoked"] && coil.actions.first { $0.id == "hate" }?.glyph == "😈")
         #expect(coil.presentation.headerTitle == "Deck")
         // Nothing offers an attachment any more, but the field still travels

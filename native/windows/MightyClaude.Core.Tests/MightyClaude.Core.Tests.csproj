@@ -22,5 +22,7 @@
     <!-- Every manifest of styles/ and every golden of styles/golden, by folder: a file added there is checked without a line here. -->
     <EmbeddedResource Include="../../../styles/*.json" LogicalName="MightyClaude.Core.Tests.Styles.repository.%(Filename)%(Extension)" />
     <EmbeddedResource Include="../../../styles/golden/*.json" LogicalName="MightyClaude.Core.Tests.Styles.golden.%(Filename)%(Extension)" />
+    <!-- The test-only manifests the Mac reads from the same files (StyleFixtures.swift), recorded in styles/golden like a style. -->
+    <EmbeddedResource Include="../../../styles/fixtures/*.json" LogicalName="MightyClaude.Core.Tests.Styles.fixtures.%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

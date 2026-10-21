@@ -7,7 +7,8 @@ using MightyClaude.Core;
 
 /// <summary>
 /// The panel every style projects, against the goldens the macOS StyleGoldenContractTests record in <c>styles/golden</c>:
-/// the same five fixed inputs (M/StyleGoldenSupport.swift projection), compared whole, byte for byte. (v7 dropped
+/// the same five fixed inputs (M/StyleGoldenSupport.swift projection), compared whole, byte for byte — for the repository
+/// manifests, the bundled styles and the test-only fixtures of <c>styles/fixtures</c>. (v7 dropped
 /// <c>capabilityOpen</c>: with no built-in feature left it was <c>lastGroup</c> again, byte for byte.)
 /// </summary>
 internal static class StyleGoldenVerification
@@ -118,9 +119,28 @@ internal static class StyleGoldenVerification
             Check(StateReading(ouroboros) is null && !Projection(ouroboros).Any(c => c.Key == "withState" || c.Key.StartsWith("planStage", StringComparison.Ordinal)), "a style without state sources has no withState and no plan-stage case");
         }
         finally { Directory.Delete(root, true); }
+        // The test-only manifests of styles/fixtures, decoded as an approved user style under the test vocabulary (the only one
+        // deck decodes under) exactly as the Mac does, and compared whole like the bundled styles (macOS theFixtureManifestsHaveGoldens).
+        {
+            var fixtures = StyleFixtures.Files();
+            Check(fixtures.Keys.Order(StringComparer.Ordinal).SequenceEqual(["deck.json", "loop.json"]), "styles/fixtures holds deck and loop: " + string.Join(", ", fixtures.Keys));
+            var projections = new List<JsonObject>();
+            foreach (var file in fixtures.Keys.Order(StringComparer.Ordinal))
+            {
+                var style = StyleFixtures.Style(file[..^".json".Length]);
+                Check(file == style.Id + ".json", file + " must be named after its id " + style.Id);
+                projections.Add(Projection(style));
+                Compare(style, goldens, compared);
+            }
+            // lastGroup is not firstGroup again for at least one golden, so the byGroup input is not vacuous.
+            Check(projections.Any(p => !JsonNode.DeepEquals(p["firstGroup"], p["lastGroup"])), "at least one golden's lastGroup differs from its firstGroup");
+            var deck = Projection(StyleFixtures.CatalogueStyle);
+            Check(deck["firstGroup"]!["next"]!.AsArray().Select(n => (string?)n).SequenceEqual(["tidy", "hate"]) && deck["lastGroup"]!["next"]!.AsArray().Select(n => (string?)n).SequenceEqual(["plan", "loop", "memo", "work", "nba"]), "the first and last group draw their own actions");
+            Check(deck["empty"]!["actions"]!.AsArray().Single(a => (string?)a!["id"] == "nba")!["flags"]!.AsArray().Select(n => (string?)n).SequenceEqual(["userInvoked", "readOnly"]), "an action's two flags are recorded in order");
+        }
         // §1.16: a style with file and run-event sources records what the engine makes of them — the plan file as a bar and the
         // subagent.start count as a label — and the file state moves it to the phase a current plan means. No bundled or
-        // repository style declares either kind since v7, so the fixture stands in and no golden is kept (macOS
+        // repository style declares either kind since v7, so the loop fixture stands in; its golden is compared above (macOS
         // aStyleWithFileAndRunEventSourcesRecordsItsReading).
         {
             var stateful = StyleFixtures.StatefulStyle;
@@ -134,7 +154,7 @@ internal static class StyleGoldenVerification
         }
         var left = goldens.Keys.Where(name => !compared.Contains(name)).ToArray();
         Check(left.Length == 0, "goldens no style produced: " + string.Join(", ", left));
-        Check(compared.Count == 4, "the four goldens of styles/golden are compared whole; compared " + string.Join(", ", compared.Order()));
+        Check(compared.Count == 6, "the six goldens of styles/golden are compared whole; compared " + string.Join(", ", compared.Order()));
         return Task.CompletedTask;
     }
 
