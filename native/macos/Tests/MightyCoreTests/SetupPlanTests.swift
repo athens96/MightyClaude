@@ -19,16 +19,16 @@ struct SetupPlanTests {
         #expect(SetupPlan.order(selected: ["gh"], catalog: catalog, platform: .macos, isSatisfied: { $0 == "homebrew" }) == ["gh"])
         // The native Claude installer needs nothing else.
         #expect(SetupPlan.order(selected: ["claude"], catalog: catalog, platform: .macos, isSatisfied: { _ in false }) == ["claude"])
-        // Paperthin needs node → Homebrew → git; Ouroboros needs Claude and uv.
-        let styles = SetupPlan.order(selected: ["ouroboros", "paperthin"], catalog: catalog, platform: .macos, isSatisfied: { _ in false })
+        // Node needs Homebrew → git; Ouroboros needs Claude and uv.
+        let styles = SetupPlan.order(selected: ["ouroboros", "node"], catalog: catalog, platform: .macos, isSatisfied: { _ in false })
         #expect(styles.firstIndex(of: "git")! < styles.firstIndex(of: "homebrew")!)
         #expect(styles.firstIndex(of: "homebrew")! < styles.firstIndex(of: "node")!)
-        #expect(styles.firstIndex(of: "node")! < styles.firstIndex(of: "paperthin")!)
+        #expect(styles.firstIndex(of: "homebrew")! < styles.firstIndex(of: "node")!)
         #expect(styles.firstIndex(of: "claude")! < styles.firstIndex(of: "ouroboros")!)
         #expect(styles.firstIndex(of: "uv")! < styles.firstIndex(of: "ouroboros")!)
-        #expect(Set(styles) == ["git", "homebrew", "node", "paperthin", "claude", "uv", "ouroboros"])
-        #expect(SetupPlan.addedPrerequisites(selected: ["ouroboros", "paperthin"], catalog: catalog, platform: .macos, isSatisfied: { _ in false })
-                == ["git", "homebrew", "node", "claude", "uv"])
+        #expect(Set(styles) == ["git", "homebrew", "node", "claude", "uv", "ouroboros"])
+        #expect(SetupPlan.addedPrerequisites(selected: ["ouroboros", "node"], catalog: catalog, platform: .macos, isSatisfied: { _ in false })
+                == ["git", "homebrew", "claude", "uv"])
     }
 
     @Test func theOrderFollowsTheCatalogWhenNothingDependsOnAnything() throws {
@@ -39,7 +39,7 @@ struct SetupPlanTests {
         #expect(SetupPlan.order(selected: ["rm-rf"], catalog: catalog, platform: .macos, isSatisfied: { _ in false }).isEmpty)
         // Items with no Windows entry (Homebrew, gstack) are never planned there; Windows has its own prerequisites.
         #expect(SetupPlan.order(selected: ["homebrew", "gstack"], catalog: catalog, platform: .windows, isSatisfied: { _ in false }).isEmpty)
-        #expect(SetupPlan.order(selected: ["paperthin"], catalog: catalog, platform: .windows, isSatisfied: { _ in false }) == ["node", "paperthin"])
+        #expect(SetupPlan.order(selected: ["ouroboros"], catalog: catalog, platform: .windows, isSatisfied: { _ in false }) == ["claude", "uv", "ouroboros"])
     }
 
     @Test func quotingKeepsEveryValueLiteral() {
@@ -66,8 +66,7 @@ struct SetupPlanTests {
         // The system's own xcode-select, by its path; Control-C ends only the wait, which ends after half an hour anyway.
         #expect(try body("git") == "'/usr/bin/xcode-select' '--install'; trap 'break' INT; mighty_waited=0; until /usr/bin/xcode-select -p >/dev/null 2>&1 || [ \"$mighty_waited\" -ge 1800 ]; do sleep 5; mighty_waited=$((mighty_waited + 5)); done; trap - INT")
         #expect(try body("ouroboros") == "claude plugin marketplace add 'Q00/ouroboros'; claude plugin install 'ouroboros@ouroboros' --scope user")
-        // Pinned: the skills CLI to an exact version, gstack to a commit.
-        #expect(try body("paperthin") == "'npx' 'skills@1.7.2' 'add' 'LilMGenius/paperthin' '--global' '--agent' 'claude-code'")
+        // Pinned: gstack to a commit.
         let gstack = try #require(try body("gstack"))
         let sha = "'d258bcffb0cb7bda5f133f3e957f932d816d282f'", destination = "\"$HOME\"/'.claude/skills/gstack'"
         #expect(gstack.hasPrefix("if [ -d \(destination)/.git ]; then git -C \(destination) fetch -q --depth 1 'https://github.com/garrytan/gstack.git' \(sha) && git -C \(destination) checkout -q --detach FETCH_HEAD; else mighty_tmp=\"$(mktemp -d)\""))

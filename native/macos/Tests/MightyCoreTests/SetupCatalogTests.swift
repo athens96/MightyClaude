@@ -48,7 +48,7 @@ struct SetupCatalogTests {
     @Test func theCatalogParsesWithEveryGroupTheUserAskedFor() throws {
         let catalog = try SetupCatalogDecoder.decode(Data(contentsOf: Self.fixtureURL))
         let ids = catalog.items.map(\.id)
-        for id in ["claude", "codex", "agy", "node", "git", "homebrew", "uv", "ouroboros", "superpowers", "paperthin", "omc", "gstack", "tailscale", "gh", "glab"] {
+        for id in ["claude", "codex", "agy", "node", "git", "homebrew", "uv", "ouroboros", "omc", "gstack", "tailscale", "gh", "glab"] {
             #expect(ids.contains(id), "missing \(id)")
         }
         #expect(Set(catalog.items.map(\.group)) == Set(SetupGroup.allCases))

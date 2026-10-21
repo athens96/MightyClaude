@@ -97,8 +97,7 @@ public sealed class SetupCatalog(IReadOnlyList<SetupItem> items)
         "setup.item.agy.title", "setup.item.agy.detail", "setup.item.git.title", "setup.item.git.detail",
         "setup.item.homebrew.title", "setup.item.homebrew.detail", "setup.item.node.title", "setup.item.node.detail",
         "setup.item.bun.title", "setup.item.bun.detail", "setup.item.uv.title", "setup.item.uv.detail",
-        "setup.item.ouroboros.title", "setup.item.ouroboros.detail", "setup.item.superpowers.title", "setup.item.superpowers.detail",
-        "setup.item.paperthin.title", "setup.item.paperthin.detail", "setup.item.omc.title", "setup.item.omc.detail",
+        "setup.item.ouroboros.title", "setup.item.ouroboros.detail", "setup.item.omc.title", "setup.item.omc.detail",
         "setup.item.gstack.title", "setup.item.gstack.detail", "setup.item.tailscale.title", "setup.item.tailscale.detail",
         "setup.item.gh.title", "setup.item.gh.detail", "setup.item.glab.title", "setup.item.glab.detail",
     };
