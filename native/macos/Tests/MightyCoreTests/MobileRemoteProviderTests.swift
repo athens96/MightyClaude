@@ -51,9 +51,12 @@ struct MobileRemoteProviderTests {
         #expect(MobileRemoteSupport.resolvedModel(switched, catalog: ProviderOptions.fallbackCatalog("claude")) == nil)
     }
 
-    @Test func anOlderPhoneReadsTheSummaryWithoutTheNewField() throws {
+    @Test func aSummaryWithoutCanSteerDecodesAndANilOneIsLeftOut() throws {
         let data = Data(#"{"id":"s","workspaceId":"w","title":"t","kind":"claude","provider":"gemini","model":"default","status":"idle","revision":1,"updatedAt":"2026-10-22T00:00:00Z","pendingPermissions":0,"pendingQuestions":0,"queued":0,"terminal":false}"#.utf8)
         let decoded = try JSONDecoder().decode(MobileSessionSummary.self, from: data)
         #expect(decoded.canSteer == nil && decoded.resolvedModel == nil)
+        // Encoded back, a nil canSteer leaves the key out rather than sending null.
+        let encoded = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(decoded)) as? [String: Any])
+        #expect(encoded["canSteer"] == nil && encoded["provider"] as? String == "gemini")
     }
 }
