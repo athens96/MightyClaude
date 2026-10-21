@@ -113,15 +113,14 @@ public sealed class StyleChangeWatcher : IDisposable
 
     /// <summary>
     /// Whether changes under a workspace can move what a pane's style panel shows: the workspace's own style files
-    /// (<c>.claude/mighty-styles</c>), a file source of the pane's style (<see cref="StyleStateEngine.Affects"/>) or the
-    /// folder its built-in feature reads. An empty list is the watcher's "read everything again".
+    /// (<c>.claude/mighty-styles</c>) or a file source of the pane's style (<see cref="StyleStateEngine.Affects"/>). An empty
+    /// list is the watcher's "read everything again".
     /// </summary>
     public static bool Concerns(IReadOnlyList<string> changed, string workspace, StyleManifest? manifest)
     {
         if (changed.Count == 0) return true;
         var styles = Path.Combine(workspace, ".claude", "mighty-styles");
-        var casebook = manifest is not null && StyleManifest.Strings(manifest.Root, "capabilities").Contains("paperthin.casebook") ? Path.Combine(workspace, ".re0", "iteration") : null;
-        return changed.Any(path => Touches(path, styles) || casebook is not null && Touches(path, casebook) || manifest is not null && StyleStateEngine.Affects(manifest, workspace, path));
+        return changed.Any(path => Touches(path, styles) || manifest is not null && StyleStateEngine.Affects(manifest, workspace, path));
     }
 
     /// <summary>One path is the other, or lies under it: a change inside the folder, or one of its parents appearing.</summary>

@@ -146,11 +146,11 @@ internal static class DelegationHumanChildVerification
         // A human's child takes its parent's model, effort and view; only a Claude one takes the style.
         foreach (var provider in new[] { "claude", "codex", "gemini" })
         {
-            var parent = new RunSession { Id = "parent", WorkspaceId = "ws", Provider = provider, Model = "model-x", Settings = new(Effort: "high", PermissionMode: "acceptEdits"), AgentViewMode = "mighty", GraphViewMode = "structure", MightyStyle = "superpowers", MightyStyleHash = "h1", MightyStyleSince = "2026-10-15T00:00:00Z" };
+            var parent = new RunSession { Id = "parent", WorkspaceId = "ws", Provider = provider, Model = "model-x", Settings = new(Effort: "high", PermissionMode: "acceptEdits"), AgentViewMode = "mighty", GraphViewMode = "structure", MightyStyle = "claude-plan", MightyStyleHash = "h1", MightyStyleSince = "2026-10-15T00:00:00Z" };
             var pane = new DelegationChildPane("c1", "parent", "acceptEdits", "/w/c1", StartedByHuman: true, Provider: provider);
             var made = DelegationPanes.ChildSession(pane, "ws", "Fix it", parent);
             Check(made is { Kind: "claude", Model: "model-x", AgentViewMode: "mighty", GraphViewMode: "structure", ParentSessionId: "parent", WorkingFolder: "/w/c1", MightyStyleSince: null } && made.Provider == provider && made.Settings is { Effort: "high", PermissionMode: "acceptEdits" }
-                && (provider == "claude" ? made is { MightyStyle: "superpowers", MightyStyleHash: "h1" } : made is { MightyStyle: null, MightyStyleHash: null }), provider + ": a human's child takes the parent's model and view");
+                && (provider == "claude" ? made is { MightyStyle: "claude-plan", MightyStyleHash: "h1" } : made is { MightyStyle: null, MightyStyleHash: null }), provider + ": a human's child takes the parent's model and view");
             var agent = DelegationPanes.ChildSession(pane with { StartedByHuman = false }, "ws", "Fix it", parent);
             Check(agent is { Model: "default", AgentViewMode: "mighty", GraphViewMode: "structure", MightyStyle: null } && agent.Settings.Effort == "default" && agent.Provider == provider, provider + ": a delegate call's child shows the view only");
         }

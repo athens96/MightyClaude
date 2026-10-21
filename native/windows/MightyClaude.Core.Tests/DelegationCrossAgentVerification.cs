@@ -247,7 +247,7 @@ internal static class DelegationCrossAgentVerification
 
     internal static Task AChildOfAnotherAgentTakesThatAgentsDefaults()
     {
-        var parent = new RunSession { Id = "parent", WorkspaceId = "ws", Kind = "claude", Provider = "claude", Model = "opus", Settings = new(Effort: "high", PermissionMode: "auto"), AgentViewMode = "mighty", GraphViewMode = "timeline", MightyStyle = "superpowers", MightyStyleHash = "h1" };
+        var parent = new RunSession { Id = "parent", WorkspaceId = "ws", Kind = "claude", Provider = "claude", Model = "opus", Settings = new(Effort: "high", PermissionMode: "auto"), AgentViewMode = "mighty", GraphViewMode = "timeline", MightyStyle = "claude-plan", MightyStyleHash = "h1" };
         var codexPane = new RunSession { Id = "codex-pane", WorkspaceId = "ws", Kind = "claude", Provider = "codex", Model = "gpt-5.6-sol", Settings = new(Effort: "low", PermissionMode: "fullAccess") };
         foreach (var human in new[] { true, false })
         {

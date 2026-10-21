@@ -35,13 +35,64 @@ internal static class StylesVerification
             catch(StyleManifestException e){if(e.Code!=expected)failures.Add(expected+" got "+e.Code);}
         }
         Check(failures.Count==0,string.Join("; ",failures));
-        // The size bound and the registry's collision are the two codes no file in the corpus can stand for.
-        var codes=invalid.Select(file=>file.Name[..^5]).ToHashSet(StringComparer.Ordinal);
-        var missing=StyleManifestDecoder.Codes.Except(["E_ID_COLLISION","E_TOO_LARGE"]).Except(codes).Order(StringComparer.Ordinal).ToArray();var unknown=codes.Except(StyleManifestDecoder.Codes).Order(StringComparer.Ordinal).ToArray();
-        Check(missing.Length==0,"codes with no file in the corpus: "+string.Join(", ",missing));Check(unknown.Length==0,"corpus files named after no code: "+string.Join(", ",unknown));
+        // The size bound and the registry's collision are codes no file in the corpus can stand for, and since v7 the app's empty
+        // feature vocabulary refuses a declared feature before its map is read, so no file can stand for E_CAPABILITY_MAP either
+        // (BuiltInFeatures checks it with a test vocabulary).
+        var codes=invalid.Select(file=>file.Name[..^5]).ToHashSet(StringComparer.Ordinal);var reachable=StyleManifestDecoder.Codes.Except(["E_ID_COLLISION","E_TOO_LARGE","E_CAPABILITY_MAP"]).ToHashSet(StringComparer.Ordinal);
+        var missing=reachable.Except(codes).Order(StringComparer.Ordinal).ToArray();var unknown=codes.Except(reachable).Order(StringComparer.Ordinal).ToArray();
+        Check(missing.Length==0,"codes with no file in the corpus: "+string.Join(", ",missing));Check(unknown.Length==0,"corpus files named after no code, or after one no file can produce: "+string.Join(", ",unknown));
+        Check(invalid.Length==51&&StyleManifestDecoder.Codes.Count==54,$"51 of the 54 codes have a file: {invalid.Length} files, {StyleManifestDecoder.Codes.Count} codes");
         try{StyleManifestDecoder.Decode(new byte[StyleManifestDecoder.MaximumBytes+1]);throw new InvalidOperationException("oversize accepted");}catch(StyleManifestException e){Check(e.Code=="E_TOO_LARGE","size precedes JSON");}
         var minimal=Encoding.UTF8.GetString(Fixture("valid/minimal.json"));
         foreach(var glyph in new[]{"☕","👩‍💻","⚙️","🚀"})StyleManifestDecoder.Decode(Encoding.UTF8.GetBytes(minimal.Replace("\"takesText\":false","\"takesText\":false,\"glyph\":"+JsonSerializer.Serialize(glyph),StringComparison.Ordinal)));
+        return Task.CompletedTask;
+    }
+    /// Built-in features (§1.8, macOS StyleCapabilityTests): the app knows none since v7, so every declared name is refused as
+    /// unknown; the field and the two rules that name a feature stay in the schema and are checked here against a test
+    /// vocabulary, in the Mac validator's order — unknown name, then undeclared, then the map.
+    internal static Task BuiltInFeatures()
+    {
+        var minimal=Encoding.UTF8.GetString(Fixture("valid/minimal.json"));
+        string? Code(string text,string source="user",IReadOnlyDictionary<string,string[]>? vocabulary=null){try{StyleManifestDecoder.Decode(Encoding.UTF8.GetBytes(text),source,vocabulary);return null;}catch(StyleManifestException e){return e.Code;}}
+        string With(string? capabilities=null,string? recommend=null,string? initial=null)
+        {
+            var text=minimal;
+            if(capabilities is not null)text=text.Replace("\"capabilities\":[]","\"capabilities\":"+capabilities,StringComparison.Ordinal);
+            if(recommend is not null)text=text.Replace("\"recommend\":{\"kind\":\"none\"}","\"recommend\":"+recommend,StringComparison.Ordinal);
+            if(initial is not null)text=text.Replace("\"initialGroup\":{\"kind\":\"fixed\",\"group\":\"g\"}","\"initialGroup\":"+initial,StringComparison.Ordinal);
+            Check(text!=minimal,"the fixture changed");return text;
+        }
+        var test=StyleFixtures.TestCapabilities;
+        Check(StyleCapabilityID.Vocabulary.Count==0,"the app knows no built-in feature");
+        foreach(var name in new[]{"acme.thing","a"})Check(Code(With("[\""+name+"\"]"))=="E_UNKNOWN_CAPABILITY"&&Code(With("[\""+name+"\"]"),"bundled")=="E_UNKNOWN_CAPABILITY",name+" is refused as unknown, for a bundled manifest too");
+        Check(Code(minimal) is null,"declaring nothing is still the ordinary case");
+        var root=Verification.Temp();
+        try{foreach(var style in StyleRegistry.Load(Path.Combine(root,"profile"),Path.Combine(root,"workspace")).Styles.Where(s=>s.Source=="bundled"))Check(StyleManifest.Strings(style.Manifest.Root,"capabilities").Length==0,style.Id+" declares no feature");}
+        finally{Directory.Delete(root,true);}
+        const string recommend="{\"kind\":\"capability\",\"capability\":\"acme.thing\",\"map\":{\"absent\":\"go\",\"open\":\"go\",\"complete\":\"go\"}}";
+        const string initial="{\"kind\":\"capabilityState\",\"capability\":\"acme.thing\",\"map\":{\"absent\":\"g\",\"open\":\"g\",\"complete\":\"g\"}}";
+        foreach(var (rule,group) in new (string?,string?)[]{(recommend,null),(null,initial)})
+        {
+            var undeclared=With(recommend:rule,initial:group);var declared=With("[\"acme.thing\"]",rule,group);
+            Check(Code(undeclared)=="E_CAPABILITY_UNDECLARED"&&Code(undeclared,vocabulary:test)=="E_CAPABILITY_UNDECLARED","a rule naming an undeclared feature is refused for that, whatever the vocabulary");
+            Check(Code(declared)=="E_UNKNOWN_CAPABILITY"&&Code(declared,vocabulary:test) is null,"a declared feature is read against the vocabulary first: the app refuses it, a vocabulary that knows it accepts the whole map");
+        }
+        // A map must cover every state and name nothing else; only a test vocabulary still reaches that check.
+        var partial=With("[\"acme.thing\"]","{\"kind\":\"capability\",\"capability\":\"acme.thing\",\"map\":{\"absent\":\"go\",\"open\":\"go\"}}");
+        var extra=With("[\"acme.thing\"]","{\"kind\":\"capability\",\"capability\":\"acme.thing\",\"map\":{\"absent\":\"go\",\"open\":\"go\",\"complete\":\"go\",\"gone\":\"go\"}}");
+        var noMap=With("[\"acme.thing\"]","{\"kind\":\"capability\",\"capability\":\"acme.thing\"}");
+        Check(Code(partial,vocabulary:test)=="E_CAPABILITY_MAP"&&Code(partial)=="E_UNKNOWN_CAPABILITY","a partial map is E_CAPABILITY_MAP under a vocabulary that knows the feature, and unknown under the app's");
+        Check(Code(extra,vocabulary:test)=="E_UNKNOWN_REFERENCE"&&Code(noMap,vocabulary:test)=="E_MISSING_FIELD","a state the feature lacks is an unknown reference, and a rule without its map is missing a field");
+        // The evaluator reads a feature's state as it always did, so a feature added later recommends and seeds a group without engine work.
+        var catalogue=StyleFixtures.CatalogueStyle;var evaluator=catalogue.Evaluator;
+        Check(evaluator.RecommendedAction(new Dictionary<string,string>{["acme.thing"]="complete"})=="work"&&evaluator.RecommendedAction(new Dictionary<string,string>()) is null,"the recommendation follows the feature's state, and none before it is read");
+        Check(evaluator.InitialGroup(new Dictionary<string,string>{["acme.thing"]="open"})?.Id=="coil"&&evaluator.InitialGroup(new Dictionary<string,string>())?.Id=="depth","the first group follows the feature's state; not read yet, the first group");
+        // The phone has no group of its own and production passes none, so the recommendation has to survive that (§7.4).
+        var panel=StylePanelProjection.Make(catalogue,[],null,new Dictionary<string,string>{["acme.thing"]="complete"},new(true,[],null,null));
+        Check(panel.Recommended=="work"&&panel.Groups.Single(g=>g.Selected).Id=="coil","the panel carries the recommendation and the group it seeds");
+        // Nothing offers a chip any more, but the field is still sent, empty, for a phone that predates v7.
+        using var wire=JsonDocument.Parse(StylePanelProjection.Serialise(panel));
+        Check(panel.Attachments.Count==0&&wire.RootElement.GetProperty("attachments").GetArrayLength()==0,"attachments travel, always empty");
         return Task.CompletedTask;
     }
     internal static Task EvaluationAndTrust()
@@ -49,7 +100,7 @@ internal static class StylesVerification
         var root=Verification.Temp();var workspace=Path.Combine(root,"workspace");var profile=Path.Combine(root,"profile");Directory.CreateDirectory(workspace);Directory.CreateDirectory(Path.Combine(profile,"styles"));
         try
         {
-            var registry=StyleRegistry.Load(profile,workspace);Check(registry.Styles.Count==4&&registry.Styles.All(s=>s.Runnable),"all four bundled styles loaded: "+string.Join(";",registry.Rejections.Select(e=>e.Message)));
+            var registry=StyleRegistry.Load(profile,workspace);Check(registry.Styles.Count==2&&registry.Styles.All(s=>s.Runnable),"both bundled styles loaded: "+string.Join(";",registry.Rejections.Select(e=>e.Message)));
             var source=Fixture("valid/with-state-sources.json");var file=Path.Combine(profile,"styles","custom.json");File.WriteAllBytes(file,source);
             registry=StyleRegistry.Load(profile,workspace);var style=registry.Styles.Single(s=>s.Id=="corpus-state");Check(!style.Runnable,"unapproved doesn't run");var trust=new StyleTrustStore(Path.Combine(profile,"style-trust"));trust.Decide(style,"approved");registry=StyleRegistry.Load(profile,workspace);Check(registry.Runnable(style.Id,style.Hash)!=null,"approval binds bytes and place");Check(registry.Runnable(style.Id,"wrong")==null,"pane hash also gates");
             File.WriteAllText(file,Encoding.UTF8.GetString(source)+" ");Check(!StyleRegistry.Unchanged(style),"changed file invalidates preview before approve/run");registry=StyleRegistry.Load(profile,workspace);var changed=registry.Styles.Single(s=>s.Id==style.Id);Check(!changed.Runnable,"one changed byte asks again");trust.Decide(changed,"revoked");File.WriteAllBytes(file,source);registry=StyleRegistry.Load(profile,workspace);Check(registry.Styles.Single(s=>s.Id==style.Id).Approval=="revoked","revocation survives old bytes returning");trust.Decide(style,"unblock");Check(StyleRegistry.Load(profile,workspace).Runnable(style.Id,style.Hash)==null,"unblock requires fresh approval");
@@ -182,13 +233,8 @@ internal static class StylesVerification
         Check(StyleChangeWatcher.Concerns([At(".claude","mighty-styles","x.json")],workspace,null)&&StyleChangeWatcher.Concerns([At(".claude")],workspace,null),"the workspace's own styles, for every pane");
         Check(!StyleChangeWatcher.Concerns([At("src","a.cs"),At(".claude","settings.json")],workspace,manifest)&&!StyleChangeWatcher.Concerns([At("docs","plans","plan.md")],workspace,null),"other files concern no one");
         Check(StyleChangeWatcher.Concerns([At("src","a.cs"),At("docs","plans","plan.md")],workspace,manifest),"one file of a source among others");
-        var root=Verification.Temp();
-        try
-        {
-            var casebook=StyleRegistry.Load(Path.Combine(root,"profile"),Path.Combine(root,"workspace")).Styles.Single(s=>s.Id=="paperthin").Manifest;
-            Check(StyleChangeWatcher.Concerns([At(".re0","iteration","0.1.0","DESIGN.local.md")],workspace,casebook)&&!StyleChangeWatcher.Concerns([At(".re0","iteration","0.1.0","DESIGN.local.md")],workspace,manifest),"the casebook's folder, for a style that reads it");
-        }
-        finally{Directory.Delete(root,true);}
+        // No built-in feature reads a folder since v7: a style that names one is moved by nothing beyond its own sources.
+        Check(!StyleChangeWatcher.Concerns([At(".re0","iteration","0.1.0","DESIGN.local.md")],workspace,StyleFixtures.CatalogueStyle.Manifest)&&!StyleChangeWatcher.Concerns([At(".re0","iteration","0.1.0","DESIGN.local.md")],workspace,manifest),"a folder no source names concerns no style");
         return Task.CompletedTask;
     }
     /// The watcher itself: a folder that is not there yet, a file written in it, the folder taken away and put back, and silence once disposed.

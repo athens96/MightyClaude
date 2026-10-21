@@ -7,7 +7,8 @@ using MightyClaude.Core;
 
 /// <summary>
 /// The panel every style projects, against the goldens the macOS StyleGoldenContractTests record in <c>styles/golden</c>:
-/// the same six fixed inputs (M/StyleGoldenSupport.swift projection), compared whole, byte for byte.
+/// the same five fixed inputs (M/StyleGoldenSupport.swift projection), compared whole, byte for byte. (v7 dropped
+/// <c>capabilityOpen</c>: with no built-in feature left it was <c>lastGroup</c> again, byte for byte.)
 /// </summary>
 internal static class StyleGoldenVerification
 {
@@ -36,8 +37,6 @@ internal static class StyleGoldenVerification
     private const string Checklist = "- [x] one\n- [x] two\n- [x] three\n- [ ] four\n- [ ] five\n- [ ] six\n- [ ] seven\n";
     /// <summary>Two sub-agents started and one ordinary tool call.</summary>
     private static readonly (string, string)[] Events = [("subagent.start", "plan review"), ("tool.call", "Read"), ("subagent.start", "task 1")];
-    /// <summary>Two items every style's golden carries, so the attachment shape is recorded even for a style with no built-in feature.</summary>
-    private static readonly StyleAttachmentItem[] Attachments = [new("DESIGN", "/repo/.re0/DESIGN.local.md", "0.1.0-golden · full"), new("RETRO", "/repo/.re0/RETRO.local.md", "0.1.0-golden · full")];
 
     /// <summary>The <c>withState</c> reading (M/StyleGoldenSupport.swift stateReading): every file source parses the checklist, the run events aggregate, and a style that reads the plan stage reads the fixed run state.</summary>
     private static StyleStateReading? StateReading(RegisteredStyle style, string stage = "executing")
@@ -51,16 +50,16 @@ internal static class StyleGoldenVerification
         });
     }
 
-    private static JsonObject Projection(RegisteredStyle style, IReadOnlyDictionary<string, string>? casebook = null)
+    private static JsonObject Projection(RegisteredStyle style)
     {
-        var manifest = style.Manifest; casebook ??= new Dictionary<string, string>();
+        var manifest = style.Manifest;
         var ready = new StylePrerequisiteResult(true, [], null, null);
         var probe = StyleManifest.Items(manifest.Root.GetProperty("prerequisites"), "probes").FirstOrDefault();
         var missing = new StylePrerequisiteResult(false, StyleManifest.Text(probe, "missing") is { } line ? [line] : [], StyleManifest.Text(probe, "hint"), null);
-        var open = StyleManifest.Strings(manifest.Root, "capabilities").ToDictionary(name => name, _ => "open");
-        StylePanel Make(string[]? prompts = null, string? group = null, IReadOnlyDictionary<string, string>? states = null, StyleAttachmentItem[]? items = null,
-            StylePrerequisiteResult? prerequisites = null, StyleStateReading? state = null, bool running = false) =>
-            StylePanelProjection.Make(style, prompts ?? [], group, states ?? casebook, items ?? [], prerequisites ?? ready, running, null, state);
+        // No built-in feature exists to read (§1.8), so no input carries a state.
+        var none = new Dictionary<string, string>();
+        StylePanel Make(string[]? prompts = null, string? group = null, StylePrerequisiteResult? prerequisites = null, StyleStateReading? state = null, bool running = false) =>
+            StylePanelProjection.Make(style, prompts ?? [], group, none, prerequisites ?? ready, running, null, state);
         var cases = new Dictionary<string, StylePanel>
         {
             ["empty"] = Make(),
@@ -68,7 +67,6 @@ internal static class StyleGoldenVerification
             ["notReady"] = Make(prerequisites: missing),
             ["firstGroup"] = Make(group: manifest.Groups.FirstOrDefault()?.Id),
             ["lastGroup"] = Make(group: manifest.Groups.LastOrDefault()?.Id),
-            ["capabilityOpen"] = Make(group: manifest.Groups.LastOrDefault()?.Id, states: open, items: Attachments),
         };
         if (StateReading(style) is { } reading) cases["withState"] = Make(state: reading);
         // §1.17: one panel per plan stage for a style that reads it; a plan waiting for its answer is a running turn.
@@ -80,11 +78,11 @@ internal static class StyleGoldenVerification
         return projection;
     }
 
-    private static void Compare(RegisteredStyle style, IReadOnlyDictionary<string, byte[]> goldens, HashSet<string> compared, IReadOnlyDictionary<string, string>? casebook = null)
+    private static void Compare(RegisteredStyle style, IReadOnlyDictionary<string, byte[]> goldens, HashSet<string> compared)
     {
         var name = style.Id + ".panel.json";
         Check(goldens.TryGetValue(name, out var expected), "styles/golden has no " + name + ": record it on the Mac (MIGHTY_STYLE_GOLDEN=record)");
-        var produced = Encoding.UTF8.GetString(StylePanelProjection.Canonical(Projection(style, casebook)));
+        var produced = Encoding.UTF8.GetString(StylePanelProjection.Canonical(Projection(style)));
         // A Windows checkout may hold the golden with CRLF line ends; the bytes compared are the ones the Mac wrote.
         var golden = new UTF8Encoding(false, true).GetString(expected!).Replace("\r\n", "\n", StringComparison.Ordinal);
         if (produced != golden)
@@ -113,19 +111,30 @@ internal static class StyleGoldenVerification
         {
             var bundled = StyleRegistry.Load(Path.Combine(root, "profile"), Path.Combine(root, "workspace")).Styles.Where(s => s.Source == "bundled").ToArray();
             Check(bundled.Length > 0, "the bundled styles did not load");
-            // The pair that reads the casebook records it absent, as the phone lane's fixtures do (macOS theBundledStylesHaveGoldens).
-            foreach (var style in bundled)
-                Compare(style, goldens, compared, style.Id is "ouroboros" or "paperthin" ? new Dictionary<string, string> { ["paperthin.casebook"] = "absent" } : null);
-            // §1.16: the one bundled style with file and event sources records what the engine makes of them.
-            var withState = StateReading(bundled.Single(s => s.Id == "superpowers")) ?? throw new InvalidOperationException("superpowers declares state sources");
-            Check(withState.Widgets.Count == 2 && withState.Widgets[0] is { Kind: "progressBar", Value: 3, Total: 7 } && withState.Widgets[1] is { Kind: "label", Text: "서브에이전트 2회 시작" }, "superpowers reads its plan file as a bar and its sub-agents as a label");
-            Check(bundled.Single(s => s.Id == "superpowers").Evaluator.CurrentPhase([], withState.Files)?.Id == "execute", "a current plan moves superpowers to execute");
-            Check(StateReading(bundled.Single(s => s.Id == "paperthin")) is null, "a style without state sources has no withState case");
+            Check(bundled.Select(s => s.Id).Order(StringComparer.Ordinal).SequenceEqual(["claude-plan", "ouroboros"]), "the bundled styles are Claude plan and Ouroboros: " + string.Join(", ", bundled.Select(s => s.Id)));
+            foreach (var style in bundled) Compare(style, goldens, compared);
+            // No state source, no plan stage: those cases are not recorded at all (macOS theBundledStylesHaveGoldens).
+            var ouroboros = bundled.Single(s => s.Id == "ouroboros");
+            Check(StateReading(ouroboros) is null && !Projection(ouroboros).Any(c => c.Key == "withState" || c.Key.StartsWith("planStage", StringComparison.Ordinal)), "a style without state sources has no withState and no plan-stage case");
         }
         finally { Directory.Delete(root, true); }
+        // §1.16: a style with file and run-event sources records what the engine makes of them — the plan file as a bar and the
+        // subagent.start count as a label — and the file state moves it to the phase a current plan means. No bundled or
+        // repository style declares either kind since v7, so the fixture stands in and no golden is kept (macOS
+        // aStyleWithFileAndRunEventSourcesRecordsItsReading).
+        {
+            var stateful = StyleFixtures.StatefulStyle;
+            var withState = StateReading(stateful) ?? throw new InvalidOperationException("the fixture declares state sources");
+            Check(withState.Widgets.Count == 2 && withState.Widgets[0] is { Kind: "progressBar", Value: 3, Total: 7 } && withState.Widgets[1] is { Kind: "label", Text: "서브에이전트 2회 시작" }, "a plan file reads as a bar and the sub-agents as a label");
+            Check(stateful.Evaluator.CurrentPhase([], withState.Files)?.Id == "execute", "a current plan moves the style to execute");
+            var recorded = Projection(stateful);
+            Check((string?)recorded["withState"]?["phase"]?["id"] == "execute" && recorded["withState"]?["widgets"]?.AsArray().Count == 2, "the withState case records the reading's phase and widgets");
+            Check((string?)recorded["empty"]?["phase"]?["id"] == "brainstorm" && recorded["empty"]?["widgets"] is null, "the empty case reads nothing");
+            Check(!recorded.Any(c => c.Key.StartsWith("planStage", StringComparison.Ordinal)), "a style that does not read the plan stage records no plan-stage case");
+        }
         var left = goldens.Keys.Where(name => !compared.Contains(name)).ToArray();
         Check(left.Length == 0, "goldens no style produced: " + string.Join(", ", left));
-        Check(compared.Count == 6, "the six goldens of styles/golden are compared whole; compared " + string.Join(", ", compared.Order()));
+        Check(compared.Count == 4, "the four goldens of styles/golden are compared whole; compared " + string.Join(", ", compared.Order()));
         return Task.CompletedTask;
     }
 
@@ -135,11 +144,11 @@ internal static class StyleGoldenVerification
         var root = Verification.Temp();
         try
         {
-            var style = StyleRegistry.Load(Path.Combine(root, "profile"), Path.Combine(root, "workspace")).Styles.Single(s => s.Id == "paperthin");
-            var panel = StylePanelProjection.Make(style, [], null, new Dictionary<string, string> { ["paperthin.casebook"] = "absent" }, [], new(true, [], null, null));
+            var style = StyleRegistry.Load(Path.Combine(root, "profile"), Path.Combine(root, "workspace")).Styles.Single(s => s.Id == "ouroboros");
+            var panel = StylePanelProjection.Make(style, [], null, new Dictionary<string, string>(), new(true, [], null, null));
             var data = StylePanelProjection.Serialise(panel); var text = Encoding.UTF8.GetString(data);
             Check(text.EndsWith("}\n", StringComparison.Ordinal) && !text.EndsWith("}\n\n", StringComparison.Ordinal), "one trailing newline");
-            Check(!text.Contains("\\/", StringComparison.Ordinal) && text.Contains("npx skills@latest", StringComparison.Ordinal) && !text.Contains('\r'), "no escaped slash, no carriage return");
+            Check(!text.Contains("\\/", StringComparison.Ordinal) && text.Contains("add Q00/ouroboros", StringComparison.Ordinal) && !text.Contains('\r'), "no escaped slash, no carriage return");
             Check(text.StartsWith("{\n  \"actions\" : [", StringComparison.Ordinal), "keys sorted, two-space indent");
             Check(StylePanelProjection.Serialise(panel).SequenceEqual(data), "the same panel serialises to the same bytes");
             // What the phone is sent is the same panel through the wire's own serialiser: the same keys and values.
