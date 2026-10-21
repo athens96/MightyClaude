@@ -884,7 +884,7 @@ final class AppStore: ObservableObject, DelegationHost {
     /// A local Claude run reads follow-ups on its open stdin frame, so the text
     /// joins the running turn. Everything else waits for the current request.
     func canSteer(_ session: RunSession) -> Bool {
-        session.kind == "claude" && session.provider == "claude" && !pendingRuns.contains(session.id)
+        DelegationProviders.canSteer(kind: session.kind, provider: session.provider) && !pendingRuns.contains(session.id)
             && snapshot.workspaces.contains { $0.id == session.workspaceId }
     }
 

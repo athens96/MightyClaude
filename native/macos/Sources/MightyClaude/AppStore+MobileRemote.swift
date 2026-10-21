@@ -347,7 +347,8 @@ extension AppStore {
             mightyStyle: session.kind == "shell" ? nil : mobileStyle(session),
             styleId: session.kind == "shell" ? nil : mobileStyleId(session),
             titleMode: session.titleMode ?? "auto",
-            resolvedModel: session.kind == "shell" ? nil : ModelLabel.resolution(session.model, catalog: providerRuntime(session.provider, workspaceId: session.workspaceId).modelCatalog, hint: ModelLabel.reportedModel(session)),
+            resolvedModel: MobileRemoteSupport.resolvedModel(session, catalog: providerRuntime(session.provider, workspaceId: session.workspaceId).modelCatalog),
+            canSteer: MobileRemoteSupport.canSteer(session),
             parentSessionId: child?.parent, childState: child?.state)
     }
 

@@ -181,6 +181,17 @@ public enum MobileRemoteSupport {
     /// the phone must grey out the same ones or it offers a guaranteed 409.
     public static func editable(status: String, pendingRun: Bool) -> Bool { status != "running" && !pendingRun }
 
+    /// The summary's `canSteer`: whether text sent while the pane runs joins the
+    /// running turn. The Mac composer's own rule (`DelegationProviders.canSteer`):
+    /// only a Claude agent pane steers; a Codex or Antigravity pane queues.
+    public static func canSteer(_ session: RunSession) -> Bool { DelegationProviders.canSteer(kind: session.kind, provider: session.provider) }
+
+    /// The summary's `resolvedModel`: what the Mac's model chip reads the pane's
+    /// selection through (`ModelLabel.resolution`), never for a command pane.
+    public static func resolvedModel(_ session: RunSession, catalog: ModelCatalog?) -> String? {
+        session.kind == SessionKind.shell ? nil : ModelLabel.resolution(session.model, catalog: catalog, hint: ModelLabel.reportedModel(session))
+    }
+
     /// What the phone is told when a submit was dropped rather than accepted.
     public static var droppedMessage: String { L("remote.error.dropped") }
 
