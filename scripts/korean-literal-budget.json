@@ -25,14 +25,14 @@
     "native/macos/Sources/MightyClaude/HeaderSettingsDiagnostics.swift": "A GUI smoke step (verifyHeaderSettingsSmoke) with no caller at present. Its failure messages are for smoke-result.json, not the UI.",
     "native/macos/Sources/MightyClaude/InputSessionRecoveryDiagnostics.swift": "The input-recovery contract harness that scripts/tests/test_input_session_recovery.py builds and runs. Its Hangul fixtures exercise IME composition and must stay Korean.",
     "native/macos/Sources/MightyClaude/AppStore+*Smoke.swift": "The GUI smoke steps (--smoke-test), one file per area. Their fixtures and failure messages go to smoke-result.json, not to the UI.",
-    "native/macos/Sources/MightyCore/Styles/*.swift": "frozen style engine v6; localizing needs v7",
+    "native/macos/Sources/MightyCore/Styles/*.swift": "frozen style engine v7; localizing needs v8",
     "native/macos/Sources/MightyCore/HangulComposer.swift": "The 2-set Hangul composer's jamo tables: single consonants and vowels it composes into syllables. They are input data, not copy, and must stay Korean.",
     "native/windows/MightyClaude.WinUI/MainWindow.Smoke.cs": "The Windows GUI smoke (--smoke-test): its Korean is fixture input (IME text, Markdown, session history, rename and draft samples the smoke types and then finds again) and failure messages written to smoke-result.json, not UI. The one guard outside RunUISmoke (StartAdmitted) throws only under --smoke-test. UI text it compares goes through Locale.Get or the Core strings classes.",
     "native/windows/MightyClaude.WinUI/MainWindow.PaletteDesignSmoke.cs": "The palette design smoke (--smoke-test): its Hangul is Markdown fixture text whose drawn ink and type sizes it measures; nothing here reaches the UI outside the smoke.",
     "native/windows/MightyClaude.WinUI/MainWindow.SmallParitySmoke.cs": "The small-parity smoke (--smoke-test): its Hangul is a draft fixture that a conversation reset must keep; nothing here reaches the UI outside the smoke.",
     "native/windows/MightyClaude.WinUI/MainWindow.TimelineSmoke.cs": "The timeline smoke (--smoke-test): its Hangul is the requests, answers and agent titles of the fixture runs it draws; nothing here reaches the UI outside the smoke.",
     "native/windows/MightyClaude.WinUI/WindowsScreenTransportSmoke.cs": "The screen-share transport smoke (--smoke-test): its Hangul is the Unicode text fixture sent over the data channel and checked on arrival.",
-    "mobile/src/lib/styles.ts": "frozen style engine v6 (the phone renderer, scripts/check-style-freeze.sh); localizing needs v7"
+    "mobile/src/lib/styles.ts": "frozen style engine v7 (the phone renderer, scripts/check-style-freeze.sh); localizing needs v8"
   },
   "exemptRegions": {
     "native/macos/Sources/MightyClaude/AppStore.swift": "The GUI smoke (runSmokeTest and its composer and attachment checks): fixtures and failure messages for smoke-result.json, not UI.",
@@ -137,6 +137,11 @@
         "찾는"
       ],
       "reason": "Matched against activity summaries (Korean summaries kept in saved logs) to choose the companion's reviewing animation, as on macOS; the English words beside them cover English summaries."
+    },
+    {
+      "file": "native/windows/MightyClaude.Core/Styles/StyleManifest.cs",
+      "literal": "클러드 플랜",
+      "reason": "ReservedNames: the bundled Claude plan style's name exactly as its manifest (claude-plan.json) spells it, matched folded against a non-bundled manifest's name (contract 1.2, as macOS StyleManifestValidator.swift does); it is never shown, so it stays as written in every language."
     },
     {
       "file": "mobile/src/lib/next-actions.ts",

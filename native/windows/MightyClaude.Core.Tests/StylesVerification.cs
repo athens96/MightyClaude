@@ -50,6 +50,29 @@ internal static class StylesVerification
     /// Built-in features (§1.8, macOS StyleCapabilityTests): the app knows none since v7, so every declared name is refused as
     /// unknown; the field and the two rules that name a feature stay in the schema and are checked here against a test
     /// vocabulary, in the Mac validator's order — unknown name, then undeclared, then the map.
+    /// A non-bundled style may not take a bundled style's name, folded (NFKC, case, spaces), and the reserved names are exactly
+    /// the bundled styles' names (macOS StyleSecurityTests.reservedNameIsRefused).
+    internal static Task ReservedNames()
+    {
+        var minimal=Encoding.UTF8.GetString(Fixture("valid/minimal.json"));
+        string? Code(string name,string source="user"){try{StyleManifestDecoder.Decode(Encoding.UTF8.GetBytes(minimal.Replace("\"name\":\"코퍼스 최소\"","\"name\":"+JsonSerializer.Serialize(name),StringComparison.Ordinal)),source);return null;}catch(StyleManifestException e){return e.Code;}}
+        Check(Code("코퍼스 최소")==null,"the fixture decodes as it is");
+        Check(StyleManifestDecoder.ReservedNames.SequenceEqual(["Ouroboros","클러드 플랜"]),"the reserved names: "+string.Join(", ",StyleManifestDecoder.ReservedNames));
+        var root=Verification.Temp();
+        try
+        {
+            var bundled=StyleRegistry.Load(Path.Combine(root,"profile"),Path.Combine(root,"workspace")).Styles.Where(s=>s.Source=="bundled").Select(s=>s.Manifest.Name).Order(StringComparer.Ordinal);
+            Check(bundled.SequenceEqual(StyleManifestDecoder.ReservedNames.Order(StringComparer.Ordinal)),"the reserved names are the bundled styles' names: "+string.Join(", ",bundled));
+        }
+        finally{Directory.Delete(root,true);}
+        foreach(var name in new[]{"Ouroboros","ouroboros","OURO BOROS","ＯＵＲＯＢＯＲＯＳ","클러드 플랜","클러드플랜","클러드　플랜"})
+        {
+            Check(Code(name)=="E_RESERVED_NAME",name+" passed the reserved-name check: "+Code(name));
+            Check(Code(name,"bundled")==null,name+" is refused for a bundled style: "+Code(name,"bundled"));
+        }
+        Check(Code("Ouroboros Team")==null&&Code("클러드 플랜 2")==null,"a name that only contains a reserved one is free");
+        return Task.CompletedTask;
+    }
     internal static Task BuiltInFeatures()
     {
         var minimal=Encoding.UTF8.GetString(Fixture("valid/minimal.json"));

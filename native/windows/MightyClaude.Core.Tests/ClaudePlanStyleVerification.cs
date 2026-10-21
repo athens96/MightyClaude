@@ -21,9 +21,10 @@ internal static class ClaudePlanStyleVerification
     // A Windows checkout may turn the manifest's line ends into CRLF; the edits below are written with LF.
     private static string ManifestText(RegisteredStyle style) => Encoding.UTF8.GetString(style.Bytes.Span).Replace("\r\n", "\n", StringComparison.Ordinal);
 
+    /// <summary>The bundled file's text decoded as the bundled source it is: its name is reserved for anything else (§1.2).</summary>
     private static string? Code(string text)
     {
-        try { StyleManifestDecoder.Decode(Encoding.UTF8.GetBytes(text)); return null; }
+        try { StyleManifestDecoder.Decode(Encoding.UTF8.GetBytes(text), "bundled"); return null; }
         catch (StyleManifestException e) { return e.Code; }
     }
 

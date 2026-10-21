@@ -10,10 +10,10 @@
     "native/macos/Sources/MightyClaude/*Diagnostics*.swift": "GUI smoke and contract-harness steps (--smoke-test, scripts/tests): fixtures and measurements, not app chrome.",
     "native/macos/Sources/MightyClaude/AppStore+*Smoke.swift": "The GUI smoke steps (--smoke-test), one file per area: fixtures and measurements, not app chrome.",
     "native/macos/Sources/MightyClaude/ScreenShareReferenceSceneWindow.swift": "A fixed reference scene for the screen-share check, not app chrome.",
-    "native/macos/Sources/MightyCore/Styles/**": "frozen style engine v6 (scripts/check-style-freeze.sh); changing it needs v7",
+    "native/macos/Sources/MightyCore/Styles/**": "frozen style engine v7 (scripts/check-style-freeze.sh); changing it needs v8",
     "native/windows/MightyClaude.WinUI/*Smoke*.cs": "The Windows GUI smoke (--smoke-test): fixtures and measured expectations, not app chrome.",
     "native/windows/MightyClaude.Core/*Smoke*.cs": "Smoke support in Core (--smoke-test): fixtures, not app chrome.",
     "native/windows/MightyClaude.WinUI/ScreenShareReferenceSceneWindow.cs": "A fixed reference scene for the screen-share check, not app chrome.",
-    "mobile/src/lib/styles.ts": "frozen style engine v6 (the phone renderer, scripts/check-style-freeze.sh); changing it needs v7"
+    "mobile/src/lib/styles.ts": "frozen style engine v7 (the phone renderer, scripts/check-style-freeze.sh); changing it needs v8"
   }
 }

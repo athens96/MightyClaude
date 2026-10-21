@@ -15,10 +15,11 @@ struct StylesClaudePlanTests {
     }
 
     /// The bundled file with one exact piece replaced, and the code it is refused with.
+    /// Decoded as the bundled source it is: its name is reserved for anything else (§1.2).
     private func code(replacing old: String, with new: String) -> String? {
         let text = Self.manifestText
         #expect(text.contains(old), "fixture text not found: \(old)")
-        return StyleFixtures.code(Data(text.replacingOccurrences(of: old, with: new).utf8))
+        return StyleFixtures.code(Data(text.replacingOccurrences(of: old, with: new).utf8), source: .bundled)
     }
 
     private func pane(runs: [MightyGraphRun] = [], plans: [PlanRecord] = [], todos: TodoProgress? = nil,
