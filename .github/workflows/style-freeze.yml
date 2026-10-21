@@ -16,13 +16,11 @@ jobs:
       - name: The frozen style engine is unchanged since the tag
         run: |
           set -euo pipefail
-          if git rev-parse -q --verify refs/tags/mighty-style-engine-v6 >/dev/null; then
-            bash scripts/check-style-freeze.sh
-          else
-            # v6 is still being prepared: v5 keeps guarding everything except the
-            # engine files styles/STYLE_FREEZE_PENDING declares, and v5's bundled
-            # manifests, goldens and corpus stay byte-locked (new files only).
-            echo "mighty-style-engine-v6 태그가 아직 없어 v5와 styles/STYLE_FREEZE_PENDING으로 검사합니다."
-            bash scripts/check-style-freeze.sh mighty-style-engine-v5 --pending styles/STYLE_FREEZE_PENDING
-            git diff --exit-code --diff-filter=MDR mighty-style-engine-v5 HEAD -- native/macos/Sources/MightyCore/Resources/Styles styles/golden styles/conformance
+          if ! git rev-parse -q --verify refs/tags/mighty-style-engine-v7 >/dev/null; then
+            # v7 deletes bundled manifests and goldens, which a pending freeze on
+            # v6 may not do (it lets new files in, nothing out), so there is no
+            # fallback: the engine commit, the FREEZE commit and the tag go up in
+            # one atomic push, and until the tag exists the check fails closed.
+            echo "mighty-style-engine-v7 태그가 없습니다. 엔진 커밋·FREEZE 커밋·태그를 한 번에(--atomic) 올리세요."
           fi
+          bash scripts/check-style-freeze.sh
