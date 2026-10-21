@@ -192,6 +192,10 @@ public struct MobileSessionSummary: Codable, Sendable, Equatable, Identifiable {
     /// the CLI's catalogue or the pane's last reported model; absent when unknown.
     /// Only for the phone's label (`ModelLabel`); older phones ignore it.
     public var resolvedModel: String?
+    /// Whether text sent while the pane runs joins the running turn (steer); false
+    /// when it can only queue (Codex, Antigravity, command panes). Older phones
+    /// ignore it; a phone talking to an older host, which leaves it out, offers steer.
+    public var canSteer: Bool?
     /// A Mighty Orchestration child pane's parent pane, as the Mac sidebar nests it
     /// (`DelegationSidebar`); absent on every other pane. Older phones ignore it.
     public var parentSessionId: String?
@@ -200,13 +204,13 @@ public struct MobileSessionSummary: Codable, Sendable, Equatable, Identifiable {
     public var childState: String?
     public init(id: String, workspaceId: String, title: String, kind: String, provider: String, model: String, status: String, revision: Int, updatedAt: String,
                 preview: MobilePreview? = nil, pendingPermissions: Int = 0, pendingQuestions: Int = 0, queued: Int = 0, resumeId: String? = nil, terminal: Bool = false,
-                agentViewMode: String? = nil, mightyStyle: String? = nil, styleId: String? = nil, titleMode: String? = nil, resolvedModel: String? = nil,
+                agentViewMode: String? = nil, mightyStyle: String? = nil, styleId: String? = nil, titleMode: String? = nil, resolvedModel: String? = nil, canSteer: Bool? = nil,
                 parentSessionId: String? = nil, childState: String? = nil) {
         self.id = id; self.workspaceId = workspaceId; self.title = title; self.kind = kind; self.provider = provider; self.model = model; self.status = status
         self.revision = revision; self.updatedAt = updatedAt; self.preview = preview; self.pendingPermissions = pendingPermissions
         self.pendingQuestions = pendingQuestions; self.queued = queued; self.resumeId = resumeId; self.terminal = terminal
         self.agentViewMode = agentViewMode; self.mightyStyle = mightyStyle; self.styleId = styleId; self.titleMode = titleMode
-        self.resolvedModel = resolvedModel; self.parentSessionId = parentSessionId; self.childState = childState
+        self.resolvedModel = resolvedModel; self.canSteer = canSteer; self.parentSessionId = parentSessionId; self.childState = childState
     }
 }
 
