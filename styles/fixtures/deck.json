@@ -1,0 +1,27 @@
+{
+"schema":1,
+"id":"deck",
+"name":"Deck",
+"summary":"그룹으로 고르는 스킬 카탈로그",
+"subtitle":"deck",
+"placeholders":{"idle":"대상을 적고 위에서 스킬을 고르세요 · Enter는 그대로 요청합니다…","answering":"직접 답하려면 여기에 적고 Enter…"},
+"guidance":{"next":"대상(파일 경로나 지시)을 아래에 적고 스킬을 누르세요. 비워 두면 스킬만 보냅니다.","running":"실행 중 · 고른 스킬은 다음 요청으로 대기합니다"},
+"prerequisites":{"mode":"all","probes":[]},
+"phases":[],
+"groups":[{"id":"depth","title":"depth","axis":"하나 · 지금","question":"지금 이것 하나가 맞는가?","actions":["tidy","hate"]},{"id":"coil","title":"coil","axis":"하나 · 반복","question":"되풀이할수록 나아지는가?","actions":["plan","loop","memo","work","nba"]}],
+"actions":[
+  {"id":"tidy","title":"tidy","help":"아티팩트 하나를 다듬습니다","prompt":"/tidy {text}","takesText":true,"foldText":"oneLine","scope":"아티팩트 하나","glyph":"♻️"},
+  {"id":"hate","title":"hate","help":"계획의 가장 약한 곳을 찾아 반론 하나와 그것을 확인할 테스트를 냅니다","prompt":"/hate {text}","takesText":true,"foldText":"oneLine","scope":"계획 하나","glyph":"😈","flags":["userInvoked"]},
+  {"id":"plan","title":"plan","help":"새 사이클을 엽니다","prompt":"/plan {text}","takesText":true,"foldText":"oneLine","scope":"새 사이클 하나","glyph":"🗂️","flags":["userInvoked"]},
+  {"id":"loop","title":"loop","help":"사이클 전체를 돌립니다","prompt":"/loop {text}","takesText":true,"foldText":"oneLine","scope":"전체 루프","glyph":"🌀"},
+  {"id":"memo","title":"memo","help":"끝난 사이클에서 배운 것을 적습니다","prompt":"/memo {text}","takesText":true,"foldText":"oneLine","scope":"완료된 사이클 하나","glyph":"🧭"},
+  {"id":"work","title":"work","help":"배운 것만 들고 다시 시작합니다","prompt":"/work {text}","takesText":true,"foldText":"oneLine","scope":"재시작 하나","glyph":"🧱"},
+  {"id":"nba","title":"nba","help":"다음 한 수를 고릅니다","prompt":"/nba {text}","takesText":true,"foldText":"oneLine","scope":"현재 사이클","glyph":"🎯","flags":["userInvoked","readOnly"]}
+],
+"aliases":[],
+"recognition":{"prefixes":["/"],"lowercase":false},
+"rules":{"start":{"kind":"none"},"phase":{"kind":"none"},"next":{"kind":"byGroup"},"enter":{"kind":"verbatim"},"recommend":{"kind":"capability","capability":"acme.thing","group":"coil","map":{"absent":"plan","open":"loop","complete":"work"}},"initialGroup":{"kind":"capabilityState","capability":"acme.thing","map":{"absent":"depth","open":"coil","complete":"coil"}}},
+"capabilities":["acme.thing"],
+"autoAllow":[],
+"presentation":{}
+}

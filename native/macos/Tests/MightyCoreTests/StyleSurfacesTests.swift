@@ -67,9 +67,10 @@ struct StyleSurfacesTests {
     @Test func aChipsTooltipNamesItsScopeAndItsFlags() throws {
         let catalogue = StyleFixtures.catalogueStyle
         let hate = try #require(catalogue.manifest.action("hate"))
-        #expect(StyleChips.help(hate) == "친절하기를 거부합니다. 계획을 죽일 수 있는 반론 하나와 가장 싼 테스트를 냅니다 \u{00B7} 범위: 계획 하나 \u{00B7} 사람만 부를 수 있는 스킬")
+        #expect(StyleChips.help(hate) == "계획의 가장 약한 곳을 찾아 반론 하나와 그것을 확인할 테스트를 냅니다 \u{00B7} 범위: 계획 하나 \u{00B7} 사람만 부를 수 있는 스킬")
         let nba = try #require(catalogue.manifest.action("nba"))
-        #expect(StyleChips.help(nba).hasSuffix("범위: 현재 사이클 \u{00B7} 읽기 전용"))
+        // Both flags, in the order the tooltip names them.
+        #expect(StyleChips.help(nba) == "다음 한 수를 고릅니다 \u{00B7} 범위: 현재 사이클 \u{00B7} 사람만 부를 수 있는 스킬 \u{00B7} 읽기 전용")
         // No scope and no flags: the help line stands by itself, as today.
         let seed = try #require(StyleFixtures.bundled("ouroboros").manifest.action("seed"))
         #expect(StyleChips.help(seed) == "인터뷰 결과를 불변 명세(시드)로 굳힙니다")

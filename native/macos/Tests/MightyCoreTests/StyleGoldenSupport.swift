@@ -20,6 +20,9 @@ enum StyleGolden {
     }
     static var stylesDirectory: URL { repositoryRoot.appendingPathComponent("styles", isDirectory: true) }
     static var goldenDirectory: URL { stylesDirectory.appendingPathComponent("golden", isDirectory: true) }
+    /// The test-only manifests (§8.4): not a style anyone installs, so not in
+    /// `styles/*.json`, but recorded and compared like one.
+    static var fixturesDirectory: URL { stylesDirectory.appendingPathComponent("fixtures", isDirectory: true) }
 
     /// The five fixed inputs of §8.4, in one file so the golden stays readable.
     /// `lastGroup` exists because the first four collapse onto the default

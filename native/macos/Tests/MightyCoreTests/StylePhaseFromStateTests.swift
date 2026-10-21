@@ -5,7 +5,7 @@ import Testing
 /// §1.16: the phase a pane shows comes from its request history plus what its
 /// state sources read, and only a plan modified after the pane's first request
 /// in the style is the current plan. Real files, real mtimes, and a manifest
-/// that declares a plan-file source (`StyleFixtures.stateful`).
+/// that declares a plan-file source (`StyleFixtures.statefulStyle`, `styles/fixtures/loop.json`).
 struct StylePhaseFromStateTests {
     private let fm = FileManager.default
     private var style: RegisteredStyle { StyleFixtures.statefulStyle }

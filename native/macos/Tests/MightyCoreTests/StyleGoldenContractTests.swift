@@ -46,11 +46,41 @@ struct StyleGoldenContractTests {
         try StyleGolden.check(projection, id: "ouroboros")
     }
 
+    /// The test-only manifests of `styles/fixtures/` (§8.4) are recorded and
+    /// compared whole like the bundled styles, so the cases no bundled style
+    /// exercises since v7 — state sources, a group map, a feature-fed
+    /// recommendation, both action flags — stay in the cross-platform goldens
+    /// Windows Core and the phone read too. Each is decoded as an approved
+    /// user style under `StyleFixtures.testCapabilities`, the only vocabulary
+    /// `deck` decodes under; Windows Core loads them the same way.
+    @Test func theFixtureManifestsHaveGoldens() throws {
+        let found = try FileManager.default.contentsOfDirectory(at: StyleGolden.fixturesDirectory,
+                                                                includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+        let names = found.filter { $0.pathExtension == "json" }.map(\.lastPathComponent).sorted()
+        #expect(names == ["deck.json", "loop.json"])
+        var projections: [StyleGolden.Projection] = []
+        for name in names {
+            let id = String(name.dropLast(".json".count))
+            let style = StyleFixtures.fixtureStyle(id)
+            #expect(style.manifest.id == id)
+            let projection = StyleGolden.projection(for: style)
+            projections.append(projection)
+            try StyleGolden.check(projection, id: id)
+        }
+        // `lastGroup` is not `firstGroup` again for at least one golden, so
+        // the `byGroup` input is not vacuous.
+        #expect(projections.contains { $0.lastGroup != $0.firstGroup })
+        let deck = StyleGolden.projection(for: StyleFixtures.catalogueStyle)
+        #expect(deck.firstGroup.next == ["tidy", "hate"] && deck.lastGroup.next == ["plan", "loop", "memo", "work", "nba"])
+        #expect(deck.empty.actions.first { $0.id == "nba" }?.flags == ["userInvoked", "readOnly"])
+    }
+
     /// §1.16: a style with file and run-event sources records what the engine
     /// makes of its own declarations — the plan file as a bar and the
     /// `subagent.start` count as a label — and the file state moves it to the
     /// phase a current plan means. No bundled or repository style declares
-    /// either kind since v7, so the fixture stands in and no golden is kept.
+    /// either kind since v7, so the `loop` fixture stands in; its golden is
+    /// compared in `theFixtureManifestsHaveGoldens`.
     @Test func aStyleWithFileAndRunEventSourcesRecordsItsReading() throws {
         let projection = StyleGolden.projection(for: StyleFixtures.statefulStyle)
         let withState = try #require(projection.withState)
