@@ -69,6 +69,13 @@ public static class ModelLabel
     public static string InCatalog(string model, ModelCatalog? catalog, string? hint = null) =>
         catalog?.Models.FirstOrDefault(m => m.Value == model) is { } option ? Option(option, hint) : Text(model, FamilyHint(model, hint));
 
+    /// <summary>
+    /// The id <see cref="InCatalog"/> reads a model through, or null — what the host sends the phone as
+    /// <c>resolvedModel</c> so it can label the model with the same rules.
+    /// </summary>
+    public static string? Resolution(string model, ModelCatalog? catalog, string? hint = null) =>
+        catalog?.Models.FirstOrDefault(m => m.Value == model)?.ResolvedModel ?? FamilyHint(model, hint);
+
     // ── a pane's model ──────────────────────────────────────────────────────
 
     /// <summary>

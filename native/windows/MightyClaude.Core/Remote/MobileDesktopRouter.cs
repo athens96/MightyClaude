@@ -45,6 +45,8 @@ public sealed class MobileDesktopRouter : IDisposable
     public Func<string, byte[], CancellationToken, Task<MobileImageResult>>? ImagePreview { get; set; }
     public Func<string, string, JsonElement?, string, CancellationToken, Task<MobileReply>>? ScreenRoute { get; set; }
     public Func<string, int>? QueueCount { get; set; }
+    /// <summary>The model list the pane's CLI gave (M/AppStore providerRuntime(_:workspaceId:)), for the summary's <c>resolvedModel</c>; null (or none) reads the provider's fallback list.</summary>
+    public Func<RunSession, ModelCatalog?>? Catalog { get; set; }
     public string HostId { get; set; } = "";
     public string HostName { get; }
     public string AppVersion { get; init; } = "0.0.0";
@@ -289,7 +291,11 @@ public sealed class MobileDesktopRouter : IDisposable
         var agent = pane.Kind == "claude"; var style = !agent ? null : ActiveStyle is null ? pane.MightyStyle : ActiveStyle(pane);
         return new { pane.Id, pane.WorkspaceId, pane.Title, pane.Kind, pane.Provider, pane.Model, pane.Status, revision, updatedAt = pane.Logs.LastOrDefault()?.Timestamp ?? pane.CreatedAt,
             preview = tail is null ? null : new { tail.Kind, text = Wire.Clean(tail.Text, 200) }, pendingPermissions = pending.Count(p => !p.CanAnswerQuestions), pendingQuestions = pending.Count(p => p.CanAnswerQuestions), queued = QueueCount is { } count ? count(pane.Id) + service.HeldItems(pane.Id).Count : extra(pane).Queued.Count,
-            pane.ResumeId, terminal = !agent, agentViewMode = agent ? MobileRemoteSupport.ViewMode(pane.AgentViewMode) : null, mightyStyle = agent ? MobileRemoteSupport.Style(style) : null, styleId = agent ? style ?? MobileWire.CliStyle : null, titleMode = pane.TitleMode ?? "auto", resolvedModel = pane.SessionUsage?.Model };
+            pane.ResumeId, terminal = !agent, agentViewMode = agent ? MobileRemoteSupport.ViewMode(pane.AgentViewMode) : null, mightyStyle = agent ? MobileRemoteSupport.Style(style) : null, styleId = agent ? style ?? MobileWire.CliStyle : null, titleMode = pane.TitleMode ?? "auto",
+            // The Mac's rules (M/MightyClaude/AppStore+MobileRemote.swift mobileSummary): the model the composer's chip reads the
+            // selection through, never a model reported for an earlier one; and steer only where the desktop composer steers.
+            resolvedModel = pane.Kind == "shell" ? null : ModelLabel.Resolution(pane.Model, Catalog?.Invoke(pane) ?? ProviderCatalog.Fallback(pane.Provider), ModelLabel.ReportedModel(pane)),
+            canSteer = DelegationProviders.CanSteer(pane.Kind, pane.Provider) };
     }
     /// <summary>
     /// The session detail as it goes out (M/MightyCore/Remote/MobileRemoteSupport.swift:59-72). The structure travels only to a

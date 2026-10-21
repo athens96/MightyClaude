@@ -337,6 +337,7 @@ internal static class Verification
         await Test("Mobile host: a pane without a graph is grouped from its transcript", MobileHostVerification.APaneWithoutAGraphIsGroupedFromItsTranscript);
         await Test("Mobile host: a phone is told only of what changed", MobileHostVerification.APhoneIsToldOnlyOfWhatChanged);
         await Test("Mobile host: a session reply reads as the desktop does", MobileHostVerification.ASessionReplyReadsAsTheDesktopDoes);
+        await Test("Mobile host: a pane travels as its provider runs", MobileHostVerification.APaneTravelsAsItsProviderRuns);
         await Test("Mobile host: settings offer what the pane can pick", MobileHostVerification.SettingsOfferWhatThePaneCanPick);
         await Test("Mobile host: older phones still get the Ouroboros payload", MobileHostVerification.OlderPhonesStillGetTheOuroborosPayload);
         await Test("Mobile host: file replies carry a code and the Mac's caps", MobileHostVerification.FileRepliesCarryACodeAndTheMacsCaps);
