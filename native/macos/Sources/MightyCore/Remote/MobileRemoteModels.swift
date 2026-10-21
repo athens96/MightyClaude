@@ -74,7 +74,7 @@ public enum MobileCapability {
 public enum MobileWire {
     public static let submitModes = ["steer", "queue"]
     public static let agentViewModes = ["plain", "mighty"]
-    public static let mightyStyles = ["cli", "ouroboros", "paperthin"]
+    public static let mightyStyles = ["cli", "ouroboros"]
     /// What `POST …/command` performs; the other actions the phone handles itself.
     public static let performedActions = ["clear", "usage", "help"]
     /// The Mac's `agentViewMode` is nil or "default" where the wire says "plain".
@@ -415,48 +415,6 @@ public struct MobileOuroboros: Codable, Sendable, Equatable {
     }
 }
 
-public struct MobilePaperthinSkill: Codable, Sendable, Equatable, Identifiable {
-    public var name: String
-    public var emoji: String
-    public var summary: String
-    public var scope: String
-    public var userInvoked: Bool
-    public var readOnly: Bool
-    public var id: String { name }
-    public init(name: String, emoji: String, summary: String, scope: String, userInvoked: Bool, readOnly: Bool) {
-        self.name = name; self.emoji = emoji; self.summary = summary; self.scope = scope
-        self.userInvoked = userInvoked; self.readOnly = readOnly
-    }
-}
-
-public struct MobilePaperthinDomain: Codable, Sendable, Equatable, Identifiable {
-    public var id: String
-    public var title: String
-    public var axis: String
-    public var question: String
-    public var skills: [MobilePaperthinSkill]
-    public init(id: String, title: String, axis: String, question: String, skills: [MobilePaperthinSkill]) {
-        self.id = id; self.title = title; self.axis = axis; self.question = question; self.skills = skills
-    }
-}
-
-public struct MobilePaperthinCasebook: Codable, Sendable, Equatable {
-    public var name: String
-    public var weight: String
-    public var files: [String]
-    public init(name: String, weight: String, files: [String]) { self.name = name; self.weight = weight; self.files = files }
-}
-
-public struct MobilePaperthin: Codable, Sendable, Equatable {
-    public var installed: Bool
-    public var recommended: String?
-    public var domains: [MobilePaperthinDomain]
-    public var casebook: MobilePaperthinCasebook?
-    public init(installed: Bool, recommended: String? = nil, domains: [MobilePaperthinDomain], casebook: MobilePaperthinCasebook? = nil) {
-        self.installed = installed; self.recommended = recommended; self.domains = domains; self.casebook = casebook
-    }
-}
-
 /// The Mighty view of a pane: its style, its newest runs as blocks, and the
 /// guided panel of whichever style it is in (never both).
 public struct MobileMighty: Codable, Sendable, Equatable {
@@ -466,7 +424,6 @@ public struct MobileMighty: Codable, Sendable, Equatable {
     public var runs: [MobileMightyRun]
     public var panel: StylePanel?
     public var ouroboros: MobileOuroboros?
-    public var paperthin: MobilePaperthin?
     /// The Mac's structure view of the pane (`MobileStructure`). Only on a detail the
     /// phone asked for with `?structure=<tag>`, and only when it differs from that tag.
     public var structure: MobileStructure?
@@ -474,10 +431,10 @@ public struct MobileMighty: Codable, Sendable, Equatable {
     /// when the phone asked for the structure.
     public var structureTag: Int?
     public init(style: String, styleId: String = MobileWire.cliStyle, runs: [MobileMightyRun], panel: StylePanel? = nil,
-                ouroboros: MobileOuroboros? = nil, paperthin: MobilePaperthin? = nil, structure: MobileStructure? = nil,
+                ouroboros: MobileOuroboros? = nil, structure: MobileStructure? = nil,
                 structureTag: Int? = nil) {
         self.style = style; self.styleId = styleId; self.runs = runs; self.panel = panel
-        self.ouroboros = ouroboros; self.paperthin = paperthin; self.structure = structure; self.structureTag = structureTag
+        self.ouroboros = ouroboros; self.structure = structure; self.structureTag = structureTag
     }
 }
 

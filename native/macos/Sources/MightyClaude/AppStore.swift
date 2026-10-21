@@ -121,14 +121,8 @@ final class AppStore: ObservableObject, DelegationHost {
     /// A trust store that could not be read answers no decision at all (§4.3).
     @Published var styleTrustLocked = false
     @Published var styleTrustPath = ""
-    /// Prerequisites per style and workspace path; built-in feature readings
-    /// per workspace and feature name.
+    /// Prerequisites per style and workspace path.
     @Published var stylePrerequisites: [StylePrerequisiteKey: StylePrerequisiteResult] = [:]
-    @Published var styleCapabilityStates: [StyleCapabilityKey: String] = [:]
-    @Published var styleAttachments: [StyleCapabilityKey: [StyleAttachmentItem]] = [:]
-    @Published var styleCasebooks: [String: StyleCasebook] = [:]
-    /// Features that have been read at least once, per workspace.
-    @Published var styleCapabilitiesLoaded: Set<StyleCapabilityKey> = []
     /// Composer-side progress through the agent's pending questions, per pane.
     @Published var guidedProgress: [String: QuestionnaireProgress] = [:]
     @Published var guidedAutoAllowing = Set<String>()
@@ -147,8 +141,6 @@ final class AppStore: ObservableObject, DelegationHost {
     /// a process on every poll, and a button pressed meanwhile would be lost.
     var stylePrerequisiteLoading: Set<StylePrerequisiteKey> = []
     var stylePrerequisiteAgain: Set<StylePrerequisiteKey> = []
-    var styleCapabilityLoading: Set<StyleCapabilityKey> = []
-    var styleCapabilityAgain: Set<StyleCapabilityKey> = []
     /// §1.16: what each pane's declared file sources last read, per pane id,
     /// with the reads in flight, the ones asked for again, and one watcher per
     /// workspace path that has a pane reading state.

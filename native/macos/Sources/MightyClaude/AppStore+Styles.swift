@@ -16,12 +16,6 @@ struct StylePrerequisiteKey: Hashable {
     var workspacePath: String?
 }
 
-/// One built-in feature read in one workspace (§1.8).
-struct StyleCapabilityKey: Hashable {
-    var workspaceId: String
-    var name: String
-}
-
 /// §1.16: what a pane's file sources were read for. A different style, a
 /// moved workspace or a new first request makes an older reading stale.
 struct StyleStateKey: Hashable {
@@ -122,12 +116,6 @@ extension AppStore {
     /// walked by every later scan, and its readings and manifest bytes would
     /// sit in memory for the life of the process.
     func forgetWorkspaceStyles(_ workspace: Workspace) {
-        styleCapabilityStates = styleCapabilityStates.filter { $0.key.workspaceId != workspace.id }
-        styleAttachments = styleAttachments.filter { $0.key.workspaceId != workspace.id }
-        styleCapabilitiesLoaded = styleCapabilitiesLoaded.filter { $0.workspaceId != workspace.id }
-        styleCapabilityLoading = styleCapabilityLoading.filter { $0.workspaceId != workspace.id }
-        styleCapabilityAgain = styleCapabilityAgain.filter { $0.workspaceId != workspace.id }
-        styleCasebooks.removeValue(forKey: workspace.id)
         // A remote workspace's path is its host's: a local workspace may have the
         // same one, and its path-keyed readings and scans are not this one's.
         guard workspace.remote == nil else { return }
@@ -203,7 +191,6 @@ extension AppStore {
     /// Both reads a style needs before its panel can be drawn.
     func refreshStyle(_ style: RegisteredStyle, for session: RunSession) {
         refreshStylePrerequisites(style, for: session)
-        refreshStyleCapabilities(style, for: session)
         refreshStyleState(style, for: session)
     }
 
@@ -382,63 +369,6 @@ extension AppStore {
                 }
             }
         }
-    }
-
-    // MARK: Built-in capabilities
-
-    /// Re-reads the named built-in features for this pane's workspace, cached
-    /// per workspace **and feature name** because that is what they read (§1.8):
-    /// two styles naming different features in one workspace must not erase
-    /// each other's readings.
-    func refreshStyleCapabilities(_ style: RegisteredStyle, for session: RunSession) {
-        guard !style.manifest.capabilities.isEmpty,
-              let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId && $0.remote == nil }) else { return }
-        loadStyleCapabilities(style.manifest.capabilities, workspaceId: workspace.id, path: workspace.path)
-    }
-
-    private func loadStyleCapabilities(_ names: [String], workspaceId: String, path: String) {
-        let keys = Set(names.map { StyleCapabilityKey(workspaceId: workspaceId, name: $0) })
-        guard styleCapabilityLoading.isDisjoint(with: keys) else { styleCapabilityAgain.formUnion(keys); return }
-        styleCapabilityLoading.formUnion(keys)
-        Task.detached(priority: .utility) { [weak self] in
-            let value = StyleCapabilities.evaluate(names, workspacePath: path)
-            // The legacy phone payload carries the casebook itself, so the
-            // raw reading is kept beside the normalised chips.
-            let casebook = names.contains(StyleCapabilityID.casebook) ? StyleCasebook.latest(workspacePath: path) : nil
-            await MainActor.run { [weak self] in
-                guard let self else { return }
-                self.styleCapabilityLoading.subtract(keys)
-                for key in keys {
-                    self.styleCapabilityStates[key] = value.states[key.name]
-                    self.styleAttachments[key] = value.attachments
-                    self.styleCapabilitiesLoaded.insert(key)
-                }
-                if let casebook { self.styleCasebooks[workspaceId] = casebook } else { self.styleCasebooks.removeValue(forKey: workspaceId) }
-                self.mobileObserve()
-                if !self.styleCapabilityAgain.isDisjoint(with: keys) {
-                    self.styleCapabilityAgain.subtract(keys)
-                    self.loadStyleCapabilities(names, workspaceId: workspaceId, path: path)
-                }
-            }
-        }
-    }
-
-    /// Only the features this style declared: another style's reading in the
-    /// same workspace is not part of this style's state (§1.8).
-    func styleStates(_ style: RegisteredStyle, for session: RunSession) -> [String: String] {
-        var states: [String: String] = [:]
-        for name in style.manifest.capabilities {
-            states[name] = styleCapabilityStates[StyleCapabilityKey(workspaceId: session.workspaceId, name: name)]
-        }
-        return states
-    }
-
-    func styleChips(_ style: RegisteredStyle, for session: RunSession) -> [StyleAttachmentItem] {
-        style.manifest.capabilities.flatMap { styleAttachments[StyleCapabilityKey(workspaceId: session.workspaceId, name: $0)] ?? [] }
-    }
-
-    func styleCapabilitiesAreLoaded(_ style: RegisteredStyle, for session: RunSession) -> Bool {
-        style.manifest.capabilities.allSatisfy { styleCapabilitiesLoaded.contains(StyleCapabilityKey(workspaceId: session.workspaceId, name: $0)) }
     }
 
     // MARK: Sending

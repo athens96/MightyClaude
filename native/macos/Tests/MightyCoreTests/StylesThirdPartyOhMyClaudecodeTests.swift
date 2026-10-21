@@ -133,8 +133,8 @@ struct StylesThirdPartyOhMyClaudecodeTests {
         #expect(evaluator.requestTitle(forInput: "무슨 일이 일어난 거죠") == nil)
         #expect(registry.requestTitle(forInput: "/oh-my-claudecode:verify", workspace: nil) == "검증")
         // `/review` belongs to gstack, whose bare `/name` rule reads it: the sweep
-        // runs bundled first (Ouroboros needs `/ouroboros:`, Paperthin has no
-        // `review` skill), then user styles by id, and `gstack` sorts before
+        // runs bundled first (Ouroboros needs `/ouroboros:`, the plan style
+        // reads `[`-tags), then user styles by id, and `gstack` sorts before
         // `oh-my-claudecode`. This style's prefix could never match `/review`
         // anyway. Claude Code's own `/review` command is untouched — the engine
         // only titles the request block; the request itself still goes out as typed.

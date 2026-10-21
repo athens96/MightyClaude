@@ -56,8 +56,6 @@ struct StyleManifestTests {
         cases.append(("E_ENTER_ACTION_TEXT", f.data(f.phased, ["rules": "{\"start\":{\"kind\":\"none\"},\"phase\":{\"kind\":\"lastRecognisedAction\",\"default\":\"one\"},\"next\":{\"kind\":\"byPhase\",\"map\":{\"one\":[],\"two\":[]}},\"enter\":{\"kind\":\"rewriteBareDraftTo\",\"action\":\"go\",\"phase\":\"one\"},\"recommend\":{\"kind\":\"none\"},\"initialGroup\":{\"kind\":\"fixed\",\"group\":\"g\"}}"])))
         cases.append(("E_UNKNOWN_CAPABILITY", f.data(f.flat, ["capabilities": "[\"acme.thing\"]"])))
         cases.append(("E_CAPABILITY_UNDECLARED", f.data(f.flat, ["rules": recommendRule(map: "{\"absent\":\"go\",\"open\":\"go\",\"complete\":\"go\"}")])))
-        cases.append(("E_CAPABILITY_MAP", f.data(f.flat, ["capabilities": "[\"paperthin.casebook\"]",
-                                                          "rules": recommendRule(map: "{\"absent\":\"go\",\"open\":\"go\"}")])))
         cases.append(("E_UNKNOWN_TINT", f.data(f.flat, ["presentation": "{\"tint\":\"chartreuse\"}"])))
         cases.append(("E_UNKNOWN_ICON", f.data(f.flat, ["presentation": "{\"icon\":\"lock.fill\"}"])))
         cases.append(("E_UNKNOWN_PROBE", f.data(f.flat, ["prerequisites": "{\"mode\":\"all\",\"probes\":[{\"kind\":\"daemon\",\"name\":\"x\",\"missing\":\"m\"}]}"])))
@@ -85,6 +83,13 @@ struct StyleManifestTests {
         for (code, data) in cases {
             #expect(StyleFixtures.code(data) == code, "\(code) 픽스처가 다른 코드를 냈습니다: \(StyleFixtures.code(data) ?? "통과")")
         }
+        // The app's vocabulary is empty since v7, so a declared feature is
+        // refused as unknown before its map is read; only a test vocabulary
+        // still reaches the map check (§1.8).
+        let unmapped = f.data(f.flat, ["capabilities": "[\"acme.thing\"]",
+                                       "rules": recommendRule(map: "{\"absent\":\"go\",\"open\":\"go\"}")])
+        #expect(f.code(unmapped, capabilities: f.testCapabilities) == "E_CAPABILITY_MAP")
+        #expect(f.code(unmapped) == "E_UNKNOWN_CAPABILITY")
         // The one code the registry owns rather than the decoder.
         let first = StyleFixtures.discovered(f.data(), source: .user, url: URL(fileURLWithPath: "/tmp/a.json"))
         let second = StyleFixtures.discovered(f.data(f.flat, ["summary": "\"다른 파일\""]), source: .user, url: URL(fileURLWithPath: "/tmp/b.json"))
@@ -92,14 +97,14 @@ struct StyleManifestTests {
         #expect(made.styles.count == 1 && made.rejections.map(\.error.code) == ["E_ID_COLLISION"])
         // The count comes from the production enum, not from this list: a new
         // code with no fixture has to fail here, and a literal cannot say so.
-        #expect(Set(cases.map(\.0) + ["E_ID_COLLISION"]) == StyleErrorCodes.all)
+        #expect(Set(cases.map(\.0) + ["E_ID_COLLISION", "E_CAPABILITY_MAP"]) == StyleErrorCodes.all)
         #expect(StyleErrorCodes.all.count == 54)
     }
 
     private let unknownRule = "{\"start\":{\"kind\":\"sideways\"},\"phase\":{\"kind\":\"none\"},\"next\":{\"kind\":\"byGroup\"},\"enter\":{\"kind\":\"verbatim\"},\"recommend\":{\"kind\":\"none\"},\"initialGroup\":{\"kind\":\"fixed\",\"group\":\"g\"}}"
     private let acmeProbe = "{\"mode\":\"all\",\"probes\":[{\"kind\":\"plugin\",\"prefix\":\"acme@\",\"missing\":\"m\"}]}"
     private func recommendRule(map: String) -> String {
-        "{\"start\":{\"kind\":\"none\"},\"phase\":{\"kind\":\"none\"},\"next\":{\"kind\":\"byGroup\"},\"enter\":{\"kind\":\"verbatim\"},\"recommend\":{\"kind\":\"capability\",\"capability\":\"paperthin.casebook\",\"map\":\(map)},\"initialGroup\":{\"kind\":\"fixed\",\"group\":\"g\"}}"
+        "{\"start\":{\"kind\":\"none\"},\"phase\":{\"kind\":\"none\"},\"next\":{\"kind\":\"byGroup\"},\"enter\":{\"kind\":\"verbatim\"},\"recommend\":{\"kind\":\"capability\",\"capability\":\"acme.thing\",\"map\":\(map)},\"initialGroup\":{\"kind\":\"fixed\",\"group\":\"g\"}}"
     }
 
     @Test func depthIsCountedBeforeTheParserSeesTheBytes() {
@@ -130,8 +135,7 @@ struct StyleManifestTests {
         // The ellipsis is inside the budget: "cut to 64" means 64 on screen.
         #expect(StyleText.safe(String(repeating: "a", count: 200)).count == StyleLimits.maximumMessageValue)
         #expect(StyleText.safe(String(repeating: "a", count: 200)).hasSuffix("\u{2026}"))
-        #expect(StyleText.normalised(String(repeating: "b", count: 200), limit: StyleLimits.maximumCapabilityString).count
-                    == StyleLimits.maximumCapabilityString)
+        #expect(StyleText.normalised(String(repeating: "b", count: 200), limit: 80).count == 80)
     }
 
     /// C3: a `\uXXXX` in a key name is one key to `JSONSerialization` and a
@@ -161,8 +165,8 @@ struct StyleManifestTests {
         #expect(f.code(Data((f.text() + "garbage").utf8)) == "E_NOT_JSON")
         let missingMap = "{\"start\":{\"kind\":\"none\"},\"phase\":{\"kind\":\"lastRecognisedAction\",\"default\":\"one\"},\"next\":{\"kind\":\"byPhase\"},\"enter\":{\"kind\":\"verbatim\"},\"recommend\":{\"kind\":\"none\"},\"initialGroup\":{\"kind\":\"fixed\",\"group\":\"g\"}}"
         #expect(f.code(f.data(f.phased, ["rules": missingMap])) == "E_MISSING_FIELD")
-        let recommendNoMap = "{\"start\":{\"kind\":\"none\"},\"phase\":{\"kind\":\"none\"},\"next\":{\"kind\":\"byGroup\"},\"enter\":{\"kind\":\"verbatim\"},\"recommend\":{\"kind\":\"capability\",\"capability\":\"paperthin.casebook\"},\"initialGroup\":{\"kind\":\"fixed\",\"group\":\"g\"}}"
-        #expect(f.code(f.data(f.flat, ["capabilities": "[\"paperthin.casebook\"]", "rules": recommendNoMap])) == "E_MISSING_FIELD")
+        let recommendNoMap = "{\"start\":{\"kind\":\"none\"},\"phase\":{\"kind\":\"none\"},\"next\":{\"kind\":\"byGroup\"},\"enter\":{\"kind\":\"verbatim\"},\"recommend\":{\"kind\":\"capability\",\"capability\":\"acme.thing\"},\"initialGroup\":{\"kind\":\"fixed\",\"group\":\"g\"}}"
+        #expect(f.code(f.data(f.flat, ["capabilities": "[\"acme.thing\"]", "rules": recommendNoMap]), capabilities: f.testCapabilities) == "E_MISSING_FIELD")
         // An action may name itself in `match`; only another action's id clashes.
         #expect(f.code(f.data(f.flat, ["actions": "[{\"id\":\"go\",\"title\":\"Go\",\"help\":\"h\",\"prompt\":\"/go\",\"takesText\":false,\"match\":\"go\"}]"])) == nil)
     }

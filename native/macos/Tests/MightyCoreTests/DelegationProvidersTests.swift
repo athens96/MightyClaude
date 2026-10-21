@@ -110,7 +110,7 @@ import Testing
         for provider in ["codex", "gemini"] {
             var parent = RunSession(id: "parent", workspaceId: "ws", title: "Parent", kind: SessionKind.claude, provider: provider, settings: RunSettings(effort: "high", permissionMode: "acceptEdits"))
             parent.model = "model-x"; parent.agentViewMode = "mighty"; parent.graphViewMode = .structure
-            parent.mightyStyle = "superpowers"; parent.mightyStyleHash = "h1"
+            parent.mightyStyle = "claude-plan"; parent.mightyStyleHash = "h1"
             let pane = DelegationChildPane(sessionId: "c1", parentSessionId: "parent", mode: "acceptEdits", folder: "/w/c1", startedByHuman: true, provider: provider)
             let human = DelegationPanes.childSession(pane, workspaceId: "ws", title: "Fix it", parent: parent)
             #expect(human.kind == SessionKind.claude && human.provider == provider && human.settings.permissionMode == "acceptEdits", "\(provider)")

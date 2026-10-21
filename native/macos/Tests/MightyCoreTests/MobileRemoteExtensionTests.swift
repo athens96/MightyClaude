@@ -95,8 +95,8 @@ struct MobileRemoteExtensionTests {
         #expect(mighty && !plain && !codex)
         // `options.styles` is the open list: the CLI plus what may be run.
         let options = MobileRemoteSupport.styleOptions(BundledStyles.shared.styles())
-        #expect(options.map(\.id) == ["cli", "claude-plan", "ouroboros", "paperthin", "superpowers"])
-        #expect(options.map(\.label) == ["cli", "클러드 플랜", "Ouroboros", "Paperthin", "Superpowers"])
+        #expect(options.map(\.id) == ["cli", "claude-plan", "ouroboros"])
+        #expect(options.map(\.label) == ["cli", "클러드 플랜", "Ouroboros"])
         #expect(options[0].source == nil && options[1].source == .bundled)
         #expect(MobileRemoteSupport.styleOptions([]).map(\.id) == ["cli"])
 
@@ -451,9 +451,9 @@ struct MobileRemoteExtensionTests {
         // into the shapes an older phone knows (§7.4).
         let flow = StyleFixtures.bundled("ouroboros")
         let seeded = StylePanelProjection.make(style: flow, prompts: ["/ouroboros:seed"], selectedGroupId: nil,
-                                               capabilityStates: [:], attachments: [],
+                                               capabilityStates: [:],
                                                prerequisites: StylePrerequisiteResult(ready: false))
-        let ouroboros = try #require(MobileLegacyStyleAdapter.payloads(style: flow, panel: seeded, casebook: nil).ouroboros)
+        let ouroboros = try #require(MobileLegacyStyleAdapter.payload(style: flow, panel: seeded))
         #expect(ouroboros.phase == "seed" && !ouroboros.ready)
         #expect(ouroboros.next.map(\.skill) == ["run", "evaluate", "status"])
         // The literal catalogue the deleted `OuroborosFlowTests` pinned.
@@ -464,43 +464,13 @@ struct MobileRemoteExtensionTests {
         var phases: [String] = []
         for phase in flow.manifest.orderedPhases {
             let panel = StylePanelProjection.make(style: flow, prompts: ["/ouroboros:" + phase.id], selectedGroupId: nil,
-                                                  capabilityStates: [:], attachments: [],
+                                                  capabilityStates: [:],
                                                   prerequisites: StylePrerequisiteResult(ready: true))
-            phases.append(MobileLegacyStyleAdapter.payloads(style: flow, panel: panel, casebook: nil).ouroboros?.phase ?? "")
+            phases.append(MobileLegacyStyleAdapter.payload(style: flow, panel: panel)?.phase ?? "")
         }
         // `goal` has no action of its own, so a pane there reports the entry.
         #expect(flow.manifest.orderedPhases.map(\.id) == ["goal", "interview", "seed", "run", "evaluate", "evolve"])
         #expect(phases == ["goal", "interview", "seed", "run", "evaluate", "evolve"])
-
-        let thin = StyleFixtures.bundled("paperthin")
-        let casebook = StyleCasebook(name: "v3-relay", path: "/tmp/x", files: ["DESIGN.local.md", "RETRO.local.md"], modifiedAt: Date())
-        // The phone has no group of its own, and production never passes one:
-        // the recommendation has to survive that, or it disappears exactly
-        // where the old payload said `re0-plan` (§7.4).
-        let map = StylePanelProjection.make(style: thin, prompts: [], selectedGroupId: nil,
-                                            capabilityStates: [StyleCapabilityID.casebook: "complete"], attachments: [],
-                                            prerequisites: StylePrerequisiteResult(ready: true))
-        let paperthin = try #require(MobileLegacyStyleAdapter.payloads(style: thin, panel: map, casebook: casebook).paperthin)
-        #expect(paperthin.installed && paperthin.domains.map(\.id) == ["depth", "breadth", "coil", "mesh"])
-        #expect(paperthin.casebook?.weight == "full" && paperthin.casebook?.files.count == 2)
-        #expect(paperthin.recommended == "re0-work")
-        let depth = try #require(paperthin.domains.first { $0.id == "depth" })
-        #expect(depth.axis == "하나 \u{00B7} 지금" && depth.question == "이 하나가 깨끗하고 참인가?")
-        // The literal first four of the domain the deleted tests pinned.
-        #expect(depth.skills.prefix(4).map(\.name) == ["re0", "readchk", "aim", "modelchk"])
-        #expect(depth.skills.count == 19 && depth.skills.first { $0.name == "hate" }?.userInvoked == true)
-        #expect(paperthin.domains.map { $0.skills.count } == [19, 2, 6, 1])
-        // Nothing on disk yet: the first step of a cycle is what is recommended,
-        // and that is the value an older phone read without any group at all.
-        let absent = StylePanelProjection.make(style: thin, prompts: [], selectedGroupId: nil,
-                                               capabilityStates: [StyleCapabilityID.casebook: "absent"], attachments: [],
-                                               prerequisites: StylePrerequisiteResult(ready: false))
-        let none = try #require(MobileLegacyStyleAdapter.payloads(style: thin, panel: absent, casebook: nil).paperthin)
-        #expect(!none.installed && none.recommended == "re0-plan" && none.casebook == nil)
-        // A workspace whose feature has not been read yet has no answer at all.
-        let unread = StylePanelProjection.make(style: thin, prompts: [], selectedGroupId: nil, capabilityStates: [:],
-                                               attachments: [], prerequisites: StylePrerequisiteResult(ready: true))
-        #expect(MobileLegacyStyleAdapter.payloads(style: thin, panel: unread, casebook: nil).paperthin?.recommended == nil)
     }
 
     /// The `/guided` gate, decided from the registry in memory alone: neither
@@ -552,35 +522,40 @@ struct MobileRemoteExtensionTests {
 
     @Test func guidedPromptsAreTheVeryStringsTheMacButtonsSend() throws {
         let flow = StyleFixtures.bundled("ouroboros")
-        let thin = StyleFixtures.bundled("paperthin")
+        let plan = StyleFixtures.bundled("claude-plan")
         #expect(MobileMightySupport.guidedPrompt(flow, actionId: "interview", text: " 결제 흐름 ") == flow.evaluator.prompt(actionId: "interview", text: "결제 흐름"))
         // An action that takes no text drops it, exactly as the Mac's chip does.
         #expect(MobileMightySupport.guidedPrompt(flow, actionId: "seed", text: "무시됨") == flow.evaluator.prompt(actionId: "seed", text: ""))
-        #expect(MobileMightySupport.guidedPrompt(thin, actionId: "re0", text: "docs/spec.md") == thin.evaluator.prompt(actionId: "re0", text: "docs/spec.md"))
-        #expect(MobileMightySupport.guidedPrompt(thin, actionId: "re0", text: "") == "/re0")
+        #expect(MobileMightySupport.guidedPrompt(plan, actionId: "new-plan", text: "docs/spec.md") == plan.evaluator.prompt(actionId: "new-plan", text: "docs/spec.md"))
+        #expect(MobileMightySupport.guidedPrompt(plan, actionId: "new-plan", text: "docs/spec.md") == "[계획] docs/spec.md")
+        #expect(MobileMightySupport.guidedPrompt(plan, actionId: "verify", text: "무시됨") == plan.evaluator.prompt(actionId: "verify", text: ""))
         // Wrong catalogue, unknown action: nothing is invented.
-        #expect(MobileMightySupport.guidedPrompt(thin, actionId: "interview", text: "") == nil)
-        #expect(MobileMightySupport.guidedPrompt(flow, actionId: "re0", text: "") == nil)
+        #expect(MobileMightySupport.guidedPrompt(plan, actionId: "interview", text: "") == nil)
+        #expect(MobileMightySupport.guidedPrompt(flow, actionId: "new-plan", text: "") == nil)
     }
 
     @Test func aPhonesMultilineTextBecomesOneLineForBothGuidedStyles() throws {
         // An action reads its argument up to the first line break, so a pasted
         // paragraph must not reach one catalogue whole and the other cut off.
         let flow = StyleFixtures.bundled("ouroboros")
-        let thin = StyleFixtures.bundled("paperthin")
+        let plan = StyleFixtures.bundled("claude-plan")
         let pasted = "결제 흐름 정리\n\n  두 번째 줄  \n세 번째 줄"
         #expect(MobileMightySupport.guidedPrompt(flow, actionId: "interview", text: pasted) == "/ouroboros:interview 결제 흐름 정리 두 번째 줄 세 번째 줄")
-        #expect(MobileMightySupport.guidedPrompt(thin, actionId: "re0", text: pasted) == "/re0 결제 흐름 정리 두 번째 줄 세 번째 줄")
+        #expect(MobileMightySupport.guidedPrompt(plan, actionId: "new-plan", text: pasted) == "[계획] 결제 흐름 정리 두 번째 줄 세 번째 줄")
         #expect(MobileMightySupport.guidedPrompt(flow, actionId: "interview", text: "\n \n") == "/ouroboros:interview")
         // The Mac's own buttons are untouched: only the phone's route folds.
         #expect(flow.evaluator.prompt(actionId: "interview", text: "첫 줄\n둘째 줄") == "/ouroboros:interview 첫 줄\n둘째 줄")
-        #expect(thin.evaluator.prompt(actionId: "re0", text: "첫 줄\n둘째 줄") == "/re0 첫 줄 둘째 줄")
+        #expect(plan.evaluator.prompt(actionId: "new-plan", text: "첫 줄\n둘째 줄") == "[계획] 첫 줄\n둘째 줄")
+        // A catalogue that folds to one line itself gives the same either way.
+        let catalogue = StyleFixtures.catalogueStyle
+        #expect(catalogue.evaluator.prompt(actionId: "tidy", text: "첫 줄\n둘째 줄") == "/tidy 첫 줄 둘째 줄")
+        #expect(MobileMightySupport.guidedPrompt(catalogue, actionId: "tidy", text: pasted) == "/tidy 결제 흐름 정리 두 번째 줄 세 번째 줄")
         #expect(flow.evaluator.prompt(actionId: "interview", text: " 결제 흐름 ") == "/ouroboros:interview 결제 흐름")
     }
 
     @Test func theMightyPayloadKeepsItsOptionalFieldsOffTheWire() throws {
         let plain = try encoded(MobileMighty(style: "cli", runs: []))
-        #expect(plain["style"] as? String == "cli" && plain["ouroboros"] == nil && plain["paperthin"] == nil)
+        #expect(plain["style"] as? String == "cli" && plain["ouroboros"] == nil)
         let block = try encoded(MobileBlock(id: "b", kind: "main", title: "요청 1", status: "running"))
         for key in ["summary", "output", "durationMs", "activity"] { #expect(block[key] == nil) }
         let active = try encoded(MobileBlock(id: "b", kind: "agent", title: "검색", status: "running", activity: ["a.swift"]))
@@ -1153,12 +1128,15 @@ struct MobileRemoteExtensionTests {
     }
 
     @Test func theStyleFieldsRideBesideTheFixedVocabulary() throws {
-        // `mightyStyle` keeps its three words; the truth travels in `styleId`,
-        // so an old phone sees a plain CLI pane rather than a wrong one (§7.2).
-        #expect(MobileWire.mightyStyles == ["cli", "ouroboros", "paperthin"])
-        // A third bundled style gets no word of its own: it reads "cli" here
-        // and travels as `styleId`, like any registered style.
-        #expect(MobileRemoteSupport.style("superpowers") == MobileWire.cliStyle)
+        // `mightyStyle` keeps its two words (v7 dropped the removed style's);
+        // the truth travels in `styleId`, so an old phone sees a plain CLI pane
+        // rather than a wrong one (§7.2).
+        #expect(MobileWire.mightyStyles == ["cli", "ouroboros"])
+        // Another bundled style gets no word of its own: it reads "cli" here
+        // and travels as `styleId`, like any registered style. So does a pane
+        // still saved in the removed style.
+        #expect(MobileRemoteSupport.style("claude-plan") == MobileWire.cliStyle)
+        #expect(MobileRemoteSupport.style(MightyStyleIDs.paperthin) == MobileWire.cliStyle)
         #expect(MobileCapability.all.contains("style"))
         let summary = try encoded(MobileSessionSummary(id: "s", workspaceId: "w", title: "t", kind: "claude", provider: "claude",
                                                        model: "default", status: "idle", revision: 1, updatedAt: "now",
@@ -1168,17 +1146,18 @@ struct MobileRemoteExtensionTests {
                                                             model: "default", status: "idle", revision: 1, updatedAt: "now"))
         #expect(plainSummary["styleId"] == nil)
 
-        let style = StyleFixtures.bundled("paperthin")
-        let panel = StylePanelProjection.make(style: style, prompts: [], selectedGroupId: "coil",
-                                              capabilityStates: [StyleCapabilityID.casebook: "absent"], attachments: [],
-                                              prerequisites: StylePrerequisiteResult(ready: true))
-        let legacy = MobileLegacyStyleAdapter.payloads(style: style, panel: panel, casebook: nil)
-        let mighty = try encoded(MobileMighty(style: "paperthin", styleId: "paperthin", runs: [], panel: panel, paperthin: legacy.paperthin))
-        #expect(mighty["styleId"] as? String == "paperthin")
+        let style = StyleFixtures.bundled("claude-plan")
+        let panel = StylePanelProjection.make(style: style, prompts: [], selectedGroupId: nil,
+                                              capabilityStates: [:], prerequisites: StylePrerequisiteResult(ready: true))
+        // Only Ouroboros has a legacy payload of its own.
+        #expect(MobileLegacyStyleAdapter.payload(style: style, panel: panel) == nil)
+        let mighty = try encoded(MobileMighty(style: MobileRemoteSupport.style(style.id), styleId: style.id, runs: [], panel: panel))
+        #expect(mighty["style"] as? String == "cli" && mighty["styleId"] as? String == "claude-plan")
         let wire = try #require(mighty["panel"] as? [String: Any])
-        #expect((wire["actions"] as? [Any])?.count == 28 && (wire["groups"] as? [Any])?.count == 4)
+        #expect((wire["actions"] as? [Any])?.count == 2 && (wire["groups"] as? [Any])?.count == 1)
         #expect((wire["presentation"] as? [String: Any])?["source"] as? String == "bundled")
-        #expect(mighty["paperthin"] != nil)
+        #expect((wire["attachments"] as? [Any])?.isEmpty == true)
+        #expect(mighty["ouroboros"] == nil)
         // A plain pane carries neither.
         let plain = try encoded(MobileMighty(style: "cli", runs: []))
         #expect(plain["panel"] == nil && plain["styleId"] as? String == "cli")
@@ -1186,13 +1165,13 @@ struct MobileRemoteExtensionTests {
 
     @Test func settingsCarryTheOpenStyleListAndAcceptOnlyItsMembers() throws {
         let styles = MobileRemoteSupport.styleOptions(BundledStyles.shared.styles())
-        #expect(styles.map(\.id) == ["cli", "claude-plan", "ouroboros", "paperthin", "superpowers"])
+        #expect(styles.map(\.id) == ["cli", "claude-plan", "ouroboros"])
         #expect(styles[2].label == "Ouroboros" && styles[2].source == .bundled && styles[0].source == nil)
         let options = MobileSettingsOptions(models: [MobileOption(id: "default", label: "기본")],
                                             permissionModes: [MobileOption(id: "default", label: "기본")],
                                             mightyStyles: MobileWire.mightyStyles.map { MobileOption(id: $0, label: $0) },
                                             styles: styles)
-        try MobileRemoteSupport.validate(MobileSettingsRequest(styleId: "paperthin"), options: options)
+        try MobileRemoteSupport.validate(MobileSettingsRequest(styleId: "claude-plan"), options: options)
         // Unregistered and unapproved answer with the very same string (§4.5).
         #expect(throws: MobileHostError.badRequest(MobileRemoteSupport.unknownStyleMessage)) {
             try MobileRemoteSupport.validate(MobileSettingsRequest(styleId: "secret-style"), options: options)

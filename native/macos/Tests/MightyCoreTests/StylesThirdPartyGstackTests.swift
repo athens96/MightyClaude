@@ -83,9 +83,10 @@ struct StylesThirdPartyGstackTests {
         #expect(evaluator.recognised(inPrompt: "/qa https://staging.example.dev") == .action("qa"))
         #expect(evaluator.recognised(inPrompt: "/qa-only") == .action("qa-only"))
         #expect(evaluator.recognised(inPrompt: "/landing-report") == .alias(name: "landing-report", phase: "ship"))
-        // Recognition is per style: Paperthin's skills share the bare `/` rule
-        // but are not in this catalogue, so they name nothing here and move no
-        // phase. The request still goes out; it just gets no chip (A.4).
+        // Recognition is per style: another catalogue's skill reads the same
+        // under the bare `/` rule but is not in this one, so it names nothing
+        // here and moves no phase. The request still goes out; it just gets
+        // no chip (A.4).
         #expect(evaluator.recognised(inPrompt: "/re0 docs/spec.md") == nil)
         #expect(evaluator.recognised(inPrompt: "/oh-my-claudecode:plan 목표") == nil)
         #expect(evaluator.recognised(inPrompt: "/") == nil && evaluator.recognised(inPrompt: "그냥 물어볼게요") == nil)
@@ -127,14 +128,14 @@ struct StylesThirdPartyGstackTests {
         let registry = StyleRegistry(styles: BundledStyles.shared.styles() + [style, try Self.ohMyClaudecode()])
         // A pane keeps its earlier blocks when the style changes, so the sweep
         // runs over every runnable style in precedence order — bundled first.
-        // Paperthin shares the bare `/` rule and owns these two names, so a
-        // gstack pane still sees Paperthin's titles on them. That is the same
-        // thing the two bundled styles do for each other today (§1.10, A.4).
-        #expect(registry.requestTitle(forInput: "/re0 docs/spec.md", workspace: nil) == "♻️ re0")
-        #expect(registry.requestTitle(forInput: "/nba", workspace: nil) == "🎯 nba")
+        // No bundled style reads the bare `/` rule since v7, so a name outside
+        // every catalogue gets no title from the sweep, while a bundled
+        // style's own prefix still titles its block (§1.10, A.4).
+        #expect(registry.requestTitle(forInput: "/re0 docs/spec.md", workspace: nil) == nil)
+        #expect(registry.requestTitle(forInput: "/nba", workspace: nil) == nil)
         #expect(registry.requestTitle(forInput: "/ouroboros:seed", workspace: nil) == "시드")
         // `/review` is no bundled style's name — Ouroboros needs its own prefix
-        // and Paperthin has no `review` skill — so the first user style by id
+        // and the plan style reads `[`-tags — so the first user style by id
         // answers, and `gstack` sorts before `oh-my-claudecode`. Claude Code's
         // built-in `/review` is unaffected: the engine titles the block, it does
         // not rewrite the request.
@@ -178,7 +179,7 @@ struct StylesThirdPartyGstackTests {
     }
 
     /// gstack ships no MCP server, so nothing is auto-allowed: every tool call
-    /// follows the pane's own permission mode, exactly as Paperthin does.
+    /// follows the pane's own permission mode.
     @Test func nothingIsAutoAllowed() {
         #expect(manifest.autoAllow.isEmpty && manifest.capabilities.isEmpty)
         for name in ["Bash", "Write", "Edit", "AskUserQuestion", "ToolSearch",

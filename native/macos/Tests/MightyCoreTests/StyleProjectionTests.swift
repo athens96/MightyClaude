@@ -4,11 +4,11 @@ import Testing
 
 struct StyleProjectionTests {
     private func panel(_ style: RegisteredStyle, prompts: [String] = [], group: String? = nil,
-                       states: [String: String] = [:], attachments: [StyleAttachmentItem] = [],
+                       states: [String: String] = [:],
                        prerequisites: StylePrerequisiteResult = StylePrerequisiteResult(ready: true),
                        session: RunSession? = nil) -> StylePanel {
         StylePanelProjection.make(style: style, prompts: prompts, selectedGroupId: group,
-                                  capabilityStates: states, attachments: attachments, prerequisites: prerequisites,
+                                  capabilityStates: states, prerequisites: prerequisites,
                                   session: session)
     }
 
@@ -45,22 +45,24 @@ struct StyleProjectionTests {
         #expect(!notReady.setup.ready && notReady.setup.missing == ["없음"] && notReady.setup.hint == "힌트")
     }
 
-    @Test func groupsRecommendationAndAttachmentsTravel() throws {
-        let style = StyleFixtures.bundled("paperthin")
-        let items = [StyleAttachmentItem(id: "DESIGN.local.md", title: "DESIGN", detail: "0.1.0 \u{00B7} full", readOnly: true, openPath: "/repo/x")]
-        let coil = panel(style, group: "coil", states: [StyleCapabilityID.casebook: "open"], attachments: items)
-        #expect(coil.phase == nil && coil.groups.count == 4)
+    @Test func groupsAndTheRecommendationTravel() throws {
+        // The feature exists only in the test vocabulary since v7 (§1.8).
+        let style = StyleFixtures.catalogueStyle
+        let coil = panel(style, group: "coil", states: ["acme.thing": "open"])
+        #expect(coil.phase == nil && coil.groups.count == 2)
         #expect(coil.groups.first { $0.selected }?.id == "coil" && coil.groups.first { $0.id == "depth" }?.axis == "하나 \u{00B7} 지금")
-        #expect(coil.next == ["re0-plan", "re0-loop", "re0-memo", "re0-work", "catchup", "nba"])
-        #expect(coil.recommended == "re0-loop")
-        #expect(coil.actions.count == 28 && coil.actions.first { $0.id == "prism" }?.flags == ["userInvoked", "readOnly"])
-        #expect(coil.attachments == [StylePanel.Attachment(id: "DESIGN.local.md", title: "DESIGN", detail: "0.1.0 \u{00B7} full", readOnly: true)])
-        #expect(coil.presentation.headerTitle == "Paperthin")
+        #expect(coil.next == ["plan", "loop", "memo", "work", "nba"])
+        #expect(coil.recommended == "loop")
+        #expect(coil.actions.count == 7 && coil.actions.first { $0.id == "nba" }?.flags == ["readOnly"])
+        #expect(coil.actions.first { $0.id == "hate" }?.flags == ["userInvoked"] && coil.actions.first { $0.id == "hate" }?.glyph == "😈")
+        #expect(coil.presentation.headerTitle == "Deck")
+        // Nothing offers an attachment any more, but the field still travels
+        // for a phone that predates v7.
+        #expect(coil.attachments.isEmpty)
+        let encoded = String(data: try StylePanelProjection.serialise(coil), encoding: .utf8) ?? ""
+        #expect(encoded.contains("\"attachments\" : ["))
         // The initial group comes from the capability when none was chosen yet.
-        #expect(panel(style, states: [StyleCapabilityID.casebook: "absent"]).groups.first { $0.selected }?.id == "depth")
-        // A path never rides to the phone.
-        let encoded = try StylePanelProjection.serialise(coil)
-        #expect(!(String(data: encoded, encoding: .utf8) ?? "").contains("/repo/x"))
+        #expect(panel(style, states: ["acme.thing": "absent"]).groups.first { $0.selected }?.id == "depth")
     }
 
     @Test func aNonBundledStyleNamesItsSourceEverywhere() throws {
@@ -91,9 +93,7 @@ struct StyleProjectionTests {
     @Test func theLegacyAdapterRebuildsTodaysPayloads() throws {
         let ouroboros = StyleFixtures.bundled("ouroboros")
         let seeded = panel(ouroboros, prompts: ["/ouroboros:seed"])
-        let legacy = MobileLegacyStyleAdapter.payloads(style: ouroboros, panel: seeded, casebook: nil)
-        let flow = try #require(legacy.ouroboros)
-        #expect(legacy.paperthin == nil)
+        let flow = try #require(MobileLegacyStyleAdapter.payload(style: ouroboros, panel: seeded))
         #expect(flow.phase == "seed" && flow.ready)
         #expect(flow.takesText == ["interview", "auto", "unstuck"])
         #expect(flow.next.map(\.skill) == ["run", "evaluate", "status"])
@@ -102,26 +102,15 @@ struct StyleProjectionTests {
         // A phase-less pane still reports the entry phase, as today — and the
         // old `next` field is the phase map alone, which is empty at `goal`,
         // so an older phone falls back to `all` exactly as it used to (§7.4).
-        let fresh = MobileLegacyStyleAdapter.payloads(style: ouroboros, panel: panel(ouroboros), casebook: nil).ouroboros
+        let fresh = MobileLegacyStyleAdapter.payload(style: ouroboros, panel: panel(ouroboros))
         #expect(fresh?.phase == "goal" && fresh?.next.isEmpty == true)
         // The new panel still offers the start rule's buttons in the same state.
         #expect(panel(ouroboros).next == ["interview", "auto"])
 
-        let paperthin = StyleFixtures.bundled("paperthin")
-        let casebook = StyleCasebook(name: "0.1.0-first", path: "/repo/.re0/iteration/0.1.0-first", files: ["DESIGN.local.md"], modifiedAt: Date())
-        let map = panel(paperthin, group: "coil", states: [StyleCapabilityID.casebook: "complete"])
-        let thin = try #require(MobileLegacyStyleAdapter.payloads(style: paperthin, panel: map, casebook: casebook).paperthin)
-        #expect(thin.installed && thin.recommended == "re0-work" && thin.domains.count == 4)
-        #expect(thin.domains.map(\.id) == ["depth", "breadth", "coil", "mesh"])
-        #expect(thin.domains.map { $0.skills.count } == [19, 2, 6, 1])
-        #expect(thin.domains[0].axis == "하나 \u{00B7} 지금" && thin.domains[2].question == "각 패스가 다음 패스를 가르쳤는가?")
-        let re0 = try #require(thin.domains[0].skills.first)
-        #expect(re0.name == "re0" && re0.emoji == "♻️" && re0.scope == "아티팩트 하나" && !re0.userInvoked && !re0.readOnly)
-        #expect(thin.domains[3].skills.first?.userInvoked == true && thin.domains[3].skills.first?.readOnly == true)
-        #expect(thin.casebook == MobilePaperthinCasebook(name: "0.1.0-first", weight: "full", files: ["DESIGN.local.md"]))
-        // The adapter belongs to the two bundled ids and nothing else.
+        // The adapter belongs to the bundled Ouroboros and nothing else.
         let third = try StyleFixtures.registered(StyleFixtures.data())
-        let none = MobileLegacyStyleAdapter.payloads(style: third, panel: panel(third), casebook: nil)
-        #expect(none.ouroboros == nil && none.paperthin == nil)
+        #expect(MobileLegacyStyleAdapter.payload(style: third, panel: panel(third)) == nil)
+        let plan = StyleFixtures.bundled("claude-plan")
+        #expect(MobileLegacyStyleAdapter.payload(style: plan, panel: panel(plan)) == nil)
     }
 }

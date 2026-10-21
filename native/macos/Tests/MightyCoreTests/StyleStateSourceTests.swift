@@ -135,9 +135,9 @@ struct StyleStateSourceTests {
         let (root, _) = workspace("affects")
         defer { try? fm.removeItem(at: root.deletingLastPathComponent()) }
         let real = try #require(StyleStateEngine.realPath(root)).path
-        let sources = StyleStateSources(files: [StyleStateFileSource(path: "docs/superpowers/plans/*.md", parser: .markdownChecklist, widget: .progressBar)])
-        #expect(StyleStateEngine.affects(sources, workspacePath: root.path, changedPath: real + "/docs/superpowers/plans"))
-        #expect(StyleStateEngine.affects(sources, workspacePath: root.path, changedPath: real + "/docs/superpowers/plans/a.md"))
+        let sources = StyleStateSources(files: [StyleStateFileSource(path: "docs/loop/plans/*.md", parser: .markdownChecklist, widget: .progressBar)])
+        #expect(StyleStateEngine.affects(sources, workspacePath: root.path, changedPath: real + "/docs/loop/plans"))
+        #expect(StyleStateEngine.affects(sources, workspacePath: root.path, changedPath: real + "/docs/loop/plans/a.md"))
         // The folder being created on the way.
         #expect(StyleStateEngine.affects(sources, workspacePath: root.path, changedPath: real + "/docs"))
         #expect(!StyleStateEngine.affects(sources, workspacePath: root.path, changedPath: real + "/src"))

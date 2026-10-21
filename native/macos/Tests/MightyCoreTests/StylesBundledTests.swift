@@ -7,18 +7,21 @@ struct StylesBundledTests {
         let directories = BundledStyleSource.directories()
         #expect(!directories.isEmpty, "번들 스타일 폴더를 찾지 못했습니다. Package.swift의 리소스 선언을 확인하세요.")
         let files = StyleSourceScanner.bundled()
-        #expect(files.count == 4 && files.allSatisfy { $0.source == .bundled })
+        #expect(files.count == 2 && files.allSatisfy { $0.source == .bundled })
         var ids: [String] = []
         for file in files {
             let manifest = try StyleManifestDecoder.decode(file.data, source: .bundled)
-            try StyleManifestValidator.validate(manifest, source: .bundled, knownCapabilities: StyleCapabilityID.all)
+            try StyleManifestValidator.validate(manifest, source: .bundled)
             ids.append(manifest.id)
             #expect(file.hash.count == 64)
         }
-        #expect(ids.sorted() == ["claude-plan", "ouroboros", "paperthin", "superpowers"])
+        #expect(ids.sorted() == ["claude-plan", "ouroboros"])
         let registry = StyleRegistry(styles: BundledStyles.shared.styles())
         #expect(registry.resolve("ouroboros")?.approval == .preApproved)
-        #expect(registry.resolve("paperthin")?.manifest.actions.count == 28)
+        #expect(registry.resolve("ouroboros")?.manifest.actions.count == 10)
+        // A style removed from the bundle (v7) is simply not there: a pane
+        // saved in it opens as the plain CLI (§3.4).
+        #expect(registry.resolve(MightyStyleIDs.paperthin) == nil)
         // A missing bundle is nothing, never a trap.
         #expect(StyleSourceScanner.read(directory: URL(fileURLWithPath: "/nowhere-at-all"), source: .bundled, workspacePath: nil).isEmpty)
     }
