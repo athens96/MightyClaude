@@ -9,13 +9,13 @@ function settings(overrides: Partial<MobileSettings> = {}): MobileSettings {
     effort: 'high',
     agentViewMode: 'cli',
     mightyStyle: 'ouroboros',
-    styleId: 'superpowers',
+    styleId: 'claude-plan',
     options: {
       models: [{ id: 'claude-opus-5-5', label: 'Opus 5.5' }],
       permissionModes: [{ id: 'auto', label: 'Auto' }],
       efforts: [{ id: 'high', label: 'High' }],
       mightyStyles: [{ id: 'ouroboros', label: 'Ouroboros' }],
-      styles: [{ id: 'superpowers', label: 'Superpowers', source: 'bundled' }],
+      styles: [{ id: 'claude-plan', label: '클러드 플랜', source: 'bundled' }],
     },
     ...overrides,
   };

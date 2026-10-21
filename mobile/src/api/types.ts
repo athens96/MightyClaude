@@ -63,7 +63,7 @@ export type AgentViewMode = 'plain' | 'mighty';
  * The fixed `mightyStyle` vocabulary (contract 7.2). A pane running any other style
  * carries `cli` here and the truth in `styleId`, so an older phone sees a plain CLI pane.
  */
-export type MightyStyle = 'cli' | 'ouroboros' | 'paperthin';
+export type MightyStyle = 'cli' | 'ouroboros';
 export type CommandSource = 'app' | 'builtin' | 'project' | 'user' | 'plugin';
 export type MightyBlockKind = 'main' | 'agent' | 'task' | 'steer' | 'compact' | 'question';
 export type MightyBlockStatus = 'running' | 'waiting' | 'completed' | 'error' | 'stopped';
@@ -366,38 +366,6 @@ export interface MobileOuroboros {
   all: OuroborosAction[];
 }
 
-export interface PaperthinSkill {
-  name: string;
-  emoji: string;
-  summary: string;
-  scope: string;
-  /** Only a human may fire it. */
-  userInvoked: boolean;
-  readOnly: boolean;
-}
-
-export interface PaperthinDomain {
-  id: string;
-  title: string;
-  /** Where the domain sits on the 2×2 map. */
-  axis: string;
-  question: string;
-  skills: PaperthinSkill[];
-}
-
-export interface PaperthinCasebook {
-  name: string;
-  weight: string;
-  files: string[];
-}
-
-export interface MobilePaperthin {
-  installed: boolean;
-  recommended?: string;
-  domains: PaperthinDomain[];
-  casebook?: PaperthinCasebook;
-}
-
 /**
  * The style behind a guided pane (contract 7.3). `source` and `tint` stay plain strings:
  * the phone maps the words it knows and falls back for the rest, so only the exact word
@@ -448,7 +416,10 @@ export interface StyleAction {
   prominent: boolean;
 }
 
-/** Read-only information a built-in capability produced; the phone cannot open files. */
+/**
+ * Read-only information a built-in capability produced; the phone cannot open files.
+ * Always an empty list from a v7 host (contract 7.3), still read for an older one.
+ */
 export interface StyleAttachment {
   id: string;
   title: string;
@@ -592,7 +563,6 @@ export interface MobileMighty {
    */
   panelUnreadable?: boolean;
   ouroboros?: MobileOuroboros;
-  paperthin?: MobilePaperthin;
 }
 
 /** Body of `POST /guided`; `text` is left out when the action takes none. */
@@ -602,8 +572,8 @@ export interface GuidedRequest {
   text?: string;
   /**
    * Set against a host without the "style" capability, whose route only knows the old
-   * `{style, skill}` body and answers 400 to anything else. Only the two built-in ids
-   * reach it, because that host sends no other style's panel (contract 7.4, 7.5).
+   * `{style, skill}` body and answers 400 to anything else. Only `ouroboros` reaches
+   * it, because that host sends no other style's panel this app reads (contract 7.4, 7.5).
    */
   legacy?: boolean;
 }

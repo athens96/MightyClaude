@@ -14,6 +14,7 @@ import {
   sourceBadge,
   styleOptions,
   styleViewModel,
+  taskRowDisplay,
 } from '@/lib/styles';
 
 /** A panel in the shape contract 7.3 documents, with every optional field present. */
@@ -337,24 +338,44 @@ describe('state widgets (§1.16)', () => {
     ]);
   });
 
-  it('reads the recorded Superpowers golden widgets the way the Mac presents them', () => {
+  it('reads the recorded Claude Plan golden widgets the way the Mac presents them', () => {
     // The same bytes StyleWidgetPresentationTests reads on the Mac (contract 8.4); read with
-    // `fs` because mobile/tsconfig.json has no `resolveJsonModule`.
-    const golden = join(__dirname, '..', '..', '..', 'styles', 'golden', 'superpowers.panel.json');
+    // `fs` because mobile/tsconfig.json has no `resolveJsonModule`. The bundled style with
+    // state sources since v7 is the plan-mode one.
+    const golden = join(__dirname, '..', '..', '..', 'styles', 'golden', 'claude-plan.panel.json');
     const recorded = JSON.parse(readFileSync(golden, 'utf8')) as Record<string, unknown>;
     const panel = normalizeStylePanel(recorded.withState)!;
     expect(panel.phase?.id).toBe('execute');
-    // What the engine makes of Superpowers' own declarations: the plan file as a bar and
-    // the `subagent.start` count as a label, recorded in Korean.
+    // What the engine makes of Claude Plan's own declarations: the plan's checklist as a bar,
+    // the current step and the turn state as labels, and the background tasks as a list.
     expect(panel.widgets).toEqual([
       { kind: 'progressBar', value: 3, total: 7 },
-      { kind: 'label', text: '서브에이전트 2회 시작' },
+      { kind: 'label', text: '진행 중: doing step 4' },
+      { kind: 'label', text: '턴 완료 · 백그라운드 1개 실행 중' },
+      {
+        kind: 'taskList',
+        items: [
+          { text: 'review the diff', kind: 'agent', status: 'running', startedAt: '2026-10-06T01:00:00.000Z' },
+          {
+            text: 'npm test',
+            kind: 'shell',
+            status: 'completed',
+            startedAt: '2026-10-06T01:00:05.000Z',
+            endedAt: '2026-10-06T01:01:10.000Z',
+          },
+        ],
+      },
     ]);
     const bar = panel.widgets?.[0];
     expect(bar?.kind === 'progressBar' ? progressBarDisplay(bar) : undefined).toEqual({
       fraction: 3 / 7,
       text: '3/7',
     });
+    const tasks = panel.widgets?.[3];
+    const now = Date.parse('2026-10-06T01:02:00.000Z');
+    expect(
+      tasks?.kind === 'taskList' ? tasks.items.map((task) => taskRowDisplay(task, now).running) : undefined,
+    ).toEqual([true, false]);
   });
 
   it('closes up a line break inside a widget line rather than breaking the line', () => {
@@ -659,86 +680,11 @@ describe('legacyStylePanel', () => {
     expect(model.rest.map((action) => action.id)).toEqual(['interview']);
   });
 
-  it('folds the Paperthin payload into a group map with its casebook', () => {
-    const panel = legacyStylePanel({
-      style: 'paperthin',
-      runs: [],
-      paperthin: {
-        installed: true,
-        recommended: 're0-memo',
-        domains: [
-          {
-            id: 'coil',
-            title: 'coil',
-            axis: '하나 · 반복',
-            question: '각 패스가 다음 패스를 가르쳤는가?',
-            skills: [
-              {
-                name: 're0-memo',
-                emoji: '🧭',
-                summary: '교훈을 뽑아냅니다',
-                scope: '완료된 사이클 하나',
-                userInvoked: false,
-                readOnly: true,
-              },
-            ],
-          },
-          {
-            id: 'edge',
-            title: 'edge',
-            axis: '여럿 · 처음',
-            question: '',
-            skills: [
-              {
-                name: 'nba',
-                emoji: '🎯',
-                summary: '다음 한 수',
-                scope: '',
-                userInvoked: true,
-                readOnly: false,
-              },
-            ],
-          },
-        ],
-        casebook: {
-          name: '2026-09-cycle',
-          weight: 'full',
-          files: ['DESIGN.local.md', 'NOTES.md'],
-        },
-      },
-    })!;
-    expect(panel.style.id).toBe('paperthin');
-    expect(panel.groups.map((group) => group.id)).toEqual(['coil', 'edge']);
-    expect(panel.recommended).toBe('re0-memo');
-    // The host titles a casebook file without its `.local.md` suffix; one casebook must
-    // not read as two different sets of files depending on which host answered.
-    expect(panel.attachments).toEqual([
-      { id: 'DESIGN.local.md', title: 'DESIGN', detail: '2026-09-cycle · full', readOnly: true },
-      { id: 'NOTES.md', title: 'NOTES.md', detail: '2026-09-cycle · full', readOnly: true },
-    ]);
-    // Every Paperthin skill takes the composer text: it is the skill's target.
-    expect(panel.actions.every((action) => action.takesText)).toBe(true);
-    expect(panel.actions[1]?.flags).toEqual(['userInvoked']);
-
-    const model = styleViewModel(panel);
-    expect(model.showMap).toBe(true);
-    expect(model.selectedGroupId).toBe('coil');
-    expect(model.actions.map((view) => view.action.id)).toEqual(['re0-memo']);
-    // Word for word the bundled manifest's `guidance.next`, so the same style says the
-    // same thing on both paths; the long-press hint is the panel's, not the manifest's.
-    expect(model.guidance).toBe('대상(파일 경로나 지시)을 아래에 적고 스킬을 누르세요. 비워 두면 스킬만 보냅니다.');
-    // A map on screen means the emphasis is the group cell's, so no chip is filled.
-    expect(model.actions.every((view) => !view.prominent)).toBe(true);
-    expect(guidedRequestFor(panel, 're0-memo', 'docs/spec.md')).toEqual({
-      styleId: 'paperthin',
-      actionId: 're0-memo',
-      text: 'docs/spec.md',
-    });
-  });
-
-  it('answers for the two built-in ids and nothing else', () => {
+  it('answers for Ouroboros and nothing else', () => {
     expect(legacyStylePanel({ style: 'gstack', runs: [] })).toBeUndefined();
     expect(legacyStylePanel({ style: 'cli', runs: [] })).toBeUndefined();
+    // Removed in v7 (contract 7.4): a host from before v7 naming it draws a plain pane.
+    expect(legacyStylePanel({ style: 'paperthin', runs: [] })).toBeUndefined();
     // The id without its payload has nothing to fold.
     expect(legacyStylePanel({ style: 'ouroboros', runs: [] })).toBeUndefined();
   });
