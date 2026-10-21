@@ -90,14 +90,17 @@ struct StyleSecurityTests {
     }
 
     @Test func reservedNameIsRefused() {
-        // The name of a style no longer bundled is free again (v7).
-        #expect(MightyStyleIDs.reservedNames == ["Ouroboros"])
-        for name in ["Ouroboros", "ouroboros", "OURO BOROS", "ＯＵＲＯＢＯＲＯＳ"] {
+        // Exactly the bundled styles' names: the name of a style no longer
+        // bundled is free again (v7), and a bundled one is never left out.
+        #expect(MightyStyleIDs.reservedNames == ["Ouroboros", "클러드 플랜"])
+        #expect(Set(MightyStyleIDs.reservedNames) == Set(BundledStyles.shared.styles().map(\.manifest.name)))
+        for name in ["Ouroboros", "ouroboros", "OURO BOROS", "ＯＵＲＯＢＯＲＯＳ", "클러드 플랜", "클러드플랜", "클러드　플랜"] {
             let data = StyleFixtures.data(StyleFixtures.flat, ["name": "\"\(name)\""])
             #expect(StyleFixtures.code(data) == "E_RESERVED_NAME", "\(name)이 예약 이름 검사를 통과했습니다")
             #expect(StyleFixtures.code(data, source: .bundled) == nil)
         }
         #expect(StyleFixtures.code(StyleFixtures.data(StyleFixtures.flat, ["name": "\"Ouroboros Team\""])) == nil)
+        #expect(StyleFixtures.code(StyleFixtures.data(StyleFixtures.flat, ["name": "\"클러드 플랜 2\""])) == nil)
     }
 
     /// Every reserved id is refused outside the bundle, including the one no

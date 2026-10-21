@@ -217,7 +217,8 @@ public enum MightyStyleIDs {
     public static let cli = "cli"
     /// `cli` is the wire word for "no style", so no manifest may claim it.
     public static let reserved: Set<String> = [cli, ouroboros, paperthin]
-    public static let reservedNames = ["Ouroboros"]
+    /// Every bundled style's `name`, exactly as its manifest spells it (§1.2).
+    public static let reservedNames = ["Ouroboros", "클러드 플랜"]
     public static func isValidShape(_ value: String) -> Bool {
         value.range(of: "^[a-z0-9][a-z0-9-]{0,39}$", options: .regularExpression) != nil
     }

@@ -479,9 +479,10 @@ internal static class Verification
         await Test("delegation scenario S2: held notices released together by a send or run next after a relaunch", DelegationScenarioVerification.S2);
         await Test("delegation scenario S3: a diverged child's held follow-ups reach it once after a relaunch", DelegationScenarioVerification.S3);
         await Test("styles Conformance", StylesVerification.Conformance);
+        await Test("styles: a style that is not bundled cannot take a bundled style's name", StylesVerification.ReservedNames);
         await Test("styles: the app knows no built-in feature, and the rules that name one are refused in a fixed order", StylesVerification.BuiltInFeatures);
         await Test("styles EvaluationAndTrust", StylesVerification.EvaluationAndTrust);
-        await Test("styles: every manifest and bundled style projects its golden panel in full", StyleGoldenVerification.EveryStyleMatchesItsGolden);
+        await Test("styles: every manifest, bundled style and test fixture projects its golden panel in full", StyleGoldenVerification.EveryStyleMatchesItsGolden);
         await Test("styles: the golden's serialisation rules are fixed", StyleGoldenVerification.TheSerialisationRulesAreFixed);
         await Test("styles: removing a user style forgets the decision made for it", StylesVerification.RemovalForgetsTheDecision);
         await Test("styles: a style's own tools are allowed request by request, never past a revocation", StylesVerification.AutoAllowIsJudgedAtEachRequest);

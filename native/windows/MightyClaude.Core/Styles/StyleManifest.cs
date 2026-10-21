@@ -235,7 +235,8 @@ public static class StyleManifestDecoder
     /// binding (§3.4) already refuses a stranger there; the reservation keeps the id from being claimed at all (§1.2).
     /// </summary>
     public static readonly IReadOnlyList<string> ReservedIds=["cli","ouroboros","paperthin"];
-    public static readonly IReadOnlyList<string> ReservedNames=["Ouroboros"];
+    /// <summary>Every bundled style's <c>name</c>, exactly as its manifest spells it (§1.2; M/Styles/StyleManifestValidator.swift reservedNames).</summary>
+    public static readonly IReadOnlyList<string> ReservedNames=["Ouroboros","클러드 플랜"];
     private static void Validate(StyleManifest m,string source,IReadOnlyDictionary<string,string[]> vocabulary)
     {
         static string? S(JsonElement e,string k)=>StyleManifest.Text(e,k);

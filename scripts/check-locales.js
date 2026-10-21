@@ -795,13 +795,13 @@ function documentation() {
   out.push('- 번체 중국어(`zh-Hant`, `zh-TW`, `zh-HK`)는 지금 간체로 읽는다. 따로 둘지는 나중에 정한다.');
   out.push('- 표의 남은 문구를 단계마다 한 켜씩 옮긴다. 매니페스트 글과 `styles/**`는 데이터이므로');
   out.push('  옮기지 않는다.');
-  // Exemptions whose reason names v7 are frozen code (the style engine) waiting for the next engine version.
-  const v7 = exemptGlobs.filter((entry) => /\bv7\b/.test(entry.reason)).flatMap((entry) => entry.files);
-  if (v7.length > 0) {
-    const total = v7.reduce((sum, file) => sum + file.count, 0);
-    out.push(`- v7 작업: 고정된 스타일 엔진(v6)의 코드에 남은 한국어 문구 ${total}개. 엔진이 v6으로 고정되어 지금은`);
-    out.push('  옮기지 않고 예외로 둔다. 스타일 엔진 v7에서 `L()` 키로 옮긴다.');
-    for (const file of [...v7].sort((a, b) => a.relative.localeCompare(b.relative))) {
+  // Exemptions whose reason names v8 are frozen code (the style engine) waiting for the next engine version.
+  const v8 = exemptGlobs.filter((entry) => /\bv8\b/.test(entry.reason)).flatMap((entry) => entry.files);
+  if (v8.length > 0) {
+    const total = v8.reduce((sum, file) => sum + file.count, 0);
+    out.push(`- v8 작업: 고정된 스타일 엔진(v7)의 코드에 남은 한국어 문구 ${total}개. 엔진이 v7로 고정되어 지금은`);
+    out.push('  옮기지 않고 예외로 둔다. 스타일 엔진 v8에서 `L()` 키로 옮긴다.');
+    for (const file of [...v8].sort((a, b) => a.relative.localeCompare(b.relative))) {
       out.push(`  - \`${file.relative}\` ${file.count}개`);
     }
   }

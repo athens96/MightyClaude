@@ -50,7 +50,7 @@
 
 **id.** `cli`(스타일 없음을 뜻하는 와이어 단어), `ouroboros`, `paperthin`. 번들이 아닌 매니페스트가 이 셋 중 하나를 쓰면 `E_RESERVED_ID`로 등록이 거부된다. 번들 id는 오늘 문자열 그대로이므로 저장된 실행 창이 마이그레이션 없이 열린다. `paperthin`은 v7에서 번들에서 지웠지만 **예약은 남는다** — 그 id로 저장된 실행 창이 남아 있고, 다른 매니페스트가 그 id에 답하는 일은 없어야 한다. 3.4의 해시 결속이 이미 낯선 매니페스트를 거절하지만, 예약은 그 id를 주장하는 것 자체를 막는다. 그런 실행 창은 데이터 이전 없이 일반 CLI로 보인다(3.4).
 
-**이름.** 번들이 아닌 매니페스트의 `name`은, **NFKC 정규화 → 대소문자 접기 → 모든 공백 제거** 후 번들 스타일의 `name`(`Ouroboros`)에 같은 처리를 한 값과 같아서는 안 된다(`E_RESERVED_NAME`). v7에서 Paperthin을 지우면서 이름 `Paperthin`의 예약은 풀었다 — 흉내 낼 번들 스타일이 없다. 예약이 id에만 걸리면 사용자가 보는 화면에서는 아무것도 예약되지 않는다 — 사용자는 id가 아니라 이름을 읽는다. `id: "ouroboros-team"` + `name: "Ouroboros"`는 이 규칙이 없으면 선택기·그래프 머리말·폰에서 번들 스타일과 구별되지 않는다.
+**이름.** 번들이 아닌 매니페스트의 `name`은, **NFKC 정규화 → 대소문자 접기 → 모든 공백 제거** 후 번들 스타일의 `name`(`Ouroboros`, `클러드 플랜`)에 같은 처리를 한 값과 같아서는 안 된다(`E_RESERVED_NAME`). 예약 이름은 번들 매니페스트의 `name` 그대로이고, 두 플랫폼의 테스트가 예약 목록이 번들 스타일의 이름과 정확히 같은지 확인한다(`클러드 플랜`은 v7에서 더했다 — v6에 번들이 됐지만 목록에 빠져 있었다). v7에서 Paperthin을 지우면서 이름 `Paperthin`의 예약은 풀었다 — 흉내 낼 번들 스타일이 없다. 예약이 id에만 걸리면 사용자가 보는 화면에서는 아무것도 예약되지 않는다 — 사용자는 id가 아니라 이름을 읽는다. `id: "ouroboros-team"` + `name: "Ouroboros"`는 이 규칙이 없으면 선택기·그래프 머리말·폰에서 번들 스타일과 구별되지 않는다.
 
 이름의 유사성(동형 문자·너비 0 문자)은 1.11의 금지 문자 목록이, 출처의 가시성은 1.10의 출처 배지 규칙이 맡는다. 셋이 함께 있어야 위조가 막힌다.
 
@@ -1378,7 +1378,7 @@ public enum TerminalInputPolicy {
 | `…installationAndCasebookAreReadFromDisk` | `StylesPaperthinTests.prerequisitesAndCasebook` | `re0-plan`/`re0-loop`/`re0-work` 추천, 케이스북 파일 순서, 링크 미추적, 24개 스캔 |
 | `MobileRemoteExtensionTests`의 마이티 관련 6개 | `MobileRemoteExtensionTests`에 그대로 + `StyleProjectionTests` 추가 | 레거시 페이로드 값 전부. `guidedPrompt(…, text:"\n \n") == "/ouroboros:interview"`도 그대로(1.3.3) |
 
-> **v7.** `StylesPaperthinTests`·`SuperpowersStyleTests`는 그 스타일과 함께 지웠다. 그 테스트들이 기대던 엔진 동작(그룹 카탈로그와 추천, 파일·실행 이벤트 상태 소스)은 테스트 안의 픽스처 매니페스트(`StyleFixtures.catalogue`·`StyleFixtures.stateful`)로 옮겨 같은 강도로 남는다.
+> **v7.** `StylesPaperthinTests`·`SuperpowersStyleTests`는 그 스타일과 함께 지웠다. 그 테스트들이 기대던 엔진 동작(그룹 카탈로그와 추천, 파일·실행 이벤트 상태 소스)은 테스트 전용 픽스처 매니페스트(`styles/fixtures/deck.json`·`loop.json`, Mac `StyleFixtures.catalogueStyle`·`statefulStyle`, Windows 같은 이름)로 옮겨 같은 강도로 남고, 두 픽스처의 골든도 기록해 두 플랫폼과 폰이 함께 비교한다(8.4 "픽스처 골든").
 
 **값이 바뀌는 단언은 하나뿐이다**: 설치 버튼이 터미널에 명령을 넣기만 하고 Enter를 누르지 않는다(1.5·9.3의 `installIsNeverRun`). 그 밖에 그래프 머리말 문구(`마이티` → `마이티 · <name>[ · <단계>]`)와 Paperthin의 실행 중 placeholder(매니페스트 문구 → 앱 공통 문구)는 오늘 어떤 테스트도 단언하지 않는 뷰 문자열이다.
 
@@ -1613,7 +1613,7 @@ MobileStylePanel {
 
 태그 `mighty-style-engine-v1`이 다음을 얼린다.
 
-> **고정 이력.** `mighty-style-engine-v1`(2026-09-19)은 스타일 엔진을 처음 얼린 태그다. `mighty-style-engine-v2`(2026-09-20)는 같은 방식으로 다시 건 고정이다. v1 과 v2 사이에 스타일 엔진 파일(`native/macos/Sources/MightyCore/Styles/**`)·스키마·규칙 어휘는 **바뀌지 않았다.** 달라진 것은 입력창의 한글 직접 조합(`docs/hangul-fallback-composer.md`)과 적합성 코퍼스(`styles/conformance/`)뿐이고, 검사가 저장소 전체를 보기 때문에 앱 소스 변경을 담으려면 고정을 다시 걸어야 했다. 외부 도구가 v1 시점의 엔진 파일을 고정 사본으로 쓰는 것은 그대로 유효하다. `mighty-style-engine-v3`(2026-09-20)는 v2 이후 처음으로 엔진 쪽 파일(`StyleSurfaces.swift`의 연결 규칙, 폰의 `styles.ts`)을 바꾼 고정이다. `mighty-style-engine-v4`(2026-09-22)는 매니페스트의 선택적 `job` 선언(§1.13)과 오류 코드 `E_JOB_MATCHER_LITERAL`을 더한 고정이다. `mighty-style-engine-v5`는 상태 소스(`stateSources`, §1.16)와 `rules.phase.stateOverrides`, 오류 코드 `E_STATE_*` 다섯 개, 골든의 `withState` 사례, 폰 페이로드의 `panel.widgets`를 더한 고정이다. `mighty-style-engine-v6`(2026-10-06)은 Claude 계획 모드 읽기(§1.17: `planState` 단계 규칙, `stateSources.runState`, `taskList` 위젯, `launch`, 단계별 입력창 문구·안내), 오류 코드 `E_STATE_RUN_STATE`, 번들 "클러드 플랜", 골든의 `planStage*` 사례를 더한 고정이다. `mighty-style-engine-v7`(2026-10-21)은 번들 Paperthin·Superpowers와 내장 기능 `paperthin.casebook`, 옛 폰의 `paperthin` 페이로드를 지운 고정이다. 내장 기능 어휘가 비어 `E_CAPABILITY_MAP`이 나올 수 없게 됐고(코드는 남는다, 1.8), 패널의 `attachments`는 언제나 빈 배열이 됐으며(필드는 남는다), 와이어 어휘가 `["cli","ouroboros"]`가 됐고, 골든의 `capabilityOpen` 사례가 빠졌다. id `paperthin`은 예약으로 남는다(1.2). 검사 스크립트와 CI의 기본 태그다. 각 고정의 두 커밋 SHA는 `docs/styles-followups.md` 머리에 있다.
+> **고정 이력.** `mighty-style-engine-v1`(2026-09-19)은 스타일 엔진을 처음 얼린 태그다. `mighty-style-engine-v2`(2026-09-20)는 같은 방식으로 다시 건 고정이다. v1 과 v2 사이에 스타일 엔진 파일(`native/macos/Sources/MightyCore/Styles/**`)·스키마·규칙 어휘는 **바뀌지 않았다.** 달라진 것은 입력창의 한글 직접 조합(`docs/hangul-fallback-composer.md`)과 적합성 코퍼스(`styles/conformance/`)뿐이고, 검사가 저장소 전체를 보기 때문에 앱 소스 변경을 담으려면 고정을 다시 걸어야 했다. 외부 도구가 v1 시점의 엔진 파일을 고정 사본으로 쓰는 것은 그대로 유효하다. `mighty-style-engine-v3`(2026-09-20)는 v2 이후 처음으로 엔진 쪽 파일(`StyleSurfaces.swift`의 연결 규칙, 폰의 `styles.ts`)을 바꾼 고정이다. `mighty-style-engine-v4`(2026-09-22)는 매니페스트의 선택적 `job` 선언(§1.13)과 오류 코드 `E_JOB_MATCHER_LITERAL`을 더한 고정이다. `mighty-style-engine-v5`는 상태 소스(`stateSources`, §1.16)와 `rules.phase.stateOverrides`, 오류 코드 `E_STATE_*` 다섯 개, 골든의 `withState` 사례, 폰 페이로드의 `panel.widgets`를 더한 고정이다. `mighty-style-engine-v6`(2026-10-06)은 Claude 계획 모드 읽기(§1.17: `planState` 단계 규칙, `stateSources.runState`, `taskList` 위젯, `launch`, 단계별 입력창 문구·안내), 오류 코드 `E_STATE_RUN_STATE`, 번들 "클러드 플랜", 골든의 `planStage*` 사례를 더한 고정이다. `mighty-style-engine-v7`(2026-10-21)은 번들 Paperthin·Superpowers와 내장 기능 `paperthin.casebook`, 옛 폰의 `paperthin` 페이로드를 지운 고정이다. 내장 기능 어휘가 비어 `E_CAPABILITY_MAP`이 나올 수 없게 됐고(코드는 남는다, 1.8), 패널의 `attachments`는 언제나 빈 배열이 됐으며(필드는 남는다), 와이어 어휘가 `["cli","ouroboros"]`가 됐고, 골든의 `capabilityOpen` 사례가 빠졌다. id `paperthin`은 예약으로 남고, 예약 이름에 번들 `클러드 플랜`을 더했다(1.2). 번들이 쓰지 않게 된 엔진 경우는 테스트 전용 픽스처 `styles/fixtures/{loop,deck}.json`과 그 골든이 맡는다(8.4). 검사 스크립트와 CI의 기본 태그다. 각 고정의 두 커밋 SHA는 `docs/styles-followups.md` 머리에 있다.
 
 - **스키마 v1** — 1장의 모든 필드·타입·한도. `guidance`(1.7)와 `rules.start`(1.6)를 포함한다.
 - **규칙 어휘** — `StartRule` 2종, `PhaseRule` 2종, `NextRule` 2종, `EnterRule` 2종(제약 3개 포함), `RecommendRule` 2종, `InitialGroupRule` 2종.
@@ -1675,6 +1675,10 @@ styles/oh-my-claudecode.json
 styles/gstack.json
 styles/golden/oh-my-claudecode.panel.json
 styles/golden/gstack.panel.json
+styles/fixtures/loop.json                  # 테스트 전용 픽스처 (아래 "픽스처 골든")
+styles/fixtures/deck.json
+styles/golden/loop.panel.json
+styles/golden/deck.panel.json
 ```
 
 `styles/`의 파일은 자동으로 등록되지 않는다 — 사용자가 설정에서 골라 `<데이터 폴더>/styles/`로 복사하고 승인한다. 저장소의 사본은 **테스트가 읽는 원본**이다.
@@ -1685,7 +1689,9 @@ styles/golden/gstack.panel.json
 
 고정 입력 **5가지**: 빈 요청 기록(`empty`) · 그 스타일의 첫 행동을 부른 기록 하나(`afterFirstAction`) · 준비물 미충족(`notReady`) · 첫 그룹 선택(`firstGroup`) · **마지막 그룹 선택(`lastGroup`)**. 그리고 상태 소스나 계획 모드를 읽는 스타일에만 `withState`·`planStage*`가 붙는다(1.16·1.17).
 
-> 마지막 하나가 없으면 다섯이 아니라 넷이고, 넷은 서로 겹친다. 앞의 네 입력은 모두 `initialGroup` 규칙이 고르는 **기본 그룹**에 떨어지므로, 기본이 아닌 그룹의 `byGroup` 결과가 어느 골든에도 기록되지 않는다. v6까지는 여섯째 입력 `capabilityOpen`(선언된 내장 기능이 모두 `open`이고 첨부 2개)이 추천 규칙과 첨부 투영을 기록했다. v7에서 어휘가 비고 `attachments`가 언제나 빈 배열이 되자 그 입력은 `lastGroup`과 바이트가 같아져서 뺐다. 추천 규칙은 시험용 어휘로 엔진 테스트가 확인한다(`StyleCapabilityTests`).
+> 마지막 하나가 없으면 다섯이 아니라 넷이고, 넷은 서로 겹친다. 앞의 네 입력은 모두 `initialGroup` 규칙이 고르는 **기본 그룹**에 떨어지므로, 기본이 아닌 그룹의 `byGroup` 결과가 어느 골든에도 기록되지 않는다. 그래서 Mac과 Windows의 골든 테스트는 적어도 한 골든의 `lastGroup`이 `firstGroup`과 다른지 확인한다(지금은 `deck`). v6까지는 여섯째 입력 `capabilityOpen`(선언된 내장 기능이 모두 `open`이고 첨부 2개)이 추천 규칙과 첨부 투영을 기록했다. v7에서 어휘가 비고 `attachments`가 언제나 빈 배열이 되자 그 입력은 `lastGroup`과 바이트가 같아져서 뺐다. 추천 규칙은 시험용 어휘로 엔진 테스트가 확인한다(`StyleCapabilityTests`).
+
+**픽스처 골든.** v7에서 번들 Paperthin·Superpowers가 빠지자 상태 소스(1.16), 그룹 지도, 내장 기능이 고르는 첫 그룹·추천, 행동 플래그 둘을 함께 쓰는 번들 스타일이 없어졌다. 그 경우를 두 플랫폼과 폰의 골든에 남기려고 **테스트 전용 매니페스트 둘**을 `styles/fixtures/`에 둔다 — `loop.json`(단계 넷, 파일·실행 이벤트 상태 소스와 `stateOverrides`)과 `deck.json`(단계 없음, 그룹 둘을 지도로, 시험용 기능 `acme.thing`이 고르는 첫 그룹·추천, `userInvoked`·`readOnly`를 함께 단 행동 하나). 사용자가 고르는 스타일이 아니므로 `styles/*.json` 글롭에는 들지 않는다. 대신 Mac(`StyleFixtures.fixtureStyle`)과 Windows Core(`StyleFixtures.Style`, 같은 파일을 묻어 둔다)가 **같은 방식으로** 읽는다: 사용자 출처·승인된 스타일로, 앱 어휘가 아니라 **시험용 어휘 `{"acme.thing": ["absent","open","complete"]}`** 로 디코딩한다(`deck`은 그 어휘로만 통과한다). 골든 `styles/golden/loop.panel.json`·`deck.panel.json`은 위의 고정 입력 5가지(`loop`은 상태 소스를 선언하므로 `withState`까지)를 담고, 번들 골든과 똑같이 기록 모드로 만들어 **통째로, 바이트 단위로** 비교한다(Mac `theFixtureManifestsHaveGoldens`, Windows `StyleGoldenVerification`). `styles/golden/` 안에 있으므로 폰의 글롭 계약(`styles-thirdparty-contract.test.ts`)도 두 골든을 정규화기와 뷰 모델에 통과시킨다. 입력이 고정이라 기능 상태는 비어 있고, 그래서 `deck`의 추천은 기록되지 않는다 — 추천 규칙은 위의 엔진 테스트가 맡는다.
 
 이 파일이 없으면 고정 장치에 구멍이 남는다. 태그 이후에 쓰이는 `StylesThirdPartyGstackTests.swift`는 허용 목록 **안**에 있고 골든을 기록한 바로 그 손이 쓰므로, 무엇이든 단언할 수 있다 — "기록 모드가 태그 이전에 존재한다"는 사실만으로는 그것이 **실제로 쓰였는지** 아무 얼어붙은 코드도 확인하지 않는다. 글롭이 그 고리를 닫는다: 매니페스트를 추가하는 것만으로 얼어붙은 코드가 골든을 요구하고 검사한다. 태그 이후의 테스트 파일은 장식이지 계약이 아니다.
 
@@ -1734,7 +1740,7 @@ scripts/check-style-freeze.sh                       # 0
 | `StyleEvaluatorTests` | 프롬프트 치환 4경우(텍스트 있음/없음 × 두 접기), `recognised` vs `namesSomething`의 차이(`"ooo 이거 해줘"`), 별칭, 단계 계산, `start`/`byPhase`/`byGroup`, Enter 6조건 각각의 거짓 경우와 **되돌리기 칩 예외**, 무장 칩이 입력창의 글까지 본다, 질문이 Enter 규칙보다 먼저다(`StyleComposer`), 실행 중 `byPhase`는 칩이 없고 `byGroup`은 그대로다, `initialGroup` 3상태, 추천이 그룹과 무관하다, `guidance`의 `{phase}` 치환과 단계 없을 때의 삭제 |
 | `StyleCapabilityTests` | 앱 어휘가 비어 있고 선언한 이름은 번들까지 `E_UNKNOWN_CAPABILITY`, 1.8의 판정 순서(미선언 → `E_CAPABILITY_UNDECLARED`, 선언 + 앱이 모름 → `E_UNKNOWN_CAPABILITY`, 시험용 어휘에서 빠진 상태 → `E_CAPABILITY_MAP`, 없는 상태 → `E_UNKNOWN_REFERENCE`), 시험용 어휘 아래에서 추천·초기 그룹이 그대로 동작한다, `attachments`가 빈 배열로 실린다 |
 | `StyleProjectionTests` | 투영이 매니페스트와 상태를 빠짐없이 옮긴다. `source`가 실린다. 레거시 어댑터가 Ouroboros의 옛 페이로드를 **오늘과 같은 값**으로 만들고 다른 스타일에는 아무것도 만들지 않는다 |
-| `StyleGoldenContractTests` | 8.4 — `styles/*.json` 글롭, 골든 존재·일치. `styles/` 폴더가 아예 없으면 **소리 내어 실패한다**(빈 글롭과 잘못된 경로가 구별되지 않으면 관문 전체가 조용한 no-op이 된다). 태그 이전에 쓰이고 허용 목록 밖에 산다 |
+| `StyleGoldenContractTests` | 8.4 — `styles/*.json` 글롭, 번들 스타일과 `styles/fixtures/`의 픽스처 둘, 골든 존재·일치. `styles/` 폴더가 아예 없으면 **소리 내어 실패한다**(빈 글롭과 잘못된 경로가 구별되지 않으면 관문 전체가 조용한 no-op이 된다). 태그 이전에 쓰이고 허용 목록 밖에 산다 |
 | `TerminalInputPolicyTests` | 9.3의 `installIsNeverRun` |
 | `MobileRemoteExtensionTests` (기존) | `styleId`/`panel` 인코딩, `options.styles`, `/guided` 새·옛 형식, 미승인 400, 빈 글로도 `interview`가 나간다(1.3.3). 레거시 페이로드의 단언은 **매니페스트에서 다시 읽은 값이 아니라 리터럴**이다(삭제된 `OuroborosFlowTests`·`PaperthinCatalogTests`가 박아 두었던 id 목록 그대로). `/guided`의 관문 판정(`guidedDecision`), 폰이 그룹을 고르지 않아도 추천이 살아 있다, 128개 요청 창에서 밀려난 단계는 진입 단계로 읽힌다 |
 
