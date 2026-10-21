@@ -60,7 +60,7 @@ struct StyleManifestTests {
         cases.append(("E_UNKNOWN_ICON", f.data(f.flat, ["presentation": "{\"icon\":\"lock.fill\"}"])))
         cases.append(("E_UNKNOWN_PROBE", f.data(f.flat, ["prerequisites": "{\"mode\":\"all\",\"probes\":[{\"kind\":\"daemon\",\"name\":\"x\",\"missing\":\"m\"}]}"])))
         cases.append(("E_PROBE_NAME_SHAPE", f.data(f.flat, ["prerequisites": "{\"mode\":\"all\",\"probes\":[{\"kind\":\"executable\",\"name\":\"-bad\",\"missing\":\"m\"}]}"])))
-        cases.append(("E_SCOPES", f.data(f.flat, ["prerequisites": "{\"mode\":\"any\",\"probes\":[{\"kind\":\"skill\",\"name\":\"re0\",\"scopes\":[],\"missing\":\"m\"}]}"])))
+        cases.append(("E_SCOPES", f.data(f.flat, ["prerequisites": "{\"mode\":\"any\",\"probes\":[{\"kind\":\"skill\",\"name\":\"kit\",\"scopes\":[],\"missing\":\"m\"}]}"])))
         cases.append(("E_AUTOALLOW_SERVER", f.data(f.flat, ["autoAllow": "[{\"tool\":\"Write\"}]"])))
         cases.append(("E_AUTOALLOW_SHAPE", f.data(f.flat, ["autoAllow": "[{\"server\":\"a_\",\"tool\":\"_b\"}]"])))
         cases.append(("E_AUTOALLOW_FOREIGN_SERVER", f.data(f.flat, ["autoAllow": "[{\"server\":\"plugin_other_x\",\"tool\":\"read\"}]"])))

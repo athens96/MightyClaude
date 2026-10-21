@@ -257,11 +257,11 @@ internal static class SetupVerification
             Check((await prober.ProbeAsync(new SetupProbe.ClaudePlugin("ouroboros@"))).IsInstalled, "a user-scope plugin counts");
             Check(!(await prober.ProbeAsync(new SetupProbe.ClaudePlugin("omc@"))).IsInstalled, "a longer name is another plugin");
             Check(!(await prober.ProbeAsync(new SetupProbe.ClaudePlugin("oh-my-claudecode@"))).IsInstalled, "a project-scope record does not count");
-            var skill = Directory.CreateDirectory(Path.Combine(home, ".claude", "skills", "re0")).FullName;
+            var skill = Directory.CreateDirectory(Path.Combine(home, ".claude", "skills", "kit")).FullName;
             File.WriteAllText(Path.Combine(skill, "SKILL.md"), "x");
-            Check((await prober.ProbeAsync(new SetupProbe.Skill("re0"))).IsInstalled, "a skill the user placed counts");
+            Check((await prober.ProbeAsync(new SetupProbe.Skill("kit"))).IsInstalled, "a skill the user placed counts");
             File.WriteAllText(Path.Combine(skill, SetupProber.SkillInstallingMarker), "");
-            Check(!(await prober.ProbeAsync(new SetupProbe.Skill("re0"))).IsInstalled, "a placed skill counts only once its setup finished");
+            Check(!(await prober.ProbeAsync(new SetupProbe.Skill("kit"))).IsInstalled, "a placed skill counts only once its setup finished");
             var all = await new SetupProber(environment, (_, _) => Task.FromResult<string?>("1.0.0")).ProbeAllAsync(SetupCatalog.Bundled(), new HashSet<string> { "agy", "homebrew" });
             Check(all.Keys.SequenceEqual(["agy"]), "only the asked items with a Windows entry are probed");
         }

@@ -121,7 +121,7 @@ struct SetupProbeTests {
         #expect(await prober.probe(.claudePlugin(prefix: "oh-my-claudecode@")) == .missing)
         #expect(await prober.probe(.claudePlugin(prefix: "ouro@")) == .missing)
         #expect(await prober.probe(.skill(name: "gstack")) == .installed(version: nil))
-        #expect(await prober.probe(.skill(name: "re0")) == .missing)
+        #expect(await prober.probe(.skill(name: "kit")) == .missing)
         // An app in ~/Applications, or its command on the PATH, counts too.
         #expect(await prober.probe(.appBundle(name: appName, executable: "mighty-fixture-ts")) == .missing)
         try FileManager.default.createDirectory(at: root.appendingPathComponent("Applications/" + appName), withIntermediateDirectories: true)
