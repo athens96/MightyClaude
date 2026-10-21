@@ -25,7 +25,7 @@
 
 ## 검사
 - 맥: `DEVELOPER_DIR=/Library/Developer/CommandLineTools bash scripts/test-native-macos.sh --scratch-path /tmp/mc-rmstyles --filter '<앵커 필터>'` (전체 실행 금지 — 반드시 `--filter`), 앱 빌드.
-- 윈도우: `bash ~/Work/MightyClaude-wincatch/.superpowers/sdd/bin/core-checks.sh <repo>` → `RESULT: BASELINE`, `bash scripts/check-winui-compile.sh`.
+- 윈도우: Windows Core 검사를 이 Mac에서 돌려 실패 목록이 알려진 기준선(Windows에서만 나는 실패)과 같은지 비교, `bash scripts/check-winui-compile.sh`.
 - 폰: `cd mobile && npm run typecheck && npx jest`.
 - 공통: `node scripts/check-locales.js`, `node scripts/check-design-tokens.js --check`, `node scripts/help/build.mjs --check`, `bash scripts/check-style-freeze.sh`(T 이후 0).
 - 잔존 검색: `grep -rniE 'paperthin|superpowers|casebook'` — 남는 것은 예약 id, 고정 이력·결정 기록, 사용자가 쓰는 superpowers 플러그인 문서(`docs/superpowers/`)뿐.
