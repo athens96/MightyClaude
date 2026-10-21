@@ -43,7 +43,7 @@ Mighty Claude는 Claude Code, Codex CLI, Google의 Antigravity CLI를 한 창에
 ![[welcome]]
 
 ### 필요한 도구 {#setup}
-에이전트 CLI(Claude Code, Codex, Antigravity 중 하나)가 하나도 실행되지 않거나 Git이 준비되지 않았으면 앱을 열 때 {{ui:setup.title}} 화면이 먼저 열립니다. 에이전트 CLI, 기본 도구(Git, Homebrew, Node, Bun), 스타일 도구(uv, Ouroboros, Superpowers, Paperthin, oh-my-claudecode, gstack), Tailscale, gh·glab을 묶어서 보여 줍니다.
+에이전트 CLI(Claude Code, Codex, Antigravity 중 하나)가 하나도 실행되지 않거나 Git이 준비되지 않았으면 앱을 열 때 {{ui:setup.title}} 화면이 먼저 열립니다. 에이전트 CLI, 기본 도구(Git, Homebrew, Node, Bun), 스타일 도구(uv, Ouroboros, oh-my-claudecode, gstack), Tailscale, gh·glab을 묶어서 보여 줍니다.
 
 1. 설치할 항목에 체크합니다. 처음 열 때 빠진 Git과, 에이전트 CLI가 하나도 없으면 Claude Code가 미리 체크되어 있고, 고른 항목에 필요한 도구(예: gh에 필요한 Homebrew)는 함께 들어갑니다.
 2. {{ui:setup.button.install}}를 누르면 실행할 명령을 순서대로 모두 보여 줍니다. {{ui:setup.confirm.run}}을 눌러야 실행됩니다.

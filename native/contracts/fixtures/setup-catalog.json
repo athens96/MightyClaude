@@ -189,50 +189,6 @@
       }
     },
     {
-      "id": "superpowers",
-      "group": "style",
-      "label": "setup.item.superpowers.title",
-      "description": "setup.item.superpowers.detail",
-      "need": "optional",
-      "afterInstall": { "kind": "none" },
-      "platforms": {
-        "macos": {
-          "probe": { "kind": "claudePlugin", "prefix": "superpowers@" },
-          "install": { "kind": "claudePlugin", "marketplace": "anthropics/claude-plugins-community", "plugin": "superpowers@claude-community" },
-          "prerequisites": ["claude"],
-          "source": "https://github.com/anthropics/claude-plugins-community"
-        },
-        "windows": {
-          "probe": { "kind": "claudePlugin", "prefix": "superpowers@" },
-          "install": { "kind": "claudePlugin", "marketplace": "anthropics/claude-plugins-community", "plugin": "superpowers@claude-community" },
-          "prerequisites": ["claude"],
-          "source": "https://github.com/anthropics/claude-plugins-community"
-        }
-      }
-    },
-    {
-      "id": "paperthin",
-      "group": "style",
-      "label": "setup.item.paperthin.title",
-      "description": "setup.item.paperthin.detail",
-      "need": "optional",
-      "afterInstall": { "kind": "none" },
-      "platforms": {
-        "macos": {
-          "probe": { "kind": "skill", "name": "re0" },
-          "install": { "kind": "argv", "argv": ["npx", "skills@1.7.2", "add", "LilMGenius/paperthin", "--global", "--agent", "claude-code"] },
-          "prerequisites": ["node"],
-          "source": "https://www.npmjs.com/package/skills/v/1.7.2"
-        },
-        "windows": {
-          "probe": { "kind": "skill", "name": "re0" },
-          "install": { "kind": "argv", "argv": ["npx", "skills@1.7.2", "add", "LilMGenius/paperthin", "--global", "--agent", "claude-code"] },
-          "prerequisites": ["node"],
-          "source": "https://www.npmjs.com/package/skills/v/1.7.2"
-        }
-      }
-    },
-    {
       "id": "omc",
       "group": "style",
       "label": "setup.item.omc.title",

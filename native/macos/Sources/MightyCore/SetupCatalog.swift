@@ -134,8 +134,6 @@ public struct SetupCatalog: Sendable, Equatable {
         "setup.item.bun.title", "setup.item.bun.detail",
         "setup.item.uv.title", "setup.item.uv.detail",
         "setup.item.ouroboros.title", "setup.item.ouroboros.detail",
-        "setup.item.superpowers.title", "setup.item.superpowers.detail",
-        "setup.item.paperthin.title", "setup.item.paperthin.detail",
         "setup.item.omc.title", "setup.item.omc.detail",
         "setup.item.gstack.title", "setup.item.gstack.detail",
         "setup.item.tailscale.title", "setup.item.tailscale.detail",

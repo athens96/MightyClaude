@@ -22,15 +22,13 @@ Windows에도 같은 화면이 있다. 다른 점은 아래 [Windows](#windows)�
 | | Bun | `bun` 1.3.3 이상 | `https://bun.com/install`을 bash로 실행 | https://bun.com/docs/installation |
 | 스타일 도구 | uv | `uvx` | `https://astral.sh/uv/install.sh`를 sh로 실행 | https://docs.astral.sh/uv/getting-started/installation/ |
 | | Ouroboros (Claude, uv 필요) | 사용자 범위 플러그인 `ouroboros@…` | `claude plugin marketplace add Q00/ouroboros; claude plugin install ouroboros@ouroboros --scope user` | https://github.com/Q00/ouroboros |
-| | Superpowers (Claude 필요) | 사용자 범위 플러그인 `superpowers@…` | `claude plugin marketplace add anthropics/claude-plugins-community; claude plugin install superpowers@claude-community --scope user` | https://github.com/anthropics/claude-plugins-community |
-| | Paperthin (Node 필요) | `~/.claude/skills/re0/SKILL.md` | `npx skills@1.7.2 add LilMGenius/paperthin --global --agent claude-code` (skills CLI를 1.7.2로 고정, 2026-10-17 npm 최신) | https://github.com/LilMGenius/paperthin, 고정 버전 https://www.npmjs.com/package/skills/v/1.7.2 |
 | | oh-my-claudecode (Claude 필요) | 사용자 범위 플러그인 `oh-my-claudecode@…` | `claude plugin marketplace add https://github.com/Yeachan-Heo/oh-my-claudecode; claude plugin install oh-my-claudecode@omc --scope user` (그 뒤 Claude 창에서 `/omc-setup`) | https://github.com/Yeachan-Heo/oh-my-claudecode |
 | | gstack (Git, Bun, Claude 필요) | `~/.claude/skills/gstack/SKILL.md`, 앱이 놓은 폴더는 `.mighty-setup-ok`도 | 커밋 `d258bcffb0cb7bda5f133f3e957f932d816d282f`(2026-10-17 main, v1.91.121.0)를 임시 폴더에 받아 `~/.claude/skills/gstack`으로 옮기고(이미 있으면 그 클론을 그 커밋으로 옮김) `./setup` 실행 | https://github.com/garrytan/gstack/commit/d258bcffb0cb7bda5f133f3e957f932d816d282f |
 | 원격 연결 | Tailscale | `/Applications/Tailscale.app`, `~/Applications/Tailscale.app`, 또는 PATH의 `tailscale` | 공식 내려받기 페이지를 연다(https://tailscale.com/download/mac) — 실행하는 명령 없음 | https://tailscale.com/kb/1016/install-mac |
 | Git 호스팅 CLI | GitHub CLI (Homebrew 필요) | `gh` | `brew install gh` | https://cli.github.com |
 | | GitLab CLI (Homebrew 필요) | `glab` | `brew install glab` | https://gitlab.com/gitlab-org/cli |
 
-Ouroboros·Superpowers의 명령은 각 스타일 매니페스트(`ouroboros.json`·`superpowers.json`)의 설치 명령과 같고, Paperthin은 매니페스트의 `skills@latest` 대신 고정한 `skills@1.7.2`를 쓴다. 마켓플레이스로 설치하는 플러그인(Ouroboros·Superpowers·oh-my-claudecode)은 버전을 고정하지 않는다: 버전은 마켓플레이스가 정한다. Tailscale은 공식 안내(KB 1016)가 Homebrew를 다루지 않고 standalone 내려받기를 권하며, Homebrew cask 이름이 `tailscale`에서 `tailscale-app`으로 바뀐 적이 있고, 어떤 방식이든 시스템 설정에서 VPN·확장 승인을 직접 해야 하므로 페이지를 여는 방식으로 했다.
+Ouroboros의 명령은 스타일 매니페스트(`ouroboros.json`)의 설치 명령과 같다. 마켓플레이스로 설치하는 플러그인(Ouroboros·oh-my-claudecode)은 버전을 고정하지 않는다: 버전은 마켓플레이스가 정한다. Tailscale은 공식 안내(KB 1016)가 Homebrew를 다루지 않고 standalone 내려받기를 권하며, Homebrew cask 이름이 `tailscale`에서 `tailscale-app`으로 바뀐 적이 있고, 어떤 방식이든 시스템 설정에서 VPN·확장 승인을 직접 해야 하므로 페이지를 여는 방식으로 했다.
 
 ## 상태
 
@@ -66,8 +64,7 @@ Ouroboros·Superpowers의 명령은 각 스타일 매니페스트(`ouroboros.jso
 | 기본 도구 | Git for Windows (필수) | `git` | `winget install --exact --id Git.Git --source winget --scope user --accept-package-agreements --accept-source-agreements` | https://git-scm.com/downloads/win, 매니페스트 `manifests/g/Git/Git` (user·machine 설치기) |
 | | Node.js LTS | `node` | `winget install --exact --id OpenJS.NodeJS.LTS --source winget --scope machine …` — MSI가 모든 사용자용뿐이라 Windows가 관리자 확인 창을 띄울 수 있다 | https://nodejs.org/en/download, 매니페스트 `manifests/o/OpenJS/NodeJS/LTS` |
 | 스타일 도구 | uv | `uvx` | `https://astral.sh/uv/install.ps1` (공식 `irm https://astral.sh/uv/install.ps1 \| iex`), `%USERPROFILE%\.local\bin` | https://docs.astral.sh/uv/getting-started/installation/ |
-| | Ouroboros · Superpowers · oh-my-claudecode | Mac과 같음 | Mac과 같은 `claude plugin marketplace add …; claude plugin install … --scope user` | Mac과 같음 |
-| | Paperthin (Node 필요) | `%USERPROFILE%\.claude\skills\re0\SKILL.md` | `npx skills@1.7.2 add LilMGenius/paperthin --global --agent claude-code` | https://www.npmjs.com/package/skills/v/1.7.2 |
+| | Ouroboros · oh-my-claudecode | Mac과 같음 | Mac과 같은 `claude plugin marketplace add …; claude plugin install … --scope user` | Mac과 같음 |
 | 원격 연결 | Tailscale | `tailscale` (PATH 또는 `C:\Program Files\Tailscale`) | 공식 내려받기 페이지를 연다(https://tailscale.com/download/windows) | https://tailscale.com/kb/1022/install-windows |
 | Git 호스팅 CLI | GitHub CLI | `gh` | `winget install --exact --id GitHub.cli --source winget --scope machine …` — MSI가 모든 사용자용뿐 | https://cli.github.com, 매니페스트 `manifests/g/GitHub/cli` |
 | | GitLab CLI | `glab` | `winget install --exact --id GLab.GLab --source winget --scope user …` | https://gitlab.com/gitlab-org/cli, 매니페스트 `manifests/g/GLab/GLab` |

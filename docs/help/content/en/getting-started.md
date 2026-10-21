@@ -43,7 +43,7 @@ The first time you open the app there is no workspace yet, so you see the welcom
 ![[welcome]]
 
 ### Required tools {#setup}
-If no agent CLI (Claude Code, Codex or Antigravity) can run, or Git is not ready, the {{ui:setup.title}} screen opens when the app starts. It groups the agent CLIs, the prerequisites (Git, Homebrew, Node, Bun), the style tools (uv, Ouroboros, Superpowers, Paperthin, oh-my-claudecode, gstack), Tailscale, and gh and glab.
+If no agent CLI (Claude Code, Codex or Antigravity) can run, or Git is not ready, the {{ui:setup.title}} screen opens when the app starts. It groups the agent CLIs, the prerequisites (Git, Homebrew, Node, Bun), the style tools (uv, Ouroboros, oh-my-claudecode, gstack), Tailscale, and gh and glab.
 
 1. Check what you want to install. The first time, a missing Git starts checked, and so does Claude Code when there is no agent CLI at all; and anything a picked item needs (such as Homebrew for gh) comes along.
 2. Click {{ui:setup.button.install}}. Every command that will run is shown, in order. Nothing runs until you click {{ui:setup.confirm.run}}.

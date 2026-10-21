@@ -41,7 +41,7 @@ internal static class SetupVerification
         var catalog = SetupCatalog.Bundled();
         Check(catalog.Items.Select(item => item.Id).SequenceEqual(SetupCatalogDecoder.Decode(FixtureText()).Items.Select(item => item.Id)), "the embedded catalog must be the contract file");
         var windows = catalog.Items.Where(item => item.Entry(SetupPlatform.Windows) is not null).Select(item => item.Id).ToList();
-        Check(windows.SequenceEqual(["claude", "codex", "agy", "git", "node", "uv", "ouroboros", "superpowers", "paperthin", "omc", "tailscale", "gh", "glab"]),
+        Check(windows.SequenceEqual(["claude", "codex", "agy", "git", "node", "uv", "ouroboros", "omc", "tailscale", "gh", "glab"]),
             "every tool Windows can install has a Windows entry; got " + string.Join(", ", windows));
         foreach (var id in new[] { "homebrew", "bun", "gstack" }) Check(catalog.Item(id)?.Entry(SetupPlatform.Windows) is null, id + " stays a Mac tool");
         Check(catalog.Items.Where(item => item.Required).Select(item => item.Id).SequenceEqual(["git"]), "Git is the one required tool");
@@ -89,9 +89,9 @@ internal static class SetupVerification
         Refused(() => DecodeEditing(item => item["extra"] = true), "an unknown key");
         Refused(() => DecodeEditing(item => item["afterInstall"] = new JsonObject { ["kind"] = "signIn", ["provider"] = "someone" }), "an unknown provider");
         Refused(() => DecodeEditing(item => SetWindows(item, "prerequisites", new JsonArray("claude"))), "an item needing itself");
-        // node → paperthin, and paperthin → node, closes a loop on Windows.
+        // claude → ouroboros, and ouroboros → claude, closes a loop on Windows.
         var root = JsonNode.Parse(FixtureText())!.AsObject();
-        foreach (var item in root["items"]!.AsArray()) if (item!["id"]!.GetValue<string>() == "node") item["platforms"]!["windows"]!["prerequisites"] = new JsonArray("paperthin");
+        foreach (var item in root["items"]!.AsArray()) if (item!["id"]!.GetValue<string>() == "claude") item["platforms"]!["windows"]!["prerequisites"] = new JsonArray("ouroboros");
         Refused(() => SetupCatalogDecoder.Decode(root.ToJsonString()), "a Windows cycle");
         var ok = DecodeEditing(item => SetWindows(item, "install", new JsonObject { ["kind"] = "winget", ["id"] = "Anthropic.ClaudeCode", ["scope"] = "user" }));
         Check(ok.Items[0].Entry(SetupPlatform.Windows)!.Install == new SetupRecipe.Winget("Anthropic.ClaudeCode", "user"), "a winget recipe under windows decodes");
@@ -102,12 +102,12 @@ internal static class SetupVerification
     {
         var catalog = SetupCatalog.Bundled();
         IReadOnlyList<string> Order(params string[] picked) => SetupPlan.Order(picked.ToHashSet(), catalog, SetupPlatform.Windows, _ => false);
-        Check(Order("paperthin").SequenceEqual(["node", "paperthin"]), "Paperthin needs Node.js first");
+        Check(Order("omc").SequenceEqual(["claude", "omc"]), "oh-my-claudecode needs Claude Code first");
         Check(Order("ouroboros").SequenceEqual(["claude", "uv", "ouroboros"]), "Ouroboros needs Claude Code and uv first: " + string.Join(",", Order("ouroboros")));
         Check(Order("glab", "codex", "tailscale", "agy").SequenceEqual(["codex", "agy", "tailscale", "glab"]), "with nothing between them the catalog's order holds");
         Check(Order("homebrew", "gstack", "rm-rf").Count == 0, "a Mac tool or an unknown ID is never planned on Windows");
         Check(SetupPlan.Order(new HashSet<string> { "ouroboros" }, catalog, SetupPlatform.Windows, id => id == "claude").SequenceEqual(["uv", "ouroboros"]), "a prerequisite that is there is not planned");
-        Check(SetupPlan.AddedPrerequisites(new HashSet<string> { "paperthin", "omc" }, catalog, SetupPlatform.Windows, _ => false).Order().SequenceEqual(["claude", "node"]), "the added prerequisites are the unpicked ones");
+        Check(SetupPlan.AddedPrerequisites(new HashSet<string> { "ouroboros", "omc" }, catalog, SetupPlatform.Windows, _ => false).Order().SequenceEqual(["claude", "uv"]), "the added prerequisites are the unpicked ones");
         return Task.CompletedTask;
     }
 
@@ -121,15 +121,15 @@ internal static class SetupVerification
             ["ProgramFiles"] = @"C:\Program Files", ["SystemRoot"] = @"C:\Windows",
         };
         var catalog = SetupCatalog.Bundled();
-        var ids = SetupPlan.Order(new HashSet<string> { "claude", "git", "ouroboros", "paperthin", "gh", "tailscale" }, catalog, SetupPlatform.Windows, _ => false);
+        var ids = SetupPlan.Order(new HashSet<string> { "claude", "git", "ouroboros", "omc", "gh", "tailscale" }, catalog, SetupPlatform.Windows, _ => false);
         var steps = SetupScript.Steps(ids, catalog, SetupCatalog.Title);
-        Check(steps.Select(step => step.ItemId).SequenceEqual(["claude", "git", "node", "uv", "ouroboros", "paperthin", "gh"]), "a page-only item has no step: " + string.Join(",", steps.Select(step => step.ItemId)));
+        Check(steps.Select(step => step.ItemId).SequenceEqual(["claude", "git", "uv", "ouroboros", "omc", "gh"]), "a page-only item has no step: " + string.Join(",", steps.Select(step => step.ItemId)));
         string Body(string id) => steps.Single(step => step.ItemId == id).Body;
         Check(Body("claude") == "Invoke-MightyScript 'https://claude.ai/install.ps1'", "an official script goes through the https-only fetch: " + Body("claude"));
         Check(Body("git") == "winget install --exact --id 'Git.Git' --source winget --scope user --accept-package-agreements --accept-source-agreements", "winget: " + Body("git"));
         Check(Body("gh").Contains("--scope machine", StringComparison.Ordinal), "gh is machine scope");
         Check(Body("ouroboros") == "claude plugin marketplace add 'Q00/ouroboros'; claude plugin install 'ouroboros@ouroboros' --scope user", "plugin: " + Body("ouroboros"));
-        Check(Body("paperthin") == "npx 'skills@1.7.2' 'add' 'LilMGenius/paperthin' '--global' '--agent' 'claude-code'", "argv: " + Body("paperthin"));
+        Check(Body("omc") == "claude plugin marketplace add 'https://github.com/Yeachan-Heo/oh-my-claudecode'; claude plugin install 'oh-my-claudecode@omc' --scope user", "plugin: " + Body("omc"));
         var preamble = SetupScript.Preamble(environment);
         Check(preamble[0] == "Set-Location -LiteralPath $HOME", "the home folder is the working folder first");
         Check(preamble[1].StartsWith("$env:Path += ';C:\\Users\\me", StringComparison.Ordinal) && preamble[1].Contains("agy", StringComparison.Ordinal) && preamble[1].Contains("Codex", StringComparison.Ordinal), "the installers' folders follow the PATH: " + preamble[1]);
@@ -242,9 +242,9 @@ internal static class SetupVerification
             // Plugins by their whole name in user scope; skills by SKILL.md and the setup markers.
             Directory.CreateDirectory(Path.Combine(home, ".claude", "plugins"));
             File.WriteAllText(Path.Combine(home, ".claude", "plugins", "installed_plugins.json"),
-                """{"plugins":{"ouroboros@ouroboros":[{"scope":"user"}],"superpowers-extra@x":[{"scope":"user"}],"oh-my-claudecode@omc":[{"scope":"project"}]}}""");
+                """{"plugins":{"ouroboros@ouroboros":[{"scope":"user"}],"omc-extra@x":[{"scope":"user"}],"oh-my-claudecode@omc":[{"scope":"project"}]}}""");
             Check((await prober.ProbeAsync(new SetupProbe.ClaudePlugin("ouroboros@"))).IsInstalled, "a user-scope plugin counts");
-            Check(!(await prober.ProbeAsync(new SetupProbe.ClaudePlugin("superpowers@"))).IsInstalled, "a longer name is another plugin");
+            Check(!(await prober.ProbeAsync(new SetupProbe.ClaudePlugin("omc@"))).IsInstalled, "a longer name is another plugin");
             Check(!(await prober.ProbeAsync(new SetupProbe.ClaudePlugin("oh-my-claudecode@"))).IsInstalled, "a project-scope record does not count");
             var skill = Directory.CreateDirectory(Path.Combine(home, ".claude", "skills", "re0")).FullName;
             File.WriteAllText(Path.Combine(skill, "SKILL.md"), "x");

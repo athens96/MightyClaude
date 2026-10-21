@@ -43,7 +43,7 @@ Mighty Claudeは、Claude Code、Codex CLI、GoogleのAntigravity CLIを1つの�
 ![[welcome]]
 
 ### 必要なツール {#setup}
-動かせるエージェントCLI(Claude Code、Codex、Antigravityのいずれか)が1つもないか、Gitの準備ができていない場合は、アプリの起動時に{{ui:setup.title}}画面が先に開きます。エージェントCLI、前提ツール(Git、Homebrew、Node、Bun)、スタイル用ツール(uv、Ouroboros、Superpowers、Paperthin、oh-my-claudecode、gstack)、Tailscale、gh・glabをグループごとに表示します。
+動かせるエージェントCLI(Claude Code、Codex、Antigravityのいずれか)が1つもないか、Gitの準備ができていない場合は、アプリの起動時に{{ui:setup.title}}画面が先に開きます。エージェントCLI、前提ツール(Git、Homebrew、Node、Bun)、スタイル用ツール(uv、Ouroboros、oh-my-claudecode、gstack)、Tailscale、gh・glabをグループごとに表示します。
 
 1. インストールする項目にチェックを入れます。最初に開いたときは、足りないGitと、エージェントCLIが1つもなければClaude Codeが最初からチェックされていて、選んだ項目に必要なツール(例: ghに必要なHomebrew)も一緒に入ります。
 2. {{ui:setup.button.install}}をクリックすると、実行するコマンドがすべて順番に表示されます。{{ui:setup.confirm.run}}をクリックするまで何も実行されません。

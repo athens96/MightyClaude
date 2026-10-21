@@ -109,7 +109,7 @@ struct SetupProbeTests {
         try FileManager.default.createDirectory(at: registry.deletingLastPathComponent(), withIntermediateDirectories: true)
         try JSONSerialization.data(withJSONObject: ["plugins": [
             "ouroboros@ouroboros": [["scope": "user"]],
-            "superpowers@claude-community": [["scope": "project"]],
+            "oh-my-claudecode@omc": [["scope": "project"]],
         ]]).write(to: registry)
         let skill = root.appendingPathComponent(".claude/skills/gstack/SKILL.md")
         try FileManager.default.createDirectory(at: skill.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -118,7 +118,7 @@ struct SetupProbeTests {
         let prober = prober(root, path: [root.appendingPathComponent("bin")])
         #expect(await prober.probe(.claudePlugin(prefix: "ouroboros@")) == .installed(version: nil))
         // Only a user-scope record counts, and the prefix names a whole plugin.
-        #expect(await prober.probe(.claudePlugin(prefix: "superpowers@")) == .missing)
+        #expect(await prober.probe(.claudePlugin(prefix: "oh-my-claudecode@")) == .missing)
         #expect(await prober.probe(.claudePlugin(prefix: "ouro@")) == .missing)
         #expect(await prober.probe(.skill(name: "gstack")) == .installed(version: nil))
         #expect(await prober.probe(.skill(name: "re0")) == .missing)
