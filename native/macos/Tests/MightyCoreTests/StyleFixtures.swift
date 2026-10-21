@@ -52,27 +52,26 @@ enum StyleFixtures {
     /// (§8.4). No bundled style declares file or run-event sources or a
     /// catalogue fed by a built-in feature since v7, so the tests that need one
     /// read these. Both are decoded as an approved user style under
-    /// `testCapabilities`, the only vocabulary `deck` decodes under.
-    static func fixtureData(_ id: String) -> Data {
-        let url = StyleGolden.fixturesDirectory.appendingPathComponent(id + ".json")
-        do { return try Data(contentsOf: url) } catch { fatalError("fixture manifest unreadable: \(url.path): \(error)") }
+    /// `testCapabilities`, the only vocabulary `deck` decodes under. A file
+    /// that is missing or refused fails the test that reads it, not the run.
+    static func fixtureData(_ id: String) throws -> Data {
+        try Data(contentsOf: StyleGolden.fixturesDirectory.appendingPathComponent(id + ".json"))
     }
 
-    static func fixtureStyle(_ id: String) -> RegisteredStyle {
-        do { return try registered(fixtureData(id), path: "/tmp/\(id).json", capabilities: testCapabilities) }
-        catch { fatalError("fixture '\(id)' refused: \(error)") }
+    static func fixtureStyle(_ id: String) throws -> RegisteredStyle {
+        try registered(fixtureData(id), path: "/tmp/\(id).json", capabilities: testCapabilities)
     }
 
     /// `styles/fixtures/loop.json`: a four-phase loop that reads its own state
     /// (§1.16) — the newest current checklist under `docs/plans/` as a bar,
     /// `subagent.start` as a count, and two state overrides that move the phase.
-    static var statefulStyle: RegisteredStyle { fixtureStyle("loop") }
+    static var statefulStyle: RegisteredStyle { get throws { try fixtureStyle("loop") } }
 
     /// `styles/fixtures/deck.json`: a catalogue — no phases, two groups drawn
     /// as a map, Enter verbatim, a recommendation and first group read from a
     /// built-in feature that exists only in `testCapabilities` (§1.8), and one
     /// action carrying both flags.
-    static var catalogueStyle: RegisteredStyle { fixtureStyle("deck") }
+    static var catalogueStyle: RegisteredStyle { get throws { try fixtureStyle("deck") } }
 
     /// The app's own vocabulary of built-in features is empty since v7 (§1.8).
     /// The engine still reads the `capabilities` field and the two rules that

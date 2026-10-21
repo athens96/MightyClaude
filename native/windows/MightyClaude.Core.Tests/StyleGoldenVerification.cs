@@ -135,8 +135,8 @@ internal static class StyleGoldenVerification
             // lastGroup is not firstGroup again for at least one golden, so the byGroup input is not vacuous.
             Check(projections.Any(p => !JsonNode.DeepEquals(p["firstGroup"], p["lastGroup"])), "at least one golden's lastGroup differs from its firstGroup");
             var deck = Projection(StyleFixtures.CatalogueStyle);
-            Check(deck["firstGroup"]!["next"]!.AsArray().Select(n => (string?)n).SequenceEqual(["tidy", "hate"]) && deck["lastGroup"]!["next"]!.AsArray().Select(n => (string?)n).SequenceEqual(["plan", "loop", "memo", "work", "nba"]), "the first and last group draw their own actions");
-            Check(deck["empty"]!["actions"]!.AsArray().Single(a => (string?)a!["id"] == "nba")!["flags"]!.AsArray().Select(n => (string?)n).SequenceEqual(["userInvoked", "readOnly"]), "an action's two flags are recorded in order");
+            Check(deck["firstGroup"]!["next"]!.AsArray().Select(n => (string?)n).SequenceEqual(["sweep", "probe"]) && deck["lastGroup"]!["next"]!.AsArray().Select(n => (string?)n).SequenceEqual(["draft", "cycle", "note", "reset", "peek"]), "the first and last group draw their own actions");
+            Check(deck["empty"]!["actions"]!.AsArray().Single(a => (string?)a!["id"] == "peek")!["flags"]!.AsArray().Select(n => (string?)n).SequenceEqual(["userInvoked", "readOnly"]), "an action's two flags are recorded in order");
         }
         // §1.16: a style with file and run-event sources records what the engine makes of them — the plan file as a bar and the
         // subagent.start count as a label — and the file state moves it to the phase a current plan means. No bundled or
@@ -146,10 +146,10 @@ internal static class StyleGoldenVerification
             var stateful = StyleFixtures.StatefulStyle;
             var withState = StateReading(stateful) ?? throw new InvalidOperationException("the fixture declares state sources");
             Check(withState.Widgets.Count == 2 && withState.Widgets[0] is { Kind: "progressBar", Value: 3, Total: 7 } && withState.Widgets[1] is { Kind: "label", Text: "서브에이전트 2회 시작" }, "a plan file reads as a bar and the sub-agents as a label");
-            Check(stateful.Evaluator.CurrentPhase([], withState.Files)?.Id == "execute", "a current plan moves the style to execute");
+            Check(stateful.Evaluator.CurrentPhase([], withState.Files)?.Id == "build", "a current plan moves the style to build");
             var recorded = Projection(stateful);
-            Check((string?)recorded["withState"]?["phase"]?["id"] == "execute" && recorded["withState"]?["widgets"]?.AsArray().Count == 2, "the withState case records the reading's phase and widgets");
-            Check((string?)recorded["empty"]?["phase"]?["id"] == "brainstorm" && recorded["empty"]?["widgets"] is null, "the empty case reads nothing");
+            Check((string?)recorded["withState"]?["phase"]?["id"] == "build" && recorded["withState"]?["widgets"]?.AsArray().Count == 2, "the withState case records the reading's phase and widgets");
+            Check((string?)recorded["empty"]?["phase"]?["id"] == "sketch" && recorded["empty"]?["widgets"] is null, "the empty case reads nothing");
             Check(!recorded.Any(c => c.Key.StartsWith("planStage", StringComparison.Ordinal)), "a style that does not read the plan stage records no plan-stage case");
         }
         var left = goldens.Keys.Where(name => !compared.Contains(name)).ToArray();

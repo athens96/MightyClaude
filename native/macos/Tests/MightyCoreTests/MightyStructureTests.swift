@@ -159,9 +159,9 @@ struct MightyStructureTests {
     }
 
     @Test func withNoCurrentPhaseTheNewestRequestsPhaseIsCurrent() throws {
-        // Four phases: brainstorm, plan, execute, finish.
-        let style = StyleFixtures.statefulStyle.evaluator
-        let runs = [Self.run("r1", input: "/loop:brainstorming 아이디어"), Self.run("r2", input: "/loop:writing-plans")]
+        // Four phases: sketch, outline, build, wrap.
+        let style = try StyleFixtures.statefulStyle.evaluator
+        let runs = [Self.run("r1", input: "/loop:sketch-idea 아이디어"), Self.run("r2", input: "/loop:write-outline")]
         let columns = Self.columns(MightyStructure.make(runs: runs, style: style, currentPhase: nil))
         #expect(columns.map(\.step) == [.done, .current, .pending, .pending])
     }
@@ -178,7 +178,7 @@ struct MightyStructureTests {
             Self.run("tail", agents: [Self.agent("bg", status: "running", kind: "task")]),
         ]
         // A style without phases is drawn as a free pane, as no style at all is.
-        let catalogue = StyleFixtures.catalogueStyle.evaluator
+        let catalogue = try StyleFixtures.catalogueStyle.evaluator
         #expect(MightyStructure.make(runs: runs, style: catalogue, currentPhase: nil) == MightyStructure.make(runs: runs, style: nil, currentPhase: nil))
         let rows = Self.rows(MightyStructure.make(runs: runs, style: nil, currentPhase: nil))
         #expect(rows.map(\.id) == ["running", "done", "failed", "halted", "tail"])

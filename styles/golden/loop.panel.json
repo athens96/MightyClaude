@@ -5,89 +5,89 @@
         "flags" : [
 
         ],
-        "help" : "아이디어를 구체적인 설계와 요구사항으로 발전시킵니다",
-        "id" : "brainstorming",
+        "help" : "생각을 짧은 스케치로 적습니다",
+        "id" : "sketch-idea",
         "prominent" : true,
         "requiresText" : false,
         "takesText" : true,
-        "title" : "브레인스토밍"
+        "title" : "아이디어 스케치"
       },
       {
         "flags" : [
 
         ],
-        "help" : "구현 계획을 단계별 작업으로 작성합니다",
-        "id" : "writing-plans",
+        "help" : "할 일을 개요로 나눕니다",
+        "id" : "write-outline",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "계획 작성"
+        "title" : "개요 쓰기"
       },
       {
         "flags" : [
 
         ],
-        "help" : "계획을 직접 한 단계씩 실행합니다",
-        "id" : "executing-plans",
+        "help" : "개요를 한 단계씩 만듭니다",
+        "id" : "build-step",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "계획 실행"
+        "title" : "한 단계씩"
       },
       {
         "flags" : [
 
         ],
-        "help" : "서브에이전트를 통해 각 태스크를 병렬로 처리합니다",
-        "id" : "subagent-driven-development",
+        "help" : "개요를 여러 손에 나눠 만듭니다",
+        "id" : "build-split",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "서브에이전트 개발"
+        "title" : "나눠 만들기"
       },
       {
         "flags" : [
 
         ],
-        "help" : "완료 전 구현이 올바른지 체계적으로 검증합니다",
-        "id" : "verification-before-completion",
+        "help" : "만든 것을 확인합니다",
+        "id" : "check-work",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "완료 전 검증"
+        "title" : "확인"
       },
       {
         "flags" : [
 
         ],
-        "help" : "개발 브랜치를 마무리하고 PR을 준비합니다",
-        "id" : "finishing-a-development-branch",
+        "help" : "작업을 마무리합니다",
+        "id" : "wrap-up",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "브랜치 완료"
+        "title" : "마무리"
       },
       {
         "flags" : [
 
         ],
-        "help" : "체계적인 방법으로 버그의 근본 원인을 찾습니다",
-        "id" : "systematic-debugging",
+        "help" : "문제의 원인을 찾습니다",
+        "id" : "find-cause",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "디버깅"
+        "title" : "원인 찾기"
       },
       {
         "flags" : [
 
         ],
-        "help" : "코드 리뷰를 요청합니다",
-        "id" : "requesting-code-review",
+        "help" : "검토를 부탁합니다",
+        "id" : "ask-review",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "코드 리뷰 요청"
+        "title" : "검토 부탁"
       }
     ],
     "attachments" : [
@@ -96,33 +96,33 @@
     "groups" : [
       {
         "actions" : [
-          "brainstorming",
-          "writing-plans",
-          "executing-plans",
-          "subagent-driven-development",
-          "verification-before-completion",
-          "finishing-a-development-branch",
-          "systematic-debugging",
-          "requesting-code-review"
+          "sketch-idea",
+          "write-outline",
+          "build-step",
+          "build-split",
+          "check-work",
+          "wrap-up",
+          "find-cause",
+          "ask-review"
         ],
         "id" : "loop",
         "selected" : true,
         "title" : "루프"
       }
     ],
-    "guidance" : "무엇을 만들까요? 아이디어를 적으면 브레인스토밍으로 요구를 정리합니다.",
+    "guidance" : "무엇을 할까요? 적으면 스케치부터 시작합니다.",
     "next" : [
-      "brainstorming",
-      "writing-plans"
+      "sketch-idea",
+      "write-outline"
     ],
     "phase" : {
       "count" : 4,
-      "id" : "brainstorm",
+      "id" : "sketch",
       "index" : 0,
-      "title" : "브레인스토밍"
+      "title" : "스케치"
     },
     "presentation" : {
-      "headerTitle" : "Loop · 브레인스토밍",
+      "headerTitle" : "Loop · 스케치",
       "source" : "user"
     },
     "setup" : {
@@ -143,89 +143,89 @@
         "flags" : [
 
         ],
-        "help" : "아이디어를 구체적인 설계와 요구사항으로 발전시킵니다",
-        "id" : "brainstorming",
+        "help" : "생각을 짧은 스케치로 적습니다",
+        "id" : "sketch-idea",
         "prominent" : true,
         "requiresText" : false,
         "takesText" : true,
-        "title" : "브레인스토밍"
+        "title" : "아이디어 스케치"
       },
       {
         "flags" : [
 
         ],
-        "help" : "구현 계획을 단계별 작업으로 작성합니다",
-        "id" : "writing-plans",
+        "help" : "할 일을 개요로 나눕니다",
+        "id" : "write-outline",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "계획 작성"
+        "title" : "개요 쓰기"
       },
       {
         "flags" : [
 
         ],
-        "help" : "계획을 직접 한 단계씩 실행합니다",
-        "id" : "executing-plans",
+        "help" : "개요를 한 단계씩 만듭니다",
+        "id" : "build-step",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "계획 실행"
+        "title" : "한 단계씩"
       },
       {
         "flags" : [
 
         ],
-        "help" : "서브에이전트를 통해 각 태스크를 병렬로 처리합니다",
-        "id" : "subagent-driven-development",
+        "help" : "개요를 여러 손에 나눠 만듭니다",
+        "id" : "build-split",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "서브에이전트 개발"
+        "title" : "나눠 만들기"
       },
       {
         "flags" : [
 
         ],
-        "help" : "완료 전 구현이 올바른지 체계적으로 검증합니다",
-        "id" : "verification-before-completion",
+        "help" : "만든 것을 확인합니다",
+        "id" : "check-work",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "완료 전 검증"
+        "title" : "확인"
       },
       {
         "flags" : [
 
         ],
-        "help" : "개발 브랜치를 마무리하고 PR을 준비합니다",
-        "id" : "finishing-a-development-branch",
+        "help" : "작업을 마무리합니다",
+        "id" : "wrap-up",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "브랜치 완료"
+        "title" : "마무리"
       },
       {
         "flags" : [
 
         ],
-        "help" : "체계적인 방법으로 버그의 근본 원인을 찾습니다",
-        "id" : "systematic-debugging",
+        "help" : "문제의 원인을 찾습니다",
+        "id" : "find-cause",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "디버깅"
+        "title" : "원인 찾기"
       },
       {
         "flags" : [
 
         ],
-        "help" : "코드 리뷰를 요청합니다",
-        "id" : "requesting-code-review",
+        "help" : "검토를 부탁합니다",
+        "id" : "ask-review",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "코드 리뷰 요청"
+        "title" : "검토 부탁"
       }
     ],
     "attachments" : [
@@ -234,33 +234,33 @@
     "groups" : [
       {
         "actions" : [
-          "brainstorming",
-          "writing-plans",
-          "executing-plans",
-          "subagent-driven-development",
-          "verification-before-completion",
-          "finishing-a-development-branch",
-          "systematic-debugging",
-          "requesting-code-review"
+          "sketch-idea",
+          "write-outline",
+          "build-step",
+          "build-split",
+          "check-work",
+          "wrap-up",
+          "find-cause",
+          "ask-review"
         ],
         "id" : "loop",
         "selected" : true,
         "title" : "루프"
       }
     ],
-    "guidance" : "무엇을 만들까요? 아이디어를 적으면 브레인스토밍으로 요구를 정리합니다.",
+    "guidance" : "무엇을 할까요? 적으면 스케치부터 시작합니다.",
     "next" : [
-      "brainstorming",
-      "writing-plans"
+      "sketch-idea",
+      "write-outline"
     ],
     "phase" : {
       "count" : 4,
-      "id" : "brainstorm",
+      "id" : "sketch",
       "index" : 0,
-      "title" : "브레인스토밍"
+      "title" : "스케치"
     },
     "presentation" : {
-      "headerTitle" : "Loop · 브레인스토밍",
+      "headerTitle" : "Loop · 스케치",
       "source" : "user"
     },
     "setup" : {
@@ -281,89 +281,89 @@
         "flags" : [
 
         ],
-        "help" : "아이디어를 구체적인 설계와 요구사항으로 발전시킵니다",
-        "id" : "brainstorming",
+        "help" : "생각을 짧은 스케치로 적습니다",
+        "id" : "sketch-idea",
         "prominent" : true,
         "requiresText" : false,
         "takesText" : true,
-        "title" : "브레인스토밍"
+        "title" : "아이디어 스케치"
       },
       {
         "flags" : [
 
         ],
-        "help" : "구현 계획을 단계별 작업으로 작성합니다",
-        "id" : "writing-plans",
+        "help" : "할 일을 개요로 나눕니다",
+        "id" : "write-outline",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "계획 작성"
+        "title" : "개요 쓰기"
       },
       {
         "flags" : [
 
         ],
-        "help" : "계획을 직접 한 단계씩 실행합니다",
-        "id" : "executing-plans",
+        "help" : "개요를 한 단계씩 만듭니다",
+        "id" : "build-step",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "계획 실행"
+        "title" : "한 단계씩"
       },
       {
         "flags" : [
 
         ],
-        "help" : "서브에이전트를 통해 각 태스크를 병렬로 처리합니다",
-        "id" : "subagent-driven-development",
+        "help" : "개요를 여러 손에 나눠 만듭니다",
+        "id" : "build-split",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "서브에이전트 개발"
+        "title" : "나눠 만들기"
       },
       {
         "flags" : [
 
         ],
-        "help" : "완료 전 구현이 올바른지 체계적으로 검증합니다",
-        "id" : "verification-before-completion",
+        "help" : "만든 것을 확인합니다",
+        "id" : "check-work",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "완료 전 검증"
+        "title" : "확인"
       },
       {
         "flags" : [
 
         ],
-        "help" : "개발 브랜치를 마무리하고 PR을 준비합니다",
-        "id" : "finishing-a-development-branch",
+        "help" : "작업을 마무리합니다",
+        "id" : "wrap-up",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "브랜치 완료"
+        "title" : "마무리"
       },
       {
         "flags" : [
 
         ],
-        "help" : "체계적인 방법으로 버그의 근본 원인을 찾습니다",
-        "id" : "systematic-debugging",
+        "help" : "문제의 원인을 찾습니다",
+        "id" : "find-cause",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "디버깅"
+        "title" : "원인 찾기"
       },
       {
         "flags" : [
 
         ],
-        "help" : "코드 리뷰를 요청합니다",
-        "id" : "requesting-code-review",
+        "help" : "검토를 부탁합니다",
+        "id" : "ask-review",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "코드 리뷰 요청"
+        "title" : "검토 부탁"
       }
     ],
     "attachments" : [
@@ -372,33 +372,33 @@
     "groups" : [
       {
         "actions" : [
-          "brainstorming",
-          "writing-plans",
-          "executing-plans",
-          "subagent-driven-development",
-          "verification-before-completion",
-          "finishing-a-development-branch",
-          "systematic-debugging",
-          "requesting-code-review"
+          "sketch-idea",
+          "write-outline",
+          "build-step",
+          "build-split",
+          "check-work",
+          "wrap-up",
+          "find-cause",
+          "ask-review"
         ],
         "id" : "loop",
         "selected" : true,
         "title" : "루프"
       }
     ],
-    "guidance" : "무엇을 만들까요? 아이디어를 적으면 브레인스토밍으로 요구를 정리합니다.",
+    "guidance" : "무엇을 할까요? 적으면 스케치부터 시작합니다.",
     "next" : [
-      "brainstorming",
-      "writing-plans"
+      "sketch-idea",
+      "write-outline"
     ],
     "phase" : {
       "count" : 4,
-      "id" : "brainstorm",
+      "id" : "sketch",
       "index" : 0,
-      "title" : "브레인스토밍"
+      "title" : "스케치"
     },
     "presentation" : {
-      "headerTitle" : "Loop · 브레인스토밍",
+      "headerTitle" : "Loop · 스케치",
       "source" : "user"
     },
     "setup" : {
@@ -419,89 +419,89 @@
         "flags" : [
 
         ],
-        "help" : "아이디어를 구체적인 설계와 요구사항으로 발전시킵니다",
-        "id" : "brainstorming",
+        "help" : "생각을 짧은 스케치로 적습니다",
+        "id" : "sketch-idea",
         "prominent" : true,
         "requiresText" : false,
         "takesText" : true,
-        "title" : "브레인스토밍"
+        "title" : "아이디어 스케치"
       },
       {
         "flags" : [
 
         ],
-        "help" : "구현 계획을 단계별 작업으로 작성합니다",
-        "id" : "writing-plans",
+        "help" : "할 일을 개요로 나눕니다",
+        "id" : "write-outline",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "계획 작성"
+        "title" : "개요 쓰기"
       },
       {
         "flags" : [
 
         ],
-        "help" : "계획을 직접 한 단계씩 실행합니다",
-        "id" : "executing-plans",
+        "help" : "개요를 한 단계씩 만듭니다",
+        "id" : "build-step",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "계획 실행"
+        "title" : "한 단계씩"
       },
       {
         "flags" : [
 
         ],
-        "help" : "서브에이전트를 통해 각 태스크를 병렬로 처리합니다",
-        "id" : "subagent-driven-development",
+        "help" : "개요를 여러 손에 나눠 만듭니다",
+        "id" : "build-split",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "서브에이전트 개발"
+        "title" : "나눠 만들기"
       },
       {
         "flags" : [
 
         ],
-        "help" : "완료 전 구현이 올바른지 체계적으로 검증합니다",
-        "id" : "verification-before-completion",
+        "help" : "만든 것을 확인합니다",
+        "id" : "check-work",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "완료 전 검증"
+        "title" : "확인"
       },
       {
         "flags" : [
 
         ],
-        "help" : "개발 브랜치를 마무리하고 PR을 준비합니다",
-        "id" : "finishing-a-development-branch",
+        "help" : "작업을 마무리합니다",
+        "id" : "wrap-up",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "브랜치 완료"
+        "title" : "마무리"
       },
       {
         "flags" : [
 
         ],
-        "help" : "체계적인 방법으로 버그의 근본 원인을 찾습니다",
-        "id" : "systematic-debugging",
+        "help" : "문제의 원인을 찾습니다",
+        "id" : "find-cause",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "디버깅"
+        "title" : "원인 찾기"
       },
       {
         "flags" : [
 
         ],
-        "help" : "코드 리뷰를 요청합니다",
-        "id" : "requesting-code-review",
+        "help" : "검토를 부탁합니다",
+        "id" : "ask-review",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "코드 리뷰 요청"
+        "title" : "검토 부탁"
       }
     ],
     "attachments" : [
@@ -510,33 +510,33 @@
     "groups" : [
       {
         "actions" : [
-          "brainstorming",
-          "writing-plans",
-          "executing-plans",
-          "subagent-driven-development",
-          "verification-before-completion",
-          "finishing-a-development-branch",
-          "systematic-debugging",
-          "requesting-code-review"
+          "sketch-idea",
+          "write-outline",
+          "build-step",
+          "build-split",
+          "check-work",
+          "wrap-up",
+          "find-cause",
+          "ask-review"
         ],
         "id" : "loop",
         "selected" : true,
         "title" : "루프"
       }
     ],
-    "guidance" : "무엇을 만들까요? 아이디어를 적으면 브레인스토밍으로 요구를 정리합니다.",
+    "guidance" : "무엇을 할까요? 적으면 스케치부터 시작합니다.",
     "next" : [
-      "brainstorming",
-      "writing-plans"
+      "sketch-idea",
+      "write-outline"
     ],
     "phase" : {
       "count" : 4,
-      "id" : "brainstorm",
+      "id" : "sketch",
       "index" : 0,
-      "title" : "브레인스토밍"
+      "title" : "스케치"
     },
     "presentation" : {
-      "headerTitle" : "Loop · 브레인스토밍",
+      "headerTitle" : "Loop · 스케치",
       "source" : "user"
     },
     "setup" : {
@@ -557,89 +557,89 @@
         "flags" : [
 
         ],
-        "help" : "아이디어를 구체적인 설계와 요구사항으로 발전시킵니다",
-        "id" : "brainstorming",
+        "help" : "생각을 짧은 스케치로 적습니다",
+        "id" : "sketch-idea",
         "prominent" : true,
         "requiresText" : false,
         "takesText" : true,
-        "title" : "브레인스토밍"
+        "title" : "아이디어 스케치"
       },
       {
         "flags" : [
 
         ],
-        "help" : "구현 계획을 단계별 작업으로 작성합니다",
-        "id" : "writing-plans",
+        "help" : "할 일을 개요로 나눕니다",
+        "id" : "write-outline",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "계획 작성"
+        "title" : "개요 쓰기"
       },
       {
         "flags" : [
 
         ],
-        "help" : "계획을 직접 한 단계씩 실행합니다",
-        "id" : "executing-plans",
+        "help" : "개요를 한 단계씩 만듭니다",
+        "id" : "build-step",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "계획 실행"
+        "title" : "한 단계씩"
       },
       {
         "flags" : [
 
         ],
-        "help" : "서브에이전트를 통해 각 태스크를 병렬로 처리합니다",
-        "id" : "subagent-driven-development",
+        "help" : "개요를 여러 손에 나눠 만듭니다",
+        "id" : "build-split",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "서브에이전트 개발"
+        "title" : "나눠 만들기"
       },
       {
         "flags" : [
 
         ],
-        "help" : "완료 전 구현이 올바른지 체계적으로 검증합니다",
-        "id" : "verification-before-completion",
+        "help" : "만든 것을 확인합니다",
+        "id" : "check-work",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "완료 전 검증"
+        "title" : "확인"
       },
       {
         "flags" : [
 
         ],
-        "help" : "개발 브랜치를 마무리하고 PR을 준비합니다",
-        "id" : "finishing-a-development-branch",
+        "help" : "작업을 마무리합니다",
+        "id" : "wrap-up",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "브랜치 완료"
+        "title" : "마무리"
       },
       {
         "flags" : [
 
         ],
-        "help" : "체계적인 방법으로 버그의 근본 원인을 찾습니다",
-        "id" : "systematic-debugging",
+        "help" : "문제의 원인을 찾습니다",
+        "id" : "find-cause",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "디버깅"
+        "title" : "원인 찾기"
       },
       {
         "flags" : [
 
         ],
-        "help" : "코드 리뷰를 요청합니다",
-        "id" : "requesting-code-review",
+        "help" : "검토를 부탁합니다",
+        "id" : "ask-review",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "코드 리뷰 요청"
+        "title" : "검토 부탁"
       }
     ],
     "attachments" : [
@@ -648,33 +648,33 @@
     "groups" : [
       {
         "actions" : [
-          "brainstorming",
-          "writing-plans",
-          "executing-plans",
-          "subagent-driven-development",
-          "verification-before-completion",
-          "finishing-a-development-branch",
-          "systematic-debugging",
-          "requesting-code-review"
+          "sketch-idea",
+          "write-outline",
+          "build-step",
+          "build-split",
+          "check-work",
+          "wrap-up",
+          "find-cause",
+          "ask-review"
         ],
         "id" : "loop",
         "selected" : true,
         "title" : "루프"
       }
     ],
-    "guidance" : "무엇을 만들까요? 아이디어를 적으면 브레인스토밍으로 요구를 정리합니다.",
+    "guidance" : "무엇을 할까요? 적으면 스케치부터 시작합니다.",
     "next" : [
-      "brainstorming",
-      "writing-plans"
+      "sketch-idea",
+      "write-outline"
     ],
     "phase" : {
       "count" : 4,
-      "id" : "brainstorm",
+      "id" : "sketch",
       "index" : 0,
-      "title" : "브레인스토밍"
+      "title" : "스케치"
     },
     "presentation" : {
-      "headerTitle" : "Loop · 브레인스토밍",
+      "headerTitle" : "Loop · 스케치",
       "source" : "user"
     },
     "setup" : {
@@ -695,89 +695,89 @@
         "flags" : [
 
         ],
-        "help" : "아이디어를 구체적인 설계와 요구사항으로 발전시킵니다",
-        "id" : "brainstorming",
+        "help" : "생각을 짧은 스케치로 적습니다",
+        "id" : "sketch-idea",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : true,
-        "title" : "브레인스토밍"
+        "title" : "아이디어 스케치"
       },
       {
         "flags" : [
 
         ],
-        "help" : "구현 계획을 단계별 작업으로 작성합니다",
-        "id" : "writing-plans",
+        "help" : "할 일을 개요로 나눕니다",
+        "id" : "write-outline",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "계획 작성"
+        "title" : "개요 쓰기"
       },
       {
         "flags" : [
 
         ],
-        "help" : "계획을 직접 한 단계씩 실행합니다",
-        "id" : "executing-plans",
+        "help" : "개요를 한 단계씩 만듭니다",
+        "id" : "build-step",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "계획 실행"
+        "title" : "한 단계씩"
       },
       {
         "flags" : [
 
         ],
-        "help" : "서브에이전트를 통해 각 태스크를 병렬로 처리합니다",
-        "id" : "subagent-driven-development",
+        "help" : "개요를 여러 손에 나눠 만듭니다",
+        "id" : "build-split",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "서브에이전트 개발"
+        "title" : "나눠 만들기"
       },
       {
         "flags" : [
 
         ],
-        "help" : "완료 전 구현이 올바른지 체계적으로 검증합니다",
-        "id" : "verification-before-completion",
+        "help" : "만든 것을 확인합니다",
+        "id" : "check-work",
         "prominent" : true,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "완료 전 검증"
+        "title" : "확인"
       },
       {
         "flags" : [
 
         ],
-        "help" : "개발 브랜치를 마무리하고 PR을 준비합니다",
-        "id" : "finishing-a-development-branch",
+        "help" : "작업을 마무리합니다",
+        "id" : "wrap-up",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "브랜치 완료"
+        "title" : "마무리"
       },
       {
         "flags" : [
 
         ],
-        "help" : "체계적인 방법으로 버그의 근본 원인을 찾습니다",
-        "id" : "systematic-debugging",
+        "help" : "문제의 원인을 찾습니다",
+        "id" : "find-cause",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "디버깅"
+        "title" : "원인 찾기"
       },
       {
         "flags" : [
 
         ],
-        "help" : "코드 리뷰를 요청합니다",
-        "id" : "requesting-code-review",
+        "help" : "검토를 부탁합니다",
+        "id" : "ask-review",
         "prominent" : false,
         "requiresText" : false,
         "takesText" : false,
-        "title" : "코드 리뷰 요청"
+        "title" : "검토 부탁"
       }
     ],
     "attachments" : [
@@ -786,34 +786,34 @@
     "groups" : [
       {
         "actions" : [
-          "brainstorming",
-          "writing-plans",
-          "executing-plans",
-          "subagent-driven-development",
-          "verification-before-completion",
-          "finishing-a-development-branch",
-          "systematic-debugging",
-          "requesting-code-review"
+          "sketch-idea",
+          "write-outline",
+          "build-step",
+          "build-split",
+          "check-work",
+          "wrap-up",
+          "find-cause",
+          "ask-review"
         ],
         "id" : "loop",
         "selected" : true,
         "title" : "루프"
       }
     ],
-    "guidance" : "실행 단계가 끝났습니다. 다음 단계를 고르거나 계속 진행하세요.",
+    "guidance" : "만들기 단계가 끝났습니다. 다음을 고르세요.",
     "next" : [
-      "verification-before-completion",
-      "systematic-debugging",
-      "executing-plans"
+      "check-work",
+      "find-cause",
+      "build-step"
     ],
     "phase" : {
       "count" : 4,
-      "id" : "execute",
+      "id" : "build",
       "index" : 2,
-      "title" : "실행"
+      "title" : "만들기"
     },
     "presentation" : {
-      "headerTitle" : "Loop · 실행",
+      "headerTitle" : "Loop · 만들기",
       "source" : "user"
     },
     "setup" : {

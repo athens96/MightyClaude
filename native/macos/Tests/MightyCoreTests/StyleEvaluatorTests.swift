@@ -94,7 +94,7 @@ struct StyleEvaluatorTests {
         #expect(style.enterArmedPrefix(draft: "xx 이거 해줘", phase: one, running: false, hasRequests: false) == nil)
         #expect(style.enterArmedPrefix(draft: "결제", phase: one, hasAttachments: true, running: false, hasRequests: false) == nil)
         // A verbatim style never rewrites, whatever the draft is.
-        let catalogue = StyleFixtures.catalogueStyle.evaluator
+        let catalogue = try StyleFixtures.catalogueStyle.evaluator
         #expect(catalogue.enterBehaviour(draft: "무엇이든", phase: nil, hasAttachments: false, running: false, hasRequests: false) == .verbatim)
         #expect(catalogue.enterArmedPrefix(draft: "무엇이든", phase: nil, running: false, hasRequests: false) == nil)
     }
@@ -115,7 +115,7 @@ struct StyleEvaluatorTests {
         #expect(enter(answering: false, requests: true, startingNew: true) == .rewrite(actionId: "plan"))
         #expect(enter(answering: false, draft: "/x:note") == .verbatim)
         // A style with no rewrite rule sends what was typed, question aside.
-        let catalogue = StyleFixtures.catalogueStyle.evaluator
+        let catalogue = try StyleFixtures.catalogueStyle.evaluator
         #expect(StyleComposer.enter(catalogue, draft: "무엇이든", phase: nil, answering: false, hasAttachments: false,
                                     running: false, hasRequests: false, startingNew: true) == .verbatim)
         #expect(StyleComposer.enter(catalogue, draft: "무엇이든", phase: nil, answering: true, hasAttachments: false,
@@ -131,11 +131,11 @@ struct StyleEvaluatorTests {
         let idle = StyleChips.make(ouroboros.evaluator, phase: seed, group: nil, startingNew: false, running: false)
         #expect(idle.actions.map(\.id) == ["run", "evaluate", "status"] && !idle.progress)
 
-        let catalogue = StyleFixtures.catalogueStyle
-        let coil = catalogue.manifest.group("coil")
-        let running = StyleChips.make(catalogue.evaluator, phase: nil, group: coil, startingNew: false,
+        let catalogue = try StyleFixtures.catalogueStyle
+        let far = catalogue.manifest.group("far")
+        let running = StyleChips.make(catalogue.evaluator, phase: nil, group: far, startingNew: false,
                                       capabilityStates: ["acme.thing": "open"], running: true)
-        #expect(running.actions.map(\.id) == ["plan", "loop", "memo", "work", "nba"])
+        #expect(running.actions.map(\.id) == ["draft", "cycle", "note", "reset", "peek"])
         #expect(!running.progress && running.grid)
     }
 
@@ -153,29 +153,29 @@ struct StyleEvaluatorTests {
         // With no phase the token and the space after it both go (§1.7).
         #expect(StyleGuidanceTemplate.render("{phase} 단계가 끝났습니다.", phaseTitle: nil) == "단계가 끝났습니다.")
         #expect(StyleGuidanceTemplate.render("{phase} 단계", phaseTitle: "시드") == "시드 단계")
-        #expect(StyleFixtures.catalogueStyle.evaluator.guidanceLine(phase: nil, running: false) == "대상(파일 경로나 지시)을 아래에 적고 스킬을 누르세요. 비워 두면 스킬만 보냅니다.")
+        #expect(try StyleFixtures.catalogueStyle.evaluator.guidanceLine(phase: nil, running: false) == "아래에 대상을 적고 행동을 누르세요. 비워 두면 행동만 보냅니다.")
     }
 
     @Test func groupRulesReadTheCapabilityStateOnce() throws {
         // The feature exists only in the test vocabulary since v7 (§1.8).
-        let catalogue = StyleFixtures.catalogueStyle.evaluator
-        #expect(catalogue.initialGroup(capabilityStates: ["acme.thing": "absent"])?.id == "depth")
-        #expect(catalogue.initialGroup(capabilityStates: ["acme.thing": "open"])?.id == "coil")
-        #expect(catalogue.initialGroup(capabilityStates: ["acme.thing": "complete"])?.id == "coil")
-        let coil = catalogue.manifest.group("coil")
+        let catalogue = try StyleFixtures.catalogueStyle.evaluator
+        #expect(catalogue.initialGroup(capabilityStates: ["acme.thing": "absent"])?.id == "near")
+        #expect(catalogue.initialGroup(capabilityStates: ["acme.thing": "open"])?.id == "far")
+        #expect(catalogue.initialGroup(capabilityStates: ["acme.thing": "complete"])?.id == "far")
+        let far = catalogue.manifest.group("far")
         // The recommendation is the feature's answer, not the chosen group's:
         // the rule's own group only says which row the attachments belong to.
-        #expect(catalogue.recommendedAction(capabilityStates: ["acme.thing": "open"]) == "loop")
-        #expect(catalogue.recommendedAction(capabilityStates: ["acme.thing": "absent"]) == "plan")
+        #expect(catalogue.recommendedAction(capabilityStates: ["acme.thing": "open"]) == "cycle")
+        #expect(catalogue.recommendedAction(capabilityStates: ["acme.thing": "absent"]) == "draft")
         #expect(catalogue.recommendedAction(capabilityStates: [:]) == nil)
-        #expect(catalogue.recommendGroupId == "coil" && StyleFixtures.bundled("ouroboros").evaluator.recommendGroupId == nil)
-        #expect(catalogue.nextActions(phase: nil, group: coil).map(\.id) == ["plan", "loop", "memo", "work", "nba"])
+        #expect(catalogue.recommendGroupId == "far" && StyleFixtures.bundled("ouroboros").evaluator.recommendGroupId == nil)
+        #expect(catalogue.nextActions(phase: nil, group: far).map(\.id) == ["draft", "cycle", "note", "reset", "peek"])
         #expect(catalogue.nextActions(phase: nil, group: nil).isEmpty)
     }
 
     @Test func jobOpenStateDerivesFromToolResults() throws {
         let ouro = StyleFixtures.bundled("ouroboros").evaluator
-        let catalogue = StyleFixtures.catalogueStyle.evaluator
+        let catalogue = try StyleFixtures.catalogueStyle.evaluator
 
         // A manifest without a job declaration is never open.
         #expect(!catalogue.isJobOpen(session: RunSession(workspaceId: "ws", title: "T")))

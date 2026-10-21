@@ -5,93 +5,93 @@
         "flags" : [
 
         ],
-        "glyph" : "♻️",
-        "help" : "아티팩트 하나를 다듬습니다",
-        "id" : "tidy",
+        "glyph" : "🧹",
+        "help" : "목록을 쓸어 정리합니다",
+        "id" : "sweep",
         "prominent" : true,
         "requiresText" : false,
-        "scope" : "아티팩트 하나",
+        "scope" : "목록 하나",
         "takesText" : true,
-        "title" : "tidy"
+        "title" : "sweep"
       },
       {
         "flags" : [
           "userInvoked"
         ],
-        "glyph" : "😈",
-        "help" : "계획의 가장 약한 곳을 찾아 반론 하나와 그것을 확인할 테스트를 냅니다",
-        "id" : "hate",
+        "glyph" : "🔍",
+        "help" : "약한 곳 하나를 짚어 묻습니다",
+        "id" : "probe",
         "prominent" : false,
         "requiresText" : false,
-        "scope" : "계획 하나",
+        "scope" : "질문 하나",
         "takesText" : true,
-        "title" : "hate"
+        "title" : "probe"
       },
       {
         "flags" : [
           "userInvoked"
         ],
-        "glyph" : "🗂️",
-        "help" : "새 사이클을 엽니다",
-        "id" : "plan",
+        "glyph" : "✏️",
+        "help" : "초안 하나를 엽니다",
+        "id" : "draft",
         "prominent" : false,
         "requiresText" : false,
-        "scope" : "새 사이클 하나",
+        "scope" : "초안 하나",
         "takesText" : true,
-        "title" : "plan"
+        "title" : "draft"
       },
       {
         "flags" : [
 
         ],
-        "glyph" : "🌀",
-        "help" : "사이클 전체를 돌립니다",
-        "id" : "loop",
+        "glyph" : "🔁",
+        "help" : "한 바퀴를 돕니다",
+        "id" : "cycle",
         "prominent" : false,
         "requiresText" : false,
-        "scope" : "전체 루프",
+        "scope" : "한 바퀴",
         "takesText" : true,
-        "title" : "loop"
+        "title" : "cycle"
       },
       {
         "flags" : [
 
         ],
-        "glyph" : "🧭",
-        "help" : "끝난 사이클에서 배운 것을 적습니다",
-        "id" : "memo",
+        "glyph" : "📝",
+        "help" : "남길 것을 적습니다",
+        "id" : "note",
         "prominent" : false,
         "requiresText" : false,
-        "scope" : "완료된 사이클 하나",
+        "scope" : "메모 하나",
         "takesText" : true,
-        "title" : "memo"
+        "title" : "note"
       },
       {
         "flags" : [
 
         ],
-        "glyph" : "🧱",
-        "help" : "배운 것만 들고 다시 시작합니다",
-        "id" : "work",
+        "glyph" : "🔄",
+        "help" : "처음부터 다시 합니다",
+        "id" : "reset",
         "prominent" : false,
         "requiresText" : false,
-        "scope" : "재시작 하나",
+        "scope" : "처음부터",
         "takesText" : true,
-        "title" : "work"
+        "title" : "reset"
       },
       {
         "flags" : [
           "userInvoked",
           "readOnly"
         ],
-        "glyph" : "🎯",
-        "help" : "다음 한 수를 고릅니다",
-        "id" : "nba",
+        "glyph" : "👀",
+        "help" : "지금 상태를 들여다봅니다",
+        "id" : "peek",
         "prominent" : false,
         "requiresText" : false,
-        "scope" : "현재 사이클",
+        "scope" : "지금 상태",
         "takesText" : true,
-        "title" : "nba"
+        "title" : "peek"
       }
     ],
     "attachments" : [
@@ -100,34 +100,34 @@
     "groups" : [
       {
         "actions" : [
-          "tidy",
-          "hate"
+          "sweep",
+          "probe"
         ],
-        "axis" : "하나 · 지금",
-        "id" : "depth",
-        "question" : "지금 이것 하나가 맞는가?",
+        "axis" : "가까이 · 지금",
+        "id" : "near",
+        "question" : "바로 끝낼 수 있는가?",
         "selected" : true,
-        "title" : "depth"
+        "title" : "near"
       },
       {
         "actions" : [
-          "plan",
-          "loop",
-          "memo",
-          "work",
-          "nba"
+          "draft",
+          "cycle",
+          "note",
+          "reset",
+          "peek"
         ],
-        "axis" : "하나 · 반복",
-        "id" : "coil",
-        "question" : "되풀이할수록 나아지는가?",
+        "axis" : "멀리 · 나중",
+        "id" : "far",
+        "question" : "나중에 다시 볼 것인가?",
         "selected" : false,
-        "title" : "coil"
+        "title" : "far"
       }
     ],
-    "guidance" : "대상(파일 경로나 지시)을 아래에 적고 스킬을 누르세요. 비워 두면 스킬만 보냅니다.",
+    "guidance" : "아래에 대상을 적고 행동을 누르세요. 비워 두면 행동만 보냅니다.",
     "next" : [
-      "tidy",
-      "hate"
+      "sweep",
+      "probe"
     ],
     "presentation" : {
       "headerTitle" : "Deck",
@@ -151,93 +151,93 @@
         "flags" : [
 
         ],
-        "glyph" : "♻️",
-        "help" : "아티팩트 하나를 다듬습니다",
-        "id" : "tidy",
+        "glyph" : "🧹",
+        "help" : "목록을 쓸어 정리합니다",
+        "id" : "sweep",
         "prominent" : true,
         "requiresText" : false,
-        "scope" : "아티팩트 하나",
+        "scope" : "목록 하나",
         "takesText" : true,
-        "title" : "tidy"
+        "title" : "sweep"
       },
       {
         "flags" : [
           "userInvoked"
         ],
-        "glyph" : "😈",
-        "help" : "계획의 가장 약한 곳을 찾아 반론 하나와 그것을 확인할 테스트를 냅니다",
-        "id" : "hate",
+        "glyph" : "🔍",
+        "help" : "약한 곳 하나를 짚어 묻습니다",
+        "id" : "probe",
         "prominent" : false,
         "requiresText" : false,
-        "scope" : "계획 하나",
+        "scope" : "질문 하나",
         "takesText" : true,
-        "title" : "hate"
+        "title" : "probe"
       },
       {
         "flags" : [
           "userInvoked"
         ],
-        "glyph" : "🗂️",
-        "help" : "새 사이클을 엽니다",
-        "id" : "plan",
+        "glyph" : "✏️",
+        "help" : "초안 하나를 엽니다",
+        "id" : "draft",
         "prominent" : false,
         "requiresText" : false,
-        "scope" : "새 사이클 하나",
+        "scope" : "초안 하나",
         "takesText" : true,
-        "title" : "plan"
+        "title" : "draft"
       },
       {
         "flags" : [
 
         ],
-        "glyph" : "🌀",
-        "help" : "사이클 전체를 돌립니다",
-        "id" : "loop",
+        "glyph" : "🔁",
+        "help" : "한 바퀴를 돕니다",
+        "id" : "cycle",
         "prominent" : false,
         "requiresText" : false,
-        "scope" : "전체 루프",
+        "scope" : "한 바퀴",
         "takesText" : true,
-        "title" : "loop"
+        "title" : "cycle"
       },
       {
         "flags" : [
 
         ],
-        "glyph" : "🧭",
-        "help" : "끝난 사이클에서 배운 것을 적습니다",
-        "id" : "memo",
+        "glyph" : "📝",
+        "help" : "남길 것을 적습니다",
+        "id" : "note",
         "prominent" : false,
         "requiresText" : false,
-        "scope" : "완료된 사이클 하나",
+        "scope" : "메모 하나",
         "takesText" : true,
-        "title" : "memo"
+        "title" : "note"
       },
       {
         "flags" : [
 
         ],
-        "glyph" : "🧱",
-        "help" : "배운 것만 들고 다시 시작합니다",
-        "id" : "work",
+        "glyph" : "🔄",
+        "help" : "처음부터 다시 합니다",
+        "id" : "reset",
         "prominent" : false,
         "requiresText" : false,
-        "scope" : "재시작 하나",
+        "scope" : "처음부터",
         "takesText" : true,
-        "title" : "work"
+        "title" : "reset"
       },
       {
         "flags" : [
           "userInvoked",
           "readOnly"
         ],
-        "glyph" : "🎯",
-        "help" : "다음 한 수를 고릅니다",
-        "id" : "nba",
+        "glyph" : "👀",
+        "help" : "지금 상태를 들여다봅니다",
+        "id" : "peek",
         "prominent" : false,
         "requiresText" : false,
-        "scope" : "현재 사이클",
+        "scope" : "지금 상태",
         "takesText" : true,
-        "title" : "nba"
+        "title" : "peek"
       }
     ],
     "attachments" : [
@@ -246,34 +246,34 @@
     "groups" : [
       {
         "actions" : [
-          "tidy",
-          "hate"
+          "sweep",
+          "probe"
         ],
-        "axis" : "하나 · 지금",
-        "id" : "depth",
-        "question" : "지금 이것 하나가 맞는가?",
+        "axis" : "가까이 · 지금",
+        "id" : "near",
+        "question" : "바로 끝낼 수 있는가?",
         "selected" : true,
-        "title" : "depth"
+        "title" : "near"
       },
       {
         "actions" : [
-          "plan",
-          "loop",
-          "memo",
-          "work",
-          "nba"
+          "draft",
+          "cycle",
+          "note",
+          "reset",
+          "peek"
         ],
-        "axis" : "하나 · 반복",
-        "id" : "coil",
-        "question" : "되풀이할수록 나아지는가?",
+        "axis" : "멀리 · 나중",
+        "id" : "far",
+        "question" : "나중에 다시 볼 것인가?",
         "selected" : false,
-        "title" : "coil"
+        "title" : "far"
       }
     ],
-    "guidance" : "대상(파일 경로나 지시)을 아래에 적고 스킬을 누르세요. 비워 두면 스킬만 보냅니다.",
+    "guidance" : "아래에 대상을 적고 행동을 누르세요. 비워 두면 행동만 보냅니다.",
     "next" : [
-      "tidy",
-      "hate"
+      "sweep",
+      "probe"
     ],
     "presentation" : {
       "headerTitle" : "Deck",
@@ -297,93 +297,93 @@
         "flags" : [
 
         ],
-        "glyph" : "♻️",
-        "help" : "아티팩트 하나를 다듬습니다",
-        "id" : "tidy",
+        "glyph" : "🧹",
+        "help" : "목록을 쓸어 정리합니다",
+        "id" : "sweep",
         "prominent" : true,
         "requiresText" : false,
-        "scope" : "아티팩트 하나",
+        "scope" : "목록 하나",
         "takesText" : true,
-        "title" : "tidy"
+        "title" : "sweep"
       },
       {
         "flags" : [
           "userInvoked"
         ],
-        "glyph" : "😈",
-        "help" : "계획의 가장 약한 곳을 찾아 반론 하나와 그것을 확인할 테스트를 냅니다",
-        "id" : "hate",
+        "glyph" : "🔍",
+        "help" : "약한 곳 하나를 짚어 묻습니다",
+        "id" : "probe",
         "prominent" : false,
         "requiresText" : false,
-        "scope" : "계획 하나",
+        "scope" : "질문 하나",
         "takesText" : true,
-        "title" : "hate"
+        "title" : "probe"
       },
       {
         "flags" : [
           "userInvoked"
         ],
-        "glyph" : "🗂️",
-        "help" : "새 사이클을 엽니다",
-        "id" : "plan",
+        "glyph" : "✏️",
+        "help" : "초안 하나를 엽니다",
+        "id" : "draft",
         "prominent" : false,
         "requiresText" : false,
-        "scope" : "새 사이클 하나",
+        "scope" : "초안 하나",
         "takesText" : true,
-        "title" : "plan"
+        "title" : "draft"
       },
       {
         "flags" : [
 
         ],
-        "glyph" : "🌀",
-        "help" : "사이클 전체를 돌립니다",
-        "id" : "loop",
+        "glyph" : "🔁",
+        "help" : "한 바퀴를 돕니다",
+        "id" : "cycle",
         "prominent" : false,
         "requiresText" : false,
-        "scope" : "전체 루프",
+        "scope" : "한 바퀴",
         "takesText" : true,
-        "title" : "loop"
+        "title" : "cycle"
       },
       {
         "flags" : [
 
         ],
-        "glyph" : "🧭",
-        "help" : "끝난 사이클에서 배운 것을 적습니다",
-        "id" : "memo",
+        "glyph" : "📝",
+        "help" : "남길 것을 적습니다",
+        "id" : "note",
         "prominent" : false,
         "requiresText" : false,
-        "scope" : "완료된 사이클 하나",
+        "scope" : "메모 하나",
         "takesText" : true,
-        "title" : "memo"
+        "title" : "note"
       },
       {
         "flags" : [
 
         ],
-        "glyph" : "🧱",
-        "help" : "배운 것만 들고 다시 시작합니다",
-        "id" : "work",
+        "glyph" : "🔄",
+        "help" : "처음부터 다시 합니다",
+        "id" : "reset",
         "prominent" : false,
         "requiresText" : false,
-        "scope" : "재시작 하나",
+        "scope" : "처음부터",
         "takesText" : true,
-        "title" : "work"
+        "title" : "reset"
       },
       {
         "flags" : [
           "userInvoked",
           "readOnly"
         ],
-        "glyph" : "🎯",
-        "help" : "다음 한 수를 고릅니다",
-        "id" : "nba",
+        "glyph" : "👀",
+        "help" : "지금 상태를 들여다봅니다",
+        "id" : "peek",
         "prominent" : false,
         "requiresText" : false,
-        "scope" : "현재 사이클",
+        "scope" : "지금 상태",
         "takesText" : true,
-        "title" : "nba"
+        "title" : "peek"
       }
     ],
     "attachments" : [
@@ -392,34 +392,34 @@
     "groups" : [
       {
         "actions" : [
-          "tidy",
-          "hate"
+          "sweep",
+          "probe"
         ],
-        "axis" : "하나 · 지금",
-        "id" : "depth",
-        "question" : "지금 이것 하나가 맞는가?",
+        "axis" : "가까이 · 지금",
+        "id" : "near",
+        "question" : "바로 끝낼 수 있는가?",
         "selected" : true,
-        "title" : "depth"
+        "title" : "near"
       },
       {
         "actions" : [
-          "plan",
-          "loop",
-          "memo",
-          "work",
-          "nba"
+          "draft",
+          "cycle",
+          "note",
+          "reset",
+          "peek"
         ],
-        "axis" : "하나 · 반복",
-        "id" : "coil",
-        "question" : "되풀이할수록 나아지는가?",
+        "axis" : "멀리 · 나중",
+        "id" : "far",
+        "question" : "나중에 다시 볼 것인가?",
         "selected" : false,
-        "title" : "coil"
+        "title" : "far"
       }
     ],
-    "guidance" : "대상(파일 경로나 지시)을 아래에 적고 스킬을 누르세요. 비워 두면 스킬만 보냅니다.",
+    "guidance" : "아래에 대상을 적고 행동을 누르세요. 비워 두면 행동만 보냅니다.",
     "next" : [
-      "tidy",
-      "hate"
+      "sweep",
+      "probe"
     ],
     "presentation" : {
       "headerTitle" : "Deck",
@@ -443,93 +443,93 @@
         "flags" : [
 
         ],
-        "glyph" : "♻️",
-        "help" : "아티팩트 하나를 다듬습니다",
-        "id" : "tidy",
+        "glyph" : "🧹",
+        "help" : "목록을 쓸어 정리합니다",
+        "id" : "sweep",
         "prominent" : false,
         "requiresText" : false,
-        "scope" : "아티팩트 하나",
+        "scope" : "목록 하나",
         "takesText" : true,
-        "title" : "tidy"
+        "title" : "sweep"
       },
       {
         "flags" : [
           "userInvoked"
         ],
-        "glyph" : "😈",
-        "help" : "계획의 가장 약한 곳을 찾아 반론 하나와 그것을 확인할 테스트를 냅니다",
-        "id" : "hate",
+        "glyph" : "🔍",
+        "help" : "약한 곳 하나를 짚어 묻습니다",
+        "id" : "probe",
         "prominent" : false,
         "requiresText" : false,
-        "scope" : "계획 하나",
+        "scope" : "질문 하나",
         "takesText" : true,
-        "title" : "hate"
+        "title" : "probe"
       },
       {
         "flags" : [
           "userInvoked"
         ],
-        "glyph" : "🗂️",
-        "help" : "새 사이클을 엽니다",
-        "id" : "plan",
+        "glyph" : "✏️",
+        "help" : "초안 하나를 엽니다",
+        "id" : "draft",
         "prominent" : true,
         "requiresText" : false,
-        "scope" : "새 사이클 하나",
+        "scope" : "초안 하나",
         "takesText" : true,
-        "title" : "plan"
+        "title" : "draft"
       },
       {
         "flags" : [
 
         ],
-        "glyph" : "🌀",
-        "help" : "사이클 전체를 돌립니다",
-        "id" : "loop",
+        "glyph" : "🔁",
+        "help" : "한 바퀴를 돕니다",
+        "id" : "cycle",
         "prominent" : false,
         "requiresText" : false,
-        "scope" : "전체 루프",
+        "scope" : "한 바퀴",
         "takesText" : true,
-        "title" : "loop"
+        "title" : "cycle"
       },
       {
         "flags" : [
 
         ],
-        "glyph" : "🧭",
-        "help" : "끝난 사이클에서 배운 것을 적습니다",
-        "id" : "memo",
+        "glyph" : "📝",
+        "help" : "남길 것을 적습니다",
+        "id" : "note",
         "prominent" : false,
         "requiresText" : false,
-        "scope" : "완료된 사이클 하나",
+        "scope" : "메모 하나",
         "takesText" : true,
-        "title" : "memo"
+        "title" : "note"
       },
       {
         "flags" : [
 
         ],
-        "glyph" : "🧱",
-        "help" : "배운 것만 들고 다시 시작합니다",
-        "id" : "work",
+        "glyph" : "🔄",
+        "help" : "처음부터 다시 합니다",
+        "id" : "reset",
         "prominent" : false,
         "requiresText" : false,
-        "scope" : "재시작 하나",
+        "scope" : "처음부터",
         "takesText" : true,
-        "title" : "work"
+        "title" : "reset"
       },
       {
         "flags" : [
           "userInvoked",
           "readOnly"
         ],
-        "glyph" : "🎯",
-        "help" : "다음 한 수를 고릅니다",
-        "id" : "nba",
+        "glyph" : "👀",
+        "help" : "지금 상태를 들여다봅니다",
+        "id" : "peek",
         "prominent" : false,
         "requiresText" : false,
-        "scope" : "현재 사이클",
+        "scope" : "지금 상태",
         "takesText" : true,
-        "title" : "nba"
+        "title" : "peek"
       }
     ],
     "attachments" : [
@@ -538,37 +538,37 @@
     "groups" : [
       {
         "actions" : [
-          "tidy",
-          "hate"
+          "sweep",
+          "probe"
         ],
-        "axis" : "하나 · 지금",
-        "id" : "depth",
-        "question" : "지금 이것 하나가 맞는가?",
+        "axis" : "가까이 · 지금",
+        "id" : "near",
+        "question" : "바로 끝낼 수 있는가?",
         "selected" : false,
-        "title" : "depth"
+        "title" : "near"
       },
       {
         "actions" : [
-          "plan",
-          "loop",
-          "memo",
-          "work",
-          "nba"
+          "draft",
+          "cycle",
+          "note",
+          "reset",
+          "peek"
         ],
-        "axis" : "하나 · 반복",
-        "id" : "coil",
-        "question" : "되풀이할수록 나아지는가?",
+        "axis" : "멀리 · 나중",
+        "id" : "far",
+        "question" : "나중에 다시 볼 것인가?",
         "selected" : true,
-        "title" : "coil"
+        "title" : "far"
       }
     ],
-    "guidance" : "대상(파일 경로나 지시)을 아래에 적고 스킬을 누르세요. 비워 두면 스킬만 보냅니다.",
+    "guidance" : "아래에 대상을 적고 행동을 누르세요. 비워 두면 행동만 보냅니다.",
     "next" : [
-      "plan",
-      "loop",
-      "memo",
-      "work",
-      "nba"
+      "draft",
+      "cycle",
+      "note",
+      "reset",
+      "peek"
     ],
     "presentation" : {
       "headerTitle" : "Deck",
@@ -592,93 +592,93 @@
         "flags" : [
 
         ],
-        "glyph" : "♻️",
-        "help" : "아티팩트 하나를 다듬습니다",
-        "id" : "tidy",
+        "glyph" : "🧹",
+        "help" : "목록을 쓸어 정리합니다",
+        "id" : "sweep",
         "prominent" : true,
         "requiresText" : false,
-        "scope" : "아티팩트 하나",
+        "scope" : "목록 하나",
         "takesText" : true,
-        "title" : "tidy"
+        "title" : "sweep"
       },
       {
         "flags" : [
           "userInvoked"
         ],
-        "glyph" : "😈",
-        "help" : "계획의 가장 약한 곳을 찾아 반론 하나와 그것을 확인할 테스트를 냅니다",
-        "id" : "hate",
+        "glyph" : "🔍",
+        "help" : "약한 곳 하나를 짚어 묻습니다",
+        "id" : "probe",
         "prominent" : false,
         "requiresText" : false,
-        "scope" : "계획 하나",
+        "scope" : "질문 하나",
         "takesText" : true,
-        "title" : "hate"
+        "title" : "probe"
       },
       {
         "flags" : [
           "userInvoked"
         ],
-        "glyph" : "🗂️",
-        "help" : "새 사이클을 엽니다",
-        "id" : "plan",
+        "glyph" : "✏️",
+        "help" : "초안 하나를 엽니다",
+        "id" : "draft",
         "prominent" : false,
         "requiresText" : false,
-        "scope" : "새 사이클 하나",
+        "scope" : "초안 하나",
         "takesText" : true,
-        "title" : "plan"
+        "title" : "draft"
       },
       {
         "flags" : [
 
         ],
-        "glyph" : "🌀",
-        "help" : "사이클 전체를 돌립니다",
-        "id" : "loop",
+        "glyph" : "🔁",
+        "help" : "한 바퀴를 돕니다",
+        "id" : "cycle",
         "prominent" : false,
         "requiresText" : false,
-        "scope" : "전체 루프",
+        "scope" : "한 바퀴",
         "takesText" : true,
-        "title" : "loop"
+        "title" : "cycle"
       },
       {
         "flags" : [
 
         ],
-        "glyph" : "🧭",
-        "help" : "끝난 사이클에서 배운 것을 적습니다",
-        "id" : "memo",
+        "glyph" : "📝",
+        "help" : "남길 것을 적습니다",
+        "id" : "note",
         "prominent" : false,
         "requiresText" : false,
-        "scope" : "완료된 사이클 하나",
+        "scope" : "메모 하나",
         "takesText" : true,
-        "title" : "memo"
+        "title" : "note"
       },
       {
         "flags" : [
 
         ],
-        "glyph" : "🧱",
-        "help" : "배운 것만 들고 다시 시작합니다",
-        "id" : "work",
+        "glyph" : "🔄",
+        "help" : "처음부터 다시 합니다",
+        "id" : "reset",
         "prominent" : false,
         "requiresText" : false,
-        "scope" : "재시작 하나",
+        "scope" : "처음부터",
         "takesText" : true,
-        "title" : "work"
+        "title" : "reset"
       },
       {
         "flags" : [
           "userInvoked",
           "readOnly"
         ],
-        "glyph" : "🎯",
-        "help" : "다음 한 수를 고릅니다",
-        "id" : "nba",
+        "glyph" : "👀",
+        "help" : "지금 상태를 들여다봅니다",
+        "id" : "peek",
         "prominent" : false,
         "requiresText" : false,
-        "scope" : "현재 사이클",
+        "scope" : "지금 상태",
         "takesText" : true,
-        "title" : "nba"
+        "title" : "peek"
       }
     ],
     "attachments" : [
@@ -687,34 +687,34 @@
     "groups" : [
       {
         "actions" : [
-          "tidy",
-          "hate"
+          "sweep",
+          "probe"
         ],
-        "axis" : "하나 · 지금",
-        "id" : "depth",
-        "question" : "지금 이것 하나가 맞는가?",
+        "axis" : "가까이 · 지금",
+        "id" : "near",
+        "question" : "바로 끝낼 수 있는가?",
         "selected" : true,
-        "title" : "depth"
+        "title" : "near"
       },
       {
         "actions" : [
-          "plan",
-          "loop",
-          "memo",
-          "work",
-          "nba"
+          "draft",
+          "cycle",
+          "note",
+          "reset",
+          "peek"
         ],
-        "axis" : "하나 · 반복",
-        "id" : "coil",
-        "question" : "되풀이할수록 나아지는가?",
+        "axis" : "멀리 · 나중",
+        "id" : "far",
+        "question" : "나중에 다시 볼 것인가?",
         "selected" : false,
-        "title" : "coil"
+        "title" : "far"
       }
     ],
-    "guidance" : "대상(파일 경로나 지시)을 아래에 적고 스킬을 누르세요. 비워 두면 스킬만 보냅니다.",
+    "guidance" : "아래에 대상을 적고 행동을 누르세요. 비워 두면 행동만 보냅니다.",
     "next" : [
-      "tidy",
-      "hate"
+      "sweep",
+      "probe"
     ],
     "presentation" : {
       "headerTitle" : "Deck",

@@ -8,7 +8,8 @@ import Testing
 /// that declares a plan-file source (`StyleFixtures.statefulStyle`, `styles/fixtures/loop.json`).
 struct StylePhaseFromStateTests {
     private let fm = FileManager.default
-    private var style: RegisteredStyle { StyleFixtures.statefulStyle }
+    private let style: RegisteredStyle
+    init() throws { style = try StyleFixtures.statefulStyle }
     private var sources: StyleStateSources { style.manifest.stateSources! }
 
     private func workspace(_ label: String) -> URL { StyleFixtures.temporaryDirectory("phase-state-" + label) }
@@ -41,7 +42,7 @@ struct StylePhaseFromStateTests {
         return (mac, phone, reading)
     }
 
-    @Test func aNewSessionOpensInBrainstormWhateverPlansAreLeftOver() throws {
+    @Test func aNewSessionOpensInItsFirstPhaseWhateverPlansAreLeftOver() throws {
         let root = workspace("new-session")
         defer { try? fm.removeItem(at: root) }
         // A finished plan from yesterday's work.
@@ -49,32 +50,32 @@ struct StylePhaseFromStateTests {
 
         // No request in the style yet: nothing is current.
         let fresh = phases(pane(since: nil), root: root)
-        #expect(fresh.mac == "brainstorm" && fresh.phone == "brainstorm")
+        #expect(fresh.mac == "sketch" && fresh.phone == "sketch")
         #expect(fresh.reading.fileSourceStates[0] == StyleFileSourceState(exists: false, allChecked: false))
         #expect(fresh.reading.widgets.first == .progressBar(value: 0, total: 0))
 
         // The first request was just made: the old plan is still stale.
-        let started = phases(pane(since: Date(timeIntervalSinceNow: -60), prompts: ["/loop:brainstorming 결제"]), root: root)
-        #expect(started.mac == "brainstorm" && started.phone == "brainstorm")
+        let started = phases(pane(since: Date(timeIntervalSinceNow: -60), prompts: ["/loop:sketch-idea 결제"]), root: root)
+        #expect(started.mac == "sketch" && started.phone == "sketch")
         #expect(started.reading.widgets.first == .progressBar(value: 0, total: 0))
     }
 
-    @Test func aStalePlanIsIgnoredAndAFreshOneAdvancesToExecute() throws {
+    @Test func aStalePlanIsIgnoredAndAFreshOneAdvancesToBuild() throws {
         let root = workspace("fresh-plan")
         defer { try? fm.removeItem(at: root) }
         let since = Date(timeIntervalSinceNow: -600)
         // Newer by name but older than the first request: not current.
         try plan("- [x] a\n", named: "2026-09-29-stale.md", in: root, modified: since.addingTimeInterval(-5))
-        let before = phases(pane(since: since, prompts: ["/loop:brainstorming 결제"]), root: root)
-        #expect(before.mac == "brainstorm" && before.phone == "brainstorm")
+        let before = phases(pane(since: since, prompts: ["/loop:sketch-idea 결제"]), root: root)
+        #expect(before.mac == "sketch" && before.phone == "sketch")
 
-        // writing-plans saved a plan after the first request.
+        // write-outline saved a plan after the first request.
         try plan("- [x] one\n- [ ] two\n- [ ] three\n", named: "2026-09-28-fresh.md", in: root, modified: since.addingTimeInterval(120))
-        let after = phases(pane(since: since, prompts: ["/loop:brainstorming 결제"]), root: root)
-        #expect(after.mac == "execute" && after.phone == "execute")
+        let after = phases(pane(since: since, prompts: ["/loop:sketch-idea 결제"]), root: root)
+        #expect(after.mac == "build" && after.phone == "build")
         #expect(after.reading.widgets.first == .progressBar(value: 1, total: 3))
-        // History alone would have said brainstorm: the state is what moved it.
-        #expect(style.evaluator.currentPhase(session: pane(since: since, prompts: ["/loop:brainstorming 결제"]))?.id == "brainstorm")
+        // History alone would have said sketch: the state is what moved it.
+        #expect(style.evaluator.currentPhase(session: pane(since: since, prompts: ["/loop:sketch-idea 결제"]))?.id == "sketch")
     }
 
     @Test func theNewestCurrentPlanIsTheOneRead() throws {
@@ -85,23 +86,23 @@ struct StylePhaseFromStateTests {
         try plan("- [x] a\n- [ ] b\n- [ ] c\n- [ ] d\n", named: "second.md", in: root, modified: since.addingTimeInterval(120))
         let result = phases(pane(since: since), root: root)
         #expect(result.reading.widgets.first == .progressBar(value: 1, total: 4))
-        #expect(result.mac == "execute" && result.phone == "execute")
+        #expect(result.mac == "build" && result.phone == "build")
     }
 
-    @Test func everyItemCheckedMovesToFinishAndACommandStandsWithoutAPlan() throws {
-        let root = workspace("finish")
+    @Test func everyItemCheckedMovesToWrapAndACommandStandsWithoutAPlan() throws {
+        let root = workspace("wrap")
         defer { try? fm.removeItem(at: root) }
         let since = Date(timeIntervalSinceNow: -600)
         try plan("- [x] one\n- [x] two\n", in: root, modified: since.addingTimeInterval(300))
-        let done = phases(pane(since: since, prompts: ["/loop:executing-plans"]), root: root)
-        #expect(done.mac == "finish" && done.phone == "finish")
+        let done = phases(pane(since: since, prompts: ["/loop:build-step"]), root: root)
+        #expect(done.mac == "wrap" && done.phone == "wrap")
         #expect(done.reading.widgets.first == .progressBar(value: 2, total: 2))
 
         // A plan command without a current plan file: the command's phase stands.
-        let empty = workspace("finish-empty")
+        let empty = workspace("wrap-empty")
         defer { try? fm.removeItem(at: empty) }
-        let planning = phases(pane(since: since, prompts: ["/loop:writing-plans"]), root: empty)
-        #expect(planning.mac == "plan" && planning.phone == "plan")
+        let planning = phases(pane(since: since, prompts: ["/loop:write-outline"]), root: empty)
+        #expect(planning.mac == "outline" && planning.phone == "outline")
     }
 
     @Test func enterStaysVerbatimWhateverTheStateSays() throws {
@@ -111,8 +112,8 @@ struct StylePhaseFromStateTests {
         try plan("- [ ] one\n", in: root, modified: since.addingTimeInterval(60))
         let result = phases(pane(since: since), root: root)
         let phase = style.manifest.phase(try #require(result.mac))
-        #expect(phase?.id == "execute")
-        for draft in ["결제 모듈 계속", "/loop:executing-plans", ""] {
+        #expect(phase?.id == "build")
+        for draft in ["결제 모듈 계속", "/loop:build-step", ""] {
             #expect(style.evaluator.enterBehaviour(draft: draft, phase: phase, hasAttachments: false, running: false,
                                                    hasRequests: false, startingNew: true) == .verbatim)
         }
@@ -150,7 +151,7 @@ struct StylePhaseFromStateTests {
     @Test func aSnapshotSavedBeforeTheMarkerExistedStillLoads() {
         // A pane saved by the previous app version: a style, no `mightyStyleSince`.
         let json = Data("""
-        {"version":1,"workspaces":[{"id":"ws-old","name":"Old","path":"/private/tmp","createdAt":"2026-09-01T00:00:00Z"}],"sessions":[{"id":"pane-old","workspaceId":"ws-old","title":"Claude","kind":"claude","provider":"claude","model":"default","settings":{"effort":"default","permissionMode":"manual"},"status":"completed","logs":[{"id":"u1","kind":"user","text":"/loop:writing-plans","timestamp":"2026-09-01T00:00:05Z"}],"createdAt":"2026-09-01T00:00:00Z","agentViewMode":"mighty","mightyStyle":"loop","mightyStyleHash":"abc"}],"layout":"grid","theme":"dark","sidebarWidth":252}
+        {"version":1,"workspaces":[{"id":"ws-old","name":"Old","path":"/private/tmp","createdAt":"2026-09-01T00:00:00Z"}],"sessions":[{"id":"pane-old","workspaceId":"ws-old","title":"Claude","kind":"claude","provider":"claude","model":"default","settings":{"effort":"default","permissionMode":"manual"},"status":"completed","logs":[{"id":"u1","kind":"user","text":"/loop:write-outline","timestamp":"2026-09-01T00:00:05Z"}],"createdAt":"2026-09-01T00:00:00Z","agentViewMode":"mighty","mightyStyle":"loop","mightyStyleHash":"abc"}],"layout":"grid","theme":"dark","sidebarWidth":252}
         """.utf8)
         let snapshot = StateRepository.decodeSnapshot(json)
         let pane = snapshot.sessions.first { $0.id == "pane-old" }
@@ -158,7 +159,7 @@ struct StylePhaseFromStateTests {
         #expect(pane != nil && pane?.mightyStyleSince == nil)
         // With no marker nothing on disk is current, so history alone decides.
         if let pane {
-            #expect(style.evaluator.currentPhase(session: pane, fileSourceStates: [:])?.id == "plan")
+            #expect(style.evaluator.currentPhase(session: pane, fileSourceStates: [:])?.id == "outline")
             #expect(StyleStateEngine.runEvents(from: pane, since: nil).isEmpty)
         }
     }
