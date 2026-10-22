@@ -1363,6 +1363,27 @@ internal static class AppUpdateVerification
             Check(File.ReadAllText(Path.Combine(stuckInstall, "MightyClaude.exe")) == "old" && !Directory.Exists(stuckPlan.BackupDirectory) && !Directory.Exists(stuckPlan.NewDirectory),
                 "the old install is back and nothing is left beside it");
 
+            // A copy that is not the staged tree (a file missing, or one of another size) is never swapped in: the install
+            // stays, the copy is removed, the staged update kept, and the reason goes to install.log.
+            foreach (var (name, spoil) in new (string, Action<string>)[]
+            {
+                ("missing", copy => File.Delete(Path.Combine(copy, "lib.dll"))),
+                ("short", copy => File.WriteAllText(Path.Combine(copy, "lib.dll"), "x")),
+            })
+            {
+                var (copyInstall, _, copyPlan) = await SwapFixture(Path.Combine(root, "copy-" + name), relaunch: true);
+                await File.WriteAllTextAsync(Path.Combine(copyPlan.StagedDirectory, "lib.dll"), "library");
+                var copyStarts = 0;
+                var spoiled = await AppUpdateReplacement.RunAsync(copyPlan, _ => Task.FromResult(true), _ => { copyStarts++; return Task.CompletedTask; },
+                    (source, destination) => { AppUpdateReplacement.CopyDirectory(source, destination); spoil(destination); });
+                Check(!spoiled.Replaced && !spoiled.RolledBack && spoiled.Moves.Count == 0 && spoiled.Error?.Contains("does not match the staged update", StringComparison.Ordinal) == true,
+                    $"a {name} copy is refused before the renames; got replaced {spoiled.Replaced}, error '{spoiled.Error}'");
+                Check(File.ReadAllText(Path.Combine(copyInstall, "MightyClaude.exe")) == "old" && !Directory.Exists(copyPlan.NewDirectory)
+                    && File.Exists(Path.Combine(copyPlan.StagedDirectory, "lib.dll")) && copyStarts == 1 && spoiled.Started,
+                    "the install stays, the copy is removed, the staged update kept, and the app the user had starts again");
+            }
+            Check(AppUpdateReplacement.TreeMismatch(plan.StagedDirectory, plan.StagedDirectory) is null, "a tree matches itself");
+
             // A check for the app running again that throws, at once or later, keeps everything and says why.
             var (unsureInstall, _, unsurePlan) = await SwapFixture(Path.Combine(root, "unsure"), relaunch: false);
             var starts = 0;
@@ -1383,10 +1404,11 @@ internal static class AppUpdateVerification
     }
 
     /// A version an install on quit kept for the next quit (the app was opened
-    /// again first) is found at the next start, checked against the signed
-    /// manifest at once and staged again from the package on disk: only the
-    /// manifest is fetched. With the switch off, or nothing newer kept, the
-    /// start checks nothing.
+    /// again first) is found after the next start, checked against the signed
+    /// manifest and staged again from the package on disk: only the manifest is
+    /// fetched. While staging is busy (the helper still runs from the staged
+    /// folder, or its copy is fresh) it waits without failing, as does any
+    /// download. With the switch off, or nothing newer kept, nothing is checked.
     internal static async Task AKeptUpdateIsStagedAgainWithoutADownload()
     {
         var root = Temp();
@@ -1404,23 +1426,53 @@ internal static class AppUpdateVerification
             using var service = new AppUpdateService(state, FixtureKey, handler);
 
             // The run before staged it; its install on quit found the app open again and kept updates/ as it was.
-            var before = new AppUpdateCoordinator(service, "0.1.0", ManifestUrl, "x64", install, _ => Task.CompletedTask, () => true);
-            Check(!await before.CheckKeptUpdateAsync(null, DateTimeOffset.UtcNow), "with nothing kept the start checks nothing");
+            var before = new AppUpdateCoordinator(service, "0.1.0", ManifestUrl, "x64", install, _ => Task.CompletedTask, () => true, () => false);
+            Check(await before.CheckKeptUpdateAsync(null, DateTimeOffset.UtcNow) == AppUpdateKeptCheck.None, "with nothing kept the start checks nothing");
             await before.CheckAsync(null);
             Check(before.State.Phase == AppUpdatePhase.Ready, "the run before ends ready: " + before.State.ErrorMessage);
             Check(service.KeptVersion("0.1.0") == "9.9.9" && service.KeptVersion("9.9.9") is null && service.KeptVersion("10.0.0") is null,
                 "the kept version is found only by a version older than it");
+            // The helper's staged folder, as it runs from it.
+            var helperFile = Path.Combine(before.State.StagedDirectory!, "helper-running.txt");
+            await File.WriteAllTextAsync(helperFile, "in use");
 
-            var off = new AppUpdateCoordinator(service, "0.1.0", ManifestUrl, "x64", install, _ => Task.CompletedTask, () => false);
-            Check(!await off.CheckKeptUpdateAsync(null, DateTimeOffset.UtcNow) && off.State.Phase == AppUpdatePhase.Idle, "with the switch off the start checks nothing");
+            var off = new AppUpdateCoordinator(service, "0.1.0", ManifestUrl, "x64", install, _ => Task.CompletedTask, () => false, () => false);
+            Check(await off.CheckKeptUpdateAsync(null, DateTimeOffset.UtcNow) == AppUpdateKeptCheck.None && off.State.Phase == AppUpdatePhase.Idle, "with the switch off the start checks nothing");
 
+            // While the helper still runs from the staged folder (or its copy is fresh) the kept update waits, tick after tick:
+            // nothing is fetched, unpacked or counted as an attempt, and nothing fails.
+            var busy = true;
             var requests = handler.Requested.Count;
-            var next = new AppUpdateCoordinator(service, "0.1.0", ManifestUrl, "x64", install, _ => Task.CompletedTask, () => true);
+            var next = new AppUpdateCoordinator(service, "0.1.0", ManifestUrl, "x64", install, _ => Task.CompletedTask, () => true, () => busy);
+            for (var tick = 0; tick < 2; tick++)
+                Check(await next.CheckKeptUpdateAsync(null, DateTimeOffset.UtcNow) == AppUpdateKeptCheck.Waiting && next.State.Phase == AppUpdatePhase.Idle
+                    && next.LastAttempt is null && next.State.LastError is null && handler.Requested.Count == requests && File.Exists(helperFile),
+                    "a kept update waits while staging is busy, with nothing fetched, failed or touched");
+
+            // Once the helper is gone the next tick checks it and stages it again from the package on disk.
+            busy = false;
             var now = DateTimeOffset.UtcNow;
-            Check(await next.CheckKeptUpdateAsync(null, now) && next.State.Phase == AppUpdatePhase.Ready && next.State.InstallPlan is not null && next.LastAttempt == now,
-                "the kept update is checked at once and ready again: " + next.State.ErrorMessage);
+            Check(await next.CheckKeptUpdateAsync(null, now) == AppUpdateKeptCheck.Checked && next.State.Phase == AppUpdatePhase.Ready && next.State.InstallPlan is not null && next.LastAttempt == now,
+                "the kept update is checked and ready again: " + next.State.ErrorMessage);
             Check(handler.Requested.Skip(requests).Select(url => url.ToString()).SequenceEqual([ManifestUrl]), "only the manifest is fetched; the package on disk is used again");
-            Check(File.Exists(Path.Combine(next.State.StagedDirectory!, "MightyClaude.exe")), "the package is staged again");
+            Check(File.Exists(Path.Combine(next.State.StagedDirectory!, "MightyClaude.exe")) && !File.Exists(helperFile), "the package is staged afresh");
+
+            // Any download waits the same way: before it starts nothing under updates/ is touched, and a download that finds
+            // staging busy once it is done leaves the update Available, with no error, until a later tick stages it.
+            await File.WriteAllTextAsync(helperFile, "in use");
+            var answers = new Queue<bool>([true]);
+            var later = new AppUpdateCoordinator(service, "0.1.0", ManifestUrl, "x64", install, _ => Task.CompletedTask, () => true, () => answers.Count > 0 && answers.Dequeue());
+            await later.CheckAsync(null);
+            Check(later.State.Phase == AppUpdatePhase.Available && later.StagingDeferred && later.State.LastError is null && later.State.ErrorMessage is null && File.Exists(helperFile),
+                $"a download while staging is busy waits without touching updates/; got {later.State.Phase}, deferred {later.StagingDeferred}");
+            answers = new Queue<bool>([false, true]);
+            await later.RetryDeferredStagingAsync();
+            Check(later.State.Phase == AppUpdatePhase.Available && later.StagingDeferred && later.State.LastError is null && File.Exists(helperFile),
+                $"busy again before unpacking, it stays Available and the staged folder is not touched; got {later.State.Phase}");
+            requests = handler.Requested.Count;
+            await later.RetryDeferredStagingAsync();
+            Check(later.State.Phase == AppUpdatePhase.Ready && !later.StagingDeferred && handler.Requested.Count == requests && !File.Exists(helperFile),
+                "a later tick stages it from the package on disk: " + later.State.ErrorMessage);
         }
         finally { Directory.Delete(root, true); }
     }

@@ -40,6 +40,11 @@ public static class AppUpdateBuild
         RuntimeInformation.ProcessArchitecture == System.Runtime.InteropServices.Architecture.Arm64 ? "arm64" : "x64";
 }
 
+/// What a look for a kept update at start found: nothing kept (or the switch
+/// off), a kept update that must wait (staging is busy, or a check or download
+/// is running), or a kept update that was checked.
+public enum AppUpdateKeptCheck { None, Waiting, Checked }
+
 /// What the app update section is showing right now. Not saved state.
 public sealed record AppUpdateState
 {
@@ -147,6 +152,7 @@ public sealed class AppUpdateCoordinator
     private readonly string? installDirectory;
     private readonly Func<AppUpdateInstallPlan, Task>? launchHelper;
     private readonly Func<bool> automatic;
+    private readonly Func<bool> stagingBusy;
     private CancellationTokenSource? work;
     private bool closing;
     private bool checking;
@@ -161,10 +167,12 @@ public sealed class AppUpdateCoordinator
         string? architecture = null,
         string? installDirectory = null,
         Func<AppUpdateInstallPlan, Task>? launchHelper = null,
-        Func<bool>? automatic = null)
+        Func<bool>? automatic = null,
+        Func<bool>? stagingBusy = null)
     {
         this.service = service;
         this.automatic = automatic ?? (() => false);
+        this.stagingBusy = stagingBusy ?? (() => AppUpdateReplacement.StagingBusy(service.UpdatesDirectory, installDirectory));
         this.currentVersion = currentVersion;
         this.architecture = architecture ?? AppUpdateBuild.Architecture;
         this.installDirectory = installDirectory;
@@ -204,19 +212,40 @@ public sealed class AppUpdateCoordinator
         return true;
     }
 
-    /// At app start: an update an install on quit kept (the app was opened
-    /// again before it could swap) is checked against the signed manifest right
-    /// away instead of waiting for the next due check, and, while it is still
-    /// the newest for this machine and the switch is on, staged again from the
-    /// package on disk without a second download (`AppUpdateService.KeptVersion`,
-    /// `DownloadAsync`). True when it checked.
-    public async Task<bool> CheckKeptUpdateAsync(string? userUrl, DateTimeOffset now)
+    /// After app start, on the loop's ticks: an update an install on quit kept
+    /// (the app was opened again before it could swap) is checked against the
+    /// signed manifest without waiting for the next due check, and, while it is
+    /// still the newest for this machine and the switch is on, staged again from
+    /// the package on disk without a second download (`AppUpdateService.KeptVersion`,
+    /// `DownloadAsync`). While staging is busy (that helper still runs from the
+    /// staged folder, or its copy is fresh) or a check or download runs, it
+    /// waits: nothing is changed, no attempt is counted, and the next tick asks again.
+    public async Task<AppUpdateKeptCheck> CheckKeptUpdateAsync(string? userUrl, DateTimeOffset now)
     {
-        if (closing || Busy || checking || !Automatic || !HasPublicKey) return false;
-        if (service.KeptVersion(currentVersion) is null) return false;
+        if (closing || !Automatic || !HasPublicKey) return AppUpdateKeptCheck.None;
+        if (service.KeptVersion(currentVersion) is null) return AppUpdateKeptCheck.None;
+        if (Busy || checking || StagingMustWait()) return AppUpdateKeptCheck.Waiting;
         LastAttempt = now;
         await CheckAsync(userUrl);
-        return true;
+        return AppUpdateKeptCheck.Checked;
+    }
+
+    /// A download that found staging busy (see `StagingMustWait`) left the
+    /// update Available, with no error, to be staged later.
+    public bool StagingDeferred { get; private set; }
+
+    /// On the loop's ticks, with the switch on: a deferred download is tried
+    /// again (the package on disk is used again when it still matches).
+    public Task RetryDeferredStagingAsync() =>
+        StagingDeferred && Automatic && State.Phase == AppUpdatePhase.Available ? DownloadAsync() : Task.CompletedTask;
+
+    /// True while unpacking must wait (`AppUpdateReplacement.StagingBusy`):
+    /// staging deletes and rewrites the staged folder an install on quit's
+    /// helper may still run from or copy. A check that throws reads as busy.
+    private bool StagingMustWait()
+    {
+        try { return stagingBusy(); }
+        catch (Exception error) when (error is not OutOfMemoryException) { return true; }
     }
 
     public async Task CheckAsync(string? userUrl)
@@ -310,12 +339,22 @@ public sealed class AppUpdateCoordinator
             Fail(Locale.Get("appUpdate.error.noPackageForArchitecture", new Dictionary<string, string> { ["architecture"] = architecture }));
             return;
         }
+        // Nothing under updates/ is touched while staging is busy: the update stays Available, with no error, and waits.
+        if (StagingMustWait()) { StagingDeferred = true; return; }
+        StagingDeferred = false;
         Mutate(s => s with { Phase = AppUpdatePhase.Downloading, DownloadFraction = 0, ErrorMessage = null });
         work = new();
         try
         {
             var package = await service.DownloadAsync(
                 asset, manifest.Version, fraction => Mutate(s => s with { DownloadFraction = fraction }), work.Token);
+            // Asked again right before unpacking: the download took time.
+            if (StagingMustWait())
+            {
+                StagingDeferred = true;
+                Mutate(s => s with { Phase = AppUpdatePhase.Available, DownloadFraction = 0, PackagePath = null });
+                return;
+            }
             Mutate(s => s with { Phase = AppUpdatePhase.Staging, PackagePath = package });
 
             // Unpacking is off the caller's thread (the app's dispatcher); the state is changed back on it.
@@ -332,6 +371,14 @@ public sealed class AppUpdateCoordinator
         }
         catch (Exception error) { Fail(error.Message); }
         finally { work?.Dispose(); work = null; }
+    }
+
+    /// The relaunch helper was started but the app could not quit (its
+    /// shutdown failed): the update is Ready again, so "restart now" and the
+    /// install on quit still offer it.
+    public void InstallAbandoned()
+    {
+        if (State.Phase == AppUpdatePhase.Installing) Mutate(s => s with { Phase = AppUpdatePhase.Ready });
     }
 
     public void CancelDownload()
