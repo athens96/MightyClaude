@@ -172,4 +172,36 @@ struct MobilePushRelayTests {
         #expect(MobilePushHTTPTransport.retryAfter("999999") == 3600)
         for bad in [nil, "", "-1", "nan", "inf", "Wed, 21 Oct 2026 07:28:00 GMT"] { #expect(MobilePushHTTPTransport.retryAfter(bad) == nil) }
     }
+
+    /// A relay that answers 3xx is refused, not followed: the bearer token and the envelope go nowhere else.
+    @Test func aRedirectIsAFailureAndIsNeverFollowed() async throws {
+        let hits = PushHits()
+        let elsewhere = HTTPServer(address: "127.0.0.1", port: 0) { _ in hits.hit(); return HTTPResponse(status: 200, body: Data("{}".utf8)) }
+        let elsewherePort = try await elsewhere.start()
+        let redirecting = HTTPServer(address: "127.0.0.1", port: 0) { _ in
+            HTTPResponse(status: 307, body: Data(), headers: ["Location": "http://127.0.0.1:\(elsewherePort)/push/v1/send"])
+        }
+        let port = try await redirecting.start()
+        let url = try #require(URL(string: "http://127.0.0.1:\(port)/push/v1/send"))
+        let outcome = await MobilePushHTTPTransport().send(MobilePushSendRequest(serverId: "s", handle: "h", payload: "p"), to: url, hostToken: "t")
+        #expect(outcome == .failed(status: 307))
+        #expect(hits.count == 0)
+        await redirecting.stop(); await elsewhere.stop()
+    }
+
+    @Test func theRedirectPolicyAnswersNil() {
+        let session = URLSession.shared, task = session.dataTask(with: URL(string: "https://relay.example.invalid/")!)
+        let response = HTTPURLResponse(url: URL(string: "https://relay.example.invalid/")!, statusCode: 302, httpVersion: nil, headerFields: nil)!
+        var decision: URLRequest?? = nil
+        MobilePushNoRedirect.shared.urlSession(session, task: task, willPerformHTTPRedirection: response,
+                                               newRequest: URLRequest(url: URL(string: "https://relay.example.invalid/next")!)) { decision = .some($0) }
+        #expect(decision == .some(nil))
+    }
+}
+
+private final class PushHits: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+    var count: Int { lock.lock(); defer { lock.unlock() }; return value }
+    func hit() { lock.lock(); value += 1; lock.unlock() }
 }

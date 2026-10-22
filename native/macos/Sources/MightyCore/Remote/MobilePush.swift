@@ -349,7 +349,7 @@ public struct MobilePushHTTPTransport: MobilePushTransport {
         http.setValue("application/json", forHTTPHeaderField: "Content-Type")
         http.setValue("Bearer " + hostToken, forHTTPHeaderField: "Authorization")
         http.httpBody = try? JSONEncoder().encode(request)
-        guard let (_, response) = try? await session.data(for: http), let answer = response as? HTTPURLResponse else { return .retry(after: nil) }
+        guard let (_, response) = try? await session.data(for: http, delegate: MobilePushNoRedirect.shared), let answer = response as? HTTPURLResponse else { return .retry(after: nil) }
         return MobilePushSendOutcome(status: answer.statusCode, retryAfter: Self.retryAfter(answer.value(forHTTPHeaderField: "Retry-After")))
     }
     /// Seconds only (an HTTP date counts as absent), finite, not negative, at most `maximumRetryAfter`.
@@ -357,4 +357,12 @@ public struct MobilePushHTTPTransport: MobilePushTransport {
         guard let header, let seconds = TimeInterval(header.trimmingCharacters(in: .whitespaces)), seconds.isFinite, seconds >= 0 else { return nil }
         return min(seconds, maximumRetryAfter)
     }
+}
+
+/// A relay that answers 3xx is not followed: the bearer token and the envelope go to the relay
+/// the user set and nowhere else, and the 3xx itself comes back as `.failed(status:)`.
+final class MobilePushNoRedirect: NSObject, URLSessionTaskDelegate, Sendable {
+    static let shared = MobilePushNoRedirect()
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
 }

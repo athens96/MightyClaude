@@ -242,6 +242,8 @@ public actor MobileRemoteService {
     /// Test seam; see `keyRotationFailure`.
     func setKeyRotationFailure(_ value: String?) { keyRotationFailure = value }
     public func setAppVersion(_ value: String) { appVersion = value }
+    /// Test seam: settings taken as they are, without dialling the relay or binding the direct path.
+    func setSettingsWithoutStarting(_ value: MobileRemoteSettings) { settings = value.normalized }
     /// Test seam; see `keepaliveInterval`.
     func setKeepaliveInterval(_ value: TimeInterval) { keepaliveInterval = value }
     /// Test seam; see `disconnectPause`.
@@ -1452,7 +1454,9 @@ extension MobileRemoteService {
         let now = pushClock()
         let stamp = ISO8601DateFormatter().string(from: now)
         let messages = pushPlanner.observe(panes, hostId: hostId, hostName: hostName, at: stamp)
-        guard !messages.isEmpty else { return [] }
+        // Off, the planner still watches, so turning phone remote access on later does not
+        // send everything that happened meanwhile; only delivery waits for the switch.
+        guard settings.enabled, !messages.isEmpty else { return [] }
         let devices = deviceRegistry.pushDevices()
         guard !devices.isEmpty else { return [] }
         guard let relay = relayURL, let url = MobilePushRelay.sendURL(relay), let hostToken = try? loadOrCreateControlToken() else {

@@ -225,6 +225,7 @@ extension AppStore {
         $delegationHeld.sink { [weak self] value in self?.mobileObserve(held: value) }.store(in: &mobileSubscriptions)
         // A child pane's parent and state ride in its summary.
         $delegationChildren.sink { [weak self] value in self?.mobileObserve(children: value) }.store(in: &mobileSubscriptions)
+        configureMobilePush()
         // Asleep, the Mac missed the relay's pings and its control socket may be
         // gone on the relay's side while it still looks open here.
         NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)

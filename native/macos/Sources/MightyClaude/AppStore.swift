@@ -69,6 +69,8 @@ final class AppStore: ObservableObject, DelegationHost {
     /// The phone's structure view per pane, kept between reads (`MobileStructureCache`).
     let mobileStructures = MobileStructureCache()
     var mobileSubscriptions = Set<AnyCancellable>()
+    /// The last hand-off to the push planner; each waits for the one before, so observations keep their order.
+    var mobilePushTask: Task<Void, Never>?
     var mobileRetryTask: Task<Void, Never>?
     /// Settings → Components (AppStore+Components.swift).
     @Published var components: [ComponentStatus] = []
