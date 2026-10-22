@@ -90,6 +90,29 @@ describe('PushHandleStore', () => {
     expect(await second.refresh(made.handle, made.secret, TOKEN_B, 4)).toBe(true);
   });
 
+  it('keeps a handle that is used daily alive across a restart past the idle limit', async () => {
+    const folder = await mkdtemp(join(tmpdir(), 'push-store-'));
+    const path = join(folder, 'push-handles.json');
+    const idleMs = 120 * DAY;
+    const first = await PushHandleStore.open(options(path, { idleMs }), 0);
+    const made = (await first.register(TOKEN_A, 0))!;
+    for (let day = 1; day <= 130; day += 1) {
+      expect(await first.bind(made.handle, SERVER_1, day * DAY)).toEqual({ kind: 'ok', fcmToken: TOKEN_A });
+      await first.flush();
+    }
+    const second = await PushHandleStore.open(options(path, { idleMs }), 130 * DAY + 1);
+    expect(await second.bind(made.handle, SERVER_1, 130 * DAY + 2)).toEqual({ kind: 'ok', fcmToken: TOKEN_A });
+  });
+
+  it('refuses a malformed FCM token on register and refresh', async () => {
+    const store = await PushHandleStore.open(options(''), 0);
+    expect(await store.register('too short', 0)).toBeNull();
+    expect(store.size).toBe(0);
+    const made = (await store.register(TOKEN_A, 0))!;
+    expect(await store.refresh(made.handle, made.secret, 'has a space in it, not valid at all', 1)).toBe(false);
+    expect(await store.bind(made.handle, SERVER_1, 2)).toEqual({ kind: 'ok', fcmToken: TOKEN_A });
+  });
+
   it('moves an unreadable file aside and starts empty', async () => {
     const folder = await mkdtemp(join(tmpdir(), 'push-store-'));
     const path = join(folder, 'push-handles.json');

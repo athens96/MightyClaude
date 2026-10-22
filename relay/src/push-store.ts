@@ -62,6 +62,8 @@ function validRecord(value: unknown): value is PushHandleRecord {
  */
 export class PushHandleStore {
   readonly #records = new Map<string, PushHandleRecord>();
+  /** The usedAt value last written to disk, per handle; keeps bind's daily write from being starved by its own updates. */
+  readonly #persistedUsedAt = new Map<string, number>();
   readonly #options: PushStoreOptions;
   #writing: Promise<void> = Promise.resolve();
 
@@ -80,6 +82,7 @@ export class PushHandleStore {
   }
 
   async register(fcmToken: string, now: number): Promise<{ handle: string; secret: string } | null> {
+    if (!FCM_TOKEN_PATTERN.test(fcmToken)) return null;
     this.#dropIdle(now);
     if (this.#records.size >= this.#options.maxHandles) return null;
     const handle = newPushSecret();
@@ -91,7 +94,7 @@ export class PushHandleStore {
 
   async refresh(handle: string, secret: string, fcmToken: string, now: number): Promise<boolean> {
     const record = this.#owned(handle, secret);
-    if (record === null) return false;
+    if (record === null || !FCM_TOKEN_PATTERN.test(fcmToken)) return false;
     record.fcmToken = fcmToken;
     record.usedAt = now;
     await this.#save();
@@ -110,10 +113,10 @@ export class PushHandleStore {
     if (record === undefined) return { kind: 'unknown' };
     if (record.serverId !== null && record.serverId !== serverId) return { kind: 'foreign' };
     const firstUse = record.serverId === null;
-    const stale = now - record.usedAt > DAY_MS;
+    const stale = now - (this.#persistedUsedAt.get(handle) ?? record.usedAt) > DAY_MS;
     record.serverId = serverId;
     record.usedAt = now;
-    // usedAt reaches the disk at most daily per handle; it only feeds the idle sweep.
+    // usedAt reaches the disk at most daily per handle (measured from the last write); it only feeds the idle sweep.
     if (firstUse || stale) await this.#save();
     return { kind: 'ok', fcmToken: record.fcmToken };
   }
@@ -168,12 +171,15 @@ export class PushHandleStore {
     const path = this.#options.path;
     if (path === '') return Promise.resolve();
     const snapshot = JSON.stringify({ v: 1, handles: [...this.#records.values()] });
+    const written = new Map([...this.#records.values()].map((r) => [r.handle, r.usedAt] as const));
     this.#writing = this.#writing
       .then(async () => {
         await mkdir(dirname(path), { recursive: true, mode: 0o700 });
         const temporary = `${path}.tmp`;
         await writeFile(temporary, snapshot, { mode: 0o600 });
         await rename(temporary, path);
+        this.#persistedUsedAt.clear();
+        for (const [handle, usedAt] of written) this.#persistedUsedAt.set(handle, usedAt);
       })
       .catch((error: unknown) => {
         // Memory still answers; the next write tries again.
