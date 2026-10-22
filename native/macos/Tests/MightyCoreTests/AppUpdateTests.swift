@@ -184,7 +184,7 @@ import Testing
         #expect(kill(pid, 0) == -1 && errno == ESRCH)
         let script = AppUpdateService.installScript(stagedApp: staged, destination: installed, pid: pid, relaunch: false)
         #expect(script.hasPrefix("#!/bin/sh") && script.contains("PATH=/usr/bin:/bin") && script.contains("PID=\(pid)\n") && script.contains("kill -0 \"$PID\""))
-        #expect(script.contains("MightyClaude.app.bak") && script.contains("lsregister") && script.contains("\nsleep 2\n"))
+        #expect(script.contains("OLD=\"$DESTINATION.update-old\"") && script.contains("lsregister") && script.contains("\nsleep 2\n"))
         #expect(script.contains("DESTINATION='" + root.path + "/Apps (it'\\''s here)/MightyClaude.app'"))
         #expect(!script.contains("open -n") && AppUpdateService.installScript(stagedApp: staged, destination: installed, pid: 1).contains("open -n \"$DESTINATION\""))
         // Run the real helper: the pid is gone, so it proceeds at once. Its own last word is the
@@ -209,7 +209,33 @@ import Testing
         #expect(plist?["CFBundleShortVersionString"] as? String == "0.2.0")
         #expect(!FileManager.default.fileExists(atPath: staged.path)) // staged folder removed
         #expect(!FileManager.default.fileExists(atPath: installed.path + ".update-new"))
-        let backups = (try? FileManager.default.contentsOfDirectory(atPath: NSTemporaryDirectory()))?.filter { $0.hasPrefix("MightyClaude-app-backup-") && $0.contains("T") } ?? []
-        #expect(backups.allSatisfy { !FileManager.default.fileExists(atPath: NSTemporaryDirectory() + $0 + "/MightyClaude.app/Contents/Info.plist") || (try? String(contentsOfFile: NSTemporaryDirectory() + $0 + "/MightyClaude.app/Contents/Info.plist", encoding: .utf8))?.contains("0.1.0") != true })
+        #expect(!FileManager.default.fileExists(atPath: installed.path + ".update-old")) // the old app is gone once the swap succeeded
+    }
+
+    /// Installing when the app quits: the helper does not start the app again, and if a copy of
+    /// the app is running from the destination by the time it would swap, it leaves the bundle
+    /// alone (the update stays staged for the next quit).
+    @Test func installOnQuitNeitherRelaunchesNorSwapsUnderARunningApp() {
+        let staged = URL(fileURLWithPath: "/tmp/updates/0.2.0/staged/MightyClaude.app")
+        let destination = URL(fileURLWithPath: "/Applications/Mighty (it's) [1].app")
+        let quiet = AppUpdateService.installScript(stagedApp: staged, destination: destination, pid: 42, relaunch: false)
+        #expect(!quiet.contains("open -n"))
+        #expect(quiet.contains("pgrep -f"))
+        // The pattern is the destination's executable folder with every regex character escaped.
+        #expect(quiet.contains("pgrep -f '/Applications/Mighty \\(it'\\''s\\) \\[1\\]\\.app/Contents/MacOS/'"))
+        #expect(quiet.contains("OLD=\"$DESTINATION.update-old\"") && quiet.contains("mv \"$DESTINATION\" \"$OLD\"") && quiet.contains("mv \"$NEW\" \"$DESTINATION\"") && quiet.contains("rm -rf \"$OLD\""))
+        // The running check comes after the new copy is ready and before the old app is moved aside.
+        let check = quiet.range(of: "pgrep -f")!.lowerBound
+        #expect(quiet.range(of: "ditto \"$SOURCE\" \"$NEW\"")!.lowerBound < check)
+        #expect(check < quiet.range(of: "mv \"$DESTINATION\" \"$OLD\"")!.lowerBound)
+        // A failed swap puts the old app back.
+        #expect(quiet.contains("mv \"$OLD\" \"$DESTINATION\""))
+        // No copy into a temporary backup any more: the swap is two renames.
+        #expect(!quiet.contains("BACKUP") && !quiet.contains("MightyClaude.app.bak"))
+
+        let relaunching = AppUpdateService.installScript(stagedApp: staged, destination: destination, pid: 42, relaunch: true)
+        #expect(relaunching.contains("open -n \"$DESTINATION\""))
+        #expect(!relaunching.contains("pgrep"))
+        #expect(relaunching.contains("OLD=\"$DESTINATION.update-old\"") && relaunching.contains("rm -rf \"$OLD\""))
     }
 }

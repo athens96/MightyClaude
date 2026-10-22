@@ -283,8 +283,17 @@ public actor AppUpdateService {
     }
 
     /// The helper waits for the running app to exit, copies the new bundle
-    /// beside the old one, swaps them in one move, keeps a backup until the
-    /// swap succeeded, and relaunches. Paths are single-quoted for `sh`.
+    /// beside the old one and swaps them by renaming: the installed app moves
+    /// to `<destination>.update-old`, the copy takes its place, and the old one
+    /// is deleted once that worked (or moved back when it did not). Paths are
+    /// single-quoted for `sh`.
+    ///
+    /// `relaunch: true` (the user's "restart now", or the idle countdown)
+    /// opens the new app afterwards. `relaunch: false` installs while the app
+    /// quits for good: nothing is opened, and if a copy of the app is running
+    /// from the destination again by the time the swap would happen (`pgrep`
+    /// on its `Contents/MacOS/` folder), the bundle is left alone and the
+    /// update stays staged for the next quit.
     ///
     /// Two extra steps keep the macOS input method attached to the right
     /// bundle: the staged copy is unregistered from LaunchServices and the
@@ -294,7 +303,18 @@ public actor AppUpdateService {
     /// text-input session (Korean composition falling apart into jamo).
     public static func installScript(stagedApp: URL, destination: URL, pid: Int32, relaunch: Bool = true) -> String {
         func quote(_ value: String) -> String { "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'" }
-        let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "")
+        /// `pgrep` takes an extended regular expression; the path must match literally.
+        func literalPattern(_ value: String) -> String {
+            value.map { "\\.[]()*+?{}|^$".contains($0) ? "\\" + String($0) : String($0) }.joined()
+        }
+        let runningCheck = relaunch ? "" : """
+        if pgrep -f \(quote(literalPattern(destination.path + "/Contents/MacOS/"))) >/dev/null 2>&1; then
+          echo "Mighty Claude is running again; leaving the update for the next quit." >&2
+          rm -rf "$NEW"
+          exit 0
+        fi
+
+        """
         return """
         #!/bin/sh
         # MightyClaude update helper: swap the bundle only after the app has quit.
@@ -302,9 +322,9 @@ public actor AppUpdateService {
         PATH=/usr/bin:/bin; export PATH
         SOURCE=\(quote(stagedApp.path))
         DESTINATION=\(quote(destination.path))
-        BACKUP=\(quote(NSTemporaryDirectory() + "MightyClaude-app-backup-" + stamp))
         PID=\(pid)
         NEW="$DESTINATION.update-new"
+        OLD="$DESTINATION.update-old"
         LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
         for _ in $(seq 1 600); do kill -0 "$PID" 2>/dev/null || break; sleep 0.5; done
         if kill -0 "$PID" 2>/dev/null; then echo "Mighty Claude did not quit; skipping the update." >&2; exit 1; fi
@@ -312,17 +332,17 @@ public actor AppUpdateService {
         [ -d "$SOURCE" ] || { echo "No app to install: $SOURCE" >&2; exit 1; }
         rm -rf "$NEW"
         ditto "$SOURCE" "$NEW" || { echo "Could not copy the new app." >&2; rm -rf "$NEW"; exit 1; }
+        \(runningCheck)rm -rf "$OLD"
         if [ -d "$DESTINATION" ]; then
-          mkdir -p "$BACKUP" && ditto "$DESTINATION" "$BACKUP/MightyClaude.app.bak" || { echo "Could not back up the current app." >&2; rm -rf "$NEW"; exit 1; }
-          rm -rf "$DESTINATION"
+          mv "$DESTINATION" "$OLD" || { echo "Could not back up the current app." >&2; rm -rf "$NEW"; exit 1; }
         fi
         if ! mv "$NEW" "$DESTINATION"; then
           echo "Could not replace the app; restoring the previous version." >&2
-          rm -rf "$DESTINATION" "$NEW"
-          [ -d "$BACKUP/MightyClaude.app.bak" ] && ditto "$BACKUP/MightyClaude.app.bak" "$DESTINATION"
+          rm -rf "$NEW"
+          if [ -d "$OLD" ]; then rm -rf "$DESTINATION"; mv "$OLD" "$DESTINATION"; fi
           exit 1
         fi
-        rm -rf "$BACKUP"
+        rm -rf "$OLD"
         "$LSREGISTER" -u "$SOURCE" >/dev/null 2>&1 || true
         rm -rf "$(dirname "$SOURCE")"
         "$LSREGISTER" -f "$DESTINATION" >/dev/null 2>&1 || true
