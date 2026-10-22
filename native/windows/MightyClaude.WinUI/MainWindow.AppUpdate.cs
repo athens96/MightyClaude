@@ -117,10 +117,10 @@ public sealed partial class MainWindow
         builtIn.Children.Add(SettingsText(AppUpdate.BuiltInManifestUrl ?? "", 11, DesignToken.Ink2, mono: true, selectable: true));
         appUpdateBuiltInRow = SettingsRow(rows, builtIn);
 
-        var automatic = SettingsSwitch(AppUpdateStrings.AutoCheckToggle, service.Snapshot.AppUpdateAutoCheck, AppUpdateToggleId);
+        var automatic = SettingsSwitch(AppUpdateStrings.AutoUpdateToggle, service.Snapshot.AppUpdateAutoCheck, AppUpdateToggleId);
         async void AutomaticToggled() => await service.UpdateAsync(s => s with { AppUpdateAutoCheck = automatic.IsChecked == true });
         automatic.Checked += (_, _) => AutomaticToggled(); automatic.Unchecked += (_, _) => AutomaticToggled();
-        appUpdateAutomaticRow = SettingsRow(rows, SettingsLabeled(SettingsText(AppUpdateStrings.AutoCheckToggle), automatic));
+        appUpdateAutomaticRow = SettingsRow(rows, SettingsLabeled(SettingsText(AppUpdateStrings.AutoUpdateToggle), automatic));
 
         var signature = SettingsText("", 10, DesignToken.Ink2);
         appUpdateSignatureRow = SettingsRow(rows, signature);
@@ -289,7 +289,7 @@ public sealed partial class MainWindow
             value => service.UpdateAsync(s => s with { AppUpdateAutoCheck = value }));
 
         // The switch is named for its label, and the label stands beside it in the same row.
-        Require(AutomationProperties.GetName(toggle) == AppUpdateStrings.AutoCheckToggle && SettingsElements(panel).OfType<TextBlock>().Any(label => label.Text == AppUpdateStrings.AutoCheckToggle),
+        Require(AutomationProperties.GetName(toggle) == AppUpdateStrings.AutoUpdateToggle && SettingsElements(panel).OfType<TextBlock>().Any(label => label.Text == AppUpdateStrings.AutoUpdateToggle),
             "the app update section must show the automatic check switch");
         return outcome;
     }

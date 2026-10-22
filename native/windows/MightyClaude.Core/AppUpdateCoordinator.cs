@@ -51,6 +51,9 @@ public sealed record AppUpdateState
     public AppUpdateInstallPlan? InstallPlan { get; init; }
     public string? ErrorMessage { get; init; }
     public DateTimeOffset? CheckedAt { get; init; }
+    /// The last failure, kept beside Ready so a failed background check never
+    /// takes a staged update away; cleared by the next success.
+    public string? LastError { get; init; }
 }
 
 /// One rendering of the section: every string WinUI puts on screen and whether
@@ -63,7 +66,9 @@ public sealed record AppUpdateSectionView(
     string StatusText,
     string ButtonLabel,
     bool ButtonEnabled,
-    string? Notes);
+    string? Notes,
+    string? KeptError = null,
+    string? RetryNotice = null);
 
 public static class AppUpdatePresentation
 {
@@ -71,8 +76,10 @@ public static class AppUpdatePresentation
     /// the button is disabled — there is no check, not even in a dev build.
     /// Windows rule 3: a build that carries an address ignores a typed one, so
     /// the address field is shown disabled with the built-in address beside it.
+    /// `automatic` is the saved switch: a staged update reads "installed at the
+    /// next launch" only while quitting installs it (M/AppUpdateSettingsView.swift).
     public static AppUpdateSectionView Describe(
-        AppUpdateState state, bool hasPublicKey, string? builtInAddress, Func<DateTimeOffset, string> formatTime)
+        AppUpdateState state, bool hasPublicKey, string? builtInAddress, Func<DateTimeOffset, string> formatTime, bool automatic = true)
     {
         if (!hasPublicKey)
             return new(false, AppUpdateStrings.NoPublicKeyNotice, null, false,
@@ -87,7 +94,8 @@ public static class AppUpdatePresentation
             AppUpdatePhase.Downloading => AppUpdateStrings.DownloadingTemplate.Replace(
                 "{percent}", ((int)(state.DownloadFraction * 100)).ToString()),
             AppUpdatePhase.Staging => AppUpdateStrings.StagingProgress,
-            AppUpdatePhase.Ready => AppUpdateStrings.ReadyTemplate.Replace("{version}", version),
+            // Turned off, quitting does not install: the update only waits for "restart now".
+            AppUpdatePhase.Ready => (automatic ? AppUpdateStrings.StagedTemplate : AppUpdateStrings.ReadyTemplate).Replace("{version}", version),
             AppUpdatePhase.Installing => AppUpdateStrings.Installing,
             AppUpdatePhase.Failed => state.ErrorMessage ?? AppUpdateStrings.NotCheckedYet,
             _ => state.CheckedAt is { } at
@@ -98,7 +106,7 @@ public static class AppUpdatePresentation
         {
             AppUpdatePhase.Available => (AppUpdateStrings.DownloadButton, true),
             AppUpdatePhase.Downloading => (AppUpdateStrings.CancelButton, true),
-            AppUpdatePhase.Ready => (AppUpdateStrings.InstallButton, true),
+            AppUpdatePhase.Ready => (AppUpdateStrings.RestartNowButton, true),
             AppUpdatePhase.Checking or AppUpdatePhase.Staging or AppUpdatePhase.Installing =>
                 (AppUpdateStrings.InProgressButton, false),
             _ => (AppUpdateStrings.CheckButton, true),
@@ -106,22 +114,31 @@ public static class AppUpdatePresentation
         var notes = state.Phase is AppUpdatePhase.Available or AppUpdatePhase.Ready
             ? state.Availability?.Manifest.Notes
             : null;
+        // A failure only shows here: beside a staged update, which stays ready,
+        // and with the switch on as the promise that the next check tries again.
+        var failed = state.LastError is not null && (state.Phase == AppUpdatePhase.Ready || automatic);
         return new(
             true,
             AppUpdateStrings.SignatureVerified,
             builtInAddress is null ? null : AppUpdateStrings.BuiltInAddressTemplate.Replace("{address}", builtInAddress),
             builtInAddress is null,
             status, label, enabled,
-            string.IsNullOrEmpty(notes) ? null : notes);
+            string.IsNullOrEmpty(notes) ? null : notes,
+            failed && state.Phase == AppUpdatePhase.Ready ? state.LastError : null,
+            failed && automatic ? AppUpdateStrings.RetryNotice : null);
     }
 }
 
 /// Drives the update through its phases. Every decision lives here; WinUI
 /// renders <see cref="AppUpdateSectionView"/> and forwards the one button.
+///
+/// With the "automatic" switch on (read live through `automatic`), a check that
+/// finds a newer version goes on to download and stage it, a check that finds
+/// the version already staged keeps it, and a failure while an update is staged
+/// only lands in `LastError`. `InstallOnQuitAsync` installs the staged update
+/// when the app quits, without starting it again (AppUpdateAuto).
 public sealed class AppUpdateCoordinator
 {
-    public const double CheckIntervalHours = 24;
-
     public event Action? StateChanged;
 
     private readonly AppUpdateService service;
@@ -129,8 +146,10 @@ public sealed class AppUpdateCoordinator
     private readonly string architecture;
     private readonly string? installDirectory;
     private readonly Func<AppUpdateInstallPlan, Task>? launchHelper;
+    private readonly Func<bool> automatic;
     private CancellationTokenSource? work;
     private bool closing;
+    private bool checking;
 
     public AppUpdateState State { get; private set; } = new();
     public string? BuiltInManifestUrl { get; }
@@ -141,9 +160,11 @@ public sealed class AppUpdateCoordinator
         string? builtInManifestUrl = null,
         string? architecture = null,
         string? installDirectory = null,
-        Func<AppUpdateInstallPlan, Task>? launchHelper = null)
+        Func<AppUpdateInstallPlan, Task>? launchHelper = null,
+        Func<bool>? automatic = null)
     {
         this.service = service;
+        this.automatic = automatic ?? (() => false);
         this.currentVersion = currentVersion;
         this.architecture = architecture ?? AppUpdateBuild.Architecture;
         this.installDirectory = installDirectory;
@@ -153,57 +174,103 @@ public sealed class AppUpdateCoordinator
 
     public bool HasPublicKey => service.VerifiesSignatures;
 
+    /// The saved "automatic" switch, as the app reports it.
+    public bool Automatic => automatic();
+
+    /// The last automatic attempt this run, successful or not. Kept in memory so
+    /// a failed check waits for the next cycle instead of retrying every tick.
+    public DateTimeOffset? LastAttempt { get; private set; }
+
     /// Windows rule 3: when the build carries an address, a user-entered
     /// address is ignored rather than merged or preferred.
     public string? EffectiveManifestUrl(string? userUrl) =>
         BuiltInManifestUrl ?? (AppUpdateManifest.Allowed(userUrl?.Trim()) ? userUrl!.Trim() : null);
 
-    /// The automatic check: a saved preference with the macOS default, at most
-    /// once a day, and never when the build cannot verify a signature.
-    public static bool IsDue(bool enabled, bool hasPublicKey, DateTimeOffset? lastChecked, DateTimeOffset now) =>
-        enabled && hasPublicKey &&
-        (lastChecked is not { } last || (now - last).TotalHours >= CheckIntervalHours);
+    /// The automatic check: a saved preference with the macOS default, every
+    /// `AppUpdateAuto.CheckInterval` after the later of the last check and the
+    /// last attempt, and never when the build cannot verify a signature.
+    public static bool IsDue(bool enabled, bool hasPublicKey, DateTimeOffset? lastChecked, DateTimeOffset now, DateTimeOffset? lastAttempt = null) =>
+        AppUpdateAuto.CheckDue(enabled, hasPublicKey, lastChecked, lastAttempt, now);
 
+    /// Checks when `IsDue` says so and remembers the attempt. A newer version
+    /// is downloaded straight away while the switch is on.
     public async Task<bool> CheckAutomaticallyIfDueAsync(
         string? userUrl, bool enabled, DateTimeOffset? lastChecked, DateTimeOffset now)
     {
-        if (!IsDue(enabled, HasPublicKey, lastChecked, now)) return false;
+        if (closing || Busy || checking) return false;
+        if (!IsDue(enabled, HasPublicKey, lastChecked, now, LastAttempt)) return false;
+        LastAttempt = now;
         await CheckAsync(userUrl);
         return true;
     }
 
     public async Task CheckAsync(string? userUrl)
     {
-        if (closing || Busy) return;
-        if (!HasPublicKey) { Fail(AppUpdateStrings.NoPublicKeyNotice); return; }
+        if (closing || Busy || checking) return;
+        if (!HasPublicKey) { FailCheck(AppUpdateStrings.NoPublicKeyNotice); return; }
         if (EffectiveManifestUrl(userUrl) is not { } url)
         {
-            Fail(Locale.Get("settings.appUpdate.errorNoManifestURL"));
+            FailCheck(Locale.Get("settings.appUpdate.errorNoManifestURL"));
             return;
         }
-        Mutate(s => s with { Phase = AppUpdatePhase.Checking, ErrorMessage = null });
-        work = new();
+        // A staged update stays ready (and installable) while the check runs.
+        if (State.Phase != AppUpdatePhase.Ready) Mutate(s => s with { Phase = AppUpdatePhase.Checking, ErrorMessage = null });
+        checking = true;
+        var token = new CancellationTokenSource();
+        work = token;
+        var download = false;
         try
         {
-            var availability = await service.CheckAsync(url, currentVersion, work.Token);
+            var availability = await service.CheckAsync(url, currentVersion, token.Token);
+            // "Restart now" was pressed meanwhile: the install owns the state.
+            if (State.Phase is not (AppUpdatePhase.Ready or AppUpdatePhase.Checking)) return;
+            var staged = State.Phase == AppUpdatePhase.Ready ? State.Availability?.Manifest.Version : null;
+            var sameAsStaged = staged is not null && AppVersion.Normalized(staged) is not null
+                && AppVersion.Normalized(availability.Manifest.Version) is not null
+                && AppVersion.Compare(staged, availability.Manifest.Version) == 0;
+            var newerButNotForThisMachine = availability.IsNewer && !availability.Manifest.Windows.ContainsKey(architecture);
+            if (staged is not null && (sameAsStaged || newerButNotForThisMachine))
+            {
+                // The version the manifest names is the one staged, or a newer one this machine cannot
+                // install: the staged update stays ready and nothing is downloaded again (M/AppUpdateAutoSteps.swift afterCheck).
+                Mutate(s => s with { CheckedAt = DateTimeOffset.UtcNow, LastError = null });
+                return;
+            }
             Mutate(s => s with
             {
                 Phase = availability.IsNewer ? AppUpdatePhase.Available : AppUpdatePhase.UpToDate,
                 Availability = availability,
+                PackagePath = null,
+                StagedDirectory = null,
+                InstallPlan = null,
                 CheckedAt = DateTimeOffset.UtcNow,
                 ErrorMessage = null,
+                LastError = null,
             });
+            download = availability.IsNewer && Automatic;
         }
-        catch (OperationCanceledException) { Mutate(s => s with { Phase = AppUpdatePhase.Idle }); }
-        catch (Exception error) { Fail(error.Message); }
-        finally { work?.Dispose(); work = null; }
+        catch (OperationCanceledException)
+        {
+            if (State.Phase == AppUpdatePhase.Checking) Mutate(s => s with { Phase = AppUpdatePhase.Idle });
+        }
+        catch (Exception error)
+        {
+            if (State.Phase is AppUpdatePhase.Ready or AppUpdatePhase.Checking) FailCheck(error.Message);
+        }
+        finally
+        {
+            checking = false;
+            if (ReferenceEquals(work, token)) work = null;
+            token.Dispose();
+        }
+        if (download) await DownloadAsync();
     }
 
     /// Downloads the package for this machine's architecture, verifies it and
     /// unpacks it. A manifest with no asset for this architecture is refused.
     public async Task DownloadAsync()
     {
-        if (closing || State.Phase != AppUpdatePhase.Available) return;
+        if (closing || checking || State.Phase != AppUpdatePhase.Available) return;
         if (State.Availability?.Manifest is not { } manifest) return;
         if (!manifest.Windows.TryGetValue(architecture, out var asset))
         {
@@ -223,7 +290,7 @@ public sealed class AppUpdateCoordinator
                 ? null
                 : AppUpdateInstallPlan.Create(
                     staged, installDirectory, package, asset.Sha256, asset.Size, Environment.ProcessId);
-            Mutate(s => s with { Phase = AppUpdatePhase.Ready, StagedDirectory = staged, InstallPlan = plan });
+            Mutate(s => s with { Phase = AppUpdatePhase.Ready, StagedDirectory = staged, InstallPlan = plan, LastError = null });
         }
         catch (OperationCanceledException)
         {
@@ -241,17 +308,32 @@ public sealed class AppUpdateCoordinator
 
     /// Hands the swap to the detached helper and reports the phase. The app is
     /// quit by the caller; the helper waits for it before touching the install.
-    public async Task InstallAsync()
+    /// `relaunch` false is the install on quit: the helper does not start the
+    /// app again (`--relaunch 0`).
+    public async Task InstallAsync(bool relaunch = true)
     {
         if (closing || State.Phase != AppUpdatePhase.Ready) return;
-        if (State.InstallPlan is not { } plan || launchHelper is null)
+        if (State.InstallPlan is not { } staged || launchHelper is null)
         {
             Fail(Locale.Get("appUpdate.error.noInstallPlan"));
             return;
         }
+        var plan = staged with { Relaunch = relaunch };
         Mutate(s => s with { Phase = AppUpdatePhase.Installing, ErrorMessage = null });
         try { await launchHelper(plan); }
         catch (Exception error) { Fail(error.Message); }
+    }
+
+    /// Called as the app quits, before `ShutdownAsync`: a staged update is
+    /// installed once the app has gone, without starting it again. Skipped with
+    /// the switch off, while an install is under way, while Windows is signing
+    /// out or shutting down, and in a build that cannot verify updates
+    /// (`AppUpdateAuto.InstallsOnQuit`). True when the helper was started.
+    public async Task<bool> InstallOnQuitAsync(bool poweringOff = false)
+    {
+        if (closing || !AppUpdateAuto.InstallsOnQuit(State.Phase == AppUpdatePhase.Ready, Automatic, HasPublicKey, poweringOff)) return false;
+        await InstallAsync(relaunch: false);
+        return State.Phase == AppUpdatePhase.Installing;
     }
 
     public Task ShutdownAsync()
@@ -286,7 +368,14 @@ public sealed class AppUpdateCoordinator
         is AppUpdatePhase.Checking or AppUpdatePhase.Downloading or AppUpdatePhase.Staging or AppUpdatePhase.Installing;
 
     private void Fail(string message) =>
-        Mutate(s => s with { Phase = AppUpdatePhase.Failed, ErrorMessage = message });
+        Mutate(s => s with { Phase = AppUpdatePhase.Failed, ErrorMessage = message, LastError = message });
+
+    /// A failed check never drops a staged update: beside Ready it is only `LastError`.
+    private void FailCheck(string message)
+    {
+        if (State.Phase == AppUpdatePhase.Ready) Mutate(s => s with { LastError = message });
+        else Fail(message);
+    }
 
     private void Mutate(Func<AppUpdateState, AppUpdateState> apply)
     {
