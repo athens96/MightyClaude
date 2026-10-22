@@ -33,18 +33,33 @@ jobs:
       - name: Design-token gate — colour and spacing literals only go down
         shell: pwsh
         run: node scripts/check-design-tokens.js --check
-      - name: Test core and publish self-contained WinUI folder and ZIP
+      - name: Install Inno Setup 6 for the setup program
+        shell: pwsh
+        # Always the pinned release, checked by its SHA-256 before it runs, never whatever Inno Setup the runner image carries.
+        run: |
+          $setup = Join-Path $env:RUNNER_TEMP 'innosetup-6.7.3.exe'
+          Invoke-WebRequest https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe -OutFile $setup
+          if ((Get-FileHash $setup -Algorithm SHA256).Hash -ne '9C73C3BAE7ED48D44112A0F48E66742C00090BDB5BEF71D9D3C056C66E97B732') { throw 'Inno Setup download does not match its pinned SHA-256' }
+          $dir = Join-Path $env:RUNNER_TEMP 'innosetup'
+          $process = Start-Process $setup -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', "/DIR=`"$dir`"" -Wait -PassThru
+          if ($process.ExitCode -ne 0 -or -not (Test-Path "$dir/ISCC.exe")) { throw "Inno Setup install failed ($($process.ExitCode))" }
+          "MIGHTY_ISCC=$dir/ISCC.exe" >> $env:GITHUB_ENV
+      - name: Test core and publish self-contained WinUI folder, ZIP and setup program
         shell: pwsh
         # The update address and the public half of the update signing key, as the Mac release
         # build stamps them; the signing key itself never leaves the release machine.
         env:
           MIGHTY_UPDATE_URL: https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/latest.json
           MIGHTY_UPDATE_PUBLIC_KEY: ZGxMTGfVVu2ocgC6ajyqDBl4JqPmyzlqK/xgGMDsa2c=
-        run: ./scripts/build-windows.ps1 -Architecture ${{ matrix.architecture }} -Configuration Release
+        run: ./scripts/build-windows.ps1 -Architecture ${{ matrix.architecture }} -Configuration Release -Installer
       - name: Launch native WinUI with an isolated profile and capture GUI evidence
         shell: pwsh
         timeout-minutes: 6
         run: ./scripts/test-native-windows.ps1 -Executable ./release/native-windows-${{ matrix.architecture }}/MightyClaude.exe -ProfileDirectory "$env:RUNNER_TEMP/mighty-windows-smoke-${{ matrix.architecture }}"
+      - name: Install the setup program for this user, check it, and uninstall it
+        shell: pwsh
+        timeout-minutes: 6
+        run: ./scripts/test-windows-installer.ps1 -Setup ./release/MightyClaude-windows-${{ matrix.architecture }}-setup.exe -Version (Get-Content VERSION -Raw).Trim()
       - name: Upload distributable
         uses: actions/upload-artifact@v4
         with:
@@ -52,6 +67,8 @@ jobs:
           path: |
             release/MightyClaude-windows-${{ matrix.architecture }}.zip
             release/MightyClaude-windows-${{ matrix.architecture }}.zip.sha256
+            release/MightyClaude-windows-${{ matrix.architecture }}-setup.exe
+            release/MightyClaude-windows-${{ matrix.architecture }}-setup.exe.sha256
           if-no-files-found: error
       - name: Upload isolated GUI result and screenshot
         if: always()

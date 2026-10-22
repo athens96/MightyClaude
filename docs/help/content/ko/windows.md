@@ -9,16 +9,20 @@ section: windows
 > Windows 앱은 {{ui:badge.beta}}입니다. 창 제목에 베타 표시가 붙습니다.
 
 ## 설치 {#install}
-1. [다운로드 페이지](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/index.html)에서 내 PC에 맞는 zip을 받습니다. 대부분의 PC는 x64, Snapdragon 같은 ARM PC는 ARM64입니다.
-2. zip을 폴더째 풉니다.
-3. 폴더 안의 `MightyClaude.exe`를 실행합니다. 함께 들어 있는 파일도 필요하므로 exe만 다른 곳으로 옮기지 마세요.
+1. [다운로드 페이지](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/index.html)에서 내 PC에 맞는 설치 프로그램을 받습니다. 대부분의 PC는 `MightyClaude-windows-x64-setup.exe`, Snapdragon 같은 ARM PC는 `MightyClaude-windows-arm64-setup.exe`입니다.
+2. 설치 프로그램을 실행합니다. 관리자 권한 없이 지금 사용자에게만 `%LOCALAPPDATA%\Programs\MightyClaude`에 설치되고, 시작 메뉴에 Mighty Claude가 생깁니다. 바탕 화면 바로 가기는 설치 중에 고를 수 있습니다.
+3. 마지막 화면에서 바로 실행하거나, 나중에 시작 메뉴에서 엽니다.
 
-Windows 10(버전 2004) 이상 또는 Windows 11에서 동작합니다. 필요한 .NET 런타임은 zip에 들어 있습니다.
+지우려면 Windows 설정 → 앱 → 설치된 앱에서 Mighty Claude를 제거합니다. 설치 폴더는 통째로 지워지고, 설정과 대화 기록(`%APPDATA%\MightyClaudeNative`)은 남습니다.
+
+설치하지 않고 쓰려면 같은 페이지의 zip을 받아 폴더째 풀고 그 안의 `MightyClaude.exe`를 실행하세요. 함께 들어 있는 파일도 필요하므로 exe만 다른 곳으로 옮기지 마세요.
+
+Windows 10(버전 2004) 이상 또는 Windows 11에서 동작합니다. 필요한 .NET 런타임은 설치 프로그램과 zip에 들어 있습니다.
 
 > [!warning]
-> 이 앱은 코드 서명이 없어 Windows가 처음 실행을 막을 수 있습니다. 앱이 Visual C++ 런타임을 찾지 못한다고 하면 Microsoft Visual C++ 재배포 가능 패키지(v14)를 설치하세요. 터미널과 브라우저 창에는 Microsoft Edge WebView2 런타임이 필요합니다.
+> 이 앱은 코드 서명이 없어 Windows(SmartScreen)가 설치 프로그램이나 첫 실행을 막을 수 있습니다. 그러면 **추가 정보**를 누른 뒤 **실행**을 누르세요. 앱이 Visual C++ 런타임을 찾지 못한다고 하면 Microsoft Visual C++ 재배포 가능 패키지(v14)를 설치하세요. 터미널과 브라우저 창에는 Microsoft Edge WebView2 런타임이 필요합니다.
 
-업데이트는 Mac과 같이 {{ui:menu.settings}} → {{ui:settings.nav.about}}에서 받습니다.
+업데이트는 Mac과 같이 {{ui:menu.settings}} → {{ui:settings.nav.about}}에서 받습니다. 설치 프로그램으로 설치한 앱은 같은 폴더에서 새 버전으로 바뀌고, 설치된 앱 목록에 보이는 버전도 따라 바뀝니다. 새 설치 프로그램을 받아 그 위에 설치해도 됩니다.
 
 ## 단축키 {#shortcuts}
 {{kbd:⌘}} 대신 {{kbd:Ctrl}}를 씁니다. 사이드바 접기와 원격 화면 멈추기만 키가 다릅니다.

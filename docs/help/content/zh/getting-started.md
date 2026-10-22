@@ -19,7 +19,7 @@ Mighty Claude 是一款桌面应用，可以在一个窗口中并排使用 Claud
 ## 安装 {#install}
 1. 从[下载页面](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/index.html)下载适合你操作系统的文件。
 2. macOS：解压 `MightyClaude-macos.zip`，将 `MightyClaude.app` 移到“应用程序”文件夹，然后打开。
-3. Windows：解压整个文件夹，运行其中的 `MightyClaude.exe`。详情请参阅[Windows 上的不同之处](windows.md#install)。
+3. Windows：运行 `MightyClaude-windows-x64-setup.exe`（ARM 电脑选择 `arm64`）进行安装，然后从开始菜单打开。详情请参阅[Windows 上的不同之处](windows.md#install)。
 
 > [!warning]
 > 此应用未经过 Apple 公证。如果 macOS 在首次打开时阻止了它，请在 Finder 中按住 Control 键点按该应用并选择**打开**，或在“系统设置 → 隐私与安全性”中允许打开。

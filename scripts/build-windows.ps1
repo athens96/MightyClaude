@@ -2,7 +2,9 @@
 param(
     [ValidateSet('x64', 'arm64')][string]$Architecture = 'x64',
     [ValidateSet('Debug', 'Release')][string]$Configuration = 'Release',
-    [string]$OutputDirectory
+    [string]$OutputDirectory,
+    # Also builds the setup program (native/windows/installer/MightyClaude.iss) with Inno Setup 6.
+    [switch]$Installer
 )
 $ErrorActionPreference = 'Stop'
 if (-not $IsWindows) { throw 'WinUI 패키지 빌드는 Windows의 PowerShell 7에서 실행하세요.' }
@@ -76,4 +78,19 @@ try {
     "$hash  $([IO.Path]::GetFileName($archive))" | Set-Content "$archive.sha256" -Encoding ascii
     Write-Output "Windows 네이티브 앱: $OutputDirectory/MightyClaude.exe"
     Write-Output "배포 ZIP: $archive"
+    if ($Installer) {
+        # The setup program carries the same verified publish folder; the ZIP stays, since the app's own updates use it.
+        $iscc = @($env:MIGHTY_ISCC, (Get-Command ISCC.exe -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Source),
+            (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'), (Join-Path $env:ProgramFiles 'Inno Setup 6/ISCC.exe'),
+            (Join-Path $env:LOCALAPPDATA 'Programs/Inno Setup 6/ISCC.exe')) | Where-Object { $_ -and (Test-Path $_ -PathType Leaf) } | Select-Object -First 1
+        if (-not $iscc) { throw 'Inno Setup 6(ISCC.exe)이 없습니다. 설치하거나 MIGHTY_ISCC에 경로를 지정하세요.' }
+        $releaseDirectory = Split-Path -Parent $OutputDirectory
+        $setup = Join-Path $releaseDirectory "MightyClaude-windows-$Architecture-setup.exe"
+        if (Test-Path $setup) { throw "기존 설치 프로그램을 덮어쓰지 않습니다: $setup" }
+        & $iscc /Q "/DAppVersion=$appVersion" "/DArch=$Architecture" "/DSourceDir=$OutputDirectory" "/DOutputDir=$releaseDirectory" (Join-Path $projectRoot 'native/windows/installer/MightyClaude.iss')
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path $setup -PathType Leaf)) { throw '설치 프로그램 빌드 실패' }
+        $setupHash = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLowerInvariant()
+        "$setupHash  $([IO.Path]::GetFileName($setup))" | Set-Content "$setup.sha256" -Encoding ascii
+        Write-Output "설치 프로그램: $setup"
+    }
 } finally { Pop-Location }

@@ -220,6 +220,8 @@ public sealed partial class MainWindow
         // from; this start clears it.
         try { AppUpdateReplacement.PruneBackups(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar)); }
         catch (IOException) { /* Housekeeping must not change startup. */ }
+        // After the app replaced its own folder, Settings › Apps shows this version, not the setup program's.
+        InstallerRegistration.SyncDisplayVersion(AppContext.BaseDirectory, AppVersionText);
         var snapshot = service.Snapshot;
         var last = DateTimeOffset.TryParse(snapshot.AppUpdateLastCheckedAt, out var parsed) ? parsed : (DateTimeOffset?)null;
         if (!AppUpdateCoordinator.IsDue(snapshot.AppUpdateAutoCheck, AppUpdate.HasPublicKey, last, DateTimeOffset.UtcNow)) return;

@@ -21,7 +21,8 @@ Mighty Claude는 프로젝트 폴더(워크스페이스)마다 여러 실행 창
 | 파일 | 설치 |
 | --- | --- |
 | `MightyClaude-macos.zip` | 풀고 `MightyClaude.app`을 응용 프로그램 폴더로 옮긴 뒤 엽니다. |
-| Windows x64 / ARM64 zip (베타) | 폴더째 풀고 그 안의 `MightyClaude.exe`를 실행합니다. 함께 든 파일도 필요하므로 exe만 옮기지 마세요. 대부분의 PC는 x64, Snapdragon 같은 ARM PC는 ARM64입니다. |
+| `MightyClaude-windows-x64-setup.exe` / `-arm64-setup.exe` (베타) | 실행해서 설치합니다. 관리자 권한 없이 이 사용자에게만 `%LOCALAPPDATA%\Programs\MightyClaude`에 설치되고, 제거는 Windows 설정 → 앱에서 합니다. 대부분의 PC는 x64, Snapdragon 같은 ARM PC는 ARM64입니다. |
+| Windows x64 / ARM64 zip (베타) | 설치 없이 쓸 때: 폴더째 풀고 그 안의 `MightyClaude.exe`를 실행합니다. 함께 든 파일도 필요하므로 exe만 옮기지 마세요. |
 | Android APK | 휴대폰에 받아 설치합니다. 연결 방법은 도움말의 [휴대폰 원격](docs/help/content/ko/phone.md)에 있습니다. |
 
 AI CLI 설치 명령은 다음과 같습니다. 앱의 **설정 → 구성 요소**에서도 어떤 CLI가 준비됐는지 보고 명령을 복사할 수 있습니다.
@@ -34,7 +35,7 @@ AI CLI 설치 명령은 다음과 같습니다. 앱의 **설정 → 구성 요�
 
 > **macOS:** 이 앱은 Apple 공증을 받지 않았습니다. 처음 열 때 막히면 Finder에서 앱을 Control-클릭한 뒤 **열기**를 고르거나, 시스템 설정 → 개인정보 보호 및 보안에서 열기를 허용하세요.
 >
-> **Windows:** 코드 서명이 없어 Windows(SmartScreen)가 처음 실행을 막을 수 있습니다. Visual C++ 런타임을 찾지 못한다고 하면 [Microsoft Visual C++ 재배포 가능 패키지(v14)](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)를 설치하세요. 터미널과 브라우저 창에는 Microsoft Edge WebView2 런타임이 필요합니다. .NET 런타임은 zip에 들어 있습니다.
+> **Windows:** 코드 서명이 없어 Windows(SmartScreen)가 처음 실행을 막을 수 있습니다. Visual C++ 런타임을 찾지 못한다고 하면 [Microsoft Visual C++ 재배포 가능 패키지(v14)](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)를 설치하세요. 터미널과 브라우저 창에는 Microsoft Edge WebView2 런타임이 필요합니다. .NET 런타임은 설치 프로그램과 zip에 들어 있습니다.
 
 **업데이트:** 앱이 하루 한 번, 열 때 새 버전을 확인하고 상태 줄에 알립니다. **설정 → 앱 정보 → 앱 업데이트**에서 확인·내려받기를 하고 **설치하고 다시 실행**을 누르면 바뀝니다. 업데이트 파일은 서명을 확인한 뒤에만 설치합니다. AI CLI 업데이트는 따로 **설정 → CLI → CLI 업데이트**에서 합니다.
 
@@ -142,7 +143,7 @@ pwsh ./scripts/build-windows.ps1 -Architecture arm64 -Configuration Release
 pwsh ./scripts/test-native-windows.ps1 -Executable ./release/native-windows-x64/MightyClaude.exe
 ```
 
-`build-windows.ps1`은 먼저 `MightyClaude.Core.Tests`를 돌린 뒤, self-contained 앱을 `release/native-windows-<아키텍처>/`에, 배포 zip과 SHA-256 파일을 `release/MightyClaude-windows-<아키텍처>.zip`에 만듭니다. 다른 출력 폴더는 `-OutputDirectory`로 지정합니다. 이 패키지는 코드 서명하지 않습니다.
+`build-windows.ps1`은 먼저 `MightyClaude.Core.Tests`를 돌린 뒤, self-contained 앱을 `release/native-windows-<아키텍처>/`에, 배포 zip과 SHA-256 파일을 `release/MightyClaude-windows-<아키텍처>.zip`에 만듭니다. 다른 출력 폴더는 `-OutputDirectory`로 지정합니다. `-Installer`를 붙이면 [Inno Setup 6](https://jrsoftware.org/isinfo.php)으로 설치 프로그램 `release/MightyClaude-windows-<아키텍처>-setup.exe`도 만듭니다(`native/windows/installer/MightyClaude.iss`, `ISCC.exe` 경로는 `MIGHTY_ISCC`로 지정 가능). `pwsh ./scripts/test-windows-installer.ps1 -Setup <setup.exe> -Version <버전>`은 그것을 조용히 설치해 확인하고 다시 제거합니다. 이 패키지는 코드 서명하지 않습니다.
 
 Mac에서는 Windows 앱을 실행할 수 없지만, C# 코어 검사(`dotnet run --project native/windows/MightyClaude.Core.Tests --configuration Release`)와 WinUI 컴파일 검사(`bash scripts/check-winui-compile.sh`)는 돌릴 수 있습니다.
 
