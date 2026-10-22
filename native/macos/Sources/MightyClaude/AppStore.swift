@@ -249,6 +249,15 @@ final class AppStore: ObservableObject, DelegationHost {
     @Published var toolPermissions: [String: [ToolPermissionRequest]] = [:]
     @Published var permissionResponses = Set<String>()
     @Published var permissionErrors: [String: String] = [:]
+    /// Antigravity cards (`AntigravityPermissions.swift`): one per pane, the
+    /// last turn's refusals, with the answer in flight and why one failed.
+    @Published var antigravityBoard = AntigravityPermissionBoard()
+    @Published var antigravityResponses = Set<String>()
+    @Published var antigravityPermissionErrors: [String: String] = [:]
+    /// The temporary rules each local pane's run holds, released when it ends.
+    var antigravityLeases: [String: AntigravityRuleLeases.Lease] = [:]
+    /// agy's settings, shared by this Mac's panes and the runs it hosts.
+    lazy var antigravityRules = AntigravityRuleLeases(ledgerURL: dataDirectory.appendingPathComponent("antigravity-temporary-rules.json"))
     /// A plan opened like a document (the plan card's expand button, a history block).
     @Published var planDocument: PlanDocument?
 
@@ -365,7 +374,8 @@ final class AppStore: ObservableObject, DelegationHost {
     @Published var remoteError: String?
     lazy var remoteHost = RemoteHostService(repository: repository, providers: providers, pluginDirectory: pluginDirectory, appVersion: appVersion,
                                             hostName: SCDynamicStoreCopyComputerName(nil, nil).map { $0 as String } ?? "Mac",
-                                            admission: { [weak self] request in await self?.remoteHostAdmission(request) }) { [weak self] count in
+                                            admission: { [weak self] request in await self?.remoteHostAdmission(request) },
+                                            antigravityRules: antigravityRules) { [weak self] count in
         Task { @MainActor in self?.remoteHostState.activeRuns = count }
     }
     lazy var remoteClient = RemoteClientService(repository: repository, dataDirectory: dataDirectory) { [weak self, runEvents] event in
@@ -420,6 +430,8 @@ final class AppStore: ObservableObject, DelegationHost {
         startAgentIO()
         do { snapshot = try await repository.load(); preparePaneLayouts(); canSave = true }
         catch { self.error = L("store.error.loadFailed", ["error": error.localizedDescription]) }
+        // Temporary Antigravity rules a crash left in agy's settings go first.
+        await antigravityRules.removeLeftovers()
         // Saved remote connections, without their keys: those are read on first use.
         remoteConnections = await remoteClient.list()
         // Children whose runs quitting killed come back interrupted, before any pane runs again.
@@ -667,6 +679,7 @@ final class AppStore: ObservableObject, DelegationHost {
             pendingTerminalInput.removeValue(forKey: id); cliLoginEnded(sessionID: id); forgetLoginRecovery(id); guidedProgress.removeValue(forKey: id)
             discardAttachments(id)
             queuedInputs.removeValue(forKey: id); steerTasks.removeValue(forKey: id)?.task.cancel()
+            antigravityBoard.remove(sessionId: id); antigravityPermissionErrors.removeValue(forKey: id)
             draftRevisions.removeValue(forKey: id)
             forgetGraphHistory(id)
             forgetStyleState(id); pruneStyleStateWatchers()
@@ -1046,7 +1059,8 @@ final class AppStore: ObservableObject, DelegationHost {
     @discardableResult
     /// `queued` is the queue item being started: its recorded launch decision wins.
     /// `titleFrom` is what an automatic title follows when it is not `input`:
-    /// a run delegation starts on its own sets none ("").
+    /// a run delegation starts on its own sets none (""), and an Antigravity
+    /// card's continuation (`queued.antigravityGrant`) keeps the title too.
     func start(_ id: String, session: RunSession, workspace: Workspace, input: String, attachments: [RunAttachment], restoringDraft: String?, queued: QueuedInput? = nil, titleFrom: String? = nil) -> Bool {
         guard !ending, !closingSessions.contains(id), !pendingRuns.contains(id), session.status != "running" else { return false }
         if let refusal = startRefusal(session, in: workspace, input: input, attachments: attachments) { error = refusal; return false }
@@ -1065,7 +1079,7 @@ final class AppStore: ObservableObject, DelegationHost {
         let logText = [input, attachmentSummary].filter { !$0.isEmpty }.joined(separator: "\n\n")
         let inputEntry = LogEntry(kind: "user", text: logText)
         let autoTitle: String? = (session.titleMode ?? "auto") == "auto" && session.kind != "shell" && session.kind != "browser"
-            ? PaneTitle.shortened(titleFrom ?? input) : nil
+            ? PaneTitle.shortened(titleFrom ?? (queued?.antigravityGrant != nil ? "" : input)) : nil
         // §1.16: the first request in the pane's style is where its state starts.
         let startsStyle = guidedStyle(session) != nil && session.mightyStyleSince == nil
         updateSession(id) {
@@ -1104,6 +1118,7 @@ final class AppStore: ObservableObject, DelegationHost {
                 // leaving the pane's stored mode as it is; a queued item keeps
                 // the decision made when it was queued.
                 if let queued { request.permissionModeOverride = queued.permissionModeOverride }
+                if current.provider == "gemini", current.kind == "claude" { request.antigravityGrant = queued?.antigravityGrant }
                 else if styleLaunchesInPlanMode(current) { request.permissionModeOverride = StyleLaunchPermissionMode.plan.rawValue }
                 try CoreValidation.validate(request)
                 if current.kind != "shell" {
@@ -1125,6 +1140,12 @@ final class AppStore: ObservableObject, DelegationHost {
                     // The host runs it with its own CLIs; Settings → Models travel with the request.
                     try await remoteClient.start(request: request, workspace: currentWorkspace, phaseModels: snapshot.phaseModels)
                 } else {
+                    // An allowed Antigravity card's rules are in place before its run starts.
+                    if let grant = request.antigravityGrant {
+                        // Held from here: the run's end, or its failed start, releases it.
+                        if let lease = try await antigravityRules.apply(grant) { antigravityLeases[id] = lease }
+                        try Task.checkCancellation()
+                    }
                     // A child's run, its terminal tool and its MCP binding work in its worktree folder.
                     try await runner.start(request: request, workspace: DelegationPanes.runWorkspace(for: current, in: currentWorkspace),
                                            allowPermissionPrompts: current.kind == "claude" && (current.provider == "claude" || (current.provider == "codex" && current.settings.permissionMode == "onRequest")))
@@ -1197,6 +1218,7 @@ final class AppStore: ObservableObject, DelegationHost {
 
     func apply(_ event: RunEvent) {
         receivePermissionEvent(event)
+        receiveAntigravityEvent(event)
         let receivedAt = Date()
         updateSession(event.sessionId) { session in
             session.recordRunTiming(event, at: receivedAt)
@@ -1454,6 +1476,9 @@ final class AppStore: ObservableObject, DelegationHost {
         await remoteClient.shutdown()
         // Only a host that shares, or is starting to, has anything to close.
         if remoteHostState.enabled || remoteBusy { await remoteHost.shutdown() }
+        // Temporary Antigravity rules leave agy's settings with the runs that held them.
+        antigravityLeases.removeAll()
+        await antigravityRules.releaseAll()
         // Screen sharing ends before the relay goes: a held remote drag is let
         // go and the phones hear why.
         if screenShareEngine != nil { await screenShare.shutdown() }

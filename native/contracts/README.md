@@ -709,3 +709,33 @@ Readers: `RemoteWireFixtureTests` (Swift), `RemoteWireFixtureVerification` and
 by `endpoints.json` or one of the extra bodies listed above.
 Implementations: `MightyCore/Remote/RemoteWorkspaceModels.swift`, `StateRepository.swift`;
 `MightyClaude.Core/Remote/RemoteWorkspaceModels.cs`, `RemoteWireEvents.cs`, `StateStore.cs`.
+
+## Antigravity permission cards (`fixtures/antigravity-permissions.json`)
+
+A headless `agy -p` turn cannot ask, so what its review mode would have asked
+about is refused and the turn goes on; the pane asks afterwards with a card
+(docs/mobile-remote.md, "Antigravity 권한 카드"). The fixture holds:
+
+- `streams`: agy stream-json turns (recorded from agy 1.4.4 where `recorded`
+  says so) and the card's `actions` each must give — `{ kind, action,
+  displayName, target?, rule? }`, in the order the denied tool steps came, one
+  per rule, then each `denied_actions` permission no step showed. A command's
+  rule is `command(<whole command line>)`; any other denial's rule is what
+  agy's message names after "denied permission for "; a multi-line command or
+  an unnamed denial has none.
+- `settings`: byte-exact edits of `permissions.allow` in agy's
+  `settings.json` (`before` → add → `afterAdd` → remove → `afterRemove`), the
+  new file a missing one becomes, and the shapes that are refused unchanged
+  (`notJSON`, `notObject`, `permissionsNotObject`, `allowNotArray`). Every byte
+  outside the list stays; a rule already there is never added or removed.
+- `remote`: the `/v2` poll event (`type: "antigravityPermission"`) and the
+  continuation's start with `antigravityGrant: { requestId, rules, temporary }`;
+  a host adds only rules of a card it reported.
+- `mobile`: the card as one `MobilePermission` (`toolName:
+  "AntigravityPermission"`, optional `antigravity.actions`) and the answers on
+  `POST /m1/sessions/{id}/permission` (`allow`, `allow` + `always`, deny;
+  `always` without `allow` is 400).
+
+Implementations: `MightyCore/AntigravityPermissions.swift` (checked by
+`AntigravityPermissionTests`, `AntigravityPermissionWireTests`); the Windows host
+follows the same file.

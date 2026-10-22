@@ -1,0 +1,492 @@
+{
+  "about": "Antigravity permission cards (docs/superpowers/plans/2026-10-22-antigravity-permission-cards.md, docs/mobile-remote.md). streams: agy stream-json turns and the actions the card shows (Mac AntigravityDenialCollector; the Windows host must read them the same). settings: byte-exact edits of permissions.allow in agy's settings.json; every other byte stays.",
+  "streams": [
+    {
+      "name": "command",
+      "recorded": "agy 1.4.4, default mode, `date +%Y`",
+      "lines": [
+        "{\"event\":\"init\",\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"init\":{\"cwd\":\"/tmp/demo\",\"tools\":[\"run_command\",\"write_file\",\"read_url_content\",\"view_file\"],\"permission_mode\":\"request-review\"}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":0,\"state\":\"DONE\",\"step_type\":\"user_input\"}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":1,\"state\":\"DONE\",\"step_type\":\"agent_response\",\"duration_seconds\":4.549962,\"usage\":{\"input_tokens\":6623,\"output_tokens\":44,\"thinking_tokens\":0,\"cache_read_tokens\":0,\"total_tokens\":6667}}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":2,\"state\":\"ACTIVE\",\"step_type\":\"tool\",\"tool_name\":\"run_command\",\"tool_info\":{\"name\":\"run_command\",\"parameters\":{\"CommandLine\":\"date +%Y\"}}}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":2,\"state\":\"ERROR\",\"step_type\":\"tool\",\"tool_name\":\"run_command\",\"duration_seconds\":0.03994,\"tool_info\":{\"name\":\"run_command\",\"parameters\":{\"CommandLine\":\"date +%Y\"},\"error\":{\"type\":\"TOOL_ERROR\",\"message\":\"permission check failed for unsandboxed \\\"date +%Y\\\": user denied permission to run command:\\ndate +%Y\\nDo not attempt to circumvent this denial by rephrasing the command, using alternative tools/scripts (e.g. python, sh, curl), or accessing the same target resource. Proceed without performing this action.\"}}}}",
+        "{\"event\":\"result\",\"result\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"status\":\"SUCCESS\",\"response\":\"\",\"duration_seconds\":4.604019,\"num_turns\":1,\"usage\":{\"input_tokens\":6623,\"output_tokens\":44,\"thinking_tokens\":0,\"cache_read_tokens\":0,\"total_tokens\":6667},\"denied_actions\":[{\"action\":\"command\",\"display_name\":\"RunCommand\"}]}}"
+      ],
+      "actions": [
+        {
+          "kind": "command",
+          "action": "command",
+          "displayName": "RunCommand",
+          "target": "date +%Y",
+          "rule": "command(date +%Y)"
+        }
+      ]
+    },
+    {
+      "name": "curl",
+      "recorded": "agy 1.4.4, default mode, asked to fetch https://example.com (it chose curl)",
+      "lines": [
+        "{\"event\":\"init\",\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"init\":{\"cwd\":\"/tmp/demo\",\"tools\":[\"run_command\",\"write_file\",\"read_url_content\",\"view_file\"],\"permission_mode\":\"request-review\"}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":0,\"state\":\"DONE\",\"step_type\":\"user_input\"}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":1,\"state\":\"DONE\",\"step_type\":\"agent_response\",\"duration_seconds\":14.472751,\"usage\":{\"input_tokens\":6612,\"output_tokens\":280,\"thinking_tokens\":222,\"cache_read_tokens\":0,\"total_tokens\":6892}}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":2,\"state\":\"ACTIVE\",\"step_type\":\"tool\",\"tool_name\":\"run_command\",\"tool_info\":{\"name\":\"run_command\",\"parameters\":{\"CommandLine\":\"curl -s https://example.com | grep -i '<title>'\"}}}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":2,\"state\":\"ERROR\",\"step_type\":\"tool\",\"tool_name\":\"run_command\",\"duration_seconds\":1.041854,\"tool_info\":{\"name\":\"run_command\",\"parameters\":{\"CommandLine\":\"curl -s https://example.com | grep -i '<title>'\"},\"error\":{\"type\":\"TOOL_ERROR\",\"message\":\"permission check failed for unsandboxed \\\"curl -s https://example.com | grep -i '<title>'\\\": user denied permission to run command:\\ncurl -s https://example.com | grep -i '<title>'\\nDo not attempt to circumvent this denial by rephrasing the command, using alternative tools/scripts (e.g. python, sh, curl), or accessing the same target resource. Proceed without performing this action.\"}}}}",
+        "{\"event\":\"result\",\"result\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"status\":\"SUCCESS\",\"response\":\"\",\"duration_seconds\":15.532098,\"num_turns\":1,\"usage\":{\"input_tokens\":6612,\"output_tokens\":280,\"thinking_tokens\":222,\"cache_read_tokens\":0,\"total_tokens\":6892},\"denied_actions\":[{\"action\":\"command\",\"display_name\":\"RunCommand\"}]}}"
+      ],
+      "actions": [
+        {
+          "kind": "command",
+          "action": "command",
+          "displayName": "RunCommand",
+          "target": "curl -s https://example.com | grep -i '<title>'",
+          "rule": "command(curl -s https://example.com | grep -i '<title>')"
+        }
+      ]
+    },
+    {
+      "name": "writeFile",
+      "recorded": "agy 1.4.4, default mode, create hello.txt",
+      "lines": [
+        "{\"event\":\"init\",\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"init\":{\"cwd\":\"/tmp/demo\",\"tools\":[\"run_command\",\"write_file\",\"read_url_content\",\"view_file\"],\"permission_mode\":\"request-review\"}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":0,\"state\":\"DONE\",\"step_type\":\"user_input\"}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":1,\"state\":\"DONE\",\"step_type\":\"agent_response\",\"duration_seconds\":4.052925,\"usage\":{\"input_tokens\":6622,\"output_tokens\":39,\"thinking_tokens\":0,\"cache_read_tokens\":0,\"total_tokens\":6661}}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":2,\"state\":\"ACTIVE\",\"step_type\":\"tool\",\"tool_name\":\"write_file\",\"tool_info\":{\"name\":\"write_file\",\"parameters\":{\"Path\":\"/tmp/demo/hello.txt\"}}}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":2,\"state\":\"ERROR\",\"step_type\":\"tool\",\"tool_name\":\"write_file\",\"duration_seconds\":1.870905,\"tool_info\":{\"name\":\"write_file\",\"parameters\":{\"Path\":\"/tmp/demo/hello.txt\"},\"error\":{\"type\":\"TOOL_ERROR\",\"message\":\"permission check failed for write_file \\\"/private/tmp/demo/hello.txt\\\": user denied permission for write_file(/private/tmp/demo/hello.txt)\\nDo not attempt to circumvent this denial by rephrasing the command, using alternative tools/scripts (e.g. python, sh, curl), or accessing the same target resource. Proceed without performing this action.\"}}}}",
+        "{\"event\":\"result\",\"result\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"status\":\"SUCCESS\",\"response\":\"\",\"duration_seconds\":5.943888,\"num_turns\":1,\"usage\":{\"input_tokens\":6622,\"output_tokens\":39,\"thinking_tokens\":0,\"cache_read_tokens\":0,\"total_tokens\":6661},\"denied_actions\":[{\"action\":\"write_file\",\"display_name\":\"WriteFile\"}]}}"
+      ],
+      "actions": [
+        {
+          "kind": "file",
+          "action": "write_file",
+          "displayName": "WriteFile",
+          "target": "/private/tmp/demo/hello.txt",
+          "rule": "write_file(/private/tmp/demo/hello.txt)"
+        }
+      ]
+    },
+    {
+      "name": "oneDeniedOneRan",
+      "recorded": "agy 1.4.4, default mode, two commands: the first refused, the second ran",
+      "lines": [
+        "{\"event\":\"init\",\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"init\":{\"cwd\":\"/tmp/demo\",\"tools\":[\"run_command\",\"write_file\",\"read_url_content\",\"view_file\"],\"permission_mode\":\"request-review\"}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":0,\"state\":\"DONE\",\"step_type\":\"user_input\"}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":1,\"state\":\"DONE\",\"step_type\":\"agent_response\",\"duration_seconds\":3.784068,\"usage\":{\"input_tokens\":6627,\"output_tokens\":107,\"thinking_tokens\":27,\"cache_read_tokens\":0,\"total_tokens\":6734}}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":2,\"state\":\"ACTIVE\",\"step_type\":\"tool\",\"tool_name\":\"run_command\",\"tool_info\":{\"name\":\"run_command\",\"parameters\":{\"CommandLine\":\"echo alpha\"}}}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":2,\"state\":\"ERROR\",\"step_type\":\"tool\",\"tool_name\":\"run_command\",\"duration_seconds\":0.098433,\"tool_info\":{\"name\":\"run_command\",\"parameters\":{\"CommandLine\":\"echo alpha\"},\"error\":{\"type\":\"TOOL_ERROR\",\"message\":\"permission check failed for unsandboxed \\\"echo alpha\\\": user denied permission to run command:\\necho alpha\\nDo not attempt to circumvent this denial by rephrasing the command, using alternative tools/scripts (e.g. python, sh, curl), or accessing the same target resource. Proceed without performing this action.\"}}}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":3,\"state\":\"ACTIVE\",\"step_type\":\"tool\",\"tool_name\":\"run_command\",\"tool_info\":{\"name\":\"run_command\",\"parameters\":{\"CommandLine\":\"echo beta\"}}}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":3,\"state\":\"DONE\",\"step_type\":\"tool\",\"tool_name\":\"run_command\",\"duration_seconds\":0.040979,\"tool_info\":{\"name\":\"run_command\",\"parameters\":{\"CommandLine\":\"echo beta\"}}}}",
+        "{\"event\":\"result\",\"result\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"status\":\"SUCCESS\",\"response\":\"\",\"duration_seconds\":3.829886,\"num_turns\":1,\"usage\":{\"input_tokens\":6627,\"output_tokens\":107,\"thinking_tokens\":27,\"cache_read_tokens\":0,\"total_tokens\":6734},\"denied_actions\":[{\"action\":\"command\",\"display_name\":\"RunCommand\"}]}}"
+      ],
+      "actions": [
+        {
+          "kind": "command",
+          "action": "command",
+          "displayName": "RunCommand",
+          "target": "echo alpha",
+          "rule": "command(echo alpha)"
+        }
+      ]
+    },
+    {
+      "name": "noDenial",
+      "recorded": "agy 1.4.4, default mode, read_url_content is not offered headless; nothing refused",
+      "lines": [
+        "{\"event\":\"init\",\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"init\":{\"cwd\":\"/tmp/demo\",\"tools\":[\"run_command\",\"write_file\",\"read_url_content\",\"view_file\"],\"permission_mode\":\"request-review\"}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":0,\"state\":\"DONE\",\"step_type\":\"user_input\"}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":1,\"state\":\"ACTIVE\",\"step_type\":\"agent_response\",\"text_delta\":\"The `read_\"}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":1,\"state\":\"ACTIVE\",\"step_type\":\"agent_response\",\"text_delta\":\"url_content` tool is not available i\"}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":1,\"state\":\"ACTIVE\",\"step_type\":\"agent_response\",\"text_delta\":\"n my current\"}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":1,\"state\":\"ACTIVE\",\"step_type\":\"agent_response\",\"text_delta\":\" toolset (though `Exampl\"}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":1,\"state\":\"ACTIVE\",\"step_type\":\"agent_response\",\"text_delta\":\"e\"}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":1,\"state\":\"ACTIVE\",\"step_type\":\"agent_response\",\"text_delta\":\" Domain` is the standard\"}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":1,\"state\":\"ACTIVE\",\"step_type\":\"agent_response\",\"text_delta\":\" title of `https://examp\"}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":1,\"state\":\"ACTIVE\",\"step_type\":\"agent_response\",\"text_delta\":\"le.com`). Yo\"}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":1,\"state\":\"ACTIVE\",\"step_type\":\"agent_response\",\"text_delta\":\"u can use the `/browser`\"}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":1,\"state\":\"ACTIVE\",\"step_type\":\"agent_response\",\"text_delta\":\" command if \"}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":1,\"state\":\"ACTIVE\",\"step_type\":\"agent_response\",\"text_delta\":\"you need to browse\"}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":1,\"state\":\"ACTIVE\",\"step_type\":\"agent_response\",\"text_delta\":\" or read web pages directly.\"}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":1,\"state\":\"DONE\",\"step_type\":\"agent_response\",\"text_delta\":\"\\n\",\"duration_seconds\":4.587642,\"usage\":{\"input_tokens\":6627,\"output_tokens\":58,\"thinking_tokens\":0,\"cache_read_tokens\":0,\"total_tokens\":6685}}}",
+        "{\"event\":\"result\",\"result\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"status\":\"SUCCESS\",\"response\":\"The `read_url_content` tool is not available in my current toolset (though `Example Domain` is the standard title of `https://example.com`). You can use the `/browser` command if you need to browse or read web pages directly.\\n\",\"duration_seconds\":4.6274429999999995,\"num_turns\":1,\"usage\":{\"input_tokens\":6627,\"output_tokens\":58,\"thinking_tokens\":0,\"cache_read_tokens\":0,\"total_tokens\":6685}}}"
+      ],
+      "actions": []
+    },
+    {
+      "name": "older",
+      "recorded": "agy 1.3.5 wording (no command after the colon)",
+      "lines": [
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":2,\"state\":\"ACTIVE\",\"step_type\":\"tool\",\"tool_name\":\"run_command\",\"tool_info\":{\"name\":\"run_command\",\"parameters\":{\"CommandLine\":\"echo hi\"}}}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":2,\"state\":\"ERROR\",\"step_type\":\"tool\",\"tool_name\":\"run_command\",\"tool_info\":{\"name\":\"run_command\",\"parameters\":{\"CommandLine\":\"echo hi\"},\"error\":{\"type\":\"TOOL_ERROR\",\"message\":\"permission check failed for unsandboxed \\\"echo hi\\\": user denied permission to run command\"}}}}",
+        "{\"event\":\"result\",\"result\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"status\":\"SUCCESS\",\"response\":\"\",\"num_turns\":1,\"denied_actions\":[{\"action\":\"command\",\"display_name\":\"RunCommand\"}]}}"
+      ],
+      "actions": [
+        {
+          "kind": "command",
+          "action": "command",
+          "displayName": "RunCommand",
+          "target": "echo hi",
+          "rule": "command(echo hi)"
+        }
+      ]
+    },
+    {
+      "name": "multiple",
+      "recorded": "synthetic: shapes from the recorded ones; read_url wording follows agy's 'user denied permission for %s'",
+      "lines": [
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":2,\"state\":\"ACTIVE\",\"step_type\":\"tool\",\"tool_name\":\"run_command\",\"tool_info\":{\"name\":\"run_command\",\"parameters\":{\"CommandLine\":\"echo first\"}}}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":2,\"state\":\"ERROR\",\"step_type\":\"tool\",\"tool_name\":\"run_command\",\"tool_info\":{\"name\":\"run_command\",\"parameters\":{\"CommandLine\":\"echo first\"},\"error\":{\"type\":\"TOOL_ERROR\",\"message\":\"permission check failed for unsandboxed \\\"echo first\\\": user denied permission to run command:\\necho first\\nDo not attempt to circumvent this denial by rephrasing the command, using alternative tools/scripts (e.g. python, sh, curl), or accessing the same target resource. Proceed without performing this action.\"}}}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":3,\"state\":\"ERROR\",\"step_type\":\"tool\",\"tool_name\":\"write_file\",\"tool_info\":{\"name\":\"write_file\",\"parameters\":{\"Path\":\"/tmp/demo/hello.txt\"},\"error\":{\"type\":\"TOOL_ERROR\",\"message\":\"permission check failed for write_file \\\"/private/tmp/demo/hello.txt\\\": user denied permission for write_file(/private/tmp/demo/hello.txt)\\nDo not attempt to circumvent this denial by rephrasing the command, using alternative tools/scripts (e.g. python, sh, curl), or accessing the same target resource. Proceed without performing this action.\"}}}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":4,\"state\":\"ERROR\",\"step_type\":\"tool\",\"tool_name\":\"read_url_content\",\"tool_info\":{\"name\":\"read_url_content\",\"parameters\":{\"Url\":\"https://example.com/page\"},\"error\":{\"type\":\"TOOL_ERROR\",\"message\":\"permission check failed for read_url \\\"https://example.com/page\\\": user denied permission for read_url(example.com)\\nDo not attempt to circumvent this denial by rephrasing the command, using alternative tools/scripts (e.g. python, sh, curl), or accessing the same target resource. Proceed without performing this action.\"}}}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":5,\"state\":\"ERROR\",\"step_type\":\"tool\",\"tool_name\":\"run_command\",\"tool_info\":{\"name\":\"run_command\",\"parameters\":{\"CommandLine\":\"echo first\"},\"error\":{\"type\":\"TOOL_ERROR\",\"message\":\"permission check failed for unsandboxed \\\"echo first\\\": user denied permission to run command:\\necho first\\nDo not attempt to circumvent this denial by rephrasing the command, using alternative tools/scripts (e.g. python, sh, curl), or accessing the same target resource. Proceed without performing this action.\"}}}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":6,\"state\":\"ERROR\",\"step_type\":\"tool\",\"tool_name\":\"run_command\",\"tool_info\":{\"name\":\"run_command\",\"parameters\":{\"CommandLine\":\"ls\"},\"error\":{\"type\":\"TOOL_ERROR\",\"message\":\"exit status 1\"}}}}",
+        "{\"event\":\"result\",\"result\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"status\":\"SUCCESS\",\"response\":\"\",\"num_turns\":1,\"denied_actions\":[{\"action\":\"command\",\"display_name\":\"RunCommand\"},{\"action\":\"write_file\",\"display_name\":\"WriteFile\"},{\"action\":\"read_url\",\"display_name\":\"ReadUrl\"},{\"action\":\"notebook_execution\",\"display_name\":\"NotebookExecution\"}]}}"
+      ],
+      "actions": [
+        {
+          "kind": "command",
+          "action": "command",
+          "displayName": "RunCommand",
+          "target": "echo first",
+          "rule": "command(echo first)"
+        },
+        {
+          "kind": "file",
+          "action": "write_file",
+          "displayName": "WriteFile",
+          "target": "/private/tmp/demo/hello.txt",
+          "rule": "write_file(/private/tmp/demo/hello.txt)"
+        },
+        {
+          "kind": "url",
+          "action": "read_url",
+          "displayName": "ReadUrl",
+          "target": "example.com",
+          "rule": "read_url(example.com)"
+        },
+        {
+          "kind": "other",
+          "action": "notebook_execution",
+          "displayName": "NotebookExecution"
+        }
+      ]
+    },
+    {
+      "name": "multilineCommand",
+      "recorded": "synthetic: a command over two lines has no rule",
+      "lines": [
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":2,\"state\":\"ERROR\",\"step_type\":\"tool\",\"tool_name\":\"run_command\",\"tool_info\":{\"name\":\"run_command\",\"parameters\":{\"CommandLine\":\"printf a\\nprintf b\"},\"error\":{\"type\":\"TOOL_ERROR\",\"message\":\"permission check failed for unsandboxed \\\"printf a\\\\nprintf b\\\": user denied permission to run command:\\nprintf a\\nprintf b\\nDo not attempt to circumvent this denial by rephrasing the command, using alternative tools/scripts (e.g. python, sh, curl), or accessing the same target resource. Proceed without performing this action.\"}}}}",
+        "{\"event\":\"result\",\"result\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"status\":\"SUCCESS\",\"response\":\"\",\"num_turns\":1,\"denied_actions\":[{\"action\":\"command\",\"display_name\":\"RunCommand\"}]}}"
+      ],
+      "actions": [
+        {
+          "kind": "command",
+          "action": "command",
+          "displayName": "RunCommand",
+          "target": "printf a\nprintf b"
+        }
+      ]
+    }
+  ],
+  "settings": {
+    "newFile": {
+      "add": [
+        "command(echo hi)"
+      ],
+      "after": "{\n  \"permissions\": {\n    \"allow\": [\n      \"command(echo hi)\"\n    ]\n  }\n}\n"
+    },
+    "edits": [
+      {
+        "name": "realShape",
+        "before": "{\n  \"colorScheme\": \"tokyo night\",\n  \"model\": \"Gemini 4 Argon (Medium)\",\n  \"permissions\": {\n    \"allow\": [\n      \"command(ls)\",\n      \"command(find src api tools -maxdepth 2)\"\n    ]\n  },\n  \"trustedWorkspaces\": [\n    \"/Users/me/Work/NewHome\"\n  ]\n}\n",
+        "add": [
+          "command(curl -s https://example.com | grep -i '<title>')",
+          "command(ls)",
+          "write_file(/private/tmp/demo/hello.txt)"
+        ],
+        "added": [
+          "command(curl -s https://example.com | grep -i '<title>')",
+          "write_file(/private/tmp/demo/hello.txt)"
+        ],
+        "afterAdd": "{\n  \"colorScheme\": \"tokyo night\",\n  \"model\": \"Gemini 4 Argon (Medium)\",\n  \"permissions\": {\n    \"allow\": [\n      \"command(ls)\",\n      \"command(find src api tools -maxdepth 2)\",\n      \"command(curl -s https://example.com | grep -i '<title>')\",\n      \"write_file(/private/tmp/demo/hello.txt)\"\n    ]\n  },\n  \"trustedWorkspaces\": [\n    \"/Users/me/Work/NewHome\"\n  ]\n}\n",
+        "remove": [
+          "command(curl -s https://example.com | grep -i '<title>')",
+          "write_file(/private/tmp/demo/hello.txt)"
+        ],
+        "afterRemove": "{\n  \"colorScheme\": \"tokyo night\",\n  \"model\": \"Gemini 4 Argon (Medium)\",\n  \"permissions\": {\n    \"allow\": [\n      \"command(ls)\",\n      \"command(find src api tools -maxdepth 2)\"\n    ]\n  },\n  \"trustedWorkspaces\": [\n    \"/Users/me/Work/NewHome\"\n  ]\n}\n"
+      },
+      {
+        "name": "emptyList",
+        "before": "{\n  \"model\": \"x\",\n  \"permissions\": {\n    \"allow\": []\n  }\n}\n",
+        "add": [
+          "command(echo hi)"
+        ],
+        "added": [
+          "command(echo hi)"
+        ],
+        "afterAdd": "{\n  \"model\": \"x\",\n  \"permissions\": {\n    \"allow\": [\n      \"command(echo hi)\"\n    ]\n  }\n}\n",
+        "remove": [
+          "command(echo hi)"
+        ],
+        "afterRemove": "{\n  \"model\": \"x\",\n  \"permissions\": {\n    \"allow\": []\n  }\n}\n"
+      },
+      {
+        "name": "noPermissions",
+        "before": "{\n  \"colorScheme\": \"tokyo night\",\n  \"trustedWorkspaces\": []\n}\n",
+        "add": [
+          "command(echo hi)"
+        ],
+        "added": [
+          "command(echo hi)"
+        ],
+        "afterAdd": "{\n  \"colorScheme\": \"tokyo night\",\n  \"trustedWorkspaces\": [],\n  \"permissions\": {\n    \"allow\": [\n      \"command(echo hi)\"\n    ]\n  }\n}\n",
+        "remove": [
+          "command(echo hi)"
+        ],
+        "afterRemove": "{\n  \"colorScheme\": \"tokyo night\",\n  \"trustedWorkspaces\": [],\n  \"permissions\": {\n    \"allow\": []\n  }\n}\n"
+      },
+      {
+        "name": "noAllowTabs",
+        "before": "{\n\t\"permissions\": {\n\t\t\"deny\": [\"command(rm)\"]\n\t},\n\t\"z\": {\"nested\": [1, 2.50, true, null, \"\\u00e9\"]}\n}",
+        "add": [
+          "command(echo hi)"
+        ],
+        "added": [
+          "command(echo hi)"
+        ],
+        "afterAdd": "{\n\t\"permissions\": {\n\t\t\"deny\": [\"command(rm)\"],\n\t\t\"allow\": [\n\t\t\t\"command(echo hi)\"\n\t\t]\n\t},\n\t\"z\": {\"nested\": [1, 2.50, true, null, \"\\u00e9\"]}\n}",
+        "remove": [
+          "command(echo hi)"
+        ],
+        "afterRemove": "{\n\t\"permissions\": {\n\t\t\"deny\": [\"command(rm)\"],\n\t\t\"allow\": []\n\t},\n\t\"z\": {\"nested\": [1, 2.50, true, null, \"\\u00e9\"]}\n}"
+      },
+      {
+        "name": "oneLine",
+        "before": "{\"model\":\"x\",\"permissions\":{\"allow\":[\"command(ls)\"]},\"unknown\":{\"a\":[]}}",
+        "add": [
+          "command(git status)",
+          "url_rule(é)"
+        ],
+        "added": [
+          "command(git status)",
+          "url_rule(é)"
+        ],
+        "afterAdd": "{\"model\":\"x\",\"permissions\":{\"allow\":[\"command(ls)\",\"command(git status)\",\"url_rule(é)\"]},\"unknown\":{\"a\":[]}}",
+        "remove": [
+          "url_rule(é)",
+          "command(git status)"
+        ],
+        "afterRemove": "{\"model\":\"x\",\"permissions\":{\"allow\":[\"command(ls)\"]},\"unknown\":{\"a\":[]}}"
+      },
+      {
+        "name": "emptyObject",
+        "before": "{}",
+        "add": [
+          "command(echo hi)"
+        ],
+        "added": [
+          "command(echo hi)"
+        ],
+        "afterAdd": "{\n  \"permissions\": {\n    \"allow\": [\n      \"command(echo hi)\"\n    ]\n  }\n}",
+        "remove": [
+          "command(echo hi)"
+        ],
+        "afterRemove": "{\n  \"permissions\": {\n    \"allow\": []\n  }\n}"
+      },
+      {
+        "name": "alreadyThere",
+        "before": "{\n  \"colorScheme\": \"tokyo night\",\n  \"model\": \"Gemini 4 Argon (Medium)\",\n  \"permissions\": {\n    \"allow\": [\n      \"command(ls)\",\n      \"command(find src api tools -maxdepth 2)\"\n    ]\n  },\n  \"trustedWorkspaces\": [\n    \"/Users/me/Work/NewHome\"\n  ]\n}\n",
+        "add": [
+          "command(ls)"
+        ],
+        "added": [],
+        "afterAdd": "{\n  \"colorScheme\": \"tokyo night\",\n  \"model\": \"Gemini 4 Argon (Medium)\",\n  \"permissions\": {\n    \"allow\": [\n      \"command(ls)\",\n      \"command(find src api tools -maxdepth 2)\"\n    ]\n  },\n  \"trustedWorkspaces\": [\n    \"/Users/me/Work/NewHome\"\n  ]\n}\n",
+        "remove": [
+          "command(not there)"
+        ],
+        "afterRemove": "{\n  \"colorScheme\": \"tokyo night\",\n  \"model\": \"Gemini 4 Argon (Medium)\",\n  \"permissions\": {\n    \"allow\": [\n      \"command(ls)\",\n      \"command(find src api tools -maxdepth 2)\"\n    ]\n  },\n  \"trustedWorkspaces\": [\n    \"/Users/me/Work/NewHome\"\n  ]\n}\n"
+      },
+      {
+        "name": "removeMiddle",
+        "before": "{\n  \"colorScheme\": \"tokyo night\",\n  \"model\": \"Gemini 4 Argon (Medium)\",\n  \"permissions\": {\n    \"allow\": [\n      \"command(ls)\",\n      \"command(find src api tools -maxdepth 2)\"\n    ]\n  },\n  \"trustedWorkspaces\": [\n    \"/Users/me/Work/NewHome\"\n  ]\n}\n",
+        "add": [],
+        "added": [],
+        "afterAdd": "{\n  \"colorScheme\": \"tokyo night\",\n  \"model\": \"Gemini 4 Argon (Medium)\",\n  \"permissions\": {\n    \"allow\": [\n      \"command(ls)\",\n      \"command(find src api tools -maxdepth 2)\"\n    ]\n  },\n  \"trustedWorkspaces\": [\n    \"/Users/me/Work/NewHome\"\n  ]\n}\n",
+        "remove": [
+          "command(ls)"
+        ],
+        "afterRemove": "{\n  \"colorScheme\": \"tokyo night\",\n  \"model\": \"Gemini 4 Argon (Medium)\",\n  \"permissions\": {\n    \"allow\": [\n      \"command(find src api tools -maxdepth 2)\"\n    ]\n  },\n  \"trustedWorkspaces\": [\n    \"/Users/me/Work/NewHome\"\n  ]\n}\n"
+      }
+    ],
+    "refused": [
+      {
+        "name": "notJSON",
+        "before": "{ not json",
+        "error": "notJSON"
+      },
+      {
+        "name": "empty",
+        "before": "",
+        "error": "notJSON"
+      },
+      {
+        "name": "notObject",
+        "before": "[]",
+        "error": "notObject"
+      },
+      {
+        "name": "permissionsNotObject",
+        "before": "{\"permissions\": []}",
+        "error": "permissionsNotObject"
+      },
+      {
+        "name": "allowNotArray",
+        "before": "{\"permissions\": {\"allow\": \"command(ls)\"}}",
+        "error": "allowNotArray"
+      }
+    ]
+  },
+  "remote": {
+    "about": "Remote workspaces (docs/remote-workspaces.md, /v2): the host's run reports the card as a RunEvent of type antigravityPermission; the client's continuation start carries antigravityGrant beside the request, and the host adds only rules it reported (else 403).",
+    "pollEvent": {
+      "protocol": 2,
+      "cursor": 2,
+      "lastCursor": 2,
+      "gap": false,
+      "done": true,
+      "events": [
+        {
+          "cursor": 1,
+          "event": {
+            "sessionId": "job-1",
+            "type": "antigravityPermission",
+            "antigravityPermission": {
+              "id": "agy-0f6c1d2e-1111-4222-8333-444455556666",
+              "runId": "6B1F0C1E-2A3B-4C5D-8E9F-0A1B2C3D4E5F",
+              "actions": [
+                {
+                  "kind": "command",
+                  "action": "command",
+                  "displayName": "RunCommand",
+                  "target": "curl -s https://example.com | grep -i '<title>'",
+                  "rule": "command(curl -s https://example.com | grep -i '<title>')"
+                },
+                {
+                  "kind": "other",
+                  "action": "notebook_execution",
+                  "displayName": "NotebookExecution"
+                }
+              ],
+              "receivedAt": "2026-10-22T04:00:00Z"
+            }
+          }
+        },
+        {
+          "cursor": 2,
+          "event": {
+            "sessionId": "job-1",
+            "type": "status",
+            "status": "completed"
+          }
+        }
+      ]
+    },
+    "start": {
+      "request": {
+        "sessionId": "pane-3",
+        "workspaceId": "ws-project",
+        "kind": "claude",
+        "input": "The user has now allowed what was just declined: curl -s https://example.com | grep -i '<title>'. Please continue.",
+        "model": "default",
+        "provider": "gemini",
+        "settings": {
+          "effort": "default",
+          "permissionMode": "manual",
+          "maxTurns": null,
+          "maxBudgetUsd": null
+        },
+        "resumeId": "11111111-2222-4333-8444-555555555555"
+      },
+      "registeredModels": [],
+      "antigravityGrant": {
+        "requestId": "agy-0f6c1d2e-1111-4222-8333-444455556666",
+        "rules": [
+          "command(curl -s https://example.com | grep -i '<title>')"
+        ],
+        "temporary": true
+      }
+    }
+  },
+  "mobile": {
+    "about": "docs/mobile-remote.md: the card is one MobilePermission (toolName AntigravityPermission) with an optional antigravity object; POST /m1/sessions/{id}/permission answers it, always only with allow.",
+    "permission": {
+      "id": "agy-0f6c1d2e-1111-4222-8333-444455556666",
+      "runId": "6B1F0C1E-2A3B-4C5D-8E9F-0A1B2C3D4E5F",
+      "toolName": "AntigravityPermission",
+      "title": "Antigravity asks you to allow this",
+      "fields": [
+        {
+          "label": "Command",
+          "value": "curl -s https://example.com | grep -i '<title>'"
+        },
+        {
+          "label": "Action",
+          "value": "NotebookExecution"
+        }
+      ],
+      "summary": "curl -s https://example.com | grep -i '<title>', NotebookExecution",
+      "canAllow": true,
+      "receivedAt": "2026-10-22T04:00:00Z",
+      "antigravity": {
+        "actions": [
+          {
+            "kind": "command",
+            "action": "command",
+            "displayName": "RunCommand",
+            "target": "curl -s https://example.com | grep -i '<title>'",
+            "rule": "command(curl -s https://example.com | grep -i '<title>')"
+          },
+          {
+            "kind": "other",
+            "action": "notebook_execution",
+            "displayName": "NotebookExecution"
+          }
+        ]
+      }
+    },
+    "answers": [
+      {
+        "body": {
+          "requestId": "agy-0f6c1d2e-1111-4222-8333-444455556666",
+          "runId": "6B1F0C1E-2A3B-4C5D-8E9F-0A1B2C3D4E5F",
+          "allow": true
+        },
+        "decision": "once"
+      },
+      {
+        "body": {
+          "requestId": "agy-0f6c1d2e-1111-4222-8333-444455556666",
+          "runId": "6B1F0C1E-2A3B-4C5D-8E9F-0A1B2C3D4E5F",
+          "allow": true,
+          "always": true
+        },
+        "decision": "always"
+      },
+      {
+        "body": {
+          "requestId": "agy-0f6c1d2e-1111-4222-8333-444455556666",
+          "runId": "6B1F0C1E-2A3B-4C5D-8E9F-0A1B2C3D4E5F",
+          "allow": false
+        },
+        "decision": "deny"
+      },
+      {
+        "body": {
+          "requestId": "agy-0f6c1d2e-1111-4222-8333-444455556666",
+          "runId": "6B1F0C1E-2A3B-4C5D-8E9F-0A1B2C3D4E5F",
+          "allow": false,
+          "always": true
+        },
+        "status": 400
+      }
+    ]
+  }
+}

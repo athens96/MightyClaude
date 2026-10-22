@@ -144,6 +144,10 @@ struct RemoteWireStart: Codable, Sendable {
     var registeredModels: [RegisteredModelEntry] = []
     var todoProgress: TodoProgress?
     var phaseModels: PhaseModelHardcodedConfig?
+    /// An Antigravity continuation: the rules of a card this host reported,
+    /// for this run (`temporary`) or for good. The host refuses rules it did
+    /// not report itself.
+    var antigravityGrant: AntigravityAllowGrant?
 }
 
 struct RemoteWireJob: Codable, Sendable { var `protocol` = RemoteProtocol.version; var jobId: String }
@@ -222,7 +226,7 @@ enum RemoteWorkspaceValidation {
         ["manual", "plan", "acceptEdits", "fullAccess"].contains(mode) || (mode == "auto" && provider == "claude") || (mode == "onRequest" && provider == "codex")
     }
 
-    static let eventTypes: Set<String> = ["log", "status", "resume", "activity", "usage", "graph", "permission", "plan", "todos", "background"]
+    static let eventTypes: Set<String> = ["log", "status", "resume", "activity", "usage", "graph", "permission", "plan", "todos", "background", "antigravityPermission"]
 
     /// One event of the host's run, before the client applies it as its own pane's.
     static func event(_ value: RunEvent, sessionId: String) -> Bool {
@@ -237,6 +241,7 @@ enum RemoteWorkspaceValidation {
             return CoreValidation.identifier(permission.runId) && !permission.id.isEmpty && permission.id.count <= 256 && permission.toolName.count <= 256
                 && permission.inputJSON.utf8.count <= 65_536 && permission.summary.utf8.count <= 16_384 && !permission.state.isEmpty && permission.state.count <= 32
         case "plan": return value.plan != nil
+        case "antigravityPermission": return value.antigravityPermission.map(antigravityCard) ?? false
         case "todos": return value.todos != nil
         case "background": return value.background != nil
         case "log":
@@ -247,6 +252,16 @@ enum RemoteWorkspaceValidation {
         // Usage and graph observations are normalized by the client, or left out.
         default: return true
         }
+    }
+
+    /// An Antigravity card from the host: ids, at most 16 actions, bounded
+    /// text, and only well-formed rules.
+    static func antigravityCard(_ card: AntigravityPermissionRequest) -> Bool {
+        CoreValidation.identifier(card.id) && CoreValidation.identifier(card.runId) && !card.actions.isEmpty && card.actions.count <= AntigravityPermissionRequest.maximumActions
+            && card.actions.allSatisfy { action in
+                !action.action.isEmpty && action.action.utf8.count <= 128 && !action.displayName.isEmpty && action.displayName.utf8.count <= 128
+                    && (action.target?.utf8.count ?? 0) <= AntigravityAllowGrant.maximumRuleBytes && (action.rule.map(AntigravityAllowGrant.validRule) ?? true)
+            }
     }
 
     /// Settings → Models as the client sent it: every value a model name or "default", every effort a known one.
