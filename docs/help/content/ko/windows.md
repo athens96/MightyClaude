@@ -22,7 +22,7 @@ Windows 10(버전 2004) 이상 또는 Windows 11에서 동작합니다. 필요�
 > [!warning]
 > 이 앱은 코드 서명이 없어 Windows(SmartScreen)가 설치 프로그램이나 첫 실행을 막을 수 있습니다. 그러면 **추가 정보**를 누른 뒤 **실행**을 누르세요. 앱이 Visual C++ 런타임을 찾지 못한다고 하면 Microsoft Visual C++ 재배포 가능 패키지(v14)를 설치하세요. 터미널과 브라우저 창에는 Microsoft Edge WebView2 런타임이 필요합니다.
 
-업데이트는 Mac과 같이 {{ui:menu.settings}} → {{ui:settings.nav.about}}에서 받습니다. 설치 프로그램으로 설치한 앱은 같은 폴더에서 새 버전으로 바뀌고, 설치된 앱 목록에 보이는 버전도 따라 바뀝니다. 새 설치 프로그램을 받아 그 위에 설치해도 됩니다.
+업데이트도 Mac과 같습니다. 새 버전을 알아서 받아 두었다가 앱을 닫아 종료할 때 설치하고, 앱이 쉬고 있으면 1분 알림 뒤 다시 시작하며 설치합니다([업데이트](getting-started.md#update)). 직접 하려면 {{ui:menu.settings}} → {{ui:settings.nav.about}}에서 합니다. 설치 프로그램으로 설치한 앱은 같은 폴더에서 새 버전으로 바뀌고, 설치된 앱 목록에 보이는 버전도 따라 바뀝니다. 새 설치 프로그램을 받아 그 위에 설치해도 됩니다.
 
 ## 단축키 {#shortcuts}
 {{kbd:⌘}} 대신 {{kbd:Ctrl}}를 씁니다. 사이드바 접기와 원격 화면 멈추기만 키가 다릅니다.
@@ -37,7 +37,7 @@ Windows 10(버전 2004) 이상 또는 Windows 11에서 동작합니다. 필요�
 | {{kbd:⌃⌘S}} | {{kbd:Ctrl+B}} | {{ui:sidebar.collapse}} / {{ui:sidebar.expand}} |
 | {{kbd:⌘,}} | {{kbd:Ctrl+,}} | {{ui:menu.settings}} |
 | {{kbd:⌘=}} / {{kbd:⌘-}} / {{kbd:⌘0}} | {{kbd:Ctrl+=}} / {{kbd:Ctrl+-}} / {{kbd:Ctrl+0}} | {{ui:menu.textBigger}} / {{ui:menu.textSmaller}} / {{ui:menu.textActualSize}} |
-| {{kbd:⌘Enter}} | {{kbd:Ctrl+Enter}} | 새 worktree에서 바로 실행, 또는 실행 중인 Claude에 바로 전달 |
+| {{kbd:⌘Enter}} | {{kbd:Ctrl+Enter}} | 실행 중인 창에서 새 worktree에서 바로 실행, 그럴 수 없으면 대기열에 추가 |
 | {{kbd:⌃⌥⌘K}} | {{kbd:Ctrl+Alt+Esc}} | 휴대폰의 원격 화면 세션을 모두 멈춤([화면 보기](phone.md#screen)) |
 
 Windows에는 메뉴 막대가 없습니다. 같은 기능은 사이드바와 {{ui:workspace.addPane}} 메뉴에 있습니다.

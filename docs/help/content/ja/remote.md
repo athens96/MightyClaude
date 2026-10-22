@@ -39,7 +39,7 @@ Mac または Windows のコンピュータ 2 台の Mighty Claude を [Tailscal
 
 ## リモートペインを使う {#use}
 - エージェントペインはローカルのペインと同じように使えます。モデル・権限モード・思考の強さ・Fast モードはそのままホストに伝わり、ホストの CLI が対応していない設定は実行前に知らせます。
-- 権限・質問・計画のカードはこのアプリに表示され、答えはホストの実行に届きます。実行中の Claude のリクエストに追加することもできます（{{platform:mac}} {{kbd:⌘Enter}}、{{platform:windows}} {{kbd:Ctrl+Enter}}）。
+- 権限・質問・計画のカードはこのアプリに表示され、答えはホストの実行に届きます。実行中に送ったリクエストは、ローカルのペインと同じようにキューに入り、今の実行が終わってから始まります。
 - {{ui:graph.view.default}} 表示と {{ui:graph.view.mighty}} 表示（{{ui:graph.view.diagram}}・{{ui:graph.view.timeline}}・{{ui:graph.view.structure}}）は、ローカルの実行とまったく同じように描かれます。
 - {{ui:remote.menu.newCommand}} のペインは、コマンドごとにホストの共有フォルダで新しいシェルを開きます。対話型プログラムとパスワード入力には対応していません。
 - リモートペインは、ステータスバーとセッション情報に実行コンピュータの OS（macOS・Windows）を表示します。{{ui:remote.menu.newCommand}} のペインは、Mac のホストではログインシェル、Windows のホストでは PowerShell でコマンドを実行します。

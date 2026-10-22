@@ -84,10 +84,25 @@ macOS zip이 `.app` 하나를 담는 것과 같은 모양이다.
 5. 스테이지된 폴더를 설치 위치로 **복사한다**. 도우미가 스테이지된 폴더에서
    실행 중이므로 그 폴더를 이동할 수 없어 복사를 쓴다. 복사 뒤 설치 폴더에
    실행 파일이 있는지 확인한다.
-6. 새 앱을 **시작한다**.
-7. **새 앱이 시작된 뒤에야** 백업을 지운다.
-4–6 중 어디서든 실패하면 부분 복사를 삭제하고 백업을 되돌리고 이전 앱을 시작한다.
+6. `--relaunch 1`(기본)이면 새 앱을 **시작한다**. `--relaunch 0`이면 시작하지 않는다(아래 "종료할 때 설치").
+7. **새 앱이 시작된 뒤에야**(다시 실행하지 않을 때는 새 폴더가 자리를 잡고 확인된 뒤에) 백업을 지운다.
+8. 교체에 성공하면 도우미가 설치 프로그램의 제거 항목 `DisplayVersion`을 새 버전으로 맞춘다(아래 "설치 프로그램과의 관계").
+4–6 중 어디서든 실패하면 부분 복사를 삭제하고 백업을 되돌린다. 이전 앱은 `--relaunch 1`일 때만 다시 시작한다.
 스테이지된 폴더는 도우미가 삭제하지 않고 다음 버전을 내려받을 때 정리된다.
+
+### 종료할 때 설치 (`--relaunch 0`)
+
+macOS 도우미의 `relaunch: false`와 같다. 설치 계획 `AppUpdateInstallPlan.Relaunch`(기본 `true`)가 도우미 인자
+`--relaunch 1|0`으로 넘어간다. 인자가 없으면 `true`로 읽어(이 인자를 모르는 구버전 앱이 띄운 도우미와 같은 동작)
+예전처럼 다시 실행하고, `1`·`0`이 아닌 값이면 계획 전체를 거절한다(`AppUpdateInstallPlan.TryParse`).
+
+- `--relaunch 0`이면 도우미는 교체 뒤에도, 되돌린 뒤에도 앱을 시작하지 않는다(`AppUpdateReplacement.RunAsync`의 `startApp`을 부르지 않는다).
+  교체에 성공하면 새 폴더를 확인한 뒤 백업을 지운다.
+- Core의 `AppUpdateCoordinator.InstallOnQuitAsync(poweringOff)`가 이 경로를 연다. `AppUpdateAuto.InstallsOnQuit`이
+  참일 때만이다: 업데이트가 준비되어 있고(`Ready`), 자동 스위치가 켜져 있고, 서명을 검증하는 빌드이고, Windows가
+  로그아웃·종료 중이 아니다. 이미 설치가 진행 중이면 건너뛴다.
+- 창을 닫을 때(`AppWindow.Closing`) `ShutdownAppUpdateAsync()` 앞에서 `InstallOnQuitAsync()`를 부르는 것과, 쉬는 동안의
+  60초 카운트다운 뒤 다시 시작(`--relaunch 1` + 창 닫기)은 WinUI 쪽 작업으로 이어서 들어온다(아래 "자동 업데이트").
 
 순수한 부분(복사, 트리 확인, 되돌리기 판단, 인자 목록, 재검증)은 Core에 있고
 macOS에서 임시 폴더로 그대로 실행해 증명한다 —
@@ -127,6 +142,9 @@ macOS에서 임시 폴더로 그대로 실행해 증명한다 —
 - **설치된 앱 목록의 버전**: 앱은 시작할 때마다 제거 항목
   (`HKCU\…\Uninstall\{F2F99AEF-FB35-4476-A3EE-49453FA0527F}_is1`)의 `InstallLocation`이 자기 폴더일 때만
   `DisplayVersion`을 자기 버전으로 맞춘다(`InstallerRegistration`). 다른 곳에 푼 ZIP은 항목을 건드리지 않는다.
+  종료할 때 설치한 앱은 다음에 열 때까지 시작되지 않으므로, 도우미(`Program.RunUpdateHelper`)도 교체에 성공하면
+  `InstallerRegistration.SyncDisplayVersion(<설치 폴더>, <도우미 자신의 버전>)`을 부른다. 도우미는 새 버전의
+  스테이지된 폴더에서 돌므로 그 버전이 새 버전이다. 같은 `InstallLocation` 조건이 그대로 적용된다.
   `AppId`를 바꾸면 기존 설치와 다른 앱이 되므로 바꾸지 않는다.
 - CI는 설치 프로그램을 만든 뒤 `/DIR=`로 준 다른 폴더를 거절하는지 보고, 조용히 설치해 파일·제거 항목·시작 메뉴를
   확인한다. 그다음 업데이트처럼 설치 폴더를 백업으로 옮기고 새로 복사한 뒤, 제거가 새 폴더·남은 백업·제거 프로그램까지
@@ -143,18 +161,32 @@ macOS에서 임시 폴더로 그대로 실행해 증명한다 —
 
 ---
 
-## 앱 시작 시 자동 확인
+## 자동 업데이트
 
-- 저장되는 사용자 설정이고 **기본값은 macOS와 같이 켜짐**
-  (`AppSnapshot.AppUpdateAutoCheck`, 기본 `true`).
-- **하루에 한 번까지**(`AppUpdateCoordinator.CheckIntervalHours = 24`).
-  마지막 확인 시각은 `AppSnapshot.AppUpdateLastCheckedAt`에 ISO 8601로 저장한다.
-- 창을 **지연시키지 않는다**. 첫 렌더 뒤에 백그라운드로 시작한다.
-- 실패는 **섹션 안에서만** 보인다. 다른 화면에 오류를 띄우지 않는다.
-- 공개 키가 없으면 자동 확인도 하지 않는다(규칙 1).
-- `--smoke-test`에서는 자동 확인을 하지 않는다.
+macOS와 같은 규칙이다(`docs/app-update.md` "자동 업데이트"). 규칙은 Core `AppUpdateAutoPolicy.cs`의 `AppUpdateAuto`
+(macOS `AppUpdateAuto.swift`·`AppUpdateAutoSteps.swift`와 같은 상수·이름)에 있다.
+
+- 저장되는 사용자 설정이고 **기본값은 macOS와 같이 켜짐**(`AppSnapshot.AppUpdateAutoCheck`, 기본 `true`).
+  설정의 스위치 문구는 macOS와 같은 `settings.appUpdate.autoUpdateToggle`이다.
+- **확인 주기**: 마지막 확인(`AppSnapshot.AppUpdateLastCheckedAt`, ISO 8601)이나 이번 실행의 마지막 시도
+  (`AppUpdateCoordinator.LastAttempt`, 메모리) 가운데 늦은 쪽에서 6시간 뒤(`AppUpdateAuto.CheckDue`).
+  실패한 확인은 다음 주기까지 기다린다. 미래 시각(시계를 뒤로 돌림)은 무시한다.
+- **받기**: 스위치가 켜져 있으면 새 서명 버전을 묻지 않고 받아 검증하고 스테이지한다. 같은 버전이 이미 `Ready`면
+  다시 받지 않는다. `Ready`에서 확인이 실패하면 `LastError`에만 남고(섹션에 "다음 확인 때 다시 시도합니다")
+  준비된 업데이트는 그대로다.
+- **표시**: `Ready`이면 섹션과 상태 줄이 "다음 실행 때 {version} 설치"와 "지금 다시 시작"을 보인다.
+- **설치**: 종료할 때 `--relaunch 0`(위), 쉬는 동안에는 60초 카운트다운 InfoBar("지금 다시 시작"·"나중에" 4시간)
+  뒤 `--relaunch 1`. 쉬는 상태를 막는 사유는 macOS와 같은 열 가지(`AppIdleBlocker`)이고, 키보드·마우스 입력만으로는
+  돌고 있는 카운트다운을 취소하지 않는다.
+- **스위치를 끄면** 확인·받기·카운트다운이 멈추고, 준비된 업데이트는 "지금 다시 시작"으로만 설치되며 종료할 때 설치하지 않는다.
+- 창을 **지연시키지 않는다**. 첫 렌더 뒤에 백그라운드로 시작한다. 공개 키가 없으면 자동으로 아무것도 하지 않는다(규칙 1).
+  `--smoke-test`에서는 자동 루프를 돌리지 않는다.
 - 새 필드는 기본값을 가진 추가 필드이고 스냅샷 `Version`은 1로 유지된다
   (`StateStore`는 `Version`이 1이 아니면 저장 상태를 전부 초기화한다).
+
+지금 들어온 것은 Core(정책, 6시간 확인, 자동 받기, `Ready` 지키기, `InstallOnQuitAsync`, `--relaunch`, 도우미의
+`DisplayVersion` 맞춤)다. WinUI의 10분 타이머(`DispatcherQueueTimer`), `CollectIdleFacts()`, 카운트다운 InfoBar,
+창을 닫을 때의 `InstallOnQuitAsync()` 호출은 이어지는 작업으로 계획되어 있다.
 
 ---
 
@@ -179,7 +211,7 @@ macOS의 `SignatureUnverified`(주황색 "서명 검증 없음…") 문장은 Wi
 (확인 중 → 새 버전 있음 → 42% 받는 중 → 푸는 중 → 준비 완료 → 교체 중)를 모두 렌더하고,
 화면에서 읽어 낸 상태 문장과 버튼 이름을 Core의 기대값과 대조한다.
 공개 키 없는 빌드가 확인을 거절하는지도 같은 판정 안에서 본다.
-자동 확인 스위치는 뒤집었다가 **원래 값으로 되돌린다**.
+자동 업데이트 스위치는 뒤집었다가 **원래 값으로 되돌린다**.
 manifest를 받지도, 패키지를 내려받지도, 프로세스를 시작하지도 않는다.
 
 ---
@@ -225,6 +257,11 @@ manifest를 받지도, 패키지를 내려받지도, 프로세스를 시작하�
 | `app update helper executable is inside the staged folder` | `StagedHelperExecutable`이 스테이지된 폴더 안에 있다 |
 | `app update helper copies the staged folder to the install path` | 복사 기반 교체, 스테이지 폴더 보존 |
 | `app update helper rolls back after a copy that fails half way` | 중간 실패 → 부분 복사 삭제 → 백업 복원 → 이전 앱 시작 |
-| `app update automatic check happens at most once a day` | 저장 설정·기본값·하루 한 번 |
+| `app update automatic check happens every six hours` | 저장 설정·기본값·6시간 주기·마지막 시도 |
+| `app update automatic policy follows the macOS rules` | `CheckDue`·`IdleBlockers`·`RestartOffer`·`Later`·`InstallsOnQuit`이 macOS와 같다 |
+| `app update helper --relaunch round trips` | `--relaunch 1\|0` 왕복, 없으면 `true`, 다른 값은 거절 |
+| `app update replacement without relaunch never starts the app` | 교체 뒤에도 되돌린 뒤에도 앱을 시작하지 않고, 성공하면 백업을 지운다 |
+| `app update a staged update stays ready and installs on quit` | 같은 버전이면 `Ready`를 지키고, 실패는 `LastError`에만, 종료할 때 `--relaunch 0` |
+| `app update keeps the setup program's uninstall entry at the app's version` | `DisplayVersion` 맞춤 |
 | `app update section shows the macOS copy for every phase` | 단계별 문장과 버튼, 스모크 판정 |
 | `app update pipeline runs from a fixture-signed manifest to a ready install plan` | 확인 → 다운로드 → 풀기 → 계획 → 교체 전체 |

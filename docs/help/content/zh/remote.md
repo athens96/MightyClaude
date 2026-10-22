@@ -39,7 +39,7 @@ section: remote
 
 ## 使用远程窗格 {#use}
 - 代理窗格的用法与本地窗格相同。模型、权限模式、思考强度和 Fast 模式会原样传给主机；主机 CLI 不支持的设置会在运行前提示。
-- 权限、提问和计划卡片会出现在本应用中，你的回答会传给主机上的运行。也可以向正在运行的 Claude 请求追加内容（{{platform:mac}} {{kbd:⌘Enter}}，{{platform:windows}} {{kbd:Ctrl+Enter}}）。
+- 权限、提问和计划卡片会出现在本应用中，你的回答会传给主机上的运行。运行期间发送的请求会像本地窗格一样放入队列，在当前运行结束后开始。
 - {{ui:graph.view.default}} 视图和 {{ui:graph.view.mighty}} 视图（{{ui:graph.view.diagram}}、{{ui:graph.view.timeline}}、{{ui:graph.view.structure}}）的显示与本地运行完全相同。
 - {{ui:remote.menu.newCommand}} 窗格的每条命令都会在主机的共享文件夹中打开新的 shell。不支持交互式程序和密码输入。
 - 远程窗格会在状态栏和会话信息中显示运行电脑的系统（macOS 或 Windows）。{{ui:remote.menu.newCommand}} 窗格在 Mac 主机上用登录 shell、在 Windows 主机上用 PowerShell 运行命令。

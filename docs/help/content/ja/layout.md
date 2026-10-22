@@ -91,5 +91,5 @@ Claude、Codex、Antigravityのペインを追加するとき、このフォル�
 | {{kbd:⌘,}} | {{ui:menu.settings}} |
 | {{kbd:Enter}} | リクエストを送信 |
 | {{kbd:⇧Enter}} | 改行 |
-| {{kbd:⌘Enter}} | 新しいworktreeですぐ実行([Mightyオーケストレーション](delegation.md#worktree)がオンで、gitリポジトリにあるClaudeペイン)。それ以外では実行中のClaudeにすぐに伝える |
+| {{kbd:⌘Enter}} | 実行中のペインで、新しいworktreeですぐ実行([Mightyオーケストレーション](delegation.md#worktree)がオンで、gitリポジトリにあるペイン)。それ以外の実行中のペインではキューに追加 |
 | {{kbd:Esc}} | シートを閉じる、スラッシュコマンドの一覧を閉じる |

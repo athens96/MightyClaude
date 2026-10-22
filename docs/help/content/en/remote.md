@@ -39,7 +39,7 @@ A remote workspace shows a computer icon and its host's name in the sidebar, and
 
 ## Using remote panes {#use}
 - Use agent panes as you would local ones. Model, permission mode, effort and Fast mode travel to the host; a setting the host's CLI does not support is reported before the run.
-- Permission, question and plan cards appear in this app, and your answers reach the run on the host. You can also add to a running Claude request ({{platform:mac}} {{kbd:⌘Enter}}, {{platform:windows}} {{kbd:Ctrl+Enter}}).
+- Permission, question and plan cards appear in this app, and your answers reach the run on the host. A request you send while it runs waits in the queue, as in a local pane, and starts when the run ends.
 - The {{ui:graph.view.default}} view and the {{ui:graph.view.mighty}} views ({{ui:graph.view.diagram}}, {{ui:graph.view.timeline}}, {{ui:graph.view.structure}}) draw exactly as for a local run.
 - A {{ui:remote.menu.newCommand}} pane runs each command in a new shell in the host's shared folder. Interactive programs and password prompts are not supported.
 - A remote pane shows its host's OS (macOS or Windows) in the status bar and the session info. A {{ui:remote.menu.newCommand}} pane runs commands in the login shell on a Mac host and in PowerShell on a Windows host.

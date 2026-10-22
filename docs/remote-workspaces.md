@@ -19,7 +19,7 @@ Mac이나 Windows 컴퓨터 두 대의 Mighty Claude를 Tailscale로 이으면, 
 
 - 원격 창의 요청은 호스트의 `ProcessRunner`가 호스트의 CLI·계정·환경으로 실행한다. 모델, 권한 모드(계획 모드와 Claude Auto, Codex 승인 요청 포함), 사고 강도, Fast·웹 검색·네트워크 설정, 재개 ID, 첨부, 설정 → 모델의 페이즈 모델이 그대로 넘어간다. 호스트 CLI가 없거나 지원하지 않는 설정은 클라이언트가 호스트의 `/info` 응답으로 먼저 거르고, 호스트도 실행 전에 다시 확인해 거절한다.
 - 호스트가 CLI 출력을 같은 파서(`CLIStreamParser`, Codex 세션 기록과 Antigravity 하위 에이전트 감시 포함)로 읽어 만든 실행 이벤트를 클라이언트가 커서로 받아 자기 창의 이벤트로 적용한다. 그래서 기본 보기와 마이티 보기(흐름·기록·파이프라인)가 로컬 실행과 같은 경로로 그려진다. CLI의 원시 줄 대신 파싱된 이벤트를 보내는 이유는, 파서가 호스트에만 있는 파일(Codex 세션 기록, Antigravity 하위 에이전트 기록, mods 브리지)을 함께 읽기 때문이다.
-- 권한·질문·계획 요청은 클라이언트의 같은 카드로 뜨고, 답은 호스트 실행으로 전해진다. 실행 중인 Claude 턴에 덧붙이기(Mac ⌘Enter, Windows Ctrl+Enter)도 호스트로 간다.
+- 권한·질문·계획 요청은 클라이언트의 같은 카드로 뜨고, 답은 호스트 실행으로 전해진다. 실행 중에 보낸 요청은 클라이언트의 대기열에 들어가 지금 실행이 끝난 뒤 새 실행으로 호스트에 간다. 실행 중인 턴에 덧붙이는 길은 없다.
 - 원격 명령 창(kind `shell`, 호스트가 **원격에서 전체 권한·명령 실행 허용**을 켰을 때만)은 명령마다 호스트의 공유 폴더에서 `$SHELL -l -c`를 새로 띄운다(Mac 호스트. Windows 호스트는 아래 절). 대화형 프로그램과 비밀번호 입력은 지원하지 않는다. 로컬 터미널 창(Ghostty PTY)은 원격에 쓰지 않는다.
 - 첨부는 내용 자체를 보낸다. 최대 8개, 파일당 5 MiB, 합계 8 MiB.
 - 앱을 다시 열면 원격 창과 연결 목록은 남고 연결은 "저장됨" 상태다. 원격 창에서 처음 보내거나 **새로고침**할 때 키를 읽어(Mac은 Keychain, Windows는 아래 절) 다시 연결한다.
@@ -49,7 +49,7 @@ Mac이나 Windows 컴퓨터 두 대의 Mighty Claude를 Tailscale로 이으면, 
   - `GET /v2/info` — 호스트 이름, 공유 워크스페이스(id·이름·경로), 호스트의 CLI·모델·지원 설정
   - `POST /v2/runs` — 실행 요청(본문에만 프롬프트), `202 {jobId}`
   - `GET /v2/runs/{id}/events?cursor=N` — 커서 뒤의 이벤트, 버퍼에서 빠진 구간이 있으면 `gap`
-  - `POST /v2/runs/{id}/stop|steer|permission|questions|plan`
+  - `POST /v2/runs/{id}/stop|steer|permission|questions|plan` — `steer`는 구버전 클라이언트를 위해 라우트만 남았고, 0.4.35부터 호스트는 언제나 `accepted: false`로 답한다. 구버전 클라이언트는 그 답을 받으면 글을 자기 대기열로 넘긴다.
   - Antigravity 권한 카드: 호스트 실행의 이벤트 `antigravityPermission`이 클라이언트 창에 카드를 띄우고, 허용의 이어 보내기는 `POST /v2/runs`에 `antigravityGrant`를 싣는다. 규칙은 그 창을 실행하는 호스트가 자기 agy 설정에 넣고 지운다(자기가 알린 카드의 규칙만, 그 밖은 403). 카드의 규칙은 한 번만 받는다(같은 카드로 다시 보내면 403). 항상 허용(`temporary: false`)은 호스트의 '원격에서 전체 권한·명령 실행 허용'이 켜져 있을 때만 받고(아니면 403 `remote.host.error.antigravityAlways`), 이번만 허용할 수 있는 명령의 항상 허용은 409(`remote.error.antigravityOnceOnly`). 임시 규칙도 그 호스트의 전역 agy 설정에 들어가므로 있는 동안 그 컴퓨터의 모든 Antigravity 실행에 적용된다. 자세한 것은 [mobile-remote.md](mobile-remote.md)의 "Antigravity 권한 카드"
 - 무엇이 Tailscale 주소인지는 한 규칙이다(`TailscaleAddresses.select(interfaces:)`): `utun…` 인터페이스 가운데 Tailscale만 쓰는 IPv6 대역 fd7a:115c:a1e0::/48 주소도 가진 것만 Tailscale이고, 그 인터페이스의 두 대역(IPv4 100.64.0.0/10, IPv6 fd7a:115c:a1e0::/48) 주소가 Tailscale 주소다. 통신사 NAT 망은 Wi-Fi·이더넷에도 100.64/10 주소를 주고, Cloudflare WARP 같은 다른 VPN은 자기 utun에 100.96/12 주소를 두기 때문이다.
 - 호스트는 그 주소마다 하나씩, 그 주소에만 바인딩하고, 리스너를 그 주소를 가진 utun 인터페이스에 고정한다(시스템이 그 인터페이스를 알려 주지 않으면 Wi-Fi·이더넷·셀룰러·루프백 인터페이스를 막는다). 연결을 받는 순간 상대 주소가 Tailscale 주소가 아니거나 같은 상대의 열린 연결이 이미 8개면 아무것도 읽지 않고 끊는다. 키가 없거나 틀리면 본문을 한 바이트도 읽지 않고 머리만으로 401을 답한다. 요청마다 상대 주소가 Tailscale 주소인지, `Origin` 헤더가 없는지(브라우저 페이지 차단), 키가 맞는지(SHA-256 뒤 상수 시간 비교), 프로토콜 버전이 맞는지, 초당 요청 수를 넘지 않는지 본다. 상대마다 300번, 키가 맞는 요청만 세는 전체 600번이라 키 없는 기기가 진짜 클라이언트를 밀어낼 수 없다. 클라이언트는 실행마다 초당 10번까지만 묻는다.

@@ -22,7 +22,7 @@ section: windows
 > [!warning]
 > 此应用没有代码签名，Windows（SmartScreen）可能会阻止安装程序或首次运行。遇到这种情况，请点按**更多信息**，再点按**仍要运行**。如果提示找不到 Visual C++ 运行时，请安装 Microsoft Visual C++ 可再发行程序包（v14）。终端窗格和浏览器窗格需要 Microsoft Edge WebView2 运行时。
 
-与 Mac 相同，更新在{{ui:menu.settings}} → {{ui:settings.nav.about}}中获取。用安装程序安装的应用会在同一文件夹中替换为新版本，已安装的应用列表中显示的版本也会随之更新。也可以直接运行新的安装程序覆盖安装。
+更新方式与 Mac 相同：应用会自行下载新版本，在你关闭应用时安装；应用空闲时，会在一分钟提示后重新启动并安装（[更新](getting-started.md#update)）。要手动更新，请在{{ui:menu.settings}} → {{ui:settings.nav.about}}中操作。用安装程序安装的应用会在同一文件夹中替换为新版本，已安装的应用列表中显示的版本也会随之更新。也可以直接运行新的安装程序覆盖安装。
 
 ## 快捷键 {#shortcuts}
 用{{kbd:Ctrl}}代替{{kbd:⌘}}。只有收起侧边栏和停止远程屏幕的按键不同。
@@ -37,7 +37,7 @@ section: windows
 | {{kbd:⌃⌘S}} | {{kbd:Ctrl+B}} | {{ui:sidebar.collapse}} / {{ui:sidebar.expand}} |
 | {{kbd:⌘,}} | {{kbd:Ctrl+,}} | {{ui:menu.settings}} |
 | {{kbd:⌘=}} / {{kbd:⌘-}} / {{kbd:⌘0}} | {{kbd:Ctrl+=}} / {{kbd:Ctrl+-}} / {{kbd:Ctrl+0}} | {{ui:menu.textBigger}} / {{ui:menu.textSmaller}} / {{ui:menu.textActualSize}} |
-| {{kbd:⌘Enter}} | {{kbd:Ctrl+Enter}} | 立即在新的 worktree 中运行，或立即发送给正在运行的 Claude |
+| {{kbd:⌘Enter}} | {{kbd:Ctrl+Enter}} | 在运行中的窗格里立即在新的 worktree 中运行，无法这样做时放入队列 |
 | {{kbd:⌃⌥⌘K}} | {{kbd:Ctrl+Alt+Esc}} | 停止来自手机的所有远程屏幕会话（[远程屏幕](phone.md#screen)） |
 
 Windows 没有菜单栏。相同的功能位于侧边栏和{{ui:workspace.addPane}}菜单中。

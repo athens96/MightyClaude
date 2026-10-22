@@ -25,14 +25,31 @@ Mighty Claude is a desktop app for using Claude Code, Codex CLI and Google's Ant
 > The app is not notarized by Apple. If macOS blocks it the first time, Control-click the app in Finder and choose **Open**, or allow it in System Settings → Privacy & Security.
 
 ## Updates {#update}
-Once a day, when it opens, the app checks for a new version. If there is one, a badge appears in the status bar at the bottom of the window. Clicking it opens Settings.
+With {{ui:settings.appUpdate.autoUpdateToggle}} on (it is on from the start), the app gets and installs new versions by itself.
+
+- It checks for a new version when it opens and every 6 hours while it runs. A check that fails is tried again at the next one, and the failure shows only in Settings.
+- When there is a new version, it downloads it without asking, verifies its signature and files, and keeps it ready. The status bar at the bottom of the window then says it installs on next launch, with a {{ui:window.status.updateRestartNow}} button.
+- When you quit the app, the ready update is installed. The app does not open again; the next time you open it, it is the new version. {{platform:mac}} When the app closes because you log out, restart or shut down the Mac, nothing is installed; the update waits for the next quit.
+- When the app has been idle for a while, a one-minute notice appears at the top of the window. When it runs out, the app restarts to install the update, and your open workspaces and panes come back as they were. {{ui:appUpdate.countdown.restartNow}} restarts right away; {{ui:appUpdate.countdown.later}} keeps the notice away for 4 hours. Quitting the app meanwhile installs the update then.
+
+The app is idle when all of the following hold. If one stops holding while the notice counts down, the notice goes away without a word and waits for the next idle moment. Keyboard or mouse input alone does not take it away, so you can click its buttons.
+- No agent task is running or waiting to start, no card waits for an answer and no request waits in a queue.
+- No composer holds unsent text or attachments.
+- No terminal is running a command, and no CLI sign-in, update or install is under way.
+- No phone upload, no screen sharing and no remote run this computer hosts for another one.
+- No Settings window or dialog is open.
+- There was no keyboard or mouse input for 5 minutes, and no run ended and no request was sent in the last 3 minutes.
+
+To update by hand:
 
 1. Open {{ui:menu.settings}} ({{kbd:⌘,}}) and go to the {{ui:settings.nav.about}} tab.
 2. Under {{ui:settings.appUpdate.sectionTitle}}, click {{ui:settings.appUpdate.checkButton}}.
-3. If a new version is available, click {{ui:settings.appUpdate.downloadButton}}.
-4. When it is ready, click {{ui:settings.appUpdate.installButton}}. The app quits, is replaced by the new version and opens again.
+3. If there is a new version that has not been downloaded yet, click {{ui:settings.appUpdate.downloadButton}}.
+4. When it is ready, click {{ui:settings.appUpdate.restartNowButton}}. The app quits, is replaced by the new version and opens again.
 
-To stop the automatic check, turn off {{ui:settings.appUpdate.autoCheckToggle}}. An update is installed only after its signature is verified.
+With {{ui:settings.appUpdate.autoUpdateToggle}} off, the app does not check or download on its own, shows no one-minute notice and installs nothing when it quits; an update already downloaded installs only when you click {{ui:settings.appUpdate.restartNowButton}}. Either way, an update is installed only after its signature is verified.
+
+The Windows app updates the same way ([How Windows differs](windows.md#install)).
 
 > [!note]
 > The AI CLIs are updated separately from the app. Use {{ui:settings.cliUpdate.sectionTitle}} on the {{ui:settings.nav.cli}} tab.

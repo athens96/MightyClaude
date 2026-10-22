@@ -20,7 +20,7 @@ section: faq
 メニューバーの{{ui:menu.workspace}}メニューで{{ui:menu.reconnectInputMethod}}を選んでください。それでも続く場合は、{{ui:menu.saveInputDiagnostics}}で診断ファイルを保存してお知らせください。
 
 > [!warning]
-> アプリの実行中に、アプリのファイルを上書きしたり、アプリを2つ起動したりしないでください。macOSの入力メソッドとの接続が切れ、ハングルが字母に分解されることがあります。アップデートには、アプリ内の{{ui:settings.appUpdate.installButton}}を使ってください。
+> アプリの実行中に、アプリのファイルを上書きしたり、アプリを2つ起動したりしないでください。macOSの入力メソッドとの接続が切れ、ハングルが字母に分解されることがあります。アップデートは、ダウンロード済みのものをアプリが終了時にインストールするのに任せるか、アプリ内の{{ui:settings.appUpdate.restartNowButton}}を使ってください([アップデート](getting-started.md#update))。
 
 ## ブラウザペインが空になっている {#browser-empty}
 ブラウザペインは最初はオフになっています。{{ui:settings.nav.general}}で{{ui:settings.display.browserToggle}}をオンにして、アプリを開き直してください。[ブラウザペイン](terminal-files-browser.md#browser)を参照してください。

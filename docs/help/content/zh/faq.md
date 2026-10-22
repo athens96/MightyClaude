@@ -20,7 +20,7 @@ section: faq
 在菜单栏的{{ui:menu.workspace}}菜单中点击{{ui:menu.reconnectInputMethod}}。如果问题仍然存在，请用{{ui:menu.saveInputDiagnostics}}保存诊断文件并发给我们。
 
 > [!warning]
-> 应用运行期间，请勿覆盖应用文件，也不要同时打开两个应用。这可能会断开与 macOS 输入法的连接，导致韩文被拆成单独的字母。更新时请使用应用内的{{ui:settings.appUpdate.installButton}}。
+> 应用运行期间，请勿覆盖应用文件，也不要同时打开两个应用。这可能会断开与 macOS 输入法的连接，导致韩文被拆成单独的字母。更新请交给应用在退出时安装已下载的版本，或使用应用内的{{ui:settings.appUpdate.restartNowButton}}（[更新](getting-started.md#update)）。
 
 ## 浏览器窗格是空白的 {#browser-empty}
 浏览器窗格默认处于关闭状态。请在{{ui:settings.nav.general}}中打开{{ui:settings.display.browserToggle}}，然后重新打开应用。请参阅[浏览器窗格](terminal-files-browser.md#browser)。

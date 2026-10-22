@@ -2,7 +2,7 @@ defaults delete dev.mightyclaude.native delegation.enabled
 
 # 마이티 오케스트레이션(예전 이름: 에이전트 위임) 실제 실행 확인표 (Mac)
 
-맨 위 한 줄은 위임 스위치 `delegation.enabled`를 기본값인 켜짐으로 되돌린다(Mac은 기본으로 켜져 있고, 설정 › 일반의 "마이티 오케스트레이션"으로도 켜고 끈다). 앱을 끈 채로 터미널에서 실행한다. 스위치가 켜져 있으면 Claude 창에서 새 실행을 시작할 때마다 위임 MCP 서버 `mighty-delegation`이 붙는다. 도구는 `delegate`·`list_children`·`child_status`·`merge`·`follow_up`·`discard` 여섯 개다. 끄려면 설정에서 끄거나 `defaults write dev.mightyclaude.native delegation.enabled -bool false`를 실행한다. 꺼도 서버만 떨어지고, 입력창의 ⌘Enter는 다시 실행 중인 Claude에 바로 전달한다. 예전 안내대로 `defaults delete`로 꺼 두었던 사용자는 이제 켜진 상태가 되므로, 계속 꺼 두려면 설정 › 일반의 "에이전트 위임"을 끈다. 이미 있는 자식 창은 트리·카드·정리가 그대로 동작한다.
+맨 위 한 줄은 위임 스위치 `delegation.enabled`를 기본값인 켜짐으로 되돌린다(Mac은 기본으로 켜져 있고, 설정 › 일반의 "마이티 오케스트레이션"으로도 켜고 끈다). 앱을 끈 채로 터미널에서 실행한다. 스위치가 켜져 있으면 Claude 창에서 새 실행을 시작할 때마다 위임 MCP 서버 `mighty-delegation`이 붙는다. 도구는 `delegate`·`list_children`·`child_status`·`merge`·`follow_up`·`discard` 여섯 개다. 끄려면 설정에서 끄거나 `defaults write dev.mightyclaude.native delegation.enabled -bool false`를 실행한다. 꺼도 서버만 떨어지고, 입력창의 ⌘Enter는 Enter처럼 요청을 대기열에 넣는다. 예전 안내대로 `defaults delete`로 꺼 두었던 사용자는 이제 켜진 상태가 되므로, 계속 꺼 두려면 설정 › 일반의 "에이전트 위임"을 끈다. 이미 있는 자식 창은 트리·카드·정리가 그대로 동작한다.
 
 macOS CI는 가짜 Claude로 같은 경로를 확인한다. 헤드리스 시나리오 S1–S3과 `--delegation-smoke-test`를 돌리고, S1·S2가 남긴 기록을 기록 스크립트 `scripts/delegation-record.py`로 판정한다. 이 확인표는 실제 Claude CLI와 모델로 한 번 돌려 보는 실행이다. 스위치는 이제 Mac에서 기본으로 켜져 있다. 실행 중인 Claude 창의 ⌘Enter가 새 worktree의 자식 창을 사람이 직접 띄우는 길이 되었고, 그렇게 띄운 자식은 부모에게 알림을 보내지 않는다(도움말 `delegation.md#worktree`).
 

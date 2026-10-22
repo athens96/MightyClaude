@@ -39,7 +39,7 @@ Mac이나 Windows 컴퓨터 두 대의 Mighty Claude를 [Tailscale](https://tail
 
 ## 원격 창 쓰기 {#use}
 - 에이전트 창은 로컬 창처럼 쓰면 됩니다. 모델·권한·사고 강도·Fast 모드는 그대로 호스트로 전해지고, 호스트 CLI가 지원하지 않는 설정은 실행 전에 알려 줍니다.
-- 승인·질문·계획 카드는 이 앱에 나타나고, 답하면 호스트의 실행으로 전해집니다. 실행 중인 Claude 요청에 끼워 넣을 수도 있습니다({{platform:mac}} {{kbd:⌘Enter}}, {{platform:windows}} {{kbd:Ctrl+Enter}}).
+- 승인·질문·계획 카드는 이 앱에 나타나고, 답하면 호스트의 실행으로 전해집니다. 실행 중에 보낸 요청은 로컬 창처럼 대기열에 들어가 지금 실행이 끝난 뒤 시작합니다.
 - {{ui:graph.view.default}} 보기와 {{ui:graph.view.mighty}} 보기({{ui:graph.view.diagram}}·{{ui:graph.view.timeline}}·{{ui:graph.view.structure}})가 로컬 실행과 똑같이 그려집니다.
 - {{ui:remote.menu.newCommand}} 창은 명령마다 호스트의 공유 폴더에서 새 셸을 엽니다. 대화형 프로그램과 비밀번호 입력은 지원하지 않습니다.
 - 원격 창은 상태 막대와 세션 정보에 실행 컴퓨터의 OS(macOS·Windows)를 보여 줍니다. {{ui:remote.menu.newCommand}} 창은 Mac 호스트에서는 로그인 셸, Windows 호스트에서는 PowerShell로 명령을 실행합니다.
