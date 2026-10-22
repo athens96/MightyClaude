@@ -35,7 +35,7 @@ Antigravity 在工作过程中无法向应用提问。遇到必须询问的操�
 
 串联命令（`;`、`&&`、`||`）、使用管道（`|`）、重定向（`>`、`<`）、命令替换（反引号、`$(`）、后台运行（`&`），或删除数据、提升权限的命令（`rm`、`sudo`、`git push --force`、`git reset --hard`、`git clean`、`kill` 等）只能{{ui:permission.allowOnce}}。卡片上的{{ui:antigravity.permission.allowAlways}}会关闭并显示原因；手机上不会显示该按钮。
 
-应用不会为含有 `*` 或括号的命令、指向整个磁盘（`/`）或主文件夹（`~`）的规则创建规则。也不会为 Antigravity 自己的设置文件夹（`~/.gemini`）或应用数据文件夹之内、或其上层文件夹（如主文件夹）创建文件规则，因为那里的规则会让 Antigravity 改写自己的权限。提到 `.gemini` 的命令只能{{ui:permission.allowOnce}}。这类操作会显示为无法用规则允许的操作。
+应用不会为含有 `*` 或括号的命令、指向整个磁盘（`/`）或主文件夹（`~`）的规则创建规则。也不会为 Antigravity 自己的设置文件夹（`~/.gemini`）或应用数据文件夹之内、或其上层文件夹（如主文件夹）创建文件规则，因为那里的规则会让 Antigravity 改写自己的权限。提到 `.gemini` 的命令、单独运行或直接传入代码的 shell 和解释器（`bash`、`python3 -c …`、`node -e …`、`cmd /c …`），以及运行其他命令的包装程序（`npx`、`xargs`、`timeout`、`env` 等）也只能{{ui:permission.allowOnce}}，因为 `command(bash)` 会允许以 `bash -c` 开头的任何命令。卡片会显示具体原因。这类操作会显示为无法用规则允许的操作。
 
 这与 Claude 不同。Claude 会在执行前停下来等待你的回答；Antigravity 则先结束这一轮，之后再询问，你允许后才继续。因此卡片出现时，其余工作可能已经完成。
 
