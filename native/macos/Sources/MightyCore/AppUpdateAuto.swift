@@ -32,6 +32,9 @@ public enum AppUpdateAuto {
     public static let countdown: TimeInterval = 60
     /// How often the app re-evaluates while the banner counts down.
     public static let countdownTick: TimeInterval = 1
+    /// A countdown found more than this past its end was not watched to the
+    /// end (the Mac slept through it): it is cancelled, never acted on.
+    public static let countdownGrace: TimeInterval = 5
     /// "Later" keeps the banner away this long.
     public static let snooze: TimeInterval = 4 * 60 * 60
 
@@ -67,7 +70,7 @@ public enum AppUpdateAuto {
             case .draft: return facts.drafts > 0
             case .terminal: return facts.terminals > 0
             case .cliWork: return facts.cliWork
-            case .remote: return facts.screenSharing || facts.phoneUploads > 0 || facts.remoteHostRuns > 0
+            case .remote: return facts.screenSharing || facts.phoneUploads > 0 || facts.remoteHostRuns > 0 || facts.sharingWorkspaces
             case .modal: return facts.blockingModal
             case .userActive: return recent(facts.lastUserInput, within: userIdleDelay)
             case .recentAgentActivity: return recent(facts.lastAgentActivity, within: agentIdleDelay)
@@ -89,12 +92,17 @@ public enum AppUpdateAuto {
     /// appears, the switch goes off or the update is no longer ready. Input
     /// alone does not cancel a running countdown, so the pointer can reach the
     /// banner's buttons ("restart now", "later"), which the app handles itself.
+    /// A countdown found more than `countdownGrace` past its end (the Mac slept
+    /// through it) is cancelled too, so waking never restarts the app at once;
+    /// the next idle step starts a fresh one.
     /// A snooze holds until it ends, then the app is asked again the next time
     /// it is idle.
     public static func restartOffer(_ state: AppUpdateRestartState, ready: Bool, automatic: Bool, blockers: [AppIdleBlocker], now: Date) -> AppUpdateRestartDecision {
         switch state {
         case .countingDown(let until):
-            guard ready, automatic, blockers.allSatisfy({ $0 == .userActive }) else { return AppUpdateRestartDecision(state: .idle, action: .cancel) }
+            guard ready, automatic, blockers.allSatisfy({ $0 == .userActive }), now.timeIntervalSince(until) <= countdownGrace else {
+                return AppUpdateRestartDecision(state: .idle, action: .cancel)
+            }
             return now >= until ? AppUpdateRestartDecision(state: .idle, action: .restart) : AppUpdateRestartDecision(state: state, action: .none)
         case .snoozed(let until) where now < until:
             return AppUpdateRestartDecision(state: state, action: .none)
@@ -136,6 +144,9 @@ public struct AppIdleFacts: Sendable, Equatable {
     public var phoneUploads: Int
     /// `.remote`: runs this Mac hosts for another computer.
     public var remoteHostRuns: Int
+    /// `.remote`: this Mac shares workspaces with another computer, runs or
+    /// not; a restart would turn sharing off and revoke the client's key.
+    public var sharingWorkspaces: Bool
     /// `.modal`: a blocking modal, the setup sheet or the settings are open.
     public var blockingModal: Bool
     /// `.userActive`: the last keyboard or mouse input anywhere in the session.
@@ -144,11 +155,11 @@ public struct AppIdleFacts: Sendable, Equatable {
     public var lastAgentActivity: Date?
 
     public init(agentRuns: Int = 0, pendingCards: Int = 0, queuedInputs: Int = 0, drafts: Int = 0, terminals: Int = 0, cliWork: Bool = false,
-                screenSharing: Bool = false, phoneUploads: Int = 0, remoteHostRuns: Int = 0, blockingModal: Bool = false,
+                screenSharing: Bool = false, phoneUploads: Int = 0, remoteHostRuns: Int = 0, sharingWorkspaces: Bool = false, blockingModal: Bool = false,
                 lastUserInput: Date? = nil, lastAgentActivity: Date? = nil) {
         self.agentRuns = agentRuns; self.pendingCards = pendingCards; self.queuedInputs = queuedInputs; self.drafts = drafts
         self.terminals = terminals; self.cliWork = cliWork; self.screenSharing = screenSharing; self.phoneUploads = phoneUploads
-        self.remoteHostRuns = remoteHostRuns; self.blockingModal = blockingModal; self.lastUserInput = lastUserInput; self.lastAgentActivity = lastAgentActivity
+        self.remoteHostRuns = remoteHostRuns; self.sharingWorkspaces = sharingWorkspaces; self.blockingModal = blockingModal; self.lastUserInput = lastUserInput; self.lastAgentActivity = lastAgentActivity
     }
 }
 

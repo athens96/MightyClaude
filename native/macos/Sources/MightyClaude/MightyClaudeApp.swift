@@ -119,6 +119,9 @@ struct MightyClaudeApp: App {
 final class ApplicationDelegate: NSObject, NSApplicationDelegate {
     private var terminating = false
     private var terminationReady = false
+    /// The quit came from a logout, restart or shutdown and was answered
+    /// `.terminateLater`: cleanup ends with a reply instead of a second terminate.
+    private var replyPending = false
     private let copyRouter = ApplicationCopyRouter()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -134,9 +137,11 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         terminating = true
         // Logout, restart and shutdown send their quit with one of their
         // reasons: a staged update then waits for the next quit. Read from this
-        // quit alone, so a logout cancelled earlier leaves nothing behind.
-        let reason = NSAppleEventManager.shared().currentAppleEvent?.attributeDescriptor(forKeyword: AEKeyword(kAEQuitReason))?.enumCodeValue
-        AppStore.shared.appUpdatePoweringOff = AppUpdateAuto.quitReasonPowersOff(reason)
+        // quit alone, so a logout cancelled earlier leaves nothing behind. A
+        // reason that reads as no code is still a reason (AppUpdateAuto.quitReasonPowersOff).
+        let poweringOff = AppUpdateAuto.quitReasonPowersOff(NSAppleEventManager.shared().currentAppleEvent?
+            .attributeDescriptor(forKeyword: AEKeyword(kAEQuitReason)).map { $0.enumCodeValue != 0 ? $0.enumCodeValue : $0.typeCodeValue })
+        AppStore.shared.appUpdatePoweringOff = poweringOff
         Task {
             await AppStore.shared.shutdown()
             finishTermination(sender)
@@ -152,6 +157,13 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         // Keep the normal event loop active while asynchronous process cleanup and
         // state saving finish. terminateLater enters a modal loop that can block
         // MainActor jobs when termination was requested from a SwiftUI Task.
+        // A logout, restart or shutdown is the exception: cancelling its quit
+        // would cancel the logout itself, and its quit arrives as an Apple event
+        // from the event loop, never from inside a main-actor job.
+        if poweringOff {
+            replyPending = true
+            return .terminateLater
+        }
         return .terminateCancel
     }
 
@@ -163,7 +175,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         terminationReady = true
         // Cleanup hung: nothing it would still have stopped outlives the app.
         if deadline { AppStore.shared.killProcessesAtQuitDeadline() }
-        sender.terminate(nil)
+        if replyPending { sender.reply(toApplicationShouldTerminate: true) } else { sender.terminate(nil) }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }

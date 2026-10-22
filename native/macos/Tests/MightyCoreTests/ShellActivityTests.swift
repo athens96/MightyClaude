@@ -121,6 +121,27 @@ struct ShellActivityTests {
         #expect((try? String(contentsOf: pidFile, encoding: .utf8)) == "4242\n")
     }
 
+    @Test func aShellHoldingABackgroundJobHasChildrenAndALoneProcessDoesNot() async throws {
+        let lone = try Self.spawn("/bin/sleep", ["20"], environment: [:])
+        defer { lone.terminate(); lone.waitUntilExit() }
+        let shell = try Self.spawn("/bin/sh", ["-c", "/bin/sleep 20 & wait"], environment: [:])
+        defer {
+            var children = [pid_t](repeating: 0, count: 16)
+            let count = children.withUnsafeMutableBytes { proc_listchildpids(shell.processIdentifier, $0.baseAddress, Int32($0.count)) }
+            for child in children.prefix(Int(max(0, count))) where child > 1 { kill(child, SIGTERM) }
+            shell.terminate(); shell.waitUntilExit()
+        }
+        var found = false
+        for _ in 0..<40 where !found {
+            found = ShellProcessProbe.hasChildren(pid: shell.processIdentifier)
+            if !found { try await Task.sleep(for: .milliseconds(50)) }
+        }
+        #expect(found)
+        #expect(!ShellProcessProbe.hasChildren(pid: lone.processIdentifier))
+        #expect(!ShellProcessProbe.hasChildren(pid: 0))
+        #expect(!ShellProcessProbe.hasChildren(pid: 1))
+    }
+
     @Test func aPidFileCountsOnlyForAProcessBelowTheApp() throws {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("shell-activity-\(UUID().uuidString).pid")
         defer { try? FileManager.default.removeItem(at: file) }
