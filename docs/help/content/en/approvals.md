@@ -31,12 +31,18 @@ The card lists every declined action. For each one you see its kind ({{ui:antigr
 
 Allowing continues in the same conversation. If the pane is busy with something else, the continuing run waits in the queue.
 
+Rules match from the start. A command rule allows **every command that starts with its text** (`command(git status)` also allows `git status --short`), and a file rule for a folder allows every file in it. The {{ui:permission.allowOnce}} rule also goes into Antigravity's settings for the whole computer, so while it is there it applies to **every Antigravity run on this computer** (other panes and workspaces, and `agy` in a terminal).
+
+A command that chains (`;`, `&&`, `||`), pipes (`|`), redirects (`>`, `<`), substitutes (backticks, `$(`), runs in the background (`&`), or deletes data or raises privileges (`rm`, `sudo`, `git push --force`, `git reset --hard`, `git clean`, `kill` and so on) offers only {{ui:permission.allowOnce}}. The card's {{ui:antigravity.permission.allowAlways}} is turned off with the reason; on the phone the button is not shown.
+
+The app never makes a rule from a command with `*` or a parenthesis, or one for the whole disk (`/`) or your home folder (`~`). Such an action shows as one no rule can allow.
+
 This differs from Claude. Claude stops before acting and waits for your answer; Antigravity finishes the turn, asks afterwards, and carries on once you allow it. So when the card appears, the rest of the work may already be done.
 
 > [!note]
-> An action that no rule can allow still shows on the card, with guidance to change the permission mode. A card with only such actions offers just {{ui:antigravity.permission.deny}}. If Antigravity's settings file cannot be read or is not JSON, the app leaves it alone and shows the reason on the card. The app only adds and removes rules under `permissions.allow` and leaves every other setting as it was.
+> An action that no rule can allow still shows on the card, with guidance to change the permission mode. A card with only such actions offers just {{ui:antigravity.permission.deny}}. If Antigravity's settings file cannot be read or is not JSON, the app leaves it alone and shows the reason on the card. The app only adds and removes rules under `permissions.allow` and leaves every other setting as it was. If a rule it added for a moment cannot be removed, it tries again shortly, and again when the app opens next.
 
-An Antigravity pane on a [remote workspace](remote.md) changes the settings of the computer that runs it.
+An Antigravity pane on a [remote workspace](remote.md) changes the settings of the computer that runs it. Each card's allow can be used only once there, and {{ui:antigravity.permission.allowAlways}} is accepted only while {{ui:settings.remote.allowFullAccess}} is on on that computer.
 
 ## Answer questions {#questions}
 When Claude asks you to choose between options, a {{ui:phone.questionnaire.title}} card appears.

@@ -31,12 +31,18 @@ Antigravity 在工作过程中无法向应用提问。遇到必须询问的操�
 
 允许后会在同一个对话中继续。如果窗格正忙于其他事情，继续运行的请求会进入队列。
 
+规则按开头匹配。命令规则会允许**以该文本开头的所有命令**（`command(git status)` 也会允许 `git status --short`），指向文件夹的文件规则会允许其中的所有文件。{{ui:permission.allowOnce}}的规则也会写入 Antigravity 的全局设置，因此规则存在期间，它适用于**此电脑上的所有 Antigravity 运行**（其他窗格和工作区，以及终端中的 `agy`）。
+
+串联命令（`;`、`&&`、`||`）、使用管道（`|`）、重定向（`>`、`<`）、命令替换（反引号、`$(`）、后台运行（`&`），或删除数据、提升权限的命令（`rm`、`sudo`、`git push --force`、`git reset --hard`、`git clean`、`kill` 等）只能{{ui:permission.allowOnce}}。卡片上的{{ui:antigravity.permission.allowAlways}}会关闭并显示原因；手机上不会显示该按钮。
+
+应用不会为含有 `*` 或括号的命令、指向整个磁盘（`/`）或主文件夹（`~`）的规则创建规则。这类操作会显示为无法用规则允许的操作。
+
 这与 Claude 不同。Claude 会在执行前停下来等待你的回答；Antigravity 则先结束这一轮，之后再询问，你允许后才继续。因此卡片出现时，其余工作可能已经完成。
 
 > [!note]
-> 没有规则可以允许的操作仍会显示在卡片上，并附有更改权限模式的提示。只含这类操作的卡片只有{{ui:antigravity.permission.deny}}一个按钮。如果 Antigravity 的设置文件无法读取或不是 JSON，应用不会改动它，并在卡片上显示原因。应用只会在 `permissions.allow` 下添加和删除规则，其他设置保持原样。
+> 没有规则可以允许的操作仍会显示在卡片上，并附有更改权限模式的提示。只含这类操作的卡片只有{{ui:antigravity.permission.deny}}一个按钮。如果 Antigravity 的设置文件无法读取或不是 JSON，应用不会改动它，并在卡片上显示原因。应用只会在 `permissions.allow` 下添加和删除规则，其他设置保持原样。如果临时添加的规则删除失败，应用会稍后再试，下次打开应用时也会删除。
 
-[远程工作区](remote.md)中的 Antigravity 窗格会修改运行它的那台电脑的设置。
+[远程工作区](remote.md)中的 Antigravity 窗格会修改运行它的那台电脑的设置。每张卡片的允许只能使用一次，并且只有那台电脑开启了{{ui:settings.remote.allowFullAccess}}时，才接受{{ui:antigravity.permission.allowAlways}}。
 
 ## 回答问题 {#questions}
 Claude 给出选项向你提问时，会弹出{{ui:phone.questionnaire.title}}卡片。

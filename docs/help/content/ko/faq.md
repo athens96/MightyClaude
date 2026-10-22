@@ -28,6 +28,9 @@ section: faq
 ## Antigravity가 명령이나 파일 쓰기를 거절해요 {#antigravity-denied}
 Antigravity는 일하는 도중에 물어볼 수 없어서, 물어봐야 하는 작업은 건너뛰고 턴을 끝냅니다. 그러면 실행 창에 거절한 작업을 모은 카드가 뜹니다. {{ui:permission.allowOnce}}이나 {{ui:antigravity.permission.allowAlways}}을 누르면 같은 대화에서 이어서 진행합니다. 규칙 파일을 직접 고치지 않아도 됩니다. [Antigravity의 권한 카드](approvals.md#antigravity-permission)를 보세요.
 
+## Antigravity 카드의 {{ui:antigravity.permission.allowAlways}}이 꺼져 있어요 {#antigravity-once-only}
+명령을 잇거나 파이프·리디렉션을 쓰거나 데이터를 지울 수 있는 명령은 {{ui:permission.allowOnce}}만 할 수 있습니다. 규칙은 그 글자로 시작하는 모든 명령을 허용하므로 그런 규칙을 계속 두면 위험하기 때문입니다. [Antigravity의 권한 카드](approvals.md#antigravity-permission)를 보세요.
+
 ## 휴대폰이 연결되지 않아요 {#phone}
 - Mac의 {{ui:settings.nav.mobile}}에서 {{ui:settings.mobileRemote.allowToggle}}이 켜져 있는지 봅니다.
 - 상태가 릴레이 연결 중에서 멈춰 있으면 {{ui:settings.mobileRemote.reconnectButton}} 단추를 누릅니다.

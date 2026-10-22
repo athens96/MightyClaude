@@ -31,12 +31,18 @@ Antigravity는 일하는 도중에 앱에 물어볼 수 없습니다. 물어봐�
 
 허용하면 같은 대화에서 이어서 진행합니다. 창이 다른 일로 바쁘면 이어 가는 실행은 대기열에 들어갑니다.
 
+규칙은 앞부분이 맞으면 허용합니다. 명령 규칙은 **그 글자로 시작하는 모든 명령**을 허용하고(`command(git status)`는 `git status --short`도 허용합니다), 폴더를 가리키는 파일 규칙은 그 안의 모든 파일을 허용합니다. {{ui:permission.allowOnce}}의 규칙도 Antigravity의 전체 설정에 들어가므로, 규칙이 있는 동안에는 이 컴퓨터의 **모든 Antigravity 실행**(다른 창과 워크스페이스, 터미널의 `agy`)에 적용됩니다.
+
+명령을 잇거나(`;`, `&&`, `||`), 파이프(`|`)·리디렉션(`>`, `<`)·명령 치환(백틱, `$(`)·백그라운드(`&`)를 쓰거나, 데이터를 지우거나 권한을 올리는 명령(`rm`, `sudo`, `git push --force`, `git reset --hard`, `git clean`, `kill` 등)은 {{ui:permission.allowOnce}}만 할 수 있습니다. 카드의 {{ui:antigravity.permission.allowAlways}}이 꺼지고 그 이유가 나옵니다. 휴대폰에서는 그 단추가 보이지 않습니다.
+
+`*`나 괄호가 든 명령, 디스크 전체(`/`)나 홈(`~`)을 가리키는 규칙은 만들지 않습니다. 그런 작업은 규칙으로 허용할 수 없는 작업으로 보입니다.
+
 Claude와 다른 점이 있습니다. Claude는 실행 전에 멈추고 답을 기다리지만, Antigravity는 그 턴을 끝낸 뒤에 묻고 허용하면 이어서 진행합니다. 그래서 카드가 보일 때는 나머지 작업이 이미 끝나 있을 수 있습니다.
 
 > [!note]
-> 규칙으로 허용할 수 없는 작업이 있으면 카드에 그 작업이 보이고, 권한 모드를 바꾸라는 안내가 나옵니다. 그 작업만 있는 카드에는 {{ui:antigravity.permission.deny}}만 있습니다. Antigravity 설정 파일을 읽을 수 없거나 JSON이 아니면 앱은 파일을 고치지 않고 카드에 이유를 보여 줍니다. 앱은 `permissions.allow`의 규칙만 더하고 지우며 다른 설정은 그대로 둡니다.
+> 규칙으로 허용할 수 없는 작업이 있으면 카드에 그 작업이 보이고, 권한 모드를 바꾸라는 안내가 나옵니다. 그 작업만 있는 카드에는 {{ui:antigravity.permission.deny}}만 있습니다. Antigravity 설정 파일을 읽을 수 없거나 JSON이 아니면 앱은 파일을 고치지 않고 카드에 이유를 보여 줍니다. 앱은 `permissions.allow`의 규칙만 더하고 지우며 다른 설정은 그대로 둡니다. 잠깐 더한 규칙을 지우지 못하면 잠시 뒤 다시 지우고, 앱을 다시 열 때도 지웁니다.
 
-[원격 워크스페이스](remote.md)의 Antigravity 창은 그 창을 실행하는 컴퓨터의 설정을 고칩니다.
+[원격 워크스페이스](remote.md)의 Antigravity 창은 그 창을 실행하는 컴퓨터의 설정을 고칩니다. 카드 하나의 허용은 한 번만 쓸 수 있고, {{ui:antigravity.permission.allowAlways}}은 그 컴퓨터에서 {{ui:settings.remote.allowFullAccess}}이 켜져 있을 때만 받습니다.
 
 ## 질문에 답하기 {#questions}
 Claude가 선택지를 주고 물으면 {{ui:phone.questionnaire.title}} 카드가 뜹니다.
