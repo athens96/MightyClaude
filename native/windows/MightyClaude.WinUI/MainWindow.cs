@@ -428,7 +428,7 @@ public sealed partial class MainWindow : Window
                     args.Handled = true;
                     // Send rechecks the same busy/content/capability guards used
                     // by the button. Holding Enter must not submit again.
-                    if (!args.KeyStatus.WasKeyDown) await Send(steering: IsInputKeyDown(Windows.System.VirtualKey.Control));
+                    if (!args.KeyStatus.WasKeyDown) await Send(secondSend: IsInputKeyDown(Windows.System.VirtualKey.Control));
                     return;
                 }
                 if (args.Key != Windows.System.VirtualKey.V || !IsInputKeyDown(Windows.System.VirtualKey.Control)) return;
@@ -482,12 +482,13 @@ public sealed partial class MainWindow : Window
         private static bool IsInputKeyDown(Windows.System.VirtualKey key) =>
             (Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(key) & Windows.UI.Core.CoreVirtualKeyStates.Down) != 0;
         private static bool SubmitKeyAllowed(bool composing, bool shift, bool otherModifier) => !composing && !shift && !otherModifier;
-        private Task Send(bool steering = false) => owner.Act(async () =>
+        /// <summary><paramref name="secondSend"/>: Ctrl+Enter, which on a busy pane runs the draft in a new child worktree where one can be made and otherwise queues it, as Enter does (<see cref="DeferBusyComposer"/>).</summary>
+        private Task Send(bool secondSend = false) => owner.Act(async () =>
         {
             if (owner.ManualMutationBlockReason(Session) is not null) { RefreshComposerState(); return; }
             if (await AnswerGuidedQuestion()) return;
             if (await SubmitTypedBuiltin()) return;
-            if (await DeferBusyComposer(steering)) return;
+            if (await DeferBusyComposer(secondSend)) return;
             RefreshComposerState(); if (!canSend || starting || composingInput) return;
             starting = true; var submissionVersion = ++composerSubmissionVersion;
             // The draft and its attachments are taken and cleared at submit, before the model list is read (M/AppStore.swift:946-951):
@@ -557,12 +558,8 @@ public sealed partial class MainWindow : Window
             var said = reason.Length > 0 ? reason : attachmentsLoading && !busy ? Locale.Get("composer.hint.attachmentsLoading") : "";
             AutomationProperties.SetHelpText(input, said.Length == 0 ? InputShortcuts : said + " " + InputShortcuts);
             // While a run is busy the editor says what Enter will do with the next request (M/SessionPaneView.swift:98-99).
-            input.PlaceholderText = checkingModels ? Locale.Get("composer.placeholder.checkingModels") : busy ? Locale.Get(pane.Kind != "claude" ? "composer.placeholder.busyQueue" : owner.service.SecondSend(pane) switch
-            {
-                ComposerSecondSend.Worktree => "composer.placeholder.busyWorktree",
-                ComposerSecondSend.Steer => "composer.placeholder.busy",
-                _ => "composer.placeholder.busyQueue",
-            }) : pane.Kind == "shell" ? Locale.Get("composer.placeholder.shell") : Locale.Get("composer.placeholder.idle");
+            input.PlaceholderText = checkingModels ? Locale.Get("composer.placeholder.checkingModels") : busy ? Locale.Get(pane.Kind == "claude" && owner.service.SecondSend(pane) == ComposerSecondSend.Worktree
+                ? "composer.placeholder.busyWorktree" : "composer.placeholder.busyQueue") : pane.Kind == "shell" ? Locale.Get("composer.placeholder.shell") : Locale.Get("composer.placeholder.idle");
             canSend = mutationBlock is null && remoteBlock is null && !busy && !attachmentsLoading && (pane.Kind == "shell" || runtime?.Available == true) && !unsupportedEffort && unsupportedSettings is null && (!string.IsNullOrWhiteSpace(input.Text) || pendingAttachments.Count > 0);
             send.IsEnabled = busy ? !stopping : canSend; ShowSendSymbol(busy ? "stop" : "send");
             AutomationProperties.SetName(send, busy ? Locale.Get("composer.stop.name") : Locale.Get("composer.send.name")); ToolTipService.SetToolTip(send, busy ? Locale.Get("composer.stop.tooltip") : Locale.Get("composer.send.tooltip"));
@@ -576,7 +573,7 @@ public sealed partial class MainWindow : Window
             attach.IsEnabled = !attachmentsLoading; attach.Visibility = pane.Kind == "shell" ? Visibility.Collapsed : Visibility.Visible;
             RefreshStyles();
             RefreshQueuedComposer(busy);
-            if (mutationBlock is not null && (!busy || HasComposerContent)) send.IsEnabled = steer.IsEnabled = worktreeButton.IsEnabled = false;
+            if (mutationBlock is not null && (!busy || HasComposerContent)) send.IsEnabled = worktreeButton.IsEnabled = false;
             RefreshStyleComposer();
             RefreshNextActions(pane, busy);
             PaintSend();

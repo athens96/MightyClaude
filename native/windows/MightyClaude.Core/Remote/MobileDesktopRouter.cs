@@ -316,9 +316,10 @@ public sealed class MobileDesktopRouter : IDisposable
             preview = tail is null ? null : new { tail.Kind, text = Wire.Clean(tail.Text, 200) }, pendingPermissions = pending.Count(p => !p.CanAnswerQuestions) + (service.AntigravityCard(pane.Id) is null ? 0 : 1), pendingQuestions = pending.Count(p => p.CanAnswerQuestions), queued = QueueCount is { } count ? count(pane.Id) + service.HeldItems(pane.Id).Count : extra(pane).Queued.Count,
             pane.ResumeId, terminal = !agent, agentViewMode = agent ? MobileRemoteSupport.ViewMode(pane.AgentViewMode) : null, mightyStyle = agent ? MobileRemoteSupport.Style(style) : null, styleId = agent ? style ?? MobileWire.CliStyle : null, titleMode = pane.TitleMode ?? "auto",
             // The Mac's rules (M/MightyClaude/AppStore+MobileRemote.swift mobileSummary): the model the composer's chip reads the
-            // selection through, never a model reported for an earlier one; and steer only where the desktop composer steers.
+            // selection through, never a model reported for an earlier one. canSteer is always false since 0.4.35 (a busy pane only
+            // queues), kept for older phones.
             resolvedModel = pane.Kind == "shell" ? null : ModelLabel.Resolution(pane.Model, Catalog?.Invoke(pane) ?? ProviderCatalog.Fallback(pane.Provider), ModelLabel.ReportedModel(pane)),
-            canSteer = DelegationProviders.CanSteer(pane.Kind, pane.Provider) };
+            canSteer = false };
     }
     /// <summary>
     /// The session detail as it goes out (M/MightyCore/Remote/MobileRemoteSupport.swift:59-72). The structure travels only to a

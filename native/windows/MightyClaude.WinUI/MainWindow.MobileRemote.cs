@@ -504,10 +504,10 @@ public sealed partial class MainWindow
             var request = new StartRunRequest(id, pane.WorkspaceId, pane.Kind, text, RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot), pane.Model, pane.Provider, pane.Settings, pane.ResumeId, files).Validate();
             if (MobileBusy)
             {
-                // The composer's rule (§1.17.4): a plan-mode style never steers into a turn that only waits on background work.
-                var plans = LaunchesInPlanMode;
-                if (BackgroundQueuePolicy.PhoneSteers(mode, pane.BackgroundWork, plans) && files.Count == 0 && DelegationProviders.CanSteer(pane.Kind, pane.Provider) && await owner.service.TrySteerAsync(id, text)) return "steered";
-                token.ThrowIfCancellationRequested(); queuedInputs.Add(text, files, BackgroundQueuePolicy.QueuedOverride(plans), prepared); RenderQueuedInputs(); RefreshComposerState(); if (!MobileBusy) queueDrainTimer.Start(); return "queued";
+                // A busy pane always queues the text as its next request, whatever mode asks for: nothing a person sends joins the
+                // running turn, and mode "steer" from an older phone is queued too. The desktop composer's draft is left as it is.
+                // A plan-mode style's queued request plans fresh (§1.17.4).
+                token.ThrowIfCancellationRequested(); queuedInputs.Add(text, files, BackgroundQueuePolicy.QueuedOverride(LaunchesInPlanMode), prepared); RenderQueuedInputs(); RefreshComposerState(); if (!MobileBusy) queueDrainTimer.Start(); return "queued";
             }
             var submission = ++composerSubmissionVersion; starting = true; RefreshComposerState();
             try
@@ -634,7 +634,7 @@ public sealed partial class MainWindow
         }
         /// <summary>
         /// A style's button pressed on the phone (M/MightyClaude/AppStore+MobileRemote.swift:634-647). The prompt is built by the
-        /// style's own action and then travels the ordinary send path, so into a running pane it steers or queues, and
+        /// style's own action and then travels the ordinary send path, so into a running pane it queues, and
         /// <c>accepted</c> means what it does there. An unregistered style and an unapproved one answer alike.
         /// </summary>
         internal async Task<string> MobileGuided(JsonElement body, CancellationToken token)

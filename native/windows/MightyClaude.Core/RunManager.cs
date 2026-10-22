@@ -8,14 +8,13 @@ public interface IRunManager : IAsyncDisposable
     Task StopAsync(string sessionId);
 }
 /// <summary>
-/// What a sharing host drives its clients' runs through (M/Remote/RemoteHostService.swift's ProcessRunner): start, stop, steer and the
-/// answers to a run's tool requests, questionnaires and plans, each by the host's own session id.
+/// What a sharing host drives its clients' runs through (M/Remote/RemoteHostService.swift's ProcessRunner): start, stop and the answers
+/// to a run's tool requests, questionnaires and plans, each by the host's own session id. A client's steer is refused without it.
 /// </summary>
 public interface IRemoteRunner : IAsyncDisposable
 {
     Task StartAsync(StartRunRequest request);
     Task StopAsync(string sessionId);
-    Task<bool> TrySteerAsync(string sessionId, string text);
     void RespondToToolPermission(string sessionId, string requestId, bool allow);
     void AnswerQuestionnaire(string sessionId, string requestId, IReadOnlyDictionary<string, UserQuestionAnswer> answers);
     PlanRecord AnswerPlan(string sessionId, string requestId, PlanDecision decision);

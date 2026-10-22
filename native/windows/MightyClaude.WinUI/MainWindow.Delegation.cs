@@ -419,9 +419,8 @@ public sealed partial class MainWindow
         }
 
         /// <summary>
-        /// The text of a second send that no new child runs (<see cref="ComposerSecondSends.Fallback"/>): steered into the pane's
-        /// running Claude turn when that can take it, otherwise the pane's next request, queued behind the run or started now when
-        /// the run ended meanwhile. With the queue full it goes back to the composer instead, ahead of anything typed there
+        /// The text of a second send that no new child runs (<see cref="ComposerSecondSends.Choose"/>): the pane's next request,
+        /// queued behind the run or started now when the run ended meanwhile; it never joins the running turn. With the queue full it goes back to the composer instead, ahead of anything typed there
         /// meanwhile, so it is never lost. The transcript says which, and why.
         /// </summary>
         private async Task RunAfterNoWorktree(string text, IReadOnlyList<RunAttachment> files, string reason)
@@ -429,7 +428,6 @@ public sealed partial class MainWindow
             if (!QueuePaneAlive) return;
             var pane = Session; var words = new Dictionary<string, string> { ["reason"] = reason };
             var busy = pane.Status == "running" || starting || owner.service.IsSessionRunning(id) || owner.BackgroundUpdateHolds(pane);
-            var fallback = ComposerSecondSends.Fallback(busy && DelegationProviders.CanSteer(pane.Kind, pane.Provider) && files.Count == 0);
             if (queuedInputs.Items.Count >= QueuedInputBuffer.MaximumItems)
             {
                 await SlashNote(Locale.Get("delegation.human.returned", words));
@@ -437,9 +435,7 @@ public sealed partial class MainWindow
                 await GiveBackToComposer(text, files);
                 return;
             }
-            await SlashNote(Locale.Get(fallback == ComposerSecondSend.Steer ? "delegation.human.steered" : "delegation.human.queued", words));
-            // A turn that ends before taking the steer runs it next instead.
-            if (fallback == ComposerSecondSend.Steer && await owner.service.TrySteerAsync(id, text)) { RefreshComposerState(); return; }
+            await SlashNote(Locale.Get("delegation.human.queued", words));
             if (!QueuePaneAlive) return;
             queuedInputs.Add(text, files, BackgroundQueuePolicy.QueuedOverride(LaunchesInPlanMode));
             RenderQueuedInputs(); RefreshComposerState();

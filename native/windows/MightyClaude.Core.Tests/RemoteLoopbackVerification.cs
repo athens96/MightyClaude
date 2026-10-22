@@ -196,7 +196,6 @@ internal static class RemoteLoopbackVerification
     {
         public Task StartAsync(StartRunRequest request) => inner.StartAsync(request);
         public Task StopAsync(string sessionId) => inner.StopAsync(sessionId);
-        public Task<bool> TrySteerAsync(string sessionId, string text) => inner.TrySteerAsync(sessionId, text);
         public void RespondToToolPermission(string sessionId, string requestId, bool allow) => inner.RespondToToolPermission(sessionId, requestId, allow);
         public void AnswerQuestionnaire(string sessionId, string requestId, IReadOnlyDictionary<string, UserQuestionAnswer> answers) => inner.AnswerQuestionnaire(sessionId, requestId, answers);
         public PlanRecord AnswerPlan(string sessionId, string requestId, PlanDecision decision) => inner.AnswerPlan(sessionId, requestId, decision);
@@ -237,6 +236,7 @@ internal static class RemoteLoopbackVerification
         }
         Task<byte[]> Post(string job, string action, object body) => RemoteTransport.RequestAsync(target, key, HttpMethod.Post, $"/v2/runs/{job}/{action}", JsonSerializer.SerializeToUtf8Bytes(body, body.GetType(), RemoteWire.Json));
         static bool Conflict(Exception ex) => ex is RemoteHttpFailure { Status: 409 };
+        static bool BadRequest(Exception ex) => ex is RemoteHttpFailure { Status: 400 };
         await RemoteClientVerification.RejectAsync(() => Post(holding, "permission", new RemoteWirePermission(holding, "perm-1", true)), "another job's request is never this job's", Conflict);
         await RemoteClientVerification.RejectAsync(() => Post(asking, "permission", new RemoteWirePermission(holding, "perm-1", true)), "an answer naming another run is refused", Conflict);
         await RemoteClientVerification.RejectAsync(() => Post(holding, "questions", new RemoteWireQuestions(holding, "perm-1", new Dictionary<string, UserQuestionAnswer>())), "questions only for this job's requests", Conflict);
@@ -248,10 +248,12 @@ internal static class RemoteLoopbackVerification
         await Post(asking, "permission", new RemoteWirePermission(asking, "perm-1", false));
         Check(fixture.Runner.Answers.Single() == (asking, "perm-1", false), "the job's own request is answered");
         var steered = JsonSerializer.Deserialize<RemoteWireAnswer>(await Post(holding, "steer", new RemoteWireSteer("more")), RemoteWire.Json)!;
-        Check(steered.Accepted && fixture.Runner.Steered.Single() == (holding, "more"), "steering reaches that job alone");
+        // Nothing a person sends joins a running turn: an older client gets false and queues the text itself.
+        Check(!steered.Accepted, "a steer to a running turn is refused");
+        await RemoteClientVerification.RejectAsync(() => Post(holding, "steer", new RemoteWireSteer(" ")), "a steer is still checked first", BadRequest);
         // A stop reads no body, as the Mac's does.
         Check((await RemoteHostVerification.Raw(port, Head(holding, "stop", ""))).StartsWith("HTTP/1.1 200", StringComparison.Ordinal) && fixture.Runner.Stopped.Contains(holding), "a stop without a body stops the run");
-        Check(!fixture.Runner.Stopped.Contains(asking) && fixture.Runner.Steered.Count == 1, "a stop and a steer reach their own job alone");
+        Check(!fixture.Runner.Stopped.Contains(asking), "a stop reaches its own job alone");
         var stopped = await PollRaw(target, key, holding, 0);
         Check(stopped.Done && stopped.Events[^1].Event["status"]?.GetValue<string>() == "stopped", "and the run ends stopped");
     }
@@ -264,7 +266,6 @@ internal static class RemoteLoopbackVerification
         internal volatile bool Taken;
         public async Task StartAsync(StartRunRequest request) { Entered.TrySetResult(); await Release.Task; Live[request.SessionId] = true; Taken = true; }
         public Task StopAsync(string sessionId) { Live.TryRemove(sessionId, out _); return Task.CompletedTask; }
-        public Task<bool> TrySteerAsync(string sessionId, string text) => Task.FromResult(false);
         public void RespondToToolPermission(string sessionId, string requestId, bool allow) { }
         public void AnswerQuestionnaire(string sessionId, string requestId, IReadOnlyDictionary<string, UserQuestionAnswer> answers) { }
         public PlanRecord AnswerPlan(string sessionId, string requestId, PlanDecision decision) => throw new InvalidOperationException();

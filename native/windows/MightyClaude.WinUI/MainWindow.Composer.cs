@@ -257,18 +257,16 @@ public sealed partial class MainWindow
             var ink = b.Brush(stop || send.IsEnabled ? DesignToken.OnStatus : DesignToken.Ink2);
             sendArrow.Ink(ink); sendQueue.Ink(ink); sendStop.Ink(ink);
             sendHost.Opacity = send.IsEnabled ? 1 : DisabledDim;
-            PaintSteer();
+            PaintWorktree();
         }
 
-        /// <summary>The steer button wears the send button's circle: <c>run</c> with the <c>onStatus</c> bolt while it can go, <c>track</c> with <c>ink2</c> at half strength while not.</summary>
-        private void PaintSteer()
+        /// <summary>The worktree button wears the send button's circle: <c>run</c> with the <c>onStatus</c> branch while it can go, <c>track</c> with <c>ink2</c> at half strength while not.</summary>
+        private void PaintWorktree()
         {
-            var b = owner.brushes;
-            var enabled = offersWorktree ? worktreeButton.IsEnabled : steer.IsEnabled;
-            steerDisc.Background = b.Brush(enabled ? DesignToken.Run : DesignToken.Track);
-            steerBolt.Ink(b.Brush(steer.IsEnabled ? DesignToken.OnStatus : DesignToken.Ink2));
-            worktreeBranch.Ink(b.Brush(worktreeButton.IsEnabled ? DesignToken.OnStatus : DesignToken.Ink2));
-            steerHost.Opacity = enabled ? 1 : DisabledDim;
+            var b = owner.brushes; var enabled = worktreeButton.IsEnabled;
+            worktreeDisc.Background = b.Brush(enabled ? DesignToken.Run : DesignToken.Track);
+            worktreeBranch.Ink(b.Brush(enabled ? DesignToken.OnStatus : DesignToken.Ink2));
+            worktreeHost.Opacity = enabled ? 1 : DisabledDim;
         }
 
         /// <summary>
@@ -329,7 +327,7 @@ public sealed partial class MainWindow
         /// <summary>
         /// Builds the pills and the right cluster (M/SessionPaneView.swift:707-771): one 32pt row, the pills
         /// leading and sized to their contents, then the resume mark, the context ring, the background-work
-        /// and status-line toggles and stop / send (stop, steer and queue while a draft waits on a busy pane), 6 apart.
+        /// and status-line toggles and stop / send (stop, the new worktree and queue while a draft waits on a busy pane), 6 apart.
         /// </summary>
         private void BuildToolbar()
         {

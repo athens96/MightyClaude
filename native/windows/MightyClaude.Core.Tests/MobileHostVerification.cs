@@ -238,14 +238,15 @@ internal static class MobileHostVerification
 
     /// <summary>
     /// What a phone is told about a pane's provider, by the Mac's rules (MobileRemoteProviderTests): an Antigravity pane on
-    /// <c>default</c> names no model and an old report never revives, and only a Claude pane takes text into its running turn.
+    /// <c>default</c> names no model and an old report never revives, and no pane tells the phone it steers (<c>canSteer</c> is always
+    /// false since 0.4.35, kept for older phones).
     /// </summary>
     internal static async Task APaneTravelsAsItsProviderRuns()
     {
         var capabilities = ProviderCatalog.Capabilities("gemini", "1.2.3");
         Check(ProviderCatalog.Name("gemini") == "Antigravity CLI" && ProviderCatalog.Executable("gemini") == "agy", "the gemini id runs agy");
         Check(!capabilities.Effort && MobileRemoteSupport.EffortOptions(capabilities.Effort, ["low", "high"]) is null && capabilities.PermissionModes.SequenceEqual(["manual", "plan", "acceptEdits", "fullAccess"]), "an Antigravity pane offers its permission modes and no effort");
-        Check(DelegationProviders.CanSteer("claude", "claude") && !DelegationProviders.CanSteer("claude", "gemini") && !DelegationProviders.CanSteer("claude", "codex") && !DelegationProviders.CanSteer("shell", "claude"), "only a Claude agent pane steers");
+        Check(DelegationProviders.CanSteer("claude", "claude") && !DelegationProviders.CanSteer("claude", "gemini") && !DelegationProviders.CanSteer("claude", "codex") && !DelegationProviders.CanSteer("shell", "claude"), "only a Claude agent pane takes a delegation notice into its running turn");
 
         var directory = Verification.Temp();
         try
@@ -264,8 +265,8 @@ internal static class MobileHostVerification
             async Task<Dictionary<string, JsonElement>> Panes() => Json((await router.RouteAsync("GET", "/m1/state", null, "phone", CancellationToken.None)).Body).GetProperty("sessions").EnumerateArray().ToDictionary(p => p.Text("id")!);
             var panes = await Panes();
             Check(panes["agy"].Text("provider") == "gemini" && panes["agy"].Text("model") == "default" && !panes["agy"].TryGetProperty("resolvedModel", out _), "an Antigravity pane on default names no model, so the phone reads its default label alone: " + panes["agy"]);
-            Check(panes["agy"].GetProperty("canSteer").GetBoolean() is false && panes["codex"].GetProperty("canSteer").GetBoolean() is false && panes["shell"].GetProperty("canSteer").GetBoolean() is false, "an Antigravity, Codex or command pane only queues");
-            Check(panes["opus"].GetProperty("canSteer").GetBoolean() && panes["opus"].Text("resolvedModel") == "claude-opus-5-5", "a Claude family alias takes the model reported for it, and steers");
+            Check(panes.Values.All(pane => pane.GetProperty("canSteer").GetBoolean() is false), "every pane, Claude too, only queues: canSteer is always false");
+            Check(panes["opus"].Text("resolvedModel") == "claude-opus-5-5", "a Claude family alias takes the model reported for it");
             Check(!panes["switched"].TryGetProperty("resolvedModel", out _) && !panes["shell"].TryGetProperty("resolvedModel", out _), "a model reported for an earlier selection never shows, and a command pane names none");
             Check(!panes["default"].TryGetProperty("resolvedModel", out _), "without a catalogue a Claude default resolves to nothing");
             var detail = Json((await router.RouteAsync("GET", "/m1/sessions/agy", null, "phone", CancellationToken.None)).Body).GetProperty("session");

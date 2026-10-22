@@ -253,7 +253,7 @@ public sealed partial class DesktopService : IDelegationHost
         catch (Exception ex) when (ex is not OutOfMemoryException) { return null; }
     }
 
-    /// <summary><paramref name="input"/> steered into the pane's running Claude run, shown in its transcript like a steered send, or started as its next run.</summary>
+    /// <summary>A delegation notice or follow-up: steered into the pane's running Claude run and shown in its transcript, or started as its next run.</summary>
     async Task<string?> IDelegationHost.Deliver(string input, string sessionId, DeliveryRoute route)
     {
         if (route == DeliveryRoute.Queue) return await StartDelegatedRun(sessionId, input);
@@ -347,10 +347,10 @@ public sealed partial class DesktopService : IDelegationHost
     /// <summary>
     /// What the composer's second send (Ctrl+Enter) does with the text while the pane is busy: a new child worktree for a Claude,
     /// Codex or Antigravity pane that may have children (delegation on and loaded, its folder last checked able to host one),
-    /// otherwise steer or queue as before (<see cref="ComposerSecondSends.Choose"/>).
+    /// otherwise the queue, as Enter (<see cref="ComposerSecondSends.Choose"/>).
     /// </summary>
     public ComposerSecondSend SecondSend(RunSession session) =>
-        ComposerSecondSends.Choose(session.Kind, session.Provider, session.Settings.PermissionMode, IsDelegatedChild(session), delegation is not null && delegationEnabled() && !IsRemoteWorkspace(session.WorkspaceId), CanHostWorktree(session), DelegationProviders.CanSteer(session.Kind, session.Provider));
+        ComposerSecondSends.Choose(session.Kind, session.Provider, session.Settings.PermissionMode, IsDelegatedChild(session), delegation is not null && delegationEnabled() && !IsRemoteWorkspace(session.WorkspaceId), CanHostWorktree(session));
 
     /// <summary>
     /// What the worktree button's menu on the agent pane <paramref name="session"/> offers: Claude, Codex and Antigravity, each with

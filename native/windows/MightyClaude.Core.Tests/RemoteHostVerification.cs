@@ -400,7 +400,6 @@ internal static partial class RemoteHostVerification
         internal readonly ConcurrentQueue<StartRunRequest> Started = new();
         internal readonly ConcurrentQueue<string> Stopped = new();
         internal readonly ConcurrentQueue<(string Session, string Request, bool Allow)> Answers = new();
-        internal readonly ConcurrentQueue<(string Session, string Text)> Steered = new();
         private readonly ConcurrentDictionary<string, bool> waiting = new();
         public Task StartAsync(StartRunRequest request)
         {
@@ -427,7 +426,6 @@ internal static partial class RemoteHostVerification
             return Task.CompletedTask;
         }
         public Task StopAsync(string id) { Stopped.Enqueue(id); if (waiting.TryRemove(id, out _)) sinks.Event(RunEvent.State(id, "stopped")); return Task.CompletedTask; }
-        public Task<bool> TrySteerAsync(string id, string text) { Steered.Enqueue((id, text)); return Task.FromResult(waiting.ContainsKey(id)); }
         public void RespondToToolPermission(string id, string requestId, bool allow)
         {
             Answers.Enqueue((id, requestId, allow));

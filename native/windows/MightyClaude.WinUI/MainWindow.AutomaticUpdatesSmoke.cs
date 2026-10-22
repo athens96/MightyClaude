@@ -103,8 +103,11 @@ public sealed partial class MainWindow
                 updating = true; input.Text = "local held instruction"; updating = false;
                 RefreshComposerState(); await Send();
                 Require(queuedInputs.Items.Count == 1 && input.Text.Length == 0 && calls.Count == 0, "Local send must preserve input in the queue while plugins update.");
-                Require(await MobileSubmit("mobile held instruction", "queue", [], CancellationToken.None) == "queued" && queuedInputs.Items.Count == 2,
-                    "Mobile send must use the same provider hold and queue.");
+                // An older phone's "steer" is queued too, and the desktop composer's draft is left as it is.
+                updating = true; input.Text = "desktop draft"; updating = false;
+                Require(await MobileSubmit("mobile held instruction", "steer", [], CancellationToken.None) == "queued" && queuedInputs.Items.Count == 2 && input.Text == "desktop draft",
+                    "Mobile send must use the same provider hold and queue, also when it asks to steer, and leave the desktop draft alone.");
+                updating = true; input.Text = ""; updating = false;
                 await StartNextQueuedInput();
                 Require(calls.Count == 0 && !owner.ReadyForAutomaticUpdate("claude"), "Queued requests must neither start under a hold nor admit another idle update.");
                 queueDrainTimer.Stop(); owner.automaticUpdateRunning = false; owner.automaticallyUpdatingProvider = null;
