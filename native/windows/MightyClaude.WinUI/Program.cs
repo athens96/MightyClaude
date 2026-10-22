@@ -163,10 +163,16 @@ internal static class Program
     /// version is it.
     private static int RunUpdateHelper(AppUpdateInstallPlan plan)
     {
+        // One helper per install folder: a second one leaves at once, moving and starting nothing (AppUpdateHelperGuard).
+        using var single = new Mutex(false, AppUpdateHelperGuard.MutexName(plan.InstallDirectory));
+        bool acquired;
+        try { acquired = single.WaitOne(0); }
+        catch (AbandonedMutexException) { acquired = true; }
         AppUpdateReplacementResult result;
         try
         {
-            result = AppUpdateReplacement.RunAsync(
+            if (AppUpdateHelperGuard.Refusal(acquired) is { } refused) result = refused;
+            else result = AppUpdateReplacement.RunAsync(
                 plan,
                 token => AppUpdateReplacement.WaitForExitAsync(plan.AppProcessId, AppUpdateReplacement.DefaultExitTimeout, token),
                 executable =>
@@ -186,14 +192,16 @@ internal static class Program
         {
             result = new(false, false, error.GetType().Name + ": " + error.Message, [], false, false);
         }
+        // Appended, so a second helper's line and the first one's outcome are both kept.
         try
         {
-            File.WriteAllText(
+            File.AppendAllText(
                 Path.Combine(Path.GetDirectoryName(plan.PackagePath) ?? Path.GetTempPath(), "install.log"),
                 $"{DateTimeOffset.UtcNow:O} replaced={result.Replaced} rolledBack={result.RolledBack} " +
                 $"relaunch={plan.Relaunch} skipped={result.Skipped} started={result.Started} backupRemoved={result.BackupRemoved} {result.Error}\n");
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException) { /* The outcome must not depend on the log. */ }
+        if (acquired) single.ReleaseMutex();
         return result.Replaced || result.Skipped ? 0 : 1;
     }
 }

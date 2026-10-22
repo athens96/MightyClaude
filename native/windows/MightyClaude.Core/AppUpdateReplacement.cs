@@ -132,6 +132,29 @@ public sealed record AppUpdateReplacementResult(
     bool BackupRemoved,
     bool Skipped = false);
 
+/// One helper per install: the helper holds a named mutex for the install
+/// folder while it runs, and a second one started meanwhile (a restart pressed
+/// twice, an install on quit beside a relaunch) leaves at once without moving
+/// or starting anything, so two never copy or rename the same folders.
+public static class AppUpdateHelperGuard
+{
+    /// The mutex name for `installDirectory`: the same folder, however it is
+    /// written (case, trailing separator), gives the same name; another folder
+    /// another one. Session-local, since the helper runs as the user.
+    public static string MutexName(string installDirectory)
+    {
+        var folder = Path.GetFullPath(installDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)).ToUpperInvariant();
+        var digest = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(folder));
+        return @"Local\MightyClaude-update-helper-" + Convert.ToHexString(digest)[..32].ToLowerInvariant();
+    }
+
+    /// Null when this helper holds the mutex and goes on; otherwise the result
+    /// it leaves with: skipped (exit code 0), nothing moved or started, and why
+    /// in install.log.
+    public static AppUpdateReplacementResult? Refusal(bool acquired) =>
+        acquired ? null : new(false, false, "another update helper is already running for this install", [], false, false, Skipped: true);
+}
+
 /// The replacement itself: put back an install an interrupted swap left aside,
 /// wait for the app to quit, verify the package again, copy the new folder
 /// beside the install, rename the install aside and the new folder in, start
@@ -212,9 +235,9 @@ public static class AppUpdateReplacement
 
     /// True when the folder, or anything in it, was created or written after
     /// `since` (UTC). Copied files keep their source's write time, so the
-    /// creation times count too. A folder that cannot be read counts as written,
-    /// so nothing is removed on a guess.
-    private static bool WrittenSince(string folder, DateTime since)
+    /// creation times count too. A folder that cannot be read answers
+    /// `whenUnreadable`: the pruning keeps it (nothing is removed on a guess).
+    private static bool WrittenSince(string folder, DateTime since, bool whenUnreadable = true)
     {
         try
         {
@@ -224,7 +247,7 @@ public static class AppUpdateReplacement
             var root = new DirectoryInfo(folder);
             return Latest(root) > since || root.EnumerateFileSystemInfos("*", SearchOption.AllDirectories).Any(entry => Latest(entry) > since);
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return true; }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return whenUnreadable; }
     }
 
     /// Verifies the package SHA-256 again immediately before the swap.
@@ -285,15 +308,17 @@ public static class AppUpdateReplacement
     /// helper runs from `updates/<version>/staged`, and keeps polling up to 30
     /// seconds after the app opened again), or the copy beside the install was
     /// written within `NewCopyGrace` (a helper may still be filling it). Staging
-    /// deletes and rewrites the staged folder, which would break either. A check
-    /// that cannot tell reads as busy.
+    /// deletes and rewrites the staged folder, which would break either. A
+    /// process check that cannot tell reads as busy; a copy whose times cannot
+    /// be read does not (it would hold staging forever, and the helper's own
+    /// `TreeMismatch` refuses a copy that is not the staged tree).
     public static bool StagingBusy(string updatesDirectory, string? installDirectory, DateTime? now = null)
     {
         try
         {
             if (Directory.Exists(updatesDirectory) && AnyRunningFrom(updatesDirectory)) return true;
             return installDirectory is not null
-                && WrittenSince(Path.GetFullPath(installDirectory.TrimEnd(Path.DirectorySeparatorChar)) + ".update-new", (now ?? DateTime.UtcNow) - NewCopyGrace);
+                && WrittenSince(Path.GetFullPath(installDirectory.TrimEnd(Path.DirectorySeparatorChar)) + ".update-new", (now ?? DateTime.UtcNow) - NewCopyGrace, whenUnreadable: false);
         }
         catch (Exception error) when (error is not OutOfMemoryException) { return true; }
     }

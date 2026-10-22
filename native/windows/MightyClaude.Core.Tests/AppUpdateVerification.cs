@@ -1384,6 +1384,16 @@ internal static class AppUpdateVerification
             }
             Check(AppUpdateReplacement.TreeMismatch(plan.StagedDirectory, plan.StagedDirectory) is null, "a tree matches itself");
 
+            // One helper per install: the mutex name follows the folder, however it is written, and a helper that cannot hold it
+            // leaves at once, skipped, with nothing moved or started and the reason for install.log.
+            var guardName = AppUpdateHelperGuard.MutexName(install);
+            Check(guardName.StartsWith(@"Local\MightyClaude-update-helper-", StringComparison.Ordinal) && guardName.Length == @"Local\MightyClaude-update-helper-".Length + 32
+                && guardName == AppUpdateHelperGuard.MutexName(install + Path.DirectorySeparatorChar) && guardName == AppUpdateHelperGuard.MutexName(install.ToUpperInvariant())
+                && guardName != AppUpdateHelperGuard.MutexName(install + "-other"), "the helper's mutex is named for its install folder: " + guardName);
+            Check(AppUpdateHelperGuard.Refusal(true) is null, "the helper holding the mutex goes on");
+            Check(AppUpdateHelperGuard.Refusal(false) is { Skipped: true, Replaced: false, RolledBack: false, Started: false, Moves.Count: 0, Error: { } why } && why.Contains("another update helper", StringComparison.Ordinal),
+                "a second helper leaves at once, skipped, moving and starting nothing");
+
             // A check for the app running again that throws, at once or later, keeps everything and says why.
             var (unsureInstall, _, unsurePlan) = await SwapFixture(Path.Combine(root, "unsure"), relaunch: false);
             var starts = 0;
@@ -1473,6 +1483,27 @@ internal static class AppUpdateVerification
             await later.RetryDeferredStagingAsync();
             Check(later.State.Phase == AppUpdatePhase.Ready && !later.StagingDeferred && handler.Requested.Count == requests && !File.Exists(helperFile),
                 "a later tick stages it from the package on disk: " + later.State.ErrorMessage);
+
+            // A deferral belongs to the Available it left: a check that fails meanwhile clears it, so the loop's due check runs
+            // again instead of waiting on a retry that has nothing to do.
+            var failing = false;
+            using var flaky = new AppUpdateService(state, FixtureKey, new FakeHttp(url => failing ? new HttpResponseMessage(HttpStatusCode.InternalServerError) : Ok(url.ToString() == ManifestUrl ? Envelope(manifest) : packageBytes)));
+            var stuck = new AppUpdateCoordinator(flaky, "0.1.0", ManifestUrl, "x64", install, _ => Task.CompletedTask, () => true, () => true);
+            await stuck.CheckAsync(null);
+            Check(stuck.State.Phase == AppUpdatePhase.Available && stuck.StagingDeferred, "deferred while staging is busy");
+            failing = true;
+            await stuck.CheckAsync(null);
+            Check(stuck.State.Phase == AppUpdatePhase.Failed && !stuck.StagingDeferred, $"a failed check clears the deferral; got {stuck.State.Phase}, deferred {stuck.StagingDeferred}");
+            failing = false;
+            Check(await stuck.CheckAutomaticallyIfDueAsync(null, true, null, DateTimeOffset.UtcNow), "the next tick's due check runs");
+
+            // What counts as busy for real: a fresh copy beside the install, not an old one or none.
+            var fresh = Path.GetFullPath(install) + ".update-new";
+            Check(!AppUpdateReplacement.StagingBusy(service.UpdatesDirectory, install), "no copy and no helper: not busy");
+            MakeInstall(fresh, "copying");
+            Check(AppUpdateReplacement.StagingBusy(service.UpdatesDirectory, install), "a copy written just now is busy");
+            Check(!AppUpdateReplacement.StagingBusy(service.UpdatesDirectory, install, DateTime.UtcNow + AppUpdateReplacement.NewCopyGrace + TimeSpan.FromMinutes(1)), "an old copy is not");
+            Directory.Delete(fresh, true);
         }
         finally { Directory.Delete(root, true); }
     }
