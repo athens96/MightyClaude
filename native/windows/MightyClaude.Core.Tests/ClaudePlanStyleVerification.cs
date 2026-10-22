@@ -197,6 +197,7 @@ internal static class ClaudePlanStyleVerification
         var waiting = new BackgroundWork([running], TurnEnded: true); var busy = new BackgroundWork([running]);
         // New input to a busy pane always waits in the queue, so the notice shows in every style (M/BackgroundQueuePolicyTests.swift).
         Check(BackgroundQueuePolicy.WaitsOnBackground(waiting, 1) && !BackgroundQueuePolicy.WaitsOnBackground(waiting, 0) && !BackgroundQueuePolicy.WaitsOnBackground(busy, 1) && !BackgroundQueuePolicy.WaitsOnBackground(null, 1), "the queue says when it waits on background work, in every style");
+        Check(Korean(() => Locale.Get("queue.waitingOnBackground.windows")) == "백그라운드 작업이 끝나야 시작합니다 · 지금 시작하려면 중지", "the background notice says Stop starts the queued request now");
         Check(BackgroundQueuePolicy.StopKeepsQueue(waiting) && !BackgroundQueuePolicy.StopKeepsQueue(busy) && !BackgroundQueuePolicy.StopKeepsQueue(null), "stopping a turn that is over keeps the queue");
 
         var queue = new QueuedInputBuffer();
