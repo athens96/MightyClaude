@@ -31,7 +31,7 @@ Antigravity는 일하는 도중에 앱에 물어볼 수 없습니다. 물어봐�
 
 허용하면 같은 대화에서 이어서 진행합니다. 창이 다른 일로 바쁘면 이어 가는 실행은 대기열에 들어갑니다.
 
-규칙은 앞부분이 맞으면 허용합니다. 명령 규칙은 **그 글자로 시작하는 모든 명령**을 허용하고(`command(git status)`는 `git status --short`도 허용합니다), 폴더를 가리키는 파일 규칙은 그 안의 모든 파일을 허용합니다. {{ui:permission.allowOnce}}의 규칙도 Antigravity의 전체 설정에 들어가므로, 규칙이 있는 동안에는 이 컴퓨터의 **모든 Antigravity 실행**(다른 창과 워크스페이스, 터미널의 `agy`)에 적용됩니다.
+규칙은 앞부분이 맞으면 허용합니다. 명령 규칙은 **그 글자로 시작하는 모든 명령**을 허용하고(`command(git status)`는 `git status --short`도 허용합니다), 폴더를 가리키는 파일 규칙은 그 안의 모든 파일을 허용합니다. {{ui:permission.allowOnce}}의 규칙도 Antigravity의 전체 설정에 들어가므로, 규칙이 있는 동안에는 이 컴퓨터의 **모든 Antigravity 실행**(다른 창과 워크스페이스, 터미널의 `agy`)에 적용됩니다. 항상 허용한 명령 규칙은 그 뒤에 붙는 어떤 인수든 허용하므로, 인수로 다른 일을 시킬 수 있는 명령(`find … -exec`, `curl … -o` 등)은 되도록 {{ui:permission.allowOnce}}을 고르세요.
 
 명령을 잇거나(`;`, `&&`, `||`), 파이프(`|`)·리디렉션(`>`, `<`)·명령 치환(백틱, `$(`)·백그라운드(`&`)를 쓰거나, 데이터를 지우거나 권한을 올리는 명령(`rm`, `sudo`, `git push --force`, `git reset --hard`, `git clean`, `kill` 등)은 {{ui:permission.allowOnce}}만 할 수 있습니다. 카드의 {{ui:antigravity.permission.allowAlways}}이 꺼지고 그 이유가 나옵니다. 휴대폰에서는 그 단추가 보이지 않습니다.
 
