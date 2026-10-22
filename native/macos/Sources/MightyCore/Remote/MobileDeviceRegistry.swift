@@ -1,6 +1,22 @@
 import CryptoKit
 import Foundation
 
+/// Where and what a phone asked to be pushed (docs/mobile-remote.md "푸시 알림"). The handle
+/// means nothing without the relay, and the relay's token means nothing without the handle.
+public struct MobilePushRegistration: Codable, Sendable, Equatable {
+    public var handle: String
+    public var kinds: [String]
+    public var updatedAt: String
+    public init(handle: String, kinds: [String], updatedAt: String) { self.handle = handle; self.kinds = kinds; self.updatedAt = updatedAt }
+}
+
+public enum MobilePushRegistrationResult: Sendable, Equatable {
+    case saved
+    /// Unknown device, or the legacy group: the push key comes from a device token.
+    case needsToken
+    case unsaved
+}
+
 /// One phone the host has admitted. The token itself is never stored: only its
 /// SHA-256, so a stolen `devices.json` cannot be replayed as a phone.
 public struct MobileDevice: Codable, Sendable, Equatable, Identifiable {
@@ -11,8 +27,9 @@ public struct MobileDevice: Codable, Sendable, Equatable, Identifiable {
     public var tokenHash: String?
     public var firstSeen: String
     public var lastSeen: String
-    public init(id: String, name: String, tokenHash: String? = nil, firstSeen: String, lastSeen: String) {
-        self.id = id; self.name = name; self.tokenHash = tokenHash; self.firstSeen = firstSeen; self.lastSeen = lastSeen
+    public var push: MobilePushRegistration?
+    public init(id: String, name: String, tokenHash: String? = nil, firstSeen: String, lastSeen: String, push: MobilePushRegistration? = nil) {
+        self.id = id; self.name = name; self.tokenHash = tokenHash; self.firstSeen = firstSeen; self.lastSeen = lastSeen; self.push = push
     }
     public var legacy: Bool { tokenHash == nil }
 }
@@ -197,6 +214,38 @@ public final class MobileDeviceRegistry: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         load()
         return Set(devices.filter { $0.tokenHash != nil }.map(\.id))
+    }
+
+    // MARK: Push
+
+    public func setPush(_ id: String, handle: String, kinds: [MobilePushKind]) -> MobilePushRegistrationResult {
+        lock.lock(); defer { lock.unlock() }
+        load()
+        guard let index = devices.firstIndex(where: { $0.id == id }), devices[index].tokenHash != nil else { return .needsToken }
+        let snapshot = devices
+        devices[index].push = MobilePushRegistration(handle: handle, kinds: kinds.map(\.rawValue), updatedAt: timestamp())
+        do { try save() } catch { devices = snapshot; return .unsaved }
+        return .saved
+    }
+
+    /// Forgets a phone's handle; with `handle`, only while it is still that one (the relay said it is gone).
+    public func clearPush(_ id: String, handle: String? = nil) {
+        lock.lock(); defer { lock.unlock() }
+        load()
+        guard let index = devices.firstIndex(where: { $0.id == id }), let current = devices[index].push, handle == nil || current.handle == handle else { return }
+        let snapshot = devices
+        devices[index].push = nil
+        do { try save() } catch { devices = snapshot }
+    }
+
+    /// The phones to push to, with what their key is made from. Never leaves the host.
+    public func pushDevices() -> [MobilePushDevice] {
+        lock.lock(); defer { lock.unlock() }
+        load()
+        return devices.compactMap { device in
+            guard let push = device.push, let hash = device.tokenHash else { return nil }
+            return MobilePushDevice(deviceId: device.id, handle: push.handle, tokenHash: hash, kinds: Set(push.kinds.compactMap(MobilePushKind.init(rawValue:))))
+        }
     }
 
     /// What the settings sheet must tell the user about the file itself, if
@@ -393,6 +442,12 @@ public final class MobileDeviceRegistry: @unchecked Sendable {
             guard seen.insert(device.id).inserted else { return false }
             if let stored = device.tokenHash { return stored.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil }
             return device.id == Self.legacyId
+        }
+        // A hand-edited or older row may carry a handle it cannot use: drop the handle, keep the phone.
+        devices = devices.map { device in
+            var device = device
+            if let push = device.push, device.tokenHash == nil || !MobilePushWire.validHandle(push.handle) { device.push = nil }
+            return device
         }
         if devices.count > Self.maximum { devices = Array(devices.prefix(Self.maximum)) }
     }

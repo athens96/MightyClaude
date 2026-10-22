@@ -909,3 +909,51 @@ private final class PushedStatuses: @unchecked Sendable {
     func append(_ value: Int) { lock.lock(); defer { lock.unlock() }; sequences.append(value) }
     func values() -> [Int] { lock.lock(); defer { lock.unlock() }; return sequences }
 }
+
+// MARK: Push (docs/mobile-remote.md "푸시 알림")
+
+extension MobileRemoteTests {
+    /// A host whose device list already holds the fixture's phone with its token hash.
+    fileprivate static func pushService(_ directory: URL) throws -> (MobileRemoteService, PushFixture.Seal) {
+        let seal = try PushFixture.load().seal
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let stamp = "2026-10-23T00:00:00.000Z"
+        let devices = [MobileDevice(id: seal.clientId, name: "Phone", tokenHash: seal.tokenHash, firstSeen: stamp, lastSeen: stamp)]
+        try JSONEncoder().encode(devices).write(to: directory.appendingPathComponent("devices.json"))
+        let service = MobileRemoteService(dataDirectory: directory, hostName: "Test Mac", appVersion: "9.9.9",
+                                          defaultRelayURL: "wss://relay.example.invalid", watchesNetwork: false)
+        return (service, seal)
+    }
+
+    @Test func aPhoneWithATokenRegistersAHandleAndTheKindsItWants() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-push-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let (service, seal) = try Self.pushService(directory)
+        let host = FakeMobileHost()  // the service holds its delegate weakly
+        defer { withExtendedLifetime(host) {} }
+        await service.attach(host)
+        let (status, _) = try await call(service, "POST", "/m1/push/register", body: ["handle": seal.handle, "kinds": ["permission", "completed", "future-kind"]], device: seal.clientId)
+        #expect(status == 200)
+        let registry = MobileDeviceRegistry(url: directory.appendingPathComponent("devices.json"))
+        #expect(registry.pushDevices() == [MobilePushDevice(deviceId: seal.clientId, handle: seal.handle, tokenHash: seal.tokenHash, kinds: [.permission, .completed])])
+        #expect(try await call(service, "POST", "/m1/push/unregister", body: [:], device: seal.clientId).0 == 200)
+        #expect(MobileDeviceRegistry(url: directory.appendingPathComponent("devices.json")).pushDevices().isEmpty)
+    }
+
+    @Test func aBadHandleOrALegacyPhoneIsRefused() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-push-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let (service, seal) = try Self.pushService(directory)
+        let host = FakeMobileHost()  // the service holds its delegate weakly
+        defer { withExtendedLifetime(host) {} }
+        await service.attach(host)
+        #expect(try await call(service, "POST", "/m1/push/register", body: ["handle": "short", "kinds": []], device: seal.clientId).0 == 400)
+        #expect(try await call(service, "POST", "/m1/push/register", body: ["handle": seal.handle, "kinds": []], device: MobileDeviceRegistry.legacyId).0 == 409)
+        #expect(try await call(service, "POST", "/m1/push/viewing", body: ["sessionId": "bad id!"], device: seal.clientId).0 == 404)
+        #expect(try await call(service, "POST", "/m1/push/viewing", body: ["sessionId": NSNull()], device: seal.clientId).0 == 200)
+    }
+
+    @Test func theHostAdvertisesPush() {
+        #expect(MobileCapability.all.contains("push"))
+    }
+}
