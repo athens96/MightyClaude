@@ -372,9 +372,13 @@ public sealed record ProviderInput(List<string> Arguments, byte[] StandardInput)
         return arguments;
     }
 
-    /// <summary>The single stream-json user frame the channel sends once the handshake succeeds.</summary>
+    /// <summary>
+    /// The single stream-json user frame the channel sends once the handshake succeeds, and a steer's. Its message names its
+    /// role as the Mac's does (M/MightyCore/Attachments.swift:120): Claude Code 2.1.289 refuses a user message without one
+    /// ("Expected message role 'user', got 'undefined'").
+    /// </summary>
     public static string PromptFrame(string input)
-        => JsonSerializer.Serialize(new { type = "user", message = new { content = input } }, Wire.Json) + "\n";
+        => JsonSerializer.Serialize(new { type = "user", message = new { role = "user", content = input } }, Wire.Json) + "\n";
 
     /// <summary>
     /// The one stdin line of an Antigravity run (<c>agy --input-format stream-json</c>, M/MightyCore/Attachments.swift

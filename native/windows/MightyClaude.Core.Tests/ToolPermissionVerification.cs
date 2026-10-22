@@ -272,6 +272,7 @@ internal static class ToolPermissionVerification
         var frame = ProviderInput.PromptFrame("안녕");
         Check(frame.EndsWith("\n", StringComparison.Ordinal), "the prompt frame is newline framed");
         Check(JsonDocument.Parse(frame).RootElement.GetProperty("message").GetProperty("content").GetString() == "안녕", "the prompt frame carries the input");
+        Check(JsonDocument.Parse(frame).RootElement.GetProperty("message").GetProperty("role").GetString() == "user", "the prompt frame names its role, which Claude Code 2.1.289 requires");
 
         Check(ClaudeStream.IsTurnResult("{\"type\":\"result\",\"subtype\":\"success\"}"), "the CLI's own result ends the turn");
         Check(!ClaudeStream.IsTurnResult("{\"type\":\"result\",\"origin\":{\"kind\":\"task-notification\"}}"), "a task notification does not end the turn");
