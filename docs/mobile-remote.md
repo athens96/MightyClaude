@@ -39,7 +39,7 @@ PC에서 실행 중인 Mighty Claude에 휴대폰으로 접속해 워크스페�
 | GET | `/m1/sessions/{id}?since=<rev>&wait=<0..10>[&structure=<tag>]` | | `MobileSessionDetail` — 세션 단위 `revision`으로 같은 방식. `structure`는 `"structure"` 기능이 있는 호스트(Mac·Windows)에만(아래 "구조 보기" 절) |
 | POST | `/m1/sessions/{id}/submit` | `{ text }` | 202 `{ protocol, accepted: "started" \| "steered" \| "queued" }` · 실행할 수 없으면 409 |
 | POST | `/m1/sessions/{id}/stop` | | `{ protocol, stopped }` — 실행 중인 요청이 없어 멈출 것이 없었으면 `stopped: false` |
-| POST | `/m1/sessions/{id}/permission` | `{ requestId, runId, allow }` | `{ protocol, ok: true }` |
+| POST | `/m1/sessions/{id}/permission` | `{ requestId, runId, allow, always? }` | `{ protocol, ok: true }` — `always`는 Antigravity 권한 카드에만(아래 "Antigravity 권한 카드" 절) |
 | POST | `/m1/sessions/{id}/answers` | `{ requestId, runId, answers: { "<질문 문장>": { selectedOptions, customText? } } }` | `{ protocol, ok: true }` |
 | POST | `/m1/sessions/{id}/plan` | `{ requestId, runId, decision: "approveAutoEdit" \| "approveConfirmEach" \| "revise" \| "cancel", feedback? }` | `{ protocol, ok: true }` — Claude 계획(ExitPlanMode) 카드의 네 답. `feedback`은 `revise`에만 쓰며 앞뒤 공백을 뺀 뒤 비어 있거나 16 KiB를 넘으면 400(`plan.error.emptyFeedback` / `plan.error.feedbackTooLong` 문구). 모르는 `decision` 400(`plan.error.invalidDecision`), 형식이 틀린 `requestId`·`runId` 400(`plan.error.invalidRequest`), 이미 끝났거나 계획이 아닌 요청 409 |
 | POST | `/m1/workspaces/{id}/sessions` | `{ kind: "claude" \| "shell", provider?: "claude" \| "codex" \| "gemini" }` | 201 `{ protocol, sessionId }` |
@@ -94,7 +94,8 @@ MobilePermission {
   id, runId, toolName, title, headline?, fields: [{ label, value }], summary, canAllow,
   questionnaire?: { questions: [{ header, question, multiSelect, options: [{ label, description }] }] },
   plan?: string,        // Claude 계획 승인(ExitPlanMode)의 Markdown. 있으면 title은 "계획", fields는 같은 계획 하나({ label: "계획", value: plan } — plan을 모르는 옛 폰용); 답은 POST …/plan
-  receivedAt?: string   // 계획 승인에만, 호스트가 요청을 받은 ISO 8601 시각
+  receivedAt?: string,  // 계획 승인과 Antigravity 카드에만, 호스트가 요청을 받은(턴이 끝난) ISO 8601 시각
+  antigravity?: { actions: [MobileAntigravityAction] }   // Antigravity 권한 카드에만(아래 절); 답은 POST …/permission
 }
 ```
 
@@ -378,6 +379,52 @@ MobileFilePreview {
 **존재 여부를 흘리지 않는다.** 루트 밖으로 나가는 링크 **아래**의 경로(`outdir/secret.txt`처럼 부모 폴더가 루트 안으로 풀리지 않는 경로)는 거기에 무엇이 있든 없든 똑같이 404 `notFound`다. `outsideWorkspace`는 루트 안으로 풀리는 폴더에 바로 들어 있는 항목(그 링크 자체)에만 쓴다 — 그 폴더의 목록으로 이미 보이는 것이다.
 
 `files` capability가 없는 호스트에는 두 라우트가 없으므로(404) 휴대폰은 `파일` 버튼을 보이지 않는다.
+
+### Antigravity 권한 카드
+
+Antigravity 창(`provider: "gemini"`)은 agy를 헤드리스(`agy -p`)로 돌리므로 실행 도중 권한을 물을 수 없다. agy는 자기 검토 모드가 물었을 작업(명령 실행, 파일 쓰기 등)을 거절하고 턴을 이어 간 뒤, 끝에 무엇을 거절했는지 알린다. 호스트는 그 턴이 끝나면 Claude 권한 카드와 같은 경로로 묻는다: 권한 모드와 상관없이(기본 '수동'도) 거절된 작업이 하나라도 있으면 카드 하나가 생긴다. **Claude와 다른 점**: Claude는 실행 전에 멈추고 답을 기다리지만, Antigravity는 그 턴을 끝낸 뒤 묻고, 허용하면 같은 대화에서 이어서 진행한다.
+
+**카드 (`MobileSessionDetail.permissions`의 한 항목)** — 지금은 Mac 호스트만 싣는다(Windows 호스트는 같은 계약을 따를 예정이고, 그 전에는 거절 안내 줄만 남긴다).
+
+```
+MobilePermission {
+  id: "agy-<uuid>", runId,              // runId는 거절된 실행의 id
+  toolName: "AntigravityPermission",
+  title,                                // antigravity.permission.title ("Antigravity가 이 작업을 허용해 달라고 합니다")
+  fields: [{ label, value }],           // 작업마다 하나: label은 종류 이름(명령·주소·파일·작업), value는 target 또는 displayName
+  summary,                              // target(없으면 displayName)들을 ", "로 이은 것
+  canAllow,                             // rule이 있는 작업이 하나라도 있으면 true
+  receivedAt,
+  antigravity: { actions: [MobileAntigravityAction] }
+}
+MobileAntigravityAction {
+  kind: "command" | "url" | "file" | "other",   // 모르는 값은 "other"로 읽는다
+  action,                               // agy의 권한 이름: "command", "write_file", "read_file", "read_url", "execute_url", "mcp", … (규칙이 없으면 도구 이름)
+  displayName,                          // agy의 이름("RunCommand", "WriteFile"); 모르면 도구 이름
+  target?,                              // 명령 전체, 도메인, 경로. agy가 말하지 않았으면 없음
+  rule?                                 // 이 작업 하나만 허용하는 permissions.allow 규칙. 없으면 규칙으로 허용할 수 없는 작업 — 카드는 "권한 모드를 바꾸세요"(antigravity.permission.noRule)를 보인다
+}
+```
+
+- 규칙: 명령은 `command(<명령 전체>)`(agy가 접두어로 맞춘다), 그 밖에는 agy가 거절 문구에 쓴 그대로(`user denied permission for write_file(/private/tmp/a.txt)` → `write_file(/private/tmp/a.txt)`; agy의 규칙 이름은 `read_file`·`write_file`·`read_url(<도메인>)`·`execute_url(<도메인>)`·`mcp(<서버>/<도구>)`). 여러 줄 명령, 규칙을 말하지 않은 거절은 `rule`이 없다. 규칙은 `이름(…)` 꼴, 4 KiB 이하, 줄바꿈·NUL 없음(`AntigravityAllowGrant.validRule`).
+- `MobileSessionSummary.pendingPermissions`는 카드를 하나로 센다. 카드가 있는 창은 보통 실행 중이 아니다(`status`가 `completed` 등).
+- 카드는 답할 때까지, 또는 그 창의 **다음** 실행이 끝날 때까지 남는다. 다음 실행이 거절을 남기면 그 카드가 자리를 잇고, 남기지 않으면 카드가 사라진다.
+- 같은 턴에 대화에 짧은 안내 줄 하나(`run.notice.antigravityAsked`, `kind: "system"`)가 남는다. 이 줄은 카드를 모르는 휴대폰에도 보인다.
+
+**답 — `POST /m1/sessions/{id}/permission`** (`{ requestId, runId, allow, always? }`, 응답은 Claude 카드와 같다. 호스트가 처리한다)
+
+| 본문 | 버튼 | 호스트가 하는 일 |
+|---|---|---|
+| `allow: false` | 거절 | 카드를 닫는다. 아무것도 실행하지 않는다 |
+| `allow: true` | 이번만 허용 | 카드의 규칙을 그 호스트의 agy 설정 `permissions.allow`에 넣고, 같은 대화(창의 `resumeId`)로 이어 보내는 글(`antigravity.permission.continue`: 허용한 작업을 적은 짧은 문장)을 보낸다. 그 실행이 끝나면(성공·실패·중지·앱 종료 모두) 앱이 넣은 규칙만 지운다 |
+| `allow: true, always: true` | 항상 허용 | 같은 규칙을 넣고 지우지 않는다. 이어 보내기는 같다 |
+
+- 이어 보내는 글은 데스크톱 입력창의 규칙을 따른다: 창이 실행 중이거나 업데이트가 붙잡고 있으면 대기열에 들어가고(규칙은 그 실행이 시작될 때 들어간다), 아니면 바로 시작한다. 휴대폰은 결과를 대기열·대화로 본다.
+- 오류: `always: true`에 `allow: false`는 400(`remote.error.alwaysNeedsAllow`). `always: true`를 Antigravity 카드가 아닌 요청에 보내면 409(`remote.error.notAntigravityPermission`). 카드가 이미 없거나 `requestId`·`runId`가 맞지 않으면 409(`remote.error.notPendingPermission`). `canAllow: false`인 카드의 허용은 409(`antigravity.permission.noRule`). 설정 파일을 고칠 수 없으면(없는 폴더, 읽을 수 없음, JSON이 아님, `permissions`가 객체가 아님, `permissions.allow`가 배열이 아님, 저장 실패) 409에 그 이유(`antigravity.settings.error.*`)를 싣고, 카드는 남아 같은 이유를 보이며 아무것도 실행하지 않는다.
+- **설정 파일**: `~/.gemini/antigravity-cli/settings.json`(Windows는 사용자 폴더의 `.gemini\antigravity-cli\settings.json`). `permissions.allow` 배열만 바꾸고 다른 키·순서·값·공백은 한 바이트도 바꾸지 않는다(규칙은 목록 끝에 그 목록의 모양대로 붙고, 지울 때는 붙인 것만 그대로 뺀다). 이미 있던 규칙은 더하지 않고, 지우지도 않는다. 옆에 임시 파일을 써서 이름을 바꿔 덮는다(권한·심볼릭 링크 유지). 파일이 없고 폴더가 있으면 그 규칙만 담은 파일을 만든다. 같은 규칙을 여러 창이 잠깐 쓰면 마지막 사용이 끝날 때 지운다. 앱이 잠깐 넣은 규칙은 앱 데이터 폴더의 `antigravity-temporary-rules.json`에 먼저 적어 두므로, 앱이 그대로 꺼졌으면 다음 실행 때 지운다.
+- **구버전 휴대폰**은 `antigravity`를 모르고 이 카드를 보통 권한 카드(제목·필드·허용/거부)로 보인다. 허용은 이번만 허용, 거부는 거절로 처리된다. **구버전 호스트**는 이 카드를 싣지 않고, 대화에 거절 안내 줄(`run.notice.antigravityDenied`)만 남긴다.
+- **원격 워크스페이스 창**(데스크톱이 다른 컴퓨터에 붙여 쓰는 창, 휴대폰 목록에는 없다)은 그 창을 실행하는 호스트가 규칙을 처리한다: 호스트 실행의 이벤트 `antigravityPermission`(`RunEvent.antigravityPermission`, 위 카드와 같은 actions)이 클라이언트 창에 카드를 띄우고, 허용하면 클라이언트가 이어 보내는 `POST /v2/runs`에 `antigravityGrant: { requestId, rules, temporary }`를 실어 보낸다. 호스트는 자기가 알린 카드(하루 안, 최근 128개)의 규칙만 받고 그 밖은 403(`remote.host.error.antigravityRules`)이며, 규칙을 넣지 못하면 409로 그 이유를 보낸다. 이 이벤트를 모르는 구버전 클라이언트는 그 이벤트만 빼고 `remote.run.notice.skipped` 줄을 남긴다.
+- 와이어 표본과 agy 스트림(agy 1.4.4에서 녹화)·설정 편집의 바이트 단위 기대값: `native/contracts/fixtures/antigravity-permissions.json`. Mac 구현은 `MightyCore/AntigravityPermissions.swift`(파서·카드 수명·설정 편집·규칙 보관), `MightyClaude/AppStore+AntigravityPermissions.swift`(버튼·이어 보내기), `MightyClaude/ToolPermissionBar.swift`(카드).
 
 ### 휴대폰에서 의도적으로 제외한 Mac 기능
 
