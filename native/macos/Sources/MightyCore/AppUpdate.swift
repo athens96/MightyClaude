@@ -285,15 +285,26 @@ public actor AppUpdateService {
     /// The helper waits for the running app to exit, copies the new bundle
     /// beside the old one and swaps them by renaming: the installed app moves
     /// to `<destination>.update-old`, the copy takes its place, and the old one
-    /// is deleted once that worked (or moved back when it did not). Paths are
+    /// is unregistered and deleted once that worked (or moved back when it did
+    /// not). Hang-up, interrupt and terminate are ignored while the bundle is
+    /// moved, and a helper that died between the two renames anyway is
+    /// repaired by the next one: with no app at the destination but an
+    /// `.update-old` beside it, that is moved back first. Paths are
     /// single-quoted for `sh`.
     ///
     /// `relaunch: true` (the user's "restart now", or the idle countdown)
     /// opens the new app afterwards. `relaunch: false` installs while the app
-    /// quits for good: nothing is opened, and if a copy of the app is running
-    /// from the destination again by the time the swap would happen (`pgrep`
-    /// on its `Contents/MacOS/` folder), the bundle is left alone and the
-    /// update stays staged for the next quit.
+    /// quits for good: nothing is opened, and if the app is running from the
+    /// destination again by the time the swap would happen, the bundle is
+    /// left alone and the update stays staged for the next quit. "Running" is
+    /// a process whose command line starts with the destination's
+    /// `Contents/MacOS/MightyClaude`, except the app's own headless modes
+    /// (`--agent-io-mcp`, `--agent-delegation-mcp`, `--verify-resources`),
+    /// which can outlive the window for a moment and do not hold the bundle.
+    /// The path is matched byte for byte and case-sensitively, while APFS
+    /// folds case and Unicode normalization: an app started through a
+    /// differently spelled path (`/applications/…`, decomposed accents) is not
+    /// seen, and is replaced under its feet as before this check existed.
     ///
     /// Two extra steps keep the macOS input method attached to the right
     /// bundle: the staged copy is unregistered from LaunchServices and the
@@ -303,12 +314,14 @@ public actor AppUpdateService {
     /// text-input session (Korean composition falling apart into jamo).
     public static func installScript(stagedApp: URL, destination: URL, pid: Int32, relaunch: Bool = true) -> String {
         func quote(_ value: String) -> String { "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'" }
-        /// `pgrep` takes an extended regular expression; the path must match literally.
+        /// `pgrep` and `grep -E` take extended regular expressions; these must match literally.
         func literalPattern(_ value: String) -> String {
             value.map { "\\.[]()*+?{}|^$".contains($0) ? "\\" + String($0) : String($0) }.joined()
         }
+        let executable = "^" + literalPattern(destination.path + "/Contents/MacOS/MightyClaude") + "( |$)"
+        let headless = " (" + [PaneMCPServerLocation.headlessArgument, DelegationMCPServer.headlessArgument, "--verify-resources"].map(literalPattern).joined(separator: "|") + ")( |$)"
         let runningCheck = relaunch ? "" : """
-        if pgrep -f \(quote(literalPattern(destination.path + "/Contents/MacOS/"))) >/dev/null 2>&1; then
+        if pgrep -lf \(quote(executable)) 2>/dev/null | grep -Ev -- \(quote(headless)) | grep -q .; then
           echo "Mighty Claude is running again; leaving the update for the next quit." >&2
           rm -rf "$NEW"
           exit 0
@@ -326,23 +339,36 @@ public actor AppUpdateService {
         NEW="$DESTINATION.update-new"
         OLD="$DESTINATION.update-old"
         LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+        if [ ! -e "$DESTINATION" ] && [ -d "$OLD" ]; then
+          echo "Putting back the app an interrupted update left aside." >&2
+          mv "$OLD" "$DESTINATION" || { echo "Could not put back the previous version; it is at $OLD." >&2; exit 1; }
+        fi
         for _ in $(seq 1 600); do kill -0 "$PID" 2>/dev/null || break; sleep 0.5; done
         if kill -0 "$PID" 2>/dev/null; then echo "Mighty Claude did not quit; skipping the update." >&2; exit 1; fi
         sleep 2
         [ -d "$SOURCE" ] || { echo "No app to install: $SOURCE" >&2; exit 1; }
         rm -rf "$NEW"
         ditto "$SOURCE" "$NEW" || { echo "Could not copy the new app." >&2; rm -rf "$NEW"; exit 1; }
-        \(runningCheck)rm -rf "$OLD"
+        \(runningCheck)trap '' HUP INT TERM
+        if [ -e "$OLD" ]; then "$LSREGISTER" -u "$OLD" >/dev/null 2>&1 || true; rm -rf "$OLD"; fi
+        if [ -e "$OLD" ]; then echo "Could not remove the leftover $OLD; skipping the update." >&2; rm -rf "$NEW"; exit 1; fi
         if [ -d "$DESTINATION" ]; then
           mv "$DESTINATION" "$OLD" || { echo "Could not back up the current app." >&2; rm -rf "$NEW"; exit 1; }
         fi
         if ! mv "$NEW" "$DESTINATION"; then
           echo "Could not replace the app; restoring the previous version." >&2
           rm -rf "$NEW"
-          if [ -d "$OLD" ]; then rm -rf "$DESTINATION"; mv "$OLD" "$DESTINATION"; fi
+          if [ -d "$OLD" ]; then
+            rm -rf "$DESTINATION"
+            mv "$OLD" "$DESTINATION" || echo "Could not restore the previous version; it is at $OLD." >&2
+          fi
           exit 1
         fi
-        rm -rf "$OLD"
+        trap - HUP INT TERM
+        if [ -e "$OLD" ]; then
+          "$LSREGISTER" -u "$OLD" >/dev/null 2>&1 || true
+          rm -rf "$OLD" || echo "Could not remove the previous version at $OLD." >&2
+        fi
         "$LSREGISTER" -u "$SOURCE" >/dev/null 2>&1 || true
         rm -rf "$(dirname "$SOURCE")"
         "$LSREGISTER" -f "$DESTINATION" >/dev/null 2>&1 || true
