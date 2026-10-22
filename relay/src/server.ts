@@ -6,8 +6,10 @@ import { pathToFileURL } from 'node:url';
 import { WebSocketServer } from 'ws';
 
 import { loadConfig, type RelayConfig } from './config.ts';
+import type { PushSender } from './fcm.ts';
 import { RelayHub, type RelayLogger } from './hub.ts';
 import { CloseCode, parseSocketParams, WS_PATH } from './protocol.ts';
+import { createPushRoutes } from './push.ts';
 
 /** A listening relay instance. */
 export interface RelayHandle {
@@ -20,6 +22,8 @@ export interface RelayHandle {
 
 export interface StartRelayOptions extends Partial<RelayConfig> {
   readonly logger?: RelayLogger;
+  /** Overrides the FCM sender the config would build; null turns sending off (tests). */
+  readonly pushSender?: PushSender | null;
 }
 
 function handleRequest(req: IncomingMessage, res: ServerResponse): void {
@@ -53,12 +57,24 @@ function rejectUpgrade(socket: Duplex): void {
 
 /** Creates and starts the relay. */
 export async function startRelay(options: StartRelayOptions = {}): Promise<RelayHandle> {
-  const { logger, ...overrides } = options;
+  const { logger, pushSender, ...overrides } = options;
   const config = loadConfig(overrides);
   const log: RelayLogger = logger ?? ((line) => console.log(line));
 
   const hub = new RelayHub(config, log);
-  const httpServer: Server = createServer(handleRequest);
+  const push = await createPushRoutes(config, log, pushSender);
+  const httpServer: Server = createServer((req, res) => {
+    void (async () => {
+      try {
+        if (await push.handle(req, res, clientIp(req, config.trustProxy))) return;
+        handleRequest(req, res);
+      } catch {
+        if (!res.headersSent) res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
+        res.end();
+        log('[push] request failed');
+      }
+    })();
+  });
   const wss = new WebSocketServer({ noServer: true, maxPayload: config.maxPayload });
 
   httpServer.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
@@ -96,6 +112,7 @@ export async function startRelay(options: StartRelayOptions = {}): Promise<Relay
     config,
     close: async () => {
       hub.dispose();
+      await push.close();
       for (const client of wss.clients) client.terminate();
       await new Promise<void>((resolve) => {
         wss.close(() => resolve());
