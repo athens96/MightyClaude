@@ -58,7 +58,7 @@
    - (b) 앱이 **쉬고 있으면** 60초 카운트다운 배너를 띄운다. 버튼은 "지금 다시 시작"과 "나중에"다.
      - 시간이 다 되면 다시 시작하며 설치한다.
      - "나중에"를 누르면 4시간 동안 묻지 않는다. 그사이 종료하면 (a)로 설치된다.
-     - 카운트다운 중에 쉬는 상태가 깨지면 조용히 취소한다.
+     - 카운트다운 중에 다른 일(실행·초안·카드 등)이 생기면 조용히 취소한다. 키보드·마우스 입력만으로는 취소하지 않는다(알림 단추를 누를 수 있게). 입력이 있으면 카운트다운을 새로 시작하지는 않는다.
 4. **표시:** 상태 줄과 설정에 "다음 실행 때 {version} 설치"와 "지금 다시 시작"을 보인다.
 5. **실패:** 설정 행에만 보인다. `.ready` 상태는 그대로 지킨다.
 6. **스위치를 끄면:** 루프·다운로드·카운트다운을 멈춘다. 스테이지된 업데이트는 수동 "지금 다시 시작"으로만 설치되고, 끈 상태에서는 종료할 때 설치하지 않는다.
@@ -134,7 +134,7 @@
   - `checkDue(enabled:hasKey:lastCheck:lastAttempt:now:)`
   - `idleBlockers(_:now:)`
   - `AppUpdateRestartState { idle, countingDown(until), snoozed(until) }`
-  - `restartOffer(...)`: 입력은 ready 여부, 자동 여부, 쉬는지, 지금 시각. 결과는 다음 상태와 동작(`.none/.startCountdown/.restart/.cancel`).
+  - `restartOffer(..., blockers:)`: 입력은 ready 여부, 자동 여부, 막는 사유 목록, 지금 시각. 시작은 사유가 없을 때만, 진행 중인 카운트다운은 `.userActive`만 있으면 계속된다. 결과는 다음 상태와 동작(`.none/.startCountdown/.restart/.cancel`).
 - **`AppUpdate.swift`의 `installScript(...relaunch:)`**
   - 교체를 이름 바꾸기로 한다: DESTINATION → `"$DESTINATION.update-old"` → NEW → DESTINATION. 실패하면 되돌리고, 성공하면 old를 지운다.
   - `relaunch == false`이면 교체 직전에 `pgrep -f "$DESTINATION/Contents/MacOS/"`를 보고, 실행 중이면 교체를 건너뛴다. 이때 `open -n`을 쓰지 않는다.
