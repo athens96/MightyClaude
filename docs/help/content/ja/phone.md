@@ -67,7 +67,7 @@ Macで[Mightyオーケストレーション](delegation.md)により作られた
 ## 通知 {#notifications}
 接続したコンピューター（Mac または Windows）で実行が終わったとき、失敗したとき、そして許可の依頼・質問・計画の承認・ログイン切れで対応が必要なときに、スマートフォンへ通知が届きます。今は Android アプリだけが受け取ります。
 - 初めてアプリを開いたとき（Android 13 以降）、通知を許可するか一度だけ聞きます。種類ごとにオフにするには、{{ui:phone.tabs.hosts}} タブの {{ui:phone.settings.title}} を開き、{{ui:phone.settings.notifications}} のスイッチを変えます。システム設定でこのアプリの通知がオフのときは、{{ui:phone.settings.title}} でお知らせします。
-- 許可の依頼の通知では、その場で {{ui:permission.allow}} か {{ui:permission.deny}} をタップできます。Antigravity のカードは {{ui:permission.allowOnce}}・{{ui:antigravity.permission.allowAlways}}・{{ui:antigravity.permission.deny}} です。コマンドがつながっている、データを消せるなど、一度だけ許可できるカードには {{ui:antigravity.permission.allowAlways}} はありません。質問と計画の通知にはボタンがなく、タップしてアプリで答えます。
+- 許可の依頼の通知では、その場で {{ui:permission.allow}} か {{ui:permission.deny}} をタップできます。Antigravity のカードは {{ui:permission.allowOnce}}・{{ui:antigravity.permission.allowAlways}}・{{ui:antigravity.permission.deny}} です。コマンドがつながっている、データを消せるなど、一度だけ許可できるカードには {{ui:antigravity.permission.allowAlways}} はありません。質問と計画の通知にはボタンがなく、タップしてアプリで答えます。許可できる操作がひとつもない Antigravity のカードもボタンなしで届くので、タップしてアプリで答えてください。
 - ボタンはスマートフォンのロックを解除してからでないと動きません。ロック中に押すと通知が「{{ui:phone.push.outcome.locked}}」に変わり、ボタンは残ります。コンピューターで先に答えていた場合は {{ui:phone.push.outcome.already}} に、答えを送れなかった場合は {{ui:phone.push.outcome.failed}} に変わります。最後の場合は通知をタップして、アプリで答えてください。
 - 通知をタップすると、そのセッションが開きます。スマートフォンでそのセッションを表示している間は、そのセッションの通知は届きません。
 - 通知はロック画面では非公開で表示されます。ロック画面で機密性の高い内容を隠す設定にしていると、タイトルと本文は表示されません。

@@ -67,7 +67,7 @@ Windows 电脑也一样，只是需要一条 Windows 防火墙规则，以免连
 ## 通知 {#notifications}
 已连接的电脑（Mac 或 Windows）上的运行完成或失败时，以及需要你处理权限请求、问题、待批准的计划或登录过期时，手机会收到通知。目前只有 Android 应用会收到。
 - 第一次打开应用时（Android 13 及以上）会询问一次是否允许通知。要按类型关闭，请在 {{ui:phone.tabs.hosts}} 标签页打开 {{ui:phone.settings.title}}，修改 {{ui:phone.settings.notifications}} 下的开关。如果系统设置里该应用的通知被关闭，{{ui:phone.settings.title}} 会提示。
-- 收到权限请求通知时，可以直接点 {{ui:permission.allow}} 或 {{ui:permission.deny}}。Antigravity 卡片提供 {{ui:permission.allowOnce}}、{{ui:antigravity.permission.allowAlways}} 和 {{ui:antigravity.permission.deny}}。只能允许一次的卡片（例如串联命令或可能删除数据的命令）没有 {{ui:antigravity.permission.allowAlways}}。问题和计划的通知没有按钮，点开后在应用里回答。
+- 收到权限请求通知时，可以直接点 {{ui:permission.allow}} 或 {{ui:permission.deny}}。Antigravity 卡片提供 {{ui:permission.allowOnce}}、{{ui:antigravity.permission.allowAlways}} 和 {{ui:antigravity.permission.deny}}。只能允许一次的卡片（例如串联命令或可能删除数据的命令）没有 {{ui:antigravity.permission.allowAlways}}。问题和计划的通知没有按钮，点开后在应用里回答。没有任何可允许操作的 Antigravity 卡片同样不带按钮，点开后在应用里回答。
 - 按钮只有在手机解锁后才起作用。锁屏时点按，通知会变为“{{ui:phone.push.outcome.locked}}”，按钮仍保留。如果已在电脑上回答，通知会变为 {{ui:phone.push.outcome.already}}；如果答复没能发出，会变为 {{ui:phone.push.outcome.failed}}。最后这种情况请点开通知，在应用里回答。
 - 点按通知会打开对应的会话。手机正在显示某个会话时，不会收到关于它的通知。
 - 通知在锁屏上以私密方式显示：如果你设置了在锁屏上隐藏敏感内容，标题和正文就不会显示。
