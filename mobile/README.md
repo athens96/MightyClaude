@@ -11,6 +11,8 @@
   **알림**(답이 필요한 것과 결과) · **호스트**(페어링된 호스트 목록 / 연결 상태)
 - 작업 공간별 세션 카드 (상태 색 가장자리, 상태 알약, 응답 대기 수, 새 창 만들기)
 - 세션 상세: 대화 기록, 권한 허용/거부, 질문 답변, 대기열, 메시지 전송/중지
+- Antigravity 권한 카드: 거절된 작업마다 종류와 명령·주소·경로, 이번만 허용 / 항상 허용 / 거절
+  (규칙으로 허용할 수 없으면 허용 버튼 없이 권한 모드 안내, 호스트가 거절하면 카드에 그 이유)
 - 호스트가 알려 주는 기능만 추가로: 전송 방식 선택, 대기열 관리, 이름 변경·창 닫기,
   이전 기록 불러오기, 설정 변경, 슬래시 명령, 상태 줄,
   **Mighty 블록 보기**, **파일 첨부** (아래 **호스트 기능(capabilities)**)
@@ -350,6 +352,7 @@ src/
              session-card.tsx(세션 카드), host-workspaces.tsx(작업 공간 묶음), host-poller.tsx
              host-status.tsx(연결 점), icons.tsx(탭·전송·중지 선 아이콘)
              sheets.tsx(선택·입력·확인·본문·목록 모달), permission-card.tsx(한 번에 한 질문)
+             antigravity-permission-card.tsx(Antigravity 권한 카드)
              mighty-blocks.tsx(요청·블록 타임라인), structure-view.tsx(파이프라인 보드), guided-panel.tsx
   hooks/     use-long-poll.ts (AbortController + 포커스 + notify 연동)
              use-capabilities.ts (호스트별 /m1/info 캐시)
@@ -361,6 +364,7 @@ src/
              mighty.ts(블록·패널 파싱과 라벨), uploads.ts(한도·청크 계획·업로드 진행)
              file-slices.ts(expo-file-system 범위 읽기), device-token.ts, host-secrets.ts
              provider-marks.ts(프로바이더 마크 24×24 아웃라인)
+             antigravity-permission.ts(Antigravity 카드 읽기·답 본문)
   store/     hosts.ts(secure store), live.ts(상태·기능·명령 캐시), toast.ts,
              dashboard.ts(현황이 보는 호스트, 탭 롱폴 상태)
   theme/     팔레트(밝게/어둡게) / 상태 색 묶음(toneColors) / 글꼴 / 간격 / 라벨

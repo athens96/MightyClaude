@@ -277,7 +277,8 @@ export interface MobileClient {
   cancelUpload(uploadId: string, signal?: AbortSignal): Promise<OkResponse>;
   respondPermission(
     sessionId: string,
-    input: { requestId: string; runId: string; allow: boolean },
+    /** `always` is "항상 허용" on an Antigravity card, and goes only with `allow: true`. */
+    input: { requestId: string; runId: string; allow: boolean; always?: boolean },
     signal?: AbortSignal,
   ): Promise<OkResponse>;
   answer(
