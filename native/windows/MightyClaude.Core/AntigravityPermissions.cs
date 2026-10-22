@@ -129,10 +129,18 @@ public static class AntigravityRuleSafety
     public static readonly IReadOnlySet<string> Interpreters = new HashSet<string>(StringComparer.Ordinal)
     {
         "bash", "sh", "zsh", "dash", "fish", "ksh", "csh", "tcsh", "pwsh", "powershell", "cmd", "python", "python3", "node", "deno", "bun",
-        "ruby", "perl", "php", "lua", "osascript",
+        "ruby", "perl", "php", "lua", "osascript", "py", "awk", "gawk",
     };
+    /// <summary>Interpreters whose first argument is their program: once whatever follows.</summary>
+    public static readonly IReadOnlySet<string> ProgramFirst = new HashSet<string>(StringComparer.Ordinal) { "awk", "gawk" };
     /// <summary>Programs that run the command after them: once whatever follows.</summary>
-    public static readonly IReadOnlySet<string> Wrappers = new HashSet<string>(StringComparer.Ordinal) { "env", "xargs", "nohup", "time", "timeout", "nice", "watch", "exec", "eval", "source", ".", "npx", "bunx", "uvx", "pipx" };
+    public static readonly IReadOnlySet<string> Wrappers = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "env", "xargs", "nohup", "time", "timeout", "nice", "watch", "exec", "eval", "source", ".", "npx", "bunx", "uvx", "pipx",
+        "command", "builtin", "caffeinate", "arch", "stdbuf", "wsl", "setsid", "script",
+    };
+    /// <summary>Options that only print an interpreter's version or help.</summary>
+    public static readonly IReadOnlySet<string> InfoFlags = new HashSet<string>(StringComparer.Ordinal) { "--version", "-v", "-version", "--help", "-h", "-help", "-?", "/?" };
     /// <summary>Flags that hand an interpreter code to run.</summary>
     public static readonly IReadOnlySet<string> InlineCodeFlags = new HashSet<string>(StringComparer.Ordinal) { "-c", "-e", "-p", "-r", "--eval", "--print", "--command", "-command", "-encodedcommand", "-enc", "-ec", "/c", "/k" };
 
@@ -142,12 +150,14 @@ public static class AntigravityRuleSafety
     /// </summary>
     public static bool RunsCode(string command)
     {
+        // An empty quoted word ('' or "") is dropped: the next word is the one that runs.
         var words = command.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries).Select(word => word.Trim('"', '\'').ToLowerInvariant()).Where(word => word.Length > 0).ToList();
         static bool Assignment(string word) => !word.StartsWith('-') && !word.StartsWith('=') && word.Contains('=');
         var at = 0;
         while (at < words.Count && Assignment(words[at])) at++;
         if (at + 1 < words.Count && words[at] == "env" && Assignment(words[at + 1])) { at++; while (at < words.Count && Assignment(words[at])) at++; }
-        if (at >= words.Count) return false;
+        // Nothing but assignments (FOO=1, env FOO=1) runs whatever a prefix rule lets follow.
+        if (at >= words.Count) return true;
         // The program by its name, without a folder or .exe.
         var program = words[at];
         var slash = program.LastIndexOfAny(['/', '\\']);
@@ -156,16 +166,20 @@ public static class AntigravityRuleSafety
         if (program.StartsWith("python", StringComparison.Ordinal)) program = "python";
         if (Wrappers.Contains(program)) return true;
         if (!Interpreters.Contains(program)) return false;
-        if (at + 1 == words.Count) return true;
+        if (ProgramFirst.Contains(program) || at + 1 == words.Count) return true;
         // The interpreter's own options come before its script; what follows the script is the script's.
+        var onlyInfo = true;
         foreach (var word in words.Skip(at + 1))
         {
             if (InlineCodeFlags.Contains(word)) return true;
             var shortFlag = word.StartsWith('-') && !word.StartsWith("--", StringComparison.Ordinal) && word.Length > 1 && word[1..].All(char.IsLetter);
             if (shortFlag && word[1..].Any(c => "cerp".Contains(c))) return true;
-            if (!word.StartsWith('-')) return false;
+            // cmd's options are /x; anyone else's word starting with / is a script path.
+            if (!word.StartsWith('-') && !(program == "cmd" && word.StartsWith('/'))) return false;
+            if (!InfoFlags.Contains(word)) onlyInfo = false;
         }
-        return false;
+        // No script: the interpreter reads its code from what a prefix rule lets follow (bash -l, python3 -u), unless it only prints its version or help.
+        return !onlyInfo;
     }
 
     /// <summary>Characters that chain, pipe, redirect, background or substitute.</summary>
