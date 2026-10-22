@@ -97,10 +97,12 @@ internal static class AntigravityPermissionVerification
 
     internal static Task WhichRulesACardMayOfferFollowsTheSharedCases()
     {
+        var context = Fixture.Value["rules"]!["context"]!["protected"]!.AsArray().Select(f => f!.GetValue<string>()).ToList();
         foreach (var item in Fixture.Value["rules"]!["cases"]!.AsArray())
         {
             var rule = item!["rule"]!.GetValue<string>(); var verdict = item["verdict"]!.GetValue<string>();
-            Check(AntigravityRuleSafety.Verdict(rule).ToString().Equals(verdict, StringComparison.OrdinalIgnoreCase), rule + ": " + verdict + ", got " + AntigravityRuleSafety.Verdict(rule));
+            var got = AntigravityRuleSafety.Verdict(rule, context);
+            Check(got.ToString().Equals(verdict, StringComparison.OrdinalIgnoreCase), rule + ": " + verdict + ", got " + got);
         }
         var tools = Fixture.Value["tools"]!;
         var map = tools["map"]!.AsObject().ToDictionary(p => p.Key, p => p.Value!.GetValue<string>());
@@ -242,6 +244,36 @@ internal static class AntigravityPermissionVerification
         // A rule that is not one is refused before the file is read.
         Check(Kind(() => folder.Leases().Apply(Grant("agy-1", true, "rm -rf /"))) == "badRule", "a bad rule");
         return Task.CompletedTask;
+    }
+
+    internal static async Task NoFileRuleReachesAgysOwnFolderOrTheAppsData()
+    {
+        using var folder = new Folder(); folder.Make(Real);
+        var leases = folder.Leases();
+        var gemini = Path.Combine(folder.Root, ".gemini");
+        // agy's own settings, the app's ledger, and anything above them.
+        foreach (var path in new[] { folder.SettingsPath, gemini, folder.Ledger, Path.GetDirectoryName(folder.Ledger)!, folder.Root, Path.Combine(folder.Root, "project", "..", ".gemini", "x") })
+            foreach (var name in new[] { "write_file", "read_file" })
+                Check(Kind(() => leases.Apply(Grant("agy-1", true, name + "(" + path + ")"))) == "badRule", name + "(" + path + ")");
+        // Through a link to it too (a symbolic link needs a privilege on Windows).
+        if (!OperatingSystem.IsWindows())
+        {
+            var link = Path.Combine(folder.Root, "linked"); Directory.CreateSymbolicLink(link, gemini);
+            Check(Kind(() => leases.Apply(Grant("agy-1", true, "write_file(" + Path.Combine(link, "antigravity-cli", "settings.json") + ")"))) == "badRule", "through a link");
+        }
+        Check(folder.Text() == Real, "nothing was added");
+        // A file beside them is fine.
+        var lease = leases.Apply(Grant("agy-2", true, "write_file(" + Path.Combine(folder.Root, "project", "a.txt") + ")"))!;
+        leases.Release(lease); await leases.Settled();
+        // The real profile's .gemini and the app's own data folder are never a rule's, wherever the leases point.
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        Check(AntigravityRuleSafety.Verdict("write_file(" + Path.Combine(home, ".gemini", "antigravity-cli", "settings.json") + ")") == AntigravityRuleVerdict.Refused, "the real .gemini");
+        Check(AntigravityRuleSafety.Verdict("read_file(" + home + ")") == AntigravityRuleVerdict.Refused, "the profile folder");
+        var saved = AntigravityRuleSafety.AppDataFolder;
+        AntigravityRuleSafety.AppDataFolder = Path.GetDirectoryName(folder.Ledger);
+        try { Check(AntigravityRuleSafety.Verdict("write_file(" + folder.Ledger + ")") == AntigravityRuleVerdict.Refused, "the app's data folder"); }
+        finally { AntigravityRuleSafety.AppDataFolder = saved; }
+        Check(AntigravityRuleSafety.Verdict("command(cat " + Path.Combine(home, ".gemini", "antigravity-cli", "settings.json") + ")") == AntigravityRuleVerdict.Once, "a command naming .gemini runs once");
     }
 
     internal static async Task AMissingFileIsCreatedWithTheRuleAloneAndGoesWithIt()

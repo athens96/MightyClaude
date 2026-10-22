@@ -117,10 +117,84 @@ public static class AntigravityRuleSafety
         return (rule[..open], rule[(open + 1)..^1]);
     }
 
-    public static AntigravityRuleVerdict Verdict(string rule)
+    private static string? appDataFolder;
+    /// <summary>The app's data folder (where the ledger lives); the desktop service sets it. No file rule may reach into it or above it.</summary>
+    public static string? AppDataFolder { get => Volatile.Read(ref appDataFolder); set => Volatile.Write(ref appDataFolder, value); }
+
+    /// <summary>
+    /// The folders no file rule may reach into or above: agy's own %USERPROFILE%\.gemini (an always rule there would let agy rewrite its
+    /// own permissions) and the app's data folder with its ledger, each as written and with its links resolved.
+    /// </summary>
+    public static IReadOnlyList<string> ProtectedFolders()
+    {
+        var folders = new List<string>();
+        void Add(string path) { folders.Add(path); if (ResolvedPath(path) is { } resolved && resolved != path) folders.Add(resolved); }
+        Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".gemini"));
+        if (AppDataFolder is { Length: > 0 } app) Add(app);
+        return folders;
+    }
+
+    /// <summary>
+    /// <paramref name="protectedFolders"/>: the folders file rules keep out of, compared as written (the shared cases); null uses this
+    /// computer's (<see cref="ProtectedFolders"/>). <paramref name="resolvingLinks"/> (by default when null) also checks the rule's path
+    /// with its links resolved.
+    /// </summary>
+    public static AntigravityRuleVerdict Verdict(string rule, IReadOnlyList<string>? protectedFolders = null, bool? resolvingLinks = null)
     {
         if (Parts(rule) is not { } parts || !Permissions.Contains(parts.Name) || RefusedArgument(parts.Argument)) return AntigravityRuleVerdict.Refused;
-        return parts.Name == "command" && Risky(parts.Argument) ? AntigravityRuleVerdict.Once : AntigravityRuleVerdict.Always;
+        if (parts.Name is "write_file" or "read_file")
+        {
+            var paths = new List<string> { parts.Argument };
+            if ((resolvingLinks ?? protectedFolders is null) && ResolvedPath(parts.Argument) is { } resolved && resolved != parts.Argument) paths.Add(resolved);
+            var guarded = (protectedFolders ?? ProtectedFolders()).Select(NormalizedPath).OfType<string>().ToList();
+            foreach (var path in paths)
+            {
+                if (NormalizedPath(path) is not { } normalized) return AntigravityRuleVerdict.Refused;
+                if (guarded.Any(folder => Within(normalized, folder) || Within(folder, normalized))) return AntigravityRuleVerdict.Refused;
+            }
+        }
+        // A command that names agy's own folder may run once, never for good.
+        return parts.Name == "command" && (Risky(parts.Argument) || parts.Argument.Contains(".gemini", StringComparison.OrdinalIgnoreCase))
+            ? AntigravityRuleVerdict.Once : AntigravityRuleVerdict.Always;
+    }
+
+    /// <summary>An absolute path, compared without case, \ as /, . and .. taken out and no trailing slash; null when it is not absolute (/…, C:\…).</summary>
+    internal static string? NormalizedPath(string path)
+    {
+        var slashed = path.Replace('\\', '/');
+        var drive = slashed.Length >= 3 && char.IsAsciiLetter(slashed[0]) && slashed[1] == ':' && slashed[2] == '/';
+        if (!drive && !slashed.StartsWith('/')) return null;
+        var parts = new List<string>();
+        foreach (var part in (drive ? slashed[2..] : slashed).Split('/', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (part == ".") continue;
+            if (part == "..") { if (parts.Count > 0) parts.RemoveAt(parts.Count - 1); continue; }
+            parts.Add(part.ToLowerInvariant());
+        }
+        return (drive ? slashed[..2].ToLowerInvariant() : "") + "/" + string.Join('/', parts);
+    }
+
+    /// <summary><paramref name="path"/> is <paramref name="folder"/> or inside it.</summary>
+    internal static bool Within(string path, string folder) => path == folder || path.StartsWith(folder.EndsWith('/') ? folder : folder + "/", StringComparison.Ordinal);
+
+    /// <summary>The path with every link along it resolved, as far as it exists; null when it is not absolute or cannot be read.</summary>
+    internal static string? ResolvedPath(string path)
+    {
+        try
+        {
+            if (!Path.IsPathFullyQualified(path)) return null;
+            var full = Path.GetFullPath(path);
+            var root = Path.GetPathRoot(full)!;
+            var current = root;
+            foreach (var part in full[root.Length..].Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
+            {
+                current = Path.Combine(current, part);
+                FileSystemInfo info = Directory.Exists(current) ? new DirectoryInfo(current) : new FileInfo(current);
+                if (info.Exists && info.LinkTarget is not null && info.ResolveLinkTarget(true) is { } target) current = target.FullName;
+            }
+            return current;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { return null; }
     }
 
     /// <summary>Empty, the whole disk or home (/, ~, C:\), a wildcard, a parenthesis or a control character.</summary>
@@ -794,6 +868,9 @@ public sealed class AntigravityRuleLeases
         {
             if (closed) throw new OperationCanceledException();
             if (!grant.IsValid) throw AntigravitySettingsException.Of("badRule");
+            // Never a file rule into (or above) these settings' own folder or this ledger's, wherever they are.
+            var guarded = AntigravityRuleSafety.ProtectedFolders().Concat(OwnFolders()).ToList();
+            if (grant.Rules.Any(rule => AntigravityRuleSafety.Verdict(rule, guarded, resolvingLinks: true) == AntigravityRuleVerdict.Refused)) throw AntigravitySettingsException.Of("badRule");
             if (!grant.KeepsOnlyAllowedRules) throw AntigravitySettingsException.Of("onceOnly");
             RetryPending([]);
             var current = Read();
@@ -880,6 +957,18 @@ public sealed class AntigravityRuleLeases
             if (left.Count == 0) { PruneIfDone(); return; }
         }
         Remove(left);
+    }
+
+    /// <summary>agy's folder these settings are in (.gemini, two up from antigravity-cli\settings.json) and the ledger's folder, as written and resolved.</summary>
+    private IEnumerable<string> OwnFolders()
+    {
+        var folders = new List<string?> { Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(SettingsPath))) };
+        if (ledgerPath is not null) folders.Add(Path.GetDirectoryName(Path.GetFullPath(ledgerPath)));
+        foreach (var folder in folders.OfType<string>())
+        {
+            yield return folder;
+            if (AntigravityRuleSafety.ResolvedPath(folder) is { } resolved) yield return resolved;
+        }
     }
 
     // Removing

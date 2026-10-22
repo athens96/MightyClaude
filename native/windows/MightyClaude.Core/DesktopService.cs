@@ -48,6 +48,8 @@ public sealed partial class DesktopService : IAsyncDisposable
         store = new(directory, legacyDirectory); Providers = providers ?? new(); Images = new(Path.Combine(directory, "image-cache")); this.pluginDirectory = pluginDirectory;
         // The rules a continuation adds for a while are recorded in the app's data folder first, so a crash leaves nothing a next launch does not take out.
         AntigravityRules = new(antigravitySettings ?? AntigravityRuleLeases.DefaultSettingsPath(), Path.Combine(directory, "antigravity-temporary-rules.json"));
+        // No Antigravity file rule may reach this folder (it holds that ledger).
+        AntigravityRuleSafety.AppDataFolder = directory;
         local = new(ResolveLocal, Providers, pluginDirectory, Receive, ReceiveToolPermission, Images);
         this.delegationEnabled = delegationEnabled ?? DelegationSwitch.IsOn; this.worktrees = worktrees; local.DelegationEnabled = this.delegationEnabled;
         // A save already asked for is still written while the app closes: closing only stops new work.
