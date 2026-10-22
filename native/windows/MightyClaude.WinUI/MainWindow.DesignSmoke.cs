@@ -161,9 +161,11 @@ public sealed partial class MainWindow
             $"{key} ({theme}): the sidebar column must be bounded by Layout.SidebarMin {DesignMetrics.Layout.SidebarMin} and SidebarMax {DesignMetrics.Layout.SidebarMax}; got {column.MinWidth}..{column.MaxWidth}");
 
         var workspace = service.Snapshot.Workspaces.First(w => w.Id == service.Snapshot.ActiveWorkspaceId);
-        // Over the dock the resource band (hidden: the smoke's copy has every file), the error banner, then the header (M/WorkspaceView.swift:16-22).
+        // Over the dock the update countdown (hidden: a smoke run never counts down), the resource band (hidden: the smoke's copy has
+        // every file), the error banner, then the header (M/WorkspaceView.swift:16-22).
         Require(workspaceHeader.Visibility == Visibility.Visible && workspaceHeaderName.Text == workspace.Name && Grid.GetRow(detailTop) == 0 && Grid.GetColumn(detailTop) == 1
-            && detailTop.Children.Count == 3 && ReferenceEquals(detailTop.Children[0], resourceBanner) && resourceBanner.Visibility == Visibility.Collapsed && ReferenceEquals(detailTop.Children[1], errorBanner) && ReferenceEquals(detailTop.Children[2], workspaceHeader),
+            && detailTop.Children.Count == 4 && ReferenceEquals(detailTop.Children[0], appUpdateCountdown) && appUpdateCountdown!.Visibility == Visibility.Collapsed
+            && ReferenceEquals(detailTop.Children[1], resourceBanner) && resourceBanner.Visibility == Visibility.Collapsed && ReferenceEquals(detailTop.Children[2], errorBanner) && ReferenceEquals(detailTop.Children[3], workspaceHeader),
             $"{key} ({theme}): the workspace header must show the active workspace '{workspace.Name}' over the dock, under the error banner; got '{workspaceHeaderName.Text}', {workspaceHeader.Visibility}, row {Grid.GetRow(detailTop)} column {Grid.GetColumn(detailTop)}, {detailTop.Children.Count} parts");
         Require(workspaceHeader.Padding == new Thickness(DesignMetrics.Inset.WorkspaceHeaderH, DesignMetrics.Inset.WorkspaceHeaderT, DesignMetrics.Inset.WorkspaceHeaderH, DesignMetrics.Inset.WorkspaceHeaderB),
             $"{key} ({theme}): the workspace header padding must be Inset.WorkspaceHeader h{DesignMetrics.Inset.WorkspaceHeaderH} t{DesignMetrics.Inset.WorkspaceHeaderT} b{DesignMetrics.Inset.WorkspaceHeaderB}; got {workspaceHeader.Padding}");
@@ -240,10 +242,10 @@ public sealed partial class MainWindow
         var machine = (Grid)((Grid)((Grid)statusBar.Child).Children[0]).Children[0];
         RequireBrush(machine.Children.OfType<Border>().Single(), e => ((Border)e).BorderBrush, DesignToken.Ink2, "the machine symbol", key: key);
         var parts = statusTrailing.Children.ToList();
-        Require(statusTrailing.Spacing == StatusBarSpacing && parts.Count == 9 && ReferenceEquals(parts[0], statusPanes) && parts[1] is TextBlock && ReferenceEquals(parts[2], statusRunning)
-            && ReferenceEquals(parts[3], updateBadge) && ReferenceEquals(parts[4], setupBadge) && parts[5] is Border && ReferenceEquals(parts[6], usageButton) && ReferenceEquals(parts[7], usageDivider)
-            && parts[8] is StackPanel { Spacing: DesignMetrics.Spacing.Md, Children: [Microsoft.UI.Xaml.Controls.Button paw, Microsoft.UI.Xaml.Controls.Button capsule] } && ReferenceEquals(paw, companionToggleControl) && ReferenceEquals(capsule, companionStatusControl),
-            $"{key} ({theme}): the status bar's trailing parts must be the pane count, a dot, the running count, the update badge, the setup-finished badge, a line, the usage chips, their line and the pet controls (paw, then capsule, 10 apart), {StatusBarSpacing} apart; got {parts.Count} parts: {string.Join(", ", parts.Select(p => p.GetType().Name + "'" + AutomationProperties.GetAutomationId(p) + "'"))}");
+        Require(statusTrailing.Spacing == StatusBarSpacing && parts.Count == 10 && ReferenceEquals(parts[0], statusPanes) && parts[1] is TextBlock && ReferenceEquals(parts[2], statusRunning)
+            && ReferenceEquals(parts[3], updateBadge) && ReferenceEquals(parts[4], updateStaged) && ReferenceEquals(parts[5], setupBadge) && parts[6] is Border && ReferenceEquals(parts[7], usageButton) && ReferenceEquals(parts[8], usageDivider)
+            && parts[9] is StackPanel { Spacing: DesignMetrics.Spacing.Md, Children: [Microsoft.UI.Xaml.Controls.Button paw, Microsoft.UI.Xaml.Controls.Button capsule] } && ReferenceEquals(paw, companionToggleControl) && ReferenceEquals(capsule, companionStatusControl),
+            $"{key} ({theme}): the status bar's trailing parts must be the pane count, a dot, the running count, the update badge, the staged update, the setup-finished badge, a line, the usage chips, their line and the pet controls (paw, then capsule, 10 apart), {StatusBarSpacing} apart; got {parts.Count} parts: {string.Join(", ", parts.Select(p => p.GetType().Name + "'" + AutomationProperties.GetAutomationId(p) + "'"))}");
         string Count(int value) => value.ToString(System.Globalization.CultureInfo.InvariantCulture);
         var panesWant = Locale.Get("window.status.paneCount", new Dictionary<string, string> { ["count"] = Count(state.Sessions.Count(s => s.WorkspaceId == state.ActiveWorkspaceId)) });
         var runningWant = Locale.Get("window.status.runningCount", new Dictionary<string, string> { ["count"] = Count(state.Sessions.Count(s => s.Status == "running" && WorkDashboard.IsCounted(s.Kind))) });
@@ -259,7 +261,9 @@ public sealed partial class MainWindow
         Require(updateBadge is { Visibility: Visibility.Collapsed } && AutomationProperties.GetAutomationId(updateBadge) == "app-update-badge" && updateBadgeText.FontSize == DesignMetrics.Type.Small && updateBadgeText.FontWeight.Weight == Microsoft.UI.Text.FontWeights.Medium.Weight,
             $"{key} ({theme}): the update badge must be hidden with no newer version, 10pt medium; got {updateBadge?.Visibility}, {updateBadgeText.FontSize}pt weight {updateBadgeText.FontWeight.Weight}");
         RequireBrush(updateBadgeText, e => ((TextBlock)e).Foreground, DesignToken.Accent, "the update badge", key: key);
-        foreach (var (line, what) in new[] { ((Border)parts[5], "the line before the usage chips"), (usageDivider!, "the line after the usage chips") })
+        Require(updateStaged.Visibility == Visibility.Collapsed && updateStagedText.FontSize == DesignMetrics.Type.Small && updateStagedText.FontWeight.Weight == Microsoft.UI.Text.FontWeights.Medium.Weight,
+            $"{key} ({theme}): the staged update must be hidden with nothing staged, 10pt medium; got {updateStaged.Visibility}, {updateStagedText.FontSize}pt weight {updateStagedText.FontWeight.Weight}");
+        foreach (var (line, what) in new[] { ((Border)parts[6], "the line before the usage chips"), (usageDivider!, "the line after the usage chips") })
         {
             Require(line.Width == DesignMetrics.Stroke.Line && line.Height == StatusDividerHeight && line.Margin == new Thickness(StatusDividerInset, 0, StatusDividerInset, 0),
                 $"{key} ({theme}): {what} must be {StatusDividerHeight} high with {StatusDividerInset} on either side; got {line.Width}×{line.Height}, {line.Margin}");

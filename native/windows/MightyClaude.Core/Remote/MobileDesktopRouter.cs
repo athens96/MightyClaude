@@ -28,6 +28,8 @@ public sealed class MobileDesktopRouter : IDisposable
     private readonly Func<MobileDesktopAction, CancellationToken, Task<object?>> action;
     private readonly Func<RunSession, MobilePaneExtras> extra;
     private readonly MobileUploads uploads;
+    /// Files the phone is uploading or has uploaded and not yet sent (M openUploadCount).
+    public int OpenUploadCount => uploads.Count;
     private readonly object sync = new();
     private readonly Dictionary<string, ToolPermissionRequest> permissions = [];
     private readonly SemaphoreSlim submitSlots = new(2), fileSlots = new(2);
