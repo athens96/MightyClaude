@@ -25,6 +25,9 @@ section: faq
 ## 브라우저 창이 비어 있어요 {#browser-empty}
 브라우저 창은 처음에 꺼져 있습니다. {{ui:settings.nav.general}}에서 {{ui:settings.display.browserToggle}}를 켜고 앱을 다시 여세요. [브라우저 창](terminal-files-browser.md#browser)을 보세요.
 
+## Antigravity가 명령이나 파일 쓰기를 거절해요 {#antigravity-denied}
+Antigravity는 일하는 도중에 물어볼 수 없어서, 물어봐야 하는 작업은 건너뛰고 턴을 끝냅니다. 그러면 실행 창에 거절한 작업을 모은 카드가 뜹니다. {{ui:permission.allowOnce}}이나 {{ui:antigravity.permission.allowAlways}}을 누르면 같은 대화에서 이어서 진행합니다. 규칙 파일을 직접 고치지 않아도 됩니다. [Antigravity의 권한 카드](approvals.md#antigravity-permission)를 보세요.
+
 ## 휴대폰이 연결되지 않아요 {#phone}
 - Mac의 {{ui:settings.nav.mobile}}에서 {{ui:settings.mobileRemote.allowToggle}}이 켜져 있는지 봅니다.
 - 상태가 릴레이 연결 중에서 멈춰 있으면 {{ui:settings.mobileRemote.reconnectButton}} 단추를 누릅니다.

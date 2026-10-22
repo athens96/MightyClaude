@@ -25,6 +25,9 @@ section: faq
 ## 浏览器窗格是空白的 {#browser-empty}
 浏览器窗格默认处于关闭状态。请在{{ui:settings.nav.general}}中打开{{ui:settings.display.browserToggle}}，然后重新打开应用。请参阅[浏览器窗格](terminal-files-browser.md#browser)。
 
+## Antigravity 拒绝了命令或文件写入 {#antigravity-denied}
+Antigravity 在工作过程中无法提问，所以会跳过需要询问的操作并结束这一轮。窗格中随后会出现一张列出被拒绝操作的卡片。点{{ui:permission.allowOnce}}或{{ui:antigravity.permission.allowAlways}}，就会在同一个对话中继续，无需自己修改规则文件。请参阅 [Antigravity 的权限卡片](approvals.md#antigravity-permission)。
+
 ## 手机无法连接 {#phone}
 - 检查 Mac 的{{ui:settings.nav.mobile}}中是否已打开{{ui:settings.mobileRemote.allowToggle}}。
 - 如果状态一直停在“正在连接中继”，请点击{{ui:settings.mobileRemote.reconnectButton}}按钮。

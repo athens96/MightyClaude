@@ -60,6 +60,7 @@ Mac에서 [마이티 오케스트레이션](delegation.md)으로 만든 자식 �
 ## 승인과 질문 {#approvals}
 에이전트가 승인을 요청하거나 질문하면 {{ui:phone.tabs.alerts}} 탭에 개수가 표시됩니다.
 - 권한 요청: {{ui:permission.allow}} 또는 {{ui:permission.deny}}를 누릅니다.
+- Antigravity의 권한 카드: 거절된 작업마다 종류와 명령·주소·경로가 보이고, {{ui:permission.allowOnce}} · {{ui:antigravity.permission.allowAlways}} · {{ui:antigravity.permission.deny}} 중에서 고릅니다. 허용하면 같은 대화가 이어집니다([Antigravity의 권한 카드](approvals.md#antigravity-permission)). 규칙으로 허용할 수 없는 작업만 있으면 {{ui:antigravity.permission.deny}}만 보이고 권한 모드를 바꾸라는 안내가 나옵니다. 호스트가 답을 받아들이지 못하면 이유와 함께 카드가 남습니다. 이 카드를 모르는 예전 휴대폰 앱에서는 보통 권한 카드로 보입니다.
 - 질문: 답을 고르고 {{ui:phone.questionnaire.submit}}를 누릅니다.
 - 계획 카드: Mac과 같은 단추({{ui:plan.card.approveAuto}}, {{ui:plan.card.revise}} 등)로 답합니다.
 

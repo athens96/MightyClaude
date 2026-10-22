@@ -60,6 +60,7 @@ Macで[Mightyオーケストレーション](delegation.md)により作られた
 ## 許可と質問 {#approvals}
 エージェントが許可を求めたり質問したりすると、{{ui:phone.tabs.alerts}}タブに件数が表示されます。
 - 権限のリクエスト: {{ui:permission.allow}}または{{ui:permission.deny}}をタップします。
+- Antigravityの権限カード: 拒否された操作ごとに種類とコマンド・アドレス・パスが表示されます。{{ui:permission.allowOnce}}、{{ui:antigravity.permission.allowAlways}}、{{ui:antigravity.permission.deny}}から選びます。許可すると同じ会話が続きます([Antigravityの権限カード](approvals.md#antigravity-permission))。ルールで許可できない操作だけのカードでは{{ui:antigravity.permission.deny}}だけが表示され、権限モードを変えるよう案内が出ます。ホストが答えを受け付けられないときは、理由とともにカードが残ります。このカードを知らない古いスマートフォンアプリでは、通常の権限リクエストとして表示されます。
 - 質問: 答えを選んで{{ui:phone.questionnaire.submit}}をタップします。
 - 計画カード: Macと同じボタン({{ui:plan.card.approveAuto}}、{{ui:plan.card.revise}}など)で答えます。
 

@@ -16,7 +16,27 @@ section: approvals
 許可はこのリクエスト1回にだけ適用されます。今後も常に許可するルールは作成しません。
 
 > [!note]
-> 許可を求めるカードは、このMacのClaudeペイン(Always askなど)と、Codexの{{ui:permission.label.onRequest}}で表示されます。ほかの権限では、CLIの設定に従って許可またはブロックされます。
+> 許可を求めるカードは、このMacのClaudeペイン(Always askなど)と、Codexの{{ui:permission.label.onRequest}}で表示されます。ほかの権限では、CLIの設定に従って許可またはブロックされます。Antigravityは動き方が違うため、[別の方法で確認します](#antigravity-permission)。
+
+## Antigravityの権限カード {#antigravity-permission}
+Antigravityは作業の途中でアプリに確認できません。確認が必要な操作(コマンドの実行、ファイルの書き込みなど)に当たると、その操作だけを飛ばしてターンを終え、拒否した操作をまとめて1枚のカードで尋ねます。権限が{{ui:permission.label.default}}のときも表示され、スマートフォンにも同じカードが表示されます。
+
+カードには、拒否された操作がすべて並びます。操作ごとに、種類({{ui:antigravity.permission.kind.command}}、{{ui:antigravity.permission.kind.url}}、{{ui:antigravity.permission.kind.file}}など)、コマンド・アドレス・パス、許可に使うルールが表示されます。
+
+1. 何が拒否されたかを確認します。
+2. ボタンを選びます。
+   - {{ui:permission.allowOnce}}: 拒否された操作だけを許可するルールをAntigravityに一時的に追加し、同じ会話を続けます。続きの実行が終わると(完了、失敗、停止、アプリの終了のいずれでも)、アプリが追加したルールだけを削除します。
+   - {{ui:antigravity.permission.allowAlways}}: 同じルールをAntigravityの設定(`~/.gemini/antigravity-cli/settings.json`の`permissions.allow`)に残します。次回からは確認なしで実行されます。Windowsでは`%USERPROFILE%\.gemini\antigravity-cli\settings.json`です。
+   - {{ui:antigravity.permission.deny}}: カードを閉じ、何も続けて実行しません。
+
+許可すると、同じ会話で続きが進みます。ペインが別の作業で忙しいときは、続きの実行はキューに入ります。
+
+Claudeとは違う点があります。Claudeは実行の前に止まって答えを待ちますが、Antigravityはそのターンを終えてから尋ね、許可されると続きを進めます。そのため、カードが表示された時点で残りの作業はすでに終わっていることがあります。
+
+> [!note]
+> ルールで許可できない操作もカードに表示され、権限モードを変えるよう案内が出ます。そのような操作だけのカードには{{ui:antigravity.permission.deny}}しかありません。Antigravityの設定ファイルが読めない、またはJSONでない場合、アプリはファイルを変更せず、理由をカードに表示します。アプリは`permissions.allow`のルールだけを追加・削除し、ほかの設定はそのままにします。
+
+[リモートワークスペース](remote.md)のAntigravityペインは、そのペインを実行しているコンピュータの設定を書き換えます。
 
 ## 質問に答える {#questions}
 Claudeが選択肢を示して質問すると、{{ui:phone.questionnaire.title}}カードが表示されます。

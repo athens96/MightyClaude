@@ -16,7 +16,27 @@ section: approvals
 批准仅对这一次请求有效，不会创建今后持续允许的规则。
 
 > [!note]
-> 批准卡片会在此 Mac 上的 Claude 窗格（Always ask 等）和 Codex 的{{ui:permission.label.onRequest}}权限下弹出。在其他权限下，是允许还是阻止取决于 CLI 设置。
+> 批准卡片会在此 Mac 上的 Claude 窗格（Always ask 等）和 Codex 的{{ui:permission.label.onRequest}}权限下弹出。在其他权限下，是允许还是阻止取决于 CLI 设置。Antigravity 的工作方式不同，会[用自己的方式询问](#antigravity-permission)。
+
+## Antigravity 的权限卡片 {#antigravity-permission}
+Antigravity 在工作过程中无法向应用提问。遇到必须询问的操作（运行命令、写入文件等）时，它只跳过该操作，先结束这一轮，再把所有被拒绝的操作汇总到一张卡片里询问。{{ui:permission.label.default}}权限下也会弹出，手机上会出现同样的卡片。
+
+卡片会列出每一项被拒绝的操作。每项都会显示类型（{{ui:antigravity.permission.kind.command}}、{{ui:antigravity.permission.kind.url}}、{{ui:antigravity.permission.kind.file}} 等）、命令、地址或路径，以及用于允许它的规则。
+
+1. 先看被拒绝的是什么。
+2. 选择一个按钮。
+   - {{ui:permission.allowOnce}}：为被拒绝的操作临时给 Antigravity 添加一条规则，并在同一个对话中继续。随后的运行结束时（完成、失败、停止或关闭应用），应用只会删除自己添加的规则。
+   - {{ui:antigravity.permission.allowAlways}}：把同一条规则保留在 Antigravity 的设置中（`~/.gemini/antigravity-cli/settings.json` 的 `permissions.allow`），下次无需询问即可运行。在 Windows 上该文件是 `%USERPROFILE%\.gemini\antigravity-cli\settings.json`。
+   - {{ui:antigravity.permission.deny}}：关闭卡片，不继续运行任何内容。
+
+允许后会在同一个对话中继续。如果窗格正忙于其他事情，继续运行的请求会进入队列。
+
+这与 Claude 不同。Claude 会在执行前停下来等待你的回答；Antigravity 则先结束这一轮，之后再询问，你允许后才继续。因此卡片出现时，其余工作可能已经完成。
+
+> [!note]
+> 没有规则可以允许的操作仍会显示在卡片上，并附有更改权限模式的提示。只含这类操作的卡片只有{{ui:antigravity.permission.deny}}一个按钮。如果 Antigravity 的设置文件无法读取或不是 JSON，应用不会改动它，并在卡片上显示原因。应用只会在 `permissions.allow` 下添加和删除规则，其他设置保持原样。
+
+[远程工作区](remote.md)中的 Antigravity 窗格会修改运行它的那台电脑的设置。
 
 ## 回答问题 {#questions}
 Claude 给出选项向你提问时，会弹出{{ui:phone.questionnaire.title}}卡片。

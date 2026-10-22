@@ -60,6 +60,7 @@ A child pane made on the Mac by [Mighty Orchestration](delegation.md) is listed 
 ## Approvals and questions {#approvals}
 When an agent asks for approval or asks a question, the {{ui:phone.tabs.alerts}} tab shows a count.
 - Permission requests: tap {{ui:permission.allow}} or {{ui:permission.deny}}.
+- Antigravity permission card: each declined action shows its kind and its command, address or path. Choose {{ui:permission.allowOnce}}, {{ui:antigravity.permission.allowAlways}} or {{ui:antigravity.permission.deny}}; allowing continues the same conversation ([Antigravity's permission card](approvals.md#antigravity-permission)). A card with only actions no rule can allow offers just {{ui:antigravity.permission.deny}} and tells you to change the permission mode. If the host cannot take your answer, the card stays with the reason. An older phone app that does not know the card shows it as an ordinary permission request.
 - Questions: pick your answers and tap {{ui:phone.questionnaire.submit}}.
 - Plan cards: answer with the same buttons as on the Mac ({{ui:plan.card.approveAuto}}, {{ui:plan.card.revise}} and so on).
 
