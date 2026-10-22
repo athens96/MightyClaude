@@ -26,7 +26,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "permissions": [
-        "android.permission.CAMERA"
+        "android.permission.CAMERA",
+        "android.permission.POST_NOTIFICATIONS"
       ],
       "predictiveBackGestureEnabled": false,
       "package": "dev.mightyclaude.mobile",
@@ -35,7 +36,6 @@
         "android.permission.SYSTEM_ALERT_WINDOW",
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.BLUETOOTH",
-        "android.permission.WAKE_LOCK",
         "android.permission.RECORD_AUDIO"
       ]
     },
