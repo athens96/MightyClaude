@@ -23,7 +23,7 @@ You can write the next request while a task is running. Once the composer holds 
 - In a child pane, outside such a repository, or with Mighty Orchestration off, {{kbd:⌘Enter}} queues it too, as {{kbd:Enter}} does. A text whose child could not be made or started goes to the queue as well ([Run in a new worktree](delegation.md#worktree)). Nothing you send joins the running task any more; in older records the Mighty view still shows such texts as orange {{ui:graph.block.steer}} blocks. A delegation notice handed straight to a running Claude parent shows as a {{ui:graph.block.delegationNotice}} block of the same colour ([Notices and held items](delegation.md#notices)).
 - Click {{ui:queue.runNext}} in the queue to run the first queued request now.
 
-Stopping the task cancels the queued requests too. The queue is emptied when the app reopens.
+Stopping the task cancels the queued requests too, except in a pane whose turn only waits on background work: there Stop keeps the queue and starts its first request now. The queue is emptied when the app reopens.
 
 ## Composer tools {#composer}
 The row under the composer has, from the left: attach, model, thinking effort, permission and more run settings (…). In a narrow pane some of them fold into one menu. They can't be changed while a task runs, and a change applies from the next request.

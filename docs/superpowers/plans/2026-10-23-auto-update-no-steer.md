@@ -322,7 +322,7 @@
 
 ### 끝낸 뒤
 - 모든 검사를 한 번에 돌린다.
-- `git grep -n -i "phoneSteers\|composerJoins\|ComposerJoins\|PhoneSteers\|composer-steer\|queue.steerHint\|phone.composer.steer"`의 결과가 비어 있어야 한다.
+- `git grep -n -i "phoneSteers\|composerJoins\|ComposerJoins\|PhoneSteers\|composer-steer\|queue.steerHint\|phone.composer.steer" -- ':!docs/superpowers/plans'`의 결과가 비어 있어야 한다(이 계획 파일 자체는 이름을 적고 있으므로 뺀다).
 - 릴리즈는 이 계획 밖이다.
 
 ## 정해 둔 값

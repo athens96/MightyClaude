@@ -29,14 +29,15 @@ With {{ui:settings.appUpdate.autoUpdateToggle}} on (it is on from the start), th
 
 - It checks for a new version when it opens and every 6 hours while it runs. A check that fails is tried again at the next one, and the failure shows only in Settings.
 - When there is a new version, it downloads it without asking, verifies its signature and files, and keeps it ready. The status bar at the bottom of the window then says it installs on next launch, with a {{ui:window.status.updateRestartNow}} button.
-- When you quit the app, the ready update is installed. The app does not open again; the next time you open it, it is the new version. {{platform:mac}} When the app closes because you log out, restart or shut down the Mac, nothing is installed; the update waits for the next quit.
-- When the app has been idle for a while, a one-minute notice appears at the top of the window. When it runs out, the app restarts to install the update, and your open workspaces and panes come back as they were. {{ui:appUpdate.countdown.restartNow}} restarts right away; {{ui:appUpdate.countdown.later}} keeps the notice away for 4 hours. Quitting the app meanwhile installs the update then.
+- When you quit the app, the ready update is installed. The app does not open again; the next time you open it, it is the new version. When the app closes because you log out, restart or shut down the computer, nothing is installed; the update waits for the next quit.
+- When the app has been idle for a while, a one-minute notice appears at the top of the window. When it runs out, the app restarts to install the update, and your open workspaces and panes come back as they were. {{ui:appUpdate.countdown.restartNow}} restarts right away; {{ui:appUpdate.countdown.later}} keeps the notice away for 4 hours. Quitting the app meanwhile installs the update then. A countdown that ran out while the computer was asleep is not acted on when it wakes: the notice is taken away instead.
 
 The app is idle when all of the following hold. If one stops holding while the notice counts down, the notice goes away without a word and waits for the next idle moment. Keyboard or mouse input alone does not take it away, so you can click its buttons.
 - No agent task is running or waiting to start, no card waits for an answer and no request waits in a queue.
 - No composer holds unsent text or attachments.
-- No terminal is running a command, and no CLI sign-in, update or install is under way.
+- No terminal is running a command or holding a background process, and no CLI sign-in, update or install is under way.
 - No phone upload, no screen sharing and no remote run this computer hosts for another one.
+- This computer is not sharing its workspaces with another computer (sharing turned on counts even with no remote run going).
 - No Settings window or dialog is open.
 - There was no keyboard or mouse input for 5 minutes, and no run ended and no request was sent in the last 3 minutes.
 
