@@ -29,7 +29,23 @@ function actionFrom(value: unknown): MobileAntigravityAction | undefined {
     displayName,
     ...(target !== undefined ? { target } : {}),
     ...(rule !== undefined ? { rule } : {}),
+    ...(rule !== undefined && raw.onceOnly === true ? { onceOnly: true } : {}),
   };
+}
+
+/**
+ * Whether the card offers 항상 허용: some action has a rule, and no rule may be allowed only
+ * once (the host refuses `always` for those with a 409).
+ */
+export function antigravityOffersAlways(actions: readonly MobileAntigravityAction[]): boolean {
+  const ruled = actions.filter((action) => action.rule !== undefined);
+  return ruled.length > 0 && ruled.every((action) => action.onceOnly !== true);
+}
+
+/** What the card says an action's rule allows: commands starting with it, a file or folder. */
+export function antigravityRuleLine(action: MobileAntigravityAction): string | undefined {
+  if (action.rule === undefined) return undefined;
+  return t(action.action === 'command' ? 'antigravity.permission.ruleCommand' : 'antigravity.permission.rule', { rule: action.rule });
 }
 
 /**

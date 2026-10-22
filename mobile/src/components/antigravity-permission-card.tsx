@@ -1,7 +1,12 @@
 import { StyleSheet, Text, View } from 'react-native';
 import type { MobileAntigravityAction, MobilePermission } from '@/api/types';
 import { Button, Card } from '@/components/ui';
-import { antigravityKindLabel, type AntigravityDecision } from '@/lib/antigravity-permission';
+import {
+  antigravityKindLabel,
+  antigravityOffersAlways,
+  antigravityRuleLine,
+  type AntigravityDecision,
+} from '@/lib/antigravity-permission';
 import { t } from '@/lib/i18n';
 import { monoText, radius, spacing, typeScale, useStyles, type Palette } from '@/theme';
 
@@ -9,8 +14,10 @@ import { monoText, radius, spacing, typeScale, useStyles, type Palette } from '@
  * What a finished Antigravity turn was refused, in the Claude card's shape (the Mac's
  * `AntigravityPermissionCard`): every action with its kind and its command, address or
  * path, then 거절 / 항상 허용 / 이번만 허용. A card no rule can allow (`canAllow: false`)
- * offers no allow buttons, only the guidance to change the permission mode. `error` is the
- * host's reason for refusing the last answer; the card stays until the host drops it.
+ * offers no allow buttons, only the guidance to change the permission mode; one with a rule
+ * that may be allowed only once (`onceOnly`) has no 항상 허용 and says why under that rule.
+ * `error` is the host's reason for refusing the last answer; the card stays until the host
+ * drops it.
  */
 export function AntigravityPermissionCard({
   permission,
@@ -26,6 +33,7 @@ export function AntigravityPermissionCard({
   onAnswer: (decision: AntigravityDecision) => void;
 }) {
   const styles = useStyles(makeStyles);
+  const offersAlways = antigravityOffersAlways(actions);
 
   return (
     <Card style={styles.card}>
@@ -45,12 +53,13 @@ export function AntigravityPermissionCard({
               </Text>
             ) : null}
             {action.rule !== undefined ? (
-              <Text selectable style={styles.rule} numberOfLines={2}>
-                {t('antigravity.permission.rule', { rule: action.rule })}
+              <Text selectable style={styles.rule} numberOfLines={3}>
+                {antigravityRuleLine(action)}
               </Text>
             ) : (
               <Text style={styles.noRule}>{t('antigravity.permission.noRule')}</Text>
             )}
+            {action.onceOnly === true ? <Text style={styles.noRule}>{t('antigravity.permission.onceOnly')}</Text> : null}
           </View>
         ))}
 
@@ -72,13 +81,15 @@ export function AntigravityPermissionCard({
           />
           {permission.canAllow ? (
             <>
-              <Button
-                label={t('antigravity.permission.allowAlways')}
-                tone="neutral"
-                busy={busy}
-                style={styles.button}
-                onPress={() => onAnswer('always')}
-              />
+              {offersAlways ? (
+                <Button
+                  label={t('antigravity.permission.allowAlways')}
+                  tone="neutral"
+                  busy={busy}
+                  style={styles.button}
+                  onPress={() => onAnswer('always')}
+                />
+              ) : null}
               <Button
                 label={t('permission.allowOnce')}
                 tone="primary"
