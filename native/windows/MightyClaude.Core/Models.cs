@@ -374,6 +374,9 @@ public sealed record StartRunRequest(string SessionId, string WorkspaceId, strin
     // An Antigravity continuation's rules (AntigravityAllowGrant): the computer that runs it puts them in agy's settings for this run,
     // or for good. Not persisted; a remote run carries it beside the request (RemoteWireStart.AntigravityGrant).
     [JsonIgnore] public AntigravityAllowGrant? AntigravityGrant { get; init; }
+    // The card that continuation answers: it comes back with the reason when the run cannot start (its rules refused, a host said no).
+    // Not persisted and never sent.
+    [JsonIgnore] public AntigravityPermissionRequest? AntigravityCard { get; init; }
     private readonly IReadOnlyList<RunAttachment>? attachments = Attachments;
     public IReadOnlyList<RunAttachment>? Attachments { get => attachments is { Count: > 0 } ? attachments : null; init => attachments = value; }
     public IReadOnlyList<RegisteredModelEntry> RegisteredModels { get; init; } = RegisteredModels ?? [];

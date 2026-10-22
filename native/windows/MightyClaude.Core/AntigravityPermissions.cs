@@ -23,6 +23,8 @@ public sealed record AntigravityDeniedAction([property: JsonConverter(typeof(Ant
     public static readonly IReadOnlyList<string> Kinds = ["command", "url", "file", "other"];
     /// <summary>A kind this app does not know reads as other.</summary>
     public static string KindOf(string? value) => value is not null && Kinds.Contains(value) ? value : "other";
+    /// <summary>Its rule may be allowed only for the follow-up run (<see cref="AntigravityRuleSafety"/>).</summary>
+    [JsonIgnore] public bool OnceOnly => Rule is { } rule && AntigravityRuleSafety.Verdict(rule) == AntigravityRuleVerdict.Once;
 }
 
 /// <summary>Reads an action's kind as the Mac's decoder does: a string, and one it does not know is <c>other</c>.</summary>
@@ -43,10 +45,12 @@ public sealed record AntigravityPermissionRequest(string Id, string RunId, IRead
     /// <summary>A new card of <paramref name="runId"/>, stamped now as the Mac stamps it (whole seconds).</summary>
     public static AntigravityPermissionRequest Make(string runId, IReadOnlyList<AntigravityDeniedAction> actions) =>
         new("agy-" + Guid.NewGuid().ToString("D"), runId, actions, DateTimeOffset.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture));
-    /// <summary>The rules an allow adds, once each, in order.</summary>
-    [JsonIgnore] public IReadOnlyList<string> Rules => Actions.Select(a => a.Rule).OfType<string>().Distinct(StringComparer.Ordinal).ToList();
+    /// <summary>The rules an allow adds, once each, in order (never one <see cref="AntigravityRuleSafety"/> refuses).</summary>
+    [JsonIgnore] public IReadOnlyList<string> Rules => Actions.Select(a => a.Rule).OfType<string>().Where(rule => AntigravityRuleSafety.Verdict(rule) != AntigravityRuleVerdict.Refused).Distinct(StringComparer.Ordinal).ToList();
     /// <summary>At least one action can be allowed with a rule.</summary>
     [JsonIgnore] public bool CanAllow => Rules.Count > 0;
+    /// <summary>항상 허용 is offered: every rule may be kept (none chains, pipes, redirects or runs a destructive command).</summary>
+    [JsonIgnore] public bool CanAllowAlways => CanAllow && Rules.All(rule => AntigravityRuleSafety.Verdict(rule) == AntigravityRuleVerdict.Always);
     /// <summary>What the transcript line and the continuation name: the targets, else agy's names.</summary>
     [JsonIgnore] public IReadOnlyList<string> Names => Actions.Select(a => a.Target ?? a.DisplayName).ToList();
 }
@@ -65,13 +69,98 @@ public sealed record AntigravityAllowGrant(string RequestId, IReadOnlyList<strin
     /// <summary>A rule is <c>name(…)</c>: a lowercase permission name and a non-empty argument, at most 4 KiB, no NUL, no line break.</summary>
     public static bool ValidRule(string? rule) =>
         rule is not null && Encoding.UTF8.GetByteCount(rule) <= MaximumRuleBytes && !rule.Contains('\0') && !rule.Contains('\n') && !rule.Contains('\r') && RuleShape.IsMatch(rule);
-    [JsonIgnore] public bool IsValid => Wire.Identifier(RequestId) && Rules is { Count: > 0 and <= AntigravityPermissionRequest.MaximumActions } && Rules.All(ValidRule);
+    /// <summary>Well formed, and no rule <see cref="AntigravityRuleSafety"/> refuses; whether it may be kept for good is <see cref="KeepsOnlyAllowedRules"/>.</summary>
+    [JsonIgnore] public bool IsValid => Wire.Identifier(RequestId) && Rules is { Count: > 0 and <= AntigravityPermissionRequest.MaximumActions }
+        && Rules.All(rule => ValidRule(rule) && AntigravityRuleSafety.Verdict(rule) != AntigravityRuleVerdict.Refused);
+    /// <summary>A temporary grant, or one whose every rule may be kept.</summary>
+    [JsonIgnore] public bool KeepsOnlyAllowedRules => Temporary || Rules.All(rule => AntigravityRuleSafety.Verdict(rule) == AntigravityRuleVerdict.Always);
     public bool Same(AntigravityAllowGrant? other) => other is not null && other.RequestId == RequestId && other.Temporary == Temporary && other.Rules.SequenceEqual(Rules);
+}
+
+/// <summary>Refused: never offered or added. Once: offered and added only for the follow-up run (no 항상 허용). Always: may be kept.</summary>
+public enum AntigravityRuleVerdict { Refused, Once, Always }
+
+/// <summary>
+/// Which rules an allow may add (M/MightyCore/AntigravityPermissions.swift AntigravityRuleSafety). agy's rules are prefixes (probed on agy
+/// 1.4.5: command(echo hi) allows "echo hi there", write_file(&lt;folder&gt;) everything in it, command(*) every command) and a temporary
+/// one applies to every agy run on the computer while it is in place, so they are kept narrow: a closed mapping from tool to permission,
+/// no wildcard, no whole disk, no parenthesis, and a command that chains, pipes, redirects or runs one of a closed list of destructive
+/// programs only once.
+/// </summary>
+public static class AntigravityRuleSafety
+{
+    /// <summary>The permission an agy tool's rule names; any other tool gets no rule.</summary>
+    public static readonly IReadOnlyDictionary<string, string> ToolPermissions = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["run_command"] = "command",
+        ["write_file"] = "write_file", ["write_to_file"] = "write_file", ["replace_file_content"] = "write_file", ["multi_replace_file_content"] = "write_file",
+        ["sed_file"] = "write_file", ["notebook_edit"] = "write_file",
+        ["view_file"] = "read_file", ["read_file"] = "read_file", ["list_dir"] = "read_file",
+        ["read_url_content"] = "read_url",
+    };
+    /// <summary>The permissions a rule may name.</summary>
+    public static readonly IReadOnlySet<string> Permissions = ToolPermissions.Values.ToHashSet(StringComparer.Ordinal);
+    /// <summary>Programs that destroy data, escalate or end processes (by name in lower case, without a folder or .exe); mkfs… too.</summary>
+    public static readonly IReadOnlySet<string> DestructivePrograms = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "rm", "rmdir", "unlink", "shred", "dd", "sudo", "su", "doas", "kill", "killall", "pkill", "shutdown", "reboot", "halt", "poweroff", "eval",
+        "del", "erase", "rd", "format", "remove-item", "taskkill", "stop-process", "stop-computer", "restart-computer",
+    };
+    /// <summary>Characters that chain, pipe, redirect, background or substitute.</summary>
+    public static readonly IReadOnlySet<char> ChainCharacters = new HashSet<char> { ';', '&', '|', '>', '<', '`' };
+
+    /// <summary>The name and the argument of a well-formed rule.</summary>
+    public static (string Name, string Argument)? Parts(string rule)
+    {
+        if (!AntigravityAllowGrant.ValidRule(rule)) return null;
+        var open = rule.IndexOf('(');
+        return (rule[..open], rule[(open + 1)..^1]);
+    }
+
+    public static AntigravityRuleVerdict Verdict(string rule)
+    {
+        if (Parts(rule) is not { } parts || !Permissions.Contains(parts.Name) || RefusedArgument(parts.Argument)) return AntigravityRuleVerdict.Refused;
+        return parts.Name == "command" && Risky(parts.Argument) ? AntigravityRuleVerdict.Once : AntigravityRuleVerdict.Always;
+    }
+
+    /// <summary>Empty, the whole disk or home (/, ~, C:\), a wildcard, a parenthesis or a control character.</summary>
+    internal static bool RefusedArgument(string argument)
+    {
+        if (argument.Contains('*') || argument.Contains('(') || argument.Contains(')')) return true;
+        if (argument.Any(c => c < 0x20 || c == 0x7F)) return true;
+        var core = argument.Trim(' ', '\t').TrimEnd('/', '\\').Trim(' ', '\t');
+        if (core.Length == 0 || core == "~") return true;
+        return core.Length == 2 && core[1] == ':' && char.IsAsciiLetter(core[0]);
+    }
+
+    /// <summary>A command line that may be allowed only once.</summary>
+    public static bool Risky(string command)
+    {
+        if (command.Any(ChainCharacters.Contains) || command.Contains("$(", StringComparison.Ordinal)) return true;
+        var words = command.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries).Select(word =>
+        {
+            var value = word.Trim('"', '\'');
+            var slash = value.LastIndexOfAny(['/', '\\']);
+            if (slash >= 0) value = value[(slash + 1)..];
+            value = value.ToLowerInvariant();
+            return value.EndsWith(".exe", StringComparison.Ordinal) ? value[..^4] : value;
+        }).ToList();
+        if (words.Any(word => DestructivePrograms.Contains(word) || word.StartsWith("mkfs", StringComparison.Ordinal))) return true;
+        static bool ShortFlag(string word, char letter) => word.StartsWith('-') && !word.StartsWith("--", StringComparison.Ordinal) && word.Contains(letter);
+        if (words.Any(word => word is "chmod" or "chown") && words.Any(word => ShortFlag(word, 'r') || word == "--recursive")) return true;
+        if (words.Contains("git"))
+        {
+            if (words.Contains("push") && words.Any(word => word == "-f" || word.StartsWith("--force", StringComparison.Ordinal) || word.StartsWith('+') || ShortFlag(word, 'f'))) return true;
+            if (words.Contains("reset") && words.Contains("--hard")) return true;
+            if (words.Contains("clean")) return true;
+        }
+        return words.Contains("find") && words.Contains("-delete");
+    }
 }
 
 /// <summary>
 /// Collects one turn's refusals from agy's stream-json: each tool step that ended ERROR with a permission denial ("permission check
-/// failed … user denied permission …"), then the result's denied_actions.
+/// failed … user denied permission …") whose permission the result's denied_actions lists, then what denied_actions lists that no step showed.
 /// </summary>
 public sealed class AntigravityDenialCollector
 {
@@ -115,9 +204,11 @@ public sealed class AntigravityDenialCollector
                 var key = value.Rule ?? value.Kind + "|" + value.Action + "|" + (value.Target ?? "");
                 if (result.Count < AntigravityPermissionRequest.MaximumActions && seen.Add(key)) result.Add(value);
             }
+            // A step counts only when the result says its permission was refused.
+            var listed = reported.Select(row => row.Action).ToHashSet(StringComparer.Ordinal);
             foreach (var index in order)
             {
-                if (!steps.TryGetValue(index, out var value)) continue;
+                if (!steps.TryGetValue(index, out var value) || !listed.Contains(value.Action)) continue;
                 if (reported.FirstOrDefault(row => row.Action == value.Action) is { } named) value = value with { DisplayName = named.Name };
                 Add(value);
             }
@@ -139,8 +230,10 @@ public sealed class AntigravityDenialCollector
     }
 
     /// <summary>
-    /// What one denied step was. A command is allowed by its whole command line (<c>command(&lt;line&gt;)</c>, a prefix rule in agy); any
-    /// other denial names its own rule ("user denied permission for write_file(/path)"), which is used as agy wrote it.
+    /// What one denied step was. A command is allowed by its whole command line (<c>command(&lt;line&gt;)</c>, a word-prefix rule in agy);
+    /// any other denial names its own rule ("user denied permission for write_file(/path)"), used as agy wrote it when it names the tool's
+    /// own permission (<see cref="AntigravityRuleSafety.ToolPermissions"/>). A rule the safety rules refuse, or a tool outside the mapping,
+    /// leaves the action without one.
     /// </summary>
     internal static AntigravityDeniedAction Action(string tool, JsonElement parameters, string message)
     {
@@ -149,22 +242,23 @@ public sealed class AntigravityDenialCollector
             foreach (var name in names) if (parameters.Text(name) is { Length: > 0 } value) return Prefix(value, AntigravityAllowGrant.MaximumRuleBytes);
             return null;
         }
-        if (tool == "run_command" || message.ToLowerInvariant().Contains("denied permission to run command", StringComparison.Ordinal))
+        var permission = AntigravityRuleSafety.ToolPermissions.GetValueOrDefault(tool);
+        if (permission == "command")
         {
             var line = Parameter("CommandLine", "Command", "command");
             var rule = line is null ? null : "command(" + line + ")";
-            return new("command", "command", tool, line, AntigravityAllowGrant.ValidRule(rule) ? rule : null);
+            return new("command", "command", tool, line, rule is not null && AntigravityRuleSafety.Verdict(rule) != AntigravityRuleVerdict.Refused ? rule : null);
         }
-        if (NamedRule(message) is { } named)
+        if (permission is not null && NamedRule(message) is { } named && AntigravityRuleSafety.Parts(named) is { } parts && parts.Name == permission
+            && AntigravityRuleSafety.Verdict(named) != AntigravityRuleVerdict.Refused)
         {
-            var open = named.IndexOf('(');
-            var name = named[..open]; var target = named[(open + 1)..^1];
+            var name = parts.Name; var target = parts.Argument;
             var kind = Kind(name, tool);
             // A URL rule names a domain; show the domain, as the rule does.
             if (kind == "url" && Host(target) is { Length: > 0 } host) target = host;
             return new(kind, name, tool, target, named);
         }
-        var plain = Kind(tool, tool);
+        var plain = Kind(permission ?? tool, tool);
         var shown = plain switch
         {
             "url" => Parameter("Url", "URL", "url") is { } url ? Host(url) ?? url : null,
@@ -172,7 +266,7 @@ public sealed class AntigravityDenialCollector
             "command" => Parameter("CommandLine"),
             _ => null,
         };
-        return new(plain, tool, tool, shown);
+        return new(plain, permission ?? tool, tool, shown);
     }
 
     /// <summary>The rule a denial names: the text after "denied permission for " up to the end of its line, when it is a whole <c>name(…)</c> rule.</summary>
@@ -243,10 +337,21 @@ public sealed record AntigravityContinuation(AntigravityAllowGrant Grant, string
 
 public static class AntigravityPermissionFlow
 {
-    /// <summary>Null for deny, and for an allow of a card no rule can allow.</summary>
+    /// <summary>
+    /// Why an allow cannot go ahead: no rule can allow the card, or 항상 허용 on a card with a rule that may be allowed only once. Null for
+    /// deny and for an allow that can.
+    /// </summary>
+    public static string? Refusal(AntigravityPermissionRequest card, AntigravityPermissionDecision decision)
+    {
+        if (decision == AntigravityPermissionDecision.Deny) return null;
+        if (!card.CanAllow) return Locale.Get("antigravity.permission.noRule");
+        return decision == AntigravityPermissionDecision.Always && !card.CanAllowAlways ? Locale.Get("remote.error.antigravityOnceOnly") : null;
+    }
+
+    /// <summary>Null for deny, and for an allow <see cref="Refusal"/> refuses.</summary>
     public static AntigravityContinuation? Continuation(AntigravityPermissionRequest card, AntigravityPermissionDecision decision)
     {
-        if (decision == AntigravityPermissionDecision.Deny || !card.CanAllow) return null;
+        if (decision == AntigravityPermissionDecision.Deny || Refusal(card, decision) is not null) return null;
         var allowed = card.Actions.Where(a => a.Rule is not null).Select(a => a.Target ?? a.DisplayName);
         var list = ActivitySupport.Clean(string.Join(", ", allowed), 2_048, true);
         return new(new(card.Id, card.Rules, decision == AntigravityPermissionDecision.Once), Locale.Get("antigravity.permission.continue", new Dictionary<string, string> { ["actions"] = list }));
@@ -255,6 +360,11 @@ public static class AntigravityPermissionFlow
     /// <summary>The short transcript line a card leaves (what an older phone shows).</summary>
     public static string TranscriptLine(AntigravityPermissionRequest card) =>
         Locale.Get("run.notice.antigravityAsked", new Dictionary<string, string> { ["actions"] = ActivitySupport.Clean(string.Join(", ", card.Names), 512, true) });
+
+    /// <summary>What the card says an action's rule allows: commands starting with it, a file or everything in a folder, a domain.</summary>
+    public static string? RuleLine(AntigravityDeniedAction action) => action.Rule is { } rule
+        ? Locale.Get(action.Action == "command" ? "antigravity.permission.ruleCommand" : "antigravity.permission.rule", new Dictionary<string, string> { ["rule"] = rule })
+        : null;
 
     /// <summary>The card's label for an action's kind.</summary>
     public static string KindLabel(string kind) => Locale.Get("antigravity.permission.kind." + AntigravityDeniedAction.KindOf(kind));
@@ -265,7 +375,7 @@ public static class AntigravityPermissionFlow
 }
 
 /// <summary>Why agy's settings were left alone. <c>Kind</c> is the Mac's case name (missingFolder, unreadable, notJSON, notObject,
-/// permissionsNotObject, allowNotArray, writeFailed, badRule); the message is the user's words.</summary>
+/// permissionsNotObject, allowNotArray, writeFailed, badRule, onceOnly); the message is the user's words.</summary>
 public sealed class AntigravitySettingsException(string kind, string message) : InvalidOperationException(message)
 {
     public string Kind { get; } = kind;
@@ -274,20 +384,29 @@ public sealed class AntigravitySettingsException(string kind, string message) : 
         var values = new Dictionary<string, string>();
         if (path is not null) values["path"] = path;
         if (error is not null) values["error"] = error;
-        return new(kind, Locale.Get("antigravity.settings.error." + kind, values));
+        // 항상 허용 for a rule that may be allowed only once says what the phone and a host say.
+        return new(kind, Locale.Get(kind == "onceOnly" ? "remote.error.antigravityOnceOnly" : "antigravity.settings.error." + kind, values));
     }
 }
 
 /// <summary>
 /// Edits permissions.allow in the bytes of agy's settings, leaving every other byte as it was: other keys, their order and values,
 /// unknown fields, whitespace. Rules are added after the last one in the style of the list (or of the file, for a list it has to
-/// create), and removing one takes out exactly what adding it put in (M/MightyCore/AntigravityPermissions.swift AntigravitySettingsText).
+/// create, with its line endings), and removing one takes out exactly what adding it put in; <see cref="Pruning"/> then takes out the
+/// permissions or allow adding had to create, once empty (M/MightyCore/AntigravityPermissions.swift AntigravitySettingsText).
 /// </summary>
 public static class AntigravitySettingsText
 {
-    /// <summary>The file's rules; throws when it is not an object, permissions is not an object or allow is not an array (non-string entries are skipped).</summary>
+    /// <summary>What adding made that was not there: the file, permissions (with its allow) or allow.</summary>
+    public const string CreatedFile = "file", CreatedPermissions = "permissions", CreatedAllow = "allow";
+
+    /// <summary>
+    /// The file's rules; throws when it is not an object, permissions is not an object or allow is not an array (non-string entries are
+    /// skipped). A UTF-8 byte order mark is not JSON here (agy writes none), as on the Mac.
+    /// </summary>
     public static IReadOnlyList<string> Rules(byte[] data, string path)
     {
+        if (data.Length >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF) throw AntigravitySettingsException.Of("notJSON", path);
         JsonDocument document;
         try { document = JsonDocument.Parse(data); }
         catch (JsonException) { throw AntigravitySettingsException.Of("notJSON", path); }
@@ -313,14 +432,15 @@ public static class AntigravitySettingsText
     /// <summary>A new settings file that holds only these rules.</summary>
     public static byte[] NewFile(IReadOnlyList<string> rules) => Encoding.UTF8.GetBytes("{\n  \"permissions\": {\n    \"allow\": " + Array(rules, "    ", "  ") + "\n  }\n}\n");
 
-    /// <summary><paramref name="rules"/> not in the file yet, added. Returns the bytes and what was added.</summary>
-    public static (byte[] Data, IReadOnlyList<string> Added) Adding(IReadOnlyList<string> rules, byte[] data, string path)
+    /// <summary><paramref name="rules"/> not in the file yet, added. Returns the bytes, what was added and what had to be created for it.</summary>
+    public static (byte[] Data, IReadOnlyList<string> Added, IReadOnlyList<string> Created) Adding(IReadOnlyList<string> rules, byte[] data, string path)
     {
         var existing = Rules(data, path).ToHashSet(StringComparer.Ordinal);
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var missing = rules.Where(rule => !existing.Contains(rule) && seen.Add(rule)).ToList();
-        if (missing.Count == 0) return (data, []);
+        if (missing.Count == 0) return (data, [], []);
         var b = new List<byte>(data);
+        var newline = data.AsSpan().IndexOf("\r\n"u8) >= 0 ? "\r\n" : "\n";
         var scan = new Scanner(data, path);
         var top = scan.SkipWhitespace(0);
         if (top >= data.Length || data[top] != (byte)'{') throw AntigravitySettingsException.Of("notObject", path);
@@ -328,15 +448,15 @@ public static class AntigravitySettingsText
         var unit = scan.LineIndent(topObject.Members.Count > 0 ? topObject.Members[0].KeyStart : -1) is { Length: > 0 } found ? found : "  ";
         if (topObject.Members.LastOrDefault(m => m.Key == "permissions") is not { } permissions)
         {
-            InsertMember(b, scan, topObject, "", unit, indent => "\"permissions\": " + AllowObject(missing, indent, unit));
-            return (b.ToArray(), missing);
+            InsertMember(b, scan, topObject, "", unit, newline, indent => "\"permissions\": " + AllowObject(missing, indent, unit, newline));
+            return (b.ToArray(), missing, [CreatedPermissions]);
         }
         var permissionsIndent = scan.LineIndent(permissions.KeyStart);
         var section = scan.Object(permissions.ValueStart);
         if (section.Members.LastOrDefault(m => m.Key == "allow") is not { } allow)
         {
-            InsertMember(b, scan, section, permissionsIndent, unit, indent => "\"allow\": " + Array(missing, indent, unit));
-            return (b.ToArray(), missing);
+            InsertMember(b, scan, section, permissionsIndent, unit, newline, indent => "\"allow\": " + Array(missing, indent, unit, newline));
+            return (b.ToArray(), missing, [CreatedAllow]);
         }
         var list = scan.Array(allow.ValueStart);
         if (list.Elements.Count > 0)
@@ -350,11 +470,11 @@ public static class AntigravitySettingsText
         }
         else
         {
-            var rendered = Encoding.UTF8.GetBytes(Array(missing, scan.LineIndent(allow.KeyStart), unit));
+            var rendered = Encoding.UTF8.GetBytes(Array(missing, scan.LineIndent(allow.KeyStart), unit, newline));
             b.RemoveRange(list.Open, list.Close - list.Open + 1);
             b.InsertRange(list.Open, rendered);
         }
-        return (b.ToArray(), missing);
+        return (b.ToArray(), missing, []);
     }
 
     /// <summary>One occurrence of each of <paramref name="rules"/> taken out of permissions.allow (the last one). Returns the bytes and what was removed.</summary>
@@ -387,6 +507,45 @@ public static class AntigravitySettingsText
         return (b, removed);
     }
 
+    /// <summary>
+    /// Takes out what adding created once it is empty: permissions when it holds nothing but an empty allow (permissions, file), else an
+    /// empty allow (allow). <c>Empty</c>: the file is now <c>{}</c>, which a created file is deleted for.
+    /// </summary>
+    public static (byte[] Data, bool Empty) Pruning(IReadOnlySet<string> created, byte[] data, string path)
+    {
+        _ = Rules(data, path);
+        var b = new List<byte>(data);
+        var scan = new Scanner(data, path);
+        var top = scan.Object(scan.SkipWhitespace(0));
+        var permissionMembers = Enumerable.Range(0, top.Members.Count).Where(i => top.Members[i].Key == "permissions").ToList();
+        if (permissionMembers.Count == 1)
+        {
+            var index = permissionMembers[0];
+            var section = scan.Object(top.Members[index].ValueStart);
+            var allows = Enumerable.Range(0, section.Members.Count).Where(i => section.Members[i].Key == "allow").ToList();
+            var emptyAllow = allows.Count == 1 && scan.Array(section.Members[allows[0]].ValueStart).Elements.Count == 0;
+            if (created.Contains(CreatedPermissions) || created.Contains(CreatedFile))
+            {
+                if (section.Members.Count == 0 || section.Members.Count == 1 && emptyAllow) RemoveMember(b, top, index);
+            }
+            else if (created.Contains(CreatedAllow) && emptyAllow) RemoveMember(b, section, allows[0]);
+        }
+        var bytes = b.ToArray();
+        var after = new Scanner(bytes, path);
+        var result = after.Object(after.SkipWhitespace(0));
+        _ = Rules(bytes, path);
+        return (bytes, result.Members.Count == 0);
+    }
+
+    /// <summary>Takes a member out with the separator that adding put before it; the only member leaves <c>{}</c>.</summary>
+    private static void RemoveMember(List<byte> b, Scanner.ObjectSpan value, int index)
+    {
+        var members = value.Members;
+        if (members.Count == 1) { b.RemoveRange(value.Open, value.Close - value.Open + 1); b.InsertRange(value.Open, "{}"u8.ToArray()); }
+        else if (index == members.Count - 1) b.RemoveRange(members[index - 1].ValueEnd, members[index].ValueEnd - members[index - 1].ValueEnd);
+        else b.RemoveRange(members[index].KeyStart, members[index + 1].KeyStart - members[index].KeyStart);
+    }
+
     // Rendering
 
     /// <summary>A rule as a JSON string, as the Mac writes it: non-ASCII and slashes as they are.</summary>
@@ -413,22 +572,22 @@ public static class AntigravitySettingsText
     }
 
     /// <summary>A list on its own lines under <paramref name="indent"/>, or on one line when the place it goes is one line (null).</summary>
-    internal static string Array(IReadOnlyList<string> rules, string? indent, string unit)
+    internal static string Array(IReadOnlyList<string> rules, string? indent, string unit, string newline = "\n")
     {
         var items = rules.Select(rule => Encoding.UTF8.GetString(Encoded(rule)));
         if (indent is null) return "[" + string.Join(", ", items) + "]";
-        return "[\n" + string.Join(",\n", items.Select(item => indent + unit + item)) + "\n" + indent + "]";
+        return "[" + newline + string.Join("," + newline, items.Select(item => indent + unit + item)) + newline + indent + "]";
     }
 
-    internal static string AllowObject(IReadOnlyList<string> rules, string? indent, string unit) => indent is null
+    internal static string AllowObject(IReadOnlyList<string> rules, string? indent, string unit, string newline = "\n") => indent is null
         ? "{\"allow\": " + Array(rules, null, unit) + "}"
-        : "{\n" + indent + unit + "\"allow\": " + Array(rules, indent + unit, unit) + "\n" + indent + "}";
+        : "{" + newline + indent + unit + "\"allow\": " + Array(rules, indent + unit, unit, newline) + newline + indent + "}";
 
     /// <summary>
     /// Adds a member to <paramref name="value"/>: after its last member, in that member's style, or as the only member of an empty
     /// object. <paramref name="render"/> gets the member's indent (null when it goes on one line).
     /// </summary>
-    private static void InsertMember(List<byte> b, Scanner scan, Scanner.ObjectSpan value, string? indentOfObject, string unit, Func<string?, string> render)
+    private static void InsertMember(List<byte> b, Scanner scan, Scanner.ObjectSpan value, string? indentOfObject, string unit, string newline, Func<string?, string> render)
     {
         if (value.Members.Count > 0)
         {
@@ -440,7 +599,7 @@ public static class AntigravitySettingsText
             b.InsertRange(last.ValueEnd, inserted);
             return;
         }
-        var text = indentOfObject is { } outer ? "{\n" + outer + unit + render(outer + unit) + "\n" + outer + "}" : "{" + render(null) + "}";
+        var text = indentOfObject is { } outer ? "{" + newline + outer + unit + render(outer + unit) + newline + outer + "}" : "{" + render(null) + "}";
         b.RemoveRange(value.Open, value.Close - value.Open + 1);
         b.InsertRange(value.Open, Encoding.UTF8.GetBytes(text));
     }
@@ -557,11 +716,14 @@ public static class AntigravitySettingsText
 }
 
 /// <summary>
-/// Puts rules in agy's settings and takes them out again. One per app: the panes on this PC and the runs it hosts for other computers
-/// share it, so a rule two of them hold at once stays until the last is done. Every rule it adds for a while is written to its ledger
-/// first, and taken out of it only after the settings no longer have it, so a crash leaves nothing a next launch
-/// (<see cref="RemoveLeftovers"/>) does not clean up. A rule the settings already had is never removed. Calls are serialized; each
-/// reads and writes files, so callers keep them off the UI thread.
+/// Puts rules in agy's settings and takes them out again (M/MightyCore/AntigravityPermissions.swift AntigravityRuleLeases). One per app:
+/// the panes on this PC and the runs it hosts for other computers share it, so a rule two of them hold at once stays until the last is
+/// done. Every rule it adds for a while is written to its ledger first, and taken out of it only once the settings are seen without it a
+/// little after it was removed (a running agy that rewrites its settings could bring it back); a removal that fails (File.Replace meets a
+/// file agy has open) is tried again with growing pauses, then again on the next apply or release and at the next launch
+/// (<see cref="RemoveLeftovers"/>). A rule the settings already had is never removed, and what adding had to create (permissions, allow,
+/// the file) goes again once it is empty. Calls are serialized; each reads and writes files and may pause, so callers keep them off the
+/// UI thread.
 /// </summary>
 public sealed class AntigravityRuleLeases
 {
@@ -572,20 +734,38 @@ public sealed class AntigravityRuleLeases
         public IReadOnlyList<string> Rules { get; }
     }
     private sealed record LedgerEntry(string Settings, string Rule);
-    private sealed record Ledger(int Version, List<LedgerEntry> Entries);
+    private sealed record CreatedEntry(string Settings, string Part);
+    private sealed record Ledger(int Version, List<LedgerEntry> Entries, List<CreatedEntry>? Created = null)
+    {
+        public bool IsEmpty => Entries.Count == 0 && (Created ?? []).Count == 0;
+    }
 
     public string SettingsPath { get; }
     private readonly string? ledgerPath;
+    private readonly IReadOnlyList<TimeSpan> retryDelays;
+    private readonly TimeSpan recheckDelay;
     private readonly object gate = new();
     private readonly Dictionary<string, int> counts = new(StringComparer.Ordinal);
     private readonly HashSet<Lease> leases = [];
+    /// <summary>Rules removed and waiting to be looked for once more.</summary>
+    private readonly HashSet<string> awaitingRecheck = new(StringComparer.Ordinal);
+    private readonly List<Task> rechecks = [];
+    /// <summary>Quit released everything: nothing is added any more.</summary>
+    private bool closed;
 
     /// <summary>%USERPROFILE%\.gemini\antigravity-cli\settings.json (on a Mac, ~/.gemini/antigravity-cli/settings.json).</summary>
     public static string DefaultSettingsPath(string? home = null) =>
         Path.Combine(home ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".gemini", "antigravity-cli", "settings.json");
 
     /// <param name="ledgerPath">Where the rules added for a while are recorded (the app's data folder); null keeps no record.</param>
-    public AntigravityRuleLeases(string settingsPath, string? ledgerPath) { SettingsPath = settingsPath; this.ledgerPath = ledgerPath; }
+    /// <param name="retryDelays">The pauses before each new try of a failed removal; null is 250 ms, 1 s, 3 s.</param>
+    /// <param name="recheckDelay">How long after a removal the settings are looked at again; null is 5 s.</param>
+    public AntigravityRuleLeases(string settingsPath, string? ledgerPath, IReadOnlyList<TimeSpan>? retryDelays = null, TimeSpan? recheckDelay = null)
+    {
+        SettingsPath = settingsPath; this.ledgerPath = ledgerPath;
+        this.retryDelays = retryDelays ?? [TimeSpan.FromMilliseconds(250), TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(3)];
+        this.recheckDelay = recheckDelay ?? TimeSpan.FromSeconds(5);
+    }
 
     /// <summary>The rules the app holds for a while now, with their counts.</summary>
     public IReadOnlyDictionary<string, int> Held() { lock (gate) return new Dictionary<string, int>(counts, StringComparer.Ordinal); }
@@ -593,43 +773,68 @@ public sealed class AntigravityRuleLeases
     /// <summary>Reads the settings the way adding would, and changes nothing.</summary>
     public void Check() { lock (gate) _ = Read(); }
 
-    /// <summary>Puts <paramref name="grant"/>'s rules in place. A temporary grant returns the lease to <see cref="Release"/> when its run ends; one for good returns null.</summary>
+    /// <summary>Waits for the look-agains removals started (checks).</summary>
+    public async Task Settled()
+    {
+        while (true)
+        {
+            Task[] pending; lock (gate) { rechecks.RemoveAll(task => task.IsCompleted); pending = rechecks.ToArray(); }
+            if (pending.Length == 0) return;
+            await Task.WhenAll(pending);
+        }
+    }
+
+    /// <summary>
+    /// Puts <paramref name="grant"/>'s rules in place. A temporary grant returns the lease to <see cref="Release"/> when its run ends; one
+    /// for good returns null. After quit's <see cref="ReleaseAll"/> it throws <see cref="OperationCanceledException"/> and adds nothing.
+    /// </summary>
     public Lease? Apply(AntigravityAllowGrant grant)
     {
-        if (!grant.IsValid) throw AntigravitySettingsException.Of("badRule");
         lock (gate)
         {
+            if (closed) throw new OperationCanceledException();
+            if (!grant.IsValid) throw AntigravitySettingsException.Of("badRule");
+            if (!grant.KeepsOnlyAllowedRules) throw AntigravitySettingsException.Of("onceOnly");
+            RetryPending([]);
             var current = Read();
             var existing = current.Rules.ToHashSet(StringComparer.Ordinal);
             var rules = grant.Rules.Distinct(StringComparer.Ordinal).ToList();
             if (!grant.Temporary)
             {
-                // Kept for good: a rule the app holds for a while is no longer its to remove.
-                var owned = rules.Where(counts.ContainsKey).ToList();
-                Write(rules.Where(rule => !existing.Contains(rule)).ToList(), current);
-                foreach (var rule in owned) counts.Remove(rule);
-                try { Forget(owned); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or AntigravitySettingsException) { }
+                // Kept for good: a rule the app holds or held for a while is no longer its to remove.
+                var missing = rules.Where(rule => !existing.Contains(rule)).ToList();
+                if (missing.Count > 0) Save(Changed(current, missing).Data);
+                foreach (var rule in rules) { counts.Remove(rule); awaitingRecheck.Remove(rule); }
+                try { Forget(rules); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or AntigravitySettingsException) { }
                 return null;
             }
-            var held = new List<string>(); var added = new List<string>();
+            // Still in the settings from an earlier hold whose removal is pending: held again.
+            var pending = LedgerRules().ToHashSet(StringComparer.Ordinal);
+            var incremented = new List<string>(); var reclaimed = new List<string>(); var added = new List<string>();
             foreach (var rule in rules)
             {
-                if (counts.TryGetValue(rule, out var count)) { counts[rule] = count + 1; held.Add(rule); }
+                if (counts.TryGetValue(rule, out var count)) { counts[rule] = count + 1; incremented.Add(rule); }
                 else if (!existing.Contains(rule)) added.Add(rule);
+                else if (pending.Contains(rule)) { counts[rule] = 1; awaitingRecheck.Remove(rule); reclaimed.Add(rule); }
             }
             if (added.Count > 0)
             {
-                try { Record(added); Write(added, current); }
+                try
+                {
+                    var change = Changed(current, added);
+                    Record(added, change.Created);
+                    Save(change.Data);
+                }
                 catch
                 {
                     try { Forget(added); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or AntigravitySettingsException) { }
-                    foreach (var rule in held) counts[rule] = counts.GetValueOrDefault(rule, 1) - 1;
+                    foreach (var rule in incremented) counts[rule] = counts.GetValueOrDefault(rule, 1) - 1;
+                    foreach (var rule in reclaimed) counts.Remove(rule);
                     throw;
                 }
                 foreach (var rule in added) counts[rule] = 1;
-                held.AddRange(added);
             }
-            var lease = new Lease(held);
+            var lease = new Lease([.. incremented, .. reclaimed, .. added]);
             leases.Add(lease);
             return lease;
         }
@@ -638,38 +843,136 @@ public sealed class AntigravityRuleLeases
     /// <summary>The lease's run ended: a rule nobody holds any more leaves the settings.</summary>
     public void Release(Lease lease)
     {
+        List<string> gone = [];
         lock (gate)
         {
             if (!leases.Remove(lease)) return;
-            var gone = new List<string>();
             foreach (var rule in lease.Rules)
             {
                 if (!counts.TryGetValue(rule, out var count)) continue;
                 if (count > 1) counts[rule] = count - 1; else { counts.Remove(rule); gone.Add(rule); }
             }
-            Remove(gone);
+            RetryPending(gone);
         }
+        Remove(gone);
     }
 
-    /// <summary>Quit: every rule held for a while leaves now.</summary>
+    /// <summary>Quit: every rule held for a while leaves now, and nothing is added after.</summary>
     public void ReleaseAll()
     {
+        List<string> gone;
         lock (gate)
         {
-            var gone = counts.Keys.ToList();
+            closed = true;
+            gone = counts.Keys.Concat(LedgerRules().Where(rule => !awaitingRecheck.Contains(rule))).Distinct(StringComparer.Ordinal).ToList();
             counts.Clear(); leases.Clear();
-            Remove(gone);
         }
+        Remove(gone);
     }
 
     /// <summary>Launch: what a previous run of the app added for a while and could not take out.</summary>
     public void RemoveLeftovers()
     {
+        List<string> left;
         lock (gate)
         {
-            var left = (ReadLedger()?.Entries ?? []).Where(e => e.Settings == SettingsPath && !counts.ContainsKey(e.Rule)).Select(e => e.Rule).Distinct(StringComparer.Ordinal).ToList();
-            Remove(left);
+            left = LedgerRules().Where(rule => !counts.ContainsKey(rule) && !awaitingRecheck.Contains(rule)).ToList();
+            if (left.Count == 0) { PruneIfDone(); return; }
         }
+        Remove(left);
+    }
+
+    // Removing
+
+    /// <summary>Takes <paramref name="rules"/> out of the settings, trying again after each of the retry pauses; then looks again after the recheck delay. A rule held again meanwhile is left in.</summary>
+    private void Remove(IReadOnlyList<string> rules)
+    {
+        if (rules.Count == 0) return;
+        if (RemoveWithRetries(rules)) lock (gate) ScheduleRecheck(rules.Where(rule => !counts.ContainsKey(rule)).ToList());
+    }
+
+    /// <summary>Each try under the lock, each pause outside it.</summary>
+    private bool RemoveWithRetries(IReadOnlyList<string> rules)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            lock (gate)
+            {
+                var still = rules.Where(rule => !counts.ContainsKey(rule)).ToList();
+                if (still.Count == 0) return true;
+                try { RemoveOnce(still); return true; }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or AntigravitySettingsException) { if (attempt >= retryDelays.Count) return false; }
+            }
+            Thread.Sleep(retryDelays[attempt]);
+        }
+    }
+
+    private void RemoveOnce(IReadOnlyList<string> rules)
+    {
+        var current = Read();
+        if (current.Data is not { } data) return;
+        var result = AntigravitySettingsText.Removing(rules, data, SettingsPath);
+        if (result.Removed.Count > 0) Save(result.Data);
+    }
+
+    /// <summary>Under <c>gate</c>.</summary>
+    private void ScheduleRecheck(IReadOnlyList<string> rules)
+    {
+        if (rules.Count == 0) return;
+        foreach (var rule in rules) awaitingRecheck.Add(rule);
+        var delay = recheckDelay;
+        rechecks.Add(Task.Run(async () => { await Task.Delay(delay); Recheck(rules); }));
+    }
+
+    /// <summary>A little after a removal: a rule agy wrote back is taken out again; then the ledger lets go of it.</summary>
+    private void Recheck(IReadOnlyList<string> rules)
+    {
+        List<string> still;
+        lock (gate)
+        {
+            var ledger = LedgerRules().ToHashSet(StringComparer.Ordinal);
+            still = rules.Where(rule => !counts.ContainsKey(rule) && awaitingRecheck.Contains(rule) && ledger.Contains(rule)).ToList();
+            foreach (var rule in rules.Where(rule => !counts.ContainsKey(rule))) awaitingRecheck.Remove(rule);
+            if (still.Count == 0) return;
+        }
+        if (!RemoveWithRetries(still)) return;
+        lock (gate)
+        {
+            try { Forget(still.Where(rule => !counts.ContainsKey(rule)).ToList()); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or AntigravitySettingsException) { return; }
+            PruneIfDone();
+        }
+    }
+
+    /// <summary>Under <c>gate</c>: one try, without waiting, at what the ledger still holds that nobody holds now (an earlier removal that failed).</summary>
+    private void RetryPending(IReadOnlyList<string> except)
+    {
+        var skip = except.ToHashSet(StringComparer.Ordinal);
+        var pending = LedgerRules().Where(rule => !counts.ContainsKey(rule) && !awaitingRecheck.Contains(rule) && !skip.Contains(rule)).ToList();
+        if (pending.Count == 0) return;
+        try { RemoveOnce(pending); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or AntigravitySettingsException) { return; }
+        ScheduleRecheck(pending);
+    }
+
+    /// <summary>Under <c>gate</c>: nothing held and nothing left in the ledger, so what adding created goes once empty.</summary>
+    private void PruneIfDone()
+    {
+        if (counts.Count > 0 || LedgerRules().Count > 0 || ReadLedger() is not { } ledger) return;
+        var created = (ledger.Created ?? []).Where(e => e.Settings == SettingsPath).Select(e => e.Part).ToHashSet(StringComparer.Ordinal);
+        if (created.Count == 0) return;
+        try
+        {
+            var current = Read();
+            if (current.Data is { } data)
+            {
+                var result = AntigravitySettingsText.Pruning(created, data, SettingsPath);
+                if (result.Empty && created.Contains(AntigravitySettingsText.CreatedFile) && new FileInfo(SettingsPath).LinkTarget is null) File.Delete(SettingsPath);
+                else if (!result.Data.AsSpan().SequenceEqual(data)) Save(result.Data);
+            }
+            WriteLedger(ledger with { Created = (ledger.Created ?? []).Where(e => e.Settings != SettingsPath).ToList() });
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or AntigravitySettingsException) { }
     }
 
     // Files
@@ -686,6 +989,9 @@ public sealed class AntigravityRuleLeases
 
     private Current Read()
     {
+        // A link to nothing is not replaced by a new file.
+        try { if (new FileInfo(SettingsPath) is { LinkTarget: not null } link && !(link.ResolveLinkTarget(true)?.Exists ?? false)) throw AntigravitySettingsException.Of("unreadable", SettingsPath); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { throw AntigravitySettingsException.Of("unreadable", SettingsPath); }
         var target = Target();
         var folder = Path.GetDirectoryName(target);
         if (folder is null || !Directory.Exists(folder)) throw AntigravitySettingsException.Of("missingFolder", folder ?? target);
@@ -697,27 +1003,12 @@ public sealed class AntigravityRuleLeases
         return new(data, AntigravitySettingsText.Rules(data, SettingsPath));
     }
 
-    private void Write(IReadOnlyList<string> rules, Current current)
+    /// <summary>The settings with <paramref name="rules"/> added, and what that created.</summary>
+    private (byte[] Data, IReadOnlyList<string> Created) Changed(Current current, IReadOnlyList<string> rules)
     {
-        if (rules.Count == 0) return;
-        Save(current.Data is { } data ? AntigravitySettingsText.Adding(rules, data, SettingsPath).Data : AntigravitySettingsText.NewFile(rules));
-    }
-
-    /// <summary>Takes <paramref name="rules"/> out of the settings, then out of the ledger. A file that cannot be read or written keeps them in the ledger for the next launch.</summary>
-    private void Remove(IReadOnlyList<string> rules)
-    {
-        if (rules.Count == 0) return;
-        try
-        {
-            var current = Read();
-            if (current.Data is { } data)
-            {
-                var result = AntigravitySettingsText.Removing(rules, data, SettingsPath);
-                if (result.Removed.Count > 0) Save(result.Data);
-            }
-            Forget(rules);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or AntigravitySettingsException) { }
+        if (current.Data is not { } data) return (AntigravitySettingsText.NewFile(rules), [AntigravitySettingsText.CreatedFile]);
+        var result = AntigravitySettingsText.Adding(rules, data, SettingsPath);
+        return (result.Data, result.Created);
     }
 
     /// <summary>
@@ -753,14 +1044,22 @@ public sealed class AntigravityRuleLeases
     private Ledger? ReadLedger()
     {
         if (ledgerPath is null || !File.Exists(ledgerPath)) return null;
-        try { return JsonSerializer.Deserialize<Ledger>(File.ReadAllBytes(ledgerPath), Wire.Json) is { Entries: not null } ledger ? ledger with { Entries = ledger.Entries.Where(e => e is { Settings: not null, Rule: not null }).ToList() } : null; }
+        try
+        {
+            return JsonSerializer.Deserialize<Ledger>(File.ReadAllBytes(ledgerPath), Wire.Json) is { Entries: not null } ledger
+                ? ledger with { Entries = ledger.Entries.Where(e => e is { Settings: not null, Rule: not null }).ToList(), Created = ledger.Created?.Where(e => e is { Settings: not null, Part: not null }).ToList() }
+                : null;
+        }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or NotSupportedException) { return null; }
     }
+
+    /// <summary>The rules the ledger holds for these settings.</summary>
+    private List<string> LedgerRules() => (ReadLedger()?.Entries ?? []).Where(e => e.Settings == SettingsPath).Select(e => e.Rule).Distinct(StringComparer.Ordinal).ToList();
 
     private void WriteLedger(Ledger ledger)
     {
         if (ledgerPath is null) return;
-        if (ledger.Entries.Count == 0) { if (File.Exists(ledgerPath)) File.Delete(ledgerPath); return; }
+        if (ledger.IsEmpty) { if (File.Exists(ledgerPath)) File.Delete(ledgerPath); return; }
         Directory.CreateDirectory(Path.GetDirectoryName(ledgerPath)!);
         var temporary = ledgerPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
@@ -771,12 +1070,14 @@ public sealed class AntigravityRuleLeases
         catch { try { File.Delete(temporary); } catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException) { } throw; }
     }
 
-    private void Record(IReadOnlyList<string> rules)
+    private void Record(IReadOnlyList<string> rules, IReadOnlyList<string> created)
     {
         if (ledgerPath is null) return;
         var ledger = ReadLedger() ?? new(1, []);
         foreach (var rule in rules) if (!ledger.Entries.Contains(new(SettingsPath, rule))) ledger.Entries.Add(new(SettingsPath, rule));
-        try { WriteLedger(ledger); }
+        var parts = ledger.Created ?? [];
+        foreach (var part in created) if (!parts.Contains(new(SettingsPath, part))) parts.Add(new(SettingsPath, part));
+        try { WriteLedger(ledger with { Created = parts.Count == 0 ? null : parts }); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { throw AntigravitySettingsException.Of("writeFailed", ledgerPath, ex.Message); }
     }
 

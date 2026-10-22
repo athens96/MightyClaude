@@ -165,7 +165,7 @@ internal static class Verification
                 await File.WriteAllTextAsync(record + ".attachments", JsonSerializer.Serialize(captured, Wire.Json));
             }
             // An agy that is refused a command on its first turn and, continued (--conversation), says whether its settings allow it.
-            if (args.Contains("--agy-denied")) { AntigravityPermissionVerification.FakeAgy(args[Array.IndexOf(args, "--agy-denied") + 1], args.Contains("--conversation")); return; }
+            if (args.Contains("--agy-denied")) { AntigravityPermissionVerification.FakeAgy(args[Array.IndexOf(args, "--agy-denied") + 1], args.Contains("--conversation"), input); return; }
             // What Antigravity CLI 1.3.5 prints on stderr when its sign-in is gone, and the same words as a model answer.
             const string antigravitySignInLost = "Error: authentication required. Run 'agy' to log in, then retry.";
             if (args.Contains("--agy-signin-lost")) { await Console.Error.WriteLineAsync(antigravitySignInLost); Environment.ExitCode = 1; return; }
@@ -418,13 +418,18 @@ internal static class Verification
         await Test("antigravity cards: without a card the older notice stays", AntigravityPermissionVerification.WithoutACardTheOlderNoticeStays);
         await Test("antigravity cards: two turns in one run give two cards and nothing carries over", AntigravityPermissionVerification.TwoTurnsInOneRunGiveTwoCardsAndNothingCarriesOver);
         await Test("antigravity cards: rules are well formed or absent", AntigravityPermissionVerification.RulesAreWellFormedOrAbsent);
+        await Test("antigravity cards: which rules a card may offer follows the shared cases", AntigravityPermissionVerification.WhichRulesACardMayOfferFollowsTheSharedCases);
         await Test("antigravity cards: settings edits change only the allow list, byte for byte", AntigravityPermissionVerification.SettingsEditsChangeOnlyTheAllowList);
         await Test("antigravity cards: settings of an unexpected shape are refused", AntigravityPermissionVerification.SettingsThatAreNotTheExpectedShapeAreRefused);
         await Test("antigravity cards: a temporary rule is added, recorded and taken out leaving every other byte", AntigravityPermissionVerification.ATemporaryRuleIsAddedRecordedAndTakenOutLeavingEveryOtherByte);
         await Test("antigravity cards: a rule two panes hold stays until the last is done", AntigravityPermissionVerification.ARuleTwoPanesHoldStaysUntilTheLastIsDone);
         await Test("antigravity cards: a rule the settings already had is never removed", AntigravityPermissionVerification.ARuleTheSettingsAlreadyHadIsNeverRemoved);
         await Test("antigravity cards: settings that cannot be read are left alone and refused", AntigravityPermissionVerification.SettingsThatCannotBeReadAreLeftAloneAndRefused);
-        await Test("antigravity cards: a missing file is created with the rule alone", AntigravityPermissionVerification.AMissingFileIsCreatedWithTheRuleAlone);
+        await Test("antigravity cards: a missing file is created with the rule alone and goes with it", AntigravityPermissionVerification.AMissingFileIsCreatedWithTheRuleAloneAndGoesWithIt);
+        await Test("antigravity cards: a failed removal is tried again and kept in the ledger until it works", AntigravityPermissionVerification.AFailedRemovalIsTriedAgainAndKeptInTheLedgerUntilItWorks);
+        await Test("antigravity cards: a rule agy writes back is taken out again", AntigravityPermissionVerification.ARuleAgyWritesBackIsTakenOutAgain);
+        await Test("antigravity cards: after quit nothing is added and a link to nothing is left alone", AntigravityPermissionVerification.AfterQuitNothingIsAddedAndALinkToNothingIsLeftAlone);
+        await Test("antigravity cards: a continuation that cannot start brings its card back with the reason", AntigravityPermissionVerification.AContinuationThatCannotStartBringsItsCardBack);
         await Test("antigravity cards: what a crash left is removed at the next launch", AntigravityPermissionVerification.WhatACrashLeftIsRemovedAtTheNextLaunch);
         await Test("antigravity cards: quit releases everything and a linked file stays linked", AntigravityPermissionVerification.QuitReleasesEverythingAndALinkedFileStaysLinked);
         await Test("antigravity cards: a card stays until a later run ends or it is answered", AntigravityPermissionVerification.ACardStaysUntilALaterRunEndsOrItIsAnswered);
