@@ -104,6 +104,23 @@ describe('PushHandleStore', () => {
     expect(await second.bind(made.handle, SERVER_1, 130 * DAY + 2)).toEqual({ kind: 'ok', fcmToken: TOKEN_A });
   });
 
+  it('keeps a daily-used handle alive when the relay restarted before the daily binds began', async () => {
+    const folder = await mkdtemp(join(tmpdir(), 'push-store-'));
+    const path = join(folder, 'push-handles.json');
+    const idleMs = 120 * DAY;
+    const first = await PushHandleStore.open(options(path, { idleMs }), 0);
+    const made = (await first.register(TOKEN_A, 0))!;
+    await first.bind(made.handle, SERVER_1, 1);
+    await first.flush();
+    const second = await PushHandleStore.open(options(path, { idleMs }), DAY / 2);
+    for (let day = 1; day <= 130; day += 1) {
+      expect(await second.bind(made.handle, SERVER_1, day * DAY)).toEqual({ kind: 'ok', fcmToken: TOKEN_A });
+      await second.flush();
+    }
+    const third = await PushHandleStore.open(options(path, { idleMs }), 130 * DAY + 1);
+    expect(await third.bind(made.handle, SERVER_1, 130 * DAY + 2)).toEqual({ kind: 'ok', fcmToken: TOKEN_A });
+  });
+
   it('refuses a malformed FCM token on register and refresh', async () => {
     const store = await PushHandleStore.open(options(''), 0);
     expect(await store.register('too short', 0)).toBeNull();
