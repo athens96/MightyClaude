@@ -157,7 +157,9 @@ export class PushHandleStore {
       const parsed = JSON.parse(text) as { v?: unknown; handles?: unknown };
       if (parsed.v !== 1 || !Array.isArray(parsed.handles)) throw new Error('shape');
       for (const record of parsed.handles) {
-        if (validRecord(record)) this.#records.set(record.handle, { ...record });
+        if (!validRecord(record)) continue;
+        this.#records.set(record.handle, { ...record });
+        this.#persistedUsedAt.set(record.handle, record.usedAt);
       }
     } catch {
       await rename(path, `${path}.unreadable-${now}`);
