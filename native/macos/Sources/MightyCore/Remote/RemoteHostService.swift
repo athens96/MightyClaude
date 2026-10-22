@@ -48,7 +48,7 @@ public actor RemoteHostService {
     /// agy's settings on this Mac, shared with its own panes.
     private let antigravityRules: AntigravityRuleLeases?
     /// The Antigravity cards this host's runs reported, by card id: a client's
-    /// continuation may add only these rules here (for a day, the newest 128).
+    /// continuation may add only these rules here, once (for a day, the newest 128).
     private var reportedRules: [String: (rules: Set<String>, at: Date)] = [:]
 
     /// Seconds a run may go unpolled before it is stopped; tests shorten it.
@@ -330,8 +330,16 @@ public actor RemoteHostService {
         if let grant = wire.antigravityGrant, run.provider == "gemini", run.kind == SessionKind.claude {
             guard grant.isValid, let reported = reportedRules[grant.requestId], Date().timeIntervalSince(reported.at) < 86_400,
                   Set(grant.rules).isSubset(of: reported.rules) else { throw Failure(403, L("remote.host.error.antigravityRules")) }
+            // Kept for good only when this computer lets others run with full access.
+            guard grant.temporary || allowsFullAccess else { throw Failure(403, L("remote.host.error.antigravityAlways")) }
+            guard grant.keepsOnlyAllowedRules else { throw Failure(409, L("remote.error.antigravityOnceOnly")) }
             guard let antigravityRules else { throw Failure(409, L("remote.host.error.antigravityRules")) }
-            do { lease = try await antigravityRules.apply(grant) } catch { throw Failure(409, error.localizedDescription) }
+            // A card's rules are granted once: the first accepted grant uses them up.
+            reportedRules.removeValue(forKey: grant.requestId)
+            do { lease = try await antigravityRules.apply(grant) } catch {
+                if reportedRules[grant.requestId] == nil { reportedRules[grant.requestId] = reported }
+                throw Failure(409, error.localizedDescription)
+            }
             guard revision == generation, self.runner != nil else {
                 if let lease { await antigravityRules.release(lease) }
                 throw Failure(503, L("remote.host.error.stopped"))

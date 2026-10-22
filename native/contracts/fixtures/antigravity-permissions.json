@@ -1,5 +1,5 @@
 {
-  "about": "Antigravity permission cards (docs/superpowers/plans/2026-10-22-antigravity-permission-cards.md, docs/mobile-remote.md). streams: agy stream-json turns and the actions the card shows (Mac AntigravityDenialCollector; the Windows host must read them the same). settings: byte-exact edits of permissions.allow in agy's settings.json; every other byte stays.",
+  "about": "Antigravity permission cards (docs/superpowers/plans/2026-10-22-antigravity-permission-cards.md, docs/mobile-remote.md). streams: agy stream-json turns and the actions the card shows (Mac AntigravityDenialCollector; the Windows host must read them the same). rules: which rules a card may offer (refused: none; once: 이번만 허용 only; always: both), with the closed tool-to-permission mapping. settings: byte-exact edits of permissions.allow in agy's settings.json; every other byte stays.",
   "streams": [
     {
       "name": "command",
@@ -20,7 +20,8 @@
           "target": "date +%Y",
           "rule": "command(date +%Y)"
         }
-      ]
+      ],
+      "canAllowAlways": true
     },
     {
       "name": "curl",
@@ -41,7 +42,8 @@
           "target": "curl -s https://example.com | grep -i '<title>'",
           "rule": "command(curl -s https://example.com | grep -i '<title>')"
         }
-      ]
+      ],
+      "canAllowAlways": false
     },
     {
       "name": "writeFile",
@@ -62,7 +64,8 @@
           "target": "/private/tmp/demo/hello.txt",
           "rule": "write_file(/private/tmp/demo/hello.txt)"
         }
-      ]
+      ],
+      "canAllowAlways": true
     },
     {
       "name": "oneDeniedOneRan",
@@ -85,7 +88,8 @@
           "target": "echo alpha",
           "rule": "command(echo alpha)"
         }
-      ]
+      ],
+      "canAllowAlways": true
     },
     {
       "name": "noDenial",
@@ -126,7 +130,8 @@
           "target": "echo hi",
           "rule": "command(echo hi)"
         }
-      ]
+      ],
+      "canAllowAlways": true
     },
     {
       "name": "multiple",
@@ -167,7 +172,8 @@
           "action": "notebook_execution",
           "displayName": "NotebookExecution"
         }
-      ]
+      ],
+      "canAllowAlways": true
     },
     {
       "name": "multilineCommand",
@@ -183,7 +189,157 @@
           "displayName": "RunCommand",
           "target": "printf a\nprintf b"
         }
-      ]
+      ],
+      "canAllowAlways": false
+    },
+    {
+      "name": "chained",
+      "recorded": "synthetic from the recorded shape: a chained command gets a rule that may be allowed only once (agy 1.4.5 checks each piece of a chain)",
+      "lines": [
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":2,\"state\":\"ERROR\",\"step_type\":\"tool\",\"tool_name\":\"run_command\",\"tool_info\":{\"name\":\"run_command\",\"parameters\":{\"CommandLine\":\"echo hi && date\"},\"error\":{\"type\":\"TOOL_ERROR\",\"message\":\"permission check failed for unsandboxed \\\"echo hi && date\\\": user denied permission to run command:\\necho hi && date\\nDo not attempt to circumvent this denial by rephrasing the command, using alternative tools/scripts (e.g. python, sh, curl), or accessing the same target resource. Proceed without performing this action.\"}}}}",
+        "{\"event\":\"result\",\"result\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"status\":\"SUCCESS\",\"response\":\"\",\"num_turns\":1,\"denied_actions\":[{\"action\":\"command\",\"display_name\":\"RunCommand\"}]}}"
+      ],
+      "actions": [
+        {
+          "kind": "command",
+          "action": "command",
+          "displayName": "RunCommand",
+          "target": "echo hi && date",
+          "rule": "command(echo hi && date)"
+        }
+      ],
+      "canAllowAlways": false
+    },
+    {
+      "name": "parenCommand",
+      "recorded": "synthetic: a command with a parenthesis gets no rule",
+      "lines": [
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":2,\"state\":\"ERROR\",\"step_type\":\"tool\",\"tool_name\":\"run_command\",\"tool_info\":{\"name\":\"run_command\",\"parameters\":{\"CommandLine\":\"python3 -c 'print(1)'\"},\"error\":{\"type\":\"TOOL_ERROR\",\"message\":\"permission check failed for unsandboxed \\\"python3 -c 'print(1)'\\\": user denied permission to run command:\\npython3 -c 'print(1)'\\nDo not attempt to circumvent this denial by rephrasing the command, using alternative tools/scripts (e.g. python, sh, curl), or accessing the same target resource. Proceed without performing this action.\"}}}}",
+        "{\"event\":\"result\",\"result\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"status\":\"SUCCESS\",\"response\":\"\",\"num_turns\":1,\"denied_actions\":[{\"action\":\"command\",\"display_name\":\"RunCommand\"}]}}"
+      ],
+      "actions": [
+        {
+          "kind": "command",
+          "action": "command",
+          "displayName": "RunCommand",
+          "target": "python3 -c 'print(1)'"
+        }
+      ],
+      "canAllowAlways": false
+    },
+    {
+      "name": "globCommand",
+      "recorded": "synthetic: a command with * gets no rule (agy 1.4.5 reads command(*) as every command)",
+      "lines": [
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":2,\"state\":\"ERROR\",\"step_type\":\"tool\",\"tool_name\":\"run_command\",\"tool_info\":{\"name\":\"run_command\",\"parameters\":{\"CommandLine\":\"ls *.txt\"},\"error\":{\"type\":\"TOOL_ERROR\",\"message\":\"permission check failed for unsandboxed \\\"ls *.txt\\\": user denied permission to run command:\\nls *.txt\\nDo not attempt to circumvent this denial by rephrasing the command, using alternative tools/scripts (e.g. python, sh, curl), or accessing the same target resource. Proceed without performing this action.\"}}}}",
+        "{\"event\":\"result\",\"result\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"status\":\"SUCCESS\",\"response\":\"\",\"num_turns\":1,\"denied_actions\":[{\"action\":\"command\",\"display_name\":\"RunCommand\"}]}}"
+      ],
+      "actions": [
+        {
+          "kind": "command",
+          "action": "command",
+          "displayName": "RunCommand",
+          "target": "ls *.txt"
+        }
+      ],
+      "canAllowAlways": false
+    },
+    {
+      "name": "notListed",
+      "recorded": "synthetic: a refused step whose permission the result does not list is ignored",
+      "lines": [
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":2,\"state\":\"ERROR\",\"step_type\":\"tool\",\"tool_name\":\"run_command\",\"tool_info\":{\"name\":\"run_command\",\"parameters\":{\"CommandLine\":\"echo a\"},\"error\":{\"type\":\"TOOL_ERROR\",\"message\":\"permission check failed for unsandboxed \\\"echo a\\\": user denied permission to run command:\\necho a\\nDo not attempt to circumvent this denial by rephrasing the command, using alternative tools/scripts (e.g. python, sh, curl), or accessing the same target resource. Proceed without performing this action.\"}}}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":3,\"state\":\"ERROR\",\"step_type\":\"tool\",\"tool_name\":\"write_file\",\"tool_info\":{\"name\":\"write_file\",\"parameters\":{\"Path\":\"/tmp/demo/b.txt\"},\"error\":{\"type\":\"TOOL_ERROR\",\"message\":\"permission check failed for write_file \\\"/private/tmp/demo/b.txt\\\": user denied permission for write_file(/private/tmp/demo/b.txt)\\nDo not attempt to circumvent this denial by rephrasing the command, using alternative tools/scripts (e.g. python, sh, curl), or accessing the same target resource. Proceed without performing this action.\"}}}}",
+        "{\"event\":\"result\",\"result\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"status\":\"SUCCESS\",\"response\":\"\",\"num_turns\":1,\"denied_actions\":[{\"action\":\"command\",\"display_name\":\"RunCommand\"}]}}"
+      ],
+      "actions": [
+        {
+          "kind": "command",
+          "action": "command",
+          "displayName": "RunCommand",
+          "target": "echo a",
+          "rule": "command(echo a)"
+        }
+      ],
+      "canAllowAlways": true
+    },
+    {
+      "name": "notReported",
+      "recorded": "synthetic: a turn whose result lists nothing refused leaves no card, whatever its steps said",
+      "lines": [
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":2,\"state\":\"ERROR\",\"step_type\":\"tool\",\"tool_name\":\"run_command\",\"tool_info\":{\"name\":\"run_command\",\"parameters\":{\"CommandLine\":\"echo a\"},\"error\":{\"type\":\"TOOL_ERROR\",\"message\":\"permission check failed for unsandboxed \\\"echo a\\\": user denied permission to run command:\\necho a\\nDo not attempt to circumvent this denial by rephrasing the command, using alternative tools/scripts (e.g. python, sh, curl), or accessing the same target resource. Proceed without performing this action.\"}}}}",
+        "{\"event\":\"result\",\"result\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"status\":\"SUCCESS\",\"response\":\"\",\"num_turns\":1}}"
+      ],
+      "actions": []
+    },
+    {
+      "name": "listedOnly",
+      "recorded": "agy 1.4.5, default mode, command(echo hi) allowed, `echo hi `date``: the step ended DONE yet the result listed command",
+      "lines": [
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":2,\"state\":\"ACTIVE\",\"step_type\":\"tool\",\"tool_name\":\"run_command\",\"tool_info\":{\"name\":\"run_command\",\"parameters\":{\"CommandLine\":\"echo hi `date`\"}}}}",
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":2,\"state\":\"DONE\",\"step_type\":\"tool\",\"tool_name\":\"run_command\",\"duration_seconds\":1.767967,\"tool_info\":{\"name\":\"run_command\",\"parameters\":{\"CommandLine\":\"echo hi `date`\"}}}}",
+        "{\"event\":\"result\",\"result\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"status\":\"SUCCESS\",\"response\":\"\",\"duration_seconds\":7.20106,\"num_turns\":1,\"usage\":{\"input_tokens\":6750,\"output_tokens\":69,\"thinking_tokens\":22,\"cache_read_tokens\":0,\"total_tokens\":6819},\"denied_actions\":[{\"action\":\"command\",\"display_name\":\"RunCommand\"}]}}"
+      ],
+      "actions": [
+        {
+          "kind": "command",
+          "action": "command",
+          "displayName": "RunCommand"
+        }
+      ],
+      "canAllowAlways": false
+    },
+    {
+      "name": "writeToFile",
+      "recorded": "synthetic: agy 1.4.5's write_to_file tool is allowed by agy's write_file rule",
+      "lines": [
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":2,\"state\":\"ERROR\",\"step_type\":\"tool\",\"tool_name\":\"write_to_file\",\"tool_info\":{\"name\":\"write_to_file\",\"parameters\":{\"TargetFile\":\"/tmp/demo/a.txt\"},\"error\":{\"type\":\"TOOL_ERROR\",\"message\":\"permission check failed for write_file \\\"/private/tmp/demo/a.txt\\\": user denied permission for write_file(/private/tmp/demo/a.txt)\\nDo not attempt to circumvent this denial by rephrasing the command, using alternative tools/scripts (e.g. python, sh, curl), or accessing the same target resource. Proceed without performing this action.\"}}}}",
+        "{\"event\":\"result\",\"result\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"status\":\"SUCCESS\",\"response\":\"\",\"num_turns\":1,\"denied_actions\":[{\"action\":\"write_file\",\"display_name\":\"WriteFile\"}]}}"
+      ],
+      "actions": [
+        {
+          "kind": "file",
+          "action": "write_file",
+          "displayName": "WriteFile",
+          "target": "/private/tmp/demo/a.txt",
+          "rule": "write_file(/private/tmp/demo/a.txt)"
+        }
+      ],
+      "canAllowAlways": true
+    },
+    {
+      "name": "wrongRuleName",
+      "recorded": "synthetic: a denial that names a rule of another permission than its tool's gets no rule",
+      "lines": [
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":2,\"state\":\"ERROR\",\"step_type\":\"tool\",\"tool_name\":\"write_to_file\",\"tool_info\":{\"name\":\"write_to_file\",\"parameters\":{\"TargetFile\":\"/tmp/demo/a.txt\"},\"error\":{\"type\":\"TOOL_ERROR\",\"message\":\"permission check failed for write_file \\\"/private/tmp/demo/a.txt\\\": user denied permission for command(ls)\\nDo not attempt to circumvent this denial by rephrasing the command, using alternative tools/scripts (e.g. python, sh, curl), or accessing the same target resource. Proceed without performing this action.\"}}}}",
+        "{\"event\":\"result\",\"result\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"status\":\"SUCCESS\",\"response\":\"\",\"num_turns\":1,\"denied_actions\":[{\"action\":\"write_file\",\"display_name\":\"WriteFile\"}]}}"
+      ],
+      "actions": [
+        {
+          "kind": "file",
+          "action": "write_file",
+          "displayName": "WriteFile",
+          "target": "/tmp/demo/a.txt"
+        }
+      ],
+      "canAllowAlways": false
+    },
+    {
+      "name": "rootRule",
+      "recorded": "synthetic: a rule for the whole disk is never offered",
+      "lines": [
+        "{\"event\":\"step_update\",\"step_update\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"step_index\":2,\"state\":\"ERROR\",\"step_type\":\"tool\",\"tool_name\":\"write_file\",\"tool_info\":{\"name\":\"write_file\",\"parameters\":{\"Path\":\"/\"},\"error\":{\"type\":\"TOOL_ERROR\",\"message\":\"permission check failed for write_file \\\"/\\\": user denied permission for write_file(/)\\nDo not attempt to circumvent this denial by rephrasing the command, using alternative tools/scripts (e.g. python, sh, curl), or accessing the same target resource. Proceed without performing this action.\"}}}}",
+        "{\"event\":\"result\",\"result\":{\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"status\":\"SUCCESS\",\"response\":\"\",\"num_turns\":1,\"denied_actions\":[{\"action\":\"write_file\",\"display_name\":\"WriteFile\"}]}}"
+      ],
+      "actions": [
+        {
+          "kind": "file",
+          "action": "write_file",
+          "displayName": "WriteFile",
+          "target": "/"
+        }
+      ],
+      "canAllowAlways": false
     }
   ],
   "settings": {
@@ -191,7 +347,10 @@
       "add": [
         "command(echo hi)"
       ],
-      "after": "{\n  \"permissions\": {\n    \"allow\": [\n      \"command(echo hi)\"\n    ]\n  }\n}\n"
+      "after": "{\n  \"permissions\": {\n    \"allow\": [\n      \"command(echo hi)\"\n    ]\n  }\n}\n",
+      "created": [
+        "file"
+      ]
     },
     "edits": [
       {
@@ -211,7 +370,9 @@
           "command(curl -s https://example.com | grep -i '<title>')",
           "write_file(/private/tmp/demo/hello.txt)"
         ],
-        "afterRemove": "{\n  \"colorScheme\": \"tokyo night\",\n  \"model\": \"Gemini 4 Argon (Medium)\",\n  \"permissions\": {\n    \"allow\": [\n      \"command(ls)\",\n      \"command(find src api tools -maxdepth 2)\"\n    ]\n  },\n  \"trustedWorkspaces\": [\n    \"/Users/me/Work/NewHome\"\n  ]\n}\n"
+        "afterRemove": "{\n  \"colorScheme\": \"tokyo night\",\n  \"model\": \"Gemini 4 Argon (Medium)\",\n  \"permissions\": {\n    \"allow\": [\n      \"command(ls)\",\n      \"command(find src api tools -maxdepth 2)\"\n    ]\n  },\n  \"trustedWorkspaces\": [\n    \"/Users/me/Work/NewHome\"\n  ]\n}\n",
+        "created": [],
+        "afterPrune": "{\n  \"colorScheme\": \"tokyo night\",\n  \"model\": \"Gemini 4 Argon (Medium)\",\n  \"permissions\": {\n    \"allow\": [\n      \"command(ls)\",\n      \"command(find src api tools -maxdepth 2)\"\n    ]\n  },\n  \"trustedWorkspaces\": [\n    \"/Users/me/Work/NewHome\"\n  ]\n}\n"
       },
       {
         "name": "emptyList",
@@ -226,7 +387,9 @@
         "remove": [
           "command(echo hi)"
         ],
-        "afterRemove": "{\n  \"model\": \"x\",\n  \"permissions\": {\n    \"allow\": []\n  }\n}\n"
+        "afterRemove": "{\n  \"model\": \"x\",\n  \"permissions\": {\n    \"allow\": []\n  }\n}\n",
+        "created": [],
+        "afterPrune": "{\n  \"model\": \"x\",\n  \"permissions\": {\n    \"allow\": []\n  }\n}\n"
       },
       {
         "name": "noPermissions",
@@ -241,7 +404,11 @@
         "remove": [
           "command(echo hi)"
         ],
-        "afterRemove": "{\n  \"colorScheme\": \"tokyo night\",\n  \"trustedWorkspaces\": [],\n  \"permissions\": {\n    \"allow\": []\n  }\n}\n"
+        "afterRemove": "{\n  \"colorScheme\": \"tokyo night\",\n  \"trustedWorkspaces\": [],\n  \"permissions\": {\n    \"allow\": []\n  }\n}\n",
+        "created": [
+          "permissions"
+        ],
+        "afterPrune": "{\n  \"colorScheme\": \"tokyo night\",\n  \"trustedWorkspaces\": []\n}\n"
       },
       {
         "name": "noAllowTabs",
@@ -256,7 +423,11 @@
         "remove": [
           "command(echo hi)"
         ],
-        "afterRemove": "{\n\t\"permissions\": {\n\t\t\"deny\": [\"command(rm)\"],\n\t\t\"allow\": []\n\t},\n\t\"z\": {\"nested\": [1, 2.50, true, null, \"\\u00e9\"]}\n}"
+        "afterRemove": "{\n\t\"permissions\": {\n\t\t\"deny\": [\"command(rm)\"],\n\t\t\"allow\": []\n\t},\n\t\"z\": {\"nested\": [1, 2.50, true, null, \"\\u00e9\"]}\n}",
+        "created": [
+          "allow"
+        ],
+        "afterPrune": "{\n\t\"permissions\": {\n\t\t\"deny\": [\"command(rm)\"]\n\t},\n\t\"z\": {\"nested\": [1, 2.50, true, null, \"\\u00e9\"]}\n}"
       },
       {
         "name": "oneLine",
@@ -274,7 +445,9 @@
           "url_rule(é)",
           "command(git status)"
         ],
-        "afterRemove": "{\"model\":\"x\",\"permissions\":{\"allow\":[\"command(ls)\"]},\"unknown\":{\"a\":[]}}"
+        "afterRemove": "{\"model\":\"x\",\"permissions\":{\"allow\":[\"command(ls)\"]},\"unknown\":{\"a\":[]}}",
+        "created": [],
+        "afterPrune": "{\"model\":\"x\",\"permissions\":{\"allow\":[\"command(ls)\"]},\"unknown\":{\"a\":[]}}"
       },
       {
         "name": "emptyObject",
@@ -289,7 +462,11 @@
         "remove": [
           "command(echo hi)"
         ],
-        "afterRemove": "{\n  \"permissions\": {\n    \"allow\": []\n  }\n}"
+        "afterRemove": "{\n  \"permissions\": {\n    \"allow\": []\n  }\n}",
+        "created": [
+          "permissions"
+        ],
+        "afterPrune": "{}"
       },
       {
         "name": "alreadyThere",
@@ -302,7 +479,9 @@
         "remove": [
           "command(not there)"
         ],
-        "afterRemove": "{\n  \"colorScheme\": \"tokyo night\",\n  \"model\": \"Gemini 4 Argon (Medium)\",\n  \"permissions\": {\n    \"allow\": [\n      \"command(ls)\",\n      \"command(find src api tools -maxdepth 2)\"\n    ]\n  },\n  \"trustedWorkspaces\": [\n    \"/Users/me/Work/NewHome\"\n  ]\n}\n"
+        "afterRemove": "{\n  \"colorScheme\": \"tokyo night\",\n  \"model\": \"Gemini 4 Argon (Medium)\",\n  \"permissions\": {\n    \"allow\": [\n      \"command(ls)\",\n      \"command(find src api tools -maxdepth 2)\"\n    ]\n  },\n  \"trustedWorkspaces\": [\n    \"/Users/me/Work/NewHome\"\n  ]\n}\n",
+        "created": [],
+        "afterPrune": "{\n  \"colorScheme\": \"tokyo night\",\n  \"model\": \"Gemini 4 Argon (Medium)\",\n  \"permissions\": {\n    \"allow\": [\n      \"command(ls)\",\n      \"command(find src api tools -maxdepth 2)\"\n    ]\n  },\n  \"trustedWorkspaces\": [\n    \"/Users/me/Work/NewHome\"\n  ]\n}\n"
       },
       {
         "name": "removeMiddle",
@@ -313,7 +492,45 @@
         "remove": [
           "command(ls)"
         ],
-        "afterRemove": "{\n  \"colorScheme\": \"tokyo night\",\n  \"model\": \"Gemini 4 Argon (Medium)\",\n  \"permissions\": {\n    \"allow\": [\n      \"command(find src api tools -maxdepth 2)\"\n    ]\n  },\n  \"trustedWorkspaces\": [\n    \"/Users/me/Work/NewHome\"\n  ]\n}\n"
+        "afterRemove": "{\n  \"colorScheme\": \"tokyo night\",\n  \"model\": \"Gemini 4 Argon (Medium)\",\n  \"permissions\": {\n    \"allow\": [\n      \"command(find src api tools -maxdepth 2)\"\n    ]\n  },\n  \"trustedWorkspaces\": [\n    \"/Users/me/Work/NewHome\"\n  ]\n}\n",
+        "created": [],
+        "afterPrune": "{\n  \"colorScheme\": \"tokyo night\",\n  \"model\": \"Gemini 4 Argon (Medium)\",\n  \"permissions\": {\n    \"allow\": [\n      \"command(find src api tools -maxdepth 2)\"\n    ]\n  },\n  \"trustedWorkspaces\": [\n    \"/Users/me/Work/NewHome\"\n  ]\n}\n"
+      },
+      {
+        "name": "crlf",
+        "before": "{\r\n  \"model\": \"x\"\r\n}\r\n",
+        "add": [
+          "command(echo hi)"
+        ],
+        "added": [
+          "command(echo hi)"
+        ],
+        "created": [
+          "permissions"
+        ],
+        "afterAdd": "{\r\n  \"model\": \"x\",\r\n  \"permissions\": {\r\n    \"allow\": [\r\n      \"command(echo hi)\"\r\n    ]\r\n  }\r\n}\r\n",
+        "remove": [
+          "command(echo hi)"
+        ],
+        "afterRemove": "{\r\n  \"model\": \"x\",\r\n  \"permissions\": {\r\n    \"allow\": []\r\n  }\r\n}\r\n",
+        "afterPrune": "{\r\n  \"model\": \"x\"\r\n}\r\n"
+      },
+      {
+        "name": "crlfEmptyList",
+        "before": "{\r\n  \"permissions\": {\r\n    \"allow\": []\r\n  }\r\n}\r\n",
+        "add": [
+          "command(echo hi)"
+        ],
+        "added": [
+          "command(echo hi)"
+        ],
+        "created": [],
+        "afterAdd": "{\r\n  \"permissions\": {\r\n    \"allow\": [\r\n      \"command(echo hi)\"\r\n    ]\r\n  }\r\n}\r\n",
+        "remove": [
+          "command(echo hi)"
+        ],
+        "afterRemove": "{\r\n  \"permissions\": {\r\n    \"allow\": []\r\n  }\r\n}\r\n",
+        "afterPrune": "{\r\n  \"permissions\": {\r\n    \"allow\": []\r\n  }\r\n}\r\n"
       }
     ],
     "refused": [
@@ -341,11 +558,17 @@
         "name": "allowNotArray",
         "before": "{\"permissions\": {\"allow\": \"command(ls)\"}}",
         "error": "allowNotArray"
+      },
+      {
+        "name": "bom",
+        "before": "﻿{\"permissions\": {\"allow\": []}}",
+        "error": "notJSON"
       }
-    ]
+    ],
+    "about": "created: what adding made that was not there (file, permissions, allow); afterPrune: after removing, what the app made is taken out again once it is empty, so the bytes are as before (a created file that ends {} is deleted)."
   },
   "remote": {
-    "about": "Remote workspaces (docs/remote-workspaces.md, /v2): the host's run reports the card as a RunEvent of type antigravityPermission; the client's continuation start carries antigravityGrant beside the request, and the host adds only rules it reported (else 403).",
+    "about": "Remote workspaces (docs/remote-workspaces.md, /v2): the host's run reports the card as a RunEvent of type antigravityPermission; the client's continuation start carries antigravityGrant beside the request, and the host adds only rules it reported (else 403). A reported card's rules are single-use: the first accepted grant takes them out of the host's cache. temporary:false is refused unless the host allows full access from other computers.",
     "pollEvent": {
       "protocol": 2,
       "cursor": 2,
@@ -413,10 +636,27 @@
         ],
         "temporary": true
       }
-    }
+    },
+    "refusals": [
+      {
+        "case": "rules the host did not report, or a card already used",
+        "status": 403,
+        "error": "remote.host.error.antigravityRules"
+      },
+      {
+        "case": "temporary false while the host does not allow full access",
+        "status": 403,
+        "error": "remote.host.error.antigravityAlways"
+      },
+      {
+        "case": "temporary false for a once-only rule (host allows full access)",
+        "status": 409,
+        "error": "remote.error.antigravityOnceOnly"
+      }
+    ]
   },
   "mobile": {
-    "about": "docs/mobile-remote.md: the card is one MobilePermission (toolName AntigravityPermission) with an optional antigravity object; POST /m1/sessions/{id}/permission answers it, always only with allow.",
+    "about": "docs/mobile-remote.md: the card is one MobilePermission (toolName AntigravityPermission) with an optional antigravity object; POST /m1/sessions/{id}/permission answers it, always only with allow. onceOnly marks an action whose rule may be allowed only once: a card with one offers no 항상 허용, and always on it is refused (409 remote.error.antigravityOnceOnly).",
     "permission": {
       "id": "agy-0f6c1d2e-1111-4222-8333-444455556666",
       "runId": "6B1F0C1E-2A3B-4C5D-8E9F-0A1B2C3D4E5F",
@@ -442,7 +682,8 @@
             "action": "command",
             "displayName": "RunCommand",
             "target": "curl -s https://example.com | grep -i '<title>'",
-            "rule": "command(curl -s https://example.com | grep -i '<title>')"
+            "rule": "command(curl -s https://example.com | grep -i '<title>')",
+            "onceOnly": true
           },
           {
             "kind": "other",
@@ -486,6 +727,371 @@
           "always": true
         },
         "status": 400
+      }
+    ],
+    "permissionPlain": {
+      "stream": "command",
+      "about": "what the Mac sends for the recorded `command` stream's card (id, runId and receivedAt as in permission): 항상 허용 is offered",
+      "permission": {
+        "id": "agy-0f6c1d2e-1111-4222-8333-444455556666",
+        "runId": "6B1F0C1E-2A3B-4C5D-8E9F-0A1B2C3D4E5F",
+        "toolName": "AntigravityPermission",
+        "title": "Antigravity asks you to allow this",
+        "fields": [
+          {
+            "label": "Command",
+            "value": "date +%Y"
+          }
+        ],
+        "summary": "date +%Y",
+        "canAllow": true,
+        "receivedAt": "2026-10-22T04:00:00Z",
+        "antigravity": {
+          "actions": [
+            {
+              "kind": "command",
+              "action": "command",
+              "displayName": "RunCommand",
+              "target": "date +%Y",
+              "rule": "command(date +%Y)"
+            }
+          ]
+        }
+      }
+    },
+    "refusals": [
+      {
+        "case": "always on a card with a once-only rule",
+        "status": 409,
+        "error": "remote.error.antigravityOnceOnly"
+      }
+    ]
+  },
+  "tools": {
+    "about": "The closed mapping from an agy tool to the permission its rule names; any other tool gets no rule.",
+    "map": {
+      "run_command": "command",
+      "write_file": "write_file",
+      "write_to_file": "write_file",
+      "replace_file_content": "write_file",
+      "multi_replace_file_content": "write_file",
+      "sed_file": "write_file",
+      "notebook_edit": "write_file",
+      "view_file": "read_file",
+      "read_file": "read_file",
+      "list_dir": "read_file",
+      "read_url_content": "read_url"
+    },
+    "unmapped": [
+      "call_mcp_tool",
+      "open_browser_url",
+      "execute_browser_javascript",
+      "notebook_execution",
+      "search_web"
+    ]
+  },
+  "rules": {
+    "about": "AntigravityRuleSafety: refused rules are never offered or added; once rules are offered and added only for the follow-up run (no 항상 허용; a host refuses always with 409 remote.error.antigravityOnceOnly); always rules may be kept.",
+    "cases": [
+      {
+        "rule": "command(git status)",
+        "verdict": "always"
+      },
+      {
+        "rule": "command(ls -la)",
+        "verdict": "always"
+      },
+      {
+        "rule": "command(npm test)",
+        "verdict": "always"
+      },
+      {
+        "rule": "command(chmod 755 build.sh)",
+        "verdict": "always"
+      },
+      {
+        "rule": "command(git push origin main)",
+        "verdict": "always"
+      },
+      {
+        "rule": "command(echo hi)",
+        "verdict": "always"
+      },
+      {
+        "rule": "write_file(/private/tmp/demo/hello.txt)",
+        "verdict": "always"
+      },
+      {
+        "rule": "write_file(C:\\Users\\me\\notes.txt)",
+        "verdict": "always"
+      },
+      {
+        "rule": "read_file(/Users/me/notes)",
+        "verdict": "always"
+      },
+      {
+        "rule": "read_url(example.com)",
+        "verdict": "always"
+      },
+      {
+        "rule": "command(curl -s https://example.com | grep -i '<title>')",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(echo hi && date)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(echo hi; date)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(echo hi || true)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(echo hi > out.txt)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(sort < in.txt)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(echo `date`)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(sleep 5 &)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(rm -rf build)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(rm build/a.txt)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(/bin/rm x)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(sudo ls)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(dd if=/dev/zero of=disk.img)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(mkfs.ext4 /dev/sdb1)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(chmod -R 755 .)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(chown -R me .)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(chmod --recursive 700 x)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(git push --force origin main)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(git push -f)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(git push --force-with-lease)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(git push origin +main)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(git reset --hard HEAD~1)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(git clean -fdx)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(kill 123)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(killall node)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(pkill -f node)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(shutdown -h now)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(reboot)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(find . -name x -delete)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(Remove-Item -Recurse build)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(del /s build)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(taskkill /f /im node.exe)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(RM.EXE x)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(bash -c \"rm -rf x\")",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(eval x)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(rmdir build)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(unlink a)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(shred a)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(su root)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(doas ls)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(halt)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(poweroff)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(*)",
+        "verdict": "refused"
+      },
+      {
+        "rule": "command(ls *)",
+        "verdict": "refused"
+      },
+      {
+        "rule": "command( )",
+        "verdict": "refused"
+      },
+      {
+        "rule": "command()",
+        "verdict": "refused"
+      },
+      {
+        "rule": "write_file(/)",
+        "verdict": "refused"
+      },
+      {
+        "rule": "write_file(//)",
+        "verdict": "refused"
+      },
+      {
+        "rule": "write_file(~)",
+        "verdict": "refused"
+      },
+      {
+        "rule": "write_file(~/)",
+        "verdict": "refused"
+      },
+      {
+        "rule": "write_file(*)",
+        "verdict": "refused"
+      },
+      {
+        "rule": "write_file(C:\\)",
+        "verdict": "refused"
+      },
+      {
+        "rule": "write_file(/tmp/*)",
+        "verdict": "refused"
+      },
+      {
+        "rule": "read_url(*)",
+        "verdict": "refused"
+      },
+      {
+        "rule": "read_url(*.example.com)",
+        "verdict": "refused"
+      },
+      {
+        "rule": "command(echo (x))",
+        "verdict": "refused"
+      },
+      {
+        "rule": "command(python3 -c 'print(1)')",
+        "verdict": "refused"
+      },
+      {
+        "rule": "command(echo $(date))",
+        "verdict": "refused"
+      },
+      {
+        "rule": "mcp(server/tool)",
+        "verdict": "refused"
+      },
+      {
+        "rule": "execute_url(example.com)",
+        "verdict": "refused"
+      },
+      {
+        "rule": "url_rule(x)",
+        "verdict": "refused"
+      },
+      {
+        "rule": "Command(ls)",
+        "verdict": "refused"
+      },
+      {
+        "rule": "command(a\nb)",
+        "verdict": "refused"
+      },
+      {
+        "rule": "command(ls",
+        "verdict": "refused"
+      },
+      {
+        "rule": "rm -rf /",
+        "verdict": "refused"
       }
     ]
   }
