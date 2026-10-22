@@ -149,6 +149,7 @@ public actor MobileRemoteService {
     /// Clock for `pushViewing` and push timestamps; tests move it.
     var pushClock: @Sendable () -> Date = { Date() }
     private var pushPlanner = MobilePushPlanner()
+    private let pushStampFormatter = ISO8601DateFormatter()
     private var pushTransport: any MobilePushTransport = MobilePushHTTPTransport()
     /// Waits before the second and third attempt; a relay's Retry-After (up to 30 s) wins when longer.
     private var pushRetryDelays: [TimeInterval] = [2, 8]
@@ -1446,17 +1447,23 @@ extension MobileRemoteService {
         pushTransport = transport; pushRetryDelays = retryDelays; pushClock = now
     }
 
+    /// Phone remote access came back on: the next `pushObserve` only sets the planner's baseline,
+    /// so what changed while the app handed nothing on is not pushed. The app calls it in the same
+    /// ordered chain as its observations, right before the first one after the switch.
+    public func pushRestart() {
+        pushPlanner.reset()
+    }
+
     /// Feeds the planner what the panes show now and sends what it decides, sealed per phone.
     /// Best effort: a phone that is off or a relay that is down only misses the notification,
     /// and failures go to the log, never to the screen.
     @discardableResult
     public func pushObserve(_ panes: [MobilePushPane]) async -> [Task<Void, Never>] {
         let now = pushClock()
-        let stamp = ISO8601DateFormatter().string(from: now)
+        let stamp = pushStampFormatter.string(from: now)
         let messages = pushPlanner.observe(panes, hostId: hostId, hostName: hostName, at: stamp)
-        // Off, the planner still watches, so turning phone remote access on later does not
-        // send everything that happened meanwhile; only delivery waits for the switch.
-        guard settings.enabled, !messages.isEmpty else { return [] }
+        // Off or shut down, nothing goes out whatever the caller hands on.
+        guard settings.enabled, !disposed, !messages.isEmpty else { return [] }
         let devices = deviceRegistry.pushDevices()
         guard !devices.isEmpty else { return [] }
         guard let relay = relayURL, let url = MobilePushRelay.sendURL(relay), let hostToken = try? loadOrCreateControlToken() else {

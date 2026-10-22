@@ -1101,9 +1101,9 @@ extension MobileRemoteTests {
         #expect(MobileDeviceRegistry(url: directory.appendingPathComponent("devices.json")).pushDevices().isEmpty)
     }
 
-    /// With phone remote access off the planner still watches, so turning it on later
-    /// sends only what is new, not everything that happened meanwhile.
-    @Test func nothingIsSentWhilePhoneRemoteAccessIsOff() async throws {
+    /// Off, nothing goes out. Switched back on, the app starts the planner over (`pushRestart`)
+    /// with the panes as they are, so what changed meanwhile is not replayed; only what is new from then.
+    @Test func nothingIsSentWhilePhoneRemoteAccessIsOffAndNothingIsReplayedWhenItComesBack() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-push-" + UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let (service, seal) = try Self.pushService(directory)
@@ -1112,14 +1112,20 @@ extension MobileRemoteTests {
         await service.attach(host)
         let transport = RecordingPushTransport()
         await service.setPushTransport(transport, retryDelays: [0, 0], now: { Date(timeIntervalSince1970: 1_000) })
+        await service.setSettingsWithoutStarting(MobileRemoteSettings(enabled: true))
         _ = try await call(service, "POST", "/m1/push/register", body: ["handle": seal.handle, "kinds": ["permission"]], device: seal.clientId)
         var pane = MobilePushPane(sessionId: "pane-1", workspace: "demo", title: "Claude 1", status: "running", preview: nil, requests: [], signInLost: false)
         for task in await service.pushObserve([pane]) { await task.value }
+
+        await service.setSettingsWithoutStarting(MobileRemoteSettings(enabled: false))
         pane.requests = [MobilePushRequest(id: "a", runId: "r", kind: .permission, summary: "", buttons: .claude)]
         #expect(await service.pushObserve([pane]).isEmpty)
         #expect(transport.sent.isEmpty)
 
+        // The app hands nothing on while off; on again, it starts over with the panes as they are.
         await service.setSettingsWithoutStarting(MobileRemoteSettings(enabled: true))
+        pane.requests.append(MobilePushRequest(id: "c", runId: "r", kind: .permission, summary: "", buttons: .claude))
+        await service.pushRestart()
         #expect(await service.pushObserve([pane]).isEmpty)
         pane.requests.append(MobilePushRequest(id: "b", runId: "r", kind: .permission, summary: "", buttons: .claude))
         for task in await service.pushObserve([pane]) { await task.value }
@@ -1127,6 +1133,25 @@ extension MobileRemoteTests {
         let key = try #require(MobilePushSeal.key(tokenHash: seal.tokenHash, clientId: seal.clientId))
         let plaintext = try #require(transport.sent.first.flatMap { MobilePushSeal.open($0.request.payload, key: key, handle: seal.handle) })
         #expect(try JSONDecoder().decode(MobilePushMessage.self, from: plaintext).id == "request:r:b")
+    }
+
+    @Test func nothingIsSentAfterShutdown() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-push-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let (service, seal) = try Self.pushService(directory)
+        let host = FakeMobileHost()  // the service holds its delegate weakly
+        defer { withExtendedLifetime(host) {} }
+        await service.attach(host)
+        let transport = RecordingPushTransport()
+        await service.setPushTransport(transport, retryDelays: [0, 0], now: { Date(timeIntervalSince1970: 1_000) })
+        await service.setSettingsWithoutStarting(MobileRemoteSettings(enabled: true))
+        _ = try await call(service, "POST", "/m1/push/register", body: ["handle": seal.handle, "kinds": ["permission"]], device: seal.clientId)
+        var pane = MobilePushPane(sessionId: "pane-1", workspace: "demo", title: "Claude 1", status: "running", preview: nil, requests: [], signInLost: false)
+        for task in await service.pushObserve([pane]) { await task.value }
+        await service.shutdown()
+        pane.requests = [MobilePushRequest(id: "a", runId: "r", kind: .permission, summary: "", buttons: .claude)]
+        #expect(await service.pushObserve([pane]).isEmpty)
+        #expect(transport.sent.isEmpty)
     }
 }
 

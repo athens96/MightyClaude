@@ -205,3 +205,83 @@ private final class PushHits: @unchecked Sendable {
     var count: Int { lock.lock(); defer { lock.unlock() }; return value }
     func hit() { lock.lock(); value += 1; lock.unlock() }
 }
+
+/// What the Mac hands the planner (`MobilePushPane.project`), read from what the app holds.
+struct MobilePushProjectionTests {
+    static let workspaces = [Workspace(id: "w1", name: "demo", path: "/tmp/demo")]
+
+    static func project(_ sessions: [RunSession], permissions: [String: [ToolPermissionRequest]] = [:], autoAllowed: Set<String> = [],
+                        antigravity: AntigravityPermissionBoard = AntigravityPermissionBoard(), login: [String: String] = [:]) -> [MobilePushPane] {
+        MobilePushPane.project(sessions: sessions, workspaces: workspaces, permissions: permissions,
+                               autoAllowed: { sessionId, request in autoAllowed.contains(sessionId + "|" + request.id) },
+                               antigravity: antigravity, login: login)
+    }
+
+    @Test func aWaitingPaneIsStillRunningAndCarriesItsPendingRequests() {
+        let pane = WorkDashboardTests.pane("p1", status: "running", logs: [
+            LogEntry(kind: "assistant", text: "the last words"),
+            LogEntry(kind: "assistant", text: "Bash", activity: AgentActivity(provider: "claude", kind: "tool", state: "running", summary: "Bash")),
+            LogEntry(kind: "assistant", text: ""),
+        ])
+        let permissions = ["p1": [WorkDashboardTests.request("a"), WorkDashboardTests.request("q", question: true), WorkDashboardTests.request("done", state: "allowed")]]
+        let panes = Self.project([pane], permissions: permissions)
+        #expect(panes.count == 1)
+        let first = panes.first
+        #expect(first?.status == "running")
+        #expect(first?.workspace == "demo" && first?.title == "pane p1")
+        #expect(first?.preview == "the last words")
+        #expect(first?.requests.map(\.id) == ["a", "q"])
+        #expect(first?.requests.map(\.kind) == [.permission, .question])
+        #expect(first?.signInLost == false)
+    }
+
+    @Test func aRequestAStyleIsAnsweringOnItsOwnIsLeftOut() {
+        let permissions = ["p1": [WorkDashboardTests.request("auto"), WorkDashboardTests.request("ask")]]
+        let panes = Self.project([WorkDashboardTests.pane("p1", status: "running")], permissions: permissions, autoAllowed: ["p1|auto"])
+        #expect(panes.first?.requests.map(\.id) == ["ask"])
+    }
+
+    @Test func anAntigravityCardAndALostSignInAreIncluded() {
+        var board = AntigravityPermissionBoard()
+        let card = AntigravityPermissionRequest(id: "agy-1", runId: "r", actions: [AntigravityDeniedAction(kind: .command, action: "command", displayName: "RunCommand", target: "ls", rule: "command(ls)")])
+        board.received(card, sessionId: "p1")
+        let panes = Self.project([WorkDashboardTests.pane("p1", provider: "gemini", status: "completed"), WorkDashboardTests.pane("p2", status: "error")],
+                                 antigravity: board, login: ["p2": "claude"])
+        #expect(panes.map(\.sessionId) == ["p1", "p2"])
+        #expect(panes[0].requests.map(\.id) == ["agy-1"])
+        #expect(panes[0].requests.first?.kind == .permission)
+        #expect(panes[0].signInLost == false && panes[1].signInLost == true)
+    }
+
+    @Test func filesPanesAndOtherComputersPanesAreLeftOut() {
+        let remote = Workspace(id: "w2", name: "elsewhere", path: "/tmp/elsewhere", remote: RemoteWorkspaceReference(connectionId: "c", workspaceId: "rw", hostName: "h"))
+        let sessions = [WorkDashboardTests.pane("p1"), WorkDashboardTests.pane(FilePaneKind.paneId(workspaceId: "w1"), kind: FilePaneKind.kind), WorkDashboardTests.pane("r1", workspace: "w2")]
+        let panes = MobilePushPane.project(sessions: sessions, workspaces: Self.workspaces + [remote], permissions: [:], autoAllowed: { _, _ in false },
+                                           antigravity: AntigravityPermissionBoard(), login: [:])
+        #expect(panes.map(\.sessionId) == ["p1"])
+    }
+
+    @Test func thePreviewIsCut() {
+        let pane = WorkDashboardTests.pane("p1", logs: [LogEntry(kind: "assistant", text: String(repeating: "가", count: 500))])
+        #expect(Self.project([pane]).first?.preview?.count == MobilePushPane.previewLimit)
+    }
+}
+
+struct MobilePushPlannerResetTests {
+    /// Starting over (phone remote access switched back on) replays nothing that changed meanwhile,
+    /// and a pane's run numbers keep counting so an id already sent is not reused.
+    @Test func startingOverReplaysNothingAndKeepsCounting() {
+        var planner = MobilePushPlanner()
+        var pane = MobilePushPane(sessionId: "p", workspace: "w", title: "t", status: "running", preview: nil, requests: [], signInLost: false)
+        _ = planner.observe([pane], hostId: "h", hostName: "n", at: "a")
+        pane.status = "completed"
+        #expect(planner.observe([pane], hostId: "h", hostName: "n", at: "a").map(\.id) == ["run:p:1:completed"])
+        planner.reset()
+        pane.status = "running"
+        pane.requests = [MobilePushRequest(id: "x", runId: "r", kind: .permission, summary: "", buttons: .claude)]
+        #expect(planner.observe([pane], hostId: "h", hostName: "n", at: "a").isEmpty)
+        pane.requests = []
+        pane.status = "completed"
+        #expect(planner.observe([pane], hostId: "h", hostName: "n", at: "a").map(\.id) == ["run:p:2:completed"])
+    }
+}

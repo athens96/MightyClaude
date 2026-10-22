@@ -117,6 +117,38 @@ public struct MobilePushPane: Codable, Sendable, Equatable {
     }
 }
 
+extension MobilePushPane {
+    /// The longest preview handed to the planner (it clips again for the message).
+    public static let previewLimit = 400
+
+    /// The panes as the planner sees them, from what the app holds: only the panes the phone can see
+    /// (no files panes, no other computer's workspaces); the pending requests minus the ones a style
+    /// is answering on its own (`autoAllowed`), then the pane's Antigravity card; a confirmed lost
+    /// sign-in (`login`, never a raw auth failure); and the raw run status, so a pane waiting on a
+    /// permission is still "running".
+    public static func project(sessions: [RunSession], workspaces: [Workspace], permissions: [String: [ToolPermissionRequest]],
+                               autoAllowed: (_ sessionId: String, _ request: ToolPermissionRequest) -> Bool,
+                               antigravity: AntigravityPermissionBoard, login: [String: String]) -> [MobilePushPane] {
+        let names = Dictionary(workspaces.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+        return FilePaneKind.phoneVisible(RemoteWorkspacePhone.sessions(sessions, workspaces: workspaces)).map { session in
+            var requests = (permissions[session.id] ?? [])
+                .filter { $0.state == "pending" && !autoAllowed(session.id, $0) }
+                .map { MobilePushRequest(MobilePermission(request: $0)) }
+            if let card = antigravity[session.id] { requests.append(MobilePushRequest(MobilePermission(antigravity: card))) }
+            return MobilePushPane(sessionId: session.id, workspace: names[session.workspaceId] ?? "", title: session.title, status: session.status,
+                                  preview: MobileRemoteSupport.previewLine(session).map { String($0.text.prefix(previewLimit)) },
+                                  requests: requests, signInLost: login[session.id] != nil)
+        }
+    }
+}
+
+extension MobileRemoteSupport {
+    /// The line a pane's preview shows on the phone and in a push: the newest entry with text that is not a tool activity.
+    public static func previewLine(_ session: RunSession) -> LogEntry? {
+        session.logs.last(where: { $0.activity == nil && !$0.text.isEmpty })
+    }
+}
+
 public struct MobilePushPermission: Codable, Sendable, Equatable {
     public var requestId: String
     public var runId: String
@@ -177,6 +209,13 @@ public struct MobilePushPlanner: Sendable {
     private var sentSet = Set<String>()
 
     public init() {}
+
+    /// Starts over from the next observation, which only sets the baseline: what changed while
+    /// nothing was watched is not pushed. Run and sign-in numbers and the sent ids are kept, so an
+    /// id already pushed is never reused.
+    public mutating func reset() {
+        baseline = false; memory = [:]
+    }
 
     public mutating func observe(_ panes: [MobilePushPane], hostId: String, hostName: String, at: String) -> [MobilePushMessage] {
         var messages: [MobilePushMessage] = []

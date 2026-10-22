@@ -243,6 +243,7 @@ extension AppStore {
 
     func shutdownMobileRemote() async {
         mobileRetryTask?.cancel(); mobileSubscriptions.removeAll()
+        mobilePushTask?.cancel(); mobilePushTask = nil
         await mobileRemote.shutdown()
     }
 
@@ -353,7 +354,7 @@ extension AppStore {
         // The sidebar's own test for a child waiting on a human (`WorkspaceView.paneRow`).
         let asksHuman = WorkDashboard.attention((permissions ?? toolPermissions)[session.id], antigravity: (antigravity ?? antigravityBoard)[session.id]).total > 0
         let child = MobileRemoteSupport.childLink(sessionId: session.id, children: children ?? delegationChildren, asksHuman: asksHuman)
-        let last = session.logs.last(where: { $0.activity == nil && !$0.text.isEmpty })
+        let last = MobileRemoteSupport.previewLine(session)
         return MobileSessionSummary(
             id: session.id, workspaceId: session.workspaceId, title: session.title, kind: session.kind, provider: session.provider, model: session.model,
             status: session.status, revision: revision, updatedAt: session.logs.last?.timestamp ?? session.createdAt,
