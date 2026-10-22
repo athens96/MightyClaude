@@ -797,7 +797,7 @@
     ]
   },
   "rules": {
-    "about": "AntigravityRuleSafety: refused rules are never offered or added; once rules are offered and added only for the follow-up run (no 항상 허용; a host refuses always with 409 remote.error.antigravityOnceOnly); always rules may be kept. File rules (write_file, read_file) need an absolute path and are refused when the path is inside or equal to a protected folder (agy's own ~/.gemini, the app's data folder that holds its ledger) or an ancestor of one; the cases are judged with `context.protected` as the protected folders, compared without case, with / and \\ alike and . and .. taken out (the apps add the real folders, symlinks resolved). A command that mentions .gemini is once only. A once rule carries its reason: risky (chains, pipes, redirects, substitutes, background, a destructive program), interpreter (a shell, interpreter or wrapper alone or with an inline-code flag, judged by the first word after any leading VAR=x or env VAR=x; wrappers such as npx, xargs, timeout are once whatever follows) or agyFolder (mentions .gemini), checked in that order.",
+    "about": "AntigravityRuleSafety: refused rules are never offered or added; once rules are offered and added only for the follow-up run (no 항상 허용; a host refuses always with 409 remote.error.antigravityOnceOnly); always rules may be kept. File rules (write_file, read_file) need an absolute path and are refused when the path is inside or equal to a protected folder (agy's own ~/.gemini, the app's data folder that holds its ledger) or an ancestor of one; the cases are judged with `context.protected` as the protected folders, compared without case, with / and \\ alike and . and .. taken out (the apps add the real folders, symlinks resolved). A command that mentions .gemini is once only. A once rule carries its reason: risky (chains, pipes, redirects, substitutes, background, a destructive program), interpreter (a shell, interpreter or wrapper alone or with an inline-code flag, judged by the first word after any leading VAR=x or env VAR=x; wrappers such as npx, xargs, timeout are once whatever follows) or agyFolder (mentions .gemini), checked in that order. An interpreter whose own options run out without a script (bash -l, python3 -u) is once too, unless they only ask for its version or help; nothing but VAR=x is once; empty quoted words are dropped; awk and gawk take their program as their first argument, so they are once whatever follows.",
     "cases": [
       {
         "rule": "command(git status)",
@@ -1472,6 +1472,127 @@
       {
         "rule": "command(python3 -c \"print(1)\")",
         "verdict": "refused"
+      },
+      {
+        "rule": "command(bash -l)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(bash -i)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(bash --norc)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(python3 -u)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(node --inspect)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(env FOO=1)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(FOO=1)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(py -c \"x\")",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(awk '{print}')",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(gawk -f prog.awk data)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(command -p ls)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(builtin cd)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(caffeinate make)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(arch -x86_64 make)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(stdbuf -oL make)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(wsl ls)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(setsid make)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(script log.txt)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command('' bash)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(\"\" python3 -u)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(bash --version)",
+        "verdict": "always"
+      },
+      {
+        "rule": "command(python3 -V)",
+        "verdict": "always"
+      },
+      {
+        "rule": "command(node --help)",
+        "verdict": "always"
+      },
+      {
+        "rule": "command(cmd /q)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(python3 /Users/me/project/run.py)",
+        "verdict": "always"
       }
     ],
     "context": {
