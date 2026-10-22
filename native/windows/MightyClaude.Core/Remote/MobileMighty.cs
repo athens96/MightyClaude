@@ -205,14 +205,16 @@ public sealed record MobileAntigravityCard(IReadOnlyList<MobileAntigravityAction
 {
     public const string ToolName = "AntigravityPermission";
     public static MobileAntigravityCard From(AntigravityPermissionRequest card) =>
-        new(card.Actions.Select(a => new MobileAntigravityAction(a.Kind, a.Action, a.DisplayName, a.Target, a.Rule, a.OnceOnly ? true : null)).ToArray());
+        new(card.Actions.Select(a => new MobileAntigravityAction(a.Kind, a.Action, a.DisplayName, a.Target, a.Rule, a.OnceOnly ? true : null,
+            a.OnceOnlyReason is { } reason ? JsonNamingPolicy.CamelCase.ConvertName(reason.ToString()) : null)).ToArray());
 }
 /// <summary>
 /// One action of <see cref="MobileAntigravityCard"/> (M/MightyCore/Remote/MobileRemoteModels.swift MobileAntigravityAction). <c>OnceOnly</c> is
 /// true when its rule may be allowed only once (it chains, pipes, redirects or runs a destructive command): the card offers no 항상 허용 and
-/// the host refuses always; absent otherwise.
+/// the host refuses always; absent otherwise. <c>OnceOnlyReason</c> (risky, interpreter or agyFolder) says why and picks the card's words; a
+/// phone that does not know a reason shows the risky words.
 /// </summary>
-public sealed record MobileAntigravityAction(string Kind, string Action, string DisplayName, string? Target = null, string? Rule = null, bool? OnceOnly = null);
+public sealed record MobileAntigravityAction(string Kind, string Action, string DisplayName, string? Target = null, string? Rule = null, bool? OnceOnly = null, string? OnceOnlyReason = null);
 /// <summary>A pending request as the phone's card shows it. <c>Plan</c> is the Markdown of a Claude plan approval, answered with <c>POST …/plan</c>.
 /// <c>Antigravity</c> is an Antigravity card (the actions a finished turn was refused), answered with <c>POST …/permission</c> and <c>always</c>; absent for any other request.</summary>
 public sealed record MobilePermission(string Id, string RunId, string ToolName, string Title, string? Headline, IReadOnlyList<MobilePermissionField> Fields, string Summary, bool CanAllow, UserQuestionnaire? Questionnaire = null, string? Plan = null, string? ReceivedAt = null, MobileAntigravityCard? Antigravity = null)

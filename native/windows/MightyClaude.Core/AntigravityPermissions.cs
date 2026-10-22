@@ -25,6 +25,8 @@ public sealed record AntigravityDeniedAction([property: JsonConverter(typeof(Ant
     public static string KindOf(string? value) => value is not null && Kinds.Contains(value) ? value : "other";
     /// <summary>Its rule may be allowed only for the follow-up run (<see cref="AntigravityRuleSafety"/>).</summary>
     [JsonIgnore] public bool OnceOnly => Rule is { } rule && AntigravityRuleSafety.Verdict(rule) == AntigravityRuleVerdict.Once;
+    /// <summary>Why it may be allowed only once; null when it may be kept (or has no rule).</summary>
+    [JsonIgnore] public AntigravityOnceReason? OnceOnlyReason => OnceOnly && Rule is { } rule ? AntigravityRuleSafety.OnceReasonOf(rule) : null;
 }
 
 /// <summary>Reads an action's kind as the Mac's decoder does: a string, and one it does not know is <c>other</c>.</summary>
@@ -81,6 +83,13 @@ public sealed record AntigravityAllowGrant(string RequestId, IReadOnlyList<strin
 public enum AntigravityRuleVerdict { Refused, Once, Always }
 
 /// <summary>
+/// Why a command rule may be allowed only once (M/MightyCore/AntigravityPermissions.swift OnceReason): Risky chains, pipes, redirects,
+/// substitutes, backgrounds or runs a destructive program; Interpreter is a shell, interpreter or wrapper alone or with inline code
+/// (command(bash) would allow bash -c …); AgyFolder names agy's own .gemini folder.
+/// </summary>
+public enum AntigravityOnceReason { Risky, Interpreter, AgyFolder }
+
+/// <summary>
 /// Which rules an allow may add (M/MightyCore/AntigravityPermissions.swift AntigravityRuleSafety). agy's rules are prefixes (probed on agy
 /// 1.4.5: command(echo hi) allows "echo hi there", write_file(&lt;folder&gt;) everything in it, command(*) every command) and a temporary
 /// one applies to every agy run on the computer while it is in place, so they are kept narrow: a closed mapping from tool to permission,
@@ -106,6 +115,59 @@ public static class AntigravityRuleSafety
         "rm", "rmdir", "unlink", "shred", "dd", "sudo", "su", "doas", "kill", "killall", "pkill", "shutdown", "reboot", "halt", "poweroff", "eval",
         "del", "erase", "rd", "format", "remove-item", "taskkill", "stop-process", "stop-computer", "restart-computer",
     };
+    /// <summary>Why a rule may be allowed only once, checked in this order; null for a rule that may be kept or is refused.</summary>
+    public static AntigravityOnceReason? OnceReasonOf(string rule, IReadOnlyList<string>? protectedFolders = null) =>
+        Verdict(rule, protectedFolders) == AntigravityRuleVerdict.Once && Parts(rule) is { } parts ? CommandReason(parts.Argument) : null;
+
+    internal static AntigravityOnceReason? CommandReason(string command) =>
+        Risky(command) ? AntigravityOnceReason.Risky
+        : RunsCode(command) ? AntigravityOnceReason.Interpreter
+        : command.Contains(".gemini", StringComparison.OrdinalIgnoreCase) ? AntigravityOnceReason.AgyFolder
+        : null;
+
+    /// <summary>Shells and interpreters: once alone or with an inline-code flag.</summary>
+    public static readonly IReadOnlySet<string> Interpreters = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "bash", "sh", "zsh", "dash", "fish", "ksh", "csh", "tcsh", "pwsh", "powershell", "cmd", "python", "python3", "node", "deno", "bun",
+        "ruby", "perl", "php", "lua", "osascript",
+    };
+    /// <summary>Programs that run the command after them: once whatever follows.</summary>
+    public static readonly IReadOnlySet<string> Wrappers = new HashSet<string>(StringComparer.Ordinal) { "env", "xargs", "nohup", "time", "timeout", "nice", "watch", "exec", "eval", "source", ".", "npx", "bunx", "uvx", "pipx" };
+    /// <summary>Flags that hand an interpreter code to run.</summary>
+    public static readonly IReadOnlySet<string> InlineCodeFlags = new HashSet<string>(StringComparer.Ordinal) { "-c", "-e", "-p", "-r", "--eval", "--print", "--command", "-command", "-encodedcommand", "-enc", "-ec", "/c", "/k" };
+
+    /// <summary>
+    /// A shell, interpreter or wrapper alone or running inline code, judged by the first word after any leading VAR=x (or env VAR=x).
+    /// command(bash) would allow bash -c "&lt;anything&gt;": agy matches words from the start.
+    /// </summary>
+    public static bool RunsCode(string command)
+    {
+        var words = command.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries).Select(word => word.Trim('"', '\'').ToLowerInvariant()).Where(word => word.Length > 0).ToList();
+        static bool Assignment(string word) => !word.StartsWith('-') && !word.StartsWith('=') && word.Contains('=');
+        var at = 0;
+        while (at < words.Count && Assignment(words[at])) at++;
+        if (at + 1 < words.Count && words[at] == "env" && Assignment(words[at + 1])) { at++; while (at < words.Count && Assignment(words[at])) at++; }
+        if (at >= words.Count) return false;
+        // The program by its name, without a folder or .exe.
+        var program = words[at];
+        var slash = program.LastIndexOfAny(['/', '\\']);
+        if (program != "." && slash >= 0) program = program[(slash + 1)..];
+        if (program.EndsWith(".exe", StringComparison.Ordinal)) program = program[..^4];
+        if (program.StartsWith("python", StringComparison.Ordinal)) program = "python";
+        if (Wrappers.Contains(program)) return true;
+        if (!Interpreters.Contains(program)) return false;
+        if (at + 1 == words.Count) return true;
+        // The interpreter's own options come before its script; what follows the script is the script's.
+        foreach (var word in words.Skip(at + 1))
+        {
+            if (InlineCodeFlags.Contains(word)) return true;
+            var shortFlag = word.StartsWith('-') && !word.StartsWith("--", StringComparison.Ordinal) && word.Length > 1 && word[1..].All(char.IsLetter);
+            if (shortFlag && word[1..].Any(c => "cerp".Contains(c))) return true;
+            if (!word.StartsWith('-')) return false;
+        }
+        return false;
+    }
+
     /// <summary>Characters that chain, pipe, redirect, background or substitute.</summary>
     public static readonly IReadOnlySet<char> ChainCharacters = new HashSet<char> { ';', '&', '|', '>', '<', '`' };
 
@@ -153,9 +215,8 @@ public static class AntigravityRuleSafety
                 if (guarded.Any(folder => Within(normalized, folder) || Within(folder, normalized))) return AntigravityRuleVerdict.Refused;
             }
         }
-        // A command that names agy's own folder may run once, never for good.
-        return parts.Name == "command" && (Risky(parts.Argument) || parts.Argument.Contains(".gemini", StringComparison.OrdinalIgnoreCase))
-            ? AntigravityRuleVerdict.Once : AntigravityRuleVerdict.Always;
+        // A risky command, a shell or interpreter running code, or one that names agy's own folder may run once, never for good.
+        return parts.Name == "command" && CommandReason(parts.Argument) is not null ? AntigravityRuleVerdict.Once : AntigravityRuleVerdict.Always;
     }
 
     /// <summary>An absolute path, compared without case, \ as /, . and .. taken out and no trailing slash; null when it is not absolute (/…, C:\…).</summary>
@@ -439,6 +500,16 @@ public static class AntigravityPermissionFlow
     public static string? RuleLine(AntigravityDeniedAction action) => action.Rule is { } rule
         ? Locale.Get(action.Action == "command" ? "antigravity.permission.ruleCommand" : "antigravity.permission.rule", new Dictionary<string, string> { ["rule"] = rule })
         : null;
+
+    /// <summary>The words under a rule that may be allowed only once.</summary>
+    public static string OnceOnlyText(AntigravityOnceReason reason) => Locale.Get(reason switch
+    {
+        AntigravityOnceReason.Interpreter => "antigravity.permission.onceOnlyInterpreter",
+        AntigravityOnceReason.AgyFolder => "antigravity.permission.onceOnlyAgyFolder",
+        _ => "antigravity.permission.onceOnly",
+    });
+    /// <summary>The words under an action's rule, or null when it may be kept.</summary>
+    public static string? OnceOnlyText(AntigravityDeniedAction action) => action.OnceOnlyReason is { } reason ? OnceOnlyText(reason) : action.OnceOnly ? OnceOnlyText(AntigravityOnceReason.Risky) : null;
 
     /// <summary>The card's label for an action's kind.</summary>
     public static string KindLabel(string kind) => Locale.Get("antigravity.permission.kind." + AntigravityDeniedAction.KindOf(kind));

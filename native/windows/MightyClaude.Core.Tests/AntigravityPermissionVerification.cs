@@ -103,6 +103,8 @@ internal static class AntigravityPermissionVerification
             var rule = item!["rule"]!.GetValue<string>(); var verdict = item["verdict"]!.GetValue<string>();
             var got = AntigravityRuleSafety.Verdict(rule, context);
             Check(got.ToString().Equals(verdict, StringComparison.OrdinalIgnoreCase), rule + ": " + verdict + ", got " + got);
+            var reason = AntigravityRuleSafety.OnceReasonOf(rule, context);
+            Check(string.Equals(reason?.ToString(), item["reason"]?.GetValue<string>(), StringComparison.OrdinalIgnoreCase), rule + ": reason " + item["reason"] + ", got " + reason);
         }
         var tools = Fixture.Value["tools"]!;
         var map = tools["map"]!.AsObject().ToDictionary(p => p.Key, p => p.Value!.GetValue<string>());
@@ -525,6 +527,17 @@ internal static class AntigravityPermissionVerification
         var card = RemoteWireEvents.Read(poll.Events[0].Event, "job-1", "pane", false).Event!.AntigravityPermission!;
         var sent = JsonSerializer.SerializeToNode(MobilePermission.FromAntigravity(card), Wire.Json);
         Check(RemoteWireFixtureVerification.Same(mobile["permission"], sent), "the phone sample is what this host sends: " + sent?.ToJsonString());
+        // Each reason has its own words on the card.
+        var reasons = mobile["onceOnlyReasons"]!.AsObject();
+        Check(reasons.Count == Enum.GetValues<AntigravityOnceReason>().Length, "every reason has words");
+        foreach (var reason in Enum.GetValues<AntigravityOnceReason>())
+        {
+            var key = reasons[JsonNamingPolicy.CamelCase.ConvertName(reason.ToString())]!.GetValue<string>();
+            Check(AntigravityPermissionFlow.OnceOnlyText(reason) == Locale.Get(key) && !Locale.Get(key).StartsWith("antigravity.", StringComparison.Ordinal), reason + " words");
+        }
+        var interpreter = new AntigravityDeniedAction("command", "command", "RunCommand", "bash", "command(bash)");
+        Check(interpreter.OnceOnlyReason == AntigravityOnceReason.Interpreter && AntigravityPermissionFlow.OnceOnlyText(interpreter) == Locale.Get("antigravity.permission.onceOnlyInterpreter"), "bash alone");
+        Check(MobileAntigravityCard.From(AntigravityPermissionRequest.Make("r", [interpreter])).Actions[0].OnceOnlyReason == "interpreter", "the phone hears why");
         // The recorded command's card: 항상 허용 is offered, and nothing says once-only.
         var plain = mobile["permissionPlain"]!; var shown = plain["permission"]!;
         var actions = Stream(plain["stream"]!.GetValue<string>())["actions"].Deserialize<List<AntigravityDeniedAction>>(Wire.Json)!;

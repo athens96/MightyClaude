@@ -77,7 +77,7 @@ public sealed partial class MainWindow
                     ? new TextBlock { Text = line, TextFont = TextArea.Code, TextSize = 10, Foreground = ink2, TextWrapping = TextWrapping.Wrap, MaxLines = 3, TextTrimming = TextTrimming.CharacterEllipsis, IsTextSelectionEnabled = true }
                     : new TextBlock { Text = Locale.Get("antigravity.permission.noRule"), TextSize = 10, Foreground = b.Brush(DesignToken.WaitText), TextWrapping = TextWrapping.Wrap });
                 // A rule that may be allowed only once says so under it; 항상 허용 is off for the card.
-                if (action.OnceOnly) block.Children.Add(new TextBlock { Text = Locale.Get("antigravity.permission.onceOnly"), TextSize = 10, Foreground = b.Brush(DesignToken.WaitText), TextWrapping = TextWrapping.Wrap });
+                if (AntigravityPermissionFlow.OnceOnlyText(action) is { } onceOnly) block.Children.Add(new TextBlock { Text = onceOnly, TextSize = 10, Foreground = b.Brush(DesignToken.WaitText), TextWrapping = TextWrapping.Wrap });
                 actions.Children.Add(block);
             }
 
@@ -111,7 +111,7 @@ public sealed partial class MainWindow
             }
             Answer("antigravity.permission.deny", "antigravity-permission-deny-", AntigravityPermissionDecision.Deny, false, true, 2);
             var always = Answer("antigravity.permission.allowAlways", "antigravity-permission-allow-always-", AntigravityPermissionDecision.Always, false, card.CanAllowAlways, 3);
-            if (card.CanAllow && !card.CanAllowAlways) ToolTipService.SetToolTip(always, Locale.Get("antigravity.permission.onceOnly"));
+            if (card.CanAllow && !card.CanAllowAlways) ToolTipService.SetToolTip(always, card.Actions.Select(AntigravityPermissionFlow.OnceOnlyText).OfType<string>().FirstOrDefault() ?? Locale.Get("antigravity.permission.onceOnly"));
             Answer("permission.allowOnce", "antigravity-permission-allow-once-", AntigravityPermissionDecision.Once, true, card.CanAllow, 4);
             body.Children.Add(footer);
 
