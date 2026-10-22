@@ -232,6 +232,7 @@
   "graph.block.agent": "子智能体",
   "graph.block.blockUsageLabel": "此块",
   "graph.block.compact": "上下文摘要",
+  "graph.block.delegationNotice": "委派通知",
   "graph.block.draftHint": "在下方输入框中写下你的请求。",
   "graph.block.execution": "执行",
   "graph.block.executionOf": "执行 · 请求 {n}",

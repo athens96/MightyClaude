@@ -61,6 +61,20 @@ describe('block labels and marks', () => {
     expect(blockTitle(block({ title: '   ' }))).toBe('하위 에이전트');
     expect(blockTitle(block({ title: '', kind: 'nope' }))).toBe('nope');
   });
+
+  it('names a steer that delegation sent 위임 알림 and one a person sent 중간 요청', () => {
+    const notice = '[Mighty Claude notice n-1] Your child c-1 reported revision 1.';
+    const followUp = '[Mighty Claude follow-up f-1] Your parent sent you this follow-up:';
+    // An older host still titles a notice 중간 요청; the phone names it from what it was asked.
+    expect(blockTitle(block({ kind: 'steer', title: '중간 요청', summary: notice }))).toBe('위임 알림');
+    expect(blockTitle(block({ kind: 'steer', title: '중간 요청', summary: followUp }))).toBe('위임 알림');
+    expect(blockKindLabel('steer', notice)).toBe('위임 알림');
+    expect(blockTitle(block({ kind: 'steer', title: '중간 요청', summary: 'Also add tests' }))).toBe('중간 요청');
+    expect(blockKindLabel('steer', 'Also add tests')).toBe('중간 요청');
+    expect(blockKindLabel('steer')).toBe('중간 요청');
+    // Only a steer is one: a sub-agent asked with the same words keeps its own title.
+    expect(blockTitle(block({ kind: 'agent', title: '검색', summary: notice }))).toBe('검색');
+  });
 });
 
 describe('run headings and previews', () => {

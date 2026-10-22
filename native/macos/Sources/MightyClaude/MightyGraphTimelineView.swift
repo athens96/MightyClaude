@@ -44,12 +44,13 @@ struct MightyViewSwitch: View {
 
 /// Words the timeline puts beside a block.
 enum MightyTimelineText {
-    static func kind(_ kind: String) -> String {
+    /// `input` is what the block was asked; a steer that delegation sent is named for that.
+    static func kind(_ kind: String, input: String? = nil) -> String {
         switch kind {
         case "main": L("graph.timeline.kind.request")
         case MightyTimeline.executionKind: L("graph.block.execution")
         case "task": L("graph.block.task")
-        case "steer": L("graph.block.steer")
+        case "steer": MightyGraphSupport.isDelegationNotice(input ?? "") ? L("graph.block.delegationNotice") : L("graph.block.steer")
         case "compact": L("graph.block.compact")
         case "question": L("graph.block.question")
         default: L("graph.block.agent")
@@ -166,7 +167,7 @@ struct MightyTimelineRowCard<Detail: View>: View {
                             .lineLimit(2).multilineTextAlignment(.leading)
                         HStack(spacing: 4) {
                             Image(systemName: icon).font(.ui(size: 9, weight: .bold)).foregroundStyle(tint)
-                            Text(([MightyTimelineText.kind(row.block.kind)] + meta).joined(separator: " · "))
+                            Text(([MightyTimelineText.kind(row.block.kind, input: row.block.summary)] + meta).joined(separator: " · "))
                                 .lineLimit(1).truncationMode(.tail)
                         }
                         .font(.ui(size: 11)).foregroundStyle(Palette.ink2)

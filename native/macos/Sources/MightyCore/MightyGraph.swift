@@ -19,6 +19,8 @@ public struct MightyGraphAgent: Codable, Sendable, Equatable, Identifiable {
     public var isTask: Bool { kind == "task" }
     /// A mid-turn message the user sent to a running Claude request.
     public var isSteer: Bool { kind == "steer" }
+    /// A steer that delegation sent, not the user (see `MightyGraphSupport.isDelegationNotice`).
+    public var isDelegationNotice: Bool { isSteer && MightyGraphSupport.isDelegationNotice(input) }
     /// The CLI summarized its context mid-turn; the block is complete on arrival.
     public var isCompact: Bool { kind == "compact" }
     /// A question the agent asked the user (AskUserQuestion); the answer is its output.
@@ -102,12 +104,19 @@ public enum MightyGraphSupport {
     /// Mighty view both read it here, so the two cannot drift apart.
     public static func blockTitle(_ agent: MightyGraphAgent) -> String {
         switch blockKind(agent) {
-        case "steer": return L("graph.block.steer")
+        case "steer": return isDelegationNotice(agent.input) ? L("graph.block.delegationNotice") : L("graph.block.steer")
         case "compact": return ContextCompaction.title
         case "question": return agent.title.isEmpty ? L("graph.block.question") : agent.title
         case "task": return agent.title.isEmpty ? L("graph.block.task") : agent.title
         default: return agent.title.isEmpty ? L("graph.block.agent") : agent.title
         }
+    }
+    /// Delegation hands a child's notice, or a follow-up to a running child,
+    /// into a running Claude turn as a steer (`DelegationDelivery`); its text
+    /// opens with one of these. Such a block is a 위임 알림, not a 중간 요청.
+    public static let delegationNoticePrefixes = ["[Mighty Claude notice ", "[Mighty Claude follow-up "]
+    public static func isDelegationNotice(_ input: String) -> Bool {
+        delegationNoticePrefixes.contains { input.hasPrefix($0) }
     }
     static func nextState(_ previous: String, _ incoming: String) -> String {
         if ["error", "stopped"].contains(previous) { return previous }
