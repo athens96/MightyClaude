@@ -958,4 +958,27 @@ internal static class AppUpdateVerification
         }
         finally { Directory.Delete(root, true); }
     }
+
+    /// The setup program's uninstall entry follows the app's own updates, and only for the folder setup installed into.
+    internal static Task InstallerEntryFollowsTheAppsOwnUpdates()
+    {
+        const string install = @"C:\Users\me\AppData\Local\Programs\MightyClaude";
+        Check(InstallerRegistration.VersionToWrite(install + @"\", "0.4.34", install, "0.4.35") == "0.4.35", "an entry for this folder with an older version takes the app's version");
+        Check(InstallerRegistration.VersionToWrite(install.ToUpperInvariant(), "0.4.34", install + @"\", "0.4.35") == "0.4.35", "folders compare without case and trailing separator");
+        Check(InstallerRegistration.VersionToWrite(install + @"\", "0.4.35", install, "0.4.35") is null, "the same version writes nothing");
+        Check(InstallerRegistration.VersionToWrite(install + @"\", "0.4.34", @"D:\Tools\MightyClaude", "0.4.35") is null, "a copy unpacked elsewhere leaves the entry alone");
+        Check(InstallerRegistration.VersionToWrite(null, "0.4.34", install, "0.4.35") is null, "no entry writes nothing");
+        Check(InstallerRegistration.VersionToWrite(install + "Old", "0.4.34", install, "0.4.35") is null, "a folder whose name only starts the same is another folder");
+
+        // The setup script and the app name the same entry, and setup installs where the app can replace itself.
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "native", "windows", "installer", "MightyClaude.iss"))) directory = directory.Parent;
+        Check(directory is not null, "the setup script was not found from the test folder");
+        var script = File.ReadAllText(Path.Combine(directory!.FullName, "native", "windows", "installer", "MightyClaude.iss"));
+        var key = InstallerRegistration.UninstallKey;
+        var guid = key[(key.LastIndexOf('{') + 1)..key.LastIndexOf('}')];
+        Check(script.Contains("AppId={{" + guid + "}"), "MightyClaude.iss AppId must match InstallerRegistration.UninstallKey");
+        Check(script.Contains("PrivilegesRequired=lowest") && script.Contains("DisableDirPage=yes"), "setup installs for this user only, into its fixed folder");
+        return Task.CompletedTask;
+    }
 }

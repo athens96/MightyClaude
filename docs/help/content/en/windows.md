@@ -9,16 +9,20 @@ This help is written from the Mac app. The Windows app has the same features und
 > The Windows app is a {{ui:badge.beta}}. Its window title carries a beta label.
 
 ## Install {#install}
-1. Get the zip for your PC from the [download page](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/index.html). Most PCs need x64; ARM PCs such as Snapdragon laptops need ARM64.
-2. Unzip the whole folder.
-3. Run `MightyClaude.exe` inside it. The other files in the folder are needed too, so don't move the exe out on its own.
+1. Get the setup program for your PC from the [download page](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/index.html). Most PCs need `MightyClaude-windows-x64-setup.exe`; ARM PCs such as Snapdragon laptops need `MightyClaude-windows-arm64-setup.exe`.
+2. Run it. It installs for your user only, without administrator rights, into `%LOCALAPPDATA%\Programs\MightyClaude` and adds Mighty Claude to the Start menu. You can choose a desktop shortcut during setup.
+3. Start the app from the last page, or later from the Start menu.
 
-It runs on Windows 10 (version 2004) or later, or Windows 11. The .NET runtime it needs is included in the zip.
+To remove it, go to Windows Settings → Apps → Installed apps and uninstall Mighty Claude. The install folder is removed whole; your settings and conversations (`%APPDATA%\MightyClaudeNative`) stay.
+
+To use it without installing, get the zip from the same page, unzip the whole folder and run `MightyClaude.exe` inside it. The other files in the folder are needed too, so don't move the exe out on its own.
+
+It runs on Windows 10 (version 2004) or later, or Windows 11. The .NET runtime it needs is included in both the setup program and the zip.
 
 > [!warning]
-> The app isn't code-signed, so Windows may block it the first time. If it says the Visual C++ runtime is missing, install the Microsoft Visual C++ Redistributable (v14). Terminal and browser panes need the Microsoft Edge WebView2 runtime.
+> The app isn't code-signed, so Windows (SmartScreen) may block the setup program or the first launch. If it does, click **More info**, then **Run anyway**. If it says the Visual C++ runtime is missing, install the Microsoft Visual C++ Redistributable (v14). Terminal and browser panes need the Microsoft Edge WebView2 runtime.
 
-Updates come from {{ui:menu.settings}} → {{ui:settings.nav.about}}, as on the Mac.
+Updates come from {{ui:menu.settings}} → {{ui:settings.nav.about}}, as on the Mac. An installed app is replaced by the new version in the same folder, and the version shown in Installed apps follows. Running a newer setup program over it works too.
 
 ## Keyboard shortcuts {#shortcuts}
 Use {{kbd:Ctrl}} instead of {{kbd:⌘}}. Only collapsing the sidebar and stopping remote screen sessions use different keys.

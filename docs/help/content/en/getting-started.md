@@ -19,7 +19,7 @@ Mighty Claude is a desktop app for using Claude Code, Codex CLI and Google's Ant
 ## Install {#install}
 1. Get the file for your system from the [download page](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/index.html).
 2. macOS: unzip `MightyClaude-macos.zip`, move `MightyClaude.app` to your Applications folder and open it.
-3. Windows: unzip the whole folder and run `MightyClaude.exe` inside it. See [How Windows differs](windows.md#install) for details.
+3. Windows: run `MightyClaude-windows-x64-setup.exe` (`arm64` on ARM PCs) to install, then open the app from the Start menu. See [How Windows differs](windows.md#install) for details.
 
 > [!warning]
 > The app is not notarized by Apple. If macOS blocks it the first time, Control-click the app in Finder and choose **Open**, or allow it in System Settings → Privacy & Security.

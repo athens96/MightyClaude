@@ -9,16 +9,20 @@ section: windows
 > Windowsアプリは{{ui:badge.beta}}版です。ウインドウのタイトルにベータの表示が付きます。
 
 ## インストール {#install}
-1. [ダウンロードページ](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/index.html)から、お使いのPCに合ったzipをダウンロードします。ほとんどのPCはx64、SnapdragonなどのARM搭載PCはARM64です。
-2. zipをフォルダごと展開します。
-3. フォルダ内の`MightyClaude.exe`を実行します。一緒に含まれているファイルも必要なので、exeだけをほかの場所に移動しないでください。
+1. [ダウンロードページ](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/index.html)から、お使いのPCに合ったインストーラーをダウンロードします。ほとんどのPCは`MightyClaude-windows-x64-setup.exe`、SnapdragonなどのARM搭載PCは`MightyClaude-windows-arm64-setup.exe`です。
+2. インストーラーを実行します。管理者権限なしで、今のユーザーにだけ`%LOCALAPPDATA%\Programs\MightyClaude`にインストールされ、スタートメニューにMighty Claudeが追加されます。デスクトップのショートカットはインストール中に選べます。
+3. 最後の画面からそのまま起動するか、あとでスタートメニューから開きます。
 
-Windows 10(バージョン2004)以降またはWindows 11で動作します。必要な.NETランタイムはzipに含まれています。
+削除するには、Windowsの設定 → アプリ → インストールされているアプリでMighty Claudeをアンインストールします。インストールフォルダはまるごと削除され、設定と会話履歴(`%APPDATA%\MightyClaudeNative`)は残ります。
+
+インストールせずに使うには、同じページのzipをダウンロードしてフォルダごと展開し、その中の`MightyClaude.exe`を実行します。一緒に含まれているファイルも必要なので、exeだけをほかの場所に移動しないでください。
+
+Windows 10(バージョン2004)以降またはWindows 11で動作します。必要な.NETランタイムはインストーラーとzipに含まれています。
 
 > [!warning]
-> このアプリにはコード署名がないため、初回の実行時にWindowsにブロックされることがあります。Visual C++ランタイムが見つからないと表示された場合は、Microsoft Visual C++ 再頒布可能パッケージ(v14)をインストールしてください。ターミナルペインとブラウザペインには、Microsoft Edge WebView2ランタイムが必要です。
+> このアプリにはコード署名がないため、インストーラーや初回の実行がWindows(SmartScreen)にブロックされることがあります。その場合は**詳細情報**を押してから**実行**を押してください。Visual C++ランタイムが見つからないと表示された場合は、Microsoft Visual C++ 再頒布可能パッケージ(v14)をインストールしてください。ターミナルペインとブラウザペインには、Microsoft Edge WebView2ランタイムが必要です。
 
-アップデートは、Macと同じく{{ui:menu.settings}} → {{ui:settings.nav.about}}で行います。
+アップデートは、Macと同じく{{ui:menu.settings}} → {{ui:settings.nav.about}}で行います。インストーラーで入れたアプリは同じフォルダで新しいバージョンに置き換わり、インストールされているアプリの一覧に表示されるバージョンも追従します。新しいインストーラーを上書きで実行してもかまいません。
 
 ## ショートカット {#shortcuts}
 {{kbd:⌘}}の代わりに{{kbd:Ctrl}}を使います。サイドバーの折りたたみとリモート画面の停止だけはキーが異なります。

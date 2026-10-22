@@ -1148,6 +1148,7 @@ internal static class Verification
         await Test("app update automatic check happens at most once a day", AppUpdateVerification.AutomaticCheckHappensAtMostOnceADay);
         await Test("app update section shows the macOS copy for every phase", AppUpdateVerification.SectionShowsTheMacOSCopyForEveryPhase);
         await Test("app update pipeline runs from a fixture-signed manifest to a ready install plan", AppUpdateVerification.PipelineRunsFromAFixtureSignedManifestToAReadyInstallPlan);
+        await Test("app update keeps the setup program's uninstall entry at the app's version", AppUpdateVerification.InstallerEntryFollowsTheAppsOwnUpdates);
         await Test("rename validation accepts valid names", RenameVerification.renameValidationAcceptsValidNames);
         await Test("rename validation refuses empty", RenameVerification.renameValidationRefusesEmpty);
         await Test("rename validation refuses over 120 characters", RenameVerification.renameValidationRefusesOver120);

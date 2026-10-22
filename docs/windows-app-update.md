@@ -109,6 +109,31 @@ macOS에서 임시 폴더로 그대로 실행해 증명한다 —
 
 ---
 
+## 설치 프로그램과의 관계
+
+릴리스는 ZIP과 함께 Inno Setup 설치 프로그램(`MightyClaude-windows-<아키텍처>-setup.exe`,
+`native/windows/installer/MightyClaude.iss`)을 낸다. 설치 프로그램은 처음 설치와 제거만 맡고,
+업데이트는 위의 도우미가 그대로 한다. 그래서 설치 위치가 다음 조건을 지킨다.
+
+- **이 사용자에게만, 승격 없이** `%LOCALAPPDATA%\Programs\MightyClaude`에 설치한다(`PrivilegesRequired=lowest`).
+  도우미가 설치 폴더의 이름을 바꾸고 새 폴더를 복사하려면 그 부모 폴더에 쓸 수 있어야 한다.
+  Program Files나 MSIX(`WindowsApps`)에서는 이 순서가 성립하지 않는다.
+- **폴더는 고정이다**(`DisableDirPage=yes`). 설치 프로그램은 설치 전에 폴더를 비우고(`[InstallDelete]`),
+  제거는 폴더와 `<설치 폴더>.backup-*`를 통째로 지운다(`[UninstallDelete]`). 업데이트로 바뀐 파일은
+  설치 기록에 없기 때문이다. 사용자가 고른 다른 폴더에 이 동작이 닿으면 안 된다. 페이지를 숨기는 것만으로는
+  `/DIR=`를 막지 못하므로 `UsePreviousAppDir=no`와 `PrepareToInstall`이 다른 폴더를 거절한다.
+- **제거 프로그램은 설치 폴더 밖**(`%LOCALAPPDATA%\MightyClaudeSetup`, `UninstallFilesDir`)에 둔다.
+  업데이트가 설치 폴더를 ZIP 내용으로 바꾸면 그 안의 `unins000.exe`도 사라지기 때문이다.
+- **설치된 앱 목록의 버전**: 앱은 시작할 때마다 제거 항목
+  (`HKCU\…\Uninstall\{F2F99AEF-FB35-4476-A3EE-49453FA0527F}_is1`)의 `InstallLocation`이 자기 폴더일 때만
+  `DisplayVersion`을 자기 버전으로 맞춘다(`InstallerRegistration`). 다른 곳에 푼 ZIP은 항목을 건드리지 않는다.
+  `AppId`를 바꾸면 기존 설치와 다른 앱이 되므로 바꾸지 않는다.
+- CI는 설치 프로그램을 만든 뒤 `/DIR=`로 준 다른 폴더를 거절하는지 보고, 조용히 설치해 파일·제거 항목·시작 메뉴를
+  확인한다. 그다음 업데이트처럼 설치 폴더를 백업으로 옮기고 새로 복사한 뒤, 제거가 새 폴더·남은 백업·제거 프로그램까지
+  지우는지 본다(`scripts/test-windows-installer.ps1`).
+
+---
+
 ## 기기 점검 (실제 업데이트)
 
 | 항목 | 상태 |

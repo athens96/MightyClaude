@@ -19,7 +19,7 @@ Mighty Claude는 Claude Code, Codex CLI, Google의 Antigravity CLI를 한 창에
 ## 설치 {#install}
 1. [다운로드 페이지](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/index.html)에서 내 운영체제용 파일을 받습니다.
 2. macOS: `MightyClaude-macos.zip`을 풀고 `MightyClaude.app`을 응용 프로그램 폴더로 옮긴 뒤 엽니다.
-3. Windows: zip을 폴더째 풀고 그 안의 `MightyClaude.exe`를 실행합니다. 자세한 내용은 [Windows에서 다른 점](windows.md#install)에 있습니다.
+3. Windows: `MightyClaude-windows-x64-setup.exe`(ARM PC는 `arm64`)를 실행해 설치하고 시작 메뉴에서 엽니다. 자세한 내용은 [Windows에서 다른 점](windows.md#install)에 있습니다.
 
 > [!warning]
 > 이 앱은 Apple 공증을 받지 않았습니다. macOS가 처음 열 때 막으면 Finder에서 앱을 Control-클릭한 뒤 **열기**를 고르거나, 시스템 설정 → 개인정보 보호 및 보안에서 열기를 허용하세요.

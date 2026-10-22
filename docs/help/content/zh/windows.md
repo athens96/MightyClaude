@@ -9,16 +9,20 @@ section: windows
 > Windows 应用目前为{{ui:badge.beta}}版。窗口标题上带有 Beta 标记。
 
 ## 安装 {#install}
-1. 从[下载页面](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/index.html)下载适合你电脑的 zip。大多数电脑选择 x64，骁龙等 ARM 电脑选择 ARM64。
-2. 解压整个文件夹。
-3. 运行文件夹中的 `MightyClaude.exe`。文件夹中的其他文件也是必需的，请勿把 exe 单独移到别处。
+1. 从[下载页面](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/index.html)下载适合你电脑的安装程序。大多数电脑选择 `MightyClaude-windows-x64-setup.exe`，骁龙等 ARM 电脑选择 `MightyClaude-windows-arm64-setup.exe`。
+2. 运行安装程序。它无需管理员权限，只为当前用户安装到 `%LOCALAPPDATA%\Programs\MightyClaude`，并在开始菜单中添加 Mighty Claude。安装时可以选择是否创建桌面快捷方式。
+3. 在最后一页直接启动，或之后从开始菜单打开。
 
-可在 Windows 10（版本 2004）或更高版本，或 Windows 11 上运行。所需的 .NET 运行时已包含在 zip 中。
+要删除它，请在 Windows 设置 → 应用 → 已安装的应用中卸载 Mighty Claude。安装文件夹会被整个删除，设置和对话记录（`%APPDATA%\MightyClaudeNative`）会保留。
+
+如果不想安装，可以从同一页面下载 zip，解压整个文件夹后运行其中的 `MightyClaude.exe`。文件夹中的其他文件也是必需的，请勿把 exe 单独移到别处。
+
+可在 Windows 10（版本 2004）或更高版本，或 Windows 11 上运行。所需的 .NET 运行时已包含在安装程序和 zip 中。
 
 > [!warning]
-> 此应用没有代码签名，Windows 可能会在首次运行时阻止它。如果提示找不到 Visual C++ 运行时，请安装 Microsoft Visual C++ 可再发行程序包（v14）。终端窗格和浏览器窗格需要 Microsoft Edge WebView2 运行时。
+> 此应用没有代码签名，Windows（SmartScreen）可能会阻止安装程序或首次运行。遇到这种情况，请点按**更多信息**，再点按**仍要运行**。如果提示找不到 Visual C++ 运行时，请安装 Microsoft Visual C++ 可再发行程序包（v14）。终端窗格和浏览器窗格需要 Microsoft Edge WebView2 运行时。
 
-与 Mac 相同，更新在{{ui:menu.settings}} → {{ui:settings.nav.about}}中获取。
+与 Mac 相同，更新在{{ui:menu.settings}} → {{ui:settings.nav.about}}中获取。用安装程序安装的应用会在同一文件夹中替换为新版本，已安装的应用列表中显示的版本也会随之更新。也可以直接运行新的安装程序覆盖安装。
 
 ## 快捷键 {#shortcuts}
 用{{kbd:Ctrl}}代替{{kbd:⌘}}。只有收起侧边栏和停止远程屏幕的按键不同。
