@@ -341,6 +341,7 @@ internal static class Verification
         await Test("mobile push: deliveries retry and stop as the Mac's do", MobilePushVerification.DeliveriesRetryAndStopAsTheMacDoes);
         await Test("mobile push: the caller's cancellation is not a retry", MobilePushVerification.TheCallersCancellationIsNotARetry);
         await Test("mobile push: observing reads the panes, and disposing lets go", MobilePushVerification.ObservingReadsThePanesAndDisposingLetsGo);
+        await Test("mobile push: a run between two ticks is still pushed", MobilePushVerification.ARunBetweenTwoTicksIsStillPushed);
         await Test("Mobile remote DeviceTrustAndRotation", MobileRemoteVerification.DeviceTrustAndRotation);
         await Test("Mobile remote UploadOwnershipAndClaims", MobileRemoteVerification.UploadOwnershipAndClaims);
         await Test("Mobile remote DesktopRouteContract", MobileRemoteVerification.DesktopRouteContract);
