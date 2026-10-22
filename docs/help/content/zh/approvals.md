@@ -31,7 +31,7 @@ Antigravity 在工作过程中无法向应用提问。遇到必须询问的操�
 
 允许后会在同一个对话中继续。如果窗格正忙于其他事情，继续运行的请求会进入队列。
 
-规则按开头匹配。命令规则会允许**以该文本开头的所有命令**（`command(git status)` 也会允许 `git status --short`），指向文件夹的文件规则会允许其中的所有文件。{{ui:permission.allowOnce}}的规则也会写入 Antigravity 的全局设置，因此规则存在期间，它适用于**此电脑上的所有 Antigravity 运行**（其他窗格和工作区，以及终端中的 `agy`）。
+规则按开头匹配。命令规则会允许**以该文本开头的所有命令**（`command(git status)` 也会允许 `git status --short`），指向文件夹的文件规则会允许其中的所有文件。{{ui:permission.allowOnce}}的规则也会写入 Antigravity 的全局设置，因此规则存在期间，它适用于**此电脑上的所有 Antigravity 运行**（其他窗格和工作区，以及终端中的 `agy`）。始终允许的命令规则会允许其后附加的任何参数，因此对于能通过参数做其他事情的命令（如 `find … -exec`、`curl … -o`），请尽量选择{{ui:permission.allowOnce}}。
 
 串联命令（`;`、`&&`、`||`）、使用管道（`|`）、重定向（`>`、`<`）、命令替换（反引号、`$(`）、后台运行（`&`），或删除数据、提升权限的命令（`rm`、`sudo`、`git push --force`、`git reset --hard`、`git clean`、`kill` 等）只能{{ui:permission.allowOnce}}。卡片上的{{ui:antigravity.permission.allowAlways}}会关闭并显示原因；手机上不会显示该按钮。
 

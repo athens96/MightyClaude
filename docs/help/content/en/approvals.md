@@ -31,7 +31,7 @@ The card lists every declined action. For each one you see its kind ({{ui:antigr
 
 Allowing continues in the same conversation. If the pane is busy with something else, the continuing run waits in the queue.
 
-Rules match from the start. A command rule allows **every command that starts with its text** (`command(git status)` also allows `git status --short`), and a file rule for a folder allows every file in it. The {{ui:permission.allowOnce}} rule also goes into Antigravity's settings for the whole computer, so while it is there it applies to **every Antigravity run on this computer** (other panes and workspaces, and `agy` in a terminal).
+Rules match from the start. A command rule allows **every command that starts with its text** (`command(git status)` also allows `git status --short`), and a file rule for a folder allows every file in it. The {{ui:permission.allowOnce}} rule also goes into Antigravity's settings for the whole computer, so while it is there it applies to **every Antigravity run on this computer** (other panes and workspaces, and `agy` in a terminal). An always-allowed command rule allows any arguments after it, so for a command whose arguments can make it do something else (`find … -exec`, `curl … -o` and the like), prefer {{ui:permission.allowOnce}}.
 
 A command that chains (`;`, `&&`, `||`), pipes (`|`), redirects (`>`, `<`), substitutes (backticks, `$(`), runs in the background (`&`), or deletes data or raises privileges (`rm`, `sudo`, `git push --force`, `git reset --hard`, `git clean`, `kill` and so on) offers only {{ui:permission.allowOnce}}. The card's {{ui:antigravity.permission.allowAlways}} is turned off with the reason; on the phone the button is not shown.
 
