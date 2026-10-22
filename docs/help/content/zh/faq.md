@@ -28,6 +28,9 @@ section: faq
 ## Antigravity 拒绝了命令或文件写入 {#antigravity-denied}
 Antigravity 在工作过程中无法提问，所以会跳过需要询问的操作并结束这一轮。窗格中随后会出现一张列出被拒绝操作的卡片。点{{ui:permission.allowOnce}}或{{ui:antigravity.permission.allowAlways}}，就会在同一个对话中继续，无需自己修改规则文件。请参阅 [Antigravity 的权限卡片](approvals.md#antigravity-permission)。
 
+## Antigravity 卡片上的{{ui:antigravity.permission.allowAlways}}是关闭的 {#antigravity-once-only}
+串联命令、使用管道、重定向或可能删除数据的命令只能{{ui:permission.allowOnce}}。规则会允许以该文本开头的所有命令，长期保留这样的规则有风险。请参阅 [Antigravity 的权限卡片](approvals.md#antigravity-permission)。
+
 ## 手机无法连接 {#phone}
 - 检查 Mac 的{{ui:settings.nav.mobile}}中是否已打开{{ui:settings.mobileRemote.allowToggle}}。
 - 如果状态一直停在“正在连接中继”，请点击{{ui:settings.mobileRemote.reconnectButton}}按钮。

@@ -28,6 +28,9 @@ section: faq
 ## Antigravityがコマンドやファイルの書き込みを拒否する {#antigravity-denied}
 Antigravityは作業の途中で確認できないため、確認が必要な操作を飛ばしてターンを終えます。するとペインに、拒否した操作を並べたカードが表示されます。{{ui:permission.allowOnce}}または{{ui:antigravity.permission.allowAlways}}を押すと、同じ会話で続きが進みます。ルールのファイルを自分で編集する必要はありません。[Antigravityの権限カード](approvals.md#antigravity-permission)を参照してください。
 
+## Antigravityカードの{{ui:antigravity.permission.allowAlways}}がオフになっている {#antigravity-once-only}
+コマンドをつなぐ、パイプやリダイレクトを使う、またはデータを消す可能性があるコマンドは{{ui:permission.allowOnce}}しかできません。ルールはそのテキストで始まるすべてのコマンドを許可するため、そのようなルールを残しておくのは危険だからです。[Antigravityの権限カード](approvals.md#antigravity-permission)を参照してください。
+
 ## スマートフォンが接続できない {#phone}
 - Macの{{ui:settings.nav.mobile}}で、{{ui:settings.mobileRemote.allowToggle}}がオンになっているかを確認します。
 - 状態が「リレーに接続中」のまま止まっている場合は、{{ui:settings.mobileRemote.reconnectButton}}ボタンをクリックします。

@@ -60,7 +60,7 @@ Windows 电脑也一样，只是需要一条 Windows 防火墙规则，以免连
 ## 批准与提问 {#approvals}
 智能体请求批准或提问时，{{ui:phone.tabs.alerts}}标签页上会显示数量。
 - 权限请求：轻点{{ui:permission.allow}}或{{ui:permission.deny}}。
-- Antigravity 权限卡片：每项被拒绝的操作都会显示类型以及命令、地址或路径。可选择{{ui:permission.allowOnce}}、{{ui:antigravity.permission.allowAlways}}或{{ui:antigravity.permission.deny}}；允许后会在同一个对话中继续（[Antigravity 的权限卡片](approvals.md#antigravity-permission)）。如果卡片中只有没有规则可以允许的操作，则只有{{ui:antigravity.permission.deny}}，并提示你更改权限模式。如果主机无法接受你的答复，卡片会保留并显示原因。不认识这种卡片的旧版手机应用会把它显示为普通的权限请求。
+- Antigravity 权限卡片：每项被拒绝的操作都会显示类型以及命令、地址或路径。可选择{{ui:permission.allowOnce}}、{{ui:antigravity.permission.allowAlways}}或{{ui:antigravity.permission.deny}}；允许后会在同一个对话中继续（[Antigravity 的权限卡片](approvals.md#antigravity-permission)）。如果卡片中只有没有规则可以允许的操作，则只有{{ui:antigravity.permission.deny}}，并提示你更改权限模式。如果命令会串联、使用管道、重定向或可能删除数据，则不显示{{ui:antigravity.permission.allowAlways}}。如果主机无法接受你的答复，卡片会保留并显示原因。不认识这种卡片的旧版手机应用会把它显示为普通的权限请求。
 - 提问：选择答案后，轻点{{ui:phone.questionnaire.submit}}。
 - 计划卡片：用与 Mac 上相同的按钮（{{ui:plan.card.approveAuto}}、{{ui:plan.card.revise}}等）回答。
 
