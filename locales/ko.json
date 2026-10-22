@@ -2141,6 +2141,8 @@
   "remote.error.nothingToResume": "이어갈 이전 대화가 없습니다. 다음 입력은 이미 새 대화로 시작합니다.",
   "remote.error.nothingToSend": "보낼 내용이 없습니다.",
   "remote.error.notPendingPermission": "대기 중인 권한 요청이 아닙니다. 이미 처리되었을 수 있습니다.",
+  "remote.error.badPushHandle": "알림 핸들 형식이 맞지 않습니다.",
+  "remote.error.pushNeedsToken": "이 휴대폰은 알림을 받을 수 없습니다. 휴대폰 앱을 업데이트한 뒤 다시 페어링하세요.",
   "remote.error.notQuestionnaire": "이 요청은 선택형 질문이 아닙니다.",
   "remote.error.otherStyle": "이 실행 창은 {style} 스타일이 아닙니다.",
   "remote.error.paneNotFound": "실행 창을 찾을 수 없습니다.",

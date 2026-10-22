@@ -2141,6 +2141,8 @@
   "remote.error.nothingToResume": "続ける以前の会話はありません。次の入力はすでに新しい会話として始まります。",
   "remote.error.nothingToSend": "送信する内容がありません。",
   "remote.error.notPendingPermission": "保留中の権限リクエストではありません。すでに処理された可能性があります。",
+  "remote.error.badPushHandle": "通知ハンドルの形式が正しくありません。",
+  "remote.error.pushNeedsToken": "このスマートフォンは通知を受け取れません。アプリを更新してからもう一度ペアリングしてください。",
   "remote.error.notQuestionnaire": "このリクエストは選択式の質問ではありません。",
   "remote.error.otherStyle": "このペインは{style}スタイルではありません。",
   "remote.error.paneNotFound": "ペインが見つかりませんでした。",

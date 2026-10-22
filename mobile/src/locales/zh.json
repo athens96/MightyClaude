@@ -2141,6 +2141,8 @@
   "remote.error.nothingToResume": "没有可继续的之前对话。下一次输入本来就会开始新对话。",
   "remote.error.nothingToSend": "没有可发送的内容。",
   "remote.error.notPendingPermission": "这不是待处理的权限请求。它可能已被处理。",
+  "remote.error.badPushHandle": "通知句柄格式不正确。",
+  "remote.error.pushNeedsToken": "此手机无法接收通知。请更新手机应用后重新配对。",
   "remote.error.notQuestionnaire": "此请求不是选择题。",
   "remote.error.otherStyle": "此窗格未使用 {style} 风格。",
   "remote.error.paneNotFound": "找不到该窗格。",

@@ -2141,6 +2141,8 @@
   "remote.error.nothingToResume": "There is no earlier conversation to continue. The next input already starts a new one.",
   "remote.error.nothingToSend": "There is nothing to send.",
   "remote.error.notPendingPermission": "This is not a pending permission request. It may already have been handled.",
+  "remote.error.badPushHandle": "The notification handle is malformed.",
+  "remote.error.pushNeedsToken": "This phone can't receive notifications. Update the phone app and pair it again.",
   "remote.error.notQuestionnaire": "This request is not a multiple-choice question.",
   "remote.error.otherStyle": "This pane is not in the {style} style.",
   "remote.error.paneNotFound": "The pane could not be found.",

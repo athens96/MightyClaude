@@ -276,3 +276,21 @@ public enum MobilePushRecipients {
         }
     }
 }
+
+public enum MobilePushWire {
+    /// A relay push handle: 32 random bytes, base64url without padding.
+    public static func validHandle(_ value: String) -> Bool { value.range(of: "^[A-Za-z0-9_-]{43}$", options: .regularExpression) != nil }
+    /// The kinds this host knows, in its own order; a newer phone's unknown names are left out, not refused.
+    public static func kinds(_ values: [String]) -> [MobilePushKind] { MobilePushKind.allCases.filter { values.contains($0.rawValue) } }
+}
+
+/// `POST /m1/push/register`.
+public struct MobilePushRegisterRequest: Codable, Sendable {
+    public var handle: String
+    public var kinds: [String]
+}
+
+/// `POST /m1/push/viewing`: the session on the phone's screen, or null when none.
+public struct MobilePushViewingRequest: Codable, Sendable {
+    public var sessionId: String?
+}

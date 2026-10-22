@@ -144,6 +144,10 @@ public actor MobileRemoteService {
     /// Which device each live connection authenticated as, so revoking one
     /// phone can close exactly its sockets.
     private var connectedDevices: [String: String] = [:]
+    /// The session each phone said is on its screen; a push about it is not sent while it holds.
+    private var pushViewing: [String: MobilePushViewing] = [:]
+    /// Clock for `pushViewing` and push timestamps; tests move it.
+    var pushClock: @Sendable () -> Date = { Date() }
     /// How many requests may hold a submit's attachments in memory at once.
     /// Eight phones asking for eight 5 MB files each would otherwise be
     /// hundreds of megabytes of base64 alive at the same moment.
@@ -1101,6 +1105,32 @@ public actor MobileRemoteService {
                 guard CoreValidation.identifier(route[3]) else { throw Failure(404, L("remote.error.queueItemNotFound")) }
                 try await perform { try await delegate.mobileRemoveQueued(sessionId: id, itemId: route[3]) }
                 return reply(200, MobileOK())
+            }
+            if method == "POST", route.count == 2, route[0] == "push", url.query == nil {
+                switch route[1] {
+                case "register":
+                    let request = try decode(body, as: MobilePushRegisterRequest.self)
+                    guard MobilePushWire.validHandle(request.handle) else { throw Failure(400, L("remote.error.badPushHandle")) }
+                    switch deviceRegistry.setPush(deviceId, handle: request.handle, kinds: MobilePushWire.kinds(request.kinds)) {
+                    case .saved: return reply(200, MobileOK())
+                    case .needsToken: throw Failure(409, L("remote.error.pushNeedsToken"))
+                    case .unsaved: throw Failure(503, L("mobileRemote.device.saveFailed"))
+                    }
+                case "unregister":
+                    deviceRegistry.clearPush(deviceId)
+                    pushViewing.removeValue(forKey: deviceId)
+                    return reply(200, MobileOK())
+                case "viewing":
+                    let request = try decode(body, as: MobilePushViewingRequest.self)
+                    if let id = request.sessionId {
+                        pushViewing[deviceId] = MobilePushViewing(sessionId: try sessionID(id), until: pushClock().addingTimeInterval(MobilePushRecipients.viewingWindow))
+                    } else {
+                        pushViewing.removeValue(forKey: deviceId)
+                    }
+                    return reply(200, MobileOK())
+                default:
+                    break
+                }
             }
             if method == "POST", route.count == 3, route[0] == "sessions", url.query == nil {
                 let id = try sessionID(route[1])
