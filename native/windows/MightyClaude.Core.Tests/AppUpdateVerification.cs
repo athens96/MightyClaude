@@ -348,6 +348,14 @@ internal static class AppUpdateVerification
             Check(!Directory.Exists(stale), "another version folder must be removed");
             Check(seen.Count > 0 && Math.Abs(seen[^1] - 1) < 0.0001, "progress must end at 1");
 
+            // The same version's package already on disk and matching the signed asset is used again: nothing is downloaded twice.
+            var requests = handler.Requested.Count;
+            Check(await service.DownloadAsync(good, "9.9.9") == path && handler.Requested.Count == requests, "a matching package already on disk must not be downloaded again");
+            // One whose bytes changed since is downloaded afresh.
+            await File.WriteAllBytesAsync(path, Encoding.UTF8.GetBytes(new string('q', 5000)));
+            Check(await service.DownloadAsync(good, "9.9.9") == path && handler.Requested.Count == requests + 1 && (await File.ReadAllBytesAsync(path)).SequenceEqual(package),
+                "a package whose bytes changed must be downloaded again");
+
             var wrongDigest = new AppUpdateAsset(url, new string('c', 64), package.Length);
             var digestMessage = await Refused(() => service.DownloadAsync(wrongDigest, "9.9.9"), "a wrong sha256 must be refused");
             Check(digestMessage.Contains("SHA-256"), "the refusal must name the digest: " + digestMessage);
@@ -1286,8 +1294,10 @@ internal static class AppUpdateVerification
                 var (failingInstall, _, failingPlan) = await SwapFixture(failing, relaunch);
                 var calls = 0;
                 var starts = new List<string>();
+                // Refused every time it is tried: a refusal for a moment is tried again (HelperRetriesRenamesAndReadsAnUnsureCheckAsRunning).
                 var rolled = await AppUpdateReplacement.RunAsync(failingPlan, _ => Task.FromResult(true), path => { starts.Add(path); return Task.CompletedTask; },
-                    mover: (from, to) => { if (++calls == 2) throw new IOException("이름을 바꾸지 못했습니다."); Directory.Move(from, to); });
+                    mover: (from, to) => { calls++; if (from == failingPlan.NewDirectory) throw new IOException("이름을 바꾸지 못했습니다."); Directory.Move(from, to); },
+                    moveRetryDelay: TimeSpan.FromMilliseconds(1));
                 Check(!rolled.Replaced && rolled.RolledBack, "a failed rename must roll back: " + rolled.Error);
                 Check(File.ReadAllText(Path.Combine(failingInstall, "MightyClaude.exe")) == "old", "the old install is back");
                 Check(!Directory.Exists(failingPlan.BackupDirectory) && !Directory.Exists(failingPlan.NewDirectory), "neither the backup nor the copy is left behind");
@@ -1299,10 +1309,118 @@ internal static class AppUpdateVerification
             var (lockedInstall, _, lockedPlan) = await SwapFixture(locked, relaunch: true);
             var lockedStarts = 0;
             var refused = await AppUpdateReplacement.RunAsync(lockedPlan, _ => Task.FromResult(true), _ => { lockedStarts++; return Task.CompletedTask; },
-                mover: (_, _) => throw new IOException("다른 프로세스가 사용 중입니다."));
+                mover: (_, _) => throw new IOException("다른 프로세스가 사용 중입니다."), moveRetryDelay: TimeSpan.FromMilliseconds(1));
             Check(!refused.Replaced && !refused.RolledBack && refused.Moves.Count == 0, "a refused first rename moves nothing");
             Check(File.ReadAllText(Path.Combine(lockedInstall, "MightyClaude.exe")) == "old" && !Directory.Exists(lockedPlan.NewDirectory), "the install stays and the copy is removed");
             Check(lockedStarts == 1, "the app the user had is started again");
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    /// A rename refused for a moment (a scan or the indexer holding a file) is
+    /// tried again, the rollback's too, and given up after `MoveAttempts`; a
+    /// check for the app running again that throws counts as running, so an
+    /// install on quit keeps everything and says why.
+    internal static async Task HelperRetriesRenamesAndReadsAnUnsureCheckAsRunning()
+    {
+        var root = Temp();
+        var quick = TimeSpan.FromMilliseconds(1);
+        try
+        {
+            // The install is refused three times, then moves; the copy goes in after it.
+            var (install, _, plan) = await SwapFixture(Path.Combine(root, "busy"), relaunch: true);
+            var tries = new List<string>();
+            var refusals = 0;
+            var result = await AppUpdateReplacement.RunAsync(plan, _ => Task.FromResult(true), _ => Task.CompletedTask,
+                mover: (from, to) => { tries.Add(from); if (refusals++ < 3) throw new UnauthorizedAccessException("잠시 사용 중입니다."); Directory.Move(from, to); },
+                moveRetryDelay: quick);
+            Check(result.Replaced && !result.RolledBack && File.ReadAllText(Path.Combine(install, "MightyClaude.exe")) == "new", "a rename refused for a moment goes through: " + result.Error);
+            Check(tries.Count == 5 && tries.Take(4).All(from => from == plan.InstallDirectory) && tries[4] == plan.NewDirectory,
+                $"the install is tried four times, then the copy is renamed in; got {string.Join(", ", tries.Select(Path.GetFileName))}");
+
+            // The copy is refused three times, then goes in.
+            var (newInstall, _, newPlan) = await SwapFixture(Path.Combine(root, "busy-new"), relaunch: false);
+            var newRefusals = 0;
+            var second = await AppUpdateReplacement.RunAsync(newPlan, _ => Task.FromResult(true), _ => Task.CompletedTask,
+                mover: (from, to) => { if (from == newPlan.NewDirectory && newRefusals++ < 3) throw new IOException("잠시 사용 중입니다."); Directory.Move(from, to); },
+                moveRetryDelay: quick);
+            Check(second.Replaced && newRefusals == 4 && File.ReadAllText(Path.Combine(newInstall, "MightyClaude.exe")) == "new", "the copy's rename is tried again too: " + second.Error);
+
+            // Refused every time, the copy is given up after MoveAttempts tries, and the rollback's own rename is tried again.
+            var (stuckInstall, _, stuckPlan) = await SwapFixture(Path.Combine(root, "stuck"), relaunch: false);
+            var newTries = 0;
+            var rollbackRefusals = 0;
+            var stuck = await AppUpdateReplacement.RunAsync(stuckPlan, _ => Task.FromResult(true), _ => Task.CompletedTask,
+                mover: (from, to) =>
+                {
+                    if (from == stuckPlan.NewDirectory) { newTries++; throw new IOException("다른 프로세스가 사용 중입니다."); }
+                    if (from == stuckPlan.BackupDirectory && rollbackRefusals++ < 2) throw new IOException("다른 프로세스가 사용 중입니다.");
+                    Directory.Move(from, to);
+                },
+                moveRetryDelay: quick);
+            Check(!stuck.Replaced && stuck.RolledBack && newTries == AppUpdateReplacement.MoveAttempts && rollbackRefusals == 3,
+                $"the copy is tried {AppUpdateReplacement.MoveAttempts} times and the rollback goes through on its third try; got {newTries} and {rollbackRefusals}: {stuck.Error}");
+            Check(File.ReadAllText(Path.Combine(stuckInstall, "MightyClaude.exe")) == "old" && !Directory.Exists(stuckPlan.BackupDirectory) && !Directory.Exists(stuckPlan.NewDirectory),
+                "the old install is back and nothing is left beside it");
+
+            // A check for the app running again that throws, at once or later, keeps everything and says why.
+            var (unsureInstall, _, unsurePlan) = await SwapFixture(Path.Combine(root, "unsure"), relaunch: false);
+            var starts = 0;
+            foreach (var check in new Func<CancellationToken, Task<bool>>[]
+            {
+                _ => throw new InvalidOperationException("프로세스 목록을 읽지 못했습니다."),
+                async _ => { await Task.Yield(); throw new InvalidOperationException("프로세스 목록을 읽지 못했습니다."); },
+            })
+            {
+                var unsure = await AppUpdateReplacement.RunAsync(unsurePlan, _ => Task.FromResult(true), _ => { starts++; return Task.CompletedTask; }, runningAgain: check);
+                Check(unsure.Skipped && !unsure.Replaced && !unsure.RolledBack && unsure.Moves.Count == 0 && unsure.Error == "프로세스 목록을 읽지 못했습니다." && starts == 0,
+                    $"a check that cannot tell reads as the app running, with its reason; got skipped {unsure.Skipped}, error '{unsure.Error}'");
+                Check(File.ReadAllText(Path.Combine(unsureInstall, "MightyClaude.exe")) == "old" && !Directory.Exists(unsurePlan.NewDirectory) && Directory.Exists(unsurePlan.StagedDirectory),
+                    "the install is untouched, the copy removed and the staged update kept");
+            }
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    /// A version an install on quit kept for the next quit (the app was opened
+    /// again first) is found at the next start, checked against the signed
+    /// manifest at once and staged again from the package on disk: only the
+    /// manifest is fetched. With the switch off, or nothing newer kept, the
+    /// start checks nothing.
+    internal static async Task AKeptUpdateIsStagedAgainWithoutADownload()
+    {
+        var root = Temp();
+        try
+        {
+            var state = Path.Combine(root, "state");
+            var install = Path.Combine(root, "MightyClaude");
+            MakeInstall(install, "old");
+            var packagePath = MakeZip(root, "MightyClaude-windows-x64.zip", zip => AddEntry(zip, "MightyClaude.exe", FakeExecutable("x64")));
+            var packageBytes = await File.ReadAllBytesAsync(packagePath);
+            var manifest = "{\"version\":\"9.9.9\",\"windows\":{\"x64\":{"
+                + "\"url\":\"https://updates.example/9.9.9/MightyClaude-windows-x64.zip\","
+                + $"\"sha256\":\"{Sha256Of(packageBytes)}\",\"size\":{packageBytes.Length}}}}}}}";
+            var handler = new FakeHttp(url => Ok(url.ToString() == ManifestUrl ? Envelope(manifest) : packageBytes));
+            using var service = new AppUpdateService(state, FixtureKey, handler);
+
+            // The run before staged it; its install on quit found the app open again and kept updates/ as it was.
+            var before = new AppUpdateCoordinator(service, "0.1.0", ManifestUrl, "x64", install, _ => Task.CompletedTask, () => true);
+            Check(!await before.CheckKeptUpdateAsync(null, DateTimeOffset.UtcNow), "with nothing kept the start checks nothing");
+            await before.CheckAsync(null);
+            Check(before.State.Phase == AppUpdatePhase.Ready, "the run before ends ready: " + before.State.ErrorMessage);
+            Check(service.KeptVersion("0.1.0") == "9.9.9" && service.KeptVersion("9.9.9") is null && service.KeptVersion("10.0.0") is null,
+                "the kept version is found only by a version older than it");
+
+            var off = new AppUpdateCoordinator(service, "0.1.0", ManifestUrl, "x64", install, _ => Task.CompletedTask, () => false);
+            Check(!await off.CheckKeptUpdateAsync(null, DateTimeOffset.UtcNow) && off.State.Phase == AppUpdatePhase.Idle, "with the switch off the start checks nothing");
+
+            var requests = handler.Requested.Count;
+            var next = new AppUpdateCoordinator(service, "0.1.0", ManifestUrl, "x64", install, _ => Task.CompletedTask, () => true);
+            var now = DateTimeOffset.UtcNow;
+            Check(await next.CheckKeptUpdateAsync(null, now) && next.State.Phase == AppUpdatePhase.Ready && next.State.InstallPlan is not null && next.LastAttempt == now,
+                "the kept update is checked at once and ready again: " + next.State.ErrorMessage);
+            Check(handler.Requested.Skip(requests).Select(url => url.ToString()).SequenceEqual([ManifestUrl]), "only the manifest is fetched; the package on disk is used again");
+            Check(File.Exists(Path.Combine(next.State.StagedDirectory!, "MightyClaude.exe")), "the package is staged again");
         }
         finally { Directory.Delete(root, true); }
     }
@@ -1347,9 +1465,12 @@ internal static class AppUpdateVerification
             Check(File.ReadAllText(Path.Combine(helperInstall, "MightyClaude.exe")) == "new", "the new version is installed");
             Check(!Directory.Exists(helperInstall + ".backup-20261001T000000000"), "the put-back backup is no longer beside the install");
 
-            // A copy a killed helper left beside the install is cleared with the backups at the next start.
+            // A copy a killed helper left beside the install is cleared with the backups at a later start; one written in the
+            // last minutes may still be filling (an install on quit's helper while the app was opened again) and is kept.
             MakeInstall(plan.NewDirectory, "partial");
             AppUpdateReplacement.PruneBackups(helperInstall);
+            Check(Directory.Exists(plan.NewDirectory) && File.Exists(Path.Combine(plan.NewDirectory, "MightyClaude.exe")), "a copy written just now is left to the helper writing it");
+            AppUpdateReplacement.PruneBackups(helperInstall, DateTime.UtcNow + AppUpdateReplacement.NewCopyGrace + TimeSpan.FromMinutes(1));
             Check(!Directory.Exists(plan.NewDirectory) && Directory.Exists(helperInstall), "a leftover copy is pruned, the install stays");
         }
         finally { Directory.Delete(root, true); }

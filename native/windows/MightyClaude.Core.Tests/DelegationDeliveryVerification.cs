@@ -402,8 +402,11 @@ internal static class DelegationDeliveryVerification
             fixture.Host.RefuseNext(Running, Running);
             var first = await fixture.End("c1");
             Check(fixture.Saved(first) == first && fixture.Coordinator.HeldItems("parent").Count == 0, "still pending, not held");
+            // A pending notice is delegation work a restart would cut short: the automatic app update waits for it (M pendingWork).
+            Check(fixture.Coordinator.PendingWork() == 1, $"a pending notice counts as pending work; got {fixture.Coordinator.PendingWork()}");
             // Once the run is up the app offers it again: steered into that run.
             await fixture.Coordinator.DeliverPending();
+            Check(fixture.Coordinator.PendingWork() == 0, $"a delivered notice is no pending work; got {fixture.Coordinator.PendingWork()}");
             Check(fixture.Host.Taken[^1] is { Route: DeliveryRoute.Steer, RunId: "p-run" } steer && steer.Input == DelegationCoordinator.Text(first) && fixture.Saved(first) is { Lane: DeliveryLane.Delivered, Receipt.Route: DeliveryRoute.Steer }, "steered once the run is up");
             // A run that ends normally while its notice is offered: the run end offers it again, as the next run.
             fixture.Host.RefuseNext(Finished, Finished);
@@ -464,6 +467,8 @@ internal static class DelegationDeliveryVerification
             Check(host.AllHanded.Count == 0 && restored.Notices.Select(notice => notice.Lane).SequenceEqual([DeliveryLane.Held, DeliveryLane.Delivered]) && restored.Notices[1].Receipt == receipt && restored.FollowUps.Single().Lane == DeliveryLane.Held
                 && coordinator.File == restored, "what was pending at launch is held, on disk too");
             Check(coordinator.HeldItems("parent").Select(item => item.Id).SequenceEqual(["n-old"]) && coordinator.HeldItems("c1").Select(item => item.Id).SequenceEqual(["f-old"]), "each pane has its own held rows");
+            // Held items survive a restart, so they keep no automatic app update waiting.
+            Check(coordinator.PendingWork() == 0, $"held items are no pending work; got {coordinator.PendingWork()}");
             // A new notice does not go ahead of what launch held: it is held behind it.
             var fresh = await coordinator.ChildRunEnded("c2", "r-c2", ChildRunEnd.Finished) ?? throw new InvalidOperationException("no notice");
             Check(host.AllHanded.Count == 0 && coordinator.HeldItems("parent").Select(item => item.Id).SequenceEqual(["n-old", fresh.Id]), "a new notice is held behind what launch held");

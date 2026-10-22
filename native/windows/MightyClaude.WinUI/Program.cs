@@ -155,27 +155,37 @@ internal static class Program
     }
 
     /// The helper half. Never elevated, never interactive: the outcome goes to
-    /// install.log beside the package so a failed swap can be read afterwards.
-    /// With `--relaunch 0` (the install on quit) the app is not started again, so
-    /// the helper itself brings the setup program's uninstall entry to the new
-    /// version; the helper is the new version's executable, so its own version is it.
+    /// install.log beside the package so a failed swap can be read afterwards,
+    /// whatever happened (an exception the replacement did not expect is logged
+    /// too). With `--relaunch 0` (the install on quit) the app is not started
+    /// again, so the helper itself brings the setup program's uninstall entry to
+    /// the new version; the helper is the new version's executable, so its own
+    /// version is it.
     private static int RunUpdateHelper(AppUpdateInstallPlan plan)
     {
-        var result = AppUpdateReplacement.RunAsync(
-            plan,
-            token => AppUpdateReplacement.WaitForExitAsync(plan.AppProcessId, AppUpdateReplacement.DefaultExitTimeout, token),
-            executable =>
-            {
-                using (Process.Start(new ProcessStartInfo(executable)
+        AppUpdateReplacementResult result;
+        try
+        {
+            result = AppUpdateReplacement.RunAsync(
+                plan,
+                token => AppUpdateReplacement.WaitForExitAsync(plan.AppProcessId, AppUpdateReplacement.DefaultExitTimeout, token),
+                executable =>
                 {
-                    UseShellExecute = false,
-                    WorkingDirectory = Path.GetDirectoryName(executable)!,
-                })) { }
-                return Task.CompletedTask;
-            },
-            runningAgain: token => AppUpdateReplacement.RunningFromInstallAsync(plan.InstallDirectory, TimeSpan.FromSeconds(30), token)).GetAwaiter().GetResult();
-        if (result.Replaced && typeof(Program).Assembly.GetName().Version?.ToString(3) is { } version)
-            InstallerRegistration.SyncDisplayVersion(plan.InstallDirectory, version);
+                    using (Process.Start(new ProcessStartInfo(executable)
+                    {
+                        UseShellExecute = false,
+                        WorkingDirectory = Path.GetDirectoryName(executable)!,
+                    })) { }
+                    return Task.CompletedTask;
+                },
+                runningAgain: token => AppUpdateReplacement.RunningFromInstallAsync(plan.InstallDirectory, TimeSpan.FromSeconds(30), token)).GetAwaiter().GetResult();
+            if (result.Replaced && typeof(Program).Assembly.GetName().Version?.ToString(3) is { } version)
+                InstallerRegistration.SyncDisplayVersion(plan.InstallDirectory, version);
+        }
+        catch (Exception error) when (error is not OutOfMemoryException)
+        {
+            result = new(false, false, error.GetType().Name + ": " + error.Message, [], false, false);
+        }
         try
         {
             File.WriteAllText(
@@ -183,7 +193,7 @@ internal static class Program
                 $"{DateTimeOffset.UtcNow:O} replaced={result.Replaced} rolledBack={result.RolledBack} " +
                 $"relaunch={plan.Relaunch} skipped={result.Skipped} started={result.Started} backupRemoved={result.BackupRemoved} {result.Error}\n");
         }
-        catch (IOException) { /* The outcome must not depend on the log. */ }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { /* The outcome must not depend on the log. */ }
         return result.Replaced || result.Skipped ? 0 : 1;
     }
 }

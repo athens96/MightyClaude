@@ -220,6 +220,20 @@ public sealed partial class DelegationCoordinator : IDelegationRequestHandler
     /// </summary>
     public ChannelReader<IReadOnlyDictionary<string, IReadOnlyList<DelegationDeliveryItem>>> HeldRows => heldRows.Reader;
 
+    /// <summary>
+    /// Delegation work a restart would cut short (M/DelegationCoordinator.swift pendingWork): notices and follow-ups waiting to be
+    /// offered (a relaunch holds them instead), children still starting, the panes a card's merge or undo is changing, and a merge,
+    /// undo or discard going. The automatic app update waits while it is above zero. Read on the app's dispatcher without waiting for
+    /// the coordinator's turn, so its idle check stays in one turn: the file is swapped whole, and the counts are plain reads that
+    /// may be one change behind, which the next idle tick reads again.
+    /// </summary>
+    public int PendingWork()
+    {
+        var current = file;
+        return current.Notices.Count(notice => notice.Lane == DeliveryLane.Pending) + current.FollowUps.Count(followUp => followUp.Lane == DeliveryLane.Pending)
+            + Math.Max(0, starting.Count) + Math.Max(0, cardPanes.Count) + (mergeTurns.Taken ? 1 : 0);
+    }
+
     private static Channel<T> Latest<T>() => Channel.CreateBounded<T>(new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true });
 
     private void PublishChildRows()
@@ -323,8 +337,11 @@ public sealed partial class DelegationCoordinator : IDelegationRequestHandler
     /// <summary>Whoever asks first holds the turn; the others wait here, first come first, and each is handed it in order.</summary>
     private sealed class Turns
     {
-        private bool taken;
+        private volatile bool taken;
         private readonly Queue<TaskCompletionSource> waiting = new();
+
+        /// <summary>Someone holds the turn (a turn handed over stays taken).</summary>
+        public bool Taken => taken;
 
         public Task Take()
         {

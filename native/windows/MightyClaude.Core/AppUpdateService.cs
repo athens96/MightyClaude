@@ -72,7 +72,10 @@ public sealed class AppUpdateService : IDisposable
     /// Downloads the package into updates/&lt;version&gt;/, removes every other
     /// version folder first, and verifies the size and the SHA-256 of the bytes
     /// that are actually on disk. Anything that does not match is deleted, and a
-    /// cancelled download leaves nothing behind.
+    /// cancelled download leaves nothing behind. A package an earlier run left
+    /// there for this version (an install on quit that found the app open again
+    /// keeps it) is used again when its size and SHA-256 still match the signed
+    /// asset, so it is not downloaded twice.
     public async Task<string> DownloadAsync(
         AppUpdateAsset asset, string version, DownloadProgress? progress = null, CancellationToken cancellation = default)
     {
@@ -86,9 +89,14 @@ public sealed class AppUpdateService : IDisposable
                 try { Directory.Delete(folder, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
 
         var versionDirectory = Path.Combine(UpdatesDirectory, name);
+        var destination = Path.Combine(versionDirectory, PackageName);
+        if (await MatchesAsync(destination, asset, cancellation))
+        {
+            progress?.Invoke(1);
+            return destination;
+        }
         if (Directory.Exists(versionDirectory)) Directory.Delete(versionDirectory, true);
         Directory.CreateDirectory(versionDirectory);
-        var destination = Path.Combine(versionDirectory, PackageName);
 
         var owned = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
         downloading = owned;
@@ -119,6 +127,41 @@ public sealed class AppUpdateService : IDisposable
     }
 
     public void CancelDownload() => downloading?.Cancel();
+
+    /// True when `path` holds exactly the asset's bytes (size, then SHA-256).
+    private static async Task<bool> MatchesAsync(string path, AppUpdateAsset asset, CancellationToken cancellation)
+    {
+        try
+        {
+            return File.Exists(path) && new FileInfo(path).Length == asset.Size
+                && string.Equals(await Sha256Async(path, cancellation), asset.Sha256, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return false; }
+    }
+
+    /// The newest version, newer than `currentVersion`, whose package and whole
+    /// staged folder (exactly one MightyClaude.exe) an earlier run left under
+    /// updates/: an install on quit that found the app open again keeps both for
+    /// the next quit. Null when there is none. Nothing here is trusted: the
+    /// package is used again only once a check has matched it against the
+    /// signed manifest (`DownloadAsync`), and it is staged afresh.
+    public string? KeptVersion(string currentVersion)
+    {
+        try
+        {
+            if (!Directory.Exists(UpdatesDirectory)) return null;
+            return Directory.GetDirectories(UpdatesDirectory)
+                .Select(folder => (Folder: folder, Version: AppVersion.Normalized(Path.GetFileName(folder))))
+                .Where(kept => kept.Version is not null && AppVersion.Compare(kept.Version, currentVersion) > 0
+                    && File.Exists(Path.Combine(kept.Folder, PackageName))
+                    && Directory.Exists(Path.Combine(kept.Folder, "staged"))
+                    && Directory.GetFiles(Path.Combine(kept.Folder, "staged"), ExecutableName, SearchOption.AllDirectories).Length == 1)
+                .Select(kept => kept.Version!)
+                .OrderByDescending(version => version, Comparer<string>.Create(AppVersion.Compare))
+                .FirstOrDefault();
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return null; }
+    }
 
     /// Unpacks the zip into a fresh folder beside it and returns the folder
     /// that will replace the install. It refuses: an entry with an absolute
@@ -209,11 +252,15 @@ public sealed class AppUpdateService : IDisposable
     /// SHA-256 of the bytes on disk, read in 1 MiB pieces.
     public static async Task<string> Sha256Async(string path, CancellationToken cancellation = default)
     {
+        // Off the caller's context (the app's dispatcher): it touches nothing but the file and its own hash.
         using var digest = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        await using var file = File.OpenRead(path);
-        var buffer = new byte[1 << 20];
-        int read;
-        while ((read = await file.ReadAsync(buffer, cancellation)) > 0) digest.AppendData(buffer, 0, read);
+        var file = File.OpenRead(path);
+        await using (file.ConfigureAwait(false))
+        {
+            var buffer = new byte[1 << 20];
+            int read;
+            while ((read = await file.ReadAsync(buffer, cancellation).ConfigureAwait(false)) > 0) digest.AppendData(buffer, 0, read);
+        }
         return Convert.ToHexString(digest.GetHashAndReset()).ToLowerInvariant();
     }
 
@@ -269,6 +316,8 @@ public sealed class AppUpdateService : IDisposable
         {
             var buffer = new byte[81920];
             long written = 0;
+            // Progress is reported once per whole percent, not per 80 KiB piece: each report redraws the section.
+            var reported = -1;
             int read;
             while ((read = await source.ReadAsync(buffer, cancellation)) > 0)
             {
@@ -278,7 +327,12 @@ public sealed class AppUpdateService : IDisposable
                 if (written > MaxPackageBytes || written > expected)
                     throw new InvalidOperationException(Locale.Get("appUpdate.error.packageTooLarge"));
                 await target.WriteAsync(buffer.AsMemory(0, read), cancellation);
-                if (expected > 0) progress?.Invoke(Math.Min(0.99, (double)written / expected));
+                var fraction = expected > 0 ? Math.Min(0.99, (double)written / expected) : 0;
+                if (expected > 0 && (int)(fraction * 100) != reported)
+                {
+                    reported = (int)(fraction * 100);
+                    progress?.Invoke(fraction);
+                }
             }
         }
     }
