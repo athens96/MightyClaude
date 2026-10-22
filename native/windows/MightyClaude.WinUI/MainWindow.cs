@@ -112,12 +112,29 @@ public sealed partial class MainWindow : Window
         Grid.SetColumn(detailTop, 1); root.Children.Add(detailTop); Grid.SetRow(panes, 1); Grid.SetColumn(panes, 1); root.Children.Add(panes);
         // The bottom status bar, in the Mac's order (MainWindow.Shell.cs).
         statusBar.Child = BuildStatusBar(); ApplyChromeText(); Grid.SetRow(statusBar, 2); Grid.SetColumn(statusBar, 1); root.Children.Add(statusBar); Content = root;
-        AppWindow.Closing += async (_, args) => { if (canClose) return; args.Cancel = true; if (closing) return; closing = true; ShutdownCompanion(); settingsWindow?.Close(); setupWatch?.Cancel(); setupWindow?.Close(); foreach (var pane in views.Values) { pane.CloseReferencePreview(); pane.CloseBrowserView(); } clock.Stop(); modelRefreshes?.Shutdown(); StopWorkspaceGit(); root.IsHitTestVisible = false; try { await ShutdownAutomaticUpdates(); await coordinator.ShutdownAsync(); await InstallAppUpdateOnQuitAsync(); await ShutdownAppUpdateAsync(); await ShutdownAccountUsageAsync(); await ShutdownLoginRecovery(); await ShutdownStatusLines(); await CloseTerminalsAsync(); await ShutdownAgentIO(); await ShutdownMobileRemote(); await ShutdownRemoteWorkspacesAsync(); await service.DisposeAsync(); canClose = true; Close(); } catch (Exception ex) { error.Text = Locale.Get("window.error.shutdownFailed", new Dictionary<string, string> { ["reason"] = ex.Message }); root.IsHitTestVisible = true; closing = false; modelRefreshes = null; } };
+        // A person's close (the title bar, Alt+F4, the taskbar) arrives here and is held until QuitAsync has shut everything down.
+        AppWindow.Closing += (sender, args) => { if (canClose) return; args.Cancel = true; _ = QuitAsync(); };
         clock.Tick += (_, _) => RefreshRunningIndicators(); clock.Start();
         InitFilePane(); InitAddPaneShortcuts(); InitHelpShortcut(); InitTextAppearance();
         ShowLaunchSplash(); InitParityShortcuts(); InitWorkspaceGit(); InitDashboard();
         _ = Initialize();
     }
+    /// <summary>
+    /// The one way the app quits, for a person's close and for every quit the app starts itself (the update helper's restart):
+    /// the run, the automatic updates, the terminals, the agent I/O, the phone link and the shared workspaces are shut down, a
+    /// staged update is handed to the helper for the install on quit, the service is disposed, and only then is the window
+    /// closed. <c>Window.Close()</c> from code does not raise <c>AppWindow.Closing</c> (that event is for a close the user asks
+    /// for through the system), so a quit that called it directly would skip all of this. Runs once: a call while it runs, or
+    /// after it finished, does nothing; one after a shutdown that failed (the error shows) tries again.
+    /// </summary>
+    private async Task QuitAsync()
+    {
+        if (canClose || closing) return;
+        closing = true; ShutdownCompanion(); settingsWindow?.Close(); setupWatch?.Cancel(); setupWindow?.Close(); foreach (var pane in views.Values) { pane.CloseReferencePreview(); pane.CloseBrowserView(); } clock.Stop(); modelRefreshes?.Shutdown(); StopWorkspaceGit(); root.IsHitTestVisible = false;
+        try { await ShutdownAutomaticUpdates(); await coordinator.ShutdownAsync(); await InstallAppUpdateOnQuitAsync(); await ShutdownAppUpdateAsync(); await ShutdownAccountUsageAsync(); await ShutdownLoginRecovery(); await ShutdownStatusLines(); await CloseTerminalsAsync(); await ShutdownAgentIO(); await ShutdownMobileRemote(); await ShutdownRemoteWorkspacesAsync(); await service.DisposeAsync(); canClose = true; Close(); }
+        catch (Exception ex) { error.Text = Locale.Get("window.error.shutdownFailed", new Dictionary<string, string> { ["reason"] = ex.Message }); root.IsHitTestVisible = true; closing = false; modelRefreshes = null; }
+    }
+
     private async Task Initialize()
     {
         try

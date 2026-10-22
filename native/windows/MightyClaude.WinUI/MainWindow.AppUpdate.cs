@@ -54,9 +54,12 @@ public sealed partial class MainWindow
     }
 
     /// Starts the helper detached with a minimal environment. A helper that
-    /// starts the app again (manual install, idle restart) quits the app; the
-    /// install on quit (`Relaunch` false) is started while the app is already
-    /// closing and must not close it a second time.
+    /// starts the app again (manual install, idle restart) quits the app through
+    /// `QuitAsync`, the routine a person's close runs, so the run, the terminals,
+    /// the phone link and the shared workspaces are shut down as on any quit
+    /// (`Window.Close()` alone does not raise `AppWindow.Closing`); the install
+    /// on quit (`Relaunch` false) is started while the app is already closing
+    /// and must not close it a second time.
     /// The helper runs from the staged folder of the new version so the install
     /// folder can be renamed aside freely. It never runs elevated.
     private Task LaunchUpdateHelperAsync(AppUpdateInstallPlan plan)
@@ -76,7 +79,7 @@ public sealed partial class MainWindow
         info.Environment.Clear();
         foreach (var (key, value) in AppUpdateInstallPlan.HelperEnvironment) info.Environment[key] = value;
         using (Process.Start(info)) { }
-        if (plan.Relaunch) DispatcherQueue.TryEnqueue(Close);
+        if (plan.Relaunch) DispatcherQueue.TryEnqueue(() => _ = QuitAsync());
         return Task.CompletedTask;
     }
 
@@ -255,16 +258,33 @@ public sealed partial class MainWindow
     internal void BeginAutomaticAppUpdateCheck()
     {
         if (options.SmokeTest) return;
-        // A previous replacement could not delete the folder it was running
-        // from; this start clears it, after putting back an install an
-        // interrupted swap left aside.
-        AppUpdateReplacement.RestoreInterruptedInstall(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar));
-        try { AppUpdateReplacement.PruneBackups(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar)); }
-        catch (IOException) { /* Housekeeping must not change startup. */ }
+        // Housekeeping, each step best effort: nothing here may keep the loop, the check or the setup screen after it from
+        // starting. A previous replacement could not delete the folder it was running from; this start clears it, after
+        // putting back an install an interrupted swap left aside (which, with the install whole enough to run this, finds
+        // nothing to do; the next helper is what puts a missing one back).
+        var install = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
+        try { AppUpdateReplacement.RestoreInterruptedInstall(install); }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { Trace.TraceWarning("interrupted install not checked: " + ex.Message); }
+        try { AppUpdateReplacement.PruneBackups(install); }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { Trace.TraceWarning("update backups not pruned: " + ex.Message); }
         // After the app replaced its own folder, Settings › Apps shows this version, not the setup program's.
         InstallerRegistration.SyncDisplayVersion(AppContext.BaseDirectory, AppVersionText);
-        WatchSessionEnding();
+        // Without it a quit during a sign-out would still install; the update itself goes on.
+        try { WatchSessionEnding(); }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { Trace.TraceWarning("session ending not watched: " + ex.Message); }
         StartAppUpdateLoop();
+        CheckAppUpdateAtStart();
+    }
+
+    /// An update an install on quit kept (the app was opened again before the
+    /// helper could swap) is checked at once and staged again from the package
+    /// on disk; otherwise the start checks when one is due.
+    private async void CheckAppUpdateAtStart()
+    {
+        if (closing || !AppUpdateCanRunAutomatically) return;
+        var snapshot = service.Snapshot;
+        // Failures land in the section (LastError); nothing here can throw past the coordinator.
+        if (snapshot.AppUpdateAutoCheck && await AppUpdate.CheckKeptUpdateAsync(snapshot.AppUpdateManifestUrlOverride, DateTimeOffset.UtcNow)) return;
         CheckAppUpdateIfDue();
     }
 
@@ -415,7 +435,7 @@ public sealed partial class MainWindow
         _ = appUpdate.InstallAsync(relaunch: true);
     }
 
-    /// The banner's "restart now".
+    /// "Restart now", from the banner or the status bar: a running countdown is cleared first.
     private void RestartForAppUpdateNow()
     {
         appUpdateRestart = AppUpdateRestartState.Idle;
@@ -452,9 +472,11 @@ public sealed partial class MainWindow
         row.Children.Add(message);
         Grid.SetColumn(later, 1); row.Children.Add(later);
         Grid.SetColumn(restart, 2); row.Children.Add(restart);
+        // No icon, and the row is the whole banner, as on the Mac: with no title, message or action button the InfoBar moves its
+        // content into the first row (its NoBannerContent state), so no empty title or message line is left above it.
         var bar = new InfoBar
         {
-            Severity = InfoBarSeverity.Informational, IsClosable = false, IsOpen = false, Visibility = Visibility.Collapsed,
+            Severity = InfoBarSeverity.Informational, IsIconVisible = false, IsClosable = false, IsOpen = false, Visibility = Visibility.Collapsed,
             Content = row, Background = brushes.Brush(DesignToken.AccentSoft), CornerRadius = new CornerRadius(0), BorderThickness = new Thickness(0),
         };
         AutomationProperties.SetAutomationId(bar, AppUpdateCountdownId);
@@ -545,6 +567,10 @@ public sealed partial class MainWindow
             () => service.Snapshot.AppUpdateAutoCheck,
             value => service.UpdateAsync(s => s with { AppUpdateAutoCheck = value }));
 
+        // The idle facts read the real window once (deterministic: no helper, no countdown): a composer draft holds the restart.
+        Require(views.Values.FirstOrDefault() is { } draftPane && draftPane.SmokeDraftHoldsRestart(),
+            "a composer draft must hold the automatic restart (AppIdleBlocker.Draft in CollectIdleFacts)");
+
         // The switch is named for its label, and the label stands beside it in the same row.
         Require(AutomationProperties.GetName(toggle) == AppUpdateStrings.AutoUpdateToggle && SettingsElements(panel).OfType<TextBlock>().Any(label => label.Text == AppUpdateStrings.AutoUpdateToggle),
             "the app update section must show the automatic check switch");
@@ -613,10 +639,11 @@ public sealed partial class MainWindow
         var panes = views.Values.ToArray();
         var delegation = service.Delegation;
         // Agent sessions running (remote ones too), panes starting a run, sign-in resends held for a CLI update,
-        // delegation runs ending and children still being made.
+        // delegation runs ending, children still being made and the coordinator's own work under way (pending notices and
+        // follow-ups, children starting, card panes, a merge going; M/DelegationCoordinator.swift pendingWork).
         var agentRuns = state.Sessions.Count(s => s.Kind != "shell" && (s.Status == "running" || service.IsSessionRunning(s.Id)))
             + panes.Count(p => p.UpdateStarting) + loginResendsAwaitingUpdate.Count
-            + (delegation is null ? 0 : state.Sessions.Count(s => delegation.EndingRuns.Contains(s.Id)))
+            + (delegation is null ? 0 : state.Sessions.Count(s => delegation.EndingRuns.Contains(s.Id)) + delegation.PendingWork())
             + service.DelegationChildren.Count(row => row.State == ChildState.Creating);
         // Permission, question and plan cards and Antigravity's card per pane, and requests to open a web page.
         var pendingCards = panes.Sum(p => p.DashboardAttention.Total) + views.Keys.Sum(id => agentUrlPrompts.ForPane(id).Count);
@@ -650,6 +677,22 @@ public sealed partial class MainWindow
     {
         /// <summary>Text in the composer, attachments for the next request or attachments still being read in (AppIdleFacts.Drafts).</summary>
         internal bool HasDraft => HasComposerContent || attachmentsLoading;
+
+        /// <summary>
+        /// Smoke: with words in this composer, the window's idle facts (read once, as the restart offer reads them) hold the
+        /// automatic restart for a draft. Nothing is checked, installed or restarted, and the composer's text is put back unsaved.
+        /// </summary>
+        internal bool SmokeDraftHoldsRestart()
+        {
+            var was = input.Text;
+            try
+            {
+                updating = true; input.Text = "draft holds the restart"; updating = false;
+                var now = DateTimeOffset.UtcNow;
+                return AppUpdateAuto.IdleBlockers(owner.CollectIdleFacts(now), now).Contains(AppIdleBlocker.Draft);
+            }
+            finally { updating = true; input.Text = was; updating = false; }
+        }
     }
 
     // ── Windows signing out, restarting or shutting down ──
