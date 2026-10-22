@@ -78,13 +78,18 @@ export function plainText(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+/** A body as written: escaped, with its line breaks kept (HTML would fold them into spaces). */
+export function plainBody(text: string): string {
+  return plainText(text).replace(/\r?\n/g, '<br>');
+}
+
 function toNotification(spec: PushNotificationSpec): Notification {
   return {
     id: spec.id,
     title: plainText(spec.title),
     // Android shows `subtitle` as the sub-text next to the app name: the host and workspace.
     subtitle: plainText(spec.subText),
-    body: plainText(spec.body),
+    body: plainBody(spec.body),
     data: spec.data,
     android: {
       channelId: spec.channelId,
@@ -195,7 +200,7 @@ export async function handleNotificationEvent({ type, detail }: Event, open?: (p
   try {
     await notifee.displayNotification({
       ...notification,
-      body: plainText(update.body),
+      body: plainBody(update.body),
       android: {
         ...notification.android,
         channelId: notification.android?.channelId ?? CHANNEL_ATTENTION,
@@ -310,18 +315,22 @@ export function requestSync(delayMs = SYNC_DEBOUNCE_MS): void {
   scheduleSync(delayMs);
 }
 
-/** Foreground start: channels, the one-time Android 13 prompt, the token, and listeners. Returns a cleanup. */
+/** Foreground start: channels, listeners and the token, then the one-time Android 13 prompt. Returns a cleanup. */
 export async function startPush(): Promise<() => void> {
   await ensureChannels().catch(() => undefined);
-  await askOnce().catch(() => undefined);
   const messaging = messagingOrNull();
-  if (messaging === null) return () => undefined;
+  if (messaging === null) {
+    await askOnce().catch(() => undefined);
+    return () => undefined;
+  }
+  // Listening starts before the permission prompt, so a push arriving while it is up is not lost.
   const stopToken = onTokenRefresh(messaging, (token) => {
     lastToken = token;
     requestSync();
   });
   const stopMessages = onMessage(messaging, (remote) => showPush(remote as { data?: Record<string, unknown> }));
   requestSync();
+  await askOnce().catch(() => undefined);
   return () => {
     stopToken();
     stopMessages();
