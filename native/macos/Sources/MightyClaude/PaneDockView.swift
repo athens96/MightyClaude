@@ -228,7 +228,7 @@ private struct PaneDockTab: View {
     /// as waiting. Not for an agent's own terminal or browser, or the files pane.
     private var tabTone: DesignTone? {
         guard WorkDashboard.isCounted(session.kind) else { return nil }
-        let pending = WorkDashboard.attention(store.toolPermissions[session.id])
+        let pending = WorkDashboard.attention(store.toolPermissions[session.id], antigravity: store.antigravityBoard[session.id])
         let tone = DesignTone(status: WorkDashboard.displayStatus(session.status, attention: pending))
         return tone == .idle ? nil : tone
     }

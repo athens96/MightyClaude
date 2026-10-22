@@ -188,7 +188,7 @@ struct WorkspaceView: View {
     /// The dashboard entry at the top of the sidebar, with what waits on the user, what runs and
     /// what stopped on an error, as glyph counts.
     private var dashboardEntry: some View {
-        let badges = WorkDashboard.badges(sessions: store.snapshot.sessions, permissions: store.toolPermissions)
+        let badges = WorkDashboard.badges(sessions: store.snapshot.sessions, permissions: store.toolPermissions, antigravity: store.antigravityBoard)
         let selected = store.showsDashboard
         return Button { store.showsDashboard = true } label: {
             HStack(spacing: DesignMetrics.Spacing.md) {
@@ -216,7 +216,7 @@ struct WorkspaceView: View {
         let selected = !store.showsDashboard && workspace.id == store.snapshot.activeWorkspaceId
         let expanded = store.isWorkspaceExpanded(workspace.id)
         let sessions = store.snapshot.sessions.filter { $0.workspaceId == workspace.id }
-        let badges = WorkDashboard.badges(sessions: sessions, permissions: store.toolPermissions)
+        let badges = WorkDashboard.badges(sessions: sessions, permissions: store.toolPermissions, antigravity: store.antigravityBoard)
         return VStack(alignment: .leading, spacing: DesignMetrics.Inset.listGap) {
             HStack(spacing: 0) {
             Button { store.selectWorkspace(workspace.id) } label: {
@@ -280,7 +280,7 @@ struct WorkspaceView: View {
     /// pane waiting on the user carries a word on the right ("Question 1"); a delegated
     /// child's pane, one step in under its parent, always carries its state there.
     private func paneRow(_ session: RunSession, child: DelegationChildRow? = nil) -> some View {
-        let card = WorkDashboard.card(session, permissions: store.toolPermissions[session.id])
+        let card = WorkDashboard.card(session, permissions: store.toolPermissions[session.id], antigravity: store.antigravityBoard[session.id])
         let active = !store.showsDashboard && session.id == store.snapshot.activeSessionId
         let beta = session.kind == "claude" && ProviderOptions.isBeta(session.provider)
         let childState = child.map { DelegationSidebar.shownState($0.state, asksHuman: card.attention.total > 0) }
@@ -521,7 +521,7 @@ struct WorkspaceView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            StatusCounts(badges: WorkDashboard.badges(sessions: store.snapshot.sessions.filter { $0.workspaceId == workspace.id }, permissions: store.toolPermissions),
+            StatusCounts(badges: WorkDashboard.badges(sessions: store.snapshot.sessions.filter { $0.workspaceId == workspace.id }, permissions: store.toolPermissions, antigravity: store.antigravityBoard),
                          runningIdentifier: "workspace-header-running-\(workspace.id)", long: true)
                 .accessibilityIdentifier("workspace-header-status-\(workspace.id)")
             Button { store.openFilePane(workspaceId: workspace.id) } label: {

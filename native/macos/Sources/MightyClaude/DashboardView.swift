@@ -96,7 +96,7 @@ struct DashboardView: View {
 
     var body: some View {
         let sessions = store.snapshot.sessions
-        let stats = WorkDashboard.stats(sessions: sessions, permissions: store.toolPermissions)
+        let stats = WorkDashboard.stats(sessions: sessions, permissions: store.toolPermissions, antigravity: store.antigravityBoard)
         // The page's inset (Inset.dashboardPage); only the header row moves past the traffic lights while folded.
         let inset = DesignMetrics.Inset.dashboardPageH
         ScrollView {
@@ -216,7 +216,7 @@ struct DashboardView: View {
     // MARK: Workspace groups
 
     private func group(_ workspace: Workspace, sessions: [RunSession]) -> some View {
-        let cards = WorkDashboard.ordered(sessions.map { WorkDashboard.card($0, permissions: store.toolPermissions[$0.id]) })
+        let cards = WorkDashboard.ordered(sessions.map { WorkDashboard.card($0, permissions: store.toolPermissions[$0.id], antigravity: store.antigravityBoard[$0.id]) })
         return VStack(alignment: .leading, spacing: DesignMetrics.Spacing.sm) {
             HStack(spacing: DesignMetrics.Spacing.md) {
                 Text(workspace.name).font(Palette.heading(17)).foregroundStyle(Palette.ink).lineLimit(1)
