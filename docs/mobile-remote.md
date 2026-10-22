@@ -107,9 +107,11 @@ MobilePermission {
 
 기존 라우트와 필드는 그대로다. 아래는 모두 **추가**이며, 새 필드는 전부 선택(optional)이다. 업데이트하지 않은 휴대폰 앱은 모르는 필드를 무시하고 지금처럼 동작한다. 휴대폰은 `/m1/info`의 `capabilities`에 이름이 있을 때만 해당 기능을 보여 준다(없으면 구버전 호스트).
 
-`MobileInfo.capabilities: string[]` — 허용 값: `"submit-mode"`, `"queue"`, `"pane"`, `"history"`, `"settings"`, `"commands"`, `"mighty"`, `"status"`, `"attachments"`, `"style"`, `"files"`, `"screenShare"`, `"structure"`, `"direct"`.
+`MobileInfo.capabilities: string[]` — 허용 값: `"submit-mode"`, `"queue"`, `"pane"`, `"history"`, `"settings"`, `"commands"`, `"mighty"`, `"status"`, `"attachments"`, `"style"`, `"files"`, `"screenShare"`, `"structure"`, `"direct"`, `"push"`.
 
 `"direct"`는 호스트가 Tailscale 직접 연결을 아는 빌드라는 뜻이다(Mac·Windows). 이 이름이 있으면 `MobileInfo.direct`와 `auth_ok.direct`가 그 순간의 끝점 목록이다(위 "Tailscale 직접 연결").
+
+`"push"`는 호스트가 아래 "푸시 알림"의 세 라우트(`/m1/push/*`)를 알고 휴대폰에 푸시를 보낸다는 뜻이다(Mac·Windows). 이 이름이 없으면 휴대폰은 핸들을 만들지도 주지도 않는다.
 
 `"screenShare"`는 BETA 화면 보기·조작 기능의 문이다. 세션 요청 라우트와 E2EE 시그널링 메시지 규약은 `docs/relay.md`의 "화면 공유 시그널링"에 있다.
 
@@ -152,6 +154,9 @@ MobilePermission {
 | POST | `/m1/uploads/{uploadId}/cancel` | | `{ protocol, ok }` |
 | GET | `/m1/workspaces/{id}/files?path=<상대 경로>` | | `MobileFileListing` — 폴더 하나(`path` 없거나 빈 값이면 워크스페이스 루트). 아래 "파일" 절 |
 | GET | `/m1/workspaces/{id}/file?path=<상대 경로>` | | `MobileFilePreview` — 파일 하나의 미리보기. 아래 "파일" 절 |
+| POST | `/m1/push/register` | `{ handle, kinds: [string] }` | `{ protocol, ok }` — `handle`은 43자 base64url이 아니면 400(`remote.error.badPushHandle`), `kinds`가 없거나 배열이 아니면 400. 이 호스트가 모르는 종류 이름은 거절하지 않고 뺀다. 기기 토큰이 없는 기기(구버전 앱 묶음, 레거시 기기 줄)는 409(`remote.error.pushNeedsToken`). 기기 목록을 저장하지 못하면 503(`mobileRemote.device.saveFailed`). 기기는 본문이 아니라 인증된 연결로 정한다 — `push` 기능 |
+| POST | `/m1/push/unregister` | `{}` | `{ protocol, ok }` — 그 기기의 핸들과 보고 있는 세션을 지운다. 저장하지 못하면 503 |
+| POST | `/m1/push/viewing` | `{ sessionId: string \| null }` | `{ protocol, ok }` — 형식이 틀린 id는 404(`remote.error.paneNotFound`). `null`(Windows는 본문·필드 생략도)이면 지운다. 45초 동안 유효 |
 
 `POST /m1/workspaces/{id}/sessions`는 **로컬** 워크스페이스에서 `kind: "shell"`을 409로 거절한다(휴대폰에서 쓸 수 없는 창이 되기 때문).
 
@@ -432,9 +437,63 @@ MobileAntigravityAction {
 - **원격 워크스페이스 창**(데스크톱이 다른 컴퓨터에 붙여 쓰는 창, 휴대폰 목록에는 없다)은 그 창을 실행하는 호스트가 규칙을 처리한다: 호스트 실행의 이벤트 `antigravityPermission`(`RunEvent.antigravityPermission`, 위 카드와 같은 actions)이 클라이언트 창에 카드를 띄우고, 허용하면 클라이언트가 이어 보내는 `POST /v2/runs`에 `antigravityGrant: { requestId, rules, temporary }`를 실어 보낸다. 호스트는 자기가 알린 카드(하루 안, 최근 128개)의 규칙만 받고 그 밖은 403(`remote.host.error.antigravityRules`)이다. 카드의 규칙은 **한 번만** 쓸 수 있다: 처음 받아들인 허용이 호스트의 목록에서 그 카드를 지우므로 같은 카드로 다시 보내면 403이다(규칙을 넣지 못해 실패한 허용은 쓰지 않은 것으로 친다). `temporary: false`(항상 허용)는 호스트의 '원격에서 전체 권한·명령 실행 허용'이 켜져 있을 때만 받고, 아니면 403(`remote.host.error.antigravityAlways`)이다. 켜져 있어도 이번만 허용할 수 있는 규칙이면 409(`remote.error.antigravityOnceOnly`). 클라이언트는 호스트의 카드에 규칙 안전 검사가 거절하는 규칙(`command(*)` 등)이 있으면 그 이벤트를 받지 않는다. 규칙을 넣지 못하면 409로 그 이유를 보낸다. 이 이벤트를 모르는 구버전 클라이언트는 그 이벤트만 빼고 `remote.run.notice.skipped` 줄을 남긴다.
 - 와이어 표본과 agy 스트림(agy 1.4.4·1.4.5에서 녹화)·규칙 판정(`rules`)·도구 대응(`tools`)·설정 편집의 바이트 단위 기대값: `native/contracts/fixtures/antigravity-permissions.json`. Mac 구현은 `MightyCore/AntigravityPermissions.swift`(파서·카드 수명·설정 편집·규칙 보관), `MightyClaude/AppStore+AntigravityPermissions.swift`(버튼·이어 보내기), `MightyClaude/ToolPermissionBar.swift`(카드).
 
+### 푸시 알림 (push)
+
+호스트(Mac이 기준, Windows는 같은 규칙)가 일이 끝났거나 사람이 필요할 때 안드로이드 휴대폰에 알린다. 릴레이 쪽 HTTP 라우트(핸들 등록·전송, 상태 코드, 한도)는 [relay.md](relay.md)의 "푸시 알림"이고, 이 절은 호스트와 휴대폰의 약속이다. 호스트는 `"push"` 기능을 알릴 때만 이 절을 따른다.
+
+**핸들.** 휴대폰은 FCM 토큰을 **페어링마다** 그 페어링의 릴레이(`POST /push/v1/handles`)에 등록해 핸들과 비밀을 받고, 핸들만 그 호스트에게 `POST /m1/push/register`로 준다(비밀은 휴대폰만 갖는다). 호스트마다 다른 핸들이라 두 호스트가 서로의 휴대폰을 알아볼 수 없다. 함께 주는 `kinds`는 휴대폰이 켠 종류(`completed` `failed` `permission` `question` `plan` `signin`)이고, 모두 끈 휴대폰은 빈 배열을 준다. 호스트는 기기 목록의 그 기기 줄에 `push: { handle, kinds, updatedAt }`로 둔다(Mac `devices.json`, Windows `mobile-identity.json`). 기기를 해제하거나 키를 다시 만들면 기기 줄과 함께 지워지고, 그 휴대폰이 보고 있던 세션 기록(아래 `viewing`)도 지워진다. 호스트는 핸들만 알고 FCM 토큰은 모른다. 휴대폰은 FCM 토큰이 바뀌면 릴레이의 핸들을 갱신하고(`PUT`), 릴레이가 핸들을 잊었으면(404) 새로 만들어 호스트에 다시 준다. 페어링을 지우면 릴레이의 핸들도 지운다(`DELETE`, 기다리지 않는다). 호스트는 다음 전송에서 404를 받고 자기 기록을 지운다. `/m1/push/unregister`는 휴대폰이 호스트에게 핸들을 거두게 하는 라우트이고 지금 앱은 쓰지 않는다. 기기 토큰이 없는 기기(구버전 앱 묶음)는 봉인 키를 만들 수 없어 409이고, 휴대폰은 그 호스트를 푸시 없음으로 둔다.
+
+**봉인.** 푸시는 호스트가 그 휴대폰 하나만 열 수 있게 봉인한 뒤 릴레이에 맡긴다. 릴레이와 Google은 내용을 읽을 수 없다.
+- `key = HKDF-SHA256(ikm = SHA-256(UTF-8 기기 토큰)의 32바이트, salt = UTF-8 clientId, info = "mighty-push-v1", 길이 32)`. ikm은 다이제스트의 **원시 32바이트**이지 64자 16진수 글자가 아니다. 호스트는 기기 줄의 `tokenHash`(16진수)를 풀어 같은 32바이트를 얻고 `clientId`는 기기 id다. 릴레이 연결과 Tailscale 직접 연결이 같은 기기 토큰으로 인증하므로 키도 같다.
+- 봉투는 `base64url(0x01 ‖ nonce 12바이트 ‖ ChaCha20-Poly1305 암호문 ‖ 태그 16바이트)`(패딩 없음)이다. AAD는 `"mighty-push-v1:" + handle`이라 다른 핸들 아래에서는 열리지 않는다. 평문은 2048바이트 이하, 봉투는 3072자 이하다.
+- 고정 파일 `native/contracts/fixtures/push.json`(키, 봉투, 변조한 봉투, 계획 단계)을 세 구현(Mac `MobilePush.swift`, Windows `MobilePush.cs`, 휴대폰 `mobile/src/lib/push/seal.ts`)이 함께 지킨다. 자세한 칸은 `native/contracts/README.md`의 "Push notifications".
+- 호스트의 기기 목록 파일(소유자만 읽는다)을 읽을 수 있는 사람은 그 기기의 푸시를 열 수 있다.
+
+**평문.**
+
+```
+MobilePushMessage {
+  v: 1, id,                       // "request:<runId>:<requestId>" | "run:<sessionId>:<n>:completed|failed" | "signin:<sessionId>:<n>"
+  kind: "completed" | "failed" | "permission" | "question" | "plan" | "signin",
+  hostId, hostName, workspace, title, summary, sessionId,   // hostName·workspace·title 80자, summary 200자(유니코드 스칼라), summary는 한 줄
+  permission?: { requestId, runId, buttons: "claude" | "antigravity" | "antigravityOnce" | "none" },  // kind가 permission일 때만
+  at                              // ISO 8601 UTC, 초 단위
+}
+```
+
+인코딩한 평문이 2048바이트를 넘으면(제어 문자는 6바이트로 이스케이프된다) `summary`를 비워 보내고, 비워도 넘으면 그 푸시를 건너뛴다(로그에는 id만).
+
+**무엇을 언제 보내는가** (`MobilePushPlanner`; 공유 고정 파일의 `planner` 단계가 같은 규칙을 모든 구현에 건다). 호스트는 보이는 실행 창(휴대폰이 볼 수 있는 것만: 파일 창과 다른 컴퓨터의 워크스페이스는 뺀다)을 그때그때 플래너에게 준다.
+1. 처음 보는 상태는 기준선이다. 앱이 켜질 때, 그리고 **휴대폰 리모트를 껐다가 다시 켤 때** 이미 있던 요청과 끝난 실행은 알리지 않는다. 껐다 켜기 전에 보낸 id는 다시 쓰지 않는다. 휴대폰 리모트가 꺼져 있는 동안과 앱을 끝내는 중에는 아무것도 보내지 않는다.
+2. 새 요청은 한 번 알린다: 권한(`permission`), 질문(`question`), 계획(`plan`), Antigravity 카드(`permission`). id는 `request:<runId>:<requestId>`. 스타일이 자동 허용하는 요청은 알리지 않는다.
+3. 실행 창이 `running`에서 `completed`나 `error`로 바뀌고 기다리는 요청이 하나도 없을 때만 완료(`completed`)·실패(`failed`)를 알린다. 요청이 남아 있으면 요청만 알린다. `stopped`로 끝난 것은 알리지 않는다. id는 `run:<sessionId>:<n>:<kind>`로, `n`은 그 실행 창의 끝난 실행 번호다.
+4. 로그인 만료(`signin`)는 호스트가 확인한 뒤에만(Mac `loginRequired`, Windows는 로그인 복구가 기억한 요청) 한 번 알린다. id는 `signin:<sessionId>:<n>`.
+5. `n`(실행 번호와 로그인 번호)은 실행 창이 잠깐 목록에서 빠졌다 돌아와도 이어서 센다. 기준선과 마지막 상태는 빠진 동안 잊지만 번호와 이미 보낸 id(최근 512개)는 기억한다. 그래서 돌아온 실행 창의 다음 완료·로그인 만료도 알리고, 같은 id를 두 번 보내지 않는다.
+6. 실행 창 하나는 휴대폰에서 상태 알림 한 자리를 쓴다(아래 "폰"). 그래서 한 실행 창의 완료·실패·로그인 만료는 같은 알림을 바꾸고, 요청 알림은 요청마다 따로 쌓인다.
+7. 받는 휴대폰: `kinds`에 그 종류가 없으면 보내지 않는다. 그 휴대폰이 `POST /m1/push/viewing`으로 **그 실행 창**을 보고 있다고 한 지 45초가 안 됐으면 그 휴대폰에는 보내지 않는다(다른 휴대폰에는 간다). 휴대폰은 세션 화면이 앞에 있는 동안 30초마다 다시 알리고, 화면을 떠나거나 앱이 뒤로 가면 `sessionId: null`을 보낸다. 키를 다시 만들거나 기기를 해제하면 호스트가 그 기록을 바로 지운다.
+8. 버튼(`permission.buttons`): Claude·Codex 권한 요청은 허용할 수 있으면 `claude`, 아니면 `none`. Antigravity 카드는 규칙이 붙은 작업이 없거나 `canAllow`가 거짓이면 `none`, 규칙 중 `onceOnly`가 하나라도 있으면 `antigravityOnce`, 아니면 `antigravity`. 질문·계획은 `none`.
+
+**전송.** 호스트는 자기 릴레이 주소(`wss://…` → `https://…/push/v1/send`)로 휴대폰마다 따로 `Authorization: Bearer <hostToken>`과 `{ serverId, handle, payload }`를 보낸다. 요청 시간 제한은 15초이고 리다이렉트는 따르지 않는다(토큰과 봉투가 호스트가 정한 릴레이 밖으로 나가지 않게). 접속 실패와 429·500·502·504는 2초, 8초 뒤 두 번 더 시도하고 `Retry-After`가 더 길면 그것을 쓴다(30초 이하로 자른다). 403·404·410은 그 기기의 핸들을 지우고 더 시도하지 않는다. 그 밖의 거절(예: 릴레이에 FCM 키가 없어 503)은 시도를 멈춘다. 실패는 진단 기록에만 남는다(Mac `os.Logger` 범주 `mobile-remote`, Windows `Trace` `mobile push:`). 핸들·토큰 해시·알림 내용은 기록에 쓰지 않는다. Tailscale 직접 연결로 붙은 휴대폰에도 알림은 릴레이로 간다(호스트가 인터넷의 릴레이에 닿아야 한다).
+
+**폰.**
+- 안드로이드 앱이 푸시를 처음 쓰는 것은 푸시를 보내는 호스트와 페어링했을 때다. FCM 자동 초기화는 꺼 둔 채(`firebase.json`) 그때 켠다. 페어링이 바뀌거나 켠 종류를 바꾸거나 토큰이 바뀌면 1초 모아서 한 번 모든 호스트에 다시 준다. 호스트나 릴레이에 닿지 못하면 30초부터 두 배씩 최대 5번 다시 한다.
+- FCM 데이터 메시지 `{ v: "1", h, p }`를 앱이 닫혀 있어도 백그라운드 처리기가 받는다. `h`가 어느 페어링의 핸들인지로 페어링을 찾고(봉투 안의 `hostId`는 고르는 데 쓰지 않는다), 그 페어링의 키로 열고, 열 수 없거나 모양이 틀렸거나 그 종류를 껐으면 말없이 버린다.
+- 알림 채널: `attention`(권한·질문·계획, 높은 중요도), `work`(완료·실패·로그인 만료). 잠금 화면에서는 **비공개**(`PRIVATE`)라서 제목과 내용은 사용자가 잠금 화면에서 민감한 내용을 가리게 해 둔 경우 보이지 않는다. 알림 문구는 휴대폰 앱의 언어를 따르고, `<`·`&` 같은 글자는 쓴 그대로 보인다.
+- 요청 알림의 id는 `<handle>:<id>`, 상태 알림은 `<handle>:<sessionId>:status`다. 실패 뒤의 로그인 만료가 같은 자리를 바꾼다.
+- 권한 알림의 버튼은 카드가 정한다: `claude`는 허용·거부, `antigravity`는 이번만 허용·항상 허용·거절, `antigravityOnce`(이번만 허용할 수 있는 명령)는 이번만 허용·거절. 질문·계획·완료 알림에는 버튼이 없다. 버튼은 기존 `POST /m1/sessions/{id}/permission`(Antigravity `always` 포함)으로 앱이 닫혀 있어도 답하고, 호스트가 앱의 카드와 같은 검사를 한다.
+  - **잠금 확인**: 휴대폰이 잠겨 있으면 — 비밀번호·PIN·패턴이 걸렸거나 밀어서 푸는 잠금 화면이 떠 있는 것까지 — 호스트에 보내지 않고 알림을 "잠금을 푼 뒤 다시 누르세요"로 바꾸되 버튼은 남긴다. 확인 모듈(`MightyDeviceLock`)이 없거나 모르면 잠긴 것으로 친다.
+  - 성공하면 "허용함"/"거절함"이다.
+  - 409를 받으면 그 세션을 다시 읽는다. 그 요청이 이미 없으면 "이미 처리됨"(컴퓨터에서 먼저 답함)이다. 아직 있으면(예: Antigravity 설정 파일 오류로 규칙을 넣지 못함), 다른 실패이거나 15초를 넘기면 "응답하지 못했습니다. 눌러서 여세요."다. 이때는 알림을 누르면 앱이 열린다.
+- 알림을 누르면 앱이 `/host/<storageId>/session/<sessionId>`(그 호스트의 그 세션 화면)로 간다. 앱이 닫혀 있었으면 뜬 뒤에 간다.
+- 안드로이드 13 이상은 처음 한 번만 알림 권한을 묻는다. 설정 화면에 종류별 스위치(기본 모두 켬)와 충돌 보고 스위치(기본 켬)가 있고, 앱의 알림이 시스템에서 꺼져 있으면 그렇다고 알린다. 종류를 바꾸면 호스트에 다시 준다.
+
+**Crashlytics.** 폰 앱의 네이티브 충돌과 JS 오류의 **이름과 스택 프레임 위치만** 보낸다. 오류 메시지는 대화·명령·경로를 인용할 수 있어 버리고(`scrubError`), 사용자 id·`log`·속성은 쓰지 않는다. 치명적이지 않은 JS 오류와 처리되지 않은 Promise 거부만 직접 기록하고, 치명적인 JS 오류는 같은 걸러낸 오류를 앱의 기본 처리기에 넘겨 네이티브 충돌 보고가 대신하게 한다. 수집은 설정(충돌 보고)을 읽은 뒤에만 켠다(`firebase.json`의 자동 수집은 꺼 둔다). 설정을 끄면 아직 보내지 않은 보고도 지운다.
+
+**빌드.** `google-services.json`은 저장소에 없다. `mobile/app.config.js`가 환경 변수 `GOOGLE_SERVICES_JSON`이 가리키는 파일을 넣고, 변수가 없을 때 EAS 빌드는 멈춘다(푸시와 충돌 보고가 조용히 안 되는 앱을 내보내지 않으려고). 릴리즈 도구가 그 변수를 채운다. Firebase 설정이 없는 빌드(테스트·타입 검사)는 푸시 없이 돈다.
+
 ### 휴대폰에서 의도적으로 제외한 Mac 기능
 
-알림(푸시·로컬), 터미널 실행 창 조작, 워크스페이스 추가·이름 변경·제거, 그래프 배치·블록 크기 조절·참조 말풍선, CLI 계정 전환·CLI 업데이트·앱 자체 업데이트·앱 설정, 펫, 다국어, **스타일 등록·승인·취소·재스캔과 마이티 스타일 설정 화면**(데스크톱 앱 전용).
+로컬 알림(휴대폰의 푸시 알림은 위 "푸시 알림"), 터미널 실행 창 조작, 워크스페이스 추가·이름 변경·제거, 그래프 배치·블록 크기 조절·참조 말풍선, CLI 계정 전환·CLI 업데이트·앱 자체 업데이트·데스크톱 앱 설정, 펫, 다국어, **스타일 등록·승인·취소·재스캔과 마이티 스타일 설정 화면**(데스크톱 앱 전용).
 
 **리셋권(한도 리셋 자격):** 휴대폰은 CLI가 보고하는 `rateLimits` 상태 줄(`resetsAt` 포함)을 그대로 표시한다. 리셋권 자격 조회(cedar_ember·juniper_tide 두 프로그램의 일곱 상태)는 데스크톱 앱 전용이며, 휴대폰에 릴레이 계약 확장으로 전달하는 것은 이후 작업으로 미룬다.
 

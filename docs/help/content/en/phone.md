@@ -64,7 +64,18 @@ When an agent asks for approval or asks a question, the {{ui:phone.tabs.alerts}}
 - Questions: pick your answers and tap {{ui:phone.questionnaire.submit}}.
 - Plan cards: answer with the same buttons as on the Mac ({{ui:plan.card.approveAuto}}, {{ui:plan.card.revise}} and so on).
 
-The phone doesn't get push notifications. Open the app to check.
+## Notifications {#notifications}
+Your phone gets a notification when a run on a connected computer (Mac or Windows) finishes or fails, and when an agent needs you: a permission request, a question, a plan to approve or an expired sign-in. Only the Android app gets them for now.
+- The first time you open the app (Android 13 or later) it asks once whether to allow notifications. To turn kinds off, open {{ui:phone.settings.title}} on the {{ui:phone.tabs.hosts}} tab and change the {{ui:phone.settings.notifications}} switches. If notifications for the app are off in the system settings, {{ui:phone.settings.title}} tells you so.
+- On a permission request you can tap {{ui:permission.allow}} or {{ui:permission.deny}} right in the notification. An Antigravity card offers {{ui:permission.allowOnce}}, {{ui:antigravity.permission.allowAlways}} and {{ui:antigravity.permission.deny}}. A card that can only be allowed once, such as a chained command or one that can delete data, has no {{ui:antigravity.permission.allowAlways}}. Question and plan notifications have no buttons; tap them and answer in the app.
+- The buttons work only after you unlock the phone. If you tap one while it is locked, the notification changes to "{{ui:phone.push.outcome.locked}}" and keeps its buttons. If you already answered on the computer it changes to {{ui:phone.push.outcome.already}}, and if the answer could not be sent it changes to {{ui:phone.push.outcome.failed}}. In that last case, tap the notification and answer in the app.
+- Tapping a notification opens that session. You get no notifications about a session while it is on your phone's screen.
+- Notifications are private on the lock screen: if you chose to hide sensitive content there, the title and text are hidden.
+- The computer encrypts each notification so only this phone can read it; the relay and Google can't. Notifications go through the relay, so over a direct Tailscale connection they still arrive, as long as the computer can reach the internet.
+- Both the desktop app and the phone app need a version with this feature. A desktop app without it sends no notifications. If you paired with a very old phone app, pair again.
+- While phone remote access is off the computer sends nothing, and when you turn it back on it does not report what happened in the meantime.
+
+When the app crashes it sends the developers only where it stopped, never conversations, commands or paths. You can turn {{ui:phone.settings.crashReports}} off in {{ui:phone.settings.title}}.
 
 ## Screen view {#screen}
 You can watch your Mac's screen from the phone and, if you allow it, control it. This is a {{ui:badge.beta}} feature, in the Android app only for now.
