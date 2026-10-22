@@ -196,7 +196,8 @@ struct MightyGraphView: View {
         let agentCount = own.reduce(0) { $0 + $1.agents.filter { !$0.isTask && !$0.isSteer && !$0.isCompact && !$0.isQuestion }.count }
         let questionCount = own.reduce(0) { $0 + $1.agents.filter(\.isQuestion).count }
         let taskCount = own.reduce(0) { $0 + $1.agents.filter(\.isTask).count }
-        let steerCount = own.reduce(0) { $0 + $1.agents.filter(\.isSteer).count }
+        // Only steers a person sent; a delegation notice is not counted.
+        let steerCount = own.reduce(0) { $0 + $1.agents.filter { $0.isSteer && !$0.isDelegationNotice }.count }
         let compactCount = own.reduce(0) { $0 + $1.agents.filter(\.isCompact).count }
         let tokens = own.reduce(GraphTokenUsage()) { $0 + ($1.totalUsage ?? GraphTokenUsage()) }
         let summary = Self.headerSummary(runs: own.count, agents: agentCount, tasks: taskCount, steers: steerCount, compactions: compactCount, questions: questionCount, tokens: tokens)

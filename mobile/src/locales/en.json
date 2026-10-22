@@ -232,6 +232,7 @@
   "graph.block.agent": "Sub-agent",
   "graph.block.blockUsageLabel": "This block",
   "graph.block.compact": "Context summary",
+  "graph.block.delegationNotice": "Delegation notice",
   "graph.block.draftHint": "Write your request in the box below.",
   "graph.block.execution": "Run",
   "graph.block.executionOf": "Run · Request {n}",

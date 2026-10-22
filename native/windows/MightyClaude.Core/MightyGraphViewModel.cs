@@ -428,7 +428,8 @@ public static class MightyGraphBlockModel
     public static string ToolbarSummary(IReadOnlyList<MightyGraphRun> runs)
     {
         static Dictionary<string, string> N(int n) => new() { ["n"] = n.ToString() };
-        int Kind(string kind) => runs.Sum(r => r.Agents.Count(a => MightyGraphSupport.BlockKind(a) == kind));
+        // Only steers a person sent are counted; a delegation notice is not.
+        int Kind(string kind) => runs.Sum(r => r.Agents.Count(a => MightyGraphSupport.BlockKind(a) == kind && !MightyGraphSupport.IsDelegationNotice(a)));
         var parts = new List<string>
         {
             Locale.Get("graph.header.requests", N(runs.Count)),

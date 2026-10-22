@@ -26,6 +26,14 @@ internal static class MightyTimelineVerification
         Check(groups[0].Result is { Text: "done", Tone: DesignTone.Done } result && diagram.Nodes.Any(n => n.Id == result.NodeId), "result identity and final answer are shared");
         Check(MightyTimeline.Groups([Run("pending-child", "completed", "premature", new MightyGraphAgent { Id = "still-running" })])[0].Result is null, "an unfinished child prevents a premature result");
         Check(MightyTimeline.Groups([Run("failure", "failed")])[0].Result is { Tone: DesignTone.Err, Text: null } && MightyTimeline.Groups([Run("stop", "interrupted")])[0].Result?.Tone == DesignTone.Stop, "terminal aliases match diagram result states");
+        // A steer delegation sent is a 위임 알림; one a person sent stays a 중간 요청, and only those are counted in the toolbar.
+        var notice = new MightyGraphAgent { Id = "notice", Kind = "steer", Status = "completed", Input = "[Mighty Claude notice n-1] Your child c-1 reported revision 1." };
+        var followUp = new MightyGraphAgent { Id = "follow", Kind = "steer", Status = "completed", Input = "[Mighty Claude follow-up f-1] Your parent sent you this follow-up:" };
+        var person = new MightyGraphAgent { Id = "person", Kind = "steer", Status = "completed", Input = "Also add tests" };
+        Check(MightyGraphSupport.BlockTitle(notice) == "위임 알림" && MightyGraphSupport.BlockTitle(followUp) == "위임 알림" && MightyGraphSupport.BlockTitle(person) == "중간 요청", "a delegation notice is named 위임 알림, a person's steer 중간 요청");
+        Check(MightyTimeline.KindLabel("steer", notice.Input) == "위임 알림" && MightyTimeline.KindLabel("steer", person.Input) == "중간 요청" && MightyGraphSupport.BlockKind(notice) == "steer", "the timeline names the kind the same way, and the kind stays steer");
+        var steered = MightyGraphBlockModel.ToolbarSummary([Run("steered", "completed", "done", notice, followUp, person)]);
+        Check(steered.Contains("중간 요청 1", StringComparison.Ordinal) && !steered.Contains("중간 요청 3", StringComparison.Ordinal), "the toolbar counts only a person's steers; got " + steered);
         return Task.CompletedTask;
     }
     /// macOS MightyTimelineTests.theRequestRowHoldsTheInputAndTheExecutionRowTheWork.

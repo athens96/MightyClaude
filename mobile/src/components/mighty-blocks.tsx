@@ -209,7 +209,7 @@ function BlockRow({
             </Text>
             <Text style={styles.blockMeta}>
               <Text style={{ color: tint }}>{blockKindMark(block.kind)} </Text>
-              {blockKindLabel(block.kind)}
+              {blockKindLabel(block.kind, block.summary)}
               {duration ? ` · ${duration}` : ''}
             </Text>
             {gist ? (

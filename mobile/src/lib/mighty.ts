@@ -72,8 +72,24 @@ function labelled(table: Record<string, string>, key: string): string | undefine
   return Object.hasOwn(table, key) ? table[key] : undefined;
 }
 
-/** The label for a block kind, or the word the host sent when we do not know it. */
-export function blockKindLabel(kind: string): string {
+/**
+ * Delegation hands a child's notice, or a follow-up to a running child, into a running
+ * Claude turn as a steer; its text opens with one of these (the Mac's
+ * `MightyGraphSupport.delegationNoticePrefixes`). Such a block is a 위임 알림, not a 중간 요청.
+ */
+export const DELEGATION_NOTICE_PREFIXES = ['[Mighty Claude notice ', '[Mighty Claude follow-up '];
+
+/** Whether a `steer` block was sent by delegation rather than by a person, read from what it was asked. */
+export function isDelegationNotice(kind: string, summary: string | undefined): boolean {
+  return kind === 'steer' && DELEGATION_NOTICE_PREFIXES.some((prefix) => (summary ?? '').startsWith(prefix));
+}
+
+/**
+ * The label for a block kind, or the word the host sent when we do not know it. `summary`
+ * is what the block was asked: a steer that delegation sent is named for that.
+ */
+export function blockKindLabel(kind: string, summary?: string): string {
+  if (isDelegationNotice(kind, summary)) return t('graph.block.delegationNotice');
   const key = labelled(BLOCK_KIND_LABEL_KEYS, kind);
   if (key !== undefined) return t(key);
   return kind.length > 0 ? kind : t('phone.blocks.unknownKind');
@@ -84,8 +100,12 @@ export function blockKindMark(kind: string): string {
   return labelled(BLOCK_KIND_MARKS, kind) ?? UNKNOWN_BLOCK_MARK;
 }
 
-/** The block's own title, falling back to what its kind is called. */
+/**
+ * The block's own title, falling back to what its kind is called. A delegation notice is
+ * named here too, since an older host still titles it 중간 요청.
+ */
 export function blockTitle(block: MobileBlock): string {
+  if (isDelegationNotice(block.kind, block.summary)) return t('graph.block.delegationNotice');
   const title = block.title.trim();
   return title.length > 0 ? title : blockKindLabel(block.kind);
 }

@@ -232,6 +232,7 @@
   "graph.block.agent": "하위 에이전트",
   "graph.block.blockUsageLabel": "이 블록",
   "graph.block.compact": "컨텍스트 정리",
+  "graph.block.delegationNotice": "위임 알림",
   "graph.block.draftHint": "아래 입력창에서 요청을 작성하세요.",
   "graph.block.execution": "실행",
   "graph.block.executionOf": "실행 · 요청 {n}",

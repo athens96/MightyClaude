@@ -73,12 +73,21 @@ public static class MightyGraphSupport
 
     public static string BlockTitle(MightyGraphAgent agent) => BlockKind(agent) switch
     {
-        "steer" => Locale.Get("graph.block.steer"),
+        "steer" => IsDelegationNotice(agent.Input) ? Locale.Get("graph.block.delegationNotice") : Locale.Get("graph.block.steer"),
         "compact" => ContextCompaction.Title,
         "question" => string.IsNullOrEmpty(agent.Title) ? Locale.Get("graph.block.question") : agent.Title,
         "task" => string.IsNullOrEmpty(agent.Title) ? Locale.Get("graph.block.task") : agent.Title,
         _ => string.IsNullOrEmpty(agent.Title) ? Locale.Get("graph.block.agent") : agent.Title,
     };
+
+    /// <summary>Delegation hands a child's notice, or a follow-up to a running child, into a running Claude turn as a steer
+    /// (<see cref="DelegationCoordinator"/>); its text opens with one of these. Such a block is a 위임 알림, not a 중간 요청
+    /// (macOS MightyGraphSupport.delegationNoticePrefixes).</summary>
+    public static readonly string[] DelegationNoticePrefixes = ["[Mighty Claude notice ", "[Mighty Claude follow-up "];
+    public static bool IsDelegationNotice(string? input) =>
+        input is not null && DelegationNoticePrefixes.Any(prefix => input.StartsWith(prefix, StringComparison.Ordinal));
+    /// <summary>A steer that delegation sent, not a person.</summary>
+    public static bool IsDelegationNotice(MightyGraphAgent agent) => BlockKind(agent) == "steer" && IsDelegationNotice(agent.Input);
 
     public static string AgentNodeId(string runId, string agentId) =>
         MightyGraphBlockSize.NodeId(runId, "agent:" + agentId);

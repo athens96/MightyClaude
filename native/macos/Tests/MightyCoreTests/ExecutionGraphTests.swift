@@ -426,6 +426,22 @@ struct SteeringGraphTests {
         #expect(normalized[0].agents[0].isSteer)
     }
 
+    @Test func aSteerDelegationSentIsADelegationNoticeAndAPersonsStaysAMidTurnInput() {
+        LocaleOverride.$language.withValue(.ko) {
+            let notice = MightyGraphAgent(id: "n", input: "[Mighty Claude notice n-1] Your child c-1 reported revision 1.", kind: "steer")
+            let followUp = MightyGraphAgent(id: "f", input: "[Mighty Claude follow-up f-1] Your parent sent you this follow-up:", kind: "steer")
+            let person = MightyGraphAgent(id: "p", input: "Also add tests", kind: "steer")
+            #expect(MightyGraphSupport.blockTitle(notice) == "위임 알림")
+            #expect(MightyGraphSupport.blockTitle(followUp) == "위임 알림")
+            #expect(MightyGraphSupport.blockTitle(person) == "중간 요청")
+            #expect(notice.isDelegationNotice && followUp.isDelegationNotice && !person.isDelegationNotice)
+            // The kind on the wire stays "steer" for older phones.
+            #expect(MightyGraphSupport.blockKind(notice) == "steer")
+            // Only a steer is one: a sub-agent asked with the same words is not.
+            #expect(!MightyGraphAgent(id: "a", input: notice.input).isDelegationNotice)
+        }
+    }
+
     @Test func claudeStdinFramesCarryTheUserMessageShape() throws {
         let data = try ProviderInput.claudeUserMessage("Also add tests")
         let text = String(decoding: data, as: UTF8.self)

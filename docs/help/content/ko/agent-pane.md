@@ -20,7 +20,7 @@ section: agent-pane
 작업이 도는 동안에도 다음 요청을 쓸 수 있습니다. 입력창에 글이 있으면 중지 단추 옆에 보내기 단추와 같은 둥근 단추가 생깁니다.
 - {{kbd:Enter}} 또는 {{ui:queue.add}} 단추: 다음 요청으로 대기열에 넣습니다. 지금 작업이 끝나면 순서대로 실행합니다. 한 창에 16개까지 넣을 수 있습니다.
 - {{kbd:⌘Enter}} 또는 {{ui:queue.worktree}} 단추: 마이티 오케스트레이션이 켜진 이 Mac의 Claude 창이나 자식이 파일을 바꿀 수 있는 모드의 Codex·Antigravity 창이 커밋이 있는 브랜치의 git 저장소에 있으면, 이 창 옆에 자기 git worktree를 가진 새 자식 창을 열어 바로 실행합니다. 돌고 있는 작업은 그대로 이어지고, 자식이 끝나면 사이드바의 카드에서 결과를 병합합니다([새 worktree에서 실행하기](delegation.md#worktree)).
-- 자식 창, 그런 저장소 밖의 창, 마이티 오케스트레이션을 끈 창에서는 {{kbd:⌘Enter}}도 {{kbd:Enter}}처럼 대기열에 넣습니다. 자식을 만들거나 시작하지 못했을 때도 글은 대기열로 갑니다([새 worktree에서 실행하기](delegation.md#worktree)). 보낸 글이 실행 중인 작업에 끼어드는 일은 이제 없습니다. 예전 기록의 마이티 보기에는 그렇게 보낸 글이 주황색 {{ui:graph.block.steer}} 블록으로 남아 있습니다.
+- 자식 창, 그런 저장소 밖의 창, 마이티 오케스트레이션을 끈 창에서는 {{kbd:⌘Enter}}도 {{kbd:Enter}}처럼 대기열에 넣습니다. 자식을 만들거나 시작하지 못했을 때도 글은 대기열로 갑니다([새 worktree에서 실행하기](delegation.md#worktree)). 보낸 글이 실행 중인 작업에 끼어드는 일은 이제 없습니다. 예전 기록의 마이티 보기에는 그렇게 보낸 글이 주황색 {{ui:graph.block.steer}} 블록으로 남아 있습니다. 실행 중인 Claude 부모에게 바로 전달된 위임 알림은 같은 색의 {{ui:graph.block.delegationNotice}} 블록으로 보입니다([알림과 보류](delegation.md#notices)).
 - 대기열의 {{ui:queue.runNext}}을 누르면 첫 대기 요청을 지금 실행합니다.
 
 작업을 중지하면 대기 중인 요청도 취소됩니다. 앱을 다시 열면 대기열은 비워집니다.

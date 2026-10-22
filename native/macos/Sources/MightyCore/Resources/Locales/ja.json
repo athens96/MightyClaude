@@ -232,6 +232,7 @@
   "graph.block.agent": "サブエージェント",
   "graph.block.blockUsageLabel": "このブロック",
   "graph.block.compact": "コンテキストの要約",
+  "graph.block.delegationNotice": "委任の通知",
   "graph.block.draftHint": "下の入力欄にリクエストを書いてください。",
   "graph.block.execution": "実行",
   "graph.block.executionOf": "実行 · リクエスト {n}",
