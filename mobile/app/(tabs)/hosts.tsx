@@ -132,6 +132,11 @@ export default function HostsTab() {
               tone="ghost"
               onPress={() => void Linking.openURL(helpSiteUrl())}
             />
+            <Button
+              label={t('phone.settings.title')}
+              tone="ghost"
+              onPress={() => router.push('/settings')}
+            />
           </View>
         }
       />
