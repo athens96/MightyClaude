@@ -333,6 +333,8 @@ internal static class Verification
         await Test("mobile push: printing shows no handle, token hash or content", MobilePushVerification.PrintingShowsNoHandleTokenHashOrContent);
         await Test("mobile push: recipients, the relay address and its answers", MobilePushVerification.RecipientsAndRelayAnswers);
         await Test("mobile push: a relay redirect is a failure and is never followed", MobilePushVerification.ARedirectIsAFailureAndIsNeverFollowed);
+        await Test("mobile push: a phone registers a handle and a view", MobilePushVerification.RoutesRegisterAHandleAndAView);
+        await Test("mobile push: registration follows the Mac's rules", MobilePushVerification.RegistrationFollowsTheMacsRules);
         await Test("Mobile remote DeviceTrustAndRotation", MobileRemoteVerification.DeviceTrustAndRotation);
         await Test("Mobile remote UploadOwnershipAndClaims", MobileRemoteVerification.UploadOwnershipAndClaims);
         await Test("Mobile remote DesktopRouteContract", MobileRemoteVerification.DesktopRouteContract);
