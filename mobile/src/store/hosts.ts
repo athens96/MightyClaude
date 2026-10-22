@@ -79,7 +79,11 @@ interface HostsState {
   clientIds: Record<string, string>;
   status: Record<string, HostStatus>;
   loaded: boolean;
-  load: () => Promise<void>;
+  /**
+   * Reads the pairings from the keychain, then probes every host unless `probe` is false:
+   * a push or a notification button handled with the app closed reads them without dialling each host.
+   */
+  load: (options?: { probe?: boolean }) => Promise<void>;
   /** The install's id, generating it if this is the first time it is needed. */
   ensureClientId: () => Promise<string>;
   addHost: (
@@ -256,7 +260,7 @@ export const useHostsStore = create<HostsState>((set, get) => ({
     return clientId;
   },
 
-  load: async () => {
+  load: async (options) => {
     const clientId = await ensureClientId(SecureStore);
     const hosts = parseIndex(await SecureStore.getItemAsync(INDEX_KEY));
     const keys: Record<string, string> = {};
@@ -280,7 +284,7 @@ export const useHostsStore = create<HostsState>((set, get) => ({
       }
     }
     set({ hosts, keys, tokens, clientIds, status, clientId, loaded: true });
-    void get().refreshAll();
+    if (options?.probe !== false) void get().refreshAll();
   },
 
   addHost: async (payload, info) => {

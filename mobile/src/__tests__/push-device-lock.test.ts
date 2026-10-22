@@ -20,6 +20,13 @@ describe('isDeviceLocked', () => {
     expect(isDeviceLocked()).toBe(true);
   });
 
+  it('counts anything but a plain false as locked', () => {
+    lookup.mockReturnValue({ isDeviceLocked: () => undefined as unknown as boolean });
+    expect(isDeviceLocked()).toBe(true);
+    lookup.mockReturnValue({ isDeviceLocked: () => 0 as unknown as boolean });
+    expect(isDeviceLocked()).toBe(true);
+  });
+
   it('follows the native answer', () => {
     lookup.mockReturnValue({ isDeviceLocked: () => false });
     expect(isDeviceLocked()).toBe(false);

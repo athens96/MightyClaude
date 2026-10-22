@@ -4,6 +4,7 @@ import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { PushRoot } from '@/components/push-root';
 import { ToastHost } from '@/components/toast-host';
 import { installCryptoPolyfill } from '@/api/relay/random';
 import { useHostsStore } from '@/store/hosts';
@@ -84,6 +85,7 @@ export default function RootLayout() {
               options={{ title: t('phone.files.title') }}
             />
           </Stack>
+          <PushRoot />
           <ToastHost />
         </GestureHandlerRootView>
       </ThemeProvider>

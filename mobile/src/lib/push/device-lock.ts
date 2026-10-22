@@ -9,7 +9,8 @@ export function isDeviceLocked(): boolean {
   const native = requireOptionalNativeModule<MightyDeviceLockModule>('MightyDeviceLock');
   if (!native) return true;
   try {
-    return native.isDeviceLocked();
+    // Only a plain `false` unlocks: an undefined or odd answer from the bridge counts as locked.
+    return native.isDeviceLocked() !== false;
   } catch {
     return true;
   }
