@@ -234,8 +234,31 @@ export interface MobilePermission {
   questionnaire?: Questionnaire;
   /** The Markdown plan of a Claude plan approval (ExitPlanMode), answered with `answerPlan`. */
   plan?: string;
-  /** ISO 8601, when the host received the request (plan approvals only). */
+  /** ISO 8601, when the host received the request (plan approvals and Antigravity cards). */
   receivedAt?: string;
+  /**
+   * What a finished Antigravity turn was refused (`toolName: "AntigravityPermission"`),
+   * answered with `respondPermission` and `always`. Read through `antigravityActions`.
+   */
+  antigravity?: MobileAntigravityCard;
+}
+
+/** The kind of a refused Antigravity action; the phone reads any other value as `other`. */
+export type MobileAntigravityKind = 'command' | 'url' | 'file' | 'other';
+
+export interface MobileAntigravityAction {
+  kind: MobileAntigravityKind;
+  /** agy's permission name (`command`, `write_file`, …), or the tool name without a rule. */
+  action: string;
+  displayName: string;
+  /** The whole command, the domain or the path, when agy said it. */
+  target?: string;
+  /** The `permissions.allow` rule allowing this action alone; absent when no rule can. */
+  rule?: string;
+}
+
+export interface MobileAntigravityCard {
+  actions: MobileAntigravityAction[];
 }
 
 /** The plan card's four answers (`POST /m1/sessions/{id}/plan`). */

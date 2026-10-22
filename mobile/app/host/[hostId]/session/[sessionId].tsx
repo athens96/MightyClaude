@@ -39,6 +39,7 @@ import { GuidedPanel } from '@/components/guided-panel';
 import { MightyRunList } from '@/components/mighty-blocks';
 import { MightyStructureView } from '@/components/structure-view';
 import { NextActionChips } from '@/components/next-action-chips';
+import { AntigravityPermissionCard } from '@/components/antigravity-permission-card';
 import { PermissionCard } from '@/components/permission-card';
 import { PlanCard } from '@/components/plan-card';
 import { QuestionnaireCard } from '@/components/questionnaire-card';
@@ -58,6 +59,12 @@ import { Button, EmptyState, ErrorBanner, SegmentedControl } from '@/components/
 import { useAttachments } from '@/hooks/use-attachments';
 import { useCapabilities, useRunsAntigravity } from '@/hooks/use-capabilities';
 import { useFollowBottom } from '@/hooks/use-follow-bottom';
+import {
+  antigravityActions,
+  antigravityAnsweredToast,
+  sendAntigravityAnswer,
+  type AntigravityDecision,
+} from '@/lib/antigravity-permission';
 import { useLongPoll } from '@/hooks/use-long-poll';
 import { usePanelExpanded } from '@/hooks/use-panel-expanded';
 import { hasCapability } from '@/lib/capabilities';
@@ -181,6 +188,8 @@ export default function SessionScreen() {
    * card stays off screen until the host drops them, so it cannot be sent a second time.
    */
   const [settledRequests, setSettledRequests] = useState<ReadonlySet<string>>(() => new Set());
+  /** The host's reason (`requestKey` → text) for refusing an Antigravity card's last answer. */
+  const [antigravityErrors, setAntigravityErrors] = useState<ReadonlyMap<string, string>>(() => new Map());
   const [paneBusy, setPaneBusy] = useState(false);
   const [queueBusy, setQueueBusy] = useState(false);
   const [savingSetting, setSavingSetting] = useState(false);
@@ -547,6 +556,38 @@ export default function SessionScreen() {
     [client, poll, sessionId, settle],
   );
 
+  /**
+   * One of an Antigravity card's three answers. The card leaves when the host drops it; a
+   * refusal (409) keeps it on screen with the host's reason, as on the Mac.
+   */
+  const answerAntigravity = useCallback(
+    async (permission: MobilePermission, decision: AntigravityDecision) => {
+      if (!client || !sessionId || decidingRef.current) return;
+      decidingRef.current = true;
+      setDeciding(true);
+      const key = requestKey(permission);
+      try {
+        const result = await sendAntigravityAnswer(client, sessionId, permission, decision);
+        setAntigravityErrors((prev) => {
+          if (result.ok && !prev.has(key)) return prev;
+          const next = new Map(prev);
+          if (result.ok) next.delete(key);
+          else next.set(key, result.reason);
+          return next;
+        });
+        if (result.ok) {
+          settle(key);
+          showToast(antigravityAnsweredToast(decision), 'success');
+        }
+        poll.refresh();
+      } finally {
+        decidingRef.current = false;
+        setDeciding(false);
+      }
+    },
+    [client, poll, sessionId, settle],
+  );
+
   /** One of the plan card's four answers; the plan leaves the screen once the host took it. */
   const answerPlan = useCallback(
     async (requestId: string, runId: string, decision: PlanDecisionKind, feedback?: string) => {
@@ -813,6 +854,10 @@ export default function SessionScreen() {
       const kept = [...prev].filter((key) => listed.has(key));
       return kept.length === prev.size ? prev : new Set(kept);
     });
+    setAntigravityErrors((prev) => {
+      const kept = [...prev].filter(([key]) => listed.has(key));
+      return kept.length === prev.size ? prev : new Map(kept);
+    });
   }, [detail?.permissions]);
   const questionRequest = questionRequests[0];
   const questionPending = questionRequest !== undefined;
@@ -972,14 +1017,26 @@ export default function SessionScreen() {
     <View style={styles.footer}>
       {detail.permissions
         .filter((permission) => permission.questionnaire === undefined && !isPlanRequest(permission))
-        .map((permission) => (
-          <PermissionCard
-            key={permission.id}
-            permission={permission}
-            busy={deciding}
-            onDecide={(allow) => void decide(permission.id, permission.runId, allow)}
-          />
-        ))}
+        .map((permission) => {
+          const actions = antigravityActions(permission);
+          return actions ? (
+            <AntigravityPermissionCard
+              key={permission.id}
+              permission={permission}
+              actions={actions}
+              busy={deciding}
+              error={antigravityErrors.get(requestKey(permission))}
+              onAnswer={(decision) => void answerAntigravity(permission, decision)}
+            />
+          ) : (
+            <PermissionCard
+              key={permission.id}
+              permission={permission}
+              busy={deciding}
+              onDecide={(allow) => void decide(permission.id, permission.runId, allow)}
+            />
+          );
+        })}
 
       <QueuedList
         items={detail.queued}
