@@ -113,6 +113,17 @@ bash relay/deploy/oracle/setup.sh
 
 (두 번째부터는 이름을 생략하면 `.env`에 적힌 이름을 씁니다.)
 
+## 푸시 알림(FCM) 켜기
+
+폰 알림은 릴레이가 FCM으로 보낸다. 키는 서버에만 둔다(저장소·앱에 넣지 않는다).
+
+1. Firebase 콘솔 → 프로젝트 설정 → 서비스 계정 → **새 비공개 키 생성**. JSON 파일을 받는다. 이 키에는 Firebase Cloud Messaging API 권한이 있다. Google Cloud 콘솔에서 그 프로젝트의 "Firebase Cloud Messaging API"가 사용 설정되어 있는지 확인한다.
+2. 받은 파일을 서버의 `relay/deploy/oracle/fcm-service-account.json`으로 올린다. 예: `scp <받은 파일> <서버>:~/<저장소>/relay/deploy/oracle/fcm-service-account.json`.
+3. 서버에서 `bash relay/deploy/oracle/setup.sh`를 다시 실행한다. 키를 `secrets/`로 옮기고(읽기 전용, 컨테이너 사용자만) 릴레이를 다시 빌드·재시작한다. 끝에 "푸시 알림 전송: 켜짐"이 보여야 한다. "꺼져 있습니다" 경고가 나오면 JSON 파일이 맞는지(내려받은 그대로인지) 확인하고 `sudo docker compose logs relay`에서 `[push] FCM`을 본다. 키가 깨졌어도 릴레이는 계속 돌고 푸시 전송만 503이다.
+4. Mac에서 `node relay/deploy/oracle/push-check.mjs <도메인>`을 실행한다. `✔ 푸시 경로`가 보이면 된다.
+
+핸들 파일은 이름 있는 볼륨 `relay_data`에 있어 재배포해도 남는다. 키를 바꾸려면 새 파일을 같은 이름으로 올리고 3을 다시 한다.
+
 ## TURN(coturn) 배포와 확인 — 원격 화면 BETA
 
 원격 화면 기능의 TURN 대체 경로는 같은 VM의 coturn이 맡습니다. coturn의
