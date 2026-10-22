@@ -31,6 +31,8 @@ public struct AntigravityDeniedAction: Codable, Sendable, Equatable {
     }
     /// Its rule may be allowed only for the follow-up run (`AntigravityRuleSafety`).
     public var onceOnly: Bool { rule.map { AntigravityRuleSafety.verdict($0) == .once } ?? false }
+    /// Why it may be allowed only once; nil when it may be kept (or has no rule).
+    public var onceOnlyReason: AntigravityRuleSafety.OnceReason? { onceOnly ? rule.flatMap { AntigravityRuleSafety.onceReason($0) } : nil }
 }
 
 /// The card one Antigravity turn leaves: what it was refused, together.
@@ -123,6 +125,69 @@ public enum AntigravityRuleSafety {
         "rm", "rmdir", "unlink", "shred", "dd", "sudo", "su", "doas", "kill", "killall", "pkill", "shutdown", "reboot", "halt", "poweroff", "eval",
         "del", "erase", "rd", "format", "remove-item", "taskkill", "stop-process", "stop-computer", "restart-computer",
     ]
+    /// Why a command rule may be allowed only once.
+    public enum OnceReason: String, Sendable, Codable, CaseIterable {
+        /// It chains, pipes, redirects, substitutes, runs in the background or runs a destructive program.
+        case risky
+        /// A shell, interpreter or wrapper alone or with inline code (`command(bash)` would allow `bash -c …`).
+        case interpreter
+        /// It names agy's own `.gemini` folder.
+        case agyFolder
+    }
+    /// Why a rule may be allowed only once, checked in this order; nil for a
+    /// rule that may be kept or is refused.
+    public static func onceReason(_ rule: String, protectedFolders folders: [String]? = nil) -> OnceReason? {
+        guard verdict(rule, protectedFolders: folders) == .once, let (_, argument) = parts(rule) else { return nil }
+        return commandReason(argument)
+    }
+
+    static func commandReason(_ command: String) -> OnceReason? {
+        if risky(command) { return .risky }
+        if runsCode(command) { return .interpreter }
+        if command.lowercased().contains(".gemini") { return .agyFolder }
+        return nil
+    }
+
+    /// Shells and interpreters: once alone or with an inline-code flag.
+    public static let interpreters: Set<String> = [
+        "bash", "sh", "zsh", "dash", "fish", "ksh", "csh", "tcsh", "pwsh", "powershell", "cmd", "python", "python3", "node", "deno", "bun",
+        "ruby", "perl", "php", "lua", "osascript",
+    ]
+    /// Programs that run the command after them: once whatever follows.
+    public static let wrappers: Set<String> = ["env", "xargs", "nohup", "time", "timeout", "nice", "watch", "exec", "eval", "source", ".", "npx", "bunx", "uvx", "pipx"]
+    /// Flags that hand an interpreter code to run.
+    public static let inlineCodeFlags: Set<String> = ["-c", "-e", "-p", "-r", "--eval", "--print", "--command", "-command", "-encodedcommand", "-enc", "-ec", "/c", "/k"]
+
+    /// A shell, interpreter or wrapper alone or running inline code, judged
+    /// by the first word after any leading `VAR=x` (or `env VAR=x`).
+    /// `command(bash)` would allow `bash -c "<anything>"`: agy matches words from the start.
+    public static func runsCode(_ command: String) -> Bool {
+        var words = command.split(whereSeparator: { $0 == " " || $0 == "\t" }).map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "\"'")).lowercased() }[...]
+        func assignment(_ word: String) -> Bool { !word.hasPrefix("-") && !word.hasPrefix("=") && word.contains("=") }
+        while let first = words.first, assignment(first) { words.removeFirst() }
+        if words.first == "env", words.count > 1, assignment(words[words.startIndex + 1]) {
+            words.removeFirst()
+            while let first = words.first, assignment(first) { words.removeFirst() }
+        }
+        guard let first = words.first else { return false }
+        // The program by its name, without a folder or `.exe`.
+        var program = first
+        if program != ".", let slash = program.lastIndex(where: { $0 == "/" || $0 == "\\" }) { program = String(program[program.index(after: slash)...]) }
+        if program.hasSuffix(".exe") { program.removeLast(4) }
+        if program.hasPrefix("python") { program = "python" }
+        if wrappers.contains(program) { return true }
+        guard interpreters.contains(program) else { return false }
+        if words.count == 1 { return true }
+        // The interpreter's own options come before its script; what follows the script is the script's.
+        for word in words.dropFirst() {
+            if inlineCodeFlags.contains(word) { return true }
+            let shortFlag = word.hasPrefix("-") && !word.hasPrefix("--") && word.count > 1 && word.dropFirst().allSatisfy(\.isLetter)
+            if shortFlag, word.dropFirst().contains(where: { "cerp".contains($0) }) { return true }
+            if !word.hasPrefix("-") { return false }
+        }
+        return false
+    }
+
     /// Characters that chain, pipe, redirect, background or substitute.
     public static let chainCharacters: Set<Character> = [";", "&", "|", ">", "<", "`"]
 
@@ -178,8 +243,8 @@ public enum AntigravityRuleSafety {
                 if guarded.contains(where: { within(normalized, $0) || within($0, normalized) }) { return .refused }
             }
         }
-        // A command that names agy's own folder may run once, never for good.
-        return name == "command" && (risky(argument) || argument.lowercased().contains(".gemini")) ? .once : .always
+        // A risky command, a shell or interpreter running code, or one that names agy's own folder may run once, never for good.
+        return name == "command" && commandReason(argument) != nil ? .once : .always
     }
 
     /// An absolute path, compared without case, `\\` as `/`, `.` and `..` taken
@@ -426,6 +491,17 @@ public enum AntigravityPermissionFlow {
         guard let rule = action.rule else { return nil }
         return L(action.action == "command" ? "antigravity.permission.ruleCommand" : "antigravity.permission.rule", ["rule": rule])
     }
+
+    /// The words under a rule that may be allowed only once.
+    public static func onceOnlyText(_ reason: AntigravityRuleSafety.OnceReason) -> String {
+        switch reason {
+        case .risky: return L("antigravity.permission.onceOnly")
+        case .interpreter: return L("antigravity.permission.onceOnlyInterpreter")
+        case .agyFolder: return L("antigravity.permission.onceOnlyAgyFolder")
+        }
+    }
+    /// The words under an action's rule, or nil when it may be kept.
+    public static func onceOnlyText(_ action: AntigravityDeniedAction) -> String? { action.onceOnlyReason.map(onceOnlyText) ?? (action.onceOnly ? onceOnlyText(.risky) : nil) }
 
     /// The card's label for an action's kind.
     public static func kindLabel(_ kind: AntigravityDeniedAction.Kind) -> String {

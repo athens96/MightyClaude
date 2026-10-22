@@ -622,7 +622,8 @@ public struct MobileAntigravityCard: Codable, Sendable, Equatable {
     public init(actions: [MobileAntigravityAction]) { self.actions = actions }
     public init(_ card: AntigravityPermissionRequest) {
         actions = card.actions.map {
-            MobileAntigravityAction(kind: $0.kind.rawValue, action: $0.action, displayName: $0.displayName, target: $0.target, rule: $0.rule, onceOnly: $0.onceOnly ? true : nil)
+            MobileAntigravityAction(kind: $0.kind.rawValue, action: $0.action, displayName: $0.displayName, target: $0.target, rule: $0.rule, onceOnly: $0.onceOnly ? true : nil,
+                                    onceOnlyReason: $0.onceOnlyReason?.rawValue)
         }
     }
 }
@@ -641,8 +642,13 @@ public struct MobileAntigravityAction: Codable, Sendable, Equatable {
     /// redirects or runs a destructive command): the card offers no "항상
     /// 허용" and the host refuses `always`. Absent otherwise.
     public var onceOnly: Bool?
-    public init(kind: String, action: String, displayName: String, target: String? = nil, rule: String? = nil, onceOnly: Bool? = nil) {
+    /// Why (`risky`, `interpreter` or `agyFolder`, `AntigravityRuleSafety.OnceReason`),
+    /// with `onceOnly`; it picks the card's words. A phone that does not know
+    /// a reason shows the `risky` words.
+    public var onceOnlyReason: String?
+    public init(kind: String, action: String, displayName: String, target: String? = nil, rule: String? = nil, onceOnly: Bool? = nil, onceOnlyReason: String? = nil) {
         self.kind = kind; self.action = action; self.displayName = displayName; self.target = target; self.rule = rule; self.onceOnly = onceOnly
+        self.onceOnlyReason = onceOnlyReason
     }
 }
 /// `POST /m1/sessions/{id}/plan`: one of the plan card's four answers.
