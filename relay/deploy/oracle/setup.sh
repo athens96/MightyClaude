@@ -103,8 +103,35 @@ sudo chown root:65534 /etc/coturn/turnserver.conf
 sudo chmod 640 /etc/coturn/turnserver.conf
 echo "▶ /etc/coturn/turnserver.conf 기록 완료"
 
+# ── FCM 서비스 계정 키 (푸시 알림) ───────────────────────────────────────────
+# 키 파일은 저장소에 넣지 않는다. 사용자가 이 폴더에 fcm-service-account.json을
+# 올려 두면 secrets/로 옮겨 컨테이너의 node 사용자(uid 1000)만 읽게 한다.
+# 키가 없으면 푸시 전송만 꺼진다(503). 핸들 등록과 나머지는 그대로 동작한다.
+# 키가 있어도 JSON이나 개인 키가 깨져 있으면 릴레이는 시작 때 이를 알아채 전송만
+# 끄고(503) 계속 돈다. 로그의 "[push] FCM sending on"이 진짜 켜짐 표시다.
+sudo install -d -o 1000 -g 1000 -m 500 secrets
+FCM_KEY_MOVED=0
+if [ -f fcm-service-account.json ]; then
+    sudo install -o 1000 -g 1000 -m 400 fcm-service-account.json secrets/fcm-service-account.json
+    rm -f fcm-service-account.json
+    FCM_KEY_MOVED=1
+    echo "▶ FCM 서비스 계정 키를 secrets/로 옮겼습니다."
+fi
+if sudo test -f secrets/fcm-service-account.json; then
+    echo "▶ 푸시 알림 전송: 키 파일 있음 (릴레이가 읽었는지는 맨 끝에서 확인합니다)"
+else
+    echo "▶ 푸시 알림 전송: 꺼짐 (relay/deploy/oracle/fcm-service-account.json을 올리고 다시 실행하면 켜집니다)"
+fi
+
 echo "▶ 릴레이와 Caddy와 coturn을 빌드하고 시작합니다 (첫 실행은 몇 분 걸립니다)..."
 sudo docker compose up -d --build
+
+# 키 파일도 바인드 마운트라 compose가 새 키를 알아채지 못한다. 릴레이는 키를
+# 시작할 때 한 번 읽으므로, 방금 옮겼다면 릴레이만 재시작해 읽힌다.
+if [ "${FCM_KEY_MOVED}" = "1" ]; then
+    echo "▶ 새 FCM 키를 읽히게 릴레이를 재시작합니다..."
+    sudo docker compose restart relay
+fi
 
 # 설정 파일은 바인드 마운트라 compose가 변경을 알아채지 못한다. 방금 다시 쓴
 # 설정을 확실히 읽히게 coturn만 재시작한다(릴레이와 Caddy는 건드리지 않는다).
@@ -126,6 +153,15 @@ fi
 echo "▶ 인증서를 받고 응답하는지 기다립니다..."
 for _ in $(seq 1 30); do
     if [ "$(curl -fsS --max-time 5 "https://${DOMAIN}/healthz" 2>/dev/null)" = "ok" ]; then
+        if sudo test -f secrets/fcm-service-account.json; then
+            RELAY_LOGS="$(sudo docker compose logs --tail 200 relay 2>&1 || true)"
+            if grep -q 'FCM sending on' <<< "${RELAY_LOGS}"; then
+                echo "✔ 푸시 알림 전송: 켜짐 (확인: node relay/deploy/oracle/push-check.mjs ${DOMAIN})"
+            else
+                echo "⚠ 푸시 알림 전송: 릴레이가 키를 읽지 못해 꺼져 있습니다(전송 503, 나머지는 정상)." >&2
+                echo "  JSON 파일이 맞는지, 'sudo docker compose logs relay'의 '[push] FCM'을 확인하세요." >&2
+            fi
+        fi
         echo ""
         echo "✔ 완료. Mac의 릴레이 주소: wss://${DOMAIN}"
         exit 0

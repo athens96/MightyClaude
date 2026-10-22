@@ -153,6 +153,26 @@ QR/문자열: `mightyclaude://pair?v=2&sid=<serverId>&pk=<b64url 공개키>&rela
 3. 직접 소켓이 열린 뒤 3초 안에 `auth_ok`가 오지 않거나, 그 전에 끝나면 — `ready`의 공개키가 페어링한 것과 다름(그 주소를 이제 다른 기기가 씀), 핸드셰이크 지연, 연결을 받지 않음, `auth_error` — 페어링을 지우지 않고 기다리는 요청에도 알리지 않은 채 곧바로 릴레이로 연다. 기기 해제·키 교체·`device-conflict` 같은 진짜 이유는 릴레이에서 듣고, 거기서 지금과 똑같이 처리한다. 릴레이 경로에서 공개키가 다르면 지금처럼 재페어링 필요다.
 4. 연결된 뒤 끊기면 평소 재접속(1.5초부터 2배씩 최대 30초, 앱이 전면으로 오면 즉시)으로 1번부터 다시 한다.
 
+## 푸시 알림 (릴레이 평문 봉투, 내용은 E2EE)
+
+호스트(Mac·Windows)가 폰에 알림을 보낼 때 쓰는 HTTP 라우트다. 릴레이는 **핸들 → FCM 토큰**만 알고, 내용은 호스트가 폰 키로 봉인한 봉투(`payload`)라 열 수 없다. 봉인과 평문 모양은 `docs/mobile-remote.md` "푸시 알림"이다.
+
+| 메서드 · 경로 | 인증 | 본문 | 성공 | 오류(`{ "error": "<code>" }`) |
+|---|---|---|---|---|
+| `POST /push/v1/handles` | 없음 | `{ fcmToken }` | 201 `{ handle, secret }` | 400 `bad-request` · 429 `rate-limited` · 503 `full` |
+| `PUT /push/v1/handles/{handle}` | `Authorization: Bearer <secret>` | `{ fcmToken }` | 204 | 400 · 404 `unknown-handle` · 429 |
+| `DELETE /push/v1/handles/{handle}` | `Authorization: Bearer <secret>` | | 204 | 404 · 429 |
+| `POST /push/v1/send` | `Authorization: Bearer <hostToken>` | `{ serverId, handle, payload }` | 202 `{ ok: true }` | 400 · 401 `unauthorized` · 403 `foreign-handle` · 404 `unknown-handle` · 410 `token-gone` · 413 `too-large` · 429 `rate-limited` · 502 `fcm-failed` · 503 `push-unavailable` |
+
+- **핸들**과 **비밀**은 각각 32 무작위 바이트 base64url(43자)이다. 폰은 핸들을 페어링된 호스트에게만(m1 `POST /m1/push/register`) 주고, 비밀은 자기만 갖는다. 비밀 없이는 핸들의 토큰을 바꾸거나 지울 수 없다. 릴레이는 비밀의 SHA-256만 저장한다.
+- **호스트 인증**은 제어 소켓과 같다: `SHA-256(hostToken) == serverId`. 릴레이는 핸들을 처음 보낸 `serverId`에 묶고, 다른 `serverId`의 전송은 403이다. 폰은 호스트마다 다른 핸들을 받는다.
+- **FCM 메시지**: 데이터 전용 `{ v: "1", h: <handle>, p: <payload> }`, `android.priority: HIGH`, `ttl: 3600s`. `payload`는 `^[A-Za-z0-9_-]{24,3072}$`.
+- **토큰 정리**: FCM이 토큰을 무효라고 하면(404 `UNREGISTERED`, 400 `INVALID_ARGUMENT`, 403 `SENDER_ID_MISMATCH`) 릴레이가 핸들을 지우고 410으로 답한다. 호스트는 410·404·403을 받으면 그 기기의 핸들을 지운다. FCM이 바쁘면(429·5xx) 502와 `Retry-After`다.
+- **한도**(TURN과 같은 슬라이딩 창, 기본 10분): 전송은 serverId당 120, IP당 240, 전체 3000. 핸들 등록·갱신·삭제는 IP당 30이고(IPv6는 /64 단위), 핸들 등록은 전체로도 300이다. 넘으면 429와 `Retry-After`.
+- **저장**: `PUSH_STORE_PATH`의 JSON 파일(0600). 120일 동안 쓰이지 않은 핸들은 지운다. 핸들은 최대 2만 개이고, 가득 차면 오래 쓰이지 않은 핸들부터, 그다음 호스트가 아직 한 번도 쓰지 않은 핸들 중 가장 오래된 것부터 비운다(호스트가 쓴 핸들은 자리 때문에 지우지 않는다). 읽을 수 없는 파일은 `.unreadable-<시각>`으로 옮기고 빈 상태로 시작한다.
+- **로그**: `[serverId 앞 8자] push sent` 같은 줄만 남긴다. 핸들·토큰·봉투는 남기지 않는다.
+- 서비스 계정 키(`FCM_SERVICE_ACCOUNT_FILE`)가 없거나 읽히지 않거나 JSON·개인 키가 깨졌으면 릴레이는 시작 때 `[push] FCM disabled`를 남기고 전송만 503이다. 릴레이는 계속 돌고 나머지는 그대로다. 키를 읽으면 `[push] FCM sending on`이다.
+
 ## TURN 자격증명 발급 (릴레이 평문, E2EE 아님)
 
 릴레이는 coturn `use-auth-secret`을 환경 변수 `TURN_SECRET`으로 보관한다. 클라이언트·호스트 앱에는 절대 전달되지 않는다.

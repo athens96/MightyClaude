@@ -26,3 +26,8 @@ __pycache__/
 
 # The generated help site (node scripts/help/build.mjs); it is uploaded to R2, not committed.
 docs/help/site/
+
+# Firebase and FCM secrets stay outside git (docs/relay-oracle.md, docs/mobile-remote.md).
+mobile/google-services.json
+relay/deploy/oracle/secrets/
+relay/deploy/oracle/fcm-service-account.json

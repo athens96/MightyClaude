@@ -10,6 +10,7 @@
 릴레이는 키를 만들지도, 받지도, 저장하지도 않으며 프레임 내용을 해석할 수 없다.
 평문으로 보는 것은 쿼리(`serverId`, `role`, `connectionId`, `v`)와 제어 소켓 알림(`connected`/`disconnected`)뿐이다.
 로그에도 프레임 내용은 절대 남기지 않고 `serverId` 앞 8자만 찍는다.
+푸시 봉투도 호스트가 폰 키로 봉인한 암호문이고, 릴레이는 핸들→FCM 토큰만 안다.
 
 ## 로컬 실행
 
@@ -32,6 +33,13 @@ npm test                       # vitest
 | `RELAY_MAX_CONNECTIONS` | `32` | `serverId`당 동시 연결 수 |
 | `RELAY_MAX_BUFFERED_FRAMES` | `64` | 호스트 부착 전 버퍼링할 클라이언트 프레임 수 |
 | `RELAY_MAX_PAYLOAD` | `1048576` | 프레임 최대 크기(바이트) |
+| `PUSH_STORE_PATH` | (빈 값) | 푸시 핸들 파일. 비면 메모리에만 둔다(로컬 실행) |
+| `FCM_SERVICE_ACCOUNT_FILE` | (빈 값) | FCM 서비스 계정 JSON 경로. 비거나 읽을 수 없거나 키가 깨졌으면 `POST /push/v1/send`가 503(릴레이는 계속 돈다) |
+| `PUSH_RATE_WINDOW_MS` | `600000` | 푸시 한도 창 |
+| `PUSH_MAX_SEND_PER_SERVER_ID` · `PUSH_MAX_SEND_PER_IP` · `PUSH_MAX_SEND_GLOBAL` | `120` · `240` · `3000` | 창마다 전송 수 |
+| `PUSH_MAX_HANDLE_OPS_PER_IP` | `30` | 창마다 IP당(IPv6는 /64당) 핸들 등록·갱신·삭제 수 |
+| `PUSH_MAX_REGISTRATIONS_GLOBAL` | `300` | 창마다 전체 핸들 등록 수 |
+| `PUSH_MAX_HANDLES` · `PUSH_HANDLE_IDLE_DAYS` | `20000` · `120` | 핸들 수 상한, 쓰이지 않은 핸들을 지우는 날 수 |
 
 ## Docker
 
@@ -41,7 +49,7 @@ docker run --rm -p 8787:8787 mightyclaude-relay
 curl http://localhost:8787/healthz   # -> ok
 ```
 
-이미지는 `node:22-alpine` 기반이고 비루트 사용자(`node`)로 실행된다. 상태를 디스크에 쓰지 않으므로 볼륨이 필요 없고, 여러 인스턴스를 띄울 경우 같은 `serverId`의 소켓들이 **같은 인스턴스**로 가도록 스티키 라우팅이 필요하다.
+이미지는 `node:22-alpine` 기반이고 비루트 사용자(`node`)로 실행된다. 푸시 핸들만 `PUSH_STORE_PATH` 파일에 쓰므로(배포 키트는 이름 있는 볼륨 `relay_data`를 `/data`에 붙인다), 여러 인스턴스를 띄울 경우 같은 `serverId`의 소켓들이 **같은 인스턴스**로 가도록 스티키 라우팅이 필요하다.
 
 ## 공개 인터넷: TLS 리버스 프록시 뒤에 두기
 
