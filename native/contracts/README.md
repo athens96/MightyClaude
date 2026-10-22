@@ -733,7 +733,9 @@ about is refused and the turn goes on; the pane asks afterwards with a card
   `~/.gemini` or the app's data folder with its ledger; the cases use
   `context.protected`), `once` (a command that
   chains, pipes, redirects, substitutes or runs a closed list of destructive
-  programs, or mentions `.gemini`: offered only as 이번만 허용; a host refuses `always` with 409
+  programs, runs a shell, interpreter or wrapper alone or with inline code, or
+  mentions `.gemini` — each once case carries its `reason`: offered only as
+  이번만 허용; a host refuses `always` with 409
   `remote.error.antigravityOnceOnly`) and `always`. agy's rules are prefixes
   (probed on agy 1.4.5): `command(echo hi)` allows every command starting with
   that text, `write_file(<folder>)` everything in it, `command(*)` everything.
@@ -755,7 +757,8 @@ about is refused and the turn goes on; the pane asks afterwards with a card
   "AntigravityPermission"`, optional `antigravity.actions`) and the answers on
   `POST /m1/sessions/{id}/permission` (`allow`, `allow` + `always`, deny;
   `always` without `allow` is 400). `onceOnly: true` on an action means the
-  card offers no 항상 허용 (`refusals`: 409); `permissionPlain` is the card of
+  card offers no 항상 허용 (`refusals`: 409), and `onceOnlyReason` picks its words
+  (`onceOnlyReasons`); `permissionPlain` is the card of
   the recorded `command` stream, where it does.
 
 Implementations: `MightyCore/AntigravityPermissions.swift` (checked by
