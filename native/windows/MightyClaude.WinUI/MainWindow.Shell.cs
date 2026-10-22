@@ -252,7 +252,7 @@ public sealed partial class MainWindow
         updateStagedText.Foreground = brushes.Brush(DesignToken.Accent);
         AutomationProperties.SetAutomationId(updateStagedText, AppUpdateStagedId);
         var restartWords = new TextBlock { Text = Locale.Get("window.status.updateRestartNow"), TextSize = DesignMetrics.Type.Small, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Accent), VerticalAlignment = VerticalAlignment.Center };
-        updateRestartNow = Button(Locale.Get("window.status.updateRestartNow"), () => AppUpdate.InstallAsync()); updateRestartNow.Content = restartWords;
+        updateRestartNow = Button(Locale.Get("window.status.updateRestartNow"), () => { RestartForAppUpdateNow(); return Task.CompletedTask; }); updateRestartNow.Content = restartWords;
         updateRestartNow.MinWidth = 0; updateRestartNow.MinHeight = 0; updateRestartNow.Padding = new Thickness(0); updateRestartNow.BorderThickness = new Thickness(0); updateRestartNow.VerticalAlignment = VerticalAlignment.Center;
         PaintPlainButton(updateRestartNow, brushes.Transparent, brushes.Transparent);
         ToolTipService.SetToolTip(updateRestartNow, Locale.Get("window.status.updateStagedHelp"));
