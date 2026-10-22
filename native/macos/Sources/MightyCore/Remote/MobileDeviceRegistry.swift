@@ -229,13 +229,15 @@ public final class MobileDeviceRegistry: @unchecked Sendable {
     }
 
     /// Forgets a phone's handle; with `handle`, only while it is still that one (the relay said it is gone).
-    public func clearPush(_ id: String, handle: String? = nil) {
+    /// False only when the file could not be written, so the handle is still there; nothing to clear is true.
+    @discardableResult public func clearPush(_ id: String, handle: String? = nil) -> Bool {
         lock.lock(); defer { lock.unlock() }
         load()
-        guard let index = devices.firstIndex(where: { $0.id == id }), let current = devices[index].push, handle == nil || current.handle == handle else { return }
+        guard let index = devices.firstIndex(where: { $0.id == id }), let current = devices[index].push, handle == nil || current.handle == handle else { return true }
         let snapshot = devices
         devices[index].push = nil
-        do { try save() } catch { devices = snapshot }
+        do { try save() } catch { devices = snapshot; return false }
+        return true
     }
 
     /// The phones to push to, with what their key is made from. Never leaves the host.

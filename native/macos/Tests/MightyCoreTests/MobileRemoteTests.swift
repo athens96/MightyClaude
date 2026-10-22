@@ -947,10 +947,78 @@ extension MobileRemoteTests {
         let host = FakeMobileHost()  // the service holds its delegate weakly
         defer { withExtendedLifetime(host) {} }
         await service.attach(host)
-        #expect(try await call(service, "POST", "/m1/push/register", body: ["handle": "short", "kinds": []], device: seal.clientId).0 == 400)
-        #expect(try await call(service, "POST", "/m1/push/register", body: ["handle": seal.handle, "kinds": []], device: MobileDeviceRegistry.legacyId).0 == 409)
-        #expect(try await call(service, "POST", "/m1/push/viewing", body: ["sessionId": "bad id!"], device: seal.clientId).0 == 404)
+        let short = try await call(service, "POST", "/m1/push/register", body: ["handle": "short", "kinds": []], device: seal.clientId)
+        #expect(short.0 == 400 && short.1["error"] as? String == L("remote.error.badPushHandle"))
+        let legacy = try await call(service, "POST", "/m1/push/register", body: ["handle": seal.handle, "kinds": []], device: MobileDeviceRegistry.legacyId)
+        #expect(legacy.0 == 409 && legacy.1["error"] as? String == L("remote.error.pushNeedsToken"))
+        let badId = try await call(service, "POST", "/m1/push/viewing", body: ["sessionId": "bad id!"], device: seal.clientId)
+        #expect(badId.0 == 404 && badId.1["error"] as? String == L("remote.error.paneNotFound"))
         #expect(try await call(service, "POST", "/m1/push/viewing", body: ["sessionId": NSNull()], device: seal.clientId).0 == 200)
+    }
+
+    /// A phone told "notifications off" must not keep getting them: an unregister the Mac
+    /// cannot write is a failure the phone hears about, with the handle still in place.
+    @Test func anUnregisterThatCannotBeSavedIsReportedAndKeepsTheHandle() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-push-" + UUID().uuidString, isDirectory: true)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let (service, seal) = try Self.pushService(directory)
+        let host = FakeMobileHost()  // the service holds its delegate weakly
+        defer { withExtendedLifetime(host) {} }
+        await service.attach(host)
+        #expect(try await call(service, "POST", "/m1/push/register", body: ["handle": seal.handle, "kinds": ["completed"]], device: seal.clientId).0 == 200)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
+        let failed = try await call(service, "POST", "/m1/push/unregister", body: [:], device: seal.clientId)
+        #expect(failed.0 == 503 && failed.1["error"] as? String == L("mobileRemote.device.saveFailed"))
+        #expect(MobileDeviceRegistry(url: directory.appendingPathComponent("devices.json")).pushDevices().map(\.handle) == [seal.handle])
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+        #expect(try await call(service, "POST", "/m1/push/unregister", body: [:], device: seal.clientId).0 == 200)
+        // Nothing left to clear is not a failure.
+        #expect(try await call(service, "POST", "/m1/push/unregister", body: [:], device: seal.clientId).0 == 200)
+        #expect(MobileDeviceRegistry(url: directory.appendingPathComponent("devices.json")).pushDevices().isEmpty)
+    }
+
+    /// A revoked phone or a rotated key leaves no "on screen" entry behind.
+    @Test func revokingOrRotatingForgetsWhatThePhoneWasViewing() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-push-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let (service, seal) = try Self.pushService(directory)
+        let host = FakeMobileHost()  // the service holds its delegate weakly
+        defer { withExtendedLifetime(host) {} }
+        await service.attach(host)
+        #expect(try await call(service, "POST", "/m1/push/viewing", body: ["sessionId": "pane-1"], device: seal.clientId).0 == 200)
+        #expect(await service.pushViewing[seal.clientId]?.sessionId == "pane-1")
+        _ = try await service.revokeDevice(seal.clientId)
+        #expect(await service.pushViewing.isEmpty)
+        #expect(try await call(service, "POST", "/m1/push/viewing", body: ["sessionId": "pane-2"], device: "b3RoZXItcGhvbmUtMDAwMA").0 == 200)
+        #expect(await service.pushViewing.count == 1)
+        _ = try await service.regenerateKey()
+        #expect(await service.pushViewing.isEmpty)
+    }
+
+    /// A row that cannot use its handle loses the handle and keeps the phone.
+    @Test func theListDropsAHandleItCannotUse() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-push-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let seal = try PushFixture.load().seal
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let stamp = "2026-10-23T00:00:00.000Z"
+        let wellFormed = "cGhvbmUtdGhyZWUtMDAwMA"
+        let devices = [
+            MobileDevice(id: seal.clientId, name: "Bad handle", tokenHash: seal.tokenHash, firstSeen: stamp, lastSeen: stamp,
+                         push: MobilePushRegistration(handle: "not-a-handle", kinds: ["completed"], updatedAt: stamp)),
+            MobileDevice(id: MobileDeviceRegistry.legacyId, name: "Legacy", tokenHash: nil, firstSeen: stamp, lastSeen: stamp,
+                         push: MobilePushRegistration(handle: seal.handle, kinds: ["completed"], updatedAt: stamp)),
+            MobileDevice(id: wellFormed, name: "Good", tokenHash: String(repeating: "a", count: 64), firstSeen: stamp, lastSeen: stamp,
+                         push: MobilePushRegistration(handle: seal.otherHandle, kinds: ["completed", "future-kind"], updatedAt: stamp)),
+        ]
+        try JSONEncoder().encode(devices).write(to: directory.appendingPathComponent("devices.json"))
+        let registry = MobileDeviceRegistry(url: directory.appendingPathComponent("devices.json"))
+        #expect(registry.all().map(\.id) == [seal.clientId, MobileDeviceRegistry.legacyId, wellFormed])
+        #expect(registry.all().map { $0.push == nil } == [true, true, false])
+        #expect(registry.pushDevices() == [MobilePushDevice(deviceId: wellFormed, handle: seal.otherHandle, tokenHash: String(repeating: "a", count: 64), kinds: [.completed])])
     }
 
     @Test func theHostAdvertisesPush() {
