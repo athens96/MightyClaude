@@ -87,8 +87,8 @@ private struct AntigravityPermissionCard: View {
                             }
                             if let line = AntigravityPermissionFlow.ruleLine(action) {
                                 Text(line).font(.code(size: 10)).foregroundStyle(Palette.ink2).lineLimit(3).textSelection(.enabled)
-                                if action.onceOnly {
-                                    Text(L("antigravity.permission.onceOnly")).font(.ui(size: 10)).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true)
+                                if let reason = AntigravityPermissionFlow.onceOnlyText(action) {
+                                    Text(reason).font(.ui(size: 10)).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true)
                                 }
                             } else {
                                 Text(L("antigravity.permission.noRule")).font(.ui(size: 10)).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true)
@@ -107,7 +107,7 @@ private struct AntigravityPermissionCard: View {
                 Button(L("antigravity.permission.deny")) { answer(.deny) }.buttonStyle(PaneCardButtonStyle()).accessibilityIdentifier("antigravity-permission-deny")
                 // A rule that may be allowed only once has no "항상 허용" (the reason is under it).
                 Button(L("antigravity.permission.allowAlways")) { answer(.always) }.buttonStyle(PaneCardButtonStyle())
-                    .disabled(!card.canAllowAlways).help(card.canAllow && !card.canAllowAlways ? L("antigravity.permission.onceOnly") : "")
+                    .disabled(!card.canAllowAlways).help(card.canAllow && !card.canAllowAlways ? (card.actions.lazy.compactMap { AntigravityPermissionFlow.onceOnlyText($0) }.first ?? L("antigravity.permission.onceOnly")) : "")
                     .accessibilityIdentifier("antigravity-permission-allow-always")
                 Button(L("permission.allowOnce")) { answer(.once) }.buttonStyle(PaneCardButtonStyle(prominent: true))
                     .disabled(!card.canAllow).accessibilityIdentifier("antigravity-permission-allow-once")

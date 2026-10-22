@@ -656,7 +656,7 @@
     ]
   },
   "mobile": {
-    "about": "docs/mobile-remote.md: the card is one MobilePermission (toolName AntigravityPermission) with an optional antigravity object; POST /m1/sessions/{id}/permission answers it, always only with allow. onceOnly marks an action whose rule may be allowed only once: a card with one offers no 항상 허용, and always on it is refused (409 remote.error.antigravityOnceOnly).",
+    "about": "docs/mobile-remote.md: the card is one MobilePermission (toolName AntigravityPermission) with an optional antigravity object; POST /m1/sessions/{id}/permission answers it, always only with allow. onceOnly marks an action whose rule may be allowed only once: a card with one offers no 항상 허용, and always on it is refused (409 remote.error.antigravityOnceOnly). onceOnlyReason (risky, interpreter or agyFolder) says why, and picks the card's reason text (onceOnlyReasons); a phone that does not know a reason shows the risky text.",
     "permission": {
       "id": "agy-0f6c1d2e-1111-4222-8333-444455556666",
       "runId": "6B1F0C1E-2A3B-4C5D-8E9F-0A1B2C3D4E5F",
@@ -683,7 +683,8 @@
             "displayName": "RunCommand",
             "target": "curl -s https://example.com | grep -i '<title>'",
             "rule": "command(curl -s https://example.com | grep -i '<title>')",
-            "onceOnly": true
+            "onceOnly": true,
+            "onceOnlyReason": "risky"
           },
           {
             "kind": "other",
@@ -765,7 +766,12 @@
         "status": 409,
         "error": "remote.error.antigravityOnceOnly"
       }
-    ]
+    ],
+    "onceOnlyReasons": {
+      "risky": "antigravity.permission.onceOnly",
+      "interpreter": "antigravity.permission.onceOnlyInterpreter",
+      "agyFolder": "antigravity.permission.onceOnlyAgyFolder"
+    }
   },
   "tools": {
     "about": "The closed mapping from an agy tool to the permission its rule names; any other tool gets no rule.",
@@ -791,7 +797,7 @@
     ]
   },
   "rules": {
-    "about": "AntigravityRuleSafety: refused rules are never offered or added; once rules are offered and added only for the follow-up run (no 항상 허용; a host refuses always with 409 remote.error.antigravityOnceOnly); always rules may be kept. File rules (write_file, read_file) need an absolute path and are refused when the path is inside or equal to a protected folder (agy's own ~/.gemini, the app's data folder that holds its ledger) or an ancestor of one; the cases are judged with `context.protected` as the protected folders, compared without case, with / and \\ alike and . and .. taken out (the apps add the real folders, symlinks resolved). A command that mentions .gemini is once only.",
+    "about": "AntigravityRuleSafety: refused rules are never offered or added; once rules are offered and added only for the follow-up run (no 항상 허용; a host refuses always with 409 remote.error.antigravityOnceOnly); always rules may be kept. File rules (write_file, read_file) need an absolute path and are refused when the path is inside or equal to a protected folder (agy's own ~/.gemini, the app's data folder that holds its ledger) or an ancestor of one; the cases are judged with `context.protected` as the protected folders, compared without case, with / and \\ alike and . and .. taken out (the apps add the real folders, symlinks resolved). A command that mentions .gemini is once only. A once rule carries its reason: risky (chains, pipes, redirects, substitutes, background, a destructive program), interpreter (a shell, interpreter or wrapper alone or with an inline-code flag, judged by the first word after any leading VAR=x or env VAR=x; wrappers such as npx, xargs, timeout are once whatever follows) or agyFolder (mentions .gemini), checked in that order.",
     "cases": [
       {
         "rule": "command(git status)",
@@ -835,171 +841,213 @@
       },
       {
         "rule": "command(curl -s https://example.com | grep -i '<title>')",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(echo hi && date)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(echo hi; date)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(echo hi || true)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(echo hi > out.txt)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(sort < in.txt)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(echo `date`)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(sleep 5 &)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(rm -rf build)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(rm build/a.txt)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(/bin/rm x)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(sudo ls)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(dd if=/dev/zero of=disk.img)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(mkfs.ext4 /dev/sdb1)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(chmod -R 755 .)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(chown -R me .)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(chmod --recursive 700 x)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(git push --force origin main)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(git push -f)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(git push --force-with-lease)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(git push origin +main)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(git reset --hard HEAD~1)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(git clean -fdx)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(kill 123)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(killall node)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(pkill -f node)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(shutdown -h now)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(reboot)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(find . -name x -delete)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(Remove-Item -Recurse build)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(del /s build)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(taskkill /f /im node.exe)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(RM.EXE x)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(bash -c \"rm -rf x\")",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(eval x)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(rmdir build)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(unlink a)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(shred a)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(su root)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(doas ls)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(halt)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(poweroff)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "risky"
       },
       {
         "rule": "command(*)",
@@ -1115,15 +1163,18 @@
       },
       {
         "rule": "command(cat ~/.gemini/antigravity-cli/settings.json)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "agyFolder"
       },
       {
         "rule": "command(ls /Users/me/.GEMINI)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "agyFolder"
       },
       {
         "rule": "command(code .gemini/settings.json)",
-        "verdict": "once"
+        "verdict": "once",
+        "reason": "agyFolder"
       },
       {
         "rule": "write_file(/Users/me/.gemini/antigravity-cli/settings.json)",
@@ -1199,6 +1250,227 @@
       },
       {
         "rule": "write_file(~/notes.txt)",
+        "verdict": "refused"
+      },
+      {
+        "rule": "command(bash)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(sh)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(zsh)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(bash -c \"ls\")",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(bash -lc \"ls\")",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(python3)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(python3 -c \"import os\")",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(node -e \"process.exit\")",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(node -p 1)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(perl -e 1)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(ruby -e \"puts 1\")",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(php -r \"echo 1\")",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(pwsh -Command Get-Date)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(powershell -EncodedCommand ZQBjAGgAbwA=)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(cmd /c dir)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(osascript -e \"beep\")",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(lua -e \"x\")",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(bun -e \"x\")",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(env FOO=1 bash)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(FOO=1 python3 -c \"x\")",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(/usr/bin/python3.12 -c \"x\")",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(Python.exe -c \"x\")",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(npx tsc --noEmit)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(bunx vite)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(uvx ruff check)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(pipx run black)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(xargs ls)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(nohup ./run.sh)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(time make)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(timeout 10 make)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(nice make)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(watch ls)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(exec ls)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(source env.sh)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(. ./env.sh)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(env)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(env -i ls)",
+        "verdict": "once",
+        "reason": "interpreter"
+      },
+      {
+        "rule": "command(python3 script.py)",
+        "verdict": "always"
+      },
+      {
+        "rule": "command(node --version)",
+        "verdict": "always"
+      },
+      {
+        "rule": "command(python3 -m pytest)",
+        "verdict": "always"
+      },
+      {
+        "rule": "command(bash scripts/test.sh)",
+        "verdict": "always"
+      },
+      {
+        "rule": "command(env FOO=1 make test)",
+        "verdict": "always"
+      },
+      {
+        "rule": "command(npm test)",
+        "verdict": "always"
+      },
+      {
+        "rule": "command(pythonic run)",
+        "verdict": "always"
+      },
+      {
+        "rule": "command(git commit -m \"fix\")",
+        "verdict": "always"
+      },
+      {
+        "rule": "command(python3 -c \"print(1)\")",
         "verdict": "refused"
       }
     ],

@@ -17,7 +17,7 @@ struct AntigravityPermissionTests {
         struct Refused: Decodable { let name: String; let before: String; let error: String }
         struct NewFile: Decodable { let add: [String]; let after: String; let created: [String] }
         struct Settings: Decodable { let newFile: NewFile; let edits: [Edit]; let refused: [Refused] }
-        struct RuleCase: Decodable { let rule: String; let verdict: String }
+        struct RuleCase: Decodable { let rule: String; let verdict: String; let reason: String? }
         struct Context: Decodable { let protected: [String] }
         struct Rules: Decodable { let cases: [RuleCase]; let context: Context }
         struct Tools: Decodable { let map: [String: String]; let unmapped: [String] }
@@ -119,6 +119,7 @@ struct AntigravityPermissionTests {
     @Test func whichRulesACardMayOfferFollowsTheSharedCases() {
         for item in Self.fixture.rules.cases {
             #expect(AntigravityRuleSafety.verdict(item.rule, protectedFolders: Self.fixture.rules.context.protected).rawValue == item.verdict, "\(item.rule)")
+            #expect(AntigravityRuleSafety.onceReason(item.rule, protectedFolders: Self.fixture.rules.context.protected)?.rawValue == item.reason, "\(item.rule) reason")
         }
         #expect(AntigravityRuleSafety.toolPermissions == Self.fixture.tools.map)
         for tool in Self.fixture.tools.unmapped { #expect(AntigravityRuleSafety.toolPermissions[tool] == nil, "\(tool)") }
@@ -732,6 +733,16 @@ struct AntigravityPermissionWireTests {
             let poll = try JSONDecoder().decode(RemoteWirePoll.self, from: JSONSerialization.data(withJSONObject: try #require(remote["pollEvent"])))
             #expect(MobilePermission(antigravity: try #require(poll.events.first?.event.antigravityPermission)) == sample)
             #expect(sample.antigravity?.actions.first?.onceOnly == true && sample.antigravity?.actions.last?.onceOnly == nil)
+            #expect(sample.antigravity?.actions.first?.onceOnlyReason == "risky" && sample.antigravity?.actions.last?.onceOnlyReason == nil)
+            // Each reason has its own words on the card.
+            let reasons = try #require(mobile["onceOnlyReasons"] as? [String: String])
+            #expect(Set(reasons.keys) == Set(AntigravityRuleSafety.OnceReason.allCases.map(\.rawValue)))
+            for reason in AntigravityRuleSafety.OnceReason.allCases {
+                #expect(AntigravityPermissionFlow.onceOnlyText(reason) == L(try #require(reasons[reason.rawValue])) && !L(reasons[reason.rawValue]!).hasPrefix("antigravity."))
+            }
+            let interpreter = AntigravityDeniedAction(kind: .command, action: "command", displayName: "RunCommand", target: "bash", rule: "command(bash)")
+            #expect(interpreter.onceOnlyReason == .interpreter && AntigravityPermissionFlow.onceOnlyText(interpreter) == L("antigravity.permission.onceOnlyInterpreter"))
+            #expect(MobileAntigravityCard(AntigravityPermissionRequest(runId: "r", actions: [interpreter])).actions[0].onceOnlyReason == "interpreter")
             // The recorded command's card: 항상 허용 is offered, and nothing says once-only.
             let plainSample = try #require(mobile["permissionPlain"] as? [String: Any])
             let plain = try Self.roundTrips(try #require(plainSample["permission"]), MobilePermission.self)
