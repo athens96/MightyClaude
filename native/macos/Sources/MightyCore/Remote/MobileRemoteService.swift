@@ -145,7 +145,7 @@ public actor MobileRemoteService {
     /// phone can close exactly its sockets.
     private var connectedDevices: [String: String] = [:]
     /// The session each phone said is on its screen; a push about it is not sent while it holds.
-    private var pushViewing: [String: MobilePushViewing] = [:]
+    private(set) var pushViewing: [String: MobilePushViewing] = [:]
     /// Clock for `pushViewing` and push timestamps; tests move it.
     var pushClock: @Sendable () -> Date = { Date() }
     /// How many requests may hold a submit's attachments in memory at once.
@@ -340,6 +340,8 @@ public actor MobileRemoteService {
         // registry so no stale token can authenticate again. clearAll writes []
         // atomically; a write failure is tolerated since the key is already rotated.
         if isRotation { try? deviceRegistry.clearAll() }
+        // Every phone has to pair again, so none of them is looking at anything here.
+        pushViewing.removeAll()
         dropKeyDependentClients()
         return (fresh, rotatedAt)
     }
@@ -400,6 +402,7 @@ public actor MobileRemoteService {
         // dropKeyDependentClients handles key-dependent connections; close
         // this device's token-authenticated socket explicitly.
         close(connections: connectedDevices.filter { $0.value == id }.map(\.key), reason: "device revoked")
+        pushViewing.removeValue(forKey: id)
         // The phone has lost its place: anything it is watching or controlling
         // stops now, not when it next tries to reconnect.
         await screenShare?.deviceRevoked(id)
@@ -1117,7 +1120,7 @@ public actor MobileRemoteService {
                     case .unsaved: throw Failure(503, L("mobileRemote.device.saveFailed"))
                     }
                 case "unregister":
-                    deviceRegistry.clearPush(deviceId)
+                    guard deviceRegistry.clearPush(deviceId) else { throw Failure(503, L("mobileRemote.device.saveFailed")) }
                     pushViewing.removeValue(forKey: deviceId)
                     return reply(200, MobileOK())
                 case "viewing":
