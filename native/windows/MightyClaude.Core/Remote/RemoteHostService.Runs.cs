@@ -31,7 +31,14 @@ public sealed partial class RemoteHostService
         public readonly CancellationTokenSource Cancel = new();
         /// <summary>The event types left out because the Mac could not read them, each traced once.</summary>
         public readonly HashSet<string> Dropped = new(StringComparer.Ordinal);
+        /// <summary>The temporary Antigravity rules this run holds, released when it ends.</summary>
+        public AntigravityRuleLeases.Lease? Lease;
     }
+
+    /// <summary>The Antigravity cards this host's runs reported, by card id: a client's continuation may add only these rules here (for a day, the newest 128). Under <c>gate</c>.</summary>
+    private readonly Dictionary<string, (HashSet<string> Rules, DateTimeOffset At)> reportedRules = new(StringComparer.Ordinal);
+    private static readonly TimeSpan ReportedRulesKept = TimeSpan.FromDays(1);
+    private const int MaximumReportedCards = 128;
 
     private readonly Dictionary<string, Job> jobs = new(StringComparer.Ordinal);
     private static readonly Regex CursorQuery = new(@"^\?cursor=([0-9]{1,12})\z", RegexOptions.CultureInvariant);
@@ -139,15 +146,30 @@ public sealed partial class RemoteHostService
                 throw new HostFailure(400, Locale.Get("remote.host.error.cliMissing", new Dictionary<string, string> { ["name"] = ProviderCatalog.Name(run.Provider) }));
             if (RemoteWorkspaceValidation.CapabilityProblem(run, provider.Capabilities) is { } problem) throw new HostFailure(400, problem);
         }
-        Job job; IRemoteRunner active;
-        lock (gate)
+        // An allowed card's rules go in place before the run starts; refused, nothing runs (M/Remote/RemoteHostService.swift startRun).
+        AntigravityRuleLeases.Lease? lease = null;
+        if (wire.AntigravityGrant is { } grant && run.Provider == "gemini" && run.Kind == "claude")
         {
-            if (revision != generation || runner is null) throw new HostFailure(503, Locale.Get("remote.host.error.stopped"));
-            if (jobs.Values.Count(j => !j.Done) >= RemoteProtocol.MaximumRuns) throw RunLimit();
-            Prune();
-            jobs[id] = job = new Job(request.Headers.GetValueOrDefault(RemoteProtocol.GraphHeader) == RemoteProtocol.GraphRuns, options.Clock());
-            active = runner;
+            bool reported;
+            lock (gate) reported = grant.IsValid && reportedRules.TryGetValue(grant.RequestId, out var known) && options.Clock() - known.At < ReportedRulesKept && grant.Rules.All(known.Rules.Contains);
+            if (!reported) throw new HostFailure(403, Locale.Get("remote.host.error.antigravityRules"));
+            if (options.AntigravityRules is not { } rules) throw new HostFailure(409, Locale.Get("remote.host.error.antigravityRules"));
+            try { lease = await Task.Run(() => rules.Apply(grant)); }
+            catch (Exception ex) when (ex is not OutOfMemoryException) { throw new HostFailure(409, ex.Message); }
         }
+        Job job; IRemoteRunner active;
+        try
+        {
+            lock (gate)
+            {
+                if (revision != generation || runner is null) throw new HostFailure(503, Locale.Get("remote.host.error.stopped"));
+                if (jobs.Values.Count(j => !j.Done) >= RemoteProtocol.MaximumRuns) throw RunLimit();
+                Prune();
+                jobs[id] = job = new Job(request.Headers.GetValueOrDefault(RemoteProtocol.GraphHeader) == RemoteProtocol.GraphRuns, options.Clock()) { Lease = lease };
+                active = runner;
+            }
+        }
+        catch when (lease is not null) { options.AntigravityRules!.Release(lease); throw; }
         AnnounceRuns();
         _ = Task.Run(() => LaunchAsync(run, job, active, revision), job.Cancel.Token);
         return Reply(202, new RemoteWireJob(RemoteProtocol.Version, id));
@@ -214,9 +236,23 @@ public sealed partial class RemoteHostService
             if (Following(value.SessionId, revision) is not { } graphRuns) return;
             // A client that did not ask for graph runs (the Mac's) gets graph nodes instead: left out on purpose, never traced as dropped.
             if (value.Type == "graph_run" && !graphRuns) return;
+            if (value.Type == "antigravityPermission" && value.AntigravityPermission is { } card && card.Rules.Count > 0) Remember(card, revision);
             Append(value.SessionId, value.Type, RemoteWireEvents.FromRunEvent(value, value.SessionId, graphRuns), revision, value.Type == "status" && value.Status is "completed" or "error" or "stopped");
         }
         catch (Exception ex) when (ex is not OutOfMemoryException) { Trace.TraceWarning("remote host: a run event was left out: " + ex.GetType().Name); }
+    }
+
+    /// <summary>A card a run of this sharing reported: its rules may come back as a client's grant, for a day (the newest 128 cards).</summary>
+    private void Remember(AntigravityPermissionRequest card, Guid revision)
+    {
+        lock (gate)
+        {
+            if (revision != generation) return;
+            var now = options.Clock();
+            foreach (var stale in reportedRules.Where(p => now - p.Value.At >= ReportedRulesKept).Select(p => p.Key).ToList()) reportedRules.Remove(stale);
+            while (reportedRules.Count >= MaximumReportedCards && reportedRules.MinBy(p => p.Value.At) is { Key: { } oldest }) reportedRules.Remove(oldest);
+            reportedRules[card.Id] = (card.Rules.ToHashSet(StringComparer.Ordinal), now);
+        }
     }
 
     private void ReceivePermission(ToolPermissionRequest value, Guid revision)
@@ -255,7 +291,7 @@ public sealed partial class RemoteHostService
     private void Append(string jobId, string type, JsonObject? wire, Guid revision, bool ended)
     {
         var data = wire is null ? null : JsonSerializer.SerializeToUtf8Bytes(wire, RemoteWire.Json);
-        var dropped = false;
+        var dropped = false; AntigravityRuleLeases.Lease? lease = null;
         lock (gate)
         {
             if (revision != generation || !jobs.TryGetValue(jobId, out var job) || job.Done) return;
@@ -270,8 +306,10 @@ public sealed partial class RemoteHostService
                     while (job.Events.Count > RemoteProtocol.MaximumBufferedEvents || job.Bytes > RemoteProtocol.MaximumBufferedBytes) job.Bytes -= job.Events.Dequeue().Size;
                 }
             }
-            if (ended) { job.Done = true; job.FinishedAt = options.Clock(); job.Pending.Clear(); }
+            if (ended) { job.Done = true; job.FinishedAt = options.Clock(); job.Pending.Clear(); lease = job.Lease; job.Lease = null; }
         }
+        // The run's temporary Antigravity rules leave agy's settings; from the pool, as nothing may wait here.
+        if (lease is not null && options.AntigravityRules is { } rules) ThreadPool.QueueUserWorkItem(_ => rules.Release(lease));
         // The type alone, never the event: its content may be anything the run printed.
         if (dropped) Trace.TraceInformation("remote host: a \"" + type + "\" event the Mac cannot read was left out");
         if (!ended) return;

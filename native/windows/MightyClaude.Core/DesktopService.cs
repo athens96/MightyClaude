@@ -42,9 +42,12 @@ public sealed partial class DesktopService : IAsyncDisposable
     public string SaveStatus { get { lock (sync) return !saved.IsCompleted ? "pending" : saved.IsFaulted ? "faulted: " + saved.Exception?.GetBaseException().Message : "saved"; } }
     /// <param name="delegationEnabled">The hidden delegation switch; null reads <see cref="DelegationSwitch.IsOn()"/>.</param>
     /// <param name="worktrees">Makes delegated children's worktrees; null makes them under <see cref="ChildWorktreeMaker.DefaultRoot"/>.</param>
-    public DesktopService(string directory, string? legacyDirectory, string pluginDirectory, ProviderCatalog? providers = null, Func<bool>? delegationEnabled = null, ChildWorktreeMaker? worktrees = null)
+    /// <param name="antigravitySettings">agy's settings file; null is the user profile's (<see cref="AntigravityRuleLeases.DefaultSettingsPath"/>). Checks pass a temporary one.</param>
+    public DesktopService(string directory, string? legacyDirectory, string pluginDirectory, ProviderCatalog? providers = null, Func<bool>? delegationEnabled = null, ChildWorktreeMaker? worktrees = null, string? antigravitySettings = null)
     {
         store = new(directory, legacyDirectory); Providers = providers ?? new(); Images = new(Path.Combine(directory, "image-cache")); this.pluginDirectory = pluginDirectory;
+        // The rules a continuation adds for a while are recorded in the app's data folder first, so a crash leaves nothing a next launch does not take out.
+        AntigravityRules = new(antigravitySettings ?? AntigravityRuleLeases.DefaultSettingsPath(), Path.Combine(directory, "antigravity-temporary-rules.json"));
         local = new(ResolveLocal, Providers, pluginDirectory, Receive, ReceiveToolPermission, Images);
         this.delegationEnabled = delegationEnabled ?? DelegationSwitch.IsOn; this.worktrees = worktrees; local.DelegationEnabled = this.delegationEnabled;
         // A save already asked for is still written while the app closes: closing only stops new work.
@@ -109,6 +112,8 @@ public sealed partial class DesktopService : IAsyncDisposable
     {
         StartDelegation();
         var loaded = await store.LoadAsync(); lock (sync) snapshot = loaded;
+        // Temporary Antigravity rules a crash left in agy's settings go first (M/AppStore.swift:433-434).
+        await Task.Run(AntigravityRules.RemoveLeftovers);
         // Children whose runs quitting killed come back interrupted, before any pane runs again (M/AppStore.swift:373-374).
         // Whatever goes wrong there, the app starts all the same.
         if (delegation is { } coordinator)
@@ -160,7 +165,7 @@ public sealed partial class DesktopService : IAsyncDisposable
             var next = StateStore.Normalize(update(snapshot), false); var open = next.Sessions.Select(s => s.Id).ToHashSet();
             closed = snapshot.Sessions.Where(s => !open.Contains(s.Id)).ToList(); snapshot = next; save = QueueSave();
         }
-        foreach (var pane in closed) PaneClosed(pane);
+        foreach (var pane in closed) { ForgetAntigravity(pane.Id); PaneClosed(pane); }
         return save;
     }
     /// <summary>
@@ -185,6 +190,7 @@ public sealed partial class DesktopService : IAsyncDisposable
             // scheduleSave). A run's end is saved at once.
             if (value.Type == "status" && value.Status is "stopped" or "completed" or "error") _ = QueueSave(); else ScheduleSave();
         }
+        ReceiveAntigravity(value);
         // A remote pane's id is remembered too, as the Mac's apply() does.
         if (value.Type == "resume" && value.ResumeId is { } resumed) RememberSession(resumed);
         RunEventReceived?.Invoke(value);
@@ -212,9 +218,11 @@ public sealed partial class DesktopService : IAsyncDisposable
         }
     }
     public Task StartAsync(StartRunRequest value) => Launch(value, null, false);
+    /// <summary>Starts a run and returns once its process is up with its input open (a remote one: once its host took it), or throws why it never got that far.</summary>
+    public Task StartReachedAsync(StartRunRequest value) => Launch(value, null, true);
     /// <summary>
     /// Starts a run. <paramref name="titleFrom"/> is what an automatic title follows when it is not the input: a run delegation
-    /// starts on its own sets none (""). With <paramref name="reach"/> it returns only once the run's process is up with its input open (<see cref="RunManager.StartReachedAsync"/>), or
+    /// starts on its own sets none (""), and an Antigravity card's continuation (<see cref="StartRunRequest.AntigravityGrant"/>) keeps the title too. With <paramref name="reach"/> it returns only once the run's process is up with its input open (<see cref="RunManager.StartReachedAsync"/>), or
     /// throws why it never got it. The run's id as delegation names it; null when it was stopped before it started (M/AppStore.swift:938-1052).
     /// </summary>
     private async Task<string?> Launch(StartRunRequest value, string? titleFrom, bool reach)
@@ -233,7 +241,7 @@ public sealed partial class DesktopService : IAsyncDisposable
             route = new();
             if (!routes.TryAdd(request.SessionId, route)) throw new InvalidOperationException(Locale.Get("run.error.alreadyRunning"));
             runId = DelegationRunBegan(pane);
-            snapshot = snapshot with { Sessions = snapshot.Sessions.Select(s => s.Id == request.SessionId ? PaneTitle.Requested(s, titleFrom ?? request.Input) with { SessionUsage = request.ResumeId is null || s.Provider != request.Provider ? null : s.SessionUsage, Provider = request.Provider, CurrentActivity = null, RunTiming = request.Kind == "shell" ? null : AgentRunTiming.Begin() } : s).ToList() };
+            snapshot = snapshot with { Sessions = snapshot.Sessions.Select(s => s.Id == request.SessionId ? PaneTitle.Requested(s, request.AntigravityGrant is not null ? "" : titleFrom ?? request.Input) with { SessionUsage = request.ResumeId is null || s.Provider != request.Provider ? null : s.SessionUsage, Provider = request.Provider, CurrentActivity = null, RunTiming = request.Kind == "shell" ? null : AgentRunTiming.Begin() } : s).ToList() };
             var history = request.Input + (request.Attachments is { Count: > 0 } ? "\n\n" + AttachmentSupport.Summary(request.Attachments) : "");
             snapshot = snapshot.Apply(RunEvent.State(request.SessionId, "running")).Apply(RunEvent.Log(request.SessionId, "user", history, request.Kind == "claude" ? request.Provider : null)); _ = QueueSave();
         }
@@ -241,6 +249,8 @@ public sealed partial class DesktopService : IAsyncDisposable
         {
             RequestStarting?.Invoke(request);
             RunEventReceived?.Invoke(RunEvent.State(request.SessionId, "running"));
+            // An allowed Antigravity card's rules are in place before its run starts; a remote pane's host puts them in its own settings.
+            if (!remote) await HoldAntigravityRules(request);
             Task started;
             lock (sync)
             {
@@ -312,7 +322,7 @@ public sealed partial class DesktopService : IAsyncDisposable
         // The client's runs stop first, and whatever that throws never keeps this PC's runs and delegation from shutting down.
         if (Remote is { } client)
             try { await client.DisposeAsync(); } catch (Exception ex) when (ex is not OutOfMemoryException) { System.Diagnostics.Trace.TraceWarning("remote client shutdown: " + ex.GetType().Name); }
-        try { await Providers.DisposeAsync(); await local.DisposeAsync(); await StopDelegation(); }
+        try { await Providers.DisposeAsync(); await local.DisposeAsync(); await StopDelegation(); await ReleaseAntigravityRules(); }
         finally
         {
             // The final save runs whatever the shutdown above threw.

@@ -90,6 +90,8 @@ public sealed partial class MainWindow : Window
         // Claude's extra tool-permission requests never travel as a RunEvent:
         // they are ephemeral, so they reach the pane that can show the bar and
         // nowhere else — not the snapshot.
+        // A pane's Antigravity card came, went, or its answer moved: the card over its composer, its counts and the dashboard follow.
+        service.AntigravityCardChanged += sessionId => DispatcherQueue.TryEnqueue(() => { if (closing) return; if (views.TryGetValue(sessionId, out var pane) && service.Snapshot.Sessions.Any(s => s.Id == sessionId)) pane.RenderAntigravityCard(); RefreshRunningIndicators(); });
         service.ToolPermissionChanged += value => DispatcherQueue.TryEnqueue(() => { if (closing) return; if (views.TryGetValue(value.RunId, out var pane) && service.Snapshot.Sessions.Any(s => s.Id == value.RunId)) pane.ReceiveToolPermission(value); try { ReceiveCompanionPermission(value); } catch (Exception ex) { companionError = ex.Message; } });
         service.PersistenceFailed += ex => DispatcherQueue.TryEnqueue(() => error.Text = Locale.Get("window.error.saveFailed", new Dictionary<string, string> { ["reason"] = ex.Message }));
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });

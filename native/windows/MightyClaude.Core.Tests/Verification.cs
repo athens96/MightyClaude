@@ -164,6 +164,8 @@ internal static class Verification
                 foreach (var file in Directory.EnumerateFiles(directory)) captured.Add(file, Convert.ToBase64String(await File.ReadAllBytesAsync(file)));
                 await File.WriteAllTextAsync(record + ".attachments", JsonSerializer.Serialize(captured, Wire.Json));
             }
+            // An agy that is refused a command on its first turn and, continued (--conversation), says whether its settings allow it.
+            if (args.Contains("--agy-denied")) { AntigravityPermissionVerification.FakeAgy(args[Array.IndexOf(args, "--agy-denied") + 1], args.Contains("--conversation")); return; }
             // What Antigravity CLI 1.3.5 prints on stderr when its sign-in is gone, and the same words as a model answer.
             const string antigravitySignInLost = "Error: authentication required. Run 'agy' to log in, then retry.";
             if (args.Contains("--agy-signin-lost")) { await Console.Error.WriteLineAsync(antigravitySignInLost); Environment.ExitCode = 1; return; }
@@ -411,6 +413,31 @@ internal static class Verification
         await Test("antigravity: the watcher follows growing transcripts and nested sub-agents", AntigravityVerification.TheWatcherFollowsGrowingTranscriptsAndNestedSubagents);
         await Test("antigravity: older requests are read from the conversation's transcript", AntigravityVerification.OlderRequestsAreReadFromTheConversationTranscript);
         await Test("antigravity: the conversations to continue and the skills", AntigravityVerification.TheConversationListAndSkills);
+        // Antigravity permission cards, ported from the Mac's AntigravityPermissionTests over the shared fixture.
+        await Test("antigravity cards: every fixture turn gives its actions", AntigravityPermissionVerification.EveryFixtureTurnGivesItsActions);
+        await Test("antigravity cards: without a card the older notice stays", AntigravityPermissionVerification.WithoutACardTheOlderNoticeStays);
+        await Test("antigravity cards: two turns in one run give two cards and nothing carries over", AntigravityPermissionVerification.TwoTurnsInOneRunGiveTwoCardsAndNothingCarriesOver);
+        await Test("antigravity cards: rules are well formed or absent", AntigravityPermissionVerification.RulesAreWellFormedOrAbsent);
+        await Test("antigravity cards: settings edits change only the allow list, byte for byte", AntigravityPermissionVerification.SettingsEditsChangeOnlyTheAllowList);
+        await Test("antigravity cards: settings of an unexpected shape are refused", AntigravityPermissionVerification.SettingsThatAreNotTheExpectedShapeAreRefused);
+        await Test("antigravity cards: a temporary rule is added, recorded and taken out leaving every other byte", AntigravityPermissionVerification.ATemporaryRuleIsAddedRecordedAndTakenOutLeavingEveryOtherByte);
+        await Test("antigravity cards: a rule two panes hold stays until the last is done", AntigravityPermissionVerification.ARuleTwoPanesHoldStaysUntilTheLastIsDone);
+        await Test("antigravity cards: a rule the settings already had is never removed", AntigravityPermissionVerification.ARuleTheSettingsAlreadyHadIsNeverRemoved);
+        await Test("antigravity cards: settings that cannot be read are left alone and refused", AntigravityPermissionVerification.SettingsThatCannotBeReadAreLeftAloneAndRefused);
+        await Test("antigravity cards: a missing file is created with the rule alone", AntigravityPermissionVerification.AMissingFileIsCreatedWithTheRuleAlone);
+        await Test("antigravity cards: what a crash left is removed at the next launch", AntigravityPermissionVerification.WhatACrashLeftIsRemovedAtTheNextLaunch);
+        await Test("antigravity cards: quit releases everything and a linked file stays linked", AntigravityPermissionVerification.QuitReleasesEverythingAndALinkedFileStaysLinked);
+        await Test("antigravity cards: a card stays until a later run ends or it is answered", AntigravityPermissionVerification.ACardStaysUntilALaterRunEndsOrItIsAnswered);
+        await Test("antigravity cards: an allow continues with the rules and a deny does nothing", AntigravityPermissionVerification.AnAllowContinuesWithTheRulesAndADenyDoesNothing);
+        await Test("antigravity cards: the card rides a run event and an unknown kind reads as other", AntigravityPermissionVerification.TheCardRidesARunEventAndAnUnknownKindReadsAsOther);
+        await Test("antigravity cards: the phone sees the card as a permission an older phone can answer", AntigravityPermissionVerification.ThePhoneSeesTheCardAsAPermissionAnOlderPhoneCanAnswer);
+        await Test("antigravity cards: the /v2 samples are the Mac's own and pass the client's checks", AntigravityPermissionVerification.TheRemoteSamplesAreTheMacsOwnAndPassTheClientsChecks);
+        await Test("antigravity cards: the phone sample is what this host sends", AntigravityPermissionVerification.ThePhoneSampleIsWhatTheMacSends);
+        await Test("antigravity cards: the runner sends the card before the run's end", AntigravityPermissionVerification.TheRunnerSendsTheCardBeforeTheRunsEnd);
+        await Test("antigravity cards: a pane's continuation holds the rule for its run and keeps the title", AntigravityPermissionVerification.APanesContinuationHoldsTheRuleForItsRunAndKeepsTheTitle);
+        await Test("antigravity cards: a continuation the settings refuse never starts", AntigravityPermissionVerification.AContinuationTheSettingsRefuseNeverStarts);
+        await Test("antigravity cards: the phone answers a card on the permission route", AntigravityPermissionVerification.AntigravityCardsAreAnsweredOnThePermissionRoute);
+        await Test("antigravity cards: a remote pane's host puts the rules in its own settings and refuses forged ones", AntigravityPermissionVerification.ARemotePanesHostPutsTheRulesInItsOwnSettingsAndRefusesForgedOnes);
         await Test("Agent IO TerminalCleanerAndEphemeralOwnership", AgentIOVerification.TerminalCleanerAndEphemeralOwnership);
         if (OperatingSystem.IsWindows()) await Test("Agent IO real ConPTY process ownership", AgentIOVerification.RealWindowsInteractiveProcess);
         else { skipped++; Console.WriteLine("SKIP Agent IO real ConPTY process (requires Windows)"); }

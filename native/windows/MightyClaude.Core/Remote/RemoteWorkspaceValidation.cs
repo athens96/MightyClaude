@@ -20,7 +20,13 @@ public static class RemoteWorkspaceValidation
     public static bool PermissionMode(string mode, string provider) =>
         mode is "manual" or "plan" or "acceptEdits" or "fullAccess" || mode == "auto" && provider == "claude" || mode == "onRequest" && provider == "codex";
 
-    public static readonly IReadOnlySet<string> EventTypes = new HashSet<string>(StringComparer.Ordinal) { "log", "status", "resume", "activity", "usage", "graph", "permission", "plan", "todos", "background" };
+    public static readonly IReadOnlySet<string> EventTypes = new HashSet<string>(StringComparer.Ordinal) { "log", "status", "resume", "activity", "usage", "graph", "permission", "plan", "todos", "background", "antigravityPermission" };
+
+    /// <summary>An Antigravity card from a host (M/Remote/RemoteWorkspaceModels.swift antigravityCard): ids, at most 16 actions, bounded text, and only well-formed rules.</summary>
+    public static bool AntigravityCard(AntigravityPermissionRequest card) =>
+        Wire.Identifier(card.Id) && Wire.Identifier(card.RunId) && card.Actions is { Count: > 0 and <= AntigravityPermissionRequest.MaximumActions }
+        && card.Actions.All(action => action is not null && action.Action is { Length: > 0 } name && Encoding.UTF8.GetByteCount(name) <= 128 && action.DisplayName is { Length: > 0 } shown && Encoding.UTF8.GetByteCount(shown) <= 128
+            && Encoding.UTF8.GetByteCount(action.Target ?? "") <= AntigravityAllowGrant.MaximumRuleBytes && (action.Rule is null || AntigravityAllowGrant.ValidRule(action.Rule)));
 
     /// <summary>A host's /info as the Mac checks it, after RemoteWire.Json read it: nulls the Mac's decoder refuses are refused here too.</summary>
     public static void Info(RemoteWireInfo? value)

@@ -86,6 +86,8 @@ public sealed partial class DesktopService
         Admission = admission,
         RunsChanged = runsChanged,
         AllowLoopbackForTests = allowLoopbackForTests,
+        // A client's continuation adds its card's rules to this PC's agy settings, counted with this PC's own panes.
+        AntigravityRules = AntigravityRules,
     };
 
     /// <summary>

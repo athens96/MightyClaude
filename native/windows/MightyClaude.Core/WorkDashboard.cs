@@ -15,6 +15,12 @@ public static class WorkDashboard
     }
     public static bool IsCounted(string kind) => kind is not ("files" or "agent-terminal" or "agent-browser");
     public static Attention Pending(IEnumerable<ToolPermissionRequest> requests) => new(requests.Count(r => r.State == "pending" && r.CanAnswerQuestions), requests.Count(r => r.State == "pending" && !r.CanAnswerQuestions));
+    /// <summary>A pane's Antigravity card is one more permission request, as the phone's pendingPermissions counts it (M/MightyCore/WorkDashboard.swift attention).</summary>
+    public static Attention Pending(IEnumerable<ToolPermissionRequest> requests, AntigravityPermissionRequest? antigravity)
+    {
+        var value = Pending(requests);
+        return antigravity is null ? value : value with { Permissions = value.Permissions + 1 };
+    }
     public static Stats Count(IEnumerable<RunSession> sessions, Func<string, Attention> attention)
     {
         var values = sessions.Where(s => IsCounted(s.Kind)).ToArray();

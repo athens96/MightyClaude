@@ -445,6 +445,6 @@ public sealed partial class MainWindow
     internal const double DashboardEntrySymbol = 10.8, DashboardEntrySquare = 4.8;
     private sealed partial class PaneView
     {
-        internal WorkDashboard.Attention DashboardAttention => WorkDashboard.Pending(toolPermissions);
+        internal WorkDashboard.Attention DashboardAttention => WorkDashboard.Pending(toolPermissions, owner.service.AntigravityCard(id));
     }
 }

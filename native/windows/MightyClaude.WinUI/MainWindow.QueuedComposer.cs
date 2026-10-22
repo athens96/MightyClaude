@@ -294,8 +294,8 @@ public sealed partial class MainWindow
                 var pane = Session; last = pane.Logs.LastOrDefault()?.Id;
                 var submitted = item.Prepared ? item.Text : await PrepareStyleSubmission(item.Text, item.Attachments.Count > 0);
                 var request = await PrepareStyleRunRequest(new StartRunRequest(pane.Id, pane.WorkspaceId, pane.Kind, submitted, RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot), pane.Model, pane.Provider, pane.Settings, pane.ResumeId, item.Attachments.ToList()));
-                // The decision made when the item was queued wins (§1.17.4).
-                request = request with { PermissionModeOverride = item.PermissionModeOverride };
+                // The decision made when the item was queued wins (§1.17.4); an Antigravity card's continuation carries its rules.
+                request = request with { PermissionModeOverride = item.PermissionModeOverride, AntigravityGrant = item.AntigravityGrant };
                 // Stop or removal while style consent was open must prevent this request from starting.
                 if (!QueuePaneAlive || !queuedInputs.Items.Any(queued => queued.Id == item.Id)) return;
                 // No run took it (the items held for the pane stay held): it stays at the head of the queue, and the transcript says so (M/AppStore+Delegation.swift:191-195).
