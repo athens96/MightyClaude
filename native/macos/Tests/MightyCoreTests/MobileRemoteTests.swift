@@ -1024,4 +1024,91 @@ extension MobileRemoteTests {
     @Test func theHostAdvertisesPush() {
         #expect(MobileCapability.all.contains("push"))
     }
+
+    @Test func aNewPermissionIsSealedForThePhoneAndSentToTheRelay() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-push-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let (service, seal) = try Self.pushService(directory)
+        let host = FakeMobileHost()  // the service holds its delegate weakly
+        defer { withExtendedLifetime(host) {} }
+        await service.attach(host)
+        let transport = RecordingPushTransport()
+        await service.setPushTransport(transport, retryDelays: [0, 0], now: { Date(timeIntervalSince1970: 1_000) })
+        _ = try await call(service, "POST", "/m1/push/register", body: ["handle": seal.handle, "kinds": ["permission"]], device: seal.clientId)
+        let idle = MobilePushPane(sessionId: "pane-1", workspace: "demo", title: "Claude 1", status: "running", preview: nil, requests: [], signInLost: false)
+        for task in await service.pushObserve([idle]) { await task.value }
+        var asking = idle
+        asking.requests = [MobilePushRequest(id: "req-1", runId: "run-1", kind: .permission, summary: "git status", buttons: .claude)]
+        for task in await service.pushObserve([asking]) { await task.value }
+
+        let sent = transport.sent
+        #expect(sent.count == 1)
+        #expect(sent.first?.url.absoluteString == "https://relay.example.invalid/push/v1/send")
+        let first = try #require(sent.first)
+        #expect(first.request.serverId == RelayEndpoint.serverId(hostToken: first.hostToken))
+        #expect(first.request.handle == seal.handle)
+        let key = try #require(MobilePushSeal.key(tokenHash: seal.tokenHash, clientId: seal.clientId))
+        let plaintext = try #require(MobilePushSeal.open(first.request.payload, key: key, handle: seal.handle))
+        let message = try JSONDecoder().decode(MobilePushMessage.self, from: plaintext)
+        #expect(message.id == "request:run-1:req-1")
+        #expect(message.hostName == "Test Mac")
+        #expect(message.permission == MobilePushPermission(requestId: "req-1", runId: "run-1", buttons: .claude))
+        #expect(message.at == "1970-01-01T00:16:40Z")
+    }
+
+    @Test func nothingIsSentForAKindThePhoneTurnedOffOrASessionItIsViewing() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-push-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let (service, seal) = try Self.pushService(directory)
+        let host = FakeMobileHost()  // the service holds its delegate weakly
+        defer { withExtendedLifetime(host) {} }
+        await service.attach(host)
+        let transport = RecordingPushTransport()
+        await service.setPushTransport(transport, retryDelays: [0, 0], now: { Date(timeIntervalSince1970: 1_000) })
+        _ = try await call(service, "POST", "/m1/push/register", body: ["handle": seal.handle, "kinds": ["completed"]], device: seal.clientId)
+        _ = try await call(service, "POST", "/m1/push/viewing", body: ["sessionId": "pane-1"], device: seal.clientId)
+        let running = MobilePushPane(sessionId: "pane-1", workspace: "demo", title: "Claude 1", status: "running", preview: nil, requests: [], signInLost: false)
+        var question = running; question.sessionId = "pane-2"
+        for task in await service.pushObserve([running, question]) { await task.value }
+        var done = running; done.status = "completed"
+        question.requests = [MobilePushRequest(id: "q", runId: "r", kind: .question, summary: "?", buttons: .none)]
+        for task in await service.pushObserve([done, question]) { await task.value }
+        #expect(transport.sent.isEmpty)
+    }
+
+    @Test func aHandleTheRelayNoLongerKnowsIsForgottenAndABusyRelayIsTriedThreeTimes() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-push-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let (service, seal) = try Self.pushService(directory)
+        let host = FakeMobileHost()  // the service holds its delegate weakly
+        defer { withExtendedLifetime(host) {} }
+        await service.attach(host)
+        let transport = RecordingPushTransport()
+        transport.outcomes = [.retry(after: nil), .retry(after: nil), .retry(after: nil), .gone]
+        await service.setPushTransport(transport, retryDelays: [0, 0], now: { Date(timeIntervalSince1970: 1_000) })
+        _ = try await call(service, "POST", "/m1/push/register", body: ["handle": seal.handle, "kinds": ["permission"]], device: seal.clientId)
+        var pane = MobilePushPane(sessionId: "pane-1", workspace: "demo", title: "Claude 1", status: "running", preview: nil, requests: [], signInLost: false)
+        for task in await service.pushObserve([pane]) { await task.value }
+        pane.requests = [MobilePushRequest(id: "a", runId: "r", kind: .permission, summary: "", buttons: .claude)]
+        for task in await service.pushObserve([pane]) { await task.value }
+        #expect(transport.sent.count == 3)
+        pane.requests.append(MobilePushRequest(id: "b", runId: "r", kind: .permission, summary: "", buttons: .claude))
+        for task in await service.pushObserve([pane]) { await task.value }
+        #expect(transport.sent.count == 4)
+        #expect(MobileDeviceRegistry(url: directory.appendingPathComponent("devices.json")).pushDevices().isEmpty)
+    }
+}
+
+/// Records what would have gone to the relay and answers from a queue (`sent` when it runs dry).
+final class RecordingPushTransport: MobilePushTransport, @unchecked Sendable {
+    struct Sent { let request: MobilePushSendRequest; let url: URL; let hostToken: String }
+    private let lock = NSLock()
+    private var log: [Sent] = []
+    var outcomes: [MobilePushSendOutcome] = []
+    var sent: [Sent] { lock.lock(); defer { lock.unlock() }; return log }
+    func send(_ request: MobilePushSendRequest, to url: URL, hostToken: String) async -> MobilePushSendOutcome {
+        lock.lock(); defer { lock.unlock() }
+        log.append(Sent(request: request, url: url, hostToken: hostToken))
+        return outcomes.isEmpty ? .sent : outcomes.removeFirst()
+    }
 }

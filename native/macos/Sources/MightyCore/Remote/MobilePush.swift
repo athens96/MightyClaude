@@ -294,3 +294,67 @@ public struct MobilePushRegisterRequest: Codable, Sendable {
 public struct MobilePushViewingRequest: Codable, Sendable {
     public var sessionId: String?
 }
+
+public enum MobilePushRelay {
+    /// The relay's push route next to the WebSocket the host already dials.
+    public static func sendURL(_ relay: String) -> URL? {
+        guard var parts = URLComponents(string: relay), let scheme = parts.scheme?.lowercased(), parts.host?.isEmpty == false else { return nil }
+        switch scheme {
+        case "wss", "https": parts.scheme = "https"
+        case "ws", "http": parts.scheme = "http"
+        default: return nil
+        }
+        parts.path = "/push/v1/send"; parts.query = nil; parts.fragment = nil
+        return parts.url
+    }
+}
+
+/// `POST /push/v1/send` on the relay: the payload is the sealed envelope, never plaintext.
+public struct MobilePushSendRequest: Codable, Sendable, Equatable {
+    public var serverId: String
+    public var handle: String
+    public var payload: String
+    public init(serverId: String, handle: String, payload: String) { self.serverId = serverId; self.handle = handle; self.payload = payload }
+}
+
+public enum MobilePushSendOutcome: Sendable, Equatable {
+    case sent
+    /// The relay no longer knows the handle, it is another host's, or FCM dropped the token.
+    case gone
+    case retry(after: TimeInterval?)
+    case failed(status: Int)
+    public init(status: Int, retryAfter: TimeInterval?) {
+        switch status {
+        case 200...299: self = .sent
+        case 403, 404, 410: self = .gone
+        case 429, 500, 502, 504: self = .retry(after: retryAfter)
+        default: self = .failed(status: status)
+        }
+    }
+}
+
+public protocol MobilePushTransport: Sendable {
+    func send(_ request: MobilePushSendRequest, to url: URL, hostToken: String) async -> MobilePushSendOutcome
+}
+
+public struct MobilePushHTTPTransport: MobilePushTransport {
+    /// The longest Retry-After taken from the relay, which clamps its own to the same.
+    public static let maximumRetryAfter: TimeInterval = 3600
+    private let session: URLSession
+    public init(session: URLSession = URLSession(configuration: .ephemeral)) { self.session = session }
+    public func send(_ request: MobilePushSendRequest, to url: URL, hostToken: String) async -> MobilePushSendOutcome {
+        var http = URLRequest(url: url)
+        http.httpMethod = "POST"
+        http.timeoutInterval = 15
+        http.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        http.setValue("Bearer " + hostToken, forHTTPHeaderField: "Authorization")
+        http.httpBody = try? JSONEncoder().encode(request)
+        guard let (_, response) = try? await session.data(for: http), let answer = response as? HTTPURLResponse else { return .retry(after: nil) }
+        return MobilePushSendOutcome(status: answer.statusCode, retryAfter: Self.retryAfter(answer.value(forHTTPHeaderField: "Retry-After")))
+    }
+    /// Seconds only (an HTTP date counts as absent), finite, not negative, at most `maximumRetryAfter`.
+    static func retryAfter(_ header: String?) -> TimeInterval? {
+        guard let header, let seconds = TimeInterval(header.trimmingCharacters(in: .whitespaces)), seconds.isFinite, seconds >= 0 else { return nil }
+        return min(seconds, maximumRetryAfter)
+    }
+}

@@ -147,3 +147,29 @@ struct MobilePushPlannerTests {
         #expect(MobilePushRecipients.targets(for: message, devices: [all], viewing: expired, now: now) == [all])
     }
 }
+
+struct MobilePushRelayTests {
+    @Test func theSendAddressFollowsTheRelaysScheme() {
+        #expect(MobilePushRelay.sendURL("wss://relay.example.invalid")?.absoluteString == "https://relay.example.invalid/push/v1/send")
+        #expect(MobilePushRelay.sendURL("ws://127.0.0.1:8787")?.absoluteString == "http://127.0.0.1:8787/push/v1/send")
+        #expect(MobilePushRelay.sendURL("wss://relay.example.invalid/ws?x=1")?.absoluteString == "https://relay.example.invalid/push/v1/send")
+        #expect(MobilePushRelay.sendURL("ftp://relay.example.invalid") == nil)
+    }
+
+    @Test func theRelaysAnswerSaysWhetherToRetryOrForget() {
+        #expect(MobilePushSendOutcome(status: 202, retryAfter: nil) == .sent)
+        for gone in [403, 404, 410] { #expect(MobilePushSendOutcome(status: gone, retryAfter: nil) == .gone) }
+        #expect(MobilePushSendOutcome(status: 429, retryAfter: 5) == .retry(after: 5))
+        #expect(MobilePushSendOutcome(status: 502, retryAfter: nil) == .retry(after: nil))
+        #expect(MobilePushSendOutcome(status: 503, retryAfter: nil) == .failed(status: 503))
+        #expect(MobilePushSendOutcome(status: 401, retryAfter: nil) == .failed(status: 401))
+    }
+
+    /// Only plain seconds count, and a relay cannot ask the Mac to wait past an hour.
+    @Test func aRetryAfterIsSecondsWithinAnHour() {
+        #expect(MobilePushHTTPTransport.retryAfter("5") == 5)
+        #expect(MobilePushHTTPTransport.retryAfter(" 12 ") == 12)
+        #expect(MobilePushHTTPTransport.retryAfter("999999") == 3600)
+        for bad in [nil, "", "-1", "nan", "inf", "Wed, 21 Oct 2026 07:28:00 GMT"] { #expect(MobilePushHTTPTransport.retryAfter(bad) == nil) }
+    }
+}
