@@ -246,6 +246,8 @@ internal static class MobilePushVerification
         var handle = new string('h', 43); var newer = new string('n', 43);
         var bad = await Route("/m1/push/register", new { handle = "short", kinds = Array.Empty<string>() }, clientId);
         Check(bad.Status == 400 && Said(bad) == Locale.Get("remote.error.badPushHandle"), "a bad handle is refused in the shared words");
+        var noKinds = await Route("/m1/push/register", new { handle }, clientId);
+        Check(noKinds.Status == 400 && Said(noKinds) == Locale.Get("remote.error.badBody"), "a register without kinds is refused in the shared words, as on the Mac");
         var legacy = await Route("/m1/push/register", new { handle, kinds = Array.Empty<string>() }, "legacy");
         Check(legacy.Status == 409 && Said(legacy) == Locale.Get("remote.error.pushNeedsToken"), "a token-less phone is refused in the shared words");
         Check((await Route("/m1/push/register", new { handle, kinds = Array.Empty<string>() }, "ZZZZZZZZZZZZZZZZZZZZZZ")).Status == 409, "an unknown phone is refused");

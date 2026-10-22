@@ -141,7 +141,7 @@ public sealed class MobileDesktopRouter : IDisposable
                         var value = Object(body);
                         var handle = Required(value, "handle");
                         if (!MobilePushWire.ValidHandle(handle)) throw new MobileRequestException(400, Locale.Get("remote.error.badPushHandle"));
-                        if (!value.TryGetProperty("kinds", out var list) || list.ValueKind != JsonValueKind.Array) throw new MobileRequestException(400, "Missing kinds.");
+                        if (!value.TryGetProperty("kinds", out var list) || list.ValueKind != JsonValueKind.Array) throw new MobileRequestException(400, Locale.Get("remote.error.badBody"));
                         var kinds = MobilePushWire.Kinds(list.EnumerateArray().Where(k => k.ValueKind == JsonValueKind.String).Select(k => k.GetString()!));
                         return push.Register(device, handle, kinds) switch
                         {
