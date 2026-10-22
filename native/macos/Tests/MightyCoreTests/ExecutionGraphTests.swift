@@ -406,6 +406,21 @@ struct SteeringGraphTests {
         }
     }
 
+    @Test func anUnansweredDelegationNoticeSaysItWasADelegationNotice() throws {
+        try LocaleOverride.$language.withValue(.ko) { () throws in
+            var nodes: [ExecutionGraphNode] = []
+            let parser = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in }, activityNamespace: "run-notice", graph: { nodes.append($0) }, graphInput: "Refactor the parser")
+            try send(assistant([["type": "tool_use", "id": "tool-1", "name": "Bash", "input": ["command": "sleep 5"]]], id: "main-1"), to: parser)
+            parser.steer(id: "notice", text: "[Mighty Claude notice n-1] Your child c-1 reported revision 1.")
+            parser.steer(id: "person", text: "Also add tests")
+            parser.finishGraph(state: "completed")
+            let notice = try #require(nodes.last(where: { $0.input?.hasPrefix("[Mighty Claude notice ") == true }))
+            #expect(notice.state == "stopped"); #expect(notice.entries.last?.text == L("graph.block.unfinished.delegationNotice"))
+            let person = try #require(nodes.last(where: { $0.input == "Also add tests" }))
+            #expect(person.entries.last?.text == L("graph.block.unfinished.steer"))
+        }
+    }
+
     @Test func codexRunsIgnoreSteeringAndSessionsKeepTheSteerKind() throws {
         var nodes: [ExecutionGraphNode] = []
         let codex = CLIStreamParser(provider: "codex", log: { _, _ in }, resume: { _ in }, activityNamespace: "run-codex", graph: { nodes.append($0) }, graphInput: "Hi")
