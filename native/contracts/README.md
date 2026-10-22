@@ -765,3 +765,12 @@ Implementations: `MightyCore/AntigravityPermissions.swift` (checked by
 `AntigravityPermissionTests`, `AntigravityPermissionWireTests`); the Windows host
 (`AntigravityPermissionVerification`) and the phone
 (`mobile/src/__tests__/antigravity-permission.test.ts`) read the same file.
+
+## Push notifications (`fixtures/push.json`)
+
+The seal on a host → phone push and the rule that decides what is pushed (docs/mobile-remote.md "푸시 알림", docs/relay.md "푸시 알림").
+
+- `seal`: a fake device token, `clientId` and handle; the token's `tokenHash` (hex SHA-256, what the host stores); the derived key `keyB64` (HKDF-SHA256, salt = UTF-8 `clientId`, info `mighty-push-v1`); a fixed `nonceB64`; the `aad` (`mighty-push-v1:` + handle); a `plaintext` message; its `envelope` (base64url of `0x01 ‖ nonce ‖ ChaCha20-Poly1305 ciphertext ‖ tag`); `tampered` envelopes (a flipped ciphertext bit, a wrong version byte) that must not open; `otherHandle`, under which the envelope must not open.
+- `planner`: `hostId`, `hostName`, `at`, and `steps`. Each step is the whole list of panes a host sees (`MobilePushPane`: `sessionId`, `workspace`, `title`, `status`, `preview?`, `requests: [{ id, runId, kind, summary, buttons }]`, `signInLost`). `expect` lists the messages that observation sends, in order. Every message also carries `v: 1`, `hostId`, `hostName` and `at` from the top.
+
+Implementations: Mac `MightyCore/Remote/MobilePush.swift` (`MobilePushSeal`, `MobilePushPlanner`), Windows `MightyClaude.Core/Remote/MobilePush.cs`, phone `mobile/src/lib/push/seal.ts` (opening only). Readers: Swift `MobilePushSealTests`, `MobilePushPlannerTests`; Windows `MobilePushVerification`; jest `push-seal.test.ts`.

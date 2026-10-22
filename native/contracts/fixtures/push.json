@@ -1,0 +1,409 @@
+{
+  "seal": {
+    "deviceToken": "AQgPFh0kKzI5QEdOVVxjanF4f4aNlJuiqbC3vsXM09o",
+    "clientId": "AAECAwQFBgcICQoLDA0ODw",
+    "handle": "__79_Pv6-fj39vX08_Lx8O_u7ezr6uno5-bl5OPi4eA",
+    "tokenHash": "5723c1b7256eba050781d42f7d4fd96201c4b75d7673b1a82ffbcba6dc2e1c23",
+    "keyB64": "JzXs+EzwuV8UDZFIKJvoYxb9N5riD9wfYDeNtmQMRYY=",
+    "nonceB64": "AAECAwQFBgcICQoL",
+    "aad": "mighty-push-v1:__79_Pv6-fj39vX08_Lx8O_u7ezr6uno5-bl5OPi4eA",
+    "plaintext": "{\"v\":1,\"id\":\"perm:run-1:req-1\",\"kind\":\"permission\",\"hostId\":\"host-1\",\"hostName\":\"Test Mac\",\"workspace\":\"demo\",\"title\":\"Claude 1\",\"summary\":\"git status\",\"sessionId\":\"pane-1\",\"permission\":{\"requestId\":\"req-1\",\"runId\":\"run-1\",\"buttons\":\"claude\"},\"at\":\"2026-10-23T01:02:03Z\"}",
+    "envelope": "AQABAgMEBQYHCAkKC10m-R6zdQ5pj0SATLOGKPuGaNgTwb_MKx-ihIwRZL_sZZZXABwjmFdYp_YG5eEHDYzWBUpeDORPjZiglEjtaNTLIGiieN3u6W5va7UjojkWOwBuFmQHuom51zcUdFbVrKkXJkQJslIBeTZsmjelyejmlsVcDKH_D69ezWZoeowWQNzrVg6aBeBLSUIMfOmtkCr_6ei6MP19DqKTKjBxilR3irTCy1_I_QQ3UGu6IqRwMgBp6PP9BnXiImYr6p08WRcTEaj_qHhFhquPgwLs70dN-P1GfkVRYZSZ-oszZSmXRhp2JD6ZLJd_kQ-BmO29g26uLryt_upXRS_AT80vu93stMX0Xbp6S9wwq3ZDzvG0vbujqZv_9e1_AwVeLDOv",
+    "tampered": [
+      "AQABAgMEBQYHCAkKC10m-R6zdQ5oj0SATLOGKPuGaNgTwb_MKx-ihIwRZL_sZZZXABwjmFdYp_YG5eEHDYzWBUpeDORPjZiglEjtaNTLIGiieN3u6W5va7UjojkWOwBuFmQHuom51zcUdFbVrKkXJkQJslIBeTZsmjelyejmlsVcDKH_D69ezWZoeowWQNzrVg6aBeBLSUIMfOmtkCr_6ei6MP19DqKTKjBxilR3irTCy1_I_QQ3UGu6IqRwMgBp6PP9BnXiImYr6p08WRcTEaj_qHhFhquPgwLs70dN-P1GfkVRYZSZ-oszZSmXRhp2JD6ZLJd_kQ-BmO29g26uLryt_upXRS_AT80vu93stMX0Xbp6S9wwq3ZDzvG0vbujqZv_9e1_AwVeLDOv",
+      "AgABAgMEBQYHCAkKC10m-R6zdQ5pj0SATLOGKPuGaNgTwb_MKx-ihIwRZL_sZZZXABwjmFdYp_YG5eEHDYzWBUpeDORPjZiglEjtaNTLIGiieN3u6W5va7UjojkWOwBuFmQHuom51zcUdFbVrKkXJkQJslIBeTZsmjelyejmlsVcDKH_D69ezWZoeowWQNzrVg6aBeBLSUIMfOmtkCr_6ei6MP19DqKTKjBxilR3irTCy1_I_QQ3UGu6IqRwMgBp6PP9BnXiImYr6p08WRcTEaj_qHhFhquPgwLs70dN-P1GfkVRYZSZ-oszZSmXRhp2JD6ZLJd_kQ-BmO29g26uLryt_upXRS_AT80vu93stMX0Xbp6S9wwq3ZDzvG0vbujqZv_9e1_AwVeLDOv"
+    ],
+    "otherHandle": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc"
+  },
+  "planner": {
+    "hostId": "host-1",
+    "hostName": "Test Mac",
+    "at": "2026-10-23T01:02:03Z",
+    "steps": [
+      {
+        "note": "the first observation is the baseline: nothing is sent",
+        "panes": [
+          {
+            "sessionId": "pane-1",
+            "workspace": "demo",
+            "title": "Claude 1",
+            "status": "running",
+            "requests": [],
+            "signInLost": false
+          },
+          {
+            "sessionId": "pane-2",
+            "workspace": "demo",
+            "title": "Antigravity",
+            "status": "completed",
+            "requests": [],
+            "signInLost": false
+          }
+        ],
+        "expect": []
+      },
+      {
+        "note": "a new request is sent once",
+        "panes": [
+          {
+            "sessionId": "pane-1",
+            "workspace": "demo",
+            "title": "Claude 1",
+            "status": "running",
+            "requests": [
+              {
+                "id": "req-1",
+                "runId": "run-1",
+                "kind": "permission",
+                "summary": "git status",
+                "buttons": "claude"
+              }
+            ],
+            "signInLost": false
+          },
+          {
+            "sessionId": "pane-2",
+            "workspace": "demo",
+            "title": "Antigravity",
+            "status": "completed",
+            "requests": [],
+            "signInLost": false
+          }
+        ],
+        "expect": [
+          {
+            "id": "request:run-1:req-1",
+            "kind": "permission",
+            "sessionId": "pane-1",
+            "workspace": "demo",
+            "title": "Claude 1",
+            "summary": "git status",
+            "permission": {
+              "requestId": "req-1",
+              "runId": "run-1",
+              "buttons": "claude"
+            }
+          }
+        ]
+      },
+      {
+        "note": "the same request seen again is not sent again",
+        "panes": [
+          {
+            "sessionId": "pane-1",
+            "workspace": "demo",
+            "title": "Claude 1",
+            "status": "running",
+            "requests": [
+              {
+                "id": "req-1",
+                "runId": "run-1",
+                "kind": "permission",
+                "summary": "git status",
+                "buttons": "claude"
+              }
+            ],
+            "signInLost": false
+          },
+          {
+            "sessionId": "pane-2",
+            "workspace": "demo",
+            "title": "Antigravity",
+            "status": "completed",
+            "requests": [],
+            "signInLost": false
+          }
+        ],
+        "expect": []
+      },
+      {
+        "note": "running to completed with nothing pending sends the preview on one line",
+        "panes": [
+          {
+            "sessionId": "pane-1",
+            "workspace": "demo",
+            "title": "Claude 1",
+            "status": "completed",
+            "requests": [],
+            "signInLost": false,
+            "preview": "Done.\nAll tests pass"
+          },
+          {
+            "sessionId": "pane-2",
+            "workspace": "demo",
+            "title": "Antigravity",
+            "status": "completed",
+            "requests": [],
+            "signInLost": false
+          }
+        ],
+        "expect": [
+          {
+            "id": "run:pane-1:1:completed",
+            "kind": "completed",
+            "sessionId": "pane-1",
+            "workspace": "demo",
+            "title": "Claude 1",
+            "summary": "Done. All tests pass"
+          }
+        ]
+      },
+      {
+        "note": "a new run starts; a plan request on another pane is sent without buttons",
+        "panes": [
+          {
+            "sessionId": "pane-1",
+            "workspace": "demo",
+            "title": "Claude 1",
+            "status": "running",
+            "requests": [],
+            "signInLost": false
+          },
+          {
+            "sessionId": "pane-2",
+            "workspace": "demo",
+            "title": "Antigravity",
+            "status": "completed",
+            "requests": [
+              {
+                "id": "plan-1",
+                "runId": "run-2",
+                "kind": "plan",
+                "summary": "Refactor the parser",
+                "buttons": "none"
+              }
+            ],
+            "signInLost": false
+          }
+        ],
+        "expect": [
+          {
+            "id": "request:run-2:plan-1",
+            "kind": "plan",
+            "sessionId": "pane-2",
+            "workspace": "demo",
+            "title": "Antigravity",
+            "summary": "Refactor the parser"
+          }
+        ]
+      },
+      {
+        "note": "running to error is a failure",
+        "panes": [
+          {
+            "sessionId": "pane-1",
+            "workspace": "demo",
+            "title": "Claude 1",
+            "status": "error",
+            "requests": [],
+            "signInLost": false,
+            "preview": "boom"
+          },
+          {
+            "sessionId": "pane-2",
+            "workspace": "demo",
+            "title": "Antigravity",
+            "status": "completed",
+            "requests": [
+              {
+                "id": "plan-1",
+                "runId": "run-2",
+                "kind": "plan",
+                "summary": "Refactor the parser",
+                "buttons": "none"
+              }
+            ],
+            "signInLost": false
+          }
+        ],
+        "expect": [
+          {
+            "id": "run:pane-1:2:failed",
+            "kind": "failed",
+            "sessionId": "pane-1",
+            "workspace": "demo",
+            "title": "Claude 1",
+            "summary": "boom"
+          }
+        ]
+      },
+      {
+        "note": "a lost sign-in is sent once",
+        "panes": [
+          {
+            "sessionId": "pane-1",
+            "workspace": "demo",
+            "title": "Claude 1",
+            "status": "error",
+            "requests": [],
+            "signInLost": true,
+            "preview": "boom"
+          },
+          {
+            "sessionId": "pane-2",
+            "workspace": "demo",
+            "title": "Antigravity",
+            "status": "completed",
+            "requests": [],
+            "signInLost": false
+          }
+        ],
+        "expect": [
+          {
+            "id": "signin:pane-1:1",
+            "kind": "signin",
+            "sessionId": "pane-1",
+            "workspace": "demo",
+            "title": "Claude 1",
+            "summary": ""
+          }
+        ]
+      },
+      {
+        "note": "a pane that appears after the baseline sends its first request; a long title is clipped to 80",
+        "panes": [
+          {
+            "sessionId": "pane-1",
+            "workspace": "demo",
+            "title": "Claude 1",
+            "status": "error",
+            "requests": [],
+            "signInLost": true
+          },
+          {
+            "sessionId": "pane-2",
+            "workspace": "demo",
+            "title": "Antigravity",
+            "status": "completed",
+            "requests": [],
+            "signInLost": false
+          },
+          {
+            "sessionId": "pane-3",
+            "workspace": "other",
+            "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "status": "running",
+            "requests": [
+              {
+                "id": "q-1",
+                "runId": "run-3",
+                "kind": "question",
+                "summary": "Which branch?",
+                "buttons": "none"
+              }
+            ],
+            "signInLost": false
+          }
+        ],
+        "expect": [
+          {
+            "id": "request:run-3:q-1",
+            "kind": "question",
+            "sessionId": "pane-3",
+            "workspace": "other",
+            "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "summary": "Which branch?"
+          }
+        ]
+      },
+      {
+        "note": "a stopped run sends nothing",
+        "panes": [
+          {
+            "sessionId": "pane-1",
+            "workspace": "demo",
+            "title": "Claude 1",
+            "status": "error",
+            "requests": [],
+            "signInLost": true
+          },
+          {
+            "sessionId": "pane-2",
+            "workspace": "demo",
+            "title": "Antigravity",
+            "status": "completed",
+            "requests": [],
+            "signInLost": false
+          },
+          {
+            "sessionId": "pane-3",
+            "workspace": "other",
+            "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "status": "stopped",
+            "requests": [],
+            "signInLost": false
+          },
+          {
+            "sessionId": "pane-4",
+            "workspace": "demo",
+            "title": "Antigravity 2",
+            "status": "running",
+            "requests": [],
+            "signInLost": false
+          }
+        ],
+        "expect": []
+      },
+      {
+        "note": "a run that ends while a card waits sends only the card",
+        "panes": [
+          {
+            "sessionId": "pane-1",
+            "workspace": "demo",
+            "title": "Claude 1",
+            "status": "error",
+            "requests": [],
+            "signInLost": true
+          },
+          {
+            "sessionId": "pane-2",
+            "workspace": "demo",
+            "title": "Antigravity",
+            "status": "completed",
+            "requests": [],
+            "signInLost": false
+          },
+          {
+            "sessionId": "pane-3",
+            "workspace": "other",
+            "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "status": "stopped",
+            "requests": [],
+            "signInLost": false
+          },
+          {
+            "sessionId": "pane-4",
+            "workspace": "demo",
+            "title": "Antigravity 2",
+            "status": "completed",
+            "requests": [
+              {
+                "id": "agy-1",
+                "runId": "run-4",
+                "kind": "permission",
+                "summary": "rm -rf build",
+                "buttons": "antigravityOnce"
+              }
+            ],
+            "signInLost": false
+          }
+        ],
+        "expect": [
+          {
+            "id": "request:run-4:agy-1",
+            "kind": "permission",
+            "sessionId": "pane-4",
+            "workspace": "demo",
+            "title": "Antigravity 2",
+            "summary": "rm -rf build",
+            "permission": {
+              "requestId": "agy-1",
+              "runId": "run-4",
+              "buttons": "antigravityOnce"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
