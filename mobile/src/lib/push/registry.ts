@@ -11,6 +11,11 @@ const HANDLE = /^[A-Za-z0-9_-]{43}$/;
 /** How long one relay call may take; React Native's fetch has no timeout of its own. */
 export const PUSH_RELAY_TIMEOUT_MS = 8_000;
 /**
+ * How often an unchanged handle is confirmed with the relay. The relay can lose a handle (store
+ * reset, idle sweep, eviction); without asking, the phone would keep giving hosts a dead one.
+ */
+export const PUSH_HANDLE_CHECK_MS = 24 * 60 * 60 * 1000;
+/**
  * One sync or removal per pairing at a time: two syncs would mint two handles, and a
  * removal during a sync would let the sync save its handle again.
  */
@@ -22,6 +27,8 @@ export interface PushHandleRecord {
   secret: string;
   relayUrl: string;
   fcmToken: string;
+  /** When the relay last confirmed this handle (ms since epoch); 0 (never) for a record saved before this was kept. */
+  checkedAt: number;
 }
 
 export type PushFetch = (
@@ -35,6 +42,8 @@ export const globalPushFetch: PushFetch = (url, init) => fetch(url, init);
 interface Deps {
   store: SecretStore;
   fetch: PushFetch;
+  /** The clock for `checkedAt`; `Date.now` when absent. */
+  now?: () => number;
 }
 
 /** `https://host[:port]` for a pairing's `wss://` relay (`http` for `ws`); null for anything else. */
@@ -66,6 +75,8 @@ function parseRecord(text: string | null): PushHandleRecord | null {
       secret: value.secret,
       relayUrl: value.relayUrl,
       fcmToken: value.fcmToken,
+      checkedAt:
+        typeof value.checkedAt === 'number' && Number.isFinite(value.checkedAt) ? value.checkedAt : 0,
     };
   } catch {
     return null;
@@ -119,9 +130,10 @@ async function drop(deps: Deps, record: PushHandleRecord): Promise<void> {
 
 /**
  * This pairing's handle for `fcmToken`, registering or refreshing it on the pairing's
- * relay as needed. A handle the relay forgot (404) is registered again; a handle from
- * another relay is deleted there first. Never throws: null when the relay cannot be
- * reached in time, refuses, or answers oddly.
+ * relay as needed. An unchanged handle is confirmed with the relay at most once a day
+ * (`PUSH_HANDLE_CHECK_MS`). A handle the relay forgot (404) is registered again; a handle
+ * from another relay is deleted there first. Never throws: null when the relay cannot be
+ * reached in time, refuses, or answers oddly (an unchanged handle is kept instead).
  */
 export function ensurePushHandle(
   deps: Deps,
@@ -154,16 +166,29 @@ async function refreshOrRegister(
 ): Promise<PushHandleRecord | null> {
   const base = relayHttpBase(relayUrl);
   if (base === null) return null;
+  const now = (deps.now ?? Date.now)();
   const existing = await readPushHandle(deps.store, storageId);
   if (existing !== null && existing.relayUrl === relayUrl) {
-    if (existing.fcmToken === fcmToken) return existing;
-    const res = await callRelay(deps, `${base}/push/v1/handles/${existing.handle}`, {
-      method: 'PUT',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${existing.secret}` },
-      body: JSON.stringify({ fcmToken }),
-    });
-    if (res.status === 204) return save(deps.store, storageId, { ...existing, fcmToken });
-    if (res.status !== 404) return null;
+    const unchanged = existing.fcmToken === fcmToken;
+    const recent =
+      existing.checkedAt > 0 &&
+      now >= existing.checkedAt &&
+      now - existing.checkedAt < PUSH_HANDLE_CHECK_MS;
+    if (unchanged && recent) return existing;
+    let res: { status: number };
+    try {
+      res = await callRelay(deps, `${base}/push/v1/handles/${existing.handle}`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${existing.secret}` },
+        body: JSON.stringify({ fcmToken }),
+      });
+    } catch (error) {
+      // An unreachable relay says nothing about the handle; the next sync asks again.
+      if (unchanged) return existing;
+      throw error;
+    }
+    if (res.status === 204) return save(deps.store, storageId, { ...existing, fcmToken, checkedAt: now });
+    if (res.status !== 404) return unchanged ? existing : null;
   } else if (existing !== null) {
     await drop(deps, existing);
   }
@@ -182,6 +207,7 @@ async function refreshOrRegister(
     secret: made.secret,
     relayUrl,
     fcmToken,
+    checkedAt: now,
   });
 }
 
