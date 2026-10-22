@@ -325,6 +325,14 @@ internal static class Verification
         await Test("QuestionnaireVerification AnswerRpcSettlesOnceAndReplacesModelSuppliedResponse", QuestionnaireVerification.AnswerRpcSettlesOnceAndReplacesModelSuppliedResponse);
         await Test("Questionnaire reply delivery failure", QuestionnaireVerification.BrokenQuestionnaireReplyFailsWithoutClaimingDelivery);
         await Test("Mobile remote SharedCipherVectors", MobileRemoteVerification.SharedCipherVectors);
+        await Test("mobile push: the seal follows the shared fixture", MobilePushVerification.SealFollowsTheFixture);
+        await Test("mobile push: the planner follows the shared steps", MobilePushVerification.PlannerFollowsTheFixture);
+        await Test("mobile push: a message is encoded as the Mac's JSONEncoder writes it", MobilePushVerification.EncodingMatchesTheMacsJsonEncoder);
+        await Test("mobile push: requests take their buttons from the card", MobilePushVerification.RequestsTakeTheirButtonsFromTheCard);
+        await Test("mobile push: starting over replays nothing and keeps counting", MobilePushVerification.StartingOverReplaysNothingAndKeepsCounting);
+        await Test("mobile push: printing shows no handle, token hash or content", MobilePushVerification.PrintingShowsNoHandleTokenHashOrContent);
+        await Test("mobile push: recipients, the relay address and its answers", MobilePushVerification.RecipientsAndRelayAnswers);
+        await Test("mobile push: a relay redirect is a failure and is never followed", MobilePushVerification.ARedirectIsAFailureAndIsNeverFollowed);
         await Test("Mobile remote DeviceTrustAndRotation", MobileRemoteVerification.DeviceTrustAndRotation);
         await Test("Mobile remote UploadOwnershipAndClaims", MobileRemoteVerification.UploadOwnershipAndClaims);
         await Test("Mobile remote DesktopRouteContract", MobileRemoteVerification.DesktopRouteContract);
