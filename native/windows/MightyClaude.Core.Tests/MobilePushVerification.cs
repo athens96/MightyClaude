@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -296,5 +297,237 @@ internal static class MobilePushVerification
             var read = new MobileIdentity(Path.Combine(other, "mobile"));
             Check(read.PushDevices().Count == 0 && read.Contains(phone, false), "a malformed handle is dropped, the phone kept");
         }
+    }
+
+    private sealed class RecordingTransport : IMobilePushTransport
+    {
+        private readonly object gate = new();
+        public readonly List<(MobilePushSendRequest Request, Uri Url, string HostToken)> Sent = [];
+        public readonly Queue<MobilePushSendOutcome> Outcomes = new();
+        /// <summary>When set, answers instead of <see cref="Outcomes"/> (after the send is recorded).</summary>
+        public Func<MobilePushSendRequest, CancellationToken, Task<MobilePushSendOutcome>>? Answer;
+        public Task<MobilePushSendOutcome> SendAsync(MobilePushSendRequest request, Uri url, string hostToken, CancellationToken token)
+        {
+            lock (gate)
+            {
+                Sent.Add((request, url, hostToken));
+                if (Answer is { } answer) return answer(request, token);
+                return Task.FromResult(Outcomes.Count > 0 ? Outcomes.Dequeue() : new MobilePushSendOutcome(MobilePushSendStatus.Sent));
+            }
+        }
+        public int Count { get { lock (gate) return Sent.Count; } }
+    }
+
+    internal static async Task ANewPermissionIsSealedAndSentAndAGoneHandleForgotten()
+    {
+        var directory = Verification.Temp();
+        await using var service = new DesktopService(Path.Combine(directory, "state"), null, directory);
+        await service.InitializeAsync();
+        var (host, clientId, token) = PairedHost(directory);
+        await using var _ = host;
+        var transport = new RecordingTransport();
+        using var push = new MobilePushHub(service, host, "Test PC") { Transport = transport, RetryDelays = [TimeSpan.Zero, TimeSpan.Zero], Relay = () => "wss://relay.example.invalid", Clock = () => DateTimeOffset.FromUnixTimeSeconds(1000), RemoteOn = () => true };
+        var handle = new string('h', 43);
+        Check(push.Register(clientId, handle, [MobilePushKinds.Permission]) == MobilePushRegistrationResult.Saved, "registered");
+        var idle = new MobilePushPane("pane-1", "demo", "Claude 1", "running", null, [], false);
+        await Task.WhenAll(push.Push([idle]));
+        var asking = idle with { Requests = [new("req-1", "run-1", MobilePushKinds.Permission, "git status", MobilePushButtonKinds.Claude)] };
+        await Task.WhenAll(push.Push([asking]));
+        Check(transport.Sent.Count == 1, "one push: " + transport.Sent.Count);
+        var (request, url, hostToken) = transport.Sent[0];
+        Check(url.ToString() == "https://relay.example.invalid/push/v1/send", "to the relay's push route");
+        Check(request.ServerId == Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(hostToken))).ToLowerInvariant(), "serverId is SHA-256 of the host token");
+        var key = MobilePushSeal.Key(Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token))).ToLowerInvariant(), clientId)!;
+        var plain = MobilePushSeal.Open(request.Payload, key, handle) ?? throw new InvalidOperationException("the phone could not open it");
+        using var message = JsonDocument.Parse(plain);
+        Check(message.RootElement.GetProperty("id").GetString() == "request:run-1:req-1" && message.RootElement.GetProperty("v").GetInt32() == 1, "the message");
+        Check(message.RootElement.GetProperty("at").GetString() == "1970-01-01T00:16:40Z", "the Mac's timestamp form");
+        Check(message.RootElement.GetProperty("permission").GetProperty("buttons").GetString() == "claude", "the buttons");
+
+        push.View(clientId, "pane-1");
+        await Task.WhenAll(push.Push([asking with { Requests = [.. asking.Requests, new("req-2", "run-1", MobilePushKinds.Permission, "", MobilePushButtonKinds.Claude)] }]));
+        Check(transport.Sent.Count == 1, "nothing for the session the phone is viewing");
+        push.View(clientId, null);
+
+        transport.Outcomes.Enqueue(new(MobilePushSendStatus.Retry)); transport.Outcomes.Enqueue(new(MobilePushSendStatus.Retry)); transport.Outcomes.Enqueue(new(MobilePushSendStatus.Gone, null, 410));
+        await Task.WhenAll(push.Push([asking with { Requests = [.. asking.Requests, new("req-3", "run-1", MobilePushKinds.Permission, "", MobilePushButtonKinds.Claude)] }]));
+        Check(transport.Sent.Count == 4 && host.Identity.PushDevices().Count == 0, "two retries, then a gone handle is forgotten");
+    }
+
+    /// <summary>
+    /// The panes as the planner sees them (M/Tests/MightyCoreTests/MobilePushTests.swift project): no files panes, no remote
+    /// workspaces, pending requests minus the style's own then the Antigravity card, a confirmed lost sign-in, the raw status
+    /// and the newest non-activity line cut to 400 scalars.
+    /// </summary>
+    internal static Task TheProjectionFollowsTheMac()
+    {
+        var local = new Workspace { Id = "ws-1", Name = "demo" };
+        var shadow = new Workspace { Id = "ws-1", Name = "second" };
+        var remote = new Workspace { Id = "ws-r", Name = "away", Remote = new("c", "w", "other PC") };
+        var wide = string.Concat(Enumerable.Repeat("😀", 450));
+        var asking = new RunSession
+        {
+            Id = "pane-a", WorkspaceId = "ws-1", Title = "Claude 1", Status = "running",
+            Logs = [new("1", "assistant", "older", "t"), new("2", "assistant", wide, "t"), new("3", "assistant", "ran a tool", "t", Activity: new("a", "claude", "tool", "completed", "s")), new("4", "assistant", "", "t")],
+        };
+        var signedOut = new RunSession { Id = "pane-b", WorkspaceId = "ws-1", Title = "Claude 2", Status = "error" };
+        var files = new RunSession { Id = "pane-f", WorkspaceId = "ws-1", Kind = "files" };
+        var away = new RunSession { Id = "pane-r", WorkspaceId = "ws-r" };
+        ToolPermissionRequest Request(string id, string state = "pending") => new(id, "pane-a", "tu-" + id, "Bash", "{\"command\":\"ls\"}", "ls " + id, State: state);
+        var permissions = new Dictionary<string, IReadOnlyList<ToolPermissionRequest>> { ["pane-a"] = [Request("styled"), Request("asked"), Request("done", "allowed")], ["pane-r"] = [Request("far")] };
+        var card = new AntigravityPermissionRequest("agy-1", "run-agy", [new("command", "RunCommand", "RunCommand", "ls", "command(ls)")]);
+        IReadOnlyList<MobilePushPane> Project() => MobilePushPane.Project([asking, signedOut, files, away], [local, shadow, remote], permissions,
+            (session, request) => session == "pane-a" && request.Id == "styled", id => id == "pane-a" ? card : null, id => id == "pane-b");
+        var panes = Project();
+        Check(panes.Select(p => p.SessionId).SequenceEqual(["pane-a", "pane-b"]), "only the panes a phone can see: " + string.Join(",", panes.Select(p => p.SessionId)));
+        var a = panes[0];
+        Check(a.Workspace == "demo" && a.Title == "Claude 1" && a.Status == "running", "the first workspace of an id names it, and a pane waiting on a request is still running");
+        Check(a.Requests.Select(r => r.Id).SequenceEqual(["asked", "agy-1"]) && a.Requests[0].Buttons == MobilePushButtonKinds.Claude && a.Requests[1].Kind == MobilePushKinds.Permission && a.Requests[1].Buttons == MobilePushButtonKinds.Antigravity,
+            "the pending requests minus the style's own, then the Antigravity card: " + string.Join(",", a.Requests.Select(r => r.Id)));
+        Check(a.Preview == string.Concat(Enumerable.Repeat("😀", 400)) && a.Preview.EnumerateRunes().Count() == MobilePushPane.PreviewLimit, "the newest line that is not a tool activity, cut to 400 scalars");
+        Check(!a.SignInLost && panes[1].SignInLost && panes[1].Preview is null && panes[1].Workspace == "demo", "a confirmed lost sign-in; no line, no preview");
+        Check(Project().SequenceEqual(panes), "the same panes again are equal");
+        permissions["pane-a"] = [Request("styled"), Request("asked"), Request("next")];
+        Check(!Project().SequenceEqual(panes), "a new request makes them differ");
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// The Mac's hand-off rules: nothing while phone remote access is off, the first hand-off after it comes on only sets the
+    /// baseline (what happened meanwhile is not pushed), and the ids already sent are never sent again.
+    /// </summary>
+    internal static async Task NothingGoesOutWhileOffAndSwitchingOnPushesNothingOld()
+    {
+        var directory = Verification.Temp();
+        await using var service = new DesktopService(Path.Combine(directory, "state"), null, directory);
+        await service.InitializeAsync();
+        var (host, clientId, _) = PairedHost(directory);
+        await using var _host = host;
+        var transport = new RecordingTransport(); var on = false;
+        using var push = new MobilePushHub(service, host, "Test PC") { Transport = transport, RetryDelays = [], Relay = () => "wss://relay.example.invalid", RemoteOn = () => on };
+        Check(push.Register(clientId, new string('h', 43), [MobilePushKinds.Permission, MobilePushKinds.Completed]) == MobilePushRegistrationResult.Saved, "registered");
+        MobilePushPane Pane(params string[] requests) => new("pane-1", "demo", "Claude 1", "running", null, requests.Select(id => new MobilePushRequest(id, "run-1", MobilePushKinds.Permission, "", MobilePushButtonKinds.Claude)).ToArray(), false);
+        async Task<string[]> Hand(MobilePushPane pane) { var before = transport.Count; await Task.WhenAll(push.Push([pane])); return transport.Sent.Skip(before).Select(s => s.Request.Payload).ToArray(); }
+        Check(push.Observe().Count == 0 && (await Hand(Pane())).Length == 0 && (await Hand(Pane("r1"))).Length == 0, "nothing while off");
+        on = true;
+        Check((await Hand(Pane("r1", "r2"))).Length == 0, "the first hand-off after switching on only sets the baseline");
+        Check((await Hand(Pane("r1", "r2", "r3"))).Length == 1, "then a new request is pushed");
+        Check((await Hand(Pane("r1", "r2", "r3"))).Length == 0, "the same panes again decide nothing");
+        on = false;
+        Check((await Hand(Pane("r1", "r2", "r3", "r4"))).Length == 0, "off again: nothing");
+        on = true;
+        Check((await Hand(Pane("r1", "r2", "r3", "r4", "r5"))).Length == 0, "on again: a new baseline, r4 and r5 came while off");
+        Check((await Hand(Pane("r3", "r6"))).Length == 1 && (await Hand(Pane("r3"))).Length == 0 && (await Hand(Pane("r3", "r6"))).Length == 0, "an id already sent is never sent again");
+        push.Dispose();
+        Check(push.Observe().Count == 0 && (await Hand(Pane("r7"))).Length == 0 && (await Hand(Pane("r7", "r8"))).Length == 0, "nothing after shutdown");
+    }
+
+    /// <summary>
+    /// Sending (M/MobileRemoteService deliver): two retries at 2 s and 8 s, a longer Retry-After wins up to 30 s, an exception is a
+    /// retry, a refusal ends it, "gone" forgets only the handle sent to, and switching off or closing stops it without a retry.
+    /// </summary>
+    internal static async Task DeliveriesRetryAndStopAsTheMacDoes()
+    {
+        var directory = Verification.Temp();
+        await using var service = new DesktopService(Path.Combine(directory, "state"), null, directory);
+        await service.InitializeAsync();
+        var (host, clientId, _) = PairedHost(directory);
+        await using var _host = host;
+        var transport = new RecordingTransport(); var on = true; var waits = new List<TimeSpan>();
+        using var push = new MobilePushHub(service, host, "Test PC") { Transport = transport, Relay = () => "wss://relay.example.invalid", RemoteOn = () => on, Wait = (wait, _) => { lock (waits) waits.Add(wait); return Task.CompletedTask; } };
+        var handle = new string('h', 43); var newer = new string('n', 43);
+        Check(push.Register(clientId, handle, [MobilePushKinds.Permission]) == MobilePushRegistrationResult.Saved, "registered");
+        var serial = 0;
+        async Task Ask() { serial++; await Task.WhenAll(push.Push([new("pane-1", "demo", "Claude 1", "running", null, [new("r" + serial, "run-1", MobilePushKinds.Permission, "", MobilePushButtonKinds.Claude)], false)])); }
+        await Task.WhenAll(push.Push([new("pane-1", "demo", "Claude 1", "running", null, [], false)]));
+
+        transport.Outcomes.Enqueue(new(MobilePushSendStatus.Retry, TimeSpan.FromSeconds(5))); transport.Outcomes.Enqueue(new(MobilePushSendStatus.Retry, MobilePushHttpTransport.MaximumRetryAfter));
+        await Ask();
+        Check(transport.Count == 3 && waits.SequenceEqual([TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(30)]), "a longer Retry-After wins, at most 30 s: " + string.Join(",", waits));
+        waits.Clear(); transport.Outcomes.Enqueue(new(MobilePushSendStatus.Retry, TimeSpan.FromSeconds(1))); transport.Outcomes.Enqueue(new(MobilePushSendStatus.Retry)); transport.Outcomes.Enqueue(new(MobilePushSendStatus.Retry));
+        await Ask();
+        Check(transport.Count == 6 && waits.SequenceEqual([TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(8)]), "2 s, 8 s, then it gives up: " + string.Join(",", waits));
+        transport.Outcomes.Enqueue(new(MobilePushSendStatus.Failed, null, 400));
+        await Ask();
+        Check(transport.Count == 7 && host.Identity.PushDevices().Count == 1, "a refusal is not retried and forgets nothing");
+        var thrown = 0;
+        transport.Answer = (_, _) => Interlocked.Increment(ref thrown) == 1 ? throw new InvalidOperationException("boom") : Task.FromResult(new MobilePushSendOutcome(MobilePushSendStatus.Sent));
+        await Ask();
+        Check(transport.Count == 9, "an exception is tried again");
+        // The phone registered a newer handle while the old one was on its way: "gone" for the old one leaves the new one.
+        transport.Answer = (_, _) => { push.Register(clientId, newer, [MobilePushKinds.Permission]); return Task.FromResult(new MobilePushSendOutcome(MobilePushSendStatus.Gone, null, 404)); };
+        await Ask();
+        Check(host.Identity.PushDevices().Single().Handle == newer, "only the handle that was sent to is forgotten");
+        // Switched off between two attempts: no more.
+        waits.Clear(); transport.Answer = (_, _) => { on = false; return Task.FromResult(new MobilePushSendOutcome(MobilePushSendStatus.Retry)); };
+        var before = transport.Count;
+        await Ask();
+        Check(transport.Count == before + 1 && waits.Count == 0, "switched off meanwhile, nothing is tried again");
+        on = true;
+        // Closing while a send is under way: it is cancelled, and no retry is planned.
+        var entered = new TaskCompletionSource();
+        transport.Answer = async (_, token) => { entered.TrySetResult(); await Task.Delay(Timeout.Infinite, token); return new MobilePushSendOutcome(MobilePushSendStatus.Sent); };
+        before = transport.Count;
+        serial++; var sending = push.Push([new("pane-1", "demo", "Claude 1", "running", null, [new("r" + serial, "run-1", MobilePushKinds.Permission, "", MobilePushButtonKinds.Claude)], false)]);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        push.Dispose();
+        await Task.WhenAll(sending).WaitAsync(TimeSpan.FromSeconds(10));
+        Check(transport.Count == before + 1 && waits.Count == 0 && sending.All(t => t.IsCompletedSuccessfully), "closing ends the send without a retry");
+    }
+
+    /// <summary>The caller's cancellation (the app closing) is thrown back, not turned into a retry.</summary>
+    internal static async Task TheCallersCancellationIsNotARetry()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        using var cancel = new CancellationTokenSource();
+        cancel.Cancel();
+        var thrown = false;
+        try { await new MobilePushHttpTransport().SendAsync(new("s", "h", "p"), new Uri($"http://127.0.0.1:{((IPEndPoint)listener.LocalEndpoint).Port}/push/v1/send"), "t", cancel.Token); }
+        catch (OperationCanceledException) { thrown = true; }
+        Check(thrown, "a cancelled send throws");
+    }
+
+    /// <summary>
+    /// The WinUI observes on its 250 ms tick: a pane's lost sign-in and a finished run reach the planner through Observe, the panes
+    /// are read again only when something moved, and the hub lets go of everything it subscribed to when disposed.
+    /// </summary>
+    internal static async Task ObservingReadsThePanesAndDisposingLetsGo()
+    {
+        var directory = Verification.Temp();
+        await using var service = new DesktopService(Path.Combine(directory, "state"), null, directory);
+        await service.InitializeAsync();
+        var (host, clientId, token) = PairedHost(directory);
+        await using var _host = host;
+        static int Handlers(object target, string name) => target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic) is { } field ? (field.GetValue(target) as Delegate)?.GetInvocationList().Length ?? 0 : -1;
+        string[] events = ["ToolPermissionChanged", "RunEventReceived", "AntigravityCardChanged"];
+        var before = events.Select(name => Handlers(service, name)).Append(Handlers(host.Identity, "Rotated")).ToArray();
+        Check(before.All(count => count >= 0), "the events are fields: " + string.Join(",", before));
+        var transport = new RecordingTransport(); var lost = new HashSet<string>();
+        var push = new MobilePushHub(service, host, "Test PC") { Transport = transport, RetryDelays = [], Relay = () => "wss://relay.example.invalid", RemoteOn = () => true, SignInLost = lost.Contains };
+        Check(events.Select(name => Handlers(service, name)).Append(Handlers(host.Identity, "Rotated")).Zip(before).All(pair => pair.First == pair.Second + 1), "subscribed to all four");
+        try
+        {
+            Check(push.Register(clientId, new string('h', 43), [MobilePushKinds.Signin, MobilePushKinds.Completed]) == MobilePushRegistrationResult.Saved, "registered");
+            var workspace = await service.AddWorkspaceAsync(directory);
+            var pane = new RunSession { Id = "pane-1", WorkspaceId = workspace.Id, Title = "Claude 1", Status = "running", Logs = [new("1", "assistant", "all done", "t")] };
+            await service.UpdateAsync(s => s with { Sessions = [pane] });
+            async Task<string[]> Observe()
+            {
+                var count = transport.Count; await Task.WhenAll(push.Observe());
+                var key = MobilePushSeal.Key(Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token))).ToLowerInvariant(), clientId)!;
+                return transport.Sent.Skip(count).Select(s => JsonDocument.Parse(MobilePushSeal.Open(s.Request.Payload, key, s.Request.Handle)!).RootElement.GetProperty("id").GetString()!).ToArray();
+            }
+            Check((await Observe()).Length == 0, "the first observation is the baseline");
+            lost.Add("pane-1");
+            Check((await Observe()).SequenceEqual(["signin:pane-1:1"]), "a lost sign-in is seen without any other news");
+            await service.UpdateAsync(s => s with { Sessions = [pane with { Status = "completed" }] });
+            Check((await Observe()).Length == 0, "nothing reported, nothing read");
+            push.Changed();
+            var finished = await Observe();
+            Check(finished.SequenceEqual(["run:pane-1:1:completed"]), "a finished run once something moved: " + string.Join(",", finished));
+        }
+        finally { push.Dispose(); }
+        Check(events.Select(name => Handlers(service, name)).Append(Handlers(host.Identity, "Rotated")).SequenceEqual(before), "disposing lets go of all four");
     }
 }
