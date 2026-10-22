@@ -8,6 +8,7 @@ import {
   readPushHandle,
   relayHttpBase,
   syncHostPush,
+  PUSH_HANDLE_CHECK_MS,
   PUSH_RELAY_TIMEOUT_MS,
   type PushFetch,
 } from '@/lib/push/registry';
@@ -52,12 +53,13 @@ describe('push handles', () => {
     const store = memoryStore();
     const calls: Call[] = [];
     const fetch = relay([{ status: 201, body: { handle: HANDLE, secret: SECRET } }, { status: 204 }], calls);
-    const first = await ensurePushHandle({ store, fetch }, 'host-a', 'wss://relay.example.invalid', 'token-1');
-    expect(first).toEqual({ handle: HANDLE, secret: SECRET, relayUrl: 'wss://relay.example.invalid', fcmToken: 'token-1' });
+    const now = () => 5_000;
+    const first = await ensurePushHandle({ store, fetch, now }, 'host-a', 'wss://relay.example.invalid', 'token-1');
+    expect(first).toEqual({ handle: HANDLE, secret: SECRET, relayUrl: 'wss://relay.example.invalid', fcmToken: 'token-1', checkedAt: 5_000 });
     expect(calls[0]).toEqual({ url: 'https://relay.example.invalid/push/v1/handles', method: 'POST', body: JSON.stringify({ fcmToken: 'token-1' }) });
-    expect(await ensurePushHandle({ store, fetch }, 'host-a', 'wss://relay.example.invalid', 'token-1')).toEqual(first);
+    expect(await ensurePushHandle({ store, fetch, now }, 'host-a', 'wss://relay.example.invalid', 'token-1')).toEqual(first);
     expect(calls).toHaveLength(1);
-    await ensurePushHandle({ store, fetch }, 'host-a', 'wss://relay.example.invalid', 'token-2');
+    await ensurePushHandle({ store, fetch, now }, 'host-a', 'wss://relay.example.invalid', 'token-2');
     expect(calls[1]).toEqual({ url: `https://relay.example.invalid/push/v1/handles/${HANDLE}`, method: 'PUT', body: JSON.stringify({ fcmToken: 'token-2' }), auth: `Bearer ${SECRET}` });
     expect((await readPushHandle(store, 'host-a'))?.fcmToken).toBe('token-2');
   });
@@ -79,7 +81,7 @@ describe('push handles', () => {
     const other = 'o'.repeat(43);
     const fetch = relay([{ status: 204 }, { status: 201, body: { handle: other, secret: SECRET } }], calls);
     const made = await ensurePushHandle({ store, fetch }, 'host-a', 'wss://new.example.invalid', 't');
-    expect(made).toEqual({ handle: other, secret: SECRET, relayUrl: 'wss://new.example.invalid', fcmToken: 't' });
+    expect(made).toEqual({ handle: other, secret: SECRET, relayUrl: 'wss://new.example.invalid', fcmToken: 't', checkedAt: expect.any(Number) });
     expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
       `DELETE https://old.example.invalid/push/v1/handles/${HANDLE}`,
       'POST https://new.example.invalid/push/v1/handles',
@@ -107,6 +109,69 @@ describe('push handles', () => {
     await store.setItemAsync('mightyclaude.push.v1.host-b', JSON.stringify({ handle: HANDLE, secret: SECRET, relayUrl: 'wss://r', fcmToken: 't' }));
     expect(await findHostByHandle(store, ['host-a', 'host-b'], HANDLE)).toBe('host-b');
     expect(await findHostByHandle(store, ['host-a', 'host-b'], 'x'.repeat(43))).toBeNull();
+  });
+});
+
+describe('an unchanged handle', () => {
+  const DAY = PUSH_HANDLE_CHECK_MS;
+  const saved = (checkedAt?: number) =>
+    JSON.stringify({ handle: HANDLE, secret: SECRET, relayUrl: 'wss://relay.example.invalid', fcmToken: 'token', ...(checkedAt === undefined ? {} : { checkedAt }) });
+
+  it('is not asked about again within a day', async () => {
+    const store = memoryStore();
+    await store.setItemAsync('mightyclaude.push.v1.host-a', saved(1_000));
+    const calls: Call[] = [];
+    const record = await ensurePushHandle({ store, fetch: relay([], calls), now: () => 1_000 + DAY - 1 }, 'host-a', 'wss://relay.example.invalid', 'token');
+    expect(record?.handle).toBe(HANDLE);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('is confirmed with the relay once a day, and a confirmed handle is kept', async () => {
+    const store = memoryStore();
+    await store.setItemAsync('mightyclaude.push.v1.host-a', saved(1_000));
+    const calls: Call[] = [];
+    const record = await ensurePushHandle({ store, fetch: relay([{ status: 204 }], calls), now: () => 1_000 + DAY }, 'host-a', 'wss://relay.example.invalid', 'token');
+    expect(record).toEqual({ handle: HANDLE, secret: SECRET, relayUrl: 'wss://relay.example.invalid', fcmToken: 'token', checkedAt: 1_000 + DAY });
+    expect(calls).toEqual([{ url: `https://relay.example.invalid/push/v1/handles/${HANDLE}`, method: 'PUT', body: JSON.stringify({ fcmToken: 'token' }), auth: `Bearer ${SECRET}` }]);
+    expect((await readPushHandle(store, 'host-a'))?.checkedAt).toBe(1_000 + DAY);
+  });
+
+  it('saved before the check was kept is confirmed on the next sync', async () => {
+    const store = memoryStore();
+    await store.setItemAsync('mightyclaude.push.v1.host-a', saved());
+    expect((await readPushHandle(store, 'host-a'))?.checkedAt).toBe(0);
+    const calls: Call[] = [];
+    await ensurePushHandle({ store, fetch: relay([{ status: 204 }], calls), now: () => 10 }, 'host-a', 'wss://relay.example.invalid', 'token');
+    expect(calls.map((c) => c.method)).toEqual(['PUT']);
+  });
+
+  it('is kept when the relay is busy or unreachable, and asked about again next time', async () => {
+    const store = memoryStore();
+    await store.setItemAsync('mightyclaude.push.v1.host-a', saved(1));
+    expect((await ensurePushHandle({ store, fetch: relay([{ status: 503 }], []), now: () => 1 + DAY }, 'host-a', 'wss://relay.example.invalid', 'token'))?.handle).toBe(HANDLE);
+    const offline: PushFetch = async () => { throw new Error('offline'); };
+    expect((await ensurePushHandle({ store, fetch: offline, now: () => 1 + DAY }, 'host-a', 'wss://relay.example.invalid', 'token'))?.handle).toBe(HANDLE);
+    expect((await readPushHandle(store, 'host-a'))?.checkedAt).toBe(1);
+  });
+
+  it('the relay lost is replaced, and the host gets the new handle', async () => {
+    const info = (): HostInfo => ({ protocol: 1, hostId: 'h', hostName: 'H', appVersion: '1', platform: 'darwin', capabilities: ['push'] } as HostInfo);
+    const ok: OkResponse = { protocol: 1, ok: true } as OkResponse;
+    const store = memoryStore();
+    await store.setItemAsync('mightyclaude.push.v1.host-a', saved(1_000));
+    const calls: Call[] = [];
+    const other = 'o'.repeat(43);
+    const fetch = relay([{ status: 404 }, { status: 201, body: { handle: other, secret: SECRET } }], calls);
+    const registered: string[] = [];
+    const client: Pick<MobileClient, 'info' | 'registerPush'> = {
+      info: async () => info(),
+      registerPush: async (input) => { registered.push(input.handle); return ok; },
+    };
+    const result = await syncHostPush({ store, fetch, client, now: () => 1_000 + 2 * DAY }, { id: 'host-a', relayUrl: 'wss://relay.example.invalid' }, 'token', ['completed']);
+    expect(result).toBe('registered');
+    expect(calls.map((c) => c.method)).toEqual(['PUT', 'POST']);
+    expect(registered).toEqual([other]);
+    expect((await readPushHandle(store, 'host-a'))?.handle).toBe(other);
   });
 });
 
