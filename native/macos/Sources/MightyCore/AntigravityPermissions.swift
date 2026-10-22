@@ -151,10 +151,17 @@ public enum AntigravityRuleSafety {
     /// Shells and interpreters: once alone or with an inline-code flag.
     public static let interpreters: Set<String> = [
         "bash", "sh", "zsh", "dash", "fish", "ksh", "csh", "tcsh", "pwsh", "powershell", "cmd", "python", "python3", "node", "deno", "bun",
-        "ruby", "perl", "php", "lua", "osascript",
+        "ruby", "perl", "php", "lua", "osascript", "py", "awk", "gawk",
     ]
+    /// Interpreters whose first argument is their program: once whatever follows.
+    public static let programFirst: Set<String> = ["awk", "gawk"]
     /// Programs that run the command after them: once whatever follows.
-    public static let wrappers: Set<String> = ["env", "xargs", "nohup", "time", "timeout", "nice", "watch", "exec", "eval", "source", ".", "npx", "bunx", "uvx", "pipx"]
+    public static let wrappers: Set<String> = [
+        "env", "xargs", "nohup", "time", "timeout", "nice", "watch", "exec", "eval", "source", ".", "npx", "bunx", "uvx", "pipx",
+        "command", "builtin", "caffeinate", "arch", "stdbuf", "wsl", "setsid", "script",
+    ]
+    /// Options that only print an interpreter's version or help.
+    public static let infoFlags: Set<String> = ["--version", "-v", "-version", "--help", "-h", "-help", "-?", "/?"]
     /// Flags that hand an interpreter code to run.
     public static let inlineCodeFlags: Set<String> = ["-c", "-e", "-p", "-r", "--eval", "--print", "--command", "-command", "-encodedcommand", "-enc", "-ec", "/c", "/k"]
 
@@ -162,14 +169,17 @@ public enum AntigravityRuleSafety {
     /// by the first word after any leading `VAR=x` (or `env VAR=x`).
     /// `command(bash)` would allow `bash -c "<anything>"`: agy matches words from the start.
     public static func runsCode(_ command: String) -> Bool {
-        var words = command.split(whereSeparator: { $0 == " " || $0 == "\t" }).map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "\"'")).lowercased() }[...]
+        // An empty quoted word ('' or "") is dropped: the next word is the one that runs.
+        var words = command.split(whereSeparator: { $0 == " " || $0 == "\t" }).map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "\"'")).lowercased() }
+            .filter { !$0.isEmpty }[...]
         func assignment(_ word: String) -> Bool { !word.hasPrefix("-") && !word.hasPrefix("=") && word.contains("=") }
         while let first = words.first, assignment(first) { words.removeFirst() }
         if words.first == "env", words.count > 1, assignment(words[words.startIndex + 1]) {
             words.removeFirst()
             while let first = words.first, assignment(first) { words.removeFirst() }
         }
-        guard let first = words.first else { return false }
+        // Nothing but assignments (`FOO=1`, `env FOO=1`) runs whatever a prefix rule lets follow.
+        guard let first = words.first else { return true }
         // The program by its name, without a folder or `.exe`.
         var program = first
         if program != ".", let slash = program.lastIndex(where: { $0 == "/" || $0 == "\\" }) { program = String(program[program.index(after: slash)...]) }
@@ -177,15 +187,19 @@ public enum AntigravityRuleSafety {
         if program.hasPrefix("python") { program = "python" }
         if wrappers.contains(program) { return true }
         guard interpreters.contains(program) else { return false }
-        if words.count == 1 { return true }
+        if programFirst.contains(program) || words.count == 1 { return true }
         // The interpreter's own options come before its script; what follows the script is the script's.
+        var onlyInfo = true
         for word in words.dropFirst() {
             if inlineCodeFlags.contains(word) { return true }
             let shortFlag = word.hasPrefix("-") && !word.hasPrefix("--") && word.count > 1 && word.dropFirst().allSatisfy(\.isLetter)
             if shortFlag, word.dropFirst().contains(where: { "cerp".contains($0) }) { return true }
-            if !word.hasPrefix("-") { return false }
+            // cmd's options are /x; anyone else's word starting with / is a script path.
+            if !word.hasPrefix("-") && !(program == "cmd" && word.hasPrefix("/")) { return false }
+            if !infoFlags.contains(word) { onlyInfo = false }
         }
-        return false
+        // No script: the interpreter reads its code from what a prefix rule lets follow (bash -l, python3 -u), unless it only prints its version or help.
+        return !onlyInfo
     }
 
     /// Characters that chain, pipe, redirect, background or substitute.
