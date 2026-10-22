@@ -132,9 +132,74 @@ public enum AntigravityRuleSafety {
         return (String(rule[..<open]), String(rule[rule.index(after: open)..<rule.index(before: rule.endIndex)]))
     }
 
-    public static func verdict(_ rule: String) -> Verdict {
+    private final class Setting: @unchecked Sendable { let lock = NSLock(); var value: String? }
+    private static let appData = Setting()
+    /// The app's data folder (where the ledger lives); the app sets it at launch.
+    /// No file rule may reach into it or above it.
+    public static var appDataFolder: String? {
+        get { appData.lock.lock(); defer { appData.lock.unlock() }; return appData.value }
+        set { appData.lock.lock(); appData.value = newValue; appData.lock.unlock() }
+    }
+
+    /// The folders no file rule may reach into or above: agy's own `~/.gemini`
+    /// (an always rule there would let agy rewrite its own permissions) and
+    /// the app's data folder with its ledger, each as written and with its
+    /// symbolic links resolved.
+    public static func protectedFolders() -> [String] {
+        var folders: [String] = []
+        func add(_ url: URL) {
+            folders.append(url.path)
+            let resolved = url.resolvingSymlinksInPath().path
+            if resolved != url.path { folders.append(resolved) }
+        }
+        add(FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".gemini", isDirectory: true))
+        if let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            add(support.appendingPathComponent("MightyClaude Native", isDirectory: true))
+        }
+        if let app = appDataFolder { add(URL(fileURLWithPath: app, isDirectory: true)) }
+        return folders
+    }
+
+    /// `protectedFolders`: the folders file rules keep out of, compared as
+    /// written (the shared cases); nil uses this computer's
+    /// (`protectedFolders()`). `resolvingLinks` (by default when nil) also
+    /// checks the rule's path with its symbolic links resolved.
+    public static func verdict(_ rule: String, protectedFolders folders: [String]? = nil, resolvingLinks: Bool? = nil) -> Verdict {
         guard let (name, argument) = parts(rule), permissions.contains(name), !refusedArgument(argument) else { return .refused }
-        return name == "command" && risky(argument) ? .once : .always
+        if name == "write_file" || name == "read_file" {
+            var paths = [argument]
+            if resolvingLinks ?? (folders == nil), argument.hasPrefix("/") {
+                let resolved = URL(fileURLWithPath: argument).resolvingSymlinksInPath().path
+                if resolved != argument { paths.append(resolved) }
+            }
+            let guarded = (folders ?? protectedFolders()).compactMap(normalizedPath)
+            for path in paths {
+                guard let normalized = normalizedPath(path) else { return .refused }
+                if guarded.contains(where: { within(normalized, $0) || within($0, normalized) }) { return .refused }
+            }
+        }
+        // A command that names agy's own folder may run once, never for good.
+        return name == "command" && (risky(argument) || argument.lowercased().contains(".gemini")) ? .once : .always
+    }
+
+    /// An absolute path, compared without case, `\\` as `/`, `.` and `..` taken
+    /// out and no trailing slash; nil when it is not absolute (`/…`, `C:\…`).
+    static func normalizedPath(_ path: String) -> String? {
+        let slashed = path.replacingOccurrences(of: "\\", with: "/")
+        let drive = slashed.range(of: "\\A[A-Za-z]:/", options: .regularExpression) != nil
+        guard drive || slashed.hasPrefix("/") else { return nil }
+        var parts: [String] = []
+        for part in (drive ? String(slashed.dropFirst(2)) : slashed).split(separator: "/") {
+            if part == "." { continue }
+            if part == ".." { if !parts.isEmpty { parts.removeLast() }; continue }
+            parts.append(part.lowercased())
+        }
+        return (drive ? String(slashed.prefix(2)).lowercased() : "") + "/" + parts.joined(separator: "/")
+    }
+
+    /// `path` is `folder` or inside it.
+    static func within(_ path: String, _ folder: String) -> Bool {
+        path == folder || path.hasPrefix(folder.hasSuffix("/") ? folder : folder + "/")
     }
 
     /// Empty, the whole disk or home (`/`, `~`, `C:\`), a wildcard, a parenthesis or a control character.
@@ -740,6 +805,11 @@ public actor AntigravityRuleLeases {
     public func apply(_ grant: AntigravityAllowGrant) throws -> Lease? {
         guard !closed else { throw CancellationError() }
         guard grant.isValid else { throw AntigravitySettingsError.badRule }
+        // Never a file rule into (or above) these settings' own folder or this ledger's, wherever they are.
+        let guarded = AntigravityRuleSafety.protectedFolders() + ownFolders()
+        guard grant.rules.allSatisfy({ AntigravityRuleSafety.verdict($0, protectedFolders: guarded, resolvingLinks: true) != .refused }) else {
+            throw AntigravitySettingsError.badRule
+        }
         guard grant.keepsOnlyAllowedRules else { throw AntigravitySettingsError.onceOnly }
         retryPending()
         let current = try read()
@@ -806,6 +876,14 @@ public actor AntigravityRuleLeases {
     public func removeLeftovers() async {
         let left = ledgerRules().filter { counts[$0] == nil && !awaitingRecheck.contains($0) }
         if left.isEmpty { pruneIfDone() } else { await remove(left) }
+    }
+
+    /// agy's folder these settings are in (`.gemini`, two up from
+    /// `antigravity-cli/settings.json`) and the ledger's folder, as written and resolved.
+    private func ownFolders() -> [String] {
+        var urls = [settingsURL.deletingLastPathComponent().deletingLastPathComponent()]
+        if let ledgerURL { urls.append(ledgerURL.deletingLastPathComponent()) }
+        return urls.flatMap { [$0.path, $0.resolvingSymlinksInPath().path] }
     }
 
     // MARK: Removing

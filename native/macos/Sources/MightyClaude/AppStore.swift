@@ -399,6 +399,8 @@ final class AppStore: ObservableObject, DelegationHost {
         let profile = arguments.firstIndex(of: "--profile").flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
         dataDirectory = profile.map { URL(fileURLWithPath: $0, isDirectory: true) } ?? support.appendingPathComponent("MightyClaude Native", isDirectory: true)
+        // No Antigravity file rule may reach this folder (it holds the temporary-rule ledger).
+        AntigravityRuleSafety.appDataFolder = dataDirectory.path
         repository = StateRepository(directory: dataDirectory, legacyStateURL: profile == nil ? StateRepository.defaultLegacyStateURL() : nil)
         imageCache = AgentImageCache(directory: dataDirectory.appendingPathComponent("image-cache", isDirectory: true))
         AgentImageLibrary.shared.cache = imageCache

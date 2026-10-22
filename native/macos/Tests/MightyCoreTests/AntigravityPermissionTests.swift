@@ -18,7 +18,8 @@ struct AntigravityPermissionTests {
         struct NewFile: Decodable { let add: [String]; let after: String; let created: [String] }
         struct Settings: Decodable { let newFile: NewFile; let edits: [Edit]; let refused: [Refused] }
         struct RuleCase: Decodable { let rule: String; let verdict: String }
-        struct Rules: Decodable { let cases: [RuleCase] }
+        struct Context: Decodable { let protected: [String] }
+        struct Rules: Decodable { let cases: [RuleCase]; let context: Context }
         struct Tools: Decodable { let map: [String: String]; let unmapped: [String] }
         let streams: [Stream]
         let settings: Settings
@@ -117,7 +118,7 @@ struct AntigravityPermissionTests {
 
     @Test func whichRulesACardMayOfferFollowsTheSharedCases() {
         for item in Self.fixture.rules.cases {
-            #expect(AntigravityRuleSafety.verdict(item.rule).rawValue == item.verdict, "\(item.rule)")
+            #expect(AntigravityRuleSafety.verdict(item.rule, protectedFolders: Self.fixture.rules.context.protected).rawValue == item.verdict, "\(item.rule)")
         }
         #expect(AntigravityRuleSafety.toolPermissions == Self.fixture.tools.map)
         for tool in Self.fixture.tools.unmapped { #expect(AntigravityRuleSafety.toolPermissions[tool] == nil, "\(tool)") }
@@ -274,6 +275,38 @@ struct AntigravityPermissionTests {
         // A rule that is not one is refused before the file is read.
         do { _ = try await folder.leases().apply(AntigravityAllowGrant(requestId: "agy-1", rules: ["rm -rf /"], temporary: true)); Issue.record("bad rule") }
         catch { #expect(Self.errorName(error) == "badRule") }
+    }
+
+    @Test func noFileRuleReachesAgysOwnFolderOrTheAppsData() async throws {
+        let folder = Folder(); defer { folder.cleanup() }
+        try folder.make(Self.real)
+        let leases = folder.leases()
+        let gemini = folder.root.appendingPathComponent(".gemini")
+        // agy's own settings, the app's ledger, and anything above them.
+        for path in [folder.settings.path, gemini.path, folder.ledger.path, folder.ledger.deletingLastPathComponent().path, folder.root.path,
+                     folder.root.appendingPathComponent("project/../.gemini/x").path] {
+            for name in ["write_file", "read_file"] {
+                do { _ = try await leases.apply(AntigravityAllowGrant(requestId: "agy-1", rules: ["\(name)(\(path))"], temporary: true)); Issue.record("allowed \(name)(\(path))") }
+                catch { #expect(Self.errorName(error) == "badRule", "\(name)(\(path))") }
+            }
+        }
+        // Through a link to it too.
+        let link = folder.root.appendingPathComponent("linked")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: gemini)
+        do { _ = try await leases.apply(AntigravityAllowGrant(requestId: "agy-1", rules: ["write_file(\(link.path)/antigravity-cli/settings.json)"], temporary: true)); Issue.record("allowed through a link") }
+        catch { #expect(Self.errorName(error) == "badRule") }
+        #expect(folder.text() == Self.real)
+        // A file beside them is fine.
+        let lease = try #require(try await leases.apply(AntigravityAllowGrant(requestId: "agy-2", rules: ["write_file(\(folder.root.path)/project/a.txt)"], temporary: true)))
+        await leases.release(lease); await leases.settled()
+        // The real home's .gemini and the app's own data folder are never a rule's, wherever the leases point.
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        #expect(AntigravityRuleSafety.verdict("write_file(\(home.path)/.gemini/antigravity-cli/settings.json)") == .refused)
+        #expect(AntigravityRuleSafety.verdict("read_file(\(home.path))") == .refused)
+        AntigravityRuleSafety.appDataFolder = folder.root.appendingPathComponent("app").path
+        defer { AntigravityRuleSafety.appDataFolder = nil }
+        #expect(AntigravityRuleSafety.verdict("write_file(\(folder.ledger.path))") == .refused)
+        #expect(AntigravityRuleSafety.verdict("command(cat \(home.path)/.gemini/antigravity-cli/settings.json)") == .once)
     }
 
     @Test func aMissingFileIsCreatedWithTheRuleAloneAndGoesWithIt() async throws {
