@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.AccessControl;
 using System.Security.Cryptography;
 using System.Security.Principal;
@@ -13,12 +14,17 @@ public sealed record MobileDeviceInfo(string Id, string Name, string FirstSeen, 
 public sealed record MobileAuthResult(string? DeviceId, string? DeviceToken = null, string? Error = null)
 { public override string ToString() => $"MobileAuthResult {{ DeviceId = {DeviceId}, Error = {Error}, DeviceToken = [redacted] }}"; }
 
+/// <summary>Where and what a phone asked to be pushed (M/MobileDeviceRegistry.swift MobilePushRegistration).</summary>
+public sealed record MobilePushRegistration(string Handle, IReadOnlyList<string> Kinds, string UpdatedAt);
+/// <summary>NeedsToken: an unknown phone or the legacy row, since the push key comes from a device token.</summary>
+public enum MobilePushRegistrationResult { Saved, NeedsToken, Unsaved }
+
 /// Pairing identity and token hashes commit together: a failed key rotation
 /// cannot leave a new key paired with an old device registry. Secrets never
 /// enter AppSnapshot, diagnostic strings, notifications or ordinary logs.
 public sealed class MobileIdentity
 {
-    private sealed record Device(string Id, string Name, string? TokenHash, string FirstSeen, string LastSeen);
+    private sealed record Device(string Id, string Name, string? TokenHash, string FirstSeen, string LastSeen, MobilePushRegistration? Push = null);
     private sealed record Saved(int Version, string HostId, string HostToken, string PairingKey, string SecretKeyB64, List<Device> Devices);
     private readonly object sync = new();
     private readonly string path;
@@ -43,6 +49,8 @@ public sealed class MobileIdentity
             if (new FileInfo(path).Length > 128 * 1024 || File.GetAttributes(path).HasFlag(FileAttributes.ReparsePoint)) throw new IOException("Invalid mobile identity file.");
             state = JsonSerializer.Deserialize<Saved>(File.ReadAllText(path), Wire.Json) ?? throw new IOException("Invalid mobile identity.");
             if (state.Version != 1 || !Wire.Identifier(state.HostId) || !Regex.IsMatch(state.HostToken, "^[a-f0-9]{64}$") || !TokenShape(state.PairingKey) || Convert.FromBase64String(state.SecretKeyB64).Length != 32 || state.Devices.Count > 32 || state.Devices.Select(d => d.Id).Distinct().Count() != state.Devices.Count || state.Devices.Any(d => d.Id != "legacy" && !ClientId(d.Id) || d.Id == "legacy" && d.TokenHash is not null || d.Id != "legacy" && (d.TokenHash is null || !Regex.IsMatch(d.TokenHash, "^[a-f0-9]{64}$")) || d.Name.Length > 160 || !DateTimeOffset.TryParse(d.FirstSeen, out _) || !DateTimeOffset.TryParse(d.LastSeen, out _))) throw new IOException("Invalid mobile identity.");
+            // A handle the row cannot use is dropped, the phone kept (M/MobileDeviceRegistry.swift load()).
+            state = state with { Devices = state.Devices.Select(d => d.Push is { } push && (d.TokenHash is null || push.Handle is null || push.Kinds is null || !MobilePushWire.ValidHandle(push.Handle)) ? d with { Push = null } : d).ToList() };
         }
         else { state = new(1, Wire.Id(), Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant(), RandomToken(32), Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)), []); Save(state); }
     }
@@ -95,11 +103,44 @@ public sealed class MobileIdentity
         if (!DateTimeOffset.TryParse(device.LastSeen, out var seen) || DateTimeOffset.UtcNow - seen > TimeSpan.FromMinutes(1))
             Save(state with { Devices = state.Devices.Select(d => d.Id == device.Id ? d with { LastSeen = Wire.Now() } : d).ToList() });
     }
+    /// <summary>The key was rotated: every phone, its token and its push handle are gone.</summary>
+    internal event Action? Rotated;
     public void Rotate()
     {
         lock (sync) { Save(state with { PairingKey = RandomToken(32), Devices = [] }); registrations.Clear(); }
+        Rotated?.Invoke();
     }
     public bool Contains(string id, bool legacyAllowed) { lock (sync) return state.Devices.Any(d => d.Id == id && (d.TokenHash is not null || id == "legacy" && legacyAllowed)); }
+    public MobilePushRegistrationResult SetPush(string id, string handle, IReadOnlyList<string> kinds)
+    {
+        lock (sync)
+        {
+            if (state.Devices.FirstOrDefault(d => d.Id == id)?.TokenHash is null) return MobilePushRegistrationResult.NeedsToken;
+            // Save keeps the old state when the write fails, so nothing needs rolling back.
+            try { Save(state with { Devices = state.Devices.Select(d => d.Id == id ? d with { Push = new(handle, kinds.ToArray(), Wire.Now()) } : d).ToList() }); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Trace.TraceWarning("mobile push: registration not saved: " + ex.GetType().Name); return MobilePushRegistrationResult.Unsaved; }
+            return MobilePushRegistrationResult.Saved;
+        }
+    }
+    /// <summary>
+    /// Forgets a phone's handle; with <paramref name="handle"/>, only while it is still that one (the relay said it is gone).
+    /// False only when the file could not be written, so the handle is still there; nothing to clear is true.
+    /// </summary>
+    public bool ClearPush(string id, string? handle = null)
+    {
+        lock (sync)
+        {
+            if (state.Devices.FirstOrDefault(d => d.Id == id)?.Push is not { } current || handle is not null && current.Handle != handle) return true;
+            try { Save(state with { Devices = state.Devices.Select(d => d.Id == id ? d with { Push = null } : d).ToList() }); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Trace.TraceWarning("mobile push: handle not cleared: " + ex.GetType().Name); return false; }
+            return true;
+        }
+    }
+    /// <summary>The phones to push to, with what their key is made from. Never leaves the host.</summary>
+    public IReadOnlyList<MobilePushDevice> PushDevices()
+    {
+        lock (sync) return state.Devices.Where(d => d.Push is not null && d.TokenHash is not null).Select(d => new MobilePushDevice(d.Id, d.Push!.Handle, d.TokenHash!, d.Push.Kinds.Where(MobilePushKinds.All.Contains).ToHashSet())).ToArray();
+    }
     /// <summary>The v2 pairing link; <paramref name="direct"/> adds the direct path's endpoints as <c>direct=</c>, joined with commas and percent-encoded (':' ',' '[' ']' included) as the Mac writes it. A phone that does not know it uses the relay.</summary>
     public string PairingUrl(string relay, string name, IReadOnlyList<string>? direct = null)
     {

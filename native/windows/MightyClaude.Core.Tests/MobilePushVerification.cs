@@ -190,4 +190,111 @@ internal static class MobilePushVerification
         await Task.Delay(100);
         Check(Volatile.Read(ref hits) == 0, "the redirect is not followed");
     }
+
+    /// <summary>A host with one phone paired the ordinary way; returns the phone's id and token.</summary>
+    internal static (MobileRelayHost Host, string ClientId, string Token) PairedHost(string directory)
+    {
+        var host = new MobileRelayHost(Path.Combine(directory, "mobile"), "Test PC", MobileDesktopRouter.Capabilities, (_, _, _, _, _) => Task.FromResult(new MobileReply(404, new { })));
+        const string clientId = "AAECAwQFBgcICQoLDA0ODw";
+        var auth = JsonSerializer.SerializeToElement(new { type = "auth", pairingKey = host.Identity.PairingKey, clientId, clientName = "Phone" });
+        var result = host.Identity.Authenticate(auth, false);
+        return (host, clientId, result.DeviceToken ?? throw new InvalidOperationException("no token: " + result.Error));
+    }
+
+    internal static async Task RoutesRegisterAHandleAndAView()
+    {
+        var directory = Verification.Temp();
+        await using var service = new DesktopService(Path.Combine(directory, "state"), null, directory);
+        await service.InitializeAsync();
+        var (host, clientId, token) = PairedHost(directory);
+        await using var _ = host;
+        using var push = new MobilePushHub(service, host, "Test PC");
+        using var router = new MobileDesktopRouter(service, Path.Combine(directory, "router"), "Test PC", (_, _) => Task.FromResult<object?>("started"), _ => new([])) { Push = push };
+        Task<MobileReply> Route(string path, object body, string device) => router.RouteAsync("POST", path, JsonSerializer.SerializeToElement(body), device, CancellationToken.None);
+        var handle = new string('h', 43);
+        Check((await Route("/m1/push/register", new { handle, kinds = new[] { "permission", "completed", "future-kind" } }, clientId)).Status == 200, "a phone with a token registers");
+        var devices = host.Identity.PushDevices();
+        Check(devices.Count == 1 && devices[0].Handle == handle && devices[0].Kinds.SetEquals(["permission", "completed"]), "the handle and the known kinds are kept");
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token))).ToLowerInvariant();
+        Check(devices[0].TokenHash == hash, "the key material is the token hash");
+        Check((await Route("/m1/push/register", new { handle = "short", kinds = Array.Empty<string>() }, clientId)).Status == 400, "a bad handle is refused");
+        Check((await Route("/m1/push/register", new { handle, kinds = Array.Empty<string>() }, "legacy")).Status == 409, "a phone without a token is refused");
+        Check((await Route("/m1/push/viewing", new { sessionId = "bad id!" }, clientId)).Status == 404, "a malformed pane id");
+        Check((await Route("/m1/push/viewing", new { sessionId = (string?)null }, clientId)).Status == 200, "null clears the view");
+        Check((await Route("/m1/push/unregister", new { }, clientId)).Status == 200 && host.Identity.PushDevices().Count == 0, "unregister forgets the handle");
+        Check(MobileDesktopRouter.Capabilities.Contains("push"), "the host advertises push");
+    }
+
+    /// <summary>
+    /// What the Mac settled in review (M/Tests/MightyCoreTests/MobileRemoteTests.swift push tests): the refusals carry the shared
+    /// words, a failed unregister is reported with the handle kept, a stale "gone" leaves a newer handle alone, a view holds 45 s,
+    /// a rotated key forgets every view, and a handle the stored row cannot use is dropped when the file is read.
+    /// </summary>
+    internal static async Task RegistrationFollowsTheMacsRules()
+    {
+        var directory = Verification.Temp();
+        await using var service = new DesktopService(Path.Combine(directory, "state"), null, directory);
+        await service.InitializeAsync();
+        var (host, clientId, _) = PairedHost(directory);
+        await using var _host = host;
+        var now = DateTimeOffset.Parse("2026-10-23T00:00:00Z", System.Globalization.CultureInfo.InvariantCulture);
+        using var push = new MobilePushHub(service, host, "Test PC") { Clock = () => now };
+        using var router = new MobileDesktopRouter(service, Path.Combine(directory, "router"), "Test PC", (_, _) => Task.FromResult<object?>("started"), _ => new([])) { Push = push };
+        Task<MobileReply> Route(string path, object body, string device) => router.RouteAsync("POST", path, JsonSerializer.SerializeToElement(body), device, CancellationToken.None);
+        static string Said(MobileReply reply) => JsonSerializer.SerializeToElement(reply.Body, Wire.Json).Text("error") ?? "";
+        var handle = new string('h', 43); var newer = new string('n', 43);
+        var bad = await Route("/m1/push/register", new { handle = "short", kinds = Array.Empty<string>() }, clientId);
+        Check(bad.Status == 400 && Said(bad) == Locale.Get("remote.error.badPushHandle"), "a bad handle is refused in the shared words");
+        var legacy = await Route("/m1/push/register", new { handle, kinds = Array.Empty<string>() }, "legacy");
+        Check(legacy.Status == 409 && Said(legacy) == Locale.Get("remote.error.pushNeedsToken"), "a token-less phone is refused in the shared words");
+        Check((await Route("/m1/push/register", new { handle, kinds = Array.Empty<string>() }, "ZZZZZZZZZZZZZZZZZZZZZZ")).Status == 409, "an unknown phone is refused");
+        Check((await Route("/m1/push/register", new { handle = handle + "\n", kinds = Array.Empty<string>() }, clientId)).Status == 400, "a trailing newline is not a handle");
+        var pane = await Route("/m1/push/viewing", new { sessionId = "bad id!" }, clientId);
+        Check(pane.Status == 404 && Said(pane) == Locale.Get("remote.error.paneNotFound"), "a malformed pane id is not found");
+        Check((await Route("/m1/push/register", new { handle, kinds = new[] { "completed" } }, clientId)).Status == 200, "registered");
+        host.Identity.ClearPush(clientId, newer);
+        Check(host.Identity.PushDevices().Single().Handle == handle, "a gone handle that is not the stored one clears nothing");
+
+        Check((await Route("/m1/push/viewing", new { sessionId = "pane-1" }, clientId)).Status == 200, "a view");
+        Check(push.Viewing.TryGetValue(clientId, out var seen) && seen == new MobilePushViewing("pane-1", now + TimeSpan.FromSeconds(45)), "the view holds 45 s from the clock");
+        Check((await Route("/m1/push/viewing", new { }, clientId)).Status == 200 && push.Viewing.Count == 0, "a body without sessionId clears the view");
+        Check((await Route("/m1/push/viewing", new { sessionId = "pane-2", deviceId = "b3RoZXItcGhvbmUtMDAwMA" }, clientId)).Status == 200 && push.Viewing.Keys.SequenceEqual([clientId]), "the view is the authenticated phone's, never a body field's");
+
+        if (!OperatingSystem.IsWindows())
+        {
+            var folder = Path.Combine(directory, "mobile");
+            File.SetUnixFileMode(folder, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+            try
+            {
+                var failed = await Route("/m1/push/unregister", new { }, clientId);
+                Check(failed.Status == 503 && Said(failed) == Locale.Get("mobileRemote.device.saveFailed"), "an unregister that cannot be saved is reported: " + failed.Status);
+                Check(host.Identity.PushDevices().Single().Handle == handle && push.Viewing.ContainsKey(clientId), "and the handle and the view are kept");
+                var unsaved = await Route("/m1/push/register", new { handle = newer, kinds = new[] { "completed" } }, clientId);
+                Check(unsaved.Status == 503 && Said(unsaved) == Locale.Get("mobileRemote.device.saveFailed"), "a register that cannot be saved is reported");
+                Check(host.Identity.PushDevices().Single().Handle == handle, "and the old handle is kept");
+            }
+            finally { File.SetUnixFileMode(folder, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute); }
+        }
+        Check((await Route("/m1/push/unregister", new { }, clientId)).Status == 200 && host.Identity.PushDevices().Count == 0 && push.Viewing.Count == 0, "unregister forgets the handle and the view");
+        Check((await Route("/m1/push/unregister", new { }, clientId)).Status == 200, "nothing left to clear is not a failure");
+
+        Check((await Route("/m1/push/register", new { handle, kinds = new[] { "completed" } }, clientId)).Status == 200, "registered again");
+        Check((await Route("/m1/push/viewing", new { sessionId = "pane-1" }, clientId)).Status == 200 && push.Viewing.Count == 1, "a view again");
+        await host.RotateKeyAsync(clientId);
+        Check(push.Viewing.Count == 0 && host.Identity.PushDevices().Count == 0, "a revoke (a rotated key) forgets every view and handle");
+
+        // Reading the file drops a handle the row cannot use and keeps the phone.
+        var other = Verification.Temp();
+        var (again, phone, _) = PairedHost(other);
+        await using (again)
+        {
+            Check(again.Identity.SetPush(phone, handle, ["completed"]) == MobilePushRegistrationResult.Saved, "saved");
+            var file = Path.Combine(other, "mobile", "mobile-identity.json");
+            var json = JsonNode.Parse(File.ReadAllText(file))!;
+            json["devices"]![0]!["push"]!["handle"] = "not a handle";
+            File.WriteAllText(file, json.ToJsonString());
+            var read = new MobileIdentity(Path.Combine(other, "mobile"));
+            Check(read.PushDevices().Count == 0 && read.Contains(phone, false), "a malformed handle is dropped, the phone kept");
+        }
+    }
 }
