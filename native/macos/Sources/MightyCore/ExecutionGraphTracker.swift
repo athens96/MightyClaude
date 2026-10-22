@@ -742,8 +742,10 @@ final class ExecutionGraphTracker {
             // agent succeeded or returned an answer.
             update(id) { value in
                 value.state = state == "error" ? "error" : "stopped"
+                // A steer delegation sent says so in its own words (MightyGraphSupport.isDelegationNotice).
+                let steer = MightyGraphSupport.isDelegationNotice(value.input ?? "") ? L("graph.block.unfinished.delegationNotice") : L("graph.block.unfinished.steer")
                 let text = value.kind == "task" ? L("graph.block.unfinished.task")
-                    : value.kind == "steer" ? L("graph.block.unfinished.steer") : value.kind == "question" ? L("graph.block.unfinished.question") : L("graph.block.unfinished.agent")
+                    : value.kind == "steer" ? steer : value.kind == "question" ? L("graph.block.unfinished.question") : L("graph.block.unfinished.agent")
                 value.entries.append(LogEntry(id: ExecutionGraphSupport.identifier(runID, id + ":unfinished"), kind: "system", text: text, provider: provider))
             }
         }

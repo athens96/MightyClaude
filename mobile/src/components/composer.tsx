@@ -186,8 +186,6 @@ export function Composer({
           <Text style={styles.hint}>{t('phone.composer.uploading')}</Text>
           <Button label={t('common.cancel')} tone="ghost" compact onPress={attachments.cancel} />
         </View>
-      ) : running && picked.length > 0 ? (
-        <Text style={styles.hint}>{t('phone.composer.attachmentsQueue')}</Text>
       ) : null}
 
       <View style={styles.row}>
