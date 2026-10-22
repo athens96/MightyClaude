@@ -16,7 +16,27 @@ section: approvals
 승인은 이 요청 한 번에만 적용됩니다. 앞으로도 계속 허용하는 규칙은 만들지 않습니다.
 
 > [!note]
-> 승인 카드는 이 Mac의 Claude 창(Always ask 등)과 Codex의 {{ui:permission.label.onRequest}} 권한에서 뜹니다. 다른 권한에서는 CLI 설정에 따라 허용되거나 막힙니다.
+> 승인 카드는 이 Mac의 Claude 창(Always ask 등)과 Codex의 {{ui:permission.label.onRequest}} 권한에서 뜹니다. 다른 권한에서는 CLI 설정에 따라 허용되거나 막힙니다. Antigravity는 일하는 방식이 달라 [따로 묻습니다](#antigravity-permission).
+
+## Antigravity의 권한 카드 {#antigravity-permission}
+Antigravity는 일하는 도중에 앱에 물어볼 수 없습니다. 물어봐야 하는 작업(명령 실행, 파일 쓰기 등)을 만나면 그 작업만 건너뛰고 턴을 끝낸 뒤, 거절한 작업을 모두 모아 카드로 묻습니다. 권한이 {{ui:permission.label.default}}일 때도 뜹니다. 휴대폰에도 같은 카드가 뜹니다.
+
+카드에는 거절된 작업이 하나도 빠짐없이 나옵니다. 작업마다 종류({{ui:antigravity.permission.kind.command}}, {{ui:antigravity.permission.kind.url}}, {{ui:antigravity.permission.kind.file}} 등), 명령·주소·경로, 허용에 쓸 규칙이 보입니다.
+
+1. 무엇을 거절했는지 읽습니다.
+2. 단추를 고릅니다.
+   - {{ui:permission.allowOnce}}: 거절된 작업만 허용하는 규칙을 Antigravity에 잠깐 더해 같은 대화를 이어 갑니다. 이어지는 실행이 끝나면(끝나든, 실패하든, 중지하든, 앱을 닫든) 앱이 더한 규칙만 지웁니다.
+   - {{ui:antigravity.permission.allowAlways}}: 같은 규칙을 Antigravity 설정(`~/.gemini/antigravity-cli/settings.json`의 `permissions.allow`)에 그대로 남깁니다. 다음에는 묻지 않고 실행합니다. Windows에서는 `%USERPROFILE%\.gemini\antigravity-cli\settings.json`입니다.
+   - {{ui:antigravity.permission.deny}}: 카드를 닫고 아무것도 이어서 실행하지 않습니다.
+
+허용하면 같은 대화에서 이어서 진행합니다. 창이 다른 일로 바쁘면 이어 가는 실행은 대기열에 들어갑니다.
+
+Claude와 다른 점이 있습니다. Claude는 실행 전에 멈추고 답을 기다리지만, Antigravity는 그 턴을 끝낸 뒤에 묻고 허용하면 이어서 진행합니다. 그래서 카드가 보일 때는 나머지 작업이 이미 끝나 있을 수 있습니다.
+
+> [!note]
+> 규칙으로 허용할 수 없는 작업이 있으면 카드에 그 작업이 보이고, 권한 모드를 바꾸라는 안내가 나옵니다. 그 작업만 있는 카드에는 {{ui:antigravity.permission.deny}}만 있습니다. Antigravity 설정 파일을 읽을 수 없거나 JSON이 아니면 앱은 파일을 고치지 않고 카드에 이유를 보여 줍니다. 앱은 `permissions.allow`의 규칙만 더하고 지우며 다른 설정은 그대로 둡니다.
+
+[원격 워크스페이스](remote.md)의 Antigravity 창은 그 창을 실행하는 컴퓨터의 설정을 고칩니다.
 
 ## 질문에 답하기 {#questions}
 Claude가 선택지를 주고 물으면 {{ui:phone.questionnaire.title}} 카드가 뜹니다.

@@ -25,6 +25,9 @@ In the menu bar's {{ui:menu.workspace}} menu, click {{ui:menu.reconnectInputMeth
 ## The browser pane is empty {#browser-empty}
 Browser panes are off at first. Turn on {{ui:settings.display.browserToggle}} on {{ui:settings.nav.general}} and reopen the app. See [Browser pane](terminal-files-browser.md#browser).
 
+## Antigravity declines a command or a file write {#antigravity-denied}
+Antigravity cannot ask while it works, so it skips what it would have to ask about and finishes the turn. The pane then shows a card listing what it declined. {{ui:permission.allowOnce}} or {{ui:antigravity.permission.allowAlways}} continues in the same conversation; you do not need to edit the rules file yourself. See [Antigravity's permission card](approvals.md#antigravity-permission).
+
 ## My phone won't connect {#phone}
 - Check that {{ui:settings.mobileRemote.allowToggle}} is on under {{ui:settings.nav.mobile}} on the Mac.
 - If the status is stuck on connecting to the relay, click {{ui:settings.mobileRemote.reconnectButton}}.

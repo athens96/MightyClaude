@@ -16,7 +16,27 @@ When the agent wants to do something outside its permission (run a command, chan
 An approval applies to this one request only. No rule is made that keeps allowing it.
 
 > [!note]
-> Approval cards appear in Claude panes on this Mac (Always ask and similar modes) and with Codex's {{ui:permission.label.onRequest}} mode. In other modes the CLI's own settings allow or block the action.
+> Approval cards appear in Claude panes on this Mac (Always ask and similar modes) and with Codex's {{ui:permission.label.onRequest}} mode. In other modes the CLI's own settings allow or block the action. Antigravity works differently and [asks in its own way](#antigravity-permission).
+
+## Antigravity's permission card {#antigravity-permission}
+Antigravity cannot ask the app while it works. When it meets an action it would have to ask about (running a command, writing a file and so on), it skips just that action, finishes the turn, and then asks about everything it declined in one card. The card appears in {{ui:permission.label.default}} too, and the same card appears on your phone.
+
+The card lists every declined action. For each one you see its kind ({{ui:antigravity.permission.kind.command}}, {{ui:antigravity.permission.kind.url}}, {{ui:antigravity.permission.kind.file}} and so on), the command, address or path, and the rule that would allow it.
+
+1. Read what was declined.
+2. Pick a button.
+   - {{ui:permission.allowOnce}}: adds a rule for just the declined actions to Antigravity for a moment and continues the same conversation. When that run ends (finished, failed, stopped or the app closed), the app removes only the rules it added.
+   - {{ui:antigravity.permission.allowAlways}}: keeps the same rule in Antigravity's settings (`permissions.allow` in `~/.gemini/antigravity-cli/settings.json`), so it runs without asking next time. On Windows the file is `%USERPROFILE%\.gemini\antigravity-cli\settings.json`.
+   - {{ui:antigravity.permission.deny}}: closes the card and continues nothing.
+
+Allowing continues in the same conversation. If the pane is busy with something else, the continuing run waits in the queue.
+
+This differs from Claude. Claude stops before acting and waits for your answer; Antigravity finishes the turn, asks afterwards, and carries on once you allow it. So when the card appears, the rest of the work may already be done.
+
+> [!note]
+> An action that no rule can allow still shows on the card, with guidance to change the permission mode. A card with only such actions offers just {{ui:antigravity.permission.deny}}. If Antigravity's settings file cannot be read or is not JSON, the app leaves it alone and shows the reason on the card. The app only adds and removes rules under `permissions.allow` and leaves every other setting as it was.
+
+An Antigravity pane on a [remote workspace](remote.md) changes the settings of the computer that runs it.
 
 ## Answer questions {#questions}
 When Claude asks you to choose between options, a {{ui:phone.questionnaire.title}} card appears.
