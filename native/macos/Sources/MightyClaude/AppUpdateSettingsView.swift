@@ -67,7 +67,7 @@ struct AppUpdateSettingsSection: View {
         case .ready:
             // Turned off, quitting does not install: the update only waits for "restart now".
             let version = store.appUpdate.availability?.manifest.version ?? ""
-            Label(store.appUpdateAutomatic ? L("settings.appUpdate.stagedTemplate", ["version": version]) : L("settings.appUpdate.availableTemplate", ["version": version]),
+            Label(L(store.appUpdateAutomatic ? "settings.appUpdate.stagedTemplate" : "settings.appUpdate.readyTemplate", ["version": version]),
                   systemImage: "shippingbox").font(.ui(size: 11)).foregroundStyle(.secondary)
         case .installing:
             ProgressView().controlSize(.small); Text(L("settings.appUpdate.installing")).font(.ui(size: 11))

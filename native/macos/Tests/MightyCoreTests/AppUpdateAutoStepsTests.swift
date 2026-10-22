@@ -1,3 +1,4 @@
+import CoreServices
 import Foundation
 import Testing
 @testable import MightyCore
@@ -33,6 +34,21 @@ struct AppUpdateAutoStepsTests {
             Issue.record("expected blocked"); return
         }
         #expect(!reason.isEmpty)
+    }
+
+    @Test func aStagedUpdateStaysReadyWhenTheNewerVersionCannotRunOnThisMac() {
+        #expect(AppUpdateAuto.afterCheck(found("0.4.36", minimumSystem: "99.0"), stagedVersion: "0.4.35", automatic: true) == .keepStaged)
+        #expect(AppUpdateAuto.afterCheck(found("0.4.36", minimumSystem: "99.0"), stagedVersion: "0.4.35", automatic: false) == .keepStaged)
+    }
+
+    @Test func onlyALogoutRestartOrShutdownQuitReasonKeepsTheUpdateForLater() {
+        let powerOff = [kAELogOut, kAEReallyLogOut, kAEShowRestartDialog, kAEShowShutdownDialog, kAERestart, kAEShutDown].map { UInt32($0) }
+        #expect(AppUpdateAuto.powerOffQuitReasons == Set(powerOff))
+        for code in powerOff { #expect(AppUpdateAuto.quitReasonPowersOff(code)) }
+        // An ordinary quit (no reason) or any other reason installs.
+        #expect(!AppUpdateAuto.quitReasonPowersOff(nil))
+        #expect(!AppUpdateAuto.quitReasonPowersOff(UInt32(kAEQuitApplication)))
+        #expect(!AppUpdateAuto.quitReasonPowersOff(0))
     }
 
     @Test func quittingInstallsOnlyAReadyUpdateWithTheSwitchOnAndNoPowerOff() {

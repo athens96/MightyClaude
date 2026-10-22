@@ -13,6 +13,9 @@ struct WorkspaceView: View {
     var body: some View {
         SidebarSplit(sidebar: sidebar, detail:
             VStack(spacing: 0) {
+                if case .countingDown(let until) = store.appUpdateRestart, let version = store.appUpdate.availability?.manifest.version {
+                    appUpdateCountdownBanner(version: version, until: until)
+                }
                 if let warning = store.resourceWarning { resourceWarningBanner(warning) }
                 if let error = store.error { errorBanner(error) }
                 if store.showsDashboard { DashboardView(gitState: gitState, accountUsage: accountUsage) }
@@ -650,6 +653,26 @@ struct WorkspaceView: View {
             Text(message).font(.ui(size: 12)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
             Button { store.resourceWarning = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel(L("window.warning.dismiss"))
         }.padding([.vertical, .trailing], DesignMetrics.Spacing.md).leadingPastTrafficLights(DesignMetrics.Spacing.md).background(Palette.waitSoft)
+    }
+
+    /// The app is idle with an update staged: it restarts to install when the
+    /// countdown ends, unless something starts meanwhile (the banner then goes quietly).
+    private func appUpdateCountdownBanner(version: String, until: Date) -> some View {
+        HStack(alignment: .center, spacing: DesignMetrics.Spacing.md) {
+            Image(systemName: "arrow.clockwise.circle").foregroundStyle(Palette.accent)
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let seconds = max(0, Int(until.timeIntervalSince(context.date).rounded(.up)))
+                Text(L("appUpdate.countdown.message", ["version": version, "seconds": "\(seconds)"]))
+                    .font(.ui(size: 12)).frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Button(L("appUpdate.countdown.later")) { store.postponeAppUpdateRestart() }
+                .accessibilityIdentifier("app-update-countdown-later")
+            Button(L("appUpdate.countdown.restartNow")) { store.restartForAppUpdateNow() }
+                .buttonStyle(.borderedProminent).accessibilityIdentifier("app-update-countdown-restart")
+        }
+        .controlSize(.small)
+        .padding([.vertical, .trailing], DesignMetrics.Spacing.md).leadingPastTrafficLights(DesignMetrics.Spacing.md).background(Palette.accentSoft)
+        .accessibilityElement(children: .contain).accessibilityIdentifier("app-update-countdown")
     }
 
     private func errorBanner(_ message: String) -> some View {

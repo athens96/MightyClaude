@@ -267,6 +267,15 @@ public actor DelegationCoordinator: DelegationRequestHandler {
         heldRowsContinuation.yield(publishedHeldRows)
     }
 
+    /// Delegation work a restart would cut short: notices and follow-ups
+    /// waiting to be offered (a relaunch holds them instead), children still
+    /// starting, and merges or card undos going (the automatic app update
+    /// waits for none).
+    public func pendingWork() -> Int {
+        file.notices.filter { $0.lane == .pending }.count + file.followUps.filter { $0.lane == .pending }.count
+            + starting.count + cardPanes.count + (isMerging ? 1 : 0)
+    }
+
     /// Hands ``childRows`` the children when they differ from the last list it carried.
     private func publishChildRows() {
         let rows = DelegationSidebar.rows(file)
@@ -358,6 +367,9 @@ public final class ChildRunsEnding: @unchecked Sendable {
 
     /// The host is about to report an end of the child `id`'s run.
     public func begin(_ id: String) { lock.withLock { counts[id, default: 0] += 1 } }
+
+    /// How many children have an end reported and not yet recorded.
+    public var count: Int { lock.withLock { counts.count } }
 
     public func contains(_ id: String) -> Bool { lock.withLock { counts[id] != nil } }
 

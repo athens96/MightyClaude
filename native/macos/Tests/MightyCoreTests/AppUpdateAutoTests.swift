@@ -102,6 +102,35 @@ struct AppUpdateAutoTests {
         #expect(done == AppUpdateRestartDecision(state: .idle, action: .restart))
     }
 
+    @Test func theBannerTicksEverySecondAndRestartsOnTheSixtiethTick() {
+        var state = AppUpdateRestartState.idle
+        let start = AppUpdateAuto.restartOffer(state, ready: true, automatic: true, blockers: [], now: now)
+        #expect(start.action == .startCountdown)
+        state = start.state
+        var actions: [AppUpdateRestartAction] = []
+        for second in 1...Int(AppUpdateAuto.countdown) {
+            // The user reaches for the banner on the tenth second: still counting.
+            let blockers: [AppIdleBlocker] = second == 10 ? [.userActive] : []
+            let step = AppUpdateAuto.restartOffer(state, ready: true, automatic: true, blockers: blockers, now: now.addingTimeInterval(Double(second) * AppUpdateAuto.countdownTick))
+            actions.append(step.action); state = step.state
+        }
+        #expect(actions.dropLast().allSatisfy { $0 == .none })
+        #expect(actions.last == .restart)
+        #expect(state == .idle)
+    }
+
+    @Test func aRunStartingMidCountdownCancelsItAndTheNextIdleTickStartsAFreshOne() {
+        var state = AppUpdateAuto.restartOffer(.idle, ready: true, automatic: true, blockers: [], now: now).state
+        for second in 1...29 { state = AppUpdateAuto.restartOffer(state, ready: true, automatic: true, blockers: [], now: now.addingTimeInterval(Double(second))).state }
+        let cancelled = AppUpdateAuto.restartOffer(state, ready: true, automatic: true, blockers: [.agentRun], now: now.addingTimeInterval(30))
+        #expect(cancelled == AppUpdateRestartDecision(state: .idle, action: .cancel))
+        // Busy again right after the run (recent activity): nothing starts.
+        #expect(AppUpdateAuto.restartOffer(cancelled.state, ready: true, automatic: true, blockers: [.recentAgentActivity], now: now.addingTimeInterval(31)).action == .none)
+        // Idle again: a full countdown, never the rest of the old one.
+        let later = now.addingTimeInterval(600)
+        #expect(AppUpdateAuto.restartOffer(.idle, ready: true, automatic: true, blockers: [], now: later) == AppUpdateRestartDecision(state: .countingDown(until: later.addingTimeInterval(AppUpdateAuto.countdown)), action: .startCountdown))
+    }
+
     @Test func nothingIsOfferedWhileBusyNotReadyOrSwitchedOff() {
         #expect(AppUpdateAuto.restartOffer(.idle, ready: true, automatic: true, blockers: [.agentRun], now: now) == AppUpdateRestartDecision(state: .idle, action: .none))
         #expect(AppUpdateAuto.restartOffer(.idle, ready: false, automatic: true, blockers: [], now: now) == AppUpdateRestartDecision(state: .idle, action: .none))

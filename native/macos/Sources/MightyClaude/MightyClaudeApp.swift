@@ -132,11 +132,11 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         if terminationReady { return .terminateNow }
         if terminating { return .terminateCancel }
         terminating = true
-        // Logout, restart and shutdown send their quit with a reason (beside
-        // NSWorkspace.willPowerOffNotification): a staged update then waits.
-        if NSAppleEventManager.shared().currentAppleEvent?.attributeDescriptor(forKeyword: AEKeyword(kAEQuitReason)) != nil {
-            AppStore.shared.appUpdatePoweringOff = true
-        }
+        // Logout, restart and shutdown send their quit with one of their
+        // reasons: a staged update then waits for the next quit. Read from this
+        // quit alone, so a logout cancelled earlier leaves nothing behind.
+        let reason = NSAppleEventManager.shared().currentAppleEvent?.attributeDescriptor(forKeyword: AEKeyword(kAEQuitReason))?.enumCodeValue
+        AppStore.shared.appUpdatePoweringOff = AppUpdateAuto.quitReasonPowersOff(reason)
         Task {
             await AppStore.shared.shutdown()
             finishTermination(sender)
