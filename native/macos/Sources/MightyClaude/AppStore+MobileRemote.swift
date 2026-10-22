@@ -623,7 +623,8 @@ extension AppStore {
     /// `queued`, whatever `mode` asks for: nothing a person sends joins the
     /// running turn, and `mode: "steer"` from an older phone is queued too. A
     /// pane that is not running has nothing to drain its queue, so the request
-    /// starts the run either way.
+    /// starts the run either way. The Mac composer's draft and attachments
+    /// are left alone: the phone's text never came from them.
     func mobileSubmit(_ id: String, text: String, mode: String? = nil, attachments: [RunAttachment] = []) throws -> MobileSubmitOutcome {
         guard !ending, !closingSessions.contains(id), let session = mobilePane(id),
               let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { throw MightyError(L("remote.error.paneNotFound")) }
@@ -637,7 +638,7 @@ extension AppStore {
             let plans = styleLaunchesInPlanMode(session)
             let item = QueuedInput(text: text, attachments: attachments, permissionModeOverride: BackgroundQueuePolicy.queuedOverride(launchesInPlan: plans))
             if held { heldForUpdate.insert(id) }
-            let deferred = mobileCapturingError { deferInput(id, session: session, workspace: workspace, item: item) }
+            let deferred = mobileCapturingError { deferInput(id, session: session, workspace: workspace, item: item, takingDraft: false) }
             switch deferred.value {
             case .queued: return .immediate(.queued)
             case .refused: throw MightyError(deferred.failure ?? L("remote.error.queueRefused"))

@@ -198,8 +198,10 @@ extension AppStore {
     /// ready and the next idle tick offers a fresh countdown.
     private func restartForAppUpdateAutomatically() {
         guard !ending, let install = prepareAppUpdateInstall(relaunch: true) else { return }
+        appUpdateVerifyingRestart = true
         let store = AppUpdateProgressSink(self)
         Task {
+            defer { store.owner?.appUpdateVerifyingRestart = false }
             do { try await install.verify() } catch {
                 store.owner?.appUpdate.phase = .failed(L("settings.appUpdate.errorInstall", ["error": error.localizedDescription])); return
             }

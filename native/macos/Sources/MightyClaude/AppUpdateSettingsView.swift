@@ -48,8 +48,11 @@ struct AppUpdateSettingsSection: View {
         }
     }
 
+    /// While the automatic restart is still being checked the update shows as ready.
+    private var shownPhase: AppStore.AppUpdatePhase { store.appUpdateVerifyingRestart ? .ready : store.appUpdate.phase }
+
     @ViewBuilder private var statusView: some View {
-        switch store.appUpdate.phase {
+        switch shownPhase {
         case .idle:
             Text(store.appUpdate.checkedAt.map {
                 L("settings.appUpdate.lastCheckedTemplate", ["time": $0.formatted(date: .omitted, time: .shortened)])
@@ -65,9 +68,10 @@ struct AppUpdateSettingsSection: View {
         case .staging:
             ProgressView().controlSize(.small); Text(L("settings.appUpdate.stagingProgress")).font(.ui(size: 11))
         case .ready:
-            // Turned off, quitting does not install: the update only waits for "restart now".
+            // Turned off (or unable to run automatically), quitting does not
+            // install: the update only waits for "restart now".
             let version = store.appUpdate.availability?.manifest.version ?? ""
-            Label(L(store.appUpdateAutomatic ? "settings.appUpdate.stagedTemplate" : "settings.appUpdate.readyTemplate", ["version": version]),
+            Label(L(store.appUpdateAutomatic && store.appUpdateCanRunAutomatically ? "settings.appUpdate.stagedTemplate" : "settings.appUpdate.readyTemplate", ["version": version]),
                   systemImage: "shippingbox").font(.ui(size: 11)).foregroundStyle(.secondary)
         case .installing:
             ProgressView().controlSize(.small); Text(L("settings.appUpdate.installing")).font(.ui(size: 11))
@@ -77,13 +81,14 @@ struct AppUpdateSettingsSection: View {
     }
 
     @ViewBuilder private var actionButton: some View {
-        switch store.appUpdate.phase {
+        switch shownPhase {
         case .available:
             Button(L("settings.appUpdate.downloadButton")) { store.downloadAppUpdate() }.accessibilityIdentifier("app-update-download")
         case .downloading:
             Button(L("settings.appUpdate.cancelButton")) { store.cancelAppUpdateDownload() }
         case .ready:
-            Button(L("settings.appUpdate.restartNowButton")) { store.installAppUpdateAndRelaunch() }.accessibilityIdentifier("app-update-install")
+            Button(L("settings.appUpdate.restartNowButton")) { store.installAppUpdateAndRelaunch() }
+                .disabled(store.appUpdateVerifyingRestart).accessibilityIdentifier("app-update-install")
         case .checking, .installing, .staging:
             Button(L("settings.appUpdate.inProgressButton")) {}.disabled(true)
         default:
