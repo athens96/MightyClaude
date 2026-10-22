@@ -14,8 +14,24 @@ enum PushFixture {
         let deviceToken, clientId, handle, tokenHash, keyB64, nonceB64, aad, plaintext, envelope, otherHandle: String
         let tampered: [String]
     }
+    struct Expected: Decodable {
+        let id: String
+        let kind: MobilePushKind
+        let sessionId, workspace, title, summary: String
+        let permission: MobilePushPermission?
+    }
+    struct Step: Decodable {
+        let note: String
+        let panes: [MobilePushPane]
+        let expect: [Expected]
+    }
+    struct Planner: Decodable {
+        let hostId, hostName, at: String
+        let steps: [Step]
+    }
     struct File: Decodable {
         let seal: Seal
+        let planner: Planner
     }
     static func load() throws -> File { try JSONDecoder().decode(File.self, from: Data(contentsOf: url)) }
 }
@@ -52,5 +68,64 @@ struct MobilePushSealTests {
         #expect(throws: MightyError.self) { try MobilePushSeal.seal(Data(count: 2_049), key: key, handle: seal.handle) }
         let longest = try MobilePushSeal.seal(Data(count: 2_048), key: key, handle: seal.handle)
         #expect(longest.count <= MobilePushSeal.maximumEnvelope)
+    }
+}
+
+struct MobilePushPlannerTests {
+    @Test func theSharedStepsSendWhatTheFixtureExpects() throws {
+        let planner = try PushFixture.load().planner
+        var subject = MobilePushPlanner()
+        for step in planner.steps {
+            let sent = subject.observe(step.panes, hostId: planner.hostId, hostName: planner.hostName, at: planner.at)
+            #expect(sent.map(\.id) == step.expect.map(\.id), "\(step.note)")
+            for (message, expected) in zip(sent, step.expect) {
+                #expect(message.v == 1 && message.hostId == planner.hostId && message.hostName == planner.hostName && message.at == planner.at, "\(step.note)")
+                #expect(message.kind == expected.kind && message.sessionId == expected.sessionId && message.workspace == expected.workspace, "\(step.note)")
+                #expect(message.title == expected.title && message.summary == expected.summary && message.permission == expected.permission, "\(step.note)")
+            }
+        }
+    }
+
+    @Test func requestsTakeTheirKindAndButtonsFromTheCard() {
+        func permission(_ toolName: String, canAllow: Bool = true, plan: String? = nil, antigravity: MobileAntigravityCard? = nil) -> MobilePermission {
+            MobilePermission(id: "r", runId: "u", toolName: toolName, title: "t", summary: "s", canAllow: canAllow, plan: plan, antigravity: antigravity)
+        }
+        #expect(MobilePushRequest(permission("Bash")).buttons == .claude)
+        #expect(MobilePushRequest(permission("Bash", canAllow: false)).buttons == MobilePushButtons.none)
+        #expect(MobilePushRequest(permission("AskUserQuestion")).kind == .question)
+        #expect(MobilePushRequest(permission(ClaudePlanMode.toolName, plan: "p")).kind == .plan)
+        let once = MobileAntigravityCard(actions: [MobileAntigravityAction(kind: "command", action: "command", displayName: "RunCommand", target: "rm x", rule: "command(rm x)", onceOnly: true)])
+        let always = MobileAntigravityCard(actions: [MobileAntigravityAction(kind: "command", action: "command", displayName: "RunCommand", target: "ls", rule: "command(ls)")])
+        let ruleless = MobileAntigravityCard(actions: [MobileAntigravityAction(kind: "other", action: "mcp", displayName: "Mcp")])
+        #expect(MobilePushRequest(permission(MobileAntigravityCard.toolName, antigravity: once)).buttons == .antigravityOnce)
+        #expect(MobilePushRequest(permission(MobileAntigravityCard.toolName, antigravity: always)).buttons == .antigravity)
+        #expect(MobilePushRequest(permission(MobileAntigravityCard.toolName, canAllow: false, antigravity: ruleless)).buttons == MobilePushButtons.none)
+        #expect(MobilePushRequest(permission(MobileAntigravityCard.toolName, antigravity: once)).kind == .permission)
+    }
+
+    @Test func aWideMessageStaysWithinThePushLimit() throws {
+        var subject = MobilePushPlanner()
+        _ = subject.observe([], hostId: "h", hostName: "H", at: "t")
+        let wide = String(repeating: "가", count: 80)
+        let pane = MobilePushPane(sessionId: "p", workspace: wide, title: wide, status: "running", preview: nil,
+                                  requests: [MobilePushRequest(id: "r", runId: "u", kind: .permission, summary: String(repeating: "😀", count: 300), buttons: .claude)], signInLost: false)
+        let message = try #require(subject.observe([pane], hostId: "h", hostName: wide, at: "t").first)
+        #expect(message.summary.unicodeScalars.count == 200)
+        let encoded = try #require(message.encodedForPush())
+        #expect(encoded.count <= MobilePushSeal.maximumPlaintext)
+    }
+
+    @Test func aDeviceGetsOnlyTheKindsItTurnedOnAndNothingForTheSessionItIsViewing() {
+        let message = MobilePushMessage(id: "x", kind: .completed, hostId: "h", hostName: "H", workspace: "w", title: "t", summary: "", sessionId: "pane-1", permission: nil, at: "t")
+        let all = MobilePushDevice(deviceId: "a", handle: "ha", tokenHash: String(repeating: "0", count: 64), kinds: Set(MobilePushKind.allCases))
+        let quiet = MobilePushDevice(deviceId: "b", handle: "hb", tokenHash: String(repeating: "0", count: 64), kinds: [.permission])
+        let now = Date(timeIntervalSince1970: 1_000)
+        #expect(MobilePushRecipients.targets(for: message, devices: [all, quiet], viewing: [:], now: now) == [all])
+        let watching = ["a": MobilePushViewing(sessionId: "pane-1", until: now.addingTimeInterval(10))]
+        #expect(MobilePushRecipients.targets(for: message, devices: [all], viewing: watching, now: now).isEmpty)
+        let elsewhere = ["a": MobilePushViewing(sessionId: "pane-2", until: now.addingTimeInterval(10))]
+        #expect(MobilePushRecipients.targets(for: message, devices: [all], viewing: elsewhere, now: now) == [all])
+        let expired = ["a": MobilePushViewing(sessionId: "pane-1", until: now.addingTimeInterval(-1))]
+        #expect(MobilePushRecipients.targets(for: message, devices: [all], viewing: expired, now: now) == [all])
     }
 }
