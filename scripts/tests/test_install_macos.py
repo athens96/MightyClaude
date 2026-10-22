@@ -238,5 +238,78 @@ class InstallerTests(unittest.TestCase):
             self.assertEqual(list((data / "updates").iterdir()), [])
 
 
+    def test_an_app_reopened_by_its_update_helper_is_waited_for_again(self):
+        root = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory(prefix="mighty-install-reopen-test-") as temporary:
+            folder = Path(temporary)
+            bins = folder / "bin"
+            bins.mkdir()
+            helper_gate = folder / "helper-running"
+            helper_gate.touch()
+            app_gate = folder / "app-running"
+            data = folder / "data"
+            (data / "updates").mkdir(parents=True)
+            destination = folder / "Applications/MightyClaude.app"
+            binary = destination / "Contents/MacOS/MightyClaude"
+            binary.parent.mkdir(parents=True)
+            binary.write_text("old")
+            source = folder / "release/MightyClaude.app"
+            source_binary = source / "Contents/MacOS/MightyClaude"
+            source_binary.parent.mkdir(parents=True)
+            source_binary.write_text("dev-build")
+            for name, body in {
+                # The helper runs first; then (a restart for an update) the app runs again.
+                "ps": 'if [ -f "$FIXTURE_HELPER_GATE" ]; then printf "/bin/sh %s\n" "$MIGHTY_DATA_DIR/updates/9.9.9/install.sh"; fi; '
+                      'if [ -f "$FIXTURE_APP_GATE" ]; then printf "%s\n" "$MIGHTY_INSTALL_PATH/Contents/MacOS/MightyClaude"; fi',
+                "codesign": "exit 0",
+                "open": "exit 0",
+                "lsregister": "exit 0",
+            }.items():
+                script = bins / name
+                script.write_text("#!/bin/bash\n" + body + "\n")
+                script.chmod(0o700)
+            fixture_script = (root / "scripts/install-macos.sh").read_text().replace(
+                "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",
+                str(bins / "lsregister"),
+            ).replace("/tmp/MightyClaude-app-backup-", str(folder / "backup-")).replace(
+                '"$SOURCE/Contents/MacOS/MightyClaude" --verify-resources', "echo resources-verified")
+            installer = folder / "install.sh"
+            installer.write_text(fixture_script)
+            environment = os.environ.copy()
+            environment.pop("MIGHTY_INSTALL_UNDER_LOCK", None)
+            environment.update(PATH=str(bins) + ":/usr/bin:/bin:/usr/sbin:/sbin", TMPDIR=str(folder),
+                               MIGHTY_INSTALL_PATH=str(destination), MIGHTY_DATA_DIR=str(data),
+                               FIXTURE_HELPER_GATE=str(helper_gate), FIXTURE_APP_GATE=str(app_gate))
+            log_path = folder / "reopen.log"
+            with log_path.open("w") as log:
+                waiter = subprocess.Popen(["/bin/bash", str(installer), str(source)], env=environment,
+                                          stdout=log, stderr=subprocess.STDOUT)
+                try:
+                    deadline = time.monotonic() + 10
+                    while "업데이트 도우미" not in log_path.read_text() and waiter.poll() is None and time.monotonic() < deadline:
+                        time.sleep(0.02)
+                    self.assertIn("업데이트 도우미", log_path.read_text())
+                    # The helper reopens the app as it ends.
+                    app_gate.touch()
+                    helper_gate.unlink()
+                    deadline = time.monotonic() + 10
+                    while "⌘Q" not in log_path.read_text() and waiter.poll() is None and time.monotonic() < deadline:
+                        time.sleep(0.02)
+                    self.assertIn("⌘Q", log_path.read_text())
+                    time.sleep(3)
+                    # Nothing is replaced under the reopened app.
+                    self.assertIsNone(waiter.poll())
+                    self.assertEqual(binary.read_text(), "old")
+                    app_gate.unlink()
+                    self.assertEqual(waiter.wait(timeout=15), 0, log_path.read_text())
+                finally:
+                    if waiter.poll() is None:
+                        helper_gate.unlink(missing_ok=True)
+                        app_gate.unlink(missing_ok=True)
+                        waiter.terminate()
+                        waiter.wait(timeout=10)
+            self.assertEqual(binary.read_text(), "dev-build")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
