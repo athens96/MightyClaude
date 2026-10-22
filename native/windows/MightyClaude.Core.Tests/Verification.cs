@@ -335,6 +335,12 @@ internal static class Verification
         await Test("mobile push: a relay redirect is a failure and is never followed", MobilePushVerification.ARedirectIsAFailureAndIsNeverFollowed);
         await Test("mobile push: a phone registers a handle and a view", MobilePushVerification.RoutesRegisterAHandleAndAView);
         await Test("mobile push: registration follows the Mac's rules", MobilePushVerification.RegistrationFollowsTheMacsRules);
+        await Test("mobile push: a new permission is sealed, sent, and a gone handle forgotten", MobilePushVerification.ANewPermissionIsSealedAndSentAndAGoneHandleForgotten);
+        await Test("mobile push: the panes are projected as the Mac projects them", MobilePushVerification.TheProjectionFollowsTheMac);
+        await Test("mobile push: nothing goes out while off, and switching on pushes nothing old", MobilePushVerification.NothingGoesOutWhileOffAndSwitchingOnPushesNothingOld);
+        await Test("mobile push: deliveries retry and stop as the Mac's do", MobilePushVerification.DeliveriesRetryAndStopAsTheMacDoes);
+        await Test("mobile push: the caller's cancellation is not a retry", MobilePushVerification.TheCallersCancellationIsNotARetry);
+        await Test("mobile push: observing reads the panes, and disposing lets go", MobilePushVerification.ObservingReadsThePanesAndDisposingLetsGo);
         await Test("Mobile remote DeviceTrustAndRotation", MobileRemoteVerification.DeviceTrustAndRotation);
         await Test("Mobile remote UploadOwnershipAndClaims", MobileRemoteVerification.UploadOwnershipAndClaims);
         await Test("Mobile remote DesktopRouteContract", MobileRemoteVerification.DesktopRouteContract);

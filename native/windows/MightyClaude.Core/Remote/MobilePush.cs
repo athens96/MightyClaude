@@ -89,7 +89,37 @@ public sealed record MobilePushRequest(string Id, string RunId, string Kind, str
 }
 
 /// <summary>One pane as the planner sees it; Status is the pane's own run status (running, completed, error, stopped, …), not the phone's display status.</summary>
-public sealed record MobilePushPane(string SessionId, string Workspace, string Title, string Status, string? Preview, IReadOnlyList<MobilePushRequest> Requests, bool SignInLost);
+public sealed record MobilePushPane(string SessionId, string Workspace, string Title, string Status, string? Preview, IReadOnlyList<MobilePushRequest> Requests, bool SignInLost)
+{
+    /// <summary>The longest preview handed to the planner, in Unicode scalars (it clips again for the message).</summary>
+    public const int PreviewLimit = 400;
+
+    /// <summary>
+    /// The panes as the planner sees them (M/MobilePushPane.project): only the panes the phone can see (no files panes, no other
+    /// computer's workspaces); the pending requests minus the ones a style is answering on its own, then the pane's Antigravity card;
+    /// a confirmed lost sign-in, never a raw auth failure; and the raw run status, so a pane waiting on a permission is still "running".
+    /// </summary>
+    public static IReadOnlyList<MobilePushPane> Project(IReadOnlyList<RunSession> sessions, IReadOnlyList<Workspace> workspaces,
+        IReadOnlyDictionary<string, IReadOnlyList<ToolPermissionRequest>> permissions, Func<string, ToolPermissionRequest, bool> autoAllowed,
+        Func<string, AntigravityPermissionRequest?> antigravity, Func<string, bool> signInLost)
+    {
+        var names = new Dictionary<string, string>();
+        foreach (var workspace in workspaces) names.TryAdd(workspace.Id, workspace.Name);
+        return RemoteWorkspacePhone.Sessions(sessions, workspaces).Where(session => session.Kind != "files").Select(session =>
+        {
+            var requests = permissions.GetValueOrDefault(session.Id, []).Where(p => p.State == "pending" && !autoAllowed(session.Id, p))
+                .Select(p => MobilePushRequest.From(MobilePermission.From(p))).ToList();
+            if (antigravity(session.Id) is { } card) requests.Add(MobilePushRequest.From(MobilePermission.FromAntigravity(card)));
+            var preview = MobileRemoteSupport.PreviewLine(session) is { } line ? MobilePushPlanner.Clip(line.Text, PreviewLimit) : null;
+            return new MobilePushPane(session.Id, names.GetValueOrDefault(session.WorkspaceId, ""), session.Title, session.Status, preview, requests, signInLost(session.Id));
+        }).ToArray();
+    }
+
+    /// <summary>The same pane with the same requests, in order (the Mac's Equatable): a hand-off of equal panes decides nothing.</summary>
+    public bool Equals(MobilePushPane? other) => other is not null && SessionId == other.SessionId && Workspace == other.Workspace && Title == other.Title
+        && Status == other.Status && Preview == other.Preview && SignInLost == other.SignInLost && Requests.SequenceEqual(other.Requests);
+    public override int GetHashCode() => HashCode.Combine(SessionId, Status, Requests.Count, SignInLost);
+}
 public sealed record MobilePushPermission(string RequestId, string RunId, string Buttons);
 
 /// <summary>The plaintext inside a push envelope.</summary>
@@ -303,7 +333,8 @@ public sealed class MobilePushHttpTransport : IMobilePushTransport
 {
     /// <summary>The longest Retry-After taken from the relay, which clamps its own to the same.</summary>
     public static readonly TimeSpan MaximumRetryAfter = TimeSpan.FromHours(1);
-    private static readonly HttpClient Client = new(new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false }) { Timeout = TimeSpan.FromSeconds(15) };
+    /// <summary>Shared for the app's life; its connections are renewed every 5 minutes so a relay that moved (DNS) is followed.</summary>
+    private static readonly HttpClient Client = new(new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false, PooledConnectionLifetime = TimeSpan.FromMinutes(5) }) { Timeout = TimeSpan.FromSeconds(15) };
 
     public async Task<MobilePushSendOutcome> SendAsync(MobilePushSendRequest request, Uri url, string hostToken, CancellationToken token)
     {
@@ -316,7 +347,10 @@ public sealed class MobilePushHttpTransport : IMobilePushTransport
             var header = response.Headers.NonValidated.TryGetValues("Retry-After", out var values) ? values.ToString() : null;
             return MobilePushSendOutcome.FromStatus((int)response.StatusCode, RetryAfter(header));
         }
-        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or IOException)
+        // The caller stopping (the app closing) is not the relay's fault: no retry is planned for it.
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+        // Anything else (no network, a timeout, a reset) may pass: tried again. Only the kind is logged, never the request.
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Trace.TraceInformation("mobile push: relay unreachable (" + ex.GetType().Name + ")");
             return new(MobilePushSendStatus.Retry);
