@@ -143,6 +143,7 @@ public struct MobilePushMessage: Codable, Sendable, Equatable {
         self.title = title; self.summary = summary; self.sessionId = sessionId; self.permission = permission; self.at = at
     }
     /// UTF-8 JSON within `MobilePushSeal.maximumPlaintext`; the summary goes first when it does not fit.
+    /// nil means it does not fit even without the summary: skip this push and log its `id` only.
     public func encodedForPush() -> Data? {
         let encoder = JSONEncoder()
         if let data = try? encoder.encode(self), data.count <= MobilePushSeal.maximumPlaintext { return data }
@@ -155,15 +156,23 @@ public struct MobilePushMessage: Codable, Sendable, Equatable {
 /// Decides what a host pushes from what its panes show now and what they showed last time.
 public struct MobilePushPlanner: Sendable {
     public static let sentMemory = 512
+    /// How many sessions' run and sign-in numbers are kept, absent panes oldest first out.
+    public static let countMemory = 512
     private struct Memory: Sendable {
         var status: String
         var requests: Set<String>
         var signInLost: Bool
-        var runs: Int
-        var signins: Int
+    }
+    /// Kept across observations a pane misses, so its ids keep counting up instead of repeating sent ones.
+    private struct Count: Sendable {
+        var runs = 0
+        var signins = 0
+        var seen = 0
     }
     private var baseline = false
     private var memory: [String: Memory] = [:]
+    private var counts: [String: Count] = [:]
+    private var observation = 0
     private var sent: [String] = []
     private var sentSet = Set<String>()
 
@@ -172,26 +181,33 @@ public struct MobilePushPlanner: Sendable {
     public mutating func observe(_ panes: [MobilePushPane], hostId: String, hostName: String, at: String) -> [MobilePushMessage] {
         var messages: [MobilePushMessage] = []
         var next: [String: Memory] = [:]
+        observation += 1
         for pane in panes {
             let previous = memory[pane.sessionId]
-            var record = Memory(status: pane.status, requests: Set(pane.requests.map(Self.requestId)), signInLost: pane.signInLost,
-                                runs: previous?.runs ?? 0, signins: previous?.signins ?? 0)
+            let record = Memory(status: pane.status, requests: Set(pane.requests.map(Self.requestId)), signInLost: pane.signInLost)
+            var count = counts[pane.sessionId] ?? Count()
+            count.seen = observation
             if baseline {
                 for request in pane.requests where previous?.requests.contains(Self.requestId(request)) != true {
                     let permission = request.kind == .permission ? MobilePushPermission(requestId: request.id, runId: request.runId, buttons: request.buttons) : nil
                     emit(&messages, pane: pane, kind: request.kind, id: Self.requestId(request), summary: request.summary, permission: permission, hostId: hostId, hostName: hostName, at: at)
                 }
                 if previous?.status == "running", pane.requests.isEmpty, pane.status == "completed" || pane.status == "error" {
-                    record.runs += 1
+                    count.runs += 1
                     let kind: MobilePushKind = pane.status == "completed" ? .completed : .failed
-                    emit(&messages, pane: pane, kind: kind, id: "run:\(pane.sessionId):\(record.runs):\(kind.rawValue)", summary: pane.preview ?? "", permission: nil, hostId: hostId, hostName: hostName, at: at)
+                    emit(&messages, pane: pane, kind: kind, id: "run:\(pane.sessionId):\(count.runs):\(kind.rawValue)", summary: pane.preview ?? "", permission: nil, hostId: hostId, hostName: hostName, at: at)
                 }
                 if pane.signInLost, previous?.signInLost != true {
-                    record.signins += 1
-                    emit(&messages, pane: pane, kind: .signin, id: "signin:\(pane.sessionId):\(record.signins)", summary: "", permission: nil, hostId: hostId, hostName: hostName, at: at)
+                    count.signins += 1
+                    emit(&messages, pane: pane, kind: .signin, id: "signin:\(pane.sessionId):\(count.signins)", summary: "", permission: nil, hostId: hostId, hostName: hostName, at: at)
                 }
             }
             next[pane.sessionId] = record
+            counts[pane.sessionId] = count
+        }
+        if counts.count > Self.countMemory {
+            let absent = counts.filter { $0.value.seen != observation }.sorted { $0.value.seen < $1.value.seen }
+            for (sessionId, _) in absent.prefix(counts.count - Self.countMemory) { counts[sessionId] = nil }
         }
         memory = next
         baseline = true
@@ -237,6 +253,17 @@ public struct MobilePushViewing: Sendable, Equatable {
     public var sessionId: String
     public var until: Date
     public init(sessionId: String, until: Date) { self.sessionId = sessionId; self.until = until }
+}
+
+/// Printing shows only ids and kinds: never the handle, the token hash or what the notification says.
+extension MobilePushDevice: CustomStringConvertible, CustomDebugStringConvertible {
+    public var description: String { "MobilePushDevice(deviceId: \(deviceId), kinds: \(kinds.map(\.rawValue).sorted()))" }
+    public var debugDescription: String { description }
+}
+
+extension MobilePushMessage: CustomStringConvertible, CustomDebugStringConvertible {
+    public var description: String { "MobilePushMessage(id: \(id), kind: \(kind.rawValue), sessionId: \(sessionId))" }
+    public var debugDescription: String { description }
 }
 
 public enum MobilePushRecipients {
