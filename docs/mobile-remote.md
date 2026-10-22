@@ -156,7 +156,7 @@ MobilePermission {
 | GET | `/m1/workspaces/{id}/file?path=<상대 경로>` | | `MobileFilePreview` — 파일 하나의 미리보기. 아래 "파일" 절 |
 | POST | `/m1/push/register` | `{ handle, kinds: [string] }` | `{ protocol, ok }` — `handle`은 43자 base64url이 아니면 400(`remote.error.badPushHandle`), `kinds`가 없거나 배열이 아니면 400. 이 호스트가 모르는 종류 이름은 거절하지 않고 뺀다. 기기 토큰이 없는 기기(구버전 앱 묶음, 레거시 기기 줄)는 409(`remote.error.pushNeedsToken`). 기기 목록을 저장하지 못하면 503(`mobileRemote.device.saveFailed`). 기기는 본문이 아니라 인증된 연결로 정한다 — `push` 기능 |
 | POST | `/m1/push/unregister` | `{}` | `{ protocol, ok }` — 그 기기의 핸들과 보고 있는 세션을 지운다. 저장하지 못하면 503 |
-| POST | `/m1/push/viewing` | `{ sessionId: string \| null }` | `{ protocol, ok }` — 형식이 틀린 id는 404(`remote.error.paneNotFound`). `null`(Windows는 본문·필드 생략도)이면 지운다. 45초 동안 유효 |
+| POST | `/m1/push/viewing` | `{ sessionId: string \| null }` | `{ protocol, ok }` — 형식이 틀린 id는 404(`remote.error.paneNotFound`). `null`이거나 `sessionId`를 빼면 지운다(Mac·Windows 같음). 본문이 아예 없으면 Mac은 400(`remote.error.bodyRequired`), Windows는 지운다. 45초 동안 유효 |
 
 `POST /m1/workspaces/{id}/sessions`는 **로컬** 워크스페이스에서 `kind: "shell"`을 409로 거절한다(휴대폰에서 쓸 수 없는 창이 되기 때문).
 
@@ -441,7 +441,7 @@ MobileAntigravityAction {
 
 호스트(Mac이 기준, Windows는 같은 규칙)가 일이 끝났거나 사람이 필요할 때 안드로이드 휴대폰에 알린다. 릴레이 쪽 HTTP 라우트(핸들 등록·전송, 상태 코드, 한도)는 [relay.md](relay.md)의 "푸시 알림"이고, 이 절은 호스트와 휴대폰의 약속이다. 호스트는 `"push"` 기능을 알릴 때만 이 절을 따른다.
 
-**핸들.** 휴대폰은 FCM 토큰을 **페어링마다** 그 페어링의 릴레이(`POST /push/v1/handles`)에 등록해 핸들과 비밀을 받고, 핸들만 그 호스트에게 `POST /m1/push/register`로 준다(비밀은 휴대폰만 갖는다). 호스트마다 다른 핸들이라 두 호스트가 서로의 휴대폰을 알아볼 수 없다. 함께 주는 `kinds`는 휴대폰이 켠 종류(`completed` `failed` `permission` `question` `plan` `signin`)이고, 모두 끈 휴대폰은 빈 배열을 준다. 호스트는 기기 목록의 그 기기 줄에 `push: { handle, kinds, updatedAt }`로 둔다(Mac `devices.json`, Windows `mobile-identity.json`). 기기를 해제하거나 키를 다시 만들면 기기 줄과 함께 지워지고, 그 휴대폰이 보고 있던 세션 기록(아래 `viewing`)도 지워진다. 호스트는 핸들만 알고 FCM 토큰은 모른다. 휴대폰은 FCM 토큰이 바뀌면 릴레이의 핸들을 갱신하고(`PUT`), 릴레이가 핸들을 잊었으면(404) 새로 만들어 호스트에 다시 준다. 페어링을 지우면 릴레이의 핸들도 지운다(`DELETE`, 기다리지 않는다). 호스트는 다음 전송에서 404를 받고 자기 기록을 지운다. `/m1/push/unregister`는 휴대폰이 호스트에게 핸들을 거두게 하는 라우트이고 지금 앱은 쓰지 않는다. 기기 토큰이 없는 기기(구버전 앱 묶음)는 봉인 키를 만들 수 없어 409이고, 휴대폰은 그 호스트를 푸시 없음으로 둔다.
+**핸들.** 휴대폰은 FCM 토큰을 **페어링마다** 그 페어링의 릴레이(`POST /push/v1/handles`)에 등록해 핸들과 비밀을 받고, 핸들만 그 호스트에게 `POST /m1/push/register`로 준다(비밀은 휴대폰만 갖는다). 호스트마다 다른 핸들이라 두 호스트가 서로의 휴대폰을 알아볼 수 없다. 함께 주는 `kinds`는 휴대폰이 켠 종류(`completed` `failed` `permission` `question` `plan` `signin`)이고, 모두 끈 휴대폰은 빈 배열을 준다. 호스트는 기기 목록의 그 기기 줄에 `push: { handle, kinds, updatedAt }`로 둔다(Mac `devices.json`, Windows `mobile-identity.json`). 기기를 해제하거나 키를 다시 만들면 기기 줄과 함께 지워지고, 그 휴대폰이 보고 있던 세션 기록(아래 `viewing`)도 지워진다. 호스트는 핸들만 알고 FCM 토큰은 모른다. 휴대폰은 FCM 토큰이 바뀌면 릴레이의 핸들을 갱신하고(`PUT`), 토큰이 그대로여도 호스트에 다시 줄 때 하루에 한 번은 같은 `PUT`으로 릴레이가 그 핸들을 아직 아는지 확인한다(204면 그대로 두고 릴레이의 사용 시각도 새로워진다). 릴레이가 핸들을 잊었으면(404: 저장소 초기화, 120일 미사용 정리, 자리 비우기) 새로 만들어 호스트에 다시 준다. 릴레이에 닿지 못하면 가진 핸들을 그대로 주고 다음 동기화에서 다시 묻는다. 페어링을 지우면 릴레이의 핸들도 지운다(`DELETE`, 기다리지 않는다). 호스트는 다음 전송에서 404를 받고 자기 기록을 지운다. `/m1/push/unregister`는 휴대폰이 호스트에게 핸들을 거두게 하는 라우트이고 지금 앱은 쓰지 않는다. 기기 토큰이 없는 기기(구버전 앱 묶음)는 봉인 키를 만들 수 없어 409이고, 휴대폰은 그 호스트를 푸시 없음으로 둔다.
 
 **봉인.** 푸시는 호스트가 그 휴대폰 하나만 열 수 있게 봉인한 뒤 릴레이에 맡긴다. 릴레이와 Google은 내용을 읽을 수 없다.
 - `key = HKDF-SHA256(ikm = SHA-256(UTF-8 기기 토큰)의 32바이트, salt = UTF-8 clientId, info = "mighty-push-v1", 길이 32)`. ikm은 다이제스트의 **원시 32바이트**이지 64자 16진수 글자가 아니다. 호스트는 기기 줄의 `tokenHash`(16진수)를 풀어 같은 32바이트를 얻고 `clientId`는 기기 id다. 릴레이 연결과 Tailscale 직접 연결이 같은 기기 토큰으로 인증하므로 키도 같다.
@@ -513,6 +513,7 @@ MobilePushMessage {
 - `MightyCore/Remote/MobileRemoteSupport.swift`: 확장의 순수 규칙(이름·페이지·설정 검증, 상태줄·사용량 변환, 명령 매핑, 마이티 블록 투영과 리비전 요약, 안내형 프롬프트, `/guided`의 관문 판정 `guidedDecision`).
 - `MightyCore/Remote/MobileUploadStore.swift`: 첨부 업로드 저장소(0700 폴더·0600 파일, 순서·크기 검증, 기기·실행 창 범위, 단일 사용, 10분 만료).
 - `MightyCore/Remote/MobileDeviceRegistry.swift`: 기기 토큰 등록부와 인증 판정(`devices.json`).
+- `MightyCore/Remote/MobilePush.swift`: 푸시 알림의 계약과 규칙 — 봉인(`MobilePushSeal`), 메시지·버튼 모양, 창 목록 투영(`MobilePushPane`)과 계획기(`MobilePushPlanner`), 받을 휴대폰 고르기(`MobilePushRecipients`), 릴레이 전송(`MobilePushHTTPTransport`). 보내고 다시 시도하는 일은 `MobileRemoteService.swift`의 `pushObserve`가, 창 목록을 넘기는 일은 앱의 `MightyClaude/AppStore+MobilePush.swift`가 한다. Windows는 `MightyClaude.Core/Remote/MobilePush.cs`(같은 규칙)와 `MobilePushHub.cs`(창 변화를 모아 계획기에 넣고 전송·재시도).
 - `MightyCore/Remote/MobileWorkspaceFiles.swift`: 파일 라우트의 경로 거르기, 목록·미리보기 모양, 응답 크기 맞추기, 썸네일(svg는 `MobileHostDelegate.mobileSVGRasterizer`로 앱이 그림).
 - `MightyCore/Styles/StylePanelProjection.swift`: `MobileMighty.panel`이 되는 `StylePanel`의 모양과 골든 직렬화. Mac 패널과 같은 함수가 만든다(스타일 엔진 계약: [mighty-styles.md](mighty-styles.md) §5.6·§7.3).
 - `MightyCore/Remote/MobileLegacyStyleAdapter.swift`: 번들 Ouroboros의 `mighty.ouroboros`를 같은 투영에서 만드는 레거시 어댑터.
