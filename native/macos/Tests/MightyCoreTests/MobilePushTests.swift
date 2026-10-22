@@ -19,6 +19,8 @@ enum PushFixture {
         let kind: MobilePushKind
         let sessionId, workspace, title, summary: String
         let permission: MobilePushPermission?
+        /// The summary the pushed bytes carry when it differs (`""` once the message would pass 2048 bytes).
+        let pushSummary: String?
     }
     struct Step: Decodable {
         let note: String
@@ -82,6 +84,10 @@ struct MobilePushPlannerTests {
                 #expect(message.v == 1 && message.hostId == planner.hostId && message.hostName == planner.hostName && message.at == planner.at, "\(step.note)")
                 #expect(message.kind == expected.kind && message.sessionId == expected.sessionId && message.workspace == expected.workspace, "\(step.note)")
                 #expect(message.title == expected.title && message.summary == expected.summary && message.permission == expected.permission, "\(step.note)")
+                let encoded = try #require(message.encodedForPush(), "\(step.note)")
+                #expect(encoded.count <= MobilePushSeal.maximumPlaintext, "\(step.note)")
+                let pushed = try JSONDecoder().decode(MobilePushMessage.self, from: encoded)
+                #expect(pushed.summary == (expected.pushSummary ?? expected.summary) && pushed.id == expected.id && pushed.title == expected.title, "\(step.note)")
             }
         }
     }
@@ -113,6 +119,18 @@ struct MobilePushPlannerTests {
         #expect(message.summary.unicodeScalars.count == 200)
         let encoded = try #require(message.encodedForPush())
         #expect(encoded.count <= MobilePushSeal.maximumPlaintext)
+    }
+
+    @Test func printingADeviceOrAMessageShowsNoHandleTokenHashOrContent() {
+        let device = MobilePushDevice(deviceId: "a", handle: "handle-secret", tokenHash: String(repeating: "f", count: 64), kinds: [.permission])
+        let message = MobilePushMessage(id: "request:u:r", kind: .permission, hostId: "h", hostName: "host-secret", workspace: "workspace-secret", title: "title-secret",
+                                        summary: "summary-secret", sessionId: "pane-1", permission: nil, at: "t")
+        for text in ["\(device)", String(reflecting: device), "\([device])"] {
+            #expect(!text.contains("handle-secret") && !text.contains(device.tokenHash) && text.contains("a"))
+        }
+        for text in ["\(message)", String(reflecting: message), "\([message])"] {
+            #expect(!["host-secret", "workspace-secret", "title-secret", "summary-secret"].contains { text.contains($0) } && text.contains("request:u:r"))
+        }
     }
 
     @Test func aDeviceGetsOnlyTheKindsItTurnedOnAndNothingForTheSessionItIsViewing() {
