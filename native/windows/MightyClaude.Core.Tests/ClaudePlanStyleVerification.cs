@@ -195,11 +195,8 @@ internal static class ClaudePlanStyleVerification
     {
         var running = new BackgroundTask("b", "agent", "x", "2026-10-06T01:00:00.000Z");
         var waiting = new BackgroundWork([running], TurnEnded: true); var busy = new BackgroundWork([running]);
-        Check(BackgroundQueuePolicy.ComposerJoins(false, waiting, false) && !BackgroundQueuePolicy.ComposerJoins(false, waiting, true) && BackgroundQueuePolicy.ComposerJoins(true, waiting, true), "the composer joins unless the style plans each request; Ctrl+Enter still steers");
-        Check(!BackgroundQueuePolicy.ComposerJoins(false, busy, false) && !BackgroundQueuePolicy.ComposerJoins(false, null, false), "a turn still running is not joined by Enter");
-        Check(BackgroundQueuePolicy.PhoneSteers(null, waiting, false) && !BackgroundQueuePolicy.PhoneSteers(null, waiting, true) && !BackgroundQueuePolicy.PhoneSteers("steer", waiting, true) && BackgroundQueuePolicy.PhoneSteers("steer", busy, true) && !BackgroundQueuePolicy.PhoneSteers("queue", null, false), "the phone queues rather than steers in the same case");
-        Check(BackgroundQueuePolicy.WaitsOnBackground(waiting, true, 1) && !BackgroundQueuePolicy.WaitsOnBackground(waiting, true, 0) && !BackgroundQueuePolicy.WaitsOnBackground(waiting, false, 1) && !BackgroundQueuePolicy.WaitsOnBackground(busy, true, 1), "the queue says when it waits on background work");
-        Check(Korean(() => Locale.Get("queue.waitingOnBackground.windows")) == "백그라운드 작업이 끝나야 시작합니다 · Ctrl+Enter로 끼워 넣기 / 중지", "the notice says Ctrl+Enter");
+        // New input to a busy pane always waits in the queue, so the notice shows in every style (M/BackgroundQueuePolicyTests.swift).
+        Check(BackgroundQueuePolicy.WaitsOnBackground(waiting, 1) && !BackgroundQueuePolicy.WaitsOnBackground(waiting, 0) && !BackgroundQueuePolicy.WaitsOnBackground(busy, 1) && !BackgroundQueuePolicy.WaitsOnBackground(null, 1), "the queue says when it waits on background work, in every style");
         Check(BackgroundQueuePolicy.StopKeepsQueue(waiting) && !BackgroundQueuePolicy.StopKeepsQueue(busy) && !BackgroundQueuePolicy.StopKeepsQueue(null), "stopping a turn that is over keeps the queue");
 
         var queue = new QueuedInputBuffer();

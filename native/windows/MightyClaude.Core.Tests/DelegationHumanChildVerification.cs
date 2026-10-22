@@ -63,20 +63,20 @@ internal static class DelegationHumanChildVerification
 
     internal static Task TheSecondSendChoosesAWorktreeOnlyWhereAChildCanWork()
     {
-        ComposerSecondSend Choose(string provider, string mode = "acceptEdits", bool isChild = false, bool on = true, bool ready = true, bool steerable = false, string kind = "claude") =>
-            ComposerSecondSends.Choose(kind, provider, mode, isChild, on, ready, steerable);
-        // A Claude pane that may have children in a usable checkout opens one, whether or not its turn could take the text.
-        Check(Choose("claude", steerable: true) == ComposerSecondSend.Worktree && Choose("claude") == ComposerSecondSend.Worktree, "a Claude pane opens a new worktree");
-        // A child, the switch off or no usable checkout: Claude steers as before, or queues while it cannot take text.
-        Check(Choose("claude", isChild: true, steerable: true) == ComposerSecondSend.Steer && Choose("claude", on: false, steerable: true) == ComposerSecondSend.Steer
-            && Choose("claude", ready: false, steerable: true) == ComposerSecondSend.Steer && Choose("claude", ready: false) == ComposerSecondSend.Queue, "otherwise Claude steers as before");
+        ComposerSecondSend Choose(string provider, string mode = "acceptEdits", bool isChild = false, bool on = true, bool ready = true, string kind = "claude") =>
+            ComposerSecondSends.Choose(kind, provider, mode, isChild, on, ready);
+        // A Claude pane that may have children in a usable checkout opens one.
+        Check(Choose("claude") == ComposerSecondSend.Worktree, "a Claude pane opens a new worktree");
+        // A child, the switch off or no usable checkout: Claude queues too, as Enter; nothing a person sends joins the running turn.
+        Check(Choose("claude", isChild: true) == ComposerSecondSend.Queue && Choose("claude", on: false) == ComposerSecondSend.Queue && Choose("claude", ready: false) == ComposerSecondSend.Queue,
+            "otherwise Claude queues, as Enter");
+        Check(Enum.GetValues<ComposerSecondSend>().SequenceEqual([ComposerSecondSend.Worktree, ComposerSecondSend.Queue]), "the second send never steers");
         foreach (var provider in new[] { "codex", "gemini" })
             Check(Choose(provider) == ComposerSecondSend.Worktree && Choose(provider, isChild: true) == ComposerSecondSend.Queue && Choose(provider, on: false) == ComposerSecondSend.Queue && Choose(provider, ready: false) == ComposerSecondSend.Queue, provider + " opens one too, and otherwise queues");
         Check(Choose("claude", kind: "shell") == ComposerSecondSend.Queue, "a shell pane queues");
         foreach (var (provider, mode, worktree) in new[] { ("codex", "manual", false), ("codex", "acceptEdits", true), ("codex", "onRequest", true), ("codex", "fullAccess", true), ("gemini", "manual", false), ("gemini", "plan", false), ("gemini", "acceptEdits", true), ("gemini", "fullAccess", true) })
             Check(Choose(provider, mode) == (worktree ? ComposerSecondSend.Worktree : ComposerSecondSend.Queue), $"{provider} {mode}");
-        foreach (var mode in DelegationProviders.StartingModes("claude")) Check(Choose("claude", mode, steerable: true) == ComposerSecondSend.Worktree, "Claude " + mode);
-        Check(ComposerSecondSends.Fallback(true) == ComposerSecondSend.Steer && ComposerSecondSends.Fallback(false) == ComposerSecondSend.Queue, "a text no new child runs steers when it can and is otherwise queued");
+        foreach (var mode in DelegationProviders.StartingModes("claude")) Check(Choose("claude", mode) == ComposerSecondSend.Worktree, "Claude " + mode);
         // A checkout can host one when only the disk is short.
         Check(new ChildWorktreeCheck.Ready(new("r", "", "main", Commit)).CanHostWorktree && new ChildWorktreeCheck.Refused(DelegationReasonCode.LowDisk).CanHostWorktree
             && new[] { DelegationReasonCode.NotGit, DelegationReasonCode.DetachedHead, DelegationReasonCode.UnbornBranch }.All(reason => !new ChildWorktreeCheck.Refused(reason).CanHostWorktree), "only a usable checkout can host one");

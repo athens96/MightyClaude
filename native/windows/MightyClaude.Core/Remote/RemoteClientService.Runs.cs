@@ -333,12 +333,6 @@ public sealed partial class RemoteClientService
     /// <summary>The host's run id of a waiting request (a Mac host's need not be the job's); the job's for one the pane does not hold.</summary>
     private string HostRunId(Run run, string requestId) { lock (gate) return run.HostRunIds.GetValueOrDefault(requestId) ?? run.JobId!; }
 
-    /// <summary>Hands a follow-up to the running Claude turn on the host; false when it did not take it.</summary>
-    public async Task<bool> SteerAsync(string paneId, string text)
-    {
-        try { return await SendAsync(paneId, "steer", _ => new RemoteWireSteer(text)); }
-        catch (Exception ex) when (ex is not OutOfMemoryException) { return false; }
-    }
     public Task<bool> RespondToPermissionAsync(string paneId, string requestId, bool allow) => SendAsync(paneId, "permission", run => new RemoteWirePermission(HostRunId(run, requestId), requestId, allow));
     public Task<bool> AnswerQuestionsAsync(string paneId, string requestId, IReadOnlyDictionary<string, UserQuestionAnswer> answers) => SendAsync(paneId, "questions", run => new RemoteWireQuestions(HostRunId(run, requestId), requestId, answers));
     public Task<bool> AnswerPlanAsync(string paneId, string requestId, PlanDecision decision) => SendAsync(paneId, "plan", run => RemoteWirePlan.From(HostRunId(run, requestId), requestId, decision));

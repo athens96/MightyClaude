@@ -91,9 +91,13 @@ public sealed partial class DesktopService : IAsyncDisposable
     }
     public void ConfigureAgentIO(Func<StartRunRequest, Workspace, AgentIOBinding?>? factory) => local.AgentIOBindingFactory = factory;
     public bool IsSessionRunning(string id) => local.IsRunning(id) || Remote?.IsRunning(id) == true;
+    /// <summary>
+    /// Hands a delegation notice to the pane's running local Claude turn (<see cref="DeliveryRoute.Steer"/>); false when it did not
+    /// take it. Nothing a person sends goes this way: it waits for the current request.
+    /// </summary>
     public async Task<bool> TrySteerAsync(string sessionId, string text)
     {
-        if (!(RemotePane(sessionId) ? Remote is { } client && await client.SteerAsync(sessionId, text) : await local.TrySteerAsync(sessionId, text))) return false;
+        if (RemotePane(sessionId) || !await local.TrySteerAsync(sessionId, text)) return false;
         Receive(RunEvent.Log(sessionId, "user", text, "claude")); return true;
     }
     public void AnswerQuestionnaire(string sessionId, string requestId, IReadOnlyDictionary<string, UserQuestionAnswer> answers)

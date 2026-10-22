@@ -738,7 +738,6 @@ internal static partial class RemoteClientVerification
             Check(RemoteWireFixtureVerification.Same(System.Text.Json.Nodes.JsonNode.Parse(answer.Body), RemoteWireFixtureVerification.Node("permission.json")), "the answer is the Mac's sample, with the host's run id");
             await client.AnswerPlanAsync("pane-1", "perm-3", PlanDecision.Revise("Keep the tests"));
             Check(RemoteWireFixtureVerification.Same(System.Text.Json.Nodes.JsonNode.Parse(scripted.Seen("/v2/runs/job-1/plan").Single().Body), RemoteWireFixtureVerification.Node("plan-revised.json")), "a plan answer is the Mac's sample");
-            Check(await client.SteerAsync("pane-1", "Also check CHANGELOG.md") && RemoteWireFixtureVerification.Same(System.Text.Json.Nodes.JsonNode.Parse(scripted.Seen("/v2/runs/job-1/steer").Single().Body), RemoteWireFixtureVerification.Node("steer.json")), "a steer is the Mac's sample");
             await client.StopAsync("pane-1");
             Check(scripted.Seen("/v2/runs/job-1/stop").Single().Body is var stop && System.Text.Encoding.UTF8.GetString(stop) == "{}", "a stop reaches the host, with a body");
             Check(seen.Events.Last() is { Type: "status", Status: "stopped" } && !client.IsRunning("pane-1"), "a stop ends the pane");

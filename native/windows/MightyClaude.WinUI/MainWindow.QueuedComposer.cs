@@ -16,27 +16,23 @@ public sealed partial class MainWindow
         private readonly DispatcherTimer queueDrainTimer = new() { Interval = TimeSpan.FromMilliseconds(100) };
         private Button? queueStopButton;
         /// <summary>
-        /// Steer (Ctrl+Enter) beside queue while a draft waits: the send button's toolbar-high circle with the bolt,
-        /// in <c>run</c> while the draft can go and <c>track</c> at half strength while not (<see cref="PaintSteer"/>).
-        /// </summary>
-        private Button steer = null!;
-        private readonly Border steerDisc = new() { Width = DesignMetrics.Layout.Toolbar, Height = DesignMetrics.Layout.Toolbar, CornerRadius = new CornerRadius(16), IsHitTestVisible = false };
-        private readonly Grid steerHost = new() { Width = DesignMetrics.Layout.Toolbar, Height = DesignMetrics.Layout.Toolbar, VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
-        private readonly ComposerGlyph steerBolt = ComposerGlyph.SteerBolt();
-        /// <summary>
-        /// The second send in steer's place when it opens a new child worktree (<see cref="ComposerSecondSend.Worktree"/>), or for its
-        /// agent menu alone: the same disc with the branch, shown while the draft has words for the child's task
-        /// (M/SessionPaneView.swift worktreeButton/worktreeMenuButton). A right-click opens the menu (MainWindow.WorktreeMenu.cs).
+        /// The second send (Ctrl+Enter) beside queue when it opens a new child worktree (<see cref="ComposerSecondSend.Worktree"/>), or
+        /// for its agent menu alone: the send button's toolbar-high circle with the branch, shown while the draft has words for the
+        /// child's task, in <c>run</c> while the draft can go and <c>track</c> at half strength while not (<see cref="PaintWorktree"/>;
+        /// M/SessionPaneView.swift worktreeButton/worktreeMenuButton). A right-click opens the menu (MainWindow.WorktreeMenu.cs).
+        /// Nothing a person sends joins the running turn, so there is no other second button.
         /// </summary>
         private Button worktreeButton = null!;
+        private readonly Border worktreeDisc = new() { Width = DesignMetrics.Layout.Toolbar, Height = DesignMetrics.Layout.Toolbar, CornerRadius = new CornerRadius(16), IsHitTestVisible = false };
+        private readonly Grid worktreeHost = new() { Width = DesignMetrics.Layout.Toolbar, Height = DesignMetrics.Layout.Toolbar, VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
         private readonly ComposerGlyph worktreeBranch = ComposerGlyph.WorktreeBranch();
-        /// <summary>The second send offers a new worktree now: the disc carries the branch, not the bolt.</summary>
+        /// <summary>The second send offers a new worktree (or its menu) now.</summary>
         private bool offersWorktree;
         private bool queueStarting;
         private int composerSubmissionVersion;
         private bool HasComposerContent => !string.IsNullOrWhiteSpace(input.Text) || pendingAttachments.Count > 0;
 
-        /// <summary>The small stop square before steer and queue: 4pt under the toolbar's height, as the Mac's.</summary>
+        /// <summary>The small stop square before the worktree button and queue: 4pt under the toolbar's height, as the Mac's.</summary>
         internal const double QueueStopSize = DesignMetrics.Layout.Toolbar - 4;
         private void InitializeQueuedComposer(StackPanel actions)
         {
@@ -48,22 +44,17 @@ public sealed partial class MainWindow
             owner.PaintPlainButton(queueStopButton, owner.brushes.Brush(DesignToken.Err), owner.brushes.Brush(DesignToken.Err), ink: owner.brushes.Brush(DesignToken.OnStatus), disabledInk: owner.brushes.Brush(DesignToken.OnStatus));
             AutomationProperties.SetName(queueStopButton, Locale.Get("composer.stop.name")); AutomationProperties.SetAutomationId(queueStopButton, "composer-stop-" + id);
             actions.Children.Add(queueStopButton);
-            // Stop, steer, then queue where send sits (M/SessionPaneView.swift:773-805).
-            steer = new Button { Width = DesignMetrics.Layout.Toolbar, Height = DesignMetrics.Layout.Toolbar, MinWidth = 0, MinHeight = 0, Padding = new(0), CornerRadius = new(16), BorderThickness = new(0), Content = steerBolt.View };
-            steer.Click += async (_, _) => await Send(steering: true);
-            AutomationProperties.SetName(steer, Locale.Get("phone.composer.steer")); AutomationProperties.SetAutomationId(steer, "composer-steer-" + id); ToolTipService.SetToolTip(steer, Locale.Get("queue.steerHint"));
-            // Like send, the button draws nothing of its own; the disc and the bolt carry its look (PaintSteer).
-            owner.PaintPlainButton(steer, owner.brushes.Transparent, owner.brushes.Transparent);
-            steer.IsEnabledChanged += (_, _) => PaintSteer();
-            worktreeButton = new Button { Width = DesignMetrics.Layout.Toolbar, Height = DesignMetrics.Layout.Toolbar, MinWidth = 0, MinHeight = 0, Padding = new(0), CornerRadius = new(16), BorderThickness = new(0), Content = worktreeBranch.View, Visibility = Visibility.Collapsed };
+            // Stop, the new worktree, then queue where send sits (M/SessionPaneView.swift:773-805).
+            worktreeButton = new Button { Width = DesignMetrics.Layout.Toolbar, Height = DesignMetrics.Layout.Toolbar, MinWidth = 0, MinHeight = 0, Padding = new(0), CornerRadius = new(16), BorderThickness = new(0), Content = worktreeBranch.View };
             // A click (as Ctrl+Enter) runs the draft in a child of this pane's agent; where only another agent's child fits it opens the menu.
-            worktreeButton.Click += async (_, _) => { if (worktreeMenuOnly) worktreeMenu.ShowAt(worktreeButton); else await Send(steering: true); };
+            worktreeButton.Click += async (_, _) => { if (worktreeMenuOnly) worktreeMenu.ShowAt(worktreeButton); else await Send(secondSend: true); };
             worktreeMenu.Opening += (_, _) => FillWorktreeMenu();
             worktreeButton.ContextFlyout = worktreeMenu;
             AutomationProperties.SetName(worktreeButton, Locale.Get("queue.worktree")); AutomationProperties.SetAutomationId(worktreeButton, "composer-worktree-" + id); ToolTipService.SetToolTip(worktreeButton, Locale.Get("queue.worktreeHint"));
+            // Like send, the button draws nothing of its own; the disc and the branch carry its look (PaintWorktree).
             owner.PaintPlainButton(worktreeButton, owner.brushes.Transparent, owner.brushes.Transparent);
-            worktreeButton.IsEnabledChanged += (_, _) => PaintSteer();
-            steerHost.Children.Add(steerDisc); steerHost.Children.Add(steer); steerHost.Children.Add(worktreeButton); actions.Children.Add(steerHost);
+            worktreeButton.IsEnabledChanged += (_, _) => PaintWorktree();
+            worktreeHost.Children.Add(worktreeDisc); worktreeHost.Children.Add(worktreeButton); actions.Children.Add(worktreeHost);
             queueDrainTimer.Tick += async (_, _) =>
             {
                 if (!QueuePaneAlive) { queueDrainTimer.Stop(); return; }
@@ -75,8 +66,13 @@ public sealed partial class MainWindow
         private bool QueuePaneAlive => !owner.closing && owner.views.TryGetValue(id, out var pane) && ReferenceEquals(pane, this)
             && owner.service.Snapshot.Sessions.Any(p => p.Id == id);
 
+        /// <summary>
+        /// A busy pane (running, starting, held for an update, or a turn that only waits on background work) always queues the draft
+        /// as its next request; nothing a person sends joins the running turn. <paramref name="secondSend"/>: Ctrl+Enter, which runs
+        /// written words in a new child worktree where <see cref="DesktopService.SecondSend"/> offers one, and otherwise queues too.
+        /// </summary>
         /// <returns>True when the busy path handled this send, including validation refusals.</returns>
-        private async Task<bool> DeferBusyComposer(bool steering)
+        private async Task<bool> DeferBusyComposer(bool secondSend)
         {
             if (Session.Status != "running" && !starting && !owner.service.IsSessionRunning(id) && !owner.BackgroundUpdateHolds(Session)) return false;
             if (Session.Kind != "claude" || !HasComposerContent || starting || composingInput || attachmentsLoading) return true;
@@ -84,11 +80,8 @@ public sealed partial class MainWindow
             var pane = Session;
             // The same request validation applies before consuming a draft even though it runs later.
             _ = new StartRunRequest(pane.Id, pane.WorkspaceId, pane.Kind, text, RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot), pane.Model, pane.Provider, pane.Settings, pane.ResumeId, files).Validate();
-            // A turn that is over but still running background agents takes new input in the same process
-            // (M/AppStore.swift submit); the queue is the fallback. A plan-mode style's new request waits and
-            // starts fresh in plan mode (§1.17.4), and the queued item keeps that decision.
             // Ctrl+Enter on a pane that may have children runs written words now in a new child worktree; files alone wait.
-            if (steering && !owner.BackgroundUpdateHolds(pane) && !string.IsNullOrWhiteSpace(text) && owner.service.SecondSend(pane) == ComposerSecondSend.Worktree)
+            if (secondSend && !owner.BackgroundUpdateHolds(pane) && !string.IsNullOrWhiteSpace(text) && owner.service.SecondSend(pane) == ComposerSecondSend.Worktree)
             {
                 // Taken from the composer now, so a second Ctrl+Enter cannot send it again.
                 var sent = files.Select(file => file.Id).ToHashSet(); pendingAttachments.RemoveAll(file => sent.Contains(file.Id)); RefreshAttachments();
@@ -97,16 +90,13 @@ public sealed partial class MainWindow
                 RefreshComposerState();
                 return true;
             }
-            var plans = LaunchesInPlanMode;
-            var joins = BackgroundQueuePolicy.ComposerJoins(steering, pane.BackgroundWork, plans);
-            var steered = joins && files.Length == 0 && pane.Provider == "claude" && !starting && await owner.service.TrySteerAsync(id, text);
-            if (!QueuePaneAlive) return true;
-            if (!steered) queuedInputs.Add(text, files, BackgroundQueuePolicy.QueuedOverride(plans));
+            // A plan-mode style's queued request starts fresh in plan mode (§1.17.4), and the queued item keeps that decision.
+            queuedInputs.Add(text, files, BackgroundQueuePolicy.QueuedOverride(LaunchesInPlanMode));
             var consumed = files.Select(file => file.Id).ToHashSet(); pendingAttachments.RemoveAll(file => consumed.Contains(file.Id)); RefreshAttachments();
             if (input.Text == text) { updating = true; input.Text = ""; updating = false; await Change(s => s with { Draft = "" }); }
             RefreshComposerState(); RenderQueuedInputs();
-            // The stream may finish while a steering attempt is being admitted.
-            if (!steered && Session.Status is "completed" or "idle") queueDrainTimer.Start();
+            // The stream may finish while the draft is being taken.
+            if (Session.Status is "completed" or "idle") queueDrainTimer.Start();
             return true;
         }
 
@@ -143,23 +133,20 @@ public sealed partial class MainWindow
             // as a new queue item (which would also disable the primary button).
             var queueable = busy && !starting && !queueStarting && Session.Kind == "claude" && HasComposerContent;
             if (queueStopButton is not null) { queueStopButton.Visibility = queueable ? Visibility.Visible : Visibility.Collapsed; queueStopButton.IsEnabled = !stopping; }
-            // The second send: a new worktree for written words in a pane that may have children, otherwise steer for a Claude turn
-            // and a draft without files: files always queue (DeferBusyComposer).
+            // The second send: a new worktree for written words in a pane that may have children; otherwise Ctrl+Enter queues, as Enter.
             var second = queueable ? owner.service.SecondSend(Session) : ComposerSecondSend.Queue;
             // Where this pane's own agent cannot have a child in its mode but another agent's can, the same button shows for its menu alone.
             worktreeMenuOnly = queueable && second == ComposerSecondSend.Queue && owner.service.WorktreeMenuOnly(Session, LaunchesInPlanMode);
-            var steers = second == ComposerSecondSend.Steer && pendingAttachments.Count == 0;
             offersWorktree = (second == ComposerSecondSend.Worktree || worktreeMenuOnly) && !string.IsNullOrWhiteSpace(input.Text);
             if (worktreeTipIsMenu != worktreeMenuOnly) { worktreeTipIsMenu = worktreeMenuOnly; ToolTipService.SetToolTip(worktreeButton, Locale.Get(worktreeMenuOnly ? "queue.worktreeMenuHintMac" : "queue.worktreeHint")); }
-            steerHost.Visibility = steers || offersWorktree ? Visibility.Visible : Visibility.Collapsed;
-            steer.Visibility = offersWorktree ? Visibility.Collapsed : Visibility.Visible; worktreeButton.Visibility = offersWorktree ? Visibility.Visible : Visibility.Collapsed;
+            worktreeHost.Visibility = offersWorktree ? Visibility.Visible : Visibility.Collapsed;
             if (queueable)
             {
                 ShowSendSymbol("queue"); send.IsEnabled = !starting && !queueStarting && !attachmentsLoading && !stopping && queuedInputs.Items.Count < QueuedInputBuffer.MaximumItems && owner.ManualMutationBlockReason(Session) is null;
                 AutomationProperties.SetName(send, Locale.Get("queue.add")); ToolTipService.SetToolTip(send, Locale.Get("queue.addHint"));
             }
-            steer.IsEnabled = steers && send.IsEnabled; worktreeButton.IsEnabled = offersWorktree && send.IsEnabled;
-            PaintSteer(); RenderQueuedInputs();
+            worktreeButton.IsEnabled = offersWorktree && send.IsEnabled;
+            PaintWorktree(); RenderQueuedInputs();
         }
 
         internal void ReceiveQueueRunEvent(RunEvent value)
@@ -199,7 +186,7 @@ public sealed partial class MainWindow
             var busy = Session.Status == "running" || starting || queueStarting || owner.BackgroundUpdateHolds(Session);
             var header = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm }; header.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); header.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             header.Children.Add(new FontIcon { Glyph = "", TextSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = accent, VerticalAlignment = VerticalAlignment.Center });
-            var waitsOnBackground = BackgroundQueuePolicy.WaitsOnBackground(Session.BackgroundWork, LaunchesInPlanMode, queuedInputs.Items.Count);
+            var waitsOnBackground = BackgroundQueuePolicy.WaitsOnBackground(Session.BackgroundWork, queuedInputs.Items.Count);
             var count = new TextBlock { Text = Locale.Get(busy ? "queue.waitingBusy" : "queue.waiting", new Dictionary<string, string> { ["count"] = total.ToString() }) + (waitsOnBackground ? "\n" + Locale.Get(owner.service.SecondSend(Session) == ComposerSecondSend.Worktree ? "queue.waitingOnBackground.windowsWorktree" : "queue.waitingOnBackground.windows") : ""), TextSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = ink2, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
             if (waitsOnBackground) AutomationProperties.SetAutomationId(count, "queue-background-" + id);
             Grid.SetColumn(count, 1); header.Children.Add(count);

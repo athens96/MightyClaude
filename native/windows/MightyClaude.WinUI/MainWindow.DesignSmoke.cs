@@ -1166,25 +1166,29 @@ public sealed partial class MainWindow
             Require(backgroundWorkToggle.Visibility == (pane.Kind == "claude" && pane.Provider == "claude" ? Visibility.Visible : Visibility.Collapsed),
                 $"{key} ({theme}): the background-work toggle must show on Claude panes alone; got {backgroundWorkToggle.Visibility} on a {pane.Kind} / {pane.Provider} pane");
             var cluster = toolbarActions.Children.ToList();
-            Require(cluster.IndexOf(resumeHost) == 0 && cluster.IndexOf(context) == 1 && cluster.IndexOf(backgroundWorkToggle) == 2 && cluster.IndexOf(statusLineToggle) == 3 && cluster.IndexOf(queueStopButton!) == cluster.Count - 3 && cluster.IndexOf(steerHost) == cluster.Count - 2 && cluster.IndexOf(sendHost) == cluster.Count - 1 && !paneHeaderControls.Children.Contains(statusLineToggle),
-                $"{key} ({theme}): the right cluster must be the resume mark, the context ring, the background-work and status-line toggles, then stop, steer and send / queue, and the status-line toggle must have left the pane header");
-            // Steer wears the send button's look in both states, set directly here (the busy pane's own state is checked in the composer capture).
-            Require(ReferenceEquals(steer.Content, steerBolt.View) && ReferenceEquals(OwnResource(steer, "ButtonBackground"), b.Transparent) && ReferenceEquals(OwnResource(steer, "ButtonBackgroundDisabled"), b.Transparent)
-                && steerDisc.Width == DesignMetrics.Layout.Toolbar && steerDisc.Height == DesignMetrics.Layout.Toolbar && steerDisc.CornerRadius == new CornerRadius(16),
-                $"{key} ({theme}): the steer button must draw nothing of its own over a {DesignMetrics.Layout.Toolbar} circle; got {steerDisc.Width}x{steerDisc.Height} r{steerDisc.CornerRadius}");
-            var steerWas = steer.IsEnabled;
+            Require(cluster.IndexOf(resumeHost) == 0 && cluster.IndexOf(context) == 1 && cluster.IndexOf(backgroundWorkToggle) == 2 && cluster.IndexOf(statusLineToggle) == 3 && cluster.IndexOf(queueStopButton!) == cluster.Count - 3 && cluster.IndexOf(worktreeHost) == cluster.Count - 2 && cluster.IndexOf(sendHost) == cluster.Count - 1 && !paneHeaderControls.Children.Contains(statusLineToggle),
+                $"{key} ({theme}): the right cluster must be the resume mark, the context ring, the background-work and status-line toggles, then stop, the new worktree and send / queue, and the status-line toggle must have left the pane header");
+            // Nothing a person sends joins the running turn: the second send holds the worktree button alone, never a steer button.
+            Require(worktreeHost.Children.Count == 2 && worktreeHost.Children[0] == worktreeDisc && worktreeHost.Children[1] == worktreeButton
+                && !worktreeHost.Children.Any(child => AutomationProperties.GetAutomationId(child).StartsWith("composer-steer-", StringComparison.Ordinal)),
+                $"{key} ({theme}): the second send must hold the worktree disc and button alone, with no steer button; got {worktreeHost.Children.Count} children");
+            // The worktree button wears the send button's look in both states, set directly here (the busy pane's own state is checked in the composer capture).
+            Require(ReferenceEquals(worktreeButton.Content, worktreeBranch.View) && ReferenceEquals(OwnResource(worktreeButton, "ButtonBackground"), b.Transparent) && ReferenceEquals(OwnResource(worktreeButton, "ButtonBackgroundDisabled"), b.Transparent)
+                && worktreeDisc.Width == DesignMetrics.Layout.Toolbar && worktreeDisc.Height == DesignMetrics.Layout.Toolbar && worktreeDisc.CornerRadius == new CornerRadius(16),
+                $"{key} ({theme}): the worktree button must draw nothing of its own over a {DesignMetrics.Layout.Toolbar} circle; got {worktreeDisc.Width}x{worktreeDisc.Height} r{worktreeDisc.CornerRadius}");
+            var worktreeWas = worktreeButton.IsEnabled;
             try
             {
-                steer.IsEnabled = true; PaintSteer();
-                o.RequireBrush(steerDisc, e => ((Border)e).Background, DesignToken.Run, "the steer circle", key: key);
-                o.RequireBrush(steerDisc, _ => steerBolt.Colour, DesignToken.OnStatus, "the steer bolt", key: key);
-                Require(steerHost.Opacity == 1, $"{key} ({theme}): an enabled steer button must be opaque; got {steerHost.Opacity}");
-                steer.IsEnabled = false; PaintSteer();
-                o.RequireBrush(steerDisc, e => ((Border)e).Background, DesignToken.Track, "the disabled steer circle", key: key);
-                o.RequireBrush(steerDisc, _ => steerBolt.Colour, DesignToken.Ink2, "the disabled steer bolt", key: key);
-                Require(Math.Abs(steerHost.Opacity - DisabledDim) < .001, $"{key} ({theme}): a disabled steer button must be drawn at {DisabledDim}, as send; got {steerHost.Opacity}");
+                worktreeButton.IsEnabled = true; PaintWorktree();
+                o.RequireBrush(worktreeDisc, e => ((Border)e).Background, DesignToken.Run, "the worktree circle", key: key);
+                o.RequireBrush(worktreeDisc, _ => worktreeBranch.Colour, DesignToken.OnStatus, "the worktree branch", key: key);
+                Require(worktreeHost.Opacity == 1, $"{key} ({theme}): an enabled worktree button must be opaque; got {worktreeHost.Opacity}");
+                worktreeButton.IsEnabled = false; PaintWorktree();
+                o.RequireBrush(worktreeDisc, e => ((Border)e).Background, DesignToken.Track, "the disabled worktree circle", key: key);
+                o.RequireBrush(worktreeDisc, _ => worktreeBranch.Colour, DesignToken.Ink2, "the disabled worktree branch", key: key);
+                Require(Math.Abs(worktreeHost.Opacity - DisabledDim) < .001, $"{key} ({theme}): a disabled worktree button must be drawn at {DisabledDim}, as send; got {worktreeHost.Opacity}");
             }
-            finally { steer.IsEnabled = steerWas; PaintSteer(); }
+            finally { worktreeButton.IsEnabled = worktreeWas; PaintWorktree(); }
             o.RequireBrush(resumeHost, _ => resumeMark.Colour, DesignToken.Ink2, "the resume mark", key: key);
             Require(resumeHost.Visibility == (pane.ResumeId is null ? Visibility.Collapsed : Visibility.Visible), $"{key} ({theme}): the resume mark must show exactly while the pane continues an earlier conversation; got {resumeHost.Visibility}");
 

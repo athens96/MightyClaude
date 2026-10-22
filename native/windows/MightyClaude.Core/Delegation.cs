@@ -13,7 +13,7 @@ namespace MightyClaude.Core;
 /// new run in a Claude pane, or a Codex pane in acceptEdits or fullAccess, also gets the delegation MCP server beside
 /// mighty-terminal, and the composer's second send (Ctrl+Enter) on a busy Claude, Codex or Antigravity pane runs the text in a new
 /// child worktree (<see cref="ComposerSecondSend"/>); which panes take part is <see cref="DelegationProviders"/>'s. While it is off,
-/// no run gets the server and the second send steers or queues as before. Turning it off only detaches the server: existing
+/// no run gets the server and the second send queues, as Enter does. Turning it off only detaches the server: existing
 /// children keep working.
 /// </summary>
 public static class DelegationSwitch
@@ -69,8 +69,6 @@ public enum ComposerSecondSend
 {
     /// <summary>A new child pane of the same agent in its own worktree, beside this one, runs the text now (<see cref="DelegationCoordinator.StartHumanChild"/>).</summary>
     Worktree,
-    /// <summary>The text joins the running Claude turn.</summary>
-    Steer,
     /// <summary>The text waits for the next request, as Enter does.</summary>
     Queue,
 }
@@ -78,16 +76,14 @@ public enum ComposerSecondSend
 public static class ComposerSecondSends
 {
     /// <summary>
-    /// The first rule that applies: a Claude, Codex or Antigravity pane that may have children (delegation on, not a child
-    /// itself, and for Codex or Antigravity a <paramref name="mode"/> in which its child can change files) in a folder that can
-    /// host a child worktree (<see cref="ChildWorktreeCheck.CanHostWorktree"/>) opens a new worktree; any other pane whose
-    /// running turn takes text steers; every other pane queues.
+    /// A Claude, Codex or Antigravity pane that may have children (delegation on, not a child itself, and for Codex or
+    /// Antigravity a <paramref name="mode"/> in which its child can change files) in a folder that can host a child worktree
+    /// (<see cref="ChildWorktreeCheck.CanHostWorktree"/>) opens a new worktree; every other pane queues. Nothing a person sends
+    /// joins the running turn. A text whose new worktree could not be made or whose child could not start queues as well — it
+    /// is never dropped — unless it goes back to the composer (<see cref="ReturnsToComposer"/>).
     /// </summary>
-    public static ComposerSecondSend Choose(string kind, string provider, string mode, bool isChild, bool delegationOn, bool canHostWorktree, bool steerable) =>
-        delegationOn && !isChild && canHostWorktree && DelegationProviders.CanParentByHuman(kind, provider, mode) ? ComposerSecondSend.Worktree : Fallback(steerable);
-
-    /// <summary>What a text does when its new worktree could not be made or its child could not start: it goes to the running turn when that can take it, and is otherwise the pane's next request. It is never dropped.</summary>
-    public static ComposerSecondSend Fallback(bool steerable) => steerable ? ComposerSecondSend.Steer : ComposerSecondSend.Queue;
+    public static ComposerSecondSend Choose(string kind, string provider, string mode, bool isChild, bool delegationOn, bool canHostWorktree) =>
+        delegationOn && !isChild && canHostWorktree && DelegationProviders.CanParentByHuman(kind, provider, mode) ? ComposerSecondSend.Worktree : ComposerSecondSend.Queue;
 
     /// <summary>
     /// Whether a text whose child could not be made or started goes back to the composer instead of to the pane: the human picked
@@ -98,7 +94,7 @@ public static class ComposerSecondSends
     /// <summary>
     /// Whether the worktree button shows for its menu alone: where <see cref="Choose"/> does not open a new worktree because the
     /// pane's own agent's child could not change files in <paramref name="mode"/>, yet the pane may have a child of another agent,
-    /// and one of <paramref name="choices"/> can run now. Its click then opens the menu, and Ctrl+Enter does what it did before.
+    /// and one of <paramref name="choices"/> can run now. Its click then opens the menu, and Ctrl+Enter queues, as Enter does.
     /// </summary>
     public static bool MenuOnly(string kind, string provider, string mode, bool isChild, bool delegationOn, bool canHostWorktree, IReadOnlyList<DelegationChildChoice> choices) =>
         delegationOn && !isChild && canHostWorktree && DelegationProviders.IsAgentPane(kind, provider)

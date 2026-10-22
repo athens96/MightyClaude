@@ -80,7 +80,9 @@ public sealed partial class RemoteHostService
                 case "steer":
                     var steer = Decode<RemoteWireSteer>(request.Body);
                     if (string.IsNullOrWhiteSpace(steer.Text) || Encoding.UTF8.GetByteCount(steer.Text) > 400_000 || steer.Text.Contains('\0')) throw new HostFailure(400, Locale.Get("validation.run.badInput"));
-                    return Reply(200, new RemoteWireAnswer(RemoteProtocol.Version, await active.TrySteerAsync(id, steer.Text)));
+                    // Since 0.4.35 nothing a person sends joins a running turn: the request is checked and refused, and an older
+                    // client queues the text itself.
+                    return Reply(200, new RemoteWireAnswer(RemoteProtocol.Version, false));
                 case "permission":
                     var permission = Decode<RemoteWirePermission>(request.Body);
                     Answerable(id, permission.RunId, permission.RequestId, ToolPermissionStrings.AlreadySettled);
