@@ -864,7 +864,10 @@ internal static partial class RemoteClientVerification
             Volatile.Write(ref tunnel, false);
             await Verification.Until(() => !client.IsRunning("pane-1"));
             Check(client.Connection(id) is { Status: RemoteConnectionStatus.Disconnected, Detail: var detail } && detail == notVia, "the poll's route check lost the connection: " + client.Connection(id)?.Detail);
-            Check(seen.Events.Where(e => e.SessionId == "pane-1").TakeLast(2).Select(e => e.Entry?.Text ?? e.Status).SequenceEqual([Lost(notVia), "error"]), "and the pane says why");
+            // The pane's lines arrive just after the run stops counting as running; give a slow runner a moment.
+            bool PaneSaysWhy() => seen.Events.Where(e => e.SessionId == "pane-1").TakeLast(2).Select(e => e.Entry?.Text ?? e.Status).SequenceEqual([Lost(notVia), "error"]);
+            try { await Verification.Until(PaneSaysWhy, 3000); } catch (TimeoutException) { }
+            Check(PaneSaysWhy(), "and the pane says why");
 
             // A start: nothing is posted.
             Volatile.Write(ref tunnel, true); await client.RefreshAsync(id); Volatile.Write(ref tunnel, false);
