@@ -204,6 +204,21 @@ public sealed class AppUpdateCoordinator
         return true;
     }
 
+    /// At app start: an update an install on quit kept (the app was opened
+    /// again before it could swap) is checked against the signed manifest right
+    /// away instead of waiting for the next due check, and, while it is still
+    /// the newest for this machine and the switch is on, staged again from the
+    /// package on disk without a second download (`AppUpdateService.KeptVersion`,
+    /// `DownloadAsync`). True when it checked.
+    public async Task<bool> CheckKeptUpdateAsync(string? userUrl, DateTimeOffset now)
+    {
+        if (closing || Busy || checking || !Automatic || !HasPublicKey) return false;
+        if (service.KeptVersion(currentVersion) is null) return false;
+        LastAttempt = now;
+        await CheckAsync(userUrl);
+        return true;
+    }
+
     public async Task CheckAsync(string? userUrl)
     {
         if (closing || Busy || checking) return;

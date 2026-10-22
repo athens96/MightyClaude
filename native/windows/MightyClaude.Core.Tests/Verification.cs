@@ -1152,6 +1152,8 @@ internal static class Verification
         await Test("app update a staged update stays ready and installs on quit", AppUpdateVerification.AStagedUpdateStaysReadyAndInstallsOnQuit);
         await Test("app update helper copies beside the install and swaps by renaming", AppUpdateVerification.HelperCopiesBesideTheInstallAndSwapsByRenaming);
         await Test("app update an interrupted swap is put back", AppUpdateVerification.AnInterruptedSwapIsPutBack);
+        await Test("app update helper retries a rename and reads an unsure running-again check as running", AppUpdateVerification.HelperRetriesRenamesAndReadsAnUnsureCheckAsRunning);
+        await Test("app update a kept update is staged again without a download", AppUpdateVerification.AKeptUpdateIsStagedAgainWithoutADownload);
         await Test("app update a check beside a staged update decides as on macOS", AppUpdateVerification.ACheckBesideAStagedUpdateDecidesAsOnMacOS);
         await Test("app update section shows the macOS copy for every phase", AppUpdateVerification.SectionShowsTheMacOSCopyForEveryPhase);
         await Test("app update pipeline runs from a fixture-signed manifest to a ready install plan", AppUpdateVerification.PipelineRunsFromAFixtureSignedManifestToAReadyInstallPlan);

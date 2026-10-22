@@ -145,6 +145,16 @@ public static class AppUpdateReplacement
 {
     public static TimeSpan DefaultExitTimeout => TimeSpan.FromMinutes(5);
 
+    /// How often each folder rename is tried, and how long apart, before the
+    /// failure counts: an antivirus scan, the search indexer or Explorer may
+    /// hold a file in the folder for a moment.
+    public const int MoveAttempts = 10;
+    public static TimeSpan MoveRetryDelay => TimeSpan.FromMilliseconds(300);
+
+    /// A `.update-new` copy written to this recently may still be filling: the
+    /// pruning at app start leaves it to the helper that is writing it.
+    public static TimeSpan NewCopyGrace => TimeSpan.FromMinutes(10);
+
     /// The moves a successful replacement performs, in order.
     public static IReadOnlyList<AppUpdateMove> Plan(AppUpdateInstallPlan plan) =>
     [
@@ -178,15 +188,18 @@ public static class AppUpdateReplacement
 
     /// Removes install-folder backups a crashed or killed helper could not
     /// delete, and a copy it left beside the install. The new app clears them
-    /// on its next start, after `RestoreInterruptedInstall`. Returns how many
+    /// on its next start, after `RestoreInterruptedInstall`. A copy written to
+    /// within `NewCopyGrace` of `now` is kept: an install on quit's helper may
+    /// still be filling it while the app was opened again. Returns how many
     /// backups were removed.
-    public static int PruneBackups(string installDirectory)
+    public static int PruneBackups(string installDirectory, DateTime? now = null)
     {
         var install = Path.GetFullPath(installDirectory.TrimEnd(Path.DirectorySeparatorChar));
         var parent = Path.GetDirectoryName(install);
         if (parent is null || !Directory.Exists(parent)) return 0;
         var prefix = Path.GetFileName(install) + ".backup-";
-        RemoveFolder(install + ".update-new");
+        var copy = install + ".update-new";
+        if (!WrittenSince(copy, (now ?? DateTime.UtcNow) - NewCopyGrace)) RemoveFolder(copy);
         var removed = 0;
         foreach (var folder in Directory.GetDirectories(parent))
         {
@@ -195,6 +208,23 @@ public static class AppUpdateReplacement
             catch (IOException) { } catch (UnauthorizedAccessException) { }
         }
         return removed;
+    }
+
+    /// True when the folder, or anything in it, was created or written after
+    /// `since` (UTC). Copied files keep their source's write time, so the
+    /// creation times count too. A folder that cannot be read counts as written,
+    /// so nothing is removed on a guess.
+    private static bool WrittenSince(string folder, DateTime since)
+    {
+        try
+        {
+            if (!Directory.Exists(folder)) return false;
+            static DateTime Latest(FileSystemInfo entry) =>
+                entry.CreationTimeUtc > entry.LastWriteTimeUtc ? entry.CreationTimeUtc : entry.LastWriteTimeUtc;
+            var root = new DirectoryInfo(folder);
+            return Latest(root) > since || root.EnumerateFileSystemInfos("*", SearchOption.AllDirectories).Any(entry => Latest(entry) > since);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return true; }
     }
 
     /// Verifies the package SHA-256 again immediately before the swap.
@@ -272,9 +302,14 @@ public static class AppUpdateReplacement
     /// Puts back an install an interrupted swap left aside: when the install
     /// folder is missing, or holds no executable, and a backup with one exists
     /// beside it, the newest such backup is renamed back (a folder without the
-    /// executable is removed first). Called when the helper starts and when the
-    /// app starts, before old backups are pruned. True when it put one back;
-    /// never throws.
+    /// executable is removed first). True when it put one back; never throws.
+    ///
+    /// Best effort. It can only help when something still runs: with the
+    /// install folder gone or half, the app cannot start from it, so in practice
+    /// it is the next helper (which runs from the staged folder) that puts the
+    /// install back, and the call at app start finds a whole install and does
+    /// nothing. It is still called there, before old backups are pruned, so a
+    /// pruning never removes the only whole copy.
     public static bool RestoreInterruptedInstall(string installDirectory)
     {
         try
@@ -300,7 +335,12 @@ public static class AppUpdateReplacement
     /// `runningAgain` are injected so the Mac-side check can run it end to end
     /// against temporary folders without a real process; on Windows the helper
     /// passes the real implementations (null means CopyDirectory, Directory.Move
-    /// and no process check).
+    /// and no process check). Each rename through `mover`, the rollback's too,
+    /// is tried `MoveAttempts` times `moveRetryDelay` apart (`MoveRetryDelay`
+    /// when null) while it fails with an IOException or an
+    /// UnauthorizedAccessException. A `runningAgain` that throws counts as the
+    /// app running again: the swap is skipped, the staged update kept, and the
+    /// result's `Error` says why.
     ///
     /// The order mirrors M/AppUpdate.swift `installScript`: an install an
     /// earlier swap left aside is put back first; after the app has quit and the
@@ -317,10 +357,13 @@ public static class AppUpdateReplacement
         Action<string, string>? copier = null,
         CancellationToken cancellation = default,
         Action<string, string>? mover = null,
-        Func<CancellationToken, Task<bool>>? runningAgain = null)
+        Func<CancellationToken, Task<bool>>? runningAgain = null,
+        TimeSpan? moveRetryDelay = null)
     {
         var doCopy = copier ?? CopyDirectory;
-        var doMove = mover ?? Directory.Move;
+        var move = mover ?? Directory.Move;
+        var delay = moveRetryDelay ?? MoveRetryDelay;
+        Task DoMove(string from, string to, CancellationToken token) => MoveWithRetryAsync(move, from, to, delay, token);
         var moves = new List<AppUpdateMove>();
         if (!plan.IsValid)
             return new(false, false, Locale.Get("appUpdate.error.planInvalid"), moves, false, false);
@@ -354,11 +397,19 @@ public static class AppUpdateReplacement
             return new(false, false, error.Message, moves, startedOld, false);
         }
 
-        if (!plan.Relaunch && runningAgain is not null && await runningAgain(cancellation))
+        if (!plan.Relaunch && runningAgain is not null)
         {
-            // The app was opened again: the update waits for the next quit.
-            RemoveFolder(plan.NewDirectory);
-            return new(false, false, null, moves, false, false, Skipped: true);
+            // The app was opened again: the update waits for the next quit. A
+            // check that cannot tell is read the same way, and its reason logged.
+            string? unsure = null;
+            bool again;
+            try { again = await runningAgain(cancellation); }
+            catch (Exception error) when (error is not OutOfMemoryException) { again = true; unsure = error.Message; }
+            if (again)
+            {
+                RemoveFolder(plan.NewDirectory);
+                return new(false, false, unsure, moves, false, false, Skipped: true);
+            }
         }
 
         var backupTaken = false;
@@ -367,11 +418,11 @@ public static class AppUpdateReplacement
         {
             if (Directory.Exists(plan.InstallDirectory))
             {
-                doMove(plan.InstallDirectory, plan.BackupDirectory);
+                await DoMove(plan.InstallDirectory, plan.BackupDirectory, cancellation);
                 moves.Add(Plan(plan)[0]);
                 backupTaken = true;
             }
-            doMove(plan.NewDirectory, plan.InstallDirectory);
+            await DoMove(plan.NewDirectory, plan.InstallDirectory, cancellation);
             moves.Add(Plan(plan)[1]);
             installed = true;
 
@@ -380,7 +431,9 @@ public static class AppUpdateReplacement
         catch (Exception error)
         {
             RemoveFolder(plan.NewDirectory);
-            return await UndoAsync(plan, moves, backupTaken, installed, startApp, error.Message);
+            // The rollback is never cancelled: the machine must end with a whole install.
+            return await UndoAsync(plan, moves, backupTaken, installed, startApp, error.Message,
+                (from, to) => DoMove(from, to, CancellationToken.None));
         }
 
         // The backup is only removed once the new app has started, or, without
@@ -397,6 +450,22 @@ public static class AppUpdateReplacement
         catch (IOException) { } catch (UnauthorizedAccessException) { }
     }
 
+    /// One rename through `mover`, tried up to `MoveAttempts` times `delay`
+    /// apart while it fails with an IOException or an
+    /// UnauthorizedAccessException; the last failure is thrown.
+    private static async Task MoveWithRetryAsync(
+        Action<string, string> mover, string from, string to, TimeSpan delay, CancellationToken cancellation)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try { mover(from, to); return; }
+            catch (Exception error) when ((error is IOException or UnauthorizedAccessException) && attempt < MoveAttempts)
+            {
+                await Task.Delay(delay, cancellation);
+            }
+        }
+    }
+
     private static async Task<bool> TryStartAsync(Func<string, Task> startApp, string executable)
     {
         try { await startApp(executable); return true; }
@@ -405,7 +474,7 @@ public static class AppUpdateReplacement
 
     private static async Task<AppUpdateReplacementResult> UndoAsync(
         AppUpdateInstallPlan plan, List<AppUpdateMove> moves, bool backupTaken, bool installed,
-        Func<string, Task> startApp, string reason)
+        Func<string, Task> startApp, string reason, Func<string, string, Task> move)
     {
         // Whatever failed, the machine ends with the version the user had.
         if (installed && backupTaken) RemoveFolder(plan.InstallDirectory);
@@ -416,7 +485,7 @@ public static class AppUpdateReplacement
             try
             {
                 if (Directory.Exists(plan.InstallDirectory)) Directory.Delete(plan.InstallDirectory, true);
-                Directory.Move(plan.BackupDirectory, plan.InstallDirectory);
+                await move(plan.BackupDirectory, plan.InstallDirectory);
                 moves.Add(Rollback(plan));
                 restored = true;
             }
