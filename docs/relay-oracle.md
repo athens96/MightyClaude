@@ -117,10 +117,11 @@ bash relay/deploy/oracle/setup.sh
 
 폰 알림은 릴레이가 FCM으로 보낸다. 키는 서버에만 둔다(저장소·앱에 넣지 않는다).
 
-1. Firebase 콘솔 → 프로젝트 설정 → 서비스 계정 → **새 비공개 키 생성**. JSON 파일을 받는다. 이 키에는 Firebase Cloud Messaging API 권한이 있다. Google Cloud 콘솔에서 그 프로젝트의 "Firebase Cloud Messaging API"가 사용 설정되어 있는지 확인한다.
+1. Firebase 콘솔 → 프로젝트 설정 → 서비스 계정 → **새 비공개 키 생성**. JSON 파일을 받는다. **키는 반드시 앱의 `google-services.json`과 같은 Firebase 프로젝트에서 받는다.** 다른 프로젝트의 키면 FCM이 모든 전송을 `SENDER_ID_MISMATCH`로 거절한다(릴레이는 핸들을 지우지 않고 로그에 `push failed: fcm 403 SENDER_ID_MISMATCH`를 남긴다). 이 키에는 Firebase Cloud Messaging API 권한이 있다. Google Cloud 콘솔에서 그 프로젝트의 "Firebase Cloud Messaging API"가 사용 설정되어 있는지 확인한다.
 2. 받은 파일을 서버의 `relay/deploy/oracle/fcm-service-account.json`으로 올린다. 예: `scp <받은 파일> <서버>:~/<저장소>/relay/deploy/oracle/fcm-service-account.json`. 올린 뒤 서버에서 `chmod 600 relay/deploy/oracle/fcm-service-account.json`으로 소유자만 읽게 한다(`setup.sh`가 곧 `secrets/`로 옮기고 지운다).
 3. 서버에서 `bash relay/deploy/oracle/setup.sh`를 다시 실행한다. 키를 `secrets/`로 옮기고(읽기 전용, 컨테이너 사용자만) 릴레이를 다시 빌드하고, 키가 있으면 매번 릴레이를 재시작해 키를 읽힌다. 끝에 릴레이의 가장 최근 시작 로그가 `[push] FCM sending on`일 때만 "푸시 알림 전송: 켜짐"이 보인다. "꺼져 있습니다" 경고가 나오면 JSON 파일이 맞는지(내려받은 그대로인지) 확인하고 `sudo docker compose logs relay`에서 `[push] FCM`을 본다. 키가 깨졌어도 릴레이는 계속 돌고 푸시 전송만 503이다.
-4. Mac에서 `node relay/deploy/oracle/push-check.mjs <도메인>`을 실행한다. `✔ 푸시 경로`가 보이면 된다.
+4. Mac에서 `node relay/deploy/oracle/push-check.mjs <도메인>`을 실행한다. `✔ 푸시 경로`가 보이면 릴레이에서 FCM까지는 된다. FCM이 다른 이유로 거절하면 FCM 오류 코드를 보여 준다.
+5. 재배포할 때마다 실제 기기로 알림 하나를 받아 본다(예: 폰과 페어링한 Mac에서 짧은 작업을 끝낸다). `push-check.mjs`는 가짜 토큰을 쓰므로 키와 앱의 Firebase 프로젝트가 다른 것을 알아내지 못한다. 알림이 오지 않으면 `sudo docker compose logs relay`에서 `push failed: fcm`을 찾아 FCM 오류 코드를 본다.
 
 핸들 파일은 이름 있는 볼륨 `relay_data`에 있어 재배포해도 남는다. 키를 바꾸려면 새 파일을 같은 이름으로 올리고 3을 다시 한다.
 

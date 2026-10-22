@@ -167,11 +167,13 @@ QR/문자열: `mightyclaude://pair?v=2&sid=<serverId>&pk=<b64url 공개키>&rela
 - **핸들**과 **비밀**은 각각 32 무작위 바이트 base64url(43자)이다. 폰은 핸들을 페어링된 호스트에게만(m1 `POST /m1/push/register`) 주고, 비밀은 자기만 갖는다. 비밀 없이는 핸들의 토큰을 바꾸거나 지울 수 없다. 릴레이는 비밀의 SHA-256만 저장한다.
 - **호스트 인증**은 제어 소켓과 같다: `SHA-256(hostToken) == serverId`. 릴레이는 핸들을 처음 보낸 `serverId`에 묶고, 다른 `serverId`의 전송은 403이다. 폰은 호스트마다 다른 핸들을 받는다.
 - **FCM 메시지**: 데이터 전용 `{ v: "1", h: <handle>, p: <payload> }`, `android.priority: HIGH`, `ttl: 3600s`. `payload`는 `^[A-Za-z0-9_-]{24,3072}$`.
-- **토큰 정리**: FCM이 토큰을 무효라고 하면(404 `UNREGISTERED`, 400 `INVALID_ARGUMENT`, 403 `SENDER_ID_MISMATCH`) 릴레이가 핸들을 지우고 410으로 답한다. 호스트는 410·404·403을 받으면 그 기기의 핸들을 지운다. FCM이 바쁘면(429·5xx) 502와 `Retry-After`다.
+- **토큰 정리**: FCM이 토큰 자체를 무효라고 할 때만(`UNREGISTERED`, 또는 등록 토큰을 지목한 `INVALID_ARGUMENT`) 릴레이가 핸들을 지우고 410으로 답한다. 호스트는 410·404·403을 받으면 그 기기의 핸들을 지운다. `SENDER_ID_MISMATCH`(서비스 계정 키가 앱과 다른 Firebase 프로젝트), 오류 코드 없는 404·`NOT_FOUND`, 토큰을 지목하지 않은 `INVALID_ARGUMENT`는 릴레이 설정 문제라 핸들을 두고 502 `{ error: "fcm-failed", fcmError: <FCM 오류 코드> }`로 답하며, 로그에는 FCM 오류 코드만 남긴다(핸들·토큰 없음). FCM이 바쁘면(429·5xx) 502와 `Retry-After`다.
+- **전체 전송 한도**: serverId별·IP별 한도를 먼저 세고, 핸들이 그 serverId에 묶여 FCM까지 갈 때만 전체 한도를 쓴다. 모르는 핸들(404)·남의 핸들(403)은 전체 한도를 쓰지 않는다.
+- **FCM 연결**: FCM 요청과 액세스 토큰 교환은 각각 10초 안에 끝나야 한다(넘으면 502와 `Retry-After`). 액세스 토큰 교환이 실패하기 시작하면 `[push] FCM access token exchange failing`, 다시 되면 `[push] FCM access token exchange working again`을 한 번씩만 남긴다.
 - **한도**(TURN과 같은 슬라이딩 창, 기본 10분): 전송은 serverId당 120, IP당 240, 전체 3000. 핸들 등록·갱신·삭제는 IP당 30이고, 핸들 등록은 전체로도 300이다. IP는 IPv6이면 /64 하나로 세고(한 가입자가 보통 /64 전체를 쓴다) IPv4-매핑 IPv6는 그 IPv4로 센다. 전송의 IP당 한도도 같은 방식이다. 넘으면 429와 `Retry-After`.
 - **저장**: `PUSH_STORE_PATH`의 JSON 파일(0600). 120일 동안 쓰이지 않은 핸들은 지운다. 핸들은 최대 2만 개이고, 가득 차면 먼저 오래 쓰이지 않은 핸들을 비우고, 그래도 가득이면 호스트가 아직 한 번도 쓰지 않은 핸들 중 가장 오래된 것부터 비운다(호스트가 쓴 핸들은 자리 때문에 지우지 않는다). 비울 핸들이 없으면 등록은 503 `full`이다. 읽을 수 없는 파일은 `.unreadable-<시각>`으로 옮기고 빈 상태로 시작한다.
 - **로그**: `[serverId 앞 8자] push sent` 같은 줄만 남긴다. 핸들·토큰·봉투는 남기지 않는다.
-- 서비스 계정 키(`FCM_SERVICE_ACCOUNT_FILE`)가 없거나 읽히지 않거나 JSON·개인 키가 깨졌으면 릴레이는 시작 때 `[push] FCM disabled`를 남기고 전송만 503이다. 릴레이는 계속 돌고 나머지는 그대로다. 키를 읽으면 `[push] FCM sending on`이다.
+- 서비스 계정 키(`FCM_SERVICE_ACCOUNT_FILE`)가 없거나 읽히지 않거나 JSON·개인 키가 깨졌으면 릴레이는 시작 때 `[push] FCM disabled`를 남기고 전송만 503이다. 릴레이는 계속 돌고 나머지는 그대로다. 키를 읽으면 `[push] FCM sending on`이다. 키는 앱의 `google-services.json`과 같은 Firebase 프로젝트의 것이어야 한다. 설정 순서와 재배포 뒤 실제 기기 확인은 `docs/relay-oracle.md` "푸시 알림(FCM) 켜기"다.
 
 ## TURN 자격증명 발급 (릴레이 평문, E2EE 아님)
 
