@@ -60,6 +60,7 @@ it('keeps every link the app and the Mac hand out', () => {
       '/',
       '/pair',
       '/connect',
+      '/settings',
       '/host/[hostId]',
       '/host/[hostId]/screen',
       '/host/[hostId]/session/[sessionId]',
