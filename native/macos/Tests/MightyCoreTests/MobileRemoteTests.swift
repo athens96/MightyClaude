@@ -1135,6 +1135,32 @@ extension MobileRemoteTests {
         #expect(try JSONDecoder().decode(MobilePushMessage.self, from: plaintext).id == "request:r:b")
     }
 
+    /// A send the relay asked to retry stops when phone remote access is switched off or the app
+    /// closes meanwhile, as on Windows: no retry goes out after that.
+    @Test func aRetryingSendStopsWhenRemoteAccessGoesOffOrTheAppCloses() async throws {
+        for closing in [false, true] {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-push-" + UUID().uuidString, isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let (service, seal) = try Self.pushService(directory)
+            let host = FakeMobileHost()  // the service holds its delegate weakly
+            defer { withExtendedLifetime(host) {} }
+            await service.attach(host)
+            let transport = RecordingPushTransport()
+            transport.outcomes = [.retry(after: nil), .retry(after: nil), .retry(after: nil)]
+            await service.setPushTransport(transport, retryDelays: [0, 0], now: { Date(timeIntervalSince1970: 1_000) })
+            await service.setSettingsWithoutStarting(MobileRemoteSettings(enabled: true))
+            _ = try await call(service, "POST", "/m1/push/register", body: ["handle": seal.handle, "kinds": ["permission"]], device: seal.clientId)
+            var pane = MobilePushPane(sessionId: "pane-1", workspace: "demo", title: "Claude 1", status: "running", preview: nil, requests: [], signInLost: false)
+            for task in await service.pushObserve([pane]) { await task.value }
+            transport.onSend = { _ in
+                if closing { await service.shutdown() } else { await service.setSettingsWithoutStarting(MobileRemoteSettings(enabled: false)) }
+            }
+            pane.requests = [MobilePushRequest(id: "a", runId: "r", kind: .permission, summary: "", buttons: .claude)]
+            for task in await service.pushObserve([pane]) { await task.value }
+            #expect(transport.sent.count == 1, "closing: \(closing)")
+        }
+    }
+
     @Test func nothingIsSentAfterShutdown() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-push-" + UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -1161,10 +1187,16 @@ final class RecordingPushTransport: MobilePushTransport, @unchecked Sendable {
     private let lock = NSLock()
     private var log: [Sent] = []
     var outcomes: [MobilePushSendOutcome] = []
+    /// Runs after each send is recorded and before it is answered, with the number of sends so far.
+    var onSend: (@Sendable (Int) async -> Void)?
     var sent: [Sent] { lock.lock(); defer { lock.unlock() }; return log }
     func send(_ request: MobilePushSendRequest, to url: URL, hostToken: String) async -> MobilePushSendOutcome {
-        lock.lock(); defer { lock.unlock() }
-        log.append(Sent(request: request, url: url, hostToken: hostToken))
-        return outcomes.isEmpty ? .sent : outcomes.removeFirst()
+        let (count, outcome, hook): (Int, MobilePushSendOutcome, (@Sendable (Int) async -> Void)?) = {
+            lock.lock(); defer { lock.unlock() }
+            log.append(Sent(request: request, url: url, hostToken: hostToken))
+            return (log.count, outcomes.isEmpty ? .sent : outcomes.removeFirst(), onSend)
+        }()
+        await hook?(count)
+        return outcome
     }
 }

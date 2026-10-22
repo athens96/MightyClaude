@@ -1495,6 +1495,8 @@ extension MobileRemoteService {
     private func deliver(_ request: MobilePushSendRequest, to url: URL, hostToken: String, deviceId: String, messageId: String) async {
         var waits = pushRetryDelays
         while true {
+            // Switched off or closing meanwhile: nothing more goes out.
+            guard settings.enabled, !disposed else { return }
             switch await pushTransport.send(request, to: url, hostToken: hostToken) {
             case .sent:
                 return
@@ -1510,6 +1512,7 @@ extension MobileRemoteService {
                     Self.log.error("push: \(messageId, privacy: .public) the relay could not take it; gave up")
                     return
                 }
+                guard settings.enabled, !disposed else { return }
                 let asked = after.flatMap { $0.isFinite ? max(0, $0) : nil } ?? 0
                 let wait = min(max(waits.removeFirst(), asked), Self.pushMaximumRetryWait)
                 if wait > 0 { try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000)) }
