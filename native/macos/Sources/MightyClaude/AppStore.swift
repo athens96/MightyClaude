@@ -195,12 +195,16 @@ final class AppStore: ObservableObject, DelegationHost {
     var appUpdateServiceStorage: AppUpdateService?
     /// The automatic app update (AppStore+AppUpdate.swift): its periodic loop,
     /// the last check attempt this run (successful or not), a check in flight,
-    /// and whether the Mac is logging out or shutting down.
+    /// and whether the quit under way comes from a logout, restart or shutdown
+    /// (set from the quit's reason when it arrives).
     var appUpdateLoop: Task<Void, Never>?
     var appUpdateLastAttempt: Date?
     var appUpdateCheckInFlight = false
     var appUpdatePoweringOff = false
-    var appUpdatePowerOffObserver: AnyCancellable?
+    /// The idle-restart offer (the countdown banner) and its one-second ticks
+    /// while it counts down.
+    @Published var appUpdateRestart: AppUpdateRestartState = .idle
+    var appUpdateCountdownTicks: Task<Void, Never>?
     var slashScansInFlight = Set<String>()
     @Published var attachmentErrors: [String: String] = [:]
     @Published var importingAttachments = Set<String>()
@@ -1586,10 +1590,12 @@ final class AppStore: ObservableObject, DelegationHost {
             result["petPlan"] = petPlan
             let planComposer = await runPlanComposerSmoke(sessionId: claudeId)
             result["planComposer"] = planComposer
+            let appUpdateRestart = await runAppUpdateRestartSmoke(window: window)
+            result["appUpdateRestart"] = appUpdateRestart
             result["passed"] = completedCorrectly && settingsRestored && window != nil
                 && (usageReset["passed"] as? Bool == true) && (sidebarResize["passed"] as? Bool == true)
                 && (backgroundWorkLine["passed"] as? Bool == true) && (petPlan["passed"] as? Bool == true)
-                && (planComposer["passed"] as? Bool == true)
+                && (planComposer["passed"] as? Bool == true) && (appUpdateRestart["passed"] as? Bool == true)
             result["status"] = snapshot.sessions.first { $0.id == sessionId }?.status ?? "missing"
         } catch {
             result["error"] = error.localizedDescription
@@ -1695,6 +1701,45 @@ final class AppStore: ObservableObject, DelegationHost {
         snapshot.backgroundWorkOpen = originalOpen
         do { try await flush() } catch { result["restoreError"] = error.localizedDescription }
         result["restored"] = snapshot.showsBackgroundWork == originalShown && snapshot.backgroundWorkOpen == originalOpen
+        return result
+    }
+
+    /// The staged update's controls from a fixed `.ready` state: the status bar's
+    /// "restart now" and the countdown banner are drawn, "later" snoozes, and a
+    /// countdown in a build that cannot update on its own is cancelled. Nothing
+    /// installs: the fixture has no staged bundle or package, so the helper can
+    /// never start, and no countdown tick runs.
+    private func runAppUpdateRestartSmoke(window: NSWindow?) async -> [String: Any] {
+        let originalUpdate = appUpdate, originalRestart = appUpdateRestart
+        var result: [String: Any] = ["passed": false]
+        var fixture = AppUpdateState()
+        fixture.phase = .ready
+        fixture.availability = AppUpdateAvailability(current: appVersion, manifest: AppUpdateManifest(version: "99.0.0", macos: AppUpdateAsset(url: URL(string: "https://example.invalid/smoke.zip")!)))
+        appUpdate = fixture
+        appUpdateRestart = .countingDown(until: Date().addingTimeInterval(AppUpdateAuto.countdown))
+        try? await Task.sleep(for: .milliseconds(350))
+        // As with the sidebar handle, presence is recorded but cannot decide the
+        // result: SwiftUI builds its accessibility tree only for an assistive client.
+        var tree: [[String: Any]] = []
+        result["restartButtonPresent"] = window.flatMap { smokeAccessibilityElement($0, identifier: "app-update-restart", tree: &tree) } != nil
+        result["countdownBannerPresent"] = window.flatMap { smokeAccessibilityElement($0, identifier: "app-update-countdown", tree: &tree) } != nil
+        if let window { result["screenshot"] = (try? captureSmokeWindow(window, filename: "app-update-countdown.png"))?.path ?? "" }
+
+        postponeAppUpdateRestart()
+        let snoozed: Bool
+        if case .snoozed(let until) = appUpdateRestart { snoozed = until.timeIntervalSinceNow > AppUpdateAuto.snooze - 60 } else { snoozed = false }
+        result["laterSnoozes"] = snoozed
+
+        appUpdateRestart = .countingDown(until: Date().addingTimeInterval(AppUpdateAuto.countdown))
+        await offerAppUpdateRestart()
+        let cancelled = appUpdateRestart == .idle
+        result["cancelledWithoutAutomaticUpdates"] = cancelled
+        let neverInstalled = appUpdate.phase == .ready && appUpdateCountdownTicks == nil
+        result["neverInstalled"] = neverInstalled
+
+        result["passed"] = snoozed && cancelled && neverInstalled
+        appUpdate = originalUpdate
+        appUpdateRestart = originalRestart
         return result
     }
 

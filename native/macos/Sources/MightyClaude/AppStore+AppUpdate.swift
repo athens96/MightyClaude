@@ -11,7 +11,8 @@ import MightyCore
 /// With the "automatic" switch on (the default) the app checks at launch and
 /// every `AppUpdateAuto.tick` whether a check is due, downloads and stages a
 /// newer version without asking, and installs it when the app quits
-/// (`launchAppUpdateOnQuit`). The rules live in `AppUpdateAuto`.
+/// (`launchAppUpdateOnQuit`) or, once the app is idle, after a 60-second
+/// countdown banner (`offerAppUpdateRestart`). The rules live in `AppUpdateAuto`.
 extension AppStore {
     enum AppUpdatePhase: Equatable {
         case idle, checking, upToDate, available, downloading(Double), staging, ready, installing
@@ -101,30 +102,119 @@ extension AppStore {
     /// launch and when the switch goes on; cancelled when it goes off and at quit.
     func startAppUpdateLoop() {
         guard appUpdateLoop == nil, appUpdateAutomatic, appUpdateCanRunAutomatically else { return }
-        observeAppUpdatePowerOff()
         appUpdateLoop = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(AppUpdateAuto.tick))
                 guard !Task.isCancelled, let self, !self.ending else { return }
-                self.appUpdateTick()
+                await self.appUpdateTick()
             }
         }
     }
 
+    /// Stops the loop and a running countdown (the banner goes away; a "later" stays).
     func stopAppUpdateLoop() {
         appUpdateLoop?.cancel()
         appUpdateLoop = nil
+        cancelAppUpdateCountdown()
     }
 
-    /// One pass of the loop: a check when one is due. The idle restart offer
-    /// joins this pass.
-    func appUpdateTick(now: Date = Date()) {
+    /// One pass of the loop: a check when one is due, then the idle restart offer.
+    func appUpdateTick(now: Date = Date()) async {
         checkForAppUpdateAutomatically(now: now)
+        await offerAppUpdateRestart()
     }
 
-    /// Off stops the loop and any download; a staged update then installs only
-    /// from "restart now". On starts the loop, checks when due and downloads
-    /// what a check already found.
+    // MARK: Idle restart
+
+    /// What the app is doing right now, for `AppUpdateAuto.idleBlockers`: one
+    /// source per row of the plan's idle table.
+    func appIdleFacts(now: Date) async -> AppIdleFacts {
+        // The actors first, so everything read on the main actor below is current.
+        let phoneUploads = await mobileRemote.openUploadCount()
+        let delegationPending = await delegation?.pendingWork() ?? 0
+        let sessions = snapshot.sessions
+        let agentRuns = sessions.filter { $0.kind != "shell" && $0.status == "running" }.count + pendingRuns.count + heldForUpdate.count
+            + (delegation?.endingRuns.count ?? 0) + delegationPending
+        let pendingCards = toolPermissions.values.reduce(0) { $0 + $1.count } + antigravityBoard.cards.count + webOpenRequests.count
+        let drafts = self.drafts.values.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count
+            + attachmentDrafts.values.filter { !$0.isEmpty }.count + importingAttachments.count
+        let terminals = sessions.filter { $0.kind == "shell" && $0.status == "running" }.count
+            + agentTerminals.values.reduce(0) { $0 + $1.pane.runningHandles().count }
+            + (setupRun?.finished == false ? 1 : 0) + setupTerminals.count + cliLoginPending.count + backgroundLoginJobs.count
+        let cliWork = isUpdatingCLIs || automaticUpdateRunning || isManagingPlugins || updatingPluginsFor != nil
+            || claudeModelResetInProgress || toolkitRunning || componentAction != nil
+        let modal = hasModal || setupConfirmation != nil || toolkitShowConfirmation
+            || NSApp.modalWindow != nil || NSApp.windows.contains { $0.attachedSheet != nil }
+        // Any keyboard or mouse input in the login session, in this app or another.
+        let inputIdle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
+        return AppIdleFacts(agentRuns: agentRuns, pendingCards: pendingCards, queuedInputs: queuedInputs.values.filter { !$0.isEmpty }.count,
+                            drafts: drafts, terminals: terminals, cliWork: cliWork,
+                            screenSharing: screenShareMenuBar?.isActive ?? false, phoneUploads: phoneUploads, remoteHostRuns: remoteHostState.activeRuns,
+                            blockingModal: modal, lastUserInput: now.addingTimeInterval(-inputIdle), lastAgentActivity: providerLastActive.values.max())
+    }
+
+    /// One step of the idle-restart offer (`AppUpdateAuto.restartOffer`): starts
+    /// the countdown banner when the app is idle, cancels it quietly when it no
+    /// longer is, and restarts to install when it runs out.
+    func offerAppUpdateRestart() async {
+        guard !ending else { return }
+        let facts = await appIdleFacts(now: Date())
+        guard !ending else { return }
+        let now = Date()
+        let decision = AppUpdateAuto.restartOffer(appUpdateRestart, ready: appUpdate.phase == .ready,
+                                                  automatic: appUpdateAutomatic && appUpdateCanRunAutomatically,
+                                                  blockers: AppUpdateAuto.idleBlockers(facts, now: now), now: now)
+        // Unchanged state is not set again: the store would redraw every second.
+        if appUpdateRestart != decision.state { appUpdateRestart = decision.state }
+        switch decision.action {
+        case .none: break
+        case .startCountdown: startAppUpdateCountdownTicks()
+        case .cancel: stopAppUpdateCountdownTicks()
+        case .restart:
+            stopAppUpdateCountdownTicks()
+            installAppUpdateAndRelaunch()
+        }
+    }
+
+    /// The banner's "restart now".
+    func restartForAppUpdateNow() {
+        stopAppUpdateCountdownTicks()
+        appUpdateRestart = .idle
+        installAppUpdateAndRelaunch()
+    }
+
+    /// The banner's "later": no banner for `AppUpdateAuto.snooze`; quitting still installs.
+    func postponeAppUpdateRestart() {
+        stopAppUpdateCountdownTicks()
+        appUpdateRestart = AppUpdateAuto.later(now: Date())
+    }
+
+    /// Takes the banner away without a word; a "later" is kept.
+    private func cancelAppUpdateCountdown() {
+        stopAppUpdateCountdownTicks()
+        if case .countingDown = appUpdateRestart { appUpdateRestart = .idle }
+    }
+
+    /// While the banner counts down, the offer is asked again every `AppUpdateAuto.countdownTick`.
+    private func startAppUpdateCountdownTicks() {
+        appUpdateCountdownTicks?.cancel()
+        appUpdateCountdownTicks = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(AppUpdateAuto.countdownTick))
+                guard !Task.isCancelled, let self, !self.ending, case .countingDown = self.appUpdateRestart else { return }
+                await self.offerAppUpdateRestart()
+            }
+        }
+    }
+
+    private func stopAppUpdateCountdownTicks() {
+        appUpdateCountdownTicks?.cancel()
+        appUpdateCountdownTicks = nil
+    }
+
+    /// Off stops the loop, any download and the countdown; a staged update then
+    /// installs only from "restart now". On starts the loop, checks when due and
+    /// downloads what a check already found.
     private func appUpdateAutomaticChanged(_ on: Bool) {
         guard on else {
             stopAppUpdateLoop()
@@ -134,14 +224,6 @@ extension AppStore {
         guard appUpdateCanRunAutomatically else { return }
         startAppUpdateLoop()
         if appUpdate.phase == .available { downloadAppUpdate() } else { checkForAppUpdateAutomatically() }
-    }
-
-    /// Logging out, restarting or shutting down: quitting then leaves the
-    /// staged update for the next quit (`AppUpdateAuto.installsOnQuit`).
-    private func observeAppUpdatePowerOff() {
-        guard appUpdatePowerOffObserver == nil else { return }
-        appUpdatePowerOffObserver = NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.willPowerOffNotification)
-            .sink { [weak self] _ in self?.appUpdatePoweringOff = true }
     }
 
     private var appUpdateBusy: Bool {
@@ -243,8 +325,8 @@ extension AppStore {
 
     /// Called first thing in `shutdown()`: a staged update is installed once
     /// the app has quit, without opening it again. Skipped with the switch off,
-    /// while an install is already under way, at logout or shutdown, and in
-    /// smoke tests. The returned task is awaited at the end of `shutdown()` so
+    /// while an install is already under way, when the quit's reason is a
+    /// logout, restart or shutdown (`appUpdatePoweringOff`), and in smoke tests. The returned task is awaited at the end of `shutdown()` so
     /// the helper has started before the process ends.
     func launchAppUpdateOnQuit() -> Task<Void, Never>? {
         guard AppUpdateAuto.installsOnQuit(ready: appUpdate.phase == .ready, automatic: appUpdateAutomatic,
@@ -275,15 +357,20 @@ extension AppStore {
         let script = AppUpdateService.installScript(stagedApp: staged, destination: destination, pid: ProcessInfo.processInfo.processIdentifier, relaunch: relaunch)
         let service = appUpdateService
         return {
-            // Rule 4: re-verify the package on disk immediately before replacement.
-            if let size = asset.size {
-                let actual = (try? FileManager.default.attributesOfItem(atPath: package.path)[.size] as? Int) ?? -1
-                if actual != size { throw MightyError(L("settings.appUpdate.errorSizeMismatch")) }
-            }
-            if let sha256 = asset.sha256, try AppUpdateService.fileDigest(package) != sha256 {
-                throw MightyError(L("settings.appUpdate.errorDigestMismatch"))
-            }
+            // Rule 4: re-verify the package on disk immediately before replacement,
+            // off the main actor (hashing the package takes a while).
+            try await Task.detached { try Self.verifyAppUpdatePackage(package, asset: asset) }.value
             try await service.launchInstaller(script: script, near: package)
+        }
+    }
+
+    private nonisolated static func verifyAppUpdatePackage(_ package: URL, asset: AppUpdateAsset) throws {
+        if let size = asset.size {
+            let actual = (try? FileManager.default.attributesOfItem(atPath: package.path)[.size] as? Int) ?? -1
+            if actual != size { throw MightyError(L("settings.appUpdate.errorSizeMismatch")) }
+        }
+        if let sha256 = asset.sha256, try AppUpdateService.fileDigest(package) != sha256 {
+            throw MightyError(L("settings.appUpdate.errorDigestMismatch"))
         }
     }
 }

@@ -501,6 +501,10 @@ public actor MobileRemoteService {
         return mine
     }
 
+    /// Files the phone has uploaded or is uploading and has not sent yet: a
+    /// restart would drop them (the automatic app update waits for none).
+    public func openUploadCount() async -> Int { await uploads.count() }
+
     /// Half-finished uploads are bytes nobody will ever claim, so the folder
     /// goes with the host.
     public func shutdown() async { disposed = true; await stop(reason: L("common.appClosing")); await uploads.shutdown() }

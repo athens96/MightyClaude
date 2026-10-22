@@ -216,6 +216,9 @@ final class ScreenShareMenuBarController {
 
     init(service: ScreenShareService) { self.service = service }
 
+    /// A phone is viewing or controlling this Mac's screen right now.
+    var isActive: Bool { state.isActive }
+
     func start() {
         installMonitors()
         // The lock screen and secure input are polled: neither posts a
