@@ -719,23 +719,43 @@ about is refused and the turn goes on; the pane asks afterwards with a card
 - `streams`: agy stream-json turns (recorded from agy 1.4.4 where `recorded`
   says so) and the card's `actions` each must give — `{ kind, action,
   displayName, target?, rule? }`, in the order the denied tool steps came, one
-  per rule, then each `denied_actions` permission no step showed. A command's
+  per rule, then each `denied_actions` permission no step showed. A step counts
+  only when the result's `denied_actions` lists its permission. A command's
   rule is `command(<whole command line>)`; any other denial's rule is what
-  agy's message names after "denied permission for "; a multi-line command or
-  an unnamed denial has none.
+  agy's message names after "denied permission for ", when it names the tool's
+  own permission (`tools.map`). A rule `rules` refuses, an unnamed denial or a
+  tool outside `tools.map` has none. `canAllowAlways` says whether the card
+  offers 항상 허용.
+- `rules`: which rules a card may offer — `refused` (never offered or added:
+  `*`, a parenthesis, a control character, an empty argument, `/`, `~`, a
+  drive root, a permission outside the mapping), `once` (a command that
+  chains, pipes, redirects, substitutes or runs a closed list of destructive
+  programs: offered only as 이번만 허용; a host refuses `always` with 409
+  `remote.error.antigravityOnceOnly`) and `always`. agy's rules are prefixes
+  (probed on agy 1.4.5): `command(echo hi)` allows every command starting with
+  that text, `write_file(<folder>)` everything in it, `command(*)` everything.
+- `tools`: the closed mapping from agy tool to the permission its rule names.
 - `settings`: byte-exact edits of `permissions.allow` in agy's
-  `settings.json` (`before` → add → `afterAdd` → remove → `afterRemove`), the
-  new file a missing one becomes, and the shapes that are refused unchanged
-  (`notJSON`, `notObject`, `permissionsNotObject`, `allowNotArray`). Every byte
-  outside the list stays; a rule already there is never added or removed.
+  `settings.json` (`before` → add → `afterAdd` → remove → `afterRemove` →
+  prune `created` → `afterPrune`), the new file a missing one becomes, and the
+  shapes that are refused unchanged (`notJSON` — a UTF-8 BOM too —,
+  `notObject`, `permissionsNotObject`, `allowNotArray`). Every byte outside the
+  list stays; a CRLF file gets CRLF; a rule already there is never added or
+  removed; what adding created (`permissions`, `allow`, the file) goes again
+  once empty.
 - `remote`: the `/v2` poll event (`type: "antigravityPermission"`) and the
   continuation's start with `antigravityGrant: { requestId, rules, temporary }`;
-  a host adds only rules of a card it reported.
+  a host adds only rules of a card it reported, once per card, and keeps them
+  for good (`temporary: false`) only with its full-access switch on
+  (`refusals`).
 - `mobile`: the card as one `MobilePermission` (`toolName:
   "AntigravityPermission"`, optional `antigravity.actions`) and the answers on
   `POST /m1/sessions/{id}/permission` (`allow`, `allow` + `always`, deny;
-  `always` without `allow` is 400).
+  `always` without `allow` is 400). `onceOnly: true` on an action means the
+  card offers no 항상 허용 (`refusals`: 409); `permissionPlain` is the card of
+  the recorded `command` stream, where it does.
 
 Implementations: `MightyCore/AntigravityPermissions.swift` (checked by
 `AntigravityPermissionTests`, `AntigravityPermissionWireTests`); the Windows host
-follows the same file.
+(`AntigravityPermissionVerification`) and the phone
+(`mobile/src/__tests__/antigravity-permission.test.ts`) read the same file.
