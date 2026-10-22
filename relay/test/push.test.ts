@@ -184,6 +184,22 @@ describe('push send', () => {
     expect((await send(base, identity('host-a'), made.handle)).status).toBe(404);
   });
 
+  it('keeps a handle FCM refuses for a setup reason and logs only the FCM code', async () => {
+    const lines: string[] = [];
+    const { base, sender } = await relay({ logger: (line) => lines.push(line) });
+    const made = await register(base);
+    const host = identity('host-a');
+    sender.next = { kind: 'failed', status: 403, code: 'SENDER_ID_MISMATCH' };
+    const res = await send(base, host, made.handle);
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: 'fcm-failed', fcmError: 'SENDER_ID_MISMATCH' });
+    expect(lines).toContain(`[${host.serverId.slice(0, 8)}] push failed: fcm 403 SENDER_ID_MISMATCH`);
+    expect(lines.join('\n')).not.toContain(made.handle);
+    expect(lines.join('\n')).not.toContain(FCM_TOKEN);
+    sender.next = { kind: 'sent' };
+    expect((await send(base, host, made.handle)).status).toBe(202);
+  });
+
   it('answers 502 with Retry-After when FCM is busy', async () => {
     const { base, sender } = await relay();
     const made = await register(base);
@@ -236,6 +252,28 @@ describe('push send', () => {
     const res = await send(base, host, made.handle);
     expect(res.status).toBe(429);
     expect(Number(res.headers.get('retry-after'))).toBeGreaterThan(0);
+  });
+
+  it('spends the shared send budget only on sends that reach FCM', async () => {
+    const { base, sender } = await relay({ pushMaxSendGlobal: 1 });
+    const made = await register(base);
+    const owner = identity('owner');
+    const stranger = identity('stranger');
+    expect((await send(base, owner, 'B'.repeat(43))).status).toBe(404);
+    expect((await send(base, owner, 'C'.repeat(43))).status).toBe(404);
+    expect((await send(base, owner, made.handle)).status).toBe(202);
+    expect((await send(base, stranger, made.handle)).status).toBe(403);
+    const limited = await send(base, owner, made.handle);
+    expect(limited.status).toBe(429);
+    expect(Number(limited.headers.get('retry-after'))).toBeGreaterThan(0);
+    expect(sender.sent).toHaveLength(1);
+  });
+
+  it('refuses a guessed or foreign handle once its serverId or IP is over budget', async () => {
+    const { base } = await relay({ pushMaxSendPerServerId: 1 });
+    const host = identity('guesser');
+    expect((await send(base, host, 'B'.repeat(43))).status).toBe(404);
+    expect((await send(base, host, 'C'.repeat(43))).status).toBe(429);
   });
 
   it('says 503 when no FCM sender is configured', async () => {
