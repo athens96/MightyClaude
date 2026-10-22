@@ -50,9 +50,14 @@ export interface RelayConfig {
   readonly pushMaxSendPerIp: number;
   /** Push sends across all hosts per window: host identity is self-certified, so this bounds a flood. */
   readonly pushMaxSendGlobal: number;
-  /** Handle registrations, refreshes and deletions per source IP per window. */
+  /** Handle registrations, refreshes and deletions per source IP (IPv6: per /64) per window. */
   readonly pushMaxHandleOpsPerIp: number;
-  /** Handles kept at most; idle ones go first. */
+  /** Handle registrations across all IPs per window: registration needs no account, so this bounds a flood. */
+  readonly pushMaxRegistrationsGlobal: number;
+  /**
+   * Handles kept at most. When full, idle ones go first, then the least recently used
+   * handle no host has used yet; handles a host has used are never dropped for space.
+   */
   readonly pushMaxHandles: number;
   /** A handle neither refreshed nor used for this many days is dropped. */
   readonly pushHandleIdleDays: number;
@@ -88,6 +93,7 @@ const DEFAULTS: RelayConfig = {
   pushMaxSendPerIp: 240,
   pushMaxSendGlobal: 3000,
   pushMaxHandleOpsPerIp: 30,
+  pushMaxRegistrationsGlobal: 300,
   pushMaxHandles: 20_000,
   pushHandleIdleDays: 120,
   trustProxy: false,
@@ -126,6 +132,7 @@ export function loadConfig(overrides: Partial<RelayConfig> = {}): RelayConfig {
     pushMaxSendPerIp: envInt('PUSH_MAX_SEND_PER_IP', DEFAULTS.pushMaxSendPerIp),
     pushMaxSendGlobal: envInt('PUSH_MAX_SEND_GLOBAL', DEFAULTS.pushMaxSendGlobal),
     pushMaxHandleOpsPerIp: envInt('PUSH_MAX_HANDLE_OPS_PER_IP', DEFAULTS.pushMaxHandleOpsPerIp),
+    pushMaxRegistrationsGlobal: envInt('PUSH_MAX_REGISTRATIONS_GLOBAL', DEFAULTS.pushMaxRegistrationsGlobal),
     pushMaxHandles: envInt('PUSH_MAX_HANDLES', DEFAULTS.pushMaxHandles),
     pushHandleIdleDays: envInt('PUSH_HANDLE_IDLE_DAYS', DEFAULTS.pushHandleIdleDays),
     trustProxy: process.env['RELAY_TRUST_PROXY']?.trim() === '1',
