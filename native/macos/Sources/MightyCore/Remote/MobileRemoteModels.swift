@@ -246,9 +246,23 @@ public struct MobilePermission: Codable, Sendable, Equatable, Identifiable {
     public var plan: String?
     /// ISO 8601, when the host received the request.
     public var receivedAt: String?
-    public init(id: String, runId: String, toolName: String, title: String, headline: String? = nil, fields: [MobilePermissionField] = [], summary: String, canAllow: Bool, questionnaire: UserQuestionnaire? = nil, plan: String? = nil, receivedAt: String? = nil) {
+    /// An Antigravity card (the actions a finished turn was refused): answered
+    /// with `POST …/permission` and `always`; absent for any other request.
+    public var antigravity: MobileAntigravityCard?
+    public init(id: String, runId: String, toolName: String, title: String, headline: String? = nil, fields: [MobilePermissionField] = [], summary: String, canAllow: Bool, questionnaire: UserQuestionnaire? = nil, plan: String? = nil, receivedAt: String? = nil,
+                antigravity: MobileAntigravityCard? = nil) {
         self.id = id; self.runId = runId; self.toolName = toolName; self.title = title; self.headline = headline; self.fields = fields
         self.summary = summary; self.canAllow = canAllow; self.questionnaire = questionnaire; self.plan = plan; self.receivedAt = receivedAt
+        self.antigravity = antigravity
+    }
+    /// The Antigravity card as one permission: `toolName` is
+    /// `AntigravityPermission`, and the actions are its fields too, so a phone
+    /// that does not know these cards shows them with allow (once) and deny.
+    public init(antigravity card: AntigravityPermissionRequest) {
+        self.init(id: card.id, runId: card.runId, toolName: MobileAntigravityCard.toolName, title: L("antigravity.permission.title"),
+                  fields: card.actions.map { MobilePermissionField(label: AntigravityPermissionFlow.kindLabel($0.kind), value: $0.target ?? $0.displayName) },
+                  summary: ActivitySupport.clean(card.names.joined(separator: ", "), maximumBytes: 2_048, singleLine: true), canAllow: card.canAllow,
+                  receivedAt: card.receivedAt, antigravity: MobileAntigravityCard(card))
     }
     /// The structured card the desktop shows, so both surfaces read alike.
     /// A plan carries its text as `plan`, and once more as its one field so a
@@ -594,7 +608,36 @@ public struct MobilePermissionAnswer: Codable, Sendable {
     public var requestId: String
     public var runId: String
     public var allow: Bool
-    public init(requestId: String, runId: String, allow: Bool) { self.requestId = requestId; self.runId = runId; self.allow = allow }
+    /// "항상 허용" on an Antigravity card: only with `allow: true`.
+    public var always: Bool?
+    public init(requestId: String, runId: String, allow: Bool, always: Bool? = nil) { self.requestId = requestId; self.runId = runId; self.allow = allow; self.always = always }
+    /// What the answer asks of an Antigravity card.
+    public var antigravityDecision: AntigravityPermissionDecision { allow ? (always == true ? .always : .once) : .deny }
+}
+
+/// `MobilePermission.antigravity`: what an Antigravity turn was refused.
+public struct MobileAntigravityCard: Codable, Sendable, Equatable {
+    public static let toolName = "AntigravityPermission"
+    public var actions: [MobileAntigravityAction]
+    public init(actions: [MobileAntigravityAction]) { self.actions = actions }
+    public init(_ card: AntigravityPermissionRequest) {
+        actions = card.actions.map { MobileAntigravityAction(kind: $0.kind.rawValue, action: $0.action, displayName: $0.displayName, target: $0.target, rule: $0.rule) }
+    }
+}
+public struct MobileAntigravityAction: Codable, Sendable, Equatable {
+    /// `command`, `url`, `file` or `other` (an unknown value reads as `other`).
+    public var kind: String
+    /// agy's permission name (`command`, `write_file`, `read_url`, …).
+    public var action: String
+    /// agy's name for it (`RunCommand`, `WriteFile`).
+    public var displayName: String
+    /// The command line, domain or path, when agy said.
+    public var target: String?
+    /// The allow rule; absent when none can allow it (change the permission mode instead).
+    public var rule: String?
+    public init(kind: String, action: String, displayName: String, target: String? = nil, rule: String? = nil) {
+        self.kind = kind; self.action = action; self.displayName = displayName; self.target = target; self.rule = rule
+    }
 }
 /// `POST /m1/sessions/{id}/plan`: one of the plan card's four answers.
 public struct MobilePlanAnswer: Codable, Sendable {

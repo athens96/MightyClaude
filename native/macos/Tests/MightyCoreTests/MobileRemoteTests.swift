@@ -91,6 +91,14 @@ private final class FakeMobileHost: MobileHostDelegate, @unchecked Sendable {
         commands.append("stop:\(sessionId)"); return true
     }
     func mobilePermission(sessionId: String, requestId: String, runId: String, allow: Bool) async throws { lock.lock(); commands.append("perm:\(requestId):\(runId):\(allow)"); lock.unlock() }
+    /// Only `agy-…` requests are Antigravity cards here, as in the app.
+    func mobilePermission(sessionId: String, requestId: String, runId: String, allow: Bool, always: Bool) async throws {
+        guard requestId.hasPrefix("agy-") else {
+            guard !always else { throw MightyError(L("remote.error.notAntigravityPermission")) }
+            return try await mobilePermission(sessionId: sessionId, requestId: requestId, runId: runId, allow: allow)
+        }
+        lock.lock(); commands.append("agy:\(requestId):\(runId):\(allow ? (always ? "always" : "once") : "deny")"); lock.unlock()
+    }
     func mobileAnswers(sessionId: String, requestId: String, runId: String, answers: [String: UserQuestionAnswer]) async throws {
         lock.lock(); commands.append("answers:\(requestId):\(answers.keys.sorted().joined(separator: ","))"); lock.unlock()
     }
@@ -183,6 +191,28 @@ struct MobileRemoteTests {
         let reply = await service.route(method: method, path: path, body: data, deviceId: device)
         let object = (try? JSONSerialization.jsonObject(with: reply.body) as? [String: Any]) ?? [:]
         return (reply.status, object)
+    }
+
+    /// An Antigravity card is answered on the permission route: `allow` alone
+    /// is "이번만 허용", `always` "항상 허용"; `always` never comes without `allow`.
+    @Test func antigravityCardsAreAnsweredOnThePermissionRoute() async throws {
+        try await LocaleOverride.$language.withValue(.ko) { () async throws in
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-remote-" + UUID().uuidString, isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let service = MobileRemoteService(dataDirectory: directory, hostName: "Test Mac", appVersion: "9.9.9")
+            let host = FakeMobileHost()
+            await service.attach(host)
+            let path = "/m1/sessions/session-1/permission"
+            #expect(try await call(service, "POST", path, body: ["requestId": "agy-1", "runId": "run-1", "allow": true]).0 == 200)
+            #expect(try await call(service, "POST", path, body: ["requestId": "agy-1", "runId": "run-1", "allow": true, "always": true]).0 == 200)
+            #expect(try await call(service, "POST", path, body: ["requestId": "agy-1", "runId": "run-1", "allow": false, "always": false]).0 == 200)
+            let contradictory = try await call(service, "POST", path, body: ["requestId": "agy-1", "runId": "run-1", "allow": false, "always": true])
+            #expect(contradictory.0 == 400 && contradictory.1["error"] as? String == L("remote.error.alwaysNeedsAllow"))
+            let claude = try await call(service, "POST", path, body: ["requestId": "perm-1", "runId": "run-1", "allow": true, "always": true])
+            #expect(claude.0 == 409 && claude.1["error"] as? String == L("remote.error.notAntigravityPermission"))
+            #expect(try await call(service, "POST", path, body: ["requestId": "perm-1", "runId": "run-1", "allow": true]).0 == 200)
+            #expect(host.recorded() == ["agy:agy-1:run-1:once", "agy:agy-1:run-1:always", "agy:agy-1:run-1:deny", "perm:perm-1:run-1:true"])
+        }
     }
 
     @Test func routesValidateAndForwardCommandsAndLongPollWakesOnNotify() async throws {

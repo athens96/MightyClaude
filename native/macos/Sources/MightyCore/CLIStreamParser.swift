@@ -36,6 +36,10 @@ public final class CLIStreamParser {
     /// new one when it cannot find it, and says so once.
     private let requestedResume: String?
     private var newConversationNoted = false
+    /// The turn's refused actions, for the pane's card; nil keeps the older
+    /// notice that tells how to add an allow rule by hand.
+    private let antigravityPermission: ((AntigravityPermissionRequest) -> Void)?
+    private var denials = AntigravityDenialCollector()
     /// The text of the latest Claude message the CLI marked as a lost sign-in,
     /// until a result ends its turn (`CLIAuthFailure.claude(result:repeating:)`).
     private var authFailureText: String?
@@ -74,8 +78,10 @@ public final class CLIStreamParser {
     public init(provider: String, log: @escaping (String, String) -> Void, resume: @escaping (String) -> Void, activityNamespace: String = UUID().uuidString, activity: ((AgentActivity) -> Void)? = nil, control: ((Data) -> Void)? = nil, result: (() -> Void)? = nil, activityClock: (() -> TimeInterval)? = nil, usage: ((SessionUsage) -> Void)? = nil, graph: ((ExecutionGraphNode) -> Void)? = nil, graphInput: String? = nil, configuredModel: String? = nil,
                 images: AgentImageCache? = nil, imageRoot: URL? = nil, imageEntry: ((LogEntry) -> Void)? = nil, maximumLineBytes: Int = CLIStreamParser.maximumLineBytes,
                 todos: ((TodoProgress) -> Void)? = nil, background: ((BackgroundWork) -> Void)? = nil, backgroundClock: @escaping () -> Date = Date.init,
-                savedTodos: TodoProgress? = nil, settled: (() -> Void)? = nil, requestedResume: String? = nil) {
+                savedTodos: TodoProgress? = nil, settled: (() -> Void)? = nil, requestedResume: String? = nil,
+                antigravityPermission: ((AntigravityPermissionRequest) -> Void)? = nil) {
         self.provider = provider; self.log = log; self.resume = resume; self.requestedResume = requestedResume
+        self.antigravityPermission = provider == "gemini" ? antigravityPermission : nil
         self.todos = provider == "claude" ? todos : nil; self.background = provider == "claude" ? background : nil
         todoTracker = TodoProgressTracker(progress: savedTodos); self.settled = settled
         backgroundTracker = BackgroundTaskTracker(clock: backgroundClock)
@@ -536,6 +542,7 @@ public final class CLIStreamParser {
                 let key = "step:\(index)"
                 let started = toolActivities[ActivitySupport.id(namespace: activityNamespace, key: key)] != nil
                 let ended = toolState != "running"
+                denials.observe(step: payload)
                 self.tool(id: key, name: tool, input: Self.antigravityParameters(info?["parameters"]), state: toolState, output: ended ? failure ?? info?["output"] as? String : nil)
                 if activity == nil {
                     if !started, !ended { log("system", L("run.tool.started", ["name": String(tool.prefix(160))])) }
@@ -562,9 +569,17 @@ public final class CLIStreamParser {
                 log("assistant", text); graphTracker?.antigravityAnswer(text)
             }
             antigravityStreamed = false
-            // What headless mode could not ask about was declined and the turn went on.
-            let denied = (payload["denied_actions"] as? [[String: Any]] ?? []).prefix(16).compactMap { ($0["display_name"] ?? $0["action"]) as? String }
-            if !denied.isEmpty { log("system", L("run.notice.antigravityDenied", ["actions": ActivitySupport.clean(denied.joined(separator: ", "), maximumBytes: 512, singleLine: true)])) }
+            // What headless mode could not ask about was declined and the turn
+            // went on; the pane asks now, with a card (`AntigravityPermissions.swift`).
+            let refused = denials.finish(result: payload)
+            if let antigravityPermission, !refused.isEmpty {
+                let card = AntigravityPermissionRequest(runId: activityNamespace, actions: refused)
+                log("system", AntigravityPermissionFlow.transcriptLine(card))
+                antigravityPermission(card)
+            } else {
+                let denied = (payload["denied_actions"] as? [[String: Any]] ?? []).prefix(16).compactMap { ($0["display_name"] ?? $0["action"]) as? String }
+                if !denied.isEmpty { log("system", L("run.notice.antigravityDenied", ["actions": ActivitySupport.clean(denied.joined(separator: ", "), maximumBytes: 512, singleLine: true)])) }
+            }
             let status = (payload["status"] as? String ?? "").uppercased()
             switch status {
             case "SUCCESS": authFailure = false

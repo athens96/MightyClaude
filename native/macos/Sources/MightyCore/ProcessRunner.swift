@@ -642,7 +642,11 @@ public actor ProcessRunner {
                         guard let run, !run.finalized else { return }
                         onEvent(RunEvent(sessionId: run.request.sessionId, type: "background", background: work))
                         if run.receivedClaudeResult, !run.inputClosed, run.permissions != nil, work.running.isEmpty { Task { await self?.armInputWatchdog(run) } }
-                    }, savedTodos: request.todoProgress, settled: { [weak run] in run?.settleInput() }, requestedResume: request.resumeId)
+                    }, savedTodos: request.todoProgress, settled: { [weak run] in run?.settleInput() }, requestedResume: request.resumeId,
+                    antigravityPermission: { [weak run, onEvent] card in
+                        guard let run, !run.finalized else { return }
+                        onEvent(RunEvent(sessionId: run.request.sessionId, type: "antigravityPermission", antigravityPermission: card))
+                    })
                 if codexApprovals {
                     run.codexPermissions = CodexApprovalChannel(runId: run.activityId, request: request, workspacePath: workspace.path, attachments: attachments,
                         write: { [weak run] data in guard let run, !run.stopping, !run.finished else { return }; run.child?.write(data) },

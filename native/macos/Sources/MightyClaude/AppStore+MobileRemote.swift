@@ -109,6 +109,22 @@ final class MobileRemoteBridge: MobileHostDelegate, @unchecked Sendable {
         await store.answerPermission(sessionId: sessionId, request: request, allow: allow)
         try await MainActor.run { try store.mobileCheckPermissionOutcome(sessionId: sessionId, requestId: requestId) }
     }
+    /// An Antigravity card's answer (`allow` alone is "이번만 허용", with
+    /// `always` "항상 허용"), or any other request's as before.
+    func mobilePermission(sessionId: String, requestId: String, runId: String, allow: Bool, always: Bool) async throws {
+        let (store, card) = try await MainActor.run { () -> (AppStore, AntigravityPermissionRequest?) in
+            let store = try self.store.orClosing()
+            try store.mobileValidateCommand(sessionId)
+            return (store, store.antigravityBoard.pending(sessionId: sessionId, requestId: requestId, runId: runId))
+        }
+        guard let card else {
+            guard !always else { throw MightyError(L("remote.error.notAntigravityPermission")) }
+            try await mobilePermission(sessionId: sessionId, requestId: requestId, runId: runId, allow: allow)
+            return
+        }
+        let decision = MobilePermissionAnswer(requestId: requestId, runId: runId, allow: allow, always: always).antigravityDecision
+        if let failure = await store.answerAntigravityPermission(sessionId: sessionId, request: card, decision: decision) { throw MightyError(failure) }
+    }
     func mobileAnswers(sessionId: String, requestId: String, runId: String, answers: [String: UserQuestionAnswer]) async throws {
         let (store, request) = try await MainActor.run { () -> (AppStore, ToolPermissionRequest) in
             let store = try self.store.orClosing()
@@ -203,6 +219,7 @@ extension AppStore {
         // incoming values rather than re-reading the (still old) properties.
         $snapshot.sink { [weak self] value in self?.mobileObserve(snapshot: value) }.store(in: &mobileSubscriptions)
         $toolPermissions.sink { [weak self] value in self?.mobileObserve(permissions: value) }.store(in: &mobileSubscriptions)
+        $antigravityBoard.sink { [weak self] value in self?.mobileObserve(antigravity: value) }.store(in: &mobileSubscriptions)
         // `$statusLines` is deliberately not observed: see SessionFingerprint.
         $queuedInputs.sink { [weak self] value in self?.mobileObserve(queued: value) }.store(in: &mobileSubscriptions)
         $delegationHeld.sink { [weak self] value in self?.mobileObserve(held: value) }.store(in: &mobileSubscriptions)
@@ -273,7 +290,7 @@ extension AppStore {
     // MARK: Revisions
 
     func mobileObserve(snapshot incoming: AppSnapshot? = nil, permissions: [String: [ToolPermissionRequest]]? = nil, queued: [String: [QueuedInput]]? = nil,
-                       held: [String: [DelegationDeliveryItem]]? = nil, children: [DelegationChildRow]? = nil) {
+                       held: [String: [DelegationDeliveryItem]]? = nil, children: [DelegationChildRow]? = nil, antigravity: AntigravityPermissionBoard? = nil) {
         guard !ending, mobileBridge != nil else { return }
         let snapshot = incoming ?? self.snapshot
         // Nothing to track while the feature is off; the first publish after
@@ -301,7 +318,7 @@ extension AppStore {
             let changed = mobileTracking.seen[session.id] != fingerprint || heldMoved.contains(session.id)
             if changed { mobileTracking.sessionRevisions[session.id, default: 0] += 1 }
             var summary = mobileSummary(session, revision: mobileTracking.sessionRevisions[session.id, default: 1], permissions: permissions, queued: queued, held: held,
-                                        children: children)
+                                        children: children, antigravity: antigravity)
             let previous = mobileTracking.summaries[session.id]
             var compare = summary; compare.revision = 0
             var previousCompare = previous; previousCompare?.revision = 0
@@ -328,17 +345,19 @@ extension AppStore {
     }
 
     private func mobileSummary(_ session: RunSession, revision: Int, permissions: [String: [ToolPermissionRequest]]? = nil, queued: [String: [QueuedInput]]? = nil,
-                               held: [String: [DelegationDeliveryItem]]? = nil, children: [DelegationChildRow]? = nil) -> MobileSessionSummary {
+                               held: [String: [DelegationDeliveryItem]]? = nil, children: [DelegationChildRow]? = nil, antigravity: AntigravityPermissionBoard? = nil) -> MobileSessionSummary {
         let pending = ((permissions ?? toolPermissions)[session.id] ?? []).filter { $0.state == "pending" }
+        // An Antigravity card waits on a human like a permission does.
+        let antigravityCards = (antigravity ?? antigravityBoard)[session.id] == nil ? 0 : 1
         // The sidebar's own test for a child waiting on a human (`WorkspaceView.paneRow`).
-        let asksHuman = WorkDashboard.attention((permissions ?? toolPermissions)[session.id]).total > 0
+        let asksHuman = WorkDashboard.attention((permissions ?? toolPermissions)[session.id]).total > 0 || antigravityCards > 0
         let child = MobileRemoteSupport.childLink(sessionId: session.id, children: children ?? delegationChildren, asksHuman: asksHuman)
         let last = session.logs.last(where: { $0.activity == nil && !$0.text.isEmpty })
         return MobileSessionSummary(
             id: session.id, workspaceId: session.workspaceId, title: session.title, kind: session.kind, provider: session.provider, model: session.model,
             status: session.status, revision: revision, updatedAt: session.logs.last?.timestamp ?? session.createdAt,
             preview: last.map { MobilePreview(kind: $0.kind, text: String($0.text.prefix(200))) },
-            pendingPermissions: pending.filter { !$0.canAnswerQuestions }.count, pendingQuestions: pending.filter(\.canAnswerQuestions).count,
+            pendingPermissions: pending.filter { !$0.canAnswerQuestions }.count + antigravityCards, pendingQuestions: pending.filter(\.canAnswerQuestions).count,
             // Held rows are in the pane's queued list too.
             queued: ((queued ?? queuedInputs)[session.id]?.count ?? 0) + ((held ?? delegationHeld)[session.id]?.count ?? 0), resumeId: session.resumeId, terminal: usesLocalTerminal(session) || AgentIOPaneKind.isAgentIOPane(session.kind),
             // A command pane has no agent view and no style; sending "plain"
@@ -397,6 +416,7 @@ extension AppStore {
         let revision = mobileTracking.sessionRevisions[id, default: 1]
         let summary = mobileTracking.summaries[id] ?? mobileSummary(session, revision: revision)
         let permissions = (toolPermissions[id] ?? []).filter { $0.state == "pending" }.map(MobilePermission.init(request:))
+            + (antigravityBoard[id].map { [MobilePermission(antigravity: $0)] } ?? [])
         // The Mac re-runs the status line only for panes it is drawing; ask here
         // so a phone watching a hidden pane sees a live one too (only for the
         // local Claude panes that have a command at all). Only once what we hold

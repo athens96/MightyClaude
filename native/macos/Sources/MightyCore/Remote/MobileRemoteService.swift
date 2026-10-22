@@ -24,6 +24,9 @@ public protocol MobileHostDelegate: AnyObject, Sendable {
     /// told there was nothing left to stop rather than "stop requested".
     func mobileStop(sessionId: String) async throws -> Bool
     func mobilePermission(sessionId: String, requestId: String, runId: String, allow: Bool) async throws
+    /// The same answer with "항상 허용": an Antigravity card takes
+    /// `allow` alone as "이번만 허용", `always` as "항상 허용".
+    func mobilePermission(sessionId: String, requestId: String, runId: String, allow: Bool, always: Bool) async throws
     func mobileAnswers(sessionId: String, requestId: String, runId: String, answers: [String: UserQuestionAnswer]) async throws
     /// Answers a pending Claude plan the way the desktop plan card does.
     func mobilePlan(sessionId: String, requestId: String, runId: String, decision: PlanDecision) async throws
@@ -48,6 +51,11 @@ public extension MobileHostDelegate {
     func mobileSession(id: String, structure: Bool) async -> MobileSessionDetail? { await mobileSession(id: id) }
     /// No drawing: an svg preview is `unsupported` ("undecodable").
     var mobileSVGRasterizer: MobileWorkspaceFiles.SVGRasterizer? { nil }
+    /// A host without Antigravity cards answers like before, and has nothing to always allow.
+    func mobilePermission(sessionId: String, requestId: String, runId: String, allow: Bool, always: Bool) async throws {
+        guard !always else { throw MightyError(L("remote.error.notAntigravityPermission")) }
+        try await mobilePermission(sessionId: sessionId, requestId: requestId, runId: runId, allow: allow)
+    }
     /// A host without plan cards has nothing to answer.
     func mobilePlan(sessionId: String, requestId: String, runId: String, decision: PlanDecision) async throws { throw MightyError(L("plan.error.notPlan")) }
 }
@@ -1150,7 +1158,8 @@ public actor MobileRemoteService {
                 case "permission":
                     let request = try decode(body, as: MobilePermissionAnswer.self)
                     guard CoreValidation.identifier(request.requestId), CoreValidation.identifier(request.runId) else { throw Failure(400, L("remote.error.badPermissionId")) }
-                    do { try await delegate.mobilePermission(sessionId: id, requestId: request.requestId, runId: request.runId, allow: request.allow) }
+                    guard request.always != true || request.allow else { throw Failure(400, L("remote.error.alwaysNeedsAllow")) }
+                    do { try await delegate.mobilePermission(sessionId: id, requestId: request.requestId, runId: request.runId, allow: request.allow, always: request.always == true) }
                     catch let failure as MightyError { throw Failure(409, failure.message) }
                     return reply(200, MobileOK())
                 case "answers":

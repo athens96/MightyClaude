@@ -17,6 +17,8 @@ public actor RemoteHostService {
         var stopping = false
         var finishedAt: Date?
         var task: Task<Void, Never>?
+        /// The temporary Antigravity rules this run holds.
+        var lease: AntigravityRuleLeases.Lease?
     }
     private struct Failure: Error { let status: Int; let message: String; init(_ status: Int, _ message: String) { self.status = status; self.message = message } }
 
@@ -43,6 +45,11 @@ public actor RemoteHostService {
     private var rateWindow = Date.distantPast
     private var rateCount = 0
     private var peerRates: [String: (start: Date, count: Int)] = [:]
+    /// agy's settings on this Mac, shared with its own panes.
+    private let antigravityRules: AntigravityRuleLeases?
+    /// The Antigravity cards this host's runs reported, by card id: a client's
+    /// continuation may add only these rules here (for a day, the newest 128).
+    private var reportedRules: [String: (rules: Set<String>, at: Date)] = [:]
 
     /// Seconds a run may go unpolled before it is stopped; tests shorten it.
     private let heartbeat: TimeInterval
@@ -55,7 +62,8 @@ public actor RemoteHostService {
 
     public init(repository: StateRepository, providers: ProviderService, pluginDirectory: URL, appVersion: String, hostName: String, allowLoopbackForTests: Bool = false,
                 heartbeat: TimeInterval = RemoteProtocol.heartbeatTimeout, admission: @escaping @Sendable (StartRunRequest) async -> String? = { _ in nil },
-                runsChanged: @escaping @Sendable (Int) -> Void = { _ in }) {
+                antigravityRules: AntigravityRuleLeases? = nil, runsChanged: @escaping @Sendable (Int) -> Void = { _ in }) {
+        self.antigravityRules = antigravityRules
         self.repository = repository; self.providers = providers; self.pluginDirectory = pluginDirectory
         self.appVersion = appVersion; self.hostName = String(hostName.prefix(120)); self.testing = allowLoopbackForTests; self.heartbeat = heartbeat
         self.admission = admission; self.runsChanged = runsChanged
@@ -170,7 +178,9 @@ public actor RemoteHostService {
         servers = []; runner = nil; runnerEvents = nil; state = RemoteHostState(); allowsFullAccess = false
         leaseTask?.cancel(); leaseTask = nil
         for job in jobs.values { job.task?.cancel() }
-        jobs.removeAll()
+        let leases = jobs.values.compactMap(\.lease)
+        jobs.removeAll(); reportedRules.removeAll()
+        if let antigravityRules { for lease in leases { await antigravityRules.release(lease) } }
         announceRuns()
         for server in oldServers { await server.stop() }
         await oldRunner?.shutdown()
@@ -315,8 +325,21 @@ public actor RemoteHostService {
         guard revision == generation, let runner else { throw Failure(503, L("remote.host.error.stopped")) }
         guard jobs.values.filter({ !$0.done }).count < RemoteProtocol.maximumRuns else { throw Failure(429, L("remote.host.error.runLimit", ["count": "\(RemoteProtocol.maximumRuns)"])) }
         prune()
+        // An allowed card's rules go in place before the run starts; refused, nothing runs.
+        var lease: AntigravityRuleLeases.Lease?
+        if let grant = wire.antigravityGrant, run.provider == "gemini", run.kind == SessionKind.claude {
+            guard grant.isValid, let reported = reportedRules[grant.requestId], Date().timeIntervalSince(reported.at) < 86_400,
+                  Set(grant.rules).isSubset(of: reported.rules) else { throw Failure(403, L("remote.host.error.antigravityRules")) }
+            guard let antigravityRules else { throw Failure(409, L("remote.host.error.antigravityRules")) }
+            do { lease = try await antigravityRules.apply(grant) } catch { throw Failure(409, error.localizedDescription) }
+            guard revision == generation, self.runner != nil else {
+                if let lease { await antigravityRules.release(lease) }
+                throw Failure(503, L("remote.host.error.stopped"))
+            }
+        }
         let id = UUID().uuidString
         jobs[id] = Job()
+        jobs[id]?.lease = lease
         announceRuns()
         run.sessionId = id
         let permissions = run.kind == SessionKind.claude && (run.provider == "claude" || (run.provider == "codex" && run.settings.permissionMode == "onRequest"))
@@ -372,8 +395,19 @@ public actor RemoteHostService {
         }
         let ended = event.type == "status" && ["completed", "error", "stopped"].contains(event.status ?? "")
         if ended { job.done = true; job.finishedAt = Date() }
+        if let card = event.antigravityPermission, !card.rules.isEmpty { remember(card) }
+        let lease = ended ? job.lease : nil
+        if ended { job.lease = nil }
         jobs[event.sessionId] = job
         if ended { announceRuns() }
+        if let lease, let antigravityRules { Task { await antigravityRules.release(lease) } }
+    }
+
+    private func remember(_ card: AntigravityPermissionRequest) {
+        let now = Date()
+        reportedRules = reportedRules.filter { now.timeIntervalSince($0.value.at) < 86_400 }
+        while reportedRules.count >= 128, let oldest = reportedRules.min(by: { $0.value.at < $1.value.at }) { reportedRules.removeValue(forKey: oldest.key) }
+        reportedRules[card.id] = (Set(card.rules), now)
     }
 
     private func stopJob(_ id: String) async {

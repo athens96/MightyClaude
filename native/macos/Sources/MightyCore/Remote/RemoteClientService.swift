@@ -213,7 +213,8 @@ public actor RemoteClientService {
         runs[request.sessionId] = run
         var outgoing = request; outgoing.workspaceId = reference.workspaceId
         let wire = RemoteWireStart(request: outgoing, permissionModeOverride: request.permissionModeOverride, registeredModels: request.registeredModels,
-                                   todoProgress: request.todoProgress, phaseModels: request.kind == SessionKind.claude ? phaseModels : nil)
+                                   todoProgress: request.todoProgress, phaseModels: request.kind == SessionKind.claude ? phaseModels : nil,
+                                   antigravityGrant: request.provider == "gemini" ? request.antigravityGrant : nil)
         do {
             let encoder = JSONEncoder(); encoder.outputFormatting = [.withoutEscapingSlashes]
             let body = try encoder.encode(wire)

@@ -224,9 +224,13 @@ public struct QueuedInput: Sendable, Equatable, Identifiable {
     /// when a plan-mode style asked for one (§1.17.4), so a later style change
     /// does not change what was queued.
     public var permissionModeOverride: String?
+    /// The continuation of an allowed Antigravity card: the rules its run puts
+    /// in place (`AntigravityPermissions.swift`). Not saved.
+    public var antigravityGrant: AntigravityAllowGrant?
     public static let maximumItems = 16
-    public init(id: String = UUID().uuidString, text: String, attachments: [RunAttachment] = [], createdAt: String = mightyTimestamp(), permissionModeOverride: String? = nil) {
+    public init(id: String = UUID().uuidString, text: String, attachments: [RunAttachment] = [], createdAt: String = mightyTimestamp(), permissionModeOverride: String? = nil, antigravityGrant: AntigravityAllowGrant? = nil) {
         self.id = id; self.text = text; self.attachments = attachments; self.createdAt = createdAt; self.permissionModeOverride = permissionModeOverride
+        self.antigravityGrant = antigravityGrant
     }
     public var isEmpty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty }
 }
@@ -517,6 +521,10 @@ public struct StartRunRequest: Codable, Sendable, Equatable {
     /// outside that folder, so a Codex run may also write here and an
     /// Antigravity run adds it. Not persisted.
     public var delegationWorktreeRoot: String?
+    /// An Antigravity continuation's rules (`AntigravityAllowGrant`): the
+    /// computer that runs it puts them in agy's settings for this run, or for
+    /// good. Not persisted; a remote run carries it beside the request.
+    public var antigravityGrant: AntigravityAllowGrant?
     public init(sessionId: String, workspaceId: String, kind: String = "claude", input: String, model: String = "default", provider: String = "claude", settings: RunSettings = .init(), resumeId: String? = nil, attachments: [RunAttachment] = [], registeredModels: [RegisteredModelEntry] = []) {
         self.sessionId = sessionId; self.workspaceId = workspaceId; self.kind = kind; self.input = input; self.model = model; self.provider = provider; self.settings = settings; self.resumeId = resumeId; self.attachments = attachments; self.registeredModels = registeredModels
     }
@@ -557,12 +565,15 @@ public struct RunEvent: Codable, Sendable, Equatable {
     public var todos: TodoProgress?
     /// `background`: the run's background tasks after a change.
     public var background: BackgroundWork?
+    /// `antigravityPermission`: the actions an Antigravity turn was refused,
+    /// sent once the turn ended and before its run's final status.
+    public var antigravityPermission: AntigravityPermissionRequest?
     public init(sessionId: String, type: String, entry: LogEntry? = nil, status: String? = nil, resumeId: String? = nil, activity: AgentActivity? = nil, permission: ToolPermissionRequest? = nil, usage: SessionUsage? = nil, graph: ExecutionGraphNode? = nil, reason: String? = nil,
-                plan: PlanRecord? = nil, todos: TodoProgress? = nil, background: BackgroundWork? = nil) {
+                plan: PlanRecord? = nil, todos: TodoProgress? = nil, background: BackgroundWork? = nil, antigravityPermission: AntigravityPermissionRequest? = nil) {
         self.sessionId = sessionId; self.type = type; self.entry = entry; self.status = status; self.resumeId = resumeId; self.activity = activity; self.permission = permission; self.usage = usage
-        self.graph = graph; self.reason = reason; self.plan = plan; self.todos = todos; self.background = background
+        self.graph = graph; self.reason = reason; self.plan = plan; self.todos = todos; self.background = background; self.antigravityPermission = antigravityPermission
     }
-    enum CodingKeys: String, CodingKey { case sessionId, type, entry, status, resumeId, activity, permission, usage, graph, reason, plan, todos, background }
+    enum CodingKeys: String, CodingKey { case sessionId, type, entry, status, resumeId, activity, permission, usage, graph, reason, plan, todos, background, antigravityPermission }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         sessionId = try c.decode(String.self, forKey: .sessionId); type = try c.decode(String.self, forKey: .type)
@@ -575,6 +586,7 @@ public struct RunEvent: Codable, Sendable, Equatable {
         plan = try? c.decodeIfPresent(PlanRecord.self, forKey: .plan)
         todos = try? c.decodeIfPresent(TodoProgress.self, forKey: .todos)
         background = try? c.decodeIfPresent(BackgroundWork.self, forKey: .background)
+        antigravityPermission = try? c.decodeIfPresent(AntigravityPermissionRequest.self, forKey: .antigravityPermission)
     }
 }
 
