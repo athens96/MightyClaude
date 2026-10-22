@@ -791,7 +791,7 @@
     ]
   },
   "rules": {
-    "about": "AntigravityRuleSafety: refused rules are never offered or added; once rules are offered and added only for the follow-up run (no 항상 허용; a host refuses always with 409 remote.error.antigravityOnceOnly); always rules may be kept.",
+    "about": "AntigravityRuleSafety: refused rules are never offered or added; once rules are offered and added only for the follow-up run (no 항상 허용; a host refuses always with 409 remote.error.antigravityOnceOnly); always rules may be kept. File rules (write_file, read_file) need an absolute path and are refused when the path is inside or equal to a protected folder (agy's own ~/.gemini, the app's data folder that holds its ledger) or an ancestor of one; the cases are judged with `context.protected` as the protected folders, compared without case, with / and \\ alike and . and .. taken out (the apps add the real folders, symlinks resolved). A command that mentions .gemini is once only.",
     "cases": [
       {
         "rule": "command(git status)",
@@ -1092,7 +1092,123 @@
       {
         "rule": "rm -rf /",
         "verdict": "refused"
+      },
+      {
+        "rule": "write_file(/Users/me/project/a.txt)",
+        "verdict": "always"
+      },
+      {
+        "rule": "read_file(/Users/me/.geminirc)",
+        "verdict": "always"
+      },
+      {
+        "rule": "write_file(/Users/me/Library/Application Support/Other/x)",
+        "verdict": "always"
+      },
+      {
+        "rule": "command(gemini --version)",
+        "verdict": "always"
+      },
+      {
+        "rule": "read_file(C:\\Users\\me\\project)",
+        "verdict": "always"
+      },
+      {
+        "rule": "command(cat ~/.gemini/antigravity-cli/settings.json)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(ls /Users/me/.GEMINI)",
+        "verdict": "once"
+      },
+      {
+        "rule": "command(code .gemini/settings.json)",
+        "verdict": "once"
+      },
+      {
+        "rule": "write_file(/Users/me/.gemini/antigravity-cli/settings.json)",
+        "verdict": "refused"
+      },
+      {
+        "rule": "write_file(/Users/me/.gemini)",
+        "verdict": "refused"
+      },
+      {
+        "rule": "read_file(/Users/me/.gemini/oauth_creds.json)",
+        "verdict": "refused"
+      },
+      {
+        "rule": "write_file(/users/ME/.Gemini/antigravity-cli/settings.json)",
+        "verdict": "refused"
+      },
+      {
+        "rule": "write_file(/Users/me/project/../.gemini/settings.json)",
+        "verdict": "refused"
+      },
+      {
+        "rule": "write_file(/Users/me//.gemini/x)",
+        "verdict": "refused"
+      },
+      {
+        "rule": "write_file(/Users/me/Library/Application Support/MightyClaude Native/antigravity-temporary-rules.json)",
+        "verdict": "refused"
+      },
+      {
+        "rule": "read_file(/Users/me/Library/Application Support/MightyClaude Native)",
+        "verdict": "refused"
+      },
+      {
+        "rule": "write_file(/Users/me)",
+        "verdict": "refused"
+      },
+      {
+        "rule": "write_file(/Users/me/)",
+        "verdict": "refused"
+      },
+      {
+        "rule": "write_file(/Users)",
+        "verdict": "refused"
+      },
+      {
+        "rule": "read_file(/Users/me/Library)",
+        "verdict": "refused"
+      },
+      {
+        "rule": "write_file(C:\\Users\\me\\.gemini\\antigravity-cli\\settings.json)",
+        "verdict": "refused"
+      },
+      {
+        "rule": "write_file(C:\\Users\\me)",
+        "verdict": "refused"
+      },
+      {
+        "rule": "write_file(C:/Users/me/AppData/Local/MightyClaude/antigravity-temporary-rules.json)",
+        "verdict": "refused"
+      },
+      {
+        "rule": "read_file(C:\\Users)",
+        "verdict": "refused"
+      },
+      {
+        "rule": "write_file(notes.txt)",
+        "verdict": "refused"
+      },
+      {
+        "rule": "read_file(./src)",
+        "verdict": "refused"
+      },
+      {
+        "rule": "write_file(~/notes.txt)",
+        "verdict": "refused"
       }
-    ]
+    ],
+    "context": {
+      "protected": [
+        "/Users/me/.gemini",
+        "/Users/me/Library/Application Support/MightyClaude Native",
+        "C:\\Users\\me\\.gemini",
+        "C:\\Users\\me\\AppData\\Local\\MightyClaude"
+      ]
+    }
   }
 }
