@@ -217,7 +217,9 @@ public sealed partial class MainWindow
     {
         if (options.SmokeTest) return;
         // A previous replacement could not delete the folder it was running
-        // from; this start clears it.
+        // from; this start clears it, after putting back an install an
+        // interrupted swap left aside.
+        AppUpdateReplacement.RestoreInterruptedInstall(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar));
         try { AppUpdateReplacement.PruneBackups(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar)); }
         catch (IOException) { /* Housekeeping must not change startup. */ }
         // After the app replaced its own folder, Settings › Apps shows this version, not the setup program's.

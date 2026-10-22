@@ -236,6 +236,24 @@ public sealed class AppUpdateCoordinator
                 Mutate(s => s with { CheckedAt = DateTimeOffset.UtcNow, LastError = null });
                 return;
             }
+            if (newerButNotForThisMachine)
+            {
+                // Nothing staged and the newer version cannot run here: the Mac's "blocked" outcome — the
+                // reason is the status, nothing is downloaded, and it is no failure to retry.
+                var reason = Locale.Get("appUpdate.error.noPackageForArchitecture", new Dictionary<string, string> { ["architecture"] = architecture });
+                Mutate(s => s with
+                {
+                    Phase = AppUpdatePhase.Failed,
+                    Availability = availability,
+                    PackagePath = null,
+                    StagedDirectory = null,
+                    InstallPlan = null,
+                    CheckedAt = DateTimeOffset.UtcNow,
+                    ErrorMessage = reason,
+                    LastError = null,
+                });
+                return;
+            }
             Mutate(s => s with
             {
                 Phase = availability.IsNewer ? AppUpdatePhase.Available : AppUpdatePhase.UpToDate,
@@ -331,7 +349,9 @@ public sealed class AppUpdateCoordinator
     /// (`AppUpdateAuto.InstallsOnQuit`). True when the helper was started.
     public async Task<bool> InstallOnQuitAsync(bool poweringOff = false)
     {
-        if (closing || !AppUpdateAuto.InstallsOnQuit(State.Phase == AppUpdatePhase.Ready, Automatic, HasPublicKey, poweringOff)) return false;
+        // A dev or portable run has no install plan: quitting it says and changes nothing.
+        if (closing || State.InstallPlan is null || launchHelper is null) return false;
+        if (!AppUpdateAuto.InstallsOnQuit(State.Phase == AppUpdatePhase.Ready, Automatic, HasPublicKey, poweringOff)) return false;
         await InstallAsync(relaunch: false);
         return State.Phase == AppUpdatePhase.Installing;
     }
@@ -350,7 +370,7 @@ public sealed class AppUpdateCoordinator
     public void ShowForSmoke(AppUpdateState state) => Mutate(_ => state);
 
     public AppUpdateSectionView Describe(Func<DateTimeOffset, string> formatTime) =>
-        AppUpdatePresentation.Describe(State, HasPublicKey, BuiltInManifestUrl, formatTime);
+        AppUpdatePresentation.Describe(State, HasPublicKey, BuiltInManifestUrl, formatTime, Automatic);
 
     /// The one button the section shows, routed by the phase it is in.
     public Task PressAsync(string? userUrl) => State.Phase switch
@@ -419,6 +439,8 @@ public static class AppUpdateSmoke
         new() { Phase = AppUpdatePhase.Installing, Availability = FixtureAvailability },
         new() { Phase = AppUpdatePhase.UpToDate },
         new() { Phase = AppUpdatePhase.Failed, ErrorMessage = Locale.Get("appUpdate.error.checkFailed") },
+        // A failed background check beside a staged update: it stays ready.
+        new() { Phase = AppUpdatePhase.Ready, Availability = FixtureAvailability, LastError = Locale.Get("appUpdate.error.checkFailed") },
     ];
 
     /// The status sentences and button labels the section must show for the

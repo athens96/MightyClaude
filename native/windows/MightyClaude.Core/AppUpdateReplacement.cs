@@ -101,6 +101,12 @@ public sealed record AppUpdateInstallPlan(
     /// folder — so the install folder can be renamed aside freely.
     public string StagedHelperExecutable => Path.Combine(StagedDirectory, AppUpdateService.ExecutableName);
 
+    /// Where the helper copies the staged folder before the two renames: beside
+    /// the install, so a copy cut off half-way never touches it
+    /// (M/AppUpdate.swift `$DESTINATION.update-new`).
+    public string NewDirectory =>
+        Path.GetFullPath(InstallDirectory.TrimEnd(Path.DirectorySeparatorChar)) + ".update-new";
+
     public bool IsValid =>
         !string.IsNullOrEmpty(StagedDirectory) &&
         !string.IsNullOrEmpty(InstallDirectory) &&
@@ -115,17 +121,22 @@ public sealed record AppUpdateInstallPlan(
 }
 
 /// What the replacement did. `Replaced` and `RolledBack` are never both true.
+/// `Skipped`: an install on quit found the app running again and left the
+/// install and the staged update as they were, for the next quit.
 public sealed record AppUpdateReplacementResult(
     bool Replaced,
     bool RolledBack,
     string? Error,
     IReadOnlyList<AppUpdateMove> Moves,
     bool Started,
-    bool BackupRemoved);
+    bool BackupRemoved,
+    bool Skipped = false);
 
-/// The replacement itself: wait for the app to quit, verify the package again,
-/// move the install aside, move the new folder in, start the new app (unless
-/// the plan says not to relaunch), and put the old one back on any failure.
+/// The replacement itself: put back an install an interrupted swap left aside,
+/// wait for the app to quit, verify the package again, copy the new folder
+/// beside the install, rename the install aside and the new folder in, start
+/// the new app (unless the plan says not to relaunch), and put the old one back
+/// on any failure.
 ///
 /// The whole sequence is here rather than in a shell script, so the same code
 /// that runs on Windows is exercised on macOS with temporary folders by
@@ -138,7 +149,7 @@ public static class AppUpdateReplacement
     public static IReadOnlyList<AppUpdateMove> Plan(AppUpdateInstallPlan plan) =>
     [
         new("backup", plan.InstallDirectory, plan.BackupDirectory),
-        new("install", plan.StagedDirectory, plan.InstallDirectory),
+        new("install", plan.NewDirectory, plan.InstallDirectory),
     ];
 
     /// The move that undoes a failed replacement.
@@ -166,7 +177,8 @@ public static class AppUpdateReplacement
         File.Exists(Path.Combine(installDirectory, AppUpdateService.ExecutableName));
 
     /// Removes install-folder backups a crashed or killed helper could not
-    /// delete. The new app clears them on its next start. Returns how many
+    /// delete, and a copy it left beside the install. The new app clears them
+    /// on its next start, after `RestoreInterruptedInstall`. Returns how many
     /// backups were removed.
     public static int PruneBackups(string installDirectory)
     {
@@ -174,6 +186,7 @@ public static class AppUpdateReplacement
         var parent = Path.GetDirectoryName(install);
         if (parent is null || !Directory.Exists(parent)) return 0;
         var prefix = Path.GetFileName(install) + ".backup-";
+        RemoveFolder(install + ".update-new");
         var removed = 0;
         foreach (var folder in Directory.GetDirectories(parent))
         {
@@ -219,23 +232,100 @@ public static class AppUpdateReplacement
         catch (InvalidOperationException) { return false; }
     }
 
-    /// The whole sequence. `waitForExit`, `startApp` and `copier` are injected
-    /// so the Mac-side check can run it end to end against temporary folders
-    /// without a real process; on Windows the helper passes the real
-    /// implementations. `copier` is null in production (uses CopyDirectory).
-    /// With `plan.Relaunch` false `startApp` is never called: not after the swap,
-    /// not after a rollback.
+    /// Waits up to `timeout` while a process other than this one runs an image
+    /// from the install folder (the app opened again, or one of its headless
+    /// children still ending). True when one is still there: the install on
+    /// quit then leaves the update for the next quit. Windows cannot rename a
+    /// folder an executable runs from, and the command lines that would tell
+    /// the headless children apart are not readable without WMI, so they are
+    /// waited out rather than told apart.
+    public static async Task<bool> RunningFromInstallAsync(string installDirectory, TimeSpan timeout, CancellationToken cancellation = default)
+    {
+        var deadline = DateTimeOffset.UtcNow + timeout;
+        while (true)
+        {
+            if (!AnyRunningFrom(installDirectory)) return false;
+            if (DateTimeOffset.UtcNow >= deadline) return true;
+            await Task.Delay(500, cancellation);
+        }
+    }
+
+    private static bool AnyRunningFrom(string installDirectory)
+    {
+        var folder = Path.GetFullPath(installDirectory.TrimEnd(Path.DirectorySeparatorChar)) + Path.DirectorySeparatorChar;
+        var name = Path.GetFileNameWithoutExtension(AppUpdateService.ExecutableName);
+        foreach (var process in Process.GetProcessesByName(name))
+        {
+            using (process)
+            {
+                try
+                {
+                    if (process.Id == Environment.ProcessId || process.HasExited) continue;
+                    if (process.MainModule?.FileName is { } image && image.StartsWith(folder, StringComparison.OrdinalIgnoreCase)) return true;
+                }
+                catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException) { }
+            }
+        }
+        return false;
+    }
+
+    /// Puts back an install an interrupted swap left aside: when the install
+    /// folder is missing, or holds no executable, and a backup with one exists
+    /// beside it, the newest such backup is renamed back (a folder without the
+    /// executable is removed first). Called when the helper starts and when the
+    /// app starts, before old backups are pruned. True when it put one back;
+    /// never throws.
+    public static bool RestoreInterruptedInstall(string installDirectory)
+    {
+        try
+        {
+            var install = Path.GetFullPath(installDirectory.TrimEnd(Path.DirectorySeparatorChar));
+            if (Directory.Exists(install) && VerifyInstallTree(install)) return false;
+            var parent = Path.GetDirectoryName(install);
+            if (parent is null || !Directory.Exists(parent)) return false;
+            var prefix = Path.GetFileName(install) + ".backup-";
+            var backup = Directory.GetDirectories(parent)
+                .Where(folder => Path.GetFileName(folder).StartsWith(prefix, StringComparison.Ordinal) && VerifyInstallTree(folder))
+                .OrderByDescending(folder => Path.GetFileName(folder), StringComparer.Ordinal)
+                .FirstOrDefault();
+            if (backup is null) return false;
+            if (Directory.Exists(install)) Directory.Delete(install, true);
+            Directory.Move(backup, install);
+            return true;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return false; }
+    }
+
+    /// The whole sequence. `waitForExit`, `startApp`, `copier`, `mover` and
+    /// `runningAgain` are injected so the Mac-side check can run it end to end
+    /// against temporary folders without a real process; on Windows the helper
+    /// passes the real implementations (null means CopyDirectory, Directory.Move
+    /// and no process check).
+    ///
+    /// The order mirrors M/AppUpdate.swift `installScript`: an install an
+    /// earlier swap left aside is put back first; after the app has quit and the
+    /// package is verified again, the staged folder is copied to
+    /// `NewDirectory` beside the install while the install is still whole; then
+    /// two renames (install → backup, new → install), undone on failure. With
+    /// `plan.Relaunch` false, the swap is skipped (the staged update kept, the
+    /// result `Skipped`) when the app runs from the install folder again, and
+    /// `startApp` is never called.
     public static async Task<AppUpdateReplacementResult> RunAsync(
         AppUpdateInstallPlan plan,
         Func<CancellationToken, Task<bool>> waitForExit,
         Func<string, Task> startApp,
         Action<string, string>? copier = null,
-        CancellationToken cancellation = default)
+        CancellationToken cancellation = default,
+        Action<string, string>? mover = null,
+        Func<CancellationToken, Task<bool>>? runningAgain = null)
     {
         var doCopy = copier ?? CopyDirectory;
+        var doMove = mover ?? Directory.Move;
         var moves = new List<AppUpdateMove>();
         if (!plan.IsValid)
             return new(false, false, Locale.Get("appUpdate.error.planInvalid"), moves, false, false);
+
+        RestoreInterruptedInstall(plan.InstallDirectory);
 
         if (!await waitForExit(cancellation))
             return new(false, false, Locale.Get("appUpdate.error.appStillRunning"), moves, false, false);
@@ -247,21 +337,41 @@ public static class AppUpdateReplacement
         if (!Directory.Exists(plan.StagedDirectory))
             return new(false, false, Locale.Get("appUpdate.error.stagedFolderMissing"), moves, false, false);
 
+        // Copy (not move): the helper runs from the staged folder and cannot
+        // move the directory it is running from. The copy lands beside the
+        // install, so a copy cut off half-way never touches the install.
+        try
+        {
+            RemoveFolder(plan.NewDirectory);
+            doCopy(plan.StagedDirectory, plan.NewDirectory);
+            if (!VerifyInstallTree(plan.NewDirectory))
+                throw new InvalidOperationException(Locale.Get("appUpdate.error.installedExecutableMissing"));
+        }
+        catch (Exception error)
+        {
+            RemoveFolder(plan.NewDirectory);
+            var startedOld = plan.Relaunch && await TryStartAsync(startApp, plan.NewExecutable);
+            return new(false, false, error.Message, moves, startedOld, false);
+        }
+
+        if (!plan.Relaunch && runningAgain is not null && await runningAgain(cancellation))
+        {
+            // The app was opened again: the update waits for the next quit.
+            RemoveFolder(plan.NewDirectory);
+            return new(false, false, null, moves, false, false, Skipped: true);
+        }
+
         var backupTaken = false;
         var installed = false;
         try
         {
             if (Directory.Exists(plan.InstallDirectory))
             {
-                Directory.Move(plan.InstallDirectory, plan.BackupDirectory);
+                doMove(plan.InstallDirectory, plan.BackupDirectory);
                 moves.Add(Plan(plan)[0]);
                 backupTaken = true;
             }
-            // Copy (not move): the helper runs from the staged folder and
-            // cannot move the directory it is running from.
-            doCopy(plan.StagedDirectory, plan.InstallDirectory);
-            if (!VerifyInstallTree(plan.InstallDirectory))
-                throw new InvalidOperationException(Locale.Get("appUpdate.error.installedExecutableMissing"));
+            doMove(plan.NewDirectory, plan.InstallDirectory);
             moves.Add(Plan(plan)[1]);
             installed = true;
 
@@ -269,6 +379,7 @@ public static class AppUpdateReplacement
         }
         catch (Exception error)
         {
+            RemoveFolder(plan.NewDirectory);
             return await UndoAsync(plan, moves, backupTaken, installed, startApp, error.Message);
         }
 
@@ -280,13 +391,24 @@ public static class AppUpdateReplacement
         return new(true, false, null, moves, plan.Relaunch, removed);
     }
 
+    private static void RemoveFolder(string path)
+    {
+        try { if (Directory.Exists(path)) Directory.Delete(path, true); }
+        catch (IOException) { } catch (UnauthorizedAccessException) { }
+    }
+
+    private static async Task<bool> TryStartAsync(Func<string, Task> startApp, string executable)
+    {
+        try { await startApp(executable); return true; }
+        catch (Exception) { return false; }
+    }
+
     private static async Task<AppUpdateReplacementResult> UndoAsync(
         AppUpdateInstallPlan plan, List<AppUpdateMove> moves, bool backupTaken, bool installed,
         Func<string, Task> startApp, string reason)
     {
         // Whatever failed, the machine ends with the version the user had.
-        try { if (installed && Directory.Exists(plan.InstallDirectory)) Directory.Delete(plan.InstallDirectory, true); }
-        catch (IOException) { } catch (UnauthorizedAccessException) { }
+        if (installed && backupTaken) RemoveFolder(plan.InstallDirectory);
 
         var restored = false;
         if (backupTaken && Directory.Exists(plan.BackupDirectory))
@@ -301,12 +423,8 @@ public static class AppUpdateReplacement
             catch (IOException) { } catch (UnauthorizedAccessException) { }
         }
 
-        var started = false;
-        if (restored && plan.Relaunch)
-        {
-            try { await startApp(plan.NewExecutable); started = true; }
-            catch (Exception) { started = false; }
-        }
+        var started = (restored || !backupTaken && Directory.Exists(plan.InstallDirectory)) && plan.Relaunch
+            && await TryStartAsync(startApp, plan.NewExecutable);
         return new(false, restored, Locale.Get("appUpdate.error.rolledBack", new Dictionary<string, string> { ["reason"] = reason }), moves, started, false);
     }
 }

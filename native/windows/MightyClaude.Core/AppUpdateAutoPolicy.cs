@@ -31,6 +31,9 @@ public static class AppUpdateAuto
     public static readonly TimeSpan Countdown = TimeSpan.FromSeconds(60);
     /// How often the app re-evaluates while the banner counts down.
     public static readonly TimeSpan CountdownTick = TimeSpan.FromSeconds(1);
+    /// A countdown found more than this past its end was not watched to the end
+    /// (the computer slept through it): it is cancelled, never acted on.
+    public static readonly TimeSpan CountdownGrace = TimeSpan.FromSeconds(5);
     /// "Later" keeps the banner away this long.
     public static readonly TimeSpan Snooze = TimeSpan.FromHours(4);
 
@@ -61,7 +64,7 @@ public static class AppUpdateAuto
             AppIdleBlocker.Draft => facts.Drafts > 0,
             AppIdleBlocker.Terminal => facts.Terminals > 0,
             AppIdleBlocker.CliWork => facts.CliWork,
-            AppIdleBlocker.Remote => facts.ScreenSharing || facts.PhoneUploads > 0 || facts.RemoteHostRuns > 0,
+            AppIdleBlocker.Remote => facts.ScreenSharing || facts.PhoneUploads > 0 || facts.RemoteHostRuns > 0 || facts.SharingWorkspaces,
             AppIdleBlocker.Modal => facts.BlockingModal,
             AppIdleBlocker.UserActive => Recent(facts.LastUserInput, UserIdleDelay),
             AppIdleBlocker.RecentAgentActivity => Recent(facts.LastAgentActivity, AgentIdleDelay),
@@ -79,15 +82,18 @@ public static class AppUpdateAuto
     /// cancelled quietly as soon as any blocker other than `UserActive`
     /// appears, the switch goes off or the update is no longer ready. Input
     /// alone does not cancel a running countdown, so the pointer can reach the
-    /// banner's buttons. A snooze holds until it ends, then the app is asked
-    /// again the next time it is idle.
+    /// banner's buttons. A countdown found more than `CountdownGrace` past its
+    /// end (the computer slept through it) is cancelled too, so waking never
+    /// restarts the app at once; the next idle step starts a fresh one. A
+    /// snooze holds until it ends, then the app is asked again the next time it
+    /// is idle.
     public static AppUpdateRestartDecision RestartOffer(
         AppUpdateRestartState state, bool ready, bool automatic, IReadOnlyList<AppIdleBlocker> blockers, DateTimeOffset now)
     {
         switch (state.Kind)
         {
             case AppUpdateRestartKind.CountingDown:
-                if (!ready || !automatic || blockers.Any(blocker => blocker != AppIdleBlocker.UserActive))
+                if (!ready || !automatic || blockers.Any(blocker => blocker != AppIdleBlocker.UserActive) || now - state.Until > CountdownGrace)
                     return new(AppUpdateRestartState.Idle, AppUpdateRestartAction.Cancel);
                 return now >= state.Until
                     ? new(AppUpdateRestartState.Idle, AppUpdateRestartAction.Restart)
@@ -142,6 +148,9 @@ public sealed record AppIdleFacts
     public int PhoneUploads { get; init; }
     /// `Remote`: runs this computer hosts for another computer.
     public int RemoteHostRuns { get; init; }
+    /// `Remote`: this computer shares workspaces with another computer, runs or
+    /// not; a restart would turn sharing off and revoke the client's key.
+    public bool SharingWorkspaces { get; init; }
     /// `Modal`: a blocking dialog, the setup screen or the settings are open.
     public bool BlockingModal { get; init; }
     /// `UserActive`: the last keyboard or mouse input anywhere in the session.

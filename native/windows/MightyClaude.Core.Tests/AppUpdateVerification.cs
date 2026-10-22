@@ -655,10 +655,13 @@ internal static class AppUpdateVerification
         Check(statuses[5] == AppUpdateStrings.Installing, "the installing sentence must be the macOS one");
         Check(statuses[6] == AppUpdateStrings.UpToDate, "the up-to-date sentence must be the macOS one");
         Check(statuses[7] == "업데이트 확인 중 오류가 발생했습니다.", "the failed state shows the error message");
+        Check(statuses[8] == statuses[4], "a failed check beside a staged update keeps the staged sentence");
+        var kept = AppUpdatePresentation.Describe(AppUpdateSmoke.FixtureStates[8], true, null, _ => "00:00");
+        Check(kept.KeptError == "업데이트 확인 중 오류가 발생했습니다." && kept.RetryNotice == AppUpdateStrings.RetryNotice, "the failure and the retry notice sit beside it");
         Check(buttons.SequenceEqual([
             AppUpdateStrings.InProgressButton, AppUpdateStrings.DownloadButton, AppUpdateStrings.CancelButton,
             AppUpdateStrings.InProgressButton, AppUpdateStrings.RestartNowButton, AppUpdateStrings.InProgressButton,
-            AppUpdateStrings.CheckButton, AppUpdateStrings.CheckButton]),
+            AppUpdateStrings.CheckButton, AppUpdateStrings.CheckButton, AppUpdateStrings.RestartNowButton]),
             "the buttons must follow the macOS order: " + string.Join(", ", buttons));
 
         var idle = AppUpdatePresentation.Describe(new(), true, null, _ => "00:00");
@@ -744,8 +747,9 @@ internal static class AppUpdateVerification
         finally { Directory.Delete(root, true); }
     }
 
-    /// When a copy fails halfway, the partial install is removed and the backup
-    /// is renamed back so the user keeps the version they had.
+    /// When a copy fails halfway it fails beside the install: the install is
+    /// never touched, the partial copy is removed and the app the user had is
+    /// started again.
     internal static async Task AppUpdateHelperRollsBackAfterACopyThatFailsHalfWay()
     {
         var root = Temp();
@@ -769,15 +773,17 @@ internal static class AppUpdateVerification
                 throw new IOException("디스크 공간이 부족해 복사를 중단합니다.");
             }
 
+            var started = new List<string>();
             var result = await AppUpdateReplacement.RunAsync(
-                plan, _ => Task.FromResult(true), _ => Task.CompletedTask, HalfWayCopier);
+                plan, _ => Task.FromResult(true), path => { started.Add(path); return Task.CompletedTask; }, HalfWayCopier);
 
-            Check(!result.Replaced && result.RolledBack,
-                "a half-way copy must roll back: " + result.Error);
+            Check(!result.Replaced && !result.RolledBack && result.Moves.Count == 0,
+                "a half-way copy must fail before anything is moved: " + result.Error);
             Check(await File.ReadAllTextAsync(Path.Combine(install, "MightyClaude.exe")) == "old",
-                "the old install must be restored after the rollback");
-            Check(!Directory.Exists(plan.BackupDirectory),
-                "the backup must be gone after it was renamed back to install");
+                "the old install must be untouched");
+            Check(!Directory.Exists(plan.NewDirectory), "the partial copy beside the install must be removed");
+            Check(!Directory.Exists(plan.BackupDirectory), "no backup may be taken");
+            Check(started.SequenceEqual([Path.Combine(install, "MightyClaude.exe")]) && result.Started, "the app the user had is started again");
             Check(result.Error!.Contains("디스크"),
                 "the error must name the copy failure: " + result.Error);
         }
@@ -998,6 +1004,7 @@ internal static class AppUpdateVerification
         Check(AppUpdateAuto.CheckInterval == TimeSpan.FromHours(6) && AppUpdateAuto.Tick == TimeSpan.FromMinutes(10)
             && AppUpdateAuto.UserIdleDelay == TimeSpan.FromMinutes(5) && AppUpdateAuto.AgentIdleDelay == TimeSpan.FromMinutes(3)
             && AppUpdateAuto.Countdown == TimeSpan.FromSeconds(60) && AppUpdateAuto.CountdownTick == TimeSpan.FromSeconds(1)
+            && AppUpdateAuto.CountdownGrace == TimeSpan.FromSeconds(5)
             && AppUpdateAuto.Snooze == TimeSpan.FromHours(4), "the constants must be the macOS ones");
 
         // The macOS source names the same blockers in the same order and the same constants.
@@ -1008,7 +1015,7 @@ internal static class AppUpdateVerification
         var cases = string.Join(", ", Enum.GetValues<AppIdleBlocker>().Select(blocker => char.ToLowerInvariant(blocker.ToString()[0]) + blocker.ToString()[1..]));
         Check(swift.Contains("case " + cases + "\n"), "AppIdleBlocker must list the macOS cases in the macOS order: " + cases);
         foreach (var constant in new[] { "checkInterval: TimeInterval = 6 * 60 * 60", "tick: TimeInterval = 10 * 60", "userIdleDelay: TimeInterval = 5 * 60",
-                     "agentIdleDelay: TimeInterval = 3 * 60", "countdown: TimeInterval = 60", "countdownTick: TimeInterval = 1", "snooze: TimeInterval = 4 * 60 * 60" })
+                     "agentIdleDelay: TimeInterval = 3 * 60", "countdown: TimeInterval = 60", "countdownTick: TimeInterval = 1", "countdownGrace: TimeInterval = 5", "snooze: TimeInterval = 4 * 60 * 60" })
             Check(swift.Contains(constant), "the macOS constant changed: " + constant);
 
         var now = new DateTimeOffset(2026, 10, 23, 12, 0, 0, TimeSpan.Zero);
@@ -1034,6 +1041,7 @@ internal static class AppUpdateVerification
             (new() { ScreenSharing = true }, AppIdleBlocker.Remote),
             (new() { PhoneUploads = 1 }, AppIdleBlocker.Remote),
             (new() { RemoteHostRuns = 1 }, AppIdleBlocker.Remote),
+            (new() { SharingWorkspaces = true }, AppIdleBlocker.Remote),
             (new() { BlockingModal = true }, AppIdleBlocker.Modal),
             (new() { LastUserInput = now.AddMinutes(-4) }, AppIdleBlocker.UserActive),
             (new() { LastUserInput = now.AddMinutes(1) }, AppIdleBlocker.UserActive),
@@ -1060,6 +1068,9 @@ internal static class AppUpdateVerification
         Check(AppUpdateAuto.RestartOffer(started.State, false, true, [], now.AddSeconds(2)).Action == AppUpdateRestartAction.Cancel, "an update no longer ready cancels");
         Check(AppUpdateAuto.RestartOffer(started.State, true, true, [], now.AddSeconds(59)).Action == AppUpdateRestartAction.None, "the countdown runs its sixty seconds");
         Check(AppUpdateAuto.RestartOffer(started.State, true, true, [], now.AddSeconds(60)) == new AppUpdateRestartDecision(idle, AppUpdateRestartAction.Restart), "the end of the countdown restarts");
+        Check(AppUpdateAuto.RestartOffer(started.State, true, true, [], now.AddSeconds(65)).Action == AppUpdateRestartAction.Restart, "a tick within the grace still restarts");
+        Check(AppUpdateAuto.RestartOffer(started.State, true, true, [], now.AddSeconds(66)) == new AppUpdateRestartDecision(idle, AppUpdateRestartAction.Cancel),
+            "a countdown found past its grace (the computer slept) is cancelled, never acted on");
 
         var later = AppUpdateAuto.Later(now);
         Check(later == AppUpdateRestartState.Snoozed(now.AddHours(4)), "later snoozes four hours");
@@ -1119,14 +1130,14 @@ internal static class AppUpdateVerification
             Check(started.Count == 0 && !result.Started, "the install on quit must not start the app");
             Check(result.BackupRemoved && !Directory.Exists(plan.BackupDirectory), "the backup must be removed after a swap without relaunch");
 
-            // A failed copy puts the old install back and starts nothing either.
+            // A failed copy leaves the install as it was and starts nothing either.
             MakeInstall(staged, "newer");
             var failing = AppUpdateInstallPlan.Create(staged, install, package, Sha256Of(packageBytes), packageBytes.Length, 4242) with { Relaunch = false };
             var rolled = await AppUpdateReplacement.RunAsync(failing, _ => Task.FromResult(true), Start,
                 (_, destination) => { Directory.CreateDirectory(destination); throw new IOException("복사 실패"); });
-            Check(!rolled.Replaced && rolled.RolledBack, "a failed swap must roll back: " + rolled.Error);
+            Check(!rolled.Replaced && !rolled.RolledBack && rolled.Moves.Count == 0, "a failed copy must stop before anything is moved: " + rolled.Error);
             Check(await File.ReadAllTextAsync(Path.Combine(install, "MightyClaude.exe")) == "new", "the install must be the one before the swap");
-            Check(started.Count == 0 && !rolled.Started, "a rollback without relaunch must not start the app");
+            Check(started.Count == 0 && !rolled.Started, "a failed swap without relaunch must not start the app");
         }
         finally { Directory.Delete(root, true); }
     }
@@ -1198,6 +1209,238 @@ internal static class AppUpdateVerification
             Check(fresh.State.Phase == AppUpdatePhase.Failed, "a failed check with nothing staged fails");
             Check(fresh.Describe(_ => "00:00").RetryNotice == AppUpdateStrings.RetryNotice && fresh.Describe(_ => "00:00").KeptError is null,
                 "the retry notice shows, the error is the status itself");
+        }
+        finally { Directory.Delete(root, true); }
+    }
+    private sealed class GatedHttp(Func<Uri, Task<HttpResponseMessage>> respond) : HttpMessageHandler
+    {
+        internal readonly List<Uri> Requested = [];
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellation)
+        {
+            Requested.Add(request.RequestUri!);
+            return respond(request.RequestUri!);
+        }
+    }
+
+    private static string WindowsManifest(string version, byte[] package, params string[] architectures) =>
+        "{\"version\":\"" + version + "\",\"windows\":{" + string.Join(",", architectures.Select(arch =>
+            "\"" + arch + "\":{\"url\":\"https://updates.example/" + version + "/MightyClaude-windows-" + arch + ".zip\","
+            + $"\"sha256\":\"{Sha256Of(package)}\",\"size\":{package.Length}}}")) + "}}";
+
+    private static async Task<(string Install, string Package, AppUpdateInstallPlan Plan)> SwapFixture(string root, bool relaunch)
+    {
+        var install = Path.Combine(root, "MightyClaude");
+        var staged = Path.Combine(root, "staged");
+        MakeInstall(install, "old");
+        MakeInstall(staged, "new");
+        var packageBytes = "package"u8.ToArray();
+        var package = Path.Combine(root, "package.zip");
+        await File.WriteAllBytesAsync(package, packageBytes);
+        return (install, package, AppUpdateInstallPlan.Create(staged, install, package, Sha256Of(packageBytes), packageBytes.Length, 4242) with { Relaunch = relaunch });
+    }
+
+    /// The staged folder is copied beside the install first and then renamed in,
+    /// so the install is whole until two renames; an install on quit that finds
+    /// the app running again keeps everything for the next quit; a failed rename
+    /// puts the old install back.
+    internal static async Task HelperCopiesBesideTheInstallAndSwapsByRenaming()
+    {
+        var root = Temp();
+        try
+        {
+            var (install, _, plan) = await SwapFixture(root, relaunch: true);
+            Check(plan.NewDirectory == Path.GetFullPath(install) + ".update-new", "the copy lands beside the install");
+            var installWholeDuringCopy = false;
+            var result = await AppUpdateReplacement.RunAsync(plan, _ => Task.FromResult(true), _ => Task.CompletedTask,
+                (source, destination) =>
+                {
+                    installWholeDuringCopy = destination == plan.NewDirectory && File.ReadAllText(Path.Combine(install, "MightyClaude.exe")) == "old";
+                    AppUpdateReplacement.CopyDirectory(source, destination);
+                });
+            Check(result.Replaced && installWholeDuringCopy, "the install is whole while the copy runs: " + result.Error);
+            Check(result.Moves.Select(move => (move.Kind, move.From)).SequenceEqual([("backup", plan.InstallDirectory), ("install", plan.NewDirectory)]),
+                "the swap is two renames, the install aside and the copy in");
+            Check(!Directory.Exists(plan.NewDirectory) && Directory.Exists(plan.StagedDirectory), "the copy was renamed in; the staged folder stays");
+
+            // An install on quit that finds the app running again keeps everything for the next quit.
+            var again = Path.Combine(root, "again");
+            var (againInstall, _, quiet) = await SwapFixture(again, relaunch: false);
+            var startedAgain = 0;
+            var asked = false;
+            var skipped = await AppUpdateReplacement.RunAsync(quiet, _ => Task.FromResult(true), _ => { startedAgain++; return Task.CompletedTask; },
+                runningAgain: _ => { asked = true; return Task.FromResult(true); });
+            Check(asked && skipped.Skipped && !skipped.Replaced && !skipped.RolledBack && skipped.Error is null, "a running app skips the swap without an error");
+            Check(skipped.Moves.Count == 0 && startedAgain == 0 && !skipped.Started, "nothing is moved or started");
+            Check(File.ReadAllText(Path.Combine(againInstall, "MightyClaude.exe")) == "old", "the install is untouched");
+            Check(!Directory.Exists(quiet.NewDirectory) && Directory.Exists(quiet.StagedDirectory), "the copy is removed and the staged update kept");
+            Check(!Directory.Exists(quiet.BackupDirectory), "no backup is taken");
+            var notAsked = true;
+            var relaunching = await AppUpdateReplacement.RunAsync(quiet with { Relaunch = true }, _ => Task.FromResult(true), _ => Task.CompletedTask,
+                runningAgain: _ => { notAsked = false; return Task.FromResult(true); });
+            Check(notAsked && relaunching.Replaced, "a restart asked for by the user does not look for the app running again");
+
+            // The copy cannot be renamed in: the old install is put back (and started only with a relaunch).
+            foreach (var relaunch in new[] { true, false })
+            {
+                var failing = Path.Combine(root, "failing-" + relaunch);
+                var (failingInstall, _, failingPlan) = await SwapFixture(failing, relaunch);
+                var calls = 0;
+                var starts = new List<string>();
+                var rolled = await AppUpdateReplacement.RunAsync(failingPlan, _ => Task.FromResult(true), path => { starts.Add(path); return Task.CompletedTask; },
+                    mover: (from, to) => { if (++calls == 2) throw new IOException("이름을 바꾸지 못했습니다."); Directory.Move(from, to); });
+                Check(!rolled.Replaced && rolled.RolledBack, "a failed rename must roll back: " + rolled.Error);
+                Check(File.ReadAllText(Path.Combine(failingInstall, "MightyClaude.exe")) == "old", "the old install is back");
+                Check(!Directory.Exists(failingPlan.BackupDirectory) && !Directory.Exists(failingPlan.NewDirectory), "neither the backup nor the copy is left behind");
+                Check(starts.Count == (relaunch ? 1 : 0) && rolled.Started == relaunch, "the old app is started again only with a relaunch");
+            }
+
+            // The install cannot be moved aside (the app runs from it): nothing changes and the app the user had comes back.
+            var locked = Path.Combine(root, "locked");
+            var (lockedInstall, _, lockedPlan) = await SwapFixture(locked, relaunch: true);
+            var lockedStarts = 0;
+            var refused = await AppUpdateReplacement.RunAsync(lockedPlan, _ => Task.FromResult(true), _ => { lockedStarts++; return Task.CompletedTask; },
+                mover: (_, _) => throw new IOException("다른 프로세스가 사용 중입니다."));
+            Check(!refused.Replaced && !refused.RolledBack && refused.Moves.Count == 0, "a refused first rename moves nothing");
+            Check(File.ReadAllText(Path.Combine(lockedInstall, "MightyClaude.exe")) == "old" && !Directory.Exists(lockedPlan.NewDirectory), "the install stays and the copy is removed");
+            Check(lockedStarts == 1, "the app the user had is started again");
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    /// An install an interrupted swap left aside (missing, or without its
+    /// executable) is put back from the newest backup, when the helper starts
+    /// and when the app starts; a whole install is never touched.
+    internal static async Task AnInterruptedSwapIsPutBack()
+    {
+        var root = Temp();
+        try
+        {
+            var install = Path.Combine(root, "MightyClaude");
+            var older = install + ".backup-20261001T000000000";
+            var newer = install + ".backup-20261020T000000000";
+            Check(!AppUpdateReplacement.RestoreInterruptedInstall(install), "with no backup there is nothing to put back");
+
+            MakeInstall(older, "older");
+            MakeInstall(newer, "newer");
+            Check(AppUpdateReplacement.RestoreInterruptedInstall(install), "a missing install is put back");
+            Check(File.ReadAllText(Path.Combine(install, "MightyClaude.exe")) == "newer" && !Directory.Exists(newer) && Directory.Exists(older),
+                "the newest backup is renamed back");
+            Check(!AppUpdateReplacement.RestoreInterruptedInstall(install), "a whole install is left alone");
+            Check(Directory.Exists(older), "a whole install leaves the backups to the pruning");
+
+            File.Delete(Path.Combine(install, "MightyClaude.exe"));
+            File.WriteAllText(Path.Combine(install, "half.dll"), "half");
+            Check(AppUpdateReplacement.RestoreInterruptedInstall(install), "an install without its executable is put back");
+            Check(File.ReadAllText(Path.Combine(install, "MightyClaude.exe")) == "older" && !File.Exists(Path.Combine(install, "half.dll")),
+                "the half install is replaced by the backup");
+            File.Delete(Path.Combine(install, "MightyClaude.exe"));
+            Directory.CreateDirectory(install + ".backup-20261021T000000000");
+            Check(!AppUpdateReplacement.RestoreInterruptedInstall(install), "a backup without the executable is not put back");
+            Directory.Delete(install, true);
+            Directory.Delete(install + ".backup-20261021T000000000");
+
+            // The helper puts the install back before it starts, then swaps as usual.
+            var (helperInstall, _, plan) = await SwapFixture(Path.Combine(root, "helper"), relaunch: false);
+            Directory.Move(helperInstall, helperInstall + ".backup-20261001T000000000");
+            var result = await AppUpdateReplacement.RunAsync(plan, _ => Task.FromResult(true), _ => Task.CompletedTask);
+            Check(result.Replaced && result.Moves[0].Kind == "backup", "the helper puts the install back, then backs it up and swaps: " + result.Error);
+            Check(File.ReadAllText(Path.Combine(helperInstall, "MightyClaude.exe")) == "new", "the new version is installed");
+            Check(!Directory.Exists(helperInstall + ".backup-20261001T000000000"), "the put-back backup is no longer beside the install");
+
+            // A copy a killed helper left beside the install is cleared with the backups at the next start.
+            MakeInstall(plan.NewDirectory, "partial");
+            AppUpdateReplacement.PruneBackups(helperInstall);
+            Check(!Directory.Exists(plan.NewDirectory) && Directory.Exists(helperInstall), "a leftover copy is pruned, the install stays");
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    /// The decisions after a check, beside a staged update: a newer version for
+    /// another machine keeps the staged one; with nothing staged it is the
+    /// Mac's "blocked" (shown, never downloaded, nothing to retry); a newer
+    /// version for this machine replaces the staged plan and is downloaded; a
+    /// "restart now" during a check keeps the install; the switch off shows
+    /// through Describe; and a run with no install plan installs nothing on quit.
+    internal static async Task ACheckBesideAStagedUpdateDecidesAsOnMacOS()
+    {
+        var root = Temp();
+        try
+        {
+            var install = Path.Combine(root, "MightyClaude");
+            MakeInstall(install, "old");
+            var packagePath = MakeZip(root, "MightyClaude-windows-x64.zip", zip => AddEntry(zip, "MightyClaude.exe", FakeExecutable("x64")));
+            var packageBytes = await File.ReadAllBytesAsync(packagePath);
+            var manifest = WindowsManifest("9.9.9", packageBytes, "x64");
+            Func<Task> gate = () => Task.CompletedTask;
+            var handler = new GatedHttp(async url =>
+            {
+                if (url.ToString() != ManifestUrl) return Ok(packageBytes);
+                await gate();
+                return Ok(Envelope(manifest));
+            });
+            using var service = new AppUpdateService(Path.Combine(root, "state"), FixtureKey, handler);
+            var launched = new List<AppUpdateInstallPlan>();
+            var automatic = true;
+            var coordinator = new AppUpdateCoordinator(service, "0.1.0", ManifestUrl, "x64", install,
+                plan => { launched.Add(plan); return Task.CompletedTask; }, () => automatic);
+            int Downloads() => handler.Requested.Count(url => url.ToString() != ManifestUrl);
+
+            await coordinator.CheckAsync(null);
+            Check(coordinator.State.Phase == AppUpdatePhase.Ready && Downloads() == 1, "the first version is staged: " + coordinator.State.ErrorMessage);
+            var firstPlan = coordinator.State.InstallPlan;
+
+            // A newer version only for arm64 keeps the staged x64 update, without a download.
+            manifest = WindowsManifest("10.0.0", packageBytes, "arm64");
+            await coordinator.CheckAsync(null);
+            Check(coordinator.State.Phase == AppUpdatePhase.Ready && coordinator.State.InstallPlan == firstPlan && Downloads() == 1,
+                "a newer version this machine cannot install keeps the staged update ready");
+            Check(coordinator.State.Availability!.Manifest.Version == "9.9.9", "the staged version is still the one shown");
+
+            // A newer version for this machine replaces the staged plan and downloads again.
+            manifest = WindowsManifest("10.0.1", packageBytes, "x64");
+            await coordinator.CheckAsync(null);
+            Check(coordinator.State.Phase == AppUpdatePhase.Ready && Downloads() == 2, "a newer version is downloaded and staged: " + coordinator.State.ErrorMessage);
+            Check(coordinator.State.Availability!.Manifest.Version == "10.0.1" && coordinator.State.InstallPlan is { } secondPlan && secondPlan != firstPlan,
+                "the newer version's plan replaces the staged one");
+
+            // The switch off shows through the coordinator's own Describe.
+            automatic = false;
+            Check(coordinator.Describe(_ => "00:00").StatusText == AppUpdateStrings.ReadyTemplate.Replace("{version}", "10.0.1"),
+                "with the switch off a staged update waits for restart now");
+            automatic = true;
+            Check(coordinator.Describe(_ => "00:00").StatusText == AppUpdateStrings.StagedTemplate.Replace("{version}", "10.0.1"),
+                "with the switch on it installs at the next launch");
+
+            // "Restart now" while a check from Ready is still running: the late answer leaves the install alone.
+            var release = new TaskCompletionSource();
+            gate = () => release.Task;
+            manifest = WindowsManifest("10.0.2", packageBytes, "x64");
+            var running = coordinator.CheckAsync(null);
+            Check(coordinator.State.Phase == AppUpdatePhase.Ready, "a staged update stays ready while the check runs");
+            await coordinator.InstallAsync();
+            Check(coordinator.State.Phase == AppUpdatePhase.Installing && launched.Count == 1, "restart now installs during the check");
+            release.SetResult();
+            await running;
+            Check(coordinator.State.Phase == AppUpdatePhase.Installing && Downloads() == 2, "the late check result changes nothing and downloads nothing");
+            gate = () => Task.CompletedTask;
+
+            // Nothing staged and the newer version is only for arm64: blocked, shown, never downloaded, no retry notice.
+            manifest = WindowsManifest("10.0.0", packageBytes, "arm64");
+            var fresh = new AppUpdateCoordinator(service, "0.1.0", ManifestUrl, "x64", install, null, () => true);
+            await fresh.CheckAsync(null);
+            Check(fresh.State.Phase == AppUpdatePhase.Failed && fresh.State.ErrorMessage!.Contains("x64"), "a newer version for another machine is blocked with the reason");
+            Check(Downloads() == 2, "a blocked version is never downloaded");
+            var blocked = fresh.Describe(_ => "00:00");
+            Check(blocked.StatusText == fresh.State.ErrorMessage && blocked.RetryNotice is null && blocked.KeptError is null, "a blocked version is no failure to retry");
+
+            // A run without an install plan (dev or portable) installs nothing on quit and says nothing.
+            var noPlan = new AppUpdateCoordinator(service, "0.1.0", ManifestUrl, "x64", installDirectory: null, plan => { launched.Add(plan); return Task.CompletedTask; }, () => true);
+            manifest = WindowsManifest("9.9.9", packageBytes, "x64");
+            await noPlan.CheckAsync(null);
+            Check(noPlan.State.Phase == AppUpdatePhase.Ready && noPlan.State.InstallPlan is null, "a run without an install folder stages without a plan");
+            var changes = 0;
+            noPlan.StateChanged += () => changes++;
+            Check(!await noPlan.InstallOnQuitAsync() && changes == 0 && noPlan.State.Phase == AppUpdatePhase.Ready, "quitting it changes nothing");
         }
         finally { Directory.Delete(root, true); }
     }
