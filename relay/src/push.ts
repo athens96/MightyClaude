@@ -1,6 +1,7 @@
 import { createPrivateKey } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { isIP } from 'node:net';
 
 import type { RelayConfig } from './config.ts';
 import { FcmHttpV1Sender, parseServiceAccount, type PushSender } from './fcm.ts';
@@ -68,6 +69,44 @@ function clampRetryAfter(secs: number): number {
   return Number.isFinite(secs) ? Math.min(RETRY_AFTER_MAX_SECS, Math.max(1, Math.ceil(secs))) : 60;
 }
 
+/** The eight 16-bit groups of a valid IPv6 address (zone already removed), or null. */
+function ipv6Groups(ip: string): number[] | null {
+  let text = ip;
+  const lastColon = text.lastIndexOf(':');
+  const tail = text.slice(lastColon + 1);
+  if (tail.includes('.')) {
+    const octets = tail.split('.').map(Number);
+    if (octets.length !== 4 || octets.some((o) => !Number.isInteger(o) || o < 0 || o > 255)) return null;
+    const [a = 0, b = 0, c = 0, d = 0] = octets;
+    text = `${text.slice(0, lastColon + 1)}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+  }
+  const halves = text.split('::');
+  if (halves.length > 2) return null;
+  const parse = (part: string): number[] => (part === '' ? [] : part.split(':').map((g) => Number.parseInt(g, 16)));
+  const head = parse(halves[0] ?? '');
+  const rest = halves.length === 2 ? parse(halves[1] ?? '') : [];
+  const fill = halves.length === 2 ? 8 - head.length - rest.length : 0;
+  if (fill < 0) return null;
+  const groups = [...head, ...new Array<number>(fill).fill(0), ...rest];
+  return groups.length === 8 && groups.every((g) => Number.isInteger(g) && g >= 0 && g <= 0xffff) ? groups : null;
+}
+
+/**
+ * The key push limits count a source under: IPv4 as is, IPv6 by its /64 (one subscriber
+ * usually holds a whole /64), and an IPv4-mapped IPv6 address as its IPv4 address.
+ */
+export function pushIpKey(ip: string): string {
+  const bare = ip.split('%')[0] ?? ip;
+  if (isIP(bare) !== 6) return ip;
+  const groups = ipv6Groups(bare);
+  if (groups === null) return ip;
+  const [g0, g1, g2, g3, g4, g5, g6 = 0, g7 = 0] = groups;
+  if (g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0xffff) {
+    return `${g6 >> 8}.${g6 & 0xff}.${g7 >> 8}.${g7 & 0xff}`;
+  }
+  return `${groups.slice(0, 4).map((g) => g.toString(16)).join(':')}::/64`;
+}
+
 function shortId(serverId: string): string {
   return serverId.slice(0, 8);
 }
@@ -82,6 +121,7 @@ export class PushRoutes {
   readonly #sendByServerId: SlidingWindowLimiter;
   readonly #sendByIp: SlidingWindowLimiter;
   readonly #sendGlobal: SlidingWindowLimiter;
+  readonly #registrationsGlobal: SlidingWindowLimiter;
   readonly #sweeper: NodeJS.Timeout;
 
   constructor(config: RelayConfig, store: PushHandleStore, sender: PushSender | null, log: RelayLogger, now: () => number) {
@@ -94,17 +134,20 @@ export class PushRoutes {
     this.#sendByServerId = new SlidingWindowLimiter(window, config.pushMaxSendPerServerId);
     this.#sendByIp = new SlidingWindowLimiter(window, config.pushMaxSendPerIp);
     this.#sendGlobal = new SlidingWindowLimiter(window, config.pushMaxSendGlobal);
+    this.#registrationsGlobal = new SlidingWindowLimiter(window, config.pushMaxRegistrationsGlobal);
     this.#sweeper = setInterval(() => {
       const at = this.#now();
-      for (const limiter of [this.#handleOpsByIp, this.#sendByServerId, this.#sendByIp, this.#sendGlobal]) limiter.sweep(at);
+      const limiters = [this.#handleOpsByIp, this.#sendByServerId, this.#sendByIp, this.#sendGlobal, this.#registrationsGlobal];
+      for (const limiter of limiters) limiter.sweep(at);
     }, window);
     this.#sweeper.unref?.();
   }
 
   /** Handles `/push/v1/*`; false for every other path. */
-  async handle(req: IncomingMessage, res: ServerResponse, ip: string): Promise<boolean> {
+  async handle(req: IncomingMessage, res: ServerResponse, sourceIp: string): Promise<boolean> {
     const path = new URL(req.url ?? '/', 'http://relay.invalid').pathname;
     if (!path.startsWith('/push/v1/')) return false;
+    const ip = pushIpKey(sourceIp);
     if (req.method === 'POST' && path === '/push/v1/handles') await this.#register(req, res, ip);
     else if (req.method === 'POST' && path === '/push/v1/send') await this.#send(req, res, ip);
     else if ((req.method === 'PUT' || req.method === 'DELETE') && HANDLE_PATH.test(path)) await this.#manage(req, res, ip, HANDLE_PATH.exec(path)?.[1] ?? '');
@@ -135,7 +178,7 @@ export class PushRoutes {
     if (!body.ok) return failure(res, body.status, body.status === 413 ? 'too-large' : 'bad-request');
     const token = body.value['fcmToken'];
     if (typeof token !== 'string' || !FCM_TOKEN_PATTERN.test(token)) return failure(res, 400, 'bad-request');
-    const rate = this.#take([[this.#handleOpsByIp, ip]]);
+    const rate = this.#take([[this.#handleOpsByIp, ip], [this.#registrationsGlobal, '*']]);
     if (!rate.ok) return failure(res, 429, 'rate-limited', rate.retryAfterSecs);
     const made = await this.#store.register(token, this.#now());
     if (made === null) return failure(res, 503, 'full');

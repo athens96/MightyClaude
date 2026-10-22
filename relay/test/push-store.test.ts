@@ -67,12 +67,33 @@ describe('PushHandleStore', () => {
     expect(store.size).toBe(0);
   });
 
-  it('refuses a new handle when full, after dropping idle ones', async () => {
-    const store = await PushHandleStore.open(options('', { maxHandles: 1, idleMs: DAY }), 0);
-    expect(await store.register(TOKEN_A, 0)).not.toBeNull();
+  it('refuses a new handle when full of bound handles, after dropping idle ones', async () => {
+    const lines: string[] = [];
+    const store = await PushHandleStore.open(options('', { maxHandles: 1, idleMs: DAY, log: (line) => lines.push(line) }), 0);
+    const made = (await store.register(TOKEN_A, 0))!;
+    await store.bind(made.handle, SERVER_1, 0);
     expect(await store.register(TOKEN_B, 1)).toBeNull();
+    expect(lines).toEqual(['[push] handle store full']);
     expect(await store.register(TOKEN_B, 2 * DAY)).not.toBeNull();
     expect(store.size).toBe(1);
+  });
+
+  it('makes room by dropping the least recently used handle no host has used', async () => {
+    const lines: string[] = [];
+    const store = await PushHandleStore.open(options('', { maxHandles: 3, log: (line) => lines.push(line) }), 0);
+    const bound = (await store.register(TOKEN_A, 0))!;
+    await store.bind(bound.handle, SERVER_1, 0);
+    const older = (await store.register(TOKEN_A, 1))!;
+    const newer = (await store.register(TOKEN_A, 2))!;
+    // A refresh counts as use: `older` is now the most recent unbound handle.
+    expect(await store.refresh(older.handle, older.secret, TOKEN_B, 3)).toBe(true);
+    const fresh = await store.register(TOKEN_B, 4);
+    expect(fresh).not.toBeNull();
+    expect(store.size).toBe(3);
+    expect(lines).toEqual(['[push] handle store full']);
+    expect((await store.bind(newer.handle, SERVER_2, 5)).kind).toBe('unknown');
+    expect((await store.bind(older.handle, SERVER_2, 5)).kind).toBe('ok');
+    expect((await store.bind(bound.handle, SERVER_1, 5)).kind).toBe('ok');
   });
 
   it('keeps handles across a restart in an owner-only file', async () => {

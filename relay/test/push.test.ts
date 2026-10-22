@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { PushSendResult, PushSender } from '../src/fcm.ts';
+import { pushIpKey } from '../src/push.ts';
 import { startRelay, type RelayHandle } from '../src/server.ts';
 
 const sha256Hex = (value: string): string => createHash('sha256').update(value, 'utf8').digest('hex');
@@ -89,6 +90,59 @@ describe('push handles', () => {
     const res = await call(base, 'POST', '/push/v1/handles', { fcmToken: FCM_TOKEN });
     expect(res.status).toBe(429);
     expect(Number(res.headers.get('retry-after'))).toBeGreaterThan(0);
+  });
+});
+
+describe('push limits', () => {
+  function registerFrom(base: string, ip: string): Promise<Response> {
+    return fetch(`${base}/push/v1/handles`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-forwarded-for': ip },
+      body: JSON.stringify({ fcmToken: FCM_TOKEN }),
+    });
+  }
+
+  it('keys IPv6 by its /64 and IPv4 as is', () => {
+    expect(pushIpKey('2001:db8:1:2:aaaa::1')).toBe('2001:db8:1:2::/64');
+    expect(pushIpKey('2001:0db8:0001:0002:ffff:ffff:ffff:ffff')).toBe('2001:db8:1:2::/64');
+    expect(pushIpKey('2001:db8::1')).toBe('2001:db8:0:0::/64');
+    expect(pushIpKey('::1')).toBe('0:0:0:0::/64');
+    expect(pushIpKey('203.0.113.7')).toBe('203.0.113.7');
+    expect(pushIpKey('::ffff:203.0.113.7')).toBe('203.0.113.7');
+    expect(pushIpKey('::ffff:cb00:7107')).toBe('203.0.113.7');
+    expect(pushIpKey('fe80::1%en0')).toBe('fe80:0:0:0::/64');
+  });
+
+  it('shares one handle budget across a whole IPv6 /64', async () => {
+    const { base } = await relay({ trustProxy: true, pushMaxHandleOpsPerIp: 2 });
+    expect((await registerFrom(base, '2001:db8:1:2::1')).status).toBe(201);
+    expect((await registerFrom(base, '2001:db8:1:2::2')).status).toBe(201);
+    expect((await registerFrom(base, '2001:db8:1:2:ffff::3')).status).toBe(429);
+    expect((await registerFrom(base, '2001:db8:1:3::1')).status).toBe(201);
+  });
+
+  it('counts an IPv4-mapped address as its IPv4 address', async () => {
+    const { base } = await relay({ trustProxy: true, pushMaxHandleOpsPerIp: 1 });
+    expect((await registerFrom(base, '203.0.113.7')).status).toBe(201);
+    expect((await registerFrom(base, '::ffff:203.0.113.7')).status).toBe(429);
+  });
+
+  it('limits registrations across all IPs', async () => {
+    const { base } = await relay({ trustProxy: true, pushMaxRegistrationsGlobal: 2 });
+    expect((await registerFrom(base, '203.0.113.1')).status).toBe(201);
+    expect((await registerFrom(base, '203.0.113.2')).status).toBe(201);
+    const res = await registerFrom(base, '203.0.113.3');
+    expect(res.status).toBe(429);
+    expect(Number(res.headers.get('retry-after'))).toBeGreaterThan(0);
+  });
+
+  it('logs a full store without identifiers and makes room from unused handles', async () => {
+    const lines: string[] = [];
+    const { base } = await relay({ pushMaxHandles: 1, logger: (line) => lines.push(line) });
+    const first = await register(base);
+    await register(base);
+    expect(lines).toContain('[push] handle store full');
+    expect((await send(base, identity('host-a'), first.handle)).status).toBe(404);
   });
 });
 

@@ -84,7 +84,15 @@ export class PushHandleStore {
   async register(fcmToken: string, now: number): Promise<{ handle: string; secret: string } | null> {
     if (!FCM_TOKEN_PATTERN.test(fcmToken)) return null;
     this.#dropIdle(now);
-    if (this.#records.size >= this.#options.maxHandles) return null;
+    if (this.#records.size >= this.#options.maxHandles) {
+      this.#options.log('[push] handle store full');
+      // Room comes only from handles no host has used yet, least recently used first; bound ones stay.
+      while (this.#records.size >= this.#options.maxHandles) {
+        const unused = this.#leastRecentlyUsedUnbound();
+        if (unused === null) return null;
+        this.#records.delete(unused);
+      }
+    }
     const handle = newPushSecret();
     const secret = newPushSecret();
     this.#records.set(handle, { handle, secretHash: sha256Hex(secret), fcmToken, serverId: null, createdAt: now, usedAt: now });
@@ -136,6 +144,14 @@ export class PushHandleStore {
     const stored = Buffer.from(record.secretHash, 'hex');
     const given = Buffer.from(sha256Hex(secret), 'hex');
     return stored.length === given.length && timingSafeEqual(stored, given) ? record : null;
+  }
+
+  #leastRecentlyUsedUnbound(): string | null {
+    let oldest: PushHandleRecord | null = null;
+    for (const record of this.#records.values()) {
+      if (record.serverId === null && (oldest === null || record.usedAt < oldest.usedAt)) oldest = record;
+    }
+    return oldest?.handle ?? null;
   }
 
   #dropIdle(now: number): void {
