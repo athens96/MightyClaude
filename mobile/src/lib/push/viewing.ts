@@ -18,7 +18,11 @@ export function createViewingReporter(deps: ViewingDeps) {
   let timer: unknown = null;
 
   const say = (storageId: string, sessionId: string | null): void => {
-    void deps.send(storageId, sessionId).catch(() => undefined);
+    try {
+      void deps.send(storageId, sessionId).catch(() => undefined);
+    } catch {
+      // Best effort: a send that fails at once is the same as one that fails later.
+    }
   };
   const stop = (): void => {
     if (timer !== null) deps.clearInterval(timer);
@@ -34,6 +38,8 @@ export function createViewingReporter(deps: ViewingDeps) {
 
   return {
     enter(storageId: string, sessionId: string): void {
+      const same = current !== null && current.storageId === storageId && current.sessionId === sessionId;
+      if (same && active && timer !== null) return;
       if (current !== null && current.storageId !== storageId && active) say(current.storageId, null);
       current = { storageId, sessionId };
       start();

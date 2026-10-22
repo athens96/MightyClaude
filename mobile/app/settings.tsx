@@ -34,10 +34,13 @@ async function notificationsAllowed(): Promise<boolean> {
 
 function SettingSwitch({
   label,
+  hint,
   value,
   onChange,
 }: {
   label: string;
+  /** Read out with the switch, for a note shown under it. */
+  hint?: string;
   value: boolean;
   onChange: (value: boolean) => void;
 }) {
@@ -51,6 +54,7 @@ function SettingSwitch({
         onValueChange={onChange}
         trackColor={{ false: palette.track, true: palette.accent }}
         accessibilityLabel={label}
+        accessibilityHint={hint}
       />
     </View>
   );
@@ -75,8 +79,12 @@ export default function SettingsScreen() {
     return () => subscription.remove();
   }, []);
 
+  // Each change is built on the store's latest value, so two quick toggles both stay.
   const setKind = (kind: PushKind, value: boolean) => {
-    void pushSettings.set({ ...settings, kinds: { ...settings.kinds, [kind]: value } });
+    void pushSettings.update((now) => ({ ...now, kinds: { ...now.kinds, [kind]: value } }));
+  };
+  const setCrashReports = (value: boolean) => {
+    void pushSettings.update((now) => ({ ...now, crashReports: value }));
   };
 
   return (
@@ -84,7 +92,9 @@ export default function SettingsScreen() {
       contentContainerStyle={[styles.page, { paddingBottom: insets.bottom + spacing.xl }]}
     >
       <Card>
-        <Text style={styles.heading}>{t('phone.settings.notifications')}</Text>
+        <Text style={styles.heading} accessibilityRole="header">
+          {t('phone.settings.notifications')}
+        </Text>
         <Text style={styles.hint}>{t('phone.settings.notificationsHint')}</Text>
         {!allowed ? (
           <View style={styles.block}>
@@ -108,8 +118,9 @@ export default function SettingsScreen() {
       <Card>
         <SettingSwitch
           label={t('phone.settings.crashReports')}
+          hint={t('phone.settings.crashReportsHint')}
           value={settings.crashReports}
-          onChange={(value) => void pushSettings.set({ ...settings, crashReports: value })}
+          onChange={setCrashReports}
         />
         <Text style={styles.hint}>{t('phone.settings.crashReportsHint')}</Text>
       </Card>
