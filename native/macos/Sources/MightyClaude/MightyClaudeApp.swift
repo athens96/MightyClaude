@@ -133,7 +133,8 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         if terminationReady { return .terminateNow }
-        if terminating { return .terminateCancel }
+        // A second quit while a logout's reply is pending must not refuse it.
+        if terminating { return replyPending ? .terminateLater : .terminateCancel }
         terminating = true
         // Logout, restart and shutdown send their quit with one of their
         // reasons: a staged update then waits for the next quit. Read from this
@@ -162,6 +163,13 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         // from the event loop, never from inside a main-actor job.
         if poweringOff {
             replyPending = true
+            // terminateLater runs a modal loop in which main-queue work may
+            // not drain; a run-loop timer in the common modes still fires, so
+            // the logout always gets its reply by the deadline.
+            let deadline = Timer(timeInterval: Self.terminationDeadline, repeats: false) { [self] _ in
+                MainActor.assumeIsolated { finishTermination(sender, deadline: true) }
+            }
+            RunLoop.main.add(deadline, forMode: .common)
             return .terminateLater
         }
         return .terminateCancel

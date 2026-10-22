@@ -38,8 +38,8 @@ struct SessionPaneView: View {
         return nil
     }
     private var selectedModelName: String { store.modelLabel(for: session) }
-    /// Sending stays possible while a run is busy: a local Claude turn takes
-    /// the text immediately, other panes queue it for after the current request.
+    /// Sending stays possible while a run is busy: a busy pane queues the text
+    /// (⌘Enter may run it in a new worktree).
     private var canSend: Bool {
         guard !stopping, !importingAttachments, blockedReason == nil else { return false }
         if !draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (session.kind != "shell" && !attachments.isEmpty) { return true }

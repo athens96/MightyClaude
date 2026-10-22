@@ -204,6 +204,10 @@ final class AppStore: ObservableObject, DelegationHost {
     /// The idle-restart offer (the countdown banner) and its one-second ticks
     /// while it counts down.
     @Published var appUpdateRestart: AppUpdateRestartState = .idle
+    /// The countdown ran out and the restart is still being checked: the
+    /// phase is already `.installing`, but the app shows the update as ready
+    /// until the re-check passes.
+    @Published var appUpdateVerifyingRestart = false
     var appUpdateCountdownTicks: Task<Void, Never>?
     var slashScansInFlight = Set<String>()
     @Published var attachmentErrors: [String: String] = [:]
