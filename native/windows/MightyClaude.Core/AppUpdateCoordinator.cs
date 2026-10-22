@@ -373,14 +373,6 @@ public sealed class AppUpdateCoordinator
         finally { work?.Dispose(); work = null; }
     }
 
-    /// The relaunch helper was started but the app could not quit (its
-    /// shutdown failed): the update is Ready again, so "restart now" and the
-    /// install on quit still offer it.
-    public void InstallAbandoned()
-    {
-        if (State.Phase == AppUpdatePhase.Installing) Mutate(s => s with { Phase = AppUpdatePhase.Ready });
-    }
-
     public void CancelDownload()
     {
         service.CancelDownload();
@@ -463,6 +455,9 @@ public sealed class AppUpdateCoordinator
     private void Mutate(Func<AppUpdateState, AppUpdateState> apply)
     {
         State = apply(State);
+        // A deferred staging belongs to the Available it left: once the phase moves on (a check, a failure, a download)
+        // there is nothing to retry, and the loop's due check must not wait on it.
+        if (State.Phase != AppUpdatePhase.Available) StagingDeferred = false;
         StateChanged?.Invoke();
     }
 }

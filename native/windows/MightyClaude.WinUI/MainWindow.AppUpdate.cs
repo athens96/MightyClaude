@@ -79,12 +79,7 @@ public sealed partial class MainWindow
         info.Environment.Clear();
         foreach (var (key, value) in AppUpdateInstallPlan.HelperEnvironment) info.Environment[key] = value;
         using (Process.Start(info)) { }
-        if (plan.Relaunch) DispatcherQueue.TryEnqueue(async () =>
-        {
-            await QuitAsync();
-            // The shutdown failed (its error shows) and the app runs on: the update is ready again.
-            if (!canClose && !closing) appUpdate?.InstallAbandoned();
-        });
+        if (plan.Relaunch) DispatcherQueue.TryEnqueue(() => _ = QuitAsync());
         return Task.CompletedTask;
     }
 
@@ -300,7 +295,7 @@ public sealed partial class MainWindow
             if (kept != AppUpdateKeptCheck.Waiting) appUpdateKeptPending = false;
             if (kept != AppUpdateKeptCheck.None) return;
         }
-        if (appUpdate.StagingDeferred) { await appUpdate.RetryDeferredStagingAsync(); return; }
+        if (appUpdate.StagingDeferred && appUpdate.State.Phase == AppUpdatePhase.Available) { await appUpdate.RetryDeferredStagingAsync(); return; }
         CheckAppUpdateIfDue();
     }
 
