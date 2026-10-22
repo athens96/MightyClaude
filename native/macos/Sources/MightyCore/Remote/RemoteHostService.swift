@@ -254,7 +254,9 @@ public actor RemoteHostService {
                 case "steer":
                     let body = try JSONDecoder().decode(RemoteWireSteer.self, from: request.body)
                     guard !body.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, body.text.utf8.count <= 400_000, !body.text.contains("\0") else { throw Failure(400, L("validation.run.badInput")) }
-                    return reply(200, RemoteWireAnswer(accepted: await runner.steer(sessionId: id, text: body.text)))
+                    // Since 0.4.35 nothing a person sends joins a running turn: the
+                    // request is checked and refused, and an older client queues the text itself.
+                    return reply(200, RemoteWireAnswer(accepted: false))
                 case "permission":
                     let body = try JSONDecoder().decode(RemoteWirePermission.self, from: request.body)
                     try await runner.respondToPermission(sessionId: id, runId: body.runId, requestId: body.requestId, allow: body.allow)

@@ -11,9 +11,9 @@ public protocol MobileHostDelegate: AnyObject, Sendable {
     /// The detail with the pane's structure view built in (`mighty.structure` and its
     /// tag), for a phone that asked for it; the service decides whether it is sent.
     func mobileSession(id: String, structure: Bool) async -> MobileSessionDetail?
-    /// Returns what actually happened — "started", "steered" or "queued" — so
-    /// the phone never shows a steer that silently became a queued item.
-    /// `mode` is already checked against `MobileWire.submitModes`, and the
+    /// Returns what actually happened — "started" or "queued" — so the phone
+    /// shows what the host did. A busy pane always queues, whatever `mode`
+    /// says ("steer" from an older phone is queued too). `mode` is already checked against `MobileWire.submitModes`, and the
     /// uploads the phone named are already files the composer would accept.
     func mobileSubmit(sessionId: String, text: String, mode: String?, attachments: [RunAttachment]) async throws -> String
     /// Sends a guided style's prompt through the very same path, so `accepted`

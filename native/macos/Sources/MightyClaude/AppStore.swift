@@ -44,9 +44,6 @@ final class AppStore: ObservableObject, DelegationHost {
     @Published var graphHistory: [String: SessionHistoryState] = [:]
     /// Session record reads in flight per pane, cancelled when it closes.
     var graphHistoryLoads: [String: Task<Result<SessionHistoryChunk, Error>, Never>] = [:]
-    /// The live steer chain per session. The token identifies the chain's last
-    /// link, so a finished chain clears itself without racing a newer one.
-    private var steerTasks: [String: (token: UUID, task: Task<SubmitOutcome, Never>)] = [:]
     /// Phone access (docs/mobile-remote.md): listener, revision tracking, UI status.
     @Published var mobileStatus = MobileHostStatus()
     @Published var mobileBusy = false
@@ -690,7 +687,7 @@ final class AppStore: ObservableObject, DelegationHost {
             statusLines.removeValue(forKey: id)
             pendingTerminalInput.removeValue(forKey: id); cliLoginEnded(sessionID: id); forgetLoginRecovery(id); guidedProgress.removeValue(forKey: id)
             discardAttachments(id)
-            queuedInputs.removeValue(forKey: id); steerTasks.removeValue(forKey: id)?.task.cancel()
+            queuedInputs.removeValue(forKey: id)
             antigravityBoard.remove(sessionId: id); antigravityPermissionErrors.removeValue(forKey: id)
             draftRevisions.removeValue(forKey: id)
             forgetGraphHistory(id)
@@ -750,7 +747,7 @@ final class AppStore: ObservableObject, DelegationHost {
                 statusLines.removeValue(forKey: session.id)
                 pendingTerminalInput.removeValue(forKey: session.id); cliLoginEnded(sessionID: session.id); forgetLoginRecovery(session.id); guidedProgress.removeValue(forKey: session.id)
                 discardAttachments(session.id)
-                queuedInputs.removeValue(forKey: session.id); steerTasks.removeValue(forKey: session.id)?.task.cancel()
+                queuedInputs.removeValue(forKey: session.id)
                 draftRevisions.removeValue(forKey: session.id)
                 forgetGraphHistory(session.id)
                 forgetStyleState(session.id)
@@ -836,12 +833,13 @@ final class AppStore: ObservableObject, DelegationHost {
         refreshModels(for: id, invalidate: true)
     }
 
-    /// `steering`: the second send (⌘Enter) while a run is busy, which does
-    /// what ``composerSecondSend(_:)`` says — runs the text in a new child
-    /// worktree, hands it to the running Claude turn, or queues it — instead
-    /// of queueing it for the next request (Enter). `agent`, from the
-    /// worktree button's menu, is that new child's agent.
-    func submit(_ id: String, steering: Bool = false, agent: String? = nil) {
+    /// A busy pane (running, starting, held for an update, or a turn that only
+    /// waits on background work) always queues the text as its next request;
+    /// nothing a person sends joins the running turn. `secondSend`: ⌘Enter,
+    /// which runs the text in a new child worktree where
+    /// ``composerSecondSend(_:)`` offers one, and otherwise queues it too.
+    /// `agent`, from the worktree button's menu, is that new child's agent.
+    func submit(_ id: String, secondSend: Bool = false, agent: String? = nil) {
         guard !ending, !closingSessions.contains(id), !importingAttachments.contains(id), let session = snapshot.sessions.first(where: { $0.id == id }),
               let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return }
         guard !usesLocalTerminal(session) else { error = L("composer.localTerminalInput"); return }
@@ -862,17 +860,14 @@ final class AppStore: ObservableObject, DelegationHost {
         if session.status == "running" || pendingRuns.contains(id) || held {
             if held { heldForUpdate.insert(id) }
             // A new worktree needs written words for its task; files alone wait.
-            if steering, !held, !input.isEmpty, composerSecondSend(session) == .worktree {
+            if secondSend, !held, !input.isEmpty, composerSecondSend(session) == .worktree {
                 runInNewWorktree(id, input: input, attachments: attachments, draft: originalDraft)
                 return
             }
-            // A turn that is over but still running background agents takes new
-            // input in the same process; the queue is the fallback. A plan-mode
-            // style's new request waits and starts fresh in plan mode (§1.17.4).
+            // A plan-mode style's queued request starts fresh in plan mode (§1.17.4).
             let plans = styleLaunchesInPlanMode(session)
-            let joins = BackgroundQueuePolicy.composerJoins(steering: steering, work: session.backgroundWork, launchesInPlan: plans)
             let item = QueuedInput(text: input, attachments: attachments, permissionModeOverride: BackgroundQueuePolicy.queuedOverride(launchesInPlan: plans))
-            deferInput(id, session: session, workspace: workspace, item: item, steering: joins && !held)
+            deferInput(id, session: session, workspace: workspace, item: item)
             return
         }
         // Items held for the pane go first, in this one run.
@@ -882,12 +877,12 @@ final class AppStore: ObservableObject, DelegationHost {
 
     /// What the composer's second send does with the text while the pane is
     /// busy: a new child worktree for a Claude, Codex or Antigravity pane that
-    /// may have children (delegation on and loaded), otherwise steer or queue as before.
+    /// may have children (delegation on and loaded), otherwise the queue, as Enter.
     func composerSecondSend(_ session: RunSession) -> ComposerSecondSend {
         // Mighty Orchestration works in this Mac's worktrees: never from a remote pane.
         ComposerSecondSend.choose(kind: session.kind, provider: session.provider, mode: session.settings.permissionMode,
                                   isChild: isDelegatedChild(session), delegationOn: delegation != nil && DelegationSwitch.isOn() && !isRemoteSession(session),
-                                  canHostWorktree: canHostWorktree(session), steerable: canSteer(session))
+                                  canHostWorktree: canHostWorktree(session))
     }
 
     /// Whether the busy pane shows the worktree button for its menu alone: its
@@ -906,85 +901,37 @@ final class AppStore: ObservableObject, DelegationHost {
 
     private func canHostWorktree(_ session: RunSession) -> Bool { worktreeHostFolder(session).flatMap { worktreeReadiness[$0] } == true }
 
-    /// A local Claude run reads follow-ups on its open stdin frame, so the text
-    /// joins the running turn. Everything else waits for the current request.
+    /// A local Claude run reads follow-ups on its open stdin frame, so a
+    /// delegation notice can join the running turn (``DelegationDelivery``).
+    /// Nothing a person sends goes this way: it waits for the current request.
     func canSteer(_ session: RunSession) -> Bool {
         DelegationProviders.canSteer(kind: session.kind, provider: session.provider) && !pendingRuns.contains(session.id)
             && snapshot.workspaces.contains { $0.id == session.workspaceId }
     }
 
-    /// What deferring did. Steering is only known once the runner answers, so
-    /// the task carries the outcome for callers (the phone) that must report it.
+    /// What deferring did.
     enum DeferOutcome {
         case refused, queued
-        case steering(Task<SubmitOutcome, Never>)
     }
 
-    /// `takingDraft` false: the text left the composer earlier, so a draft
-    /// typed since is left as it is.
+    /// Queues `item` as the pane's next request. `takingDraft` false: the
+    /// text left the composer earlier, so a draft typed since is left as it is.
     @discardableResult
-    func deferInput(_ id: String, session: RunSession, workspace: Workspace, item: QueuedInput, steering: Bool = true, takingDraft: Bool = true) -> DeferOutcome {
+    func deferInput(_ id: String, session: RunSession, workspace: Workspace, item: QueuedInput, takingDraft: Bool = true) -> DeferOutcome {
         guard (queuedInputs[id]?.count ?? 0) < QueuedInput.maximumItems else { error = L("queue.fullCount", ["count": "\(QueuedInput.maximumItems)"]); return .refused }
         if takingDraft {
             drafts[id] = ""
             let submittedIds = Set(item.attachments.map(\.id))
             attachmentDrafts[id]?.removeAll { submittedIds.contains($0.id) }
         }
-        guard steering, canSteer(session), item.attachments.isEmpty else {
-            queuedInputs[id, default: []].append(item)
-            return .queued
-        }
-        // One chain per session keeps rapid follow-ups in send order.
-        let previous = steerTasks[id]?.task
-        let token = UUID()
-        let task = Task { [weak self] in
-            _ = await previous?.value
-            // Cancelled while waiting its turn: the text never reached anything.
-            guard let self, !Task.isCancelled else { return SubmitOutcome.dropped }
-            let outcome = await self.steer(id, item: item)
-            self.finishSteerChain(id, token: token)
-            return outcome
-        }
-        steerTasks[id] = (token, task)
-        return .steering(task)
+        queuedInputs[id, default: []].append(item)
+        return .queued
     }
 
-    /// Drops the chain handle once its last link finished, so a session that
-    /// stopped steering does not keep a completed task alive.
-    private func finishSteerChain(_ id: String, token: UUID) {
-        guard steerTasks[id]?.token == token else { return }
-        steerTasks.removeValue(forKey: id)
-    }
-
-    /// Hands `text` to the pane's running Claude turn; false when it did not take it.
+    /// Hands a delegation notice to the pane's running local Claude turn
+    /// (``DelegationDelivery``); false when it did not take it.
     func steerRunningTurn(_ id: String, text: String) async -> Bool {
-        if let session = snapshot.sessions.first(where: { $0.id == id }), isRemoteSession(session) { return await remoteClient.steer(id: id, text: text) }
-        return await runner.steer(sessionId: id, text: text)
-    }
-
-    /// What the text finally did. The runner refusing it is not the end: the
-    /// item goes to the queue, and settling may start it right there, which a
-    /// caller reporting to a phone must be able to tell apart from waiting.
-    private func steer(_ id: String, item: QueuedInput) async -> SubmitOutcome {
-        let accepted = await steerRunningTurn(id, text: item.text)
-        // Closing meanwhile: the item is deliberately not queued, so say so.
-        guard !ending, !closingSessions.contains(id) else { return .dropped }
-        guard accepted else {
-            // The turn ended (or never opened stdin) meanwhile; run it next.
-            queuedInputs[id, default: []].append(item)
-            settleQueue(id, status: snapshot.sessions.first { $0.id == id }?.status ?? "idle")
-            if queuedInputs[id]?.contains(where: { $0.id == item.id }) == true { return .queued }
-            // Gone from the queue: settling either started it now, or threw the
-            // whole queue away because the pane cannot run (it logged why).
-            if pendingRuns.contains(id) || releasingRows.contains(item.id) { return .started }
-            let status = snapshot.sessions.first { $0.id == id }?.status
-            return status == "running" ? .started : .dropped
-        }
-        companion.recordInput(sessionID: id, text: item.text)
-        updateSession(id) {
-            $0.logs.append(LogEntry(id: item.id, kind: "user", text: item.text)); $0.logs = TranscriptRetention.trimmed($0.logs)
-        }
-        return .steered
+        await runner.steer(sessionId: id, text: text)
     }
 
     /// Removes the human's queued request `itemId`. A row held for the pane
@@ -1190,7 +1137,7 @@ final class AppStore: ObservableObject, DelegationHost {
             }
             pendingRuns.remove(id)
             startTasks.removeValue(forKey: id)
-            // Up now: a notice its start could not take yet is steered in.
+            // Up now: a delegation notice its start could not take yet is steered in.
             if snapshot.sessions.first(where: { $0.id == id })?.status == "running" { offerDelegationPending() }
             settleQueue(id, status: snapshot.sessions.first { $0.id == id }?.status ?? "idle")
             return reachedRunner
@@ -1872,21 +1819,16 @@ final class AppStore: ObservableObject, DelegationHost {
         try await Task.sleep(for: .milliseconds(100))
         var tree: [[String: Any]] = []
         let running = session.status == "running"
-        // A busy pane keeps accepting text: it steers a local Claude turn or
-        // waits in the queue. With a draft present, stop and send coexist.
+        // A busy pane keeps accepting text: it waits in the queue. With a
+        // draft present, stop and send coexist.
         let sendsWhileRunning = running && !forceUnavailable
         let sendExpected = expectedSendEnabled || sendsWhileRunning
         let actionIdentifier = (running ? "composer-stop-" : "send-") + sessionId
         let absentIdentifier = (running ? "send-" : "composer-stop-") + sessionId
         func secondaryMatches(_ value: Bool?) -> Bool { sendsWhileRunning ? value == true : value == nil }
         // The second send stands beside queue, enabled, exactly while that draft can
-        // go: a new worktree for written text in a Claude pane that may have children,
-        // otherwise steer for a draft with no files in a pane that can steer.
-        let secondSend = composerSecondSend(snapshot.sessions.first { $0.id == sessionId } ?? session)
-        func steerMatches(_ value: Bool?) -> Bool {
-            let steers = sendsWhileRunning && (attachmentDrafts[sessionId] ?? []).isEmpty && secondSend == .steer
-            return steers ? value == true : value == nil
-        }
+        // go to a new worktree: written text in a pane that may have children.
+        // Nothing else shows there: no send joins the running turn.
         let worktreeOffered = offersWorktreeMenu(snapshot.sessions.first { $0.id == sessionId } ?? session)
         func worktreeMatches(_ value: Bool?) -> Bool {
             let shown = sendsWhileRunning && worktreeOffered && !(drafts[sessionId] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -1894,7 +1836,6 @@ final class AppStore: ObservableObject, DelegationHost {
         }
         var action: Bool?
         var duplicate: Bool?
-        var steer: Bool?
         var worktree: Bool?
         let actionDeadline = Date().addingTimeInterval(3)
         repeat {
@@ -1904,21 +1845,18 @@ final class AppStore: ObservableObject, DelegationHost {
             tree = []
             action = smokeAccessibilityElement(window, identifier: actionIdentifier, tree: &tree)
             duplicate = smokeAccessibilityElement(window, identifier: absentIdentifier, tree: &tree)
-            steer = smokeAccessibilityElement(window, identifier: "composer-steer-" + sessionId, tree: &tree)
             worktree = smokeAccessibilityElement(window, identifier: "composer-worktree-" + sessionId, tree: &tree)
-            if action == (running || expectedSendEnabled), secondaryMatches(duplicate), steerMatches(steer), worktreeMatches(worktree) { break }
+            if action == (running || expectedSendEnabled), secondaryMatches(duplicate), worktreeMatches(worktree) { break }
             try await Task.sleep(for: .milliseconds(50))
         } while Date() < actionDeadline
         diagnostic["primaryAction"] = running ? "stop" : "send"
         diagnostic["primaryActionLocated"] = action != nil
         diagnostic["singlePrimaryAction"] = secondaryMatches(duplicate)
         diagnostic["sendWhileRunning"] = sendsWhileRunning
-        diagnostic["steerShown"] = steer != nil
-        diagnostic["steerMatchesState"] = steerMatches(steer)
         diagnostic["worktreeShown"] = worktree != nil
         diagnostic["worktreeMatchesState"] = worktreeMatches(worktree)
         report(diagnostic)
-        guard let action, secondaryMatches(duplicate), steerMatches(steer), worktreeMatches(worktree) else {
+        guard let action, secondaryMatches(duplicate), worktreeMatches(worktree) else {
             let data = try JSONSerialization.data(withJSONObject: tree, options: [.prettyPrinted, .sortedKeys])
             try data.write(to: dataDirectory.appendingPathComponent("composer-accessibility.json"), options: .atomic)
             throw MightyError("단일 실행·중지 버튼의 접근성 상태를 확인하지 못했습니다.")

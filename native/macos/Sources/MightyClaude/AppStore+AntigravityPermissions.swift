@@ -59,7 +59,7 @@ extension AppStore {
         if session.status == "running" || pendingRuns.contains(sessionId) || held {
             // The composer's rule for a busy pane: it waits in the queue.
             if held { heldForUpdate.insert(sessionId) }
-            guard case .queued = deferInput(sessionId, session: session, workspace: workspace, item: item, steering: false, takingDraft: false) else {
+            guard case .queued = deferInput(sessionId, session: session, workspace: workspace, item: item, takingDraft: false) else {
                 return refuse(L("queue.fullCount", ["count": "\(QueuedInput.maximumItems)"]))
             }
             antigravityBoard.remove(sessionId: sessionId)

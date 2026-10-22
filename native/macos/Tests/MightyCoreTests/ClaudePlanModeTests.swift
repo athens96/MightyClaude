@@ -378,7 +378,7 @@ struct ClaudePlanModeRunnerTests {
             #expect(approval.plan == "# Plan\n1. Do it" && !pending.canAllow)
             await #expect(throws: MightyError.self) { try await runner.answerPlan(sessionId: "pane", runId: "other", requestId: pending.id, decision: .approveAutoEdit) }
             try await runner.answerPlan(sessionId: "pane", runId: pending.runId, requestId: pending.id, decision: .approveAutoEdit)
-            // The turn is over but its background agent runs: input stays open and new text joins.
+            // The turn is over but its background agent runs: input stays open and a delegation notice can join.
             try await wait { values().compactMap(\.background).contains { $0.waitingOnBackground } }
             #expect(!values().contains { $0.status == "completed" })
             #expect(await runner.steer(sessionId: "pane", text: "and one more thing"))

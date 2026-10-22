@@ -227,7 +227,7 @@ import Testing
     @Test func aTextForAnotherAgentGoesBackToTheComposerNeverToThePane() {
         #expect(ComposerSecondSend.returnsToComposer(childAgent: "codex", parentAgent: "claude"))
         #expect(ComposerSecondSend.returnsToComposer(childAgent: "claude", parentAgent: "gemini"))
-        // ⌘Enter, or the menu's row for the pane's own agent: steered or queued as before.
+        // ⌘Enter, or the menu's row for the pane's own agent: queued in the pane.
         #expect(!ComposerSecondSend.returnsToComposer(childAgent: nil, parentAgent: "claude"))
         #expect(!ComposerSecondSend.returnsToComposer(childAgent: "codex", parentAgent: "codex"))
     }

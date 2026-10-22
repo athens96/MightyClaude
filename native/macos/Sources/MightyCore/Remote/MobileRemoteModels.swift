@@ -116,8 +116,10 @@ public enum MobileWire {
 }
 
 /// What submitting text finally did. The app's own submit path answers in
-/// these terms so the bridge never has to guess: steering can still end up
-/// queued, and a queued item the host started right away is `started`.
+/// these terms so the bridge never has to guess: a send to a busy pane is
+/// `queued` (since 0.4.35 nothing a person sends joins the running turn; only
+/// older hosts answer `steered`), and a queued item the host started right
+/// away is `started`.
 /// `dropped` has no wire name — nothing was accepted, so the phone gets 409.
 public enum SubmitOutcome: String, Sendable, Equatable, CaseIterable {
     case started, steered, queued, dropped
@@ -192,9 +194,8 @@ public struct MobileSessionSummary: Codable, Sendable, Equatable, Identifiable {
     /// the CLI's catalogue or the pane's last reported model; absent when unknown.
     /// Only for the phone's label (`ModelLabel`); older phones ignore it.
     public var resolvedModel: String?
-    /// Whether text sent while the pane runs joins the running turn (steer); false
-    /// when it can only queue (Codex, Antigravity, command panes). Older phones
-    /// ignore it; a phone talking to an older host, which leaves it out, offers steer.
+    /// Always false since 0.4.35: text sent while the pane runs always queues.
+    /// Kept for older phones, which offered steer when it was true or absent.
     public var canSteer: Bool?
     /// A Mighty Orchestration child pane's parent pane, as the Mac sidebar nests it
     /// (`DelegationSidebar`); absent on every other pane. Older phones ignore it.

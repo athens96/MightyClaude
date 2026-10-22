@@ -104,7 +104,7 @@ extension AppStore {
             let outcome: SubmitOutcome
             switch try mobileSubmit(parent, text: text) {
             case .immediate(let value): outcome = value
-            case .steering(let task): outcome = await task.value
+            case .pending(let task): outcome = await task.value
             }
             guard outcome == .started else { throw MightyError("The phone send was \(outcome.rawValue), not started.") }
             let delivered = try await delegationSmokeAwait("C's notice delivered", timeout: 60) { () -> Notice? in
