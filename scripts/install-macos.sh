@@ -53,17 +53,31 @@ if [ "$VERIFY_EXIT" -ne 0 ]; then
   exit 1
 fi
 
-if running; then
-  echo "Mighty Claude가 실행 중입니다. 앱을 종료(⌘Q)하면 교체합니다…"
-  while running; do sleep 1; done
+# Wait until neither the app nor its own update helper runs. The helper may
+# reopen the app (a restart for an update) or the person may reopen it while
+# the helper waits, so both are checked together, again after the settle.
+# The helper itself gives up within about five minutes; a match that lasts
+# longer than ten is something else holding that path, and the install stops.
+helper_waited=0
+while running || update_helper_running; do
+  if running; then
+    echo "Mighty Claude가 실행 중입니다. 앱을 종료(⌘Q)하면 교체합니다…"
+    while running; do sleep 1; done
+  fi
+  if update_helper_running; then
+    echo "Mighty Claude의 업데이트 도우미가 끝나기를 기다립니다…"
+    while update_helper_running; do
+      sleep 1
+      helper_waited=$((helper_waited + 1))
+      if [ "$helper_waited" -ge 600 ]; then
+        echo "설치 중단: 업데이트 도우미가 10분 넘게 끝나지 않습니다 ($UPDATES)." >&2
+        exit 1
+      fi
+    done
+  fi
   # Let the input method and LaunchServices finish tearing down the old process.
   sleep 2
-fi
-
-if update_helper_running; then
-  echo "Mighty Claude의 업데이트 도우미가 끝나기를 기다립니다…"
-  while update_helper_running; do sleep 1; done
-fi
+done
 # A staged update would replace this build at the app's next quit.
 rm -rf "$UPDATES"/*
 
