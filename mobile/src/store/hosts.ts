@@ -27,7 +27,7 @@ import {
 import { t } from '@/lib/i18n';
 import { createKeyedMutex } from '@/lib/keyed-mutex';
 import { describeRelayTarget, type PairingPayload } from '@/lib/pairing';
-import { forgetPushHandle } from '@/lib/push/registry';
+import { forgetPushHandle, globalPushFetch } from '@/lib/push/registry';
 import { forgetControlKey } from '@/lib/screen-share/control-key';
 import { nativeControlKey } from '@/lib/screen-share/native-control-key';
 
@@ -383,10 +383,10 @@ export const useHostsStore = create<HostsState>((set, get) => ({
   removeHost: async (id) => {
     const hosts = get().hosts.filter((entry) => entry.id !== id);
     closeHostClient(id);
-    // The relay forgets this pairing's push handle; the host drops it on its next push (404).
-    await forgetPushHandle({ store: SecureStore, fetch: (url, init) => fetch(url, init) }, id).catch(
-      () => undefined,
-    );
+    // The push handle goes from the phone once any sync for it ends, and from the relay
+    // after that; the host drops it on its next push (404). Not awaited: neither may hold
+    // up the removal.
+    void forgetPushHandle({ store: SecureStore, fetch: globalPushFetch }, id).catch(() => undefined);
     await forgetHost(SecureStore, id);
     // The screen-share control key belongs to this pairing and goes with it.
     await forgetControlKey({ hostId: id, native: nativeControlKey() });

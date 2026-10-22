@@ -8,6 +8,7 @@ import {
   readPushHandle,
   relayHttpBase,
   syncHostPush,
+  PUSH_RELAY_TIMEOUT_MS,
   type PushFetch,
 } from '@/lib/push/registry';
 
@@ -128,12 +129,79 @@ describe('syncHostPush', () => {
   it('leaves a host without push alone, and a legacy pairing is unsupported', async () => {
     const store = memoryStore();
     const none: Pick<MobileClient, 'info' | 'registerPush'> = { info: async () => info([]), registerPush: async () => ok };
-    expect(await syncHostPush({ store, fetch: relay([], []), client: none }, { id: 'a', relayUrl: 'wss://r' }, 't', ['completed'])).toBe('unsupported');
+    const noCalls: Call[] = [];
+    expect(await syncHostPush({ store, fetch: relay([], noCalls), client: none }, { id: 'a', relayUrl: 'wss://r' }, 't', ['completed'])).toBe('unsupported');
+    expect(noCalls).toHaveLength(0);
+    expect(store.items.size).toBe(0);
     const legacy: Pick<MobileClient, 'info' | 'registerPush'> = {
       info: async () => info(['push']),
       registerPush: async () => { throw new ApiError(409, 'needs token'); },
     };
     expect(await syncHostPush({ store, fetch: relay([{ status: 201, body: { handle: HANDLE, secret: SECRET } }], []), client: legacy }, { id: 'a', relayUrl: 'wss://r' }, 't', ['completed'])).toBe('unsupported');
+  });
+});
+
+describe('one pairing at a time', () => {
+  const info = (): HostInfo => ({ protocol: 1, hostId: 'h', hostName: 'H', appVersion: '1', platform: 'darwin', capabilities: ['push'] } as HostInfo);
+  const ok: OkResponse = { protocol: 1, ok: true } as OkResponse;
+
+  it('two syncs for one pairing share one relay handle', async () => {
+    const store = memoryStore();
+    const calls: Call[] = [];
+    const fetch = relay([{ status: 201, body: { handle: HANDLE, secret: SECRET } }, { status: 201, body: { handle: 'o'.repeat(43), secret: SECRET } }], calls);
+    const registered: string[] = [];
+    const client: Pick<MobileClient, 'info' | 'registerPush'> = {
+      info: async () => info(),
+      registerPush: async (input) => { registered.push(input.handle); return ok; },
+    };
+    const host = { id: 'host-a', relayUrl: 'wss://relay.example.invalid' };
+    const results = await Promise.all([
+      syncHostPush({ store, fetch, client }, host, 'token', ['completed']),
+      syncHostPush({ store, fetch, client }, host, 'token', ['completed']),
+    ]);
+    expect(results).toEqual(['registered', 'registered']);
+    expect(calls.filter((c) => c.method === 'POST')).toHaveLength(1);
+    expect(registered).toEqual([HANDLE, HANDLE]);
+  });
+
+  it('a removal during a sync leaves no record behind and deletes the new handle on the relay', async () => {
+    const store = memoryStore();
+    const calls: Call[] = [];
+    let answerPost: (value: { status: number; json(): Promise<unknown> }) => void = () => undefined;
+    const fetch: PushFetch = (url, init) => {
+      calls.push({ url, method: init.method });
+      if (init.method === 'POST') return new Promise((resolve) => { answerPost = resolve; });
+      return Promise.resolve({ status: 204, json: async () => undefined });
+    };
+    const client: Pick<MobileClient, 'info' | 'registerPush'> = { info: async () => info(), registerPush: async () => ok };
+    const sync = syncHostPush({ store, fetch, client }, { id: 'host-a', relayUrl: 'wss://relay.example.invalid' }, 'token', ['completed']);
+    await new Promise((resolve) => setImmediate(resolve));
+    const forget = forgetPushHandle({ store, fetch }, 'host-a');
+    answerPost({ status: 201, json: async () => ({ handle: HANDLE, secret: SECRET }) });
+    await sync;
+    await forget;
+    expect(await readPushHandle(store, 'host-a')).toBeNull();
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+      'POST https://relay.example.invalid/push/v1/handles',
+      `DELETE https://relay.example.invalid/push/v1/handles/${HANDLE}`,
+    ]);
+  });
+});
+
+describe('a relay that never answers', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  it('gives up after the timeout instead of hanging', async () => {
+    const store = memoryStore();
+    const fetch: PushFetch = (_url, init) =>
+      new Promise((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+      });
+    const pending = ensurePushHandle({ store, fetch }, 'host-a', 'wss://relay.example.invalid', 'token');
+    await jest.advanceTimersByTimeAsync(PUSH_RELAY_TIMEOUT_MS);
+    await expect(pending).resolves.toBeNull();
+    expect(store.items.size).toBe(0);
   });
 });
 
